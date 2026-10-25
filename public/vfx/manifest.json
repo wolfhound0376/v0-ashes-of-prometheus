@@ -43,6 +43,23 @@
     "loop": true,
     "rows": 6
   },
+  "aoePoisonSkullHeads": {
+    "bytes": 25268,
+    "cols": 6,
+    "file": "aoePoisonSkullHeads.webp",
+    "fps": 1,
+    "frames": 6,
+    "rows": 1
+  },
+  "aoePoisonSkulls": {
+    "bytes": 1308878,
+    "cols": 10,
+    "file": "aoePoisonSkulls.webp",
+    "fps": 20,
+    "frames": 100,
+    "grow": 50,
+    "rows": 10
+  },
   "bardicInspire": {
     "bytes": 426518,
     "cols": 4,
