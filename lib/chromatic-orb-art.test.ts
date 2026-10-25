@@ -42,8 +42,18 @@ describe("Chromatic Orb art and sound", () => {
     }
   })
 
-  it("offers the picker in the built map", () => {
+  it("offers the picker as one up/down cycler in the built map", () => {
     expect(page).toContain(`sub === "orb"`)
     expect(page).toContain("walk:orb-select")
+    expect(page).toContain("orbCycler")       // Sam: "an option cycler going up or down"
+  })
+})
+
+// Footsteps (Sam, 2026-10-25: "very subtle sounds and a little louder for heavier creatures"): single footfalls the
+// map picks from at random. A missing clip would just be a silent step.
+describe("footstep clips", () => {
+  it("ships all eight single footfalls with the app", () => {
+    for (let i = 1; i <= 8; i++) expect(existsSync(`public/sfx/walk/step-${i}.mp3`), `step-${i}`).toBe(true)
+    expect(page).toContain("const STEP_CLIPS = 8")
   })
 })

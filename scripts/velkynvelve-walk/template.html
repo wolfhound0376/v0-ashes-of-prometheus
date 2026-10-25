@@ -174,6 +174,13 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .cbt-menu button{all:unset;display:grid;grid-template-columns:34px 1fr;grid-template-rows:auto auto;column-gap:6px;align-items:center;box-sizing:border-box;flex:1 1 132px;min-width:0;max-width:172px;min-height:44px;padding:3px 8px 3px 4px;border-radius:5px;border:1px solid rgba(203,160,90,.18);cursor:pointer;color:var(--ink);font-family:var(--face-display);font-size:.8rem;line-height:1.1;background:rgba(0,0,0,.18)}
 .cbt-menu button .ico{grid-row:1/3;width:34px;height:34px;border-radius:4px;border:1px solid rgba(203,160,90,.35);object-fit:cover;image-rendering:auto;background:#1a1410}
 .cbt-menu button.orbOn{outline:2px solid var(--ember);background:rgba(232,162,74,.16)}
+.cbt-menu .orbCycler{display:flex;flex-direction:column;align-items:stretch;gap:3px;flex:0 1 210px;min-width:160px}
+/* the menu's buttons grow along the row (flex 1 1 132px); in this column that basis became a 132-px-tall box */
+.cbt-menu .orbCycler button{max-width:none;flex:0 0 auto}
+.cbt-menu .orbCycler .orbStep{display:flex;justify-content:center;align-items:center;min-height:20px;height:20px;padding:0;font-size:11px;color:var(--ember);border:1px solid rgba(203,160,90,.35);border-radius:4px;cursor:pointer}
+.cbt-menu .orbCycler .orbStep span{grid-column:auto}
+.cbt-menu .orbCycler ~ button{align-self:center}
+.cbt-menu .orbCycler .orbStep:hover,.cbt-menu .orbCycler .orbStep:focus-visible{background:rgba(232,162,74,.16)}
 .cbt-menu button .ico.glyph{display:grid;place-items:center;font-size:20px;color:var(--ember)}
 .cbt-menu button span{grid-column:2}
 .cbt-menu button small{grid-column:2;font-family:var(--face-mono);font-size:.54rem;color:var(--ink-dim);letter-spacing:0;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -1880,12 +1887,12 @@ function loadSfx(name){
     .then(b => audioCtx().decodeAudioData(b)).catch(() => { delete SFX[name]; return null; }));
 }
 const bank = (name, gain = .8) => sfx(name.startsWith("walk:") ? name : "bank:" + name, gain);
-async function sfx(name, gain = .8){
+async function sfx(name, gain = .8, rate = 1){
   try {
     const ctx = audioCtx(); if (ctx.state === "suspended") await ctx.resume();
     const buf = await loadSfx(name); if (!buf) return;
     const src = ctx.createBufferSource(), g = ctx.createGain(); g.gain.value = gain;
-    src.buffer = buf; src.connect(g); g.connect(ctx.destination); src.start();
+    src.buffer = buf; src.playbackRate.value = rate; src.connect(g); g.connect(ctx.destination); src.start();
   } catch (e) {}
 }
 // The lullaby for Sleep: a music box, synthesised here so it needs no file. An original eight-bar
@@ -3207,14 +3214,15 @@ function openMenu(a, sub){
     for (const atk of s.attacks){ ACTION_ICON[atk.name] = atk.name.toLowerCase().includes("unarmed") ? "opportunity-attack" : "attack"; add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.sneak ? ` · sneak +${atk.sneak}` : ""}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk})); }
     add("Back", "", () => openMenu(a));
   } else if (sub === "orb"){
+    // ONE CYCLER, UP OR DOWN (Sam, 2026-10-25: "Chromatic orb should be an option cycler going up or down"): an up
+    // arrow, the element in the hand, a down arrow. The arrows, the arrow keys and the mouse wheel step through the six;
+    // the element itself (or Enter) aims it.
     const i0 = orbPick && orbPick.a === a ? orbPick.i : 0; orbPick = {a, i: i0};
-    ORB_ELEMENTS.forEach((el, i) => {
-      add(`${el.label}`, `3d8 ${el.type} · ${i === orbPick.i ? "in your hand: click or Enter to aim" : "hover, wheel or arrows to switch"}`, () => { orbPick.i = i; orbConfirm(a); });
-      const b = m.lastElementChild; b.dataset.orb = String(i); b.classList.toggle("orbOn", i === orbPick.i);
-      const g = b.querySelector(".ico"); if (g){ g.style.color = el.col; g.textContent = "●"; }
-      b.addEventListener("mouseenter", () => orbSet(a, i));
-    });
-    add("Back", "the orb fades", () => { orbDrop(); openMenu(a, "cast"); });
+    const cyc = document.createElement("div"); cyc.className = "orbCycler"; cyc.setAttribute("role", "group"); cyc.setAttribute("aria-label", "Chromatic Orb element");
+    const step = (d, glyph, label) => { const b = document.createElement("button"); b.className = "orbStep"; b.innerHTML = `<span aria-hidden="true">${glyph}</span>`; b.setAttribute("aria-label", label); b.onclick = () => orbSet(a, orbPick.i + d); return b; };
+    const cur = document.createElement("button"); cur.id = "orbCur"; cur.className = "orbOn"; cur.onclick = () => orbConfirm(a);
+    cyc.append(step(-1, "▲", "Previous element"), cur, step(1, "▼", "Next element")); m.appendChild(cyc);
+    orbShow(); add("Back", "the orb fades", () => { orbDrop(); openMenu(a, "cast"); });
     m.onwheel = (e) => { e.preventDefault(); orbSet(a, orbPick.i + (e.deltaY > 0 ? 1 : -1)); };
     orbHold(a, orbPick.i, true);
     // the first orb sounds a beat after the click, so the two are heard as two (select, then the element)
@@ -4642,8 +4650,13 @@ function orbDrop(){ if (heldOrb){ heldOrb.then(e => { if (e) e.until = now; }); 
 function orbSet(a, i){
   if (!orbPick || orbPick.a !== a) return; const n = ORB_ELEMENTS.length; i = ((i % n) + n) % n; if (i === orbPick.i) return;
   orbPick.i = i; orbHold(a, i);
-  for (const b of $("cbtMenu").querySelectorAll("button[data-orb]")){ const on = +b.dataset.orb === i; b.classList.toggle("orbOn", on);
-    const sm = b.querySelector("small"); if (sm) sm.textContent = `3d8 ${ORB_ELEMENTS[+b.dataset.orb].type} · ${on ? "in your hand: click or Enter to aim" : "hover, wheel or arrows to switch"}`; }
+  orbShow();
+}
+// the cycler's middle button shows the element in the hand: its colour, its name, what it does, and its place in the six
+function orbShow(){
+  const b = $("orbCur"); if (!b || !orbPick) return; const el = ORB_ELEMENTS[orbPick.i];
+  b.innerHTML = `<i class="ico glyph" style="color:${el.col}">●</i><span>${el.label} orb</span><small>3d8 ${el.type} · ${orbPick.i + 1} of ${ORB_ELEMENTS.length} · click or Enter to aim</small>`;
+  b.setAttribute("aria-label", `${el.label} orb, ${orbPick.i + 1} of ${ORB_ELEMENTS.length}. Click to aim.`);
 }
 // the choice is made: aim it, still glowing in the hand until it is thrown
 function orbConfirm(a){ const el = ORB_ELEMENTS[orbPick.i], keep = heldOrb; heldOrb = null; orbPick = null; aim(a, {spell: `Chromatic Orb (${el.type})`}); heldOrb = keep; }
@@ -6764,6 +6777,42 @@ function idleLife(a){
   a.actUntil = now + pick.dur[0] + Math.random() * (pick.dur[1] - pick.dur[0]);
 }
 
+// ---------- footsteps (Sam, 2026-10-25: "walking in the game should have a very subtle sounds and a little louder for
+// heavier creatures") ----------
+// One footfall per stride of the walk animation (two per cycle: frame 0 and the half-way frame), for anyone walking
+// on screen. The clips are single footfalls cut from the bank's wet-stone and gravel recordings
+// (scripts/sfx/cut_footsteps.py -> public/sfx/walk/step-1..8.mp3), picked at random and pitched a little either way so
+// a line of walkers never sounds like one loop. Weight comes from how tall the creature stands: small folk patter,
+// people barely register, big things land heavier and lower.
+const STEP_CLIPS = 8;
+const STEP_WEIGHT = [            // [up to this height in feet, gain, playback rate]
+  [4,  .03, 1.15],               // Small: gnomes, halflings, goblins, giant rats
+  [9,  .05, 1.0],                // Medium: people, drow, dwarves, orcs (Ront's frame measures 8.1: still medium)
+  [14, .12, .8],                 // Large: quaggoths, hook horrors, ogres
+  [99, .2,  .62],                // Huge and up
+];
+let stepBudget = 0, stepBudgetAt = 0;
+function standingFt(a){ const m = SPR[a.id].json; return m.cell[1] * 5 / m.ppu * (a.big || 1); }
+function footstep(a){
+  if (now - stepBudgetAt > 160){ stepBudgetAt = now; stepBudget = 0; }
+  if (++stepBudget > 5) return;                                       // a whole party on the move stays a patter, not a roar
+  const ft = standingFt(a), w = STEP_WEIGHT.find(r => ft <= r[0]) || STEP_WEIGHT[STEP_WEIGHT.length - 1];
+  const clip = 1 + Math.floor(Math.random() * STEP_CLIPS), wobble = .94 + Math.random() * .12;
+  sfx(`walk:step-${clip}`, w[1] * (.85 + Math.random() * .3), w[2] * wobble);
+}
+function tickFootsteps(){
+  if (!actors.length) return;
+  const r = stage.getBoundingClientRect(), s = base * view.z;
+  for (const a of actors){
+    if (a.anim !== "walk" || a.down || a.alpha < .5 || a.climbing){ a.stride = -1; continue; }
+    const sx = a.x * s + view.tx, sy = a.y * s + view.ty;            // on screen, or it makes no sound
+    if (sx < -40 || sy < -40 || sx > r.width + 40 || sy > r.height + 40){ a.stride = -1; continue; }
+    const an = SPR[a.id].json.animations.walk; if (!an) continue;
+    const half = Math.max(1, an.frames / 2), stride = Math.floor((now - a.t0) / 1000 * an.fps / half);
+    if (a.stride !== stride){ if (a.stride != null && a.stride >= 0) footstep(a); a.stride = stride; }
+  }
+}
+
 // ---------- simulation ----------
 let nextAmbient = 0;
 function trailPoint(dist){
@@ -6803,6 +6852,7 @@ function step(a, dt, speed){
 }
 function update(dt){
   if (cbt && poisonZones.length) tickPoisonZones();
+  tickFootsteps();
   tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt);
   if (camTween){
     const k = Math.min(1, (now - camTween.t0) / camTween.ms), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
