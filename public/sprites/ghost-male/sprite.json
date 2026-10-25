@@ -41,6 +41,14 @@
       "frames": 1,
       "fps": 5,
       "loop": true
+    },
+    "curse": {
+      "sheet": "curse.png",
+      "frames": 9,
+      "fps": 10,
+      "loop": false,
+      "hit": 0.6,
+      "note": "Sam, 2026-10-24: eyes red while it curses. PixelLab state 'Cursing' (534153cc) of the same character, custom clip."
     }
   }
 }

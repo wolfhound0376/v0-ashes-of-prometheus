@@ -37,6 +37,7 @@ DIRECTIONS = ["south", "south-east", "east", "north-east", "north", "north-west"
 STATE_PATTERNS = [
     ("idle", r"^idle$|breathing-idle|fight-stance-idle"),
     ("walk", r"^walk$|^walk(ing)?(-\d+)?(-\d+-frames)?$|^walk-[a-z]+$|crouched-walking|scary-walk|sad-walk"),
+    ("curse", r"^curse$|curs|hex|chant"),   # a bhut's curse (Sam, 2026-10-24): eyes red, hand out, a word said
     ("attack", r"^attack$|slash|swing|cross-punch|lead-jab|punch$|kick"),
     ("shoot", r"^shoot$|shoot|crossbow|archery|loose|^aim"),
     ("cast", r"^cast$|fireball|spell"),
@@ -57,6 +58,7 @@ PLAYBACK = {
     "idle": {"fps": 5, "loop": True},
     "walk": {"fps": 10, "loop": True},
     "attack": {"fps": 12, "loop": False, "hit": 0.75},
+    "curse": {"fps": 10, "loop": False, "hit": 0.6},
     "cast": {"fps": 10, "loop": False, "hit": 0.6},
     "shoot": {"fps": 12, "loop": False, "hit": 0.7},
     "ward": {"fps": 12, "loop": False},
