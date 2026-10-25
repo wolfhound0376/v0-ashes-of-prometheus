@@ -2965,7 +2965,8 @@ const SPELLS = {
   // saving throw before the spell ends, the target can roll a d4 and add the number rolled." Concentration, 1 minute.
   // Click one friend; the two nearest other friends within range are blessed with them (`targets`). Added for the bhut
   // (Sam, 2026-10-24): a blessed hero's weapon hit opens its Holy Vulnerability. Samson can prepare it at a long rest.
-  "Bless":              {lvl: 1, kind: "buff", range: 30, cond: "blessed", targets: 3, fx: "#ffe9a8", conc: 10},
+  // Sam, 2026-10-25: "He can bless as long as he has his items of faith with him" (`faith`: see hasFaithItem).
+  "Bless":              {lvl: 1, kind: "buff", range: 30, cond: "blessed", targets: 3, fx: "#ffe9a8", conc: 10, faith: true},
   "Faerie Fire":        {lvl: 1, kind: "save", save: "dex", range: 60, area: 20, cond: "lit", fx: "#c8a2ff", conc: 10},
   // The two poison clouds (SRD 5.1; the rules and the text are lib/poison-clouds.mjs). `kind: "cloud"`: the cast only
   // places the gas; everything it does happens later, at the start of turns and (Cloudkill) as creatures walk in.
@@ -3003,6 +3004,11 @@ function roll(expr, crit){
   return {total: Math.max(0, total), rolls};
 }
 const d6 = () => 1 + Math.floor(Math.random() * 6);
+// Items of faith (Sam, 2026-10-25): Bless needs them carried. Samson's is his Book of Prayers (confiscated with his gear
+// into the drow stash at capture); any holy symbol, amulet, emblem or reliquary counts too. Read from what the hero
+// actually carries (GEAR, loaded from inventory_items), so it comes back the moment the book is recovered.
+const FAITH_ITEM = /book of prayers|holy symbol|amulet|emblem|reliquary/i;
+function hasFaithItem(a){ const g = typeof GEAR !== "undefined" && GEAR[a.id]; return !!(g && (g.carried || []).some(c => FAITH_ITEM.test(c.name || ""))); }
 // Bless (SRD 5.1): a d4 on the attack roll or saving throw of a blessed creature, rolled and shown each time
 function blessD4(a){ return a && a.c && a.c.conds && a.c.conds.has("blessed") ? 1 + Math.floor(Math.random() * 4) : 0; }
 function d20(adv){ const a = 1 + Math.floor(Math.random() * 20); if (!adv) return a; const b = 1 + Math.floor(Math.random() * 20); return adv > 0 ? Math.max(a, b) : Math.min(a, b); }
@@ -3310,7 +3316,7 @@ function openMenu(a, sub){
       for (const nm of (SPELL_VARIANTS[base] || [base])){ const sp = SPELLS[nm]; if (!sp) continue; ACTION_ICON[nm] = "cast-spell";
       if (sp.kind === "reaction"){ add(nm, `level ${sp.lvl} slot · your reaction · offered when an attack would hit you`, null); continue; }
       const left = c.slots[sp.lvl] || 0;
-      const why = left <= 0 ? "no slot left" : sp.bonus ? (!c.bonus ? "bonus action used" : c.leveledSpell ? "you already cast a leveled spell with your action" : "") : (!c.action ? "action used" : c.bonusSpell ? "a bonus-action spell was cast: only cantrips now" : "");
+      const why = left <= 0 ? "no slot left" : sp.faith && !hasFaithItem(a) ? "needs his items of faith (the Book of Prayers or a holy symbol)" : sp.bonus ? (!c.bonus ? "bonus action used" : c.leveledSpell ? "you already cast a leveled spell with your action" : "") : (!c.action ? "action used" : c.bonusSpell ? "a bonus-action spell was cast: only cantrips now" : "");
       add(nm, why || `level ${sp.lvl} slot · ${left} of ${s.magic.slots[sp.lvl] || 0} left · ${sp.bonus ? "bonus action" : "action"}${sp.conc ? (c.conc ? ` · concentration: ends ${c.conc.spell}` : " · concentration") : ""} · ${sp.dmg ? (sp.darts ? sp.darts + " darts × " : "") + sp.dmg + (sp.type ? " " + sp.type : " healing") : sp.cond ? COND_GLYPH[sp.cond][2] : ""}${sp.area ? " · " + sp.area + "-ft area" : ""}`, why ? null : () => aim(a, {spell: nm})); }
     }
     // anything else on the sheet is shown, not hidden: the map cannot resolve it in a fight yet, Malachar can
