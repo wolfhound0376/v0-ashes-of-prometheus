@@ -1803,7 +1803,7 @@ ATTACK ROLLS & HITS:
 - On a hit, ask for damage in words plus the tag ("Roll damage. [[1d4+4]]" for a dagger).
 
   DAMAGE & NPC HP:
-  - When they provide damage, narrate the wound AND emit [NPC_DAMAGE: <Name> <amount>] on its own line.
+  - When they provide damage, narrate the wound AND emit [NPC_DAMAGE: <Name> <amount>] on its own line. When the damage has a type (a spell, a poison, fire), add it as one lowercase word after the amount: [NPC_DAMAGE: Drow Guard 9 necrotic]. The map draws some deaths by it.
   - The dashboard parses this and decrements the NPC's current HP.
   - After every hit, tell the player how hurt the NPC LOOKS, in words - untouched, scratched, bloodied, reeling, barely standing - judged from its current HP against its max. Never the numbers. Example: "Your blade rakes across its chitin. The Hook Horror screams - bloodied now, and angrier for it."
   - DO NOT declare an NPC dead unless its HP reaches 0. Only use [NPC_LEAVE: <Name>] when it dies or flees.
@@ -3119,12 +3119,17 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
       }
     }
 
-    // Handle NPC_DAMAGE tags - [NPC_DAMAGE: Name amount]
-    const npcDamageMatches = rawText.matchAll(/\[NPC_DAMAGE:\s*([^|\s]+)\s+(\d+)\s*\]/gi)
+    // Handle NPC_DAMAGE tags - [NPC_DAMAGE: Name amount] or [NPC_DAMAGE: Name amount type]
+    // The name runs up to the LAST number, so two-word names parse. The old pattern ([^|\s]+) stopped at the
+    // first space: "[NPC_DAMAGE: Hook Horror 10]", the prompt's own example, matched nothing and the damage was
+    // silently dropped, as for every Drow Guard and Old Thessaly. The optional damage type rides to the stage
+    // roster on a killing blow (Sam, 2026-10-25: a necrotic kill withers to bones on the map, in a fight or not).
+    const npcDamageMatches = rawText.matchAll(/\[NPC_DAMAGE:\s*([^\]|]+?)\s+(\d+)(?:\s+([a-z]+))?\s*\]/gi)
     for (const match of npcDamageMatches) {
-      const [, npcName, amountStr] = match
+      const [, npcName, amountStr, typeStr] = match
       const name = npcName.trim()
       const amount = parseInt(amountStr) || 0
+      const damageType = typeStr ? typeStr.toLowerCase() : null
       console.log("[v0] NPC_DAMAGE tag found:", name, "takes", amount, "damage")
 
       if (amount > 0) {
@@ -3137,7 +3142,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
         if (npc) {
           const newHp = Math.max(0, (npc.hp_current || 0) - amount)
           const isDefeated = newHp <= 0
-          if (isDefeated) stageEvents.push({ kind: "leave", name: canonicalName, dead: true })
+          if (isDefeated) stageEvents.push({ kind: "leave", name: canonicalName, dead: true, cause: damageType })
 
           // Update the shared row by its id.
           const { error } = await supabase
