@@ -925,6 +925,7 @@ function actorScale(a){ const m = SPR[a.id].json; if (a.fixedScale) return BASE 
 function asleepNow(a){ return !!(a.c && a.c.conds.has("asleep") && !a.down); }
 function frameOf(a){
   const sp = SPR[a.id];
+  if (a.down && a.iced) return {img: a.iced.img, f: a.iced.f, pose: "iced", dead: true};
   if (a.down && !hero(a) && !(sp.json.animations.dead && sp.img.dead)) return {img: sp.img.idle, f: 0, pose: /spider|rat/.test(a.id) ? "belly" : /ooze/.test(a.id) ? "puddle" : "side", dead: true};
   if (asleepNow(a)){
     const A = sp.json.animations;
@@ -1017,7 +1018,7 @@ function draw(){
   }
   for (const c of node.chains || []) drawChain(c);
   drawCombatGround(); drawStuckGround();
-  if (mode === "combat") drawFxLayer(true);
+  if (mode === "combat"){ drawIcePatches(); drawFxLayer(true); tickIce(); }
   const list = actors.concat(vermin).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);
   for (const a of list){
     const m = SPR[a.id].json, sc = actorScale(a), [cw, ch] = m.cell, [px, py] = m.pivot;
@@ -1062,7 +1063,11 @@ function draw(){
     }
     const held = !pose && !a.climbing && heldWeapon(a);                              // what is in their hand, drawn on the sprite
     if (held && held.behind) drawHeld(a, held, sc, py, cw, fy);
-    if (pose === "belly"){                         // a crawler dies on its back, legs drawn in over the body (Sam's reference: curled, not splayed)
+    if (pose === "iced"){                          // frozen solid: the last standing frame, drained of colour, under a rime of ice
+      ctx.filter = "brightness(1.05) saturate(.25) contrast(1.1)";
+      ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh); ctx.filter = "none";
+      drawIcicles(a, dx, dy, dw, dh);
+    } else if (pose === "belly"){                         // a crawler dies on its back, legs drawn in over the body (Sam's reference: curled, not splayed)
       ctx.save(); ctx.translate(a.x, a.y - 6 * sc); ctx.scale(.7, -.66); ctx.drawImage(img, f * cw, a.face * ch, cw, ch, -px * sc, -py * sc, dw, ch * sc); ctx.restore();
     } else if (pose === "puddle"){                 // an ooze slumps to a still, spreading puddle
       ctx.save(); ctx.translate(a.x, a.y); ctx.scale(1.25, .4); ctx.drawImage(img, f * cw, a.face * ch, cw, ch, -px * sc, -py * sc, dw, ch * sc); ctx.restore();
@@ -1089,6 +1094,7 @@ function draw(){
     // moment the rage starts or the hit points cross ten, and goes the moment either stops. It breathes a little
     // so it reads as a state, not a stuck flash.
     const wear = a.flash > now ? {col: a.flashCol || "#fff", k: .55}
+      : a.iced ? {col: "#9fdcff", k: .42 + .05 * Math.sin(now / 900 + a.iced.seed)}
       : (a.c && !a.down && mode === "combat" && tintFor({hp: a.c.hp, woundedFury: a.c.sheet.woundedFury, raging: a.c.rage})) ? {col: RAGE_TINT, k: .3 + .08 * Math.sin(now / 230)} : null;
     if (wear){
       ctx.globalAlpha = wear.k * a.alpha;
@@ -2740,7 +2746,7 @@ const SPELLS = {
   "Magic Missile":      {lvl: 1, kind: "auto", range: 120, dmg: "1d4+1", darts: 3, type: "force", fx: "#c9a7ff"},
   "Thunderwave":        {lvl: 1, kind: "save", save: "con", range: 15, area: 15, selfArea: true, dmg: "2d8", type: "thunder", fx: "#bfe3ff"},
   "Chromatic Orb (acid)":      {lvl: 1, kind: "attack", range: 90, dmg: "3d8", type: "acid", fx: "#9be37a"},
-  "Chromatic Orb (cold)":      {lvl: 1, kind: "attack", range: 90, dmg: "3d8", type: "cold", fx: "#9fdcff"},
+  "Chromatic Orb (cold)":      {lvl: 1, kind: "attack", range: 90, dmg: "3d8", type: "cold", fx: "#9fdcff", ice: true},   // `ice`: freezes the ground where it lands (Sam's rule, freezeGround)
   "Chromatic Orb (fire)":      {lvl: 1, kind: "attack", range: 90, dmg: "3d8", type: "fire", fx: "#ff8a3a"},
   "Chromatic Orb (lightning)": {lvl: 1, kind: "attack", range: 90, dmg: "3d8", type: "lightning", fx: "#fff27a"},
   "Chromatic Orb (poison)":    {lvl: 1, kind: "attack", range: 90, dmg: "3d8", type: "poison", fx: "#8fd48f"},
@@ -2948,6 +2954,7 @@ function nextTurn(first){
   // Alchemist's fire (SRD 5.1): "the target takes 1d4 fire damage at the start of each of its turns"
   if (a.c.conds.has("burning")){ const d = roll("1d4").total; bank("magic/impact_fire", .6); spawnFx("fireImpact", {at: a, sq: 1.3, anchor: "mid"}); damage(a, d, "fire", false, null);
     log(`${fname(a)} burns: ${d} fire.`); if (a.down){ setTimeout(() => passTurn(a), 700); return; } }
+  for (const p of icePatches) if (onIce(a, p)){ p.tested.delete(a); iceSave(a, p, "starting the turn on it"); }
   a.c.conds.delete("disengaged"); a.c.lastLight = null; a.c.kbdPx = 0; for (const h of [...heroes(), ...foes]) if (h.c) h.c.sneakUsed = false;   // Sneak Attack: once per turn, anyone's turn (so an opportunity attack can carry it)
   a.c.bonusSpell = false; a.c.leveledSpell = false;   // the bonus-action spell rule is per turn (it had slipped into the comment above, so one Guiding Bolt locked out Healing Word for the rest of the fight)
   if (a.c.conds.has("grappled")){ const g = a.c.grappledBy; if (!g || g.down || feetBetween(a, g) > 5) a.c.conds.delete("grappled"); else a.c.move = 0; }
@@ -3608,6 +3615,7 @@ function castSpell(caster, tgt, name, done, darts){
         land(tgt, true, sp.type); knock(tgt, caster, 12 * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
         narrate(caster, `${fname(caster)}'s ${name} ${sp.type === "cold" ? "frosts" : sp.type === "necrotic" ? "withers" : sp.type === "radiant" ? "sears" : "strikes"} ${fname(tgt)}.`);
         const d = roll(sp.dmg, crit); damage(tgt, d.total, sp.type, crit, caster, true); if (sp.cond) addCond(tgt, sp.cond); if (name === "Ray of Frost") addCond(tgt, "slowed");
+        if (sp.type === "cold" && sp.ice){ const patch = freezeGround(tgt.x, tgt.y, m.dc, caster); if (!tgt.down){ tgt.onIce = patch; iceSave(tgt, patch, "struck by the orb"); } }
         // SRD 5.1 Shocking Grasp: "On a hit ... it can't take reactions until the start of its next turn."
         if (name === "Shocking Grasp"){ tgt.c.reactionUsed = true; popText(tgt, "no reactions", "#fff27a", .8); }
         log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d.total} ${sp.type}${sp.note ? " (" + sp.note + ")" : ""}.`);
@@ -3748,6 +3756,10 @@ function damage(t, n, type, crit, from, magical = false){
     return;
   }
   const over = n - t.c.hp;
+  // A COLD KILL LEAVES AN ICED CADAVER (Sam, 2026-10-24: "Ray of frost should leave dead people like icicles or iced
+  // cadavers"): anyone but a hero who is brought to 0 by cold damage does not fall — they stop where they stand, in the
+  // frame they were in, rimed over, icicles hanging off them. The body is still a body: it can be searched like any other.
+  if (t.kind !== "pc" && n >= t.c.hp && type === "cold" && t.c.hp > 0){ const fr = frameOf(t); t.iced = {t0: now, img: fr.img, f: fr.f, seed: Math.floor(Math.random() * 1e6)}; }
   t.c.hp = Math.max(0, t.c.hp - n); if (t.creature) t.hp = t.c.hp;
   if (t.c.rage && n > 0) t.c.rage.hurt = true;                                 // SRD: "taken damage since then" keeps the rage going
   if (t.kind === "pc" && t.c.hp <= 0 && over >= t.c.hpMax){ t.flash = now + 180; fall(t); dieNow(t, `${over} damage past 0, as much as their hit point maximum`); return; }
@@ -3833,10 +3845,11 @@ function fall(t){
   // Sam, 2026-10-14: "I don't see any carcasses of the creatures that are dead." Only creatures with a death
   // sheet used to stay; the rest (spider, quaggoth, Jorlan) faded out. Now everything that dies stays down:
   // its own death sheet when it has one, otherwise it is drawn dead (frameOf: belly-up or on its side).
-  if (SPR[t.id].img.dead){ playOnce(t, "dead", () => {}); if (SPR[t.id].json.animations.dead.frames === 1) t.deadSwap = now; } else t.deadT0 = now;   // a one-frame corpse (the spider) cross-fades in from the standing body
-  log(`<b>${fname(t)}</b> ${hero(t) ? "goes down." : "is dead."}`);
+  if (t.iced){ t.path = []; bank("magic/impact_cold", .8); spawnFx("frostImpact", {at: t, sq: 1.6, anchor: "mid"}); }   // frozen solid: no fall, the standing frame stays
+  else if (SPR[t.id].img.dead){ playOnce(t, "dead", () => {}); if (SPR[t.id].json.animations.dead.frames === 1) t.deadSwap = now; } else t.deadT0 = now;   // a one-frame corpse (the spider) cross-fades in from the standing body
+  log(`<b>${fname(t)}</b> ${hero(t) ? "goes down." : t.iced ? "is frozen where it stands." : "is dead."}`);
   if (t.creature) narrate(t, `${t.creature.name} is dead.`);
-  popText(t, hero(t) ? "down" : "slain", hero(t) ? "#ff6b5e" : "#ffd166", 1.3); hitstop(160); shake(10);
+  popText(t, hero(t) ? "down" : t.iced ? "frozen" : "slain", hero(t) ? "#ff6b5e" : t.iced ? "#bfe9ff" : "#ffd166", 1.3); hitstop(160); shake(10);
   if (t.kind === "pc"){ const near = standing(party).filter(p => p !== t).sort((a, b) => Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y))[0]; if (near) setTimeout(() => bark(near, `${fname(t)}!`, 1600, {talk: true}), 400);
     const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS), 1400); }
   else narrate(t, `${fname(t)} falls.`);
@@ -4113,7 +4126,7 @@ function endCombat(won){
   for (let i = stuck.length - 1; i >= 0; i--){ const q = stuck[i]; if (!q.at || !(q.at.down && q.at.kind === "foe")) stuck.splice(i, 1); }
   for (const h of party) if (h.c){ h.c.conds.delete("burning"); }
   for (const h of party) if (h.c && h.c.rage) endRage(h, "the fight is over");   // no hostile left to attack: the next turn would end it anyway
-  shots.length = 0;
+  shots.length = 0; icePatches = []; for (const a of actors) a.onIce = null;
   // anyone of ours still out on the balcony walks back in through the gate before it stops being floor
   if (gatePassable()) for (const h of [...party, ...(cbt ? cbt.allies : [])]) if (!h.down && onBalcony(h)){
     const back = findPath(h, nearestWalkable(balcony().inside[0], balcony().inside[1] + 30)); if (back.length){ h.path = back; h.onArrive = null; }
@@ -4560,6 +4573,76 @@ function drawAoe(x, y, sp, col, alpha, inside){
   if (inside) for (const t of standing([...foes, ...party])) if (Math.hypot(t.x - x, t.y - y) <= (sp.area / 2 + 2.5) * ftPx(t)){
     ctx.globalAlpha = alpha * (.6 + .4 * Math.sin(now / 160)); ctx.beginPath(); ctx.ellipse(t.x, t.y, 30 * actorScale(t), 10 * actorScale(t), 0, 0, Math.PI * 2); ctx.stroke(); }
   ctx.restore();
+}
+// ICICLES ON A FROZEN BODY: a few pale spikes hang from the figure's lower edge and off its sides, a frost rim spreads
+// on the floor, and a glint wanders over the ice. Drawn in the sprite's own pixel size, seeded per body so no two match.
+function drawIcicles(a, dx, dy, dw, dh){
+  const S = a.iced, px = Math.max(2, dw / 32), k = Math.min(1, (now - S.t0) / 700);   // grow in over the first moments
+  let r = S.seed; const rnd = () => (r = (r * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+  ctx.save(); ctx.globalAlpha = a.alpha * .9;
+  // rim on the floor
+  ctx.fillStyle = "rgba(190,230,255,.28)"; ctx.beginPath(); ctx.ellipse(a.x, a.y - 2, dw * .42 * k, dw * .16 * k, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = "rgba(230,248,255,.55)"; for (let i = 0; i < 7; i++){ const t = rnd() * Math.PI * 2, R = dw * .4 * k; ctx.fillRect(Math.round(a.x + Math.cos(t) * R), Math.round(a.y - 2 + Math.sin(t) * R * .38), px, px); }
+  // the spikes: from the lower third of the figure and the shoulder line, pointing down
+  const spikes = 5 + Math.floor(rnd() * 3);
+  for (let i = 0; i < spikes; i++){
+    const side = rnd() < .5 ? -1 : 1, hx = dx + dw * (.5 + side * (.12 + rnd() * .3)), hy = dy + dh * (.45 + rnd() * .35), L = (dh * (.08 + rnd() * .14)) * k, W = px * (1 + Math.floor(rnd() * 2));
+    ctx.fillStyle = "rgba(222,244,255,.92)"; ctx.beginPath(); ctx.moveTo(hx - W, hy); ctx.lineTo(hx + W, hy); ctx.lineTo(hx, hy + L); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,.9)"; ctx.fillRect(Math.round(hx - W / 2), Math.round(hy + L * .2), px, px);
+  }
+  // a glint that walks over the ice
+  const g = (now / 1400 + S.seed) % 1; ctx.fillStyle = "rgba(255,255,255,.85)"; ctx.fillRect(Math.round(dx + dw * (.3 + .4 * g)), Math.round(dy + dh * (.25 + .5 * ((g * 7) % 1))), px, px);
+  ctx.restore();
+}
+// FROZEN GROUND (Sam, 2026-10-24: "Chromatic orb with ice or similar ice spells should freeze the ground and have people
+// that fail a dexterity save slip and fall"). HOMEBREW, Sam's rule, not SRD: where a cold spell that is thrown at a body
+// lands, the floor ices over in a 5-ft radius for two rounds. A creature that steps onto the ice, or starts its turn on
+// it, makes a Dexterity save against the caster's spell save DC or falls prone; the one hit by the spell saves at once.
+// Each creature saves once per patch per entry (walking around on it does not keep rolling). Claude's numbers, flagged:
+// the radius (one square around the point) and the two rounds. Not for Ray of Frost — a ray, not a burst (Sam named
+// Chromatic Orb "or similar ice spells").
+const ICE = {radiusFt: 5, rounds: 2};
+let icePatches = [];
+function freezeGround(x, y, dc, by){
+  const patch = {x, y, r: ICE.radiusFt * ftPx(by), dc, by, endRound: (cbt ? cbt.round : 0) + ICE.rounds, endIdx: cbt ? cbt.idx : 0, t0: now, seed: Math.floor(Math.random() * 1e6), tested: new Set()};
+  icePatches.push(patch); bank("magic/impact_cold", .5);
+  log(`The floor ices over where the ${by ? fname(by) + "'s" : ""} cold lands.`);
+  return patch;
+}
+const onIce = (a, p) => Math.hypot(a.x - p.x, a.y - p.y) <= p.r + 4;
+function iceSave(a, p, why){
+  if (p.tested.has(a) || a.down || !a.c) return; p.tested.add(a);
+  if (a.c.conds.has("prone")) return;
+  const sv = a.c.sheet.saves.dex || 0, r = d20(rageAdvantage(a.c.rage, "dex")), total = r + sv, ok = total >= p.dc;
+  log(`${fname(a)} on the ice (${why}): DEX ${r} + ${sv} = ${total} vs DC ${p.dc} — ${ok ? "keeps their feet" : "<b>slips and falls</b>"}.`);
+  if (ok){ popText(a, "steady", "#bfe9ff", .8); return; }
+  addCond(a, "prone"); a.path = []; if (SPR[a.id].img.hurt) playOnce(a, "hurt", () => setAnim(a, "idle")); knock(a, p, 6 * actorScale(a));
+  narrate(a, `${fname(a)} slips on the ice and goes down.`);
+}
+function tickIce(){
+  if (!cbt){ icePatches = []; return; }
+  icePatches = icePatches.filter(p => !(cbt.round > p.endRound || (cbt.round === p.endRound && cbt.idx >= p.endIdx)));
+  for (const p of icePatches) for (const a of standing([...party, ...foes, ...npcs.filter(n => n.ally)])){
+    const on = onIce(a, p);
+    if (on && !a.onIce) iceSave(a, p, "stepping onto it");
+    a.onIce = on ? p : null;   // leaving the patch lets the next entry roll again
+    if (!on) p.tested.delete(a);
+  }
+}
+function drawIcePatches(){
+  for (const p of icePatches){
+    const k = Math.min(1, (now - p.t0) / 400), dying = cbt && cbt.round === p.endRound ? .6 : 1;
+    let r0 = p.seed; const rnd = () => (r0 = (r0 * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
+    ctx.save(); ctx.globalAlpha = .75 * k * dying;
+    ctx.fillStyle = "rgba(170,220,255,.35)"; ctx.beginPath(); ctx.ellipse(p.x, p.y, p.r * k, p.r * .5 * k, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "rgba(220,245,255,.6)"; ctx.lineWidth = 2; ctx.stroke();
+    // cracks and specks of frost, fixed per patch
+    ctx.strokeStyle = "rgba(240,250,255,.55)"; ctx.lineWidth = 1.5;
+    for (let i = 0; i < 6; i++){ const t = rnd() * Math.PI * 2, L = p.r * (.35 + rnd() * .55) * k; ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x + Math.cos(t) * L, p.y + Math.sin(t) * L * .5); ctx.stroke(); }
+    ctx.fillStyle = "rgba(255,255,255,.8)"; for (let i = 0; i < 12; i++){ const t = rnd() * Math.PI * 2, R = rnd() * p.r * k; ctx.fillRect(Math.round(p.x + Math.cos(t) * R), Math.round(p.y + Math.sin(t) * R * .5), 3, 3); }
+    const g = (now / 1600 + p.seed) % 1; ctx.fillStyle = "rgba(255,255,255,.9)"; ctx.fillRect(Math.round(p.x + (g - .5) * p.r * 1.4), Math.round(p.y + Math.sin(g * 6) * p.r * .3), 3, 3);
+    ctx.restore();
+  }
 }
 let aimW = null, aoeMarks = [];
 function drawCombatGround(){
