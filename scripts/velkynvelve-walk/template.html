@@ -934,6 +934,7 @@ function asleepNow(a){ return !!(a.c && a.c.conds.has("asleep") && !a.down); }
 function frameOf(a){
   const sp = SPR[a.id];
   if (a.down && a.iced) return {img: a.iced.img, f: a.iced.f, pose: "iced", dead: true};
+  if (a.down && a.withered) return now < a.withered.swap ? {img: a.withered.img, f: a.withered.f, pose: "withering", dead: true} : {img: sp.img.idle, f: 0, pose: "cadaver", dead: true};
   if (a.down && !hero(a) && pickCadaver(a)) return {img: sp.img.idle, f: 0, pose: "cadaver", dead: true};
   if (a.down && !hero(a) && !(sp.json.animations.dead && sp.img.dead)) return {img: sp.img.idle, f: 0, pose: /spider|rat/.test(a.id) ? "belly" : /ooze/.test(a.id) ? "puddle" : "side", dead: true};
   if (asleepNow(a)){
@@ -1081,6 +1082,11 @@ function draw(){
         ctx.save(); ctx.translate(a.x, a.y - side * .35); if (C.flip) ctx.scale(-1, 1);
         ctx.drawImage(im, -side / 2, -side / 2, side, side); ctx.restore(); ctx.globalAlpha = a0;
       } else { ctx.filter = "brightness(.55) saturate(.45)"; ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh); }   // until the body image has loaded
+    } else if (pose === "withering"){                     // necrotic kill: the last standing frame blackens and thins out under the blaze
+      const W = a.withered, k = Math.min(1, (now - W.t0) / (W.swap - W.t0)), a0 = ctx.globalAlpha;
+      ctx.filter = `brightness(${1 - .65 * k}) saturate(${1 - .8 * k}) contrast(${1 + .2 * k})`;
+      ctx.globalAlpha = a.alpha * (k < .7 ? 1 : 1 - (k - .7) / .3);       // gone by the swap, so the bones come up out of the ash
+      ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh); ctx.filter = "none"; ctx.globalAlpha = a0;
     } else if (pose === "iced"){                          // frozen solid: the last standing frame, drained of colour, under a rime of ice
       ctx.filter = "brightness(1.05) saturate(.25) contrast(1.1)";
       ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh); ctx.filter = "none";
@@ -1113,6 +1119,7 @@ function draw(){
     // so it reads as a state, not a stuck flash.
     const wear = a.flash > now ? {col: a.flashCol || "#fff", k: .55}
       : a.iced ? {col: "#9fdcff", k: .42 + .05 * Math.sin(now / 900 + a.iced.seed)}
+      : (a.withered && now < a.withered.swap) ? {col: "#8fdc2a", k: (.15 + .4 * Math.min(1, (now - a.withered.t0) / (a.withered.swap - a.withered.t0))) * (1 - Math.max(0, ((now - a.withered.t0) / (a.withered.swap - a.withered.t0) - .7) / .3))}
       : (a.c && !a.down && mode === "combat" && tintFor({hp: a.c.hp, woundedFury: a.c.sheet.woundedFury, raging: a.c.rage})) ? {col: RAGE_TINT, k: .3 + .08 * Math.sin(now / 230)} : null;
     if (wear){
       ctx.globalAlpha = wear.k * a.alpha;
@@ -3046,7 +3053,8 @@ const hero = a => !!a && (a.kind === "pc" || !!a.ally);
 // drawn as its idle frame tipped on its side — now it lies as one of its species' three bodies, picked at the moment of
 // death and kept. `sq` is how many 5-ft squares the 128-px canvas spans on the floor: a gnome's body is small, a
 // quaggoth's is not. Species by sprite id; anyone unmatched keeps the tipped frame. The frozen drow and the two
-// skeletons are in the folder for later (set dressing / a lying alternative to the iced standing body), not drawn here.
+// skeletons are in the folder for later (set dressing / a lying alternative to the iced standing body), not drawn here —
+// except the scattered skeleton, which is what a necrotic kill leaves (deathTouch, below).
 const CADAVER_DIR = APP ? "/sprites/cadavers/" : "sprites/cadavers/";
 const CADAVER_POSES = ["facedown", "onback", "curled"];
 // sq = 128 / (ppu / 5) / 5: the body's pixels land at the same density as its species' standing sprite (drow ppu 103, bandit 107, duergar 142, deep gnome 197, quaggoth 66)
@@ -3066,6 +3074,24 @@ function pickCadaver(a){
   const sp = cadaverSpecies(a.id); if (!sp || (SPR[a.id].json.animations.dead && SPR[a.id].img.dead)) return (a.cadaver = null);
   const pose = CADAVER_POSES[Math.floor(Math.random() * CADAVER_POSES.length)];
   return (a.cadaver = {key: `${sp}-${pose}`, sq: CADAVER_SETS[sp].sq, flip: Math.random() < .5, t0: now});
+}
+// THE DEATH TOUCH (Sam, 2026-10-25): his green-black necrotic blaze, baked to pixels by scripts/vfx/bake_death_touch.py
+// (public/vfx/deathTouch.webp — the light only; the armoured figure in his source art is keyed out, so the blaze wraps
+// the creature's OWN sprite). It plays once over the body, sized to the figure's height and standing on its feet. The
+// body withers under it (frameOf "withering") and at the sheet's peak, frame 9 of 16 (DEATH_TOUCH_SWAP_MS), it is
+// swapped for the scattered skeleton pile — one of the two skeletons approved with the cadaver sets — so the ash
+// frames fall on the bones. The pile is sized like the species' own body where there is a set, else by the creature.
+const DEATH_TOUCH_SWAP_MS = 1000;
+function deathTouch(t){
+  const m = SPR[t.id].json, figure = m.pivot[1] * actorScale(t), sq = figure * 1.55 / (ftPx(t) * 5);   // the art's figure fills ~2/3 of its cell
+  spawnFx("deathTouch", {at: t, sq, anchor: "base", once: true});
+  // its own sound (Sam, 2026-10-25: "create a matching necrotic sound effect"): 2.4 s, the ghost-fire swelling in,
+  // peaking with the blaze, the bones going down at about a second, the ash hiss trailing out (public/sfx/walk)
+  bank("walk:death-touch", .85);
+  if (t.withered){
+    const sp = cadaverSpecies(t.id), base = sp ? CADAVER_SETS[sp].sq : 1.2 * Math.max(1, t.big || 1);
+    t.cadaver = {key: "skeleton-scattered", sq: base, flip: Math.random() < .5, t0: t.withered.swap};
+  }
 }
 const heroes = () => [...party, ...(cbt ? cbt.allies : [])];
 // Who of the four stands with the party when steel comes out: on this plate, not turned hostile, not part of the backdrop.
@@ -3990,6 +4016,14 @@ function damage(t, n, type, crit, from, magical = false){
     // one on its feet freezes standing (Sam, 2026-10-24: "frozen drow can be either, depending if they slipped")
     if (t.c.conds.has("prone") && cadaverSpecies(t.id) === "drow") t.cadaver = {key: "drow-frozen", sq: CADAVER_SETS.drow.sq, flip: Math.random() < .5, t0: now, frozen: true};
     else { const fr = frameOf(t); t.iced = {t0: now, img: fr.img, f: fr.f, seed: Math.floor(Math.random() * 1e6)}; } }
+  // A NECROTIC KILL (Sam, 2026-10-25: "This is the effect to superimpose on creatures/characters that succumb to a
+  // necrotic spell ... they become a clump of bones if they are a NPC or opponent"). Whoever is brought to 0 by necrotic
+  // damage gets the Death Touch blaze over their own sprite (fall); anyone but a hero then withers where they stand and
+  // drops as the scattered skeleton pile — still a body, searchable like any other. A hero only gets the blaze and goes
+  // down as usual (death saves). An ooze has no bones to leave: it gets the blaze and keeps its puddle.
+  if (n >= t.c.hp && type === "necrotic" && t.c.hp > 0 && !t.iced){
+    t.necro = {t0: now};
+    if (t.kind !== "pc" && !/ooze/.test(t.id)){ const fr = frameOf(t); t.withered = {t0: now, img: fr.img, f: fr.f, swap: now + DEATH_TOUCH_SWAP_MS}; } }
   t.c.hp = Math.max(0, t.c.hp - n); if (t.creature) t.hp = t.c.hp;
   if (t.c.rage && n > 0) t.c.rage.hurt = true;                                 // SRD: "taken damage since then" keeps the rage going
   if (t.kind === "pc" && t.c.hp <= 0 && over >= t.c.hpMax){ t.flash = now + 180; fall(t); dieNow(t, `${over} damage past 0, as much as their hit point maximum`); return; }
@@ -4075,11 +4109,14 @@ function fall(t){
   // Sam, 2026-10-14: "I don't see any carcasses of the creatures that are dead." Only creatures with a death
   // sheet used to stay; the rest (spider, quaggoth, Jorlan) faded out. Now everything that dies stays down:
   // its own death sheet when it has one, otherwise it is drawn dead (frameOf: belly-up or on its side).
-  if (t.iced || (t.cadaver && t.cadaver.frozen)){ t.path = []; bank("magic/impact_cold", .8); spawnFx("frostImpact", {at: t, sq: 1.6, anchor: "mid"}); }   // frozen solid: no death sheet — standing where it stood, or lying where it slipped
+  if (t.necro){ deathTouch(t); t.necro = null; }
+  if (t.withered){ t.path = []; }   // withering where it stood: no death sheet — the bones replace it at the swap
+  else if (t.iced || (t.cadaver && t.cadaver.frozen)){ t.path = []; bank("magic/impact_cold", .8); spawnFx("frostImpact", {at: t, sq: 1.6, anchor: "mid"}); }   // frozen solid: no death sheet — standing where it stood, or lying where it slipped
   else if (SPR[t.id].img.dead){ playOnce(t, "dead", () => {}); if (SPR[t.id].json.animations.dead.frames === 1) t.deadSwap = now; } else t.deadT0 = now;   // a one-frame corpse (the spider) cross-fades in from the standing body
-  log(`<b>${fname(t)}</b> ${hero(t) ? "goes down." : t.iced ? "is frozen where it stands." : t.cadaver && t.cadaver.frozen ? "is frozen where it lies." : "is dead."}`);
+  log(`<b>${fname(t)}</b> ${hero(t) && !t.withered ? "goes down." : t.withered ? "withers to bones." : t.iced ? "is frozen where it stands." : t.cadaver && t.cadaver.frozen ? "is frozen where it lies." : "is dead."}`);
   if (t.creature) narrate(t, `${t.creature.name} is dead.`);
-  { const fz = t.iced || (t.cadaver && t.cadaver.frozen); popText(t, hero(t) ? "down" : fz ? "frozen" : "slain", hero(t) ? "#ff6b5e" : fz ? "#bfe9ff" : "#ffd166", 1.3); } hitstop(160); shake(10);
+  { const fz = t.iced || (t.cadaver && t.cadaver.frozen), dn = hero(t) && !t.withered;
+    popText(t, dn ? "down" : t.withered ? "withered" : fz ? "frozen" : "slain", dn ? "#ff6b5e" : t.withered ? "#b6f04a" : fz ? "#bfe9ff" : "#ffd166", 1.3); } hitstop(160); shake(10);
   if (t.kind === "pc"){ const near = standing(party).filter(p => p !== t).sort((a, b) => Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y))[0]; if (near) setTimeout(() => bark(near, `${fname(t)}!`, 1600, {talk: true}), 400);
     const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS), 1400); }
   else narrate(t, `${fname(t)} falls.`);
