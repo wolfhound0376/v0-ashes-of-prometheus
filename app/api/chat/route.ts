@@ -5004,8 +5004,12 @@ Answer with exactly one cue name from the list, or the single word NONE. No othe
   // The text remains for readability, but only this ledger entry can be resolved
   // by the dice endpoint. A committed result is consumed after Malachar answers,
   // which also permits a follow-up roll request in the same response.
+  // SANDBOX: a rehearsal owes no roll, so the ledger is not touched at all. The dry-run client
+  // would swallow the insert and hand back an empty row, and reading `created.id` off that threw
+  // a TypeError into the catch below on every rehearsed turn that asked for dice. Skipping the
+  // block is the honest version: no request row, no handoff, narration still arrives.
   let rollRequest: RollRequestSpec | undefined
-  if (playerCharacter) {
+  if (playerCharacter && !sandbox) {
     try {
       const admin = adminClient()
       const committedResultId = /\[ROLL_RESULT:([0-9a-f-]{36})\]/i.exec(message)?.[1]
