@@ -5,7 +5,7 @@
 // comes back as null, never a throw. Nothing that reads the situation may hold up a turn.
 
 import type { SupabaseClient } from "@supabase/supabase-js"
-import type { PartySituationRow } from "@/lib/situation"
+import type { Situation } from "@/lib/situation"
 
 export const SITUATION_TABLE = "party_situation"
 
@@ -24,13 +24,13 @@ export async function activeRun(db: SupabaseClient): Promise<string | null> {
 }
 
 /** The live run's row, or null when there is none (or the table is not there yet). */
-export async function readPartySituation(db: SupabaseClient, runId?: string | null): Promise<PartySituationRow | null> {
+export async function readPartySituation(db: SupabaseClient, runId?: string | null): Promise<Situation | null> {
   try {
     const run = runId || (await activeRun(db))
     if (!run) return null
     const { data, error } = await db.from(SITUATION_TABLE).select("*").eq("campaign_run_id", run).maybeSingle()
     if (error || !data) return null
-    return data as PartySituationRow
+    return data as Situation
   } catch {
     return null
   }
