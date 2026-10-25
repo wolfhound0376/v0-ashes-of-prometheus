@@ -173,6 +173,7 @@ body.dm-open .cbt-menu:not([hidden]){display:none}
 body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .cbt-menu button{all:unset;display:grid;grid-template-columns:34px 1fr;grid-template-rows:auto auto;column-gap:6px;align-items:center;box-sizing:border-box;flex:1 1 132px;min-width:0;max-width:172px;min-height:44px;padding:3px 8px 3px 4px;border-radius:5px;border:1px solid rgba(203,160,90,.18);cursor:pointer;color:var(--ink);font-family:var(--face-display);font-size:.8rem;line-height:1.1;background:rgba(0,0,0,.18)}
 .cbt-menu button .ico{grid-row:1/3;width:34px;height:34px;border-radius:4px;border:1px solid rgba(203,160,90,.35);object-fit:cover;image-rendering:auto;background:#1a1410}
+.cbt-menu button.orbOn{outline:2px solid var(--ember);background:rgba(232,162,74,.16)}
 .cbt-menu button .ico.glyph{display:grid;place-items:center;font-size:20px;color:var(--ember)}
 .cbt-menu button span{grid-column:2}
 .cbt-menu button small{grid-column:2;font-family:var(--face-mono);font-size:.54rem;color:var(--ink-dim);letter-spacing:0;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
@@ -3864,6 +3865,7 @@ function nextTurn(first){
 function openMenu(a, sub){
   if (!a || a.down) return;                                    // the fallen get no commands; passWhenSettled moves the turn on
   const m = $("cbtMenu"); m.hidden = false; m.innerHTML = ""; m.dataset.kind = "combat"; exploreKey = ""; castOpen = null; cbt.phase = "menu"; cbt.pend = null;
+  m.onwheel = null; if (sub !== "orb"){ orbPick = null; orbDrop(); }
   const add = (label, hint, fn, cls) => { const b = document.createElement("button"); b.className = cls || ""; const ic = ACTION_ICON[label] || ACTION_ICON[label.replace(/:.*$/, "")] || ACTION_ICON[label.split(" ")[0]];
     const sic = SPELL_ICON[label];
     b.innerHTML = `${sic ? `<img class="ico" src="${ICON_BASE}spells/${sic}.webp" alt="">` : ic ? `<img class="ico" src="${ICON_BASE}${ic}.png" alt="">` : `<i class="ico glyph">${ACTION_GLYPH[label] || "·"}</i>`}<span>${label}</span>${hint ? `<small>${hint}</small>` : ""}`; b.onclick = fn; b.disabled = !fn; m.appendChild(b); return b; };
@@ -3873,6 +3875,20 @@ function openMenu(a, sub){
   if (sub === "attack"){
     for (const atk of s.attacks){ ACTION_ICON[atk.name] = atk.name.toLowerCase().includes("unarmed") ? "opportunity-attack" : "attack"; add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.sneak ? ` · sneak +${atk.sneak}` : ""}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk})); }
     add("Back", "", () => openMenu(a));
+  } else if (sub === "orb"){
+    const i0 = orbPick && orbPick.a === a ? orbPick.i : 0; orbPick = {a, i: i0};
+    ORB_ELEMENTS.forEach((el, i) => {
+      add(`${el.label}`, `3d8 ${el.type} · ${i === orbPick.i ? "in your hand: click or Enter to aim" : "hover, wheel or arrows to switch"}`, () => { orbPick.i = i; orbConfirm(a); });
+      const b = m.lastElementChild; b.dataset.orb = String(i); b.classList.toggle("orbOn", i === orbPick.i);
+      const g = b.querySelector(".ico"); if (g){ g.style.color = el.col; g.textContent = "●"; }
+      b.addEventListener("mouseenter", () => orbSet(a, i));
+    });
+    add("Back", "the orb fades", () => { orbDrop(); openMenu(a, "cast"); });
+    m.onwheel = (e) => { e.preventDefault(); orbSet(a, orbPick.i + (e.deltaY > 0 ? 1 : -1)); };
+    orbHold(a, orbPick.i, true);
+    // the first orb sounds a beat after the click, so the two are heard as two (select, then the element)
+    const el0 = ORB_ELEMENTS[orbPick.i]; setTimeout(() => { if (orbPick && orbPick.a === a && orbPick.i === ORB_ELEMENTS.indexOf(el0)) bank(`walk:orb-${el0.type}`, el0.gain); }, 260);
+    return;
   } else if (sub === "shove"){
     add("Shove: knock prone", `they save STR or DEX vs DC ${shoveDc(a)}`, () => aim(a, {shove: "prone"}));
     add("Shove: push 5 ft", `they save STR or DEX vs DC ${shoveDc(a)}`, () => aim(a, {shove: "push"}));
@@ -3889,11 +3905,19 @@ function openMenu(a, sub){
     if (!c.action) add("— action already used —", c.leveledSpell ? "you cast a leveled spell with it: no other spell this turn but a cantrip, and your action is spent" : c.bonus ? "only a bonus-action spell is left" : "and the bonus action too", null);
     for (const nm of [...s.magic.cantrips, ...s.magic.prepared]) ACTION_ICON[nm] = "cast-spell";
     for (const nm of s.magic.cantrips){ const sp = SPELLS[nm]; if (sp) add(nm, `cantrip · action · ${sp.dmg ? sp.dmg + " " + sp.type : ""}${sp.kind === "save" ? " · " + sp.save.toUpperCase() + " save" : ""}`, c.action ? () => aim(a, {spell: nm}) : null); }
-    for (const base of s.magic.prepared) for (const nm of (SPELL_VARIANTS[base] || [base])){ const sp = SPELLS[nm]; if (!sp) continue; ACTION_ICON[nm] = "cast-spell";
+    for (const base of s.magic.prepared){
+      // CHROMATIC ORB IS ONE CHOICE, THEN AN ELEMENT (Sam, 2026-10-25): picked with a dull click, it opens the element
+      // picker, and the orb forms in the caster's hand in the element's colour, with its own sound, as they cycle.
+      if (base === "Chromatic Orb"){ const sp = SPELLS["Chromatic Orb (fire)"], left = c.slots[1] || 0; ACTION_ICON[base] = "cast-spell";
+        const why = left <= 0 ? "no slot left" : !c.action ? "action used" : c.bonusSpell ? "a bonus-action spell was cast: only cantrips now" : "";
+        add(base, why || `level 1 slot · ${left} of ${s.magic.slots[1] || 0} left · action · 3d8 of an element you choose · ${sp.range} ft`, why ? null : () => { bank("walk:orb-select", .45); openMenu(a, "orb"); });
+        continue; }
+      for (const nm of (SPELL_VARIANTS[base] || [base])){ const sp = SPELLS[nm]; if (!sp) continue; ACTION_ICON[nm] = "cast-spell";
       if (sp.kind === "reaction"){ add(nm, `level ${sp.lvl} slot · your reaction · offered when an attack would hit you`, null); continue; }
       const left = c.slots[sp.lvl] || 0;
       const why = left <= 0 ? "no slot left" : sp.bonus ? (!c.bonus ? "bonus action used" : c.leveledSpell ? "you already cast a leveled spell with your action" : "") : (!c.action ? "action used" : c.bonusSpell ? "a bonus-action spell was cast: only cantrips now" : "");
       add(nm, why || `level ${sp.lvl} slot · ${left} of ${s.magic.slots[sp.lvl] || 0} left · ${sp.bonus ? "bonus action" : "action"}${sp.conc ? (c.conc ? ` · concentration: ends ${c.conc.spell}` : " · concentration") : ""} · ${sp.dmg ? (sp.darts ? sp.darts + " darts × " : "") + sp.dmg + (sp.type ? " " + sp.type : " healing") : sp.cond ? COND_GLYPH[sp.cond][2] : ""}${sp.area ? " · " + sp.area + "-ft area" : ""}`, why ? null : () => aim(a, {spell: nm})); }
+    }
     // anything else on the sheet is shown, not hidden: the map cannot resolve it in a fight yet, Malachar can
     { const all = s.magicAll || s.magic, have = new Set([...s.magic.cantrips, ...s.magic.prepared]);
       for (const nm of [...(all.cantrips || []), ...(all.prepared || [])]) if (!have.has(nm) && !SPELLS[nm] && !SPELL_VARIANTS[nm]){ ACTION_ICON[nm] = "cast-spell"; add(nm, "not in the map's fights yet · cast it outside a fight, or tell Malachar", null); } }
@@ -4463,8 +4487,9 @@ function castSpell(caster, tgt, name, done, darts){
   else if (tgt.id) markTarget(tgt);
   const sigilEnd = (tg, taken) => { marks.forEach(p => p.then(e => { if (e) e.until = now + (quiet ? 1200 : 0); })); if (bardic){ for (let i = 0; i < 8; i++){ const B = bodyPoint(tg); noteAt(B.x, B.y, taken ? (quiet ? "#b0b8ff" : noteCol) : "#9a93a8"); } return; } if (!quiet) spawnFx(taken ? "pxSigilBurst" : "pxSigilShatter", {at: tg, sq: 1.6, anchor: "feet"}); };
   playOnce(caster, bardic && SPR[caster.id].img.perform ? "perform" : SPR[caster.id].img.cast ? "cast" : "attack", () => { setAnim(caster, "idle"); });
+  const thrown = heldOrb; heldOrb = null;                                     // the Chromatic Orb in the hand leaves it at the release
   caster.once && (caster.once.hit = () => {
-    ring.then(e => { if (e) e.until = now; });
+    ring.then(e => { if (e) e.until = now; }); if (thrown) thrown.then(e => { if (e) e.until = now; });
     if (!quiet) bank(`magic/${family}_release`, .7);
     if (tgt.id && BOLT_OF[dtype] && !quiet && !kit) spawnFx(BOLT_OF[dtype], {at: caster, sq: .9, anchor: "mid", loop: true, until: now + 260, alpha: .95});
     // Healing is carried by an orb (Sam, 2026-10-13: "healing word should not look like a projectile but an
@@ -5465,6 +5490,60 @@ const KIT_BY_SPELL = {
       "ring": false,
       "noFlash": true
     }
+  },
+  "Chromatic Orb (acid)": {
+    "route": "ball",
+    "motion": "dart",
+    "speed": 16,
+    "travel": "orbAcidFly",
+    "impact": "orbAcidHit",
+    "impactScale": 1.05,
+    "gather": null
+  },
+  "Chromatic Orb (cold)": {
+    "route": "ball",
+    "motion": "dart",
+    "speed": 16,
+    "travel": "orbColdFly",
+    "impact": "orbColdHit",
+    "impactScale": 1.05,
+    "gather": null
+  },
+  "Chromatic Orb (fire)": {
+    "route": "ball",
+    "motion": "dart",
+    "speed": 16,
+    "travel": "orbFireFly",
+    "impact": "orbFireHit",
+    "impactScale": 1.05,
+    "gather": null
+  },
+  "Chromatic Orb (lightning)": {
+    "route": "ball",
+    "motion": "dart",
+    "speed": 16,
+    "travel": "orbLightningFly",
+    "impact": "orbLightningHit",
+    "impactScale": 1.05,
+    "gather": null
+  },
+  "Chromatic Orb (poison)": {
+    "route": "ball",
+    "motion": "dart",
+    "speed": 16,
+    "travel": "orbPoisonFly",
+    "impact": "orbPoisonHit",
+    "impactScale": 1.05,
+    "gather": null
+  },
+  "Chromatic Orb (thunder)": {
+    "route": "ball",
+    "motion": "dart",
+    "speed": 16,
+    "travel": "orbThunderFly",
+    "impact": "orbThunderHit",
+    "impactScale": 1.05,
+    "gather": null
   }
 };
 const clings = [];   // Chill Touch's hands: {by: caster, p: the hand's fx}, let go when the caster's next turn starts
@@ -5488,6 +5567,36 @@ const flights = [];
 function handPoint(a){ const m = SPR[a.id].json; return {x: a.x + (a.face >= 4 && a.face <= 6 ? -1 : 1) * 10 * actorScale(a), y: a.y - m.pivot[1] * actorScale(a) * .58}; }
 function bodyPoint(t){ if (!t.id) return {x: t.x, y: t.y - 10}; const m = SPR[t.id].json; return {x: t.x, y: t.y - m.pivot[1] * actorScale(t) * .5}; }
 // the windup's extra for a type that has one: cold pulls vapour in at the hand
+// ---------- Chromatic Orb: the element picker and the orb in the hand (Sam, 2026-10-25) ----------
+// Sam's pack (scripts/vfx/bake_chromatic_orb.py): per element a forming sheet (held at the hand, pulsing on its last
+// two frames), a flight sheet and a burst. Each element has its own sound as the orb changes (public/sfx/walk/orb-*):
+// fire igniting, liquid nitrogen freezing, crackling storm electricity, thunder, metal corroding (acid), a faint
+// banshee scream (poison). Sam's order. `gain` keeps them under the click and level with each other.
+const ORB_ELEMENTS = [
+  {key: "Fire", type: "fire", label: "Fire", col: "#ff7a2e", gain: .55},
+  {key: "Cold", type: "cold", label: "Cold", col: "#9fdcff", gain: .7},
+  {key: "Lightning", type: "lightning", label: "Lightning", col: "#9db8ff", gain: .65},
+  {key: "Thunder", type: "thunder", label: "Thunder", col: "#d9d3ff", gain: .4},
+  {key: "Acid", type: "acid", label: "Acid", col: "#b8e23a", gain: .55},
+  {key: "Poison", type: "poison", label: "Poison", col: "#7fd16a", gain: .6},
+];
+let orbPick = null, heldOrb = null, orbSoundAt = 0;
+// the forming orb at the caster's hand, in element `i`; `quiet` skips the element's sound (opening the picker)
+function orbHold(a, i, quiet){
+  const el = ORB_ELEMENTS[i]; orbDrop(); const h = handPoint(a);
+  heldOrb = spawnFx(`orb${el.key}Form`, {x: h.x, y: h.y, sq: .8, tail: 2, until: now + 600000, alpha: 1});
+  if (!quiet && now - orbSoundAt > 90){ orbSoundAt = now; bank(`walk:orb-${el.type}`, el.gain); }
+}
+function orbDrop(){ if (heldOrb){ heldOrb.then(e => { if (e) e.until = now; }); heldOrb = null; } }
+// cycle to element `i` (wraps): the highlighted choice moves, the orb in the hand recolours and sounds
+function orbSet(a, i){
+  if (!orbPick || orbPick.a !== a) return; const n = ORB_ELEMENTS.length; i = ((i % n) + n) % n; if (i === orbPick.i) return;
+  orbPick.i = i; orbHold(a, i);
+  for (const b of $("cbtMenu").querySelectorAll("button[data-orb]")){ const on = +b.dataset.orb === i; b.classList.toggle("orbOn", on);
+    const sm = b.querySelector("small"); if (sm) sm.textContent = `3d8 ${ORB_ELEMENTS[+b.dataset.orb].type} · ${on ? "in your hand: click or Enter to aim" : "hover, wheel or arrows to switch"}`; }
+}
+// the choice is made: aim it, still glowing in the hand until it is thrown
+function orbConfirm(a){ const el = ORB_ELEMENTS[orbPick.i], keep = heldOrb; heldOrb = null; orbPick = null; aim(a, {spell: `Chromatic Orb (${el.type})`}); heldOrb = keep; }
 function kitGather(caster, kit){ if (kit && kit.gather) spawnFx(kit.gather, {at: caster, sq: 1.1, anchor: "mid", alpha: .95}); }
 // carry the spell from the hand to the target; `then` fires on the impact frame
 async function kitDeliver(caster, at, kit, then){
@@ -6577,6 +6686,12 @@ addEventListener("keydown", e => {
   if (e.key === "Escape" && bagOpen()){ toggleBag(false); return; }
   if (e.key === "Escape"){ if (!$("obj").hidden){ $("obj").hidden = true; mode = "explore"; } else if (!$("talk").hidden) $("talkNo").click(); else if (!$("dm").hidden) toggleDm(false); }
   if (e.key === "m" || e.key === "M") $("musicBtn").click();
+  if (orbPick && mode === "combat" && cbt && cbt.phase === "menu"){
+    if (/^Arrow(Up|Left)$/.test(e.code)){ e.preventDefault(); orbSet(orbPick.a, orbPick.i - 1); return; }
+    if (/^Arrow(Down|Right)$/.test(e.code)){ e.preventDefault(); orbSet(orbPick.a, orbPick.i + 1); return; }
+    if (e.code === "Enter"){ e.preventDefault(); orbConfirm(orbPick.a); return; }
+    if (e.key === "Escape"){ const a = orbPick.a; orbDrop(); openMenu(a, "cast"); return; }
+  }
   if (MOVE_KEYS.has(e.code) && (mode === "explore" || mode === "combat")){ keys.add(e.code); e.preventDefault(); unlockAudio(); }
   if (mode === "explore"){
     if (/^Digit[1-4]$/.test(e.code)){ const a = party.find(p => p.id === PARTY[+e.code.slice(5) - 1]); if (a) setLeader(a); }

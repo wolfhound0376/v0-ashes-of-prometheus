@@ -111,6 +111,14 @@ WALK_BY_SPELL = {
                       # the bell is the moment; no white flash over it
                       "burst": {"tint": "#9c6bff", "sparks": 12, "ring": False, "noFlash": True}},
 }
+# Chromatic Orb (Sam's pack, 2026-10-25, scripts/vfx/bake_chromatic_orb.py): every element is thrown as its own
+# orb and bursts as its own impact, whatever the damage type's default delivery is (cold is a beam, thunder radiates
+# -- not for this spell: SRD "You hurl a 4-inch-diameter sphere of energy"). No `gather`: the orb is already in the
+# caster's hand from the element picker, and the throw takes it from there.
+for _el in ("acid", "cold", "fire", "lightning", "poison", "thunder"):
+    _k = _el.capitalize()
+    WALK_BY_SPELL[f"Chromatic Orb ({_el})"] = {"route": "ball", "motion": "dart", "speed": 16, "travel": f"orb{_k}Fly",
+                                               "impact": f"orb{_k}Hit", "impactScale": 1.05, "gather": None}
 # Per-type scale tweaks for the walk's camera, which sits closer than the
 # board's. Applied on top of whatever the board says.
 WALK_SCALE = {"fire": 2.2}
