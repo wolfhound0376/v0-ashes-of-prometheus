@@ -47,7 +47,18 @@
         "name": "Armory (upper chamber)",
         "kind": "interact"
       }
-    ]
+    ],
+    "rest": {
+      "chance": 0.3333333333333333,
+      "foes": [
+        "drow-guard-male",
+        "drow-guard-female"
+      ],
+      "dice": "1d2",
+      "who": "a drow patrol",
+      "label": "A drow patrol comes through and finds you resting.",
+      "_src": "HOMEBREW (Sam's rule 2026-10-24, Claude's odds): inside the outpost the garrison is twelve drow and five elite warriors (OotA p.13) — one in three an hour that a pair walk in."
+    }
   },
   "11": {
     "npcs": [
@@ -575,7 +586,14 @@
         "name": "Manacles, collars",
         "kind": "interact"
       }
-    ]
+    ],
+    "rest": {
+      "chance": 0,
+      "foes": [],
+      "who": "",
+      "label": "",
+      "_src": "The pen: the guards are on the bridge outside; nobody walks in on prisoners resting."
+    }
   },
   "7": {
     "props": [
@@ -715,7 +733,18 @@
         ]
       }
     ],
-    "hostileLabel": "Ilvara's quarters are not yours to enter."
+    "hostileLabel": "Ilvara's quarters are not yours to enter.",
+    "rest": {
+      "chance": 0.3333333333333333,
+      "foes": [
+        "drow-guard-male",
+        "drow-guard-female"
+      ],
+      "dice": "1d2",
+      "who": "a drow patrol",
+      "label": "A drow patrol comes through and finds you resting.",
+      "_src": "HOMEBREW (Sam's rule 2026-10-24, Claude's odds): inside the outpost the garrison is twelve drow and five elite warriors (OotA p.13) — one in three an hour that a pair walk in."
+    }
   },
   "8": {
     "props": [
@@ -812,7 +841,18 @@
         "name": "Pewter pitcher and matched goblets",
         "kind": "interact"
       }
-    ]
+    ],
+    "rest": {
+      "chance": 0.3333333333333333,
+      "foes": [
+        "drow-guard-male",
+        "drow-guard-female"
+      ],
+      "dice": "1d2",
+      "who": "a drow patrol",
+      "label": "A drow patrol comes through and finds you resting.",
+      "_src": "HOMEBREW (Sam's rule 2026-10-24, Claude's odds): inside the outpost the garrison is twelve drow and five elite warriors (OotA p.13) — one in three an hour that a pair walk in."
+    }
   },
   "2": {
     "loot": [
@@ -916,7 +956,18 @@
       "passive": 12,
       "label": "A resting drow stirs at the noise and rises from his pallet."
     },
-    "hostileLabel": "The resting drow come up off their pallets with steel in hand."
+    "hostileLabel": "The resting drow come up off their pallets with steel in hand.",
+    "rest": {
+      "chance": 0.3333333333333333,
+      "foes": [
+        "drow-guard-male",
+        "drow-guard-female"
+      ],
+      "dice": "1d2",
+      "who": "a drow patrol",
+      "label": "A drow patrol comes through and finds you resting.",
+      "_src": "HOMEBREW (Sam's rule 2026-10-24, Claude's odds): inside the outpost the garrison is twelve drow and five elite warriors (OotA p.13) — one in three an hour that a pair walk in."
+    }
   },
   "5": {
     "lift": {
@@ -1002,7 +1053,18 @@
         ]
       }
     ],
-    "hostileLabel": "The lift attendants bare their teeth."
+    "hostileLabel": "The lift attendants bare their teeth.",
+    "rest": {
+      "chance": 0.3333333333333333,
+      "foes": [
+        "drow-guard-male",
+        "drow-guard-female"
+      ],
+      "dice": "1d2",
+      "who": "a drow patrol",
+      "label": "A drow patrol comes through and finds you resting.",
+      "_src": "HOMEBREW (Sam's rule 2026-10-24, Claude's odds): inside the outpost the garrison is twelve drow and five elite warriors (OotA p.13) — one in three an hour that a pair walk in."
+    }
   },
   "1": {
     "objects": [
@@ -1042,7 +1104,18 @@
       "passive": 12,
       "label": "The sentries at the southern watch post have seen you."
     },
-    "hostileLabel": "The watch post sentries draw steel."
+    "hostileLabel": "The watch post sentries draw steel.",
+    "rest": {
+      "chance": 0.3333333333333333,
+      "foes": [
+        "drow-guard-male",
+        "drow-guard-female"
+      ],
+      "dice": "1d2",
+      "who": "a drow patrol",
+      "label": "A drow patrol comes through and finds you resting.",
+      "_src": "HOMEBREW (Sam's rule 2026-10-24, Claude's odds): inside the outpost the garrison is twelve drow and five elite warriors (OotA p.13) — one in three an hour that a pair walk in."
+    }
   },
   "14": {
     "objects": [
@@ -1070,7 +1143,14 @@
         "sq": 0.9,
         "flip": true
       }
-    ]
+    ],
+    "rest": {
+      "chance": 0.16666666666666666,
+      "foes": [],
+      "who": "something in the pool",
+      "label": "Something surges out of the pool's shallows.",
+      "_src": "HOMEBREW: the gray ooze in the pool (OotA p.19) — no sprite is sent here; its entrance stays Malachar's (Gray Ooze Entrance doc)."
+    }
   },
   "9": {
     "objects": [
@@ -1078,7 +1158,18 @@
         "name": "Water barrels",
         "kind": "interact"
       }
-    ]
+    ],
+    "rest": {
+      "chance": 0.3333333333333333,
+      "foes": [
+        "drow-guard-male",
+        "drow-guard-female"
+      ],
+      "dice": "1d2",
+      "who": "a drow patrol",
+      "label": "A drow patrol comes through and finds you resting.",
+      "_src": "HOMEBREW (Sam's rule 2026-10-24, Claude's odds): inside the outpost the garrison is twelve drow and five elite warriors (OotA p.13) — one in three an hour that a pair walk in."
+    }
   },
   "12": {
     "objects": [
@@ -1152,7 +1243,18 @@
         "sq": 1.2,
         "flip": true
       }
-    ]
+    ],
+    "rest": {
+      "chance": 0.3333333333333333,
+      "foes": [
+        "quaggoth",
+        "quaggoth"
+      ],
+      "dice": "1d2",
+      "who": "quaggoths back to their nests",
+      "label": "Quaggoths come back to the den and find you in it.",
+      "_src": "HOMEBREW: twelve quaggoths serve the outpost and use the den to sleep and eat (OotA p.18)."
+    }
   },
   "10b": {
     "objects": [
@@ -1180,7 +1282,18 @@
         "name": "Ladder to the upper chamber",
         "kind": "interact"
       }
-    ]
+    ],
+    "rest": {
+      "chance": 0.3333333333333333,
+      "foes": [
+        "drow-guard-male",
+        "drow-guard-female"
+      ],
+      "dice": "1d2",
+      "who": "a drow patrol",
+      "label": "A drow patrol comes through and finds you resting.",
+      "_src": "HOMEBREW (Sam's rule 2026-10-24, Claude's odds): inside the outpost the garrison is twelve drow and five elite warriors (OotA p.13) — one in three an hour that a pair walk in."
+    }
   },
   "3": {
     "objects": [
@@ -1304,7 +1417,18 @@
         ]
       }
     ],
-    "hostileLabel": "The main hall turns on you."
+    "hostileLabel": "The main hall turns on you.",
+    "rest": {
+      "chance": 0.3333333333333333,
+      "foes": [
+        "drow-guard-male",
+        "drow-guard-female"
+      ],
+      "dice": "1d2",
+      "who": "a drow patrol",
+      "label": "A drow patrol comes through and finds you resting.",
+      "_src": "HOMEBREW (Sam's rule 2026-10-24, Claude's odds): inside the outpost the garrison is twelve drow and five elite warriors (OotA p.13) — one in three an hour that a pair walk in."
+    }
   },
   "4": {
     "objects": [
@@ -1385,7 +1509,18 @@
         ]
       }
     ],
-    "hostileLabel": "The elite barracks are not empty."
+    "hostileLabel": "The elite barracks are not empty.",
+    "rest": {
+      "chance": 0.3333333333333333,
+      "foes": [
+        "drow-guard-male",
+        "drow-guard-female"
+      ],
+      "dice": "1d2",
+      "who": "a drow patrol",
+      "label": "A drow patrol comes through and finds you resting.",
+      "_src": "HOMEBREW (Sam's rule 2026-10-24, Claude's odds): inside the outpost the garrison is twelve drow and five elite warriors (OotA p.13) — one in three an hour that a pair walk in."
+    }
   },
   "10c": {
     "objects": [
@@ -1599,7 +1734,18 @@
         ],
         "text": "Two building hammers (not weapons) by two chests."
       }
-    ]
+    ],
+    "rest": {
+      "chance": 0.3333333333333333,
+      "foes": [
+        "drow-guard-male",
+        "drow-guard-female"
+      ],
+      "dice": "1d2",
+      "who": "a drow patrol",
+      "label": "A drow patrol comes through and finds you resting.",
+      "_src": "HOMEBREW (Sam's rule 2026-10-24, Claude's odds): inside the outpost the garrison is twelve drow and five elite warriors (OotA p.13) — one in three an hour that a pair walk in."
+    }
   },
   "13": {
     "objects": [
@@ -1639,7 +1785,18 @@
       "passive": 12,
       "label": "The sentries at the northern watch post have seen you."
     },
-    "hostileLabel": "The northern watch draws steel."
+    "hostileLabel": "The northern watch draws steel.",
+    "rest": {
+      "chance": 0.3333333333333333,
+      "foes": [
+        "drow-guard-male",
+        "drow-guard-female"
+      ],
+      "dice": "1d2",
+      "who": "a drow patrol",
+      "label": "A drow patrol comes through and finds you resting.",
+      "_src": "HOMEBREW (Sam's rule 2026-10-24, Claude's odds): inside the outpost the garrison is twelve drow and five elite warriors (OotA p.13) — one in three an hour that a pair walk in."
+    }
   },
   "6": {
     "rolls": {
@@ -1725,6 +1882,87 @@
         ]
       }
     ],
-    "hostileLabel": "The shrine's worshippers turn from the altar."
+    "hostileLabel": "The shrine's worshippers turn from the altar.",
+    "rest": {
+      "chance": 0.3333333333333333,
+      "foes": [
+        "drow-guard-male",
+        "drow-guard-female"
+      ],
+      "dice": "1d2",
+      "who": "a drow patrol",
+      "label": "A drow patrol comes through and finds you resting.",
+      "_src": "HOMEBREW (Sam's rule 2026-10-24, Claude's odds): inside the outpost the garrison is twelve drow and five elite warriors (OotA p.13) — one in three an hour that a pair walk in."
+    }
+  },
+  "tunnels": {
+    "rest": {
+      "chance": 0.16666666666666666,
+      "foes": [
+        "giant-spider",
+        "giant-spider"
+      ],
+      "dice": "1d2",
+      "who": "the spiders",
+      "label": "A giant spider drops from the webs above.",
+      "_src": "HOMEBREW: the giant spiders serve as guards, dropping on their web strands on creatures in the cavern (OotA p.14)."
+    }
+  },
+  "crystal": {
+    "rest": {
+      "chance": 0.16666666666666666,
+      "foes": [
+        "giant-spider",
+        "giant-spider"
+      ],
+      "dice": "1d2",
+      "who": "the spiders",
+      "label": "A giant spider drops from the webs above.",
+      "_src": "HOMEBREW: the giant spiders serve as guards, dropping on their web strands on creatures in the cavern (OotA p.14)."
+    }
+  },
+  "wastes": {
+    "rest": {
+      "chance": 0.16666666666666666,
+      "foes": [
+        "giant-spider",
+        "giant-spider"
+      ],
+      "dice": "1d2",
+      "who": "the spiders",
+      "label": "A giant spider drops from the webs above.",
+      "_src": "HOMEBREW: the giant spiders serve as guards, dropping on their web strands on creatures in the cavern (OotA p.14)."
+    }
+  },
+  "lair": {
+    "rest": {
+      "chance": 0.16666666666666666,
+      "foes": [
+        "giant-spider",
+        "giant-spider"
+      ],
+      "dice": "1d2",
+      "who": "the spiders",
+      "label": "A giant spider drops from the webs above.",
+      "_src": "HOMEBREW: the giant spiders serve as guards, dropping on their web strands on creatures in the cavern (OotA p.14)."
+    }
+  },
+  "shore": {
+    "rest": {
+      "chance": 0,
+      "foes": [],
+      "who": "",
+      "label": "",
+      "_src": "Nobody comes this way."
+    }
+  },
+  "grove": {
+    "rest": {
+      "chance": 0,
+      "foes": [],
+      "who": "",
+      "label": "",
+      "_src": "Nobody comes this way."
+    }
   }
 }
