@@ -59,7 +59,7 @@ export async function GET(req: NextRequest) {
   const db = createAdminClient()
   if (req.nextUrl.searchParams.get("catalog") === "1") {
     const { data, error } = await db.from("items")
-      .select("id,slug,name,item_type,equippable_slot,pixel_icon_url,icon_url,description,stackable,properties")
+      .select("id,slug,name,item_type,equippable_slot,pixel_icon_url,icon_url,description,stackable,properties,rarity")   // rarity: the walk reads "rarer than common" as a magic weapon (the bhut resists the rest)
       .order("item_type", { ascending: true }).order("name", { ascending: true })
     if (error) return NextResponse.json({ items: [], error: error.message })
     return NextResponse.json({ items: data ?? [] })
