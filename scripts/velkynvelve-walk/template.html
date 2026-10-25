@@ -2732,7 +2732,7 @@ const SPELLS = {
   // where it records them (Magic Missile "1d4+1 force", 120 ft; Thunderwave "Constitution save (half); 2d8 thunder;
   // 15-foot cube"; Chromatic Orb 90 ft, ranged spell attack). Recalled from the SRD, as the dataset leaves them out:
   // Magic Missile's three darts, Chromatic Orb's 3d8 of a type the caster picks, Shield's +5 AC as a reaction.
-  // Not done here: splitting the darts between targets, and Thunderwave's 10-ft push.
+  // Not done here: Thunderwave's 10-ft push. The darts split between targets since 2026-10-24 (placeDart/fireDarts).
   "Magic Missile":      {lvl: 1, kind: "auto", range: 120, dmg: "1d4+1", darts: 3, type: "force", fx: "#c9a7ff"},
   "Thunderwave":        {lvl: 1, kind: "save", save: "con", range: 15, area: 15, selfArea: true, dmg: "2d8", type: "thunder", fx: "#bfe3ff"},
   "Chromatic Orb (acid)":      {lvl: 1, kind: "attack", range: 90, dmg: "3d8", type: "acid", fx: "#9be37a"},
@@ -3203,8 +3203,35 @@ function aim(a, what){
   if (what.shove){ hint(`${what.shove === "grapple" ? "Grapple" : "Shove"}: click a foe within 5 ft. Esc to cancel.`); return; }
   if (sp && (sp.kind === "heal" || sp.kind === "buff")){ hint(`${what.spell}: click a friend.`); return; }
   if (sp && sp.area){ hint(`${what.spell}: click where it lands (${sp.area}-ft area).`); return; }
+  if (sp && sp.darts){ what.darts = []; hint(dartHint(what.spell, sp, [])); return; }
   const sn = what.atk && sneakState(a, null, what.atk);
   hint(`${what.spell || what.atk.name}: click a foe. Esc to cancel.${sn ? ` Sneak Attack ${sn.why}.` : ""}`);
+}
+// MAGIC MISSILE'S DARTS (Sam, 2026-10-24: "select target up to three target shooting three different missiles or
+// two + one or three missiles into one area ... don't have to take a linear path as long as there is line of sight").
+// SRD 5.1: "three glowing darts ... Each dart hits a creature of your choice that you can see within range ... The
+// darts all strike simultaneously, and you can direct them to hit one creature or several." So the pick is one click
+// per dart — the same foe again stacks a second dart on them — and the volley flies when the last dart is placed, or
+// on Enter with the rest going where the last one went. Range and SIGHT are the only tests: no attack roll, no path,
+// cover only matters when it is total (no line of sight). Each dart is its own flight and lands its own 1d4+1.
+function dartHint(name, sp, picked){
+  const n = sp.darts, left = n - picked.length;
+  const so = picked.length ? ` ${picked.map(fname).join(", ")}.` : "";
+  return `${name}: ${left} dart${left === 1 ? "" : "s"} to place — click a foe you can see (the same one again stacks).${so} Enter fires the rest at the last pick; Esc cancels.`;
+}
+function placeDart(a, t){
+  const p = cbt.pend, sp = SPELLS[p.spell];
+  if (t.down) return;
+  if (feetBetween(a, t) > sp.range){ toast(`Out of range (${sp.range} ft).`); return; }
+  const cv = coverOf(a, t); if (cv.total){ toast(`No line of sight: ${fname(t)} is behind ${cv.why}.`); return; }
+  p.darts.push(t); hint(dartHint(p.spell, sp, p.darts)); popText(t, `dart ${p.darts.length}`, sp.fx || "#c9a7ff", .7);
+  if (p.darts.length >= sp.darts) fireDarts(a);
+}
+function fireDarts(a){
+  const p = cbt && cbt.pend; if (!p || !p.darts || !p.darts.length) return;
+  const sp = SPELLS[p.spell], last = p.darts[p.darts.length - 1];
+  while (p.darts.length < sp.darts) p.darts.push(last);
+  const darts = p.darts.slice(); p.darts = null; castSpell(a, darts[0], p.spell, null, darts);
 }
 function cancelAim(){ if (cbt && cbt.phase === "target"){ const a = activeActor(); openMenu(a); } else if (cbt && cbt.phase === "move"){ openMenu(activeActor()); } }
 function combatClick(w){
@@ -3221,6 +3248,7 @@ function combatClick(w){
     if (t !== a && coverOf(a, t).total){ toast(`No line of sight to ${fname(t)}.`); return; } castSpell(a, t, p.spell); return; }
   if (sp && sp.area){ castSpell(a, w, p.spell); return; }
   const t = hitActor(foes, w); if (!t || t.down) return;
+  if (p.darts){ placeDart(a, t); return; }
   { const cv = coverOf(a, t), round = p.atk && !p.throwing && (p.atk.reach || 5) <= 10 && gateWayTo(a, t);
     if (cv.total && !round){ toast(`No line of sight: ${fname(t)} is behind ${cv.why}.`); return; } }
   if (p.atk && p.throwing && feetBetween(a, t) > p.atk.thrown){ toast(`Too far to throw (${p.atk.thrown} ft).`); return; }
@@ -3469,8 +3497,10 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
     }, () => Promise.resolve(shieldWait).then(() => flying).then(() => setTimeout(() => { att.aimAt = null; combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(att, done); }, flying ? 250 : 0)), shot);
   });
 }
-function castSpell(caster, tgt, name, done){
+function castSpell(caster, tgt, name, done, darts){
   const sp = SPELLS[name], c = caster.c; closeMenu(); cbt.phase = "busy"; combatBusy = true;
+  // a volley: `darts` is one actor per dart (repeats allowed); the mark goes under each distinct target
+  const volley = darts && darts.length ? darts : null, distinct = volley ? [...new Set(volley)] : null;
   if (sp.bonus){ c.bonus = false; c.bonusSpell = true; } else { c.action = false; if (sp.lvl > 0) c.leveledSpell = true; }
   if (sp.lvl > 0) c.slots[sp.lvl] = Math.max(0, (c.slots[sp.lvl] || 0) - 1);
   const at = tgt;                                                                // a point or an actor
@@ -3514,6 +3544,7 @@ function castSpell(caster, tgt, name, done){
   const markTarget = (tg) => { if (bardic){ noteRing(tg, quiet ? "#b0b8ff" : noteCol, now + 2400); return; } if (sig[0]) marks.push(spawnFx(sig[0], {at: tg, sq: 2.2, flat: true, spin: 1.2, loop: true, alpha: .9})); };
   if (sp.area) aoeMarks.push({x: at.x, y: at.y, sp, col: sp.fx || "#e8a24a", until: now + 2600});
   if (sp.area && !quiet) spawnFx(sig[0] || "aoeHoly", {x: at.x, y: at.y, sq: sp.area / 5 * 1.1, flat: true, spin: .8, loop: true, until: now + 2600, alpha: .8});
+  else if (distinct) distinct.forEach(markTarget);
   else if (tgt.id) markTarget(tgt);
   const sigilEnd = (tg, taken) => { marks.forEach(p => p.then(e => { if (e) e.until = now + (quiet ? 1200 : 0); })); if (bardic){ for (let i = 0; i < 8; i++){ const B = bodyPoint(tg); noteAt(B.x, B.y, taken ? (quiet ? "#b0b8ff" : noteCol) : "#9a93a8"); } return; } if (!quiet) spawnFx(taken ? "pxSigilBurst" : "pxSigilShatter", {at: tg, sq: 1.6, anchor: "feet"}); };
   playOnce(caster, bardic && SPR[caster.id].img.perform ? "perform" : SPR[caster.id].img.cast ? "cast" : "attack", () => { setAnim(caster, "idle"); });
@@ -3527,6 +3558,25 @@ function castSpell(caster, tgt, name, done){
     // Healing does not travel (Sam, 2026-10-14: "Healing is still a projectile"). Healing Word is a word: the
     // caster speaks it and the light rises out of the ground at the ally — a green bloom, motes climbing,
     // the shimmer. Nothing crosses the room.
+    // the darts fly one after another, each to its own target, and each lands its own damage as it arrives
+    if (volley){
+      let landed = 0; const per = new Map();
+      volley.forEach((t, i) => setTimeout(() => {
+        const fly = kit ? (cb) => kitDeliver(caster, t, kit, cb) : (cb) => spellBolt(caster, t, sp.fx, cb);
+        fly(() => {
+          const d = roll(sp.dmg).total; per.set(t, (per.get(t) || []).concat(d));
+          if (!t.down) { knock(t, caster, 8 * actorScale(t)); if (t.kind === "pc") redFlash(); damage(t, d, sp.type, false, caster); }
+          if (kit){ bank(`magic/impact_${sp.type}`, .6); kitImpact(t, kit, {by: caster}); }
+          if (++landed === volley.length){
+            distinct.forEach(x => sigilEnd(x, true));
+            const parts = distinct.map(x => `${per.get(x).length} dart${per.get(x).length === 1 ? "" : "s"} strike ${fname(x)} for ${per.get(x).join(" + ")} = <b>${per.get(x).reduce((u, v) => u + v, 0)}</b>`);
+            narrate(caster, `${fname(caster)}'s darts of light strike ${distinct.map(fname).join(" and ")}.`);
+            log(`${fname(caster)} ${name}: ${parts.join("; ")} ${sp.type}.`);   // the turn moves on from the cast's own timer below, as for every spell
+          }
+        });
+      }, i * 160));
+      return;
+    }
     const carry = quiet ? (cb) => setTimeout(cb, 420)
       : kit ? (cb) => kitDeliver(caster, at, kit, cb)
       : sp.kind === "heal" ? (cb) => healBloom(caster, tgt, cb)
@@ -5232,7 +5282,7 @@ addEventListener("keydown", e => {
     if (/^Digit[1-4]$/.test(e.code)){ const a = party.find(p => p.id === PARTY[+e.code.slice(5) - 1]); if (a) setLeader(a); }
     if (e.code === "Tab"){ e.preventDefault(); const i = party.indexOf(leader); setLeader(party[(i + (e.shiftKey ? party.length - 1 : 1)) % party.length]); }
     if (e.code === "KeyE" || e.code === "Space"){ e.preventDefault(); interact(); }
-  } else if (mode === "combat"){ if (e.code === "Enter" && !e.target.closest("button")) nextTurn(); if (e.key === "Escape") cancelAim(); }
+  } else if (mode === "combat"){ if (e.code === "Enter" && !e.target.closest("button")){ if (cbt && cbt.phase === "target" && cbt.pend && cbt.pend.darts && cbt.pend.darts.length) fireDarts(activeActor()); else nextTurn(); } if (e.key === "Escape") cancelAim(); }
   if (e.key === "+" || e.key === "="){ const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.2); }
   if (e.key === "-" || e.key === "_"){ const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.2); }
 });
