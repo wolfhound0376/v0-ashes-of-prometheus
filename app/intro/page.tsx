@@ -94,6 +94,16 @@ export default function TitleScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [musicOff, stage])
 
+  // Browsers only allow sound after a gesture, so while the film is silenced the first key
+  // anywhere brings the song up (a click on the film does the same, see the <video> below).
+  useEffect(() => {
+    if (stage !== "film" || !filmNeedsTap) return
+    const onKey = () => unmuteFilm()
+    window.addEventListener("keydown", onKey, { once: true })
+    return () => window.removeEventListener("keydown", onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, filmNeedsTap])
+
   const unmuteFilm = () => {
     const video = videoRef.current
     if (!video || musicOff) return
@@ -140,6 +150,9 @@ export default function TitleScreen() {
   }
 
   const toggleMute = () => {
+    // During the film, a browser-silenced film reads as "off" to the eye: the first press brings
+    // the sound up rather than switching music off.
+    if (stage === "film" && filmNeedsTap && !musicOff) { unmuteFilm(); return }
     const off = !isMusicOff()
     setMusicOff(off)
     setMusicOffState(off || !introMusicOn())
@@ -179,7 +192,7 @@ export default function TitleScreen() {
       {filmUp && (
         <video
           ref={videoRef}
-          onClick={finishFilm}
+          onClick={() => (filmNeedsTap && !musicOff ? unmuteFilm() : finishFilm())}
           onEnded={finishFilm}
           src="/videos/intro.mp4"
           playsInline
@@ -192,9 +205,9 @@ export default function TitleScreen() {
           Skip ▸
         </button>
       )}
-      {filmUp && filmNeedsTap && (
-        <button type="button" onClick={unmuteFilm} className="absolute bottom-6 left-8 z-20 rounded-sm border border-[#8a6a3a]/50 bg-black/50 px-4 py-2 text-[11px] uppercase tracking-[0.3em] text-stone-400 backdrop-blur-sm transition-colors hover:border-[#c9a868] hover:text-[#e8c56a]">
-          ♪ Tap for sound
+      {filmUp && filmNeedsTap && !musicOff && (
+        <button type="button" onClick={unmuteFilm} className="fixed left-1/2 top-6 z-40 -translate-x-1/2 whitespace-nowrap rounded-full border border-[#8a6a3a]/60 bg-black/60 px-4 py-1.5 text-[11px] uppercase tracking-[0.25em] text-[#c9a868] backdrop-blur-sm">
+          ♪ Tap anywhere for sound
         </button>
       )}
 
