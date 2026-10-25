@@ -2616,7 +2616,9 @@ const FOE_BLOCKS = {
   // reactions"; the page's reaction budget is `reactionUsed`) and one Claws (+4, 1d6+2 slashing) — `rotate` makes the two
   // swings use the two attacks in turn.
   // Both carry the CURSE (Sam: "curses anyone he strikes"): one per character, the words of it Malachar's.
-  "ghost-male": {name: "Bhut", xp: 700, passive: 10, hp: 45, ac: 13, speed: 30, init: 2, saves: {str: 1, dex: 2, con: 2, int: 1, wis: 0, cha: 2},
+  // Holy Vulnerability (the block, as read in the design doc): a weapon hit from an attacker under *bless*, or holy
+  // water, and it loses its resistances until the end of its next turn — `holyVulnerable`, tracked as c.holyOpen.
+  "ghost-male": {name: "Bhut", ctype: "undead", holyVulnerable: true, xp: 700, passive: 10, hp: 45, ac: 13, speed: 30, init: 2, saves: {str: 1, dex: 2, con: 2, int: 1, wis: 0, cha: 2},
                  resistNonmagical: ["bludgeoning", "piercing", "slashing"], immune: ["poison"], immuneCond: ["poisoned", "charmed"], multi: 2, rotate: true,
                  attacks: [{name: "Numbing Bite", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5, extra: {dmg: "1d6", type: "cold"}, numb: {save: "con", dc: 12}, curse: true},
                            {name: "Claws", hit: 4, dmg: "1d6+2", type: "slashing", reach: 5, curse: true}]},
@@ -2685,6 +2687,11 @@ const SPELLS = {
   // Faerie Fire "Concentration, up to 1 minute". Sleep is the 5.2.1 spell here (a WIS save, waking on a later
   // save), and in 5.2.1 it is "Concentration, up to 1 minute" (in 5.1 it was not concentration).
   "Shield of Faith":    {lvl: 1, kind: "buff", range: 60, bonus: true, cond: "shielded", fx: "#cfe8ff", conc: 100},
+  // SRD 5.1 Bless: "up to three creatures of your choice within range. Whenever a target makes an attack roll or a
+  // saving throw before the spell ends, the target can roll a d4 and add the number rolled." Concentration, 1 minute.
+  // Click one friend; the two nearest other friends within range are blessed with them (`targets`). Added for the bhut
+  // (Sam, 2026-10-24): a blessed hero's weapon hit opens its Holy Vulnerability. Samson can prepare it at a long rest.
+  "Bless":              {lvl: 1, kind: "buff", range: 30, cond: "blessed", targets: 3, fx: "#ffe9a8", conc: 10},
   "Faerie Fire":        {lvl: 1, kind: "save", save: "dex", range: 60, area: 20, cond: "lit", fx: "#c8a2ff", conc: 10},
   "Sleep":              {lvl: 1, kind: "save", save: "wis", range: 60, area: 5, cond: "asleep", fx: "#b0b8ff", conc: 10},
   "Dissonant Whispers": {lvl: 1, kind: "save", save: "wis", range: 60, dmg: "3d6", type: "psychic", fx: "#ff7fa0"},
@@ -2864,7 +2871,7 @@ function attackRiders(att, atk, thrown) {
 function tintFor(a) { return a.raging || woundedFury(a.hp, a.woundedFury) ? RAGE_TINT : null }
 
 const COND_GLYPH = {poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
-                    shielded: ["◇", "#cfe8ff", "+2 AC"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
+                    shielded: ["◇", "#cfe8ff", "+2 AC"], blessed: ["✚", "#ffe9a8", "Blessed: +1d4 to attack rolls and saving throws"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
                     hidden: ["◌", "#b8c7d6", "Hidden: unseen until you attack"], prone: ["▼", "#e0b070", "Prone: melee on it has advantage, ranged disadvantage; half speed to stand"],
                     grappled: ["✊", "#e0b070", "Grappled: speed 0"], helped: ["★", "#ffe08a", "Helped: advantage on the next attack"], disengaged: ["↷", "#cfe8ff", "Disengaged: no opportunity attacks"],
                     sorcery: ["✴", "#ff9bd2", "Innate Sorcery: DC +1, advantage on spell attacks"], dodging: ["◈", "#cfe8ff", "Dodging"],
@@ -2884,6 +2891,8 @@ function roll(expr, crit){
   return {total: Math.max(0, total), rolls};
 }
 const d6 = () => 1 + Math.floor(Math.random() * 6);
+// Bless (SRD 5.1): a d4 on the attack roll or saving throw of a blessed creature, rolled and shown each time
+function blessD4(a){ return a && a.c && a.c.conds && a.c.conds.has("blessed") ? 1 + Math.floor(Math.random() * 4) : 0; }
 function d20(adv){ const a = 1 + Math.floor(Math.random() * 20); if (!adv) return a; const b = 1 + Math.floor(Math.random() * 20); return adv > 0 ? Math.max(a, b) : Math.min(a, b); }
 
 // one 5-ft square in plate pixels where this actor stands (the sprites are drawn at ppu px per square)
@@ -3047,6 +3056,7 @@ function nextTurn(first){
   if (a.c.conds.has("grappled")){ const g = a.c.grappledBy; if (!g || g.down || feetBetween(a, g) > 5) a.c.conds.delete("grappled"); else a.c.move = 0; }
   if (a.c.conds.has("restrained")) a.c.move = 0;
   if (a.kind === "foe" && a.c.sheet.web && !a.c.webReady){ const r = d6(); if (r >= a.c.sheet.web.recharge){ a.c.webReady = true; popText(a, "web ready", "#e8e2c8", .9); } }
+  if (a.c.holyOpen && --a.c.holyOpen <= 0){ delete a.c.holyOpen; popText(a, "resistance returns", "#aaa", .8); }
   if (a.kind === "foe"){ bank("ui/turn_foe", .6); foeTurn(a); return; }
   if (a.ally){ allyTurn(a); return; }
   // no sound as the turn passes to a hero or an ally: the camera moving to them is the cue (Sam, 2026-10-22: "it shouldn't
@@ -3519,8 +3529,10 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       // cover is judged at the moment of the blow, from where they both stand now (SRD 5.1 Cover); a wall in the way
       // means there is no shot at all (a foe that walked as far as it could and still has stone between them)
       let cv = coverOf(att, tgt), acVs = targetAc(tgt) + cv.ac;
-      let adv = advantageOn(att, tgt, ranged, atk), r = d20(adv), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
-      if (hit && !crit && !cv.total && hero(tgt) && canShield(tgt) && r + atk.hit + insp < acVs + 5){
+      const bl = blessD4(att);
+      let adv = advantageOn(att, tgt, ranged, atk), r = d20(adv), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit + bl, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + bl + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
+      if (bl) popText(att, `bless +${bl}`, "#ffe9a8", .8);
+      if (hit && !crit && !cv.total && hero(tgt) && canShield(tgt) && r + atk.hit + bl + insp < acVs + 5){
         shieldWait = new Promise(res => askShield(tgt, att, atk, r + atk.hit + insp, acVs, used => { if (used){ acVs += 5; hit = false; } rest(); res(); }));
         return;
       }
@@ -3561,12 +3573,13 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         for (const f of rd.flat){ dmg.total += f.amount; parts.push(`${f.label} +${f.amount}`); } }
       damage(tgt, dmg.total, atk.type, crit, att, !!atk.magic);
       if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => bank(`magic/impact_${atk.extra.type}`, .55), 200); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att, true), 260); parts.push(`${e.total} ${atk.extra.type}`); }
-      if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20(rageAdvantage(tgt.c.rage, atk.rider.save)) + (tgt.c.sheet.saves[atk.rider.save] || 0), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
+      if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20(rageAdvantage(tgt.c.rage, atk.rider.save)) + (tgt.c.sheet.saves[atk.rider.save] || 0) + blessD4(tgt), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att, true); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
       if (atk.drowPoison && !tgt.down) parts.push(drowPoison(tgt, atk.drowPoison.dc));
-      if (atk.numb && !tgt.down){ const s0 = d20() + (tgt.c.sheet.saves[atk.numb.save] || 0), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.numb.dc) : 0), ok = sv >= atk.numb.dc;
+      if (atk.numb && !tgt.down){ const s0 = d20() + (tgt.c.sheet.saves[atk.numb.save] || 0) + blessD4(tgt), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.numb.dc) : 0), ok = sv >= atk.numb.dc;
         if (!ok){ addCond(tgt, "numbed"); tgt.c.reactionUsed = true; popText(tgt, "numbed", "#9fd8ff"); } parts.push(`${atk.numb.save.toUpperCase()} save ${sv} vs ${atk.numb.dc}: ${ok ? "shakes it off" : "numbed"}`); }
       if (atk.curse && !tgt.down && hero(tgt)) setTimeout(() => curseBy(att, tgt), 420);
+      if (tgt.c.sheet.holyVulnerable && !atk.flask && att.c.conds.has("blessed")) holyOpen(tgt, `${fname(att)}'s blessed blow`);
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
       blowNarration(att, tgt, atk, dmg.total, crit);
       }
@@ -3663,7 +3676,9 @@ function castSpell(caster, tgt, name, done){
         if (name === "Shield of Faith"){ if (tgt.sofFx) tgt.sofFx.then(e => { if (e) e.until = now; });
           tgt.sofFx = spawnFx("shieldOfFaith", {at: tgt, sq: 1.9, anchor: "base", lift: -.2, tail: 8, holdAlpha: .5, whileCond: "shielded"}); }
         else spawnFx("sigilAbjurationRing", {at: tgt, sq: 2.2, flat: true, spin: .8});
-        addCond(tgt, sp.cond); concHolds(caster, tgt, sp.cond, name); log(`${fname(caster)} ${name} on ${fname(tgt)}: ${COND_GLYPH[sp.cond][2]}.`); renderParty(); }
+        const more = sp.targets > 1 ? standing(heroes()).filter(h => h !== tgt && feetBetween(caster, h) <= sp.range).sort((x, y) => Math.hypot(x.x - tgt.x, x.y - tgt.y) - Math.hypot(y.x - tgt.x, y.y - tgt.y)).slice(0, sp.targets - 1) : [];
+        for (const t of [tgt, ...more]){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); if (t !== tgt) spawnFx("sigilAbjurationRing", {at: t, sq: 2.2, flat: true, spin: .8}); }
+        log(`${fname(caster)} ${name} on ${[tgt, ...more].map(fname).join(", ")}: ${COND_GLYPH[sp.cond][2]}.`); renderParty(); }
       else if (sp.kind === "auto"){                                             // Magic Missile: the darts never miss
         const rolls = []; for (let i = 0; i < (sp.darts || 1); i++) rolls.push(roll(sp.dmg).total);
         const tot = rolls.reduce((x, y) => x + y, 0);
@@ -3768,7 +3783,7 @@ function endConc(a, why){
   log(`${fname(a)} loses concentration on <b>${esc(k.spell)}</b> (${esc(why)}).`); renderParty();
 }
 function concSave(a, dmg){
-  const dc = Math.max(10, Math.floor(dmg / 2)), r = d20(), mod = a.c.sheet.saves.con || 0, s = r + mod, insp = a.kind === "pc" ? useInspiration(a, s, dc) : 0, ok = s + insp >= dc;
+  const dc = Math.max(10, Math.floor(dmg / 2)), r = d20(), mod = (a.c.sheet.saves.con || 0) + blessD4(a), s = r + mod, insp = a.kind === "pc" ? useInspiration(a, s, dc) : 0, ok = s + insp >= dc;
   log(`${fname(a)} keeps concentration? CON ${r} ${mod >= 0 ? "+" : "−"} ${Math.abs(mod)}${insp ? ` + ${insp}` : ""} vs DC ${dc}: ${ok ? "holds" : "fails"}.`);
   if (ok) popText(a, "holds focus", "#9fe6ff", .8); else endConc(a, `failed the CON save after ${dmg} damage`);
 }
@@ -3776,7 +3791,7 @@ function concSave(a, dmg){
 // only when it did not — a +1 blade or a cantrip goes through whole.
 function damage(t, n, type, crit, from, magical = false){
   const s = t.c.sheet; if ((s.immune || []).includes(type)){ popText(t, "immune", "#aaa"); return; }
-  if (!magical && !(s.resist || []).includes(type) && (s.resistNonmagical || []).includes(type)){ n = Math.floor(n / 2); popText(t, "resists steel", "#aaa"); }
+  if (!magical && !t.c.holyOpen && !(s.resist || []).includes(type) && (s.resistNonmagical || []).includes(type)){ n = Math.floor(n / 2); popText(t, "resists steel", "#aaa"); }
   if ((s.resist || []).includes(type) || rageResists(t.c.rage, type)){ n = Math.floor(n / 2);   // a raging barbarian resists bludgeoning, piercing and slashing (lib/rage.mjs)
     popText(t, "resist", "#aaa"); }
   if (t.kind === "pc" && t.down){                                             // already at 0
@@ -6061,8 +6076,16 @@ function flaskHits(att, tgt, atk, crit, why){
   if (f.kind === "fire"){ addCond(tgt, "burning"); log(`${why} — <b>hit</b>: ${fname(tgt)} catches fire (1d4 fire at the start of each turn; an action and DC 10 DEX puts it out).`); narrate(att, `${fname(att)}'s flask bursts across ${fname(tgt)} in a sheet of fire.`); renderParty(); return; }
   if (f.only){ const kind = (tgt.c.sheet.ctype || (tgt.creature && tgt.creature.type) || "").toLowerCase();
     if (!f.only.test(kind)){ popText(tgt, "no effect", "#cfe8ff"); log(`${why} — <b>hit</b>, but ${fname(tgt)} is neither fiend nor undead: the holy water only wets them.`); return; } }
+  if (f.kind === "holy" && tgt.c.sheet.holyVulnerable) holyOpen(tgt, "the holy water");
   const d = roll(f.dmg, crit).total; damage(tgt, d, f.type, crit, att);
   log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d} ${f.type}.`);
+}
+// Holy Vulnerability: the bhut's resistances are gone until the end of ITS next turn. `holyOpen` counts that creature's
+// turn starts: 2 at the hit, 1 as its next turn begins (open all through it), cleared when the one after begins.
+function holyOpen(t, by){
+  const fresh = !t.c.holyOpen; t.c.holyOpen = 2;
+  bank("magic/impact_radiant", .7); spawnFx("radiantColumn", {at: t, sq: 1.8, anchor: "feet", lift: 1}); popText(t, "holy: resistance gone", "#fff1b0", 1.05);
+  if (fresh) log(`${by} burns through ${fname(t)}'s unlife: it resists nothing until the end of its next turn (Holy Vulnerability).`);
 }
 // SRD 5.1 Drow, Hand Crossbow: DC 13 CON or poisoned for 1 hour; failed by 5 or more, also unconscious until it takes
 // damage or someone uses an action to shake it awake
