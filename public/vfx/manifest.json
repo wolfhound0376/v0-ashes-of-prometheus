@@ -312,6 +312,156 @@
     "frames": 20,
     "rows": 4
   },
+  "orbAcidFly": {
+    "bytes": 37010,
+    "cols": 4,
+    "file": "orbAcidFly.webp",
+    "fps": 14,
+    "frames": 4,
+    "loop": true,
+    "rows": 1
+  },
+  "orbAcidForm": {
+    "bytes": 15606,
+    "cols": 3,
+    "file": "orbAcidForm.webp",
+    "fps": 10,
+    "frames": 3,
+    "rows": 1
+  },
+  "orbAcidHit": {
+    "bytes": 62506,
+    "cols": 9,
+    "file": "orbAcidHit.webp",
+    "fps": 14,
+    "frames": 9,
+    "rows": 1
+  },
+  "orbColdFly": {
+    "bytes": 43002,
+    "cols": 4,
+    "file": "orbColdFly.webp",
+    "fps": 14,
+    "frames": 4,
+    "loop": true,
+    "rows": 1
+  },
+  "orbColdForm": {
+    "bytes": 21390,
+    "cols": 3,
+    "file": "orbColdForm.webp",
+    "fps": 10,
+    "frames": 3,
+    "rows": 1
+  },
+  "orbColdHit": {
+    "bytes": 90106,
+    "cols": 9,
+    "file": "orbColdHit.webp",
+    "fps": 14,
+    "frames": 9,
+    "rows": 1
+  },
+  "orbFireFly": {
+    "bytes": 39900,
+    "cols": 4,
+    "file": "orbFireFly.webp",
+    "fps": 14,
+    "frames": 4,
+    "loop": true,
+    "rows": 1
+  },
+  "orbFireForm": {
+    "bytes": 17512,
+    "cols": 3,
+    "file": "orbFireForm.webp",
+    "fps": 10,
+    "frames": 3,
+    "rows": 1
+  },
+  "orbFireHit": {
+    "bytes": 63986,
+    "cols": 9,
+    "file": "orbFireHit.webp",
+    "fps": 14,
+    "frames": 9,
+    "rows": 1
+  },
+  "orbLightningFly": {
+    "bytes": 33746,
+    "cols": 4,
+    "file": "orbLightningFly.webp",
+    "fps": 14,
+    "frames": 4,
+    "loop": true,
+    "rows": 1
+  },
+  "orbLightningForm": {
+    "bytes": 11124,
+    "cols": 3,
+    "file": "orbLightningForm.webp",
+    "fps": 10,
+    "frames": 3,
+    "rows": 1
+  },
+  "orbLightningHit": {
+    "bytes": 67016,
+    "cols": 9,
+    "file": "orbLightningHit.webp",
+    "fps": 14,
+    "frames": 9,
+    "rows": 1
+  },
+  "orbPoisonFly": {
+    "bytes": 30432,
+    "cols": 4,
+    "file": "orbPoisonFly.webp",
+    "fps": 14,
+    "frames": 4,
+    "loop": true,
+    "rows": 1
+  },
+  "orbPoisonForm": {
+    "bytes": 20752,
+    "cols": 3,
+    "file": "orbPoisonForm.webp",
+    "fps": 10,
+    "frames": 3,
+    "rows": 1
+  },
+  "orbPoisonHit": {
+    "bytes": 59374,
+    "cols": 9,
+    "file": "orbPoisonHit.webp",
+    "fps": 14,
+    "frames": 9,
+    "rows": 1
+  },
+  "orbThunderFly": {
+    "bytes": 31974,
+    "cols": 4,
+    "file": "orbThunderFly.webp",
+    "fps": 14,
+    "frames": 4,
+    "loop": true,
+    "rows": 1
+  },
+  "orbThunderForm": {
+    "bytes": 14158,
+    "cols": 3,
+    "file": "orbThunderForm.webp",
+    "fps": 10,
+    "frames": 3,
+    "rows": 1
+  },
+  "orbThunderHit": {
+    "bytes": 74066,
+    "cols": 9,
+    "file": "orbThunderHit.webp",
+    "fps": 14,
+    "frames": 9,
+    "rows": 1
+  },
   "physicalImpact": {
     "bytes": 7472,
     "cols": 5,
