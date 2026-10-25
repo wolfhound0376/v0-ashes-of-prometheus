@@ -1030,6 +1030,10 @@
    {
     "name": "Window to the cavern",
     "kind": "decor"
+   },
+   {
+    "name": "The armory racks (8 spots)",
+    "kind": "interact"
    }
   ],
   "loot": [

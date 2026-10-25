@@ -719,14 +719,23 @@ const inRect = (r, x, y) => x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
 // A plate may carry a painted walkable mask instead of traced shapes: Sam's brush on the wiring board writes one cell per
 // walk-grid cell (120 x 67, CELL px each) as run-length pairs starting with a run of 0s ("12,5,103,..."). When a plate
 // has one, the mask IS the floor (the obstacles are already painted out); the exit rects still count as floor.
+// One exception, the gated plate (the pen, area 11): Sam painted the rope bridge, the landing and the cliff stairs
+// outside the bars as floor too, because feet can go there -- but WHEN they can is the gate's business (balconyFloor
+// below: a fight, or the gate standing open). So on a plate with a gate, a painted cell that lies outside everything
+// the trace knew (its floors; an exit rect counts on its own terms, the landing only once the gate is open) is floor only
+// while the balcony is; the pen's painted inside is always.
+// Without this the prisoners could walk out through a shut gate the moment the mask landed.
 function unpackMask(s){ const m = new Uint8Array(GW * GH); let i = 0, v = 0; for (const r of String(s).split(",")){ const k = Number(r); if (v) m.fill(1, i, i + k); i += k; v ^= 1; } return m; }
 function buildGrid(){
   grid = new Uint8Array(GW * GH);
   let sx = 0, sy = 0, n = 0; depthMin = 1e9; depthMax = -1e9;
-  const mask = node.mask ? unpackMask(node.mask) : null;
+  const mask = node.mask ? unpackMask(node.mask) : null, outsideShut = !!(mask && balcony() && !balconyFloor());
   for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++){
     const x = cx * CELL + CELL / 2, y = cy * CELL + CELL / 2;
-    const inside = (mask ? mask[cy * GW + cx] === 1 : node.floors.some(f => inFloor(f, x, y))) || node.zones.some(z => inRect(z.rect, x, y) && !(z.landing && !(state.gateOpen && !state.doorShut)));
+    const zoneFloor = node.zones.some(z => inRect(z.rect, x, y) && !(z.landing && !(state.gateOpen && !state.doorShut)));
+    const traced = () => node.floors.some(f => inFloor(f, x, y));
+    const painted = mask ? mask[cy * GW + cx] === 1 && (!outsideShut || traced()) : traced();   // outside the trace: only while the balcony is floor
+    const inside = painted || zoneFloor;
     const blocked = !mask && (node.obstacles || []).some(o => ((x - o.cx) / o.rx) ** 2 + ((y - o.cy) / o.ry) ** 2 < 1);
     if (inside && !blocked){ grid[cy * GW + cx] = 1; sx += x; sy += y; n++; depthMin = Math.min(depthMin, y); depthMax = Math.max(depthMax, y); }
   }

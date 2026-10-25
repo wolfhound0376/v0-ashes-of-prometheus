@@ -10,7 +10,11 @@ cavern plate in CAVERNS below that takes the party, and the page hands over to t
 Exits re-traced by Sam in his editor, 2026-10-24 (every area but 9's falls and 11's gate, which keep the wiring that landed the same
 day); 'proposed': Claude's draw from OotA p.17-20, not yet reviewed by Sam. Area 11's export put the gate zone at the plate's
 west edge; that rect is NOT applied — the gate zone is what carries the lock, the leaf and the landing (doorGate in the page).
-Which painted way-out maps to which neighbour is an APPROXIMATE call where the painting doesn't say; adjust freely."""
+Which painted way-out maps to which neighbour is an APPROXIMATE call where the painting doesn't say; adjust freely.
+mask (masks.json, Sam's editor export 2026-10-25): the PAINTED walkable floor of a plate, one bit per 20 px cell of the 120x67 walk
+grid, RLE. When a plate has one the page walks the mask and ignores its traced floors and obstacles (buildGrid in template.html);
+the traced shapes stay as the record of what was there before and as the fallback for a plate without a mask (area 10). The same
+export nudged four exits (6->4, 14->grove, 10b->10, lair->tunnels) and the editor layout; areas 9 and 11 keep their wiring as above."""
 import json
 
 def P(*xy):  # flatten pairs
@@ -53,7 +57,7 @@ NODES = {
    obstacles=[dict(cx=1200,cy=665,rx=200,ry=95),dict(cx=780,cy=665,rx=60,ry=35),dict(cx=1610,cy=665,rx=60,ry=35)],
    zones=[dict(rect=[1020, 1260, 1380, 1339], to=[7], label="Stair down the priestess tower"),
           dict(rect=[51, 668, 221, 797], to=[10], label="Rope bridge west"),
-          dict(rect=[2129, 651, 2400, 792], to=[4], label="Rope bridge towards Elite Barracks")],
+          dict(rect=[2118, 662, 2389, 803], to=[4], label="Rope bridge towards Elite Barracks")],
    hazard=dict(poly=P((900,500),(1500,500),(1520,560),(880,560)), kind="ambush", foes=["giant-spider"], label="Something shifts among the cushions")),
  7: dict(slug="node-07-ilvara-quarters", name="Ilvara's Quarters", scale=1.0,
    floors=[dict(poly=P((660,660),(840,480),(1120,430),(1400,460),(1680,480),(1800,600),(1860,760),(1800,880),(1680,960),(1400,1000),(1120,1000),(840,940),(640,820))),dict(rect=[520,760,680,900]),dict(rect=[1175,995,1250,1112])],
@@ -95,7 +99,7 @@ NODES = {
    # (public/velkynvelve-walk/img/, Sam's painting cut to 2400x1339) rather than the Supabase bucket, so no upload step.
    floors=[dict(poly=P((61,961),(580,838),(914,803),(2179,803),(2179,1031),(2400,1119),(2400,1339),(0,1339),(0,1066)))],
    obstacles=[dict(cx=1300,cy=803,rx=404,ry=193),dict(cx=2047,cy=750,rx=193,ry=105)],
-   zones=[dict(rect=[854, 15, 1041, 329], to=[10], label="the ladder up to the upper chamber", climb=dict(foot=[887, 838], ladder=[887, 750], dir="up"))]),
+   zones=[dict(rect=[870, 2, 1057, 316], to=[10], label="the ladder up to the upper chamber", climb=dict(foot=[887, 838], ladder=[887, 750], dir="up"))]),
  "10c": dict(slug="node-10c-guard-tower-armory", name="Guard Tower, armory (upper chamber)", scale=0.95, img="node-10c-guard-tower-armory.jpg",
    # OotA p.18 area 10, upper chamber: the armory. What is on the racks is in lib/walk-loot.ts (BOOK_CONTAINERS) and
    # story.json 10c.loot, every entry with its page.
@@ -146,15 +150,15 @@ NODES = {
    obstacles=[],
    zones=[dict(rect=[884, 1223, 1420, 1367], to=["shore"], kind="leave", label="The underground river runs on toward the Darklake — PROPOSED: the river runs west to the Darklake (OotA p.18, p.20)", proposed=True),
           dict(rect=[831, 274, 1080, 484], to=["crystal"], label="(Hidden) Passage to ?"),
-          dict(rect=[1974, 1078, 2236, 1306], to=["grove"], label="Follow river")]),
+          dict(rect=[1975, 1074, 2237, 1302], to=["grove"], label="Follow river")]),
 }
 
 # ── beyond the edge ──────────────────────────────────────────────────────────────────────────────────────────────────
 # The cavern plates a `leave` exit walks onto (Sam's editor export, 2026-10-24; Sam, same day: "Lets make all the sprite
 # plates walkable"). They are plates of this page now: `img` is the painting, cut to 2400x1339 and shipped in the repo
-# (public/velkynvelve-walk/img/), and `floors`/`obstacles` are PROVISIONAL, traced by eye from the painting by Claude --
-# Sam's brush on the wiring board (walk_masks in his export) replaces them as `mask` (RLE over the 120x67 walk grid,
-# which wins over the shapes when present). The zone rects are Sam's. `biome` is the camp plate that stands in for each
+# (public/velkynvelve-walk/img/), and `floors`/`obstacles` were PROVISIONAL, traced by eye from the painting by Claude --
+# Sam's brush on the wiring board (walk_masks in his export, 2026-10-25) has replaced them as `mask` (masks.json, attached
+# below; the page walks the mask and ignores the shapes when one is present). The zone rects are Sam's. `biome` is the camp plate that stands in for each
 # on the travel map (lib/camp-plates.ts: tunnels | fungal | shore; anything unpainted camps in the tunnels, the same
 # rule campBiomeFor applies). An outward exit with no `to` (kind="leave") is where the party steps off onto the
 # Underdark map: lib/travel/handoff.ts reads which cavern they came out of. "PROPOSED" labels are Claude's draws
@@ -183,7 +187,7 @@ CAVERNS = {
    # the lair floor; the bone pile and the wheel block
    floors=[dict(poly=P((420,630),(900,490),(1450,420),(1730,470),(1950,520),(2230,770),(2230,1120),(1800,1339),(520,1339),(210,1050),(150,900),(150,750),(280,770)))],
    obstacles=[dict(cx=780,cy=540,rx=230,ry=90)],
-   zones=[dict(rect=[0, 560, 140, 900], to=["tunnels"], label="PROPOSED: back to the tunnels", proposed=True),
+   zones=[dict(rect=[759, 1186, 1765, 1337], to=["tunnels"], label="PROPOSED: back to the tunnels", proposed=True),
           dict(rect=[1448, 262, 1730, 564], to=[], kind="leave", label="Hook Horror Layer")]),
  "shore": dict(slug="biome-shore", name="The Darklake shore", biome="shore", scale=1.0, img="biome-shore.jpg",
    # the cobbled shore below the water line; the crates, the chest, the keelboat and the crystals block
@@ -200,31 +204,46 @@ CAVERNS = {
           dict(rect=[2229, 665, 2400, 836], to=[], kind="leave", label="New exit")]),
 }
 
-# Sam's editor layout: where each plate sits on the overview board (editor pixels). Data for the editor, not for the page.
+# Sam's editor layout (export 2026-10-25): where each plate sits on the overview board (editor pixels). Data for the editor, not for the page.
 LAYOUT = {
   "1": [80, 1180],
-  "2": [80, 900],
+  "2": [81, 899],
   "3": [460, 900],
-  "4": [80, 620],
+  "4": [81, 619],
   "5": [460, 620],
-  "6": [839, 338],
-  "7": [840, 620],
-  "8": [840, 900],
+  "6": [838, 339],
+  "7": [841, 619],
+  "8": [838, 899],
   "9": [1220, 900],
   "10": [1219, 618],
   "11": [1600, 619],
   "12": [1600, 340],
   "13": [1601, 59],
-  "14": [1220, 1180],
-  "tunnels": [-360, 900],
+  "14": [1222, 1180],
+  "tunnels": [-359, 902],
   "shore": [1600, 1180],
   "crystal": [-360, 1460],
   "wastes": [80, 1460],
   "lair": [460, 1460],
   "grove": [839, 1458],
-  "10b": [1220, 340],
-  "10c": [1218, 59]
+  "10b": [1221, 339],
+  "10c": [1217, 57]
 }
+
+# ── the painted floor ───────────────────────────────────────────────────────────────────────────────────────────────
+# masks.json is Sam's brush, straight from his editor export (walk_masks). Each plate that has one gets it as `mask`; the
+# page then walks the painting, not the traced shapes. Checked here so a bad paste fails the build, not a player's walk:
+# the grid must be the page's (20 px cells, 120 x 67), every key must be a plate, and every RLE must sum to exactly one grid.
+_M = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'masks.json')))
+assert (_M['cell'], _M['w'], _M['h']) == (20, 120, 67), ('masks.json grid is not the page\'s', _M['cell'], _M['w'], _M['h'])
+_PLATES = {str(k): v for k, v in NODES.items()}; _PLATES.update(CAVERNS)
+for _k, _rle in _M['masks'].items():
+    assert _k in _PLATES, ('masks.json names a plate that does not exist', _k)
+    _runs = [int(r) for r in _rle.split(',')]
+    assert all(r >= 0 for r in _runs) and sum(_runs) == _M['w'] * _M['h'], ('mask does not cover exactly one grid', _k, sum(_runs))
+    assert sum(_runs[1::2]) > 0, ('mask paints no floor at all', _k)
+    _PLATES[_k]['mask'] = _rle
+print(len(_M['masks']), 'plates walk Sam\'s painted floor; traced shapes still used by:', ', '.join(k for k in _PLATES if k not in _M['masks']))
 
 # sanity. Every way out must lead to a plate that exists. A walk link is expected to have a zone on both sides; the ones
 # that do not are listed here so they are a known gap and not a surprise (Sam's export, 2026-10-24: one_way_links_to_fix).

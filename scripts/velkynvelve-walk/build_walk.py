@@ -5,7 +5,7 @@ Python only (Sam's machine has no Node). From the repo root:  python scripts/vel
 Inputs, all in this folder:
   template.html  the page (HTML + JS); placeholders /*__SPEC__*/ /*__FX__*/ /*__SPRITES__*/ /*__KIT__*/
                  (/*__KIT__*/ is filled from the BOARD's spell tables -- see build_kit_tables)
-  spec.json      per-plate walk floors, obstacles, exits, hazards, NPC spots (built by spec.py); _handoffs = the cavern
+  spec.json      per-plate walk floors, obstacles, exits, hazards, NPC spots, painted masks (built by spec.py from spec.py + masks.json); _handoffs = the cavern
                  plates a 'leave' exit hands the party to, _layout = Sam's editor board (not used by the page)
   story.json     who stands where, scripted crossings, chains; bark lines are placeholders
   fx.json        lamp/crystal glows and waterfall masks per plate
