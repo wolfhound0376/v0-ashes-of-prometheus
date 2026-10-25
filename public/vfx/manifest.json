@@ -43,6 +43,14 @@
     "loop": true,
     "rows": 6
   },
+  "aoePoisonSkullHeads": {
+    "bytes": 25268,
+    "cols": 6,
+    "file": "aoePoisonSkullHeads.webp",
+    "fps": 1,
+    "frames": 6,
+    "rows": 1
+  },
   "aoePoisonSkulls": {
     "bytes": 1308878,
     "cols": 10,

@@ -343,6 +343,9 @@ const DELIVERY_BY_SPELL: Record<string, Partial<TypeSpec>> = {
   // fog CENTERED ON A POINT you choose within range." It is created there.
   // It was being lobbed across the room like a flask.
   "cloudkill": { route: "impact-only", travel: undefined },
+  // SRD 5.1: "You create a 20-foot radius sphere of yellow, nauseating gas centered on a point within range."
+  // Created there, like Cloudkill; nothing is thrown.
+  "stinking cloud": { route: "impact-only", travel: undefined },
 
   // ── LIGHTNING ─────────────────────────────────────────────────────────
   // SRD 5.1: Range TOUCH. "Lightning springs from your hand to deliver a

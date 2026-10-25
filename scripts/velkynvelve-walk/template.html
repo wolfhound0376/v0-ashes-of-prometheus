@@ -293,6 +293,7 @@ footer.party{display:flex;gap:8px;overflow-x:auto;min-width:0;align-items:stretc
 .pc[aria-pressed="true"] small{color:var(--ember)}
 .seats{display:flex;flex-direction:column;gap:4px}
 .help{margin-left:auto;align-self:center;font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink-dim);white-space:nowrap;padding-left:8px}
+.dmCloudRow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0}.dmCloudRow input{width:4.5em}
 button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outline-offset:2px}
 .loading{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--face-mono);color:var(--ink-dim);letter-spacing:.1em}
 
@@ -408,7 +409,12 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmFlag">Malachar calls initiative: ooze + guards (preview)</button>
       <button class="btn" id="dmGate">Open the pen gate (Jorlan's gambit)</button>
       <button class="btn" id="dmThrow">Throw the active character into the falls (area 9)</button>
-      <button class="btn" id="dmCloud">Poison cloud on the active character, 20-ft radius (preview)</button>
+      <div class="dmCloudRow" id="dmCloudRow">
+        <label>Cast <select id="dmCloudSpell" aria-label="Poison cloud spell"><option>Stinking Cloud</option><option>Cloudkill</option></select></label>
+        <label>as <select id="dmCloudBy" aria-label="Who casts it"></select></label>
+        <label>DC <input id="dmCloudDc" type="number" min="1" max="30" placeholder="sheet" aria-label="Save DC (blank: the caster's own)"></label>
+        <button class="btn" id="dmCloud">Place it: click the floor</button>
+      </div>
       <button class="btn" id="dmCombat">Start a fight here</button>
       <label class="dmMood">Fight music <select id="dmMood" aria-label="Fight music">
         <option value="auto">Auto (by the odds)</option><option value="regular">Regular</option><option value="scary">Scary</option>
@@ -2545,12 +2551,14 @@ async function spawnFx(name, o){
 // pasted here whole so the map and its tests read one copy; the sheet is scripts/vfx/bake_skull_cloud.py.
 /*__AREA_CLOUD__*/
 let clouds = [];
-async function spawnCloud(key, x, y, sp, caster, spell, holdMs){
+async function spawnCloud(key, x, y, sp, caster, spell, holdMs, opt = {}){
   const v = await vfxLoad(key); if (!v || !v.m.grow) return null;
+  const heads = opt.skulls === false ? null : await vfxLoad("aoePoisonSkullHeads");
   const sqPx = ftPx({y}) * 5, r = aoeRadiusAt(sp, y);
   const seed = (Math.round(x * 31 + y * 17) & 0xffff) || 1;
   const c = {img: v.img, m: v.m, x, y, sqPx, puffs: layoutPuffs(2 * r / sqPx, seed), t0: now, end: 0,
-             until: holdMs ? now + holdMs : (sp.conc ? Infinity : now + 6000), caster, spell};
+             until: holdMs ? now + holdMs : (sp.conc ? Infinity : now + 6000), caster, spell,
+             zone: opt.zone || null, heads, startAt: opt.skulls === false ? SKULL_FREE_FROM : 0, seed};
   clouds.push(c); return c;
 }
 // Every live puff this frame, back to front, for the actor loop to interleave.
@@ -2559,19 +2567,94 @@ function cloudPuffs(){
   clouds = clouds.filter(c => !(c.end && now - c.end > 1000));
   for (const c of clouds){
     const held = c.caster && c.spell ? c.caster.c && c.caster.c.conc && c.caster.c.conc.spell === c.spell : true;
-    if (!c.end && (!cbt || !held || now > c.until)) c.end = now;          // concentration dropped, the fight ended, or time
+    const gone = c.zone && !poisonZones.includes(c.zone);
+    if (!c.end && (!cbt || !held || gone || now > c.until)) c.end = now;  // concentration dropped, the fight ended, or time
+    if (c.zone){ c.x += (c.zone.x - c.x) * .05; c.y += (c.zone.y - c.y) * .05; }   // Cloudkill's fog rolls, not jumps
     const t = (now - c.t0) / 1000, fade = Math.min(1, t / .35) * (c.end ? Math.max(0, 1 - (now - c.end) / 1000) : 1);
     const grow = growSeconds(c.m), cw = c.img.width / c.m.cols, ch = c.img.height / c.m.rows;
+    const placed = [];
     for (const p of c.puffs){
       const s = spreadAt(t, grow, p.delay), k = SPREAD_FROM + (1 - SPREAD_FROM) * s, w = p.width * k * c.sqPx;
       const born = t >= p.delay ? Math.min(1, (t - p.delay) / .25) : 0, a = p.opacity * fade * born; if (a <= .005) continue;
-      out.push({c, x: c.x + p.x * s * c.sqPx, y: c.y + p.z * s * c.sqPx * .55, w, h: w * ch / cw, cw, ch, a,
-                f: cloudFrame(c.m, t - p.delay, p.holdOffset)});
+      const q = {c, x: c.x + p.x * s * c.sqPx, y: c.y + p.z * s * c.sqPx * .55, w, h: w * ch / cw, cw, ch, a,
+                f: cloudFrame(c.m, t - p.delay, p.holdOffset, c.startAt)};
+      out.push(q); placed[c.puffs.indexOf(p)] = q;
+    }
+    // skull heads surfacing in and out of the held gas, each drawn just after the puff it is in
+    if (c.heads) for (const k of skullsAt(t, grow, c.puffs.length, c.heads.m.frames, c.seed)){
+      const q = placed[k.puff]; if (!q) continue;
+      const sz = q.w * k.size; out.push({skull: c.heads, head: k.head, x: q.x + k.u * q.w, y: q.y + .01, top: q.y - q.h * k.v, w: sz, a: k.alpha * fade});
     }
   }
   return out.sort((a, b) => a.y - b.y);
 }
+// ---------- the poison clouds' rules on the map (lib/poison-clouds.mjs) ----------
+/*__POISON_CLOUDS__*/
+let poisonZones = [], dmPlace = null;
+// A creature's half-width in feet: 2.5 for Small and Medium, more for the big ones the map scales up.
+function bodyFtOf(t){ return 2.5 * Math.max(1, t.big || 1, (t.c && t.c.sheet && t.c.sheet.size === "large") ? 2 : 1); }
+function zoneFt(z, t){ return Math.hypot(t.x - z.x, t.y - z.y) / ftPx(t); }
+function fightersIn(){ return cbt ? cbt.order.filter(t => !t.down && actors.includes(t)) : []; }
+function refreshInside(z){ z.inside = new Set(fightersIn().filter(t => inCloud(zoneFt(z, t), z.rule, bodyFtOf(t)))); }
+function placePoisonCloud(caster, at, name, dc, slot, byDm){
+  const rule = CLOUD_RULES[name]; if (!rule || !cbt) return;
+  const z = {name, rule, x: at.x, y: at.y, caster, dc, slot, last: new Map(), inside: new Set(), dir: null};
+  poisonZones.push(z); refreshInside(z);
+  spawnCloud("aoePoisonSkulls", at.x, at.y, SPELLS[name], caster, name, 0, {zone: z, skulls: rule.skulls});
+  log(`${byDm ? "<i>(DM)</i> " : ""}<b>${fname(caster)}</b> casts <b>${name}</b> (DC ${dc} CON): ${rule.retch
+    ? "a 20-ft sphere of nauseating gas. Whoever starts a turn wholly inside it saves or spends the action retching."
+    : `a 20-ft sphere of poisonous fog. Entering it or starting a turn in it: ${cloudDamage(rule, slot)} poison, half on a save. It rolls 10 ft away from ${fname(caster)} at the start of each of their turns.`}`);
+  narrate(caster, rule.retch ? `A yellow, reeking gas billows out where ${fname(caster)} points.` : `Green fog spills out where ${fname(caster)} points, and skulls drift through it.`);
+}
+// One creature's save against one cloud. `why` is the log's words for how it came to roll.
+function cloudSave(z, t, why){
+  z.last.set(t, cbt.turnNo); const rule = z.rule;
+  if (autoSucceeds(rule, t.c.sheet)){ popText(t, "unaffected", "#aaa"); log(`${fname(t)} ${why} ${z.name}: does not need to breathe or is immune to poison, and shrugs it off.`); return; }
+  const r = d20(rageAdvantage(t.c.rage, "con")), mod = (t.c.sheet.saves.con || 0) + blessD4(t), s = r + mod, ok = s >= z.dc;
+  const rolled = rule.dmg ? roll(cloudDamage(rule, z.slot)).total : 0, out = saveOutcome(rule, ok, rolled);
+  let line = `${fname(t)} ${why} ${z.name}: CON ${r} ${mod >= 0 ? "+" : "−"} ${Math.abs(mod)} = ${s} vs DC ${z.dc}, ${ok ? "saves" : "fails"}`;
+  // a failed Stinking Cloud: a hero sees "action used"; a foe or an ally is handed to retchTurn
+  if (out.retch){ if (t.kind === "pc") t.c.action = false; else t.c.retching = true; popText(t, "retching", "#c9d65a"); bank("magic/impact_poison", .5); line += ": the action goes on retching and reeling"; }
+  if (rule.dmg){ spawnFx("poisonCloud", {at: t, sq: 1.6, anchor: "mid"}); if (out.dmg) damage(t, out.dmg, "poison", false, z.caster, true); else miss(t); line += `, ${out.dmg} poison`; }
+  if (!out.retch && !rule.dmg) popText(t, "holds breath", "#cfe8ff");
+  log(line + "."); renderParty();
+}
+// The start of a turn: the caster's Cloudkill rolls on, then every cloud the creature starts in tests it.
+// True if the creature went down. `dying`: a hero at 0 starting the turn -- only Cloudkill's damage reaches them.
+function poisonTurnStart(a, dying = false){
+  for (const z of poisonZones) if (!dying && z.caster === a && z.rule.drift){
+    const n = driftAway(z, a, z.rule.drift * ftPx({y: z.y}), z.dir); z.x = n.x; z.y = n.y; z.dir = n.dir; refreshInside(z);
+    if (n.dir) log(`The fog of ${fname(a)}'s ${z.name} rolls 10 ft on, away from them.`);
+  }
+  for (const z of poisonZones){
+    if ((a.down && !(dying && z.rule.dmg && a.c.ds && !a.c.ds.dead)) || !inCloud(zoneFt(z, a), z.rule, bodyFtOf(a))) continue;
+    if (shouldRoll(z.rule, "start", z.last.get(a), cbt.turnNo)) cloudSave(z, a, "starts the turn in");
+  }
+  return a.down;
+}
+// Every frame of a fight: anyone who has just walked in. The fog moving onto someone is not them entering it.
+function tickPoisonZones(){
+  for (const z of poisonZones) for (const t of fightersIn()){
+    const inside = inCloud(zoneFt(z, t), z.rule, bodyFtOf(t));
+    if (inside && !z.inside.has(t)){ z.inside.add(t); if (shouldRoll(z.rule, "enter", z.last.get(t), cbt.turnNo)) cloudSave(z, t, "walks into"); }
+    else if (!inside) z.inside.delete(t);
+  }
+}
+// A foe or an ally that failed Stinking Cloud: no action this turn (SRD), but it can still move, and it does: out of
+// the gas, as far as its speed allows. It does not attack, and nothing else is spent.
+function retchTurn(a){
+  bank("magic/impact_poison", .5); log(`${fname(a)} retches and reels: no action this turn.`);
+  const z = poisonZones.find(q => inCloud(zoneFt(q, a), q.rule, bodyFtOf(a)));
+  if (!z){ setTimeout(nextTurn, 900); return; }
+  const d = Math.hypot(a.x - z.x, a.y - z.y) || 1, ux = (a.x - z.x) / d || 1, uy = (a.y - z.y) / d;
+  const need = (z.rule.radiusFt + bodyFtOf(a) + 2.5) * ftPx(a) - d, step = Math.max(0, Math.min(need, a.c.move * ftPx(a)));
+  a.path = findPath(a, nearestWalkable(a.x + ux * step, a.y + uy * step));
+  if (!a.path.length){ setTimeout(nextTurn, 900); return; }
+  a.onArrive = () => setTimeout(nextTurn, 400);
+}
 function drawPuff(q){
+  if (q.skull){ const m = q.skull.m, img = q.skull.img, cw = img.width / m.cols, ch = img.height / m.rows;
+    ctx.save(); ctx.globalAlpha = q.a; ctx.drawImage(img, q.head * cw, 0, cw, ch, q.x - q.w / 2, q.top - q.w / 2, q.w, q.w); ctx.restore(); return; }
   const m = q.c.m, sx = (q.f % m.cols) * q.cw, sy = Math.floor(q.f / m.cols) * q.ch;
   ctx.save(); ctx.globalAlpha = q.a; ctx.drawImage(q.c.img, sx, sy, q.cw, q.ch, q.x - q.w / 2, q.y - q.h * .94, q.w, q.h); ctx.restore();
 }
@@ -2612,7 +2695,8 @@ function drawFxLayer(flat){
 }
 // which sheets and sounds a spell uses, from its school (lib/spell-school-data) and damage type
 const SCHOOL_OF = {"Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
-  "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment"};
+  "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment",
+  "Stinking Cloud": "conjuration", "Cloudkill": "conjuration"};
 const RUNE_OF = {cold: "runeFrost", fire: "runeFire", lightning: "runeStorm", necrotic: "runeNecrotic", psychic: "runePsychic", radiant: "runeRadiant", force: "runeForce", acid: "runeAcid", heal: "runeHealing"};
 const RUNE_SCHOOL = {abjuration: "runeAbjuration", conjuration: "runeConjuration", divination: "runeDivination", enchantment: "runeEnchantment", evocation: "runeEvocation", illusion: "runeIllusion", necromancy: "runeNecromancy", transmutation: "runeTransmutation"};
 const SIGIL_OF = {necromancy: ["sigilNecroticRing", "sigilNecroticPlume"], enchantment: ["sigilEnchantmentRing", "sigilEnchantmentPlume"], evocation: ["sigilEvocationRing", "sigilEvocationPlume"],
@@ -2831,6 +2915,11 @@ const SPELLS = {
   // (Sam, 2026-10-24): a blessed hero's weapon hit opens its Holy Vulnerability. Samson can prepare it at a long rest.
   "Bless":              {lvl: 1, kind: "buff", range: 30, cond: "blessed", targets: 3, fx: "#ffe9a8", conc: 10},
   "Faerie Fire":        {lvl: 1, kind: "save", save: "dex", range: 60, area: 20, cond: "lit", fx: "#c8a2ff", conc: 10},
+  // The two poison clouds (SRD 5.1; the rules and the text are lib/poison-clouds.mjs). `kind: "cloud"`: the cast only
+  // places the gas; everything it does happens later, at the start of turns and (Cloudkill) as creatures walk in.
+  // `area` is the map's diameter in feet, so a 20-foot radius is 40. Concentration: 1 minute and 10 minutes.
+  "Stinking Cloud":     {lvl: 3, kind: "cloud", save: "con", range: 90, area: 40, type: "poison", fx: "#c9d65a", conc: 10},
+  "Cloudkill":          {lvl: 5, kind: "cloud", save: "con", range: 120, area: 40, type: "poison", dmg: "5d8", fx: "#8fd48f", conc: 100},
   "Sleep":              {lvl: 1, kind: "save", save: "wis", range: 60, area: 5, cond: "asleep", fx: "#b0b8ff", conc: 10},
   "Dissonant Whispers": {lvl: 1, kind: "save", save: "wis", range: 60, dmg: "3d6", type: "psychic", fx: "#ff7fa0"},
 };
@@ -3029,7 +3118,9 @@ function nextTurn(first){
     const a = cbt.order[cbt.idx]; if ((!a.down || dyingNow(a)) && actors.includes(a)) break;
   }
   const a = activeActor(); if (!a) return;
-  if (a.down){ renderTurns(); renderParty(); if (deathSaveTurn(a)) return; }
+  // a dying hero who starts the turn in Cloudkill still makes the save, and the poison, hitting them at 0, is a
+  // death-save failure (damage() does that) -- before the turn's own death save
+  if (a.down){ renderTurns(); renderParty(); if (a.kind === "pc") poisonTurnStart(a, true); if (deathSaveTurn(a)) return; }
   if (a.c.conc && cbt.round >= a.c.conc.endRound) endConc(a, "the spell runs its full time");
   for (let i = clings.length - 1; i >= 0; i--) if (clings[i].by === a || !clings[i].by){ clings[i].p.then(e => { if (e) e.until = now + 350; }); clings.splice(i, 1); }
   a.c.conds.delete("dodging"); a.c.conds.delete("shieldSpell"); a.c.reactionUsed = false;
@@ -3046,12 +3137,14 @@ function nextTurn(first){
   if (a.c.conds.has("burning")){ const d = roll("1d4").total; bank("magic/impact_fire", .6); spawnFx("fireImpact", {at: a, sq: 1.3, anchor: "mid"}); damage(a, d, "fire", false, null);
     log(`${fname(a)} burns: ${d} fire.`); if (a.down){ setTimeout(() => passTurn(a), 700); return; } }
   for (const p of icePatches) if (onIce(a, p)){ p.tested.delete(a); iceSave(a, p, "starting the turn on it"); }
+  if (poisonTurnStart(a)){ setTimeout(() => passTurn(a), 700); return; }                 // Cloudkill's fog rolls; the gas tests whoever starts in it
   a.c.conds.delete("disengaged"); a.c.lastLight = null; a.c.kbdPx = 0; for (const h of [...heroes(), ...foes]) if (h.c) h.c.sneakUsed = false;   // Sneak Attack: once per turn, anyone's turn (so an opportunity attack can carry it)
   a.c.bonusSpell = false; a.c.leveledSpell = false;   // the bonus-action spell rule is per turn (it had slipped into the comment above, so one Guiding Bolt locked out Healing Word for the rest of the fight)
   if (a.c.conds.has("grappled")){ const g = a.c.grappledBy; if (!g || g.down || feetBetween(a, g) > 5) a.c.conds.delete("grappled"); else a.c.move = 0; }
   if (a.c.conds.has("restrained")) a.c.move = 0;
   if (a.kind === "foe" && a.c.sheet.web && !a.c.webReady){ const r = d6(); if (r >= a.c.sheet.web.recharge){ a.c.webReady = true; popText(a, "web ready", "#e8e2c8", .9); } }
   if (a.c.holyOpen && --a.c.holyOpen <= 0){ delete a.c.holyOpen; popText(a, "resistance returns", "#aaa", .8); }
+  if (a.c.retching && a.kind !== "pc"){ a.c.retching = false; retchTurn(a); return; }   // Stinking Cloud: the action goes on retching
   if (a.kind === "foe"){ bank("ui/turn_foe", .6); foeTurn(a); return; }
   if (a.ally){ allyTurn(a); return; }
   // no sound as the turn passes to a hero or an ally: the camera moving to them is the cue (Sam, 2026-10-22: "it shouldn't
@@ -3356,6 +3449,7 @@ function combatClick(w){
   if (p.shove){ const t = hitActor(foes, w); if (!t || t.down) return; if (feetBetween(a, t) > 5){ toast("Shove needs to be within 5 ft."); return; } doShove(a, t, p.shove); return; }
   if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(heroes(), w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; }
     if (t !== a && coverOf(a, t).total){ toast(`No line of sight to ${fname(t)}.`); return; } castSpell(a, t, p.spell); return; }
+  if (sp && sp.kind === "cloud" && Math.hypot(w.x - a.x, w.y - a.y) / ftPx(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
   if (sp && sp.area){ castSpell(a, w, p.spell); return; }
   const t = hitActor(foes, w); if (!t || t.down) return;
   if (p.darts){ placeDart(a, t); return; }
@@ -3696,6 +3790,7 @@ function castSpell(caster, tgt, name, done, darts){
       : (cb) => spellBolt(caster, at, sp.fx, cb);
     carry(() => {
       const m = c.sheet.magic;
+      if (sp.kind === "cloud"){ placePoisonCloud(caster, at, name, m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), sp.lvl); return; }
       if (sp.area && kit && kit.cloud) spawnCloud(kit.cloud, at.x, at.y, sp, caster, name);   // the gas arrives with the spell
       const land = (tg, taken, type) => { sigilEnd(tg, taken); if (taken && kit && kit.type === type){ bank(`magic/impact_${type}`, .8); kitImpact(tg, kit, {area: !!sp.area, by: caster}); if (GROUND_OF[type] && !kit.aftermath) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
       if (sp.kind === "attack"){
@@ -3821,6 +3916,7 @@ function concHolds(caster, t, cond, spell){
 }
 function endConc(a, why){
   const k = a.c.conc; if (!k) return; a.c.conc = null;
+  poisonZones = poisonZones.filter(z => !(z.caster === a && z.name === k.spell));   // the gas goes with the concentration
   for (const {t, cond} of k.holds){
     if (!t.c || !t.c.condFrom || t.c.condFrom[cond] !== k) continue;      // since replaced by another source
     delete t.c.condFrom[cond]; if (!t.c.conds.has(cond)) continue;
@@ -4232,7 +4328,7 @@ function endCombat(won){
   // the walk keeps no clock between fights, so a spell held through the fight is let go at its end
   for (const a of [...heroes(), ...foes]) if (a.c && a.c.conc) endConc(a, "the fight is over");
   const allies = cbt ? cbt.allies : [], fightId = cbt ? cbt.id : null;
-  closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby();
+  closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby(); poisonZones = []; dmPlace = null;
   // The dead stay where they fell (Sam, 2026-10-13: "There should always be a carcass or dead body of
   // whatever died. This way we can search the body."). Only the living, called off, walk away.
   const slain = foes.filter(f => f.down);
@@ -5462,7 +5558,7 @@ function click(w){
     if (n && POCKETED(n.id) && !n.hostile){ walkTo(nearNpc(n), () => openPockets(n)); return; }
     if (n){ if (wantsWord(n) || canTalkTo(n)) walkTo(nearNpc(n), () => approach(n)); else ambient(n); return; }
     const p = nearestWalkable(w.x, w.y); marker = {x: p.x, y: p.y, t: now}; walkTo(p);
-  } else if (mode === "combat"){ combatClick(w); }
+  } else if (mode === "combat"){ if (dmPlace){ placeDmCloud(w); return; } combatClick(w); }
 }
 function nearNpc(n){ const d = norm({x: leader.x - n.x, y: leader.y - n.y}); return nearestWalkable(n.x + d.x * 80, n.y + d.y * 80); }
 function walkTo(p, cb){ stopActivity(leader); leader.slow = false; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
@@ -5513,9 +5609,26 @@ $("jump").onchange = e => { const v = e.target.value, n = /^\d+$/.test(v) ? +v :
   const offs = party.map(p => ({id: p.id, dx: p.x - leader.x, dy: p.y - leader.y}));
   enterNode(n, {offs, fromScale: node.scale, note: `The DM moves the party to <em>${esc(SPEC[n].name)}</em>.`}); };
 $("dmGate").onclick = () => { toggleDm(false); openGate(); };
-// Sam's skull cloud on whoever's turn it is, as a 20-ft-radius sphere (Cloudkill's and Stinking Cloud's size), for
-// twenty seconds. A preview: no save, no damage -- no character on this map knows a poison-cloud spell yet.
-$("dmCloud").onclick = () => { const a = cbt && activeActor(); if (!a){ toast("Start a fight first: the cloud is drawn in combat."); return; } toggleDm(false); spawnCloud("aoePoisonSkulls", a.x, a.y, {area: 40}, null, null, 20000); };
+// THE DM CASTS A POISON CLOUD (2026-10-25). No one on this map has a 3rd- or 5th-level slot yet and no Velkynvelve
+// stat block casts either spell, so the DM can put one in a fight on any combatant's behalf: it is that creature's
+// spell from then on (its concentration, its turn the fog rolls on, its DC unless one is typed). No slot or action
+// is spent: it is the DM's call. The rules are the same ones a caster's own Cast menu uses.
+function dmCloudCasters(){ const sel = $("dmCloudBy"), prev = sel.value; sel.innerHTML = "";
+  for (const [i, a] of (cbt ? cbt.order : []).entries()) if (!a.down && actors.includes(a)){ const o = document.createElement("option"); o.value = String(i); o.textContent = fname(a) + (a.c.sheet.magic ? ` (DC ${a.c.sheet.magic.dc})` : ""); sel.appendChild(o); }
+  if ([...sel.options].some(o => o.value === prev)) sel.value = prev; }
+$("dmCloudBy").onfocus = dmCloudCasters;
+$("dmCloud").onclick = () => {
+  if (!cbt){ toast("Start a fight first: the clouds are combat spells."); return; }
+  dmCloudCasters(); const caster = cbt.order[+$("dmCloudBy").value]; if (!caster){ toast("Pick who casts it."); return; }
+  const name = $("dmCloudSpell").value, typed = parseInt($("dmCloudDc").value, 10), dc = typed > 0 ? typed : caster.c.sheet.magic && caster.c.sheet.magic.dc;
+  if (!dc){ toast(`${fname(caster)} has no spell save DC on its sheet. Type one in.`); return; }
+  dmPlace = {name, caster, dc}; toggleDm(false); toast(`${name}: click where it lands.`, 3200);
+};
+function placeDmCloud(w){
+  const d = dmPlace; dmPlace = null; if (!cbt || !actors.includes(d.caster) || d.caster.down) return;
+  startConc(d.caster, d.name); bank("magic/nature_windup", .5);
+  placePoisonCloud(d.caster, w, d.name, d.dc, CLOUD_RULES[d.name].level, true);
+}
 $("dmThrow").onclick = () => { if (cur !== 9){ toast("The falls are in area 9."); return; } toggleDm(false); const z = node.zones.find(z => z.kind === "water"); const c = zoneCenter(z); leader.x = c.x; leader.y = c.y; overTheFalls(leader, null); };
 $("dmFlag").onclick = () => { toggleDm(false); followCombatFlag({status: "active", startedAt: String(Date.now()), label: "Malachar calls for initiative.", foes: [{name: "Gray Ooze", slug: "gray-ooze", aliases: [], hp: 22, hpMax: 22}, {name: "Drow Guard", slug: "drow-guard", aliases: ["drow"], hp: 13, hpMax: 13}]}); };
 $("dmGuards").onclick = () => { toggleDm(false); const g = npcs.filter(n => /^drow-guard|^jorlan$/.test(n.id)); if (!g.length){ log("No guards on this plate."); return; } g.forEach(n => { n.stroll = null; n.offStage ? castReturns(n) : castLeaves(n, false); }); };
@@ -6578,6 +6691,7 @@ function step(a, dt, speed){
   else { a.x += dx / d * sp; a.y += dy / d * sp; a.face = faceOf(dx, dy); setAnim(a, "walk"); }
 }
 function update(dt){
+  if (cbt && poisonZones.length) tickPoisonZones();
   tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt);
   if (camTween){
     const k = Math.min(1, (now - camTween.t0) / camTween.ms), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
