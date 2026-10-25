@@ -50,7 +50,10 @@ NODES = {
    floors=[dict(poly=P((740,640),(960,580),(1280,600),(1480,640),(1520,720),(1490,940),(1440,1040),(1200,1120),(940,1120),(700,1040),(640,940),(660,820),(700,740))),dict(rect=[160,750,720,860])],
    obstacles=[dict(cx=1140,cy=690,rx=150,ry=80)],
    zones=[dict(rect=[150, 740, 260, 870], to=[2], label="Walkway to the main hall"),
-          dict(rect=[1436, 819, 1526, 959], to=["wastes"], kind="leave", label="The lift basket: DC 18 Strength to crank, 4 rounds to the cavern floor — PROPOSED: the basket lowers to the cavern floor, where the fall forms the pool (OotA p.17–18)"),
+          # Sam, 2026-10-24: "Lift basket goes to the plate pool" — the basket sets the party down on area 14 (Pool / Underground
+          # River), which has its own ways out; it is not a way off the map. `kind="leave"` stays only because the page keys the
+          # basket's climb-out button on it (template.html openLift); with a plate in `to`, goBeyond walks there.
+          dict(rect=[1436, 819, 1526, 959], to=[14], kind="leave", label="The lift basket: DC 18 Strength to crank, 4 rounds down to the cavern floor by the pool (OotA p.17–18)"),
           dict(rect=[914, 1255, 1099, 1339], to=[2], label="Down the Lift to the Wastes")]),
  6: dict(slug="node-06-shrine", name="Shrine to Lolth", scale=1.0,
    floors=[dict(ellipse=[1200,750,620,250]),dict(rect=[1010,980,1390,1339]),dict(rect=[400,700,620,775]),dict(rect=[1800,700,1990,785])],
@@ -254,7 +257,7 @@ print(len(_M['masks']), 'plates walk Sam\'s painted floor; traced shapes still u
 # sanity. Every way out must lead to a plate that exists. A walk link is expected to have a zone on both sides; the ones
 # that do not are listed here so they are a known gap and not a surprise (Sam's export, 2026-10-24: one_way_links_to_fix).
 # A new one-way link fails the build until it gets its return zone or is added here on purpose.
-KNOWN_ONE_WAY = {("4", "1"), ("5", "2"), ("5", "wastes"), ("6", "10"), ("9", "14"), ("12", "10")}
+KNOWN_ONE_WAY = {("4", "1"), ("5", "2"), ("5", "14"), ("6", "10"), ("9", "14"), ("12", "10")}
 ALL = {str(k): v for k, v in NODES.items()}; ALL.update(CAVERNS)
 links = {(a, str(t)) for a, node in ALL.items() for z in node["zones"] for t in z["to"]}
 for a, b in links:

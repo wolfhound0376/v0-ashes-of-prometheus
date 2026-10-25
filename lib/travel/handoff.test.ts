@@ -34,41 +34,50 @@ describe("walk hand-off — a way out of Velkynvelve lands the party on the trav
   })
 })
 
-describe("the nodal side — which roads a way out opens on the travel map", () => {
-  // The live graph around Velkynvelve as of 2026-10-24: two painted roads leave it, one west, one east.
+describe("the nodal side — which roads a way out opens on the travel map (Sam's picks, 2026-10-24)", () => {
   const V = { id: "v", node_key: "velkynvelve", metadata: { map_x: 470, map_y: 120 } }
+  const R07 = { id: "r07", node_key: "road-07", metadata: { map_x: 345, map_y: 231 } }
+  const R09 = { id: "r09", node_key: "road-09", metadata: { map_x: 398, map_y: 288 } }
   const R10 = { id: "r10", node_key: "road-10", metadata: { map_x: 414, map_y: 197 } }
   const R15 = { id: "r15", node_key: "road-15", metadata: { map_x: 576, map_y: 209 } }
-  const R11 = { id: "r11", node_key: "road-11", metadata: { map_x: 462, map_y: 398 } }
-  const nodes = [V, R10, R15, R11]
-  const edges = [
+  const R21 = { id: "r21", node_key: "road-21", metadata: { map_x: 750, map_y: 267 } }
+  const POOL = { id: "cp", node_key: "cliff-pool", metadata: { map_x: 470, map_y: 286 } }
+  const nodes = [V, R07, R09, R10, R15, R21, POOL]
+  // the painted roads as the data has them today: only road-10 and road-15 touch Velkynvelve
+  const painted = [
     { from_node_id: "r10", to_node_id: "v" },
     { from_node_id: "v", to_node_id: "r15" },
-    { from_node_id: "r10", to_node_id: "r15" }, // the bypass below the camp: not from V, must not count
+    { from_node_id: "r10", to_node_id: "r15" },
   ]
+  // ...and with the cavern edges from the PR applied
+  const withCaverns = [...painted, { from_node_id: "v", to_node_id: "r21" }, { from_node_id: "v", to_node_id: "cp" }, { from_node_id: "v", to_node_id: "r09" }, { from_node_id: "v", to_node_id: "r07" }]
   const arrival = (via: WalkArrival["via"]): WalkArrival => parseWalkHandoff(walkHandoffHref(via).slice("/map".length))!
+  const keys = (via: WalkArrival["via"], edges: typeof painted) => roadsOpenedBy(arrival(via), V, nodes, edges).map((r) => r.node.node_key)
 
-  it("the south passage and the lift both come out on the cavern floor the two roads start from", () => {
-    for (const via of ["tunnels", "wastes"] as const) {
-      const roads = roadsOpenedBy(arrival(via), V, nodes, edges)
-      expect(roads.map((r) => r.node.node_key)).toEqual(["road-10", "road-15"])
-    }
+  it("the wastes' Oozing Temple tunnel opens road-10, which the painted roads already join", () => {
+    expect(keys("wastes", painted)).toEqual(["road-10"])
+  })
+  it("the lair, the shore and the grove wait for their edges, then open exactly Sam's marker", () => {
+    expect(keys("lair", painted)).toEqual([])
+    expect(keys("shore", painted)).toEqual([])
+    expect(keys("grove", painted)).toEqual([])
+    expect(keys("lair", withCaverns)).toEqual(["road-21"])
+    expect(keys("shore", withCaverns)).toEqual(["cliff-pool"])
+    expect(keys("grove", withCaverns)).toEqual(["road-09"])
+  })
+  it("the tunnels keep both of Sam's markers in his order", () => {
+    expect(keys("tunnels", withCaverns)).toEqual(["road-07", "road-10"])
   })
   it("each road is named by where it lies from the outpost, not by an invented place-name", () => {
-    const roads = roadsOpenedBy(arrival("tunnels"), V, nodes, edges)
-    expect(roads.map((r) => r.heading)).toEqual(["south-west", "south-east"])
-  })
-  it("a road with no edge to the party's node is not offered — the river has no edge in the data yet", () => {
-    expect(roadsOpenedBy(arrival("shore"), V, nodes, edges)).toEqual([])
-    // ...and the moment the data joins them, it is.
-    const withRiver = [...edges, { from_node_id: "v", to_node_id: "r11" }]
-    expect(roadsOpenedBy(arrival("shore"), V, nodes, withRiver).map((r) => `${r.node.node_key}:${r.heading}`)).toEqual(["road-11:south"])
+    expect(roadsOpenedBy(arrival("tunnels"), V, nodes, withCaverns).map((r) => r.heading)).toEqual(["south-west", "south-west"])
+    expect(roadsOpenedBy(arrival("shore"), V, nodes, withCaverns)[0].heading).toBe("south")
+    expect(roadsOpenedBy(arrival("lair"), V, nodes, withCaverns)[0].heading).toBe("south-east")
   })
   it("a road the map has never loaded is not offered either", () => {
-    expect(roadsOpenedBy(arrival("tunnels"), V, [V, R15], edges).map((r) => r.node.node_key)).toEqual(["road-15"])
+    expect(roadsOpenedBy(arrival("tunnels"), V, [V, R10], withCaverns).map((r) => r.node.node_key)).toEqual(["road-10"])
   })
-  it("caverns beyond caverns open no road off the outpost", () => {
-    for (const via of ["lair", "grove", "crystal"] as const) expect(roadsOpenedBy(arrival(via), V, nodes, edges)).toEqual([])
+  it("the crystal passage opens no road — nothing picked", () => {
+    expect(keys("crystal", withCaverns)).toEqual([])
   })
   it("headings follow the map's axes, y downward", () => {
     const o = { map_x: 0, map_y: 0 }
