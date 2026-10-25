@@ -89,18 +89,17 @@ NODES = {
           dict(rect=[2321, 777, 2427, 892], to=[11], label="Rope bridge east to the slave pen"),
           dict(rect=[1445, 1238, 1602, 1336], to=["10b"], label="Ladder to lower chamber"),
           dict(rect=[1719, 822, 1840, 909], to=["10c"], label="Ladder to Upper Chamber")]),
- "10b": dict(slug="node-10b-guard-tower-lower", name="Guard Tower, lower chamber", scale=0.95,
+ "10b": dict(slug="node-10b-guard-tower-lower", name="Guard Tower, lower chamber", scale=0.95, img="node-10b-guard-tower-lower.jpg",
    # OotA p.18 area 10, lower chamber: the guards' room (two drow and an elite warrior on duty, dice and cups).
-   # Floor and blocking shapes traced by Sam in the editor, 2026-10-24. Plate node-10b-guard-tower-lower.jpg (2400x1339) is NOT in
-   # the bucket yet: upload it to vtt-assets/scenes/velkynvelve/walk/img/ or the page shows a blank where the room should be.
+   # Floor and blocking shapes traced by Sam in the editor, 2026-10-24. `img`: the plate ships in the repo
+   # (public/velkynvelve-walk/img/, Sam's painting cut to 2400x1339) rather than the Supabase bucket, so no upload step.
    floors=[dict(poly=P((61,961),(580,838),(914,803),(2179,803),(2179,1031),(2400,1119),(2400,1339),(0,1339),(0,1066)))],
    obstacles=[dict(cx=1300,cy=803,rx=404,ry=193),dict(cx=2047,cy=750,rx=193,ry=105)],
    zones=[dict(rect=[854, 15, 1041, 329], to=[10], label="the ladder up to the upper chamber", climb=dict(foot=[887, 838], ladder=[887, 750], dir="up"))]),
- "10c": dict(slug="node-10c-guard-tower-armory", name="Guard Tower, armory (upper chamber)", scale=0.95,
+ "10c": dict(slug="node-10c-guard-tower-armory", name="Guard Tower, armory (upper chamber)", scale=0.95, img="node-10c-guard-tower-armory.jpg",
    # OotA p.18 area 10, upper chamber: the armory. What is on the racks is in lib/walk-loot.ts (BOOK_CONTAINERS) and
    # story.json 10c.loot, every entry with its page.
-   # Floor and blocking shapes traced by Sam in the editor, 2026-10-24. Plate node-10c-guard-tower-armory.jpg (2400x1339) is NOT in
-   # the bucket yet: upload it to vtt-assets/scenes/velkynvelve/walk/img/ or the page shows a blank where the room should be.
+   # Floor and blocking shapes traced by Sam in the editor, 2026-10-24. `img`: the plate ships in the repo (see 10b).
    floors=[dict(poly=P((804,814),(1220,792),(1722,792),(2239,864),(2400,993),(2400,1339),(0,1339),(0,1209),(775,1209),(775,907),(804,878)))],
    obstacles=[],
    zones=[dict(rect=[158, 922, 718, 1180], to=[10], label="PROPOSED: the trapdoor — ladder down to the guard room", climb=dict(foot=[804, 1079], ladder=[431, 1022], dir="down"))]),
@@ -151,33 +150,54 @@ NODES = {
 }
 
 # ── beyond the edge ──────────────────────────────────────────────────────────────────────────────────────────────────
-# Where a `leave` exit hands the party over (Sam's editor export, 2026-10-24). These are NOT Velkynvelve plates and nothing
-# here is painted or traced in this repo: they are the cavern beyond, the travel map's biome plates. The rects are Sam's,
-# drawn in the editor, kept so his exits round-trip; the page never walks them. `biome` is the camp plate that stands in
-# for each today (lib/camp-plates.ts: tunnels | fungal | shore; anything unpainted camps in the tunnels, the same rule
-# campBiomeFor applies). lib/travel/handoff.ts reads the hand-off on the /map side. "PROPOSED" labels are Claude's draws
+# The cavern plates a `leave` exit walks onto (Sam's editor export, 2026-10-24; Sam, same day: "Lets make all the sprite
+# plates walkable"). They are plates of this page now: `img` is the painting, cut to 2400x1339 and shipped in the repo
+# (public/velkynvelve-walk/img/), and `floors`/`obstacles` are PROVISIONAL, traced by eye from the painting by Claude --
+# Sam's brush on the wiring board (walk_masks in his export) replaces them as `mask` (RLE over the 120x67 walk grid,
+# which wins over the shapes when present). The zone rects are Sam's. `biome` is the camp plate that stands in for each
+# on the travel map (lib/camp-plates.ts: tunnels | fungal | shore; anything unpainted camps in the tunnels, the same
+# rule campBiomeFor applies). An outward exit with no `to` (kind="leave") is where the party steps off onto the
+# Underdark map: lib/travel/handoff.ts reads which cavern they came out of. "PROPOSED" labels are Claude's draws
 # from OotA p.17-20 that Sam has not reviewed; `proposed=True` marks the ones his export still lists as unreviewed.
 CAVERNS = {
- "tunnels": dict(name="The tunnels", biome="tunnels",
+ "tunnels": dict(slug="biome-tunnels", name="The tunnels", biome="tunnels", scale=1.0, img="biome-tunnels.jpg",
+   # the flat cave floor between the tunnel mouths; the crates and the stalagmites block
+   floors=[dict(poly=P((240,800),(450,590),(500,420),(780,330),(1050,520),(1800,560),(1900,330),(2230,330),(2300,700),(2300,900),(2100,1150),(1750,1339),(420,1339),(200,1150),(120,1000)))],
+   obstacles=[dict(cx=2060,cy=870,rx=60,ry=45),dict(cx=280,cy=770,rx=120,ry=55),dict(cx=420,cy=1150,rx=140,ry=70),dict(cx=1600,cy=560,rx=80,ry=35)],
    zones=[dict(rect=[892, 1224, 1523, 1404], to=[1], label="PROPOSED: back up the south passage to the Southern Watch Post", proposed=True),
           dict(rect=[477, 146, 781, 517], to=["wastes"], label="PROPOSED: back up the north passage to the Northern Watch Post"),
           dict(rect=[103, 838, 243, 1178], to=["shore"], label="PROPOSED: on west to the Darklake", proposed=True),
           dict(rect=[1887, 289, 2232, 633], to=["lair"], label="PROPOSED: deeper in — the road marker decides which biome")]),
- "crystal": dict(name="The crystal passage", biome="tunnels",
+ "crystal": dict(slug="biome-crystal", name="The crystal passage", biome="tunnels", scale=1.0, img="biome-crystal.jpg",
+   # the pool of crystal-lit floor; the geodes and the big clusters block
+   floors=[dict(poly=P((350,590),(800,490),(1500,450),(1700,330),(1820,330),(2060,590),(2230,900),(1950,1220),(1500,1339),(520,1339),(310,1050)))],
+   obstacles=[dict(cx=380,cy=800,rx=70,ry=45),dict(cx=1950,cy=940,rx=90,ry=55),dict(cx=560,cy=1250,rx=130,ry=70),dict(cx=2050,cy=1250,rx=140,ry=70)],
    zones=[dict(rect=[1656, 231, 1821, 563], to=[14], label="Back through the waterfall")]),
- "wastes": dict(name="The wastes", biome="tunnels",
+ "wastes": dict(slug="biome-wastes", name="The wastes", biome="tunnels", scale=1.0, img="biome-wastes.jpg",
+   # the bone-strewn floor up to the chasm on the right; the fallen pillars and the fire block
+   floors=[dict(poly=P((350,520),(1000,430),(1400,430),(1680,420),(1850,590),(1880,1050),(1680,1339),(200,1339),(140,870),(140,700)))],
+   obstacles=[dict(cx=450,cy=560,rx=70,ry=45),dict(cx=700,cy=575,rx=80,ry=40),dict(cx=1950,cy=575,rx=60,ry=45),dict(cx=310,cy=1150,rx=60,ry=90),dict(cx=800,cy=820,rx=40,ry=30)],
    zones=[dict(rect=[38, 685, 178, 1025], to=["tunnels"], label="PROPOSED: back to the tunnels", proposed=True),
-          dict(rect=[969, 90, 1412, 433], to=[], label="Tunnel to the Oozing Temple")]),
- "lair": dict(name="The lair", biome="tunnels",
+          dict(rect=[969, 90, 1412, 433], to=[], kind="leave", label="Tunnel to the Oozing Temple")]),
+ "lair": dict(slug="biome-lair", name="The lair", biome="tunnels", scale=1.0, img="biome-lair.jpg",
+   # the lair floor; the bone pile and the wheel block
+   floors=[dict(poly=P((420,630),(900,490),(1450,420),(1730,470),(1950,520),(2230,770),(2230,1120),(1800,1339),(520,1339),(210,1050),(150,900),(150,750),(280,770)))],
+   obstacles=[dict(cx=780,cy=540,rx=230,ry=90)],
    zones=[dict(rect=[0, 560, 140, 900], to=["tunnels"], label="PROPOSED: back to the tunnels", proposed=True),
-          dict(rect=[1448, 262, 1730, 564], to=[], label="Hook Horror Layer")]),
- "shore": dict(name="The Darklake shore", biome="shore",
+          dict(rect=[1448, 262, 1730, 564], to=[], kind="leave", label="Hook Horror Layer")]),
+ "shore": dict(slug="biome-shore", name="The Darklake shore", biome="shore", scale=1.0, img="biome-shore.jpg",
+   # the cobbled shore below the water line; the crates, the chest, the keelboat and the crystals block
+   floors=[dict(poly=P((150,825),(180,700),(400,620),(725,690),(1000,675),(1400,690),(1750,725),(2050,800),(2200,1000),(2050,1339),(450,1339),(250,1125)))],
+   obstacles=[dict(cx=725,cy=725,rx=60,ry=35),dict(cx=1750,cy=825,rx=70,ry=40),dict(cx=1500,cy=790,rx=160,ry=60),dict(cx=350,cy=1175,rx=120,ry=80),dict(cx=2075,cy=1125,rx=70,ry=60),dict(cx=500,cy=1050,rx=40,ry=60)],
    zones=[dict(rect=[882, 1134, 1537, 1337], to=["tunnels"], label="Back along the river  into the tunnels"),
           dict(rect=[176, 568, 499, 803], to=[14], label="Back to towards the underground river"),
-          dict(rect=[1316, 512, 1653, 698], to=[], label="Traverse the Darklake")]),
- "grove": dict(name="The grove", biome="fungal",
+          dict(rect=[1316, 512, 1653, 698], to=[], kind="leave", label="Traverse the Darklake")]),
+ "grove": dict(slug="biome-grove", name="The grove", biome="fungal", scale=1.0, img="biome-grove.jpg",
+   # the dirt clearing under the giant caps; the roots and the mushroom clumps block
+   floors=[dict(poly=P((375,825),(650,625),(950,550),(1300,550),(1625,600),(1900,750),(2230,750),(2230,900),(2000,1075),(1700,1250),(1400,1339),(750,1339),(425,1200),(250,1000),(140,900),(140,700)))],
+   obstacles=[dict(cx=375,cy=625,rx=80,ry=40),dict(cx=1650,cy=525,rx=80,ry=40),dict(cx=1825,cy=950,rx=80,ry=50),dict(cx=1525,cy=1100,rx=100,ry=60)],
    zones=[dict(rect=[0, 560, 140, 900], to=[14], label="PROPOSED: back to the tunnels"),
-          dict(rect=[2229, 665, 2400, 836], to=[], label="New exit")]),
+          dict(rect=[2229, 665, 2400, 836], to=[], kind="leave", label="New exit")]),
 }
 
 # Sam's editor layout: where each plate sits on the overview board (editor pixels). Data for the editor, not for the page.
@@ -220,5 +240,6 @@ assert not unexpected, ("one-way links not on the known list", sorted(unexpected
 print(len(links), "ways out across", len(ALL), "plates;", len(one_way), "one-way (known):", ", ".join(f"{a}→{b}" for a, b in sorted(one_way)))
 print("still PROPOSED, unreviewed:", "; ".join(f"{a}: {z['label'].split(':')[0]} → {','.join(map(str, z['to']))}" for a, node in ALL.items() for z in node["zones"] if z.get("proposed")))
 out = {str(k): v for k, v in NODES.items()}
-out["_handoffs"] = CAVERNS; out["_layout"] = LAYOUT
+out.update({k: {kk: vv for kk, vv in v.items() if kk != "biome"} for k, v in CAVERNS.items()})   # walkable plates of the page
+out["_handoffs"] = {k: dict(name=v["name"], biome=v["biome"]) for k, v in CAVERNS.items()}; out["_layout"] = LAYOUT
 json.dump(out, open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'spec.json'), 'w'), separators=(',', ':'))
