@@ -2167,7 +2167,7 @@ async function takeLoot(a, id, row){
       const r = await fetch("/api/walk-loot", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "take", characterId: cid, container: id, slug: row.slug, rowId: row.rowId})});
       const j = await r.json(); if (!r.ok || j.error){ toast(j.error || "It would not come free.", 3600); return false; }
     } catch (e){ toast("The game did not answer. Try again.", 3000); return false; }
-    loadGear(a.id);
+    await loadGear(a.id);   // awaited: the equip offer below needs the pack to hold the weapon before it can ready it
   } else {
     if (row.kind === "preview-stash"){ toast("In the game this is the real list of what the drow took from you.", 3600); return false; }
     const k = lootKeyOf(id), m = lootLocal[k] || (lootLocal[k] = {}); m[row.slug] = (m[row.slug] || 0) + row.qty;
@@ -2180,7 +2180,22 @@ async function takeLoot(a, id, row){
   if (bagOpen()) renderBag();
   popText(a, `+ ${row.qty > 1 ? row.qty + " " : ""}${row.name}`, "#e8d9a8"); bank("ui/item_pickup", .7);
   log(`${fname(a)} takes ${esc(row.qty > 1 ? row.qty + " × " : "")}<b>${esc(row.name)}</b>.`);
+  // A weapon off a rack gets the same offer a weapon off the floor does (pickUp): hold it ready, or pack it. Without
+  // this the armory's shortswords went straight into the pack and the party fought the guard tower bare-handed —
+  // attacks read GEAR[id].main (heldWeapon / refreshAttacks), and nothing had set it (Sam's playtest, 2026-10-24).
+  // Offered once, when the hands are empty: a hero already holding something keeps it and the rack's blade is packed.
+  if (!inFightNow()){ const g = GEAR[a.id], cat = catalogItem(row.name) || {};
+    if (g && !g.main && (isWeapon(cat) || isWeapon({name: row.name}))) pendingEquip = {a, name: row.name}; }
   return true;
+}
+// the offer is shown by openLoot once the loot card has re-drawn, so the two never stack on top of each other
+let pendingEquip = null;
+function offerEquip(then){
+  const p = pendingEquip; pendingEquip = null;
+  const g = p && GEAR[p.a.id];
+  if (!p || inFightNow() || !g || g.main || !g.carried.some(c => c.name === p.name)){ then && then(); return; }
+  showDialog({title: p.name, body: `${fname(p.a)} has the ${p.name}. Hold it ready, or keep it in the pack?`, buttons: [
+    {label: "Equip it", primary: true, fn: () => { equipItem(p.a, p.name); then && then(); }}, {label: "Keep it in the pack", fn: then}]});
 }
 // the card: what is there, a button for each, and Take all
 async function openLoot(id, title, opts = {}){
@@ -2201,13 +2216,13 @@ async function openLoot(id, title, opts = {}){
   else $("objText").textContent = (opts.text ? opts.text + " " : "") + `${fname(who)} can take:`;
   for (const row of rows){
     const b = add(row.missing ? `${lootLabel(row)} · not in the catalogue yet` : row.kind === "preview-stash" ? row.name : `Take: ${lootLabel(row)}`,
-      async () => { b.disabled = true; if (await takeLoot(who, id, row)){ close(); openLoot(id, title, opts); } else b.disabled = false; }, "", !!row.missing);
+      async () => { b.disabled = true; if (await takeLoot(who, id, row)){ close(); offerEquip(() => openLoot(id, title, opts)); } else b.disabled = false; }, "", !!row.missing);
     if (row.pixel){ const im = document.createElement("img"); im.src = ITEM_PX + row.pixel; im.alt = ""; im.className = "lootPx"; b.prepend(im); }
   }
   if (can.length > 1) add("Take all", async () => {
     for (const b of box.querySelectorAll("button")) b.disabled = true;
     for (const row of can) await takeLoot(who, id, row);
-    close(); openLoot(id, title, opts);
+    close(); offerEquip(() => openLoot(id, title, opts));
   }, "primary");
   if (opts.extra) for (const [label, fn] of opts.extra) add(label, () => { close(); fn(); });
   add("Leave it", close);
@@ -2253,7 +2268,7 @@ async function openPockets(n){
   for (const row of rows) add(`Lift: ${row.name}${row.missing ? " (not in the catalogue yet)" : ""}`, () => {
     $("objText").textContent = `${fname(who)}: Dexterity (Sleight of Hand) ${sgn(sl)}, against ${name}'s passive Perception. Roll it on the dashboard (DC ${dc}). What did it come to?`;
     box.innerHTML = "";
-    add(`${dc} or more`, async () => { close(); if (await takeLoot(who, id, row)) log(`${fname(who)} lifts the ${esc(row.name)} from ${esc(name)} without being noticed.`); }, "primary");
+    add(`${dc} or more`, async () => { close(); if (await takeLoot(who, id, row)){ log(`${fname(who)} lifts the ${esc(row.name)} from ${esc(name)} without being noticed.`); offerEquip(); } }, "primary");
     add(`Under ${dc}`, () => { close(); caught(n, who, row); });
     add("Back", () => { close(); openPockets(n); });
     box.firstChild?.focus();
