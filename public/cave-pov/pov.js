@@ -51,7 +51,7 @@ const LINES={fifi:[[0,1.23],[1.23,2.49],[2.49,4.6]],kenta:[[0,1.08],[1.08,2.03],
 // Items: every find resolves to a row in the items catalog (slug → name). Nothing is invented.
 const ITEMS={"bluecap":"Bluecap","barrelstalk":"Barrelstalk","trillimac":"Trillimac","waterorb":"Waterorb","ripplebark":"Ripplebark","fire-lichen":"Fire Lichen","torchstalk":"Torchstalk",
   "potion-of-healing":"Potion of Healing","gold-coin":"Gold coin","flint-shard":"Flint shard","silk-rope":"Silk rope","candle-of-the-deep":"Candle of the Deep","carnelian-gem":"Carnelian gem",
-  "hook-horror-egg":"Hook horror egg","bloodstone":"Bloodstone","brown-tourmaline":"Brown tourmaline"};
+  "hook-horror-egg":"Hook horror egg","bloodstone":"Bloodstone","brown-tourmaline":"Brown tourmaline","spear":"Spear","shield":"Shield","giant-spider-silk":"Giant Spider Silk","spider-meat":"Spider Meat","hook-horror-claw":"Hook Horror Claw"};
 const FORAGE=["bluecap","barrelstalk","trillimac","waterorb","ripplebark","fire-lichen","torchstalk"];
 const CHEST_LOOT=[[["potion-of-healing",1],["gold-coin","2d6"]],[["flint-shard",1],["silk-rope",1]],[["candle-of-the-deep",1],["carnelian-gem",1]]];
 
@@ -91,7 +91,8 @@ const CARD={
 CARD.daggerBow={...CARD.dagger,name:"Dagger / Shortbow",both:true,right:"fifiBow"}; CARD.throwObj={...CARD.throw,name:"Throw object"};
 // monster saves and details not carried in the build: bestiary rows (Giant Spider SRD 5.1; Hook Horror, Out of the Abyss)
 const PRON={fifi:{his:"her",him:"her"}}; const PR=()=>PRON[PC.voice==='fifi'?'fifi':'x']||{his:"his",him:"him"}; const cap=(s)=>s[0].toUpperCase()+s.slice(1);
-const MSAVE={spider:{wis:0,dex:3,con:1},hook:{wis:1,dex:0,con:2}};
+// gnoll (SRD 5.1): DEX 12 CON 11 WIS 10. The pack lord borrows them until his own stat block is in (see manifest needsStats).
+const MSAVE={spider:{wis:0,dex:3,con:1},hook:{wis:1,dex:0,con:2},gnoll:{wis:0,dex:1,con:0},packlord:{wis:0,dex:1,con:0}};
 
 // =====================================================================================================================
 // STATE
@@ -186,7 +187,11 @@ D.dressing=Object.assign({bats:10,spiders:9,swarms:6},D.dressing);
 function startleBat(b,delay=0){ if(b.st!=="roost") return; b.st="flush"; b.delay=delay; }
 function faunaNoise(x,y,r){ if(BLD.open) return; for(const b of BATS) if(Math.hypot(b.x-x,b.y-y)<r) startleBat(b,Math.random()*.25); }
 function batOpen(x,y){ return !solid(x,y)&&!solid(x+.12,y)&&!solid(x-.12,y)&&!solid(x,y+.12)&&!solid(x,y-.12); }
-function faunaTick(dt){ if(BLD.open) return;
+let packT=6;
+function packTick(dt){ if(BLD.open||!started||P.dead) return; packT-=dt; if(packT>0) return; packT=14+Math.random()*16;
+  let best=null, bd=22; for(const e of ENTS){ if(!e.pack||e.dead||e.mode==="hunt") continue; const dd=Math.hypot(e.x-P.x,e.y-P.y); if(dd<bd){ bd=dd; best=e; } }
+  if(best) playBuf("gnollPack",{x:best.x,y:best.y,vol:.9,rate:.92+Math.random()*.16}); }
+function faunaTick(dt){ if(BLD.open) return; packTick(dt);
   const near=(P.crouch||P.hidden)?1.4:P.dash>0?4.2:P.moving?2.8:2;
   batSqT-=dt; batFlushT-=dt;
   for(const b of BATS){ b.ph+=dt;
@@ -718,7 +723,13 @@ function interact(){ if(!$("lore").hidden){ closeLore(); return; } if(!started||
   const ag=FX.find(f=>f.kind==="arrowGround"&&Math.hypot(f.x-P.x,f.y-P.y)<1.3); if(ag){ FX.splice(FX.indexOf(ag),1); P.arrows++; say(`Arrow recovered — ${P.arrows} in the quiver.`,"#e3b95c"); renderBar(); return; }
   const dg=FX.find(f=>f.kind==="dagger"&&Math.hypot(f.x-P.x,f.y-P.y)<1.3); if(dg){ FX.splice(FX.indexOf(dg),1); P.dagger=true; say("Dagger back in hand.","#e3b95c"); SND.chime([990]); renderBar(); return; }
   const ch=nearest(e=>e.chest&&!e.opened); if(ch){ openChest(ch,false); return; }
+  const bd=nearest(e=>e.dead&&!e.removed&&e.foe&&!e.searched&&e.drops&&e.drops.length,1.5); if(bd){ searchBody(bd); return; }
   const m=nearest(e=>e.forage&&!e.spent); if(m){ forage(m); return; } }
+// Sam, 2026-10-13: there is always a body of whatever died, and the party can search it. Drops are catalog slugs (manifest
+// `drops`, or a dungeon record's own — the pack lord's gems); a slug the page has no name for is skipped, never invented.
+function searchBody(e){ e.searched=true; SND.chime([520,780]); const tally={}; for(const slug of e.drops){ if(!ITEMS[slug]) continue; tally[slug]=(tally[slug]||0)+1; }
+  const got=Object.entries(tally).map(([slug,n])=>{ BAG[slug]=(BAG[slug]||0)+n; return `${ITEMS[slug]}${n>1?` ×${n}`:""}`; });
+  say(got.length?`${PC.name} searches the ${e.name.toLowerCase()}: ${got.join(", ")}.`:`${PC.name} searches the ${e.name.toLowerCase()}. Nothing worth taking.`,"#ffd36a"); }
 function openChest(ch,magic){ ch.opened=true; SND.creak(ch.x,ch.y,.35); burstAt(ch.x,ch.y,"#ffd36a","sparkle");
   later(.6,()=>{ const got=ch.loot.map(([slug,q])=>{ const n=typeof q==="string"?dice(+q[0],+q.slice(2)):q; BAG[slug]=(BAG[slug]||0)+n; return `${ITEMS[slug]}${n>1?` ×${n}`:""}`; });
     SND.chime(); say(ch.nest?`${ch.text?ch.text+" ":""}${ch.label}: ${got.join(", ")}.`:`${magic?"Mage Hand lifts the lid. ":""}Chest: ${got.join(", ")}.`,"#ffd36a"); }); }
@@ -798,14 +809,15 @@ function updateEnts(dt){ for(const e of ENTS){ e.pops.forEach(p=>p.age+=dt); e.p
       if(e.sprite==="spider"){ e.webT-=dt; if(!e.webReady&&e.webT<=0){ e.webT=6; if(d(6)>=5) e.webReady=true; }
         if(e.webReady&&sees&&dist>2&&dist<7&&e.cool<=0){ e.webReady=false; e.webT=6; e.cool=1.6; e.state="attack"; e.atkT=.55; shootWeb(e); continue; } }
       if(dist>reach){ const tgt=sees?{x:P.x,y:P.y}:(e.lastSeen||{x:P.x,y:P.y}); steer(e,tgt.x,tgt.y,dt); }
-      else { e.state="idle"; if(e.cool<=0&&sees){ e.cool=e.sprite==="hook"?2.6:2.1; e.state="attack"; e.atkT=.55; for(let k=0;k<(e.multi||1);k++) later(.3+k*.45,()=>strike(e)); } }
+      else { e.state="idle"; if(e.cool<=0&&sees){ e.cool=e.sprite==="hook"?2.6:e.pack?2.3:2.1; e.state="attack"; e.atkT=.55; for(let k=0;k<(e.multi||1);k++) later(.3+k*.45,()=>strike(e)); } }
       // behind her and close: a second scare
       if(dist<1.6&&!e.behindScare){ let da=Math.atan2(e.y-P.y,e.x-P.x)-P.a; da=Math.atan2(Math.sin(da),Math.cos(da)); if(Math.abs(da)>1.9){ e.behindScare=true; e.roarT=-99; roar(e); } }
       continue; }
     if(e.mode==="search"){ e.searchT-=dt; if(e.searchT<=0){ e.mode="idle"; } else { if(!e.wander||Math.hypot(e.wander.x-e.x,e.wander.y-e.y)<.5){ const a=Math.random()*6.28; const w={x:e.x+Math.cos(a)*2,y:e.y+Math.sin(a)*2}; e.wander=solid(w.x,w.y)?null:w; } if(e.wander) steer(e,e.wander.x,e.wander.y,dt*.6); } continue; }
     e.state="idle"; } }
 // SRD attacks. Giant Spider — Bite +5, 1d8+3 piercing plus DC 11 CON or 2d8 poison (half on a save). Hook Horror — two Hooks, +6, 2d6+4.
-const ATK={bite:{name:"bite",hit:5,n:1,d:8,mod:3,poison:{dc:11,n:2,d:8}},hook:{name:"hook",hit:6,n:2,d:6,mod:4}};
+// Gnoll (SRD 5.1) — Spear +4, 1d6+2 piercing one-handed (it carries a shield). Its Bite and Rampage are not modelled yet.
+const ATK={bite:{name:"bite",hit:5,n:1,d:8,mod:3,poison:{dc:11,n:2,d:8}},hook:{name:"hook",hit:6,n:2,d:6,mod:4},spear:{name:"spear",hit:4,n:1,d:6,mod:2}};
 function strike(e){ if(e.dead||e.incap||e.sleep||P.dead) return; const A2=ATK[e.atk]||ATK.bite; const ac=P.ac+(P.sof>0?2:0);
   // Sam, 9/30: "it should be able to reach you" — checked again on the frame the blow lands: its real reach (spider bite
   // 5 ft = 1.1 squares, hook horror 10 ft = 2), plus 0.1 square for the body jostling, and nothing solid in between.
@@ -1273,6 +1285,7 @@ function prompt(){ let s=""; if(P.dead) s=""; else if(BLD.open) s="BUILDER — t
   else if(FX.some(f=>f.kind==="dagger"&&Math.hypot(f.x-P.x,f.y-P.y)<1.3)) s="E — pick up the dagger";
   else if(FX.some(f=>f.kind==="arrowGround"&&Math.hypot(f.x-P.x,f.y-P.y)<1.3)) s="E — pick up the arrow";
   else if(FX.some(f=>{ if(f.kind!=="arrowStuck"||(f.ent&&!f.ent.dead)) return false; const q=stuckPos(f); return Math.hypot(q.x-P.x,q.y-P.y)<1.3; })) s="E — pull the arrow free";
+  else if(nearest(e=>e.dead&&!e.removed&&e.foe&&!e.searched&&e.drops&&e.drops.length,1.5)) s=`E — search the ${nearest(e=>e.dead&&!e.removed&&e.foe&&!e.searched&&e.drops&&e.drops.length,1.5).name.toLowerCase()}`;
   else { const ch=nearest(e=>e.chest&&!e.opened); if(ch) s=ch.nest?`E — search ${ch.label.toLowerCase()}`:"E — open the chest"; else { const m=nearest(e=>e.forage&&!e.spent); if(m) s="E — forage (Survival DC 15)"; else if(!locked&&started) s="Click the view to look around with the mouse"; } }
   if($("prompt").textContent!==s) $("prompt").textContent=s; }
 

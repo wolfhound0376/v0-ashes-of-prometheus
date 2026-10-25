@@ -69,7 +69,7 @@
    "x": 22.5,
    "y": 10.5,
    "heading": 3.14,
-   "_note": "Area 2A: four gnolls, hunting; they cannot resist attacking anything that crosses their path, shrieking 'Sacrifices for Yeenoghu!' (p.33). NOT YET IN THE ENGINE — there is no gnoll in manifest.js (creature stats + sprite). The record keeps them where the book puts them so they appear the day a gnoll lands; the engine skips a creature kind it does not know."
+   "_note": "Area 2A: four gnolls, hunting; they cannot resist attacking anything that crosses their path, shrieking 'Sacrifices for Yeenoghu!' (p.33). Gnoll = SRD 5.1 stats (manifest.js); sprite Sam-approved 2026-10-25 (PixelLab e8bd020a)."
   },
   {
    "kind": "gnoll",
@@ -124,7 +124,7 @@
     "bloodstone",
     "brown-tourmaline"
    ],
-   "_note": "The gnoll pack lord carries two bloodstones worth 50 gp each and a brown tourmaline worth 100 gp (p.33). Drops resolve against the items catalog; the three rows are proposed in the PR, not yet inserted."
+   "_note": "The gnoll pack lord carries two bloodstones worth 50 gp each and a brown tourmaline worth 100 gp (p.33) — searchable on his body. Sprite Sam-approved 2026-10-25 (PixelLab 188c9690). Stat block NOT in SRD 5.1 / not ingested: fights with the SRD gnoll's numbers until Sam supplies the Monster Manual block (manifest needsStats)."
   },
   {
    "kind": "gnoll",
