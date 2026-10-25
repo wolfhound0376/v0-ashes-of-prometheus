@@ -5696,7 +5696,7 @@ if (APP){ setTimeout(pollTalk, 3000); setInterval(pollTalk, 2500); }
 // Someone wants a word: Malachar writes their opener (in the NPC's own voice, addressing the speaker by name if
 // they would know it, otherwise by race or a gesture); it is said in a balloon and a small card offers Talk / Decline.
 const PCS = {kenta: {name: "Kenta", race: "half-elf", cls: "sorcerer"}, samson: {name: "Samson", race: "human", cls: "cleric"},
-  scott: {name: "Scott", race: "half-elf", cls: "bard"}, freia: {name: "Fifi of Copperas Cove", race: "human", cls: "rogue"}};   // live characters table, 2026-10-11
+  scott: {name: "Scott", race: "half-elf", cls: "bard"}, freia: {name: "Fifi of Waterdeep", race: "human", cls: "rogue"}};   // live characters table, 2026-10-25
 const BRIEF = {   // the project's own prisoner summaries (lib/world-ai/campaigns.ts)
   eldeth: "Eldeth Feldrun, a shield dwarf scout; loyal", stool: "Stool, a myconid sprout who speaks only through telepathic rapport spores",
   sarith: "Sarith Kzekarit, a drow prisoner", buppido: "Buppido, a derro", derendil: "Prince Derendil, a quaggoth who believes he is a cursed elf prince",
@@ -5869,7 +5869,9 @@ async function openTalk(npc, opts = {}){
 }
 let talkNpc = null;
 // The game character each walker is (the dashboard plays as whoever is moving when the talk starts).
-const PLAYS_AS = {kenta: "Kenta", samson: "Samson", scott: "Scott", freia: "Fifi of Copperas Cove"};
+// The canon heroes' names on their characters rows (Sam, 2026-10-25; lib/canon-heroes.ts). Matched exactly
+// against the seats, so this must change in the same breath as the rows do.
+const PLAYS_AS = {kenta: "Kenta of Neverwinter", samson: "Samson Stillwater", scott: "Scott Reedwind of Luskan", freia: "Fifi of Waterdeep"};
 // The way into the dashboard for this conversation. The game opens it in place; the stand-alone preview
 // (no game around it) opens the live game in a new tab. Both go to the full dashboard as map talk, never
 // to the camp's talk window (Sam, 2026-10-11: "still goes to camp UI").

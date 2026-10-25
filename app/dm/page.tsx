@@ -28,6 +28,7 @@ import { Check, DoorOpen, Eye, FlaskConical, Play, Swords, UserMinus, UserPlus, 
 import { cn } from "@/lib/utils"
 import { setDmKey, clearDmKey } from "@/lib/dm-key"
 import { HomeButton } from "@/components/home-button"
+import { canonBySlug } from "@/lib/canon-heroes"
 
 const ROLE_LS_KEY = "aop_access_role"
 const TOKEN_LS_KEY = "aop_claim_token"
@@ -35,6 +36,8 @@ const CHARACTER_LS_KEY = "aop_character_id"
 
 type Pending = {
   id: string; playerName: string; heroName: string; status: string; createdAt: string; note: string | null
+  /** Set when the claim is for one of the four canon heroes (lib/canon-heroes.ts): their slug. */
+  canon: string | null
   sheet: { species: string | null; clazz: string | null; background: string | null; level: number | null; ac: number | null; hp: number | null }
   assets: { look: string | null; sprite: { status: string; previewUrl: string | null; characterId: string | null } | null; voice: string; voiceSample: string | null; facePhotos: string[] }
 }
@@ -150,6 +153,8 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
   useEffect(() => { load(); const t = window.setInterval(load, 8000); return () => window.clearInterval(t) }, [load])
 
   const act = async (id: string, action: "activate" | "reject", confirmDuplicate = false) => {
+    const claim = pending.find((p) => p.id === id)
+    if (action === "activate" && claim?.canon && !confirmDuplicate && !window.confirm(`Hand ${claim.heroName} to ${claim.playerName}? Whoever held ${claim.heroName} before loses their words and their seat link.`)) return
     setBusy(id); setMsg(null)
     try {
       const r = await fetch("/api/forge/activate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action, confirmDuplicate }) })
@@ -214,14 +219,17 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
             <li key={p.id} className="rounded-sm border border-[#3d3428] bg-black/50">
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div className="flex items-center gap-3">
-                  {p.assets.sprite?.previewUrl ? (
+                  {p.canon && canonBySlug(p.canon) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={canonBySlug(p.canon)!.portrait} alt="" className="h-12 w-12 rounded-sm border border-[#8a6a3a] bg-black object-cover object-top" />
+                  ) : p.assets.sprite?.previewUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={p.assets.sprite.previewUrl} alt="" className="h-12 w-12 rounded-sm border border-[#3d3428] bg-black object-contain [image-rendering:pixelated]" />
                   ) : (
                     <div className="grid h-12 w-12 place-items-center rounded-sm border border-[#3d3428] font-serif text-lg text-[#8a6a3a]">{p.heroName.charAt(0)}</div>
                   )}
                   <div>
-                    <div className="font-serif text-lg text-[#e8d9ae]">{p.heroName} <span className="text-sm text-stone-500">· {p.playerName}</span></div>
+                    <div className="font-serif text-lg text-[#e8d9ae]">{p.heroName} <span className="text-sm text-stone-500">· {p.playerName}</span>{p.canon && <span className="ml-2 rounded-sm border border-[#8a6a3a]/70 px-1.5 py-0.5 align-middle text-[9px] uppercase tracking-[0.25em] text-[#c9a868]">Canon hero</span>}</div>
                     <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">{[p.sheet.species, p.sheet.clazz, p.sheet.background, p.sheet.level != null ? `Lv ${p.sheet.level}` : null].filter(Boolean).join(" · ")}{p.sheet.ac != null ? ` · AC ${p.sheet.ac}` : ""}{p.sheet.hp != null ? ` · HP ${p.sheet.hp}` : ""}</div>
                   </div>
                 </div>
@@ -243,7 +251,7 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
                       ))}</div>
                     ) : <div className="text-stone-400">Skipped</div>}
                   </div>
-                  <div className="text-[11px] text-stone-600 sm:col-span-2">Handed in {new Date(p.createdAt).toLocaleString()}. Opening the cell runs the same import as /forge/import, with their own words as the door code. Figure animations, voice clone and film stills are NOT started here yet.</div>
+                  <div className="text-[11px] text-stone-600 sm:col-span-2">Handed in {new Date(p.createdAt).toLocaleString()}. {p.canon ? `A canon hero: opening the cell hands the existing ${p.heroName} — sheet, sprite, voice and art — to these words. Nothing is imported.` : "Opening the cell runs the same import as /forge/import, with their own words as the door code. Figure animations, voice clone and film stills are NOT started here yet."}</div>
                 </div>
               )}
             </li>

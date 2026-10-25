@@ -1,5 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin"
-import { generateClaimCode, normalizeCode, safeEquals } from "@/lib/access-code"
+import { normalizeCode } from "@/lib/access-code"
+import { freshClaimCode } from "@/lib/forge-code"
+import { forgePassFromCookieHeader, verifyForgePass } from "@/lib/forge-pass"
+import { dmTokenFromCookieHeader, verifyDmToken } from "@/lib/dm-session"
 import { cleanName, validateSubmission, MAX_SUBMISSION_BYTES, type ForgeAssets } from "@/lib/forge-submission"
 
 // POST /api/forge/submit — a hero handed in at the Forge. NO CODE REQUIRED.
@@ -40,23 +43,13 @@ function clientIp(req: Request): string {
   return req.headers.get("x-real-ip") ?? "unknown"
 }
 
-async function freshCode(admin: ReturnType<typeof createAdminClient>): Promise<string | null> {
-  for (let attempt = 0; attempt < 8; attempt++) {
-    const candidate = generateClaimCode()
-    if (process.env.DM_ACCESS_CODE && safeEquals(candidate, normalizeCode(process.env.DM_ACCESS_CODE))) continue
-    if (process.env.FORGE_ACCESS_CODE && safeEquals(candidate, normalizeCode(process.env.FORGE_ACCESS_CODE))) continue
-    const [{ data: a, error: ea }, { data: b, error: eb }] = await Promise.all([
-      admin.from("character_secrets").select("character_id").ilike("claim_code", candidate).limit(1).maybeSingle(),
-      admin.from("forge_submissions").select("id").eq("claim_code", candidate).limit(1).maybeSingle(),
-    ])
-    if (ea || eb) { console.error("[forge/submit] code check failed:", ea?.message ?? eb?.message); return null }
-    if (a || b) continue
-    return candidate
-  }
-  return null
-}
-
 export async function POST(req: Request) {
+  // The Forge has one door for players — the chooser's Forge Your Own (Sam, 2026-10-25) — and the
+  // DM's own. A hero handed in without either is turned away (lib/forge-pass.ts).
+  const cookie = req.headers.get("cookie")
+  if (!verifyForgePass(forgePassFromCookieHeader(cookie)) && !verifyDmToken(dmTokenFromCookieHeader(cookie))) {
+    return Response.json({ ok: false, error: "The Forge is reached through Start New Game. Go back to the title and choose Forge Your Own." }, { status: 403 })
+  }
   const raw = await req.text().catch(() => "")
   if (raw.length > MAX_SUBMISSION_BYTES) return Response.json({ ok: false, error: "That hero is too large to hand in." }, { status: 413 })
   let body: unknown
@@ -79,7 +72,7 @@ export async function POST(req: Request) {
   // The sheet's own name follows the Forge's Identity step — one name, no drift.
   const payload = { ...b.payload, character: { ...b.payload.character, name: heroName, sheet_player_name: playerName } }
 
-  const code = await freshCode(admin)
+  const code = await freshClaimCode(admin, "forge/submit")
   if (!code) return Response.json({ ok: false, error: "Could not issue your words. Try again." }, { status: 500 })
 
   const { data, error } = await admin
