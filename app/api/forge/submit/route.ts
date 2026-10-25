@@ -1,6 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode } from "@/lib/access-code"
 import { freshClaimCode } from "@/lib/forge-code"
+import { forgePassFromCookieHeader, verifyForgePass } from "@/lib/forge-pass"
+import { dmTokenFromCookieHeader, verifyDmToken } from "@/lib/dm-session"
 import { cleanName, validateSubmission, MAX_SUBMISSION_BYTES, type ForgeAssets } from "@/lib/forge-submission"
 
 // POST /api/forge/submit — a hero handed in at the Forge. NO CODE REQUIRED.
@@ -42,6 +44,12 @@ function clientIp(req: Request): string {
 }
 
 export async function POST(req: Request) {
+  // The Forge has one door for players — the chooser's Forge Your Own (Sam, 2026-10-25) — and the
+  // DM's own. A hero handed in without either is turned away (lib/forge-pass.ts).
+  const cookie = req.headers.get("cookie")
+  if (!verifyForgePass(forgePassFromCookieHeader(cookie)) && !verifyDmToken(dmTokenFromCookieHeader(cookie))) {
+    return Response.json({ ok: false, error: "The Forge is reached through Start New Game. Go back to the title and choose Forge Your Own." }, { status: 403 })
+  }
   const raw = await req.text().catch(() => "")
   if (raw.length > MAX_SUBMISSION_BYTES) return Response.json({ ok: false, error: "That hero is too large to hand in." }, { status: 413 })
   let body: unknown
