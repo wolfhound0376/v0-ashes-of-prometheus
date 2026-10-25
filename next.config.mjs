@@ -42,8 +42,14 @@ const nextConfig = {
   // That address now goes straight to /bench, the bench and nothing else (Sam,
   // 2026-10-01: the dashboard flashing up first "is unnecessary"). Done here,
   // on the server, so the dashboard is never loaded on the way.
+  //
+  // The 3D battle board at /battle is retired (Sam, 2026-10-23: "We are done
+  // with the 3d battle board. Lets retire it"). Fights happen on the pixel map
+  // now, so an old link or bookmark lands there instead of on a 404.
   async redirects() {
     return [
+      { source: "/battle", destination: "/velkynvelve", permanent: false },
+      { source: "/battle/:rest*", destination: "/velkynvelve", permanent: false },
       {
         source: "/",
         has: [{ type: "query", key: "bench", value: "1" }],

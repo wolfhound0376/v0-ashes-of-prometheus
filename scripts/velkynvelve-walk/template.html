@@ -1055,12 +1055,19 @@ function draw(){
     if (pose) ctx.filter = "none";
     if (held && !held.behind) drawHeld(a, held, sc, py, cw, fy);
     drawStuckOn(a, fy, pose);
-    if (a.flash > now){
-      ctx.globalAlpha = .55 * a.alpha;
-      // tint by redrawing through a temp canvas
+    // THE BODY WEARS ITS STATE (playtest bug #1, 2026-10-24: "Fury/rage tints nothing"). The hit flash (180 ms, white)
+    // and the standing red of a rage or of Wounded Fury go through the same temp canvas: the frame redrawn, filled
+    // with the colour where the sprite has pixels. The red is lib/rage.mjs's RAGE_TINT — the fury red Sam approved
+    // on the BERSERK pop, burst and embers — read off the live state every frame (tintFor), so it comes on the
+    // moment the rage starts or the hit points cross ten, and goes the moment either stops. It breathes a little
+    // so it reads as a state, not a stuck flash.
+    const wear = a.flash > now ? {col: a.flashCol || "#fff", k: .55}
+      : (a.c && !a.down && mode === "combat" && tintFor({hp: a.c.hp, woundedFury: a.c.sheet.woundedFury, raging: a.c.rage})) ? {col: RAGE_TINT, k: .3 + .08 * Math.sin(now / 230)} : null;
+    if (wear){
+      ctx.globalAlpha = wear.k * a.alpha;
       tint.width = cw; tint.height = ch; const tc = tint.getContext("2d");
       tc.clearRect(0, 0, cw, ch); tc.drawImage(img, f * cw, a.face * ch, cw, ch, 0, 0, cw, ch);
-      tc.globalCompositeOperation = "source-in"; tc.fillStyle = a.flashCol || "#fff"; tc.fillRect(0, 0, cw, ch); tc.globalCompositeOperation = "source-over";
+      tc.globalCompositeOperation = "source-in"; tc.fillStyle = wear.col; tc.fillRect(0, 0, cw, ch); tc.globalCompositeOperation = "source-over";
       ctx.drawImage(tint, 0, 0, cw, ch, dx, dy, dw, dh);
     }
     if (mode === "combat") drawConds(a);
@@ -2542,13 +2549,17 @@ const SPELLS = {
   "Sleep":              {lvl: 1, kind: "save", save: "wis", range: 60, area: 5, cond: "asleep", fx: "#b0b8ff", conc: 10},
   "Dissonant Whispers": {lvl: 1, kind: "save", save: "wis", range: 60, dmg: "3d6", type: "psychic", fx: "#ff7fa0"},
 };
+// ---------- Rage and Wounded Fury: the rules, one copy (lib/rage.mjs, pasted in here by build_walk.py) ----------
+/*__RAGE__*/
 const COND_GLYPH = {poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
                     shielded: ["◇", "#cfe8ff", "+2 AC"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
                     hidden: ["◌", "#b8c7d6", "Hidden: unseen until you attack"], prone: ["▼", "#e0b070", "Prone: melee on it has advantage, ranged disadvantage; half speed to stand"],
                     grappled: ["✊", "#e0b070", "Grappled: speed 0"], helped: ["★", "#ffe08a", "Helped: advantage on the next attack"], disengaged: ["↷", "#cfe8ff", "Disengaged: no opportunity attacks"],
                     sorcery: ["✴", "#ff9bd2", "Innate Sorcery: DC +1, advantage on spell attacks"], dodging: ["◈", "#cfe8ff", "Dodging"],
                     inspired: ["♪", "#ffd36a", "Bardic Inspiration: +d6 to one attack roll, ability check or saving throw"],
-                    restrained: ["⌗", "#e8e2c8", "Restrained by webbing: speed 0, attacks on you have advantage, yours disadvantage"]};
+                    restrained: ["⌗", "#e8e2c8", "Restrained by webbing: speed 0, attacks on you have advantage, yours disadvantage"],
+                    raging: ["✸", "#ff4a2a", "Raging: bonus melee damage with Strength, advantage on STR checks and saves, resists bludgeoning, piercing and slashing · ends if a turn passes with no attack made and no damage taken"],
+                    fury: ["✹", "#ff4a2a", "Wounded Fury: at 10 HP or fewer, advantage on attacks and +2d6 on a melee hit"]};
 
 // dice: "1d8+3", "2d6", "4" → {total, rolls}
 function roll(expr, crit){
@@ -2695,6 +2706,9 @@ function renderParty(){
 function nextTurn(first){
   if (!cbt || (combatBusy && !first)) return;
   closeMenu(); cbt.phase = "idle"; cbt.turnNo = (cbt.turnNo || 0) + 1;
+  // A RAGE IS TESTED AS ITS OWNER'S TURN ENDS (SRD 5.1): "It ends early ... if your turn ends and you haven't attacked
+  // a hostile creature since your last turn or taken damage since then", and after one minute. lib/rage.mjs decides.
+  if (!first){ const was = cbt.order[cbt.idx]; if (was && was.c && was.c.rage){ const r = rageAfterTurn(was.c.rage, cbt.round); if (r.ended) endRage(was, r.ended); else was.c.rage = r.rage; } }
   for (let k = 0; k < cbt.order.length; k++){
     cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0) cbt.round++;
     const a = cbt.order[cbt.idx]; if ((!a.down || dyingNow(a)) && actors.includes(a)) break;
@@ -2800,10 +2814,10 @@ function openMenu(a, sub){
     if (s.magic || s.innateSorcery) grp("magic");
     // In a warded area the Cast command stays OPEN (Sam, 2026-10-14: "Characters should be able to cast magic
     // but notice it fizzles when attempted because the sigil soaks it up") — the lesson is learned by trying.
-    const castable = s.magic && [...s.magic.cantrips, ...s.magic.prepared].some(nm => { const sp = SPELLS[nm]; if (!sp) return false;
+    const castable = s.magic && !c.rage && [...s.magic.cantrips, ...s.magic.prepared].some(nm => { const sp = SPELLS[nm]; if (!sp) return false;
       if (sp.lvl === 0) return c.action; if ((c.slots[sp.lvl] || 0) <= 0) return false; return sp.bonus ? c.bonus && !c.leveledSpell : c.action && !c.bonusSpell; });
     if (c.conc) add("End concentration", `${c.conc.spell} · free, no action · ${Math.max(0, c.conc.endRound - cbt.round)} rounds left`, () => { endConc(a, "let go"); openMenu(a); });
-    if (s.magic) add("Cast", !castable ? "nothing left to cast this turn" : `DC ${s.magic.dc} · +${s.magic.hit} · slots ${Object.entries(c.slots).map(([l, n]) => `L${l} ${n}/${s.magic.slots[l] || 0}`).join(" ")}`, castable ? () => openMenu(a, "cast") : null, "primary");
+    if (s.magic) add("Cast", !castable ? (c.rage ? "raging: no spells and no concentration" : "nothing left to cast this turn") : `DC ${s.magic.dc} · +${s.magic.hit} · slots ${Object.entries(c.slots).map(([l, n]) => `L${l} ${n}/${s.magic.slots[l] || 0}`).join(" ")}`, castable ? () => openMenu(a, "cast") : null, "primary");
     // Bardic Inspiration (SRD 5.1, Bard): a bonus action, one creature other than you within 60 ft who can hear
     // you gains a d6, once per creature at a time; uses = Charisma modifier per long rest.
     if (s.bardic){ const left = c.inspLeft ?? s.bardic.uses;
@@ -2828,6 +2842,15 @@ function openMenu(a, sub){
         add("Off-hand attack", !c.lastLight ? "attack with a light weapon first" : `bonus action · ${off.name} +${off.hit} · ${offDmg(off)} ${off.type}`, c.bonus && c.lastLight ? () => aim(a, {atk: off, offhand: true}) : null);
       } else if ((s.level || 1) < 2) add("No bonus action yet", `Cunning Action comes at rogue level 2${light.length === 1 ? "; an off-hand attack needs a second light weapon" : ""}`, null);
       else if (light.length === 1) add("Off-hand attack", "needs a second light weapon in the other hand", null);
+    }
+    // RAGE (SRD 5.1, Barbarian; lib/rage.mjs holds the rule, enterRage/endRage below do the deed). A bonus action on
+    // your turn. The hint says what it does and what is left; the rule, not the menu, decides every number.
+    if (isBarbarian(s.cls)){
+      grp("bonus action");
+      const uses = ragesPerLongRest(s.level || 1), used = RAGE_USED[a.id] || 0, left = uses === Infinity ? "unlimited" : `${Math.max(0, uses - used)} of ${uses} left`;
+      if (c.rage) add("End rage", "bonus action · let it go", c.bonus ? () => { c.bonus = false; endRage(a, "let go"); openMenu(a); } : null);
+      else { const can = canRage({cls: s.cls, level: s.level || 1, bonus: c.bonus, raging: c.rage, used, heavyArmor: inHeavyArmor(a)});
+        add("Rage", can.ok ? `bonus action · ${left} · +${rageDamageBonus(s.level || 1)} melee damage with Strength · advantage on STR checks and saves · resist bludgeoning, piercing, slashing` : can.why, can.ok ? () => enterRage(a) : null); }
     }
     if (s.innateSorcery) add("Innate Sorcery", c.conds.has("sorcery") ? "active: DC +1, advantage on spell attacks" : `bonus action · ${c.sorceryLeft ?? s.innateSorcery} left · DC +1, advantage on spell attacks`, c.bonus && !c.conds.has("sorcery") && (c.sorceryLeft ?? s.innateSorcery) > 0 ? () => { c.bonus = false; c.sorceryLeft = (c.sorceryLeft ?? s.innateSorcery) - 1; addCond(a, "sorcery"); spawnFx("runeEvocation", {at: a, sq: 1.8, anchor: "mid", loop: true, until: now + 1800}); bank("walk:innate-sorcery", .8); log(`${fname(a)} draws on Innate Sorcery.`); openMenu(a); } : null);
     grp("move");
@@ -2960,7 +2983,7 @@ const SPELL_ICON = {"Ray of Frost": "ray-of-frost", "Shocking Grasp": "shocking-
   "Faerie Fire": "faerie-fire", "Sleep": "sleep", "Dissonant Whispers": "dissonant-whispers", "Bardic Inspiration": "bardic-inspiration"};
 const ACTION_ICON = {Attack: "attack", Throw: "offhand-attack", Hide: "hide", "Cunning Action: Dash": "dash", "Cunning Action: Disengage": "disengage", "Cunning Action: Hide": "hide", "Off-hand attack": "offhand-attack", "Shove / Grapple": "opportunity-attack", Shove: "opportunity-attack", Grapple: "opportunity-attack",
   Dash: "dash", Disengage: "disengage", Help: "help", Search: "search", Dodge: "dodge", Cast: "cast-spell", "Innate Sorcery": "cast-spell"};
-const ACTION_GLYPH = {Move: "➶", "Stand up": "⇧", "End turn": "⏎", Back: "↩"};
+const ACTION_GLYPH = {Rage: "✸", "End rage": "✸", Move: "➶", "Stand up": "⇧", "End turn": "⏎", Back: "↩"};
 function hint(t){ $("cbtHint").textContent = t; $("cbtHint").hidden = !t; }
 // The command list is docked at the lower left, off the picture: beside the sprite it hid whoever stood
 // next to the one who was up (Sam, 2026-10-13). The active sprite is already ringed and framed by the camera.
@@ -3107,7 +3130,7 @@ function advantageOn(att, tgt, ranged, atk){
   if (tgt.c.conds.has("prone")) adv += ranged ? -1 : 1;                      // SRD: prone — melee advantage, ranged disadvantage
   if (att.c.conds.has("prone")) adv--;
   if (tgt.c.conds.has("restrained")) adv++; if (att.c.conds.has("restrained")) adv--;
-  if (att.c.sheet.woundedFury && att.c.hp <= att.c.sheet.woundedFury) adv++;
+  adv += attackRiders({hp: att.c.hp, woundedFury: att.c.sheet.woundedFury, raging: att.c.rage}, atk).adv;   // Wounded Fury: advantage on attack rolls at 10 HP or fewer (lib/rage.mjs)
   return Math.sign(adv);
 }
 // Attacking gives you away and spends the Help; both are one attack's worth.
@@ -3123,11 +3146,12 @@ function sneakState(att, tgt, atk, ranged){
   if (ally) return {on: true, why: `SNEAK ATTACK +${atk.sneak} (ally beside it)`};
   return {on: false, why: "no sneak attack: get advantage, or an ally beside it"};
 }
-function afterAttackRoll(att){ if (att.c.conds.has("hidden")){ att.c.conds.delete("hidden"); att.alpha = 1; } att.c.conds.delete("helped"); }
+function afterAttackRoll(att){ if (att.c.rage) att.c.rage.attacked = true;   // SRD: "attacked a hostile creature since your last turn"
+  if (att.c.conds.has("hidden")){ att.c.conds.delete("hidden"); att.alpha = 1; } att.c.conds.delete("helped"); }
 // SRD 2024: the DC to resist a Shove or Grapple is 8 + STR mod + proficiency.
 const sgn = (n) => (n >= 0 ? "+" : "−") + Math.abs(n);
 const shoveDc = (a) => 8 + (a.c.sheet.saves.str || 0) + 2;
-function skillCheck(a, skill){ const r = d20(), mod = (a.c.sheet.skills || {})[skill] ?? (skill === "perception" ? a.c.sheet.saves.wis || 0 : skill === "athletics" ? a.c.sheet.saves.str || 0 : a.c.sheet.saves.dex || 0); return {r, mod, total: r + mod}; }
+function skillCheck(a, skill){ const r = d20(rageAdvantage(a.c.rage, skill === "athletics" ? "str" : skill)), mod = (a.c.sheet.skills || {})[skill] ?? (skill === "perception" ? a.c.sheet.saves.wis || 0 : skill === "athletics" ? a.c.sheet.saves.str || 0 : a.c.sheet.saves.dex || 0); return {r, mod, total: r + mod}; }
 function targetAc(t){ return t.c.ac + (t.c.conds.has("shielded") ? 2 : 0) + (t.c.conds.has("shieldSpell") ? 5 : 0); }
 // SHIELD, THE REACTION (Sam, 2026-10-10: "combat pauses like Baldur's Gate 3 for reactions like shield"). When an
 // attack is about to hit a caster who has Shield prepared, a level 1 slot and their reaction, and +5 AC would turn it,
@@ -3217,10 +3241,14 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (atk.flask){ flaskHits(att, tgt, atk, crit, why); return; }
       let dmg = roll(offhand ? offDmg(atk) : atk.dmg, crit), parts = [`${dmg.total} ${atk.type}${offhand ? " (off hand)" : ""}`];
       if (sneak){ const s = roll(atk.sneak, crit); dmg.total += s.total; parts.push(`sneak attack ${s.total}`); }
-      if (att.c.sheet.woundedFury && att.c.hp <= att.c.sheet.woundedFury){ const s = roll("2d6", crit); dmg.total += s.total; parts.push(`wounded fury ${s.total}`); }
+      // Wounded Fury's 2d6 and Rage's flat bonus come from one place (lib/rage.mjs attackRiders): fury is the live hit
+      // points, rage the live rage and the weapon's own ability — never a flag that could go stale
+      { const rd = attackRiders({hp: att.c.hp, woundedFury: att.c.sheet.woundedFury, raging: att.c.rage, level: att.c.sheet.level || 1}, atk, shot === "thrown");
+        for (const d of rd.dice){ const s = roll(d.dice, crit); dmg.total += s.total; parts.push(`${d.label} ${s.total}`); }
+        for (const f of rd.flat){ dmg.total += f.amount; parts.push(`${f.label} +${f.amount}`); } }
       damage(tgt, dmg.total, atk.type, crit, att);
       if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => bank(`magic/impact_${atk.extra.type}`, .55), 200); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att), 260); parts.push(`${e.total} ${atk.extra.type}`); }
-      if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20() + (tgt.c.sheet.saves[atk.rider.save] || 0), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
+      if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20(rageAdvantage(tgt.c.rage, atk.rider.save)) + (tgt.c.sheet.saves[atk.rider.save] || 0), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
       if (atk.drowPoison && !tgt.down) parts.push(drowPoison(tgt, atk.drowPoison.dc));
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
@@ -3334,7 +3362,7 @@ function castSpell(caster, tgt, name, done){
         targets.forEach((t, i) => setTimeout(() => {
           if (name === "Sleep" && (t.c.sheet.immuneCond || []).includes("asleep")) return;
           const cvS = sp.save === "dex" ? coverOf(caster, t) : {ac: 0};            // SRD: cover adds to DEX saves too
-          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20() + (t.c.sheet.saves[sp.save] || 0) + cvS.ac, ok = s >= dc;
+          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20(rageAdvantage(t.c.rage, sp.save)) + (t.c.sheet.saves[sp.save] || 0) + cvS.ac, ok = s >= dc;
           let line = `${fname(t)} ${sp.save.toUpperCase()} ${s}${cvS.ac ? ` (cover +${cvS.ac})` : ""} vs DC ${dc}: ${ok ? "saves" : "fails"}`;
           if (sp.area && !marks.length) markTarget(t);
           if (name === "Sleep"){ if (!ok){ bank("spells/control-slumber-fall", .5); t.sheepT0 = now; } else bank("magic/spell_fizzle", .4); if (i === targets.length - 1) sigilEnd(t, !ok); }
@@ -3374,7 +3402,7 @@ function doShove(a, t, what){
   const c = a.c; c.action = false; closeMenu(); cbt.phase = "busy"; combatBusy = true;
   approachThen(a, t, 5, () => {
     strike(a, t, () => {
-      const sv = Math.max(t.c.sheet.saves.str || 0, t.c.sheet.saves.dex || 0), r = d20(), total = r + sv, dc = shoveDc(a), ok = total >= dc;
+      const sv = Math.max(t.c.sheet.saves.str || 0, t.c.sheet.saves.dex || 0), r = d20(rageAdvantage(t.c.rage, (t.c.sheet.saves.str || 0) >= (t.c.sheet.saves.dex || 0) ? "str" : "dex")), total = r + sv, dc = shoveDc(a), ok = total >= dc;
       lunge(a, t, 12 * actorScale(a)); afterAttackRoll(a);
       if (ok){ bank("combat/melee_miss", .6); popText(t, "holds", "#c9c4b8"); log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — it holds.`); return; }
       bank("walk:punch-bag", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx("strikePunch", {at: t, sq: 1.8});
@@ -3430,7 +3458,8 @@ function concSave(a, dmg){
 }
 function damage(t, n, type, crit, from){
   const s = t.c.sheet; if ((s.immune || []).includes(type)){ popText(t, "immune", "#aaa"); return; }
-  if ((s.resist || []).includes(type)){ n = Math.floor(n / 2); popText(t, "resist", "#aaa"); }
+  if ((s.resist || []).includes(type) || rageResists(t.c.rage, type)){ n = Math.floor(n / 2);   // a raging barbarian resists bludgeoning, piercing and slashing (lib/rage.mjs)
+    popText(t, "resist", "#aaa"); }
   if (t.kind === "pc" && t.down){                                             // already at 0
     if (t.c.ds && !t.c.ds.dead){ popText(t, String(n), "#ff6b5e"); burst(t, "#ff5040", 8);
       if (n >= t.c.hpMax) dieNow(t, "struck while down by a blow as great as their whole life");
@@ -3439,15 +3468,16 @@ function damage(t, n, type, crit, from){
   }
   const over = n - t.c.hp;
   t.c.hp = Math.max(0, t.c.hp - n); if (t.creature) t.hp = t.c.hp;
+  if (t.c.rage && n > 0) t.c.rage.hurt = true;                                 // SRD: "taken damage since then" keeps the rage going
   if (t.kind === "pc" && t.c.hp <= 0 && over >= t.c.hpMax){ t.flash = now + 180; fall(t); dieNow(t, `${over} damage past 0, as much as their hit point maximum`); return; }
   t.flash = now + 180; t.flashCol = "#fff";
   popText(t, String(n), crit ? "#ffd166" : hero(t) ? "#ff6b5e" : "#fff4d8", crit ? 1.5 : 1);
   burst(t, from && from.kind === "foe" ? "#ff5040" : "#ffe3a0", crit ? 22 : 12); hitstop(crit ? 140 : 80); shake(crit ? 9 : 5);
   t.c.conds.delete("asleep"); t.c.drugged = false; if (t.c.conds.has("hidden")){ t.c.conds.delete("hidden"); t.alpha = 1; }
   if (t.c.conc && t.c.hp > 0 && n > 0) concSave(t, n);
-  if (t.kind === "foe" && s.woundedFury && t.c.hp > 0 && t.c.hp <= s.woundedFury && !t.c.berserk) goBerserk(t);
-  if (t.ally && s.woundedFury && t.c.hp > 0 && t.c.hp <= s.woundedFury && !t.c.fury){   // Derendil, on our side: same trait, no hunt for casters
-    t.c.fury = true; popText(t, "WOUNDED FURY", "#ff4a2a", 1.2); burst(t, "#ff4a2a", 20);
+  if (t.kind === "foe" && woundedFury(t.c.hp, s.woundedFury) && !t.c.berserk) goBerserk(t);
+  if (t.ally && woundedFury(t.c.hp, s.woundedFury) && !t.c.fury){   // Derendil, on our side: same trait, no hunt for casters
+    t.c.fury = true; popText(t, "WOUNDED FURY", RAGE_TINT, 1.2); burst(t, RAGE_TINT, 20);
     log(`<b>${fname(t)}</b> — Wounded Fury: advantage on his attacks and +2d6 on every claw that lands.`); narrate(t, `${fname(t)} roars, bleeding, and keeps coming.`);
   }
   if (t.c.hp > 0){ const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_hurt" : cs && cs.hurt ? cs.hurt : "creature/hurt_beast", .7); }
@@ -3514,6 +3544,7 @@ function sparMiss(att, tgt, margin, sw, ws){
   popText(tgt, style === "duck" ? "duck" : "dodge", "#c9c4b8", .9); bank(ws.miss, .7); return style === "duck" ? "duck" : "dodge";
 }
 function fall(t){
+  if (t.c.rage) endRage(t, "knocked unconscious");
   if (t.c.conc) endConc(t, "they go down");
   t.down = true; t.path = []; t.c.conds.clear();
   if (t.kind === "pc") t.c.ds = {s: 0, f: 0, stable: false, dead: false};
@@ -3607,6 +3638,43 @@ function strike(att, tgt, onHit, after, shot){
   if (!pose){ setAnim(att, "idle"); att.aimHold = now; setTimeout(() => { onHit(); setTimeout(after, 380); }, 420); return; }
   playOnce(att, pose, () => { setAnim(att, "idle"); setTimeout(after, 320); });
   if (att.once) att.once.hit = onHit; else { onHit(); setTimeout(after, 320); }
+}
+// ---------- RAGE (SRD 5.1, Barbarian) ----------
+// Playtest bug #1 (2026-10-24): "Fury/rage tints nothing, and it is unknown whether the mechanical bonuses apply at
+// all." There was no Rage on the map at all — nothing wrote a raging state, so nothing could read one — and Wounded
+// Fury, which WAS applied (advantageOn, attackWith), only announced itself in text. The rule lives in lib/rage.mjs
+// (pasted in above by build_walk.py) and is read, never copied: the resolver (attackRiders), the damage step (rageResists),
+// the checks and saves (rageAdvantage), the turn end (rageAfterTurn) and the draw loop (tintFor) all call it.
+//
+// WHAT IS KEPT WHERE. `c.rage` is the live rage ({since, attacked, hurt}) or null; "raging" also goes in `c.conds`
+// so the glyph row and the party panel show it the way they show every other condition. Rages spent this page-load
+// are in RAGE_USED by hero: the map has no long rest, so nothing here restores them — a reload does. The stored
+// per-long-rest resource (sheet_resources, the way Bardic Inspiration keeps its uses) is a follow-up, named in the PR.
+const RAGE_USED = {};
+// heavy armor worn: the doll's body slot holds a catalogue armor whose armor_category is "heavy"
+function inHeavyArmor(a){
+  const g = GEAR[a.id]; if (!g) return false;
+  const worn = g.doll.filter(d => ["body", "torso", "armor", "chest"].includes(d.slot)).map(d => g.carried.find(c => c.name === d.name)).filter(Boolean);
+  return worn.some(it => String((it.properties || {}).armor_category || "").toLowerCase() === "heavy");
+}
+function enterRage(a){
+  const c = a.c, s = c.sheet, used = RAGE_USED[a.id] || 0;
+  const can = canRage({cls: s.cls, level: s.level || 1, bonus: c.bonus, raging: c.rage, used, heavyArmor: inHeavyArmor(a)});
+  if (!can.ok){ toast(can.why); return; }
+  closeMenu(); c.bonus = false; RAGE_USED[a.id] = used + 1; c.rage = beginRage(cbt ? cbt.round : 0);
+  if (c.conc) endConc(a, "a rage allows no concentration");
+  c.conds.add("raging");
+  popText(a, "RAGE", RAGE_TINT, 1.4); burst(a, RAGE_TINT, 26); shake(6); a.flash = now + 220; a.flashCol = RAGE_TINT;
+  if (SPR[a.id].img.rage) playOnce(a, "rage", () => setAnim(a, "idle"));
+  const uses = ragesPerLongRest(s.level || 1);
+  log(`<b>${fname(a)} rages.</b> +${rageDamageBonus(s.level || 1)} on melee weapon damage with Strength, advantage on Strength checks and saves, resistance to bludgeoning, piercing and slashing. It ends if a turn passes with no attack made and no damage taken${uses === Infinity ? "" : ` · ${Math.max(0, uses - used - 1)} of ${uses} left`}.`);
+  narrate(a, `${fname(a)}'s breathing goes ragged, and something behind the eyes stops being careful.`);
+  renderParty(); if (cbt && activeActor() === a) openMenu(a);
+}
+function endRage(a, why){
+  const c = a.c; if (!c || !c.rage) return;
+  c.rage = null; c.conds.delete("raging");
+  popText(a, "rage ends", "#c9c4b8", .9); log(`${fname(a)}'s rage ends: ${esc(why)}.`); renderParty();
 }
 // BERSERK (Sam, 2026-10-15: "Do not have quaggoths retreat when bloodied. Instead, describe them entering a
 // berserk state. Direct a wounded quaggoth toward fragile backline characters (wizards, sorcerers) where that
@@ -3760,6 +3828,7 @@ function endCombat(won){
   // the living pull the bolts out of themselves; the dead keep theirs
   for (let i = stuck.length - 1; i >= 0; i--){ const q = stuck[i]; if (!q.at || !(q.at.down && q.at.kind === "foe")) stuck.splice(i, 1); }
   for (const h of party) if (h.c){ h.c.conds.delete("burning"); }
+  for (const h of party) if (h.c && h.c.rage) endRage(h, "the fight is over");   // no hostile left to attack: the next turn would end it anyway
   shots.length = 0;
   // anyone of ours still out on the balcony walks back in through the gate before it stops being floor
   if (gatePassable()) for (const h of [...party, ...(cbt ? cbt.allies : [])]) if (!h.down && onBalcony(h)){
@@ -3905,7 +3974,7 @@ function drawSwipe(s, k){
 function swipeStyle(atk, crit, att){
   const n = atk.name.toLowerCase();
   if (/claw|talon|rake/.test(n) || /bite|fang|jaws/.test(n)){
-    const claw = !/bite|fang|jaws/.test(n), c = att && att.c, fury = !!(c && c.sheet.woundedFury && c.hp <= c.sheet.woundedFury);
+    const claw = !/bite|fang|jaws/.test(n), c = att && att.c, fury = !!(c && woundedFury(c.hp, c.sheet.woundedFury));
     let flip = 1; if (claw && c){ c.rakeHand = -(c.rakeHand || -1); flip = c.rakeHand; }                // left, right, left …
     const col = crit ? "#ffcf5a" : fury ? "#ff4a2a" : claw ? "#f3e6d8" : "#efe6c8";
     return {kind: claw ? "claw" : "bite", col, core: crit ? "#fff6d0" : fury ? "#ffd6a0" : "#ffffff", wound: fury ? "#ff2a10" : "#b3121e", flip};
@@ -4252,10 +4321,11 @@ function drawConds(a){
     ctx.fillStyle = "rgba(10,6,8,.85)"; ctx.fillRect(x - 1, y - 1, w + 2, h + 2); ctx.fillStyle = "#5a1f1a"; ctx.fillRect(x, y, w, h);
     ctx.fillStyle = own ? (a.c.hp / a.c.hpMax > .5 ? "#5fbf6a" : "#d9b23f") : a.c.hp / a.c.hpMax > .5 ? "#c4432f" : "#e5703a"; ctx.fillRect(x, y, w * a.c.hp / a.c.hpMax, h);
   }
-  if (!a.c.conds.size) return;
+  const shown = [...a.c.conds, ...(woundedFury(a.c.hp, a.c.sheet.woundedFury) ? ["fury"] : [])];   // Wounded Fury is the hit points, not a condition: shown while it is on
+  if (!shown.length) return;
   if (a.c.conds.has("asleep")){ if (!a.c.drugged) drawSheep(a, top); drawZzz(a, top); }
-  for (const k of a.c.conds){ const g = COND_GLYPH[k]; if (!g) continue; ctx.font = "bold 22px Georgia, serif"; ctx.textAlign = "center"; ctx.lineWidth = 4; ctx.strokeStyle = "#140a06"; ctx.fillStyle = g[1];
-    const x = a.x + (i - (a.c.conds.size - 1) / 2) * 22; ctx.strokeText(g[0], x, top); ctx.fillText(g[0], x, top); i++; }
+  for (const k of shown){ const g = COND_GLYPH[k]; if (!g) continue; ctx.font = "bold 22px Georgia, serif"; ctx.textAlign = "center"; ctx.lineWidth = 4; ctx.strokeStyle = "#140a06"; ctx.fillStyle = g[1];
+    const x = a.x + (i - (shown.length - 1) / 2) * 22; ctx.strokeText(g[0], x, top); ctx.fillText(g[0], x, top); i++; }
 }
 // z's drifting up off a sleeper: three at a time, growing and fading as they rise
 function drawZzz(a, top){
@@ -5059,7 +5129,8 @@ function baseWeapon(it){ const n = String((it.properties || {}).srd_stats_as || 
   return [...SIMPLE_WEAPONS, ...MARTIAL_WEAPONS].filter(b => n.includes(b)).sort((a, b) => b.length - a.length)[0] || null; }
 function proficientWith(cls, it){ const b = baseWeapon(it), list = CLASS_WEAPONS[cls] || []; return !!b && (list.includes(b) || (list.includes("simple") && SIMPLE_WEAPONS.includes(b))); }
 const isWeapon = it => !!it && ((it.item_type || "") === "weapon" || !!baseWeapon(it));
-// an attack line from a catalogue weapon, the way the sheet's own lines are written
+// an attack line from a catalogue weapon, the way the sheet's own lines are written. `str` says the modifier used was
+// Strength (not finesse-with-DEX, not ammunition): Rage's damage bonus reads it (lib/rage.mjs isStrengthMelee).
 function attackFromItem(sheet, it){
   const p = it.properties || {}, wp = (p.weapon_properties || []).map(s => String(s).toLowerCase());
   const finesse = wp.includes("finesse") || p.finesse === true, light = wp.includes("light") || p.light === true, thrown = wp.includes("thrown");
@@ -5071,7 +5142,7 @@ function attackFromItem(sheet, it){
   const str = sheet.saves.str || 0, dex = sheet.saves.dex || 0, mod = ammo ? dex : finesse ? Math.max(str, dex) : str;
   const prof = proficientWith(sheet.cls, it) ? 2 : 0, dm = mod + Number(p.damage_bonus || 0);       // proficiency +2 at levels 1-4
   const a = {name: it.name, hit: mod + prof + Number(p.attack_bonus || 0), dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
-    reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, item: true, itemName: it.name, pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null};
+    reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, str: !ammo && (!finesse || str >= dex), ammo, item: true, itemName: it.name, pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null};
   if (ammo && rng[1]) a.long = rng[1];
   if (light) a.light = true; if (thrown && rng[0]) a.thrown = rng[0];
   if (sheet.sneakDie && (finesse || ammo)) a.sneak = sheet.sneakDie;
