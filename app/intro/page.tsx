@@ -41,6 +41,7 @@ export default function TitleScreen() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [musicOff, setMusicOffState] = useState(false)
   const [needsTap, setNeedsTap] = useState(false)
+  const [filmNeedsTap, setFilmNeedsTap] = useState(false)
   const [leaving, setLeaving] = useState<string | null>(null)
 
   // First paint: remember that this browser has seen the door, learn whether it already holds a
@@ -67,22 +68,48 @@ export default function TitleScreen() {
     })
   }, [])
 
-  // The film: muted autoplay is always allowed; the score rides with it where the browser permits,
-  // otherwise on the first tap. Any click skips.
+  // The film. Since 2026-10-25 it is "Into the Underdark" (Sam: "Use this as the new intro to the
+  // game"), and it carries its own score — the bard's dirge — baked into the file. So: try to play
+  // with sound; if the browser refuses unmuted autoplay, play muted rather than skipping the film,
+  // and let the first tap bring the sound up. Any click on the film itself still skips.
   useEffect(() => {
     if (stage !== "film") return
     const video = videoRef.current
-    video?.play().catch(() => finishFilm())
+    if (!video) return
+    video.muted = musicOff
+    video.play().catch(() => {
+      video.muted = true
+      setFilmNeedsTap(!musicOff)
+      video.play().catch(() => finishFilm())
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stage])
 
+  // The mute button and the Intro music switch also govern the film's own sound.
+  useEffect(() => {
+    const video = videoRef.current
+    if (stage !== "film" || !video) return
+    video.muted = musicOff || video.muted && filmNeedsTap
+    if (musicOff) setFilmNeedsTap(false)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [musicOff, stage])
+
+  const unmuteFilm = () => {
+    const video = videoRef.current
+    if (!video || musicOff) return
+    video.muted = false
+    setFilmNeedsTap(false)
+  }
+
   // The title score. One place starts it (playThemeAudio honours the global mute); the Intro music
   // switch gates it here. Asks on mount, again on the first gesture, and again when a switch flips.
+  // It waits while the film runs — the film has its own score and the two must not play together.
   useEffect(() => {
     if (stage === null) return
     const audio = getThemeAudio()
     if (!audio) return
     audio.volume = 0.55
+    if (stage === "film") { if (!audio.paused) audio.pause(); return }
     const tryTheme = () => {
       if (!introMusicOn()) { if (!audio.paused) audio.pause(); return }
       if (!audio.paused) { setNeedsTap(false); return }
@@ -155,8 +182,6 @@ export default function TitleScreen() {
           onClick={finishFilm}
           onEnded={finishFilm}
           src="/videos/intro.mp4"
-          muted={musicOff}
-          autoPlay
           playsInline
           preload="auto"
           className="absolute inset-0 h-full w-full object-cover"
@@ -165,6 +190,11 @@ export default function TitleScreen() {
       {filmUp && (
         <button type="button" onClick={finishFilm} className="absolute bottom-6 right-8 z-20 rounded-sm border border-[#8a6a3a]/50 bg-black/50 px-4 py-2 text-[11px] uppercase tracking-[0.3em] text-stone-400 backdrop-blur-sm transition-colors hover:border-[#c9a868] hover:text-[#e8c56a]">
           Skip ▸
+        </button>
+      )}
+      {filmUp && filmNeedsTap && (
+        <button type="button" onClick={unmuteFilm} className="absolute bottom-6 left-8 z-20 rounded-sm border border-[#8a6a3a]/50 bg-black/50 px-4 py-2 text-[11px] uppercase tracking-[0.3em] text-stone-400 backdrop-blur-sm transition-colors hover:border-[#c9a868] hover:text-[#e8c56a]">
+          ♪ Tap for sound
         </button>
       )}
 
