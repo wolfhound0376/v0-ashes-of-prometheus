@@ -1,176 +1,120 @@
 import { describe, expect, it } from "vitest"
-import { ACTIVITIES, TRANSIENT_AFTER_MS, ageWords, describeSituation, parseSituationInput, situationPromptNote, situationRow } from "./situation"
+import { buildSituationBlock, isWalkPatch, mergeSituation, parsePatch, sameSituation, situationForChat, startingSituation } from "./situation"
 
-const RUN = "11111111-2222-3333-4444-555555555555"
+const RUN = "00000000-0000-0000-0000-000000000001"
+const T0 = "2026-10-24T18:00:00.000Z"
+const T1 = "2026-10-24T18:05:00.000Z"
 
-const walkPayload = {
-  activity: "talking",
-  place: "Velkynvelve",
-  areaKey: "node-08-shoor-quarters",
-  areaNo: 8,
-  areaName: "Shoor's Quarters",
-  talkingTo: "Jorlan Duskryn",
-  leader: "Kenta",
-  party: [
-    { slug: "kenta", name: "Kenta", characterId: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee", down: false },
-    { slug: "scott", name: "Scott", characterId: null, down: true },
-  ],
-  company: [{ slug: "eldeth", name: "Eldeth" }, { slug: "sarith", name: "Sarith" }],
-  nearby: [
-    { slug: "jorlan", name: "Jorlan Duskryn", hostile: false, down: false, body: false },
-    { slug: "drow-guard-male", name: "Drow guard", hostile: true, down: false, body: false },
-    { slug: "quaggoth", name: "Quaggoth", hostile: true, down: true, body: true },
-  ],
-  flags: { gateOpen: true, clearedHere: false, penKey: true },
-  note: "The pen gate swings open.",
-}
-
-describe("parseSituationInput", () => {
-  it("accepts what the walk sends and keeps it as sent", () => {
-    const r = parseSituationInput(walkPayload)
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(r.value.activity).toBe("talking")
-    expect(r.value.talkingTo).toBe("Jorlan Duskryn")
-    expect(r.value.areaNo).toBe(8)
-    expect(r.value.party).toHaveLength(2)
-    expect(r.value.party[0].characterId).toBe("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
-    expect(r.value.party[1].down).toBe(true)
-    expect(r.value.company.map((c) => c.slug)).toEqual(["eldeth", "sarith"])
-    expect(r.value.nearby[2]).toEqual({ slug: "quaggoth", name: "Quaggoth", hostile: true, down: true, body: true })
-    expect(r.value.flags).toEqual({ gateOpen: true, clearedHere: false, penKey: true })
-  })
-
-  it("rejects an unknown activity and a missing area", () => {
-    expect(parseSituationInput({ ...walkPayload, activity: "sleeping" })).toMatchObject({ ok: false })
-    expect(parseSituationInput({ ...walkPayload, areaKey: "" })).toMatchObject({ ok: false })
-    expect(parseSituationInput(null)).toMatchObject({ ok: false })
-    expect(parseSituationInput([])).toMatchObject({ ok: false })
-  })
-
-  it("requires a partner while talking, and drops the partner otherwise", () => {
-    expect(parseSituationInput({ ...walkPayload, talkingTo: "" })).toMatchObject({ ok: false })
-    const r = parseSituationInput({ ...walkPayload, activity: "exploring" })
-    expect(r.ok && r.value.talkingTo).toBe(null)
-  })
-
-  it("clamps strings, caps lists and ignores junk", () => {
-    const long = "x".repeat(500)
-    const r = parseSituationInput({
-      ...walkPayload,
-      activity: "fighting",
-      note: long,
-      areaNo: "12",
-      party: Array.from({ length: 20 }, (_, i) => ({ slug: `p${i}`, name: `P${i}`, characterId: "not-a-uuid" })),
-      nearby: [null, 5, { name: "no slug" }, { slug: "ok" }],
-      flags: { gateOpen: "yes", bogus: true },
-      extra: "dropped",
-    })
-    expect(r.ok).toBe(true)
-    if (!r.ok) return
-    expect(r.value.note).toHaveLength(240)
-    expect(r.value.areaNo).toBe(12)
-    expect(r.value.party).toHaveLength(8)
-    expect(r.value.party[0].characterId).toBe(null)
-    expect(r.value.nearby).toEqual([{ slug: "ok", name: "ok", hostile: false, down: false, body: false }])
-    expect(r.value.flags).toEqual({ gateOpen: true })
-    expect((r.value as unknown as Record<string, unknown>).extra).toBeUndefined()
-  })
-
-  it("knows every activity in the vocabulary", () => {
-    for (const a of ACTIVITIES) {
-      const r = parseSituationInput({ ...walkPayload, activity: a, talkingTo: a === "talking" ? "Jorlan" : null })
-      expect(r.ok, a).toBe(true)
-    }
+describe("startingSituation", () => {
+  it("is captive in the pen, gate locked, ward up", () => {
+    const s = startingSituation(RUN, T0)
+    expect(s).toMatchObject({ node_key: "velkynvelve", sub_location: "node-11-slave-pen", stance: "captive", ward_active: true, gate_state: "locked", updated_by: "restart" })
   })
 })
 
-describe("situationRow", () => {
-  it("maps the input onto the table's columns for one run", () => {
-    const r = parseSituationInput(walkPayload)
-    if (!r.ok) throw new Error(r.error)
-    const row = situationRow(r.value, RUN)
-    expect(row.campaign_run_id).toBe(RUN)
-    expect(row.source).toBe("walk")
-    expect(row.area_key).toBe("node-08-shoor-quarters")
-    expect(row.area_no).toBe(8)
-    expect(row.talking_to).toBe("Jorlan Duskryn")
-    expect(row.party).toBe(r.value.party)
-    expect(Date.parse(row.updated_at)).not.toBeNaN()
+describe("the gate and the step outside (Sam, 2026-10-24)", () => {
+  it("opening the gate does NOT change the stance", () => {
+    const s = mergeSituation(startingSituation(RUN, T0), { event: "gate_open" }, "walk", T1)
+    expect(s.gate_state).toBe("open")
+    expect(s.stance).toBe("captive")
+    expect(s.ward_active).toBe(true)
+  })
+  it("stepping outside flips captive -> escaping and lifts the ward", () => {
+    const opened = mergeSituation(startingSituation(RUN, T0), { event: "gate_open" }, "walk", T1)
+    const out = mergeSituation(opened, { event: "step_outside", sub_location: "node-10-guard-tower", sub_label: "Guard Tower" }, "walk", T1)
+    expect(out.stance).toBe("escaping")
+    expect(out.ward_active).toBe(false)
+    expect(out.sub_label).toBe("Guard Tower")
+    expect(out.updated_by).toBe("walk")
+  })
+  it("stepping outside again does not demote a later stance back to escaping", () => {
+    const free = mergeSituation(startingSituation(RUN, T0), { stance: "free" }, "dm", T1)
+    expect(mergeSituation(free, { event: "step_outside" }, "walk", T1).stance).toBe("free")
+  })
+  it("a forced gate is broken and an open event cannot un-break it", () => {
+    const broken = mergeSituation(startingSituation(RUN, T0), { event: "gate_broken" }, "walk", T1)
+    expect(broken.gate_state).toBe("broken")
+    expect(mergeSituation(broken, { event: "gate_open" }, "walk", T1).gate_state).toBe("broken")
+  })
+  it("the DM's explicit fields win over the event", () => {
+    const s = mergeSituation(startingSituation(RUN, T0), { event: "step_outside", stance: "captive", ward_active: true }, "dm", T1)
+    expect(s.stance).toBe("captive")
+    expect(s.ward_active).toBe(true)
   })
 })
 
-describe("describeSituation", () => {
-  it("is null for no row", () => {
-    expect(describeSituation(null)).toBe(null)
+describe("parsePatch", () => {
+  it("drops unknown stances, gates and events", () => {
+    expect(parsePatch({ stance: "dead", gate_state: "ajar", event: "teleport", node_key: "velkynvelve" })).toEqual({ node_key: "velkynvelve" })
   })
-
-  it("says only what the row says, in one paragraph", () => {
-    const r = parseSituationInput(walkPayload)
-    if (!r.ok) throw new Error(r.error)
-    const text = describeSituation(situationRow(r.value, RUN))!
-    expect(text).toContain("Velkynvelve — Shoor's Quarters (area 8).")
-    expect(text).toContain("Kenta leads.")
-    expect(text).toContain("Scott is down.")
-    expect(text).toContain("Walking with them: Eldeth and Sarith.")
-    expect(text).toContain("Also here: Jorlan Duskryn and Drow guard (hostile).")
-    expect(text).toContain("Dead on the ground: Quaggoth.")
-    expect(text).toContain("They are talking with Jorlan Duskryn.")
-    expect(text).toContain("The pen gate is open.")
-    expect(text).toContain("They hold the pen key.")
-    expect(text).toContain("Last: The pen gate swings open.")
-    expect(text.split("\n")).toHaveLength(1)
+  it("sanitises labels and caps the roster", () => {
+    const p = parsePatch({ sub_label: "<script>Slave Pen</script>", party_present: Array.from({ length: 20 }, (_, i) => `Hero ${i}`) })
+    expect(p.sub_label).toBe("scriptSlave Penscript")
+    expect(p.party_present).toHaveLength(12)
   })
-
-  it("names the rest of the party after the leader", () => {
-    const r = parseSituationInput({ ...walkPayload, activity: "exploring", party: [...walkPayload.party, { slug: "samson", name: "Samson" }] })
-    if (!r.ok) throw new Error(r.error)
-    const text = describeSituation(situationRow(r.value, RUN))!
-    expect(text).toContain("Kenta leads, with Samson.")
-    expect(text).toContain("They are looking around.")
+  it("tells a walk patch from a DM patch", () => {
+    expect(isWalkPatch(parsePatch({ sub_location: "node-10-guard-tower", event: "step_outside", party_present: ["Fifi"] }))).toBe(true)
+    expect(isWalkPatch(parsePatch({ stance: "free" }))).toBe(false)
+    expect(isWalkPatch(parsePatch({ node_key: "sloobludop" }))).toBe(false)
   })
 })
 
-describe("situationPromptNote", () => {
-  const fresh = () => {
-    const r = parseSituationInput(walkPayload)
-    if (!r.ok) throw new Error(r.error)
-    return situationRow(r.value, RUN)
-  }
-
-  it("is null for no row", () => {
-    expect(situationPromptNote(null)).toBe(null)
+describe("sameSituation", () => {
+  it("ignores updated_at/updated_by and compares the rest", () => {
+    const a = startingSituation(RUN, T0)
+    const b = mergeSituation(a, {}, "walk", T1)
+    expect(sameSituation(a, b)).toBe(true)
+    expect(sameSituation(a, mergeSituation(a, { sub_location: "x" }, "walk", T1))).toBe(false)
   })
+})
 
-  it("trusts the row while the travel graph agrees on the place", () => {
-    const out = situationPromptNote(fresh(), { location: "Velkynvelve — Slave Pen" })
-    expect(out).not.toBe(null)
-    expect(out!.where).toBe("Velkynvelve — Shoor's Quarters")
-    expect(out!.note).toContain("reported just now")
-    expect(out!.note).toContain("They are talking with Jorlan Duskryn.")
-    expect(out!.note).toContain("Do not move the party to another area yourself")
+describe("buildSituationBlock", () => {
+  it("captive: names the pen, the locked gate and the ward", () => {
+    const text = buildSituationBlock(startingSituation(RUN, T0), "Velkynvelve")
+    expect(text).toContain("Velkynvelve — Slave Pen")
+    expect(text).toContain("CAPTIVE")
+    expect(text).toContain("LOCKED")
+    expect(text).toContain("ward sigil still")
+    expect(text).not.toContain("Do NOT refer to the party as prisoners")
   })
-
-  it("drops the row once the party has left the place on the travel map", () => {
-    expect(situationPromptNote(fresh(), { location: "Darklake shore" })).toBe(null)
-    expect(situationPromptNote(fresh(), { location: null })).not.toBe(null)
+  it("escaping: forbids the prisoner framing and says the ward is lifted", () => {
+    const out = mergeSituation(startingSituation(RUN, T0), { event: "gate_open" }, "walk", T1)
+    const s = mergeSituation(out, { event: "step_outside", sub_label: "Guard Tower", party_present: ["Fifi", "Ront"] }, "walk", T1)
+    const text = buildSituationBlock(s, "Velkynvelve")
+    expect(text).toContain("ESCAPING")
+    expect(text).toContain("LEFT the slave pen")
+    expect(text).toContain("gate is OPEN")
+    expect(text).toContain("no longer binds")
+    expect(text).toContain("Present here: Fifi, Ront")
+    expect(text).toContain("Do NOT refer to the party as prisoners")
+    expect(text).not.toMatch(/manacled/)
   })
-
-  it("lets an old talk or fight lapse but keeps the place", () => {
-    const row = fresh()
-    const later = new Date(Date.parse(row.updated_at) + TRANSIENT_AFTER_MS + 60_000)
-    const out = situationPromptNote(row, { now: later })!
-    expect(out.note).toContain("31 minutes ago")
-    expect(out.note).not.toContain("talking with")
-    expect(out.note).toContain("They are looking around.")
-    expect(out.note).toContain("The talk it reported has had time to end.")
-    expect(out.where).toBe("Velkynvelve — Shoor's Quarters")
+  it("away from Velkynvelve it says nothing about the gate", () => {
+    const s = mergeSituation(startingSituation(RUN, T0), { node_key: "sloobludop", sub_location: null, sub_label: null, stance: "camped" }, "travel", T1)
+    const text = buildSituationBlock(s, "Sloobludop")
+    expect(text).toContain("Where: Sloobludop")
+    expect(text).toContain("CAMPED")
+    expect(text).not.toContain("gate")
   })
+})
 
-  it("says how old the account is in plain words", () => {
-    expect(ageWords(10_000)).toBe("just now")
-    expect(ageWords(5 * 60_000)).toBe("5 minutes ago")
-    expect(ageWords(3 * 3_600_000)).toBe("3 hours ago")
-    expect(ageWords(3 * 86_400_000)).toBe("3 days ago")
+describe("situationForChat (the chat route's view)", () => {
+  it("captive at Velkynvelve: the stage ladder stays on the pen and the block says CAPTIVE", () => {
+    const v = situationForChat(startingSituation(RUN, T0), "Velkynvelve (slave pen)")
+    expect(v).not.toBeNull()
+    expect(v!.where.toLowerCase()).toContain("slave pen")
+    expect(v!.note).toContain("CAPTIVE")
+    expect(v!.note).toContain("Where: Velkynvelve")
+  })
+  it("escaping: the ladder moves to the outpost and the block forbids the prisoner framing", () => {
+    const out = mergeSituation(startingSituation(RUN, T0), { event: "step_outside", sub_label: "Guard Tower" }, "walk", T1)
+    const v = situationForChat(out, "Velkynvelve (slave pen)")
+    expect(v!.where).toBe("Velkynvelve outpost")
+    expect(v!.where.toLowerCase()).not.toContain("pen")
+    expect(v!.note).toContain("Do NOT refer to the party as prisoners")
+  })
+  it("says nothing when the travel graph has the party somewhere else", () => {
+    expect(situationForChat(startingSituation(RUN, T0), "Sloobludop")).toBeNull()
+    expect(situationForChat(null, "Velkynvelve")).toBeNull()
   })
 })

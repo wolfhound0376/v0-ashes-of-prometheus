@@ -1,3 +1,6 @@
+-- SUPERSEDED: Sam chose the PR 832 vocabulary on 2026-10-25; migrations/20261025020000_party_situation_retire_819_columns.sql
+-- removes the columns this added. Kept as the record of what the database held in between.
+--
 -- APPLIED 2026-10-25 ~01:08 UTC through the Supabase connector, on Sam's instruction ("apply the migration").
 -- Recorded here because migrations do not run on deploy and the repo should say what the database holds.
 --

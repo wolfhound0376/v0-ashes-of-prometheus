@@ -6,7 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { findNpcRow, learnName, npcKnowsName, relationshipSummary, saysOwnName } from "@/lib/npc-acquaintance"
 import { applyStageEvents, readStage, type StageEvent } from "@/lib/stage-roster"
 import { readSeated } from "@/lib/seats"
-import { situationPromptNote } from "@/lib/situation"
+import { situationForChat } from "@/lib/situation"
 import { readPartySituation } from "@/lib/situation-store"
 import { dryRun, newDryRunLog } from "@/lib/dry-run"
 import { startCombatFlag, endCombatFlag } from "@/lib/combat-flag"
@@ -1484,7 +1484,7 @@ ${combatantRows
   // a party that has walked out onto the road leaves the row behind. Best-effort: never holds up a turn.
   let situation: { note: string; where: string } | null = null
   try {
-    if (timeAdmin) situation = situationPromptNote(await readPartySituation(timeAdmin), { location: currentLocation })
+    if (timeAdmin) situation = situationForChat(await readPartySituation(timeAdmin), currentLocation)
   } catch (e) { console.error("[situation] skipped:", e) }
   // The stage follows the finer location when the map has one: out of the pen is loose in the outpost.
   const stageLocation = (situation?.where ?? currentLocation).toLowerCase()
