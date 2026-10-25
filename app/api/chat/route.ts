@@ -2277,7 +2277,13 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
   //
   // Row-level security lets the browser insert only author='player', which is
   // correct: a page claiming to be the DM's must come from the server. This is
-  // the server.
+  // the server — but the cookie-bound `supabase` client here still speaks as
+  // the anon role, so the same policy refused every Malachar page ("new row
+  // violates row-level security policy for table journal_entries", seen live
+  // 2026-10-24) and journal_entries stayed at zero rows. Per the standing rule
+  // (app/api/journal/share/route.ts) the answer is never to widen the policy;
+  // DM-authored pages go through the service role, sandbox-aware via
+  // adminClient(). Same fix the session_beats writes got.
   const journalTags = rawText.match(/\[JOURNAL:\s*([^\]]*)\]/gi) || []
   // Same diagnostic the item tags get. When a page does not appear, this says
   // whether he never emitted the tag or the write failed — the difference
@@ -2287,7 +2293,8 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
     // One page per turn. If he emitted two, the first is the one he meant.
     const body = journalTags[0].replace(/^\[JOURNAL:\s*/i, "").replace(/\]$/, "").trim()
     if (body) {
-      const { error: jerr } = await supabase.from("journal_entries").insert({
+      // Service-role write: author='malachar' is refused to the anon key (see above).
+      const { error: jerr } = await adminClient().from("journal_entries").insert({
         character_id: playerCharacter.id,
         session_id: activeSessionId ?? null,
         author: "malachar",
@@ -2362,7 +2369,9 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
           visibility: decision.file!.visibility,
           tags: decision.file!.tags,
         }))
-        const { error: qerr } = await supabase.from("journal_entries").insert(rows)
+        // Service-role write: quest pages are author='malachar', which the anon
+        // key may not insert (see the journal block above for the live failure).
+        const { error: qerr } = await adminClient().from("journal_entries").insert(rows)
         if (qerr) console.error("[v0] quest failed to write:", qerr.message)
         else console.log(`[v0] quest filed for ${recipients.length} character(s):`, decision.note)
       }
