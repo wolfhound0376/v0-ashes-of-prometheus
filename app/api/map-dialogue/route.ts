@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ cursor: data?.created_at ?? new Date().toISOString(), lines: [] })
     }
     const { data, error } = await db.from("dialogue")
-      .select("id, speaker, speaker_type, text, created_at, sort_order")
+      .select("id, speaker, speaker_type, text, speech_segments, created_at, sort_order")  // speech_segments[].lang: the tongue (lib/languages)
       .eq("channel", "dm").in("speaker_type", SPOKEN).gte("created_at", after)
       .order("created_at", { ascending: true }).order("sort_order", { ascending: true }).limit(40)
     if (error) return NextResponse.json({ cursor: after, lines: [], error: error.message })

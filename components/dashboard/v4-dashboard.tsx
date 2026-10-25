@@ -1,5 +1,6 @@
 "use client"
 
+import { hearDialogueRow, listenerFromCharacter, partyListener, renderSpeechFor, understands } from "@/lib/languages"
 import { listenerCharacterId } from "@/lib/rapport"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react"
@@ -209,22 +210,22 @@ function buildRailStats(c: Character | undefined) {
   return { saves, skills, passiveInsight, passivePerception: raw.passive_perception ?? 10 + mod("wis") }
 }
 
-type DialogueSpeechSegment = { speaker: string; line: string; npc_id: string | null; voice_id: string | null }
-type DialogueEntry = { id?: string; speaker: string; text: string; speech_segments?: DialogueSpeechSegment[] | null; turn_id?: string; created_at?: string }
+type DialogueSpeechSegment = { speaker: string; line: string; npc_id: string | null; voice_id: string | null; lang?: string | null }
+type DialogueEntry = { id?: string; speaker: string; text: string; speech_segments?: DialogueSpeechSegment[] | null; turn_id?: string; created_at?: string; lang?: string | null }
 
 function dialogueLines(entry: DialogueEntry): DialogueEntry[] {
-  if (entry.speaker !== "Malachar" || !entry.speech_segments?.length) return [entry]
+  if (entry.speaker !== "Malachar" || !entry.speech_segments?.length) return [{ ...entry, lang: entry.speech_segments?.[0]?.lang ?? null }]
   const lines: DialogueEntry[] = []
   let cursor = 0
-  const push = (speaker: string, text: string, suffix: string) => {
+  const push = (speaker: string, text: string, suffix: string, lang: string | null = null) => {
     const clean = text.replace(/^[\s“”"']+|[\s“”"']+$/g, "").trim()
-    if (clean) lines.push({ id: `${entry.id ?? "line"}-${suffix}`, speaker, text: clean })
+    if (clean) lines.push({ id: `${entry.id ?? "line"}-${suffix}`, speaker, text: clean, lang })
   }
   entry.speech_segments.forEach((segment, index) => {
     const at = entry.text.indexOf(segment.line, cursor)
     if (at < 0) return
     push("Malachar", entry.text.slice(cursor, at), `dm-${index}`)
-    push(segment.speaker === "NARRATOR" ? "Malachar" : segment.speaker, segment.line, `speaker-${index}`)
+    push(segment.speaker === "NARRATOR" ? "Malachar" : segment.speaker, segment.line, `speaker-${index}`, segment.lang ?? null)
     cursor = at + segment.line.length
   })
   push("Malachar", entry.text.slice(cursor), "dm-tail")
@@ -325,6 +326,8 @@ interface V4DashboardProps {
   /** The line the NPC opened with on the map (/?line=). Shown in the window
    *  and spoken in their voice, with their talking loop, as the scene opens. */
   talkOpening?: string | null
+  /** Language the map opener was spoken in (?lang= from the walk map). */
+  talkOpeningLang?: string | null
   /** The DM has stopped time: the input is closed and a banner says so (components/dashboard/time-stop.tsx). */
   timeStopped?: boolean
   /** Who the NPC window is showing, as it changes: the one an unaddressed question is put to. */
@@ -467,7 +470,20 @@ export function V4Dashboard(props: V4DashboardProps) {
   const dialogue = props.dialogue.length
     ? props.dialogue
     : hasLiveCampaign ? [] : previewDialogue
-  const displayedDialogue = dialogue.flatMap(dialogueLines)
+  // LANGUAGES (Sam, 2026-10-25): a line in a tongue the viewer's character does not
+  // know is shown and voiced as gibberish (lib/languages). The DM reads the real
+  // words, tagged with the tongue; what the DM screen SAYS aloud is what every
+  // seated player understands, so the speakers never translate for the table.
+  const isDmView = Boolean(props.dmMode || props.dmScreen)
+  const seatedPlayers = props.characters.filter((character) => character.is_player)
+  const hearer = useMemo(
+    () => (isDmView ? partyListener(seatedPlayers as any[]) : listenerFromCharacter((props.selectedCharacter ?? seatedPlayers[0] ?? null) as any)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isDmView, props.selectedCharacter, props.characters],
+  )
+  const heardDialogue = useMemo(() => dialogue.map((entry) => hearDialogueRow(entry, hearer)), [dialogue, hearer])
+  const displayedDialogue = (isDmView ? dialogue : heardDialogue).flatMap(dialogueLines)
+  const followsLang = (lang: string | null | undefined) => !lang || isDmView || understands(hearer, lang)
   // Dictation: browser speech-to-text lands in the input for review; Enter sends.
   // speechBaseRef preserves anything already typed when the mic starts.
   const speechBaseRef = useRef("")
@@ -599,8 +615,8 @@ export function V4Dashboard(props: V4DashboardProps) {
   // shots. A player borrowing the window keeps the untouched framing.
   const npcFrame = npcWindowStyle(speakingPlayer ? undefined : ((speakingRow ?? shownNpc) as StageFramingRow | undefined))
   // On the map the opener is the line that matters right now; otherwise their last line in the feed.
-  const lastNpcLine = (talkMode && talkPartner?.kind === "npc" && props.talkOpening ? props.talkOpening.slice(0, 160) : null)
-    ?? [...dialogue].reverse().find((entry) => entry.speaker === npcName)?.text?.slice(0, 160) ?? null
+  const lastNpcLine = (talkMode && talkPartner?.kind === "npc" && props.talkOpening ? (isDmView || !props.talkOpeningLang ? props.talkOpening : renderSpeechFor(props.talkOpening, props.talkOpeningLang, hearer).text).slice(0, 160) : null)
+    ?? [...(isDmView ? dialogue : heardDialogue)].reverse().find((entry) => entry.speaker === npcName)?.text?.slice(0, 160) ?? null
   // Map talk (Sam, 2026-10-13: "When Eldeth says 'a word' and you accept, she should say something on
   // the UI. The UI should start with her in the idle loop and then transition to talking loop when she
   // begins to speak"). The opener was already said on the map, so it is NOT said again here: it goes
@@ -617,7 +633,12 @@ export function V4Dashboard(props: V4DashboardProps) {
     if (!talkMode || !line || !npc || openingSpoken.current) return
     openingSpoken.current = true
     markVoicedElsewhere(npc.name, line)
-    void createClient().from("dialogue").insert({ speaker: npc.name, speaker_type: "npc", channel: "dm", text: line })
+    const lang = props.talkOpeningLang ?? null
+    if (lang) markVoicedElsewhere(npc.name, renderSpeechFor(line, lang, hearer).text)
+    void createClient().from("dialogue").insert({
+      speaker: npc.name, speaker_type: "npc", channel: "dm", text: line,
+      ...(lang ? { speech_segments: [{ speaker: npc.name, line, npc_id: npc.id ?? null, voice_id: null, lang }] } : {}),
+    })
       .then((res: { error: { message: string } | null }) => { if (res.error) console.error("[map talk] opener not logged:", res.error.message) })
       .then(() => onOpenerAccepted?.(npc.name, line))
   }, [talkMode, props.talkOpening, talkPartner, onOpenerAccepted])
@@ -932,7 +953,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       <Frame title="Interactive Log" hideDecorativeControls className={cn("relative flex flex-[2_1_0%] flex-col rounded-none transition-[height,min-height] duration-200", interactiveLogMinimized ? "h-9 min-h-9 flex-none" : "min-h-[240px] flex-[2_1_0%]")} action={<button type="button" onClick={() => setInteractiveLogMinimized((value) => !value)} aria-expanded={!interactiveLogMinimized} aria-label={interactiveLogMinimized ? "Expand interactive log" : "Minimize interactive log"} title={interactiveLogMinimized ? "Expand interactive log" : "Minimize interactive log"} className="rounded-sm p-1 text-[#cdb276] transition-colors hover:bg-[#2a2114] hover:text-[#f0cd7a]"><span className="sr-only">{interactiveLogMinimized ? "Expand" : "Minimize"} interactive log</span>{interactiveLogMinimized ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}</button>}>
         {!interactiveLogMinimized ? <>
           <div className="flex gap-1 px-2 pt-2">{["All", "Narration", "Dialogue", "Combat", "System"].map((filter) => <button key={filter} onClick={() => setLogFilter(filter)} className={cn("rounded px-2 py-0.5 text-[9px]", logFilter === filter ? "bg-[#a8272e] text-white" : "border border-[#4b3a19] text-[#8f8061]")}>{filter}</button>)}</div>
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 pb-16 text-[11px] leading-[1.45]">{displayedDialogue.length === 0 ? <p className="mt-6 text-center text-[10px] italic text-[#6d6450]">The log is empty. Malachar is waiting.</p> : null}{displayedDialogue.map((entry, index) => <p key={entry.id ?? index}><strong style={{ color: speakerColor(entry.speaker) }}>{entry.speaker}:</strong> <span className="text-[#ddd2bc]">{entry.text}</span></p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 pb-16 text-[11px] leading-[1.45]">{displayedDialogue.length === 0 ? <p className="mt-6 text-center text-[10px] italic text-[#6d6450]">The log is empty. Malachar is waiting.</p> : null}{displayedDialogue.map((entry, index) => <p key={entry.id ?? index}><strong style={{ color: speakerColor(entry.speaker) }}>{entry.speaker}:</strong> <span className={followsLang(entry.lang) ? "text-[#ddd2bc]" : "italic text-[#a99c82]"}>{entry.text}</span>{entry.lang && entry.lang !== "Common" ? <span className="ml-1.5 rounded-sm border border-[#4b3a19] px-1 align-middle text-[8px] uppercase tracking-wider text-[#8f8061]" title={followsLang(entry.lang) ? `Spoken in ${entry.lang}` : `Spoken in ${entry.lang}, which you do not know`}>{followsLang(entry.lang) ? entry.lang : `${entry.lang} ✕`}</span> : null}</p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
         </> : null}
       </Frame>
       {/* Player-to-player chat — the `party` channel. Plain inserts only; never
@@ -942,7 +963,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       </Frame>
     </div>
 
-    <Frame title="NPC / Dungeon Master Window" className={cn("flex flex-col", narrowTalk ? "w-full max-w-[480px] flex-1" : "min-h-[690px]")} hideHeader action={<DmNarration dialogue={dialogue} npcs={talkVoices.npcs} players={talkVoices.players.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />}>
+    <Frame title="NPC / Dungeon Master Window" className={cn("flex flex-col", narrowTalk ? "w-full max-w-[480px] flex-1" : "min-h-[690px]")} hideHeader action={<DmNarration dialogue={heardDialogue} npcs={talkVoices.npcs} players={talkVoices.players.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />}>
       {talkMode ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-[#4b3a19] px-3 py-2">
           <div className="min-w-0 flex-1">

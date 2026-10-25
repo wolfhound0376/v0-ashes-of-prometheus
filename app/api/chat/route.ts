@@ -39,6 +39,7 @@ import {
   formatQuestBlock, stripQuestTags, QUEST_TAG_RULES, QUEST_STRIP_RE,
   type QuestPage,
 } from "@/lib/quests"
+import { languagePromptBlock, loadActiveNpcLanguages, loadPartyLanguages, stampSegmentLanguages } from "@/lib/npc-languages"
 import { canonicalizeCondition } from "@/lib/conditions"
 // A long rest, as the SRD writes it. The rule is pure and lives in its own
 // file; this route only owns the rows it touches.
@@ -1659,6 +1660,14 @@ Rules:
     }
   }
 
+  // Who speaks what (lib/npc-languages). Best-effort: empty on any failure.
+  let languageBlock = ""
+  try {
+    const [npcLangs, partyLangs] = await Promise.all([loadActiveNpcLanguages(supabase), loadPartyLanguages(supabase)])
+    languageBlock = languagePromptBlock(npcLangs, partyLangs)
+  } catch (error) {
+    console.error("[languages] prompt block failed:", error)
+  }
   const lichPrompt = `You are Malachar, a lich, and the Dungeon Master of this campaign. You are running D&D 5E "Out of the Abyss" in the Underdark of Faerûn. You never break character.
 
   WHO YOU ARE
@@ -1870,6 +1879,8 @@ FORMATTING — CRITICAL:
 - Write plain prose. Use em-dashes, ellipses, and sentence structure for emphasis instead of markdown
 - Your text will be read aloud by text-to-speech. Formatting characters are spoken literally and sound terrible.
 - NEVER repeat your name "Malachar" in every response. Establish character once, then drop the name unless specifically needed.
+
+${languageBlock}
 
 NPC DIALOGUE OWNERSHIP — CRITICAL:
 - When an NPC answers, put that NPC's exact spoken words in quotation marks once. Never repeat, paraphrase, or claim the NPC's words as Malachar.
@@ -3492,8 +3503,11 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
     }
   }
 
+  // [NPC_SPEECH: Name | Elvish] — the optional "| Language" is the tongue the
+  // line is spoken in (lib/npc-languages.ts decides when it is left out).
   const taggedNpcSpeech = Array.from(rawText.matchAll(/\[NPC_SPEECH:\s*([^\]]+)\]([\s\S]*?)\[\/NPC_SPEECH\]/gi)).map((match) => ({
-    speaker: match[1].trim(),
+    speaker: match[1].split("|")[0].trim(),
+    lang: match[1].includes("|") ? match[1].split("|").slice(1).join("|").trim() || null : null,
     line: match[2].trim().replace(/^["“”„]+|["“”„]+$/g, "").trim(),
   })).filter((segment) => segment.speaker && segment.line)
 
@@ -3551,6 +3565,8 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
     line: string
     npc_id: string | null
     voice_id: string | null
+    /** Spoken language (lib/npc-languages). null = never scrambled. */
+    lang?: string | null
   }
   type DialogueOutputEntry = {
     speaker: string
@@ -3569,7 +3585,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
       const npc = await resolveNpcByName(supabase, segment.speaker)
       if (!npc) continue
       const row = (taggedNpcRows || []).find((entry: any) => entry.id === npc.id)
-      resolved.push({ speaker: npc.name, line: segment.line, npc_id: npc.id, voice_id: row?.voice_id || null })
+      resolved.push({ speaker: npc.name, line: segment.line, npc_id: npc.id, voice_id: row?.voice_id || null, lang: segment.lang })
     }
     speechSegments = resolved.length ? resolved : null
   } else if (responseText && /[“”"„]/.test(responseText)) {
@@ -3716,6 +3732,21 @@ Rules:
       // uses its legacy fallback for old/failed messages.
       console.error("[v0] Speech segmentation failed:", error)
       speechSegments = null
+    }
+  }
+
+  // LANGUAGES (Sam, 2026-10-25): each NPC line is stamped with the one tongue
+  // it was spoken in, decided here so every seat agrees on WHAT was said; each
+  // client then renders it as gibberish for a viewer who lacks that tongue.
+  // Best-effort: a failure leaves lang unset, which means "understood by all".
+  if (speechSegments?.some((segment) => segment.npc_id)) {
+    try {
+      const { data: hearer } = playerCharacter
+        ? await supabase.from("characters").select("languages").eq("id", playerCharacter.id).maybeSingle()
+        : { data: null }
+      await stampSegmentLanguages(supabase, speechSegments, { addressee: hearer?.languages ?? null })
+    } catch (error) {
+      console.error("[languages] could not stamp line languages:", error)
     }
   }
 
