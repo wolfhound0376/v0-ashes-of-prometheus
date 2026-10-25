@@ -99,9 +99,11 @@ describe("readiness (Sam: pixel art, complete sheet, voice, thumbnail)", () => {
   it("a Forge hero listed in heroes.json has their figure", () => {
     expect(readinessOf(full, { c1: "lynkes" }).sprite).toBe(true)
   })
-  it("the four premades have theirs by name", () => {
-    expect(readinessOf({ ...full, id: "x", name: "Fifi of Copperas Cove" }, {}).sprite).toBe(true)
-    expect(readinessOf({ ...full, id: "x", name: "Kenta" }, {}).sprite).toBe(true)
+  it("the four canon heroes have theirs by id, whatever they are called", () => {
+    expect(readinessOf({ ...full, id: "d00aa5b8-ced1-477d-9ec8-0861cca55498", name: "Fifi of Waterdeep" }, {}).sprite).toBe(true)
+    expect(readinessOf({ ...full, id: "51e4202d-b4d5-4658-a9c1-6102713e77f1", name: "Kenta of Neverwinter" }, {}).sprite).toBe(true)
+    // A Forge hero who merely shares a canon name does not borrow the figure.
+    expect(readinessOf({ ...full, id: "x", name: "Kenta" }, {}).sprite).toBe(false)
   })
   it("any of the three portrait columns is a thumbnail; none is not", () => {
     expect(readinessOf({ ...full, portrait_image_url: null, avatar_image_url: "a" }, {}).thumbnail).toBe(true)

@@ -119,11 +119,19 @@ export function readTableState(value: unknown): TableState {
 // --- What counts as ready -----------------------------------------------------------------------
 
 /**
- * The four premades whose pixel figures are baked into the map (template.html PLAYS_AS), by name.
- * A hero made at the Forge has a figure only once it is listed in scripts/velkynvelve-walk/heroes.json;
- * until then the map dresses them in their class's stand-in, which is not "their" pixel art.
+ * The four canon heroes whose pixel figures are baked into the map (template.html PLAYS_AS), keyed BY
+ * characters.id — the canon heroes are being renamed (Sam, 2026-10-25: "Kenta of Neverwinter", "Fifi of
+ * Waterdeep", … — lib/canon-heroes.ts on the hero-chooser lane), and a name match would turn all four red
+ * the moment the rows change. A hero made at the Forge has a figure only once it is listed in
+ * scripts/velkynvelve-walk/heroes.json; until then the map dresses them in their class's stand-in, which is
+ * not "their" pixel art.
  */
-export const PREMADE_SPRITE_NAMES = ["kenta", "samson", "scott", "fifi of copperas cove"]
+export const PREMADE_SPRITE_IDS = [
+  "51e4202d-b4d5-4658-a9c1-6102713e77f1", // Kenta
+  "d00aa5b8-ced1-477d-9ec8-0861cca55498", // Fifi
+  "88cc9dd1-b0fe-4e62-9829-f84aafe3c066", // Scott
+  "be060806-9938-4afd-9cf6-ad298d9eaa97", // Samson
+]
 
 export type CharacterRowForReadiness = {
   id: string
@@ -163,7 +171,7 @@ export function sheetComplete(c: CharacterRowForReadiness): boolean {
 
 export function readinessOf(c: CharacterRowForReadiness, heroSprites: Record<string, string>): Readiness {
   return {
-    sprite: PREMADE_SPRITE_NAMES.includes(c.name.trim().toLowerCase()) || typeof heroSprites[c.id] === "string",
+    sprite: PREMADE_SPRITE_IDS.includes(c.id) || typeof heroSprites[c.id] === "string",
     sheet: sheetComplete(c),
     voice: filled(c.voice_id),
     thumbnail: filled(c.portrait_image_url) || filled(c.avatar_image_url) || filled(c.face_image_url),
