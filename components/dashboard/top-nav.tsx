@@ -11,6 +11,7 @@
 import type { ReactNode } from "react"
 import { BookOpen, Flame, Settings, Shield, Smartphone, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { MapButton } from "@/components/dashboard/map-button"
 
 export type NavSection = "journal" | "quests" | "maps" | "npcs" | "lore" | "settings"
 
@@ -76,6 +77,8 @@ export function TopNav({
 
       {/* Sections */}
       <nav data-tick="key" className="flex items-center gap-1.5">
+        {/* The way back to the pixel map, first and brightest (Sam, 2026-10-25). */}
+        <MapButton className="mr-2" />
         {sections.map((s) => {
           const Icon = s.icon
           return (
