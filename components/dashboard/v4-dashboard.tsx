@@ -339,7 +339,7 @@ const previewDialogue: DialogueEntry[] = [
   { speaker: "Sam", text: "I check the others for wounds before anything else." },
   { speaker: "DM", text: "Roll Medicine." },
   { speaker: "Sam", text: "🎲 Medicine — 16 (d20: 12 +4)" },
-  { speaker: "Fifi of Copperas Cove", text: "Save the bedside manner. Get these manacles off." },
+  { speaker: "Fifi of Waterdeep", text: "Save the bedside manner. Get these manacles off." },
   { speaker: "Jimjar", text: "I’ll bet you two gold the bald one prays first." },
   { speaker: "Malachar", text: "Somewhere above, a whip cracks. The drow are awake." },
 ]
