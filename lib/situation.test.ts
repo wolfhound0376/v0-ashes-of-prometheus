@@ -1,0 +1,99 @@
+import { describe, expect, it } from "vitest"
+import { buildSituationBlock, isWalkPatch, mergeSituation, parsePatch, sameSituation, startingSituation } from "./situation"
+
+const RUN = "00000000-0000-0000-0000-000000000001"
+const T0 = "2026-10-24T18:00:00.000Z"
+const T1 = "2026-10-24T18:05:00.000Z"
+
+describe("startingSituation", () => {
+  it("is captive in the pen, gate locked, ward up", () => {
+    const s = startingSituation(RUN, T0)
+    expect(s).toMatchObject({ node_key: "velkynvelve", sub_location: "node-11-slave-pen", stance: "captive", ward_active: true, gate_state: "locked", updated_by: "restart" })
+  })
+})
+
+describe("the gate and the step outside (Sam, 2026-10-24)", () => {
+  it("opening the gate does NOT change the stance", () => {
+    const s = mergeSituation(startingSituation(RUN, T0), { event: "gate_open" }, "walk", T1)
+    expect(s.gate_state).toBe("open")
+    expect(s.stance).toBe("captive")
+    expect(s.ward_active).toBe(true)
+  })
+  it("stepping outside flips captive -> escaping and lifts the ward", () => {
+    const opened = mergeSituation(startingSituation(RUN, T0), { event: "gate_open" }, "walk", T1)
+    const out = mergeSituation(opened, { event: "step_outside", sub_location: "node-10-guard-tower", sub_label: "Guard Tower" }, "walk", T1)
+    expect(out.stance).toBe("escaping")
+    expect(out.ward_active).toBe(false)
+    expect(out.sub_label).toBe("Guard Tower")
+    expect(out.updated_by).toBe("walk")
+  })
+  it("stepping outside again does not demote a later stance back to escaping", () => {
+    const free = mergeSituation(startingSituation(RUN, T0), { stance: "free" }, "dm", T1)
+    expect(mergeSituation(free, { event: "step_outside" }, "walk", T1).stance).toBe("free")
+  })
+  it("a forced gate is broken and an open event cannot un-break it", () => {
+    const broken = mergeSituation(startingSituation(RUN, T0), { event: "gate_broken" }, "walk", T1)
+    expect(broken.gate_state).toBe("broken")
+    expect(mergeSituation(broken, { event: "gate_open" }, "walk", T1).gate_state).toBe("broken")
+  })
+  it("the DM's explicit fields win over the event", () => {
+    const s = mergeSituation(startingSituation(RUN, T0), { event: "step_outside", stance: "captive", ward_active: true }, "dm", T1)
+    expect(s.stance).toBe("captive")
+    expect(s.ward_active).toBe(true)
+  })
+})
+
+describe("parsePatch", () => {
+  it("drops unknown stances, gates and events", () => {
+    expect(parsePatch({ stance: "dead", gate_state: "ajar", event: "teleport", node_key: "velkynvelve" })).toEqual({ node_key: "velkynvelve" })
+  })
+  it("sanitises labels and caps the roster", () => {
+    const p = parsePatch({ sub_label: "<script>Slave Pen</script>", party_present: Array.from({ length: 20 }, (_, i) => `Hero ${i}`) })
+    expect(p.sub_label).toBe("scriptSlave Penscript")
+    expect(p.party_present).toHaveLength(12)
+  })
+  it("tells a walk patch from a DM patch", () => {
+    expect(isWalkPatch(parsePatch({ sub_location: "node-10-guard-tower", event: "step_outside", party_present: ["Fifi"] }))).toBe(true)
+    expect(isWalkPatch(parsePatch({ stance: "free" }))).toBe(false)
+    expect(isWalkPatch(parsePatch({ node_key: "sloobludop" }))).toBe(false)
+  })
+})
+
+describe("sameSituation", () => {
+  it("ignores updated_at/updated_by and compares the rest", () => {
+    const a = startingSituation(RUN, T0)
+    const b = mergeSituation(a, {}, "walk", T1)
+    expect(sameSituation(a, b)).toBe(true)
+    expect(sameSituation(a, mergeSituation(a, { sub_location: "x" }, "walk", T1))).toBe(false)
+  })
+})
+
+describe("buildSituationBlock", () => {
+  it("captive: names the pen, the locked gate and the ward", () => {
+    const text = buildSituationBlock(startingSituation(RUN, T0), "Velkynvelve")
+    expect(text).toContain("Velkynvelve — Slave Pen")
+    expect(text).toContain("CAPTIVE")
+    expect(text).toContain("LOCKED")
+    expect(text).toContain("ward sigil still")
+    expect(text).not.toContain("Do NOT refer to the party as prisoners")
+  })
+  it("escaping: forbids the prisoner framing and says the ward is lifted", () => {
+    const out = mergeSituation(startingSituation(RUN, T0), { event: "gate_open" }, "walk", T1)
+    const s = mergeSituation(out, { event: "step_outside", sub_label: "Guard Tower", party_present: ["Fifi", "Ront"] }, "walk", T1)
+    const text = buildSituationBlock(s, "Velkynvelve")
+    expect(text).toContain("ESCAPING")
+    expect(text).toContain("LEFT the slave pen")
+    expect(text).toContain("gate is OPEN")
+    expect(text).toContain("no longer binds")
+    expect(text).toContain("Present here: Fifi, Ront")
+    expect(text).toContain("Do NOT refer to the party as prisoners")
+    expect(text).not.toMatch(/manacled/)
+  })
+  it("away from Velkynvelve it says nothing about the gate", () => {
+    const s = mergeSituation(startingSituation(RUN, T0), { node_key: "sloobludop", sub_location: null, sub_label: null, stance: "camped" }, "travel", T1)
+    const text = buildSituationBlock(s, "Sloobludop")
+    expect(text).toContain("Where: Sloobludop")
+    expect(text).toContain("CAMPED")
+    expect(text).not.toContain("gate")
+  })
+})

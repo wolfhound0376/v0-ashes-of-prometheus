@@ -520,6 +520,29 @@ function noteSeats(seated){
 }
 function characterIdOf(slug){ if (ALLY_ROW[slug]) return ALLY_ROW[slug]; if (FORGED_ID[slug]) return FORGED_ID[slug]; const nm = String(PLAYS_AS[slug] || "").toLowerCase(); const s = seatsSeen.find(x => String(x.name || "").toLowerCase() === nm); return s ? s.id : null; }
 const dmHeaders = () => { const key = (() => { try { return localStorage.getItem("aop_forge_key") || ""; } catch (e) { return ""; } })(); return key ? {"x-dm-key": key} : {}; };
+
+// The server's idea of where the party is (/api/party/situation, lib/situation.ts, table party_situation).
+// Until 2026-10-24 the walk kept the party's position in sessionStorage only, so the NPCs on the dashboard
+// went on treating the party as prisoners three rooms past the gate. Now every plate change, the gate, and
+// the first step outside the pen are reported here. The browser sends WHAT happened; the server decides what
+// it means (Sam's ruling: captive -> escaping on stepping OUT, not on the gate opening). Fire-and-forget:
+// the walk never waits on it, and the preview (APP false) never calls it.
+function reportSituation(patch){
+  if (!APP) return;
+  const body = Object.assign({}, patch);
+  if (!Object.keys(dmHeaders()).length){
+    try { body.characterId = localStorage.getItem("aop_character_id") || undefined; body.claimToken = localStorage.getItem("aop_claim_token") || undefined; } catch (e) {}
+    if (!body.characterId || !body.claimToken) return;        // a browser with no seat and no key cannot move the party
+  } else body.by = "walk";
+  try {
+    fetch("/api/party/situation", {method: "POST", keepalive: true, headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)}).catch(() => {});
+  } catch (e) {}
+}
+function partyPresent(){
+  const names = party.map(p => { try { return fname(p); } catch (e) { return null; } });
+  for (const id of companyNow()) if (SPR[id] && !party.some(p => p.id === id)) names.push(SPR[id].json.name);
+  return names.filter(Boolean);
+}
 async function seatCompanion(who){
   const body = typeof who === "string" ? {name: PLAYS_AS[who] || who} : {characterId: who.id, name: who.name};
   const res = await fetch("/api/seat", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)});
@@ -1433,6 +1456,8 @@ async function enterNode(n, opts = {}){
   party.forEach(p => p.face = face);
   party.forEach(p => { p.home = {x: p.x, y: p.y}; p.actUntil = now + 3000 + Math.random() * 6000; });
   party.sort((a, b) => PARTY.indexOf(a.id) - PARTY.indexOf(b.id));
+  // tell the server where the party now stands and who is here; the first step out of the pen is the moment the ward lets go
+  reportSituation({sub_location: node.slug, sub_label: node.name, party_present: partyPresent(), event: from === PEN && n !== PEN ? "step_outside" : undefined});
   const comp = companyNow().filter(id => SPR[id]);
   for (const np of node.npcs || []){
     if (np.hostile && state.cleared[n]) continue;
@@ -2200,6 +2225,7 @@ function hasPenKey(){ return !!state.penKey || Object.values(GEAR).some(g => (g.
 function unlockGate(forced){
   if (state.gateOpen) return;
   state.gateOpen = true; state.doorShut = false; if (forced) state.gateBroken = true;   // torn from its bolts: it will not shut again
+  reportSituation({event: forced ? "gate_broken" : "gate_open"});                        // the gate only; the stance waits for the step out
   if (cur === 11){ setDoor(true); sfx("door-open", forced ? 1 : .85); }
   if (balcony()) buildGrid();
   log(forced ? "The pen gate tears open and hangs from one hinge." : "The pen gate swings open.");
@@ -2212,6 +2238,7 @@ function openGate(){
   if (!j){ unlockGate(); return; }
   // Jorlan leaves his post on the landing, goes round behind the pillar, unlocks the door from outside and steps in.
   state.gateOpen = true; state.doorShut = false;                 // saved now; the door itself swings when he gets there
+  reportSituation({event: "gate_open"});
   log("Someone is at the lock. <em>Jorlan's gambit.</em>");
   j.static = false; j.patrol = null; stopActivity(j);
   const room = y => 1 / (node.scale * depthAt(y)), fs = j.fixedScale || 1.35;   // his size on the landing = Sarith's
