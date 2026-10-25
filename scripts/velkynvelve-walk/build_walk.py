@@ -180,6 +180,13 @@ def martial_rules(root):
     return re.sub(r'^export ', '', src, flags=re.M)
 
 
+def surgeon_rules(root):
+    """lib/drow-surgeon.mjs (The Drow Surgeon, Sam's homebrew for the pen gate), pasted whole minus `export`, like
+    rage_rules. The map, app/api/drow-surgeon and lib/drow-surgeon.test.ts read the SAME table, bolt, potion and lines."""
+    src = open(os.path.join(root, 'lib', 'drow-surgeon.mjs'), encoding='utf-8').read()
+    return re.sub(r'^export ', '', src, flags=re.M)
+
+
 def build_kit_tables(root):
     src = open(os.path.join(root, KIT_TS), encoding="utf-8").read()
     types = _ts_to_obj(_ts_block(src, "const TYPES"))
@@ -292,7 +299,7 @@ for k, n in spec.items():
 fx = open(os.path.join(HERE, 'fx.json')).read()
 t = open(os.path.join(HERE, 'template.html')).read()
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
-      .replace('/*__MARTIAL__*/', martial_rules(ROOT))
+      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))
