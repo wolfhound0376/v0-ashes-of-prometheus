@@ -30,6 +30,8 @@ interface LichResponse {
   /** Sounds this turn earned, as full bucket paths. Played by lib/sfx-cues. */
   sfxCues?: { type: "raw"; key: string; scope?: "self" | "party" }[]
   rollRequest?: RollRequestSpec
+  /** Present when the turn was a rehearsal (sandbox): what it would have written, and did not. */
+  sandbox?: { suppressedWrites: number }
 }
 
 export function useLich(campaignId: string = "abyss") {
@@ -53,7 +55,7 @@ export function useLich(campaignId: string = "abyss") {
     message: string,
     characterId?: string | null,
     claimToken?: string | null,
-    opts?: { director?: boolean; talkWith?: string | null; talkWhere?: string | null; facing?: string | null },
+    opts?: { director?: boolean; talkWith?: string | null; talkWhere?: string | null; facing?: string | null; sandbox?: boolean },
   ): Promise<LichResponse> => {
     setIsLoading(true)
 
@@ -77,7 +79,7 @@ export function useLich(campaignId: string = "abyss") {
           response = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message, campaignId, characterId, claimToken, director: opts?.director === true, talkWith: opts?.talkWith ?? null, talkWhere: opts?.talkWhere ?? null, facing: opts?.facing ?? null }),
+            body: JSON.stringify({ message, campaignId, characterId, claimToken, director: opts?.director === true, talkWith: opts?.talkWith ?? null, talkWhere: opts?.talkWhere ?? null, facing: opts?.facing ?? null, sandbox: opts?.sandbox === true }),
           })
           // The server answered — success or failure, that is the answer.
           break
@@ -128,6 +130,7 @@ export function useLich(campaignId: string = "abyss") {
           data.rollRequest && typeof data.rollRequest.id === "string"
             ? (data.rollRequest as RollRequestSpec)
             : undefined,
+        sandbox: data.sandbox && typeof data.sandbox.suppressedWrites === "number" ? { suppressedWrites: data.sandbox.suppressedWrites } : undefined,
       }
     } catch (error) {
       console.error("Error sending message:", error)
