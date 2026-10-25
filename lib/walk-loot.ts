@@ -52,6 +52,55 @@ export const BOOK_CONTAINERS: Record<string, BookContainer> = {
       { slug: "common-clothes", qty: 12, note: "two sets per chest" },
     ],
   },
+  // The armory, area 10's upper chamber (walk plate "10c"; Sam's editor, 2026-10-24). OotA ch.1 area 10, Treasure: "The
+  // armory holds six hand crossbows, twenty cases of twenty hand crossbow bolts each, six chain shirts, six suits of studded
+  // leather armor, six shields, six shortswords, ten daggers, four 100-foot coils of silk rope, six bags of caltrops (20 each),
+  // two bags of iron spikes (10 each), and two building hammers (not usable as weapons)." Catalogue slugs where the catalogue
+  // has the thing (a case of bolts is the catalogue's "bolts-20"); the rest are shown "not in the catalogue yet" until it does.
+  "armory-crossbows": {
+    node: "10c", title: "The crossbow rack",
+    source: "OotA ch.1 area 10, Treasure: six hand crossbows.",
+    entries: [{ slug: "hand-crossbow", qty: 6 }],
+  },
+  "armory-bolts": {
+    node: "10c", title: "The cases of bolts",
+    source: "OotA ch.1 area 10, Treasure: twenty cases of twenty hand crossbow bolts each.",
+    entries: [{ slug: "bolts-20", qty: 20, note: "a case of 20 hand crossbow bolts" }],
+  },
+  "armory-rope-sacks": {
+    node: "10c", title: "Rope and sacks",
+    source: "OotA ch.1 area 10, Treasure: four 100-foot coils of silk rope, six bags of caltrops (20 each), two bags of iron spikes (10 each).",
+    entries: [
+      { slug: "silk-rope", qty: 4, note: "a 100-foot coil (the catalogue's silk rope is 50 ft)" },
+      { slug: "bag-of-caltrops", qty: 6, note: "20 caltrops to a bag" },
+      { slug: "iron-spikes-bag", qty: 2, note: "10 iron spikes to a bag" },
+    ],
+  },
+  "armory-chain": {
+    node: "10c", title: "The chain shirts",
+    source: "OotA ch.1 area 10, Treasure: six chain shirts.",
+    entries: [{ slug: "chain-shirt", qty: 6 }],
+  },
+  "armory-studded": {
+    node: "10c", title: "The studded leather",
+    source: "OotA ch.1 area 10, Treasure: six suits of studded leather armor.",
+    entries: [{ slug: "studded-leather-armor", qty: 6 }],
+  },
+  "armory-shields": {
+    node: "10c", title: "The shields",
+    source: "OotA ch.1 area 10, Treasure: six shields.",
+    entries: [{ slug: "shield", qty: 6 }],
+  },
+  "armory-blades": {
+    node: "10c", title: "The blade racks",
+    source: "OotA ch.1 area 10, Treasure: six shortswords and ten daggers.",
+    entries: [{ slug: "shortsword", qty: 6 }, { slug: "dagger", qty: 10 }],
+  },
+  "armory-hammers": {
+    node: "10c", title: "The building hammers",
+    source: "OotA ch.1 area 10, Treasure: two building hammers (not usable as weapons). The two chests beside them are in the painting only; the book lists nothing in them.",
+    entries: [{ slug: "building-hammer", qty: 2, note: "a tool, not a weapon" }],
+  },
 }
 
 // A drow warrior's kit. OotA ch.1 area 2, of a resting drow: "a shortsword, a hand crossbow with a case of 20 hand
