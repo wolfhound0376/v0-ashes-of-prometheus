@@ -136,6 +136,14 @@ interface TypeSpec {
    * types with no loop art yet; a single-target cast never lays one.
    */
   decal?: string
+  /**
+   * A cloud that STANDS in the area: painted smoke that erupts where an AREA
+   * spell of this type lands, spreads to fill the area, and stays while the
+   * caster concentrates. Drawn by the painted map (scripts/velkynvelve-walk,
+   * which inherits this table at build time), with lib/area-cloud.mjs for the
+   * timing. A single-target cast never raises one.
+   */
+  cloud?: string
 }
 
 // Every damage type is now covered.
@@ -189,7 +197,9 @@ const TYPES: Partial<Record<DamageType, TypeSpec>> = {
   cold:     { rune: "runeFrost",    route: "beam",        travel: "frostRayTravel", impact: "frostRayImpact", charge: 0.70, gather: "frostRayCharge", tint: 0xffffff, decal: "aoeFrost", burst: { tint: 0xa8e6ff, sparks: 22, ring: true, rise: 0.1 }, aftermath: { sheet: "pxIce", hold: 8, size: 1.35 } },
   necrotic: { rune: "runeNecrotic", route: "beam",        travel: "necroBeam",     impact: "necroImpact",    charge: 0.75, tint: 0xffffff, burst: { tint: 0x9c6bff, sparks: 12, ring: false } },
   eldritch: { rune: "runeEldritch", route: "beam",        travel: "eldBeam",       impact: "eldImpact",      charge: 0.70, tint: 0xffffff, burst: { tint: 0xc678ff, sparks: 18, ring: true } },
-  poison:   { rune: "runeAcid",     route: "ball",        travel: "pxPoison",      impact: "poisonCloud",    charge: 0.65, speed: 10, motion: "lob",   tint: 0xffffff, burst: { tint: 0x7ee23f, sparks: 16, ring: false, power: 0.8 } },
+  // An AREA of poison stands as Sam's skull cloud (2026-10-25: "It should
+  // grow and fill the area of effect"). Poison Spray has no area and raises none.
+  poison:   { rune: "runeAcid",     route: "ball",        travel: "pxPoison",      impact: "poisonCloud",    charge: 0.65, speed: 10, motion: "lob",   tint: 0xffffff, cloud: "aoePoisonSkulls", burst: { tint: 0x7ee23f, sparks: 16, ring: false, power: 0.8 } },
   // A missile SEEKS: each dart of a volley swings out on its own side and
   // homes in, so three darts leave as a fan and arrive together.
   force:    { rune: "runeForce",    route: "ball",        travel: "pxMissile",     impact: "forceHit",       charge: 0.65, speed: 16, motion: "seek",  tint: 0xffffff, burst: { tint: 0xa78bff, sparks: 18, ring: true } },
@@ -333,6 +343,9 @@ const DELIVERY_BY_SPELL: Record<string, Partial<TypeSpec>> = {
   // fog CENTERED ON A POINT you choose within range." It is created there.
   // It was being lobbed across the room like a flask.
   "cloudkill": { route: "impact-only", travel: undefined },
+  // SRD 5.1: "You create a 20-foot radius sphere of yellow, nauseating gas centered on a point within range."
+  // Created there, like Cloudkill; nothing is thrown.
+  "stinking cloud": { route: "impact-only", travel: undefined },
 
   // ── LIGHTNING ─────────────────────────────────────────────────────────
   // SRD 5.1: Range TOUCH. "Lightning springs from your hand to deliver a

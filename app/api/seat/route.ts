@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
+import { isDmRequest } from "@/lib/dm-session"
 import { readSeated, seatCharacter, unseatCharacter } from "@/lib/seats"
 
 // /api/seat — the DM's hand on the seats (lib/seats.ts).
@@ -14,10 +15,12 @@ import { readSeated, seatCharacter, unseatCharacter } from "@/lib/seats"
 
 export const dynamic = "force-dynamic"
 
+// The DM's session cookie (/dm, lib/dm-session.ts) or the older x-dm-key header. With no DM code
+// set the route stays OPEN, as before, so a missing env var never locks Sam out of his own game.
 function authorized(req: NextRequest): boolean {
   const required = process.env.DM_ACCESS_CODE
   if (!required) return true
-  return safeEquals(normalizeCode(req.headers.get("x-dm-key") ?? ""), normalizeCode(required))
+  return isDmRequest(req, normalizeCode, safeEquals)
 }
 
 // `roster` is every player character in the game (names and classes only — nothing a player at the table

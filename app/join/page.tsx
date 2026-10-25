@@ -65,7 +65,8 @@ export default function JoinPage() {
   const [roster, setRoster] = useState<RosterCharacter[] | null>(null)
   const [pick, setPick] = useState<Pick | null>(null)
   const [code, setCode] = useState("")
-  const [status, setStatus] = useState<"idle" | "checking" | "error" | "mismatch" | "limited" | "welcome">("idle")
+  const [status, setStatus] = useState<"idle" | "checking" | "error" | "mismatch" | "limited" | "welcome" | "pending" | "rejected">("idle")
+  const [pendingHero, setPendingHero] = useState<string | null>(null)
   const [savedBuilds, setSavedBuilds] = useState(0)
   const [forgeNext, setForgeNext] = useState<"create" | "import" | null>(null)
 
@@ -102,15 +103,22 @@ export default function JoinPage() {
         })
         if (res.status === 429) { setStatus("limited"); return }
         const result = await res.json()
-        if (!res.ok || !result?.ok) { setStatus("error"); return }
+        if (!res.ok || !result?.ok) {
+          // A hero from the Forge whose cell is not open yet: real words, no seat yet.
+          if (result?.reason === "pending" || result?.reason === "rejected") { setPendingHero(result.heroName ?? null); setStatus(result.reason); return }
+          setStatus("error"); return
+        }
 
         if (result.role === "dm") {
           if (pick.kind !== "dm") { setStatus("mismatch"); return }
           window.localStorage.setItem(ROLE_LS_KEY, "dm")
           window.localStorage.removeItem(TOKEN_LS_KEY)
           window.localStorage.setItem(FORGE_KEY_LS_KEY, code.trim())
+          // Mint the DM session cookie too (best-effort), then the table: who is seated, who is
+          // waiting at the Forge, Begin session or Rehearsal (/dm).
+          await fetch("/api/dm/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) }).catch(() => {})
           setStatus("welcome")
-          setTimeout(() => router.replace("/"), 900)
+          setTimeout(() => router.replace("/dm"), 900)
           return
         }
 
@@ -200,7 +208,7 @@ export default function JoinPage() {
               >
                 <div className="flex h-44 w-full items-center justify-center font-serif text-6xl text-[#8a6a3a] group-hover:text-[#c9a868]">+</div>
                 <div className="mt-3 font-serif text-lg text-[#c9b896]">A new face</div>
-                <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Create or import</div>
+                <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Forge · import · waiting</div>
               </button>
             </div>
             <button onClick={() => { setPick({ kind: "dm" }); setCode(""); setStatus("idle") }} className="mt-10 text-[11px] uppercase tracking-[0.3em] text-stone-600 hover:text-[#c9a868]">
@@ -229,13 +237,15 @@ export default function JoinPage() {
               autoComplete="off"
               autoCapitalize="off"
               spellCheck={false}
-              placeholder={pick.kind === "character" ? "gloom-tallow-hush" : pick.kind === "new" ? "the forge code" : "the DM code"}
+              placeholder={pick.kind === "character" ? "gloom-tallow-hush" : pick.kind === "new" ? "the forge code, or your own words" : "the DM code"}
               className="w-full rounded-sm border border-[#7a5f33]/70 bg-black/70 px-3 py-3 text-center font-mono text-[16px] tracking-wide text-stone-100 placeholder:text-stone-700 focus:border-[#c9a868] focus:outline-none disabled:opacity-60"
             />
             <p className="mt-2 text-center text-[11px] text-stone-600">Spaces, capitals and dashes are all fine.</p>
             {status === "error" && <p role="alert" className="mt-3 text-center text-sm text-red-400/90">Those words aren&apos;t recognised. Check them with your Dungeon Master.</p>}
             {status === "mismatch" && <p role="alert" className="mt-3 text-center text-sm text-red-400/90">Those words belong to someone else. Pick the right card, or a different code.</p>}
             {status === "limited" && <p role="alert" className="mt-3 text-center text-sm text-red-400/90">Too many attempts. Wait a few minutes and try again.</p>}
+            {status === "pending" && <p role="status" className="mt-3 text-center text-sm text-[#d9bd7e]">The Dungeon Master hasn&apos;t opened {pendingHero ? `${pendingHero}'s` : "your"} cell yet. Ask them, then try again.</p>}
+            {status === "rejected" && <p role="alert" className="mt-3 text-center text-sm text-red-400/90">The Dungeon Master turned {pendingHero ?? "that hero"} away at the Forge. Talk to them.</p>}
             {status === "welcome" && <p role="status" className="mt-3 text-center text-sm text-[#d9bd7e]">{pick.kind === "dm" ? "Welcome back, Dungeon Master." : "The door opens…"}</p>}
             <div className="mt-6 flex items-center justify-center gap-3">
               <button type="button" onClick={() => { setPick(null); setStatus("idle") }} disabled={busy} className="px-4 py-2.5 text-[11px] uppercase tracking-[0.25em] text-stone-500 hover:text-stone-300">
@@ -262,7 +272,7 @@ export default function JoinPage() {
                 {savedBuilds > 0 && <> {savedBuilds} saved build{savedBuilds === 1 ? "" : "s"} on this device — resume or finish there.</>}
               </span>
             </button>
-            <button onClick={() => router.push("/forge")} className="w-full rounded-sm border border-[#3d3428] bg-black/60 px-4 py-3 text-left transition-colors hover:border-[#8a6a4a]">
+            <button onClick={() => router.push("/forge/import")} className="w-full rounded-sm border border-[#3d3428] bg-black/60 px-4 py-3 text-left transition-colors hover:border-[#8a6a4a]">
               <span className="block text-sm text-stone-300">📜 Import a character</span>
               <span className="mt-0.5 block text-[11px] leading-relaxed text-stone-500">Paste an <code className="text-[#c9b896]">aop-character-v1</code> export from the Forge.</span>
             </button>
