@@ -6819,7 +6819,34 @@ function idleLife(a){
 // (scripts/sfx/cut_footsteps.py -> public/sfx/walk/step-1..8.mp3), picked at random and pitched a little either way so
 // a line of walkers never sounds like one loop. Weight comes from how tall the creature stands: small folk patter,
 // people barely register, big things land heavier and lower.
-const STEP_CLIPS = 8;
+const STEP_CLIPS = 4;            // per surface: public/sfx/walk/step-<surface>-1..4.mp3
+// WHAT THE GROUND IS (Sam, 2026-10-25: "footsteps sound different depending where you are at"), read off each
+// plate: the drow outpost's wooden platforms, stone floors, dirt and bone, wet rock by the river, crystal, fungus.
+const AREA_SURFACE = {
+  "node-01-southern-watch-post": "stone", "node-02-barracks": "stone", "node-03-main-hall": "gravel",
+  "node-04-elite-barracks": "wood", "node-05-lift": "stone", "node-06-shrine": "stone", "node-07-ilvara-quarters": "wood",
+  "node-08-shoor-quarters": "wood", "node-09-waterfall": "wood", "node-10-guard-tower": "wood",
+  "node-10b-guard-tower-lower": "stone", "node-10c-guard-tower-armory": "stone", "node-11-slave-pen": "gravel",
+  "node-12-quaggoth-den": "gravel", "node-13-northern-watch-post": "wood", "node-14-pool-river": "stone",
+  "biome-tunnels": "gravel", "biome-crystal": "crystal", "biome-wastes": "gravel", "biome-lair": "gravel",
+  "biome-shore": "water", "biome-grove": "moss",
+};
+// Each surface's level against the others, so a stride sounds the same size whatever it lands on.
+const SURFACE_TRIM = {stone: 1, gravel: 1, wood: 1, bridge: 1.1, water: 1.25, moss: 1.35, crystal: .85};
+// The ground under a walker: a rope bridge or a timber walkway they are crossing (the plate's own labelled zones),
+// the water at the falls, or else the area's floor.
+function surfaceAt(a){
+  const z = node && node.zones ? zoneAt(a.x, a.y) : null;
+  if (z){
+    const l = String(z.label || z.name || "").toLowerCase();
+    // the bridge first: area 9's falls zone is "the bridge passes right over the drop" -- you walk on rope, not water
+    if (/rope (bridge|walkway)|\bbridge\b/.test(l)) return "bridge";
+    if (z.kind === "water" || /\briver\b|\bpool\b|shallows|wade/.test(l)) return "water";
+    if (/stone steps|stair down the priestess|cliff stair/.test(l)) return "stone";
+    if (/walkway|timber|ladder|wooden|plank/.test(l)) return "wood";
+  }
+  return AREA_SURFACE[node && node.slug] || "stone";
+}
 const STEP_WEIGHT = [            // [up to this height in feet, gain, playback rate]
   [4,  .03, 1.15],               // Small: gnomes, halflings, goblins, giant rats
   [9,  .05, 1.0],                // Medium: people, drow, dwarves, orcs (Ront's frame measures 8.1: still medium)
@@ -6832,8 +6859,8 @@ function footstep(a){
   if (now - stepBudgetAt > 160){ stepBudgetAt = now; stepBudget = 0; }
   if (++stepBudget > 5) return;                                       // a whole party on the move stays a patter, not a roar
   const ft = standingFt(a), w = STEP_WEIGHT.find(r => ft <= r[0]) || STEP_WEIGHT[STEP_WEIGHT.length - 1];
-  const clip = 1 + Math.floor(Math.random() * STEP_CLIPS), wobble = .94 + Math.random() * .12;
-  sfx(`walk:step-${clip}`, w[1] * (.85 + Math.random() * .3), w[2] * wobble);
+  const surface = surfaceAt(a), clip = 1 + Math.floor(Math.random() * STEP_CLIPS), wobble = .94 + Math.random() * .12;
+  sfx(`walk:step-${surface}-${clip}`, w[1] * (SURFACE_TRIM[surface] || 1) * (.85 + Math.random() * .3), w[2] * wobble);
 }
 function tickFootsteps(){
   if (!actors.length) return;

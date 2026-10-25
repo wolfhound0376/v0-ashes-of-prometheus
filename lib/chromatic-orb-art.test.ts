@@ -51,9 +51,25 @@ describe("Chromatic Orb art and sound", () => {
 
 // Footsteps (Sam, 2026-10-25: "very subtle sounds and a little louder for heavier creatures"): single footfalls the
 // map picks from at random. A missing clip would just be a silent step.
+// Then "footsteps sound different depending where you are at": a set of four per surface, and every area of the map
+// says what its floor is.
+const SURFACES = ["stone", "gravel", "water", "bridge", "wood", "moss", "crystal"]
 describe("footstep clips", () => {
-  it("ships all eight single footfalls with the app", () => {
-    for (let i = 1; i <= 8; i++) expect(existsSync(`public/sfx/walk/step-${i}.mp3`), `step-${i}`).toBe(true)
-    expect(page).toContain("const STEP_CLIPS = 8")
+  it("ships four single footfalls for every surface", () => {
+    for (const s of SURFACES) for (let i = 1; i <= 4; i++) expect(existsSync(`public/sfx/walk/step-${s}-${i}.mp3`), `step-${s}-${i}`).toBe(true)
+    expect(page).toContain("const STEP_CLIPS = 4")
+  })
+
+  it("gives every area of the map a floor surface the clips exist for", () => {
+    const spec = JSON.parse(readFileSync("scripts/velkynvelve-walk/spec.json", "utf8"))
+    const nodes: { slug?: string }[] = Object.values(spec.nodes ?? spec).filter((n: any) => n && typeof n === "object" && n.slug) as any
+    const m = /const AREA_SURFACE = (\{[\s\S]*?\});/.exec(page)
+    expect(m).toBeTruthy()
+    const table = Function(`return ${m![1]}`)() as Record<string, string>
+    expect(nodes.length).toBeGreaterThan(10)
+    for (const n of nodes) {
+      expect(table[n.slug!], n.slug).toBeTruthy()
+      expect(SURFACES).toContain(table[n.slug!])
+    }
   })
 })
