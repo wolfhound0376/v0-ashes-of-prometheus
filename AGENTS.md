@@ -535,6 +535,16 @@ a Vercel preview, **not yet merged**.
   `main`'s baseline** (see the note in §1 — it does not exit 0 on `main`), and `pnpm build`
   must exit 0. The plan docs carry numbered post-deploy checklists — use them.
 - Branch, push, and let Sam merge from GitHub's banner. Don't push to `main` unasked.
+- **Every ask comes with a link (Sam's rule, 2026-10-25: "whenever you ask me to do something give
+  me a link").** When a step is Sam's to do — paste SQL, merge a PR, approve a connector prompt, delete a
+  branch, flip a setting — hand it over as a clickable link to the exact page, never just a name. The
+  usual ones: the SQL Editor is
+  `https://supabase.com/dashboard/project/ppadxmvvvxmnnejeaoer/sql/new`; a PR is
+  `https://github.com/wolfhound0376/v0-ashes-of-prometheus/pull/<n>`; opening one from a pushed branch is
+  `https://github.com/wolfhound0376/v0-ashes-of-prometheus/compare/main...<branch>?expand=1`; the branch
+  list (for deletes) is `https://github.com/wolfhound0376/v0-ashes-of-prometheus/branches`; Vercel env vars
+  are under the project's Settings → Environment Variables. A command is still fine (`git push origin
+  --delete …`) but it rides alongside the link, not instead of it.
 
 ---
 
