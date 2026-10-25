@@ -70,7 +70,14 @@ export default function ChooseHero() {
     load()
   }, [load])
 
-  const forge = () => { setLeaving(true); window.setTimeout(() => router.push("/forge"), 380) }
+  // The Forge's one door: ask for the pass (lib/forge-pass.ts), then go. A refused pass says so.
+  const forge = async () => {
+    try {
+      const r = await fetch("/api/forge/pass", { method: "POST" })
+      if (!r.ok) { const j = await r.json().catch(() => ({})); setLoadErr(j.error ?? "The Forge would not open."); return }
+    } catch { setLoadErr("Could not reach the Forge."); return }
+    setLeaving(true); window.setTimeout(() => router.push("/forge"), 380)
+  }
 
   const reserved = (c: Claim, hero: Hero) => {
     writeClaim(c); setClaim(c)
