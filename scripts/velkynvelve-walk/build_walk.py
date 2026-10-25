@@ -195,7 +195,7 @@ P = ['kenta', 'samson', 'scott', 'freia']
 HEROES = {k: v for k, v in json.load(open(os.path.join(HERE, 'heroes.json'))).items() if not k.startswith('_') and os.path.exists(os.path.join(SPR, v, 'sprite.json'))}
 P = P + [v for v in HEROES.values() if v not in P]
 N = ['ront', 'eldeth', 'derendil', 'sarith', 'buppido', 'jimjar', 'topsy', 'turvy', 'shuushar', 'stool', 'jorlan', 'drow-guard-male', 'drow-guard-female']
-F = ['quaggoth', 'giant-spider', 'ghost-male']   # ghost-male: the bhut under Old Thessaly (Sam, 2026-10-24)
+F = ['quaggoth', 'giant-spider', 'ghost-male', 'drow-elite-warrior', 'ilvara', 'shoor', 'asha']   # ghost-male: the bhut under Old Thessaly (Sam, 2026-10-24); the officers: Sam's playtest, 2026-10-24 (shoor and asha have idle sheets only)
 V = ['giant-rat']  # vermin: set dressing, idle sheet only
 
 meta = {}
@@ -230,7 +230,7 @@ story = json.load(open(os.path.join(HERE, 'story.json')))
 for k, v in story.items():
     if k.startswith('_'): continue
     n = spec[k]; n['npcs'] = n.get('npcs', []) + v.get('npcs', [])
-    for f in ('chains', 'hostileLabel', 'interact', 'arrivals', 'wards', 'spots', 'props', 'loot', 'lift', 'objects'):
+    for f in ('chains', 'hostileLabel', 'interact', 'arrivals', 'wards', 'spots', 'props', 'loot', 'lift', 'objects', 'rolls', 'watch'):
         if f in v: n[f] = v[f]
     n['cross'] = v.get('cross', {})
 # exits that lead to several places become one strip per destination, split across the way out

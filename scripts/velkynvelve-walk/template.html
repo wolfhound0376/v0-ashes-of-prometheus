@@ -693,7 +693,7 @@ let actors = [], party = [], npcs = [], foes = [];
 let leader = null, trail = [];
 let mode = "load";            // explore | combat | talk | dialog | travel
 let ackZone = null;
-const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {}, props: {}};
+const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {}, props: {}, rolls: {}};
 
 let now = performance.now();
 
@@ -1547,6 +1547,47 @@ const zoneCenter = z => ({x: (z.rect[0] + z.rect[2]) / 2, y: (z.rect[1] + z.rect
 function norm(v){ const d = Math.hypot(v.x, v.y) || 1; return {x: v.x / d, y: v.y / d}; }
 function zoneAt(x, y){ return node.zones.find(z => inRect(z.rect, x, y)) || null; }
 
+// WHO IS ON A PLATE WHEN THE PARTY WALKS IN (Sam's playtest, 2026-10-24: "walking into a plate didn't populate the plate
+// with the campaign specific characters and items (some require a roll)"). The book gives most rooms a chance, not a
+// fixture — "25 percent chance that 1d4 drow are in the main hall", "roll a d6: on 1–2 the priestess is here". story.json
+// carries those as data on the plate (`rolls`: named dice) and on each inhabitant (`when`: which results put them here;
+// `chance`: a plain probability; `dice` + `spots`: how many of them, at which of the listed posts; `at`: a named roll that
+// picks ONE spot). Every roll is made ONCE per plate per session and kept (state.rolls), so leaving and coming back finds
+// the same room — the book's "at any given time" is read as "the time you looked", not a new shuffle every doorway.
+function plateRolls(n){
+  const r = state.rolls[n] || (state.rolls[n] = {}), spec = (SPEC[n] && SPEC[n].rolls) || {};
+  for (const k in spec) if (r[k] == null) r[k] = roll(spec[k]).total;
+  return r;
+}
+function whoIsHere(n){
+  const out = [], R = plateRolls(n);
+  for (const np of (SPEC[n] && SPEC[n].npcs) || []){
+    if (np.when){ const v = R[np.when.roll]; if (v == null || !(np.when.in || []).includes(v)) continue; }
+    if (np.chance != null){ const key = `chance:${np.id}:${np.x}:${np.y}`; if (R[key] == null) R[key] = Math.random() < np.chance ? 1 : 0; if (!R[key]) continue; }
+    const spots = np.spots || [[np.x, np.y, np.face || 0]];
+    let picks;
+    if (np.at){ const i = Math.min(spots.length, Math.max(1, R[np.at] || 1)) - 1; picks = [spots[i]]; }
+    else if (np.dice){ const key = `dice:${np.id}:${np.x}:${np.y}`; if (R[key] == null) R[key] = roll(np.dice).total; picks = spots.slice(0, Math.min(spots.length, R[key])); }
+    else picks = [spots[0]];
+    for (const [x, y, face] of picks) out.push({...np, x, y, face: face || 0});
+  }
+  return out;
+}
+// A WATCH POST (areas 1 and 13; OotA p.15: "A successful Dexterity (Stealth) check made against the guards' passive
+// Wisdom (Perception) score of 12 allows characters to pass unnoticed"). Rolled for the leader on the way in, once per
+// visit; a failure turns the sentries toward the party. What the sentries then DO is the DM core's: the book has them
+// report and watch, and blow the horn only at a real threat — the page does not start that fight by itself.
+function watchPost(n){
+  const w = SPEC[n] && SPEC[n].watch; if (!w || state.cleared[n] || !leader) return;
+  const seen = npcs.filter(a => a.hostile && !a.offStage);
+  if (!seen.length) return;
+  const sheet = SHEETS[leader.id] || {}, mod = (sheet.skills || {}).stealth ?? (sheet.saves || {}).dex ?? 0, r = d20(0), total = r + mod;
+  if (total >= w.passive){ log(`${fname(leader)} slips past the watch: Stealth ${r} + ${mod} = ${total} against their passive ${w.passive}.`); return; }
+  state.seen = state.seen || {}; state.seen[n] = true;
+  for (const a of seen){ a.face = faceOf(leader.x - a.x, leader.y - a.y); a.alert = true; }
+  log(`<em>${esc(w.label || "The sentries have seen you.")}</em> Stealth ${r} + ${mod} = ${total} against their passive ${w.passive}.`);
+  reportSituation({sub_location: SPEC[n].slug, sub_label: SPEC[n].name, party_present: partyPresent(), event: "seen_by_watch"});
+}
 async function enterNode(n, opts = {}){
   const from = cur, fromScale = node.scale;
   // the freed prisoners come out of the pen with the party, and a companion who fell stays where they fell
@@ -1596,13 +1637,15 @@ async function enterNode(n, opts = {}){
   // tell the server where the party now stands and who is here; the first step out of the pen is the moment the ward lets go
   reportSituation({sub_location: node.slug, sub_label: node.name, party_present: partyPresent(), event: from === PEN && n !== PEN ? "step_outside" : undefined});
   const comp = companyNow().filter(id => SPR[id]);
-  for (const np of node.npcs || []){
+  for (const np of whoIsHere(n)){
     if (np.hostile && state.cleared[n]) continue;
     if (comp.includes(np.id)) continue;                 // a companion walks with the party, not at their old spot
+    if (!SPR[np.id]) continue;                          // no sprite baked for them yet: the record stays, the plate shows nobody
     const a = mkActor(np.id, np.x, np.y, "npc", {face: np.face || 0, talk: !!np.talk, talkLine: np.talkLine, barks: np.barks || [], home: {x: np.x, y: np.y},
       hostile: !!np.hostile, static: !!np.static, backdrop: !!np.backdrop, fixedScale: np.fixedScale || 0, patrol: np.patrol || null, post: {x: np.x, y: np.y}});
     a.t0 = now - Math.random() * 1000; a.actUntil = now + 2000 + Math.random() * 7000; npcs.push(a);
   }
+  watchPost(n);
   // they gather loosely around the party (two rings, the inner one first), not in a heap on the leader
   comp.forEach((id, i) => {
     const ring = i < 6 ? 0 : 1, k = ring ? i - 6 : i, cnt = ring ? Math.max(1, comp.length - 6) : Math.min(6, comp.length);
@@ -2513,7 +2556,9 @@ const CREATURE_SFX = {quaggoth: {call: "creature/creature_quaggoth_roar", hurt: 
   "ghost-male": {hurt: "magic/necrotic_tail", death: "magic/necrotic_release"},
   "giant-spider": {call: "creature/creature_spider_hiss", hurt: "creature/hurt_spider", death: "creature/death_spider"},
   "gray-ooze": {hurt: "creature/hurt_beast", death: "creature/death_beast"},
-  "drow-guard-male": {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}, "drow-guard-female": {hurt: "creature/hurt_humanoid_female", death: "creature/death_humanoid_female"}, jorlan: {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}};
+  "drow-guard-male": {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}, "drow-guard-female": {hurt: "creature/hurt_humanoid_female", death: "creature/death_humanoid_female"},
+  "drow-elite-warrior": {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}, shoor: {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"},
+  ilvara: {hurt: "creature/hurt_humanoid_female", death: "creature/death_humanoid_female"}, asha: {hurt: "creature/hurt_humanoid_female", death: "creature/death_humanoid_female"}, jorlan: {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}};
 const CLASS_TURN = {Sorcerer: "ui/turn_sorcerer", Cleric: "ui/turn_cleric", Bard: "ui/turn_bard", Rogue: "ui/turn_rogue"};
 // Opponents speak (Sam, 2026-10-13: "Opponents can speak and taunt"). Placeholder lines, not book text: the
 // drow in their saved voices (the game renders them live through /api/npc-tts; the preview plays the banked
@@ -2623,6 +2668,25 @@ const FOE_BLOCKS = {
                  resist: ["bludgeoning", "piercing", "slashing"], immune: ["poison"], immuneCond: ["poisoned", "charmed"], multi: 2, rotate: true,
                  attacks: [{name: "Numbing Bite", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5, extra: {dmg: "1d6", type: "cold"}, numb: {save: "con", dc: 12}, curse: true},
                            {name: "Claws", hit: 4, dmg: "1d6+2", type: "slashing", reach: 5, curse: true}]},
+  // THE OUTPOST'S OFFICERS, so the plates can hold who the book puts in them (Sam's playtest, 2026-10-24). Blocks from
+  // `bestiary` rows `drow-elite-warrior` and `drow-priestess-of-lolth` (source: Out of the Abyss, owned) and SRD 5.1 Priest.
+  // Saves are ability modifiers (no save proficiencies on the rows). What the page cannot do is flagged, not faked:
+  // the elite's and priestess's innate spells, the priestess's cleric list and Summon Demon, and the book's own script
+  // for Ilvara (she casts web / conjure animals / insect plague and FLEES calling for help — that is Malachar's to run).
+  "drow-elite-warrior": {name: "Drow elite warrior", xp: 1800, passive: 15, hp: 71, ac: 18, speed: 30, init: 4, saves: {str: 1, dex: 4, con: 2, int: 0, wis: 1, cha: 1}, multi: 2,
+                         attacks: [{name: "Shortsword", hit: 7, dmg: "1d6+4", type: "piercing", reach: 5, extra: {dmg: "3d6", type: "poison"}},
+                                   {name: "Hand Crossbow", hit: 7, dmg: "1d6+4", type: "piercing", reach: 30, long: 120, ranged: true, drowPoison: {dc: 13}}]},
+  // Shoor Vandree IS a drow elite warrior (OotA p.13); his sprite has an idle sheet only, so he stands and the hits land without a swing frame.
+  shoor:                {name: "Shoor Vandree", xp: 1800, passive: 15, hp: 71, ac: 18, speed: 30, init: 4, saves: {str: 1, dex: 4, con: 2, int: 0, wis: 1, cha: 1}, multi: 2, boss: true,
+                         attacks: [{name: "Shortsword", hit: 7, dmg: "1d6+4", type: "piercing", reach: 5, extra: {dmg: "3d6", type: "poison"}},
+                                   {name: "Hand Crossbow", hit: 7, dmg: "1d6+4", type: "piercing", reach: 30, long: 120, ranged: true, drowPoison: {dc: 13}}]},
+  // Ilvara Mizzrym, drow priestess of Lolth (CR 8): two scourge lashes, or Ray of Sickness at range (its poisoned rider lasts a round; `rider` here is the damage-on-save shape the page has).
+  ilvara:               {name: "Ilvara Mizzrym", xp: 3900, passive: 13, hp: 71, ac: 16, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 1, int: 1, wis: 3, cha: 4}, multi: 2, boss: true,
+                         attacks: [{name: "Scourge", hit: 5, dmg: "1d6+2", type: "piercing", reach: 5, extra: {dmg: "5d6", type: "poison"}},
+                                   {name: "Ray of Sickness", hit: 6, dmg: "2d8", type: "poison", reach: 60, ranged: true}]},
+  // Asha Vandree: SRD 5.1 Priest (AC 13, 27 HP, mace +2 1d6) with the drow's Fey Ancestry/Sunlight Sensitivity per OotA p.13; her spells (sacred flame, spirit guardians…) are not on the page.
+  asha:                 {name: "Asha Vandree", xp: 450, passive: 13, hp: 27, ac: 13, speed: 30, init: 0, saves: {str: 0, dex: 0, con: 1, int: 1, wis: 3, cha: 1},
+                         attacks: [{name: "Mace", hit: 2, dmg: "1d6", type: "bludgeoning", reach: 5}]},
   "gray-ooze": {name: "Gray ooze", xp: 100, passive: 8, hp: 22, ac: 8, speed: 10, init: -2, saves: {str: 1, dex: -2, con: 3, int: -5, wis: -2, cha: -4}, resist: ["acid", "cold", "fire"],
                 immuneCond: ["blinded", "charmed", "deafened", "frightened", "prone"],
                 attacks: [{name: "Pseudopod", hit: 3, dmg: "1d6+1", type: "bludgeoning", reach: 5, extra: {dmg: "2d6", type: "acid"}}]},
@@ -6281,7 +6345,7 @@ function update(dt){
     else if (!z && !leader.walkIn) ackZone = null;
     // ambush
     const hz = node.hazard;
-    if (mode === "explore" && hz && hz.kind === "ambush" && !state.cleared[cur] && !state.ambushOff && state.jumped !== cur && (inPoly(hz.poly, leader.x, leader.y) || inPoly(hz.poly, leader.x, leader.y - 30) || inPoly(hz.poly, leader.x, leader.y + 30))) startCombat(hz.foes, hz.label);
+    if (mode === "explore" && hz && hz.kind === "ambush" && !state.cleared[cur] && !state.ambushOff && state.jumped !== cur && (inPoly(hz.poly, leader.x, leader.y) || inPoly(hz.poly, leader.x, leader.y - 30) || inPoly(hz.poly, leader.x, leader.y + 30))){ const here = npcs.filter(a => a.hostile && !a.offStage && !a.backdrop && !a.body && !a.down); startCombat(hz.fromPlate && here.length ? here : [...here, ...hz.foes], hz.label); }   // whoever is resting on the plate rises too; `fromPlate`: the hazard's list only stands in when the plate rolled nobody
     // drow who are on watch
     if (mode === "explore" && !state.cleared[cur]){
       const watch = npcs.filter(n => n.hostile && !n.offStage);

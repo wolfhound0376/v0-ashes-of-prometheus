@@ -146,7 +146,7 @@ NODES = {
    zones=[dict(rect=[1276, 26, 1427, 232], to=[11], label="Stone steps up toward the slave pen"),
           dict(rect=[2101, 556, 2260, 721], to=[10], label="Perimeter walkway north to the watch post"),
           dict(rect=[891, 1211, 1079, 1441], to=[13], label="New exit")],
-   hazard=dict(poly=P((620,500),(1900,440),(2040,700),(1880,1080),(720,1060),(480,800)), kind="ambush", foes=["quaggoth","quaggoth","quaggoth"], label="The quaggoths rise from their nests. You are not drow.")),
+   hazard=dict(poly=P((620,500),(1900,440),(2040,700),(1880,1080),(720,1060),(480,800)), kind="ambush", foes=["quaggoth","quaggoth","quaggoth"], fromPlate=True, label="The quaggoths rise from their nests. You are not drow.")),
  13: dict(slug="node-13-northern-watch-post", name="Northern Watch Post", scale=1.0,
    floors=[dict(poly=P((540,720),(840,700),(1040,660),(1400,660),(1520,720),(1760,700),(1920,740),(1860,840),(1720,900),(1400,940),(1380,1020),(1320,1080),(1320,1339),(1080,1339),(1060,1080),(1000,1000),(960,940),(660,940),(520,840)))],
    obstacles=[dict(cx=1540,cy=800,rx=120,ry=60),dict(cx=840,cy=740,rx=35,ry=25)],
