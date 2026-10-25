@@ -4,7 +4,8 @@ import { createAnthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { findNpcRow, learnName, npcKnowsName, relationshipSummary, saysOwnName } from "@/lib/npc-acquaintance"
-import { applyStageEvents, readStage, type StageEvent } from "@/lib/stage-roster"
+import { applyStageEvents, readStage, watchAndGateTags, type StageEvent } from "@/lib/stage-roster"
+import { directorPrompt, namesTaggedIn, parseDirector, wantsDirector, type DirectorCast } from "@/lib/stage-director"
 import { readSeated } from "@/lib/seats"
 import { situationForChat } from "@/lib/situation"
 import { storedText } from "@/lib/address"
@@ -1551,6 +1552,9 @@ ${combatantRows
       const stage = await readStage(timeAdmin)
       const here = Object.values(stage.present)
       if (here.length) stageContext += ` ON STAGE NOW (keep these positions unless you move them with [NPC_MOVE:]): ${here.map((e) => `${e.name} — ${e.where || "position not stated"}${e.hp != null ? ` (${e.hp}/${e.hpMax ?? "?"} hp)` : ""}${e.wantsWord ? ` [wants a word with ${e.wantsWord.who ?? "anyone"} — not yet spoken]` : ""}`).join("; ")}.`
+      // The watch and the gate are facts the map is drawing (two guards on the bridge, or none; a door that opens).
+      if (stage.watch) stageContext += ` THE WATCH: ${stage.watch.state === "unattended" ? "UNATTENDED — no guard and no Jorlan at the posts; the map shows the bridge and the landing empty until you emit [WATCH: posted]" : stage.watch.state === "changing" ? "changing hands right now (the relief is taking the posts)" : "posted — guards on the bridge, Jorlan on the landing"}.`
+      if (stage.gate) stageContext += ` THE PEN GATE: ${stage.gate.state}${stage.gate.state === "unlocked" ? " (shut, but the lock is off — anyone who tries it can walk out)" : ""}.`
     }
   } catch (e) { console.error("[stage] context skipped:", e) }
   // And the map's account of the room, after the roster so "on stage" above means what the note says it means.
@@ -1740,7 +1744,7 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 12. WHEN COMBAT BEGINS (SRD, Combat Step by Step): the moment any creature attacks, or a hostile act is declared — a player says they strike, a guard draws on them, an ooze lunges — combat has begun and initiative is rolled. A predator that comes INTO the party's space (through the bars, into the pen, onto them) to attack IS attacking: that is [COMBAT_START:], in the same response as its [NPC_MOVE:], not a description of menace. Emit [COMBAT_START: <Name>, <Name>] on its own line naming EVERY hostile creature in the fight, by its canonical name, each of them already brought on with [NPC_ENCOUNTER:] (emit that first if it is missing). From that line on you do NOT roll attacks or decide damage yourself: the dice engine resolves every exchange, the table sees it, and you narrate what it reports. Do not emit it for threats, posturing or a drawn blade nobody uses; do emit it before describing the first blow. When the fight is over — every foe dead, fled or yielded — emit [COMBAT_END] on its own line.
 
 13. WHERE EVERYONE IS: a creature's position is a FACT, not flavour. The stage list below names where each creature on stage was last put; keep it there until you move it, and move it ONLY with [NPC_MOVE: <Name> | <where>] on its own line — "on the bridge", "at the gate, outside", "inside the pen", "through the bars". An ooze that was touching the bars from outside is still outside until you say [NPC_MOVE: Gray Ooze | inside the pen]. Never have an NPC describe a creature somewhere you have not moved it. The map shows exactly where you put them. This holds for the outpost's own people as much as for monsters: a guard who steps away from the bridge, Jorlan coming to the bars with the food — tag the move or it did not happen.
-13b. SOMEONE APPROACHES THE PARTY on their own only through [NPC_WANTS_WORD: <Name> | <character>] — the map shows them asking for a word and the player chooses to come over. Then they speak. JORLAN'S GAMBIT, specifically (Out of the Abyss, ch.1): Jorlan brings the prisoners their food during his guard duty; at the gate he mutters to the NEAREST character "If I could give you a means to escape from here, would you take it?" — and ONLY IF THEY ACCEPT does he propose leaving the gate unlocked and a distraction at the guard change. If they accept, the gate is left unlocked close to the NEXT guard shift change, with the replacement guards delayed a few minutes — a window of minutes, once. Never before the offer, never for days, never a "latch left open". He offers nothing more, warns of nothing (not the ooze), and does not care whether they live.
+13b. SOMEONE APPROACHES THE PARTY on their own only through [NPC_WANTS_WORD: <Name> | <character>] — the map shows them asking for a word and the player chooses to come over. Then they speak. JORLAN'S GAMBIT, specifically (Out of the Abyss, ch.1): Jorlan brings the prisoners their food during his guard duty; at the gate he mutters to the NEAREST character "If I could give you a means to escape from here, would you take it?" — and ONLY IF THEY ACCEPT does he propose leaving the gate unlocked and a distraction at the guard change. If they accept, the gate is left unlocked close to the NEXT guard shift change, with the replacement guards delayed a few minutes — a window of minutes, once. When that moment comes, TAG IT: [GATE: unlocked] when he leaves it unlocked, and [WATCH: unattended] when the old watch has gone and the relief is not yet there (the map then shows the bridge and landing empty); [WATCH: posted] when the delayed relief finally arrives. An ordinary shift change at any other time is [WATCH: change]. Never before the offer, never for days, never a "latch left open". He offers nothing more, warns of nothing (not the ooze), and does not care whether they live.
 
 WHEN IN DOUBT, EMIT THE TAG. False positives are acceptable. Missed state changes break the game.
 
@@ -1957,6 +1961,10 @@ WORLD FLAGS:
   - Example: [NPC_MOVE: Gray Ooze | inside the pen]
 - [NPC_WANTS_WORD: name | character] — an NPC wants a word with a character (or with "anyone"): the map shows them asking, and the character can come over. Use it when someone would approach the party on their own — Jorlan at the gate with the food, a prisoner with something to whisper. It is an INVITATION, not the conversation: say nothing of what they want yet. Clears itself when they talk.
   - Example: [NPC_WANTS_WORD: Jorlan Duskryn | Fifi]
+- [WATCH: change | unattended | posted] — the outpost's watch on the pen. The map shows the guards exactly as this says: "change" walks the old pair off and the relief on; "unattended" takes EVERY guard and Jorlan off the bridge and the landing (nobody returns until you emit [WATCH: posted]); "posted" puts them back. Emit it the moment the narration has the watch change hands, the posts left empty, or the guards return. Never for a plan or an offer.
+  - Example: [WATCH: unattended]
+- [GATE: unlocked | open | locked] — something is done to the pen gate from outside or by an NPC (Jorlan leaves it unlocked, a guard swings it open, it is locked again). "unlocked" means shut but no longer locked: the prisoners can simply open it. The map's door follows this tag with no DM button.
+  - Example: [GATE: unlocked]
 - [FLAG: <key>] — when a permanent, table-wide fact becomes true
   - pen-door-open — the slave pen's door is open: unlocked, picked, forced, or opened by someone else
   - Emit once, at the moment it happens. Never invent a key that is not listed here.
@@ -3520,6 +3528,8 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
     .replace(/\[COMBAT_END\]/gi, "")
     .replace(/\[NPC_MOVE:[^\]]*\]/gi, "")
     .replace(/\[NPC_WANTS_WORD:[^\]]*\]/gi, "")
+    .replace(/\[WATCH:[^\]]*\]/gi, "")
+    .replace(/\[GATE:[^\]]*\]/gi, "")
     // BACKSTOP. Every line above is hand-written, so every new tag is one
     // somebody has to remember to add here — and forgetting means the tag is
     // printed to the table as raw text. This sweeps any [UPPERCASE_TAG: ...]
@@ -4033,6 +4043,46 @@ Rules:
     const resolved = await resolveNpcByName(supabase, talkWith)
     stageEvents.push({ kind: "heard", name: resolved?.name || talkWith })
   }
+
+  // The watch on the pen and the pen gate, from his own tags: [WATCH: change|unattended|posted], [GATE: unlocked|open|locked].
+  const watchGateEvents = watchAndGateTags(rawText)
+  stageEvents.push(...watchGateEvents)
+  // THE STAGE DIRECTOR (lib/stage-director.ts). Sam, 2026-10-25: "The pixel NPCs (especially drow guards/jorlan) MUST
+  // match the story." The tags above are the contract; when the prose moved someone, changed the watch or opened the
+  // gate WITHOUT a tag, one cheap Haiku pass reads the narration against the roster and fills only that gap. Anything
+  // the reply tagged itself is left exactly as tagged. Best-effort and capped at a few seconds: a slow or failed pass
+  // changes nothing.
+  try {
+    if (timeAdmin && responseText) {
+      const stageNow = await readStage(timeAdmin)
+      const mentioned = knownNpcNames.filter((n) => {
+        const first = n.split(/\s+/)[0]
+        return first.length > 2 && new RegExp(`\\b${first.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(responseText)
+      })
+      const cast: DirectorCast[] = [
+        ...Object.values(stageNow.present).map((e) => ({ name: e.name, aliases: e.aliases })),
+        ...mentioned.filter((n) => !Object.values(stageNow.present).some((e) => e.name === n)).map((n) => ({ name: n })),
+      ]
+      if (/\bguards?\b/i.test(responseText) && !cast.some((c) => /^drow guard$/i.test(c.name))) cast.push({ name: "Drow Guard" })
+      const input = { narration: responseText, cast, characters: playerRoster, watch: stageNow.watch?.state ?? null, gate: stageNow.gate?.state ?? null }
+      if (wantsDirector(input)) {
+        const tagged = {
+          names: namesTaggedIn(rawText),
+          watch: watchGateEvents.some((e) => e.kind === "watch"),
+          gate: watchGateEvents.some((e) => e.kind === "gate") || /\[FLAG:\s*pen-door-open\s*\]/i.test(rawText),
+        }
+        const res = await Promise.race([
+          generateText({ model: anthropic("claude-haiku-4-5-20251001"), messages: [{ role: "user", content: directorPrompt(input) }] }),
+          new Promise<null>((r) => setTimeout(() => r(null), 7000)),
+        ])
+        const directed = res ? parseDirector(res.text, input, tagged) : []
+        if (directed.length) console.log("[stage-director] from the prose:", JSON.stringify(directed))
+        stageEvents.push(...directed)
+      }
+    }
+  } catch (e) { console.error("[stage-director] skipped:", e) }
+  // [FLAG: pen-door-open] is the gate standing open, for the map too.
+  if (/\[FLAG:\s*pen-door-open\s*\]/i.test(rawText) && !watchGateEvents.some((e) => e.kind === "gate")) stageEvents.push({ kind: "gate", state: "open" })
 
   // The stage roster: one read, one write, after every tag has been handled (best-effort, never blocks the turn).
   // A creature crossing INTO the party's space this turn is what the arrival film is for (see the cinematic block).

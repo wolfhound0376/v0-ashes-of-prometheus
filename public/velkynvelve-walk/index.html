@@ -414,6 +414,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmTime">Stop time</button>
       <button class="btn" id="dmOoze">Gray ooze: to the bridge → up from the chasm → away (preview)</button>
       <button class="btn" id="dmGuards">Guards out of sight / back (preview)</button>
+      <button class="btn" id="dmWatchChange">Story: the watch changes (preview)</button>
+      <button class="btn" id="dmWatchEmpty">Story: posts unattended / posted again (preview)</button>
       <button class="btn" id="dmFlag">Malachar calls initiative: ooze + guards (preview)</button>
       <button class="btn" id="dmGate">Open the pen gate (Jorlan's gambit)</button>
       <button class="btn" id="dmThrow">Throw the active character into the falls (area 9)</button>
@@ -709,6 +711,11 @@ let leader = null, trail = [];
 let mode = "load";            // explore | combat | talk | dialog | travel
 let ackZone = null;
 const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {}, props: {}, rolls: {}};
+// The watch on the pen and the pen gate as the STORY has them (/api/map-stage `watch` and `gate`, written from
+// Malachar's [WATCH:] / [GATE:] tags and from his prose by the stage director). Declared up here because a plate is
+// populated before the poll below ever runs. See "the watch and the gate" further down.
+let storyWatch = null, storyGate = null, watchPlayed = null, gatePlayed = null;
+const DROW_POST = n => /^drow-guard|^jorlan$/.test(n.id);
 
 let now = performance.now();
 
@@ -1693,6 +1700,9 @@ async function enterNode(n, opts = {}){
       hostile: !!np.hostile, static: !!np.static, backdrop: !!np.backdrop, fixedScale: np.fixedScale || 0, patrol: np.patrol || null, post: {x: np.x, y: np.y}});
     a.t0 = now - Math.random() * 1000; a.actUntil = now + 2000 + Math.random() * 7000; npcs.push(a);
   }
+  // the posts left unattended in the story: the drow the story layer would stand there are not there (Sam, 2026-10-25:
+  // "If they leave it unattended they all MUST be gone"). Kept on the plate, hidden, so [WATCH: posted] can walk them back.
+  if (postsEmpty()) for (const a of npcs) if (DROW_POST(a)){ a.keep = {patrol: a.patrol, static: a.static}; a.patrol = null; a.static = false; a.offStage = true; a.alpha = 0; a.talk = false; }
   watchPost(n);
   // they gather loosely around the party (two rings, the inner one first), not in a heap on the leader
   comp.forEach((id, i) => {
@@ -5026,7 +5036,10 @@ function foeTurn(f){
   // NOBODY IN SIGHT (a wall between it and every hero): it does not hack at the stone. If the room has a place to see
   // in from (story.json `spots`: the pen gate, where the bars give three-quarters cover), it goes there, as far as its
   // speed allows, and shoots through if it can; otherwise it holds and watches.
-  if (holdsGateKey(f)){ goOpenGate(f); return; }      // the pen gate, both ways: a guard with the key opens it first
+  // the pen gate, both ways: a guard with the key opens it first — except in the fight the gate warning starts, where the
+  // guards were told to shoot whoever stood at the bars, and do, from the bridge, while there is someone to shoot
+  const volley = cbt && cbt.gateVolley && bow && !blind && feetBetween(f, tgt) <= (bow.long || bow.reach);
+  if (holdsGateKey(f) && !volley){ goOpenGate(f); return; }
   if (blind && !gateWayTo(f, tgt)){ seekSight(f); return; }
   if (f.c.conds.has("burning") && Math.random() < .5){ putOutFire(f, () => setTimeout(() => passTurn(f), 500)); return; }
   if (s.web && f.c.webReady && !tgt.c.conds.has("restrained") && feetBetween(f, tgt) <= s.web.range){ shootWeb(f, tgt, () => { setTimeout(() => passTurn(f), 500); }); return; }
@@ -6228,13 +6241,18 @@ async function pollStage(){
     for (const slug of [...creatures.keys()]) if (!present.some(c => c.slug === slug && ![...CAST].some(id => stageMatch(c, id)))){ const g = gone.find(c => c.slug === slug); creatureLeaves(slug, !!(g && g.dead), g && g.cause); }
     // the cast: off the plate when the game says they have gone, back when it says they are here;
     // where Malachar put them ([NPC_MOVE:]) and whether they want a word ([NPC_WANTS_WORD:])
-    for (const n of npcs.filter(a => CAST.has(a.id) && !a.creature)){
+    storyWatch = j.watch || null;
+    for (const n of npcs.filter(a => CAST.has(a.id) && !a.creature && !a.relieved)){
       const here = present.find(c => stageMatch(c, n.id));
-      const off = gone.some(g => stageMatch(g, n.id)) && !here;
-      if (off){ n.stroll = null; if (!n.offStage){ const g = gone.find(g => stageMatch(g, n.id)); castLeaves(n, !!g.dead, false, g.cause); } }   // gone in the story: not just out for a walk
-      else if (n.offStage && !n.stroll) castReturns(n);                    // a guard out for a walk comes back on their own clock
-      if (!n.offStage){ castMovesTo(n, here ? here.where : null); castAsks(n, here ? here.wantsWord : null); }
+      const {off, dead, cause} = storyOff(n, present, gone);
+      if (off && DROW_POST(n) && postsEmpty() && !dead) continue;            // the watch is left: followWatch below walks them off
+      if (off){ n.stroll = null; if (!n.offStage) castLeaves(n, dead, false, cause); }   // gone in the story: not just out for a walk
+      else if (n.offStage && !n.stroll && !n.relief) castReturns(n);       // a guard out for a walk comes back on their own clock
+      // a position is acted on when the ROSTER changes it, not every poll: a speaker walked over to the one they are
+      // talking to (comeToListener) is not dragged back to the spot the roster last named five seconds later
+      if (!n.offStage){ if (here && here.where && here.where !== n.rosterWhere){ n.rosterWhere = here.where; castMovesTo(n, here.where); } castAsks(n, here ? here.wantsWord : null); }
     }
+    followWatch(storyWatch); followGate(j.gate || null);
     stageSeen = {present, gone};
   } catch (e) {}
 }
@@ -6289,6 +6307,7 @@ function spotFor(where){
 function castMovesTo(n, where){
   if (!where || n.stageWhere === where) return;
   n.stageWhere = where;
+  const pc = pcNamedIn(where); if (pc){ walkBeside(n, pc); return; }      // "beside Fifi" (the stage director's approaches)
   const s = spotFor(where); if (!s || (Math.hypot(s.x - n.x, s.y - n.y) < 40 && !n.path.length)) return;
   n.keep = n.keep || {patrol: n.patrol, static: n.static}; n.patrol = null; n.static = false; stopActivity(n);
   // Someone standing on the floor goes where the floor goes: a spot beyond it (the gate, the landing, the bridge are all
@@ -6351,9 +6370,177 @@ function maybeStroll(a){
   castLeaves(a, false, true); return true;
 }
 function strollBack(a){
+  if (a.stroll && postsEmpty()){ a.stroll = null; return true; }            // nobody comes back to an unattended post
   if (!a.stroll || !a.offStage || now < a.stroll.back) return false;
   a.stroll = null; castReturns(a, true); return true;
 }
+
+// ---------- the watch and the gate ----------
+// Sam, 2026-10-25: "The pixel NPCs (especially drow guards/jorlan) MUST match the story. If there is a guard rotation
+// then they must perform a change. If they leave it unattended they all MUST be gone. So that when we try to escape
+// there shouldn't be any guards. I shouldn't have to as the DM prompt the door to escape."
+//   CHANGING    the old pair walk off the bridge toward the tower while their relief walks in from it and takes the
+//               beat — a hand-over you can watch, played once per change (`since`).
+//   UNATTENDED  every guard and Jorlan walks off the plate and STAYS off: no stroll brings one back, no roster entry,
+//               no re-entry to the plate. Only [WATCH: posted] (or a later change) brings them back.
+//   POSTED      whoever the watch had taken comes back to their post.
+//   THE GATE    [GATE: unlocked] leaves the door shut but no longer locked (walk up, "Open it"); [GATE: open] swings it
+//               (Jorlan walks round and does it if he is at his post); [GATE: locked] shuts and locks it again.
+// Only a FRESH event (under 90 s old) is played out; an older one — a reload, a party coming back to the pen after the
+// change happened — is applied as it now stands: a reload is not the moment Jorlan opens the door.
+const freshStory = since => Date.now() - Date.parse(since) < 90000;
+function postsEmpty(){ return cur === PEN && !!storyWatch && storyWatch.state === "unattended"; }
+function storyOff(n, present, gone){
+  const here = present.find(c => stageMatch(c, n.id)), g = gone.find(c => stageMatch(c, n.id));
+  if (DROW_POST(n) && postsEmpty()) return {off: true, dead: !!(g && g.dead), cause: g && g.cause};
+  if (!g || here) return {off: false, dead: false};
+  // a guard the prose sent off the bridge is back once the watch is posted again, later than they left
+  if (DROW_POST(n) && !g.dead && storyWatch && Date.parse(storyWatch.since) > Date.parse(g.since)) return {off: false, dead: false};
+  return {off: true, dead: !!g.dead, cause: g.cause};
+}
+function followWatch(w){
+  if (cur !== PEN || !(mode === "explore" || mode === "dialog" || mode === "talk")) return;   // a fight holds everyone where they are; the next poll catches up
+  const posts = npcs.filter(n => DROW_POST(n) && !n.relieved && !n.body && !n.down && !n.hostile && actors.includes(n));
+  if (postsEmpty()){
+    const first = !freshStory(w.since);
+    for (const n of posts){
+      if (n.relief){ clearTimeout(n.relief); n.relief = null; }
+      n.stroll = null;
+      if (n.offStage) continue;
+      if (first){ n.keep = n.keep || {patrol: n.patrol, static: n.static}; n.patrol = null; n.static = false; n.path = []; n.offStage = true; n.alpha = 0; n.talk = false; }   // a reload: already gone
+      else castLeaves(n, false, true);
+    }
+    if (watchPlayed !== w.since){ watchPlayed = w.since; if (!first && posts.length) narrate(null, "The bridge and the landing empty. Nobody is watching the pen."); }
+    return;
+  }
+  if (!w || watchPlayed === w.since) return;
+  const first = !freshStory(w.since); watchPlayed = w.since;
+  if (w.state === "changing" && !first) changeOfWatch(posts.filter(n => /^drow-guard/.test(n.id) && !n.offStage));
+  else if (w.state === "posted"){
+    let back = 0; for (const n of posts) if (n.offStage && !n.stroll){ castReturns(n, true); back++; }
+    if (back && !first) narrate(null, "The guards are back at their posts.");
+  }
+}
+// The hand-over: a stand-in for each guard walks off by the nearest edge (the tower end of the bridge) while the guard
+// themself, now the relief, comes in from that same edge a moment later and takes up the beat. Same sprites — the
+// outpost's guards are two figures on the map — but you see two leave and two arrive.
+function changeOfWatch(guards){
+  if (!guards.length) return;
+  narrate(null, "The watch changes. Boots on the bridge: the guards are relieved.");
+  guards.forEach((n, i) => {
+    const old = mkActor(n.id, n.x, n.y, "npc", {face: n.face, backdrop: n.backdrop, fixedScale: n.fixedScale, big: n.big, relieved: true, post: {x: n.x, y: n.y}});
+    const e = plateEdge(n); old.path = [{x: e.x, y: e.y, out: true}]; old.slow = true;
+    old.onArrive = () => { npcs = npcs.filter(x => x !== old); actors = actors.filter(x => x !== old); };
+    npcs.push(old); actors.push(old);
+    n.keep = n.keep || {patrol: n.patrol, static: n.static}; n.patrol = null; n.static = false; stopActivity(n);
+    n.path = []; n.onArrive = null; n.alpha = 0; n.offStage = true; n.stroll = null; n.talk = false;
+    n.relief = setTimeout(() => { n.relief = null; if (cur === PEN && n.offStage && !postsEmpty() && actors.includes(n)) castReturns(n, true); }, 2600 + i * 1500);
+  });
+  setTimeout(() => { if (cur === PEN && !postsEmpty()) narrate(null, "Their relief takes the bridge."); }, 4200);
+}
+function followGate(g){
+  storyGate = g;
+  if (!g || gatePlayed === g.since || cur !== PEN || mode !== "explore") return;
+  const first = !freshStory(g.since); gatePlayed = g.since;
+  if (g.state === "unlocked"){
+    if (state.gateOpen) return;
+    state.gateOpen = true; state.doorShut = true; if (balcony()) buildGrid();
+    if (!first){ sfx("lock-picked", .6); log("A soft click from the pen gate. <em>The lock is off.</em> It is shut, but it will open."); }
+  } else if (g.state === "open"){
+    if (state.gateOpen && !state.doorShut) return;
+    if (state.gateOpen){ state.doorShut = false; setDoor(true); if (!first) sfx("door-open", .85); if (balcony()) buildGrid(); return; }
+    const j = npcs.find(n => n.id === "jorlan" && !n.offStage && actors.includes(n));
+    if (j && !first) openGate(); else unlockGate();
+  } else if (g.state === "locked"){
+    if (!state.gateOpen || state.gateBroken) return;
+    state.gateOpen = false; state.doorShut = false; setDoor(false); if (balcony()) buildGrid();
+    if (!first){ sfx("door-close", .8); log("The pen gate is shut and locked again."); }
+  }
+}
+
+// ---------- the guards watch the gate ----------
+// Sam, 2026-10-25: "standing near the door when Jorlan isn't nearby will prompt the guards to have a voice bubble saying
+// step back where you have the option to do so or will start getting shot with arrows." Jorlan on his landing by the
+// door is the one who deals with prisoners at the bars; when he is not there and the watch is, a guard on the bridge
+// warns whoever comes up to the gate, aloud and in a bubble, and the player chooses: step back, or stay. Staying — or
+// coming back to the bars inside the window after stepping away — is defying an armed sentry: they shoot, and by the
+// SRD's Combat Step by Step that is the moment combat begins, so the fight opens with the guards' own stat block
+// (the drow hand crossbow, +4, 1d6+2 and the DC 13 poison — not arrows: the SRD drow carries a hand crossbow).
+// The line is a placeholder, not book text.
+const GATE_WATCH = {near: 200, jorlanNear: 330, again: 20000};
+const GATE_WARNINGS = ["Back from the gate, rivvil. Now.", "Step away from the bars.", "Another step and you bleed."];
+let gateWarn = null;                       // {stage: "warned"} while the card is up · {stage: "stepped", until} after
+function gateCenter(){ const z = doorGate(); if (!z) return null; const p = z.interact.poly; return {x: (p[0][0] + p[2][0]) / 2, y: (p[0][1] + p[2][1]) / 2}; }
+function gateGuards(){ return npcs.filter(n => /^drow-guard/.test(n.id) && !n.relieved && !n.offStage && !n.body && !n.down && !n.hostile && n.alpha > .5 && actors.includes(n)); }
+function tickGateWatch(){
+  if (cur !== PEN || mode !== "explore" || !leader || state.gateOpen || postsEmpty() || timeStopped){ if (!state.gateOpen && gateWarn && gateWarn.stage === "warned" && mode === "explore") gateWarn = null; return; }
+  const g = gateCenter(); if (!g) return;
+  const sc = node.scale || 1, near = Math.hypot(leader.x - g.x, leader.y - g.y) < GATE_WATCH.near * sc;
+  const j = npcs.find(n => n.id === "jorlan" && !n.offStage && !n.body && actors.includes(n));
+  const guards = gateGuards();
+  if ((j && Math.hypot(j.x - g.x, j.y - g.y) < GATE_WATCH.jorlanNear * sc) || !guards.length){ gateWarn = null; return; }
+  if (!near){ if (gateWarn && gateWarn.stage === "stepped" && now > gateWarn.until) gateWarn = null; return; }
+  if (gateWarn && gateWarn.stage === "stepped" && now <= gateWarn.until){ gateGuardsShoot(guards); return; }
+  gateWarning(guards, g);              // first time here, or the card went away without an answer: ask again
+}
+function gateWarning(guards, g){
+  gateWarn = {stage: "warned"};
+  const w = guards.sort((a, b) => Math.hypot(a.x - g.x, a.y - g.y) - Math.hypot(b.x - g.x, b.y - g.y))[0];
+  guards.forEach(x => { x.path = []; x.actUntil = now + 6000; x.face = faceOf(leader.x - x.x, leader.y - x.y); });
+  leader.path = [];
+  const line = GATE_WARNINGS[Math.floor(Math.random() * GATE_WARNINGS.length)];
+  delete state.voiced[w.id + ":" + line];                        // heard every time, not once
+  bark(w, line, 5200, {voice: true, talk: true});
+  mode = "dialog"; tip.hidden = true;
+  const c = $("objPic").getContext("2d"); c.clearRect(0, 0, 128, 128);
+  try { const m = SPR[w.id].json, an = m.animations.idle; c.imageSmoothingEnabled = false; c.drawImage(SPR[w.id].img.idle, 0, 0, m.cell[0], m.cell[1], 0, 0, 128, 128); } catch (e) {}
+  $("objWho").textContent = "A guard on the bridge";
+  $("objText").textContent = `“${line}” A hand crossbow is levelled at ${fname(leader)} from the bridge.`;
+  const box = $("objBtns"); box.innerHTML = "";
+  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); };
+  add("Step back", () => {
+    $("obj").hidden = true; mode = "explore"; gateWarn = {stage: "stepped", until: now + GATE_WATCH.again};
+    ackZone = zoneAt(leader.x, leader.y);                    // walking away from the bars is not walking up to them
+    const back = nearestWalkable(g.x + (centroid.x - g.x) * .55, g.y + (centroid.y - g.y) * .55);
+    leader.path = findPath(leader, back); narrate(leader, `${fname(leader)} steps back from the gate.`);
+  }, "primary");
+  add("Stay where you are", () => { $("obj").hidden = true; mode = "explore"; ackZone = zoneAt(leader.x, leader.y); gateGuardsShoot(gateGuards()); });
+  $("obj").hidden = false; box.firstChild?.focus();
+}
+function gateGuardsShoot(guards){
+  gateWarn = null; if (!guards.length || mode !== "explore") return;
+  log(`<em>${esc(fname(leader))} does not step back.</em> The guards on the bridge raise their crossbows.`);
+  if (APP) handOff(`${fname(leader)} ignored the drow guards' order to step back from the pen gate; the guards shoot. Combat has begun.`);
+  startCombat(guards, "The guards on the bridge loose their crossbows!");
+  if (cbt) cbt.gateVolley = true;
+}
+
+// ---------- someone talking to you comes over ----------
+// Sam, 2026-10-25: "The pixel art NPCs in the pen MUST behave like their narration. If one is talking to you they should
+// be near." A cast member whose line is heard on the plate walks over to the one they are talking to — the character
+// whose line came just before theirs, or the leader — unless they are already close; then they turn to face them and
+// stay put while the conversation lasts (30 s after their last line, no wandering off mid-talk). Someone outside the
+// bars (Jorlan on the landing, a guard on the bridge) comes to the bars instead, never through them.
+let lastPlayerLine = null;
+function listenerFor(){ const p = lastPlayerLine && now - lastPlayerLine.at < 90000 ? lastPlayerLine.a : null; return p && party.includes(p) ? p : leader; }
+function pcNamedIn(where){
+  const w = String(where || "").toLowerCase(); if (!w) return null;
+  return party.find(p => [PLAYS_AS[p.id], (() => { try { return fname(p); } catch (e) { return null; } })(), SHORT[p.id]]
+    .filter(Boolean).some(nm => { const n0 = String(nm).toLowerCase(); return w.includes(n0) || (n0.split(" ")[0].length > 2 && new RegExp(`\\b${n0.split(" ")[0]}\\b`).test(w)); })) || null;
+}
+function walkBeside(n, pc){
+  if (!n || !pc || n.creature || n.offStage || n.body || n.down || n.hostile || n.relieved) return;
+  n.talkHold = now + 30000;
+  if (Math.hypot(n.x - pc.x, n.y - pc.y) < 170 * node.scale){ n.path = []; stopActivity(n); faceTo(n, pc); return; }
+  if (!walkable(n.x, n.y)){ if (walkable(pc.x, pc.y) && spotFor("bars")) castMovesTo(n, "at the bars"); return; }
+  const side = n.x > pc.x ? 1 : -1;
+  const goal = nearestWalkable(pc.x + side * 80 * node.scale, pc.y + 15 * node.scale, party.map(p => ({x: p.x, y: p.y})));
+  n.keep = n.keep || {patrol: n.patrol, static: n.static}; stopActivity(n);
+  n.path = findPath(n, goal); if (!n.path.length) n.path = [{x: goal.x, y: goal.y}]; n.slow = true;
+  n.onArrive = () => { n.home = {x: n.x, y: n.y}; setAnim(n, "idle"); faceTo(n, pc); };
+}
+function comeToListener(n){ if (n && n.kind === "npc" && (mode === "explore" || mode === "dialog")) walkBeside(n, listenerFor()); }
+
 if (APP){ setTimeout(pollStage, 2500); setInterval(pollStage, 5000); }
 
 // ---------- the story, heard on the plate ----------
@@ -6383,12 +6570,12 @@ function hearLine(row){
   const text = String(row.text).trim(), type = row.speaker_type, name = row.speaker || "";
   if (type === "dm"){ narrate(null, text); return; }
   const a = actorForSpeaker(name, type);
-  if (type === "player"){ if (a) bark(a, text, lineMs(text), {talk: true}); else log(`<b>${esc(name)}</b>: ${esc(text)}`); return; }
+  if (type === "player"){ if (a){ lastPlayerLine = {a, at: now}; bark(a, text, lineMs(text), {talk: true}); } else log(`<b>${esc(name)}</b>: ${esc(text)}`); return; }
   // an NPC: their turn in the queue, bubble when their voice starts
   const id = (a && a.id) || castIdFor(name);
   talkQueue = talkQueue.then(async () => {
     const here = actorForSpeaker(name, type);
-    if (here) bark(here, text, lineMs(text), {talk: true}); else log(`<b>${esc(name)}</b>${id ? " (not here)" : ""}: ${esc(text)}`);
+    if (here){ comeToListener(here); bark(here, text, lineMs(text), {talk: true}); } else log(`<b>${esc(name)}</b>${id ? " (not here)" : ""}: ${esc(text)}`);
     if (!voicesOn || !id) return wait(here ? Math.min(lineMs(text), 2500) : 300);
     try { await speakCanon(id, text, name); } catch (e) { console.warn("voice unavailable:", name, e); return; }
     const t0 = performance.now(); while (speaking && performance.now() - t0 < 30000) await wait(150);   // one voice at a time
@@ -6842,6 +7029,10 @@ function placeDmCloud(w){
 }
 $("dmThrow").onclick = () => { if (cur !== 9){ toast("The falls are in area 9."); return; } toggleDm(false); const z = node.zones.find(z => z.kind === "water"); const c = zoneCenter(z); leader.x = c.x; leader.y = c.y; overTheFalls(leader, null); };
 $("dmFlag").onclick = () => { toggleDm(false); followCombatFlag({status: "active", startedAt: String(Date.now()), label: "Malachar calls for initiative.", foes: [{name: "Gray Ooze", slug: "gray-ooze", aliases: [], hp: 22, hpMax: 22}, {name: "Drow Guard", slug: "drow-guard", aliases: ["drow"], hp: 13, hpMax: 13}]}); };
+// what [WATCH: change] / [WATCH: unattended] / [WATCH: posted] do, without the game: in the app the poll sets the watch
+const fakeWatch = st => { storyWatch = {state: st, since: new Date().toISOString()}; followWatch(storyWatch); };
+$("dmWatchChange").onclick = () => { toggleDm(false); if (cur !== PEN){ log("The watch is the pen's (Area 11)."); return; } fakeWatch("changing"); };
+$("dmWatchEmpty").onclick = () => { toggleDm(false); if (cur !== PEN){ log("The watch is the pen's (Area 11)."); return; } fakeWatch(postsEmpty() ? "posted" : "unattended"); };
 $("dmGuards").onclick = () => { toggleDm(false); const g = npcs.filter(n => /^drow-guard|^jorlan$/.test(n.id)); if (!g.length){ log("No guards on this plate."); return; } g.forEach(n => { n.stroll = null; n.offStage ? castReturns(n) : castLeaves(n, false); }); };
 $("dmOoze").onclick = async () => { toggleDm(false); if (creatures.has("gray-ooze")) { const f = creatures.get("gray-ooze"); if (!f.inside) creatureCrosses("gray-ooze"); else creatureLeaves("gray-ooze", false); return; } if (await loadSpriteManifest("gray-ooze")) creatureArrives({slug: "gray-ooze", name: "Gray Ooze", hp: 22, hpMax: 22}); };
 function setTimeStopped(on){
@@ -7876,6 +8067,7 @@ const ACTS = [
 function stopActivity(a){ if (a.act){ a.act = null; if (a.anim !== "walk") setAnim(a, "idle"); } a.slow = false; }
 function idleLife(a){
   if (a.stroll && strollBack(a)) return;                                                 // a guard back from a walk off the plate
+  if (a.talkHold && now < a.talkHold) return;                                            // in a conversation: no wandering off
   if (a === leader || a.once || a.fading || a.offStage || a.creature || a.body || a.riding) return;   // creatures move by tickCreatures, not the idle wander
   if (a.patrol){                        // walk the beat end to end, pause, turn, walk back
     if (a.path.length) return;
@@ -8038,6 +8230,7 @@ function update(dt){
     if (!last || Math.hypot(leader.x - last.x, leader.y - last.y) > 6){ trail.push({x: leader.x, y: leader.y}); if (trail.length > 500) trail.shift(); }
     keyboardMove(leader, dt);
     tickCreatures();
+    tickGateWatch();
     // the rest of the party stays where they were put; they only come along when the party leaves the plate
     // exits
     const z = mode === "explore" && !leader.walkIn ? zoneAt(leader.x, leader.y) : null;
