@@ -408,6 +408,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmFlag">Malachar calls initiative: ooze + guards (preview)</button>
       <button class="btn" id="dmGate">Open the pen gate (Jorlan's gambit)</button>
       <button class="btn" id="dmThrow">Throw the active character into the falls (area 9)</button>
+      <button class="btn" id="dmCloud">Poison cloud on the active character, 20-ft radius (preview)</button>
       <button class="btn" id="dmCombat">Start a fight here</button>
       <label class="dmMood">Fight music <select id="dmMood" aria-label="Fight music">
         <option value="auto">Auto (by the odds)</option><option value="regular">Regular</option><option value="scary">Scary</option>
@@ -1021,7 +1022,9 @@ function draw(){
   drawCombatGround(); drawStuckGround();
   if (mode === "combat"){ drawIcePatches(); drawFxLayer(true); tickIce(); }
   const list = actors.concat(vermin).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);
+  const cloudQ = mode === "combat" || clouds.length ? cloudPuffs() : [];   // the poison cloud, in depth order among the figures
   for (const a of list){
+    while (cloudQ.length && cloudQ[0].y <= a.y) drawPuff(cloudQ.shift());
     const m = SPR[a.id].json, sc = actorScale(a), [cw, ch] = m.cell, [px, py] = m.pivot;
     if (a.fall || a.fallIn) {} else { ctx.globalAlpha = a.alpha * .45; ctx.fillStyle = "#000";
     ctx.beginPath(); ctx.ellipse(a.x, a.y, 26 * sc * (cw / 128), 9 * sc * (cw / 128), 0, 0, Math.PI * 2); ctx.fill(); }
@@ -1121,6 +1124,7 @@ function draw(){
     }
     if (sp){ a.kx -= sp.ox; a.ky -= sp.oy; }
   }
+  while (cloudQ.length) drawPuff(cloudQ.shift());
   if (mode === "combat") drawFxLayer(false);
   drawCombatFx(); drawShots();
   ctx.globalAlpha = 1;
@@ -2531,6 +2535,46 @@ async function spawnFx(name, o){
   const e = Object.assign({name, m: v.m, img: v.img, t0: now, sq: 2, flat: false, spin: 0, lift: 0, alpha: 1, loop: v.m.loop && !o.once}, o);
   fx.push(e); return e;
 }
+// ---------- the standing poison cloud (Sam's skull cloud, 2026-10-25) ----------
+// Sam: "use it and preserve the animation. Have the transparency adjusted slightly so you can see the pixel
+// character(s) it is affecting. It should grow and fill the area of effect." An area spell whose kit type names a
+// `cloud` (poison: aoePoisonSkulls) lands as Sam's painted bank of smoke and skulls. It erupts at the point it was
+// aimed, spreads to fill the area over the sheet's grow frames (the skulls are in those), then breathes for as long
+// as the caster concentrates. It is drawn as several upright puffs IN DEPTH ORDER among the figures, so whoever
+// stands in it is veiled and whoever stands in front of it is not. The timing and the layout are lib/area-cloud.mjs,
+// pasted here whole so the map and its tests read one copy; the sheet is scripts/vfx/bake_skull_cloud.py.
+/*__AREA_CLOUD__*/
+let clouds = [];
+async function spawnCloud(key, x, y, sp, caster, spell, holdMs){
+  const v = await vfxLoad(key); if (!v || !v.m.grow) return null;
+  const sqPx = ftPx({y}) * 5, r = aoeRadiusAt(sp, y);
+  const seed = (Math.round(x * 31 + y * 17) & 0xffff) || 1;
+  const c = {img: v.img, m: v.m, x, y, sqPx, puffs: layoutPuffs(2 * r / sqPx, seed), t0: now, end: 0,
+             until: holdMs ? now + holdMs : (sp.conc ? Infinity : now + 6000), caster, spell};
+  clouds.push(c); return c;
+}
+// Every live puff this frame, back to front, for the actor loop to interleave.
+function cloudPuffs(){
+  const out = [];
+  clouds = clouds.filter(c => !(c.end && now - c.end > 1000));
+  for (const c of clouds){
+    const held = c.caster && c.spell ? c.caster.c && c.caster.c.conc && c.caster.c.conc.spell === c.spell : true;
+    if (!c.end && (!cbt || !held || now > c.until)) c.end = now;          // concentration dropped, the fight ended, or time
+    const t = (now - c.t0) / 1000, fade = Math.min(1, t / .35) * (c.end ? Math.max(0, 1 - (now - c.end) / 1000) : 1);
+    const grow = growSeconds(c.m), cw = c.img.width / c.m.cols, ch = c.img.height / c.m.rows;
+    for (const p of c.puffs){
+      const s = spreadAt(t, grow, p.delay), k = SPREAD_FROM + (1 - SPREAD_FROM) * s, w = p.width * k * c.sqPx;
+      const born = t >= p.delay ? Math.min(1, (t - p.delay) / .25) : 0, a = p.opacity * fade * born; if (a <= .005) continue;
+      out.push({c, x: c.x + p.x * s * c.sqPx, y: c.y + p.z * s * c.sqPx * .55, w, h: w * ch / cw, cw, ch, a,
+                f: cloudFrame(c.m, t - p.delay, p.holdOffset)});
+    }
+  }
+  return out.sort((a, b) => a.y - b.y);
+}
+function drawPuff(q){
+  const m = q.c.m, sx = (q.f % m.cols) * q.cw, sy = Math.floor(q.f / m.cols) * q.ch;
+  ctx.save(); ctx.globalAlpha = q.a; ctx.drawImage(q.c.img, sx, sy, q.cw, q.ch, q.x - q.w / 2, q.y - q.h * .94, q.w, q.h); ctx.restore();
+}
 function fxPos(e){ const a = e.at; if (a && a.id){ const sc = actorScale(a), m = SPR[a.id].json; return {x: a.x, y: a.y, top: a.y - m.pivot[1] * sc, mid: a.y - m.pivot[1] * sc * .55, ref: a}; } return {x: e.x, y: e.y, top: e.y - 40, mid: e.y - 20, ref: null}; }
 function drawFxLayer(flat){
   for (let i = fx.length - 1; i >= 0; i--){
@@ -3652,6 +3696,7 @@ function castSpell(caster, tgt, name, done, darts){
       : (cb) => spellBolt(caster, at, sp.fx, cb);
     carry(() => {
       const m = c.sheet.magic;
+      if (sp.area && kit && kit.cloud) spawnCloud(kit.cloud, at.x, at.y, sp, caster, name);   // the gas arrives with the spell
       const land = (tg, taken, type) => { sigilEnd(tg, taken); if (taken && kit && kit.type === type){ bank(`magic/impact_${type}`, .8); kitImpact(tg, kit, {area: !!sp.area, by: caster}); if (GROUND_OF[type] && !kit.aftermath) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
       if (sp.kind === "attack"){
         const cv = coverOf(caster, tgt), acVs = targetAc(tgt) + cv.ac;
@@ -5468,6 +5513,9 @@ $("jump").onchange = e => { const v = e.target.value, n = /^\d+$/.test(v) ? +v :
   const offs = party.map(p => ({id: p.id, dx: p.x - leader.x, dy: p.y - leader.y}));
   enterNode(n, {offs, fromScale: node.scale, note: `The DM moves the party to <em>${esc(SPEC[n].name)}</em>.`}); };
 $("dmGate").onclick = () => { toggleDm(false); openGate(); };
+// Sam's skull cloud on whoever's turn it is, as a 20-ft-radius sphere (Cloudkill's and Stinking Cloud's size), for
+// twenty seconds. A preview: no save, no damage -- no character on this map knows a poison-cloud spell yet.
+$("dmCloud").onclick = () => { const a = cbt && activeActor(); if (!a){ toast("Start a fight first: the cloud is drawn in combat."); return; } toggleDm(false); spawnCloud("aoePoisonSkulls", a.x, a.y, {area: 40}, null, null, 20000); };
 $("dmThrow").onclick = () => { if (cur !== 9){ toast("The falls are in area 9."); return; } toggleDm(false); const z = node.zones.find(z => z.kind === "water"); const c = zoneCenter(z); leader.x = c.x; leader.y = c.y; overTheFalls(leader, null); };
 $("dmFlag").onclick = () => { toggleDm(false); followCombatFlag({status: "active", startedAt: String(Date.now()), label: "Malachar calls for initiative.", foes: [{name: "Gray Ooze", slug: "gray-ooze", aliases: [], hp: 22, hpMax: 22}, {name: "Drow Guard", slug: "drow-guard", aliases: ["drow"], hp: 13, hpMax: 13}]}); };
 $("dmGuards").onclick = () => { toggleDm(false); const g = npcs.filter(n => /^drow-guard|^jorlan$/.test(n.id)); if (!g.length){ log("No guards on this plate."); return; } g.forEach(n => { n.stroll = null; n.offStage ? castReturns(n) : castLeaves(n, false); }); };

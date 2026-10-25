@@ -148,6 +148,14 @@ def rage_rules(root):
     return re.sub(r'^export ', '', src, flags=re.M)
 
 
+def area_cloud_rules(root):
+    """lib/area-cloud.mjs, pasted into the page whole minus its `export` keywords -- the same pattern as
+    rage_rules. The map draws Sam's skull cloud with the SAME timing and layout lib/area-cloud.test.ts tests
+    (the grow played once, the hold ping-ponged, the puffs that fill the area)."""
+    src = open(os.path.join(root, 'lib', 'area-cloud.mjs'), encoding='utf-8').read()
+    return re.sub(r'^export ', '', src, flags=re.M)
+
+
 def build_kit_tables(root):
     src = open(os.path.join(root, KIT_TS), encoding="utf-8").read()
     types = _ts_to_obj(_ts_block(src, "const TYPES"))
@@ -172,7 +180,7 @@ def build_kit_tables(root):
     wanted = set()
     for tbl in (kit, named):
         for spec in tbl.values():
-            for k in ("travel", "impact", "gather"):
+            for k in ("travel", "impact", "gather", "cloud"):
                 if spec.get(k):
                     wanted.add(spec[k])
             if spec.get("aftermath"):
@@ -259,7 +267,7 @@ for k, n in spec.items():
 
 fx = open(os.path.join(HERE, 'fx.json')).read()
 t = open(os.path.join(HERE, 'template.html')).read()
-t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT))
+t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))
