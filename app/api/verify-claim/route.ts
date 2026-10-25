@@ -1,5 +1,4 @@
 import { createAdminClient } from "@/lib/supabase/admin"
-import { seatCharacter } from "@/lib/seats"
 
 // Verify a character claim link (/?c=<characterId>&k=<claimToken>) SERVER-SIDE.
 // The anon client must never be able to read characters.claim_token, so this
@@ -56,9 +55,10 @@ export async function POST(req: Request) {
     return Response.json({ valid: false }, { status: 200 })
   }
 
-  // A verified claim is a player at the table: take their seat for this run (lib/seats.ts).
-  // Best-effort; the verification stands either way.
-  await seatCharacter(admin, { id: character.id, name: character.name })
+  // This route used to seat the character too, on every dashboard load and at /awaken, which is how
+  // heroes walked into a game already under way (Sam's playtest, 2026-10-25). Seats are now taken
+  // only at the staging table, while the DM has it open (/api/table, lib/table.ts). Verifying a code
+  // says who you are; it no longer puts you in the game.
 
   return Response.json({ valid: true, character: { id: character.id, name: character.name } }, { status: 200 })
 }

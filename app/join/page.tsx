@@ -14,6 +14,7 @@ import { useThemeAudio } from "@/components/theme-audio"
 //   THE WORDS      the card chosen, the three-word code for THAT character; a new face takes the
 //                  forge code. The server trades the code for the claim token, which never
 //                  appears in a URL; nothing is stored until the code is good.
+//   THEN           /table — the staging table, until the DM starts the session (Sam, 2026-10-25)
 //   THEN           /awaken — the opening film, the fortune roll, Malachar's first words — and
 //                  the slave pen.
 //
@@ -148,7 +149,9 @@ export default function JoinPage() {
         window.localStorage.setItem(CHARACTER_LS_KEY, result.character.id)
         window.localStorage.setItem(TOKEN_LS_KEY, result.claimToken)
         setStatus("welcome")
-        setTimeout(() => router.replace("/awaken"), 700)
+        // To the staging table, not straight into the game: nobody enters until the DM has opened the table
+        // and started it (Sam, 2026-10-25; app/table/page.tsx). The table sends them on to /awaken.
+        setTimeout(() => router.replace("/table"), 700)
       } catch (err) {
         console.error("[join] code check failed:", err)
         setStatus("error")

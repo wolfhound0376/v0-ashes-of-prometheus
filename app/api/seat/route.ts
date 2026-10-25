@@ -2,7 +2,8 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { isDmRequest } from "@/lib/dm-session"
-import { readSeated, seatCharacter, unseatCharacter } from "@/lib/seats"
+import { readSeated, unseatCharacter } from "@/lib/seats"
+import { nextSeatNumber, readTable, readTableView, startIfReady, writeSeat } from "@/lib/table-store"
 
 // /api/seat — the DM's hand on the seats (lib/seats.ts).
 //
@@ -50,7 +51,17 @@ export async function POST(req: NextRequest) {
   const q = db.from("characters").select("id, name, is_player").is("archived_at", null).eq("is_player", true)
   const { data: ch } = await (characterId ? q.eq("id", characterId) : q.ilike("name", name)).limit(1).maybeSingle()
   if (!ch || !ch.is_player) return NextResponse.json({ error: "not a player character" }, { status: 404 })
-  await seatCharacter(db, { id: ch.id, name: ch.name }, { dm: true })
+  // The roster locks when the session begins, for the DM too (Sam, 2026-10-25): a companion is seated at
+  // the staging table before the start, like everyone else (lib/table.ts).
+  const table = await readTable(db)
+  if (table.status !== "lobby") return NextResponse.json({ error: table.status === "live" ? "The roster is locked once the session begins. Seat companions at the table before you start." : "Open the table first (Behind the Screen → Open the table)." }, { status: 409 })
+  const view = await readTableView(db)
+  if (!view.seats.some((s) => s.id === ch.id)) {
+    const seat = nextSeatNumber(view)
+    if (seat == null) return NextResponse.json({ error: "Every seat at the table is taken." }, { status: 409 })
+    await writeSeat(db, { id: ch.id, name: ch.name, at: new Date().toISOString(), dm: true, seat, ready: true }, "dm", `${ch.name} runs as the DM's companion`)
+    await startIfReady(db, await readTableView(db))
+  }
   return NextResponse.json({ ok: true, seated: await readSeated(db) })
 }
 
