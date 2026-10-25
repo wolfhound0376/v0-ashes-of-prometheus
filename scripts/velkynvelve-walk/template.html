@@ -983,7 +983,7 @@ function draw(){
   const shx = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0, shy = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0; shakeAmt = shakeAmt > .5 ? shakeAmt * .82 : 0;
   ctx.setTransform(s, 0, 0, s, (view.tx + shx) * dpr, (view.ty + shy) * dpr);
   ctx.imageSmoothingEnabled = false;
-  drawDoor(); drawProps(); drawLift(); drawPropHighlight(); drawLootHighlight(); drawFloorItems();
+  drawDoor(); drawProps(); drawDecor(); drawLift(); drawPropHighlight(); drawLootHighlight(); drawFloorItems();
   // exits: soft glows so players can see the ways out
   if (mode === "explore" || mode === "dialog"){
     const pulse = .5 + .5 * Math.sin(now / 520);
@@ -1964,6 +1964,17 @@ function buildProps(){
   }
 }
 function tickProps(dt){ for (const id in lids){ const l = lids[id]; if (l.k !== l.target) l.k = l.target > l.k ? Math.min(1, l.k + dt / 1.3) : Math.max(0, l.k - dt / .7); } }
+// SET DRESSING ON THE FLOOR (story.json `decor`, Sam 2026-10-24: "get the skeletons done"): flat pixel objects from
+// public/sprites/cadavers/ laid on the plate under everyone — the den's gnawed bones, the pool's refuse. `sq` is how many
+// squares the 128-px canvas spans; `flip` mirrors. Nothing to interact with; the body of the thing is the painting's.
+function drawDecor(){
+  for (const dc of node.decor || []){
+    const im = cadaverImg(dc.img); if (!im.complete || !im.naturalWidth) continue;
+    const side = (dc.sq || 1) * ftPx({x: dc.x, y: dc.y}) * 5;
+    ctx.save(); ctx.translate(dc.x, dc.y - side * .35); if (dc.flip) ctx.scale(-1, 1); ctx.globalAlpha = .95;
+    ctx.drawImage(im, -side / 2, -side / 2, side, side); ctx.restore();
+  }
+}
 function drawProps(){
   for (const pr of node.props || []){
     const l = lids[pr.id]; if (!l || l.k <= 0) continue;
@@ -3795,7 +3806,11 @@ function damage(t, n, type, crit, from, magical = false){
   // A COLD KILL LEAVES AN ICED CADAVER (Sam, 2026-10-24: "Ray of frost should leave dead people like icicles or iced
   // cadavers"): anyone but a hero who is brought to 0 by cold damage does not fall — they stop where they stand, in the
   // frame they were in, rimed over, icicles hanging off them. The body is still a body: it can be searched like any other.
-  if (t.kind !== "pc" && n >= t.c.hp && type === "cold" && t.c.hp > 0){ const fr = frameOf(t); t.iced = {t0: now, img: fr.img, f: fr.f, seed: Math.floor(Math.random() * 1e6)}; }
+  if (t.kind !== "pc" && n >= t.c.hp && type === "cold" && t.c.hp > 0){
+    // one that had slipped (prone) freezes where it lies — the lying frozen body, when its species has one (the drow);
+    // one on its feet freezes standing (Sam, 2026-10-24: "frozen drow can be either, depending if they slipped")
+    if (t.c.conds.has("prone") && cadaverSpecies(t.id) === "drow") t.cadaver = {key: "drow-frozen", sq: CADAVER_SETS.drow.sq, flip: Math.random() < .5, t0: now, frozen: true};
+    else { const fr = frameOf(t); t.iced = {t0: now, img: fr.img, f: fr.f, seed: Math.floor(Math.random() * 1e6)}; } }
   t.c.hp = Math.max(0, t.c.hp - n); if (t.creature) t.hp = t.c.hp;
   if (t.c.rage && n > 0) t.c.rage.hurt = true;                                 // SRD: "taken damage since then" keeps the rage going
   if (t.kind === "pc" && t.c.hp <= 0 && over >= t.c.hpMax){ t.flash = now + 180; fall(t); dieNow(t, `${over} damage past 0, as much as their hit point maximum`); return; }
@@ -3881,11 +3896,11 @@ function fall(t){
   // Sam, 2026-10-14: "I don't see any carcasses of the creatures that are dead." Only creatures with a death
   // sheet used to stay; the rest (spider, quaggoth, Jorlan) faded out. Now everything that dies stays down:
   // its own death sheet when it has one, otherwise it is drawn dead (frameOf: belly-up or on its side).
-  if (t.iced){ t.path = []; bank("magic/impact_cold", .8); spawnFx("frostImpact", {at: t, sq: 1.6, anchor: "mid"}); }   // frozen solid: no fall, the standing frame stays
+  if (t.iced || (t.cadaver && t.cadaver.frozen)){ t.path = []; bank("magic/impact_cold", .8); spawnFx("frostImpact", {at: t, sq: 1.6, anchor: "mid"}); }   // frozen solid: no death sheet — standing where it stood, or lying where it slipped
   else if (SPR[t.id].img.dead){ playOnce(t, "dead", () => {}); if (SPR[t.id].json.animations.dead.frames === 1) t.deadSwap = now; } else t.deadT0 = now;   // a one-frame corpse (the spider) cross-fades in from the standing body
-  log(`<b>${fname(t)}</b> ${hero(t) ? "goes down." : t.iced ? "is frozen where it stands." : "is dead."}`);
+  log(`<b>${fname(t)}</b> ${hero(t) ? "goes down." : t.iced ? "is frozen where it stands." : t.cadaver && t.cadaver.frozen ? "is frozen where it lies." : "is dead."}`);
   if (t.creature) narrate(t, `${t.creature.name} is dead.`);
-  popText(t, hero(t) ? "down" : t.iced ? "frozen" : "slain", hero(t) ? "#ff6b5e" : t.iced ? "#bfe9ff" : "#ffd166", 1.3); hitstop(160); shake(10);
+  { const fz = t.iced || (t.cadaver && t.cadaver.frozen); popText(t, hero(t) ? "down" : fz ? "frozen" : "slain", hero(t) ? "#ff6b5e" : fz ? "#bfe9ff" : "#ffd166", 1.3); } hitstop(160); shake(10);
   if (t.kind === "pc"){ const near = standing(party).filter(p => p !== t).sort((a, b) => Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y))[0]; if (near) setTimeout(() => bark(near, `${fname(t)}!`, 1600, {talk: true}), 400);
     const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS), 1400); }
   else narrate(t, `${fname(t)} falls.`);
