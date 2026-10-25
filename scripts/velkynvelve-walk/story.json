@@ -1,1246 +1,1685 @@
 {
- "_note": "Story layer on top of the walk spec: who stands where, scripted crossings, props. Coordinates in 2400x1339 plate pixels. Bark lines are placeholders, not book text. Pen: two drow guards patrol the rope bridge outside the gate and Jorlan Duskryn stands on the landing by the door (Sam, 2026-10-11). objects (Sam's editor, 2026-10-24): what is in each room and whether it can be used (interact) or is only set dressing (decor); names from OotA p.17-20, no positions yet.",
- "10": {
-  "npcs": [
-   {
-    "id": "drow-guard-male",
-    "x": 1250,
-    "y": 800,
-    "face": 2,
-    "hostile": true,
-    "barks": [
-     "(a drow guard scans the bridges)"
+  "_note": "Story layer on top of the walk spec: who stands where, scripted crossings, props. Coordinates in 2400x1339 plate pixels. Bark lines are placeholders, not book text. Pen: two drow guards patrol the rope bridge outside the gate and Jorlan Duskryn stands on the landing by the door (Sam, 2026-10-11). objects (Sam's editor, 2026-10-24): what is in each room and whether it can be used (interact) or is only set dressing (decor); names from OotA p.17-20, no positions yet. INHABITANTS (Sam's playtest, 2026-10-24): who the book puts in each room, with the book's own odds — `rolls` names dice rolled once per plate per session; an npc's `when` {roll, in} says which results put them here, `chance` a flat probability, `dice`+`spots` how many at which posts, `at` a named roll picking one spot. `watch` {passive} is the sentries' passive Perception the leader's Stealth is rolled against on the way in (OotA p.15). Positions are Claude's placement by eye on the painted plates, not Sam's — nudge freely. `_src` cites the page.",
+  "10": {
+    "npcs": [
+      {
+        "id": "drow-guard-male",
+        "x": 1250,
+        "y": 800,
+        "face": 2,
+        "hostile": true,
+        "barks": [
+          "(a drow guard scans the bridges)"
+        ]
+      },
+      {
+        "id": "drow-guard-female",
+        "x": 1720,
+        "y": 830,
+        "face": 6,
+        "hostile": true,
+        "barks": [
+          "(a drow guard leans on the rail, watching the pen)"
+        ]
+      },
+      {
+        "id": "drow-guard-male",
+        "x": 1580,
+        "y": 990,
+        "face": 0,
+        "hostile": true,
+        "barks": [
+          "(a drow guard checks the crossbow on the rack)"
+        ]
+      }
+    ],
+    "hostileLabel": "The drow guards in the tower see you coming.",
+    "objects": [
+      {
+        "name": "Guards' gate keys",
+        "kind": "interact"
+      },
+      {
+        "name": "Dice game",
+        "kind": "interact"
+      },
+      {
+        "name": "Armory (upper chamber)",
+        "kind": "interact"
+      }
     ]
-   },
-   {
-    "id": "drow-guard-female",
-    "x": 1720,
-    "y": 830,
-    "face": 6,
-    "hostile": true,
-    "barks": [
-     "(a drow guard leans on the rail, watching the pen)"
-    ]
-   },
-   {
-    "id": "drow-guard-male",
-    "x": 1580,
-    "y": 990,
-    "face": 0,
-    "hostile": true,
-    "barks": [
-     "(a drow guard checks the crossbow on the rack)"
-    ]
-   }
-  ],
-  "hostileLabel": "The drow guards in the tower see you coming.",
-  "objects": [
-   {
-    "name": "Guards' gate keys",
-    "kind": "interact"
-   },
-   {
-    "name": "Dice game",
-    "kind": "interact"
-   },
-   {
-    "name": "Armory (upper chamber)",
-    "kind": "interact"
-   }
-  ]
- },
- "11": {
-  "npcs": [
-   {
-    "id": "drow-guard-female",
-    "x": 120,
-    "y": 465,
-    "face": 6,
-    "backdrop": true,
-    "fixedScale": 1.35,
-    "patrol": [
-     [
-      70,
-      440
-     ],
-     [
-      300,
-      555
-     ]
-    ],
-    "barks": []
-   },
-   {
-    "id": "drow-guard-male",
-    "x": 300,
-    "y": 555,
-    "face": 2,
-    "backdrop": true,
-    "fixedScale": 1.35,
-    "patrol": [
-     [
-      345,
-      578
-     ],
-     [
-      140,
-      475
-     ]
-    ],
-    "barks": []
-   },
-   {
-    "id": "jorlan",
-    "x": 445,
-    "y": 650,
-    "face": 2,
-    "backdrop": true,
-    "static": true,
-    "fixedScale": 1.35,
-    "barks": []
-   }
-  ],
-  "cross": {
-   "10": [
-    [
-     822,
-     880,
-     1
-    ],
-    [
-     812,
-     812,
-     0.95,
-     "out"
-    ],
-    [
-     470,
-     705,
-     0.85,
-     "jump"
-    ],
-    [
-     330,
-     600,
-     0.7
-    ],
-    [
-     150,
-     505,
-     0.58
-    ],
-    [
-     -150,
-     420,
-     0.5
-    ]
-   ],
-   "12": [
-    [
-     822,
-     880,
-     1
-    ],
-    [
-     812,
-     812,
-     0.95,
-     "out"
-    ],
-    [
-     470,
-     722,
-     0.85,
-     "jump"
-    ],
-    [
-     432,
-     850,
-     0.8
-    ],
-    [
-     400,
-     1100,
-     0.75
-    ],
-    [
-     380,
-     1500,
-     0.72
-    ]
-   ]
   },
-  "chains": [
-   {
-    "pts": [
-     [
-      1163,
-      476
-     ],
-     [
-      1160,
-      560
-     ],
-     [
-      1167,
-      640
-     ],
-     [
-      1180,
-      668
-     ],
-     [
-      1212,
-      688
-     ],
-     [
-      1240,
-      698
-     ]
+  "11": {
+    "npcs": [
+      {
+        "id": "drow-guard-female",
+        "x": 120,
+        "y": 465,
+        "face": 6,
+        "backdrop": true,
+        "fixedScale": 1.35,
+        "patrol": [
+          [
+            70,
+            440
+          ],
+          [
+            300,
+            555
+          ]
+        ],
+        "barks": []
+      },
+      {
+        "id": "drow-guard-male",
+        "x": 300,
+        "y": 555,
+        "face": 2,
+        "backdrop": true,
+        "fixedScale": 1.35,
+        "patrol": [
+          [
+            345,
+            578
+          ],
+          [
+            140,
+            475
+          ]
+        ],
+        "barks": []
+      },
+      {
+        "id": "jorlan",
+        "x": 445,
+        "y": 650,
+        "face": 2,
+        "backdrop": true,
+        "static": true,
+        "fixedScale": 1.35,
+        "barks": []
+      }
     ],
-    "cuffs": [
-     [
-      1252,
-      701
-     ],
-     [
-      1284,
-      711
-     ]
-    ]
-   },
-   {
-    "pts": [
-     [
-      1466,
-      450
-     ],
-     [
-      1468,
-      540
-     ],
-     [
-      1463,
-      610
-     ],
-     [
-      1478,
-      638
-     ],
-     [
-      1506,
-      652
-     ]
-    ],
-    "cuffs": [
-     [
-      1518,
-      657
-     ],
-     [
-      1546,
-      667
-     ]
-    ]
-   },
-   {
-    "pts": [
-     [
-      2266,
-      760
-     ],
-     [
-      2262,
-      840
-     ],
-     [
-      2250,
-      902
-     ],
-     [
-      2218,
-      932
-     ],
-     [
-      2184,
-      946
-     ]
-    ],
-    "cuffs": [
-     [
-      2170,
-      951
-     ],
-     [
-      2142,
-      957
-     ]
-    ]
-   },
-   {
-    "pts": [
-     [
-      1004,
-      1116
-     ],
-     [
-      1022,
-      1124
-     ],
-     [
-      1040,
-      1128
-     ]
-    ],
-    "cuffs": [
-     [
-      1000,
-      1114
-     ],
-     [
-      1046,
-      1130
-     ]
-    ]
-   },
-   {
-    "pts": [
-     [
-      1858,
-      1206
-     ],
-     [
-      1874,
-      1214
-     ],
-     [
-      1892,
-      1216
-     ]
-    ],
-    "cuffs": [
-     [
-      1852,
-      1204
-     ],
-     [
-      1898,
-      1217
-     ]
-    ]
-   }
-  ],
-  "interact": {
-   "gate": {
-    "name": "The pen gate",
-    "poly": [
-     [
-      740,
-      660
-     ],
-     [
-      906,
-      578
-     ],
-     [
-      906,
-      795
-     ],
-     [
-      740,
-      890
-     ]
-    ],
-    "locked": "Heavy iron bars bolted into the stone. Locked. Picking or forcing it is a DC 20 check (OotA p.18).",
-    "open": "The gate stands open. Beyond it, the balcony: a rope bridge to the guard tower, and stairs down the cliff.",
-    "routes": {
-     "10": "Out across the rope bridge to the Guard Tower",
-     "12": "Down the cliff stairs to the Quaggoth Den"
-    },
-    "leaf": {
-     "hb": [
-      750,
-      876
-     ],
-     "ht": [
-      750,
-      669
-     ],
-     "fb": [
-      899,
-      787
-     ],
-     "ft": [
-      899,
-      592
-     ]
-    },
-    "balcony": {
-     "_note": "Sam, 2026-10-23: 'The drow should be able to open the gate and come in and vice versa.' Outside the bars: the rope bridge and the rock landing by Jorlan's post, traced on the plate. In a fight it is floor. Once the gate is open, the way between the landing and the threshold goes round behind the pillar (Jorlan's own route in openGate), out of sight, and costs passFt of movement. Drawn at the guards' size (scale, = their fixedScale), not by the pen's depth. keys: who carries the gate key (house assumption: the outpost's guards and Jorlan).",
-     "poly": [
-      [
-       20,
-       370
+    "cross": {
+      "10": [
+        [
+          822,
+          880,
+          1
+        ],
+        [
+          812,
+          812,
+          0.95,
+          "out"
+        ],
+        [
+          470,
+          705,
+          0.85,
+          "jump"
+        ],
+        [
+          330,
+          600,
+          0.7
+        ],
+        [
+          150,
+          505,
+          0.58
+        ],
+        [
+          -150,
+          420,
+          0.5
+        ]
       ],
-      [
-       120,
-       395
-      ],
-      [
-       230,
-       440
-      ],
-      [
-       320,
-       480
-      ],
-      [
-       410,
-       540
-      ],
-      [
-       480,
-       575
-      ],
-      [
-       525,
-       625
-      ],
-      [
-       540,
-       690
-      ],
-      [
-       510,
-       730
-      ],
-      [
-       440,
-       738
-      ],
-      [
-       365,
-       712
-      ],
-      [
-       325,
-       655
-      ],
-      [
-       285,
-       615
-      ],
-      [
-       195,
-       570
-      ],
-      [
-       105,
-       520
-      ],
-      [
-       20,
-       480
+      "12": [
+        [
+          822,
+          880,
+          1
+        ],
+        [
+          812,
+          812,
+          0.95,
+          "out"
+        ],
+        [
+          470,
+          722,
+          0.85,
+          "jump"
+        ],
+        [
+          432,
+          850,
+          0.8
+        ],
+        [
+          400,
+          1100,
+          0.75
+        ],
+        [
+          380,
+          1500,
+          0.72
+        ]
       ]
-     ],
-     "scale": 1.35,
-     "landing": [
-      500,
-      688
-     ],
-     "behind": [
-      545,
-      702
-     ],
-     "threshold": [
-      812,
-      812
-     ],
-     "inside": [
-      822,
-      880
-     ],
-     "passFt": 15,
-     "keys": "^(drow|jorlan)"
-    }
-   }
+    },
+    "chains": [
+      {
+        "pts": [
+          [
+            1163,
+            476
+          ],
+          [
+            1160,
+            560
+          ],
+          [
+            1167,
+            640
+          ],
+          [
+            1180,
+            668
+          ],
+          [
+            1212,
+            688
+          ],
+          [
+            1240,
+            698
+          ]
+        ],
+        "cuffs": [
+          [
+            1252,
+            701
+          ],
+          [
+            1284,
+            711
+          ]
+        ]
+      },
+      {
+        "pts": [
+          [
+            1466,
+            450
+          ],
+          [
+            1468,
+            540
+          ],
+          [
+            1463,
+            610
+          ],
+          [
+            1478,
+            638
+          ],
+          [
+            1506,
+            652
+          ]
+        ],
+        "cuffs": [
+          [
+            1518,
+            657
+          ],
+          [
+            1546,
+            667
+          ]
+        ]
+      },
+      {
+        "pts": [
+          [
+            2266,
+            760
+          ],
+          [
+            2262,
+            840
+          ],
+          [
+            2250,
+            902
+          ],
+          [
+            2218,
+            932
+          ],
+          [
+            2184,
+            946
+          ]
+        ],
+        "cuffs": [
+          [
+            2170,
+            951
+          ],
+          [
+            2142,
+            957
+          ]
+        ]
+      },
+      {
+        "pts": [
+          [
+            1004,
+            1116
+          ],
+          [
+            1022,
+            1124
+          ],
+          [
+            1040,
+            1128
+          ]
+        ],
+        "cuffs": [
+          [
+            1000,
+            1114
+          ],
+          [
+            1046,
+            1130
+          ]
+        ]
+      },
+      {
+        "pts": [
+          [
+            1858,
+            1206
+          ],
+          [
+            1874,
+            1214
+          ],
+          [
+            1892,
+            1216
+          ]
+        ],
+        "cuffs": [
+          [
+            1852,
+            1204
+          ],
+          [
+            1898,
+            1217
+          ]
+        ]
+      }
+    ],
+    "interact": {
+      "gate": {
+        "name": "The pen gate",
+        "poly": [
+          [
+            740,
+            660
+          ],
+          [
+            906,
+            578
+          ],
+          [
+            906,
+            795
+          ],
+          [
+            740,
+            890
+          ]
+        ],
+        "locked": "Heavy iron bars bolted into the stone. Locked. Picking or forcing it is a DC 20 check (OotA p.18).",
+        "open": "The gate stands open. Beyond it, the balcony: a rope bridge to the guard tower, and stairs down the cliff.",
+        "routes": {
+          "10": "Out across the rope bridge to the Guard Tower",
+          "12": "Down the cliff stairs to the Quaggoth Den"
+        },
+        "leaf": {
+          "hb": [
+            750,
+            876
+          ],
+          "ht": [
+            750,
+            669
+          ],
+          "fb": [
+            899,
+            787
+          ],
+          "ft": [
+            899,
+            592
+          ]
+        },
+        "balcony": {
+          "_note": "Sam, 2026-10-23: 'The drow should be able to open the gate and come in and vice versa.' Outside the bars: the rope bridge and the rock landing by Jorlan's post, traced on the plate. In a fight it is floor. Once the gate is open, the way between the landing and the threshold goes round behind the pillar (Jorlan's own route in openGate), out of sight, and costs passFt of movement. Drawn at the guards' size (scale, = their fixedScale), not by the pen's depth. keys: who carries the gate key (house assumption: the outpost's guards and Jorlan).",
+          "poly": [
+            [
+              20,
+              370
+            ],
+            [
+              120,
+              395
+            ],
+            [
+              230,
+              440
+            ],
+            [
+              320,
+              480
+            ],
+            [
+              410,
+              540
+            ],
+            [
+              480,
+              575
+            ],
+            [
+              525,
+              625
+            ],
+            [
+              540,
+              690
+            ],
+            [
+              510,
+              730
+            ],
+            [
+              440,
+              738
+            ],
+            [
+              365,
+              712
+            ],
+            [
+              325,
+              655
+            ],
+            [
+              285,
+              615
+            ],
+            [
+              195,
+              570
+            ],
+            [
+              105,
+              520
+            ],
+            [
+              20,
+              480
+            ]
+          ],
+          "scale": 1.35,
+          "landing": [
+            500,
+            688
+          ],
+          "behind": [
+            545,
+            702
+          ],
+          "threshold": [
+            812,
+            812
+          ],
+          "inside": [
+            822,
+            880
+          ],
+          "passFt": 15,
+          "keys": "^(drow|jorlan)"
+        }
+      }
+    },
+    "arrivals": {
+      "gray-ooze": {
+        "from": [
+          30,
+          425
+        ],
+        "to": [
+          690,
+          750
+        ],
+        "anim": "walk",
+        "backdrop": true,
+        "fixedScale": 1.35,
+        "via": "along the rope bridge",
+        "note": "to the outside of the gate, where Malachar had it (2026-10-12: it reaches the gate, touches the bars). `inside` is the chasm-side entry Malachar narrated (2026-10-13 21:28: it oozes up the stone wall from the pool below the pen) — it heaves up over the ledge at the pen's left rim, by the crystals. The approved film shows an under-the-bars entry instead; `insideGate` keeps that path for when he brings it through the gate.",
+        "inside": {
+          "from": [
+            700,
+            1240
+          ],
+          "to": [
+            1000,
+            1150
+          ],
+          "anim": "emerge",
+          "via": "heaving itself up over the ledge from the chasm"
+        },
+        "insideGate": {
+          "from": [
+            812,
+            812
+          ],
+          "to": [
+            900,
+            900
+          ],
+          "anim": "emerge",
+          "via": "squeezing under the bars"
+        }
+      },
+      "default": {
+        "from": [
+          812,
+          812
+        ],
+        "to": [
+          900,
+          930
+        ],
+        "anim": "walk",
+        "big": 1,
+        "inside": {
+          "from": [
+            812,
+            812
+          ],
+          "to": [
+            900,
+            930
+          ],
+          "anim": "walk",
+          "via": "through the gate"
+        }
+      }
+    },
+    "wards": "The wards cut into the pen's walls smother any spell cast inside it; a spell cast from outside still reaches in.",
+    "spots": {
+      "_note": "Where a cast member goes when Malachar tags [NPC_MOVE: name | where] with this word in it. Plate pixels, matched by substring, first match wins. gate/bars = outside the pen gate where the ooze touched the bars; landing/door = Jorlan's post; bridge = the rope bridge; tower = its far end.",
+      "bars": [
+        690,
+        750
+      ],
+      "gate": [
+        690,
+        750
+      ],
+      "landing": [
+        445,
+        650
+      ],
+      "door": [
+        445,
+        650
+      ],
+      "stairs": [
+        432,
+        850
+      ],
+      "bridge": [
+        300,
+        555
+      ],
+      "tower": [
+        90,
+        450
+      ]
+    },
+    "objects": [
+      {
+        "name": "Clay chamber pots",
+        "kind": "decor"
+      },
+      {
+        "name": "Clay bowls of mushroom broth",
+        "kind": "interact"
+      },
+      {
+        "name": "Manacles, collars",
+        "kind": "interact"
+      }
+    ]
   },
-  "arrivals": {
-   "gray-ooze": {
-    "from": [
-     30,
-     425
+  "7": {
+    "props": [
+      {
+        "id": "ilvara-chest",
+        "name": "Ilvara's chest",
+        "_src": "OotA ch.1 area 7 (Ilvara's Quarters): 'A heavy chest of black-stained zurkhwood sits at the foot of the bed.' Locked; the key is in a hidden pocket inside Ilvara's belt. Poison-needle trap on the lock, set off by any attempt to open it without the key: 1 piercing, DC 13 CON or poisoned 1 hour (fail by 5+: also unconscious). DC 20 INT (Investigation) finds it; thieves' tools + DC 15 DEX disarms it; thieves' tools + DC 15 DEX picks the lock. Traced by eye on the painted plate, 2026-10-14.",
+        "poly": [
+          [
+            930,
+            735
+          ],
+          [
+            988,
+            712
+          ],
+          [
+            1200,
+            680
+          ],
+          [
+            1222,
+            730
+          ],
+          [
+            1222,
+            800
+          ],
+          [
+            985,
+            862
+          ],
+          [
+            936,
+            820
+          ]
+        ],
+        "lid": {
+          "poly": [
+            [
+              943,
+              733
+            ],
+            [
+              988,
+              718
+            ],
+            [
+              1197,
+              686
+            ],
+            [
+              1215,
+              732
+            ],
+            [
+              1217,
+              757
+            ],
+            [
+              980,
+              807
+            ],
+            [
+              942,
+              762
+            ]
+          ],
+          "hinge": [
+            [
+              988,
+              718
+            ],
+            [
+              1197,
+              686
+            ]
+          ],
+          "front": [
+            978,
+            780
+          ]
+        },
+        "text": {
+          "closed": "A heavy chest of black-stained zurkhwood at the foot of the bed. Locked.",
+          "open": "Ilvara's chest stands open."
+        }
+      }
     ],
-    "to": [
-     690,
-     750
+    "objects": [
+      {
+        "name": "Silver-framed mirror",
+        "kind": "interact"
+      },
+      {
+        "name": "Small shrine to Lolth",
+        "kind": "interact"
+      }
     ],
-    "anim": "walk",
-    "backdrop": true,
-    "fixedScale": 1.35,
-    "via": "along the rope bridge",
-    "note": "to the outside of the gate, where Malachar had it (2026-10-12: it reaches the gate, touches the bars). `inside` is the chasm-side entry Malachar narrated (2026-10-13 21:28: it oozes up the stone wall from the pool below the pen) — it heaves up over the ledge at the pen's left rim, by the crystals. The approved film shows an under-the-bars entry instead; `insideGate` keeps that path for when he brings it through the gate.",
-    "inside": {
-     "from": [
-      700,
-      1240
-     ],
-     "to": [
-      1000,
-      1150
-     ],
-     "anim": "emerge",
-     "via": "heaving itself up over the ledge from the chasm"
+    "rolls": {
+      "ilvara": "1d6"
     },
-    "insideGate": {
-     "from": [
-      812,
-      812
-     ],
-     "to": [
-      900,
-      900
-     ],
-     "anim": "emerge",
-     "via": "squeezing under the bars"
-    }
-   },
-   "default": {
-    "from": [
-     812,
-     812
+    "npcs": [
+      {
+        "id": "ilvara",
+        "x": 1510,
+        "y": 930,
+        "face": 6,
+        "hostile": true,
+        "when": {
+          "roll": "ilvara",
+          "in": [
+            1,
+            2
+          ]
+        },
+        "barks": [
+          "(Ilvara Mizzrym turns from the table, and her face says you are already dead)"
+        ],
+        "_src": "OotA p.17 area 7: roll a d6 — on 1–2 the priestess is here; on a 1, Shoor Vandree is with her. Ilvara is furious at anyone entering unbidden; caught here she casts web, conjure animals or insect plague to bedevil them and FLEES calling for help; Shoor attacks to cover her escape (the flight and the spells are Malachar's to run)."
+      },
+      {
+        "id": "shoor",
+        "x": 1700,
+        "y": 780,
+        "face": 6,
+        "hostile": true,
+        "static": true,
+        "when": {
+          "roll": "ilvara",
+          "in": [
+            1
+          ]
+        },
+        "barks": [
+          "(Shoor Vandree steps between you and his mistress)"
+        ]
+      }
     ],
-    "to": [
-     900,
-     930
-    ],
-    "anim": "walk",
-    "big": 1,
-    "inside": {
-     "from": [
-      812,
-      812
-     ],
-     "to": [
-      900,
-      930
-     ],
-     "anim": "walk",
-     "via": "through the gate"
-    }
-   }
+    "hostileLabel": "Ilvara's quarters are not yours to enter."
   },
-  "wards": "The wards cut into the pen's walls smother any spell cast inside it; a spell cast from outside still reaches in.",
-  "spots": {
-   "_note": "Where a cast member goes when Malachar tags [NPC_MOVE: name | where] with this word in it. Plate pixels, matched by substring, first match wins. gate/bars = outside the pen gate where the ooze touched the bars; landing/door = Jorlan's post; bridge = the rope bridge; tower = its far end.",
-   "bars": [
-    690,
-    750
-   ],
-   "gate": [
-    690,
-    750
-   ],
-   "landing": [
-    445,
-    650
-   ],
-   "door": [
-    445,
-    650
-   ],
-   "stairs": [
-    432,
-    850
-   ],
-   "bridge": [
-    300,
-    555
-   ],
-   "tower": [
-    90,
-    450
-   ]
-  },
-  "objects": [
-   {
-    "name": "Clay chamber pots",
-    "kind": "decor"
-   },
-   {
-    "name": "Clay bowls of mushroom broth",
-    "kind": "interact"
-   },
-   {
-    "name": "Manacles, collars",
-    "kind": "interact"
-   }
-  ]
- },
- "7": {
-  "props": [
-   {
-    "id": "ilvara-chest",
-    "name": "Ilvara's chest",
-    "_src": "OotA ch.1 area 7 (Ilvara's Quarters): 'A heavy chest of black-stained zurkhwood sits at the foot of the bed.' Locked; the key is in a hidden pocket inside Ilvara's belt. Poison-needle trap on the lock, set off by any attempt to open it without the key: 1 piercing, DC 13 CON or poisoned 1 hour (fail by 5+: also unconscious). DC 20 INT (Investigation) finds it; thieves' tools + DC 15 DEX disarms it; thieves' tools + DC 15 DEX picks the lock. Traced by eye on the painted plate, 2026-10-14.",
-    "poly": [
-     [
-      930,
-      735
-     ],
-     [
-      988,
-      712
-     ],
-     [
-      1200,
-      680
-     ],
-     [
-      1222,
-      730
-     ],
-     [
-      1222,
-      800
-     ],
-     [
-      985,
-      862
-     ],
-     [
-      936,
-      820
-     ]
+  "8": {
+    "props": [
+      {
+        "id": "shoor-chest",
+        "name": "Shoor's chest",
+        "_src": "Sam's ruling, 2026-10-22: the party's confiscated weapons and gear are kept in Shoor's quarters. Traced by eye on the painted plate. Lid traced by eye, 2026-10-22 (Sam: \"This chest should also be able to open and have an animation\"). Not locked: the book says nothing of a lock on it.",
+        "locked": false,
+        "poly": [
+          [
+            1290,
+            330
+          ],
+          [
+            1370,
+            315
+          ],
+          [
+            1525,
+            350
+          ],
+          [
+            1520,
+            470
+          ],
+          [
+            1440,
+            495
+          ],
+          [
+            1290,
+            450
+          ]
+        ],
+        "lid": {
+          "poly": [
+            [
+              1288,
+              408
+            ],
+            [
+              1292,
+              360
+            ],
+            [
+              1318,
+              312
+            ],
+            [
+              1478,
+              348
+            ],
+            [
+              1528,
+              385
+            ],
+            [
+              1520,
+              440
+            ],
+            [
+              1400,
+              436
+            ],
+            [
+              1340,
+              425
+            ]
+          ],
+          "hinge": [
+            [
+              1318,
+              316
+            ],
+            [
+              1478,
+              352
+            ]
+          ],
+          "front": [
+            1400,
+            434
+          ]
+        },
+        "text": {
+          "closed": "A heavy iron-bound chest against the wall of Shoor's quarters.",
+          "unlocked": "A heavy iron-bound chest against the wall. It is not locked.",
+          "open": "A chest against the wall of Shoor's quarters. Your own things are in here, the ones the drow took off you."
+        }
+      }
     ],
-    "lid": {
-     "poly": [
-      [
-       943,
-       733
-      ],
-      [
-       988,
-       718
-      ],
-      [
-       1197,
-       686
-      ],
-      [
-       1215,
-       732
-      ],
-      [
-       1217,
-       757
-      ],
-      [
-       980,
-       807
-      ],
-      [
-       942,
-       762
-      ]
-     ],
-     "hinge": [
-      [
-       988,
-       718
-      ],
-      [
-       1197,
-       686
-      ]
-     ],
-     "front": [
-      978,
-      780
-     ]
-    },
-    "text": {
-     "closed": "A heavy chest of black-stained zurkhwood at the foot of the bed. Locked.",
-     "open": "Ilvara's chest stands open."
-    }
-   }
-  ],
-  "objects": [
-   {
-    "name": "Silver-framed mirror",
-    "kind": "interact"
-   },
-   {
-    "name": "Small shrine to Lolth",
-    "kind": "interact"
-   }
-  ]
- },
- "8": {
-  "props": [
-   {
-    "id": "shoor-chest",
-    "name": "Shoor's chest",
-    "_src": "Sam's ruling, 2026-10-22: the party's confiscated weapons and gear are kept in Shoor's quarters. Traced by eye on the painted plate. Lid traced by eye, 2026-10-22 (Sam: \"This chest should also be able to open and have an animation\"). Not locked: the book says nothing of a lock on it.",
-    "locked": false,
-    "poly": [
-     [
-      1290,
-      330
-     ],
-     [
-      1370,
-      315
-     ],
-     [
-      1525,
-      350
-     ],
-     [
-      1520,
-      470
-     ],
-     [
-      1440,
-      495
-     ],
-     [
-      1290,
-      450
-     ]
-    ],
-    "lid": {
-     "poly": [
-      [
-       1288,
-       408
-      ],
-      [
-       1292,
-       360
-      ],
-      [
-       1318,
-       312
-      ],
-      [
-       1478,
-       348
-      ],
-      [
-       1528,
-       385
-      ],
-      [
-       1520,
-       440
-      ],
-      [
-       1400,
-       436
-      ],
-      [
-       1340,
-       425
-      ]
-     ],
-     "hinge": [
-      [
-       1318,
-       316
-      ],
-      [
-       1478,
-       352
-      ]
-     ],
-     "front": [
-      1400,
-      434
-     ]
-    },
-    "text": {
-     "closed": "A heavy iron-bound chest against the wall of Shoor's quarters.",
-     "unlocked": "A heavy iron-bound chest against the wall. It is not locked.",
-     "open": "A chest against the wall of Shoor's quarters. Your own things are in here, the ones the drow took off you."
-    }
-   }
-  ],
-  "objects": [
-   {
-    "name": "Pewter pitcher and matched goblets",
-    "kind": "interact"
-   }
-  ]
- },
- "2": {
-  "loot": [
-   {
-    "id": "barracks-west",
-    "name": "The barracks chests (west)",
-    "_src": "OotA ch.1 area 2: six chests in each barracks; drow poison, clothing, trinkets. Traced by eye on the painted plate.",
-    "poly": [
-     [
-      835,
-      610
-     ],
-     [
-      925,
-      610
-     ],
-     [
-      930,
-      690
-     ],
-     [
-      840,
-      695
-     ]
-    ],
-    "text": "Footlockers at the ends of the bunks. Six of them, unlocked."
-   },
-   {
-    "id": "barracks-east",
-    "name": "The barracks chests (east)",
-    "_src": "OotA ch.1 area 2 (the same six chests, the other cave). Traced by eye on the painted plate.",
-    "poly": [
-     [
-      1140,
-      945
-     ],
-     [
-      1340,
-      930
-     ],
-     [
-      1345,
-      1060
-     ],
-     [
-      1240,
-      1140
-     ],
-     [
-      1140,
-      1140
-     ]
-    ],
-    "text": "Footlockers at the ends of the bunks. Six of them, unlocked."
-   }
-  ],
-  "objects": [
-   {
-    "name": "Pallet with gear beneath",
-    "kind": "interact"
-   },
-   {
-    "name": "Resting drow in trance",
-    "kind": "interact"
-   },
-   {
-    "name": "Side tables",
-    "kind": "interact"
-   },
-   {
-    "name": "Wall webbing with hooks",
-    "kind": "interact"
-   }
-  ]
- },
- "5": {
-  "lift": {
-   "_src": "OotA ch.1 area 5: winch-and-basket on a swinging arm; up to four Medium creatures; DC 18 Strength to turn the spool (another can Help); 4 rounds between the platform and the cavern floor. Traced by eye on the painted plate, 2026-10-22.",
-   "crank": [
-    [
-     960,
-     440
-    ],
-    [
-     1260,
-     440
-    ],
-    [
-     1270,
-     740
-    ],
-    [
-     960,
-     760
+    "objects": [
+      {
+        "name": "Pewter pitcher and matched goblets",
+        "kind": "interact"
+      }
     ]
-   ],
-   "spool": [
-    1150,
-    800
-   ],
-   "board": [
-    1490,
-    890
-   ],
-   "basket": [
-    1665,
-    700,
-    1900,
-    1045
-   ],
-   "rope": 1800,
-   "seats": [
-    [
-     1745,
-     925
-    ],
-    [
-     1795,
-     935
-    ],
-    [
-     1845,
-     925
-    ],
-    [
-     1795,
-     905
-    ]
-   ]
   },
-  "objects": [
-   {
-    "name": "Two quaggoth attendants",
-    "kind": "interact"
-   }
-  ]
- },
- "1": {
-  "objects": [
-   {
-    "name": "Warning trumpet",
-    "kind": "interact"
-   },
-   {
-    "name": "Two drow sentries",
-    "kind": "interact"
-   }
-  ]
- },
- "14": {
-  "objects": [
-   {
-    "name": "The pool",
-    "kind": "interact"
-   },
-   {
-    "name": "Webs overhead",
-    "kind": "interact"
-   }
-  ]
- },
- "9": {
-  "objects": [
-   {
-    "name": "Water barrels",
-    "kind": "interact"
-   }
-  ]
- },
- "12": {
-  "objects": [
-   {
-    "name": "Scattered bones of past meals",
-    "kind": "decor"
-   }
-  ]
- },
- "10b": {
-  "objects": [
-   {
-    "name": "Side table with lantern and small chest",
-    "kind": "interact"
-   },
-   {
-    "name": "Weapon rack and hooks on the wall",
-    "kind": "interact"
-   },
-   {
-    "name": "Two drow + one elite warrior on duty",
-    "kind": "interact"
-   },
-   {
-    "name": "Dice and cups on the table",
-    "kind": "interact"
-   },
-   {
-    "name": "Zurkhwood table and chairs",
-    "kind": "decor"
-   },
-   {
-    "name": "Ladder to the upper chamber",
-    "kind": "interact"
-   }
-  ]
- },
- "3": {
-  "objects": [
-   {
-    "name": "The larder",
-    "kind": "interact"
-   },
-   {
-    "name": "Iron brazier",
-    "kind": "decor"
-   },
-   {
-    "name": "Dice and cards on the tables",
-    "kind": "interact"
-   },
-   {
-    "name": "Food stocks",
-    "kind": "interact"
-   }
-  ]
- },
- "4": {
-  "objects": [
-   {
-    "name": "Pallet with gear beneath",
-    "kind": "interact"
-   },
-   {
-    "name": "Finer furniture",
-    "kind": "decor"
-   },
-   {
-    "name": "Chests (four chambers)",
-    "kind": "interact"
-   },
-   {
-    "name": "Rope ladder through the trapdoor",
-    "kind": "interact"
-   }
-  ]
- },
- "10c": {
-  "objects": [
-   {
-    "name": "Trapdoor and ladder down",
-    "kind": "interact"
-   },
-   {
-    "name": "Two chests",
-    "kind": "interact"
-   },
-   {
-    "name": "Window to the cavern",
-    "kind": "decor"
-   },
-   {
-    "name": "The armory racks (8 spots)",
-    "kind": "interact"
-   }
-  ],
-  "loot": [
-   {
-    "id": "armory-crossbows",
-    "name": "Hand crossbows",
-    "_src": "OotA p.18 area 10 Treasure. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
-    "poly": [
-     [
-      273,
-      204
-     ],
-     [
-      675,
-      204
-     ],
-     [
-      675,
-      477
-     ],
-     [
-      273,
-      477
-     ]
+  "2": {
+    "loot": [
+      {
+        "id": "barracks-west",
+        "name": "The barracks chests (west)",
+        "_src": "OotA ch.1 area 2: six chests in each barracks; drow poison, clothing, trinkets. Traced by eye on the painted plate.",
+        "poly": [
+          [
+            835,
+            610
+          ],
+          [
+            925,
+            610
+          ],
+          [
+            930,
+            690
+          ],
+          [
+            840,
+            695
+          ]
+        ],
+        "text": "Footlockers at the ends of the bunks. Six of them, unlocked."
+      },
+      {
+        "id": "barracks-east",
+        "name": "The barracks chests (east)",
+        "_src": "OotA ch.1 area 2 (the same six chests, the other cave). Traced by eye on the painted plate.",
+        "poly": [
+          [
+            1140,
+            945
+          ],
+          [
+            1340,
+            930
+          ],
+          [
+            1345,
+            1060
+          ],
+          [
+            1240,
+            1140
+          ],
+          [
+            1140,
+            1140
+          ]
+        ],
+        "text": "Footlockers at the ends of the bunks. Six of them, unlocked."
+      }
     ],
-    "text": "Six hand crossbows racked on the wall."
-   },
-   {
-    "id": "armory-bolts",
-    "name": "Cases of bolts",
-    "_src": "OotA p.18: 20 cases, each of 20 bolts. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
-    "poly": [
-     [
-      287,
-      491
-     ],
-     [
-      675,
-      491
-     ],
-     [
-      675,
-      735
-     ],
-     [
-      287,
-      735
-     ]
+    "objects": [
+      {
+        "name": "Pallet with gear beneath",
+        "kind": "interact"
+      },
+      {
+        "name": "Resting drow in trance",
+        "kind": "interact"
+      },
+      {
+        "name": "Side tables",
+        "kind": "interact"
+      },
+      {
+        "name": "Wall webbing with hooks",
+        "kind": "interact"
+      }
     ],
-    "text": "Twenty cases of hand crossbow bolts, twenty to a case."
-   },
-   {
-    "id": "armory-rope-sacks",
-    "name": "Rope and sacks",
-    "_src": "OotA p.18: 4 coils of 100-ft silk rope, 6 bags of caltrops (20 each), 2 bags of iron spikes (10 each). What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
-    "poly": [
-     [
-      115,
-      376
-     ],
-     [
-      287,
-      376
-     ],
-     [
-      287,
-      591
-     ],
-     [
-      115,
-      591
-     ]
+    "npcs": [
+      {
+        "id": "drow-guard-male",
+        "x": 570,
+        "y": 930,
+        "face": 2,
+        "hostile": true,
+        "static": true,
+        "barks": [
+          "(a drow sits cross-legged on his pallet, eyes open and unseeing: the trance)"
+        ],
+        "_src": "OotA p.15 area 2: one drow present in each barracks cave at any time, resting in a meditative trance; rises at any significant light or noise, ready to attack."
+      },
+      {
+        "id": "drow-guard-male",
+        "x": 1800,
+        "y": 940,
+        "face": 6,
+        "hostile": true,
+        "static": true,
+        "barks": [
+          "(another drow in trance, a hand crossbow within reach under the pallet)"
+        ]
+      }
     ],
-    "text": "Four 100-foot coils of silk rope; sacks of caltrops and iron spikes."
-   },
-   {
-    "id": "armory-chain",
-    "name": "Chain shirts",
-    "_src": "OotA p.18. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
-    "poly": [
-     [
-      789,
-      276
-     ],
-     [
-      1148,
-      276
-     ],
-     [
-      1148,
-      563
-     ],
-     [
-      789,
-      563
-     ]
+    "watch": {
+      "passive": 12,
+      "label": "A resting drow stirs at the noise and rises from his pallet."
+    },
+    "hostileLabel": "The resting drow come up off their pallets with steel in hand."
+  },
+  "5": {
+    "lift": {
+      "_src": "OotA ch.1 area 5: winch-and-basket on a swinging arm; up to four Medium creatures; DC 18 Strength to turn the spool (another can Help); 4 rounds between the platform and the cavern floor. Traced by eye on the painted plate, 2026-10-22.",
+      "crank": [
+        [
+          960,
+          440
+        ],
+        [
+          1260,
+          440
+        ],
+        [
+          1270,
+          740
+        ],
+        [
+          960,
+          760
+        ]
+      ],
+      "spool": [
+        1150,
+        800
+      ],
+      "board": [
+        1490,
+        890
+      ],
+      "basket": [
+        1665,
+        700,
+        1900,
+        1045
+      ],
+      "rope": 1800,
+      "seats": [
+        [
+          1745,
+          925
+        ],
+        [
+          1795,
+          935
+        ],
+        [
+          1845,
+          925
+        ],
+        [
+          1795,
+          905
+        ]
+      ]
+    },
+    "objects": [
+      {
+        "name": "Two quaggoth attendants",
+        "kind": "interact"
+      }
     ],
-    "text": "Six chain shirts on hangers."
-   },
-   {
-    "id": "armory-studded",
-    "name": "Studded leather",
-    "_src": "OotA p.18. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
-    "poly": [
-     [
-      1335,
-      319
-     ],
-     [
-      1694,
-      319
-     ],
-     [
-      1694,
-      563
-     ],
-     [
-      1335,
-      563
-     ]
+    "npcs": [
+      {
+        "id": "quaggoth",
+        "x": 820,
+        "y": 800,
+        "face": 2,
+        "hostile": true,
+        "barks": [
+          "(a quaggoth attendant leans on the spool, watching the dark below)"
+        ],
+        "_src": "OotA p.15 area 5: two quaggoth attendants remain by the lift to watch for a signal from below; on guard against anyone who is not a drow or their own kind."
+      },
+      {
+        "id": "quaggoth",
+        "x": 1250,
+        "y": 900,
+        "face": 6,
+        "hostile": true,
+        "barks": [
+          "(the second attendant sniffs the air)"
+        ]
+      }
     ],
-    "text": "Six suits of studded leather armour."
-   },
-   {
-    "id": "armory-shields",
-    "name": "Shields",
-    "_src": "OotA p.18. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
-    "poly": [
-     [
-      1823,
-      247
-     ],
-     [
-      2239,
-      247
-     ],
-     [
-      2239,
-      520
-     ],
-     [
-      1823,
-      520
-     ]
+    "hostileLabel": "The lift attendants bare their teeth."
+  },
+  "1": {
+    "objects": [
+      {
+        "name": "Warning trumpet",
+        "kind": "interact"
+      },
+      {
+        "name": "Two drow sentries",
+        "kind": "interact"
+      }
     ],
-    "text": "Six shields on the wall."
-   },
-   {
-    "id": "armory-blades",
-    "name": "Shortswords and daggers",
-    "_src": "OotA p.18. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
-    "poly": [
-     [
-      1823,
-      563
-     ],
-     [
-      2239,
-      563
-     ],
-     [
-      2239,
-      792
-     ],
-     [
-      1823,
-      792
-     ]
+    "npcs": [
+      {
+        "id": "drow-guard-male",
+        "x": 900,
+        "y": 660,
+        "face": 2,
+        "hostile": true,
+        "barks": [
+          "(a sentry squints down the spyglass at the southern passage)"
+        ],
+        "_src": "OotA p.15 area 1: two drow stationed here at all times; they report intruders and watch, and blow the warning trumpet only at a significant threat."
+      },
+      {
+        "id": "drow-guard-female",
+        "x": 1500,
+        "y": 640,
+        "face": 6,
+        "hostile": true,
+        "barks": [
+          "(the second sentry picks at the coiled rope, bored)"
+        ]
+      }
     ],
-    "text": "Six shortswords and ten daggers in the racks."
-   },
-   {
-    "id": "armory-hammers",
-    "name": "Building hammers and chests",
-    "_src": "OotA p.18: 2 building hammers (not usable as weapons). The chests are in the painting only; the book lists nothing in them. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
-    "poly": [
-     [
-      1321,
-      620
-     ],
-     [
-      1651,
-      620
-     ],
-     [
-      1651,
-      764
-     ],
-     [
-      1321,
-      764
-     ]
+    "watch": {
+      "passive": 12,
+      "label": "The sentries at the southern watch post have seen you."
+    },
+    "hostileLabel": "The watch post sentries draw steel."
+  },
+  "14": {
+    "objects": [
+      {
+        "name": "The pool",
+        "kind": "interact"
+      },
+      {
+        "name": "Webs overhead",
+        "kind": "interact"
+      }
+    ]
+  },
+  "9": {
+    "objects": [
+      {
+        "name": "Water barrels",
+        "kind": "interact"
+      }
+    ]
+  },
+  "12": {
+    "objects": [
+      {
+        "name": "Scattered bones of past meals",
+        "kind": "decor"
+      }
     ],
-    "text": "Two building hammers (not weapons) by two chests."
-   }
-  ]
- },
- "13": {
-  "objects": [
-   {
-    "name": "Two drow sentries",
-    "kind": "interact"
-   },
-   {
-    "name": "Warning horn",
-    "kind": "interact"
-   }
-  ]
- }
+    "npcs": [
+      {
+        "id": "quaggoth",
+        "x": 970,
+        "y": 470,
+        "face": 0,
+        "hostile": true,
+        "static": true,
+        "dice": "1d4",
+        "spots": [
+          [
+            970,
+            470,
+            0
+          ],
+          [
+            1600,
+            520,
+            0
+          ],
+          [
+            610,
+            750,
+            2
+          ],
+          [
+            1910,
+            810,
+            6
+          ]
+        ],
+        "barks": [
+          "(a quaggoth sleeps curled in a nest of bone and refuse)"
+        ],
+        "_src": "OotA p.18 area 12: 1d4 quaggoths resting here at any given time; they attack anything in the den that is not a drow, a spider or their own kind."
+      }
+    ]
+  },
+  "10b": {
+    "objects": [
+      {
+        "name": "Side table with lantern and small chest",
+        "kind": "interact"
+      },
+      {
+        "name": "Weapon rack and hooks on the wall",
+        "kind": "interact"
+      },
+      {
+        "name": "Two drow + one elite warrior on duty",
+        "kind": "interact"
+      },
+      {
+        "name": "Dice and cups on the table",
+        "kind": "interact"
+      },
+      {
+        "name": "Zurkhwood table and chairs",
+        "kind": "decor"
+      },
+      {
+        "name": "Ladder to the upper chamber",
+        "kind": "interact"
+      }
+    ]
+  },
+  "3": {
+    "objects": [
+      {
+        "name": "The larder",
+        "kind": "interact"
+      },
+      {
+        "name": "Iron brazier",
+        "kind": "decor"
+      },
+      {
+        "name": "Dice and cards on the tables",
+        "kind": "interact"
+      },
+      {
+        "name": "Food stocks",
+        "kind": "interact"
+      }
+    ],
+    "rolls": {
+      "hall": "1d4"
+    },
+    "npcs": [
+      {
+        "id": "drow-guard-male",
+        "x": 1000,
+        "y": 760,
+        "face": 0,
+        "hostile": true,
+        "when": {
+          "roll": "hall",
+          "in": [
+            1
+          ]
+        },
+        "dice": "1d4",
+        "spots": [
+          [
+            1000,
+            760,
+            0
+          ],
+          [
+            1250,
+            760,
+            0
+          ],
+          [
+            1000,
+            980,
+            4
+          ],
+          [
+            1250,
+            980,
+            4
+          ]
+        ],
+        "barks": [
+          "(the drow rattle dice in a cup and bet on the fall)"
+        ],
+        "_src": "OotA p.15 area 3: 25 percent chance 1d4 drow are in the main hall eating or at dice; if any drow are present, 1d4 quaggoths are serving and cleaning; if no drow, 25 percent chance of a lone quaggoth at its duties."
+      },
+      {
+        "id": "quaggoth",
+        "x": 1550,
+        "y": 530,
+        "face": 0,
+        "hostile": true,
+        "when": {
+          "roll": "hall",
+          "in": [
+            1
+          ]
+        },
+        "dice": "1d4",
+        "spots": [
+          [
+            1550,
+            530,
+            0
+          ],
+          [
+            1700,
+            560,
+            6
+          ],
+          [
+            1100,
+            500,
+            2
+          ],
+          [
+            1600,
+            900,
+            4
+          ]
+        ],
+        "barks": [
+          "(a quaggoth scrubs a table with a rag of hide)"
+        ]
+      },
+      {
+        "id": "quaggoth",
+        "x": 1510,
+        "y": 570,
+        "face": 0,
+        "hostile": true,
+        "when": {
+          "roll": "hall",
+          "in": [
+            2,
+            3,
+            4
+          ]
+        },
+        "chance": 0.25,
+        "barks": [
+          "(a lone quaggoth stacks bowls by the larder)"
+        ]
+      }
+    ],
+    "hostileLabel": "The main hall turns on you."
+  },
+  "4": {
+    "objects": [
+      {
+        "name": "Pallet with gear beneath",
+        "kind": "interact"
+      },
+      {
+        "name": "Finer furniture",
+        "kind": "decor"
+      },
+      {
+        "name": "Chests (four chambers)",
+        "kind": "interact"
+      },
+      {
+        "name": "Rope ladder through the trapdoor",
+        "kind": "interact"
+      }
+    ],
+    "rolls": {
+      "tower": "1d2",
+      "chore": "1d2"
+    },
+    "npcs": [
+      {
+        "id": "drow-elite-warrior",
+        "x": 560,
+        "y": 560,
+        "face": 0,
+        "hostile": true,
+        "static": true,
+        "at": "tower",
+        "spots": [
+          [
+            560,
+            560,
+            2
+          ],
+          [
+            1720,
+            560,
+            6
+          ]
+        ],
+        "barks": [
+          "(an elite warrior rests in a chair, a hand on the hilt even at ease)"
+        ],
+        "_src": "OotA p.15 area 4: one off-duty drow elite warrior rests in one of the chambers at any given time; 50 percent chance one quaggoth is also present on chores. Either reacts hostilely but might flee to warn the outpost."
+      },
+      {
+        "id": "quaggoth",
+        "x": 900,
+        "y": 620,
+        "face": 0,
+        "hostile": true,
+        "when": {
+          "roll": "chore",
+          "in": [
+            1
+          ]
+        },
+        "at": "tower",
+        "spots": [
+          [
+            900,
+            620,
+            6
+          ],
+          [
+            1400,
+            620,
+            2
+          ]
+        ],
+        "barks": [
+          "(a quaggoth carries a water skin between the towers)"
+        ]
+      }
+    ],
+    "hostileLabel": "The elite barracks are not empty."
+  },
+  "10c": {
+    "objects": [
+      {
+        "name": "Trapdoor and ladder down",
+        "kind": "interact"
+      },
+      {
+        "name": "Two chests",
+        "kind": "interact"
+      },
+      {
+        "name": "Window to the cavern",
+        "kind": "decor"
+      },
+      {
+        "name": "The armory racks (8 spots)",
+        "kind": "interact"
+      }
+    ],
+    "loot": [
+      {
+        "id": "armory-crossbows",
+        "name": "Hand crossbows",
+        "_src": "OotA p.18 area 10 Treasure. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+        "poly": [
+          [
+            273,
+            204
+          ],
+          [
+            675,
+            204
+          ],
+          [
+            675,
+            477
+          ],
+          [
+            273,
+            477
+          ]
+        ],
+        "text": "Six hand crossbows racked on the wall."
+      },
+      {
+        "id": "armory-bolts",
+        "name": "Cases of bolts",
+        "_src": "OotA p.18: 20 cases, each of 20 bolts. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+        "poly": [
+          [
+            287,
+            491
+          ],
+          [
+            675,
+            491
+          ],
+          [
+            675,
+            735
+          ],
+          [
+            287,
+            735
+          ]
+        ],
+        "text": "Twenty cases of hand crossbow bolts, twenty to a case."
+      },
+      {
+        "id": "armory-rope-sacks",
+        "name": "Rope and sacks",
+        "_src": "OotA p.18: 4 coils of 100-ft silk rope, 6 bags of caltrops (20 each), 2 bags of iron spikes (10 each). What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+        "poly": [
+          [
+            115,
+            376
+          ],
+          [
+            287,
+            376
+          ],
+          [
+            287,
+            591
+          ],
+          [
+            115,
+            591
+          ]
+        ],
+        "text": "Four 100-foot coils of silk rope; sacks of caltrops and iron spikes."
+      },
+      {
+        "id": "armory-chain",
+        "name": "Chain shirts",
+        "_src": "OotA p.18. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+        "poly": [
+          [
+            789,
+            276
+          ],
+          [
+            1148,
+            276
+          ],
+          [
+            1148,
+            563
+          ],
+          [
+            789,
+            563
+          ]
+        ],
+        "text": "Six chain shirts on hangers."
+      },
+      {
+        "id": "armory-studded",
+        "name": "Studded leather",
+        "_src": "OotA p.18. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+        "poly": [
+          [
+            1335,
+            319
+          ],
+          [
+            1694,
+            319
+          ],
+          [
+            1694,
+            563
+          ],
+          [
+            1335,
+            563
+          ]
+        ],
+        "text": "Six suits of studded leather armour."
+      },
+      {
+        "id": "armory-shields",
+        "name": "Shields",
+        "_src": "OotA p.18. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+        "poly": [
+          [
+            1823,
+            247
+          ],
+          [
+            2239,
+            247
+          ],
+          [
+            2239,
+            520
+          ],
+          [
+            1823,
+            520
+          ]
+        ],
+        "text": "Six shields on the wall."
+      },
+      {
+        "id": "armory-blades",
+        "name": "Shortswords and daggers",
+        "_src": "OotA p.18. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+        "poly": [
+          [
+            1823,
+            563
+          ],
+          [
+            2239,
+            563
+          ],
+          [
+            2239,
+            792
+          ],
+          [
+            1823,
+            792
+          ]
+        ],
+        "text": "Six shortswords and ten daggers in the racks."
+      },
+      {
+        "id": "armory-hammers",
+        "name": "Building hammers and chests",
+        "_src": "OotA p.18: 2 building hammers (not usable as weapons). The chests are in the painting only; the book lists nothing in them. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+        "poly": [
+          [
+            1321,
+            620
+          ],
+          [
+            1651,
+            620
+          ],
+          [
+            1651,
+            764
+          ],
+          [
+            1321,
+            764
+          ]
+        ],
+        "text": "Two building hammers (not weapons) by two chests."
+      }
+    ]
+  },
+  "13": {
+    "objects": [
+      {
+        "name": "Two drow sentries",
+        "kind": "interact"
+      },
+      {
+        "name": "Warning horn",
+        "kind": "interact"
+      }
+    ],
+    "npcs": [
+      {
+        "id": "drow-guard-male",
+        "x": 760,
+        "y": 760,
+        "face": 2,
+        "hostile": true,
+        "barks": [
+          "(a sentry glowers toward the quaggoth den and spits)"
+        ],
+        "_src": "OotA p.19 area 13: same as area 1 — two drow on watch, hating the duty for its nearness to the den, the pen and the pool."
+      },
+      {
+        "id": "drow-guard-female",
+        "x": 1500,
+        "y": 720,
+        "face": 6,
+        "hostile": true,
+        "barks": [
+          "(the second sentry fingers the warning horn)"
+        ]
+      }
+    ],
+    "watch": {
+      "passive": 12,
+      "label": "The sentries at the northern watch post have seen you."
+    },
+    "hostileLabel": "The northern watch draws steel."
+  },
+  "6": {
+    "rolls": {
+      "shrine": "1d6"
+    },
+    "npcs": [
+      {
+        "id": "asha",
+        "x": 1630,
+        "y": 530,
+        "face": 0,
+        "hostile": true,
+        "static": true,
+        "when": {
+          "roll": "shrine",
+          "in": [
+            1,
+            2
+          ]
+        },
+        "barks": [
+          "(Asha reclines among the cushions, alone)"
+        ],
+        "_src": "OotA p.17 area 6: d6 — 1–2 Asha alone, resting; 3–4 Asha and 1d4 drow at worship; 5–6 empty. The trained giant spider among the cushions is the plate's ambush hazard already."
+      },
+      {
+        "id": "asha",
+        "x": 1210,
+        "y": 770,
+        "face": 0,
+        "hostile": true,
+        "static": true,
+        "when": {
+          "roll": "shrine",
+          "in": [
+            3,
+            4
+          ]
+        },
+        "barks": [
+          "(Asha leads the rite before the spider's eight eyes)"
+        ]
+      },
+      {
+        "id": "drow-guard-male",
+        "x": 1000,
+        "y": 800,
+        "face": 4,
+        "hostile": true,
+        "static": true,
+        "when": {
+          "roll": "shrine",
+          "in": [
+            3,
+            4
+          ]
+        },
+        "dice": "1d4",
+        "spots": [
+          [
+            1000,
+            800,
+            4
+          ],
+          [
+            1400,
+            800,
+            4
+          ],
+          [
+            1100,
+            900,
+            4
+          ],
+          [
+            1300,
+            900,
+            4
+          ]
+        ],
+        "barks": [
+          "(the drow kneel, hands raised to the altar)"
+        ]
+      }
+    ],
+    "hostileLabel": "The shrine's worshippers turn from the altar."
+  }
 }
