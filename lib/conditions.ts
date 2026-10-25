@@ -19,6 +19,9 @@ export const CONDITION_PRESETS = [
   "Burning",
   "Charged",
   "Webbed",
+  // Numbed (Sam, 2026-10-24): the bhut's Numbing Bite. Not a 5e condition —
+  // one round, no reactions, speed halved. claude/Darklake_Shore_Keelboat_Fisherman.md
+  "Numbed",
 ] as const
 
 // Tailwind text color per known condition (case-insensitive key). Free-text
@@ -35,6 +38,7 @@ const CONDITION_COLORS: Record<string, string> = {
   burning: "text-orange-500",
   charged: "text-sky-300",
   webbed: "text-stone-200",
+  numbed: "text-blue-200",
   // Additional 5e conditions that may already exist in saved data.
   blinded: "text-stone-400",
   charmed: "text-pink-400",

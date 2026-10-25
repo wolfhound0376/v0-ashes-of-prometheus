@@ -199,3 +199,66 @@ export function describeSituation(row: PartySituationRow | null | undefined): st
   if (row.note) parts.push(`Last: ${row.note}`)
   return parts.join(" ")
 }
+
+// ---------------------------------------------------------------------------
+// What Malachar is told (PR B). The row is the walk's account; this decides whether to trust it for
+// this turn and puts it into words he can act on.
+// ---------------------------------------------------------------------------
+
+/** A talk or a fight the map reported this long ago has had time to end; the row keeps the place. */
+export const TRANSIENT_AFTER_MS = 30 * 60 * 1000
+
+/** "Velkynvelve — Shoor's Quarters": the finer location, in the travel graph's own label style. */
+export function situationWhere(row: PartySituationRow): string {
+  return [row.place, row.area_name].filter(Boolean).join(" — ") || "an unknown place"
+}
+
+export function ageWords(ms: number): string {
+  if (!Number.isFinite(ms) || ms < 90_000) return "just now"
+  const m = Math.round(ms / 60_000)
+  if (m < 60) return `${m} minutes ago`
+  const h = Math.round(m / 60)
+  if (h < 48) return `${h} hour${h === 1 ? "" : "s"} ago`
+  return `${Math.round(h / 24)} days ago`
+}
+
+export interface SituationNoteOptions {
+  /** Where the travel graph says the party is (party_location_label's label or location), if known. */
+  location?: string | null
+  now?: Date
+}
+
+/**
+ * The prompt block for one turn, or null when the row should not be trusted for it.
+ *
+ * Trusted only while the travel graph agrees on the PLACE: the walk writes the row from inside
+ * Velkynvelve, and a party that has since walked out onto the road (which moves party_position, not
+ * this table) leaves it behind. A talk or fight older than TRANSIENT_AFTER_MS is read as over —
+ * the place stands, the activity does not — because the walk only writes on change and a tab closed
+ * mid-fight would otherwise keep the party fighting for a week.
+ */
+export function situationPromptNote(row: PartySituationRow | null | undefined, opts: SituationNoteOptions = {}): { note: string; where: string } | null {
+  if (!row) return null
+  const place = (row.place ?? "").trim()
+  if (opts.location && place && !opts.location.toLowerCase().includes(place.toLowerCase())) return null
+
+  const now = opts.now ?? new Date()
+  const age = now.getTime() - Date.parse(row.updated_at)
+  const ageText = Number.isNaN(age) ? "at an unknown time" : ageWords(age)
+
+  let shown = row
+  let lapsed = ""
+  if (!Number.isNaN(age) && age > TRANSIENT_AFTER_MS && (row.activity === "talking" || row.activity === "fighting")) {
+    lapsed = row.activity === "talking" ? " The talk it reported has had time to end." : " The fight it reported has had time to end."
+    shown = { ...row, activity: "exploring", talking_to: null }
+  }
+
+  const where = situationWhere(row)
+  const note = [
+    `PARTY SITUATION — the painted map's own account, reported ${ageText}: ${describeSituation(shown)}${lapsed}`,
+    "Treat this as where the party stands, who leads, and who is within arm's reach; the ON STAGE list is still yours for anyone you brought in.",
+    "Narrate THIS room. Do not move the party to another area yourself — the map moves them.",
+    "Only those listed here or on stage can be seen or spoken to; no one else is in the room.",
+  ].join(" ")
+  return { note, where }
+}

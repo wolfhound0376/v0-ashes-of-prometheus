@@ -1060,7 +1060,7 @@
    {
     "id": "armory-bolts",
     "name": "Cases of bolts",
-    "_src": "OotA p.18: 20 cases, each of 20 bolts What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
+    "_src": "OotA p.18: 20 cases, each of 20 bolts. What is on the rack (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS. Traced by Sam in the editor, 2026-10-24.",
     "poly": [
      [
       287,

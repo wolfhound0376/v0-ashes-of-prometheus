@@ -190,6 +190,10 @@ export const NAMED_NPC_VOICES: NamedNpcVoice[] = [
   { name: "Derendil", voiceId: "JwgGi9aLSpBIW7pVE2A8", archetype: "growling beast with regal elven diction", aliases: ["derendil"] },
   { name: "JimJar", voiceId: "3shyWw5cq1cr7y8xyeZg", archetype: "sly deep gnome gambler/rogue", aliases: ["jimjar"] },
   { name: "Drow Matron", voiceId: "AaYuthhtZkIbXwIXDdTi", archetype: "cold, seductive noble drow", aliases: ["matron"] },
+  // Old Thessaly (Sam, 2026-10-24): the Darklake Shore fisherman, a bhut wearing a deep
+  // gnome's face. Voice-size rule: small body, so a high raspy gnome voice first and the
+  // cantankerousness second — the workspace's Grimblewood Thornwhisker.
+  { name: "Old Thessaly", voiceId: "ouL9IsyrSnUkCmfnD02u", archetype: "cantankerous old deep-gnome fisherman, high raspy voice", aliases: ["thessaly", "the fisherman"] },
   { name: "Ront", voiceId: "HPNUUUFNQiMEJN5oqMLX", archetype: "brutish, short-tempered orc warrior", aliases: ["ront"] },
   { name: "Deep Gnome (Svirfneblin)", voiceId: "Eja1uLaoEhh7YwasRYmL", archetype: "wary, secretive Underdark gnome", aliases: ["svirfneblin", "deepgnome"] },
   { name: "The Lich", voiceId: "NiQt0cwFeLsVf6cAmcCp", archetype: "ancient, quietly contemptuous undead sorcerer", aliases: ["lich", "malachar"] },
