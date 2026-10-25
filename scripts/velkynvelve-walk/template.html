@@ -3432,9 +3432,60 @@ function renderExploreBar(){
   if (sh && (sh.magic || sh.caster)) add("Cast", "✦", "cast-spell", wardsHere() ? "the ward on the wall drinks it here" : "a spell you have memorized", wardsHere() ? null : () => openCastMenu(o));
   if (o.foe) add(`Attack ${nm(o.foe)}`, "⚔", "attack", "starts a fight · roll initiative", () => startCombat([o.foe], `${who} attacks!`), "end");
   if (party.length > 1) add("Next hero", "⇆", null, `Tab · now ${who}`, () => { const i = party.indexOf(leader); setLeader(party[(i + 1) % party.length]); });
+  if (!o.foe) add("Short rest", "⌛", "dodge", restRisk().chance ? `an hour here · ${Math.round(restRisk().chance * 100)}% the locals find you` : "an hour here", () => openRest());
   add("Tell Malachar", "✎", null, "search, hide, anything else", () => { saveWalk();
     const q = new URLSearchParams({view: "full", from: "map", return: "/velkynvelve", area: node.name, as: PLAYS_AS[leader.id] || ""});
     const url = (APP ? "/?" : "https://ashes.playacartagena.com/?") + q.toString(); if (APP) window.top.location.href = url; else window.open(url, "_blank"); });
+}
+// A SHORT REST ON THE MAP (Sam, 2026-10-24: "Short rests should be able to be taken even when not in camp but risk an
+// encounter with locals"). An hour where the party stands. The sheets rest for real (/api/walk-rest runs the camp's
+// own short rest: Hit Dice rolled with CON, Song of Rest, pact slots, the clock moves an hour, Malachar is told) —
+// and the hour has a price: each plate names its locals and the odds they wander in (story.json `rest`, HOMEBREW,
+// Sam's rule; the numbers are Claude's: one in three inside the outpost, one in six out in the caverns, none where
+// nobody goes). A rest the locals break heals nothing and half an hour is gone; the fight starts on the spot.
+// What the map itself does NOT carry is current hit points between fights (every fight starts a hero at full), so
+// the healing lands on the sheet, which is where the dashboard, the camp and Malachar read it.
+const REST_DEFAULT = {chance: 0, foes: [], label: ""};
+function restRisk(){ return (node && node.rest) || REST_DEFAULT; }
+function openRest(){
+  if (mode !== "explore" || !leader) return;
+  if (!party.some(p => characterIdOf(p.id))){ toast("Nobody here has a sheet to rest on."); return; }
+  const r = restRisk(), odds = r.chance ? `There is a ${Math.round(r.chance * 100)}% chance ${r.who || "the locals"} come by in that hour.` : "Nobody comes this way.";
+  showDialog({title: "Short rest", body: `Rest an hour in ${node.name}? Each of you spends Hit Dice to heal (the game rolls them). ${odds}`, buttons: [
+    {label: "Rest · spend Hit Dice", primary: true, fn: () => doRest("max")},
+    {label: "Rest · spend nothing", fn: () => doRest("none")},
+    {label: "Not now"}]});
+}
+async function doRest(spend){
+  const r = restRisk(); mode = "dialog"; party.forEach(p => { p.path = []; });
+  // the party settles: everyone sits where they stand for the fade
+  for (const p of party) if (SPR[p.id].img.sit){ p.anim = "sit"; p.t0 = now; }
+  log(`<i>The party rests in ${esc(node.name)}…</i>`);
+  const mine = (() => { try { const id = localStorage.getItem("aop_character_id"); return id && party.some(p => characterIdOf(p.id) === id) ? localStorage.getItem("aop_claim_token") : null; } catch (e) { return null; } })();
+  let j = null;
+  if (APP){
+    const res = await fetch("/api/walk-rest", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()},
+      body: JSON.stringify({plate: String(cur), area: node.name, spend, claimToken: mine || undefined, risk: {chance: r.chance || 0, label: r.label || ""}})}).catch(() => null);
+    j = res ? await res.json().catch(() => ({})) : {};
+    if (!res || res.status === 403){ for (const p of party) setAnim(p, "idle"); mode = "explore"; toast("Only a seated player or the DM can rest the party."); return; }
+    if (!j.ok){ for (const p of party) setAnim(p, "idle"); mode = "explore"; toast(j.error || "The rest would not take."); return; }
+  } else {   // the stand-alone preview rolls the odds itself and heals nothing
+    j = {ok: true, interrupted: Math.random() < (r.chance || 0), minutes: 60, characters: []};
+  }
+  await wait(1400);
+  for (const p of party) setAnim(p, "idle");
+  mode = "explore";
+  if (j.interrupted){
+    log(`<b>${esc(r.label || "The locals find you.")}</b> The rest is broken after half an hour.`);
+    const foes = (r.foes || []).map(id => typeof id === "string" ? id : id.id).filter(id => SPR[id]);
+    if (foes.length){ const n = r.dice ? Math.max(1, roll(r.dice).total) : foes.length; startCombat(foes.slice(0, n), r.label || "The locals find you."); }
+    else log(`<i>Nobody on this plate has a sprite to send; Malachar will say who came.</i>`);
+    return;
+  }
+  const lines = (j.characters || []).map(c => `${esc(c.name.split(" ")[0])}: ${c.healed > 0 ? `+${c.healed} hp (${c.hp}/${c.hpMax})` : `${c.hp}/${c.hpMax}`}${c.dice && c.dice.length ? ` · d: ${c.dice.join(", ")}` : ""}${c.hitDiceLeft != null ? ` · ${c.hitDiceLeft} HD left` : ""}`);
+  log(`<b>Short rest.</b> An hour passes. ${lines.length ? lines.join("; ") + "." : ""}`);
+  toast("Rested an hour.", 2400);
+  renderExploreBar();
 }
 // CASTING OUTSIDE A FIGHT (Sam, 2026-10-23: "there should be a way for the magic users to use magic that they've
 // memorized when out of the sigil"). The list is the caster's own sheet (/api/walk-cast GET: every cantrip and
