@@ -76,6 +76,15 @@
     "frames": 16,
     "rows": 4
   },
+  "deathTouch": {
+    "bytes": 24232,
+    "cols": 8,
+    "file": "deathTouch.webp",
+    "fps": 9,
+    "frames": 16,
+    "rows": 2,
+    "swap": 9
+  },
   "eldBeam": {
     "bytes": 6700,
     "cols": 4,
