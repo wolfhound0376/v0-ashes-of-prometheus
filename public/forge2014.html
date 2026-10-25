@@ -1678,7 +1678,7 @@ function newChar(){
     deathS:0,deathF:0,built:false,
     abilityAdj:{},levelHp:[],history:[],
     armor:{magicBonus:0,otherBonus:0,override:null},
-    extraProfs:[]
+    extraProfs:[],langChoices:[]
   };
 }
 const activeChar=()=>state.chars.find(c=>c.id===state.activeId)||null;
@@ -1938,12 +1938,8 @@ function derive(c){
   let weight=0;
   c.inventory.forEach(i=>{weight+=(itemInfo(i.name).weight||0)*i.qty;});
 
-  /* languages */
-  const languages=["Common"];
-  const SP_LANG={Dwarf:"Dwarvish",Elf:"Elvish",Drow:"Elvish, Undercommon",Halfling:"Halfling",Gnome:"Gnomish","Deep Gnome":"Gnomish, Undercommon",Dragonborn:"Draconic",Tiefling:"Infernal","Half-Elf":"Elvish","Half-Orc":"Orc",Aarakocra:"Auran",Genasi:"Primordial",Goliath:"Giant",Human:"one extra language"};
-  if(sp&&SP_LANG[c.species])languages.push(SP_LANG[c.species]);
-  if(c.clazz==="Rogue")languages.push("Thieves' Cant");
-  if(c.clazz==="Druid")languages.push("Druidic");
+  /* languages: SRD 5.1 race defaults + background/species picks + class secrets */
+  const languages=knownLanguages(c);
 
   const passives={
     perception:10+skills["Perception"].bonus,
@@ -2157,7 +2153,58 @@ function renderRoster(){
 /* =====================================================================
    WIZARD
    ===================================================================== */
-const STEPS=["Class","Background","Species","Abilities","Equipment","Spells","Details","Review"];
+/* ---------------- languages (SRD 5.1 "Characterization: Languages") ----------------
+   Race gives default languages; background adds picks of your choice; Standard
+   table by default, Exotic with the DM's permission; Primordial = Aquan/Auran/
+   Ignan/Terran dialects. Kept in step with lib/languages.ts (a test compares them). */
+const LANGS=[
+ {n:"Common",t:"standard",sp:"Humans",sc:"Common"},
+ {n:"Dwarvish",t:"standard",sp:"Dwarves",sc:"Dwarvish"},
+ {n:"Elvish",t:"standard",sp:"Elves",sc:"Elvish"},
+ {n:"Giant",t:"standard",sp:"Ogres, giants",sc:"Dwarvish"},
+ {n:"Gnomish",t:"standard",sp:"Gnomes",sc:"Dwarvish"},
+ {n:"Goblin",t:"standard",sp:"Goblinoids",sc:"Dwarvish"},
+ {n:"Halfling",t:"standard",sp:"Halflings",sc:"Common"},
+ {n:"Orc",t:"standard",sp:"Orcs",sc:"Dwarvish"},
+ {n:"Abyssal",t:"exotic",sp:"Demons",sc:"Infernal"},
+ {n:"Celestial",t:"exotic",sp:"Celestials",sc:"Celestial"},
+ {n:"Draconic",t:"exotic",sp:"Dragons, dragonborn",sc:"Draconic"},
+ {n:"Deep Speech",t:"exotic",sp:"Aboleths, cloakers",sc:"—"},
+ {n:"Infernal",t:"exotic",sp:"Devils",sc:"Infernal"},
+ {n:"Primordial",t:"exotic",sp:"Elementals",sc:"Dwarvish"},
+ {n:"Sylvan",t:"exotic",sp:"Fey creatures",sc:"Elvish"},
+ {n:"Undercommon",t:"exotic",sp:"Underdark traders",sc:"Elvish"}
+];
+const SPECIES_LANGS={Human:{f:["Common"],c:1},Dwarf:{f:["Common","Dwarvish"],c:0},Elf:{f:["Common","Elvish"],c:1},
+ Drow:{f:["Common","Elvish"],c:0},Halfling:{f:["Common","Halfling"],c:0},Gnome:{f:["Common","Gnomish"],c:0},
+ Dragonborn:{f:["Common","Draconic"],c:0},Tiefling:{f:["Common","Infernal"],c:0},"Half-Elf":{f:["Common","Elvish"],c:1},
+ "Half-Orc":{f:["Common","Orc"],c:0},Aarakocra:{f:["Common","Aarakocra","Primordial"],c:0},
+ "Deep Gnome":{f:["Common","Gnomish","Undercommon"],c:0},Genasi:{f:["Common","Primordial"],c:0},Goliath:{f:["Common","Giant"],c:0}};
+/* 2014 PHB background language counts; the 2024-only names take the nearest 2014 background (Claude's mapping, flagged). */
+const BG_LANG_CHOICES={Acolyte:2,Sage:2,Hermit:1,Noble:1,Charlatan:0,Criminal:0,Entertainer:0,Sailor:0,Soldier:0,
+ Artisan:1,Merchant:1,Scribe:2,Guide:1,Farmer:0,Guard:0,Wayfarer:0};
+const CLASS_LANGS={Rogue:["Thieves' Cant"],Druid:["Druidic"]};
+const LANG_FLAVOR={Undercommon:"The trade tongue of the Underdark — drow give their orders in it.",
+ Elvish:"Drow speak it among themselves when they don't want slaves to follow.",
+ Dwarvish:"Stone-hard and guttural; the tongue of Gracklstugh's duergar too.",
+ "Deep Speech":"Spoken by things that should not speak.",
+ Goblin:"Heard in the Underdark more often than you'd like."};
+function langGrant(c){
+  const sp=c.species?SPECIES_LANGS[c.species]:null;
+  const fixed=sp?[...sp.f]:["Common"];const src=[];let n=0;
+  if(sp&&sp.c){n+=sp.c;src.push(c.species+" +"+sp.c);}
+  const b=c.background?(BG_LANG_CHOICES[c.background]||0):0;
+  if(b){n+=b;src.push(c.background+" +"+b);}
+  (CLASS_LANGS[c.clazz]||[]).forEach(l=>{if(!fixed.includes(l))fixed.push(l);});
+  return{fixed,choices:n,src};
+}
+function knownLanguages(c){
+  const g=langGrant(c);
+  const picks=(c.langChoices||[]).filter(l=>!g.fixed.includes(l)).slice(0,g.choices);
+  return[...g.fixed,...picks];
+}
+
+const STEPS=["Class","Background","Species","Abilities","Equipment","Spells","Languages","Details","Review"];
 
 function stepValid(c,i){
   switch(i){
@@ -2207,6 +2254,11 @@ function stepValid(c,i){
       }
       return null;}
     case 6:{
+      const g=langGrant(c);
+      const picks=(c.langChoices||[]).filter(l=>!g.fixed.includes(l));
+      if(picks.length<g.choices)return"Choose "+(g.choices-picks.length)+" more language"+(g.choices-picks.length>1?"s":"")+".";
+      return null;}
+    case 7:{
       if(!c.name.trim())return"Give your character a name.";
       return null;}
     default:return null;
@@ -2227,7 +2279,7 @@ function renderWizard(){
     pills.appendChild(p);
   });
   const panel=$("#stepPanel");panel.innerHTML="";
-  [stClass,stBackground,stSpecies,stAbilities,stEquip,stSpells,stDetails,stReview][state.step](panel,c);
+  [stClass,stBackground,stSpecies,stAbilities,stEquip,stSpells,stLanguages,stDetails,stReview][state.step](panel,c);
   const err=stepValid(c,state.step);
   $("#wizWarn").textContent="";
   $("#wizBack").style.visibility=state.step===0?"hidden":"visible";
@@ -2597,6 +2649,44 @@ function stSpells(panel,c){
     spellPicker(panel,c,"Feat Cantrips",SPELL_LISTS[srcList].cantrips,c.featSpells.cantrips,2,"cantrip");
     spellPicker(panel,c,"Feat Level-1 Spell (1 free cast per Long Rest)",SPELL_LISTS[srcList].l1,c.featSpells.l1,1,"l1");
   }
+}
+
+/* ---- step: languages ---- */
+function stLanguages(panel,c){
+  panel.appendChild(el("h2",null,"Languages"));
+  panel.appendChild(el("p","lead","What you understand when someone speaks. Anyone you can't follow will sound like gibberish to you in the game — so choose with the Underdark in mind. Exotic tongues need the DM's nod, which he gives when he opens your cell."));
+  const g=langGrant(c);
+  c.langChoices=(c.langChoices||[]).filter(l=>!g.fixed.includes(l)).slice(0,g.choices);
+  const box=el("div","detail-box");
+  box.appendChild(el("h3",null,"You already speak"));
+  const why=[];
+  if(c.species)why.push(c.species);
+  (CLASS_LANGS[c.clazz]||[]).length&&why.push(c.clazz);
+  box.appendChild(el("div","sp-chips",g.fixed.map(l=>'<span class="tag on">'+esc(l)+"</span>").join("")));
+  box.appendChild(el("div","trait","<span>From your "+esc(why.join(" and ")||"upbringing")+"."+(g.choices?" You may choose <b>"+g.choices+"</b> more ("+esc(g.src.join(", "))+").":" Your species and background give no extra picks — the DM can still teach you one in play.")+"</span>"));
+  panel.appendChild(box);
+  if(!g.choices)return;
+  const left=g.choices-c.langChoices.length;
+  const leftP=el("p","lead",left?("Choose "+left+" more."):"All picks made. Click one to swap it.");leftP.style.marginTop="14px";panel.appendChild(leftP);
+  ["standard","exotic"].forEach(tier=>{
+    const h=el("h3",null,tier==="standard"?"Standard Languages":"Exotic Languages <span class='tag'>DM's nod</span>");h.style.margin=tier==="standard"?"4px 0 10px":"22px 0 10px";panel.appendChild(h);
+    const grid=el("div","opt-grid");
+    LANGS.filter(l=>l.t===tier&&!g.fixed.includes(l.n)).forEach(l=>{
+      const on=c.langChoices.includes(l.n);
+      const card=el("button","opt-card"+(on?" sel":""));
+      card.setAttribute("role","checkbox");card.setAttribute("aria-checked",on?"true":"false");
+      card.innerHTML='<div><div class="oc-title">'+esc(l.n)+'</div><div class="oc-sub">'+esc(l.sp)+" • Script: "+esc(l.sc)+"</div>"+
+        (LANG_FLAVOR[l.n]?'<div class="oc-desc">'+esc(LANG_FLAVOR[l.n])+"</div>":"")+"</div>";
+      card.addEventListener("click",()=>{
+        if(on)c.langChoices=c.langChoices.filter(x=>x!==l.n);
+        else if(c.langChoices.length<g.choices)c.langChoices.push(l.n);
+        else{c.langChoices.shift();c.langChoices.push(l.n);}
+        renderWizard();
+      });
+      grid.appendChild(card);
+    });
+    panel.appendChild(grid);
+  });
 }
 
 /* ---- step: details ---- */
