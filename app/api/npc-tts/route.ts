@@ -39,6 +39,7 @@ export async function POST(request: NextRequest) {
 
     // 1) Resolve the voice.
     let explicitVoiceId = typeof voiceId === "string" && voiceId.trim() ? voiceId.trim() : undefined
+    let isHero = false   // a hero's saved voice: never written back onto an npc_encounters row
     // Rapport spores (lib/rapport.ts, Sam 2026-10-12): a myconid has no voice of its own. The line is
     // rendered in the LISTENER's saved voice — the character it is spoken to — and the audio is marked
     // so the player runs it through the cave treatment. Without a listener it falls back to the row's
@@ -69,6 +70,13 @@ export async function POST(request: NextRequest) {
           if (hit) row = (await db.from("npc_encounters").select("voice_id").eq("id", hit.id).maybeSingle()).data
         }
         if (row?.voice_id) explicitVoiceId = row.voice_id
+        // Not an NPC at all: a hero speaking on the painted map (Sam, 2026-10-25: "We can't hear
+        // Lynkes' voice in the game"). The Underwalk only knows the speaker's name, and heroes live in
+        // `characters`, not `npc_encounters` — so without this a hero fell through to a stock voice.
+        if (!explicitVoiceId && !npcId && !rapport && typeof npcName === "string" && npcName.trim()) {
+          const { data: hero } = await db.from("characters").select("voice_id").eq("is_player", true).is("archived_at", null).ilike("name", npcName.trim()).limit(1).maybeSingle()
+          if (hero?.voice_id) { explicitVoiceId = hero.voice_id; isHero = true; console.log("[v0] npc-tts hero voice for", npcName) }
+        }
       } catch (e) {
         console.log("[v0] npc-tts saved-voice lookup skipped:", (e as Error).message)
       }
@@ -106,7 +114,7 @@ export async function POST(request: NextRequest) {
     // write to exactly the NPC being resolved (by id when available, else name)
     // and only where voice_id is still empty so a canon voice is never replaced.
     // Best-effort: never fail playback if the DB write can't happen.
-    if (persistable && !rapport && (npcId || npcName)) {
+    if (persistable && !rapport && !isHero && (npcId || npcName)) {
       try {
         const admin = createAdminClient()
         let q = admin.from("npc_encounters").update({ voice_id: resolvedVoiceId }).is("voice_id", null)
