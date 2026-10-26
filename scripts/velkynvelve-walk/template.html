@@ -2585,6 +2585,7 @@ function openInteract(z, opts = {}){
     const attempt = (action, localMod, onWin, onLose) => () => {
       close();
       rollOnDashboard(action, localMod).then(k => {
+        if (k && k.cancelled){ openInteract(z, {again: true}); return; }   // stepped back from the roll panel: back to the choices
         if (!k || !k.ok){ toast((k && k.error) || "The dice did not roll.", 3200); return; }
         (k.success ? onWin : onLose)();
       });
@@ -2642,18 +2643,21 @@ function openBody(b){
 }
 // The game-side hook for an action the map cannot resolve itself. Nothing listens yet; the dashboard will.
 // A check rolled on the dashboard's dice (Sam, 2026-10-25). The map names an action from lib/walk-roll.ts WALK_ACTIONS;
-// the /velkynvelve page rolls it with the dashboard's engine and modifier, logs it, tells Malachar, and answers with
-// {ok, success, total, natural}. Opened as a plain file (no game around it), the map rolls locally against the same
-// DC so the page still works on its own.
+// the /velkynvelve page opens its BG3-style roll panel (components/walk/roll-panel.tsx), the player throws the die on
+// the dashboard's engine with the dashboard's modifier, and the page answers {ok, success, total, natural} — or
+// {cancelled} if they stepped back. "aop:roll-ack" says the panel is open; after it the map waits as long as the
+// player does. Opened as a plain file (no game around it), the map rolls locally against the same DC.
 const ROLLS = new Map(), LOCAL_DC = {"pen-gate:pick": 20, "pen-gate:force": 20};
-addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || m.type !== "aop:roll-result" || !ROLLS.has(m.id)) return; const done = ROLLS.get(m.id); ROLLS.delete(m.id); done(m); });
+addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
+  if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
+  if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
 function rollOnDashboard(action, localMod){
   if (!APP || window.parent === window){ const r = d20(), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= (LOCAL_DC[action] ?? 20), total, natural: r}); }
   const id = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   let characterId = null; try { characterId = myClaimId || characterIdOf(leader.id) || null; } catch (e) {}
   return new Promise(res => {
-    const t = setTimeout(() => { ROLLS.delete(id); res({ok: false, error: "The dice did not answer. Try again."}); }, 30000);
-    ROLLS.set(id, m => { clearTimeout(t); res(m); });
+    const t = setTimeout(() => { ROLLS.delete(id); res({ok: false, error: "The dice did not answer. Try again."}); }, 8000);   // no panel opened
+    ROLLS.set(id, {ack: () => clearTimeout(t), done: m => { clearTimeout(t); res(m); }});
     try { window.parent.postMessage({type: "aop:roll", id, action, characterId}, location.origin); } catch (e) { clearTimeout(t); ROLLS.delete(id); res({ok: false, error: "The dice did not answer."}); }
   });
 }

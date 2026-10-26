@@ -26,7 +26,7 @@
 //      modifier and their total, never the DC or the book page.
 // ============================================================================
 
-import { abilityMod, proficiency, skillBonus, type Ability, type SheetSlice, type Skill } from "@/lib/game-context"
+import { SKILL_ABILITY, abilityMod, proficiency, skillBonus, type Ability, type SheetSlice, type Skill } from "@/lib/game-context"
 import { hasTool } from "@/lib/repair"
 
 export type WalkCheck =
@@ -34,6 +34,8 @@ export type WalkCheck =
   | { kind: "tool"; tool: string; ability: Ability; label: string }
 
 export interface WalkAction {
+  /** The roll panel's heading: what the player chose, in their words. */
+  title: string
   /** What the player is doing, as the log and Malachar read it. */
   label: string
   check: WalkCheck
@@ -55,8 +57,8 @@ const ATHLETICS: WalkCheck = { kind: "skill", skill: "athletics", label: "Athlet
  * of "forcing it"; the book does not name the skill.
  */
 export const WALK_ACTIONS = {
-  "pen-gate:pick": { label: "Picking the pen gate's lock", check: THIEVES_TOOLS, dc: 20, source: "OotA p.18" },
-  "pen-gate:force": { label: "Forcing the pen gate", check: ATHLETICS, dc: 20, source: "OotA p.18" },
+  "pen-gate:pick": { title: "Pick the lock", label: "Picking the pen gate's lock", check: THIEVES_TOOLS, dc: 20, source: "OotA p.18" },
+  "pen-gate:force": { title: "Force the gate", label: "Forcing the pen gate", check: ATHLETICS, dc: 20, source: "OotA p.18" },
 } as const satisfies Record<string, WalkAction>
 
 export type WalkActionKey = keyof typeof WALK_ACTIONS
@@ -101,22 +103,51 @@ export function toolsFromRow(row: Row): string[] {
   return Array.isArray(t) ? t.filter((x): x is string => typeof x === "string") : []
 }
 
+export interface WalkModifierPart {
+  /** "DEX", "Proficiency", "Expertise", "Thieves' tools" — what the roll panel's chips say. */
+  label: string
+  value: number
+}
+
 export interface WalkModifier {
   modifier: number
   /** True when proficiency (or expertise) went into it. */
   proficient: boolean
+  /** The modifier, itemised the way the roll panel shows it. Always sums to `modifier`. */
+  parts: WalkModifierPart[]
 }
+
+const ABBR: Record<Ability, string> = { str: "STR", dex: "DEX", con: "CON", int: "INT", wis: "WIS", cha: "CHA" }
 
 /** The modifier the dashboard's sheet would use for this check. */
 export function walkCheckModifier(row: Row, check: WalkCheck): WalkModifier {
   const sheet = sheetSliceFromRow(row)
   if (check.kind === "skill") {
     const { mod, prof, level } = skillBonus(sheet, check.skill)
-    return { modifier: mod + prof, proficient: level !== "none" }
+    const parts: WalkModifierPart[] = [{ label: ABBR[SKILL_ABILITY[check.skill]], value: mod }]
+    if (prof) parts.push({ label: level === "expertise" ? "Expertise" : level === "proficient" ? "Proficiency" : "Jack of all trades", value: prof })
+    return { modifier: mod + prof, proficient: level !== "none", parts }
   }
   const mod = abilityMod(sheet[`${check.ability}_score` as const])
-  const prof = hasTool(toolsFromRow(row), check.tool)
-  return { modifier: mod + (prof ? proficiency(sheet) : 0), proficient: prof }
+  const has = hasTool(toolsFromRow(row), check.tool)
+  const prof = has ? proficiency(sheet) : 0
+  const parts: WalkModifierPart[] = [{ label: ABBR[check.ability], value: mod }]
+  if (prof) parts.push({ label: check.label, value: prof })
+  return { modifier: mod + prof, proficient: has, parts }
+}
+
+/**
+ * The DC as a word, never a number: the player sees how hard it is, not the DC
+ * (Sam's ruling). The words are the DMG's Typical Difficulty Classes:
+ * very easy 5, easy 10, medium 15, hard 20, very hard 25, nearly impossible 30.
+ */
+export function difficultyWord(dc: number): string {
+  if (dc <= 5) return "Very easy"
+  if (dc <= 10) return "Easy"
+  if (dc <= 15) return "Medium"
+  if (dc <= 20) return "Hard"
+  if (dc <= 25) return "Very hard"
+  return "Nearly impossible"
 }
 
 /** What goes on the dice and in the log: "Pick the lock — Thieves' tools". */
@@ -156,7 +187,13 @@ export interface WalkRollRequest {
   characterId?: string | null
 }
 
-/** Page → map. */
+/** Page → map: "I have it, the roll panel is open." After this the map waits as long as the player does. */
+export interface WalkRollAck {
+  type: "aop:roll-ack"
+  id: string
+}
+
+/** Page → map. `cancelled` is the player stepping back from the roll panel: no roll, nothing to say. */
 export interface WalkRollReply {
   type: "aop:roll-result"
   id: string
@@ -164,6 +201,7 @@ export interface WalkRollReply {
   success?: boolean
   total?: number
   natural?: number
+  cancelled?: boolean
   error?: string
 }
 

@@ -1,8 +1,9 @@
 import { readFileSync } from "node:fs"
 import vm from "node:vm"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import {
   WALK_ACTIONS,
+  difficultyWord,
   isWalkActionKey,
   parseWalkRollRequest,
   walkCheckModifier,
@@ -20,25 +21,51 @@ const rogue = {
 
 describe("walkCheckModifier — the dashboard's maths", () => {
   it("tool check: ability modifier + proficiency when the sheet lists the tool", () => {
-    expect(walkCheckModifier(rogue, WALK_ACTIONS["pen-gate:pick"].check)).toEqual({ modifier: 5, proficient: true })
+    expect(walkCheckModifier(rogue, WALK_ACTIONS["pen-gate:pick"].check)).toMatchObject({ modifier: 5, proficient: true })
   })
   it("tool check without the tool: the bare ability modifier", () => {
     const noTools = { ...rogue, sheet_proficiencies: { tools: [] } }
-    expect(walkCheckModifier(noTools, WALK_ACTIONS["pen-gate:pick"].check)).toEqual({ modifier: 3, proficient: false })
+    expect(walkCheckModifier(noTools, WALK_ACTIONS["pen-gate:pick"].check)).toMatchObject({ modifier: 3, proficient: false })
   })
   it("tool names match loosely, as lib/repair hasTool does", () => {
     const spelled = { ...rogue, sheet_proficiencies: { tools: ["thieves tools"] } }
     expect(walkCheckModifier(spelled, WALK_ACTIONS["pen-gate:pick"].check).modifier).toBe(5)
   })
   it("skill check: proficient adds the bonus once", () => {
-    expect(walkCheckModifier(rogue, WALK_ACTIONS["pen-gate:force"].check)).toEqual({ modifier: 2, proficient: true })
+    expect(walkCheckModifier(rogue, WALK_ACTIONS["pen-gate:force"].check)).toMatchObject({ modifier: 2, proficient: true })
   })
   it("skill check: unproficient is the ability modifier alone", () => {
     const plain = { ...rogue, sheet_skill_proficiencies: {} }
-    expect(walkCheckModifier(plain, WALK_ACTIONS["pen-gate:force"].check)).toEqual({ modifier: 0, proficient: false })
+    expect(walkCheckModifier(plain, WALK_ACTIONS["pen-gate:force"].check)).toMatchObject({ modifier: 0, proficient: false })
   })
   it("a missing score is 10, never a guess", () => {
     expect(walkCheckModifier({ id: "x", name: "Nobody" }, WALK_ACTIONS["pen-gate:force"].check).modifier).toBe(0)
+  })
+})
+
+describe("the roll panel's chips and difficulty word", () => {
+  it("itemises a tool check: ability, then the tool, summing to the modifier", () => {
+    const m = walkCheckModifier(rogue, WALK_ACTIONS["pen-gate:pick"].check)
+    expect(m.parts).toEqual([{ label: "DEX", value: 3 }, { label: "Thieves' tools", value: 2 }])
+    expect(m.parts.reduce((a, b) => a + b.value, 0)).toBe(m.modifier)
+  })
+  it("itemises a skill check and names expertise as expertise", () => {
+    expect(walkCheckModifier(rogue, WALK_ACTIONS["pen-gate:force"].check).parts).toEqual([{ label: "STR", value: 0 }, { label: "Proficiency", value: 2 }])
+    const expert = { ...rogue, sheet_skill_proficiencies: { athletics: "expertise" } }
+    expect(walkCheckModifier(expert, WALK_ACTIONS["pen-gate:force"].check).parts).toEqual([{ label: "STR", value: 0 }, { label: "Expertise", value: 4 }])
+  })
+  it("no proficiency, no chip for it", () => {
+    const plain = { ...rogue, sheet_proficiencies: { tools: [] } }
+    expect(walkCheckModifier(plain, WALK_ACTIONS["pen-gate:pick"].check).parts).toEqual([{ label: "DEX", value: 3 }])
+  })
+  it("the DC becomes the DMG's word, never a number", () => {
+    expect(difficultyWord(5)).toBe("Very easy")
+    expect(difficultyWord(10)).toBe("Easy")
+    expect(difficultyWord(15)).toBe("Medium")
+    expect(difficultyWord(20)).toBe("Hard")
+    expect(difficultyWord(25)).toBe("Very hard")
+    expect(difficultyWord(30)).toBe("Nearly impossible")
+    expect(difficultyWord(WALK_ACTIONS["pen-gate:pick"].dc)).toBe("Hard")
   })
 })
 
@@ -135,6 +162,33 @@ describe("the shipped map asks the dashboard and obeys the answer", () => {
     m.send({ type: "aop:roll-result", id: req?.id, ok: true, success: true, total: 21 }, "https://evil.example") // wrong origin: ignored
     m.send({ type: "aop:roll-result", id: req?.id, ok: true, success: true, total: 21, natural: 16 })
     await expect(p).resolves.toMatchObject({ ok: true, success: true, total: 21 })
+  })
+
+  it("waits past the no-panel timeout once the panel says it is open, and passes a step-back through", async () => {
+    vi.useFakeTimers()
+    try {
+      const m = boot({ inApp: true })
+      const p = (m.ctx.rollOnDashboard as (a: string, mod: number) => Promise<Record<string, unknown>>)("pen-gate:force", 0)
+      const req = parseWalkRollRequest(m.posted[0])
+      m.send({ type: "aop:roll-ack", id: req?.id })
+      vi.advanceTimersByTime(60_000) // a player thinking it over for a minute
+      m.send({ type: "aop:roll-result", id: req?.id, ok: false, cancelled: true })
+      await expect(p).resolves.toMatchObject({ ok: false, cancelled: true })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("gives up with a message when no panel ever opens", async () => {
+    vi.useFakeTimers()
+    try {
+      const m = boot({ inApp: true })
+      const p = (m.ctx.rollOnDashboard as (a: string, mod: number) => Promise<Record<string, unknown>>)("pen-gate:pick", 0)
+      vi.advanceTimersByTime(9_000)
+      await expect(p).resolves.toMatchObject({ ok: false })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("opened on its own, it rolls locally against the same DC", async () => {
