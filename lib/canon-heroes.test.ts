@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { CANON_HEROES, availability, canonById, canonBySlug, canonPayload, CANON_FORMAT } from "./canon-heroes"
+import { CANON_HEROES, HERO_FILM_LOCATION, availability, canonById, canonBySlug, canonPayload, CANON_FORMAT } from "./canon-heroes"
 
 describe("canon heroes", () => {
   it("are the four Sam named, with distinct ids and slugs", () => {
@@ -8,8 +8,9 @@ describe("canon heroes", () => {
     expect(new Set(CANON_HEROES.map((h) => h.slug)).size).toBe(4)
   })
 
-  it("each film key is hero-intro:<slug>", () => {
-    for (const h of CANON_HEROES) expect(h.sceneKey).toBe(`hero-intro:${h.slug}`)
+  it("films are found by location hero-intro + state <slug>, not by scene_key", () => {
+    expect(HERO_FILM_LOCATION).toBe("hero-intro")
+    for (const h of CANON_HEROES) expect(h).not.toHaveProperty("sceneKey")
   })
 
   it("looks up by slug and by id, and refuses anything else", () => {

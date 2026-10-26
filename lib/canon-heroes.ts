@@ -37,8 +37,6 @@ export interface CanonHero {
   powers: string[]
   /** Canon art, served from /public. */
   portrait: string
-  /** cinematic_clips.scene_key of the hero's intro film. */
-  sceneKey: string
 }
 
 export const CANON_HEROES: readonly CanonHero[] = [
@@ -51,7 +49,6 @@ export const CANON_HEROES: readonly CanonHero[] = [
     hook: "He kept a ledger of everyone who owed him. The Underdark kept one too.",
     powers: ["Ray of Frost", "Disguise Self", "Fog Cloud"],
     portrait: "/characters/kenta/kenta-hero-hd.webp",
-    sceneKey: "hero-intro:kenta",
   },
   {
     slug: "fifi",
@@ -62,7 +59,6 @@ export const CANON_HEROES: readonly CanonHero[] = [
     hook: "Nobody sees her unless she lets them. Somebody finally did.",
     powers: ["Sneak Attack", "Twin daggers (Nick)", "Expertise: Stealth"],
     portrait: "/characters/fifi/fifi-hero-4k.webp",
-    sceneKey: "hero-intro:fifi",
   },
   {
     slug: "scott",
@@ -73,7 +69,6 @@ export const CANON_HEROES: readonly CanonHero[] = [
     hook: "Twenty years holding a room. The room finally held him.",
     powers: ["Vicious Mockery", "Bardic Inspiration", "Sleep"],
     portrait: "/characters/scott/scott-bard-hero-4k.webp",
-    sceneKey: "hero-intro:scott",
   },
   {
     slug: "samson",
@@ -84,9 +79,13 @@ export const CANON_HEROES: readonly CanonHero[] = [
     hook: "He followed a sign into the one place his god can't see.",
     powers: ["Guiding Bolt", "Healing Word", "Bless"],
     portrait: "/characters/samson/samson-hero-4k.webp",
-    sceneKey: "hero-intro:samson",
   },
 ] as const
+
+/** The hero's intro film is the cinematic_clips row with location = HERO_FILM_LOCATION and
+ *  state = the hero's slug. NOT scene_key: a trigger (cinematic_clips_set_scene_key) rebuilds
+ *  scene_key from location on every write, so it can never carry the hero. */
+export const HERO_FILM_LOCATION = "hero-intro"
 
 export function canonBySlug(slug: unknown): CanonHero | null {
   return CANON_HEROES.find((h) => h.slug === slug) ?? null
