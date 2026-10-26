@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { readStage } from "@/lib/stage-roster"
+import { jorlanOnDuty, readStage } from "@/lib/stage-roster"
 import { readSeated } from "@/lib/seats"
 import { WALK_SHEET_COLUMNS, walkSheetFromRow, type WalkSheet } from "@/lib/walk-sheet"
 import { loadNpcLanguages } from "@/lib/npc-languages"
@@ -22,6 +22,11 @@ import { loadNpcLanguages } from "@/lib/npc-languages"
 // `seated` is who has sat down this run (lib/seats.ts): the map draws THOSE as the party, and only
 // them (Sam, 2026-10-14: "only the character selected will populate"). Empty until someone comes
 // through the door, in which case the map falls back to the whole party so a DM screen is not empty.
+//
+// `watch` and `gate` are the pen's watch and gate as Malachar's [WATCH:] / [GATE:] tags left them (lib/stage-roster).
+// The map has read both since 2026-10-25 (followWatch / followGate) but this route never sent them, so no change of
+// watch, unattended post or story-opened gate ever reached it. `jorlanOnDuty` says whether Jorlan has come on the
+// watch yet (Sam, 2026-10-26: he arrives with the 2nd or 3rd rotation, not at the start); `rotations` is the count.
 
 export const dynamic = "force-dynamic"
 
@@ -72,6 +77,10 @@ export async function GET() {
     } catch { /* best-effort: without it taunts stay in plain words, as before */ }
     return NextResponse.json({
       area: stage.area,
+      watch: stage.watch ?? null,
+      gate: stage.gate ?? null,
+      rotations: stage.rotations ?? 0,
+      jorlanOnDuty: jorlanOnDuty(stage),
       npcLanguages,
       updatedAt: stage.updatedAt,
       present: Object.values(stage.present),
@@ -80,6 +89,6 @@ export async function GET() {
       seated: seated.map((s) => ({ id: s.id, name: s.name, dm: !!s.dm, level: levels.get(s.id) ?? null, sheet: sheets.get(s.id) ?? null, ...(tongues.get(s.id) ?? { languages: null, conditions: null }) })),
     })
   } catch (e) {
-    return NextResponse.json({ area: null, present: [], gone: [], run: null, seated: [], npcLanguages: {}, error: String(e) }, { status: 200 })
+    return NextResponse.json({ area: null, watch: null, gate: null, rotations: 0, jorlanOnDuty: false, present: [], gone: [], run: null, seated: [], npcLanguages: {}, error: String(e) }, { status: 200 })
   }
 }
