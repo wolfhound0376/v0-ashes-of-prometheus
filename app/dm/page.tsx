@@ -12,7 +12,8 @@
 //         WAITING FOR YOU   heroes handed in at the Forge, with their sheet, look, voice and photos,
 //                           and Open the cell / Turn away
 //         THE ROSTER        every player character; Seat as DM-run companion / Send away
-//         BEGIN SESSION     live, the default — the dashboard as the DM
+//         OPEN THE TABLE    live, the default — the staging table (/table); the game starts when the DM
+//                           and every seat are green (Sam, 2026-10-25)
 //         REHEARSAL         the sandbox (/?sandbox=1): Malachar answers, nothing is written
 //
 // One place I push back on the spec: the gate does not drop the DM INTO the sandbox. If it did, a
@@ -27,6 +28,7 @@ import { Check, DoorOpen, Eye, FlaskConical, Play, Swords, UserMinus, UserPlus, 
 import { cn } from "@/lib/utils"
 import { setDmKey, clearDmKey } from "@/lib/dm-key"
 import { HomeButton } from "@/components/home-button"
+import { canonBySlug } from "@/lib/canon-heroes"
 
 const ROLE_LS_KEY = "aop_access_role"
 const TOKEN_LS_KEY = "aop_claim_token"
@@ -34,6 +36,8 @@ const CHARACTER_LS_KEY = "aop_character_id"
 
 type Pending = {
   id: string; playerName: string; heroName: string; status: string; createdAt: string; note: string | null
+  /** Set when the claim is for one of the four canon heroes (lib/canon-heroes.ts): their slug. */
+  canon: string | null
   sheet: { species: string | null; clazz: string | null; background: string | null; level: number | null; ac: number | null; hp: number | null }
   assets: { look: string | null; sprite: { status: string; previewUrl: string | null; characterId: string | null } | null; voice: string; voiceSample: string | null; facePhotos: string[] }
 }
@@ -149,6 +153,8 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
   useEffect(() => { load(); const t = window.setInterval(load, 8000); return () => window.clearInterval(t) }, [load])
 
   const act = async (id: string, action: "activate" | "reject", confirmDuplicate = false) => {
+    const claim = pending.find((p) => p.id === id)
+    if (action === "activate" && claim?.canon && !confirmDuplicate && !window.confirm(`Hand ${claim.heroName} to ${claim.playerName}? Whoever held ${claim.heroName} before loses their words and their seat link.`)) return
     setBusy(id); setMsg(null)
     try {
       const r = await fetch("/api/forge/activate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action, confirmDuplicate }) })
@@ -182,11 +188,22 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
     } finally { setBusy(null) }
   }
 
-  const begin = (sandbox: boolean) => {
+  const begin = async (sandbox: boolean) => {
     try { window.localStorage.setItem(ROLE_LS_KEY, "dm"); window.sessionStorage.setItem("aop_intro_seen", "1") } catch { /* storage blocked */ }
-    // The session opens on the pixel map, not the dashboard (Sam, 2026-10-25; lib/map-entry.ts).
-    try { window.sessionStorage.setItem(ENTERED_KEY, "1") } catch { /* storage blocked */ }
-    router.push(mapHref(sandbox))
+    if (sandbox) {
+      // Rehearsal skips the table: nothing is saved and nobody needs to be seated.
+      try { window.sessionStorage.setItem(ENTERED_KEY, "1") } catch { /* storage blocked */ }
+      router.push(mapHref(true))
+      return
+    }
+    // A live session starts at the staging table (Sam, 2026-10-25; app/table/page.tsx): the DM opens it, the
+    // players sit, and the game begins when the DM and every seat are green. The table sends the DM to the map.
+    setBusy("open"); setMsg(null)
+    try {
+      const r = await fetch("/api/table", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "open" }) })
+      if (!r.ok) { const j = await r.json().catch(() => ({})); setMsg(j.error ?? "Could not open the table."); return }
+      router.push("/table")
+    } catch { setMsg("Could not reach the table.") } finally { setBusy(null) }
   }
 
   const seatOf = (id: string) => seated.find((s) => s.id === id)
@@ -202,14 +219,17 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
             <li key={p.id} className="rounded-sm border border-[#3d3428] bg-black/50">
               <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
                 <div className="flex items-center gap-3">
-                  {p.assets.sprite?.previewUrl ? (
+                  {p.canon && canonBySlug(p.canon) ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={canonBySlug(p.canon)!.portrait} alt="" className="h-12 w-12 rounded-sm border border-[#8a6a3a] bg-black object-cover object-top" />
+                  ) : p.assets.sprite?.previewUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={p.assets.sprite.previewUrl} alt="" className="h-12 w-12 rounded-sm border border-[#3d3428] bg-black object-contain [image-rendering:pixelated]" />
                   ) : (
                     <div className="grid h-12 w-12 place-items-center rounded-sm border border-[#3d3428] font-serif text-lg text-[#8a6a3a]">{p.heroName.charAt(0)}</div>
                   )}
                   <div>
-                    <div className="font-serif text-lg text-[#e8d9ae]">{p.heroName} <span className="text-sm text-stone-500">· {p.playerName}</span></div>
+                    <div className="font-serif text-lg text-[#e8d9ae]">{p.heroName} <span className="text-sm text-stone-500">· {p.playerName}</span>{p.canon && <span className="ml-2 rounded-sm border border-[#8a6a3a]/70 px-1.5 py-0.5 align-middle text-[9px] uppercase tracking-[0.25em] text-[#c9a868]">Canon hero</span>}</div>
                     <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">{[p.sheet.species, p.sheet.clazz, p.sheet.background, p.sheet.level != null ? `Lv ${p.sheet.level}` : null].filter(Boolean).join(" · ")}{p.sheet.ac != null ? ` · AC ${p.sheet.ac}` : ""}{p.sheet.hp != null ? ` · HP ${p.sheet.hp}` : ""}</div>
                   </div>
                 </div>
@@ -231,7 +251,7 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
                       ))}</div>
                     ) : <div className="text-stone-400">Skipped</div>}
                   </div>
-                  <div className="text-[11px] text-stone-600 sm:col-span-2">Handed in {new Date(p.createdAt).toLocaleString()}. Opening the cell runs the same import as /forge/import, with their own words as the door code. Figure animations, voice clone and film stills are NOT started here yet.</div>
+                  <div className="text-[11px] text-stone-600 sm:col-span-2">Handed in {new Date(p.createdAt).toLocaleString()}. {p.canon ? `A canon hero: opening the cell hands the existing ${p.heroName} — sheet, sprite, voice and art — to these words. Nothing is imported.` : "Opening the cell runs the same import as /forge/import, with their own words as the door code. Figure animations, voice clone and film stills are NOT started here yet."}</div>
                 </div>
               )}
             </li>
@@ -246,7 +266,7 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
       </Section>
 
       {/* THE ROSTER */}
-      <Section title="The roster" count={seated.length} icon={<Swords className="h-4 w-4" />} sub="Players take their own seats at the door. Seat a hero yourself to run them as a companion, or send a companion away.">
+      <Section title="The roster" count={seated.length} icon={<Swords className="h-4 w-4" />} sub="Players take their own seats at the staging table. While the table is open and before you press Start, seat a hero yourself to run them as a companion; once the session begins the roster is locked.">
         <ul className="divide-y divide-[#2a241e] rounded-sm border border-[#3d3428] bg-black/50">
           {roster.length === 0 && <li className="px-4 py-3 text-sm text-stone-500">No player characters yet.</li>}
           {roster.map((c) => {
@@ -276,7 +296,7 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
       {/* BEGIN */}
       <div className="flex flex-col items-center gap-3 pt-2">
         <button type="button" onClick={() => begin(false)} className="flex items-center gap-3 rounded-sm border-2 border-[#8a6a3a] bg-gradient-to-b from-[#2a2015]/90 via-black/80 to-[#2a2015]/90 px-12 py-4 font-serif text-xl uppercase tracking-[0.35em] text-[#e8c56a] shadow-[0_0_40px_rgba(201,168,104,0.35)] transition-all hover:border-[#f4e0a8] hover:text-[#fff3cf] hover:shadow-[0_0_80px_rgba(232,197,106,0.6)]">
-          <Play className="h-5 w-5" /> Begin session
+          <Play className="h-5 w-5" /> {busy === "open" ? "Opening…" : "Open the table"}
         </button>
         <button type="button" onClick={() => begin(true)} className="flex items-center gap-2 rounded-sm border border-[#3d3428] px-5 py-2 text-[11px] uppercase tracking-[0.3em] text-stone-500 hover:border-[#8a6a3a] hover:text-stone-300">
           <FlaskConical className="h-3.5 w-3.5" /> Rehearsal — sandbox, nothing saves

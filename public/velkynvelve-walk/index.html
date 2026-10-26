@@ -94,6 +94,8 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .bubble.eldritch,.bubble.foe.eldritch{background:#0b0608;border-color:#3a0a10;color:#ff2e22;padding:10px 16px 11px;box-shadow:4px 4px 0 rgba(0,0,0,.6),0 0 22px rgba(255,40,30,.35)}
 .bubble.eldritch::before,.bubble.foe.eldritch::before{border-color:#3a0a10 transparent transparent transparent}
 .bubble.eldritch::after,.bubble.foe.eldritch::after{border-color:#0b0608 transparent transparent transparent}
+.bubble.drowish .elv{display:block;font-style:italic;letter-spacing:.05em;color:#5a2a7a}
+.bubble.drowish .tr{display:block;margin-top:4px;padding-top:4px;border-top:1px dashed rgba(20,17,15,.25);font-size:.92em}
 .bubble.eldritch svg{display:block;height:30px;filter:drop-shadow(0 0 3px rgba(255,60,40,.9));animation:eldritch .9s steps(3) infinite}
 .bubble.eldritch b,.bubble.foe.eldritch b{color:#ff6a5a}
 @keyframes eldritch{0%{opacity:1}33%{opacity:.78}66%{opacity:.92}100%{opacity:1}}
@@ -189,6 +191,12 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .cbt-menu button.primary{color:#ffd9a0;border-color:rgba(255,217,160,.45)}
 .cbt-menu button.end{margin-left:auto;border-color:rgba(255,155,143,.4);color:#ff9b8f}
 .cbt-menu button:disabled{opacity:.36;cursor:default}
+/* the Underwalk's More tray (2026-10-25): the six options that matter here stay on the bar, the rest fold behind More */
+.cbt-menu .moreTray{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:5px;padding-top:5px;border-top:1px dashed rgba(203,160,90,.25)}
+.cbt-menu .moreTray[hidden]{display:none}
+.cbt-menu button.more{flex:0 0 auto;min-width:92px}
+.cbt-menu[data-kind=explore] button.end{margin-left:0}
+.cbt-menu button.on{outline:2px solid #9ad0ff;background:rgba(120,170,230,.14)}
 .cbt-menu .sep{width:1px;align-self:stretch;background:var(--rule);margin:3px 2px}
 /* two rows, not three (Sam, 2026-10-22: "Can you make this two rows high and not three?"): the chips share the row and
    shrink to fit before they wrap, and the group labels give way on narrower windows */
@@ -437,6 +445,9 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <label class="dmMood">Fight music <select id="dmMood" aria-label="Fight music">
         <option value="auto">Auto (by the odds)</option><option value="regular">Regular</option><option value="scary">Scary</option>
         <option value="boss">Boss</option><option value="overwhelming">Overwhelming odds</option></select></label>
+      <label class="dmMood">Explore music <select id="dmExplore" aria-label="Explore music">
+        <option value="auto">Auto (by the place)</option><option value="outpost">Outpost</option><option value="caverns">Caverns</option>
+        <option value="water">Water</option><option value="off">Off (ambience only)</option></select></label>
       <button class="btn" id="dmTalk">An NPC wants to talk</button>
       <button class="btn" id="dmBark">Make an NPC comment</button>
       <button class="btn" id="dmReset">Reset ambushes</button>
@@ -480,7 +491,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
   <footer class="party" id="party"><span class="help">WASD / arrows or click to walk · 1–4 or Tab to switch · E to talk · walk into a glowing exit to travel</span></footer>
 </div>
 
-<audio id="mExplore" loop preload="auto"></audio>
+<audio id="mExplore" preload="auto"></audio>
+<audio id="mAmbience" loop preload="auto"></audio>
 <audio id="mCombat" loop preload="auto"></audio>
 
 <script>
@@ -1014,7 +1026,7 @@ function draw(){
   const shx = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0, shy = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0; shakeAmt = shakeAmt > .5 ? shakeAmt * .82 : 0;
   ctx.setTransform(s, 0, 0, s, (view.tx + shx) * dpr, (view.ty + shy) * dpr);
   ctx.imageSmoothingEnabled = false;
-  drawDoor(); drawProps(); drawDecor(); drawLift(); drawPropHighlight(); drawLootHighlight(); drawFloorItems();
+  drawDoor(); drawProps(); drawDecor(); drawLift(); drawPropHighlight(); drawLootHighlight(); drawFloorItems(); drawSneakCones();
   // exits: soft glows so players can see the ways out
   if (mode === "explore" || mode === "dialog"){
     const pulse = .5 + .5 * Math.sin(now / 520);
@@ -1049,7 +1061,7 @@ function draw(){
     ctx.beginPath(); ctx.ellipse(marker.x, marker.y, 14 + 20 * k, (14 + 20 * k) * .5, 0, 0, Math.PI * 2); ctx.stroke();
   }
   for (const c of node.chains || []) drawChain(c);
-  drawCombatGround(); drawStuckGround();
+  drawCombatGround(); drawStuckGround(); drawSurgeonGround();
   if (mode === "combat"){ drawIcePatches(); drawFxLayer(true); tickIce(); }
   const list = actors.concat(vermin).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);
   const cloudQ = mode === "combat" || clouds.length ? cloudPuffs() : [];   // the poison cloud, in depth order among the figures
@@ -1489,17 +1501,25 @@ function wardDrinks(){
 }
 
 // ---------- music ----------
-const music = {explore: $("mExplore"), combat: $("mCombat")};
-music.explore.src = ASSET + "audio/explore.mp3"; music.combat.src = ASSET + "audio/combat.mp3";
+const music = {explore: $("mExplore"), combat: $("mCombat"), ambience: $("mAmbience")};
+music.combat.src = ASSET + "audio/combat.mp3";   // the explore player is loaded by pickExploreTrack (below)
 let musicOn = true, vol = .4, track = "explore", audioUnlocked = false;
 try { const v = localStorage.getItem("vk-music"); if (v === "off" || (APP && localStorage.getItem("aop_music_off"))) musicOn = false; const vv = localStorage.getItem("vk-vol"); if (vv) vol = +vv; } catch (e) {}
 $("vol").value = Math.round(vol * 100);
-const LEVEL = {explore: .55, combat: .7};   // explore sits low under play; combat a touch hotter, still under everything
+const LEVEL = {explore: .55, combat: .7, ambience: .5};   // explore sits low under play; combat a touch hotter, still under everything
 function unlockAudio(){ if (audioUnlocked) return; audioUnlocked = true; if (musicOn) music[track].play().catch(() => {}); }
-function setTrack(t){ track = t; if (musicOn && audioUnlocked){ const a = music[t]; if (a.paused){ a.volume = 0; a.play().catch(() => {}); } } }
+function setTrack(t){
+  if (t === "explore" && track === "combat") exploreAfterFight();   // a fight is a seam: come back to something new
+  track = t; if (musicOn && audioUnlocked){ const a = music[t]; if (a.paused && !(t === "explore" && exploreQuiet())){ a.volume = 0; a.play().catch(() => {}); } } }
 function tickMusic(dt){
+  tickExplore();
   for (const [name, a] of Object.entries(music)){
-    let target = musicOn && audioUnlocked && name === track ? vol * LEVEL[name] : 0;
+    let target = 0;
+    if (musicOn && audioUnlocked){
+      if (name === "ambience") target = track === "explore" && exploreQuiet() ? vol * LEVEL.ambience : 0;
+      else if (name === track && !(name === "explore" && (exploreQuiet() || exploreSwap))) target = vol * LEVEL[name];
+    }
+    if (name === "ambience" && target > 0 && a.paused){ a.volume = 0; a.play().catch(() => {}); }
     if (mode === "talk" || speaking) target *= .35;
     a.volume = Math.max(0, Math.min(1, a.volume + (target - a.volume) * Math.min(1, dt * 1.6)));
     if (target === 0 && a.volume < .01 && !a.paused) a.pause();
@@ -1507,6 +1527,61 @@ function tickMusic(dt){
 }
 function renderMusicBtn(){ $("musicBtn").setAttribute("aria-pressed", String(musicOn)); $("musicBtn").textContent = musicOn ? "♪ Music on" : "♪ Music off"; }
 $("musicBtn").onclick = () => { musicOn = !musicOn; try { localStorage.setItem("vk-music", musicOn ? "on" : "off"); } catch (e) {} renderMusicBtn(); audioUnlocked = true; if (musicOn) setTrack(track); };
+// ---------- explore music that rotates ----------
+// Sam, 2026-10-25: "alternate background music that rotates from occasion to avoid fatigue." Exploring used to play
+// ONE file (audio/explore.mp3) on a loop for as long as the party walked. Now each kind of place has its own pool
+// (ElevenLabs Music v2.5, flow "AoP Underwalk explore music + UI clicks", levelled to -16 LUFS, public/audio/explore/):
+//   outpost  — the drow outpost and the pen: tense, sneaking (the original explore.mp3 stays in this pool)
+//   caverns  — the open Underdark plates past the outpost: vast, lonely
+//   water    — the falls, the pool and river, the Darklake shore: liquid, eerie
+// A track plays through ONCE (no loop), then the next is drawn from the pool, never the one just played. After every
+// two tracks the music rests for 20-40 s and only the cave (or water) ambience plays — silence is what stops a long
+// session wearing on the ear. Changes happen only at seams: a track ending, a plate of a different kind, a fight
+// ending. A plate of the same kind keeps the music going. DM tools can pin a pool or turn exploring music off.
+const EXPLORE_POOLS = {
+  outpost: [null, "outpost-1", "outpost-2", "outpost-3", "outpost-4"],   // null: the original explore.mp3
+  caverns: ["caverns-1", "caverns-2", "caverns-3", "caverns-4"],
+  water:   ["water-1", "water-2"],
+};
+const WATER_PLATES = new Set(["node-09-waterfall", "node-14-pool-river", "biome-shore"]);
+const ORIGINAL_EXPLORE = ASSET + "audio/explore.mp3";
+const EXPLORE_BASE = `${APP ? "/" : ""}audio/explore/`;
+const REST_EVERY = 2, REST_MS = [20000, 40000];
+let exploreRegion = null, lastExplore = null, exploreSince = 0, exploreRestUntil = 0, exploreSwap = null, dmExplore = "auto";
+try { dmExplore = localStorage.getItem("vk-explore-music") || "auto"; } catch (e) {}
+/** What kind of place a plate is, for the music. */
+function regionOf(slug){ return WATER_PLATES.has(slug) ? "water" : /^biome-/.test(slug || "") ? "caverns" : "outpost"; }
+function wantedRegion(){ return dmExplore !== "auto" && dmExplore !== "off" ? dmExplore : regionOf(node && node.slug); }
+/** The gap between tracks (or the DM turned exploring music off): only the ambience is heard. */
+function exploreQuiet(){ return dmExplore === "off" || performance.now() < exploreRestUntil; }
+function srcOfExplore(t){ return t ? `${EXPLORE_BASE}${t}.mp3` : ORIGINAL_EXPLORE; }
+/** Draw the next track of a pool, never the last one played. Swapped in under a fade (exploreSwap). */
+function pickExploreTrack(region){
+  exploreRegion = region;
+  const pool = EXPLORE_POOLS[region] || EXPLORE_POOLS.outpost, fresh = pool.filter(t => t !== lastExplore), from = fresh.length ? fresh : pool;
+  const t = from[Math.floor(Math.random() * from.length)];
+  lastExplore = t;
+  const a = music.explore;
+  if (a.paused || a.volume < .02 || !a.getAttribute("src")){ a.src = srcOfExplore(t); exploreSwap = null; if (track === "explore") setTrack("explore"); }
+  else exploreSwap = srcOfExplore(t);   // fade the old one out first; tickExplore swaps at the bottom of the fade
+  music.ambience.src = `${EXPLORE_BASE}ambience-${region === "water" ? "water" : "cave"}.mp3`;
+}
+/** Called when a plate is entered: a different kind of place is a seam. */
+function exploreForPlate(){ const r = wantedRegion(); if (r !== exploreRegion) pickExploreTrack(r); }
+function exploreAfterFight(){ exploreRestUntil = 0; pickExploreTrack(wantedRegion()); }
+function tickExplore(){
+  const a = music.explore;
+  if (exploreSwap && a.volume < .02){ a.pause(); a.src = exploreSwap; exploreSwap = null; if (track === "explore" && musicOn && audioUnlocked && !exploreQuiet()){ a.volume = 0; a.play().catch(() => {}); } }
+  // the rest is over: start the next track
+  if (exploreRestUntil && performance.now() >= exploreRestUntil && dmExplore !== "off"){ exploreRestUntil = 0; if (track === "explore") setTrack("explore"); }
+}
+music.explore.addEventListener("ended", () => {
+  exploreSince++;
+  if (exploreSince >= REST_EVERY){ exploreSince = 0; exploreRestUntil = performance.now() + REST_MS[0] + Math.random() * (REST_MS[1] - REST_MS[0]); }
+  pickExploreTrack(wantedRegion());
+});
+music.explore.addEventListener("error", () => { if (music.explore.getAttribute("src") !== ORIGINAL_EXPLORE){ music.explore.src = ORIGINAL_EXPLORE; if (track === "explore") setTrack("explore"); } });
+pickExploreTrack(wantedRegion());
 // ---------- fight music by mood ----------
 // Sam, 2026-10-24: alternate combat music for scary encounters, boss encounters, regular encounters and
 // overwhelming odds. Two ElevenLabs tracks per mood (flow "AoP combat music moods"), in public/audio/combat/.
@@ -1595,7 +1670,8 @@ function renderParty(){
   });
 }
 function setLeader(a){
-  if (dmRun.has(a.id) && !isDm()){ toast(`${SHORT[a.id] || SPR[a.id].json.name} is in the DM's hands.`); return; }
+  if (dmRun.has(a.id) && !isDm()){ uiSfx("deny"); toast(`${SHORT[a.id] || SPR[a.id].json.name} is in the DM's hands.`); return; }
+  if (leader && leader !== a && mode !== "combat") uiSfx("swap");
   if (mode === "combat"){ const i = turnOrder.indexOf(a); if (i >= 0){ turnIdx = i; renderTurns(); } return; }
   if (leader && leader !== a) leader.home = {x: leader.x, y: leader.y};
   stopActivity(a); a.path = []; a.actUntil = 0;
@@ -1703,6 +1779,7 @@ async function enterNode(n, opts = {}){
   for (const np of whoIsHere(n)){
     if (np.hostile && state.cleared[n]) continue;
     if (comp.includes(np.id)) continue;                 // a companion walks with the party, not at their old spot
+    if (np.id === surgeonDeadId()) continue;            // shot dead at the gate (The Drow Surgeon) and thrown over the falls
     if (!SPR[np.id]) continue;                          // no sprite baked for them yet: the record stays, the plate shows nobody
     const a = mkActor(np.id, np.x, np.y, "npc", {face: np.face || 0, talk: !!np.talk, talkLine: np.talkLine, barks: np.barks || [], home: {x: np.x, y: np.y},
       hostile: !!np.hostile, static: !!np.static, backdrop: !!np.backdrop, fixedScale: np.fixedScale || 0, patrol: np.patrol || null, post: {x: np.x, y: np.y}});
@@ -1737,11 +1814,12 @@ async function enterNode(n, opts = {}){
   $("fade").classList.remove("on");
   $("tcNo").textContent = `Area ${n}`; $("tcName").textContent = node.name;
   $("titlecard").classList.add("on"); clearTimeout(enterNode.t); enterNode.t = setTimeout(() => $("titlecard").classList.remove("on"), 1900);
-  mode = "explore"; setTrack("explore");
+  mode = "explore"; exploreForPlate(); setTrack("explore");
   if (opts.note) log(opts.note);
   if (joined.length) log(`${joined.map(id => esc(SHORT[id] || SPR[id].json.name)).join(", ")} ${joined.length > 1 ? "come" : "comes"} with you out of the pen.`);
   if (!$("dm").hidden) renderCompany();
   nextAmbient = now + 6000 + Math.random() * 6000;
+  surgeonOnEnter(n);
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
 // Leaving a plate: the party walks out along the exit (across the bridge, down the stairs, off the edge),
@@ -1909,11 +1987,54 @@ const SFX_BANK = APP ? "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/obje
 function loadSfx(name){
   const url = name.startsWith("bank:") ? `${SFX_BANK}${name.slice(5)}.ogg`
     : name.startsWith("walk:") ? `${APP ? "/" : ""}sfx/walk/${name.slice(5)}.mp3`        // Sam's ElevenLabs picks, shipped with the app (public/sfx/walk)
+    : name.startsWith("ui:") ? `${APP ? "/" : ""}sfx/ui/${name.slice(3)}.mp3`            // the map's button clicks (public/sfx/ui)
     : `${ASSET}${name.startsWith("arrive-") ? "audio" : "sfx"}/${name}.mp3`;
   return SFX[name] || (SFX[name] = fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
     .then(b => audioCtx().decodeAudioData(b)).catch(() => { delete SFX[name]; return null; }));
 }
 const bank = (name, gain = .8) => sfx(name.startsWith("walk:") ? name : "bank:" + name, gain);
+// ---------- the clicks ----------
+// Sam, 2026-10-25: "We also need more audible clicks." The map's buttons were silent (only loot, dice and initiative
+// made a sound). Eight short ElevenLabs effects (flow "AoP Underwalk explore music + UI clicks"), cut and levelled,
+// in public/sfx/ui/: hover (a brass ring on wood), press (a brass latch, kin to the dashboard's Map button), open /
+// close (a satchel flap), confirm (a seal pressed into parchment), cancel (a drawer sliding shut), deny (a knuckle
+// on stone: the button is greyed out) and swap (leather and buckles: the next hero). Each plays a touch above or
+// below its pitch so a run of clicks never sounds like one sample. Kept low: they sit under the voices and music.
+const UI_GAIN = {hover: .12, press: .42, open: .35, close: .3, confirm: .45, cancel: .35, deny: .4, swap: .45};
+let uiLast = {};
+function uiSfx(kind){
+  if (!audioUnlocked) return;                                     // a page nobody has touched stays silent (previews included)
+  const t = performance.now(); if (t - (uiLast[kind] || 0) < 45) return; uiLast[kind] = t;
+  sfx("ui:" + kind, UI_GAIN[kind] || .35, .95 + Math.random() * .1);
+}
+const CANCEL_WORDS = /^(cancel|close|back|no\b|not now|leave it|never ?mind|decline|step back|stay|done)/i;
+/** Which click a button makes: the panel's main choice confirms, a way out cancels, everything else presses. */
+function uiKindOf(b){
+  if (b.dataset.sfx) return b.dataset.sfx;
+  if (b.id === "talkNo" || CANCEL_WORDS.test((b.textContent || "").trim())) return "cancel";
+  if (b.classList.contains("primary")) return "confirm";
+  return "press";
+}
+// one listener for every button on the page, now and later: menus are rebuilt all the time
+addEventListener("pointerdown", e => {
+  const b = e.target.closest && e.target.closest("button, .turn, .cpc, [role=button]"); if (!b || e.button) return;
+  unlockAudio();
+  if (b.disabled || b.getAttribute("aria-disabled") === "true") uiSfx("deny"); else uiSfx(uiKindOf(b));
+}, {capture: true});
+let uiHoverEl = null;
+addEventListener("pointerover", e => {
+  if (e.pointerType !== "mouse") return;
+  const b = e.target.closest && e.target.closest("button:not(:disabled)"); if (b === uiHoverEl) return; uiHoverEl = b; if (b) uiSfx("hover");
+}, {passive: true});
+addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " "){ const b = document.activeElement; if (b && b.tagName === "BUTTON") uiSfx(b.disabled ? "deny" : uiKindOf(b)); } }, {capture: true});
+// panels opening and closing: watched, so every way in or out (button, key, the game itself) sounds the same
+const UI_PANELS = ["obj", "talk", "dialog", "inv", "dm", "cbtMenu"];
+setTimeout(() => {
+  const mo = new MutationObserver(ms => { for (const m of ms){ const el = m.target, open = !el.hidden;
+    if (el.id === "cbtMenu" && el.dataset.kind === "explore") continue;   // the explore bar comes and goes by itself as you walk
+    if ((el._wasOpen || false) !== open){ el._wasOpen = open; uiSfx(open ? "open" : "close"); } } });
+  for (const id of UI_PANELS){ const el = $(id); if (el){ el._wasOpen = !el.hidden; mo.observe(el, {attributes: true, attributeFilter: ["hidden"]}); } }
+}, 0);
 async function sfx(name, gain = .8, rate = 1){
   try {
     const ctx = audioCtx(); if (ctx.state === "suspended") await ctx.resume();
@@ -2513,6 +2634,29 @@ function openBody(b){
 // The game-side hook for an action the map cannot resolve itself. Nothing listens yet; the dashboard will.
 function handOff(text){ try { (window.parent !== window ? window.parent : window).postMessage({type: "aop:action", text}, "*"); } catch (e) {} }
 function isDm(){ try { return localStorage.getItem("aop_access_role") === "dm"; } catch (e) { return false; } }
+// WHO MOVES WHOM (Sam, 2026-10-25): "The DM is the only instance that can move characters that are not his" and a
+// player "CAN ONLY control his character on the dashboard UI and the pixel map." Everyone seated still walks together
+// on every screen (his ruling the same day); only the hero you play takes your clicks, keys and combat menu. The DM
+// moves anyone. The stand-alone preview (no game around it) is one person at a desk, so it moves everyone too.
+// `mySlug` is the walker of the claim this browser verified at boot.
+let mySlug = null;
+function canControl(a){
+  if (!a) return false;
+  if (!APP || isDm()) return true;
+  if (dmRun.has(a.id)) return false;
+  return !!mySlug && a.id === mySlug;
+}
+const heroName = a => (SHORT[a.id] || (SPR[a.id] && SPR[a.id].json.name) || "That hero");
+function notYours(a){ toast(dmRun.has(a.id) ? `${heroName(a)} is in the DM's hands.` : `${heroName(a)} belongs to another player — only they move them.`); }
+/** A leader change the PERSON asked for (a click, 1-4, Tab, Next hero): refused for a hero who is not theirs. */
+function pickLeader(a){ if (!canControl(a)){ notYours(a); return; } setLeader(a); }
+/** The hero this browser may move right now: the leader if theirs, else their own hero takes the lead back. */
+function ownLeader(){
+  if (canControl(leader)) return leader;
+  const own = party.find(p => p.id === mySlug && !p.ko);
+  if (own){ setLeader(own); return own; }
+  return null;
+}
 function hasPenKey(){ return !!state.penKey || Object.values(GEAR).some(g => (g.carried || []).some(c => c.name === PEN_KEY)); }
 // the gate comes open: the lock is beaten, the leaf swings, the way out is lit
 function unlockGate(forced){
@@ -3966,6 +4110,10 @@ function nextTurn(first){
   if (a.c.retching && a.kind !== "pc"){ a.c.retching = false; retchTurn(a); return; }   // Stinking Cloud: the action goes on retching
   if (a.kind === "foe"){ bank("ui/turn_foe", .6); foeTurn(a); return; }
   if (a.ally){ allyTurn(a); return; }
+  // Another player's hero on this screen: each browser runs its own fight (nothing is shared between screens yet), so
+  // rather than freeze this one on a turn its player cannot take, that hero fights on its own the way the freed
+  // prisoners do. The DM's screen drives every hero. (Sam, 2026-10-25: only the DM moves a hero who is not his.)
+  if (a.kind === "pc" && !canControl(a)){ log(`${fname(a)} acts on their own instincts here — their player drives them on their own screen.`); allyTurn(a); return; }
   // no sound as the turn passes to a hero or an ally: the camera moving to them is the cue (Sam, 2026-10-22: "it shouldn't
   // say bard", then "Please remove the bell between players as the system move to the active player")
   camTo(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 60, 500);
@@ -4162,12 +4310,195 @@ function renderExploreBar(){
   const sh = SHEETS[leader.id];
   if (sh && (sh.magic || sh.caster)) add("Cast", "✦", "cast-spell", wardsHere() ? "the ward on the wall drinks it here" : "a spell you have memorized", wardsHere() ? null : () => openCastMenu(o));
   if (o.foe) add(`Attack ${nm(o.foe)}`, "⚔", "attack", "starts a fight · roll initiative", () => startCombat([o.foe], `${who} attacks!`), "end");
-  if (party.length > 1) add("Next hero", "⇆", null, `Tab · now ${who}`, () => { const i = party.indexOf(leader); setLeader(party[(i + 1) % party.length]); });
+  if (party.filter(canControl).length > 1) add("Next hero", "⇆", null, `Tab · now ${who}`, () => { const mine = party.filter(canControl); const i = mine.indexOf(leader); setLeader(mine[(i + 1) % mine.length]); });
   if (!o.foe) add("Short rest", "⌛", "dodge", restRisk().chance ? `an hour here · ${Math.round(restRisk().chance * 100)}% the locals find you` : "an hour here", () => openRest());
   add("Tell Malachar", "✎", null, "search, hide, anything else", () => { saveWalk();
     const q = new URLSearchParams({view: "full", from: "map", return: "/velkynvelve", area: node.name, as: PLAYS_AS[leader.id] || ""});
     const url = (APP ? "/?" : "https://ashes.playacartagena.com/?") + q.toString(); if (APP) window.top.location.href = url; else window.open(url, "_blank"); });
+  exploreExtras(m, o, add, who);
 }
+// ---------- THE UNDERWALK'S OPTIONS (Sam, 2026-10-25: "we need more options") ----------
+// Added to the explore bar, each resolved by 5E and nothing invented. The map rolls the d20 (as the watch posts do,
+// OotA p.15) and shows the numbers; what a Search, a Listen or a closer Look actually turns up is the DM core's to
+// say, so the result is handed to Malachar (handOff -> the dashboard) instead of the page making up a find.
+//   Sneak       Dexterity (Stealth) for whoever is moving; while sneaking every hostile's view is drawn on the floor
+//               (BG3-style, Sam 2026-10-24: "NPC vision areas highlighted ... characters inside roll Stealth").
+//               Walking into a view is tested against that watcher's passive Perception. With Follow on, it is a
+//               group check (SRD: the group succeeds if at least half succeed).
+//   Search here Wisdom (Perception) for the plate around the hero.      Listen  Perception at the nearest way out.
+//   Look closer Intelligence (Investigation) on the thing in reach.     Help    the next hero's check has advantage.
+//   Hero        Pray (cleric: silently or aloud — Sam 2026-10-01, a prayer is private unless spoken), Inspire (bard:
+//               Bardic Inspiration out of a fight), Scout ahead (rogue: sneak alone, the rest wait).
+//   Quick drink the first potion on the belt, without opening the bag.  Follow / Wait  the party trails the leader.
+// HOUSE NUMBERS (Claude's, flagged in the PR): a watcher sees 60 ft in a 120-degree cone; Help lasts one minute.
+const ICONS_HAVE = new Set(["attack", "cast-spell", "dash", "disengage", "dodge", "help", "hide", "offhand-attack", "opportunity-attack", "ready", "search", "use-object"]);
+const ART = (name, fallback) => ICONS_HAVE.has(name) ? name : fallback || null;   // Sam's icons drop in by name (velkynvelve-walk/icons/<name>.png)
+const VIEW_FT = 60, VIEW_HALF = Math.PI / 3;
+let sneak = null, helpNext = null, followOn = false, moreOpen = false;
+const BUTTON_PRI = [[/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
+  [/^(Sneak|Stop sneaking|Scout)/, 4], [/^Search here/, 5], [/^Cast/, 6], [/^Inventory/, 7], [/^(Pray|Inspire)/, 8], [/^Quick drink/, 9],
+  [/^Next hero/, 10], [/^Help/, 11], [/^(Follow|Wait)/, 12], [/^Short rest/, 13], [/^Tell Malachar/, 14], [/^Talk$/, 30]];
+function priOf(b){ const t = (b.querySelector("span") || b).textContent; const hit = BUTTON_PRI.find(([re]) => re.test(t)); return (hit ? hit[1] : 15) + (b.disabled ? 20 : 0); }
+function heroMod(a, skill, abil){ const sh = SHEETS[a.id] || {}; return (sh.skills || {})[skill] ?? (sh.saves || {})[abil] ?? 0; }
+/** A check the map rolls for the hero: d20 + skill, with advantage when a friend helped. */
+function mapCheck(a, skill, abil){
+  let adv = 0; if (helpNext && helpNext.by !== a.id && now < helpNext.until){ adv = 1; helpNext = null; }
+  const mod = heroMod(a, skill, abil), r = d20(adv); return {r, mod, total: r + mod, adv};
+}
+const SKILL_NAME = {stealth: "Dexterity (Stealth)", perception: "Wisdom (Perception)", investigation: "Intelligence (Investigation)"};
+function rollLine(k, skill){ return `${SKILL_NAME[skill]} ${k.r}${k.adv ? " (advantage)" : ""} ${k.mod >= 0 ? "+" : "−"} ${Math.abs(k.mod)} = <b>${k.total}</b>`; }
+function nearestExit(L){ return node.zones.filter(z => !z.interact && (z.to || []).length).map(z => [z, Math.hypot(zoneCenter(z).x - L.x, zoneCenter(z).y - L.y)]).sort((x, y) => x[1] - y[1])[0]; }
+function exitName(z){ const t = SPEC[(z.to || [])[0]]; return z.label || (t && t.name) || (z.kind === "leave" ? "the way out" : "the way on"); }
+function lookTarget(o){ return o.obj ? o.obj.interact.name : o.pile ? o.pile.name : o.body ? fname(o.body) : null; }
+
+function exploreExtras(m, o, add, who){
+  const L = leader, sh = SHEETS[L.id] || {}, cls = (sh.cls || "").toLowerCase(), sc = node.scale;
+  const ex = nearestExit(L), exNear = ex && ex[1] < 360 * sc ? ex[0] : null, look = lookTarget(o);
+  const x = (label, glyph, icon, sub, fn, cls2) => { const b = add(label, glyph, icon, sub, fn, cls2); return b; };
+  if (sneak) x(sneak.scout ? "Stop scouting" : "Stop sneaking", "◐", ART("sneak", "hide"), `Stealth ${sneak.line} · walk out of their sight`, () => endSneak("You stop moving quietly."), "on");
+  else x("Sneak", "◐", ART("sneak", "hide"), `Stealth ${sgn(heroMod(L, "stealth", "dex"))} vs their passive Perception`, () => startSneak(false));
+  x("Search here", "⌕", ART("search-here", "search"), `Perception ${sgn(heroMod(L, "perception", "wis"))} · the DM says what turns up`, () => searchHere());
+  if (exNear) x(`Listen at ${exitName(exNear)}`, "◖", ART("listen"), `Perception ${sgn(heroMod(L, "perception", "wis"))} · what is beyond`, () => listenAt(exNear));
+  if (look) x(`Look closer at ${look}`, "◎", ART("look-closer"), `Investigation ${sgn(heroMod(L, "investigation", "int"))}`, () => lookCloser(look));
+  if (party.length > 1) x(helpNext && helpNext.by === L.id ? "Helping" : "Help", "✋", ART("help"), helpNext && helpNext.by === L.id ? "the next friend's check has advantage" : "the next friend's check gets advantage", helpNext && helpNext.by === L.id ? null : () => giveHelp());
+  if (/cleric/.test(cls)) x("Pray", "✠", ART("pray"), "silently, or aloud", () => openPray());
+  if (sh.bardic) x("Inspire", "♪", ART("inspire"), `Bardic Inspiration · ${inspLeftOf(L)} of ${sh.bardic.uses} left`, inspLeftOf(L) > 0 && party.length > 1 ? () => openInspire() : null);
+  if (/rogue/.test(cls) && !sneak) x("Scout ahead", "➶", ART("scout"), "sneak alone; the others wait", () => startSneak(true));
+  const pot = beltPotion(L); if (pot) x(`Quick drink: ${pot.name}`, "⚗", ART("quick-drink"), "from the belt", () => drinkItem(L, pot, L));
+  if (party.length > 1) x(followOn ? "Wait here" : "Follow me", followOn ? "⏸" : "➜", ART(followOn ? "wait" : "follow"), followOn ? "the others stop where they are" : "the others come along behind", () => setFollow(!followOn));
+  // the More tray: the six that matter here stay on the bar (talk and a fight first), the rest fold away
+  const btns = [...m.children].filter(b => b.tagName === "BUTTON");
+  btns.forEach((b, i) => { b.dataset.pri = priOf(b) * 100 + i; });
+  const keep = new Set(btns.slice().sort((a, b) => a.dataset.pri - b.dataset.pri).slice(0, 6));
+  const rest = btns.filter(b => !keep.has(b));
+  btns.slice().sort((a, b) => a.dataset.pri - b.dataset.pri).forEach(b => m.appendChild(b));   // reorder by what matters
+  if (rest.length){
+    const tray = document.createElement("div"); tray.className = "moreTray"; tray.hidden = !moreOpen; rest.forEach(b => tray.appendChild(b));
+    const more = document.createElement("button"); more.className = "more"; more.dataset.sfx = moreOpen ? "close" : "open";
+    more.innerHTML = `${ICONS_HAVE.has("more") ? `<img class="ico" src="${ICON_BASE}more.png" alt="">` : `<i class="ico glyph">⋯</i>`}<span>${moreOpen ? "Less" : "More"}</span><small>${rest.length} more</small>`;
+    more.onclick = () => { moreOpen = !moreOpen; tray.hidden = !moreOpen; more.dataset.sfx = moreOpen ? "close" : "open"; more.querySelector("span").textContent = moreOpen ? "Less" : "More"; };
+    m.appendChild(more); m.appendChild(tray);
+  }
+}
+
+// Sneak
+function startSneak(scout){
+  const who = scout || !followOn ? [leader] : party.filter(p => !p.ko && !p.down);
+  if (scout && followOn) setFollow(false);
+  const rolls = who.map(p => ({p, k: mapCheck(p, "stealth", "dex")}));
+  sneak = {scout, cur, rolls, seenBy: new Set(), line: rolls.length === 1 ? String(rolls[0].k.total) : rolls.map(x => x.k.total).join(" / ")};
+  log(`${rolls.map(({p, k}) => `${fname(p)}: ${rollLine(k, "stealth")}`).join(" · ")}. ${scout ? `${fname(leader)} slips ahead alone.` : rolls.length > 1 ? "The party moves quietly." : `${fname(leader)} moves quietly.`}`);
+  exploreKey = "";
+}
+function endSneak(why){ if (!sneak) return; sneak = null; if (why) log(why); exploreKey = ""; }
+function watchers(){ return npcs.filter(n => n.hostile && !n.offStage && !n.down && !n.body && n.alpha > .5); }
+function faceAngle(a){ const k = ROW_OF.indexOf(a.face); return (k < 0 ? 2 : k) * Math.PI / 4; }
+function inView(w, p){
+  const dx = p.x - w.x, dy = p.y - w.y, d = Math.hypot(dx, dy); if (d > VIEW_FT * ftPx(w)) return false;
+  let da = Math.atan2(dy, dx) - faceAngle(w); da = Math.atan2(Math.sin(da), Math.cos(da)); return Math.abs(da) <= VIEW_HALF;
+}
+function passiveOf(w){ const b = FOE_BLOCKS[w.id] || {}; return b.passive ?? (b.senses && +((String(b.senses).match(/passive Perception (\d+)/i) || [])[1])) ?? 12; }
+setInterval(() => {
+  if (sneak && (mode === "combat" || sneak.cur !== cur)){ endSneak(mode === "combat" ? "" : "A new place: the sneak is over."); return; }   // a fight or a new plate ends it
+  if (!sneak || mode !== "explore" || !leader) return;
+  const movers = sneak.rolls.map(x => x.p);
+  for (const w of watchers()){
+    if (sneak.seenBy.has(w) || !movers.some(p => inView(w, p))) continue;
+    const P = passiveOf(w) || 12;
+    // SRD group check: hidden from this watcher if at least half the movers beat its passive Perception
+    const beat = sneak.rolls.filter(({p, k}) => k.total + useInspiration(p, k.total, P) >= P).length;
+    sneak.seenBy.add(w);
+    if (beat * 2 >= sneak.rolls.length){ popText(w, "?", "#9ad0ff"); continue; }
+    w.face = faceOf(leader.x - w.x, leader.y - w.y); w.alert = true; popText(w, "!", "#ff6b5a", 1.3); bank("ui/initiative_start", .35);
+    const name = fname(w), line = `${name} spots ${movers.length > 1 ? "the party" : fname(leader)} (passive Perception ${P}).`;
+    log(`<em>${esc(line)}</em>`); toast(line, 3600); handOff(`${line} They were sneaking (Stealth ${sneak.line}).`);
+    endSneak(); return;
+  }
+}, 250);
+function drawSneakCones(){
+  if (!sneak || mode !== "explore") return;
+  for (const w of watchers()){
+    const r = VIEW_FT * ftPx(w), a0 = faceAngle(w), seen = w.alert, g = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r);
+    const col = seen ? "255,107,90" : "154,208,255";
+    g.addColorStop(0, `rgba(${col},.42)`); g.addColorStop(.7, `rgba(${col},.16)`); g.addColorStop(1, `rgba(${col},0)`);
+    ctx.save(); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(w.x, w.y); ctx.arc(w.x, w.y, r, a0 - VIEW_HALF, a0 + VIEW_HALF); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = `rgba(${col},.55)`; ctx.lineWidth = 2 / (base * view.z); ctx.setLineDash([8 / (base * view.z), 6 / (base * view.z)]); ctx.stroke(); ctx.restore();
+  }
+}
+
+// Search here, Listen, Look closer: the roll on the map, the finding from the DM core
+function searchHere(){
+  const k = mapCheck(leader, "perception", "wis");
+  log(`${fname(leader)} searches ${esc(node.name)}: ${rollLine(k, "perception")}.`);
+  handOff(`${fname(leader)} searches ${node.name} carefully. Wisdom (Perception) ${k.total}${k.adv ? " (with help)" : ""}. What do they find?`);
+  toast(`Perception ${k.total} — Malachar will say what turns up.`, 3200); exploreKey = "";
+}
+function listenAt(z){
+  const k = mapCheck(leader, "perception", "wis"), where = exitName(z);
+  log(`${fname(leader)} listens at ${esc(where)}: ${rollLine(k, "perception")}.`);
+  handOff(`${fname(leader)} stops at ${where} and listens. Wisdom (Perception) ${k.total}${k.adv ? " (with help)" : ""}. What can they hear beyond it?`);
+  toast(`Perception ${k.total} — Malachar will say what they hear.`, 3200); exploreKey = "";
+}
+function lookCloser(what){
+  const k = mapCheck(leader, "investigation", "int");
+  log(`${fname(leader)} studies ${esc(what)}: ${rollLine(k, "investigation")}.`);
+  handOff(`${fname(leader)} looks closely at ${what}. Intelligence (Investigation) ${k.total}${k.adv ? " (with help)" : ""}. What do they notice?`);
+  toast(`Investigation ${k.total} — Malachar will say what they notice.`, 3200); exploreKey = "";
+}
+function giveHelp(){ helpNext = {by: leader.id, until: now + 60000}; log(`${fname(leader)} lends a hand: the next friend's check has advantage.`); exploreKey = ""; }
+
+// Follow / Wait: out of combat the others hold where they were put (the walk's rule) unless the leader calls them on
+function setFollow(on){ followOn = on; log(on ? "The party falls in behind." : "The others wait where they stand."); if (on) trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: leader.x, y: leader.y}]); else followers().forEach(f => { f.path = []; f.home = {x: f.x, y: f.y}; }); exploreKey = ""; }
+setInterval(() => {
+  if (!followOn || mode !== "explore" || !leader) return;
+  followOrder().forEach((f, i) => {
+    if (f.once || f.down) return;
+    const want = trailPoint((i + 1) * 70 * node.scale);
+    if (Math.hypot(f.x - want.x, f.y - want.y) < 40 * node.scale && !f.path.length) return;
+    const last = f.path[f.path.length - 1];
+    if (!last || Math.hypot(last.x - want.x, last.y - want.y) > 30 * node.scale){ const p = findPath(f, nearestWalkable(want.x, want.y)); if (p) f.path = p; }
+  });
+}, 350);
+
+// Quick drink: the first potion on the belt
+function beltPotion(a){ const g = GEAR[a.id]; if (!g || !g.carried) return null; return g.carried.find(it => { const u = useOf(it); return u.kind === "heal" || u.kind === "drink"; }) || null; }
+
+// Pray (cleric): silently or aloud; Malachar answers or does not
+function heroCard(title, text){
+  $("objWho").textContent = title; $("objText").textContent = text;
+  const c = $("objPic"), g = c.getContext("2d"); g.clearRect(0, 0, 128, 128); try { g.drawImage(faceCanvas(leader, 128), 0, 0); } catch (e) {}
+  const box = $("objBtns"); box.innerHTML = ""; box.classList.remove("loot"); $("obj").hidden = false; mode = "dialog";
+  const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
+  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); return b; };
+  return {add, close};
+}
+function openPray(){
+  const god = /samson/.test(leader.id) ? "Lathander" : "your god";
+  const {add, close} = heroCard(`${fname(leader)} prays`, `To ${god}. A prayer is between you and your god unless you say it out loud${cur === 11 || /^node-/.test(node.slug) ? " — and this is a drow outpost" : ""}.`);
+  add("Pray silently", () => { close(); log(`${fname(leader)} bows their head and prays to ${god} in silence.`); handOff(`${fname(leader)} prays silently to ${god}.`); }, "primary");
+  add("Pray aloud", () => { close(); log(`${fname(leader)} prays aloud to ${god}.`); narrate(leader, `${fname(leader)} prays aloud.`); handOff(`${fname(leader)} prays ALOUD to ${god}, where anyone near can hear.`); });
+  add("Not now", close);
+}
+// Inspire (bard): Bardic Inspiration out of a fight; the die is spent by the map's own checks (useInspiration)
+function inspLeftOf(a){ a.c = a.c || fighterFor(a); return a.c.inspLeft ?? ((SHEETS[a.id] || {}).bardic || {}).uses ?? 0; }
+function openInspire(){
+  const {add, close} = heroCard(`${fname(leader)}: Bardic Inspiration`, `Sing to a friend who can hear you. They add a d${SHEETS[leader.id].bardic.die} to one roll that would otherwise fall short.`);
+  for (const t of party.filter(p => p !== leader && !p.down && feetBetween(leader, p) <= 60)){
+    t.c = t.c || fighterFor(t);
+    add(fname(t), t.c.conds.has("inspired") ? null : () => { close(); exploreInspire(leader, t); }, "primary").disabled = t.c.conds.has("inspired");
+  }
+  add("Not now", close);
+}
+function exploreInspire(a, t){
+  a.c = a.c || fighterFor(a); a.c.inspLeft = inspLeftOf(a) - 1;
+  a.face = faceOf(t.x - a.x, t.y - a.y); playOnce(a, SPR[a.id].img.perform ? "perform" : "cast", () => setAnim(a, "idle"));
+  bank("walk:bardic-inspiration", .8); singAt(a, "#ffd36a", 700); noteStream(a, t, "#ffd36a", 900);
+  setTimeout(() => { addCond(t, "inspired"); t.c.inspDie = SHEETS[a.id].bardic.die;
+    if (t.inspFx) t.inspFx.then(e => { if (e) e.until = now; });
+    t.inspFx = spawnFx("bardicInspire", {at: t, sq: 2.1, anchor: "base", lift: -.3, tail: 4, tailLift: .55, until: now + 600000});
+    log(`${fname(a)} sings to ${fname(t)}: <b>Bardic Inspiration</b> (d${SHEETS[a.id].bardic.die}).`); handOff(`${fname(a)} gives ${fname(t)} Bardic Inspiration.`); exploreKey = ""; }, 1000);
+}
+
 // A SHORT REST ON THE MAP (Sam, 2026-10-24: "Short rests should be able to be taken even when not in camp but risk an
 // encounter with locals"). An hour where the party stands. The sheets rest for real (/api/walk-rest runs the camp's
 // own short rest: Hit Dice rolled with CON, Song of Rest, pact slots, the clock moves an hour, Malachar is told) —
@@ -4333,7 +4664,7 @@ function fireDarts(a){
 function cancelAim(){ if (cbt && cbt.phase === "target"){ const a = activeActor(); openMenu(a); } else if (cbt && cbt.phase === "move"){ openMenu(activeActor()); } }
 function combatClick(w){
   if (!cbt || combatBusy) return;
-  const a = activeActor(); if (!a || a.kind !== "pc") return;
+  const a = activeActor(); if (!a || a.kind !== "pc" || !canControl(a)) return;
   if (cbt.phase === "move"){ moveActor(a, w, () => { if (cbt && activeActor() === a) openMenu(a); }); return; }
   if (cbt.phase !== "target") return;
   const p = cbt.pend, sp = p.spell && SPELLS[p.spell];
@@ -6336,7 +6667,7 @@ async function pollStage(){
     // the cast: off the plate when the game says they have gone, back when it says they are here;
     // where Malachar put them ([NPC_MOVE:]) and whether they want a word ([NPC_WANTS_WORD:])
     storyWatch = j.watch || null;
-    for (const n of npcs.filter(a => CAST.has(a.id) && !a.creature && !a.relieved)){
+    for (const n of npcs.filter(a => CAST.has(a.id) && !a.creature && !a.relieved && !a.slain)){
       const here = present.find(c => stageMatch(c, n.id));
       const {off, dead, cause} = storyOff(n, present, gone);
       if (off && DROW_POST(n) && postsEmpty() && !dead) continue;            // the watch is left: followWatch below walks them off
@@ -6567,6 +6898,7 @@ let gateWarn = null;                       // {stage: "warned"} while the card i
 function gateCenter(){ const z = doorGate(); if (!z) return null; const p = z.interact.poly; return {x: (p[0][0] + p[2][0]) / 2, y: (p[0][1] + p[2][1]) / 2}; }
 function gateGuards(){ return npcs.filter(n => /^drow-guard/.test(n.id) && !n.relieved && !n.offStage && !n.body && !n.down && !n.hostile && n.alpha > .5 && actors.includes(n)); }
 function tickGateWatch(){
+  if (surgeon) return;                                  // the guards are already shooting (The Drow Surgeon)
   if (cur !== PEN || mode !== "explore" || !leader || state.gateOpen || postsEmpty() || timeStopped){ if (!state.gateOpen && gateWarn && gateWarn.stage === "warned" && mode === "explore") gateWarn = null; return; }
   const g = gateCenter(); if (!g) return;
   const sc = node.scale || 1, near = Math.hypot(leader.x - g.x, leader.y - g.y) < GATE_WATCH.near * sc;
@@ -6603,11 +6935,549 @@ function gateWarning(guards, g){
 }
 function gateGuardsShoot(guards){
   gateWarn = null; if (!guards.length || mode !== "explore") return;
-  log(`<em>${esc(fname(leader))} does not step back.</em> The guards on the bridge raise their crossbows.`);
-  if (APP) handOff(`${fname(leader)} ignored the drow guards' order to step back from the pen gate; the guards shoot. Combat has begun.`);
-  startCombat(guards, "The guards on the bridge loose their crossbows!");
-  if (cbt) cbt.gateVolley = true;
+  // Sam, 2026-10-25: "Remove formal fight. Volleys only." Defying the guards never opens combat: the first time is The
+  // Drow Surgeon (below); every later time they simply shoot until the prisoner steps away or drops.
+  if (!surgeonDone()) drowSurgeonBegins(guards); else surgeonAgain(guards);
 }
+
+// ---------- THE DROW SURGEON ----------
+// Sam, 2026-10-25: "When the guards get annoyed and finally attack there is NO formal COMBAT. They just start firing
+// their arrows until characters finally move away." The first time a prisoner defies the "step back", Malachar's d8
+// picks a prisoner and ONE bolt kills them; then volleys at the one at the gate until they step away or drop (stable,
+// no death saves — Sam). Two prisoners drag the fallen to a corner through their own blood; Liana, a sullen drow
+// surgeon who speaks only Elvish, comes in, pours a Potion of Healing, has the body thrown over the falls (it is found
+// later in the pool, area 14) and can be talked round ONCE for one of four favours (Malachar's hidden d4).
+// The rules are lib/drow-surgeon.mjs, pasted below; every die in the game is rolled by /api/drow-surgeon, which also
+// writes the death, the hit points, the favour and a line for Malachar. The stand-alone preview rolls here instead.
+// Design of record: project doc claude/The_Drow_Surgeon_2026-10-25.md.
+// Liana has no sprite of her own yet (PixelLab, 2026-10-26): she stands in the female drow guard's sheets until she does.
+// THE DROW SURGEON — the rules, pure, in one copy.
+//
+// Homebrew encounter for the Velkynvelve slave pen (Sam, 2026-10-25). Design of record: project doc
+// claude/The_Drow_Surgeon_2026-10-25.md. When a prisoner ignores the guards' "step back" at the pen gate the guards
+// do not start a fight: they shoot. One bolt kills a prisoner (Malachar's d8), then volleys at the one at the gate
+// until they step away or drop; two prisoners drag them to a corner; Liana, a sullen drow surgeon, heals them and can
+// be talked round for one of four favours.
+//
+// Plain JavaScript for the same reason as lib/rage.mjs: build_walk.py pastes this file into the painted map at its
+// DROW_SURGEON placeholder (minus `export`), so the map, the server route (app/api/drow-surgeon) and
+// lib/drow-surgeon.test.ts all read the SAME functions. Every name here starts with SURGEON_ or surgeon so the paste
+// cannot collide with the page's own names.
+//
+// SOURCES
+//   [SOURCED] the bolt: the live bestiary row `drow` (SRD 5.1 Drow) — Hand Crossbow, +4 to hit, 1d6+2 piercing, and
+//             "the target must succeed on a DC 13 Constitution saving throw or be poisoned for 1 hour. If the saving
+//             throw fails by 5 or more, the target is also unconscious while poisoned in this way."
+//   [SOURCED] the potion: catalog `potion-of-healing`, SRD 5.1 — 2d4 + 2.
+//   [SOURCED] Jorlan's grudge: OotA escape route "Traitor" — Jorlan is angry Ilvara cast him aside and offers to unlock
+//             the door to embarrass her. Liana's word only hastens a book escape.
+//   [SOURCED] Topsy and Turvy are off the victim table: wererats, immune to nonmagical piercing (SRD 5.1 lycanthrope).
+//   [SAM]     the trigger, the instant kill, volleys until they step away or drop, the drag, Liana and her heal, the
+//             one persuasion, the hidden d4 and its four favours; no formal combat at any point.
+//   [SAM 2026-10-25, answering the doc] the d8 table as drawn; at 0 HP the prisoner is stable, no death saves; Lolth's
+//             Tooth glows brighter the nearer the spiders; its venom puts the target to sleep and does no damage.
+//   [CLAUDE]  Persuasion DC 15; one attempt; through a translator at disadvantage; Arcana DC 15; spider-sense 60 ft;
+//             3 doses; who receives each favour; the Elvish words (an invented tongue — no canon drow-Elvish is used).
+
+const SURGEON_RULES = {
+  bolt: { name: "Hand Crossbow", hit: 4, dmg: "1d6+2", type: "piercing", poisonDc: 13 },   // bestiary `drow`
+  potion: { slug: "potion-of-healing", heal: "2d4+2" },                                     // SRD 5.1
+  persuadeDc: 15,
+  volleyMs: 4000,                                                                           // the map's pause between volleys (a round, shortened for the table)
+}
+
+// Malachar's d8: the eight prisoners a plain bolt can kill. `id` is the map's sprite id; `name` is the
+// npc_encounters / characters name (canon identity is by name, AGENTS.md §8).
+const SURGEON_VICTIMS = [
+  { d8: 1, id: "buppido", name: "Buppido" },
+  { d8: 2, id: "eldeth", name: "Eldeth Feldrun" },
+  { d8: 3, id: "jimjar", name: "Jimjar" },
+  { d8: 4, id: "derendil", name: "Prince Derendil" },
+  { d8: 5, id: "ront", name: "Ront" },
+  { d8: 6, id: "sarith", name: "Sarith Kzekarit" },
+  { d8: 7, id: "shuushar", name: "Shuushar the Awakened" },
+  { d8: 8, id: "stool", name: "Stool" },
+]
+
+/** The rolled victim; if that one is already dead or gone, the next on the table, round the end. null when none is left. */
+function surgeonVictim(roll, goneIds = []) {
+  const start = Math.min(8, Math.max(1, Math.floor(roll))) - 1
+  for (let k = 0; k < SURGEON_VICTIMS.length; k++) {
+    const v = SURGEON_VICTIMS[(start + k) % SURGEON_VICTIMS.length]
+    if (!goneIds.includes(v.id)) return v
+  }
+  return null
+}
+
+/** The gate: Liana is understood by anyone who speaks Elvish. A blank language list is not a guess — it is "no". */
+function surgeonSpeaksElvish(languages) {
+  const s = Array.isArray(languages) ? languages.join(", ") : String(languages ?? "")
+  return /\belv(?:ish|en)\b/i.test(s)
+}
+
+/** Dice: "2d4+2", "1d6+2". `rng` returns [0,1). `crit` doubles the dice, not the modifier (SRD). */
+function surgeonRoll(expr, rng = Math.random, crit = false) {
+  let total = 0
+  const rolls = []
+  for (const term of String(expr).replace(/\s+/g, "").match(/[+-]?[^+-]+/g) || []) {
+    const sign = term[0] === "-" ? -1 : 1
+    const t = term.replace(/^[+-]/, "")
+    const m = t.match(/^(\d*)d(\d+)$/)
+    if (m) {
+      const n = (Number(m[1]) || 1) * (crit ? 2 : 1)
+      for (let i = 0; i < n; i++) { const r = 1 + Math.floor(rng() * Number(m[2])); rolls.push(r); total += sign * r }
+    } else total += sign * (Number(t) || 0)
+  }
+  return { total: Math.max(0, total), rolls }
+}
+const surgeonD = (sides, rng = Math.random) => 1 + Math.floor(rng() * sides)
+
+/**
+ * One bolt at the prisoner. `t` = {ac, hp, conSave}. Returns what happened and the HP after.
+ * A natural 20 hits and doubles the dice; a natural 1 misses (SRD). The poison save is only on a hit.
+ * `down`: dropped to 0 HP or knocked out by the poison. Either way the prisoner is stable (Sam: no death saves).
+ */
+function surgeonBolt(t, rng = Math.random) {
+  const B = SURGEON_RULES.bolt
+  const d20 = surgeonD(20, rng)
+  const total = d20 + B.hit
+  const hit = d20 === 20 || (d20 !== 1 && total >= t.ac)
+  const out = { d20, total, hit, crit: d20 === 20, dmg: 0, save: null, poisoned: false, ko: false, hpAfter: t.hp, down: false }
+  if (!hit) return out
+  out.dmg = surgeonRoll(B.dmg, rng, out.crit).total
+  out.hpAfter = Math.max(0, t.hp - out.dmg)
+  const s = surgeonD(20, rng)
+  const sTotal = s + (t.conSave || 0)
+  out.save = { d20: s, total: sTotal, dc: B.poisonDc, ok: sTotal >= B.poisonDc }
+  out.poisoned = !out.save.ok
+  out.ko = !out.save.ok && B.poisonDc - sTotal >= 5
+  out.down = out.hpAfter <= 0 || out.ko
+  return out
+}
+
+/** A volley: one bolt per guard on post. The bolts stop the moment the prisoner drops — the drow are shooting property. */
+function surgeonVolley(t, guards, rng = Math.random) {
+  const bolts = []
+  let hp = t.hp, poisoned = false, ko = false
+  for (let g = 0; g < Math.max(1, guards); g++) {
+    const b = surgeonBolt({ ...t, hp }, rng)
+    bolts.push(b)
+    hp = b.hpAfter; poisoned = poisoned || b.poisoned; ko = ko || b.ko
+    if (b.down) break
+  }
+  return { bolts, hpAfter: hp, poisoned, ko, down: hp <= 0 || ko }
+}
+
+/** Liana's potion: 2d4+2 from where they lie, never past their maximum. */
+function surgeonHeal(hp, hpMax, rng = Math.random) {
+  const r = surgeonRoll(SURGEON_RULES.potion.heal, rng)
+  const after = Math.min(hpMax, Math.max(0, hp) + r.total)
+  return { rolls: r.rolls, amount: after - Math.max(0, hp), hpAfter: after }
+}
+
+/** The one try at talking her round: d20 + Persuasion, at disadvantage through a translator. */
+function surgeonPersuade(bonus, viaTranslator, rng = Math.random) {
+  const a = surgeonD(20, rng)
+  const b = viaTranslator ? surgeonD(20, rng) : null
+  const d20 = b === null ? a : Math.min(a, b)
+  const total = d20 + bonus
+  return { rolls: b === null ? [a] : [a, b], d20, bonus, total, dc: SURGEON_RULES.persuadeDc, success: total >= SURGEON_RULES.persuadeDc }
+}
+
+// Malachar's hidden d4 on a success. `to`: who receives it — the one who talked her round, or the one she stitched
+// (the diluted poison is for the downed prisoner to drink). `shown`: the name the inventory row carries, so a cursed
+// blade reveals nothing until an Arcana check reads its sigils.
+const SURGEON_BOONS = {
+  1: { kind: "item", slug: "drow-lockpick", to: "speaker", shown: "Drow lockpick",
+       desc: "A thin pick of black steel, filed for drow locks. Counts as thieves' tools for picking a lock; snaps on a natural 1." },
+  2: { kind: "item", slug: "diluted-drow-poison", to: "downed", shown: "Diluted drow poison",
+       desc: "A stoppered vial, watered down. Drunk, it brings a sleep so deep the pulse cannot be found, for up to an hour. Taking damage wakes the drinker." },
+  3: { kind: "jorlan" },
+  4: { kind: "item", slug: "lolths-tooth", to: "speaker", shown: "Drow ritual dagger",
+       desc: "A drow ritual dagger, its blade cut with spider sigils, a reservoir in the hilt. Liana says that if it is ever drawn, the priestess will know." },
+}
+function surgeonBoon(d4) { return SURGEON_BOONS[Math.min(4, Math.max(1, Math.floor(d4)))] }
+
+// LIANA'S LINES. She speaks only Elvish to slaves. `en` is shown to whoever understands it (and to the DM); the audio
+// is ALWAYS `elv`, spoken in her ElevenLabs voice, so the table hears a foreign tongue. The words are invented for
+// this game — not Tolkien's, not any published drow lexicon — and fixed per line so a replay sounds the same.
+const SURGEON_LINES = {
+  arrive:   { en: "Move. Let me see it.", elv: "Vaeth. Shan'ri vel osse." },
+  dead:     { en: "That one won't need me. Lucky. I hate stitching the ones who keep screaming.", elv: "Ilsa nae'threm dossa. Velun. Iss khaal surrith nae ulvreth kaessa." },
+  working:  { en: "Hold still. The bolt went in clean. Clean is a kindness down here. Don't waste it.", elv: "Thal'veri. Ressa illun sorrath. Illun ve maeloth draeth. Nae shuvra." },
+  guards:   { en: "Take that one over the bridge. Into the falls. And scrub the stones before the Mistress sees what you did to her property.", elv: "Thesra ilsa vel'kauth. Orra shael'ven. Ul draethi ossan, ilvae Maethra shan dessa." },
+  brushOff: { en: "I mend what she breaks. I don't listen to it.", elv: "Iss vaelun ka'vessar. Nae iss vethra." },
+  refuse:   { en: "No. I was never here.", elv: "Nae. Iss zhessa nae'thal." },
+  offer1:   { en: "Here. Black steel, filed thin. It knows our locks. Break it and you are on your own.", elv: "Vaen. Durrath ossk, shiv'ri. Ka draethel nae'sorr. Vessa, ul eth valun." },
+  offer2:   { en: "Drink this when you're ready to die. You won't. Not quite. They'll throw you over the falls, and the webs will catch you.", elv: "Shael ilsa, dossa'reth. Nae. Nae vaen. Ka thesra vel'shael, ul ressath ka vurren." },
+  offer3:   { en: "Jorlan hates her more than you do. I will tell him there are slaves who could embarrass her.", elv: "Jorlan khaal Maethra osse ul'ka. Iss vethrel ka draeth sorrun Maethra'ss." },
+  offer4:   { en: "Ilvara's. Don't draw it. If you ever do, she will know where you are.", elv: "Ilvara'ss. Nae shuvren. Ka'ul vessa, Maethra shan ul'vel." },
+}
+
+SHORT.liana = "Liana";
+let surgeon = null;                  // the scene while it plays: {pc, stage, local, liana, victim, draggers}
+let surgeonSeen = null;              // the server's record (GET), so a reload knows it happened
+let surgeonElvish = new Set();       // character ids that speak Elvish (GET); the preview counts Kenta
+const bloodMarks = [];
+function lianaSprite(){
+  if (!SPR.liana && SPR_META.liana) return false;                // her own sheets are still loading
+  if (!SPR.liana && SPR["drow-guard-female"]) SPR.liana = {json: Object.assign({}, SPR["drow-guard-female"].json, {name: "Liana"}), img: SPR["drow-guard-female"].img};
+  return !!SPR.liana;
+}
+const surgeonDone = () => !!(surgeonSeen || (surgeon && surgeon.stage) || surgeonLocalState.s);
+const surgeonDeadId = () => { const s = surgeonSeen || surgeonLocalState.s; return s && s.victim ? s.victim.id : null; };
+function slugSpeaksElvish(slug){ if (!APP) return slug === "kenta"; const id = characterIdOf(slug); return !!id && surgeonElvish.has(id); }
+function viewerUnderstands(){
+  if (!APP || isDm()) return true;                        // the DM (and the preview) read her in both tongues
+  try { const id = localStorage.getItem("aop_character_id"); return !!id && surgeonElvish.has(id); } catch (e) { return false; }
+}
+async function readSurgeon(){
+  if (!APP) return;
+  try { const j = await fetch("/api/drow-surgeon", {cache: "no-store"}).then(r => r.json()); surgeonSeen = j.state || null; surgeonElvish = new Set(j.elvish || []); } catch (e) {}
+}
+// ----- the record: the game's route, or the preview's own dice -----
+const surgeonLocalState = {s: null, hp: 0};
+async function surgeonApi(action, extra = {}){
+  if (surgeon && surgeon.local) return surgeonLocal(action, extra);
+  const body = {action, ...extra};
+  try { body.claimId = localStorage.getItem("aop_character_id") || undefined; body.claimToken = localStorage.getItem("aop_claim_token") || undefined; } catch (e) {}
+  const r = await fetch("/api/drow-surgeon", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)}).catch(() => null);
+  const j = r ? await r.json().catch(() => ({})) : {};
+  if (!r || !r.ok){ j.failed = true; j.status = r ? r.status : 0; }
+  if (j.state) surgeonSeen = j.state;
+  return j;
+}
+function surgeonLocal(action, x){
+  const L = surgeonLocalState, sh = SHEETS[surgeon.pc.id] || {}, hpMax = sh.hp || 8;
+  if (action === "begin"){
+    if (L.s) return {failed: true, status: 409, state: L.s};
+    const roll = 1 + Math.floor(Math.random() * 8), v = surgeonVictim(roll, x.gone || []);
+    L.hp = hpMax; L.s = {stage: "shooting", victim: v ? {id: v.id, name: v.name, roll} : null, target: {id: surgeon.pc.id, name: fname(surgeon.pc)}, volleys: 0};
+    return {ok: true, state: L.s};
+  }
+  if (action === "volley"){
+    const v = surgeonVolley({ac: sh.ac || 10, hp: L.hp, conSave: (sh.saves || {}).con || 0}, x.guards || 1);
+    L.hp = v.hpAfter; L.s.volleys++; if (v.down) L.s.stage = "down";
+    return {ok: true, volley: v, hp: L.hp, hpMax, state: L.s};
+  }
+  if (action === "stepped"){ L.s.stage = "stepped"; return {ok: true, state: L.s}; }
+  if (action === "tend"){ const h = surgeonHeal(L.hp, hpMax); L.hp = h.hpAfter; L.s.stage = "tended"; return {ok: true, heal: h, state: L.s}; }
+  if (action === "persuade"){
+    const sp = SHEETS[x.speakerSlug] || {}, r = surgeonPersuade((sp.saves || {}).cha || 0, !!x.translator);   // the preview has no Persuasion skill on its sheets: CHA alone
+    let boon = null, granted = null;
+    if (r.success){ const d4 = 1 + Math.floor(Math.random() * 4); boon = {d4, ...surgeonBoon(d4)}; if (boon.kind === "item") granted = {name: boon.shown, to: boon.to === "downed" ? fname(surgeon.pc) : x.speakerName}; }
+    L.s.stage = "settled"; return {ok: true, persuade: r, boon, granted, state: L.s};
+  }
+  if (action === "leave"){ L.s.stage = "settled"; return {ok: true, state: L.s}; }
+  if (action === "again"){
+    if (L.s.target.id !== surgeon.pc.id) L.hp = hpMax;
+    L.s.again = (L.s.again || 0) + 1; L.s.stage = "shooting"; L.s.target = {id: surgeon.pc.id, name: fname(surgeon.pc)}; L.s.volleys = 0;
+    return {ok: true, state: L.s};
+  }
+  if (action === "recover"){ const hours = 1 + Math.floor(Math.random() * 4); L.hp = Math.max(1, L.hp); L.s.stage = "settled"; return {ok: true, hours, hp: L.hp, state: L.s}; }
+  return {failed: true};
+}
+// ----- blood on the floor: the pool where they fall, the smear where they are dragged -----
+function addBlood(a, size, pool){
+  const sc = node.scale || 1;
+  bloodMarks.push({plate: cur, x: a.x + (Math.random() - .5) * 10 * sc, y: a.y + 3 * sc, r: (pool ? 44 : 13) * size * sc, pool: !!pool, t0: now, grow: pool ? 2600 : 160, rot: (Math.random() - .5) * .7});
+  if (bloodMarks.length > 220) bloodMarks.shift();
+}
+function drawSurgeonGround(){
+  for (const b of bloodMarks){
+    if (b.plate !== cur) continue;
+    const k = Math.min(1, (now - b.t0) / b.grow), r = b.r * (b.pool ? .35 + .65 * k : 1);
+    ctx.save(); ctx.globalAlpha = b.pool ? .82 : .7; ctx.fillStyle = b.pool ? "#4e0808" : "#641010";
+    ctx.beginPath(); ctx.ellipse(b.x, b.y, r, r * .42, b.rot, 0, Math.PI * 2); ctx.fill();
+    if (b.pool){ ctx.globalAlpha = .35 * k; ctx.fillStyle = "#a01c16"; ctx.beginPath(); ctx.ellipse(b.x - r * .2, b.y - r * .08, r * .45, r * .16, b.rot, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+  }
+}
+// carried, not walked: a body moves along `pts` over `ms` (the walk loop would put a walking frame on it)
+function dragAlong(a, pts, ms, each, done){
+  if (!pts.length){ done && done(); return; }
+  const seg = [{x: a.x, y: a.y}, ...pts], lens = seg.slice(1).map((p, i) => Math.hypot(p.x - seg[i].x, p.y - seg[i].y)), total = lens.reduce((s, l) => s + l, 0) || 1, t0 = now;
+  const id = setInterval(() => {
+    const k = Math.min(1, (now - t0) / ms); let d = k * total, i = 0;
+    while (i < lens.length - 1 && d > lens[i]){ d -= lens[i]; i++; }
+    const f = lens[i] ? Math.min(1, d / lens[i]) : 1;
+    a.x = seg[i].x + (seg[i + 1].x - seg[i].x) * f; a.y = seg[i].y + (seg[i + 1].y - seg[i].y) * f;
+    each && each(k);
+    if (k >= 1){ clearInterval(id); done && done(); }
+  }, 33);
+}
+// ----- Liana's voice: always her own tongue; the translation only for those who have it -----
+function lianaSays(key, ms = 7000){
+  const a = surgeon && surgeon.liana, L = SURGEON_LINES[key]; if (!a || !L) return;
+  if (APP) speakCanon("liana", L.elv, "Liana").catch(() => {});
+  bubbles.filter(b => b.a === a).forEach(b => b.until = 0);
+  const el = document.createElement("div"); el.className = "bubble said drowish";
+  const who = document.createElement("b"); who.textContent = "Liana · in Elvish"; el.appendChild(who);
+  const tongue = document.createElement("span"); tongue.className = "elv"; tongue.textContent = L.elv; el.appendChild(tongue);
+  const knows = viewerUnderstands();
+  if (knows){ const tr = document.createElement("span"); tr.className = "tr"; tr.textContent = L.en; el.appendChild(tr); }
+  over.appendChild(el); bubbles.push({a, el, until: now + ms}); a.lastBark = now; lastAnyBark = now;
+  log(knows ? `<b>Liana</b> <i>(Elvish)</i>: “${esc(L.en)}”` : `<b>Liana</b> says something in Elvish.`);
+}
+// ----- 1. the bolt that makes the point -----
+async function drowSurgeonBegins(guards){
+  const pc = leader;
+  surgeon = {pc, stage: "shooting", local: !APP || !characterIdOf(pc.id)};
+  pc.path = []; guards.forEach(g => { g.path = []; g.actUntil = now + 90000; faceTo(g, pc); });
+  mode = "dialog";                                          // nobody walks while the first bolt flies
+  log(`<em>${esc(fname(pc))} does not step back.</em> The guards on the bridge raise their crossbows.`);
+  const gone = SURGEON_VICTIMS.filter(v => !npcs.some(n => n.id === v.id && !n.down && !n.offStage && !n.body)).map(v => v.id);
+  const j = await surgeonApi("begin", {targetId: characterIdOf(pc.id) || undefined, gone});
+  if (j.failed){
+    surgeon = null; mode = "explore";
+    if (j.status === 409){ gateGuardsShoot(gateGuards()); return; }   // it has happened already this run: the old way
+    toast(j.error || "The game did not answer."); return;
+  }
+  const st = j.state; surgeon.victimRec = st.victim;
+  const v = st.victim && npcs.find(n => n.id === st.victim.id && !n.offStage && !n.down);
+  if (st.victim) log(`Malachar rolls a d8: <b>${st.victim.roll}</b>.`);
+  const shooter = guards[0];
+  if (v){
+    faceTo(shooter, v); bank("combat/crossbow_release", .85);
+    fireShot(shooter, v, "bolt", true, () => surgeonKill(v), null);
+  } else if (st.victim) log(`<b>${esc(st.victim.name)}</b> is shot dead.`);
+  // a beat to back off before the first volley: walk away from the bars and they stop (Sam: "until the player moves away")
+  setTimeout(() => { if (surgeon && surgeon.stage === "shooting"){ mode = "explore"; log("<em>They keep shooting until you get away from the gate.</em>"); setTimeout(surgeonVolleyTick, 1600); } }, 2400);
+}
+function surgeonKill(v){
+  surgeon.victim = v; v.slain = true; v.talk = false; v.stroll = null;
+  popText(v, "slain", "#ffd166", 1.3); burst(v, "#a8140e", 16); hitstop(140); shake(8);
+  bank("creature/death_beast", .7); addBlood(v, 1.1, true);
+  castLeaves(v, true, true);                                // down where they stand: the out-of-fight death
+  log(`A bolt takes <b>${esc(fname(v))}</b> in the chest. ${esc(fname(v))} is dead.`);
+  const near = npcs.filter(n => n !== v && PEN_NPCS.some(d => d.id === n.id) && !n.down && !n.offStage && n.alpha > .5).sort((a, b) => Math.hypot(a.x - v.x, a.y - v.y) - Math.hypot(b.x - v.x, b.y - v.y))[0];
+  if (near) setTimeout(() => bark(near, `${SHORT[v.id] || fname(v)}!`, 1800, {talk: true}), 500);
+}
+// ----- 2. volleys until they step away or drop -----
+async function surgeonVolleyTick(){
+  const S = surgeon; if (!S || S.stage !== "shooting") return;
+  const g = gateCenter(), pc = S.pc, guards = gateGuards();
+  const near = cur === PEN && g && actors.includes(pc) && Math.hypot(pc.x - g.x, pc.y - g.y) < GATE_WATCH.near * (node.scale || 1) * 1.3;
+  if (!near || !guards.length){ surgeonStepped(); return; }
+  const j = await surgeonApi("volley", {guards: guards.length});
+  if (j.failed){ toast(j.error || "The game did not answer."); S.stage = null; surgeon = null; return; }
+  const bolts = j.volley.bolts;
+  bolts.forEach((b, i) => setTimeout(() => {
+    const gd = guards[i % guards.length]; faceTo(gd, pc); bank("combat/crossbow_release", .75);
+    fireShot(gd, pc, "bolt", b.hit, () => {
+      if (b.hit){ popText(pc, String(b.dmg), b.crit ? "#ffd166" : "#ff6b5e", b.crit ? 1.4 : 1); burst(pc, "#ff5040", 10); bank("creature/player_hurt", .7); pc.flash = now + 180; addBlood(pc, .7);
+        if (b.poisoned) setTimeout(() => popText(pc, b.ko ? "poison · out cold" : "poisoned", "#7be36b", .95), 260); }
+      else popText(pc, "miss", "#c9c4b8", .9);
+    }, null);
+  }, i * 450));
+  const after = 450 * bolts.length + 750;
+  const hits = bolts.filter(b => b.hit);
+  setTimeout(() => {
+    log(`The guards loose ${bolts.length === 1 ? "a bolt" : bolts.length + " bolts"} at ${esc(fname(pc))}: ${hits.length ? `${hits.length} hit, ${hits.reduce((n, b) => n + b.dmg, 0)} piercing` : "all miss"}. ${esc(fname(pc))} is at ${j.hp}/${j.hpMax} HP.`);
+    if (j.volley.down) surgeonDown(j.volley); else setTimeout(surgeonVolleyTick, SURGEON_RULES.volleyMs);
+  }, after);
+}
+async function surgeonStepped(){
+  const S = surgeon; if (!S) return; S.stage = "stepped";
+  await surgeonApi("stepped");
+  log("The guards lower their crossbows.");
+  if (S.victim) setTimeout(() => surgeonRemoveBody(), 9000);   // nobody comes to stitch anyone; the body still goes over the falls
+  surgeon = null;
+}
+// ----- a later defiance: no warning bolt, no surgeon — volleys only (Sam, 2026-10-25) -----
+async function surgeonAgain(guards){
+  const pc = leader;
+  surgeon = {pc, stage: "shooting", local: !APP || !characterIdOf(pc.id), again: true};
+  pc.path = []; guards.forEach(g => { g.path = []; g.actUntil = now + 90000; faceTo(g, pc); });
+  log(`<em>${esc(fname(pc))} does not step back.</em> No warning bolt this time: the guards raise their crossbows.`);
+  const j = await surgeonApi("again", {targetId: characterIdOf(pc.id) || undefined, slug: pc.id});
+  if (j.failed){ surgeon = null; toast(j.error || "The game did not answer."); return; }
+  setTimeout(surgeonVolleyTick, 1600);
+}
+// after a later drop nobody comes: stable at 0, back up with 1 HP after 1d4 hours (SRD 5.1, Stabilizing a Creature)
+async function surgeonRecover(){
+  const S = surgeon; if (!S) return; const pc = S.pc;
+  log("Nobody comes. The guards go back to their watch.");
+  const j = await surgeonApi("recover");
+  if (j.failed){ toast(j.error || "The game did not answer."); surgeon = null; mode = "explore"; return; }
+  setTimeout(() => {
+    pc.down = false; pc.surgeonDown = false; pc.once = null; setAnim(pc, "idle");
+    popText(pc, `+${j.hp}`, "#9be37b", 1.1);
+    log(`<b>${j.hours} hour${j.hours > 1 ? "s" : ""}</b> later (1d4), ${esc(fname(pc))} comes round in the corner with ${j.hp} HP.`);
+    if (S.draggers) S.draggers.forEach(d => { if (d.keep){ d.patrol = d.keep.patrol; d.static = d.keep.static; } d.actUntil = now + 4000; });
+    surgeon = null; mode = "explore";
+  }, 3200);
+}
+// ----- 3. down, and dragged to the corner -----
+function surgeonDown(vol){
+  const S = surgeon, pc = S.pc; S.stage = "down"; mode = "dialog"; tip.hidden = true;
+  pc.down = true; pc.surgeonDown = true; pc.path = []; if (SPR[pc.id].img.dead) playOnce(pc, "dead", () => {});
+  bank("creature/player_downed", .85); popText(pc, vol.ko && vol.hpAfter > 0 ? "out cold" : "down", "#ff6b5e", 1.3); hitstop(160); shake(9);
+  addBlood(pc, 1.3, true);
+  log(vol.ko && vol.hpAfter > 0
+    ? `<b>${esc(fname(pc))}</b> drops by the gate — <b>out cold from the drow poison</b>, ${vol.hpAfter} HP left. The shooting stops.`
+    : `<b>${esc(fname(pc))}</b> drops by the gate, bleeding — <b>stable at 0 HP</b>, no death saves. The shooting stops.`);
+  const g = gateCenter() || {x: pc.x, y: pc.y};
+  const draggers = npcs.filter(n => PEN_NPCS.some(d => d.id === n.id) && n !== S.victim && !n.down && !n.offStage && !n.body && !n.hostile && n.alpha > .5)
+    .sort((a, b) => Math.hypot(a.x - pc.x, a.y - pc.y) - Math.hypot(b.x - pc.x, b.y - pc.y)).slice(0, 2);
+  S.draggers = draggers;
+  const sc = node.scale || 1;
+  draggers.forEach((d, i) => { stopActivity(d); d.keep = d.keep || {patrol: d.patrol, static: d.static}; d.patrol = null; d.static = false; d.actUntil = now + 60000;
+    const spot = nearestWalkable(pc.x + (i ? 70 : -70) * sc, pc.y + 18 * sc); d.path = findPath(d, spot); if (!d.path.length) d.path = [spot]; d.slow = false; });
+  if (draggers[0]) setTimeout(() => bark(draggers[0], "Get them off the bars!", 2600, {talk: true}), 900);
+  // the corner: the far side of the pen from the gate
+  const corner = nearestWalkable(centroid.x + (centroid.x - g.x) * .75, centroid.y + (centroid.y - g.y) * .75);
+  setTimeout(() => {
+    const route = findPath(pc, corner), pts = route.length ? route : [corner];
+    const len = pts.reduce((s, p, i) => s + Math.hypot(p.x - (i ? pts[i - 1].x : pc.x), p.y - (i ? pts[i - 1].y : pc.y)), 0);
+    const ms = Math.max(2600, len / (SPEED * .32 * sc) * 1000);
+    draggers.forEach((d, i) => { d.path = []; setAnim(d, "walk"); });
+    let lastMark = {x: pc.x, y: pc.y};
+    dragAlong(pc, pts, ms, () => {
+      draggers.forEach((d, i) => { const side = i ? 1 : -1; d.x = pc.x + side * 52 * sc; d.y = pc.y - 14 * sc; d.face = faceOf(corner.x - pc.x, corner.y - pc.y); });
+      if (Math.hypot(pc.x - lastMark.x, pc.y - lastMark.y) > 22 * sc){ lastMark = {x: pc.x, y: pc.y}; addBlood(pc, .8); }
+    }, () => {
+      draggers.forEach(d => { setAnim(d, "idle"); faceTo(d, pc); d.home = {x: d.x, y: d.y}; });
+      addBlood(pc, 1, true);
+      log(`${draggers.length ? draggers.map(d => esc(SHORT[d.id] || fname(d))).join(" and ") + " drag" + (draggers.length > 1 ? "" : "s") : "Someone drags"} ${esc(fname(pc))} to the corner of the pen, a red smear behind them.`);
+      setTimeout(S.again ? surgeonRecover : lianaArrives, 2800);
+    });
+  }, 2000);
+}
+// ----- 4. the surgeon -----
+function lianaArrives(next = lianaTends){
+  const S = surgeon; if (!S || !lianaSprite()) return;
+  const pc = S.pc, sc = node.scale || 1, gIn = nearestWalkable(822, 880);
+  const a = mkActor("liana", 812, 812, "npc", {alpha: 0, fadeIn: true, talk: false, barks: [], fixedScale: 0});
+  a.home = {x: a.x, y: a.y}; S.liana = a; npcs.push(a); actors.push(a);
+  const beside = nearestWalkable(pc.x + 60 * sc, pc.y + 10 * sc);
+  a.path = [{x: gIn.x, y: gIn.y}, ...findPath({...a, x: gIn.x, y: gIn.y}, beside)]; a.slow = true;
+  sfx("door-open", .5);
+  log("The pen gate opens a hand's width. A drow in a stained leather apron comes in with a satchel of vials, and the gate is locked behind her.");
+  a.onArrive = () => { faceTo(a, pc); setAnim(a, "idle"); lianaSays("arrive", 4200); setTimeout(next, 3600); };
+}
+async function lianaTends(){
+  const S = surgeon, pc = S.pc, a = S.liana;
+  lianaSays("working", 6500);
+  const j = await surgeonApi("tend");
+  if (j.failed){ toast(j.error || "The game did not answer."); return; }
+  setTimeout(() => {
+    bank("combat/heal", .8); burst(pc, "#9be37b", 14);
+    popText(pc, `+${j.heal.amount}`, "#9be37b", 1.2);
+    pc.down = false; pc.surgeonDown = false; setAnim(pc, "idle"); pc.once = null;
+    log(`Liana pulls the bolt and pours a <b>Potion of Healing</b> into ${esc(fname(pc))}: ${j.heal.rolls ? `2d4+2 [${j.heal.rolls.join(", ")}] = ` : ""}<b>${j.heal.amount}</b> HP.`);
+    if (S.victimRec || S.victim){
+      setTimeout(() => { if (S.victim) faceTo(a, S.victim); lianaSays("dead", 7000); }, 2600);
+      setTimeout(() => { lianaSays("guards", 7000); surgeonRemoveBody(); }, 9200);
+      setTimeout(openLianaCard, 15500);
+    } else setTimeout(openLianaCard, 3000);
+  }, 2600);
+}
+function surgeonRemoveBody(){
+  const v = surgeon ? surgeon.victim : npcs.find(n => n.id === surgeonDeadId() && n.slain);
+  if (!v || !actors.includes(v)) return;
+  const gIn = nearestWalkable(822, 880), route = [...findPath(v, gIn), {x: gIn.x, y: gIn.y}, {x: 812, y: 812}];
+  log(`Two guards come in, take ${esc(fname(v))} by the ankles and drag the body out across the bridge.`);
+  let lastMark = {x: v.x, y: v.y};
+  dragAlong(v, route, 5200, k => { if (Math.hypot(v.x - lastMark.x, v.y - lastMark.y) > 26 * (node.scale || 1)){ lastMark = {x: v.x, y: v.y}; addBlood(v, .6); } if (k > .85) v.alpha = Math.max(0, (1 - k) / .15); },
+    () => { v.alpha = 0; const i = actors.indexOf(v); if (i >= 0) actors.splice(i, 1); const k = npcs.indexOf(v); if (k >= 0) npcs.splice(k, 1);
+      setTimeout(() => log("Somewhere below the bridge, something heavy goes into the falls."), 2600); });
+}
+// ----- 5. the one chance to ask her -----
+function openLianaCard(){
+  const S = surgeon; if (!S) return;
+  mode = "dialog"; tip.hidden = true;
+  const c = $("objPic").getContext("2d"); c.clearRect(0, 0, 128, 128);
+  try { const m = SPR.liana.json; c.imageSmoothingEnabled = false; c.drawImage(SPR.liana.img.idle, 0, 0, m.cell[0], m.cell[1], 0, 0, 128, 128); } catch (e) {}
+  $("objWho").textContent = "Liana, the drow surgeon";
+  $("objText").textContent = viewerUnderstands()
+    ? `She wipes her needle and packs the satchel. “${SURGEON_LINES.brushOff.en}” One chance to ask her for something, and it has to be in Elvish.`
+    : "She wipes her needle and packs the satchel, muttering in Elvish. One chance to ask her for something, if anyone can put it into her tongue.";
+  const box = $("objBtns"); box.innerHTML = "";
+  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); };
+  const standingParty = party.filter(p => !p.down);
+  const elvishPc = standingParty.filter(p => slugSpeaksElvish(p.id));
+  const npcTongue = npcs.filter(n => (n.id === "sarith" || n.id === "derendil") && !n.down && !n.offStage && !n.slain && actors.includes(n));
+  let offered = 0;
+  for (const p of standingParty){
+    const own = slugSpeaksElvish(p.id);
+    const tr = own ? null : (elvishPc.find(q => q !== p) || npcTongue[0] || null);
+    if (!own && !tr) continue;
+    const trName = tr ? (tr.kind === "pc" ? fname(tr) : (SHORT[tr.id] || fname(tr))) : null;
+    add(own ? `${fname(p)} asks her (Persuasion)` : `${fname(p)} asks, ${trName} translating (disadvantage)`, () => lianaPersuaded(p, trName), offered ? "" : "primary");
+    offered++;
+  }
+  if (!offered) log("Nobody here speaks Elvish. Liana does not wait to be understood.");
+  add("Let her go", () => lianaLeaves(null));
+  $("obj").hidden = false; box.firstChild?.focus();
+}
+async function lianaPersuaded(p, translator){
+  $("obj").hidden = true;
+  const j = await surgeonApi("persuade", {speakerId: characterIdOf(p.id) || undefined, translator: translator || undefined, speakerSlug: p.id, speakerName: fname(p)});
+  if (j.failed){ toast(j.error || "The game did not answer."); openLianaCard(); return; }
+  const r = j.persuade;
+  log(`${esc(fname(p))}${translator ? `, through ${esc(translator)},` : ""} asks Liana for help. Persuasion: d20 ${r.rolls.length > 1 ? `[${r.rolls.join(", ")}] (disadvantage) ` : ""}${r.d20} ${r.bonus >= 0 ? "+" : "−"} ${Math.abs(r.bonus)} = <b>${r.total}</b> vs DC ${r.dc} — ${r.success ? "she listens" : "she does not"}.`);
+  if (!r.success){ lianaSays("refuse", 4500); setTimeout(() => lianaLeaves("failed"), 3200); return; }
+  const b = j.boon;
+  if (isDm() || !APP) log(`<i>Malachar's hidden d4: ${b.d4}.</i>`);
+  lianaSays("offer" + b.d4, 8500);
+  setTimeout(() => {
+    if (j.granted){ bank("ui/item_pickup", .7); log(`Liana presses something into ${esc(j.granted.to)}'s hand: <b>${esc(j.granted.name)}</b>.`); }
+    else if (b.kind === "jorlan") log("Liana will speak to <b>Jorlan</b>, who hates Ilvara more than you do.");
+    lianaLeaves("helped");
+  }, 4200);
+}
+async function lianaLeaves(why){
+  $("obj").hidden = true;
+  if (!why) await surgeonApi("leave");
+  const S = surgeon, a = S && S.liana;
+  if (a){
+    const gIn = nearestWalkable(822, 880);
+    a.path = [...findPath(a, gIn), {x: gIn.x, y: gIn.y}, {x: 812, y: 812, out: true}]; a.slow = false;
+    a.onArrive = () => { a.alpha = 0; const i = actors.indexOf(a); if (i >= 0) actors.splice(i, 1); const k = npcs.indexOf(a); if (k >= 0) npcs.splice(k, 1); };
+    log(why === "failed" ? "Liana goes out through the gate without looking back. You will not see her again." : "Liana goes out through the gate, and it is locked behind her.");
+  }
+  if (S && S.draggers) S.draggers.forEach(d => { if (d.keep){ d.patrol = d.keep.patrol; d.static = d.keep.static; } d.actUntil = now + 4000; });
+  surgeon = null; mode = "explore";
+}
+// ----- after a reload: the dead stay dead, and a scene cut off part-way picks up again -----
+function surgeonOnEnter(n){
+  const s = surgeonSeen; if (!s) return;
+  if (String(n) === "14" && s.victim) placeBodyInPool(s.victim);
+  if (n !== PEN || surgeon) return;
+  if (s.stage === "shooting"){ surgeon = {pc: leader, stage: "shooting", local: false}; surgeonStepped(); return; }
+  if (s.stage === "down" && s.again){
+    const pc = party.find(p => characterIdOf(p.id) === s.target.id) || leader;
+    surgeon = {pc, stage: "down", local: false, again: true}; pc.down = true; pc.surgeonDown = true; if (SPR[pc.id].img.dead) playOnce(pc, "dead", () => {});
+    setTimeout(surgeonRecover, 2500); return;
+  }
+  if (s.stage === "down" || s.stage === "tended"){
+    const pc = party.find(p => characterIdOf(p.id) === s.target.id) || leader;
+    surgeon = {pc, stage: s.stage, local: false, victimRec: s.victim};
+    if (s.stage === "down"){ pc.down = true; pc.surgeonDown = true; if (SPR[pc.id].img.dead) playOnce(pc, "dead", () => {}); setTimeout(lianaArrives, 2500); }
+    else setTimeout(() => lianaArrives(openLianaCard), 1500);          // already stitched: she only has the question left
+  }
+}
+// The pool (area 14): the drow dump their waste there (OotA p.19), and the one they threw over the falls is in it.
+function placeBodyInPool(rec){
+  if (!SPR[rec.id] || npcs.some(n => n.id === rec.id)) return;
+  const z = node.zones.find(q => q.interact && /pool/i.test(q.interact.name || "")), poly = z && z.interact.poly;
+  const c = poly ? {x: poly.reduce((s, p) => s + p[0], 0) / poly.length, y: poly.reduce((s, p) => s + p[1], 0) / poly.length} : {x: 1600, y: 860};
+  const at = nearestWalkable(c.x, c.y);
+  const b = mkActor(rec.id, at.x, at.y, "body", {down: true, body: true, deadT0: now - 60000, slain: true, face: Math.floor(Math.random() * 8)});
+  if (SPR[rec.id].img.dead){ b.anim = "dead"; b.t0 = now - 60000; }
+  b.lootKey = `14-${Math.round(at.x)}-${Math.round(at.y)}`;
+  npcs.push(b); actors.push(b);
+  stuck.push({at: b, ox: 0, oy: -18, ang: -.9, kind: "bolt", t0: now});
+}
+// after the record arrives: a body the reload put back in the pen goes, and the scene picks up where it stood
+async function surgeonAfterRead(){
+  await readSurgeon();
+  const id = surgeonDeadId();
+  if (id && cur === PEN){ const v = npcs.find(n => n.id === id && !n.body); if (v){ v.slain = true; const i = actors.indexOf(v); if (i >= 0) actors.splice(i, 1); const k = npcs.indexOf(v); if (k >= 0) npcs.splice(k, 1); } }
+  if (mode === "explore") surgeonOnEnter(cur);
+}
+if (APP) setTimeout(surgeonAfterRead, 1500);
 
 // ---------- someone talking to you comes over ----------
 // Sam, 2026-10-25: "The pixel art NPCs in the pen MUST behave like their narration. If one is talking to you they should
@@ -6707,7 +7577,7 @@ if (APP){ setTimeout(pollTalk, 3000); setInterval(pollTalk, 2500); }
 // Someone wants a word: Malachar writes their opener (in the NPC's own voice, addressing the speaker by name if
 // they would know it, otherwise by race or a gesture); it is said in a balloon and a small card offers Talk / Decline.
 const PCS = {kenta: {name: "Kenta", race: "half-elf", cls: "sorcerer"}, samson: {name: "Samson", race: "human", cls: "cleric"},
-  scott: {name: "Scott", race: "half-elf", cls: "bard"}, freia: {name: "Fifi of Copperas Cove", race: "human", cls: "rogue"}};   // live characters table, 2026-10-11
+  scott: {name: "Scott", race: "half-elf", cls: "bard"}, freia: {name: "Fifi of Waterdeep", race: "human", cls: "rogue"}};   // live characters table, 2026-10-25
 const BRIEF = {   // the project's own prisoner summaries (lib/world-ai/campaigns.ts)
   eldeth: "Eldeth Feldrun, a shield dwarf scout; loyal", stool: "Stool, a myconid sprout who speaks only through telepathic rapport spores",
   sarith: "Sarith Kzekarit, a drow prisoner", buppido: "Buppido, a derro", derendil: "Prince Derendil, a quaggoth who believes he is a cursed elf prince",
@@ -6941,7 +7811,9 @@ async function openTalk(npc, opts = {}){
 }
 let talkNpc = null, talkLang = null;
 // The game character each walker is (the dashboard plays as whoever is moving when the talk starts).
-const PLAYS_AS = {kenta: "Kenta", samson: "Samson", scott: "Scott", freia: "Fifi of Copperas Cove"};
+// The canon heroes' names on their characters rows (Sam, 2026-10-25; lib/canon-heroes.ts). Matched exactly
+// against the seats, so this must change in the same breath as the rows do.
+const PLAYS_AS = {kenta: "Kenta of Neverwinter", samson: "Samson Stillwater", scott: "Scott Reedwind of Luskan", freia: "Fifi of Waterdeep"};
 // The way into the dashboard for this conversation. The game opens it in place; the stand-alone preview
 // (no game around it) opens the live game in a new tab. Both go to the full dashboard as map talk, never
 // to the camp's talk window (Sam, 2026-10-11: "still goes to camp UI").
@@ -7053,7 +7925,7 @@ function click(w){
     const pile = !hitActor(npcs, w) ? pileAt(w) : null;
     if (pile){ const me0 = leader; walkTo(nearestWalkable(pile.x, pile.y + 8), () => pickUp(me0, pile)); return; }
     const me = hitActor(party, w);
-    if (me && me !== leader){ setLeader(me); return; }
+    if (me && me !== leader){ pickLeader(me); return; }
     const pr = propAt(w); if (pr){ const pc = propCenter(pr); walkTo(nearestWalkable(pc.x, pc.y), () => openProp(pr)); return; }
     if (liftAt(w)){ walkTo(nearestWalkable(node.lift.spool[0], node.lift.spool[1]), () => openLift()); return; }
     const ls = !hitActor(npcs, w) ? lootSpotAt(w) : null; if (ls){ const lc = lootCenter(ls); walkTo(nearestWalkable(lc.x, lc.y), () => openLootSpot(ls)); return; }
@@ -7067,7 +7939,7 @@ function click(w){
   } else if (mode === "combat"){ if (dmPlace){ placeDmCloud(w); return; } combatClick(w); }
 }
 function nearNpc(n){ const d = norm({x: leader.x - n.x, y: leader.y - n.y}); return nearestWalkable(n.x + d.x * 80, n.y + d.y * 80); }
-function walkTo(p, cb){ if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
+function walkTo(p, cb){ if (!ownLeader()){ if (leader) notYours(leader); return; } if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
 $("zIn").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.3); };
 $("zOut").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.3); };
 $("zFit").onclick = () => { camTween = null; view = {z: 1, tx: 0, ty: 0}; applyView(); };
@@ -7086,8 +7958,8 @@ addEventListener("keydown", e => {
   }
   if (MOVE_KEYS.has(e.code) && (mode === "explore" || mode === "combat")){ keys.add(e.code); e.preventDefault(); unlockAudio(); }
   if (mode === "explore"){
-    if (/^Digit[1-4]$/.test(e.code)){ const a = party.find(p => p.id === PARTY[+e.code.slice(5) - 1]); if (a) setLeader(a); }
-    if (e.code === "Tab"){ e.preventDefault(); const i = party.indexOf(leader); setLeader(party[(i + (e.shiftKey ? party.length - 1 : 1)) % party.length]); }
+    if (/^Digit[1-4]$/.test(e.code)){ const a = party.find(p => p.id === PARTY[+e.code.slice(5) - 1]); if (a) pickLeader(a); }
+    if (e.code === "Tab"){ e.preventDefault(); const mine = party.filter(canControl); if (mine.length > 1){ const i = mine.indexOf(leader); setLeader(mine[(i + (e.shiftKey ? mine.length - 1 : 1)) % mine.length]); } }
     if (e.code === "KeyE" || e.code === "Space"){ e.preventDefault(); interact(); }
   } else if (mode === "combat"){ if (e.code === "Enter" && !e.target.closest("button")){ if (cbt && cbt.phase === "target" && cbt.pend && cbt.pend.darts && cbt.pend.darts.length) fireDarts(activeActor()); else nextTurn(); } if (e.key === "Escape") cancelAim(); }
   if (e.key === "+" || e.key === "="){ const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.2); }
@@ -7111,9 +7983,12 @@ if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(stage);
 if (window.MutationObserver) new MutationObserver(() => resize()).observe($("cbtMenu"), {attributes: true, attributeFilter: ["hidden"]});
 
 // ---------- DM drawer ----------
-function toggleDm(on){ $("dm").hidden = !on; document.body.classList.toggle("dm-open", !!on); $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ dmGrudgeLists(); renderSeats(); renderCompany(); renderDmItems(); renderDmLoot(); loadRoster().then(() => { renderSeats(); }); } }
+function toggleDm(on){ if (on && APP && !isDm()) return; $("dm").hidden = !on; document.body.classList.toggle("dm-open", !!on); $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ dmGrudgeLists(); renderSeats(); renderCompany(); renderDmItems(); renderDmLoot(); loadRoster().then(() => { renderSeats(); }); } }
 $("cbtMini").onclick = () => toggleDm(false);
 $("dmBtn").onclick = () => toggleDm($("dm").hidden);
+// The DM tools are the DM's (Sam, 2026-10-25). A player's screen never shows the button; the server-backed tools
+// were already refused without the DM code, but the local ones (jump, gate, start a fight, ambush) ran for anyone.
+if (APP && !isDm()) $("dmBtn").hidden = true;
 $("dmClose").onclick = () => toggleDm(false);
 Object.entries(SPEC).forEach(([n, s]) => { const o = document.createElement("option"); o.value = n; o.textContent = `${n} · ${s.name}`; $("jump").appendChild(o); });
 $("jump").onchange = e => { const v = e.target.value, n = /^\d+$/.test(v) ? +v : v; /* "10b" is a plate too */ if (n === cur || mode === "combat" || mode === "travel") return; toggleDm(false);
@@ -7202,6 +8077,10 @@ $("dmCombat").onclick = () => { toggleDm(false); if (mode !== "explore") return;
   const ids = node.hazard ? node.hazard.foes : cur === 12 ? ["quaggoth", "quaggoth"] : ["quaggoth", "giant-spider"];
   startCombat(ids, node.hazard ? node.hazard.label : "The DM calls for initiative."); };
 $("dmMood").value = dmMood;
+$("dmExplore").value = dmExplore;
+$("dmExplore").onchange = e => { dmExplore = e.target.value; try { localStorage.setItem("vk-explore-music", dmExplore); } catch (er) {}
+  exploreRestUntil = 0; if (dmExplore !== "off") pickExploreTrack(wantedRegion());
+  toast(dmExplore === "auto" ? "Explore music follows the place." : dmExplore === "off" ? "Explore music off: ambience only." : `Explore music: ${dmExplore}`); };
 $("dmMood").onchange = e => { dmMood = e.target.value; try { localStorage.setItem("vk-fight-music", dmMood); } catch (er) {}
   if (mode === "combat"){ pickCombatTrack(moodFor(foes)); toast(`Fight music: ${MOOD_LABEL[combatMood]}`); } else toast(dmMood === "auto" ? "Fight music follows the odds." : `Next fight's music: ${MOOD_LABEL[dmMood]}`); };
 // TURN ON THEM (Sam, 2026-10-25: "have ront kill kingasaur in the game with his pixel art attacking him until he is
@@ -7851,7 +8730,7 @@ function toggleBag(on, who){
   $("inv").hidden = !on; $("bagBtn").setAttribute("aria-expanded", String(on));
 }
 // what this hero may do with the bag right now: anything out of a fight, only on their own turn in one
-function bagCan(a){ return !inFightNow() || (a === activeActor() && !combatBusy && !a.down); }
+function bagCan(a){ return canControl(a) && (!inFightNow() || (a === activeActor() && !combatBusy && !a.down)); }
 function renderBag(){
   const a = bagHero(), g = GEAR[a.id] || (GEAR[a.id] = {carried: [], doll: [], main: null, off: null});
   const fight = inFightNow(), mine = bagCan(a), c = a.c;
@@ -8397,7 +9276,7 @@ function update(dt){
   if (mode === "explore" && leader){
     const last = trail[trail.length - 1];
     if (!last || Math.hypot(leader.x - last.x, leader.y - last.y) > 6){ trail.push({x: leader.x, y: leader.y}); if (trail.length > 500) trail.shift(); }
-    keyboardMove(leader, dt);
+    if (canControl(leader)) keyboardMove(leader, dt);
     tickCreatures();
     tickGateWatch();
     // the rest of the party stays where they were put; they only come along when the party leaves the plate
@@ -8441,7 +9320,7 @@ function update(dt){
         if (!a.once && !aw && walkable(a.x - ux * push, a.y - uy * push)){ a.x -= ux * push; a.y -= uy * push; } }
     }
   }
-  if (mode === "combat" && !combatBusy) keyboardMove(activeActor(), dt);
+  if (mode === "combat" && !combatBusy && canControl(activeActor())) keyboardMove(activeActor(), dt);
   // idle life: whoever you're not moving potters about, like at camp
   if (mode === "explore") for (const a of [...party, ...npcs]) idleLife(a);
   if (now - (renderExploreBar.at || 0) > 250){ renderExploreBar.at = now; renderExploreBar(); }
@@ -8477,6 +9356,7 @@ function frame(t){
       if (id && token){
         const v = await fetch("/api/verify-claim", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({characterId: id, claimToken: token})}).then(r => r.json());
         if (v && v.valid && v.character){ myClaimId = v.character.id; mine = seatedSlugs([v.character])[0] || null; }
+        mySlug = mine;
       }
     } catch (e) {}
     try { const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json(); noteSeats(j.seated); const seated = seatedSlugs(j.seated); if (seated.length) PARTY = seated; if (typeof j.run === "number") runSeen = j.run; } catch (e) {}
@@ -8494,7 +9374,7 @@ function frame(t){
     if (saved.cur === 9) applyInPool(); else state.inPool = [];
   } else {
     if (mine) leader = {id: mine};
-    await enterNode(11, {spawn: {x: 1560, y: 960}, note: "You wake in the slave pen. The gate is locked. <em>DM tools</em> can open it, or jump the party anywhere."});
+    await enterNode(11, {spawn: {x: 1560, y: 960}, note: (!APP || isDm()) ? "You wake in the slave pen. The gate is locked. <em>DM tools</em> can open it, or jump the party anywhere." : "You wake in the slave pen. The gate is locked."});
   }
   booted = true;
   // the heroes' own gear, now that they are on the plate. The first load (noteSeats) runs before the party is built,

@@ -883,7 +883,8 @@ function Waiting({ draft, onAnother, router }: { draft: Draft; onAnother: () => 
       window.localStorage.setItem(ROLE_LS_KEY, "player")
       window.localStorage.setItem(CHARACTER_LS_KEY, j.character.id)
       window.localStorage.setItem(TOKEN_LS_KEY, j.claimToken)
-      router.replace("/awaken")
+      // The staging table first (Sam, 2026-10-25): a new hero sits down and waits for the DM like everyone else.
+      router.replace("/table")
     } catch { setErr("Could not reach the door.") } finally { setEntering(false) }
   }
 

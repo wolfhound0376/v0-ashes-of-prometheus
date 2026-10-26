@@ -137,9 +137,13 @@ export default function AwakenPage() {
       Promise.all([
         fetch(`/api/verify-claim`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ characterId: id, claimToken: token }) }).then((r) => r.json()),
         fetch(`/api/fortune-roll?characterId=${encodeURIComponent(id)}`, { cache: "no-store" }).then((r) => r.json()).catch(() => null),
+        fetch(`/api/table?characterId=${encodeURIComponent(id)}`, { cache: "no-store" }).then((r) => r.json()).catch(() => null),
       ])
-        .then(([claim, fortune]) => {
+        .then(([claim, fortune, table]) => {
           if (!claim?.valid) { router.replace("/join"); return }
+          // Nobody walks in until the DM has started the session and they hold a seat at it (Sam, 2026-10-25).
+          // An unreadable table lets them through rather than locking the family out on a network blip.
+          if (table && !table.error && !(table.state?.status === "live" && table.mine)) { router.replace("/table"); return }
           if (fortune?.rolled) { setStep("act"); return }   // a saved game: the Act I card, then the pen
           setSeat({ id, token, name: claim?.character?.name ?? null })
         })

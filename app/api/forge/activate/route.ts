@@ -3,6 +3,9 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { isDmRequest } from "@/lib/dm-session"
 import { importCharacter } from "@/lib/forge-import"
 import type { ForgeAssets } from "@/lib/forge-submission"
+import { randomUUID } from "crypto"
+import { readSeated } from "@/lib/seats"
+import { canonById } from "@/lib/canon-heroes"
 
 // /api/forge/activate — the DM opens (or shuts) a Forge hero's cell. DM only.
 //
@@ -32,7 +35,7 @@ export async function GET(req: Request) {
   try { admin = createAdminClient() } catch { return Response.json({ error: "Server not configured" }, { status: 500 }) }
   const { data, error } = await admin
     .from("forge_submissions")
-    .select("id, player_name, hero_name, payload, assets, status, character_id, note, created_at, activated_at")
+    .select("id, player_name, hero_name, payload, assets, status, character_id, canon_character_id, note, created_at, activated_at")
     .order("created_at", { ascending: false })
     .limit(60)
   if (error) {
@@ -44,6 +47,7 @@ export async function GET(req: Request) {
     const a = (r.assets ?? {}) as ForgeAssets
     return {
       id: r.id, playerName: r.player_name, heroName: r.hero_name, status: r.status, characterId: r.character_id, note: r.note, createdAt: r.created_at, activatedAt: r.activated_at,
+      canon: r.canon_character_id ? (canonById(r.canon_character_id)?.slug ?? "unknown") : null,
       sheet: { species: c.sheet_species ?? null, clazz: c.class ?? null, background: c.sheet_background ?? null, level: c.level ?? null, ac: c.ac ?? null, hp: c.hp_max ?? null },
       assets: {
         look: a.look?.description ?? null,
@@ -77,6 +81,28 @@ export async function POST(req: Request) {
     const { error: e2 } = await admin.from("forge_submissions").update({ status: "rejected", note, activated_at: new Date().toISOString(), activated_by: "dm" }).eq("id", id)
     if (e2) return Response.json({ error: e2.message }, { status: 500 })
     return Response.json({ ok: true, status: "rejected" })
+  }
+
+  // ACTIVATE A CANON HERO — the row already exists, so nothing is imported: the hero is HANDED to
+  // these words. Their old words and old claim token stop working (one of each per run; the chooser
+  // only offers a hero nobody is seated as, and this re-checks in case someone sat down since).
+  if (sub.canon_character_id) {
+    const hero = canonById(sub.canon_character_id)
+    if (!hero) return Response.json({ error: "That claim is for a hero the chooser does not know." }, { status: 400 })
+    const seats = await readSeated(admin)
+    if (seats.some((s) => s.id === hero.id && !s.dm)) return Response.json({ error: `${hero.name} is already seated this run. Turn this claim away, or unseat them first.` }, { status: 409 })
+    const { data: secret, error: es } = await admin.from("character_secrets").select("character_id").eq("character_id", hero.id).maybeSingle()
+    if (es) return Response.json({ error: es.message }, { status: 500 })
+    const handOver = { claim_code: normalizeCode(sub.claim_code), claim_token: randomUUID() }
+    const { error: ew } = secret
+      ? await admin.from("character_secrets").update(handOver).eq("character_id", hero.id)
+      : await admin.from("character_secrets").insert({ character_id: hero.id, ...handOver })
+    if (ew) return Response.json({ error: `Could not hand ${hero.name} over: ${ew.message}` }, { status: 500 })
+    const { error: ep } = await admin.from("characters").update({ sheet_player_name: sub.player_name }).eq("id", hero.id)
+    if (ep) console.error("[forge/activate] player name not written:", ep.message)
+    const { error: e5 } = await admin.from("forge_submissions").update({ status: "activated", character_id: hero.id, activated_at: new Date().toISOString(), activated_by: "dm" }).eq("id", id)
+    if (e5) console.error("[forge/activate] status write failed:", e5.message)
+    return Response.json({ ok: true, status: "activated", characterId: hero.id, claimCode: handOver.claim_code, codeKept: true, canon: true, warning: null, confiscated: null })
   }
 
   // ACTIVATE — the same import as /api/forge/import, with the player's own words preset.

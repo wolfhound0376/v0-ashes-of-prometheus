@@ -342,7 +342,7 @@ const previewDialogue: DialogueEntry[] = [
   { speaker: "Sam", text: "I check the others for wounds before anything else." },
   { speaker: "DM", text: "Roll Medicine." },
   { speaker: "Sam", text: "🎲 Medicine — 16 (d20: 12 +4)" },
-  { speaker: "Fifi of Copperas Cove", text: "Save the bedside manner. Get these manacles off." },
+  { speaker: "Fifi of Waterdeep", text: "Save the bedside manner. Get these manacles off." },
   { speaker: "Jimjar", text: "I’ll bet you two gold the bald one prays first." },
   { speaker: "Malachar", text: "Somewhere above, a whip cracks. The drow are awake." },
 ]
@@ -548,9 +548,12 @@ export function V4Dashboard(props: V4DashboardProps) {
     const hit = (xs: string[]) => xs.some((x) => x === want || x.split(/\s+/).includes(want) || x.startsWith(want + " "))
     const npc = npcPool.find((n) => names(n).includes(want)) ?? npcPool.find((n) => hit(names(n)))
     if (npc) return { kind: "npc" as const, npc }
+    // A player's own screen never puts another player's hero in the window (Sam, 2026-10-25: "The dashboard UI
+    // ONLY shows him in the center panel NO one else"), so a talk aimed at another hero finds no partner there.
+    if (props.claimLocked) return null
     const pc = props.characters.find((c) => c.name.toLowerCase() === want) ?? props.characters.find((c) => hit([c.name.toLowerCase()]))
     return pc ? { kind: "player" as const, player: pc as Character & { idle_url?: string | null; talking_url?: string | null } } : null
-  }, [props.talkWith, npcPool, props.characters])
+  }, [props.talkWith, npcPool, props.characters, props.claimLocked])
   const activeNpc = talkPartner?.kind === "npc"
     ? talkPartner.npc
     : talkMode && talkPartner?.kind === "player"
@@ -563,7 +566,9 @@ export function V4Dashboard(props: V4DashboardProps) {
   // A speaking PLAYER takes the window too: when Player Voices reads a typed
   // line aloud, the speaker's face and talking loop hold the stage exactly the
   // way an NPC's does, then the window falls back to the active NPC.
-  const speakingPlayerAny = speakingNpc && !speakingRowAny
+  // On a player's own screen only their own hero may take it — another player's line is heard, not shown
+  // (Sam, 2026-10-25: the centre panel shows him and NO one else). The DM's screen still shows whoever speaks.
+  const speakingPlayerAny = speakingNpc && !speakingRowAny && (!props.claimLocked || speakingNpc.id === selected?.id)
     ? (props.characters.find((c) => c.id === speakingNpc.id && c.is_player) as (Character & { idle_url?: string | null; talking_url?: string | null }) | undefined)
     : undefined
   const partnerPlayer = talkMode && talkPartner?.kind === "player" ? talkPartner.player : undefined

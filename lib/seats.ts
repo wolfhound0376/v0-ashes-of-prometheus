@@ -5,9 +5,13 @@
 // selected will populate in the game." Per-browser identity is localStorage
 // (AGENTS.md §5), so the database could not say who was at the table; the map
 // drew all four every time. A seat is a world flag, `seated:<characterId>`,
-// written when a claim is verified (/api/verify-claim — the dashboard on every
-// load, /awaken at the door) and cleared with every other flag by a restart,
-// so a new run starts with nobody seated until someone comes through the door.
+// cleared with every other flag by a restart.
+//
+// SINCE 2026-10-25 a seat is taken ONLY at the staging table (/table, /api/table,
+// lib/table.ts), while the DM has it open, and every seat empties when the DM ends
+// the session. It used to be written whenever a claim was verified, which let a
+// hero walk into a game already under way. `seatCharacter` below is no longer
+// called; the table writes seats through lib/table-store.ts.
 //
 // A seat is "has sat down this run", not "is online now". The party on the map
 // is everyone seated; a player who closes the tab is still in the party, and
@@ -28,7 +32,9 @@ const PREFIX = "seated:"
 
 export const seatFlagKey = (characterId: string) => `${PREFIX}${characterId}`
 
-export type Seat = { id: string; name: string; at: string; dm?: boolean }
+// `seat` (1..5) and `ready` belong to the table (lib/table.ts, Sam 2026-10-25): where around the table
+// the hero sits, and whether their player pressed Ready. Seats written before the table existed lack both.
+export type Seat = { id: string; name: string; at: string; dm?: boolean; seat?: number; ready?: boolean }
 
 /** Record that this character has sat down this run. Best-effort: never throws. */
 export async function seatCharacter(db: SupabaseClient, character: { id: string; name: string }, opts: { dm?: boolean } = {}): Promise<void> {
@@ -56,7 +62,7 @@ export async function readSeated(db: SupabaseClient): Promise<Seat[]> {
     const seats: Seat[] = []
     for (const row of data ?? []) {
       const v = row.value as Partial<Seat> | null
-      if (v && typeof v.id === "string" && typeof v.name === "string") seats.push({ id: v.id, name: v.name, at: typeof v.at === "string" ? v.at : "", dm: !!v.dm })
+      if (v && typeof v.id === "string" && typeof v.name === "string") seats.push({ id: v.id, name: v.name, at: typeof v.at === "string" ? v.at : "", dm: !!v.dm, seat: typeof v.seat === "number" ? v.seat : undefined, ready: !!v.ready })
     }
     return seats.sort((a, b) => a.at.localeCompare(b.at))
   } catch (e) {
