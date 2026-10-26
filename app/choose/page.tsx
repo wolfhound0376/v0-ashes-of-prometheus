@@ -22,6 +22,7 @@ import { useRouter } from "next/navigation"
 import { ClipboardCopy, Hammer } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { cinematicsOn } from "@/lib/settings"
+import { getThemeAudio, playThemeAudio } from "@/components/theme-audio"
 
 type Hero = {
   slug: string; name: string; clazz: string; origin: string | null; hook: string; powers: string[]; portrait: string
@@ -240,6 +241,17 @@ function HeroFilm({ src, onDone }: { src: string; onDone: () => void }) {
   const ref = useRef<HTMLVideoElement | null>(null)
   const [muted, setMuted] = useState(true)
   useEffect(() => { ref.current?.play().catch(() => { /* waits for a tap */ }) }, [])
+  // Sam, 2026-10-26: "intro song was playing during fifi's intro while also playing sound of her
+  // intro." The title theme lives in the root layout (components/theme-audio.tsx) and survives the
+  // client hop /intro → /choose; nothing here ever paused it, so the film's score played on top of
+  // it. The film owns the speakers while it runs — the theme pauses on mount and is handed back on
+  // the way out (Skip, end, or leaving), through playThemeAudio() so Music off still wins.
+  useEffect(() => {
+    const theme = getThemeAudio()
+    const wasPlaying = !!theme && !theme.paused
+    if (wasPlaying) theme!.pause()
+    return () => { if (wasPlaying) playThemeAudio().catch(() => {}) }
+  }, [])
   const unmute = () => { const v = ref.current; if (!v) return; v.muted = false; setMuted(false); v.play().catch(() => {}) }
   return (
     <div className="fixed inset-0 z-40 bg-black">
