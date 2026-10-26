@@ -61,6 +61,22 @@ function Portrait({ c, size }: { c: RosterCharacter; size: "card" | "small" }) {
   )
 }
 
+/**
+ * If this browser is signed in as the Dungeon Master, a player (or Forge) code typed here would leave it
+ * half one and half the other: the server still sees the DM's cookie and code, while the map reads the new
+ * player role. Ask first, then end the DM's session in this browser. False = keep the DM, sign nobody in.
+ */
+async function leaveDmHere(heroName: string | null): Promise<boolean> {
+  let wasDm = false
+  try { wasDm = window.localStorage.getItem(ROLE_LS_KEY) === "dm" } catch { /* storage blocked */ }
+  if (!wasDm) return true
+  const who = heroName ?? "a player"
+  if (!window.confirm(`This browser is signed in as the Dungeon Master. Signing ${who} in here ends the DM's session in this browser.\n\nTo run the DM and a player on one computer, open the player in a private window.\n\nSign ${who} in here anyway?`)) return false
+  try { window.localStorage.removeItem(FORGE_KEY_LS_KEY); window.localStorage.removeItem(ROLE_LS_KEY) } catch { /* storage blocked */ }
+  await fetch("/api/dm/logout", { method: "POST" }).catch(() => {})
+  return true
+}
+
 export default function JoinPage() {
   const router = useRouter()
   useThemeAudio()
@@ -126,6 +142,7 @@ export default function JoinPage() {
 
         if (result.role === "forge") {
           if (pick.kind !== "new") { setStatus("mismatch"); return }
+          if (!(await leaveDmHere(null))) { setStatus("idle"); return }
           window.localStorage.setItem(ROLE_LS_KEY, "forge")
           window.localStorage.setItem(FORGE_KEY_LS_KEY, code.trim())
           setStatus("idle")
@@ -136,6 +153,9 @@ export default function JoinPage() {
         // A player code. On "a new face" it still works — a claimed player may forge a second
         // character, and the import is authorised by their own seat — otherwise it must be the
         // card they chose.
+        // One browser is one person (Sam, 2026-10-25: Lynkes signed in on the DM's browser and got the DM's
+        // frame, while the DM's own map lost its tools). A player signing in here ends the DM's session here.
+        if (!(await leaveDmHere(pick.kind === "character" ? pick.character.name : null))) { setStatus("idle"); return }
         if (pick.kind === "new") {
           window.localStorage.setItem(ROLE_LS_KEY, "player")
           window.localStorage.setItem(CHARACTER_LS_KEY, result.character.id)

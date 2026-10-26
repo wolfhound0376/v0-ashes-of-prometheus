@@ -91,7 +91,9 @@ export default function TablePage() {
     try { id = localStorage.getItem(CHARACTER_LS_KEY) ?? ""; token = localStorage.getItem(TOKEN_LS_KEY) ?? ""; stored = localStorage.getItem(ROLE_LS_KEY) ?? "" } catch { /* storage blocked */ }
     if (id && token && stored !== "dm") setMe({ id, token })
     fetch("/api/table", { cache: "no-store", headers: dmHeaders() }).then((r) => r.json()).then((j: View) => {
-      setRole(j.isDm ? "dm" : id && token ? "player" : "none")
+      // The DM only where this browser signed in as the DM (the map reads the same flag). A browser left
+      // holding an old DM cookie after a player signed in on it is that player, not the DM.
+      setRole(j.isDm && (stored === "dm" || !(id && token)) ? "dm" : id && token ? "player" : "none")
     }).catch(() => setRole(id && token ? "player" : "none"))
   }, [])
 

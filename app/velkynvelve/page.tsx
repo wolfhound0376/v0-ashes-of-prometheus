@@ -37,8 +37,8 @@ export default function VelkynvelvePage() {
 
   useEffect(() => {
     let live = true
-    let id = ""
-    try { id = localStorage.getItem("aop_character_id") ?? "" } catch { /* storage blocked */ }
+    let id = "", role = ""
+    try { id = localStorage.getItem("aop_character_id") ?? ""; role = localStorage.getItem("aop_access_role") ?? "" } catch { /* storage blocked */ }
     const check = async (first: boolean) => {
       try {
         const q = id ? `?characterId=${encodeURIComponent(id)}` : ""
@@ -46,7 +46,10 @@ export default function VelkynvelvePage() {
         const j = await r.json()
         if (!live) return
         if (j.error) { if (first) setGate("player"); return }   // the table could not be read: never lock the family out on a blip
-        if (j.isDm) { setGate("dm"); return }
+        // The DM only where this browser signed in as the DM — the map inside reads the same flag for its DM
+        // tools, so the frame and the tools can never disagree (Sam, 2026-10-25: Lynkes got the frame, the
+        // DM's own map lost its tools).
+        if (j.isDm && role === "dm") { setGate("dm"); return }
         if (j.state?.status === "live" && j.mine) { setGate("player"); return }
         router.replace("/table")
       } catch {
