@@ -6,6 +6,7 @@ import { BuildWatch } from '@/components/build-watch'
 import ThemeAudio from '@/components/theme-audio'
 import { UiClickSound } from '@/components/ui-click-sound'
 import { StageProvider } from '@/components/stage/stage-provider'
+import { SessionGuard } from '@/components/session-guard'
 
 import './globals.css'
 
@@ -97,6 +98,8 @@ export default function RootLayout({
         {/* One stage, no page loads: every move between the table, the scene, the map, camp and the
             board is a soft navigation drawn by this provider (lib/stage.ts has the grammar). */}
         <StageProvider>{children}</StageProvider>
+        {/* Sends players off in-game pages once the DM ends the game or removes them (lib/session-guard.ts). */}
+        <SessionGuard />
         <ThemeAudio />
         <UiClickSound />
 

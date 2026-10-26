@@ -26,6 +26,7 @@ import { useRouter } from "next/navigation"
 import { StageLink } from "@/components/stage/stage-provider"
 import { ArrowLeft, Crown } from "lucide-react"
 import { dmHeaders } from "@/lib/dm-key"
+import { EndGameButton } from "@/components/end-game-button"
 
 const RECHECK_MS = 6000
 
@@ -84,6 +85,7 @@ export default function VelkynvelvePage() {
           </StageLink>
         )}
         <span className="font-serif text-xs uppercase tracking-[0.22em] text-stone-400">Velkynvelve</span>
+        {dm ? <span className="ml-auto"><EndGameButton /></span> : null}
       </header>
       <div className={dm ? "relative min-h-0 flex-1 p-[14px]" : "relative min-h-0 flex-1"}>
         <iframe

@@ -323,7 +323,7 @@ function DmControls({ view, busy, send, onRehearse }: { view: View; busy: boolea
     return (
       <div className="space-y-3">
         <p className="text-sm text-emerald-300/80">Session {s.session} is live. The roster is locked.</p>
-        <EndButton busy={busy} send={send} />
+        <EndButton busy={busy} send={send} prominent label="End the game" />
       </div>
     )
   }
@@ -347,9 +347,13 @@ function DmControls({ view, busy, send, onRehearse }: { view: View; busy: boolea
   )
 }
 
-function EndButton({ busy, send, label = "End the session" }: { busy: boolean; send: (a: string) => Promise<View | null>; label?: string }) {
+function EndButton({ busy, send, label = "End the session", prominent = false }: { busy: boolean; send: (a: string) => Promise<View | null>; label?: string; prominent?: boolean }) {
+  // While the game is live this is THE way out for the DM (Sam, 2026-10-25: "a button that gets me to end the
+  // game and kicks everyone out"), so it is a real red button, not the faint text link it was.
   return (
-    <button type="button" disabled={busy} onClick={() => { if (window.confirm(`${label}? Everyone is sent back to the door; the world stays exactly as it is for next time.`)) send("end") }} className="text-[11px] uppercase tracking-[0.3em] text-stone-600 hover:text-red-300 disabled:opacity-40">
+    <button type="button" disabled={busy} onClick={() => { if (window.confirm(`${label}? Everyone is sent back to the door; the world stays exactly as it is for next time.`)) send("end") }} className={prominent
+      ? "flex w-full items-center justify-center gap-2 rounded-sm border-2 border-red-700/80 bg-gradient-to-b from-[#3a1414] to-[#1f0b0b] py-3 font-serif text-sm uppercase tracking-[0.3em] text-red-100 shadow-[0_0_30px_rgba(185,28,28,0.25)] hover:border-red-400 disabled:opacity-40"
+      : "text-[11px] uppercase tracking-[0.3em] text-stone-600 hover:text-red-300 disabled:opacity-40"}>
       {label}
     </button>
   )
