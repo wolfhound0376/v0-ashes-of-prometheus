@@ -3243,9 +3243,17 @@ function fighterFor(a){
   // an ally who turns on the party (DM tools → Turn on them) still fights with his own block, not a stand-in's
   const turned = a.kind !== "pc" && !a.ally && !FOE_BLOCKS[a.id] && !!ALLY_SHEETS[a.id];
   const s = a.kind === "pc" ? SHEETS[a.id] : a.ally || turned ? ALLY_SHEETS[a.id] : FOE_BLOCKS[a.id];
-  const own = a.kind === "pc" || a.ally || turned;
+  // A hero with no sheet must never take the map down with it. Sam's rehearsal, 2026-10-26: Gandalf was claimed in
+  // the DM's browser but seated nowhere, so no sheet ever reached the page; the party panel asked for his hit points
+  // inside enterNode, the throw skipped the line that lifts the fade, and the whole Underwalk stayed black. The claim
+  // now brings the sheet (/api/verify-claim); if one is still missing, say so in the console and stand them in.
+  if (!s && (a.kind === "pc" || a.ally || turned) && !fighterFor.warned?.[a.id]){
+    (fighterFor.warned ||= {})[a.id] = true;
+    console.warn(`[walk] no sheet for ${a.id}: using a placeholder block so the map keeps running`);
+  }
+  const own = !!s && (a.kind === "pc" || a.ally || turned);
   const hpMax = own ? s.hp : (a.hpMax || (s && s.hp) || 1), hp = own ? s.hp : (a.hp ?? hpMax);
-  return {sheet: s || {name: SHORT[a.id] || SPR[a.id].json.name, hp: hpMax, ac: 10, speed: 30, init: 0, saves: {}, attacks: [{name: "Strike", hit: 2, dmg: "1d4", type: "bludgeoning", reach: 5}], improvised: true},
+  return {sheet: s || {name: SHORT[a.id] || SPR[a.id].json.name, cls: "", hp: hpMax, ac: 10, speed: 30, init: 0, saves: {}, attacks: [{name: "Strike", hit: 2, dmg: "1d4", type: "bludgeoning", reach: 5}], improvised: true},
           hp, hpMax, ac: s ? s.ac : 10, conds: new Set(), slots: s && s.magic ? {...s.magic.slots} : {}, init: 0};
 }
 function startCombat(foeIds, label, opts = {}){
