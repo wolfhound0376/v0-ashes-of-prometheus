@@ -34,7 +34,8 @@ export const seatFlagKey = (characterId: string) => `${PREFIX}${characterId}`
 
 // `seat` (1..5) and `ready` belong to the table (lib/table.ts, Sam 2026-10-25): where around the table
 // the hero sits, and whether their player pressed Ready. Seats written before the table existed lack both.
-export type Seat = { id: string; name: string; at: string; dm?: boolean; seat?: number; ready?: boolean }
+// `figure` (0..6) is which of the table's seven cartoon players they chose to sit as (Sam, 2026-10-25).
+export type Seat = { id: string; name: string; at: string; dm?: boolean; seat?: number; ready?: boolean; figure?: number }
 
 /** Record that this character has sat down this run. Best-effort: never throws. */
 export async function seatCharacter(db: SupabaseClient, character: { id: string; name: string }, opts: { dm?: boolean } = {}): Promise<void> {
@@ -62,7 +63,7 @@ export async function readSeated(db: SupabaseClient): Promise<Seat[]> {
     const seats: Seat[] = []
     for (const row of data ?? []) {
       const v = row.value as Partial<Seat> | null
-      if (v && typeof v.id === "string" && typeof v.name === "string") seats.push({ id: v.id, name: v.name, at: typeof v.at === "string" ? v.at : "", dm: !!v.dm, seat: typeof v.seat === "number" ? v.seat : undefined, ready: !!v.ready })
+      if (v && typeof v.id === "string" && typeof v.name === "string") seats.push({ id: v.id, name: v.name, at: typeof v.at === "string" ? v.at : "", dm: !!v.dm, seat: typeof v.seat === "number" ? v.seat : undefined, ready: !!v.ready, figure: typeof v.figure === "number" ? v.figure : undefined })
     }
     return seats.sort((a, b) => a.at.localeCompare(b.at))
   } catch (e) {

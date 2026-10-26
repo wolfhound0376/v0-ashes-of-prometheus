@@ -32,6 +32,35 @@
 // ============================================================================
 
 export const MAX_SEATS = 5
+/** The table's seven cartoon players (public/table/player-1..7.webp): three women, four men. */
+export const FIGURE_COUNT = 7
+
+/**
+ * Which figure each seated hero sits as. A choice the player made wins; everyone else gets a stable pick
+ * from their id, so they look the same every session. Never two alike at one table.
+ */
+export function assignFigures(seats: { id: string; seat?: number | null; figure?: number | null }[]): Map<string, number> {
+  const out = new Map<string, number>(), used = new Set<number>()
+  for (const s of seats) {
+    const f = s.figure
+    if (typeof f === "number" && f >= 0 && f < FIGURE_COUNT && !used.has(f)) { out.set(s.id, f); used.add(f) }
+  }
+  const hash = (id: string) => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h }
+  for (const s of [...seats].sort((a, b) => (a.seat ?? 9) - (b.seat ?? 9))) {
+    if (out.has(s.id)) continue
+    let f = hash(s.id) % FIGURE_COUNT
+    for (let i = 0; i < FIGURE_COUNT && used.has(f); i++) f = (f + 1) % FIGURE_COUNT
+    out.set(s.id, f); used.add(f)
+  }
+  return out
+}
+
+/** Why this figure cannot be taken right now, or null. */
+export function cannotChooseFigure(figure: unknown, mineId: string, seats: { id: string; figure?: number | null }[]): string | null {
+  if (typeof figure !== "number" || !Number.isInteger(figure) || figure < 0 || figure >= FIGURE_COUNT) return "That player is not at this table."
+  if (seats.some((s) => s.id !== mineId && s.figure === figure)) return "Someone else is already sitting as that player."
+  return null
+}
 
 export type TableStatus = "closed" | "lobby" | "live"
 export type Light = "red" | "yellow" | "green"
