@@ -20,6 +20,7 @@ Sheets (all under public/vfx, entries written into manifest.json):
   pxFireball   48x48  8f loop   the ball, head at +X, waving flame tail, embers
   pxMissile    48x48  8f loop   force dart: a sharp violet needle with sparkles
   pxPoison     48x48  8f loop   a green glob with drips behind and bubbles in it
+  pxPoisonSpray 96x32 8f loop   Poison Spray's jet of toxic mist, hand at x=0 fanning to the target (beam)
   pxPsychic    48x48  8f loop   a bright core with two crescents orbiting it
   pxFlash      48x48  6f        the white impact flash: star, bloom, rays, dots
   pxRing       64x64  8f        the floor shockwave, drawn flat: ring runs out
@@ -259,6 +260,63 @@ def poison(f, n):
         by = int(cy + 4 - bp * 9)
         if abs(by - cy) < 6:
             cell.put(bx, by, POISON[4] if bp > 0.5 else POISON[3])
+    cell.outline(hexes("#0a2408")[0])
+    return cell
+
+
+def poisonspray(f, n):
+    """Poison Spray (SRD 5.2.1): a jet of toxic mist from the hand to one creature.
+
+    Drawn as a BEAM sheet: the walk stretches it from the caster's hand (x=0)
+    to the target (the right edge), so the hand end is narrow and the far end
+    is the widest, thickest cloud — the spray fans out as it goes, like breath
+    on a cold morning. The billows are fbm noise scrolled toward +X one whole
+    lattice period per loop, so the mist visibly streams at the target and the
+    eighth frame meets the first. Droplets ride the core; a few pale motes
+    flick off the edges. Same POISON ramp as pxPoison, so the glob and the
+    spray read as one poison.
+    """
+    W, H = 96, 32
+    cell = Cell(W, H)
+    ph = f / n
+    cy = H / 2
+    for x in range(W):
+        u = x / (W - 1)                                    # 0 at the hand, 1 at the target
+        half = 1.5 + 11.0 * (u ** 0.8)                     # the fan: 3 px at the hand, ~25 at the target
+        wob = (vnoise(x * 0.09 - ph * 8, 3.0, 71) * 2 - 1) * 2.2 * u   # the cloud's edge breathes
+        for y in range(H):
+            dy = abs(y - (cy + wob)) / half
+            if dy > 1.15:
+                continue
+            # streaming billows: sample noise that slides +X as the loop runs (period 8 lattice cells)
+            b = fbm(x * 0.12 - ph * 8, y * 0.22, 77, 3)
+            core = max(0.0, 1 - dy * dy)                   # thick in the middle of the jet
+            fade = 1 - max(0.0, (u - 0.88) / 0.12) * 0.55  # the far tip thins as it breaks on them
+            if b < 0.38 and dy > 0.35:                     # gaps between the billows: mist, not a tube
+                continue
+            heat = (0.12 + 0.6 * core) * (0.3 + 0.95 * b) * fade
+            heat *= 1.0 if u > 0.06 else 0.6 + u * 6       # leaves the fingers as a tight bright stream
+            if dy > 0.85:
+                if (x + y + f) % 2:                        # a dithered rim, not a hard tube
+                    continue
+                heat *= 0.6
+            c = tone(POISON, min(0.99, heat))
+            if c:
+                cell.put(x, y, c)
+    # droplets carried in the core, streaming with the mist
+    for k in range(7):
+        p = ((k / 7) + ph) % 1
+        x = int(4 + p * (W - 10))
+        y = int(cy + (_hash(k, 5, 81) * 2 - 1) * (1 + 9 * p))
+        cell.put(x, y, POISON[4])
+        cell.put(x - 1, y, POISON[3])
+    # pale motes flicking off the edges of the cloud
+    for k in range(5):
+        p = ((k / 5) + ph * 1.5) % 1
+        x = int(20 + p * (W - 24))
+        side = 1 if k % 2 else -1
+        y = int(cy + side * (3 + 11 * (x / W)) + side * p * 3)
+        cell.put(x, y, POISON[3])
     cell.outline(hexes("#0a2408")[0])
     return cell
 
@@ -950,6 +1008,7 @@ SHEETS = [
     ("pxFireball", fireball,  8, 4, 12, True),
     ("pxMissile",  missile,   8, 4, 14, True),
     ("pxPoison",   poison,    8, 4, 10, True),
+    ("pxPoisonSpray", poisonspray, 8, 4, 14, True),
     ("pxPsychic",  psychic,   8, 4, 12, True),
     ("pxFlash",    flash,     6, 6, 24, False),
     ("pxRing",     shockring, 8, 4, 20, False),

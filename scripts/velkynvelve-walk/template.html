@@ -744,6 +744,10 @@ function mkActor(id, x, y, kind, extra = {}){
   return Object.assign({id, x, y, kind, face: 0, anim: "idle", t0: now, path: [], alpha: 1, flash: 0, once: null, repath: 0, lastBark: -1e9}, extra);
 }
 function setAnim(a, n){ if (a.anim !== n){ a.anim = n; a.t0 = now; } }
+// the cast's release, on the animation's hit frame — or, for a caster with no cast or attack sheet (a Forge hero
+// baked with only idle and walk), a beat after the wind-up starts. Without this the hit was never called and the
+// spell silently did nothing: the menu closed, the turn ran on, nobody was struck (found on Kingasaur, 2026-10-25).
+function castRelease(a, fn){ if (a.once && !a.once.hit) a.once.hit = fn; else setTimeout(fn, 320); }
 function playOnce(a, n, cb){
   const an = SPR[a.id].json.animations[n];
   if (!an || !SPR[a.id].img[n]){ cb && cb(); return; }
@@ -2889,7 +2893,7 @@ function drawFxLayer(flat){
 // which sheets and sounds a spell uses, from its school (lib/spell-school-data) and damage type
 const SCHOOL_OF = {"Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
   "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment",
-  "Stinking Cloud": "conjuration", "Cloudkill": "conjuration", "Fog Cloud": "conjuration"};
+  "Stinking Cloud": "conjuration", "Cloudkill": "conjuration", "Fog Cloud": "conjuration", "Poison Spray": "necromancy"};
 const RUNE_OF = {cold: "runeFrost", fire: "runeFire", lightning: "runeStorm", necrotic: "runeNecrotic", psychic: "runePsychic", radiant: "runeRadiant", force: "runeForce", acid: "runeAcid", heal: "runeHealing"};
 const RUNE_SCHOOL = {abjuration: "runeAbjuration", conjuration: "runeConjuration", divination: "runeDivination", enchantment: "runeEnchantment", evocation: "runeEvocation", illusion: "runeIllusion", necromancy: "runeNecromancy", transmutation: "runeTransmutation"};
 const SIGIL_OF = {necromancy: ["sigilNecroticRing", "sigilNecroticPlume"], enchantment: ["sigilEnchantmentRing", "sigilEnchantmentPlume"], evocation: ["sigilEvocationRing", "sigilEvocationPlume"],
@@ -3147,6 +3151,11 @@ const SPELLS = {
   "Fog Cloud":          {lvl: 1, kind: "fog", range: 120, area: 40, type: "fog", fx: "#d6dbe0", conc: 600},
   "Sleep":              {lvl: 1, kind: "save", save: "wis", range: 60, area: 5, cond: "asleep", fx: "#b0b8ff", conc: 10},
   "Dissonant Whispers": {lvl: 1, kind: "save", save: "wis", range: 60, dmg: "3d6", type: "psychic", fx: "#ff7fa0"},
+  // Kingasaur's cantrip (Sam, 2026-10-25). SRD 5.2.1, NOT the 2014 spell lib/data/spells.json holds (10 ft, CON save):
+  // in 5.2.1 it is a Necromancy cantrip, Action, 30 feet, a ranged spell attack, 1d12 poison on a hit (2d12 at
+  // level 5, 3d12 at 11, 4d12 at 17 — he is level 1). 5.2.1 is not ingested in campaign_chunks; checked against the
+  // SRD 2024 text at virtualtabletoptools.com/spells/srd-2024_poison-spray. Drawn as a spray (build_walk.py WALK_BY_SPELL).
+  "Poison Spray":       {lvl: 0, kind: "attack", range: 30, dmg: "1d12", type: "poison", fx: "#7fd16a"},
 };
 // ---------- Rage and Wounded Fury: the rules, one copy (lib/rage.mjs, pasted in here by build_walk.py) ----------
 /*__RAGE__*/
@@ -4285,7 +4294,7 @@ function castSpell(caster, tgt, name, done, darts){
     bank(`magic/${family}_windup`, .55);
     const ring0 = spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
     playOnce(caster, bardic && SPR[caster.id].img.perform ? "perform" : SPR[caster.id].img.cast ? "cast" : "attack", () => { setAnim(caster, "idle"); });
-    caster.once && (caster.once.hit = () => {
+    castRelease(caster, () => {
       ring0.then(e => { if (e) e.until = now; });
       wardDrinks(); bank("magic/spell_fizzle", .9); spawnFx("pxSigilShatter", {at: caster, sq: 1.3, anchor: "mid"});
       caster.flash = now + 220; caster.flashCol = "#c89cff";
@@ -4312,7 +4321,7 @@ function castSpell(caster, tgt, name, done, darts){
   const sigilEnd = (tg, taken) => { marks.forEach(p => p.then(e => { if (e) e.until = now + (quiet ? 1200 : 0); })); if (bardic){ for (let i = 0; i < 8; i++){ const B = bodyPoint(tg); noteAt(B.x, B.y, taken ? (quiet ? "#b0b8ff" : noteCol) : "#9a93a8"); } return; } if (!quiet) spawnFx(taken ? "pxSigilBurst" : "pxSigilShatter", {at: tg, sq: 1.6, anchor: "feet"}); };
   playOnce(caster, bardic && SPR[caster.id].img.perform ? "perform" : SPR[caster.id].img.cast ? "cast" : "attack", () => { setAnim(caster, "idle"); });
   const thrown = heldOrb; heldOrb = null;                                     // the Chromatic Orb in the hand leaves it at the release
-  caster.once && (caster.once.hit = () => {
+  castRelease(caster, () => {
     ring.then(e => { if (e) e.until = now; }); if (thrown) thrown.then(e => { if (e) e.until = now; });
     if (!quiet) bank(`magic/${family}_release`, .7);
     if (tgt.id && BOLT_OF[dtype] && !quiet && !kit) spawnFx(BOLT_OF[dtype], {at: caster, sq: .9, anchor: "mid", loop: true, until: now + 260, alpha: .95});

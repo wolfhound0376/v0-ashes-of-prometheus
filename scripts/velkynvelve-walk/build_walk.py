@@ -110,6 +110,11 @@ WALK_BY_SPELL = {
                       "impactLift": -0.15, "noPunch": True,
                       # the bell is the moment; no white flash over it
                       "burst": {"tint": "#9c6bff", "sparks": 12, "ring": False, "noFlash": True}},
+    # SRD 5.2.1 Poison Spray (Kingasaur's cantrip, Sam 2026-10-25): a cloud of poisonous vapour released at one
+    # creature. A SPRAY, not a thrown glob, so it rides the beam route: vfx/pxPoisonSpray (draw_pixel_vfx.py) is
+    # stretched from the hand to the target, narrow at the fingers and fanning wide where it breaks on them. The
+    # poison type's own impact (poisonCloud) and burst still land on a hit; on a miss the target ducks it.
+    "Poison Spray": {"route": "beam", "travel": "pxPoisonSpray", "gather": None},
 }
 # Chromatic Orb (Sam's pack, 2026-10-25, scripts/vfx/bake_chromatic_orb.py): every element is thrown as its own
 # orb and bursts as its own impact, whatever the damage type's default delivery is (cold is a beam, thunder radiates
