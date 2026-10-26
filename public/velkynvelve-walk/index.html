@@ -746,6 +746,26 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
 // Malachar's [WATCH:] / [GATE:] tags and from his prose by the stage director). Declared up here because a plate is
 // populated before the poll below ever runs. See "the watch and the gate" further down.
 let storyWatch = null, storyGate = null, watchPlayed = null, gatePlayed = null;
+// Sam, 2026-10-26: "Jorlan shouldn't be present in the beginning of the game. He should come after the 2nd or 3rd guard
+// rotation." The game rolls which (lib/stage-roster.ts, once per run) and /api/map-stage says whether he is on the watch
+// yet. Until it does he is not on the plate: hidden at his post, so the rotation that brings him can walk him in.
+// null = the game has not answered yet (he stays hidden); a preview with no game has no watch, so he simply stands there.
+let jorlanDuty = APP ? null : true;
+const offDuty = n => n.id === "jorlan" && jorlanDuty !== true;
+function hideOffStage(n){ n.keep = n.keep || {patrol: n.patrol, static: n.static}; n.patrol = null; n.static = false; n.path = []; n.onArrive = null; n.offStage = true; n.alpha = 0; n.talk = false; }
+function showAtPost(n){
+  n.offStage = false; n.down = false; n.fading = false; n.fadeIn = false; n.alpha = 1; n.path = []; n.x = n.post.x; n.y = n.post.y;
+  if (n.keep){ n.patrol = n.keep.patrol; n.static = n.keep.static; } n.home = {x: n.x, y: n.y}; setAnim(n, "idle");
+}
+// He comes on with the relief of his rotation: the old pair walk off, the new pair walk in, and a beat later so does he.
+function jorlanJoinsWatch(n){
+  if (n.relief) return;
+  n.relief = setTimeout(() => {
+    n.relief = null;
+    if (cur !== PEN || !n.offStage || jorlanDuty !== true || postsEmpty() || !actors.includes(n)) return;
+    castReturns(n, true); narrate(n, "A new face comes on with the relief: Jorlan takes the landing.");   // placeholder line, not book text
+  }, 3800);
+}
 const DROW_POST = n => /^drow-guard|^jorlan$/.test(n.id);
 
 let now = performance.now();
@@ -1810,6 +1830,7 @@ async function enterNode(n, opts = {}){
   // the posts left unattended in the story: the drow the story layer would stand there are not there (Sam, 2026-10-25:
   // "If they leave it unattended they all MUST be gone"). Kept on the plate, hidden, so [WATCH: posted] can walk them back.
   if (postsEmpty()) for (const a of npcs) if (DROW_POST(a)){ a.keep = {patrol: a.patrol, static: a.static}; a.patrol = null; a.static = false; a.offStage = true; a.alpha = 0; a.talk = false; }
+  for (const a of npcs) if (offDuty(a)) hideOffStage(a);              // Jorlan is not on the watch yet (see jorlanDuty)
   watchPost(n);
   // they gather loosely around the party (two rings, the inner one first), not in a heap on the leader
   comp.forEach((id, i) => {
@@ -2718,7 +2739,7 @@ function unlockGate(forced){
 }
 function openGate(){
   if (state.gateOpen) return;
-  const j = cur === 11 && mode === "explore" ? npcs.find(n => n.id === "jorlan") : null;
+  const j = cur === 11 && mode === "explore" ? npcs.find(n => n.id === "jorlan" && !n.offStage) : null;
   if (!j){ unlockGate(); return; }
   // Jorlan leaves his post on the landing, goes round behind the pillar, unlocks the door from outside and steps in.
   state.gateOpen = true; state.doorShut = false;                 // saved now; the door itself swings when he gets there
@@ -6760,7 +6781,19 @@ async function pollStage(){
     // the cast: off the plate when the game says they have gone, back when it says they are here;
     // where Malachar put them ([NPC_MOVE:]) and whether they want a word ([NPC_WANTS_WORD:])
     storyWatch = j.watch || null;
+    // Jorlan's turn on the watch. Decided before the cast loop, which leaves him alone while he is off duty and must
+    // not walk him back the instant he comes on (n.relief holds that until the relief has had its moment).
+    if (typeof j.jorlanOnDuty === "boolean" && !j.error){
+      const was = jorlanDuty; jorlanDuty = j.jorlanOnDuty;
+      const jn = cur === PEN ? npcs.find(n => n.id === "jorlan" && !n.body && !n.slain) : null;
+      if (jn && !jorlanDuty && !jn.offStage) hideOffStage(jn);
+      else if (jn && jorlanDuty && jn.offStage && !postsEmpty() && !jn.relief){
+        if (was === null) showAtPost(jn);                   // the page loaded with him already on the watch: he is simply there
+        else jorlanJoinsWatch(jn);
+      }
+    }
     for (const n of npcs.filter(a => CAST.has(a.id) && !a.creature && !a.relieved && !a.slain)){
+      if (offDuty(n)) continue;                                            // Jorlan before his rotation: nobody brings him on
       const here = present.find(c => stageMatch(c, n.id));
       const {off, dead, cause} = storyOff(n, present, gone);
       if (off && DROW_POST(n) && postsEmpty() && !dead) continue;            // the watch is left: followWatch below walks them off
@@ -6935,7 +6968,7 @@ function followWatch(w){
   const first = !freshStory(w.since); watchPlayed = w.since;
   if (w.state === "changing" && !first) changeOfWatch(posts.filter(n => /^drow-guard/.test(n.id) && !n.offStage));
   else if (w.state === "posted"){
-    let back = 0; for (const n of posts) if (n.offStage && !n.stroll){ castReturns(n, true); back++; }
+    let back = 0; for (const n of posts) if (n.offStage && !n.stroll && !offDuty(n)){ castReturns(n, true); back++; }
     if (back && !first) narrate(null, "The guards are back at their posts.");
   }
 }
@@ -8241,7 +8274,7 @@ $("dmFlag").onclick = () => { toggleDm(false); followCombatFlag({status: "active
 const fakeWatch = st => { storyWatch = {state: st, since: new Date().toISOString()}; followWatch(storyWatch); };
 $("dmWatchChange").onclick = () => { toggleDm(false); if (cur !== PEN){ log("The watch is the pen's (Area 11)."); return; } fakeWatch("changing"); };
 $("dmWatchEmpty").onclick = () => { toggleDm(false); if (cur !== PEN){ log("The watch is the pen's (Area 11)."); return; } fakeWatch(postsEmpty() ? "posted" : "unattended"); };
-$("dmGuards").onclick = () => { toggleDm(false); const g = npcs.filter(n => /^drow-guard|^jorlan$/.test(n.id)); if (!g.length){ log("No guards on this plate."); return; } g.forEach(n => { n.stroll = null; n.offStage ? castReturns(n) : castLeaves(n, false); }); };
+$("dmGuards").onclick = () => { toggleDm(false); const g = npcs.filter(n => /^drow-guard|^jorlan$/.test(n.id) && !offDuty(n)); if (!g.length){ log("No guards on this plate."); return; } g.forEach(n => { n.stroll = null; n.offStage ? castReturns(n) : castLeaves(n, false); }); };
 $("dmOoze").onclick = async () => { toggleDm(false); if (creatures.has("gray-ooze")) { const f = creatures.get("gray-ooze"); if (!f.inside) creatureCrosses("gray-ooze"); else creatureLeaves("gray-ooze", false); return; } if (await loadSpriteManifest("gray-ooze")) creatureArrives({slug: "gray-ooze", name: "Gray Ooze", hp: 22, hpMax: 22}); };
 function setTimeStopped(on){
   if (on === timeStopped) return;

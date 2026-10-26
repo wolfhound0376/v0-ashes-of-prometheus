@@ -62,19 +62,43 @@ export type Stage = {
   gone: Record<string, StageEntry>      // left or died here, so the map walks them off
   watch?: Watch                         // optional: a stage written before 2026-10-25 has neither
   gate?: Gate
+  /** How many times the watch has changed hands this run (every [WATCH: change]). See jorlanOnDuty. */
+  rotations?: number
+  /** Which rotation brings Jorlan on duty: 2 or 3, rolled once at the first change of the run. */
+  jorlanAt?: number | null
   updatedAt: string
+}
+
+/**
+ * Jorlan is not at the pen when the game begins (Sam, 2026-10-26: "Jorlan shouldn't be present in the beginning of
+ * the game. He should come after the 2nd or 3rd guard rotation"). Which of the two is rolled once per run, on the
+ * first change of the watch, and kept in the stage so every map and every Malachar turn agree. He arrives with the
+ * relief of that rotation and is on the watch from then on. The timing is Sam's ruling, not the book's: Out of the
+ * Abyss ch.1 has him on guard duty at the pen without saying when he first takes it.
+ */
+export const JORLAN_ROTATIONS = [2, 3] as const
+export function rollJorlanAt(rand: () => number = Math.random): number {
+  return JORLAN_ROTATIONS[Math.min(JORLAN_ROTATIONS.length - 1, Math.floor(rand() * JORLAN_ROTATIONS.length))]
+}
+export function jorlanOnDuty(stage: Pick<Stage, "rotations" | "jorlanAt">): boolean {
+  const r = stage.rotations ?? 0
+  return r > 0 && !!stage.jorlanAt && r >= stage.jorlanAt
 }
 
 export const slugOf = (name: string) => name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
 
-const empty = (): Stage => ({ area: null, present: {}, gone: {}, watch: null, gate: null, updatedAt: new Date().toISOString() })
+const empty = (): Stage => ({ area: null, present: {}, gone: {}, watch: null, gate: null, rotations: 0, jorlanAt: null, updatedAt: new Date().toISOString() })
 
 export async function readStage(db: SupabaseClient): Promise<Stage> {
   const { data } = await db.from("world_flags").select("value").eq("campaign_id", CAMPAIGN).eq("key", STAGE_FLAG).maybeSingle()
   const v = data?.value
   if (!v || typeof v !== "object" || Array.isArray(v)) return empty()
   const s = v as Partial<Stage>
-  return { area: s.area ?? null, present: s.present ?? {}, gone: s.gone ?? {}, watch: s.watch ?? null, gate: s.gate ?? null, updatedAt: s.updatedAt ?? new Date().toISOString() }
+  return {
+    area: s.area ?? null, present: s.present ?? {}, gone: s.gone ?? {}, watch: s.watch ?? null, gate: s.gate ?? null,
+    rotations: typeof s.rotations === "number" ? s.rotations : 0, jorlanAt: typeof s.jorlanAt === "number" ? s.jorlanAt : null,
+    updatedAt: s.updatedAt ?? new Date().toISOString(),
+  }
 }
 
 async function writeStage(db: SupabaseClient, stage: Stage) {
@@ -141,65 +165,74 @@ export async function applyStageEvents(db: SupabaseClient | null, events: StageE
   try {
     const stage = await readStage(db)
     const before: Stage = JSON.parse(JSON.stringify(stage))
-    const now = new Date().toISOString()
-    for (const e of events) {
-      if (e.kind === "move") {
-        // A new area: the story places its own cast there, and Malachar's tags fill in the rest. The watch is the
-        // old area's; the gate is the pen's and stays what it was (a gate left open does not shut behind them).
-        if (stage.area && stage.area.toLowerCase() !== e.area.toLowerCase()) { stage.present = {}; stage.gone = {}; stage.watch = null }
-        stage.area = e.area
-        continue
-      }
-      if (e.kind === "watch") {
-        if (stage.watch?.state !== e.state || e.state === "changing") stage.watch = { state: e.state, since: now }
-        continue
-      }
-      if (e.kind === "gate") {
-        // a gate already open is not "unlocked" again by a later line that only remembers it was left unlocked
-        if (!(e.state === "unlocked" && stage.gate?.state === "open") && stage.gate?.state !== e.state) stage.gate = { state: e.state, since: now }
-        continue
-      }
-      const slug = slugOf(e.name)
-      if (e.kind === "place") {
-        // Someone Malachar moves is on stage by definition. The story's own cast — the guards, Jorlan —
-        // stand on the map from story.json without ever being [NPC_ENCOUNTER:]ed, so a move with no entry
-        // used to be dropped on the floor and Jorlan could never be walked to the bars. Now it opens one.
-        const entry = stage.present[slug] ?? stage.gone[slug] ?? { name: e.name, slug, aliases: [], hp: null, hpMax: null, since: now }
-        entry.where = e.where; entry.inside = isInsideWording(e.where); delete entry.dead
-        delete stage.gone[slug]; stage.present[slug] = entry
-        continue
-      }
-      if (e.kind === "wantsWord") {
-        const entry = stage.present[slug] ?? stage.gone[slug] ?? { name: e.name, slug, aliases: [], hp: null, hpMax: null, since: now }
-        entry.wantsWord = { who: e.who, since: now }; delete entry.dead
-        delete stage.gone[slug]; stage.present[slug] = entry
-        continue
-      }
-      if (e.kind === "heard") {
-        const entry = stage.present[slug]
-        if (entry?.wantsWord) entry.wantsWord = null
-        continue
-      }
-      if (e.kind === "arrive") {
-        const prev = stage.present[slug] ?? stage.gone[slug]
-        delete stage.gone[slug]
-        stage.present[slug] = {
-          name: e.name, slug,
-          aliases: Array.from(new Set([...(prev?.aliases ?? []), ...((e.aliases ?? []).map(slugOf))])).filter(Boolean),
-          hp: e.hp ?? prev?.hp ?? null, hpMax: e.hpMax ?? prev?.hpMax ?? null,
-          since: prev && stage.present[slug] ? prev.since : now,
-          where: prev?.where ?? null, inside: prev?.inside ?? false,
-        }
-      } else {
-        const prev = stage.present[slug] ?? stage.gone[slug]
-        delete stage.present[slug]
-        stage.gone[slug] = { name: e.name, slug, aliases: prev?.aliases ?? [], hp: e.dead ? 0 : prev?.hp ?? null, hpMax: prev?.hpMax ?? null, since: now, dead: e.dead, cause: e.dead ? (e.cause ?? prev?.cause ?? null) : null, wantsWord: null }
-      }
-    }
+    applyEventsTo(stage, events, new Date().toISOString())
     await writeStage(db, stage)
     return { crossed: crossedInside(before, stage) }
   } catch (err) {
     console.error("[stage] apply failed:", err)
     return { crossed: [] }
   }
+}
+
+/** The pure half of applyStageEvents: the turn's events applied to a stage in memory, in order. */
+export function applyEventsTo(stage: Stage, events: StageEvent[], now: string, rand: () => number = Math.random): Stage {
+  for (const e of events) {
+    if (e.kind === "move") {
+      // A new area: the story places its own cast there, and Malachar's tags fill in the rest. The watch is the
+      // old area's; the gate is the pen's and stays what it was (a gate left open does not shut behind them).
+      if (stage.area && stage.area.toLowerCase() !== e.area.toLowerCase()) { stage.present = {}; stage.gone = {}; stage.watch = null }
+      stage.area = e.area
+      continue
+    }
+    if (e.kind === "watch") {
+      if (stage.watch?.state !== e.state || e.state === "changing") stage.watch = { state: e.state, since: now }
+      if (e.state === "changing") {
+        stage.rotations = (stage.rotations ?? 0) + 1
+        if (!stage.jorlanAt) stage.jorlanAt = rollJorlanAt(rand)
+      }
+      continue
+    }
+    if (e.kind === "gate") {
+      // a gate already open is not "unlocked" again by a later line that only remembers it was left unlocked
+      if (!(e.state === "unlocked" && stage.gate?.state === "open") && stage.gate?.state !== e.state) stage.gate = { state: e.state, since: now }
+      continue
+    }
+    const slug = slugOf(e.name)
+    if (e.kind === "place") {
+      // Someone Malachar moves is on stage by definition. The story's own cast — the guards, Jorlan —
+      // stand on the map from story.json without ever being [NPC_ENCOUNTER:]ed, so a move with no entry
+      // used to be dropped on the floor and Jorlan could never be walked to the bars. Now it opens one.
+      const entry = stage.present[slug] ?? stage.gone[slug] ?? { name: e.name, slug, aliases: [], hp: null, hpMax: null, since: now }
+      entry.where = e.where; entry.inside = isInsideWording(e.where); delete entry.dead
+      delete stage.gone[slug]; stage.present[slug] = entry
+      continue
+    }
+    if (e.kind === "wantsWord") {
+      const entry = stage.present[slug] ?? stage.gone[slug] ?? { name: e.name, slug, aliases: [], hp: null, hpMax: null, since: now }
+      entry.wantsWord = { who: e.who, since: now }; delete entry.dead
+      delete stage.gone[slug]; stage.present[slug] = entry
+      continue
+    }
+    if (e.kind === "heard") {
+      const entry = stage.present[slug]
+      if (entry?.wantsWord) entry.wantsWord = null
+      continue
+    }
+    if (e.kind === "arrive") {
+      const prev = stage.present[slug] ?? stage.gone[slug]
+      delete stage.gone[slug]
+      stage.present[slug] = {
+        name: e.name, slug,
+        aliases: Array.from(new Set([...(prev?.aliases ?? []), ...((e.aliases ?? []).map(slugOf))])).filter(Boolean),
+        hp: e.hp ?? prev?.hp ?? null, hpMax: e.hpMax ?? prev?.hpMax ?? null,
+        since: prev && stage.present[slug] ? prev.since : now,
+        where: prev?.where ?? null, inside: prev?.inside ?? false,
+      }
+    } else {
+      const prev = stage.present[slug] ?? stage.gone[slug]
+      delete stage.present[slug]
+      stage.gone[slug] = { name: e.name, slug, aliases: prev?.aliases ?? [], hp: e.dead ? 0 : prev?.hp ?? null, hpMax: prev?.hpMax ?? null, since: now, dead: e.dead, cause: e.dead ? (e.cause ?? prev?.cause ?? null) : null, wantsWord: null }
+    }
+  }
+  return stage
 }
