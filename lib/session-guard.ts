@@ -19,17 +19,17 @@ export type TableReply = {
   error?: string
   isDm?: boolean
   state?: { status?: string } | null
-  mine?: unknown
+  mine?: { away?: boolean; id?: string } | null
 } | null
 
 /**
  * "stay" or "leave". The DM (signed in as DM on this browser) always stays. A player stays only while the
- * session is live and they hold a seat. A table that could not be read never throws anyone out — a network
+ * session is live and they hold a seat the DM has not stepped them out of. A table that could not be read never throws anyone out — a network
  * blip must not kick the family mid-scene.
  */
 export function guardVerdict(reply: TableReply, role: string | null | undefined): "stay" | "leave" {
   if (!reply || reply.error) return "stay"
   if (reply.isDm && role === "dm") return "stay"
-  if (reply.state?.status === "live" && reply.mine) return "stay"
+  if (reply.state?.status === "live" && reply.mine && !reply.mine.away) return "stay"
   return "leave"
 }

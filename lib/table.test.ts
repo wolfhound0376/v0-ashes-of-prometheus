@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  CLOSED, MAX_SEATS, assignFigures, cannotChooseFigure, cannotSit, dmLight, freeSeatNumber, isComplete, missingOf, readTableState, readinessOf,
+  CLOSED, MAX_SEATS, NOT_INVITED, assignFigures, cannotChooseFigure, cannotSit, dmLight, freeSeatNumber, isComplete, missingOf, readTableState, readinessOf,
   seatLight, sheetComplete, shouldStart, type CharacterRowForReadiness, type Readiness, type TableState,
 } from "./table"
 
@@ -59,17 +59,25 @@ describe("the start", () => {
 
 describe("who may sit", () => {
   it("nobody before the DM opens the table", () => {
-    expect(cannotSit(CLOSED, 0, false)).toMatch(/Dungeon Master/)
+    expect(cannotSit(CLOSED, 0, false, true)).toMatch(/Dungeon Master/)
   })
   it("nobody new once the session is live (another session is needed)", () => {
-    expect(cannotSit(live, 2, false)).toMatch(/next one/)
+    expect(cannotSit(live, 2, false, true)).toMatch(/next one/)
   })
   it("at most five", () => {
-    expect(cannotSit(lobby(), MAX_SEATS - 1, false)).toBeNull()
-    expect(cannotSit(lobby(), MAX_SEATS, false)).toMatch(/taken/)
+    expect(cannotSit(lobby(), MAX_SEATS - 1, false, true)).toBeNull()
+    expect(cannotSit(lobby(), MAX_SEATS, false, true)).toMatch(/taken/)
   })
   it("a hero already in their seat is never turned away", () => {
-    expect(cannotSit(live, MAX_SEATS, true)).toBeNull()
+    expect(cannotSit(live, MAX_SEATS, true, false)).toBeNull()
+  })
+  it("nobody sits until the DM has opened a seat to them (Sam, 2026-10-25)", () => {
+    expect(cannotSit(lobby(), 0, false, false)).toBe(NOT_INVITED)
+    expect(cannotSit(lobby(), 0, false, true)).toBeNull()
+  })
+  it("an invitation does not beat a full table or a closed one", () => {
+    expect(cannotSit(lobby(), MAX_SEATS, false, true)).toMatch(/taken/)
+    expect(cannotSit(CLOSED, 0, false, true)).toMatch(/not set/)
   })
   it("hands out the lowest free chair", () => {
     expect(freeSeatNumber([])).toBe(1)

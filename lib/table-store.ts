@@ -15,6 +15,7 @@ import {
 
 const CAMPAIGN = "ashes-of-prometheus"
 const TABLE_KEY = "table"
+const INVITE_PREFIX = "invited:"
 
 const HERO_SPRITES = Object.fromEntries(Object.entries(heroSprites as Record<string, string>).filter(([k]) => k !== "_"))
 
@@ -51,6 +52,33 @@ export async function clearSeats(db: SupabaseClient): Promise<void> {
   if (error) throw new Error(`seats not cleared: ${error.message}`)
 }
 
+// An invitation is the DM opening a seat to one player (Sam, 2026-10-25). One world flag per hero, no migration;
+// `End` clears them all so the next session starts with every seat shut.
+export const inviteFlagKey = (characterId: string) => `${INVITE_PREFIX}${characterId}`
+
+export async function readInvitedIds(db: SupabaseClient): Promise<Set<string>> {
+  const { data } = await db.from("world_flags").select("key").eq("campaign_id", CAMPAIGN).like("key", `${INVITE_PREFIX}%`)
+  return new Set((data ?? []).map((r) => String(r.key).slice(INVITE_PREFIX.length)))
+}
+
+export async function writeInvite(db: SupabaseClient, c: { id: string; name: string }): Promise<void> {
+  const { error } = await db.from("world_flags").upsert(
+    { campaign_id: CAMPAIGN, key: inviteFlagKey(c.id), value: { id: c.id, name: c.name, at: new Date().toISOString() }, set_by: "dm", note: `The DM opened a seat for ${c.name}` },
+    { onConflict: "campaign_id,key" },
+  )
+  if (error) throw new Error(`invite not written: ${error.message}`)
+}
+
+export async function removeInvite(db: SupabaseClient, characterId: string): Promise<void> {
+  const { error } = await db.from("world_flags").delete().eq("campaign_id", CAMPAIGN).eq("key", inviteFlagKey(characterId))
+  if (error) throw new Error(`invite not removed: ${error.message}`)
+}
+
+export async function clearInvites(db: SupabaseClient): Promise<void> {
+  const { error } = await db.from("world_flags").delete().eq("campaign_id", CAMPAIGN).like("key", `${INVITE_PREFIX}%`)
+  if (error) throw new Error(`invites not cleared: ${error.message}`)
+}
+
 export type SeatView = {
   id: string
   name: string
@@ -66,6 +94,8 @@ export type SeatView = {
   /** The cartoon player this hero chose to sit as (0..6), if they chose. */
   figure: number | null
   cls: string | null
+  /** The DM stepped this player out of the live session; the seat is held for them. */
+  away: boolean
 }
 
 export type TableView = {
@@ -103,6 +133,7 @@ export async function readTableView(db: SupabaseClient): Promise<TableView> {
       loop: row?.idle_url || null,
       figure: typeof s.figure === "number" ? s.figure : null,
       cls: row?.class ?? null,
+      away: !!s.away,
     }
   }).sort((a, b) => (a.seat ?? 99) - (b.seat ?? 99))
   return { state, dmLight: dmLight(state), seats }
