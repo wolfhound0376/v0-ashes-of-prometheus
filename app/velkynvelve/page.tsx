@@ -21,12 +21,14 @@
 //
 // The old top-down Phaser map (components/velkynvelve/*) is no longer routed. It is left in place.
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { StageLink } from "@/components/stage/stage-provider"
 import { ArrowLeft, Crown } from "lucide-react"
 import { dmHeaders } from "@/lib/dm-key"
 import { EndGameButton } from "@/components/end-game-button"
+import { DiceProvider } from "@/components/dice/dice-provider"
+import { WalkRollBridge } from "@/components/walk/walk-roll-bridge"
 
 const RECHECK_MS = 6000
 
@@ -35,6 +37,7 @@ type Gate = "checking" | "dm" | "player"
 export default function VelkynvelvePage() {
   const router = useRouter()
   const [gate, setGate] = useState<Gate>("checking")
+  const frameRef = useRef<HTMLIFrameElement>(null)
 
   useEffect(() => {
     let live = true
@@ -67,7 +70,12 @@ export default function VelkynvelvePage() {
   }
 
   const dm = gate === "dm"
+  // DICE (Sam, 2026-10-25: "Use the dashboard UI dice roll animation and math"). A check the map asks for — picking
+  // the pen gate's lock, forcing it — is rolled here, on the dashboard's one dice engine with the dashboard's modifier,
+  // logged to the table and sent to Malachar. The map never rolls these itself and never asks "what did you get".
   return (
+    <DiceProvider>
+    <WalkRollBridge frameRef={frameRef} />
     <main className="flex h-dvh flex-col bg-[#07060b] text-stone-200">
       <header className="flex items-center gap-3 border-b border-amber-900/40 px-4 py-2">
         {dm ? (
@@ -89,6 +97,7 @@ export default function VelkynvelvePage() {
       </header>
       <div className={dm ? "relative min-h-0 flex-1 p-[14px]" : "relative min-h-0 flex-1"}>
         <iframe
+          ref={frameRef}
           src="/velkynvelve-walk/index.html"
           title="Velkynvelve"
           className="h-full w-full border-0"
@@ -97,6 +106,7 @@ export default function VelkynvelvePage() {
         {dm && <DmFrame />}
       </div>
     </main>
+    </DiceProvider>
   )
 }
 

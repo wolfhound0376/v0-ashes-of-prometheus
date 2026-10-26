@@ -362,7 +362,7 @@
             890
           ]
         ],
-        "locked": "Heavy iron bars bolted into the stone. Locked. Picking or forcing it is a DC 20 check (OotA p.18).",
+        "locked": "Heavy iron bars bolted into the stone. Locked.",
         "open": "The gate stands open. Beyond it, the balcony: a rope bridge to the guard tower, and stairs down the cliff.",
         "routes": {
           "10": "Out across the rope bridge to the Guard Tower",
