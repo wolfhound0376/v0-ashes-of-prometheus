@@ -38,7 +38,10 @@ NODES = {
    obstacles=[dict(cx=890,cy=670,rx=120,ry=70),dict(cx=1350,cy=660,rx=120,ry=70),dict(cx=850,cy=890,rx=120,ry=70),dict(cx=1350,cy=890,rx=120,ry=70),dict(cx=1500,cy=470,rx=90,ry=50)],
    zones=[dict(rect=[942, 1214, 1194, 1417], to=[2], label="Rope walkway west"),
           dict(rect=[62, 786, 354, 941], to=[7], label="Walkway east"),
-          dict(rect=[122, 208, 294, 393], to=[8], label="Passage to the lift")]),
+          dict(rect=[122, 208, 294, 393], to=[8], label="Passage to the lift"),
+          # Hard Labor module (Sam, 2026-10-26): the kitchen is its own painted plate ("3k"), reached past the pantry
+          # shelves at the back of the hall. PROPOSED: where the door sits is Claude's pick, on the painted floor by the counter.
+          dict(rect=[1380, 480, 1560, 560], to=["3k"], label="PROPOSED: behind the serving counter, into the kitchen", proposed=True)]),
  4: dict(slug="node-04-elite-barracks", name="Elite Barracks", scale=0.85,
    floors=[dict(ellipse=[670,610,370,165]),dict(ellipse=[1730,610,370,165]),dict(rect=[1030,570,1370,660])],
    obstacles=[dict(cx=680,cy=560,rx=55,ry=40),dict(cx=1730,cy=560,rx=55,ry=40)],
@@ -54,7 +57,11 @@ NODES = {
           # River), which has its own ways out; it is not a way off the map. `kind="leave"` stays only because the page keys the
           # basket's climb-out button on it (template.html openLift); with a plate in `to`, goBeyond walks there.
           dict(rect=[1436, 819, 1526, 959], to=[14], kind="leave", label="The lift basket: DC 18 Strength to crank, 4 rounds down to the cavern floor by the pool (OotA p.17–18)"),
-          dict(rect=[914, 1255, 1099, 1339], to=[2], label="Down the Lift to the Wastes")]),
+          dict(rect=[914, 1255, 1099, 1339], to=[2], label="Down the Lift to the Wastes"),
+          # Hard Labor module (Sam, 2026-10-26), Lift Trouble (OotA Expanded p.45): goods fell off the lift and snagged on the
+          # cliff below; the prisoners are sent down on two tattered 25-ft ropes, three rappels. PROPOSED: the spot on the rail is
+          # Claude's pick. The rappel checks are not built yet (labor module PR 3); for now this simply walks.
+          dict(rect=[1100, 1100, 1300, 1180], to=["5c"], label="PROPOSED: over the rail on a rope, down the cliff below the lift", proposed=True)]),
  6: dict(slug="node-06-shrine", name="Shrine to Lolth", scale=1.0,
    floors=[dict(ellipse=[1200,750,620,250]),dict(rect=[1010,980,1390,1339]),dict(rect=[400,700,620,775]),dict(rect=[1800,700,1990,785])],
    obstacles=[dict(cx=1200,cy=665,rx=200,ry=95),dict(cx=780,cy=665,rx=60,ry=35),dict(cx=1610,cy=665,rx=60,ry=35)],
@@ -116,6 +123,26 @@ NODES = {
    floors=[dict(poly=P((804,814),(1220,792),(1722,792),(2239,864),(2400,993),(2400,1339),(0,1339),(0,1209),(775,1209),(775,907),(804,878)))],
    obstacles=[],
    zones=[dict(rect=[158, 922, 718, 1180], to=[10], label="PROPOSED: the trapdoor — ladder down to the guard room", climb=dict(foot=[804, 1079], ladder=[431, 1022], dir="down"))]),
+ "5c": dict(slug="node-05c-lift-cliffside", name="The cliff below the lift", scale=2.2, depth=[0.8, 1.2], img="node-05c-lift-cliffside.jpg",
+   # Hard Labor module plate A (Sam painted it in OpenAI from Claude's prompt, 2026-10-26; doc claude/Hard_Labor_Module_2026-10-26.md).
+   # Lift Trouble, OotA Expanded p.45 (community supplement, not WotC): three ledges down a 45-degree cliff, goods snagged
+   # between them, a web net with a giant spider 100 ft below for anyone who falls. Cut 1672x941 -> 2400x1339 (8 px trimmed,
+   # Lanczos; not AI-upscaled). Floors traced by Claude by eye: the three ledges and the two scree ramps between them.
+   # scale 2.2 is by eye from the burlap sacks (~40 px/ft mid-cliff), NOT checked by compositing a hero -- adjust after a look.
+   floors=[dict(poly=P((201,303),(373,231),(689,202),(1249,210),(1263,267),(1091,296),(919,281),(804,339),(474,346),(230,339))),
+           dict(poly=P((804,281),(919,267),(1091,353),(1292,454),(1177,489),(1005,454),(861,353))),
+           dict(poly=P((919,468),(1091,446),(1292,454),(1579,468),(1651,511),(1622,583),(1292,597),(1005,583),(876,540))),
+           dict(poly=P((1292,576),(1507,568),(1593,669),(1708,798),(1507,820),(1378,712))),
+           dict(poly=P((1421,812),(1794,791),(2096,805),(2153,856),(2124,927),(1794,949),(1507,942),(1414,884)))],
+   obstacles=[],
+   zones=[dict(rect=[416, 0, 847, 167], to=[5], label="Climb back up the rope to the lift", climb=dict(foot=[700, 260], ladder=[630, 150], dir="up"))]),
+ "3k": dict(slug="node-03k-kitchen", name="Main Hall kitchen", scale=2.4, depth=[0.8, 1.4], img="node-03k-kitchen.jpg",
+   # Hard Labor module plate B (Sam, 2026-10-26). OotA p.12 lists food prep and service, and washing dishes, among the
+   # prisoners' chores; plate 3 has a pantry but no stove, so the kitchen is its own close-up. Cut as plate A.
+   # A steep close-up like 10b: the stove at the back ~67 px/ft, the near chairs ~135 px/ft. scale/depth by eye, NOT composited.
+   floors=[dict(poly=P((632,475),(804,461),(1234,533),(1794,626),(1816,662),(2211,777),(2400,856),(2400,1229),(2297,1339),(330,1339),(172,1186),(57,999),(0,927),(0,669),(100,568)))],
+   obstacles=[dict(cx=359, cy=741, rx=344, ry=237)],   # the card table and its four chairs
+   zones=[dict(rect=[890, 1257, 1522, 1339], to=[3], label="Back out into the main hall")]),
  11: dict(slug="node-11-slave-pen", name="Slave Pen", scale=1.25,
    floors=[dict(poly=P((960,740),(1120,700),(1400,560),(1700,500),(2000,480),(2200,560),(2300,700),(2360,940),(2300,1200),(2200,1339),(900,1339),(760,1200),(620,1000),(640,900),(800,860),(920,780)))],
    obstacles=[],  # table and stool removed from the plate (take 35)
@@ -236,7 +263,9 @@ LAYOUT = {
   "lair": [460, 1460],
   "grove": [839, 1458],
   "10b": [1221, 339],
-  "10c": [1217, 57]
+  "10c": [1217, 57],
+  "5c": [460, 340],
+  "3k": [460, 1180]
 }
 
 # ── the painted floor ───────────────────────────────────────────────────────────────────────────────────────────────

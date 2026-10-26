@@ -1964,5 +1964,224 @@
       "label": "",
       "_src": "Nobody comes this way."
     }
+  },
+  "5c": {
+    "objects": [
+      {
+        "name": "Snagged sack near the lift",
+        "kind": "interact"
+      },
+      {
+        "name": "Split crate on the upper scree",
+        "kind": "interact"
+      },
+      {
+        "name": "Snagged sack on the lower scree",
+        "kind": "interact"
+      },
+      {
+        "name": "Frayed ropes pegged into the rock",
+        "kind": "decor"
+      },
+      {
+        "name": "Underside of the lift platform",
+        "kind": "interact"
+      },
+      {
+        "name": "The web net far below (a fall lands here; the giant spider waits, Expanded p.45)",
+        "kind": "decor"
+      },
+      {
+        "name": "Waterfall past the cliff",
+        "kind": "decor"
+      }
+    ],
+    "loot": [
+      {
+        "id": "cliff-top-sack",
+        "name": "Snagged sack",
+        "_src": "OotA Expanded p.45 (community supplement, not WotC), Lift Trouble: 'a pouch of vials of sleep poison, a container of fresh fruit, a weapon's belt (containing small throwing darts)'. Which bundle snagged where is Claude's placement on Sam's plate (2026-10-26). What is in it (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS.",
+        "poly": [
+          [
+            883,
+            131
+          ],
+          [
+            990,
+            131
+          ],
+          [
+            990,
+            195
+          ],
+          [
+            883,
+            195
+          ]
+        ],
+        "text": "A burlap sack caught on a root, just under the lift. It smells of fruit."
+      },
+      {
+        "id": "cliff-crate",
+        "name": "Split crate",
+        "_src": "OotA Expanded p.45 (community supplement, not WotC), Lift Trouble: 'a pouch of vials of sleep poison, a container of fresh fruit, a weapon's belt (containing small throwing darts)'. Which bundle snagged where is Claude's placement on Sam's plate (2026-10-26). What is in it (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS.",
+        "poly": [
+          [
+            876,
+            382
+          ],
+          [
+            1069,
+            382
+          ],
+          [
+            1069,
+            518
+          ],
+          [
+            876,
+            518
+          ]
+        ],
+        "text": "A crate split open on the rocks. A weapon belt is tangled in the slats."
+      },
+      {
+        "id": "cliff-low-sack",
+        "name": "Snagged sack, low on the cliff",
+        "_src": "OotA Expanded p.45 (community supplement, not WotC), Lift Trouble: 'a pouch of vials of sleep poison, a container of fresh fruit, a weapon's belt (containing small throwing darts)'. Which bundle snagged where is Claude's placement on Sam's plate (2026-10-26). What is in it (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS.",
+        "poly": [
+          [
+            1342,
+            719
+          ],
+          [
+            1457,
+            719
+          ],
+          [
+            1457,
+            863
+          ],
+          [
+            1342,
+            863
+          ]
+        ],
+        "text": "A sack wedged low on the scree. Something inside clinks like little glass vials."
+      }
+    ]
+  },
+  "3k": {
+    "objects": [
+      {
+        "name": "Iron stove with an open firebox",
+        "kind": "interact"
+      },
+      {
+        "name": "Worktable: cutting board, knives, mushrooms",
+        "kind": "interact"
+      },
+      {
+        "name": "Wash trough full of dirty dishes",
+        "kind": "interact"
+      },
+      {
+        "name": "Shelf of clay jars and spices",
+        "kind": "decor"
+      },
+      {
+        "name": "Card table: a game left mid-hand, wine cups",
+        "kind": "interact"
+      },
+      {
+        "name": "Faerie-fire lantern",
+        "kind": "decor"
+      }
+    ],
+    "loot": [
+      {
+        "id": "kitchen-knives",
+        "name": "Kitchen knives",
+        "_src": "Painted on Sam's kitchen plate (2026-10-26); the book (OotA p.12) only lists food prep, service and dishes as chores. What is on it (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS.",
+        "poly": [
+          [
+            1557,
+            382
+          ],
+          [
+            1852,
+            382
+          ],
+          [
+            1852,
+            446
+          ],
+          [
+            1557,
+            446
+          ]
+        ],
+        "text": "Knives and a cleaver lie loose by the cutting board."
+      },
+      {
+        "id": "kitchen-mushrooms",
+        "name": "Mushrooms on the worktable",
+        "_src": "Painted on Sam's kitchen plate (2026-10-26); the book (OotA p.12) only lists food prep, service and dishes as chores. What is on it (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS.",
+        "poly": [
+          [
+            1450,
+            317
+          ],
+          [
+            1737,
+            317
+          ],
+          [
+            1737,
+            399
+          ],
+          [
+            1450,
+            399
+          ]
+        ],
+        "text": "Pale mushrooms, half chopped."
+      },
+      {
+        "id": "kitchen-card-table",
+        "name": "The card table",
+        "_src": "Painted on Sam's kitchen plate (2026-10-26); the book (OotA p.12) only lists food prep, service and dishes as chores. What is on it (slugs and counts) is in lib/walk-loot.ts BOOK_CONTAINERS.",
+        "poly": [
+          [
+            122,
+            518
+          ],
+          [
+            567,
+            518
+          ],
+          [
+            567,
+            669
+          ],
+          [
+            122,
+            669
+          ]
+        ],
+        "text": "Cards dealt face down, cups still half full. Someone was winning."
+      }
+    ],
+    "rest": {
+      "chance": 0.3333333333333333,
+      "foes": [
+        "drow-guard-male",
+        "drow-guard-female"
+      ],
+      "dice": "1d2",
+      "who": "a drow patrol",
+      "label": "A drow patrol comes through and finds you resting.",
+      "_src": "HOMEBREW (Sam's rule 2026-10-24, Claude's odds): inside the outpost the garrison is twelve drow and five elite warriors (OotA p.13) — one in three an hour that a pair walk in."
+    }
   }
 }
