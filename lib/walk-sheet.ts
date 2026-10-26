@@ -72,7 +72,7 @@ function bonusOf(v: unknown): number | null {
 }
 
 /** The skill's bonus from the row's proficiency map ({"Stealth": "proficient"}), keys matched case-blind. */
-function skill(row: Row, label: string, mod: number, prof: number): number {
+export function skill(row: Row, label: string, mod: number, prof: number): number {
   const profs = (row.sheet_skill_proficiencies && typeof row.sheet_skill_proficiencies === "object" ? row.sheet_skill_proficiencies : {}) as Record<string, unknown>
   // the rows spell keys three ways: "Stealth", "stealth", "sleight_of_hand"
   const flat = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "")

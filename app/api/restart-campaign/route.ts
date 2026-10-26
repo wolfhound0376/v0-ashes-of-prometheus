@@ -813,6 +813,21 @@ export async function POST(req: Request) {
     // Named, not just counted: this is the one step that can quietly undo a
     // condition the DM meant to be permanent, so the report says whose.
     report.npcConditionsClearedFrom = dirty.map((c) => c.name)
+
+    // NPC wounds heal too. The Drow Surgeon (app/api/drow-surgeon) puts the prisoner its bolt kills at 0 on their
+    // characters row; without this a restart brought them back on the stage roster and npc_encounters but left the
+    // row at 0, so the ally panel showed them dead in the fresh run.
+    const { data: hurtRows, error: hurtErr } = await admin
+      .from("characters")
+      .select("id, name, hp_current, hp_max")
+      .eq("is_player", false)
+    note("npc hp read", hurtErr)
+    const hurt = (hurtRows || []).filter((c) => typeof c.hp_max === "number" && (c.hp_current ?? c.hp_max) < c.hp_max)
+    for (const c of hurt) {
+      const { error } = await admin.from("characters").update({ hp_current: c.hp_max }).eq("id", c.id)
+      if (error) note(`npc hp ${c.id}`, error)
+    }
+    report.npcHpRestored = hurt.map((c) => c.name)
   }
 
   console.log("[restart] complete:", JSON.stringify(report))
