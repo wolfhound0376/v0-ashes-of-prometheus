@@ -4,7 +4,7 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { applyStageEvents, readStage, slugOf } from "@/lib/stage-roster"
 import { skill } from "@/lib/walk-sheet"
 import {
-  SURGEON_VICTIMS, surgeonVictim, surgeonD, surgeonSpeaksElvish, surgeonVolley, surgeonHeal, surgeonPersuade, surgeonBoon,
+  SURGEON_TOOTH, SURGEON_VICTIMS, surgeonVictim, surgeonD, surgeonSpeaksElvish, surgeonVolley, surgeonHeal, surgeonPersuade, surgeonBoon,
 } from "@/lib/drow-surgeon.mjs"
 
 // /api/drow-surgeon — The Drow Surgeon (Sam's homebrew, 2026-10-25; doc claude/The_Drow_Surgeon_2026-10-25.md).
@@ -26,6 +26,12 @@ import {
 //   POST {action:"recover"}     after a later drop nobody comes: stable at 0, they regain 1 HP after 1d4 hours
 //                               (SRD 5.1, Combat: Stabilizing a Creature) — the time is reported to Malachar, not advanced here
 //
+// LOLTH'S TOOTH (the dagger Liana can hand over; Sam's rulings 2026-10-25), its own record under "lolths-tooth":
+//   POST {action:"tooth-dose"}     a dose of venom spent on a hit (3 in the hilt)
+//   POST {action:"tooth-refill"}   a vial of drow poison from the wielder's pack fills it again (the vial is spent)
+//   POST {action:"tooth-drawn"}    taken in hand: Ilvara feels it, unless the curse is lifted — a line for Malachar
+//   POST {action:"tooth-uncurse"}  DM only: a Remove Curse has ended the beacon (the spider-sense stays)
+//
 // Who may call it: the DM, or any browser holding a seat's claim (claimId + claimToken) — the same gate as /api/walk-cast.
 // The state lives in world_flags under "drow-surgeon", so a campaign restart clears it with every other flag.
 
@@ -33,6 +39,19 @@ export const dynamic = "force-dynamic"
 
 const CAMPAIGN = "ashes-of-prometheus"
 const FLAG = "drow-surgeon"
+const TOOTH_FLAG = "lolths-tooth"
+type Tooth = { doses: number; uncursed: boolean; drawn?: { by: string; area: string | null; at: string } | null }
+async function readTooth(db: Db): Promise<Tooth> {
+  const { data } = await db.from("world_flags").select("value").eq("campaign_id", CAMPAIGN).eq("key", TOOTH_FLAG).maybeSingle()
+  const v = data?.value as Partial<Tooth> | null
+  return { doses: typeof v?.doses === "number" ? v.doses : SURGEON_TOOTH.doses, uncursed: !!v?.uncursed, drawn: v?.drawn ?? null }
+}
+async function writeTooth(db: Db, t: Tooth, note: string) {
+  await db.from("world_flags").upsert(
+    { campaign_id: CAMPAIGN, key: TOOTH_FLAG, value: t, set_by: "map", note: `Lolth's Tooth: ${note}`.slice(0, 240) },
+    { onConflict: "campaign_id,key" },
+  )
+}
 
 type Stage = "shooting" | "stepped" | "down" | "tended" | "settled"
 type State = {
@@ -75,12 +94,13 @@ const withoutCond = (list: string[], c: string) => list.filter((x) => x.toLowerC
 export async function GET() {
   try {
     const db = createAdminClient()
-    const [state, players] = await Promise.all([
+    const [state, players, tooth] = await Promise.all([
       readState(db),
       db.from("characters").select("id, languages").eq("is_player", true),
+      readTooth(db),
     ])
     const elvish = (players.data ?? []).filter((p) => surgeonSpeaksElvish(p.languages)).map((p) => p.id)
-    return NextResponse.json({ state, elvish })
+    return NextResponse.json({ state, elvish, tooth: { doses: tooth.doses, uncursed: tooth.uncursed } })
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })
   }
@@ -97,6 +117,49 @@ export async function POST(req: NextRequest) {
     const claimToken = typeof body.claimToken === "string" ? body.claimToken : ""
     const { data: secret } = claimId ? await db.from("character_secrets").select("claim_token").eq("character_id", claimId).maybeSingle() : { data: null }
     if (!secret || !claimToken || secret.claim_token !== claimToken) return NextResponse.json({ error: "Only a seated player or the DM can do that." }, { status: 403 })
+  }
+
+  // ---------- Lolth's Tooth ----------
+  if (action.startsWith("tooth-")) {
+    const tooth = await readTooth(db)
+    const who = typeof body.characterId === "string" ? body.characterId : ""
+    const { data: ch } = who ? await db.from("characters").select("id, name").eq("id", who).maybeSingle() : { data: null }
+    if (action === "tooth-dose") {
+      if (tooth.doses <= 0) return NextResponse.json({ ok: false, tooth }, { status: 409 })
+      tooth.doses -= 1
+      await writeTooth(db, tooth, `a dose spent (${tooth.doses} left)`)
+      return NextResponse.json({ ok: true, tooth })
+    }
+    if (action === "tooth-refill") {
+      if (!ch) return NextResponse.json({ error: "who is refilling it?" }, { status: 400 })
+      if (tooth.doses >= SURGEON_TOOTH.doses) return NextResponse.json({ ok: true, tooth, full: true })
+      // a vial of the catalog's drow poison from their own pack, never one confiscated into the stash
+      const { data: vial } = await db.from("inventory_items").select("id, quantity, items!inner(slug)")
+        .eq("character_id", ch.id).eq("items.slug", "drow-poison").is("confiscated_from", null).limit(1).maybeSingle()
+      if (!vial) return NextResponse.json({ error: `${ch.name} has no drow poison to fill it with.` }, { status: 409 })
+      const q = Number(vial.quantity) || 1
+      const { error } = q > 1 ? await db.from("inventory_items").update({ quantity: q - 1 }).eq("id", vial.id) : await db.from("inventory_items").delete().eq("id", vial.id)
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      tooth.doses = SURGEON_TOOTH.doses
+      await writeTooth(db, tooth, `refilled by ${ch.name}`)
+      await say(db, `${ch.name} fills the reservoir in the drow ritual dagger's hilt from a vial of drow poison (${SURGEON_TOOTH.doses} doses).`)
+      return NextResponse.json({ ok: true, tooth })
+    }
+    if (action === "tooth-drawn") {
+      const area = typeof body.area === "string" ? body.area.slice(0, 80) : null
+      tooth.drawn = { by: ch?.name ?? "someone", area, at: new Date().toISOString() }
+      await writeTooth(db, tooth, `drawn by ${tooth.drawn.by}`)
+      if (!tooth.uncursed) await say(db, `CURSE — Lolth's Tooth has been drawn by ${tooth.drawn.by}${area ? ` in ${area}` : ""}. Ilvara Mizzrym, the priestess who consecrated it, feels it and knows roughly where it is. What she does about it is Malachar's call.`)
+      return NextResponse.json({ ok: true, tooth, beacon: !tooth.uncursed })
+    }
+    if (action === "tooth-uncurse") {
+      if (!isDm(req)) return NextResponse.json({ error: "DM only" }, { status: 403 })
+      tooth.uncursed = true
+      await writeTooth(db, tooth, "curse lifted")
+      await say(db, `A Remove Curse has broken the beacon in Lolth's Tooth: Ilvara can no longer feel it drawn. It still glows near spiders.`)
+      return NextResponse.json({ ok: true, tooth })
+    }
+    return NextResponse.json({ error: "unknown action" }, { status: 400 })
   }
 
   const state = await readState(db)
