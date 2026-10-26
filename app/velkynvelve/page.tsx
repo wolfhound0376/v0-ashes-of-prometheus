@@ -51,7 +51,7 @@ export default function VelkynvelvePage() {
         // tools, so the frame and the tools can never disagree (Sam, 2026-10-25: Lynkes got the frame, the
         // DM's own map lost its tools).
         if (j.isDm && role === "dm") { setGate("dm"); return }
-        if (j.state?.status === "live" && j.mine) { setGate("player"); return }
+        if (j.state?.status === "live" && j.mine && !j.mine.away) { setGate("player"); return }
         router.replace("/table")
       } catch {
         if (live && first) setGate("player")

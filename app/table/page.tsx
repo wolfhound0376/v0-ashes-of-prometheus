@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { DoorOpen, LogOut, Play, RotateCcw, Square, UserMinus, Volume2, VolumeX } from "lucide-react"
+import { DoorOpen, LogOut, Play, RotateCcw, Square, UserMinus, UserPlus, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { dmHeaders } from "@/lib/dm-key"
 import { assignFigures, type Light, type TableState } from "@/lib/table"
@@ -66,7 +66,8 @@ const ROOM_MUSIC = "/audio/camp-embers.mp3"
 const ACT_TITLE = { act: "Act I", name: "Awakening into the Nightmare" }
 const ACT_CARD_MS = 4200
 
-type View = { state: TableState; dmLight: Light | null; seats: SeatView[]; mine: SeatView | null; isDm?: boolean; refused?: string; note?: string; error?: string }
+type RosterEntry = { id: string; name: string; cls: string; invited: boolean; seated: boolean; companion: boolean; away: boolean }
+type View = { state: TableState; dmLight: Light | null; seats: SeatView[]; mine: SeatView | null; isDm?: boolean; invited?: boolean; roster?: RosterEntry[]; refused?: string; note?: string; error?: string }
 
 // The five chairs, by seat number: where the chair's feet stand (percent of the painting) and how tall the
 // figure is. The players were drawn facing up and to the right; the right-hand chairs are mirrored so every
@@ -138,9 +139,13 @@ export default function TablePage() {
     } catch { setMsg("Could not reach the table."); return null } finally { setBusy(false) }
   }, [me, role])
 
-  // A player takes their seat as soon as the DM has the table open.
+  // A player takes their seat once the DM has the table open AND has opened a seat to them (Sam, 2026-10-25:
+  // "NO player can sit at the table without me FIRST opening up the seat to them"). If he takes the invitation
+  // back, the latch resets so a fresh invitation sits them down again.
   useEffect(() => {
-    if (role !== "player" || !view || sat.current || leaving.current) return
+    if (role !== "player" || !view || leaving.current) return
+    if (!view.invited) { sat.current = false; return }
+    if (sat.current) return
     if (view.state.status === "lobby" && !view.mine) { sat.current = true; send("sit") }
   }, [role, view, send])
 
@@ -149,7 +154,8 @@ export default function TablePage() {
   const [dark, setDark] = useState(false)
   useEffect(() => {
     if (!view || view.state.status !== "live" || dark) return
-    if (role !== "dm" && !(role === "player" && view.mine)) return
+    // A player the DM has stepped out waits here; he lets them back in and they go in with the rest.
+    if (role !== "dm" && !(role === "player" && view.mine && !view.mine.away)) return
     setDark(true)
     try { music.current?.pause() } catch { /* nothing playing */ }
     window.setTimeout(() => {
@@ -218,13 +224,16 @@ export default function TablePage() {
       </header>
 
       {/* the room */}
-      <Room view={view} isDm={role === "dm"} busy={busy} dark={dark} onRemove={(id) => send("remove", { characterId: id })} />
+      <Room view={view} isDm={role === "dm"} busy={busy} dark={dark}
+        locked={role !== "dm" && view != null && view.state.status === "lobby" && !view.mine && !view.invited}
+        onRemove={(id) => send("remove", { characterId: id })} onExcuse={(id) => send("excuse", { characterId: id })} onReadmit={(id) => send("readmit", { characterId: id })} />
 
       {/* the box under the table: what this browser can do now */}
       <section className="relative z-10 mx-auto mt-6 max-w-xl px-4 pb-16 text-center">
         {msg && <p role="alert" className="mb-3 text-sm text-[#d9bd7e]">{msg}</p>}
         {!view && <p className="text-[11px] uppercase tracking-[0.4em] text-stone-600">Lighting the candles…</p>}
         {view && role === "dm" && <DmControls view={view} busy={busy} send={send} onRehearse={() => router.push(mapHref(true))} />}
+        {view && role === "dm" && <SeatInvites view={view} busy={busy} send={send} />}
         {view && role === "dm" && <RestartCampaign busy={busy} onDone={load} />}
         {view && role === "player" && <PlayerBox view={view} busy={busy} send={send} />}
         {view && role === "player" && view.state.status === "lobby" && view.mine && <FigurePicker view={view} busy={busy} send={send} />}
@@ -240,11 +249,12 @@ export default function TablePage() {
 
 // ---------------------------------------------------------------------------------------------
 
-function Room({ view, isDm, busy, dark, onRemove }: { view: View | null; isDm: boolean; busy: boolean; dark: boolean; onRemove: (id: string) => void }) {
+function Room({ view, isDm, busy, dark, locked, onRemove, onExcuse, onReadmit }: { view: View | null; isDm: boolean; busy: boolean; dark: boolean; locked: boolean; onRemove: (id: string) => void; onExcuse: (id: string) => void; onReadmit: (id: string) => void }) {
   const seats = view?.seats ?? []
   const bySeat = new Map(seats.map((s, i) => [s.seat ?? i + 1, s]))
   const figures = assignFigures(seats)
-  const closed = (view?.state.status ?? "closed") === "closed"
+  const live = view?.state.status === "live"
+  const closed = (view?.state.status ?? "closed") === "closed" || locked
   const light = view?.dmLight ?? null
   const video = useAlphaVideo()
   return (
@@ -272,7 +282,7 @@ function Room({ view, isDm, busy, dark, onRemove }: { view: View | null; isDm: b
           return (
             <div key={i} className="absolute flex -translate-x-1/2 -translate-y-full justify-center" style={{ left: `${slot.x}%`, top: `${slot.y}%`, height: `${slot.h}%`, width: `${slot.h * 0.9}%`, zIndex: Math.round(slot.y) }}>
               <Art key={`${s?.id ?? "empty"}:${fig}`} still={art} loop={fig == null ? null : PLAYER_LOOP[fig]} video={video} alt={s ? `${s.name}'s player` : "An empty chair"}
-                className={cn("absolute bottom-0 h-full w-auto max-w-none", s ? (video ? "animate-[aop-figure-sit_.7s_cubic-bezier(.3,1.5,.6,1)_both]" : "animate-[aop-figure-sit_.7s_cubic-bezier(.3,1.5,.6,1)_both,aop-figure-idle_3.6s_ease-in-out_.8s_infinite]") : "")}
+                className={cn("absolute bottom-0 h-full w-auto max-w-none", s?.away && "opacity-35 saturate-0", s ? (video ? "animate-[aop-figure-sit_.7s_cubic-bezier(.3,1.5,.6,1)_both]" : "animate-[aop-figure-sit_.7s_cubic-bezier(.3,1.5,.6,1)_both,aop-figure-idle_3.6s_ease-in-out_.8s_infinite]") : "")}
                 style={{ transform: slot.flip ? "scaleX(-1)" : undefined, ...fade }} />
             </div>
           )
@@ -290,9 +300,15 @@ function Room({ view, isDm, busy, dark, onRemove }: { view: View | null; isDm: b
               </div>
               {s.light === "red" && <span className="whitespace-nowrap rounded-sm bg-black/80 px-1.5 text-[clamp(9px,.95vw,12px)] text-red-300">needs: {s.missing.join(", ")}</span>}
               {s.dm && <span className="rounded-sm bg-black/80 px-1.5 text-[10px] uppercase tracking-[0.18em] text-stone-400">DM&apos;s companion</span>}
-              {isDm && (
+              {s.away && <span className="rounded-sm bg-black/80 px-1.5 text-[10px] uppercase tracking-[0.18em] text-amber-300">stepped out</span>}
+              {isDm && !live && (
                 <button type="button" disabled={busy} onClick={() => onRemove(s.id)} className="flex items-center gap-1 rounded-sm bg-black/70 px-1.5 text-[10px] uppercase tracking-[0.2em] text-stone-400 hover:text-red-300 disabled:opacity-40">
                   <UserMinus className="h-3 w-3" /> remove
+                </button>
+              )}
+              {isDm && live && !s.dm && (
+                <button type="button" disabled={busy} onClick={() => (s.away ? onReadmit(s.id) : onExcuse(s.id))} className="flex items-center gap-1 rounded-sm bg-black/70 px-1.5 text-[10px] uppercase tracking-[0.2em] text-stone-400 hover:text-amber-200 disabled:opacity-40">
+                  {s.away ? <><UserPlus className="h-3 w-3" /> let back in</> : <><UserMinus className="h-3 w-3" /> excuse</>}
                 </button>
               )}
             </div>
@@ -303,6 +319,46 @@ function Room({ view, isDm, busy, dark, onRemove }: { view: View | null; isDm: b
         <div aria-hidden className={cn("pointer-events-none absolute inset-0 z-[200] bg-black transition-opacity duration-[1600ms] ease-in", dark ? "opacity-100" : "opacity-0")} />
       </div>
     </section>
+  )
+}
+
+// Who may sit (Sam, 2026-10-25). Every hero in the game, with the one button that fits where they are: open a
+// seat to them, take it back, or — once the game is live — step them out and let them back in.
+function SeatInvites({ view, busy, send }: { view: View; busy: boolean; send: (a: string, e?: Record<string, unknown>) => Promise<View | null> }) {
+  const roster = view.roster ?? []
+  const status = view.state.status
+  const btn = "flex items-center gap-1.5 rounded-sm border px-3 py-1.5 text-[11px] uppercase tracking-[0.2em] disabled:opacity-40"
+  return (
+    <div className="mt-6 rounded-sm border border-[#3d3428] bg-black/50 text-left">
+      <div className="border-b border-[#2a241e] px-4 py-2 text-[10px] uppercase tracking-[0.35em] text-[#8a6a3a]">Who sits at the table</div>
+      {roster.length === 0 && <p className="px-4 py-3 text-sm text-stone-500">No player characters yet.</p>}
+      <ul className="divide-y divide-[#2a241e]">
+        {roster.map((c) => (
+          <li key={c.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+            <div>
+              <div className="font-serif text-[15px] text-[#e8d9ae]">{c.name}</div>
+              <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">
+                {c.cls || "Adventurer"} · {c.companion ? "your companion" : c.away ? "stepped out" : c.seated ? "seated" : c.invited ? "seat open — waiting for them" : "not invited"}
+              </div>
+            </div>
+            <div>
+              {status !== "live" && !c.seated && !c.invited && (
+                <button type="button" disabled={busy} onClick={() => send("invite", { characterId: c.id })} className={cn(btn, "border-[#3d3428] text-stone-400 hover:border-[#c9a868] hover:text-[#e8c56a]")}><UserPlus className="h-3.5 w-3.5" /> Open a seat</button>
+              )}
+              {status !== "live" && !c.companion && (c.invited || c.seated) && (
+                <button type="button" disabled={busy} onClick={() => send("uninvite", { characterId: c.id })} className={cn(btn, "border-[#3d3428] text-stone-400 hover:border-red-500/60 hover:text-red-200")}><UserMinus className="h-3.5 w-3.5" /> {c.seated ? "Remove" : "Withdraw"}</button>
+              )}
+              {status === "live" && c.seated && !c.companion && (
+                <button type="button" disabled={busy} onClick={() => send(c.away ? "readmit" : "excuse", { characterId: c.id })} className={cn(btn, "border-[#3d3428] text-stone-400 hover:border-amber-300/60 hover:text-amber-200")}>
+                  {c.away ? <><UserPlus className="h-3.5 w-3.5" /> Let back in</> : <><UserMinus className="h-3.5 w-3.5" /> Excuse</>}
+                </button>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+      {status === "closed" && <p className="border-t border-[#2a241e] px-4 py-2 text-[12px] text-stone-600">Open the table, then open a seat to each player. Nobody sits uninvited.</p>}
+    </div>
   )
 }
 
@@ -426,6 +482,24 @@ function PlayerBox({ view, busy, send }: { view: View; busy: boolean; send: (a: 
       <div className="rounded-sm border border-[#3d3428] bg-black/60 p-5">
         <div className="font-serif text-lg text-[#e8d9ae]">The table is not set yet.</div>
         <p className="mt-1 text-sm text-stone-500">Wait here for the Dungeon Master. Your chair is saved the moment he opens it.</p>
+        <div className="mx-auto mt-4 h-1 w-24 animate-pulse rounded-full bg-[#8a6a3a]/60" />
+      </div>
+    )
+  }
+  if (s.status === "live" && mine?.away) {
+    return (
+      <div className="rounded-sm border border-amber-900/60 bg-black/60 p-5">
+        <div className="font-serif text-lg text-amber-200">The Dungeon Master has stepped you out.</div>
+        <p className="mt-1 text-sm text-stone-500">Your chair is held. Wait here — you go back in the moment he lets you.</p>
+        <div className="mx-auto mt-4 h-1 w-24 animate-pulse rounded-full bg-[#8a6a3a]/60" />
+      </div>
+    )
+  }
+  if (s.status === "lobby" && !mine && !view.invited) {
+    return (
+      <div className="rounded-sm border border-[#3d3428] bg-black/60 p-5">
+        <div className="font-serif text-lg text-[#e8d9ae]">The table is open — but not to you yet.</div>
+        <p className="mt-1 text-sm text-stone-500">The Dungeon Master chooses who sits. Wait here; your chair appears when he opens a seat for you.</p>
         <div className="mx-auto mt-4 h-1 w-24 animate-pulse rounded-full bg-[#8a6a3a]/60" />
       </div>
     )

@@ -116,11 +116,18 @@ export function shouldStart(t: TableState, lights: Light[]): boolean {
   return t.status === "lobby" && t.dmReady && lights.length > 0 && lights.every((l) => l === "green")
 }
 
-/** Why a player may not sit right now, or null if they may. */
-export function cannotSit(t: TableState, seatsTaken: number, alreadySeated: boolean): string | null {
+export const NOT_INVITED = "The Dungeon Master has not opened a seat for you yet. Wait here."
+
+/**
+ * Why a player may not sit right now, or null if they may. Sam, 2026-10-25: "NO player can sit at the table
+ * without me FIRST opening up the seat to them" — so a seat needs an invitation (`invited:<id>`, written by
+ * the DM) on top of an open table with room.
+ */
+export function cannotSit(t: TableState, seatsTaken: number, alreadySeated: boolean, invited: boolean): string | null {
   if (alreadySeated) return null
   if (t.status === "closed") return "The table is not set yet. Wait for the Dungeon Master."
   if (t.status === "live") return "This session has already begun. You can join the next one."
+  if (!invited) return NOT_INVITED
   if (seatsTaken >= MAX_SEATS) return "Every seat at the table is taken."
   return null
 }
