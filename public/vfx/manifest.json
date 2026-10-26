@@ -595,6 +595,15 @@
     "loop": true,
     "rows": 2
   },
+  "pxPoisonSpray": {
+    "bytes": 2562,
+    "cols": 4,
+    "file": "pxPoisonSpray.webp",
+    "fps": 14,
+    "frames": 8,
+    "loop": true,
+    "rows": 2
+  },
   "pxPsychic": {
     "bytes": 430,
     "cols": 4,
