@@ -8,6 +8,10 @@ import {
   renderSpeechFor,
   sharedLanguages,
   understands,
+  hearDialogueRow,
+  listenerFromCharacter,
+  partyListener,
+  rowLanguages,
 } from "./languages"
 
 describe("canonicalLanguage", () => {
@@ -125,5 +129,43 @@ describe("languageGrant (Forge)", () => {
     expect(names).not.toContain("Elvish")
     expect(names).not.toContain("Druidic")
     expect(names).toContain("Undercommon")
+  })
+})
+
+describe("dialogue rows", () => {
+  const row = {
+    speaker: "Liana",
+    text: "Hold still, or I let you bleed.",
+    speech_segments: [{ speaker: "Liana", line: "Hold still, or I let you bleed.", npc_id: "x", voice_id: null, lang: "Elvish" }],
+  }
+  it("scrambles text and segment together for a listener without the tongue", () => {
+    const heard = hearDialogueRow(row, listenerFromCharacter({ languages: "Common, Goblin" }))
+    expect(heard.text).not.toBe(row.text)
+    expect(heard.speech_segments![0].line).toBe(heard.text)
+  })
+  it("returns the same object when understood", () => {
+    expect(hearDialogueRow(row, listenerFromCharacter({ languages: "Common, Elvish" }))).toBe(row)
+  })
+  it("Comprehend Languages on the sheet understands it", () => {
+    const l = listenerFromCharacter({ languages: "Common", conditions: [{ name: "Comprehend Languages" }] })
+    expect(hearDialogueRow(row, l)).toBe(row)
+  })
+  it("scrambles a quote inside a Malachar row and leaves his narration", () => {
+    const m = {
+      text: 'She leans in. "Hold still." Then she is gone.',
+      speech_segments: [{ line: "Hold still.", lang: "Elvish" }],
+    }
+    const heard = hearDialogueRow(m, { languages: "Common" })
+    expect(heard.text.startsWith('She leans in. "')).toBe(true)
+    expect(heard.text.endsWith('" Then she is gone.')).toBe(true)
+    expect(heard.text).not.toContain("Hold still")
+  })
+  it("party ears: only what every seat understands", () => {
+    const p = partyListener([{ languages: "Common, Elvish" }, { languages: "Common, Undercommon" }])
+    expect(understands(p, "Common")).toBe(true)
+    expect(understands(p, "Elvish")).toBe(false)
+  })
+  it("rowLanguages reports the tongue and whether it is followed", () => {
+    expect(rowLanguages(row, { languages: "Common" })).toEqual([{ lang: "Elvish", understood: false }])
   })
 })

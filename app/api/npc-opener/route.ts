@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { generateText } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { chooseLineLanguage, loadNpcLanguages } from "@/lib/npc-languages"
 import { findNpcRow, npcKnowsName, relationshipSummary } from "@/lib/npc-acquaintance"
 
 // Same direct-Anthropic provider as /api/chat and /api/suggestions.
@@ -39,12 +40,19 @@ export async function POST(req: NextRequest) {
     let knowsName = false
     let standing: string | null = null
     let personality = ""
+    let lang: string | null = null
     try {
       const db = createAdminClient()
       const npcRow = await findNpcRow(db, npcName)
       if (npcRow) personality = [npcRow.description, npcRow.disposition ? `disposition: ${npcRow.disposition}` : ""].filter(Boolean).join("; ")
-      const { data: pcRows } = await db.from("characters").select("id, name").ilike("name", pcName).limit(1)
+      const { data: pcRows } = await db.from("characters").select("id, name, languages").ilike("name", pcName).limit(1)
       const pcRow = pcRows?.[0]
+      // The tongue the opener is spoken in (lib/npc-languages): what the NPC shares
+      // with this PC, else its own. null when the NPC has no language data.
+      if (npcRow?.id) {
+        const npcLangs = await loadNpcLanguages(db, [npcRow.id])
+        lang = chooseLineLanguage({ speaker: npcLangs.get(npcRow.id) ?? null, addressee: pcRow?.languages ?? null })
+      }
       if (pcRow) {
         knowsName = await npcKnowsName(db, npcName, pcRow.id)
         if (npcRow) standing = await relationshipSummary(db, npcRow.id, pcRow.id)
@@ -61,7 +69,7 @@ Player character: ${pcName}${pcRace || pcClass ? `, a ${[pcRace, pcClass].filter
 ${personality ? `Their personality and manner: ${personality}.` : ""}
 ${knowsName ? `The NPC knows ${pcName}'s name and may use it.` : `The NPC does NOT know this character's name. Never say "${pcName}" or invent a name. Address them by what the NPC can see (that they are a ${pcRace || "stranger"}, how they look) or with a gesture.`}
 ${standing ? `How the NPC feels about them (trust, fear, respect, affection, debt, resentment): ${standing}. Let that set how warm, wary or cold the line is.` : "They have no history together yet: a fellow prisoner the NPC has noticed but does not know."}
-The line is spoken in the NPC's own voice and manner, under 25 words. Do not invent facts about the campaign.
+The line is spoken in the NPC's own voice and manner, under 25 words.${lang && lang !== "Common" ? ` The NPC speaks it in ${lang}; write the words as they mean them (the game renders the foreign sound). The narration may say they speak in ${lang} but must not translate it.` : ""} Do not invent facts about the campaign.
 The narration is one short sentence, present tense, describing how the NPC approaches (no dialogue in it).
 Reply with only JSON: {"narration": "...", "line": "..."}`
 
@@ -73,7 +81,7 @@ Reply with only JSON: {"narration": "...", "line": "..."}`
     const parsed = m ? JSON.parse(m[0]) : null
     const line = typeof parsed?.line === "string" ? parsed.line.trim().replace(/^["“]|["”]$/g, "").slice(0, 280) : null
     const narration = typeof parsed?.narration === "string" ? parsed.narration.trim().slice(0, 240) : null
-    return NextResponse.json({ narration, line })
+    return NextResponse.json({ narration, line, lang })
   } catch (error) {
     console.error("[npc-opener] failed:", error)
     return NextResponse.json({ narration: null, line: null })

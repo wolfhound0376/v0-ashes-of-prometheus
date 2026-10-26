@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <script src="/test-copy-silence.js"></script>
+<script src="/js/aop-languages.js"></script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Velkynvelve Walk</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -568,7 +569,7 @@ function applyForgedSheet(slug, sh){
 // A DM-run companion (lib/seats.ts, seat.dm): walks with the party, led only from the DM's browser,
 // marked on hover. Sam, 2026-10-14: "The DM can add characters but will treat them like an NPC, with
 // the DM controlling that character."
-let seatsSeen = [];
+let seatsSeen = [], myClaimId = null;   // myClaimId: this browser's own seated character (languages: whose ears)
 const dmRun = new Set();
 function noteSeats(seated){
   seatsSeen = Array.isArray(seated) ? seated : [];
@@ -6374,8 +6375,25 @@ function actorForSpeaker(name, type){
 // the cast's ids by name, so a line can be voiced by someone who is not on this plate
 function castIdFor(name){ const who = {slug: slugOf(name), aliases: [slugOf(String(name).split(" ")[0])]}; return [...CAST].find(id => SPR[id] && stageMatch(who, id)) || null; }
 const lineMs = text => Math.max(3500, Math.min(14000, 900 + text.length * 62));
+// LANGUAGES (Sam, 2026-10-25): a line spoken in a tongue this seat does not know is drawn and voiced as
+// gibberish (public/js/aop-languages.js, built from lib/languages.ts). The seat is the claimed character;
+// a browser with no seat of its own (the DM's) hears only what EVERY seated player understands, so the
+// table's speakers never translate for anyone.
+const LANG = window.AopLanguages || null;
+function myEars(){
+  if (!LANG) return null;
+  const mineSeat = myClaimId && seatsSeen.find(s => s.id === myClaimId);
+  if (mineSeat) return LANG.listenerFromCharacter(mineSeat);
+  const players = seatsSeen.filter(s => !s.dm);
+  return players.length ? LANG.partyListener(players) : null;
+}
+function heardText(text, lang){
+  const ears = myEars();
+  return LANG && lang && ears ? LANG.renderSpeechFor(text, lang, ears).text : text;
+}
 function hearLine(row){
-  const text = String(row.text).trim(), type = row.speaker_type, name = row.speaker || "";
+  const ears = myEars();
+  const text = String((LANG && ears ? LANG.hearDialogueRow(row, ears) : row).text).trim(), type = row.speaker_type, name = row.speaker || "";
   if (type === "dm"){ narrate(null, text); return; }
   const a = actorForSpeaker(name, type);
   if (type === "player"){ if (a){ lastPlayerLine = {a, at: now}; bark(a, text, lineMs(text), {talk: true}); } else log(`<b>${esc(name)}</b>: ${esc(text)}`); return; }
@@ -6419,7 +6437,7 @@ async function npcOpening(npc){
       const res = await fetch("/api/npc-opener", {method: "POST", headers: {"Content-Type": "application/json"},
         body: JSON.stringify({npcName: nm, brief: BRIEF[npc.id] || nm, area: node.name, pc: {...pc, name: PLAYS_AS[leader.id] || pc.name}})});
       const r = await res.json();
-      if (r && typeof r.line === "string" && r.line.trim()) return {narration: String(r.narration || fallback.narration), line: r.line.trim()};
+      if (r && typeof r.line === "string" && r.line.trim()) return {narration: String(r.narration || fallback.narration), line: r.line.trim(), lang: r.lang || null};
     } catch (e) {}
     return fallback;
   }
@@ -6569,13 +6587,15 @@ async function openTalk(npc, opts = {}){
     $("talkLine").innerHTML = `<p class="narr">${esc(look.replace(/^\(|\)$/g, ""))}</p>`;
     return;
   }
-  const {narration, line} = await npcOpening(npc);
+  const {narration, line, lang} = await npcOpening(npc);
   if (talkNpc !== npc || $("talk").hidden) return;
-  $("talkLine").innerHTML = `<p class="narr">${esc(narration)}</p><p class="said">“${esc(line)}”</p>`;
+  const heard = heardText(line, lang);                // what this seat hears; the real words still travel on to the dashboard
+  $("talkLine").innerHTML = `<p class="narr">${esc(narration)}</p><p class="said">“${esc(heard)}”</p>${lang && lang !== "Common" ? `<p class="narr">— in ${esc(lang)}</p>` : ""}`;
+  talkLang = lang || null;
   $("talkGo").href = talkUrl(npc, line);
-  bark(npc, line, 7000, {talk: true}); speak(npc.id, line);
+  bark(npc, heard, 7000, {talk: true}); speak(npc.id, heard);
 }
-let talkNpc = null;
+let talkNpc = null, talkLang = null;
 // The game character each walker is (the dashboard plays as whoever is moving when the talk starts).
 // The canon heroes' names on their characters rows (Sam, 2026-10-25; lib/canon-heroes.ts). Matched exactly
 // against the seats, so this must change in the same breath as the rows do.
@@ -6587,6 +6607,7 @@ const PLATES = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/publi
 function talkUrl(npc, said){
   const q = new URLSearchParams({view: "full", from: "map", talk: SPR[npc.id].json.name, return: SANDBOX ? "/velkynvelve?sandbox=1" : "/velkynvelve", scene: SPEC[cur].img ? location.origin + PLATE_DIR + SPEC[cur].img : `${PLATES}img/${node.slug}.jpg`, area: node.name, as: PLAYS_AS[leader?.id] || ""});
   if (said) q.set("line", said.slice(0, 280));
+  if (said && talkLang) q.set("lang", talkLang);     // the tongue it was said in; the dashboard renders it per seat
   if (SANDBOX) q.set("sandbox", "1");                 // a rehearsal stays a rehearsal on the far side
   return (APP ? "/?" : "https://ashes.playacartagena.com/?") + q.toString();
 }
@@ -8073,7 +8094,7 @@ function frame(t){
       const id = localStorage.getItem("aop_character_id"), token = localStorage.getItem("aop_claim_token");
       if (id && token){
         const v = await fetch("/api/verify-claim", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({characterId: id, claimToken: token})}).then(r => r.json());
-        if (v && v.valid && v.character) mine = seatedSlugs([v.character])[0] || null;
+        if (v && v.valid && v.character){ myClaimId = v.character.id; mine = seatedSlugs([v.character])[0] || null; }
         mySlug = mine;
       }
     } catch (e) {}

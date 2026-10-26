@@ -368,6 +368,7 @@ export default function DashboardPage() {
   // hands over the NPC and the line they opened with; "Back to the map" returns to `return`.
   const [talkReturn, setTalkReturn] = useState<string | null>(null)
   const [talkOpening, setTalkOpening] = useState<string | null>(null)
+  const [talkOpeningLang, setTalkOpeningLang] = useState<string | null>(null)
   const [talkFrom, setTalkFrom] = useState<"camp" | "map">("camp")
   // The map area the talk is happening in ("Slave Pen"), so Malachar plays it there, not by the fire.
   const [talkArea, setTalkArea] = useState<string | null>(null)
@@ -419,9 +420,12 @@ export default function DashboardPage() {
     if (back && back.startsWith("/") && !back.startsWith("//")) setTalkReturn(back.slice(0, 200))
     const opening = url.searchParams.get("line")?.trim()
     if (opening) setTalkOpening(opening.slice(0, 280))
+    const openingLang = url.searchParams.get("lang")?.trim()
+    if (opening && openingLang) setTalkOpeningLang(openingLang.slice(0, 40))
     // Drop them from the address so a refresh after "Back to camp" stays at camp.
     url.searchParams.delete("talk")
     url.searchParams.delete("line")
+    url.searchParams.delete("lang")
     url.searchParams.delete("return")
     url.searchParams.delete("as")
     window.history.replaceState(null, "", url.pathname + url.search + url.hash)
@@ -2012,6 +2016,7 @@ if (error) {
         talkWith={campTalkWith}
         talkFrom={talkFrom}
         talkOpening={talkOpening}
+        talkOpeningLang={talkOpeningLang}
         timeStopped={timeStopped}
         onFacingChange={handleFacingChange}
         onOpenerAccepted={handleOpenerAccepted}

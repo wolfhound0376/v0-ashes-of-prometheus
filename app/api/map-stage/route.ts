@@ -44,10 +44,14 @@ export async function GET() {
     const ids = seated.map((s) => s.id)
     const levels = new Map<string, number>()
     const sheets = new Map<string, WalkSheet>()
+    // Each seat's languages (and conditions, for Comprehend Languages / Tongues) so the map can render a
+    // line in a tongue that seat lacks as gibberish (lib/languages, public/js/aop-languages.js).
+    const tongues = new Map<string, { languages: unknown; conditions: unknown }>()
     if (ids.length) {
-      const { data } = await admin.from("characters").select(WALK_SHEET_COLUMNS).in("id", ids)
+      const { data } = await admin.from("characters").select(WALK_SHEET_COLUMNS + ", languages, conditions").in("id", ids)
       for (const r of (data ?? []) as unknown as Record<string, unknown>[]) {
         const id = String(r.id)
+        tongues.set(id, { languages: r.languages ?? null, conditions: r.conditions ?? null })
         if (typeof r.level === "number") levels.set(id, r.level)
         sheets.set(id, walkSheetFromRow(r))
       }
@@ -58,7 +62,7 @@ export async function GET() {
       present: Object.values(stage.present),
       gone: Object.values(stage.gone),
       run: runRes.data?.run_number ?? null,
-      seated: seated.map((s) => ({ id: s.id, name: s.name, dm: !!s.dm, level: levels.get(s.id) ?? null, sheet: sheets.get(s.id) ?? null })),
+      seated: seated.map((s) => ({ id: s.id, name: s.name, dm: !!s.dm, level: levels.get(s.id) ?? null, sheet: sheets.get(s.id) ?? null, ...(tongues.get(s.id) ?? { languages: null, conditions: null }) })),
     })
   } catch (e) {
     return NextResponse.json({ area: null, present: [], gone: [], run: null, seated: [], error: String(e) }, { status: 200 })

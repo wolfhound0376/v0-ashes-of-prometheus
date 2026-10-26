@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState } from "react"
+import { hearDialogueRow, listenerFromCharacter } from "@/lib/languages"
 import {
   BookOpen,
   Compass,
@@ -41,7 +42,7 @@ import type { Character } from "@/lib/types/database"
 // party, and a short sheet. Camp actions are sent as ordinary player lines;
 // Malachar and /api/chat decide what they cost and roll for them.
 
-type Entry = { id?: string; speaker: string; text: string; pending?: boolean }
+type Entry = { id?: string; speaker: string; text: string; pending?: boolean; speech_segments?: { line: string; lang?: string | null }[] | null }
 type Npc = { id: string; name: string; face_url: string | null; portrait_url: string | null }
 
 interface CompactDashboardProps {
@@ -146,7 +147,11 @@ export function CompactDashboard(props: CompactDashboardProps) {
   }, [props.openBench, me?.id])
   const logEnd = useRef<HTMLDivElement>(null)
 
-  const recent = useMemo(() => dialogue.slice(-80), [dialogue])
+  // Languages: a line in a tongue this character lacks reads as gibberish (lib/languages).
+  const recent = useMemo(() => {
+    const hearer = listenerFromCharacter(me as any)
+    return dialogue.slice(-80).map((entry) => hearDialogueRow(entry, hearer))
+  }, [dialogue, me])
 
   useEffect(() => {
     if (tab === "story") logEnd.current?.scrollIntoView({ block: "end" })

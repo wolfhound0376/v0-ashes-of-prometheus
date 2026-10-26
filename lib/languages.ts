@@ -374,3 +374,76 @@ export function choosableLanguages(known: readonly string[]): Language[] {
   const k = new Set(known.map((x) => canonicalLanguage(x) ?? x))
   return LANGUAGES.filter((l) => l.tier !== "secret" && !k.has(l.name))
 }
+
+// ---------------------------------------------------------------------------
+// Dialogue rows (the `dialogue` table) as one viewer hears them. A row's
+// language lives on its speech_segments[].lang, stamped by the server
+// (lib/npc-languages.ts). Rows without one pass through untouched.
+
+const COMPREHEND_RE = /comprehend languages|tongues/i
+
+/** A characters row (or the dashboard's view of one) as a listener. */
+export function listenerFromCharacter(row: { languages?: unknown; conditions?: unknown } | null | undefined): ListenerState {
+  if (!row) return { languages: null }
+  const conditions = Array.isArray(row.conditions) ? row.conditions : []
+  const comprehendAll = conditions.some((c: any) => COMPREHEND_RE.test(typeof c === "string" ? c : String(c?.name ?? "")))
+  const raw = row.languages
+  return { languages: Array.isArray(raw) ? raw.map(String) : typeof raw === "string" ? raw : null, comprehendAll }
+}
+
+/**
+ * The shared ears of a whole table — what a projected DM screen should SAY
+ * aloud: a tongue is understood only when every seated player understands it,
+ * so the speakers never give away a line someone at the table should not get.
+ */
+export function partyListener(rows: Array<{ languages?: unknown; conditions?: unknown }>): ListenerState {
+  if (!rows.length) return { languages: null }
+  const sets = rows.map((r) => {
+    const l = listenerFromCharacter(r)
+    if (l.comprehendAll) return null // understands all: does not narrow the table
+    return new Set(understoodLanguages(parseLanguages(l.languages)))
+  })
+  const real = sets.filter((s): s is Set<string> => s !== null)
+  if (!real.length) return { languages: null, comprehendAll: true }
+  const common = [...real[0]].filter((l) => real.every((s) => s.has(l)))
+  return { languages: common }
+}
+
+type SegmentLike = { line: string; lang?: string | null }
+type RowLike = { text: string; speech_segments?: SegmentLike[] | null }
+
+/** The languages a dialogue row is spoken in, with whether this listener follows each. */
+export function rowLanguages(row: RowLike, listener?: ListenerState): Array<{ lang: string; understood: boolean }> {
+  const out: Array<{ lang: string; understood: boolean }> = []
+  for (const seg of row.speech_segments ?? []) {
+    const lang = seg.lang ? canonicalLanguage(seg.lang) : null
+    if (lang && !out.some((o) => o.lang === lang)) out.push({ lang, understood: listener ? understands(listener, lang) : true })
+  }
+  return out
+}
+
+/**
+ * Return the row as `listener` hears it: every segment in a tongue they lack is
+ * replaced by gibberish, in the segment AND in the row text, so the voice queue
+ * (which matches segments inside the text) speaks the same nonsense the log
+ * shows. A row with nothing foreign is returned as the same object.
+ */
+export function hearDialogueRow<T extends RowLike>(row: T, listener: ListenerState): T {
+  const segs = row.speech_segments
+  if (!segs?.length || !segs.some((s) => s.lang)) return row
+  let text = row.text
+  let changed = false
+  let cursor = 0
+  const nextSegs = segs.map((seg) => {
+    if (!seg.lang || understands(listener, seg.lang)) return seg
+    const heard = gibberish(seg.line, seg.lang)
+    const at = text.indexOf(seg.line, cursor)
+    if (at >= 0) {
+      text = text.slice(0, at) + heard + text.slice(at + seg.line.length)
+      cursor = at + heard.length
+    }
+    changed = true
+    return { ...seg, line: heard }
+  })
+  return changed ? { ...row, text, speech_segments: nextSegs } : row
+}
