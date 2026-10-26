@@ -26,8 +26,10 @@ import { getThemeAudio, playThemeAudio } from "@/components/theme-audio"
 import { SettingsSheet } from "@/components/settings-sheet"
 import { isMusicOff, onMusicPrefChange, setMusicOff } from "@/lib/audio-prefs"
 import { cinematicsOn, introMusicOn, onSettingsChange } from "@/lib/settings"
+import { markDmDoor } from "@/lib/dm-door"
 
-/** Where the small "Dungeon Master" link goes: the DM door (/dm) — code, then the table. */
+/** Where the small "Dungeon Master" link goes: the DM door (/dm) — code, then the table. This link is the
+ *  only way in; /dm sends anyone without its stamp back here (Sam, 2026-10-25; lib/dm-door.ts). */
 const DM_HREF = "/dm"
 const FILM_SEEN_KEY = "aop_title_film_seen" // sessionStorage: the film plays once per browser session
 
@@ -256,7 +258,7 @@ export default function TitleScreen() {
       {stage === "title" && (
         <button
           type="button"
-          onClick={() => go(DM_HREF)}
+          onClick={() => { markDmDoor(); go(DM_HREF) }} // the ONLY way to the table-opening door (lib/dm-door.ts)
           className="group fixed bottom-5 left-6 z-50 flex items-center gap-2 text-[10px] uppercase tracking-[0.35em] text-stone-600 transition-colors hover:text-[#c9a868]"
         >
           <span className="grid h-6 w-6 place-items-center rounded-full border border-stone-700 font-serif text-[11px] text-stone-500 transition-colors group-hover:border-[#c9a868] group-hover:text-[#e8c56a]">☠</span>

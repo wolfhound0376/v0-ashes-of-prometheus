@@ -20,7 +20,8 @@ import { useThemeAudio } from "@/components/theme-audio"
 //
 // A card is a picture, not a key: picking Fifi's card and typing Scott's code is refused ("those
 // words belong to someone else"), so the roster being public changes nothing about who may sit in a
-// seat. The DM still has the shared DM code, behind a small link, and goes straight to the table.
+// seat. The DM does NOT come in here: the DM code is turned away with a pointer to the title screen's DM door,
+// the only way a table opens (Sam, 2026-10-25; lib/dm-door.ts).
 
 const CHARACTER_LS_KEY = "aop_character_id"
 const TOKEN_LS_KEY = "aop_claim_token"
@@ -36,7 +37,7 @@ interface RosterCharacter {
   portraitUrl: string | null
 }
 
-type Pick = { kind: "character"; character: RosterCharacter } | { kind: "new" } | { kind: "dm" }
+type Pick = { kind: "character"; character: RosterCharacter } | { kind: "new" }
 
 /** How many builds the Character Forge has saved in THIS browser. */
 function savedBuildCount(): number {
@@ -83,7 +84,7 @@ export default function JoinPage() {
   const [roster, setRoster] = useState<RosterCharacter[] | null>(null)
   const [pick, setPick] = useState<Pick | null>(null)
   const [code, setCode] = useState("")
-  const [status, setStatus] = useState<"idle" | "checking" | "error" | "mismatch" | "limited" | "welcome" | "pending" | "rejected">("idle")
+  const [status, setStatus] = useState<"idle" | "checking" | "error" | "mismatch" | "limited" | "welcome" | "pending" | "rejected" | "dmDoor">("idle")
   const [pendingHero, setPendingHero] = useState<string | null>(null)
   const [savedBuilds, setSavedBuilds] = useState(0)
   const [forgeNext, setForgeNext] = useState<"create" | "import" | null>(null)
@@ -127,18 +128,9 @@ export default function JoinPage() {
           setStatus("error"); return
         }
 
-        if (result.role === "dm") {
-          if (pick.kind !== "dm") { setStatus("mismatch"); return }
-          window.localStorage.setItem(ROLE_LS_KEY, "dm")
-          window.localStorage.removeItem(TOKEN_LS_KEY)
-          window.localStorage.setItem(FORGE_KEY_LS_KEY, code.trim())
-          // Mint the DM session cookie too (best-effort), then the table: who is seated, who is
-          // waiting at the Forge, Begin session or Rehearsal (/dm).
-          await fetch("/api/dm/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) }).catch(() => {})
-          setStatus("welcome")
-          setTimeout(() => router.replace("/dm"), 900)
-          return
-        }
+        // The DM code is not taken here. The Dungeon Master comes in by his own door on the title screen —
+        // the only way a table opens (Sam, 2026-10-25; lib/dm-door.ts).
+        if (result.role === "dm") { setStatus("dmDoor"); return }
 
         if (result.role === "forge") {
           if (pick.kind !== "new") { setStatus("mismatch"); return }
@@ -236,9 +228,6 @@ export default function JoinPage() {
                 <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">Forge · import · waiting</div>
               </button>
             </div>
-            <button onClick={() => { setPick({ kind: "dm" }); setCode(""); setStatus("idle") }} className="mt-10 text-[11px] uppercase tracking-[0.3em] text-stone-600 hover:text-[#c9a868]">
-              Dungeon Master
-            </button>
           </>
         )}
 
@@ -271,7 +260,8 @@ export default function JoinPage() {
             {status === "limited" && <p role="alert" className="mt-3 text-center text-sm text-red-400/90">Too many attempts. Wait a few minutes and try again.</p>}
             {status === "pending" && <p role="status" className="mt-3 text-center text-sm text-[#d9bd7e]">The Dungeon Master hasn&apos;t opened {pendingHero ? `${pendingHero}'s` : "your"} cell yet. Ask them, then try again.</p>}
             {status === "rejected" && <p role="alert" className="mt-3 text-center text-sm text-red-400/90">The Dungeon Master turned {pendingHero ?? "that hero"} away at the Forge. Talk to them.</p>}
-            {status === "welcome" && <p role="status" className="mt-3 text-center text-sm text-[#d9bd7e]">{pick.kind === "dm" ? "Welcome back, Dungeon Master." : "The door opens…"}</p>}
+            {status === "welcome" && <p role="status" className="mt-3 text-center text-sm text-[#d9bd7e]">The door opens…</p>}
+            {status === "dmDoor" && <p role="alert" className="mt-3 text-center text-sm text-[#d9bd7e]">Those are the Dungeon Master&apos;s words. The Dungeon Master enters by his own door on the title screen.</p>}
             <div className="mt-6 flex items-center justify-center gap-3">
               <button type="button" onClick={() => { setPick(null); setStatus("idle") }} disabled={busy} className="px-4 py-2.5 text-[11px] uppercase tracking-[0.25em] text-stone-500 hover:text-stone-300">
                 Back
