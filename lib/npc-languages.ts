@@ -16,25 +16,13 @@
 //
 // Pure functions first, then the Supabase loaders the chat route calls.
 
-import { canonicalLanguage, parseLanguages, understoodLanguages } from "./languages"
+import { chooseLineLanguage, parseLanguages, type LangSource } from "./languages"
 
-export type LangSource = string | readonly string[] | null | undefined
-
-export function chooseLineLanguage(opts: {
-  speaker: LangSource
-  tagged?: string | null
-  addressee?: LangSource
-}): string | null {
-  const speaks = parseLanguages(opts.speaker).speaks
-  const tagged = opts.tagged ? canonicalLanguage(opts.tagged) : null
-  if (tagged && (speaks.length === 0 || speaks.includes(tagged))) return tagged
-  if (speaks.length === 0) return null
-  const hears = understoodLanguages(parseLanguages(opts.addressee))
-  const shared = speaks.filter((l) => hears.includes(l))
-  if (shared.includes("Common")) return "Common"
-  if (shared.length) return shared[0]
-  return speaks[0]
-}
+// The decision itself lives in lib/languages.ts, so the static pages get it too
+// (public/js/aop-languages.js): the painted walk map has to pick a tongue for the
+// lines it composes itself, its combat taunts. Re-exported here so the routes
+// that already import it from this file are unchanged.
+export { chooseLineLanguage, type LangSource }
 
 export type NamedLanguages = { name: string; languages: LangSource }
 

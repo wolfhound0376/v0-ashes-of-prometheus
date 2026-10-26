@@ -291,6 +291,34 @@ export function renderSpeechFor(text: string, spoken: string | null | undefined,
   return { text: gibberish(text, language ?? String(spoken)), understood: false, language }
 }
 
+export type LangSource = string | readonly string[] | null | undefined
+
+/**
+ * Which language one NPC line is spoken in (the rule lib/npc-languages.ts
+ * documents in full):
+ *   1. a tagged tongue, if the speaker speaks it (or we know nothing of the speaker);
+ *   2. else the first tongue the speaker shares with the addressee, Common preferred;
+ *   3. else the speaker's own first tongue;
+ *   4. no language data for the speaker: null, never scrambled.
+ * Pure, so the server (chat route, NPC openers) and the walk map's combat
+ * taunts decide a line the same way.
+ */
+export function chooseLineLanguage(opts: {
+  speaker: LangSource
+  tagged?: string | null
+  addressee?: LangSource
+}): string | null {
+  const speaks = parseLanguages(opts.speaker).speaks
+  const tagged = opts.tagged ? canonicalLanguage(opts.tagged) : null
+  if (tagged && (speaks.length === 0 || speaks.includes(tagged))) return tagged
+  if (speaks.length === 0) return null
+  const hears = understoodLanguages(parseLanguages(opts.addressee))
+  const shared = speaks.filter((l) => hears.includes(l))
+  if (shared.includes("Common")) return "Common"
+  if (shared.length) return shared[0]
+  return speaks[0]
+}
+
 // ---------------------------------------------------------------------------
 // Character creation (Forge). SRD 5.1 race language traits; background and
 // class grants. Mirrors what public/forge2014.html applies so tests can pin it.
