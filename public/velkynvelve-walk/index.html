@@ -7706,7 +7706,16 @@ function hearLine(row){
   const text = String((LANG && ears ? LANG.hearDialogueRow(row, ears) : row).text).trim(), type = row.speaker_type, name = row.speaker || "";
   if (type === "dm"){ narrate(null, text); return; }
   const a = actorForSpeaker(name, type);
-  if (type === "player"){ if (a){ lastPlayerLine = {a, at: now}; bark(a, text, lineMs(text), {talk: true}); } else log(`<b>${esc(name)}</b>: ${esc(text)}`); return; }
+  if (type === "player"){
+    if (a){ lastPlayerLine = {a, at: now}; bark(a, text, lineMs(text), {talk: true}); } else log(`<b>${esc(name)}</b>: ${esc(text)}`);
+    // Heroes are heard in their own saved voice too (Sam, 2026-10-25: "We can't hear Lynkes' voice in the game").
+    // /api/npc-tts finds the voice on the hero's characters row by name; same queue as the NPCs, one voice at a time.
+    if (voicesOn && APP) talkQueue = talkQueue.then(async () => {
+      try { await speakCanon((a && a.id) || null, text, name); } catch (e) { console.warn("voice unavailable:", name, e); return; }
+      const t0 = performance.now(); while (speaking && performance.now() - t0 < 30000) await wait(150);
+    });
+    return;
+  }
   // an NPC: their turn in the queue, bubble when their voice starts
   const id = (a && a.id) || castIdFor(name);
   talkQueue = talkQueue.then(async () => {
