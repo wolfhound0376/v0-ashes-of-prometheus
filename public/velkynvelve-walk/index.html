@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <script src="/test-copy-silence.js"></script>
 <script src="/js/aop-languages.js"></script>
+<script src="/js/aop-one-world.js"></script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Velkynvelve</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -121,6 +122,15 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .acts p.old{opacity:.5}
 .acts p.gone{opacity:0}
 .stage.frozen *{animation-play-state:paused!important}
+.ow-light{position:absolute;right:12px;bottom:58px;z-index:6;display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--rule);color:var(--ink-dim);border-radius:999px;padding:4px 11px 4px 9px;font:500 11px/1.2 'Alegreya Sans',sans-serif;letter-spacing:.06em;cursor:pointer}
+.ow-light::before{content:'';width:8px;height:8px;border-radius:50%;background:#62e3a0;box-shadow:0 0 6px #62e3a0}
+.ow-light[data-s=catching-up]::before,.ow-light[data-s=fight-unshared]::before,.ow-seats i[data-s=catching-up],.ow-seats i[data-s=fight-unshared]{background:#e8c04a;box-shadow:0 0 6px #e8c04a}
+.ow-light[data-s=out-of-touch]::before,.ow-light[data-s=off]::before,.ow-seats i[data-s=out-of-touch]{background:#d0453a;box-shadow:0 0 6px #d0453a}
+.ow-light[data-s=fight-unshared],.ow-light[data-s=off],.ow-light[data-s=out-of-touch]{color:var(--ink);border-color:var(--ember)}
+.ow-seats{position:absolute;right:12px;bottom:90px;z-index:6;min-width:190px;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:6px 10px;font:13px/1.5 'Alegreya Sans',sans-serif;color:var(--ink)}
+.ow-row{display:flex;align-items:center;gap:8px}.ow-row span{margin-left:auto;color:var(--ink-dim);font-size:11px}
+.ow-light[data-s=rehearsal]::before{background:#7aa7ff;box-shadow:0 0 6px #7aa7ff}
+.ow-seats i{width:8px;height:8px;border-radius:50%;background:#62e3a0;flex:none}
 .frozen-badge{position:absolute;left:50%;top:12px;transform:translateX(-50%);background:rgba(7,22,20,.9);border:1px solid rgba(98,227,198,.6);color:#9ff0dc;border-radius:5px;padding:5px 14px;font-size:12px;letter-spacing:.2em;text-transform:uppercase;pointer-events:none;z-index:5}
 .acts.over p{background:rgba(9,7,13,.78);border-radius:4px;padding:2px 10px;justify-self:center}   /* no black band: a dark backing so it reads over the painting */
 @media (max-width:700px){.acts{width:calc(100% - 24px);bottom:56px}}
@@ -1699,20 +1709,26 @@ function zoneAt(x, y){ return node.zones.find(z => inRect(z.rect, x, y)) || null
 // `chance`: a plain probability; `dice` + `spots`: how many of them, at which of the listed posts; `at`: a named roll that
 // picks ONE spot). Every roll is made ONCE per plate per session and kept (state.rolls), so leaving and coming back finds
 // the same room — the book's "at any given time" is read as "the time you looked", not a new shuffle every doorway.
+// ONE WORLD (Sam, 2026-10-25): the room dice are SEEDED by the campaign run, the plate and the roll's name
+// (lib/walk-world.ts seededRoll), so two screens in the same run find the same drow in the same hall even before
+// the shared world answers — on 2026-10-25 each browser rolled its own. A new game is a new run: new rooms.
+// The stand-alone preview has no run and keeps rolling freely.
+function roomDice(expr, key){ return runSeen != null && window.AopOneWorld ? AopOneWorld.seededRoll(expr, `${runSeen}:${key}`) : roll(expr).total; }
+function roomChance(key){ return runSeen != null && window.AopOneWorld ? AopOneWorld.seededRandom(`${runSeen}:${key}`)() : Math.random(); }
 function plateRolls(n){
   const r = state.rolls[n] || (state.rolls[n] = {}), spec = (SPEC[n] && SPEC[n].rolls) || {};
-  for (const k in spec) if (r[k] == null) r[k] = roll(spec[k]).total;
+  for (const k in spec) if (r[k] == null) r[k] = roomDice(spec[k], `${n}:${k}`);
   return r;
 }
 function whoIsHere(n){
   const out = [], R = plateRolls(n);
   for (const np of (SPEC[n] && SPEC[n].npcs) || []){
     if (np.when){ const v = R[np.when.roll]; if (v == null || !(np.when.in || []).includes(v)) continue; }
-    if (np.chance != null){ const key = `chance:${np.id}:${np.x}:${np.y}`; if (R[key] == null) R[key] = Math.random() < np.chance ? 1 : 0; if (!R[key]) continue; }
+    if (np.chance != null){ const key = `chance:${np.id}:${np.x}:${np.y}`; if (R[key] == null) R[key] = roomChance(`${n}:${key}`) < np.chance ? 1 : 0; if (!R[key]) continue; }
     const spots = np.spots || [[np.x, np.y, np.face || 0]];
     let picks;
     if (np.at){ const i = Math.min(spots.length, Math.max(1, R[np.at] || 1)) - 1; picks = [spots[i]]; }
-    else if (np.dice){ const key = `dice:${np.id}:${np.x}:${np.y}`; if (R[key] == null) R[key] = roll(np.dice).total; picks = spots.slice(0, Math.min(spots.length, R[key])); }
+    else if (np.dice){ const key = `dice:${np.id}:${np.x}:${np.y}`; if (R[key] == null) R[key] = roomDice(np.dice, `${n}:${key}`); picks = spots.slice(0, Math.min(spots.length, R[key])); }
     else picks = [spots[0]];
     for (const [x, y, face] of picks) out.push({...np, x, y, face: face || 0});
   }
@@ -1826,12 +1842,14 @@ async function enterNode(n, opts = {}){
   if (!$("dm").hidden) renderCompany();
   nextAmbient = now + 6000 + Math.random() * 6000;
   surgeonOnEnter(n);
+  owEntered();
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
 // Leaving a plate: the party walks out along the exit (across the bridge, down the stairs, off the edge),
 // the camera slides to the neighbouring plate, and they walk in from its matching edge.
-async function travel(to, z){
+async function travel(to, z, fromWorld){
   if (mode === "travel") return;
+  if (!fromWorld) owLeavesPlate(to, z);
   state.jumped = null;
   mode = "travel"; hoverZone = null; tip.hidden = true; bubbles.forEach(b => b.until = 0);
   const zc = zoneCenter(z), exitDir = norm({x: zc.x - centroid.x, y: zc.y - centroid.y});
@@ -3910,6 +3928,7 @@ function fighterFor(a){
 }
 function startCombat(foeIds, label, opts = {}){
   if (mode !== "explore") return;
+  owFightBegins();
   mode = "combat"; [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); setAnim(p, "idle"); });
   if (balcony()) buildGrid();               // the balcony outside the pen gate is floor while the fight lasts
   const allies = opts.noAllies ? [] : alliesHere(); allies.forEach(n => { n.ally = true; n.talking = false; });
@@ -4488,7 +4507,7 @@ function setFollow(on){ followOn = on; log(on ? "The party falls in behind." : "
 setInterval(() => {
   if (!followOn || mode !== "explore" || !leader) return;
   followOrder().forEach((f, i) => {
-    if (f.once || f.down) return;
+    if (f.once || f.down || owRemote(f)) return;
     const want = trailPoint((i + 1) * 70 * node.scale);
     if (Math.hypot(f.x - want.x, f.y - want.y) < 40 * node.scale && !f.path.length) return;
     const last = f.path[f.path.length - 1];
@@ -5605,6 +5624,7 @@ function checkEnd(){
 }
 function endCombat(won){
   if (mode !== "combat") return;
+  owFightEnds();
   // the living pull the bolts out of themselves; the dead keep theirs
   for (let i = stuck.length - 1; i >= 0; i--){ const q = stuck[i]; if (!q.at || !(q.at.down && q.at.kind === "foe")) stuck.splice(i, 1); }
   for (const h of party) if (h.c){ h.c.conds.delete("burning"); }
@@ -9290,7 +9310,7 @@ function stopActivity(a){ if (a.act){ a.act = null; if (a.anim !== "walk") setAn
 function idleLife(a){
   if (a.stroll && strollBack(a)) return;                                                 // a guard back from a walk off the plate
   if (a.talkHold && now < a.talkHold) return;                                            // in a conversation: no wandering off
-  if (a === leader || a.once || a.fading || a.offStage || a.creature || a.body || a.riding) return;   // creatures move by tickCreatures, not the idle wander
+  if (a === leader || a.once || a.fading || a.offStage || a.creature || a.body || a.riding || owRemote(a)) return;   // creatures move by tickCreatures, not the idle wander
   if (a.patrol){                        // walk the beat end to end, pause, turn, walk back
     if (a.path.length) return;
     if (now < (a.actUntil || 0)) return;
@@ -9446,7 +9466,8 @@ function update(dt){
       if (a.kind === "foe" && a.alpha < 1) a.alpha = Math.min(1, a.alpha + dt * 2.5);
       step(a, dt, a.kind === "foe" ? SPEED * .9 : (a.slow && a !== leader && mode === "explore") ? SPEED * .42 : SPEED);
     }
-  } else if (mode === "travel"){ for (const a of actors){ if (a.fading){ a.alpha = Math.max(0, a.alpha - dt * 1.6); continue; } if (a.kind === "pc") step(a, dt, SPEED); } }
+  } else if (mode === "talk" && OW.on){ for (const a of party) if (owRemote(a)) step(a, dt, SPEED); }   // your conversation pauses your screen, not the other players
+  else if (mode === "travel"){ for (const a of actors){ if (a.fading){ a.alpha = Math.max(0, a.alpha - dt * 1.6); continue; } if (a.kind === "pc") step(a, dt, SPEED); } }
   if (mode === "explore" && leader){
     const last = trail[trail.length - 1];
     if (!last || Math.hypot(leader.x - last.x, leader.y - last.y) > 6){ trail.push({x: leader.x, y: leader.y}); if (trail.length > 500) trail.shift(); }
@@ -9513,6 +9534,299 @@ function frame(t){
   requestAnimationFrame(frame);
 }
 
+// ---------- ONE WORLD: every screen at the table walks the same Velkynvelve ----------
+// Sam, 2026-10-25: Fifi (Stephanie's browser) and Gandalf (Sam's computer) "were not synced well". They were
+// not synced at all: the map kept its world in each tab (sessionStorage), so each screen had its own plate,
+// its own hero positions, its own gate and its own room dice; the server heard nothing from the map after the
+// session went live. Now the server holds the one copy (/api/walk-world, table walk_world, rules in
+// lib/walk-world.ts, bundled here as window.AopOneWorld) and this page is a window onto it:
+//   - HEROES. Each hero has one driver: its player while connected, else the DM's map, else the lowest seat.
+//     The driver's screen sends where the hero is walking; every other screen walks it the same route. This
+//     screen never wanders or trails a hero someone else drives (owRemote).
+//   - PLATES. Leading the party through an exit is a world event (owLeavesPlate); the other screens play the
+//     same crossing. Any other arrival (DM jump, falls, lift) is reported by owEntered.
+//   - STATE. The `state` object (gate, door, talked, cleared, room rolls, …) is diffed key by key every 400 ms
+//     and merged on the server; a key another screen changed is taken here unless this screen has an unsent
+//     change to the same key.
+//   - THE FAILSAFE. Every 2.5 s a heartbeat carries a fingerprint of {plate, state}. The server answers with
+//     its own. Two disagreements in a row with nothing unsent and the screen drops its copy and snaps to the
+//     server's (owResync). The light bottom-right says which: in step, catching up, out of touch. The DM's
+//     light opens onto every seat's.
+//   - FIGHTS are not shared yet (the next lane). A fight on any screen turns every light amber and says
+//     whose screen it is on, so nobody believes the others see it.
+// When the table is not there (migration unapplied) or the server cannot be reached, the page plays on as a
+// single screen, as before, and its light says "Not shared" — never silently.
+const OW = {on: false, run: null, key: null, version: 0, plate: null, synced: {}, seen: {}, sent: {}, pending: {},
+  travelSeq: 0, localTravelUntil: 0, misses: 0, fails: 0, status: "off", offset: 0, seats: {}, inflight: false,
+  queue: null, stateInflight: false, resyncing: false, rt: null, last: {}};
+const owNow = () => Date.now() + OW.offset;
+const owCanon = v => window.AopOneWorld ? AopOneWorld.canon(v) : JSON.stringify(v);
+const owClone = v => v === undefined ? undefined : JSON.parse(JSON.stringify(v));
+function owAuth(){
+  if (isDm()) return {headers: dmHeaders(), body: {}};          // the DM door's cookie rides along on its own; the older key too
+  try { const id = localStorage.getItem("aop_character_id"), tk = localStorage.getItem("aop_claim_token"); if (id && tk) return {headers: {}, body: {characterId: id, claimToken: tk}}; } catch (e) {}
+  return null;
+}
+async function owPost(op, extra){
+  const a = owAuth(); if (!a) throw new Error("no seat");
+  const r = await fetch("/api/walk-world", {method: "POST", headers: {"Content-Type": "application/json", ...a.headers}, body: JSON.stringify({op, ...a.body, ...extra})});
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error || String(r.status));
+  if (typeof j.now === "number") OW.offset = j.now - Date.now();
+  if (j.seats) OW.seats = j.seats;
+  return j;
+}
+/** Boot: read the shared world. Null (and a "Not shared" light) when there is none to read. */
+async function owLoad(){
+  if (!APP || !window.AopOneWorld) return null;
+  if (SANDBOX){ owSetStatus("rehearsal"); return null; }      // a DM rehearsal never touches the real game's world
+  // A session's local test copy (any host but the live site, AGENTS.md §8) must never move the real game's heroes —
+  // the same rule as its sound. The two-screen test opts in with ?oneworld=1 against its own stand-in server.
+  if (!/(^|\.)playacartagena\.com$/.test(location.hostname) && new URLSearchParams(location.search).get("oneworld") !== "1"){ owSetStatus("rehearsal"); return null; }
+  try {
+    const r = await fetch("/api/walk-world", {cache: "no-store"}); const j = await r.json();
+    if (!r.ok || !j.world) throw new Error(j.error || r.status);
+    if (typeof j.now === "number") OW.offset = j.now - Date.now();
+    OW.seats = j.seats || {};
+    return j;
+  } catch (e) { owSetStatus("off"); return null; }
+}
+/** The world as the boot's `saved` walk: the plate, the state, and every hero standing on that plate. */
+function owSaved(W, mine){
+  const w = W.world; if (w.plate == null || !SPEC[w.plate]) return null;
+  const party = PARTY.map(id => w.heroes && w.heroes[id]).map((h, i) => h && h.plate === w.plate ? {id: PARTY[i], x: h.x, y: h.y, face: h.face || 0} : null).filter(Boolean);
+  return {cur: w.plate, run: runSeen, leader: mine || (party[0] && party[0].id), party, state: owClone(w.state || {}), bare: !party.length};
+}
+function owStart(W){
+  if (!W || !W.world || !owAuth()){ if (OW.status !== "rehearsal") owSetStatus("off"); return; }
+  const w = W.world;
+  OW.on = true; OW.run = w.campaign_run_id; OW.key = isDm() ? "dm" : (myClaimId || null);
+  OW.version = Number(w.version) || 0; OW.plate = w.plate; OW.travelSeq = (w.travel && w.travel.seq) || 0;
+  for (const k of Object.keys(w.state || {})) OW.synced[k] = owCanon(w.state[k]);
+  for (const [slug, h] of Object.entries(w.heroes || {})) OW.seen[slug] = h.seq || 0;
+  owSetStatus("catching-up");
+  if (w.plate == null || w.plate !== cur) owEntered(true);      // a fresh world: this screen places the party
+  setInterval(owHeroTick, 150); setInterval(owStateTick, 400); setInterval(owBeat, 2500);
+  setTimeout(owBeat, 300);
+  if (W.realtime && W.realtime.url && W.realtime.key) owRealtime(W.realtime);
+}
+async function owRealtime(cfg){
+  try {
+    const {createClient} = await import("https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.105.4/+esm");
+    const sb = createClient(cfg.url, cfg.key, {auth: {persistSession: false, autoRefreshToken: false}});
+    OW.rt = sb.channel("walk-world-" + OW.run)
+      .on("postgres_changes", {event: "*", schema: "public", table: "walk_world", filter: `campaign_run_id=eq.${OW.run}`}, p => { if (p && p.new) owReceive(p.new); })
+      .subscribe();
+  } catch (e) {}                                                   // the heartbeat still carries every change, a beat later
+}
+// --- who drives whom ---
+function owDriver(a){ return AopOneWorld.driverOf(characterIdOf(a.id), OW.seats, owNow()); }
+function owDrives(a){
+  if (!OW.on || !a || a.kind !== "pc") return true;
+  const d = owDriver(a);
+  if (d == null) return a.id === mySlug || (isDm() && !mySlug);    // before the first heartbeat lands: your own hero only
+  return d === OW.key;
+}
+function owRemote(a){ return !!(OW.on && a && a.kind === "pc" && !owDrives(a)); }
+// --- heroes ---
+function owHeroTick(){
+  if (!OW.on || mode === "load" || mode === "travel" || mode === "combat") return;
+  for (const slug of Object.keys(OW.pending)){ const h = OW.pending[slug]; delete OW.pending[slug]; owApplyHero(slug, h); }
+  if (OW.inflight) return;
+  const heroes = {};
+  for (const a of party){
+    if (a.climbing || a.once || !a.x) continue;
+    const drives = owDrives(a);
+    const dest = a.path.length ? a.path[a.path.length - 1] : {x: a.x, y: a.y};
+    const last = OW.sent[a.id];
+    // an order this screen gave a hero it does not drive: only the DM may (the DM moves anyone, Sam 2026-10-25)
+    const ordered = !drives && isDm() && a.netDest && Math.hypot(dest.x - a.netDest.x, dest.y - a.netDest.y) > 8;
+    // A hero someone else drives that is not where its driver last put it — a dialog on this screen stopped it, a
+    // crossing re-formed the party, a fight shoved it — walks back there (or is put there, if far). Positions heal.
+    if (!drives && !ordered){
+      const h = OW.last[a.id];
+      if (h && h.plate === cur && !a.path.length && !a.kbd){
+        const d = Math.hypot(a.x - h.tx, a.y - h.ty);
+        if (d > 220 * node.scale){ a.x = h.tx; a.y = h.ty; }
+        else if (d > 30){ const p = findPath(a, nearestWalkable(h.tx, h.ty)); a.path = p && p.length ? p : [{x: h.tx, y: h.ty}]; }
+      }
+      continue;
+    }
+    const moved = !last || Math.hypot(dest.x - last.tx, dest.y - last.ty) > 8 || (a.kbd && Math.hypot(a.x - last.x, a.y - last.y) > 24) || (!a.path.length && Math.hypot(a.x - last.x, a.y - last.y) > 30);
+    if (!moved) continue;
+    const seq = Math.max(owNow(), (OW.seen[a.id] || 0) + 1); OW.seen[a.id] = seq;
+    const e = {x: Math.round(a.x), y: Math.round(a.y), tx: Math.round(dest.x), ty: Math.round(dest.y), face: a.face | 0, plate: cur, seq, cid: characterIdOf(a.id)};
+    OW.sent[a.id] = e; if (ordered) a.netDest = {x: dest.x, y: dest.y};
+    heroes[a.id] = e;
+  }
+  if (!Object.keys(heroes).length) return;
+  OW.inflight = true;
+  owPost("patch", {patch: {heroes}}).then(j => { if (j.refused) for (const s of j.refused) delete OW.sent[s]; owBumpVersion(j); })
+    .catch(() => { for (const s of Object.keys(heroes)) delete OW.sent[s]; }).finally(() => { OW.inflight = false; });
+}
+function owApplyHero(slug, h){
+  const a = party.find(p => p.id === slug);
+  if (!a || h.plate !== cur || mode === "travel" || mode === "load" || mode === "combat" || a.climbing || a.once){ if (a || PARTY.includes(slug)) OW.pending[slug] = h; return; }
+  if (Math.hypot(a.x - h.x, a.y - h.y) > 220 * node.scale){ a.x = h.x; a.y = h.y; a.alpha = 1; }   // too far apart to walk it: put it there
+  const dest = {x: h.tx, y: h.ty}; a.netDest = dest; OW.sent[slug] = {...h}; OW.last[slug] = h;
+  stopActivity(a); a.kbd = false; a.onArrive = null; a.walkIn = false;
+  if (Math.hypot(dest.x - a.x, dest.y - a.y) > 6){ const p = findPath(a, nearestWalkable(dest.x, dest.y)); a.path = p && p.length ? p : [{x: dest.x, y: dest.y}]; }
+  else { a.path = []; a.face = h.face | 0; }
+}
+// --- plates ---
+function owLeavesPlate(to, z){
+  if (!OW.on) return;
+  const seq = Math.max(owNow(), OW.travelSeq + 1); OW.travelSeq = seq; OW.plate = to; OW.localTravelUntil = Date.now() + 12000;
+  OW.sent = {};                                                    // on the new plate every driven hero is re-sent
+  owPost("patch", {patch: {travel: {seq, from: cur, to, zone: node.zones.indexOf(z)}, plate: to}}).then(owBumpVersion).catch(() => { OW.plate = null; });
+}
+function owEntered(force){
+  if (!OW.on || OW.applyingPlate) return;
+  OW.sent = {};
+  if (!force && cur === OW.plate) return;
+  OW.plate = cur;
+  owPost("patch", {patch: {plate: cur}}).then(owBumpVersion).catch(() => { OW.plate = null; });
+}
+// The modes a screen can be pulled to another plate from: walking, a dialog or a conversation open. Not mid-fight,
+// not mid-crossing, not while loading — those finish first and the plate follows (OW.pendingPlate).
+const OW_CAN_MOVE = () => mode === "explore" || mode === "dialog" || mode === "talk";
+async function owGoTo(plate, t){
+  OW.applyingPlate = true;
+  try {
+    const z = t && t.from === cur && t.to === plate ? node.zones[t.zone] : null;
+    $("obj").hidden = true; $("talk").hidden = true; $("dialog").hidden = true; talkNpc = null;   // nothing declined: the party just left
+    if (z && OW_CAN_MOVE()){ mode = "explore"; await travel(plate, z, true); }
+    else await enterNode(plate, {note: "The party has moved on — you are with them."});
+  } finally { OW.applyingPlate = false; OW.plate = cur; OW.sent = {}; }
+}
+// --- state ---
+function owStateTick(){
+  if (!OW.on || mode === "load" || OW.stateInflight || OW.resyncing) return;
+  const patch = {};
+  for (const k of Object.keys(state)){ const s = owCanon(state[k]); if (s !== OW.synced[k]){ patch[k] = owClone(state[k]); OW.synced[k] = s; } }
+  if (!Object.keys(patch).length) return;
+  OW.stateInflight = true;
+  owPost("patch", {patch: {state: patch}}).then(owBumpVersion)
+    .catch(() => { for (const k of Object.keys(patch)) delete OW.synced[k]; })      // unsent: tried again next tick
+    .finally(() => { OW.stateInflight = false; });
+}
+function owDirty(){
+  if (OW.stateInflight || OW.inflight) return true;
+  for (const k of Object.keys(state)) if (owCanon(state[k]) !== OW.synced[k]) return true;
+  return false;
+}
+function owApplyState(remote, all){
+  const changed = [];
+  for (const k of Object.keys(remote || {})){
+    const rs = owCanon(remote[k]);
+    if (!all && rs === OW.synced[k]) continue;
+    if (!all && OW.synced[k] !== undefined && owCanon(state[k]) !== OW.synced[k]) continue;   // this screen's own change to it is still on its way
+    state[k] = owClone(remote[k]); OW.synced[k] = rs; changed.push(k);
+  }
+  if (all) for (const k of Object.keys(state)) if (!(k in (remote || {}))){ delete state[k]; delete OW.synced[k]; changed.push(k); }
+  if (changed.some(k => k === "gateOpen" || k === "doorShut" || k === "gateBroken")){
+    if (typeof door !== "undefined" && door.leaf) setDoor(!!state.gateOpen && !state.doorShut);
+    if (balcony()) buildGrid();
+  }
+}
+// --- what comes back ---
+// The version this screen has SEEN only ever comes from a world row it actually read (owReceive). Taking it from the
+// answer to our own write would skip whatever another screen wrote just before — caught by the two-screen test:
+// Gandalf stopped on Sam's screen and Fifi's screen never heard, because her own gate write had moved her past it.
+function owBumpVersion(){}
+function owReceive(w){
+  if (!OW.on || !w) return;
+  if (w.seats) OW.seats = w.seats;
+  const v = Number(w.version) || 0;
+  if (v > OW.version) OW.version = v;
+  for (const [slug, h] of Object.entries(w.heroes || {})){
+    if (!h || (h.seq || 0) <= (OW.seen[slug] || 0)) continue;
+    OW.seen[slug] = h.seq;
+    if (h.by === OW.key) continue;                                  // our own move coming back
+    owApplyHero(slug, h);
+  }
+  owApplyState(w.state || {}, false);
+  const t = w.travel;
+  if (t && (t.seq || 0) > OW.travelSeq){
+    OW.travelSeq = t.seq;
+    if (t.by !== OW.key && t.to !== cur){ if (OW_CAN_MOVE()) owGoTo(t.to, t); else OW.pendingPlate = t.to; return; }
+  }
+  if (w.plate != null) OW.plate = w.plate;
+  owCheckPlate();
+}
+function owCheckPlate(){
+  const p = OW.pendingPlate != null ? OW.pendingPlate : OW.plate;
+  if (p == null || p === cur || !SPEC[p] || OW.applyingPlate) return;
+  if (Date.now() < OW.localTravelUntil && mode === "travel") return;
+  if (!OW_CAN_MOVE()) return;                                         // after the fight / the crossing
+  OW.pendingPlate = null; owGoTo(p, null);
+}
+// --- the heartbeat: the failsafe ---
+async function owBeat(){
+  if (!OW.on) return;
+  owCheckPlate();
+  const digest = AopOneWorld.worldDigest(cur, state);
+  let j;
+  try {
+    j = await owPost("beat", {digest, version: OW.version, slug: mySlug, status: OW.status === "off" ? "in-step" : OW.status});
+    OW.fails = 0;
+  } catch (e) {
+    if (++OW.fails >= 3) owSetStatus("out-of-touch");
+    return;
+  }
+  if (j.world) owReceive(j.world);
+  const mine = AopOneWorld.worldDigest(cur, state);
+  const v = AopOneWorld.heartbeatVerdict({digest: mine, dirty: owDirty(), travelling: mode === "travel" || OW.applyingPlate}, {digest: j.digest}, OW.misses);
+  OW.misses = v.misses;
+  if (v.resync) await owResync();
+  owSetStatus(state.fightOn ? "fight-unshared" : v.status);
+}
+async function owResync(){
+  if (OW.resyncing) return; OW.resyncing = true;
+  try {
+    const j = await owPost("beat", {digest: "", version: -1, slug: mySlug, status: "catching-up", full: true});
+    const w = j.world; if (!w) return;
+    console.warn("[one-world] this screen had drifted from the shared world; snapping to it", {plate: w.plate, version: w.version});
+    owApplyState(w.state || {}, true);
+    OW.version = Number(w.version) || 0; OW.plate = w.plate; OW.seen = {};
+    for (const [slug, h] of Object.entries(w.heroes || {})){ OW.seen[slug] = h.seq || 0; if (h.by !== OW.key) owApplyHero(slug, h); }
+    if (w.plate != null && w.plate !== cur){ OW.pendingPlate = w.plate; owCheckPlate(); }
+  } catch (e) {} finally { OW.resyncing = false; }
+}
+// --- fights (not shared yet) ---
+function owFightBegins(){ if (OW.on) state.fightOn = {by: OW.key, who: mySlug ? (SHORT[mySlug] || mySlug) : "the DM", plate: cur}; }
+function owFightEnds(){ if (OW.on && state.fightOn) state.fightOn = null; }
+// --- the light ---
+const OW_LABEL = {"in-step": "In step", "catching-up": "Catching up…", "out-of-touch": "Out of touch", "fight-unshared": "Fight not shared", "off": "Not shared", "rehearsal": "Rehearsal · own world"};
+function owSetStatus(s){
+  OW.status = s;
+  let el = $("owLight");
+  if (!el){
+    el = document.createElement("button"); el.id = "owLight"; el.className = "ow-light"; el.type = "button";
+    el.onclick = () => { const p = $("owSeats"); if (p) p.hidden = !p.hidden; owRenderSeats(); };
+    $("stage").appendChild(el);
+    const p = document.createElement("div"); p.id = "owSeats"; p.className = "ow-seats"; p.hidden = true; $("stage").appendChild(p);
+  }
+  el.dataset.s = s;
+  const f = state.fightOn;
+  el.textContent = OW_LABEL[s] || s;
+  el.title = s === "fight-unshared" && f ? `A fight is running on ${f.who === (SHORT[mySlug] || mySlug) ? "this" : f.who + "'s"} screen. Fights are not shared between screens yet — the others do not see it.`
+    : s === "rehearsal" ? "A DM rehearsal: this screen plays its own world and never touches the real game."
+    : s === "off" ? "This screen is not sharing its world with the others. Tell the DM."
+    : s === "out-of-touch" ? "This screen cannot reach the game. It will catch up on its own when the connection comes back."
+    : s === "catching-up" ? "This screen is bringing itself in line with the shared world." : "Every screen at the table sees the same world.";
+  owRenderSeats();
+}
+function owRenderSeats(){
+  const p = $("owSeats"); if (!p || p.hidden) return;
+  const t = owNow(), rows = Object.entries(OW.seats || {}).sort((a, b) => (a[1].dm ? -1 : 0) - (b[1].dm ? -1 : 0) || (a[1].seat || 9) - (b[1].seat || 9));
+  p.innerHTML = rows.length ? rows.map(([k, s]) => {
+    const live = AopOneWorld.isOnline(s, t), st = live ? s.status : "out-of-touch";
+    const name = s.dm ? "DM" : (s.slug && (SHORT[s.slug] || PLAYS_AS[s.slug])) || "Seat " + (s.seat || "?");
+    return `<div class="ow-row"><i data-s="${esc(st)}"></i>${esc(name)}<span>${esc(live ? OW_LABEL[st] || st : "away")}</span></div>`;
+  }).join("") : `<div class="ow-row">No screen has checked in yet.</div>`;
+}
+
 // ---------- boot ----------
 (async () => {
   setMotion(motionOn);
@@ -9536,7 +9850,10 @@ function frame(t){
     try { const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json(); noteSeats(j.seated); noteNpcTongues(j); const seated = seatedSlugs(j.seated); if (seated.length) PARTY = seated; if (typeof j.run === "number") runSeen = j.run; } catch (e) {}
     if (mine && !PARTY.includes(mine)) PARTY = FULL_PARTY.filter(x => PARTY.includes(x) || x === mine);
   }
-  let saved = APP ? loadWalk() : null;
+  // ONE WORLD: the shared world wins over what this tab remembers. Only a world nobody has placed yet (or no
+  // shared world at all) falls back to the tab's own sessionStorage walk.
+  const W = APP ? await owLoad() : null;
+  let saved = (W && owSaved(W, mine)) || (APP ? loadWalk() : null);
   if (saved && saved.run != null && runSeen != null && saved.run !== runSeen) saved = null;   // saved before a restart: that world is gone
   if (saved) saved.party = saved.party.filter(p => PARTY.includes(p.id));
   if (saved && saved.party.length){
@@ -9550,11 +9867,16 @@ function frame(t){
     // "lynkes can not see gandalf" — Lynkes walked session 1 alone, so his tab restored a party of one). Everyone
     // seated now who was not in that save joins beside the leader.
     for (const id of PARTY) if (!party.some(p => p.id === id)) partyJoins(id);
+  } else if (saved && saved.bare){                       // the shared world is on a plate where no hero has been placed yet
+    Object.assign(state, saved.state || {});
+    if (mine) leader = {id: mine};
+    await enterNode(saved.cur, {});
   } else {
     if (mine) leader = {id: mine};
     await enterNode(11, {spawn: {x: 1560, y: 960}, note: (!APP || isDm()) ? "You wake in the slave pen. The gate is locked. <em>DM tools</em> can open it, or jump the party anywhere." : "You wake in the slave pen. The gate is locked."});
   }
   booted = true;
+  if (APP) owStart(W);
   // the heroes' own gear, now that they are on the plate. The first load (noteSeats) runs before the party is built,
   // so it reached only the allies: a hero's pack and hands stayed empty until something else asked, and an equipped
   // crossbow never became an attack.
