@@ -12,7 +12,9 @@
 //              bonus as chips, and a d20 to click. Step back is free.
 //   rolling  → the dashboard's 3D dice tumble over everything (DiceProvider).
 //   done     → the natural roll on the die, the total counting up, and a
-//              SUCCESS / FAILURE stamp. Continues on its own after a beat.
+//              SUCCESS / FAILURE stamp. Continues on its own after a beat —
+//              unless a failure can be rerolled with Heroic Inspiration
+//              (lib/heroic-inspiration.ts): then it waits for Reroll or Accept.
 //
 // The DC never appears here (Sam's ruling): the player learns the difficulty as
 // the DMG's word for it, and the outcome — not the number they needed.
@@ -30,6 +32,18 @@ export interface RollPanelResult {
   success: boolean
 }
 
+/** The Heroic Inspiration reroll, as the panel sees it. */
+export interface RollPanelReroll {
+  /** Show Reroll / Accept and hold the panel open. */
+  offered: boolean
+  /** The spend is on its way to the server. */
+  busy: boolean
+  /** The first natural roll, once the die has been rerolled — shown struck through. */
+  firstNatural: number | null
+  /** A short line when the spend did not go through. */
+  note: string | null
+}
+
 export interface RollPanelProps {
   who: string
   title: string
@@ -42,6 +56,8 @@ export interface RollPanelProps {
   onRoll: () => void
   onCancel: () => void
   onDone: () => void
+  reroll?: RollPanelReroll
+  onReroll?: () => void
 }
 
 const AUTO_CONTINUE_MS = 2600
@@ -86,12 +102,15 @@ export function RollPanel(p: RollPanelProps) {
     return () => cancelAnimationFrame(raf)
   }, [p.phase, p.result])
 
-  // Carry on by itself once the verdict has had a moment to land.
+  const holding = Boolean(p.reroll?.offered || p.reroll?.busy)
+
+  // Carry on by itself once the verdict has had a moment to land — but never out from under an
+  // Inspiration offer: the player decides that one.
   useEffect(() => {
-    if (!stamped) return
+    if (!stamped || holding) return
     const t = setTimeout(p.onDone, AUTO_CONTINUE_MS)
     return () => clearTimeout(t)
-  }, [stamped, p.onDone])
+  }, [stamped, holding, p.onDone])
 
   if (typeof document === "undefined") return null
 
@@ -104,7 +123,7 @@ export function RollPanel(p: RollPanelProps) {
   return createPortal(
     <div
       className="aop-rp-backdrop fixed inset-0 z-[95] flex items-center justify-center px-4"
-      onClick={() => { if (stamped) p.onDone() }}
+      onClick={() => { if (stamped && !holding) p.onDone() }}
     >
       <style>{CSS}</style>
       <div
@@ -143,7 +162,12 @@ export function RollPanel(p: RollPanelProps) {
           </div>
 
           <div aria-live="polite" className="mt-2 h-5 text-[13px] text-[#a08a63]">
-            {p.phase === "ready" ? "Click the die to roll" : rolling ? "Rolling…" : crit ? "Natural 20" : fumble ? "Natural 1" : ""}
+            {p.phase === "ready" ? "Click the die to roll" : rolling ? (p.reroll?.firstNatural != null ? "Rerolling…" : "Rolling…") : crit ? "Natural 20" : fumble ? "Natural 1" : ""}
+            {done && p.reroll?.firstNatural != null && (
+              <span className="ml-2 text-[#d9b56a]">
+                Inspired · first roll <s className="text-[#8a7752]">{p.reroll.firstNatural}</s>
+              </span>
+            )}
           </div>
         </div>
 
@@ -186,6 +210,36 @@ export function RollPanel(p: RollPanelProps) {
             </div>
           )}
         </div>
+        {stamped && (p.reroll?.offered || p.reroll?.busy || p.reroll?.note) && (
+          <div className="aop-rp-offer flex flex-col items-center gap-2 border-t border-[#3d3020]/80 px-6 pb-2 pt-4">
+            {(p.reroll.offered || p.reroll.busy) && (
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  autoFocus
+                  disabled={p.reroll.busy}
+                  onClick={p.onReroll}
+                  className="aop-rp-inspire inline-flex min-h-[44px] items-center gap-2 rounded-[6px] border border-[#e0b45c] px-4 font-serif text-[15px] font-semibold tracking-[0.04em] text-[#1a1208] outline-none focus-visible:ring-2 focus-visible:ring-[#5fd4c4] focus-visible:ring-offset-2 focus-visible:ring-offset-[#110d09] disabled:opacity-70"
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+                    <path d="M8 1.5l1.7 3.9 4.2.4-3.2 2.8.9 4.1L8 10.6 4.4 12.7l.9-4.1L2.1 5.8l4.2-.4z" fill="currentColor" />
+                  </svg>
+                  {p.reroll.busy ? "Spending Inspiration…" : "Reroll with Inspiration"}
+                </button>
+                <button
+                  type="button"
+                  disabled={p.reroll.busy}
+                  onClick={p.onDone}
+                  className="min-h-[44px] rounded-[6px] border border-[#5a4526] bg-[#1d1610] px-4 text-[15px] text-[#e6d3a8] transition-colors hover:border-[#c9a868] disabled:opacity-50"
+                >
+                  Accept
+                </button>
+              </div>
+            )}
+            {p.reroll.offered && <div className="text-[12.5px] text-[#a08a63]">Spends your Heroic Inspiration. You keep the new roll, whatever it is.</div>}
+            {p.reroll.note && <div role="status" className="text-[13px] text-[#e7a08f]">{p.reroll.note}</div>}
+          </div>
+        )}
         <div className="h-3" />
       </div>
     </div>,
@@ -255,11 +309,15 @@ const CSS = `
 .aop-rp-crit{filter:drop-shadow(0 0 26px rgba(255,220,140,.75))}
 .aop-rp-fumble{filter:drop-shadow(0 0 18px rgba(224,122,99,.55))}
 .aop-rp-stamp{animation:aop-rp-stamp .32s cubic-bezier(.2,1.7,.4,1) both;padding:4px 18px;border:3px double currentColor;border-radius:4px;transform:rotate(-6deg);background:rgba(15,11,8,.85)}
+.aop-rp-offer{animation:aop-rp-rise .22s ease-out}
+.aop-rp-inspire{background:linear-gradient(180deg,#f3d58a 0%,#d9a948 100%);box-shadow:0 0 0 1px #000,0 0 18px rgba(240,200,110,.45);animation:aop-rp-inspire 2.2s ease-in-out infinite}
+.aop-rp-inspire:hover:not(:disabled){filter:brightness(1.08)}
+@keyframes aop-rp-inspire{0%,100%{box-shadow:0 0 0 1px #000,0 0 10px rgba(240,200,110,.3)}50%{box-shadow:0 0 0 1px #000,0 0 24px rgba(240,200,110,.7)}}
 .aop-rp-win{color:#f0d27a;text-shadow:0 0 18px rgba(240,210,122,.55)}
 .aop-rp-lose{color:#e07a63;text-shadow:0 0 18px rgba(224,122,99,.45)}
 @keyframes aop-rp-fade{from{opacity:0}to{opacity:1}}
 @keyframes aop-rp-rise{from{opacity:0;transform:translateY(14px) scale(.97)}to{opacity:1;transform:none}}
 @keyframes aop-rp-breathe{0%,100%{filter:drop-shadow(0 0 8px rgba(217,181,106,.25))}50%{filter:drop-shadow(0 0 20px rgba(217,181,106,.6))}}
 @keyframes aop-rp-stamp{from{opacity:0;transform:rotate(-6deg) scale(2.2)}to{opacity:1;transform:rotate(-6deg) scale(1)}}
-@media (prefers-reduced-motion:reduce){.aop-rp-backdrop,.aop-rp-card,.aop-rp-ready,.aop-rp-stamp{animation:none}.aop-rp-ready:hover{transform:none}}
+@media (prefers-reduced-motion:reduce){.aop-rp-backdrop,.aop-rp-card,.aop-rp-ready,.aop-rp-stamp,.aop-rp-offer,.aop-rp-inspire{animation:none}.aop-rp-ready:hover{transform:none}}
 `
