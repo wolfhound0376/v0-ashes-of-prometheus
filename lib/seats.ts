@@ -37,7 +37,9 @@ export const seatFlagKey = (characterId: string) => `${PREFIX}${characterId}`
 // `seat` (1..5) and `ready` belong to the table (lib/table.ts, Sam 2026-10-25): where around the table
 // the hero sits, and whether their player pressed Ready. Seats written before the table existed lack both.
 // `figure` (0..6) is which of the table's seven cartoon players they chose to sit as (Sam, 2026-10-25).
-export type Seat = { id: string; name: string; at: string; dm?: boolean; seat?: number; ready?: boolean; figure?: number }
+// `away` (Sam, 2026-10-25): the DM stepped this player out mid-game. The seat is kept — same chair, same figure —
+// so the DM can let them back in, but they are not in the game until he does. Only ever set while the session is live.
+export type Seat = { id: string; name: string; at: string; dm?: boolean; seat?: number; ready?: boolean; figure?: number; away?: boolean }
 
 /** Everyone seated this run, earliest first. Empty when nobody has come through the door yet. */
 export async function readSeated(db: SupabaseClient): Promise<Seat[]> {
@@ -46,7 +48,7 @@ export async function readSeated(db: SupabaseClient): Promise<Seat[]> {
     const seats: Seat[] = []
     for (const row of data ?? []) {
       const v = row.value as Partial<Seat> | null
-      if (v && typeof v.id === "string" && typeof v.name === "string") seats.push({ id: v.id, name: v.name, at: typeof v.at === "string" ? v.at : "", dm: !!v.dm, seat: typeof v.seat === "number" ? v.seat : undefined, ready: !!v.ready, figure: typeof v.figure === "number" ? v.figure : undefined })
+      if (v && typeof v.id === "string" && typeof v.name === "string") seats.push({ id: v.id, name: v.name, at: typeof v.at === "string" ? v.at : "", dm: !!v.dm, seat: typeof v.seat === "number" ? v.seat : undefined, ready: !!v.ready, figure: typeof v.figure === "number" ? v.figure : undefined, away: !!v.away })
     }
     return seats.sort((a, b) => a.at.localeCompare(b.at))
   } catch (e) {

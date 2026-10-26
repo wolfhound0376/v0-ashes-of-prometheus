@@ -9,12 +9,15 @@ describe("isGuardedPath", () => {
 })
 
 describe("guardVerdict", () => {
-  const seat = { id: "fifi" }
+  const seat = { id: "fifi", away: false }
   it("a seated player stays while the session is live", () => {
     expect(guardVerdict({ state: { status: "live" }, mine: seat }, "player")).toBe("stay")
   })
   it("after the DM ends it, everyone without the DM key leaves", () => {
     expect(guardVerdict({ state: { status: "closed" }, mine: null }, "player")).toBe("leave")
+    // Stepped out by the DM: the chair is held, but the player is out of the game until he lets them back in.
+    expect(guardVerdict({ state: { status: "live" }, mine: { away: true } }, "player")).toBe("leave")
+    expect(guardVerdict({ state: { status: "live" }, mine: { away: false } }, "player")).toBe("stay")
     expect(guardVerdict({ state: { status: "live" }, mine: null }, null)).toBe("leave")
   })
   it("the DM stays, but only on the browser signed in as DM", () => {
