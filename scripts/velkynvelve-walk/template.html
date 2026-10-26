@@ -436,6 +436,9 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <label class="dmMood">Fight music <select id="dmMood" aria-label="Fight music">
         <option value="auto">Auto (by the odds)</option><option value="regular">Regular</option><option value="scary">Scary</option>
         <option value="boss">Boss</option><option value="overwhelming">Overwhelming odds</option></select></label>
+      <label class="dmMood">Explore music <select id="dmExplore" aria-label="Explore music">
+        <option value="auto">Auto (by the place)</option><option value="outpost">Outpost</option><option value="caverns">Caverns</option>
+        <option value="water">Water</option><option value="off">Off (ambience only)</option></select></label>
       <button class="btn" id="dmTalk">An NPC wants to talk</button>
       <button class="btn" id="dmBark">Make an NPC comment</button>
       <button class="btn" id="dmReset">Reset ambushes</button>
@@ -479,7 +482,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
   <footer class="party" id="party"><span class="help">WASD / arrows or click to walk · 1–4 or Tab to switch · E to talk · walk into a glowing exit to travel</span></footer>
 </div>
 
-<audio id="mExplore" loop preload="auto"></audio>
+<audio id="mExplore" preload="auto"></audio>
+<audio id="mAmbience" loop preload="auto"></audio>
 <audio id="mCombat" loop preload="auto"></audio>
 
 <script>
@@ -1488,17 +1492,25 @@ function wardDrinks(){
 }
 
 // ---------- music ----------
-const music = {explore: $("mExplore"), combat: $("mCombat")};
-music.explore.src = ASSET + "audio/explore.mp3"; music.combat.src = ASSET + "audio/combat.mp3";
+const music = {explore: $("mExplore"), combat: $("mCombat"), ambience: $("mAmbience")};
+music.combat.src = ASSET + "audio/combat.mp3";   // the explore player is loaded by pickExploreTrack (below)
 let musicOn = true, vol = .4, track = "explore", audioUnlocked = false;
 try { const v = localStorage.getItem("vk-music"); if (v === "off" || (APP && localStorage.getItem("aop_music_off"))) musicOn = false; const vv = localStorage.getItem("vk-vol"); if (vv) vol = +vv; } catch (e) {}
 $("vol").value = Math.round(vol * 100);
-const LEVEL = {explore: .55, combat: .7};   // explore sits low under play; combat a touch hotter, still under everything
+const LEVEL = {explore: .55, combat: .7, ambience: .5};   // explore sits low under play; combat a touch hotter, still under everything
 function unlockAudio(){ if (audioUnlocked) return; audioUnlocked = true; if (musicOn) music[track].play().catch(() => {}); }
-function setTrack(t){ track = t; if (musicOn && audioUnlocked){ const a = music[t]; if (a.paused){ a.volume = 0; a.play().catch(() => {}); } } }
+function setTrack(t){
+  if (t === "explore" && track === "combat") exploreAfterFight();   // a fight is a seam: come back to something new
+  track = t; if (musicOn && audioUnlocked){ const a = music[t]; if (a.paused && !(t === "explore" && exploreQuiet())){ a.volume = 0; a.play().catch(() => {}); } } }
 function tickMusic(dt){
+  tickExplore();
   for (const [name, a] of Object.entries(music)){
-    let target = musicOn && audioUnlocked && name === track ? vol * LEVEL[name] : 0;
+    let target = 0;
+    if (musicOn && audioUnlocked){
+      if (name === "ambience") target = track === "explore" && exploreQuiet() ? vol * LEVEL.ambience : 0;
+      else if (name === track && !(name === "explore" && (exploreQuiet() || exploreSwap))) target = vol * LEVEL[name];
+    }
+    if (name === "ambience" && target > 0 && a.paused){ a.volume = 0; a.play().catch(() => {}); }
     if (mode === "talk" || speaking) target *= .35;
     a.volume = Math.max(0, Math.min(1, a.volume + (target - a.volume) * Math.min(1, dt * 1.6)));
     if (target === 0 && a.volume < .01 && !a.paused) a.pause();
@@ -1506,6 +1518,61 @@ function tickMusic(dt){
 }
 function renderMusicBtn(){ $("musicBtn").setAttribute("aria-pressed", String(musicOn)); $("musicBtn").textContent = musicOn ? "♪ Music on" : "♪ Music off"; }
 $("musicBtn").onclick = () => { musicOn = !musicOn; try { localStorage.setItem("vk-music", musicOn ? "on" : "off"); } catch (e) {} renderMusicBtn(); audioUnlocked = true; if (musicOn) setTrack(track); };
+// ---------- explore music that rotates ----------
+// Sam, 2026-10-25: "alternate background music that rotates from occasion to avoid fatigue." Exploring used to play
+// ONE file (audio/explore.mp3) on a loop for as long as the party walked. Now each kind of place has its own pool
+// (ElevenLabs Music v2.5, flow "AoP Underwalk explore music + UI clicks", levelled to -16 LUFS, public/audio/explore/):
+//   outpost  — the drow outpost and the pen: tense, sneaking (the original explore.mp3 stays in this pool)
+//   caverns  — the open Underdark plates past the outpost: vast, lonely
+//   water    — the falls, the pool and river, the Darklake shore: liquid, eerie
+// A track plays through ONCE (no loop), then the next is drawn from the pool, never the one just played. After every
+// two tracks the music rests for 20-40 s and only the cave (or water) ambience plays — silence is what stops a long
+// session wearing on the ear. Changes happen only at seams: a track ending, a plate of a different kind, a fight
+// ending. A plate of the same kind keeps the music going. DM tools can pin a pool or turn exploring music off.
+const EXPLORE_POOLS = {
+  outpost: [null, "outpost-1", "outpost-2", "outpost-3", "outpost-4"],   // null: the original explore.mp3
+  caverns: ["caverns-1", "caverns-2", "caverns-3", "caverns-4"],
+  water:   ["water-1", "water-2"],
+};
+const WATER_PLATES = new Set(["node-09-waterfall", "node-14-pool-river", "biome-shore"]);
+const ORIGINAL_EXPLORE = ASSET + "audio/explore.mp3";
+const EXPLORE_BASE = `${APP ? "/" : ""}audio/explore/`;
+const REST_EVERY = 2, REST_MS = [20000, 40000];
+let exploreRegion = null, lastExplore = null, exploreSince = 0, exploreRestUntil = 0, exploreSwap = null, dmExplore = "auto";
+try { dmExplore = localStorage.getItem("vk-explore-music") || "auto"; } catch (e) {}
+/** What kind of place a plate is, for the music. */
+function regionOf(slug){ return WATER_PLATES.has(slug) ? "water" : /^biome-/.test(slug || "") ? "caverns" : "outpost"; }
+function wantedRegion(){ return dmExplore !== "auto" && dmExplore !== "off" ? dmExplore : regionOf(node && node.slug); }
+/** The gap between tracks (or the DM turned exploring music off): only the ambience is heard. */
+function exploreQuiet(){ return dmExplore === "off" || performance.now() < exploreRestUntil; }
+function srcOfExplore(t){ return t ? `${EXPLORE_BASE}${t}.mp3` : ORIGINAL_EXPLORE; }
+/** Draw the next track of a pool, never the last one played. Swapped in under a fade (exploreSwap). */
+function pickExploreTrack(region){
+  exploreRegion = region;
+  const pool = EXPLORE_POOLS[region] || EXPLORE_POOLS.outpost, fresh = pool.filter(t => t !== lastExplore), from = fresh.length ? fresh : pool;
+  const t = from[Math.floor(Math.random() * from.length)];
+  lastExplore = t;
+  const a = music.explore;
+  if (a.paused || a.volume < .02 || !a.getAttribute("src")){ a.src = srcOfExplore(t); exploreSwap = null; if (track === "explore") setTrack("explore"); }
+  else exploreSwap = srcOfExplore(t);   // fade the old one out first; tickExplore swaps at the bottom of the fade
+  music.ambience.src = `${EXPLORE_BASE}ambience-${region === "water" ? "water" : "cave"}.mp3`;
+}
+/** Called when a plate is entered: a different kind of place is a seam. */
+function exploreForPlate(){ const r = wantedRegion(); if (r !== exploreRegion) pickExploreTrack(r); }
+function exploreAfterFight(){ exploreRestUntil = 0; pickExploreTrack(wantedRegion()); }
+function tickExplore(){
+  const a = music.explore;
+  if (exploreSwap && a.volume < .02){ a.pause(); a.src = exploreSwap; exploreSwap = null; if (track === "explore" && musicOn && audioUnlocked && !exploreQuiet()){ a.volume = 0; a.play().catch(() => {}); } }
+  // the rest is over: start the next track
+  if (exploreRestUntil && performance.now() >= exploreRestUntil && dmExplore !== "off"){ exploreRestUntil = 0; if (track === "explore") setTrack("explore"); }
+}
+music.explore.addEventListener("ended", () => {
+  exploreSince++;
+  if (exploreSince >= REST_EVERY){ exploreSince = 0; exploreRestUntil = performance.now() + REST_MS[0] + Math.random() * (REST_MS[1] - REST_MS[0]); }
+  pickExploreTrack(wantedRegion());
+});
+music.explore.addEventListener("error", () => { if (music.explore.getAttribute("src") !== ORIGINAL_EXPLORE){ music.explore.src = ORIGINAL_EXPLORE; if (track === "explore") setTrack("explore"); } });
+pickExploreTrack(wantedRegion());
 // ---------- fight music by mood ----------
 // Sam, 2026-10-24: alternate combat music for scary encounters, boss encounters, regular encounters and
 // overwhelming odds. Two ElevenLabs tracks per mood (flow "AoP combat music moods"), in public/audio/combat/.
@@ -1594,7 +1661,8 @@ function renderParty(){
   });
 }
 function setLeader(a){
-  if (dmRun.has(a.id) && !isDm()){ toast(`${SHORT[a.id] || SPR[a.id].json.name} is in the DM's hands.`); return; }
+  if (dmRun.has(a.id) && !isDm()){ uiSfx("deny"); toast(`${SHORT[a.id] || SPR[a.id].json.name} is in the DM's hands.`); return; }
+  if (leader && leader !== a && mode !== "combat") uiSfx("swap");
   if (mode === "combat"){ const i = turnOrder.indexOf(a); if (i >= 0){ turnIdx = i; renderTurns(); } return; }
   if (leader && leader !== a) leader.home = {x: leader.x, y: leader.y};
   stopActivity(a); a.path = []; a.actUntil = 0;
@@ -1736,7 +1804,7 @@ async function enterNode(n, opts = {}){
   $("fade").classList.remove("on");
   $("tcNo").textContent = `Area ${n}`; $("tcName").textContent = node.name;
   $("titlecard").classList.add("on"); clearTimeout(enterNode.t); enterNode.t = setTimeout(() => $("titlecard").classList.remove("on"), 1900);
-  mode = "explore"; setTrack("explore");
+  mode = "explore"; exploreForPlate(); setTrack("explore");
   if (opts.note) log(opts.note);
   if (joined.length) log(`${joined.map(id => esc(SHORT[id] || SPR[id].json.name)).join(", ")} ${joined.length > 1 ? "come" : "comes"} with you out of the pen.`);
   if (!$("dm").hidden) renderCompany();
@@ -1908,11 +1976,54 @@ const SFX_BANK = APP ? "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/obje
 function loadSfx(name){
   const url = name.startsWith("bank:") ? `${SFX_BANK}${name.slice(5)}.ogg`
     : name.startsWith("walk:") ? `${APP ? "/" : ""}sfx/walk/${name.slice(5)}.mp3`        // Sam's ElevenLabs picks, shipped with the app (public/sfx/walk)
+    : name.startsWith("ui:") ? `${APP ? "/" : ""}sfx/ui/${name.slice(3)}.mp3`            // the map's button clicks (public/sfx/ui)
     : `${ASSET}${name.startsWith("arrive-") ? "audio" : "sfx"}/${name}.mp3`;
   return SFX[name] || (SFX[name] = fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
     .then(b => audioCtx().decodeAudioData(b)).catch(() => { delete SFX[name]; return null; }));
 }
 const bank = (name, gain = .8) => sfx(name.startsWith("walk:") ? name : "bank:" + name, gain);
+// ---------- the clicks ----------
+// Sam, 2026-10-25: "We also need more audible clicks." The map's buttons were silent (only loot, dice and initiative
+// made a sound). Eight short ElevenLabs effects (flow "AoP Underwalk explore music + UI clicks"), cut and levelled,
+// in public/sfx/ui/: hover (a brass ring on wood), press (a brass latch, kin to the dashboard's Map button), open /
+// close (a satchel flap), confirm (a seal pressed into parchment), cancel (a drawer sliding shut), deny (a knuckle
+// on stone: the button is greyed out) and swap (leather and buckles: the next hero). Each plays a touch above or
+// below its pitch so a run of clicks never sounds like one sample. Kept low: they sit under the voices and music.
+const UI_GAIN = {hover: .12, press: .42, open: .35, close: .3, confirm: .45, cancel: .35, deny: .4, swap: .45};
+let uiLast = {};
+function uiSfx(kind){
+  if (!audioUnlocked) return;                                     // a page nobody has touched stays silent (previews included)
+  const t = performance.now(); if (t - (uiLast[kind] || 0) < 45) return; uiLast[kind] = t;
+  sfx("ui:" + kind, UI_GAIN[kind] || .35, .95 + Math.random() * .1);
+}
+const CANCEL_WORDS = /^(cancel|close|back|no\b|not now|leave it|never ?mind|decline|step back|stay|done)/i;
+/** Which click a button makes: the panel's main choice confirms, a way out cancels, everything else presses. */
+function uiKindOf(b){
+  if (b.dataset.sfx) return b.dataset.sfx;
+  if (b.id === "talkNo" || CANCEL_WORDS.test((b.textContent || "").trim())) return "cancel";
+  if (b.classList.contains("primary")) return "confirm";
+  return "press";
+}
+// one listener for every button on the page, now and later: menus are rebuilt all the time
+addEventListener("pointerdown", e => {
+  const b = e.target.closest && e.target.closest("button, .turn, .cpc, [role=button]"); if (!b || e.button) return;
+  unlockAudio();
+  if (b.disabled || b.getAttribute("aria-disabled") === "true") uiSfx("deny"); else uiSfx(uiKindOf(b));
+}, {capture: true});
+let uiHoverEl = null;
+addEventListener("pointerover", e => {
+  if (e.pointerType !== "mouse") return;
+  const b = e.target.closest && e.target.closest("button:not(:disabled)"); if (b === uiHoverEl) return; uiHoverEl = b; if (b) uiSfx("hover");
+}, {passive: true});
+addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " "){ const b = document.activeElement; if (b && b.tagName === "BUTTON") uiSfx(b.disabled ? "deny" : uiKindOf(b)); } }, {capture: true});
+// panels opening and closing: watched, so every way in or out (button, key, the game itself) sounds the same
+const UI_PANELS = ["obj", "talk", "dialog", "inv", "dm", "cbtMenu"];
+setTimeout(() => {
+  const mo = new MutationObserver(ms => { for (const m of ms){ const el = m.target, open = !el.hidden;
+    if (el.id === "cbtMenu" && el.dataset.kind === "explore") continue;   // the explore bar comes and goes by itself as you walk
+    if ((el._wasOpen || false) !== open){ el._wasOpen = open; uiSfx(open ? "open" : "close"); } } });
+  for (const id of UI_PANELS){ const el = $(id); if (el){ el._wasOpen = !el.hidden; mo.observe(el, {attributes: true, attributeFilter: ["hidden"]}); } }
+}, 0);
 async function sfx(name, gain = .8, rate = 1){
   try {
     const ctx = audioCtx(); if (ctx.state === "suspended") await ctx.resume();
@@ -6161,6 +6272,10 @@ $("dmCombat").onclick = () => { toggleDm(false); if (mode !== "explore") return;
   const ids = node.hazard ? node.hazard.foes : cur === 12 ? ["quaggoth", "quaggoth"] : ["quaggoth", "giant-spider"];
   startCombat(ids, node.hazard ? node.hazard.label : "The DM calls for initiative."); };
 $("dmMood").value = dmMood;
+$("dmExplore").value = dmExplore;
+$("dmExplore").onchange = e => { dmExplore = e.target.value; try { localStorage.setItem("vk-explore-music", dmExplore); } catch (er) {}
+  exploreRestUntil = 0; if (dmExplore !== "off") pickExploreTrack(wantedRegion());
+  toast(dmExplore === "auto" ? "Explore music follows the place." : dmExplore === "off" ? "Explore music off: ambience only." : `Explore music: ${dmExplore}`); };
 $("dmMood").onchange = e => { dmMood = e.target.value; try { localStorage.setItem("vk-fight-music", dmMood); } catch (er) {}
   if (mode === "combat"){ pickCombatTrack(moodFor(foes)); toast(`Fight music: ${MOOD_LABEL[combatMood]}`); } else toast(dmMood === "auto" ? "Fight music follows the odds." : `Next fight's music: ${MOOD_LABEL[dmMood]}`); };
 // TURN ON THEM (Sam, 2026-10-25: "have ront kill kingasaur in the game with his pixel art attacking him until he is
