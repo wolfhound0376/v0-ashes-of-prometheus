@@ -116,3 +116,24 @@ describe("the map reads this same file", () => {
     expect(b).toContain("drow-surgeon.mjs")
   })
 })
+
+import { SURGEON_TOOTH, surgeonToothGlow, surgeonToothStep, surgeonToothVenom } from "./drow-surgeon.mjs"
+describe("Lolth's Tooth (Sam: sleep venom, brighter near spiders)", () => {
+  it("dark past 60 ft, brightest at arm's length, brighter as they close", () => {
+    expect(surgeonToothGlow(60)).toBe(0); expect(surgeonToothGlow(Infinity)).toBe(0)
+    expect(surgeonToothGlow(5)).toBe(1)
+    expect(surgeonToothGlow(20)).toBeGreaterThan(surgeonToothGlow(40))
+    expect(surgeonToothGlow(59)).toBeGreaterThan(0)
+  })
+  it("three steps the player is prompted to say", () => {
+    expect(surgeonToothStep(0)).toBe(0); expect(surgeonToothStep(surgeonToothGlow(55))).toBe(1)
+    expect(surgeonToothStep(surgeonToothGlow(25))).toBe(2); expect(surgeonToothStep(surgeonToothGlow(8))).toBe(3)
+  })
+  it("the venom: DC 13 CON or asleep, nothing for the immune, no damage field at all", () => {
+    expect(SURGEON_TOOTH).toMatchObject({ doses: 3, dc: 13, senseFt: 60 })
+    expect(surgeonToothVenom(2, false, () => (10 - 0.5) / 20).asleep).toBe(true)   // 10 + 2 = 12
+    expect(surgeonToothVenom(2, false, () => (11 - 0.5) / 20).asleep).toBe(false)  // 11 + 2 = 13
+    expect(surgeonToothVenom(0, true)).toEqual({ immune: true, asleep: false })
+    expect(Object.keys(surgeonToothVenom(0, false))).not.toContain("dmg")
+  })
+})
