@@ -1885,7 +1885,9 @@ function chooseDestination(z){
 }
 function triggerZone(z){
   leader.path = [];
-  if (z.interact){ if (z.kind === "gate" && gatePassable()) return; openInteract(z); return; }   // the open doorway is just a doorway
+  // Sam, 2026-10-25: the gate card opens "only if you choose to interact with the door, not automatically". Walking
+  // up to the bars does nothing; clicking the gate (or its ✋ action) opens it.
+  if (z.interact){ if (z.kind === "gate") return; openInteract(z); return; }
   if (z.to.length > 1){ chooseDestination(z); return; }                                        // the landing: stairs or bridge
   // Sam, 2026-10-22: "why does the party always fall when crossing the bridge?" The bridge across the falls (area 9)
   // runs right over the spot where you can drop into the pool, so walking from one side to the other used to drop
@@ -2577,21 +2579,23 @@ function openInteract(z, opts = {}){
   };
   if (!state.gateOpen){
     if (isDoor && !opts.again) sfx("door-locked", .7);             // you try the bars: locked fast
-    // No dice here: the roll is made on the dashboard with the one dice roller; the player says how it went.
-    const ask = (what, onWin, onLose) => () => {
-      $("objText").textContent = `${what}: roll it on the dashboard (DC 20, OotA p.18). What did it come to?`;
-      box.innerHTML = "";
-      add("20 or more", () => { close(); onWin(); }, "primary");
-      add("Under 20", () => { close(); onLose(); });
-      add("Back", () => { close(); openInteract(z, {again: true}); });
-      box.firstChild?.focus();
+    // Sam, 2026-10-25: no "What did it come to? 20 or more / Under 20" window. Choosing an action rolls it, on the
+    // dashboard's dice with the dashboard's modifier (lib/walk-roll.ts, components/walk/walk-roll-bridge.tsx); the
+    // DC stays with the DM and the result plays out here. The card shows what you can try, never the DC.
+    const attempt = (action, localMod, onWin, onLose) => () => {
+      close();
+      rollOnDashboard(action, localMod).then(k => {
+        if (k && k.cancelled){ openInteract(z, {again: true}); return; }   // stepped back from the roll panel: back to the choices
+        if (!k || !k.ok){ toast((k && k.error) || "The dice did not roll.", 3200); return; }
+        (k.success ? onWin : onLose)();
+      });
     };
     if (hasPenKey()) add("Unlock it with the pen key", () => { close(); sfx("lock-picked", .9); log(`${fname(leader)} turns the stolen key in the lock.`); if (APP) handOff(`${fname(leader)} unlocks the slave pen gate with the key lifted from a guard.`); setTimeout(() => unlockGate(), 650); }, "primary");
-    add("Pick the lock", ask("Picking the lock", () => {
+    add("Pick the lock", attempt("pen-gate:pick", heroMod(leader, "thievesTools", "dex"), () => {
       sfx("lock-picked", .9); log("The lock gives with a soft click.");
       setTimeout(() => unlockGate(), 650);
     }, () => { sfx("lock-pick-fail", .8); toast("The pick slips in the wards. The lock holds.", 3200); }), "primary");
-    add("Force it", ask("Forcing the gate", () => {
+    add("Force it", attempt("pen-gate:force", heroMod(leader, "athletics", "str"), () => {
       log("The bolt tears from the stone."); unlockGate(1);
     }, () => { sfx("door-locked", .9); toast("The bars shudder in their bolts, and hold.", 3200); }));
     calls();
@@ -2638,6 +2642,25 @@ function openBody(b){
   $("obj").hidden = false; box.firstChild?.focus();
 }
 // The game-side hook for an action the map cannot resolve itself. Nothing listens yet; the dashboard will.
+// A check rolled on the dashboard's dice (Sam, 2026-10-25). The map names an action from lib/walk-roll.ts WALK_ACTIONS;
+// the /velkynvelve page opens its BG3-style roll panel (components/walk/roll-panel.tsx), the player throws the die on
+// the dashboard's engine with the dashboard's modifier, and the page answers {ok, success, total, natural} — or
+// {cancelled} if they stepped back. "aop:roll-ack" says the panel is open; after it the map waits as long as the
+// player does. Opened as a plain file (no game around it), the map rolls locally against the same DC.
+const ROLLS = new Map(), LOCAL_DC = {"pen-gate:pick": 20, "pen-gate:force": 20};
+addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
+  if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
+  if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
+function rollOnDashboard(action, localMod){
+  if (!APP || window.parent === window){ const r = d20(), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= (LOCAL_DC[action] ?? 20), total, natural: r}); }
+  const id = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  let characterId = null; try { characterId = myClaimId || characterIdOf(leader.id) || null; } catch (e) {}
+  return new Promise(res => {
+    const t = setTimeout(() => { ROLLS.delete(id); res({ok: false, error: "The dice did not answer. Try again."}); }, 8000);   // no panel opened
+    ROLLS.set(id, {ack: () => clearTimeout(t), done: m => { clearTimeout(t); res(m); }});
+    try { window.parent.postMessage({type: "aop:roll", id, action, characterId}, location.origin); } catch (e) { clearTimeout(t); ROLLS.delete(id); res({ok: false, error: "The dice did not answer."}); }
+  });
+}
 function handOff(text){ try { (window.parent !== window ? window.parent : window).postMessage({type: "aop:action", text}, "*"); } catch (e) {} }
 function isDm(){ try { return localStorage.getItem("aop_access_role") === "dm"; } catch (e) { return false; } }
 // WHO MOVES WHOM (Sam, 2026-10-25): "The DM is the only instance that can move characters that are not his" and a
@@ -2674,7 +2697,6 @@ function unlockGate(forced){
   const opened = forced ? "The pen gate tears open and hangs from one hinge." : "The pen gate swings open.";
   log(opened);
   const r = npcs.find(n => n.id === "ront"); if (r && cur === 11) setTimeout(() => bark(r, "Finally.", 3000), 900);
-  const z = doorGate(); if (z) setTimeout(() => { if (mode === "explore") openInteract(z); }, 1700);
 }
 function openGate(){
   if (state.gateOpen) return;
