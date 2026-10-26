@@ -190,6 +190,12 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .cbt-menu button.primary{color:#ffd9a0;border-color:rgba(255,217,160,.45)}
 .cbt-menu button.end{margin-left:auto;border-color:rgba(255,155,143,.4);color:#ff9b8f}
 .cbt-menu button:disabled{opacity:.36;cursor:default}
+/* the Underwalk's More tray (2026-10-25): the six options that matter here stay on the bar, the rest fold behind More */
+.cbt-menu .moreTray{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:5px;padding-top:5px;border-top:1px dashed rgba(203,160,90,.25)}
+.cbt-menu .moreTray[hidden]{display:none}
+.cbt-menu button.more{flex:0 0 auto;min-width:92px}
+.cbt-menu[data-kind=explore] button.end{margin-left:0}
+.cbt-menu button.on{outline:2px solid #9ad0ff;background:rgba(120,170,230,.14)}
 .cbt-menu .sep{width:1px;align-self:stretch;background:var(--rule);margin:3px 2px}
 /* two rows, not three (Sam, 2026-10-22: "Can you make this two rows high and not three?"): the chips share the row and
    shrink to fit before they wrap, and the group labels give way on narrower windows */
@@ -1019,7 +1025,7 @@ function draw(){
   const shx = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0, shy = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0; shakeAmt = shakeAmt > .5 ? shakeAmt * .82 : 0;
   ctx.setTransform(s, 0, 0, s, (view.tx + shx) * dpr, (view.ty + shy) * dpr);
   ctx.imageSmoothingEnabled = false;
-  drawDoor(); drawProps(); drawDecor(); drawLift(); drawPropHighlight(); drawLootHighlight(); drawFloorItems();
+  drawDoor(); drawProps(); drawDecor(); drawLift(); drawPropHighlight(); drawLootHighlight(); drawFloorItems(); drawSneakCones();
   // exits: soft glows so players can see the ways out
   if (mode === "explore" || mode === "dialog"){
     const pulse = .5 + .5 * Math.sin(now / 520);
@@ -3608,7 +3614,190 @@ function renderExploreBar(){
   add("Tell Malachar", "✎", null, "search, hide, anything else", () => { saveWalk();
     const q = new URLSearchParams({view: "full", from: "map", return: "/velkynvelve", area: node.name, as: PLAYS_AS[leader.id] || ""});
     const url = (APP ? "/?" : "https://ashes.playacartagena.com/?") + q.toString(); if (APP) window.top.location.href = url; else window.open(url, "_blank"); });
+  exploreExtras(m, o, add, who);
 }
+// ---------- THE UNDERWALK'S OPTIONS (Sam, 2026-10-25: "we need more options") ----------
+// Added to the explore bar, each resolved by 5E and nothing invented. The map rolls the d20 (as the watch posts do,
+// OotA p.15) and shows the numbers; what a Search, a Listen or a closer Look actually turns up is the DM core's to
+// say, so the result is handed to Malachar (handOff -> the dashboard) instead of the page making up a find.
+//   Sneak       Dexterity (Stealth) for whoever is moving; while sneaking every hostile's view is drawn on the floor
+//               (BG3-style, Sam 2026-10-24: "NPC vision areas highlighted ... characters inside roll Stealth").
+//               Walking into a view is tested against that watcher's passive Perception. With Follow on, it is a
+//               group check (SRD: the group succeeds if at least half succeed).
+//   Search here Wisdom (Perception) for the plate around the hero.      Listen  Perception at the nearest way out.
+//   Look closer Intelligence (Investigation) on the thing in reach.     Help    the next hero's check has advantage.
+//   Hero        Pray (cleric: silently or aloud — Sam 2026-10-01, a prayer is private unless spoken), Inspire (bard:
+//               Bardic Inspiration out of a fight), Scout ahead (rogue: sneak alone, the rest wait).
+//   Quick drink the first potion on the belt, without opening the bag.  Follow / Wait  the party trails the leader.
+// HOUSE NUMBERS (Claude's, flagged in the PR): a watcher sees 60 ft in a 120-degree cone; Help lasts one minute.
+const ICONS_HAVE = new Set(["attack", "cast-spell", "dash", "disengage", "dodge", "help", "hide", "offhand-attack", "opportunity-attack", "ready", "search", "use-object"]);
+const ART = (name, fallback) => ICONS_HAVE.has(name) ? name : fallback || null;   // Sam's icons drop in by name (velkynvelve-walk/icons/<name>.png)
+const VIEW_FT = 60, VIEW_HALF = Math.PI / 3;
+let sneak = null, helpNext = null, followOn = false, moreOpen = false;
+const BUTTON_PRI = [[/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
+  [/^(Sneak|Stop sneaking|Scout)/, 4], [/^Search here/, 5], [/^Cast/, 6], [/^Inventory/, 7], [/^(Pray|Inspire)/, 8], [/^Quick drink/, 9],
+  [/^Next hero/, 10], [/^Help/, 11], [/^(Follow|Wait)/, 12], [/^Short rest/, 13], [/^Tell Malachar/, 14], [/^Talk$/, 30]];
+function priOf(b){ const t = (b.querySelector("span") || b).textContent; const hit = BUTTON_PRI.find(([re]) => re.test(t)); return (hit ? hit[1] : 15) + (b.disabled ? 20 : 0); }
+function heroMod(a, skill, abil){ const sh = SHEETS[a.id] || {}; return (sh.skills || {})[skill] ?? (sh.saves || {})[abil] ?? 0; }
+/** A check the map rolls for the hero: d20 + skill, with advantage when a friend helped. */
+function mapCheck(a, skill, abil){
+  let adv = 0; if (helpNext && helpNext.by !== a.id && now < helpNext.until){ adv = 1; helpNext = null; }
+  const mod = heroMod(a, skill, abil), r = d20(adv); return {r, mod, total: r + mod, adv};
+}
+const SKILL_NAME = {stealth: "Dexterity (Stealth)", perception: "Wisdom (Perception)", investigation: "Intelligence (Investigation)"};
+function rollLine(k, skill){ return `${SKILL_NAME[skill]} ${k.r}${k.adv ? " (advantage)" : ""} ${k.mod >= 0 ? "+" : "−"} ${Math.abs(k.mod)} = <b>${k.total}</b>`; }
+function nearestExit(L){ return node.zones.filter(z => !z.interact && (z.to || []).length).map(z => [z, Math.hypot(zoneCenter(z).x - L.x, zoneCenter(z).y - L.y)]).sort((x, y) => x[1] - y[1])[0]; }
+function exitName(z){ const t = SPEC[(z.to || [])[0]]; return z.label || (t && t.name) || (z.kind === "leave" ? "the way out" : "the way on"); }
+function lookTarget(o){ return o.obj ? o.obj.interact.name : o.pile ? o.pile.name : o.body ? fname(o.body) : null; }
+
+function exploreExtras(m, o, add, who){
+  const L = leader, sh = SHEETS[L.id] || {}, cls = (sh.cls || "").toLowerCase(), sc = node.scale;
+  const ex = nearestExit(L), exNear = ex && ex[1] < 360 * sc ? ex[0] : null, look = lookTarget(o);
+  const x = (label, glyph, icon, sub, fn, cls2) => { const b = add(label, glyph, icon, sub, fn, cls2); return b; };
+  if (sneak) x(sneak.scout ? "Stop scouting" : "Stop sneaking", "◐", ART("sneak", "hide"), `Stealth ${sneak.line} · walk out of their sight`, () => endSneak("You stop moving quietly."), "on");
+  else x("Sneak", "◐", ART("sneak", "hide"), `Stealth ${sgn(heroMod(L, "stealth", "dex"))} vs their passive Perception`, () => startSneak(false));
+  x("Search here", "⌕", ART("search-here", "search"), `Perception ${sgn(heroMod(L, "perception", "wis"))} · the DM says what turns up`, () => searchHere());
+  if (exNear) x(`Listen at ${exitName(exNear)}`, "◖", ART("listen"), `Perception ${sgn(heroMod(L, "perception", "wis"))} · what is beyond`, () => listenAt(exNear));
+  if (look) x(`Look closer at ${look}`, "◎", ART("look-closer"), `Investigation ${sgn(heroMod(L, "investigation", "int"))}`, () => lookCloser(look));
+  if (party.length > 1) x(helpNext && helpNext.by === L.id ? "Helping" : "Help", "✋", ART("help"), helpNext && helpNext.by === L.id ? "the next friend's check has advantage" : "the next friend's check gets advantage", helpNext && helpNext.by === L.id ? null : () => giveHelp());
+  if (/cleric/.test(cls)) x("Pray", "✠", ART("pray"), "silently, or aloud", () => openPray());
+  if (sh.bardic) x("Inspire", "♪", ART("inspire"), `Bardic Inspiration · ${inspLeftOf(L)} of ${sh.bardic.uses} left`, inspLeftOf(L) > 0 && party.length > 1 ? () => openInspire() : null);
+  if (/rogue/.test(cls) && !sneak) x("Scout ahead", "➶", ART("scout"), "sneak alone; the others wait", () => startSneak(true));
+  const pot = beltPotion(L); if (pot) x(`Quick drink: ${pot.name}`, "⚗", ART("quick-drink"), "from the belt", () => drinkItem(L, pot, L));
+  if (party.length > 1) x(followOn ? "Wait here" : "Follow me", followOn ? "⏸" : "➜", ART(followOn ? "wait" : "follow"), followOn ? "the others stop where they are" : "the others come along behind", () => setFollow(!followOn));
+  // the More tray: the six that matter here stay on the bar (talk and a fight first), the rest fold away
+  const btns = [...m.children].filter(b => b.tagName === "BUTTON");
+  btns.forEach((b, i) => { b.dataset.pri = priOf(b) * 100 + i; });
+  const keep = new Set(btns.slice().sort((a, b) => a.dataset.pri - b.dataset.pri).slice(0, 6));
+  const rest = btns.filter(b => !keep.has(b));
+  btns.slice().sort((a, b) => a.dataset.pri - b.dataset.pri).forEach(b => m.appendChild(b));   // reorder by what matters
+  if (rest.length){
+    const tray = document.createElement("div"); tray.className = "moreTray"; tray.hidden = !moreOpen; rest.forEach(b => tray.appendChild(b));
+    const more = document.createElement("button"); more.className = "more"; more.dataset.sfx = moreOpen ? "close" : "open";
+    more.innerHTML = `${ICONS_HAVE.has("more") ? `<img class="ico" src="${ICON_BASE}more.png" alt="">` : `<i class="ico glyph">⋯</i>`}<span>${moreOpen ? "Less" : "More"}</span><small>${rest.length} more</small>`;
+    more.onclick = () => { moreOpen = !moreOpen; tray.hidden = !moreOpen; more.dataset.sfx = moreOpen ? "close" : "open"; more.querySelector("span").textContent = moreOpen ? "Less" : "More"; };
+    m.appendChild(more); m.appendChild(tray);
+  }
+}
+
+// Sneak
+function startSneak(scout){
+  const who = scout || !followOn ? [leader] : party.filter(p => !p.ko && !p.down);
+  if (scout && followOn) setFollow(false);
+  const rolls = who.map(p => ({p, k: mapCheck(p, "stealth", "dex")}));
+  sneak = {scout, cur, rolls, seenBy: new Set(), line: rolls.length === 1 ? String(rolls[0].k.total) : rolls.map(x => x.k.total).join(" / ")};
+  log(`${rolls.map(({p, k}) => `${fname(p)}: ${rollLine(k, "stealth")}`).join(" · ")}. ${scout ? `${fname(leader)} slips ahead alone.` : rolls.length > 1 ? "The party moves quietly." : `${fname(leader)} moves quietly.`}`);
+  exploreKey = "";
+}
+function endSneak(why){ if (!sneak) return; sneak = null; if (why) log(why); exploreKey = ""; }
+function watchers(){ return npcs.filter(n => n.hostile && !n.offStage && !n.down && !n.body && n.alpha > .5); }
+function faceAngle(a){ const k = ROW_OF.indexOf(a.face); return (k < 0 ? 2 : k) * Math.PI / 4; }
+function inView(w, p){
+  const dx = p.x - w.x, dy = p.y - w.y, d = Math.hypot(dx, dy); if (d > VIEW_FT * ftPx(w)) return false;
+  let da = Math.atan2(dy, dx) - faceAngle(w); da = Math.atan2(Math.sin(da), Math.cos(da)); return Math.abs(da) <= VIEW_HALF;
+}
+function passiveOf(w){ const b = FOE_BLOCKS[w.id] || {}; return b.passive ?? (b.senses && +((String(b.senses).match(/passive Perception (\d+)/i) || [])[1])) ?? 12; }
+setInterval(() => {
+  if (sneak && (mode === "combat" || sneak.cur !== cur)){ endSneak(mode === "combat" ? "" : "A new place: the sneak is over."); return; }   // a fight or a new plate ends it
+  if (!sneak || mode !== "explore" || !leader) return;
+  const movers = sneak.rolls.map(x => x.p);
+  for (const w of watchers()){
+    if (sneak.seenBy.has(w) || !movers.some(p => inView(w, p))) continue;
+    const P = passiveOf(w) || 12;
+    // SRD group check: hidden from this watcher if at least half the movers beat its passive Perception
+    const beat = sneak.rolls.filter(({p, k}) => k.total + useInspiration(p, k.total, P) >= P).length;
+    sneak.seenBy.add(w);
+    if (beat * 2 >= sneak.rolls.length){ popText(w, "?", "#9ad0ff"); continue; }
+    w.face = faceOf(leader.x - w.x, leader.y - w.y); w.alert = true; popText(w, "!", "#ff6b5a", 1.3); bank("ui/initiative_start", .35);
+    const name = fname(w), line = `${name} spots ${movers.length > 1 ? "the party" : fname(leader)} (passive Perception ${P}).`;
+    log(`<em>${esc(line)}</em>`); toast(line, 3600); handOff(`${line} They were sneaking (Stealth ${sneak.line}).`);
+    endSneak(); return;
+  }
+}, 250);
+function drawSneakCones(){
+  if (!sneak || mode !== "explore") return;
+  for (const w of watchers()){
+    const r = VIEW_FT * ftPx(w), a0 = faceAngle(w), seen = w.alert, g = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r);
+    const col = seen ? "255,107,90" : "154,208,255";
+    g.addColorStop(0, `rgba(${col},.42)`); g.addColorStop(.7, `rgba(${col},.16)`); g.addColorStop(1, `rgba(${col},0)`);
+    ctx.save(); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(w.x, w.y); ctx.arc(w.x, w.y, r, a0 - VIEW_HALF, a0 + VIEW_HALF); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = `rgba(${col},.55)`; ctx.lineWidth = 2 / (base * view.z); ctx.setLineDash([8 / (base * view.z), 6 / (base * view.z)]); ctx.stroke(); ctx.restore();
+  }
+}
+
+// Search here, Listen, Look closer: the roll on the map, the finding from the DM core
+function searchHere(){
+  const k = mapCheck(leader, "perception", "wis");
+  log(`${fname(leader)} searches ${esc(node.name)}: ${rollLine(k, "perception")}.`);
+  handOff(`${fname(leader)} searches ${node.name} carefully. Wisdom (Perception) ${k.total}${k.adv ? " (with help)" : ""}. What do they find?`);
+  toast(`Perception ${k.total} — Malachar will say what turns up.`, 3200); exploreKey = "";
+}
+function listenAt(z){
+  const k = mapCheck(leader, "perception", "wis"), where = exitName(z);
+  log(`${fname(leader)} listens at ${esc(where)}: ${rollLine(k, "perception")}.`);
+  handOff(`${fname(leader)} stops at ${where} and listens. Wisdom (Perception) ${k.total}${k.adv ? " (with help)" : ""}. What can they hear beyond it?`);
+  toast(`Perception ${k.total} — Malachar will say what they hear.`, 3200); exploreKey = "";
+}
+function lookCloser(what){
+  const k = mapCheck(leader, "investigation", "int");
+  log(`${fname(leader)} studies ${esc(what)}: ${rollLine(k, "investigation")}.`);
+  handOff(`${fname(leader)} looks closely at ${what}. Intelligence (Investigation) ${k.total}${k.adv ? " (with help)" : ""}. What do they notice?`);
+  toast(`Investigation ${k.total} — Malachar will say what they notice.`, 3200); exploreKey = "";
+}
+function giveHelp(){ helpNext = {by: leader.id, until: now + 60000}; log(`${fname(leader)} lends a hand: the next friend's check has advantage.`); exploreKey = ""; }
+
+// Follow / Wait: out of combat the others hold where they were put (the walk's rule) unless the leader calls them on
+function setFollow(on){ followOn = on; log(on ? "The party falls in behind." : "The others wait where they stand."); if (on) trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: leader.x, y: leader.y}]); else followers().forEach(f => { f.path = []; f.home = {x: f.x, y: f.y}; }); exploreKey = ""; }
+setInterval(() => {
+  if (!followOn || mode !== "explore" || !leader) return;
+  followOrder().forEach((f, i) => {
+    if (f.once || f.down) return;
+    const want = trailPoint((i + 1) * 70 * node.scale);
+    if (Math.hypot(f.x - want.x, f.y - want.y) < 40 * node.scale && !f.path.length) return;
+    const last = f.path[f.path.length - 1];
+    if (!last || Math.hypot(last.x - want.x, last.y - want.y) > 30 * node.scale){ const p = findPath(f, nearestWalkable(want.x, want.y)); if (p) f.path = p; }
+  });
+}, 350);
+
+// Quick drink: the first potion on the belt
+function beltPotion(a){ const g = GEAR[a.id]; if (!g || !g.carried) return null; return g.carried.find(it => { const u = useOf(it); return u.kind === "heal" || u.kind === "drink"; }) || null; }
+
+// Pray (cleric): silently or aloud; Malachar answers or does not
+function heroCard(title, text){
+  $("objWho").textContent = title; $("objText").textContent = text;
+  const c = $("objPic"), g = c.getContext("2d"); g.clearRect(0, 0, 128, 128); try { g.drawImage(faceCanvas(leader, 128), 0, 0); } catch (e) {}
+  const box = $("objBtns"); box.innerHTML = ""; box.classList.remove("loot"); $("obj").hidden = false; mode = "dialog";
+  const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
+  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); return b; };
+  return {add, close};
+}
+function openPray(){
+  const god = /samson/.test(leader.id) ? "Lathander" : "your god";
+  const {add, close} = heroCard(`${fname(leader)} prays`, `To ${god}. A prayer is between you and your god unless you say it out loud${cur === 11 || /^node-/.test(node.slug) ? " — and this is a drow outpost" : ""}.`);
+  add("Pray silently", () => { close(); log(`${fname(leader)} bows their head and prays to ${god} in silence.`); handOff(`${fname(leader)} prays silently to ${god}.`); }, "primary");
+  add("Pray aloud", () => { close(); log(`${fname(leader)} prays aloud to ${god}.`); narrate(leader, `${fname(leader)} prays aloud.`); handOff(`${fname(leader)} prays ALOUD to ${god}, where anyone near can hear.`); });
+  add("Not now", close);
+}
+// Inspire (bard): Bardic Inspiration out of a fight; the die is spent by the map's own checks (useInspiration)
+function inspLeftOf(a){ a.c = a.c || fighterFor(a); return a.c.inspLeft ?? ((SHEETS[a.id] || {}).bardic || {}).uses ?? 0; }
+function openInspire(){
+  const {add, close} = heroCard(`${fname(leader)}: Bardic Inspiration`, `Sing to a friend who can hear you. They add a d${SHEETS[leader.id].bardic.die} to one roll that would otherwise fall short.`);
+  for (const t of party.filter(p => p !== leader && !p.down && feetBetween(leader, p) <= 60)){
+    t.c = t.c || fighterFor(t);
+    add(fname(t), t.c.conds.has("inspired") ? null : () => { close(); exploreInspire(leader, t); }, "primary").disabled = t.c.conds.has("inspired");
+  }
+  add("Not now", close);
+}
+function exploreInspire(a, t){
+  a.c = a.c || fighterFor(a); a.c.inspLeft = inspLeftOf(a) - 1;
+  a.face = faceOf(t.x - a.x, t.y - a.y); playOnce(a, SPR[a.id].img.perform ? "perform" : "cast", () => setAnim(a, "idle"));
+  bank("walk:bardic-inspiration", .8); singAt(a, "#ffd36a", 700); noteStream(a, t, "#ffd36a", 900);
+  setTimeout(() => { addCond(t, "inspired"); t.c.inspDie = SHEETS[a.id].bardic.die;
+    if (t.inspFx) t.inspFx.then(e => { if (e) e.until = now; });
+    t.inspFx = spawnFx("bardicInspire", {at: t, sq: 2.1, anchor: "base", lift: -.3, tail: 4, tailLift: .55, until: now + 600000});
+    log(`${fname(a)} sings to ${fname(t)}: <b>Bardic Inspiration</b> (d${SHEETS[a.id].bardic.die}).`); handOff(`${fname(a)} gives ${fname(t)} Bardic Inspiration.`); exploreKey = ""; }, 1000);
+}
+
 // A SHORT REST ON THE MAP (Sam, 2026-10-24: "Short rests should be able to be taken even when not in camp but risk an
 // encounter with locals"). An hour where the party stands. The sheets rest for real (/api/walk-rest runs the camp's
 // own short rest: Hit Dice rolled with CON, Song of Rest, pact slots, the clock moves an hour, Malachar is told) —
