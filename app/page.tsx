@@ -383,7 +383,9 @@ export default function DashboardPage() {
   // window>" or "To the DM". It defaults to the NPC, exactly the old behaviour, and remembers the choice until
   // the window turns to someone else. A shortcut in the text (/dm …, (…), @Ront …) overrides it for one line.
   const [addressMode, setAddressMode] = useState<"npc" | "dm">("npc")
-  const addressee = campTalkWith ?? facingName ?? ((npcEncounters.find((n) => n.is_active) ?? npcEncounters[0])?.name ?? null)
+  // The face in the NPC window first (Sam, 2026-10-26: "look at the dashboard UI to who exactly we're speaking
+  // to"): that is who the player sees, so it is who the switch names.
+  const addressee = facingName ?? campTalkWith ?? ((npcEncounters.find((n) => n.is_active) ?? npcEncounters[0])?.name ?? null)
   useEffect(() => { setAddressMode("npc") }, [addressee])
   /** Read a typed line: the text to send, and who it goes to (the shortcut first, then the switch). */
   const addressLine = useCallback((raw: string): { line: string; addressTo: string | null; shown: string } => {
@@ -1997,6 +1999,9 @@ if (error) {
         setDialogueInput={setDialogueInput}
         onDialogueSubmit={handleDialogueSubmit}
         onQuickReply={(text) => void handleQuickReply(text)}
+        addressee={addressee}
+        addressMode={addressMode}
+        onAddressModeChange={setAddressMode}
         // The look-around chip replays cinematics only while this is on.
         dmMode={dmMode && !claimLocked}
         dmScreen={!claimLocked && (dmMode || enteredAsDm)}

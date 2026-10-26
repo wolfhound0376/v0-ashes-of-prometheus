@@ -1541,7 +1541,7 @@ ${combatantRows
   }
   if (talkWith && talkWhere) {
     // From the painted map: not at camp, so none of the fire. Still one conversation, one voice.
-    stageContext += ` The player is talking with ${talkWith} in ${talkWhere}, not at camp. Answer AS ${talkWith}: every spoken line is ${talkWith}'s own, quoted and attributed to ${talkWith} by name. No other NPC speaks unless ${talkWith} calls them over. Stay in the conversation; keep narration short.`
+    stageContext += ` The player is talking with ${talkWith} in ${talkWhere}, not at camp. Answer AS ${talkWith}: every spoken line is ${talkWith}'s own, quoted and attributed to ${talkWith} by name. No other NPC speaks unless ${talkWith} calls them over. Stay in the conversation; keep narration short. If the recent log is a conversation with someone else, that one is over: the player has turned to ${talkWith} now, and only ${talkWith} answers.`
   } else if (talkWith) {
     stageContext += ` The player is sitting by the fire with ${talkWith}. Answer AS ${talkWith}: every spoken line is ${talkWith}'s own, quoted and attributed to ${talkWith} by name. No other NPC speaks unless ${talkWith} calls them over. Stay in the conversation; keep narration short.`
   }
@@ -1578,7 +1578,7 @@ ${combatantRows
     stageContext += ` OUT OF CHARACTER — this line is from the player to YOU, the DM, across the table. Nobody in the scene heard it. Answer as Malachar in your own voice: narration of what they can see or know, a ruling, or a plain answer. No NPC reacts to it, quotes it or answers it, and the scene does not move on unless the question asks you to move it. Do not write it into anyone's mouth.`
   }
   if (facing) {
-    stageContext += ` The player is facing ${facing}, who is in front of them. Any question or remark that does not name someone else ("who are you?", "what do you want?", "are you all right?") is addressed to ${facing}, and ${facing} answers it in their own voice, quoted and attributed to ${facing} by name. Do not have anyone else answer for them.`
+    stageContext += ` The player is facing ${facing}, who is in front of them. Any question or remark that does not name someone else ("who are you?", "what do you want?", "are you all right?") is addressed to ${facing}, and ${facing} answers it in their own voice, quoted and attributed to ${facing} by name. Do not have anyone else answer for them — even if the recent conversation was with someone else, the player has turned to ${facing} now.`
   }
 
   // === CINEMATIC CUES (closed whitelist) ===
@@ -3630,13 +3630,25 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
         .reverse()
         .map((entry: { speaker: string | null; text: string | null }) => `${entry.speaker || "?"}: ${(entry.text || "").slice(0, 300)}`)
         .join("\n")
+      // WHO THE PLAYER IS ADDRESSING NOW (Sam, 2026-10-26: "dialog would still be targeted to the previous
+      // NPC"). The rule below used to say an unattributed reply belongs to whoever the player "most recently
+      // addressed" in RECENT CONVERSATION — the last six log lines, which after a switch from Stool to Buppido
+      // are all Stool. So Buppido's answer was filed under Stool, with Stool's face and voice. The dashboard
+      // says who is in the NPC window (talkWith in a conversation, else facing); that is the addressee, and it
+      // outranks the log. A line put to the DM has no NPC addressee at all.
+      const addresseeNow = toDm ? null : (talkWith ?? facing)
+      const addresseeRule = toDm
+        ? `\nTHE PLAYER IS SPEAKING TO THE DUNGEON MASTER, not to anyone in the scene. A reply quote with no named speaker is NARRATOR.\n`
+        : addresseeNow
+          ? `\nTHE PLAYER IS SPEAKING TO: ${addresseeNow}. This outranks RECENT CONVERSATION: an earlier partner there is no longer the one being answered. A reply quote with no named speaker is ${addresseeNow}'s (use their canonical name from the roster).\n`
+          : ""
       const segmentationPrompt = `You attribute quoted speech in a D&D dungeon master's narration.
 
 RECENT CONVERSATION (oldest first — context only, do NOT attribute quotes from it):
 """
 ${recentExchange}${spokenMessage ? `\n${playerName}: ${String(spokenMessage).slice(0, 300)}` : ""}
 """
-
+${addresseeRule}
 NARRATION (attribute the quotes in THIS text only):
 """
 ${responseText}
@@ -3655,7 +3667,7 @@ Rules:
 - A name appearing after the closing quote in a descriptive aside (for example \"- Prince Derendil, if you catch his name later -\") is NOT the speaker.
 - Consecutive quotes with no new attribution keep the previous speaker.
 - Resolve aliases to the exact canonical NPC name from the roster.
-- When the narration replies in quotes without naming a speaker, the speaker is almost always the NPC the player most recently addressed or was in conversation with (see RECENT CONVERSATION). Prefer that NPC over NARRATOR.
+- When the narration replies in quotes without naming a speaker, the speaker is the NPC the player is speaking to NOW (THE PLAYER IS SPEAKING TO, above). Only when that line is absent, use the NPC the player most recently addressed in RECENT CONVERSATION. Prefer that NPC over NARRATOR.
 - Use PLAYER when a player character speaks; use NARRATOR only when no NPC/player speaker can plausibly be identified even with the conversation context.
 - Preserve each quoted line verbatim and preserve quote order. Do not omit any quoted span.`
 
