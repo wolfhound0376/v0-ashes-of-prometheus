@@ -35,7 +35,29 @@ const ROLE_LS_KEY = "aop_access_role"
 const ROOM = "/table/room.webp"
 const CHAIR = "/table/chair.webp"
 const LICH = "/table/lich.webp"
+const LICH_LOOP = "/table/lich.webm"
 const PLAYER_ART = [1, 2, 3, 4, 5, 6, 7].map((n) => `/table/player-${n}.webp`)
+// Each player's idle loop (and the Lich's): see-through VP9 video, 5 s, first frame = the still, so the swap
+// from still to motion is invisible. Safari cannot play see-through WebM, so it keeps the stills.
+const PLAYER_LOOP = [1, 2, 3, 4, 5, 6, 7].map((n) => `/table/player-${n}.webm`)
+
+/** True where a see-through WebM plays (Chrome, Edge, Firefox, Android); false on Safari and iOS. */
+function useAlphaVideo(): boolean {
+  const [ok, setOk] = useState(false)
+  useEffect(() => {
+    const ua = navigator.userAgent
+    const safari = /^((?!chrome|chromium|android|crios|fxios|edg).)*safari/i.test(ua) || /iP(hone|ad|od)/.test(ua)
+    setOk(!safari && typeof document !== "undefined" && document.createElement("video").canPlayType('video/webm; codecs="vp9"') !== "")
+  }, [])
+  return ok
+}
+
+/** A still, or its idle loop where the browser can play it. */
+function Art({ still, loop, video, alt, className, style }: { still: string; loop: string | null; video: boolean; alt: string; className?: string; style?: React.CSSProperties }) {
+  if (video && loop) return <video src={loop} poster={still} autoPlay loop muted playsInline aria-label={alt} className={className} style={style} />
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={still} alt={alt} className={className} style={style} />
+}
 // The screen in room.webp, as a polygon in percent of the painting: drawn again on top of the Lich so he
 // stands BEHIND it.
 const SCREEN_CLIP = "polygon(57.2% 32.3%, 59.9% 34.8%, 74.3% 37.4%, 83.5% 35.9%, 83.5% 55.7%, 74.3% 57.5%, 59.9% 54.4%, 57.2% 51.2%)"
@@ -223,6 +245,7 @@ function Room({ view, isDm, busy, dark, onRemove }: { view: View | null; isDm: b
   const figures = assignFigures(seats)
   const closed = (view?.state.status ?? "closed") === "closed"
   const light = view?.dmLight ?? null
+  const video = useAlphaVideo()
   return (
     <section className="relative z-10 mx-auto mt-3 w-full max-w-6xl px-4">
       <div className="relative w-full overflow-hidden rounded-[4px] border border-[#3d3020] shadow-[0_30px_80px_rgba(0,0,0,0.7)]" style={{ aspectRatio: "1920 / 1072" }}>
@@ -230,8 +253,7 @@ function Room({ view, isDm, busy, dark, onRemove }: { view: View | null; isDm: b
         <img src={ROOM} alt="A candlelit round table with the Dungeon Master's screen" className="absolute inset-0 h-full w-full object-cover" />
         {/* the Lich, behind his screen */}
         <div className="absolute left-[56%] top-[3%] w-[25.6%] origin-bottom animate-[aop-lich-loom_5s_ease-in-out_infinite]">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={LICH} alt="Malachar the Lich" className="w-full [filter:drop-shadow(0_0_20px_rgba(140,60,200,0.35))]" />
+          <Art still={LICH} loop={LICH_LOOP} video={video} alt="Malachar the Lich" className="w-full [filter:drop-shadow(0_0_20px_rgba(140,60,200,0.35))]" />
         </div>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={ROOM} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full object-cover" style={{ clipPath: SCREEN_CLIP }} />
@@ -243,13 +265,13 @@ function Room({ view, isDm, busy, dark, onRemove }: { view: View | null; isDm: b
         {/* five chairs */}
         {SLOTS.map((slot, i) => {
           const s = bySeat.get(i + 1) ?? null
-          const art = s ? PLAYER_ART[figures.get(s.id) ?? 0] : CHAIR
+          const fig = s ? figures.get(s.id) ?? 0 : null
+          const art = fig == null ? CHAIR : PLAYER_ART[fig]
           const fade = slot.side ? { WebkitMaskImage: "linear-gradient(to bottom,#000 80%,transparent 100%)", maskImage: "linear-gradient(to bottom,#000 80%,transparent 100%)" } : undefined
           return (
             <div key={i} className="absolute flex -translate-x-1/2 -translate-y-full justify-center" style={{ left: `${slot.x}%`, top: `${slot.y}%`, height: `${slot.h}%`, width: `${slot.h * 0.9}%`, zIndex: Math.round(slot.y) }}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img key={s?.id ?? "empty"} src={art} alt={s ? `${s.name}'s player` : "An empty chair"}
-                className={cn("absolute bottom-0 h-full w-auto max-w-none", s ? "animate-[aop-figure-sit_.7s_cubic-bezier(.3,1.5,.6,1)_both,aop-figure-idle_3.6s_ease-in-out_.8s_infinite]" : "")}
+              <Art key={`${s?.id ?? "empty"}:${fig}`} still={art} loop={fig == null ? null : PLAYER_LOOP[fig]} video={video} alt={s ? `${s.name}'s player` : "An empty chair"}
+                className={cn("absolute bottom-0 h-full w-auto max-w-none", s ? (video ? "animate-[aop-figure-sit_.7s_cubic-bezier(.3,1.5,.6,1)_both]" : "animate-[aop-figure-sit_.7s_cubic-bezier(.3,1.5,.6,1)_both,aop-figure-idle_3.6s_ease-in-out_.8s_infinite]") : "")}
                 style={{ transform: slot.flip ? "scaleX(-1)" : undefined, ...fade }} />
             </div>
           )
