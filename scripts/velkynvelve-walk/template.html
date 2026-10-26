@@ -452,6 +452,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmBark">Make an NPC comment</button>
       <button class="btn" id="dmReset">Reset ambushes</button>
       <button class="btn" id="dmAmbush" aria-pressed="false">Ambushes: on</button>
+      <button class="btn" id="dmTooth" title="A Remove Curse on Lolth's Tooth: Ilvara no longer feels it drawn. The spider-sense stays.">Lolth's Tooth: lift the curse</button>
       </details>
       <details><summary>Items</summary>
       <input id="dmItemQ" class="dmq" placeholder="Search the item catalogue" aria-label="Search the item catalogue">
@@ -1183,7 +1184,7 @@ function draw(){
   }
   while (cloudQ.length) drawPuff(cloudQ.shift());
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
-  drawCombatFx(); drawShots();
+  drawCombatFx(); drawShots(); drawToothGlow();
   ctx.globalAlpha = 1;
 }
 const tint = document.createElement("canvas");
@@ -4232,6 +4233,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20(rageAdvantage(tgt.c.rage, atk.rider.save)) + (tgt.c.sheet.saves[atk.rider.save] || 0) + blessD4(tgt), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att, true); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
       if (atk.drowPoison && !tgt.down) parts.push(drowPoison(tgt, atk.drowPoison.dc));
+      if (atk.tooth && !tgt.down){ const v = toothVenomHit(att, tgt); if (v) parts.push(v); }
       if (atk.numb && !tgt.down){ const s0 = d20() + (tgt.c.sheet.saves[atk.numb.save] || 0) + blessD4(tgt), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.numb.dc) : 0), ok = sv >= atk.numb.dc;
         if (!ok){ addCond(tgt, "numbed"); tgt.c.reactionUsed = true; popText(tgt, "numbed", "#9fd8ff"); } parts.push(`${atk.numb.save.toUpperCase()} save ${sv} vs ${atk.numb.dc}: ${ok ? "shakes it off" : "numbed"}`); }
       if (atk.curse && !tgt.down && hero(tgt)) setTimeout(() => curseBy(att, tgt), 420);
@@ -5993,7 +5995,7 @@ function viewerUnderstands(){
 }
 async function readSurgeon(){
   if (!APP) return;
-  try { const j = await fetch("/api/drow-surgeon", {cache: "no-store"}).then(r => r.json()); surgeonSeen = j.state || null; surgeonElvish = new Set(j.elvish || []); } catch (e) {}
+  try { const j = await fetch("/api/drow-surgeon", {cache: "no-store"}).then(r => r.json()); surgeonSeen = j.state || null; surgeonElvish = new Set(j.elvish || []); if (j.tooth) Object.assign(TOOTH, j.tooth); } catch (e) {}
 }
 // ----- the record: the game's route, or the preview's own dice -----
 const surgeonLocalState = {s: null, hp: 0};
@@ -6338,6 +6340,94 @@ async function surgeonAfterRead(){
   if (mode === "explore") surgeonOnEnter(cur);
 }
 if (APP) setTimeout(surgeonAfterRead, 1500);
+
+// ---------- LOLTH'S TOOTH ----------
+// The drow ritual dagger Liana can smuggle out of Ilvara's things (The Drow Surgeon, favour 4). Sam, 2026-10-25: its venom
+// "puts you to sleep but doesn't do any damage"; it glows "brighter nearer to spiders (the player can narrate this with
+// her/his voice when she notices it burn brighter)"; equipped, it calls on Ilvara and tells her where they are, until a
+// Remove Curse. The blade is a +1 dagger and fights through the ordinary weapon code (attackFromItem); the rules for
+// what only it does are lib/drow-surgeon.mjs (SURGEON_TOOTH and friends); the record is /api/drow-surgeon.
+// It is known by its catalogue row (the venom reservoir AND the spider-sense), never by its name: the pack calls it
+// "Drow ritual dagger" until someone reads the sigils (Arcana DC 15, Malachar's).
+const TOOTH = {doses: SURGEON_TOOTH.doses, uncursed: false, armed: true};
+const isTooth = it => !!(it && it.properties && it.properties.reservoir && it.properties.spider_sense);
+function toothHeldBy(a){ const g = GEAR[a.id]; if (!g) return null; return [g.main, g.off].map(n => n && g.carried.find(c => c.name === n)).find(isTooth) || null; }
+const toothLabel = () => `venom ${TOOTH.doses}/${SURGEON_TOOTH.doses}${TOOTH.doses ? (TOOTH.armed ? ", released on a hit" : ", held back") : ", empty"}`;
+async function toothApi(action, extra = {}){
+  if (!APP) return {ok: true, tooth: TOOTH};                                // the preview keeps the count in the page
+  const body = {action, ...extra};
+  try { body.claimId = localStorage.getItem("aop_character_id") || undefined; body.claimToken = localStorage.getItem("aop_claim_token") || undefined; } catch (e) {}
+  const r = await fetch("/api/drow-surgeon", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)}).catch(() => null);
+  const j = r ? await r.json().catch(() => ({})) : {};
+  if (j.tooth){ TOOTH.doses = j.tooth.doses; TOOTH.uncursed = j.tooth.uncursed; }
+  if (!r || !r.ok) j.failed = true;
+  return j;
+}
+// on a hit: a dose goes in, DC 13 CON or asleep for the hour (wakes if hurt or shaken awake), no damage of its own
+function toothVenomHit(att, tgt){
+  if (!TOOTH.armed || TOOTH.doses <= 0) return TOOTH.doses <= 0 && TOOTH.armed ? "the reservoir is empty" : null;
+  const s = tgt.c.sheet, immune = (s.immune || []).includes("poison") || (s.immuneCond || []).includes("poisoned") || (s.immuneCond || []).includes("unconscious");
+  TOOTH.doses -= 1; toothApi("tooth-dose");
+  const v = surgeonToothVenom(s.saves.con || 0, immune);
+  if (v.immune){ popText(tgt, "immune to the venom", "#c9c4b8", .8); return "the Tooth's venom does nothing to it"; }
+  if (!v.asleep){ popText(tgt, "resists the venom", "#8fd48f", .8); return `the Tooth's venom: CON ${v.total} vs ${v.dc}, shrugged off`; }
+  // after the blade's own damage has landed, so that blow does not wake them
+  addCond(tgt, "asleep"); tgt.c.drugged = true; tgt.sleepT0 = now; tgt.path = [];
+  setTimeout(() => bank("magic/impact_poison", .5), 200);
+  popText(tgt, "asleep", "#c9a8ff", 1.1); renderParty();
+  narrate(att, `Venom wells from the black blade. ${fname(tgt)}'s eyes roll back and they go down asleep.`);
+  return `the Tooth's venom: CON ${v.total} vs ${v.dc}, <b>asleep</b> (an hour; wakes if hurt or shaken awake)`;
+}
+// taken in hand: the beacon (a line for Malachar; the table sees nothing unless the DM is looking)
+async function toothDrawn(a){
+  const j = await toothApi("tooth-drawn", {characterId: characterIdOf(a.id) || undefined, area: node && node.name});
+  if (isDm() || !APP) log(TOOTH.uncursed ? `<i>Lolth's Tooth is drawn. The curse is lifted: Ilvara feels nothing.</i>` : `<i>DM: Lolth's Tooth is drawn by ${esc(fname(a))}. Ilvara feels it, and knows roughly where.</i>`);
+  return j;
+}
+function toothBagButtons(a, btn, mine, fight){
+  if (TOOTH.doses > 0) btn(TOOTH.armed ? "Hold the venom back" : "Release venom on a hit", mine, "the hilt's reservoir: whether a hit spends a dose", () => { TOOTH.armed = !TOOTH.armed; renderBag(); });
+  if (TOOTH.doses < SURGEON_TOOTH.doses){
+    const g = GEAR[a.id], vial = g && g.carried.find(c => /^drow poison$/i.test(c.name || "") || ((c.properties || {}).save_dc === 13 && /drow poison/i.test(c.name || "") && !/dilut/i.test(c.name || "")));
+    btn("Refill (a vial of drow poison)", mine && !fight && !!vial, fight ? "not mid-fight" : vial ? "spends one vial from the pack" : "needs a vial of drow poison in the pack", async () => {
+      const j = await toothApi("tooth-refill", {characterId: characterIdOf(a.id) || undefined});
+      if (j.failed){ toast(j.error || "The game did not answer."); return; }
+      if (!APP){ TOOTH.doses = SURGEON_TOOTH.doses; spendItem(a, vial, "pour"); }
+      bank("ui/item_pickup", .6); log(`${esc(fname(a))} fills the hilt's reservoir from a vial of drow poison.`); if (APP) loadGear(a.id); renderBag();
+    });
+  }
+}
+// the spider-sense: an orange glow at the blade, brighter as spiders close; each step brighter, the wielder's player is
+// prompted to say it in their own voice (Sam's ruling) — once per step, and again only after it has cooled
+function drawToothGlow(){
+  const spiders = actors.concat(vermin).filter(x => /spider/.test(x.id) && !x.down && !x.body && x.alpha > .2);
+  for (const a of party){
+    if (!toothHeldBy(a)){ a.toothStep = 0; continue; }
+    let ft = Infinity; for (const sp of spiders){ const d = feetBetween(a, sp); if (d < ft) ft = d; }
+    const glow = surgeonToothGlow(ft), step = surgeonToothStep(glow);
+    if (step > (a.toothStep || 0) && now - (a.toothSaid || -1e9) > 4000){
+      a.toothSaid = now;
+      const how = step === 3 ? "blazes orange in their hand" : step === 2 ? "burns brighter" : "starts to glow a dull orange";
+      log(`<b>${esc(fname(a))}</b>'s black dagger ${how}.${step >= 2 ? ` <i>(${esc(fname(a))}'s player: say it, in your own voice.)</i>` : ""}`);
+      popText(a, step === 3 ? "the blade blazes" : step === 2 ? "brighter…" : "a glow", "#ff9a3c", .85);
+    }
+    if (step < (a.toothStep || 0) - 1 || step === 0) a.toothStep = step; else a.toothStep = Math.max(a.toothStep || 0, step);
+    if (!glow) continue;
+    const m = SPR[a.id].json, sc = actorScale(a), x = a.x + (a.kx || 0) + m.cell[0] * sc * .13, y = a.y + (a.ky || 0) - m.pivot[1] * sc * .42;
+    const flick = .85 + .15 * Math.sin(now / (90 - 50 * glow)) * Math.sin(now / 37), r = (10 + 34 * glow) * sc * flick;
+    ctx.save(); ctx.globalCompositeOperation = "lighter";
+    const gr = ctx.createRadialGradient(x, y, 0, x, y, r);
+    gr.addColorStop(0, `rgba(255,190,90,${.55 * glow + .15})`); gr.addColorStop(.35, `rgba(255,120,30,${.35 * glow + .08})`); gr.addColorStop(1, "rgba(255,80,0,0)");
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+    if (Math.random() < glow * .25) sparks.push({x: x + (Math.random() - .5) * 6 * sc, y, vx: (Math.random() - .5) * 20, vy: -30 - Math.random() * 40, col: Math.random() < .5 ? "#ffb35c" : "#ff7a1a", t0: now, life: 380 + Math.random() * 300});
+  }
+}
+$("dmTooth").onclick = async () => {
+  toggleDm(false);
+  if (TOOTH.uncursed){ toast("The Tooth's curse is already lifted."); return; }
+  const j = await toothApi("tooth-uncurse");
+  if (APP && j.failed){ toast(j.error === "DM only" ? "That needs the DM code. Enter it on the dashboard first." : (j.error || "The game did not answer.")); return; }
+  TOOTH.uncursed = true; log("The curse on Lolth's Tooth is lifted: Ilvara can no longer feel it drawn. It still glows near spiders.");
+};
 
 // ---------- someone talking to you comes over ----------
 // Sam, 2026-10-25: "The pixel art NPCs in the pen MUST behave like their narration. If one is talking to you they should
@@ -7000,7 +7090,7 @@ const isWeapon = it => !!it && ((it.item_type || "") === "weapon" || !!baseWeapo
 // A magic weapon: its catalogue row is rarer than common (the six magic weapons in `items` all are; every mundane
 // blade is common), or its properties say so. What it means: damage that gets past `resistNonmagical`.
 const isMagicWeapon = it => { if (!it) return false; const p = it.properties || {}, cat = catalogItem(it.name) || {}, r = String(it.rarity || cat.rarity || "common").toLowerCase();
-  return p.magic === true || p.magical === true || Number(p.attack_bonus || 0) > 0 || /\+\s*\d/.test(it.name || "") || !/^(common|mundane|none|)$/.test(r); };
+  return p.magic === true || p.magical === true || Number(p.attack_bonus || p.bonus || 0) > 0 || /\+\s*\d/.test(it.name || "") || !/^(common|mundane|none|)$/.test(r); };
 // an attack line from a catalogue weapon, the way the sheet's own lines are written. `str` says the modifier used was
 // Strength (not finesse-with-DEX, not ammunition): Rage's damage bonus reads it (lib/rage.mjs isStrengthMelee).
 function attackFromItem(sheet, it){
@@ -7012,12 +7102,14 @@ function attackFromItem(sheet, it){
   const rng = String(p.range || "").split("/").map(Number), die = (String(p.damage || "1").match(/^\s*(\d+d\d+|\d+)/) || [0, "1"])[1];
   const type = p.damage_type && p.damage_type !== "none" ? p.damage_type : (String(p.damage || "").match(/([a-z]+)\s*$/i) || [0, "bludgeoning"])[1];
   const str = sheet.saves.str || 0, dex = sheet.saves.dex || 0, mod = ammo ? dex : finesse ? Math.max(str, dex) : str;
-  const prof = proficientWith(sheet.cls, it) ? 2 : 0, dm = mod + Number(p.damage_bonus || 0);       // proficiency +2 at levels 1-4
-  const a = {name: it.name, hit: mod + prof + Number(p.attack_bonus || 0), dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
+  // a "+1" weapon's catalogue row may carry one `bonus` for both (Lolth's Tooth does): it adds to the attack and the damage
+  const prof = proficientWith(sheet.cls, it) ? 2 : 0, dm = mod + Number(p.damage_bonus ?? p.bonus ?? 0);       // proficiency +2 at levels 1-4
+  const a = {name: it.name, hit: mod + prof + Number(p.attack_bonus ?? p.bonus ?? 0), dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
     reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, str: !ammo && (!finesse || str >= dex), ammo, item: true, itemName: it.name, pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null, magic: isMagicWeapon(it)};
   if (ammo && rng[1]) a.long = rng[1];
   if (light) a.light = true; if (thrown && rng[0]) a.thrown = rng[0];
   if (sheet.sneakDie && (finesse || ammo)) a.sneak = sheet.sneakDie;
+  if (isTooth(it)) a.tooth = true;                                      // Lolth's Tooth: the venom in the hilt (below)
   return a;
 }
 // a hero's attack lines: the equipped weapon first, then what the sheet always has (a fist)
@@ -7163,6 +7255,7 @@ function equipTo(a, it, sl){
   g.doll = (g.doll || []).filter(d => d.slot !== sl).concat([{slot: sl, name: it.name, item_key: it.item_key || null}]);
   if (sl === "main_hand") g.main = it.name; if (sl === "off_hand") g.off = it.name;
   if (HAND(sl)) refreshAttacks(a.id);
+  if (HAND(sl) && isTooth(it)) toothDrawn(a);
   popText(a, HAND(sl) ? `${it.name} in hand` : it.name, "#e8d9a8", .8);
   log(`${fname(a)} ${was && was.name !== it.name ? `takes off the ${esc(was.name)} and ` : ""}${HAND(sl) ? "readies" : "puts on"} the <b>${esc(it.name)}</b>${HAND(sl) ? "" : ` (${slotLabel(sl).toLowerCase()})`}${paid}.`);
   if (APP){ const cid = characterIdOf(a.id);
@@ -7549,6 +7642,7 @@ function renderBag(){
     const worn = wornSlotsOf(g, it);
     const pic = it.icon || (it.pixel ? ITEM_PX + it.pixel : "");
     const what = worn.length ? `${worn.map(slotLabel).join(" and ").toLowerCase()}${u.kind === "weapon" ? "" : " · worn"}`
+      : isTooth(it) ? `a weapon · ${toothLabel()}`
       : u.kind === "weapon" ? "a weapon"
       : u.kind === "heal" ? `restores ${u.dice} HP`
       : u.kind === "drink" ? (u.effect || "a draught")
@@ -7582,6 +7676,7 @@ function renderBag(){
     if (u.kind === "throw" && fight){ const fa = flaskAttacks(a).find(x => x.itemName === it.name);
       btn("Throw", mine && c.action && !!fa, "your action: click a foe within 20 ft", () => { toggleBag(false); aim(a, {atk: fa, throwing: true}); }); }
     if (u.kind === "food") btn(u.verb === "drink" ? "Drink" : "Eat", mine && (!fight || c.action), fight ? "takes your action" : "", () => eatItem(a, it, u.verb));
+    if (isTooth(it)) toothBagButtons(a, btn, mine, fight);
     list.appendChild(row);
   }
 }
