@@ -91,6 +91,42 @@ export const BOOK_CONTAINERS: Record<string, BookContainer> = {
     source: "OotA ch.1 area 10, Treasure: six shields.",
     entries: [{ slug: "shield", qty: 6 }],
   },
+  // ── Hard Labor plates (Sam's paintings, 2026-10-26; claude/Hard_Labor_Module_2026-10-26.md) ──
+  // Lift Trouble, OotA Expanded p.45 (community supplement, NOT WotC): "a pouch of vials of sleep poison, a container of
+  // fresh fruit, a weapon's belt (containing small throwing darts)". The book gives no counts: the 3 vials and 5 darts
+  // are Claude's numbers. "Sleep poison" is read as drow poison, the catalogue row whose effect is unconsciousness.
+  // Fresh fruit has no catalogue row, so it shows as "not in the catalogue yet" and cannot be taken.
+  "cliff-top-sack": {
+    node: "5c", title: "Snagged sack",
+    source: "OotA Expanded p.45, Lift Trouble: a container of fresh fruit fell off the lift.",
+    entries: [{ slug: "fresh-fruit", qty: 1, note: "a container of it" }],
+  },
+  "cliff-crate": {
+    node: "5c", title: "Split crate",
+    source: "OotA Expanded p.45, Lift Trouble: a weapon's belt containing small throwing darts. Count (5) is Claude's.",
+    entries: [{ slug: "dart", qty: 5, note: "on a weapon belt" }],
+  },
+  "cliff-low-sack": {
+    node: "5c", title: "Snagged sack, low on the cliff",
+    source: "OotA Expanded p.45, Lift Trouble: a pouch of vials of sleep poison. Read as drow poison; count (3) is Claude's.",
+    entries: [{ slug: "drow-poison", qty: 3, note: "vials in a pouch" }],
+  },
+  // The kitchen (plate 3k): what is painted on Sam's plate. The book (OotA p.12) names the chores, not the kit.
+  "kitchen-knives": {
+    node: "3k", title: "Kitchen knives",
+    source: "Sam's kitchen plate, 2026-10-26: three knives and a cleaver painted by the cutting board; the catalogue's nearest row is the dagger.",
+    entries: [{ slug: "dagger", qty: 3, note: "kitchen knives" }],
+  },
+  "kitchen-mushrooms": {
+    node: "3k", title: "Mushrooms on the worktable",
+    source: "Sam's kitchen plate, 2026-10-26: a pile of pale mushrooms on the worktable.",
+    entries: [{ slug: "edible-mushrooms", qty: 1, note: "a handful" }],
+  },
+  "kitchen-card-table": {
+    node: "3k", title: "The card table",
+    source: "Sam's kitchen plate, 2026-10-26: a card game left mid-hand.",
+    entries: [{ slug: "gaming-set-cards", qty: 1, note: "the drow's deck" }],
+  },
   "armory-blades": {
     node: "10c", title: "The blade racks",
     source: "OotA ch.1 area 10, Treasure: six shortswords and ten daggers.",
