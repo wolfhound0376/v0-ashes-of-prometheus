@@ -5698,7 +5698,7 @@ async function pollStage(){
     // someone else came through the door: they appear beside the party (never mid-fight — next poll)
     noteSeats(j.seated);
     if (mode === "explore"){
-      for (const id of seatedSlugs(j.seated)) if (!PARTY.includes(id)) partyJoins(id);
+      for (const id of seatedSlugs(j.seated)) if (!party.some(p => p.id === id)) partyJoins(id);
       if (Array.isArray(j.seated) && j.seated.length) for (const id of PARTY.slice()) if (!seatedSlugs(j.seated).includes(id) && party.length > 1 && id !== (leader && leader.id)) partyLeaves(id);
     }
     const present = Array.isArray(j.present) ? j.present : [], gone = Array.isArray(j.gone) ? j.gone : [];
@@ -5758,7 +5758,7 @@ function tickVermin(dt){
 }
 // A seated character who was not on the plate when it loaded joins the party where the leader stands.
 function partyJoins(id){
-  if (!SPR[id] || PARTY.includes(id) || !leader) return;
+  if (!SPR[id] || party.some(p => p.id === id) || !leader) return;   // on the plate already (PARTY can name a hero who is not drawn)
   PARTY = FULL_PARTY.filter(x => PARTY.includes(x) || x === id);
   const p = nearestWalkable(leader.x - 60 + Math.random() * 120, leader.y + 40, party.map(q => ({x: q.x, y: q.y})));
   const a = mkActor(id, p.x, p.y, "pc", {alpha: 0, fadeIn: true, home: {x: p.x, y: p.y}, face: leader.face});
@@ -8254,6 +8254,10 @@ function frame(t){
     await enterNode(saved.cur, {spawn: {x: L.x, y: L.y}, offs: saved.party.map(p => ({id: p.id, dx: p.x - L.x, dy: p.y - L.y}))});
     for (const p of party){ const s = saved.party.find(q => q.id === p.id); if (s){ p.x = s.x; p.y = s.y; p.face = s.face || 0; p.home = {x: s.x, y: s.y}; } }
     if (saved.cur === 9) applyInPool(); else state.inPool = [];
+    // The walk this tab saved can be from an earlier session with fewer heroes at the table (Sam, 2026-10-25:
+    // "lynkes can not see gandalf" — Lynkes walked session 1 alone, so his tab restored a party of one). Everyone
+    // seated now who was not in that save joins beside the leader.
+    for (const id of PARTY) if (!party.some(p => p.id === id)) partyJoins(id);
   } else {
     if (mine) leader = {id: mine};
     await enterNode(11, {spawn: {x: 1560, y: 960}, note: (!APP || isDm()) ? "You wake in the slave pen. The gate is locked. <em>DM tools</em> can open it, or jump the party anywhere." : "You wake in the slave pen. The gate is locked."});
