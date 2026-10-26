@@ -234,6 +234,9 @@ P = ['kenta', 'samson', 'scott', 'freia']
 HEROES = {k: v for k, v in json.load(open(os.path.join(HERE, 'heroes.json'))).items() if not k.startswith('_') and os.path.exists(os.path.join(SPR, v, 'sprite.json'))}
 P = P + [v for v in HEROES.values() if v not in P]
 N = ['ront', 'eldeth', 'derendil', 'sarith', 'buppido', 'jimjar', 'topsy', 'turvy', 'shuushar', 'stool', 'jorlan', 'drow-guard-male', 'drow-guard-female']
+# Liana, the drow surgeon (The Drow Surgeon, Sam 2026-10-25): baked once her sheets are in the repo; until then the page
+# dresses her in the female guard's sheets (lianaSprite in the template)
+if os.path.exists(os.path.join(SPR, 'liana', 'sprite.json')): N.append('liana')
 F = ['quaggoth', 'giant-spider', 'ghost-male', 'drow-elite-warrior', 'ilvara', 'shoor', 'asha']   # ghost-male: the bhut under Old Thessaly (Sam, 2026-10-24); the officers: Sam's playtest, 2026-10-24 (shoor and asha have idle sheets only)
 V = ['giant-rat']  # vermin: set dressing, idle sheet only
 

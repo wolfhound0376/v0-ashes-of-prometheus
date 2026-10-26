@@ -21,6 +21,10 @@ import {
 //   POST {action:"tend"}        Liana pours the potion
 //   POST {action:"persuade"}    the one try at talking her round; on a success the hidden d4 and the favour
 //   POST {action:"leave"}       she goes without being asked
+//   POST {action:"again"}       a LATER defiance at the gate (Sam, 2026-10-25: "Remove formal fight. Volleys only."): the
+//                               guards shoot again — no execution, no surgeon — volleys until they step away or drop
+//   POST {action:"recover"}     after a later drop nobody comes: stable at 0, they regain 1 HP after 1d4 hours
+//                               (SRD 5.1, Combat: Stabilizing a Creature) — the time is reported to Malachar, not advanced here
 //
 // Who may call it: the DM, or any browser holding a seat's claim (claimId + claimToken) — the same gate as /api/walk-cast.
 // The state lives in world_flags under "drow-surgeon", so a campaign restart clears it with every other flag.
@@ -33,6 +37,7 @@ const FLAG = "drow-surgeon"
 type Stage = "shooting" | "stepped" | "down" | "tended" | "settled"
 type State = {
   stage: Stage
+  again?: number                                   // 0/absent = the first time (the surgeon's scene); n = the n-th later defiance
   at: string
   victim: { id: string; name: string; roll: number } | null
   target: { id: string; name: string }
@@ -122,6 +127,33 @@ export async function POST(req: NextRequest) {
 
   if (!state) return NextResponse.json({ error: "nothing has happened at the gate yet" }, { status: 409 })
 
+  // ---------- a later defiance: volleys only ----------
+  if (action === "again") {
+    if (state.stage !== "stepped" && state.stage !== "settled") return NextResponse.json({ error: "the guards are already busy", state }, { status: 409 })
+    const targetId = typeof body.targetId === "string" ? body.targetId : ""
+    const { data: target } = await db.from("characters").select("id, name").eq("id", targetId).maybeSingle()
+    if (!target) return NextResponse.json({ error: "no such character at the gate" }, { status: 400 })
+    state.again = (state.again ?? 0) + 1
+    state.stage = "shooting"; state.target = { id: target.id, name: target.name }; state.volleys = 0
+    await writeState(db, state, `${target.name} defies the guards again (${state.again})`)
+    await say(db, `${target.name} would not step back from the pen gate again. No warning bolt this time: the guards on the bridge simply shoot.`)
+    return NextResponse.json({ ok: true, state })
+  }
+
+  // ---------- stable at 0 and nobody comes ----------
+  if (action === "recover") {
+    if (state.stage !== "down" || !state.again) return NextResponse.json({ error: "nobody is lying there waiting", state }, { status: 409 })
+    const hours = surgeonD(4)
+    const { data: t } = await db.from("characters").select("id, name, hp_current, conditions").eq("id", state.target.id).maybeSingle()
+    if (!t) return NextResponse.json({ error: "the prisoner's row is gone" }, { status: 500 })
+    const hp = Math.max(1, Number(t.hp_current) || 0)
+    await db.from("characters").update({ hp_current: hp, conditions: withoutCond(conditionsOf(t.conditions), "unconscious") }).eq("id", t.id)
+    state.stage = "settled"
+    await writeState(db, state, `${t.name} comes round after ${hours} h`)
+    await say(db, `Nobody came for ${t.name}. Stable at 0 HP, they lay in the corner of the pen and came round ${hours} hour${hours > 1 ? "s" : ""} later with ${hp} HP (SRD: a stable creature regains 1 HP after 1d4 hours). Malachar: advance the clock by ${hours} hour${hours > 1 ? "s" : ""}.`)
+    return NextResponse.json({ ok: true, hours, hp, state })
+  }
+
   // ---------- a round of bolts at the prisoner ----------
   if (action === "volley") {
     if (state.stage !== "shooting") return NextResponse.json({ error: "the shooting has stopped", state }, { status: 409 })
@@ -158,7 +190,7 @@ export async function POST(req: NextRequest) {
 
   // ---------- Liana's potion ----------
   if (action === "tend") {
-    if (state.stage !== "down") return NextResponse.json({ error: "nobody is lying there for her", state }, { status: 409 })
+    if (state.stage !== "down" || state.again) return NextResponse.json({ error: "nobody is lying there for her", state }, { status: 409 })
     const { data: t } = await db.from("characters").select("id, name, hp_current, hp_max, conditions").eq("id", state.target.id).maybeSingle()
     if (!t) return NextResponse.json({ error: "the prisoner's row is gone" }, { status: 500 })
     const hpMax = Number(t.hp_max) || 1

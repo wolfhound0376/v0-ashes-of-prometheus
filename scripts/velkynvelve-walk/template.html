@@ -5614,11 +5614,9 @@ function gateWarning(guards, g){
 }
 function gateGuardsShoot(guards){
   gateWarn = null; if (!guards.length || mode !== "explore") return;
-  if (!surgeonDone()){ drowSurgeonBegins(guards); return; }   // the first time: The Drow Surgeon, no formal combat (below)
-  log(`<em>${esc(fname(leader))} does not step back.</em> The guards on the bridge raise their crossbows.`);
-  if (APP) handOff(`${fname(leader)} ignored the drow guards' order to step back from the pen gate; the guards shoot. Combat has begun.`);
-  startCombat(guards, "The guards on the bridge loose their crossbows!");
-  if (cbt) cbt.gateVolley = true;
+  // Sam, 2026-10-25: "Remove formal fight. Volleys only." Defying the guards never opens combat: the first time is The
+  // Drow Surgeon (below); every later time they simply shoot until the prisoner steps away or drops.
+  if (!surgeonDone()) drowSurgeonBegins(guards); else surgeonAgain(guards);
 }
 
 // ---------- THE DROW SURGEON ----------
@@ -5639,6 +5637,7 @@ let surgeonSeen = null;              // the server's record (GET), so a reload k
 let surgeonElvish = new Set();       // character ids that speak Elvish (GET); the preview counts Kenta
 const bloodMarks = [];
 function lianaSprite(){
+  if (!SPR.liana && SPR_META.liana) return false;                // her own sheets are still loading
   if (!SPR.liana && SPR["drow-guard-female"]) SPR.liana = {json: Object.assign({}, SPR["drow-guard-female"].json, {name: "Liana"}), img: SPR["drow-guard-female"].img};
   return !!SPR.liana;
 }
@@ -5687,6 +5686,12 @@ function surgeonLocal(action, x){
     L.s.stage = "settled"; return {ok: true, persuade: r, boon, granted, state: L.s};
   }
   if (action === "leave"){ L.s.stage = "settled"; return {ok: true, state: L.s}; }
+  if (action === "again"){
+    if (L.s.target.id !== surgeon.pc.id) L.hp = hpMax;
+    L.s.again = (L.s.again || 0) + 1; L.s.stage = "shooting"; L.s.target = {id: surgeon.pc.id, name: fname(surgeon.pc)}; L.s.volleys = 0;
+    return {ok: true, state: L.s};
+  }
+  if (action === "recover"){ const hours = 1 + Math.floor(Math.random() * 4); L.hp = Math.max(1, L.hp); L.s.stage = "settled"; return {ok: true, hours, hp: L.hp, state: L.s}; }
   return {failed: true};
 }
 // ----- blood on the floor: the pool where they fall, the smear where they are dragged -----
@@ -5796,13 +5801,39 @@ async function surgeonStepped(){
   if (S.victim) setTimeout(() => surgeonRemoveBody(), 9000);   // nobody comes to stitch anyone; the body still goes over the falls
   surgeon = null;
 }
+// ----- a later defiance: no warning bolt, no surgeon — volleys only (Sam, 2026-10-25) -----
+async function surgeonAgain(guards){
+  const pc = leader;
+  surgeon = {pc, stage: "shooting", local: !APP || !characterIdOf(pc.id), again: true};
+  pc.path = []; guards.forEach(g => { g.path = []; g.actUntil = now + 90000; faceTo(g, pc); });
+  log(`<em>${esc(fname(pc))} does not step back.</em> No warning bolt this time: the guards raise their crossbows.`);
+  const j = await surgeonApi("again", {targetId: characterIdOf(pc.id) || undefined, slug: pc.id});
+  if (j.failed){ surgeon = null; toast(j.error || "The game did not answer."); return; }
+  setTimeout(surgeonVolleyTick, 1600);
+}
+// after a later drop nobody comes: stable at 0, back up with 1 HP after 1d4 hours (SRD 5.1, Stabilizing a Creature)
+async function surgeonRecover(){
+  const S = surgeon; if (!S) return; const pc = S.pc;
+  log("Nobody comes. The guards go back to their watch.");
+  const j = await surgeonApi("recover");
+  if (j.failed){ toast(j.error || "The game did not answer."); surgeon = null; mode = "explore"; return; }
+  setTimeout(() => {
+    pc.down = false; pc.surgeonDown = false; pc.once = null; setAnim(pc, "idle");
+    popText(pc, `+${j.hp}`, "#9be37b", 1.1);
+    log(`<b>${j.hours} hour${j.hours > 1 ? "s" : ""}</b> later (1d4), ${esc(fname(pc))} comes round in the corner with ${j.hp} HP.`);
+    if (S.draggers) S.draggers.forEach(d => { if (d.keep){ d.patrol = d.keep.patrol; d.static = d.keep.static; } d.actUntil = now + 4000; });
+    surgeon = null; mode = "explore";
+  }, 3200);
+}
 // ----- 3. down, and dragged to the corner -----
 function surgeonDown(vol){
   const S = surgeon, pc = S.pc; S.stage = "down"; mode = "dialog"; tip.hidden = true;
   pc.down = true; pc.surgeonDown = true; pc.path = []; if (SPR[pc.id].img.dead) playOnce(pc, "dead", () => {});
   bank("creature/player_downed", .85); popText(pc, vol.ko && vol.hpAfter > 0 ? "out cold" : "down", "#ff6b5e", 1.3); hitstop(160); shake(9);
   addBlood(pc, 1.3, true);
-  log(`<b>${esc(fname(pc))}</b> drops by the gate, bleeding — <b>stable at 0 HP</b>, no death saves. The shooting stops.`);
+  log(vol.ko && vol.hpAfter > 0
+    ? `<b>${esc(fname(pc))}</b> drops by the gate — <b>out cold from the drow poison</b>, ${vol.hpAfter} HP left. The shooting stops.`
+    : `<b>${esc(fname(pc))}</b> drops by the gate, bleeding — <b>stable at 0 HP</b>, no death saves. The shooting stops.`);
   const g = gateCenter() || {x: pc.x, y: pc.y};
   const draggers = npcs.filter(n => PEN_NPCS.some(d => d.id === n.id) && n !== S.victim && !n.down && !n.offStage && !n.body && !n.hostile && n.alpha > .5)
     .sort((a, b) => Math.hypot(a.x - pc.x, a.y - pc.y) - Math.hypot(b.x - pc.x, b.y - pc.y)).slice(0, 2);
@@ -5826,7 +5857,7 @@ function surgeonDown(vol){
       draggers.forEach(d => { setAnim(d, "idle"); faceTo(d, pc); d.home = {x: d.x, y: d.y}; });
       addBlood(pc, 1, true);
       log(`${draggers.length ? draggers.map(d => esc(SHORT[d.id] || fname(d))).join(" and ") + " drag" + (draggers.length > 1 ? "" : "s") : "Someone drags"} ${esc(fname(pc))} to the corner of the pen, a red smear behind them.`);
-      setTimeout(lianaArrives, 2800);
+      setTimeout(S.again ? surgeonRecover : lianaArrives, 2800);
     });
   }, 2000);
 }
@@ -5932,6 +5963,11 @@ function surgeonOnEnter(n){
   if (String(n) === "14" && s.victim) placeBodyInPool(s.victim);
   if (n !== PEN || surgeon) return;
   if (s.stage === "shooting"){ surgeon = {pc: leader, stage: "shooting", local: false}; surgeonStepped(); return; }
+  if (s.stage === "down" && s.again){
+    const pc = party.find(p => characterIdOf(p.id) === s.target.id) || leader;
+    surgeon = {pc, stage: "down", local: false, again: true}; pc.down = true; pc.surgeonDown = true; if (SPR[pc.id].img.dead) playOnce(pc, "dead", () => {});
+    setTimeout(surgeonRecover, 2500); return;
+  }
   if (s.stage === "down" || s.stage === "tended"){
     const pc = party.find(p => characterIdOf(p.id) === s.target.id) || leader;
     surgeon = {pc, stage: s.stage, local: false, victimRec: s.victim};
