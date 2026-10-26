@@ -24,7 +24,7 @@
 import { ENTERED_KEY, mapHref } from "@/lib/map-entry"
 import { useCallback, useEffect, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
-import { Check, DoorOpen, Eye, FlaskConical, Play, Swords, UserMinus, UserPlus, X } from "lucide-react"
+import { Check, DoorOpen, Eye, FlaskConical, Play, RotateCcw, Swords, UserMinus, UserPlus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { setDmKey, clearDmKey } from "@/lib/dm-key"
 import { cameThroughDmDoor, leaveDmDoor } from "@/lib/dm-door"
@@ -143,6 +143,7 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
   const [busy, setBusy] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
+  const [askNew, setAskNew] = useState(false)
 
   const load = useCallback(async () => {
     try {
@@ -192,22 +193,30 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
     } finally { setBusy(null) }
   }
 
-  const begin = async (sandbox: boolean) => {
+  // Three ways out of Behind the Screen (Sam, 2026-10-25):
+  //   Continue the campaign  → open the table; the world is exactly as the last session left it.
+  //   New game               → the campaign is RESET, then the table opens ("starting a new game ALWAYS resets
+  //                            the campaign"). Server side it is one action (/api/table `new`), so a reset is never
+  //                            half-done with the table left shut, or the table opened on the old world.
+  //   Rehearsal              → the sandbox; skips the table, saves nothing.
+  // The player's Start New Game on the title screen only picks or forges a hero — it never resets anything.
+  const begin = async (mode: "continue" | "new" | "sandbox") => {
     try { window.localStorage.setItem(ROLE_LS_KEY, "dm"); window.sessionStorage.setItem("aop_intro_seen", "1") } catch { /* storage blocked */ }
-    if (sandbox) {
-      // Rehearsal skips the table: nothing is saved and nobody needs to be seated.
+    if (mode === "sandbox") {
       try { window.sessionStorage.setItem(ENTERED_KEY, "1") } catch { /* storage blocked */ }
       router.push(mapHref(true))
       return
     }
-    // A live session starts at the staging table (Sam, 2026-10-25; app/table/page.tsx): the DM opens it, the
-    // players sit, and the game begins when the DM and every seat are green. The table sends the DM to the map.
-    setBusy("open"); setMsg(null)
+    setBusy(mode === "new" ? "new" : "open"); setMsg(null)
     try {
-      const r = await fetch("/api/table", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "open" }) })
-      if (!r.ok) { const j = await r.json().catch(() => ({})); setMsg(j.error ?? "Could not open the table."); return }
+      const r = await fetch("/api/table", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: mode === "new" ? "new" : "open" }) })
+      if (!r.ok) { const j = await r.json().catch(() => ({})); setMsg(j.error ?? (mode === "new" ? "Could not start a new game." : "Could not open the table.")); return }
+      if (mode === "new") {
+        // Bring every screen that follows the shared stage back to the table, as the old restart did.
+        fetch("/api/stage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "table", by: "dm", at: new Date().toISOString(), caption: "A new game begins." }) }).catch(() => {})
+      }
       router.push("/table")
-    } catch { setMsg("Could not reach the table.") } finally { setBusy(null) }
+    } catch { setMsg("Could not reach the table.") } finally { setBusy(null); setAskNew(false) }
   }
 
   const seatOf = (id: string) => seated.find((s) => s.id === id)
@@ -299,10 +308,28 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
 
       {/* BEGIN */}
       <div className="flex flex-col items-center gap-3 pt-2">
-        <button type="button" onClick={() => begin(false)} className="flex items-center gap-3 rounded-sm border-2 border-[#8a6a3a] bg-gradient-to-b from-[#2a2015]/90 via-black/80 to-[#2a2015]/90 px-12 py-4 font-serif text-xl uppercase tracking-[0.35em] text-[#e8c56a] shadow-[0_0_40px_rgba(201,168,104,0.35)] transition-all hover:border-[#f4e0a8] hover:text-[#fff3cf] hover:shadow-[0_0_80px_rgba(232,197,106,0.6)]">
-          <Play className="h-5 w-5" /> {busy === "open" ? "Opening…" : "Open the table"}
+        <button type="button" disabled={busy !== null} onClick={() => begin("continue")} className="flex items-center gap-3 rounded-sm border-2 border-[#8a6a3a] bg-gradient-to-b from-[#2a2015]/90 via-black/80 to-[#2a2015]/90 px-12 py-4 font-serif text-xl uppercase tracking-[0.35em] text-[#e8c56a] shadow-[0_0_40px_rgba(201,168,104,0.35)] transition-all hover:border-[#f4e0a8] hover:text-[#fff3cf] hover:shadow-[0_0_80px_rgba(232,197,106,0.6)] disabled:opacity-40">
+          <Play className="h-5 w-5" /> {busy === "open" ? "Opening…" : "Continue the campaign"}
         </button>
-        <button type="button" onClick={() => begin(true)} className="flex items-center gap-2 rounded-sm border border-[#3d3428] px-5 py-2 text-[11px] uppercase tracking-[0.3em] text-stone-500 hover:border-[#8a6a3a] hover:text-stone-300">
+        {askNew ? (
+          <div className="w-full max-w-md rounded-sm border border-red-800/70 bg-[#1a0b0b]/90 p-4 text-left">
+            <div className="font-serif text-base text-red-100">Start a new game?</div>
+            <p className="mt-2 text-sm leading-relaxed text-stone-400">
+              A new game resets the whole campaign: the story so far, what Malachar and the NPCs remember, every choice the
+              world recorded and everything the party carries. The heroes are kept, with their sheets, levels and art. Then
+              the table opens and the party wakes in the slave pen of Velkynvelve. This cannot be undone.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button type="button" disabled={busy !== null} onClick={() => begin("new")} className="rounded-sm border border-red-600/80 bg-[#3a1414] px-4 py-2 font-serif text-[12px] uppercase tracking-[0.25em] text-red-100 hover:border-red-400 disabled:opacity-40">{busy === "new" ? "Resetting…" : "Reset and open the table"}</button>
+              <button type="button" disabled={busy !== null} onClick={() => setAskNew(false)} className="rounded-sm border border-[#3d3428] px-4 py-2 text-[11px] uppercase tracking-[0.25em] text-stone-400 hover:text-stone-200 disabled:opacity-40">Keep the campaign</button>
+            </div>
+          </div>
+        ) : (
+          <button type="button" disabled={busy !== null} onClick={() => setAskNew(true)} className="flex items-center gap-2 rounded-sm border border-red-900/70 px-6 py-2.5 font-serif text-[13px] uppercase tracking-[0.3em] text-red-200/80 hover:border-red-500/70 hover:text-red-100 disabled:opacity-40">
+            <RotateCcw className="h-4 w-4" /> New game — resets the campaign
+          </button>
+        )}
+        <button type="button" onClick={() => begin("sandbox")} className="flex items-center gap-2 rounded-sm border border-[#3d3428] px-5 py-2 text-[11px] uppercase tracking-[0.3em] text-stone-500 hover:border-[#8a6a3a] hover:text-stone-300">
           <FlaskConical className="h-3.5 w-3.5" /> Rehearsal — sandbox, nothing saves
         </button>
         <button type="button" onClick={onLock} className="mt-4 text-[10px] uppercase tracking-[0.3em] text-stone-700 hover:text-stone-500">Lock the screen</button>
