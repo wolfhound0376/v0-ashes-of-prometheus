@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { hasDmCookie, isDmRequest } from "@/lib/dm-session"
+import { restartCampaign } from "@/lib/restart-campaign"
 import { cannotChooseFigure, cannotSit, isComplete, missingOf, type TableState } from "@/lib/table"
 import {
   clearSeats, nextSeatNumber, readTable, readTableView, readinessFor, removeSeat, startIfReady, writeSeat, writeTable,
@@ -14,8 +15,11 @@ import {
 //                                  whether that character holds a seat. Anyone may read it — names, lights
 //                                  and what each seat is missing, nothing secret.
 //   POST { action, … }
-//     DM, door cookie ONLY:        open — the table opens only from the DM door on the title screen
-//                                  (Sam, 2026-10-25; lib/dm-door.ts). The older x-dm-key header cannot open it.
+//     DM, door cookie ONLY:        open — CONTINUE the campaign: the table opens, the world is kept.
+//                                  new  — NEW GAME: the campaign is reset (lib/restart-campaign.ts), then the
+//                                         table opens. Sam, 2026-10-25: "starting a new game ALWAYS resets the
+//                                         campaign"; both live only behind the DM door on the title screen
+//                                         (lib/dm-door.ts). The older x-dm-key header can do neither.
 //     DM (cookie or x-dm-key):     start · unstart · remove {characterId} · companion {characterId} · end
 //     player (characterId + claimToken):  sit · ready · unready · leave · figure {figure: 0..6}
 //
@@ -23,8 +27,10 @@ import {
 // whoever turned it.
 
 export const dynamic = "force-dynamic"
+export const maxDuration = 60 // `new` runs the whole campaign reset first
 
-const DM_ACTIONS = new Set(["open", "start", "unstart", "remove", "companion", "end"])
+const DM_ACTIONS = new Set(["open", "new", "start", "unstart", "remove", "companion", "end"])
+const DOOR_ACTIONS = new Set(["open", "new"]) // the DM door's own cookie only
 const PLAYER_ACTIONS = new Set(["sit", "ready", "unready", "leave", "figure"])
 
 function isDm(req: NextRequest): boolean {
@@ -62,7 +68,7 @@ export async function POST(req: NextRequest) {
   try {
     if (DM_ACTIONS.has(action)) {
       if (!isDm(req)) return NextResponse.json({ error: "Only the Dungeon Master can do that." }, { status: 403 })
-      if (action === "open" && !hasDmCookie(req)) {
+      if (DOOR_ACTIONS.has(action) && !hasDmCookie(req)) {
         return NextResponse.json({ error: "The table opens only from the Dungeon Master's door on the title screen." }, { status: 403 })
       }
       return await dmAction(db, action, characterId)
@@ -92,6 +98,20 @@ async function dmAction(db: ReturnType<typeof createAdminClient>, action: string
       await writeTable(db, next, `The DM opened the table for session ${next.session}`)
     }
     return reply(await readTableView(db))
+  }
+
+  if (action === "new") {
+    // A new game is a new campaign, every time (Sam, 2026-10-25). Refused while a session is live: the DM ends
+    // it first, so nobody is wiped out from under their own map mid-scene.
+    if (t.status === "live") return NextResponse.json({ error: "A session is live. End it before you start a new game." }, { status: 409 })
+    const restart = await restartCampaign(db)
+    // The restart clears every world flag, the table and its seats included. Open the new run's table only when
+    // the wipe finished cleanly; a half-wiped world is not a new game.
+    if (!restart.ok) return NextResponse.json({ error: "The campaign reset did not fully finish, so the table was not opened. Tell Claude before you play.", problems: restart.problems }, { status: 500 })
+    const after = await readTable(db)
+    await clearSeats(db)
+    await writeTable(db, { status: "lobby", dmReady: false, session: after.session + 1, openedAt: now, startedAt: null }, "The DM started a new game")
+    return reply(await readTableView(db), null, { newGame: true, run: (restart.report.run as { number?: number } | undefined)?.number ?? null })
   }
 
   if (action === "end") {
