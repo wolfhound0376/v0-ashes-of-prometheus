@@ -19,7 +19,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { DoorOpen, LogOut, Play, Square, UserMinus, Volume2, VolumeX } from "lucide-react"
+import { DoorOpen, LogOut, Play, RotateCcw, Square, UserMinus, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { dmHeaders } from "@/lib/dm-key"
 import { assignFigures, type Light, type TableState } from "@/lib/table"
@@ -225,6 +225,7 @@ export default function TablePage() {
         {msg && <p role="alert" className="mb-3 text-sm text-[#d9bd7e]">{msg}</p>}
         {!view && <p className="text-[11px] uppercase tracking-[0.4em] text-stone-600">Lighting the candles…</p>}
         {view && role === "dm" && <DmControls view={view} busy={busy} send={send} onRehearse={() => router.push(mapHref(true))} />}
+        {view && role === "dm" && <RestartCampaign busy={busy} onDone={load} />}
         {view && role === "player" && <PlayerBox view={view} busy={busy} send={send} />}
         {view && role === "player" && view.state.status === "lobby" && view.mine && <FigurePicker view={view} busy={busy} send={send} />}
         {view && role === "none" && (
@@ -356,6 +357,62 @@ function EndButton({ busy, send, label = "End the session", prominent = false }:
       : "text-[11px] uppercase tracking-[0.3em] text-stone-600 hover:text-red-300 disabled:opacity-40"}>
       {label}
     </button>
+  )
+}
+
+// Start the whole campaign over (Sam, 2026-10-25: "I also want to reset the game button so we can restart the
+// campaign"). The dashboard had this, but the DM no longer has a dashboard, so it lives at his table now. The
+// work is /api/restart-campaign (DM only): it wipes the run and keeps the heroes. It also clears every world
+// flag, which closes this table and empties every seat, so anyone still in the game is sent back to the table
+// (components/session-guard.tsx). Two steps, because it cannot be undone.
+function RestartCampaign({ busy, onDone }: { busy: boolean; onDone: () => void }) {
+  const [step, setStep] = useState<"idle" | "ask" | "working">("idle")
+  const [note, setNote] = useState<string | null>(null)
+  const restart = async () => {
+    setStep("working"); setNote(null)
+    try {
+      const r = await fetch("/api/restart-campaign", { method: "POST", headers: { "Content-Type": "application/json", ...dmHeaders() } })
+      const j = await r.json().catch(() => null)
+      if (r.status === 403) { setNote("The server did not accept your DM code. Nothing was restarted. Sign in at the DM door again."); return }
+      if (!r.ok || !j?.ok) { setNote("The restart did not fully finish. Some of the old run may still be there; tell Claude before you play."); return }
+      // Bring every screen that follows the shared stage back to the table, as the dashboard's restart did.
+      fetch("/api/stage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "table", by: "dm", at: new Date().toISOString(), caption: "A new game begins." }) }).catch(() => {})
+      const run = typeof j.report?.run?.number === "number" ? ` Run ${j.report.run.number} begins.` : ""
+      setNote(`The campaign is back at the beginning.${run} Open the table when the players are ready.`)
+      onDone()
+    } catch {
+      setNote("Could not reach the server. Nothing was changed.")
+    } finally {
+      setStep("idle")
+    }
+  }
+  return (
+    <div className="mt-10 border-t border-[#2a221a] pt-5">
+      {note && <p role="status" className="mb-3 text-sm text-[#d9bd7e]">{note}</p>}
+      {step === "ask" ? (
+        <div className="rounded-sm border border-red-800/70 bg-[#1a0b0b]/90 p-4 text-left">
+          <div className="font-serif text-base text-red-100">Restart the whole campaign?</div>
+          <p className="mt-2 text-sm leading-relaxed text-stone-400">
+            Everything that happened in this campaign is wiped: the story so far, what Malachar and the NPCs remember, every
+            choice the world recorded, everything the party carries, and every seat at this table. The heroes themselves are kept,
+            with their sheets, levels and art. The party wakes again in rags, in the slave pen of Velkynvelve.
+          </p>
+          <p className="mt-2 text-sm text-red-300/90">This cannot be undone.</p>
+          <div className="mt-4 flex gap-2">
+            <button type="button" onClick={restart} disabled={busy} className="flex flex-1 items-center justify-center gap-2 rounded-sm border-2 border-red-700/80 bg-gradient-to-b from-[#3a1414] to-[#1f0b0b] py-3 font-serif text-sm uppercase tracking-[0.25em] text-red-100 hover:border-red-400 disabled:opacity-40">
+              <RotateCcw className="h-4 w-4" /> Yes, start over
+            </button>
+            <button type="button" onClick={() => setStep("idle")} className="flex-1 rounded-sm border border-[#3d3428] py-3 text-[12px] uppercase tracking-[0.25em] text-stone-400 hover:text-stone-200">
+              Keep this campaign
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button type="button" disabled={busy || step === "working"} onClick={() => setStep("ask")} className="inline-flex items-center gap-2 rounded-sm border border-red-900/60 px-4 py-2 text-[11px] uppercase tracking-[0.3em] text-red-300/80 hover:border-red-500/80 hover:text-red-200 disabled:opacity-40">
+          <RotateCcw className="h-3.5 w-3.5" /> {step === "working" ? "Restarting…" : "Restart the campaign"}
+        </button>
+      )}
+    </div>
   )
 }
 
