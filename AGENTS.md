@@ -449,9 +449,16 @@ Other things that will bite you:
   each served a local copy of the painted map and clicked around in it; the map unlocks its
   audio on any click, so Sam heard three fights start at once in games nobody was playing.
   `public/test-copy-silence.js` now mutes every page off `*.playacartagena.com` and shows a
-  "Test copy · sound off" pill. **Never click that pill** — it is Sam's switch. Every page
-  that makes sound loads it as the FIRST script in `<head>` (`/test-copy-silence.js`); a new
-  page that plays audio must do the same. Close your preview tab when you are done with it.
+  "Test copy · sound off" pill. **Never click that pill** — it is Sam's switch. Every static
+  page that makes sound loads it as the FIRST script in `<head>` (`/test-copy-silence.js`); a
+  new static page that plays audio must do the same. React pages get it from `app/layout.tsx`
+  (`<Script strategy="beforeInteractive">`) — until 2026-10-26 they did not, which is how a
+  preview of `/intro` played its score out loud. Close your preview tab when you are done.
+- **A hidden page is silent, live site included** (Sam, 2026-10-26, after the intro score kept
+  playing from a window he could not find). The same script pauses every film, song and voice
+  and suspends Web Audio when a tab is hidden, and resumes them when it is shown; sound that
+  tries to start while hidden waits. It also catches `autoPlay` media and page code setting
+  `muted = false`, both of which the first version let through.
 
 ---
 
