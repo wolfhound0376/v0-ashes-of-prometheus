@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
-import { isDmRequest } from "@/lib/dm-session"
+import { hasDmCookie, isDmRequest } from "@/lib/dm-session"
 import { cannotChooseFigure, cannotSit, isComplete, missingOf, type TableState } from "@/lib/table"
 import {
   clearSeats, nextSeatNumber, readTable, readTableView, readinessFor, removeSeat, startIfReady, writeSeat, writeTable,
@@ -14,7 +14,9 @@ import {
 //                                  whether that character holds a seat. Anyone may read it — names, lights
 //                                  and what each seat is missing, nothing secret.
 //   POST { action, … }
-//     DM (cookie or x-dm-key):     open · start · unstart · remove {characterId} · companion {characterId} · end
+//     DM, door cookie ONLY:        open — the table opens only from the DM door on the title screen
+//                                  (Sam, 2026-10-25; lib/dm-door.ts). The older x-dm-key header cannot open it.
+//     DM (cookie or x-dm-key):     start · unstart · remove {characterId} · companion {characterId} · end
 //     player (characterId + claimToken):  sit · ready · unready · leave · figure {figure: 0..6}
 //
 // Every change re-checks the start condition, so the session begins the moment the last light turns green,
@@ -60,6 +62,9 @@ export async function POST(req: NextRequest) {
   try {
     if (DM_ACTIONS.has(action)) {
       if (!isDm(req)) return NextResponse.json({ error: "Only the Dungeon Master can do that." }, { status: 403 })
+      if (action === "open" && !hasDmCookie(req)) {
+        return NextResponse.json({ error: "The table opens only from the Dungeon Master's door on the title screen." }, { status: 403 })
+      }
       return await dmAction(db, action, characterId)
     }
     if (PLAYER_ACTIONS.has(action)) {

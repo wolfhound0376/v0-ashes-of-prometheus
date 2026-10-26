@@ -10,8 +10,10 @@
 // SINCE 2026-10-25 a seat is taken ONLY at the staging table (/table, /api/table,
 // lib/table.ts), while the DM has it open, and every seat empties when the DM ends
 // the session. It used to be written whenever a claim was verified, which let a
-// hero walk into a game already under way. `seatCharacter` below is no longer
-// called; the table writes seats through lib/table-store.ts.
+// hero walk into a game already under way. The old `seatCharacter` writer is gone
+// (2026-10-25) so nothing can seat a hero outside the table; the table writes seats
+// through lib/table-store.ts, and the table itself opens only from the DM door
+// (lib/dm-door.ts).
 //
 // A seat is "has sat down this run", not "is online now". The party on the map
 // is everyone seated; a player who closes the tab is still in the party, and
@@ -36,25 +38,6 @@ export const seatFlagKey = (characterId: string) => `${PREFIX}${characterId}`
 // the hero sits, and whether their player pressed Ready. Seats written before the table existed lack both.
 // `figure` (0..6) is which of the table's seven cartoon players they chose to sit as (Sam, 2026-10-25).
 export type Seat = { id: string; name: string; at: string; dm?: boolean; seat?: number; ready?: boolean; figure?: number }
-
-/** Record that this character has sat down this run. Best-effort: never throws. */
-export async function seatCharacter(db: SupabaseClient, character: { id: string; name: string }, opts: { dm?: boolean } = {}): Promise<void> {
-  try {
-    const key = seatFlagKey(character.id)
-    const { data } = await db.from("world_flags").select("key, value").eq("campaign_id", CAMPAIGN).eq("key", key).maybeSingle()
-    const prev = (data?.value ?? null) as Partial<Seat> | null
-    // Already seated: keep the first `at`. A player claiming a DM-run companion takes it over
-    // (dm → false); the DM seating an already-seated player changes nothing.
-    if (prev && (!prev.dm || opts.dm)) return
-    const { error } = await db.from("world_flags").upsert(
-      { campaign_id: CAMPAIGN, key, value: { id: character.id, name: character.name, at: prev?.at ?? new Date().toISOString(), dm: !!opts.dm }, set_by: opts.dm ? "dm" : "seat", note: opts.dm ? `${character.name} runs as the DM's NPC` : `${character.name} sat down` },
-      { onConflict: "campaign_id,key" },
-    )
-    if (error) console.error("[seat] not written:", error.message)
-  } catch (e) {
-    console.error("[seat] failed:", e)
-  }
-}
 
 /** Everyone seated this run, earliest first. Empty when nobody has come through the door yet. */
 export async function readSeated(db: SupabaseClient): Promise<Seat[]> {

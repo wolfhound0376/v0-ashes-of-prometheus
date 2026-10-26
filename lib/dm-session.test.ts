@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { DM_COOKIE, DM_SESSION_HOURS, dmCookieHeader, dmTokenFromCookieHeader, isDmRequest, mintDmToken, verifyDmToken } from "./dm-session"
+import { DM_COOKIE, DM_SESSION_HOURS, dmCookieHeader, dmTokenFromCookieHeader, hasDmCookie, isDmRequest, mintDmToken, verifyDmToken } from "./dm-session"
 
 const KEY = "test-secret"
 const NOW = 1_800_000_000_000
@@ -75,5 +75,36 @@ describe("isDmRequest", () => {
       if (prevCode !== undefined) process.env.DM_ACCESS_CODE = prevCode; else delete process.env.DM_ACCESS_CODE
       if (prevSecret !== undefined) process.env.DM_SESSION_SECRET = prevSecret; else delete process.env.DM_SESSION_SECRET
     }
+  })
+})
+
+// Sam, 2026-10-25: the DM door on the title screen is the ONLY way to open the table. Only the door's code
+// field mints the cookie, so `open` checks the cookie and nothing else — the dashboard's x-dm-key cannot open.
+describe("hasDmCookie (the table's open lock)", () => {
+  const req = (h: Record<string, string>) => ({ headers: { get: (n: string) => h[n.toLowerCase()] ?? null } })
+
+  it("accepts the door's cookie and refuses the x-dm-key header", () => {
+    const prevCode = process.env.DM_ACCESS_CODE, prevSecret = process.env.DM_SESSION_SECRET
+    process.env.DM_ACCESS_CODE = "Open-Sesame"
+    process.env.DM_SESSION_SECRET = KEY
+    try {
+      const t = mintDmToken(Date.now(), KEY)!
+      expect(hasDmCookie(req({ cookie: `${DM_COOKIE}=${encodeURIComponent(t)}` }))).toBe(true)
+      expect(hasDmCookie(req({ "x-dm-key": "open-sesame" }))).toBe(false)
+      expect(hasDmCookie(req({ cookie: `${DM_COOKIE}=forged.sig` }))).toBe(false)
+      expect(hasDmCookie(req({}))).toBe(false)
+    } finally {
+      if (prevCode !== undefined) process.env.DM_ACCESS_CODE = prevCode; else delete process.env.DM_ACCESS_CODE
+      if (prevSecret !== undefined) process.env.DM_SESSION_SECRET = prevSecret; else delete process.env.DM_SESSION_SECRET
+    }
+  })
+
+  it("fails closed with no DM code configured", () => {
+    const prev = process.env.DM_ACCESS_CODE
+    delete process.env.DM_ACCESS_CODE
+    try {
+      const t = mintDmToken(Date.now(), KEY)!
+      expect(hasDmCookie(req({ cookie: `${DM_COOKIE}=${encodeURIComponent(t)}` }))).toBe(false)
+    } finally { if (prev !== undefined) process.env.DM_ACCESS_CODE = prev }
   })
 })

@@ -63,6 +63,14 @@ export function dmCookieHeader(token: string | null): string {
   return token ? `${base}${secure}; Max-Age=${DM_SESSION_HOURS * 3600}` : `${base}${secure}; Max-Age=0`
 }
 
+/** Does this request carry the DM session COOKIE (minted only by the DM door's code field)? The
+ *  x-dm-key header does not count here. Used where only the DM door may act — opening the table
+ *  (lib/dm-door.ts). FAILS CLOSED without a DM code. */
+export function hasDmCookie(req: { headers: { get(name: string): string | null } }): boolean {
+  if (!process.env.DM_ACCESS_CODE) return false
+  return verifyDmToken(dmTokenFromCookieHeader(req.headers.get("cookie")))
+}
+
 /** Is this request the DM? The cookie wins; `x-dm-key` (the older header) is honoured too, so the
  *  existing dashboard tools keep working while routes move over. FAILS CLOSED without a DM code. */
 export function isDmRequest(req: { headers: { get(name: string): string | null } }, normalize: (s: unknown) => string, safeEquals: (a: string, b: string) => boolean): boolean {

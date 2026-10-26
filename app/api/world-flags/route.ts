@@ -16,6 +16,14 @@ export const dynamic = "force-dynamic"
 
 const CAMPAIGN = "ashes-of-prometheus"
 
+// The staging table and its seats live in world_flags too (lib/table-store.ts), but they are NOT
+// set by hand: the table opens only from the DM door (Sam, 2026-10-25; lib/dm-door.ts) and seats
+// are taken at /table. Writing them here would be a side door, so these keys are refused.
+function reserved(key: string): boolean {
+  return key === "table" || key.startsWith("seated:")
+}
+const RESERVED_ERROR = "The table and its seats are not set here. Open the table from the DM door on the title screen."
+
 function authorized(req: NextRequest): boolean {
   const required = process.env.DM_ACCESS_CODE
   if (!required) return true
@@ -37,6 +45,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
   const key = typeof body.key === "string" ? body.key.trim() : ""
   if (!key) return NextResponse.json({ error: "key is required" }, { status: 400 })
+  if (reserved(key)) return NextResponse.json({ error: RESERVED_ERROR }, { status: 409 })
 
   const db = createAdminClient()
   const { error } = await db.from("world_flags").upsert(
@@ -58,6 +67,7 @@ export async function DELETE(req: NextRequest) {
 
   const key = req.nextUrl.searchParams.get("key")?.trim()
   if (!key) return NextResponse.json({ error: "key is required" }, { status: 400 })
+  if (reserved(key)) return NextResponse.json({ error: RESERVED_ERROR }, { status: 409 })
 
   const db = createAdminClient()
   const { error } = await db

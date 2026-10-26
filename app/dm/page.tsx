@@ -27,6 +27,7 @@ import { useRouter } from "next/navigation"
 import { Check, DoorOpen, Eye, FlaskConical, Play, Swords, UserMinus, UserPlus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { setDmKey, clearDmKey } from "@/lib/dm-key"
+import { cameThroughDmDoor, leaveDmDoor } from "@/lib/dm-door"
 import { HomeButton } from "@/components/home-button"
 import { canonBySlug } from "@/lib/canon-heroes"
 
@@ -50,11 +51,14 @@ export default function DmPage() {
   const [gateArmed, setGateArmed] = useState(true)
 
   useEffect(() => {
+    // The only way in is the title screen's Dungeon Master link (Sam, 2026-10-25: it is the ONLY way to
+    // open a table). A typed URL, a bookmark or a hop from Play Saved Game goes back to the title screen.
+    if (!cameThroughDmDoor()) { router.replace("/intro"); return }
     fetch("/api/dm/session", { cache: "no-store" }).then((r) => r.json()).then((j) => {
       setGateArmed(Boolean(j.gate))
       setPhase(j.dm ? "table" : "gate")
     }).catch(() => setPhase("gate"))
-  }, [])
+  }, [router])
 
   return (
     <div className="relative min-h-screen bg-[#0a0908] text-stone-200">
@@ -68,7 +72,7 @@ export default function DmPage() {
         </div>
         {phase === "checking" && <div className="py-24 text-center text-[11px] uppercase tracking-[0.4em] text-stone-600">Checking the lock…</div>}
         {phase === "gate" && <Gate armed={gateArmed} onOpen={() => setPhase("table")} />}
-        {phase === "table" && <Table onLock={async () => { await fetch("/api/dm/logout", { method: "POST" }).catch(() => {}); clearDmKey(); setPhase("gate") }} router={router} />}
+        {phase === "table" && <Table onLock={async () => { await fetch("/api/dm/logout", { method: "POST" }).catch(() => {}); clearDmKey(); leaveDmDoor(); router.replace("/intro") }} router={router} />}
       </div>
     </div>
   )

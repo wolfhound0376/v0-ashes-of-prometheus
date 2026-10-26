@@ -310,12 +310,14 @@ function DmControls({ view, busy, send, onRehearse }: { view: View; busy: boolea
   const s = view.state
   const waiting = view.seats.filter((x) => x.light !== "green")
   if (s.status === "closed") {
+    // No Open button here: the table opens ONLY from the DM door on the title screen (Sam, 2026-10-25;
+    // lib/dm-door.ts). Rehearsal still lives here, since it never opens the table.
     return (
       <div className="space-y-3">
-        <p className="text-sm text-stone-400">The table is dark. Open it and the players can take their seats.</p>
-        <button type="button" disabled={busy} onClick={() => send("open")} className="flex w-full items-center justify-center gap-3 rounded-sm border-2 border-[#8a6a3a] bg-gradient-to-b from-[#2a2015] to-[#120e0a] py-4 font-serif text-lg uppercase tracking-[0.3em] text-[#e8c56a] shadow-[0_0_40px_rgba(201,168,104,0.3)] hover:border-[#f4e0a8] disabled:opacity-40">
-          <DoorOpen className="h-5 w-5" /> Open the table
-        </button>
+        <p className="text-sm text-stone-400">The table is dark. It opens only from the Dungeon Master&apos;s door on the title screen.</p>
+        <a href="/intro" className="flex w-full items-center justify-center gap-3 rounded-sm border-2 border-[#8a6a3a] bg-gradient-to-b from-[#2a2015] to-[#120e0a] py-4 font-serif text-lg uppercase tracking-[0.3em] text-[#e8c56a] shadow-[0_0_40px_rgba(201,168,104,0.3)] hover:border-[#f4e0a8]">
+          <DoorOpen className="h-5 w-5" /> To the DM door
+        </a>
         <button type="button" onClick={onRehearse} className="text-[11px] uppercase tracking-[0.3em] text-stone-600 hover:text-stone-400">Rehearsal — sandbox, nothing saves</button>
       </div>
     )
