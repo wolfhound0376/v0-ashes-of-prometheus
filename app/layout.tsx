@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { Cinzel, Cinzel_Decorative, Crimson_Text, Geist_Mono, IM_Fell_English, UnifrakturMaguntia } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
+import Script from 'next/script'
 import { SupabaseStatus } from '@/components/supabase-status'
 import { BuildWatch } from '@/components/build-watch'
 import ThemeAudio from '@/components/theme-audio'
@@ -95,6 +96,11 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark bg-[#0a0908]">
       <body className={`${cinzel.variable} ${cinzelDecorative.variable} ${crimsonText.variable} ${unifraktur.variable} ${imFell.variable} font-sans antialiased`}>
+        {/* The two sound rules (public/test-copy-silence.js): test copies start silent until Sam turns them
+            on, and a hidden page is silent everywhere. beforeInteractive puts it ahead of every app script,
+            so it is in place before the first AudioContext or film. Until 2026-10-26 only the static pages
+            loaded it, which is how a preview of the intro played its score out loud. */}
+        <Script src="/test-copy-silence.js" strategy="beforeInteractive" />
         {/* One stage, no page loads: every move between the table, the scene, the map, camp and the
             board is a soft navigation drawn by this provider (lib/stage.ts has the grammar). */}
         <StageProvider>{children}</StageProvider>
