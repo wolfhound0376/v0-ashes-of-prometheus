@@ -1,7 +1,7 @@
 "use client"
 
 import { addressedNpc } from "@/lib/addressed-npc"
-import { useState, useEffect, useCallback, useRef } from "react"
+import { useState, useEffect, useCallback, useRef, useMemo } from "react"
 import { freshScene, nextNudge, nudgePrompt, onNudged, onPlayerMessage, type PacingState } from "@/lib/pacing"
 import Link from "next/link"
 import { Settings, Sparkles, X, Save, RotateCcw, Flame, Hammer, Download, ChevronUp, RefreshCw, UserMinus, Circle, BookOpen, ScrollText, Map, Users, Landmark } from "lucide-react"
@@ -42,6 +42,7 @@ import type { Character, InventoryItem, EquipmentItem, Environment } from "@/lib
 import type { Campaign } from "@/lib/world-ai/campaigns"
 import { rollMatchesRequest, type RollRequestSpec } from "@/lib/roll-requests"
 import { parseAddress, resolveAddressee, storedText } from "@/lib/address"
+import { addressOptions } from "@/lib/address-options"
 import { ENTERED_KEY, mapHref, shouldEnterOnMap } from "@/lib/map-entry"
 
 // A dialogue message carries the DB row `id` so we can dedupe. Optimistic
@@ -379,26 +380,56 @@ export default function DashboardPage() {
   // Read at send time by every path to Malachar (typed, quick replies): who you are talking with, or else
   // who is in the NPC window.
   talkOptsRef.current = campTalkWith ? { talkWith: campTalkWith, talkWhere: talkFrom === "map" ? (talkArea ?? "Velkynvelve") : null } : null
-  // WHO A LINE IS TO (lib/address.ts; Sam, 2026-10-25). The switch beside the send box: "To <the NPC in the
-  // window>" or "To the DM". It defaults to the NPC, exactly the old behaviour, and remembers the choice until
-  // the window turns to someone else. A shortcut in the text (/dm …, (…), @Ront …) overrides it for one line.
-  const [addressMode, setAddressMode] = useState<"npc" | "dm">("npc")
-  const addressee = campTalkWith ?? facingName ?? ((npcEncounters.find((n) => n.is_active) ?? npcEncounters[0])?.name ?? null)
-  useEffect(() => { setAddressMode("npc") }, [addressee])
-  /** Read a typed line: the text to send, and who it goes to (the shortcut first, then the switch). */
+  // WHO A LINE IS TO (lib/address.ts, lib/address-options.ts). The "To:" picker beside the send box.
+  // Sam, 2026-10-25: NPC or DM. Sam, 2026-10-26: "Give me an option to answer the guard or whomever or the DM" —
+  // so it lists the face in the window, whoever spoke lately (the guard who barked "Move." is not in the window;
+  // the partner is), everyone on stage, and the DM. null = whoever is in the window (the old default).
+  // A pick HOLDS until changed — the DM stays the DM even if an NPC speaks up — and an NPC pick lapses only
+  // when that person is no longer around to answer. A shortcut in the text (/dm …, (…), @Ront …) wins for one line.
+  const [addressPick, setAddressPick] = useState<string | null>(null)
+  // The face in the NPC window first (Sam, 2026-10-26: "look at the dashboard UI to who exactly we're speaking
+  // to"): that is who the player sees, so it is who an unpicked line goes to.
+  const addressee = facingName ?? campTalkWith ?? ((npcEncounters.find((n) => n.is_active) ?? npcEncounters[0])?.name ?? null)
+  const addressChoices = useMemo(() => addressOptions({
+    window: addressee,
+    partner: campTalkWith,
+    onStage: npcEncounters.filter((n) => n.is_active),
+    roster: npcRoster.length ? npcRoster : npcEncounters,
+    recentSpeakers: dialogue.slice(-16).reverse().map((d) => d.speaker),
+    players: characters.filter((c) => c.is_player).map((c) => c.name),
+  }), [addressee, campTalkWith, npcEncounters, npcRoster, dialogue, characters])
+  const pickedNpc = addressPick && addressPick !== "dm" && addressChoices.some((n) => n.toLowerCase() === addressPick.toLowerCase()) ? addressPick : null
+  const addressNow: string | null = addressPick === "dm" ? "dm" : pickedNpc   // what the picker shows and sends
+  useEffect(() => { if (addressPick && addressPick !== "dm" && !pickedNpc) setAddressPick(null) }, [addressPick, pickedNpc])
+  // The old two-way switch (legacy LeftColumn) reads and sets the same choice.
+  const addressMode: "npc" | "dm" = addressNow === "dm" ? "dm" : "npc"
+  const setAddressMode = useCallback((m: "npc" | "dm") => setAddressPick(m === "dm" ? "dm" : null), [])
+  /** Pick who to answer. In a conversation the window turns to them too, so the face matches the voice
+   *  (Sam, 2026-10-11: talk to ONLY the character we are speaking to); elsewhere the window follows speakers. */
+  const pickAddressee = useCallback((who: string | null) => {
+    if (who && who !== "dm" && campTalkWithRef.current && who.toLowerCase() !== campTalkWithRef.current.toLowerCase()) {
+      setCampTalkWith(who); setTalkOpening(null); setAddressPick(null); return
+    }
+    setAddressPick(who && addressee && who !== "dm" && who.toLowerCase() === addressee.toLowerCase() ? null : who)
+  }, [addressee])
+  /** Read a typed line: the text to send, and who it goes to (the shortcut first, then the picker). */
   const addressLine = useCallback((raw: string): { line: string; addressTo: string | null; shown: string } => {
     const parsed = parseAddress(raw)
     let addressTo: string | null = null
     let line = parsed.text
-    if (parsed.address?.to === "dm" || (!parsed.address && addressMode === "dm")) addressTo = "dm"
+    if (parsed.address?.to === "dm" || (!parsed.address && addressNow === "dm")) addressTo = "dm"
     else if (parsed.address?.to === "npc") {
       const who = resolveAddressee(parsed.address.name, npcEncounters.filter((n) => n.is_active))
       if (who) addressTo = who
       else line = raw.trim()                      // nobody on stage by that name: the line goes as typed
-    }
+    } else if (addressNow && addressNow !== "dm") addressTo = addressNow   // someone picked who is not in the window
     const shown = storedText(line, addressTo === "dm" ? { to: "dm" } : addressTo ? { to: "npc", name: addressTo } : null)
     return { line, addressTo, shown }
-  }, [addressMode, npcEncounters])
+  }, [addressNow, npcEncounters])
+  // Where the party is, for a line picked to someone outside a sat-down conversation: without a place the chat
+  // route would frame it as talk by the camp fire.
+  const placeRef = useRef<string | null>(null)
+  placeRef.current = talkFrom === "map" ? (talkArea ?? "Velkynvelve") : (currentEnvironment?.name ?? null)
   // The NPC window reports who it shows (onFacingChange); until it has, the active NPC.
   if (!facingShownRef.current) facingRef.current = (npcEncounters.find((n) => n.is_active) ?? npcEncounters[0])?.name ?? null
   // The camp scene's Talk button links here as /?view=compact&from=camp&talk=<name>:
@@ -497,7 +528,8 @@ export default function DashboardPage() {
     async (text: string, extra?: { addressTo?: string | null }) => {
       const { characterId, claimToken: token } = claimRef.current
       try {
-        return await sendToLich(text, characterId, token, { ...(talkOptsRef.current ?? { facing: facingRef.current }), ...(extra ?? {}) })
+        const picked = extra?.addressTo && extra.addressTo !== "dm" && !talkOptsRef.current ? { talkWhere: placeRef.current } : {}
+        return await sendToLich(text, characterId, token, { ...(talkOptsRef.current ?? { facing: facingRef.current }), ...picked, ...(extra ?? {}) })
       } catch (err) {
         if ((err as { claimRejected?: boolean })?.claimRejected) {
           handleClaimRejected()
@@ -1386,7 +1418,7 @@ if (error) {
           // Naming someone else who is in the room turns the conversation to them.
           const named = campTalkWith ? addressedNpc(message, npcEncounters.filter((n) => n.is_active)) : null
           const partner = named && turnTo(named) ? (npcEncounters.find((n) => n.name.toLowerCase() === named.toLowerCase())?.name ?? named) : campTalkWith
-          const response = await sendToLich(message, selectedCharacterId, claimToken, { ...(partner ? { talkWith: partner, talkWhere: talkFrom === "map" ? (talkArea ?? "Velkynvelve") : null } : { facing: facingRef.current }), ...(addressed.addressTo ? { addressTo: addressed.addressTo } : {}) })
+          const response = await sendToLich(message, selectedCharacterId, claimToken, { ...(partner ? { talkWith: partner, talkWhere: talkFrom === "map" ? (talkArea ?? "Velkynvelve") : null } : { facing: facingRef.current }), ...(addressed.addressTo ? { addressTo: addressed.addressTo, ...(!partner && addressed.addressTo !== "dm" ? { talkWhere: placeRef.current } : {}) } : {}) })
           if (response) {
             // Optimistically add Malachar's response to dialogue (also pending)
             if (response.text) {
@@ -1997,6 +2029,10 @@ if (error) {
         setDialogueInput={setDialogueInput}
         onDialogueSubmit={handleDialogueSubmit}
         onQuickReply={(text) => void handleQuickReply(text)}
+        addressee={addressee}
+        addressChoices={addressChoices}
+        addressPick={addressNow}
+        onAddressPick={pickAddressee}
         // The look-around chip replays cinematics only while this is on.
         dmMode={dmMode && !claimLocked}
         dmScreen={!claimLocked && (dmMode || enteredAsDm)}
