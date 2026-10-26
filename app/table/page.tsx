@@ -11,10 +11,11 @@
 //
 // The rules are lib/table.ts; the state is /api/table. This page only shows it and sends the buttons.
 //
-// ART STILL TO COME (lane 3, each piece to Sam for approval first): the painted table, and the seven
-// cartoon figures (three women, four men) who sit down with dice and a character sheet. Until those are
-// approved a seat shows the hero's own portrait (or idle loop). The Lich is already the real thing: his
-// canon idle loop from storage.
+// THE ART (approved by Sam, 2026-10-25): a painted candlelit room in public/table/ — the table with the DM
+// screen (room.webp), seven cartoon players in their chairs, three women and four men (player-1..7.webp),
+// an empty chair, and a cartoon Lich behind the screen. A hero who sits down is drawn as one of the seven,
+// chosen from their character id so they keep the same figure every session; no two at one table share one.
+// THE START (Sam): when the last light goes green the whole room darkens, a beat of black, then the Act.
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -31,20 +32,51 @@ const CHARACTER_LS_KEY = "aop_character_id"
 const TOKEN_LS_KEY = "aop_claim_token"
 const ROLE_LS_KEY = "aop_access_role"
 
-const LICH_IDLE = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/character-loops/lich_king_idle.webm"
+const ROOM = "/table/room.webp"
+const CHAIR = "/table/chair.webp"
+const LICH = "/table/lich.webp"
+const PLAYER_ART = [1, 2, 3, 4, 5, 6, 7].map((n) => `/table/player-${n}.webp`)
+// The screen in room.webp, as a polygon in percent of the painting: drawn again on top of the Lich so he
+// stands BEHIND it.
+const SCREEN_CLIP = "polygon(57.2% 32.3%, 59.9% 34.8%, 74.3% 37.4%, 83.5% 35.9%, 83.5% 55.7%, 74.3% 57.5%, 59.9% 54.4%, 57.2% 51.2%)"
+const DARK_MS = 2600   // the room goes dark, a beat of black, then the Act
 const ROOM_MUSIC = "/audio/camp-embers.mp3"
 const ACT_TITLE = { act: "Act I", name: "Awakening into the Nightmare" }
 const ACT_CARD_MS = 4200
 
 type View = { state: TableState; dmLight: Light | null; seats: SeatView[]; mine: SeatView | null; isDm?: boolean; refused?: string; note?: string; error?: string }
 
-// Five chairs around the lower rim of the table; the Lich holds the head. Angles in degrees, 0 = right, 90 = down.
-const CHAIR_ANGLES = [168, 128, 90, 52, 12]
+// The five chairs, by seat number: where the chair's feet stand (percent of the painting) and how tall the
+// figure is. The players were drawn facing up and to the right; the right-hand chairs are mirrored so every
+// one of them faces the screen. The two side chairs sit further back and fade into the floor.
+const SLOTS = [
+  { x: 13, y: 86, h: 44, flip: false, side: true },
+  { x: 31, y: 101, h: 53, flip: false, side: false },
+  { x: 52, y: 103, h: 56, flip: false, side: false },
+  { x: 74, y: 101, h: 53, flip: true, side: false },
+  { x: 92, y: 86, h: 44, flip: true, side: true },
+]
+
+/** Which of the seven figures each seated hero is: a stable pick from their id, never two alike at one table. */
+function figuresFor(seats: SeatView[]): Map<string, number> {
+  const out = new Map<string, number>(), used = new Set<number>()
+  const hash = (id: string) => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h }
+  for (const s of [...seats].sort((a, b) => (a.seat ?? 9) - (b.seat ?? 9))) {
+    let f = hash(s.id) % PLAYER_ART.length
+    for (let i = 0; i < PLAYER_ART.length && used.has(f); i++) f = (f + 1) % PLAYER_ART.length
+    used.add(f); out.set(s.id, f)
+  }
+  return out
+}
 
 // The waiting figures breathe; the Act title fades in. Local to this page.
 const TABLE_KEYFRAMES = `
 @keyframes aop-seat-breathe { 0%,100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-2px) scale(1.015); } }
 @keyframes aop-act-in { from { opacity: 0; letter-spacing: 0.3em; } to { opacity: 1; } }
+@keyframes aop-figure-sit { 0% { opacity: 0; translate: 0 -6%; } 60% { opacity: 1; translate: 0 1%; } 100% { opacity: 1; translate: 0 0; } }
+@keyframes aop-figure-idle { 0%,100% { translate: 0 0; } 50% { translate: 0 -0.8%; } }
+@keyframes aop-lich-loom { 0%,100% { translate: 0 0; scale: 1; } 50% { translate: 0 -1.2%; scale: 1.01; } }
+@keyframes aop-candles { 0% { opacity: .85 } 17% { opacity: 1 } 33% { opacity: .78 } 48% { opacity: .95 } 66% { opacity: .82 } 81% { opacity: 1 } }
 `
 
 const LIGHT_CLASS: Record<Light, string> = {
@@ -99,22 +131,28 @@ export default function TablePage() {
     if (view.state.status === "lobby" && !view.mine) { sat.current = true; send("sit") }
   }, [role, view, send])
 
-  // The session began: the Act card, then into the game.
+  // The session began (Sam, 2026-10-25): "The whole table should darken after they start. Then after a
+  // second or so the cinematic for the act starts up." Everyone in the room sees the dark first.
+  const [dark, setDark] = useState(false)
   useEffect(() => {
-    if (!view || view.state.status !== "live" || act) return
-    if (role === "dm") {
-      setAct(true)
-      window.setTimeout(() => {
-        try { sessionStorage.setItem(ENTERED_KEY, "1"); sessionStorage.setItem("aop_intro_seen", "1") } catch { /* storage blocked */ }
-        router.push(mapHref(false))
-      }, ACT_CARD_MS)
-    } else if (role === "player" && view.mine) {
-      // /awaken plays the Act card itself (and, for a hero who has not rolled their fortune, the whole
-      // opening), then drops them into the pen — so it is not played twice here.
-      setAct(true)
-      router.replace("/awaken")
-    }
-  }, [view, role, act, router])
+    if (!view || view.state.status !== "live" || dark) return
+    if (role !== "dm" && !(role === "player" && view.mine)) return
+    setDark(true)
+    try { music.current?.pause() } catch { /* nothing playing */ }
+    window.setTimeout(() => {
+      if (role === "dm") {
+        setAct(true)
+        window.setTimeout(() => {
+          try { sessionStorage.setItem(ENTERED_KEY, "1"); sessionStorage.setItem("aop_intro_seen", "1") } catch { /* storage blocked */ }
+          router.push(mapHref(false))
+        }, ACT_CARD_MS)
+      } else {
+        // /awaken plays the Act card itself (and, for a hero who has not rolled their fortune, the whole
+        // opening), then drops them into the pen — so it is not played twice here.
+        router.replace("/awaken")
+      }
+    }, DARK_MS)
+  }, [view, role, dark, router])
 
   // Room music: calm, looped, only on the real site and only if intro music is on (Sam's test-copy rule).
   const music = useRef<HTMLAudioElement | null>(null)
@@ -140,8 +178,6 @@ export default function TablePage() {
   if (act) return <ActCard />
 
   const status = view?.state.status ?? "closed"
-  const seats = view?.seats ?? []
-  const bySeat = new Map(seats.map((s, i) => [s.seat ?? i + 1, s]))
 
   return (
     <main className="relative min-h-dvh overflow-hidden bg-[#070605] text-stone-200">
@@ -169,36 +205,10 @@ export default function TablePage() {
       </header>
 
       {/* the room */}
-      <section className="relative z-10 mx-auto mt-2 aspect-[16/10.5] w-full max-w-5xl px-4">
-        {/* the table */}
-        <div className="absolute left-1/2 top-[50%] h-[50%] w-[70%] -translate-x-1/2 -translate-y-1/2 rounded-[50%] border-[10px] border-[#3b2513] bg-[radial-gradient(ellipse_at_50%_40%,#6b4524_0%,#4a2e17_55%,#2c1a0c_100%)] shadow-[0_30px_80px_rgba(0,0,0,0.85),inset_0_0_60px_rgba(0,0,0,0.6)]">
-          <div className="absolute inset-[7%] rounded-[50%] border border-[#8a6a3a]/25" />
-          <Dice />
-        </div>
-
-        {/* the Lich behind his screen, at the head of the table */}
-        <div className="absolute left-1/2 top-[0%] w-[42%] -translate-x-1/2">
-          <video src={LICH_IDLE} autoPlay loop muted playsInline className="mx-auto w-full [filter:drop-shadow(0_0_24px_rgba(120,200,255,0.25))]" />
-          <DmScreen light={view?.dmLight ?? null} />
-        </div>
-
-        {/* five chairs */}
-        {Array.from({ length: MAX_SEATS }, (_, i) => {
-          const a = (CHAIR_ANGLES[i] * Math.PI) / 180
-          const left = 50 + Math.cos(a) * 44
-          const top = 50 + Math.sin(a) * 34
-          const s = bySeat.get(i + 1)
-          return (
-            <div key={i} className="absolute w-[15%] -translate-x-1/2 -translate-y-1/2" style={{ left: `${left}%`, top: `${top}%` }}>
-              <Chair seat={s ?? null} isMe={!!s && s.id === view?.mine?.id} isDm={role === "dm"} busy={busy}
-                onRemove={() => s && send("remove", { characterId: s.id })} />
-            </div>
-          )
-        })}
-      </section>
+      <Room view={view} isDm={role === "dm"} busy={busy} dark={dark} onRemove={(id) => send("remove", { characterId: id })} />
 
       {/* the box under the table: what this browser can do now */}
-      <section className="relative z-10 mx-auto mt-10 max-w-xl px-4 pb-16 text-center">
+      <section className="relative z-10 mx-auto mt-6 max-w-xl px-4 pb-16 text-center">
         {msg && <p role="alert" className="mb-3 text-sm text-[#d9bd7e]">{msg}</p>}
         {!view && <p className="text-[11px] uppercase tracking-[0.4em] text-stone-600">Lighting the candles…</p>}
         {view && role === "dm" && <DmControls view={view} busy={busy} send={send} onRehearse={() => router.push(mapHref(true))} />}
@@ -215,76 +225,69 @@ export default function TablePage() {
 
 // ---------------------------------------------------------------------------------------------
 
-function Chair({ seat, isMe, isDm, busy, onRemove }: { seat: SeatView | null; isMe: boolean; isDm: boolean; busy: boolean; onRemove: () => void }) {
-  if (!seat) {
-    return (
-      <div className="flex flex-col items-center opacity-60">
-        <div className="aspect-square w-full rounded-full border-2 border-dashed border-[#3d3428] bg-black/40" />
-        <div className="mt-1 text-[10px] uppercase tracking-[0.25em] text-stone-600">empty chair</div>
-      </div>
-    )
-  }
+function Room({ view, isDm, busy, dark, onRemove }: { view: View | null; isDm: boolean; busy: boolean; dark: boolean; onRemove: (id: string) => void }) {
+  const seats = view?.seats ?? []
+  const bySeat = new Map(seats.map((s, i) => [s.seat ?? i + 1, s]))
+  const figures = figuresFor(seats)
+  const closed = (view?.state.status ?? "closed") === "closed"
+  const light = view?.dmLight ?? null
   return (
-    <div className="flex flex-col items-center">
-      <div className={cn("relative aspect-square w-full overflow-hidden rounded-full border-2 bg-black/70 animate-[aop-seat-breathe_4s_ease-in-out_infinite]", isMe ? "border-[#e8c56a]" : "border-[#7a5f33]")}>
-        {seat.loop ? (
-          <video src={seat.loop} autoPlay loop muted playsInline className="h-full w-full object-cover [object-position:center_15%]" />
-        ) : seat.thumbnail ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={seat.thumbnail} alt="" className="h-full w-full object-cover [object-position:center_15%]" />
-        ) : (
-          <div className="grid h-full w-full place-items-center font-serif text-3xl text-[#8a6a3a]">{seat.name.charAt(0)}</div>
-        )}
-      </div>
-      <div className="mt-2 flex items-center gap-2">
-        <span className={cn("h-3 w-3 rounded-full", LIGHT_CLASS[seat.light])} aria-label={`${seat.light} light`} />
-        <span className="max-w-[9rem] truncate font-serif text-[14px] text-[#e8d9ae]">{seat.name}</span>
-      </div>
-      <div className="text-[10px] uppercase tracking-[0.18em] text-stone-500">{seat.dm ? "DM's companion" : seat.cls ?? ""}</div>
-      {seat.light === "red" && <div className="mt-1 text-center text-[10px] leading-tight text-red-300/80">needs: {seat.missing.join(", ")}</div>}
-      {isDm && (
-        <button type="button" disabled={busy} onClick={onRemove} className="mt-1 flex items-center gap-1 text-[10px] uppercase tracking-[0.2em] text-stone-600 hover:text-red-300 disabled:opacity-40">
-          <UserMinus className="h-3 w-3" /> remove
-        </button>
-      )}
-    </div>
-  )
-}
-
-function DmScreen({ light }: { light: Light | null }) {
-  return (
-    <div className="relative -mt-[16%] mx-auto flex w-[82%] items-end justify-center gap-1">
-      {[0, 1, 2].map((p) => (
-        <div key={p} className={cn("h-16 flex-1 border-2 border-[#8a6a3a] bg-gradient-to-b from-[#3a1d14] to-[#1b0c08] shadow-[0_8px_24px_rgba(0,0,0,0.8)] sm:h-24", p === 1 ? "z-10" : p === 0 ? "origin-right [transform:perspective(400px)_rotateY(18deg)]" : "origin-left [transform:perspective(400px)_rotateY(-18deg)]")}>
-          {p === 1 && (
-            <div className="flex h-full flex-col items-center justify-center gap-1">
-              <span className="font-serif text-lg text-[#c9a868] sm:text-2xl">☠</span>
-              <span className={cn("h-3 w-3 rounded-full", light ? LIGHT_CLASS[light] : "bg-stone-800")} aria-label={light ? `DM ${light}` : "DM not here"} />
-            </div>
-          )}
+    <section className="relative z-10 mx-auto mt-3 w-full max-w-6xl px-4">
+      <div className="relative w-full overflow-hidden rounded-[4px] border border-[#3d3020] shadow-[0_30px_80px_rgba(0,0,0,0.7)]" style={{ aspectRatio: "1920 / 1072" }}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={ROOM} alt="A candlelit round table with the Dungeon Master's screen" className="absolute inset-0 h-full w-full object-cover" />
+        {/* the Lich, behind his screen */}
+        <div className="absolute left-[56%] top-[3%] w-[25.6%] origin-bottom animate-[aop-lich-loom_5s_ease-in-out_infinite]">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={LICH} alt="Malachar the Lich" className="w-full [filter:drop-shadow(0_0_20px_rgba(140,60,200,0.35))]" />
         </div>
-      ))}
-    </div>
-  )
-}
-
-function Dice() {
-  // A few dice lying beside the screen. Drawn, not photographed — the painted table replaces this (lane 3).
-  const d = [
-    { l: "71%", t: "16%", r: 12, c: "#8b1e1e" },
-    { l: "76%", t: "27%", r: -20, c: "#1e3f8b" },
-    { l: "23%", t: "20%", r: 30, c: "#1f6b3a" },
-  ]
-  return (
-    <>
-      {d.map((x, i) => (
-        <svg key={i} viewBox="0 0 40 40" className="absolute h-[9%] w-[6%]" style={{ left: x.l, top: x.t, transform: `rotate(${x.r}deg)` }} aria-hidden>
-          <polygon points="20,2 37,12 37,28 20,38 3,28 3,12" fill={x.c} stroke="#e8c56a" strokeWidth="1.5" />
-          <polygon points="20,2 30,22 10,22" fill="none" stroke="#e8c56a" strokeWidth="1" opacity="0.7" />
-          <text x="20" y="20" textAnchor="middle" fontSize="9" fill="#f4e0a8" fontFamily="serif">20</text>
-        </svg>
-      ))}
-    </>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={ROOM} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full object-cover" style={{ clipPath: SCREEN_CLIP }} />
+        {/* candle flicker and the DM's light on the screen */}
+        <div aria-hidden className="pointer-events-none absolute inset-0 mix-blend-screen animate-[aop-candles_2.3s_steps(1)_infinite]"
+          style={{ background: "radial-gradient(4% 7% at 48.4% 35%,rgba(255,190,90,.35),transparent 70%),radial-gradient(4% 7% at 51.6% 31%,rgba(255,190,90,.35),transparent 70%),radial-gradient(4% 7% at 88.4% 40%,rgba(255,190,90,.3),transparent 70%),radial-gradient(4% 7% at 93% 39%,rgba(255,190,90,.3),transparent 70%),radial-gradient(22% 10% at 55% 7%,rgba(255,180,80,.22),transparent 70%)" }} />
+        <span className={cn("absolute left-[67.1%] top-[46%] aspect-square w-[1.5%] -translate-x-1/2 -translate-y-1/2 rounded-full transition-all duration-500", light ? LIGHT_CLASS[light] : "bg-stone-800")}
+          aria-label={light ? `Dungeon Master: ${light}` : "The Dungeon Master is not here"} />
+        {/* five chairs */}
+        {SLOTS.map((slot, i) => {
+          const s = bySeat.get(i + 1) ?? null
+          const art = s ? PLAYER_ART[figures.get(s.id) ?? 0] : CHAIR
+          const fade = slot.side ? { WebkitMaskImage: "linear-gradient(to bottom,#000 80%,transparent 100%)", maskImage: "linear-gradient(to bottom,#000 80%,transparent 100%)" } : undefined
+          return (
+            <div key={i} className="absolute flex -translate-x-1/2 -translate-y-full justify-center" style={{ left: `${slot.x}%`, top: `${slot.y}%`, height: `${slot.h}%`, width: `${slot.h * 0.9}%`, zIndex: Math.round(slot.y) }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img key={s?.id ?? "empty"} src={art} alt={s ? `${s.name}'s player` : "An empty chair"}
+                className={cn("absolute bottom-0 h-full w-auto max-w-none", s ? "animate-[aop-figure-sit_.7s_cubic-bezier(.3,1.5,.6,1)_both,aop-figure-idle_3.6s_ease-in-out_.8s_infinite]" : "")}
+                style={{ transform: slot.flip ? "scaleX(-1)" : undefined, ...fade }} />
+            </div>
+          )
+        })}
+        {/* name tags with the lights, above everyone */}
+        {SLOTS.map((slot, i) => {
+          const s = bySeat.get(i + 1)
+          if (!s) return null
+          return (
+            <div key={`t${i}`} className="absolute z-[120] flex -translate-x-1/2 flex-col items-center gap-0.5" style={{ left: `${slot.x}%`, top: `${Math.min(slot.y - slot.h - 6, 90)}%` }}>
+              <div className="flex items-center gap-1.5 rounded-sm border border-[#5a4528] bg-black/80 px-2 py-0.5">
+                <span className={cn("h-2.5 w-2.5 rounded-full", LIGHT_CLASS[s.light])} aria-label={`${s.light} light`} />
+                <span className="whitespace-nowrap font-serif text-[clamp(10px,1.15vw,14px)] tracking-[0.06em] text-[#e8d9ae]">{s.name}</span>
+                {s.id === view?.mine?.id && <span className="text-[9px] uppercase tracking-[0.2em] text-[#e8c56a]">you</span>}
+              </div>
+              {s.light === "red" && <span className="whitespace-nowrap rounded-sm bg-black/80 px-1.5 text-[clamp(9px,.95vw,12px)] text-red-300">needs: {s.missing.join(", ")}</span>}
+              {s.dm && <span className="rounded-sm bg-black/80 px-1.5 text-[10px] uppercase tracking-[0.18em] text-stone-400">DM&apos;s companion</span>}
+              {isDm && (
+                <button type="button" disabled={busy} onClick={() => onRemove(s.id)} className="flex items-center gap-1 rounded-sm bg-black/70 px-1.5 text-[10px] uppercase tracking-[0.2em] text-stone-400 hover:text-red-300 disabled:opacity-40">
+                  <UserMinus className="h-3 w-3" /> remove
+                </button>
+              )}
+            </div>
+          )
+        })}
+        {/* the room before the DM opens it, and the dark when the session begins */}
+        <div aria-hidden className={cn("pointer-events-none absolute inset-0 z-[110] transition-colors duration-1000", closed ? "bg-black/60" : "bg-[radial-gradient(ellipse_at_55%_50%,transparent_40%,rgba(5,3,2,.5)_100%)]")} />
+        <div aria-hidden className={cn("pointer-events-none absolute inset-0 z-[200] bg-black transition-opacity duration-[1600ms] ease-in", dark ? "opacity-100" : "opacity-0")} />
+      </div>
+    </section>
   )
 }
 
