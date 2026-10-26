@@ -462,6 +462,27 @@ export async function restartCampaign(admin: SupabaseClient): Promise<RestartRes
     note("issue rags", ragsErr)
     report.ragsIssued = ragsErr ? 0 : playerIds.length
 
+    // ...and put them ON. Sam, 2026-10-25: "Having rags at the beginning of
+    // the game equipped should be default. It's ridiculous that we have to
+    // equip this." The bag row alone left the paper doll's torso empty, so
+    // every hero woke up holding their rags. One worn torso row per player,
+    // the same shape lib/confiscation.ts writes for a Forge-imported hero.
+    // Rags give no AC (lib/armor-class.ts falls back to 10 + Dex).
+    if (!ragsErr) {
+      const { error: wornErr } = await admin.from("equipment_items").insert(
+        playerIds.map((character_id) => ({
+          character_id,
+          slot: STARTING_GARMENT.equippable_slot,
+          name: STARTING_GARMENT.name,
+          equipped: true,
+          description: STARTING_GARMENT.description,
+          stats_bonus: { ac: 0 },
+        })),
+      )
+      note("wear rags", wornErr)
+      report.ragsWorn = wornErr ? 0 : playerIds.length
+    }
+
     // Re-issue the smuggled journal + quill to every player. Their previous
     // pages were burned above — a restart is a fresh book (Sam's ruling).
     const { error: effectsErr } = await admin.from("inventory_items").insert(
