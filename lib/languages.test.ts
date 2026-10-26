@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import * as languages from "./languages"
 import {
   canonicalLanguage,
   choosableLanguages,
@@ -167,5 +168,33 @@ describe("dialogue rows", () => {
   })
   it("rowLanguages reports the tongue and whether it is followed", () => {
     expect(rowLanguages(row, { languages: "Common" })).toEqual([{ lang: "Elvish", understood: false }])
+  })
+})
+
+// The rule that picks an NPC line's tongue lives here so the walk map's combat taunts
+// (public/js/aop-languages.js) decide a line exactly as the server does.
+describe("chooseLineLanguage, as the walk map's taunts use it", () => {
+  const drow = "Elvish, Undercommon" // the Drow Guard and Jorlan rows (MM drow stat block)
+  it("is the same function the server routes import", async () => {
+    const server = await import("./npc-languages")
+    expect(server.chooseLineLanguage).toBe(languages.chooseLineLanguage)
+  })
+  it("sneers at a hero in the tongue that hero follows", () => {
+    expect(languages.chooseLineLanguage({ speaker: drow, addressee: "Common, Elvish" })).toBe("Elvish")
+    expect(languages.chooseLineLanguage({ speaker: drow, addressee: "Common, Goblin, Undercommon" })).toBe("Undercommon")
+  })
+  it("a hero with no shared tongue, or nobody's hero, hears the drow's own first tongue", () => {
+    expect(languages.chooseLineLanguage({ speaker: drow, addressee: "Common, Dwarvish" })).toBe("Elvish")
+    expect(languages.chooseLineLanguage({ speaker: drow, addressee: null })).toBe("Elvish")
+  })
+  it("a foe with no language data is never scrambled", () => {
+    expect(languages.chooseLineLanguage({ speaker: null, addressee: "Common" })).toBeNull()
+  })
+  it("a taunt in Elvish reaches a Common-only seat as gibberish and an Elvish one as words", () => {
+    const line = "Back in your cage, meat."
+    const lang = languages.chooseLineLanguage({ speaker: drow, addressee: "Common" })
+    expect(languages.renderSpeechFor(line, lang, { languages: "Common" }).understood).toBe(false)
+    expect(languages.renderSpeechFor(line, lang, { languages: "Common" }).text).not.toBe(line)
+    expect(languages.renderSpeechFor(line, lang, { languages: "Common, Elvish" }).text).toBe(line)
   })
 })

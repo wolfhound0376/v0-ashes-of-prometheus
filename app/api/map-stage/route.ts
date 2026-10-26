@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { readStage } from "@/lib/stage-roster"
 import { readSeated } from "@/lib/seats"
 import { WALK_SHEET_COLUMNS, walkSheetFromRow, type WalkSheet } from "@/lib/walk-sheet"
+import { loadNpcLanguages } from "@/lib/npc-languages"
 
 // /api/map-stage — who is in the area with the party, as Malachar has narrated it (lib/stage-roster.ts).
 //
@@ -56,8 +57,22 @@ export async function GET() {
         sheets.set(id, walkSheetFromRow(r))
       }
     }
+    // And what each NPC speaks, by name (lib/npc-languages: its own `languages`, else its bestiary row's), so the
+    // lines the map composes itself, its combat taunts, are spoken in a real tongue and heard per seat like
+    // every other NPC line. Only NPCs with language data are listed; a missing name is never scrambled.
+    const npcLanguages: Record<string, string> = {}
+    try {
+      const { data: npcRows } = await admin.from("npc_encounters").select("id, name")
+      const rows = (npcRows ?? []) as { id: string; name: string | null }[]
+      const langs = await loadNpcLanguages(admin, rows.map((r) => r.id))
+      for (const r of rows) {
+        const l = langs.get(r.id)
+        if (r.name && l && !npcLanguages[r.name]) npcLanguages[r.name] = l
+      }
+    } catch { /* best-effort: without it taunts stay in plain words, as before */ }
     return NextResponse.json({
       area: stage.area,
+      npcLanguages,
       updatedAt: stage.updatedAt,
       present: Object.values(stage.present),
       gone: Object.values(stage.gone),
@@ -65,6 +80,6 @@ export async function GET() {
       seated: seated.map((s) => ({ id: s.id, name: s.name, dm: !!s.dm, level: levels.get(s.id) ?? null, sheet: sheets.get(s.id) ?? null, ...(tongues.get(s.id) ?? { languages: null, conditions: null }) })),
     })
   } catch (e) {
-    return NextResponse.json({ area: null, present: [], gone: [], run: null, seated: [], error: String(e) }, { status: 200 })
+    return NextResponse.json({ area: null, present: [], gone: [], run: null, seated: [], npcLanguages: {}, error: String(e) }, { status: 200 })
   }
 }

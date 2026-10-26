@@ -1281,6 +1281,7 @@ function bark(a, text, ms = 4200, opts = {}){
   const full = SPR[a.id].json.name, short = SHORT[a.id] || full, first = full.split(" ")[0];
   const named = [short, first, full].some(n => n && text.toLowerCase().includes(n.toLowerCase()));
   if (isRapport(a.id)){ const who = document.createElement("i"); who.textContent = "in your head · " + short + "'s spores"; el.appendChild(who); }
+  else if (opts.lang && opts.lang !== "Common"){ const who = document.createElement("b"); who.textContent = `${short} · in ${opts.lang}`; el.appendChild(who); }   // the tongue, heard or not
   else if (!named){ const who = document.createElement("b"); who.textContent = short; el.appendChild(who); }   // never say the name twice
   if (opts.talk) el.classList.add("said");
   el.appendChild(document.createTextNode(text)); over.appendChild(el);
@@ -3257,12 +3258,25 @@ const TAUNTS = {
   jorlan: ["I know this pen better than you know your own hands.", "Fast. Not fast enough."],
 };
 const GLOATS = {"drow-guard-male": ["One less mouth to feed."], "drow-guard-female": ["One less mouth to feed."], jorlan: ["Stay down."]};
-function taunt(f, pool){
+// LANGUAGES IN THE FIGHT (Sam, 2026-10-26: "Wire languages into combat taunts"). A taunt is spoken in a real
+// tongue, picked the way every NPC line is (lib/languages.ts chooseLineLanguage): the first one the foe shares with
+// the hero it is aimed at, else its own first. A drow guard sneers at Fifi in Undercommon and at Kenta in Elvish.
+// What the foe speaks comes from its row (/api/map-stage `npcLanguages`), never from this page. This seat then hears
+// it as every other line is heard (myEars/heardText): the real words if it knows the tongue, gibberish if not, in
+// the bubble and in the voice. A foe with no language data taunts in plain words, as before.
+function tauntTongue(f, at){
+  if (!LANG || !LANG.chooseLineLanguage) return null;
+  const tongues = tongueOfFoe(f); if (!tongues) return null;
+  return LANG.chooseLineLanguage({speaker: tongues, addressee: at ? languagesOfHero(at) : null});
+}
+function taunt(f, pool, at){
   const ls = (pool || TAUNTS)[f.id]; if (!ls || !ls.length) return false;
   const line = ls[Math.floor(Math.random() * ls.length)];
-  bark(f, line, 2600, {talk: true});
+  const lang = tauntTongue(f, at), heard = heardText(line, lang);
+  bark(f, heard, 2600, {talk: true, lang});
   const b = VOICE_BANK[f.id], i = b && b.taunts ? b.taunts.indexOf(line) : -1;
-  if (APP) speak(f.id, line); else if (i >= 0) playBankFile(`audio/voice/${f.id}-t${i + 1}.mp3`, profileFor(f.id));
+  // the banked files are the real words, so they play only when this seat hears the real words
+  if (APP) speak(f.id, heard); else if (i >= 0 && heard === line) playBankFile(`audio/voice/${f.id}-t${i + 1}.mp3`, profileFor(f.id));
   return true;
 }
 async function playBankFile(file, profile){ try { const ctx = audioCtx(); if (ctx.state !== "running") await Promise.race([ctx.resume().catch(() => {}), wait(1500)]); if (ctx.state !== "running") return; const r = await fetch(file); if (!r.ok) return; playVoice(ctx, await ctx.decodeAudioData(await r.arrayBuffer()), profile); } catch (e) {} }
@@ -4896,7 +4910,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         if (!how){ if (!shot) swipe(att, tgt, {...sw, miss: true}); miss(tgt); bank(shot === "flask" ? "magic/spell_fizzle" : ws.miss, .7); }
         log(`${why} — ${how === "parry" ? "parried" : how === "duck" ? "ducked" : how === "dodge" ? "dodged" : "miss"}.`);
         narrate(att, shot ? `${fname(att)}'s shot goes wide of ${fname(tgt)}.` : how === "parry" ? `${fname(att)} swings at ${fname(tgt)}, who turns the blow aside.` : how === "duck" ? `${fname(att)} swings at ${fname(tgt)}, who ducks under it.` : how === "dodge" ? `${fname(att)} swings at ${fname(tgt)}, who slips out of the way.` : `${fname(att)} swings at ${fname(tgt)} and misses.`);
-        if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt), 500); return; }
+        if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt, null, att), 500); return; }
       // Sneak Attack (Fifi's row): once per turn, with a Finesse or Ranged weapon, when you have advantage
       // OR an ally is within 5 ft of the target and you do not have disadvantage.
       const sneak = !!(atk.sneak && !att.c.sneakUsed && adv >= 0 && (adv > 0 || standing(heroes()).some(p => p !== att && feetBetween(p, tgt) <= 5)));
@@ -5292,7 +5306,7 @@ function fall(t){
     popText(t, dn ? "down" : t.withered ? "withered" : fz ? "frozen" : "slain", dn ? "#ff6b5e" : t.withered ? "#b6f04a" : fz ? "#bfe9ff" : "#ffd166", 1.3); } hitstop(160); shake(10);
   if (t.kind === "pc"){ const near = standing(party).filter(p => p !== t).sort((a, b) => Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y))[0]; if (near) setTimeout(() => bark(near, `${fname(t)}!`, 1600, {talk: true}), 400);
     if (t.ko){ popText(t, "knocked out", "#ffd166", 1.2); log(`<b>${fname(t)} is knocked out</b>: unconscious and stable at 0 HP (SRD: a stable creature regains 1 HP after 1d4 hours).`); settleGrudge(t); }
-    else { const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS), 1400); } }
+    else { const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS, t), 1400); } }
   else narrate(t, `${fname(t)} falls.`);
   renderTurns();
   if (cbt && activeActor() === t) passWhenSettled(t);
@@ -5452,7 +5466,7 @@ function foeTurn(f){
   const tgt = grudgeOn ? grudgeOn : f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(heroes())) : (seen.length ? seen : standing(heroes())).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
   if (!tgt){ checkEnd(); return; }
   camTo(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600);
-  if (Math.random() < .45){ if (!taunt(f)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }
+  if (Math.random() < .45){ if (!taunt(f, null, tgt)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }
   const s = f.c.sheet, swings = s.multi || 1, bow = s.attacks.find(k => k.ranged);
   // a drow with a hand crossbow shoots, unless a hero is already at its elbow (SRD: a ranged attack within 5 ft of a
   // hostile is at disadvantage), and then it is the shortsword. It closes only to the crossbow's normal range.
@@ -6646,6 +6660,7 @@ async function pollStage(){
   if (!APP || timeStopped) return;
   try {
     const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json();
+    noteNpcTongues(j);
     if (typeof j.run === "number"){
       if (runSeen === null) runSeen = j.run;
       else if (j.run !== runSeen){ location.reload(); return; }
@@ -7542,6 +7557,18 @@ function myEars(){
   const players = seatsSeen.filter(s => !s.dm);
   return players.length ? LANG.partyListener(players) : null;
 }
+// What each NPC speaks, by the name on its row (/api/map-stage `npcLanguages`). A sprite named "Drow Guard (male)"
+// is the "Drow Guard" row.
+let NPC_TONGUES = {};
+function noteNpcTongues(j){ if (j && j.npcLanguages && typeof j.npcLanguages === "object") NPC_TONGUES = j.npcLanguages; }
+function tongueOfFoe(f){
+  const full = SPR[f.id] && SPR[f.id].json.name; if (!full) return null;
+  const base = full.replace(/\s*\(.*\)\s*$/, "");
+  const key = Object.keys(NPC_TONGUES).find(k => k.toLowerCase() === full.toLowerCase()) || Object.keys(NPC_TONGUES).find(k => k.toLowerCase() === base.toLowerCase());
+  return key ? NPC_TONGUES[key] : null;
+}
+// the hero's own tongues, from their seat; a hero nobody is playing has none on record (the foe then uses its own)
+function languagesOfHero(h){ const id = characterIdOf(h.id), s = id && seatsSeen.find(x => x.id === id); return s ? s.languages : null; }
 function heardText(text, lang){
   const ears = myEars();
   return LANG && lang && ears ? LANG.renderSpeechFor(text, lang, ears).text : text;
@@ -9359,7 +9386,7 @@ function frame(t){
         mySlug = mine;
       }
     } catch (e) {}
-    try { const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json(); noteSeats(j.seated); const seated = seatedSlugs(j.seated); if (seated.length) PARTY = seated; if (typeof j.run === "number") runSeen = j.run; } catch (e) {}
+    try { const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json(); noteSeats(j.seated); noteNpcTongues(j); const seated = seatedSlugs(j.seated); if (seated.length) PARTY = seated; if (typeof j.run === "number") runSeen = j.run; } catch (e) {}
     if (mine && !PARTY.includes(mine)) PARTY = FULL_PARTY.filter(x => PARTY.includes(x) || x === mine);
   }
   let saved = APP ? loadWalk() : null;

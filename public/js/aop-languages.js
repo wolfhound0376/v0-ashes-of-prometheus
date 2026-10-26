@@ -28,6 +28,7 @@ var AopLanguages = (() => {
     SPECIES_LANGUAGES: () => SPECIES_LANGUAGES,
     canonicalLanguage: () => canonicalLanguage,
     choosableLanguages: () => choosableLanguages,
+    chooseLineLanguage: () => chooseLineLanguage,
     gibberish: () => gibberish,
     hearDialogueRow: () => hearDialogueRow,
     languageGrant: () => languageGrant,
@@ -215,6 +216,17 @@ var AopLanguages = (() => {
     const language = spoken ? canonicalLanguage(spoken) : null;
     if (understands(listener, spoken)) return { text, understood: true, language };
     return { text: gibberish(text, language != null ? language : String(spoken)), understood: false, language };
+  }
+  function chooseLineLanguage(opts) {
+    const speaks = parseLanguages(opts.speaker).speaks;
+    const tagged = opts.tagged ? canonicalLanguage(opts.tagged) : null;
+    if (tagged && (speaks.length === 0 || speaks.includes(tagged))) return tagged;
+    if (speaks.length === 0) return null;
+    const hears = understoodLanguages(parseLanguages(opts.addressee));
+    const shared = speaks.filter((l) => hears.includes(l));
+    if (shared.includes("Common")) return "Common";
+    if (shared.length) return shared[0];
+    return speaks[0];
   }
   var SPECIES_LANGUAGES = {
     Human: { fixed: ["Common"], choices: 1 },
