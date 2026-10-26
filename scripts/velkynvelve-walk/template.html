@@ -3599,8 +3599,15 @@ function renderExploreBar(){
 //               Bardic Inspiration out of a fight), Scout ahead (rogue: sneak alone, the rest wait).
 //   Quick drink the first potion on the belt, without opening the bag.  Follow / Wait  the party trails the leader.
 // HOUSE NUMBERS (Claude's, flagged in the PR): a watcher sees 60 ft in a 120-degree cone; Help lasts one minute.
-const ICONS_HAVE = new Set(["attack", "cast-spell", "dash", "disengage", "dodge", "help", "hide", "offhand-attack", "opportunity-attack", "ready", "search", "use-object"]);
-const ART = (name, fallback) => ICONS_HAVE.has(name) ? name : fallback || null;   // Sam's icons drop in by name (velkynvelve-walk/icons/<name>.png)
+// Sam, 2026-10-25: "you have all the icons for actions in this project" — the commissioned gold-framed sets in
+// vtt-assets/action-icons and vtt-assets/spell-icons, copied here at 96 px beside the first fifteen. Untitled art only:
+// most spell icons carry their name painted in, which would mislabel a button.
+const ICONS_HAVE = new Set(["attack", "cast-spell", "dash", "disengage", "dodge", "help", "hide", "offhand-attack", "opportunity-attack", "ready", "search", "use-object",
+  "detect-magic", "use-item", "second-wind", "bless", "bardic-inspiration"]);
+// which commissioned picture stands for each option (the art names are the 5e actions they were drawn for)
+const OPTION_ART = {sneak: "hide", scout: "dash", "search-here": "search", listen: "ready", "look-closer": "detect-magic", help: "help",
+  pray: "bless", inspire: "bardic-inspiration", "quick-drink": "use-item", follow: "disengage", wait: "dodge", inventory: "use-object", "short-rest": "second-wind"};
+const ART = (name, fallback) => ICONS_HAVE.has(name) ? name : OPTION_ART[name] && ICONS_HAVE.has(OPTION_ART[name]) ? OPTION_ART[name] : fallback || null;   // Sam's icons drop in by name (velkynvelve-walk/icons/<name>.png)
 const VIEW_FT = 60, VIEW_HALF = Math.PI / 3;
 let sneak = null, helpNext = null, followOn = false, moreOpen = false;
 const BUTTON_PRI = [[/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
@@ -3634,6 +3641,10 @@ function exploreExtras(m, o, add, who){
   if (/rogue/.test(cls) && !sneak) x("Scout ahead", "➶", ART("scout"), "sneak alone; the others wait", () => startSneak(true));
   const pot = beltPotion(L); if (pot) x(`Quick drink: ${pot.name}`, "⚗", ART("quick-drink"), "from the belt", () => drinkItem(L, pot, L));
   if (party.length > 1) x(followOn ? "Wait here" : "Follow me", followOn ? "⏸" : "➜", ART(followOn ? "wait" : "follow"), followOn ? "the others stop where they are" : "the others come along behind", () => setFollow(!followOn));
+  for (const b of m.querySelectorAll("button")){
+    const t = (b.querySelector("span") || b).textContent, key = /^Inventory/.test(t) ? "inventory" : /^Short rest/.test(t) ? "short-rest" : null, g = b.querySelector(".ico");
+    if (key && g && ART(key)){ const im = document.createElement("img"); im.className = "ico"; im.alt = ""; im.src = `${ICON_BASE}${ART(key)}.png`; g.replaceWith(im); }
+  }
   // the More tray: the six that matter here stay on the bar (talk and a fight first), the rest fold away
   const btns = [...m.children].filter(b => b.tagName === "BUTTON");
   btns.forEach((b, i) => { b.dataset.pri = priOf(b) * 100 + i; });
