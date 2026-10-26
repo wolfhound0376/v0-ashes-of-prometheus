@@ -22,7 +22,7 @@ import { useRouter } from "next/navigation"
 import { DoorOpen, LogOut, Play, Square, UserMinus, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { dmHeaders } from "@/lib/dm-key"
-import { MAX_SEATS, type Light, type TableState } from "@/lib/table"
+import { assignFigures, type Light, type TableState } from "@/lib/table"
 import type { SeatView } from "@/lib/table-store"
 import { ENTERED_KEY, mapHref } from "@/lib/map-entry"
 import { fadeOutThemeAudio } from "@/components/theme-audio"
@@ -57,17 +57,6 @@ const SLOTS = [
   { x: 92, y: 86, h: 44, flip: true, side: true },
 ]
 
-/** Which of the seven figures each seated hero is: a stable pick from their id, never two alike at one table. */
-function figuresFor(seats: SeatView[]): Map<string, number> {
-  const out = new Map<string, number>(), used = new Set<number>()
-  const hash = (id: string) => { let h = 0; for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0; return h }
-  for (const s of [...seats].sort((a, b) => (a.seat ?? 9) - (b.seat ?? 9))) {
-    let f = hash(s.id) % PLAYER_ART.length
-    for (let i = 0; i < PLAYER_ART.length && used.has(f); i++) f = (f + 1) % PLAYER_ART.length
-    used.add(f); out.set(s.id, f)
-  }
-  return out
-}
 
 // The waiting figures breathe; the Act title fades in. Local to this page.
 const TABLE_KEYFRAMES = `
@@ -213,6 +202,7 @@ export default function TablePage() {
         {!view && <p className="text-[11px] uppercase tracking-[0.4em] text-stone-600">Lighting the candles…</p>}
         {view && role === "dm" && <DmControls view={view} busy={busy} send={send} onRehearse={() => router.push(mapHref(true))} />}
         {view && role === "player" && <PlayerBox view={view} busy={busy} send={send} />}
+        {view && role === "player" && view.state.status === "lobby" && view.mine && <FigurePicker view={view} busy={busy} send={send} />}
         {view && role === "none" && (
           <div className="rounded-sm border border-[#3d3428] bg-black/60 p-4 text-sm text-stone-400">
             Come in through the door first. <a href="/join" className="text-[#e8c56a] underline-offset-4 hover:underline">Your words, please →</a>
@@ -228,7 +218,7 @@ export default function TablePage() {
 function Room({ view, isDm, busy, dark, onRemove }: { view: View | null; isDm: boolean; busy: boolean; dark: boolean; onRemove: (id: string) => void }) {
   const seats = view?.seats ?? []
   const bySeat = new Map(seats.map((s, i) => [s.seat ?? i + 1, s]))
-  const figures = figuresFor(seats)
+  const figures = assignFigures(seats)
   const closed = (view?.state.status ?? "closed") === "closed"
   const light = view?.dmLight ?? null
   return (
@@ -379,6 +369,34 @@ function PlayerBox({ view, busy, send }: { view: View; busy: boolean; send: (a: 
     <button type="button" disabled={busy} onClick={() => send("ready")} className="w-full rounded-sm border-2 border-amber-400/70 bg-gradient-to-b from-[#2a2015] to-[#120e0a] py-4 font-serif text-lg uppercase tracking-[0.3em] text-amber-200 shadow-[0_0_40px_rgba(252,211,77,0.2)] hover:border-amber-200 disabled:opacity-40">
       I&apos;m ready
     </button>
+  )
+}
+
+// Who you sit as (Sam, 2026-10-25). The seven players; the one you are now is ringed in gold, ones taken by
+// someone else at this table are dimmed.
+function FigurePicker({ view, busy, send }: { view: View; busy: boolean; send: (a: string, e?: Record<string, unknown>) => Promise<View | null> }) {
+  const figures = assignFigures(view.seats)
+  const mineId = view.mine?.id ?? ""
+  const current = figures.get(mineId)
+  const taken = new Set([...figures.entries()].filter(([id]) => id !== mineId).map(([, f]) => f))
+  return (
+    <div className="mt-6 text-left">
+      <div className="mb-2 text-center text-[10px] uppercase tracking-[0.35em] text-[#8a6a3a]">Choose who you sit as</div>
+      <div className="grid grid-cols-4 gap-2 sm:grid-cols-7">
+        {PLAYER_ART.map((src, i) => {
+          const isMine = current === i, isTaken = taken.has(i)
+          return (
+            <button key={src} type="button" disabled={busy || isTaken || isMine} onClick={() => send("figure", { figure: i })}
+              aria-pressed={isMine} aria-label={isTaken ? `Player ${i + 1}, taken` : `Sit as player ${i + 1}`}
+              className={cn("relative flex aspect-[4/5] items-end justify-center overflow-hidden rounded-sm border bg-[radial-gradient(ellipse_at_50%_75%,#2a1c10,#120d08)] p-1 transition",
+                isMine ? "border-[#e8c56a] shadow-[0_0_14px_rgba(232,197,106,0.45)]" : "border-[#3d3428] hover:border-[#8a6a3a]", isTaken && "opacity-30")}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={src} alt="" className="h-full w-auto object-contain object-bottom" />
+            </button>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 

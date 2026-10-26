@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { isDmRequest } from "@/lib/dm-session"
-import { cannotSit, isComplete, missingOf, type TableState } from "@/lib/table"
+import { cannotChooseFigure, cannotSit, isComplete, missingOf, type TableState } from "@/lib/table"
 import {
   clearSeats, nextSeatNumber, readTable, readTableView, readinessFor, removeSeat, startIfReady, writeSeat, writeTable,
   type TableView,
@@ -15,7 +15,7 @@ import {
 //                                  and what each seat is missing, nothing secret.
 //   POST { action, … }
 //     DM (cookie or x-dm-key):     open · start · unstart · remove {characterId} · companion {characterId} · end
-//     player (characterId + claimToken):  sit · ready · unready · leave
+//     player (characterId + claimToken):  sit · ready · unready · leave · figure {figure: 0..6}
 //
 // Every change re-checks the start condition, so the session begins the moment the last light turns green,
 // whoever turned it.
@@ -23,7 +23,7 @@ import {
 export const dynamic = "force-dynamic"
 
 const DM_ACTIONS = new Set(["open", "start", "unstart", "remove", "companion", "end"])
-const PLAYER_ACTIONS = new Set(["sit", "ready", "unready", "leave"])
+const PLAYER_ACTIONS = new Set(["sit", "ready", "unready", "leave", "figure"])
 
 function isDm(req: NextRequest): boolean {
   return isDmRequest(req, normalizeCode, safeEquals)
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
     if (PLAYER_ACTIONS.has(action)) {
       const claimToken = typeof body.claimToken === "string" ? body.claimToken : ""
       if (!(await claimOk(db, characterId, claimToken))) return NextResponse.json({ error: "Your door code did not check out. Come in through the door again." }, { status: 403 })
-      return await playerAction(db, action, characterId)
+      return await playerAction(db, action, characterId, body.figure)
     }
     return NextResponse.json({ error: "unknown action" }, { status: 400 })
   } catch (e) {
@@ -126,7 +126,7 @@ async function dmAction(db: ReturnType<typeof createAdminClient>, action: string
   return NextResponse.json({ error: "unknown action" }, { status: 400 })
 }
 
-async function playerAction(db: ReturnType<typeof createAdminClient>, action: string, characterId: string) {
+async function playerAction(db: ReturnType<typeof createAdminClient>, action: string, characterId: string, figure?: unknown) {
   const t = await readTable(db)
   const view = await readTableView(db)
   const mine = view.seats.find((s) => s.id === characterId)
@@ -159,8 +159,17 @@ async function playerAction(db: ReturnType<typeof createAdminClient>, action: st
       const r = (await readinessFor(db, [characterId])).get(characterId)?.r
       if (!r || !isComplete(r)) return reply(view, characterId, { refused: `Not yet — still missing: ${r ? missingOf(r).join(", ") : "everything"}.` })
     }
-    await writeSeat(db, { id: mine.id, name: mine.name, at: new Date().toISOString(), dm: false, seat: mine.seat ?? undefined, ready: action === "ready" }, "seat", `${mine.name} is ${action === "ready" ? "" : "not "}ready`)
+    await writeSeat(db, { id: mine.id, name: mine.name, at: new Date().toISOString(), dm: false, seat: mine.seat ?? undefined, ready: action === "ready", figure: mine.figure ?? undefined }, "seat", `${mine.name} is ${action === "ready" ? "" : "not "}ready`)
     return reply(await startIfReady(db, await readTableView(db)), characterId)
+  }
+
+  if (action === "figure") {
+    // Who you sit as at the table (Sam, 2026-10-25). Chosen in the lobby; once the session is live the room is gone.
+    if (t.status !== "lobby") return reply(view, characterId)
+    const why = cannotChooseFigure(figure, characterId, view.seats)
+    if (why) return reply(view, characterId, { refused: why })
+    await writeSeat(db, { id: mine.id, name: mine.name, at: new Date().toISOString(), dm: mine.dm, seat: mine.seat ?? undefined, ready: mine.ready, figure: figure as number }, "seat", `${mine.name} sits as player ${(figure as number) + 1}`)
+    return reply(await readTableView(db), characterId)
   }
 
   return NextResponse.json({ error: "unknown action" }, { status: 400 })

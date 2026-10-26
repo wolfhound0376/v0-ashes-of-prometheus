@@ -63,6 +63,8 @@ export type SeatView = {
   thumbnail: string | null
   /** The hero's idle loop, if one exists — the seat plays it while the table waits. */
   loop: string | null
+  /** The cartoon player this hero chose to sit as (0..6), if they chose. */
+  figure: number | null
   cls: string | null
 }
 
@@ -99,6 +101,7 @@ export async function readTableView(db: SupabaseClient): Promise<TableView> {
       readiness: r,
       thumbnail: row?.portrait_image_url || row?.face_image_url || row?.avatar_image_url || null,
       loop: row?.idle_url || null,
+      figure: typeof s.figure === "number" ? s.figure : null,
       cls: row?.class ?? null,
     }
   }).sort((a, b) => (a.seat ?? 99) - (b.seat ?? 99))

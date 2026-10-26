@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  CLOSED, MAX_SEATS, cannotSit, dmLight, freeSeatNumber, isComplete, missingOf, readTableState, readinessOf,
+  CLOSED, MAX_SEATS, assignFigures, cannotChooseFigure, cannotSit, dmLight, freeSeatNumber, isComplete, missingOf, readTableState, readinessOf,
   seatLight, sheetComplete, shouldStart, type CharacterRowForReadiness, type Readiness, type TableState,
 } from "./table"
 
@@ -116,5 +116,28 @@ describe("readiness (Sam: pixel art, complete sheet, voice, thumbnail)", () => {
     expect(sheetComplete({ ...full, wis_score: null })).toBe(false)
     expect(sheetComplete({ ...full, sheet_species: "" })).toBe(false)
     expect(sheetComplete(full)).toBe(true)
+  })
+})
+
+describe("who you sit as (the seven cartoon players)", () => {
+  it("a player's own choice wins", () => {
+    const f = assignFigures([{ id: "a", seat: 1, figure: 4 }, { id: "b", seat: 2 }])
+    expect(f.get("a")).toBe(4)
+    expect(f.get("b")).not.toBe(4)
+  })
+  it("no two people at one table share a figure, even with five seats and clashing ids", () => {
+    const seats = ["x1", "x2", "x3", "x4", "x5"].map((id, i) => ({ id, seat: i + 1 }))
+    const f = assignFigures(seats)
+    expect(new Set(f.values()).size).toBe(5)
+  })
+  it("the same hero gets the same figure every session", () => {
+    expect(assignFigures([{ id: "kenta-id", seat: 3 }]).get("kenta-id")).toBe(assignFigures([{ id: "kenta-id", seat: 1 }]).get("kenta-id"))
+  })
+  it("refuses a figure someone else holds, or one that does not exist", () => {
+    const seats = [{ id: "a", figure: 2 }, { id: "b" }]
+    expect(cannotChooseFigure(2, "b", seats)).toMatch(/already/)
+    expect(cannotChooseFigure(2, "a", seats)).toBeNull()
+    expect(cannotChooseFigure(7, "b", seats)).toMatch(/not at this table/)
+    expect(cannotChooseFigure("3", "b", seats)).toMatch(/not at this table/)
   })
 })
