@@ -473,8 +473,13 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
         createPortal(
           <div
             className={cn(
-              "fixed inset-0 z-[100] flex items-center justify-center transition-opacity duration-200",
-              overlayOpen ? "opacity-100" : "pointer-events-none opacity-0",
+              // `invisible` as well as opacity-0 when closed (2026-10-25): Safari keeps painting a
+              // backdrop-filter layer under an ancestor at opacity 0, so the closed overlay's
+              // bg-black/85 + blur stayed on screen and blacked out /awaken (Gandalf and Fifi on Mac
+              // Safari: the whole intro and the fortune roll ran underneath it, unseen). visibility
+              // hides it in every browser without unmounting the canvas, so the renderer stays warm.
+              "fixed inset-0 z-[100] flex items-center justify-center transition-[opacity,visibility] duration-200",
+              overlayOpen ? "visible opacity-100" : "pointer-events-none invisible opacity-0",
             )}
             aria-hidden={!overlayOpen}
             role="dialog"
