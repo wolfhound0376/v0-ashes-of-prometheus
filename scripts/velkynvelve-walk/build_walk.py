@@ -284,6 +284,9 @@ for i in P + N + F + V + LP:
     # Hard Labor's poses (scripts/sprites/add-labor-poses.py): the five main players have them; a sprite without
     # them is filtered out below and works in its idle
     if i in P: sh += ['scrub', 'heave', 'carry']
+    # hidden poses (scripts/sprites/add-sneak-poses.py, Sam 2026-10-26): `sneak` walks and `crouch` stands while the
+    # hero is hidden; the five main players have them, everyone else (Kingasaur) is filtered out below and walks
+    if i in P: sh += ['sneak', 'crouch']
     if i == 'scott': sh.append('perform')
     if i in ['jorlan', 'drow-guard-male', 'drow-guard-female']: sh += ['attack', 'dodge', 'hurt', 'dead']
     j = json.load(open(os.path.join(SPR, i, 'sprite.json')))

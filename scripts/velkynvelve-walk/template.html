@@ -1016,6 +1016,18 @@ function approachViaGate(att, tgt, ft, then){
 function depthAt(y){ const D = (node && node.depth) || [0.8, 1.12]; return D[0] + (D[1] - D[0]) * Math.min(1, Math.max(0, (y - depthMin) / (depthMax - depthMin))); }
 function actorScale(a){ const m = SPR[a.id].json; if (a.fixedScale) return BASE * a.fixedScale * (96 / m.ppu); return BASE * paceAt(a) * (96 / m.ppu) * (a.big || 1); }
 function asleepNow(a){ return !!(a.c && a.c.conds.has("asleep") && !a.down); }
+// HIDDEN POSES (Sam, 2026-10-26: "sneaking poses (when successfully hidden) for all the players except Kingasaur").
+// A hero who is hidden right now — one of the movers of a Sneak that has not been spotted (explore), or a hero with
+// the `hidden` condition from Hide (combat) — walks in `sneak` (a crouched walk) and stands in `crouch` instead of
+// `walk` and `idle`. The moment the sneak ends or Hide breaks, the ordinary sheets come back by themselves: this only
+// changes which sheet is DRAWN, never a.anim, so nothing that reads the animation (footsteps, labor, turns) changes.
+// Sheets: scripts/sprites/add-sneak-poses.py, the five main players. A hero without them (Kingasaur) just walks.
+function hiddenNow(a){
+  if (!a || a.kind !== "pc" || a.down) return false;
+  if (a.c && a.c.conds && a.c.conds.has("hidden")) return true;
+  try { return !!(sneak && mode === "explore" && sneak.rolls.some(x => x.p === a)); } catch (e){ return false; }   // `sneak` is declared further down
+}
+const HIDDEN_SHEET = {walk: "sneak", idle: "crouch"};
 function frameOf(a){
   const sp = SPR[a.id];
   if (a.down && a.iced) return {img: a.iced.img, f: a.iced.f, pose: "iced", dead: true};
@@ -1029,8 +1041,9 @@ function frameOf(a){
     // no sheet to sleep in: a crawler (spider, ooze, rat) settles low and still; anything that stands up lies down on its side
     return {img: sp.img.idle, f: 0, pose: /spider|ooze|rat/.test(a.id) ? "settle" : "side"};
   }
-  const an = sp.json.animations[a.anim] && sp.img[a.anim] ? sp.json.animations[a.anim] : sp.json.animations.idle;
-  const name = sp.json.animations[a.anim] && sp.img[a.anim] ? a.anim : "idle";
+  const hid = HIDDEN_SHEET[a.anim], want = hid && sp.json.animations[hid] && sp.img[hid] && hiddenNow(a) ? hid : a.anim;
+  const an = sp.json.animations[want] && sp.img[want] ? sp.json.animations[want] : sp.json.animations.idle;
+  const name = sp.json.animations[want] && sp.img[want] ? want : "idle";
   const el = (now - a.t0) / 1000 * an.fps;
   const f = an.loop === false ? Math.min(an.frames - 1, Math.floor(el)) : Math.floor(el) % an.frames;
   return {img: sp.img[name], f};
