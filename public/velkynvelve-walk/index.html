@@ -2696,7 +2696,7 @@ function openBody(b){
 // the dashboard's engine with the dashboard's modifier, and the page answers {ok, success, total, natural} — or
 // {cancelled} if they stepped back. "aop:roll-ack" says the panel is open; after it the map waits as long as the
 // player does. Opened as a plain file (no game around it), the map rolls locally against the same DC.
-const ROLLS = new Map(), LOCAL_DC = {"pen-gate:pick": 20, "pen-gate:force": 20, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:lift-trouble": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14};
+const ROLLS = new Map(), LOCAL_DC = {"pen-gate:pick": 20, "pen-gate:force": 20, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14};
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
@@ -7204,7 +7204,7 @@ const ESCORT_SPRITE = { drow: "drow-guard-male", "jorlan-duskryn": "jorlan", qua
 // ─── The stations: the work itself (PR 3) ─────────────────────────────────────────────────────────────────────
 // Each check is rolled on the dashboard's dice (lib/walk-roll.ts WALK_ACTIONS, Sam's 2026-10-25 ruling). A task with
 // no check is a matter of time. [HOUSE] two passes finish a task.
-const WORK_ROLL = { water: "labor:water", lift: "labor:lift", pots: "labor:pots", kitchen: "labor:kitchen", "lift-trouble": "labor:lift-trouble" }
+const WORK_ROLL = { water: "labor:water", lift: "labor:lift", pots: "labor:pots", kitchen: "labor:kitchen" }   // Lift Trouble: the cliff's own rappels are the work (feat/cliff-rappels)
 const WORK_NEEDED = 2
 // [BOOK] the pointless work is "redone" whenever it misses the drow's arbitrary standards — here, always once.
 const CRUELTY = ["rocks", "rope", "supplies", "quaggoth-hair"]

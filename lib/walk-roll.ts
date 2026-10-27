@@ -69,7 +69,7 @@ export const WALK_ACTIONS = {
   "labor:lift": { title: "Turn the winch", label: "Operating the lift on a work detail", check: ATHLETICS, dc: 12, source: "OotA p.12 chore; DC house" },
   "labor:pots": { title: "Carry the pots across", label: "Carrying chamber pots across the bridge on a work detail", check: ACROBATICS, dc: 10, source: "OotA p.12 chore; balance is Acrobatics (SRD); DC house" },
   "labor:kitchen": { title: "Cook for the drow", label: "Preparing food for the drow on a work detail", check: COOKS, dc: 12, source: "OotA p.12 chore; DC house" },
-  "labor:lift-trouble": { title: "Rappel for the goods", label: "Rappelling down the cliff for spilled goods", check: ATHLETICS, dc: 12, source: "OotA Expanded p.45 (community); DC house" },
+  // Lift Trouble has no work roll here: the cliff plate's own rappels are the work (feat/cliff-rappels, "cliff:rappel").
   "labor:look": { title: "Look around", label: "Taking in the room while working", check: PERCEPTION, dc: 12, source: "DC house" },
   // Pocketing on a detail: OotA p.19 "Acquisitions" — Sleight of Hand against an observer's passive Perception as the
   // base DC (book). The DC is the sharpest eyes in the escort: a drow, passive 12 (SRD); Jorlan, passive 14 (his row).

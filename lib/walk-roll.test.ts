@@ -201,7 +201,7 @@ describe("the shipped map asks the dashboard and obeys the answer", () => {
 
 describe("Hard Labor rolls", () => {
   it("rolls every work detail check the map can ask for", () => {
-    for (const k of ["labor:water", "labor:lift", "labor:pots", "labor:kitchen", "labor:lift-trouble", "labor:look", "labor:pocket", "labor:pocket-jorlan"]) {
+    for (const k of ["labor:water", "labor:lift", "labor:pots", "labor:kitchen", "labor:look", "labor:pocket", "labor:pocket-jorlan"]) {
       expect(isWalkActionKey(k), k).toBe(true)
     }
   })
