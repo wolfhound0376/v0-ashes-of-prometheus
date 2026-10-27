@@ -9,7 +9,7 @@ import { LeftColumn } from "@/components/dashboard/left-column"
 import { CenterColumn } from "@/components/dashboard/center-column"
 import { RightColumn } from "@/components/dashboard/right-column"
 import { fadeOutThemeAudio } from "@/components/theme-audio"
-import { DiceProvider, type DiceResult } from "@/components/dice/dice-provider"
+import { DiceProvider, forLedger, type DiceResult } from "@/components/dice/dice-provider"
 import { TopNav } from "@/components/dashboard/top-nav"
 import { CompactDashboard } from "@/components/dashboard/compact-dashboard"
 import { StatusBar } from "@/components/dashboard/status-bar"
@@ -1584,13 +1584,15 @@ if (error) {
       if (request && opts.result) {
         setRollLifecycle("resolving")
         const { characterId, claimToken } = claimRef.current
-        const matches = rollMatchesRequest(request, opts.result)
+        // A trait's advantage goes to the ledger as the die that counted (forLedger names both dice).
+        const committed = forLedger(opts.result)
+        const matches = rollMatchesRequest(request, committed)
         let resolution: Response
         try {
           resolution = await fetch("/api/rolls/resolve", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ requestId: request.id, characterId, claimToken, result: opts.result }),
+            body: JSON.stringify({ requestId: request.id, characterId, claimToken, result: committed }),
           })
         } catch {
           setRollLifecycle("retry")
@@ -1808,6 +1810,8 @@ if (error) {
       // Who rolls by default: the selected hero, so roll-changing traits (lib/traits.mjs — Halfling
       // Luck first) fire on every sheet, tray and Malachar-called roll without each button knowing.
       roller={selectedCharacter ? { name: selectedCharacter.name, species: (selectedCharacter as { sheet_species?: string | null }).sheet_species ?? null } : null}
+      // The save Malachar is waiting on ("vs charmed" in his tag) — Brave / Fey Ancestry read it.
+      against={pendingRoll?.against ?? null}
     >
     <div className="flex h-screen flex-col overflow-hidden bg-[#0a0806] text-stone-200">
       {sandbox && (
