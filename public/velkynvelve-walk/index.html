@@ -1108,6 +1108,19 @@ function clampView(v){
   v.tx = w <= r.width ? (r.width - w) / 2 : Math.min(0, Math.max(r.width - w, v.tx));
   v.ty = h <= r.height ? (r.height - h) / 2 : Math.min(0, Math.max(r.height - h, v.ty));
 }
+// ---------- THE FOLLOW CAMERA (Sam, 2026-10-27: AFK Journey's camera for the Underwalk; he asked Claude to pick by
+// gameplay and said "go ahead") ----------
+// Exploring, the camera sits at 1.5x and glides with the hero you move: big enough to read faces on a 2400-px plate,
+// small enough to keep most of the room. It pulls back to the whole plate whenever the room matters more than the hero:
+//   * sneaking — the watchers' cones must all be on screen, or you walk into one you could not see;
+//   * combat — it keeps its own framing (cbt.home); this camera only runs while exploring;
+//   * the DM screen — Sam projects it for the table, so it shows everyone, never one hero;
+//   * "Fit" — a viewer's own switch between whole plate and follow, remembered in this browser.
+// The wheel and the zoom buttons still win; the camera drifts back 2.5 s after the last touch.
+const FOLLOW_Z = 1.5;
+let wholePlate = false;
+try { wholePlate = localStorage.getItem("aop_walk_whole_plate") === "1"; } catch (e) {}
+function wantZ(){ return wholePlate || sneak || isDm() ? 1 : FOLLOW_Z; }
 let sliding = false;
 function applyView(){ if (!sliding) clampView(view); world.style.transform = `translate(${view.tx}px,${view.ty}px) scale(${base * view.z})`; placeActs(); }
 // The narration strip sits in the black band under the painting when there is one; otherwise low over it.
@@ -11020,7 +11033,12 @@ function nearNpc(n){ const d = norm({x: leader.x - n.x, y: leader.y - n.y}); ret
 function walkTo(p, cb){ if (!ownLeader()){ if (leader) notYours(leader); return; } if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
 $("zIn").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.3); };
 $("zOut").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.3); };
-$("zFit").onclick = () => { camTween = null; view = {z: 1, tx: 0, ty: 0}; applyView(); };
+$("zFit").onclick = () => {
+  wholePlate = !wholePlate; try { localStorage.setItem("aop_walk_whole_plate", wholePlate ? "1" : "0"); } catch (e) {}
+  $("zFit").textContent = wholePlate ? "Follow" : "Fit"; $("zFit").title = wholePlate ? "Follow your hero" : "Show the whole plate";
+  camTween = null; userPanAt = -1e9; if (wholePlate){ view = {z: 1, tx: 0, ty: 0}; applyView(); }
+};
+$("zFit").textContent = wholePlate ? "Follow" : "Fit"; $("zFit").title = wholePlate ? "Follow your hero" : "Show the whole plate";
 addEventListener("keydown", e => {
   if (e.target.closest && e.target.closest("input,select")) return;
   if (e.key === "Escape" && dmPlacing){ dmPlacing = null; stage.classList.remove("placing"); hint(""); return; }
@@ -12360,9 +12378,15 @@ function update(dt){
     view.tx = camTween.from.tx + (camTween.to.tx - camTween.from.tx) * e;
     view.ty = camTween.from.ty + (camTween.to.ty - camTween.from.ty) * e;
     applyView(); if (k >= 1) camTween = null;
-  } else if (mode === "explore" && view.z > 1.02 && leader && now - userPanAt > 2500){
-    const r = stage.getBoundingClientRect(), s = base * view.z;
-    const tx = r.width / 2 - leader.x * s, ty = r.height / 2 - leader.y * s;
+  } else if (mode === "explore" && leader && now - userPanAt > 2500){
+    // the follow camera (wantZ, below): ease the zoom about the middle of the screen, then glide onto the leader
+    const r = stage.getBoundingClientRect(), zt = wantZ();
+    if (Math.abs(view.z - zt) > .002){
+      const s0 = base * view.z, mx = (r.width / 2 - view.tx) / s0, my = (r.height / 2 - view.ty) / s0;
+      view.z += (zt - view.z) * Math.min(1, dt * 2);
+      const s1 = base * view.z; view.tx = r.width / 2 - mx * s1; view.ty = r.height / 2 - my * s1;
+    }
+    const s = base * view.z, tx = r.width / 2 - leader.x * s, ty = r.height / 2 - leader.y * s;
     view.tx += (tx - view.tx) * Math.min(1, dt * 3); view.ty += (ty - view.ty) * Math.min(1, dt * 3); applyView();
   }
   if (mode === "explore" || mode === "combat" || mode === "dialog"){
