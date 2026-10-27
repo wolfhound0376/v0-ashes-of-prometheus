@@ -6,7 +6,7 @@ import { jorlanOnDuty, readStage } from "@/lib/stage-roster"
 import { disobey, planDay, seeded, shiftAt, suspicionReasons, type CrewMember, type PlannedDetail, type PocketResult } from "@/lib/labor"
 import { CONFISCATION_STASH_NAME } from "@/lib/confiscation"
 // plain .mjs, shared with the walk page (build_walk.py /*__LABOR__*/)
-import { PRISONERS, advance, arrivalStep, choiceEffect, prisonerSlug, shiftTimeout, tooBigToHide } from "@/lib/labor-walk.mjs"
+import { PRISONERS, advance, arrivalStep, choiceEffect, prisonerSlug, shiftOver, shiftTimeout, tooBigToHide } from "@/lib/labor-walk.mjs"
 
 // /api/labor — Hard Labor: the work details that take the party out of the Velkynvelve slave pen.
 // Design of record: project doc claude/Hard_Labor_Module_2026-10-26.md. Rules: lib/labor.ts, lib/labor-walk.mjs.
@@ -15,7 +15,7 @@ import { PRISONERS, advance, arrivalStep, choiceEffect, prisonerSlug, shiftTimeo
 //          asking at once plan the same rows and the table's unique key keeps one). Answers with the party's own
 //          detail and whether its shift is running now on the game clock. A party detail left over from an earlier
 //          day that never ran is called off (`aborted`) — the day ended without it. A detail working for more than one
-//          game hour is marked overdue (`overdue: true`: the map that may finish the shift walks them home), and called
+//          game hour, or 15 real minutes (the backstop), is marked overdue (`overdue: true`: the map that may finish the shift walks them home), and called
 //          off if no map has started home a minute later (lib/labor-walk.mjs shiftTimeout; Sam, 2026-10-26).
 //   POST   {id, action, choice?, slug?, characterId?, claimToken?}
 //          action = call | march | arrive | return | done | choice | abort | event (what happened at the station: work, redo, look, pocket, caught, searched)
@@ -58,7 +58,7 @@ async function clockAt(db: Db, at: string | undefined): Promise<{ day: number; m
 type DetailRow = { id: string; status: string; events: unknown; updated_at: string } & Record<string, unknown>
 
 /**
- * The one-game-hour shift timeout (lib/labor-walk.mjs shiftTimeout). Writes are conditional on the row being as read,
+ * The shift timeout: one game hour, or the 15-real-minute backstop (lib/labor-walk.mjs shiftTimeout). Writes are conditional on the row being as read,
  * so of the several maps polling at once one marks it and the rest read the mark. Returns the row and whether the maps
  * should walk the party home now.
  */
@@ -72,7 +72,7 @@ async function applyShiftTimeout(db: Db, detail: DetailRow, clock: { day: number
   if (verdict === "overdue") return { detail, overdue: true }
   const now = new Date().toISOString()
   if (verdict === "flag") {
-    events.push({ at: now, kind: "overdue", clock, arrived })
+    events.push({ at: now, kind: "overdue", why: shiftOver({ ...detail, events }, clock, Date.now(), arrived), clock, arrived })
     const { data } = await db.from("work_details").update({ events, updated_at: now })
       .eq("id", detail.id).eq("status", "working").eq("updated_at", detail.updated_at).select("*").maybeSingle()
     return { detail: (data as DetailRow | null) ?? detail, overdue: true }
@@ -82,7 +82,7 @@ async function applyShiftTimeout(db: Db, detail: DetailRow, clock: { day: number
   const { data } = await db.from("work_details").update({ status: "aborted", events, updated_at: now })
     .eq("id", detail.id).eq("status", "working").eq("updated_at", detail.updated_at).select("*").maybeSingle()
   if (data) await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text:
-    "A work detail ran past its shift (one game hour) and no map walked the party home, so it was called off. The party is wherever it was standing." })
+    "A work detail ran past its shift (one game hour, or 15 real minutes) and no map walked the party home, so it was called off. The party is wherever it was standing." })
   return { detail: (data as DetailRow | null) ?? detail, overdue: false }
 }
 

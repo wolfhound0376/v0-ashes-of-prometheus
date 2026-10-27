@@ -7592,15 +7592,18 @@ function arrivalFrom(spec, from, to) {
 // ─── The shift timeout ────────────────────────────────────────────────────────────────────────────────────────
 // 2026-10-26: a laundry detail sat at 'working' for two hours because nobody pressed "Finish the shift", and the escort
 // stood on every plate the party walked onto. Sam approved ONE GAME HOUR: a detail working for more than an hour of
-// game_clock after it reached 'working' ends itself. /api/labor applies it on the maps' poll (every map asks every
-// 6 s), so it does not depend on any one browser:
-//   1. past the hour, the server marks the detail overdue (an `overdue` event) and tells the maps;
+// game_clock after it reached 'working' ends itself — or, the backstop (Sam, 2026-10-27: "add the 15 minute backstop"),
+// more than 15 REAL minutes after it reached 'working', whichever comes first. /api/labor applies it on the maps' poll
+// (every map asks every 6 s), so it does not depend on any one browser:
+//   1. past either limit, the server marks the detail overdue (an `overdue` event) and tells the maps;
 //   2. the map that may press "Finish the shift" (the DM's, or the one that marched them) walks them home the normal
 //      way (`return` → `done`);
 //   3. if no map has started the way home OVERDUE_GRACE_MS after the mark, the server calls the detail off (`aborted`).
 // The game clock moves only on Malachar's turns (5 minutes an exchange, [TIME:…] tags), not while the party walks or
-// works on the map: a quiet table ages a shift not at all. Measured 2026-10-27 from time_log.
+// works on the map: a quiet table ages a shift not at all (measured 2026-10-27 from time_log) — hence the real-time
+// backstop, which runs whether or not anyone talks to Malachar.
 const SHIFT_GAME_MINUTES = 60
+const SHIFT_REAL_MS = 15 * 60 * 1000
 const OVERDUE_GRACE_MS = 60000
 
 /** Minutes since the start of day 1 for a game_clock reading {day, minutes}, or null. */
@@ -7610,14 +7613,24 @@ const gameMinute = (c) => (c && Number.isFinite(Number(c.minutes)) ? (Math.max(1
 const arrivalStep = (events) => [...(events || [])].reverse().find((e) => e && e.kind === "step" && e.to === "working") || null
 
 /**
- * What the server does about a detail now: "ok" (nothing), "flag" (first past the hour: mark it overdue and tell the
+ * Which limit a working detail is past: "game-hour", "real-time" (the 15-minute backstop), or null for neither.
+ * `arrived` is the game clock when it reached 'working'; the real time comes from that step's own `at`.
+ */
+function shiftOver(detail, clock, nowMs, arrived = arrivalStep(detail && detail.events)?.clock) {
+  if (!detail || detail.status !== "working") return null
+  const a = gameMinute(arrived), n = gameMinute(clock)
+  if (a !== null && n !== null && n - a > SHIFT_GAME_MINUTES) return "game-hour"
+  const step = arrivalStep(detail.events), t0 = step ? Date.parse(step.at) : NaN
+  if (Number.isFinite(t0) && nowMs - t0 > SHIFT_REAL_MS) return "real-time"
+  return null
+}
+
+/**
+ * What the server does about a detail now: "ok" (nothing), "flag" (first past a limit: mark it overdue and tell the
  * maps), "overdue" (marked, waiting on a map to walk them home), "abort" (marked and nobody did: call it off).
- * `arrived` is the game clock when it reached 'working'; without one (and without a clock now) it never times out.
  */
 function shiftTimeout(detail, clock, nowMs, arrived = arrivalStep(detail && detail.events)?.clock) {
-  if (!detail || detail.status !== "working") return "ok"
-  const a = gameMinute(arrived), n = gameMinute(clock)
-  if (a === null || n === null || n - a <= SHIFT_GAME_MINUTES) return "ok"
+  if (!shiftOver(detail, clock, nowMs, arrived)) return "ok"
   const mark = (detail.events || []).find((e) => e && e.kind === "overdue")
   if (!mark) return "flag"
   const at = Date.parse(mark.at)
