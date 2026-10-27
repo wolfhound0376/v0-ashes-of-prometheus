@@ -4173,6 +4173,8 @@ function openMenu(a, sub){
   const c = a.c, s = c.sheet;
   // a spell (or Bardic Inspiration) wears its own commissioned icon, the one the dashboard uses (lib/action-icons.ts)
   if (sub === "attack"){
+    for (const d of drawable(a)){ ACTION_ICON[d.label] = "attack";
+      add(d.label, c.objFree !== false ? `draw it (your free object interaction) and attack · ${d.hint}` : "your free object interaction is spent: draw it from the inventory instead", c.objFree !== false ? () => drawAndAttack(a, d.it) : null); }
     for (const atk of s.attacks){ ACTION_ICON[atk.name] = atk.name.toLowerCase().includes("unarmed") ? "opportunity-attack" : "attack"; add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.sneak ? ` · sneak +${atk.sneak}` : ""}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk})); }
     add("Back", "", () => openMenu(a));
   } else if (sub === "orb"){
@@ -4226,7 +4228,8 @@ function openMenu(a, sub){
   } else {
     grp("attack");
     const sa = s.attacks.find(k => k.sneak), ss = sa && sneakState(a, null, sa);
-    add("Attack", ss ? (c.sneakUsed ? "sneak attack used this turn" : `Sneak Attack ${ss.why}`) : s.attacks.length === 1 ? `${s.attacks[0].name} +${s.attacks[0].hit}` : `${s.attacks.length} options`, c.action ? () => s.attacks.length === 1 ? aim(a, {atk: s.attacks[0]}) : openMenu(a, "attack") : null, "primary");
+    const draws = drawable(a), opts = s.attacks.length + draws.length;
+    add("Attack", ss ? (c.sneakUsed ? "sneak attack used this turn" : `Sneak Attack ${ss.why}`) : opts === 1 ? `${s.attacks[0].name} +${s.attacks[0].hit}` : draws.length ? `${opts} options · draw ${draws[0].it.name}` : `${opts} options`, c.action ? () => opts === 1 ? aim(a, {atk: s.attacks[0]}) : openMenu(a, "attack") : null, "primary");
     // SNEAK ATTACK, AS A COMMAND (Sam, 2026-10-14: "How about the sneak attack; I didn't see the option."). By the
     // rules it is not a separate action: it rides on an Attack once per turn when the conditions are met. The command
     // makes that visible: it aims the finesse weapon and marks every foe it would work on right now (✓ SNEAK) — with
@@ -9689,6 +9692,39 @@ function removeFrom(a, sl, how){
     body: JSON.stringify({action: "unequip", character_id: cid, slot: sl})}).then(r => r.json()).then(j => { if (j && j.error){ toast(j.error); loadGear(a.id); } }).catch(() => {}); }
   if (fight){ renderParty(); if (cbt.phase === "menu") openMenu(a); }
   renderBag();
+}
+// DRAW AND ATTACK (Sam, 2026-10-27: "lynkes hit with a dagger but still had unarmed strike; fix it and make sure all
+// characters"). A hero with empty hands and a weapon in the pack was offered only the Unarmed Strike, because attacks
+// come from what is IN HAND (refreshAttacks). The SRD's own example of the free object interaction is drawing a weapon
+// as you attack ("draw or sheathe a sword"), so the Attack list now offers every weapon carried but not held, for any
+// hero: pick it and it is drawn into a free hand (that costs the turn's free interaction, gearCost) and swung at once.
+function drawable(a){
+  if (a.kind !== "pc") return [];
+  const g = GEAR[a.id]; if (!g || !g.carried) return [];
+  const hands = ["main_hand", "off_hand"].filter(sl => !wornIn(g, sl)); if (!hands.length) return [];
+  const heldTwo = (() => { const w = wornIn(g, "main_hand"), h = w && g.carried.find(x => x.name === w.name); return h && twoHanded(h); })(); if (heldTwo) return [];
+  const out = [];
+  for (const it of g.carried){
+    if (!isWeapon(it) || (it.qty || 1) <= (g.doll || []).filter(d => d.name === it.name).length) continue;   // every copy is already in a hand
+    const sl = hands.includes("main_hand") ? "main_hand" : (!twoHanded(it) ? "off_hand" : null); if (!sl) continue;
+    const atk = attackFromItem(a.c.sheet, it);
+    out.push({it, slot: sl, label: `Draw ${it.name}`, hint: `+${atk.hit} · ${atk.dmg} ${atk.type}`});
+  }
+  return out;
+}
+function drawAndAttack(a, it){
+  const g = GEAR[a.id], d = drawable(a).find(x => x.it === it); if (!g || !d) return;
+  const k = gearCost(a, 1); if (!k.ok){ toast(k.why); return; }
+  k.pay();
+  g.doll = (g.doll || []).filter(x => x.slot !== d.slot).concat([{slot: d.slot, name: it.name, item_key: it.item_key || null}]);
+  if (d.slot === "main_hand") g.main = it.name; else g.off = it.name;
+  refreshAttacks(a.id); renderParty();
+  popText(a, `${it.name} drawn`, "#e8d9a8", .8); log(`${fname(a)} draws the <b>${esc(it.name)}</b> (free object interaction).`);
+  const cid = serverCid(a.id), key = it.item_key;
+  if (cid && key) fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "equip", character_id: cid, slot: d.slot, item_key: key})})
+    .then(r => r.json()).then(j => { if (j && j.error) toast(j.error); }).catch(() => {});
+  const atk = a.c.sheet.attacks.find(x => x.name === it.name) || a.c.sheet.attacks[0];
+  aim(a, {atk});
 }
 function gearCost(a, n){
   const c = a.c, free = c.objFree !== false ? 1 : 0;
