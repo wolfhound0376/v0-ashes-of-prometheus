@@ -135,6 +135,7 @@ function recentBranches(days) {
     if (!line.trim()) continue
     const [date, ref] = line.split("|")
     if (!ref || ref === BASE || ref === "origin/HEAD") continue
+    if (ref === "origin/sandbox") continue   // the DM's rehearsal copy of some other branch (/api/dm/sandbox), never work of its own
     if (Date.parse(date) < cutoff) continue
     out.push({ ref, when: date.slice(0, 16).replace("T", " ") })
   }

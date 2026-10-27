@@ -458,6 +458,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmWatchEmpty">Story: posts unattended / posted again (preview)</button>
       <button class="btn" id="dmFlag">Malachar calls initiative: ooze + guards (preview)</button>
       <button class="btn" id="dmRestartRehearsal" hidden>Rehearsal: start over from the beginning</button>
+      <button class="btn" id="dmSandboxLoad">Sandbox: load a newer version…</button>
       <button class="btn" id="dmGate">Open the pen gate (Jorlan's gambit)</button>
       <button class="btn" id="dmGateShut">Shut and lock the pen gate</button>
       <button class="btn" id="dmLaborCall">Work detail: call it now</button>
@@ -8888,6 +8889,23 @@ $("jump").onchange = e => { const v = e.target.value, n = /^\d+$/.test(v) ? +v :
   const offs = party.map(p => ({id: p.id, dx: p.x - leader.x, dy: p.y - leader.y}));
   enterNode(n, {offs, fromScale: node.scale, note: `The DM moves the party to <em>${esc(SPEC[n].name)}</em>.`}); };
 $("dmGate").onclick = () => { toggleDm(false); openGate(); };
+// LOAD A NEWER VERSION INTO THE SANDBOX (Sam, 2026-10-27: "push the new version to sandbox and give me a button to do
+// that in the future in DM mode"). The open pull requests (/api/dm/sandbox): pick one and the sandbox branch becomes it,
+// Vercel rebuilds the sandbox copy (a few minutes), and "Open the sandbox" goes there. The live game is untouched.
+$("dmSandboxLoad").onclick = async () => {
+  toggleDm(false);
+  let j = {};
+  try { j = await (await fetch("/api/dm/sandbox", {cache: "no-store", headers: dmHeaders()})).json(); } catch (e) { j = {error: "The game did not answer."}; }
+  const open = j.url ? [{label: "Open the sandbox", fn: () => window.open(j.url + "/velkynvelve?sandbox=1", "_blank")}] : [];
+  if (j.error || !Array.isArray(j.pulls)){ showDialog({title: "Sandbox", body: j.error || "No versions to load.", buttons: [...open, {label: "Close"}]}); return; }
+  const when = t => { try { return new Date(t).toLocaleString([], {month: "short", day: "numeric", hour: "numeric", minute: "2-digit"}); } catch (e) { return ""; } };
+  showDialog({title: "Load a version into the sandbox",
+    body: `${j.loaded ? `The sandbox has ${j.loaded}${j.loadedAt ? ` (loaded ${when(j.loadedAt)})` : ""}. ` : ""}Pick a version waiting in a pull request. It builds in about 2 to 4 minutes; the live game is not touched.`,
+    buttons: [...j.pulls.slice(0, 6).map(p => ({label: `#${p.number} · ${p.title.slice(0, 70)}`, fn: async () => {
+      try { const r = await fetch("/api/dm/sandbox", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify({branch: p.branch, label: `PR #${p.number}`})}); const k = await r.json();
+        showDialog({title: k.ok ? `PR #${p.number} is going into the sandbox` : "Could not load it", body: k.ok ? (k.note || "Building now.") : (k.error || "Something went wrong."), buttons: [...open, {label: "Close"}]});
+      } catch (e) { toast("The game did not answer.", 3600); } }})), ...open, {label: "Cancel"}]});
+};
 // START THE REHEARSAL OVER (Sam, 2026-10-27: "I need a DM function that resets us to the beginning of the game for
 // sandbox"). Only in a rehearsal (?sandbox=1), where the whole walk lives in this tab: the saved walk (sessionStorage),
 // the plate, the gate, the prisoners with the party, what was taken and picked up here. Clearing the saved walk and
