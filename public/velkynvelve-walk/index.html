@@ -5077,7 +5077,7 @@ function exploreExtras(m, o, add, who){
   if (o.mark) x(`Pick ${fname(o.mark)}'s pocket`, "✋", ART("pickpocket", "search"), `Sleight of Hand ${sgn(heroMod(L, "sleightOfHand", "dex"))} vs their passive Perception`, () => openPickpocket(o.mark));
   x("Search here", "⌕", ART("search-here", "search"), `Perception ${sgn(heroMod(L, "perception", "wis"))} · the DM says what turns up`, () => searchHere());
   if (exNear) x(`Listen at ${exitName(exNear)}`, "◖", ART("listen"), `Perception ${sgn(heroMod(L, "perception", "wis"))} · what is beyond`, () => listenAt(exNear));
-  if (look) x(`Look closer at ${look}`, "◎", ART("look-closer"), `Investigation ${sgn(heroMod(L, "investigation", "int"))}`, () => lookCloser(look));
+  if (look) x(`Look closer at ${look}`, "◎", ART("look-closer"), `Investigation ${sgn(heroMod(L, "investigation", "int"))}`, () => GATE_LOOK_RE.test(look) ? openGateLook(look) : lookCloser(look));
   if (party.length > 1) x(helpNext && helpNext.by === L.id ? "Helping" : "Help", "✋", ART("help"), helpNext && helpNext.by === L.id ? "the next friend's check has advantage" : "the next friend's check gets advantage", helpNext && helpNext.by === L.id ? null : () => giveHelp());
   if (/cleric/.test(cls)) x("Pray", "✠", ART("pray"), "silently, or aloud", () => openPray());
   if (sh.bardic) x("Inspire", "♪", ART("inspire"), `Bardic Inspiration · ${inspLeftOf(L)} of ${sh.bardic.uses} left`, inspLeftOf(L) > 0 && party.length > 1 ? () => openInspire() : null);
@@ -5306,19 +5306,28 @@ function lookCloser(what){
   const k = mapCheck(leader, "investigation", "int");
   log(`${fname(leader)} studies ${esc(what)}: ${rollLine(k, "investigation")}.`);
   askCheck(`${fname(leader)} looks closer at ${what}`, k, "investigation", `${fname(leader)} looks closely at ${what}. Intelligence (Investigation) ${k.total}${k.adv ? " (with help)" : ""}. What do they notice?`);
-  if (GATE_LOOK_RE.test(what)) gateLookFilm();
 }
-// LOOKING AT THE PEN GATE IS A FILMED MOMENT (Sam, 2026-10-27: "look closer at the pen gate button should trigger
-// cinematic at least once for each player"). The film is the one already shot for it: count-guards, the view through
-// the bars as a drow guard walks past (cinematic_clips f84d7f6b…, solo). The map does not play it itself: it asks the
-// page around it (components/walk/walk-cue-bridge.tsx), which hands it to the stage as a check cue (lib/check-cue.ts).
-// The server keeps the rule — once per seated character, recorded in cinematic_views — so every player sees it the
-// first time THEY look, whatever the roll, and not again on that seat. The player's "Cinematics" setting turns it off.
-// Only the browser that clicked asks, so nobody else's screen is interrupted.
+// LOOKING AT THE PEN GATE (Sam, 2026-10-27): Look closer asks "Look around or Count the guards". Each is a filmed
+// moment, played the first time each player picks it ("at least once for each player"):
+//   Look around       the outpost beyond the bars: the pen's establishing film, the same one the dashboard's
+//                     look-around chip rolls (cinematic_clips kind=environment for the slave pen)
+//   Count the guards  count-guards: Fifi's seat gets her own film (Fifi sitting by the bars); everyone else gets
+//                     the general count-guards film once it is made (AI Creator Studio) and filed under that state
+// Either way the hero still rolls Investigation and Malachar is told what they looked at. The map does not play film
+// itself: it asks the page around it (components/walk/walk-cue-bridge.tsx), and /api/cinematics keeps the rule —
+// once per seated character, recorded in cinematic_views. Only the browser that clicked asks, and it plays only
+// there; the player's "Cinematics" setting turns it off.
 const GATE_LOOK_RE = /pen gate/i;
-function gateLookFilm(){
+function openGateLook(what){
+  if (mode !== "explore" || !leader) return;
+  showDialog({title: what, body: `${fname(leader)} steps close to the bars. What do they study?`, buttons: [
+    {label: "Look around", primary: true, fn: () => { lookCloser(`${what}, looking out over the outpost beyond it`); gateLookFilm("look-around"); }},
+    {label: "Count the guards", primary: true, fn: () => { lookCloser(`${what}, counting the guards and their rounds`); gateLookFilm("count-guards"); }},
+    {label: "Not now", fn: () => { exploreKey = ""; }}]});
+}
+function gateLookFilm(cue){
   if (!APP || window.parent === window || !filmsOn()) return;
-  try { window.parent.postMessage({type: "aop:check-cue", state: "count-guards", scope: "solo", location: "Scene_1_Velkynvelve (slave pen)"}, location.origin); } catch (e) {}
+  try { window.parent.postMessage({type: "aop:walk-film", cue}, location.origin); } catch (e) {}
 }
 function giveHelp(){ helpNext = {by: leader.id, until: now + 60000}; log(`${fname(leader)} lends a hand: the next friend's check has advantage.`); exploreKey = ""; }
 
