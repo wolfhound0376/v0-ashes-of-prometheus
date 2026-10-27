@@ -12,23 +12,28 @@ import { createAdminClient } from "@/lib/supabase/admin"
 //   GET ?after=<iso>    → { cursor, lines } — the table's lines at or after that moment, oldest first
 //
 // Read-only and the same lines every seat already sees on the dashboard's log.
+//
+// Player-to-player messages (channel 'direct', Sam 2026-10-26: "This should display with everyone. No voice
+// heard.") ride along too, carrying `channel` and `recipient`: the walk draws them over the sender's sprite for
+// the whole table and says them in the sender's own voice.
 
 export const dynamic = "force-dynamic"
 
 const SPOKEN = ["npc", "dm", "player"]
+const HEARD = ["dm", "direct"]
 
 export async function GET(req: NextRequest) {
   try {
     const db = createAdminClient()
     const after = req.nextUrl.searchParams.get("after")
     if (!after || Number.isNaN(Date.parse(after))) {
-      const { data } = await db.from("dialogue").select("created_at").eq("channel", "dm")
+      const { data } = await db.from("dialogue").select("created_at").in("channel", HEARD)
         .order("created_at", { ascending: false }).limit(1).maybeSingle()
       return NextResponse.json({ cursor: data?.created_at ?? new Date().toISOString(), lines: [] })
     }
     const { data, error } = await db.from("dialogue")
-      .select("id, speaker, speaker_type, text, speech_segments, created_at, sort_order")  // speech_segments[].lang: the tongue (lib/languages)
-      .eq("channel", "dm").in("speaker_type", SPOKEN).gte("created_at", after)
+      .select("id, speaker, speaker_type, text, speech_segments, created_at, sort_order, channel, recipient")  // speech_segments[].lang: the tongue (lib/languages)
+      .in("channel", HEARD).in("speaker_type", SPOKEN).gte("created_at", after)
       .order("created_at", { ascending: true }).order("sort_order", { ascending: true }).limit(40)
     if (error) return NextResponse.json({ cursor: after, lines: [], error: error.message })
     const lines = (data ?? []).filter((r) => typeof r.text === "string" && r.text.trim())
