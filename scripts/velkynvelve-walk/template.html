@@ -1165,7 +1165,7 @@ function draw(){
       if (z.interact){                        // things you can use light up when you are in reach, or point at them
         const lit = hoverObj === z || hoverZone === z || (leader && Math.hypot(leader.x - cx, leader.y - cy) < 340 * node.scale);
         if (!lit) continue;
-        const col = state.gateOpen ? "98,227,198" : "240,170,80", pts = z.interact.poly;
+        const col = "240,190,90", pts = z.interact.poly;   // gold, open or shut (Sam, 2026-10-27: "highlighted in gold as an option")
         ctx.save(); ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
         ctx.fillStyle = `rgba(${col},${.06 + .05 * pulse})`; ctx.fill();
         ctx.shadowColor = `rgba(${col},.95)`; ctx.shadowBlur = 24; ctx.lineJoin = "round";
@@ -1174,7 +1174,7 @@ function draw(){
         continue;
       }
       const locked = z.kind === "gate" && !state.gateOpen;
-      const col = locked ? "208,69,58" : z.kind === "water" ? "140,190,255" : z.kind === "leave" ? "232,162,74" : "98,227,198";
+      const col = locked ? "208,69,58" : "240,190,90";   // every way out glows gold (Sam, 2026-10-27: the green "looks weird"); a locked gate stays red
       const rad = Math.max(40, Math.min(110, Math.min(x1 - x0, y1 - y0) * .8));
       const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
       g.addColorStop(0, `rgba(${col},${.30 + .25 * pulse})`); g.addColorStop(1, `rgba(${col},0)`);
@@ -2013,7 +2013,7 @@ async function travel(to, z, fromWorld, cut){
   if (drop && (state.inPool || []).length){ for (const p of party) if (!actors.includes(p)){ actors.push(p); p.alpha = 1; p.fall = 0; p.x = zc.x; p.y = zc.y; } state.inPool = []; }
   const cr = z.cross || (z.crossBy && z.crossBy[String(to)]);
   const route = cr ? cr.map(([x, y, s, f]) => ({x, y, s, out: f === "out", jump: f === "jump"}))
-    : [{x: zc.x, y: zc.y}, {x: zc.x + exitDir.x * 900, y: zc.y + exitDir.y * 900}];
+    : [{x: zc.x, y: zc.y}, {x: zc.x + exitDir.x * 260, y: zc.y + exitDir.y * 260}];   // into the exit and a few steps on; the screen fades (below), nobody marches off the edge
   const order = [leader, ...followOrder()];
   order.forEach((a, i) => {
     stopActivity(a); a.kbd = false; a.onArrive = null; a.waitUntil = now + i * 300;
@@ -2028,9 +2028,14 @@ async function travel(to, z, fromWorld, cut){
     await enterNode(to, {from: owPlate(via), offs, fromScale: node.scale, note: cut.note || `The escort marches the detail through the outpost to <em>${esc(SPEC[to].name)}</em>.`});
     return;
   }
-  await slideTo(to, dir);
+  // FADE, DON'T SLIDE (Sam, 2026-10-27: "the characters just leave to the right of the screen then appear to climb up or
+  // down. That looks horrible ... we fade out"). The plate used to slide sideways to the next one whatever the way was —
+  // a ladder up or down included. Now the party goes into the exit (or up or down its ladder) and the screen fades;
+  // only the drop through the falls keeps its slide, because falling is the point.
+  if (drop) await slideTo(to, dir); else { $("fade").classList.add("on"); await wait(420); }
   const verb = drop ? "The party drops through the falls" : climb ? (climb.dir === "up" ? "The party climbs up" : "The party climbs down") : z.kind === "water" ? "The party climbs" : "The party crosses";
   await enterNode(to, {from: cur, offs, exitDir, fromScale: node.scale, slide: dir, drop, note: `${verb} to <em>${esc(SPEC[to].name)}</em>.`});
+  $("fade").classList.remove("on");
 }
 async function slideTo(to, dir){
   const p2 = $("plate2"); p2.src = plateUrl(to);
