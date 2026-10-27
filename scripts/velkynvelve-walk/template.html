@@ -396,6 +396,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="titlecard" id="titlecard"><div class="no" id="tcNo"></div><h2 id="tcName"></h2></div>
     <div class="log" id="log" aria-live="polite"></div>
     <div class="acts" id="acts" aria-live="polite"></div>
+    <div id="laborBar" hidden style="position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:30;display:flex;gap:10px;align-items:center;padding:6px 12px;border:1px solid rgba(201,162,74,.55);border-radius:6px;background:rgba(12,8,16,.82);color:#e8dcc0;font:600 13px/1.2 Georgia,serif;letter-spacing:.02em"><span id="laborWhat">Work detail</span><button class="btn" id="laborEnd" hidden>Finish the shift</button></div>
     <div class="frozen-badge" id="frozen" role="status" hidden>Time is stopped</div>
     <div class="zoom">
       <button id="zOut" aria-label="Zoom out">−</button>
@@ -437,6 +438,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmWatchEmpty">Story: posts unattended / posted again (preview)</button>
       <button class="btn" id="dmFlag">Malachar calls initiative: ooze + guards (preview)</button>
       <button class="btn" id="dmGate">Open the pen gate (Jorlan's gambit)</button>
+      <button class="btn" id="dmLaborCall">Work detail: call it now</button>
+      <button class="btn" id="dmLaborOff">Work detail: call it off</button>
       <button class="btn" id="dmThrow">Throw the active character into the falls (area 9)</button>
       <div class="dmCloudRow" id="dmCloudRow">
         <label>Cast <select id="dmCloudSpell" aria-label="Poison cloud spell"><option>Stinking Cloud</option><option>Cloudkill</option></select></label>
@@ -1775,7 +1778,9 @@ async function enterNode(n, opts = {}){
   let joined = [];
   if (booted){
     state.company = companyNow().filter(id => { const a = npcs.find(x => x.id === id); return !a || !(a.down || a.body); });
-    if (from === PEN && n !== PEN) joined = prisonersJoin();
+    // a work detail takes only the prisoners on the detail; the escape takes everyone (Hard Labor, below)
+    if (from === PEN && n !== PEN) joined = laborLive() ? laborJoins() : prisonersJoin();
+    if (n === PEN && from !== PEN && laborLive()) state.company = companyNow().filter(id => !laborNpcs().includes(id));   // back to their places in the pen
   }
   mode = "travel"; if (!opts.slide) $("fade").classList.add("on"); $("talk").hidden = true; $("dialog").hidden = true;
   $("combat").hidden = true; stage.classList.remove("fight"); cbt = null; combatBusy = false; $("vignette").classList.remove("on");
@@ -1816,7 +1821,8 @@ async function enterNode(n, opts = {}){
   party.forEach(p => { p.home = {x: p.x, y: p.y}; p.actUntil = now + 3000 + Math.random() * 6000; });
   party.sort((a, b) => PARTY.indexOf(a.id) - PARTY.indexOf(b.id));
   // tell the server where the party now stands and who is here; the first step out of the pen is the moment the ward lets go
-  reportSituation({sub_location: node.slug, sub_label: node.name, party_present: partyPresent(), event: from === PEN && n !== PEN ? "step_outside" : undefined});
+  // a work detail leaves the pen as prisoners, not escapees: labor_out / labor_back (lib/situation.ts)
+  reportSituation({sub_location: node.slug, sub_label: node.name, party_present: partyPresent(), event: from === PEN && n !== PEN ? (laborLive() ? "labor_out" : "step_outside") : n === PEN && from !== PEN && laborLive() ? "labor_back" : undefined});
   const comp = companyNow().filter(id => SPR[id]);
   for (const np of whoIsHere(n)){
     if (np.hostile && state.cleared[n]) continue;
@@ -1863,6 +1869,7 @@ async function enterNode(n, opts = {}){
   if (!$("dm").hidden) renderCompany();
   nextAmbient = now + 6000 + Math.random() * 6000;
   surgeonOnEnter(n);
+  laborOnEnter(n, from);
   owEntered();
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -6014,6 +6021,212 @@ function followGate(g){
   }
 }
 
+// ---------- HARD LABOR: the work detail ----------
+// Sam, 2026-10-26: "a module for how guards who come by for labor duties to the pen coordinate this". OotA ch.1 "Hard
+// Labor" (p.12): the prisoners are worked a third of the day, under guard. Sam's rulings: ALL the heroes go together,
+// with 0–2 of the other prisoners; manacles stay on; refusing is disobedience (the first time, the warning).
+// The game plans the day (/api/labor, lib/labor.ts); the rules the page follows are lib/labor-walk.mjs, pasted below.
+// What plays here: at the party's shift an escort (a drow — Jorlan, some days, once he is on the watch — and a
+// quaggoth) crosses the bridge to the gate and calls the detail out; each player answers for their own hero (go /
+// drag your feet / refuse); the escort marches the party along the real exits to where the work is, stands over them
+// while they work, and walks them back in. The stations themselves (the work, pocketing things, the redo) are PR 3.
+// Design of record: project doc claude/Hard_Labor_Module_2026-10-26.md.
+/*__LABOR__*/
+let labor = null;                    // the party's detail as the server last told it
+const laborPlayed = {};              // what this browser has already played, by `${id}:${step}`
+let laborDriving = false;            // this browser won the race to move the detail along and walks the party
+let laborCard = null;                // heroes still to answer the call, here
+const laborLive = () => !!labor && isLive(labor.status);
+const laborNpcs = () => (labor && labor.crew || []).filter(c => c.kind === "npc").map(c => c.id).filter(id => SPR[id]);
+const ESCORT_ID = {drow: "escort-drow", "jorlan-duskryn": "escort-jorlan", quaggoth: "escort-quaggoth"};
+function laborSprites(){
+  // the escort has ids of its own so the pen's watch, the gate warning and the stage director never take it for
+  // a sentry at its post; the sheets are the guards' and the quaggoth's own
+  for (const [b, id] of Object.entries(ESCORT_ID)){ const src = ESCORT_SPRITE[b]; if (!SPR[id] && SPR[src]) SPR[id] = SPR[src]; }
+  SHORT["escort-drow"] = "Drow guard"; SHORT["escort-jorlan"] = "Jorlan"; SHORT["escort-quaggoth"] = "Quaggoth";
+}
+const escortVoice = id => id === "escort-jorlan" ? "jorlan" : "drow-guard-male";
+function laborBody(extra){
+  const body = Object.assign({}, extra);
+  if (!Object.keys(dmHeaders()).length){
+    try { body.characterId = localStorage.getItem("aop_character_id") || undefined; body.claimToken = localStorage.getItem("aop_claim_token") || undefined; } catch (e) {}
+    if (!body.characterId || !body.claimToken) return null;    // no seat, no key: this browser watches
+  }
+  return body;
+}
+async function laborPost(action, extra = {}){
+  if (!APP || !labor) return null;
+  const body = laborBody(Object.assign({id: labor.id, action}, extra)); if (!body) return null;
+  try {
+    const r = await fetch("/api/labor", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)});
+    const j = await r.json().catch(() => ({}));
+    if (j.detail) labor = j.detail;
+    return r.ok ? j : null;
+  } catch (e) { return null; }
+}
+async function pollLabor(){
+  if (!APP || !booted) return;
+  let j; try { j = await fetch("/api/labor", {cache: "no-store"}).then(r => r.json()); } catch (e) { return; }
+  const was = labor && labor.status; labor = j.detail || null;
+  // the shift has come round: anyone at the table may call it (the server takes the first and refuses the rest)
+  if (labor && j.due && labor.status === "scheduled" && cur === PEN && mode === "explore" && !surgeon && !state.gateOpen) await laborPost("call");
+  laborFollow(was);
+  renderLaborBar();
+}
+function laborFollow(was){
+  if (!labor) return;
+  const key = s => `${labor.id}:${s}`;
+  if (labor.status === "called" && cur === PEN && !laborPlayed[key("called")]){ laborPlayed[key("called")] = true; laborCall(); }
+  if ((labor.status === "done" || labor.status === "aborted") && was && isLive(was) && !laborPlayed[key("end")]){ laborPlayed[key("end")] = true; laborEnds(labor.status === "aborted"); }
+}
+
+// the escort: spawned on each plate the detail is on, walking in beside the party (on the pen plate: across the bridge)
+function laborEscort(){ return npcs.filter(n => n.escort); }
+function spawnEscort(near, fromEdge){
+  laborSprites();
+  const list = (labor && labor.escort || []).map(e => ESCORT_ID[e.bestiary]).filter(id => id && SPR[id]);
+  const placed = actors.map(a => ({x: a.x, y: a.y}));
+  return list.map((id, i) => {
+    const p = nearestWalkable(near.x + (i ? 90 : -90) * node.scale, near.y + 60 * node.scale, placed); placed.push(p);
+    const a = mkActor(id, p.x, p.y, "npc", {escort: true, relieved: true, talk: false, barks: [], home: {x: p.x, y: p.y}, post: {x: p.x, y: p.y}, static: true, face: faceOf(leader.x - p.x, leader.y - p.y)});
+    if (fromEdge){ const e = plateEdge(p); a.x = e.x; a.y = e.y; a.alpha = 0; a.fadeIn = true; a.path = [{x: p.x, y: p.y}]; a.slow = true; a.onArrive = () => { a.face = faceOf(leader.x - a.x, leader.y - a.y); }; }
+    npcs.push(a); actors.push(a);
+    return a;
+  });
+}
+function escortLeaves(){
+  for (const a of laborEscort()){ const e = plateEdge(a); a.static = false; a.path = [{x: e.x, y: e.y, out: true}]; a.slow = false; a.onArrive = () => { npcs = npcs.filter(x => x !== a); actors = actors.filter(x => x !== a); }; }
+}
+const escortDrow = () => laborEscort().find(a => a.id !== "escort-quaggoth") || null;
+const escortBeast = () => laborEscort().find(a => a.id === "escort-quaggoth") || null;
+function escortSays(a, line, ms = 5200){
+  if (!a) return;
+  const said = heardText(line, "Elvish");
+  bark(a, said, ms, {talk: true, lang: "Elvish"});
+  if (voicesOn !== false) speak(escortVoice(a.id), line);
+}
+function quaggothSays(line){ const q = escortBeast(); if (q) bark(q, heardText(line, "Undercommon"), 4200, {lang: "Undercommon"}); }
+
+// 1. the call: the escort comes over the bridge to the gate and calls the detail out
+async function laborCall(){
+  if (cur !== PEN) return;
+  narrate(null, pickLine(LINES.malachar, Math.random));
+  const g = gateCenter() || {x: 822, y: 860};
+  const drop = spotFor("landing") || spotFor("gate") || {x: g.x - 80, y: g.y - 60};
+  spawnEscort(drop, true);
+  await wait(2600);
+  if (cur !== PEN || !labor) return;
+  setDoor(true); sfx("door-open", .8);
+  escortSays(escortDrow(), pickLine(LINES.call, Math.random), 6500);
+  setTimeout(() => quaggothSays(LINES.quaggoth[0]), 2200);
+  const mine = party.filter(p => canControl(p) && !p.ko);
+  if (!mine.length){ laborWaitThenMarch(); return; }
+  laborCard = mine.slice();
+  laborAsk();
+}
+function laborAsk(){
+  const h = laborCard && laborCard.shift();
+  if (!h){ laborCard = null; laborWaitThenMarch(); return; }
+  mode = "dialog"; tip.hidden = true;
+  const d = escortDrow(), c = $("objPic").getContext("2d"); c.clearRect(0, 0, 128, 128);
+  try { const m = SPR[d.id].json; c.imageSmoothingEnabled = false; c.drawImage(SPR[d.id].img.idle, 0, 0, m.cell[0], m.cell[1], 0, 0, 128, 128); } catch (e) {}
+  $("objWho").textContent = `Work detail — ${(TASKS_LABEL[labor.task] || labor.task)}`;
+  $("objText").textContent = `The gate stands open and the escort is waiting. What does ${fname(h)} do?`;
+  const box = $("objBtns"); box.innerHTML = "";
+  let answered = false;
+  const add = (label, choice, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = () => answer(choice); box.appendChild(b); };
+  const answer = choice => {
+    if (answered) return; answered = true; clearTimeout(timer);
+    $("obj").hidden = true; mode = "explore";
+    laborPost("choice", {slug: h.id, choice});
+    const fx = choiceEffect(choice);
+    if (fx.line === "drag"){ h.slow = true; narrate(h, `${fname(h)} takes their time getting up.`); escortSays(escortDrow(), LINES.drag); }
+    else if (fx.warning){ narrate(h, LINES.refuse); playOnce(h, "hurt", () => {}); quaggothSays(LINES.quaggoth[1]); log(`<b>${esc(fname(h))}</b> refuses the work. <em>Warning</em> — the quaggoth hauls them out anyway.`); }
+    else narrate(h, `${fname(h)} goes quietly.`);
+    setTimeout(laborAsk, 900);
+  };
+  add("Go quietly", "go", "primary"); add("Drag your feet", "drag"); add("Refuse", "refuse");
+  const timer = setTimeout(() => answer("go"), CALL_TIMEOUT_MS);
+  $("obj").hidden = false; box.firstChild?.focus();
+}
+async function laborWaitThenMarch(){
+  // every hero on the detail answers (or the call times out for them) before anyone is marched off
+  const heroes = (labor && labor.crew || []).filter(c => c.kind === "pc").length, until = Date.now() + CALL_TIMEOUT_MS + 3000;
+  while (labor && labor.status === "called" && Date.now() < until){
+    const answered = new Set((labor.events || []).filter(e => e.kind === "choice").map(e => e.slug)).size;
+    if (answered >= heroes) break;
+    await wait(1500);
+    try { const j = await fetch("/api/labor", {cache: "no-store"}).then(r => r.json()); if (j.detail && j.detail.id === labor.id) labor = j.detail; } catch (e) {}
+  }
+  await wait(1200);
+  if (!labor || labor.status !== "called") return;
+  const j = await laborPost("march");
+  if (!j) return;                       // another browser won: it walks the party, the shared world brings us along
+  laborDriving = true;
+  await laborWalk(detailRoute(SPEC, labor.task).out);
+  if (labor && labor.status === "escorting") await laborPost("arrive");
+  laborAtWork();
+  renderLaborBar();
+}
+// walk a route plate by plate, by the doors (a cut where a plate has no door back: barracks to the lift today)
+async function laborWalk(route){
+  if (!route) return;
+  for (let i = 1; i < route.length; i++){
+    const next = route[i];
+    for (let t = 0; mode !== "explore" && t < 120; t++) await wait(250);
+    if (String(cur) !== String(route[i - 1])) return;            // the DM moved them elsewhere: stop walking
+    const z = exitTo(SPEC, cur, next), to = SPEC[next] ? (isNaN(+next) ? next : +next) : next;
+    if (z) await travel(to, z); else await enterNode(to, {from: cur, note: `The escort takes the party round to <em>${esc(SPEC[next].name)}</em>.`});
+    for (let t = 0; mode !== "explore" && t < 120; t++) await wait(250);
+  }
+}
+// 2. at work: the escort stands over them and says the task (the stations themselves are PR 3)
+function laborAtWork(){
+  if (!labor) return;
+  const k = `${labor.id}:work:${cur}`; if (laborPlayed[k]) return; laborPlayed[k] = true;
+  setTimeout(() => escortSays(escortDrow(), LINES.task[labor.task] || LINES.task.water), 900);
+  log(`<b>Work detail:</b> ${esc(TASKS_LABEL[labor.task] || labor.task)}. The escort stands over you while you work.`);
+}
+// 3. home: the way back, then the escort locks them in and goes
+async function laborFinish(){
+  if (!labor || labor.status !== "working") return;
+  const j = await laborPost("return"); if (!j) return;
+  laborDriving = true; renderLaborBar();
+  escortSays(escortDrow(), "Enough. Back.", 3000);
+  await wait(1200);
+  await laborWalk(detailRoute(SPEC, labor.task).back);
+  if (labor && labor.status === "returning" && cur === PEN) await laborPost("done");
+  laborEnds(false);
+}
+function laborEnds(aborted){
+  if (labor) laborPlayed[`${labor.id}:end`] = true;          // once per detail, in the browser that walked them too
+  laborDriving = false;
+  if (cur === PEN){
+    escortSays(escortDrow(), aborted ? "Not today. Sit." : LINES.back, 4200);
+    setTimeout(() => { if (!state.gateOpen) { setDoor(false); sfx("door-close", .8); } escortLeaves(); }, 1800);
+  } else escortLeaves();
+  if (aborted) narrate(null, "The work detail is called off.");
+  setTimeout(() => { labor = null; renderLaborBar(); }, 2500);
+}
+// the plate hooks (enterNode): who comes out with the party, what the server is told, and the escort on every plate
+function laborJoins(){ const comp = companyNow(), ids = laborNpcs().filter(id => npcs.some(n => n.id === id && !n.down && !n.body && !n.offStage) && !comp.includes(id)); comp.push(...ids); return ids; }
+function laborOnEnter(n, from){
+  if (!laborLive()) return;
+  if (n !== PEN || labor.status === "returning") spawnEscort(leader, false);   // back in the pen: they lock the gate behind you
+  if (String(n) === String(detailRoute(SPEC, labor.task).plate) && (labor.status === "escorting" || labor.status === "working")) laborAtWork();
+  renderLaborBar();
+}
+// the bar: what the party is doing, and (for whoever walks them, or the DM) the end of the shift
+const TASKS_LABEL = {water: "fill and haul water barrels", lift: "operate the lift", clean: "clean the barracks", pots: "empty the chamber pots", kitchen: "food preparation and service", dishes: "wash dishes", laundry: "laundry", rocks: "stack rocks", rope: "coil rope", supplies: "organize supplies", "lift-trouble": "Lift Trouble", "quaggoth-hair": "braid quaggoth hair"};
+function renderLaborBar(){
+  const bar = $("laborBar"); if (!bar) return;
+  if (!laborLive() || labor.status === "called"){ bar.hidden = true; return; }
+  const at = String(cur) === String(detailRoute(SPEC, labor.task).plate);
+  bar.hidden = false;
+  $("laborWhat").textContent = labor.status === "working" && at ? `Work detail: ${TASKS_LABEL[labor.task] || labor.task}` : labor.status === "returning" ? "Work detail: back to the pen" : "Work detail: under escort";
+  $("laborEnd").hidden = !(labor.status === "working" && at && (isDm() || laborDriving || !APP));
+}
+
 // ---------- the guards watch the gate ----------
 // Sam, 2026-10-25: "standing near the door when Jorlan isn't nearby will prompt the guards to have a voice bubble saying
 // step back where you have the option to do so or will start getting shot with arrows." Jorlan on his landing by the
@@ -6029,8 +6242,9 @@ let gateWarn = null;                       // {stage: "warned"} while the card i
 function gateCenter(){ const z = doorGate(); if (!z) return null; const p = z.interact.poly; return {x: (p[0][0] + p[2][0]) / 2, y: (p[0][1] + p[2][1]) / 2}; }
 function gateGuards(){ return npcs.filter(n => /^drow-guard/.test(n.id) && !n.relieved && !n.offStage && !n.body && !n.down && !n.hostile && n.alpha > .5 && actors.includes(n)); }
 function tickGateWatch(){
+  // a work detail in progress (laborLive): the escort has the gate, so the sentries do not warn anyone off it
   if (surgeon) return;                                  // the guards are already shooting (The Drow Surgeon)
-  if (cur !== PEN || mode !== "explore" || !leader || state.gateOpen || postsEmpty() || timeStopped){ if (!state.gateOpen && gateWarn && gateWarn.stage === "warned" && mode === "explore") gateWarn = null; return; }
+  if (cur !== PEN || mode !== "explore" || !leader || state.gateOpen || postsEmpty() || timeStopped || laborLive()){ if (!state.gateOpen && gateWarn && gateWarn.stage === "warned" && mode === "explore") gateWarn = null; return; }
   const g = gateCenter(); if (!g) return;
   const sc = node.scale || 1, near = Math.hypot(leader.x - g.x, leader.y - g.y) < GATE_WATCH.near * sc;
   const j = npcs.find(n => n.id === "jorlan" && !n.offStage && !n.body && actors.includes(n));
@@ -6563,6 +6777,10 @@ function walkBeside(n, pc){
 function comeToListener(n){ if (n && n.kind === "npc" && (mode === "explore" || mode === "dialog")) walkBeside(n, listenerFor()); }
 
 if (APP){ setTimeout(pollStage, 2500); setInterval(pollStage, 5000); }
+if (APP){ setTimeout(pollLabor, 4000); setInterval(pollLabor, 6000); }   // Hard Labor: the party's work detail
+$("laborEnd").onclick = () => laborFinish();
+$("dmLaborCall").onclick = async () => { toggleDm(false); if (!labor){ await pollLabor(); } if (!labor){ toast("No work detail today — nobody is seated yet."); return; } if (labor.status !== "scheduled"){ toast(`The detail is already ${labor.status}.`); return; } if (cur !== PEN){ toast("The party must be in the pen to be called out."); return; } const was = labor.status; if (await laborPost("call")) laborFollow(was); else toast("Could not call the detail."); };
+$("dmLaborOff").onclick = async () => { toggleDm(false); if (!labor || !isLive(labor.status) && labor.status !== "scheduled"){ toast("No work detail to call off."); return; } const was = labor.status; if (await laborPost("abort")) laborFollow(was); };
 
 // ---------- the story, heard on the plate ----------
 // Sam, 2026-10-14: "why can I not hear Jorlan speak or see him". The roster above put him at the gate, but what

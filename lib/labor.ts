@@ -164,7 +164,7 @@ export function pickTask(rng: Rng, o: TaskPickOptions = {}): LaborTask {
 // ─── The escort ───────────────────────────────────────────────────────────────────────────────────────────────
 
 export interface Observer {
-  bestiary: "drow" | "quaggoth" | "drow-elite-warrior"
+  bestiary: "drow" | "quaggoth" | "drow-elite-warrior" | "jorlan-duskryn"
   name: string
   /** Live `bestiary` row: drow 12 (SRD 5.1), quaggoth 11, drow elite warrior 14 (OotA). */
   passivePerception: number
@@ -176,16 +176,24 @@ export const OBSERVERS: Readonly<Record<Observer["bestiary"], Omit<Observer, "na
   "drow":               { bestiary: "drow",               passivePerception: 12, perceptionMod: 2 },
   "quaggoth":           { bestiary: "quaggoth",           passivePerception: 11, perceptionMod: 1 },
   "drow-elite-warrior": { bestiary: "drow-elite-warrior", passivePerception: 14, perceptionMod: 4 },
+  // Live row filled 2026-10-26 from the stat block Sam supplied (Drow Elite Warrior block + his scars).
+  "jorlan-duskryn":     { bestiary: "jorlan-duskryn",     passivePerception: 14, perceptionMod: 4 },
 }
 
 /**
  * [BOOK] supervised by quaggoths; drow come along to boast. [HOUSE] one drow + one quaggoth per detail — the
  * Expanded's 2 + 2 per detail would need more drow and quaggoths than the outpost has.
- * Jorlan never escorts here: his bestiary row has no Wisdom or senses, so his Perception would be invented.
+ *
+ * Jorlan takes the drow's place on some details once he is on duty (lib/stage-roster.ts jorlanOnDuty — Sam: he
+ * comes after the 2nd or 3rd rotation). [BOOK] "Shoor delights in giving Jorlan such menial work" (p.19).
+ * [HOUSE] one detail in three. He watches with passive Perception 14 (bestiary row, 2026-10-26).
  */
-export function escortFor(): Observer[] {
+export const JORLAN_ESCORT_CHANCE = 1 / 3
+
+export function escortFor(opts: { jorlanOnDuty?: boolean; rng?: Rng } = {}): Observer[] {
+  const jorlan = !!opts.jorlanOnDuty && !!opts.rng && opts.rng() < JORLAN_ESCORT_CHANCE
   return [
-    { ...OBSERVERS.drow, name: "Drow Guard" },
+    jorlan ? { ...OBSERVERS["jorlan-duskryn"], name: "Jorlan Duskryn" } : { ...OBSERVERS.drow, name: "Drow Guard" },
     { ...OBSERVERS.quaggoth, name: "Quaggoth" },
   ]
 }
@@ -212,6 +220,10 @@ export interface DayInput {
   areasSeen?: readonly number[]       // by the party
   platesReady?: readonly string[]
   bookOnly?: boolean
+  /** Jorlan is on the watch (stage-roster jorlanOnDuty). He can then escort the party's detail. */
+  jorlanOnDuty?: boolean
+  /** The shift running now. A day planned part-way through puts the party's detail in this shift or a later one. */
+  fromShift?: Shift
 }
 
 /**
@@ -219,7 +231,8 @@ export interface DayInput {
  * split across the other two shifts, two or three to a task, friends kept apart. Returns the details in shift order.
  */
 export function planDay(input: DayInput, rng: Rng): PlannedDetail[] {
-  const partyShift = (1 + Math.floor(rng() * 3)) as Shift
+  const first = input.fromShift ?? 1
+  const partyShift = (first + Math.floor(rng() * (4 - first))) as Shift
   const companions = pickCompanions(input.npcs, npcCountFor(input.pcs.length, rng), rng, {
     seenFriends: input.seenFriends, timesWithParty: input.timesWithParty,
   })
@@ -227,7 +240,7 @@ export function planDay(input: DayInput, rng: Rng): PlannedDetail[] {
   const out: PlannedDetail[] = []
   if (input.pcs.length) {
     const t = pickTask(rng, { ...base, areasSeen: input.areasSeen })
-    out.push(detail(input.day, partyShift, t, [...input.pcs, ...companions], true))
+    out.push(detail(input.day, partyShift, t, [...input.pcs, ...companions], true, escortFor({ jorlanOnDuty: input.jorlanOnDuty, rng })))
   }
 
   // Everyone else, dealt across the two remaining shifts, then into crews of 2–3 inside each shift.
@@ -240,17 +253,14 @@ export function planDay(input: DayInput, rng: Rng): PlannedDetail[] {
     for (const crew of crews(byShift[s], input.seenFriends ?? [])) {
       const t = pickTask(rng, { ...base, exclude: used })
       used.push(t.key)
-      out.push(detail(input.day, s, t, crew, false))
+      out.push(detail(input.day, s, t, crew, false, escortFor()))
     }
   }
   return out.sort((a, b) => a.shift - b.shift)
 }
 
-function detail(day: number, shift: Shift, t: LaborTask, crew: CrewMember[], party: boolean): PlannedDetail {
-  return {
-    day, shift, task: t.key, area_no: t.area, crew, party,
-    escort: escortFor().map(({ bestiary, name }) => ({ bestiary, name })),
-  }
+function detail(day: number, shift: Shift, t: LaborTask, crew: CrewMember[], party: boolean, escort: Observer[]): PlannedDetail {
+  return { day, shift, task: t.key, area_no: t.area, crew, party, escort: escort.map(({ bestiary, name }) => ({ bestiary, name })) }
 }
 
 /** Deals prisoners into crews of 2–3 [BOOK], moving a prisoner on when a known friend is already in the crew. */

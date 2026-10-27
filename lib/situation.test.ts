@@ -118,3 +118,26 @@ describe("situationForChat (the chat route's view)", () => {
     expect(situationForChat(null, "Velkynvelve")).toBeNull()
   })
 })
+
+describe("work details (Hard Labor)", () => {
+  const start = () => startingSituation("run-1", "2026-10-26T00:00:00Z")
+  it("labor_out keeps the party captive but out of the ward", () => {
+    const s = mergeSituation(start(), parsePatch({ event: "labor_out", sub_location: "node-10-guard-tower" }), "walk")
+    expect(s.stance).toBe("captive")
+    expect(s.ward_active).toBe(false)
+  })
+  it("labor_back puts the ward back over them", () => {
+    const out = mergeSituation(start(), { event: "labor_out" }, "walk")
+    expect(mergeSituation(out, { event: "labor_back" }, "walk").ward_active).toBe(true)
+  })
+  it("labor_back never re-wards a party that has escaped", () => {
+    const esc = mergeSituation(start(), { event: "step_outside" }, "walk")
+    const s = mergeSituation(esc, { event: "labor_back" }, "walk")
+    expect(s.stance).toBe("escaping")
+    expect(s.ward_active).toBe(false)
+  })
+  it("is something a player's own browser may send", () => {
+    expect(isWalkPatch(parsePatch({ event: "labor_out" }))).toBe(true)
+    expect(isWalkPatch(parsePatch({ event: "labor_back" }))).toBe(true)
+  })
+})

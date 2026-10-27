@@ -124,6 +124,13 @@ describe("who goes [SAM: all heroes + 0–2 NPCs]", () => {
     expect(crews([], [])).toEqual([])
   })
 
+  it("never puts the party's detail in a shift that has already gone", () => {
+    for (let k = 0; k < 200; k++) {
+      expect(planDay({ day: 2, pcs: HEROES, npcs: PRISONERS, fromShift: 2 }, seeded(k)).find((d) => d.party)!.shift).toBeGreaterThanOrEqual(2)
+      expect(planDay({ day: 2, pcs: HEROES, npcs: PRISONERS, fromShift: 3 }, seeded(k)).find((d) => d.party)!.shift).toBe(3)
+    }
+  })
+
   it("is the same day twice from the same seed", () => {
     expect(planDay({ day: 3, pcs: HEROES, npcs: PRISONERS }, seeded(42))).toEqual(planDay({ day: 3, pcs: HEROES, npcs: PRISONERS }, seeded(42)))
   })
@@ -137,8 +144,32 @@ describe("the escort", () => {
     expect(e.find((o) => o.bestiary === "quaggoth")!.passivePerception).toBe(11)
   })
 
-  it("never uses Jorlan — his row has no Wisdom to roll against", () => {
+  it("never uses Jorlan before he is on duty", () => {
+    for (let k = 0; k < 200; k++) expect(escortFor({ jorlanOnDuty: false, rng: seeded(k) }).some((o) => /jorlan/i.test(o.name))).toBe(false)
     expect(escortFor().some((o) => /jorlan/i.test(o.name))).toBe(false)
+  })
+
+  it("puts Jorlan in the drow's place about one detail in three once he is on duty", () => {
+    let n = 0
+    for (let k = 0; k < 900; k++) {
+      const e = escortFor({ jorlanOnDuty: true, rng: seeded(k) })
+      expect(e).toHaveLength(2)
+      expect(e.some((o) => o.bestiary === "quaggoth")).toBe(true)
+      if (e.some((o) => o.name === "Jorlan Duskryn")) {
+        n++
+        expect(e.find((o) => o.name === "Jorlan Duskryn")!.passivePerception).toBe(14)
+        expect(e.some((o) => o.bestiary === "drow")).toBe(false)
+      }
+    }
+    expect(n).toBeGreaterThan(220)
+    expect(n).toBeLessThan(380)
+  })
+
+  it("only escorts the party's detail, never the off-screen NPC crews", () => {
+    for (let k = 0; k < 100; k++) {
+      const plan = planDay({ day: 4, pcs: HEROES, npcs: PRISONERS, jorlanOnDuty: true }, seeded(k))
+      for (const d of plan.filter((x) => !x.party)) expect(d.escort.some((o) => o.name === "Jorlan Duskryn")).toBe(false)
+    }
   })
 })
 

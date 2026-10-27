@@ -7,6 +7,7 @@ Inputs, all in this folder:
                  (/*__KIT__*/ is filled from the BOARD's spell tables -- see build_kit_tables)
                  /*__RAGE__*/ is lib/rage.mjs pasted in whole (see rage_rules): Rage and Wounded Fury have ONE copy
                  /*__MARTIAL__*/ is lib/martial-arts-rules.mjs pasted in whole (see martial_rules): which hit spark a strike plays
+                 /*__LABOR__*/ is lib/labor-walk.mjs pasted in whole (see labor_rules): Hard Labor's routes, steps and lines
   spec.json      per-plate walk floors, obstacles, exits, hazards, NPC spots, painted masks (built by spec.py from spec.py + masks.json); _handoffs = the cavern
                  plates a 'leave' exit hands the party to, _layout = Sam's editor board (not used by the page)
   story.json     who stands where, scripted crossings, chains; bark lines are placeholders
@@ -185,6 +186,13 @@ def martial_rules(root):
     return re.sub(r'^export ', '', src, flags=re.M)
 
 
+def labor_rules(root):
+    """lib/labor-walk.mjs (Hard Labor: where a work detail walks, the escort's lines, the steps), pasted whole minus
+    `export`, like rage_rules. The map, app/api/labor and lib/labor-walk.test.ts read the SAME routes and lines."""
+    src = open(os.path.join(root, 'lib', 'labor-walk.mjs'), encoding='utf-8').read()
+    return re.sub(r'^export ', '', src, flags=re.M)
+
+
 def surgeon_rules(root):
     """lib/drow-surgeon.mjs (The Drow Surgeon, Sam's homebrew for the pen gate), pasted whole minus `export`, like
     rage_rules. The map, app/api/drow-surgeon and lib/drow-surgeon.test.ts read the SAME table, bolt, potion and lines."""
@@ -307,7 +315,7 @@ for k, n in spec.items():
 fx = open(os.path.join(HERE, 'fx.json')).read()
 t = open(os.path.join(HERE, 'template.html')).read()
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
-      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT))
+      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))
