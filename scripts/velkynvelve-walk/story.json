@@ -2069,7 +2069,37 @@
         ],
         "text": "A sack wedged low on the scree. Something inside clinks like little glass vials."
       }
-    ]
+    ],
+    "npcs": [
+      {
+        "id": "drow-lizard-rider",
+        "x": 1480,
+        "y": 560,
+        "face": 7,
+        "hostile": true,
+        "static": true,
+        "barks": [
+          "(a drow sits a giant lizard on the middle ledge; its claws grip the rock as if the cliff were flat ground)"
+        ],
+        "_src": "Sam, 2026-10-26: at least two guards at each labor plate, one of them on the cliff mounted on a lizard. Positions are Claude's by eye. Drow (SRD) on a giant lizard (SRD, climb 30 ft): it can follow anyone down the cliff."
+      },
+      {
+        "id": "drow-guard-female",
+        "x": 1150,
+        "y": 270,
+        "face": 0,
+        "hostile": true,
+        "static": true,
+        "barks": [
+          "(a drow guard leans over the edge, watching the ropes, crossbow loaded)"
+        ],
+        "_src": "Sam, 2026-10-26: at least two guards at each labor plate, one of them on the cliff mounted on a lizard. Positions are Claude's by eye."
+      }
+    ],
+    "watch": {
+      "passive": 12,
+      "label": "The guard on the ledge sees what you are doing."
+    }
   },
   "3k": {
     "objects": [
@@ -2182,6 +2212,36 @@
       "who": "a drow patrol",
       "label": "A drow patrol comes through and finds you resting.",
       "_src": "HOMEBREW (Sam's rule 2026-10-24, Claude's odds): inside the outpost the garrison is twelve drow and five elite warriors (OotA p.13) — one in three an hour that a pair walk in."
+    },
+    "npcs": [
+      {
+        "id": "drow-guard-male",
+        "x": 1050,
+        "y": 560,
+        "face": 0,
+        "hostile": true,
+        "static": true,
+        "barks": [
+          "(a drow guard stands by the stove, picking at a mushroom and watching the room)"
+        ],
+        "_src": "Sam, 2026-10-26: at least two guards at each labor plate, one of them on the cliff mounted on a lizard. Positions are Claude's by eye."
+      },
+      {
+        "id": "drow-guard-female",
+        "x": 720,
+        "y": 830,
+        "face": 6,
+        "hostile": true,
+        "static": true,
+        "barks": [
+          "(a drow guard at the card table turns a card over without looking at it; her eyes are on you)"
+        ],
+        "_src": "Sam, 2026-10-26: at least two guards at each labor plate, one of them on the cliff mounted on a lizard. Positions are Claude's by eye. Off duty at the cards the painting shows."
+      }
+    ],
+    "watch": {
+      "passive": 12,
+      "label": "The guards in the kitchen look up."
     }
   }
 }
