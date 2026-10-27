@@ -7710,6 +7710,62 @@ function escortSays(a, line, ms = 5200){
 function quaggothSays(line){ const q = escortBeast(); if (q) bark(q, heardText(line, "Undercommon"), 4200, {lang: "Undercommon"}); }
 
 // 1. the call: the escort comes over the bridge to the gate and calls the detail out
+// ---------- HARD LABOR: the escort comes into the pen and takes the detail out ----------
+// The door is a gate in a wall (story.json 11 interact.gate.balcony): outside it the landing, inside it the threshold.
+// The escort goes round behind the pillar to the door the way Jorlan does (openGate), steps in, and the drow walks up
+// to each prisoner on the detail; the quaggoth plants itself just inside the bars. While the detail is being called
+// (and until the escort leads it out) the door stands open but is not a way out: anyone who walks up to it on their
+// own is shot, the guards' volleys (tickGateWatch → gateGuardsShoot; the escort shoots when the posts are empty).
+const crewHasHero = a => !!labor && (labor.crew || []).some(c => c.kind === "pc" && (c.id === characterIdOf(a.id) || String(c.name || "").toLowerCase() === String(fname(a)).toLowerCase()));
+const crewActors = () => !labor ? [] : [...party.filter(crewHasHero), ...npcs.filter(n => laborNpcs().includes(n.id) && !n.down && !n.body && !n.offStage)];
+let laborMarching = false;           // the escort is leading the detail out: the door is theirs to walk through
+function escortWalk(a, pts){ return new Promise(res => { a.static = false; stopActivity(a); a.path = pts.map(p => ({...p})); a.onArrive = () => res(); setTimeout(res, 9000); }); }
+async function escortComesIn(){
+  const B = balcony(), d = escortDrow(), q = escortBeast(); if (!B || !d) return;
+  const room = y => 1 / (node.scale * depthAt(y)), fs = B.scale || 1.35;
+  for (const a of [d, q].filter(Boolean)){ a.fixedScale = 0; a.big = fs * room(a.y); }   // the size Jorlan keeps when he steps in
+  const [lx, ly] = B.behind || [545, 702], [tx, ty] = B.threshold, [ix, iy] = B.inside;
+  // in through the door: out of sight behind the pillar, back into view on the threshold, a step inside
+  await Promise.all([d, q].filter(Boolean).map((a, i) => { a.waitUntil = now + i * 900;
+    return escortWalk(a, [{x: lx, y: ly, s: fs * room(ly), out: true}, {x: tx, y: ty, s: .95, jump: true}, {x: ix + (i ? -60 : 30), y: iy + (i ? 10 : 40), s: 1}]); }));
+  if (cur !== PEN || !labor) return;
+  if (q){ q.face = faceOf(centroid.x - q.x, centroid.y - q.y); q.static = true; }
+  // the drow goes to each of them, a word and a shove, and they fall in behind him
+  const crew = crewActors();
+  for (const c of crew){
+    if (cur !== PEN || !labor) return;
+    const near = nearestWalkable(c.x + (c.x < d.x ? 70 : -70), c.y + 10);
+    await escortWalk(d, findPath(d, near).length ? findPath(d, near) : [near]);
+    d.face = faceOf(c.x - d.x, c.y - d.y); c.face = faceOf(d.x - c.x, d.y - c.y);
+    escortSays(d, LINES.grab ? pickLine(LINES.grab, Math.random) : "You. Up.", 1800);
+    await wait(1100);
+  }
+  const back = nearestWalkable(ix + 60, iy + 60);
+  await escortWalk(d, findPath(d, back).length ? findPath(d, back) : [back]);
+  d.face = faceOf(centroid.x - d.x, centroid.y - d.y); d.static = true;
+}
+// the escort leads them out: through the door ahead of the party, then gone over the bridge
+function escortLeadsOut(){
+  const B = balcony(); if (!B) return;
+  const room = y => 1 / (node.scale * depthAt(y)), fs = 1.35, [lx, ly] = B.behind || [545, 702], [tx, ty] = B.threshold;
+  laborEscort().forEach((a, i) => { a.static = false; stopActivity(a); a.waitUntil = now + i * 500;
+    a.path = [{x: tx, y: ty, s: .95, out: true}, {x: lx, y: ly, s: fs * room(ly), jump: true}, {x: -120, y: ly, s: fs * room(ly), out: true}]; });
+}
+// anyone at the open door on their own while a detail is being called out gets shot (not the escort's march)
+function laborGateWatch(){
+  if (String(cur) !== String(PEN) || mode !== "explore" || !laborLive() || laborMarching || surgeon || timeStopped) return false;
+  if (!["called", "escorting"].includes(labor.status)) return false;
+  const g = gateCenter(); if (!g) return true;
+  const sc = node.scale || 1;
+  // the hero this browser walks (each table member's own browser watches their own hero, so no one is shot twice)
+  const runner = leader && !leader.ko && canControl(leader) && Math.hypot(leader.x - g.x, leader.y - g.y) < GATE_WATCH.near * .6 * sc ? leader : null;
+  if (!runner) return true;
+  const guards = gateGuards(), shooters = guards.length ? guards : laborEscort().filter(a => a.id !== "escort-quaggoth");
+  log(`<b>${esc(fname(runner))}</b> goes for the open door on their own. The guards do not ask twice.`);
+  if (APP) handOff(`${fname(runner)} tried to walk out of the open pen gate on their own while a work detail was being called. Per Sam's rule, anyone going through the door unescorted is shot (volleys, no formal combat).`);
+  gateGuardsShoot(shooters);
+  return true;
+}
 // ---------- HARD LABOR: the films (Sam, 2026-10-26: "Lets do cinematics") ----------
 // Four 5-second photoreal films (Runway seedance-2 from stills Sam picked; public/videos/labor/), played full screen
 // over the map at their moment, then the map carries on: The Call when a detail is first called out of the pen, The
@@ -7751,10 +7807,25 @@ async function laborCall(){
   narrate(null, pickLine(LINES.malachar, Math.random));
   const g = gateCenter() || {x: 822, y: 860};
   const drop = spotFor("landing") || spotFor("gate") || {x: g.x - 80, y: g.y - 60};
-  spawnEscort(drop, true);
-  await wait(2600);
+  // over the rope bridge to the landing outside the door (story.json 11 balcony: the bridge runs in from the top
+  // left), at the guards' own size out there, like Jorlan on his post — not out of the pen's own floor
+  const B0 = balcony(), lnd = B0 ? {x: B0.landing[0], y: B0.landing[1]} : drop;
+  spawnEscort(lnd, false).forEach((a, i) => {
+    a.fixedScale = (B0 && B0.scale) || 1.35; a.big = 1; a.static = false;
+    a.x = 60 + i * 40; a.y = 430 + i * 30; a.alpha = 0; a.fadeIn = true; a.slow = true; a.waitUntil = now + i * 700;
+    a.path = [{x: 300, y: 560 + i * 10}, {x: lnd.x - i * 70, y: lnd.y - i * 25}];
+    a.onArrive = () => { a.face = faceOf(gateCenter() ? gateCenter().x - a.x : 1, 1); };
+  });
+  await wait(4200);
   if (cur !== PEN || !labor) return;
+  sfx("lock-picked", .8);
+  await wait(600);
   setDoor(true); sfx("door-open", .8);
+  // Sam, 2026-10-26: "The guards should open the door, come in, and grab/escort three to four people and move them to
+  // the labor camp. Anyone trying to go through the door gets shot." The escort comes IN: the drow through the door to
+  // each prisoner on the detail in turn, the quaggoth just inside the bars, blocking the way out.
+  await escortComesIn();
+  if (cur !== PEN || !labor) return;
   escortSays(escortDrow(), pickLine(LINES.call, Math.random), 6500);
   setTimeout(() => quaggothSays(LINES.quaggoth[0]), 2200);
   const mine = party.filter(p => canControl(p) && !p.ko);
@@ -7801,14 +7872,33 @@ async function laborWaitThenMarch(){
   const j = await laborPost("march");
   if (!j) return;                       // another browser won: it walks the party, the shared world brings us along
   laborDriving = true;
-  await laborWalk(detailRoute(SPEC, labor.task).out);
+  laborMarching = true; escortLeadsOut(); await wait(900);
+  await laborWalk(detailRoute(SPEC, labor.task).out, {cut: true});
+  laborMarching = false;
   if (labor && labor.status === "escorting") await laborPost("arrive");
   laborAtWork();
   renderLaborBar();
 }
 // walk a route plate by plate, by the doors (a cut where a plate has no door back: barracks to the lift today)
-async function laborWalk(route){
+async function laborWalk(route, opts = {}){
   if (!route) return;
+  // Sam, 2026-10-26: "there is not transition". Out of the pen the party walks through the door behind the escort and
+  // across to the next plate, then ONE cut takes them to where the work is (no slide through every room on the way);
+  // coming back is one cut to the pen. `cut: false` keeps the old room-by-room walk.
+  if (opts.cut && route.length > 2){
+    const last = route[route.length - 1], to = isNaN(+last) ? last : +last, name = SPEC[last] && SPEC[last].name;
+    if (String(route[0]) === String(PEN)){
+      for (let t = 0; mode !== "explore" && t < 120; t++) await wait(250);
+      const z = exitTo(SPEC, cur, route[1]); const nx = isNaN(+route[1]) ? route[1] : +route[1];
+      if (z) await travel(nx, z); else await enterNode(nx, {from: cur});
+      for (let t = 0; mode !== "explore" && t < 120; t++) await wait(250);
+    }
+    if (String(cur) === String(last)) return;
+    const prev = route[route.length - 2];
+    await enterNode(to, {from: isNaN(+prev) ? prev : +prev, note: String(last) === String(PEN) ? "The escort marches the detail back through the outpost to the pen." : `The escort marches the detail through the outpost to <em>${esc(name || "the work")}</em>.`});
+    for (let t = 0; mode !== "explore" && t < 120; t++) await wait(250);
+    return;
+  }
   for (let i = 1; i < route.length; i++){
     const next = route[i];
     for (let t = 0; mode !== "explore" && t < 120; t++) await wait(250);
@@ -7841,7 +7931,7 @@ async function laborFinish(opts = {}){
     }
   }
   await wait(1200);
-  await laborWalk(detailRoute(SPEC, labor.task).back);
+  await laborWalk(detailRoute(SPEC, labor.task).back, {cut: true});
   if (labor && labor.status === "returning" && cur === PEN) await laborPost("done");
   laborEnds(false);
 }
@@ -8138,6 +8228,7 @@ function gateGuards(){ return npcs.filter(n => /^drow-guard/.test(n.id) && !n.re
 function tickGateWatch(){
   // a work detail in progress (laborLive): the escort has the gate, so the sentries do not warn anyone off it
   if (surgeon) return;                                  // the guards are already shooting (The Drow Surgeon)
+  if (laborGateWatch()) return;                         // a detail being called: the door is open, and unescorted is shot
   if (cur !== PEN || mode !== "explore" || !leader || state.gateOpen || postsEmpty() || timeStopped || laborLive()){ if (!state.gateOpen && gateWarn && gateWarn.stage === "warned" && mode === "explore") gateWarn = null; return; }
   const g = gateCenter(); if (!g) return;
   const sc = node.scale || 1, near = Math.hypot(leader.x - g.x, leader.y - g.y) < GATE_WATCH.near * sc;
