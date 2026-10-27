@@ -610,12 +610,22 @@ function noteSeats(seated){
   seatsSeen = Array.isArray(seated) ? seated : [];
   // the live level of each seated character (/api/map-stage), so a class feature switches on the day it is earned
   for (const s of seatsSeen) if (typeof s.level === "number") for (const id of seatedSlugs([s])) if (SHEETS[id]) SHEETS[id].level = s.level;
+  // the live row's saves and skills (class save proficiencies included) over the page's snapshot, for the four premades
+  // too: a level-up or a new proficiency reaches the walk without a rebuild. Attacks and magic stay the snapshot's.
+  for (const s of seatsSeen) if (s.sheet) for (const id of seatedSlugs([s])) if (SHEETS[id] && !FORGED_ID[id]){
+    if (s.sheet.saves) SHEETS[id].saves = {...SHEETS[id].saves, ...s.sheet.saves};
+    if (s.sheet.skills) SHEETS[id].skills = {...SHEETS[id].skills, ...s.sheet.skills}; }
   dmRun.clear();
   for (const s of seatsSeen) if (s.dm) for (const id of seatedSlugs([s])) dmRun.add(id);
   renderSeats();
   if (!gearLoaded && seatsSeen.length){ gearLoaded = true; setTimeout(() => loadGear(), 0); }   // what each hero really carries
 }
-function characterIdOf(slug){ if (ALLY_ROW[slug]) return ALLY_ROW[slug]; if (FORGED_ID[slug]) return FORGED_ID[slug]; const nm = String(PLAYS_AS[slug] || "").toLowerCase(); const s = seatsSeen.find(x => String(x.name || "").toLowerCase() === nm); return s ? s.id : null; }
+// A hero's `characters` row: their seat, or — for a canon hero nobody is seated as (the DM walking the party, a
+// rehearsal) — the roster row of the same name. Without the roster the dashboard's dice got no row and rolled as
+// "Someone · No bonus +0" (Sam, 2026-10-27, picking the pen gate as Fifi). Writes go through serverCid, which a
+// rehearsal never gets, so finding the row here only lets the dice and Malachar read the right sheet.
+function characterIdOf(slug){ if (ALLY_ROW[slug]) return ALLY_ROW[slug]; if (FORGED_ID[slug]) return FORGED_ID[slug]; const nm = String(PLAYS_AS[slug] || "").toLowerCase(); if (!nm) return null;
+  const s = seatsSeen.find(x => String(x.name || "").toLowerCase() === nm) || roster.find(x => String(x.name || "").toLowerCase() === nm); return s ? s.id : null; }
 const dmHeaders = () => { const key = (() => { try { return localStorage.getItem("aop_forge_key") || ""; } catch (e) { return ""; } })(); return key ? {"x-dm-key": key} : {}; };
 
 // The server's idea of where the party is (/api/party/situation, lib/situation.ts, table party_situation).
@@ -2605,10 +2615,15 @@ function rollPocketsLocal(which){
 const pocketId = n => n.id === "escort-drow" ? "pocket:drow-guard-male:escort" : /^drow-guard-/.test(n.id) && n.pocketKey ? `pocket:${n.id}:${n.pocketKey}` : `pocket:${n.id}`;   // a named NPC is one pocket wherever they stand
 const lootLocal = {};                                   // preview only: container key -> {slug: taken}
 const lootKeyOf = id => id.startsWith("pocket:") ? id : id.startsWith("body:") ? "body:" + id.split(":")[1] + ":" + id.split(":").slice(2).join(":") : id;
+const localLootKey = row => row.slug || ("row:" + row.rowId);   // a book row by slug, a confiscated (stash) row by its id
 const slugName = s => s.replace(/-/g, " ").replace(/^./, c => c.toUpperCase());
 async function fetchLoot(id){
   if (APP){
-    try { const r = await fetch(`/api/walk-loot?container=${encodeURIComponent(id)}`, {cache: "no-store"}); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j; }
+    try { const r = await fetch(`/api/walk-loot?container=${encodeURIComponent(id)}`, {cache: "no-store"}); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
+      // what this tab took on its own (a rehearsal, or a hero with no seat: takeLoot) stays taken here
+      const mine = lootLocal[lootKeyOf(id)] || {}, penGone = Object.keys(lootLocal).some(k => k.startsWith("pocket:") && lootLocal[k]["slave-pen-key"]);
+      j.rows = (j.rows || []).map(r => ({...r, qty: r.qty - (mine[localLootKey(r)] || 0)})).filter(r => r.qty > 0 && !(r.slug === "slave-pen-key" && penGone));
+      return j; }
     catch (e){ return {rows: [], error: String(e.message || e)}; }
   }
   await ensureCatalog();
@@ -2625,11 +2640,22 @@ async function fetchLoot(id){
   return {rows};
 }
 function lootLabel(row){ return `${row.qty > 1 ? row.qty + " × " : ""}${row.name}${row.owner ? ` (${row.owner}'s)` : ""}${row.note ? ` — ${row.note}` : ""}`; }
+// said once per hero per page: what they pick up here is in this tab's pack and nowhere else
+const localOnlyTold = new Set();
+function noteLocalOnly(a){
+  if (localOnlyTold.has(a.id)) return; localOnlyTold.add(a.id);
+  toast(SANDBOX ? `Rehearsal: ${fname(a)} keeps it in this tab's pack only — the real inventory is not touched.`
+                : `${fname(a)} has no seat in this game, so it is kept in this tab's pack only.`, 4200);
+}
 // one thing into a hero's hands: the server first (it is the truth), then the bag here
 async function takeLoot(a, id, row){
   if (row.missing){ toast(`${row.name} is not in the item catalogue yet, so it cannot be taken.`, 3600); return false; }
-  if (APP){
-    const cid = characterIdOf(a.id); if (!cid){ toast(`${fname(a)} has no seat in this game, so nothing can go into their pack.`, 3600); return false; }
+  // WHERE IT GOES. A seated hero in the real game: the server (their inventory). A REHEARSAL (?sandbox=1) or a hero with
+  // no seat: this tab's pack only. Until 2026-10-27 the second case was refused with a toast, so a successful Sleight of
+  // Hand at the pen guard lifted nothing (Sam: "picked the key from the guard successfully but didn't acquire the key").
+  // A rehearsal never writes the real heroes' inventories, the same rule as the shared world (owLoad).
+  const cid = serverCid(a.id);
+  if (APP && cid){
     try {
       const r = await fetch("/api/walk-loot", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "take", characterId: cid, container: id, slug: row.slug, rowId: row.rowId})});
       const j = await r.json(); if (!r.ok || j.error){ toast(j.error || "It would not come free.", 3600); return false; }
@@ -2637,8 +2663,10 @@ async function takeLoot(a, id, row){
     await loadGear(a.id);   // awaited: the equip offer below needs the pack to hold the weapon before it can ready it
   } else {
     if (row.kind === "preview-stash"){ toast("In the game this is the real list of what the drow took from you.", 3600); return false; }
-    const k = lootKeyOf(id), m = lootLocal[k] || (lootLocal[k] = {}); m[row.slug] = (m[row.slug] || 0) + row.qty;
-    const g = GEAR[a.id] || (GEAR[a.id] = {carried: [], main: null}), cat = (catalog || []).find(i => i.slug === row.slug) || {};
+    if (APP) noteLocalOnly(a);
+    const k = lootKeyOf(id), m = lootLocal[k] || (lootLocal[k] = {}), lk = localLootKey(row); m[lk] = (m[lk] || 0) + row.qty;
+    await ensureCatalog();
+    const g = GEAR[a.id] || (GEAR[a.id] = {carried: [], main: null}), cat = (row.slug ? (catalog || []).find(i => i.slug === row.slug) : catalogItem(row.name)) || {};
     const have = g.carried.find(c => c.name === row.name && !isWeapon(c));
     if (have) have.qty = (have.qty || 1) + row.qty;
     else g.carried.push({name: row.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: cat.pixel_icon_url || null, qty: row.qty, icon: cat.icon_url || null, desc: cat.description || ""});
@@ -3489,16 +3517,20 @@ const wardsHere = () => node.wards || null;
 // spells are SRD 5.2.1 at level 1.
 const SHEETS = {
   // skills: from each character's row (sheet_skill_proficiencies; proficiency +2, expertise doubled).
-  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 0, con: 1, int: 0, wis: 0, cha: 3}, skills: {sleightOfHand: 0, medicine: -1, stealth: 2, athletics: 1, perception: -1}, innateSorcery: 2,
+  // saves: the ability modifier plus proficiency in the class's two saves (sheet_save_proficiencies). Until 2026-10-27
+  // they were the bare modifiers, so Fifi's Dex save was +3 not +5 (Sam: "I don't think I'm getting my class bonuses").
+  // investigation and thievesTools are their own numbers now: heroMod used to fall back to the SAVE for them, so
+  // Fifi picked locks at +3 instead of +5 (Rogue: thieves' tools proficiency). Re-read 2026-10-27 from the rows.
+  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 0, con: 4, int: -1, wis: -1, cha: 5}, skills: {sleightOfHand: 0, medicine: -1, stealth: 2, athletics: 1, perception: -1, investigation: -1, thievesTools: 0}, innateSorcery: 2,
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Ray of Frost", "Shocking Grasp", "Chill Touch"], prepared: ["Fog Cloud"]}},
-  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 3, cha: 1}, skills: {sleightOfHand: 2, medicine: 5, stealth: 2, athletics: 0, perception: 3},
+  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 1, wis: 5, cha: 2}, skills: {sleightOfHand: 2, medicine: 5, stealth: 2, athletics: 0, perception: 3, investigation: 1, thievesTools: 2},
            attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Toll the Dead"], prepared: ["Healing Word", "Guiding Bolt", "Shield of Faith"]}},
-  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 2, con: 1, int: 0, wis: 0, cha: 3}, skills: {sleightOfHand: 2, medicine: 1, stealth: 2, athletics: 1, perception: 3},
+  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 4, con: 2, int: 1, wis: 1, cha: 5}, skills: {sleightOfHand: 2, medicine: 1, stealth: 2, athletics: 1, perception: 3, investigation: 1, thievesTools: 2},
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Vicious Mockery"], prepared: ["Healing Word", "Faerie Fire", "Sleep", "Dissonant Whispers"]}, bardic: {uses: 3, die: 6}, music: true},
-  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, strScore: 8, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1}, skills: {sleightOfHand: 7, medicine: 1, stealth: 7, athletics: 1, perception: 1},
+  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, strScore: 8, saves: {str: -1, dex: 5, con: 0, int: 3, wis: 1, cha: 1}, skills: {sleightOfHand: 7, medicine: 1, stealth: 7, athletics: 1, perception: 1, investigation: 3, thievesTools: 5},
            // No weapon until she has one (Sam, 2026-10-15): her inventory holds none, so she fights with her fists; a weapon
            // she picks up and equips is added in front of this line (refreshAttacks). sneakDie is her Sneak Attack (rogue 1).
            sneakDie: "1d6", attacks: [{name: "Unarmed Strike", hit: 1, dmg: "1", type: "bludgeoning", reach: 5}],
@@ -9020,9 +9052,15 @@ async function loadGear(only){
   if (cbt) renderParty();
   if (bagOpen()) renderBag();
 }
+// piles picked up in this tab only (a rehearsal, or a hero with no seat): the server still has them, and the 4-second
+// poll put them straight back on the floor (Sam, 2026-10-27: "thieves tools now respawning every few seconds")
+const pickedHere = new Set();
+// the character row a hero's gear changes are written to: none in a rehearsal (?sandbox=1), which never touches the
+// real heroes' inventories, and none for a hero with no seat — either way the change lives in this tab (takeLoot)
+const serverCid = id => APP && !SANDBOX ? characterIdOf(id) : null;
 async function loadFloor(){
   if (!APP) return;
-  try { const j = await (await fetch("/api/walk-items", {cache: "no-store"})).json(); if (Array.isArray(j.piles)) floor = j.piles; } catch (e) {}
+  try { const j = await (await fetch("/api/walk-items", {cache: "no-store"})).json(); if (Array.isArray(j.piles)) floor = j.piles.filter(p => !pickedHere.has(p.id)); } catch (e) {}
 }
 if (APP){ setTimeout(loadFloor, 2000); setInterval(loadFloor, 4000); }
 const pilesHere = () => floor.filter(p => String(p.node) === String(cur));
@@ -9056,9 +9094,10 @@ async function pickUp(a, p){
   if (bagOpen()) renderBag();
   popText(a, `+ ${p.name}`, "#e8d9a8"); log(`${fname(a)} picks up the <b>${esc(p.name)}</b>${inFight ? ` (${PICKUP_FT} ft of movement)` : ""}.`);
   bank("ui/item_pickup", .7);
-  if (APP){ const cid = characterIdOf(a.id);
+  if (APP){ const cid = serverCid(a.id);
     if (cid) fetch("/api/walk-items", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "pickup", pileId: p.id, characterId: cid})})
-      .then(r => r.json()).then(j => { if (j.error) toast(j.error); loadGear(a.id); }).catch(() => {}); }
+      .then(r => r.json()).then(j => { if (j.error) toast(j.error); loadGear(a.id); }).catch(() => {});
+    else { pickedHere.add(p.id); noteLocalOnly(a); } }   // the server still has the pile: keep the poll from putting it back
   if (inFight){ openMenu(a); return; }
   if (isWeapon(cat) || isWeapon({name: p.name})) showDialog({title: p.name, body: `${fname(a)} has the ${p.name}. Hold it ready, or keep it in the pack?`, buttons: [
     {label: "Equip it", primary: true, fn: () => equipItem(a, p.name)}, {label: "Keep it in the pack"}]});
@@ -9137,11 +9176,11 @@ function equipTo(a, it, sl){
   if (HAND(sl) && isTooth(it)) toothDrawn(a);
   popText(a, HAND(sl) ? `${it.name} in hand` : it.name, "#e8d9a8", .8);
   log(`${fname(a)} ${was && was.name !== it.name ? `takes off the ${esc(was.name)} and ` : ""}${HAND(sl) ? "readies" : "puts on"} the <b>${esc(it.name)}</b>${HAND(sl) ? "" : ` (${slotLabel(sl).toLowerCase()})`}${paid}.`);
-  if (APP){ const cid = characterIdOf(a.id);
+  if (APP){ const cid = serverCid(a.id);
     const send = () => { const k = it.item_key || ((GEAR[a.id].carried.find(c => c.name === it.name) || {}).item_key); if (!cid || !k) return false;
       fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "equip", character_id: cid, slot: sl, item_key: k})})
         .then(r => r.json()).then(j => { if (j && j.error){ toast(j.error); loadGear(a.id); } }).catch(() => {}); return true; };
-    if (!send()) setTimeout(() => loadGear(a.id).then(send), 1500); }
+    if (!send() && cid) setTimeout(() => loadGear(a.id).then(send), 1500); }   // no row to write (a rehearsal): the doll here is the truth
   if (fight){ renderParty(); toggleBag(false); afterAction(a); } else renderBag();
 }
 // Sam, 2026-10-24: "add a subtle dull click for removing an object and a unequipping sound when something gets dragged
@@ -9156,7 +9195,7 @@ function removeFrom(a, sl, how){
   if (HAND(sl)) refreshAttacks(a.id);
   if (how !== "move") sfx(how === "drag" ? "walk:unequip-drag" : "walk:unequip-click", how === "drag" ? .55 : .4);   // moving between slots is not taking it off
   popText(a, `${was.name} off`, "#e8d9a8", .8); log(`${fname(a)} ${HAND(sl) ? "puts away" : "takes off"} the <b>${esc(was.name)}</b>.`);
-  if (APP){ const cid = characterIdOf(a.id); if (cid) fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"},
+  if (APP){ const cid = serverCid(a.id); if (cid) fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({action: "unequip", character_id: cid, slot: sl})}).then(r => r.json()).then(j => { if (j && j.error){ toast(j.error); loadGear(a.id); } }).catch(() => {}); }
   if (fight){ renderParty(); if (cbt.phase === "menu") openMenu(a); }
   renderBag();
@@ -10402,6 +10441,7 @@ function owRenderSeats(){
         mySlug = mine;
       }
     } catch (e) {}
+    await loadRoster();   // every hero's row, seated or not (characterIdOf)
     try { const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json(); noteSeats(j.seated); noteNpcTongues(j); const seated = seatedSlugs(j.seated); if (seated.length) PARTY = seated; if (typeof j.run === "number") runSeen = j.run; } catch (e) {}
     if (mine && !PARTY.includes(mine)) PARTY = FULL_PARTY.filter(x => PARTY.includes(x) || x === mine);
   }

@@ -13,9 +13,12 @@
 // /api/map-stage now sends this sheet with every seated character, and the map
 // uses it for anyone it does not already know. It is the same shape as the
 // page's SHEETS entries and follows the same rules they were written by:
-//   - saves are the ability modifiers (the page applies no save proficiency yet)
-//   - skills are the five the walk asks for, with the row's proficiencies
-//     (proficient +prof, expertise +2×prof)
+//   - saves are the ability modifier, plus proficiency in the row's
+//     sheet_save_proficiencies (a Rogue's Dex and Int). Until 2026-10-27 they
+//     were the bare modifiers (Sam: "I don't think I'm getting my class bonuses")
+//   - skills are the ones the walk asks for, with the row's proficiencies
+//     (proficient +prof, expertise +2×prof); thievesTools is Dex plus prof when
+//     sheet_proficiencies.tools lists thieves' tools (doubled for expertise)
 //   - the only attack is the Unarmed Strike: the run starts in rags with gear
 //     confiscated, and a weapon the hero picks up is added by the page's own
 //     refreshAttacks from what they carry (/api/equipment)
@@ -38,7 +41,7 @@ export type WalkSheet = {
   speed: number
   strScore: number
   saves: { str: number; dex: number; con: number; int: number; wis: number; cha: number }
-  skills: { sleightOfHand: number; medicine: number; stealth: number; athletics: number; perception: number }
+  skills: { sleightOfHand: number; medicine: number; stealth: number; athletics: number; perception: number; investigation: number; thievesTools: number }
   attacks: WalkAttack[]
   magic: { dc: number; hit: number; mod: number; slots: Record<string, number>; cantrips: string[]; prepared: string[] } | null
 }
@@ -47,7 +50,7 @@ export type WalkSheet = {
 export const WALK_SHEET_COLUMNS =
   "id, name, class, level, hp_max, ac, initiative, speed, proficiency_bonus, " +
   "str_score, str_modifier, dex_modifier, con_modifier, int_modifier, wis_modifier, cha_modifier, " +
-  "sheet_species, sheet_skill_proficiencies, sheet_attacks, sheet_spellcasting"
+  "sheet_species, sheet_skill_proficiencies, sheet_save_proficiencies, sheet_proficiencies, sheet_attacks, sheet_spellcasting"
 
 type Row = Record<string, unknown>
 
@@ -79,6 +82,26 @@ export function skill(row: Row, label: string, mod: number, prof: number): numbe
   const key = Object.keys(profs).find((k) => flat(k) === flat(label))
   const level = key ? String(profs[key]).toLowerCase() : ""
   return mod + (level === "expertise" ? 2 * prof : level === "proficient" ? prof : 0)
+}
+
+const ABILS = ["str", "dex", "con", "int", "wis", "cha"] as const
+type Abil = (typeof ABILS)[number]
+
+/** The saves: modifier, plus proficiency in each save the row lists ("dex", "Dexterity", "DEX" all read the same). */
+export function saves(row: Row, m: Record<Abil, number>, prof: number): WalkSheet["saves"] {
+  const listed = new Set(strList(row.sheet_save_proficiencies).map((x) => x.trim().toLowerCase().slice(0, 3)))
+  const out = {} as WalkSheet["saves"]
+  for (const a of ABILS) out[a] = m[a] + (listed.has(a) ? prof : 0)
+  return out
+}
+
+/** Thieves' tools: Dex, plus proficiency when the row lists the tools (doubled when a skill entry gives it expertise). */
+export function thievesTools(row: Row, dex: number, prof: number): number {
+  const p = (row.sheet_proficiencies && typeof row.sheet_proficiencies === "object" ? row.sheet_proficiencies : {}) as Record<string, unknown>
+  const flat = (x: string) => x.toLowerCase().replace(/[^a-z]/g, "")
+  const has = strList(p.tools).some((t) => flat(t) === "thievestools")
+  const expert = skill(row, "Thieves Tools", 0, prof) === 2 * prof
+  return dex + (expert ? 2 * prof : has ? prof : 0)
 }
 
 /** The Unarmed Strike: the row's own line when it has one, else the 5e rule (prof + STR to hit, 1 + STR damage). */
@@ -130,13 +153,15 @@ export function walkSheetFromRow(row: Row): WalkSheet {
     init: num(row.initiative, m.dex),
     speed: speedOf(row.speed),
     strScore: num(row.str_score, 10),
-    saves: m,
+    saves: saves(row, m, prof),
     skills: {
       sleightOfHand: skill(row, "Sleight of Hand", m.dex, prof),
       medicine: skill(row, "Medicine", m.wis, prof),
       stealth: skill(row, "Stealth", m.dex, prof),
       athletics: skill(row, "Athletics", m.str, prof),
       perception: skill(row, "Perception", m.wis, prof),
+      investigation: skill(row, "Investigation", m.int, prof),
+      thievesTools: thievesTools(row, m.dex, prof),
     },
     attacks: [unarmed(row, m.str, prof)],
     magic: magicOf(row),
