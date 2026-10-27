@@ -1234,6 +1234,7 @@ function draw(){
   }
   while (cloudQ.length) drawPuff(cloudQ.shift());
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
+  drawTolls();
   drawCombatFx(); drawShots(); drawToothGlow();
   ctx.globalAlpha = 1;
 }
@@ -2950,6 +2951,108 @@ function cloudPuffs(){
   }
   return out.sort((a, b) => a.y - b.y);
 }
+// ---------- Toll the Dead: the lantern (Sam, 2026-10-26) ----------
+// Sam: "this is what we will use for toll of the dead ... Make sure that the pixel character uses the lantern (sized
+// appropriately) and the effect renders from the victim with streams going to the lantern." The caster raises a pixel
+// lantern (vfx/pxTollLantern: the pixel body with Sam's painted skeleton behind the glass and his painted sphere for
+// the toll). The bell tolls; on a failed save the victim's soul is torn out: Sam's painted rings (pack images 4, 5,
+// then 8 as it breaks up) wreathe the victim, and one simulated stream of emerald gas, three souls riding in it, runs
+// from the victim's chest into the lantern glass and is drunk by it, the lantern flashing as each soul arrives.
+// On a save the bell still tolls (SRD: "the sound of a dolorous bell fills the air around it") and nothing is taken.
+// Art: scripts/vfx/toll-the-dead/ (sim_toll_unified.py for the stream, build_lantern_painted.py for the lantern).
+// The stream sheets are one fixed shot -- lantern glass LEFT, chest RIGHT -- stretched along the line between the two
+// real points (never across it: its thickness follows the victim's size) and mirrored when the victim is to the left.
+const TOLL = {fps: 24, frames: 108, per: 36, cols: 4, cw: 1020, ch: 340, glass: [157, 175], chest: [837, 181], bodyH: 122,
+  toll: 16, arrive: [62, 72, 82], dimFrom: 96, alpha: 1,
+  // the lantern sheet's frame for each of the 108 stream frames (dormant, wakes, tolls, drinks, flashes, dims)
+  seq: [0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13,14,14,15,15,16,16,17,17,12,12,13,13,14,14,15,15,16,16,17,17,12,12,13,13,14,14,15,15,16,16,17,17,12,12,18,19,20,14,15,15,16,16,17,17,18,19,20,13,14,14,15,15,16,16,18,19,20,12,13,13,14,14,15,15,16,16,17,17,21,21,22,22,23,23,24,24,25,25,26,26],
+  lcell: 360, ring: [180, 102.5], lglass: [180, 190], lbody: 182.5};
+let tolls = [];
+const tollArt = () => Promise.all(["pxTollLantern", "tollStream0", "tollStream1", "tollStream2", "tollRings"].map(vfxLoad));
+function tollCast(caster, tgt, sp, done){
+  const m = caster.c.sheet.magic, T = {caster, tgt, t0: now, ok: null, art: null, end: 0};
+  tollArt().then(a => { T.art = a; });
+  tolls.push(T); caster.tollLantern = true;
+  playOnce(caster, SPR[caster.id].img.cast ? "cast" : "attack", () => { setAnim(caster, "idle"); });
+  const at = f => (f / TOLL.fps) * 1000;
+  setTimeout(() => bank("walk:toll-bell", .95), 600);
+  setTimeout(() => {                                                       // the save, as the bell tolls
+    const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), r = d20(rageAdvantage(tgt.c.rage, "wis")), mod = tgt.c.sheet.saves.wis || 0, s = r + mod, ok = s >= dc;
+    T.ok = ok;
+    const line = `${fname(caster)} Toll the Dead: ${fname(tgt)} WIS ${r} ${mod >= 0 ? "+" : "−"} ${Math.abs(mod)} = ${s} vs DC ${dc}, ${ok ? "saves" : "fails"}`;
+    if (ok){
+      miss(tgt); setTimeout(() => bank("walk:toll-tail", .7), 500);
+      log(line + "."); narrate(caster, `A dolorous bell tolls over ${fname(tgt)}, who shakes it off.`);
+      T.end = now + 900; setTimeout(() => tollDone(T, done), 1300); return;
+    }
+    const hurt = tgt.c.hp < tgt.c.hpMax, d = roll(hurt ? sp.dmgHurt : sp.dmg).total;
+    setTimeout(() => bank("walk:toll-extract", .8), at(24) - at(TOLL.toll));
+    TOLL.arrive.forEach((f, i) => setTimeout(() => {
+      bank("walk:toll-absorb", .75);
+      if (i === 0){ if (!tgt.down) damage(tgt, d, "necrotic", false, caster, true); else miss(tgt);
+        log(`${line}, ${d} necrotic${hurt ? " (already wounded: 1d12)" : ""}.`); renderParty(); }
+    }, at(f) - at(TOLL.toll)));
+    setTimeout(() => bank("walk:toll-tail", .85), at(94) - at(TOLL.toll));
+    narrate(caster, `The bell tolls, and ${fname(tgt)}'s soul is torn out in ribbons of green smoke and drunk by ${fname(caster)}'s lantern.`);
+    setTimeout(() => tollDone(T, done), at(TOLL.frames) - at(TOLL.toll) + 200);
+  }, at(TOLL.toll));
+}
+function tollDone(T, done){
+  T.end = T.end || now; T.caster.tollLantern = false;
+  combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(T.caster, done);
+}
+// where the lantern hangs: always BELOW the hand (Sam, 2026-10-26: "the lantern should always be held below the hand"),
+// its ring in the casting hand on the side toward the victim (handPoint's height), the lantern hanging straight down
+// from it and swaying a little on the ring. 0.3 of the caster's height.
+function tollLanternAt(T){
+  const a = T.caster, bh = SPR[a.id].json.pivot[1] * actorScale(a), side = T.tgt.x >= a.x ? 1 : -1;
+  const e = Math.min(1, (now - T.t0) / 300);
+  const s = .3 * bh / TOLL.lbody, x = a.x + side * bh * .14 + (a.kx || 0), y = a.y - bh * .58 + (a.ky || 0);
+  return {x, y, s, sway: Math.sin((now - T.t0) / 380) * .05 * e, glass: {x, y: y + (TOLL.lglass[1] - TOLL.ring[1]) * s}};
+}
+function drawTolls(){
+  tolls = tolls.filter(T => !(T.end && now - T.end > 600));
+  for (const T of tolls){
+    if (!T.art || !T.art[0]) continue;
+    const [lan, s0, s1, s2, rings] = T.art, el = (now - T.t0) / 1000, f = Math.floor(el * TOLL.fps);
+    const out = T.end ? Math.max(0, 1 - (now - T.end) / 600) : 1, L = tollLanternAt(T);
+    // the stream and the rings: only when the soul is being taken
+    if (T.ok === false && f < TOLL.frames){
+      const sheet = [s0, s1, s2][Math.floor(f / TOLL.per)], k = f % TOLL.per, C = bodyPoint(T.tgt);
+      if (sheet){
+        const tb = SPR[T.tgt.id].json.pivot[1] * actorScale(T.tgt), cy = T.tgt.y - tb * .55;
+        const dx = C.x - L.glass.x, dy = cy - L.glass.y, dist = Math.hypot(dx, dy) || 1;
+        const sx0 = TOLL.chest[0] - TOLL.glass[0], sy0 = TOLL.chest[1] - TOLL.glass[1], span = Math.hypot(sx0, sy0);
+        ctx.save(); ctx.globalAlpha = TOLL.alpha * out; ctx.translate(L.glass.x, L.glass.y);
+        if (dx < 0) ctx.scale(-1, 1);
+        ctx.rotate(Math.atan2(dy, Math.abs(dx))); ctx.scale(dist / span, tb / TOLL.bodyH); ctx.rotate(-Math.atan2(sy0, sx0));
+        ctx.drawImage(sheet.img, (k % TOLL.cols) * TOLL.cw, Math.floor(k / TOLL.cols) * TOLL.ch, TOLL.cw, TOLL.ch, -TOLL.glass[0], -TOLL.glass[1], TOLL.cw, TOLL.ch);
+        ctx.restore();
+        // Sam's rings on the victim: 4 and 5 breathing into each other while it is drained, then 8 as it breaks up
+        if (rings){
+          const env = Math.max(0, Math.min(1, (el - .85) / .4, (TOLL.frames / TOLL.fps - el) / .35)), end = Math.max(0, Math.min(1, (el - 3.55) / .35));
+          if (env > 0){
+            const ph = .5 + .5 * Math.sin(el * Math.PI * 2 / 1.6), sz = tb * 1.87 * (1 + .035 * Math.sin(el * 5.1) + .06 * end), rc = rings.img.width / 3;
+            const x0 = T.tgt.x - sz / 2, y0 = cy - sz * .52;
+            for (const [i, a] of [[0, (1 - end) * (1 - ph)], [1, (1 - end) * ph], [2, end]]){
+              if (a <= .01) continue; ctx.save(); ctx.globalAlpha = TOLL.alpha * env * a * .95 * out;
+              ctx.drawImage(rings.img, i * rc, 0, rc, rings.img.height, x0, y0, sz, sz); ctx.restore();
+            }
+          }
+        }
+      }
+    }
+    // the lantern: dormant -> wakes -> tolls -> (drinks and flashes as each soul arrives) -> dims
+    let li;
+    if (T.ok !== true) li = TOLL.seq[Math.min(f, TOLL.frames - 1)];
+    else li = f < 24 ? TOLL.seq[f] : 21 + Math.min(5, Math.floor((f - 24) / 2));
+    const lc = TOLL.lcell, sz = lc * L.s;
+    ctx.save(); ctx.globalAlpha = Math.min(1, el / .2) * out; ctx.translate(L.x, L.y); ctx.rotate(L.sway);
+    ctx.drawImage(lan.img, (li % 9) * lc, Math.floor(li / 9) * lc, lc, lc, -TOLL.ring[0] * L.s, -TOLL.ring[1] * L.s, sz, sz);
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
 // ---------- the poison clouds' rules on the map (lib/poison-clouds.mjs) ----------
 /*__POISON_CLOUDS__*/
 let poisonZones = [], dmPlace = null;
@@ -4620,6 +4723,7 @@ function castSpell(caster, tgt, name, done, darts){
     });
     return;
   }
+  if (name === "Toll the Dead" && tgt.id){ tollCast(caster, tgt, sp, done); return; }   // the lantern (Sam, 2026-10-26)
   if (!quiet) bank(`magic/${family}_windup`, .55); else startLullaby();
   if (sp.conc) startConc(caster, name);
   const ring = quiet || bardic ? Promise.resolve(null) : spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
@@ -9119,7 +9223,7 @@ const coverNote = cv => cv.ac ? ` (${cv.label}: ${cv.why})` : "";
 const HELD_ANIMS = new Set(["idle", "walk", "attack", "hurt", "dodge", "jump"]);
 const ROW_DIR = [[0, 1], [.71, .71], [1, 0], [.71, -.71], [0, -1], [-.71, -.71], [-1, 0], [-.71, .71]];   // sheet row -> facing (S, SE, E, NE, N, NW, W, SW)
 function heldWeapon(a){
-  if (a.kind !== "pc" || !HELD_ANIMS.has(a.anim || "idle")) return null;
+  if (a.kind !== "pc" || !HELD_ANIMS.has(a.anim || "idle") || a.tollLantern) return null;
   const g = GEAR[a.id], it = g && g.main && g.carried.find(c => c.name === g.main);
   const url = it && (it.pixel || (catalogItem(it.name) || {}).pixel_icon_url); if (!url) return null;
   const img = itemImg(url); if (!img) return null;
