@@ -1893,6 +1893,7 @@ async function enterNode(n, opts = {}){
   nextAmbient = now + 6000 + Math.random() * 6000;
   surgeonOnEnter(n);
   laborOnEnter(n, from);
+  crewsOnEnter();                                         // prisoners out on another work crew are not in the pen
   owEntered();
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -3443,6 +3444,7 @@ function taunt(f, pool, at){
   const line = ls[Math.floor(Math.random() * ls.length)];
   const lang = tauntTongue(f, at), heard = heardText(line, lang);
   bark(f, heard, 2600, {talk: true, lang});
+  interpret(f, line, lang);
   const b = VOICE_BANK[f.id], i = b && b.taunts ? b.taunts.indexOf(line) : -1;
   // the banked files are the real words, so they play only when this seat hears the real words
   if (APP) speak(f.id, heard); else if (i >= 0 && heard === line) playBankFile(`audio/voice/${f.id}-t${i + 1}.mp3`, profileFor(f.id));
@@ -7251,7 +7253,7 @@ async function pollStage(){
       const {off, dead, cause} = storyOff(n, present, gone);
       if (off && DROW_POST(n) && postsEmpty() && !dead) continue;            // the watch is left: followWatch below walks them off
       if (off){ n.stroll = null; if (!n.offStage) castLeaves(n, dead, false, cause); }   // gone in the story: not just out for a walk
-      else if (n.offStage && !n.stroll && !n.relief) castReturns(n);       // a guard out for a walk comes back on their own clock
+      else if (n.offStage && !n.stroll && !n.relief && !n.onDetail) castReturns(n);   // out on a work crew: back at the shift's end       // a guard out for a walk comes back on their own clock
       // a position is acted on when the ROSTER changes it, not every poll: a speaker walked over to the one they are
       // talking to (comeToListener) is not dragged back to the spot the roster last named five seconds later
       if (!n.offStage){ if (here && here.where && here.where !== n.rosterWhere){ n.rosterWhere = here.where; castMovesTo(n, here.where); } castAsks(n, here ? here.wantsWord : null); }
@@ -7902,10 +7904,65 @@ async function pollLabor(){
   let j; try { j = await fetch("/api/labor", {cache: "no-store"}).then(r => r.json()); } catch (e) { return; }
   const was = labor && labor.status; labor = j.detail || null;
   if (j.overdue) laborOverdue();
+  followCrews(j.crewsNow, j.day, j.shift);
   // the shift has come round: anyone at the table may call it (the server takes the first and refuses the rest)
   if (labor && j.due && labor.status === "scheduled" && cur === PEN && mode === "explore" && !surgeon && !state.gateOpen) await laborPost("call");
   laborFollow(was);
   renderLaborBar();
+}
+// ---------- THE OTHER PRISONERS' WORK CREWS ----------
+// Sam, 2026-10-26: "yes" — the crews the server plans for the prisoners NOT on the party's detail (lib/labor.ts
+// planDay: the other two shifts, 2–3 to a task) now happen on the map. When their shift starts, an escort crosses the
+// bridge, comes in, calls them out and marches them through the door; when the shift ends they are walked back in.
+// The rota and the game clock decide it (/api/labor crewsNow), so every seat sees the same prisoners gone. A page that
+// loads mid-shift simply finds them away. While they are out they are not in the pen: an escape now takes only who is there.
+let crewsAway = null, crewMoving = false;
+const penNpc = id => npcs.find(n => n.id === id && PEN_NPCS.some(d => d.id === id) && !n.company);
+function followCrews(list, day, shift){
+  if (!Array.isArray(list) || day == null || shift == null) return;
+  const key = `${day}:${shift}`; if (crewsAway && crewsAway.key === key) return;
+  const prev = crewsAway, ids = new Set(list.flatMap(c => c.npcs || []));
+  crewsAway = {key, ids, list};
+  if (cur !== PEN) return;
+  const back = prev ? [...prev.ids].filter(id => !ids.has(id)).map(penNpc).filter(n => n && n.onDetail) : [];
+  back.forEach(n => { n.onDetail = false; castReturns(n, true); });
+  if (back.length) narrate(null, `The other work crew is marched back into the pen: ${back.map(n => SHORT[n.id] || SPR[n.id].json.name).join(", ")}.`);
+  const going = [...ids].map(penNpc).filter(n => n && !n.offStage && !n.down && !n.body && !companyNow().includes(n.id));
+  if (!going.length) return;
+  if (!prev || mode !== "explore" || laborLive() || state.gateOpen || surgeon){ going.forEach(n => { n.onDetail = true; hideOffStage(n); }); return; }
+  crewTakenOut(going, list);
+}
+function crewsOnEnter(){ if (cur !== PEN || !crewsAway) return; for (const id of crewsAway.ids){ const n = penNpc(id); if (n){ n.onDetail = true; hideOffStage(n); } } }
+async function crewTakenOut(going, list){
+  if (crewMoving) return; crewMoving = true;
+  const live = () => cur === PEN && !laborLive();
+  try {
+    laborSprites();
+    const plan = (list.find(c => (c.escort || []).length) || {}).escort || [{bestiary: "drow"}, {bestiary: "quaggoth"}];
+    const ids = plan.map(e => ESCORT_ID[e.bestiary]).filter(id => id && SPR[id]);
+    const B = balcony();
+    if (!B || !ids.length){ going.forEach(n => { n.onDetail = true; castLeaves(n, false, true); }); return; }
+    const lnd = {x: B.landing[0], y: B.landing[1]};
+    const team = ids.map((id, i) => {
+      const a = mkActor(id, 60 + i * 40, 430 + i * 30, "npc", {escort: true, relieved: true, talk: false, barks: [], static: false});
+      a.fixedScale = B.scale || 1.35; a.big = 1; a.alpha = 0; a.fadeIn = true; a.slow = true; a.waitUntil = now + i * 700;
+      a.path = [{x: 300, y: 560 + i * 10}, {x: lnd.x - i * 70, y: lnd.y - i * 25}];
+      npcs.push(a); actors.push(a); return a;
+    });
+    narrate(null, "Boots on the bridge: an escort comes for the next work crew.");
+    await wait(4200); if (!live()) return;
+    sfx("lock-picked", .7); await wait(600); setDoor(true); sfx("door-open", .75);
+    await escortComesIn(going, live); if (!live()) return;
+    escortSays(escortDrow(), pickLine(LINES.call, Math.random), 5200);
+    await wait(2200);
+    const names = going.map(n => SHORT[n.id] || SPR[n.id].json.name);
+    narrate(null, `${names.join(names.length > 2 ? ", " : " and ")} ${going.length > 1 ? "are" : "is"} marched out to work.`);
+    going.forEach((n, i) => setTimeout(() => { n.onDetail = true; castLeaves(n, false, true); }, i * 700));
+    escortLeadsOut();
+    await wait(7000);
+    for (const a of team){ npcs = npcs.filter(x => x !== a); actors = actors.filter(x => x !== a); }
+    if (cur === PEN && !state.gateOpen) setDoor(false);
+  } finally { crewMoving = false; }
 }
 function laborFollow(was){
   if (!labor) return;
@@ -7934,10 +7991,17 @@ function escortLeaves(){
 }
 const escortDrow = () => laborEscort().find(a => a.id !== "escort-quaggoth") || null;
 const escortBeast = () => laborEscort().find(a => a.id === "escort-quaggoth") || null;
+// Sam, 2026-10-26: "Ilvara and Jorlan can speak the common" (their rows now list Common). An escort who speaks it
+// (Jorlan) calls the detail out in Common; a drow guard, who does not, in Elvish.
+function escortTongue(a){
+  const t = tonguesOf(a), sp = t && LANG && LANG.parseLanguages ? (LANG.parseLanguages(t).speaks || []) : [];
+  return sp.includes("Common") ? "Common" : "Elvish";
+}
 function escortSays(a, line, ms = 5200){
   if (!a) return;
-  const said = heardText(line, "Elvish");
-  bark(a, said, ms, {talk: true, lang: "Elvish"});
+  const lang = escortTongue(a), said = heardText(line, lang);
+  bark(a, said, ms, {talk: true, lang});
+  interpret(a, line, lang);
   // the voice says what the bubble says: a hero without Elvish hears gibberish, not the English underneath
   if (voicesOn !== false) speak(escortVoice(a.id), said);
 }
@@ -7945,6 +8009,7 @@ function quaggothSays(line){
   const q = escortBeast(); if (!q) return;
   const heard = heardText(line, "Undercommon");
   bark(q, heard, 4200, {lang: "Undercommon"});
+  interpret(q, line, "Undercommon");
   if (voicesOn !== false) quaggothVoice(line, heard === line).catch(e => console.warn("quaggoth voice:", e));
 }
 // Its voice (Sam, 2026-10-26: "Q1 and 2"): one pre-rendered clip per line, the two takes alternating
@@ -7975,7 +8040,7 @@ const crewHasHero = a => !!labor && (labor.crew || []).some(c => c.kind === "pc"
 const crewActors = () => !labor ? [] : [...party.filter(crewHasHero), ...npcs.filter(n => laborNpcs().includes(n.id) && !n.down && !n.body && !n.offStage)];
 let laborMarching = false;           // the escort is leading the detail out: the door is theirs to walk through
 function escortWalk(a, pts){ return new Promise(res => { a.static = false; stopActivity(a); a.path = pts.map(p => ({...p})); a.onArrive = () => res(); setTimeout(res, 9000); }); }
-async function escortComesIn(){
+async function escortComesIn(crewList, live = () => !!labor){
   const B = balcony(), d = escortDrow(), q = escortBeast(); if (!B || !d) return;
   const room = y => 1 / (node.scale * depthAt(y)), fs = B.scale || 1.35;
   for (const a of [d, q].filter(Boolean)){ a.fixedScale = 0; a.big = fs * room(a.y); }   // the size Jorlan keeps when he steps in
@@ -7983,12 +8048,12 @@ async function escortComesIn(){
   // in through the door: out of sight behind the pillar, back into view on the threshold, a step inside
   await Promise.all([d, q].filter(Boolean).map((a, i) => { a.waitUntil = now + i * 900;
     return escortWalk(a, [{x: lx, y: ly, s: fs * room(ly), out: true}, {x: tx, y: ty, s: .95, jump: true}, {x: ix + (i ? -60 : 30), y: iy + (i ? 10 : 40), s: 1}]); }));
-  if (cur !== PEN || !labor) return;
+  if (cur !== PEN || !live()) return;
   if (q){ q.face = faceOf(centroid.x - q.x, centroid.y - q.y); q.static = true; }
   // the drow goes to each of them, a word and a shove, and they fall in behind him
-  const crew = crewActors();
+  const crew = crewList || crewActors();
   for (const c of crew){
-    if (cur !== PEN || !labor) return;
+    if (cur !== PEN || !live()) return;
     const near = nearestWalkable(c.x + (c.x < d.x ? 70 : -70), c.y + 10);
     await escortWalk(d, findPath(d, near).length ? findPath(d, near) : [near]);
     d.face = faceOf(c.x - d.x, c.y - d.y); c.face = faceOf(d.x - c.x, d.y - c.y);
@@ -9425,6 +9490,46 @@ function tongueOfFoe(f){
   const key = Object.keys(NPC_TONGUES).find(k => k.toLowerCase() === full.toLowerCase()) || Object.keys(NPC_TONGUES).find(k => k.toLowerCase() === base.toLowerCase());
   return key ? NPC_TONGUES[key] : null;
 }
+// INTERPRETERS (Sam, 2026-10-26: "make sure that if someone near the drow speaks underdark or similar then they help
+// with a bubble"). When this seat hears a line as gibberish, the nearest fellow prisoner or hero who understands that
+// tongue AND speaks one this seat knows passes it on in a small bubble, a beat after the line: Ront or Jimjar turn the
+// quaggoth's Undercommon into Common; anyone with Elvish turns the drow's. Each seat sees only the help it needs. The
+// captors never translate for you, and the interpreter is not voiced (a bubble, not more noise).
+function tonguesOf(a){
+  if (!a) return null;
+  if (a.kind === "pc") return languagesOfHero(a);
+  const full = String((SPR[a.id] && SPR[a.id].json.name) || SHORT[a.id] || "").replace(/\s*\(.*\)\s*$/, "").toLowerCase(); if (!full) return null;
+  const keys = Object.keys(NPC_TONGUES);
+  const k = keys.find(k => k.toLowerCase() === full) || keys.find(k => { const kl = k.toLowerCase(); return kl.startsWith(full + " ") || kl.endsWith(" " + full) || full.startsWith(kl + " "); });
+  return k ? NPC_TONGUES[k] : null;
+}
+const CAPTORS = /^drow|^escort-|^jorlan$|^ilvara$|^shoor$|^asha$|^liana$|^quaggoth/;
+const interpretedAt = {};
+function interpret(speaker, line, lang){
+  if (!LANG || !LANG.understands || !lang || !line || !speaker || !actors.includes(speaker)) return;
+  const ears = myEars(); if (!ears || LANG.understands(ears, lang)) return;
+  const key = speaker.id + "|" + lang; if (interpretedAt[key] && now - interpretedAt[key] < 2500) return; interpretedAt[key] = now;
+  const R = 420 * (node.scale || 1), mine = party.filter(p => canControl(p) && actors.includes(p));
+  const dist = a => Math.min(Math.hypot(a.x - speaker.x, a.y - speaker.y), ...mine.map(h => Math.hypot(a.x - h.x, a.y - h.y)));
+  let best = null;
+  for (const a of [...npcs, ...party]){
+    if (a === speaker || CAPTORS.test(a.id) || a.hostile || a.offStage || a.body || a.down || a.ko || !actors.includes(a) || (a.alpha ?? 1) < .5 || !SPR[a.id]) continue;
+    const d = dist(a); if (d > R) continue;
+    const t = tonguesOf(a); if (!t) continue;
+    if (!LANG.understands(LANG.listenerFromCharacter({languages: t}), lang)) continue;
+    const speaks = (LANG.parseLanguages(t).speaks || []);
+    const out = speaks.find(l => l === "Common" && LANG.understands(ears, l)) || speaks.find(l => LANG.understands(ears, l));
+    if (!out) continue;
+    if (!best || d < best.d) best = {a, out, d};
+  }
+  if (!best) return;
+  const who = fname(speaker), said = `${who}: “${line}”`;
+  setTimeout(() => {
+    if (!actors.includes(best.a)) return;
+    bark(best.a, said, Math.max(3600, lineMs(said)), {talk: true});
+    log(`<span style="color:#9ad0ff">${esc(fname(best.a))} passes on what ${esc(who)} said in ${esc(lang)}: “${esc(line)}”</span>`);
+  }, 1500);
+}
 // the hero's own tongues, from their seat; a hero nobody is playing has none on record (the foe then uses its own)
 function languagesOfHero(h){ const id = characterIdOf(h.id), s = id && seatsSeen.find(x => x.id === id); return s ? s.languages : null; }
 function heardText(text, lang){
@@ -9456,7 +9561,8 @@ function hearLine(row){
   const id = (a && a.id) || castIdFor(name);
   talkQueue = talkQueue.then(async () => {
     const here = actorForSpeaker(name, type);
-    if (here){ comeToListener(here); bark(here, text, lineMs(text), {talk: true}); } else log(`<b>${esc(name)}</b>${id ? " (not here)" : ""}: ${esc(text)}`);
+    if (here){ comeToListener(here); bark(here, text, lineMs(text), {talk: true});
+      for (const seg of row.speech_segments || []) if (seg && seg.lang && seg.line) interpret(here, seg.line, seg.lang); } else log(`<b>${esc(name)}</b>${id ? " (not here)" : ""}: ${esc(text)}`);
     if (!voicesOn || !id || !hearsNpcVoice(row)) return wait(here ? Math.min(lineMs(text), 2500) : 300);
     try { await speakCanon(id, text, name); } catch (e) { console.warn("voice unavailable:", name, e); return; }
     const t0 = performance.now(); while (speaking && performance.now() - t0 < 30000) await wait(150);   // one voice at a time
