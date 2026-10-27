@@ -1088,6 +1088,15 @@ function frameOf(a){
   if (a.down && a.withered) return now < a.withered.swap ? {img: a.withered.img, f: a.withered.f, pose: "withering", dead: true} : {img: sp.img.idle, f: 0, pose: "cadaver", dead: true};
   if (a.down && !hero(a) && pickCadaver(a)) return {img: sp.img.idle, f: 0, pose: "cadaver", dead: true};
   if (a.down && !hero(a) && !(sp.json.animations.dead && sp.img.dead)) return {img: sp.img.idle, f: 0, pose: /spider|rat/.test(a.id) ? "belly" : /ooze/.test(a.id) ? "puddle" : "side", dead: true};
+  // A FALLEN HERO STAYS DOWN, whatever else touches their animation (Sam, 2026-10-27: "why are characters that have
+  // fallen standing up when it is their turn?"). The turn, a follow step or a camera move could set idle or walk on a
+  // hero at 0 HP, and the sprite stood up. Down means lying: the last frame of the death sheet once it has played, or
+  // lying on their side for a hero baked without one. Only getting back up (a heal, a natural 20) clears `down`.
+  if (a.down && hero(a) && a.anim !== "dead"){
+    const A = sp.json.animations;
+    if (A.dead && sp.img.dead) return {img: sp.img.dead, f: A.dead.frames - 1};   // drawn exactly as the death sheet ends
+    return {img: sp.img.idle, f: 0, pose: "side", dead: true};
+  }
   if (asleepNow(a)){
     const A = sp.json.animations;
     if (A.sleep && sp.img.sleep){ const an = A.sleep; return {img: sp.img.sleep, f: Math.floor((now - (a.sleepT0 || 0)) / 1000 * an.fps) % an.frames, pose: "sleep"}; }
@@ -1826,7 +1835,9 @@ function setLeader(a){
   leader = a; trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: a.x, y: a.y}]);
   renderParty(); log(`Now moving <em>${esc(SHORT[a.id] || SPR[a.id].json.name)}</em>. ${followOn ? "The others fall in behind." : "The others wait where they stand."}`);
 }
-const followers = () => party.filter(p => p !== leader && !p.ko);
+// the fallen do not follow: a hero at 0 HP (dying, stable or dead) stays where they fell until someone gets them up
+// (Sam, 2026-10-27: "why are characters that have fallen standing up" — Lynkes, dead, was walking after the leader)
+const followers = () => party.filter(p => p !== leader && !p.ko && !p.down);
 function followOrder(){ return followers().sort((a, b) => Math.hypot(a.x - leader.x, a.y - leader.y) - Math.hypot(b.x - leader.x, b.y - leader.y)); }
 
 // ---------- travel ----------
