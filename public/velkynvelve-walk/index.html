@@ -2104,10 +2104,12 @@ function fallsDialog(z){
   }
   showDialog({title: "The falls", body: "The bridge passes right over the drop. Spray, noise, and the dark below — no telling what is down there.", buttons: [
     {label: `${fname(leader)} looks over the edge`, primary: true, fn: () => {
-      showDialog({title: "Looking over the edge", body: `Wisdom (Perception), DC ${FALLS_DC} (house rule — the book sets none): roll it on the dashboard. What did it come to?`, buttons: [
-        {label: `${FALLS_DC} or more`, primary: true, fn: () => { state.fallsNoticed = `${fname(leader)} made out the webs and the pool below`; log(`${fname(leader)} leans out over the falls. ${z.secret || ""}`); saveWalk(); setTimeout(() => fallsDialog(z), 300); }},
-        {label: `Under ${FALLS_DC}`, fn: () => { log(`${fname(leader)} leans out over the falls and sees only spray.`); toast("Nothing but spray and dark. You could still jump blind, from DM tools.", 3600); }},
-        {label: "Back", fn: () => setTimeout(() => fallsDialog(z), 100)}]});
+      // the dashboard's dice roll it (lib/walk-roll.ts "falls:look"); the map never asks what was rolled
+      rollOnDashboard("falls:look", heroMod(leader, "perception", "wis")).then(r => {
+        if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3200); return; }
+        if (r.success){ state.fallsNoticed = `${fname(leader)} made out the webs and the pool below`; log(`${fname(leader)} leans out over the falls. ${z.secret || ""}`); saveWalk(); setTimeout(() => fallsDialog(z), 300); }
+        else { log(`${fname(leader)} leans out over the falls and sees only spray.`); toast("Nothing but spray and dark. You could still jump blind, from DM tools.", 3600); }
+      });
     }},
     {label: "Keep crossing"}]});
 }
@@ -2394,19 +2396,23 @@ function openProp(pr, opts = {}){
   const box = $("objBtns"); box.innerHTML = "";
   const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); };
   const close = () => { $("obj").hidden = true; mode = "explore"; };
-  const ask = (what, dc, onWin, onLose) => () => {
-    $("objText").textContent = `${what}: roll it on the dashboard (DC ${dc}). What did it come to?`; box.innerHTML = "";
-    add(`${dc} or more`, () => { close(); onWin(); }, "primary"); add(`Under ${dc}`, () => { close(); onLose(); }); add("Back", () => { close(); openProp(pr, {again: true}); });
-    box.firstChild?.focus();
+  // each check is rolled on the dashboard's dice (lib/walk-roll.ts "ilvara-chest:*"); the map never asks what was rolled
+  const ask = (key, localMod, onWin, onLose) => () => {
+    close();
+    rollOnDashboard(key, localMod).then(r => {
+      if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3200); return; }
+      if (r.success) onWin(); else onLose();
+    });
   };
+  const dex = (SHEETS[leader.id] || {}).saves ? SHEETS[leader.id].saves.dex || 0 : 0;
   if (st.open){ $("objText").textContent = pr.text.open; add("Look inside", () => { close(); openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open}); }, "primary"); add("Close the lid", () => { close(); st.open = false; lids[pr.id].target = 0; setTimeout(() => sfx("door-close", .5), 500); }); add("Leave it", close); }
   else if (!st.locked){ $("objText").textContent = (pr.text && pr.text.unlocked) || "The lock is open. The lid is heavy."; add("Open it", () => { close(); openChest(pr); }, "primary"); add("Leave it", close); }
   else {
     $("objText").textContent = pr.text.closed + (st.trapKnown ? (st.disarmed ? " The needle in the lock is harmless now." : " A needle hides in the lock, its tip dark with something.") : "");
     if (!opts.again) sfx("door-locked", .45);
-    if (!st.trapKnown) add("Search it for traps", ask("Intelligence (Investigation)", 20, () => { st.trapKnown = true; toast("There: a needle set into the lock, its tip stained dark.", 3600); log(`${fname(leader)} finds a poison needle in the lock of ${pr.name}.`); }, () => { toast("You find nothing wrong with it.", 2800); }));
-    if (st.trapKnown && !st.disarmed) add("Disarm the needle (thieves' tools)", ask("Dexterity with thieves' tools", 15, () => { st.disarmed = true; sfx("lock-picked", .7); log(`${fname(leader)} disarms the needle.`); }, () => { sfx("lock-pick-fail", .7); toast("The needle does not come free.", 2800); }));
-    add("Pick the lock (thieves' tools)", ask("Dexterity with thieves' tools", 15, () => { needle(pr); sfx("lock-picked", .9); st.locked = false; setTimeout(() => openChest(pr), 700); }, () => { needle(pr); sfx("lock-pick-fail", .8); toast("The lock holds.", 2800); }), "primary");
+    if (!st.trapKnown) add("Search it for traps", ask("ilvara-chest:search", heroMod(leader, "investigation", "int"), () => { st.trapKnown = true; toast("There: a needle set into the lock, its tip stained dark.", 3600); log(`${fname(leader)} finds a poison needle in the lock of ${pr.name}.`); }, () => { toast("You find nothing wrong with it.", 2800); }));
+    if (st.trapKnown && !st.disarmed) add("Disarm the needle (thieves' tools)", ask("ilvara-chest:disarm", dex, () => { st.disarmed = true; sfx("lock-picked", .7); log(`${fname(leader)} disarms the needle.`); }, () => { sfx("lock-pick-fail", .7); toast("The needle does not come free.", 2800); }));
+    add("Pick the lock (thieves' tools)", ask("ilvara-chest:pick", dex, () => { needle(pr); sfx("lock-picked", .9); st.locked = false; setTimeout(() => openChest(pr), 700); }, () => { needle(pr); sfx("lock-pick-fail", .8); toast("The lock holds.", 2800); }), "primary");
     add("Use Ilvara's key", () => { close(); st.locked = false; st.disarmed = true; sfx("lock-picked", .9); log(`${fname(leader)} turns Ilvara's key.`); setTimeout(() => openChest(pr), 600); });
     add("Leave it", close);
   }
@@ -2522,13 +2528,15 @@ function openLift(){
   const down = lift.dy > 0, standing0 = party.filter(p => !p.down), onDeck = standing0.filter(p => !aboard(p)), riders = lift.riders.map(r => r.a);
   const spool = onDeck.includes(leader) ? leader : onDeck[0], help = onDeck.length > 1;
   const crank = (label, to) => add(label, () => {
-    $("objText").textContent = `${fname(spool)} turns the spool: Strength, DC 18 (OotA area 5)${help ? `; ${fname(onDeck.find(p => p !== spool))} can Help, so roll with advantage` : ""}. Roll it on the dashboard. What did it come to?`;
-    box.innerHTML = "";
-    add("18 or more", () => { $("obj").hidden = true; mode = "dialog"; lift.target = to; lift.moving = true; bank("movement/chains_rattle", .6);
-      log(`${fname(spool)} turns the spool. The basket ${to > 0 ? "swings out and sinks into the dark" : "rises out of the dark"}.`); }, "primary");
-    add("Under 18", () => { close(); toast("The spool does not budge. The silk cord creaks and holds.", 3200); });
-    add("Back", () => { close(); openLift(); });
-    box.firstChild?.focus();
+    // a Strength check on the dashboard's dice (lib/walk-roll.ts "lift:spool"), with advantage when a second hero helps
+    close();
+    const strMod = Math.floor((((SHEETS[spool.id] || {}).strScore) || 10) / 2) - 5;
+    rollOnDashboard("lift:spool", strMod, {advantage: help}).then(r => {
+      if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3200); openLift(); return; }
+      if (r.success){ mode = "dialog"; lift.target = to; lift.moving = true; bank("movement/chains_rattle", .6);
+        log(`${fname(spool)} turns the spool${help ? `, ${fname(onDeck.find(p => p !== spool))} helping` : ""}. The basket ${to > 0 ? "swings out and sinks into the dark" : "rises out of the dark"}.`); }
+      else toast("The spool does not budge. The silk cord creaks and holds.", 3200);
+    });
   }, "primary");
   if (down){
     $("objText").textContent = `The basket rests on the cavern floor, 4 rounds below, with ${riders.map(fname).join(", ")} in it. What is down there is Malachar's to say.`;
@@ -2698,13 +2706,16 @@ async function openPockets(n){
   $("objText").textContent = `${name} is close enough to touch.`; $("obj").hidden = false;
   const id = "pocket:" + n.id, j = await fetchLoot(id); if ($("obj").hidden) return;
   const rows = (j.rows || []).filter(r => r.kind !== "preview-stash");
-  for (const row of rows) add(`Lift: ${row.name}${row.missing ? " (not in the catalogue yet)" : ""}`, () => {
-    $("objText").textContent = `${fname(who)}: Dexterity (Sleight of Hand) ${sgn(sl)}, against ${name}'s passive Perception. Roll it on the dashboard (DC ${dc}). What did it come to?`;
-    box.innerHTML = "";
-    add(`${dc} or more`, async () => { close(); if (await takeLoot(who, id, row)){ log(`${fname(who)} lifts the ${esc(row.name)} from ${esc(name)} without being noticed.`); offerEquip(); } }, "primary");
-    add(`Under ${dc}`, () => { close(); caught(n, who, row); });
-    add("Back", () => { close(); openPockets(n); });
-    box.firstChild?.focus();
+  // Sleight of Hand on the dashboard's dice against the guard's passive Perception (lib/walk-roll.ts pickpocket:ppN, the
+  // same rows as pickpocketing while sneaking); the map never asks what was rolled (Sam, 2026-10-25). Caught follows the
+  // book: commanded to give it up, on pain of death (caught → Malachar).
+  for (const row of rows) add(`Lift: ${row.name}${row.missing ? " (not in the catalogue yet)" : ""}`, async () => {
+    if (row.missing){ toast(`${row.name} is not in the item catalogue yet, so it cannot be taken.`, 3600); return; }
+    close();
+    const r = await rollOnDashboard(ACTION_KEY_PICKPOCKET(dc), sl);
+    if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3200); return; }
+    if (r.success){ if (await takeLoot(who, id, row)){ log(`${fname(who)} lifts the ${esc(row.name)} from ${esc(name)} without being noticed.`); offerEquip(); } }
+    else caught(n, who, row);
   }, "primary");
   if (!rows.length) $("objText").textContent = `${name} is close enough to touch, but nothing on them is within reach.`;
   if (wantsWord(n) || canTalkTo(n)) add("Talk to them", () => { close(); approach(n); });
@@ -2903,18 +2914,18 @@ function openBody(b){
 // the dashboard's engine with the dashboard's modifier, and the page answers {ok, success, total, natural} — or
 // {cancelled} if they stepped back. "aop:roll-ack" says the panel is open; after it the map waits as long as the
 // player does. Opened as a plain file (no game around it), the map rolls locally against the same DC.
-const ROLLS = new Map(), LOCAL_DC = {"pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14};
+const ROLLS = new Map(), LOCAL_DC = {"falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14};
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
-function rollOnDashboard(action, localMod){
-  if (!APP || window.parent === window){ const r = d20(0, leader), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= (LOCAL_DC[action] ?? +((/^pickpocket:pp(\d+)$/.exec(action) || [])[1] || 20)), total, natural: r}); }
+function rollOnDashboard(action, localMod, opts = {}){
+  if (!APP || window.parent === window){ const r = d20(opts.advantage ? 1 : 0, leader), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= (LOCAL_DC[action] ?? +((/^pickpocket:pp(\d+)$/.exec(action) || [])[1] || 20)), total, natural: r}); }
   const id = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   let characterId = null; try { characterId = myClaimId || characterIdOf(leader.id) || null; } catch (e) {}
   return new Promise(res => {
     const t = setTimeout(() => { ROLLS.delete(id); res({ok: false, error: "The dice did not answer. Try again."}); }, 8000);   // no panel opened
     ROLLS.set(id, {ack: () => clearTimeout(t), done: m => { clearTimeout(t); res(m); }});
-    try { window.parent.postMessage({type: "aop:roll", id, action, characterId}, location.origin); } catch (e) { clearTimeout(t); ROLLS.delete(id); res({ok: false, error: "The dice did not answer."}); }
+    try { window.parent.postMessage({type: "aop:roll", id, action, characterId, advantage: !!opts.advantage}, location.origin); } catch (e) { clearTimeout(t); ROLLS.delete(id); res({ok: false, error: "The dice did not answer."}); }
   });
 }
 // HAND-OFFS to Malachar (lib/walk-action.ts). `ask` marks one the player clicked in THIS browser: only those are

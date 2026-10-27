@@ -32,6 +32,8 @@ import { hasTool } from "@/lib/repair"
 export type WalkCheck =
   | { kind: "skill"; skill: Skill; label: string }
   | { kind: "tool"; tool: string; ability: Ability; label: string }
+  /** A plain ability check: no skill, no tool (OotA area 5's spool is "a Strength check"). */
+  | { kind: "ability"; ability: Ability; label: string }
 
 export interface WalkAction {
   /** The roll panel's heading: what the player chose, in their words. */
@@ -55,6 +57,8 @@ const ATHLETICS: WalkCheck = { kind: "skill", skill: "athletics", label: "Athlet
 const ACROBATICS: WalkCheck = { kind: "skill", skill: "acrobatics", label: "Acrobatics" }
 const PERCEPTION: WalkCheck = { kind: "skill", skill: "perception", label: "Perception" }
 const SLEIGHT: WalkCheck = { kind: "skill", skill: "sleight_of_hand", label: "Sleight of Hand" }
+const INVESTIGATION: WalkCheck = { kind: "skill", skill: "investigation", label: "Investigation" }
+const STRENGTH: WalkCheck = { kind: "ability", ability: "str", label: "Strength" }
 const COOKS: WalkCheck = { kind: "tool", tool: "Cook's Utensils", ability: "wis", label: "Cook's utensils" }
 
 /**
@@ -89,6 +93,14 @@ const BOOK_ACTIONS = {
   // Perception as the DC — the book's p.19 rule turned round [HOUSE].
   "labor:hide": { title: "Keep it hidden", label: "Keeping a pocketed thing hidden while a drow guard searches them", check: SLEIGHT, dc: 12, source: "after OotA p.19; drow passive Perception 12; house" },
   "labor:hide-jorlan": { title: "Keep it hidden", label: "Keeping a pocketed thing hidden while Jorlan searches them", check: SLEIGHT, dc: 14, source: "after OotA p.19; Jorlan's passive Perception 14; house" },
+  // NO MORE "WHAT DID IT COME TO?" (Sam, 2026-10-27: "Build all of it" — retire every self-reported roll on the map,
+  // per his 2026-10-25 ruling that the map never asks the player what they rolled). Each of these used to open a
+  // "20 or more / Under 20" window; now the dashboard's dice roll them like the gate.
+  "falls:look": { title: "Look over the edge", label: "Leaning out over the falls to see what is below", check: PERCEPTION, dc: 12, source: "house DC (the book sets none), OotA p.14/p.18" },
+  "ilvara-chest:search": { title: "Search it for traps", label: "Searching Ilvara's chest for traps", check: INVESTIGATION, dc: 20, source: "OotA ch.1 area 7" },
+  "ilvara-chest:disarm": { title: "Disarm the needle", label: "Disarming the poison needle in Ilvara's chest", check: THIEVES_TOOLS, dc: 15, source: "OotA ch.1 area 7" },
+  "ilvara-chest:pick": { title: "Pick the lock", label: "Picking the lock of Ilvara's chest", check: THIEVES_TOOLS, dc: 15, source: "OotA ch.1 area 7" },
+  "lift:spool": { title: "Turn the spool", label: "Turning the lift's spool", check: STRENGTH, dc: 18, source: "OotA ch.1 area 5" },
 } as const satisfies Record<string, WalkAction>
 
 // PICKPOCKETING WHILE UNSEEN (Sam, 2026-10-27: "pick pocket should be an option when sneaking and near a character.
@@ -191,6 +203,10 @@ export function walkCheckModifier(row: Row, check: WalkCheck): WalkModifier {
     if (prof) parts.push({ label: level === "expertise" ? "Expertise" : level === "proficient" ? "Proficiency" : "Jack of all trades", value: prof })
     return { modifier: mod + prof, proficient: level !== "none", parts }
   }
+  if (check.kind === "ability") {
+    const mod = abilityMod(sheet[`${check.ability}_score` as const])
+    return { modifier: mod, proficient: false, parts: [{ label: ABBR[check.ability], value: mod }] }
+  }
   const mod = abilityMod(sheet[`${check.ability}_score` as const])
   const has = hasTool(toolsFromRow(row), check.tool)
   const prof = has ? proficiency(sheet) : 0
@@ -248,6 +264,8 @@ export interface WalkRollRequest {
   action: WalkActionKey
   /** The map's guess at who is acting (its leader's character row). Used only when this browser holds no seat. */
   characterId?: string | null
+  /** Roll with advantage: a friend's Help, as the map grants it (the spool, OotA area 5). */
+  advantage?: boolean
 }
 
 /** Page → map: "I have it, the roll panel is open." After this the map waits as long as the player does. */
@@ -276,5 +294,5 @@ export function parseWalkRollRequest(data: unknown): WalkRollRequest | null {
   if (typeof d.id !== "string" || d.id.length === 0 || d.id.length > 64) return null
   if (!isWalkActionKey(d.action)) return null
   const characterId = typeof d.characterId === "string" && d.characterId.length <= 64 ? d.characterId : null
-  return { type: "aop:roll", id: d.id, action: d.action, characterId }
+  return { type: "aop:roll", id: d.id, action: d.action, characterId, advantage: d.advantage === true }
 }

@@ -79,7 +79,7 @@ describe("walkVerdict — SRD ability check", () => {
 describe("parseWalkRollRequest — closed vocabulary", () => {
   it("accepts a known action", () => {
     expect(parseWalkRollRequest({ type: "aop:roll", id: "r1", action: "pen-gate:pick", characterId: "c1" }))
-      .toEqual({ type: "aop:roll", id: "r1", action: "pen-gate:pick", characterId: "c1" })
+      .toEqual({ type: "aop:roll", id: "r1", action: "pen-gate:pick", characterId: "c1", advantage: false })
   })
   it("refuses an unknown action, free text, or a missing id", () => {
     expect(parseWalkRollRequest({ type: "aop:roll", id: "r1", action: "open sesame" })).toBeNull()
@@ -235,5 +235,23 @@ describe("pickpocketing while unseen", () => {
   })
   it("leaves the book's rolls to the bridge to narrate", () => {
     expect("mapNarrates" in WALK_ACTIONS["pen-gate:pick"]).toBe(false)
+  })
+})
+
+describe("the retired self-reported rolls (Sam, 2026-10-25 / 2026-10-27)", () => {
+  it("has a closed-table row for each, with the book's DC", () => {
+    expect(WALK_ACTIONS["falls:look"].dc).toBe(12)
+    expect(WALK_ACTIONS["ilvara-chest:search"].dc).toBe(20)
+    expect(WALK_ACTIONS["ilvara-chest:disarm"].dc).toBe(15)
+    expect(WALK_ACTIONS["ilvara-chest:pick"].dc).toBe(15)
+    expect(WALK_ACTIONS["lift:spool"]).toMatchObject({ dc: 18, check: { kind: "ability", ability: "str" } })
+  })
+  it("carries a friend's Help as advantage, and only when the map says so", () => {
+    expect(parseWalkRollRequest({ type: "aop:roll", id: "r2", action: "lift:spool", advantage: true })?.advantage).toBe(true)
+    expect(parseWalkRollRequest({ type: "aop:roll", id: "r2", action: "lift:spool", advantage: "yes" })?.advantage).toBe(false)
+  })
+  it("rolls a plain Strength check with no proficiency", () => {
+    const m = walkCheckModifier({ str_score: 16, level: 3 } as never, WALK_ACTIONS["lift:spool"].check)
+    expect(m).toMatchObject({ modifier: 3, proficient: false })
   })
 })
