@@ -1927,6 +1927,7 @@ function triggerZone(z){
   // Sam, 2026-10-25: the gate card opens "only if you choose to interact with the door, not automatically". Walking
   // up to the bars does nothing; clicking the gate (or its ✋ action) opens it.
   if (z.interact){ if (z.kind === "gate") return; openInteract(z); return; }
+  if (z.rappel){ rappelCard(z); return; }                                                        // a rope on the cliff below the lift
   if (z.to.length > 1){ chooseDestination(z); return; }                                        // the landing: stairs or bridge
   // Sam, 2026-10-22: "why does the party always fall when crossing the bridge?" The bridge across the falls (area 9)
   // runs right over the spot where you can drop into the pool, so walking from one side to the other used to drop
@@ -1935,6 +1936,66 @@ function triggerZone(z){
   if (z.kind === "leave" && node.lift){ openLift(); return; }
   if (z.kind === "leave" || HANDOFFS[z.to[0]]){ goBeyond(z); return; }   // the way out of the outpost, by any name
   travel(z.to[0], z);
+}
+// ---------- the cliff below the lift (5c): rappels and the web net ----------
+// Sam, 2026-10-26: "Rappel checks and fall into the web net." OotA Expanded p.45 (community supplement), Lift Trouble:
+// the prisoners go down "two coils of 25' rope (that are tattered and torn ...). They must make three separate rappels
+// down ... A spider web netting with a giant spider waits 100' below for those who fall." Each rope is a `rappel` zone
+// (spec.py 5c, and plate 5's rail). The hero in the lead rolls Strength (Athletics) on the dashboard's dice ("cliff:rappel"
+// going down, "cliff:climb" going up; DC 12 is a house number). Made: the whole party goes the rope together, the
+// leader having found the holds (Claude's call: one roll per rope, not one per hero). Missed: the rope tears and the
+// leader drops into the net, restrained in the webbing (SRD 5.1 Giant Spider, Web: DC 12 Strength to break free), and
+// the giant spider climbs up through the silk to fight. The fall itself does no damage: the net breaks it (Sam's falls
+// ruling, 2026-10-24: the webs below the outpost break a fall). The net's anchor rope is the only way back up.
+const NET_LAND = [{x: 1300, y: 1150}, {x: 1180, y: 1200}, {x: 1420, y: 1210}, {x: 1060, y: 1250}];
+function rappelCard(z){
+  const R = z.rappel, up = R.dir === "up", who = fname(leader);
+  if (R.net){
+    if (cbt){ toast("Not while the spider is on you.", 2600); return; }
+    showDialog({title: "The anchor rope", body: `${z.label}. The net's main strand is pegged into the rock below the lowest ledge. Climbing it is slow but sure.`, buttons: [
+      {label: "Climb out of the net", primary: true, fn: () => rappelGo(z)}, {label: "Stay in the net"}]});
+    return;
+  }
+  const body = up ? `${z.label}. A tattered rope hangs down the scree. ${who} goes first.`
+                  : `${z.label}. The rope is tattered and frayed; below it the scree drops away, and far below that, the web.`;
+  showDialog({title: up ? "Climb the rope" : "Rappel down", body, src: "OotA Expanded p.45", buttons: [
+    {label: up ? `${who} climbs (Athletics)` : `${who} goes down the rope (Athletics)`, primary: true, fn: () => {
+      rollOnDashboard(up ? "cliff:climb" : "cliff:rappel", heroMod(leader, "athletics", "str")).then(k => {
+        if (k && k.cancelled){ ackZone = null; return; }
+        if (!k || !k.ok){ toast((k && k.error) || "The dice did not roll.", 3200); return; }
+        if (k.success){ log(`${esc(who)} ${up ? "climbs the rope" : "rappels down"} and holds it for the others.`); if (APP) handOff(`${who} ${up ? "climbed" : "rappelled down"} a rope on the cliff below the lift (Athletics ${k.total}, made it). The party follows.`);
+          if (R.entry) travel(z.to[0], z); else rappelGo(z); }
+        else { if (APP) handOff(`${who} ${up ? "climbed" : "rappelled"} on a tattered rope on the cliff below the lift and failed (Athletics ${k.total}). The rope tore. ${who} fell into the web net 100 feet below, where the giant spider waits (OotA Expanded p.45).`);
+          if (R.entry) travel(z.to[0], z).then(() => fallIntoNet(leader)); else fallIntoNet(leader); }
+      });
+    }},
+    {label: "Stay here"}]});
+}
+function rappelGo(z){
+  const R = z.rappel, order = [leader, ...followOrder()].filter(a => R.net ? inNet(a) : !inNet(a));
+  mode = "travel";
+  order.forEach((a, i) => { stopActivity(a); a.kbd = false; a.onArrive = null; a.waitUntil = now + i * 450;
+    const k = i === 0 ? 0 : (i % 2 ? 1 : -1) * Math.ceil(i / 2) * 40;
+    a.path = R.path.map(([x, y], j) => ({x: x + (j === R.path.length - 1 ? k : 0), y})); });
+  setTimeout(() => { mode = "explore"; ackZone = zoneAt(leader.x, leader.y); }, 1400 + order.length * 450);
+}
+function inNet(a){ const net = node.floors && node.floors[node.floors.length - 1]; return cur === "5c" && !!net && inPoly(net.poly, a.x, a.y); }
+function fallIntoNet(a){
+  if (cur !== "5c") return;
+  const land = NET_LAND[0];
+  stopActivity(a); a.path = []; a.onArrive = null; a.x = land.x; a.y = land.y; a.fallIn = now; a.face = 0;
+  sfx("door-locked", .4); popText(a, "the rope tears!", "#ff6b5e", 1.2);
+  log(`<b>The rope tears.</b> ${esc(fname(a))} drops down the cliff and slams into the web net. The silk holds. Then it shivers.`);
+  state.netFalls = (state.netFalls || 0) + 1;
+  setTimeout(() => {
+    if (mode !== "explore") mode = "explore";
+    try { spawnFx("spiderWeb", {at: a, sq: 1.8, anchor: "mid", tail: 12, until: now + 600000, alpha: .95}).then(e => { a.webFx = e; }); } catch (e) {}
+    // the spider comes up from under the net, so it starts IN the net: the net is its own island of floor and a spider
+    // spawned on a ledge could never reach the hero (startCombat takes an actor already on the plate as a foe)
+    const sp = mkActor("giant-spider", 1560, 1260, "npc", {face: 6}); npcs.push(sp); actors.push(sp);
+    startCombat([sp], "The net shudders. A giant spider climbs up through the silk toward you.", {noAllies: true});
+    if (a.c){ a.c.conds.add("restrained"); a.c.webDc = 12; renderParty && renderParty(); }
+  }, 900);
 }
 // ---------- the falls (area 9) ----------
 // Sam, 2026-10-24: "you should be given the option to jump after someone has insight enough to notice that there are
@@ -2689,7 +2750,7 @@ function openBody(b){
 // the dashboard's engine with the dashboard's modifier, and the page answers {ok, success, total, natural} — or
 // {cancelled} if they stepped back. "aop:roll-ack" says the panel is open; after it the map waits as long as the
 // player does. Opened as a plain file (no game around it), the map rolls locally against the same DC.
-const ROLLS = new Map(), LOCAL_DC = {"pen-gate:pick": 20, "pen-gate:force": 20};
+const ROLLS = new Map(), LOCAL_DC = {"pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12};
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
