@@ -5260,7 +5260,7 @@ function afterAttackRoll(att){ if (att.c.rage) att.c.rage.attacked = true;   // 
 // SRD 2024: the DC to resist a Shove or Grapple is 8 + STR mod + proficiency.
 const sgn = (n) => (n >= 0 ? "+" : "−") + Math.abs(n);
 const shoveDc = (a) => 8 + (a.c.sheet.saves.str || 0) + 2;
-function skillCheck(a, skill){ const r = d20(rageAdvantage(a.c.rage, skill === "athletics" ? "str" : skill), a), mod = (a.c.sheet.skills || {})[skill] ?? (skill === "perception" ? a.c.sheet.saves.wis || 0 : skill === "athletics" ? a.c.sheet.saves.str || 0 : a.c.sheet.saves.dex || 0); return {r, mod, total: r + mod}; }
+function skillCheck(a, skill){ const small = skill === "stealth" && isSmall(a), r = d20(withEdge(rageAdvantage(a.c.rage, skill === "athletics" ? "str" : skill), small), a), mod = (a.c.sheet.skills || {})[skill] ?? (skill === "perception" ? a.c.sheet.saves.wis || 0 : skill === "athletics" ? a.c.sheet.saves.str || 0 : a.c.sheet.saves.dex || 0); return {r, mod, total: r + mod, small}; }   // Small: Stealth with advantage (house rule, Sam 2026-10-26)
 function targetAc(t){ return t.c.ac + (t.c.conds.has("shielded") ? 2 : 0) + (t.c.conds.has("shieldSpell") ? 5 : 0); }
 // SHIELD, THE REACTION (Sam, 2026-10-10: "combat pauses like Baldur's Gate 3 for reactions like shield"). When an
 // attack is about to hit a caster who has Shield prepared, a level 1 slot and their reaction, and +5 AC would turn it,
@@ -5536,8 +5536,8 @@ function doHide(a, bonus){
   if (near){ toast(`${fname(near)} is right on top of you — step away first.`); return; }
   if (bonus) c.bonus = false; else c.action = false; const k = skillCheck(a, "stealth"), best = Math.max(10, ...standing(foes).map(f => f.c.sheet.passive || 10));
   bank("combat/hide", .7);
-  if (k.total >= best){ addCond(a, "hidden"); log(`${fname(a)} hides: Stealth ${k.r} + ${k.mod} = ${k.total} vs passive ${best} — <b>hidden</b>.`); narrate(a, `${fname(a)} slips out of sight.`); a.alpha = .55; }
-  else { log(`${fname(a)} tries to hide: Stealth ${k.r} + ${k.mod} = ${k.total} vs passive ${best} — spotted.`); popText(a, "spotted", "#c9c4b8"); }
+  if (k.total >= best){ addCond(a, "hidden"); log(`${fname(a)} hides: Stealth ${k.r}${k.small ? " (advantage: Small)" : ""} + ${k.mod} = ${k.total} vs passive ${best} — <b>hidden</b>.`); narrate(a, `${fname(a)} slips out of sight.`); a.alpha = .55; }
+  else { log(`${fname(a)} tries to hide: Stealth ${k.r}${k.small ? " (advantage: Small)" : ""} + ${k.mod} = ${k.total} vs passive ${best} — spotted.`); popText(a, "spotted", "#c9c4b8"); }
   openMenu(a);
 }
 function doSearch(a){
