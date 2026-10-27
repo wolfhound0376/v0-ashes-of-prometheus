@@ -1778,7 +1778,7 @@ function watchPost(n){
   if (laborLive()) return;                                   // an escorted work detail is not sneaking past anyone (Hard Labor)
   const seen = npcs.filter(a => a.hostile && !a.offStage);
   if (!seen.length) return;
-  const sheet = SHEETS[leader.id] || {}, mod = (sheet.skills || {}).stealth ?? (sheet.saves || {}).dex ?? 0, r = d20(0, leader), total = r + mod;
+  const sheet = SHEETS[leader.id] || {}, mod = (sheet.skills || {}).stealth ?? (sheet.saves || {}).dex ?? 0, r = d20(isSmall(leader) ? 1 : 0, leader), total = r + mod;   // Small: advantage (house rule)
   if (total >= w.passive){ log(`${fname(leader)} slips past the watch: Stealth ${r} + ${mod} = ${total} against their passive ${w.passive}.`); return; }
   state.seen = state.seen || {}; state.seen[n] = true;
   for (const a of seen){ a.face = faceOf(leader.x - a.x, leader.y - a.y); a.alert = true; }
@@ -4768,14 +4768,25 @@ const BUTTON_PRI = [[/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 
   [/^(Sneak|Stop sneaking|Scout)/, 4], [/^Search here/, 5], [/^Cast/, 6], [/^Inventory/, 7], [/^(Pray|Inspire)/, 8], [/^Quick drink/, 9],
   [/^Next hero/, 10], [/^Help/, 11], [/^(Follow|Wait)/, 12], [/^Short rest/, 13], [/^Tell Malachar/, 14], [/^Talk$/, 30]];
 function priOf(b){ const t = (b.querySelector("span") || b).textContent; const hit = BUTTON_PRI.find(([re]) => re.test(t)); return (hit ? hit[1] : 15) + (b.disabled ? 20 : 0); }
+// Sam, 2026-10-26: "sneaking up should be and being small should have an advantage as well as line of sight." A Small
+// hero (halfling, gnome, deep gnome, goblin, kobold — or a sheet that says size Small) rolls Stealth with advantage.
+// HOUSE RULE, not SRD: 5e gives no such general edge (a lightfoot halfling's Naturally Stealthy is narrower).
+const SMALL_RACE = /halfling|gnome|svirfneblin|goblin|kobold|hobbit/i;
+function isSmall(a){
+  if (!a) return false;
+  const sh = SHEETS[a.id] || {}, size = String(sh.size || (PCS[a.id] || {}).size || "");
+  if (size) return /^small|^tiny/i.test(size);
+  const r = rollerOf(a); return !!(r && SMALL_RACE.test(r.race));
+}
 function heroMod(a, skill, abil){ const sh = SHEETS[a.id] || {}; return (sh.skills || {})[skill] ?? (sh.saves || {})[abil] ?? 0; }
 /** A check the map rolls for the hero: d20 + skill, with advantage when a friend helped. */
 function mapCheck(a, skill, abil){
   let adv = 0; if (helpNext && helpNext.by !== a.id && now < helpNext.until){ adv = 1; helpNext = null; }
-  const mod = heroMod(a, skill, abil), r = d20(adv, a); return {r, mod, total: r + mod, adv};
+  const small = skill === "stealth" && isSmall(a); if (small) adv = 1;              // house rule: Small sneaks with advantage
+  const mod = heroMod(a, skill, abil), r = d20(adv, a); return {r, mod, total: r + mod, adv, small};
 }
 const SKILL_NAME = {stealth: "Dexterity (Stealth)", perception: "Wisdom (Perception)", investigation: "Intelligence (Investigation)"};
-function rollLine(k, skill){ return `${SKILL_NAME[skill]} ${k.r}${k.adv ? " (advantage)" : ""} ${k.mod >= 0 ? "+" : "−"} ${Math.abs(k.mod)} = <b>${k.total}</b>`; }
+function rollLine(k, skill){ return `${SKILL_NAME[skill]} ${k.r}${k.adv ? (k.small ? " (advantage: Small)" : " (advantage)") : ""} ${k.mod >= 0 ? "+" : "−"} ${Math.abs(k.mod)} = <b>${k.total}</b>`; }
 function nearestExit(L){ return node.zones.filter(z => !z.interact && (z.to || []).length).map(z => [z, Math.hypot(zoneCenter(z).x - L.x, zoneCenter(z).y - L.y)]).sort((x, y) => x[1] - y[1])[0]; }
 function exitName(z){ const t = SPEC[(z.to || [])[0]]; return z.label || (t && t.name) || (z.kind === "leave" ? "the way out" : "the way on"); }
 function lookTarget(o){ return o.obj ? o.obj.interact.name : o.pile ? o.pile.name : o.body ? fname(o.body) : null; }
@@ -4850,7 +4861,7 @@ setInterval(() => {
 }, 250);
 function drawSneakCones(){
   if (!sneak || mode !== "explore") return;
-  for (const w of watchers()){
+  for (const w of watchers().concat(cur === PEN && !postsEmpty() ? gateGuards() : [])){
     const r = VIEW_FT * ftPx(w), a0 = faceAngle(w), seen = w.alert, g = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r);
     const col = seen ? "255,107,90" : "154,208,255";
     g.addColorStop(0, `rgba(${col},.42)`); g.addColorStop(.7, `rgba(${col},.16)`); g.addColorStop(1, `rgba(${col},0)`);
@@ -7758,12 +7769,12 @@ function laborGateWatch(){
   const g = gateCenter(); if (!g) return true;
   const sc = node.scale || 1;
   // the hero this browser walks (each table member's own browser watches their own hero, so no one is shot twice)
-  const runner = leader && !leader.ko && canControl(leader) && Math.hypot(leader.x - g.x, leader.y - g.y) < GATE_WATCH.near * .6 * sc ? leader : null;
+  const runner = gateHeroes().find(a => Math.hypot(a.x - g.x, a.y - g.y) < GATE_WATCH.near * .6 * sc) || null;   // any hero, not just the leader
   if (!runner) return true;
   const guards = gateGuards(), shooters = guards.length ? guards : laborEscort().filter(a => a.id !== "escort-quaggoth");
   log(`<b>${esc(fname(runner))}</b> goes for the open door on their own. The guards do not ask twice.`);
   if (APP) handOff(`${fname(runner)} tried to walk out of the open pen gate on their own while a work detail was being called. Per Sam's rule, anyone going through the door unescorted is shot (volleys, no formal combat).`);
-  gateGuardsShoot(shooters);
+  gateGuardsShoot(shooters, runner);
   return true;
 }
 // ---------- HARD LABOR: the films (Sam, 2026-10-26: "Lets do cinematics") ----------
@@ -8220,30 +8231,109 @@ function laborPenArrival(){
 // SRD's Combat Step by Step that is the moment combat begins, so the fight opens with the guards' own stat block
 // (the drow hand crossbow, +4, 1d6+2 and the DC 13 poison — not arrows: the SRD drow carries a hand crossbow).
 // The line is a placeholder, not book text.
-const GATE_WATCH = {near: 200, jorlanNear: 330, again: 20000};
+// Sam, 2026-10-26: "why is it that the guards aren't scanning to see if anyone is near the door? If they spot someone,
+// there should be a warning, and then the volley of shots sequence." The watch used to test the LEADER only, so any
+// other hero could stand at the bars unseen (measured: Samson 141 px from the gate, 250 px trigger, no warning). Now
+// the guards watch EVERY hero this browser walks (canControl: the DM's screen walks them all, a player's screen only
+// their own, so nobody is warned or shot twice across the table). They are seen doing it: on post they sweep their
+// gaze between the gate and the pen; a hero coming toward the bars makes the nearest guard stop and turn ("?"); one at
+// the bars gets the warning ("!"), and the volleys go at THAT hero, not at whoever happens to lead.
+const GATE_WATCH = {near: 200, spot: 330, jorlanNear: 330, again: 20000, sweep: [1800, 3600]};
 const GATE_WARNINGS = ["Back from the gate, rivvil. Now.", "Step away from the bars.", "Another step and you bleed."];
-let gateWarn = null;                       // {stage: "warned"} while the card is up · {stage: "stepped", until} after
+let gateWarn = null;                       // {stage: "warned", who} while the card is up · {stage: "stepped", until, who} after
+// SIGHT. The guards stand on the bridge OUTSIDE the pen, so the only way their eyes get in is through the gate's bars:
+// a guard sees a hero when the hero is inside the guard's view cone (the same 60 ft / 120 deg cone as the Sneak cones)
+// AND the line between them passes through the gate opening AND nothing on the pen floor blocks it after the bars
+// (a pillar, a wall bend). Turned away, or a hero off to the side of the bars, is not seen.
+function gateSight(w, h){
+  if (!inView(w, h)) return false;
+  const z = doorGate(); if (!z) return false;
+  const P = z.interact.poly, d = Math.hypot(h.x - w.x, h.y - w.y), n = Math.max(2, Math.ceil(d / 6));
+  let through = -1;
+  for (let k = 0; k <= n; k++){ const t = k / n; if (inPoly(P, w.x + (h.x - w.x) * t, w.y + (h.y - w.y) * t)){ through = k; break; } }
+  if (through < 0) return false;                                // the line hits stone, not bars
+  let onFloor = false;                                          // the doorway's threshold is not floor yet: start testing once inside
+  for (let k = through + 1; k < n; k++){
+    const t = k / n, x = w.x + (h.x - w.x) * t, y = w.y + (h.y - w.y) * t;
+    if (walkable(x, y)){ onFloor = true; continue; }
+    if (onFloor && !inPoly(P, x, y)) return false;               // something on the pen side is in the way
+  }
+  return true;
+}
+// SNEAKING. A hero moving under Sneak keeps the Stealth total they rolled; each guard who gets a look at them checks it
+// once against its passive Perception (drow guard 12). Beat it: a blue "?" and that guard looks straight past them —
+// even at the bars. Lose it: that guard has them, the sneak is over, and the warning comes.
+function gateNotices(w, h){
+  if (!gateSight(w, h)) return false;
+  const roll = sneak && sneak.rolls.find(x => x.p === h);
+  if (!roll) return true;
+  sneak.gateChecked = sneak.gateChecked || new Map();
+  const key = w.id + ">" + h.id;
+  if (!sneak.gateChecked.has(key)){
+    const P = passiveOf(w) || 12, ok = roll.k.total + useInspiration(h, roll.k.total, P) >= P;
+    sneak.gateChecked.set(key, ok);
+    if (ok){ popText(w, "?", "#9ad0ff"); log(`${esc(fname(w))} looks right past ${esc(fname(h))} (Stealth ${roll.k.total} vs passive Perception ${P}).`); }
+  }
+  if (sneak.gateChecked.get(key)) return false;
+  const P = passiveOf(w) || 12;
+  log(`<em>${esc(fname(w))} spots ${esc(fname(h))} creeping toward the gate</em> (Stealth ${roll.k.total} vs passive Perception ${P}).`);
+  endSneak();
+  return true;
+}
 function gateCenter(){ const z = doorGate(); if (!z) return null; const p = z.interact.poly; return {x: (p[0][0] + p[2][0]) / 2, y: (p[0][1] + p[2][1]) / 2}; }
 function gateGuards(){ return npcs.filter(n => /^drow-guard/.test(n.id) && !n.relieved && !n.offStage && !n.body && !n.down && !n.hostile && n.alpha > .5 && actors.includes(n)); }
+/** The heroes this browser answers for who could be standing at the bars (see the note above). */
+function gateHeroes(){ return party.filter(a => actors.includes(a) && canControl(a) && !a.down && !a.ko && !a.surgeonDown && !a.fading && (a.alpha === undefined || a.alpha > .5)); }
+/** The nearest of them to the gate, with its distance. */
+function gateNearest(g){
+  let best = null, d = Infinity;
+  for (const a of gateHeroes()){ const k = Math.hypot(a.x - g.x, a.y - g.y); if (k < d){ d = k; best = a; } }
+  return {hero: best, d};
+}
+/** The guards are SEEN to watch: an idle guard on post looks from the gate to the pen and back; a hero closing on the
+ *  bars makes the nearest one stop and turn to them, once per approach. Pure presentation — the rule is in tickGateWatch. */
+function gateScan(guards, g, h, d, sc){
+  for (const x of guards){
+    if (x.path && x.path.length) continue;                        // walking the beat: the walk sets the facing
+    if (now < (x.scanAt || 0)) continue;
+    const [lo, hi] = GATE_WATCH.sweep; x.scanAt = now + lo + Math.random() * (hi - lo);
+    const look = Math.random() < .55 ? g : {x: centroid.x + (Math.random() - .5) * 600, y: centroid.y + (Math.random() - .5) * 300};
+    faceTo(x, look);
+  }
+  if (!h) return;
+  if (d < GATE_WATCH.spot * sc){
+    if (h.gateSpotted) return;
+    const w = guards.filter(x => gateNotices(x, h)).sort((a, b) => Math.hypot(a.x - h.x, a.y - h.y) - Math.hypot(b.x - h.x, b.y - h.y))[0];
+    if (!w) return;                                               // nobody is looking this way, or they looked past a sneak
+    h.gateSpotted = true;
+    w.path = []; w.actUntil = now + 4000; w.scanAt = now + 4000; faceTo(w, h);
+    popText(w, "?", "#ffd166", 1.2);
+  } else h.gateSpotted = false;
+}
 function tickGateWatch(){
   // a work detail in progress (laborLive): the escort has the gate, so the sentries do not warn anyone off it
   if (surgeon) return;                                  // the guards are already shooting (The Drow Surgeon)
   if (laborGateWatch()) return;                         // a detail being called: the door is open, and unescorted is shot
   if (cur !== PEN || mode !== "explore" || !leader || state.gateOpen || postsEmpty() || timeStopped || laborLive()){ if (!state.gateOpen && gateWarn && gateWarn.stage === "warned" && mode === "explore") gateWarn = null; return; }
   const g = gateCenter(); if (!g) return;
-  const sc = node.scale || 1, near = Math.hypot(leader.x - g.x, leader.y - g.y) < GATE_WATCH.near * sc;
+  const sc = node.scale || 1;
   const j = npcs.find(n => n.id === "jorlan" && !n.offStage && !n.body && actors.includes(n));
   const guards = gateGuards();
   if ((j && Math.hypot(j.x - g.x, j.y - g.y) < GATE_WATCH.jorlanNear * sc) || !guards.length){ gateWarn = null; return; }
+  const {hero: h, d} = gateNearest(g);
+  gateScan(guards, g, h, d, sc);
+  const near = !!h && d < GATE_WATCH.near * sc && guards.some(x => gateNotices(x, h));   // at the bars AND seen
+  if (h && d < GATE_WATCH.near * sc && !near && h.gateSpotted) h.gateSpotted = false;   // unseen at the bars: no "?" left hanging
   if (!near){ if (gateWarn && gateWarn.stage === "stepped" && now > gateWarn.until) gateWarn = null; return; }
-  if (gateWarn && gateWarn.stage === "stepped" && now <= gateWarn.until){ gateGuardsShoot(guards); return; }
-  gateWarning(guards, g);              // first time here, or the card went away without an answer: ask again
+  if (gateWarn && gateWarn.stage === "stepped" && gateWarn.who === h.id && now <= gateWarn.until){ gateGuardsShoot(guards, h); return; }
+  gateWarning(guards, g, h);           // first time here, or the card went away without an answer: ask again
 }
-function gateWarning(guards, g){
-  gateWarn = {stage: "warned"};
-  const w = guards.sort((a, b) => Math.hypot(a.x - g.x, a.y - g.y) - Math.hypot(b.x - g.x, b.y - g.y))[0];
-  guards.forEach(x => { x.path = []; x.actUntil = now + 6000; x.face = faceOf(leader.x - x.x, leader.y - x.y); });
-  leader.path = [];
+function gateWarning(guards, g, h = leader){
+  gateWarn = {stage: "warned", who: h.id};
+  const w = guards.sort((a, b) => Math.hypot(a.x - h.x, a.y - h.y) - Math.hypot(b.x - h.x, b.y - h.y))[0];
+  guards.forEach(x => { x.path = []; x.actUntil = now + 6000; x.scanAt = now + 6000; faceTo(x, h); });
+  h.path = [];
+  popText(w, "!", "#ff6b5e", 1.4);
   const line = GATE_WARNINGS[Math.floor(Math.random() * GATE_WARNINGS.length)];
   delete state.voiced[w.id + ":" + line];                        // heard every time, not once
   bark(w, line, 5200, {voice: true, talk: true});
@@ -8251,23 +8341,23 @@ function gateWarning(guards, g){
   const c = $("objPic").getContext("2d"); c.clearRect(0, 0, 128, 128);
   try { const m = SPR[w.id].json, an = m.animations.idle; c.imageSmoothingEnabled = false; c.drawImage(SPR[w.id].img.idle, 0, 0, m.cell[0], m.cell[1], 0, 0, 128, 128); } catch (e) {}
   $("objWho").textContent = "A guard on the bridge";
-  $("objText").textContent = `“${line}” A hand crossbow is levelled at ${fname(leader)} from the bridge.`;
+  $("objText").textContent = `“${line}” A hand crossbow is levelled at ${fname(h)} from the bridge.`;
   const box = $("objBtns"); box.innerHTML = "";
   const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); };
   add("Step back", () => {
-    $("obj").hidden = true; mode = "explore"; gateWarn = {stage: "stepped", until: now + GATE_WATCH.again};
+    $("obj").hidden = true; mode = "explore"; gateWarn = {stage: "stepped", until: now + GATE_WATCH.again, who: h.id};
     ackZone = zoneAt(leader.x, leader.y);                    // walking away from the bars is not walking up to them
     const back = nearestWalkable(g.x + (centroid.x - g.x) * .55, g.y + (centroid.y - g.y) * .55);
-    leader.path = findPath(leader, back); narrate(leader, `${fname(leader)} steps back from the gate.`);
+    h.path = findPath(h, back); narrate(h, `${fname(h)} steps back from the gate.`);
   }, "primary");
-  add("Stay where you are", () => { $("obj").hidden = true; mode = "explore"; ackZone = zoneAt(leader.x, leader.y); gateGuardsShoot(gateGuards()); });
+  add("Stay where you are", () => { $("obj").hidden = true; mode = "explore"; ackZone = zoneAt(leader.x, leader.y); gateGuardsShoot(gateGuards(), h); });
   $("obj").hidden = false; box.firstChild?.focus();
 }
-function gateGuardsShoot(guards){
+function gateGuardsShoot(guards, h = leader){
   gateWarn = null; if (!guards.length || mode !== "explore") return;
   // Sam, 2026-10-25: "Remove formal fight. Volleys only." Defying the guards never opens combat: the first time is The
   // Drow Surgeon (below); every later time they simply shoot until the prisoner steps away or drops.
-  if (!surgeonDone()) drowSurgeonBegins(guards); else surgeonAgain(guards);
+  if (!surgeonDone()) drowSurgeonBegins(guards, h); else surgeonAgain(guards, h);
 }
 
 // ---------- THE DROW SURGEON ----------
@@ -8576,8 +8666,7 @@ function lianaSays(key, ms = 7000){
   log(knows ? `<b>Liana</b> <i>(Elvish)</i>: “${esc(L.en)}”` : `<b>Liana</b> says something in Elvish.`);
 }
 // ----- 1. the bolt that makes the point -----
-async function drowSurgeonBegins(guards){
-  const pc = leader;
+async function drowSurgeonBegins(guards, pc = leader){
   surgeon = {pc, stage: "shooting", local: !APP || !characterIdOf(pc.id)};
   pc.path = []; guards.forEach(g => { g.path = []; g.actUntil = now + 90000; faceTo(g, pc); });
   mode = "dialog";                                          // nobody walks while the first bolt flies
@@ -8641,8 +8730,7 @@ async function surgeonStepped(){
   surgeon = null;
 }
 // ----- a later defiance: no warning bolt, no surgeon — volleys only (Sam, 2026-10-25) -----
-async function surgeonAgain(guards){
-  const pc = leader;
+async function surgeonAgain(guards, pc = leader){
   surgeon = {pc, stage: "shooting", local: !APP || !characterIdOf(pc.id), again: true};
   pc.path = []; guards.forEach(g => { g.path = []; g.actUntil = now + 90000; faceTo(g, pc); });
   log(`<em>${esc(fname(pc))} does not step back.</em> No warning bolt this time: the guards raise their crossbows.`);
