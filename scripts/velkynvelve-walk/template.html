@@ -1792,7 +1792,15 @@ async function enterNode(n, opts = {}){
   if (booted){
     state.company = companyNow().filter(id => { const a = npcs.find(x => x.id === id); return !a || !(a.down || a.body); });
     // a work detail takes only the prisoners on the detail; the escape takes everyone (Hard Labor, below)
-    if (from === PEN && n !== PEN) joined = laborLive() ? laborJoins() : prisonersJoin();
+    // Sam, 2026-10-26: "if I try to sneak through while the gate door is open then others should not follow me" — and
+    // asked who: the prisoners. A party that slips out under Sneak leaves them in the pen (a dozen captives in tow is no
+    // sneak); they stay there, still freed, and come along the next time the party leaves the pen openly.
+    if (from === PEN && n !== PEN){
+      if (laborLive()) joined = laborJoins();
+      else if (sneak){ const left = PEN_NPCS.filter(d => npcs.some(x => x.id === d.id && !x.down && !x.body && !x.offStage && !companyNow().includes(d.id))).length;
+        if (left) log(`The other prisoners stay in the pen. ${left > 1 ? "They" : "Whoever is left"} would never keep quiet behind you.`); }
+      else joined = prisonersJoin();
+    }
     if (n === PEN && from !== PEN && laborLive()) state.company = companyNow().filter(id => !laborNpcs().includes(id));   // back to their places in the pen
   }
   mode = "travel"; if (!opts.slide) $("fade").classList.add("on"); $("talk").hidden = true; $("dialog").hidden = true;
@@ -3941,7 +3949,7 @@ function passiveOf(w){ const b = FOE_BLOCKS[w.id] || {}; return b.passive ?? (b.
 // Leaving the cone resets the clock. STEALTH_HOLD is a house number (one 6-second round).
 const STEALTH_HOLD = 6000;
 function sneakSight(w, p){ return /^drow-guard/.test(w.id) && cur === PEN && !w.hostile ? gateSight(w, p) : inView(w, p); }
-function sneakWatchers(){ return watchers().concat(cur === PEN && !postsEmpty() && !state.gateOpen ? gateGuards() : []); }
+function sneakWatchers(){ return watchers().concat(cur === PEN && !postsEmpty() ? gateGuards() : []); }
 function sneakSpotted(w, who){
   w.face = faceOf(who.x - w.x, who.y - w.y); w.alert = true; popText(w, "!", "#ff6b5a", 1.3); bank("ui/initiative_start", .35);
   const movers = sneak.rolls.map(x => x.p), P = passiveOf(w) || 12;
@@ -6789,6 +6797,7 @@ let gateWarn = null;                       // {stage: "warned", who} while the c
 // (a pillar, a wall bend). Turned away, or a hero off to the side of the bars, is not seen.
 function gateSight(w, h){
   if (!inView(w, h)) return false;
+  if (onBalcony(h)) return true;                                 // out on the landing: nothing between them and the bridge
   const z = doorGate(); if (!z) return false;
   const P = z.interact.poly, d = Math.hypot(h.x - w.x, h.y - w.y), n = Math.max(2, Math.ceil(d / 6));
   let through = -1;
