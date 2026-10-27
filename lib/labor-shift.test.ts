@@ -32,9 +32,10 @@ describe("the march out is one cut", () => {
 
 // The forgotten laundry shift of 2026-10-26: 'working' for two hours because nobody pressed "Finish the shift".
 describe("the shift timeout — one game hour (Sam)", () => {
-  const arrive = (clock?: { day: number; minutes: number }) => ({ at: "2026-10-27T01:36:42.040Z", kind: "step", action: "arrive", from: "escorting", to: "working", by: "dm", clock })
-  const detail = (events: unknown[], status = "working") => ({ status, events })
   const t0 = Date.parse("2026-10-27T02:00:00Z")
+  // arrived a minute ago in real time, so only the game clock is in play here (the backstop has its own tests below)
+  const arrive = (clock?: { day: number; minutes: number }, at = new Date(t0 - 60000).toISOString()) => ({ at, kind: "step", action: "arrive", from: "escorting", to: "working", by: "dm", clock })
+  const detail = (events: unknown[], status = "working") => ({ status, events })
 
   it("leaves a shift alone for its hour", () => {
     expect(W.shiftTimeout(detail([arrive({ day: 1, minutes: 600 })]), { day: 1, minutes: 660 }, t0)).toBe("ok")
@@ -58,11 +59,39 @@ describe("the shift timeout — one game hour (Sam)", () => {
       expect(W.shiftTimeout(detail([arrive({ day: 1, minutes: 0 })], s), { day: 3, minutes: 0 }, t0), s).toBe("ok")
     }
   })
-  it("cannot time out without a game time for the arrival (the route looks it up in time_log for older rows)", () => {
+  it("cannot time out on the game clock without a game time for the arrival (the route looks it up in time_log)", () => {
     expect(W.shiftTimeout(detail([arrive()]), { day: 3, minutes: 0 }, t0)).toBe("ok")
     expect(W.shiftTimeout(detail([arrive()]), { day: 3, minutes: 0 }, t0, { day: 1, minutes: 0 })).toBe("flag")
   })
   it("uses the latest arrival on the detail", () => {
     expect(W.arrivalStep([arrive({ day: 1, minutes: 0 }), arrive({ day: 1, minutes: 500 })])?.clock).toEqual({ day: 1, minutes: 500 })
+  })
+
+  // Sam, 2026-10-27: "add the 15 minute backstop" — the game clock stands still while nobody talks to Malachar.
+  describe("the 15-real-minute backstop", () => {
+    const quiet = { day: 1, minutes: 600 }                       // the clock has not moved since they arrived
+    const at = (msBefore: number) => new Date(t0 - msBefore).toISOString()
+    it("leaves a quiet shift alone for 15 real minutes", () => {
+      const d = detail([arrive(quiet, at(W.SHIFT_REAL_MS))])
+      expect(W.shiftOver(d, quiet, t0)).toBeNull()
+      expect(W.shiftTimeout(d, quiet, t0)).toBe("ok")
+    })
+    it("ends a quiet shift after 15 real minutes, even though the game clock never moved", () => {
+      const d = detail([arrive(quiet, at(W.SHIFT_REAL_MS + 1000))])
+      expect(W.shiftOver(d, quiet, t0)).toBe("real-time")
+      expect(W.shiftTimeout(d, quiet, t0)).toBe("flag")
+    })
+    it("ends it too when there is no game time at all", () => {
+      expect(W.shiftTimeout(detail([arrive(undefined, at(W.SHIFT_REAL_MS + 1000))]), { day: 3, minutes: 0 }, t0)).toBe("flag")
+    })
+    it("whichever comes first: the game hour can still end it sooner", () => {
+      expect(W.shiftOver(detail([arrive({ day: 1, minutes: 600 }, at(5 * 60000))]), { day: 1, minutes: 661 }, t0)).toBe("game-hour")
+    })
+    it("then waits the same minute for a map to walk them home before calling it off", () => {
+      const d = detail([arrive(quiet, at(W.SHIFT_REAL_MS + 1000)), { at: new Date(t0).toISOString(), kind: "overdue" }])
+      expect(W.shiftTimeout(d, quiet, t0 + W.OVERDUE_GRACE_MS - 1)).toBe("overdue")
+      expect(W.shiftTimeout(d, quiet, t0 + W.OVERDUE_GRACE_MS)).toBe("abort")
+    })
+    it("is 15 minutes", () => expect(W.SHIFT_REAL_MS).toBe(15 * 60 * 1000))
   })
 })
