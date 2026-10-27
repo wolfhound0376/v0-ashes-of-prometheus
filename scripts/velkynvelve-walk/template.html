@@ -3001,12 +3001,13 @@ function tollDone(T, done){
   T.end = T.end || now; T.caster.tollLantern = false;
   combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(T.caster, done);
 }
-// where the lantern hangs: from the hand on the side toward the victim (the hand the map casts from, handPoint), lifted
-// a little as the spell is cast, swaying on its ring
+// where the lantern hangs: always BELOW the hand (Sam, 2026-10-26: "the lantern should always be held below the hand"),
+// its ring in the casting hand on the side toward the victim (handPoint's height), the lantern hanging straight down
+// from it and swaying a little on the ring. 0.3 of the caster's height.
 function tollLanternAt(T){
   const a = T.caster, bh = SPR[a.id].json.pivot[1] * actorScale(a), side = T.tgt.x >= a.x ? 1 : -1;
-  const raise = Math.min(1, (now - T.t0) / 300), e = raise * raise * (3 - 2 * raise);
-  const s = .4 * bh / TOLL.lbody, x = a.x + side * bh * (.13 + .03 * e) + (a.kx || 0), y = a.y - bh * (.56 + .12 * e) + (a.ky || 0);
+  const e = Math.min(1, (now - T.t0) / 300);
+  const s = .3 * bh / TOLL.lbody, x = a.x + side * bh * .14 + (a.kx || 0), y = a.y - bh * .58 + (a.ky || 0);
   return {x, y, s, sway: Math.sin((now - T.t0) / 380) * .05 * e, glass: {x, y: y + (TOLL.lglass[1] - TOLL.ring[1]) * s}};
 }
 function drawTolls(){
