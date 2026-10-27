@@ -1892,6 +1892,7 @@ async function enterNode(n, opts = {}){
     if (!SPR[np.id]) continue;                          // no sprite baked for them yet: the record stays, the plate shows nobody
     const a = mkActor(np.id, np.x, np.y, "npc", {face: np.face || 0, talk: !!np.talk, talkLine: np.talkLine, barks: np.barks || [], home: {x: np.x, y: np.y},
       hostile: !!np.hostile, static: !!np.static, backdrop: !!np.backdrop, fixedScale: np.fixedScale || 0, patrol: np.patrol || null, post: {x: np.x, y: np.y}});
+    a.pocketKey = `${n === PEN ? "pen" : "p" + n}-${Math.round(np.x)}-${Math.round(np.y)}`;   // this guard's own pockets, the same every visit (pocketId)
     a.t0 = now - Math.random() * 1000; a.actUntil = now + 2000 + Math.random() * 7000; npcs.push(a);
   }
   // the posts left unattended in the story: the drow the story layer would stand there are not there (Sam, 2026-10-25:
@@ -2566,13 +2567,33 @@ const LOOT_BOOK = {
   "barracks-west": [["drow-poison", 6, "a flask per chest, each treats 20 bolts"], ["common-clothes", 12, "two sets per chest"]],
   "barracks-east": [["drow-poison", 6, "a flask per chest, each treats 20 bolts"], ["common-clothes", 12, "two sets per chest"]],
   "body:drow-guard-male": LOOT_KIT, "body:drow-guard-female": LOOT_KIT,
-  "pocket:drow-guard-male": [["slave-pen-key", 1, "the key to the slave pen"]], "pocket:drow-guard-female": [["slave-pen-key", 1, "the key to the slave pen"]],
+  "pocket:drow-guard-male": [], "pocket:drow-guard-female": [],   // marks who has pockets; each guard's own are rolled (POCKET_TABLE)
   // Hard Labor plates (2026-10-26): same lists as lib/walk-loot.ts
   "cliff-top-sack": [["fresh-fruit", 1, "a container of it"]], "cliff-crate": [["dart", 5, "on a weapon belt"]], "cliff-low-sack": [["drow-poison", 3, "vials in a pouch"]],
   "kitchen-knives": [["dagger", 3, "kitchen knives"]], "kitchen-mushrooms": [["edible-mushrooms", 1, "a handful"]], "kitchen-card-table": [["gaming-set-cards", 1, "the drow's deck"]],
 };
 const LOOT_STASH = {"ilvara-chest": "Everything of value the drow took from you: focuses, spell components, spellbooks, magic.", "shoor-chest": "Your weapons, armour and packs, as the drow took them."};
 const PEN_KEY = "Slave pen key";
+// A guard's pockets (Sam, 2026-10-27: "a 1D6 set of items, maybe drow poison, dagger, bolts, GP, the key to the pen,
+// potion or elixir, food ration, etc"). Same table as lib/walk-loot.ts POCKET_TABLE — keep in step. In the game the
+// server rolls 1d6 draws once per guard and keeps them; here the preview rolls its own, for looking.
+// [slug, dice count, dice sides, note, max]
+const POCKET_TABLE = [["drow-poison", 1, 1, "a flask on the belt, treats 20 bolts"], ["dagger", 1, 1, "a spare, tucked in a boot", 1],
+  ["crossbow-bolt", 1, 6, "loose hand crossbow bolts"], ["gold-coin", 1, 10, "in a coin purse"], ["slave-pen-key", 1, 1, "the key to the slave pen", 1],
+  ["potion-of-healing", 1, 1, "a stoppered vial", 1], ["rations-1-day", 1, 1, "a day's dried rations"], ["mushroom-wine", 1, 1, "a small flask"]];
+const KEY_HOLDER = which => /^(pen|escort)/.test(which);   // the pen-gate guards and the labor escort always carry it (lib/walk-loot.ts)
+const LOOSE_IN_POCKET = new Set(["dagger"]);
+const pocketLocal = {};
+function rollPocketsLocal(which){
+  const d = (n, k) => { let t = 0; for (let i = 0; i < n; i++) t += 1 + Math.floor(Math.random() * k); return t; };
+  const out = new Map(), put = (r, q) => out.set(r[0], [r[0], Math.min(r[4] ?? Infinity, ((out.get(r[0]) || [])[1] || 0) + q), r[3]]);
+  for (let i = d(1, 6); i > 0; i--){ const r = POCKET_TABLE[Math.floor(Math.random() * POCKET_TABLE.length)]; put(r, d(r[1], r[2])); }
+  if (KEY_HOLDER(which) && !out.has("slave-pen-key")) put(POCKET_TABLE[4], 1);
+  return [...out.values()];
+}
+// the container id for a living character's pockets: each rank-and-file guard is their own (pocketKey, set where the plate
+// places them); a named NPC (Ilvara, Shoor, the prisoners — #970) is one pocket wherever they stand
+const pocketId = n => n.id === "escort-drow" ? "pocket:drow-guard-male:escort" : /^drow-guard-/.test(n.id) && n.pocketKey ? `pocket:${n.id}:${n.pocketKey}` : `pocket:${n.id}`;   // a named NPC is one pocket wherever they stand
 const lootLocal = {};                                   // preview only: container key -> {slug: taken}
 const lootKeyOf = id => id.startsWith("pocket:") ? id : id.startsWith("body:") ? "body:" + id.split(":")[1] + ":" + id.split(":").slice(2).join(":") : id;
 const slugName = s => s.replace(/-/g, " ").replace(/^./, c => c.toUpperCase());
@@ -2582,12 +2603,14 @@ async function fetchLoot(id){
     catch (e){ return {rows: [], error: String(e.message || e)}; }
   }
   await ensureCatalog();
-  const book = LOOT_BOOK[id] || LOOT_BOOK[id.split(":").slice(0, 2).join(":")] || [], taken = lootLocal[lootKeyOf(id)] || {}, penGone = Object.keys(lootLocal).some(k => k.startsWith("pocket:") && lootLocal[k]["slave-pen-key"]);
+  const pk = id.split(":"), pocketGuard = pk[0] === "pocket" && LOOT_BOOK[pk.slice(0, 2).join(":")] && /^drow-guard-/.test(pk[1]);
+  if (pocketGuard && !pocketLocal[id]) pocketLocal[id] = rollPocketsLocal(pk.slice(2).join(":") || "default");
+  const book = pocketGuard ? pocketLocal[id] : LOOT_BOOK[id] || LOOT_BOOK[id.split(":").slice(0, 2).join(":")] || [], taken = lootLocal[lootKeyOf(id)] || {}, penGone = Object.keys(lootLocal).some(k => k.startsWith("pocket:") && lootLocal[k]["slave-pen-key"]);
   const rows = [];
   for (const [slug, qty, note] of book){
     const left = qty - (taken[slug] || 0); if (left <= 0 || (slug === "slave-pen-key" && penGone)) continue;
     const it = (catalog || []).find(i => i.slug === slug);
-    rows.push({kind: "book", slug, name: it ? it.name : slugName(slug), qty: left, note, pixel: it ? it.pixel_icon_url : null, missing: !it});
+    rows.push({kind: "book", slug, name: it ? it.name : slugName(slug), qty: left, note, pixel: it ? it.pixel_icon_url : null, missing: !it, slot: it ? it.equippable_slot : null, loose: pocketGuard && LOOSE_IN_POCKET.has(slug)});
   }
   if (LOOT_STASH[id]) rows.push({kind: "preview-stash", name: LOOT_STASH[id], qty: 1});
   return {rows};
@@ -2698,7 +2721,7 @@ async function openPockets(n){
   const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); return b; };
   const close = () => { $("obj").hidden = true; mode = "explore"; };
   $("objText").textContent = `${name} is close enough to touch.`; $("obj").hidden = false;
-  const id = "pocket:" + n.id, j = await fetchLoot(id); if ($("obj").hidden) return;
+  const id = pocketId(n), j = await fetchLoot(id); if ($("obj").hidden) return;
   const rows = (j.rows || []).filter(r => r.kind !== "preview-stash");
   for (const row of rows) add(`Lift: ${row.name}${row.missing ? " (not in the catalogue yet)" : ""}`, () => {
     $("objText").textContent = `${fname(who)}: Dexterity (Sleight of Hand) ${sgn(sl)}, against ${name}'s passive Perception. Roll it on the dashboard (DC ${dc}). What did it come to?`;
@@ -2746,7 +2769,7 @@ function pickpocketMark(L){
 }
 async function openPickpocket(n){
   if (mode !== "explore") return;
-  const who = leader, name = fname(n), id = "pocket:" + n.id;
+  const who = leader, name = fname(n), id = pocketId(n);
   mode = "dialog"; party.forEach(p => { p.path = []; }); tip.hidden = true;
   try { portrait(n.id, $("objPic"), 128); } catch (e) {}
   $("objWho").textContent = name;
@@ -2755,7 +2778,7 @@ async function openPickpocket(n){
   const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
   $("objText").textContent = `${fname(who)} slips a hand toward ${name}…`; $("obj").hidden = false;
   const j = await fetchLoot(id); if ($("obj").hidden) return;
-  const rows = (j.rows || []).filter(r => r.kind !== "preview-stash" && !r.slot);
+  const rows = (j.rows || []).filter(r => r.kind !== "preview-stash" && (!r.slot || r.loose));   // a spare blade in a boot is loose; a worn or wielded one is not
   $("objText").textContent = j.error ? `The game did not answer (${j.error}).`
     : rows.length ? `${name} has not noticed ${fname(who)}. Loose on them, not worn or wielded:` : `${name} has nothing loose to take — only what they wear and wield.`;
   for (const row of rows){
@@ -2774,7 +2797,7 @@ async function stealFrom(n, who, row){
   const r = await rollOnDashboard(ACTION_KEY_PICKPOCKET(P), sl);
   if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3600); return; }
   if (r.success){
-    if (await takeLoot(who, "pocket:" + n.id, row)){
+    if (await takeLoot(who, pocketId(n), row)){
       popText(who, "pocketed", "#9ad0ff", 1);
       log(`${esc(fname(who))} lifts the ${esc(row.name)} from ${esc(fname(n))} without being noticed.`);
       offerEquip();
@@ -8781,7 +8804,7 @@ async function laborDoLook(){
 function laborReach(h){
   const out = [];
   for (const l of node.loot || []){ const c = lootCenter(l); if (Math.hypot(h.x - c.x, h.y - c.y) < 340 * node.scale) out.push({id: l.id, name: l.name, poly: l.poly}); }
-  const d = escortDrow(); if (d && d.id === "escort-drow" && Math.hypot(h.x - d.x, h.y - d.y) < 110 * node.scale) out.push({id: "pocket:drow-guard-male", name: "The drow guard's belt"});
+  const d = escortDrow(); if (d && d.id === "escort-drow" && Math.hypot(h.x - d.x, h.y - d.y) < 110 * node.scale) out.push({id: pocketId(d), name: "The drow guard's belt"});
   return out;
 }
 function laborWatchedBy(h){ return laborEscort().filter(w => inView(w, h)); }

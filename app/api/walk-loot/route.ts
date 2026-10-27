@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { CONFISCATION_STASH_NAME } from "@/lib/confiscation"
-import { BOOK_CONTAINERS, BODY_KIT, PEN_KEY_SLUG, isValuable, parseContainer, pocketEntries, type LootEntry } from "@/lib/walk-loot"
+import { BOOK_CONTAINERS, BODY_KIT, PEN_KEY_SLUG, POCKET_SPRITES, rollPockets, isValuable, parseContainer, pocketEntries, type LootEntry } from "@/lib/walk-loot"
 
 // /api/walk-loot — what is in Velkynvelve's chests, on its dead and in its guards' pockets (see lib/walk-loot.ts).
 //
@@ -22,7 +22,7 @@ export const dynamic = "force-dynamic"
 const CAMPAIGN = "ashes-of-prometheus"
 const KEY = "walk-loot"
 type Db = ReturnType<typeof createAdminClient>
-type State = { taken: Record<string, Record<string, number>>; carry: Record<string, string> }
+type State = { taken: Record<string, Record<string, number>>; carry: Record<string, string>; pockets: Record<string, LootEntry[]> }
 type Item = { id: string; slug: string; name: string; item_type: string; rarity: string | null; icon_url: string | null; pixel_icon_url: string | null; description: string | null; equippable_slot: string | null; weight: number | null; value: number | null; stackable: boolean }
 
 function authorized(req: NextRequest): boolean {
@@ -33,7 +33,7 @@ function authorized(req: NextRequest): boolean {
 async function readState(db: Db): Promise<State> {
   const { data } = await db.from("world_flags").select("value").eq("campaign_id", CAMPAIGN).eq("key", KEY).maybeSingle()
   const v = (data?.value ?? {}) as Partial<State>
-  return { taken: v.taken ?? {}, carry: v.carry ?? {} }
+  return { taken: v.taken ?? {}, carry: v.carry ?? {}, pockets: v.pockets ?? {} }
 }
 async function writeState(db: Db, s: State, note: string) {
   const { error } = await db.from("world_flags").upsert({ campaign_id: CAMPAIGN, key: KEY, value: s, set_by: "walk", note }, { onConflict: "campaign_id,key" })
@@ -62,9 +62,13 @@ async function stashRows(db: Db, sid: string): Promise<StashRow[]> {
 // pickpocket — a weapon, armour or a ring is worn or wielded, not in a pocket (Sam, 2026-10-27: "NOT equipped").
 type Shown = { kind: "book" | "stash"; slug?: string; rowId?: string; name: string; qty: number; note?: string; owner?: string | null; pixel: string | null; icon: string | null; missing?: boolean; slot?: string | null }
 
-async function contents(db: Db, id: string, s: State): Promise<{ title: string; source: string; rows: Shown[] } | null> {
+async function contents(db: Db, id: string, s: State): Promise<{ title: string; source: string; rows: Shown[]; rolled: boolean } | null> {
   const c = parseContainer(id); if (!c) return null
-  const book: LootEntry[] = c.kind === "book" ? BOOK_CONTAINERS[id].entries : c.kind === "body" ? BODY_KIT[c.slug!] ?? [] : pocketEntries(c.slug!)
+  // a guard's pockets are rolled the first time anyone looks, then kept for the run (lib/walk-loot.ts POCKET_TABLE)
+  const guard = c.kind === "pocket" && POCKET_SPRITES.has(c.slug!)
+  let rolled = false
+  if (guard && !s.pockets[c.key]){ s.pockets[c.key] = rollPockets(c.which!); rolled = true }
+  const book: LootEntry[] = c.kind === "book" ? BOOK_CONTAINERS[id].entries : c.kind === "body" ? BODY_KIT[c.slug!] ?? [] : guard ? s.pockets[c.key] : pocketEntries(c.slug!)
   const cat = await itemsBySlug(db, book.map((e) => e.slug))
   const taken = s.taken[c.key] ?? {}
   const penKeyGone = Object.entries(s.taken).some(([k, v]) => k.startsWith("pocket:") && (v[PEN_KEY_SLUG] ?? 0) > 0)
@@ -87,8 +91,8 @@ async function contents(db: Db, id: string, s: State): Promise<{ title: string; 
     }
   }
   const title = c.kind === "book" ? BOOK_CONTAINERS[id].title : c.kind === "body" ? "The body" : /^drow-guard/.test(c.slug!) ? "The guard's belt and pockets" : "A belt and pockets"
-  const source = c.kind === "book" ? BOOK_CONTAINERS[id].source : c.kind === "body" ? (BODY_KIT[c.slug!] ? "A drow warrior's kit, OotA ch.1 area 2." : "Only what the DM handed them.") : "OotA ch.1, Acquisitions: \"lift a key to the slave pen from a guard\"."
-  return { title, source, rows }
+  const source = c.kind === "book" ? BOOK_CONTAINERS[id].source : c.kind === "body" ? (BODY_KIT[c.slug!] ? "A drow warrior's kit, OotA ch.1 area 2." : "Only what the DM handed them.") : (guard ? "Rolled once for this guard: 1d6 draws on the pocket table (Sam's list, 2026-10-27). " : "") + "OotA ch.1, Acquisitions: \"lift a key to the slave pen from a guard\"."
+  return { title, source, rows, rolled }
 }
 
 export async function GET(req: NextRequest) {
@@ -102,7 +106,10 @@ export async function GET(req: NextRequest) {
   }
   const id = req.nextUrl.searchParams.get("container") ?? ""
   const out = await contents(db, id, s)
-  return out ? NextResponse.json(out) : NextResponse.json({ error: "No such container." }, { status: 404 })
+  if (!out) return NextResponse.json({ error: "No such container." }, { status: 404 })
+  if (out.rolled) await writeState(db, s, `pockets rolled for ${id}`)   // the same guard holds the same things all run
+  const { rolled: _r, ...shown } = out
+  return NextResponse.json(shown)
 }
 
 export async function POST(req: NextRequest) {
@@ -126,6 +133,7 @@ export async function POST(req: NextRequest) {
   const { data: who } = await db.from("characters").select("id,name").eq("id", characterId).maybeSingle()
   if (!who) return NextResponse.json({ error: "No such character." }, { status: 404 })
   const now = await contents(db, container, s); if (!now) return NextResponse.json({ error: "No such container." }, { status: 404 })
+  if (now.rolled) await writeState(db, s, `pockets rolled for ${container}`)
   const where = now.title === "The body" ? "a body" : now.title.replace(/^(The|A) /, (m) => m.toLowerCase())
 
   // a confiscated item: the row moves to the taker, and it is no longer anybody's confiscated property
