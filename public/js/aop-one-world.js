@@ -33,6 +33,8 @@ var AopOneWorld = (() => {
     heartbeatVerdict: () => heartbeatVerdict,
     isOnline: () => isOnline,
     mayWriteHero: () => mayWriteHero,
+    plateId: () => plateId,
+    samePlate: () => samePlate,
     seededRandom: () => seededRandom,
     seededRoll: () => seededRoll,
     worldDigest: () => worldDigest
@@ -40,6 +42,17 @@ var AopOneWorld = (() => {
   var ONLINE_MS = 12e3;
   var MISSES_BEFORE_RESYNC = 2;
   var LIMITS = { stateBytes: 64e3, heroesPerPatch: 12, coord: 4e3 };
+  var PLATE_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
+  function plateId(v) {
+    if (typeof v === "number") return Number.isInteger(v) && v >= 0 && v <= 999 ? String(v) : null;
+    if (typeof v !== "string") return null;
+    const s = v.trim().toLowerCase();
+    return PLATE_ID.test(s) ? s : null;
+  }
+  function samePlate(a, b) {
+    const x = plateId(a);
+    return x !== null && x === plateId(b);
+  }
   function canon(v) {
     if (v === null || v === void 0) return "null";
     if (typeof v === "number") return Number.isFinite(v) ? JSON.stringify(v) : "null";
@@ -61,7 +74,9 @@ var AopOneWorld = (() => {
     return h.toString(16).padStart(8, "0");
   }
   function worldDigest(plate, state) {
-    return fingerprint(canon({ plate: plate != null ? plate : null, state: state != null ? state : {} }));
+    const id = plateId(plate);
+    const p = id === null ? null : /^\d+$/.test(id) ? Number(id) : id;
+    return fingerprint(canon({ plate: p, state: state != null ? state : {} }));
   }
   function seededRandom(seed) {
     let a = parseInt(fingerprint(seed), 16) >>> 0;
@@ -137,15 +152,16 @@ var AopOneWorld = (() => {
       out.state = JSON.parse(JSON.stringify(r.state));
     }
     if (r.plate !== void 0) {
-      const p = int(r.plate, 0, 999);
+      const p = plateId(r.plate);
       if (p === null) return { error: "bad plate" };
       out.plate = p;
     }
     if (r.travel !== void 0) {
       const t = r.travel;
-      const seq = num(t == null ? void 0 : t.seq, Number.MAX_SAFE_INTEGER), from = int(t == null ? void 0 : t.from, 0, 999), to = int(t == null ? void 0 : t.to, 0, 999), zone = int(t == null ? void 0 : t.zone, -1, 999);
+      const seq = num(t == null ? void 0 : t.seq, Number.MAX_SAFE_INTEGER), from = plateId(t == null ? void 0 : t.from), to = plateId(t == null ? void 0 : t.to), zone = int(t == null ? void 0 : t.zone, -1, 999);
       if (!t || seq === null || from === null || to === null || zone === null) return { error: "bad travel" };
       out.travel = { seq, from, to, zone, by, at: Date.now() };
+      if (t.cut === true) out.travel.cut = true;
     }
     if (r.heroes !== void 0) {
       if (!r.heroes || typeof r.heroes !== "object" || Array.isArray(r.heroes)) return { error: "heroes must be an object" };
@@ -156,7 +172,7 @@ var AopOneWorld = (() => {
         if (!SLUG.test(slug)) return { error: `bad hero ${slug}` };
         const h = v;
         const x = num(h == null ? void 0 : h.x), y = num(h == null ? void 0 : h.y), tx = num(h == null ? void 0 : h.tx), ty = num(h == null ? void 0 : h.ty);
-        const face = int(h == null ? void 0 : h.face, 0, 7), plate = int(h == null ? void 0 : h.plate, 0, 999), seq = num(h == null ? void 0 : h.seq, Number.MAX_SAFE_INTEGER);
+        const face = int(h == null ? void 0 : h.face, 0, 7), plate = plateId(h == null ? void 0 : h.plate), seq = num(h == null ? void 0 : h.seq, Number.MAX_SAFE_INTEGER);
         if (x === null || y === null || tx === null || ty === null || face === null || plate === null || seq === null) return { error: `bad hero ${slug}` };
         const cid = typeof h.cid === "string" && h.cid.length <= 64 ? h.cid : null;
         heroes[slug] = { x, y, tx, ty, face, plate, seq, by, cid };
