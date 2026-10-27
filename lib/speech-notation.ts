@@ -16,6 +16,55 @@
  *   "a natural 20!"                                -> "a critical!"
  *   "The drow bleeds. (Drow: 4/13 HP)"             -> "The drow bleeds."
  */
+// ---------------------------------------------------------------------------
+// Rolls and checks are never dialogue (Sam, 2026-10-26: "rolls, types of checks
+// (insight, stealth) are not used as dialogue in bubbles, speech, in the pixel
+// map as speech or the dashboard UI"). The dice panel and the roll prompt are
+// where a check lives; a mouth, a speech bubble or the conversation log never
+// carries one. Two helpers:
+//
+//   isRollLine(text)   a whole row that is a roll announcement or the roll's
+//                      report to Malachar ("🎲 …", "[Dice Roll] …") — drop it.
+//   stripRollTalk(t)   any sentence that calls for or reports a check is cut
+//                      ("Roll for Stealth.", "Make a Wisdom (Insight) check."),
+//                      then the leftover maths goes (stripRollMath). An empty
+//                      result means the line had nothing but mechanics in it.
+// ---------------------------------------------------------------------------
+
+const ABILITY_WORDS = "strength|dexterity|constitution|intelligence|wisdom|charisma|str|dex|con|int|wis|cha"
+const CHECK_WORDS =
+  "athletics|acrobatics|sleight of hand|stealth|arcana|history|investigation|nature|religion|animal handling|" +
+  "insight|medicine|perception|survival|deception|intimidation|performance|persuasion|thieves'? tools|initiative"
+const CHECK_NAME = `(?:${ABILITY_WORDS}|${CHECK_WORDS})`
+
+/** A sentence that is mechanics, not speech: it names a check, a save, a DC, or carries a roll tag. */
+const CHECK_SENTENCE: RegExp[] = [
+  /\[\[[^\]]*\]\]/,                                                                     // [[1d20+3]]
+  new RegExp(`\\b${CHECK_NAME}\\s*(?:\\([^)]*\\)\\s*)?(?:check|save|saving throw|roll)s?\\b`, "i"),   // "Wisdom (Insight) check", "Stealth roll"
+  new RegExp(`\\b(?:roll|check)s?\\s+(?:for|on|with)\\s+(?:your\\s+)?${CHECK_NAME}\\b`, "i"),          // "Roll for Stealth"
+  /\bsaving throws?\b/i,
+  /\b(?:ability|skill) checks?\b/i,
+  /\b(?:AC|DC)\s*:?\s*\d+/,
+]
+
+/** True for a row that is a roll announcement or a roll result sent to Malachar — never a line anyone said. */
+export function isRollLine(text: string | null | undefined): boolean {
+  const t = String(text ?? "").trimStart()
+  return t.startsWith("🎲") || /^(?:\[ROLL_RESULT:[^\]]*\]\s*)?\[\s*dice\s*roll\s*\]/i.test(t)
+}
+
+/** The words of a line with every check call and roll figure removed. "" when nothing but mechanics was there. */
+export function stripRollTalk(text: string | null | undefined): string {
+  const raw = String(text ?? "")
+  if (!raw.trim() || isRollLine(raw)) return ""
+  // A check named in passing in brackets: "(Insight)", "(Wisdom save)".
+  const unbracketed = raw.replace(new RegExp(`\\s*\\(\\s*${CHECK_NAME}[^()]*\\)`, "gi"), "")
+  // Sentences, each with its closing punctuation and any closing quote.
+  const sentences = unbracketed.match(/[^.!?…]+(?:[.!?…]+|$)["”’']?\s*/g) ?? [unbracketed]
+  const kept = sentences.filter((s) => !CHECK_SENTENCE.some((re) => re.test(s))).join("")
+  return stripRollMath(kept)
+}
+
 export function stripRollMath(text: string): string {
   return (
     text

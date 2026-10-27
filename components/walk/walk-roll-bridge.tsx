@@ -49,6 +49,9 @@ import {
   type WalkRollReply,
 } from "@/lib/walk-roll"
 
+/** How long the acting character's sheet may take to load before the roll is called off with a reason. */
+const SHEET_READ_MS = 6000
+
 function readSeat(): { characterId: string | null; claimToken: string | null } {
   try {
     return { characterId: localStorage.getItem("aop_character_id"), claimToken: localStorage.getItem("aop_claim_token") }
@@ -96,9 +99,11 @@ export function WalkRollBridge({ frameRef }: { frameRef: RefObject<HTMLIFrameEle
   const outcomeRef = useRef<{ reply: Omit<WalkRollReply, "type" | "id">; text: string; success: boolean } | null>(null)
   pendingRef.current = pending
 
-  const post = (p: Pending, msg: WalkRollReply | WalkRollAck) => {
-    try { p.frame.postMessage(msg, window.location.origin) } catch { /* the map went away */ }
+  const loadingRef = useRef<string | null>(null)
+  const postTo = (frame: Window, msg: WalkRollReply | WalkRollAck) => {
+    try { frame.postMessage(msg, window.location.origin) } catch { /* the map went away */ }
   }
+  const post = (p: Pending, msg: WalkRollReply | WalkRollAck) => postTo(p.frame, msg)
 
   // 1–3: hear the map, read the sheet, open the panel.
   useEffect(() => {
@@ -110,35 +115,63 @@ export function WalkRollBridge({ frameRef }: { frameRef: RefObject<HTMLIFrameEle
       const req = parseWalkRollRequest(e.data)
       if (!req || seen.current.has(req.id)) return
       seen.current.add(req.id)
-      if (pendingRef.current) {
+      if (pendingRef.current || loadingRef.current) {
         try { frame.postMessage({ type: "aop:roll-result", id: req.id, ok: false, error: "Finish the roll in front of you first." } satisfies WalkRollReply, window.location.origin) } catch { /* gone */ }
         return
       }
 
-      const action = WALK_ACTIONS[req.action]
-      const seat = readSeat()
-      const characterId = seat.characterId || req.characterId || null
-      let row: Record<string, unknown> | null = null
-      if (characterId) {
-        const { data, error } = await supabase.from("characters").select(WALK_ROLL_COLUMNS).eq("id", characterId).maybeSingle()
-        if (error) console.error("[walk-roll] could not read the sheet:", error)
-        row = (data as Record<string, unknown> | null) ?? null
+      // "THE DICE DID NOT ANSWER. TRY AGAIN." (Sam, 2026-10-26: "It says try again but nothing is observed.")
+      // The map gives up after 8 s without an ack, and the ack used to wait on the sheet read below — so a slow
+      // or stuck read (or anything that threw before the ack) left the map with that toast and no dice at all.
+      // Now the map hears "I have it" at once, the read has its own clock, and every way this can fail answers
+      // the map with a reason instead of going silent.
+      const holdId = req.id
+      loadingRef.current = holdId   // one roll at a time from this moment, panel open or not
+      postTo(frame, { type: "aop:roll-ack", id: holdId })
+      const fail = (error: string) => {
+        if (loadingRef.current === holdId) loadingRef.current = null
+        postTo(frame, { type: "aop:roll-result", id: holdId, ok: false, error })
       }
-      // No sheet means no modifier to apply — never a guessed one. The roll still happens.
-      const mod = row ? walkCheckModifier(row, action.check) : { modifier: 0, parts: [] as WalkModifierPart[] }
-      const who = (row && typeof row.name === "string" && row.name) || "Someone"
+      try {
+        const action = WALK_ACTIONS[req.action]
+        const seat = readSeat()
+        const characterId = seat.characterId || req.characterId || null
+        let row: Record<string, unknown> | null = null
+        if (characterId) {
+          const read = supabase.from("characters").select(WALK_ROLL_COLUMNS).eq("id", characterId).maybeSingle()
+          const timedOut = new Promise<"timeout">((r) => window.setTimeout(() => r("timeout"), SHEET_READ_MS))
+          const got = await Promise.race([read, timedOut])
+          if (got === "timeout") {
+            console.error(`[walk-roll] the sheet did not load in ${SHEET_READ_MS / 1000} s for`, characterId)
+            // No sheet means no honest modifier, and a guessed one is never rolled.
+            fail("Your character sheet did not load, so nothing was rolled. Try once more in a moment.")
+            return
+          }
+          const { data, error } = got
+          if (error) console.error("[walk-roll] could not read the sheet:", error)
+          row = (data as Record<string, unknown> | null) ?? null
+        }
+        // No sheet means no modifier to apply — never a guessed one. The roll still happens.
+        const mod = row ? walkCheckModifier(row, action.check) : { modifier: 0, parts: [] as WalkModifierPart[] }
+        const who = (row && typeof row.name === "string" && row.name) || "Someone"
 
-      const inspired = Boolean(row && row.sheet_heroic_inspiration === true)
-      const canSpend = Boolean(characterId) && (isDmBrowser() || (Boolean(seat.claimToken) && seat.characterId === characterId))
-      const species = row && typeof row.sheet_species === "string" ? row.sheet_species : null
-      const p: Pending = { id: req.id, action: req.action, frame, who, species, characterId, modifier: mod.modifier, parts: mod.parts, inspired, canSpend }
-      outcomeRef.current = null
-      rerolledRef.current = null
-      setReroll(NO_REROLL)
-      setResult(null)
-      setPhase("ready")
-      setPending(p)
-      post(p, { type: "aop:roll-ack", id: p.id })
+        const inspired = Boolean(row && row.sheet_heroic_inspiration === true)
+        const canSpend = Boolean(characterId) && (isDmBrowser() || (Boolean(seat.claimToken) && seat.characterId === characterId))
+        const species = row && typeof row.sheet_species === "string" ? row.sheet_species : null
+        const p: Pending = { id: req.id, action: req.action, frame, who, species, characterId, modifier: mod.modifier, parts: mod.parts, inspired, canSpend }
+        outcomeRef.current = null
+        rerolledRef.current = null
+        setReroll(NO_REROLL)
+        setResult(null)
+        setPhase("ready")
+        if (loadingRef.current !== holdId) return   // superseded while the sheet loaded
+        loadingRef.current = null
+        pendingRef.current = p   // before the render lands, so a second request is still turned away
+        setPending(p)
+      } catch (err) {
+        console.error("[walk-roll] the roll could not be set up:", err)
+        fail("The dice could not be set up for that roll. Try once more.")
+      }
     }
     window.addEventListener("message", onMessage)
     return () => window.removeEventListener("message", onMessage)
