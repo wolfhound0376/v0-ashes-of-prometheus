@@ -263,7 +263,7 @@ for gi in range(NTOT):
             if 0 <= q <= 1:
                 x = TGT[0] - 10 - q * (TGT[0] - 10 - LAN[0] - 26)
                 y, _ = path_y(np.array([x]))
-                size = int(190 * SC * (0.95 - 0.25 * q))
+                size = int(133 * SC * (0.95 - 0.25 * q))   # souls 30% smaller (Sam, 2026-10-26)
                 im = SOUL_IMGS[(gi // 2) % 4].resize((size, size), Image.LANCZOS)
                 a = min(1, q * 7, (1 - q) * 7)
                 im.putalpha(im.getchannel('A').point(lambda p, a=a: int(p * a)))
