@@ -457,6 +457,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmWatchChange">Story: the watch changes (preview)</button>
       <button class="btn" id="dmWatchEmpty">Story: posts unattended / posted again (preview)</button>
       <button class="btn" id="dmFlag">Malachar calls initiative: ooze + guards (preview)</button>
+      <button class="btn" id="dmRestartRehearsal" hidden>Rehearsal: start over from the beginning</button>
       <button class="btn" id="dmGate">Open the pen gate (Jorlan's gambit)</button>
       <button class="btn" id="dmGateShut">Shut and lock the pen gate</button>
       <button class="btn" id="dmLaborCall">Work detail: call it now</button>
@@ -8726,8 +8727,9 @@ $("talkGo").onclick = (e) => {
   window.top.location.href = url;
 };
 // The walk survives a trip to the dashboard and back: where everyone stood, who has been talked to, the gate.
+let walkResetting = false;   // set by the rehearsal's start-over: nothing may save the old walk back on the way out
 function saveWalk(){
-  if (!leader || !party.length || !leader.x) return;
+  if (walkResetting || !leader || !party.length || !leader.x) return;
   try { sessionStorage.setItem("aop_walk_state", JSON.stringify({cur, run: runSeen, leader: leader && leader.id, party: party.map(p => ({id: p.id, x: Math.round(p.x), y: Math.round(p.y), face: p.face})), state})); } catch (e) {}
 }
 function loadWalk(){
@@ -8881,6 +8883,19 @@ $("jump").onchange = e => { const v = e.target.value, n = /^\d+$/.test(v) ? +v :
   const offs = party.map(p => ({id: p.id, dx: p.x - leader.x, dy: p.y - leader.y}));
   enterNode(n, {offs, fromScale: node.scale, note: `The DM moves the party to <em>${esc(SPEC[n].name)}</em>.`}); };
 $("dmGate").onclick = () => { toggleDm(false); openGate(); };
+// START THE REHEARSAL OVER (Sam, 2026-10-27: "I need a DM function that resets us to the beginning of the game for
+// sandbox"). Only in a rehearsal (?sandbox=1), where the whole walk lives in this tab: the saved walk (sessionStorage),
+// the plate, the gate, the prisoners with the party, what was taken and picked up here. Clearing the saved walk and
+// reloading puts the party back in the pen at the start. The real game is not touched: a rehearsal never reads or writes
+// the shared world (owLoad) or anyone's inventory (serverCid). The whole page reloads, so the dashboard's rehearsal
+// starts fresh with it.
+if (SANDBOX){ const b = $("dmRestartRehearsal"); b.hidden = false;
+  b.onclick = () => showDialog({title: "Start the rehearsal over?", body: "Back to the beginning: the party in the slave pen, the gate shut, nothing taken. Only this rehearsal is reset — the real game, its heroes and their inventories are not touched.",
+    buttons: [{label: "Start over", primary: true, fn: () => {
+      walkResetting = true;
+      try { sessionStorage.removeItem("aop_walk_state"); } catch (e) {}
+      try { (window.top !== window ? window.top : window).location.reload(); } catch (e) { location.reload(); }
+    }}, {label: "Cancel"}]}); }
 // Sam, 2026-10-26: a rehearsal tab kept its gate open from an earlier test and the watch never fired; there was no way
 // back to a locked pen short of a new tab. Shuts and locks it (a gate torn off its hinges stays broken).
 $("dmGateShut").onclick = () => { toggleDm(false);
