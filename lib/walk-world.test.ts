@@ -4,7 +4,7 @@ import { runInNewContext } from "node:vm"
 import { describe, expect, it } from "vitest"
 import {
   MISSES_BEFORE_RESYNC, ONLINE_MS, canon, cleanPatch, driverOf, fingerprint, heartbeatVerdict, mayWriteHero,
-  seededRandom, seededRoll, worldDigest, type Seat,
+  plateId, samePlate, seededRandom, seededRoll, worldDigest, type Seat,
 } from "./walk-world"
 
 const seat = (over: Partial<Seat>): Seat => ({ at: 0, slug: null, cid: null, dm: false, seat: null, digest: "", version: 0, status: "in-step", ...over })
@@ -114,14 +114,67 @@ describe("cleanPatch", () => {
   })
 })
 
+// Sam, 2026-10-26: he climbed the ladder 10 -> 10b and was snapped back to 10. walk_world.plate was an integer and
+// cleanPatch checked plates with int(), so every letter plate (10b, 10c, 3k, 5c — the labor plates) was refused whole.
+describe("letter plates — 10b, 10c, 3k, 5c, tunnels", () => {
+  const hero = (plate: unknown) => ({ freia: { x: 10, y: 20, tx: 30, ty: 40, face: 2, plate, seq: 5, cid: "d00a" } })
+  it("accepts a hero patch on 10b", () => {
+    const r = cleanPatch({ heroes: hero("10b") }, "d00a")
+    expect("patch" in r && r.patch.heroes?.freia.plate).toBe("10b")
+  })
+  it("accepts a plate change and a crossing to a letter plate, and the biome plates", () => {
+    for (const p of ["10b", "10c", "3k", "5c", "tunnels"]) {
+      const r = cleanPatch({ plate: p, travel: { seq: 1, from: 10, to: p, zone: 0 } }, "dm")
+      expect("patch" in r && r.patch.plate).toBe(p)
+      expect("patch" in r && r.patch.travel?.to).toBe(p)
+      expect("patch" in r && r.patch.travel?.from).toBe("10")
+    }
+  })
+  it("round-trips 10b through the stored row (JSON) unchanged", () => {
+    const r = cleanPatch({ plate: "10b", heroes: hero("10b"), travel: { seq: 3, from: "10", to: "10b", zone: 2, cut: true } }, "dm")
+    if (!("patch" in r)) throw new Error(r.error)
+    const back = JSON.parse(JSON.stringify(r.patch))
+    expect(back.plate).toBe("10b")
+    expect(back.heroes.freia.plate).toBe("10b")
+    expect(back.travel).toMatchObject({ from: "10", to: "10b", cut: true })
+    expect(cleanPatch(back, "dm")).toMatchObject({ patch: { plate: "10b" } })
+  })
+  it("still refuses what is not a plate", () => {
+    for (const p of ["", "10 b", "../x", -1, 1.5, 1000, null, {}, "a".repeat(40)]) expect("error" in cleanPatch({ plate: p }, "x")).toBe(true)
+    expect("error" in cleanPatch({ heroes: hero("10 b") }, "x")).toBe(true)
+  })
+  it("treats 10 and \"10\" as the same plate", () => {
+    expect(plateId(10)).toBe("10")
+    expect(plateId("10B")).toBe("10b")
+    expect(samePlate(10, "10")).toBe(true)
+    expect(samePlate("10b", "10")).toBe(false)
+    expect(samePlate(null, null)).toBe(false)
+  })
+  it("digests 10 and \"10\" alike, so a page holding 10 is in step with a row holding \"10\" (no resync)", () => {
+    const s = { gateOpen: true, rolls: { "10c": { guards: 1 } } }
+    expect(worldDigest(10, s)).toBe(worldDigest("10", s))
+    let misses = 0
+    for (let i = 0; i < MISSES_BEFORE_RESYNC + 1; i++) {
+      const v = heartbeatVerdict({ digest: worldDigest(10, s), dirty: false, travelling: false }, { digest: worldDigest("10", s) }, misses)
+      expect(v).toEqual({ status: "in-step", resync: false, misses: 0 })
+      misses = v.misses
+    }
+    expect(worldDigest("10b", s)).not.toBe(worldDigest(10, s))
+  })
+  it("keeps the digest of a numeric plate what it was before plates became text", () => {
+    // the pre-change worldDigest was fingerprint(canon({plate, state})) with plate a number
+    expect(worldDigest("11", {})).toBe(fingerprint(canon({ plate: 11, state: {} })))
+  })
+})
+
 describe("public/js/aop-one-world.js — the browser's copy", () => {
   it("fingerprints exactly as the server does", () => {
     const src = readFileSync(join(__dirname, "..", "public", "js", "aop-one-world.js"), "utf8")
     const ctx: Record<string, unknown> = {}
     runInNewContext(src + "\nthis.AopOneWorld = AopOneWorld;", ctx)
     const B = ctx.AopOneWorld as { worldDigest: typeof worldDigest; seededRoll: typeof seededRoll }
-    const worlds: [number | null, Record<string, unknown>][] = [
-      [11, {}], [3, { gateOpen: true, doorShut: false, rolls: { 3: { hall: 1 } }, talked: { ront: true, eldeth: false } }],
+    const worlds: [number | string | null, Record<string, unknown>][] = [
+      [11, {}], ["11", {}], ["10b", { gateOpen: true }], [3, { gateOpen: true, doorShut: false, rolls: { 3: { hall: 1 } }, talked: { ront: true, eldeth: false } }],
       [null, { company: ["ront", "eldeth"], props: { chest1: { locked: false, open: true } } }],
     ]
     for (const [p, s] of worlds) expect(B.worldDigest(p, s)).toBe(worldDigest(p, s))

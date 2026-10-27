@@ -1897,9 +1897,11 @@ async function enterNode(n, opts = {}){
 const wait = ms => new Promise(r => setTimeout(r, ms));
 // Leaving a plate: the party walks out along the exit (across the bridge, down the stairs, off the edge),
 // the camera slides to the neighbouring plate, and they walk in from its matching edge.
-async function travel(to, z, fromWorld){
+// `cut` (a work detail leaving the pen, Sam 2026-10-26): they walk out through the exit the same way, then ONE fade-cut
+// lands them on `to`, which need not be next door ({note} says how they got there). Every screen plays it alike.
+async function travel(to, z, fromWorld, cut){
   if (mode === "travel") return;
-  if (!fromWorld) owLeavesPlate(to, z);
+  if (!fromWorld) owLeavesPlate(to, z, !!cut);
   state.jumped = null;
   mode = "travel"; hoverZone = null; tip.hidden = true; bubbles.forEach(b => b.until = 0);
   const zc = zoneCenter(z), exitDir = norm({x: zc.x - centroid.x, y: zc.y - centroid.y});
@@ -1919,6 +1921,11 @@ async function travel(to, z, fromWorld){
   });
   const dir = drop ? {x: 0, y: 1} : Math.abs(exitDir.x) >= Math.abs(exitDir.y) ? {x: Math.sign(exitDir.x) || 1, y: 0} : {x: 0, y: Math.sign(exitDir.y) || 1};
   await wait(drop ? 1900 : climb ? 1600 + order.length * 650 : cr ? 2600 : 1500);
+  if (cut){
+    const via = arrivalFrom(SPEC, cur, to);
+    await enterNode(to, {from: owPlate(via), offs, fromScale: node.scale, note: cut.note || `The escort marches the detail through the outpost to <em>${esc(SPEC[to].name)}</em>.`});
+    return;
+  }
   await slideTo(to, dir);
   const verb = drop ? "The party drops through the falls" : climb ? (climb.dir === "up" ? "The party climbs up" : "The party climbs down") : z.kind === "water" ? "The party climbs" : "The party crosses";
   await enterNode(to, {from: cur, offs, exitDir, fromScale: node.scale, slide: dir, drop, note: `${verb} to <em>${esc(SPEC[to].name)}</em>.`});
@@ -6295,6 +6302,7 @@ async function pollLabor(){
   if (!APP || !booted) return;
   let j; try { j = await fetch("/api/labor", {cache: "no-store"}).then(r => r.json()); } catch (e) { return; }
   const was = labor && labor.status; labor = j.detail || null;
+  if (j.overdue) laborOverdue();
   // the shift has come round: anyone at the table may call it (the server takes the first and refuses the rest)
   if (labor && j.due && labor.status === "scheduled" && cur === PEN && mode === "explore" && !surgeon && !state.gateOpen) await laborPost("call");
   laborFollow(was);
@@ -6531,20 +6539,25 @@ async function laborWaitThenMarch(){
 // walk a route plate by plate, by the doors (a cut where a plate has no door back: barracks to the lift today)
 async function laborWalk(route, opts = {}){
   if (!route) return;
-  // Sam, 2026-10-26: "there is not transition". Out of the pen the party walks through the door behind the escort and
-  // across to the next plate, then ONE cut takes them to where the work is (no slide through every room on the way);
-  // coming back is one cut to the pen. `cut: false` keeps the old room-by-room walk.
-  if (opts.cut && route.length > 2){
-    const last = route[route.length - 1], to = isNaN(+last) ? last : +last, name = SPEC[last] && SPEC[last].name;
-    if (String(route[0]) === String(PEN)){
-      for (let t = 0; mode !== "explore" && t < 120; t++) await wait(250);
-      const z = exitTo(SPEC, cur, route[1]); const nx = isNaN(+route[1]) ? route[1] : +route[1];
-      if (z) await travel(nx, z); else await enterNode(nx, {from: cur});
-      for (let t = 0; mode !== "explore" && t < 120; t++) await wait(250);
-    }
+  // Sam, 2026-10-26: "there is not transition", then: the escort takes the party from the pen plate and the detail just
+  // shows up on the work plate. Out of the pen the escort has the gate open, the party steps through it behind them,
+  // and ONE fade-cut lands them where the work is — no walk onto the next plate first (travel's `cut`). Coming back is
+  // one cut to the pen. `cut: false` keeps the old room-by-room walk.
+  if (opts.cut && route.length >= 2 && String(route[0]) === String(PEN)){
+    const last = route[route.length - 1], to = owPlate(last), name = SPEC[last] && SPEC[last].name;
+    for (let t = 0; mode !== "explore" && t < 120; t++) await wait(250);
     if (String(cur) === String(last)) return;
-    const prev = route[route.length - 2];
-    await enterNode(to, {from: isNaN(+prev) ? prev : +prev, note: String(last) === String(PEN) ? "The escort marches the detail back through the outpost to the pen." : `The escort marches the detail through the outpost to <em>${esc(name || "the work")}</em>.`});
+    const note = `The escort marches the detail through the outpost to <em>${esc(name || "the work")}</em>.`;
+    const z = String(cur) === String(PEN) ? exitTo(SPEC, cur, route[1]) : null;   // out of the pen by its gate; anywhere else, just the cut
+    if (z) await travel(to, z, false, {note}); else await enterNode(to, {from: owPlate(arrivalFrom(SPEC, PEN, last)), note});
+    for (let t = 0; mode !== "explore" && t < 120; t++) await wait(250);
+    return;
+  }
+  if (opts.cut && route.length > 2){
+    const last = route[route.length - 1], to = owPlate(last);
+    if (String(cur) === String(last)) return;
+    const prev = route[route.length - 2], name = SPEC[last] && SPEC[last].name;
+    await enterNode(to, {from: owPlate(prev), note: String(last) === String(PEN) ? "The escort marches the detail back through the outpost to the pen." : `The escort marches the detail through the outpost to <em>${esc(name || "the work")}</em>.`});
     for (let t = 0; mode !== "explore" && t < 120; t++) await wait(250);
     return;
   }
@@ -6563,6 +6576,16 @@ function laborAtWork(){
   const k = `${labor.id}:work:${cur}`; if (laborPlayed[k]) return; laborPlayed[k] = true;
   setTimeout(() => escortSays(escortDrow(), LINES.task[labor.task] || LINES.task.water), 900);
   log(`<b>Work detail:</b> ${esc(TASKS_LABEL[labor.task] || labor.task)}. The escort stands over you while you work.`);
+}
+// The shift timeout (Sam, 2026-10-26: one game hour; /api/labor, lib/labor-walk.mjs shiftTimeout). Past the hour the
+// server says `overdue`, and the map that may press "Finish the shift" (the DM's, or the one that marched them) walks
+// them home the normal way. If no map does within a minute, the server calls the detail off.
+function laborOverdue(){
+  if (!labor || labor.status !== "working" || !atWorkPlate() || !(isDm() || laborDriving)) return;
+  if (mode !== "explore" && mode !== "dialog" && mode !== "talk") return;    // not mid-fight or mid-crossing: next poll
+  const k = `${labor.id}:overdue`; if (laborPlayed[k]) return; laborPlayed[k] = true;
+  log(`<b>Work detail:</b> the shift is over. The escort does not wait to be told.`);
+  laborFinish();
 }
 // 3. home: the way back, then the escort locks them in and goes
 async function laborFinish(opts = {}){
@@ -9342,6 +9365,11 @@ const OW = {on: false, run: null, key: null, version: 0, plate: null, synced: {}
   travelSeq: 0, localTravelUntil: 0, misses: 0, fails: 0, status: "off", offset: 0, seats: {}, inflight: false,
   queue: null, stateInflight: false, resyncing: false, rt: null, last: {}};
 const owNow = () => Date.now() + OW.offset;
+// Plates come back from the shared world as text ("10", "10b", "tunnels"); this page keys a numeric plate as a number
+// (cur === 9) and a letter plate as a string (cur === "5c"). owPlate turns any form into the page's own; owSame
+// compares any two forms. (Sam, 2026-10-26: climbed 10 -> 10b, the world refused "10b" and pulled him back to 10.)
+const owPlate = p => { if (p == null) return null; const s = String(p); return /^\d+$/.test(s) ? +s : s; };
+const owSame = (a, b) => a != null && b != null && String(a) === String(b);
 const owCanon = v => window.AopOneWorld ? AopOneWorld.canon(v) : JSON.stringify(v);
 const owClone = v => v === undefined ? undefined : JSON.parse(JSON.stringify(v));
 function owAuth(){
@@ -9376,18 +9404,18 @@ async function owLoad(){
 /** The world as the boot's `saved` walk: the plate, the state, and every hero standing on that plate. */
 function owSaved(W, mine){
   const w = W.world; if (w.plate == null || !SPEC[w.plate]) return null;
-  const party = PARTY.map(id => w.heroes && w.heroes[id]).map((h, i) => h && h.plate === w.plate ? {id: PARTY[i], x: h.x, y: h.y, face: h.face || 0} : null).filter(Boolean);
-  return {cur: w.plate, run: runSeen, leader: mine || (party[0] && party[0].id), party, state: owClone(w.state || {}), bare: !party.length};
+  const party = PARTY.map(id => w.heroes && w.heroes[id]).map((h, i) => h && owSame(h.plate, w.plate) ? {id: PARTY[i], x: h.x, y: h.y, face: h.face || 0} : null).filter(Boolean);
+  return {cur: owPlate(w.plate), run: runSeen, leader: mine || (party[0] && party[0].id), party, state: owClone(w.state || {}), bare: !party.length};
 }
 function owStart(W){
   if (!W || !W.world || !owAuth()){ if (OW.status !== "rehearsal") owSetStatus("off"); return; }
   const w = W.world;
   OW.on = true; OW.run = w.campaign_run_id; OW.key = isDm() ? "dm" : (myClaimId || null);
-  OW.version = Number(w.version) || 0; OW.plate = w.plate; OW.travelSeq = (w.travel && w.travel.seq) || 0;
+  OW.version = Number(w.version) || 0; OW.plate = owPlate(w.plate); OW.travelSeq = (w.travel && w.travel.seq) || 0;
   for (const k of Object.keys(w.state || {})) OW.synced[k] = owCanon(w.state[k]);
   for (const [slug, h] of Object.entries(w.heroes || {})) OW.seen[slug] = h.seq || 0;
   owSetStatus("catching-up");
-  if (w.plate == null || w.plate !== cur) owEntered(true);      // a fresh world: this screen places the party
+  if (w.plate == null || !owSame(w.plate, cur)) owEntered(true);      // a fresh world: this screen places the party
   setInterval(owHeroTick, 150); setInterval(owStateTick, 400); setInterval(owBeat, 2500);
   setTimeout(owBeat, 300);
   if (W.realtime && W.realtime.url && W.realtime.key) owRealtime(W.realtime);
@@ -9427,7 +9455,7 @@ function owHeroTick(){
     // crossing re-formed the party, a fight shoved it — walks back there (or is put there, if far). Positions heal.
     if (!drives && !ordered){
       const h = OW.last[a.id];
-      if (h && h.plate === cur && !a.path.length && !a.kbd){
+      if (h && owSame(h.plate, cur) && !a.path.length && !a.kbd){
         const d = Math.hypot(a.x - h.tx, a.y - h.ty);
         if (d > 220 * node.scale){ a.x = h.tx; a.y = h.ty; }
         else if (d > 30){ const p = findPath(a, nearestWalkable(h.tx, h.ty)); a.path = p && p.length ? p : [{x: h.tx, y: h.ty}]; }
@@ -9448,7 +9476,7 @@ function owHeroTick(){
 }
 function owApplyHero(slug, h){
   const a = party.find(p => p.id === slug);
-  if (!a || h.plate !== cur || mode === "travel" || mode === "load" || mode === "combat" || a.climbing || a.once){ if (a || PARTY.includes(slug)) OW.pending[slug] = h; return; }
+  if (!a || !owSame(h.plate, cur) || mode === "travel" || mode === "load" || mode === "combat" || a.climbing || a.once){ if (a || PARTY.includes(slug)) OW.pending[slug] = h; return; }
   if (Math.hypot(a.x - h.x, a.y - h.y) > 220 * node.scale){ a.x = h.x; a.y = h.y; a.alpha = 1; }   // too far apart to walk it: put it there
   const dest = {x: h.tx, y: h.ty}; a.netDest = dest; OW.sent[slug] = {...h}; OW.last[slug] = h;
   stopActivity(a); a.kbd = false; a.onArrive = null; a.walkIn = false;
@@ -9456,16 +9484,17 @@ function owApplyHero(slug, h){
   else { a.path = []; a.face = h.face | 0; }
 }
 // --- plates ---
-function owLeavesPlate(to, z){
+function owLeavesPlate(to, z, cut){
   if (!OW.on) return;
   const seq = Math.max(owNow(), OW.travelSeq + 1); OW.travelSeq = seq; OW.plate = to; OW.localTravelUntil = Date.now() + 12000;
   OW.sent = {};                                                    // on the new plate every driven hero is re-sent
-  owPost("patch", {patch: {travel: {seq, from: cur, to, zone: node.zones.indexOf(z)}, plate: to}}).then(owBumpVersion).catch(() => { OW.plate = null; });
+  const t = {seq, from: cur, to, zone: node.zones.indexOf(z)}; if (cut) t.cut = true;
+  owPost("patch", {patch: {travel: t, plate: to}}).then(owBumpVersion).catch(() => { OW.plate = null; });
 }
 function owEntered(force){
   if (!OW.on || OW.applyingPlate) return;
   OW.sent = {};
-  if (!force && cur === OW.plate) return;
+  if (!force && owSame(cur, OW.plate)) return;
   OW.plate = cur;
   owPost("patch", {patch: {plate: cur}}).then(owBumpVersion).catch(() => { OW.plate = null; });
 }
@@ -9473,11 +9502,12 @@ function owEntered(force){
 // not mid-crossing, not while loading — those finish first and the plate follows (OW.pendingPlate).
 const OW_CAN_MOVE = () => mode === "explore" || mode === "dialog" || mode === "talk";
 async function owGoTo(plate, t){
+  plate = owPlate(plate);
   OW.applyingPlate = true;
   try {
-    const z = t && t.from === cur && t.to === plate ? node.zones[t.zone] : null;
+    const z = t && owSame(t.from, cur) && owSame(t.to, plate) ? node.zones[t.zone] : null;
     $("obj").hidden = true; $("talk").hidden = true; $("dialog").hidden = true; talkNpc = null;   // nothing declined: the party just left
-    if (z && OW_CAN_MOVE()){ mode = "explore"; await travel(plate, z, true); }
+    if (z && OW_CAN_MOVE()){ mode = "explore"; await travel(plate, z, true, t.cut ? {} : null); }
     else await enterNode(plate, {note: "The party has moved on — you are with them."});
   } finally { OW.applyingPlate = false; OW.plate = cur; OW.sent = {}; }
 }
@@ -9531,14 +9561,14 @@ function owReceive(w){
   const t = w.travel;
   if (t && (t.seq || 0) > OW.travelSeq){
     OW.travelSeq = t.seq;
-    if (t.by !== OW.key && t.to !== cur){ if (OW_CAN_MOVE()) owGoTo(t.to, t); else OW.pendingPlate = t.to; return; }
+    if (t.by !== OW.key && !owSame(t.to, cur)){ if (OW_CAN_MOVE()) owGoTo(t.to, t); else OW.pendingPlate = owPlate(t.to); return; }
   }
-  if (w.plate != null) OW.plate = w.plate;
+  if (w.plate != null) OW.plate = owPlate(w.plate);
   owCheckPlate();
 }
 function owCheckPlate(){
   const p = OW.pendingPlate != null ? OW.pendingPlate : OW.plate;
-  if (p == null || p === cur || !SPEC[p] || OW.applyingPlate) return;
+  if (p == null || owSame(p, cur) || !SPEC[p] || OW.applyingPlate) return;
   if (Date.now() < OW.localTravelUntil && mode === "travel") return;
   if (!OW_CAN_MOVE()) return;                                         // after the fight / the crossing
   OW.pendingPlate = null; owGoTo(p, null);
@@ -9570,9 +9600,9 @@ async function owResync(){
     const w = j.world; if (!w) return;
     console.warn("[one-world] this screen had drifted from the shared world; snapping to it", {plate: w.plate, version: w.version});
     owApplyState(w.state || {}, true);
-    OW.version = Number(w.version) || 0; OW.plate = w.plate; OW.seen = {};
+    OW.version = Number(w.version) || 0; OW.plate = owPlate(w.plate); OW.seen = {};
     for (const [slug, h] of Object.entries(w.heroes || {})){ OW.seen[slug] = h.seq || 0; if (h.by !== OW.key) owApplyHero(slug, h); }
-    if (w.plate != null && w.plate !== cur){ OW.pendingPlate = w.plate; owCheckPlate(); }
+    if (w.plate != null && !owSame(w.plate, cur)){ OW.pendingPlate = owPlate(w.plate); owCheckPlate(); }
   } catch (e) {} finally { OW.resyncing = false; }
 }
 // --- fights (not shared yet) ---

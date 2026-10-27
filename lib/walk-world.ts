@@ -41,7 +41,7 @@ export type Hero = {
   tx: number
   ty: number
   face: number
-  plate: number
+  plate: PlateId
   /** per-hero order counter: a write with a lower seq than the stored one is stale and dropped */
   seq: number
   /** the client that sent it ("dm" or a characters.id) */
@@ -50,7 +50,18 @@ export type Hero = {
   cid: string | null
 }
 
-export type Travel = { seq: number; from: number; to: number; zone: number; by: string; at: number }
+/**
+ * A plate's key in the walk SPEC: "10", "10b", "5c", "3k", "tunnels"… Text, because plates are not all numbers.
+ * Until 2026-10-27 this was an integer and every letter plate was refused whole ("bad plate"): Sam climbed the
+ * ladder 10 -> 10b, the write bounced, and the next heartbeat pulled him back to 10 ("The party has moved on").
+ */
+export type PlateId = string
+
+/**
+ * `cut`: the crossing is played as a walk out through `zone` and then ONE fade-cut to `to` (a work detail leaving the
+ * pen, Sam 2026-10-26), not the walk-and-slide onto a neighbouring plate. Screens that follow play it the same way.
+ */
+export type Travel = { seq: number; from: PlateId; to: PlateId; zone: number; by: string; at: number; cut?: boolean }
 
 export type Seat = {
   at: number
@@ -68,7 +79,7 @@ export type SyncStatus = "in-step" | "catching-up" | "out-of-touch" | "fight-uns
 export type WorldRow = {
   campaign_run_id: string
   version: number
-  plate: number | null
+  plate: PlateId | null
   state: Record<string, unknown>
   heroes: Record<string, Hero>
   travel: Travel | null
@@ -80,8 +91,29 @@ export type WorldRow = {
 export type Patch = {
   state?: Record<string, unknown>
   heroes?: Record<string, Hero>
-  plate?: number
+  plate?: PlateId
   travel?: Travel
+}
+
+// ---------- plate ids ----------
+
+const PLATE_ID = /^[a-z0-9][a-z0-9-]{0,31}$/
+
+/**
+ * A plate id as the shared world stores it (a string), or null when it is not one. Accepts the page's numbers (10)
+ * and its strings ("10", "10b", "tunnels"), so 10 and "10" are the same plate. Case is folded ("10B" is "10b").
+ */
+export function plateId(v: unknown): PlateId | null {
+  if (typeof v === "number") return Number.isInteger(v) && v >= 0 && v <= 999 ? String(v) : null
+  if (typeof v !== "string") return null
+  const s = v.trim().toLowerCase()
+  return PLATE_ID.test(s) ? s : null
+}
+
+/** Are these the same plate? 10 and "10" are; null is never the same as anything. */
+export function samePlate(a: unknown, b: unknown): boolean {
+  const x = plateId(a)
+  return x !== null && x === plateId(b)
 }
 
 // ---------- fingerprint ----------
@@ -114,9 +146,15 @@ export function fingerprint(s: string): string {
   return h.toString(16).padStart(8, "0")
 }
 
-/** What the heartbeat compares: the plate and the shared state. Positions are not in it — they move. */
-export function worldDigest(plate: number | null | undefined, state: Record<string, unknown> | null | undefined): string {
-  return fingerprint(canon({ plate: plate ?? null, state: state ?? {} }))
+/**
+ * What the heartbeat compares: the plate and the shared state. Positions are not in it — they move.
+ * The plate is normalised first, so a page holding 10 and a server row holding "10" agree. A numeric plate digests
+ * as the number it always did (so digests from before plates became text still match); a letter plate as its string.
+ */
+export function worldDigest(plate: PlateId | number | null | undefined, state: Record<string, unknown> | null | undefined): string {
+  const id = plateId(plate)
+  const p = id === null ? null : /^\d+$/.test(id) ? Number(id) : id
+  return fingerprint(canon({ plate: p, state: state ?? {} }))
 }
 
 // ---------- seeded dice ----------
@@ -229,15 +267,16 @@ export function cleanPatch(raw: unknown, by: string): { patch: Patch } | { error
     out.state = JSON.parse(JSON.stringify(r.state)) as Record<string, unknown>
   }
   if (r.plate !== undefined) {
-    const p = int(r.plate, 0, 999)
+    const p = plateId(r.plate)
     if (p === null) return { error: "bad plate" }
     out.plate = p
   }
   if (r.travel !== undefined) {
     const t = r.travel as Record<string, unknown>
-    const seq = num(t?.seq, Number.MAX_SAFE_INTEGER), from = int(t?.from, 0, 999), to = int(t?.to, 0, 999), zone = int(t?.zone, -1, 999)
+    const seq = num(t?.seq, Number.MAX_SAFE_INTEGER), from = plateId(t?.from), to = plateId(t?.to), zone = int(t?.zone, -1, 999)
     if (!t || seq === null || from === null || to === null || zone === null) return { error: "bad travel" }
     out.travel = { seq, from, to, zone, by, at: Date.now() }
+    if (t.cut === true) out.travel.cut = true
   }
   if (r.heroes !== undefined) {
     if (!r.heroes || typeof r.heroes !== "object" || Array.isArray(r.heroes)) return { error: "heroes must be an object" }
@@ -248,7 +287,7 @@ export function cleanPatch(raw: unknown, by: string): { patch: Patch } | { error
       if (!SLUG.test(slug)) return { error: `bad hero ${slug}` }
       const h = v as Record<string, unknown>
       const x = num(h?.x), y = num(h?.y), tx = num(h?.tx), ty = num(h?.ty)
-      const face = int(h?.face, 0, 7), plate = int(h?.plate, 0, 999), seq = num(h?.seq, Number.MAX_SAFE_INTEGER)
+      const face = int(h?.face, 0, 7), plate = plateId(h?.plate), seq = num(h?.seq, Number.MAX_SAFE_INTEGER)
       if (x === null || y === null || tx === null || ty === null || face === null || plate === null || seq === null) return { error: `bad hero ${slug}` }
       const cid = typeof h.cid === "string" && h.cid.length <= 64 ? h.cid : null
       heroes[slug] = { x, y, tx, ty, face, plate, seq, by, cid }
