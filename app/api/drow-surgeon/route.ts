@@ -23,6 +23,8 @@ import {
 //   POST {action:"leave"}       she goes without being asked
 //   POST {action:"again"}       a LATER defiance at the gate (Sam, 2026-10-25: "Remove formal fight. Volleys only."): the
 //                               guards shoot again — no execution, no surgeon — volleys until they step away or drop
+//   POST {action:"labor"}       volleys at a hero who defied the escort twice on a work detail (Hard Labor): the surgeon's
+//                               first time if she has not come, else a later defiance — no execution bolt either way
 //   POST {action:"recover"}     after a later drop nobody comes: stable at 0, they regain 1 HP after 1d4 hours
 //                               (SRD 5.1, Combat: Stabilizing a Creature) — the time is reported to Malachar, not advanced here
 //
@@ -186,6 +188,25 @@ export async function POST(req: NextRequest) {
       ? `${target.name} would not step back from the pen gate. The guards on the bridge loosed one bolt into the pen to make the point: it took ${v.name} in the chest. ${v.name} is dead (Malachar's d8: ${roll}). The guards are still shooting.`
       : `${target.name} would not step back from the pen gate, and the guards on the bridge began to shoot.`)
     return NextResponse.json({ ok: true, state: s })
+  }
+
+  // ---------- volleys on a work detail (Hard Labor; Sam, 2026-10-26) ----------
+  // "another disobedient request leads to volleys downing the player (surgeon then comes unless she has already came
+  // once)". No warning bolt and no prisoner executed — that is the gate's scene. If she has never come, this starts the
+  // record as a FIRST time (again absent), so after the drop `tend` brings her; if she has come, it is a later defiance
+  // (again n), and after the drop `recover` applies. The walk hauls the downed hero back to the pen for either.
+  if (action === "labor") {
+    if (state && state.stage !== "stepped" && state.stage !== "settled" && state.stage !== "tended") return NextResponse.json({ error: "the guards are already busy", state }, { status: 409 })
+    const targetId = typeof body.targetId === "string" ? body.targetId : ""
+    const { data: target } = await db.from("characters").select("id, name").eq("id", targetId).maybeSingle()
+    if (!target) return NextResponse.json({ error: "no such character on the detail" }, { status: 400 })
+    const first = !state || (!state.heal && !state.again && state.stage !== "tended" && state.stage !== "settled")
+    const s: State = first
+      ? { stage: "shooting", at: new Date().toISOString(), victim: state?.victim ?? null, target: { id: target.id, name: target.name }, volleys: 0 }
+      : { ...state!, stage: "shooting", again: (state!.again ?? 0) + 1, target: { id: target.id, name: target.name }, volleys: 0 }
+    await writeState(db, s, `${target.name} defies the escort on a work detail${first ? "" : ` (later defiance ${s.again})`}`)
+    await say(db, `${target.name} defied the escort on a work detail a second time. No more warnings: the drow raises a hand crossbow and shoots until ${target.name} drops.${first ? " (The surgeon has not yet come this run.)" : ""}`)
+    return NextResponse.json({ ok: true, state: s, surgeon: first })
   }
 
   if (!state) return NextResponse.json({ error: "nothing has happened at the gate yet" }, { status: 409 })

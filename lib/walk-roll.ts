@@ -80,6 +80,10 @@ export const WALK_ACTIONS = {
   // A hero inside an escort's line of sight cannot try at all (the map's rule): those are the "active observers".
   "labor:pocket": { title: "Pocket it", label: "Pocketing something while the drow guard is not looking", check: SLEIGHT, dc: 12, source: "OotA p.19; drow passive Perception 12 (SRD)" },
   "labor:pocket-jorlan": { title: "Pocket it", label: "Pocketing something while Jorlan is not looking", check: SLEIGHT, dc: 14, source: "OotA p.19; Jorlan's passive Perception 14" },
+  // Searched on suspicion (Sam: never routinely). Keeping it hidden: Sleight of Hand against the searcher's passive
+  // Perception as the DC — the book's p.19 rule turned round [HOUSE].
+  "labor:hide": { title: "Keep it hidden", label: "Keeping a pocketed thing hidden while a drow guard searches them", check: SLEIGHT, dc: 12, source: "after OotA p.19; drow passive Perception 12; house" },
+  "labor:hide-jorlan": { title: "Keep it hidden", label: "Keeping a pocketed thing hidden while Jorlan searches them", check: SLEIGHT, dc: 14, source: "after OotA p.19; Jorlan's passive Perception 14; house" },
 } as const satisfies Record<string, WalkAction>
 
 export type WalkActionKey = keyof typeof WALK_ACTIONS
