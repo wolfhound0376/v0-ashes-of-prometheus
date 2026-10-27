@@ -4185,15 +4185,55 @@ setInterval(() => {
   }
   for (const id of [...sneak.dwell.keys()]) if (!seenNow.has(id)) sneak.dwell.delete(id);   // out of everyone's sight: the clock resets
 }, 250);
+// WHAT THE RED SHOWS (Sam, 2026-10-27: "the red sneak shouldn't reach beyond their line of sight"). The cone used to
+// be drawn as the plain 120-degree fan, while the game judged sight with sneakSight — for the pen's gate guards that
+// means through the gate's bars only (gateSight), so the red lay across solid stone the guard cannot see through.
+// Now the cone is drawn FROM sneakSight: rays across the fan, each sampled outward, and only the stretches the
+// watcher actually sees AND a hero could stand on (walkable floor or the landing) are filled — the red means "stand
+// here and they see you", so it never lies on a wall, even one the line of sight grazes behind the bars. The drawing and the judge cannot disagree, because they are the same test.
+// Recomputed only when the watcher moves or turns, the plate changes or the gate opens.
+const SIGHT_RAYS = 48, SIGHT_STEPS = 40;
+const sightCache = new WeakMap();
+function sightShape(w){
+  const r = VIEW_FT * ftPx(w), a0 = faceAngle(w);
+  const key = [cur, Math.round(w.x), Math.round(w.y), w.face, r | 0, !!(state && state.gateOpen)].join("|");
+  const hit = sightCache.get(w); if (hit && hit.key === key) return hit;
+  const segs = []; let full = true;
+  for (let i = 0; i < SIGHT_RAYS; i++){
+    const a = a0 - VIEW_HALF + 2 * VIEW_HALF * (i + .5) / SIGHT_RAYS, cx = Math.cos(a), cy = Math.sin(a);
+    let run = null;
+    for (let k = 1; k <= SIGHT_STEPS; k++){
+      const d = r * k / SIGHT_STEPS, q = {x: w.x + cx * d, y: w.y + cy * d}, seen = (walkable(q.x, q.y) || onBalcony(q)) && sneakSight(w, q);
+      if (seen && !run) run = [k === 1 ? 0 : r * (k - .5) / SIGHT_STEPS, d];
+      else if (seen) run[1] = d;
+      else { full = false; if (run){ segs.push([i, run[0], r * (k - .5) / SIGHT_STEPS]); run = null; } }
+    }
+    if (run) segs.push([i, run[0], r]);
+  }
+  const out = {key, r, a0, segs, full}; sightCache.set(w, out); return out;
+}
 function drawSneakCones(){
   if (!sneak || mode !== "explore") return;
   // Sam, 2026-10-26: "a relatively translucent red". Brighter once that watcher has seen someone.
   for (const w of sneakWatchers()){
-    const r = VIEW_FT * ftPx(w), a0 = faceAngle(w), seen = w.alert, g = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r);
+    const sh = sightShape(w), r = sh.r, a0 = sh.a0, seen = w.alert, g = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r);
     const col = "214,48,40", k = seen ? 1.8 : 1;
     g.addColorStop(0, `rgba(${col},${.24 * k})`); g.addColorStop(.7, `rgba(${col},${.1 * k})`); g.addColorStop(1, `rgba(${col},0)`);
-    ctx.save(); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(w.x, w.y); ctx.arc(w.x, w.y, r, a0 - VIEW_HALF, a0 + VIEW_HALF); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = `rgba(${col},${.38 * k})`; ctx.lineWidth = 2 / (base * view.z); ctx.setLineDash([8 / (base * view.z), 6 / (base * view.z)]); ctx.stroke(); ctx.restore();
+    ctx.save(); ctx.fillStyle = g;
+    if (sh.full){                                            // nothing in the way: the whole fan, with its dashed rim
+      ctx.beginPath(); ctx.moveTo(w.x, w.y); ctx.arc(w.x, w.y, r, a0 - VIEW_HALF, a0 + VIEW_HALF); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = `rgba(${col},${.38 * k})`; ctx.lineWidth = 2 / (base * view.z); ctx.setLineDash([8 / (base * view.z), 6 / (base * view.z)]); ctx.stroke();
+    } else if (sh.segs.length){                              // only what the watcher really sees: one sliver per seen stretch
+      const step = 2 * VIEW_HALF / SIGHT_RAYS;
+      ctx.beginPath();
+      for (const [i, d0, d1] of sh.segs){
+        const s0 = a0 - VIEW_HALF + step * i, s1 = s0 + step + .002;   // the hair of overlap hides seams between slivers
+        ctx.moveTo(w.x + Math.cos(s0) * d0, w.y + Math.sin(s0) * d0);
+        ctx.arc(w.x, w.y, d1, s0, s1); ctx.arc(w.x, w.y, Math.max(d0, .01), s1, s0, true); ctx.closePath();
+      }
+      ctx.fill();
+    }
+    ctx.restore();
   }
 }
 
