@@ -10091,7 +10091,10 @@ function step(a, dt, speed){
   }
   if (a.fadeIn){ a.alpha = Math.min(1, a.alpha + dt * 2.5); if (a.alpha >= 1) a.fadeIn = false; }
   if (a.waitUntil && now < a.waitUntil) return;
-  if (!a.path.length){ if ((a.anim === "walk" || a.anim === "carry") && !a.kbd) setAnim(a, "idle"); return; }
+  // A walk-in whose path was cleared before it arrived (a fight, a guard's challenge: `path = []`) never ran its onArrive,
+  // so `walkIn` stayed set — and the exits check `!leader.walkIn`, so no exit on the plate worked again (Sam, 2026-10-27:
+  // "Not able to leave this plate", the Guard Tower after its fight). Standing still ends the walk-in, however it ended.
+  if (!a.path.length){ a.walkIn = false; if ((a.anim === "walk" || a.anim === "carry") && !a.kbd) setAnim(a, "idle"); return; }
   if (a.path[0].jump){                  // through a doorway: reappear on the far side
     const q = a.path.shift(); a.x = q.x; a.y = q.y; if (q.s != null) a.big = q.s; a.fadeIn = true;
     if (!a.path.length){ setAnim(a, "idle"); const cb = a.onArrive; a.onArrive = null; cb && cb(); }
