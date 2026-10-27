@@ -619,10 +619,22 @@ function partyPresent(){
   for (const id of companyNow()) if (SPR[id] && !party.some(p => p.id === id)) names.push(SPR[id].json.name);
   return names.filter(Boolean);
 }
-async function seatCompanion(who){
+async function seatCompanion(who, override = false){
   const body = typeof who === "string" ? {name: PLAYS_AS[who] || who} : {characterId: who.id, name: who.name};
+  if (override) body.override = true;
   const res = await fetch("/api/seat", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)});
-  if (!res.ok){ toast(res.status === 403 ? "Adding a character needs the DM code. Enter it on the dashboard first." : "Could not add them."); return; }
+  if (!res.ok){
+    const err = await res.json().catch(() => ({}));
+    // THE ROSTER EXCEPTION (Sam, 2026-10-26): the session is live, so the roster is locked — but a canon hero who is
+    // not seated may still be brought in by the DM, after a warning that names the exception (lib/roster-exception.ts).
+    if (res.status === 409 && err.canOverride && !override){
+      showDialog({title: "Roster locked — DM exception", body: err.warning || `The session is live and the roster is locked. Adding ${err.name || "this hero"} now is a DM exception.`,
+        src: "Only the four canon heroes can be brought in once a session is live.",
+        buttons: [{label: `Add ${err.name || "them"} anyway`, primary: true, fn: () => seatCompanion(who, true)}, {label: "Cancel"}]});
+      return;
+    }
+    toast(res.status === 403 ? "Adding a character needs the DM code. Enter it on the dashboard first." : (err.error || "Could not add them."), 4800); return;
+  }
   // the seat answer carries no sheet; /api/map-stage does, so a Forge hero arrives with their own stats, not a stand-in's
   let seated = (await res.json()).seated;
   try { const j = await fetch("/api/map-stage", {cache: "no-store"}).then(r => r.json()); if (Array.isArray(j.seated)) seated = j.seated; } catch (e) {}

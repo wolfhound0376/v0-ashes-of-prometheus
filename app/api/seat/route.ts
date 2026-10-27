@@ -4,11 +4,13 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { isDmRequest } from "@/lib/dm-session"
 import { readSeated, unseatCharacter } from "@/lib/seats"
 import { nextSeatNumber, readTable, readTableView, startIfReady, writeSeat } from "@/lib/table-store"
+import { decideSeat, exceptionWarning } from "@/lib/roster-exception"
 
 // /api/seat — the DM's hand on the seats (lib/seats.ts).
 //
 //   GET                      → who is seated this run (anyone may ask; the map shows it anyway)
 //   POST   { characterId } or { name } → seat a player character as a DM-RUN COMPANION (x-dm-key)
+//          + { override: true } while LIVE → the DM's exception for a canon hero (lib/roster-exception.ts)
 //   DELETE ?characterId=…    → send a companion away (x-dm-key); a player's own seat is left alone
 //
 // A player's seat is never taken here — that happens when their claim is verified. The DM gate is
@@ -52,15 +54,23 @@ export async function POST(req: NextRequest) {
   const { data: ch } = await (characterId ? q.eq("id", characterId) : q.ilike("name", name)).limit(1).maybeSingle()
   if (!ch || !ch.is_player) return NextResponse.json({ error: "not a player character" }, { status: 404 })
   // The roster locks when the session begins, for the DM too (Sam, 2026-10-25): a companion is seated at
-  // the staging table before the start, like everyone else (lib/table.ts).
+  // the staging table before the start, like everyone else (lib/table.ts). One exception (Sam, 2026-10-26): a
+  // canon hero may still be brought in while live, once the DM confirms the warning (`override: true`).
   const table = await readTable(db)
-  if (table.status !== "lobby") return NextResponse.json({ error: table.status === "live" ? "The roster is locked once the session begins. Seat companions at the table before you start." : "Open the table first (Behind the Screen → Open the table)." }, { status: 409 })
+  const decision = decideSeat(table.status, ch.id, body.override === true)
+  if (!decision.ok) {
+    return NextResponse.json({
+      error: decision.error, code: decision.code, canOverride: decision.canOverride, name: ch.name,
+      ...(decision.canOverride ? { warning: exceptionWarning(ch.name) } : {}),
+    }, { status: decision.status })
+  }
   const view = await readTableView(db)
   if (!view.seats.some((s) => s.id === ch.id)) {
     const seat = nextSeatNumber(view)
     if (seat == null) return NextResponse.json({ error: "Every seat at the table is taken." }, { status: 409 })
-    await writeSeat(db, { id: ch.id, name: ch.name, at: new Date().toISOString(), dm: true, seat, ready: true }, "dm", `${ch.name} runs as the DM's companion`)
-    await startIfReady(db, await readTableView(db))
+    const note = decision.exception ? `${ch.name} brought in mid-session by the DM (roster exception)` : `${ch.name} runs as the DM's companion`
+    await writeSeat(db, { id: ch.id, name: ch.name, at: new Date().toISOString(), dm: true, seat, ready: true }, "dm", note)
+    if (!decision.exception) await startIfReady(db, await readTableView(db))   // live already: nothing to start
   }
   return NextResponse.json({ ok: true, seated: await readSeated(db) })
 }
