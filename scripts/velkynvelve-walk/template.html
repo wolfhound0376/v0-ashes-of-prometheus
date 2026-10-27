@@ -583,7 +583,7 @@ function applyForgedSheet(slug, sh){
 // A DM-run companion (lib/seats.ts, seat.dm): walks with the party, led only from the DM's browser,
 // marked on hover. Sam, 2026-10-14: "The DM can add characters but will treat them like an NPC, with
 // the DM controlling that character."
-let seatsSeen = [], myClaimId = null;   // myClaimId: this browser's own seated character (languages: whose ears)
+let seatsSeen = [], myClaimId = null, myHeroName = null;   // myHeroName: whose NPC lines this screen hears aloud   // myClaimId: this browser's own seated character (languages: whose ears)
 const dmRun = new Set();
 function noteSeats(seated){
   seatsSeen = Array.isArray(seated) ? seated : [];
@@ -7471,10 +7471,20 @@ function hearLine(row){
   talkQueue = talkQueue.then(async () => {
     const here = actorForSpeaker(name, type);
     if (here){ comeToListener(here); bark(here, text, lineMs(text), {talk: true}); } else log(`<b>${esc(name)}</b>${id ? " (not here)" : ""}: ${esc(text)}`);
-    if (!voicesOn || !id) return wait(here ? Math.min(lineMs(text), 2500) : 300);
+    if (!voicesOn || !id || !hearsNpcVoice(row)) return wait(here ? Math.min(lineMs(text), 2500) : 300);
     try { await speakCanon(id, text, name); } catch (e) { console.warn("voice unavailable:", name, e); return; }
     const t0 = performance.now(); while (speaking && performance.now() - t0 < 30000) await wait(150);   // one voice at a time
   });
+}
+// WHO HEARS AN NPC (Sam, 2026-10-26: "If an NPC speaks to another player ONLY the bubble is seen by everyone else;
+// we don't need to hear as well." / "DM screen can hear every NPC voice."). The server stamps each NPC reply with
+// the hero it answers (`recipient`); everyone sees the bubble, but only that hero's screen and the DM's play the
+// voice. A line addressed to nobody is heard by all, as before. Same rule as lib/voice-audience.ts — keep in step.
+function hearsNpcVoice(row){
+  const to = String((row && row.recipient) || "").trim().toLowerCase();
+  if (!to || isDm()) return true;
+  if (!myHeroName) return !APP;   // the stand-alone preview keeps every voice; an unclaimed seat in the game hears none of others' talk
+  return to === String(myHeroName).trim().toLowerCase();
 }
 async function pollTalk(){
   try {
@@ -9462,7 +9472,7 @@ function owRenderSeats(){
       const id = localStorage.getItem("aop_character_id"), token = localStorage.getItem("aop_claim_token");
       if (id && token){
         const v = await fetch("/api/verify-claim", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({characterId: id, claimToken: token})}).then(r => r.json());
-        if (v && v.valid && v.character){ myClaimId = v.character.id; mine = seatedSlugs([v.character])[0] || null; }
+        if (v && v.valid && v.character){ myClaimId = v.character.id; myHeroName = v.character.name || null; mine = seatedSlugs([v.character])[0] || null; }
         mySlug = mine;
       }
     } catch (e) {}
