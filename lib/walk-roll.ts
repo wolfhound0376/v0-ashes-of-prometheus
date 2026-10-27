@@ -47,6 +47,10 @@ export interface WalkAction {
 
 const THIEVES_TOOLS: WalkCheck = { kind: "tool", tool: "Thieves' Tools", ability: "dex", label: "Thieves' tools" }
 const ATHLETICS: WalkCheck = { kind: "skill", skill: "athletics", label: "Athletics" }
+const ACROBATICS: WalkCheck = { kind: "skill", skill: "acrobatics", label: "Acrobatics" }
+const PERCEPTION: WalkCheck = { kind: "skill", skill: "perception", label: "Perception" }
+const SLEIGHT: WalkCheck = { kind: "skill", skill: "sleight_of_hand", label: "Sleight of Hand" }
+const COOKS: WalkCheck = { kind: "tool", tool: "Cook's Utensils", ability: "wis", label: "Cook's utensils" }
 
 /**
  * Every roll the map may ask for. Adding a check to the map means adding a row
@@ -63,6 +67,19 @@ export const WALK_ACTIONS = {
   // ropes; whoever falls lands in the web net with the giant spider. The supplement names no DC: 12 is a house number.
   "cliff:rappel": { title: "Rappel on the rope", label: "Rappelling down the cliff below the lift", check: ATHLETICS, dc: 12, source: "OotA Expanded p.45 · DC house" },
   "cliff:climb": { title: "Climb the rope", label: "Climbing the rope up the cliff below the lift", check: ATHLETICS, dc: 12, source: "OotA Expanded p.45 · DC house" },
+  // Hard Labor (OotA Encounters ch.1 p.12; module doc claude/Hard_Labor_Module_2026-10-26.md). The book lists the chores
+  // and sets no DCs: every work and look DC below is a house number (Claude's, Sam's call).
+  "labor:water": { title: "Haul the barrels", label: "Filling and hauling water barrels on a work detail", check: ATHLETICS, dc: 10, source: "OotA p.12 chore; DC house" },
+  "labor:lift": { title: "Turn the winch", label: "Operating the lift on a work detail", check: ATHLETICS, dc: 12, source: "OotA p.12 chore; DC house" },
+  "labor:pots": { title: "Carry the pots across", label: "Carrying chamber pots across the bridge on a work detail", check: ACROBATICS, dc: 10, source: "OotA p.12 chore; balance is Acrobatics (SRD); DC house" },
+  "labor:kitchen": { title: "Cook for the drow", label: "Preparing food for the drow on a work detail", check: COOKS, dc: 12, source: "OotA p.12 chore; DC house" },
+  // Lift Trouble has no work roll here: the cliff plate's own rappels are the work (feat/cliff-rappels, "cliff:rappel").
+  "labor:look": { title: "Look around", label: "Taking in the room while working", check: PERCEPTION, dc: 12, source: "DC house" },
+  // Pocketing on a detail: OotA p.19 "Acquisitions" — Sleight of Hand against an observer's passive Perception as the
+  // base DC (book). The DC is the sharpest eyes in the escort: a drow, passive 12 (SRD); Jorlan, passive 14 (his row).
+  // A hero inside an escort's line of sight cannot try at all (the map's rule): those are the "active observers".
+  "labor:pocket": { title: "Pocket it", label: "Pocketing something while the drow guard is not looking", check: SLEIGHT, dc: 12, source: "OotA p.19; drow passive Perception 12 (SRD)" },
+  "labor:pocket-jorlan": { title: "Pocket it", label: "Pocketing something while Jorlan is not looking", check: SLEIGHT, dc: 14, source: "OotA p.19; Jorlan's passive Perception 14" },
 } as const satisfies Record<string, WalkAction>
 
 export type WalkActionKey = keyof typeof WALK_ACTIONS

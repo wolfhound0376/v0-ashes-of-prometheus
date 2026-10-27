@@ -118,3 +118,49 @@ describe("who is who", () => {
     expect(W.PRISONERS.map(W.prisonerSlug)).toEqual(["ront", "eldeth", "derendil", "sarith", "buppido", "jimjar", "topsy", "turvy", "shuushar", "stool"])
   })
 })
+
+describe("the stations (PR 3)", () => {
+  it("finishes a task in two good goes", () => {
+    const a = W.workStep("water", 0, true, false)
+    expect(a).toMatchObject({ progress: 1, done: false, redo: false })
+    expect(W.workStep("water", a.progress, true, false)).toMatchObject({ done: true })
+  })
+
+  it("makes them do it again after a failed check, without losing what they had", () => {
+    expect(W.workStep("lift", 1, false, false)).toMatchObject({ progress: 1, redo: true, done: false, line: "fail" })
+  })
+
+  it("redoes the cruelty work once, whatever the result — the drow's arbitrary standards [BOOK]", () => {
+    for (const t of W.CRUELTY) {
+      const first = W.workStep(t, 1, true, false)
+      expect(first, t).toMatchObject({ redo: true, done: false, line: "whim", progress: 0 })
+      expect(W.workStep(t, 1, true, true), t).toMatchObject({ done: true })
+      expect((W.WORK_LINES.whim as Record<string, string>)[t], t).toBeTruthy()
+    }
+  })
+
+  it("never redoes real work on a whim", () => {
+    for (const t of ["water", "lift", "pots", "kitchen", "clean", "dishes", "laundry"]) expect(W.workStep(t, 1, true, false).done, t).toBe(true)
+  })
+
+  it("rolls only checks the dashboard knows", async () => {
+    const { WALK_ACTIONS } = await import("./walk-roll")
+    for (const k of Object.values(W.WORK_ROLL) as string[]) expect(WALK_ACTIONS, k).toHaveProperty(k)
+    for (const k of ["labor:look", "labor:pocket", "labor:pocket-jorlan"]) expect(WALK_ACTIONS).toHaveProperty(k)
+  })
+
+  it("pockets against Jorlan's eyes when he is the escort, a drow's otherwise", () => {
+    expect(W.pocketRoll(["jorlan-duskryn", "quaggoth"])).toBe("labor:pocket-jorlan")
+    expect(W.pocketRoll(["drow", "quaggoth"])).toBe("labor:pocket")
+    expect(W.pocketRoll([])).toBe("labor:pocket")
+  })
+
+  it("has something to see on every plate a detail works on, each with its source", () => {
+    for (const t of TASKS) {
+      const seed = (W.LOOK_SEEDS as Record<string, { text: string; source: string; falls?: boolean }>)[(W.WORK_PLATE as Record<string, string>)[t.key]]
+      expect(seed, t.key).toBeTruthy()
+      expect(seed.source, t.key).toBeTruthy()
+    }
+    expect(W.LOOK_SEEDS["9"].falls).toBe(true)
+  })
+})
