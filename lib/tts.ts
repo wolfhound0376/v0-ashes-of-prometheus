@@ -178,7 +178,9 @@ export interface NamedNpcVoice {
 export const NAMED_NPC_VOICES: NamedNpcVoice[] = [
   { name: "Sarith Kzekarit", voiceId: "LtatEcI0kyKTsTngQlD8", archetype: "grim, haunted drow warrior with a fraying mind", aliases: ["sarith", "kzekarit"] },
   { name: "Shuushar the Awakened", voiceId: "Uzt8OVGqinnV0TMbbk28", archetype: "serene, wise amphibious mystic", aliases: ["shuushar"] },
-  { name: "Jorlan Duskryn", voiceId: "S9fXBozPl46ZX7nuL84Z", archetype: "bitter, aristocratic drow commander", aliases: ["jorlan", "duskryn"] },
+  // Jorlan (Sam, 2026-10-26: "His voice should sound more elvish and condescending"): Posh Josh, a crisp RP
+  // aristocrat, smug and cutting — the same id as his npc_encounters row, which the game reads first.
+  { name: "Jorlan Duskryn", voiceId: "NXaTw4ifg0LAguvKuIwZ", archetype: "condescending, aristocratic drow elite, crisp elvish diction", aliases: ["jorlan", "duskryn"] },
   // Topsy and Turvy: the DB spells them "Topsy" / "Turvy". These entries used
   // to read "Tipsy" / "Turvey" and never matched. Their voices are the ones
   // made for them (Sam, 2026-10-09). Turvy's is "Turvey Deep Gnome V3.0", Sam's
