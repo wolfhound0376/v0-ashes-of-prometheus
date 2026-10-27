@@ -4634,26 +4634,27 @@ function sightShape(w){
 function drawSneakCones(){
   if (!sneak || mode !== "explore") return;
   // Sam, 2026-10-26: "a relatively translucent red". Brighter once that watcher has seen someone.
-  for (const w of sneakWatchers()){
-    const sh = sightShape(w), r = sh.r, a0 = sh.a0, seen = w.alert, g = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r);
-    const col = "214,48,40", k = seen ? 1.8 : 1;
-    g.addColorStop(0, `rgba(${col},${.24 * k})`); g.addColorStop(.7, `rgba(${col},${.1 * k})`); g.addColorStop(1, `rgba(${col},0)`);
-    ctx.save(); ctx.fillStyle = g;
-    if (sh.full){                                            // nothing in the way: the whole fan, with its dashed rim
-      ctx.beginPath(); ctx.moveTo(w.x, w.y); ctx.arc(w.x, w.y, r, a0 - VIEW_HALF, a0 + VIEW_HALF); ctx.closePath(); ctx.fill();
-      ctx.strokeStyle = `rgba(${col},${.38 * k})`; ctx.lineWidth = 2 / (base * view.z); ctx.setLineDash([8 / (base * view.z), 6 / (base * view.z)]); ctx.stroke();
-    } else if (sh.segs.length){                              // only what the watcher really sees: one sliver per seen stretch
-      const step = 2 * VIEW_HALF / SIGHT_RAYS;
-      ctx.beginPath();
-      for (const [i, d0, d1] of sh.segs){
-        const s0 = a0 - VIEW_HALF + step * i, s1 = s0 + step + .002;   // the hair of overlap hides seams between slivers
-        ctx.moveTo(w.x + Math.cos(s0) * d0, w.y + Math.sin(s0) * d0);
-        ctx.arc(w.x, w.y, d1, s0, s1); ctx.arc(w.x, w.y, Math.max(d0, .01), s1, s0, true); ctx.closePath();
-      }
-      ctx.fill();
+  for (const w of sneakWatchers()) drawSightFan(w, "214,48,40", w.alert ? 1.8 : 1, true);
+}
+/** One watcher's view, drawn from sightShape: only the floor they really see is filled (the sneak cones' rule). */
+function drawSightFan(w, col, k, rim){
+  const sh = sightShape(w), r = sh.r, a0 = sh.a0, g = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r);
+  g.addColorStop(0, `rgba(${col},${.24 * k})`); g.addColorStop(.7, `rgba(${col},${.1 * k})`); g.addColorStop(1, `rgba(${col},0)`);
+  ctx.save(); ctx.fillStyle = g;
+  if (sh.full){                                            // nothing in the way: the whole fan, with its dashed rim
+    ctx.beginPath(); ctx.moveTo(w.x, w.y); ctx.arc(w.x, w.y, r, a0 - VIEW_HALF, a0 + VIEW_HALF); ctx.closePath(); ctx.fill();
+    if (rim){ ctx.strokeStyle = `rgba(${col},${.38 * k})`; ctx.lineWidth = 2 / (base * view.z); ctx.setLineDash([8 / (base * view.z), 6 / (base * view.z)]); ctx.stroke(); }
+  } else if (sh.segs.length){                              // only what the watcher really sees: one sliver per seen stretch
+    const step = 2 * VIEW_HALF / SIGHT_RAYS;
+    ctx.beginPath();
+    for (const [i, d0, d1] of sh.segs){
+      const s0 = a0 - VIEW_HALF + step * i, s1 = s0 + step + .002;   // the hair of overlap hides seams between slivers
+      ctx.moveTo(w.x + Math.cos(s0) * d0, w.y + Math.sin(s0) * d0);
+      ctx.arc(w.x, w.y, d1, s0, s1); ctx.arc(w.x, w.y, Math.max(d0, .01), s1, s0, true); ctx.closePath();
     }
-    ctx.restore();
+    ctx.fill();
   }
+  ctx.restore();
 }
 
 // Search here, Listen, Look closer: the roll on the map, the finding from the DM core
@@ -7709,7 +7710,7 @@ function laborReach(h){
   const d = escortDrow(); if (d && d.id === "escort-drow" && Math.hypot(h.x - d.x, h.y - d.y) < 110 * node.scale) out.push({id: pocketId(d), name: "The drow guard's belt"});
   return out;
 }
-function laborWatchedBy(h){ return laborEscort().filter(w => inView(w, h)); }
+function laborWatchedBy(h){ return laborEscort().filter(w => sneakSight(w, h)); }   // the same test the amber is drawn from
 function laborDoPocket(spot){
   const h = laborHero(); if (!h || !atWorkPlate()) return;
   const eyes = laborWatchedBy(h);
@@ -7766,13 +7767,14 @@ setInterval(() => {
     else { const t = party.filter(p => !p.ko).sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y))[0]; if (t) a.face = faceOf(t.x - a.x, t.y - a.y); }
   }
 }, 3200);
+// WHERE THE ESCORT IS LOOKING (Sam, 2026-10-27, on the armory: "what's up with the weird cone of light"). This was
+// drawn as the bare 60 ft / 120 deg fan, so on a small room it ran up the shelves, over the walls and off the edge of
+// the painting into the black — a searchlight, not a glance. It now draws the way the sneak cones do (Sam,
+// 2026-10-27: "shouldn't reach beyond their line of sight"): sightShape, so only the floor the escort sees is tinted,
+// faint amber, no rim. What it means is unchanged: stand in it and a hand in the stores is seen (laborWatchedBy).
 function drawLaborCones(){
   if (!atWorkPlate() || (mode !== "explore" && mode !== "dialog")) return;
-  for (const w of laborEscort()){
-    const r = VIEW_FT * ftPx(w), a0 = faceAngle(w), g = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r), col = "255,179,90";
-    g.addColorStop(0, `rgba(${col},.34)`); g.addColorStop(.7, `rgba(${col},.12)`); g.addColorStop(1, `rgba(${col},0)`);
-    ctx.save(); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(w.x, w.y); ctx.arc(w.x, w.y, r, a0 - VIEW_HALF, a0 + VIEW_HALF); ctx.closePath(); ctx.fill(); ctx.restore();
-  }
+  for (const w of laborEscort()) drawSightFan(w, "255,179,90", .8, false);
 }
 
 // ---------- HARD LABOR: caught, searched, defying (PR 4) ----------
