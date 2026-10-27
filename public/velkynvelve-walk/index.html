@@ -1940,6 +1940,7 @@ async function enterNode(n, opts = {}){
     npcs.push(spawnCompanion(id, {x: spawn.x + Math.cos(ang) * r, y: spawn.y + Math.sin(ang) * r * .7}, placed, face));
   });
   actors = [...party, ...npcs];
+  for (const k in heroTrails) delete heroTrails[k];
   trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: L.x, y: L.y}]);
   ackZone = arrival; hoverZone = null;
   sliding = false; view = {z: 1, tx: 0, ty: 0}; camTween = null; applyView(); $("plate2").hidden = true;
@@ -5271,7 +5272,7 @@ const VIEW_FT = 60, VIEW_HALF = Math.PI / 3;
 let sneak = null, helpNext = null, followOn = true, moreOpen = false;   // Follow is ON by default (Sam, 2026-10-27, AFK Journey: "party members following in a formation")
 const BUTTON_PRI = [[/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
   [/^(Sneak|Stop sneaking|Scout)/, 4], [/^Pick .*pocket/, 4], [/^Search here/, 5], [/^Cast/, 6], [/^Inventory/, 7], [/^(Pray|Inspire)/, 8], [/^Quick drink/, 9],
-  [/^Next hero/, 10], [/^Help/, 11], [/^(Follow|Wait)/, 12], [/^Short rest/, 13], [/^Tell Malachar/, 14], [/^Talk$/, 30]];
+  [/^Next hero/, 10], [/^Help/, 11], [/^(Follow|Wait)/, 12], [/^My company/, 12], [/^Short rest/, 13], [/^Tell Malachar/, 14], [/^Talk$/, 30]];
 function priOf(b){ const t = (b.querySelector("span") || b).textContent; const hit = BUTTON_PRI.find(([re]) => re.test(t)); return (hit ? hit[1] : 15) + (b.disabled ? 20 : 0); }
 // Sam, 2026-10-26: "sneaking up should be and being small should have an advantage as well as line of sight." A Small
 // hero (halfling, gnome, deep gnome, goblin, kobold — or a sheet that says size Small) rolls Stealth with advantage.
@@ -5307,6 +5308,8 @@ function exploreExtras(m, o, add, who){
   if (exNear) x(`Listen at ${exitName(exNear)}`, "◖", ART("listen"), `Perception ${sgn(heroMod(L, "perception", "wis"))} · what is beyond`, () => listenAt(exNear));
   if (look) x(`Look closer at ${look}`, "◎", ART("look-closer"), `Investigation ${sgn(heroMod(L, "investigation", "int"))}`, () => GATE_LOOK_RE.test(look) ? openGateLook(look) : lookCloser(look));
   if (party.length > 1) x(helpNext && helpNext.by === L.id ? "Helping" : "Help", "✋", ART("help"), helpNext && helpNext.by === L.id ? "the next friend's check has advantage" : "the next friend's check gets advantage", helpNext && helpNext.by === L.id ? null : () => giveHelp());
+  if (escortOf(L.id).length || companyMode(L.id) !== "follow"){ const m = companyMode(L.id);
+    x("My company", "☰", ART("follow"), `${escortOf(L.id).length} with you · ${m === "follow" ? "following" : m === "wait" ? "waiting" : "with " + fname(party.find(p => p.id === m.slice(5)) || L)}`, canControl(L) ? () => openCompany() : null); }
   if (/cleric/.test(cls)) x("Pray", "✠", ART("pray"), "silently, or aloud", () => openPray());
   if (sh.bardic) x("Inspire", "♪", ART("inspire"), `Bardic Inspiration · ${inspLeftOf(L)} of ${sh.bardic.uses} left`, inspLeftOf(L) > 0 && party.length > 1 ? () => openInspire() : null);
   if (/rogue/.test(cls) && !sneak) x("Scout ahead", "➶", ART("scout"), "sneak alone; the others wait", () => startSneak(true));
@@ -5613,42 +5616,42 @@ function giveHelp(){ helpNext = {by: leader.id, until: now + 60000}; log(`${fnam
 const followsNow = f => !f.ko && !f.down && !f.body && !f.once && !f.offStage && !f.fading && !f.climbing && !f.riding && !owRemote(f);
 function formationList(){
   if (!leader) return [];
-  const heroes = followOrder().filter(followsNow);
-  const comp = sneak || laborLive() ? [] : npcs.filter(n => n.company && followsNow(n))
-    .sort((a, b) => Math.hypot(a.x - leader.x, a.y - leader.y) - Math.hypot(b.x - leader.x, b.y - leader.y));
-  return [...heroes, ...comp];
+  return followOrder().filter(followsNow);       // the heroes this screen drives; the company walks by its escort (below)
 }
 // the point `dist` back along the trail, nudged `side` (-1 left, +1 right, 0 centre) across the line of march
-function formationSlot(i, n){
+function formationSlot(i, n){ return slotBehind(leader, trail, i, n); }
+function trailAt(h, tr, dist){
+  let acc = 0, prev = {x: h.x, y: h.y};
+  for (let i = tr.length - 1; i >= 0; i--){
+    const p = tr[i], d = Math.hypot(p.x - prev.x, p.y - prev.y);
+    if (acc + d >= dist){ const t = (dist - acc) / (d || 1); return {x: prev.x + (p.x - prev.x) * t, y: prev.y + (p.y - prev.y) * t}; }
+    acc += d; prev = p;
+  }
+  return prev;
+}
+function trailLenOf(h, tr){ let acc = 0, prev = h; for (let i = tr.length - 1; i >= 0; i--){ acc += Math.hypot(tr[i].x - prev.x, tr[i].y - prev.y); prev = tr[i]; } return acc; }
+function slotBehind(h, tr, i, n){
   const s = node.scale, row = Math.floor(i / 2) + 1, lone = i === n - 1 && n % 2 === 1;
   const side = lone ? 0 : (i % 2 ? 1 : -1), back = row * 62 * s;
-  let p = trailPoint(back), q = trailPoint(Math.max(0, back - 30 * s));
+  let p = trailAt(h, tr, back), q = trailAt(h, tr, Math.max(0, back - 30 * s));
   let dx = q.x - p.x, dy = q.y - p.y; const d = Math.hypot(dx, dy);
   if (d < 1){ dx = 0; dy = -1; } else { dx /= d; dy /= d; }
   // a trail shorter than the slot (the party just walked in, or the leader has not moved yet): carry on straight back
   // past its end, the way the trail was heading; otherwise every rear slot lands on the trail's last point, in a heap
-  const short = back - trailLen();
+  const short = back - trailLenOf(h, tr);
   if (short > 1) p = {x: p.x - dx * short, y: p.y - dy * short};
   const lat = side * 34 * s;
   return {x: p.x - dy * lat, y: p.y + dx * lat * .7};                  // .7: the floor is seen at an angle
 }
-function trailLen(){
-  let acc = 0, prev = leader;
-  for (let i = trail.length - 1; i >= 0; i--){ acc += Math.hypot(trail[i].x - prev.x, trail[i].y - prev.y); prev = trail[i]; }
-  return acc;
-}
 function setFollow(on){
   followOn = on; log(on ? "The party falls in behind." : "The others wait where they stand.");
   if (on) trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: leader.x, y: leader.y}]);
-  else formationList().concat(followers()).forEach(f => { if (!owRemote(f)){ f.path = []; f.home = {x: f.x, y: f.y}; } });
+  else formationList().concat(followers()).forEach(f => { if (!owRemote(f)){ f.path = []; f.home = {x: f.x, y: f.y}; } });   // the company has its own choice: My company
   exploreKey = "";
 }
-setInterval(() => {
-  if (!followOn || mode !== "explore" || !leader || leader.walkIn) return;
-  const list = formationList(), moving = leader.path.length > 0 || !!leader.kbd, s = node.scale;
-  list.forEach((f, i) => {
+function toSlot(f, slot, moving){
     if (f.walkIn) return;
-    const slot = formationSlot(i, list.length), want = nearestWalkable(slot.x, slot.y);
+    const s = node.scale, want = nearestWalkable(slot.x, slot.y);
     const off = Math.hypot(f.x - want.x, f.y - want.y);
     if (off < (moving ? 40 : 150) * s){                                 // in their slot, or near enough while the leader stands
       if (!moving && !f.path.length && !f.follow) return;
@@ -5660,8 +5663,131 @@ setInterval(() => {
     const p = findPath(f, want); if (!p || !p.length) return;
     stopActivity(f); f.path = p; f.slow = false; f.follow = true;
     f.onArrive = () => { f.follow = false; f.home = {x: f.x, y: f.y}; f.actUntil = now + 1500 + Math.random() * 3000; };
-  });
+}
+setInterval(() => {
+  if (mode !== "explore" || !leader) return;
+  noteHeroTrails();
+  if (followOn && !leader.walkIn){
+    const list = formationList(), moving = leader.path.length > 0 || !!leader.kbd;
+    list.forEach((f, i) => toSlot(f, formationSlot(i, list.length), moving));
+  }
+  tickEscorts();
 }, 300);
+
+// ---------- WHOSE PRISONERS (Sam, 2026-10-27) ----------
+// "how does the movement where everyone follows work with two players do we have them randomly get a few NPCs" — and,
+// on the plan, "looks good". The company's positions are not in the One World record, so before this each screen had
+// the prisoners trail ITS OWN hero, and two players saw them in two places. Now:
+//   * DEALT. Each prisoner belongs to one hero (state.escort), dealt round-robin in an order seeded by the campaign run,
+//     so every screen deals the same prisoners to the same heroes and nothing new is stored. A deal is kept for the
+//     session: the same faces walk behind the same hero. A hero who drops, leaves or is left out frees theirs, and they
+//     are dealt to whoever has fewest.
+//   * THEY FOLLOW THEIR HERO, on that hero's own trail. Hero positions ARE synced, so every screen draws them in nearly
+//     the same place.
+//   * ALONE (Sneak, Scout ahead): the prisoners never go on a sneak (Sam, 2026-10-26). They are LENT to the nearest hero
+//     who stayed and walk in that hero's formation; with nobody left behind they hold, quiet, where their hero left
+//     them (state["leftAt:<hero>"]). When the sneak ends they go back once their hero is within a short walk of them.
+//   * MY COMPANY (one choice per hero, state["companyMode:<hero>"]): Follow me (default), Wait here, or Go with another
+//     hero. Each screen writes only the keys of the heroes it drives, so two players never overwrite each other.
+// The house numbers (rejoin within 450 px of plate, hold ring 70 px) are Claude's; the rule is Sam's.
+const heroTrails = {};   // hero id -> that hero's recent footsteps, kept on every screen for every hero
+function noteHeroTrails(){
+  for (const h of party){
+    const tr = heroTrails[h.id] || (heroTrails[h.id] = [{x: h.x, y: h.y}]), l = tr[tr.length - 1];
+    if (Math.hypot(h.x - l.x, h.y - l.y) > 120 * node.scale){ tr.length = 0; tr.push({x: h.x, y: h.y}); continue; }   // put, not walked: start over
+    if (Math.hypot(h.x - l.x, h.y - l.y) > 6){ tr.push({x: h.x, y: h.y}); if (tr.length > 300) tr.shift(); }
+  }
+}
+function escortHash(s){ let h = 2166136261; for (let i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+const heroUp = h => h && !h.ko && !h.down && !h.body;
+const heroAlone = id => !!state["alone:" + id];
+const companyMode = id => state["companyMode:" + id] || "follow";
+const drivesHere = h => canControl(h) && !owRemote(h);
+function dealEscort(ids){
+  const heroes = PARTY.filter(id => heroUp(party.find(p => p.id === id)));
+  if (!heroes.length) return;
+  const was = state.escort || {}, next = {}, count = Object.fromEntries(heroes.map(h => [h, 0]));
+  for (const id of ids) if (was[id] && count[was[id]] != null){ next[id] = was[id]; count[was[id]]++; }
+  const seed = runSeen != null ? String(runSeen) : "preview";
+  const loose = ids.filter(id => !next[id]).sort((a, b) => escortHash(`${seed}:${a}`) - escortHash(`${seed}:${b}`) || (a < b ? -1 : 1));
+  for (const id of loose){ let best = heroes[0]; for (const h of heroes) if (count[h] < count[best]) best = h; next[id] = best; count[best]++; }
+  for (const id in was) if (!(id in next) && companyNow().includes(id) && !npcs.some(n => n.id === id)) next[id] = was[id];   // off this plate for now: keep the deal
+  if (owCanon(next) !== owCanon(was)) state.escort = next;
+}
+// keep this screen's own heroes' flags true: alone while sneaking, with the spot they left from
+function syncAlone(){
+  for (const h of party){
+    if (!drivesHere(h)) continue;
+    const alone = !!(sneak && sneak.cur === cur && sneak.rolls.some(r => r.p === h));
+    if (alone && !heroAlone(h.id)){ state["alone:" + h.id] = true; state["leftAt:" + h.id] = {x: Math.round(h.x), y: Math.round(h.y), plate: cur}; }
+    else if (!alone && heroAlone(h.id)) delete state["alone:" + h.id];
+  }
+}
+// who (or where) a prisoner is walking with right now
+function nearestStayer(from, not){
+  let best = null, bd = Infinity;
+  for (const id of PARTY){ const h = party.find(p => p.id === id);
+    if (!heroUp(h) || id === not || heroAlone(id)) continue;
+    const d = Math.hypot(h.x - from.x, h.y - from.y); if (d < bd){ bd = d; best = h; } }
+  return best;
+}
+function escortTarget(npcId){
+  const hid = (state.escort || {})[npcId], h = party.find(p => p.id === hid);
+  const left = state["leftAt:" + hid], spot = left && left.plate === cur ? left : h ? {x: h.x, y: h.y} : null;
+  const m = companyMode(hid);
+  if (m.startsWith("with:")){ const o = party.find(p => p.id === m.slice(5)); if (heroUp(o) && !heroAlone(o.id)) return {hero: o}; }
+  if (m === "wait" && spot) return {spot};
+  if (!heroUp(h)) return {hero: nearestStayer(spot || leader, hid) || leader};
+  if (heroAlone(hid)){ const lend = nearestStayer(spot || h, hid); return lend ? {hero: lend} : {spot: spot || {x: h.x, y: h.y}}; }
+  // back from a sneak: they rejoin once the hero is within a short walk of where they are being kept
+  if (left && left.plate === cur){
+    const lend = nearestStayer(left, hid), at = lend || left;
+    if (Math.hypot(h.x - at.x, h.y - at.y) > 450 * node.scale) return lend ? {hero: lend} : {spot: left};
+    if (drivesHere(h)) delete state["leftAt:" + hid];
+  }
+  return {hero: h};
+}
+function ringSlot(spot, i, n){
+  const s = node.scale, a = (i + .5) / Math.max(1, n) * Math.PI * 2, r = (n > 1 ? 70 : 0) * s;
+  return {x: spot.x + Math.cos(a) * r, y: spot.y + Math.sin(a) * r * .7};
+}
+function tickEscorts(){
+  syncAlone();
+  if (laborLive()) return;                                           // a work detail's prisoners do the work
+  const comp = npcs.filter(n => n.company && followsNow(n));
+  if (!comp.length) return;
+  dealEscort(comp.map(n => n.id).sort());
+  const groups = new Map();
+  for (const n of comp){
+    const g = escortTarget(n.id), key = g.hero ? "h:" + g.hero.id : `p:${Math.round(g.spot.x)},${Math.round(g.spot.y)}`;
+    if (!groups.has(key)) groups.set(key, {...g, members: []});
+    groups.get(key).members.push(n);
+  }
+  for (const g of groups.values()){
+    g.members.sort((a, b) => (a.id < b.id ? -1 : 1));
+    if (g.spot){ g.members.forEach((f, i) => toSlot(f, ringSlot(g.spot, i, g.members.length), false)); continue; }
+    const h = g.hero, mine = h === leader;
+    const base = mine && followOn ? formationList().length : 0, tr = mine ? trail : (heroTrails[h.id] || []);
+    const moving = h.path.length > 0 || !!h.kbd;
+    g.members.forEach((f, i) => toSlot(f, slotBehind(h, tr, base + i, base + g.members.length), moving));
+  }
+}
+function escortOf(id){ const e = state.escort || {}; return npcs.filter(n => n.company && e[n.id] === id); }
+function openCompany(){
+  const L = leader, nm = SHORT[L.id] || fname(L), mine = escortOf(L.id), m = companyMode(L.id);
+  const who = mine.length ? mine.map(n => SHORT[n.id] || (SPR[n.id] && SPR[n.id].json.name) || n.id).join(", ") : "No one is with you right now.";
+  const set = v => { if (v === "follow") delete state["companyMode:" + L.id]; else state["companyMode:" + L.id] = v;
+    if (v === "wait") state["leftAt:" + L.id] = {x: Math.round(L.x), y: Math.round(L.y), plate: cur};
+    else if (!heroAlone(L.id)) delete state["leftAt:" + L.id];
+    log(v === "follow" ? `${esc(nm)}'s company falls in behind ${esc(nm)}.` : v === "wait" ? `${esc(nm)}'s company waits here.` : `${esc(nm)}'s company goes with ${esc(fname(party.find(p => p.id === v.slice(5))))}.`);
+    exploreKey = ""; };
+  const others = party.filter(p => p !== L && heroUp(p));
+  showDialog({title: `${nm}'s company`, body: who, buttons: [
+    {label: m === "follow" ? "Follow me ✓" : "Follow me", primary: m !== "follow", fn: () => set("follow")},
+    {label: m === "wait" ? "Wait here ✓" : "Wait here", fn: () => set("wait")},
+    ...others.map(o => ({label: m === "with:" + o.id ? `Go with ${fname(o)} ✓` : `Go with ${fname(o)}`, fn: () => set("with:" + o.id)})),
+    {label: "Close"}]});
+}
 
 // Quick drink: the first potion on the belt
 function beltPotion(a){ const g = GEAR[a.id]; if (!g || !g.carried) return null; return g.carried.find(it => { const u = useOf(it); return u.kind === "heal" || u.kind === "drink"; }) || null; }
