@@ -499,7 +499,11 @@ const isPlayerCharacterRow = (
 ): boolean => !!row && (row.is_player === true || row.character_type === "player")
 
 export async function POST(req: Request) {
-  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null, talkWhere: talkWhereRaw = null, facing: facingRaw = null, sandbox: sandboxRaw = false, addressTo: addressToRaw = null } = await req.json()
+  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null, talkWhere: talkWhereRaw = null, facing: facingRaw = null, sandbox: sandboxRaw = false, addressTo: addressToRaw = null, privateReply: privateReplyRaw = false } = await req.json()
+  // A PRIVATE REPLY (Sam, 2026-10-01: "a prayer is private unless spoken aloud"; wired 2026-10-27). The answer goes back
+  // to the one browser that asked and is NOT written to the shared log, so no other screen at the table sees or hears it.
+  // Only honoured on a director turn: a player's own line is never hidden from the table this way.
+  const privateReplyAsked = privateReplyRaw === true
   // WHO THE LINE IS TO (lib/address.ts; Sam, 2026-10-25). "dm": the player is speaking to the DM across the
   // table, out of character — nobody in the scene heard it, no NPC answers, Malachar answers as himself. A
   // name: this one line goes to that NPC instead of whoever is in the window. Absent: as before.
@@ -3824,8 +3828,9 @@ Rules:
     })
   }
 
-  // Persist the ordered turn as separate DM/NPC records.
-  if (responseText) {
+  // Persist the ordered turn as separate DM/NPC records — unless it is a private reply (a silent prayer): that answer
+  // belongs to the one who prayed and goes back to their screen only.
+  if (responseText && !(privateReplyAsked && director)) {
     const { error: dialogueError } = await supabase
       .from("dialogue")
       .insert(dialogueEntries.map((entry) => ({ ...entry, channel: "dm" })))

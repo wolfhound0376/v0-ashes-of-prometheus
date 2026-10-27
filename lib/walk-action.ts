@@ -32,6 +32,9 @@ export interface WalkActionRequest {
   /** An automatic event: claim `sig` at /api/walk-event first; only the first screen sends it on. */
   event: boolean
   sig: string | null
+  /** A private turn (a silent prayer): the answer comes back to this screen only and is not written to the shared log.
+   *  Clicks only — an automatic event is the table's by nature. */
+  private: boolean
 }
 
 /** The server's window for one event (/api/walk-event): the same thing again after this is a new event. */
@@ -64,5 +67,5 @@ export function parseWalkActionRequest(d: unknown): WalkActionRequest | null {
   const text = m.text.trim()
   if (!text || text.length > WALK_ACTION_MAX) return null
   const characterId = typeof m.characterId === "string" && m.characterId ? m.characterId : null
-  return { type: "aop:action", id: m.id, text, characterId, event: m.ask !== true && event, sig: event ? (m.sig as string) : null }
+  return { type: "aop:action", id: m.id, text, characterId, event: m.ask !== true && event, sig: event ? (m.sig as string) : null, private: m.ask === true && m.private === true }
 }

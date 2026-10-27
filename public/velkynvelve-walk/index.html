@@ -2966,11 +2966,11 @@ function eventSig(text){
   for (let i = 0; i < s.length; i++){ const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619); h2 = Math.imul(h2 + c, 2246822519) ^ (h2 >>> 13); }
   return "ev-" + (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36);
 }
-function handOff(text, ask){
+function handOff(text, ask, opts = {}){
   const id = "a" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   let characterId = null; try { characterId = myClaimId || characterIdOf(leader.id) || null; } catch (e) {}
   ACTION_REPLIES.add(id);
-  const msg = ask ? {type: "aop:action", id, text, characterId, ask: true} : {type: "aop:action", id, text, characterId, event: true, sig: eventSig(text)};
+  const msg = ask ? {type: "aop:action", id, text, characterId, ask: true, private: !!opts.private} : {type: "aop:action", id, text, characterId, event: true, sig: eventSig(text)};
   try { (window.parent !== window ? window.parent : window).postMessage(msg, APP ? location.origin : "*"); } catch (e) {}
   return id;
 }
@@ -5414,7 +5414,14 @@ function heroCard(title, text){
 function openPray(){
   const god = /samson/.test(leader.id) ? "Lathander" : "your god";
   const {add, close} = heroCard(`${fname(leader)} prays`, `To ${god}. A prayer is between you and your god unless you say it out loud${cur === 11 || /^node-/.test(node.slug) ? " — and this is a drow outpost" : ""}.`);
-  add("Pray silently", () => { close(); log(`${fname(leader)} bows their head and prays to ${god} in silence.`); handOff(`${fname(leader)} prays silently to ${god}.`, true); }, "primary");
+  // PRIVATE (Sam, 2026-10-01: "a prayer is private unless spoken aloud"). The answer comes back to this screen alone, on
+  // the check card, and is never written to the shared log (privateReply in /api/chat), so nobody else at the table
+  // sees or hears it. Praying aloud stays the table's.
+  add("Pray silently", () => { close(); log(`${fname(leader)} bows their head and prays to ${god} in silence.`);
+    openCheck(`${fname(leader)} prays silently to ${god}`, "");
+    const id = handOff(`${fname(leader)} prays silently to ${god}. This prayer is PRIVATE: answer only ${fname(leader)}, as only they would perceive it; nobody else notices anything.`, true, {private: true});
+    if (APP && window.parent !== window) checkCard.id = id; else checkAnswer(null, "In the game, the answer comes here, to you alone.");
+  }, "primary");
   add("Pray aloud", () => { close(); log(`${fname(leader)} prays aloud to ${god}.`); narrate(leader, `${fname(leader)} prays aloud.`); handOff(`${fname(leader)} prays ALOUD to ${god}, where anyone near can hear.`, true); });
   add("Not now", close);
 }
