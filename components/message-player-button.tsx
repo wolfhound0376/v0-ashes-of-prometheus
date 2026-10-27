@@ -10,8 +10,9 @@
 // Malachar, the DM transcript, the party pane or the map's speech bubbles, because every one of those readers
 // filters to channel 'dm' or 'party'.
 //
-// No seat (the DM, a spectator, the staging table) → no button. A message arriving while the panel is shut lights
-// a count on the button and plays the window chime.
+// No seat (the DM, a spectator, the staging table) → no button. A message arriving while you are not reading that
+// thread pops a bubble under the button (sender + the line; tap it to open the thread), lights a count on the
+// button and plays the window chime (Sam, 2026-10-26: "messages to each player not creating a bubble").
 //
 // Privacy, said plainly: "private" means the app shows a thread only to its two players. `dialogue` is readable
 // with the public key (its RLS policy is allow-all), so this is a table courtesy, not a lock.
@@ -27,6 +28,8 @@ import {
 } from "@/lib/direct-messages"
 
 const SEAT_POLL_MS = 15000
+/** How long an arrival bubble stays up before it fades on its own. */
+const BUBBLE_MS = 9000
 const READ_KEY = "aop_dm_last_read"
 
 type Variant = "gold" | "pixel"
@@ -50,6 +53,11 @@ export function MessagePlayerButton({ variant = "gold", align = "right", classNa
   const [draft, setDraft] = useState("")
   const [notice, setNotice] = useState<string | null>(null)
   const [lastRead, setLastRead] = useState<Record<string, string>>({})
+  const [bubble, setBubble] = useState<DirectRow | null>(null)
+  const bubbleTimer = useRef<number | null>(null)
+  // The realtime handler is created once per hero; it reads what is on screen through refs.
+  const viewingRef = useRef<{ open: boolean; withName: string | null }>({ open: false, withName: null })
+  viewingRef.current = { open, withName }
   const endRef = useRef<HTMLDivElement>(null)
   const boxRef = useRef<HTMLDivElement>(null)
 
@@ -108,7 +116,16 @@ export function MessagePlayerButton({ variant = "gold", align = "right", classNa
               if (pending !== -1) { const next = prev.slice(); next[pending] = r; return next }
               return [...prev, r]
             })
-            if (isForMe(r, name)) uiChime()
+            if (isForMe(r, name)) {
+              uiChime()
+              const v = viewingRef.current
+              const reading = v.open && v.withName?.trim().toLowerCase() === r.speaker?.trim().toLowerCase()
+              if (!reading) {
+                setBubble(r)
+                if (bubbleTimer.current) window.clearTimeout(bubbleTimer.current)
+                bubbleTimer.current = window.setTimeout(() => setBubble(null), BUBBLE_MS)
+              }
+            }
           })
         .on("postgres_changes", { event: "DELETE", schema: "public", table: "dialogue" },
           (payload: { old: Record<string, any> }) => {
@@ -119,7 +136,11 @@ export function MessagePlayerButton({ variant = "gold", align = "right", classNa
     } catch (err) {
       console.error("[MessagePlayer] realtime subscribe failed:", err)
     }
-    return () => { cancelled = true; if (channel) supabase.removeChannel(channel) }
+    return () => {
+      cancelled = true
+      if (channel) supabase.removeChannel(channel)
+      if (bubbleTimer.current) window.clearTimeout(bubbleTimer.current)
+    }
   }, [me?.name, instanceId])
 
   const contacts: Contact[] = useMemo(() => contactsFor(seats, me?.id), [seats, me?.id])
@@ -186,6 +207,20 @@ export function MessagePlayerButton({ variant = "gold", align = "right", classNa
         <span>Message</span>
         {total > 0 && <span className={s.badge}>{total > 9 ? "9+" : total}</span>}
       </button>
+
+      {bubble && !open && (
+        <button
+          type="button"
+          role="status"
+          aria-live="polite"
+          onClick={() => { uiLatch(); setWithName(bubble.speaker.trim()); setOpen(true); setBubble(null) }}
+          className={cn(s.pop, align === "right" ? "right-0" : "left-0")}
+        >
+          <span className={s.popFrom}>{bubble.speaker} <span className="opacity-60">→ you</span></span>
+          <span className={s.popText}>{bubble.text}</span>
+          <span className={s.popHint}>Tap to reply</span>
+        </button>
+      )}
 
       {open && (
         <div role="dialog" aria-label="Message a player" className={cn(s.panel, align === "right" ? "right-0" : "left-0")}>
@@ -283,6 +318,10 @@ const GOLD = {
   composer: "flex items-center gap-2 rounded-[3px] border border-[#7a5f33]/50 bg-[#0a0908] p-1",
   input: "flex-1 bg-transparent px-2 py-1 text-[13px] text-stone-200 placeholder:text-stone-600 focus:outline-none",
   notice: "border-t border-[#3d3428] px-3 py-1.5 text-[11px] text-[#e8a38f]",
+  pop: "absolute top-full z-50 mt-2 flex w-72 flex-col gap-0.5 rounded-[6px] rounded-tr-none border border-[#c9a868]/80 bg-[#15100a]/97 px-3 py-2 text-left shadow-[0_0_18px_rgba(201,168,104,0.35),0_12px_32px_rgba(0,0,0,0.7)] backdrop-blur animate-in fade-in slide-in-from-top-1",
+  popFrom: "font-serif text-[10px] uppercase tracking-[0.18em] text-[#c9a868]",
+  popText: "line-clamp-3 text-[13px] text-[#f0e2bd]",
+  popHint: "text-[10px] italic text-stone-500",
 }
 
 // The pixel map's look: square corners, hard 2px borders, a stepped drop shadow and a monospace face.
@@ -301,4 +340,8 @@ const PIXEL = {
   composer: "flex items-center gap-2 border-2 border-black bg-[#0a0603] p-1 shadow-[inset_0_0_0_1px_#7a5418]",
   input: "flex-1 bg-transparent px-2 py-1 text-[12px] text-[#f4e7c4] placeholder:text-[#7a6a4a] focus:outline-none",
   notice: "border-t-2 border-[#c9a23a] px-3 py-1.5 text-[11px] text-[#ff9a7a]",
+  pop: "absolute top-full z-50 mt-2 flex w-72 flex-col gap-0.5 border-2 border-black bg-[#1d1440] px-3 py-2 text-left font-mono shadow-[inset_0_0_0_2px_#8b3dff,4px_4px_0_0_#000] [image-rendering:pixelated]",
+  popFrom: "text-[10px] font-bold uppercase tracking-[0.14em] text-[#f4d77a]",
+  popText: "line-clamp-3 text-[12px] text-[#e9defc]",
+  popHint: "text-[10px] text-[#a8936a]",
 }
