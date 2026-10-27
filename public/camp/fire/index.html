@@ -1315,7 +1315,7 @@ function poseOf(f){ if((f.hp??1)<=0) return "sleep"; if(f.target) return null;
   if(f.station==="bed"||((sleeping||done.has(f.i))&&f.station==="seat")) return "sleep";
   if(f.station==="seat") return f.seated&&f.seated.label==="eating"?"eat":"sit";
   if(f.station==="cookpot") return "eat";
-  if(f.station==="perform") return f.img.perform?"perform":"sit"; // a bard plays; anyone else just sits by the fire
+  if(f.station==="perform") return f.img.perform&&luteInHand(f)?"perform":"sit"; // the lute pose only with a lute in the pack; otherwise he sits and sings (Sam, 2026-10-27: no instruments)
   if(f.station==="fire"||f.station==="quiet"||f.station==="talk"||f.station==="whetstone") return "sit";
   return null; }
 const animOf=(f)=>{ const p=poseOf(f); return p&&f.img[p]?p:f.anim; };
@@ -1383,7 +1383,7 @@ window.__ds=()=>DS;
 // camp, glow, and fade. The camp's music steps aside while he plays.
 const SONG_SRC="/camp/fire/assets/d39107534eb26188480ab65b8737f6f5.webm"; let song=null, songOn=false, songFrom=null, songEmit=0, songT=0; const songNotes=[];
 const NOTE_HUES=["255,214,150","196,168,255","160,222,255","255,178,222"];
-function playSong(f){ songFrom=f; songOn=true; songT=0; try{ if(song){ song.pause(); song.currentTime=0; } song=new Audio(SONG_SRC); song.volume=.95;
+function playSong(f,src,vol){ songFrom=f; songOn=true; songT=0; try{ if(song){ song.pause(); song.currentTime=0; } song=new Audio(src||SONG_SRC); song.volume=vol??.95;
     if(window.campMusic&&window.campMusic.duck) window.campMusic.duck(true);
     song.onended=()=>{ songOn=false; if(window.campMusic&&window.campMusic.duck) window.campMusic.duck(false); };
     const pr=song.play(); if(pr&&pr.catch) pr.catch(()=>{}); }catch(e){} }
@@ -1395,6 +1395,45 @@ function songTick(dt){ songT+=dt; if(songOn&&songT>41) songOn=false; // the note
     n.x+=(n.vx+sway)*dt; n.y+=n.vy*dt; n.vy*=Math.pow(.86,dt); if(n.vy>-6) n.vy=-6; // they slow as they rise, then drift
     if(Math.random()<dt*9) n.trail.push({x:n.x,y:n.y+6,a:1}); n.trail.forEach(s=>s.a-=dt*.9); while(n.trail.length&&n.trail[0].a<=0) n.trail.shift();
     if(n.life>n.max) songNotes.splice(i,1); } }
+// ===== THE BARD AT REST (Sam, 2026-10-27: "The bard should be able to sing while in camp. He should sing from a variety
+// of songs (only ones that are without instruments), however, he may mostly just whistle.")
+// Every so often a sitting, idle bard fills the quiet on his own — no action spent, no roll, no bonus. Three in four times
+// he whistles; otherwise he sings one of the UNACCOMPANIED recordings (the party's gear is gone, so no take with an
+// instrument is ever in this pool — same list as lib/bard-songs.ts). Takes follow lib/sfx's convention: <slug>.ogg plus
+// <slug>_2.ogg… so a new take is an upload, not an edit. A take that will not load is dropped quietly.
+const BARD_BASE="https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/sfx/bard/";
+const BARD_SONGS=["sun-is-a-rumour","count-the-spiders","rothe-and-rot","haul-away-deep-water","down-we-went","ashes-the-bards-song"];
+const BARD_TAKES={whistle:["whistle","whistle_2","whistle_3","whistle_4"],"sun-is-a-rumour":["sun-is-a-rumour","sun-is-a-rumour_2"],
+  "count-the-spiders":["count-the-spiders","count-the-spiders_2"],"rothe-and-rot":["rothe-and-rot","rothe-and-rot_2"],
+  "haul-away-deep-water":["haul-away-deep-water","haul-away-deep-water_2"],"down-we-went":["down-we-went","down-we-went_2"],"ashes-the-bards-song":["ashes-the-bards-song"]};
+const BARD_DEAD=new Set(); let bardLast=null, bardWait=35+Math.random()*30, bardHum=null;
+const BARD_WHISTLE_ODDS=.75;
+function bardTake(base){ const pool=(BARD_TAKES[base]||[base]).filter(k=>!BARD_DEAD.has(k)&&k!==bardLast); const all=pool.length?pool:(BARD_TAKES[base]||[base]).filter(k=>!BARD_DEAD.has(k));
+  return all.length?all[Math.floor(Math.random()*all.length)]:null; }
+// Pick what he does: mostly a whistle; a song otherwise, never the same song twice running.
+function bardPick(){ if(Math.random()<BARD_WHISTLE_ODDS){ const k=bardTake("whistle"); if(k) return {kind:"whistle",key:k}; }
+  const songs=BARD_SONGS.filter(s=>bardTake(s)&&!(bardLast||"").startsWith(s)); const s=songs[Math.floor(Math.random()*songs.length)]; const k=s&&bardTake(s);
+  return k?{kind:"song",key:k}:null; }
+function bardIdle(f){ return f&&(f.hp??1)>0&&!f.target&&(f.anim==="idle"||f.station==="seat"||f.station==="perform"); }
+function bardSing(f,pick){ const a=new Audio(BARD_BASE+pick.key+".ogg"); bardLast=pick.key; bardHum={f,a,kind:pick.kind};
+  a.volume=pick.kind==="whistle"?.5:.8; // a whistle sits under the camp music; a song gets the fire to itself
+  a.onerror=()=>{ BARD_DEAD.add(pick.key); bardEnd(); };
+  a.onended=()=>bardEnd();
+  if(pick.kind==="song"&&window.campMusic&&window.campMusic.duck) window.campMusic.duck(true);
+  songFrom=f; songOn=true; songT=0; const pr=a.play(); if(pr&&pr.catch) pr.catch(()=>bardEnd()); }
+function bardEnd(){ if(!bardHum) return; const k=bardHum.kind; try{ bardHum.a.pause(); }catch(e){} bardHum=null; songOn=false;
+  if(k==="song"&&window.campMusic&&window.campMusic.duck) window.campMusic.duck(false); bardWait=40+Math.random()*70; }
+function bardIdleTick(dt){ const f=figures.find(x=>/^bard\b/i.test(x.cls||""));
+  if(bardHum){ if(sleeping||!bardIdle(bardHum.f)||(song&&!song.paused)) bardEnd(); return; } // he stops when he gets up, sleeps, or performs
+  if(!f||sleeping||!(window.campMusic&&window.campMusic.playing)||(song&&!song.paused)||!bardIdle(f)) return; // no sound before the first click (browser rule) and never over a performance
+  bardWait-=dt; if(bardWait>0) return; const pick=bardPick(); if(!pick){ bardWait=1e9; return; } bardSing(f,pick); }
+// A performance draws from the same unaccompanied songs by how it lands (lib/camp perform bands, warm = success).
+// Flat: he only manages a whistle.
+function performCue(band){ if(band==="flat") return bardTake("whistle"); const pool=band==="moving"?["down-we-went","ashes-the-bards-song"]:["sun-is-a-rumour","count-the-spiders","rothe-and-rot","haul-away-deep-water"];
+  const s=pool.filter(x=>bardTake(x)); const pick=s[Math.floor(Math.random()*s.length)]; return pick?bardTake(pick):null; }
+// The perform sprite strums a lute. The drow took the party's gear, so it shows only when the performer is this
+// player and an instrument is actually in their pack; everyone else sees him sitting bare-handed.
+function luteInHand(f){ try{ return f.i===ME&&Object.keys(PACK).some(k=>PACK[k]>0&&isInstrument((CATALOG[k]||{n:k}).n)); }catch(e){ return false; } }
 function noteShape(g,kind){ // a quarter, an eighth, or two beamed eighths: heads, stems, flag
   const head=(x,y)=>{ g.save(); g.translate(x,y); g.rotate(-.35); g.beginPath(); g.ellipse(0,0,5.2,3.6,0,0,Math.PI*2); g.fill(); g.restore(); };
   if(kind===2){ head(-6,6); head(6,3); g.fillRect(-2.2,-14,1.8,20); g.fillRect(9.8,-17,1.8,20); g.beginPath(); g.moveTo(-2.2,-14); g.lineTo(11.6,-17); g.lineTo(11.6,-13); g.lineTo(-2.2,-10); g.closePath(); g.fill(); return; }
@@ -1482,7 +1521,7 @@ function drawFigure(g,f){ if(!f.ready) return; const pa=animOf(f), posed=pa!==f.
   if(sitting){ const dhh=crop*sc; g.drawImage(scratchC,0,0,cell,crop,dx,f.y-dhh,dw,dhh); } else g.drawImage(scratchC,0,0,cell,cell,dx,dy,dw,dh);
   if(!f.target){const st=STATIONS[f.station]; const post=f.seated&&f.station==="seat"; const txt=((sleeping||done.has(f.i))&&f.station==="bed")||(sleeping&&post)?"z z z":(post?f.seated.label:(st?st.label:"")); if(txt&&txt!=="by the fire") label(g,f.x,(sitting?f.y-crop*sc:dy)-6,txt);}}
 let last=performance.now(),t=0;
-function frame(now){placedLabels.length=0;const dt=Math.min(.05,(now-last)/1000);last=now;t+=dt;step(dt);dsTick(dt);songTick(dt);night+=((sleeping?1:0)-night)*dt*.8;
+function frame(now){placedLabels.length=0;const dt=Math.min(.05,(now-last)/1000);last=now;t+=dt;step(dt);dsTick(dt);songTick(dt);bardIdleTick(dt);night+=((sleeping?1:0)-night)*dt*.8;
   const g=o; g.fillStyle="#07060a"; g.fillRect(0,0,W,H); if(plateReady) g.drawImage(plate,0,0,W,H);
   const gr=BIOMES[biome].grade; if(gr){g.fillStyle=gr;g.fillRect(0,0,W,H);}
   drawFire(g,t); [...figures].sort((a,b)=>a.y-b.y).forEach(f=>drawFigure(g,f)); dsDraw(g); songDraw(g); drawFx(g,now/1000);
@@ -1917,7 +1956,7 @@ function act(k){
   if(k==="forage"){ playFilm("forage",startForage); return; }
   if(k==="hunt"){ playFilm("hunt",startHunt); return; }
   if(k==="explore"){ if(!startExplore()){ budget[ME]++; refresh(); } return; }
-  if(k==="perform"){ if(!canPerform()){ budget[ME]++; refresh(); speak(`<b>ENTERTAIN</b>\n${f.name} has no instrument and no musical proficiency.`); return; } const r=C.perform(sheetOf(f),rng); leave(f); goTo(f,"perform",[560,470],"south"); speak(`<b>PERFORM</b>\n${r.note}`); if(isBard()) playSong(f); return; }
+  if(k==="perform"){ if(!canPerform()){ budget[ME]++; refresh(); speak(`<b>ENTERTAIN</b>\n${f.name} has no instrument and no musical proficiency.`); return; } const r=C.perform(sheetOf(f),rng); leave(f); goTo(f,"perform",[560,470],"south"); speak(`<b>PERFORM</b>\n${r.note}`); if(isBard()){ bardEnd(); const k=performCue(r.band); if(k){ bardLast=k; playSong(f,BARD_BASE+k+".ogg"); } else playSong(f); } return; }
   if(k==="pray"){ leave(f); goTo(f,"quiet",STATIONS.quiet.spots[0],"south"); }
   if(k==="repair"||k==="artifice"){ leave(f); goTo(f,"whetstone",[430,400],"north"); if(k==="repair") playFilm("repair",()=>{}); }
   if(k==="alchemy"){ leave(f); goTo(f,"cookpot",[875,470],"north"); }
