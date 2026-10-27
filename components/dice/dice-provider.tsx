@@ -37,7 +37,7 @@ import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import { Dices } from "lucide-react"
 import type DiceBox from "@3d-dice/dice-box"
-import { TRAITS, luckFiring, luckOnFaces, luckRerollCount, spliceLuck } from "@/lib/traits.mjs"
+import { TRAITS, luckFiring, luckOnFaces, luckRerollCount, saveEdge, spliceLuck, withEdge } from "@/lib/traits.mjs"
 
 // --- Public types -----------------------------------------------------------
 
@@ -91,11 +91,44 @@ export interface RollSpec {
   test?: boolean
   /** Who is rolling. Overrides the provider's `roller` (the dashboard's selected hero). */
   roller?: Roller | null
+  /**
+   * What a saving throw is against ("charmed", "frightened"), when a trait cares: Brave and Fey Ancestry
+   * turn it into advantage. Overrides the provider's `against` (the save Malachar is waiting on).
+   */
+  against?: string | null
 }
 
 /** A single-d20 D20 Test, the only kind of roll a trait in lib/traits.mjs can change. */
 function isD20Test(spec: RollSpec): boolean {
   return spec.die === "d20" && spec.numDice === 1 && spec.test !== false
+}
+
+const MODE_NUM: Record<RollMode, number> = { normal: 0, advantage: 1, disadvantage: -1 }
+
+/**
+ * Before the dice leave the hand: a trait that grants advantage on this save (Brave vs frightened, Fey
+ * Ancestry vs charmed) folds into the roll's mode the SRD way — advantage and disadvantage cancel. Returns
+ * the spec to roll and the firing to show, so the table sees WHY two dice came out.
+ */
+export function prepareSpec(
+  spec: RollSpec,
+  roller: Roller | null | undefined,
+  pendingAgainst: string | null | undefined,
+): { spec: RollSpec; edge: TraitFiring[] } {
+  if (!isD20Test(spec)) return { spec, edge: [] }
+  const who = spec.roller ?? roller
+  const against = spec.against !== undefined ? spec.against : pendingAgainst
+  const e = saveEdge(who, against)
+  if (!e.advantage || !e.firing) return { spec, edge: [] }
+  const next = withEdge(MODE_NUM[spec.rollMode ?? "normal"], true)
+  const rollMode: RollMode = next > 0 ? "advantage" : next < 0 ? "disadvantage" : "normal"
+  return { spec: { ...spec, rollMode }, edge: [e.firing] }
+}
+
+/** Put the edge's firing in front of whatever else fired on the roll (Luck). */
+function withEdgeTraits(result: DiceResult, edge: TraitFiring[]): DiceResult {
+  if (!edge.length) return result
+  return { ...result, traits: [...edge, ...(result.traits ?? [])] }
 }
 
 export interface DiceContextValue {
@@ -245,6 +278,11 @@ interface DiceProviderProps {
    * lib/traits.mjs, so a halfling's Luck fires on every sheet, tray and Malachar-called roll.
    */
   roller?: Roller | null
+  /**
+   * What the save Malachar is waiting on is against ("charmed" / "frightened", from his roll tag), so the
+   * d20 that answers it gets Brave / Fey Ancestry without the button knowing.
+   */
+  against?: string | null
 }
 
 // How long the trait card holds on the unlucky face before the fresh die is thrown. Long enough to
@@ -256,7 +294,9 @@ interface QueuedRoll {
   resolve: (result: DiceResult) => void
 }
 
-export function DiceProvider({ children, onAnnounce, roller }: DiceProviderProps) {
+export function DiceProvider({ children, onAnnounce, roller, against }: DiceProviderProps) {
+  const againstRef = useRef<string | null>(against ?? null)
+  againstRef.current = against ?? null
   // The default roller, read at roll time (a ref, so a hero switch mid-queue is honoured).
   const rollerRef = useRef<Roller | null>(roller ?? null)
   rollerRef.current = roller ?? null
@@ -411,8 +451,10 @@ export function DiceProvider({ children, onAnnounce, roller }: DiceProviderProps
   const startRollRef = useRef<((spec: RollSpec, resolve: (r: DiceResult) => void) => void) | null>(null)
 
   const startRoll = useCallback(
-    (spec: RollSpec, resolve: (r: DiceResult) => void) => {
+    (asked: RollSpec, resolve: (r: DiceResult) => void) => {
       const box = diceBoxRef.current
+      // Traits that change HOW the die is thrown (advantage from Brave / Fey Ancestry) apply first.
+      const { spec, edge } = prepareSpec(asked, rollerRef.current, againstRef.current)
 
       // Above the renderer check on purpose: the dice should sound the same
       // whether the 3D box is up or the classic fallback resolved it.
@@ -423,13 +465,14 @@ export function DiceProvider({ children, onAnnounce, roller }: DiceProviderProps
       // classic, the next one may get the physics back.
       if (diceFailed || !diceReady || !box) {
         if (!box) initDiceRef.current()
-        settle(resolveClassic(spec, rollerRef.current), resolve, true)
+        settle(withEdgeTraits(resolveClassic(spec, rollerRef.current), edge), resolve, true)
         return
       }
       const who = spec.roller ?? rollerRef.current
 
       // Reveal the total prominently, then auto-dismiss and hand it back.
-      const reveal = (result: DiceResult) => {
+      const reveal = (raw: DiceResult) => {
+        const result = withEdgeTraits(raw, edge)
         setOverlayResult(result)
         setOverlayPhase("result")
         resultTimerRef.current = setTimeout(() => {
@@ -446,6 +489,8 @@ export function DiceProvider({ children, onAnnounce, roller }: DiceProviderProps
       setOverlayPhase("rolling")
       setOverlayLabel(spec.label || "Dice roll")
       setOverlayNotation(buildNotation(spec))
+      // The edge trait rides as a ribbon while the two dice tumble.
+      setOverlayTrait(edge.length ? { name: edge[0].name, rule: edge[0].rule } : null)
       setOverlayOpen(true)
 
       // Roll the dice portion only (modifier is applied to the total by us);
@@ -467,7 +512,7 @@ export function DiceProvider({ children, onAnnounce, roller }: DiceProviderProps
 
           if (values.length === 0) {
             closeOverlay()
-            settle(resolveClassic(spec, rollerRef.current), resolve, true)
+            settle(withEdgeTraits(resolveClassic(spec, rollerRef.current), edge), resolve, true)
             return
           }
 
@@ -523,7 +568,7 @@ export function DiceProvider({ children, onAnnounce, roller }: DiceProviderProps
           pendingRef.current = null
           console.warn("[Dice] 3D roll failed; using classic result.", err)
           closeOverlay()
-          settle(resolveClassic(spec, rollerRef.current), resolve, true)
+          settle(withEdgeTraits(resolveClassic(spec, rollerRef.current), edge), resolve, true)
         })
 
       // Safety net: dice never settle within the window → silent classic result.
@@ -532,7 +577,7 @@ export function DiceProvider({ children, onAnnounce, roller }: DiceProviderProps
         if (!pend || pend.token !== token) return
         pendingRef.current = null
         closeOverlay()
-        settle(resolveClassic(spec, rollerRef.current), resolve, true)
+        settle(withEdgeTraits(resolveClassic(spec, rollerRef.current), edge), resolve, true)
       }, RESPONSE_TIMEOUT_MS)
     },
     [diceFailed, diceReady, settle, closeOverlay],
@@ -755,6 +800,23 @@ export function describeRoll(result: DiceResult): string {
   // a rule (and Malachar never applies it a second time).
   const traits = result.traits?.length ? ` — ${result.traits.map((t) => t.line).join(" ")}` : ""
   return `${result.label || "Roll"}: ${result.total}${flag} (${notation} → [${result.rolls.join(", ")}]${mod})${traits}`
+}
+
+/**
+ * The roll as Malachar's roll ledger takes it. The ledger (resolve_roll_request) accepts one straight
+ * die per requested die and refuses any other mode, which is right for a mode the player picked. When the
+ * advantage came from a TRAIT (Brave, Fey Ancestry) the ledger gets the die that counted, and the label
+ * names the trait and both dice, so the record and Malachar still see exactly what was thrown.
+ */
+export function forLedger(result: DiceResult): DiceResult {
+  const edge = result.traits?.find((t) => t.id === TRAITS.brave.id || t.id === TRAITS.feyAncestry.id)
+  if (!edge || !result.rollMode || result.rollMode === "normal" || !result.keptRolls?.length) return result
+  return {
+    ...result,
+    rolls: result.keptRolls,
+    rollMode: "normal",
+    label: `${result.label || "Roll"} (${edge.name}: ${result.rollMode}, rolled ${result.rolls.join(" & ")})`,
+  }
 }
 
 /** Parse a damage string like "1d8+3" / "2d6" into a RollSpec, or null for flat damage like "1+2". */
