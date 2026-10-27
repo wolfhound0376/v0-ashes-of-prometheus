@@ -1146,8 +1146,10 @@ function draw(){
   if (mode === "combat"){ drawIcePatches(); drawFxLayer(true); tickIce(); }
   const list = actors.concat(vermin, laborProps).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);   // laborProps: Hard Labor's station props
   const cloudQ = mode === "combat" || clouds.length ? cloudPuffs() : [];   // the poison cloud, in depth order among the figures
+  let barsAt = gateBarsY();                                       // the bars in front of a guard leaning at them, in depth order
   for (const a of list){
     while (cloudQ.length && cloudQ[0].y <= a.y) drawPuff(cloudQ.shift());
+    if (barsAt != null && barsAt <= a.y){ drawGateBars(); barsAt = null; }
     const m = SPR[a.id].json, sc = actorScale(a), [cw, ch] = m.cell, [px, py] = m.pivot;
     if (a.fall || a.fallIn || a.prop) {} else { ctx.globalAlpha = a.alpha * .45; ctx.fillStyle = "#000";
     ctx.beginPath(); ctx.ellipse(a.x, a.y, 26 * sc * (cw / 128), 9 * sc * (cw / 128), 0, 0, Math.PI * 2); ctx.fill(); }
@@ -1262,6 +1264,8 @@ function draw(){
     }
     if (sp){ a.kx -= sp.ox; a.ky -= sp.oy; }
   }
+  if (barsAt != null) drawGateBars();
+
   while (cloudQ.length) drawPuff(cloudQ.shift());
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
   drawTolls();
@@ -2774,6 +2778,7 @@ async function stealFrom(n, who, row){
   }
   // caught: the hand is seen, so the sneak is over for everyone moving with it
   n.path = []; n.face = faceOf(who.x - n.x, who.y - n.y); n.alert = true;
+  if (n.lean){ n.leanHold = now + 20000; n.leanBlock = now + 600000; }   // the guard at the bars: turns on them, stays a moment, then goes back to his post
   bank("ui/nat1", .5); popText(who, "caught!", "#ff6b5e", 1.2);
   log(`<b>${esc(fname(n))} catches ${esc(fname(who))}'s hand</b> at the ${esc(row.name)}.`);
   endSneak();
@@ -7406,6 +7411,7 @@ function gateNearest(g){
 function gateScan(guards, g, h, d, sc){
   for (const x of guards){
     if (x.path && x.path.length) continue;                        // walking the beat: the walk sets the facing
+    if (x.lean) continue;                                         // leaning at the bars, back to the pen (tickGuardLean)
     if (now < (x.scanAt || 0)) continue;
     const [lo, hi] = GATE_WATCH.sweep; x.scanAt = now + lo + Math.random() * (hi - lo);
     const look = Math.random() < .55 ? g : {x: centroid.x + (Math.random() - .5) * 600, y: centroid.y + (Math.random() - .5) * 300};
@@ -7481,6 +7487,94 @@ function tickGateWatch(){
   const who = gateWarn ? gateHeroes().find(a => a.id === gateWarn.who) : h;
   if (!who){ gateWarn = null; return; }
   gateDecide(guards, g, who);
+}
+// ---------- THE GUARD AT THE BARS (Sam, 2026-10-27) ----------
+// "we will need the guards to sometimes come closer to the gate and lean lazily near it" — then: "put the leaning
+// guard in the passage just outside the gate, the one the labor escort uses, and draw him behind the bars".
+// Every few minutes one of the bridge guards leaves his post, goes round behind the pillar (the way Jorlan and the
+// labor escort come to the door, story.json balcony), and leans with his back to the bars for a while, then goes back.
+// With his back to the pen he sees none of it, so a prisoner sneaking up inside can reach through and pick his pocket
+// (the pen key, OotA p.19). He is drawn BEHIND the bars: pen-gate-bars.png, the gate cut from the plate with the gaps
+// between the bars opened (scripts/velkynvelve-walk/make_gate_bars.py), laid over him in depth order, so a prisoner
+// standing in front of the gate is still drawn in front of it.
+//   WHEN   from the wall clock, not Math.random: every browser at the table works out the same window and the same
+//          guard, so everyone sees the same man at the bars. LEAN.period per window, LEAN.min..max ms at the bars, at
+//          an offset inside the window. House numbers.
+//   NOT    while the gate is open or broken, a work detail is out, the posts are empty, the surgeon is at work, time is
+//          stopped, a warning or an alarm is up, or he has just caught a hand in his pocket (leanBlock).
+//   CAUGHT a failed pickpocket (stealFrom) turns him on the thief and holds him there 20 s (leanHold); then he goes
+//          back to his post and does not lean again for ten minutes.
+const LEAN = {period: 240000, min: 45000, max: 75000, spot: {x: 818, y: 822, s: .93}};
+const LEAN_GUARDS = ["drow-guard-female", "drow-guard-male"];
+const GATE_BARS = {img: null, box: [748, 590, 153, 288], want: false};
+function leanHash(n){ n = Math.imul((n | 0) ^ 0x9e3779b9, 0x85ebca6b); n ^= n >>> 13; n = Math.imul(n, 0xc2b2ae35); n ^= n >>> 16; return n >>> 0; }
+function leanWindow(t){
+  const p = Math.floor(t / LEAN.period), r = leanHash(p);
+  const start = p * LEAN.period + 20000 + r % (LEAN.period - LEAN.max - 40000), dur = LEAN.min + (r >>> 9) % (LEAN.max - LEAN.min);
+  return {start, end: start + dur, pick: r >>> 17};
+}
+function leanCalm(){
+  return cur === PEN && (mode === "explore" || mode === "dialog") && !state.gateOpen && !state.gateBroken && !laborLive() && !surgeon && !timeStopped
+    && !postsEmpty() && !gateWarn && !(guardsAlarm && guardsAlarm.cur === cur && now < guardsAlarm.until) && !!balcony();
+}
+function leanAway(){ const g = gateCenter(); return g ? faceOf(g.x - centroid.x, g.y - centroid.y) : 5; }   // from the pen out: his back to it
+function tickGuardLean(){
+  if (cur !== PEN){ for (const n of npcs) if (n.lean) leanDone(n); return; }
+  const t = Date.now(), w = leanWindow(t), calm = leanCalm();
+  // the candidates by name, not by gateGuards(): a guard fading out behind the pillar drops off that list, and the pick
+  // must not jump to the other man half way there
+  const gs = LEAN_GUARDS.map(id => npcs.find(n => n.id === id)).filter(n => n && actors.includes(n) && !n.offStage && !n.body && !n.down && !n.hostile && !n.relieved);
+  let pick = calm && t >= w.start && t < w.end && gs.length ? (gs.find(n => n.lean && n.lean.phase !== "back") || gs[w.pick % gs.length]) : null;
+  if (pick && now < (pick.leanBlock || 0)) pick = null;
+  for (const n of npcs){
+    if (!n.lean) continue;
+    if (now < (n.leanHold || 0)) continue;                         // caught a hand: he stays turned on the thief a moment
+    if (n !== pick) leanEnd(n);
+    else if (n.lean.phase === "leaning"){ if (n.face !== leanAway()) n.face = leanAway(); if (hasSheet(n, "lean") && n.anim !== "lean" && !n.path.length) setAnim(n, "lean"); }
+  }
+  // a reaction (a turn to a hero at the bars, the alarm) holds him for seconds; the beat's own pauses are under a second
+  if (pick && !pick.lean && (pick.actUntil || 0) - now < 2000 && !pick.alert) leanStart(pick);   // breaks off his beat (the bridge guards are always walking it)
+  GATE_BARS.want = npcs.some(n => n.lean && n.atBars);
+  if (GATE_BARS.want && !GATE_BARS.img){ const im = new Image(); im.src = PLATE_DIR + "pen-gate-bars.png"; GATE_BARS.img = im; }
+}
+function leanStart(n){
+  const B = balcony(); if (!B) return;
+  const room = y => 1 / (node.scale * depthAt(y)), fs = B.scale || 1.35, [lx, ly] = B.behind || [545, 702], S = LEAN.spot;
+  n.lean = {phase: "going", keep: {patrol: n.patrol, static: n.static, fixedScale: n.fixedScale}};
+  n.patrol = null; n.static = false; stopActivity(n); n.onArrive = null;
+  n.big = (n.fixedScale || fs) * room(n.y); n.fixedScale = 0;
+  n.path = [{x: lx, y: ly, s: fs * room(ly), out: true}, {x: S.x, y: S.y, s: S.s, jump: true}];
+  n.onArrive = () => {
+    if (!n.lean) return;
+    n.lean.phase = "leaning"; n.atBars = true; n.static = true; n.face = leanAway();
+    setAnim(n, hasSheet(n, "lean") ? "lean" : "idle");
+  };
+}
+function leanEnd(n){
+  if (!n.lean || n.lean.phase === "back") return;
+  const B = balcony(); if (!B){ leanDone(n); return; }
+  const room = y => 1 / (node.scale * depthAt(y)), fs = B.scale || 1.35, [lx, ly] = B.behind || [545, 702], S = LEAN.spot, post = n.post || {x: lx, y: ly};
+  const was = n.lean.phase; n.lean.phase = "back"; n.static = false; n.atBars = false; setAnim(n, "idle");
+  if (was === "going" && n.alpha < 1) n.fadeIn = true;            // called back while fading behind the pillar: come back into view
+  n.path = was === "leaning"
+    ? [{x: S.x - 4, y: S.y - 2, s: S.s, out: true}, {x: lx, y: ly, s: fs * room(ly), jump: true}, {x: post.x, y: post.y, s: fs * room(post.y)}]
+    : [{x: post.x, y: post.y, s: fs * room(post.y)}];               // never got there: straight back
+  n.onArrive = () => leanDone(n);
+}
+function leanDone(n){
+  const k = n.lean && n.lean.keep; n.lean = null; n.atBars = false; n.leanHold = 0;
+  if (!n.offStage && n.alpha < 1) n.fadeIn = true;
+  if (k){ n.patrol = k.patrol; n.static = k.static; n.fixedScale = k.fixedScale; n.big = 1; }
+  if (n.anim === "lean") setAnim(n, "idle");
+}
+/** Where in the depth order the bars go: just in front of the guard leaning at them, or null. */
+function gateBarsY(){
+  if (!GATE_BARS.want || !GATE_BARS.img || !GATE_BARS.img.complete || !GATE_BARS.img.naturalWidth || door.k > 0) return null;
+  const n = npcs.find(m => m.lean && m.atBars); return n ? n.y + .5 : null;
+}
+function drawGateBars(){
+  const [x, y, w, h] = GATE_BARS.box;
+  ctx.save(); ctx.globalAlpha = 1; try { ctx.drawImage(GATE_BARS.img, x, y, w, h); } catch (e) {} ctx.restore();
 }
 /** At the bars AND seen by a guard. */
 function gateAtBars(h, guards, g){
@@ -9810,6 +9904,7 @@ function update(dt){
     if (canControl(leader)) keyboardMove(leader, dt);
     tickCreatures();
     tickGateWatch();
+    tickGuardLean();
     tickJorlanPrivacy();
     // the rest of the party stays where they were put; they only come along when the party leaves the plate
     // exits
