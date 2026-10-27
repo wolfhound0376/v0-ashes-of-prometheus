@@ -63,6 +63,10 @@ const COOKS: WalkCheck = { kind: "tool", tool: "Cook's Utensils", ability: "wis"
 export const WALK_ACTIONS = {
   "pen-gate:pick": { title: "Pick the lock", label: "Picking the pen gate's lock", check: THIEVES_TOOLS, dc: 20, source: "OotA p.18" },
   "pen-gate:force": { title: "Force the gate", label: "Forcing the pen gate", check: ATHLETICS, dc: 20, source: "OotA p.18" },
+  // Lift Trouble (OotA Expanded p.45, a community supplement): three rappels down the cliff below the lift on tattered
+  // ropes; whoever falls lands in the web net with the giant spider. The supplement names no DC: 12 is a house number.
+  "cliff:rappel": { title: "Rappel on the rope", label: "Rappelling down the cliff below the lift", check: ATHLETICS, dc: 12, source: "OotA Expanded p.45 · DC house" },
+  "cliff:climb": { title: "Climb the rope", label: "Climbing the rope up the cliff below the lift", check: ATHLETICS, dc: 12, source: "OotA Expanded p.45 · DC house" },
   // Hard Labor (OotA Encounters ch.1 p.12; module doc claude/Hard_Labor_Module_2026-10-26.md). The book lists the chores
   // and sets no DCs: every work and look DC below is a house number (Claude's, Sam's call).
   "labor:water": { title: "Haul the barrels", label: "Filling and hauling water barrels on a work detail", check: ATHLETICS, dc: 10, source: "OotA p.12 chore; DC house" },
@@ -87,7 +91,9 @@ export function isWalkActionKey(v: unknown): v is WalkActionKey {
 /** The columns walkCheckModifier reads. Select exactly these. */
 export const WALK_ROLL_COLUMNS =
   "id, name, level, proficiency_bonus, str_score, dex_score, con_score, int_score, wis_score, cha_score, " +
-  "sheet_skill_proficiencies, sheet_proficiencies, sheet_heroic_inspiration"
+  "sheet_skill_proficiencies, sheet_proficiencies, sheet_heroic_inspiration, " +
+  // the species, for roll-changing traits (lib/traits.mjs: Halfling Luck)
+  "sheet_species"
 
 type Row = Record<string, unknown>
 

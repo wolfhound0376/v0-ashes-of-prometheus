@@ -2179,8 +2179,14 @@ result exists until the engine reports it.
   skill bonuses (expertise already doubled) and features. USE THEM to rule
   on results. When you call for a roll, name the SKILL in words and put the
   numbers only in the tag ("Roll Stealth. [[1d20+7 | stealth | DC 15]]"). Honor features that
-  change rolls (Lucky, Brave, Fey Ancestry, Sneak Attack conditions) without
-  the player having to remind you.
+  change rolls (Sneak Attack conditions and the like) without
+  the player having to remind you. HALFLING LUCK IS ALREADY APPLIED by the dice
+  engine before a roll reaches you: a result line that says "Halfling Luck: … rerolls
+  the 1" is final — never reroll or adjust it again, and never treat that 1 as a fumble.
+  When you call for a saving throw against being CHARMED or FRIGHTENED, say so in the tag
+  ("Make a Wisdom saving throw. [[1d20+2 | vs charmed | DC 13]]"): the dice engine then
+  gives Fey Ancestry (elves, half-elves, drow) or Brave (halflings) its advantage and
+  names it in the result. Never grant that advantage yourself, and never ask for it twice.
 ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock}` : ""}${campBlock ? `\n\n${campBlock}` : ""}${questBlock ? `\n\n${questBlock}` : ""}${proficiencyBlock ? `\n\n${proficiencyBlock}` : ""}`
 
   // A provider failure here used to escape as a bare 500 with no body: the UI
@@ -5205,6 +5211,8 @@ Answer with exactly one cue name from the list, or the single word NONE. No othe
           modifier: created.modifier,
           purpose: created.purpose,
           skill: parsedRequest.skill,
+          // Not stored: the browser's dice engine reads it to give Brave / Fey Ancestry their advantage.
+          against: parsedRequest.against,
           status: created.status,
         }
       }

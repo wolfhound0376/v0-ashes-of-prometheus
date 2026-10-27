@@ -59,7 +59,8 @@ export function FortuneRoll({
     setState("rolling")
     try {
       const days = await roll({ die: `d${DAYS_DIE}`, numDice: 1, modifier: 0, label: "Days imprisoned" })
-      const d20 = await roll({ die: `d${FORTUNE_DIE}`, numDice: 1, modifier: 0, label: "Scavenged possession" })
+      // A table roll, not a D20 Test: no trait (Halfling Luck) may touch it.
+      const d20 = await roll({ die: `d${FORTUNE_DIE}`, numDice: 1, modifier: 0, label: "Scavenged possession", test: false })
       const res = await fetch("/api/fortune-roll", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

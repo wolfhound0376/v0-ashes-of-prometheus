@@ -6,6 +6,7 @@ Inputs, all in this folder:
   template.html  the page (HTML + JS); placeholders /*__SPEC__*/ /*__FX__*/ /*__SPRITES__*/ /*__KIT__*/
                  (/*__KIT__*/ is filled from the BOARD's spell tables -- see build_kit_tables)
                  /*__RAGE__*/ is lib/rage.mjs pasted in whole (see rage_rules): Rage and Wounded Fury have ONE copy
+                 /*__TRAITS__*/ is lib/traits.mjs pasted in whole (see traits_rules): Halfling Luck and every roll-changing trait
                  /*__MARTIAL__*/ is lib/martial-arts-rules.mjs pasted in whole (see martial_rules): which hit spark a strike plays
                  /*__LABOR__*/ is lib/labor-walk.mjs pasted in whole (see labor_rules): Hard Labor's routes, steps and lines
   spec.json      per-plate walk floors, obstacles, exits, hazards, NPC spots, painted masks (built by spec.py from spec.py + masks.json); _handoffs = the cavern
@@ -163,6 +164,14 @@ def rage_rules(root):
     return re.sub(r'^export ', '', src, flags=re.M)
 
 
+def traits_rules(root):
+    """lib/traits.mjs, pasted into the page whole minus its `export` keywords -- the same pattern as
+    rage_rules. The map's d20 applies the SAME Halfling Luck the dashboard's dice engine applies and
+    lib/traits.test.ts tests, so a trait that changes a roll has one copy, not one per roller."""
+    src = open(os.path.join(root, 'lib', 'traits.mjs'), encoding='utf-8').read()
+    return re.sub(r'^export ', '', src, flags=re.M)
+
+
 def area_cloud_rules(root):
     """lib/area-cloud.mjs, pasted into the page whole minus its `export` keywords -- the same pattern as
     rage_rules. The map draws Sam's skull cloud with the SAME timing and layout lib/area-cloud.test.ts tests
@@ -250,7 +259,7 @@ N = ['ront', 'eldeth', 'derendil', 'sarith', 'buppido', 'jimjar', 'topsy', 'turv
 # Liana, the drow surgeon (The Drow Surgeon, Sam 2026-10-25): baked once her sheets are in the repo; until then the page
 # dresses her in the female guard's sheets (lianaSprite in the template)
 if os.path.exists(os.path.join(SPR, 'liana', 'sprite.json')): N.append('liana')
-F = ['quaggoth', 'giant-spider', 'ghost-male', 'drow-elite-warrior', 'ilvara', 'shoor', 'asha']   # ghost-male: the bhut under Old Thessaly (Sam, 2026-10-24); the officers: Sam's playtest, 2026-10-24 (shoor and asha have idle sheets only)
+F = ['quaggoth', 'giant-spider', 'ghost-male', 'drow-elite-warrior', 'ilvara', 'shoor', 'asha', 'drow-lizard-rider']   # drow-lizard-rider: the mounted guard on the cliff below the lift (Sam, 2026-10-26); ghost-male: the bhut under Old Thessaly (Sam, 2026-10-24); the officers: Sam's playtest, 2026-10-24 (shoor and asha have idle sheets only)
 V = ['giant-rat']  # vermin: set dressing, idle sheet only
 
 meta = {}
@@ -314,7 +323,7 @@ for k, n in spec.items():
 
 fx = open(os.path.join(HERE, 'fx.json')).read()
 t = open(os.path.join(HERE, 'template.html')).read()
-t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
+t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__TRAITS__*/', traits_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
       .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))

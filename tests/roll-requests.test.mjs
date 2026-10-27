@@ -10,6 +10,7 @@ test("parses and normalizes Malachar roll notation", () => {
     modifier: 7,
     skill: null,
     dc: null,
+    against: null,
   })
   assert.deepEqual(parseRollRequest("Damage: [[2d6-1]]"), {
     expression: "2d6-1",
@@ -18,6 +19,7 @@ test("parses and normalizes Malachar roll notation", () => {
     modifier: -1,
     skill: null,
     dc: null,
+    against: null,
   })
   assert.equal(parseRollRequest("No roll needed."), null)
 })
@@ -103,4 +105,17 @@ test("ten consecutive requested-result handoffs preserve their exact totals", ()
       `handoff ${index} should validate`,
     )
   }
+})
+
+test("reads what a save is against, for Brave and Fey Ancestry (lib/traits.mjs)", () => {
+  const charm = parseRollRequest("Make a Wisdom saving throw. [[1d20+2 | vs charmed | DC 13]]")
+  assert.equal(charm.against, "charmed")
+  assert.equal(charm.dc, 13)
+  assert.equal(charm.skill, null)
+  assert.equal(parseRollRequest("[[1d20+1 | DC 12 | vs being frightened]]").against, "frightened")
+  assert.equal(parseRollRequest("[[1d20+1 | vs fear]]").against, "frightened")
+  // anything else after "vs" is not a trait's business, and is never guessed
+  assert.equal(parseRollRequest("[[1d20+1 | vs poisoned]]").against, null)
+  // the extras never reach the table
+  assert.equal(stripRollRequestExtras("[[1d20+2 | vs charmed | DC 13]]"), "[[1d20+2]]")
 })
