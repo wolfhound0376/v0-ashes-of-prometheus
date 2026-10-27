@@ -6230,6 +6230,7 @@ function castAsks(n, ask){
   if (n.storyTalk === undefined) n.storyTalk = !!n.talk;
   n.stageAsk = ask; n.talk = true; n.talkWho = ask.who || null;
   delete state.talked[n.id]; delete state.declined[n.id];
+  if (n.id === "jorlan"){ n.talk = false; n.jorlanAsk = {who: ask.who || null}; return; }   // tickJorlanPrivacy raises the "!" when no drow is close
   narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} wants a word${ask.who ? " with " + ask.who : ""}.`);
 }
 // A cast member walks out of the picture by the nearest edge of the plate (a dead one falls where they
@@ -7193,6 +7194,37 @@ function gateScan(guards, g, h, d, sc){
     popText(w, "?", "#ffd166", 1.2);
   } else h.gateSpotted = false;
 }
+// JORLAN'S PRIVACY (Sam, 2026-10-26: "Jorlan should only approach you when the other drow sprites are not close").
+// His gambit is treason, so he never comes over to a prisoner, or raises the "!", with another drow near him or near
+// the one he wants. Any other drow on the plate — the guards, the lizard rider, Ilvara, Shoor, Asha, the surgeon —
+// counts; Sarith does not (a chained prisoner, not one of the outpost). An approach that is not safe yet waits and
+// plays the moment it is; if a drow walks up while he is on his way, he breaks off back to his post. Talking to him
+// yourself is untouched, and so is the gate rule (a hero at the bars is answered by Jorlan with the guards watching).
+const JORLAN_PRIVACY = 300;               // plate px at scale 1: about four squares
+const OTHER_DROW = n => n.id !== "jorlan" && /^(drow-|ilvara$|shoor$|asha$|liana$)/.test(n.id);
+function drowClose(j, pc){
+  const r = JORLAN_PRIVACY * (node.scale || 1);
+  return npcs.some(d => OTHER_DROW(d) && actors.includes(d) && !d.offStage && !d.body && !d.down && !(d.alpha !== undefined && d.alpha < .3)
+    && (Math.hypot(d.x - j.x, d.y - j.y) < r || (pc && Math.hypot(d.x - pc.x, d.y - pc.y) < r)));
+}
+function tickJorlanPrivacy(){
+  const j = npcs.find(n => n.id === "jorlan" && actors.includes(n));
+  if (!j || j.offStage || j.body || j.down || j.hostile || j.barsTalk) return;
+  const askFor = j.jorlanAsk && !state.talked[j.id] ? (pcNamedIn(j.jorlanAsk.who) || leader) : null;
+  const target = j.jorlanBeside || askFor;
+  if (!target) return;
+  const clear = !drowClose(j, target);
+  if (j.jorlanAsk){
+    if (state.talked[j.id]){ j.jorlanAsk = null; j.jorlanWalked = false; return; }
+    if (clear && !j.talk){ j.talk = true; narrate(j, `Jorlan wants a word${j.jorlanAsk.who ? " with " + j.jorlanAsk.who : ""}.`); }
+    else if (!clear && j.talk){ j.talk = false; }
+  }
+  if (clear && (j.jorlanBeside || (j.jorlanAsk && !j.jorlanWalked))){ j.jorlanWalked = true; const pc = target; j.jorlanBeside = null; walkBeside(j, pc); return; }
+  if (!clear && j.path && j.path.length && j.slow && j.jorlanWalked){          // a drow came up while he was on his way: back to his post
+    j.jorlanWalked = false; j.jorlanBeside = target;
+    const back = j.post || j.home; j.path = back ? findPath(j, walkable(back.x, back.y) ? back : nearestWalkable(back.x, back.y)) : [];
+  }
+}
 function tickGateWatch(){
   // a work detail in progress (laborLive): the escort has the gate, so the sentries do not warn anyone off it
   if (surgeon) return;                                  // the guards are already shooting (The Drow Surgeon)
@@ -7228,7 +7260,7 @@ function jorlanAtBars(j, h, guards){
   for (const x of guards){ x.path = []; x.actUntil = now + 20000; x.scanAt = now + 20000; faceTo(x, h); }
   stopActivity(j); j.path = []; faceTo(j, h); popText(j, "!", "#ffd166", 1.2);
   h.path = [];
-  j.talk = true; delete state.talked[j.id]; delete state.declined[j.id];
+  j.talk = true; delete state.talked[j.id]; delete state.declined[j.id]; j.barsTalk = true; setTimeout(() => { j.barsTalk = false; }, 60000);
   j.talkSituation = `${who}, a prisoner, has come right up to the bars of the pen gate. Jorlan is on the landing beside the door; the guards on the bridge have crossbows ready and wait on him.`;
   setTimeout(() => { j.talkSituation = null; }, 60000);
   log(`<em>${esc(who)} comes up to the bars. Jorlan, on the landing beside the door, turns to them.</em>`);
@@ -7745,6 +7777,8 @@ function pcNamedIn(where){
 }
 function walkBeside(n, pc){
   if (!n || !pc || n.creature || n.offStage || n.body || n.down || n.hostile || n.relieved) return;
+  if (n.id === "jorlan" && drowClose(n, pc)){ n.jorlanBeside = pc; return; }   // tickJorlanPrivacy walks him over once they have gone
+  if (n.id === "jorlan") n.jorlanBeside = null;
   n.talkHold = now + 30000;
   if (Math.hypot(n.x - pc.x, n.y - pc.y) < 170 * node.scale){ n.path = []; stopActivity(n); faceTo(n, pc); return; }
   if (!walkable(n.x, n.y)){ if (walkable(pc.x, pc.y) && spotFor("bars")) castMovesTo(n, "at the bars"); return; }
@@ -9521,6 +9555,7 @@ function update(dt){
     if (canControl(leader)) keyboardMove(leader, dt);
     tickCreatures();
     tickGateWatch();
+    tickJorlanPrivacy();
     // the rest of the party stays where they were put; they only come along when the party leaves the plate
     // exits
     const z = mode === "explore" && !leader.walkIn ? zoneAt(leader.x, leader.y) : null;
