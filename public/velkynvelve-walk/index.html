@@ -8883,6 +8883,21 @@ function hearLine(row){
   const text = String((LANG && ears ? LANG.hearDialogueRow(row, ears) : row).text).trim(), type = row.speaker_type, name = row.speaker || "";
   if (type === "dm"){ narrate(null, text); return; }
   const a = actorForSpeaker(name, type);
+  // A message to another player (the Message button; Sam, 2026-10-26: "This should display with everyone. No
+  // voice heard."): the whole table sees it over the sender's sprite, addressed, and hears it in the sender's own
+  // ElevenLabs voice (/api/npc-tts finds a hero's saved voice by name). Queued like an NPC line, one voice at a time.
+  if (row.channel === "direct"){
+    const to = String(row.recipient || "").trim(), said = to ? `${to}, ${text}` : text;
+    talkQueue = talkQueue.then(async () => {
+      const here = actorForSpeaker(name, "player");
+      if (here){ lastPlayerLine = {a: here, at: now}; bark(here, said, lineMs(said), {talk: true}); }
+      log(`<b>${esc(name)}</b>${to ? ` → <b>${esc(to)}</b>` : ""}: ${esc(text)}`);
+      if (!voicesOn) return wait(here ? Math.min(lineMs(said), 2500) : 300);
+      try { await speakCanon((here && here.id) || "hero", text, name); } catch (e) { console.warn("voice unavailable:", name, e); return; }
+      const t0 = performance.now(); while (speaking && performance.now() - t0 < 30000) await wait(150);
+    });
+    return;
+  }
   if (type === "player"){ if (a){ lastPlayerLine = {a, at: now}; bark(a, text, lineMs(text), {talk: true}); } else log(`<b>${esc(name)}</b>: ${esc(text)}`); return; }
   // an NPC: their turn in the queue, bubble when their voice starts
   const id = (a && a.id) || castIdFor(name);

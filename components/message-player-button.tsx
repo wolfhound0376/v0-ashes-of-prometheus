@@ -10,12 +10,14 @@
 // Malachar, the DM transcript, the party pane or the map's speech bubbles, because every one of those readers
 // filters to channel 'dm' or 'party'.
 //
-// No seat (the DM, a spectator, the staging table) → no button. A message arriving while you are not reading that
-// thread pops a bubble under the button (sender + the line; tap it to open the thread), lights a count on the
-// button and plays the window chime (Sam, 2026-10-26: "messages to each player not creating a bubble").
+// No seat (the DM, a spectator, the staging table) → no button. Messages are SAID ALOUD TO THE TABLE (Sam,
+// 2026-10-26: "This should display with everyone. No voice heard."): every seated player sees a bubble under the
+// button for every message (sender → recipient, the line; tap to open that thread) and hears it in the sender's
+// own ElevenLabs voice. On the dashboard (variant "gold") this button plays the voice; on the pixel map the walk
+// itself draws the bubble over the sender's sprite and voices it (/api/map-dialogue carries 'direct' rows), so
+// the button there stays silent and nobody hears a line twice. The addressee also gets the unread count + chime.
 //
-// Privacy, said plainly: "private" means the app shows a thread only to its two players. `dialogue` is readable
-// with the public key (its RLS policy is allow-all), so this is a table courtesy, not a lock.
+// The thread view lists only the conversation between you and the player you picked; the table hears all of it.
 
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { ArrowLeft, Mail, SendHorizontal, X } from "lucide-react"
@@ -34,6 +36,29 @@ const READ_KEY = "aop_dm_last_read"
 
 type Variant = "gold" | "pixel"
 
+// The sender's saved hero voice, through the same route the map uses (/api/npc-tts resolves a hero by name).
+// WebAudio rather than <audio>: the game found <audio> silently mute in some Chromium builds. Lines play one at a time.
+let voiceCtx: AudioContext | null = null
+let voiceQueue: Promise<void> = Promise.resolve()
+function sayAloud(speaker: string, text: string) {
+  voiceQueue = voiceQueue.then(async () => {
+    try {
+      const res = await fetch("/api/npc-tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, npcName: speaker }) })
+      if (!res.ok) throw new Error(`tts ${res.status}`)
+      const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
+      voiceCtx = voiceCtx ?? new AC()
+      if (voiceCtx.state !== "running") await Promise.race([voiceCtx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 1500))])
+      const buf = await voiceCtx.decodeAudioData(await res.arrayBuffer())
+      const src = voiceCtx.createBufferSource()
+      src.buffer = buf
+      src.connect(voiceCtx.destination)
+      await new Promise<void>((done) => { src.onended = () => done(); src.start() })
+    } catch (err) {
+      console.warn("[MessagePlayer] voice unavailable:", speaker, err)
+    }
+  })
+}
+
 function readLastRead(): Record<string, string> {
   try { return JSON.parse(localStorage.getItem(READ_KEY) || "{}") || {} } catch { return {} }
 }
@@ -43,6 +68,7 @@ function writeLastRead(v: Record<string, string>) {
 
 export function MessagePlayerButton({ variant = "gold", align = "right", className }: { variant?: Variant; align?: "left" | "right"; className?: string }) {
   const pixel = variant === "pixel"
+  const voiced = !pixel
   const supabaseRef = useRef(createClient())
   const instanceId = useId()
   const [me, setMe] = useState<{ id: string; name: string } | null>(null)
@@ -93,7 +119,6 @@ export function MessagePlayerButton({ variant = "gold", align = "right", classNa
         .from("dialogue")
         .select("id, speaker, recipient, text, created_at")
         .eq("channel", DIRECT_CHANNEL)
-        .or(`speaker.eq."${name.replace(/"/g, '\\"')}",recipient.eq."${name.replace(/"/g, '\\"')}"`)
         .order("created_at", { ascending: false })
         .limit(200)
       if (cancelled) return
@@ -108,16 +133,17 @@ export function MessagePlayerButton({ variant = "gold", align = "right", classNa
         .on("postgres_changes", { event: "INSERT", schema: "public", table: "dialogue", filter: `channel=eq.${DIRECT_CHANNEL}` },
           (payload: { new: Record<string, any> }) => {
             const r = payload.new as DirectRow
-            const mine = r.speaker?.trim().toLowerCase() === name.toLowerCase() || r.recipient?.trim().toLowerCase() === name.toLowerCase()
-            if (!mine) return
+            const fromMe = r.speaker?.trim().toLowerCase() === name.toLowerCase()
             setRows((prev) => {
               if (prev.some((x) => x.id === r.id)) return prev
               const pending = prev.findIndex((x) => x.id.startsWith("dm-optimistic-") && x.speaker === r.speaker && x.recipient === r.recipient && x.text === r.text)
               if (pending !== -1) { const next = prev.slice(); next[pending] = r; return next }
               return [...prev, r]
             })
-            if (isForMe(r, name)) {
-              uiChime()
+            // Said aloud to the table: everyone hears it in the sender's voice (on the map, the walk says it).
+            if (voiced) sayAloud(r.speaker, r.text)
+            if (isForMe(r, name)) uiChime()
+            if (!fromMe) {
               const v = viewingRef.current
               const reading = v.open && v.withName?.trim().toLowerCase() === r.speaker?.trim().toLowerCase()
               if (!reading) {
@@ -141,7 +167,7 @@ export function MessagePlayerButton({ variant = "gold", align = "right", classNa
       if (channel) supabase.removeChannel(channel)
       if (bubbleTimer.current) window.clearTimeout(bubbleTimer.current)
     }
-  }, [me?.name, instanceId])
+  }, [me?.name, instanceId, voiced])
 
   const contacts: Contact[] = useMemo(() => contactsFor(seats, me?.id), [seats, me?.id])
   const unread = useMemo(() => (me ? unreadBySender(rows, me.name, lastRead) : {}), [rows, me, lastRead])
@@ -216,9 +242,9 @@ export function MessagePlayerButton({ variant = "gold", align = "right", classNa
           onClick={() => { uiLatch(); setWithName(bubble.speaker.trim()); setOpen(true); setBubble(null) }}
           className={cn(s.pop, align === "right" ? "right-0" : "left-0")}
         >
-          <span className={s.popFrom}>{bubble.speaker} <span className="opacity-60">→ you</span></span>
+          <span className={s.popFrom}>{bubble.speaker} <span className="opacity-60">→ {me && isForMe(bubble, me.name) ? "you" : bubble.recipient}</span></span>
           <span className={s.popText}>{bubble.text}</span>
-          <span className={s.popHint}>Tap to reply</span>
+          <span className={s.popHint}>{me && isForMe(bubble, me.name) ? "Tap to reply" : `Tap to message ${bubble.speaker}`}</span>
         </button>
       )}
 
@@ -259,7 +285,7 @@ export function MessagePlayerButton({ variant = "gold", align = "right", classNa
             <>
               <div className="max-h-64 min-h-24 space-y-1.5 overflow-y-auto px-3 py-2">
                 {thread.length === 0 ? (
-                  <p className={s.empty}>Only {withName} will see this.</p>
+                  <p className={s.empty}>Said aloud — the whole table sees and hears it.</p>
                 ) : (
                   thread.map((m) => {
                     const fromMe = m.speaker.trim().toLowerCase() === me.name.toLowerCase()
