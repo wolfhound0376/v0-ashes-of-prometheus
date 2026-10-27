@@ -30,6 +30,8 @@ export async function POST(req: NextRequest) {
     if (!npcName) return NextResponse.json({ narration: null, line: null })
     const brief = clip(body?.brief, 200) || npcName
     const area = clip(body?.area, 60) || "Velkynvelve"
+    // what just happened, when the NPC is opening because of it (the map: guards and Ilvara caught a hero sneaking)
+    const situation = clip(body?.situation, 240)
     const pc = body?.pc ?? {}
     const pcName = clip(pc.name, 60) || "the prisoner"
     const pcRace = clip(pc.race, 30)
@@ -65,6 +67,7 @@ export async function POST(req: NextRequest) {
 Write how one NPC opens a conversation with a player character.
 Scene: ${area} in Velkynvelve, the drow outpost. The prisoners have shared the slave pen for several days.
 NPC: ${brief}.
+${situation ? `What just happened: ${situation} The line reacts to THAT, in character — a threat, a question, a demand; whether they attack is decided later in the conversation, so do not narrate an attack.` : ""}
 Player character: ${pcName}${pcRace || pcClass ? `, a ${[pcRace, pcClass].filter(Boolean).join(" ")}` : ""}.
 ${personality ? `Their personality and manner: ${personality}.` : ""}
 ${knowsName ? `The NPC knows ${pcName}'s name and may use it.` : `The NPC does NOT know this character's name. Never say "${pcName}" or invent a name. Address them by what the NPC can see (that they are a ${pcRace || "stranger"}, how they look) or with a gesture.`}
