@@ -59,6 +59,10 @@ const ATHLETICS: WalkCheck = { kind: "skill", skill: "athletics", label: "Athlet
 export const WALK_ACTIONS = {
   "pen-gate:pick": { title: "Pick the lock", label: "Picking the pen gate's lock", check: THIEVES_TOOLS, dc: 20, source: "OotA p.18" },
   "pen-gate:force": { title: "Force the gate", label: "Forcing the pen gate", check: ATHLETICS, dc: 20, source: "OotA p.18" },
+  // Lift Trouble (OotA Expanded p.45, a community supplement): three rappels down the cliff below the lift on tattered
+  // ropes; whoever falls lands in the web net with the giant spider. The supplement names no DC: 12 is a house number.
+  "cliff:rappel": { title: "Rappel on the rope", label: "Rappelling down the cliff below the lift", check: ATHLETICS, dc: 12, source: "OotA Expanded p.45 · DC house" },
+  "cliff:climb": { title: "Climb the rope", label: "Climbing the rope up the cliff below the lift", check: ATHLETICS, dc: 12, source: "OotA Expanded p.45 · DC house" },
 } as const satisfies Record<string, WalkAction>
 
 export type WalkActionKey = keyof typeof WALK_ACTIONS

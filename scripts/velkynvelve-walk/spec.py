@@ -61,7 +61,8 @@ NODES = {
           # Hard Labor module (Sam, 2026-10-26), Lift Trouble (OotA Expanded p.45): goods fell off the lift and snagged on the
           # cliff below; the prisoners are sent down on two tattered 25-ft ropes, three rappels. PROPOSED: the spot on the rail is
           # Claude's pick. The rappel checks are not built yet (labor module PR 3); for now this simply walks.
-          dict(rect=[1100, 1100, 1300, 1180], to=["5c"], label="PROPOSED: over the rail on a rope, down the cliff below the lift", proposed=True)]),
+          dict(rect=[1100, 1100, 1300, 1180], to=["5c"], label="PROPOSED: over the rail on a rope, down the cliff below the lift", proposed=True,
+               rappel=dict(dir="down", entry=True))]),
  6: dict(slug="node-06-shrine", name="Shrine to Lolth", scale=1.0,
    floors=[dict(ellipse=[1200,750,620,250]),dict(rect=[1010,980,1390,1339]),dict(rect=[400,700,620,775]),dict(rect=[1800,700,1990,785])],
    obstacles=[dict(cx=1200,cy=665,rx=200,ry=95),dict(cx=780,cy=665,rx=60,ry=35),dict(cx=1610,cy=665,rx=60,ry=35)],
@@ -130,12 +131,30 @@ NODES = {
    # Lanczos; not AI-upscaled). Floors traced by Claude by eye: the three ledges and the two scree ramps between them.
    # scale 2.2 is by eye from the burlap sacks (~40 px/ft mid-cliff), NOT checked by compositing a hero -- adjust after a look.
    floors=[dict(poly=P((201,303),(373,231),(689,202),(1249,210),(1263,267),(1091,296),(919,281),(804,339),(474,346),(230,339))),
-           dict(poly=P((804,281),(919,267),(1091,353),(1292,454),(1177,489),(1005,454),(861,353))),
            dict(poly=P((919,468),(1091,446),(1292,454),(1579,468),(1651,511),(1622,583),(1292,597),(1005,583),(876,540))),
-           dict(poly=P((1292,576),(1507,568),(1593,669),(1708,798),(1507,820),(1378,712))),
-           dict(poly=P((1421,812),(1794,791),(2096,805),(2153,856),(2124,927),(1794,949),(1507,942),(1414,884)))],
+           dict(poly=P((1421,812),(1794,791),(2096,805),(2153,856),(2124,927),(1794,949),(1507,942),(1414,884))),
+           # the web net (Expanded p.45: "a spider web netting ... 100' below for those who fall"). Floor only for whoever
+           # lands in it: no path joins it to the ledges, so the only ways in are a failed rappel and the only way out is
+           # the net's anchor rope back up to the lowest ledge.
+           dict(poly=P((474,913),(1005,999),(1435,1085),(2009,1056),(2182,1085),(2153,1286),(1722,1339),(574,1339),(431,1171)))],
    obstacles=[],
-   zones=[dict(rect=[416, 0, 847, 167], to=[5], label="Climb back up the rope to the lift", climb=dict(foot=[700, 260], ladder=[630, 150], dir="up"))]),
+   # RAPPELS (Sam, 2026-10-26: "rappel checks and fall into the web net"). The scree between the ledges is not walkable:
+   # each drop is a rope, crossed by a `rappel` zone that asks for Strength (Athletics) on the dashboard's dice
+   # (lib/walk-roll.ts "cliff:rappel"). Success: the party goes down (or up) the rope together, `path` is the route
+   # they take and `land` is the ledge they reach. Failure: whoever led falls into the net and the giant spider comes.
+   # Three rappels in all, as the supplement says: lift rail -> top ledge (plate 5's zone), top -> middle, middle -> low.
+   # Positions are Claude's by eye.
+   zones=[dict(rect=[416, 0, 847, 167], to=[5], label="Climb back up the rope to the lift", climb=dict(foot=[700, 260], ladder=[630, 150], dir="up")),
+          dict(rect=[1150, 230, 1260, 300], to=[], kind="rappel", label="The rope down to the middle ledge",
+               rappel=dict(dir="down", path=[[1200, 330], [1180, 420], [1150, 510]])),
+          dict(rect=[960, 470, 1080, 560], to=[], kind="rappel", label="The rope up to the top ledge",
+               rappel=dict(dir="up", path=[[1060, 420], [1120, 330], [1080, 270]])),
+          dict(rect=[1480, 470, 1600, 560], to=[], kind="rappel", label="The rope down to the lowest ledge",
+               rappel=dict(dir="down", path=[[1500, 640], [1540, 760], [1600, 860]])),
+          dict(rect=[1440, 830, 1560, 920], to=[], kind="rappel", label="The rope up to the middle ledge",
+               rappel=dict(dir="up", path=[[1480, 760], [1440, 640], [1400, 540]])),
+          dict(rect=[1800, 1040, 1960, 1120], to=[], kind="rappel", label="The net's anchor rope, back up to the lowest ledge",
+               rappel=dict(dir="up", path=[[1860, 1000], [1860, 930], [1840, 880]], net=True))]),
  "3k": dict(slug="node-03k-kitchen", name="Main Hall kitchen", scale=2.4, depth=[0.8, 1.4], img="node-03k-kitchen.jpg",
    # Hard Labor module plate B (Sam, 2026-10-26). OotA p.12 lists food prep and service, and washing dishes, among the
    # prisoners' chores; plate 3 has a pantry but no stove, so the kitchen is its own close-up. Cut as plate A.
