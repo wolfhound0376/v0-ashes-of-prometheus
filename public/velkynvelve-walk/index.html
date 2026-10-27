@@ -5703,14 +5703,24 @@ const heroUp = h => h && !h.ko && !h.down && !h.body;
 const heroAlone = id => !!state["alone:" + id];
 const companyMode = id => state["companyMode:" + id] || "follow";
 const drivesHere = h => canControl(h) && !owRemote(h);
-function dealEscort(ids){
+// HOME (Sam, 2026-10-27, on Claude's gameplay pick: "go ahead"): state.escortHome remembers the hero a prisoner was
+// first dealt to. A hero who drops has theirs re-dealt to whoever is standing (above), but once they are back up, not
+// off alone, and walk within a short reach of a prisoner of theirs, that prisoner goes home to them. Otherwise one
+// player slowly ends up with everybody and "Gandalf's guys" stops meaning anything. Same 450 px reach as the sneak rejoin.
+function dealEscort(comp){
+  const ids = comp.map(n => n.id);
   const heroes = PARTY.filter(id => heroUp(party.find(p => p.id === id)));
   if (!heroes.length) return;
   const was = state.escort || {}, next = {}, count = Object.fromEntries(heroes.map(h => [h, 0]));
-  for (const id of ids) if (was[id] && count[was[id]] != null){ next[id] = was[id]; count[was[id]]++; }
+  const home = {...(state.escortHome || {})};
+  for (const n of comp){ const hm = home[n.id], hh = hm && party.find(p => p.id === hm);
+    if (hm && hm !== was[n.id] && heroUp(hh) && !heroAlone(hm) && Math.hypot(hh.x - n.x, hh.y - n.y) < 450 * node.scale){ next[n.id] = hm; count[hm]++; } }
+  for (const id of ids) if (!next[id] && was[id] && count[was[id]] != null){ next[id] = was[id]; count[was[id]]++; }
   const seed = runSeen != null ? String(runSeen) : "preview";
   const loose = ids.filter(id => !next[id]).sort((a, b) => escortHash(`${seed}:${a}`) - escortHash(`${seed}:${b}`) || (a < b ? -1 : 1));
-  for (const id of loose){ let best = heroes[0]; for (const h of heroes) if (count[h] < count[best]) best = h; next[id] = best; count[best]++; }
+  for (const id of loose){ let best = heroes[0]; for (const h of heroes) if (count[h] < count[best]) best = h; next[id] = best; count[best]++; if (!home[id]) home[id] = best; }
+  for (const id of ids) if (!home[id] && next[id]) home[id] = next[id];        // a deal made before homes were kept
+  if (owCanon(home) !== owCanon(state.escortHome || {})) state.escortHome = home;
   for (const id in was) if (!(id in next) && companyNow().includes(id) && !npcs.some(n => n.id === id)) next[id] = was[id];   // off this plate for now: keep the deal
   if (owCanon(next) !== owCanon(was)) state.escort = next;
 }
@@ -5756,7 +5766,7 @@ function tickEscorts(){
   if (laborLive()) return;                                           // a work detail's prisoners do the work
   const comp = npcs.filter(n => n.company && followsNow(n));
   if (!comp.length) return;
-  dealEscort(comp.map(n => n.id).sort());
+  dealEscort([...comp].sort((a, b) => (a.id < b.id ? -1 : 1)));
   const groups = new Map();
   for (const n of comp){
     const g = escortTarget(n.id), key = g.hero ? "h:" + g.hero.id : `p:${Math.round(g.spot.x)},${Math.round(g.spot.y)}`;
