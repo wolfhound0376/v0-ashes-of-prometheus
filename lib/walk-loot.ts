@@ -160,8 +160,6 @@ export const BODY_KIT: Record<string, LootEntry[]> = { "drow-guard-male": DROW_K
 // (Perception) score as the base DC. A prisoner that fails the check is commanded to relinquish the item, on pain
 // of death." There is one pen key: once lifted from any guard it is gone from them all.
 export const POCKETS: Record<string, LootEntry[]> = {
-  "drow-guard-male": [{ slug: "slave-pen-key", qty: 1, note: "the key to the slave pen" }],
-  "drow-guard-female": [{ slug: "slave-pen-key", qty: 1, note: "the key to the slave pen" }],
   // OotA ch.1 area 7: "Ilvara keeps the key in a hidden pocket on the inside of her belt" (her chest's)
   "ilvara": [{ slug: "ilvara-chest-key", qty: 1, note: "from a hidden pocket inside her belt" }],
   // OotA ch.1: "Jorlan used to have a wand that shot globs of sticky material ... Now Shoor carries it" (App B: wand of
@@ -201,6 +199,37 @@ export function scavengedRoll(slug: string): { days: number; d20: number; total:
   const row = SCAVENGE.find((r) => total <= r.upTo) ?? SCAVENGE[SCAVENGE.length - 1]
   return { days, d20, total, entry: row.entry }
 }
+// THE GUARDS' POCKETS. Sam, 2026-10-27: guards "should also have a 1D6 set of items, maybe drow poison, dagger, bolts,
+// GP, the key to the pen, potion or elixir, food ration, etc". So each guard is their OWN pocket
+// (`pocket:<sprite>:<which>`, the map sends plate + post), and the first time anyone looks, 1d6 draws are made on
+// POCKET_TABLE and kept in the walk-loot world flag for the run: the same guard holds the same things every time.
+// The table, its weights and the dice per row are Claude's, from Sam's list (the book lists no pocket contents);
+// "elixir" has no catalogue row, so that row is a potion of healing. The pen key: once the party holds one, no other
+// guard offers it. The guards posted on the pen plate (`:pen-…`: they keep that gate, and one leans at the bars so a
+// sneaking prisoner can try for it, PR #966) and the labor escort (`:escort`, "the pen key, OotA p.19") always carry
+// it; anyone else may roll it.
+export type PocketRow = { slug: string; dice: [number, number]; note: string; max?: number }
+export const POCKET_TABLE: PocketRow[] = [
+  { slug: "drow-poison", dice: [1, 1], note: "a flask on the belt, treats 20 bolts" },
+  { slug: "dagger", dice: [1, 1], note: "a spare, tucked in a boot", max: 1 },
+  { slug: "crossbow-bolt", dice: [1, 6], note: "loose hand crossbow bolts" },
+  { slug: "gold-coin", dice: [1, 10], note: "in a coin purse" },
+  { slug: "slave-pen-key", dice: [1, 1], note: "the key to the slave pen", max: 1 },
+  { slug: "potion-of-healing", dice: [1, 1], note: "a stoppered vial", max: 1 },
+  { slug: "rations-1-day", dice: [1, 1], note: "a day's dried rations" },
+  { slug: "mushroom-wine", dice: [1, 1], note: "a small flask" },
+]
+export const POCKET_SPRITES = new Set(["drow-guard-male", "drow-guard-female"])
+/** Roll a guard's pockets: 1d6 draws on POCKET_TABLE, duplicates merged. `rng` returns [0,1). */
+export function rollPockets(which: string, rng: () => number = Math.random): LootEntry[] {
+  const d = (n: number, k: number) => { let t = 0; for (let i = 0; i < n; i++) t += 1 + Math.floor(rng() * k); return t }
+  const out = new Map<string, LootEntry>()
+  const put = (r: PocketRow, q: number) => out.set(r.slug, { slug: r.slug, qty: Math.min(r.max ?? Infinity, (out.get(r.slug)?.qty ?? 0) + q), note: r.note })
+  for (let i = d(1, 6); i > 0; i--){ const r = POCKET_TABLE[Math.floor(rng() * POCKET_TABLE.length)]; put(r, d(r.dice[0], r.dice[1])) }
+  if (/^(pen|escort)/.test(which) && !out.has("slave-pen-key")) put(POCKET_TABLE.find((r) => r.slug === "slave-pen-key")!, 1)
+  return [...out.values()]
+}
+
 /** What the book puts in this character's pockets: the named pockets above, or a prisoner's scavenged find. */
 export function pocketEntries(slug: string): LootEntry[] {
   if (POCKETS[slug]) return POCKETS[slug]
@@ -218,9 +247,13 @@ export function isValuable(name: string, type: string | null | undefined, rarity
 }
 
 /** Which container a request names, and how its id is read. */
-export function parseContainer(id: string): { kind: "book" | "body" | "pocket"; key: string; slug?: string } | null {
+// A pocket is one per character (`pocket:ilvara`), except the rank-and-file guards, who are one per guard
+// (`pocket:drow-guard-male:<plate-post>`); a guard id with no `:<which>` (an old page) is their shared pocket.
+export function parseContainer(id: string): { kind: "book" | "body" | "pocket"; key: string; slug?: string; which?: string } | null {
   if (BOOK_CONTAINERS[id]) return { kind: "book", key: id }
-  const m = /^(body|pocket):([a-z0-9-]+)(?::[A-Za-z0-9:._-]+)?$/.exec(id)
+  const m = /^(body|pocket):([a-z0-9-]+)(?::([A-Za-z0-9:._-]+))?$/.exec(id)
   if (!m) return null
-  return { kind: m[1] as "body" | "pocket", key: m[1] === "pocket" ? `pocket:${m[2]}` : id, slug: m[2] }
+  if (m[1] === "body") return { kind: "body", key: id, slug: m[2] }
+  const which = m[3] || "default"
+  return { kind: "pocket", key: m[3] ? `pocket:${m[2]}:${m[3]}` : `pocket:${m[2]}`, slug: m[2], which }
 }

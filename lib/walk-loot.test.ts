@@ -3,7 +3,8 @@ import { POCKETS, PRISONERS, pocketEntries, scavengedRoll } from "./walk-loot"
 
 describe("what is in the pockets (OotA ch.1)", () => {
   it("gives the named characters what the book says they carry", () => {
-    expect(pocketEntries("drow-guard-male").map((e) => e.slug)).toEqual(["slave-pen-key"])
+    // the rank-and-file guards are rolled per guard (rollPockets, walk-loot.pockets.test.ts), not a fixed list
+    expect(pocketEntries("drow-guard-male")).toEqual([])
     expect(pocketEntries("ilvara").map((e) => e.slug)).toEqual(["ilvara-chest-key"])
     expect(pocketEntries("shoor").map((e) => e.slug)).toEqual(["wand-of-viscid-globs"])
     expect(pocketEntries("asha")).toEqual([])
@@ -41,7 +42,7 @@ describe("what is in the pockets (OotA ch.1)", () => {
     expect(seen.size).toBe(8)
   })
 
-  it("keeps the guards' named pockets in POCKETS", () => {
-    expect(Object.keys(POCKETS)).toEqual(expect.arrayContaining(["drow-guard-male", "drow-guard-female", "ilvara", "shoor"]))
+  it("keeps the named characters' pockets in POCKETS", () => {
+    expect(Object.keys(POCKETS)).toEqual(expect.arrayContaining(["ilvara", "shoor"]))
   })
 })
