@@ -2000,8 +2000,10 @@ function rappelGo(z){
   setTimeout(() => { mode = "explore"; ackZone = zoneAt(leader.x, leader.y); }, 1400 + order.length * 450);
 }
 function inNet(a){ const net = node.floors && node.floors[node.floors.length - 1]; return cur === "5c" && !!net && inPoly(net.poly, a.x, a.y); }
-function fallIntoNet(a){
+async function fallIntoNet(a){
   if (cur !== "5c") return;
+  await playFilm("fall"); await playFilm("web");            // the fall, then the net and what climbs it
+  if (mode === "dialog") mode = "explore";
   const land = NET_LAND[0];
   stopActivity(a); a.path = []; a.onArrive = null; a.x = land.x; a.y = land.y; a.fallIn = now; a.face = 0;
   sfx("door-locked", .4); popText(a, "the rope tears!", "#ff6b5e", 1.2);
@@ -6219,8 +6221,44 @@ function escortSays(a, line, ms = 5200){
 function quaggothSays(line){ const q = escortBeast(); if (q) bark(q, heardText(line, "Undercommon"), 4200, {lang: "Undercommon"}); }
 
 // 1. the call: the escort comes over the bridge to the gate and calls the detail out
+// ---------- HARD LABOR: the films (Sam, 2026-10-26: "Lets do cinematics") ----------
+// Four 5-second photoreal films (Runway seedance-2 from stills Sam picked; public/videos/labor/), played full screen
+// over the map at their moment, then the map carries on: The Call when a detail is first called out of the pen, The
+// Fall and then Caught in the Web when a rappel on the cliff below the lift is missed, Redo the first time a guard
+// makes someone do their work again. Each plays once per session in this browser (the moment repeats; the film need
+// not). Click, Space or Escape skips. The player's "Cinematics" setting (lib/settings.ts, aop_settings_v1) turns them
+// off. Silent files: the map's own music and effects keep playing underneath.
+const FILM_DIR = `${APP ? "/" : "../"}videos/labor/`;
+const filmsSeen = new Set();
+function filmsOn(){ try { const v = JSON.parse(localStorage.getItem("aop_settings_v1") || "{}"); return v.cinematics !== false; } catch (e) { return true; } }
+function playFilm(name){
+  if (filmsSeen.has(name) || !filmsOn()) return Promise.resolve(false);
+  filmsSeen.add(name);
+  return new Promise(res => {
+    const prev = mode; mode = "dialog";
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "position:fixed;inset:0;z-index:9000;background:#000;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .45s";
+    const v = document.createElement("video");
+    v.src = FILM_DIR + name + ".mp4"; v.muted = true; v.playsInline = true; v.autoplay = true; v.preload = "auto";
+    v.style.cssText = "width:100%;height:100%;object-fit:contain";
+    const skip = document.createElement("button"); skip.className = "btn"; skip.textContent = "Skip";
+    skip.style.cssText = "position:absolute;right:20px;bottom:20px";
+    wrap.append(v, skip); document.body.appendChild(wrap);
+    requestAnimationFrame(() => { wrap.style.opacity = "1"; });
+    let done = false;
+    const end = () => { if (done) return; done = true; removeEventListener("keydown", key, true);
+      wrap.style.opacity = "0"; setTimeout(() => { wrap.remove(); if (mode === "dialog") mode = prev === "dialog" ? "explore" : prev; res(true); }, 450); };
+    const key = e => { if (e.key === "Escape" || e.key === " " || e.key === "Enter"){ e.preventDefault(); e.stopPropagation(); end(); } };
+    addEventListener("keydown", key, true);
+    wrap.onclick = end; v.onended = end; v.onerror = end;
+    setTimeout(end, 9000);                                   // never strand the table behind a film that will not play
+    v.play().catch(() => {});
+  });
+}
 async function laborCall(){
   if (cur !== PEN) return;
+  await playFilm("call");                                   // the first call of the session: the film, then the escort comes
+  if (cur !== PEN || !labor) return;
   narrate(null, pickLine(LINES.malachar, Math.random));
   const g = gateCenter() || {x: 822, y: 860};
   const drop = spotFor("landing") || spotFor("gate") || {x: g.x - 80, y: g.y - 60};
@@ -6388,7 +6426,7 @@ async function laborDoWork(){
   else if (step.line === "done") escortSays(d, WORK_LINES.done);
   else if (Math.random() < .5) escortSays(d, pickLine(WORK_LINES.progress, Math.random), 3000);
   log(step.done ? `<b>${esc(fname(h))}</b> finishes their share of the work.` : step.redo ? `<b>${esc(fname(h))}</b> is made to do it again.` : `<b>${esc(fname(h))}</b> works on.`);
-  laborEvent("work", {slug: h.id, success: ok, total}); if (step.redo) laborEvent("redo", {slug: h.id});
+  laborEvent("work", {slug: h.id, success: ok, total}); if (step.redo){ laborEvent("redo", {slug: h.id}); playFilm("redo"); }
   renderLaborBar();
 }
 async function laborDoLook(){
