@@ -48,6 +48,7 @@ import {
   type WalkRollAck,
   type WalkRollReply,
 } from "@/lib/walk-roll"
+import { parseWalkActionRequest, type WalkActionReply } from "@/lib/walk-action"
 
 /** How long the acting character's sheet may take to load before the roll is called off with a reason. */
 const SHEET_READ_MS = 6000
@@ -176,6 +177,38 @@ export function WalkRollBridge({ frameRef }: { frameRef: RefObject<HTMLIFrameEle
     window.addEventListener("message", onMessage)
     return () => window.removeEventListener("message", onMessage)
   }, [frameRef])
+
+  // HAND-OFFS (lib/walk-action.ts). Listen, Search here, Look closer, Pray, Inspire: the map has rolled, Malachar
+  // says what comes of it. Sent as a stage direction about the acting hero (`director`), so the mechanical line is
+  // never logged as something the hero said; Malachar's narration lands in the log, where the map's own feed shows
+  // it. A rehearsal writes no log, so the reply also goes straight back to the map, which shows it then.
+  const actionSeen = useRef(new Set<string>())
+  useEffect(() => {
+    const onAction = async (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return
+      const frame = frameRef.current?.contentWindow
+      if (!frame || e.source !== frame) return
+      const req = parseWalkActionRequest(e.data)
+      if (!req || actionSeen.current.has(req.id)) return
+      actionSeen.current.add(req.id)
+      const sandbox = isSandbox()
+      const seat = readSeat()
+      const mine = Boolean(req.characterId && seat.claimToken && seat.characterId === req.characterId)
+      const reply = (msg: Omit<WalkActionReply, "type" | "id">) => {
+        try { frame.postMessage({ type: "aop:action-reply", id: req.id, ...msg } satisfies WalkActionReply, window.location.origin) } catch { /* the map went away */ }
+      }
+      try {
+        const res = await sendMessage(req.text, req.characterId ?? seat.characterId, mine ? seat.claimToken : null, { director: true, sandbox })
+        reply({ ok: true, text: res.text, sandbox })
+      } catch (err) {
+        console.error("[walk-action] Malachar did not take the hand-off:", err)
+        const named = err as { playerFacing?: boolean; message?: string }
+        reply({ ok: false, error: named.playerFacing && named.message ? named.message : "Malachar did not answer. Try once more." })
+      }
+    }
+    window.addEventListener("message", onAction)
+    return () => window.removeEventListener("message", onAction)
+  }, [frameRef, sendMessage])
 
   // 4: the player throws the die.
   const onRoll = useCallback(async () => {

@@ -2751,7 +2751,7 @@ function openInteract(z, opts = {}){
         (k.success ? onWin : onLose)();
       });
     };
-    if (hasPenKey()) add("Unlock it with the pen key", () => { close(); sfx("lock-picked", .9); log(`${fname(leader)} turns the stolen key in the lock.`); if (APP) handOff(`${fname(leader)} unlocks the slave pen gate with the key lifted from a guard.`); setTimeout(() => unlockGate(), 650); }, "primary");
+    if (hasPenKey()) add("Unlock it with the pen key", () => { close(); sfx("lock-picked", .9); log(`${fname(leader)} turns the stolen key in the lock.`); if (APP) handOff(`${fname(leader)} unlocks the slave pen gate with the key lifted from a guard.`, true); setTimeout(() => unlockGate(), 650); }, "primary");
     add("Pick the lock", attempt("pen-gate:pick", heroMod(leader, "thievesTools", "dex"), () => {
       sfx("lock-picked", .9); log("The lock gives with a soft click.");
       setTimeout(() => unlockGate(), 650);
@@ -2796,7 +2796,7 @@ function openBody(b){
   const known = !!LOOT_BOOK["body:" + b.id];
   add(b.searched ? "Look again" : "Search the body", () => { close(); const first = !b.searched; b.searched = true;
     if (first){ bank("ui/item_pickup", .7); log(`${fname(leader)} searches ${name}'s body.`); }
-    if (!known && first && APP) handOff(`${fname(leader)} searches ${name}'s body.`);                 // not a kit the book lists: Malachar says
+    if (!known && first && APP) handOff(`${fname(leader)} searches ${name}'s body.`, true);                 // not a kit the book lists: Malachar says
     openLoot(`body:${b.id}:${b.lootKey}`, `${name}'s body`, {text: `${name} lies where it fell.`, empty: known ? `Nothing is left on ${name}.` : APP ? `Nothing the map knows of. What ${name} carried is Malachar's to say.` : "What it carried is Malachar's to say — in the game this goes to him as your action."});
   }, "primary");
   add("Leave it", close);
@@ -2822,7 +2822,22 @@ function rollOnDashboard(action, localMod){
     try { window.parent.postMessage({type: "aop:roll", id, action, characterId}, location.origin); } catch (e) { clearTimeout(t); ROLLS.delete(id); res({ok: false, error: "The dice did not answer."}); }
   });
 }
-function handOff(text){ try { (window.parent !== window ? window.parent : window).postMessage({type: "aop:action", text}, "*"); } catch (e) {} }
+// HAND-OFFS to Malachar (lib/walk-action.ts). `ask` marks one the player clicked in THIS browser: only those are
+// sent on (the bridge in /velkynvelve turns them into a stage direction), because an automatic hand-off — a guard
+// spots the sneak, combat opens — runs in every browser at the table and would make Malachar answer it once per
+// screen. Sam, 2026-10-27: listening "did nothing" — until then no hand-off reached anyone.
+const ACTION_REPLIES = new Set();
+function handOff(text, ask){
+  const id = "a" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  let characterId = null; try { characterId = myClaimId || characterIdOf(leader.id) || null; } catch (e) {}
+  if (ask) ACTION_REPLIES.add(id);
+  try { (window.parent !== window ? window.parent : window).postMessage({type: "aop:action", id, text, characterId, ask: !!ask}, APP ? location.origin : "*"); } catch (e) {}
+}
+addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || m.type !== "aop:action-reply" || !ACTION_REPLIES.has(m.id)) return;
+  ACTION_REPLIES.delete(m.id);
+  if (!m.ok){ toast(m.error || "Malachar did not answer.", 4200); return; }
+  if (m.sandbox && m.text) narrate(null, String(m.text).trim());   // a rehearsal writes no log, so the feed never shows it: show it here
+});
 function isDm(){ try { return localStorage.getItem("aop_access_role") === "dm"; } catch (e) { return false; } }
 // WHO MOVES WHOM (Sam, 2026-10-25): "The DM is the only instance that can move characters that are not his" and a
 // player "CAN ONLY control his character on the dashboard UI and the pixel map." Everyone seated still walks together
@@ -4201,19 +4216,19 @@ function drawSneakCones(){
 function searchHere(){
   const k = mapCheck(leader, "perception", "wis");
   log(`${fname(leader)} searches ${esc(node.name)}: ${rollLine(k, "perception")}.`);
-  handOff(`${fname(leader)} searches ${node.name} carefully. Wisdom (Perception) ${k.total}${k.adv ? " (with help)" : ""}. What do they find?`);
+  handOff(`${fname(leader)} searches ${node.name} carefully. Wisdom (Perception) ${k.total}${k.adv ? " (with help)" : ""}. What do they find?`, true);
   toast(`Perception ${k.total} — Malachar will say what turns up.`, 3200); exploreKey = "";
 }
 function listenAt(z){
   const k = mapCheck(leader, "perception", "wis"), where = exitName(z);
   log(`${fname(leader)} listens at ${esc(where)}: ${rollLine(k, "perception")}.`);
-  handOff(`${fname(leader)} stops at ${where} and listens. Wisdom (Perception) ${k.total}${k.adv ? " (with help)" : ""}. What can they hear beyond it?`);
+  handOff(`${fname(leader)} stops at ${where} and listens. Wisdom (Perception) ${k.total}${k.adv ? " (with help)" : ""}. What can they hear beyond it?`, true);
   toast(`Perception ${k.total} — Malachar will say what they hear.`, 3200); exploreKey = "";
 }
 function lookCloser(what){
   const k = mapCheck(leader, "investigation", "int");
   log(`${fname(leader)} studies ${esc(what)}: ${rollLine(k, "investigation")}.`);
-  handOff(`${fname(leader)} looks closely at ${what}. Intelligence (Investigation) ${k.total}${k.adv ? " (with help)" : ""}. What do they notice?`);
+  handOff(`${fname(leader)} looks closely at ${what}. Intelligence (Investigation) ${k.total}${k.adv ? " (with help)" : ""}. What do they notice?`, true);
   toast(`Investigation ${k.total} — Malachar will say what they notice.`, 3200); exploreKey = "";
 }
 function giveHelp(){ helpNext = {by: leader.id, until: now + 60000}; log(`${fname(leader)} lends a hand: the next friend's check has advantage.`); exploreKey = ""; }
@@ -4246,8 +4261,8 @@ function heroCard(title, text){
 function openPray(){
   const god = /samson/.test(leader.id) ? "Lathander" : "your god";
   const {add, close} = heroCard(`${fname(leader)} prays`, `To ${god}. A prayer is between you and your god unless you say it out loud${cur === 11 || /^node-/.test(node.slug) ? " — and this is a drow outpost" : ""}.`);
-  add("Pray silently", () => { close(); log(`${fname(leader)} bows their head and prays to ${god} in silence.`); handOff(`${fname(leader)} prays silently to ${god}.`); }, "primary");
-  add("Pray aloud", () => { close(); log(`${fname(leader)} prays aloud to ${god}.`); narrate(leader, `${fname(leader)} prays aloud.`); handOff(`${fname(leader)} prays ALOUD to ${god}, where anyone near can hear.`); });
+  add("Pray silently", () => { close(); log(`${fname(leader)} bows their head and prays to ${god} in silence.`); handOff(`${fname(leader)} prays silently to ${god}.`, true); }, "primary");
+  add("Pray aloud", () => { close(); log(`${fname(leader)} prays aloud to ${god}.`); narrate(leader, `${fname(leader)} prays aloud.`); handOff(`${fname(leader)} prays ALOUD to ${god}, where anyone near can hear.`, true); });
   add("Not now", close);
 }
 // Inspire (bard): Bardic Inspiration out of a fight; the die is spent by the map's own checks (useInspiration)
@@ -4267,7 +4282,7 @@ function exploreInspire(a, t){
   setTimeout(() => { addCond(t, "inspired"); t.c.inspDie = SHEETS[a.id].bardic.die;
     if (t.inspFx) t.inspFx.then(e => { if (e) e.until = now; });
     t.inspFx = spawnFx("bardicInspire", {at: t, sq: 2.1, anchor: "base", lift: -.3, tail: 4, tailLift: .55, until: now + 600000});
-    log(`${fname(a)} sings to ${fname(t)}: <b>Bardic Inspiration</b> (d${SHEETS[a.id].bardic.die}).`); handOff(`${fname(a)} gives ${fname(t)} Bardic Inspiration.`); exploreKey = ""; }, 1000);
+    log(`${fname(a)} sings to ${fname(t)}: <b>Bardic Inspiration</b> (d${SHEETS[a.id].bardic.die}).`); handOff(`${fname(a)} gives ${fname(t)} Bardic Inspiration.`, true); exploreKey = ""; }, 1000);
 }
 
 // A SHORT REST ON THE MAP (Sam, 2026-10-24: "Short rests should be able to be taken even when not in camp but risk an
