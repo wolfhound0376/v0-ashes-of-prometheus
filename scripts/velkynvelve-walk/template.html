@@ -351,6 +351,21 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 .marks.still *{animation:none!important}
 .toast{position:absolute;left:50%;top:14px;transform:translateX(-50%);max-width:min(560px,calc(100% - 32px));background:var(--panel);border:1px solid var(--ember);color:var(--ink);border-radius:6px;padding:8px 14px;line-height:1.4;text-align:center;pointer-events:none;animation:fadein .2s ease}
 .toast[hidden]{display:none}
+/* THE CHECK CARD (Sam, 2026-10-27: "consolidate this cleanly at the top. The roll, the result ... Large enough to read
+   well"). One panel for a check the DM answers: what the hero did, the roll, then Malachar's answer beneath it. */
+.checkcard{position:absolute;left:50%;top:58px;transform:translateX(-50%);z-index:25;width:min(720px,calc(100% - 32px));max-height:calc(100% - 200px);overflow:auto;
+  background:rgba(13,11,20,.94);border:1px solid var(--ember);border-radius:8px;box-shadow:0 10px 40px rgba(0,0,0,.6);padding:16px 22px 18px;animation:fadein .2s ease}
+.checkcard[hidden]{display:none}
+.checkcard .cc-what{font-family:var(--face-display);font-size:var(--s2);line-height:1.25;color:var(--ink);margin:0 28px 6px 0}
+.checkcard .cc-roll{font-family:var(--face-mono);font-size:var(--s1);color:var(--ink-dim);letter-spacing:.02em}
+.checkcard .cc-roll b{font-size:1.5em;color:var(--ember);font-weight:500;vertical-align:-.08em}
+.checkcard .cc-say{margin-top:12px;padding-top:12px;border-top:1px solid var(--rule);font-size:clamp(1.05rem,1.6vw,1.3rem);line-height:1.5;color:var(--ink)}
+.checkcard .cc-say.wait{color:var(--ink-dim);font-style:italic;animation:ccpulse 1.6s ease-in-out infinite}
+.checkcard .cc-say.err{color:var(--blood)}
+.checkcard .cc-x{position:absolute;top:8px;right:10px;background:none;border:0;color:var(--ink-dim);font-size:22px;line-height:1;cursor:pointer;padding:4px 8px}
+.checkcard .cc-x:hover{color:var(--ink)}
+@keyframes ccpulse{0%,100%{opacity:.55}50%{opacity:1}}
+@media (prefers-reduced-motion: reduce){.checkcard .cc-say.wait{animation:none}}
 .cool.violet{background:radial-gradient(circle,rgba(225,200,255,.62) 0%,rgba(175,130,255,.28) 30%,rgba(140,100,255,.10) 52%,transparent 70%)}
 @media (max-width:700px){
   .brand .sub{max-width:44vw}
@@ -394,6 +409,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="over" id="over"></div>
     <div class="fade" id="fade"></div>
     <div class="toast" id="toast" hidden></div>
+    <div class="checkcard" id="checkCard" role="status" aria-live="polite" hidden><button class="cc-x" id="ccX" aria-label="Close">×</button><p class="cc-what" id="ccWhat"></p><div class="cc-roll" id="ccRoll"></div><div class="cc-say" id="ccSay"></div></div>
     <div class="titlecard" id="titlecard"><div class="no" id="tcNo"></div><h2 id="tcName"></h2></div>
     <div class="log" id="log" aria-live="polite"></div>
     <div class="acts" id="acts" aria-live="polite"></div>
@@ -2903,12 +2919,47 @@ function handOff(text, ask){
   let characterId = null; try { characterId = myClaimId || characterIdOf(leader.id) || null; } catch (e) {}
   if (ask) ACTION_REPLIES.add(id);
   try { (window.parent !== window ? window.parent : window).postMessage({type: "aop:action", id, text, characterId, ask: !!ask}, APP ? location.origin : "*"); } catch (e) {}
+  return id;
 }
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || m.type !== "aop:action-reply" || !ACTION_REPLIES.has(m.id)) return;
   ACTION_REPLIES.delete(m.id);
+  if (checkCard.id === m.id){ checkAnswer(m.ok ? m.text : null, m.ok ? null : (m.error || "Malachar did not answer.")); return; }   // the card has it
   if (!m.ok){ toast(m.error || "Malachar did not answer.", 4200); return; }
   if (m.sandbox && m.text) narrate(null, String(m.text).trim());   // a rehearsal writes no log, so the feed never shows it: show it here
 });
+// THE CHECK CARD (Sam, 2026-10-27: "consolidate this cleanly at the top. The roll, the result ... Large enough to read
+// well"). Listen, Search here and Look closer open it: what the hero did and the roll, then "Malachar is answering…"
+// until his reply comes back (lib/walk-action.ts), which fills the card. The same words also reach the shared log in a
+// live game; the feed recognises them and does not repeat them as the small caption. It stays up long enough to read
+// (CC_READ_MS per word, at least CC_MIN_MS), and × or Esc closes it; the next check replaces it.
+const CC_MIN_MS = 9000, CC_READ_MS = 330, CC_WAIT_MS = 45000;
+const checkCard = {id: null, shown: "", at: 0, t: 0};
+const normText = t => String(t || "").replace(/\s+/g, " ").trim().replace(/^\(|\)$/g, "");
+function openCheck(what, rollHtml){
+  clearTimeout(checkCard.t);
+  checkCard.id = null; checkCard.shown = ""; checkCard.at = now;
+  $("ccWhat").textContent = what; $("ccRoll").innerHTML = rollHtml;
+  const say = $("ccSay"); say.className = "cc-say wait"; say.textContent = "Malachar is answering…";
+  $("checkCard").hidden = false;
+  checkCard.t = setTimeout(() => { if ($("ccSay").classList.contains("wait")) checkAnswer(null, "Malachar has not answered. The roll stands; ask him in the dashboard if you need it."); }, CC_WAIT_MS);
+}
+function checkAnswer(text, err){
+  const say = $("ccSay"); clearTimeout(checkCard.t);
+  if (err){ say.className = "cc-say err"; say.textContent = err; checkCard.t = setTimeout(closeCheck, CC_MIN_MS); return; }
+  const t = normText(text);
+  if (!t){ say.className = "cc-say"; say.textContent = "Nothing comes of it."; checkCard.t = setTimeout(closeCheck, CC_MIN_MS); return; }
+  say.className = "cc-say"; say.textContent = t; checkCard.shown = t; checkCard.at = now;
+  checkCard.t = setTimeout(closeCheck, Math.max(CC_MIN_MS, t.split(" ").length * CC_READ_MS));
+}
+function closeCheck(){ clearTimeout(checkCard.t); $("checkCard").hidden = true; checkCard.id = null; }
+/** The feed's DM line is the one the card already shows (or is waiting for): true means the feed should not repeat it. */
+function checkCardTakes(text){
+  const t = normText(text); if (!t) return false;
+  if (checkCard.shown && checkCard.shown === t) return true;
+  return false;
+}
+$("ccX").onclick = closeCheck;
+addEventListener("keydown", e => { if (e.key === "Escape" && !$("checkCard").hidden){ closeCheck(); } });
 function isDm(){ try { return localStorage.getItem("aop_access_role") === "dm"; } catch (e) { return false; } }
 // WHO MOVES WHOM (Sam, 2026-10-25): "The DM is the only instance that can move characters that are not his" and a
 // player "CAN ONLY control his character on the dashboard UI and the pixel map." Everyone seated still walks together
@@ -4326,23 +4377,27 @@ function drawSneakCones(){
 }
 
 // Search here, Listen, Look closer: the roll on the map, the finding from the DM core
+function askCheck(what, k, skill, text){
+  openCheck(what, rollLine(k, skill));
+  const id = handOff(text, true);
+  if (APP && window.parent !== window) checkCard.id = id;
+  else checkAnswer(null, "In the game, Malachar answers here.");     // the stand-alone preview has nobody to ask
+  exploreKey = "";
+}
 function searchHere(){
   const k = mapCheck(leader, "perception", "wis");
   log(`${fname(leader)} searches ${esc(node.name)}: ${rollLine(k, "perception")}.`);
-  handOff(`${fname(leader)} searches ${node.name} carefully. Wisdom (Perception) ${k.total}${k.adv ? " (with help)" : ""}. What do they find?`, true);
-  toast(`Perception ${k.total} — Malachar will say what turns up.`, 3200); exploreKey = "";
+  askCheck(`${fname(leader)} searches ${node.name}`, k, "perception", `${fname(leader)} searches ${node.name} carefully. Wisdom (Perception) ${k.total}${k.adv ? " (with help)" : ""}. What do they find?`);
 }
 function listenAt(z){
   const k = mapCheck(leader, "perception", "wis"), where = exitName(z);
   log(`${fname(leader)} listens at ${esc(where)}: ${rollLine(k, "perception")}.`);
-  handOff(`${fname(leader)} stops at ${where} and listens. Wisdom (Perception) ${k.total}${k.adv ? " (with help)" : ""}. What can they hear beyond it?`, true);
-  toast(`Perception ${k.total} — Malachar will say what they hear.`, 3200); exploreKey = "";
+  askCheck(`${fname(leader)} listens at ${where}`, k, "perception", `${fname(leader)} stops at ${where} and listens. Wisdom (Perception) ${k.total}${k.adv ? " (with help)" : ""}. What can they hear beyond it?`);
 }
 function lookCloser(what){
   const k = mapCheck(leader, "investigation", "int");
   log(`${fname(leader)} studies ${esc(what)}: ${rollLine(k, "investigation")}.`);
-  handOff(`${fname(leader)} looks closely at ${what}. Intelligence (Investigation) ${k.total}${k.adv ? " (with help)" : ""}. What do they notice?`, true);
-  toast(`Investigation ${k.total} — Malachar will say what they notice.`, 3200); exploreKey = "";
+  askCheck(`${fname(leader)} looks closer at ${what}`, k, "investigation", `${fname(leader)} looks closely at ${what}. Intelligence (Investigation) ${k.total}${k.adv ? " (with help)" : ""}. What do they notice?`);
   if (GATE_LOOK_RE.test(what)) gateLookFilm();
 }
 // LOOKING AT THE PEN GATE IS A FILMED MOMENT (Sam, 2026-10-27: "look closer at the pen gate button should trigger
@@ -8078,7 +8133,11 @@ function heardText(text, lang){
 function hearLine(row){
   const ears = myEars();
   const text = String((LANG && ears ? LANG.hearDialogueRow(row, ears) : row).text).trim(), type = row.speaker_type, name = row.speaker || "";
-  if (type === "dm"){ narrate(null, text); return; }
+  if (type === "dm"){
+    if (checkCardTakes(text)) return;                                  // already up on the check card
+    if (!$("checkCard").hidden && $("ccSay").classList.contains("wait")){   // the card is waiting: this may be its answer
+      setTimeout(() => { if (!checkCardTakes(text)) narrate(null, text); }, 4000); return; }
+    narrate(null, text); return; }
   const a = actorForSpeaker(name, type);
   // A message to another player (the Message button; Sam, 2026-10-26: "This should display with everyone. No
   // voice heard."): the whole table sees it over the sender's sprite, addressed, and hears it in the sender's own
