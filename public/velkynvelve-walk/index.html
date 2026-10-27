@@ -1639,7 +1639,17 @@ function wardDrinks(){
 const music = {explore: $("mExplore"), combat: $("mCombat"), ambience: $("mAmbience")};
 music.combat.src = ASSET + "audio/combat.mp3";   // the explore player is loaded by pickExploreTrack (below)
 let musicOn = true, vol = .4, track = "explore", audioUnlocked = false;
-try { const v = localStorage.getItem("vk-music"); if (v === "off" || (APP && localStorage.getItem("aop_music_off"))) musicOn = false; const vv = localStorage.getItem("vk-vol"); if (vv) vol = +vv; } catch (e) {}
+// THE MAP'S OWN CHOICE WINS (Sam, 2026-10-27, in the armory: "No music"). The map honours two refusals: its own
+// "vk-music" and the app's "aop_music_off" (lib/audio-prefs.ts — the dashboard and intro's mute). Its button only ever
+// wrote its own, and "on" was not read as a choice at all, so once the app's mute was set, pressing Music on here
+// played for that visit and every reload, plate change or new detail came back silent, the button reading "Music off".
+// Now a choice made here — on or off — holds on the map; the app's mute is only the default until one is made. The
+// button still does not touch the app's key: clearing it would fade the dashboard's own player back up under the map.
+try {
+  const v = localStorage.getItem("vk-music");
+  musicOn = v === "on" ? true : v === "off" ? false : !(APP && localStorage.getItem("aop_music_off") === "true");
+  const vv = localStorage.getItem("vk-vol"); if (vv) vol = +vv;
+} catch (e) {}
 $("vol").value = Math.round(vol * 100);
 const LEVEL = {explore: .55, combat: .7, ambience: .5};   // explore sits low under play; combat a touch hotter, still under everything
 function unlockAudio(){ if (audioUnlocked) return; audioUnlocked = true; if (musicOn) music[track].play().catch(() => {}); }
