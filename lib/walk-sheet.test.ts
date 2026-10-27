@@ -44,10 +44,22 @@ describe("walkSheetFromRow", () => {
 
   it("reproduces the page's hand-written snapshots for the premades it can check against", () => {
     // template.html SHEETS.kenta / SHEETS.freia: skills and the unarmed line
-    expect(walkSheetFromRow(KENTA).skills).toEqual({ sleightOfHand: 0, medicine: -1, stealth: 2, athletics: 1, perception: -1 })
+    expect(walkSheetFromRow(KENTA).skills).toMatchObject({ sleightOfHand: 0, medicine: -1, stealth: 2, athletics: 1, perception: -1 })
     expect(walkSheetFromRow(KENTA).attacks[0]).toMatchObject({ hit: 3, dmg: "2" })
-    expect(walkSheetFromRow(FIFI).skills).toEqual({ sleightOfHand: 7, medicine: 1, stealth: 7, athletics: 1, perception: 1 })
+    expect(walkSheetFromRow(FIFI).skills).toMatchObject({ sleightOfHand: 7, medicine: 1, stealth: 7, athletics: 1, perception: 1 })
     expect(walkSheetFromRow(FIFI).attacks[0]).toMatchObject({ hit: 1, dmg: "1" })
+  })
+
+  it("adds class save proficiency, Investigation and Thieves' Tools (Fifi of Waterdeep's row, 2026-10-27)", () => {
+    const row = { ...FIFI, sheet_save_proficiencies: ["dex", "int"],
+      sheet_skill_proficiencies: { ...FIFI.sheet_skill_proficiencies, investigation: "proficient" },
+      sheet_proficiencies: { tools: ["Thieves' Tools", "Alchemist's Supplies", "Dice Set"] } }
+    const s = walkSheetFromRow(row)
+    expect(s.saves).toEqual({ str: -1, dex: 5, con: 0, int: 3, wis: 1, cha: 1 })
+    expect(s.skills).toMatchObject({ investigation: 3, thievesTools: 5 })
+    // without the tools a Rogue's lock pick is bare Dex; with expertise in them it doubles
+    expect(walkSheetFromRow(FIFI).skills.thievesTools).toBe(3)
+    expect(walkSheetFromRow({ ...row, sheet_skill_proficiencies: { thieves_tools: "expertise" } }).skills.thievesTools).toBe(7)
   })
 
   it("gives a non-caster no magic", () => {

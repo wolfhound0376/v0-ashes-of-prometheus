@@ -610,12 +610,22 @@ function noteSeats(seated){
   seatsSeen = Array.isArray(seated) ? seated : [];
   // the live level of each seated character (/api/map-stage), so a class feature switches on the day it is earned
   for (const s of seatsSeen) if (typeof s.level === "number") for (const id of seatedSlugs([s])) if (SHEETS[id]) SHEETS[id].level = s.level;
+  // the live row's saves and skills (class save proficiencies included) over the page's snapshot, for the four premades
+  // too: a level-up or a new proficiency reaches the walk without a rebuild. Attacks and magic stay the snapshot's.
+  for (const s of seatsSeen) if (s.sheet) for (const id of seatedSlugs([s])) if (SHEETS[id] && !FORGED_ID[id]){
+    if (s.sheet.saves) SHEETS[id].saves = {...SHEETS[id].saves, ...s.sheet.saves};
+    if (s.sheet.skills) SHEETS[id].skills = {...SHEETS[id].skills, ...s.sheet.skills}; }
   dmRun.clear();
   for (const s of seatsSeen) if (s.dm) for (const id of seatedSlugs([s])) dmRun.add(id);
   renderSeats();
   if (!gearLoaded && seatsSeen.length){ gearLoaded = true; setTimeout(() => loadGear(), 0); }   // what each hero really carries
 }
-function characterIdOf(slug){ if (ALLY_ROW[slug]) return ALLY_ROW[slug]; if (FORGED_ID[slug]) return FORGED_ID[slug]; const nm = String(PLAYS_AS[slug] || "").toLowerCase(); const s = seatsSeen.find(x => String(x.name || "").toLowerCase() === nm); return s ? s.id : null; }
+// A hero's `characters` row: their seat, or — for a canon hero nobody is seated as (the DM walking the party, a
+// rehearsal) — the roster row of the same name. Without the roster the dashboard's dice got no row and rolled as
+// "Someone · No bonus +0" (Sam, 2026-10-27, picking the pen gate as Fifi). Writes go through serverCid, which a
+// rehearsal never gets, so finding the row here only lets the dice and Malachar read the right sheet.
+function characterIdOf(slug){ if (ALLY_ROW[slug]) return ALLY_ROW[slug]; if (FORGED_ID[slug]) return FORGED_ID[slug]; const nm = String(PLAYS_AS[slug] || "").toLowerCase(); if (!nm) return null;
+  const s = seatsSeen.find(x => String(x.name || "").toLowerCase() === nm) || roster.find(x => String(x.name || "").toLowerCase() === nm); return s ? s.id : null; }
 const dmHeaders = () => { const key = (() => { try { return localStorage.getItem("aop_forge_key") || ""; } catch (e) { return ""; } })(); return key ? {"x-dm-key": key} : {}; };
 
 // The server's idea of where the party is (/api/party/situation, lib/situation.ts, table party_situation).
@@ -847,6 +857,7 @@ const inRect = (r, x, y) => x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
 // Without this the prisoners could walk out through a shut gate the moment the mask landed.
 function unpackMask(s){ const m = new Uint8Array(GW * GH); let i = 0, v = 0; for (const r of String(s).split(",")){ const k = Number(r); if (v) m.fill(1, i, i + k); i += k; v ^= 1; } return m; }
 function buildGrid(){
+  outsideCells = null;   // the floor changed (the balcony became floor, a door shut): the sides are worked out again
   grid = new Uint8Array(GW * GH);
   let sx = 0, sy = 0, n = 0; depthMin = 1e9; depthMax = -1e9;
   const mask = node.mask ? unpackMask(node.mask) : null, outsideShut = !!(mask && balcony() && !balconyFloor());
@@ -945,13 +956,33 @@ function gridPath(from, to){
 // rather use it; walking into the open doorway no longer pops it.
 function balcony(){ const z = doorGate(); return (z && z.interact && z.interact.balcony) || null; }
 function onBalcony(p){ const B = balcony(); return !!(B && p && p.x != null && inPoly(B.poly, p.x, p.y)); }
+// WHICH SIDE OF THE PEN WALL. The balcony polygon is the landing and the bridge as traced; but the grid's floor out
+// there runs past it (the foot of the bridge), and a guard who stepped off the trace counted as INSIDE the pen. Then
+// no hero had a path to her — findPath saw two people "inside" and the wall between them — while she walked about
+// freely (Sam, 2026-10-27: "not able to get through the door ... but NPCs got through"). Now the side is the floor's:
+// on the trace, or on floor joined to the landing without going through the gate (one flood fill per grid build).
+let outsideCells = null;   // Uint8Array over the grid: 1 = floor joined to the landing; rebuilt lazily after buildGrid
+function outsidePen(p){
+  if (onBalcony(p)) return true;
+  const B = balcony(); if (!B || !p || p.x == null || !balconyFloor()) return false;
+  if (!outsideCells){
+    outsideCells = new Uint8Array(GW * GH);
+    const c0 = Math.min(GW - 1, Math.max(0, Math.floor(B.landing[0] / CELL))) + Math.min(GH - 1, Math.max(0, Math.floor(B.landing[1] / CELL))) * GW;
+    const q = [c0]; outsideCells[c0] = 1;
+    while (q.length){ const i = q.pop(), x = i % GW, y = (i / GW) | 0;
+      for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]){ const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue;
+        const j = ny * GW + nx; if (grid[j] && !outsideCells[j]){ outsideCells[j] = 1; q.push(j); } } }
+  }
+  const cx = Math.floor(p.x / CELL), cy = Math.floor(p.y / CELL);
+  return cx >= 0 && cy >= 0 && cx < GW && cy < GH && outsideCells[cy * GW + cx] === 1;
+}
 const balconyFloor = () => !!balcony() && (mode === "combat" || (state.gateOpen && !state.doorShut));
 const gatePassable = () => balconyFloor() && state.gateOpen && !state.doorShut;
 // whether `a` can reach `b` only by going through the gate (one inside the pen, one out on the balcony)
-const gateWayTo = (a, b) => gatePassable() && onBalcony(a) !== onBalcony(b);
+const gateWayTo = (a, b) => gatePassable() && outsidePen(a) !== outsidePen(b);
 function findPath(from, to){
   const p = gridPath(from, to); if (p.length || !gatePassable()) return p;
-  const fb = onBalcony(from); if (fb === onBalcony(to)) return p;
+  const fb = outsidePen(from); if (fb === outsidePen(to)) return p;
   const B = balcony(), P = q => ({x: q[0], y: q[1]});
   const L = P(B.landing), H = P(B.behind), T = P(B.threshold), I = P(B.inside);
   const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) <= 8;
@@ -984,7 +1015,7 @@ function cutPath(a, path, budget){
 // interaction; the turn ends there, and from the next round the drow come through.
 function holdsGateKey(f){
   const B = balcony();
-  return !!(B && balconyFloor() && (!state.gateOpen || state.doorShut) && onBalcony(f) && new RegExp(B.keys).test(f.id) && !incapacitated(f));
+  return !!(B && balconyFloor() && (!state.gateOpen || state.doorShut) && outsidePen(f) && new RegExp(B.keys).test(f.id) && !incapacitated(f));
 }
 function goOpenGate(f){
   const B = balcony(), L = {x: B.landing[0], y: B.landing[1]};
@@ -993,7 +1024,7 @@ function goOpenGate(f){
     state.gateOpen = true; state.doorShut = false;
     sfx("lock-picked", .9); setTimeout(() => { setDoor(true); sfx("door-open", .85); }, 600);
     // the balcony is floor now for everyone out there: they walk it at the guards' size rather than standing as scenery
-    for (const o of [...foes, ...npcs]) if (onBalcony(o)){ o.backdrop = false; o.fixedScale = 0; o.patrol = null; o.static = false; }
+    for (const o of [...foes, ...npcs]) if (outsidePen(o)){ o.backdrop = false; o.fixedScale = 0; o.patrol = null; o.static = false; }
     log(`${fname(f)} turns a key in the pen gate and drags it open. The way in stands open.`);
     narrate(f, `${fname(f)} unlocks the gate from the landing and hauls it wide.`);
     setTimeout(() => passTurn(f), 1500);
@@ -1010,7 +1041,7 @@ function goOpenGate(f){
 // only if that brings them within reach. No straight-line shortcut across the pillar.
 function approachViaGate(att, tgt, ft, then){
   const B = balcony(), reach = reachPx(att, tgt, ft);
-  const entry = onBalcony(tgt) ? {x: B.landing[0], y: B.landing[1]} : {x: B.threshold[0], y: B.threshold[1]};
+  const entry = outsidePen(tgt) ? {x: B.landing[0], y: B.landing[1]} : {x: B.threshold[0], y: B.threshold[1]};
   const dd = Math.hypot(tgt.x - entry.x, tgt.y - entry.y), k = Math.max(0, dd - reach * .8) / (dd || 1);
   const goal = nearestWalkable(entry.x + (tgt.x - entry.x) * k, entry.y + (tgt.y - entry.y) * k);
   const hero = party.includes(att);
@@ -1026,7 +1057,7 @@ function approachViaGate(att, tgt, ft, then){
   att.path = c.pts; att.onArrive = () => {
     att.onArrive = null; setAnim(att, "idle");
     if (Math.hypot(tgt.x - att.x, tgt.y - att.y) <= reach + 40) then();
-    else stop(hero ? "Through the gate, but not within reach yet." : `${onBalcony(att) ? "is out on the landing" : "is through the gate"}, not yet within reach.`);
+    else stop(hero ? "Through the gate, but not within reach yet." : `${outsidePen(att) ? "is out on the landing" : "is through the gate"}, not yet within reach.`);
   };
 }
 
@@ -1920,6 +1951,19 @@ async function enterNode(n, opts = {}){
         p.waitUntil = now + i * 650 + 1100; p.path = [{x: C.foot[0], y: C.foot[1]}, {x: fx, y: fy}]; }
       else { const back = 520 + i * 70; p.x = fx - entryDir.x * back; p.y = fy - entryDir.y * back; p.path = [{x: fx, y: fy}]; p.waitUntil = now + i * 260; p.walkIn = true; p.onArrive = () => { p.walkIn = false; }; }
     });
+    // THE PRISONERS COME IN BEHIND YOU (Sam, 2026-10-27: "Why are NPCs ahead of us. We should arrive first and they
+    // should trickle in"). They were set down around the spawn point at once while the heroes walked in from the edge,
+    // so they were already standing in the room. Now they start further back along the same way and follow in, a beat
+    // apart, after the last hero. (A climb or a drop keeps them where they are: there is no edge to walk in from.)
+    if (!opts.drop && !(arrival && arrival.climb)){
+      const lag = party.length * 260 + 700;
+      npcs.filter(a => a.company).forEach((c, i) => {
+        const fx = c.x, fy = c.y, back = 640 + i * 60;
+        c.x = fx - entryDir.x * back; c.y = fy - entryDir.y * back; c.path = [{x: fx, y: fy}];
+        c.waitUntil = now + lag + i * (380 + Math.random() * 260); c.actUntil = c.waitUntil + 4000; c.walkIn = true;
+        c.onArrive = () => { c.walkIn = false; c.home = {x: c.x, y: c.y}; };
+      });
+    }
   }
   $("areaNo").textContent = n; $("areaName").textContent = node.name; $("jump").value = n;
   renderParty();
@@ -1959,7 +2003,7 @@ async function travel(to, z, fromWorld, cut){
     stopActivity(a); a.kbd = false; a.onArrive = null; a.waitUntil = now + i * 300;
     if (drop){ a.path = [{x: zc.x + (i - 1.5) * 40, y: zc.y}]; a.onArrive = () => { a.fall = now; }; }
     else if (climb){ a.waitUntil = now + i * 650; a.path = [{x: climb.foot[0], y: climb.foot[1]}]; a.onArrive = () => { a.climbing = {t0: now, dir: climb.dir, from: {x: a.x, y: a.y}, to: {x: climb.ladder[0], y: climb.ladder[1]}, out: true}; a.face = faceOf(0, -1); bank("movement/jump_land", .25); }; }
-    else { const j = route.findIndex(p => p.jump); a.path = (j >= 0 && onBalcony(a) ? route.slice(j + 1) : route).map(p => ({...p})); }
+    else { const j = route.findIndex(p => p.jump); a.path = (j >= 0 && outsidePen(a) ? route.slice(j + 1) : route).map(p => ({...p})); }
   });
   const dir = drop ? {x: 0, y: 1} : Math.abs(exitDir.x) >= Math.abs(exitDir.y) ? {x: Math.sign(exitDir.x) || 1, y: 0} : {x: 0, y: Math.sign(exitDir.y) || 1};
   await wait(drop ? 1900 : climb ? 1600 + order.length * 650 : cr ? 2600 : 1500);
@@ -2605,10 +2649,15 @@ function rollPocketsLocal(which){
 const pocketId = n => n.id === "escort-drow" ? "pocket:drow-guard-male:escort" : /^drow-guard-/.test(n.id) && n.pocketKey ? `pocket:${n.id}:${n.pocketKey}` : `pocket:${n.id}`;   // a named NPC is one pocket wherever they stand
 const lootLocal = {};                                   // preview only: container key -> {slug: taken}
 const lootKeyOf = id => id.startsWith("pocket:") ? id : id.startsWith("body:") ? "body:" + id.split(":")[1] + ":" + id.split(":").slice(2).join(":") : id;
+const localLootKey = row => row.slug || ("row:" + row.rowId);   // a book row by slug, a confiscated (stash) row by its id
 const slugName = s => s.replace(/-/g, " ").replace(/^./, c => c.toUpperCase());
 async function fetchLoot(id){
   if (APP){
-    try { const r = await fetch(`/api/walk-loot?container=${encodeURIComponent(id)}`, {cache: "no-store"}); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status); return j; }
+    try { const r = await fetch(`/api/walk-loot?container=${encodeURIComponent(id)}`, {cache: "no-store"}); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
+      // what this tab took on its own (a rehearsal, or a hero with no seat: takeLoot) stays taken here
+      const mine = lootLocal[lootKeyOf(id)] || {}, penGone = Object.keys(lootLocal).some(k => k.startsWith("pocket:") && lootLocal[k]["slave-pen-key"]);
+      j.rows = (j.rows || []).map(r => ({...r, qty: r.qty - (mine[localLootKey(r)] || 0)})).filter(r => r.qty > 0 && !(r.slug === "slave-pen-key" && penGone));
+      return j; }
     catch (e){ return {rows: [], error: String(e.message || e)}; }
   }
   await ensureCatalog();
@@ -2625,11 +2674,22 @@ async function fetchLoot(id){
   return {rows};
 }
 function lootLabel(row){ return `${row.qty > 1 ? row.qty + " × " : ""}${row.name}${row.owner ? ` (${row.owner}'s)` : ""}${row.note ? ` — ${row.note}` : ""}`; }
+// said once per hero per page: what they pick up here is in this tab's pack and nowhere else
+const localOnlyTold = new Set();
+function noteLocalOnly(a){
+  if (localOnlyTold.has(a.id)) return; localOnlyTold.add(a.id);
+  toast(SANDBOX ? `Rehearsal: ${fname(a)} keeps it in this tab's pack only — the real inventory is not touched.`
+                : `${fname(a)} has no seat in this game, so it is kept in this tab's pack only.`, 4200);
+}
 // one thing into a hero's hands: the server first (it is the truth), then the bag here
 async function takeLoot(a, id, row){
   if (row.missing){ toast(`${row.name} is not in the item catalogue yet, so it cannot be taken.`, 3600); return false; }
-  if (APP){
-    const cid = characterIdOf(a.id); if (!cid){ toast(`${fname(a)} has no seat in this game, so nothing can go into their pack.`, 3600); return false; }
+  // WHERE IT GOES. A seated hero in the real game: the server (their inventory). A REHEARSAL (?sandbox=1) or a hero with
+  // no seat: this tab's pack only. Until 2026-10-27 the second case was refused with a toast, so a successful Sleight of
+  // Hand at the pen guard lifted nothing (Sam: "picked the key from the guard successfully but didn't acquire the key").
+  // A rehearsal never writes the real heroes' inventories, the same rule as the shared world (owLoad).
+  const cid = serverCid(a.id);
+  if (APP && cid){
     try {
       const r = await fetch("/api/walk-loot", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "take", characterId: cid, container: id, slug: row.slug, rowId: row.rowId})});
       const j = await r.json(); if (!r.ok || j.error){ toast(j.error || "It would not come free.", 3600); return false; }
@@ -2637,8 +2697,10 @@ async function takeLoot(a, id, row){
     await loadGear(a.id);   // awaited: the equip offer below needs the pack to hold the weapon before it can ready it
   } else {
     if (row.kind === "preview-stash"){ toast("In the game this is the real list of what the drow took from you.", 3600); return false; }
-    const k = lootKeyOf(id), m = lootLocal[k] || (lootLocal[k] = {}); m[row.slug] = (m[row.slug] || 0) + row.qty;
-    const g = GEAR[a.id] || (GEAR[a.id] = {carried: [], main: null}), cat = (catalog || []).find(i => i.slug === row.slug) || {};
+    if (APP) noteLocalOnly(a);
+    const k = lootKeyOf(id), m = lootLocal[k] || (lootLocal[k] = {}), lk = localLootKey(row); m[lk] = (m[lk] || 0) + row.qty;
+    await ensureCatalog();
+    const g = GEAR[a.id] || (GEAR[a.id] = {carried: [], main: null}), cat = (row.slug ? (catalog || []).find(i => i.slug === row.slug) : catalogItem(row.name)) || {};
     const have = g.carried.find(c => c.name === row.name && !isWeapon(c));
     if (have) have.qty = (have.qty || 1) + row.qty;
     else g.carried.push({name: row.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: cat.pixel_icon_url || null, qty: row.qty, icon: cat.icon_url || null, desc: cat.description || ""});
@@ -4017,16 +4079,20 @@ const wardsHere = () => node.wards || null;
 // spells are SRD 5.2.1 at level 1.
 const SHEETS = {
   // skills: from each character's row (sheet_skill_proficiencies; proficiency +2, expertise doubled).
-  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 0, con: 1, int: 0, wis: 0, cha: 3}, skills: {sleightOfHand: 0, medicine: -1, stealth: 2, athletics: 1, perception: -1}, innateSorcery: 2,
+  // saves: the ability modifier plus proficiency in the class's two saves (sheet_save_proficiencies). Until 2026-10-27
+  // they were the bare modifiers, so Fifi's Dex save was +3 not +5 (Sam: "I don't think I'm getting my class bonuses").
+  // investigation and thievesTools are their own numbers now: heroMod used to fall back to the SAVE for them, so
+  // Fifi picked locks at +3 instead of +5 (Rogue: thieves' tools proficiency). Re-read 2026-10-27 from the rows.
+  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 0, con: 4, int: -1, wis: -1, cha: 5}, skills: {sleightOfHand: 0, medicine: -1, stealth: 2, athletics: 1, perception: -1, investigation: -1, thievesTools: 0}, innateSorcery: 2,
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Ray of Frost", "Shocking Grasp", "Chill Touch"], prepared: ["Fog Cloud"]}},
-  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 3, cha: 1}, skills: {sleightOfHand: 2, medicine: 5, stealth: 2, athletics: 0, perception: 3},
+  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 1, wis: 5, cha: 2}, skills: {sleightOfHand: 2, medicine: 5, stealth: 2, athletics: 0, perception: 3, investigation: 1, thievesTools: 2},
            attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Toll the Dead"], prepared: ["Healing Word", "Guiding Bolt", "Shield of Faith"]}},
-  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 2, con: 1, int: 0, wis: 0, cha: 3}, skills: {sleightOfHand: 2, medicine: 1, stealth: 2, athletics: 1, perception: 3},
+  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 4, con: 2, int: 1, wis: 1, cha: 5}, skills: {sleightOfHand: 2, medicine: 1, stealth: 2, athletics: 1, perception: 3, investigation: 1, thievesTools: 2},
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Vicious Mockery"], prepared: ["Healing Word", "Faerie Fire", "Sleep", "Dissonant Whispers"]}, bardic: {uses: 3, die: 6}, music: true},
-  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, strScore: 8, saves: {str: -1, dex: 3, con: 0, int: 1, wis: 0, cha: 1}, skills: {sleightOfHand: 7, medicine: 1, stealth: 7, athletics: 1, perception: 1},
+  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, strScore: 8, saves: {str: -1, dex: 5, con: 0, int: 3, wis: 1, cha: 1}, skills: {sleightOfHand: 7, medicine: 1, stealth: 7, athletics: 1, perception: 1, investigation: 3, thievesTools: 5},
            // No weapon until she has one (Sam, 2026-10-15): her inventory holds none, so she fights with her fists; a weapon
            // she picks up and equips is added in front of this line (refreshAttacks). sneakDie is her Sneak Attack (rogue 1).
            sneakDie: "1d6", attacks: [{name: "Unarmed Strike", hit: 1, dmg: "1", type: "bludgeoning", reach: 5}],
@@ -4622,7 +4688,7 @@ function d20(adv, who, vs){
 // one 5-ft square in plate pixels where this actor stands (the sprites are drawn at ppu px per square)
 function ftPx(a){ return 96 * BASE * paceAt(a) * (a.big || 1) / 5; }
 // how big a five-foot step is where `a` stands: the pen's depth rule, or out on the balcony the guards' own size
-function paceAt(a){ const B = balconyFloor() && onBalcony(a) ? balcony() : null; return B ? B.scale : node.scale * depthAt(a.y); }
+function paceAt(a){ const B = balconyFloor() && outsidePen(a) ? balcony() : null; return B ? B.scale : node.scale * depthAt(a.y); }
 function feetBetween(a, b){ return Math.hypot(b.x - a.x, b.y - a.y) / ftPx(a); }
 function reachPx(att, tgt, ft){ const m = SPR[tgt.id].json; return ft * ftPx(att) + 22 * actorScale(tgt) * (m.cell[0] / 128); }
 
@@ -4692,6 +4758,11 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   const order = [...party, ...allies, ...foes].filter(a => !a.down);
   for (const a of order){ a.c = a.c && hero(a) ? a.c : fighterFor(a); a.c.init = d20(0, a) + (a.c.sheet.init || 0); }
   order.sort((a, b) => b.c.init - a.c.init || (b.c.sheet.init || 0) - (a.c.sheet.init || 0) || (a.kind === "pc" ? -1 : 1));
+  // SURPRISE (SRD 5.1, Combat > Surprise; fightWith): a foe who never saw it coming is surprised — no move and no action
+  // on its first turn, no reaction until that turn ends. And the one who struck from hiding goes first (Sam, 2026-10-27:
+  // "If we sneak attack them we hit them first"): initiative is still rolled for the rest of the order.
+  for (const f of opts.surprised || []) if (f.c){ f.c.surprised = true; f.c.reactionUsed = true; }
+  if (opts.opener && order.includes(opts.opener)){ order.splice(order.indexOf(opts.opener), 1); order.unshift(opts.opener); }
   cbt = {order, allies, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null,
     id: `${cur}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`};   // the fight's own name: /api/walk-xp pays it once
   $("combat").hidden = false; $("cbtMenu").hidden = true; stage.classList.add("fight"); renderTurns(); renderParty();
@@ -4857,6 +4928,7 @@ function nextTurn(first){
     if (s >= (a.c.sleptDc || 13)){ a.c.conds.delete("asleep"); popText(a, "wakes", "#b0b8ff"); }
     else { popText(a, "asleep", "#b0b8ff"); log(`${fname(a)} sleeps through the turn.`); setTimeout(nextTurn, 900); return; }
   }
+  if (a.c.surprised){ a.c.surprised = false; popText(a, "surprised", "#ffd27a"); log(`${fname(a)} is caught by surprise and loses the turn.`); setTimeout(nextTurn, 900); return; }
   a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true; a.c.objFree = true;
   if (a.c.conds.has("numbed")){ a.c.move = Math.floor(a.c.move / 2 / 5) * 5; a.c.reactionUsed = true; a.c.conds.delete("numbed"); popText(a, "numb: half speed, no reactions", "#9fd8ff", .9); }   // the bhut's bite, one round (the reaction budget is reactionUsed, reset just above)
   // Alchemist's fire (SRD 5.1): "the target takes 1d4 fire damage at the start of each of its turns"
@@ -5002,12 +5074,18 @@ function openMenu(a, sub){
         add("Cunning Action: Hide", c.conds.has("hidden") ? "you are hidden" : `bonus action · Stealth ${sgn((s.skills || {}).stealth ?? s.saves.dex)} vs their passive Perception`, c.bonus && !c.conds.has("hidden") ? () => doHide(a, true) : null);
       }
       const light = s.attacks.filter(k => k.light);
-      if (light.length >= 2){
-        const off = light.find(k => k !== c.lastLight) || light[1];
-        add("Off-hand attack", !c.lastLight ? "attack with a light weapon first" : `bonus action · ${off.name} +${off.hit} · ${offDmg(off)} ${off.type}`, c.bonus && c.lastLight ? () => aim(a, {atk: off, offhand: true}) : null);
-      } else if ((s.level || 1) < 2) add("No bonus action yet", `Cunning Action comes at rogue level 2${light.length === 1 ? "; an off-hand attack needs a second light weapon" : ""}`, null);
+      if (light.length < 2 && (s.level || 1) < 2) add("No bonus action yet", `Cunning Action comes at rogue level 2${light.length === 1 ? "; an off-hand attack needs a second light weapon" : ""}`, null);
       else if (light.length === 1) add("Off-hand attack", "needs a second light weapon in the other hand", null);
     }
+    // TWO-WEAPON FIGHTING is anyone's (SRD 5.1, Combat > Two-Weapon Fighting), not only a rogue's: it was offered only
+    // inside the rogue's block, so a cleric or a bard with two daggers had no off-hand swing (Sam, 2026-10-27: "make sure
+    // action / bonus actions wired correctly for all characters").
+    { const light = s.attacks.filter(k => k.light);
+      if (light.length >= 2){
+        if (s.cls !== "Rogue") grp("bonus action");
+        const off = light.find(k => k !== c.lastLight) || light[1];
+        add("Off-hand attack", !c.lastLight ? "attack with a light weapon first" : `bonus action · ${off.name} +${off.hit} · ${offDmg(off)} ${off.type}`, c.bonus && c.lastLight ? () => aim(a, {atk: off, offhand: true}) : null);
+      } }
     // RAGE (SRD 5.1, Barbarian; lib/rage.mjs holds the rule, enterRage/endRage below do the deed). A bonus action on
     // your turn. The hint says what it does and what is left; the rule, not the menu, decides every number.
     if (isBarbarian(s.cls)){
@@ -5073,7 +5151,7 @@ function renderExploreBar(){
   add("Inventory", "▣", null, "I · equip, use, consume", () => toggleBag());
   const sh = SHEETS[leader.id];
   if (sh && (sh.magic || sh.caster)) add("Cast", "✦", "cast-spell", wardsHere() ? "the ward on the wall drinks it here" : "a spell you have memorized", wardsHere() ? null : () => openCastMenu(o));
-  if (o.foe) add(`Attack ${nm(o.foe)}`, "⚔", "attack", "starts a fight · roll initiative", () => startCombat([o.foe], `${who} attacks!`), "end");
+  if (o.foe) add(`Attack ${nm(o.foe)}`, "⚔", "attack", "starts a fight · roll initiative", () => fightWith(o.foe, `${who} attacks!`), "end");
   if (party.filter(canControl).length > 1) add("Next hero", "⇆", null, `Tab · now ${who}`, () => { const mine = party.filter(canControl); const i = mine.indexOf(leader); setLeader(mine[(i + 1) % mine.length]); });
   if (!o.foe) add("Short rest", "⌛", "dodge", restRisk().chance ? `an hour here · ${Math.round(restRisk().chance * 100)}% the locals find you` : "an hour here", () => openRest());
   add("Tell Malachar", "✎", null, "search, hide, anything else", () => { saveWalk();
@@ -5221,7 +5299,40 @@ const isGuard = n => /^drow-guard|^drow-elite|^drow-warrior|^drow-soldier|^drow-
 let guardsAlarm = null;                                       // {cur, until}: one reaction per plate at a time
 function guardsOnPlate(){ return npcs.filter(n => isGuard(n) && !n.offStage && !n.body && !n.down && !n.relieved && n.alpha > .5 && actors.includes(n)); }
 function specialOnPlate(){ return npcs.find(n => SPECIAL_WATCH.includes(n.id) && !n.offStage && !n.body && !n.down && n.alpha > .5 && actors.includes(n)) || null; }
-function behindBars(h){ return cur === PEN && !onBalcony(h) && !(h.x != null && inPoly((doorGate() || {interact: {poly: [[0,0]]}}).interact.poly, h.x, h.y) && state.gateOpen); }
+function behindBars(h){ return cur === PEN && !outsidePen(h) && !(h.x != null && inPoly((doorGate() || {interact: {poly: [[0,0]]}}).interact.poly, h.x, h.y) && state.gateOpen); }
+// ONE GUARD ATTACKED IS EVERY GUARD IN THE ROOM (Sam, 2026-10-27: "why is only one guard fighting"). Attacking a guard
+// started a fight with that guard alone while the other two stood and watched. Now everyone on watch on the plate comes
+// in. From an unspotted Sneak it is a surprise attack: the guards are surprised and the attacker goes first.
+function fightWith(foe, label){
+  const all = [foe, ...guardsOnPlate().filter(g => g !== foe && (g.hostile || isGuard(g)))];
+  const hidden = !!sneak;
+  if (hidden) endSneak();
+  startCombat(all, hidden ? `${label} — out of the dark, before they know it.` : label, hidden ? {surprised: all, opener: leader} : {});
+}
+// CAUGHT IN THE OPEN (Sam, 2026-10-27: "They should talk to us and it open up a pixel art dialogue box with their face
+// and few options. Most of the time in this case fight ensues and everyone fights"). A guard on watch who sees the party
+// walking in openly (the tick, below) stops them with words first: his face, his challenge, and the party's answer —
+// fight (every guard: guardsReact), talk (the conversation, where Malachar plays him and may still start the fight), or
+// surrender (Malachar plays it). The challenge line is house flavour, not the book's.
+function confront(w){
+  if (mode !== "explore" || !w) return;
+  guardsAlarm = {cur, until: now + 30000};
+  const h = leader, guards = guardsOnPlate();
+  for (const g of guards){ g.path = []; g.actUntil = now + 60000; g.scanAt = now + 60000; faceTo(g, h); }
+  party.forEach(p => { p.path = []; }); popText(w, "!", "#ff6b5a", 1.4); bank("ui/nat1", .4);
+  mode = "dialog"; tip.hidden = true;
+  try { portrait(w.id, $("objPic"), 128); } catch (e) {}
+  const name = fname(w);
+  $("objWho").textContent = name;
+  $("objText").textContent = `${name} levels a blade at ${fname(h)}${guards.length > 1 ? `; ${guards.length - 1 === 1 ? "the other guard reaches" : "the others reach"} for theirs` : ""}. "Slaves, out of the pen? Down on your knees — now."`;
+  const box = $("objBtns"); box.innerHTML = "";
+  const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
+  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = () => { close(); fn(); }; box.appendChild(b); };
+  add("Fight!", () => { guardsAlarm = null; guardsReact(w, h, "walking up in the open"); }, "primary");
+  add("Talk your way past", () => { w.talkSituation = `${fname(h)} and the escaped prisoners walked openly into ${node.name}; ${name} has them at blade's point. If talk fails, emit [COMBAT_START: ...] naming every guard here.`; openTalk(w); });
+  add("Surrender", () => { if (APP) handOff(`${fname(h)} and the party, escaped from the pen, surrender to the guards in ${node.name}. Play the guards.`, true); else log(`${esc(fname(h))} goes down on one knee.`); });
+  $("obj").hidden = false; box.firstChild?.focus();
+}
 function guardsReact(w, h, why){
   if (!h || mode !== "explore" || laborLive() || surgeon || timeStopped) return false;
   if (cur === PEN && behindBars(h)) return false;              // the pen's own rule: warning, then volleys
@@ -5541,7 +5652,7 @@ function renderCastMenu(caster, cid, list, o, healing){
     const lvl = sp.level === 0 ? "cantrip" : `level ${sp.level} · ${sp.left} slot${sp.left === 1 ? "" : "s"} left`;
     if (sp.left === 0){ add(sp.name, "✦", null, `${lvl} · a long rest brings them back`, null); continue; }
     if (sp.kind === "fight"){
-      if (o.foe) add(`${sp.name} at ${SHORT[o.foe.id] || SPR[o.foe.id].json.name}`, "✦", null, `${lvl} · starts the fight`, () => { castOpen = null; startCombat([o.foe], `${who} opens with ${sp.name}!`); }, "end");
+      if (o.foe) add(`${sp.name} at ${SHORT[o.foe.id] || SPR[o.foe.id].json.name}`, "✦", null, `${lvl} · starts the fight`, () => { castOpen = null; fightWith(o.foe, `${who} opens with ${sp.name}!`); }, "end");
       else add(sp.name, "✦", null, `${lvl} · cast at an enemy, none in sight`, null);
     } else if (sp.kind === "heal") add(sp.name, "✚", null, `${lvl} · choose who`, () => renderCastMenu(caster, cid, list, o, sp));
     else add(sp.name, "✦", null, `${lvl} · Malachar rules what it does`, () => doCast(caster, cid, sp, null, null));
@@ -5700,7 +5811,7 @@ function gapOnLine(a, to){
 }
 function planLeap(a, to){
   const span = a.c.sheet.strScore; if (!span) return null;
-  if (balconyFloor() && onBalcony(a) !== onBalcony(to)) return null;   // between the pen and the balcony is a wall, not a gap: the way is the gate
+  if (balconyFloor() && outsidePen(a) !== outsidePen(to)) return null;   // between the pen and the balcony is a wall, not a gap: the way is the gate
   if (["prone", "grappled", "restrained", "asleep"].some(c => a.c.conds.has(c))) return null;
   const g = gapOnLine(a, to); if (!g || g.gapFt < MIN_LEAP_FT) return null;
   g.max = g.runUpFt >= 10 ? span : Math.floor(span / 2);
@@ -6537,7 +6648,7 @@ function endCombat(won){
   for (const h of party) if (h.c && h.c.rage) endRage(h, "the fight is over");   // no hostile left to attack: the next turn would end it anyway
   shots.length = 0; icePatches = []; for (const a of actors) a.onIce = null;
   // anyone of ours still out on the balcony walks back in through the gate before it stops being floor
-  if (gatePassable()) for (const h of [...party, ...(cbt ? cbt.allies : [])]) if (!h.down && onBalcony(h)){
+  if (gatePassable()) for (const h of [...party, ...(cbt ? cbt.allies : [])]) if (!h.down && outsidePen(h)){
     const back = findPath(h, nearestWalkable(balcony().inside[0], balcony().inside[1] + 30)); if (back.length){ h.path = back; h.onArrive = null; }
   }
   mode = "travel"; if (won !== false) state.cleared[cur] = true;
@@ -9139,7 +9250,7 @@ let gateWarnTimer = 0;                     // the card's countdown while it is u
 // (a pillar, a wall bend). Turned away, or a hero off to the side of the bars, is not seen.
 function gateSight(w, h){
   if (!inView(w, h)) return false;
-  if (onBalcony(h)) return true;                                 // out on the landing: nothing between them and the bridge
+  if (outsidePen(h)) return true;                                 // out on the landing: nothing between them and the bridge
   const z = doorGate(); if (!z) return false;
   const P = z.interact.poly, d = Math.hypot(h.x - w.x, h.y - w.y), n = Math.max(2, Math.ceil(d / 6));
   let through = -1;
@@ -10963,9 +11074,15 @@ async function loadGear(only){
   if (cbt) renderParty();
   if (bagOpen()) renderBag();
 }
+// piles picked up in this tab only (a rehearsal, or a hero with no seat): the server still has them, and the 4-second
+// poll put them straight back on the floor (Sam, 2026-10-27: "thieves tools now respawning every few seconds")
+const pickedHere = new Set();
+// the character row a hero's gear changes are written to: none in a rehearsal (?sandbox=1), which never touches the
+// real heroes' inventories, and none for a hero with no seat — either way the change lives in this tab (takeLoot)
+const serverCid = id => APP && !SANDBOX ? characterIdOf(id) : null;
 async function loadFloor(){
   if (!APP) return;
-  try { const j = await (await fetch("/api/walk-items", {cache: "no-store"})).json(); if (Array.isArray(j.piles)) floor = j.piles; } catch (e) {}
+  try { const j = await (await fetch("/api/walk-items", {cache: "no-store"})).json(); if (Array.isArray(j.piles)) floor = j.piles.filter(p => !pickedHere.has(p.id)); } catch (e) {}
 }
 if (APP){ setTimeout(loadFloor, 2000); setInterval(loadFloor, 4000); }
 const pilesHere = () => floor.filter(p => String(p.node) === String(cur));
@@ -10999,9 +11116,10 @@ async function pickUp(a, p){
   if (bagOpen()) renderBag();
   popText(a, `+ ${p.name}`, "#e8d9a8"); log(`${fname(a)} picks up the <b>${esc(p.name)}</b>${inFight ? ` (${PICKUP_FT} ft of movement)` : ""}.`);
   bank("ui/item_pickup", .7);
-  if (APP){ const cid = characterIdOf(a.id);
+  if (APP){ const cid = serverCid(a.id);
     if (cid) fetch("/api/walk-items", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "pickup", pileId: p.id, characterId: cid})})
-      .then(r => r.json()).then(j => { if (j.error) toast(j.error); loadGear(a.id); }).catch(() => {}); }
+      .then(r => r.json()).then(j => { if (j.error) toast(j.error); loadGear(a.id); }).catch(() => {});
+    else { pickedHere.add(p.id); noteLocalOnly(a); } }   // the server still has the pile: keep the poll from putting it back
   if (inFight){ openMenu(a); return; }
   if (isWeapon(cat) || isWeapon({name: p.name})) showDialog({title: p.name, body: `${fname(a)} has the ${p.name}. Hold it ready, or keep it in the pack?`, buttons: [
     {label: "Equip it", primary: true, fn: () => equipItem(a, p.name)}, {label: "Keep it in the pack"}]});
@@ -11080,11 +11198,11 @@ function equipTo(a, it, sl){
   if (HAND(sl) && isTooth(it)) toothDrawn(a);
   popText(a, HAND(sl) ? `${it.name} in hand` : it.name, "#e8d9a8", .8);
   log(`${fname(a)} ${was && was.name !== it.name ? `takes off the ${esc(was.name)} and ` : ""}${HAND(sl) ? "readies" : "puts on"} the <b>${esc(it.name)}</b>${HAND(sl) ? "" : ` (${slotLabel(sl).toLowerCase()})`}${paid}.`);
-  if (APP){ const cid = characterIdOf(a.id);
+  if (APP){ const cid = serverCid(a.id);
     const send = () => { const k = it.item_key || ((GEAR[a.id].carried.find(c => c.name === it.name) || {}).item_key); if (!cid || !k) return false;
       fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "equip", character_id: cid, slot: sl, item_key: k})})
         .then(r => r.json()).then(j => { if (j && j.error){ toast(j.error); loadGear(a.id); } }).catch(() => {}); return true; };
-    if (!send()) setTimeout(() => loadGear(a.id).then(send), 1500); }
+    if (!send() && cid) setTimeout(() => loadGear(a.id).then(send), 1500); }   // no row to write (a rehearsal): the doll here is the truth
   if (fight){ renderParty(); toggleBag(false); afterAction(a); } else renderBag();
 }
 // Sam, 2026-10-24: "add a subtle dull click for removing an object and a unequipping sound when something gets dragged
@@ -11099,7 +11217,7 @@ function removeFrom(a, sl, how){
   if (HAND(sl)) refreshAttacks(a.id);
   if (how !== "move") sfx(how === "drag" ? "walk:unequip-drag" : "walk:unequip-click", how === "drag" ? .55 : .4);   // moving between slots is not taking it off
   popText(a, `${was.name} off`, "#e8d9a8", .8); log(`${fname(a)} ${HAND(sl) ? "puts away" : "takes off"} the <b>${esc(was.name)}</b>.`);
-  if (APP){ const cid = characterIdOf(a.id); if (cid) fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"},
+  if (APP){ const cid = serverCid(a.id); if (cid) fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({action: "unequip", character_id: cid, slot: sl})}).then(r => r.json()).then(j => { if (j && j.error){ toast(j.error); loadGear(a.id); } }).catch(() => {}); }
   if (fight){ renderParty(); if (cbt.phase === "menu") openMenu(a); }
   renderBag();
@@ -11977,6 +12095,15 @@ function update(dt){
     if (mode === "explore" && !state.cleared[cur]){
       const watch = npcs.filter(n => n.hostile && !n.offStage);
       if (!APP && !state.ambushOff && state.jumped !== cur && watch.length && watch.some(n => Math.hypot(n.x - leader.x, n.y - leader.y) < 520 * node.scale)) startCombat(watch, node.hostileLabel || "You've been seen.");
+      // IN THE GAME TOO (Sam, 2026-10-27: "Attack should have started" — the party walked openly up the bridge into the
+      // Guard Tower and its three guards stood there). Only a SNEAK was ever judged in the game; walking in the open past
+      // the watch was left to Malachar, who is not watching the map. Now a guard on watch who has the leader in plain
+      // sight (no wall between them) and in the same range stops them (confront): his face, a challenge, and the party's answer. The pen keeps its own rule (the gate watch), a Sneak is judged by
+      // its own rolls, and the party is let finish walking in first.
+      else if (APP && cur !== PEN && !sneak && !leader.walkIn && !state.ambushOff && state.jumped !== cur){
+        const w = watch.find(n => !n.down && !n.body && Math.hypot(n.x - leader.x, n.y - leader.y) < 520 * node.scale && !coverOf(n, leader).total);
+        if (w && !(guardsAlarm && guardsAlarm.cur === cur && now < guardsAlarm.until)) confront(w);
+      }
     }
     // NPC comments and the one who wants to talk
     for (const n of npcs){
@@ -12345,6 +12472,7 @@ function owRenderSeats(){
         mySlug = mine;
       }
     } catch (e) {}
+    await loadRoster();   // every hero's row, seated or not (characterIdOf)
     try { const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json(); noteSeats(j.seated); noteNpcTongues(j); const seated = seatedSlugs(j.seated); if (seated.length) PARTY = seated; if (typeof j.run === "number") runSeen = j.run; } catch (e) {}
     if (mine && !PARTY.includes(mine)) PARTY = FULL_PARTY.filter(x => PARTY.includes(x) || x === mine);
   }

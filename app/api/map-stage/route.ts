@@ -46,7 +46,8 @@ export async function GET() {
     // And each one's whole walk sheet (lib/walk-sheet.ts), so a hero made at the Forge after the map was
     // built walks and fights as themselves instead of as the first premade (Sam, 2026-10-23: "My son
     // created a character named gandalf but kenta is the pixel art"). The premades keep the page's own
-    // snapshots; the map only uses this for a seat it does not already know.
+    // snapshots for attacks and magic; their saves and skills come from this sheet (class save proficiency
+    // included, 2026-10-27), and a seat the map does not already know takes the whole sheet.
     const ids = seated.map((s) => s.id)
     const levels = new Map<string, number>()
     const sheets = new Map<string, WalkSheet>()
