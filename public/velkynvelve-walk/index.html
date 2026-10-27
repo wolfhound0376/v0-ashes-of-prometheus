@@ -1782,6 +1782,7 @@ function watchPost(n){
   if (total >= w.passive){ log(`${fname(leader)} slips past the watch: Stealth ${r} + ${mod} = ${total} against their passive ${w.passive}.`); return; }
   state.seen = state.seen || {}; state.seen[n] = true;
   for (const a of seen){ a.face = faceOf(leader.x - a.x, leader.y - a.y); a.alert = true; }
+  setTimeout(() => guardsReact(seen.find(isGuard) || seen[0], leader, "at the watch post"), 600);
   log(`<em>${esc(w.label || "The sentries have seen you.")}</em> Stealth ${r} + ${mod} = ${total} against their passive ${w.passive}.`);
   reportSituation({sub_location: SPEC[n].slug, sub_label: SPEC[n].name, party_present: partyPresent(), event: "seen_by_watch"});
 }
@@ -4862,10 +4863,75 @@ function sneakSpotted(w, who){
   w.face = faceOf(who.x - w.x, who.y - w.y); w.alert = true; popText(w, "!", "#ff6b5a", 1.3); bank("ui/initiative_start", .35);
   const movers = sneak.rolls.map(x => x.p), P = passiveOf(w) || 12;
   const line = `${fname(w)} spots ${movers.length > 1 ? "the party" : fname(who)} (passive Perception ${P}).`;
-  log(`<em>${esc(line)}</em>`); toast(line, 3600); handOff(`${line} They were sneaking (Stealth ${sneak.line}).`);
+  log(`<em>${esc(line)}</em>`); toast(line, 3600);
+  const why = "sneaking";
   endSneak();
+  if (!guardsReact(w, who, why) && APP && !(cur === PEN && behindBars(who))) handOff(`${line} They were sneaking.`);
+}
+// ---------- SEEN BY THE GUARDS: they attack, unless someone who matters is with them ----------
+// Sam, 2026-10-26: "If a guard spots you they attack you. If guards spot you on any plate they all attack you on the
+// spot unless you are escorted. Ilvara, Jorlan, Surgeon, will talk to you and then based on gravity/conversation/
+// context they may or may not attack you. Additionally, if special characters are with guards this also applies.
+// This will usually spark a conversation."
+//   ESCORTED   a work detail (laborLive) — the guards walking you are why you are out. Nothing happens.
+//   SPECIAL    Ilvara, Jorlan or Liana on the plate: the guards freeze on the hero, the special one turns and speaks
+//              first (npc-opener, told what just happened), and the talk goes to Malachar, who decides from gravity,
+//              the conversation and context whether it becomes [COMBAT_START:].
+//   OTHERWISE  every guard on the plate attacks. In the game the fight is opened through the shared combat flag
+//              (/api/walk-spotted), so every seat at the table rolls into the same fight; the preview opens it here.
+// THE PEN is the one exception: a prisoner inside the pen with the gate shut is behind bars — that is the warning and
+// the volleys (Sam, 2026-10-25, "Remove formal fight. Volleys only."). Out on the landing, it is this rule.
+const SPECIAL_WATCH = ["ilvara", "jorlan", "liana"];
+const isGuard = n => /^drow-guard|^drow-elite|^drow-warrior|^drow-soldier|^drow-mage|^drow-priestess/.test(n.id);
+let guardsAlarm = null;                                       // {cur, until}: one reaction per plate at a time
+function guardsOnPlate(){ return npcs.filter(n => isGuard(n) && !n.offStage && !n.body && !n.down && !n.relieved && n.alpha > .5 && actors.includes(n)); }
+function specialOnPlate(){ return npcs.find(n => SPECIAL_WATCH.includes(n.id) && !n.offStage && !n.body && !n.down && n.alpha > .5 && actors.includes(n)) || null; }
+function behindBars(h){ return cur === PEN && !onBalcony(h) && !(h.x != null && inPoly((doorGate() || {interact: {poly: [[0,0]]}}).interact.poly, h.x, h.y) && state.gateOpen); }
+function guardsReact(w, h, why){
+  if (!h || mode !== "explore" || laborLive() || surgeon || timeStopped) return false;
+  if (cur === PEN && behindBars(h)) return false;              // the pen's own rule: warning, then volleys
+  if (guardsAlarm && guardsAlarm.cur === cur && now < guardsAlarm.until) return false;
+  guardsAlarm = {cur, until: now + 30000};
+  if (sneak) endSneak();
+  const guards = guardsOnPlate(), sp = specialOnPlate();
+  for (const g of guards){ g.path = []; g.actUntil = now + 60000; g.scanAt = now + 60000; faceTo(g, h); }
+  if (w) popText(w, "!", "#ff6b5a", 1.4);
+  h.path = [];
+  const who = fname(h), where = node.name;
+  if (sp){
+    const spName = SHORT[sp.id] || SPR[sp.id].json.name;
+    stopActivity(sp); sp.path = []; faceTo(sp, h);
+    sp.talk = true; delete state.talked[sp.id]; delete state.declined[sp.id]; setTimeout(() => { sp.talkSituation = null; }, 60000);
+    sp.talkSituation = `${who}, a prisoner, was just caught ${why} in ${where} by the guards; ${spName} is there with them. The guards have crossbows on ${who} and wait for ${spName}'s word.`;
+    log(`<em>${esc(fname(w || guards[0] || sp))} has ${esc(who)} — and ${esc(spName)} is here.</em> ${esc(spName)} speaks first.`);
+    if (APP) handOff(`${who} was caught ${why} in ${where}. The drow guards have them covered, but ${spName} is present and speaks first. Play ${spName}: by gravity, ${spName}'s relationship with ${who} and what is said, ${spName} decides whether the guards attack. If anyone attacks, emit [COMBAT_START: ...] naming every hostile creature here.`);
+    openTalk(sp);
+    return true;
+  }
+  const foes = guards.length ? guards : (w ? [w] : []);
+  if (!foes.length) return false;
+  const label = `${fname(w || foes[0])} sees ${who}${why ? ` ${why}` : ""} — the guards attack!`;
+  log(`<em>${esc(label)}</em>`);
+  if (!APP){ foes.forEach(f => { f.hostile = true; }); startCombat(foes, label); return true; }
+  const body = {area: where, label, seenHero: who, foes: foes.map(f => ({name: (FOE_BLOCKS[f.id] || {}).name || SPR[f.id].json.name, aliases: [f.id], hp: (FOE_BLOCKS[f.id] || {}).hp ?? null, hpMax: (FOE_BLOCKS[f.id] || {}).hp ?? null}))};
+  try { body.claimId = localStorage.getItem("aop_character_id") || undefined; body.claimToken = localStorage.getItem("aop_claim_token") || undefined; } catch (e) {}
+  fetch("/api/walk-spotted", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)})
+    .then(r => r.json().then(j => ({r, j}))).then(({r, j}) => {
+      if (!r.ok || !j.flag){ toast(j.error || "The game did not answer.", 3200); guardsAlarm = null; return; }
+      foes.forEach(f => { f.hostile = true; });
+      followCombatFlag(j.flag);                                // this seat opens it now; the others on their next poll
+      if (APP) handOff(`${label} (${where}). Combat has begun.`);
+    }).catch(() => { toast("The game did not answer.", 3200); guardsAlarm = null; });
+  return true;
 }
 setInterval(() => {
+  if (!sneak && mode === "explore" && leader && !state.cleared[cur] && !state.ambushOff && !laborLive()){
+    const ws = sneakWatchers().filter(isGuard);
+    outer: for (const w of ws) for (const h of gateHeroes()){
+      if (cur === PEN && behindBars(h)) continue;
+      if (sneakSight(w, h) || Math.hypot(w.x - h.x, w.y - h.y) < 10 * ftPx(w)){ guardsReact(w, h, cur === PEN ? "out of the pen" : "where they should not be"); break outer; }
+    }
+  }
   if (sneak && (mode === "combat" || sneak.cur !== cur)){ endSneak(mode === "combat" ? "" : "A new place: the sneak is over."); return; }   // a fight or a new plate ends it
   if (!sneak || mode !== "explore" || !leader) return;
   sneak.dwell = sneak.dwell || new Map();
@@ -9191,7 +9257,7 @@ async function npcOpening(npc){
   if (APP){
     try {
       const res = await fetch("/api/npc-opener", {method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({npcName: nm, brief: BRIEF[npc.id] || nm, area: node.name, pc: {...pc, name: PLAYS_AS[leader.id] || pc.name}})});
+        body: JSON.stringify({npcName: nm, brief: BRIEF[npc.id] || nm, area: node.name, situation: npc.talkSituation || undefined, pc: {...pc, name: PLAYS_AS[leader.id] || pc.name}})});
       const r = await res.json();
       if (r && typeof r.line === "string" && r.line.trim()) return {narration: String(r.narration || fallback.narration), line: r.line.trim(), lang: r.lang || null};
     } catch (e) {}
@@ -9655,6 +9721,7 @@ async function followCombatFlag(flag){
       if (await loadSpriteManifest(foe.slug)){ creatureArrives({slug: foe.slug, name: foe.name, hp: foe.hp, hpMax: foe.hpMax}); const f = creatures.get(foe.slug); if (f){ f.path = []; f.waitUntil = 0; picked.push(f); } }
       else log(`<em>${esc(foe.name)}</em> joins the fight but has no sprite yet; the DM core still counts it.`);
     }
+    for (let i = picked.length - 1; i >= 0; i--) if (picked.indexOf(picked[i]) !== i) picked.splice(i, 1);   // two "Drow guard"s name the same two
     if (!picked.length){ log(`<em>${esc(flag.label || "Initiative!")}</em> Nobody he named is on this plate.`); return; }
     for (const f of picked){ f.hp = f.hp ?? (flag.foes.find(x => x.slug === f.id) || {}).hp; }
     startCombat.flagMood = flag.music || null;          // Malachar may name the mood; otherwise the odds decide
