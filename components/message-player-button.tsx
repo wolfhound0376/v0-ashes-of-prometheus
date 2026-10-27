@@ -24,6 +24,8 @@ import { ArrowLeft, Mail, SendHorizontal, X } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { uiChime, uiLatch } from "@/lib/ui-tick"
 import { cn } from "@/lib/utils"
+import { unlockSpeechAudio } from "@/lib/speech-playback"
+import { speak } from "@/lib/speech-queue"
 import {
   cleanMessage, contactsFor, directRow, DIRECT_CHANNEL, isForMe, MAX_MESSAGE, threadOf, totalUnread, unreadBySender,
   type Contact, type DirectRow, type SeatLike,
@@ -36,26 +38,36 @@ const READ_KEY = "aop_dm_last_read"
 
 type Variant = "gold" | "pixel"
 
-// The sender's saved hero voice, through the same route the map uses (/api/npc-tts resolves a hero by name).
-// WebAudio rather than <audio>: the game found <audio> silently mute in some Chromium builds. Lines play one at a time.
-let voiceCtx: AudioContext | null = null
-let voiceQueue: Promise<void> = Promise.resolve()
+// The sender's saved hero voice, through the same route the map uses (/api/npc-tts resolves a hero by name),
+// played through the dashboard's ONE mouth (lib/speech-queue: takes its turn behind whoever is talking, WebAudio
+// path from lib/speech-playback). Sam, 2026-10-26: "I still can't hear the voice on the dashboard UI" — the first
+// version opened its own AudioContext when a message ARRIVED, with no click behind it, so the browser kept it
+// suspended and the line played into silence. Audio is now unlocked on the first click or key anywhere on the page
+// (and on the Message button itself), the same unlock the dashboard's narration uses. Not gated on the dashboard's
+// "Player Voices" toggle: that one is for your own typed lines and starts off; a message is said to the table.
+let unlockWired = false
+function wireAudioUnlock() {
+  if (unlockWired || typeof window === "undefined") return
+  unlockWired = true
+  const once = () => { unlockSpeechAudio(); window.removeEventListener("pointerdown", once, true); window.removeEventListener("keydown", once, true) }
+  window.addEventListener("pointerdown", once, true)
+  window.addEventListener("keydown", once, true)
+}
 function sayAloud(speaker: string, text: string) {
-  voiceQueue = voiceQueue.then(async () => {
-    try {
-      const res = await fetch("/api/npc-tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, npcName: speaker }) })
-      if (!res.ok) throw new Error(`tts ${res.status}`)
-      const AC = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-      voiceCtx = voiceCtx ?? new AC()
-      if (voiceCtx.state !== "running") await Promise.race([voiceCtx.resume().catch(() => {}), new Promise((r) => setTimeout(r, 1500))])
-      const buf = await voiceCtx.decodeAudioData(await res.arrayBuffer())
-      const src = voiceCtx.createBufferSource()
-      src.buffer = buf
-      src.connect(voiceCtx.destination)
-      await new Promise<void>((done) => { src.onended = () => done(); src.start() })
-    } catch (err) {
-      console.warn("[MessagePlayer] voice unavailable:", speaker, err)
-    }
+  speak({
+    rank: "player",
+    speaker,
+    fetch: async () => {
+      try {
+        const res = await fetch("/api/npc-tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text, npcName: speaker }) })
+        if (!res.ok) throw new Error(`tts ${res.status}`)
+        return await res.blob()
+      } catch (err) {
+        console.warn("[MessagePlayer] voice unavailable:", speaker, err)
+        return null
+      }
+    },
+    onEnd: (reason) => { if (reason === "blocked") console.warn("[MessagePlayer] audio blocked until the page is clicked once") },
   })
 }
 
@@ -69,6 +81,7 @@ function writeLastRead(v: Record<string, string>) {
 export function MessagePlayerButton({ variant = "gold", align = "right", className }: { variant?: Variant; align?: "left" | "right"; className?: string }) {
   const pixel = variant === "pixel"
   const voiced = !pixel
+  useEffect(() => { if (voiced) wireAudioUnlock() }, [voiced])
   const supabaseRef = useRef(createClient())
   const instanceId = useId()
   const [me, setMe] = useState<{ id: string; name: string } | null>(null)
@@ -222,7 +235,7 @@ export function MessagePlayerButton({ variant = "gold", align = "right", classNa
       <button
         type="button"
         data-no-tick
-        onPointerDown={(e) => { if (e.button === 0) uiLatch() }}
+        onPointerDown={(e) => { if (e.button === 0) { uiLatch(); if (voiced) unlockSpeechAudio() } }}
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
         aria-label={total ? `Message a player — ${total} unread` : "Message a player"}
