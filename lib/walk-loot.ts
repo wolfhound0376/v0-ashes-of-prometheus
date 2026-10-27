@@ -151,7 +151,47 @@ const DROW_KIT: LootEntry[] = [
   { slug: "silk-rope", qty: 2, note: "a 100-foot coil (the catalogue's silk rope is 50 ft)" },
   { slug: "grappling-hook", qty: 1, note: "small, tied to the rope" },
 ]
-export const BODY_KIT: Record<string, LootEntry[]> = { "drow-guard-male": DROW_KIT, "drow-guard-female": DROW_KIT }
+// THE NAMED DROW CARRY WHAT THEIR STAT BLOCKS FIGHT WITH (Sam, 2026-10-27: Asha died with nothing on her — "stat block
+// gear yes unless it's damaged"). The book lists no belongings for them, so their kit is the gear their stat block
+// itself uses, the weapon it attacks with and the armour its AC is made of, and nothing more:
+//   Asha Vandree    OotA p.13: "use the priest stat block ... add the Fey Ancestry, Innate Spellcasting, and Sunlight
+//                   Sensitivity features of the drow". MM Priest: AC 13 (chain shirt), Mace.
+//   Shoor, Jorlan   OotA: drow elite warriors. MM Drow Elite Warrior: AC 18 (studded leather, shield), Shortsword,
+//                   Hand Crossbow. (Shoor's wand stays in his pockets, POCKETS above.)
+//   Ilvara          OotA: drow priestess of Lolth. MM: AC 16 (scale mail), Scourge. The catalogue has no scale mail yet,
+//                   so it shows as "not in the catalogue yet" and cannot be taken: nothing is invented.
+// Anything the DM handed them from the confiscated stash is on the body as well, as before.
+const ELITE_KIT: LootEntry[] = [
+  { slug: "shortsword", qty: 1 },
+  { slug: "hand-crossbow", qty: 1 },
+  { slug: "studded-leather-armor", qty: 1 },
+  { slug: "shield", qty: 1 },
+]
+export const BODY_KIT: Record<string, LootEntry[]> = {
+  "drow-guard-male": DROW_KIT, "drow-guard-female": DROW_KIT,
+  asha: [{ slug: "mace", qty: 1 }, { slug: "chain-shirt", qty: 1 }],
+  shoor: ELITE_KIT, jorlan: ELITE_KIT,
+  ilvara: [{ slug: "scourge", qty: 1 }, { slug: "scale-mail", qty: 1 }],
+}
+
+// WHAT SURVIVED THE FIGHT (Sam, 2026-10-27: "unless it's damaged so you can make this part of the roll"). The first time
+// a body is searched, every piece of its kit rolls a d20; on RUIN_ON or lower it was wrecked in the fight (a mail shirt
+// hacked open, a crossbow string cut, a blade snapped) and is left out. The roll is made once and kept for the run, so
+// every screen finds the same body. RUIN_ON = 4 (a 20% chance a piece is ruined) is a house number for Sam to tune.
+export const RUIN_ON = 4
+export type Ruined = { slug: string; roll: number }
+export function rollWear(entries: LootEntry[], rng: () => number = Math.random): { kept: LootEntry[]; ruined: Ruined[] } {
+  const kept: LootEntry[] = [], ruined: Ruined[] = []
+  for (const e of entries) {
+    let left = 0
+    for (let i = 0; i < e.qty; i++) {
+      const roll = 1 + Math.floor(rng() * 20)
+      if (roll <= RUIN_ON) ruined.push({ slug: e.slug, roll }); else left++
+    }
+    if (left) kept.push({ ...e, qty: left })
+  }
+  return { kept, ruined }
+}
 
 // What a quick hand can lift from a living guard. OotA ch.1 ("Acquisitions"): working outside the pen lets the
 // characters "acquire and hide small items, including makeshift weapons or tools, or even lift a key to the slave
