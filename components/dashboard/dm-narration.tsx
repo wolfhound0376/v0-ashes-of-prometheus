@@ -21,6 +21,7 @@ import { Loader2, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { sanitizeForTTS, canSpeak, setDmVoiceEnabled, setNpcVoiceEnabled, setPlayerVoiceEnabled, setKnownPlayerNames } from "@/lib/tts"
 import { unlockSpeechAudio, type SpeechPlayback } from "@/lib/speech-playback"
+import { hearsNpcVoice, type VoiceAudience } from "@/lib/voice-audience"
 import { speakBlob } from "@/lib/speech-queue"
 // The speaker-attribution parser. It lives in the v3 center column today; when
 // that tree is finally deleted this should move to lib/ rather than be rewritten
@@ -118,6 +119,8 @@ type Line = {
   pending?: boolean
   turn_id?: string
   created_at?: string
+  /** NPC rows: the hero the line answers. Only that player (and the DM) hear it aloud — lib/voice-audience.ts. */
+  recipient?: string | null
 }
 
 function castPersisted(line: Line, npcs: VoiceNpc[]): Utterance[] {
@@ -143,12 +146,14 @@ function castPersisted(line: Line, npcs: VoiceNpc[]): Utterance[] {
   return out.length ? out : cast(line.text, npcs)
 }
 
-export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChange, className }: {
+export function DmNarration({ dialogue, npcs = [], players = [], audience = null, onSpeakingChange, className }: {
   dialogue: Line[]
   npcs?: VoiceNpc[]
   /** Player characters, same shape — their typed lines speak in their chosen
    *  voice when the Player Voices toggle is on. */
   players?: VoiceNpc[]
+  /** Who this screen is: the DM hears every NPC voice, a player only NPC lines addressed to their own hero. */
+  audience?: VoiceAudience | null
   /** Fires with the NPC or player character currently speaking, or null when
    *  it is the DM or nobody. The queue is the only thing that knows who holds
    *  the floor, so the portrait is driven from here rather than guessed. */
@@ -168,6 +173,8 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
   const npcsRef = useRef<VoiceNpc[]>(npcs)
   useEffect(() => { npcsRef.current = npcs }, [npcs])
   const playersRef = useRef<VoiceNpc[]>(players)
+  const audienceRef = useRef<VoiceAudience | null>(audience)
+  useEffect(() => { audienceRef.current = audience }, [audience])
   useEffect(() => {
     playersRef.current = players
     // Registered so lib/tts can classify a player line wherever TTS is gated.
@@ -434,7 +441,8 @@ export function DmNarration({ dialogue, npcs = [], players = [], onSpeakingChang
       if (line.speaker === DM_SPEAKER) return castPersisted(line, npcsRef.current)
       const npc = npcsRef.current.find((entry) => entry.name.toLowerCase() === line.speaker.toLowerCase())
       const text = sanitizeForTTS(line.text)
-      if (npc && text) return [{ kind: "npc" as const, text, npc }]
+      // An NPC answering another player is seen here but not heard (Sam, 2026-10-26); the DM hears them all.
+      if (npc && text) return hearsNpcVoice(line, audienceRef.current) ? [{ kind: "npc" as const, text, npc }] : []
       // A player character's own typed line, in their chosen voice. Dice-roll
       // announcements stay silent — the table already watched the dice land.
       const pc = playersRef.current.find((entry) => entry.name.toLowerCase() === line.speaker.toLowerCase())

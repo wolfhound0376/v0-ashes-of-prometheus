@@ -592,6 +592,8 @@ export function V4Dashboard(props: V4DashboardProps) {
   // In a conversation only two people are heard: the one you play and the one you are talking with
   // (Sam, 2026-10-11: "talk to ONLY the character we are speaking to or is speaking to us"). Anyone
   // else Malachar mentions is told, not voiced, and never takes the window (see speakingRow above).
+  // Sam, 2026-10-26: an NPC answering another player is seen, not heard; the DM screen hears every NPC voice.
+  const narrationAudience = useMemo(() => ({ dm: isDmView, name: isDmView ? null : selected?.name ?? null }), [isDmView, selected?.name])
   const talkVoices = useMemo(() => {
     const allNpcs = props.npcRoster?.length ? props.npcRoster : props.npcEncounters
     if (!talkMode) return { npcs: allNpcs, players: livePlayers }
@@ -983,7 +985,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       </Frame>
     </div>
 
-    <Frame title="NPC / Dungeon Master Window" className={cn("flex flex-col", narrowTalk ? "w-full max-w-[480px] flex-1" : "min-h-[690px]")} hideHeader action={<DmNarration dialogue={heardDialogue} npcs={talkVoices.npcs} players={talkVoices.players.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />}>
+    <Frame title="NPC / Dungeon Master Window" className={cn("flex flex-col", narrowTalk ? "w-full max-w-[480px] flex-1" : "min-h-[690px]")} hideHeader action={<DmNarration dialogue={heardDialogue} audience={narrationAudience} npcs={talkVoices.npcs} players={talkVoices.players.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />}>
       {talkMode ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-[#4b3a19] px-3 py-2">
           <div className="min-w-0 flex-1">

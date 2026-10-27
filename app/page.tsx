@@ -55,6 +55,8 @@ type DialogueMessage = {
   speech_segments?: SpeechSegment[] | null
   speaker_type?: string | null
   channel?: string | null
+  /** NPC rows: the hero the line answers (lib/voice-audience.ts). */
+  recipient?: string | null
   pending?: boolean
   /** Client-only. All rows produced by ONE Malachar turn share this. Lets the
    *  narration queue tell "one turn, several rows" apart from a bulk refetch. */
@@ -1009,7 +1011,7 @@ export default function DashboardPage() {
     async function fetchDialogue() {
       const { data, error } = await supabase
         .from('dialogue')
-        .select('id, speaker, text, speech_segments, speaker_type, channel, created_at')
+        .select('id, speaker, text, speech_segments, speaker_type, channel, created_at, recipient')
         .eq('channel', 'dm')
         .order('created_at', { ascending: true })
         .limit(50)

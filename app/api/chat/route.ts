@@ -3594,6 +3594,8 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
     speaker_type: "dm" | "npc"
     text: string
     speech_segments: PersistedSpeechSegment[] | null
+    /** NPC rows only: the hero this line answers (lib/voice-audience.ts — only they, and the DM, hear it aloud). */
+    recipient?: string | null
   }
   let speechSegments: PersistedSpeechSegment[] | null = null
   if (taggedNpcSpeech.length) {
@@ -3802,6 +3804,9 @@ Rules:
           speaker_type: "npc",
           text: segment.line,
           speech_segments: [segment],
+          // Sam, 2026-10-26: an NPC answering one player is heard by that player (and the DM) only; the rest of
+          // the table sees the line. A director's nudge answers nobody, so it stays heard by all.
+          recipient: !director && playerCharacter?.name ? playerCharacter.name : null,
         })
       } else {
         pushMalachar(segment.line)
