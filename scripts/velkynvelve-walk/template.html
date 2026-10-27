@@ -3921,6 +3921,17 @@ function fighterFor(a){
 function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   if (mode !== "explore") return;
   owFightBegins();
+  // NOBODY FIGHTS IN THE AIR (Sam, 2026-10-27, the Barracks: "This combat is off and in the air"). A fight that opened
+  // while the party and the prisoners were still walking in from the edge of the plate cleared their paths where they
+  // stood: above the painting, off the floor, and they fought from there. Anyone still on the way in is set down where
+  // they were walking to, and anyone else off the floor on the nearest floor, before the fight takes their paths away.
+  for (const p of [...party, ...npcs]){
+    if (p.offStage || p.backdrop || p.fixedScale || p.riding || p.climbing || outsidePen(p)) continue;
+    const to = p.path && p.path.length ? p.path[p.path.length - 1] : null;
+    if (p.walkIn && to){ p.x = to.x; p.y = to.y; }
+    if (!walkable(p.x, p.y)){ const q = nearestWalkable(p.x, p.y); p.x = q.x; p.y = q.y; }
+    p.walkIn = false; p.waitUntil = 0;
+  }
   mode = "combat"; [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); setAnim(p, "idle"); });
   if (balcony()) buildGrid();               // the balcony outside the pen gate is floor while the fight lasts
   const allies = opts.noAllies ? [] : alliesHere(); allies.forEach(n => { n.ally = true; n.talking = false; });
