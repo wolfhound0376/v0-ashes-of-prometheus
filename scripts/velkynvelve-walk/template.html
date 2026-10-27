@@ -2749,6 +2749,7 @@ async function openPockets(n){
   box.firstChild?.focus();
 }
 function caught(n, who, row){
+  who.caughtUntil = now + CAUGHT_HOLD; if (gateWarn && gateWarn.who === who.id) gateWarn = null;   // Malachar plays it, not the watch (stealFrom)
   n.face = faceOf(who.x - n.x, who.y - n.y); bank("ui/nat1", .5); popText(who, "caught!", "#ff6b5e", 1.2);
   log(`<b>${esc(fname(n))} catches ${esc(fname(who))}'s hand</b> at the ${esc(row.name)}. A prisoner caught stealing is commanded to give it up, on pain of death.`);
   if (APP) handOff(`${fname(who)} tried to lift the ${row.name} from ${fname(n)} with Sleight of Hand and failed. ${fname(n)} noticed. Per the book, a prisoner who fails is commanded to relinquish the item, on pain of death. Play it.`);
@@ -2769,6 +2770,8 @@ function caught(n, who, row){
 //   LOSE   the sneak is over and the mark turns on them; Malachar plays the rest — the mark may just like them less
 //          and say so, someone else may attack them or call the guards — by gravity and who is there.
 const PICKPOCKET_FT = 8;
+const CAUGHT_HOLD = 60000;   // ms the automatic guard reactions leave a caught thief to Malachar (house number: ten rounds)
+const caughtHeld = h => !!h && now < (h.caughtUntil || 0);
 function pickpocketMark(L){
   if (!L || !sneak || mode !== "explore" || !sneak.rolls.some(x => x.p === L)) return null;
   const reach = PICKPOCKET_FT * ftPx(L);
@@ -2821,9 +2824,16 @@ async function stealFrom(n, who, row){
   if (n.lean){ n.leanHold = now + 20000; n.leanBlock = now + 600000; }   // the guard at the bars: turns on them, stays a moment, then goes back to his post
   bank("ui/nat1", .5); popText(who, "caught!", "#ff6b5e", 1.2);
   log(`<b>${esc(fname(n))} catches ${esc(fname(who))}'s hand</b> at the ${esc(row.name)}.`);
+  // CAUGHT IS A SCENE, NOT A VOLLEY (Sam, 2026-10-27: Kenta failed at the bars and the bridge guards shot him). The
+  // failed steal ends the sneak, which left the thief standing at the gate in plain sight, so the gate watch warned
+  // and, ten seconds later while everyone was reading the guard's "Drop it", fired. The book (OotA ch.1, Acquisitions):
+  // a prisoner who fails "is commanded to relinquish the item, on pain of death" — a threat first, Malachar's to play.
+  // So the automatic watch leaves this hero alone for CAUGHT_HOLD; Malachar can still open the fight ([COMBAT_START:]).
+  who.caughtUntil = now + CAUGHT_HOLD;
+  if (gateWarn && gateWarn.who === who.id) gateWarn = null;
   endSneak();
   const near = npcs.filter(m => m !== n && !m.down && !m.body && !m.offStage && actors.includes(m) && (m.alpha ?? 1) > .5 && Math.hypot(m.x - who.x, m.y - who.y) < 60 * ftPx(who)).map(fname);
-  handOff(`${fname(who)} was sneaking and tried to pick ${fname(n)}'s pocket for the ${row.name} (Dexterity (Sleight of Hand) ${r.total} against ${fname(n)}'s passive Perception ${P}) and was CAUGHT: ${fname(n)} felt the hand. ${near.length ? `Also close by: ${near.join(", ")}.` : "Nobody else is close."} ${fname(who)} does not get the item. Play what happens, by gravity, ${fname(n)}'s nature and who is there: ${fname(n)} may simply like ${fname(who)} less and say something; someone else may attack ${fname(who)} or call the guards.`, true);
+  handOff(`${fname(who)} was sneaking and tried to pick ${fname(n)}'s pocket for the ${row.name} (Dexterity (Sleight of Hand) ${r.total} against ${fname(n)}'s passive Perception ${P}) and was CAUGHT: ${fname(n)} felt the hand. ${near.length ? `Also close by: ${near.join(", ")}.` : "Nobody else is close."} ${fname(who)} does not get the item. Play what happens, by gravity, ${fname(n)}'s nature and who is there: ${fname(n)} may simply like ${fname(who)} less and say something; someone else may attack ${fname(who)} or call the guards. If ${fname(n)} is a drow and ${fname(who)} a prisoner, the book (OotA ch.1, Acquisitions): a prisoner caught stealing is commanded to relinquish the item, on pain of death — a threat first. The map's guards hold their fire for this; only if ${fname(who)} refuses, resists or attacks, emit [COMBAT_START: ...].`, true);
 }
 const ACTION_KEY_PICKPOCKET = pp => `pickpocket:pp${Math.min(30, Math.max(5, Math.round(+pp || 12)))}`;   // lib/walk-roll.ts pickpocketKey: keep in step
 // the DM's hand: confiscated gear given to a drow, so it turns up on their body, or in their pockets for a thief
@@ -4346,6 +4356,7 @@ setInterval(() => {
     const ws = sneakWatchers().filter(isGuard);
     outer: for (const w of ws) for (const h of gateHeroes()){
       if (cur === PEN && behindBars(h)) continue;
+      if (caughtHeld(h)) continue;                                 // a caught thief: Malachar is playing it (stealFrom)
       if (sneakSight(w, h) || Math.hypot(w.x - h.x, w.y - h.y) < 10 * ftPx(w)){ guardsReact(w, h, cur === PEN ? "out of the pen" : "where they should not be"); break outer; }
     }
   }
@@ -7574,6 +7585,7 @@ function tickGateWatch(){
   const j = npcs.find(n => n.id === "jorlan" && !n.offStage && !n.body && actors.includes(n));
   const guards = gateGuards();
   const {hero: h, d} = gateNearest(g);
+  if (caughtHeld(h)){ if (gateWarn && gateWarn.who === h.id) gateWarn = null; return; }   // a caught thief: Malachar is playing it (stealFrom)
   // JORLAN AT THE BARS (Sam, 2026-10-26: "why is nothing happening" — a hero at the bars, Jorlan on his landing, and
   // the watch used to go silent because "Jorlan deals with prisoners at the bars" while nothing made him do it). His
   // rule now (same day): "Ilvara, Jorlan, Surgeon, will talk to you and then based on gravity/conversation/context they
