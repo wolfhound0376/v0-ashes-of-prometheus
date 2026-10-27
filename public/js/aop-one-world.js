@@ -22,6 +22,7 @@ var AopOneWorld = (() => {
   // lib/walk-world.ts
   var walk_world_exports = {};
   __export(walk_world_exports, {
+    HERO_POSES: () => HERO_POSES,
     LIMITS: () => LIMITS,
     MISSES_BEFORE_RESYNC: () => MISSES_BEFORE_RESYNC,
     ONLINE_MS: () => ONLINE_MS,
@@ -42,6 +43,7 @@ var AopOneWorld = (() => {
   var ONLINE_MS = 12e3;
   var MISSES_BEFORE_RESYNC = 2;
   var LIMITS = { stateBytes: 64e3, heroesPerPatch: 12, coord: 4e3 };
+  var HERO_POSES = ["carry", "scrub"];
   var PLATE_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
   function plateId(v) {
     if (typeof v === "number") return Number.isInteger(v) && v >= 0 && v <= 999 ? String(v) : null;
@@ -175,7 +177,9 @@ var AopOneWorld = (() => {
         const face = int(h == null ? void 0 : h.face, 0, 7), plate = plateId(h == null ? void 0 : h.plate), seq = num(h == null ? void 0 : h.seq, Number.MAX_SAFE_INTEGER);
         if (x === null || y === null || tx === null || ty === null || face === null || plate === null || seq === null) return { error: `bad hero ${slug}` };
         const cid = typeof h.cid === "string" && h.cid.length <= 64 ? h.cid : null;
-        heroes[slug] = { x, y, tx, ty, face, plate, seq, by, cid };
+        const hero = { x, y, tx, ty, face, plate, seq, by, cid };
+        if (HERO_POSES.includes(h.pose)) hero.pose = h.pose;
+        heroes[slug] = hero;
       }
       out.heroes = heroes;
     }
