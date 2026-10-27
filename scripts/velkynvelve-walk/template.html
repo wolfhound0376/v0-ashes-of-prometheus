@@ -3097,6 +3097,10 @@ const HAND_XBOW_DROW = {name: "Hand Crossbow", hit: 4, dmg: "1d6+2", type: "pier
 const FOE_BLOCKS = {
   "drow-guard-male":   {name: "Drow guard", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, HAND_XBOW_DROW]},
   "drow-guard-female": {name: "Drow guard", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, HAND_XBOW_DROW]},
+  // The mounted guard on the cliff below the lift (Sam, 2026-10-26: "one that is mounted on the lizard"). HOUSE COMPOSITE,
+  // not one SRD block: the rider's Drow stats (SRD 5.1: AC 15, 13 hp, passive 12, shortsword, hand crossbow) with the
+  // Giant Lizard's bite added as a second melee attack (SRD 5.1: +4, 1d8+2) and its climb (30 ft). XP is the two summed.
+  "drow-lizard-rider": {name: "Drow lizard rider", xp: 100, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, {name: "Lizard's bite", hit: 4, dmg: "1d8+2", type: "piercing", reach: 5}, HAND_XBOW_DROW]},
   jorlan:              {name: "Jorlan", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
   "giant-spider": {name: "Giant spider", xp: 200, passive: 10, hp: 26, ac: 14, speed: 30, init: 3, saves: {str: 2, dex: 3, con: 1, int: -4, wis: 0, cha: -3},
                    attacks: [{name: "Bite", hit: 5, dmg: "1d8+3", type: "piercing", reach: 5, rider: {save: "con", dc: 11, dmg: "2d8", type: "poison", half: true}}],
