@@ -21,6 +21,12 @@
 //                    surfaces out of the black and he laughs.
 //   7. THE PEN       the music fades; /velkynvelve, Area 11.
 //
+// 0. THE HERO'S OWN FILM (Sam, 2026-10-27, for Lynkes: "add it"). A FORGED hero who has an intro
+//    film (cinematic_clips 'hero-intro' + their character_id, read by /api/hero-film) sees it first,
+//    before "Where am I?" — it ends on their capture, so the black that follows is the same black.
+//    Canon heroes watched theirs on /choose and get null, so nobody sees a film twice. Skip during
+//    the film skips the film only; the rest of the show still plays. Cinematics OFF: no film.
+//
 // Everything pre-recorded lives in public/awaken/ (voices rendered from the characters' and NPCs' saved
 // ElevenLabs voices; the lich cinematic is Sam's). The only live pieces are the dice, Malachar's
 // narration of the result, and the voice for it. Already rolled this run: straight to the pen.
@@ -77,7 +83,7 @@ const WAKERS = [
 ] as const
 type WakerKey = (typeof WAKERS)[number]["key"]
 
-type Step = "seat" | "tap" | "where" | "dream" | "title" | "waker" | "roll" | "result" | "laugh" | "act" | "go"
+type Step = "seat" | "tap" | "film" | "where" | "dream" | "title" | "waker" | "roll" | "result" | "laugh" | "act" | "go"
 
 const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms))
 
@@ -97,7 +103,7 @@ function pickWaker(): WakerKey {
 
 export default function AwakenPage() {
   const router = useRouter()
-  const [seat, setSeat] = useState<{ id: string; token: string; name: string | null } | null>(null)
+  const [seat, setSeat] = useState<{ id: string; token: string; name: string | null; film: string | null } | null>(null)
   const [step, setStep] = useState<Step>("seat")
   const [caption, setCaption] = useState<string | null>(null)
   const [crawl, setCrawl] = useState<{ text: string; seconds: number; key: number } | null>(null)
@@ -106,6 +112,7 @@ export default function AwakenPage() {
   const [waker, setWaker] = useState<WakerKey | null>(null)
   const [laughOn, setLaughOn] = useState(false)
   const [skipShown, setSkipShown] = useState(false)
+  const [filmOn, setFilmOn] = useState(false)
   const { sendMessage } = useLich("abyss")
 
   const started = useRef(false)
@@ -120,6 +127,7 @@ export default function AwakenPage() {
   const idleVid = useRef<HTMLVideoElement>(null)
   const talkVid = useRef<HTMLVideoElement>(null)
   const laughVid = useRef<HTMLVideoElement>(null)
+  const filmVid = useRef<HTMLVideoElement>(null)
   // Malachar's narration of the roll: text + his voice, fetched while the result card is still up.
   const narration = useRef<Promise<{ text: string; audio: string | null }> | null>(null)
   const rollDone = useRef<(rolled: boolean) => void>(() => {})
@@ -138,14 +146,15 @@ export default function AwakenPage() {
         fetch(`/api/verify-claim`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ characterId: id, claimToken: token }) }).then((r) => r.json()),
         fetch(`/api/fortune-roll?characterId=${encodeURIComponent(id)}`, { cache: "no-store" }).then((r) => r.json()).catch(() => null),
         fetch(`/api/table?characterId=${encodeURIComponent(id)}`, { cache: "no-store" }).then((r) => r.json()).catch(() => null),
+        fetch(`/api/hero-film?characterId=${encodeURIComponent(id)}`, { cache: "no-store" }).then((r) => r.json()).catch(() => null),
       ])
-        .then(([claim, fortune, table]) => {
+        .then(([claim, fortune, table, heroFilm]) => {
           if (!claim?.valid) { router.replace("/join"); return }
           // Nobody walks in until the DM has started the session and they hold a seat at it (Sam, 2026-10-25).
           // An unreadable table lets them through rather than locking the family out on a network blip.
           if (table && !table.error && !(table.state?.status === "live" && table.mine)) { router.replace("/table"); return }
           if (fortune?.rolled) { setStep("act"); return }   // a saved game: the Act I card, then the pen
-          setSeat({ id, token, name: claim?.character?.name ?? null })
+          setSeat({ id, token, name: claim?.character?.name ?? null, film: typeof heroFilm?.film === "string" ? heroFilm.film : null })
         })
         .catch(() => router.replace("/join"))
     } catch { router.replace("/join") }
@@ -177,7 +186,8 @@ export default function AwakenPage() {
     skipResolve.current()
     try { clip.current?.pause() } catch { /* nothing playing */ }
     try { laughVid.current?.pause() } catch { /* nothing playing */ }
-    setCrawl(null); setCaption(null); setFaceOpen(false); setTalking(false); setLaughOn(false)
+    try { filmVid.current?.pause() } catch { /* nothing playing */ }
+    setCrawl(null); setCaption(null); setFaceOpen(false); setTalking(false); setLaughOn(false); setFilmOn(false)
   }, [])
 
   /** Skipping the show must not also skip what comes after the roll, so the button is re-armed between acts. */
@@ -263,6 +273,35 @@ export default function AwakenPage() {
     const run = async () => {
       if (show) {
         setSkipShown(true)
+        // 0 — the hero's own film, when they have one. Its sound needs a gesture on a cold page:
+        //     if the browser refuses, ask for one tap, then play it.
+        const fv = filmVid.current
+        if (seat.film && fv) {
+          setStep("film")
+          fv.src = seat.film
+          fv.currentTime = 0
+          let ok = true
+          try { await fv.play() } catch {
+            setStep("tap")
+            await race(new Promise<void>((res) => window.addEventListener("pointerdown", () => res(), { once: true })))
+            guard(); setStep("film")
+            if (!skipped.current) await fv.play().catch(() => { ok = false })
+          }
+          if (ok && !skipped.current) {
+            setFilmOn(true)
+            await race(new Promise<void>((res) => {
+              if (fv.ended) return res()
+              fv.addEventListener("ended", () => res(), { once: true })
+              fv.addEventListener("error", () => res(), { once: true })
+            }))
+          }
+          fv.pause(); setFilmOn(false)
+          guard()
+          // Skip on the film skips the film only: the dream and the waker still play.
+          if (skipped.current) { rearmSkip(); setSkipShown(true) }
+          await wait(900); guard()
+        }
+
         // 1 — black. The character's voice. (A page loaded cold has no gesture yet: if the browser
         //     refuses the first sound, ask for one tap and start again from the top.)
         setStep("where")
@@ -444,6 +483,11 @@ export default function AwakenPage() {
             <video ref={talkVid} className={talking ? "on" : ""} muted loop playsInline preload="auto" src={`${LOOPS}/${wakerLoop}_talking.webm`} />
           </>
         )}
+      </div>
+
+      {/* a forged hero's own intro film — step 0 */}
+      <div className={`awk-lich${filmOn ? " on" : ""}`} aria-hidden={!filmOn}>
+        <video ref={filmVid} playsInline preload="auto" style={{ objectFit: "contain", objectPosition: "center center" }} />
       </div>
 
       {/* the lich, for the laugh */}
