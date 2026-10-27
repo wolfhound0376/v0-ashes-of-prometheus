@@ -1799,7 +1799,7 @@ function setLeader(a){
   if (leader && leader !== a) leader.home = {x: leader.x, y: leader.y};
   stopActivity(a); a.path = []; a.actUntil = 0;
   leader = a; trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: a.x, y: a.y}]);
-  renderParty(); log(`Now moving <em>${esc(SHORT[a.id] || SPR[a.id].json.name)}</em>. The others stay put until the party leaves.`);
+  renderParty(); log(`Now moving <em>${esc(SHORT[a.id] || SPR[a.id].json.name)}</em>. ${followOn ? "The others fall in behind." : "The others wait where they stand."}`);
 }
 const followers = () => party.filter(p => p !== leader && !p.ko);
 function followOrder(){ return followers().sort((a, b) => Math.hypot(a.x - leader.x, a.y - leader.y) - Math.hypot(b.x - leader.x, b.y - leader.y)); }
@@ -5267,7 +5267,7 @@ const OPTION_ART = {sneak: "hide", scout: "dash", "search-here": "search", liste
   pray: "bless", inspire: "bardic-inspiration", "quick-drink": "use-item", follow: "disengage", wait: "dodge", inventory: "use-object", "short-rest": "second-wind"};
 const ART = (name, fallback) => ICONS_HAVE.has(name) ? name : OPTION_ART[name] && ICONS_HAVE.has(OPTION_ART[name]) ? OPTION_ART[name] : fallback || null;   // Sam's icons drop in by name (velkynvelve-walk/icons/<name>.png)
 const VIEW_FT = 60, VIEW_HALF = Math.PI / 3;
-let sneak = null, helpNext = null, followOn = false, moreOpen = false;
+let sneak = null, helpNext = null, followOn = true, moreOpen = false;   // Follow is ON by default (Sam, 2026-10-27, AFK Journey: "party members following in a formation")
 const BUTTON_PRI = [[/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
   [/^(Sneak|Stop sneaking|Scout)/, 4], [/^Pick .*pocket/, 4], [/^Search here/, 5], [/^Cast/, 6], [/^Inventory/, 7], [/^(Pray|Inspire)/, 8], [/^Quick drink/, 9],
   [/^Next hero/, 10], [/^Help/, 11], [/^(Follow|Wait)/, 12], [/^Short rest/, 13], [/^Tell Malachar/, 14], [/^Talk$/, 30]];
@@ -5332,7 +5332,9 @@ function exploreExtras(m, o, add, who){
 
 // Sneak
 function startSneak(scout){
-  const who = scout || !followOn ? [leader] : party.filter(p => !p.ko && !p.down);
+  // a group check takes only the heroes who actually walk behind this leader: never a hero another player drives
+  // (Follow is on by default since 2026-10-27, so this line now runs on most sneaks, not just a called Follow)
+  const who = scout || !followOn ? [leader] : party.filter(p => !p.ko && !p.down && (p === leader || !owRemote(p)));
   if (scout && followOn) setFollow(false);
   const rolls = who.map(p => ({p, k: mapCheck(p, "stealth", "dex")}));
   sneak = {scout, cur, rolls, seenBy: new Set(), line: rolls.length === 1 ? String(rolls[0].k.total) : rolls.map(x => x.k.total).join(" / ")};
@@ -5592,18 +5594,73 @@ function gateLookFilm(cue){
 }
 function giveHelp(){ helpNext = {by: leader.id, until: now + 60000}; log(`${fname(leader)} lends a hand: the next friend's check has advantage.`); exploreKey = ""; }
 
-// Follow / Wait: out of combat the others hold where they were put (the walk's rule) unless the leader calls them on
-function setFollow(on){ followOn = on; log(on ? "The party falls in behind." : "The others wait where they stand."); if (on) trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: leader.x, y: leader.y}]); else followers().forEach(f => { f.path = []; f.home = {x: f.x, y: f.y}; }); exploreKey = ""; }
+// ---------- FORMATION (Sam, 2026-10-27: "Party members following in a formation rather than stacking", from AFK Journey) ----------
+// Follow / Wait is the walk's old switch; what changed is the default and the shape.
+//   * ON by default. "Wait here" still stops everyone where they stand (the DM placing heroes before a fight).
+//   * TWO ABREAST, not a conga line: the followers take slots in pairs along the leader's trail, each pair a step
+//     either side of the path the leader walked, so they turn corners where the leader turned instead of cutting
+//     through a wall, and nobody piles on the leader's heels.
+//   * THE COMPANY FALLS IN TOO: freed prisoners (company) take the slots behind the heroes. They did not follow before
+//     and pottered about wherever they walked in. Not while a hero is sneaking: Sam, 2026-10-26, the prisoners never
+//     come along on a sneak.
+//   * WHO: only bodies this screen drives. A hero another player drives is never pulled along (owRemote); a work detail's
+//     prisoners do the work (laborLive), not follow.
+//   * At rest (leader standing still) the slots loosen: followers stay put within a few strides and potter about there
+//     (idleLife wanders round their new `home`), and only re-form when the leader walks on.
+// The company is not in the One World record, so on two screens the prisoners trail each screen's own leader. Same as
+// before this change (each screen placed them alone); flagged in the PR.
+const followsNow = f => !f.ko && !f.down && !f.body && !f.once && !f.offStage && !f.fading && !f.climbing && !f.riding && !owRemote(f);
+function formationList(){
+  if (!leader) return [];
+  const heroes = followOrder().filter(followsNow);
+  const comp = sneak || laborLive() ? [] : npcs.filter(n => n.company && followsNow(n))
+    .sort((a, b) => Math.hypot(a.x - leader.x, a.y - leader.y) - Math.hypot(b.x - leader.x, b.y - leader.y));
+  return [...heroes, ...comp];
+}
+// the point `dist` back along the trail, nudged `side` (-1 left, +1 right, 0 centre) across the line of march
+function formationSlot(i, n){
+  const s = node.scale, row = Math.floor(i / 2) + 1, lone = i === n - 1 && n % 2 === 1;
+  const side = lone ? 0 : (i % 2 ? 1 : -1), back = row * 62 * s;
+  let p = trailPoint(back), q = trailPoint(Math.max(0, back - 30 * s));
+  let dx = q.x - p.x, dy = q.y - p.y; const d = Math.hypot(dx, dy);
+  if (d < 1){ dx = 0; dy = -1; } else { dx /= d; dy /= d; }
+  // a trail shorter than the slot (the party just walked in, or the leader has not moved yet): carry on straight back
+  // past its end, the way the trail was heading; otherwise every rear slot lands on the trail's last point, in a heap
+  const short = back - trailLen();
+  if (short > 1) p = {x: p.x - dx * short, y: p.y - dy * short};
+  const lat = side * 34 * s;
+  return {x: p.x - dy * lat, y: p.y + dx * lat * .7};                  // .7: the floor is seen at an angle
+}
+function trailLen(){
+  let acc = 0, prev = leader;
+  for (let i = trail.length - 1; i >= 0; i--){ acc += Math.hypot(trail[i].x - prev.x, trail[i].y - prev.y); prev = trail[i]; }
+  return acc;
+}
+function setFollow(on){
+  followOn = on; log(on ? "The party falls in behind." : "The others wait where they stand.");
+  if (on) trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: leader.x, y: leader.y}]);
+  else formationList().concat(followers()).forEach(f => { if (!owRemote(f)){ f.path = []; f.home = {x: f.x, y: f.y}; } });
+  exploreKey = "";
+}
 setInterval(() => {
-  if (!followOn || mode !== "explore" || !leader) return;
-  followOrder().forEach((f, i) => {
-    if (f.once || f.down || owRemote(f)) return;
-    const want = trailPoint((i + 1) * 70 * node.scale);
-    if (Math.hypot(f.x - want.x, f.y - want.y) < 40 * node.scale && !f.path.length) return;
+  if (!followOn || mode !== "explore" || !leader || leader.walkIn) return;
+  const list = formationList(), moving = leader.path.length > 0 || !!leader.kbd, s = node.scale;
+  list.forEach((f, i) => {
+    if (f.walkIn) return;
+    const slot = formationSlot(i, list.length), want = nearestWalkable(slot.x, slot.y);
+    const off = Math.hypot(f.x - want.x, f.y - want.y);
+    if (off < (moving ? 40 : 150) * s){                                 // in their slot, or near enough while the leader stands
+      if (!moving && !f.path.length && !f.follow) return;
+      if (!moving && !f.path.length){ f.follow = false; f.home = {x: f.x, y: f.y}; f.actUntil = now + 1500 + Math.random() * 3000; }
+      return;
+    }
     const last = f.path[f.path.length - 1];
-    if (!last || Math.hypot(last.x - want.x, last.y - want.y) > 30 * node.scale){ const p = findPath(f, nearestWalkable(want.x, want.y)); if (p) f.path = p; }
+    if (f.follow && last && Math.hypot(last.x - want.x, last.y - want.y) < 30 * s) return;
+    const p = findPath(f, want); if (!p || !p.length) return;
+    stopActivity(f); f.path = p; f.slow = false; f.follow = true;
+    f.onArrive = () => { f.follow = false; f.home = {x: f.x, y: f.y}; f.actUntil = now + 1500 + Math.random() * 3000; };
   });
-}, 350);
+}, 300);
 
 // Quick drink: the first potion on the belt
 function beltPotion(a){ const g = GEAR[a.id]; if (!g || !g.carried) return null; return g.carried.find(it => { const u = useOf(it); return u.kind === "heal" || u.kind === "drink"; }) || null; }
