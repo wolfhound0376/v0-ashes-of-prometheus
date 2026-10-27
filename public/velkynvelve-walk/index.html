@@ -1611,6 +1611,7 @@ function tickMusic(dt){
     }
     if (name === "ambience" && target > 0 && a.paused){ a.volume = 0; a.play().catch(() => {}); }
     if (mode === "talk" || speaking) target *= .35;
+    if (bardSong.a && !bardSong.a.paused) target *= name === "combat" ? .6 : bardSong.kind === "whistle" ? .5 : .3;   // the bard is singing (Inspire)
     a.volume = Math.max(0, Math.min(1, a.volume + (target - a.volume) * Math.min(1, dt * 1.6)));
     if (target === 0 && a.volume < .01 && !a.paused) a.pause();
   }
@@ -4635,7 +4636,7 @@ function fighterFor(a){
   return {sheet: s || {name: SHORT[a.id] || SPR[a.id].json.name, cls: "", hp: hpMax, ac: 10, speed: 30, init: 0, saves: {}, attacks: [{name: "Strike", hit: 2, dmg: "1d4", type: "bludgeoning", reach: 5}], improvised: true},
           hp, hpMax, ac: s ? s.ac : 10, conds: new Set(), slots: s && s.magic ? {...s.magic.slots} : {}, init: 0};
 }
-function startCombat(foeIds, label, opts = {}){
+function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   if (mode !== "explore") return;
   owFightBegins();
   mode = "combat"; [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); setAnim(p, "idle"); });
@@ -5438,7 +5439,7 @@ function openInspire(){
 function exploreInspire(a, t){
   a.c = a.c || fighterFor(a); a.c.inspLeft = inspLeftOf(a) - 1;
   a.face = faceOf(t.x - a.x, t.y - a.y); playOnce(a, SPR[a.id].img.perform ? "perform" : "cast", () => setAnim(a, "idle"));
-  bank("walk:bardic-inspiration", .8); singAt(a, "#ffd36a", 700); noteStream(a, t, "#ffd36a", 900);
+  bardTune(a, "explore"); singAt(a, "#ffd36a", 700); noteStream(a, t, "#ffd36a", 900);
   setTimeout(() => { addCond(t, "inspired"); t.c.inspDie = SHEETS[a.id].bardic.die;
     if (t.inspFx) t.inspFx.then(e => { if (e) e.until = now; });
     t.inspFx = spawnFx("bardicInspire", {at: t, sq: 2.1, anchor: "base", lift: -.3, tail: 4, tailLift: .55, until: now + 600000});
@@ -7180,11 +7181,49 @@ function drawNotes(){
   }
   ctx.restore();
 }
+// WHAT HE SINGS (Sam, 2026-10-27: "he should be able to sing / play on the pixel map as part of his inspiration. We
+// shouldn't have to be in camp" — and earlier: songs only without instruments, and mostly he just whistles). Inspire used to
+// play one fixed sound every time. Now each Inspire is a tune: two in three a whistle (Sam's pick, take 3), otherwise one of
+// the six UNACCOMPANIED songs from lib/bard-songs.ts, never the same song twice running, a random take where there are two.
+// Exploring, he sings the whole tune and the explore music dips under him; in a fight it is a short burst (~7 s) that fades,
+// so the round is not held up. A fight starting, or the next Inspire, stops the last tune. If a file will not load the old
+// one-shot sound plays instead, so Inspire is never silent.
+const BARD_SONG_BASE = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/sfx/bard/";
+const BARD_SONGS = ["sun-is-a-rumour", "count-the-spiders", "rothe-and-rot", "haul-away-deep-water", "down-we-went", "ashes-the-bards-song"];
+const BARD_TWO_TAKES = new Set(["sun-is-a-rumour", "count-the-spiders", "rothe-and-rot", "haul-away-deep-water", "down-we-went"]);
+const bardSong = {a: null, kind: null, last: null, fade: 0};
+function bardTune(who, where){
+  bardTuneStop();
+  let src, kind;
+  if (Math.random() < 2 / 3){ kind = "whistle"; src = `${APP ? "/" : ""}audio/bard/whistle.ogg`; }
+  else {
+    const pool = BARD_SONGS.filter(x => x !== bardSong.last), slug = pool[Math.floor(Math.random() * pool.length)];
+    kind = "song"; bardSong.last = slug; src = BARD_SONG_BASE + slug + (BARD_TWO_TAKES.has(slug) && Math.random() < .5 ? "_2" : "") + ".ogg";
+  }
+  const au = new Audio(src), full = Math.min(1, Math.max(.35, vol * 2.2));
+  au.volume = full * (kind === "whistle" ? .9 : 1);
+  Object.assign(bardSong, {a: au, kind});
+  let fellBack = false; const fallback = () => { if (fellBack) return; fellBack = true; bank("walk:bardic-inspiration", .8); bardTuneStop(); };
+  au.onerror = fallback; au.onended = () => { if (bardSong.a === au) bardTuneStop(); };
+  au.play().catch(fallback);
+  if (where === "combat"){
+    bardSong.fade = setTimeout(() => {   // a burst, not a concert: fade over a second after ~7 s
+      const v0 = au.volume, t0 = performance.now();
+      const step = (tm) => { if (bardSong.a !== au) return; const k = Math.min(1, (tm - t0) / 1000); au.volume = v0 * (1 - k); if (k < 1) requestAnimationFrame(step); else bardTuneStop(); };
+      requestAnimationFrame(step);
+    }, 7000);
+  }
+}
+function bardTuneStop(){
+  clearTimeout(bardSong.fade);
+  if (bardSong.a){ try { bardSong.a.pause(); } catch (e) {} }
+  bardSong.a = null; bardSong.kind = null;
+}
 // Bardic Inspiration: he sings to them, the notes cross to them, and they carry a golden note until they use it
 function inspire(a, t){
   const c = a.c; c.bonus = false; c.inspLeft = (c.inspLeft ?? c.sheet.bardic.uses) - 1; combatBusy = true;
   a.face = faceOf(t.x - a.x, t.y - a.y); playOnce(a, SPR[a.id].img.perform ? "perform" : "cast", () => setAnim(a, "idle"));
-  bank("walk:bardic-inspiration", .8); singAt(a, "#ffd36a", 700); noteStream(a, t, "#ffd36a", 900);
+  bardTune(a, "combat"); singAt(a, "#ffd36a", 700); noteStream(a, t, "#ffd36a", 900);
   // Sam's Bardic Inspiration sheet (2026-10-14): ribbons of gold and blue music rise around the ally and gather
   // into one glowing note. The note (the sheet's last 4 frames) stays over them while they hold the die, and
   // goes out when they spend it — so everyone can see who is carrying Scott's song.
