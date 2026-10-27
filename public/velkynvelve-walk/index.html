@@ -4842,31 +4842,62 @@ function inView(w, p){
   let da = Math.atan2(dy, dx) - faceAngle(w); da = Math.atan2(Math.sin(da), Math.cos(da)); return Math.abs(da) <= VIEW_HALF;
 }
 function passiveOf(w){ const b = FOE_BLOCKS[w.id] || {}; return b.passive ?? (b.senses && +((String(b.senses).match(/passive Perception (\d+)/i) || [])[1])) ?? 12; }
+// HOLDING STEALTH (Sam, 2026-10-26: "the sneak area of visibility should be a relatively translucent red that will
+// require a roll after a bit to maintain stealth"). The first look a watcher gets is checked against the Stealth the
+// sneak was rolled with. Staying inside its cone after that is not free: every STEALTH_HOLD ms in view the hero rolls
+// Stealth again (Small: advantage) against that watcher's passive Perception, and one miss is enough to be seen.
+// Leaving the cone resets the clock. STEALTH_HOLD is a house number (one 6-second round).
+const STEALTH_HOLD = 6000;
+function sneakSight(w, p){ return /^drow-guard/.test(w.id) && cur === PEN && !w.hostile ? gateSight(w, p) : inView(w, p); }
+function sneakWatchers(){ return watchers().concat(cur === PEN && !postsEmpty() && !state.gateOpen ? gateGuards() : []); }
+function sneakSpotted(w, who){
+  w.face = faceOf(who.x - w.x, who.y - w.y); w.alert = true; popText(w, "!", "#ff6b5a", 1.3); bank("ui/initiative_start", .35);
+  const movers = sneak.rolls.map(x => x.p), P = passiveOf(w) || 12;
+  const line = `${fname(w)} spots ${movers.length > 1 ? "the party" : fname(who)} (passive Perception ${P}).`;
+  log(`<em>${esc(line)}</em>`); toast(line, 3600); handOff(`${line} They were sneaking (Stealth ${sneak.line}).`);
+  endSneak();
+}
 setInterval(() => {
   if (sneak && (mode === "combat" || sneak.cur !== cur)){ endSneak(mode === "combat" ? "" : "A new place: the sneak is over."); return; }   // a fight or a new plate ends it
   if (!sneak || mode !== "explore" || !leader) return;
-  const movers = sneak.rolls.map(x => x.p);
-  for (const w of watchers()){
-    if (sneak.seenBy.has(w) || !movers.some(p => inView(w, p))) continue;
+  sneak.dwell = sneak.dwell || new Map();
+  const movers = sneak.rolls.map(x => x.p), seenNow = new Map();   // hero id -> the sharpest watcher seeing them
+  for (const w of sneakWatchers()){
+    const inSight = movers.filter(p => sneakSight(w, p));
+    if (!inSight.length) continue;
     const P = passiveOf(w) || 12;
-    // SRD group check: hidden from this watcher if at least half the movers beat its passive Perception
-    const beat = sneak.rolls.filter(({p, k}) => k.total + useInspiration(p, k.total, P) >= P).length;
-    sneak.seenBy.add(w);
-    if (beat * 2 >= sneak.rolls.length){ popText(w, "?", "#9ad0ff"); continue; }
-    w.face = faceOf(leader.x - w.x, leader.y - w.y); w.alert = true; popText(w, "!", "#ff6b5a", 1.3); bank("ui/initiative_start", .35);
-    const name = fname(w), line = `${name} spots ${movers.length > 1 ? "the party" : fname(leader)} (passive Perception ${P}).`;
-    log(`<em>${esc(line)}</em>`); toast(line, 3600); handOff(`${line} They were sneaking (Stealth ${sneak.line}).`);
-    endSneak(); return;
+    // 1. the first look: SRD group check, hidden from this watcher if at least half the movers beat its passive Perception
+    if (!sneak.seenBy.has(w)){
+      sneak.seenBy.add(w);
+      const beat = sneak.rolls.filter(({p, k}) => k.total + useInspiration(p, k.total, P) >= P).length;
+      if (beat * 2 < sneak.rolls.length){ sneakSpotted(w, inSight[0]); return; }
+      popText(w, "?", "#9ad0ff");
+    }
+    for (const p of inSight){ const e = seenNow.get(p.id); if (!e || P > e.P) seenNow.set(p.id, {w, P}); }
   }
+  // 2. holding it: ONE fresh roll per hero for every STEALTH_HOLD ms they stay in anyone's sight, against the sharpest
+  //    passive Perception among the watchers who can see them (one Stealth check, many observers — SRD Hiding)
+  for (const [id, {w, P}] of seenNow){
+    const p = movers.find(x => x.id === id), d = sneak.dwell.get(id);
+    if (!d){ sneak.dwell.set(id, {since: now}); continue; }
+    if (now - d.since < STEALTH_HOLD) continue;
+    d.since = now;
+    const k = mapCheck(p, "stealth", "dex"), ok = k.total + useInspiration(p, k.total, P) >= P;
+    log(`${esc(fname(p))} stays in ${esc(fname(w))}'s sight: ${rollLine(k, "stealth")} vs passive Perception ${P} — ${ok ? "still unseen" : "<b>seen</b>"}.`);
+    popText(p, `Stealth ${k.total}`, ok ? "#9ad0ff" : "#ff6b5a", 1);
+    if (!ok){ sneakSpotted(w, p); return; }
+  }
+  for (const id of [...sneak.dwell.keys()]) if (!seenNow.has(id)) sneak.dwell.delete(id);   // out of everyone's sight: the clock resets
 }, 250);
 function drawSneakCones(){
   if (!sneak || mode !== "explore") return;
-  for (const w of watchers().concat(cur === PEN && !postsEmpty() ? gateGuards() : [])){
+  // Sam, 2026-10-26: "a relatively translucent red". Brighter once that watcher has seen someone.
+  for (const w of sneakWatchers()){
     const r = VIEW_FT * ftPx(w), a0 = faceAngle(w), seen = w.alert, g = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r);
-    const col = seen ? "255,107,90" : "154,208,255";
-    g.addColorStop(0, `rgba(${col},.42)`); g.addColorStop(.7, `rgba(${col},.16)`); g.addColorStop(1, `rgba(${col},0)`);
+    const col = "214,48,40", k = seen ? 1.8 : 1;
+    g.addColorStop(0, `rgba(${col},${.24 * k})`); g.addColorStop(.7, `rgba(${col},${.1 * k})`); g.addColorStop(1, `rgba(${col},0)`);
     ctx.save(); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(w.x, w.y); ctx.arc(w.x, w.y, r, a0 - VIEW_HALF, a0 + VIEW_HALF); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = `rgba(${col},.55)`; ctx.lineWidth = 2 / (base * view.z); ctx.setLineDash([8 / (base * view.z), 6 / (base * view.z)]); ctx.stroke(); ctx.restore();
+    ctx.strokeStyle = `rgba(${col},${.38 * k})`; ctx.lineWidth = 2 / (base * view.z); ctx.setLineDash([8 / (base * view.z), 6 / (base * view.z)]); ctx.stroke(); ctx.restore();
   }
 }
 
@@ -8260,25 +8291,12 @@ function gateSight(w, h){
   }
   return true;
 }
-// SNEAKING. A hero moving under Sneak keeps the Stealth total they rolled; each guard who gets a look at them checks it
-// once against its passive Perception (drow guard 12). Beat it: a blue "?" and that guard looks straight past them —
-// even at the bars. Lose it: that guard has them, the sneak is over, and the warning comes.
+// SNEAKING. While a hero is under Sneak the stealth loop (HOLDING STEALTH) checks them against each gate guard that
+// can see them: the first look against the Stealth they rolled, then a fresh roll every STEALTH_HOLD in sight. Beat
+// it and the guard looks past them, even at the bars; lose it and the sneak ends, so from then on they are just seen.
 function gateNotices(w, h){
   if (!gateSight(w, h)) return false;
-  const roll = sneak && sneak.rolls.find(x => x.p === h);
-  if (!roll) return true;
-  sneak.gateChecked = sneak.gateChecked || new Map();
-  const key = w.id + ">" + h.id;
-  if (!sneak.gateChecked.has(key)){
-    const P = passiveOf(w) || 12, ok = roll.k.total + useInspiration(h, roll.k.total, P) >= P;
-    sneak.gateChecked.set(key, ok);
-    if (ok){ popText(w, "?", "#9ad0ff"); log(`${esc(fname(w))} looks right past ${esc(fname(h))} (Stealth ${roll.k.total} vs passive Perception ${P}).`); }
-  }
-  if (sneak.gateChecked.get(key)) return false;
-  const P = passiveOf(w) || 12;
-  log(`<em>${esc(fname(w))} spots ${esc(fname(h))} creeping toward the gate</em> (Stealth ${roll.k.total} vs passive Perception ${P}).`);
-  endSneak();
-  return true;
+  return !(sneak && sneak.rolls.some(x => x.p === h));
 }
 function gateCenter(){ const z = doorGate(); if (!z) return null; const p = z.interact.poly; return {x: (p[0][0] + p[2][0]) / 2, y: (p[0][1] + p[2][1]) / 2}; }
 function gateGuards(){ return npcs.filter(n => /^drow-guard/.test(n.id) && !n.relieved && !n.offStage && !n.body && !n.down && !n.hostile && n.alpha > .5 && actors.includes(n)); }
