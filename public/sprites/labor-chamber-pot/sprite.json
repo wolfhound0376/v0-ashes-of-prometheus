@@ -1,0 +1,21 @@
+{
+ "version": 1,
+ "name": "Chamber pot",
+ "cell": [
+  128,
+  128
+ ],
+ "pivot": [
+  64,
+  118
+ ],
+ "ppu": 230,
+ "animations": {
+  "idle": {
+   "sheet": "idle.png",
+   "frames": 1,
+   "fps": 5,
+   "loop": true
+  }
+ }
+}
