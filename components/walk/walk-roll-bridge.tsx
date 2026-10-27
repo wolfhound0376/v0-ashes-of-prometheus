@@ -199,6 +199,22 @@ export function WalkRollBridge({ frameRef }: { frameRef: RefObject<HTMLIFrameEle
       const reply = (msg: Omit<WalkActionReply, "type" | "id">) => {
         try { frame.postMessage({ type: "aop:action-reply", id: req.id, ...msg } satisfies WalkActionReply, window.location.origin) } catch { /* the map went away */ }
       }
+      // An automatic event happens on every screen at once: only the first screen to claim it speaks for the table
+      // (app/api/walk-event). A rehearsal is one screen and writes nothing, so it does not ask.
+      if (req.event && !sandbox) {
+        try {
+          const r = await fetch("/api/walk-event", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...dmHeaders() },
+            body: JSON.stringify({ sig: req.sig, text: req.text, claimId: seat.characterId, claimToken: seat.claimToken }),
+          })
+          const j = (await r.json().catch(() => null)) as { first?: boolean } | null
+          if (!r.ok || !j?.first) return                     // another screen has it, or this one may not speak
+        } catch (err) {
+          console.error("[walk-action] could not claim the event:", err)
+          return
+        }
+      }
       try {
         const res = await sendMessage(req.text, req.characterId ?? seat.characterId, mine ? seat.claimToken : null, { director: true, sandbox })
         reply({ ok: true, text: res.text, sandbox })

@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { CONFISCATION_STASH_NAME } from "@/lib/confiscation"
-import { BOOK_CONTAINERS, BODY_KIT, POCKETS, PEN_KEY_SLUG, isValuable, parseContainer, type LootEntry } from "@/lib/walk-loot"
+import { BOOK_CONTAINERS, BODY_KIT, PEN_KEY_SLUG, isValuable, parseContainer, pocketEntries, type LootEntry } from "@/lib/walk-loot"
 
 // /api/walk-loot — what is in Velkynvelve's chests, on its dead and in its guards' pockets (see lib/walk-loot.ts).
 //
@@ -64,7 +64,7 @@ type Shown = { kind: "book" | "stash"; slug?: string; rowId?: string; name: stri
 
 async function contents(db: Db, id: string, s: State): Promise<{ title: string; source: string; rows: Shown[] } | null> {
   const c = parseContainer(id); if (!c) return null
-  const book: LootEntry[] = c.kind === "book" ? BOOK_CONTAINERS[id].entries : c.kind === "body" ? BODY_KIT[c.slug!] ?? [] : POCKETS[c.slug!] ?? []
+  const book: LootEntry[] = c.kind === "book" ? BOOK_CONTAINERS[id].entries : c.kind === "body" ? BODY_KIT[c.slug!] ?? [] : pocketEntries(c.slug!)
   const cat = await itemsBySlug(db, book.map((e) => e.slug))
   const taken = s.taken[c.key] ?? {}
   const penKeyGone = Object.entries(s.taken).some(([k, v]) => k.startsWith("pocket:") && (v[PEN_KEY_SLUG] ?? 0) > 0)
@@ -73,7 +73,7 @@ async function contents(db: Db, id: string, s: State): Promise<{ title: string; 
     const left = e.qty - (taken[e.slug] ?? 0)
     if (left <= 0 || (c.kind === "pocket" && e.slug === PEN_KEY_SLUG && penKeyGone)) continue
     const it = cat.get(e.slug)
-    rows.push({ kind: "book", slug: e.slug, name: it?.name ?? e.slug.replace(/-/g, " "), qty: left, note: e.note, pixel: it?.pixel_icon_url ?? null, icon: it?.icon_url ?? null, missing: !it, slot: it?.equippable_slot ?? null })
+    rows.push({ kind: "book", slug: e.slug, name: it?.name ?? e.slug.replace(/-/g, " "), qty: left, note: e.note, pixel: it?.pixel_icon_url ?? null, icon: it?.icon_url ?? null, missing: !it, slot: c.kind === "pocket" ? null : it?.equippable_slot ?? null })   // what the book puts in a pocket is in the pocket, whatever slot the catalogue gives it
   }
   const sid = await stashId(db)
   if (sid){
@@ -86,7 +86,7 @@ async function contents(db: Db, id: string, s: State): Promise<{ title: string; 
       rows.push({ kind: "stash", rowId: r.id, name: r.name, qty: r.quantity ?? 1, owner: r.owner?.name ?? null, pixel: r.items?.pixel_icon_url ?? null, icon: r.items?.icon_url ?? r.icon_url ?? null, slot: r.items?.equippable_slot ?? null })
     }
   }
-  const title = c.kind === "book" ? BOOK_CONTAINERS[id].title : c.kind === "body" ? "The body" : POCKETS[c.slug!] ? "The guard's belt and pockets" : "A belt and pockets"
+  const title = c.kind === "book" ? BOOK_CONTAINERS[id].title : c.kind === "body" ? "The body" : /^drow-guard/.test(c.slug!) ? "The guard's belt and pockets" : "A belt and pockets"
   const source = c.kind === "book" ? BOOK_CONTAINERS[id].source : c.kind === "body" ? (BODY_KIT[c.slug!] ? "A drow warrior's kit, OotA ch.1 area 2." : "Only what the DM handed them.") : "OotA ch.1, Acquisitions: \"lift a key to the slave pen from a guard\"."
   return { title, source, rows }
 }

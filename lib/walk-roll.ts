@@ -46,8 +46,9 @@ export interface WalkAction {
   /** Where the DC comes from, for the DM console and the message to Malachar. */
   source: string
   /**
-   * The map tells Malachar the outcome itself, with what only it knows (whose pocket, which item, who saw), so the
-   * bridge sends nothing for this roll. Without it Malachar would get the same event twice. Pickpocketing.
+   * The map tells Malachar the outcome itself, with what only it knows (whose pocket, which item, who saw, the rope
+   * tearing), so the bridge sends nothing for this roll. Without it Malachar would get the same event twice.
+   * Pickpocketing, the cliff rope, pocketing on a work detail.
    */
   mapNarrates?: true
 }
@@ -74,8 +75,8 @@ const BOOK_ACTIONS = {
   "pen-gate:force": { title: "Force the gate", label: "Forcing the pen gate", check: ATHLETICS, dc: 20, source: "OotA p.18" },
   // Lift Trouble (OotA Expanded p.45, a community supplement): three rappels down the cliff below the lift on tattered
   // ropes; whoever falls lands in the web net with the giant spider. The supplement names no DC: 12 is a house number.
-  "cliff:rappel": { title: "Rappel on the rope", label: "Rappelling down the cliff below the lift", check: ATHLETICS, dc: 12, source: "OotA Expanded p.45 · DC house" },
-  "cliff:climb": { title: "Climb the rope", label: "Climbing the rope up the cliff below the lift", check: ATHLETICS, dc: 12, source: "OotA Expanded p.45 · DC house" },
+  "cliff:rappel": { title: "Rappel on the rope", label: "Rappelling down the cliff below the lift", check: ATHLETICS, dc: 12, source: "OotA Expanded p.45 · DC house", mapNarrates: true },
+  "cliff:climb": { title: "Climb the rope", label: "Climbing the rope up the cliff below the lift", check: ATHLETICS, dc: 12, source: "OotA Expanded p.45 · DC house", mapNarrates: true },
   // Hard Labor (OotA Encounters ch.1 p.12; module doc claude/Hard_Labor_Module_2026-10-26.md). The book lists the chores
   // and sets no DCs: every work and look DC below is a house number (Claude's, Sam's call).
   "labor:water": { title: "Haul the barrels", label: "Filling and hauling water barrels on a work detail", check: ATHLETICS, dc: 10, source: "OotA p.12 chore; DC house" },
@@ -87,8 +88,8 @@ const BOOK_ACTIONS = {
   // Pocketing on a detail: OotA p.19 "Acquisitions" — Sleight of Hand against an observer's passive Perception as the
   // base DC (book). The DC is the sharpest eyes in the escort: a drow, passive 12 (SRD); Jorlan, passive 14 (his row).
   // A hero inside an escort's line of sight cannot try at all (the map's rule): those are the "active observers".
-  "labor:pocket": { title: "Pocket it", label: "Pocketing something while the drow guard is not looking", check: SLEIGHT, dc: 12, source: "OotA p.19; drow passive Perception 12 (SRD)" },
-  "labor:pocket-jorlan": { title: "Pocket it", label: "Pocketing something while Jorlan is not looking", check: SLEIGHT, dc: 14, source: "OotA p.19; Jorlan's passive Perception 14" },
+  "labor:pocket": { title: "Pocket it", label: "Pocketing something while the drow guard is not looking", check: SLEIGHT, dc: 12, source: "OotA p.19; drow passive Perception 12 (SRD)", mapNarrates: true },
+  "labor:pocket-jorlan": { title: "Pocket it", label: "Pocketing something while Jorlan is not looking", check: SLEIGHT, dc: 14, source: "OotA p.19; Jorlan's passive Perception 14", mapNarrates: true },
   // Searched on suspicion (Sam: never routinely). Keeping it hidden: Sleight of Hand against the searcher's passive
   // Perception as the DC — the book's p.19 rule turned round [HOUSE].
   "labor:hide": { title: "Keep it hidden", label: "Keeping a pocketed thing hidden while a drow guard searches them", check: SLEIGHT, dc: 12, source: "after OotA p.19; drow passive Perception 12; house" },
