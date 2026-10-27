@@ -38,6 +38,8 @@ export const CHECK_CUES = {
   "notice-success": "The party's passive Perception found something at a road node",
   "navigation-fail": "The navigator lost the way (1d6 hours wandering)",
   "forced-march-fail": "Someone dropped a level of exhaustion pushing past eight hours",
+  // the painted map (public/velkynvelve-walk, via components/walk/walk-cue-bridge.tsx)
+  "count-guards": "Someone looked closer at the pen gate: the view through the bars as a guard walks past",
 } as const
 
 export type CheckCueName = keyof typeof CHECK_CUES
@@ -63,4 +65,23 @@ export function onCheckCue(fn: (cue: CheckCue) => void): () => void {
   }
   window.addEventListener(EVENT, handler)
   return () => window.removeEventListener(EVENT, handler)
+}
+
+/** The cues the painted map may ask for. A closed list: the map names a moment, it never picks film. */
+export const WALK_CHECK_CUES: ReadonlySet<CheckCueName> = new Set<CheckCueName>(["count-guards"])
+
+/**
+ * Read a check cue posted by the painted map's frame ({type: "aop:check-cue", state, scope, location}).
+ * Anything that is not a cue on WALK_CHECK_CUES is null. The caller checks origin and source.
+ */
+export function parseWalkCheckCue(data: unknown): CheckCue | null {
+  if (!data || typeof data !== "object") return null
+  const m = data as Record<string, unknown>
+  if (m.type !== "aop:check-cue") return null
+  const state = typeof m.state === "string" ? m.state.trim() : ""
+  if (!WALK_CHECK_CUES.has(state as CheckCueName)) return null
+  const scope = m.scope === "party" ? "party" : "solo"
+  const location = typeof m.location === "string" && m.location.trim() ? m.location.trim().slice(0, 80) : undefined
+  const caption = typeof m.caption === "string" && m.caption.trim() ? m.caption.trim().slice(0, 240) : undefined
+  return { state, scope, location, caption }
 }

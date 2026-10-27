@@ -29,6 +29,7 @@ import { dmHeaders } from "@/lib/dm-key"
 import { EndGameButton } from "@/components/end-game-button"
 import { DiceProvider } from "@/components/dice/dice-provider"
 import { WalkRollBridge } from "@/components/walk/walk-roll-bridge"
+import { WalkCueBridge } from "@/components/walk/walk-cue-bridge"
 import { MessagePlayerButton } from "@/components/message-player-button"
 
 const RECHECK_MS = 6000
@@ -77,6 +78,7 @@ export default function VelkynvelvePage() {
   return (
     <DiceProvider>
     <WalkRollBridge frameRef={frameRef} />
+    <WalkCueBridge frameRef={frameRef} />
     <main className="flex h-dvh flex-col bg-[#07060b] text-stone-200">
       <header className="flex items-center gap-3 border-b border-amber-900/40 px-4 py-2">
         {dm ? (

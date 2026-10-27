@@ -5251,6 +5251,19 @@ function lookCloser(what){
   log(`${fname(leader)} studies ${esc(what)}: ${rollLine(k, "investigation")}.`);
   handOff(`${fname(leader)} looks closely at ${what}. Intelligence (Investigation) ${k.total}${k.adv ? " (with help)" : ""}. What do they notice?`, true);
   toast(`Investigation ${k.total} — Malachar will say what they notice.`, 3200); exploreKey = "";
+  if (GATE_LOOK_RE.test(what)) gateLookFilm();
+}
+// LOOKING AT THE PEN GATE IS A FILMED MOMENT (Sam, 2026-10-27: "look closer at the pen gate button should trigger
+// cinematic at least once for each player"). The film is the one already shot for it: count-guards, the view through
+// the bars as a drow guard walks past (cinematic_clips f84d7f6b…, solo). The map does not play it itself: it asks the
+// page around it (components/walk/walk-cue-bridge.tsx), which hands it to the stage as a check cue (lib/check-cue.ts).
+// The server keeps the rule — once per seated character, recorded in cinematic_views — so every player sees it the
+// first time THEY look, whatever the roll, and not again on that seat. The player's "Cinematics" setting turns it off.
+// Only the browser that clicked asks, so nobody else's screen is interrupted.
+const GATE_LOOK_RE = /pen gate/i;
+function gateLookFilm(){
+  if (!APP || window.parent === window || !filmsOn()) return;
+  try { window.parent.postMessage({type: "aop:check-cue", state: "count-guards", scope: "solo", location: "Scene_1_Velkynvelve (slave pen)"}, location.origin); } catch (e) {}
 }
 function giveHelp(){ helpNext = {by: leader.id, until: now + 60000}; log(`${fname(leader)} lends a hand: the next friend's check has advantage.`); exploreKey = ""; }
 
