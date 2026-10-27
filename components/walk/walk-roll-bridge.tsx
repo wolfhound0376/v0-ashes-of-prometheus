@@ -214,8 +214,8 @@ export function WalkRollBridge({ frameRef }: { frameRef: RefObject<HTMLIFrameEle
         }
       }
       try {
-        const res = await sendMessage(req.text, req.characterId ?? seat.characterId, mine ? seat.claimToken : null, { director: true, sandbox })
-        reply({ ok: true, text: res.text, sandbox })
+        const res = await sendMessage(req.text, req.characterId ?? seat.characterId, mine ? seat.claimToken : null, { director: true, sandbox, privateReply: req.private })
+        reply({ ok: true, text: res.text, sandbox: sandbox || req.private })   // nothing reached the log: the map shows it
       } catch (err) {
         console.error("[walk-action] Malachar did not take the hand-off:", err)
         const named = err as { playerFacing?: boolean; message?: string }

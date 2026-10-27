@@ -5,7 +5,7 @@ const ok = { type: "aop:action", id: "a1", text: "Fifi stops at the gate and lis
 
 describe("parseWalkActionRequest", () => {
   it("accepts a clicked hand-off", () => {
-    expect(parseWalkActionRequest(ok)).toEqual({ type: "aop:action", id: "a1", text: ok.text, characterId: "c1", event: false, sig: null })
+    expect(parseWalkActionRequest(ok)).toEqual({ type: "aop:action", id: "a1", text: ok.text, characterId: "c1", event: false, sig: null, private: false })
   })
   it("ignores a hand-off with neither flag", () => {
     expect(parseWalkActionRequest({ ...ok, ask: undefined })).toBeNull()
@@ -39,5 +39,14 @@ describe("automatic events", () => {
   })
   it("treats a clicked hand-off as a click even if it also carries a fingerprint", () => {
     expect(parseWalkActionRequest({ ...ev, ask: true })).toMatchObject({ event: false })
+  })
+})
+
+describe("private turns (Sam, 2026-10-01: a prayer is private unless spoken aloud)", () => {
+  it("keeps a clicked silent prayer private", () => {
+    expect(parseWalkActionRequest({ ...ok, private: true })?.private).toBe(true)
+  })
+  it("never makes an automatic event private", () => {
+    expect(parseWalkActionRequest({ type: "aop:action", id: "a3", text: "x", event: true, sig: "ev-abcd1", private: true })?.private).toBe(false)
   })
 })
