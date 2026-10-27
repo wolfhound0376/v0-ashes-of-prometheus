@@ -200,3 +200,48 @@ describe("caught, searched, defying (PR 4)", () => {
     expect(WALK_ACTIONS["labor:hide-jorlan"].dc).toBe(14)
   })
 })
+
+describe("props, poses, voice, music (assets)", () => {
+  const SPRITES = join(__dirname, "..", "public", "sprites")
+  const AUDIO = join(__dirname, "..", "public", "audio", "labor")
+  const exists = (p: string) => { try { readFileSync(p); return true } catch { return false } }
+
+  it("gives every task a pose and a prop list", () => {
+    for (const t of TASKS) {
+      expect(["carry", "scrub"], t.key).toContain((W.WORK_POSE as Record<string, string>)[t.key])
+      expect(Array.isArray((W.STATION_PROPS as Record<string, string[]>)[t.key]), t.key).toBe(true)
+    }
+  })
+
+  it("has a sprite for every prop, and room for every station's props", () => {
+    for (const list of Object.values(W.STATION_PROPS) as string[][]) {
+      expect(list.length).toBeLessThanOrEqual(W.PROP_OFFSETS.length)
+      for (const p of list) expect(exists(join(SPRITES, p, "sprite.json")), p).toBe(true)
+    }
+  })
+
+  it("gave the five main players the three labor sheets", () => {
+    for (const h of ["kenta", "freia", "scott", "samson", "lynkes"]) {
+      const m = JSON.parse(readFileSync(join(SPRITES, h, "sprite.json"), "utf8"))
+      for (const a of ["scrub", "heave", "carry"]) {
+        expect(m.animations[a], `${h} ${a}`).toBeTruthy()
+        expect(exists(join(SPRITES, h, `${a}.png`)), `${h} ${a}.png`).toBe(true)
+      }
+      expect(m.animations.heave.loop).toBe(false)
+      expect(m.animations.carry.loop).toBe(true)
+    }
+  })
+
+  it("has a clip for each of the quaggoth's lines, and the takes alternate", () => {
+    for (const l of W.LINES.quaggoth) {
+      expect(W.quaggothClip(l, 0), l).toBeTruthy()
+      expect(W.quaggothClip(l, 0)).not.toBe(W.quaggothClip(l, 1))
+      for (const c of W.QUAGGOTH_CLIPS[l as keyof typeof W.QUAGGOTH_CLIPS]) expect(exists(join(AUDIO, `${c}.mp3`)), c).toBe(true)
+    }
+    expect(W.quaggothClip("Something it never says.", 0)).toBeNull()
+  })
+
+  it("has the work song", () => {
+    expect(exists(join(AUDIO, `${W.WORK_SONG}.mp3`))).toBe(true)
+  })
+})

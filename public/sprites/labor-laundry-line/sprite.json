@@ -1,0 +1,21 @@
+{
+ "version": 1,
+ "name": "Laundry line",
+ "cell": [
+  192,
+  128
+ ],
+ "pivot": [
+  96,
+  98
+ ],
+ "ppu": 110,
+ "animations": {
+  "idle": {
+   "sheet": "idle.png",
+   "frames": 1,
+   "fps": 5,
+   "loop": true
+  }
+ }
+}

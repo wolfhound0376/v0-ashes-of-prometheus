@@ -261,9 +261,11 @@ N = ['ront', 'eldeth', 'derendil', 'sarith', 'buppido', 'jimjar', 'topsy', 'turv
 if os.path.exists(os.path.join(SPR, 'liana', 'sprite.json')): N.append('liana')
 F = ['quaggoth', 'giant-spider', 'ghost-male', 'drow-elite-warrior', 'ilvara', 'shoor', 'asha', 'drow-lizard-rider']   # drow-lizard-rider: the mounted guard on the cliff below the lift (Sam, 2026-10-26); ghost-male: the bhut under Old Thessaly (Sam, 2026-10-24); the officers: Sam's playtest, 2026-10-24 (shoor and asha have idle sheets only)
 V = ['giant-rat']  # vermin: set dressing, idle sheet only
+# Hard Labor's station props (lib/labor-walk.mjs STATION_PROPS): PixelLab objects, one idle frame each
+LP = sorted(d for d in os.listdir(SPR) if d.startswith('labor-') and os.path.exists(os.path.join(SPR, d, 'sprite.json')))
 
 meta = {}
-for i in P + N + F + V:
+for i in P + N + F + V + LP:
     # 'jump' is asked for on both sides now that heroes long-jump too (arcTo/planLeap in the
     # page). A slug whose sprite has no jump.png is filtered out on the next line and falls
     # back to the walk sheet in the air, so asking for it early costs nothing.
@@ -271,6 +273,9 @@ for i in P + N + F + V:
     # the four allies fight beside the party (Sam, 2026-10-15), so they need their combat sheets too:
     # without 'attack' a swing has no hit frame and the roll never happens
     if i in ['ront', 'eldeth', 'derendil', 'sarith']: sh += ['sit', 'eat', 'sleep', 'attack', 'hurt', 'dead', 'dodge']
+    # Hard Labor's poses (scripts/sprites/add-labor-poses.py): the five main players have them; a sprite without
+    # them is filtered out below and works in its idle
+    if i in P: sh += ['scrub', 'heave', 'carry']
     if i == 'scott': sh.append('perform')
     if i in ['jorlan', 'drow-guard-male', 'drow-guard-female']: sh += ['attack', 'dodge', 'hurt', 'dead']
     j = json.load(open(os.path.join(SPR, i, 'sprite.json')))

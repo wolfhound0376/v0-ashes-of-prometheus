@@ -1113,12 +1113,12 @@ function draw(){
   for (const c of node.chains || []) drawChain(c);
   drawCombatGround(); drawStuckGround(); drawSurgeonGround();
   if (mode === "combat"){ drawIcePatches(); drawFxLayer(true); tickIce(); }
-  const list = actors.concat(vermin).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);
+  const list = actors.concat(vermin, laborProps).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);   // laborProps: Hard Labor's station props
   const cloudQ = mode === "combat" || clouds.length ? cloudPuffs() : [];   // the poison cloud, in depth order among the figures
   for (const a of list){
     while (cloudQ.length && cloudQ[0].y <= a.y) drawPuff(cloudQ.shift());
     const m = SPR[a.id].json, sc = actorScale(a), [cw, ch] = m.cell, [px, py] = m.pivot;
-    if (a.fall || a.fallIn) {} else { ctx.globalAlpha = a.alpha * .45; ctx.fillStyle = "#000";
+    if (a.fall || a.fallIn || a.prop) {} else { ctx.globalAlpha = a.alpha * .45; ctx.fillStyle = "#000";
     ctx.beginPath(); ctx.ellipse(a.x, a.y, 26 * sc * (cw / 128), 9 * sc * (cw / 128), 0, 0, Math.PI * 2); ctx.fill(); }
     if (a === leader && mode === "explore"){
       ctx.globalAlpha = .55 + .2 * Math.sin(now / 300); ctx.strokeStyle = "#e8a24a"; ctx.lineWidth = 2 / (base * view.z);
@@ -1782,6 +1782,7 @@ function watchPost(n){
   if (total >= w.passive){ log(`${fname(leader)} slips past the watch: Stealth ${r} + ${mod} = ${total} against their passive ${w.passive}.`); return; }
   state.seen = state.seen || {}; state.seen[n] = true;
   for (const a of seen){ a.face = faceOf(leader.x - a.x, leader.y - a.y); a.alert = true; }
+  setTimeout(() => guardsReact(seen.find(isGuard) || seen[0], leader, "at the watch post"), 600);
   log(`<em>${esc(w.label || "The sentries have seen you.")}</em> Stealth ${r} + ${mod} = ${total} against their passive ${w.passive}.`);
   reportSituation({sub_location: SPEC[n].slug, sub_label: SPEC[n].name, party_present: partyPresent(), event: "seen_by_watch"});
 }
@@ -3961,10 +3962,75 @@ function sneakSpotted(w, who){
   w.face = faceOf(who.x - w.x, who.y - w.y); w.alert = true; popText(w, "!", "#ff6b5a", 1.3); bank("ui/initiative_start", .35);
   const movers = sneak.rolls.map(x => x.p), P = passiveOf(w) || 12;
   const line = `${fname(w)} spots ${movers.length > 1 ? "the party" : fname(who)} (passive Perception ${P}).`;
-  log(`<em>${esc(line)}</em>`); toast(line, 3600); handOff(`${line} They were sneaking (Stealth ${sneak.line}).`);
+  log(`<em>${esc(line)}</em>`); toast(line, 3600);
+  const why = "sneaking";
   endSneak();
+  if (!guardsReact(w, who, why) && APP && !(cur === PEN && behindBars(who))) handOff(`${line} They were sneaking.`);
+}
+// ---------- SEEN BY THE GUARDS: they attack, unless someone who matters is with them ----------
+// Sam, 2026-10-26: "If a guard spots you they attack you. If guards spot you on any plate they all attack you on the
+// spot unless you are escorted. Ilvara, Jorlan, Surgeon, will talk to you and then based on gravity/conversation/
+// context they may or may not attack you. Additionally, if special characters are with guards this also applies.
+// This will usually spark a conversation."
+//   ESCORTED   a work detail (laborLive) — the guards walking you are why you are out. Nothing happens.
+//   SPECIAL    Ilvara, Jorlan or Liana on the plate: the guards freeze on the hero, the special one turns and speaks
+//              first (npc-opener, told what just happened), and the talk goes to Malachar, who decides from gravity,
+//              the conversation and context whether it becomes [COMBAT_START:].
+//   OTHERWISE  every guard on the plate attacks. In the game the fight is opened through the shared combat flag
+//              (/api/walk-spotted), so every seat at the table rolls into the same fight; the preview opens it here.
+// THE PEN is the one exception: a prisoner inside the pen with the gate shut is behind bars — that is the warning and
+// the volleys (Sam, 2026-10-25, "Remove formal fight. Volleys only."). Out on the landing, it is this rule.
+const SPECIAL_WATCH = ["ilvara", "jorlan", "liana"];
+const isGuard = n => /^drow-guard|^drow-elite|^drow-warrior|^drow-soldier|^drow-mage|^drow-priestess/.test(n.id);
+let guardsAlarm = null;                                       // {cur, until}: one reaction per plate at a time
+function guardsOnPlate(){ return npcs.filter(n => isGuard(n) && !n.offStage && !n.body && !n.down && !n.relieved && n.alpha > .5 && actors.includes(n)); }
+function specialOnPlate(){ return npcs.find(n => SPECIAL_WATCH.includes(n.id) && !n.offStage && !n.body && !n.down && n.alpha > .5 && actors.includes(n)) || null; }
+function behindBars(h){ return cur === PEN && !onBalcony(h) && !(h.x != null && inPoly((doorGate() || {interact: {poly: [[0,0]]}}).interact.poly, h.x, h.y) && state.gateOpen); }
+function guardsReact(w, h, why){
+  if (!h || mode !== "explore" || laborLive() || surgeon || timeStopped) return false;
+  if (cur === PEN && behindBars(h)) return false;              // the pen's own rule: warning, then volleys
+  if (guardsAlarm && guardsAlarm.cur === cur && now < guardsAlarm.until) return false;
+  guardsAlarm = {cur, until: now + 30000};
+  if (sneak) endSneak();
+  const guards = guardsOnPlate(), sp = specialOnPlate();
+  for (const g of guards){ g.path = []; g.actUntil = now + 60000; g.scanAt = now + 60000; faceTo(g, h); }
+  if (w) popText(w, "!", "#ff6b5a", 1.4);
+  h.path = [];
+  const who = fname(h), where = node.name;
+  if (sp){
+    const spName = SHORT[sp.id] || SPR[sp.id].json.name;
+    stopActivity(sp); sp.path = []; faceTo(sp, h);
+    sp.talk = true; delete state.talked[sp.id]; delete state.declined[sp.id]; setTimeout(() => { sp.talkSituation = null; }, 60000);
+    sp.talkSituation = `${who}, a prisoner, was just caught ${why} in ${where} by the guards; ${spName} is there with them. The guards have crossbows on ${who} and wait for ${spName}'s word.`;
+    log(`<em>${esc(fname(w || guards[0] || sp))} has ${esc(who)} — and ${esc(spName)} is here.</em> ${esc(spName)} speaks first.`);
+    if (APP) handOff(`${who} was caught ${why} in ${where}. The drow guards have them covered, but ${spName} is present and speaks first. Play ${spName}: by gravity, ${spName}'s relationship with ${who} and what is said, ${spName} decides whether the guards attack. If anyone attacks, emit [COMBAT_START: ...] naming every hostile creature here.`);
+    openTalk(sp);
+    return true;
+  }
+  const foes = guards.length ? guards : (w ? [w] : []);
+  if (!foes.length) return false;
+  const label = `${fname(w || foes[0])} sees ${who}${why ? ` ${why}` : ""} — the guards attack!`;
+  log(`<em>${esc(label)}</em>`);
+  if (!APP){ foes.forEach(f => { f.hostile = true; }); startCombat(foes, label); return true; }
+  const body = {area: where, label, seenHero: who, foes: foes.map(f => ({name: (FOE_BLOCKS[f.id] || {}).name || SPR[f.id].json.name, aliases: [f.id], hp: (FOE_BLOCKS[f.id] || {}).hp ?? null, hpMax: (FOE_BLOCKS[f.id] || {}).hp ?? null}))};
+  try { body.claimId = localStorage.getItem("aop_character_id") || undefined; body.claimToken = localStorage.getItem("aop_claim_token") || undefined; } catch (e) {}
+  fetch("/api/walk-spotted", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)})
+    .then(r => r.json().then(j => ({r, j}))).then(({r, j}) => {
+      if (!r.ok || !j.flag){ toast(j.error || "The game did not answer.", 3200); guardsAlarm = null; return; }
+      foes.forEach(f => { f.hostile = true; });
+      followCombatFlag(j.flag);                                // this seat opens it now; the others on their next poll
+      if (APP) handOff(`${label} (${where}). Combat has begun.`);
+    }).catch(() => { toast("The game did not answer.", 3200); guardsAlarm = null; });
+  return true;
 }
 setInterval(() => {
+  if (!sneak && mode === "explore" && leader && !state.cleared[cur] && !state.ambushOff && !laborLive()){
+    const ws = sneakWatchers().filter(isGuard);
+    outer: for (const w of ws) for (const h of gateHeroes()){
+      if (cur === PEN && behindBars(h)) continue;
+      if (sneakSight(w, h) || Math.hypot(w.x - h.x, w.y - h.y) < 10 * ftPx(w)){ guardsReact(w, h, cur === PEN ? "out of the pen" : "where they should not be"); break outer; }
+    }
+  }
   if (sneak && (mode === "combat" || sneak.cur !== cur)){ endSneak(mode === "combat" ? "" : "A new place: the sneak is over."); return; }   // a fight or a new plate ends it
   if (!sneak || mode !== "explore" || !leader) return;
   sneak.dwell = sneak.dwell || new Map();
@@ -6276,7 +6342,28 @@ function escortSays(a, line, ms = 5200){
   // the voice says what the bubble says: a hero without Elvish hears gibberish, not the English underneath
   if (voicesOn !== false) speak(escortVoice(a.id), said);
 }
-function quaggothSays(line){ const q = escortBeast(); if (q) bark(q, heardText(line, "Undercommon"), 4200, {lang: "Undercommon"}); }
+function quaggothSays(line){
+  const q = escortBeast(); if (!q) return;
+  const heard = heardText(line, "Undercommon");
+  bark(q, heard, 4200, {lang: "Undercommon"});
+  if (voicesOn !== false) quaggothVoice(line, heard === line).catch(e => console.warn("quaggoth voice:", e));
+}
+// Its voice (Sam, 2026-10-26: "Q1 and 2"): one pre-rendered clip per line, the two takes alternating
+// (lib/labor-walk.mjs QUAGGOTH_CLIPS). It speaks Undercommon: a hero who does not hears the same growl through a
+// low-pass, the menace without the words, the way a hero without Elvish hears the drow's gibberish.
+let quaggothSpoke = 0;
+const quaggothBufs = {};
+async function quaggothVoice(line, understood){
+  const clip = quaggothClip(line, quaggothSpoke++); if (!clip) return;
+  const ctx = audioCtx(); if (ctx.state !== "running") await Promise.race([ctx.resume().catch(() => {}), wait(1500)]);
+  if (ctx.state !== "running") return;
+  if (!quaggothBufs[clip]){ const r = await fetch(`${APP ? "/" : ""}audio/labor/${clip}.mp3`); if (!r.ok) return; quaggothBufs[clip] = await ctx.decodeAudioData(await r.arrayBuffer()); }
+  const src = ctx.createBufferSource(); src.buffer = quaggothBufs[clip];
+  const gain = ctx.createGain(); gain.gain.value = .9;
+  if (understood) src.connect(gain);
+  else { const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 420; lp.Q.value = .7; src.connect(lp); lp.connect(gain); }
+  gain.connect(ctx.destination); src.start();
+}
 
 // 1. the call: the escort comes over the bridge to the gate and calls the detail out
 // ---------- HARD LABOR: the escort comes into the pen and takes the detail out ----------
@@ -6365,7 +6452,8 @@ function playFilm(name){
     const key = e => { if (e.key === "Escape" || e.key === " " || e.key === "Enter"){ e.preventDefault(); e.stopPropagation(); end(); } };
     addEventListener("keydown", key, true);
     wrap.onclick = end; v.onended = end; v.onerror = end;
-    setTimeout(end, 9000);                                   // never strand the table behind a film that will not play
+    let guard = setTimeout(end, 9000);                       // never strand the table behind a film that will not play
+    v.onloadedmetadata = () => { if (isFinite(v.duration)){ clearTimeout(guard); guard = setTimeout(end, v.duration * 1000 + 2500); } };   // a longer film (the web, 10 s) gets its full length
     v.play().catch(() => {});
   });
 }
@@ -6520,6 +6608,7 @@ async function laborFinish(opts = {}){
   laborEnds(false);
 }
 function laborEnds(aborted){
+  laborPropsClear();
   if (labor) laborPlayed[`${labor.id}:end`] = true;          // once per detail, in the browser that walked them too
   laborDriving = false;
   if (cur === PEN){
@@ -6533,17 +6622,21 @@ function laborEnds(aborted){
 function laborJoins(){ const comp = companyNow(), ids = laborNpcs().filter(id => npcs.some(n => n.id === id && !n.down && !n.body && !n.offStage) && !comp.includes(id)); comp.push(...ids); return ids; }
 function laborOnEnter(n, from){
   if (n === PEN && from !== PEN) laborPenArrival();          // PR 4: the downed hero, the surgeon, the talk
+  laborPropsClear();
   if (!laborLive()) return;
   // Sam, 2026-10-26: "just the escort" — while a detail is on a plate, the guards who stand there (#923: two on each
   // labor plate, the lizard rider on the cliff) step off; they are back at their posts when no detail is there
   if (n !== PEN) for (const a of npcs) if (!a.escort && a.hostile && /^drow-guard|^drow-lizard-rider|^drow-elite/.test(a.id) && !a.offStage) hideOffStage(a);
   if (n !== PEN || labor.status === "returning") spawnEscort(leader, false);   // back in the pen: they lock the gate behind you
   if (String(n) === String(detailRoute(SPEC, labor.task).plate) && (labor.status === "escorting" || labor.status === "working")) laborAtWork();
+  if (atWorkPlate()) laborPropsSet();
   renderLaborBar();
 }
 // the bar: what the party is doing, and (for whoever walks them, or the DM) the end of the shift
 const TASKS_LABEL = {water: "fill and haul water barrels", lift: "operate the lift", clean: "clean the barracks", pots: "empty the chamber pots", kitchen: "food preparation and service", dishes: "wash dishes", laundry: "laundry", rocks: "stack rocks", rope: "coil rope", supplies: "organize supplies", "lift-trouble": "Lift Trouble", "quaggoth-hair": "braid quaggoth hair"};
 function renderLaborBar(){
+  laborMusic();
+  if (atWorkPlate() && !laborProps.length && (STATION_PROPS[labor.task] || []).length) laborPropsSet();   // arrived escorting, now working
   const bar = $("laborBar"); if (!bar) return;
   if (!laborLive() || labor.status === "called"){ bar.hidden = true; return; }
   const at = String(cur) === String(detailRoute(SPEC, labor.task).plate);
@@ -6590,7 +6683,66 @@ async function laborDoWork(){
   else if (Math.random() < .5) escortSays(d, pickLine(WORK_LINES.progress, Math.random), 3000);
   log(step.done ? `<b>${esc(fname(h))}</b> finishes their share of the work.` : step.redo ? `<b>${esc(fname(h))}</b> is made to do it again.` : `<b>${esc(fname(h))}</b> works on.`);
   laborEvent("work", {slug: h.id, success: ok, total}); if (step.redo){ laborEvent("redo", {slug: h.id}); playFilm("redo"); }
+  laborPerform(h);
   renderLaborBar();
+}
+// ---------- HARD LABOR: what it looks and sounds like (assets) ----------
+// Sam, 2026-10-26: "Start on props, poses, speech, and music" → "wire it all". The station's props stand beside the
+// work spot while the party works it (STATION_PROPS); pressing Work, the hero walks to the first of them and does the
+// chore with their body (WORK_POSE: `scrub` kneels and works the floor; `carry` heaves a sack up and walks it to the
+// drop and back); the quaggoth speaks in its own voice (quaggothSays); the work song plays while the detail is out.
+// Only this browser's own hero performs; the others see them walk to the drop and back (positions sync, poses not).
+let laborProps = [];
+function laborPropsClear(){ laborProps = []; }
+function laborPropsSet(){
+  laborPropsClear();
+  if (!atWorkPlate()) return;
+  const list = (STATION_PROPS[labor.task] || []).filter(id => SPR[id]);
+  if (!list.length) return;
+  const at = nearestWalkable(centroid.x, centroid.y);
+  list.forEach((id, i) => {
+    const [ox, oy] = PROP_OFFSETS[i] || [0, 0], p = nearestWalkable(at.x + ox * node.scale, at.y + oy * node.scale);
+    laborProps.push(mkActor(id, p.x, p.y, "prop", {prop: true, static: true}));
+  });
+}
+function laborGo(a, p){
+  return new Promise(res => {
+    const path = findPath(a, p); if (!path || !path.length){ res(); return; }
+    let done = false; const end = () => { if (!done){ done = true; res(); } };
+    a.path = path; a.onArrive = end; setTimeout(end, 9000);
+  });
+}
+const hasSheet = (a, n) => !!(SPR[a.id] && SPR[a.id].json.animations[n] && SPR[a.id].img[n]);
+async function laborPerform(h){
+  if (!labor || h.performing) return;
+  h.performing = true;
+  try {
+    const prop = laborProps[0];
+    if (prop) await laborGo(h, nearestWalkable(prop.x - 50 * node.scale, prop.y + 20 * node.scale));
+    if (prop) h.face = faceOf(prop.x - h.x, prop.y - h.y);
+    const pose = WORK_POSE[labor && labor.task];
+    if (pose === "scrub" && hasSheet(h, "scrub")){
+      h.path = []; setAnim(h, "scrub"); h.waitUntil = now + SCRUB_MS;
+      await wait(SCRUB_MS);
+      if (h.anim === "scrub") setAnim(h, "idle");
+    } else if (pose === "carry" && hasSheet(h, "carry")){
+      if (hasSheet(h, "heave")) await new Promise(r => playOnce(h, "heave", r));
+      const from = {x: h.x, y: h.y}, away = prop ? Math.sign(h.x - prop.x) || 1 : 1;
+      h.walkAs = "carry";
+      await laborGo(h, nearestWalkable(h.x + away * CARRY_PX * node.scale, h.y + 30 * node.scale));
+      await wait(500);
+      await laborGo(h, nearestWalkable(from.x, from.y));
+      h.walkAs = null; setAnim(h, "idle");
+    }
+  } finally { h.performing = false; h.walkAs = null; }
+}
+// the work song: its own player beside explore/combat/ambience, so tickMusic fades it like the others
+music.labor = new Audio(`${APP ? "/" : ""}audio/labor/${WORK_SONG}.mp3`); music.labor.loop = true; music.labor.preload = "none";
+LEVEL.labor = .5;
+function laborMusic(){
+  const out = laborLive() && labor.status !== "called" && mode === "explore";
+  if (out && track === "explore") setTrack("labor");
+  else if (!out && track === "labor") setTrack("explore");
 }
 async function laborDoLook(){
   const h = laborHero(); if (!h || !atWorkPlate()) return;
@@ -7537,7 +7689,7 @@ async function npcOpening(npc){
   if (APP){
     try {
       const res = await fetch("/api/npc-opener", {method: "POST", headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({npcName: nm, brief: BRIEF[npc.id] || nm, area: node.name, pc: {...pc, name: PLAYS_AS[leader.id] || pc.name}})});
+        body: JSON.stringify({npcName: nm, brief: BRIEF[npc.id] || nm, area: node.name, situation: npc.talkSituation || undefined, pc: {...pc, name: PLAYS_AS[leader.id] || pc.name}})});
       const r = await res.json();
       if (r && typeof r.line === "string" && r.line.trim()) return {narration: String(r.narration || fallback.narration), line: r.line.trim(), lang: r.lang || null};
     } catch (e) {}
@@ -7942,6 +8094,7 @@ async function followCombatFlag(flag){
       if (await loadSpriteManifest(foe.slug)){ creatureArrives({slug: foe.slug, name: foe.name, hp: foe.hp, hpMax: foe.hpMax}); const f = creatures.get(foe.slug); if (f){ f.path = []; f.waitUntil = 0; picked.push(f); } }
       else log(`<em>${esc(foe.name)}</em> joins the fight but has no sprite yet; the DM core still counts it.`);
     }
+    for (let i = picked.length - 1; i >= 0; i--) if (picked.indexOf(picked[i]) !== i) picked.splice(i, 1);   // two "Drow guard"s name the same two
     if (!picked.length){ log(`<em>${esc(flag.label || "Initiative!")}</em> Nobody he named is on this plate.`); return; }
     for (const f of picked){ f.hp = f.hp ?? (flag.foes.find(x => x.slug === f.id) || {}).hp; }
     startCombat.flagMood = flag.music || null;          // Malachar may name the mood; otherwise the odds decide
@@ -9051,7 +9204,7 @@ function tickFootsteps(){
   if (!actors.length) return;
   const r = stage.getBoundingClientRect(), s = base * view.z;
   for (const a of actors){
-    if (a.anim !== "walk" || a.down || a.alpha < .5 || a.climbing){ a.stride = -1; continue; }
+    if ((a.anim !== "walk" && a.anim !== "carry") || a.down || a.alpha < .5 || a.climbing){ a.stride = -1; continue; }
     const sx = a.x * s + view.tx, sy = a.y * s + view.ty;            // on screen, or it makes no sound
     if (sx < -40 || sy < -40 || sx > r.width + 40 || sy > r.height + 40){ a.stride = -1; continue; }
     const an = SPR[a.id].json.animations.walk; if (!an) continue;
@@ -9079,7 +9232,7 @@ function step(a, dt, speed){
   }
   if (a.fadeIn){ a.alpha = Math.min(1, a.alpha + dt * 2.5); if (a.alpha >= 1) a.fadeIn = false; }
   if (a.waitUntil && now < a.waitUntil) return;
-  if (!a.path.length){ if (a.anim === "walk" && !a.kbd) setAnim(a, "idle"); return; }
+  if (!a.path.length){ if ((a.anim === "walk" || a.anim === "carry") && !a.kbd) setAnim(a, "idle"); return; }
   if (a.path[0].jump){                  // through a doorway: reappear on the far side
     const q = a.path.shift(); a.x = q.x; a.y = q.y; if (q.s != null) a.big = q.s; a.fadeIn = true;
     if (!a.path.length){ setAnim(a, "idle"); const cb = a.onArrive; a.onArrive = null; cb && cb(); }
@@ -9095,7 +9248,7 @@ function step(a, dt, speed){
   else if (now - a.prog.t > 350 && !p.jump){ a.prog = null; a.path = []; setAnim(a, "idle"); const cb = a.onArrive; a.onArrive = null; cb && cb(); return; }
   if (d <= sp){ a.x = p.x; a.y = p.y; a.path.shift(); a.prog = null; if (p.out) a.alpha = 0;
     if (!a.path.length){ setAnim(a, "idle"); const cb = a.onArrive; a.onArrive = null; cb && cb(); } }
-  else { a.x += dx / d * sp; a.y += dy / d * sp; a.face = faceOf(dx, dy); setAnim(a, "walk"); }
+  else { a.x += dx / d * sp; a.y += dy / d * sp; a.face = faceOf(dx, dy); setAnim(a, a.walkAs && hasSheet(a, a.walkAs) ? a.walkAs : "walk"); }   // walkAs: Hard Labor's carry
 }
 function update(dt){
   if (cbt && poisonZones.length) tickPoisonZones();
