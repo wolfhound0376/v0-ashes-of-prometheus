@@ -1113,12 +1113,12 @@ function draw(){
   for (const c of node.chains || []) drawChain(c);
   drawCombatGround(); drawStuckGround(); drawSurgeonGround();
   if (mode === "combat"){ drawIcePatches(); drawFxLayer(true); tickIce(); }
-  const list = actors.concat(vermin).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);
+  const list = actors.concat(vermin, laborProps).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);   // laborProps: Hard Labor's station props
   const cloudQ = mode === "combat" || clouds.length ? cloudPuffs() : [];   // the poison cloud, in depth order among the figures
   for (const a of list){
     while (cloudQ.length && cloudQ[0].y <= a.y) drawPuff(cloudQ.shift());
     const m = SPR[a.id].json, sc = actorScale(a), [cw, ch] = m.cell, [px, py] = m.pivot;
-    if (a.fall || a.fallIn) {} else { ctx.globalAlpha = a.alpha * .45; ctx.fillStyle = "#000";
+    if (a.fall || a.fallIn || a.prop) {} else { ctx.globalAlpha = a.alpha * .45; ctx.fillStyle = "#000";
     ctx.beginPath(); ctx.ellipse(a.x, a.y, 26 * sc * (cw / 128), 9 * sc * (cw / 128), 0, 0, Math.PI * 2); ctx.fill(); }
     if (a === leader && mode === "explore"){
       ctx.globalAlpha = .55 + .2 * Math.sin(now / 300); ctx.strokeStyle = "#e8a24a"; ctx.lineWidth = 2 / (base * view.z);
@@ -6334,7 +6334,28 @@ function escortSays(a, line, ms = 5200){
   // the voice says what the bubble says: a hero without Elvish hears gibberish, not the English underneath
   if (voicesOn !== false) speak(escortVoice(a.id), said);
 }
-function quaggothSays(line){ const q = escortBeast(); if (q) bark(q, heardText(line, "Undercommon"), 4200, {lang: "Undercommon"}); }
+function quaggothSays(line){
+  const q = escortBeast(); if (!q) return;
+  const heard = heardText(line, "Undercommon");
+  bark(q, heard, 4200, {lang: "Undercommon"});
+  if (voicesOn !== false) quaggothVoice(line, heard === line).catch(e => console.warn("quaggoth voice:", e));
+}
+// Its voice (Sam, 2026-10-26: "Q1 and 2"): one pre-rendered clip per line, the two takes alternating
+// (lib/labor-walk.mjs QUAGGOTH_CLIPS). It speaks Undercommon: a hero who does not hears the same growl through a
+// low-pass, the menace without the words, the way a hero without Elvish hears the drow's gibberish.
+let quaggothSpoke = 0;
+const quaggothBufs = {};
+async function quaggothVoice(line, understood){
+  const clip = quaggothClip(line, quaggothSpoke++); if (!clip) return;
+  const ctx = audioCtx(); if (ctx.state !== "running") await Promise.race([ctx.resume().catch(() => {}), wait(1500)]);
+  if (ctx.state !== "running") return;
+  if (!quaggothBufs[clip]){ const r = await fetch(`${APP ? "/" : ""}audio/labor/${clip}.mp3`); if (!r.ok) return; quaggothBufs[clip] = await ctx.decodeAudioData(await r.arrayBuffer()); }
+  const src = ctx.createBufferSource(); src.buffer = quaggothBufs[clip];
+  const gain = ctx.createGain(); gain.gain.value = .9;
+  if (understood) src.connect(gain);
+  else { const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 420; lp.Q.value = .7; src.connect(lp); lp.connect(gain); }
+  gain.connect(ctx.destination); src.start();
+}
 
 // 1. the call: the escort comes over the bridge to the gate and calls the detail out
 // ---------- HARD LABOR: the escort comes into the pen and takes the detail out ----------
@@ -6564,6 +6585,7 @@ async function laborFinish(opts = {}){
   laborEnds(false);
 }
 function laborEnds(aborted){
+  laborPropsClear();
   if (labor) laborPlayed[`${labor.id}:end`] = true;          // once per detail, in the browser that walked them too
   laborDriving = false;
   if (cur === PEN){
@@ -6577,17 +6599,21 @@ function laborEnds(aborted){
 function laborJoins(){ const comp = companyNow(), ids = laborNpcs().filter(id => npcs.some(n => n.id === id && !n.down && !n.body && !n.offStage) && !comp.includes(id)); comp.push(...ids); return ids; }
 function laborOnEnter(n, from){
   if (n === PEN && from !== PEN) laborPenArrival();          // PR 4: the downed hero, the surgeon, the talk
+  laborPropsClear();
   if (!laborLive()) return;
   // Sam, 2026-10-26: "just the escort" — while a detail is on a plate, the guards who stand there (#923: two on each
   // labor plate, the lizard rider on the cliff) step off; they are back at their posts when no detail is there
   if (n !== PEN) for (const a of npcs) if (!a.escort && a.hostile && /^drow-guard|^drow-lizard-rider|^drow-elite/.test(a.id) && !a.offStage) hideOffStage(a);
   if (n !== PEN || labor.status === "returning") spawnEscort(leader, false);   // back in the pen: they lock the gate behind you
   if (String(n) === String(detailRoute(SPEC, labor.task).plate) && (labor.status === "escorting" || labor.status === "working")) laborAtWork();
+  if (atWorkPlate()) laborPropsSet();
   renderLaborBar();
 }
 // the bar: what the party is doing, and (for whoever walks them, or the DM) the end of the shift
 const TASKS_LABEL = {water: "fill and haul water barrels", lift: "operate the lift", clean: "clean the barracks", pots: "empty the chamber pots", kitchen: "food preparation and service", dishes: "wash dishes", laundry: "laundry", rocks: "stack rocks", rope: "coil rope", supplies: "organize supplies", "lift-trouble": "Lift Trouble", "quaggoth-hair": "braid quaggoth hair"};
 function renderLaborBar(){
+  laborMusic();
+  if (atWorkPlate() && !laborProps.length && (STATION_PROPS[labor.task] || []).length) laborPropsSet();   // arrived escorting, now working
   const bar = $("laborBar"); if (!bar) return;
   if (!laborLive() || labor.status === "called"){ bar.hidden = true; return; }
   const at = String(cur) === String(detailRoute(SPEC, labor.task).plate);
@@ -6634,7 +6660,66 @@ async function laborDoWork(){
   else if (Math.random() < .5) escortSays(d, pickLine(WORK_LINES.progress, Math.random), 3000);
   log(step.done ? `<b>${esc(fname(h))}</b> finishes their share of the work.` : step.redo ? `<b>${esc(fname(h))}</b> is made to do it again.` : `<b>${esc(fname(h))}</b> works on.`);
   laborEvent("work", {slug: h.id, success: ok, total}); if (step.redo){ laborEvent("redo", {slug: h.id}); playFilm("redo"); }
+  laborPerform(h);
   renderLaborBar();
+}
+// ---------- HARD LABOR: what it looks and sounds like (assets) ----------
+// Sam, 2026-10-26: "Start on props, poses, speech, and music" → "wire it all". The station's props stand beside the
+// work spot while the party works it (STATION_PROPS); pressing Work, the hero walks to the first of them and does the
+// chore with their body (WORK_POSE: `scrub` kneels and works the floor; `carry` heaves a sack up and walks it to the
+// drop and back); the quaggoth speaks in its own voice (quaggothSays); the work song plays while the detail is out.
+// Only this browser's own hero performs; the others see them walk to the drop and back (positions sync, poses not).
+let laborProps = [];
+function laborPropsClear(){ laborProps = []; }
+function laborPropsSet(){
+  laborPropsClear();
+  if (!atWorkPlate()) return;
+  const list = (STATION_PROPS[labor.task] || []).filter(id => SPR[id]);
+  if (!list.length) return;
+  const at = nearestWalkable(centroid.x, centroid.y);
+  list.forEach((id, i) => {
+    const [ox, oy] = PROP_OFFSETS[i] || [0, 0], p = nearestWalkable(at.x + ox * node.scale, at.y + oy * node.scale);
+    laborProps.push(mkActor(id, p.x, p.y, "prop", {prop: true, static: true}));
+  });
+}
+function laborGo(a, p){
+  return new Promise(res => {
+    const path = findPath(a, p); if (!path || !path.length){ res(); return; }
+    let done = false; const end = () => { if (!done){ done = true; res(); } };
+    a.path = path; a.onArrive = end; setTimeout(end, 9000);
+  });
+}
+const hasSheet = (a, n) => !!(SPR[a.id] && SPR[a.id].json.animations[n] && SPR[a.id].img[n]);
+async function laborPerform(h){
+  if (!labor || h.performing) return;
+  h.performing = true;
+  try {
+    const prop = laborProps[0];
+    if (prop) await laborGo(h, nearestWalkable(prop.x - 50 * node.scale, prop.y + 20 * node.scale));
+    if (prop) h.face = faceOf(prop.x - h.x, prop.y - h.y);
+    const pose = WORK_POSE[labor && labor.task];
+    if (pose === "scrub" && hasSheet(h, "scrub")){
+      h.path = []; setAnim(h, "scrub"); h.waitUntil = now + SCRUB_MS;
+      await wait(SCRUB_MS);
+      if (h.anim === "scrub") setAnim(h, "idle");
+    } else if (pose === "carry" && hasSheet(h, "carry")){
+      if (hasSheet(h, "heave")) await new Promise(r => playOnce(h, "heave", r));
+      const from = {x: h.x, y: h.y}, away = prop ? Math.sign(h.x - prop.x) || 1 : 1;
+      h.walkAs = "carry";
+      await laborGo(h, nearestWalkable(h.x + away * CARRY_PX * node.scale, h.y + 30 * node.scale));
+      await wait(500);
+      await laborGo(h, nearestWalkable(from.x, from.y));
+      h.walkAs = null; setAnim(h, "idle");
+    }
+  } finally { h.performing = false; h.walkAs = null; }
+}
+// the work song: its own player beside explore/combat/ambience, so tickMusic fades it like the others
+music.labor = new Audio(`${APP ? "/" : ""}audio/labor/${WORK_SONG}.mp3`); music.labor.loop = true; music.labor.preload = "none";
+LEVEL.labor = .5;
+function laborMusic(){
+  const out = laborLive() && labor.status !== "called" && mode === "explore";
+  if (out && track === "explore") setTrack("labor");
+  else if (!out && track === "labor") setTrack("explore");
 }
 async function laborDoLook(){
   const h = laborHero(); if (!h || !atWorkPlate()) return;
@@ -9096,7 +9181,7 @@ function tickFootsteps(){
   if (!actors.length) return;
   const r = stage.getBoundingClientRect(), s = base * view.z;
   for (const a of actors){
-    if (a.anim !== "walk" || a.down || a.alpha < .5 || a.climbing){ a.stride = -1; continue; }
+    if ((a.anim !== "walk" && a.anim !== "carry") || a.down || a.alpha < .5 || a.climbing){ a.stride = -1; continue; }
     const sx = a.x * s + view.tx, sy = a.y * s + view.ty;            // on screen, or it makes no sound
     if (sx < -40 || sy < -40 || sx > r.width + 40 || sy > r.height + 40){ a.stride = -1; continue; }
     const an = SPR[a.id].json.animations.walk; if (!an) continue;
@@ -9124,7 +9209,7 @@ function step(a, dt, speed){
   }
   if (a.fadeIn){ a.alpha = Math.min(1, a.alpha + dt * 2.5); if (a.alpha >= 1) a.fadeIn = false; }
   if (a.waitUntil && now < a.waitUntil) return;
-  if (!a.path.length){ if (a.anim === "walk" && !a.kbd) setAnim(a, "idle"); return; }
+  if (!a.path.length){ if ((a.anim === "walk" || a.anim === "carry") && !a.kbd) setAnim(a, "idle"); return; }
   if (a.path[0].jump){                  // through a doorway: reappear on the far side
     const q = a.path.shift(); a.x = q.x; a.y = q.y; if (q.s != null) a.big = q.s; a.fadeIn = true;
     if (!a.path.length){ setAnim(a, "idle"); const cb = a.onArrive; a.onArrive = null; cb && cb(); }
@@ -9140,7 +9225,7 @@ function step(a, dt, speed){
   else if (now - a.prog.t > 350 && !p.jump){ a.prog = null; a.path = []; setAnim(a, "idle"); const cb = a.onArrive; a.onArrive = null; cb && cb(); return; }
   if (d <= sp){ a.x = p.x; a.y = p.y; a.path.shift(); a.prog = null; if (p.out) a.alpha = 0;
     if (!a.path.length){ setAnim(a, "idle"); const cb = a.onArrive; a.onArrive = null; cb && cb(); } }
-  else { a.x += dx / d * sp; a.y += dy / d * sp; a.face = faceOf(dx, dy); setAnim(a, "walk"); }
+  else { a.x += dx / d * sp; a.y += dy / d * sp; a.face = faceOf(dx, dy); setAnim(a, a.walkAs && hasSheet(a, a.walkAs) ? a.walkAs : "walk"); }   // walkAs: Hard Labor's carry
 }
 function update(dt){
   if (cbt && poisonZones.length) tickPoisonZones();
