@@ -255,6 +255,7 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 @media (max-width:700px){.dm{top:6px;right:6px;width:calc(100% - 12px);max-height:calc(100% - 12px)}}
 .inv{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:min(760px,calc(100% - 24px));max-height:calc(100% - 20px);overflow:auto;background:var(--panel-solid);border:1px solid var(--rule);border-radius:8px;padding:12px;display:grid;gap:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);z-index:6}
 .inv[hidden]{display:none}
+#laborBar[hidden]{display:none!important}   /* its inline display:flex would otherwise beat the hidden attribute, and the idle bar sat on screen reading "Work detail" */
 .invHead{display:flex;justify-content:space-between;align-items:center;font-family:var(--face-display);font-size:var(--s1)}
 .invEcon,.invFoot{font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink-dim)}
 .invTabs{display:flex;flex-wrap:wrap;gap:4px}
