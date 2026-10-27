@@ -124,6 +124,13 @@ describe("who goes [SAM: all heroes + 0–2 NPCs]", () => {
     expect(crews([], [])).toEqual([])
   })
 
+  it("never puts the party's detail in a shift that has already gone", () => {
+    for (let k = 0; k < 200; k++) {
+      expect(planDay({ day: 2, pcs: HEROES, npcs: PRISONERS, fromShift: 2 }, seeded(k)).find((d) => d.party)!.shift).toBeGreaterThanOrEqual(2)
+      expect(planDay({ day: 2, pcs: HEROES, npcs: PRISONERS, fromShift: 3 }, seeded(k)).find((d) => d.party)!.shift).toBe(3)
+    }
+  })
+
   it("is the same day twice from the same seed", () => {
     expect(planDay({ day: 3, pcs: HEROES, npcs: PRISONERS }, seeded(42))).toEqual(planDay({ day: 3, pcs: HEROES, npcs: PRISONERS }, seeded(42)))
   })

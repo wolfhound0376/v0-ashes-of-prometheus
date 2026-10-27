@@ -222,6 +222,8 @@ export interface DayInput {
   bookOnly?: boolean
   /** Jorlan is on the watch (stage-roster jorlanOnDuty). He can then escort the party's detail. */
   jorlanOnDuty?: boolean
+  /** The shift running now. A day planned part-way through puts the party's detail in this shift or a later one. */
+  fromShift?: Shift
 }
 
 /**
@@ -229,7 +231,8 @@ export interface DayInput {
  * split across the other two shifts, two or three to a task, friends kept apart. Returns the details in shift order.
  */
 export function planDay(input: DayInput, rng: Rng): PlannedDetail[] {
-  const partyShift = (1 + Math.floor(rng() * 3)) as Shift
+  const first = input.fromShift ?? 1
+  const partyShift = (first + Math.floor(rng() * (4 - first))) as Shift
   const companions = pickCompanions(input.npcs, npcCountFor(input.pcs.length, rng), rng, {
     seenFriends: input.seenFriends, timesWithParty: input.timesWithParty,
   })

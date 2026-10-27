@@ -56,6 +56,10 @@ export function startingSituation(runId: string, now = new Date().toISOString())
  *   - `step_outside`  the party has left the pen: stance -> escaping (only from captive), ward lifts
  *   - `gate_open`     the gate was unlocked: gate_state -> open (never touches stance)
  *   - `gate_broken`   the gate was forced: gate_state -> broken
+ *   - `labor_out`     a work detail takes the party out under escort (Hard Labor, lib/labor.ts): the stance STAYS
+ *                     captive — they are prisoners at work, not escapees — and the pen's ward no longer covers them
+ *                     (the manacles still do: lib/labor.ts castableInManacles)
+ *   - `labor_back`    the detail walks them back into the pen: the ward covers them again
  */
 export interface SituationPatch {
   node_key?: string
@@ -65,7 +69,7 @@ export interface SituationPatch {
   ward_active?: boolean
   gate_state?: GateState
   party_present?: string[]
-  event?: "step_outside" | "gate_open" | "gate_broken"
+  event?: "step_outside" | "gate_open" | "gate_broken" | "labor_out" | "labor_back"
 }
 
 /** The fields the walk page (a player's own browser) may change. Everything else needs the DM key. */
@@ -91,7 +95,7 @@ export function parsePatch(body: unknown): SituationPatch {
   if (typeof b.ward_active === "boolean") p.ward_active = b.ward_active
   if (isGate(b.gate_state)) p.gate_state = b.gate_state
   if (Array.isArray(b.party_present)) p.party_present = b.party_present.map((n) => clean(n, 60)).filter((n): n is string => !!n).slice(0, 12)
-  if (b.event === "step_outside" || b.event === "gate_open" || b.event === "gate_broken") p.event = b.event
+  if (b.event === "step_outside" || b.event === "gate_open" || b.event === "gate_broken" || b.event === "labor_out" || b.event === "labor_back") p.event = b.event
   return p
 }
 
@@ -110,6 +114,10 @@ export function mergeSituation(prev: Situation, patch: SituationPatch, by: Write
   } else if (patch.event === "step_outside") {
     if (next.stance === "captive") next.stance = "escaping"
     next.ward_active = false
+  } else if (patch.event === "labor_out") {
+    next.ward_active = false                                   // out of the pen, still captive
+  } else if (patch.event === "labor_back") {
+    if (next.stance === "captive") next.ward_active = true     // back inside the ward
   }
   if (patch.node_key !== undefined) next.node_key = patch.node_key
   if (patch.sub_location !== undefined) next.sub_location = patch.sub_location
