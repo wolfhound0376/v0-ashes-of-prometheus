@@ -1091,5 +1091,50 @@
     "fps": 12,
     "frames": 15,
     "rows": 4
+  },
+  "tollStream0": {
+    "file": "tollStream0.webp",
+    "cols": 4,
+    "rows": 9,
+    "frames": 36,
+    "fps": 24,
+    "bytes": 195624,
+    "note": "Toll the Dead gas stream, part 1 of 3 (frames 0-35). Lantern glass at (157,175), target chest at (837,181) in every 1020x340 cell; flows target -> lantern."
+  },
+  "tollStream1": {
+    "file": "tollStream1.webp",
+    "cols": 4,
+    "rows": 9,
+    "frames": 36,
+    "fps": 24,
+    "bytes": 1431924,
+    "note": "Toll the Dead gas stream, part 2 of 3 (frames 36-71). Lantern glass at (157,175), target chest at (837,181) in every 1020x340 cell; flows target -> lantern."
+  },
+  "tollStream2": {
+    "file": "tollStream2.webp",
+    "cols": 4,
+    "rows": 9,
+    "frames": 36,
+    "fps": 24,
+    "bytes": 846702,
+    "note": "Toll the Dead gas stream, part 3 of 3 (frames 72-107). Lantern glass at (157,175), target chest at (837,181) in every 1020x340 cell; flows target -> lantern."
+  },
+  "tollRings": {
+    "file": "tollRings.webp",
+    "cols": 3,
+    "rows": 1,
+    "frames": 3,
+    "fps": 24,
+    "bytes": 200006,
+    "note": "Sam's painted target rings (pack target-fumes images 4, 5 and 8), 512px cells"
+  },
+  "pxTollLantern": {
+    "file": "pxTollLantern.webp",
+    "cols": 9,
+    "rows": 3,
+    "frames": 27,
+    "fps": 12,
+    "bytes": 334052,
+    "note": "Pixel lantern with Sam's painted skeleton and sphere, 360px cells; ring at (180,102), glass at (180,190)"
   }
 }
