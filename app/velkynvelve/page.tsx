@@ -29,6 +29,7 @@ import { dmHeaders } from "@/lib/dm-key"
 import { EndGameButton } from "@/components/end-game-button"
 import { DiceProvider } from "@/components/dice/dice-provider"
 import { WalkRollBridge } from "@/components/walk/walk-roll-bridge"
+import { MessagePlayerButton } from "@/components/message-player-button"
 
 const RECHECK_MS = 6000
 
@@ -93,7 +94,7 @@ export default function VelkynvelvePage() {
           </StageLink>
         )}
         <span className="font-serif text-xs uppercase tracking-[0.22em] text-stone-400">Velkynvelve</span>
-        {dm ? <span className="ml-auto"><EndGameButton /></span> : null}
+        {dm ? <span className="ml-auto"><EndGameButton /></span> : <MessagePlayerButton variant="pixel" className="ml-auto" />}
       </header>
       <div className={dm ? "relative min-h-0 flex-1 p-[14px]" : "relative min-h-0 flex-1"}>
         <iframe

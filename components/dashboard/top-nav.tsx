@@ -12,6 +12,7 @@ import type { ReactNode } from "react"
 import { BookOpen, Flame, Settings, Shield, Smartphone, Users } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { MapButton } from "@/components/dashboard/map-button"
+import { MessagePlayerButton } from "@/components/message-player-button"
 
 export type NavSection = "journal" | "quests" | "maps" | "npcs" | "lore" | "settings"
 
@@ -79,6 +80,8 @@ export function TopNav({
       <nav data-tick="key" className="flex items-center gap-1.5">
         {/* The way back to the pixel map, first and brightest (Sam, 2026-10-25). */}
         <MapButton className="mr-2" />
+        {/* Message another seated player privately (Sam, 2026-10-26). Hidden for a browser with no seat. */}
+        <MessagePlayerButton className="mr-1" />
         {sections.map((s) => {
           const Icon = s.icon
           return (
