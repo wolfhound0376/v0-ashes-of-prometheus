@@ -1414,7 +1414,7 @@ const BARD_TAKES={whistle:["/audio/bard/whistle"], // Sam picked take 3, 2026-10
   "count-the-spiders":["count-the-spiders","count-the-spiders_2"],"rothe-and-rot":["rothe-and-rot","rothe-and-rot_2"],
   "haul-away-deep-water":["haul-away-deep-water","haul-away-deep-water_2"],"down-we-went":["down-we-went","down-we-went_2"],"ashes-the-bards-song":["ashes-the-bards-song"]};
 const bardSrc=(k)=>(k.startsWith("/")?k:BARD_BASE+k)+".ogg";
-const BARD_DEAD=new Set(); let bardLast=null, bardWait=35+Math.random()*30, bardHum=null;
+const BARD_DEAD=new Set(); let bardLast=null, bardWait=12+Math.random()*8, bardHum=null; // the first tune comes soon after you sit down (Sam, 2026-10-27: "I didn't hear the song or whistle")
 const BARD_WHISTLE_ODDS=.75;
 function bardTake(base){ const pool=(BARD_TAKES[base]||[base]).filter(k=>!BARD_DEAD.has(k)&&k!==bardLast); const all=pool.length?pool:(BARD_TAKES[base]||[base]).filter(k=>!BARD_DEAD.has(k));
   return all.length?all[Math.floor(Math.random()*all.length)]:null; }
@@ -1424,7 +1424,7 @@ function bardPick(){ if(Math.random()<BARD_WHISTLE_ODDS){ const k=bardTake("whis
   return k?{kind:"song",key:k}:null; }
 function bardIdle(f){ return f&&(f.hp??1)>0&&!f.target&&(f.anim==="idle"||f.station==="seat"||f.station==="perform"); }
 function bardSing(f,pick){ const a=new Audio(bardSrc(pick.key)); bardLast=pick.key; bardHum={f,a,kind:pick.kind};
-  a.volume=pick.kind==="whistle"?.7:.85; // a whistle sits under the camp music; a song gets the fire to itself
+  a.volume=pick.kind==="whistle"?.85:.9; // the whistle file is -23 LUFS: ~10 dB over the camp music (-28 LUFS at .45), clearly heard // a whistle sits under the camp music; a song gets the fire to itself
   a.onerror=()=>{ BARD_DEAD.add(pick.key); bardEnd(); };
   a.onended=()=>bardEnd();
   if(pick.kind==="song"&&window.campMusic&&window.campMusic.duck) window.campMusic.duck(true);
