@@ -1775,6 +1775,7 @@ function whoIsHere(n){
 // report and watch, and blow the horn only at a real threat — the page does not start that fight by itself.
 function watchPost(n){
   const w = SPEC[n] && SPEC[n].watch; if (!w || state.cleared[n] || !leader) return;
+  if (laborLive()) return;                                   // an escorted work detail is not sneaking past anyone (Hard Labor)
   const seen = npcs.filter(a => a.hostile && !a.offStage);
   if (!seen.length) return;
   const sheet = SHEETS[leader.id] || {}, mod = (sheet.skills || {}).stealth ?? (sheet.saves || {}).dex ?? 0, r = d20(0, leader), total = r + mod;
@@ -6212,7 +6213,8 @@ function escortSays(a, line, ms = 5200){
   if (!a) return;
   const said = heardText(line, "Elvish");
   bark(a, said, ms, {talk: true, lang: "Elvish"});
-  if (voicesOn !== false) speak(escortVoice(a.id), line);
+  // the voice says what the bubble says: a hero without Elvish hears gibberish, not the English underneath
+  if (voicesOn !== false) speak(escortVoice(a.id), said);
 }
 function quaggothSays(line){ const q = escortBeast(); if (q) bark(q, heardText(line, "Undercommon"), 4200, {lang: "Undercommon"}); }
 
@@ -6331,6 +6333,9 @@ function laborJoins(){ const comp = companyNow(), ids = laborNpcs().filter(id =>
 function laborOnEnter(n, from){
   if (n === PEN && from !== PEN) laborPenArrival();          // PR 4: the downed hero, the surgeon, the talk
   if (!laborLive()) return;
+  // Sam, 2026-10-26: "just the escort" — while a detail is on a plate, the guards who stand there (#923: two on each
+  // labor plate, the lizard rider on the cliff) step off; they are back at their posts when no detail is there
+  if (n !== PEN) for (const a of npcs) if (!a.escort && a.hostile && /^drow-guard|^drow-lizard-rider|^drow-elite/.test(a.id) && !a.offStage) hideOffStage(a);
   if (n !== PEN || labor.status === "returning") spawnEscort(leader, false);   // back in the pen: they lock the gate behind you
   if (String(n) === String(detailRoute(SPEC, labor.task).plate) && (labor.status === "escorting" || labor.status === "working")) laborAtWork();
   renderLaborBar();
