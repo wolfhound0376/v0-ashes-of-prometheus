@@ -6357,7 +6357,8 @@ function playFilm(name){
     const key = e => { if (e.key === "Escape" || e.key === " " || e.key === "Enter"){ e.preventDefault(); e.stopPropagation(); end(); } };
     addEventListener("keydown", key, true);
     wrap.onclick = end; v.onended = end; v.onerror = end;
-    setTimeout(end, 9000);                                   // never strand the table behind a film that will not play
+    let guard = setTimeout(end, 9000);                       // never strand the table behind a film that will not play
+    v.onloadedmetadata = () => { if (isFinite(v.duration)){ clearTimeout(guard); guard = setTimeout(end, v.duration * 1000 + 2500); } };   // a longer film (the web, 10 s) gets its full length
     v.play().catch(() => {});
   });
 }
