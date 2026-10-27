@@ -164,3 +164,39 @@ describe("the stations (PR 3)", () => {
     expect(W.LOOK_SEEDS["9"].falls).toBe(true)
   })
 })
+
+describe("caught, searched, defying (PR 4)", () => {
+  it("hides against Jorlan's eyes when he is the escort, a drow's otherwise", () => {
+    expect(W.hideRoll(["jorlan-duskryn"])).toBe("labor:hide-jorlan")
+    expect(W.hideRoll(["drow", "quaggoth"])).toBe("labor:hide")
+  })
+
+  it("knows what cannot hide in rags [Sam's suspicion list]", () => {
+    expect(W.tooBigToHide({ name: "Shortsword", item_type: "weapon", weight: 2 })).toBe(true)
+    expect(W.tooBigToHide({ name: "Hand Crossbow", item_type: "weapon", weight: 3 })).toBe(true)
+    expect(W.tooBigToHide({ name: "Dagger", item_type: "weapon", weight: 1 })).toBe(false)
+    expect(W.tooBigToHide({ name: "Slave pen key", item_type: "misc", weight: 0 })).toBe(false)
+    expect(W.tooBigToHide({ name: "Drow poison", item_type: "consumable", weight: 0.5 })).toBe(false)
+    expect(W.tooBigToHide({ name: "Silk rope", item_type: "gear", weight: 5 })).toBe(true)
+    expect(W.tooBigToHide(null)).toBe(false)
+  })
+
+  it("has a hand-over line and a why-I-did-it line for every prisoner", () => {
+    for (const n of W.PRISONERS.map(W.prisonerSlug)) {
+      expect(W.lineFor(W.DEFUSE_HANDOVER, n), n).toBeTruthy()
+      expect(W.lineFor(W.DEFUSE_TALK, n), n).toBeTruthy()
+    }
+    expect(W.lineFor(W.DEFUSE_TALK, "someone-new")).toBe(W.DEFUSE_TALK._)
+  })
+
+  it("carries Sam's own words in the talk", () => {
+    expect(W.DEFUSE_TALK.eldeth).toMatch(/live another day/i)
+    expect(W.DEFUSE_TALK.ront).toMatch(/not worth it/i)
+  })
+
+  it("rolls the hide on the dashboard", async () => {
+    const { WALK_ACTIONS } = await import("./walk-roll")
+    expect(WALK_ACTIONS["labor:hide"].dc).toBe(12)
+    expect(WALK_ACTIONS["labor:hide-jorlan"].dc).toBe(14)
+  })
+})

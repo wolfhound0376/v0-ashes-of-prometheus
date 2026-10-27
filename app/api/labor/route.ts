@@ -3,9 +3,10 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { readSeated } from "@/lib/seats"
 import { jorlanOnDuty, readStage } from "@/lib/stage-roster"
-import { planDay, seeded, shiftAt, type CrewMember, type PlannedDetail } from "@/lib/labor"
+import { disobey, planDay, seeded, shiftAt, suspicionReasons, type CrewMember, type PlannedDetail, type PocketResult } from "@/lib/labor"
+import { CONFISCATION_STASH_NAME } from "@/lib/confiscation"
 // plain .mjs, shared with the walk page (build_walk.py /*__LABOR__*/)
-import { PRISONERS, advance, choiceEffect, prisonerSlug } from "@/lib/labor-walk.mjs"
+import { PRISONERS, advance, choiceEffect, prisonerSlug, tooBigToHide } from "@/lib/labor-walk.mjs"
 
 // /api/labor — Hard Labor: the work details that take the party out of the Velkynvelve slave pen.
 // Design of record: project doc claude/Hard_Labor_Module_2026-10-26.md. Rules: lib/labor.ts, lib/labor-walk.mjs.
@@ -15,7 +16,8 @@ import { PRISONERS, advance, choiceEffect, prisonerSlug } from "@/lib/labor-walk
 //          detail and whether its shift is running now on the game clock. A party detail left over from an earlier
 //          day that never ran is called off (`aborted`) — the day ended without it.
 //   POST   {id, action, choice?, slug?, characterId?, claimToken?}
-//          action = call | march | arrive | return | done | choice | abort | event (what happened at the station: work, redo, look, pocket, caught)
+//          action = call | march | arrive | return | done | choice | abort | event (what happened at the station: work, redo, look, pocket, caught, searched)
+//                   | disobey (warning, then Malachar's d20: defused / volleys) | search (suspicion from the record) | confiscate (to the stash)
 //          The DM (x-dm-key) may do anything, including calling a detail before its shift (`call` with force) and
 //          `abort`. A seated player's own browser may move the detail along its steps and give its own hero's answer.
 //          A step out of order — two browsers racing to march — answers 409, and only the winner drives the walk.
@@ -139,9 +141,9 @@ export async function POST(req: NextRequest) {
   if (action === "event") {
     // what happened at the station (PR 3): the work, a redo, a look, a pocket (and how close it was), a catch.
     // The record PR 4's search-on-suspicion reads; nothing here changes the detail's step.
-    const kind = ["work", "redo", "look", "pocket", "caught"].includes(body.kind) ? body.kind : null
+    const kind = ["work", "redo", "look", "pocket", "caught", "searched"].includes(body.kind) ? body.kind : null
     if (!kind) return NextResponse.json({ error: "unknown event" }, { status: 400 })
-    if (row.status !== "working") return NextResponse.json({ error: "the detail is not at work" }, { status: 409 })
+    if (row.status !== "working" && row.status !== "returning") return NextResponse.json({ error: "the detail is not at work" }, { status: 409 })
     if (!dm && !(row.crew as CrewMember[]).some((c) => c.kind === "pc" && c.id === playerId)) return NextResponse.json({ error: "your hero is not on this detail" }, { status: 403 })
     const clip = (v: unknown, n: number) => (typeof v === "string" ? v.slice(0, n) : undefined)
     const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : undefined)
@@ -151,6 +153,74 @@ export async function POST(req: NextRequest) {
     })
     const { data } = await db.from("work_details").update({ events: events.slice(-200), updated_at: now }).eq("id", id).select("*").maybeSingle()
     return NextResponse.json({ detail: data })
+  }
+
+  const onCrew = () => dm || (row.crew as CrewMember[]).some((c) => c.kind === "pc" && c.id === playerId)
+  const heroSlug = typeof body.slug === "string" ? body.slug.slice(0, 40) : ""
+
+  // ---------- disobedience (PR 4) ----------
+  // Sam, 2026-10-26: the first time is the warning; after that Malachar rolls — a fellow prisoner on the detail defuses
+  // it (takes the thing and offers it to the guard), or the escort shoots until the hero drops. The d20 is rolled here.
+  if (action === "disobey") {
+    if (!onCrew()) return NextResponse.json({ error: "your hero is not on this detail" }, { status: 403 })
+    if (!heroSlug) return NextResponse.json({ error: "whose disobedience?" }, { status: 400 })
+    const cause = ["keep-item", "refuse-work", "cast", "back-talk"].includes(body.cause) ? body.cause : "keep-item"
+    const strikes = events.filter((e) => e.slug === heroSlug && (e.kind === "warning" || e.kind === "disobey")).length
+    const d20 = 1 + Math.floor(Math.random() * 20)
+    const companions = (row.crew as CrewMember[]).filter((c) => c.kind === "npc")
+    const out = disobey(strikes, d20, companions, false, Math.random)        // the surgeon's record decides her part (/api/drow-surgeon "labor")
+    const by = out.kind === "defused" ? companions.find((c) => c.name === out.by) ?? null : null
+    events.push(out.kind === "warning"
+      ? { at: now, kind: "warning", slug: heroSlug, cause }
+      : { at: now, kind: "disobey", slug: heroSlug, cause, d20, outcome: out.kind, npc: by ? by.id : undefined })
+    await db.from("work_details").update({ events, updated_at: now }).eq("id", id)
+    const who = typeof body.name === "string" ? body.name.slice(0, 60) : "A prisoner"
+    await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text:
+      out.kind === "warning" ? `${who} defied the escort on a work detail (${cause}). Warning: the quaggoth slapped them down.`
+      : out.kind === "defused" ? `${who} defied the escort again (Malachar's d20: ${d20}). ${by?.name ?? "A prisoner"} stepped in, took the thing from ${who} and offered it to the guard — defused. ${who} owes ${by?.name ?? "them"} for it; ${by?.name ?? "they"} will want a word about it later.`
+      : `${who} defied the escort again (Malachar's d20: ${d20}). Nobody stepped in: the drow shoots.` })
+    return NextResponse.json({ outcome: out.kind, d20: out.kind === "warning" ? undefined : d20, npc: by ? { id: by.id, name: by.name } : null, strikes: strikes + 1 })
+  }
+
+  // ---------- the search on suspicion (PR 4; Sam: never routine) ----------
+  if (action === "search") {
+    if (!onCrew()) return NextResponse.json({ error: "your hero is not on this detail" }, { status: 403 })
+    const mine = events.filter((e) => e.slug === heroSlug && e.kind === "pocket" && e.item && !e.confiscated)
+    if (!mine.length) return NextResponse.json({ reasons: [], items: [] })
+    const { data: cat } = await db.from("items").select("slug, name, item_type, weight").in("slug", mine.map((e) => e.item))
+    const big = (cat ?? []).some((it) => tooBigToHide(it))
+    const pockets: PocketResult[] = mine.map((e) => ({ kept: true, caughtBy: null, margin: e.margin ?? 99, suspicious: !!e.close }))
+    const reasons = suspicionReasons({ pockets, biggestHidden: big ? "large" : "small" })
+    return NextResponse.json({ reasons, items: mine.map((e) => e.item) })
+  }
+
+  // ---------- what the search found goes to the stash (lib/confiscation.ts), like everything the drow took ----------
+  if (action === "confiscate") {
+    if (!onCrew()) return NextResponse.json({ error: "your hero is not on this detail" }, { status: 403 })
+    const characterId = dm && typeof body.characterId === "string" ? body.characterId : playerId
+    if (!characterId) return NextResponse.json({ error: "whose pockets?" }, { status: 400 })
+    const { data: stash } = await db.from("characters").select("id").eq("name", CONFISCATION_STASH_NAME).order("created_at", { ascending: true }).limit(1).maybeSingle()
+    if (!stash?.id) return NextResponse.json({ error: "no equipment stash" }, { status: 500 })
+    const taken: string[] = []
+    for (const e of events) {
+      if (e.slug !== heroSlug || e.kind !== "pocket" || !e.item || e.confiscated) continue
+      const { data: it } = await db.from("items").select("id, name").eq("slug", e.item).maybeSingle()
+      if (!it) continue
+      const { data: inv } = await db.from("inventory_items").select("id, quantity").eq("character_id", characterId).eq("item_id", it.id).is("confiscated_from", null).limit(1).maybeSingle()
+      if (!inv) { e.confiscated = "gone"; continue }
+      if ((inv.quantity ?? 1) > 1) {
+        await db.from("inventory_items").update({ quantity: (inv.quantity ?? 1) - 1 }).eq("id", inv.id)
+        const { data: full } = await db.from("inventory_items").select("*").eq("id", inv.id).maybeSingle()
+        if (full) { const { id: _drop, created_at: _c, updated_at: _u, ...rest } = full as Record<string, unknown>; await db.from("inventory_items").insert({ ...rest, quantity: 1, character_id: stash.id, confiscated_from: characterId }) }
+      } else {
+        await db.from("inventory_items").update({ character_id: stash.id, confiscated_from: characterId }).eq("id", inv.id)
+      }
+      e.confiscated = now; taken.push(it.name as string)
+    }
+    events.push({ at: now, kind: "confiscated", slug: heroSlug, items: taken })
+    await db.from("work_details").update({ events, updated_at: now }).eq("id", id)
+    if (taken.length) await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text: `The escort searched a prisoner on the way back from a work detail and took ${taken.join(", ")} — back to the drow's stores.` })
+    return NextResponse.json({ taken })
   }
 
   if (action === "abort" && !dm) return NextResponse.json({ error: "only the DM may call a detail off" }, { status: 403 })

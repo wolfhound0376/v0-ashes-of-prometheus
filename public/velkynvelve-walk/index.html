@@ -2696,7 +2696,7 @@ function openBody(b){
 // the dashboard's engine with the dashboard's modifier, and the page answers {ok, success, total, natural} — or
 // {cancelled} if they stepped back. "aop:roll-ack" says the panel is open; after it the map waits as long as the
 // player does. Opened as a plain file (no game around it), the map rolls locally against the same DC.
-const ROLLS = new Map(), LOCAL_DC = {"pen-gate:pick": 20, "pen-gate:force": 20, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14};
+const ROLLS = new Map(), LOCAL_DC = {"pen-gate:pick": 20, "pen-gate:force": 20, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14};
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
@@ -7253,6 +7253,66 @@ function pocketRoll(escortBestiaries) {
 const POCKET_CLOSE = 2
 const CAUGHT_LINE = "Open your hand. Slowly. Your fingers are mine — I'm only lending them back."
 
+// ─── Caught, searched, defying (PR 4) ─────────────────────────────────────────────────────────────────────────
+// Sam's rulings (2026-10-26): no routine pat-down — the drow search only on suspicion; disobedience is a warning first
+// (slapped or thrown back), then on a roll either a fellow prisoner defuses it by taking the thing and offering it to
+// the guard, or volleys bring the hero down (the surgeon comes unless she already has this run). The prisoner who
+// defused it brings it up later. Rules for the roll and the triggers are lib/labor.ts (disobey, suspicionReasons).
+
+/** The roll to keep something hidden when searched: the searcher's passive Perception as the DC [HOUSE, after p.19]. */
+function hideRoll(escortBestiaries) {
+  return (escortBestiaries || []).includes("jorlan-duskryn") ? "labor:hide-jorlan" : "labor:hide"
+}
+
+/**
+ * [HOUSE, Sam's suspicion list] An item too big to hide in rags: any weapon but a dagger, knife, dart or shard, or
+ * anything over 2 lb. Coins, keys, vials, a strand of rope pass.
+ */
+function tooBigToHide(item) {
+  if (!item) return false
+  const name = String(item.name || item.slug || "").toLowerCase()
+  if (/dagger|knife|dart|shard|needle|key|vial|coin|ring|gem/.test(name)) return false
+  if (/weapon/i.test(String(item.item_type || ""))) return true
+  return Number(item.weight) > 2
+}
+
+const SEARCH_LINES = {
+  start: "Stop. Arms out. You've been too quiet.",
+  clean: "Nothing. Pity. Move.",
+  found: "Open your hand. Slowly. Your fingers are mine — I'm only lending them back.",
+}
+
+/** What the prisoner who defused it says as they take it off the hero and hold it out to the guard. */
+const DEFUSE_HANDOVER = {
+  eldeth: "Here. It's yours. They're new — they don't know better yet.",
+  ront: "Ront has it. Here. Stupid human. No more.",
+  jimjar: "Ha! Found it, see? Must've dropped it. All yours, all yours.",
+  shuushar: "Take it. The current does not need to break anyone today.",
+  sarith: "Take it. Shoot them on your own time.",
+  derendil: "I return what is yours. On my honour, it will not happen again.",
+  topsy: "Here, here — Turvy says sorry. Turvy says a lot of things.",
+  turvy: "(mutters something, and holds out the thing in two hands)",
+  buppido: "Oh, such a fuss over so small a thing. Here you are, friend.",
+  stool: "(the sprout pushes the thing toward the drow with both little hands)",
+  _: "Here. Take it. They didn't mean it.",
+}
+
+/** That night, in the pen: why they did it (Sam: "Better to live another day", "Not worth it"). */
+const DEFUSE_TALK = {
+  eldeth: "Better to live another day than die on a bad one. Next time, let go.",
+  ront: "Not worth it. Ront see you dead, Ront sad. Little sad.",
+  shuushar: "The current takes what it takes. You were holding on to a pebble.",
+  sarith: "I didn't do it for you. Bolts miss.",
+  jimjar: "I bet on you living. Don't make me pay out.",
+  derendil: "A prince knows when a battle is not worth the blood. That was not worth yours.",
+  topsy: "Turvy says you'd have been a stain on the floor. Turvy's usually right about stains.",
+  turvy: "(Turvy mutters for a long time. Topsy listens, then: \"He says not to do that again.\")",
+  buppido: "Oh, I couldn't let them have you. Not like that. Not when there are so many better ways.",
+  stool: "(…not worth… you… friend… alive…)",
+  _: "Better to live another day. It wasn't worth it.",
+}
+const lineFor = (table, slug) => table[slug] || table._
+
 let labor = null;                    // the party's detail as the server last told it
 const laborPlayed = {};              // what this browser has already played, by `${id}:${step}`
 let laborDriving = false;            // this browser won the race to move the detail along and walks the party
@@ -7298,6 +7358,7 @@ function laborFollow(was){
   if (!labor) return;
   const key = s => `${labor.id}:${s}`;
   if (labor.status === "called" && cur === PEN && !laborPlayed[key("called")]){ laborPlayed[key("called")] = true; laborCall(); }
+  if (labor.status === "returning" && !laborDriving && atPlate(labor)) laborSearchMine();
   if ((labor.status === "done" || labor.status === "aborted") && was && isLive(was) && !laborPlayed[key("end")]){ laborPlayed[key("end")] = true; laborEnds(labor.status === "aborted"); }
 }
 
@@ -7409,11 +7470,20 @@ function laborAtWork(){
   log(`<b>Work detail:</b> ${esc(TASKS_LABEL[labor.task] || labor.task)}. The escort stands over you while you work.`);
 }
 // 3. home: the way back, then the escort locks them in and goes
-async function laborFinish(){
+async function laborFinish(opts = {}){
   if (!labor || labor.status !== "working") return;
   const j = await laborPost("return"); if (!j) return;
   laborDriving = true; renderLaborBar();
-  escortSays(escortDrow(), "Enough. Back.", 3000);
+  if (!opts.urgent){
+    escortSays(escortDrow(), "Enough. Back.", 3000);
+    await laborSearchMine();
+    const heroes = (labor.crew || []).filter(c => c.kind === "pc").length, until = Date.now() + 30000;
+    while (labor && labor.status === "returning" && Date.now() < until){
+      if (new Set((labor.events || []).filter(e => e.kind === "searched").map(e => e.slug)).size >= heroes) break;
+      await wait(1500);
+      try { const g = await fetch("/api/labor", {cache: "no-store"}).then(r => r.json()); if (g.detail && g.detail.id === labor.id) labor = g.detail; } catch (e) {}
+    }
+  }
   await wait(1200);
   await laborWalk(detailRoute(SPEC, labor.task).back);
   if (labor && labor.status === "returning" && cur === PEN) await laborPost("done");
@@ -7432,6 +7502,7 @@ function laborEnds(aborted){
 // the plate hooks (enterNode): who comes out with the party, what the server is told, and the escort on every plate
 function laborJoins(){ const comp = companyNow(), ids = laborNpcs().filter(id => npcs.some(n => n.id === id && !n.down && !n.body && !n.offStage) && !comp.includes(id)); comp.push(...ids); return ids; }
 function laborOnEnter(n, from){
+  if (n === PEN && from !== PEN) laborPenArrival();          // PR 4: the downed hero, the surgeon, the talk
   if (!laborLive()) return;
   if (n !== PEN || labor.status === "returning") spawnEscort(leader, false);   // back in the pen: they lock the gate behind you
   if (String(n) === String(detailRoute(SPEC, labor.task).plate) && (labor.status === "escorting" || labor.status === "working")) laborAtWork();
@@ -7460,6 +7531,7 @@ function renderLaborBar(){
 // you were caught with, the search on the way back, and the second offence are PR 4.
 const laborWorkDone = {};            // hero slug → {progress, redone, done}, for this detail
 const laborLooked = {};              // `${detail}:${plate}:${slug}`
+const atPlate = d => !!d && String(cur) === String(detailRoute(SPEC, d.task).plate);
 const atWorkPlate = () => laborLive() && labor.status === "working" && String(cur) === String(detailRoute(SPEC, labor.task).plate);
 function laborHero(){ const h = ownLeader(); return h && party.includes(h) && !h.ko ? h : null; }
 function laborEvent(kind, extra = {}){ laborPost("event", Object.assign({kind}, extra)); }
@@ -7551,6 +7623,7 @@ async function laborPocketFrom(h, spot){
       log(`<b>The escort catches ${esc(fname(h))}'s hand</b> at the ${esc(row.name)}. It stays where it was.`);
       laborEvent("caught", {slug: h.id, item: row.slug, total: r.total, dc});
       if (APP) handOff(`${fname(h)} tried to pocket the ${row.name} on a work detail with Sleight of Hand and failed; the escort saw. The item stays where it was. Per the book, a prisoner caught is commanded to relinquish it, on pain of death. Play the moment.`);
+      if (await openYourHand(h, row.name) === "keep") await laborDisobey(h, "keep-item");   // PR 4: refusing is disobedience
     }
   }, "primary");
   add("Leave it", close);
@@ -7570,6 +7643,122 @@ function drawLaborCones(){
     const r = VIEW_FT * ftPx(w), a0 = faceAngle(w), g = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r), col = "255,179,90";
     g.addColorStop(0, `rgba(${col},.34)`); g.addColorStop(.7, `rgba(${col},.12)`); g.addColorStop(1, `rgba(${col},0)`);
     ctx.save(); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(w.x, w.y); ctx.arc(w.x, w.y, r, a0 - VIEW_HALF, a0 + VIEW_HALF); ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+}
+
+// ---------- HARD LABOR: caught, searched, defying (PR 4) ----------
+// Sam, 2026-10-26: no routine pat-down — the escort searches only on suspicion (a close call, something too big for
+// rags). Caught with something: open your hand, or don't. Defying the escort is a warning the first time (the
+// quaggoth slaps them down); after that Malachar's d20 (rolled by /api/labor): a fellow prisoner on the detail takes
+// the thing off them and holds it out to the guard — and tells them why, later, in the pen — or the drow shoots until
+// they drop (no formal combat), the quaggoth hauls them back to the pen, and the surgeon comes unless she already has
+// this run (/api/drow-surgeon "labor"). Whatever the search finds goes back to the drow's stores (the stash).
+let laborDowned = null;              // {slug, surgeon} a hero shot down on a detail, being hauled back to the pen
+function openYourHand(h, what){
+  return new Promise(res => {
+    const t = setTimeout(() => res("give"), 30000);
+    showDialog({title: "Open your hand", body: `“${SEARCH_LINES.found}” The drow's hand is out for the ${what}. What does ${fname(h)} do?`, buttons: [
+      {label: "Give it up", primary: true, fn: () => { clearTimeout(t); res("give"); }},
+      {label: "Keep hold of it", fn: () => { clearTimeout(t); res("keep"); }}]});
+  });
+}
+async function laborDisobey(h, cause){
+  const j = await laborPost("disobey", {slug: h.id, cause, name: fname(h)});
+  if (!j){ toast("The game did not answer."); return "none"; }
+  if (j.outcome === "warning"){
+    const q = escortBeast(); if (q) q.face = faceOf(h.x - q.x, h.y - q.y);
+    narrate(h, LINES.refuse); playOnce(h, "hurt", () => {}); popText(h, "warning", "#ffb35a", 1.1); bank("combat/punch_hit", .6);
+    quaggothSays(LINES.quaggoth[1]);
+    log(`<b>${esc(fname(h))}</b> defies the escort. <em>Warning</em> — the quaggoth's hand puts them on the floor.`);
+    return "warning";
+  }
+  log(`${esc(fname(h))} defies the escort again. Malachar rolls a d20: <b>${j.d20}</b>.`);
+  if (j.outcome === "defused" && j.npc){
+    const n = npcs.find(x => x.id === j.npc.id && !x.down && !x.offStage);
+    if (n){ walkBeside(n, h); setTimeout(() => bark(n, lineFor(DEFUSE_HANDOVER, n.id), 6500, {talk: true, voice: true}), 1400); }
+    log(`<b>${esc(j.npc.name)}</b> steps in, takes it out of ${esc(fname(h))}'s hand and holds it out to the guard. The crossbow lowers.`);
+    state.laborOwed = {npc: j.npc.id, name: j.npc.name, hero: h.id}; saveWalk();
+    return "defused";
+  }
+  await laborVolleys(h);
+  return "volleys";
+}
+async function laborVolleys(h){
+  const d = escortDrow(), cid = characterIdOf(h.id);
+  surgeon = {pc: h, stage: "shooting", local: !APP || !cid, labor: true};
+  escortSays(d, "Enough.", 2500);
+  let first = true;
+  if (surgeon.local){ const sh = SHEETS[h.id] || {}; surgeonLocalState.hp = sh.hp || 8; surgeonLocalState.s = {stage: "shooting", victim: null, target: {id: h.id, name: fname(h)}, volleys: 0}; first = !surgeonLocalState.tended; }
+  else { const j = await surgeonApi("labor", {targetId: cid}); if (j.failed){ surgeon = null; toast(j.error || "The game did not answer."); return; } first = !!j.surgeon; }
+  await wait(1400);
+  let down = false;
+  for (let i = 0; i < 12 && !down; i++){
+    const j = await surgeonApi("volley", {guards: 1});
+    if (j.failed){ toast(j.error || "The game did not answer."); break; }
+    for (const b of j.volley.bolts){
+      if (d) faceTo(d, h); bank("combat/crossbow_release", .75);
+      if (d) fireShot(d, h, "bolt", b.hit, () => { if (b.hit){ popText(h, String(b.dmg), b.crit ? "#ffd166" : "#ff6b5e", b.crit ? 1.4 : 1); burst(h, "#ff5040", 10); bank("creature/player_hurt", .7); h.flash = now + 180; addBlood(h, .7); } else popText(h, "miss", "#c9c4b8", .9); }, null);
+      await wait(450);
+    }
+    await wait(700);
+    log(`The drow looses at ${esc(fname(h))}. ${esc(fname(h))} is at ${j.hp}/${j.hpMax} HP.`);
+    down = !!j.volley.down;
+    if (!down) await wait(SURGEON_RULES.volleyMs);
+  }
+  surgeon = null;
+  if (!down) return;
+  h.down = true; h.path = []; if (SPR[h.id].img.dead) playOnce(h, "dead", () => {});
+  bank("creature/player_downed", .85); popText(h, "down", "#ff6b5e", 1.3); hitstop(160); shake(9); addBlood(h, 1.3, true);
+  log(`<b>${esc(fname(h))}</b> drops, stable at 0. The quaggoth slings them over a shoulder. The detail is over.`);
+  quaggothSays(LINES.quaggoth[0]);
+  laborDowned = {slug: h.id, surgeon: first}; state.laborDowned = laborDowned; saveWalk();
+  setTimeout(() => laborFinish({urgent: true}), 2400);
+}
+// the search, on the way back — only a hero this browser plays, and only on suspicion
+async function laborSearchMine(){
+  if (!labor || (labor.status !== "returning" && labor.status !== "working")) return;
+  for (const h of party.filter(p => canControl(p) && !p.ko && !p.down)){
+    const k = `${labor.id}:search:${h.id}`; if (laborPlayed[k]) continue; laborPlayed[k] = true;
+    const j = await laborPost("search", {slug: h.id});
+    if (!j || !(j.reasons || []).length){ laborEvent("searched", {slug: h.id, success: true}); continue; }
+    const d = escortDrow(); escortTurnsTo(h); if (d){ walkBeside(d, h); } escortSays(d, SEARCH_LINES.start, 3800);
+    log(`The drow stops ${esc(fname(h))} for a search${j.reasons.includes("close-call") ? " — he saw something" : ""}${j.reasons.includes("too-big") ? " — something bulges under the rags" : ""}.`);
+    await wait(1500);
+    const r = await rollOnDashboard(hideRoll((labor.escort || []).map(e => e.bestiary)), 0);
+    if (r && r.ok && !r.cancelled && r.success){ escortSays(d, SEARCH_LINES.clean, 3000); log(`The drow finds nothing on ${esc(fname(h))}.`); laborEvent("searched", {slug: h.id, success: true}); continue; }
+    const names = (j.items || []).map(s => slugName(s)).join(", ") || "it";
+    escortSays(d, SEARCH_LINES.found, 6000);
+    const choice = await openYourHand(h, names);
+    if (choice === "keep") await laborDisobey(h, "keep-item");
+    const c = await laborPost("confiscate", {slug: h.id});
+    if (c && (c.taken || []).length){ log(`The escort takes <b>${esc(c.taken.join(", "))}</b> from ${esc(fname(h))}.`); try { await loadGear(h.id); } catch (e) {} if (bagOpen()) renderBag(); }
+    laborEvent("searched", {slug: h.id, success: false});
+  }
+}
+// back in the pen: the one who was shot is dropped on the floor — then the surgeon, or nobody; and later, the talk
+function laborPenArrival(){
+  const D = laborDowned || state.laborDowned;
+  if (D){
+    laborDowned = null; state.laborDowned = null; saveWalk();
+    const pc = party.find(p => p.id === D.slug);
+    if (pc){
+      pc.down = true; pc.surgeonDown = true; pc.path = []; if (SPR[pc.id].img.dead) playOnce(pc, "dead", () => {});
+      surgeon = {pc, stage: "down", local: !APP || !characterIdOf(pc.id), again: !D.surgeon, labor: true};
+      log(`The quaggoth dumps ${esc(fname(pc))} on the floor of the pen.`);
+      setTimeout(() => { if (surgeon && surgeon.pc === pc) (D.surgeon ? lianaArrives() : surgeonRecover()); }, 3500);
+    }
+  }
+  const O = state.laborOwed;
+  if (O && cur === PEN){
+    setTimeout(() => {
+      const n = npcs.find(x => x.id === O.npc && !x.down && !x.offStage), h = party.find(p => p.id === O.hero);
+      if (!n || !h || cur !== PEN) return;
+      state.laborOwed = null; saveWalk();
+      const line = lineFor(DEFUSE_TALK, n.id);
+      walkBeside(n, h); setTimeout(() => bark(n, line, 8000, {talk: true, voice: true}), 1600);
+      log(`<b>${esc(O.name)}</b> finds ${esc(fname(h))} in the pen. They want a word about the work detail.`);
+      if (APP) handOff(`In the pen after the work detail, ${O.name} comes to ${fname(h)}: ${O.name} took the thing out of ${fname(h)}'s hand and gave it to the guard to keep ${fname(h)} from being shot. ${O.name} says: "${line}" Play the conversation in ${O.name}'s voice; ${fname(h)} owes ${O.name} for it (Debt).`);
+    }, 9000);
   }
 }
 
