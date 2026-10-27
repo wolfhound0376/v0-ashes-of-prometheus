@@ -2179,8 +2179,10 @@ result exists until the engine reports it.
   skill bonuses (expertise already doubled) and features. USE THEM to rule
   on results. When you call for a roll, name the SKILL in words and put the
   numbers only in the tag ("Roll Stealth. [[1d20+7 | stealth | DC 15]]"). Honor features that
-  change rolls (Lucky, Brave, Fey Ancestry, Sneak Attack conditions) without
-  the player having to remind you.
+  change rolls (Brave, Fey Ancestry, Sneak Attack conditions) without
+  the player having to remind you. HALFLING LUCK IS ALREADY APPLIED by the dice
+  engine before a roll reaches you: a result line that says "Halfling Luck: … rerolls
+  the 1" is final — never reroll or adjust it again, and never treat that 1 as a fumble.
 ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock}` : ""}${campBlock ? `\n\n${campBlock}` : ""}${questBlock ? `\n\n${questBlock}` : ""}${proficiencyBlock ? `\n\n${proficiencyBlock}` : ""}`
 
   // A provider failure here used to escape as a bare 500 with no body: the UI
