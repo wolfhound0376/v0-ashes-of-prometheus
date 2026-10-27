@@ -141,7 +141,12 @@ export async function GET() {
     if (out) detail = out
     let overdue = false
     if (detail && detail.status === "working") ({ detail, overdue } = await applyShiftTimeout(db, detail as DetailRow, { day, minutes }))
-    return NextResponse.json({ detail, due: !!detail && detail.status === "scheduled" && detail.day === day && detail.shift === shift, overdue, day, shift, minutes, others: rows.filter((r) => !r.party).length })
+    return NextResponse.json({ detail, due: !!detail && detail.status === "scheduled" && detail.day === day && detail.shift === shift, overdue, day, shift, minutes, others: rows.filter((r) => !r.party).length,
+      // Sam, 2026-10-26 ("yes" to making them visible): the prisoners NOT on the party's detail work their own shift.
+      // The map takes these crews out of the pen while their shift runs and brings them back after. Derived from the
+      // day's rota and the game clock, so every seat at the table sees the same prisoners gone.
+      crewsNow: rows.filter((r) => !r.party && r.shift === shift && r.status !== "aborted")
+        .map((r) => ({ id: r.id, task: r.task, escort: r.escort ?? [], npcs: ((r.crew as CrewMember[]) ?? []).filter((c) => c.kind === "npc").map((c) => c.id) })) })
   } catch (e) {
     return NextResponse.json({ detail: null, error: String(e) }, { status: 200 })
   }
