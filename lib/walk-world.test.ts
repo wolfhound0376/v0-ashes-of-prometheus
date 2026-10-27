@@ -181,3 +181,20 @@ describe("public/js/aop-one-world.js — the browser's copy", () => {
     expect(B.seededRoll("1d4", "14:3:drow")).toBe(seededRoll("1d4", "14:3:drow"))
   })
 })
+
+describe("work poses ride with the hero (Sam, 2026-10-27: 'no work animations')", () => {
+  const hero = (pose: unknown) => ({ kenta: { x: 10, y: 20, tx: 30, ty: 40, face: 2, plate: "10c", seq: 5, cid: "k1", pose } })
+  it("keeps carry and scrub", () => {
+    for (const p of ["carry", "scrub"]) {
+      const r = cleanPatch({ heroes: hero(p) }, "k1")
+      expect("patch" in r && r.patch.heroes?.kenta.pose).toBe(p)
+    }
+  })
+  it("drops anything else without refusing the move", () => {
+    for (const p of [undefined, null, "dance", 3, { x: 1 }]) {
+      const r = cleanPatch({ heroes: hero(p) }, "k1")
+      expect("patch" in r).toBe(true)
+      expect("patch" in r && "pose" in (r.patch.heroes?.kenta ?? {})).toBe(false)
+    }
+  })
+})

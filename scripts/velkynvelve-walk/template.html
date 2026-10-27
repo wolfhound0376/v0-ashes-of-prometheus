@@ -4729,7 +4729,7 @@ function giveHelp(){ helpNext = {by: leader.id, until: now + 60000}; log(`${fnam
 //     (idleLife wanders round their new `home`), and only re-form when the leader walks on.
 // The company is not in the One World record, so on two screens the prisoners trail each screen's own leader. Same as
 // before this change (each screen placed them alone); flagged in the PR.
-const followsNow = f => !f.ko && !f.down && !f.body && !f.once && !f.offStage && !f.fading && !f.climbing && !f.riding && !owRemote(f);
+const followsNow = f => !f.ko && !f.down && !f.body && !f.once && !f.performing && !f.offStage && !f.fading && !f.climbing && !f.riding && !owRemote(f);
 function formationList(){
   if (!leader) return [];
   return followOrder().filter(followsNow);       // the heroes this screen drives; the company walks by its escort (below)
@@ -7662,35 +7662,70 @@ function laborPropsSet(){
 }
 function laborGo(a, p){
   return new Promise(res => {
-    const path = findPath(a, p); if (!path || !path.length){ res(); return; }
-    let done = false; const end = () => { if (!done){ done = true; res(); } };
-    a.path = path; a.onArrive = end; setTimeout(end, 9000);
+    const path = findPath(a, p); if (!path || !path.length){ res(true); return; }
+    let done = false, poll = 0; const end = ok => { if (!done){ done = true; clearInterval(poll); res(ok); } };
+    a.path = path; a.onArrive = () => end(true); setTimeout(() => end(true), 9000);
+    // the hero was sent somewhere else (a click, the keyboard, another screen): the chore is dropped, not resumed
+    poll = setInterval(() => { if (a.path !== path || a.kbd) end(false); }, 200);
   });
 }
 const hasSheet = (a, n) => !!(SPR[a.id] && SPR[a.id].json.animations[n] && SPR[a.id].img[n]);
-async function laborPerform(h){
+// WORKING WITHOUT BEING TOLD (Sam, 2026-10-27, in the armory on "organize supplies": "no work animations"). The
+// poses only ever played on the Work button, for this screen's own hero — so a party arriving on a detail stood about
+// in its idle under the escort's eye, and on every other screen even a hero pressing Work only walked. Now:
+//   * AMBIENT. On the work plate, a hero this screen drives who is standing about works on their own, a chore every
+//     7-13 s (laborAmbient below). Work still rolls and counts only on the button; this is how the room looks.
+//   * EACH TO A STATION. The heroes spread over the station's props (hero i -> prop i mod n), not one queue at the first.
+//   * NEVER IN THE WAY. Any order — a click, the keyboard, another screen — drops the chore where it stands (laborGo
+//     reports it), the sack is put down, and that hero is left alone for 15 s. Formation and the idle wander leave a
+//     working hero be (followsNow, idleLife).
+//   * SEEN AT THE TABLE. The pose rides along with the hero's position in the One World record (`pose`), so every
+//     screen sees the carry and the scrub (owHeroTick / owApplyHero / owPoseTick).
+async function laborPerform(h, ambient){
   if (!labor || h.performing) return;
   h.performing = true;
+  let ok = true;
   try {
-    const prop = laborProps[0];
-    if (prop) await laborGo(h, nearestWalkable(prop.x - 50 * node.scale, prop.y + 20 * node.scale));
-    if (prop) h.face = faceOf(prop.x - h.x, prop.y - h.y);
+    const i = Math.max(0, party.indexOf(h)), prop = laborProps.length ? laborProps[i % laborProps.length] : null;
+    if (prop){
+      const side = i % 2 ? 1 : -1;
+      ok = await laborGo(h, nearestWalkable(prop.x + side * 50 * node.scale, prop.y + (20 + 14 * Math.floor(i / 2)) * node.scale));
+      if (!ok) return;
+      h.face = faceOf(prop.x - h.x, prop.y - h.y);
+    }
     const pose = WORK_POSE[labor && labor.task];
     if (pose === "scrub" && hasSheet(h, "scrub")){
-      h.path = []; setAnim(h, "scrub"); h.waitUntil = now + SCRUB_MS;
-      await wait(SCRUB_MS);
-      if (h.anim === "scrub") setAnim(h, "idle");
+      h.path = []; setAnim(h, "scrub");
+      if (!ambient) h.waitUntil = now + SCRUB_MS;       // the button holds the hero to the job; the ambient scrub does not
+      const t0 = now; while (now - t0 < SCRUB_MS && h.anim === "scrub" && !h.path.length) await wait(150);
+      if (h.anim === "scrub") setAnim(h, "idle"); else ok = false;
     } else if (pose === "carry" && hasSheet(h, "carry")){
       if (hasSheet(h, "heave")) await new Promise(r => playOnce(h, "heave", r));
       const from = {x: h.x, y: h.y}, away = prop ? Math.sign(h.x - prop.x) || 1 : 1;
       h.walkAs = "carry";
-      await laborGo(h, nearestWalkable(h.x + away * CARRY_PX * node.scale, h.y + 30 * node.scale));
+      ok = await laborGo(h, nearestWalkable(h.x + away * CARRY_PX * node.scale, h.y + 30 * node.scale));
+      if (!ok) return;
       await wait(500);
-      await laborGo(h, nearestWalkable(from.x, from.y));
+      ok = await laborGo(h, nearestWalkable(from.x, from.y));
+      if (!ok) return;
       h.walkAs = null; setAnim(h, "idle");
     }
-  } finally { h.performing = false; h.walkAs = null; }
+  } finally {
+    h.performing = false; h.walkAs = null;
+    if (!ok) h.nextWork = now + 15000;                 // interrupted: leave this hero alone a while
+  }
 }
+function laborAmbient(){
+  if (!atWorkPlate() || mode !== "explore" || timeStopped || sneak) return;
+  for (const h of party){
+    if (h.ko || h.down || h.performing || h.once || h.kbd || h.path.length || h.climbing || h.walkIn || owRemote(h)) continue;
+    if (h.nextWork == null || h.nextWorkDetail !== labor.id){ h.nextWorkDetail = labor.id; h.nextWork = now + 2500 + Math.random() * 3000; continue; }
+    if (now < h.nextWork) continue;
+    h.nextWork = now + 7000 + Math.random() * 6000;
+    laborPerform(h, true);
+  }
+}
+setInterval(laborAmbient, 1000);
 // the work song: its own player beside explore/combat/ambience, so tickMusic fades it like the others
 music.labor = new Audio(`${APP ? "/" : ""}audio/labor/${WORK_SONG}.mp3`); music.labor.loop = true; music.labor.preload = "none";
 LEVEL.labor = .5;
@@ -10312,7 +10347,7 @@ function stopActivity(a){ if (a.act){ a.act = null; if (a.anim !== "walk") setAn
 function idleLife(a){
   if (a.stroll && strollBack(a)) return;                                                 // a guard back from a walk off the plate
   if (a.talkHold && now < a.talkHold) return;                                            // in a conversation: no wandering off
-  if (a === leader || a.once || a.fading || a.offStage || a.creature || a.body || a.riding || owRemote(a)) return;   // creatures move by tickCreatures, not the idle wander
+  if (a === leader || a.once || a.performing || a.fading || a.offStage || a.creature || a.body || a.riding || owRemote(a)) return;   // creatures move by tickCreatures, not the idle wander
   if (a.patrol){                        // walk the beat end to end, pause, turn, walk back
     if (a.path.length) return;
     if (now < (a.actUntil || 0)) return;
@@ -10679,10 +10714,12 @@ function owHeroTick(){
       }
       continue;
     }
-    const moved = !last || Math.hypot(dest.x - last.tx, dest.y - last.ty) > 8 || (a.kbd && Math.hypot(a.x - last.x, a.y - last.y) > 24) || (!a.path.length && Math.hypot(a.x - last.x, a.y - last.y) > 30);
+    const pose = a.walkAs === "carry" ? "carry" : a.anim === "scrub" ? "scrub" : null;   // Hard Labor's work poses, seen at the table
+    const moved = !last || Math.hypot(dest.x - last.tx, dest.y - last.ty) > 8 || (a.kbd && Math.hypot(a.x - last.x, a.y - last.y) > 24) || (!a.path.length && Math.hypot(a.x - last.x, a.y - last.y) > 30) || (last.pose || null) !== pose;
     if (!moved) continue;
     const seq = Math.max(owNow(), (OW.seen[a.id] || 0) + 1); OW.seen[a.id] = seq;
     const e = {x: Math.round(a.x), y: Math.round(a.y), tx: Math.round(dest.x), ty: Math.round(dest.y), face: a.face | 0, plate: cur, seq, cid: characterIdOf(a.id)};
+    if (pose) e.pose = pose;
     OW.sent[a.id] = e; if (ordered) a.netDest = {x: dest.x, y: dest.y};
     heroes[a.id] = e;
   }
@@ -10697,9 +10734,19 @@ function owApplyHero(slug, h){
   if (Math.hypot(a.x - h.x, a.y - h.y) > 220 * node.scale){ a.x = h.x; a.y = h.y; a.alpha = 1; }   // too far apart to walk it: put it there
   const dest = {x: h.tx, y: h.ty}; a.netDest = dest; OW.sent[slug] = {...h}; OW.last[slug] = h;
   stopActivity(a); a.kbd = false; a.onArrive = null; a.walkIn = false;
+  a.netPose = h.pose === "carry" || h.pose === "scrub" ? h.pose : null; a.walkAs = a.netPose === "carry" ? "carry" : null;
   if (Math.hypot(dest.x - a.x, dest.y - a.y) > 6){ const p = findPath(a, nearestWalkable(dest.x, dest.y)); a.path = p && p.length ? p : [{x: dest.x, y: dest.y}]; }
   else { a.path = []; a.face = h.face | 0; }
 }
+// a hero someone else drives scrubs once they have arrived where they scrub, and stops when its driver stops
+setInterval(() => {
+  if (!OW.on || mode !== "explore") return;
+  for (const a of party){
+    if (!owRemote(a) || a.once) continue;
+    if (a.netPose === "scrub" && !a.path.length && hasSheet(a, "scrub")) setAnim(a, "scrub");
+    else if (a.netPose !== "scrub" && a.anim === "scrub") setAnim(a, "idle");
+  }
+}, 400);
 // --- plates ---
 function owLeavesPlate(to, z, cut){
   if (!OW.on) return;

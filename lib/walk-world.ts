@@ -48,7 +48,13 @@ export type Hero = {
   by: string
   /** the hero's owner (characters.id), when it has one */
   cid: string | null
+  /** Hard Labor's work pose while the driver's screen plays it ("carry" | "scrub"); absent when the hero is not working */
+  pose?: HeroPose
 }
+
+/** The work poses other screens are told about (Sam, 2026-10-27: "no work animations"). Anything else is dropped. */
+export const HERO_POSES = ["carry", "scrub"] as const
+export type HeroPose = (typeof HERO_POSES)[number]
 
 /**
  * A plate's key in the walk SPEC: "10", "10b", "5c", "3k", "tunnels"… Text, because plates are not all numbers.
@@ -290,7 +296,9 @@ export function cleanPatch(raw: unknown, by: string): { patch: Patch } | { error
       const face = int(h?.face, 0, 7), plate = plateId(h?.plate), seq = num(h?.seq, Number.MAX_SAFE_INTEGER)
       if (x === null || y === null || tx === null || ty === null || face === null || plate === null || seq === null) return { error: `bad hero ${slug}` }
       const cid = typeof h.cid === "string" && h.cid.length <= 64 ? h.cid : null
-      heroes[slug] = { x, y, tx, ty, face, plate, seq, by, cid }
+      const hero: Hero = { x, y, tx, ty, face, plate, seq, by, cid }
+      if ((HERO_POSES as readonly unknown[]).includes(h.pose)) hero.pose = h.pose as HeroPose
+      heroes[slug] = hero
     }
     out.heroes = heroes
   }
