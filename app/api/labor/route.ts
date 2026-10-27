@@ -6,7 +6,7 @@ import { jorlanOnDuty, readStage } from "@/lib/stage-roster"
 import { disobey, planDay, seeded, shiftAt, suspicionReasons, type CrewMember, type PlannedDetail, type PocketResult } from "@/lib/labor"
 import { CONFISCATION_STASH_NAME } from "@/lib/confiscation"
 // plain .mjs, shared with the walk page (build_walk.py /*__LABOR__*/)
-import { PRISONERS, advance, choiceEffect, prisonerSlug, tooBigToHide } from "@/lib/labor-walk.mjs"
+import { PRISONERS, advance, arrivalStep, choiceEffect, prisonerSlug, shiftTimeout, tooBigToHide } from "@/lib/labor-walk.mjs"
 
 // /api/labor — Hard Labor: the work details that take the party out of the Velkynvelve slave pen.
 // Design of record: project doc claude/Hard_Labor_Module_2026-10-26.md. Rules: lib/labor.ts, lib/labor-walk.mjs.
@@ -14,7 +14,9 @@ import { PRISONERS, advance, choiceEffect, prisonerSlug, tooBigToHide } from "@/
 //   GET    today's rota for the active run, planned on first ask (deterministic per run and day, so two browsers
 //          asking at once plan the same rows and the table's unique key keeps one). Answers with the party's own
 //          detail and whether its shift is running now on the game clock. A party detail left over from an earlier
-//          day that never ran is called off (`aborted`) — the day ended without it.
+//          day that never ran is called off (`aborted`) — the day ended without it. A detail working for more than one
+//          game hour is marked overdue (`overdue: true`: the map that may finish the shift walks them home), and called
+//          off if no map has started home a minute later (lib/labor-walk.mjs shiftTimeout; Sam, 2026-10-26).
 //   POST   {id, action, choice?, slug?, characterId?, claimToken?}
 //          action = call | march | arrive | return | done | choice | abort | event (what happened at the station: work, redo, look, pocket, caught, searched)
 //                   | disobey (warning, then Malachar's d20: defused / volleys) | search (suspicion from the record) | confiscate (to the stash)
@@ -43,6 +45,45 @@ async function clockNow(db: Db): Promise<{ day: number; minutes: number }> {
   const { data } = await db.from("game_clock").select("game_day, minutes_of_day").order("updated_at", { ascending: false }).limit(1).maybeSingle()
   const day = Math.max(1, Number(data?.game_day) || 1), minutes = Number(data?.minutes_of_day) || 0
   return { day, minutes }
+}
+
+/** The game clock as it read at a real moment (time_log), for a detail that reached 'working' before steps were stamped. */
+async function clockAt(db: Db, at: string | undefined): Promise<{ day: number; minutes: number } | null> {
+  if (!at) return null
+  const { data } = await db.from("time_log").select("game_day_after, minutes_of_day_after").lte("created_at", at)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle()
+  return data ? { day: Math.max(1, Number(data.game_day_after) || 1), minutes: Number(data.minutes_of_day_after) || 0 } : null
+}
+
+type DetailRow = { id: string; status: string; events: unknown; updated_at: string } & Record<string, unknown>
+
+/**
+ * The one-game-hour shift timeout (lib/labor-walk.mjs shiftTimeout). Writes are conditional on the row being as read,
+ * so of the several maps polling at once one marks it and the rest read the mark. Returns the row and whether the maps
+ * should walk the party home now.
+ */
+async function applyShiftTimeout(db: Db, detail: DetailRow, clock: { day: number; minutes: number }): Promise<{ detail: DetailRow; overdue: boolean }> {
+  if (detail.status !== "working") return { detail, overdue: false }
+  const events = Array.isArray(detail.events) ? [...detail.events] : []
+  const step = arrivalStep(events)
+  const arrived = step?.clock ?? (await clockAt(db, step?.at))
+  const verdict = shiftTimeout({ ...detail, events }, clock, Date.now(), arrived)
+  if (verdict === "ok") return { detail, overdue: false }
+  if (verdict === "overdue") return { detail, overdue: true }
+  const now = new Date().toISOString()
+  if (verdict === "flag") {
+    events.push({ at: now, kind: "overdue", clock, arrived })
+    const { data } = await db.from("work_details").update({ events, updated_at: now })
+      .eq("id", detail.id).eq("status", "working").eq("updated_at", detail.updated_at).select("*").maybeSingle()
+    return { detail: (data as DetailRow | null) ?? detail, overdue: true }
+  }
+  // "abort": marked overdue a minute ago and no map started the way home
+  events.push({ at: now, kind: "step", action: "abort", from: "working", to: "aborted", by: "timeout", clock })
+  const { data } = await db.from("work_details").update({ status: "aborted", events, updated_at: now })
+    .eq("id", detail.id).eq("status", "working").eq("updated_at", detail.updated_at).select("*").maybeSingle()
+  if (data) await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text:
+    "A work detail ran past its shift (one game hour) and no map walked the party home, so it was called off. The party is wherever it was standing." })
+  return { detail: (data as DetailRow | null) ?? detail, overdue: false }
 }
 
 const hash = (s: string) => { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0 }
@@ -98,7 +139,9 @@ export async function GET() {
     const { data: out } = await db.from("work_details").select("*").eq("campaign_run_id", runId).eq("party", true)
       .in("status", ["called", "escorting", "working", "returning"]).order("day", { ascending: false }).limit(1).maybeSingle()
     if (out) detail = out
-    return NextResponse.json({ detail, due: !!detail && detail.status === "scheduled" && detail.day === day && detail.shift === shift, day, shift, minutes, others: rows.filter((r) => !r.party).length })
+    let overdue = false
+    if (detail && detail.status === "working") ({ detail, overdue } = await applyShiftTimeout(db, detail as DetailRow, { day, minutes }))
+    return NextResponse.json({ detail, due: !!detail && detail.status === "scheduled" && detail.day === day && detail.shift === shift, overdue, day, shift, minutes, others: rows.filter((r) => !r.party).length })
   } catch (e) {
     return NextResponse.json({ detail: null, error: String(e) }, { status: 200 })
   }
@@ -224,14 +267,15 @@ export async function POST(req: NextRequest) {
   }
 
   if (action === "abort" && !dm) return NextResponse.json({ error: "only the DM may call a detail off" }, { status: 403 })
+  // every step carries the game clock: 'working' starts the one-game-hour shift timeout from it
+  const clock = await clockNow(db)
   if (action === "call" && !dm) {
     // a player's browser may only call a detail whose shift is running now
-    const { day, minutes } = await clockNow(db)
-    if (row.day !== day || row.shift !== shiftAt(minutes)) return NextResponse.json({ error: "not this shift" }, { status: 409 })
+    if (row.day !== clock.day || row.shift !== shiftAt(clock.minutes)) return NextResponse.json({ error: "not this shift" }, { status: 409 })
   }
   const next = advance(row.status, action)
   if (!next) return NextResponse.json({ error: `cannot ${action} a ${row.status} detail`, detail: row }, { status: 409 })
-  events.push({ at: now, kind: "step", action, from: row.status, to: next, by: dm ? "dm" : playerId })
+  events.push({ at: now, kind: "step", action, from: row.status, to: next, by: dm ? "dm" : playerId, clock })
   // conditional on the status we read: of two browsers racing to march, one wins
   const { data, error } = await db.from("work_details").update({ status: next, events, updated_at: now }).eq("id", id).eq("status", row.status).select("*").maybeSingle()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
