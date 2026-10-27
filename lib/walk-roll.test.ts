@@ -198,3 +198,19 @@ describe("the shipped map asks the dashboard and obeys the answer", () => {
     expect(r).toMatchObject({ ok: true, total: 9, success: false })
   })
 })
+
+describe("Hard Labor rolls", () => {
+  it("rolls every work detail check the map can ask for", () => {
+    for (const k of ["labor:water", "labor:lift", "labor:pots", "labor:kitchen", "labor:lift-trouble", "labor:look", "labor:pocket", "labor:pocket-jorlan"]) {
+      expect(isWalkActionKey(k), k).toBe(true)
+    }
+  })
+  it("pockets against the escort's passive Perception (OotA p.19): 12 for a drow, 14 for Jorlan", () => {
+    expect(WALK_ACTIONS["labor:pocket"].dc).toBe(12)
+    expect(WALK_ACTIONS["labor:pocket-jorlan"].dc).toBe(14)
+    expect(WALK_ACTIONS["labor:pocket"].check).toMatchObject({ kind: "skill", skill: "sleight_of_hand" })
+  })
+  it("says where every labor DC comes from", () => {
+    for (const [k, a] of Object.entries(WALK_ACTIONS)) if (k.startsWith("labor:")) expect(a.source, k).toBeTruthy()
+  })
+})

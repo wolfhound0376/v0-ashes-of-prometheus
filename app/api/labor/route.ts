@@ -15,7 +15,7 @@ import { PRISONERS, advance, choiceEffect, prisonerSlug } from "@/lib/labor-walk
 //          detail and whether its shift is running now on the game clock. A party detail left over from an earlier
 //          day that never ran is called off (`aborted`) — the day ended without it.
 //   POST   {id, action, choice?, slug?, characterId?, claimToken?}
-//          action = call | march | arrive | return | done | choice | abort
+//          action = call | march | arrive | return | done | choice | abort | event (what happened at the station: work, redo, look, pocket, caught)
 //          The DM (x-dm-key) may do anything, including calling a detail before its shift (`call` with force) and
 //          `abort`. A seated player's own browser may move the detail along its steps and give its own hero's answer.
 //          A step out of order — two browsers racing to march — answers 409, and only the winner drives the walk.
@@ -133,6 +133,23 @@ export async function POST(req: NextRequest) {
     events.push({ at: now, kind: "choice", slug, choice, by: dm ? "dm" : playerId })
     if (choiceEffect(choice).warning) events.push({ at: now, kind: "warning", slug, cause: "refuse-work" })   // strike 1 [SAM]
     const { data } = await db.from("work_details").update({ events, updated_at: now }).eq("id", id).select("*").maybeSingle()
+    return NextResponse.json({ detail: data })
+  }
+
+  if (action === "event") {
+    // what happened at the station (PR 3): the work, a redo, a look, a pocket (and how close it was), a catch.
+    // The record PR 4's search-on-suspicion reads; nothing here changes the detail's step.
+    const kind = ["work", "redo", "look", "pocket", "caught"].includes(body.kind) ? body.kind : null
+    if (!kind) return NextResponse.json({ error: "unknown event" }, { status: 400 })
+    if (row.status !== "working") return NextResponse.json({ error: "the detail is not at work" }, { status: 409 })
+    if (!dm && !(row.crew as CrewMember[]).some((c) => c.kind === "pc" && c.id === playerId)) return NextResponse.json({ error: "your hero is not on this detail" }, { status: 403 })
+    const clip = (v: unknown, n: number) => (typeof v === "string" ? v.slice(0, n) : undefined)
+    const num = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? Math.round(v) : undefined)
+    events.push({
+      at: now, kind, by: dm ? "dm" : playerId, slug: clip(body.slug, 40), item: clip(body.item, 60), success: typeof body.success === "boolean" ? body.success : undefined,
+      total: num(body.total), dc: num(body.dc), margin: num(body.margin), close: typeof body.close === "boolean" ? body.close : undefined,
+    })
+    const { data } = await db.from("work_details").update({ events: events.slice(-200), updated_at: now }).eq("id", id).select("*").maybeSingle()
     return NextResponse.json({ detail: data })
   }
 

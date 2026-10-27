@@ -396,7 +396,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="titlecard" id="titlecard"><div class="no" id="tcNo"></div><h2 id="tcName"></h2></div>
     <div class="log" id="log" aria-live="polite"></div>
     <div class="acts" id="acts" aria-live="polite"></div>
-    <div id="laborBar" hidden style="position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:30;display:flex;gap:10px;align-items:center;padding:6px 12px;border:1px solid rgba(201,162,74,.55);border-radius:6px;background:rgba(12,8,16,.82);color:#e8dcc0;font:600 13px/1.2 Georgia,serif;letter-spacing:.02em"><span id="laborWhat">Work detail</span><button class="btn" id="laborEnd" hidden>Finish the shift</button></div>
+    <div id="laborBar" hidden style="position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:30;display:flex;gap:10px;align-items:center;padding:6px 12px;border:1px solid rgba(201,162,74,.55);border-radius:6px;background:rgba(12,8,16,.82);color:#e8dcc0;font:600 13px/1.2 Georgia,serif;letter-spacing:.02em"><span id="laborWhat">Work detail</span><button class="btn" id="laborWork" hidden>Work</button><button class="btn" id="laborLook" hidden>Look around</button><button class="btn" id="laborPocket" hidden>Pocket something</button><button class="btn" id="laborEnd" hidden>Finish the shift</button></div>
     <div class="frozen-badge" id="frozen" role="status" hidden>Time is stopped</div>
     <div class="zoom">
       <button id="zOut" aria-label="Zoom out">−</button>
@@ -1064,7 +1064,7 @@ function draw(){
   const shx = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0, shy = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0; shakeAmt = shakeAmt > .5 ? shakeAmt * .82 : 0;
   ctx.setTransform(s, 0, 0, s, (view.tx + shx) * dpr, (view.ty + shy) * dpr);
   ctx.imageSmoothingEnabled = false;
-  drawDoor(); drawProps(); drawDecor(); drawLift(); drawPropHighlight(); drawLootHighlight(); drawFloorItems(); drawSneakCones();
+  drawDoor(); drawProps(); drawDecor(); drawLift(); drawPropHighlight(); drawLootHighlight(); drawFloorItems(); drawSneakCones(); drawLaborCones();
   // exits: soft glows so players can see the ways out
   if (mode === "explore" || mode === "dialog"){
     const pulse = .5 + .5 * Math.sin(now / 520);
@@ -2535,7 +2535,7 @@ function plateCrop(poly){
 let hoverLoot = null;
 function lootSpotAt(w){ return (node.loot || []).find(l => inPoly(l.poly, w.x, w.y)) || null; }
 function lootCenter(l){ const xs = l.poly.map(p => p[0]), ys = l.poly.map(p => p[1]); return {x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) + 30}; }
-function openLootSpot(l){ openLoot(l.id, l.name, {poly: l.poly, text: l.text}); }
+function openLootSpot(l){ if (atWorkPlate()) return laborDoPocket({id: l.id, name: l.name, poly: l.poly}); openLoot(l.id, l.name, {poly: l.poly, text: l.text}); }   // at work: under the escort's eye (Hard Labor)
 function drawLootHighlight(){
   if (mode !== "explore" && mode !== "dialog") return;
   for (const l of node.loot || []){
@@ -2696,7 +2696,7 @@ function openBody(b){
 // the dashboard's engine with the dashboard's modifier, and the page answers {ok, success, total, natural} — or
 // {cancelled} if they stepped back. "aop:roll-ack" says the panel is open; after it the map waits as long as the
 // player does. Opened as a plain file (no game around it), the map rolls locally against the same DC.
-const ROLLS = new Map(), LOCAL_DC = {"pen-gate:pick": 20, "pen-gate:force": 20};
+const ROLLS = new Map(), LOCAL_DC = {"pen-gate:pick": 20, "pen-gate:force": 20, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:lift-trouble": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14};
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
@@ -6225,6 +6225,131 @@ function renderLaborBar(){
   bar.hidden = false;
   $("laborWhat").textContent = labor.status === "working" && at ? `Work detail: ${TASKS_LABEL[labor.task] || labor.task}` : labor.status === "returning" ? "Work detail: back to the pen" : "Work detail: under escort";
   $("laborEnd").hidden = !(labor.status === "working" && at && (isDm() || laborDriving || !APP));
+  const work = labor.status === "working" && at && !!laborHero();
+  for (const id of ["laborWork", "laborLook", "laborPocket"]) $(id).hidden = !work;
+  if (work){ const w = laborWorkDone[`${labor.id}:${laborHero().id}`]; $("laborWork").textContent = w && w.done ? "Share done" : w && w.progress ? `Work (${w.progress}/${WORK_NEEDED})` : "Work"; }
+}
+
+// ---------- HARD LABOR: the stations (PR 3) ----------
+// The work bar while the party is at work: Work (the chore, rolled on the dashboard where it has a check), Look around
+// (Perception: what the room shows — at the falls, the webs that make the jump safe), Pocket something (Sleight of
+// Hand against the escort's passive Perception, OotA p.19; never while an escort is looking at you). What can be
+// pocketed is what the plate already holds (story.json `loot`: the kitchen's knives, the cliff's sacks, the barracks
+// lockers, the armory racks) and the drow's belt — catalogue items only, nothing invented. Refusing to give back what
+// you were caught with, the search on the way back, and the second offence are PR 4.
+const laborWorkDone = {};            // hero slug → {progress, redone, done}, for this detail
+const laborLooked = {};              // `${detail}:${plate}:${slug}`
+const atWorkPlate = () => laborLive() && labor.status === "working" && String(cur) === String(detailRoute(SPEC, labor.task).plate);
+function laborHero(){ const h = ownLeader(); return h && party.includes(h) && !h.ko ? h : null; }
+function laborEvent(kind, extra = {}){ laborPost("event", Object.assign({kind}, extra)); }
+function escortTurnsTo(h){ for (const a of laborEscort()) a.face = faceOf(h.x - a.x, h.y - a.y); }
+async function laborDoWork(){
+  const h = laborHero(); if (!h || !atWorkPlate()) return;
+  const k = `${labor.id}:${h.id}`, w = laborWorkDone[k] || (laborWorkDone[k] = {progress: 0, redone: false, done: false});
+  if (w.done){ toast(`${fname(h)}'s share is done. The escort is waiting on the others.`); return; }
+  const key = WORK_ROLL[labor.task];
+  let ok = true, total;
+  if (key){
+    const r = await rollOnDashboard(key, 0);
+    if (!r || !r.ok){ if (r && r.error) toast(r.error); return; }
+    if (r.cancelled) return;
+    ok = !!r.success; total = r.total;
+  } else { narrate(h, `${fname(h)} works.`); await wait(900); }
+  const step = workStep(labor.task, w.progress, ok, w.redone);
+  w.progress = step.progress; w.done = step.done; if (step.line === "whim") w.redone = true;
+  const d = escortDrow();
+  if (step.line === "fail") escortSays(d, pickLine(WORK_LINES.fail, Math.random));
+  else if (step.line === "whim") escortSays(d, WORK_LINES.whim[labor.task] || WORK_LINES.fail[0]);
+  else if (step.line === "done") escortSays(d, WORK_LINES.done);
+  else if (Math.random() < .5) escortSays(d, pickLine(WORK_LINES.progress, Math.random), 3000);
+  log(step.done ? `<b>${esc(fname(h))}</b> finishes their share of the work.` : step.redo ? `<b>${esc(fname(h))}</b> is made to do it again.` : `<b>${esc(fname(h))}</b> works on.`);
+  laborEvent("work", {slug: h.id, success: ok, total}); if (step.redo) laborEvent("redo", {slug: h.id});
+  renderLaborBar();
+}
+async function laborDoLook(){
+  const h = laborHero(); if (!h || !atWorkPlate()) return;
+  const k = `${labor.id}:${cur}:${h.id}`; if (laborLooked[k]){ toast(`${fname(h)} has already taken in what there is to see here.`); return; }
+  const seed = LOOK_SEEDS[String(cur)];
+  const r = await rollOnDashboard("labor:look", 0);
+  if (!r || !r.ok){ if (r && r.error) toast(r.error); return; }
+  if (r.cancelled) return;
+  laborLooked[k] = true;
+  if (r.success && seed){
+    log(`${esc(fname(h))} keeps their head down and their eyes open. <em>${esc(seed.text)}</em> <small>(${esc(seed.source)})</small>`);
+    if (seed.falls && !state.fallsNoticed){ state.fallsNoticed = `${fname(h)} saw the webs below the falls while working the detail`; saveWalk(); }
+  } else log(`${esc(fname(h))} looks about, and sees nothing they can use.`);
+  laborEvent("look", {slug: h.id, success: !!r.success, total: r.total});
+}
+// what is within reach: the plate's own loot spots, and the escort drow's belt (the pen key, OotA p.19)
+function laborReach(h){
+  const out = [];
+  for (const l of node.loot || []){ const c = lootCenter(l); if (Math.hypot(h.x - c.x, h.y - c.y) < 340 * node.scale) out.push({id: l.id, name: l.name, poly: l.poly}); }
+  const d = escortDrow(); if (d && d.id === "escort-drow" && Math.hypot(h.x - d.x, h.y - d.y) < 110 * node.scale) out.push({id: "pocket:drow-guard-male", name: "The drow guard's belt"});
+  return out;
+}
+function laborWatchedBy(h){ return laborEscort().filter(w => inView(w, h)); }
+function laborDoPocket(spot){
+  const h = laborHero(); if (!h || !atWorkPlate()) return;
+  const eyes = laborWatchedBy(h);
+  if (eyes.length){ popText(eyes[0], "!", "#ffb35a", 1.1); toast(`${heroName(eyes[0])} is looking right at ${fname(h)}. Not now.`, 3200); return; }
+  const reach = spot ? [spot] : laborReach(h);
+  if (!reach.length){ toast(`Nothing worth taking is within ${fname(h)}'s reach here.`, 3200); return; }
+  if (reach.length === 1) return laborPocketFrom(h, reach[0]);
+  showDialog({title: "Pocket something", body: `The escort is not looking at ${fname(h)}. From where?`, buttons: [...reach.map(r => ({label: r.name, fn: () => laborPocketFrom(h, r)})), {label: "Not now"}]});
+}
+async function laborPocketFrom(h, spot){
+  if (mode !== "explore" && mode !== "dialog") return;
+  mode = "dialog"; tip.hidden = true;
+  if (spot.poly) plateCrop(spot.poly); else { const c = $("objPic").getContext("2d"); c.clearRect(0, 0, 128, 128); }
+  const box = $("objBtns"); box.innerHTML = "";
+  const close = () => { $("obj").hidden = true; mode = "explore"; };
+  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); return b; };
+  $("objWho").textContent = spot.name; $("objText").textContent = "…"; $("obj").hidden = false;
+  const j = await fetchLoot(spot.id); if ($("obj").hidden) return;
+  const rows = (j.rows || []).filter(r => !r.missing && r.kind !== "preview-stash");
+  $("objText").textContent = rows.length ? `What does ${fname(h)} try to slip into their rags? (Sleight of Hand — the escort's eyes are elsewhere, for now.)` : "Nothing here that would fit in a sleeve.";
+  for (const row of rows) add(`Pocket: ${lootLabel(row)}`, async () => {
+    close();
+    const key = pocketRoll((labor.escort || []).map(e => e.bestiary)), dc = LOCAL_DC[key] ?? 12;
+    if (laborWatchedBy(h).length){ toast(`Someone has turned round. ${fname(h)} leaves it.`, 3000); return; }
+    const r = await rollOnDashboard(key, 0);
+    if (!r || !r.ok){ if (r && r.error) toast(r.error); return; }
+    if (r.cancelled) return;
+    if (r.success){
+      const one = Object.assign({}, row, {qty: 1});
+      if (await takeLoot(h, spot.id, one)){
+        const margin = (r.total ?? dc) - dc, near = margin <= POCKET_CLOSE;
+        if (near){ const d = escortDrow(); if (d){ d.face = faceOf(h.x - d.x, h.y - d.y); popText(d, "?", "#ffd27a", 1.1); } log(`${esc(fname(h))} palms the ${esc(row.name)} — and the drow's eyes slide over for a moment, then away.`); }
+        else log(`${esc(fname(h))} palms the ${esc(row.name)}. Nobody sees.`);
+        laborEvent("pocket", {slug: h.id, item: row.slug, total: r.total, dc, margin, close: near});
+        offerEquip();
+      }
+    } else {
+      escortTurnsTo(h); bank("ui/nat1", .5); popText(h, "caught!", "#ff6b5e", 1.2);
+      escortSays(escortDrow(), CAUGHT_LINE, 6000);
+      log(`<b>The escort catches ${esc(fname(h))}'s hand</b> at the ${esc(row.name)}. It stays where it was.`);
+      laborEvent("caught", {slug: h.id, item: row.slug, total: r.total, dc});
+      if (APP) handOff(`${fname(h)} tried to pocket the ${row.name} on a work detail with Sleight of Hand and failed; the escort saw. The item stays where it was. Per the book, a prisoner caught is commanded to relinquish it, on pain of death. Play the moment.`);
+    }
+  }, "primary");
+  add("Leave it", close);
+  box.firstChild?.focus();
+}
+// the escort's gaze drifts while they work: now on the party, now away — the windows a quick hand waits for
+setInterval(() => {
+  if (!atWorkPlate() || mode !== "explore" || timeStopped) return;
+  for (const a of laborEscort()){
+    if (Math.random() < .45){ a.face = Math.floor(Math.random() * 8); }
+    else { const t = party.filter(p => !p.ko).sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y))[0]; if (t) a.face = faceOf(t.x - a.x, t.y - a.y); }
+  }
+}, 3200);
+function drawLaborCones(){
+  if (!atWorkPlate() || (mode !== "explore" && mode !== "dialog")) return;
+  for (const w of laborEscort()){
+    const r = VIEW_FT * ftPx(w), a0 = faceAngle(w), g = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r), col = "255,179,90";
+    g.addColorStop(0, `rgba(${col},.34)`); g.addColorStop(.7, `rgba(${col},.12)`); g.addColorStop(1, `rgba(${col},0)`);
+    ctx.save(); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(w.x, w.y); ctx.arc(w.x, w.y, r, a0 - VIEW_HALF, a0 + VIEW_HALF); ctx.closePath(); ctx.fill(); ctx.restore();
+  }
 }
 
 // ---------- the guards watch the gate ----------
@@ -6779,6 +6904,7 @@ function comeToListener(n){ if (n && n.kind === "npc" && (mode === "explore" || 
 if (APP){ setTimeout(pollStage, 2500); setInterval(pollStage, 5000); }
 if (APP){ setTimeout(pollLabor, 4000); setInterval(pollLabor, 6000); }   // Hard Labor: the party's work detail
 $("laborEnd").onclick = () => laborFinish();
+$("laborWork").onclick = () => laborDoWork(); $("laborLook").onclick = () => laborDoLook(); $("laborPocket").onclick = () => laborDoPocket();
 $("dmLaborCall").onclick = async () => { toggleDm(false); if (!labor){ await pollLabor(); } if (!labor){ toast("No work detail today — nobody is seated yet."); return; } if (labor.status !== "scheduled"){ toast(`The detail is already ${labor.status}.`); return; } if (cur !== PEN){ toast("The party must be in the pen to be called out."); return; } const was = labor.status; if (await laborPost("call")) laborFollow(was); else toast("Could not call the detail."); };
 $("dmLaborOff").onclick = async () => { toggleDm(false); if (!labor || !isLive(labor.status) && labor.status !== "scheduled"){ toast("No work detail to call off."); return; } const was = labor.status; if (await laborPost("abort")) laborFollow(was); };
 
