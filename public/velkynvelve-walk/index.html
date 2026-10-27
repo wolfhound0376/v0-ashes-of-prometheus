@@ -1962,6 +1962,9 @@ function chooseDestination(z){
     {label: "Stay here"}]});
 }
 function triggerZone(z){
+  // a hero walking AWAY from the bars after "Step back" may cross the gate's own zone on the way: that is not walking up
+  // to the door, so it must not stop them (measured 2026-10-27: it did, one step out, and the 10 s clock then shot them)
+  if (z.kind === "gate" && leader.gateBackUntil > now) return;
   leader.path = [];
   // Sam, 2026-10-25: the gate card opens "only if you choose to interact with the door, not automatically". Walking
   // up to the bars does nothing; clicking the gate (or its ✋ action) opens it.
@@ -8734,7 +8737,63 @@ function laborPenArrival(){
 // the bars gets the warning ("!"), and the volleys go at THAT hero, not at whoever happens to lead.
 const GATE_WATCH = {near: 200, spot: 330, jorlanNear: 330, again: 20000, sweep: [1800, 3600]};
 const GATE_WARNINGS = ["Back from the gate, rivvil. Now.", "Step away from the bars.", "Another step and you bleed."];
-let gateWarn = null;                       // {stage: "warned", who} while the card is up · {stage: "stepped", until, who} after
+// Sam, 2026-10-27: "When someone approaches the gate and is warned don't automatically kill someone. That only happens
+// if the warning is not heeded or more than 10 seconds have passed since the initial warning." The clock and the
+// verdict are lib/gate-watch.mjs (gateRuleStep), pasted below; this page only asks it and acts on the answer.
+// THE PEN GATE WARNING — the rule, pure, in one copy.
+//
+// Sam, 2026-10-27: "When someone approaches the gate and is warned don't automatically kill someone. That only
+// happens if the warning is not heeded or more than 10 seconds have passed since the initial warning."
+//
+// The bug this replaces (measured on a headless copy of the map, 2026-10-27): the guard warns Kenta at the bars, the
+// player clicks "Step back", and 0.8 s later Derendil is shot dead and the volleys begin. "Step back" opened a
+// "came back too soon" window, and on the very next frame Kenta was still standing at the bars — he had not walked
+// away yet — so the watch read it as coming back and fired.
+//
+// The rule now. A warning starts a clock. The guards shoot ONLY when:
+//   1. the warning is not heeded — "Stay where you are", or the hero gets away from the bars and then comes back
+//      while the warning still stands (GATE_RULES.againMs); or
+//   2. more than GATE_RULES.graceMs (10 s) have passed since the warning and the hero is still at the bars — whether
+//      the card was never answered or they said "Step back" and never actually left.
+// Walking away from the bars inside those 10 s is heeding it. Nothing is ever fired on the frame the warning is
+// answered.
+//
+// Plain JavaScript for the same reason as lib/drow-surgeon.mjs: build_walk.py pastes this file into the painted map
+// at its GATE_WATCH placeholder (minus `export`), so the map and lib/gate-watch.test.ts read the SAME function. Every
+// name here starts with GATE_RULES or gateRule so the paste cannot collide with the page's own names.
+
+const GATE_RULES = {
+  graceMs: 10000,   // Sam: 10 seconds from the warning to get away from the bars
+  againMs: 20000,   // how long the warning stands: coming back to the bars inside it is not heeding it
+}
+
+/**
+ * One look by the watch. `w` is the warning on record (or null), `at` whether that hero is at the bars and seen by a
+ * guard, `t` the game clock in ms. Returns the warning to keep and what the guards do now:
+ *   "warn"  — a fresh warning (the card goes up, the clock starts)
+ *   "shoot" — not heeded, or out of time
+ *   "wait"  — the clock is running; leave them be
+ *   "none"  — nothing to do
+ * Warning shapes: {stage: "warned", at} while unanswered · {stage: "stepped", at, left} after "Step back".
+ * `at` is always the time of the INITIAL warning; answering the card never resets it.
+ */
+function gateRuleStep(w, at, t) {
+  if (w && w.stage === "stepped" && t - w.at > GATE_RULES.againMs && (w.left || !at)) w = null   // the warning has lapsed: a new approach is warned afresh
+  if (!w) return at ? { w: { stage: "warned", at: t }, act: "warn" } : { w: null, act: "none" }
+  const late = t - w.at > GATE_RULES.graceMs
+  if (w.stage === "warned") {
+    if (late) return at ? { w: null, act: "shoot" } : { w: { stage: "stepped", at: w.at, left: true }, act: "none" }
+    return { w, act: "wait" }
+  }
+  // stepped: they said they would go
+  if (!at) return { w: w.left ? w : { ...w, left: true }, act: "none" }   // away from the bars: heeded
+  if (w.left) return { w: null, act: "shoot" }                           // got away, then came back: not heeded
+  if (late) return { w: null, act: "shoot" }                             // still at the bars 10 s after the warning
+  return { w, act: "wait" }                                              // still walking away
+}
+
+let gateWarn = null;                       // gateRuleStep's warning + who: {stage: "warned", at, who} · {stage: "stepped", at, left, who}
+let gateWarnTimer = 0;                     // the card's countdown while it is up
 // SIGHT. The guards stand on the bridge OUTSIDE the pen, so the only way their eyes get in is through the gate's bars:
 // a guard sees a hero when the hero is inside the guard's view cone (the same 60 ft / 120 deg cone as the Sneak cones)
 // AND the line between them passes through the gate opening AND nothing on the pen floor blocks it after the bars
@@ -8847,11 +8906,22 @@ function tickGateWatch(){
   if (jNear && h && h.jorlanSpoke && now - h.jorlanSpoke < GATE_WATCH.again){ gateWarn = null; return; }   // he is still dealing with them
   if (!guards.length){ gateWarn = null; return; }
   gateScan(guards, g, h, d, sc);
-  const near = !!h && d < GATE_WATCH.near * sc && guards.some(x => gateNotices(x, h));   // at the bars AND seen
-  if (h && d < GATE_WATCH.near * sc && !near && h.gateSpotted) h.gateSpotted = false;   // unseen at the bars: no "?" left hanging
-  if (!near){ if (gateWarn && gateWarn.stage === "stepped" && now > gateWarn.until) gateWarn = null; return; }
-  if (gateWarn && gateWarn.stage === "stepped" && gateWarn.who === h.id && now <= gateWarn.until){ gateGuardsShoot(guards, h); return; }
-  gateWarning(guards, g, h);           // first time here, or the card went away without an answer: ask again
+  if (h && d < GATE_WATCH.near * sc && !gateAtBars(h, guards, g) && h.gateSpotted) h.gateSpotted = false;   // unseen at the bars: no "?" left hanging
+  // the warning is about ONE hero: while it stands, the watch follows that hero (not whoever is nearest)
+  const who = gateWarn ? gateHeroes().find(a => a.id === gateWarn.who) : h;
+  if (!who){ gateWarn = null; return; }
+  gateDecide(guards, g, who);
+}
+/** At the bars AND seen by a guard. */
+function gateAtBars(h, guards, g){
+  return !!h && Math.hypot(h.x - g.x, h.y - g.y) < GATE_WATCH.near * (node.scale || 1) && guards.some(x => gateNotices(x, h));
+}
+/** Ask the rule (lib/gate-watch.mjs) and do what it says: warn, shoot, or leave them be. */
+function gateDecide(guards, g, h){
+  const {w, act} = gateRuleStep(gateWarn && gateWarn.who === h.id ? gateWarn : null, gateAtBars(h, guards, g), now);
+  gateWarn = w ? {...w, who: h.id} : null;
+  if (act === "warn") gateWarning(guards, g, h);
+  else if (act === "shoot") gateGuardsShoot(guards, h);
 }
 function jorlanAtBars(j, h, guards){
   const who = fname(h);
@@ -8866,7 +8936,7 @@ function jorlanAtBars(j, h, guards){
   openTalk(j);
 }
 function gateWarning(guards, g, h = leader){
-  gateWarn = {stage: "warned", who: h.id};
+  if (!gateWarn || gateWarn.who !== h.id) gateWarn = {stage: "warned", at: now, who: h.id};
   const w = guards.sort((a, b) => Math.hypot(a.x - h.x, a.y - h.y) - Math.hypot(b.x - h.x, b.y - h.y))[0];
   guards.forEach(x => { x.path = []; x.actUntil = now + 6000; x.scanAt = now + 6000; faceTo(x, h); });
   h.path = [];
@@ -8878,17 +8948,30 @@ function gateWarning(guards, g, h = leader){
   const c = $("objPic").getContext("2d"); c.clearRect(0, 0, 128, 128);
   try { const m = SPR[w.id].json, an = m.animations.idle; c.imageSmoothingEnabled = false; c.drawImage(SPR[w.id].img.idle, 0, 0, m.cell[0], m.cell[1], 0, 0, 128, 128); } catch (e) {}
   $("objWho").textContent = "A guard on the bridge";
-  $("objText").textContent = `“${line}” A hand crossbow is levelled at ${fname(h)} from the bridge.`;
+  const said = `“${line}” A hand crossbow is levelled at ${fname(h)} from the bridge.`;
+  const left = () => Math.max(0, Math.ceil((GATE_RULES.graceMs - (now - gateWarn.at)) / 1000));
+  const showLeft = () => { $("objText").textContent = `${said} ${fname(h)} has ${left()} second${left() === 1 ? "" : "s"} to get away from the bars.`; };
+  showLeft();
   const box = $("objBtns"); box.innerHTML = "";
   const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); };
+  const close = () => { clearInterval(gateWarnTimer); gateWarnTimer = 0; $("obj").hidden = true; mode = "explore"; ackZone = zoneAt(leader.x, leader.y); };
   add("Step back", () => {
-    $("obj").hidden = true; mode = "explore"; gateWarn = {stage: "stepped", until: now + GATE_WATCH.again, who: h.id};
-    ackZone = zoneAt(leader.x, leader.y);                    // walking away from the bars is not walking up to them
+    // heeded: they walk away. The clock keeps running from the warning — still at the bars when it runs out, or back
+    // at them before the warning lapses, and the guards shoot (lib/gate-watch.mjs). Never on this frame.
+    close(); gateWarn = {stage: "stepped", at: gateWarn.at, left: false, who: h.id};
     const back = nearestWalkable(g.x + (centroid.x - g.x) * .55, g.y + (centroid.y - g.y) * .55);
+    h.gateBackUntil = now + GATE_RULES.graceMs;              // the walk back is not stopped by the gate's zone (triggerZone)
     h.path = findPath(h, back); narrate(h, `${fname(h)} steps back from the gate.`);
   }, "primary");
-  add("Stay where you are", () => { $("obj").hidden = true; mode = "explore"; ackZone = zoneAt(leader.x, leader.y); gateGuardsShoot(gateGuards(), h); });
+  add("Stay where you are", () => { close(); gateWarn = null; gateGuardsShoot(gateGuards(), h); });   // not heeded
   $("obj").hidden = false; box.firstChild?.focus();
+  // the card left unanswered: the countdown runs, and at 10 s the rule decides (still at the bars: they shoot)
+  clearInterval(gateWarnTimer);
+  gateWarnTimer = setInterval(() => {
+    if (!gateWarn || gateWarn.stage !== "warned" || gateWarn.who !== h.id || $("obj").hidden){ clearInterval(gateWarnTimer); gateWarnTimer = 0; return; }
+    showLeft();
+    if (now - gateWarn.at > GATE_RULES.graceMs){ close(); gateDecide(gateGuards(), gateCenter() || g, h); }
+  }, 250);
 }
 function gateGuardsShoot(guards, h = leader){
   gateWarn = null; if (!guards.length || mode !== "explore") return;
