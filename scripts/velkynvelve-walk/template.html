@@ -2407,7 +2407,9 @@ function openProp(pr, opts = {}){
     if (!st.trapKnown) add("Search it for traps", ask("Intelligence (Investigation)", 20, () => { st.trapKnown = true; toast("There: a needle set into the lock, its tip stained dark.", 3600); log(`${fname(leader)} finds a poison needle in the lock of ${pr.name}.`); }, () => { toast("You find nothing wrong with it.", 2800); }));
     if (st.trapKnown && !st.disarmed) add("Disarm the needle (thieves' tools)", ask("Dexterity with thieves' tools", 15, () => { st.disarmed = true; sfx("lock-picked", .7); log(`${fname(leader)} disarms the needle.`); }, () => { sfx("lock-pick-fail", .7); toast("The needle does not come free.", 2800); }));
     add("Pick the lock (thieves' tools)", ask("Dexterity with thieves' tools", 15, () => { needle(pr); sfx("lock-picked", .9); st.locked = false; setTimeout(() => openChest(pr), 700); }, () => { needle(pr); sfx("lock-pick-fail", .8); toast("The lock holds.", 2800); }), "primary");
-    add("Use Ilvara's key", () => { close(); st.locked = false; st.disarmed = true; sfx("lock-picked", .9); log(`${fname(leader)} turns Ilvara's key.`); setTimeout(() => openChest(pr), 600); });
+    // only with the key in hand: OotA area 7, "Ilvara keeps the key in a hidden pocket on the inside of her belt" — lift
+    // it from her (Pick Ilvara's pocket, lib/walk-loot.ts POCKETS) and the needle never fires
+    if (hasItemNamed(ILVARA_KEY)) add("Use Ilvara's key", () => { close(); st.locked = false; st.disarmed = true; sfx("lock-picked", .9); log(`${fname(leader)} turns Ilvara's key.`); setTimeout(() => openChest(pr), 600); });
     add("Leave it", close);
   }
   $("obj").hidden = false; box.firstChild?.focus();
@@ -2992,6 +2994,8 @@ function ownLeader(){
   if (own){ setLeader(own); return own; }
   return null;
 }
+const ILVARA_KEY = "Ilvara's chest key";   // catalogue row ilvara-chest-key (migrations/walk_loot_catalog_2.sql)
+function hasItemNamed(name){ return Object.values(GEAR).some(g => (g.carried || []).some(c => c.name === name)); }
 function hasPenKey(){ return !!state.penKey || Object.values(GEAR).some(g => (g.carried || []).some(c => c.name === PEN_KEY)); }
 // the gate comes open: the lock is beaten, the leaf swings, the way out is lit
 function unlockGate(forced){

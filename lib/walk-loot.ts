@@ -162,6 +162,50 @@ export const BODY_KIT: Record<string, LootEntry[]> = { "drow-guard-male": DROW_K
 export const POCKETS: Record<string, LootEntry[]> = {
   "drow-guard-male": [{ slug: "slave-pen-key", qty: 1, note: "the key to the slave pen" }],
   "drow-guard-female": [{ slug: "slave-pen-key", qty: 1, note: "the key to the slave pen" }],
+  // OotA ch.1 area 7: "Ilvara keeps the key in a hidden pocket on the inside of her belt" (her chest's)
+  "ilvara": [{ slug: "ilvara-chest-key", qty: 1, note: "from a hidden pocket inside her belt" }],
+  // OotA ch.1: "Jorlan used to have a wand that shot globs of sticky material ... Now Shoor carries it" (App B: wand of
+  // viscid globs; the catalogue row already names him as its carrier)
+  "shoor": [{ slug: "wand-of-viscid-globs", qty: 1, note: "Jorlan's old wand, at his belt" }],
+}
+
+// THE OTHER PRISONERS' POCKETS (Sam, 2026-10-27: "Give NPCs something to steal" — built under "Build all of it").
+// The book's Scavenged Possessions (campaign_chunks "Velkynvelve Mechanics - Scavenged Possessions"): each prisoner
+// rolls 1d20 and adds the days they have been held (1d10), 2-30:
+//   2-9 nothing · 10-12 a gold coin · 13-15 a living spider the size of a tarantula · 16-18 five feet of silk rope ·
+//   19-21 a flawed carnelian worth 10 gp · 22-24 a rusted iron bar (a club) · 25-27 a flint shard (a dagger) ·
+//   28-30 ONE hand crossbow bolt coated in drow poison (a single bolt; no crossbow).
+// The roll is made once per prisoner from a seed of their name, so every screen, every session and every reload agree
+// what Eldeth has scraped together — and it stays gone once taken (the walk-loot `taken` flag, as for any pocket).
+export const PRISONERS = ["eldeth", "ront", "derendil", "sarith", "buppido", "jimjar", "topsy", "turvy", "shuushar", "stool"] as const
+const SCAVENGE: { upTo: number; entry: LootEntry | null }[] = [
+  { upTo: 9, entry: null },
+  { upTo: 12, entry: { slug: "gold-coin", qty: 1, note: "scavenged" } },
+  { upTo: 15, entry: { slug: "small-spider", qty: 1, note: "alive, about the size of a tarantula" } },
+  { upTo: 18, entry: { slug: "silk-rope", qty: 1, note: "a five-foot strand" } },
+  { upTo: 21, entry: { slug: "carnelian-gem", qty: 1, note: "flawed, 10 gp" } },
+  { upTo: 24, entry: { slug: "rusted-iron-bar", qty: 1, note: "usable as a club" } },
+  { upTo: 27, entry: { slug: "flint-shard", qty: 1, note: "usable as a dagger" } },
+  { upTo: 30, entry: { slug: "hand-crossbow-bolt-drow-poison", qty: 1, note: "a single bolt, nothing to fire it with" } },
+]
+/** A die from a name: the same name always rolls the same (FNV-1a, then the low bits mixed). */
+function seededDie(seed: string, sides: number): number {
+  let h = 0x811c9dc5
+  for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619)
+  h ^= h >>> 15; h = Math.imul(h, 0x2c1b3c6d); h ^= h >>> 12
+  return 1 + ((h >>> 0) % sides)
+}
+/** The book's roll for one prisoner: {days, d20, total, entry}. Pure and stable. */
+export function scavengedRoll(slug: string): { days: number; d20: number; total: number; entry: LootEntry | null } {
+  const days = seededDie(`velkynvelve:days:${slug}`, 10), d20 = seededDie(`velkynvelve:scavenge:${slug}`, 20), total = d20 + days
+  const row = SCAVENGE.find((r) => total <= r.upTo) ?? SCAVENGE[SCAVENGE.length - 1]
+  return { days, d20, total, entry: row.entry }
+}
+/** What the book puts in this character's pockets: the named pockets above, or a prisoner's scavenged find. */
+export function pocketEntries(slug: string): LootEntry[] {
+  if (POCKETS[slug]) return POCKETS[slug]
+  if ((PRISONERS as readonly string[]).includes(slug)) { const e = scavengedRoll(slug).entry; return e ? [e] : [] }
+  return []
 }
 // Its own catalogue row (migrations/walk_loot_catalog.sql): the catalogue's "Iron key" opens manacles, not the pen gate.
 export const PEN_KEY_SLUG = "slave-pen-key"
