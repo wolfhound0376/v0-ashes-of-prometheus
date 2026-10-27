@@ -8,7 +8,7 @@
  *    curated ElevenLabs premade voices below.
  */
 
-import { stripRollMath } from "./speech-notation"
+import { stripRollTalk } from "./speech-notation"
 
 // ============================================================================
 // VOICE ROUTING — the single gate every TTS entry point funnels through.
@@ -112,9 +112,9 @@ export function sanitizeForTTS(text: string): string {
     .replace(/\.\.\./g, "...") // keep ellipsis (TTS handles it)
     .replace(/\s{2,}/g, " ") // collapse whitespace
     .trim()
-  // Speech-only: roll maths is removed, never pronounced (the UI keeps every
-  // number). See lib/speech-notation.
-  return stripRollMath(stripped)
+  // Speech-only: roll maths and check calls ("Roll for Stealth.") are removed,
+  // never pronounced (Sam, 2026-10-26). See lib/speech-notation.
+  return stripRollTalk(stripped)
 }
 
 export interface ElevenVoice {

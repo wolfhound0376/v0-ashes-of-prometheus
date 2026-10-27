@@ -39,6 +39,7 @@ import { defaultSlotFor, normalizeSlot, slotAccepts } from "@/lib/equipped"
 import { isCombatant } from "@/lib/challenge-rating"
 // blob URLs carry the extension inside ?pathname=, which a naive regex misses.
 import { isVideoUrl } from "@/lib/media-url"
+import { isRollLine, stripRollTalk } from "@/lib/speech-notation"
 import { campBiome, CAMP_BIOME_LABEL, CAMP_PLATES } from "@/lib/camp-plates"
 import { useCampVerdict } from "@/lib/hooks/use-camp-verdict"
 import { characterStageStyle, npcWindowStyle, type StageFramingRow } from "@/lib/stage-framing"
@@ -489,7 +490,14 @@ export function V4Dashboard(props: V4DashboardProps) {
     [isDmView, props.selectedCharacter, props.characters],
   )
   const heardDialogue = useMemo(() => dialogue.map((entry) => hearDialogueRow(entry, hearer)), [dialogue, hearer])
-  const displayedDialogue = (isDmView ? dialogue : heardDialogue).flatMap(dialogueLines)
+  // Rolls are never dialogue (Sam, 2026-10-26): a "🎲 …" announcement or a "[Dice Roll] …" report is not a line
+  // anyone said, so it never shows as one — the dice panel already showed the roll — and a check call or roll
+  // figure inside a spoken line ("Roll for Stealth.", "(Insight)") is cut out. A line left empty is dropped.
+  const displayedDialogue = (isDmView ? dialogue : heardDialogue).flatMap(dialogueLines).flatMap((entry) => {
+    if (isRollLine(entry.text)) return []
+    const text = stripRollTalk(entry.text)
+    return text ? [{ ...entry, text }] : []
+  })
   const followsLang = (lang: string | null | undefined) => !lang || isDmView || understands(hearer, lang)
   // Dictation: browser speech-to-text lands in the input for review; Enter sends.
   // speechBaseRef preserves anything already typed when the mic starts.
@@ -628,7 +636,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   const npcFrame = npcWindowStyle(speakingPlayer ? undefined : ((speakingRow ?? shownNpc) as StageFramingRow | undefined))
   // On the map the opener is the line that matters right now; otherwise their last line in the feed.
   const lastNpcLine = (talkMode && talkPartner?.kind === "npc" && props.talkOpening ? (isDmView || !props.talkOpeningLang ? props.talkOpening : renderSpeechFor(props.talkOpening, props.talkOpeningLang, hearer).text).slice(0, 160) : null)
-    ?? [...(isDmView ? dialogue : heardDialogue)].reverse().find((entry) => entry.speaker === npcName)?.text?.slice(0, 160) ?? null
+    ?? ([...(isDmView ? dialogue : heardDialogue)].reverse().map((entry) => (entry.speaker === npcName ? stripRollTalk(entry.text) : "")).find(Boolean)?.slice(0, 160) || null)
   // Map talk (Sam, 2026-10-13: "When Eldeth says 'a word' and you accept, she should say something on
   // the UI. The UI should start with her in the idle loop and then transition to talking loop when she
   // begins to speak"). The opener was already said on the map, so it is NOT said again here: it goes

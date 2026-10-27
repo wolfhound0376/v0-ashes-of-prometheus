@@ -15,6 +15,7 @@ import { startCombatFlag, endCombatFlag } from "@/lib/combat-flag"
 import { hasPlayableStats } from "@/lib/bestiary-stats"
 import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
 import { parseRollRequest, stripRollRequestExtras, type RollRequestSpec } from "@/lib/roll-requests"
+import { isRollLine } from "@/lib/speech-notation"
 import { evaluate as evaluateSkillProgress, recordTraining, skillTitle, TEACHING_STAKE_PREFIX, type LedgerRow as SkillLedgerRow } from "@/lib/skill-progress"
 import { loadLedger as loadSkillLedger, loadRules as loadSkillProgressRules } from "@/lib/skill-progress-apply"
 import { normaliseSkill, skillProficiency, type SheetSlice } from "@/lib/game-context"
@@ -1470,6 +1471,12 @@ ${combatantRows
   // not appear in the transcript the video is cut from.
   if (director) {
     console.log("[pacing] direction received; not logged, not attributed —", String(message ?? "").slice(0, 80))
+  } else if (isRollLine(String(message ?? ""))) {
+    // A ROLL REPORT IS NOT PERSISTED either (Sam, 2026-10-26: rolls and checks are never dialogue). It is the
+    // app telling Malachar a result — check name, total, DC and his instructions — and stored under the
+    // character's name it showed up as that character SAYING it: a speech bubble on the walk and a line in
+    // the dashboard log. The roll itself is already in the log as its own 🎲 row, which Malachar's history reads.
+    console.log("[rolls] roll report received; not logged as speech —", String(message ?? "").slice(0, 80))
   } else {
     const { error: playerDialogueError } = await supabase.from("dialogue").insert({
       speaker: playerName,
