@@ -307,7 +307,8 @@ export function WalkRollBridge({ frameRef }: { frameRef: RefObject<HTMLIFrameEle
     }
     // Malachar hears it as this character. Only a seated browser can speak as one; the DM narrates their own.
     const seat = readSeat()
-    if (seat.characterId && seat.claimToken && seat.characterId === p.characterId) {
+    // A roll the map narrates itself (pickpocketing) is told to Malachar by the map, with who and what; not twice.
+    if (!("mapNarrates" in action && action.mapNarrates) && seat.characterId && seat.claimToken && seat.characterId === p.characterId) {
       try {
         const msg = walkRollMessage(p.who, action, out.text, out.success)
         await sendMessage(rerolled ? `${rerollNote(p.who)} ${msg}` : msg, seat.characterId, seat.claimToken, { sandbox })

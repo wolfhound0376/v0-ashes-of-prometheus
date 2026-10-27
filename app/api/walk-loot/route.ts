@@ -49,16 +49,18 @@ async function itemsBySlug(db: Db, slugs: string[]): Promise<Map<string, Item>> 
   const { data } = await db.from("items").select(ITEM_COLS).in("slug", [...new Set(slugs)])
   return new Map(((data ?? []) as Item[]).map((i) => [i.slug, i]))
 }
-type StashRow = { id: string; name: string; quantity: number | null; item_type: string | null; icon_url: string | null; items: { item_type: string; rarity: string | null; pixel_icon_url: string | null; icon_url: string | null } | null; owner: { name: string } | null }
+type StashRow = { id: string; name: string; quantity: number | null; item_type: string | null; icon_url: string | null; items: { item_type: string; rarity: string | null; pixel_icon_url: string | null; equippable_slot?: string | null; icon_url: string | null } | null; owner: { name: string } | null }
 async function stashRows(db: Db, sid: string): Promise<StashRow[]> {
   const { data } = await db.from("inventory_items")
-    .select("id,name,quantity,item_type,icon_url,items(item_type,rarity,pixel_icon_url,icon_url),owner:characters!inventory_items_confiscated_from_fkey(name)")
+    .select("id,name,quantity,item_type,icon_url,items(item_type,rarity,pixel_icon_url,icon_url,equippable_slot),owner:characters!inventory_items_confiscated_from_fkey(name)")
     .eq("character_id", sid).order("name")
   return (data ?? []) as unknown as StashRow[]
 }
 
 // one row of what a container holds, as the walk shows it
-type Shown = { kind: "book" | "stash"; slug?: string; rowId?: string; name: string; qty: number; note?: string; owner?: string | null; pixel: string | null; icon: string | null; missing?: boolean }
+// `slot`: the catalogue's equippable slot, or null. On a living mark the map offers only slot-less things to a
+// pickpocket — a weapon, armour or a ring is worn or wielded, not in a pocket (Sam, 2026-10-27: "NOT equipped").
+type Shown = { kind: "book" | "stash"; slug?: string; rowId?: string; name: string; qty: number; note?: string; owner?: string | null; pixel: string | null; icon: string | null; missing?: boolean; slot?: string | null }
 
 async function contents(db: Db, id: string, s: State): Promise<{ title: string; source: string; rows: Shown[] } | null> {
   const c = parseContainer(id); if (!c) return null
@@ -71,7 +73,7 @@ async function contents(db: Db, id: string, s: State): Promise<{ title: string; 
     const left = e.qty - (taken[e.slug] ?? 0)
     if (left <= 0 || (c.kind === "pocket" && e.slug === PEN_KEY_SLUG && penKeyGone)) continue
     const it = cat.get(e.slug)
-    rows.push({ kind: "book", slug: e.slug, name: it?.name ?? e.slug.replace(/-/g, " "), qty: left, note: e.note, pixel: it?.pixel_icon_url ?? null, icon: it?.icon_url ?? null, missing: !it })
+    rows.push({ kind: "book", slug: e.slug, name: it?.name ?? e.slug.replace(/-/g, " "), qty: left, note: e.note, pixel: it?.pixel_icon_url ?? null, icon: it?.icon_url ?? null, missing: !it, slot: it?.equippable_slot ?? null })
   }
   const sid = await stashId(db)
   if (sid){
@@ -81,10 +83,10 @@ async function contents(db: Db, id: string, s: State): Promise<{ title: string; 
       const type = r.items?.item_type ?? r.item_type, val = isValuable(r.name, type, r.items?.rarity)
       const here = c.kind === "book" ? (!carriedBy && BOOK_CONTAINERS[id].stash === (val ? "valuables" : "gear")) : carriedBy === c.slug
       if (!here) continue
-      rows.push({ kind: "stash", rowId: r.id, name: r.name, qty: r.quantity ?? 1, owner: r.owner?.name ?? null, pixel: r.items?.pixel_icon_url ?? null, icon: r.items?.icon_url ?? r.icon_url ?? null })
+      rows.push({ kind: "stash", rowId: r.id, name: r.name, qty: r.quantity ?? 1, owner: r.owner?.name ?? null, pixel: r.items?.pixel_icon_url ?? null, icon: r.items?.icon_url ?? r.icon_url ?? null, slot: r.items?.equippable_slot ?? null })
     }
   }
-  const title = c.kind === "book" ? BOOK_CONTAINERS[id].title : c.kind === "body" ? "The body" : "The guard's belt and pockets"
+  const title = c.kind === "book" ? BOOK_CONTAINERS[id].title : c.kind === "body" ? "The body" : POCKETS[c.slug!] ? "The guard's belt and pockets" : "A belt and pockets"
   const source = c.kind === "book" ? BOOK_CONTAINERS[id].source : c.kind === "body" ? (BODY_KIT[c.slug!] ? "A drow warrior's kit, OotA ch.1 area 2." : "Only what the DM handed them.") : "OotA ch.1, Acquisitions: \"lift a key to the slave pen from a guard\"."
   return { title, source, rows }
 }
@@ -124,7 +126,7 @@ export async function POST(req: NextRequest) {
   const { data: who } = await db.from("characters").select("id,name").eq("id", characterId).maybeSingle()
   if (!who) return NextResponse.json({ error: "No such character." }, { status: 404 })
   const now = await contents(db, container, s); if (!now) return NextResponse.json({ error: "No such container." }, { status: 404 })
-  const where = now.title === "The body" ? "a body" : now.title.replace(/^The /, "the ")
+  const where = now.title === "The body" ? "a body" : now.title.replace(/^(The|A) /, (m) => m.toLowerCase())
 
   // a confiscated item: the row moves to the taker, and it is no longer anybody's confiscated property
   if (body?.rowId){

@@ -2694,6 +2694,77 @@ function caught(n, who, row){
   if (APP) handOff(`${fname(who)} tried to lift the ${row.name} from ${fname(n)} with Sleight of Hand and failed. ${fname(n)} noticed. Per the book, a prisoner who fails is commanded to relinquish the item, on pain of death. Play it.`);
   else toast("What the drow do next is Malachar's to say. In the game this goes to him.", 4200);
 }
+// PICKPOCKETING WHILE UNSEEN (Sam, 2026-10-27): "pick pocket should be an option when sneaking and near a character.
+// If not spotted they may see what that character has in his inventory but NOT equipped. They may select something
+// to steal and must roll a successful slight of hand. If they get caught an NPC may just like them less and say
+// something. Another character may attack them or call the guards. If successful you pocket the item."
+//   WHEN   the hero is one of the movers of a Sneak nobody has spotted, and a living character stands within a
+//          hand's reach (PICKPOCKET_FT, a house number: 5 ft of reach plus the slack of two sprites' footprints).
+//   WHAT   what /api/walk-loot says is on them (`pocket:<slug>`: the book's pocket contents, and anything the DM
+//          handed them from the confiscated stash), minus whatever has an equippable slot — a weapon, armour or a
+//          ring is worn or wielded, not in a pocket. A mark with nothing loose says so.
+//   ROLL   Dexterity (Sleight of Hand) on the dashboard's dice, against the mark's passive Perception (OotA p.19:
+//          "an observer's passive Wisdom (Perception) score as the base DC") — WALK_ACTIONS `pickpocket:ppN`.
+//   WIN    the item moves into the hero's pack (the loot route). The mark notices nothing; the sneak goes on.
+//   LOSE   the sneak is over and the mark turns on them; Malachar plays the rest — the mark may just like them less
+//          and say so, someone else may attack them or call the guards — by gravity and who is there.
+const PICKPOCKET_FT = 8;
+function pickpocketMark(L){
+  if (!L || !sneak || mode !== "explore" || !sneak.rolls.some(x => x.p === L)) return null;
+  const reach = PICKPOCKET_FT * ftPx(L);
+  let best = null, bd = Infinity;
+  for (const n of npcs){
+    if (n.down || n.body || n.offStage || !actors.includes(n) || (n.alpha ?? 1) < .5 || /^labor-/.test(n.id)) continue;
+    const d = Math.hypot(n.x - L.x, n.y - L.y); if (d <= reach && d < bd){ best = n; bd = d; }
+  }
+  return best;
+}
+async function openPickpocket(n){
+  if (mode !== "explore") return;
+  const who = leader, name = fname(n), id = "pocket:" + n.id;
+  mode = "dialog"; party.forEach(p => { p.path = []; }); tip.hidden = true;
+  try { portrait(n.id, $("objPic"), 128); } catch (e) {}
+  $("objWho").textContent = name;
+  const box = $("objBtns"); box.innerHTML = "";
+  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); return b; };
+  const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
+  $("objText").textContent = `${fname(who)} slips a hand toward ${name}…`; $("obj").hidden = false;
+  const j = await fetchLoot(id); if ($("obj").hidden) return;
+  const rows = (j.rows || []).filter(r => r.kind !== "preview-stash" && !r.slot);
+  $("objText").textContent = j.error ? `The game did not answer (${j.error}).`
+    : rows.length ? `${name} has not noticed ${fname(who)}. Loose on them, not worn or wielded:` : `${name} has nothing loose to take — only what they wear and wield.`;
+  for (const row of rows){
+    const b = add(`Steal: ${lootLabel(row)}${row.missing ? " · not in the catalogue yet" : ""}`, async () => {
+      if (row.missing){ toast(`${row.name} is not in the item catalogue yet, so it cannot be taken.`, 3600); return; }
+      close(); await stealFrom(n, who, row);
+    }, "primary");
+    if (row.missing) b.disabled = true;
+    if (row.pixel){ const im = document.createElement("img"); im.src = ITEM_PX + row.pixel; im.alt = ""; im.className = "lootPx"; b.prepend(im); }
+  }
+  add("Leave them be", close);
+  box.querySelector("button:not([disabled])")?.focus();
+}
+async function stealFrom(n, who, row){
+  const P = passiveOf(n) || 12, sl = heroMod(who, "sleightOfHand", "dex");
+  const r = await rollOnDashboard(ACTION_KEY_PICKPOCKET(P), sl);
+  if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3600); return; }
+  if (r.success){
+    if (await takeLoot(who, "pocket:" + n.id, row)){
+      popText(who, "pocketed", "#9ad0ff", 1);
+      log(`${esc(fname(who))} lifts the ${esc(row.name)} from ${esc(fname(n))} without being noticed.`);
+      offerEquip();
+    }
+    return;
+  }
+  // caught: the hand is seen, so the sneak is over for everyone moving with it
+  n.path = []; n.face = faceOf(who.x - n.x, who.y - n.y); n.alert = true;
+  bank("ui/nat1", .5); popText(who, "caught!", "#ff6b5e", 1.2);
+  log(`<b>${esc(fname(n))} catches ${esc(fname(who))}'s hand</b> at the ${esc(row.name)}.`);
+  endSneak();
+  const near = npcs.filter(m => m !== n && !m.down && !m.body && !m.offStage && actors.includes(m) && (m.alpha ?? 1) > .5 && Math.hypot(m.x - who.x, m.y - who.y) < 60 * ftPx(who)).map(fname);
+  handOff(`${fname(who)} was sneaking and tried to pick ${fname(n)}'s pocket for the ${row.name} (Dexterity (Sleight of Hand) ${r.total} against ${fname(n)}'s passive Perception ${P}) and was CAUGHT: ${fname(n)} felt the hand. ${near.length ? `Also close by: ${near.join(", ")}.` : "Nobody else is close."} ${fname(who)} does not get the item. Play what happens, by gravity, ${fname(n)}'s nature and who is there: ${fname(n)} may simply like ${fname(who)} less and say something; someone else may attack ${fname(who)} or call the guards.`, true);
+}
+const ACTION_KEY_PICKPOCKET = pp => `pickpocket:pp${Math.min(30, Math.max(5, Math.round(+pp || 12)))}`;   // lib/walk-roll.ts pickpocketKey: keep in step
 // the DM's hand: confiscated gear given to a drow, so it turns up on their body, or in their pockets for a thief
 const CARRIERS = [["drow-guard-male", "the drow guards (men)"], ["drow-guard-female", "the drow guards (women)"], ["jorlan", "Jorlan"]];
 async function renderDmLoot(){
@@ -2813,7 +2884,7 @@ addEventListener("message", e => { if (e.origin !== location.origin) return; con
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
 function rollOnDashboard(action, localMod){
-  if (!APP || window.parent === window){ const r = d20(0, leader), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= (LOCAL_DC[action] ?? 20), total, natural: r}); }
+  if (!APP || window.parent === window){ const r = d20(0, leader), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= (LOCAL_DC[action] ?? +((/^pickpocket:pp(\d+)$/.exec(action) || [])[1] || 20)), total, natural: r}); }
   const id = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   let characterId = null; try { characterId = myClaimId || characterIdOf(leader.id) || null; } catch (e) {}
   return new Promise(res => {
@@ -4869,7 +4940,8 @@ function renderExploreBar(){
   if (castOpen){ if (castOpen.leader === leader.id) return; castOpen = null; }   // the cast list stays up until it is used or closed
   const o = exploreOptions(); if (!o) return;
   const who = SHORT[leader.id] || (SHEETS[leader.id] && SHEETS[leader.id].name.split(" ")[0]) || SPR[leader.id].json.name;
-  const key = [leader.id, o.talkNear && o.talkNear.id, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, party.length].join("|");
+  o.mark = pickpocketMark(leader);   // someone in reach of a hand while this hero is sneaking unseen
+  const key = [leader.id, o.talkNear && o.talkNear.id, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, o.mark && o.mark.id, party.length].join("|");
   if (key === exploreKey && !m.hidden) return;
   exploreKey = key; m.dataset.kind = "explore"; m.innerHTML = ""; m.hidden = false;
   const add = (label, glyph, icon, sub, fn, cls) => { const b = document.createElement("button"); if (cls) b.className = cls;
@@ -4919,7 +4991,7 @@ const ART = (name, fallback) => ICONS_HAVE.has(name) ? name : OPTION_ART[name] &
 const VIEW_FT = 60, VIEW_HALF = Math.PI / 3;
 let sneak = null, helpNext = null, followOn = false, moreOpen = false;
 const BUTTON_PRI = [[/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
-  [/^(Sneak|Stop sneaking|Scout)/, 4], [/^Search here/, 5], [/^Cast/, 6], [/^Inventory/, 7], [/^(Pray|Inspire)/, 8], [/^Quick drink/, 9],
+  [/^(Sneak|Stop sneaking|Scout)/, 4], [/^Pick .*pocket/, 4], [/^Search here/, 5], [/^Cast/, 6], [/^Inventory/, 7], [/^(Pray|Inspire)/, 8], [/^Quick drink/, 9],
   [/^Next hero/, 10], [/^Help/, 11], [/^(Follow|Wait)/, 12], [/^Short rest/, 13], [/^Tell Malachar/, 14], [/^Talk$/, 30]];
 function priOf(b){ const t = (b.querySelector("span") || b).textContent; const hit = BUTTON_PRI.find(([re]) => re.test(t)); return (hit ? hit[1] : 15) + (b.disabled ? 20 : 0); }
 // Sam, 2026-10-26: "sneaking up should be and being small should have an advantage as well as line of sight." A Small
@@ -4951,6 +5023,7 @@ function exploreExtras(m, o, add, who){
   const x = (label, glyph, icon, sub, fn, cls2) => { const b = add(label, glyph, icon, sub, fn, cls2); return b; };
   if (sneak) x(sneak.scout ? "Stop scouting" : "Stop sneaking", "◐", ART("sneak", "hide"), `Stealth ${sneak.line} · walk out of their sight`, () => endSneak("You stop moving quietly."), "on");
   else x("Sneak", "◐", ART("sneak", "hide"), `Stealth ${sgn(heroMod(L, "stealth", "dex"))} vs their passive Perception`, () => startSneak(false));
+  if (o.mark) x(`Pick ${fname(o.mark)}'s pocket`, "✋", ART("pickpocket", "search"), `Sleight of Hand ${sgn(heroMod(L, "sleightOfHand", "dex"))} vs their passive Perception`, () => openPickpocket(o.mark));
   x("Search here", "⌕", ART("search-here", "search"), `Perception ${sgn(heroMod(L, "perception", "wis"))} · the DM says what turns up`, () => searchHere());
   if (exNear) x(`Listen at ${exitName(exNear)}`, "◖", ART("listen"), `Perception ${sgn(heroMod(L, "perception", "wis"))} · what is beyond`, () => listenAt(exNear));
   if (look) x(`Look closer at ${look}`, "◎", ART("look-closer"), `Investigation ${sgn(heroMod(L, "investigation", "int"))}`, () => lookCloser(look));

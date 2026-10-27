@@ -43,6 +43,11 @@ export interface WalkAction {
   dc: number
   /** Where the DC comes from, for the DM console and the message to Malachar. */
   source: string
+  /**
+   * The map tells Malachar the outcome itself, with what only it knows (whose pocket, which item, who saw), so the
+   * bridge sends nothing for this roll. Without it Malachar would get the same event twice. Pickpocketing.
+   */
+  mapNarrates?: true
 }
 
 const THIEVES_TOOLS: WalkCheck = { kind: "tool", tool: "Thieves' Tools", ability: "dex", label: "Thieves' tools" }
@@ -60,7 +65,7 @@ const COOKS: WalkCheck = { kind: "tool", tool: "Cook's Utensils", ability: "wis"
  * slave-pen gate is a DC 20 check. Forcing is the Strength (Athletics) reading
  * of "forcing it"; the book does not name the skill.
  */
-export const WALK_ACTIONS = {
+const BOOK_ACTIONS = {
   "pen-gate:pick": { title: "Pick the lock", label: "Picking the pen gate's lock", check: THIEVES_TOOLS, dc: 20, source: "OotA p.18" },
   "pen-gate:force": { title: "Force the gate", label: "Forcing the pen gate", check: ATHLETICS, dc: 20, source: "OotA p.18" },
   // Lift Trouble (OotA Expanded p.45, a community supplement): three rappels down the cliff below the lift on tattered
@@ -85,6 +90,37 @@ export const WALK_ACTIONS = {
   "labor:hide": { title: "Keep it hidden", label: "Keeping a pocketed thing hidden while a drow guard searches them", check: SLEIGHT, dc: 12, source: "after OotA p.19; drow passive Perception 12; house" },
   "labor:hide-jorlan": { title: "Keep it hidden", label: "Keeping a pocketed thing hidden while Jorlan searches them", check: SLEIGHT, dc: 14, source: "after OotA p.19; Jorlan's passive Perception 14; house" },
 } as const satisfies Record<string, WalkAction>
+
+// PICKPOCKETING WHILE UNSEEN (Sam, 2026-10-27: "pick pocket should be an option when sneaking and near a character.
+// If not spotted they may see what that character has in his inventory but NOT equipped. They may select something
+// to steal and must roll a successful slight of hand."). The DC is the mark's own passive Perception — OotA p.19's
+// "an observer's passive Wisdom (Perception) score as the base DC" — so there is one row per score the map can send,
+// and the table stays closed: the bridge still refuses any key it does not find.
+export const PICKPOCKET_PASSIVE_MIN = 5
+export const PICKPOCKET_PASSIVE_MAX = 30
+type PickpocketKey = `pickpocket:pp${number}`
+const PICKPOCKET_ACTIONS = Object.fromEntries(
+  Array.from({ length: PICKPOCKET_PASSIVE_MAX - PICKPOCKET_PASSIVE_MIN + 1 }, (_, i) => {
+    const pp = PICKPOCKET_PASSIVE_MIN + i
+    const row: WalkAction = {
+      title: "Pick their pocket",
+      label: "Picking a pocket while unseen",
+      check: SLEIGHT,
+      dc: pp,
+      source: `the mark's passive Perception ${pp} (OotA p.19)`,
+      mapNarrates: true,
+    }
+    return [`pickpocket:pp${pp}`, row]
+  }),
+) as Record<PickpocketKey, WalkAction>
+
+/** The pickpocketing row for a mark with this passive Perception (clamped to the table). */
+export function pickpocketKey(passive: number): PickpocketKey {
+  const pp = Math.min(PICKPOCKET_PASSIVE_MAX, Math.max(PICKPOCKET_PASSIVE_MIN, Math.round(Number(passive) || 12)))
+  return `pickpocket:pp${pp}`
+}
+
+export const WALK_ACTIONS: typeof BOOK_ACTIONS & Record<PickpocketKey, WalkAction> = { ...BOOK_ACTIONS, ...PICKPOCKET_ACTIONS }
 
 export type WalkActionKey = keyof typeof WALK_ACTIONS
 

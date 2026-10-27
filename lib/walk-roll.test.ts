@@ -214,3 +214,26 @@ describe("Hard Labor rolls", () => {
     for (const [k, a] of Object.entries(WALK_ACTIONS)) if (k.startsWith("labor:")) expect(a.source, k).toBeTruthy()
   })
 })
+
+import { PICKPOCKET_PASSIVE_MAX, PICKPOCKET_PASSIVE_MIN, pickpocketKey } from "./walk-roll"
+
+describe("pickpocketing while unseen", () => {
+  it("has one closed-table row per passive Perception, DC = that score, Sleight of Hand", () => {
+    for (let pp = PICKPOCKET_PASSIVE_MIN; pp <= PICKPOCKET_PASSIVE_MAX; pp++) {
+      const a = WALK_ACTIONS[pickpocketKey(pp)]
+      expect(a.dc).toBe(pp)
+      expect(a.check).toMatchObject({ kind: "skill", skill: "sleight_of_hand" })
+      expect(a.mapNarrates).toBe(true)
+    }
+  })
+  it("clamps odd scores into the table and the bridge accepts them", () => {
+    expect(pickpocketKey(2)).toBe(`pickpocket:pp${PICKPOCKET_PASSIVE_MIN}`)
+    expect(pickpocketKey(99)).toBe(`pickpocket:pp${PICKPOCKET_PASSIVE_MAX}`)
+    expect(pickpocketKey(Number.NaN)).toBe("pickpocket:pp12")
+    expect(parseWalkRollRequest({ type: "aop:roll", id: "r9", action: pickpocketKey(14) })?.action).toBe("pickpocket:pp14")
+    expect(parseWalkRollRequest({ type: "aop:roll", id: "r9", action: "pickpocket:pp99" })).toBeNull()
+  })
+  it("leaves the book's rolls to the bridge to narrate", () => {
+    expect("mapNarrates" in WALK_ACTIONS["pen-gate:pick"]).toBe(false)
+  })
+})
