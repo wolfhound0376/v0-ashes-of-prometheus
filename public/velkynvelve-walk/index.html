@@ -228,6 +228,7 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .btns.loot .btn{text-align:left;display:flex;align-items:center;gap:8px}
 .btns.loot .btn[disabled]{opacity:.55;cursor:default}
 .lootPx{width:24px;height:24px;image-rendering:pixelated;flex:none}
+.lootRar{margin-left:auto;padding-left:10px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.9;flex:none}
 .lootDm{display:grid;gap:6px;font-size:12px}
 .lootRow{display:grid;gap:3px}
 .lootRow select{font:inherit}
@@ -1303,7 +1304,7 @@ function draw(){
   while (cloudQ.length) drawPuff(cloudQ.shift());
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
   drawTolls();
-  drawCombatFx(); drawShots(); drawToothGlow();
+  drawDrops(); drawCombatFx(); drawShots(); drawToothGlow();
   ctx.globalAlpha = 1;
 }
 const tint = document.createElement("canvas");
@@ -2421,7 +2422,7 @@ function openChest(pr){
   const l = lids[pr.id], st = propState(pr); st.open = true; st.locked = false; if (l) l.target = 1;
   sfx("door-open", .6); bank("ui/coin_purse", .5);
   log(`${fname(leader)} opens <b>${pr.name}</b>.`);
-  setTimeout(() => { if (mode === "explore") openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open}); }, 1100);
+  setTimeout(() => { if (mode === "explore") openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open, at: polyBase(pr.poly)}); }, 1100);
 }
 // the poison needle (OotA ch.1 area 7): any attempt to open the lock without the key sets it off
 function needle(pr){
@@ -2451,7 +2452,7 @@ function openProp(pr, opts = {}){
     });
   };
   const dex = (SHEETS[leader.id] || {}).saves ? SHEETS[leader.id].saves.dex || 0 : 0;
-  if (st.open){ $("objText").textContent = pr.text.open; add("Look inside", () => { close(); openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open}); }, "primary"); add("Close the lid", () => { close(); st.open = false; lids[pr.id].target = 0; setTimeout(() => sfx("door-close", .5), 500); }); add("Leave it", close); }
+  if (st.open){ $("objText").textContent = pr.text.open; add("Look inside", () => { close(); openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open, at: polyBase(pr.poly)}); }, "primary"); add("Close the lid", () => { close(); st.open = false; lids[pr.id].target = 0; setTimeout(() => sfx("door-close", .5), 500); }); add("Leave it", close); }
   else if (!st.locked){ $("objText").textContent = (pr.text && pr.text.unlocked) || "The lock is open. The lid is heavy."; add("Open it", () => { close(); openChest(pr); }, "primary"); add("Leave it", close); }
   else {
     $("objText").textContent = pr.text.closed + (st.trapKnown ? (st.disarmed ? " The needle in the lock is harmless now." : " A needle hides in the lock, its tip dark with something.") : "");
@@ -2707,7 +2708,7 @@ async function takeLoot(a, id, row){
   }
   if (row.name === PEN_KEY) state.penKey = true;
   if (bagOpen()) renderBag();
-  popText(a, `+ ${row.qty > 1 ? row.qty + " " : ""}${row.name}`, "#e8d9a8"); bank("ui/item_pickup", .7);
+  popText(a, `+ ${row.qty > 1 ? row.qty + " " : ""}${row.name}`, row.missing || row.kind === "preview-stash" || RARITY_RANK[rarityOf(row)] < 1 ? "#e8d9a8" : RARITY_COL[rarityOf(row)]); bank("ui/item_pickup", .7);
   log(`${fname(a)} takes ${esc(row.qty > 1 ? row.qty + " × " : "")}<b>${esc(row.name)}</b>.`);
   // A weapon off a rack gets the same offer a weapon off the floor does (pickUp): hold it ready, or pack it. Without
   // this the armory's shortswords went straight into the pack and the party fought the guard tower bare-handed —
@@ -2726,7 +2727,78 @@ function offerEquip(then){
   showDialog({title: p.name, body: `${fname(p.a)} has the ${p.name}. Hold it ready, or keep it in the pack?`, buttons: [
     {label: "Equip it", primary: true, fn: () => { equipItem(p.a, p.name); then && then(); }}, {label: "Keep it in the pack", fn: then}]});
 }
+// ----- THE LOOT FOUNTAIN -----
+// Sam, 2026-10-27, from the Top Heroes comparison: "a loot fountain on a kill. Items burst out in their rarity colour
+// with a pickup sound." The 5e reading: nothing is revealed for free. A body is still searched and a chest still
+// opened (the carcass rule, 2026-10-13); the FIRST time anyone opens it, what is inside is thrown up out of it in an
+// arc, lands around it, and glows its rarity colour, rarest last, before the card comes up. Re-opening the same
+// container (after taking one thing) shows the card at once, and a pocket (Sleight of Hand) never fountains: a
+// pickpocket's prize does not leap into the air. Nothing here changes what is in a container or who may take it;
+// the card and /api/walk-loot are untouched. Pure presentation.
+// Rarity colours are lib/equipment.ts RARITY_TINT (Diablo's convention), so the map and the board agree.
+const RARITY_COL = {common: "#e8e2d0", uncommon: "#4fbf6a", rare: "#4a86d8", very_rare: "#a45fd0", legendary: "#d99a2b", artifact: "#d99a2b"};
+const RARITY_RANK = {common: 0, uncommon: 1, rare: 2, very_rare: 3, legendary: 4, artifact: 5};
+const RARITY_LABEL = {uncommon: "uncommon", rare: "rare", very_rare: "very rare", legendary: "legendary", artifact: "artifact"};
+function rarityOf(row){
+  const it = (row.slug && (catalog || []).find(i => i.slug === row.slug)) || catalogItem(row.name) || {};
+  const r = String(it.rarity || "common").toLowerCase().replace(/\s+/g, "_");
+  return r in RARITY_RANK ? r : "common";
+}
+const drops = [], fountained = new Set();
+const DROP_STAGGER = 110, DROP_FLIGHT = 620, DROP_REST = 1900;
+// the base of a painted thing (a chest's poly): where its contents spill from
+const polyBase = poly => { const xs = poly.map(p => p[0]), ys = poly.map(p => p[1]); return {x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) - 6}; };
+// Throw the rows up out of `at`. Returns how long the card should wait so the last one has landed (0 = nothing thrown).
+function lootFountain(at, rows){
+  const list = rows.filter(r => !r.missing && r.kind !== "preview-stash").map(r => ({r, rar: rarityOf(r)}))
+    .sort((a, b) => RARITY_RANK[a.rar] - RARITY_RANK[b.rar]).slice(-8);     // eight at most, and the rarest are kept and land last
+  if (!list.length) return 0;
+  const sqPx = 5 * pxPerFtAt(at.y), n = list.length;
+  list.forEach(({r, rar}, i) => {
+    const ang = -Math.PI / 2 + (n === 1 ? 0 : (i / (n - 1) - .5) * Math.PI * 1.25) + (Math.random() - .5) * .25;   // a fan, mostly sideways
+    const dist = sqPx * (.55 + Math.random() * .45);
+    drops.push({x0: at.x, y0: at.y, x1: at.x + Math.cos(ang) * dist * 1.25, y1: at.y + Math.abs(Math.sin(ang)) * dist * .35 + 4,
+      h: sqPx * (1.1 + RARITY_RANK[rar] * .12 + Math.random() * .25), sq: sqPx * .42, pixel: r.pixel, rar, t0: now + i * DROP_STAGGER, landed: false, last: i === n - 1});
+    setTimeout(() => sfx("bank:ui/item_pickup", .35, .9 + Math.random() * .25), i * DROP_STAGGER);
+  });
+  return (n - 1) * DROP_STAGGER + DROP_FLIGHT + 180;
+}
+function drawDrops(){
+  for (let i = drops.length - 1; i >= 0; i--){
+    const d = drops[i], t = now - d.t0; if (t < 0) continue;
+    if (t > DROP_FLIGHT + DROP_REST){ drops.splice(i, 1); continue; }
+    const k = Math.min(1, t / DROP_FLIGHT), e = 1 - (1 - k) * (1 - k);              // ease out across the ground
+    const x = d.x0 + (d.x1 - d.x0) * e, gy = d.y0 + (d.y1 - d.y0) * e, arc = d.h * 4 * k * (1 - k);
+    const rest = Math.max(0, t - DROP_FLIGHT), bounce = k >= 1 && rest < 260 ? Math.sin(rest / 260 * Math.PI) * d.sq * .22 : 0;
+    const fade = rest > DROP_REST - 400 ? (DROP_REST - rest) / 400 : 1, col = RARITY_COL[d.rar], rank = RARITY_RANK[d.rar];
+    if (k >= 1 && !d.landed){ d.landed = true;
+      if (rank >= 1){ for (let s = 0; s < 6 + rank * 3; s++){ const a = Math.random() * Math.PI * 2, v = 40 + Math.random() * 90; sparks.push({x, y: gy - d.sq * .3, vx: Math.cos(a) * v, vy: Math.sin(a) * v * .5 - 60, g: 160, col, t0: now, life: 380 + Math.random() * 260}); } }
+      if (d.last && rank >= 1) sfx("bank:ui/item_pickup", .75, 1 + rank * .14);  // the best drop rings higher the rarer it is
+    }
+    ctx.save(); ctx.globalAlpha = fade;
+    // shadow on the floor, shrinking as it flies up
+    ctx.globalAlpha = fade * .45 * (1 - arc / (d.h + 1) * .6); ctx.fillStyle = "#000";
+    ctx.beginPath(); ctx.ellipse(x, gy, d.sq * .32, d.sq * .1, 0, 0, Math.PI * 2); ctx.fill();
+    if (rank >= 1 && k >= 1){                                                         // the rarity pool it lands in
+      const pulse = .6 + .4 * Math.sin(now / 260 + d.x1);
+      const g = ctx.createRadialGradient(x, gy, 0, x, gy, d.sq * .9); g.addColorStop(0, col + "aa"); g.addColorStop(1, col + "00");
+      ctx.globalAlpha = fade * pulse; ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x, gy, d.sq * .9, d.sq * .32, 0, 0, Math.PI * 2); ctx.fill();
+      if (rank >= 2){                                                                   // rare and up: a column of light
+        const bh = d.sq * (2.4 + rank * .5), bg = ctx.createLinearGradient(x, gy, x, gy - bh); bg.addColorStop(0, col + "cc"); bg.addColorStop(1, col + "00");
+        ctx.globalAlpha = fade * (.8 + .2 * pulse); ctx.fillStyle = bg; ctx.fillRect(x - d.sq * .18, gy - bh, d.sq * .36, bh);
+        ctx.globalAlpha = fade * .9; ctx.fillStyle = bg; ctx.fillRect(x - d.sq * .05, gy - bh, d.sq * .1, bh);   // a hot core down the middle
+      }
+    }
+    ctx.globalAlpha = fade;
+    const img = itemImg(d.pixel), y = gy - arc - bounce - d.sq * .62;
+    if (rank >= 1){ ctx.shadowColor = col; ctx.shadowBlur = 10 + rank * 4; }
+    if (img) ctx.drawImage(img, x - d.sq / 2, y, d.sq, d.sq);
+    else { ctx.fillStyle = col; ctx.fillRect(x - 4, y + d.sq * .4, 8, 8); }
+    ctx.restore();
+  }
+}
 // the card: what is there, a button for each, and Take all
+// opts.at = where the container stands on the plate; the first open of it plays the loot fountain from there
 async function openLoot(id, title, opts = {}){
   if (mode !== "explore" && mode !== "dialog") return;
   mode = "dialog"; party.forEach(p => { p.path = []; }); tip.hidden = true;
@@ -2735,9 +2807,17 @@ async function openLoot(id, title, opts = {}){
   $("objWho").textContent = title; $("objText").textContent = opts.text || "You look inside."; box.innerHTML = ""; box.classList.add("loot");
   const close = () => { $("obj").hidden = true; box.classList.remove("loot"); mode = "explore"; if (opts.onClose) opts.onClose(); };
   const add = (label, fn, cls = "", off = false) => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.disabled = off; if (fn) b.onclick = fn; box.appendChild(b); return b; };
-  $("obj").hidden = false;
-  add("…", null, "", true);
-  const j = await fetchLoot(id); if ($("obj").hidden) return;
+  const fkey = lootKeyOf(id), spill = !!opts.at && !fountained.has(fkey);   // the first open of a body or chest spills it
+  if (!spill){ $("obj").hidden = false; add("…", null, "", true); }
+  const j = await fetchLoot(id); await ensureCatalog();
+  if (spill){
+    fountained.add(fkey);
+    const wait = j.error ? 0 : lootFountain(opts.at, j.rows || []);
+    if (wait) await new Promise(r => setTimeout(r, wait));
+    if (mode !== "dialog") return;                                                // closed or left while it flew
+    $("obj").hidden = false;
+  }
+  if ($("obj").hidden) return;
   box.innerHTML = "";
   const rows = j.rows || [], can = rows.filter(r => !r.missing && r.kind !== "preview-stash");
   if (j.error) $("objText").textContent = `The game did not answer (${j.error}).`;
@@ -2747,6 +2827,9 @@ async function openLoot(id, title, opts = {}){
     const b = add(row.missing ? `${lootLabel(row)} · not in the catalogue yet` : row.kind === "preview-stash" ? row.name : `Take: ${lootLabel(row)}`,
       async () => { b.disabled = true; if (await takeLoot(who, id, row)){ close(); offerEquip(() => openLoot(id, title, opts)); } else b.disabled = false; }, "", !!row.missing);
     if (row.pixel){ const im = document.createElement("img"); im.src = ITEM_PX + row.pixel; im.alt = ""; im.className = "lootPx"; b.prepend(im); }
+    const rar = row.missing || row.kind === "preview-stash" ? "common" : rarityOf(row);
+    if (RARITY_RANK[rar] >= 1){ const col = RARITY_COL[rar]; b.style.color = col; b.style.borderColor = col; b.style.boxShadow = `inset 3px 0 0 ${col}`;
+      const tag = document.createElement("span"); tag.className = "lootRar"; tag.textContent = RARITY_LABEL[rar]; b.appendChild(tag); }
   }
   if (can.length > 1) add("Take all", async () => {
     for (const b of box.querySelectorAll("button")) b.disabled = true;
@@ -2766,7 +2849,7 @@ function plateCrop(poly){
 let hoverLoot = null;
 function lootSpotAt(w){ return (node.loot || []).find(l => inPoly(l.poly, w.x, w.y)) || null; }
 function lootCenter(l){ const xs = l.poly.map(p => p[0]), ys = l.poly.map(p => p[1]); return {x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) + 30}; }
-function openLootSpot(l){ if (atWorkPlate()) return laborDoPocket({id: l.id, name: l.name, poly: l.poly}); openLoot(l.id, l.name, {poly: l.poly, text: l.text}); }   // at work: under the escort's eye (Hard Labor)
+function openLootSpot(l){ if (atWorkPlate()) return laborDoPocket({id: l.id, name: l.name, poly: l.poly}); openLoot(l.id, l.name, {poly: l.poly, text: l.text, at: polyBase(l.poly)}); }   // at work: under the escort's eye (Hard Labor)
 function drawLootHighlight(){
   if (mode !== "explore" && mode !== "dialog") return;
   for (const l of node.loot || []){
@@ -3001,7 +3084,7 @@ function openBody(b){
   add(b.searched ? "Look again" : "Search the body", () => { close(); const first = !b.searched; b.searched = true;
     if (first){ bank("ui/item_pickup", .7); log(`${fname(leader)} searches ${name}'s body.`); }
     if (!known && first && APP) handOff(`${fname(leader)} searches ${name}'s body.`, true);                 // not a kit the book lists: Malachar says
-    openLoot(`body:${b.id}:${b.lootKey}`, `${name}'s body`, {text: `${name} lies where it fell.`, empty: known ? `Nothing is left on ${name}.` : APP ? `Nothing the map knows of. What ${name} carried is Malachar's to say.` : "What it carried is Malachar's to say — in the game this goes to him as your action."});
+    openLoot(`body:${b.id}:${b.lootKey}`, `${name}'s body`, {at: {x: b.x, y: b.y}, text: `${name} lies where it fell.`, empty: known ? `Nothing is left on ${name}.` : APP ? `Nothing the map knows of. What ${name} carried is Malachar's to say.` : "What it carried is Malachar's to say — in the game this goes to him as your action."});
   }, "primary");
   add("Leave it", close);
   $("obj").hidden = false; box.firstChild?.focus();
