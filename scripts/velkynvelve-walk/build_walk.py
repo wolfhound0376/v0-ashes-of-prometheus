@@ -289,6 +289,8 @@ for i in P + N + F + V + LP:
     if i in P: sh += ['sneak', 'crouch']
     if i == 'scott': sh.append('perform')
     if i in ['jorlan', 'drow-guard-male', 'drow-guard-female']: sh += ['attack', 'dodge', 'hurt', 'dead']
+    # the guard at the bars (scripts/sprites/add-lean-pose.py, Sam 2026-10-27): back to the pen, arms crossed
+    if i in ['drow-guard-male', 'drow-guard-female']: sh.append('lean')
     j = json.load(open(os.path.join(SPR, i, 'sprite.json')))
     sh = [s for s in sh if s in j['animations'] and os.path.exists(os.path.join(SPR, i, s + '.png'))]
     j['animations'] = {k: v for k, v in j['animations'].items() if k in sh}

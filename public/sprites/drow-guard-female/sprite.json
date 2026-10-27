@@ -47,6 +47,12 @@
       "frames": 9,
       "fps": 8,
       "loop": false
+    },
+    "lean": {
+      "sheet": "lean.png",
+      "frames": 8,
+      "fps": 4,
+      "loop": true
     }
   }
 }
