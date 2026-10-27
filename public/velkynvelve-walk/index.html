@@ -8630,14 +8630,36 @@ function tickGateWatch(){
   const sc = node.scale || 1;
   const j = npcs.find(n => n.id === "jorlan" && !n.offStage && !n.body && actors.includes(n));
   const guards = gateGuards();
-  if ((j && Math.hypot(j.x - g.x, j.y - g.y) < GATE_WATCH.jorlanNear * sc) || !guards.length){ gateWarn = null; return; }
   const {hero: h, d} = gateNearest(g);
+  // JORLAN AT THE BARS (Sam, 2026-10-26: "why is nothing happening" — a hero at the bars, Jorlan on his landing, and
+  // the watch used to go silent because "Jorlan deals with prisoners at the bars" while nothing made him do it). His
+  // rule now (same day): "Ilvara, Jorlan, Surgeon, will talk to you and then based on gravity/conversation/context they
+  // may or may not attack you." So a hero who comes up to the bars with Jorlan posted beside the door is spoken to by
+  // Jorlan first, and Malachar decides what follows. Once per approach: a hero who is still at the bars when the talk is
+  // over (or who comes back inside the window) gets the guards' warning and then the volleys, as without him.
+  const jNear = j && Math.hypot(j.x - g.x, j.y - g.y) < GATE_WATCH.jorlanNear * sc;
+  if (h && d >= GATE_WATCH.near * sc * 1.3) h.jorlanSpoke = 0;          // walked well away: the next approach is a new one
+  if (jNear && h && d < GATE_WATCH.near * sc && !h.jorlanSpoke){ h.jorlanSpoke = now; jorlanAtBars(j, h, guards); return; }
+  if (jNear && h && h.jorlanSpoke && now - h.jorlanSpoke < GATE_WATCH.again){ gateWarn = null; return; }   // he is still dealing with them
+  if (!guards.length){ gateWarn = null; return; }
   gateScan(guards, g, h, d, sc);
   const near = !!h && d < GATE_WATCH.near * sc && guards.some(x => gateNotices(x, h));   // at the bars AND seen
   if (h && d < GATE_WATCH.near * sc && !near && h.gateSpotted) h.gateSpotted = false;   // unseen at the bars: no "?" left hanging
   if (!near){ if (gateWarn && gateWarn.stage === "stepped" && now > gateWarn.until) gateWarn = null; return; }
   if (gateWarn && gateWarn.stage === "stepped" && gateWarn.who === h.id && now <= gateWarn.until){ gateGuardsShoot(guards, h); return; }
   gateWarning(guards, g, h);           // first time here, or the card went away without an answer: ask again
+}
+function jorlanAtBars(j, h, guards){
+  const who = fname(h);
+  for (const x of guards){ x.path = []; x.actUntil = now + 20000; x.scanAt = now + 20000; faceTo(x, h); }
+  stopActivity(j); j.path = []; faceTo(j, h); popText(j, "!", "#ffd166", 1.2);
+  h.path = [];
+  j.talk = true; delete state.talked[j.id]; delete state.declined[j.id];
+  j.talkSituation = `${who}, a prisoner, has come right up to the bars of the pen gate. Jorlan is on the landing beside the door; the guards on the bridge have crossbows ready and wait on him.`;
+  setTimeout(() => { j.talkSituation = null; }, 60000);
+  log(`<em>${esc(who)} comes up to the bars. Jorlan, on the landing beside the door, turns to them.</em>`);
+  if (APP) handOff(`${who} came right up to the bars of the slave pen gate. Jorlan Duskryn is on the landing beside the door and speaks first; the guards on the bridge have crossbows ready and wait on his word. Play Jorlan by gravity, his relationship with ${who} and what is said: he may wave it off, bargain, threaten, or tell the guards to shoot.`);
+  openTalk(j);
 }
 function gateWarning(guards, g, h = leader){
   gateWarn = {stage: "warned", who: h.id};
