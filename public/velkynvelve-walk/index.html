@@ -425,7 +425,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button id="zIn" aria-label="Zoom in">+</button>
     </div>
     <div class="combat" id="combat" hidden>
-      <div class="cbt-top cbt-ui"><span class="lbl">Combat</span><div class="turns" id="turns"></div><span class="round" id="cbtRound"></span><button class="btn danger" id="endCombat">End fight</button></div>
+      <div class="cbt-top cbt-ui"><span class="lbl">Combat</span><div class="turns" id="turns"></div><span class="round" id="cbtRound"></span><button class="btn" id="quickBtn" title="DM: let the heroes fight on their own at speed. Weapons only, no spells or items. Every roll is real.">Quick resolve</button><button class="btn danger" id="endCombat">End fight</button></div>
       <div class="cbt-party cbt-ui" id="cbtParty"></div>
       <div class="cbt-hint" id="cbtHint" hidden></div>
     </div>
@@ -5028,6 +5028,7 @@ function nextTurn(first){
   if (a.c.retching && a.kind !== "pc"){ a.c.retching = false; retchTurn(a); return; }   // Stinking Cloud: the action goes on retching
   if (a.kind === "foe"){ bank("ui/turn_foe", .6); foeTurn(a); return; }
   if (a.ally){ allyTurn(a); return; }
+  if (a.kind === "pc" && cbt.quick){ allyTurn(a); return; }                      // QUICK RESOLVE: the hero fights on the allies' instincts
   // Another player's hero on this screen: each browser runs its own fight (nothing is shared between screens yet), so
   // rather than freeze this one on a turn its player cannot take, that hero fights on its own the way the freed
   // prisoners do. The DM's screen drives every hero. (Sam, 2026-10-25: only the DM moves a hero who is not his.)
@@ -6032,6 +6033,7 @@ function targetAc(t){ return t.c.ac + (t.c.conds.has("shielded") ? 2 : 0) + (t.c
 // the fight stops and asks. Yes: the slot and the reaction are spent and they have +5 AC until the start of their
 // next turn, the attack that triggered it included. A critical hit is not offered (it hits whatever the AC).
 function canShield(t){
+  if (cbt && cbt.quick) return false;                                            // quick resolve spends no slots (Sam, 2026-10-27)
   const s = SHEETS[t.id], all = s && (s.magicAll || s.magic); if (!all || !t.c) return false;
   return [...(all.prepared || []), ...(all.always_prepared || [])].includes("Shield") && (t.c.slots[1] || 0) > 0 && !t.c.reactionUsed && !incapacitated(t) && !t.down;
 }
@@ -6779,8 +6781,36 @@ function checkEnd(){
   if (!standing(party).length){ log("<b>The party falls.</b> The DM core decides what the drow do with the bodies."); setTimeout(() => endCombat(false), 1200); return true; }
   return false;
 }
+// ----- QUICK RESOLVE -----
+// Sam, 2026-10-27, from the Top Heroes comparison: "One giant rat shouldn't cost three minutes" — a DM-only button that
+// plays a lopsided fight out at speed. His ruling on who acts for the heroes: "Ally AI, no resources". So every hero
+// takes their turns the way Ront and Eldeth do (allyTurn): close, swing their first melee weapon, cut a webbed friend
+// free, get up from prone. No spell slots, no potions, no class charges, and Shield is never offered (it costs a slot).
+// Every roll is still the real 5e roll the fight would make; only the clock runs faster (QUICK_SPEED): the frame loop
+// steps the world several times a frame and the page's timers are shortened by the same factor. Hit-stop is skipped.
+// Pressing it again hands the heroes back at the start of their next turn. The fight ends as any fight ends.
+// Fights are not shared between screens yet (One World, "fights not shared"), so this runs on the screen that pressed it.
+const QUICK_SPEED = 4;
+let quickTimeout = null;                                                          // the page's own setTimeout, while quick resolve shortens it
+function setQuick(on, quiet){
+  on = !!on && !!cbt && mode === "combat";
+  if (!!(cbt && cbt.quick) === on && !!quickTimeout === on) return;
+  if (cbt) cbt.quick = on;
+  if (on){
+    const st = quickTimeout = window.setTimeout;
+    window.setTimeout = (fn, ms, ...rest) => st(fn, (ms || 0) / QUICK_SPEED, ...rest);
+    log(`<b>Quick resolve.</b> The heroes fight on their own: weapons only, no spells or items. Every roll is real.`);
+    const a = activeActor();                                                      // a hero waiting at the menu right now: take over that turn
+    if (a && a.kind === "pc" && !a.down && cbt.phase === "menu"){ closeMenu(); allyTurn(a); }
+  } else if (quickTimeout){
+    window.setTimeout = quickTimeout; quickTimeout = null;
+    if (cbt && !quiet) log(`Quick resolve stopped. The heroes are back in their players' hands from their next turn.`);
+  }
+  const b = $("quickBtn"); if (b){ b.textContent = on ? "Stop quick resolve" : "Quick resolve"; b.classList.toggle("primary", on); }
+}
 function endCombat(won){
   if (mode !== "combat") return;
+  setQuick(false, true);
   owFightEnds();
   // the living pull the bolts out of themselves; the dead keep theirs
   for (let i = stuck.length - 1; i >= 0; i--){ const q = stuck[i]; if (!q.at || !(q.at.down && q.at.kind === "foe")) stuck.splice(i, 1); }
@@ -6826,6 +6856,7 @@ function endCombat(won){
   }, 700);
 }
 $("endCombat").onclick = () => endCombat(false);
+$("quickBtn").onclick = () => setQuick(!(cbt && cbt.quick));
 
 // XP ONTO THE SHEETS (Sam, 2026-10-24: "I just went up 300XP and didn't go up a level"). The banner above used to
 // be the whole of it: nothing was written, so every sheet stayed at 0. /api/walk-xp now pays the win: split evenly
@@ -10910,6 +10941,7 @@ $("dmBtn").onclick = () => toggleDm($("dm").hidden);
 // The DM tools are the DM's (Sam, 2026-10-25). A player's screen never shows the button; the server-backed tools
 // were already refused without the DM code, but the local ones (jump, gate, start a fight, ambush) ran for anyone.
 if (APP && !isDm()) $("dmBtn").hidden = true;
+if (APP && !isDm()) $("quickBtn").hidden = true;   // quick resolve is the DM's call
 $("dmClose").onclick = () => toggleDm(false);
 Object.entries(SPEC).forEach(([n, s]) => { const o = document.createElement("option"); o.value = n; o.textContent = `${n} · ${s.name}`; $("jump").appendChild(o); });
 $("jump").onchange = e => { const v = e.target.value, n = /^\d+$/.test(v) ? +v : v; /* "10b" is a plate too */ if (n === cur || mode === "combat" || mode === "travel") return; toggleDm(false);
@@ -12285,9 +12317,12 @@ let timeStopped = false, pausedMs = 0;
 function frame(t){
   const raw = Math.min(50, t - lastT); lastT = t;
   if (timeStopped && mode !== "load"){ pausedMs += raw; draw(); updateOverlay(); tickMusic(raw / 1000); requestAnimationFrame(frame); return; }
-  if (t < hitstopUntil && mode === "combat"){ pausedMs += raw; draw(); updateOverlay(); requestAnimationFrame(frame); return; }   // hit-stop: the world holds for a few frames on a blow
+  if (!cbt && quickTimeout) setQuick(false, true);                                     // a fight that ended some other way never keeps the fast clock
+  if (t < hitstopUntil && mode === "combat" && !(cbt && cbt.quick)){ pausedMs += raw; draw(); updateOverlay(); requestAnimationFrame(frame); return; }   // hit-stop: the world holds for a few frames on a blow
   now = t - pausedMs; const dt = raw / 1000;
-  if (mode !== "load"){ update(dt); draw(); updateOverlay(); if (mode === "combat") placeMenu(); }
+  if (mode !== "load"){ update(dt);
+    if (cbt && cbt.quick) for (let i = 1; i < QUICK_SPEED; i++){ pausedMs -= raw; now += raw; update(dt); }   // quick resolve: the world runs QUICK_SPEED times a frame
+    draw(); updateOverlay(); if (mode === "combat") placeMenu(); }
   tickMusic(dt);
   requestAnimationFrame(frame);
 }
