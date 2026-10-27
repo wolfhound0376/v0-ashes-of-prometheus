@@ -438,6 +438,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmWatchEmpty">Story: posts unattended / posted again (preview)</button>
       <button class="btn" id="dmFlag">Malachar calls initiative: ooze + guards (preview)</button>
       <button class="btn" id="dmGate">Open the pen gate (Jorlan's gambit)</button>
+      <button class="btn" id="dmGateShut">Shut and lock the pen gate</button>
       <button class="btn" id="dmLaborCall">Work detail: call it now</button>
       <button class="btn" id="dmLaborOff">Work detail: call it off</button>
       <button class="btn" id="dmThrow">Throw the active character into the falls (area 9)</button>
@@ -8612,7 +8613,9 @@ function tickGateWatch(){
   // a work detail in progress (laborLive): the escort has the gate, so the sentries do not warn anyone off it
   if (surgeon) return;                                  // the guards are already shooting (The Drow Surgeon)
   if (laborGateWatch()) return;                         // a detail being called: the door is open, and unescorted is shot
-  if (cur !== PEN || mode !== "explore" || !leader || state.gateOpen || postsEmpty() || timeStopped || laborLive()){ if (!state.gateOpen && gateWarn && gateWarn.stage === "warned" && mode === "explore") gateWarn = null; return; }
+  // an OPEN gate is still watched while the posts are manned (Sam, 2026-10-26: a hero at an open door with the guards on
+  // the bridge got nothing). Unattended posts (postsEmpty) are the escape: nobody there to warn anyone.
+  if (cur !== PEN || mode !== "explore" || !leader || state.gateBroken || postsEmpty() || timeStopped || laborLive()){ if (!state.gateOpen && gateWarn && gateWarn.stage === "warned" && mode === "explore") gateWarn = null; return; }
   const g = gateCenter(); if (!g) return;
   const sc = node.scale || 1;
   const j = npcs.find(n => n.id === "jorlan" && !n.offStage && !n.body && actors.includes(n));
@@ -9890,6 +9893,13 @@ $("jump").onchange = e => { const v = e.target.value, n = /^\d+$/.test(v) ? +v :
   const offs = party.map(p => ({id: p.id, dx: p.x - leader.x, dy: p.y - leader.y}));
   enterNode(n, {offs, fromScale: node.scale, note: `The DM moves the party to <em>${esc(SPEC[n].name)}</em>.`}); };
 $("dmGate").onclick = () => { toggleDm(false); openGate(); };
+// Sam, 2026-10-26: a rehearsal tab kept its gate open from an earlier test and the watch never fired; there was no way
+// back to a locked pen short of a new tab. Shuts and locks it (a gate torn off its hinges stays broken).
+$("dmGateShut").onclick = () => { toggleDm(false);
+  if (state.gateBroken){ toast("The gate was torn off its hinges; it cannot be locked."); return; }
+  if (!state.gateOpen){ toast("The pen gate is already shut and locked."); return; }
+  state.gateOpen = false; state.doorShut = false; if (cur === PEN){ setDoor(false); sfx("door-close", .8); }
+  if (balcony()) buildGrid(); saveWalk(); log("The pen gate is shut and locked again."); };
 // THE DM CASTS A POISON CLOUD (2026-10-25). No one on this map has a 3rd- or 5th-level slot yet and no Velkynvelve
 // stat block casts either spell, so the DM can put one in a fight on any combatant's behalf: it is that creature's
 // spell from then on (its concentration, its turn the fog rolls on, its DC unless one is typed). No slot or action
