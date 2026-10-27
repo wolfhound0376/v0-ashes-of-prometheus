@@ -583,7 +583,7 @@ function applyForgedSheet(slug, sh){
 // A DM-run companion (lib/seats.ts, seat.dm): walks with the party, led only from the DM's browser,
 // marked on hover. Sam, 2026-10-14: "The DM can add characters but will treat them like an NPC, with
 // the DM controlling that character."
-let seatsSeen = [], myClaimId = null;   // myClaimId: this browser's own seated character (languages: whose ears)
+let seatsSeen = [], myClaimId = null, myHeroName = null;   // myHeroName: whose NPC lines this screen hears aloud   // myClaimId: this browser's own seated character (languages: whose ears)
 const dmRun = new Set();
 function noteSeats(seated){
   seatsSeen = Array.isArray(seated) ? seated : [];
@@ -1792,7 +1792,15 @@ async function enterNode(n, opts = {}){
   if (booted){
     state.company = companyNow().filter(id => { const a = npcs.find(x => x.id === id); return !a || !(a.down || a.body); });
     // a work detail takes only the prisoners on the detail; the escape takes everyone (Hard Labor, below)
-    if (from === PEN && n !== PEN) joined = laborLive() ? laborJoins() : prisonersJoin();
+    // Sam, 2026-10-26: "if I try to sneak through while the gate door is open then others should not follow me" — and
+    // asked who: the prisoners. A party that slips out under Sneak leaves them in the pen (a dozen captives in tow is no
+    // sneak); they stay there, still freed, and come along the next time the party leaves the pen openly.
+    if (from === PEN && n !== PEN){
+      if (laborLive()) joined = laborJoins();
+      else if (sneak){ const left = PEN_NPCS.filter(d => npcs.some(x => x.id === d.id && !x.down && !x.body && !x.offStage && !companyNow().includes(d.id))).length;
+        if (left) log(`The other prisoners stay in the pen. ${left > 1 ? "They" : "Whoever is left"} would never keep quiet behind you.`); }
+      else joined = prisonersJoin();
+    }
     if (n === PEN && from !== PEN && laborLive()) state.company = companyNow().filter(id => !laborNpcs().includes(id));   // back to their places in the pen
   }
   mode = "travel"; if (!opts.slide) $("fade").classList.add("on"); $("talk").hidden = true; $("dialog").hidden = true;
@@ -3934,31 +3942,62 @@ function inView(w, p){
   let da = Math.atan2(dy, dx) - faceAngle(w); da = Math.atan2(Math.sin(da), Math.cos(da)); return Math.abs(da) <= VIEW_HALF;
 }
 function passiveOf(w){ const b = FOE_BLOCKS[w.id] || {}; return b.passive ?? (b.senses && +((String(b.senses).match(/passive Perception (\d+)/i) || [])[1])) ?? 12; }
+// HOLDING STEALTH (Sam, 2026-10-26: "the sneak area of visibility should be a relatively translucent red that will
+// require a roll after a bit to maintain stealth"). The first look a watcher gets is checked against the Stealth the
+// sneak was rolled with. Staying inside its cone after that is not free: every STEALTH_HOLD ms in view the hero rolls
+// Stealth again (Small: advantage) against that watcher's passive Perception, and one miss is enough to be seen.
+// Leaving the cone resets the clock. STEALTH_HOLD is a house number (one 6-second round).
+const STEALTH_HOLD = 6000;
+function sneakSight(w, p){ return /^drow-guard/.test(w.id) && cur === PEN && !w.hostile ? gateSight(w, p) : inView(w, p); }
+function sneakWatchers(){ return watchers().concat(cur === PEN && !postsEmpty() ? gateGuards() : []); }
+function sneakSpotted(w, who){
+  w.face = faceOf(who.x - w.x, who.y - w.y); w.alert = true; popText(w, "!", "#ff6b5a", 1.3); bank("ui/initiative_start", .35);
+  const movers = sneak.rolls.map(x => x.p), P = passiveOf(w) || 12;
+  const line = `${fname(w)} spots ${movers.length > 1 ? "the party" : fname(who)} (passive Perception ${P}).`;
+  log(`<em>${esc(line)}</em>`); toast(line, 3600); handOff(`${line} They were sneaking (Stealth ${sneak.line}).`);
+  endSneak();
+}
 setInterval(() => {
   if (sneak && (mode === "combat" || sneak.cur !== cur)){ endSneak(mode === "combat" ? "" : "A new place: the sneak is over."); return; }   // a fight or a new plate ends it
   if (!sneak || mode !== "explore" || !leader) return;
-  const movers = sneak.rolls.map(x => x.p);
-  for (const w of watchers()){
-    if (sneak.seenBy.has(w) || !movers.some(p => inView(w, p))) continue;
+  sneak.dwell = sneak.dwell || new Map();
+  const movers = sneak.rolls.map(x => x.p), seenNow = new Map();   // hero id -> the sharpest watcher seeing them
+  for (const w of sneakWatchers()){
+    const inSight = movers.filter(p => sneakSight(w, p));
+    if (!inSight.length) continue;
     const P = passiveOf(w) || 12;
-    // SRD group check: hidden from this watcher if at least half the movers beat its passive Perception
-    const beat = sneak.rolls.filter(({p, k}) => k.total + useInspiration(p, k.total, P) >= P).length;
-    sneak.seenBy.add(w);
-    if (beat * 2 >= sneak.rolls.length){ popText(w, "?", "#9ad0ff"); continue; }
-    w.face = faceOf(leader.x - w.x, leader.y - w.y); w.alert = true; popText(w, "!", "#ff6b5a", 1.3); bank("ui/initiative_start", .35);
-    const name = fname(w), line = `${name} spots ${movers.length > 1 ? "the party" : fname(leader)} (passive Perception ${P}).`;
-    log(`<em>${esc(line)}</em>`); toast(line, 3600); handOff(`${line} They were sneaking (Stealth ${sneak.line}).`);
-    endSneak(); return;
+    // 1. the first look: SRD group check, hidden from this watcher if at least half the movers beat its passive Perception
+    if (!sneak.seenBy.has(w)){
+      sneak.seenBy.add(w);
+      const beat = sneak.rolls.filter(({p, k}) => k.total + useInspiration(p, k.total, P) >= P).length;
+      if (beat * 2 < sneak.rolls.length){ sneakSpotted(w, inSight[0]); return; }
+      popText(w, "?", "#9ad0ff");
+    }
+    for (const p of inSight){ const e = seenNow.get(p.id); if (!e || P > e.P) seenNow.set(p.id, {w, P}); }
   }
+  // 2. holding it: ONE fresh roll per hero for every STEALTH_HOLD ms they stay in anyone's sight, against the sharpest
+  //    passive Perception among the watchers who can see them (one Stealth check, many observers — SRD Hiding)
+  for (const [id, {w, P}] of seenNow){
+    const p = movers.find(x => x.id === id), d = sneak.dwell.get(id);
+    if (!d){ sneak.dwell.set(id, {since: now}); continue; }
+    if (now - d.since < STEALTH_HOLD) continue;
+    d.since = now;
+    const k = mapCheck(p, "stealth", "dex"), ok = k.total + useInspiration(p, k.total, P) >= P;
+    log(`${esc(fname(p))} stays in ${esc(fname(w))}'s sight: ${rollLine(k, "stealth")} vs passive Perception ${P} — ${ok ? "still unseen" : "<b>seen</b>"}.`);
+    popText(p, `Stealth ${k.total}`, ok ? "#9ad0ff" : "#ff6b5a", 1);
+    if (!ok){ sneakSpotted(w, p); return; }
+  }
+  for (const id of [...sneak.dwell.keys()]) if (!seenNow.has(id)) sneak.dwell.delete(id);   // out of everyone's sight: the clock resets
 }, 250);
 function drawSneakCones(){
   if (!sneak || mode !== "explore") return;
-  for (const w of watchers().concat(cur === PEN && !postsEmpty() ? gateGuards() : [])){
+  // Sam, 2026-10-26: "a relatively translucent red". Brighter once that watcher has seen someone.
+  for (const w of sneakWatchers()){
     const r = VIEW_FT * ftPx(w), a0 = faceAngle(w), seen = w.alert, g = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r);
-    const col = seen ? "255,107,90" : "154,208,255";
-    g.addColorStop(0, `rgba(${col},.42)`); g.addColorStop(.7, `rgba(${col},.16)`); g.addColorStop(1, `rgba(${col},0)`);
+    const col = "214,48,40", k = seen ? 1.8 : 1;
+    g.addColorStop(0, `rgba(${col},${.24 * k})`); g.addColorStop(.7, `rgba(${col},${.1 * k})`); g.addColorStop(1, `rgba(${col},0)`);
     ctx.save(); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(w.x, w.y); ctx.arc(w.x, w.y, r, a0 - VIEW_HALF, a0 + VIEW_HALF); ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = `rgba(${col},.55)`; ctx.lineWidth = 2 / (base * view.z); ctx.setLineDash([8 / (base * view.z), 6 / (base * view.z)]); ctx.stroke(); ctx.restore();
+    ctx.strokeStyle = `rgba(${col},${.38 * k})`; ctx.lineWidth = 2 / (base * view.z); ctx.setLineDash([8 / (base * view.z), 6 / (base * view.z)]); ctx.stroke(); ctx.restore();
   }
 }
 
@@ -6758,6 +6797,7 @@ let gateWarn = null;                       // {stage: "warned", who} while the c
 // (a pillar, a wall bend). Turned away, or a hero off to the side of the bars, is not seen.
 function gateSight(w, h){
   if (!inView(w, h)) return false;
+  if (onBalcony(h)) return true;                                 // out on the landing: nothing between them and the bridge
   const z = doorGate(); if (!z) return false;
   const P = z.interact.poly, d = Math.hypot(h.x - w.x, h.y - w.y), n = Math.max(2, Math.ceil(d / 6));
   let through = -1;
@@ -6771,25 +6811,12 @@ function gateSight(w, h){
   }
   return true;
 }
-// SNEAKING. A hero moving under Sneak keeps the Stealth total they rolled; each guard who gets a look at them checks it
-// once against its passive Perception (drow guard 12). Beat it: a blue "?" and that guard looks straight past them —
-// even at the bars. Lose it: that guard has them, the sneak is over, and the warning comes.
+// SNEAKING. While a hero is under Sneak the stealth loop (HOLDING STEALTH) checks them against each gate guard that
+// can see them: the first look against the Stealth they rolled, then a fresh roll every STEALTH_HOLD in sight. Beat
+// it and the guard looks past them, even at the bars; lose it and the sneak ends, so from then on they are just seen.
 function gateNotices(w, h){
   if (!gateSight(w, h)) return false;
-  const roll = sneak && sneak.rolls.find(x => x.p === h);
-  if (!roll) return true;
-  sneak.gateChecked = sneak.gateChecked || new Map();
-  const key = w.id + ">" + h.id;
-  if (!sneak.gateChecked.has(key)){
-    const P = passiveOf(w) || 12, ok = roll.k.total + useInspiration(h, roll.k.total, P) >= P;
-    sneak.gateChecked.set(key, ok);
-    if (ok){ popText(w, "?", "#9ad0ff"); log(`${esc(fname(w))} looks right past ${esc(fname(h))} (Stealth ${roll.k.total} vs passive Perception ${P}).`); }
-  }
-  if (sneak.gateChecked.get(key)) return false;
-  const P = passiveOf(w) || 12;
-  log(`<em>${esc(fname(w))} spots ${esc(fname(h))} creeping toward the gate</em> (Stealth ${roll.k.total} vs passive Perception ${P}).`);
-  endSneak();
-  return true;
+  return !(sneak && sneak.rolls.some(x => x.p === h));
 }
 function gateCenter(){ const z = doorGate(); if (!z) return null; const p = z.interact.poly; return {x: (p[0][0] + p[2][0]) / 2, y: (p[0][1] + p[2][1]) / 2}; }
 function gateGuards(){ return npcs.filter(n => /^drow-guard/.test(n.id) && !n.relieved && !n.offStage && !n.body && !n.down && !n.hostile && n.alpha > .5 && actors.includes(n)); }
@@ -7444,10 +7471,20 @@ function hearLine(row){
   talkQueue = talkQueue.then(async () => {
     const here = actorForSpeaker(name, type);
     if (here){ comeToListener(here); bark(here, text, lineMs(text), {talk: true}); } else log(`<b>${esc(name)}</b>${id ? " (not here)" : ""}: ${esc(text)}`);
-    if (!voicesOn || !id) return wait(here ? Math.min(lineMs(text), 2500) : 300);
+    if (!voicesOn || !id || !hearsNpcVoice(row)) return wait(here ? Math.min(lineMs(text), 2500) : 300);
     try { await speakCanon(id, text, name); } catch (e) { console.warn("voice unavailable:", name, e); return; }
     const t0 = performance.now(); while (speaking && performance.now() - t0 < 30000) await wait(150);   // one voice at a time
   });
+}
+// WHO HEARS AN NPC (Sam, 2026-10-26: "If an NPC speaks to another player ONLY the bubble is seen by everyone else;
+// we don't need to hear as well." / "DM screen can hear every NPC voice."). The server stamps each NPC reply with
+// the hero it answers (`recipient`); everyone sees the bubble, but only that hero's screen and the DM's play the
+// voice. A line addressed to nobody is heard by all, as before. Same rule as lib/voice-audience.ts — keep in step.
+function hearsNpcVoice(row){
+  const to = String((row && row.recipient) || "").trim().toLowerCase();
+  if (!to || isDm()) return true;
+  if (!myHeroName) return !APP;   // the stand-alone preview keeps every voice; an unclaimed seat in the game hears none of others' talk
+  return to === String(myHeroName).trim().toLowerCase();
 }
 async function pollTalk(){
   try {
@@ -9435,7 +9472,7 @@ function owRenderSeats(){
       const id = localStorage.getItem("aop_character_id"), token = localStorage.getItem("aop_claim_token");
       if (id && token){
         const v = await fetch("/api/verify-claim", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({characterId: id, claimToken: token})}).then(r => r.json());
-        if (v && v.valid && v.character){ myClaimId = v.character.id; mine = seatedSlugs([v.character])[0] || null; }
+        if (v && v.valid && v.character){ myClaimId = v.character.id; myHeroName = v.character.name || null; mine = seatedSlugs([v.character])[0] || null; }
         mySlug = mine;
       }
     } catch (e) {}
