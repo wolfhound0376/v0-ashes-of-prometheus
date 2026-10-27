@@ -1803,7 +1803,12 @@ if (error) {
   }
 
   return (
-    <DiceProvider onAnnounce={handleDiceAnnounce}>
+    <DiceProvider
+      onAnnounce={handleDiceAnnounce}
+      // Who rolls by default: the selected hero, so roll-changing traits (lib/traits.mjs — Halfling
+      // Luck first) fire on every sheet, tray and Malachar-called roll without each button knowing.
+      roller={selectedCharacter ? { name: selectedCharacter.name, species: (selectedCharacter as { sheet_species?: string | null }).sheet_species ?? null } : null}
+    >
     <div className="flex h-screen flex-col overflow-hidden bg-[#0a0806] text-stone-200">
       {sandbox && (
         <div role="status" className="flex shrink-0 items-center justify-center gap-3 border-b border-[#c9563f]/60 bg-[#2a120c] px-4 py-1.5 text-center font-serif text-[11px] uppercase tracking-[0.22em] text-[#ff9a7a]">

@@ -26,7 +26,7 @@
 // and the tab stays open, it falls back to the game's own Camp tab.
 
 import { useEffect, useState } from "react"
-import { DiceProvider } from "@/components/dice/dice-provider"
+import { DiceProvider, type Roller } from "@/components/dice/dice-provider"
 import { AlchemyBench } from "@/components/alchemy/alchemy-bench"
 import { createClient } from "@/lib/supabase/client"
 import { getDmKey } from "@/lib/dm-key"
@@ -75,6 +75,23 @@ export default function BenchPage() {
   // undefined = still working it out; characterId null = nobody this browser may play.
   const [seat, setSeat] = useState<Seat | undefined>(undefined)
   const characterId = seat === undefined ? undefined : seat.characterId
+
+  // Who is rolling at the bench, for roll-changing traits (lib/traits.mjs): a halfling's Luck applies to
+  // a CON save over a bad brew like any other save. A missing row only means no trait fires.
+  const [roller, setRoller] = useState<Roller | null>(null)
+  useEffect(() => {
+    if (!characterId) { setRoller(null); return }
+    let live = true
+    void createClient()
+      .from("characters")
+      .select("name, sheet_species")
+      .eq("id", characterId)
+      .maybeSingle()
+      .then(({ data }: { data: { name: string | null; sheet_species: string | null } | null }) => {
+        if (live && data) setRoller({ name: data.name ?? null, species: data.sheet_species ?? null })
+      })
+    return () => { live = false }
+  }, [characterId])
 
   useEffect(() => {
     let live = true
@@ -143,7 +160,7 @@ export default function BenchPage() {
   }
 
   return (
-    <DiceProvider>
+    <DiceProvider roller={roller}>
       <main className="fixed inset-0 bg-[#070605]">
         <AlchemyBench
           key={characterId}

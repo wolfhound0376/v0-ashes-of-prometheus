@@ -1765,7 +1765,7 @@ function watchPost(n){
   const w = SPEC[n] && SPEC[n].watch; if (!w || state.cleared[n] || !leader) return;
   const seen = npcs.filter(a => a.hostile && !a.offStage);
   if (!seen.length) return;
-  const sheet = SHEETS[leader.id] || {}, mod = (sheet.skills || {}).stealth ?? (sheet.saves || {}).dex ?? 0, r = d20(0), total = r + mod;
+  const sheet = SHEETS[leader.id] || {}, mod = (sheet.skills || {}).stealth ?? (sheet.saves || {}).dex ?? 0, r = d20(0, leader), total = r + mod;
   if (total >= w.passive){ log(`${fname(leader)} slips past the watch: Stealth ${r} + ${mod} = ${total} against their passive ${w.passive}.`); return; }
   state.seen = state.seen || {}; state.seen[n] = true;
   for (const a of seen){ a.face = faceOf(leader.x - a.x, leader.y - a.y); a.alert = true; }
@@ -2762,7 +2762,7 @@ addEventListener("message", e => { if (e.origin !== location.origin) return; con
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
 function rollOnDashboard(action, localMod){
-  if (!APP || window.parent === window){ const r = d20(), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= (LOCAL_DC[action] ?? 20), total, natural: r}); }
+  if (!APP || window.parent === window){ const r = d20(0, leader), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= (LOCAL_DC[action] ?? 20), total, natural: r}); }
   const id = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   let characterId = null; try { characterId = myClaimId || characterIdOf(leader.id) || null; } catch (e) {}
   return new Promise(res => {
@@ -2939,7 +2939,7 @@ function placePoisonCloud(caster, at, name, dc, slot, byDm){
 function cloudSave(z, t, why){
   z.last.set(t, cbt.turnNo); const rule = z.rule;
   if (autoSucceeds(rule, t.c.sheet)){ popText(t, "unaffected", "#aaa"); log(`${fname(t)} ${why} ${z.name}: does not need to breathe or is immune to poison, and shrugs it off.`); return; }
-  const r = d20(rageAdvantage(t.c.rage, "con")), mod = (t.c.sheet.saves.con || 0) + blessD4(t), s = r + mod, ok = s >= z.dc;
+  const r = d20(rageAdvantage(t.c.rage, "con"), t), mod = (t.c.sheet.saves.con || 0) + blessD4(t), s = r + mod, ok = s >= z.dc;
   const rolled = rule.dmg ? roll(cloudDamage(rule, z.slot)).total : 0, out = saveOutcome(rule, ok, rolled);
   let line = `${fname(t)} ${why} ${z.name}: CON ${r} ${mod >= 0 ? "+" : "−"} ${Math.abs(mod)} = ${s} vs DC ${z.dc}, ${ok ? "saves" : "fails"}`;
   // a failed Stinking Cloud: a hero sees "action used"; a foe or an ally is handed to retchTurn
@@ -3323,7 +3323,33 @@ const FAITH_ITEM = /book of prayers|holy symbol|amulet|emblem|reliquary/i;
 function hasFaithItem(a){ const g = typeof GEAR !== "undefined" && GEAR[a.id]; return !!(g && (g.carried || []).some(c => FAITH_ITEM.test(c.name || ""))); }
 // Bless (SRD 5.1): a d4 on the attack roll or saving throw of a blessed creature, rolled and shown each time
 function blessD4(a){ return a && a.c && a.c.conds && a.c.conds.has("blessed") ? 1 + Math.floor(Math.random() * 4) : 0; }
-function d20(adv){ const a = 1 + Math.floor(Math.random() * 20); if (!adv) return a; const b = 1 + Math.floor(Math.random() * 20); return adv > 0 ? Math.max(a, b) : Math.min(a, b); }
+// Roll-changing traits — lib/traits.mjs pasted in whole by build_walk.py (TRAITS placeholder), so the map,
+// the dashboard's dice and lib/traits.test.ts read ONE copy of Halfling Luck. (Sam, 2026-10-26: abilities tied
+// to rules must pop up when they are needed.)
+/*__TRAITS__*/
+// Who is rolling, as the traits see it: a hero (or a seated, forged one) with a species on their sheet. Foes and
+// allies carry no species, so no trait fires for them. The walk party's leader (exploring) has no .kind; a hero does.
+function rollerOf(a){
+  if (!a || (a.kind && a.kind !== "pc")) return null;
+  const sh = (a.c && a.c.sheet) || SHEETS[a.id] || {}, pc = PCS[a.id] || {}, race = sh.race || pc.race || "";
+  return race ? {name: pc.name || SHORT[a.id] || "", race} : null;
+}
+// The popup: the trait says its name over the hero's head, in the log, and as a toast, at the moment it changes
+// the die. A rule the table never sees is a rule the table thinks is a bug.
+function traitPop(a, firing){
+  try { if (a && SPR[a.id]) popText(a, `☘ ${firing.name}`, "#f3d98a", 1.1); } catch (e) { /* no sprite on this plate */ }
+  log(`<span style="color:#f3d98a">☘ ${esc(firing.line)}</span>`);
+  toast(`☘ ${firing.line}`);
+}
+// The map's own d20. `who` is the creature rolling it — pass it on every attack roll, check and save so a trait
+// (Halfling Luck) can apply. Leave it off for anything that is not a D20 Test.
+function d20(adv, who){
+  let faces = [1 + Math.floor(Math.random() * 20)];
+  if (adv) faces.push(1 + Math.floor(Math.random() * 20));
+  const roller = who ? rollerOf(who) : null;
+  if (roller){ const luck = luckOnFaces(faces, () => 1 + Math.floor(Math.random() * 20), roller); if (luck.firing){ faces = luck.faces; traitPop(who, luck.firing); } }
+  return !adv ? faces[0] : adv > 0 ? Math.max(faces[0], faces[1]) : Math.min(faces[0], faces[1]);
+}
 
 // one 5-ft square in plate pixels where this actor stands (the sprites are drawn at ppu px per square)
 function ftPx(a){ return 96 * BASE * paceAt(a) * (a.big || 1) / 5; }
@@ -3396,7 +3422,7 @@ function startCombat(foeIds, label, opts = {}){
   $("vignette").classList.add("on"); pickCombatTrack(moodFor(foes, startCombat.flagMood)); startCombat.flagMood = null; setTrack("combat");
   // initiative: d20 + the sheet's bonus, everyone, highest first (ties: higher bonus, then the party)
   const order = [...party, ...allies, ...foes].filter(a => !a.down);
-  for (const a of order){ a.c = a.c && hero(a) ? a.c : fighterFor(a); a.c.init = d20() + (a.c.sheet.init || 0); }
+  for (const a of order){ a.c = a.c && hero(a) ? a.c : fighterFor(a); a.c.init = d20(0, a) + (a.c.sheet.init || 0); }
   order.sort((a, b) => b.c.init - a.c.init || (b.c.sheet.init || 0) - (a.c.sheet.init || 0) || (a.kind === "pc" ? -1 : 1));
   cbt = {order, allies, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null,
     id: `${cur}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`};   // the fight's own name: /api/walk-xp pays it once
@@ -3559,7 +3585,7 @@ function nextTurn(first){
   renderTurns(); renderParty();
   if (a.c.conds.has("asleep") && a.c.drugged){ popText(a, "out cold", "#8fd48f"); log(`${fname(a)} lies senseless from the drow poison. Damage or a shake will wake them.`); setTimeout(nextTurn, 900); return; }
   if (a.c.conds.has("asleep")){
-    const s = d20() + (a.c.sheet.saves.wis || 0);
+    const s = d20(0, a) + (a.c.sheet.saves.wis || 0);
     if (s >= (a.c.sleptDc || 13)){ a.c.conds.delete("asleep"); popText(a, "wakes", "#b0b8ff"); }
     else { popText(a, "asleep", "#b0b8ff"); log(`${fname(a)} sleeps through the turn.`); setTimeout(nextTurn, 900); return; }
   }
@@ -3731,7 +3757,7 @@ function openMenu(a, sub){
     add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
     if (c.conds.has("restrained")) add("Break free", `STR check vs DC ${c.webDc || 12} · your action`, c.action ? () => { c.action = false; const k = skillCheck(a, "athletics"); if (k.total >= (c.webDc || 12)){ c.conds.delete("restrained"); a.webFx && (a.webFx.until = now); bank("movement/web_tear", .8); popText(a, "free", "#e8e2c8"); log(`${fname(a)} tears out of the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${c.webDc || 12}.`); } else { bank("movement/chains_rattle", .5); popText(a, "stuck", "#c9c4b8"); log(`${fname(a)} strains at the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${c.webDc || 12} — stuck.`); } renderParty(); openMenu(a); } : null);
     const webbed = standing(heroes()).find(p => p !== a && p.c.conds.has("restrained") && feetBetween(a, p) <= 5);
-    if (webbed) add("Cut free", `${fname(webbed)} · hit the webbing (AC 10)`, c.action ? () => { c.action = false; const r = d20(); if (r + (s.attacks[0].hit || 0) >= 10 || r === 20){ webbed.c.conds.delete("restrained"); webbed.webFx && (webbed.webFx.until = now); bank("movement/web_tear", .8); popText(webbed, "free", "#e8e2c8"); log(`${fname(a)} cuts ${fname(webbed)} out of the web.`); } else { popText(webbed, "still stuck", "#c9c4b8"); log(`${fname(a)} hacks at the web and misses the strands.`); } renderParty(); openMenu(a); } : null);
+    if (webbed) add("Cut free", `${fname(webbed)} · hit the webbing (AC 10)`, c.action ? () => { c.action = false; const r = d20(0, a); if (r + (s.attacks[0].hit || 0) >= 10 || r === 20){ webbed.c.conds.delete("restrained"); webbed.webFx && (webbed.webFx.until = now); bank("movement/web_tear", .8); popText(webbed, "free", "#e8e2c8"); log(`${fname(a)} cuts ${fname(webbed)} out of the web.`); } else { popText(webbed, "still stuck", "#c9c4b8"); log(`${fname(a)} hacks at the web and misses the strands.`); } renderParty(); openMenu(a); } : null);
     if (c.conds.has("prone")) add("Stand up", `half your speed (${Math.floor(s.speed / 2)} ft)`, c.move >= Math.floor(s.speed / 2) ? () => { c.move -= Math.floor(s.speed / 2); c.conds.delete("prone"); setAnim(a, "idle"); renderParty(); openMenu(a); } : null);
     add("End turn", "Enter", () => nextTurn(), "end");
   }
@@ -3820,7 +3846,7 @@ function heroMod(a, skill, abil){ const sh = SHEETS[a.id] || {}; return (sh.skil
 /** A check the map rolls for the hero: d20 + skill, with advantage when a friend helped. */
 function mapCheck(a, skill, abil){
   let adv = 0; if (helpNext && helpNext.by !== a.id && now < helpNext.until){ adv = 1; helpNext = null; }
-  const mod = heroMod(a, skill, abil), r = d20(adv); return {r, mod, total: r + mod, adv};
+  const mod = heroMod(a, skill, abil), r = d20(adv, a); return {r, mod, total: r + mod, adv};
 }
 const SKILL_NAME = {stealth: "Dexterity (Stealth)", perception: "Wisdom (Perception)", investigation: "Intelligence (Investigation)"};
 function rollLine(k, skill){ return `${SKILL_NAME[skill]} ${k.r}${k.adv ? " (advantage)" : ""} ${k.mod >= 0 ? "+" : "−"} ${Math.abs(k.mod)} = <b>${k.total}</b>`; }
@@ -4297,7 +4323,7 @@ function afterAttackRoll(att){ if (att.c.rage) att.c.rage.attacked = true;   // 
 // SRD 2024: the DC to resist a Shove or Grapple is 8 + STR mod + proficiency.
 const sgn = (n) => (n >= 0 ? "+" : "−") + Math.abs(n);
 const shoveDc = (a) => 8 + (a.c.sheet.saves.str || 0) + 2;
-function skillCheck(a, skill){ const r = d20(rageAdvantage(a.c.rage, skill === "athletics" ? "str" : skill)), mod = (a.c.sheet.skills || {})[skill] ?? (skill === "perception" ? a.c.sheet.saves.wis || 0 : skill === "athletics" ? a.c.sheet.saves.str || 0 : a.c.sheet.saves.dex || 0); return {r, mod, total: r + mod}; }
+function skillCheck(a, skill){ const r = d20(rageAdvantage(a.c.rage, skill === "athletics" ? "str" : skill), a), mod = (a.c.sheet.skills || {})[skill] ?? (skill === "perception" ? a.c.sheet.saves.wis || 0 : skill === "athletics" ? a.c.sheet.saves.str || 0 : a.c.sheet.saves.dex || 0); return {r, mod, total: r + mod}; }
 function targetAc(t){ return t.c.ac + (t.c.conds.has("shielded") ? 2 : 0) + (t.c.conds.has("shieldSpell") ? 5 : 0); }
 // SHIELD, THE REACTION (Sam, 2026-10-10: "combat pauses like Baldur's Gate 3 for reactions like shield"). When an
 // attack is about to hit a caster who has Shield prepared, a level 1 slot and their reaction, and +5 AC would turn it,
@@ -4353,7 +4379,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       // means there is no shot at all (a foe that walked as far as it could and still has stone between them)
       let cv = coverOf(att, tgt), acVs = targetAc(tgt) + cv.ac;
       const bl = blessD4(att);
-      let adv = advantageOn(att, tgt, ranged, atk), r = d20(adv), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit + bl, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + bl + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
+      let adv = advantageOn(att, tgt, ranged, atk), r = d20(adv, att), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit + bl, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + bl + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
       if (bl) popText(att, `bless +${bl}`, "#ffe9a8", .8);
       if (hit && !crit && !cv.total && hero(tgt) && canShield(tgt) && r + atk.hit + bl + insp < acVs + 5){
         shieldWait = new Promise(res => askShield(tgt, att, atk, r + atk.hit + insp, acVs, used => { if (used){ acVs += 5; hit = false; } rest(); res(); }));
@@ -4396,11 +4422,11 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         for (const f of rd.flat){ dmg.total += f.amount; parts.push(`${f.label} +${f.amount}`); } }
       damage(tgt, dmg.total, atk.type, crit, att, !!atk.magic);
       if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => bank(`magic/impact_${atk.extra.type}`, .55), 200); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att, true), 260); parts.push(`${e.total} ${atk.extra.type}`); }
-      if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20(rageAdvantage(tgt.c.rage, atk.rider.save)) + (tgt.c.sheet.saves[atk.rider.save] || 0) + blessD4(tgt), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
+      if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20(rageAdvantage(tgt.c.rage, atk.rider.save), tgt) + (tgt.c.sheet.saves[atk.rider.save] || 0) + blessD4(tgt), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att, true); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
       if (atk.drowPoison && !tgt.down) parts.push(drowPoison(tgt, atk.drowPoison.dc));
       if (atk.tooth && !tgt.down){ const v = toothVenomHit(att, tgt); if (v) parts.push(v); }
-      if (atk.numb && !tgt.down){ const s0 = d20() + (tgt.c.sheet.saves[atk.numb.save] || 0) + blessD4(tgt), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.numb.dc) : 0), ok = sv >= atk.numb.dc;
+      if (atk.numb && !tgt.down){ const s0 = d20(0, tgt) + (tgt.c.sheet.saves[atk.numb.save] || 0) + blessD4(tgt), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.numb.dc) : 0), ok = sv >= atk.numb.dc;
         if (!ok){ addCond(tgt, "numbed"); tgt.c.reactionUsed = true; popText(tgt, "numbed", "#9fd8ff"); } parts.push(`${atk.numb.save.toUpperCase()} save ${sv} vs ${atk.numb.dc}: ${ok ? "shakes it off" : "numbed"}`); }
       if (atk.curse && !tgt.down && hero(tgt)) setTimeout(() => curseBy(att, tgt), 420);
       if (tgt.c.sheet.holyVulnerable && !atk.flask && att.c.conds.has("blessed")) holyOpen(tgt, `${fname(att)}'s blessed blow`);
@@ -4508,7 +4534,7 @@ function castSpell(caster, tgt, name, done, darts){
       const land = (tg, taken, type) => { sigilEnd(tg, taken); if (taken && kit && kit.type === type){ bank(`magic/impact_${type}`, .8); kitImpact(tg, kit, {area: !!sp.area, by: caster}); if (GROUND_OF[type] && !kit.aftermath) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
       if (sp.kind === "attack"){
         const cv = coverOf(caster, tgt), acVs = targetAc(tgt) + cv.ac;
-        const adv = Math.sign(advantageOn(caster, tgt, true) + (caster.c.conds.has("sorcery") ? 1 : 0)), r = d20(adv), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(caster, r + m.hit, acVs), hit = crit || (r !== 1 && r + m.hit + insp >= acVs); afterAttackRoll(caster);
+        const adv = Math.sign(advantageOn(caster, tgt, true) + (caster.c.conds.has("sorcery") ? 1 : 0)), r = d20(adv, caster), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(caster, r + m.hit, acVs), hit = crit || (r !== 1 && r + m.hit + insp >= acVs); afterAttackRoll(caster);
         const why = `${fname(caster)} ${name}: ${r} + ${m.hit} vs AC ${acVs}${coverNote(cv)}`;
         if (r === 1) bank("ui/nat1", .7); if (crit) bank("ui/nat20", .7);
         if (!hit){ miss(tgt); land(tgt, false, sp.type); log(`${why} — miss.`); return; }
@@ -4548,7 +4574,7 @@ function castSpell(caster, tgt, name, done, darts){
         targets.forEach((t, i) => setTimeout(() => {
           if (name === "Sleep" && (t.c.sheet.immuneCond || []).includes("asleep")) return;
           const cvS = sp.save === "dex" ? coverOf(caster, t) : {ac: 0};            // SRD: cover adds to DEX saves too
-          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20(rageAdvantage(t.c.rage, sp.save)) + (t.c.sheet.saves[sp.save] || 0) + cvS.ac, ok = s >= dc;
+          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20(rageAdvantage(t.c.rage, sp.save), t) + (t.c.sheet.saves[sp.save] || 0) + cvS.ac, ok = s >= dc;
           let line = `${fname(t)} ${sp.save.toUpperCase()} ${s}${cvS.ac ? ` (cover +${cvS.ac})` : ""} vs DC ${dc}: ${ok ? "saves" : "fails"}`;
           if (sp.area && !marks.length) markTarget(t);
           if (name === "Sleep"){ if (!ok){ bank("spells/control-slumber-fall", .5); t.sheepT0 = now; } else bank("magic/spell_fizzle", .4); if (i === targets.length - 1) sigilEnd(t, !ok); }
@@ -4588,7 +4614,7 @@ function doShove(a, t, what){
   const c = a.c; c.action = false; closeMenu(); cbt.phase = "busy"; combatBusy = true;
   approachThen(a, t, 5, () => {
     strike(a, t, () => {
-      const sv = Math.max(t.c.sheet.saves.str || 0, t.c.sheet.saves.dex || 0), r = d20(rageAdvantage(t.c.rage, (t.c.sheet.saves.str || 0) >= (t.c.sheet.saves.dex || 0) ? "str" : "dex")), total = r + sv, dc = shoveDc(a), ok = total >= dc;
+      const sv = Math.max(t.c.sheet.saves.str || 0, t.c.sheet.saves.dex || 0), r = d20(rageAdvantage(t.c.rage, (t.c.sheet.saves.str || 0) >= (t.c.sheet.saves.dex || 0) ? "str" : "dex"), t), total = r + sv, dc = shoveDc(a), ok = total >= dc;
       lunge(a, t, 12 * actorScale(a)); afterAttackRoll(a);
       if (ok){ bank("combat/melee_miss", .6); popText(t, "holds", "#c9c4b8"); log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — it holds.`); return; }
       bank("walk:punch-bag", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx(what === "prone" ? MARTIAL_IMPACT.sweep : what === "push" ? MARTIAL_IMPACT.kick : MARTIAL_IMPACT.punch, {at: t, sq: 1.8, mirror: what === "prone" && t.x < a.x});   // the sweep takes their legs; a push is a kick
@@ -4639,7 +4665,7 @@ function endConc(a, why){
   log(`${fname(a)} loses concentration on <b>${esc(k.spell)}</b> (${esc(why)}).`); renderParty();
 }
 function concSave(a, dmg){
-  const dc = Math.max(10, Math.floor(dmg / 2)), r = d20(), mod = (a.c.sheet.saves.con || 0) + blessD4(a), s = r + mod, insp = a.kind === "pc" ? useInspiration(a, s, dc) : 0, ok = s + insp >= dc;
+  const dc = Math.max(10, Math.floor(dmg / 2)), r = d20(0, a), mod = (a.c.sheet.saves.con || 0) + blessD4(a), s = r + mod, insp = a.kind === "pc" ? useInspiration(a, s, dc) : 0, ok = s + insp >= dc;
   log(`${fname(a)} keeps concentration? CON ${r} ${mod >= 0 ? "+" : "−"} ${Math.abs(mod)}${insp ? ` + ${insp}` : ""} vs DC ${dc}: ${ok ? "holds" : "fails"}.`);
   if (ok) popText(a, "holds focus", "#9fe6ff", .8); else endConc(a, `failed the CON save after ${dmg} damage`);
 }
@@ -4974,7 +5000,7 @@ function allyTurn(a){
   }
   const webbed = standing(heroes()).find(p => p !== a && p.c.conds.has("restrained") && feetBetween(a, p) <= 5);
   if (webbed){   // the party's Cut free: hit the webbing (AC 10) with the action
-    const r = d20(), hit = r === 20 || r + (a.c.sheet.attacks[0].hit || 0) >= 10; a.face = faceOf(webbed.x - a.x, webbed.y - a.y);
+    const r = d20(0, a), hit = r === 20 || r + (a.c.sheet.attacks[0].hit || 0) >= 10; a.face = faceOf(webbed.x - a.x, webbed.y - a.y);
     if (hit){ webbed.c.conds.delete("restrained"); webbed.webFx && (webbed.webFx.until = now); bank("movement/web_tear", .8); popText(webbed, "free", "#e8e2c8"); log(`${fname(a)} cuts ${fname(webbed)} out of the web.`); narrate(a, `${fname(a)} tears the webbing off ${fname(webbed)}.`); }
     else { popText(webbed, "still stuck", "#c9c4b8"); log(`${fname(a)} hacks at the web and misses the strands.`); }
     renderParty(); end(); return;
@@ -5006,7 +5032,7 @@ function shootWeb(f, tgt, done){
   const w = f.c.sheet.web; f.c.webReady = false; cbt.phase = "busy"; combatBusy = true; pushCam(f, tgt);
   const cs = CREATURE_SFX[f.id]; if (cs && cs.call) bank(cs.call, .6);
   strike(f, tgt, () => {
-    const adv = advantageOn(f, tgt, true), r = d20(adv), hit = r === 20 || (r !== 1 && r + w.hit >= targetAc(tgt));
+    const adv = advantageOn(f, tgt, true), r = d20(adv, f), hit = r === 20 || (r !== 1 && r + w.hit >= targetAc(tgt));
     webStrand(f, tgt, () => {
       if (!hit){ miss(tgt); log(`${fname(f)} spits a web at ${fname(tgt)}: ${r} + ${w.hit} vs AC ${targetAc(tgt)} — it slaps the stone beside them.`); spawnFx("spiderWeb", {at: null, x: tgt.x, y: tgt.y, sq: 1.5, flat: true, tail: 12, until: now + 6000, alpha: .75}); return; }
       addCond(tgt, "restrained"); tgt.c.webDc = w.dc; tgt.path = []; bank("movement/web_tear", .4);
@@ -5577,7 +5603,7 @@ const onIce = (a, p) => Math.hypot(a.x - p.x, a.y - p.y) <= p.r + 4;
 function iceSave(a, p, why){
   if (p.tested.has(a) || a.down || !a.c) return; p.tested.add(a);
   if (a.c.conds.has("prone")) return;
-  const sv = a.c.sheet.saves.dex || 0, r = d20(rageAdvantage(a.c.rage, "dex")), total = r + sv, ok = total >= p.dc;
+  const sv = a.c.sheet.saves.dex || 0, r = d20(rageAdvantage(a.c.rage, "dex"), a), total = r + sv, ok = total >= p.dc;
   log(`${fname(a)} on the ice (${why}): DEX ${r} + ${sv} = ${total} vs DC ${p.dc} — ${ok ? "keeps their feet" : "<b>slips and falls</b>"}.`);
   if (ok){ popText(a, "steady", "#bfe9ff", .8); return; }
   addCond(a, "prone"); a.path = []; if (SPR[a.id].img.hurt) playOnce(a, "hurt", () => setAnim(a, "idle")); knock(a, p, 6 * actorScale(a));
@@ -7761,7 +7787,7 @@ function holyOpen(t, by){
 function drowPoison(t, dc){
   const s = t.c.sheet;
   if ((s.immune || []).includes("poison") || (s.immuneCond || []).includes("poisoned")) return "immune to the poison";
-  const s0 = d20() + (s.saves.con || 0), sv = s0 + (t.kind === "pc" ? useInspiration(t, s0, dc) : 0);
+  const s0 = d20(0, t) + (s.saves.con || 0), sv = s0 + (t.kind === "pc" ? useInspiration(t, s0, dc) : 0);
   if (sv >= dc){ popText(t, "resists poison", "#8fd48f", .8); return `CON save ${sv} vs ${dc}: shrugs off the poison`; }
   addCond(t, "poisoned"); setTimeout(() => bank("magic/impact_poison", .5), 200);
   if (sv <= dc - 5){ addCond(t, "asleep"); t.c.drugged = true; t.path = []; popText(t, "out cold", "#8fd48f", 1.1); renderParty();
@@ -7771,7 +7797,7 @@ function drowPoison(t, dc){
 // an action and a DC 10 Dexterity check
 function putOutFire(a, done){
   if (a.kind === "pc") a.c.action = false;
-  const r = d20() + (a.c.sheet.init || 0), ok = r >= 10;
+  const r = d20(0, a) + (a.c.sheet.init || 0), ok = r >= 10;
   if (ok){ a.c.conds.delete("burning"); popText(a, "flames out", "#ffd0a0"); }
   log(`${fname(a)} beats at the flames: DEX ${r} vs 10 — ${ok ? "out" : "still burning"}.`); renderParty(); done && done();
 }
@@ -8142,7 +8168,7 @@ function dieNow(a, why){
 }
 // a downed hero's turn: the save, and the turn passes (a 20 gets them up, and the turn is theirs)
 function deathSaveTurn(a){
-  const r = d20();
+  const r = d20(0, a);   // a death save is a saving throw: Halfling Luck applies
   camTo(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 40, 500);
   if (r === 20){
     a.c.hp = 1; a.down = false; a.c.ds = null; setAnim(a, "idle"); popText(a, "20! on their feet", "#9ff2c8", 1.3); bank("combat/heal", .7);
@@ -8156,7 +8182,7 @@ function deathSaveTurn(a){
 }
 // first aid: an action, DC 10 Wisdom (Medicine), on a dying friend within 5 ft
 function stabilize(a, t){
-  a.c.action = false; const mod = (a.c.sheet.skills || {}).medicine ?? 0, r = d20() + mod, ok = r >= 10;
+  a.c.action = false; const mod = (a.c.sheet.skills || {}).medicine ?? 0, r = d20(0, a) + mod, ok = r >= 10;
   log(`${fname(a)} works on ${fname(t)}: Medicine ${r} vs 10 — ${ok ? "stable" : "not yet"}.`);
   if (ok){ t.c.ds.stable = true; popText(t, "stable", "#9ff2c8", 1.2); } else popText(t, "still dying", "#ff6b5e", .9);
   renderParty(); afterAction(a);

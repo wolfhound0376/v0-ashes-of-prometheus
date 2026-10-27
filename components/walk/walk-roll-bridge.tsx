@@ -70,6 +70,8 @@ interface Pending {
   action: WalkActionKey
   frame: Window
   who: string
+  /** For roll-changing traits (Halfling Luck): this roll is the hero's, not the dashboard's selection. */
+  species: string | null
   characterId: string | null
   modifier: number
   parts: WalkModifierPart[]
@@ -128,7 +130,8 @@ export function WalkRollBridge({ frameRef }: { frameRef: RefObject<HTMLIFrameEle
 
       const inspired = Boolean(row && row.sheet_heroic_inspiration === true)
       const canSpend = Boolean(characterId) && (isDmBrowser() || (Boolean(seat.claimToken) && seat.characterId === characterId))
-      const p: Pending = { id: req.id, action: req.action, frame, who, characterId, modifier: mod.modifier, parts: mod.parts, inspired, canSpend }
+      const species = row && typeof row.sheet_species === "string" ? row.sheet_species : null
+      const p: Pending = { id: req.id, action: req.action, frame, who, species, characterId, modifier: mod.modifier, parts: mod.parts, inspired, canSpend }
       outcomeRef.current = null
       rerolledRef.current = null
       setReroll(NO_REROLL)
@@ -149,7 +152,7 @@ export function WalkRollBridge({ frameRef }: { frameRef: RefObject<HTMLIFrameEle
     setPhase("rolling")
     let r
     try {
-      r = await roll({ die: "d20", numDice: 1, modifier: p.modifier, label: action.check.label })
+      r = await roll({ die: "d20", numDice: 1, modifier: p.modifier, label: action.check.label, roller: { name: p.who, species: p.species } })
     } catch (err) {
       console.error("[walk-roll] the dice did not roll:", err)
       post(p, { type: "aop:roll-result", id: p.id, ok: false, error: "The dice did not roll." })
@@ -200,7 +203,7 @@ export function WalkRollBridge({ frameRef }: { frameRef: RefObject<HTMLIFrameEle
     const action = WALK_ACTIONS[p.action]
     let r
     try {
-      r = await roll({ die: "d20", numDice: 1, modifier: p.modifier, label: `${action.check.label} (Inspiration)` })
+      r = await roll({ die: "d20", numDice: 1, modifier: p.modifier, label: `${action.check.label} (Inspiration)`, roller: { name: p.who, species: p.species } })
     } catch (err) {
       // The Inspiration is spent; the first roll stands rather than a guessed one.
       console.error("[walk-roll] the reroll did not roll:", err)

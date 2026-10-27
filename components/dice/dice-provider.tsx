@@ -37,8 +37,26 @@ import { createPortal } from "react-dom"
 import { cn } from "@/lib/utils"
 import { Dices } from "lucide-react"
 import type DiceBox from "@3d-dice/dice-box"
+import { TRAITS, luckFiring, luckOnFaces, luckRerollCount, spliceLuck } from "@/lib/traits.mjs"
 
 // --- Public types -----------------------------------------------------------
+
+/** Who is rolling, as far as roll-changing traits care (lib/traits.mjs). */
+export interface Roller {
+  name?: string | null
+  species?: string | null
+  race?: string | null
+}
+
+/** A trait that changed this roll — shown as a popup on the dice and named in the feed line. */
+export interface TraitFiring {
+  id: string
+  name: string
+  rule: string
+  from: number[]
+  to: number[]
+  line: string
+}
 
 export interface DiceResult {
   die: string
@@ -53,6 +71,8 @@ export interface DiceResult {
   isFail: boolean
   rollMode?: RollMode
   keptRolls?: number[]
+  /** Traits that changed this roll (Halfling Luck…). `rolls` already holds the faces AFTER them. */
+  traits?: TraitFiring[]
 }
 
 export type RollMode = "normal" | "advantage" | "disadvantage"
@@ -63,6 +83,19 @@ export interface RollSpec {
   modifier: number
   label?: string
   rollMode?: RollMode
+  /**
+   * Is this a D20 Test (attack roll, ability check, saving throw)? Defaults to true for a single d20,
+   * because that is what nearly every d20 in this game is. Pass false for a d20 that is a table roll
+   * (the "Scavenged possession" fortune) so Halfling Luck and friends leave it alone.
+   */
+  test?: boolean
+  /** Who is rolling. Overrides the provider's `roller` (the dashboard's selected hero). */
+  roller?: Roller | null
+}
+
+/** A single-d20 D20 Test, the only kind of roll a trait in lib/traits.mjs can change. */
+function isD20Test(spec: RollSpec): boolean {
+  return spec.die === "d20" && spec.numDice === 1 && spec.test !== false
 }
 
 export interface DiceContextValue {
@@ -136,7 +169,7 @@ export function buildNotation(spec: RollSpec): string {
   return `${spec.numDice}${spec.die}${modStr}${mode}`
 }
 
-function finalize(spec: RollSpec, rolls: number[]): DiceResult {
+function finalize(spec: RollSpec, rolls: number[], traits: TraitFiring[] = []): DiceResult {
   const usesD20Mode = spec.die === "d20" && spec.rollMode && spec.rollMode !== "normal"
   const keptRolls = usesD20Mode
     ? Array.from({ length: spec.numDice }, (_, index) => {
@@ -158,6 +191,7 @@ function finalize(spec: RollSpec, rolls: number[]): DiceResult {
     isFail: single20 && keptRolls[0] === 1,
     rollMode: spec.rollMode,
     keptRolls,
+    ...(traits.length ? { traits } : {}),
   }
 }
 
@@ -168,11 +202,17 @@ function physicalDiceCount(spec: RollSpec): number {
 // Classic (local) roller — silent fallback ONLY when the 3D renderer is
 // unavailable, fails, or never settles. When the 3D dice roll, THEIR values
 // are authoritative and this is never invoked.
-function resolveClassic(spec: RollSpec): DiceResult {
+function resolveClassic(spec: RollSpec, roller?: Roller | null): DiceResult {
   const sides = sidesOf(spec.die)
   const rolls: number[] = []
   for (let i = 0; i < physicalDiceCount(spec); i++) {
     rolls.push(Math.floor(Math.random() * sides) + 1)
+  }
+  // Traits apply on the fallback too — a halfling is no less lucky when WebGL is down.
+  if (isD20Test(spec)) {
+    const who = spec.roller ?? roller
+    const luck = luckOnFaces(rolls, () => Math.floor(Math.random() * 20) + 1, who)
+    if (luck.firing) return finalize(spec, luck.faces, [luck.firing])
   }
   return finalize(spec, rolls)
 }
@@ -200,14 +240,26 @@ interface DiceProviderProps {
   children: ReactNode
   /** Wired by the dashboard page to the shared dialogue feed / Lich chat. */
   onAnnounce?: (text: string, opts: { toLich: boolean; result?: DiceResult }) => void
+  /**
+   * Who rolls when a roll doesn't say (the dashboard's selected hero). Read by the traits in
+   * lib/traits.mjs, so a halfling's Luck fires on every sheet, tray and Malachar-called roll.
+   */
+  roller?: Roller | null
 }
+
+// How long the trait card holds on the unlucky face before the fresh die is thrown. Long enough to
+// read "Halfling Luck", short enough that the table doesn't wait on it.
+const TRAIT_CARD_MS = 1100
 
 interface QueuedRoll {
   spec: RollSpec
   resolve: (result: DiceResult) => void
 }
 
-export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
+export function DiceProvider({ children, onAnnounce, roller }: DiceProviderProps) {
+  // The default roller, read at roll time (a ref, so a hero switch mid-queue is honoured).
+  const rollerRef = useRef<Roller | null>(roller ?? null)
+  rollerRef.current = roller ?? null
   const [mounted, setMounted] = useState(false)
   const [diceReady, setDiceReady] = useState(false)
   // True when no engine is up and no attempt is quietly making progress —
@@ -224,7 +276,13 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
 
   // Overlay state.
   const [overlayOpen, setOverlayOpen] = useState(false)
-  const [overlayPhase, setOverlayPhase] = useState<"rolling" | "result">("rolling")
+  const [overlayPhase, setOverlayPhase] = useState<"rolling" | "trait" | "result">("rolling")
+  // The trait card: shown on the unlucky face, kept as a ribbon while the fresh die tumbles.
+  const [overlayTrait, setOverlayTrait] = useState<{ name: string; rule: string } | null>(null)
+  const [overlayTraitFace, setOverlayTraitFace] = useState<number[] | null>(null)
+  const traitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [traitToast, setTraitToast] = useState<string[] | null>(null)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [overlayLabel, setOverlayLabel] = useState("")
   const [overlayNotation, setOverlayNotation] = useState("")
   const [overlayResult, setOverlayResult] = useState<DiceResult | null>(null)
@@ -324,11 +382,19 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
     setOverlayOpen(false)
     setOverlayResult(null)
     setOverlayPhase("rolling")
+    setOverlayTrait(null)
+    setOverlayTraitFace(null)
   }, [])
 
   // Complete the in-flight roll, then run the next queued one (if any).
   const settle = useCallback(
-    (result: DiceResult, resolve: (r: DiceResult) => void) => {
+    (result: DiceResult, resolve: (r: DiceResult) => void, quiet = false) => {
+      // A trait that fired on a roll the overlay never showed (3D dice down) still pops up.
+      if (quiet && result.traits?.length) {
+        setTraitToast(result.traits.map((t) => t.line))
+        if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
+        toastTimerRef.current = setTimeout(() => setTraitToast(null), 3500)
+      }
       resolve(result)
       const next = queueRef.current.shift()
       if (next) {
@@ -357,8 +423,19 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
       // classic, the next one may get the physics back.
       if (diceFailed || !diceReady || !box) {
         if (!box) initDiceRef.current()
-        settle(resolveClassic(spec), resolve)
+        settle(resolveClassic(spec, rollerRef.current), resolve, true)
         return
+      }
+      const who = spec.roller ?? rollerRef.current
+
+      // Reveal the total prominently, then auto-dismiss and hand it back.
+      const reveal = (result: DiceResult) => {
+        setOverlayResult(result)
+        setOverlayPhase("result")
+        resultTimerRef.current = setTimeout(() => {
+          closeOverlay()
+          settle(result, resolve)
+        }, RESULT_DISPLAY_MS + (result.traits?.length ? 600 : 0))
       }
 
       const token = ++tokenRef.current
@@ -390,19 +467,54 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
 
           if (values.length === 0) {
             closeOverlay()
-            settle(resolveClassic(spec), resolve)
+            settle(resolveClassic(spec, rollerRef.current), resolve, true)
             return
           }
 
-          const result = finalize(spec, values)
-
-          // Reveal the total prominently, then auto-dismiss and hand it back.
-          setOverlayResult(result)
-          setOverlayPhase("result")
-          resultTimerRef.current = setTimeout(() => {
-            closeOverlay()
-            settle(result, resolve)
-          }, RESULT_DISPLAY_MS)
+          // Halfling Luck (lib/traits.mjs). The 1 is SHOWN first under the trait card, then the
+          // fresh die is thrown on the same felt — the table watches the luck happen rather than
+          // being told about it. Its value is as authoritative as the first throw's.
+          const lucky = isD20Test(spec) ? luckRerollCount(values, who) : 0
+          if (lucky === 0) {
+            reveal(finalize(spec, values))
+            return
+          }
+          const t = TRAITS.halflingLuck
+          setOverlayTrait({ name: t.name, rule: t.rule })
+          setOverlayTraitFace(values)
+          setOverlayPhase("trait")
+          traitTimerRef.current = setTimeout(() => {
+            if (unmountedRef.current) return
+            setOverlayPhase("rolling")
+            // Exactly one of (the fresh dice, the guard) finishes this roll.
+            let done = false
+            const finish = (result: DiceResult) => {
+              if (done) return
+              done = true
+              reveal(result)
+            }
+            const fallback = () => {
+              // The fresh die never settled: finish the Luck roll locally rather than lose it.
+              const luck = luckOnFaces(values, () => Math.floor(Math.random() * 20) + 1, who)
+              finish(finalize(spec, luck.faces, luck.firing ? [luck.firing] : []))
+            }
+            const guard = setTimeout(fallback, RESPONSE_TIMEOUT_MS)
+            box
+              .roll(`${lucky}d20`)
+              .then((again) => {
+                clearTimeout(guard)
+                const fresh = Array.isArray(again)
+                  ? again.map((r) => r.value).filter((v) => typeof v === "number" && Number.isFinite(v))
+                  : []
+                if (fresh.length < lucky) return fallback()
+                finish(finalize(spec, spliceLuck(values, fresh), [luckFiring(who, fresh)]))
+              })
+              .catch((err) => {
+                clearTimeout(guard)
+                console.warn("[Dice] Luck reroll failed on the 3D dice; finishing it locally.", err)
+                fallback()
+              })
+          }, TRAIT_CARD_MS)
         })
         .catch((err) => {
           const pend = pendingRef.current
@@ -411,7 +523,7 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
           pendingRef.current = null
           console.warn("[Dice] 3D roll failed; using classic result.", err)
           closeOverlay()
-          settle(resolveClassic(spec), resolve)
+          settle(resolveClassic(spec, rollerRef.current), resolve, true)
         })
 
       // Safety net: dice never settle within the window → silent classic result.
@@ -420,7 +532,7 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
         if (!pend || pend.token !== token) return
         pendingRef.current = null
         closeOverlay()
-        settle(resolveClassic(spec), resolve)
+        settle(resolveClassic(spec, rollerRef.current), resolve, true)
       }, RESPONSE_TIMEOUT_MS)
     },
     [diceFailed, diceReady, settle, closeOverlay],
@@ -454,6 +566,8 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
       if (responseTimerRef.current) clearTimeout(responseTimerRef.current)
       if (resultTimerRef.current) clearTimeout(resultTimerRef.current)
       if (retryTimerRef.current) clearTimeout(retryTimerRef.current)
+      if (traitTimerRef.current) clearTimeout(traitTimerRef.current)
+      if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
     }
   }, [])
 
@@ -499,6 +613,16 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
                 <span className="text-[10px] text-stone-500">{overlayNotation}</span>
               </div>
 
+              {/* Trait ribbon: stays up while the trait's fresh die tumbles, so the table knows WHY
+                  the dice are rolling again (Sam: abilities pop up when they are needed). */}
+              {overlayTrait && overlayPhase !== "trait" && (
+                <div className="mb-2 flex items-center justify-center">
+                  <span className="rounded-full border border-[#d4b15a]/70 bg-[#1d170b] px-3 py-0.5 font-serif text-[11px] font-semibold uppercase tracking-[0.2em] text-[#f3d98a] shadow-[0_0_14px_rgba(212,177,90,0.35)]">
+                    ☘ {overlayTrait.name}
+                  </span>
+                </div>
+              )}
+
               {/* Near-black felt tray holding the tumbling 3D dice */}
               <div className="relative aspect-square w-[min(78vw,420px)] overflow-hidden rounded-sm border-2 border-[#70491d] bg-[#050504] shadow-[inset_0_0_0_2px_#0a0704,inset_0_0_48px_#000]">
                 {/* Persistent 3D dice canvas mount (preloaded). */}
@@ -509,6 +633,26 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
 
                 {/* Subtle amber rim light around the felt. */}
                 <div className="pointer-events-none absolute inset-0 rounded-sm bg-[radial-gradient(circle_at_50%_38%,transparent_20%,rgba(100,20,13,0.08)_55%,rgba(0,0,0,0.72)_100%)] shadow-[inset_0_0_46px_rgba(212,142,58,0.18)]" />
+
+                {/* Trait card (trait phase): the unlucky face, and the trait that refuses it. */}
+                {overlayPhase === "trait" && overlayTrait && (
+                  <div
+                    role="status"
+                    aria-live="assertive"
+                    className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 px-6 text-center backdrop-blur-[2px]"
+                  >
+                    <span className="font-serif text-6xl font-extrabold text-[#ff8a7a]/70 line-through decoration-[#d4b15a] decoration-4">
+                      {(overlayTraitFace ?? [1]).join(" · ")}
+                    </span>
+                    <span className="rounded-sm border border-[#d4b15a] bg-[#1d170b]/95 px-4 py-2 shadow-[0_0_28px_rgba(212,177,90,0.45)]">
+                      <span className="block font-serif text-lg font-bold uppercase tracking-[0.18em] text-[#ffe9a8]">
+                        ☘ {overlayTrait.name}
+                      </span>
+                      <span className="mt-0.5 block text-xs text-[#e0cfa0]">{overlayTrait.rule}</span>
+                    </span>
+                    <span className="text-[11px] uppercase tracking-[0.25em] text-stone-400">Rerolling…</span>
+                  </div>
+                )}
 
                 {/* Prominent total reveal (result phase). */}
                 {overlayPhase === "result" && overlayResult && (
@@ -537,10 +681,33 @@ export function DiceProvider({ children, onAnnounce }: DiceProviderProps) {
                     {overlayFumble && (
                       <span className="mt-1 text-xs font-bold uppercase tracking-[0.2em] text-[#ff7a6a]">Fumble!</span>
                     )}
+                    {overlayResult.traits?.map((t) => (
+                      <span key={t.id} className="mt-1 max-w-[90%] text-center text-xs font-semibold text-[#f3d98a]">
+                        ☘ {t.line}
+                      </span>
+                    ))}
                   </div>
                 )}
               </div>
             </div>
+          </div>,
+          document.body,
+        )}
+
+      {/* Trait toast: the popup for a trait that fired while the 3D dice were down. */}
+      {mounted &&
+        traitToast &&
+        createPortal(
+          <div
+            role="status"
+            aria-live="assertive"
+            className="pointer-events-none fixed left-1/2 top-16 z-[101] -translate-x-1/2 rounded-sm border border-[#d4b15a] bg-[#1d170b]/95 px-4 py-2 text-center shadow-[0_0_28px_rgba(212,177,90,0.45)]"
+          >
+            {traitToast.map((line) => (
+              <span key={line} className="block font-serif text-sm font-semibold text-[#ffe9a8]">
+                ☘ {line}
+              </span>
+            ))}
           </div>,
           document.body,
         )}
@@ -584,7 +751,10 @@ export function describeRoll(result: DiceResult): string {
   const mod =
     result.modifier !== 0 ? (result.modifier > 0 ? ` +${result.modifier}` : ` ${result.modifier}`) : ""
   const flag = result.isCrit ? " — CRITICAL!" : result.isFail ? " — FUMBLE!" : ""
-  return `${result.label || "Roll"}: ${result.total}${flag} (${notation} → [${result.rolls.join(", ")}]${mod})`
+  // The trait is named in the line itself, so the feed and Malachar both know the face was changed by
+  // a rule (and Malachar never applies it a second time).
+  const traits = result.traits?.length ? ` — ${result.traits.map((t) => t.line).join(" ")}` : ""
+  return `${result.label || "Roll"}: ${result.total}${flag} (${notation} → [${result.rolls.join(", ")}]${mod})${traits}`
 }
 
 /** Parse a damage string like "1d8+3" / "2d6" into a RollSpec, or null for flat damage like "1+2". */

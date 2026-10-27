@@ -74,7 +74,9 @@ export function isWalkActionKey(v: unknown): v is WalkActionKey {
 /** The columns walkCheckModifier reads. Select exactly these. */
 export const WALK_ROLL_COLUMNS =
   "id, name, level, proficiency_bonus, str_score, dex_score, con_score, int_score, wis_score, cha_score, " +
-  "sheet_skill_proficiencies, sheet_proficiencies, sheet_heroic_inspiration"
+  "sheet_skill_proficiencies, sheet_proficiencies, sheet_heroic_inspiration, " +
+  // the species, for roll-changing traits (lib/traits.mjs: Halfling Luck)
+  "sheet_species"
 
 type Row = Record<string, unknown>
 
