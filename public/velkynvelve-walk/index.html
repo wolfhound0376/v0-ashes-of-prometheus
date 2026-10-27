@@ -2922,11 +2922,20 @@ function rollOnDashboard(action, localMod){
 // spots the sneak, combat opens — runs in every browser at the table and would make Malachar answer it once per
 // screen. Sam, 2026-10-27: listening "did nothing" — until then no hand-off reached anyone.
 const ACTION_REPLIES = new Set();
+// Everything else is an EVENT (Sam, 2026-10-27: "Build all of it"): it carries a fingerprint of the plate and the
+// words, the bridge claims it at /api/walk-event, and only the first screen at the table to claim it tells Malachar.
+// The same event on two screens has the same words, so the same fingerprint.
+function eventSig(text){
+  let h1 = 0x811c9dc5, h2 = 0x01000193; const s = String(cur) + "|" + String(text);
+  for (let i = 0; i < s.length; i++){ const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 16777619); h2 = Math.imul(h2 + c, 2246822519) ^ (h2 >>> 13); }
+  return "ev-" + (h1 >>> 0).toString(36) + (h2 >>> 0).toString(36);
+}
 function handOff(text, ask){
   const id = "a" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   let characterId = null; try { characterId = myClaimId || characterIdOf(leader.id) || null; } catch (e) {}
-  if (ask) ACTION_REPLIES.add(id);
-  try { (window.parent !== window ? window.parent : window).postMessage({type: "aop:action", id, text, characterId, ask: !!ask}, APP ? location.origin : "*"); } catch (e) {}
+  ACTION_REPLIES.add(id);
+  const msg = ask ? {type: "aop:action", id, text, characterId, ask: true} : {type: "aop:action", id, text, characterId, event: true, sig: eventSig(text)};
+  try { (window.parent !== window ? window.parent : window).postMessage(msg, APP ? location.origin : "*"); } catch (e) {}
   return id;
 }
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || m.type !== "aop:action-reply" || !ACTION_REPLIES.has(m.id)) return;
