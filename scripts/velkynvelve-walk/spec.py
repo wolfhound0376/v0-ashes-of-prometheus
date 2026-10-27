@@ -102,8 +102,12 @@ NODES = {
    obstacles=[dict(cx=1480,cy=880,rx=140,ry=60),dict(cx=1780,cy=870,rx=60,ry=40)],
    zones=[dict(rect=[524, 799, 834, 985], to=[9], label="Ledge west, toward the priestess tower and the falls"),
           dict(rect=[2321, 777, 2427, 892], to=[11], label="Rope bridge east to the slave pen"),
-          dict(rect=[1445, 1238, 1602, 1336], to=["10b"], label="Ladder to lower chamber"),
-          dict(rect=[1719, 822, 1840, 909], to=["10c"], label="Ladder to Upper Chamber")]),
+          # Sam, 2026-10-27: "When I try to go up or down ... the characters just leave to the right of the screen then
+          # appear to climb." Neither ladder had climb data, so the party walked off the plate's edge. On the painting the
+          # hatch in the floor (its ladder going DOWN) is the way to the lower chamber, and the rope ladder on the back wall
+          # is the way UP to the armory; until now the zone on the hatch led up and the lower chamber's sat off the floor.
+          dict(rect=[1719, 822, 1840, 909], to=["10b"], label="The hatch: ladder down to the lower chamber", climb=dict(foot=[1780, 945], ladder=[1778, 872], dir="down")),
+          dict(rect=[1715, 690, 1815, 770], to=["10c"], label="Rope ladder up to the armory", climb=dict(foot=[1768, 740], ladder=[1768, 690], dir="up"))]),
  "10b": dict(slug="node-10b-guard-tower-lower", name="Guard Tower, lower chamber", scale=3.2, depth=[0.8, 1.6], img="node-10b-guard-tower-lower.jpg",
    # scale 3.2 and depth 0.8→1.6, not 0.95 and the default 0.8→1.12 (Sam, 2026-10-24: "fix both guard room and armory").
    # A close-up with steep perspective: ladder rungs at the back wall ~56 px/ft, the table and chairs mid-room ~105 px/ft.
