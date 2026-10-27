@@ -46,3 +46,36 @@ describe("what is in the pockets (OotA ch.1)", () => {
     expect(Object.keys(POCKETS)).toEqual(expect.arrayContaining(["ilvara", "shoor"]))
   })
 })
+
+import { BODY_KIT, RUIN_ON, rollWear } from "./walk-loot"
+
+describe("the named drow's stat-block gear, and what survives the fight", () => {
+  it("gives each named drow the gear their stat block fights with", () => {
+    expect(BODY_KIT.asha.map((e) => e.slug)).toEqual(["mace", "chain-shirt"])
+    expect(BODY_KIT.shoor.map((e) => e.slug)).toEqual(["shortsword", "hand-crossbow", "studded-leather-armor", "shield"])
+    expect(BODY_KIT.jorlan).toEqual(BODY_KIT.shoor)
+    expect(BODY_KIT.ilvara.map((e) => e.slug)).toEqual(["scourge", "scale-mail"])
+  })
+
+  it("ruins a piece on a d20 of RUIN_ON or less and keeps the rest", () => {
+    const seq = [0.0, 0.99]   // d20 1 (ruined), then d20 20 (kept)
+    let i = 0
+    const out = rollWear([{ slug: "mace", qty: 1 }, { slug: "chain-shirt", qty: 1 }], () => seq[i++])
+    expect(out.ruined).toEqual([{ slug: "mace", roll: 1 }])
+    expect(out.kept).toEqual([{ slug: "chain-shirt", qty: 1 }])
+  })
+
+  it("rolls each unit of a stack on its own", () => {
+    const rolls = [RUIN_ON - 1, RUIN_ON + 5].map((r) => (r - 1) / 20 + 0.001)
+    let i = 0
+    const out = rollWear([{ slug: "silk-rope", qty: 2, note: "a coil" }], () => rolls[i++])
+    expect(out.kept).toEqual([{ slug: "silk-rope", qty: 1, note: "a coil" }])
+    expect(out.ruined).toHaveLength(1)
+  })
+
+  it("ruins about one piece in five", () => {
+    let ruined = 0
+    for (let n = 0; n < 4000; n++) ruined += rollWear([{ slug: "mace", qty: 1 }]).ruined.length
+    expect(ruined / 4000).toBeGreaterThan(0.15); expect(ruined / 4000).toBeLessThan(0.25)
+  })
+})
