@@ -1,0 +1,1885 @@
+"use client"
+
+// THE PARLEY — the narration-and-talk screen (Sam's concept, 2026-10-28).
+//
+// A fork of components/dashboard/v4-dashboard.tsx: the wiring is that file's
+// (speech, cinematics, the stage, the address picker, dice, sheet, inventory),
+// kept line for line so a fix there ports here. Only the render changed —
+// Top Heroes slabs on Baldur's Gate 3 bones, laid out as Sam edited the
+// concept (claude.ai/artifact/UrPBcDLfnCBr7QeCLCFcxK, v77). No action bar:
+// the pixel map (/velkynvelve) acts; this screen narrates and talks.
+import "./parley.css"
+
+import { hearDialogueRow, listenerFromCharacter, partyListener, renderSpeechFor, understands } from "@/lib/languages"
+import { listenerCharacterId } from "@/lib/rapport"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from "react"
+import { BookOpen, ChevronDown, ChevronUp, Compass, Crown, Dumbbell, Feather, Flame, ImagePlus, Map, Mic, Shield, TreeDeciduous, X, type LucideIcon } from "lucide-react"
+import { cn } from "@/lib/utils"
+import { DrinkButton, useDrinkables } from "@/components/alchemy/drink-button"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { ItemIcon } from "@/lib/item-icons"
+import { dmHeaders, ensureDmKey, clearDmKey, hasDmKey, onDmKeyChange } from "@/lib/dm-key"
+import { shouldRedirectToBoard, shouldForgetDeliberateExit, type PriorCombat } from "@/lib/board-exit"
+// (fantasy-icons no longer used here — equipment slots render Sam's uploaded PNG icons)
+import { describeRoll, useDice } from "@/components/dice/dice-provider"
+import { CharacterSheetSlideOver } from "@/components/dashboard/character-sheet-slideover"
+import { useSkillMarks } from "@/lib/hooks/use-skill-marks"
+import { DiceRoller } from "@/components/dashboard/dice-roller"
+import MapPanel from "@/components/map/map-panel"
+import { StageLink, useStage } from "@/components/stage/stage-provider"
+import { DmNarration } from "@/components/dashboard/dm-narration"
+import { speakBlob } from "@/lib/speech-queue"
+import { useSpeechFloor } from "@/lib/hooks/use-speech-floor"
+import { unlockSpeechAudio } from "@/lib/speech-playback"
+import { markVoicedElsewhere } from "@/lib/voiced-elsewhere"
+import { TimeStoppedBanner } from "@/components/dashboard/time-stop"
+import { canSpeak, classifySpeaker } from "@/lib/tts"
+import { isMusicOff, onMusicPrefChange, setMusicOff } from "@/lib/audio-prefs"
+import { isOnline, type WorldRow } from "@/lib/walk-world"
+
+import { SuggestionChips } from "@/components/dashboard/suggestion-chips"
+import type { Suggestion } from "@/lib/suggestions"
+import { createClient } from "@/lib/supabase/client"
+import { CharacterSpriteVignette } from "@/components/dashboard/character-sprite-vignette"
+import { onCinematicCue } from "@/lib/cinematic-cue"
+import { triggerFor, shouldPlay, readPlayed, rememberPlayed } from "@/lib/cinematic-replay"
+import { useSpeechInput } from "@/lib/hooks/use-speech-input"
+import { classDefaults } from "@/lib/game-data"
+import { calculateAC } from "@/lib/armor-class"
+import { defaultSlotFor, normalizeSlot, slotAccepts } from "@/lib/equipped"
+import { isCombatant } from "@/lib/challenge-rating"
+// blob URLs carry the extension inside ?pathname=, which a naive regex misses.
+import { isVideoUrl } from "@/lib/media-url"
+import { isRollLine, stripRollTalk } from "@/lib/speech-notation"
+import { campBiome, CAMP_BIOME_LABEL, CAMP_PLATES } from "@/lib/camp-plates"
+import { useCampVerdict } from "@/lib/hooks/use-camp-verdict"
+import { characterStageStyle, npcWindowStyle, type StageFramingRow } from "@/lib/stage-framing"
+import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/database"
+
+type AbilityKey = "str" | "dex" | "con" | "int" | "wis" | "cha"
+const ABILITY_KEYS: AbilityKey[] = ["str", "dex", "con", "int", "wis", "cha"]
+
+const spellNames = (value: unknown): string[] =>
+  Array.isArray(value) ? value.filter((name): name is string => typeof name === "string" && name.trim().length > 0) : []
+
+const DND_SKILLS = [
+  "acrobatics", "animal_handling", "arcana", "athletics", "deception", "history",
+  "insight", "intimidation", "investigation", "medicine", "nature", "perception",
+  "performance", "persuasion", "religion", "sleight_of_hand", "stealth", "survival",
+]
+
+function normalizedSkillMap(raw: Record<string, any>): Record<string, string> {
+  const result: Record<string, string> = {}
+  const mapped = raw.sheet_skill_proficiencies
+  if (mapped && typeof mapped === "object" && !Array.isArray(mapped)) {
+    for (const [key, value] of Object.entries(mapped)) {
+      const normalized = key.toLowerCase().trim().replace(/[- ]+/g, "_")
+      if (DND_SKILLS.includes(normalized) && value) result[normalized] = value === "expertise" ? "expertise" : "proficient"
+    }
+  }
+
+  const sourceText = [raw.sheet_skill_proficiencies, raw.skill_proficiencies, raw.skills]
+    .flatMap((value) => Array.isArray(value) ? value : [value])
+    .filter((value) => value != null)
+    .map((value) => typeof value === "string" ? value : JSON.stringify(value))
+    .join(" | ")
+    .toLowerCase()
+
+  for (const skill of DND_SKILLS) {
+    const label = skill.replace(/_/g, " ")
+    const pattern = new RegExp(`(^|[^a-z])${label.replace(/ /g, "[ _-]+")}(?=[^a-z]|$)`)
+    if (pattern.test(sourceText) && !result[skill]) result[skill] = "proficient"
+  }
+  return result
+}
+
+/** Map a `characters` row onto the shape the Forge sheet expects. Kept here so
+ *  the sheet stays presentational and the DB column names live in one place.
+ *  `sheet_skill_proficiencies` is a jsonb OBJECT keyed by snake_case skill name
+ *  with "proficient" | "expertise" as the value — not an array. */
+function toSheetCharacter(c: Character) {
+  const raw = c as unknown as Record<string, any>
+  const spellcasting = raw.sheet_spellcasting ?? {}
+  // A character is shown the Spells tab only when a real spellcasting block
+  // exists. An empty `{}` (non-casters) must hide the tab entirely, so we key
+  // off the object having keys rather than off a class-derived guess.
+  const hasSpellcasting =
+    spellcasting && typeof spellcasting === "object" && Object.keys(spellcasting).length > 0
+  const skillMap = normalizedSkillMap(raw)
+  const entries = Object.entries(skillMap)
+  const abilities = Object.fromEntries(
+    ABILITY_KEYS.map((k) => [k, { score: raw[`${k}_score`] ?? 10, modifier: raw[`${k}_modifier`] ?? 0 }]),
+  ) as Record<AbilityKey, { score: number; modifier: number }>
+
+  return {
+    name: c.name,
+    race: raw.sheet_species || raw.race || "Unknown",
+    class: c.class,
+    subclass: raw.sheet_subclass ?? null,
+    level: c.level,
+    background: raw.sheet_background || undefined,
+    alignment: raw.sheet_alignment || undefined,
+    avatarUrl: raw.avatar_image_url || raw.portrait_image_url || null,
+    backdropUrl: raw.sheet_appearance?.backdrop_url ?? null,
+    experiencePoints: raw.xp ?? 0,
+    hp: { current: c.hp_current, max: c.hp_max, temp: raw.sheet_hp_temp ?? 0 },
+    ac: c.ac,
+    initiative: c.initiative,
+    speed: raw.speed,
+    proficiencyBonus: raw.proficiency_bonus ?? 2,
+    passivePerception: raw.passive_perception ?? 10,
+    senses: raw.senses,
+    conditions: Array.isArray(raw.conditions) ? raw.conditions : [],
+    age: raw.sheet_age ?? null,
+    height: raw.height ?? null,
+    weight: raw.character_weight ?? null,
+    abilities,
+    savingThrowProficiencies: (Array.isArray(raw.sheet_save_proficiencies)
+      ? raw.sheet_save_proficiencies
+      : []) as AbilityKey[],
+    skillProficiencies: entries.filter(([, v]) => v === "proficient").map(([k]) => k),
+    skillExpertises: entries.filter(([, v]) => v === "expertise").map(([k]) => k),
+    languages: raw.languages ?? null,
+    armorProficiencies: raw.sheet_proficiencies?.armor ?? null,
+    weaponProficiencies: raw.sheet_proficiencies?.weapons ?? null,
+    toolProficiencies: raw.sheet_proficiencies?.tools ?? null,
+    features: raw.sheet_features,
+    attacks: raw.sheet_attacks,
+    species: raw.sheet_species || raw.race || "",
+    personality: raw.sheet_personality,
+    hasSpellcasting,
+    spellPact: spellcasting.pact ?? null,
+    spellcastingAbility: spellcasting.ability ?? null,
+    spellSaveDC: spellcasting.save_dc ?? null,
+    spellAttackBonus: spellcasting.attack_bonus ?? null,
+    spellCantrips: spellNames(spellcasting.cantrips),
+    spellPrepared: spellNames(spellcasting.prepared),
+    spellKnown: spellNames(spellcasting.known ?? spellcasting.spellbook),
+    spellAlwaysPrepared: spellNames(spellcasting.domain_spells ?? spellcasting.always_prepared),
+    spellSlots: spellcasting.slots ?? {},
+    // Limits and swap cadence come from class_spellcasting_progression
+    // (SRD 5.2.1 class tables) via characters.sheet_spellcasting.
+    spellCantripsMax: spellcasting.cantrips_max ?? null,
+    spellPreparedMax: spellcasting.prepared_max ?? null,
+    spellSwapCadence: spellcasting.swap_cadence ?? null,
+    spellFocus: spellcasting.focus ?? null,
+    spellRulesVersion: spellcasting.rules_version ?? null,
+  }
+}
+
+const SKILL_ABILITY: Record<string, AbilityKey> = {
+  acrobatics: "dex", animal_handling: "wis", arcana: "int", athletics: "str",
+  deception: "cha", history: "int", insight: "wis", intimidation: "cha",
+  investigation: "int", medicine: "wis", nature: "int", perception: "wis",
+  performance: "cha", persuasion: "cha", religion: "int", sleight_of_hand: "dex",
+  stealth: "dex", survival: "wis",
+}
+const SAVE_LABEL: Record<AbilityKey, string> = {
+  str: "STR", dex: "DEX", con: "CON", int: "INT", wis: "WIS", cha: "CHA",
+}
+const titleCaseSkill = (key: string) =>
+  key.split("_").map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(" ")
+
+export function formatSigned(n: number): string {
+  return `${n >= 0 ? "+" : ""}${n}`
+}
+
+/** Everything the Character Stats rail shows, derived from the row rather than
+ *  transcribed from the design mock. `sheet_skill_proficiencies` is a jsonb
+ *  OBJECT keyed by snake_case skill name ("proficient" | "expertise"); a skill
+ *  counts as class-granted when it also appears in that class's skill list. */
+function buildRailStats(c: Character | undefined) {
+  const raw = (c ?? {}) as unknown as Record<string, any>
+  const pb: number = raw.proficiency_bonus ?? 2
+  const mod = (k: AbilityKey): number => raw[`${k}_modifier`] ?? 0
+
+  const saveProfs: string[] = Array.isArray(raw.sheet_save_proficiencies) ? raw.sheet_save_proficiencies : []
+  const saves = ABILITY_KEYS.map((k) => {
+    const proficient = saveProfs.includes(k)
+    return { key: k, label: SAVE_LABEL[k], proficient, bonus: mod(k) + (proficient ? pb : 0) }
+  }).sort((a, b) => Number(b.proficient) - Number(a.proficient) || b.bonus - a.bonus)
+
+  const classSkills: string[] = (classDefaults[raw.class as string]?.skillChoices?.options ?? [])
+    .map((s: string) => s.toLowerCase().replace(/ /g, "_"))
+
+  const skillMap = normalizedSkillMap(raw)
+  const skills = Object.entries(skillMap)
+    .filter(([key]) => SKILL_ABILITY[key])
+    .map(([key, level]) => {
+      const ability = SKILL_ABILITY[key]
+      const multiplier = level === "expertise" ? 2 : 1
+      return {
+        name: titleCaseSkill(key),
+        bonus: mod(ability) + pb * multiplier,
+        fromClass: classSkills.includes(key),
+        expertise: level === "expertise",
+      }
+    })
+    .sort((a, b) => b.bonus - a.bonus || a.name.localeCompare(b.name))
+
+  const passiveInsight = 10 + mod("wis") + (skillMap.insight === "expertise" ? pb * 2 : skillMap.insight ? pb : 0)
+
+  return { saves, skills, passiveInsight, passivePerception: raw.passive_perception ?? 10 + mod("wis") }
+}
+
+type DialogueSpeechSegment = { speaker: string; line: string; npc_id: string | null; voice_id: string | null; lang?: string | null }
+type DialogueEntry = { id?: string; speaker: string; text: string; speech_segments?: DialogueSpeechSegment[] | null; turn_id?: string; created_at?: string; lang?: string | null }
+
+function dialogueLines(entry: DialogueEntry): DialogueEntry[] {
+  if (entry.speaker !== "Malachar" || !entry.speech_segments?.length) return [{ ...entry, lang: entry.speech_segments?.[0]?.lang ?? null }]
+  const lines: DialogueEntry[] = []
+  let cursor = 0
+  const push = (speaker: string, text: string, suffix: string, lang: string | null = null) => {
+    const clean = text.replace(/^[\s“”"']+|[\s“”"']+$/g, "").trim()
+    if (clean) lines.push({ id: `${entry.id ?? "line"}-${suffix}`, speaker, text: clean, lang })
+  }
+  entry.speech_segments.forEach((segment, index) => {
+    const at = entry.text.indexOf(segment.line, cursor)
+    if (at < 0) return
+    push("Malachar", entry.text.slice(cursor, at), `dm-${index}`)
+    push(segment.speaker === "NARRATOR" ? "Malachar" : segment.speaker, segment.line, `speaker-${index}`, segment.lang ?? null)
+    cursor = at + segment.line.length
+  })
+  push("Malachar", entry.text.slice(cursor), "dm-tail")
+  return lines.length ? lines : [entry]
+}
+
+const SPEAKER_COLORS = ["#61b978", "#d2b04f", "#e1876b", "#6fc0c5", "#c98bd8", "#8eb86a", "#df9164"]
+function speakerColor(speaker: string): string {
+  if (speaker === "Malachar" || speaker === "DM") return "#a879e1"
+  if (speaker === "Sam") return "#52a5d4"
+  if (speaker === "System") return "#b7a683"
+  if (speaker === "Combat") return "#c9a14a"
+  const hash = Array.from(speaker).reduce((value, char) => ((value * 31) + char.charCodeAt(0)) >>> 0, 0)
+  return SPEAKER_COLORS[hash % SPEAKER_COLORS.length]
+}
+type NpcEncounter = {
+  id: string
+  name: string
+  description: string | null
+  portrait_url: string | null
+  face_url?: string | null
+  idle_url?: string | null
+  talking_url?: string | null
+  is_active: boolean
+  hp_current?: number | null
+  hp_max?: number | null
+  conditions?: string[] | null
+  /** Text in Postgres: "8", "0.5" and "1/4" all occur. Read it through
+   *  parseChallengeRating/isCombatant rather than comparing it directly. */
+  challenge_rating?: string | number | null
+  aliases?: string[] | null
+  disposition?: string | null
+  stage_scale?: number | string | null
+  stage_offset_y?: number | string | null
+}
+
+// True when a media URL is a video loop (idle/talking uploads are MP4/WebM).
+
+interface ParleyDashboardProps {
+  environment: {
+    name: string
+    region: string
+    timeOfDay: string
+    imageUrl: string
+    description?: string | null
+    /**
+     * The room the NPC is standing in, behind their portrait. Supplied per
+     * scene, and per state of that scene - the slave pen has a door-closed
+     * and a door-open painting. Null falls back to the old gradient, so a
+     * location with no backdrop art still renders.
+     */
+    npcBackdropUrl?: string | null
+  }
+  dialogue: DialogueEntry[]
+  dialogueInput: string
+  setDialogueInput: (value: string) => void
+  onDialogueSubmit: () => void
+  onQuickReply?: (value: string) => void
+  /** Who a typed line goes to (Sam, 2026-10-26: "an option to answer the guard or whomever or the DM").
+   *  addressee = the face in the window (the default); addressChoices = everyone who could answer
+   *  (lib/address-options.ts); addressPick = null (the window), an NPC's name, or "dm". */
+  addressee?: string | null
+  addressChoices?: string[]
+  addressPick?: string | null
+  onAddressPick?: (who: string | null) => void
+  characters: Character[]
+  selectedCharacter?: Character
+  selectedCharacterId: string | null
+  onCharacterSelect?: (id: string) => void
+  inventory: InventoryItem[]
+  equipment: EquipmentItem[]
+  onEquipItem?: (itemId: string, slot: EquipmentItem["slot"]) => void | Promise<void>
+  onUnequipItem?: (slot: EquipmentItem["slot"]) => void | Promise<void>
+  /** Set an inventory row down on the board square the character stands on.
+   *  Sam (2 Sep 2026): items must be able to leave the pack as well as enter it. */
+  onDropItem?: (itemId: string) => void | Promise<void>
+  npcEncounters: NpcEncounter[]
+  /** The FULL NPC roster for voicing, independent of `is_active`. `is_active`
+   *  is a stage/portrait flag and must not gate who is allowed a voice, so the
+   *  narration queue reads this. Everything else keeps using `npcEncounters`
+   *  (active-only) for the stage, tactical overlay and combat checks. */
+  npcRoster?: NpcEncounter[]
+  isThinking?: boolean
+  /** True when this browser has claimed a character via a claim link, i.e. a
+   *  player is sitting here rather than the DM. Gates DM-only readouts. */
+  claimLocked?: boolean
+  /** The bottom status-bar DM Mode toggle. Sam's ruling, 18 Aug 2026: THIS is
+   *  the switch that grants cinematic replay — not the saved DM code, which is
+   *  invisible from the dashboard and left the badge and the toggle disagreeing
+   *  about who was DM. */
+  dmMode?: boolean
+  /** This browser is the DM's screen (entered as DM, or DM Mode on, and not
+   *  holding a player's seat). Sam projects it for the table, so Malachar
+   *  appears here — in the NPC / DM window — while his voice is playing. */
+  dmScreen?: boolean
+  audioSlot?: React.ReactNode
+  /** Camp talk mini-dashboard. When set, only the NPC / DM window renders —
+   *  the side columns stay mounted but hidden so music, party chat and
+   *  narration keep running underneath the conversation. */
+  talkWith?: string | null
+  onEndTalk?: () => void
+  /** Where the conversation was opened from: the camp fire (default) or the
+   *  painted Velkynvelve map, which labels the window and its way back. */
+  talkFrom?: "camp" | "map"
+  /** The line the NPC opened with on the map (/?line=). Shown in the window
+   *  and spoken in their voice, with their talking loop, as the scene opens. */
+  talkOpening?: string | null
+  /** Language the map opener was spoken in (?lang= from the walk map). */
+  talkOpeningLang?: string | null
+  /** The DM has stopped time: the input is closed and a banner says so (components/dashboard/time-stop.tsx). */
+  timeStopped?: boolean
+  /** Who the NPC window is showing, as it changes: the one an unaddressed question is put to. */
+  onFacingChange?: (npcName: string | null) => void
+  /** Map talk: the player accepted the NPC's "a word" and came over. Fired once, after the opener is
+   *  logged, so the page can ask Malachar for what the NPC actually wanted to say. */
+  onOpenerAccepted?: (npcName: string, opener: string) => void
+  // ---- the Parley's top bar and strip (the old TopNav's jobs, re-homed) ----
+  /** Malachar's and the NPCs' voices on this screen. */
+  voicesOn?: boolean
+  onToggleVoices?: () => void
+  /** The campaign book, journal page. */
+  onJournal?: () => void
+  /** The DM Mode switch (asks for the DM code when off). */
+  onToggleDmMode?: () => void
+  /** DM-only controls (time stop, the game clock), shown in the top bar on the DM screen. */
+  dmControls?: React.ReactNode
+  /** The NPC canon panel (DM screen only). */
+  onNpcs?: () => void
+  /** The phone / camp layout. */
+  onCompact?: () => void
+}
+
+const previewDialogue: DialogueEntry[] = [
+  { speaker: "Malachar", text: "The stone is cold against your cheek. That is the first thing. The second is the smell — fungus, sweat, the particular perfume of people wearing the same clothes for days." },
+  { speaker: "Sam", text: "I check the others for wounds before anything else." },
+  { speaker: "DM", text: "Roll Medicine." },
+  { speaker: "Sam", text: "🎲 Medicine — 16 (d20: 12 +4)" },
+  { speaker: "Fifi of Waterdeep", text: "Save the bedside manner. Get these manacles off." },
+  { speaker: "Jimjar", text: "I’ll bet you two gold the bald one prays first." },
+  { speaker: "Malachar", text: "Somewhere above, a whip cracks. The drow are awake." },
+]
+
+const previewCharacters = [
+  { id: "preview-kenta", name: "Kenta", class: "Sorcerer", level: 1, hp_current: 7, hp_max: 9, ac: 10, initiative: 1, avatar_image_url: null },
+  { id: "preview-fifi", name: "Fifi", class: "Rogue", level: 1, hp_current: 9, hp_max: 10, ac: 10, initiative: 0, avatar_image_url: null },
+  { id: "preview-sam", name: "Sam", class: "Cleric", level: 1, hp_current: 10, hp_max: 10, ac: 10, initiative: 0, avatar_image_url: null },
+  { id: "preview-scott", name: "Scott", class: "Bard", level: 1, hp_current: 9, hp_max: 9, ac: 10, initiative: 0, avatar_image_url: null },
+]
+
+const previewSelectedCharacter: Character = {
+  id: "preview-sam", name: "Sam", level: 1, class: "Cleric", xp: 0, xp_to_next: 300,
+  avatar_image_url: null, portrait_image_url: null, hp_current: 10, hp_max: 10, ac: 10,
+  initiative: 0, proficiency_bonus: 2, passive_perception: 12,
+  str_score: 13, str_modifier: 1, dex_score: 10, dex_modifier: 0, con_score: 14, con_modifier: 2,
+  int_score: 8, int_modifier: -1, wis_score: 15, wis_modifier: 2, cha_score: 12, cha_modifier: 1,
+  weight_current: 0, weight_max: 105, is_player: true, character_type: "player", speed: "30 ft.",
+  senses: null, skills: null, size: null, cr: null, languages: null, damage_resistances: null,
+  damage_immunities: null, condition_immunities: null, conditions: ["Poisoned", "Exhaustion 1"],
+  created_at: "", updated_at: "",
+}
+
+const abilityKeys = ["str", "dex", "con", "int", "wis", "cha"] as const
+const conditionColor: Record<string, string> = {
+  poisoned: "border-emerald-700 bg-emerald-950/70 text-emerald-400",
+  exhaustion: "border-amber-700 bg-amber-950/60 text-amber-400",
+  frightened: "border-purple-700 bg-purple-950/60 text-purple-300",
+  prone: "border-red-800 bg-red-950/60 text-red-300",
+}
+
+// MERGE NOTE: Codex's ornate panel/title treatment and the optional `action`
+// slot are orthogonal, so this keeps both. The slot exists because the
+// Interactive Log's filter row has no room for a control — six chips need
+// 314px in a 250px column — so panel-level controls live in the title bar.
+// Malachar's talking loop (transparent VP9 cut-out, 720x404, 5 s) — the canon
+// asset uploaded 2026-08-18. Played only on the DM screen.
+const LICH_TALKING_LOOP = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/character-loops/lich_king_talking.webm"
+
+export function ParleyDashboard(props: ParleyDashboardProps) {
+  const stage = useStage()
+  const { roll, announce, busy: diceBusy } = useDice()
+  const [logFilter, setLogFilter] = useState("All")
+  const [interactiveLogMinimized, setInteractiveLogMinimized] = useState(true)
+  const [inventoryOpen, setInventoryOpen] = useState(false)
+  const [characterSheetOpen, setCharacterSheetOpen] = useState(false)
+  const [diceOpen, setDiceOpen] = useState(false)
+  const [spellbookOpen, setSpellbookOpen] = useState(false)
+  const [stageMode, setStageMode] = useState<"scene" | "tactical">("scene")
+  // Camp is made on the travel map only, never inside a place's node map (Sam, 2026-10-14).
+  const campVerdict = useCampVerdict()
+  const [campNote, setCampNote] = useState<string | null>(null)
+  const talkMode = Boolean(props.talkWith)
+  // Camp talk narrows the page to the NPC window alone. Map talk does not (Sam, 2026-10-11: "This is
+  // the camp UI; we need to go to the dashboard UI"): the full dashboard, with the partner holding the
+  // NPC window and a way back to the map in its header.
+  const narrowTalk = talkMode && props.talkFrom !== "map"
+  // Read from the realtime listener and the cue handler, which are bound once.
+  const talkModeRef = useRef(talkMode)
+  talkModeRef.current = talkMode
+  // Talking by the fire happens in front of the camp's own painting, not the
+  // room the party was last in (Sam, 2026-09-27). The camp link may name the
+  // plate outright (?plate=fungal); otherwise the location name picks it.
+  const [plateParam, setPlateParam] = useState<string | null>(null)
+  // Talking on the painted map: the area name rides along for the caption. The pictures do NOT come
+  // from the map. The dashboard only ever shows the high-definition photoreal painting of where the
+  // party is (Sam, 2026-10-11: "for dashboard UI we ONLY use high def, 4K, photorealistic backgrounds
+  // that represent where we are"), so the map's pixel plate is never used here.
+  const [mapScene, setMapScene] = useState<{ area: string } | null>(null)
+  useEffect(() => {
+    if (!talkMode) return
+    const q = new URLSearchParams(window.location.search)
+    setPlateParam(q.get("plate"))
+    const area = q.get("area")?.trim()
+    if (area) setMapScene({ area: area.slice(0, 60) })
+  }, [talkMode])
+  const talkBiome = talkMode && props.talkFrom !== "map" ? campBiome(props.environment.name, plateParam) : null
+  const talkPlate = talkBiome ? CAMP_PLATES[talkBiome] : null
+  const stageBackdrop = talkPlate ?? props.environment.npcBackdropUrl
+  const [statDetail, setStatDetail] = useState<"ac" | "initiative" | "proficiency" | "speed" | null>(null)
+  // Restart Campaign DOES clear the dialogue table — the reason it looked like
+  // it had failed is right here. An empty feed fell straight back to the
+  // hardcoded preview script, so the log refilled with fake lines a moment
+  // after the wipe and read as "nothing happened".
+  //
+  // The preview is scaffolding for a dashboard with no campaign behind it, so
+  // it is only used when there is no live data at all. With real characters
+  // loaded, an empty feed is a real empty feed and says so.
+  const hasLiveCampaign = props.characters.length > 0
+  const dialogue = props.dialogue.length
+    ? props.dialogue
+    : hasLiveCampaign ? [] : previewDialogue
+  // LANGUAGES (Sam, 2026-10-25): a line in a tongue the viewer's character does not
+  // know is shown and voiced as gibberish (lib/languages). The DM reads the real
+  // words, tagged with the tongue; what the DM screen SAYS aloud is what every
+  // seated player understands, so the speakers never translate for the table.
+  const isDmView = Boolean(props.dmMode || props.dmScreen)
+  const seatedPlayers = props.characters.filter((character) => character.is_player)
+  const hearer = useMemo(
+    () => (isDmView ? partyListener(seatedPlayers as any[]) : listenerFromCharacter((props.selectedCharacter ?? seatedPlayers[0] ?? null) as any)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isDmView, props.selectedCharacter, props.characters],
+  )
+  const heardDialogue = useMemo(() => dialogue.map((entry) => hearDialogueRow(entry, hearer)), [dialogue, hearer])
+  // Rolls are never dialogue (Sam, 2026-10-26): a "🎲 …" announcement or a "[Dice Roll] …" report is not a line
+  // anyone said, so it never shows as one — the dice panel already showed the roll — and a check call or roll
+  // figure inside a spoken line ("Roll for Stealth.", "(Insight)") is cut out. A line left empty is dropped.
+  const displayedDialogue = (isDmView ? dialogue : heardDialogue).flatMap(dialogueLines).flatMap((entry) => {
+    if (isRollLine(entry.text)) return []
+    const text = stripRollTalk(entry.text)
+    return text ? [{ ...entry, text }] : []
+  })
+  const followsLang = (lang: string | null | undefined) => !lang || isDmView || understands(hearer, lang)
+  // Dictation: browser speech-to-text lands in the input for review; Enter sends.
+  // speechBaseRef preserves anything already typed when the mic starts.
+  const speechBaseRef = useRef("")
+  const { listening: micListening, supported: micSupported, toggle: toggleMic } = useSpeechInput((transcript) =>
+    props.setDialogueInput((speechBaseRef.current ? speechBaseRef.current + " " : "") + transcript),
+  )
+  const livePlayers = props.characters.filter((character) => character.is_player)
+  const party = livePlayers.length ? livePlayers : previewCharacters
+  const selected = props.selectedCharacter ?? livePlayers[0] ?? previewSelectedCharacter
+  const canCyclePlayers = !!props.dmMode && !!props.onCharacterSelect && livePlayers.length > 1
+  const selectedPlayerIndex = livePlayers.findIndex((character) => character.id === selected?.id)
+  const nextPlayer = canCyclePlayers ? livePlayers[(selectedPlayerIndex + 1) % livePlayers.length] : undefined
+  const cyclePlayer = () => { if (nextPlayer) props.onCharacterSelect?.(nextPlayer.id) }
+  // The learning mark (docs/claude_Earned_Proficiency.md §6): which skills have
+  // progress on the ledger. Re-read once per turn (the log grows), because a
+  // roll accepted this turn can put a mark on the sheet next turn.
+  const learningSkills = useSkillMarks(selected?.id, dialogue.length)
+  const visibleParty = props.claimLocked && selected
+    ? party.filter((member) => member.id === selected.id)
+    : party
+  const equipmentBonus = props.equipment.reduce<Record<string, number>>((totals, item) => {
+    Object.entries(item.stats_bonus ?? {}).forEach(([key, value]) => { totals[key.toLowerCase()] = (totals[key.toLowerCase()] ?? 0) + Number(value || 0) })
+    return totals
+  }, {})
+  const rail = buildRailStats(selected)
+  const acResult = calculateAC(selected, props.equipment)
+  const displayedAc = acResult.total
+  const displayedInitiative = (selected?.initiative ?? 0) + (equipmentBonus.initiative ?? 0)
+
+  // Whoever currently holds the floor, reported by the narration queue. The
+  // panel used to show whichever NPC happened to be `is_active`, so when
+  // Jimjar answered inside Malachar's narration the picture stayed on someone
+  // else. The speaker wins while they are talking; the scene's active NPC is
+  // the resting state.
+  const [speakingNpc, setSpeakingNpc] = useState<{ id: string; name: string } | null>(null)
+  // THE LICH TAKES THE WINDOW WHEN HE SPEAKS — DM screen only (Sam, 2026-10-23:
+  // "I want my screen to show the Lich on my screen when he talks using his
+  // loop, just on mine when I enter as DM. Since I'm projecting it they should
+  // be able to see it."). Driven by the shared speech queue, so it follows the
+  // actual voice: whenever Malachar's narration is coming out of the speakers
+  // (rank "dm"), his talking loop fades in over the stage; when he stops, it
+  // holds a beat (so back-to-back narration chunks don't flicker) and fades
+  // out to whoever was on stage. Players' seats never see it.
+  const floor = useSpeechFloor()
+  const lichVoiced = Boolean(props.dmScreen && floor?.rank === "dm")
+  const [lichShown, setLichShown] = useState(false)
+  useEffect(() => {
+    if (lichVoiced) { setLichShown(true); return }
+    const t = window.setTimeout(() => setLichShown(false), 900)
+    return () => window.clearTimeout(t)
+  }, [lichVoiced])
+  // Camp talk: whoever the player sat down with OWNS the window — their idle
+  // loop at rest, their talking loop and voice when they speak — no matter who
+  // else is active in the scene. Matched on name or alias against the FULL
+  // roster (they are usually not is_active at camp), then against the party.
+  // "Eldeth" finds "Eldeth Feldrun"; "Derendil" finds "Prince Derendil".
+  const npcPool = props.npcRoster?.length ? props.npcRoster : props.npcEncounters
+  const talkPartner = useMemo(() => {
+    const want = (props.talkWith ?? "").trim().toLowerCase()
+    if (!want) return null
+    const names = (n: { name: string; aliases?: string[] | null }) => [n.name, ...(n.aliases ?? [])].map((x) => x.toLowerCase())
+    const hit = (xs: string[]) => xs.some((x) => x === want || x.split(/\s+/).includes(want) || x.startsWith(want + " "))
+    const npc = npcPool.find((n) => names(n).includes(want)) ?? npcPool.find((n) => hit(names(n)))
+    if (npc) return { kind: "npc" as const, npc }
+    // A player's own screen never puts another player's hero in the window (Sam, 2026-10-25: "The dashboard UI
+    // ONLY shows him in the center panel NO one else"), so a talk aimed at another hero finds no partner there.
+    if (props.claimLocked) return null
+    const pc = props.characters.find((c) => c.name.toLowerCase() === want) ?? props.characters.find((c) => hit([c.name.toLowerCase()]))
+    return pc ? { kind: "player" as const, player: pc as Character & { idle_url?: string | null; talking_url?: string | null } } : null
+  }, [props.talkWith, npcPool, props.characters, props.claimLocked])
+  const activeNpc = talkPartner?.kind === "npc"
+    ? talkPartner.npc
+    : talkMode && talkPartner?.kind === "player"
+      ? undefined
+      : props.npcEncounters.find((npc) => npc.is_active) ?? props.npcEncounters[0]
+  const speakingRowAny = speakingNpc ? npcPool.find((npc) => npc.id === speakingNpc.id) : undefined
+  // While talking by the fire, only the partner may take the window; anyone
+  // else Malachar voices is heard but does not replace the face.
+  const speakingRow = talkMode && talkPartner?.kind === "npc" ? (speakingRowAny?.id === talkPartner.npc.id ? speakingRowAny : undefined) : speakingRowAny
+  // A speaking PLAYER takes the window too: when Player Voices reads a typed
+  // line aloud, the speaker's face and talking loop hold the stage exactly the
+  // way an NPC's does, then the window falls back to the active NPC.
+  // On a player's own screen only their own hero may take it — another player's line is heard, not shown
+  // (Sam, 2026-10-25: the centre panel shows him and NO one else). The DM's screen still shows whoever speaks.
+  const speakingPlayerAny = speakingNpc && !speakingRowAny && (!props.claimLocked || speakingNpc.id === selected?.id)
+    ? (props.characters.find((c) => c.id === speakingNpc.id && c.is_player) as (Character & { idle_url?: string | null; talking_url?: string | null }) | undefined)
+    : undefined
+  const partnerPlayer = talkMode && talkPartner?.kind === "player" ? talkPartner.player : undefined
+  const speakingPlayer = talkMode && talkPartner ? (partnerPlayer && speakingPlayerAny?.id === partnerPlayer.id ? speakingPlayerAny : undefined) ?? partnerPlayer : speakingPlayerAny
+  const shownNpc = speakingRow ?? activeNpc
+  // In a conversation only two people are heard: the one you play and the one you are talking with
+  // (Sam, 2026-10-11: "talk to ONLY the character we are speaking to or is speaking to us"). Anyone
+  // else Malachar mentions is told, not voiced, and never takes the window (see speakingRow above).
+  // Sam, 2026-10-26: an NPC answering another player is seen, not heard; the DM screen hears every NPC voice.
+  const narrationAudience = useMemo(() => ({ dm: isDmView, name: isDmView ? null : selected?.name ?? null }), [isDmView, selected?.name])
+  const talkVoices = useMemo(() => {
+    const allNpcs = props.npcRoster?.length ? props.npcRoster : props.npcEncounters
+    if (!talkMode) return { npcs: allNpcs, players: livePlayers }
+    return {
+      npcs: talkPartner?.kind === "npc" ? [talkPartner.npc] : [],
+      players: livePlayers.filter((c) => c.id === selected?.id || (talkPartner?.kind === "player" && c.id === talkPartner.player.id)),
+    }
+  }, [talkMode, talkPartner, props.npcRoster, props.npcEncounters, livePlayers, selected?.id])
+  // EMPTY STAGE IS A REAL STATE, NOT A FAILURE.
+  //
+  // restart-campaign sets every npc_encounters row to is_active:false
+  // ("offstage until the story calls it back") and only Malachar, mid-narration,
+  // brings one back on. Between those two moments the correct answer is that
+  // nobody is here — and page.tsx filters the fetch on is_active, so the array
+  // is legitimately empty.
+  //
+  // This used to fall back to a hardcoded "Eldeth Feldrun" over the subtitle
+  // "Present in the scene", so an empty stage rendered as a named NPC with a
+  // broken portrait. It sent Sam looking for missing art that was never
+  // missing: Eldeth has a face, a portrait and both loops. Nothing was absent
+  // except the NPC herself.
+  const onStage = speakingPlayer ?? shownNpc
+  const npcName = speakingPlayer?.name ?? shownNpc?.name ?? "No one on stage"
+  const facingName = speakingPlayer ? null : shownNpc?.name ?? null
+  const onFacingChange = props.onFacingChange
+  useEffect(() => { onFacingChange?.(facingName) }, [facingName, onFacingChange])
+  // A talking NPC gets talking_url when the row has one, so the animated head
+  // switches to the speaking loop and back to idle on its own.
+  const playerTalking = Boolean(speakingPlayer && speakingNpc?.id === speakingPlayer.id)
+  const npcPortrait = speakingPlayer
+    ? ((playerTalking ? speakingPlayer.talking_url : null) || speakingPlayer.idle_url || speakingPlayer.portrait_image_url || speakingPlayer.avatar_image_url)
+    : speakingRow
+    ? (speakingRow.talking_url || speakingRow.idle_url || speakingRow.face_url || speakingRow.portrait_url)
+    : (shownNpc?.idle_url || shownNpc?.face_url || shownNpc?.portrait_url)
+  // The most recent line this NPC actually spoke in the feed — replaces the
+  // hardcoded preview quote that used to caption every NPC as Eldeth.
+  // Whoever holds the head window brings their own framing — a face close-up
+  // needs none, a full-body goblin loop needs zooming into the face. NPC rows
+  // only: a speaking PLAYER's stage_scale is tuned for the bottom-anchored scene
+  // stage, and reusing it here would mean one number serving two different
+  // shots. A player borrowing the window keeps the untouched framing.
+  const npcFrame = npcWindowStyle(speakingPlayer ? undefined : ((speakingRow ?? shownNpc) as StageFramingRow | undefined))
+  // On the map the opener is the line that matters right now; otherwise their last line in the feed.
+  const lastNpcLine = (talkMode && talkPartner?.kind === "npc" && props.talkOpening ? (isDmView || !props.talkOpeningLang ? props.talkOpening : renderSpeechFor(props.talkOpening, props.talkOpeningLang, hearer).text).slice(0, 160) : null)
+    ?? ([...(isDmView ? dialogue : heardDialogue)].reverse().map((entry) => (entry.speaker === npcName ? stripRollTalk(entry.text) : "")).find(Boolean)?.slice(0, 160) || null)
+  // Map talk (Sam, 2026-10-13: "When Eldeth says 'a word' and you accept, she should say something on
+  // the UI. The UI should start with her in the idle loop and then transition to talking loop when she
+  // begins to speak"). The opener was already said on the map, so it is NOT said again here: it goes
+  // into the shared log as her line (once), and the page asks Malachar for what she actually wanted to
+  // say. She stands in her idle loop until that line's voice starts; DM Narration flips her to the
+  // talking loop as it plays (onSpeakingChange) and back when it ends. Saying the opener twice was the
+  // "dialogues are being repeated" of 2026-10-13. When the PLAYER walked up instead there is no opener
+  // and they wait in silence.
+  const openingSpoken = useRef(false)
+  const onOpenerAccepted = props.onOpenerAccepted
+  useEffect(() => {
+    const line = props.talkOpening?.trim()
+    const npc = talkPartner?.kind === "npc" ? talkPartner.npc : null
+    if (!talkMode || !line || !npc || openingSpoken.current) return
+    openingSpoken.current = true
+    markVoicedElsewhere(npc.name, line)
+    const lang = props.talkOpeningLang ?? null
+    if (lang) markVoicedElsewhere(npc.name, renderSpeechFor(line, lang, hearer).text)
+    void createClient().from("dialogue").insert({
+      speaker: npc.name, speaker_type: "npc", channel: "dm", text: line,
+      ...(lang ? { speech_segments: [{ speaker: npc.name, line, npc_id: npc.id ?? null, voice_id: null, lang }] } : {}),
+    })
+      .then((res: { error: { message: string } | null }) => { if (res.error) console.error("[map talk] opener not logged:", res.error.message) })
+      .then(() => onOpenerAccepted?.(npc.name, line))
+  }, [talkMode, props.talkOpening, talkPartner, onOpenerAccepted])
+  const characterPortrait = selected?.portrait_image_url || selected?.avatar_image_url
+  // Layer 2 — the POV character's own animated idle. Prefer the loop; fall back
+  // to the still portrait when a character has no idle_url yet. A talking loop
+  // could later swap in the same way the NPC head does, but players don't speak
+  // as NPCs do, so idle is the whole story here.
+  const characterStageMedia = (selected as Character & { idle_url?: string | null })?.idle_url || characterPortrait
+  // Every idle loop is framed differently — Fifi's is a waist-up crop flush to
+  // its frame; Samson's is a full body inside a tall 404x720 frame with ~9%
+  // empty space under his feet. Sizing off the frame alone made him read as a
+  // fairy floating mid-air next to her. `stage_scale` says how tall this
+  // character stands, `stage_offset_y` pushes the figure down so the padding
+  // falls below the panel and the feet meet the ground line. Both default to
+  // the previous behaviour (1 / 0), so untuned characters are unchanged.
+  const stageFrame = characterStageStyle(selected as (Character & StageFramingRow) | undefined)
+  // Talking by the fire: the big scene is the camp plate, and the figure in it
+  // is still YOUR character (Sam, 2026-09-27: "bottom portrait window should
+  // be the character playing") — the person you sat with owns the head window
+  // above. Caption says where you are rather than which room.
+  const sceneImage = talkPlate ?? props.environment.imageUrl
+  const inCombat = props.npcEncounters.some((npc) => npc.is_active && isCombatant(npc.challenge_rating))
+  // A fight breaking out sends this browser to the board — once per fight,
+  // and only the DM's browser: yanking every player off their sheet
+  // mid-sentence would be worse than the fight starting quietly.
+  //
+  // `null`, not `false`: we have not looked yet. Seeding this `false` was the
+  // bug that locked Sam on the board — it made ARRIVING on the dashboard
+  // indistinguishable from a fight starting while he sat there, so ← SCENE
+  // pushed him to `/` and this effect threw him straight back. The rule now
+  // lives in lib/board-exit.ts with tests on it.
+  /**
+   * Whether a fight starting should DRAG this browser to the battle board.
+   *
+   * Off, at Sam's word. See the effect below for what it used to do and why
+   * it was wrong more often than it was right.
+   */
+  const AUTO_OPEN_BOARD_ON_COMBAT = false
+  const wasInCombat = useRef<PriorCombat>(null)
+  // The walk carries the dashboard's sandbox flag (/?sandbox=1, PR #828) so a rehearsal stays one across the
+  // map and back: the walk's Talk hands the flag back. Set after mount, never at render, so SSR and the first
+  // client render agree on the href.
+  const [walkHref, setWalkHref] = useState("/velkynvelve")
+  useEffect(() => { try { if (new URLSearchParams(window.location.search).get("sandbox") === "1") setWalkHref("/velkynvelve?sandbox=1") } catch { /* no window */ } }, [])
+  // Has the roster actually loaded? It starts as an empty array, and an empty
+  // array reads as "no fight" — which is the condition that used to delete the
+  // deliberate-exit mark, milliseconds before the data landed and the redirect
+  // fired. Nothing may be concluded from peace we have not confirmed.
+  const rosterObserved = props.npcEncounters.length > 0 || wasInCombat.current !== null
+  useEffect(() => {
+    // "aop-left-battle" is set by ← SCENE when the DM walks off the board on
+    // purpose. It is per-tab (sessionStorage) and dropped once the fight it
+    // guarded against is genuinely over, so the NEXT fight redirects normally.
+    let leftDeliberately = false
+    try { leftDeliberately = sessionStorage.getItem("aop-left-battle") === "1" } catch {}
+    if (shouldForgetDeliberateExit(inCombat, rosterObserved)) {
+      try { sessionStorage.removeItem("aop-left-battle") } catch {}
+    }
+    // COMBAT WHEN SAM SAYS SO, AND NOT BEFORE.
+    //
+    // Sam: "it keeps going to combat. Stop that for right now. Only combat
+    // when I select it."
+    //
+    // This browser used to navigate to /battle on its own the moment a fight
+    // appeared to start. The trouble is what "appeared to start" means:
+    // `inCombat` is not a fight at all, it is
+    //
+    //     npcEncounters.some(n => n.is_active && isCombatant(n.challenge_rating))
+    //
+    // — an NPC being FLAGGED ACTIVE with a challenge rating above zero. The
+    // Lich activates NPCs while narrating, so a drow being mentioned in a
+    // conversation was enough to throw the DM out of the scene and onto the
+    // battle board mid-sentence. It never needed a combat_state row to exist,
+    // and none of #406, #410 or #423 touched that, because each of those was
+    // fixing where the redirect SENT him rather than whether it should fire.
+    //
+    // So it no longer fires. The board is one click away — the "Open Battle
+    // Board" link at the bottom of the stage, which still lights up "· Live"
+    // when a fight is genuinely running, so nothing is hidden; it simply waits
+    // to be asked.
+    //
+    // The rule and its tests are kept, not deleted. Turning this back on is
+    // this constant, and lib/board-exit still guards the case it was written
+    // for — that ARRIVING somewhere is not an event happening there.
+    if (AUTO_OPEN_BOARD_ON_COMBAT
+        && shouldRedirectToBoard({ inCombat, previous: wasInCombat.current, isDm: hasDmKey(), leftDeliberately })) {
+      window.location.assign(walkHref)
+    }
+    if (rosterObserved) wasInCombat.current = inCombat
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inCombat, rosterObserved])
+  const conditions = ((selected as Character & { conditions?: string[] | null })?.conditions ?? (hasLiveCampaign ? [] : ["Poisoned", "Exhaustion 1"]))
+  const characterExtra = selected as Character & { subclass?: string | null; sheet_background?: string | null; sheet_spellcasting?: Record<string, unknown> | null }
+  const isMagicUser = ["bard", "cleric", "druid", "paladin", "ranger", "sorcerer", "warlock", "wizard"].includes((selected?.class ?? "").toLowerCase())
+  // Header identity is READ from the row, never transcribed from the mock. The
+  // design image said "Human … · Acolyte" for everyone; species and background
+  // are real columns (sheet_species / sheet_background), so a Human Rogue with
+  // the "Criminal / Spy" background now reads correctly.
+  const sheetRow = selected as unknown as Record<string, any>
+  const speciesLabel = sheetRow?.sheet_species || sheetRow?.race || "Human"
+  const backgroundLabel = characterExtra?.sheet_background || "Adventurer"
+  // Spell slots come from the character's sheet_spellcasting block. A non-caster
+  // (a level-1 Rogue whose sheet_spellcasting is `{}`) has no slots, so the
+  // whole panel must not render — never a hardcoded "LV 1 · 2/2". `slots` may be
+  // an array indexed by level (game-data shape) or an object keyed by level.
+  const spellcasting = (characterExtra?.sheet_spellcasting ?? {}) as Record<string, any>
+  const rawSlots = spellcasting.slots
+  const spellSlotLevels: { level: string; total: number; used: number }[] = (() => {
+    if (!rawSlots || typeof rawSlots !== "object") return []
+    const entries = Array.isArray(rawSlots)
+      ? rawSlots.map((count, index) => [String(index + 1), count] as const)
+      : Object.entries(rawSlots)
+    return entries
+      .map(([level, value]) => {
+        if (typeof value === "number") return { level, total: value, used: 0 }
+        if (value && typeof value === "object") {
+          const record = value as Record<string, unknown>
+          const total = Number(record.total ?? record.max ?? record.slots ?? 0)
+          const used = Number(record.used ?? record.expended ?? 0)
+          return { level, total, used }
+        }
+        return { level, total: 0, used: 0 }
+      })
+      .filter((slot) => slot.total > 0)
+  })()
+  const hasSpellSlots = spellSlotLevels.length > 0
+  // Static fallback chips — SuggestionChips shows these when no live player is
+  // selected or the per-beat Haiku generation returns nothing. (PR-3)
+  //
+  // These MUST stay class-neutral. They previously read as cleric lines
+  // ("(Faith) Offer a quiet prayer", "(Medicine) Tend to Kenta's arm"), so any
+  // player whose generation failed was handed Samson's options ������������������ the exact
+  // leak the per-player chips exist to prevent. No class, no skill tag, no
+  // named party member: whatever sits here is shown to EVERY seat at once.
+  // === CINEMATICS (Sam's rulings, 18 Aug 2026) ===
+  //  1. A clip plays ONCE per character. The server owns that memory
+  //     (cinematic_views); this component never decides what is unseen.
+  //  2. DM Mode — the bottom toggle — is the only override. It sends
+  //     dm_override, which bypasses the seen-check server-side. It escalates a
+  //     DELIBERATE PRESS ONLY. A cue Malachar emitted stays event_driven even
+  //     with the toggle on: see lib/cinematic-replay, and Sam's report of
+  //     7 Sep 2026 ("cinematics triggering all the time"), which was twenty
+  //     automatic cues taking the DM's manual-replay door.
+  //  3. The trigger is the look-around CHIP, nothing else. Every generated set
+  //     carries exactly one observe chip (see lib/suggestions.ts); picking it
+  //     sends the action to Malachar as normal AND rolls for an unseen clip.
+  //     First look at a location plays the cinematic, every look after that is
+  //     description alone. Still no sniffing of free-typed text.
+  //  4. A solo clip plays only for the character who asked. A party clip is a
+  //     group moment, so it is broadcast to every seat over the realtime
+  //     channel and plays for all of them.
+  //  5. It plays once through and ends — CinematicOverlay carries no loop.
+  //  6. The request MUST carry dmHeaders() whenever it claims dm_override:
+  //     /api/cinematics only waives the x-dm-key check for player_initiated.
+  //     DM Mode is an unguarded toggle that never asks for the code, so a DM
+  //     with the toggle on but no code stored is prompted once rather than
+  //     handed the silent 403 that hid this feature the first time round.
+  // Film rolls through the stage (components/stage/stage-provider.tsx): the stage window grows
+  // into the clip and shrinks back, like every other move. The ref lets the broadcast effect
+  // below, which subscribes once, reach the current stage api.
+  const stageRef = useRef(stage)
+  stageRef.current = stage
+  const [cinematicBusy, setCinematicBusy] = useState(false)
+  const locationName = props.environment.name
+  const seatId = selected?.id ?? null
+
+  //  7. A cue from Malachar (rule 9 of the tag protocol) is the second door.
+  //     It asks for kind=action and the cue name as state, under the
+  //     event_driven trigger; everything downstream — resolution, the
+  //     once-per-character rule, solo vs party — is unchanged and still owned
+  //     by the server. scope is a PREFERENCE the resolver may override, so the
+  //     broadcast decision below reads the scope the response came back with.
+  const cinematicParams = useCallback(
+    (asDm: boolean, cue?: { state: string }) => {
+      const params = new URLSearchParams({
+        location: locationName,
+        kind: cue ? "action" : "environment",
+        scope: cue ? "solo" : "party",
+        // A CUE IS NEVER AN OVERRIDE. This used to read `asDm ? "dm_override"
+        // : cue ? ...`, so DM Mode swallowed the cue case entirely and every
+        // automatic cue arrived as a deliberate replay.
+        trigger_type: triggerFor({ dmMode: asDm, fromCue: Boolean(cue) }),
+      })
+      if (cue) params.set("state", cue.state)
+      if (seatId) params.set("character_id", seatId)
+      return params
+    },
+    [locationName, seatId],
+  )
+
+  // No probe any more. The old flow asked "is anything here?" on every scene
+  // change so it could decide whether to render a button; with the chip as the
+  // only door there is nothing to decide in advance, and a resolution that
+  // returns nothing is simply a look that yields description instead of film.
+
+  // Group clips arrive here from another seat; solo clips never broadcast.
+  useEffect(() => {
+    const channel = createClient()
+      .channel("cinematic-broadcast")
+      .on("broadcast", { event: "play" }, (message: { payload?: unknown }) => {
+        const url = (message?.payload as { video_url?: string })?.video_url
+        if (url && !talkModeRef.current) void stageRef.current.film({ url, scope: "party", share: false })
+      })
+      .subscribe()
+    return () => {
+      void createClient().removeChannel(channel)
+    }
+  }, [])
+
+  // Rolled when the look-around chip is picked. A null clip is the ORDINARY
+  // outcome — already seen, or this location has no film — and must stay
+  // completely silent: the player asked to look around, Malachar is already
+  // answering in words, and a failed camera cue is not an error they should
+  // ever perceive.
+  const playSceneCinematic = async (cue?: { state: string }) => {
+    // A fireside talk is a conversation; film would cut across it.
+    if (cinematicBusy || talkModeRef.current) return
+    setCinematicBusy(true)
+    try {
+      // DM Mode does not ask for the DM code, but dm_override without the
+      // x-dm-key header is a guaranteed 403. Ask once instead of failing mute;
+      // a dismissed prompt just falls back to an ordinary player request.
+      let asDm = !!props.dmMode
+      if (asDm && !hasDmKey()) asDm = ensureDmKey("replay cinematics in DM Mode") !== null
+      const res = await fetch(`/api/cinematics?${cinematicParams(asDm, cue).toString()}`, {
+        headers: dmHeaders(),
+      })
+      if (!res.ok) {
+        console.warn("[cinematics] request rejected:", res.status)
+        return
+      }
+      const body = await res.json()
+      const clip = body?.clip as { id?: string; video_url?: string; scope?: string } | null
+      if (!clip?.video_url) return // seen already, or nothing filmed here
+
+      // THE UNSEATED WINDOW REMEMBERS FOR ITSELF.
+      //
+      // The server's once-per-character memory needs a character to hang on;
+      // with no claimed seat it honestly answers "unseen" every time, which is
+      // the DM's own window replaying the same clip all evening. Ids only, in
+      // this browser, never authoritative — a seated request is decided by the
+      // server as before, and a deliberate override still replays.
+      const clipId = clip.id ?? clip.video_url
+      const trigger = triggerFor({ dmMode: asDm, fromCue: Boolean(cue) })
+      if (!shouldPlay({ clipId, characterId: seatId, trigger, playedHere: readPlayed() })) return
+      if (!seatId) rememberPlayed(clipId)
+
+      // share: false — the broadcast below is how a party clip reaches the other seats here.
+      void stage.film({ url: clip.video_url, scope: clip.scope === "party" ? "party" : "solo", share: false, cue: cue?.state })
+      if (clip.scope === "party") {
+        // A group moment: everyone at the table sees it, not just this seat.
+        await createClient()
+          .channel("cinematic-broadcast")
+          .subscribe()
+          .send({ type: "broadcast", event: "play", payload: { video_url: clip.video_url } })
+      }
+    } catch {
+      /* a failed cinematic must never interrupt play */
+    } finally {
+      setCinematicBusy(false)
+    }
+  }
+
+  // Malachar cued a filmed moment this turn (app/page.tsx forwards it here).
+  // A cue that resolves to nothing — no film, or this seat has already seen it
+  // — is the ORDINARY outcome and stays completely silent, exactly like the
+  // look-around path above.
+  const cueHandler = useRef(playSceneCinematic)
+  cueHandler.current = playSceneCinematic
+  useEffect(() => onCinematicCue((cue) => void cueHandler.current(cue)), [])
+
+  // Static fallbacks. "Look around" carries kind:"observe" so the cinematic
+  // still has a door even when suggestion generation fails outright.
+  const quickReplies: Suggestion[] = [
+    { text: "Listen for anything nearby", skill: null },
+    { text: "Speak up", skill: null },
+    { text: "Wait and watch", skill: null },
+    { text: "Look around", skill: null, kind: "observe" },
+  ]
+  const abilities = abilityKeys.map((key) => ({
+    key,
+    score: (selected?.[`${key}_score` as keyof Character] as number ?? ({ str: 13, dex: 10, con: 14, int: 8, wis: 15, cha: 12 }[key])) + (equipmentBonus[key] ?? equipmentBonus[`${key}_score`] ?? 0),
+    mod: (selected?.[`${key}_modifier` as keyof Character] as number ?? ({ str: 1, dex: 0, con: 2, int: -1, wis: 2, cha: 1 }[key])) + (equipmentBonus[`${key}_modifier`] ?? 0),
+    proficiencyBonus: ((selected as unknown as Record<string, unknown> | null)?.proficiency_bonus as number | undefined) ?? 2,
+    saveProficient: (((selected as unknown as Record<string, unknown> | null)?.sheet_save_proficiencies as string[] | undefined) ?? [])
+      .some((s) => String(s).toLowerCase().startsWith(key)),
+  }))
+  // MERGE NOTE: both branches independently fixed Roll Initiative. Codex's
+  // version is kept because it also sends the result to Malachar so he reacts
+  // to it; the message itself now goes through the shared describeRoll() so an
+  // initiative roll reads identically to every other roll in the feed.
+  const rollInitiative = async () => {
+    const result = await roll({ die: "d20", numDice: 1, modifier: displayedInitiative, label: "Initiative" })
+    announce(describeRoll(result), { toLich: true, result })
+  }
+
+  // ---------- THE PARLEY: the skin (Sam's concept, 2026-10-28) ----------
+  // Everything above this line is the dashboard's wiring, shared with
+  // components/dashboard/v4-dashboard.tsx. Everything below is how it looks.
+
+  // Who's in sync with whom: the One World row (lib/walk-world) says what every
+  // connected map screen believes. Green when they all agree, amber while one
+  // is catching up, red when one has lost the table or nobody can be reached.
+  const [tableSync, setTableSync] = useState<{ state: "ok" | "lag" | "off" | "idle"; label: string; detail: string }>({ state: "idle", label: "No map open", detail: "No one is on the Underwalk right now." })
+  useEffect(() => {
+    let alive = true
+    const read = async () => {
+      try {
+        const r = await fetch("/api/walk-world", { cache: "no-store" })
+        if (!r.ok) throw new Error(String(r.status))
+        const j = (await r.json()) as { world?: WorldRow; now?: number }
+        const now = typeof j.now === "number" ? j.now : Date.now()
+        const seats = Object.values(j.world?.seats ?? {}).filter((s) => isOnline(s, now))
+        if (!alive) return
+        if (!seats.length) { setTableSync({ state: "idle", label: "No map open", detail: "No one is on the Underwalk right now." }); return }
+        const bad = seats.filter((s) => s.status === "out-of-touch" || s.status === "fight-unshared").length
+        const slow = seats.filter((s) => s.status === "catching-up").length
+        if (bad) setTableSync({ state: "off", label: "Out of sync", detail: `${bad} of ${seats.length} screens have lost the table.` })
+        else if (slow) setTableSync({ state: "lag", label: "Catching up", detail: `${slow} of ${seats.length} screens are behind.` })
+        else setTableSync({ state: "ok", label: "In sync", detail: `${seats.length} screen${seats.length === 1 ? "" : "s"} walking the same Velkynvelve.` })
+      } catch {
+        if (alive) setTableSync({ state: "off", label: "Out of sync", detail: "The shared world could not be reached." })
+      }
+    }
+    void read()
+    const t = setInterval(() => void read(), 5000)
+    return () => { alive = false; clearInterval(t) }
+  }, [])
+
+  // Music: the shared "music off" preference (lib/audio-prefs), which the
+  // DynamicMusic player honours the moment it changes.
+  const [musicOn, setMusicOn] = useState(true)
+  useEffect(() => {
+    setMusicOn(!isMusicOff())
+    return onMusicPrefChange(() => setMusicOn(!isMusicOff()))
+  }, [])
+  const [musicPop, setMusicPop] = useState(false)
+  // Cinematics: a per-browser switch. Off, the look-around chip is an ordinary look.
+  const [cinematicsOn, setCinematicsOn] = useState(true)
+  useEffect(() => { try { setCinematicsOn(window.localStorage.getItem(CINEMATICS_OFF_KEY) !== "true") } catch { /* private mode */ } }, [])
+  const toggleCinematics = () => { const next = !cinematicsOn; setCinematicsOn(next); try { if (next) window.localStorage.removeItem(CINEMATICS_OFF_KEY); else window.localStorage.setItem(CINEMATICS_OFF_KEY, "true") } catch { /* private mode */ } }
+
+  // The NPC box ends where the character card ends, so the two middle boxes
+  // line up with the two right-hand panels (Sam: "even with the bottom of the
+  // inventory button").
+  const centerRef = useRef<HTMLDivElement>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const center = centerRef.current, card = cardRef.current
+    if (!center || !card) return
+    const fit = () => { const h = card.getBoundingClientRect().bottom - center.getBoundingClientRect().top; if (h > 200) center.style.setProperty("--npc-h", `${Math.round(h)}px`) }
+    const ro = new ResizeObserver(fit); ro.observe(card); window.addEventListener("resize", fit); fit()
+    return () => { ro.disconnect(); window.removeEventListener("resize", fit) }
+  }, [narrowTalk])
+
+  // Who a typed line goes to, as a ◀ ▶ cycler: the face in the window, then
+  // everyone else who could answer (lib/address-options), then the DM.
+  const addressOptions = useMemo(() => {
+    const here = props.addressee ?? null
+    const others = (props.addressChoices ?? []).filter((n) => n.toLowerCase() !== (here ?? "").toLowerCase())
+    const playerNames = new Set(livePlayers.map((p) => p.name.toLowerCase()))
+    const list: Array<{ value: string; label: string; sub: string; dm?: boolean }> = [
+      { value: "", label: here ?? "Whoever is here", sub: here ? "NPC in view" : "the room" },
+      ...others.map((n) => ({ value: n, label: n, sub: playerNames.has(n.toLowerCase()) ? "your friend · all hear" : "here" })),
+      { value: "dm", label: "Malachar", sub: "the DM · out of character", dm: true },
+    ]
+    return list
+  }, [props.addressee, props.addressChoices, livePlayers])
+  const addressValue = props.addressPick === "dm" ? "dm" : props.addressPick ?? ""
+  const addressIndex = Math.max(0, addressOptions.findIndex((o) => o.value === addressValue))
+  const addressCurrent = addressOptions[addressIndex]
+  const cycleAddress = (dir: 1 | -1) => { const next = addressOptions[(addressIndex + dir + addressOptions.length) % addressOptions.length]; props.onAddressPick?.(next.value || null) }
+
+  const hpPct = Math.max(0, Math.min(100, ((selected?.hp_current ?? 0) / Math.max(1, selected?.hp_max ?? 1)) * 100))
+  const xpPct = Math.max(0, Math.min(100, ((selected?.xp ?? 0) / Math.max(1, selected?.xp_to_next ?? 300)) * 100))
+  const carried = props.inventory.reduce((sum, item) => sum + Number(item.weight ?? 0) * item.quantity, 0)
+  const speedText = String(selected?.speed || "30 ft")
+  const speedMatch = speedText.match(/^\s*(\d+)\s*(ft\.?|feet)?/i)
+  const roomTag = props.environment.timeOfDay
+  const goBack = () => {
+    if (talkMode && props.onEndTalk) { props.onEndTalk(); return }
+    void stage.go(walkHref, { caption: inCombat ? "Steel is already out. Try to keep up." : "The map, then. Mind where you stand." })
+  }
+  const portraitSrc = selected?.portrait_image_url || selected?.avatar_image_url || null
+
+  return <main style={talkPlate && narrowTalk ? { backgroundImage: `linear-gradient(#050403b3, #050403e6), url(${talkPlate})`, backgroundSize: "cover", backgroundPosition: "51% 64%" } : undefined} className={cn("parley aop-lich-dashboard min-h-0 flex-1 overflow-y-auto", narrowTalk && "narrow")}>
+    <TimeStoppedBanner stopped={Boolean(props.timeStopped)} isDm={Boolean(props.dmMode)} />
+
+    {/* ---------- top bar ---------- */}
+    <div className="p-raised p-top">
+      <span className={cn("p-sync", tableSync.state)} title={tableSync.detail}><i /><span>{tableSync.label}</span></span>
+      <div className="min-w-0">
+        <h2 className="truncate">{talkMode && props.talkFrom === "map" && mapScene?.area ? mapScene.area : props.environment.name}</h2>
+        <div className="p-where truncate">{props.environment.region} · {props.environment.timeOfDay}{talkMode ? (props.talkFrom === "map" ? " · talking in Velkynvelve" : " · talking by the fire") : ""}{inCombat ? " · steel is out" : ""}</div>
+      </div>
+      <div className="p-sp" />
+      {props.dmScreen ? props.dmControls : null}
+      <span className="p-slab green" title={inCombat ? "A fight is live on the map" : "The hour, as the DM keeps it"}><img className="p-ico" src="/images/parley/time.png" alt="" />{props.environment.timeOfDay} · {inCombat ? "round live" : "round —"}</span>
+      <span style={{ position: "relative" }}>
+        <button type="button" className="p-slab blue" onClick={() => setMusicPop((v) => !v)} aria-expanded={musicPop} title="Music and voice controls"><img className="p-ico" src="/images/parley/music.png" alt="" />Music</button>
+        {musicPop && props.audioSlot ? <div className="p-panel p-music-pop">{props.audioSlot}</div> : null}
+      </span>
+      {props.onJournal ? <button type="button" className="p-slab teal" onClick={props.onJournal} title="The campaign book"><img className="p-ico" src="/images/parley/journal.png" alt="" />Journal</button> : null}
+      {props.onToggleDmMode ? <button type="button" className={cn("p-slab", props.dmMode ? "violet" : "dark")} onClick={props.onToggleDmMode} aria-pressed={!!props.dmMode} title={props.dmMode ? "DM Mode is on — click to leave it" : "Enter DM Mode (asks for the DM code)"}><img className="p-ico" src="/images/parley/dm.png" alt="" />DM Mode</button> : null}
+      {props.dmScreen && props.onNpcs ? <button type="button" className="p-slab dark sm" onClick={props.onNpcs} title="NPC canon: faces, loops, voices">NPCs</button> : null}
+      {props.onCompact ? <button type="button" className="p-slab dark sm" onClick={props.onCompact} title="The phone / camp layout">Phone</button> : null}
+      <button type="button" className="p-slab gold" onClick={goBack} title={talkMode ? (props.talkFrom === "map" ? "Back to the map" : "Back to camp") : "Back to the Underwalk map"}><img className="p-ico" src="/velkynvelve-walk/icons/bar/jump.png" alt="" />Return<span className="p-key">M</span></button>
+    </div>
+
+    {/* ---------- left: where you are, the log, the say box ---------- */}
+    <div className={cn("p-left", !interactiveLogMinimized && "log-open", narrowTalk && "hidden")}>
+      <div className="p-scene">
+        <img className="p-plate" src={sceneImage} alt={props.environment.name} style={talkPlate ? { objectPosition: "51% 64%" } : undefined} />
+        <div className="p-vignette" />
+        <div className="p-card"><div className="p-face">{(props.environment.name || "?").trim()[0]?.toUpperCase()}</div><div className="min-w-0"><b>{props.environment.name}</b><small>{props.environment.region} · {props.environment.timeOfDay}</small></div></div>
+        <div className="p-tags">
+          <span className="p-slab blue sm" title="Time of day in the room">◐ {roomTag}</span>
+          {inCombat ? <span className="p-slab red sm" title="A hostile is in the room">⚔ Hostile territory</span> : props.timeStopped ? <span className="p-slab violet sm">⌛ Time stopped</span> : <span className="p-slab dark sm">Quiet</span>}
+        </div>
+        {(campVerdict?.allowed ?? true) ? (
+          <div className="p-tags bl"><StageLink href="/camp" caption="Camp at the Fire" title={campVerdict?.reason ?? "Make camp."} className="p-slab sm" style={{ ["--c1" as string]: "#b8752a", ["--c2" as string]: "#5a3210" } as CSSProperties}>🔥 Camp</StageLink></div>
+        ) : (
+          <div className="p-tags bl"><button type="button" aria-disabled="true" title={campVerdict?.reason} onClick={() => setCampNote((note) => (note ? null : campVerdict?.reason ?? null))} className="p-slab dark sm" style={{ opacity: .6 }}>🔥 Camp</button>{campNote ? <span role="status" className="p-slab dark sm" style={{ whiteSpace: "normal", maxWidth: 260, fontWeight: 500 }}>{campNote}</span> : null}</div>
+        )}
+      </div>
+
+      <div className={cn("p-log", interactiveLogMinimized ? "p-raised mini" : "p-panel")} onClick={interactiveLogMinimized ? () => setInteractiveLogMinimized(false) : undefined} role={interactiveLogMinimized ? "button" : undefined} title={interactiveLogMinimized ? "Open the full log" : undefined}>
+        <div className="p-loghead"><span className="p-lbl">Interactive Log</span><button type="button" className="p-slab sm" style={{ ["--c1" as string]: "#b8252a", ["--c2" as string]: "#5a0e12" } as CSSProperties} onClick={(e) => { e.stopPropagation(); setInteractiveLogMinimized((v) => !v) }} aria-expanded={!interactiveLogMinimized}>{interactiveLogMinimized ? "⤢ Show all" : "⤡ Latest only"}</button></div>
+        <div className="p-filters">{["All", "Narration", "Dialogue", "Combat", "System"].map((filter) => <button key={filter} type="button" onClick={() => setLogFilter(filter)} className={cn("p-slab sm", logFilter === filter ? "gold" : "dark")}>{filter}</button>)}</div>
+        <div className="p-lines">
+          {displayedDialogue.length === 0 ? <p className="p-thinking" style={{ animation: "none", color: "#6f6380" }}>The log is empty. Malachar is waiting.</p> : null}
+          {displayedDialogue.map((entry, index) => {
+            const kind = classifySpeaker(entry.speaker)
+            const sys = entry.speaker === "System" || entry.speaker === "Combat"
+            const cls = sys ? "sys" : kind === "dm" ? "dm" : kind === "player" ? "pc" : "npc"
+            const player = kind === "player" ? livePlayers.find((p) => p.name.toLowerCase() === entry.speaker.toLowerCase()) : undefined
+            const face = player ? (player.avatar_image_url || player.portrait_image_url) : kind === "npc" ? npcPool.find((n) => n.name.toLowerCase() === entry.speaker.toLowerCase())?.face_url ?? null : null
+            return <div key={entry.id ?? index} className={cn("p-line", cls)}>
+              <span className="p-who" title={entry.speaker}>{face ? <img src={face} alt="" /> : entry.speaker.trim()[0]?.toUpperCase()}</span>
+              <div className="min-w-0"><b style={{ color: speakerColor(entry.speaker) }}>{entry.speaker}{entry.lang && entry.lang !== "Common" ? <span className="p-lang" title={followsLang(entry.lang) ? `Spoken in ${entry.lang}` : `Spoken in ${entry.lang}, which you do not know`}>{followsLang(entry.lang) ? entry.lang : `${entry.lang} ✕`}</span> : null}</b><p className={followsLang(entry.lang) ? undefined : "foreign"}>{entry.text}</p></div>
+            </div>
+          })}
+          {props.isThinking ? <p className="p-thinking">Malachar is considering your suffering…</p> : null}
+        </div>
+      </div>
+
+      <div className="p-panel p-say">
+        <input value={props.dialogueInput} disabled={props.timeStopped} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder={props.timeStopped ? "Time is stopped. The world waits for the DM." : props.addressPick === "dm" ? "Ask the DM — nobody in the scene hears this…" : (props.addressPick ?? props.addressee) ? `Say something to ${(props.addressPick ?? props.addressee)!.split(/\s+/)[0]}, or act…` : "Say something, or tell Malachar what you do…"} className={cn(props.addressPick === "dm" && "to-dm")} aria-label="Say something" />
+        <button type="button" disabled={!micSupported} onClick={() => { if (!micListening) speechBaseRef.current = props.dialogueInput; toggleMic() }} className={cn("p-slab dark p-mic", micListening && "live red")} title={micSupported ? micListening ? "Stop dictation" : "Dictate your response" : "Voice input is not supported in this browser"}><Mic className="h-4 w-4" /></button>
+        <button type="button" onClick={props.onDialogueSubmit} disabled={props.timeStopped} className="p-slab" style={{ ["--c1" as string]: "#b8252a", ["--c2" as string]: "#5a0e12" } as CSSProperties}>Send</button>
+      </div>
+    </div>
+
+    {/* ---------- centre: the one you're speaking to, then you ---------- */}
+    <div ref={centerRef} className={cn("p-center", narrowTalk && "narrow")}>
+      <div className="p-scene" data-npc-window>
+        {stageBackdrop ? (<><img className="p-plate" src={stageBackdrop} alt="" aria-hidden style={talkPlate ? { objectPosition: "51% 64%" } : undefined} /><div className="p-vignette" /></>) : null}
+        {npcPortrait ? (isVideoUrl(npcPortrait)
+          ? <video key={npcPortrait} src={npcPortrait} autoPlay loop muted playsInline style={npcFrame} className={cn("absolute inset-0 h-full w-full object-contain object-top transition-opacity duration-500", lichShown && "opacity-0")} />
+          : <img src={npcPortrait} alt={npcName} style={npcFrame} className={cn("aop-npc-still absolute inset-0 h-full w-full object-contain object-top transition-opacity duration-500", lichShown && "opacity-0")} />)
+          : <div className={cn("p-note", lichShown && "opacity-0")}>{onStage ? "Portrait loads from NPC canon" : "The stage is empty"}</div>}
+        {props.dmScreen ? <video src={LICH_TALKING_LOOP} autoPlay loop muted playsInline preload="auto" aria-hidden className={cn("pointer-events-none absolute inset-0 h-full w-full object-contain object-bottom transition-opacity duration-500", lichShown ? "opacity-100" : "opacity-0")} /> : null}
+        <div className="p-card">
+          <div className="p-face">{lichShown ? "M" : (shownNpc?.face_url && !speakingPlayer) ? <img src={shownNpc.face_url} alt="" /> : (npcName.trim()[0] ?? "?").toUpperCase()}</div>
+          <div className="min-w-0"><b>{lichShown ? "Malachar" : npcName}</b><small>{lichShown ? "The Lich" : speakingPlayer ? `Level ${speakingPlayer.level} ${speakingPlayer.class}` : onStage ? (lastNpcLine ? `“${lastNpcLine}”` : shownNpc?.description || "Present in the scene") : "No one has stepped forward yet"}</small></div>
+        </div>
+        <div className="p-tags tr">
+          <span className={cn("p-slab sm", speakingNpc || lichShown ? "gold" : "dark")}>{lichShown ? <span className="p-speak">Malachar speaks <span className="p-eq">▮▮▯▯</span></span> : speakingNpc ? <span className="p-speak">Speaking <span className="p-eq">▮▮▯▯</span></span> : onStage ? "Silent" : "Awaiting an entrance"}</span>
+        </div>
+        {onStage && !lichShown ? <div className="p-tags br">
+          {props.claimLocked ? null : activeNpc?.disposition ? <span className="p-slab dark sm" title="Disposition">{activeNpc.disposition}</span> : null}
+          {activeNpc?.challenge_rating ? <span className="p-slab red sm" title="Challenge rating">CR {activeNpc.challenge_rating}</span> : null}
+          {typeof activeNpc?.hp_current === "number" && typeof activeNpc?.hp_max === "number" && activeNpc.hp_max > 0 && !props.claimLocked ? <span className="p-slab dark sm" title="Health · DM only">♥ {activeNpc.hp_current} / {activeNpc.hp_max}</span> : null}
+        </div> : null}
+        <div className="p-narr">
+          {talkMode ? <button type="button" onClick={props.onEndTalk} className="p-slab dark sm"><X className="h-3 w-3" />{props.talkFrom === "map" ? "Back to the map" : "Back to camp"}</button> : null}
+          <DmNarration dialogue={heardDialogue} audience={narrationAudience} npcs={talkVoices.npcs} players={talkVoices.players.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />
+        </div>
+      </div>
+
+      <div className="p-scene" data-stage-window>
+        <img className="p-plate" src={sceneImage} alt="Current scene" style={talkPlate ? { objectPosition: "51% 64%" } : undefined} />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/15" />
+        {characterStageMedia ? (isVideoUrl(characterStageMedia)
+          ? <video key={characterStageMedia} src={characterStageMedia} autoPlay loop muted playsInline aria-hidden="true" style={stageFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
+          : <img src={characterStageMedia} alt={selected?.name ?? "Active character"} style={stageFrame} className="absolute bottom-0 left-1/2 object-contain object-bottom drop-shadow-[0_12px_18px_#000]" />
+        ) : <div className="p-note">Your loop plays here</div>}
+        <div className="p-tags" style={{ top: 14 }}>
+          <span className={cn("p-slab sm", playerTalking ? "" : "dark")} style={playerTalking ? ({ ["--c1" as string]: "#b8252a", ["--c2" as string]: "#5a0e12" } as CSSProperties) : undefined}>{playerTalking ? <span className="p-speak">▶ Talking <span className="p-eq">▮▮▯▯</span></span> : "Listening"}</span>
+        </div>
+        <div className="p-tags bl"><span className="p-slab dark sm" style={{ cursor: "default" }}>{talkMode ? (props.talkFrom === "map" ? "In Velkynvelve" : "By the fire") : "Point of view"} · {selected?.name ?? "Active character"}</span></div>
+      </div>
+    </div>
+
+    {/* ---------- right: you ---------- */}
+    <div className={cn("p-sheet", narrowTalk && "hidden")}>
+      <div ref={cardRef} className="p-panel p-charcard">
+        <div className="p-id">
+          <div className={cn("p-port", canCyclePlayers && "cycles")} onClick={canCyclePlayers ? cyclePlayer : undefined} title={canCyclePlayers ? `Next: ${nextPlayer?.name}` : selected?.name}>{portraitSrc ? <img src={portraitSrc} alt={selected?.name ?? ""} style={{ objectPosition: selected?.portrait_image_url ? "center" : "center 14%" }} /> : (selected?.name?.[0] ?? "?")}</div>
+          <div className="p-who-is"><b>{selected?.name ?? "—"}</b><span>{speciesLabel} {selected?.class ?? ""}</span><span>{backgroundLabel}</span></div>
+          <span className="p-lvl" title={`Level ${selected?.level ?? 1}`}><small>Level</small><b>{selected?.level ?? 1}</b></span>
+        </div>
+        <div className="p-xprow"><span>Level {selected?.level ?? 1} progress</span><span>{selected?.xp ?? 0} / {selected?.xp_to_next ?? 300} XP</span></div>
+        <div className="p-bar xp"><i style={{ width: `${xpPct}%` }} /></div>
+        <div className="p-hpwrap"><img className="p-heart" src="/images/parley/heart.png" alt="" /><div className="p-bar hp"><i style={{ width: `${hpPct}%` }} /></div><div className="p-hpnum">HP <b>{selected?.hp_current ?? 0} / {selected?.hp_max ?? 0}</b></div></div>
+        <div className="p-emblems">
+          <button type="button" className="p-emb" onClick={() => setStatDetail("proficiency")} title="Proficiency bonus"><span className="p-shield" style={{ backgroundPosition: "100% 40%" }} /><span className="p-val">+{selected?.proficiency_bonus ?? 2}</span><small>Proficiency</small></button>
+          <button type="button" className="p-emb" onClick={() => setStatDetail("ac")} title={acResult.text}><span className="p-shield" style={{ backgroundPosition: "0% 40%" }} /><span className="p-val">{displayedAc}</span><small>AC</small></button>
+          <button type="button" className="p-emb" onClick={() => setStatDetail("speed")} title="Speed"><span className="p-shield" style={{ backgroundPosition: "33.333% 40%" }} /><span className="p-val">{speedMatch ? <>{speedMatch[1]}<i>ft</i></> : speedText}</span><small>Speed</small></button>
+        </div>
+        <button type="button" data-tick="window" onClick={() => setCharacterSheetOpen(true)} className="p-slab dark wide">✧ View Full Character Sheet</button>
+        <button type="button" data-tick="window" onClick={() => setInventoryOpen(true)} className="p-slab dark wide" style={{ justifyContent: "flex-start" }}><img className="p-ico" src="/velkynvelve-walk/icons/bar/inv.png" alt="" />Inventory &amp; Equipment<small style={{ marginLeft: "auto", textAlign: "right" }}>{carried.toFixed(1)} / {selected?.weight_max ?? 105} lb · {props.equipment.length} equipped</small><span className="p-key">I</span></button>
+        {isMagicUser ? <button type="button" data-tick="window" onClick={() => setSpellbookOpen(true)} className="p-slab violet wide" style={{ justifyContent: "flex-start" }}>{selected.class === "Cleric" || selected.class === "Monk" ? <img className="p-ico" src={BOOK_OF_PRAYERS_MEDIA.poster} alt="" /> : <BookOpen className="h-5 w-5" />}{selected.class === "Cleric" || selected.class === "Monk" ? "Book of Prayers" : "Book of Spells"}<small style={{ marginLeft: "auto" }}>{characterExtra.subclass || ""}</small></button> : null}
+      </div>
+
+      <div className="p-panel p-vig">
+        <div className="p-vighead"><span>{selected?.name ?? "—"}</span><span>Idle</span></div>
+        <CharacterSpriteVignette characterId={selected?.id} name={selected?.name} />
+      </div>
+
+      <div className="p-panel p-third">
+        <div className="p-vighead"><span>Conditions &amp; effects</span><span>colour = kind</span></div>
+        <div className="p-fx">
+          {conditions.length ? conditions.map((condition) => { const kind = conditionKind(condition); const c = CONDITION_KIND_COLORS[kind]; return <span key={condition} className="p-slab" style={{ ["--c1" as string]: c[0], ["--c2" as string]: c[1] } as CSSProperties} title={CONDITION_KIND_LABEL[kind]}>{CONDITION_KIND_GLYPH[kind]} {condition}</span> }) : <span className="p-slab dark" style={{ cursor: "default", color: "#9a8bb5" }}>Nothing ails you</span>}
+        </div>
+        {hasSpellSlots ? <div className="p-slots">{spellSlotLevels.map((slot) => { const remaining = Math.max(0, slot.total - slot.used); return <div key={slot.level} className="p-slot"><span>Spell slots · lv {slot.level} {"◉".repeat(remaining)}{"◯".repeat(Math.max(0, slot.total - remaining))}</span><span>{remaining} / {slot.total}</span></div> })}</div> : null}
+        <div className="p-fxkey">{(Object.keys(CONDITION_KIND_COLORS) as ConditionKind[]).map((k) => <span key={k}><i style={{ background: CONDITION_KIND_COLORS[k][0], color: CONDITION_KIND_COLORS[k][0] }} />{k}</span>)}</div>
+      </div>
+    </div>
+
+    {/* ---------- the strip: who you're talking to, what you might say, the dice ---------- */}
+    <div className={cn("p-panel p-hot", narrowTalk && "hidden")}>
+      <div className="p-groups">
+        {props.onAddressPick ? <span className={cn("p-slab p-cycler", addressCurrent?.dm && "dm")} title="Who hears what you type">
+          <button type="button" className="p-slab p-arrow" onClick={() => cycleAddress(-1)} aria-label="Previous">◀</button>
+          <span className="p-mid"><small>Talking to</small><b>{addressCurrent?.label}</b><em>{addressCurrent?.sub}</em></span>
+          <button type="button" className="p-slab p-arrow" onClick={() => cycleAddress(1)} aria-label="Next">▶</button>
+        </span> : null}
+        <span className="p-chips">
+          <small className="p-saylbl">SAY</small>
+          <SuggestionChips
+            variant="parley"
+            character={livePlayers.length && selected?.is_player ? selected : undefined}
+            dialogue={dialogue}
+            inventory={props.inventory}
+            location={props.environment.name}
+            talkWith={talkPartner?.kind === "npc" ? talkPartner.npc.name : talkPartner?.kind === "player" ? talkPartner.player.name : null}
+            onStage={shownNpc?.name ?? null}
+            fallback={quickReplies}
+            disabled={!!props.isThinking}
+            onPick={(text, isObserve) => {
+              // The action always reaches Malachar. The cinematic rides along on
+              // top of it the first time, so a look that has no film left still
+              // reads as a normal look rather than a dead button.
+              props.onQuickReply?.(text)
+              if (isObserve && cinematicsOn) void playSceneCinematic()
+            }}
+          />
+        </span>
+      </div>
+      <div className="p-tail">
+        {props.onToggleVoices ? <button type="button" className={cn("p-slab p-tog", props.voicesOn && "on")} data-tog="voices" onClick={props.onToggleVoices} aria-pressed={!!props.voicesOn} title={props.voicesOn ? "Voices on — click to mute Malachar and the NPCs" : "Voices off"}><i />Voices</button> : null}
+        <button type="button" className={cn("p-slab p-tog", musicOn && "on")} data-tog="music" onClick={() => setMusicOff(musicOn)} aria-pressed={musicOn} title={musicOn ? "Music on — click to mute" : "Music off"}><i />Music</button>
+        <button type="button" className={cn("p-slab p-tog", cinematicsOn && "on")} data-tog="cinematics" onClick={toggleCinematics} aria-pressed={cinematicsOn} title={cinematicsOn ? "Cinematics play when you look around" : "Cinematics off"}><i />Cinematics</button>
+        <button type="button" className="p-slab green p-roll" onClick={() => setDiceOpen(true)} title="Open the dice tray">🎲 Roll</button>
+        {props.dmMode ? <button type="button" disabled={diceBusy} onClick={() => void rollInitiative()} className="p-slab dark sm" title="Roll initiative with physics and report the result">{diceBusy ? "Rolling…" : `Initiative ${signed(displayedInitiative)}`}</button> : null}
+      </div>
+    </div>
+
+    {/* The music and voice players stay mounted (they hold the audio); the top-bar Music button shows them. */}
+    {!musicPop && props.audioSlot ? <div className="p-audio-hidden" aria-hidden>{props.audioSlot}</div> : null}
+    {statDetail ? <StatDetailModal kind={statDetail} character={selected} acBreakdown={acResult.text} onClose={() => setStatDetail(null)} /> : null}
+    {diceOpen ? <DiceRoller presentation="modal" onClose={() => setDiceOpen(false)} characterName={selected?.name ?? "Player"} /> : null}
+    {spellbookOpen ? <SpellbookModal character={selected} onClose={() => setSpellbookOpen(false)} /> : null}
+    <CharacterSheetSlideOver
+      open={characterSheetOpen}
+      onClose={() => setCharacterSheetOpen(false)}
+      character={{ ...toSheetCharacter(selected), ac: displayedAc, acBreakdown: acResult.text, initiative: displayedInitiative, learningSkills: [...learningSkills] }}
+      inventory={props.inventory as any}
+    />
+    {inventoryOpen ? <EquipmentManager character={selected} inventory={props.inventory} equipment={props.equipment} bonuses={equipmentBonus} onEquip={props.onEquipItem} onUnequip={props.onUnequipItem} onDrop={props.onDropItem} onClose={() => setInventoryOpen(false)} /> : null}
+  </main>
+}
+
+const CINEMATICS_OFF_KEY = "aop-parley-cinematics-off"
+
+/** Conditions wear the colour of their kind (Sam, 2026-10-28): grey restraint,
+ *  amber fatigue, violet corruption, red harm, green blessing, blue ward. */
+type ConditionKind = "restraint" | "fatigue" | "corruption" | "harm" | "blessing" | "ward"
+const CONDITION_KIND_COLORS: Record<ConditionKind, [string, string]> = {
+  restraint: ["#5a5a66", "#23232b"], fatigue: ["#c97a2a", "#6a3a0e"], corruption: ["#8a3fc9", "#3d1a66"],
+  harm: ["#b8252a", "#5a0e12"], blessing: ["#2e8a3a", "#13451a"], ward: ["#2e6ab8", "#17406a"],
+}
+const CONDITION_KIND_GLYPH: Record<ConditionKind, string> = { restraint: "⛓", fatigue: "☾", corruption: "☠", harm: "✚", blessing: "✦", ward: "◐" }
+const CONDITION_KIND_LABEL: Record<ConditionKind, string> = {
+  restraint: "Restraint · physical: shackled, grappled, prone, stunned", fatigue: "Fatigue: exhaustion, hunger, no rest",
+  corruption: "Corruption · the Abyss working on you", harm: "Harm: wounds, bleeding, poison, disease",
+  blessing: "Blessing · a buff on you", ward: "Ward · magical protection",
+}
+function conditionKind(condition: string): ConditionKind {
+  const c = condition.toLowerCase()
+  if (/shackl|manacl|grappl|restrain|prone|paralys|stun|incapac|unconsc|petrif|bound|chained/.test(c)) return "restraint"
+  if (/exhaust|fatigue|hungry|starv|tired|weary|sleepless/.test(c)) return "fatigue"
+  if (/corrupt|curse|charm|frighten|fear|madness|taint|abyss/.test(c)) return "corruption"
+  if (/poison|wound|bleed|diseas|blind|deaf|burn|sick|hurt|injur/.test(c)) return "harm"
+  if (/inspir|bless|guid|aid|haste|heroism|bardic|lucky|resist/.test(c)) return "blessing"
+  if (/ward|shield|armor|invisib|protect|sanctuar|barkskin/.test(c)) return "ward"
+  return "restraint"
+}
+
+// Four down each side (68px buttons on a 610px frame: 5/27/49/71% leaves a
+// clear gap above the bottom row), then the two ring fingers along the
+// bottom. Cloak hangs under the head, hands beside the off hand. There is no
+// Feet slot — boots go on the legs.
+const equipmentSlots: Array<{ id: EquipmentItem["slot"]; label: string; position: string; icon: string }> = [
+  { id: "head", label: "Head", position: "left-[4%] top-[5%]", icon: "/icons/equipment/head.png" },
+  { id: "neck", label: "Neck", position: "right-[4%] top-[5%]", icon: "/icons/equipment/neck.png" },
+  { id: "back", label: "Cloak", position: "left-[4%] top-[27%]", icon: "/icons/equipment/back.png" },
+  { id: "torso", label: "Torso", position: "right-[4%] top-[27%]", icon: "/icons/equipment/torso.png" },
+  { id: "main_hand", label: "Main Hand", position: "left-[4%] top-[49%]", icon: "/icons/equipment/main-hand.png" },
+  { id: "off_hand", label: "Off Hand", position: "right-[4%] top-[49%]", icon: "/icons/equipment/off-hand.png" },
+  { id: "legs", label: "Legs", position: "left-[4%] top-[71%]", icon: "/icons/equipment/legs.png" },
+  { id: "hands", label: "Hands", position: "right-[4%] top-[71%]", icon: "/icons/equipment/hands.png" },
+  { id: "ring1", label: "Ring I", position: "left-[28%] bottom-[2%]", icon: "/icons/equipment/ring.png" },
+  { id: "ring2", label: "Ring II", position: "right-[28%] bottom-[2%]", icon: "/icons/equipment/ring2.png" },
+]
+
+/** Label for what an inventory row can wear: a `ring` item reads "Ring", not "Ring I". */
+function slotLabel(slot: string | null | undefined): string {
+  const key = normalizeSlot(slot)
+  if (key === "ring") return "Ring"
+  return equipmentSlots.find((entry) => entry.id === key)?.label || key
+}
+
+function ModalShell({ title, children, onClose, wide = false }: { title: string; children: React.ReactNode; onClose: () => void; wide?: boolean }) {
+  return <div className="fixed inset-0 z-[400] flex items-center justify-center bg-black/85 p-3 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <section role="dialog" aria-modal="true" aria-label={title} className={cn("flex max-h-[94vh] w-full flex-col overflow-hidden rounded-xl border border-[#8a672d] bg-[radial-gradient(circle_at_top,#2a1d0c,#090705_62%)] shadow-[0_25px_90px_#000]", wide ? "max-w-6xl" : "max-w-4xl")}>
+      <header className="flex h-12 shrink-0 items-center border-b border-[#5a421d] bg-black/35 px-5"><h2 className="font-serif text-base uppercase tracking-[.16em] text-[#ead39e]">{title}</h2><button aria-label={`Close ${title}`} onClick={onClose} className="ml-auto rounded border border-[#58421f] p-1.5 text-[#aa9162] hover:border-[#bd9143] hover:text-white"><X className="h-4 w-4" /></button></header>
+      <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+    </section>
+  </div>
+}
+
+type SheetTab = "actions" | "spells" | "inventory" | "features" | "background" | "notes"
+
+function CharacterSheetModal({ character, abilities, inventory, equipment, displayedAc, displayedInitiative, onClose }: { character: Character; abilities: Array<{ key: string; score: number; mod: number }>; inventory: InventoryItem[]; equipment: EquipmentItem[]; displayedAc: number; displayedInitiative: number; onClose: () => void }) {
+  const [tab, setTab] = useState<SheetTab>("actions")
+  const [notes, setNotes] = useState("")
+  const [selectedScene, setSelectedScene] = useState("drow-prisons")
+  const { roll, busy } = useDice()
+  const portrait = character.portrait_image_url || character.avatar_image_url
+  const extra = character as Character & { race?: string; background?: string; subclass?: string; alignment?: string; personality_traits?: string; ideals?: string; bonds?: string; flaws?: string; faith?: string }
+  const speed = character.speed || "30 ft."
+  const carriedWeight = inventory.reduce((sum, item) => sum + Number(item.weight || 0) * item.quantity, 0)
+  const sheetScenes = [{ id: "drow-prisons", label: "Option 1 · Drow Prisons", image: "/images/ui/character-sheet-scenes/option-1-drow-prisons.png" }]
+  const activeScene = sheetScenes.find((scene) => scene.id === selectedScene) ?? sheetScenes[0]
+  const abilityRoll = (ability: { key: string; mod: number }) => void roll({ die: "d20", numDice: 1, modifier: ability.mod, label: `${abilityNames[ability.key]} Check` })
+  const initiativeRoll = () => void roll({ die: "d20", numDice: 1, modifier: displayedInitiative, label: "Initiative" })
+  return <ModalShell title="Full Character Sheet" onClose={onClose} wide>
+    <div className="min-h-full bg-cover bg-center bg-fixed p-4" style={{ backgroundImage: `linear-gradient(rgba(4,5,8,.78), rgba(4,3,3,.9)), url('${activeScene.image}')` }}>
+      <header className="flex flex-wrap items-center gap-4 rounded-xl border border-[#765a2a] bg-[linear-gradient(100deg,#25170b,#090705_68%)] p-4 shadow-[inset_0_0_20px_#000]">
+        <div className="h-20 w-20 overflow-hidden rounded-full border-2 border-[#ad8341] bg-black/50">{portrait ? <img src={portrait} alt={character.name} className={cn("h-full w-full object-cover", character.portrait_image_url ? "object-center" : "object-[center_14%]")} /> : <div className="flex h-full items-center justify-center font-serif text-4xl text-[#b78b45]">{character.name[0]}</div>}</div>
+        <div><h3 className="font-serif text-3xl text-[#f2dfb7]">{character.name}</h3><p className="text-xs text-[#ac966d]">Level {character.level} {extra.race || "Human"} {character.class}</p><p className="mt-0.5 text-[10px] text-purple-300">{character.class === "Cleric" ? "Domain" : "Subclass"}: {extra.subclass || "Not recorded"}</p><p className="mt-1 text-[9px] uppercase tracking-wider text-[#76694f]">{extra.background || "Background not recorded"} · {extra.alignment || "Alignment not recorded"}</p></div>
+        <div className="ml-auto min-w-52"><div className="flex justify-between text-[9px] uppercase text-[#887653]"><span>Experience</span><span>{character.xp} / {character.xp_to_next}</span></div><div className="mt-1 h-2 rounded bg-black"><div className="h-full rounded bg-[#aa2a34]" style={{ width: `${Math.min(100, character.xp / Math.max(1, character.xp_to_next) * 100)}%` }} /></div><div className="mt-2 flex gap-2"><button disabled title="Rest management is not connected to the dashboard database yet" className="rounded border border-[#604821] px-2 py-1 text-[9px] text-[#6f624b]">Short Rest</button><button disabled title="Rest management is not connected to the dashboard database yet" className="rounded border border-[#604821] px-2 py-1 text-[9px] text-[#6f624b]">Long Rest</button></div></div>
+      </header>
+
+      <section className="mt-3 flex items-center gap-3 rounded-lg border border-[#5d4521] bg-black/75 p-2 shadow-[0_8px_24px_#000] backdrop-blur-sm" aria-label="Character sheet scene options">
+        <div className="px-2"><p className="font-serif text-[11px] uppercase tracking-[.14em] text-[#d7b56f]">Scene Options</p><p className="text-[8px] text-[#837354]">Character-sheet background</p></div>
+        {sheetScenes.map((scene) => <button key={scene.id} type="button" aria-pressed={selectedScene === scene.id} onClick={() => setSelectedScene(scene.id)} className={cn("flex items-center gap-2 rounded border p-1.5 pr-3 text-left transition", selectedScene === scene.id ? "border-[#c59443] bg-[#2b1e0d] text-[#f1d59e]" : "border-[#4f3c1d] bg-[#100d09] text-[#9c8964]")}><img src={scene.image} alt="" className="h-9 w-16 rounded object-cover" /><span className="text-[9px] font-bold uppercase tracking-wider">{scene.label}</span></button>)}
+      </section>
+
+      <div className="mt-4 grid gap-4 lg:grid-cols-[260px_minmax(390px,1fr)_250px]">
+        <section className="rounded border border-[#4f3c1d] bg-black/25 p-3"><h3 className="mb-3 font-serif text-xs uppercase tracking-[.14em] text-[#d7b56f]">Ability Scores</h3><div className="grid grid-cols-2 gap-2">{abilities.map((ability) => <AbilityScoreCard key={ability.key} ability={ability} sheet onClick={() => abilityRoll(ability)} />)}</div><p className="mt-2 text-center text-[8px] text-[#75674d]">Click an ability for its breakdown and to roll a check</p></section>
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-3 gap-2"><SheetCoreStat label="Armor Class" value={String(displayedAc)} /><button disabled={busy} onClick={initiativeRoll}><SheetCoreStat label="Initiative · Roll" value={signed(displayedInitiative)} /></button><SheetCoreStat label="Speed" value={speed} /></div>
+          <div className="grid gap-3 md:grid-cols-2"><SheetList title="Saving Throws" rows={abilities.map((ability) => [abilityNames[ability.key], signed(ability.mod)])} /><SheetList title="Senses" rows={[["Passive Perception", String(character.passive_perception)], ["Senses", character.senses || "Not recorded"], ["Languages", character.languages || "Not recorded"]]} /></div>
+          <section className="overflow-hidden rounded border border-[#4f3c1d] bg-black/25"><h3 className="border-b border-[#4f3c1d] px-3 py-2 font-serif text-[11px] uppercase tracking-[.14em] text-[#d7b56f]">Skills & Proficiencies</h3><p className="min-h-24 whitespace-pre-wrap p-3 text-[11px] leading-relaxed text-[#c9b895]">{character.skills || "No skill proficiency records are attached to this character."}</p></section>
+        </div>
+
+        <aside className="space-y-3">
+          <section className="rounded border border-[#6a4d22] bg-[radial-gradient(circle_at_top,#402411,#110b07_70%)] p-4 text-center"><h4 className="text-[9px] uppercase tracking-wider text-[#a58a5b]">Hit Points</h4><b className="font-serif text-4xl text-[#f1dcae]">{character.hp_current}<span className="text-xl text-[#887653]"> / {character.hp_max}</span></b><div className="mt-2 h-2 bg-black"><div className="h-full bg-[#b72f3c]" style={{ width: `${Math.min(100, character.hp_current / Math.max(1, character.hp_max) * 100)}%` }} /></div></section>
+          <div className="grid grid-cols-2 gap-2"><SheetCoreStat label="Proficiency" value={signed(character.proficiency_bonus)} /><SheetCoreStat label="Hit Dice" value="Not recorded" /></div>
+          <section className="rounded border border-[#4f3c1d] bg-black/25 p-3"><h4 className="mb-2 font-serif text-[10px] uppercase tracking-wider text-[#d7b56f]">Conditions</h4><div className="flex flex-wrap gap-1">{character.conditions?.length ? character.conditions.map((condition) => <span key={condition} className="rounded-full border border-[#755429] px-2 py-1 text-[9px] text-[#d6c29a]">{condition}</span>) : <span className="text-[10px] text-[#786b52]">No active conditions</span>}</div></section>
+          <SheetList title="Defenses" rows={[["Resistances", character.damage_resistances || "None recorded"], ["Immunities", character.damage_immunities || "None recorded"], ["Condition Immunities", character.condition_immunities || "None recorded"]]} />
+        </aside>
+      </div>
+
+      <section className="mt-4 overflow-hidden rounded border border-[#5c431e] bg-black/25">
+        <nav className="flex overflow-x-auto border-b border-[#5c431e] bg-black/30">{([['actions','Actions'],['spells','Spells'],['inventory','Inventory'],['features','Features & Traits'],['background','Background'],['notes','Notes']] as Array<[SheetTab,string]>).map(([id, label]) => <button key={id} onClick={() => setTab(id)} className={cn("whitespace-nowrap border-b-2 px-4 py-3 text-[10px] font-bold uppercase tracking-wider", tab === id ? "border-[#c59443] bg-[#2b1e0d] text-[#f1d59e]" : "border-transparent text-[#837354] hover:text-[#c9ad77]")}>{label}</button>)}</nav>
+        <div className="min-h-52 p-4">{tab === "actions" ? <SheetActions equipment={equipment} /> : tab === "spells" ? <SheetEmpty title="Spellcasting" text="No spell records are attached to this character in the current dashboard data." /> : tab === "inventory" ? <div className="grid gap-3 md:grid-cols-2"><SheetList title={`Inventory · ${carriedWeight.toFixed(1)} / ${character.weight_max} lb`} rows={inventory.length ? inventory.map((item) => [item.name, `×${item.quantity} · ${item.weight} lb`]) : [["Inventory", "Nothing carried"]]} /><SheetList title="Equipped" rows={equipment.length ? equipment.map((item) => [equipmentSlots.find((slot) => slot.id === item.slot)?.label || item.slot, item.name]) : [["Equipment", "Nothing equipped"]]} /></div> : tab === "features" ? <div className="grid gap-3 md:grid-cols-2"><SheetList title="Proficiencies" rows={[["Skills", character.skills || "Not recorded"], ["Languages", character.languages || "Not recorded"]]} /><SheetList title="Traits & Defenses" rows={[["Senses", character.senses || "Not recorded"], ["Resistances", character.damage_resistances || "None recorded"], ["Immunities", character.damage_immunities || "None recorded"]]} /></div> : tab === "background" ? <div className="grid gap-3 md:grid-cols-2"><SheetList title="Identity" rows={[["Race", extra.race || "Not recorded"], ["Background", extra.background || "Not recorded"], ["Alignment", extra.alignment || "Not recorded"], ["Faith", extra.faith || "Not recorded"]]} /><SheetList title="Personality" rows={[["Traits", extra.personality_traits || "Not recorded"], ["Ideals", extra.ideals || "Not recorded"], ["Bonds", extra.bonds || "Not recorded"], ["Flaws", extra.flaws || "Not recorded"]]} /></div> : <div><label className="mb-2 block text-[10px] uppercase tracking-wider text-[#b29461]">Session Notes · local draft</label><textarea value={notes} onChange={(event) => setNotes(event.target.value)} className="min-h-44 w-full rounded border border-[#5b431f] bg-[#0b0906] p-3 text-sm text-[#d7c7a5] outline-none focus:border-[#c29040]" placeholder="Record temporary session notes here…" /></div>}</div>
+      </section>
+    </div>
+  </ModalShell>
+}
+
+function SheetActions({ equipment }: { equipment: EquipmentItem[] }) { const weapons = equipment.filter((item) => item.slot === "main_hand" || item.slot === "off_hand"); return <div><h3 className="mb-3 font-serif text-sm uppercase tracking-wider text-[#d7b56f]">Actions in Combat</h3><div className="grid gap-2 md:grid-cols-2">{weapons.length ? weapons.map((weapon) => <div key={weapon.id} className="rounded border border-[#49371b] bg-[#120e08] p-3"><b className="font-serif text-[#e1c995]">{weapon.name}</b><p className="mt-1 text-[10px] text-[#817154]">{weapon.description || "Equipped weapon · attack details not recorded"}</p></div>) : <SheetEmpty title="Attacks" text="No equipped weapon records are available." />}<div className="rounded border border-[#49371b] bg-[#120e08] p-3"><b className="font-serif text-[#e1c995]">Standard Actions</b><p className="mt-1 text-[10px] leading-relaxed text-[#9d8b68]">Attack · Dash · Disengage · Dodge · Help · Hide · Ready · Search · Use an Object</p></div></div></div> }
+
+function SheetEmpty({ title, text }: { title: string; text: string }) { return <div className="rounded border border-[#49371b] bg-[#120e08] p-4"><h3 className="font-serif text-[#d7b56f]">{title}</h3><p className="mt-2 text-xs text-[#817154]">{text}</p></div> }
+
+function SheetCoreStat({ label, value }: { label: string; value: string }) { return <div className="rounded-lg border border-[#80602b] bg-[radial-gradient(circle_at_top,#493316,#130d07_70%)] p-3 text-center shadow-[inset_0_0_12px_#000]"><b className="block font-serif text-2xl text-[#f1deb2]">{value}</b><span className="text-[9px] uppercase tracking-[.13em] text-[#b59a66]">{label}</span></div> }
+
+function SheetList({ title, rows }: { title: string; rows: Array<Array<string>> }) { return <section className="overflow-hidden rounded border border-[#4f3c1d] bg-black/25"><h3 className="border-b border-[#4f3c1d] px-3 py-2 font-serif text-[11px] uppercase tracking-[.14em] text-[#d7b56f]">{title}</h3>{rows.map(([label, value], index) => <div key={`${label}-${index}`} className="flex gap-3 border-b border-[#2d2416] px-3 py-2 text-[11px] last:border-0"><span className="text-[#8f8061]">{label}</span><b className="ml-auto text-right text-[#d9c9a8]">{value}</b></div>)}</section> }
+
+function EquipmentManager({ character, inventory, equipment, bonuses, onEquip, onUnequip, onDrop, onClose }: { character: Character; inventory: InventoryItem[]; equipment: EquipmentItem[]; bonuses: Record<string, number>; onEquip?: ParleyDashboardProps["onEquipItem"]; onUnequip?: ParleyDashboardProps["onUnequipItem"]; onDrop?: ParleyDashboardProps["onDropItem"]; onClose: () => void }) {
+  const [selectedSlot, setSelectedSlot] = useState<EquipmentItem["slot"] | null>(null)
+  const [busySlot, setBusySlot] = useState<EquipmentItem["slot"] | null>(null)
+  const [message, setMessage] = useState("Drag an eligible item onto a slot, or click Equip.")
+  // Drinks and brewed flasks can be drunk from here, anywhere (Sam, 2026-10-01).
+  const drinkables = useDrinkables(character.id, inventory.length)
+
+  // === REPLACE ART (2026-08-18) ===
+  // The DM fixes artwork while looking at the thing that is wrong, rather than
+  // hunting for the row in an admin panel. Gated on this browser holding the DM
+  // key — the server re-checks it regardless, so this only hides a control that
+  // would 403 anyway.
+  //
+  // Art is written at CATALOGUE level by /api/item-art, so replacing the dagger
+  // icon fixes all five daggers across every character at once. That endpoint
+  // creates the catalogue row when none exists, which is the whole point: 44 of
+  // 53 inventory rows had no catalogue entry to upload against.
+  const [dmUnlocked, setDmUnlocked] = useState(false)
+  const [uploadingArtFor, setUploadingArtFor] = useState<string | null>(null)
+  // Freshly uploaded art, keyed by item name, shown immediately. The database is
+  // already updated; this only spares the DM a refresh to see it.
+  const [artOverrides, setArtOverrides] = useState<Record<string, string>>({})
+  const artInputRef = useRef<HTMLInputElement | null>(null)
+  const pendingArtItem = useRef<InventoryItem | null>(null)
+
+  useEffect(() => {
+    // Read in an effect, never during render: localStorage does not exist on the
+    // server and reading it inline would desync hydration.
+    setDmUnlocked(hasDmKey())
+    return onDmKeyChange(() => setDmUnlocked(hasDmKey()))
+  }, [])
+
+  const artKey = (name: string) => name.trim().toLowerCase()
+  const artFor = (name: string, current?: string | null) => artOverrides[artKey(name)] ?? current ?? null
+
+  const pickArtFor = (item: InventoryItem) => {
+    pendingArtItem.current = item
+    if (artInputRef.current) artInputRef.current.value = ""
+    artInputRef.current?.click()
+  }
+
+  const uploadArt = async (file: File) => {
+    const item = pendingArtItem.current
+    pendingArtItem.current = null
+    if (!item) return
+    setUploadingArtFor(item.id)
+    setMessage(`Uploading art for ${item.name}…`)
+    try {
+      const send = () => {
+        const body = new FormData()
+        body.append("file", file)
+        body.append("inventoryItemId", item.id)
+        body.append("name", item.name)
+        return fetch("/api/item-art", { method: "POST", headers: dmHeaders(), body })
+      }
+      // A 403 means the stored code is stale. Drop it, ask once, retry — the same
+      // recovery the DM asset tabs use.
+      let res = await send()
+      if (res.status === 403) {
+        clearDmKey()
+        if (ensureDmKey("replace item art") !== null) res = await send()
+      }
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || "Upload failed")
+      setArtOverrides((current) => ({ ...current, [artKey(item.name)]: json.url as string }))
+      setMessage(
+        json.created
+          ? `Art saved for ${item.name} — a catalogue entry was created, so every copy shows it.`
+          : `Art replaced for ${item.name} — every copy updated.`,
+      )
+    } catch (err) {
+      setMessage((err as Error).message)
+    } finally {
+      setUploadingArtFor(null)
+    }
+  }
+  // The ragdoll frame is tall and bottom-aligned: it wants a BODY. Avatars
+  // are the full-body character stills, portraits are the medallion faces
+  // used by the cards and the initiative rail - so avatar wins HERE, and
+  // only here. Getting this backwards put a cropped cartoon head in the
+  // equipment window for every character who had a medallion.
+  const portrait = character.avatar_image_url || character.portrait_image_url
+  const equippedAt = (slot: EquipmentItem["slot"]) => equipment.find((item) => item.slot === slot && item.equipped !== false)
+  const equip = async (item: InventoryItem, slot: EquipmentItem["slot"]) => {
+    // A ring fits either finger; everything else must match its slot exactly.
+    if (!slotAccepts(item.equippable_slot, slot)) { setMessage(`${item.name} cannot be equipped in ${slotLabel(slot)}.`); return }
+    if (!onEquip) { setMessage("Equipment changes are unavailable for this character."); return }
+    setBusySlot(slot); setMessage(`Equipping ${item.name}…`)
+    try { await onEquip(item.id, slot); setMessage(`${item.name} equipped. Live stats refresh from the campaign database.`) } finally { setBusySlot(null) }
+  }
+  const unequip = async (slot: EquipmentItem["slot"]) => { if (!onUnequip) return; setBusySlot(slot); try { await onUnequip(slot); setMessage(`${equipmentSlots.find((entry) => entry.id === slot)?.label || slot} cleared.`) } finally { setBusySlot(null) } }
+  const eligible = selectedSlot ? inventory.filter((item) => slotAccepts(item.equippable_slot, selectedSlot)) : inventory
+  return <ModalShell title={`${character.name} · Inventory & Equipped Items`} onClose={onClose} wide>
+    {/* One shared picker for the whole panel — a per-row input would mount
+        dozens of identical nodes. `pickArtFor` records which item is pending. */}
+    <input
+      ref={artInputRef}
+      type="file"
+      accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml"
+      className="hidden"
+      onChange={(event) => {
+        const file = event.target.files?.[0]
+        if (file) void uploadArt(file)
+      }}
+    />
+    <div className="grid min-h-[650px] gap-4 p-4 lg:grid-cols-[minmax(400px,1.05fr)_minmax(330px,.95fr)]">
+      <section className="relative min-h-[610px] overflow-hidden rounded-xl border border-[#5e471f] bg-[radial-gradient(circle_at_50%_32%,#27302e,#0a0907_67%)]">
+        <div className="absolute inset-x-[21%] bottom-4 top-8 overflow-hidden border-x border-[#4f3c1d] bg-black/20">{portrait ? <img src={portrait} alt={character.name} className="h-full w-full object-contain object-bottom" /> : <div className="flex h-full items-center justify-center font-serif text-8xl text-[#765a2b]">{character.name[0]}</div>}</div>
+        {equipmentSlots.map((slot) => { const item = equippedAt(slot.id); const active = selectedSlot === slot.id; return <button key={slot.id} onClick={() => setSelectedSlot(active ? null : slot.id)} onDragOver={(event) => { event.preventDefault(); event.dataTransfer.dropEffect = "move" }} onDrop={(event) => { event.preventDefault(); const itemId = event.dataTransfer.getData("application/aop-inventory-item"); const dropped = inventory.find((entry) => entry.id === itemId); if (dropped) void equip(dropped, slot.id) }} className={cn("group absolute z-10 flex h-[68px] w-[68px] flex-col items-center justify-center overflow-hidden rounded-xl border-2 bg-[#0b0906]/95 p-1 shadow-[0_4px_14px_#000] transition", slot.position, active ? "border-[#e1b75e] ring-2 ring-[#dba64255]" : item ? "border-emerald-700/80" : "border-dashed border-[#75572b] hover:border-[#c99a49]", busySlot === slot.id && "animate-pulse")} title={item ? `${slot.label}: ${item.name}` : slot.label}>{item ? <ItemIcon iconUrl={artFor(item.name, item.icon_url)} name={item.name} itemType={(item as { item_type?: string | null }).item_type} className="h-10 w-10" /> : <img src={slot.icon} alt={slot.label} className="h-12 w-12 rounded object-contain opacity-85 transition group-hover:opacity-100" />}<span className="max-w-full truncate text-[7px] uppercase tracking-wide text-[#c7ae7d]">{item?.name || slot.label}</span></button> })}
+        <div className="absolute inset-x-3 bottom-3 flex flex-wrap gap-1">{Object.entries(bonuses).length ? Object.entries(bonuses).map(([key, value]) => <span key={key} className="rounded-full border border-emerald-800 bg-emerald-950/80 px-2 py-1 text-[8px] uppercase text-emerald-300">{key} {signed(value)}</span>) : <span className="rounded border border-[#4d3a1d] bg-black/70 px-2 py-1 text-[8px] text-[#8e7b57]">No recorded equipment stat bonuses</span>}</div>
+      </section>
+      <section className="flex min-h-0 flex-col rounded-xl border border-[#5e471f] bg-[#0d0b07]">
+        <div className="border-b border-[#49371c] p-3"><div className="flex items-center"><div><h3 className="font-serif text-sm uppercase tracking-[.14em] text-[#e0bf7c]">{selectedSlot ? `Eligible for ${equipmentSlots.find((slot) => slot.id === selectedSlot)?.label}` : "Basic Inventory"}</h3><p className="mt-1 text-[9px] text-[#817154]">{message}</p></div>{selectedSlot && <button onClick={() => setSelectedSlot(null)} className="ml-auto rounded border border-[#4f3b1d] px-2 py-1 text-[9px] text-[#aa9162]">Show all</button>}</div></div>
+        <div className="min-h-0 flex-1 space-y-1 overflow-y-auto p-2">{eligible.length ? eligible.map((item) => { const fits = item.equippable_slot; const slot = fits ? (selectedSlot && slotAccepts(fits, selectedSlot) ? selectedSlot : (defaultSlotFor(fits, equipment) as EquipmentItem["slot"])) : null; const equipped = fits ? equipment.some((entry) => entry.equipped !== false && entry.name === item.name && slotAccepts(fits, entry.slot)) : false; return <article key={item.id} draggable={Boolean(slot)} onDragStart={(event) => { event.dataTransfer.setData("application/aop-inventory-item", item.id); event.dataTransfer.effectAllowed = "move" }} className={cn("flex items-center gap-3 rounded border p-2", slot ? "cursor-grab border-[#51401f] bg-[#171109] active:cursor-grabbing" : "border-[#2e281e] bg-[#100e0b] opacity-70")}><div className="flex h-11 w-11 shrink-0 items-center justify-center rounded border border-[#55411f] bg-black/50"><ItemIcon iconUrl={artFor(item.name, item.icon_url)} name={item.name} itemType={item.item_type} className="h-9 w-9" /></div><div className="min-w-0 flex-1"><h4 className="font-serif text-xs text-[#e1d0a8]">{item.name}</h4><p className="truncate text-[9px] text-[#817154]">{item.description || `${item.item_type} · ${item.weight} lb`}</p><span className="text-[8px] uppercase text-[#aa8b52]">{fits ? slotLabel(fits) : "Not equippable"}</span></div>{dmUnlocked && <button type="button" title={`Replace the artwork for ${item.name} — applies to every copy`} aria-label={`Replace artwork for ${item.name}`} disabled={uploadingArtFor === item.id} onClick={(event) => { event.stopPropagation(); pickArtFor(item) }} className="flex items-center rounded border border-[#4f3b1d] px-2 py-1 text-[9px] text-[#aa9162] hover:border-[#c99a49] hover:text-[#e0bf7c] disabled:opacity-50">{uploadingArtFor === item.id ? "Uploading…" : <ImagePlus className="h-3 w-3" />}</button>}{drinkables.kindOf(item.id) && <DrinkButton characterId={character.id} itemId={item.id} itemName={item.name} kind={drinkables.kindOf(item.id)!} conMod={drinkables.conMod} onDone={(summary) => { setMessage(summary); void drinkables.reload() }} />}{onDrop && <button type="button" title={`Set ${item.name} down on the square ${character.name} is standing on`} onClick={(event) => { event.stopPropagation(); void onDrop(item.id) }} className="rounded border border-[#4f3b1d] px-2 py-1 text-[9px] text-[#aa9162] hover:border-[#c99a49] hover:text-[#e0bf7c]">Drop</button>}{slot && <button disabled={equipped || busySlot === slot} onClick={() => void equip(item, slot)} className={cn("rounded border px-2 py-1 text-[9px]", equipped ? "border-emerald-700 bg-emerald-900/60 text-emerald-200" : "border-[#8a672d] text-[#d8b873] hover:bg-[#2a1e0d]")}>{equipped ? "Equipped" : "Equip"}</button>}</article> }) : <p className="p-8 text-center text-xs italic text-[#76694f]">No eligible inventory items for this slot.</p>}</div>
+        {selectedSlot && equippedAt(selectedSlot) ? <button onClick={() => void unequip(selectedSlot)} className="m-3 rounded border border-red-900/70 bg-red-950/30 py-2 text-[10px] uppercase tracking-wider text-red-300">Unequip {equippedAt(selectedSlot)?.name}</button> : null}
+      </section>
+    </div>
+  </ModalShell>
+}
+
+// One axis, five rungs. Colour carries the reading at a glance; the word is
+// there because colour alone is not an accessible signal. Kept lowest-to-
+// highest so the order is obvious to anyone editing it.
+const DISPOSITIONS: Record<string, { label: string; ring: string; dot: string; text: string }> = {
+  hostile: { label: "Hostile", ring: "border-[#8c2f2f] bg-[#2a0f0f]", dot: "bg-[#e0564f]", text: "text-[#f0a9a4]" },
+  wary:    { label: "Wary",    ring: "border-[#8a6520] bg-[#241a08]", dot: "bg-[#dc9a33]", text: "text-[#f0cd8f]" },
+  neutral: { label: "Neutral", ring: "border-[#5b5545] bg-[#1a1814]", dot: "bg-[#a49c86]", text: "text-[#cfc8b5]" },
+  warm:    { label: "Warm",    ring: "border-[#3f7143] bg-[#0f1e11]", dot: "bg-[#5fbb69]", text: "text-[#a8dcae]" },
+  devoted: { label: "Devoted", ring: "border-[#8a7220] bg-[#221c07]", dot: "bg-[#e8c74a]", text: "text-[#f5e2a0]" },
+}
+
+/** The DM's read on how an NPC feels about the party. Hidden from a browser
+ *  that has claimed a character — players have to earn this, in fiction, and
+ *  an NPC's private attitude is exactly the thing they should not be able to
+ *  read off a dashboard. `null` means the DM AI has not formed a read yet. */
+function DispositionChip({ value }: { value?: string | null }) {
+  const key = (value ?? "").toLowerCase()
+  const d = DISPOSITIONS[key]
+  if (!d) {
+    return <div className="rounded border border-[#3b3325] bg-[#141210] p-2 text-[10px]">
+      <span className="block text-[8px] uppercase tracking-wider text-[#6d6450]">Disposition</span>
+      <span className="text-[#7e7663]">Not yet read</span>
+    </div>
+  }
+  return <div className={cn("rounded border p-2 text-[10px]", d.ring)} title={`This NPC's private attitude toward the party: ${d.label}. Visible to the DM only.`}>
+    <span className="block text-[8px] uppercase tracking-wider text-[#847557]">Disposition · DM</span>
+    <span className={cn("mt-0.5 flex items-center gap-1.5 font-serif", d.text)}>
+      <span className={cn("h-2 w-2 shrink-0 rounded-full", d.dot)} />
+      {d.label}
+    </span>
+  </div>
+}
+
+// TacticalOverlay (the decorative fake grid) removed 22 Aug 2026 —
+// replaced by components/tactical/combat-board-3d.tsx, the real board.
+const PHB2014_CLERIC_DOMAINS: Record<string, Array<{ level: number; spells: string[] }>> = {
+  Knowledge: [{ level: 1, spells: ["Command", "Identify"] }, { level: 3, spells: ["Augury", "Suggestion"] }, { level: 5, spells: ["Nondetection", "Speak with Dead"] }, { level: 7, spells: ["Arcane Eye", "Confusion"] }, { level: 9, spells: ["Legend Lore", "Scrying"] }],
+  Life: [{ level: 1, spells: ["Bless", "Cure Wounds"] }, { level: 3, spells: ["Lesser Restoration", "Spiritual Weapon"] }, { level: 5, spells: ["Beacon of Hope", "Revivify"] }, { level: 7, spells: ["Death Ward", "Guardian of Faith"] }, { level: 9, spells: ["Mass Cure Wounds", "Raise Dead"] }],
+  Light: [{ level: 1, spells: ["Burning Hands", "Faerie Fire"] }, { level: 3, spells: ["Flaming Sphere", "Scorching Ray"] }, { level: 5, spells: ["Daylight", "Fireball"] }, { level: 7, spells: ["Guardian of Faith", "Wall of Fire"] }, { level: 9, spells: ["Flame Strike", "Scrying"] }],
+  Nature: [{ level: 1, spells: ["Animal Friendship", "Speak with Animals"] }, { level: 3, spells: ["Barkskin", "Spike Growth"] }, { level: 5, spells: ["Plant Growth", "Wind Wall"] }, { level: 7, spells: ["Dominate Beast", "Grasping Vine"] }, { level: 9, spells: ["Insect Plague", "Tree Stride"] }],
+  Tempest: [{ level: 1, spells: ["Fog Cloud", "Thunderwave"] }, { level: 3, spells: ["Gust of Wind", "Shatter"] }, { level: 5, spells: ["Call Lightning", "Sleet Storm"] }, { level: 7, spells: ["Control Water", "Ice Storm"] }, { level: 9, spells: ["Destructive Wave", "Insect Plague"] }],
+  Trickery: [{ level: 1, spells: ["Charm Person", "Disguise Self"] }, { level: 3, spells: ["Mirror Image", "Pass without Trace"] }, { level: 5, spells: ["Blink", "Dispel Magic"] }, { level: 7, spells: ["Dimension Door", "Polymorph"] }, { level: 9, spells: ["Dominate Person", "Modify Memory"] }],
+  War: [{ level: 1, spells: ["Divine Favor", "Shield of Faith"] }, { level: 3, spells: ["Magic Weapon", "Spiritual Weapon"] }, { level: 5, spells: ["Crusader's Mantle", "Spirit Guardians"] }, { level: 7, spells: ["Freedom of Movement", "Stoneskin"] }, { level: 9, spells: ["Flame Strike", "Hold Monster"] }],
+}
+
+// Samson's Book of Prayers art. The looping WebP animates on its own (~16s
+// closed→open→closed loop) and cannot be play/pause controlled, so it is treated
+// as a looping image. The poster PNG is the reduced-motion fallback.
+const BOOK_OF_PRAYERS_MEDIA = {
+  poster:
+    "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/item-icons/book-of-prayers/samson-book-of-prayers-poster.png",
+  animation:
+    "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/item-icons/book-of-prayers/samson-book-of-prayers-open-close.webp",
+} as const
+
+function SpellbookModal({ character, onClose }: { character: Character; onClose: () => void }) {
+  const [page, setPage] = useState(0)
+  const [closing, setClosing] = useState(false)
+  const [opened, setOpened] = useState(false)
+  const extra = character as Character & { subclass?: string | null; sheet_spellcasting?: Record<string, unknown> | null }
+  const spellcasting = extra.sheet_spellcasting ?? {}
+  const names = (value: unknown): string[] => Array.isArray(value)
+    ? value.map((entry) => typeof entry === "string" ? entry : entry && typeof entry === "object" && "name" in entry ? String((entry as { name: unknown }).name) : "").filter(Boolean)
+    : []
+  const cantrips = names(spellcasting.cantrips)
+  const recordedDomainSpells = names(spellcasting.domain_spells ?? spellcasting.domainSpells)
+  const prepared = names(spellcasting.prepared)
+  const known = names(spellcasting.known ?? spellcasting.spellbook)
+  const className = character.class.toLowerCase()
+  const clericDomain = className === "cleric" ? Object.keys(PHB2014_CLERIC_DOMAINS).find((domain) => extra.subclass?.toLowerCase().includes(domain.toLowerCase())) : undefined
+  const domainProgression = clericDomain ? PHB2014_CLERIC_DOMAINS[clericDomain] : []
+  const gainedDomainSpells = domainProgression.filter((entry) => character.level >= entry.level).flatMap((entry) => entry.spells)
+  const domainSpells = recordedDomainSpells.length ? recordedDomainSpells : gainedDomainSpells
+  const ruleNote = className === "cleric" || className === "druid"
+    ? "Prepared caster: choose prepared spells after a long rest. Domain or circle spells remain prepared when granted."
+    : className === "wizard"
+      ? "Spellbook caster: prepare spells from spells copied into this book after a long rest."
+      : className === "paladin"
+        ? "Prepared caster: choose prepared paladin spells after a long rest; oath spells remain prepared."
+        : "Known-spell caster: spells change only when the class rules or a level increase permit it."
+
+  const requestClose = () => {
+    if (closing) return
+    setClosing(true)
+    window.setTimeout(onClose, 900)
+  }
+  // Escape closes from either the attract screen or the open page-spread.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") requestClose() }
+    window.addEventListener("keydown", onKey)
+    return () => window.removeEventListener("keydown", onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const maxPage = className === "cleric" ? 2 : 1
+
+  // Divine casters carry a Book of Prayers rather than a grimoire. Only the
+  // cover and spread art change — the 3D open, the page turn and the spell
+  // lists rendered on top are identical. Art is the same Supabase pair recorded
+  // on the book-of-prayers catalog item under properties.art.
+  const isDivineCaster = className === "cleric" || className === "monk"
+  const bookTitle = isDivineCaster ? "Book of Prayers" : "Book of Spells"
+  // Divine casters get the animated Book of Prayers as an attract screen; a
+  // click (or Escape/backdrop) advances into the existing page-spread UI.
+  const showAttract = isDivineCaster && !opened
+
+  // Live limits from class_spellcasting_progression (SRD 5.2.1 class tables),
+  // carried on the sheet. The limit is a fixed number per class and level — it
+  // is NOT the ability modifier, which was the 2014 rule.
+  const asNumber = (v: unknown) => (typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : null)
+  const preparedMax = asNumber(spellcasting.prepared_max)
+  const cantripsMax = asNumber(spellcasting.cantrips_max)
+  const swapCadence = typeof spellcasting.swap_cadence === "string" ? spellcasting.swap_cadence : null
+  const cadenceLabel = swapCadence === "long_rest_any" ? "swap freely on a long rest"
+    : swapCadence === "long_rest_one" ? "swap one on a long rest"
+    : swapCadence === "level_up_one" ? "swaps only on level-up"
+    : null
+  const preparedNoun = isDivineCaster ? "Prayers prepared" : "Prepared"
+  const bookArt = isDivineCaster
+    ? ({
+        "--aop-book-cover":
+          "url('https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/item-icons/book-of-prayers/samson-book-of-prayers-closed-hd.png')",
+        "--aop-book-spread":
+          "url('https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/item-icons/book-of-prayers/samson-book-of-prayers-open-hd.png')",
+      } as CSSProperties)
+    : undefined
+
+  return <div className={cn("aop-spellbook-backdrop fixed inset-0 z-[78] flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm", closing && "is-closing")} role="dialog" aria-modal="true" aria-label={`${character.name}'s ${bookTitle}`} onMouseDown={(event) => { if (event.target !== event.currentTarget) return; if (showAttract) setOpened(true); else requestClose() }}>
+    {showAttract ? (
+      <button type="button" data-tick="window" onClick={() => setOpened(true)} className="group flex flex-col items-center gap-6 focus:outline-none" aria-label={`Open ${bookTitle}`}>
+        <img src={BOOK_OF_PRAYERS_MEDIA.animation} alt="" aria-hidden className="h-[400px] w-[400px] max-w-[80vw] max-h-[70vh] object-contain drop-shadow-[0_20px_60px_rgba(0,0,0,0.85)] motion-reduce:hidden" />
+        <img src={BOOK_OF_PRAYERS_MEDIA.poster} alt="" aria-hidden className="hidden h-[400px] w-[400px] max-w-[80vw] max-h-[70vh] object-contain drop-shadow-[0_20px_60px_rgba(0,0,0,0.85)] motion-reduce:block" />
+        <span className="animate-pulse font-serif text-sm uppercase tracking-[.3em] text-[#d3ae6b]/70 transition-colors group-hover:text-[#f0d9aa] motion-reduce:animate-none">Open the book</span>
+      </button>
+    ) : (
+    <section style={bookArt} className={cn("aop-arcane-stage relative w-full max-w-5xl", closing ? "is-closing" : "is-opening")}>
+      <div className="aop-arcane-book">
+        <div className="aop-spellbook-cover" aria-hidden />
+        <div key={page} className="aop-spellbook-spread">
+          <div className="aop-spell-page">
+            <span className="aop-rune-ring" aria-hidden>ᚨ ᚱ ᚲ ᚨ ᚾ ᚨ</span>
+            <header><BookOpen className="mx-auto h-7 w-7" /><h2>{character.name}&apos;s {bookTitle}</h2><p>Level {character.level} {character.class} · {character.class === "Cleric" ? "Domain" : "Subclass"}: {extra.subclass || "Not recorded"}</p></header>
+            {(preparedMax !== null || cantripsMax !== null) && (
+              <p className="-mt-2 mb-3 text-center text-[11px] text-[#6b4a2e]">
+                {cantripsMax !== null && <>Cantrips {cantrips.length} / {cantripsMax}</>}
+                {cantripsMax !== null && preparedMax !== null && " · "}
+                {preparedMax !== null && (
+                  <span className={cn(prepared.length > preparedMax && "font-semibold text-[#8f2f2f]")}>
+                    {preparedNoun} {prepared.length} / {preparedMax}
+                  </span>
+                )}
+                {cadenceLabel && <><br /><em>{cadenceLabel}</em></>}
+              </p>
+            )}
+            {page === 0 ? <SpellList title="Cantrips" spells={cantrips} empty="No cantrips recorded." /> : page === 1 ? <SpellList title="Prepared / Memorized" spells={prepared} empty="No prepared spells recorded." /> : <DomainIndex selected={clericDomain} />}
+          </div>
+          <div className="aop-spell-page">
+            <button type="button" onClick={requestClose} className="absolute right-5 top-4 z-10 text-[#6b3e25] hover:text-black" aria-label={`Close ${bookTitle}`}><X className="h-5 w-5" /></button>
+            <p className="mb-4 rounded border border-[#7f5d3c]/45 bg-[#7d5223]/10 p-3 text-xs leading-relaxed">D&amp;D 5E: {ruleNote}</p>
+            {page === 0 ? <SpellList title={character.class === "Cleric" ? "Domain Spells · Always Prepared" : "Subclass Spells"} spells={domainSpells} empty={className === "cleric" ? "Choose and record a Player's Handbook domain in The Forge." : "No subclass spells recorded."} /> : page === 1 ? <SpellList title={className === "wizard" ? "Spellbook" : "Known / Available"} spells={known} empty="No known spell records attached." /> : <DomainProgression domain={clericDomain} progression={domainProgression} />}
+            <p className="absolute bottom-12 left-8 right-8 text-center text-[10px] italic text-[#725038]">Counts and swap timing follow the 2024 class tables (SRD 5.2.1). The domain list is from the 2014 Player&apos;s Handbook. Only recorded choices are shown.</p>
+          </div>
+        </div>
+      </div>
+      <div className="aop-page-controls"><button type="button" disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>← Previous</button><span>Leaves {page + 1} / {maxPage + 1}</span><button type="button" disabled={page === maxPage} onClick={() => setPage((current) => Math.min(maxPage, current + 1))}>Next →</button></div>
+      <a href="/forge" className="aop-spellbook-forge">Manage recorded spells in The Forge</a>
+    </section>
+    )}
+  </div>
+}
+
+function SpellList({ title, spells, empty }: { title: string; spells: string[]; empty: string }) {
+  return <section className="overflow-hidden rounded border border-[#76502e]/55 bg-[#8c5d27]/5"><h3 className="border-b border-[#76502e]/45 px-3 py-2 font-serif text-xs uppercase tracking-wider text-[#653a24]">{title}</h3>{spells.length ? <ul className="divide-y divide-[#76502e]/25">{spells.map((spell) => <li key={spell} className="px-3 py-2 font-serif text-sm text-[#40271a]">✧ {spell}</li>)}</ul> : <p className="p-4 text-xs italic text-[#77604a]">{empty}</p>}</section>
+}
+
+function DomainIndex({ selected }: { selected?: string }) {
+  return <section><h3 className="mb-3 text-center font-serif text-lg text-[#53301e]">Player&apos;s Handbook Domains</h3><div className="grid grid-cols-2 gap-2">{Object.keys(PHB2014_CLERIC_DOMAINS).map((domain) => <div key={domain} className={cn("rounded border px-3 py-2 text-center font-serif", selected === domain ? "border-[#935f24] bg-amber-900/15 font-bold" : "border-[#846344]/35")}>{domain}</div>)}</div></section>
+}
+
+function DomainProgression({ domain, progression }: { domain?: string; progression: Array<{ level: number; spells: string[] }> }) {
+  return <section><h3 className="mb-3 text-center font-serif text-lg text-[#53301e]">{domain ? `${domain} Domain` : "Select a Domain in The Forge"}</h3>{progression.length ? progression.map((entry) => <div key={entry.level} className="flex border-b border-[#76502e]/30 py-2 text-sm"><b>Cleric {entry.level}</b><span className="ml-auto text-right">{entry.spells.join(" · ")}</span></div>) : <p className="text-center text-sm italic text-[#765941]">No domain is recorded, so no domain spell list has been assigned.</p>}</section>
+}
+
+type StatKind = "ac" | "initiative" | "proficiency" | "speed"
+
+const abilityNames: Record<string, string> = { str: "Strength", dex: "Dexterity", con: "Constitution", int: "Intelligence", wis: "Wisdom", cha: "Charisma" }
+
+const abilityArt: Record<string, string> = {
+  str: "/images/ui/abilities/strength.png",
+  dex: "/images/ui/abilities/dexterity.png",
+  con: "/images/ui/abilities/constitution.png",
+  int: "/images/ui/abilities/intelligence.png",
+  wis: "/images/ui/abilities/wisdom.png",
+  cha: "/images/ui/abilities/charisma.png",
+}
+
+const abilityArtPosition: Record<string, string> = {
+  str: "78% center",
+  dex: "78% center",
+  con: "center 25%",
+  int: "center 35%",
+  wis: "center 30%",
+  cha: "center 40%",
+}
+
+// Gem tones sampled from the reference card set: light / core / deep.
+const abilityGem: Record<string, [string, string, string]> = {
+  str: ["#ff8a7a", "#c81e24", "#4a0507"],
+  dex: ["#9cf08a", "#2f9a34", "#0b3a0e"],
+  con: ["#ffc07a", "#c8611c", "#4a1e04"],
+  int: ["#e2a6ff", "#8b35d6", "#2c0752"],
+  wis: ["#9cc4ff", "#2a62d0", "#0a1d52"],
+  cha: ["#ff8fae", "#c01446", "#4a0418"],
+}
+
+const goldText = "bg-gradient-to-b from-[#fff8d6] via-[#f5c542] to-[#a8701a] bg-clip-text text-transparent"
+const scoreGlow = "drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000) drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000) drop-shadow(0 0 6px #000)"
+
+const abilitySkillList: Record<string, string[]> = {
+  str: ["Athletics"],
+  dex: ["Acrobatics", "Sleight of Hand", "Stealth"],
+  con: [],
+  int: ["Arcana", "History", "Investigation", "Nature", "Religion"],
+  wis: ["Animal Handling", "Insight", "Medicine", "Perception", "Survival"],
+  cha: ["Deception", "Intimidation", "Performance", "Persuasion"],
+}
+
+function trackOrbLight(event: ReactPointerEvent<HTMLElement>) {
+  const el = event.currentTarget
+  const box = el.getBoundingClientRect()
+  const x = Math.min(1, Math.max(0, (event.clientX - box.left) / box.width))
+  const y = Math.min(1, Math.max(0, (event.clientY - box.top) / box.height))
+  el.style.setProperty("--orb-lx", `${18 + x * 64}%`)
+  el.style.setProperty("--orb-ly", `${14 + y * 52}%`)
+  el.style.setProperty("--orb-ry", `${(x - 0.5) * 36}deg`)
+  el.style.setProperty("--orb-rx", `${(0.5 - y) * 30}deg`)
+  el.dataset.orbHot = "true"
+}
+
+function resetOrbLight(event: ReactPointerEvent<HTMLElement>) {
+  const el = event.currentTarget
+  for (const prop of ["--orb-lx", "--orb-ly", "--orb-rx", "--orb-ry"]) el.style.removeProperty(prop)
+  delete el.dataset.orbHot
+}
+
+type AbilityCardData = { key: string; score: number; mod: number; proficiencyBonus?: number; saveProficient?: boolean }
+
+function AbilityBreakdown({ ability, name, onRoll }: { ability: AbilityCardData; name: string; onRoll?: () => void }) {
+  const key = ability.key.toLowerCase()
+  const half = (ability.score - 10) / 2
+  const base = Math.floor(half)
+  const extra = ability.mod - base
+  const prof = ability.proficiencyBonus ?? 2
+  const save = ability.mod + (ability.saveProficient ? prof : 0)
+  const skills = abilitySkillList[key] ?? []
+  const row = "flex items-baseline justify-between gap-3"
+
+  return <div className="flex flex-col gap-3 font-sans text-[13px] leading-relaxed text-[#e8dcc0]">
+    <div className="flex items-baseline justify-between border-b border-[#4f3c1d] pb-2">
+      <h4 className="font-serif text-sm font-bold uppercase tracking-[.12em] text-[#f6e3b0]">{name}</h4>
+      <span className="font-serif text-xs text-[#a8916a]">Score {ability.score}</span>
+    </div>
+
+    <section className="flex flex-col gap-1">
+      <h5 className="font-serif text-[11px] uppercase tracking-[.14em] text-[#d7b56f]">Ability modifier</h5>
+      <p className="text-[#b9a883]">Subtract 10 from the score, halve it, round down.</p>
+      <p className="rounded border border-[#3a2c14] bg-black/40 px-2 py-1.5 font-mono text-[12px] text-[#f6e3b0]">
+        {`(${ability.score} − 10) ÷ 2 = ${half} → ${formatSigned(base)}`}
+      </p>
+      {extra !== 0 && <div className={row}><span className="text-[#b9a883]">Equipment and effects</span><span className="font-serif font-bold">{formatSigned(extra)}</span></div>}
+      <div className={cn(row, "border-t border-[#3a2c14] pt-1")}><span>Modifier</span><span className={cn("font-serif text-base font-extrabold", goldText)}>{formatSigned(ability.mod)}</span></div>
+    </section>
+
+    <section className="flex flex-col gap-1">
+      <h5 className="font-serif text-[11px] uppercase tracking-[.14em] text-[#d7b56f]">Saving throw</h5>
+      <div className={row}><span className="text-[#b9a883]">Modifier</span><span className="font-serif">{formatSigned(ability.mod)}</span></div>
+      <div className={row}>
+        <span className="text-[#b9a883]">Proficiency bonus{ability.saveProficient ? "" : " (not proficient)"}</span>
+        <span className="font-serif">{ability.saveProficient ? formatSigned(prof) : "+0"}</span>
+      </div>
+      <div className={cn(row, "border-t border-[#3a2c14] pt-1")}><span>{name} save</span><span className={cn("font-serif text-base font-extrabold", goldText)}>{formatSigned(save)}</span></div>
+      <p className="text-[11px] text-[#8f7e5c]">Proficiency bonus is set by character level: +2 at levels 1–4, rising by 1 every four levels to +6.</p>
+    </section>
+
+    {skills.length > 0 && <p className="text-[12px] text-[#b9a883]"><span className="text-[#d7b56f]">Skills: </span>{skills.join(", ")}</p>}
+
+    {onRoll && <button type="button" onClick={onRoll} className="rounded border border-[#b8893a] bg-[linear-gradient(180deg,#2a1d0a,#120c05)] px-3 py-1.5 font-serif text-xs font-bold uppercase tracking-[.12em] text-[#f6e3b0] transition-colors hover:border-[#f7dc8f] hover:text-[#fff8d6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f7dc8f]">
+      {`Roll ${name} check`}
+    </button>}
+  </div>
+}
+
+export function AbilityScoreCard({ ability, onClick, sheet = false, large = false }: { ability: AbilityCardData; onClick?: () => void; sheet?: boolean; large?: boolean }) {
+  const key = ability.key.toLowerCase()
+  const name = abilityNames[key] ?? ability.key
+  const modifier = `${ability.mod >= 0 ? "+" : ""}${ability.mod}`
+  const rail = large && !sheet
+  const [gemLight, gemCore, gemDeep] = abilityGem[key] ?? abilityGem.str
+  const [open, setOpen] = useState(false)
+
+  return <Popover open={open} onOpenChange={setOpen}>
+  <PopoverTrigger asChild>
+  <button
+  type="button"
+  data-tick="click"
+  onPointerMove={trackOrbLight}
+    onPointerLeave={resetOrbLight}
+    aria-label={`${name} ${ability.score}, modifier ${modifier}. Show how it is calculated`}
+    className={cn(
+      "group relative isolate flex min-w-0 flex-col rounded-md p-[2px] text-left shadow-[0_8px_18px_#000] transition-[transform,box-shadow] duration-200 hover:z-20 hover:-translate-y-1 hover:shadow-[0_14px_30px_#000,0_0_20px_var(--gem)] focus-visible:z-20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#f7dc8f]",
+      "bg-[linear-gradient(160deg,#fbe7a6_0%,#c9962f_22%,#6d4812_48%,#d9a846_72%,#fff0b8_100%)]",
+      rail ? "h-[clamp(128px,17vh,160px)] w-full" : sheet ? "h-[196px]" : "h-[182px]",
+    )}
+    style={{ ["--gem" as string]: `${gemCore}aa` }}
+  >
+    <span className="relative flex h-full flex-col overflow-hidden rounded-[4px] bg-[#0b0806] shadow-[inset_0_0_0_1px_#2a1c08]">
+      <span aria-hidden className="absolute inset-0 overflow-hidden">
+        <span
+          className="absolute inset-0 bg-cover bg-no-repeat saturate-[1.2] contrast-[1.1] brightness-[1.08] transition-transform duration-500 group-hover:scale-110"
+          style={{ backgroundImage: `url('${abilityArt[key] ?? abilityArt.str}')`, backgroundPosition: abilityArtPosition[key] ?? "center" }}
+        />
+        <span className="absolute inset-0 shadow-[inset_0_0_14px_#000c]" />
+        <span className="absolute inset-x-0 bottom-0 h-[42%] bg-gradient-to-t from-[#0b0806] via-[#0b0806]/85 to-transparent" />
+      </span>
+
+      <span className="min-h-0 flex-1" />
+
+      <span className="relative z-10 flex flex-col items-center">
+        <span className="w-full border-y border-[#b8893a] bg-[linear-gradient(90deg,#0b0806,#23180a_50%,#0b0806)] py-[3px] text-center">
+          <span className={cn("block truncate px-1 font-serif font-bold uppercase leading-none tracking-[.06em] text-[#f6e3b0] [text-shadow:0_1px_2px_#000]", sheet ? "text-[11px]" : "text-[10px]")}>{name}</span>
+        </span>
+      </span>
+
+      <span className="relative z-10 flex flex-col items-center justify-center pb-2.5 pt-1.5">
+        <span
+          className={cn("aop-orb relative flex items-center justify-center rounded-full border-[3px] border-[#e9c46a] shadow-[0_3px_10px_#000,0_0_14px_var(--gem),inset_0_-4px_8px_#0009,inset_0_3px_5px_#fff5]", rail ? "size-[clamp(44px,7vh,56px)]" : "size-[52px]")}
+          style={{ ["--orb-light" as string]: gemLight, ["--orb-core" as string]: gemCore, ["--orb-deep" as string]: gemDeep }}
+        >
+          <span aria-hidden className="absolute -inset-[5px] rounded-full border border-[#8a6320]" />
+          <span aria-hidden className="absolute inset-[2px] rounded-full border border-[#fff0c2]/35" />
+          <span aria-hidden className="absolute inset-0 overflow-hidden rounded-full">
+            <span className="aop-orb-spec absolute h-[36%] w-[52%] rounded-full bg-[radial-gradient(ellipse_at_center,#ffffffb0_0%,#ffffff40_45%,transparent_75%)] opacity-80 transition-opacity duration-300 group-hover:opacity-100" />
+          </span>
+          <span className={cn("relative font-serif font-extrabold leading-none text-[#ffffff]", rail ? "text-[clamp(22px,3.6vh,30px)]" : "text-[28px]")} style={{ filter: scoreGlow }}>{ability.score}</span>
+        </span>
+      </span>
+    </span>
+
+    <span
+      aria-hidden
+      className="pointer-events-none absolute left-1/2 top-0 z-20 flex size-[28px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border-2 border-[#e9c46a] bg-[radial-gradient(circle_at_40%_30%,#3a2a12,#0b0806_75%)] shadow-[0_2px_6px_#000,0_0_10px_var(--gem),inset_0_0_5px_#f5c54255]"
+    >
+      <span className={cn("block font-serif text-[12px] font-extrabold leading-none", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa)" }}>{modifier}</span>
+    </span>
+  </button>
+  </PopoverTrigger>
+  <PopoverContent side="top" sideOffset={10} collisionPadding={12} className="w-72 border-[#b8893a] bg-[#0f0b07] p-3 shadow-[0_12px_30px_#000,0_0_18px_var(--gem)]" style={{ ["--gem" as string]: `${gemCore}66` }}>
+    <AbilityBreakdown ability={ability} name={name} onRoll={onClick ? () => { setOpen(false); onClick() } : undefined} />
+  </PopoverContent>
+  </Popover>
+}
+
+export function StatShield({ kind, label, value, onClick, tooltip }: { kind: StatKind; label: string; value: string; onClick: () => void; tooltip?: string }) {
+  const spritePosition: Record<StatKind, string> = {
+    ac: "0% 40%",
+    speed: "33.333% 40%",
+    initiative: "66.666% 40%",
+    proficiency: "100% 40%",
+  }
+  const unitMatch = value.match(/^\s*(\d+)\s*(ft\.?|feet)\s*$/i)
+  const mainValue = unitMatch ? unitMatch[1] : value
+  const featured = kind === "ac"
+  return <button type="button" onClick={onClick} className={cn("group relative flex min-w-0 flex-col items-center rounded border border-transparent pb-1 transition hover:-translate-y-0.5 hover:border-[#8c6b32] hover:bg-[#21180b]/60 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#d7b369]", featured ? "h-[166px]" : "h-[144px]")} title={tooltip ?? `Open ${label} details`} aria-label={`${label} ${value}`}>
+    <span aria-hidden className={cn("relative w-full shrink-0 overflow-hidden drop-shadow-[0_4px_5px_#000]", featured ? "h-[115px]" : "h-[100px]")} style={{ clipPath: "polygon(50% 0, 94% 14%, 91% 72%, 78% 90%, 50% 100%, 22% 90%, 9% 72%, 6% 14%)" }}>
+      <span className="block h-full w-full scale-[1.12] bg-[url('/images/ui/character-stat-shields.png')] bg-[length:400%_auto] bg-no-repeat" style={{ backgroundPosition: spritePosition[kind] }} />
+    </span>
+    <span aria-hidden className={cn("relative z-10 flex shrink-0 flex-col items-center justify-center rounded-full border-2 border-[#e9c46a] bg-[radial-gradient(circle_at_40%_30%,#3a2a12,#0b0806_75%)] shadow-[0_2px_6px_#000,0_0_10px_#f5c54255,inset_0_0_5px_#f5c54255]", featured ? "-mt-3.5 size-[37px]" : "-mt-3 size-[32px]")}>
+  <span className={cn("block font-serif font-extrabold leading-none", unitMatch && "-translate-y-[2px]", featured ? (mainValue.length > 2 ? "text-[12px]" : "text-[15px]") : (mainValue.length > 2 ? "text-[10px]" : "text-[13px]"), goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa)" }}>{mainValue}</span>
+  {unitMatch && <span className={cn("-mt-[2px] block -translate-y-[3px] font-serif text-[7.5px] font-extrabold uppercase leading-none tracking-[.08em]", goldText)} style={{ filter: "drop-shadow(0 0 2px #f5c542cc) drop-shadow(0 1px 0 #000)" }}>ft</span>}
+    </span>
+    <span aria-hidden className={cn("relative z-10 mt-1.5 block max-w-full truncate px-0.5 font-serif font-extrabold", featured ? "text-[14px]" : "text-[10px]", " uppercase leading-tight tracking-[.06em]", goldText)} style={{ filter: "drop-shadow(0 0 3px #f5c542aa) drop-shadow(0 1px 1px #000)" }}>{label}</span>
+  </button>
+}
+
+function StatDetailModal({ kind, character, acBreakdown, onClose }: { kind: StatKind; character?: Character; acBreakdown?: string; onClose: () => void }) {
+  // Pull the derived total straight out of the breakdown ("… = 13") so this
+  // modal shows the same computed AC as the shield, never the stale stored value.
+  const derivedAc = acBreakdown ? acBreakdown.split("=").pop()?.trim() ?? String(character?.ac ?? 10) : String(character?.ac ?? 10)
+  const content: Record<StatKind, { title: string; summary: string; rows: Array<[string, string]> }> = {
+    ac: { title: "Armor Class", summary: "How difficult this hero is to hit. The visible total is derived from equipped armor and ability modifiers, never a hand-entered number.", rows: [["Current AC", derivedAc], ["Breakdown", acBreakdown ?? `10 + ${signed(character?.dex_modifier ?? 0)} DEX`], ["Dexterity modifier", signed(character?.dex_modifier ?? 0)], ["When attacked", "Enemy roll must meet or exceed AC"]] },
+    initiative: { title: "Initiative", summary: "Determines turn order when combat begins. Higher totals act first.", rows: [["Current modifier", signed(character?.initiative ?? 0)], ["Base ability", "Dexterity"], ["Roll", `1d20 ${signed(character?.initiative ?? 0)}`], ["Tie breaker", "Higher Dexterity, then DM ruling"]] },
+    proficiency: { title: "Proficiency Bonus", summary: "Represents trained competence. It applies only when the character is proficient with the roll.", rows: [["Current bonus", signed(character?.proficiency_bonus ?? 2)], ["Character level", String(character?.level ?? 1)], ["Applies to", "Proficient saves, skills, attacks and spell DC"], ["Expertise", "Doubles the proficiency contribution"]] },
+    speed: { title: "Movement Speed", summary: "The distance this hero can normally move during a turn before Dash or terrain modifiers.", rows: [["Walking speed", character?.speed || "30 ft."], ["Normal move", "Up to speed each turn"], ["Dash", "Adds another movement allowance"], ["Difficult terrain", "Costs 2 feet per foot moved"]] },
+  }
+  const detail = content[kind]
+  return <div className="fixed inset-0 z-[300] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+    <div className="w-full max-w-md rounded-xl border border-[#8a6a32] bg-[radial-gradient(circle_at_top,#2b2112,#0c0906_62%)] p-5 shadow-[0_20px_70px_#000]">
+      <div className="flex items-start"><div><p className="text-[9px] uppercase tracking-[.2em] text-[#937b4c]">Character mechanic</p><h2 className="font-serif text-xl text-[#ead8af]">{detail.title}</h2></div><button onClick={onClose} className="ml-auto rounded border border-[#4b3a19] p-1 text-[#a4916d]"><X className="h-4 w-4" /></button></div>
+      <p className="mt-3 text-sm leading-relaxed text-[#c7b99e]">{detail.summary}</p>
+      <div className="mt-4 overflow-hidden rounded border border-[#4b3a19]">{detail.rows.map(([label, value]) => <div key={label} className="flex justify-between gap-4 border-b border-[#2d2416] px-3 py-2 text-xs last:border-0"><span className="text-[#8f8061]">{label}</span><b className="text-right text-[#e1d0a8]">{value}</b></div>)}</div>
+    </div>
+  </div>
+}
+
+function signed(value: number): string {
+  return `${value >= 0 ? "+" : ""}${value}`
+}

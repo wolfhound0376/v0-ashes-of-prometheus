@@ -10,14 +10,18 @@ import { CenterColumn } from "@/components/dashboard/center-column"
 import { RightColumn } from "@/components/dashboard/right-column"
 import { fadeOutThemeAudio } from "@/components/theme-audio"
 import { DiceProvider, forLedger, type DiceResult } from "@/components/dice/dice-provider"
-import { TopNav } from "@/components/dashboard/top-nav"
+import { TopNav, type NavSection } from "@/components/dashboard/top-nav"
 import { CompactDashboard } from "@/components/dashboard/compact-dashboard"
 import { StatusBar } from "@/components/dashboard/status-bar"
 import { PartyStatus } from "@/components/dashboard/party-status"
 import { V4Dashboard } from "@/components/dashboard/v4-dashboard"
+import { ParleyDashboard } from "@/components/parley/parley-dashboard"
 
 // Rollback switch: set NEXT_PUBLIC_DASHBOARD=legacy and redeploy to restore the v3 dashboard.
 const USE_LEGACY_DASHBOARD = process.env.NEXT_PUBLIC_DASHBOARD === "legacy"
+// The Parley (Sam, 2026-10-28): the narration-and-talk screen in his Top Heroes / BG3 skin,
+// built on the v4 wiring. NEXT_PUBLIC_DASHBOARD=v4 brings the plain v4 layout back without a code change.
+const USE_PARLEY = !USE_LEGACY_DASHBOARD && process.env.NEXT_PUBLIC_DASHBOARD !== "v4"
 import { DmAssetsPanel } from "@/components/dashboard/dm-assets-panel"
 import { CampaignBookModal, type CampaignBookSection } from "@/components/dashboard/campaign-book-modal"
 import { WorldAIPanel } from "@/components/world-ai"
@@ -1806,6 +1810,68 @@ if (error) {
     await fetchCharacterData()
   }
 
+
+  // The top bar's two jobs — DM Mode on/off and the campaign-book sections — shared by the
+  // old TopNav and the Parley's own top bar (components/parley).
+  const toggleDmMode = () => {
+    if (dmMode) {
+      setDmMode(false)
+      return
+    }
+    // A browser holding a player's seat is never the DM (claimLocked gates every DM
+    // control). Since the front door seats everyone, Sam testing as Fifi was locked out of
+    // DM Mode with no way back (2026-10-14: "Not able to go to DM view from dashboard UI
+    // after inputting my password"). The DM code outranks a seat in this browser: it is
+    // checked server-side first, and only a real DM code releases the seat and reopens
+    // the dashboard as the DM screen. A wrong code changes nothing.
+    if (claimLocked) {
+      const code = ensureDmKey("leave this seat and enable DM mode")
+      if (!code) return
+      void (async () => {
+        try {
+          const res = await fetch("/api/claim-code", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) })
+          const result = await res.json().catch(() => null)
+          if (!res.ok || !result?.ok || result.role !== "dm") {
+            clearDmKey()
+            window.alert("That is not the DM code. Your seat is unchanged.")
+            return
+          }
+          window.localStorage.removeItem(TOKEN_LS_KEY)
+          window.localStorage.removeItem(CHARACTER_LS_KEY)
+          window.localStorage.setItem(ROLE_LS_KEY, "dm")
+          window.location.replace("/")
+        } catch (e) {
+          console.error("[dm-mode] code check failed:", e)
+          window.alert("Could not check the DM code. Try again.")
+        }
+      })()
+      return
+    }
+    if (ensureDmKey("enable DM mode")) setDmMode(true)
+  }
+  const openSection = (section: NavSection) => {
+    // In DM Mode, the top-right NPCs button is the direct door to canon
+    // faces, loops and voices. Outside DM Mode it keeps its player-facing
+    // World AI behaviour.
+    if (section === "npcs" && dmMode && !claimLocked) {
+      setWorldAIPanelOpen(false)
+      setNpcAssetsOpen(true)
+      return
+    }
+    // Sections that already have a home route there; the rest open the
+    // World AI panel, which is where that content lives today.
+    if (section === "settings") {
+      if (!claimLocked) setNpcAssetsOpen(true)
+      return
+    }
+    if (section === "journal" || section === "quests" || section === "maps" || section === "lore") {
+      setWorldAIPanelOpen(false)
+      setCampaignBook(section)
+      return
+    }
+    setWorldAIPanelOpen(true)
+  }
+
   return (
     <DiceProvider
       onAnnounce={handleDiceAnnounce}
@@ -1823,45 +1889,10 @@ if (error) {
         </div>
       )}
       {/* Top command bar (v3.0 design) */}
-      {view === "full" && <TopNav
+      {view === "full" && !USE_PARLEY && <TopNav
         onCompact={() => switchView("compact")}
         dmMode={dmMode && !claimLocked}
-        onToggleDmMode={() => {
-          if (dmMode) {
-            setDmMode(false)
-            return
-          }
-          // A browser holding a player's seat is never the DM (claimLocked gates every DM
-          // control). Since the front door seats everyone, Sam testing as Fifi was locked out of
-          // DM Mode with no way back (2026-10-14: "Not able to go to DM view from dashboard UI
-          // after inputting my password"). The DM code outranks a seat in this browser: it is
-          // checked server-side first, and only a real DM code releases the seat and reopens
-          // the dashboard as the DM screen. A wrong code changes nothing.
-          if (claimLocked) {
-            const code = ensureDmKey("leave this seat and enable DM mode")
-            if (!code) return
-            void (async () => {
-              try {
-                const res = await fetch("/api/claim-code", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) })
-                const result = await res.json().catch(() => null)
-                if (!res.ok || !result?.ok || result.role !== "dm") {
-                  clearDmKey()
-                  window.alert("That is not the DM code. Your seat is unchanged.")
-                  return
-                }
-                window.localStorage.removeItem(TOKEN_LS_KEY)
-                window.localStorage.removeItem(CHARACTER_LS_KEY)
-                window.localStorage.setItem(ROLE_LS_KEY, "dm")
-                window.location.replace("/")
-              } catch (e) {
-                console.error("[dm-mode] code check failed:", e)
-                window.alert("Could not check the DM code. Try again.")
-              }
-            })()
-            return
-          }
-          if (ensureDmKey("enable DM mode")) setDmMode(true)
-        }}
+        onToggleDmMode={toggleDmMode}
         sessionNumber={1}
         level={selectedCharacter?.level ?? 1}
         campaignName={activeCampaign.name}
@@ -1869,28 +1900,7 @@ if (error) {
         isDM={dmMode && !claimLocked}
   controlSlot={dmMode && !claimLocked ? <><TimeStopToggle stopped={timeStopped} /><GameClockPanel refreshSignal={clockRefresh} /></> : null}
         activeSection={npcAssetsOpen ? "npcs" : campaignBook ?? (worldAIPanelOpen ? "npcs" : null)}
-        onSection={(section) => {
-          // In DM Mode, the top-right NPCs button is the direct door to canon
-          // faces, loops and voices. Outside DM Mode it keeps its player-facing
-          // World AI behaviour.
-          if (section === "npcs" && dmMode && !claimLocked) {
-            setWorldAIPanelOpen(false)
-            setNpcAssetsOpen(true)
-            return
-          }
-          // Sections that already have a home route there; the rest open the
-          // World AI panel, which is where that content lives today.
-          if (section === "settings") {
-            if (!claimLocked) setNpcAssetsOpen(true)
-            return
-          }
-          if (section === "journal" || section === "quests" || section === "maps" || section === "lore") {
-            setWorldAIPanelOpen(false)
-            setCampaignBook(section)
-            return
-          }
-          setWorldAIPanelOpen(true)
-        }}
+        onSection={openSection}
       />}
 
       {rollLifecycle !== "idle" && (
@@ -1999,6 +2009,87 @@ if (error) {
       <DynamicMusic location={currentEnvironment?.name ?? CANONICAL_START_LOCATION} inCombat={false} mood={inCombat ? "tense" : "ambient"} />
       <MusicPlayer isTTSMuted={isTTSMuted} onToggleTTSMute={toggleTTSMute} />
     </>
+  ) : USE_PARLEY ? (
+  <ParleyDashboard
+  voicesOn={!isTTSMuted}
+  onToggleVoices={toggleTTSMute}
+  onJournal={() => openSection("journal")}
+  onToggleDmMode={toggleDmMode}
+  dmControls={dmMode && !claimLocked ? <><TimeStopToggle stopped={timeStopped} /><GameClockPanel refreshSignal={clockRefresh} /></> : null}
+  onNpcs={dmMode && !claimLocked ? () => openSection("npcs") : undefined}
+  onCompact={() => switchView("compact")}
+  audioSlot={
+    <>
+      {/* Combat music belongs to /battle only — see the note on the legacy mount above. */}
+      {/* Talking by the fire: the camp tab that opened this window is already
+          playing the camp music. Mounting the room's track here as well put
+          the slave pen's jail ambience under Camp Embers (Sam, 2026-09-27),
+          so the talk window plays nothing of its own. */}
+      {/* Map talk is the full dashboard in the room the party stands in, so the room's music plays. */}
+      {campTalkWith && talkFrom !== "map" ? null : <DynamicMusic location={currentEnvironment?.name ?? CANONICAL_START_LOCATION} inCombat={false} mood={inCombat ? "tense" : "ambient"} className="static bottom-auto right-auto z-auto" />}
+      <MusicPlayer isTTSMuted={isTTSMuted} onToggleTTSMute={toggleTTSMute} className="static bottom-auto right-auto z-auto" />
+    </>
+  }
+  environment={{
+          name: currentEnvironment?.name || "Velkynvelve (Slave Pen)",
+          region: "The Underdark",
+          timeOfDay: currentEnvironment?.time_of_day || "Afternoon",
+          imageUrl: sceneImageUrl || currentEnvironment?.background_image_url || "/images/scenes/velkynvelve-slave-pen.jpg",
+          description: currentEnvironment?.description,
+          // The room the party is STANDING IN, falling back to the
+          // last-touched row only for a node with no scene bound yet. Both
+          // paintings come off that one row, so the open-door art can never be
+          // drawn from a different scene than the shut-door art.
+          // The open-door painting only once the door is actually open, and
+          // only where the scene has one; otherwise the room as it stands.
+          npcBackdropUrl: (() => {
+            const room = nodeEnvironment ?? currentEnvironment
+            return (
+              (penDoorOpen ? room?.npc_backdrop_open_url : null) ||
+              nodeBackdropUrl ||
+              room?.npc_backdrop_url ||
+              null
+            )
+          })(),
+        }}
+        dialogue={dialogue}
+        dialogueInput={dialogueInput}
+        setDialogueInput={setDialogueInput}
+        onDialogueSubmit={handleDialogueSubmit}
+        onQuickReply={(text) => void handleQuickReply(text)}
+        addressee={addressee}
+        addressChoices={addressChoices}
+        addressPick={addressNow}
+        onAddressPick={pickAddressee}
+        // The look-around chip replays cinematics only while this is on.
+        dmMode={dmMode && !claimLocked}
+        dmScreen={!claimLocked && (dmMode || enteredAsDm)}
+        characters={players}
+        selectedCharacter={selectedCharacter}
+        selectedCharacterId={selectedCharacterId}
+        onCharacterSelect={claimLocked ? undefined : handleCharacterSelect}
+        inventory={characterInventory}
+        equipment={characterEquipment}
+        onEquipItem={handleEquipItem}
+        onUnequipItem={handleUnequipItem}
+        onDropItem={handleDropItem}
+        npcEncounters={npcEncounters}
+        npcRoster={npcRoster}
+        isThinking={lichLoading}
+        claimLocked={claimLocked}
+        talkWith={campTalkWith}
+        talkFrom={talkFrom}
+        talkOpening={talkOpening}
+        talkOpeningLang={talkOpeningLang}
+        timeStopped={timeStopped}
+        onFacingChange={handleFacingChange}
+        onOpenerAccepted={handleOpenerAccepted}
+        onEndTalk={() => {
+          if (talkReturn) { window.location.href = talkReturn; return }
+          setCampTalkWith(null)
+          setTalkOpening(null)
+        }}
+      />
   ) : (
   <V4Dashboard
   audioSlot={
