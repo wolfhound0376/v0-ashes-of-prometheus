@@ -1752,7 +1752,6 @@ function draw(){
   for (const c of node.chains || []) drawChain(c);
   drawCombatGround(); drawStuckGround(); drawSurgeonGround();
   if (mode === "combat"){ drawIcePatches(); drawFxLayer(true); tickIce(); }
-  if (mode === "explore" && exploreJump && leader && actors.includes(leader)){ const J = exploreJumpSquares(leader); drawJumpCells(J.cells, J.cell); }
   const list = actors.concat(vermin, laborProps).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);   // laborProps: Hard Labor's station props
   const cloudQ = mode === "combat" || clouds.length ? cloudPuffs() : [];   // the poison cloud, in depth order among the figures
   let barsAt = gateBarsY();                                       // the bars in front of a guard leaning at them, in depth order
@@ -6749,7 +6748,40 @@ function jumpSquares(a){
   return cells;
 }
 const JUMP_INK = {ok: ["80,230,120", "190,255,205"], check: ["255,214,102", "255,240,190"], no: ["255,80,60", "255,180,170"]};
-function drawJumpSquares(a){ const cells = jumpSquares(a); drawJumpCells(cells, jumpSq.cell); }   // red, like the exploration jump (Sam, 2026-10-28)
+function drawJumpSquares(a){
+  const cells = jumpSquares(a), h = jumpSq.cell * .5, rad = jumpSq.cell * .14, pulse = .5 + .5 * Math.sin(now / 260), lw = 2 / (base * view.z);
+  const hov = aimW && cells.find(p => Math.abs(aimW.x - p.x) <= h && Math.abs(aimW.y - p.y) <= h);
+  ctx.save();
+  for (const p of cells){
+    const on = p === hov, [c, bright] = JUMP_INK[p.kind] || JUMP_INK.no, r = on ? rad * 1.35 : rad * (p.kind === "no" ? .8 : 1);
+    ctx.fillStyle = `rgba(${c},${on ? .85 : .42 + .18 * pulse})`; ctx.strokeStyle = `rgba(${on ? bright : c},${on ? 1 : .9})`; ctx.lineWidth = on ? lw * 1.6 : lw;
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, r, r * .62, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();   // a disc on the floor, foreshortened like the ground
+  }
+  // a red disc under the mouse says why; off it, the hint goes back to the instruction
+  if (hov && hov.kind === "no" && hov.why){ if (drawJumpSquares.why !== hov.why){ drawJumpSquares.why = hov.why; hint(hov.why); } }
+  else if (drawJumpSquares.why){ drawJumpSquares.why = null; hint(JUMP_HINT); }
+  ctx.restore();
+}
+const JUMP_HINT = "Jump: click a green circle. Yellow needs a roll; red is out. Esc to cancel.";
+// A JUMP NEEDS NO GAP (Sam, 2026-10-28: "Clicking it should create red hexes on legal squares I can attempt to jump. By
+// clicking the square I can jump it automatically if there is no skill check."). The long jump is movement (SRD 5.1,
+// Movement and Position > Jumping): with 10 ft of run-up on foot you clear up to your Strength score in feet, half that
+// from a standstill, and every foot costs a foot of movement. Nothing in the rule says there has to be a chasm under
+// you — a leap across open floor is legal, it just costs the same as walking. So planLeap now answers for ANY square:
+//   * a gap on the line (gapOnLine): run up to its edge, spring, land on the first ground across — as before;
+//   * open floor: a standing jump when the square is within half your score, otherwise a 10-ft run-up and the jump
+//     for the rest (a square inside 10 ft gets just the run-up it needs);
+//   * never through a standing foe's square (allies you may pass), never onto anyone's square, never off a cliff.
+// There is still no skill check to make: the DC 10 Athletics for a LOW OBSTACLE needs the obstacle's height, and the
+// DC 10 Acrobatics on landing needs DIFFICULT TERRAIN — the plates record neither (see MIN_LEAP_FT above). When the
+// data arrives, the check goes here and a lit square that needs one gets its own colour.
+function leapBlocked(a, from, to){
+  const px = ftPx(a), d = Math.hypot(to.x - from.x, to.y - from.y), n = Math.max(1, Math.ceil(d / 6));
+  const foesUp = a.kind === "pc" || hero(a) ? standing(foes) : standing(heroes());
+  for (let i = 1; i < n; i++){ const x = from.x + (to.x - from.x) * i / n, y = from.y + (to.y - from.y) * i / n;
+    const o = foesUp.find(o => Math.hypot(o.x - x, o.y - y) < 2.4 * px); if (o) return o; }
+  return null;
+}
 function planLeap(a, to){
   const span = a.c.sheet.strScore; if (!span) return null;
   if (balconyFloor() && outsidePen(a) !== outsidePen(to)) return null;   // between the pen and the balcony is a wall, not a gap: the way is the gate
@@ -11330,48 +11362,14 @@ function exploreLeap(p){
   if (L.ko){ toast(`${fname(L)} is out cold.`); return; }
   const span = (SHEETS[L.id] || {}).strScore; if (!span){ toast(`${fname(L)} has no Strength score on the sheet to jump by.`); return; }
   if (balconyFloor() && outsidePen(L) !== outsidePen(p)){ toast("That is a wall, not a gap: the way is the gate."); return; }
-  const g = exploreLeapPlan(L, p, span);
-  if (!g){ toast("No gap to jump there: just walk."); return; }
-  if (!g.ok){ toast(`That gap is about ${Math.round(g.gapFt)} ft. ${fname(L)} clears ${g.max}${g.runUpFt < 10 ? " from a standstill — back up for a run-up" : ""}.`); return; }
+  const g = gapOnLine(L, p);
+  if (!g || g.gapFt < MIN_LEAP_FT){ toast("No gap to jump there: just walk."); return; }
+  const max = g.runUpFt >= 10 ? span : Math.floor(span / 2);
+  if (g.gapFt > max){ toast(`That gap is about ${Math.round(g.gapFt)} ft. ${fname(L)} clears ${max}${g.runUpFt < 10 ? " from a standstill — back up for a run-up" : ""}.`); return; }
   stopActivity(L); L.slow = false; marker = {x: p.x, y: p.y, t: now};
   const land = () => { log(`${fname(L)} clears the ${Math.round(g.gapFt)} ft gap.`); if (Math.hypot(p.x - L.x, p.y - L.y) > 8){ L.path = findPath(L, p); L.onArrive = null; } };
   const spring = () => arcTo(L, g.land, land);
   if (g.runUpFt > 0.5){ L.path = [g.takeoff]; L.onArrive = spring; } else spring();
-}
-// the exploration jump's own test (no movement budget out of a fight: any run-up you can walk counts)
-function exploreLeapPlan(L, p, span){
-  const g = gapOnLine(L, p); if (!g || g.gapFt < MIN_LEAP_FT) return null;
-  g.max = g.runUpFt >= 10 ? span : Math.floor(span / 2); g.ok = g.gapFt <= g.max; return g;
-}
-// WHERE YOU CAN JUMP, OUT OF A FIGHT TOO (Sam, 2026-10-28: "When I select jump please highlight in red hexes where I can
-// legally jump" / "why is my jump button not highlighting where I can jump"). With Jump picked, every 5-ft square within
-// reach of the leader is put to exploreLeapPlan — the test the click itself uses — and the ones it would land on are lit
-// red. A lit square is exactly a click that springs. Recomputed only when the leader moves.
-let exploreJumpSq = null;
-function exploreJumpSquares(L){
-  const span = (SHEETS[L.id] || {}).strScore || 0, key = `${L.id}|${Math.round(L.x)}|${Math.round(L.y)}|${span}`;
-  if (exploreJumpSq && exploreJumpSq.key === key) return exploreJumpSq;
-  const cell = 5 * ftPx(L), reach = (span + 20) * ftPx(L), n = Math.ceil(reach / cell), cells = [];
-  if (span) for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++){
-    const q = {x: L.x + i * cell, y: L.y + j * cell};
-    if ((!i && !j) || Math.hypot(q.x - L.x, q.y - L.y) > reach || !walkable(q.x, q.y)) continue;
-    if (balconyFloor() && outsidePen(L) !== outsidePen(q)) continue;   // the pen wall is not a gap (as exploreLeap says)
-    const g = exploreLeapPlan(L, q, span);
-    if (g && g.ok && Math.hypot(q.x - g.land.x, q.y - g.land.y) <= cell * .75) cells.push(q);
-  }
-  return (exploreJumpSq = {key, cells, cell});
-}
-function drawJumpCells(cells, cell){
-  const h = cell * .46, pulse = .5 + .5 * Math.sin(now / 260), lw = 2 / (base * view.z);
-  const hov = aimW && cells.find(p => Math.abs(aimW.x - p.x) <= h && Math.abs(aimW.y - p.y) <= h);
-  ctx.save();
-  for (const p of cells){
-    const on = p === hov;
-    ctx.fillStyle = on ? "rgba(255,92,72,.45)" : `rgba(220,48,40,${.16 + .1 * pulse})`;
-    ctx.strokeStyle = on ? "rgba(255,200,190,.95)" : "rgba(255,86,70,.85)"; ctx.lineWidth = on ? lw * 1.6 : lw;
-    ctx.beginPath(); ctx.rect(p.x - h, p.y - h, h * 2, h * 2); ctx.fill(); ctx.stroke();
-  }
-  ctx.restore();
 }
 function walkTo(p, cb){ if (!ownLeader()){ if (leader) notYours(leader); return; } if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
 $("zIn").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.3); };
