@@ -56,6 +56,17 @@ import { campBiome, CAMP_BIOME_LABEL, CAMP_PLATES } from "@/lib/camp-plates"
 import { useCampVerdict } from "@/lib/hooks/use-camp-verdict"
 import { characterStageStyle, npcWindowStyle, type StageFramingRow } from "@/lib/stage-framing"
 import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/database"
+import { EndGameButton } from "@/components/end-game-button"
+
+/** The maps the DM can jump to from the Maps button (Sam, 2026-10-28: "DM button activated should allow me
+ *  to open the MAP button and see the maps available"). Velkynvelve takes the walk's own href so a sandbox
+ *  rehearsal stays one. A new cave dungeon is one more row here plus its public/cave-pov/dungeons/<id>.json. */
+const DM_MAPS: Array<{ id: string; label: string; sub: string; href: string | null }> = [
+  { id: "velkynvelve", label: "Velkynvelve", sub: "The walkable outpost", href: null },
+  { id: "underdark", label: "The Underdark", sub: "Travel map", href: "/map" },
+  { id: "darklake", label: "Darklake Cave", sub: "Dungeon · first person", href: "/cave?d=darklake" },
+  { id: "hook-horror-lair", label: "Hook Horror Lair", sub: "Dungeon · first person", href: "/cave?d=hook-horror-lair" },
+]
 
 type AbilityKey = "str" | "dex" | "con" | "int" | "wis" | "cha"
 const ABILITY_KEYS: AbilityKey[] = ["str", "dex", "con", "int", "wis", "cha"]
@@ -990,6 +1001,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
     return onMusicPrefChange(() => setMusicOn(!isMusicOff()))
   }, [])
   const [musicPop, setMusicPop] = useState(false)
+  const [mapsPop, setMapsPop] = useState(false)
   // Cinematics: a per-browser switch. Off, the look-around chip is an ordinary look.
   const [cinematicsOn, setCinematicsOn] = useState(true)
   useEffect(() => { try { setCinematicsOn(window.localStorage.getItem(CINEMATICS_OFF_KEY) !== "true") } catch { /* private mode */ } }, [])
@@ -1072,6 +1084,13 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
       </span>
       {props.onJournal ? <button type="button" className="p-slab teal" onClick={props.onJournal} title="The campaign book"><img className="p-ico" src="/images/parley/journal.png" alt="" />Journal</button> : null}
       {props.onToggleDmMode ? <button type="button" className={cn("p-slab", props.dmMode ? "violet" : "dark")} onClick={props.onToggleDmMode} aria-pressed={!!props.dmMode} title={props.dmMode ? "DM Mode is on — click to leave it" : "Enter DM Mode (asks for the DM code)"}><img className="p-ico" src="/images/parley/dm.png" alt="" />DM Mode</button> : null}
+      {isDmView ? <span style={{ position: "relative" }}>
+        <button type="button" className="p-slab dark sm" onClick={() => setMapsPop((v) => !v)} aria-expanded={mapsPop} title="The maps you can open (DM only)">Maps</button>
+        {mapsPop ? <div className="p-panel p-music-pop" role="menu">
+          {DM_MAPS.map((m) => <a key={m.id} role="menuitem" href={m.href ?? walkHref} className="p-slab dark sm" style={{ width: "100%", justifyContent: "space-between", gap: 12 }} title={m.sub}><span>{m.label}</span><small style={{ opacity: 0.7 }}>{m.sub}</small></a>)}
+        </div> : null}
+      </span> : null}
+      {isDmView ? <EndGameButton /> : null}
       {props.dmScreen && props.onNpcs ? <button type="button" className="p-slab dark sm" onClick={props.onNpcs} title="NPC canon: faces, loops, voices">NPCs</button> : null}
       {props.onCompact ? <button type="button" className="p-slab dark sm" onClick={props.onCompact} title="The phone / camp layout">Phone</button> : null}
       <button type="button" className="p-slab gold" onClick={goBack} title={talkMode ? (props.talkFrom === "map" ? "Back to the map" : "Back to camp") : "Back to the Underwalk map"}><img className="p-ico" src="/velkynvelve-walk/icons/bar/jump.png" alt="" />Return<span className="p-key">M</span></button>
