@@ -13978,7 +13978,9 @@ function renderBag(){
     row.addEventListener("click", e => { if (dragJustEnded || (e.target.closest && e.target.closest("button"))) return; pick(); });
     if (picked) renderItemCard(a, g, it, u, worn, pic, what, fight, mine);
     const img = row.querySelector("img"); if (img && it.icon && it.pixel) img.onerror = () => { img.onerror = null; img.src = ITEM_PX + it.pixel; };
-    icardBind(row, () => ({kind: "bag", it, slug: (catalogItem(it.name) || {}).slug, name: it.name, item_type: it.item_type, properties: it.properties, pixel: it.pixel, desc: it.desc, hero: a}));   // the item card
+    // No hover card on the backpack rows (Sam, 2026-10-28: "The item zoom on hover is not necessary because we already
+    // have an explanatory box"). The detail panel explains the item; its Examine button opens the card on purpose, for
+    // the lore checks and Study that only the card has.
     const btns = row.querySelector(".invBtns");
     { const ic = row.querySelector(".invPic"); if (ic) dragSource(ic, pic || "", (x, y) => { const to = slotUnder(x, y); if (!to) return;
         if (fitsSlot(it, to) && !worn.includes(to)) equipTo(a, it, to); else toast(`${it.name} does not go in the ${slotLabel(to).toLowerCase()}.`); }); }
@@ -14200,6 +14202,10 @@ function renderItemCard(a, g, it, u, worn, pic, what, fight, mine){
   if (to && !worn.includes(to)) btn(isWeapon(it) && HAND(to) ? `Equip · ${slotLabel(to).toLowerCase()}` : `Wear · ${slotLabel(to).toLowerCase()}`, can(to), cost(to), () => equipTo(a, it, to), true);
   for (const sl of worn) btn(HAND(sl) ? `Put away (${slotLabel(sl).toLowerCase()})` : "Take off", mine && (!fight || (HAND(sl) && gearCost(a, 1).ok)), fight ? (HAND(sl) ? gearHint(a, 1) : "not mid-fight") : "", () => removeFrom(a, sl));
   if (!acts.children.length) acts.innerHTML = `<span class="efHint">${worn.length ? "" : it.eslot || isWeapon(it) ? "pick a slot it fits, or drag it onto the body" : "nothing to wear here — use it from the row"}</span>`;
+  // the full item card, on purpose rather than on hover: lore checks (INT or a tool), Study at the next rest
+  { const b = document.createElement("button"); b.className = "btn"; b.textContent = "Examine"; b.title = "Look closer: lore checks, and Study for something magical you cannot name yet";
+    b.onclick = () => { const r = b.getBoundingClientRect(); const t = {kind: "bag", it, slug: (catalogItem(it.name) || {}).slug, name: it.name, item_type: it.item_type, properties: it.properties, pixel: it.pixel, desc: it.desc, hero: a, anchor: b}; icardShow(t, r.left + r.width / 2, r.top, true); };
+    acts.appendChild(b); }
 }
 const isArmorish = it => { const t = String(it.item_type || "").toLowerCase(), sl = String(it.eslot || ""); return t === "armor" || t === "armour" || (!isWeapon(it) && ["torso", "head", "legs", "back"].includes(sl)); };
 // one off the stack, here and in the character's real inventory
