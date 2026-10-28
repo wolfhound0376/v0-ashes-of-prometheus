@@ -5662,7 +5662,7 @@ function openMenu(a, sub){
     // JUMP, as a command (Sam, 2026-10-27: "where is the attack, jump, throw, push, entertain"). The leap itself is the
     // long-jump rule below (planLeap/leapMove): a click on the far side of a gap already springs across it. The button
     // names it, says what this hero clears, and aims the click at a gap (cbt.phase "jump").
-    if (s.strScore) add("Jump", `up to ${s.strScore} ft with a 10-ft run-up, ${Math.floor(s.strScore / 2)} standing · ${c.move} ft left`, c.move >= MIN_LEAP_FT && !["prone", "grappled", "restrained"].some(k => c.conds.has(k)) ? () => { closeMenu(); cbt.phase = "jump"; jumpSq = null; hint(jumpSquares(a).length ? "Jump: click a red square. Esc to cancel." : "Nowhere to jump to from here. Esc to go back."); } : null);
+    if (s.strScore) add("Jump", `up to ${s.strScore} ft with a 10-ft run-up, ${Math.floor(s.strScore / 2)} standing · ${c.move} ft left`, c.move >= MIN_LEAP_FT && !["prone", "grappled", "restrained"].some(k => c.conds.has(k)) ? () => { closeMenu(); cbt.phase = "jump"; jumpSq = null; drawJumpSquares.why = null; hint(jumpSquares(a).some(p => p.kind !== "no") ? JUMP_HINT : "Nowhere to jump to from here. Esc to go back."); } : null);
     if (c.conds.has("restrained")) add("Break free", `STR check vs DC ${c.webDc || 12} · your action`, c.action ? () => { c.action = false; const k = skillCheck(a, "athletics"); if (k.total >= (c.webDc || 12)){ c.conds.delete("restrained"); a.webFx && (a.webFx.until = now); bank("movement/web_tear", .8); popText(a, "free", "#e8e2c8"); log(`${fname(a)} tears out of the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${c.webDc || 12}.`); } else { bank("movement/chains_rattle", .5); popText(a, "stuck", "#c9c4b8"); log(`${fname(a)} strains at the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${c.webDc || 12} — stuck.`); } renderParty(); openMenu(a); } : null);
     const webbed = standing(heroes()).find(p => p !== a && p.c.conds.has("restrained") && feetBetween(a, p) <= 5);
     if (webbed) add("Cut free", `${fname(webbed)} · hit the webbing (AC 10)`, c.action ? () => { c.action = false; const r = d20(0, a); if (r + (s.attacks[0].hit || 0) >= 10 || r === 20){ webbed.c.conds.delete("restrained"); webbed.webFx && (webbed.webFx.until = now); bank("movement/web_tear", .8); popText(webbed, "free", "#e8e2c8"); log(`${fname(a)} cuts ${fname(webbed)} out of the web.`); } else { popText(webbed, "still stuck", "#c9c4b8"); log(`${fname(a)} hacks at the web and misses the strands.`); } renderParty(); openMenu(a); } : null);
@@ -6656,31 +6656,42 @@ let jumpSq = null;
 function jumpSquares(a){
   const key = `${a.id}|${Math.round(a.x)}|${Math.round(a.y)}|${a.c.move}|${[...a.c.conds].join()}`;
   if (jumpSq && jumpSq.key === key) return jumpSq.cells;
-  const cell = 5 * ftPx(a), reach = Math.min(a.c.move, 10 + (a.c.sheet.strScore || 0)), n = Math.ceil(reach / 5) + 1, cells = [];
+  // THE THREE COLOURS (Sam, 2026-10-28: "small green circles, with red circles that are within reach but illegal.
+  // Yellow circles require a skill check"). Every ground square within reach — 10 ft of run-up plus the Strength score,
+  // the most anyone can jump — is marked: green, a legal landing with no roll; yellow, legal but a roll first (the
+  // vault); red, within reach but not legal from here (someone is there, the run-up is blocked, no movement left, the
+  // line is not ground). A square that is not ground at all gets no mark.
+  const cell = 5 * ftPx(a), reach = 10 + (a.c.sheet.strScore || 0), n = Math.ceil(reach / 5), cells = [];
   if (a.c.sheet.strScore && a.c.move >= MIN_LEAP_FT){
     for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++){
       const p = {x: a.x + i * cell, y: a.y + j * cell};
       if (!i && !j) continue;
-      if (Math.hypot(p.x - a.x, p.y - a.y) > (reach + 5) * ftPx(a) || !walkable(p.x, p.y)) continue;
+      if (Math.hypot(p.x - a.x, p.y - a.y) > reach * ftPx(a) || !walkable(p.x, p.y)) continue;
       const g = planLeap(a, p);
-      if (g && g.ok && Math.hypot(p.x - g.land.x, p.y - g.land.y) <= cell * .75) cells.push(p);
+      if (g && g.ok && Math.hypot(p.x - g.land.x, p.y - g.land.y) <= cell * .75) p.kind = g.check ? "check" : "ok";
+      else { p.kind = "no"; p.why = (g && g.why) || "No straight line of ground from here."; }
+      cells.push(p);
     }
   }
   jumpSq = {key, cells, cell};
   return cells;
 }
+const JUMP_INK = {ok: ["80,230,120", "190,255,205"], check: ["255,214,102", "255,240,190"], no: ["255,80,60", "255,180,170"]};
 function drawJumpSquares(a){
-  const cells = jumpSquares(a), h = jumpSq.cell * .46, pulse = .5 + .5 * Math.sin(now / 260), lw = 2 / (base * view.z);
+  const cells = jumpSquares(a), h = jumpSq.cell * .5, rad = jumpSq.cell * .14, pulse = .5 + .5 * Math.sin(now / 260), lw = 2 / (base * view.z);
   const hov = aimW && cells.find(p => Math.abs(aimW.x - p.x) <= h && Math.abs(aimW.y - p.y) <= h);
   ctx.save();
   for (const p of cells){
-    const on = p === hov;
-    ctx.fillStyle = on ? "rgba(255,110,90,.46)" : `rgba(255,80,60,${.14 + .08 * pulse})`;   // red: Sam's word for them
-    ctx.strokeStyle = on ? "rgba(255,225,210,.95)" : "rgba(255,120,100,.85)"; ctx.lineWidth = on ? lw * 1.6 : lw;
-    ctx.beginPath(); ctx.rect(p.x - h, p.y - h, h * 2, h * 2); ctx.fill(); ctx.stroke();
+    const on = p === hov, [c, bright] = JUMP_INK[p.kind] || JUMP_INK.no, r = on ? rad * 1.35 : rad * (p.kind === "no" ? .8 : 1);
+    ctx.fillStyle = `rgba(${c},${on ? .85 : .42 + .18 * pulse})`; ctx.strokeStyle = `rgba(${on ? bright : c},${on ? 1 : .9})`; ctx.lineWidth = on ? lw * 1.6 : lw;
+    ctx.beginPath(); ctx.ellipse(p.x, p.y, r, r * .62, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();   // a disc on the floor, foreshortened like the ground
   }
+  // a red disc under the mouse says why; off it, the hint goes back to the instruction
+  if (hov && hov.kind === "no" && hov.why){ if (drawJumpSquares.why !== hov.why){ drawJumpSquares.why = hov.why; hint(hov.why); } }
+  else if (drawJumpSquares.why){ drawJumpSquares.why = null; hint(JUMP_HINT); }
   ctx.restore();
 }
+const JUMP_HINT = "Jump: click a green circle. Yellow needs a roll; red is out. Esc to cancel.";
 // A JUMP NEEDS NO GAP (Sam, 2026-10-28: "Clicking it should create red hexes on legal squares I can attempt to jump. By
 // clicking the square I can jump it automatically if there is no skill check."). The long jump is movement (SRD 5.1,
 // Movement and Position > Jumping): with 10 ft of run-up on foot you clear up to your Strength score in feet, half that
@@ -6712,21 +6723,33 @@ function planLeap(a, to){
     // OPEN FLOOR: the whole line must be ground (a second gap, or ground that runs out, is a walk, not a jump)
     const n = Math.ceil(d * px / 6); for (let i = 1; i <= n; i++) if (!walkable(a.x + (to.x - a.x) * i / n, a.y + (to.y - a.y) * i / n)) return null;
     const half = Math.floor(span / 2);
-    const runUpFt = d <= half ? 0 : d >= 10 ? 10 : Math.max(0, d - half);
+    let runUpFt = d <= half ? 0 : d >= 10 ? 10 : Math.max(0, d - half);
+    // a foe on the line: the run-up stops a square short of them, so the leap (and the vault) begins before their square
+    const foe = leapBlocked(a, a, to); if (foe){ const fd = Math.hypot(foe.x - a.x, foe.y - a.y) / px; runUpFt = Math.max(0, Math.min(runUpFt, Math.floor((fd - 5) / 5) * 5)); }
     const k = runUpFt / d;
     g = {open: true, takeoff: {x: a.x + (to.x - a.x) * k, y: a.y + (to.y - a.y) * k}, land: {x: to.x, y: to.y}, runUpFt, gapFt: d - runUpFt};
   }
   g.max = g.runUpFt >= 10 ? span : Math.floor(span / 2);
   g.standing = g.runUpFt < 10;
-  const need = Math.round((g.runUpFt + g.gapFt) / 5) * 5, taken = actors.find(o => o !== a && !o.down && actors.includes(o) && Math.hypot(o.x - g.land.x, o.y - g.land.y) < 2.5 * px), inWay = leapBlocked(a, a, g.land);
+  const need = Math.round((g.runUpFt + g.gapFt) / 5) * 5, taken = actors.find(o => o !== a && !o.down && actors.includes(o) && Math.hypot(o.x - g.land.x, o.y - g.land.y) < 2.5 * px);
+  const inRunUp = leapBlocked(a, a, g.takeoff), over = inRunUp ? null : leapBlocked(a, g.takeoff, g.land);
   if (g.gapFt > g.max) g.why = g.open ? `That is about ${Math.round(d)} ft. ${fname(a)} clears ${span} ft with a 10-ft run-up, ${Math.floor(span / 2)} standing.`
     : `That gap is about ${Math.round(g.gapFt)} ft. ${fname(a)} clears ${g.max}${g.standing ? " from a standstill — back up for a run-up" : ""}.`;
   else if (need > a.c.move) g.why = `Not enough movement left: the run-up and the jump cost ${need} ft, ${fname(a)} has ${a.c.move}.`;
   else if (taken) g.why = `${fname(taken)} is standing there.`;
-  else if (inWay) g.why = `${fname(inWay)} is in the way — you can't jump through a foe.`;
-  else g.ok = true;
+  else if (inRunUp) g.why = `${fname(inRunUp)} is in the way of the run-up.`;
+  else if (over && (over.big || a.big)) g.why = `${fname(over)} is too big to vault.`;
+  else { g.ok = true; if (over) g.check = {skill: "acrobatics", dc: VAULT_DC, over}; }   // THE VAULT: legal, but a roll first (yellow)
   return g;
 }
+// THE VAULT (HOUSE RULE — Sam, 2026-10-28: "Yes, a vault if possible"). The SRD lets nobody move through a hostile
+// creature's space unless it is two sizes larger; the DMG's optional Tumble is a whole action. Here a hero whose jump
+// carries OVER a standing foe (the foe lies in the leap, not the run-up; neither of them is Large) may try it: a DC 10
+// Dexterity (Acrobatics) check — the same DC the jump rule gives its two optional checks — made as they spring. A pass
+// clears the foe and lands as planned; a fail is a collision: they come down in the last clear square before the foe,
+// prone, the movement spent all the same. No opportunity attack beyond the usual one for leaving reach. Nothing else
+// in the fight hangs off it; change the DC or the rule here.
+const VAULT_DC = 10;
 // Run up, spring, land — then walk whatever is left of the way on foot.
 function leapMove(a, g, to, done){
   a.c.move = Math.max(0, a.c.move - Math.round((g.runUpFt + g.gapFt) / 5) * 5);
@@ -6740,7 +6763,19 @@ function leapMove(a, g, to, done){
     if (Math.hypot(to.x - a.x, to.y - a.y) > 8 && a.c.move > 0) combatWalk(a, to, done);
     else { combatBusy = false; done && done(); }
   };
-  const spring = () => { if (a.down){ combatBusy = false; done && done(); return; } arcTo(a, g.land, g.drop ? () => { landFall(a, g.dropFt); if (a.down){ combatBusy = false; done && done(); return; } standIfAble(a); land(); } : land); };
+  const spring = () => { if (a.down){ combatBusy = false; done && done(); return; }
+    if (g.check){   // the vault: roll as they leave the ground
+      const k = skillCheck(a, g.check.skill), o = g.check.over, px = ftPx(a);
+      if (k.total >= g.check.dc || k.r === 20){ log(`${fname(a)} vaults ${fname(o)}: Acrobatics ${k.r} + ${k.mod} = ${k.total} vs DC ${g.check.dc}.`); narrate(a, `${fname(a)} goes clean over ${fname(o)}.`); popText(a, "vault", "#ffd27a"); }
+      else {   // the collision: down in the last clear square before the foe, prone
+        const dx = o.x - g.takeoff.x, dy = o.y - g.takeoff.y, dd = Math.hypot(dx, dy), back = Math.max(0, dd - 5 * px);
+        const short = nearestWalkable(g.takeoff.x + dx / dd * back, g.takeoff.y + dy / dd * back);
+        log(`${fname(a)} tries to vault ${fname(o)} and fails: Acrobatics ${k.r} + ${k.mod} = ${k.total} vs DC ${g.check.dc} — down in a heap in front of them.`);
+        narrate(a, `${fname(a)} clips ${fname(o)} and goes sprawling.`); popText(a, "sprawl", "#ff9b8f");
+        arcTo(a, short, () => { addCond(a, "prone"); bank("creature/hurt_humanoid_male", .3); renderParty(); combatBusy = false; done && done(); }); return;
+      }
+    }
+    arcTo(a, g.land, g.drop ? () => { landFall(a, g.dropFt); if (a.down){ combatBusy = false; done && done(); return; } standIfAble(a); land(); } : land); };
   const runUp = () => { if (g.runUpFt > 0.5){ a.path = [g.takeoff]; a.onArrive = spring; } else spring(); };
   if (threat.length){ const f = threat[0]; f.c.reactionUsed = true; a.path = [];
     log(`${fname(f)} takes a swing as ${fname(a)} breaks away.`); narrate(f, `${fname(f)} lashes out as ${fname(a)} springs clear.`);
