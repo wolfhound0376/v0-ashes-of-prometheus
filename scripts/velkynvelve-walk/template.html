@@ -9453,15 +9453,21 @@ async function followCombatFlag(flag){
     combatFlagSeen = flag.startedAt;
     const picked = [];
     for (const foe of flag.foes || []){
+      // THE DEAD STAY DEAD (Sam, 2026-10-27: "why did the drow respawn after we defeated them?"). A later call naming
+      // "drow guard" picked the two guards' bodies off the Barracks floor and put them back in a fight. Only someone
+      // still standing can be named into one; a name that matches only the dead is skipped.
+      const alive = n => n && !n.down && !n.body && !(n.c && n.c.hp <= 0);
       const onPlate = creatures.get(foe.slug);
-      if (onPlate){ picked.push(onPlate); continue; }
-      const cast = npcs.filter(n => CAST.has(n.id) && !n.offStage && !n.creature && stageMatch(foe, n.id));
+      if (onPlate){ if (alive(onPlate)) picked.push(onPlate); continue; }
+      const named = npcs.filter(n => CAST.has(n.id) && !n.offStage && !n.creature && stageMatch(foe, n.id));
+      if (named.length && !named.some(alive)) continue;
+      const cast = named.filter(alive);
       if (cast.length){ picked.push(...cast); continue; }
       if (await loadSpriteManifest(foe.slug)){ creatureArrives({slug: foe.slug, name: foe.name, hp: foe.hp, hpMax: foe.hpMax}); const f = creatures.get(foe.slug); if (f){ f.path = []; f.waitUntil = 0; picked.push(f); } }
       else log(`<em>${esc(foe.name)}</em> joins the fight but has no sprite yet; the DM core still counts it.`);
     }
     for (let i = picked.length - 1; i >= 0; i--) if (picked.indexOf(picked[i]) !== i) picked.splice(i, 1);   // two "Drow guard"s name the same two
-    if (!picked.length){ log(`<em>${esc(flag.label || "Initiative!")}</em> Nobody he named is on this plate.`); return; }
+    if (!picked.length){ log(`<em>${esc(flag.label || "Initiative!")}</em> Nobody he named is still standing on this plate.`); return; }
     for (const f of picked){ f.hp = f.hp ?? (flag.foes.find(x => x.slug === f.id) || {}).hp; }
     startCombat.flagMood = flag.music || null;          // Malachar may name the mood; otherwise the odds decide
     startCombat(picked, flag.label || "Malachar calls for initiative.");
