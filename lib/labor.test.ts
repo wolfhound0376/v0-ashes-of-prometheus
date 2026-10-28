@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   OBSERVERS, TASKS, castableInManacles, crews, disobey, escortFor, npcCountFor, pickCompanions, pickTask,
-  planDay, resolvePocket, searchFinds, seeded, shiftAt, stanceDuringLabor, suspicionReasons, taskWeight,
+  firstWorkShift, planDay, resolvePocket, SHIFTS_BEFORE_FIRST_DETAIL, searchFinds, seeded, shiftAt, stanceDuringLabor, suspicionReasons, taskWeight,
   type CrewMember, type Observer,
 } from "./labor"
 
@@ -258,4 +258,42 @@ describe("casting in manacles [SAM + SRD 5.1 components]", () => {
 describe("the party's stance on a detail", () => {
   it("stays captive while they work", () => expect(stanceDuringLabor(false)).toBe("captive"))
   it("turns to escaping only when a PC breaks from the escort", () => expect(stanceDuringLabor(true)).toBe("escaping"))
+})
+
+describe("the first detail waits (Sam, 2026-10-27: not for at least 3 shift changes)", () => {
+  const H = (h: number, m = 0) => h * 60 + m
+  it("waits three shift changes from wherever the party reaches the pen", () => {
+    expect(SHIFTS_BEFORE_FIRST_DETAIL).toBe(3)
+    // in at 10:00 on day 1: 14:00, 22:00, then 06:00 on day 2
+    expect(firstWorkShift({ day: 1, minutes: H(10) })).toEqual({ day: 2, shift: 1 })
+    // in just before midnight: 06:00, 14:00, 22:00 on day 2
+    expect(firstWorkShift({ day: 1, minutes: H(23, 30) })).toEqual({ day: 2, shift: 3 })
+    // in at 03:00 (still the night shift): 06:00, 14:00, 22:00 the same day
+    expect(firstWorkShift({ day: 4, minutes: H(3) })).toEqual({ day: 4, shift: 3 })
+  })
+  it("does not count a shift change the party arrives on", () => {
+    expect(firstWorkShift({ day: 1, minutes: H(6) })).toEqual({ day: 2, shift: 1 })   // 14:00, 22:00, 06:00
+  })
+  it("plans no party detail on a day before the first one allowed; the NPCs still work all three shifts", () => {
+    for (let s = 0; s < 40; s++) {
+      const plan = planDay({ day: 1, pcs: HEROES, npcs: PRISONERS, notBefore: { day: 2, shift: 1 } }, seeded(s))
+      expect(plan.some((d) => d.party)).toBe(false)
+      expect(plan.flatMap((d) => d.crew).filter((c) => c.kind === "pc")).toEqual([])
+      expect(new Set(plan.flatMap((d) => d.crew.map((c) => c.id)))).toEqual(new Set(PRISONERS.map((n) => n.id)))
+      expect(new Set(plan.map((d) => d.shift))).toEqual(new Set([1, 2, 3]))
+    }
+  })
+  it("on the first day allowed, the party's shift is that shift or later", () => {
+    for (let s = 0; s < 60; s++) {
+      const plan = planDay({ day: 2, pcs: HEROES, npcs: PRISONERS, fromShift: 1, notBefore: { day: 2, shift: 3 } }, seeded(s))
+      expect(plan.find((d) => d.party)?.shift).toBe(3)
+    }
+  })
+  it("after that, the wait changes nothing", () => {
+    for (let s = 0; s < 20; s++) {
+      const a = planDay({ day: 5, pcs: HEROES, npcs: PRISONERS, fromShift: 1 }, seeded(s))
+      const b = planDay({ day: 5, pcs: HEROES, npcs: PRISONERS, fromShift: 1, notBefore: { day: 2, shift: 3 } }, seeded(s))
+      expect(b).toEqual(a)
+    }
+  })
 })

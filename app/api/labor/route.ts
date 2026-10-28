@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { readSeated } from "@/lib/seats"
 import { jorlanOnDuty, readStage } from "@/lib/stage-roster"
-import { disobey, planDay, seeded, shiftAt, suspicionReasons, type CrewMember, type PlannedDetail, type PocketResult } from "@/lib/labor"
+import { disobey, firstWorkShift, planDay, seeded, shiftAt, suspicionReasons, type CrewMember, type PlannedDetail, type PocketResult } from "@/lib/labor"
 import { CONFISCATION_STASH_NAME } from "@/lib/confiscation"
 // plain .mjs, shared with the walk page (build_walk.py /*__LABOR__*/)
 import { PRISONERS, advance, arrivalStep, choiceEffect, prisonerSlug, shiftOver, shiftTimeout, tooBigToHide } from "@/lib/labor-walk.mjs"
@@ -55,6 +55,27 @@ async function clockAt(db: Db, at: string | undefined): Promise<{ day: number; m
   return data ? { day: Math.max(1, Number(data.game_day_after) || 1), minutes: Number(data.minutes_of_day_after) || 0 } : null
 }
 
+/**
+ * Where the game clock stood when this run began (the party reached the pen): the time_log entry at or before the run's
+ * started_at; failing that, the first entry after it wound back by the minutes it advanced; failing that, no time has
+ * passed since the run began, so the clock now IS the start. Feeds the first-detail wait (lib/labor firstWorkShift).
+ */
+async function runStartClock(db: Db, runId: string): Promise<{ day: number; minutes: number }> {
+  const { data: run } = await db.from("campaign_runs").select("started_at, created_at").eq("id", runId).maybeSingle()
+  const at = (run?.started_at ?? run?.created_at) as string | undefined
+  const before = await clockAt(db, at)
+  if (before) return before
+  if (at) {
+    const { data: next } = await db.from("time_log").select("game_day_after, minutes_of_day_after, minutes_advanced").gt("created_at", at)
+      .order("created_at", { ascending: true }).limit(1).maybeSingle()
+    if (next) {
+      const t = Math.max(0, (Math.max(1, Number(next.game_day_after) || 1) - 1) * 1440 + (Number(next.minutes_of_day_after) || 0) - (Number(next.minutes_advanced) || 0))
+      return { day: Math.floor(t / 1440) + 1, minutes: t % 1440 }
+    }
+  }
+  return clockNow(db)
+}
+
 type DetailRow = { id: string; status: string; events: unknown; updated_at: string } & Record<string, unknown>
 
 /**
@@ -97,11 +118,12 @@ async function ensureDay(db: Db, runId: string, day: number, minutes: number) {
   await db.from("work_details").update({ status: "aborted", updated_at: new Date().toISOString() })
     .eq("campaign_run_id", runId).lt("day", day).eq("party", true).in("status", ["scheduled", "called"])
 
-  const [seated, stage, npcRes, past] = await Promise.all([
+  const [seated, stage, npcRes, past, start] = await Promise.all([
     readSeated(db),
     readStage(db),
     db.from("npc_encounters").select("name, hp_current").in("name", PRISONERS),
     db.from("work_details").select("area_no, crew").eq("campaign_run_id", runId).eq("party", true),
+    runStartClock(db, runId),
   ])
   const pcs: CrewMember[] = seated.filter((s) => !s.away).map((s) => ({ kind: "pc", id: s.id, name: s.name }))
   if (!pcs.length) return []                                // nobody at the table yet: plan the day when someone sits down
@@ -118,6 +140,7 @@ async function ensureDay(db: Db, runId: string, day: number, minutes: number) {
     platesReady: ["lift-cliffside"],                       // Sam's plate, PR #920
     jorlanOnDuty: jorlanOnDuty(stage),
     fromShift: shiftAt(minutes),
+    notBefore: firstWorkShift(start),                     // Sam, 2026-10-27: not before three shift changes in the pen
   }, seeded(hash(`${runId}:${day}`)))
   if (plan.length) {
     await db.from("work_details").upsert(plan.map((d) => ({ campaign_run_id: runId, ...d })), { onConflict: "campaign_run_id,day,shift,task", ignoreDuplicates: true })
