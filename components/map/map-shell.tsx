@@ -11,13 +11,20 @@ import { clearDmKey, hasDmKey, onDmKeyChange, setDmKey } from "@/lib/dm-key"
 import { parseWalkHandoff, type WalkArrival } from "@/lib/travel/handoff"
 
 export default function MapShell() {
-  const [mode, setMode] = useState<"2d" | "3d">("2d")
+  // The diorama is the travel map (Sam, 2026-10-27, diorama part 2); the painted 2D map stays one click away, and a
+  // browser that picked 2D keeps it.
+  const [mode, setModeState] = useState<"2d" | "3d">("3d")
+  const setMode = (m: "2d" | "3d") => {
+    setModeState(m)
+    try { localStorage.setItem("aop:map-mode", m) } catch {}
+  }
   const [dm, setDm] = useState(false)
   // The party just walked out of Velkynvelve: the walk page sends them here with the way out in the query string
   // (lib/travel/handoff.ts). Read from the window, not useSearchParams, so the page still prerenders.
   const [arrival, setArrival] = useState<WalkArrival | null>(null)
   useEffect(() => {
     setDm(hasDmKey())
+    try { if (localStorage.getItem("aop:map-mode") === "2d") setModeState("2d") } catch {}
     try { setArrival(parseWalkHandoff(window.location.search)) } catch { setArrival(null) }
     return onDmKeyChange(() => setDm(hasDmKey()))
   }, [])
