@@ -116,6 +116,29 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .log p{margin:0;background:var(--panel);border:1px solid var(--rule);border-radius:5px;padding:6px 10px;line-height:1.35;transition:opacity 1s ease}
 .log p.old{opacity:.55}
 .log p em{color:var(--ember);font-style:normal}
+/* THE COMBAT LOG (Sam, 2026-10-28: "The more detailed explanation is a combat log that can be checked if desired. The
+   dialogue on the center bottom in this case is redundant."). While a fight is on, every log line and every narrated
+   action goes here instead of the three fading lines and the centre strip: collapsed to a one-line ticker with a Log
+   button, opened to the whole account grouped by round and turn, auto-scrolling to the newest line and pausing while
+   the reader's pointer is on it (the BG3 and Divinity conventions from the research doc). It stays, collapsed, after
+   the fight until the next one begins. */
+.cbtlog{position:absolute;left:12px;bottom:12px;width:min(470px,calc(100% - 24px));font-size:.86rem;pointer-events:none;z-index:6}
+.cbtlog[hidden]{display:none}
+.cbtlog .ticker{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:5px 6px 5px 10px;pointer-events:auto}
+.cbtlog .ticker .line{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.35}
+.cbtlog .ticker .line em{color:var(--ember);font-style:normal}
+.cbtlog button{all:unset;cursor:pointer;flex:none;font-family:var(--face-mono);font-size:.68rem;letter-spacing:.1em;color:#1a0f0a;background:#f2c55c;border:2px solid #000;border-radius:6px;padding:2px 9px;box-shadow:0 2px 0 #000}
+.cbtlog button:hover{background:#ffe9a6}.cbtlog button:focus-visible{outline:2px solid #fff}
+.cbtlog .panel{display:none;margin-bottom:5px;max-height:min(320px,42vh);overflow:auto;background:linear-gradient(180deg,rgba(26,14,10,.96),rgba(14,8,10,.94));border:1px solid var(--rule);border-radius:6px;padding:6px 10px 8px;pointer-events:auto;scrollbar-width:thin;line-height:1.35}
+.cbtlog.open .panel{display:block}
+.cbtlog .grp{font-family:var(--face-mono);font-size:.64rem;letter-spacing:.14em;text-transform:uppercase;color:#ff9b8f;margin:9px 0 3px}
+.cbtlog .grp:first-child{margin-top:0}
+.cbtlog .ln{padding:2px 0 2px 5px;border-radius:4px}
+.cbtlog .ln:hover{background:rgba(242,197,92,.08)}
+.cbtlog .ln em{color:var(--ember);font-style:normal}
+.cbtlog .ln.narr{font-style:italic;color:#b9adc9}
+.cbtlog .paused{display:none;font-family:var(--face-mono);font-size:.62rem;letter-spacing:.1em;color:var(--ink-dim);margin:4px 0 0}
+.cbtlog.paused .paused{display:block}
 /* what the people around you are doing (not saying): a quiet strip in the black under the painting */
 .acts{position:absolute;left:50%;transform:translateX(-50%);bottom:10px;width:min(620px,calc(100% - 260px));display:grid;gap:2px;pointer-events:none;text-align:center}
 .acts p{margin:0;font-style:italic;font-size:13px;line-height:1.35;color:#b9adc9;text-shadow:0 1px 2px #000;transition:opacity 1.2s ease}
@@ -168,6 +191,8 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .bossbar.down{opacity:0;transform:translateY(-12px)}
 .bossbar .bface{position:relative;flex:none;width:44px;height:54px;border-radius:8px;border:2px solid #000;overflow:hidden;background:radial-gradient(circle at 50% 35%,rgba(255,235,200,.14),rgba(0,0,0,.6));box-shadow:0 0 0 2px #9a6a1c,0 0 14px rgba(255,80,60,.35)}
 .bossbar .bface .card{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0}
+/* the face fills its frame, whole, never cropped through the head (the canvas used to sit at its natural 60×76 inside a smaller frame) */
+.bossbar .bface .card img,.bossbar .bface .card canvas,.bossIntro .bface .card img,.bossIntro .bface .card canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 12%;display:block;image-rendering:pixelated;padding:0;margin:0}
 .bossbar .btext{flex:1;min-width:0}
 .bossbar .bname{display:flex;align-items:baseline;gap:8px;font-family:var(--face-display);font-size:.92rem;font-weight:700;color:#ffe9a6;letter-spacing:.06em;text-shadow:0 2px 0 #000,0 0 10px rgba(255,160,80,.35);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bossbar .bname small{font-family:var(--face-body);font-size:.76rem;font-weight:400;font-style:italic;color:#d9c7a6;letter-spacing:.02em}
@@ -717,6 +742,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="icard" id="icard" role="dialog" aria-label="Item" hidden></div>
     <div class="titlecard" id="titlecard"><div class="no" id="tcNo"></div><h2 id="tcName"></h2></div>
     <div class="log" id="log" aria-live="polite"></div>
+    <div class="cbtlog" id="cbtLog" hidden><div class="panel" id="cbtLogPanel"></div><div class="ticker"><span class="line" id="cbtLogLine" aria-live="polite"></span><button type="button" id="cbtLogBtn" aria-expanded="false" title="The whole fight, round by round">Log</button></div></div>
     <div class="acts" id="acts" aria-live="polite"></div>
     <div id="laborBar" hidden style="position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:30;display:flex;gap:10px;align-items:center;padding:6px 12px;border:1px solid rgba(201,162,74,.55);border-radius:6px;background:rgba(12,8,16,.82);color:#e8dcc0;font:600 13px/1.2 Georgia,serif;letter-spacing:.02em"><span id="laborWhat">Work detail</span><span id="laborShift" hidden title="The shift" style="--p:0;position:relative;width:110px;height:6px;border-radius:3px;background:rgba(201,162,74,.18);overflow:hidden"><i style="position:absolute;left:0;top:0;bottom:0;width:calc(var(--p) * 100%);background:linear-gradient(90deg,#8a6a2a,#e0b45a);transition:width 1s linear"></i></span><button class="btn" id="laborTalk" hidden>Talk</button><button class="btn" id="laborLook" hidden>Look around</button><button class="btn" id="laborPocket" hidden>Steal something</button><button class="btn" id="laborEnd" hidden>End the shift</button></div>
     <div class="frozen-badge" id="frozen" role="status" hidden>Time is stopped</div>
@@ -1728,6 +1754,7 @@ function drawChain(c){
 const bubbles = []; let lastAnyBark = -1e9;
 function narrate(a, text){
   if (!text) return;
+  if (cbtLog.active){ cbtLogLine(esc(text.replace(/^\(|\)$/g, "")), true); if (a){ a.lastBark = now; lastAnyBark = now; } return; }   // in a fight the strip is redundant (Sam, 2026-10-28): the log keeps it
   const el = $("acts"), p = document.createElement("p"); p.textContent = text.replace(/^\(|\)$/g, ""); el.appendChild(p);
   [...el.children].forEach((c, i, all) => c.classList.toggle("old", i < all.length - 1));
   while (el.children.length > 3) el.firstChild.remove();
@@ -1868,12 +1895,36 @@ const tip = document.createElement("div"); tip.className = "tip"; tip.hidden = t
 const nameTag = document.createElement("div"); nameTag.className = "nametag"; nameTag.hidden = true; over.appendChild(nameTag);
 function log(html){
   log.last = String(html).replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim().slice(0, 240) || log.last;
+  if (cbtLog.active){ cbtLogLine(html, false); return; }
   const el = $("log"); const p = document.createElement("p"); p.innerHTML = html; el.appendChild(p);
   [...el.children].forEach((c, i, all) => c.classList.toggle("old", i < all.length - 1));
   while (el.children.length > 3) el.firstChild.remove();
   clearTimeout(log.t); log.t = setTimeout(() => { [...el.children].forEach(c => c.style.opacity = 0); setTimeout(() => el.innerHTML = "", 1000); }, 9000);
 }
 const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"})[c]);
+// THE COMBAT LOG — the fight's whole account, grouped by round and by whose turn it is. `active` is set when a fight opens
+// and cleared once it has settled, so the fight's last lines (the win, the loot) land in it too; the ticker then holds the
+// last line, collapsed, until the next fight starts and the log begins again.
+const cbtLog = {active: false, paused: false, group: ""};
+function cbtLogBegin(){ cbtLog.active = true; cbtLog.group = ""; $("cbtLogPanel").innerHTML = ""; $("cbtLogLine").textContent = ""; $("cbtLog").hidden = false; }
+function cbtLogGroup(){
+  const a = cbt ? activeActor() : null, name = cbt ? `Round ${cbt.round || 1}${a ? " — " + fname(a) : ""}` : "After the fight";
+  if (name === cbtLog.group) return; cbtLog.group = name;
+  const g = document.createElement("div"); g.className = "grp"; g.textContent = name; $("cbtLogPanel").appendChild(g);
+}
+function cbtLogLine(html, narr){
+  const panel = $("cbtLogPanel"); cbtLogGroup();
+  const d = document.createElement("div"); d.className = "ln" + (narr ? " narr" : ""); d.innerHTML = html; panel.appendChild(d);
+  if (!narr) $("cbtLogLine").innerHTML = html;
+  while (panel.children.length > 400) panel.firstChild.remove();
+  if (!cbtLog.paused) panel.scrollTop = panel.scrollHeight;
+}
+{ const box = $("cbtLog"), panel = $("cbtLogPanel"), btn = $("cbtLogBtn");
+  btn.onclick = () => { const open = box.classList.toggle("open"); btn.setAttribute("aria-expanded", String(open)); btn.textContent = open ? "Close" : "Log"; if (open){ cbtLog.paused = false; box.classList.remove("paused"); panel.scrollTop = panel.scrollHeight; } uiSfx("press"); };
+  panel.addEventListener("mouseenter", () => { cbtLog.paused = true; box.classList.add("paused"); });
+  panel.addEventListener("mouseleave", () => { cbtLog.paused = false; box.classList.remove("paused"); panel.scrollTop = panel.scrollHeight; });
+  panel.addEventListener("scroll", () => { const atEnd = panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 8; if (atEnd && !panel.matches(":hover")){ cbtLog.paused = false; box.classList.remove("paused"); } });
+}
 
 // ---------- FX (from the plate viewer) ----------
 const STREAKS = (() => {
@@ -4870,6 +4921,7 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
     id: `${cur}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`};   // the fight's own name: /api/walk-xp pays it once
   // THE BOSS (lib/boss-fight.mjs): the one foe the fight is about, if there is one. The entrance holds the first turn
   // back by BOSS_RULES.introMs and the boss alone speaks during it; the other foes' barks wait for it to end.
+  cbtLogBegin();   // THE COMBAT LOG opens with the fight; the centre strip and the fading lines fall silent until it ends
   cbt.boss = bossOfFight(foes); cbt.bossIntro = !!cbt.boss; $("combat").classList.toggle("has-boss", !!cbt.boss);
   $("combat").hidden = false; $("cbtMenu").hidden = true; stage.classList.add("fight"); renderTurns(); renderParty(); renderBossBar();
   log(`<em>${esc(label || "Steel comes out.")}</em> Initiative: ${order.map(a => `${fname(a)} ${a.c.init}`).join(", ")}.${bystanders.length ? ` Not in it: ${bystanders.map(fname).join(", ")} — they run.` : ""}`);
@@ -7338,6 +7390,7 @@ function endCombat(won){
     trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: leader.x, y: leader.y}]);
     party.forEach(p => { p.home = {x: p.x, y: p.y}; p.actUntil = now + 4000 + Math.random() * 6000; });
     mode = "explore"; setTrack("explore"); log(won ? "The fight is over. The DM core settles the wounds and the loot." : "The fight is over.");
+    cbtLog.active = false;   // the log stays, collapsed, with the fight's last line in its ticker; the next fight starts it over
   }, 700);
 }
 $("endCombat").onclick = () => endCombat(false);
