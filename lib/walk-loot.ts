@@ -98,7 +98,7 @@ export const BOOK_CONTAINERS: Record<string, BookContainer> = {
   // Lift Trouble, OotA Expanded p.45 (community supplement, NOT WotC): "a pouch of vials of sleep poison, a container of
   // fresh fruit, a weapon's belt (containing small throwing darts)". The book gives no counts: the 3 vials and 5 darts
   // are Claude's numbers. "Sleep poison" is read as drow poison, the catalogue row whose effect is unconsciousness.
-  // Fresh fruit has no catalogue row, so it shows as "not in the catalogue yet" and cannot be taken.
+  // Fresh fruit is catalogued as rations (migrations/walk_loot_fresh_fruit.sql, Sam 2026-10-28): one day of food, perishable.
   "cliff-top-sack": {
     node: "5c", title: "Snagged sack",
     source: "OotA Expanded p.45, Lift Trouble: a container of fresh fruit fell off the lift.",
