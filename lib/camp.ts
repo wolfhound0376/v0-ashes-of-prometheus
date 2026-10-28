@@ -1204,7 +1204,7 @@ export function dmScene(action: CampAction, c: { name: string }): { action: Camp
 }
 
 // ============================================================================
-// §4 LEVELLING — gated to camp, one level at a time
+// §4 LEVELLING — anywhere but a fight (Sam, 2026-10-27), one level at a time
 // ============================================================================
 
 /** SRD 5.1, Beyond 1st Level: the XP table, from lib/game-data (one copy; the chat route's inline array should go). */
@@ -1260,12 +1260,16 @@ export interface LevelUpSite {
 }
 
 /**
- * Level-ups happen at camp. Exceptions are location-gated — a school of magic,
- * a temple, a patron — via `travel_nodes.metadata.allows_level_up = true`.
- * Sam, 2026-08-20.
+ * Where a level may be taken. Sam, 2026-10-27, superseding the camp gate of
+ * 2026-08-20: "Let's permit level ups outside of camp, just not in combat.
+ * Otherwise it could be a while before the characters level up." 5e never
+ * required a rest (the DMG only suggests one), so the only wall left is a
+ * fight. Camp and `allows_level_up` nodes are still fine — they are simply no
+ * longer the only places. The node is kept in the signature for the callers
+ * that still pass it.
  */
-export function levelUpAllowedHere(context: GameContext, node: LevelUpSite | null | undefined): boolean {
-  return context === "camp" || node?.metadata?.allows_level_up === true
+export function levelUpAllowedHere(context: GameContext, _node?: LevelUpSite | null | undefined): boolean {
+  return context !== "combat"
 }
 
 /** Full casters (SRD): Bard, Cleric, Druid, Sorcerer, Wizard — the shared slot table. */
@@ -1425,7 +1429,7 @@ export function levelUp(sheet: LevelUpSheet, opts: { method: "roll" | "average";
     note:
       `${sheet.name} reaches level ${next}: +${gained} hp (${opts.method === "roll" ? `d${die}(${face})` : `fixed ${base}`}${con ? ` ${con > 0 ? "+" : ""}${con} CON` : ""}), ` +
       `proficiency +${write.proficiency_bonus}, Hit Dice ${write.sheet_hit_dice}` +
-      (pendingChoices.length ? ` — ${pendingChoices.length} choice${pendingChoices.length === 1 ? "" : "s"} to make at the fire.` : "."),
+      (pendingChoices.length ? ` — ${pendingChoices.length} choice${pendingChoices.length === 1 ? "" : "s"} still yours to make, on the sheet.` : "."),
   }
 }
 

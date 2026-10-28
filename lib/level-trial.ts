@@ -53,6 +53,21 @@ export const CLASS_TRIAL: Record<string, { kind: TrialKind; source: "Sam" | "PRO
 }
 
 /**
+ * Sam, 2026-10-27: "No gated level until we get past level 3 for now." Levels 2
+ * and 3 are XP only; the class trial starts gating at this level. The counts
+ * above are still PROPOSED, and nothing tracks a trial yet, so a gated level is
+ * a wall the route names rather than a bar it guesses at.
+ */
+export const TRIAL_GATE_FROM_LEVEL = 4
+
+/** Must taking `nextLevel` as this class wait on a class trial? */
+export function trialGates(cls: string | null | undefined, nextLevel: number): boolean {
+  if (nextLevel < TRIAL_GATE_FROM_LEVEL) return false
+  const t = CLASS_TRIAL[(cls ?? "").trim().toLowerCase()]
+  return !!t && t.kind !== "none"
+}
+
+/**
  * How much of the trial a level asks for. PROPOSED:
  *   practice — one evening of practice per level being reached (level 2: 2).
  *   decipher — one text deciphered or scroll copied since the last level.

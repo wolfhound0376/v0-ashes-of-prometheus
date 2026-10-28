@@ -15,9 +15,25 @@
 - **The stage is painted per class.** Sam's second pack (`Emberforged_Class_Backgrounds_5.zip`, 2026-10-27: thirteen 4:3 paintings, twelve core classes plus Artificer, "decorative inventory environments, not mechanical") ships as `public/velkynvelve-walk/img/inventory-stage-<class>.jpg` (q82, ~300 KB each, 3.9 MB in all). `stageFor(cls)` picks by the first class word on the sheet ("Rogue 3 / Warlock 2" → rogue), falls back to the ruined castle, and sets `--ef-foot`, the pedestal line each figure stands on (tuned by eye per painting, .82–.84; the pack's suggested .76 is the surface's back edge). Cosmetic only. Slot labels got a dark backing because the cleric's cathedral is bright stone.
 - `lib/walk-sheet.ts` gained `hpNow` and `xp` (both null when the row has none — a preview or an unseated hero shows a quiet bar, no guessed number). Tests added; type gate clean (11 errors before and after, none new).
 
+## PR 2 — the Level Up ceremony (branch `feat/level-up-ceremony`, 2026-10-27)
+
+**Rulings (Sam, 2026-10-27).** "Unless D&D 5e rules say otherwise, let's permit level ups outside of camp, just not in combat. Otherwise it could be a while before the characters level up. No gated level until we get past level 3 for now." 5e never required a rest (the DMG only suggests one), so the ruling stands on the rules. These supersede the camp house rule of 2026-09-26 ("level-ups only at camp or at a node flagged `allows_level_up`"): `levelUpAllowedHere()` now answers "anywhere but a fight"; camp and `allows_level_up` nodes are still fine, just no longer the only places. The chat route's camp action follows the same function.
+
+**What it is.** The gold button on the Underwalk inventory, in its *earned* state, opens the ceremony over the backpack (`#invCeremony`): what the level fixes (hit points, proficiency, Hit Dice, a full caster's slots), the one choice the SRD leaves to the player (roll the Hit Die — the walk's own roll, spun in front of them — or take the fixed value), the choices owed on the sheet after (ASI, subclass, spells — listed from the engine, never picked here), then one Confirm. Mid-fight the button reads "after the fight" and refuses.
+
+**Engine.** `POST /api/walk-level-up` runs `lib/camp.ts levelUp()` + `levelUpPatch()` — the same code the camp action in `/api/chat` uses — so the walk invents nothing: HP gained = die (or the SRD fixed value) + CON, minimum 1 per level (PHB wording, house rule); hp_current rises by the same amount, so a wound carried in stays; proficiency, Hit Dice, slots per the SRD tables; pending choices banked on `sheet_features`. `GET ?character_id=` is the dry run the sheet shows before anything is written.
+
+**Once.** The write is `update … where id = ? and level = fromLevel`: a double click, a stale tab or a retry finds the level already advanced, writes nothing, and says so. Verified headless: three clicks on Confirm sent one request. One level per request; if the XP already earns another, the sheet offers it again as a fresh request.
+
+**Trial gate.** `trialGates(cls, next)` in `lib/level-trial.ts`: levels 2–3 never gate; from level 4 the classes with a trial (sorcerer, wizard, cleric, warlock + the proposed ones) are refused with a note until Sam sets the counts and something tracks them. Rogue, fighter, monk, barbarian (`kind: "none"`) never gate.
+
+**Who may take it.** The DM screen (`x-dm-key`) or the browser holding THIS character's claim — the same two doors as `/api/walk-xp`.
+
+**Owed after PR 2.** The spells-known pick for casters (the engine lists it as a pending choice; a picker needs the sheet's spell storage and the class lists); the class-trial tracking for levels 4+; proficiency-driven numbers on the map (saves, skills, attacks are baked per seat and re-read on the next reload — only matters from level 5).
+
 ## Owed
 
-1. **PR 2 — the level-up ceremony at camp** (`lib/camp.ts levelUp()` exists; the camp page has no Level Up control yet): automatic gains → required choices only (HP roll on the physics dice, min 1 per level; spells known for a sorcerer; the class trial from `lib/level-trial.ts`) → confirm once, idempotent.
+1. ~~PR 2 — the level-up ceremony~~ built on the Underwalk inventory (see PR 2 above); the spell pick and the trial tracking remain.
 2. Backpack weight in the header (the walk's catalogue select carries no `weight`; one column added to `/api/walk-items?catalog=1` does it).
 3. Arcane Reliquary variant, if Sam wants it: tokens + backdrop + inline Inspect/Equip.
 4. The "Rehearsal · own world" pill now sits under the dialog (dialog z 7); if the DM wants it visible while the bag is open, move the pill.

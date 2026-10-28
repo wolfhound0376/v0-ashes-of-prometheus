@@ -62,7 +62,7 @@ import {
   // §17 — training: the teaching path of earned proficiency.
   decideTraining, parseTrainingArgs, settleTraining, type TeacherRow,
   // PR 4 — levelling at camp, and the one XP table.
-  normaliseCampAction, levelUp, levelUpPatch, faceRng, hitDieFace, levelForXp, xpToNext, xpShares,
+  normaliseCampAction, levelUp, levelUpPatch, levelUpAllowedHere, faceRng, hitDieFace, levelForXp, xpToNext, xpShares,
   // §18 — the crafting roll.
   craftMenu, craftSpec, craftModifier, keptD20, craftMaterialsGp, payFromPurse, settleCraftRoll, toolKey, toolForCrafter,
   parseCraftOptions, settleTake10, CRAFT_TAKE10_ACTIONS, craftingLine,
@@ -4358,12 +4358,12 @@ Rules:
               .update({ rest_actions_remaining: d.remaining, updated_at: new Date().toISOString() }).eq("id", row.id)
             if (error) { console.error("[camp] spend:", error.message); continue }
             row.rest_actions_remaining = d.remaining
-          } else {
-            const node = await readPartyNode()
-            if (node.metadata?.allows_level_up !== true) {
-              console.log(`[camp] action: ${row.name} — level up is taken at camp, or at a place that allows it; this is neither.`)
-              continue
-            }
+          } else if (!levelUpAllowedHere("exploration", await readPartyNode())) {
+            // Sam, 2026-10-27: a level may be taken anywhere but a fight — camp and `allows_level_up` nodes are no
+            // longer the only places. The dashboard runs no fights, so from here the gate always opens; the walk
+            // (which does) keeps its own refusal mid-fight. Kept as a call so one function holds the ruling.
+            console.log(`[camp] action: ${row.name} — level up refused here.`)
+            continue
           }
           // ROLLED: this player's roll for this Hit Die is in the reply, and no
           // other dice action has claimed it. Settled from the table's face

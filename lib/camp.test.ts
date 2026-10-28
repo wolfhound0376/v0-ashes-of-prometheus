@@ -571,9 +571,12 @@ describe("level up", () => {
     expect(levelUp(cleric, { method: "average" }).pendingChoices.map((p) => p.kind)).not.toContain("subclass")
     expect(levelUp({ ...cleric, level: 2, xp: 900, sheet_hit_dice: "2d8" }, { method: "average" }).pendingChoices.map((p) => p.kind)).toContain("subclass")
 
+    // Sam, 2026-10-27: anywhere but a fight — camp and allows_level_up nodes are no longer the only places
     expect(levelUpAllowedHere("camp", null)).toBe(true)
-    expect(levelUpAllowedHere("exploration", { metadata: {} })).toBe(false)
+    expect(levelUpAllowedHere("exploration", { metadata: {} })).toBe(true)
     expect(levelUpAllowedHere("exploration", { metadata: { allows_level_up: true } })).toBe(true)
+    expect(levelUpAllowedHere("overworld", null)).toBe(true)
+    expect(levelUpAllowedHere("combat", { metadata: { allows_level_up: true } })).toBe(false)
 
     expect(levelForXp(0)).toBe(1)
     expect(levelForXp(6500)).toBe(5)
