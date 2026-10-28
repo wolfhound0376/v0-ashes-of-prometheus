@@ -47,7 +47,7 @@ describe("what is in the pockets (OotA ch.1)", () => {
   })
 })
 
-import { BODY_KIT, RUIN_ON, rollWear } from "./walk-loot"
+import { BODY_KIT, CREATURE_PARTS, RUIN_ON, ruinOn, rollWear } from "./walk-loot"
 
 describe("the named drow's stat-block gear, and what survives the fight", () => {
   it("gives each named drow the gear their stat block fights with", () => {
@@ -73,9 +73,39 @@ describe("the named drow's stat-block gear, and what survives the fight", () => 
     expect(out.ruined).toHaveLength(1)
   })
 
-  it("ruins about one piece in five", () => {
+  it("ruins about one piece in ten (1-2 on a d20)", () => {
+    expect(RUIN_ON).toBe(2)
     let ruined = 0
     for (let n = 0; n < 4000; n++) ruined += rollWear([{ slug: "mace", qty: 1 }]).ruined.length
-    expect(ruined / 4000).toBeGreaterThan(0.15); expect(ruined / 4000).toBeLessThan(0.25)
+    expect(ruined / 4000).toBeGreaterThan(0.07); expect(ruined / 4000).toBeLessThan(0.13)
+  })
+
+  it("is worse by what made the kill (Sam, 2026-10-27)", () => {
+    expect(ruinOn("common-clothes", "fire")).toBe(10)
+    expect(ruinOn("quaggoth-pelt", "fire")).toBe(10)
+    expect(ruinOn("giant-spider-silk", "fire")).toBe(10)
+    expect(ruinOn("shortsword", "fire")).toBe(RUIN_ON)          // a blade does not burn
+    expect(ruinOn("chain-shirt", "acid")).toBe(10)
+    expect(ruinOn("studded-leather-armor", "acid")).toBe(10)
+    expect(ruinOn("common-clothes", "acid")).toBe(RUIN_ON)
+    expect(ruinOn("potion-of-healing", "cold")).toBe(5)
+    expect(ruinOn("drow-poison", "cold")).toBe(5)
+    expect(ruinOn("shortsword", "cold")).toBe(RUIN_ON)
+    expect(ruinOn("shortsword", "slashing")).toBe(RUIN_ON)
+    expect(ruinOn("shortsword", null)).toBe(RUIN_ON)
+  })
+
+  it("passes the kill type through the roll", () => {
+    const seven = () => 6 / 20 + 0.001                          // every d20 shows 7
+    expect(rollWear([{ slug: "common-clothes", qty: 2 }], seven, "fire").kept).toEqual([])
+    expect(rollWear([{ slug: "common-clothes", qty: 2 }], seven, "piercing").kept).toEqual([{ slug: "common-clothes", qty: 2 }])
+  })
+
+  it("gives the carcasses their catalogue harvest parts, and they ride in BODY_KIT", () => {
+    expect(CREATURE_PARTS.quaggoth.map((e) => e.slug)).toEqual(["quaggoth-pelt"])
+    expect(CREATURE_PARTS["giant-spider"].map((e) => e.slug)).toEqual(["spider-venom-gland", "giant-spider-silk", "spider-meat"])
+    expect(CREATURE_PARTS["gray-ooze"].map((e) => e.slug)).toEqual(["gray-ooze-residue"])
+    expect(CREATURE_PARTS["hook-horror"].map((e) => e.slug)).toEqual(["hook-horror-claw"])
+    for (const k of Object.keys(CREATURE_PARTS)) expect(BODY_KIT[k]).toBe(CREATURE_PARTS[k])
   })
 })

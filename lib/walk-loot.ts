@@ -167,26 +167,54 @@ const ELITE_KIT: LootEntry[] = [
   { slug: "studded-leather-armor", qty: 1 },
   { slug: "shield", qty: 1 },
 ]
+// WHAT A CREATURE'S CARCASS GIVES (Sam, 2026-10-27: "Quaggoths, ooze, spider can have ingredients though!", then
+// "Drop on the kill"). The parts are the catalogue's own harvest rows (each names its `harvest_from`); they drop with the
+// kill and roll for wear like gear. Homebrew: 5e has no butchering rules. The ooze's residue has no acid effect yet
+// (its catalogue row: "Acid effect TBD — do not improvise"), so it can be carried but does nothing until Sam rules.
+export const CREATURE_PARTS: Record<string, LootEntry[]> = {
+  quaggoth: [{ slug: "quaggoth-pelt", qty: 1, note: "a shaggy white pelt" }],
+  "giant-spider": [{ slug: "spider-venom-gland", qty: 1, note: "cut clear of the jaws" }, { slug: "giant-spider-silk", qty: 2, note: "strands from the spinnerets" }, { slug: "spider-meat", qty: 2, note: "from the legs" }],
+  "gray-ooze": [{ slug: "gray-ooze-residue", qty: 1, note: "decanted; what its acid does is not ruled yet" }],
+  "hook-horror": [{ slug: "hook-horror-claw", qty: 2, note: "the two great hooks" }],
+}
 export const BODY_KIT: Record<string, LootEntry[]> = {
   "drow-guard-male": DROW_KIT, "drow-guard-female": DROW_KIT,
   asha: [{ slug: "mace", qty: 1 }, { slug: "chain-shirt", qty: 1 }],
   shoor: ELITE_KIT, jorlan: ELITE_KIT,
   ilvara: [{ slug: "scourge", qty: 1 }, { slug: "scale-mail", qty: 1 }],
+  ...CREATURE_PARTS,
 }
 
-// WHAT SURVIVED THE FIGHT (Sam, 2026-10-27: "unless it's damaged so you can make this part of the roll"). The first time
-// a body is searched, every piece of its kit rolls a d20; on RUIN_ON or lower it was wrecked in the fight (a mail shirt
+// WHAT SURVIVED THE FIGHT (Sam, 2026-10-27: "unless it's damaged so you can make this part of the roll"; then, the same
+// evening, "it only lands if it is usable (not damaged)" and he picked "1-2 on d20, worse by kill type"). The moment a
+// body falls, every piece of its kit rolls a d20; on its ruin number or lower it was wrecked in the fight (a mail shirt
 // hacked open, a crossbow string cut, a blade snapped) and is left out. The roll is made once and kept for the run, so
-// every screen finds the same body. RUIN_ON = 4 (a 20% chance a piece is ruined) is a house number for Sam to tune.
-export const RUIN_ON = 4
+// every screen finds the same body.
+//   base: 1-2 (10%)
+//   a FIRE kill: cloth, hide, silk, rope, paper and food burn on 1-10
+//   an ACID kill: metal and leather are eaten on 1-10
+//   a COLD kill: potions, poisons and vials crack on 1-5
+// The material lists are Claude's reading of the item names (the catalogue carries no material column).
+export const RUIN_ON = 2
 export type Ruined = { slug: string; roll: number }
-export function rollWear(entries: LootEntry[], rng: () => number = Math.random): { kept: LootEntry[]; ruined: Ruined[] } {
+const FIRE_FRAGILE = /clothes|cloak|robe|rope|silk|pelt|hide|scroll|paper|book|map|net\b|tackle|meat|mushroom|fruit|ration|bandage|cards|gland/
+const ACID_FRAGILE = /sword|dagger|mail|shirt|shield|bolt|crossbow|mace|axe|spear|hammer|spike|caltrop|hook|key|scourge|chain|plate|leather|armor|armour/
+const BREAKABLE = /potion|poison|vial|flask|elixir|wine|residue|antitoxin|oil/
+/** The d20 at or under which this piece is ruined, given what killed its owner ("fire", "acid", "cold", or anything else). */
+export function ruinOn(slug: string, kill?: string | null): number {
+  if (kill === "fire" && FIRE_FRAGILE.test(slug)) return 10
+  if (kill === "acid" && ACID_FRAGILE.test(slug)) return 10
+  if (kill === "cold" && BREAKABLE.test(slug)) return 5
+  return RUIN_ON
+}
+export function rollWear(entries: LootEntry[], rng: () => number = Math.random, kill?: string | null): { kept: LootEntry[]; ruined: Ruined[] } {
   const kept: LootEntry[] = [], ruined: Ruined[] = []
   for (const e of entries) {
     let left = 0
+    const on = ruinOn(e.slug, kill)
     for (let i = 0; i < e.qty; i++) {
       const roll = 1 + Math.floor(rng() * 20)
-      if (roll <= RUIN_ON) ruined.push({ slug: e.slug, roll }); else left++
+      if (roll <= on) ruined.push({ slug: e.slug, roll }); else left++
     }
     if (left) kept.push({ ...e, qty: left })
   }

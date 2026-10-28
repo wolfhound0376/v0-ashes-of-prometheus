@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { CONFISCATION_STASH_NAME } from "@/lib/confiscation"
-import { BOOK_CONTAINERS, BODY_KIT, PEN_KEY_SLUG, POCKET_SPRITES, rollPockets, rollWear, isValuable, parseContainer, pocketEntries, type LootEntry, type Ruined } from "@/lib/walk-loot"
+import { BOOK_CONTAINERS, BODY_KIT, CREATURE_PARTS, PEN_KEY_SLUG, POCKET_SPRITES, rollPockets, rollWear, isValuable, parseContainer, pocketEntries, type LootEntry, type Ruined } from "@/lib/walk-loot"
 
 // /api/walk-loot — what is in Velkynvelve's chests, on its dead and in its guards' pockets (see lib/walk-loot.ts).
 //
@@ -62,15 +62,16 @@ async function stashRows(db: Db, sid: string): Promise<StashRow[]> {
 // pickpocket — a weapon, armour or a ring is worn or wielded, not in a pocket (Sam, 2026-10-27: "NOT equipped").
 type Shown = { kind: "book" | "stash"; slug?: string; rowId?: string; name: string; qty: number; note?: string; owner?: string | null; pixel: string | null; icon: string | null; missing?: boolean; slot?: string | null }
 
-async function contents(db: Db, id: string, s: State): Promise<{ title: string; source: string; rows: Shown[]; rolled: boolean; ruinedNow?: Ruined[] } | null> {
+async function contents(db: Db, id: string, s: State, kill?: string | null): Promise<{ title: string; source: string; rows: Shown[]; rolled: boolean; ruinedNow?: Ruined[]; ruined?: Ruined[] } | null> {
   const c = parseContainer(id); if (!c) return null
   // a guard's pockets are rolled the first time anyone looks, then kept for the run (lib/walk-loot.ts POCKET_TABLE)
   const guard = c.kind === "pocket" && POCKET_SPRITES.has(c.slug!)
   let rolled = false
   if (guard && !s.pockets[c.key]){ s.pockets[c.key] = rollPockets(c.which!); rolled = true }
-  // a body's kit rolls for wear the first time it is searched (lib/walk-loot.ts rollWear), then stays as rolled
+  // a body's kit rolls for wear the first time anyone looks — the map looks the moment it falls, saying what killed it
+  // (lib/walk-loot.ts rollWear: 1-2 on a d20, worse by kill type) — then stays as rolled for the run
   let ruinedNow: Ruined[] | undefined
-  if (c.kind === "body" && BODY_KIT[c.slug!] && !s.bodies[c.key]){ s.bodies[c.key] = rollWear(BODY_KIT[c.slug!]); rolled = true; ruinedNow = s.bodies[c.key].ruined }
+  if (c.kind === "body" && BODY_KIT[c.slug!] && !s.bodies[c.key]){ s.bodies[c.key] = rollWear(BODY_KIT[c.slug!], Math.random, kill); rolled = true; ruinedNow = s.bodies[c.key].ruined }
   const book: LootEntry[] = c.kind === "book" ? BOOK_CONTAINERS[id].entries : c.kind === "body" ? (s.bodies[c.key]?.kept ?? BODY_KIT[c.slug!] ?? []) : guard ? s.pockets[c.key] : pocketEntries(c.slug!)
   const cat = await itemsBySlug(db, book.map((e) => e.slug))
   const taken = s.taken[c.key] ?? {}
@@ -94,10 +95,10 @@ async function contents(db: Db, id: string, s: State): Promise<{ title: string; 
     }
   }
   const title = c.kind === "book" ? BOOK_CONTAINERS[id].title : c.kind === "body" ? "The body" : /^drow-guard/.test(c.slug!) ? "The guard's belt and pockets" : "A belt and pockets"
-  const source = c.kind === "book" ? BOOK_CONTAINERS[id].source : c.kind === "body" ? (BODY_KIT[c.slug!] ? (/^drow-guard/.test(c.slug!) ? "A drow warrior's kit, OotA ch.1 area 2." : "What their stat block fights with.") : "Only what the DM handed them.") : (guard ? "Rolled once for this guard: 1d6 draws on the pocket table (Sam's list, 2026-10-27). " : "") + "OotA ch.1, Acquisitions: \"lift a key to the slave pen from a guard\"."
+  const source = c.kind === "book" ? BOOK_CONTAINERS[id].source : c.kind === "body" ? (BODY_KIT[c.slug!] ? (CREATURE_PARTS[c.slug!] ? "What can be cut from the carcass (homebrew harvest)." : /^drow-guard/.test(c.slug!) ? "A drow warrior's kit, OotA ch.1 area 2." : "What their stat block fights with.") : "Only what the DM handed them.") : (guard ? "Rolled once for this guard: 1d6 draws on the pocket table (Sam's list, 2026-10-27). " : "") + "OotA ch.1, Acquisitions: \"lift a key to the slave pen from a guard\"."
   const ruined = c.kind === "body" ? s.bodies[c.key]?.ruined ?? [] : []
   const wrecked = ruined.length ? ` Ruined in the fight: ${ruined.map((r) => `${r.slug.replace(/-/g, " ")} (d20 ${r.roll})`).join(", ")}.` : ""
-  return { title, source: source + wrecked, rows, rolled, ruinedNow }
+  return { title, source: source + wrecked, rows, rolled, ruinedNow, ruined }
 }
 
 // what the fight wrecked goes into the shared log once, so the table hears it with the search
@@ -117,7 +118,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ rows })
   }
   const id = req.nextUrl.searchParams.get("container") ?? ""
-  const out = await contents(db, id, s)
+  const kill = req.nextUrl.searchParams.get("kill")
+  const out = await contents(db, id, s, kill && /^[a-z]{2,16}$/.test(kill) ? kill : null)
   if (!out) return NextResponse.json({ error: "No such container." }, { status: 404 })
   if (out.rolled) await writeState(db, s, `rolled for ${id}`)
   if (out.ruinedNow?.length) await logRuin(db, id, out.ruinedNow)   // the same guard holds the same things all run

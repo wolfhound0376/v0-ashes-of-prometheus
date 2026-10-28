@@ -2663,6 +2663,11 @@ const LOOT_BOOK = {
   "barracks-west": [["drow-poison", 6, "a flask per chest, each treats 20 bolts"], ["common-clothes", 12, "two sets per chest"]],
   "barracks-east": [["drow-poison", 6, "a flask per chest, each treats 20 bolts"], ["common-clothes", 12, "two sets per chest"]],
   "body:drow-guard-male": LOOT_KIT, "body:drow-guard-female": LOOT_KIT,
+  // carcass parts on the kill (Sam, 2026-10-27): same lists as lib/walk-loot.ts CREATURE_PARTS
+  "body:quaggoth": [["quaggoth-pelt", 1, "a shaggy white pelt"]],
+  "body:giant-spider": [["spider-venom-gland", 1, "cut clear of the jaws"], ["giant-spider-silk", 2, "strands from the spinnerets"], ["spider-meat", 2, "from the legs"]],
+  "body:gray-ooze": [["gray-ooze-residue", 1, "decanted; what its acid does is not ruled yet"]],
+  "body:hook-horror": [["hook-horror-claw", 2, "the two great hooks"]],
   "pocket:drow-guard-male": [], "pocket:drow-guard-female": [],   // marks who has pockets; each guard's own are rolled (POCKET_TABLE)
   // Hard Labor plates (2026-10-26): same lists as lib/walk-loot.ts
   "cliff-top-sack": [["fresh-fruit", 1, "a container of it"]], "cliff-crate": [["dart", 5, "on a weapon belt"]], "cliff-low-sack": [["drow-poison", 3, "vials in a pouch"]],
@@ -2694,9 +2699,9 @@ const lootLocal = {};                                   // preview only: contain
 const lootKeyOf = id => id.startsWith("pocket:") ? id : id.startsWith("body:") ? "body:" + id.split(":")[1] + ":" + id.split(":").slice(2).join(":") : id;
 const localLootKey = row => row.slug || ("row:" + row.rowId);   // a book row by slug, a confiscated (stash) row by its id
 const slugName = s => s.replace(/-/g, " ").replace(/^./, c => c.toUpperCase());
-async function fetchLoot(id){
+async function fetchLoot(id, kill){
   if (APP){
-    try { const r = await fetch(`/api/walk-loot?container=${encodeURIComponent(id)}`, {cache: "no-store"}); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
+    try { const r = await fetch(`/api/walk-loot?container=${encodeURIComponent(id)}${kill ? `&kill=${encodeURIComponent(kill)}` : ""}`, {cache: "no-store"}); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
       // what this tab took on its own (a rehearsal, or a hero with no seat: takeLoot) stays taken here
       const mine = lootLocal[lootKeyOf(id)] || {}, penGone = Object.keys(lootLocal).some(k => k.startsWith("pocket:") && lootLocal[k]["slave-pen-key"]);
       j.rows = (j.rows || []).map(r => ({...r, qty: r.qty - (mine[localLootKey(r)] || 0)})).filter(r => r.qty > 0 && !(r.slug === "slave-pen-key" && penGone));
@@ -2791,7 +2796,7 @@ const DROP_STAGGER = 110, DROP_FLIGHT = 620, DROP_REST = 1900;
 // the base of a painted thing (a chest's poly): where its contents spill from
 const polyBase = poly => { const xs = poly.map(p => p[0]), ys = poly.map(p => p[1]); return {x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) - 6}; };
 // Throw the rows up out of `at`. Returns how long the card should wait so the last one has landed (0 = nothing thrown).
-function lootFountain(at, rows){
+function lootFountain(at, rows, pick){
   const list = rows.filter(r => !r.missing && r.kind !== "preview-stash").map(r => ({r, rar: rarityOf(r)}))
     .sort((a, b) => RARITY_RANK[a.rar] - RARITY_RANK[b.rar]).slice(-8);     // eight at most, and the rarest are kept and land last
   if (!list.length) return 0;
@@ -2800,7 +2805,8 @@ function lootFountain(at, rows){
     const ang = -Math.PI / 2 + (n === 1 ? 0 : (i / (n - 1) - .5) * Math.PI * 1.25) + (Math.random() - .5) * .25;   // a fan, mostly sideways
     const dist = sqPx * (.55 + Math.random() * .45);
     drops.push({x0: at.x, y0: at.y, x1: at.x + Math.cos(ang) * dist * 1.25, y1: at.y + Math.abs(Math.sin(ang)) * dist * .35 + 4,
-      h: sqPx * (1.1 + RARITY_RANK[rar] * .12 + Math.random() * .25), sq: sqPx * .42, pixel: r.pixel, rar, t0: now + i * DROP_STAGGER, landed: false, last: i === n - 1});
+      h: sqPx * (1.1 + RARITY_RANK[rar] * .12 + Math.random() * .25) * (pick ? 1.25 : 1), sq: sqPx * (pick ? .55 : .42), pixel: r.pixel, rar, t0: now + i * DROP_STAGGER, landed: false, last: i === n - 1,
+      pickup: pick ? {id: pick.id, plate: pick.plate, row: r, cool: 0} : null});
     setTimeout(() => sfx("bank:ui/item_pickup", .35, .9 + Math.random() * .25), i * DROP_STAGGER);
   });
   return (n - 1) * DROP_STAGGER + DROP_FLIGHT + 180;
@@ -2808,12 +2814,14 @@ function lootFountain(at, rows){
 function drawDrops(){
   for (let i = drops.length - 1; i >= 0; i--){
     const d = drops[i], t = now - d.t0; if (t < 0) continue;
-    if (t > DROP_FLIGHT + DROP_REST){ drops.splice(i, 1); continue; }
+    if (d.pickup){ if (d.pickup.plate !== cur) continue; if (drawPickup(d, i, t)) continue; }
+    else if (t > DROP_FLIGHT + DROP_REST){ drops.splice(i, 1); continue; }
     const k = Math.min(1, t / DROP_FLIGHT), e = 1 - (1 - k) * (1 - k);              // ease out across the ground
     const x = d.x0 + (d.x1 - d.x0) * e, gy = d.y0 + (d.y1 - d.y0) * e, arc = d.h * 4 * k * (1 - k);
     const rest = Math.max(0, t - DROP_FLIGHT), bounce = k >= 1 && rest < 260 ? Math.sin(rest / 260 * Math.PI) * d.sq * .22 : 0;
-    const fade = rest > DROP_REST - 400 ? (DROP_REST - rest) / 400 : 1, col = RARITY_COL[d.rar], rank = RARITY_RANK[d.rar];
+    const fade = d.pickup ? 1 : rest > DROP_REST - 400 ? (DROP_REST - rest) / 400 : 1, col = RARITY_COL[d.rar], rank = RARITY_RANK[d.rar];
     if (k >= 1 && !d.landed){ d.landed = true;
+      if (d.pickup){ for (let s = 0; s < 5; s++){ const a = Math.random() * Math.PI * 2, v = 30 + Math.random() * 60; sparks.push({x, y: gy - d.sq * .3, vx: Math.cos(a) * v, vy: Math.sin(a) * v * .5 - 50, g: 140, col: "#fff6d8", t0: now, life: 300 + Math.random() * 200}); } sfx("bank:ui/item_pickup", .28, 1.35 + Math.random() * .2); }   // every landing twinkles, commons too
       if (rank >= 1){ for (let s = 0; s < 6 + rank * 3; s++){ const a = Math.random() * Math.PI * 2, v = 40 + Math.random() * 90; sparks.push({x, y: gy - d.sq * .3, vx: Math.cos(a) * v, vy: Math.sin(a) * v * .5 - 60, g: 160, col, t0: now, life: 380 + Math.random() * 260}); } }
       if (d.last && rank >= 1) sfx("bank:ui/item_pickup", .75, 1 + rank * .14);  // the best drop rings higher the rarer it is
     }
@@ -2832,12 +2840,65 @@ function drawDrops(){
       }
     }
     ctx.globalAlpha = fade;
-    const img = itemImg(d.pixel), y = gy - arc - bounce - d.sq * .62;
+    const bob = d.pickup && k >= 1 && rest > 260 ? Math.sin((now + d.x1 * 7) / 420) * d.sq * .06 : 0;
+    const img = itemImg(d.pixel), y = gy - arc - bounce - bob - d.sq * .62;
+    if (d.pickup && k >= 1 && (now + d.x1 * 13) % 1800 < 220){ const g = ((now + d.x1 * 13) % 1800) / 220, r = d.sq * .32 * Math.sin(g * Math.PI);   // a glint every couple of seconds
+      ctx.save(); ctx.globalAlpha = .9; ctx.strokeStyle = "#fffbe8"; ctx.lineWidth = Math.max(1.5, d.sq * .04); ctx.beginPath(); ctx.moveTo(x + d.sq * .22 - r, y + d.sq * .2); ctx.lineTo(x + d.sq * .22 + r, y + d.sq * .2); ctx.moveTo(x + d.sq * .22, y + d.sq * .2 - r); ctx.lineTo(x + d.sq * .22, y + d.sq * .2 + r); ctx.stroke(); ctx.restore(); }
     if (rank >= 1){ ctx.shadowColor = col; ctx.shadowBlur = 10 + rank * 4; }
     if (img) ctx.drawImage(img, x - d.sq / 2, y, d.sq, d.sq);
     else { ctx.fillStyle = col; ctx.fillRect(x - 4, y + d.sq * .4, 8, 8); }
     ctx.restore();
   }
+}
+// ----- LOOT ON THE KILL -----
+// Sam, 2026-10-27: "When characters die their loot fountains after a roll to decide what they have (if applicable), it's
+// only lands if it is usable (not damaged), and it should be a pleasant top heroes like feel." He then picked: creature
+// parts drop on the kill like gear; heroes "walk near, it flies in"; and ruin is "1-2 on d20, worse by kill type".
+// The moment a body falls the map asks /api/walk-loot for it, naming what killed it; the server rolls each piece once for
+// the run (lib/walk-loot.ts rollWear) and answers with what survived. That bursts out of the body and lands around it as
+// pickups that bob and glint; a hero this screen controls who comes within MAGNET_FT has it fly to them (the same take
+// the loot card makes: the server first, then the pack). What was ruined puffs a grey line over the body instead.
+// The body stays, and searching it shows whatever is still there (nothing is lost if a pickup is never walked over).
+// A hero or a companion who falls drops nothing: only a body the party can loot.
+const MAGNET_FT = 7, MAGNET_MS = 300;
+function dropLoot(t){
+  if (!t || !t.c || t.kind === "pc" || t.ally || t.lootDropped) return;
+  t.lootDropped = true;
+  t.lootKey = t.lootKey || `${cur}-${Math.round(t.x)}-${Math.round(t.y)}`;   // the same key the body card uses
+  const id = `body:${t.id}:${t.lootKey}`, plate = cur, kill = t.killType || "", at = {x: t.x, y: t.y};
+  setTimeout(async () => {
+    const j = await fetchLoot(id, kill); await ensureCatalog();
+    if (cur !== plate || j.error) return;
+    (j.ruined || []).forEach((r, i) => setTimeout(() => { const it = (catalog || []).find(c => c.slug === r.slug); popText(t, `${it ? it.name : r.slug.replace(/-/g, " ")} ruined`, "#9a948a", .85); }, 250 + i * 260));
+    const rows = (j.rows || []).filter(r => !r.missing && r.kind !== "preview-stash");
+    if (!rows.length) return;
+    fountained.add(lootKeyOf(id));                                              // the body card will not spill it again
+    lootFountain(at, rows, {id, plate});
+  }, 650);
+}
+// one pickup's life after it lands: the magnet and the flight to the hero. Returns true when it has been drawn here.
+function drawPickup(d, i, t){
+  if (t < DROP_FLIGHT) return false;                                            // still flying out: the ordinary draw
+  const gx = d.x1, gy = d.y1;
+  if (!d.fly && now > d.pickup.cool){
+    const r = MAGNET_FT * pxPerFtAt(gy);
+    const h = party.filter(a => a.kind === "pc" && !a.down && canControl(a)).sort((a, b) => Math.hypot(a.x - gx, a.y - gy) - Math.hypot(b.x - gx, b.y - gy))[0];   // a player's hero, never a companion
+    if (h && Math.hypot(h.x - gx, h.y - gy) < r) d.fly = {h, t0: now};
+  }
+  if (!d.fly) return false;
+  const h = d.fly.h, k = Math.min(1, (now - d.fly.t0) / MAGNET_MS), e = k * k;   // eases in, like it is pulled
+  const m = SPR[h.id].json, hy = h.y - m.pivot[1] * actorScale(h) * .5;
+  const x = gx + (h.x - gx) * e, y = gy - d.sq * .62 + (hy - gy) * e - Math.sin(k * Math.PI) * d.sq * .8, s = d.sq * (1 - .35 * k);
+  const img = itemImg(d.pixel), col = RARITY_COL[d.rar];
+  ctx.save(); ctx.shadowColor = RARITY_RANK[d.rar] >= 1 ? col : "#fff6d8"; ctx.shadowBlur = 12;
+  if (img) ctx.drawImage(img, x - s / 2, y, s, s); else { ctx.fillStyle = col; ctx.fillRect(x - 4, y, 8, 8); }
+  ctx.restore();
+  if (k >= 1){
+    drops.splice(i, 1);
+    burst(h, RARITY_RANK[d.rar] >= 1 ? col : "#fff1c8", 8);
+    takeLoot(h, d.pickup.id, d.pickup.row).then(ok => { if (ok && pendingEquip && mode === "explore") offerEquip(); });   // a refusal (already taken from the card) just drops it
+  }
+  return true;
 }
 // the card: what is there, a button for each, and Take all
 // opts.at = where the container stands on the plate; the first open of it plays the loot fountain from there
@@ -6617,7 +6678,7 @@ function damage(t, n, type, crit, from, magical = false){
     log(`<b>${fname(t)}</b> — Wounded Fury: advantage on his attacks and +2d6 on every claw that lands.`); narrate(t, `${fname(t)} roars, bleeding, and keeps coming.`);
   }
   if (t.c.hp > 0){ const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_hurt" : cs && cs.hurt ? cs.hurt : "creature/hurt_beast", .7); }
-  if (t.c.hp <= 0) fall(t); else if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); else if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle"));
+  if (t.c.hp <= 0){ t.killType = type; fall(t); } else if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); else if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle"));
   renderParty();
 }
 function miss(t){ popText(t, "miss", "#c9c4b8", .9); if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle")); }
@@ -6700,6 +6761,7 @@ function fall(t){
     if (t.ko){ popText(t, "knocked out", "#ffd166", 1.2); log(`<b>${fname(t)} is knocked out</b>: unconscious and stable at 0 HP (SRD: a stable creature regains 1 HP after 1d4 hours).`); settleGrudge(t); }
     else { const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS, t), 1400); } }
   else narrate(t, `${fname(t)} falls.`);
+  if (t.kind !== "pc") dropLoot(t);                                  // LOOT ON THE KILL: what survived the fight bursts out
   renderTurns();
   if (cbt && activeActor() === t) passWhenSettled(t);
 }
