@@ -38,6 +38,26 @@ header{display:flex;align-items:center;justify-content:space-between;gap:10px;fl
 .tbtn:hover{color:var(--ink);border-color:var(--ink-dim)}
 .tbtn[aria-pressed="true"],.tbtn[aria-expanded="true"]{color:var(--fungus);border-color:var(--fungus)}
 input[type=range]{width:84px;accent-color:var(--fungus)}
+/* THE TOP BAR WEARS THE SKIN TOO (Sam, 2026-10-28: "Didn't we fix this so that it had nicer buttons and look?"). The
+   action bar (10-27) and the inventory (10-27) got the Top Heroes slabs; this header kept the old mono outline buttons.
+   Same slab as the Parley's top bar: gold rim, dark inner line, gloss, a lip, lift on hover, sink on press. A toggle
+   carries a lamp (green when on) and takes its colour only when on. Only header .tools is touched. */
+header .tools{gap:10px}
+header .tools .tbtn{--c1:#2a2330;--c2:#110e16;position:relative;display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border:3px solid #9a6a1c;border-radius:11px;background:linear-gradient(180deg,var(--c1),var(--c2));box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.14),inset 0 -6px 0 rgba(0,0,0,.24),0 3px 0 #000,0 6px 12px rgba(0,0,0,.5);color:#cbbfdc;font-family:var(--face-display);font-size:.86rem;font-weight:700;letter-spacing:.05em;text-transform:none;text-shadow:0 2px 0 rgba(0,0,0,.6);transition:transform .09s ease,filter .12s ease,box-shadow .09s ease,border-color .12s ease;white-space:nowrap}
+header .tools .tbtn::before{content:"";position:absolute;inset:3px 3px 52% 3px;border-radius:7px 7px 3px 3px;background:linear-gradient(rgba(255,255,255,.15),rgba(255,255,255,.02));pointer-events:none}
+header .tools .tbtn:hover,header .tools .tbtn:focus-visible{transform:translateY(-2px);border-color:#f2c55c;filter:brightness(1.12);color:#fff;box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.22),inset 0 -6px 0 rgba(0,0,0,.24),0 5px 0 #000,0 0 18px rgba(242,197,92,.4),0 9px 16px rgba(0,0,0,.6);outline:none}
+header .tools .tbtn:active{transform:translateY(2px);box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 3px 6px rgba(0,0,0,.6),0 1px 0 #000}
+header .tools .tbtn[aria-pressed]::after{content:"";order:-1;width:11px;height:11px;border-radius:50%;border:2px solid #000;background:#3a3344;box-shadow:inset 0 1px 0 rgba(255,255,255,.15)}
+header .tools .tbtn[aria-pressed="true"]{color:#fff}
+header .tools .tbtn[aria-pressed="true"]::after{background:radial-gradient(circle at 40% 35%,#c8ff9a,#4bd36a 55%,#1f7a35);box-shadow:0 0 8px rgba(120,255,140,.8),inset 0 1px 0 rgba(255,255,255,.5)}
+header .tools #musicBtn[aria-pressed="true"]{--c1:#2e6ab8;--c2:#17406a}
+header .tools #motionBtn[aria-pressed="true"]{--c1:#1f8f86;--c2:#0f5b57}
+header .tools #voicesBtn[aria-pressed="true"]{--c1:#6b4fc1;--c2:#3d2b80}
+header .tools #bagBtn{--c1:#1f8f86;--c2:#0f5b57;color:#fff}
+header .tools #dmBtn{--c1:#5e3a7a;--c2:#2e1a40;color:#fff}
+header .tools .tbtn[aria-expanded="true"]{border-color:#f2c55c;box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.14),inset 0 -6px 0 rgba(0,0,0,.24),0 3px 0 #000,0 0 14px rgba(242,197,92,.45)}
+header .tools #parleyBtn{--c1:#c9962a;--c2:#7a5312;color:#fff;font-size:.92rem;padding:0 16px}
+header .tools input[type=range]{accent-color:#f2c55c}
 
 .stage{position:relative;background:var(--stage);border:1px solid var(--rule);border-radius:6px;overflow:hidden;min-height:0;touch-action:none;user-select:none;-webkit-user-select:none;cursor:crosshair}
 .stage.pointer{cursor:pointer}
@@ -727,6 +747,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="tbtn" id="voicesBtn" aria-pressed="true" title="Hear the story's lines on the map">Voices on</button>
       <button class="tbtn" id="bagBtn" aria-expanded="false" title="What the hero carries and wears (I)">Inventory (I)</button>
       <button class="tbtn" id="dmBtn" aria-expanded="false">DM tools</button>
+      <button class="tbtn" id="parleyBtn" title="Open the Parley dashboard. The map waits here: Return (M) there brings you back to this spot.">❝ Parley</button>
     </div>
   </header>
 
@@ -6580,9 +6601,7 @@ function renderExploreBar(){
   if (o.foe) add(`Attack ${nm(o.foe)}`, "⚔", ART("attack", "attack"), "starts a fight · roll initiative", () => fightWith(o.foe, `${who} attacks!`), "end");
   if (party.filter(canControl).length > 1) add("Next hero", "⇆", null, `Tab · now ${who}`, () => { const mine = party.filter(canControl); const i = mine.indexOf(leader); setLeader(mine[(i + 1) % mine.length]); });
   if (!o.foe) add("Short rest", "⌛", "dodge", restRisk().chance ? `an hour here · ${Math.round(restRisk().chance * 100)}% the locals find you` : "an hour here", () => openRest());
-  add("Tell Malachar", "✎", null, "search, hide, anything else", () => { saveWalk();
-    const q = new URLSearchParams({view: "full", from: "map", return: "/velkynvelve", area: node.name, as: PLAYS_AS[leader.id] || ""});
-    const url = (APP ? "/?" : "https://ashes.playacartagena.com/?") + q.toString(); if (APP) window.top.location.href = url; else window.open(url, "_blank"); });
+  add("Tell Malachar", "✎", null, "search, hide, anything else", () => openParley());
   exploreExtras(m, o, add, who);
 }
 // ---------- THE UNDERWALK'S OPTIONS (Sam, 2026-10-25: "we need more options") ----------
@@ -12785,6 +12804,15 @@ const PLAYS_AS = {kenta: "Kenta of Neverwinter", samson: "Samson Stillwater", sc
 // (no game around it) opens the live game in a new tab. Both go to the full dashboard as map talk, never
 // to the camp's talk window (Sam, 2026-10-11: "still goes to camp UI").
 const PLATES = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/velkynvelve/walk/";
+// THE PARLEY (Sam, 2026-10-28: "I also need a parley dashboard button"). The same trip "Tell Malachar" takes: save the
+// walk, open the dashboard's Parley view with the map as its return, so Return (M) there lands the party where it stood.
+function parleyUrl(){
+  const q = new URLSearchParams({view: "full", from: "map", return: SANDBOX ? "/velkynvelve?sandbox=1" : "/velkynvelve", area: node.name, as: (leader && PLAYS_AS[leader.id]) || ""});
+  if (SANDBOX) q.set("sandbox", "1");
+  return (APP ? "/?" : "https://ashes.playacartagena.com/?") + q.toString();
+}
+function openParley(){ saveWalk(); const url = parleyUrl(); if (APP) window.top.location.href = url; else window.open(url, "_blank"); }
+if ($("parleyBtn")) $("parleyBtn").onclick = () => openParley();
 function talkUrl(npc, said){
   const q = new URLSearchParams({view: "full", from: "map", talk: SPR[npc.id].json.name, return: SANDBOX ? "/velkynvelve?sandbox=1" : "/velkynvelve", scene: SPEC[cur].img ? location.origin + PLATE_DIR + SPEC[cur].img : `${PLATES}img/${node.slug}.jpg`, area: node.name, as: PLAYS_AS[leader?.id] || ""});
   if (said) q.set("line", said.slice(0, 280));
