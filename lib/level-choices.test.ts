@@ -11,7 +11,7 @@ describe("planFor", () => {
     expect(planFor("Sorcerer", 2)).toMatchObject({ newSpells: 2, newCantrips: 0, maxSpellLevel: 1, metamagic: 2, origin: false, sorceryPoints: { from: 0, to: 2 } })
     expect(planFor("Sorcerer", 3)).toMatchObject({ newSpells: 2, maxSpellLevel: 2, metamagic: 0, origin: true })
     expect(planFor("Sorcerer", 4)).toBeNull()
-    expect(planFor("Cleric", 2)).toBeNull()
+    expect(planFor("Bard", 2)).toBeNull()
     expect(planFor("Rogue", 2)).toMatchObject({ caster: false, newSpells: 0, origin: false, gains: [{ name: "Cunning Action" }] })
     expect(planFor("Rogue", 3)).toMatchObject({ origin: true, subclassLabel: "Rogue Subclass", sneakAttack: { from: "1d6", to: "2d6" } })
   })
@@ -89,5 +89,44 @@ describe("the rogue", () => {
   it("refuses spells and Metamagic", () => {
     expect(settleChoices(planFor("Rogue", 2)!, null, [], { spells: ["Shield"] })).toMatchObject({ ok: false })
     expect(settleChoices(planFor("Rogue", 2)!, null, [], { metamagic: ["Subtle Spell"] })).toMatchObject({ ok: false })
+  })
+})
+
+describe("the cleric (SRD 5.2.1)", () => {
+  // Samson's live sheet, 2026-10-28: Cleric 1, 3 cantrips, 4 prepared, Bless always prepared (Sam's house rule).
+  const sam = { cantrips: ["Guidance", "Toll the Dead", "Thaumaturgy"], prepared: ["Sanctuary", "Healing Word", "Guiding Bolt", "Shield of Faith"], always_prepared: ["Bless"], rules_source: "SRD 5.2.1 p.36" }
+  it("plans Channel Divinity and one prepared spell at 2, the domain and a 2nd-level spell at 3", () => {
+    expect(planFor("Cleric", 2)).toMatchObject({ cls: "cleric", newSpells: 1, newCantrips: 0, maxSpellLevel: 1, origin: false, channelDivinity: { from: 0, to: 2 } })
+    expect(planFor("Cleric", 2)!.gains.map((g) => g.name)).toEqual(["Channel Divinity", "Divine Spark", "Turn Undead"])
+    expect(planFor("Cleric", 3)).toMatchObject({ newSpells: 1, maxSpellLevel: 2, origin: true, subclassLabel: "Divine Domain", prepared: { from: 5, to: 6 } })
+  })
+  it("level 2 writes the spell, two Channel Divinity uses, and no sorcery points", () => {
+    const out = settleChoices(planFor("Cleric", 2)!, sam, [marker(2)], { spells: ["Cure Wounds"] })
+    expect(out.ok).toBe(true)
+    if (!out.ok) return
+    expect(out.spellcasting!.prepared).toEqual([...sam.prepared, "Cure Wounds"])
+    expect(out.spellcasting).toMatchObject({ prepared_max: 5, cantrips_max: 3, channel_divinity: { max: 2, used: 0 } })
+    expect(out.spellcasting).not.toHaveProperty("sorcery_points")
+    expect(out.features.map((f) => f.name)).toEqual(["Channel Divinity", "Divine Spark", "Turn Undead"])
+  })
+  it("refuses Bless (always prepared), a 2nd-level spell at 2, and a sorcerer spell", () => {
+    expect(settleChoices(planFor("Cleric", 2)!, sam, [], { spells: ["Bless"] })).toMatchObject({ ok: false })
+    expect(settleChoices(planFor("Cleric", 2)!, sam, [], { spells: ["Aid"] })).toMatchObject({ ok: false })
+    expect(settleChoices(planFor("Cleric", 2)!, sam, [], { spells: ["Shield"] })).toMatchObject({ ok: false })
+  })
+  it("level 3 Life Domain writes its features and always-prepared spells; the PHB domains stay closed", () => {
+    const l2 = { ...sam, prepared: [...sam.prepared, "Command"], channel_divinity: { max: 2, used: 1 } }
+    expect(settleChoices(planFor("Cleric", 3)!, l2, [marker(3)], { spells: ["Spiritual Weapon"], origin: "War Domain" })).toMatchObject({ ok: false })
+    expect(settleChoices(planFor("Cleric", 3)!, l2, [marker(3)], { spells: ["Aid"], origin: "Life Domain" })).toMatchObject({ ok: false })   // Aid comes with the domain
+    const out = settleChoices(planFor("Cleric", 3)!, l2, [marker(3)], { spells: ["Spiritual Weapon"], origin: "Life Domain" })
+    expect(out.ok).toBe(true)
+    if (!out.ok) return
+    expect(out.features.map((f) => f.name)).toEqual(["Life Domain", "Disciple of Life", "Preserve Life"])
+    expect(out.spellcasting).toMatchObject({ always_prepared: ["Bless", "Aid", "Cure Wounds", "Lesser Restoration"], channel_divinity: { max: 2, used: 1 }, prepared_max: 6 })
+  })
+  it("a spell the domain makes always prepared leaves the chosen list", () => {
+    const l2 = { ...sam, prepared: [...sam.prepared, "Cure Wounds"] }
+    const out = settleChoices(planFor("Cleric", 3)!, l2, [marker(3)], { spells: ["Spiritual Weapon"], origin: "Life Domain" })
+    expect(out.ok && out.spellcasting!.prepared).toEqual([...sam.prepared, "Spiritual Weapon"])
   })
 })

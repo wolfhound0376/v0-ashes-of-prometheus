@@ -288,7 +288,7 @@ const Q = new URLSearchParams(location.search), CID = Q.get("cid") || "", HERO =
 const ICON = "/velkynvelve-walk/icons/level/", VOICE = "/sfx/voice/titles/";
 const slug = n => String(n).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 // every painted slab in icons/level/ (Sam's OpenArt sheets, 2026-10-28); a key not here falls back to the glyph disc
-const ART_KEYS = new Set(["aberrant-sorcery", "ability-score-improvement", "absorb-elements", "acid-splash", "aganazzar-s-scorcher", "alter-self", "arcane-trickster", "assassin", "back-arrow", "blade-ward", "blindness-deafness", "blur", "booming-blade", "burning-hands", "careful-spell", "cast", "catapult", "chaos-bolt", "charm-person", "chill-touch", "chromatic-orb", "clockwork-sorcery", "cloud-of-daggers", "color-spray", "comprehend-languages", "control-flames", "create-bonfire", "crown-of-madness", "cunning-action", "dancing-lights", "darkness", "darkvision", "detect-magic", "detect-thoughts", "disguise-self", "distant-spell", "distort-value", "done", "draconic-sorcery", "dragon-s-breath", "dust-devil", "earth-tremor", "earthbind", "elemental-adept", "empowered-spell", "enhance-ability", "enlarge-reduce", "expeditious-retreat", "expertise", "extended-spell", "false-life", "feather-fall", "fey-touched", "fire-bolt", "flame-blade", "flaming-sphere", "fog-cloud", "friends", "frostbite", "grease", "green-flame-blade", "gust", "gust-of-wind", "heightened-spell", "hit-points", "hold-person", "ice-knife", "infestation", "invisibility", "jump", "keen-mind", "knock", "level-medallion", "level-up-burst", "levitate", "light", "lightning-lure", "locked", "mage-armor", "mage-hand", "magic-missile", "magic-weapon", "maximillian-s-earthen-grasp", "mending", "message", "mind-sliver", "mind-spike", "minor-illusion", "mirror-image", "misty-step", "mold-earth", "next-arrow", "phantasmal-force", "plate-back", "plate-next", "plate-up", "poison-spray", "prestidigitation", "proficiency", "pyrotechnics", "quickened-spell", "ray-of-frost", "ray-of-sickness", "resilient", "scorching-ray", "see-invisibility", "seeking-spell", "shadow-blade", "shadow-touched", "shape-water", "shatter", "shield", "shocking-grasp", "silent-image", "sleep", "sneak-attack", "snilloc-s-snowball-storm", "sorcery-points", "soulknife", "spell-attack", "spell-save-dc", "spell-slot", "spell-sniper", "spider-climb", "steady-aim", "subtle-spell", "suggestion", "swap", "sword-burst", "tasha-s-caustic-brew", "tasha-s-mind-whip", "telekinetic", "thief", "thieves-cant", "thunderclap", "thunderwave", "transmuted-spell", "true-strike", "twinned-spell", "war-caster", "warding-wind", "weapon-mastery", "web", "wild-magic-sorcery", "witch-bolt"]);
+const ART_KEYS = new Set(["aberrant-sorcery", "ability-score-improvement", "absorb-elements", "acid-splash", "aganazzar-s-scorcher", "aid", "alter-self", "always-prepared", "arcane-trickster", "assassin", "augury", "back-arrow", "bane", "blade-ward", "bless", "blindness-deafness", "blur", "booming-blade", "burning-hands", "calm-emotions", "careful-spell", "cast", "catapult", "ceremony", "channel-divinity", "channel-divinity-use", "chaos-bolt", "charm-person", "chill-touch", "chromatic-orb", "clockwork-sorcery", "cloud-of-daggers", "color-spray", "command", "comprehend-languages", "continual-flame", "control-flames", "create-bonfire", "create-or-destroy-water", "crown-of-madness", "cunning-action", "cure-wounds", "dancing-lights", "darkness", "darkvision", "detect-evil-and-good", "detect-magic", "detect-poison-and-disease", "detect-thoughts", "disciple-of-life", "disguise-self", "distant-spell", "distort-value", "divine-order-protector", "divine-order-thaumaturge", "divine-spark", "done", "draconic-sorcery", "dragon-s-breath", "dust-devil", "earth-tremor", "earthbind", "elemental-adept", "empowered-spell", "enhance-ability", "enlarge-reduce", "expeditious-retreat", "expertise", "extended-spell", "false-life", "feather-fall", "fey-touched", "find-traps", "fire-bolt", "flame-blade", "flaming-sphere", "fog-cloud", "friends", "frostbite", "gentle-repose", "grease", "green-flame-blade", "guidance", "guiding-bolt", "gust", "gust-of-wind", "healing-word", "heightened-spell", "hit-points", "hold-person", "ice-knife", "infestation", "inflict-wounds", "invisibility", "jump", "keen-mind", "knock", "lesser-restoration", "level-medallion", "level-up-burst", "levitate", "life-domain", "light", "light-domain", "lightning-lure", "locate-object", "locked", "mage-armor", "mage-hand", "magic-missile", "magic-weapon", "maximillian-s-earthen-grasp", "mending", "message", "mind-sliver", "mind-spike", "minor-illusion", "mirror-image", "misty-step", "mold-earth", "next-arrow", "phantasmal-force", "plate-back", "plate-next", "plate-up", "poison-spray", "prayer-of-healing", "preserve-life", "prestidigitation", "proficiency", "protection-from-evil-and-good", "protection-from-poison", "purify-food-and-drink", "pyrotechnics", "quickened-spell", "ray-of-frost", "ray-of-sickness", "resilient", "resistance", "sacred-flame", "sanctuary", "scorching-ray", "sear-undead", "see-invisibility", "seeking-spell", "shadow-blade", "shadow-touched", "shape-water", "shatter", "shield", "shield-of-faith", "shocking-grasp", "silence", "silent-image", "sleep", "sneak-attack", "snilloc-s-snowball-storm", "sorcery-points", "soulknife", "spare-the-dying", "spell-attack", "spell-save-dc", "spell-slot", "spell-sniper", "spider-climb", "spiritual-weapon", "steady-aim", "subtle-spell", "suggestion", "swap", "sword-burst", "tasha-s-caustic-brew", "tasha-s-mind-whip", "telekinetic", "thaumaturgy", "thief", "thieves-cant", "thunderclap", "thunderwave", "toll-the-dead", "transmuted-spell", "trickery-domain", "true-strike", "turn-undead", "twinned-spell", "war-caster", "war-domain", "warding-bond", "warding-wind", "weapon-mastery", "web", "wild-magic-sorcery", "witch-bolt", "word-of-radiance", "zone-of-truth"]);
 const D = {
   spells: [], runes: {},
   art: new Proxy({}, {get: (_, k) => ART_KEYS.has(String(k)) ? ICON + String(k) + ".webp" : undefined}),
@@ -304,12 +304,17 @@ const D = {
 const CLASS_FX = {
   sorcerer: {film: "/velkynvelve-walk/film/sorcerer-awakening.mp4", stage: "/velkynvelve-walk/img/inventory-stage-wizard.jpg", ring: {src: "/vfx/sigilEvocationRing.webp", cols: 4, rows: 2, frames: 8, loop: true}},
   rogue: {film: null, stage: "/velkynvelve-walk/img/inventory-stage-rogue.jpg", ring: {src: "/vfx/sigilIllusionRing.webp", cols: 4, rows: 3, frames: 12, loop: false, peak: 9}},
+  // cleric: Sam's cathedral pedestal (the class stage), the gold evocation ring for radiance, no class film yet
+  cleric: {film: null, stage: "/velkynvelve-walk/img/inventory-stage-cleric.jpg", ring: {src: "/vfx/sigilEvocationRing.webp", cols: 4, rows: 2, frames: 8, loop: true}},
 };
 // a hero's own film wins over the class's. Fifi (walk id "freia"): Sam's "Fifi Manga Dagger Dance" (2026-10-28), 7 s,
 // its baked "LEVEL UP · FIFI · ROGUE ASSASSIN" card covered with the clean sky from before it fades in (3.95 s), because
 // Assassin is closed and the result screen names the subclass she actually takes. say: when "Level up!" is spoken.
 const HERO_FX = {
   freia: {film: "/velkynvelve-walk/film/fifi-dagger-dance.mp4", say: 4100},
+  // Samson: Sam's "Turn Undead" pack (2026-10-28), 9 s, its own LEVEL UP card at 6.2 s. Level 2 only (Sam: "Only at
+  // level 2" — the level that brings Turn Undead); level 3 gets the sigil until his awakening film exists.
+  samson: {filmAt: {2: "/velkynvelve-walk/film/samson-turn-undead.mp4"}, say: 6200},
 };
 const SAY_AT = {sorcerer: 2900};
 let RING = CLASS_FX.sorcerer.ring;
@@ -317,6 +322,7 @@ let SPELLS = [];
 const RAMP = {abjuration:["#0b1e2f","#2479b0"], conjuration:["#132e13","#92ce5a"], divination:["#16152e","#7542b8"], enchantment:["#2d131e","#d0407c"], evocation:["#36120e","#e87618"], illusion:["#0d1d31","#3e96df"], necromancy:["#1b172b","#853cb1"], transmutation:["#311f10","#df9c31"]};
 const ORD = {0:"Cantrip", 1:"1st", 2:"2nd", 3:"3rd"};
 const ICONS_OF = {"Careful Spell":"shield","Distant Spell":"far","Empowered Spell":"burst","Extended Spell":"hour","Heightened Spell":"chev","Quickened Spell":"bolt","Seeking Spell":"target","Subtle Spell":"eyeoff","Transmuted Spell":"cycle","Twinned Spell":"twin","Draconic Sorcery":"scale","Aberrant Sorcery":"mind","Clockwork Sorcery":"gear","Wild Magic Sorcery":"chaos"};
+let LAST_SLOTS = null;   // the slots the level just taken wrote, so a second level in a row starts from them
 let PLAN = null, SHEET = {scores:{}, cantrips:[], prepared:[], xp:0}, RULES = null, META = [], ORIGINS = [], FEATS = [], LV = {}, FLOW = {}, PRE = null, OWED = false, NAME = "", CLS = "", DC = null, ATK = null;
 const cur = {lvl:2, i:0, det:null, detKind:null, done:false, hp:null, busy:false, more:false, result:null};
 const tell = msg => { try { parent.postMessage(Object.assign({source: "aop-level-up", hero: HERO}, msg), location.origin); } catch (e) {} };
@@ -332,23 +338,23 @@ async function boot(){
     if (c.error) throw new Error(c.error);
     OWED = !!c.owed; PRE = p.preview || null; NAME = c.name; CLS = String(c.class || "").split(/[\s/]/)[0].toLowerCase();
     const plan = c.plan; PLAN = plan;
-    if (!plan) throw new Error(`${c.name}'s next choices are made on the dashboard sheet for now (this screen serves the sorcerer and the rogue, levels 2 and 3).`);
+    if (!plan) throw new Error(`${c.name}'s next choices are made on the dashboard sheet for now (this screen serves the sorcerer, the rogue and the cleric, levels 2 and 3).`);
     if (!OWED && !(PRE && PRE.ok && PRE.earned)) throw new Error(PRE && PRE.gateNote ? PRE.gateNote : PRE && !PRE.earned ? `${(PRE.need || 0).toLocaleString()} XP to level ${PRE.next}.` : (PRE && PRE.refusal) || "This level cannot be taken yet.");
     const L = plan.level; cur.lvl = L;
     SPELLS = c.spells; D.spells = SPELLS;
-    SHEET = {scores: c.scores || {}, cantrips: c.casting.cantrips || [], prepared: c.casting.prepared || [], xp: PRE ? PRE.xp : 0};
+    SHEET = {scores: c.scores || {}, cantrips: c.casting.cantrips || [], prepared: c.casting.prepared || [], always: c.casting.always_prepared || [], xp: PRE ? PRE.xp : 0};
     DC = c.casting.save_dc; ATK = c.casting.attack_bonus;
     META = c.metamagic.map(m => ({n: m.name, c: m.cost, i: ICONS_OF[m.name] || "wand", d: m.desc}));
-    ORIGINS = c.origins.map(o => ({n: o.name, i: ICONS_OF[o.name] || "scale", ok: o.open, src: o.source, d: o.desc}));
+    ORIGINS = c.origins.map(o => ({n: o.name, i: ICONS_OF[o.name] || "scale", ok: o.open, src: o.source, d: o.desc, v: o.verify !== false, always: o.alwaysPrepared || [], feats: o.features || []}));
     const slotsNow = {}, slotsNext = {};
     (PRE && PRE.write && PRE.write.slots ? Object.entries(PRE.write.slots) : []).forEach(([k, v]) => { slotsNext[k] = (v && v.max) || 0; });
-    RULES = {prepared: {[L - 1]: plan.prepared.from, [L]: plan.prepared.to}, cantrips: {[L - 1]: plan.cantrips.from, [L]: plan.cantrips.to}, sp: {[L - 1]: plan.sorceryPoints.from, [L]: plan.sorceryPoints.to},
-      slots: {[L - 1]: Q.get("slots") ? JSON.parse(Q.get("slots")) : slotsNow, [L]: Object.keys(slotsNext).length ? slotsNext : (Q.get("slots") ? JSON.parse(Q.get("slots")) : {})}, maxSpell: {[L]: plan.maxSpellLevel}, metamagic: plan.metamagic};
+    RULES = {prepared: {[L - 1]: plan.prepared.from, [L]: plan.prepared.to}, cantrips: {[L - 1]: plan.cantrips.from, [L]: plan.cantrips.to}, sp: {[L - 1]: plan.sorceryPoints.from, [L]: plan.sorceryPoints.to}, cd: {[L - 1]: (plan.channelDivinity || {}).from || 0, [L]: (plan.channelDivinity || {}).to || 0},
+      slots: {[L - 1]: LAST_SLOTS || (Q.get("slots") ? JSON.parse(Q.get("slots")) : slotsNow), [L]: Object.keys(slotsNext).length ? slotsNext : (Q.get("slots") ? JSON.parse(Q.get("slots")) : {})}, maxSpell: {[L]: plan.maxSpellLevel}, metamagic: plan.metamagic};
     LV = {[L]: {sealed: false, meta: [], origin: null, mode: null, asi: {}, feat: null, picks: [], cpicks: [], swapOut: null, swapOutC: null}};
     const pick = plan.metamagic ? "meta" : plan.origin ? "origin" : null;
     FLOW = {[L]: (OWED ? [] : ["gain"]).concat(pick ? [pick] : [], plan.caster ? ["spells"] : [], ["seal"])};
     if (OWED && FLOW[L].length === 1) FLOW[L].unshift("gain");
-    const fx = Object.assign({}, CLASS_FX[CLS] || {}, HERO_FX[HERO] || {}); D.fx.awaken = fx.film || null; D.fx.sayAt = fx.say || SAY_AT[CLS] || 2900; if (fx.ring) RING = fx.ring; D.stage = fx.stage || `/velkynvelve-walk/img/inventory-stage-${CLS}.jpg`;
+    const fx = Object.assign({}, CLASS_FX[CLS] || {}, HERO_FX[HERO] || {}); if (fx.filmAt) fx.film = fx.filmAt[L] || null; D.fx.awaken = fx.film || null; D.fx.sayAt = fx.say || SAY_AT[CLS] || 2900; if (fx.ring) RING = fx.ring; D.stage = fx.stage || `/velkynvelve-walk/img/inventory-stage-${CLS}.jpg`;
     document.getElementById("heroName").textContent = NAME.split(" ")[0];
     document.getElementById("topName").textContent = `Level up · ${NAME}`;
     tell({ready: true});
@@ -430,6 +436,8 @@ const byName = n => SPELLS.find(s => s.name === n);
 const newSpells = L => RULES.prepared[L] - RULES.prepared[L - 1];
 const newCantrips = L => RULES.cantrips[L] - RULES.cantrips[L - 1];
 function preparedBefore(L){ return SHEET.prepared.slice(); }
+// always prepared (Bless by Sam's house rule; the chosen domain's list from level 3): shown as yours, never offered
+function alwaysNow(L){ const o = PLAN && PLAN.origin && LV[L] && LV[L].origin ? ORIGINS.find(x => x.n === LV[L].origin) : null; return (SHEET.always || []).concat(o ? o.always : []); }
 function cantripsBefore(L){ return SHEET.cantrips.slice(); }
 function needSpells(L){ return newSpells(L) + (LV[L].swapOut ? 1 : 0); }
 function needCantrips(L){ return newCantrips(L) + (LV[L].swapOutC ? 1 : 0); }
@@ -460,14 +468,14 @@ function render(){
   document.getElementById("hero").style.backgroundImage = `url(${D.stage})`;
   document.getElementById("heroSub").textContent = `${CLS ? CLS[0].toUpperCase() + CLS.slice(1) : ""} ${s.sealed ? L : L - 1} · ${Number(SHEET.xp || 0).toLocaleString()} XP`;
   document.getElementById("heroBadge").innerHTML = medal(L, s.sealed ? "taken" : "next");
-  const slotsNow = Object.entries(RULES.slots[s.sealed ? L : L - 1] || {}).map(([l, n]) => `${n}× ${ORD[l]}`).join(" · ");
-  document.getElementById("heroStat").innerHTML = !PLAN.caster ? `<span${chipBg()}>${chipArt("sneak-attack")}Sneak <b>${s.sealed ? PLAN.sneakAttack.to : PLAN.sneakAttack.from}</b></span><span${chipBg()}>${chipArt("proficiency")}Prof <b>+2</b></span><span${chipBg()}>${chipArt("hit-points")}Die <b>d${PRE ? PRE.die : 8}</b></span><span${chipBg()}>${chipArt("cunning-action")}Lvl <b>${s.sealed ? L : L - 1}</b></span>` : `<span${chipBg()}>${chipArt("spell-save-dc")}DC <b>${DC ?? "—"}</b></span><span${chipBg()}>${chipArt("spell-attack")}Atk <b>${ATK == null ? "—" : (ATK >= 0 ? "+" : "") + ATK}</b></span><span class="${L >= 2 ? "up" : ""}"${chipBg()}>${chipArt("sorcery-points")}SP <b>${RULES.sp[s.sealed ? L : L - 1]}</b></span><span${chipBg()}>${chipArt("spell-slot")}Slots <b>${slotsNow}</b></span>`;
+  const slotsNow = Object.entries(RULES.slots[s.sealed ? L : L - 1] || {}).map(([l, n]) => `${n}× ${ORD[l]}`).join(" · ").replace(/^(\d+)× 1st · (\d+)× 2nd$/, "$1 · $2");   // two levels of slots: just the counts, so the chip fits
+  document.getElementById("heroStat").innerHTML = !PLAN.caster ? `<span${chipBg()}>${chipArt("sneak-attack")}Sneak <b>${s.sealed ? PLAN.sneakAttack.to : PLAN.sneakAttack.from}</b></span><span${chipBg()}>${chipArt("proficiency")}Prof <b>+2</b></span><span${chipBg()}>${chipArt("hit-points")}Die <b>d${PRE ? PRE.die : 8}</b></span><span${chipBg()}>${chipArt("cunning-action")}Lvl <b>${s.sealed ? L : L - 1}</b></span>` : `<span${chipBg()}>${chipArt("spell-save-dc")}DC <b>${DC ?? "—"}</b></span><span${chipBg()}>${chipArt("spell-attack")}Atk <b>${ATK == null ? "—" : (ATK >= 0 ? "+" : "") + ATK}</b></span>${PLAN.cls === "cleric" ? `<span class="${L === 2 ? "up" : ""}"${chipBg()}>${chipArt("channel-divinity-use")}CD <b>${RULES.cd[s.sealed ? L : L - 1]}</b></span>` : `<span class="${L >= 2 ? "up" : ""}"${chipBg()}>${chipArt("sorcery-points")}SP <b>${RULES.sp[s.sealed ? L : L - 1]}</b></span>`}<span${chipBg()}>${chipArt("spell-slot")}Slots <b>${slotsNow}</b></span>`;
   const dots = FLOW[L].map((st, i) => `<i class="${i === cur.i ? "on" : stepDone(L, st) && i < cur.i ? "done" : ""}"></i>`).join("");
   let ttl, body, foot;
   if (s.sealed && id === "seal" && cur.done){ ttl = `<h1>Level ${L}</h1><div class="dots">${dots}</div>`; body = resultView(L); foot = ""; }
   else if (id === "gain"){ ttl = `<h1>Level ${L}</h1><div class="dots">${dots}</div><div class="sub">${L === 4 ? "A look ahead — level 4 is not earned yet (2,700 XP)." : "What this level brings. Hit points first: roll the die or take the fixed value. The gold tiles are yours to choose."}</div>`; body = gainView(L); foot = footer(L, "Next", stepDone(L, "gain"), cur.hp ? "" : "roll the hit die, or take the fixed value"); }
   else if (id === "meta"){ ttl = `<h1>Choose 2 Metamagic</h1><span class="cnt ${s.meta.length === 2 ? "full" : ""}">${s.meta.length} / 2</span><div class="dots">${dots}</div>`; body = metaView(); foot = footer(L, "Next", stepDone(L, "meta"), "two of ten · the next option comes at level 10"); }
-  else if (id === "origin"){ ttl = `<h1>Choose your ${esc((PLAN.subclassLabel || "origin").replace(/^Sorcerous /, "").toLowerCase())}</h1><span class="cnt ${s.origin ? "full" : ""}">${s.origin ? "1" : "0"} / 1</span><div class="dots">${dots}</div>`; body = originView(); foot = footer(L, "Next", stepDone(L, "origin"), PLAN.cls === "rogue" ? "how you work · chosen once" : "where the magic comes from · chosen once"); }
+  else if (id === "origin"){ ttl = `<h1>Choose your ${esc((PLAN.subclassLabel || "origin").replace(/^Sorcerous |^Divine /, "").toLowerCase())}</h1><span class="cnt ${s.origin ? "full" : ""}">${s.origin ? "1" : "0"} / 1</span><div class="dots">${dots}</div>`; body = originView(); foot = footer(L, "Next", stepDone(L, "origin"), PLAN.cls === "rogue" ? "how you work · chosen once" : PLAN.cls === "cleric" ? "the god's gift · chosen once" : "where the magic comes from · chosen once"); }
   else if (id === "feat"){ ttl = `<h1>Improvement or feat</h1><span class="cnt ${stepDone(L, "feat") ? "full" : ""}">${stepDone(L, "feat") ? "1" : "0"} / 1</span><div class="dots">${dots}</div>`; body = featView(); foot = footer(L, "Next", stepDone(L, "feat"), "two points to place, or one feat"); }
   else if (id === "spells"){ const n = needSpells(L), nc = needCantrips(L); const okS = s.picks.length === n, okC = s.cpicks.length === nc;
     ttl = `<h1>Choose ${n} ${n === 1 ? "spell" : "spells"}${nc ? ` · ${nc} cantrip` : ""}</h1><span class="cnt ${okS && okC ? "full" : ""}">${s.picks.length} / ${n}${nc ? ` · ${s.cpicks.length} / ${nc}` : ""}</span><div class="dots">${dots}</div>`; body = spellsView(L); foot = footer(L, "Next", okS && okC, "tap a spell you already have to swap it out · one swap"); }
@@ -487,9 +495,9 @@ function gainView(L){
     t.push(`<div class="tile ${cur.hp ? "done" : "need"}">${ico("heart", "", "hit-points")}<div class="t">Hit points</div><div class="v">${g ? `+<b>${g}</b>` : `d${PRE.die}`}</div><div class="s">${cur.hp ? (cur.hp.method === "roll" ? `rolled ${cur.hp.face}${con ? ` ${con > 0 ? "+" : ""}${con} con` : ""}` : `fixed ${PRE.average}${con ? ` ${con > 0 ? "+" : ""}${con} con` : ""}`) : "choose below"}</div></div>`); }
   for (const g of PLAN.gains) if (!PLAN.caster || g.icon !== "sorcery-points") t.push(tile("auto", ico("spark", "", g.icon), esc(g.name), "✦", "new this level"));
   if (PLAN.sneakAttack && PLAN.sneakAttack.from !== PLAN.sneakAttack.to) t.push(tile("auto", ico("burst", "", "sneak-attack"), "Sneak Attack", `${PLAN.sneakAttack.from} → <b>${PLAN.sneakAttack.to}</b>`, "more damage"));
-  if (PLAN.origin) t.push(tile(stepDone(L, "origin") ? "done" : "need", ico("scale", "", PLAN.cls === "rogue" ? "thief" : "draconic-sorcery"), PLAN.cls === "rogue" ? "Subclass" : "Origin", "1", "choose one"));
+  if (PLAN.origin) t.push(tile(stepDone(L, "origin") ? "done" : "need", ico("scale", "", PLAN.cls === "rogue" ? "thief" : PLAN.cls === "cleric" ? "life-domain" : "draconic-sorcery"), PLAN.cls === "rogue" ? "Subclass" : PLAN.cls === "cleric" ? "Domain" : "Origin", "1", "choose one"));
   if (PLAN.caster){
-  t.push(tile("auto", ico("spark", "", "sorcery-points"), "Sorcery points", `${RULES.sp[L - 1]} → <b>${RULES.sp[L]}</b>`, L === 2 ? "Font of Magic" : "one more"));
+  if (PLAN.cls === "sorcerer") t.push(tile("auto", ico("spark", "", "sorcery-points"), "Sorcery points", `${RULES.sp[L - 1]} → <b>${RULES.sp[L]}</b>`, L === 2 ? "Font of Magic" : "one more"));
   const sl = RULES.slots[L], pr = RULES.slots[L - 1];
   const lvNew = Object.keys(sl).find(k => !pr[k]);
   t.push(tile("auto", ico("flame", "", "spell-slot"), lvNew ? `${ORD[lvNew]}-level slots` : "Spell slots", lvNew ? `<b>${sl[lvNew]}</b> new` : `${pr[1]} → <b>${sl[1]}</b>`, lvNew ? `${ORD[lvNew]}-level spells open` : "1st level"));
@@ -510,7 +518,7 @@ function detLine(){
     return `<div class="det">${rune(x)}<div class="tx"><b>${esc(x.name)}</b><span>${esc(line)}</span><span>${esc(fx)}</span><span class="src">${ORD[x.level]}${x.level ? "-level" : ""} ${esc(x.school)} · lib/data/spells.json${x.review ? " · <em>needs_review in the dataset</em>" : ""}</span></div></div>`; }
   const m = k === "meta" ? META.find(x => x.n === n) : k === "origin" ? ORIGINS.find(x => x.n === n) : FEATS.find(x => x.n === n);
   if (!m) return "";
-  return `<div class="det">${ico(m.i, "", slug(m.n))}<div class="tx"><b>${esc(m.n)}${m.c ? ` · ${m.c} SP` : ""}</b><span>${esc(m.d)}</span><span class="src">${esc(m.src || (k === "meta" ? "PHB 2024 Metamagic" : "PHB 2024 General feat · +1 to a score"))} · <em>verify</em></span></div></div>`;
+  return `<div class="det">${ico(m.i, "", slug(m.n))}<div class="tx"><b>${esc(m.n)}${m.c ? ` · ${m.c} SP` : ""}</b><span>${esc(m.d)}</span><span class="src">${esc(m.src || (k === "meta" ? "PHB 2024 Metamagic" : "PHB 2024 General feat · +1 to a score"))}${m.v === false ? "" : " · <em>verify</em>"}</span></div></div>`;
 }
 function metaView(){
   const s = LV[2], full = s.meta.length >= 2;
@@ -518,7 +526,7 @@ function metaView(){
 }
 function originView(){
   const s = LV[cur.lvl];
-  return `<div class="tiles wide">${ORIGINS.map(o => { const on = s.origin === o.n; return `<button class="tile ${on ? "on" : ""} ${o.ok ? "" : "lock"}" data-act="origin" data-n="${esc(o.n)}">${ico(o.i, "", slug(o.n))}${on && D.art["done"] ? `<img class="mark" src="${D.art["done"]}" alt="">` : !o.ok && D.art["locked"] ? `<img class="mark" src="${D.art["locked"]}" alt="">` : ""}<div class="t">${esc(o.n.replace(" Sorcery", ""))}</div><div class="s ${on ? "k" : ""}">${on ? "chosen" : o.ok ? "SRD" : "needs the DM"}</div></button>`; }).join("")}</div>${detLine()}`;
+  return `<div class="tiles wide">${ORIGINS.map(o => { const on = s.origin === o.n; return `<button class="tile ${on ? "on" : ""} ${o.ok ? "" : "lock"}" data-act="origin" data-n="${esc(o.n)}">${ico(o.i, "", slug(o.n))}${on && D.art["done"] ? `<img class="mark" src="${D.art["done"]}" alt="">` : !o.ok && D.art["locked"] ? `<img class="mark" src="${D.art["locked"]}" alt="">` : ""}<div class="t">${esc(o.n.replace(/ Sorcery$| Domain$/, ""))}</div><div class="s ${on ? "k" : ""}">${on ? "chosen" : o.ok ? "SRD" : "needs the DM"}</div></button>`; }).join("")}</div>${detLine()}`;
 }
 function featView(){
   const s = LV[4], a = s.asi, used = Object.values(a).reduce((x, y) => x + y, 0);
@@ -542,20 +550,20 @@ function spellsView(L){
   groups.push({t:"1st level", lv:1});
   if (L === 4) groups.push({t:"2nd level", lv:2});
   const after = L === 2 ? `<div class="grp"><h3>2nd level <span class="lk">🔒 opens at level 3</span></h3></div>` : "";
-  const mine = `<div class="grp"><h3>Yours already · tap one to swap it out</h3><div class="tiles">${prepB.map(n => byName(n)).filter(Boolean).map(spellTile).join("")}${L < 4 ? cansB.map(n => byName(n)).filter(Boolean).map(spellTile).join("") : ""}</div></div>`;
-  return `${detLine()}${groups.map(g => `<div class="grp"><h3>${esc(g.t)}</h3><div class="tiles">${SPELLS.filter(x => x.level === g.lv && !(x.level ? prepB : cansB).includes(x.name)).map(spellTile).join("")}</div></div>`).join("")}${after}${mine}`;
+  const mine = `<div class="grp"><h3>Yours already · tap one to swap it out</h3><div class="tiles">${prepB.map(n => byName(n)).filter(Boolean).map(spellTile).join("")}${alwaysNow(L).filter(n => !prepB.includes(n)).map(n => byName(n)).filter(Boolean).map(x => spellTile(x).replace(/<div class="s[^"]*">[^<]*<\/div><\/button>$/, '<div class="s k">always</div></button>').replace('data-act="spell"', 'data-act="noop"')).join("")}${L < 4 ? cansB.map(n => byName(n)).filter(Boolean).map(spellTile).join("") : ""}</div></div>`;
+  return `${detLine()}${groups.map(g => `<div class="grp"><h3>${esc(g.t)}</h3><div class="tiles">${SPELLS.filter(x => x.level === g.lv && !(x.level ? prepB.concat(alwaysNow(L)) : cansB).includes(x.name)).map(spellTile).join("")}</div></div>`).join("")}${after}${mine}`;
 }
 function sealView(L){
   const s = LV[L], picks = [];
   PLAN.gains.forEach(g => picks.push(`<div class="pick">${ico("spark", "", g.icon)}<div class="t">${esc(g.name)}</div><div class="s">new</div></div>`));
   if (PLAN.metamagic) s.meta.forEach(n => { const m = META.find(x => x.n === n); picks.push(`<div class="pick">${ico(m.i, "", slug(n))}<div class="t">${esc(n)}</div><div class="s">${m.c} SP</div></div>`); });
-  if (PLAN.origin && s.origin){ const o = ORIGINS.find(x => x.n === s.origin); picks.push(`<div class="pick">${ico(o.i, "", slug(o.n))}<div class="t">${esc(o.n)}</div><div class="s">${PLAN.cls === "rogue" ? "subclass" : "origin"}</div></div>`); }
+  if (PLAN.origin && s.origin){ const o = ORIGINS.find(x => x.n === s.origin); picks.push(`<div class="pick">${ico(o.i, "", slug(o.n))}<div class="t">${esc(o.n)}</div><div class="s">${PLAN.cls === "rogue" ? "subclass" : PLAN.cls === "cleric" ? "domain" : "origin"}</div></div>`); (o.feats || []).forEach(g => picks.push(`<div class="pick">${ico("spark", "", g.icon)}<div class="t">${esc(g.name)}</div><div class="s">new</div></div>`)); }
   if (L === 4){ if (s.mode === "feat" && s.feat){ const f = FEATS.find(x => x.n === s.feat); picks.push(`<div class="pick">${ico(f.i, "", slug(f.n))}<div class="t">${esc(f.n)}</div><div class="s">feat</div></div>`); } else Object.entries(s.asi).forEach(([k, v]) => v && picks.push(`<div class="pick">${ico("up", "", "ability-score-improvement")}<div class="t">+${v} ${k}</div><div class="s">${SHEET.scores[k]} → ${SHEET.scores[k] + v}</div></div>`)); }
   s.picks.concat(s.cpicks).forEach(n => { const x = byName(n); picks.push(`<div class="pick">${rune(x)}<div class="t">${esc(n)}</div><div class="s">${ORD[x.level]}${x.level ? "-level" : ""}</div></div>`); });
   const swaps = [s.swapOut, s.swapOutC].filter(Boolean);
   const d = (k, a, b) => `<div class="delta"><span class="k">${k}</span><span class="v">${a} → <b>${b}</b></span></div>`;
   if (!PLAN.caster) return `<div class="sum"><div class="deltas">${PLAN.sneakAttack ? d("Sneak Attack", PLAN.sneakAttack.from, PLAN.sneakAttack.to) : ""}${PRE && PRE.write ? d("Hit Dice", `${L - 1}d${PRE.die}`, PRE.write.sheet_hit_dice || `${L}d${PRE.die}`) : ""}</div><div class="picks">${picks.join("")}</div></div>`;
-  return `<div class="sum"><div class="deltas">${d("Sorcery points", RULES.sp[L - 1], RULES.sp[L])}${d("Prepared", RULES.prepared[L - 1], RULES.prepared[L])}${newCantrips(L) ? d("Cantrips", RULES.cantrips[L - 1], RULES.cantrips[L]) : ""}${d("Slots", Object.entries(RULES.slots[L - 1]).map(([l, n]) => `${n}×${ORD[l]}`).join(" "), Object.entries(RULES.slots[L]).map(([l, n]) => `${n}×${ORD[l]}`).join(" "))}</div><div class="picks">${picks.join("")}</div>${swaps.length ? `<div class="det">${ico("cycle", "", "transmuted-spell")}<div class="tx"><b>Swapped out</b><span>${esc(swaps.join(", "))} — set down for the new picks above.</span></div></div>` : ""}</div>`;
+  return `<div class="sum"><div class="deltas">${PLAN.cls === "cleric" ? (RULES.cd[L] !== RULES.cd[L - 1] ? d("Channel Divinity", RULES.cd[L - 1], RULES.cd[L]) : "") : d("Sorcery points", RULES.sp[L - 1], RULES.sp[L])}${d("Prepared", RULES.prepared[L - 1], RULES.prepared[L])}${newCantrips(L) ? d("Cantrips", RULES.cantrips[L - 1], RULES.cantrips[L]) : ""}${d("Slots", Object.entries(RULES.slots[L - 1]).map(([l, n]) => `${n}×${ORD[l]}`).join(" "), Object.entries(RULES.slots[L]).map(([l, n]) => `${n}×${ORD[l]}`).join(" "))}</div><div class="picks">${picks.join("")}</div>${swaps.length ? `<div class="det">${ico("cycle", "", "transmuted-spell")}<div class="tx"><b>Swapped out</b><span>${esc(swaps.join(", "))} — set down for the new picks above.</span></div></div>` : ""}</div>`;
 }
 function resultView(L){
   const r = cur.result || {};
@@ -578,7 +586,7 @@ async function seal(L){
   const b = await post("/api/walk-level-choices", {characterId: CID, level: L, picks: {metamagic: s.meta, origin: s.origin, spells: s.picks, cantrips: s.cpicks, swapOut: s.swapOut, swapOutCantrip: s.swapOutC}});
   cur.busy = false;
   if (!b.ok){ render(); toast((b.j.already ? "Already settled. " : "") + (b.j.note || b.j.error || "The choices could not be written.")); play("deny"); if (b.j.already){ s.sealed = true; cur.done = true; render(); } return; }
-  s.sealed = true; cur.done = true; cur.more = !!(level && level.moreToTake);
+  s.sealed = true; cur.done = true; cur.more = !!(level && level.moreToTake); if (RULES && RULES.slots && Object.keys(RULES.slots[L] || {}).length) LAST_SLOTS = RULES.slots[L];
   cur.result = {note: level && level.note ? level.note.replace(/ — .*$/, ".") : `Level ${L} choices written to the sheet.`};
   tell({choices: b.j, level});
   awaken(() => { render(); celebrate(L); });
