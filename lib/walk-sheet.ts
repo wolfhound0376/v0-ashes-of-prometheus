@@ -36,6 +36,10 @@ export type WalkSheet = {
   level: number
   race: string
   hp: number
+  /** hp_current when the row carries one, else null: the inventory's HP chip shows it over the max. */
+  hpNow: number | null
+  /** The row's XP (what /api/walk-xp pays), null when the row has none: the inventory's level panel reads it. */
+  xp: number | null
   ac: number
   init: number
   speed: number
@@ -48,7 +52,7 @@ export type WalkSheet = {
 
 /** The columns walkSheetFromRow reads. Select exactly these. */
 export const WALK_SHEET_COLUMNS =
-  "id, name, class, level, hp_max, ac, initiative, speed, proficiency_bonus, " +
+  "id, name, class, level, hp_max, hp_current, xp, ac, initiative, speed, proficiency_bonus, " +
   "str_score, str_modifier, dex_modifier, con_modifier, int_modifier, wis_modifier, cha_modifier, " +
   "sheet_species, sheet_skill_proficiencies, sheet_save_proficiencies, sheet_proficiencies, sheet_attacks, sheet_spellcasting"
 
@@ -149,6 +153,8 @@ export function walkSheetFromRow(row: Row): WalkSheet {
     level: Math.max(1, num(row.level, 1)),
     race: str(row.sheet_species).toLowerCase(),
     hp: Math.max(1, num(row.hp_max, 1)),
+    hpNow: Number.isFinite(num(row.hp_current, NaN)) ? Math.max(0, num(row.hp_current)) : null,
+    xp: Number.isFinite(num(row.xp, NaN)) ? Math.max(0, num(row.xp)) : null,
     ac: num(row.ac, 10),
     init: num(row.initiative, m.dex),
     speed: speedOf(row.speed),

@@ -71,4 +71,15 @@ describe("walkSheetFromRow", () => {
     expect(s).toMatchObject({ hp: 1, ac: 10, init: 0, speed: 30, strScore: 10, magic: null })
     expect(s.attacks[0]).toEqual({ name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5 })
   })
+
+  // the Emberforged inventory (2026-10-27) reads current hit points and XP off the row; a row without them says so
+  // with null rather than a guessed number, so the panel can show a quiet bar instead of a wrong one
+  it("carries hp_current and xp when the row has them, null when it does not", () => {
+    expect(walkSheetFromRow({ ...KENTA, hp_current: 5, xp: 150 })).toMatchObject({ hp: 8, hpNow: 5, xp: 150 })
+    expect(walkSheetFromRow({ ...KENTA, hp_current: "3", xp: "900" })).toMatchObject({ hpNow: 3, xp: 900 })
+    expect(walkSheetFromRow({ ...KENTA, hp_current: 0, xp: 0 })).toMatchObject({ hpNow: 0, xp: 0 })
+    expect(walkSheetFromRow({ ...KENTA, hp_current: -2, xp: -5 })).toMatchObject({ hpNow: 0, xp: 0 })
+    expect(walkSheetFromRow(KENTA)).toMatchObject({ hpNow: null, xp: null })
+    expect(walkSheetFromRow({ ...KENTA, hp_current: null, xp: "" })).toMatchObject({ hpNow: null, xp: null })
+  })
 })
