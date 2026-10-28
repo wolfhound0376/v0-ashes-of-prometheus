@@ -1006,6 +1006,11 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
     const fit = () => {
       const h = card.getBoundingClientRect().bottom - center.getBoundingClientRect().top
       if (h > 200) center.style.setProperty("--npc-h", `${Math.round(h)}px`)
+      // The middle row never gets shorter than character card + gap + 200px,
+      // so both the stage window (centre) and the sprite vignette (right) fit
+      // whole above the strip; a short window scrolls the page instead
+      // (Sam, 2026-10-28: the strip must never cover either).
+      if (h > 200) center.closest<HTMLElement>(".parley")?.style.setProperty("--mid-min", `${Math.round(h + 12 + 200 + 6)}px`)
       // Dev tripwire: if the stage box ever gets squeezed under its floor again,
       // say so in the console instead of silently clipping it.
       if (process.env.NODE_ENV !== "production") {
