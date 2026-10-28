@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
-import { METAMAGIC, ORIGINS, choicesOwed, classSpells, planFor, settleChoices, type CastingSheet, type Picks } from "@/lib/level-choices"
+import { METAMAGIC, choicesOwed, classSpells, planFor, settleChoices, subclassesFor, type CastingSheet, type Picks } from "@/lib/level-choices"
 
 // /api/walk-level-choices — the choices a level leaves after the ceremony (lib/level-choices.ts).
 //
@@ -42,8 +42,8 @@ export async function GET(req: NextRequest) {
     name: row.name, class: row.class, level, owed, plan,
     casting: { cantrips: sc.cantrips ?? [], prepared: sc.prepared ?? [], save_dc: sc.save_dc ?? null, attack_bonus: sc.attack_bonus ?? null, rules_source: sc.rules_source ?? null },
     scores: { STR: row.str_score, DEX: row.dex_score, CON: row.con_score, INT: row.int_score, WIS: row.wis_score, CHA: row.cha_score },
-    spells: plan ? classSpells(plan.cls, plan.maxSpellLevel) : [],
-    metamagic: METAMAGIC, origins: ORIGINS,
+    spells: plan && plan.caster ? classSpells(plan.cls, plan.maxSpellLevel) : [],
+    metamagic: plan && plan.metamagic ? METAMAGIC : [], origins: subclassesFor(plan),
   })
 }
 
@@ -80,11 +80,11 @@ export async function POST(req: NextRequest) {
   const out = settleChoices(plan, row.sheet_spellcasting, row.sheet_features, picks)
   if (!out.ok) return NextResponse.json({ ok: false, error: out.error }, { status: 400 })
   const { data: written, error: werr } = await db.from("characters")
-    .update({ sheet_spellcasting: out.spellcasting, sheet_features: out.features, updated_at: new Date().toISOString() })
+    .update({ ...(out.spellcasting ? { sheet_spellcasting: out.spellcasting } : {}), sheet_features: out.features, updated_at: new Date().toISOString() })
     .eq("id", characterId).eq("level", level)
     .contains("sheet_features", [{ name: `Level ${level} — choices to make` }])
     .select("id")
   if (werr) return NextResponse.json({ error: "the choices could not be written — tell the DM" }, { status: 500 })
   if (!written || written.length === 0) return NextResponse.json({ ok: false, already: true, note: "Already settled; nothing more was written." })
-  return NextResponse.json({ ok: true, summary: out.summary, casting: { cantrips: out.spellcasting.cantrips, prepared: out.spellcasting.prepared, sorcery_points: out.spellcasting.sorcery_points } })
+  return NextResponse.json({ ok: true, summary: out.summary, casting: out.spellcasting ? { cantrips: out.spellcasting.cantrips, prepared: out.spellcasting.prepared, sorcery_points: out.spellcasting.sorcery_points } : null })
 }

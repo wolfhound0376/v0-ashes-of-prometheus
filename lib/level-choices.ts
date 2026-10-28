@@ -5,8 +5,8 @@
 // banks a "Level N — choices to make" marker on sheet_features. This module answers what those choices are for a
 // level, checks a player's picks against the rules and the class list, and builds the one patch that settles them.
 //
-// Scope (Sam, 2026-10-28, the approved prototype https://claude.ai/artifact/5jSrEofrWEXGH5pmwvMf5M): the SORCERER,
-// levels 2 and 3. Level 4 and up wait on the class trial (lib/level-trial.ts, TRIAL_GATE_FROM_LEVEL = 4), so the
+// Scope (Sam, 2026-10-28, the approved prototype https://claude.ai/artifact/5jSrEofrWEXGH5pmwvMf5M): the SORCERER and
+// the ROGUE (Sam, 2026-10-28: "go" on the rogues first, SRD subclass open, everyone on the 2024 rules), levels 2 and 3. Level 4 and up wait on the class trial (lib/level-trial.ts, TRIAL_GATE_FROM_LEVEL = 4), so the
 // improvement / feat step is not wired here yet. Other classes keep the ceremony's "on your sheet" note.
 //
 // Rules source: the sheet's own (Kenta: sheet_spellcasting.rules_source "SRD 5.2.1"), i.e. the 2024 Sorcerer table:
@@ -37,9 +37,18 @@ export interface ClassSpell {
 export interface MetaOption { name: string; cost: number; desc: string; verify: true }
 export interface OriginOption { name: string; open: boolean; source: string; desc: string; verify: true }
 
+/** A feature the level brings with nothing to choose (Cunning Action, Font of Magic); it is written with the choices. */
+export interface Gain { name: string; desc: string; source: string; icon: string }
+
 export interface LevelPlan {
-  cls: "sorcerer"
+  cls: "sorcerer" | "rogue"
+  caster: boolean
   level: number
+  /** what the class calls its level-3 pick ("Sorcerous Origin", "Rogue Subclass") */
+  subclassLabel: string
+  gains: Gain[]
+  /** rogue Sneak Attack dice, before → after (null for other classes) */
+  sneakAttack: { from: string; to: string } | null
   newSpells: number
   newCantrips: number
   maxSpellLevel: number
@@ -79,6 +88,26 @@ export const ORIGINS: OriginOption[] = [
   { name: "Wild Magic Sorcery", open: false, source: "PHB 2024 — not in the SRD", desc: "Wild magic surges and Tides of Chaos. Needs the DM's say.", verify: true },
 ]
 
+// SRD 5.2.1 Rogue: 2nd Cunning Action, 3rd Rogue Subclass + Steady Aim, Sneak Attack 1d6 → 2d6 at 3rd. The SRD carries
+// one subclass (Thief); the other three are the Player's Handbook's and stay closed until Sam opens them. Feature text
+// is a short paraphrase from memory, marked verify.
+export const ROGUE_SUBCLASSES: OriginOption[] = [
+  { name: "Thief", open: true, source: "SRD 5.2.1", desc: "Fast Hands and Second-Story Work: Cunning Action also uses objects and Sleight of Hand; climbing costs no extra movement.", verify: true },
+  { name: "Assassin", open: false, source: "PHB 2024 — not in the SRD", desc: "Assassinate: advantage and extra damage against foes who have not acted. Needs the DM's say.", verify: true },
+  { name: "Soulknife", open: false, source: "PHB 2024 — not in the SRD", desc: "Psychic blades from the mind. Needs the DM's say.", verify: true },
+  { name: "Arcane Trickster", open: false, source: "PHB 2024 — not in the SRD", desc: "Wizard spells and an invisible Mage Hand. Needs the DM's say.", verify: true },
+]
+const ROGUE_GAINS: Record<number, Gain[]> = {
+  2: [{ name: "Cunning Action", desc: "A bonus action each turn to Dash, Disengage or Hide.", source: "Rogue 2 · SRD 5.2.1", icon: "cunning-action" }],
+  3: [
+    { name: "Steady Aim", desc: "Bonus action: advantage on your next attack this turn if you have not moved; your speed is 0 until the turn ends.", source: "Rogue 3 · SRD 5.2.1 · verify", icon: "steady-aim" },
+    { name: "Sneak Attack 2d6", desc: "Sneak Attack rises from 1d6 to 2d6.", source: "Rogue 3 · SRD 5.2.1", icon: "sneak-attack" },
+  ],
+}
+
+/** The subclass options a plan offers. */
+export function subclassesFor(plan: LevelPlan | null): OriginOption[] { return !plan ? [] : plan.cls === "rogue" ? ROGUE_SUBCLASSES : ORIGINS }
+
 export const CHOICES_SOURCE = "Level up — chosen"
 const pendingName = (level: number) => `Level ${level} — choices to make`
 
@@ -86,12 +115,25 @@ export function classKey(cls: string | null | undefined): string {
   return String(cls ?? "").trim().split(/[\s/]+/)[0].toLowerCase()
 }
 
-/** What level `level` asks a sorcerer to choose, or null when this module does not serve it. */
+/** What level `level` asks the class to choose, or null when this module does not serve it. */
 export function planFor(cls: string | null | undefined, level: number): LevelPlan | null {
-  if (classKey(cls) !== "sorcerer" || !(level === 2 || level === 3)) return null
+  const k = classKey(cls)
+  if (!(level === 2 || level === 3)) return null
+  if (k === "rogue") {
+    const none = { from: 0, to: 0 }
+    return { cls: "rogue", caster: false, level, subclassLabel: "Rogue Subclass", gains: ROGUE_GAINS[level] ?? [],
+      sneakAttack: { from: "1d6", to: level === 3 ? "2d6" : "1d6" },
+      newSpells: 0, newCantrips: 0, maxSpellLevel: 0, swaps: 0, metamagic: 0, origin: level === 3,
+      prepared: none, cantrips: none, sorceryPoints: none }
+  }
+  if (k !== "sorcerer") return null
   const t = SORCERER_2024
   return {
     cls: "sorcerer",
+    caster: true,
+    subclassLabel: "Sorcerous Origin",
+    gains: level === 2 ? [{ name: "Font of Magic", desc: `${t.sorceryPoints[2]} sorcery points, regained on a long rest.`, source: "Sorcerer 2", icon: "sorcery-points" }] : [],
+    sneakAttack: null,
     level,
     newSpells: t.prepared[level] - t.prepared[level - 1],
     newCantrips: t.cantrips[level] - t.cantrips[level - 1],
@@ -140,7 +182,7 @@ export interface CastingSheet {
 }
 
 export type ChoiceResult =
-  | { ok: true; spellcasting: CastingSheet; features: SheetFeature[]; summary: string[] }
+  | { ok: true; spellcasting: CastingSheet | null; features: SheetFeature[]; summary: string[] }
   | { ok: false; error: string }
 
 /** Check the picks against the plan and the class list; build the new sheet_spellcasting and sheet_features. */
@@ -171,14 +213,14 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
   if (meta.length !== plan.metamagic) return { ok: false, error: plan.metamagic ? `Choose ${plan.metamagic} Metamagic options.` : "No Metamagic at this level." }
   const metaOpts = meta.map((n) => METAMAGIC.find((m) => m.name === n))
   if (metaOpts.some((m) => !m)) return { ok: false, error: "Unknown Metamagic option." }
-  const origin = plan.origin ? ORIGINS.find((o) => o.name === picks.origin) : null
-  if (plan.origin && !origin) return { ok: false, error: "Choose a Sorcerous Origin." }
+  const origin = plan.origin ? subclassesFor(plan).find((o) => o.name === picks.origin) : null
+  if (plan.origin && !origin) return { ok: false, error: `Choose a ${plan.subclassLabel}.` }
   if (origin && !origin.open) return { ok: false, error: `${origin.name} is closed until the DM opens it.` }
-  if (!plan.origin && picks.origin) return { ok: false, error: "The origin is chosen at level 3." }
+  if (!plan.origin && picks.origin) return { ok: false, error: `The ${plan.subclassLabel.toLowerCase()} is chosen at level 3.` }
 
   const nextPrepared = prepared.filter((n) => n !== swapOut).concat(spells)
   const nextCantrips = cantrips.filter((n) => n !== swapOutC).concat(newC)
-  const spellcasting: CastingSheet = {
+  const spellcasting: CastingSheet | null = !plan.caster ? null : {
     ...(casting ?? {}),
     prepared: nextPrepared,
     cantrips: nextCantrips,
@@ -186,15 +228,16 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
     cantrips_max: plan.cantrips.to,
     sorcery_points: { max: plan.sorceryPoints.to, used: 0 },
   }
-  const src = `Sorcerer ${plan.level}`
+  const src = `${plan.cls === "rogue" ? "Rogue" : "Sorcerer"} ${plan.level}`
   const kept = (Array.isArray(features) ? features : []).filter(
     (f): f is SheetFeature => !!f && typeof f === "object" && typeof (f as SheetFeature).name === "string" && !((f as SheetFeature).source === PENDING_LEVEL_SOURCE && (f as SheetFeature).name === pendingName(plan.level)),
   )
   const added: SheetFeature[] = []
-  if (plan.level === 2) added.push({ name: "Font of Magic", desc: `${plan.sorceryPoints.to} sorcery points, regained on a long rest.`, source: src })
+  for (const g of plan.gains) added.push({ name: g.name, desc: g.desc, source: g.source })
   for (const m of metaOpts) added.push({ name: `Metamagic: ${m!.name}`, desc: `${m!.desc} (${m!.cost} SP)`, source: `${src} · verify against SRD 5.2.1` })
   if (origin) added.push({ name: origin.name, desc: origin.desc, source: `${src} · ${origin.source} · the DM applies its features` })
   const summary = [
+    ...plan.gains.map((g) => g.name),
     ...metaOpts.map((m) => m!.name),
     ...(origin ? [origin.name] : []),
     ...spells, ...newC,
