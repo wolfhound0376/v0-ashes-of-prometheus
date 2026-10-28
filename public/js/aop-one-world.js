@@ -164,6 +164,7 @@ var AopOneWorld = (() => {
       if (!t || seq === null || from === null || to === null || zone === null) return { error: "bad travel" };
       out.travel = { seq, from, to, zone, by, at: Date.now() };
       if (t.cut === true) out.travel.cut = true;
+      if (t.splinter === true) out.travel.splinter = true;
     }
     if (r.heroes !== void 0) {
       if (!r.heroes || typeof r.heroes !== "object" || Array.isArray(r.heroes)) return { error: "heroes must be an object" };

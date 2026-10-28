@@ -66,8 +66,10 @@ export type PlateId = string
 /**
  * `cut`: the crossing is played as a walk out through `zone` and then ONE fade-cut to `to` (a work detail leaving the
  * pen, Sam 2026-10-26), not the walk-and-slide onto a neighbouring plate. Screens that follow play it the same way.
+ * `splinter` (SPLIT PARTY, Sam 2026-10-27): a group split off from the party crossed together. Only the screens on
+ * the plate it left follow it, and it does not move the party's plate (the DM's screen stays with the party).
  */
-export type Travel = { seq: number; from: PlateId; to: PlateId; zone: number; by: string; at: number; cut?: boolean }
+export type Travel = { seq: number; from: PlateId; to: PlateId; zone: number; by: string; at: number; cut?: boolean; splinter?: boolean }
 
 export type Seat = {
   at: number
@@ -283,6 +285,7 @@ export function cleanPatch(raw: unknown, by: string): { patch: Patch } | { error
     if (!t || seq === null || from === null || to === null || zone === null) return { error: "bad travel" }
     out.travel = { seq, from, to, zone, by, at: Date.now() }
     if (t.cut === true) out.travel.cut = true
+    if (t.splinter === true) out.travel.splinter = true
   }
   if (r.heroes !== undefined) {
     if (!r.heroes || typeof r.heroes !== "object" || Array.isArray(r.heroes)) return { error: "heroes must be an object" }
