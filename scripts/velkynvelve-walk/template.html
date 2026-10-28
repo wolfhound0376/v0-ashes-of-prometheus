@@ -3953,19 +3953,18 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   else if (node.hazard){ const hp = node.hazard.poly; const hc = hp.reduce((s, p) => ({x: s.x + p[0] / hp.length, y: s.y + p[1] / hp.length}), {x: 0, y: 0}); dir = norm({x: hc.x - pc.x, y: hc.y - pc.y}); }
   if (!dir || !isFinite(dir.x) || (Math.abs(dir.x) < .01 && Math.abs(dir.y) < .01)) dir = norm({x: centroid.x - pc.x || 1, y: centroid.y - pc.y});
   const perp = {x: -dir.y, y: dir.x}, L = {x: leader.x, y: leader.y}, sc = node.scale;
-  // the party closes ranks around the leader, a step back from the threat
-  const placed = [L];
-  followOrder().forEach((f, i) => {
-    const k = [-1, 1, 0][i % 3], back = i < 2 ? 75 : 150;
-    const slot = nearestWalkable(L.x - dir.x * back * sc + perp.x * k * 85 * sc, L.y - dir.y * back * sc + perp.y * k * 85 * sc, placed); placed.push(slot);
-    f.path = findPath(f, slot);
-  });
+  // MOVEMENT IS BY INITIATIVE (Sam, 2026-10-27: "movement should be based on initiative not walk until you've closed
+  // that gap"). The party used to close ranks around the leader and every drow already on the plate walked to a fighting
+  // position before anyone rolled, free movement outside the turn order. Now everyone already here stays exactly where
+  // the fight found them and moves only on their own turn. Only a foe arriving from off the plate still walks in.
+  const placed = [L, ...party.filter(p => p !== L).map(p => ({x: p.x, y: p.y}))];
   foes = foeIds.map((id, i) => {
     const k = i - (foeIds.length - 1) / 2;
     let f, start;
-    if (typeof id === "object"){                 // someone already on the plate turns hostile
-      f = id; f.kind = "foe"; f.alpha = 1; f.hostile = false; f.path = []; stopActivity(f); start = {x: f.x, y: f.y};
-      npcs = npcs.filter(n => n !== f);
+    if (typeof id === "object"){                 // someone already on the plate turns hostile, where they stand
+      f = id; f.kind = "foe"; f.alpha = 1; f.hostile = false; f.path = []; stopActivity(f);
+      npcs = npcs.filter(n => n !== f); placed.push({x: f.x, y: f.y});
+      return f;
     } else {
       start = nearestWalkable(L.x + dir.x * 560 * sc + perp.x * k * 200 * sc, L.y + dir.y * 560 * sc + perp.y * k * 200 * sc, placed);
       f = mkActor(id, start.x, start.y, "foe", {alpha: 0});
