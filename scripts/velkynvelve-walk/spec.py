@@ -355,6 +355,13 @@ for _k, _rle in _M['masks'].items():
     assert all(r >= 0 for r in _runs) and sum(_runs) == _M['w'] * _M['h'], ('mask does not cover exactly one grid', _k, sum(_runs))
     assert sum(_runs[1::2]) > 0, ('mask paints no floor at all', _k)
     _PLATES[_k]['mask'] = _rle
+# DOOR CELLS (Sam, 2026-10-28): painted floor that is only floor while that plate's gate stands open (buildGrid).
+for _k, _rle in _M.get('doors', {}).items():
+    if _k.startswith('_'): continue
+    assert _k in _M['masks'], ('masks.json doors names a plate with no painted mask', _k)
+    _runs = [int(r) for r in _rle.split(',')]
+    assert sum(_runs) == _M['w'] * _M['h'], ('door cells do not cover exactly one grid', _k, sum(_runs))
+    _PLATES[_k]['doorMask'] = _rle
 print(len(_M['masks']), 'plates walk Sam\'s painted floor; traced shapes still used by:', ', '.join(k for k in _PLATES if k not in _M['masks']))
 
 # ── height on a plate ─────────────────────────────────────────────────────────────────────────────────────────────────
