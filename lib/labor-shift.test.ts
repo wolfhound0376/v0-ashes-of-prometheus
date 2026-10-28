@@ -95,3 +95,29 @@ describe("the shift timeout — one game hour (Sam)", () => {
     it("is 15 minutes", () => expect(W.SHIFT_REAL_MS).toBe(15 * 60 * 1000))
   })
 })
+
+describe("the shift plays itself (Sam, 2026-10-27)", () => {
+  const at = (iso: string) => ({ status: "working", events: [{ kind: "step", to: "working", at: iso }] })
+  const t0 = Date.parse("2026-10-27T22:00:00Z")
+  it("runs 0..1 over the watched shift from the arrival step", () => {
+    const d = at("2026-10-27T22:00:00Z")
+    expect(W.shiftProgress(d, t0)).toBe(0)
+    expect(W.shiftProgress(d, t0 + W.SHIFT_WATCH_MS / 2)).toBeCloseTo(0.5)
+    expect(W.shiftProgress(d, t0 + W.SHIFT_WATCH_MS * 3)).toBe(1)
+  })
+  it("is 0 when not working or never arrived", () => {
+    expect(W.shiftProgress({ status: "returning", events: [] }, t0)).toBe(0)
+    expect(W.shiftProgress({ status: "working", events: [] }, t0)).toBe(0)
+  })
+  it("orders the whim only on the pointless tasks, the verdict last", () => {
+    expect(W.shiftBeats("supplies").map((b) => b.line)).toEqual(["progress", "whim", "done"])
+    expect(W.shiftBeats("water").map((b) => b.line)).toEqual(["progress", "done"])
+    for (const t of ["rocks", "rope", "supplies", "quaggoth-hair"] as const) expect(W.WORK_LINES.whim[t]).toBeTruthy()
+  })
+  it("fires each beat once across successive ticks", () => {
+    const seen: string[] = []
+    let p = 0
+    for (const q of [0.1, 0.31, 0.31, 0.6, 0.93, 1]) { seen.push(...W.beatsBetween("rope", p, q).map((b) => b.line)); p = q }
+    expect(seen).toEqual(["progress", "whim", "done"])
+  })
+})

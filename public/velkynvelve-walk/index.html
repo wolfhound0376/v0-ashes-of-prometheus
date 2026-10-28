@@ -573,7 +573,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="titlecard" id="titlecard"><div class="no" id="tcNo"></div><h2 id="tcName"></h2></div>
     <div class="log" id="log" aria-live="polite"></div>
     <div class="acts" id="acts" aria-live="polite"></div>
-    <div id="laborBar" hidden style="position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:30;display:flex;gap:10px;align-items:center;padding:6px 12px;border:1px solid rgba(201,162,74,.55);border-radius:6px;background:rgba(12,8,16,.82);color:#e8dcc0;font:600 13px/1.2 Georgia,serif;letter-spacing:.02em"><span id="laborWhat">Work detail</span><button class="btn" id="laborWork" hidden>Work</button><button class="btn" id="laborLook" hidden>Look around</button><button class="btn" id="laborPocket" hidden>Pocket something</button><button class="btn" id="laborEnd" hidden>Finish the shift</button></div>
+    <div id="laborBar" hidden style="position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:30;display:flex;gap:10px;align-items:center;padding:6px 12px;border:1px solid rgba(201,162,74,.55);border-radius:6px;background:rgba(12,8,16,.82);color:#e8dcc0;font:600 13px/1.2 Georgia,serif;letter-spacing:.02em"><span id="laborWhat">Work detail</span><span id="laborShift" hidden title="The shift" style="--p:0;position:relative;width:110px;height:6px;border-radius:3px;background:rgba(201,162,74,.18);overflow:hidden"><i style="position:absolute;left:0;top:0;bottom:0;width:calc(var(--p) * 100%);background:linear-gradient(90deg,#8a6a2a,#e0b45a);transition:width 1s linear"></i></span><button class="btn" id="laborTalk" hidden>Talk</button><button class="btn" id="laborLook" hidden>Look around</button><button class="btn" id="laborPocket" hidden>Steal something</button><button class="btn" id="laborEnd" hidden>End the shift</button></div>
     <div class="frozen-badge" id="frozen" role="status" hidden>Time is stopped</div>
     <div class="zoom">
       <button id="zOut" aria-label="Zoom out">−</button>
@@ -2283,8 +2283,12 @@ async function travel(to, z, fromWorld, cut, solo){
   const dir = drop ? {x: 0, y: 1} : Math.abs(exitDir.x) >= Math.abs(exitDir.y) ? {x: Math.sign(exitDir.x) || 1, y: 0} : {x: 0, y: Math.sign(exitDir.y) || 1};
   await wait(drop ? 1900 : climb ? 1600 + order.length * 650 : cr ? 2600 : 1500);
   if (cut){
+    // the cut goes through black (Sam, 2026-10-27: the shift ends — "exits the plate, darkens, and shows them being
+    // escorted back into the pen"): out of the door, a held beat of dark, then the next place fades up
     const via = arrivalFrom(SPEC, cur, to);
+    $("fade").classList.add("on"); await wait(cut.dark || 900);
     await enterNode(to, {from: owPlate(via), offs, fromScale: node.scale, solo: splinter, note: cut.note || `The escort marches the detail through the outpost to <em>${esc(SPEC[to].name)}</em>.`});
+    $("fade").classList.remove("on");
     return;
   }
   // FADE, DON'T SLIDE (Sam, 2026-10-27: "the characters just leave to the right of the screen then appear to climb up or
@@ -6822,8 +6826,12 @@ function renderCastMenu(caster, cid, list, o, healing){
   if (!list.length) add("No spells on the sheet", "·", null, "", null);
   for (const sp of list){
     const lvl = sp.level === 0 ? "cantrip" : `level ${sp.level} · ${sp.left} slot${sp.left === 1 ? "" : "s"} left`;
+    if (inChains() && !voiceOnly(sp.components)){ add(sp.name, "✦", null, `${lvl} · ${sp.components ? "needs your hands, and they are chained" : "needs more than a voice"}`, null); continue; }
     if (sp.left === 0){ add(sp.name, "✦", null, `${lvl} · a long rest brings them back`, null); continue; }
-    if (sp.kind === "fight"){
+    if (sp.kind === "fight" && inChains()){         // on a detail a spell at a guard is not a fight: it is defiance, and they see it
+      if (o.foe) add(`${sp.name} at ${SHORT[o.foe.id] || SPR[o.foe.id].json.name}`, "✦", null, `${lvl} · they will see it`, () => doCast(caster, cid, sp, o.foe, null), "end");
+      else add(sp.name, "✦", null, `${lvl} · cast at an enemy, none in sight`, null);
+    } else if (sp.kind === "fight"){
       if (o.foe) add(`${sp.name} at ${SHORT[o.foe.id] || SPR[o.foe.id].json.name}`, "✦", null, `${lvl} · starts the fight`, () => { castOpen = null; fightWith(o.foe, `${who} opens with ${sp.name}!`); }, "end");
       else add(sp.name, "✦", null, `${lvl} · cast at an enemy, none in sight`, null);
     } else if (sp.kind === "heal") add(sp.name, "✚", null, `${lvl} · choose who`, () => renderCastMenu(caster, cid, list, o, sp));
@@ -6850,6 +6858,23 @@ async function doCast(caster, cid, sp, target, targetId){
   if (j.healed){ log(`<b>${esc(fname(caster))}</b> casts <b>${esc(sp.name)}</b>: ${esc(j.healed.name)} regains ${j.healed.amount} HP (${j.healed.hp}/${j.healed.hpMax}).${slot}`); toast(`${j.healed.name} regains ${j.healed.amount} HP.`); }
   else log(`<b>${esc(fname(caster))}</b> casts <b>${esc(sp.name)}</b>.${slot} <i>Malachar will say what comes of it.</i>`);
   renderExploreBar();
+  if (inChains()) laborCastSeen(caster, target);
+}
+// MAGIC IN CHAINS (Sam, 2026-10-27). Out of the pen there is no ward (OotA p.15: the wards are the pen's), but the
+// prisoners are manacled and stripped of components and focuses (p.11): only a spell that needs nothing but the voice
+// can be cast (lib/walk-cast.ts castableInChains — Vicious Mockery and Healing Word, not Toll the Dead, which needs a
+// gesture). Cast where the escort can see it, or at the escort, and it is defiance: the same ladder as keeping a
+// stolen thing (laborDisobey, cause "cast" — the server already knew the word).
+function inChains(){ return laborLive() && labor.status !== "called" && cur !== PEN; }
+const voiceOnly = c => !!c && c.v && !c.s && !c.m;
+async function laborCastSeen(h, target){
+  const eyes = laborWatchedBy(h), atThem = target && target.escort;
+  if (!eyes.length && !atThem){ log(`Nobody on the detail saw ${esc(fname(h))}'s lips move.`); return; }
+  escortTurnsTo(h); for (const e of (eyes.length ? eyes : [target])) popText(e, "!", "#ff6b5e", 1.2);
+  escortSays(escortDrow(), "Magic? In chains? Bold.", 3200);
+  log(`<b>The escort saw ${esc(fname(h))} cast.</b>`);
+  await wait(900);
+  await laborDisobey(h, "cast");
 }
 // The dashboard's painted action icons (public/icons/actions), 96 px copies under velkynvelve-walk/icons.
 const ICON_BASE = APP ? "/velkynvelve-walk/icons/" : "icons/";
@@ -9547,6 +9572,38 @@ const WORK_LINES = {
   done: "That will do. Barely.",
 }
 
+// ─── The shift plays itself (Sam, 2026-10-27: "make the slave work more like an animation. Nothing you actually have
+// to do but watch. Meanwhile you can try a few things like try to talk, steal something, and look around") ─────────
+// No Work button and no work roll any more. Once the detail reaches its plate the heroes work on their own, the escort
+// carps on a fixed beat sheet, and when the watch is up the escort marches them home. The player's inputs are the
+// opportunities only: Talk, Steal, Look around, and (Sam's ruling, same day) a spoken-word spell, which is defiance if
+// the escort sees it. SHIFT_WATCH_MS is [HOUSE]: how long a shift is watched in real time; the game-hour and 15-minute
+// backstops above still stand behind it.
+const SHIFT_WATCH_MS = 3 * 60 * 1000
+
+/** How far through the watched shift a working detail is, 0..1, from its arrival step's server time. */
+function shiftProgress(detail, nowMs) {
+  if (!detail || detail.status !== "working") return 0
+  const step = arrivalStep(detail.events), t0 = step ? Date.parse(step.at) : NaN
+  if (!Number.isFinite(t0)) return 0
+  return Math.max(0, Math.min(1, (nowMs - t0) / SHIFT_WATCH_MS))
+}
+
+/**
+ * The escort's beats through a shift, in order: a nag a third of the way in; on the pointless tasks [BOOK "redone
+ * whenever they fail the drow's arbitrary standards"] the whim halfway — all of it to do again; the verdict near the
+ * end. `at` is a fraction of the shift. Lines come from WORK_LINES.
+ */
+function shiftBeats(task) {
+  const beats = [{ at: 0.3, line: "progress" }]
+  if (CRUELTY.includes(task)) beats.push({ at: 0.55, line: "whim", redo: true })
+  beats.push({ at: 0.92, line: "done" })
+  return beats
+}
+
+/** The beats crossed going from progress `from` to `to` (from exclusive, to inclusive). */
+const beatsBetween = (task, from, to) => shiftBeats(task).filter((b) => b.at > from && b.at <= to)
+
 // ─── Look around: what a sharp eye takes in on each plate while working ──────────────────────────────────────
 // Book facts the room shows, not inventions. On the waterfall plate the look is the same notice Sam ruled unlocks the
 // jump into the falls (2026-10-24): the webs below that break a fall.
@@ -10021,6 +10078,16 @@ async function laborWalk(route, opts = {}){
   // shows up on the work plate. Out of the pen the escort has the gate open, the party steps through it behind them,
   // and ONE fade-cut lands them where the work is — no walk onto the next plate first (travel's `cut`). Coming back is
   // one cut to the pen. `cut: false` keeps the old room-by-room walk.
+  // HOME (Sam, 2026-10-27): the way back is the same shape as the way out — the party walks out of the work plate's
+  // own door behind the escort, the screen goes dark, and the pen fades up with them outside the bars (laborLockIn).
+  if (opts.cut && route.length >= 2 && String(route[route.length - 1]) === String(PEN) && String(cur) === String(route[0])){
+    for (let t = 0; mode !== "explore" && t < 120; t++) await wait(250);
+    const z = exitTo(SPEC, cur, route[1]);
+    const note = "The escort marches the detail back through the outpost to the pen.";
+    if (z) await travel(PEN, z, false, {note, dark: 1100}); else await enterNode(PEN, {from: owPlate(route[route.length - 2]), note});
+    for (let t = 0; mode !== "explore" && t < 120; t++) await wait(250);
+    return;
+  }
   if (opts.cut && route.length >= 2 && String(route[0]) === String(PEN)){
     const last = route[route.length - 1], to = owPlate(last), name = SPEC[last] && SPEC[last].name;
     for (let t = 0; mode !== "explore" && t < 120; t++) await wait(250);
@@ -10089,6 +10156,7 @@ function laborEnds(aborted){
   laborPropsClear();
   if (labor) laborPlayed[`${labor.id}:end`] = true;          // once per detail, in the browser that walked them too
   laborDriving = false;
+  if (cur === PEN && !aborted && laborStaged){ laborLockIn(); setTimeout(() => { labor = null; renderLaborBar(); }, 2500); return; }
   if (cur === PEN){
     escortSays(escortDrow(), aborted ? "Not today. Sit." : LINES.back, 4200);
     setTimeout(() => { if (!state.gateOpen) { setDoor(false); sfx("door-close", .8); } escortLeaves(); }, 1800);
@@ -10096,12 +10164,53 @@ function laborEnds(aborted){
   if (aborted) narrate(null, "The work detail is called off.");
   setTimeout(() => { labor = null; renderLaborBar(); }, 2500);
 }
+// LOCKED BACK IN (Sam, 2026-10-27: the shift "exits the plate, darkens, and shows them being escorted back into the
+// pen, door locking"). The pen fades up with the party outside the bars on the landing by the bridge, the escort behind
+// them. The key turns and the gate swings open; the quaggoth growls them on; each hero goes in the way the guards do
+// (behind the pillar, out of sight, back into view on the threshold — the balcony's own route) and on to a spot on the
+// floor. The quaggoth comes back out, the gate clangs shut, the key turns, the drow has his word through the bars, and
+// the escort goes. Each screen walks the heroes it drives; the others come in on the shared world, as ever.
+let laborStaged = null;
+function laborStageAtGate(){
+  const B = balcony(), d = escortDrow(), q = escortBeast(); if (cur !== PEN || !B || !labor) return;
+  const room = y => 1 / (node.scale * depthAt(y)), fs = B.scale || 1.35, [ax, ay] = B.landing;
+  const line = [...party.filter(p => !p.ko && actors.includes(p) && !owRemote(p)), q, d].filter(Boolean);
+  line.forEach((a, i) => { stopActivity(a); a.path = []; a.kbd = false; a.onArrive = null; a.performing = true;
+    a.walkIn = false; a.x = ax - 46 * i; a.y = ay - 17 * i; a.fixedScale = 0; a.big = fs * room(a.y); a.alpha = 1; a.face = faceOf(1, 1); });
+  laborStaged = labor.id;
+}
+async function laborLockIn(){
+  const B = balcony(), d = escortDrow(), q = escortBeast(); laborStaged = null;
+  if (cur !== PEN || !B){ setDoor(false); escortLeaves(); return; }
+  const room = y => 1 / (node.scale * depthAt(y)), fs = B.scale || 1.35;
+  const [lx, ly] = B.behind || [545, 702], [tx, ty] = B.threshold, [ix, iy] = B.inside;
+  const heroes = party.filter(p => p.performing && !owRemote(p) && actors.includes(p));
+  await wait(900);
+  sfx("lock-picked", .8); await wait(600);
+  setDoor(true); sfx("door-open", .85);
+  if (q){ quaggothSays(LINES.quaggoth ? LINES.quaggoth[0] : "Walk. Meat walks."); }
+  await wait(700);
+  await Promise.all(heroes.map((h, i) => { h.waitUntil = now + i * 750;
+    const spot = nearestWalkable(ix + ((i % 3) - 1) * 70, iy + 60 + Math.floor(i / 3) * 50);
+    return escortWalk(h, [{x: lx, y: ly, s: fs * room(ly), out: true}, {x: tx, y: ty, s: .95, jump: true}, {x: ix, y: iy, s: 1}, {x: spot.x, y: spot.y, s: 1}]); }));
+  for (const h of heroes){ h.performing = false; h.static = false; h.face = faceOf(gateCenter() ? gateCenter().x - h.x : 0, -1); }
+  if (cur !== PEN) return;
+  await wait(500);
+  setDoor(false); sfx("door-close", .9);
+  await wait(650); sfx("lock-picked", .6);
+  log(`The gate clangs shut behind the detail, and the key turns.`);
+  if (d){ d.performing = false; d.face = faceOf(ix - d.x, iy - d.y); escortSays(d, LINES.back, 4200); }
+  if (q) q.performing = false;
+  await wait(2600);
+  escortLeaves();
+}
 // the plate hooks (enterNode): who comes out with the party, what the server is told, and the escort on every plate
 function laborJoins(){ const comp = companyNow(), ids = laborNpcs().filter(id => npcs.some(n => n.id === id && !n.down && !n.body && !n.offStage) && !comp.includes(id)); comp.push(...ids); return ids; }
 function laborOnEnter(n, from){
   if (n === PEN && from !== PEN) laborPenArrival();          // PR 4: the downed hero, the surgeon, the talk
   laborPropsClear();
   if (!laborLive()) return;
+  if (n === PEN && from !== PEN && labor.status === "returning") setTimeout(laborStageAtGate, 0);   // after the escort is spawned below
   // Sam, 2026-10-26: "just the escort" — while a detail is on a plate, the guards who stand there (#923: two on each
   // labor plate, the lizard rider on the cliff) step off; they are back at their posts when no detail is there
   if (n !== PEN) for (const a of npcs) if (!a.escort && a.hostile && /^drow-guard|^drow-lizard-rider|^drow-elite/.test(a.id) && !a.offStage) hideOffStage(a);
@@ -10120,10 +10229,10 @@ function renderLaborBar(){
   const at = String(cur) === String(detailRoute(SPEC, labor.task).plate);
   bar.hidden = false;
   $("laborWhat").textContent = labor.status === "working" && at ? `Work detail: ${TASKS_LABEL[labor.task] || labor.task}` : labor.status === "returning" ? "Work detail: back to the pen" : "Work detail: under escort";
-  $("laborEnd").hidden = !(labor.status === "working" && at && (isDm() || laborDriving || !APP));
+  $("laborEnd").hidden = !(labor.status === "working" && at && isDm());          // the DM can cut a shift short; nobody else needs to
   const work = labor.status === "working" && at && !!laborHero();
-  for (const id of ["laborWork", "laborLook", "laborPocket"]) $(id).hidden = !work;
-  if (work){ const w = laborWorkDone[`${labor.id}:${laborHero().id}`]; $("laborWork").textContent = w && w.done ? "Share done" : w && w.progress ? `Work (${w.progress}/${WORK_NEEDED})` : "Work"; }
+  for (const id of ["laborTalk", "laborLook", "laborPocket"]) $(id).hidden = !work;
+  $("laborShift").hidden = !(labor.status === "working" && at);
 }
 
 // ---------- HARD LABOR: the stations (PR 3) ----------
@@ -10140,29 +10249,40 @@ const atWorkPlate = () => laborLive() && labor.status === "working" && String(cu
 function laborHero(){ const h = ownLeader(); return h && party.includes(h) && !h.ko ? h : null; }
 function laborEvent(kind, extra = {}){ laborPost("event", Object.assign({kind}, extra)); }
 function escortTurnsTo(h){ for (const a of laborEscort()) a.face = faceOf(h.x - a.x, h.y - a.y); }
-async function laborDoWork(){
-  const h = laborHero(); if (!h || !atWorkPlate()) return;
-  const k = `${labor.id}:${h.id}`, w = laborWorkDone[k] || (laborWorkDone[k] = {progress: 0, redone: false, done: false});
-  if (w.done){ toast(`${fname(h)}'s share is done. The escort is waiting on the others.`); return; }
-  const key = WORK_ROLL[labor.task];
-  let ok = true, total;
-  if (key){
-    const r = await rollOnDashboard(key, 0);
-    if (!r || !r.ok){ if (r && r.error) toast(r.error); return; }
-    if (r.cancelled) return;
-    ok = !!r.success; total = r.total;
-  } else { narrate(h, `${fname(h)} works.`); await wait(900); }
-  const step = workStep(labor.task, w.progress, ok, w.redone);
-  w.progress = step.progress; w.done = step.done; if (step.line === "whim") w.redone = true;
-  const d = escortDrow();
-  if (step.line === "fail") escortSays(d, pickLine(WORK_LINES.fail, Math.random));
-  else if (step.line === "whim") escortSays(d, WORK_LINES.whim[labor.task] || WORK_LINES.fail[0]);
-  else if (step.line === "done") escortSays(d, WORK_LINES.done);
-  else if (Math.random() < .5) escortSays(d, pickLine(WORK_LINES.progress, Math.random), 3000);
-  log(step.done ? `<b>${esc(fname(h))}</b> finishes their share of the work.` : step.redo ? `<b>${esc(fname(h))}</b> is made to do it again.` : `<b>${esc(fname(h))}</b> works on.`);
-  laborEvent("work", {slug: h.id, success: ok, total}); if (step.redo){ laborEvent("redo", {slug: h.id}); playFilm("redo"); }
-  laborPerform(h);
-  renderLaborBar();
+// THE SHIFT PLAYS ITSELF (Sam, 2026-10-27: "make the slave work more like an animation. Nothing you actually have to do
+// but watch"). The Work button and its roll are gone. Once the detail is on its plate the heroes work on their own
+// (laborAmbient), the bar's thin gold line fills over SHIFT_WATCH_MS (lib/labor-walk.mjs, from the arrival step's
+// server time, so every screen sees the same shift), and the escort speaks on the beat sheet (shiftBeats): a nag, the
+// whim that makes them do the pointless work again [BOOK], the verdict. When the line is full, the screen that walks
+// the detail (the DM's, or the one that marched them) calls them home. A screen that joins mid-shift does not replay
+// the beats it missed.
+const laborBeatAt = {};              // detail id -> how far through the shift this screen has played the beats
+function laborShiftTick(){
+  if (!atWorkPlate()) return;
+  const p = shiftProgress(labor, owNow()), from = laborBeatAt[labor.id];
+  $("laborShift").style.setProperty("--p", p.toFixed(3));
+  if (from === undefined){ laborBeatAt[labor.id] = p > .05 ? p : 0; return; }
+  if (p > from){ laborBeatAt[labor.id] = p; for (const b of beatsBetween(labor.task, from, p)) laborBeat(b); }
+  if (p >= 1 && (isDm() || laborDriving) && (mode === "explore" || mode === "dialog" || mode === "talk")){
+    const k = `${labor.id}:watched`; if (laborPlayed[k]) return; laborPlayed[k] = true;
+    log(`<b>Work detail:</b> the shift is done.`);
+    laborFinish();
+  }
+}
+setInterval(laborShiftTick, 1000);
+function laborBeat(b){
+  const d = escortDrow(), drives = isDm() || laborDriving;
+  if (b.line === "progress") escortSays(d, pickLine(WORK_LINES.progress, Math.random), 3000);
+  else if (b.line === "whim"){
+    escortSays(d, WORK_LINES.whim[labor.task] || WORK_LINES.fail[0]);
+    log(`<b>The escort</b> finds fault with all of it. It is to be done again.`);
+    for (const h of party) if (!owRemote(h)) h.nextWork = now + 600;      // back to it at once
+    if (drives){ laborEvent("redo", {}); playFilm("redo"); }
+  } else if (b.line === "done"){
+    escortSays(d, WORK_LINES.done);
+    if (drives){ const crew = new Set((labor.crew || []).filter(c => c.kind === "pc").map(c => c.id));
+      for (const p of party) if (crew.has(characterIdOf(p.id))) laborEvent("work", {slug: p.id, success: true}); }
+  }
 }
 // ---------- HARD LABOR: what it looks and sounds like (assets) ----------
 // Sam, 2026-10-26: "Start on props, poses, speech, and music" → "wire it all". The station's props stand beside the
@@ -10235,7 +10355,7 @@ async function laborPerform(h, ambient){
     }
   } finally {
     h.performing = false; h.walkAs = null;
-    if (!ok) h.nextWork = now + 15000;                 // interrupted: leave this hero alone a while
+    if (!ok) h.nextWork = now + 8000;                  // interrupted (Talk, Steal, a click): back to the chore after a while
   }
 }
 function laborAmbient(){
@@ -10279,14 +10399,36 @@ function laborReach(h){
   return out;
 }
 function laborWatchedBy(h){ return laborEscort().filter(w => sneakSight(w, h)); }   // the same test the amber is drawn from
+// TALK on a detail: the crewmates and the escort on this plate. The drow boast, the quaggoths snarl [BOOK p.12].
+function laborDoTalk(){
+  const h = laborHero(); if (!h || !atWorkPlate()) return;
+  const who = npcs.filter(n => (canTalkTo(n) || n.escort) && !n.offStage && !n.body && !n.down && n.alpha > .5)
+    .sort((a, b) => Math.hypot(a.x - h.x, a.y - h.y) - Math.hypot(b.x - h.x, b.y - h.y)).slice(0, 6);
+  if (!who.length){ toast("Nobody here will talk to a prisoner.", 2800); return; }
+  const go = async n => {
+    const near = nearestWalkable(n.x + (n.x < h.x ? 60 : -60) * node.scale, n.y + 12 * node.scale);
+    if (Math.hypot(h.x - n.x, h.y - n.y) > 200 * node.scale && !(await laborGo(h, near))) return;
+    h.face = faceOf(n.x - h.x, n.y - h.y);
+    if (n.escort && !canTalkTo(n)){ escortSays(n, n.id === "escort-quaggoth" ? "(a low growl)" : "Work. Or bleed. Your choice.", 3200); return; }
+    approach(n);
+  };
+  if (who.length === 1) return go(who[0]);
+  showDialog({title: "Talk", body: `Who does ${fname(h)} talk to, while the work goes on?`, buttons: [...who.map(n => ({label: heroName(n), fn: () => go(n)})), {label: "Not now"}]});
+}
 function laborDoPocket(spot){
   const h = laborHero(); if (!h || !atWorkPlate()) return;
   const eyes = laborWatchedBy(h);
   if (eyes.length){ popText(eyes[0], "!", "#ffb35a", 1.1); toast(`${heroName(eyes[0])} is looking right at ${fname(h)}. Not now.`, 3200); return; }
   const reach = spot ? [spot] : laborReach(h);
-  if (!reach.length){ toast(`Nothing worth taking is within ${fname(h)}'s reach here.`, 3200); return; }
   if (reach.length === 1) return laborPocketFrom(h, reach[0]);
-  showDialog({title: "Pocket something", body: `The escort is not looking at ${fname(h)}. From where?`, buttons: [...reach.map(r => ({label: r.name, fn: () => laborPocketFrom(h, r)})), {label: "Not now"}]});
+  if (reach.length){ showDialog({title: "Steal something", body: `The escort is not looking at ${fname(h)}. From where?`, buttons: [...reach.map(r => ({label: r.name, fn: () => laborPocketFrom(h, r)})), {label: "Not now"}]}); return; }
+  // nothing in reach: drift over to something worth taking, as if the work led there, and try once there
+  const far = (node.loot || []).map(l => ({l, c: lootCenter(l)})).sort((a, b) => Math.hypot(a.c.x - h.x, a.c.y - h.y) - Math.hypot(b.c.x - h.x, b.c.y - h.y));
+  if (!far.length){ toast(`Nothing worth taking on this plate.`, 3200); return; }
+  showDialog({title: "Steal something", body: `Nothing is within ${fname(h)}'s reach. Work their way over to…`, buttons: [...far.slice(0, 5).map(({l, c}) => ({label: l.name, fn: async () => {
+    if (!(await laborGo(h, nearestWalkable(c.x, c.y + 30 * node.scale)))) return;
+    laborDoPocket({id: l.id, name: l.name, poly: l.poly});
+  }})), {label: "Not now"}]});
 }
 async function laborPocketFrom(h, spot){
   if (mode !== "explore" && mode !== "dialog") return;
@@ -11494,7 +11636,7 @@ function comeToListener(n){ if (n && n.kind === "npc" && (mode === "explore" || 
 if (APP){ setTimeout(pollStage, 2500); setInterval(pollStage, 5000); }
 if (APP){ setTimeout(pollLabor, 4000); setInterval(pollLabor, 6000); }   // Hard Labor: the party's work detail
 $("laborEnd").onclick = () => laborFinish();
-$("laborWork").onclick = () => laborDoWork(); $("laborLook").onclick = () => laborDoLook(); $("laborPocket").onclick = () => laborDoPocket();
+$("laborTalk").onclick = () => laborDoTalk(); $("laborLook").onclick = () => laborDoLook(); $("laborPocket").onclick = () => laborDoPocket();
 $("dmLaborCall").onclick = async () => { toggleDm(false); if (!labor){ await pollLabor(); } if (!labor){ toast("No work detail today — nobody is seated yet."); return; } if (labor.status !== "scheduled"){ toast(`The detail is already ${labor.status}.`); return; } if (cur !== PEN){ toast("The party must be in the pen to be called out."); return; } const was = labor.status; if (await laborPost("call")) laborFollow(was); else toast("Could not call the detail."); };
 $("dmLaborOff").onclick = async () => { toggleDm(false); if (!labor || !isLive(labor.status) && labor.status !== "scheduled"){ toast("No work detail to call off."); return; } const was = labor.status; if (await laborPost("abort")) laborFollow(was); };
 

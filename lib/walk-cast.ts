@@ -20,7 +20,7 @@
 import { knowsSpell, slotsLeft, rollDice, normSpell, SPELLBOOK, DEFAULT_ENTRY, type SpellEntry, type Spellcasting } from "./spellbook"
 import SPELL_DATA from "./data/spells.json"
 
-type SpellRow = { name: string; level: number | string; damage?: unknown; attack_roll?: unknown; save?: unknown }
+type SpellRow = { name: string; level: number | string; damage?: unknown; attack_roll?: unknown; save?: unknown; components?: unknown }
 const DATA: Map<string, SpellRow> = new Map(
   ((Array.isArray(SPELL_DATA) ? SPELL_DATA : Object.values(SPELL_DATA as Record<string, unknown>)) as SpellRow[])
     .filter((r) => r && typeof r.name === "string").map((r) => [normSpell(r.name), r]),
@@ -91,12 +91,28 @@ export function healAmount(name: string, entry: SpellEntry, castingMod: number, 
   return Math.max(1, rollDice(healDice(name, entry), rng) + castingMod)
 }
 
+/** A spell's components (V, S, M) from lib/data/spells.json, or null for a spell the data does not have. */
+export type Components = { v: boolean; s: boolean; m: boolean }
+export function componentsOf(name: string): Components | null {
+  const raw = DATA.get(normSpell(name))?.components
+  if (typeof raw !== "string" || !raw.trim()) return null
+  const head = raw.split("(")[0].toUpperCase().split(",").map((t) => t.trim())
+  return { v: head.includes("V"), s: head.includes("S"), m: head.includes("M") }
+}
+
+/**
+ * MANACLED (Sam, 2026-10-27, on a work detail): only a spell that needs nothing but the voice can be cast — no
+ * gesture (the hands are chained to the belt, OotA p.11) and no material (the drow took them). A spell the data does
+ * not know is not castable in chains: we cannot show it needs no hands.
+ */
+export const castableInChains = (c: Components | null): boolean => !!c && c.v && !c.s && !c.m
+
 /** Every spell on the sheet, with what the map needs to offer it. Pure. */
 export function castList(sc: Spellcasting | null | undefined) {
   const names = [...(sc?.cantrips ?? []), ...(sc?.always_prepared ?? []), ...(sc?.prepared ?? [])]
     .filter((n, i, all) => typeof n === "string" && n.trim() && all.findIndex((m) => normSpell(m) === normSpell(n)) === i)
   return names.map((name) => {
     const entry = entryFor(name)
-    return { name, level: entry.level, kind: castKind(entry), target: entry.target, left: entry.level === 0 ? null : slotsLeft(sc, entry.level) }
+    return { name, level: entry.level, kind: castKind(entry), target: entry.target, left: entry.level === 0 ? null : slotsLeft(sc, entry.level), components: componentsOf(name) }
   })
 }
