@@ -331,7 +331,7 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .cbt-menu .orbCycler ~ button{align-self:center}
 .cbt-menu .orbCycler .orbStep:hover,.cbt-menu .orbCycler .orbStep:focus-visible{background:rgba(232,162,74,.16)}
 .cbt-menu button .ico.glyph{display:grid;place-items:center;font-size:22px;color:#ffe9a6}
-.cbt-menu button span{grid-column:2}
+.cbt-menu button span{grid-column:2;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .cbt-menu button small{grid-column:2;font-family:var(--face-mono);font-size:.56rem;font-weight:400;color:#fff;opacity:.82;letter-spacing:0;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-shadow:0 1px 0 rgba(0,0,0,.65)}
 .cbt-menu button:hover,.cbt-menu button:focus-visible{transform:translateY(-2px);border-color:#f2c55c;filter:brightness(1.12);box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.26),inset 0 -7px 0 rgba(0,0,0,.24),0 6px 0 #000,0 0 20px rgba(242,197,92,.4),0 10px 18px rgba(0,0,0,.6)}
 .cbt-menu button:active{transform:translateY(2px);box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.12),inset 0 -4px 0 rgba(0,0,0,.24),0 2px 0 #000,0 4px 8px rgba(0,0,0,.6)}
@@ -5775,6 +5775,7 @@ function renderExploreBar(){
   exploreKey = key; m.dataset.kind = "explore"; m.innerHTML = ""; m.hidden = false;
   const add = (label, glyph, icon, sub, fn, cls) => { const b = document.createElement("button"); if (cls) b.className = cls;
     b.innerHTML = `${icon ? `<img class="ico" src="${ICON_BASE}${icon}.png" alt="">` : `<i class="ico glyph">${glyph}</i>`}<span>${esc(label)}</span>${sub ? `<small>${esc(sub)}</small>` : ""}`;
+    b.title = sub ? `${label} · ${sub}` : label;
     dressButton(b, icon, sub);
     if (fn) b.onclick = () => { unlockAudio(); fn(); exploreKey = ""; }; else b.disabled = true; m.appendChild(b); return b; };
   const nm = n => SHORT[n.id] || (SPR[n.id] && SPR[n.id].json.name) || n.id;
