@@ -1,0 +1,206 @@
+// ============================================================================
+// LEVEL CHOICES — what is left to CHOOSE after the Level Up ceremony writes the level.
+//
+// The ceremony (/api/walk-level-up, lib/camp.ts levelUp()) fixes hit points, proficiency, Hit Dice and slots, and
+// banks a "Level N — choices to make" marker on sheet_features. This module answers what those choices are for a
+// level, checks a player's picks against the rules and the class list, and builds the one patch that settles them.
+//
+// Scope (Sam, 2026-10-28, the approved prototype https://claude.ai/artifact/5jSrEofrWEXGH5pmwvMf5M): the SORCERER,
+// levels 2 and 3. Level 4 and up wait on the class trial (lib/level-trial.ts, TRIAL_GATE_FROM_LEVEL = 4), so the
+// improvement / feat step is not wired here yet. Other classes keep the ceremony's "on your sheet" note.
+//
+// Rules source: the sheet's own (Kenta: sheet_spellcasting.rules_source "SRD 5.2.1"), i.e. the 2024 Sorcerer table:
+// prepared 2/4/6/7, cantrips 4/4/4/5, sorcery points 0/2/3/4, Metamagic ×2 at level 2, subclass at 3 (Sam,
+// 2026-09-27: 2024 timing for every class), one spell swapped per Sorcerer level ("level_up_one").
+// Spells come only from lib/data/spells.json. The Metamagic one-liners and the non-SRD origins were written from
+// memory and are marked `verify`; the non-SRD origins are closed until Sam opens them.
+// ============================================================================
+
+import spellsData from "@/lib/data/spells.json"
+import { PENDING_LEVEL_SOURCE, type SheetFeature } from "@/lib/camp"
+
+export interface ClassSpell {
+  name: string
+  level: number
+  school: string
+  cast: string
+  range: string
+  dur: string
+  conc: boolean
+  comp: string
+  effect: string
+  attack: boolean
+  save: string | null
+  review: boolean
+}
+
+export interface MetaOption { name: string; cost: number; desc: string; verify: true }
+export interface OriginOption { name: string; open: boolean; source: string; desc: string; verify: true }
+
+export interface LevelPlan {
+  cls: "sorcerer"
+  level: number
+  newSpells: number
+  newCantrips: number
+  maxSpellLevel: number
+  swaps: number
+  metamagic: number
+  origin: boolean
+  prepared: { from: number; to: number }
+  cantrips: { from: number; to: number }
+  sorceryPoints: { from: number; to: number }
+}
+
+/** SRD 5.2.1 Sorcerer table, levels 1–4 (what this module serves). */
+export const SORCERER_2024 = {
+  prepared: { 1: 2, 2: 4, 3: 6, 4: 7 } as Record<number, number>,
+  cantrips: { 1: 4, 2: 4, 3: 4, 4: 5 } as Record<number, number>,
+  sorceryPoints: { 1: 0, 2: 2, 3: 3, 4: 4 } as Record<number, number>,
+  maxSpellLevel: { 1: 1, 2: 1, 3: 2, 4: 2 } as Record<number, number>,
+}
+
+export const METAMAGIC: MetaOption[] = [
+  { name: "Careful Spell", cost: 1, desc: "Creatures you choose (up to your Charisma modifier) succeed on the save and take no damage.", verify: true },
+  { name: "Distant Spell", cost: 1, desc: "Double the range, or a touch spell reaches 30 feet.", verify: true },
+  { name: "Empowered Spell", cost: 1, desc: "Reroll damage dice up to your Charisma modifier; keep the new rolls.", verify: true },
+  { name: "Extended Spell", cost: 1, desc: "Double the duration (24 hours at most); advantage on saves to keep concentration.", verify: true },
+  { name: "Heightened Spell", cost: 2, desc: "One creature has disadvantage on its saves against the spell.", verify: true },
+  { name: "Quickened Spell", cost: 2, desc: "A spell that takes an action is cast as a bonus action.", verify: true },
+  { name: "Seeking Spell", cost: 1, desc: "Reroll a spell attack that misses; the new roll stands.", verify: true },
+  { name: "Subtle Spell", cost: 1, desc: "No verbal, somatic or material components, unless one is consumed or has a cost.", verify: true },
+  { name: "Transmuted Spell", cost: 1, desc: "Acid, cold, fire, lightning, poison or thunder damage becomes another of those.", verify: true },
+  { name: "Twinned Spell", cost: 1, desc: "A spell that upcasts to add a target gets it for 1 sorcery point instead of a higher slot.", verify: true },
+]
+
+export const ORIGINS: OriginOption[] = [
+  { name: "Draconic Sorcery", open: true, source: "SRD 5.2.1", desc: "Draconic Resilience: more hit points each level, a scaled hide instead of armour. Draconic spells always prepared.", verify: true },
+  { name: "Aberrant Sorcery", open: false, source: "PHB 2024 — not in the SRD", desc: "Psionic sorcery and telepathic speech. Needs the DM's say.", verify: true },
+  { name: "Clockwork Sorcery", open: false, source: "PHB 2024 — not in the SRD", desc: "Order over chaos: cancel advantage or disadvantage. Needs the DM's say.", verify: true },
+  { name: "Wild Magic Sorcery", open: false, source: "PHB 2024 — not in the SRD", desc: "Wild magic surges and Tides of Chaos. Needs the DM's say.", verify: true },
+]
+
+export const CHOICES_SOURCE = "Level up — chosen"
+const pendingName = (level: number) => `Level ${level} — choices to make`
+
+export function classKey(cls: string | null | undefined): string {
+  return String(cls ?? "").trim().split(/[\s/]+/)[0].toLowerCase()
+}
+
+/** What level `level` asks a sorcerer to choose, or null when this module does not serve it. */
+export function planFor(cls: string | null | undefined, level: number): LevelPlan | null {
+  if (classKey(cls) !== "sorcerer" || !(level === 2 || level === 3)) return null
+  const t = SORCERER_2024
+  return {
+    cls: "sorcerer",
+    level,
+    newSpells: t.prepared[level] - t.prepared[level - 1],
+    newCantrips: t.cantrips[level] - t.cantrips[level - 1],
+    maxSpellLevel: t.maxSpellLevel[level],
+    swaps: 1,
+    metamagic: level === 2 ? 2 : 0,
+    origin: level === 3,
+    prepared: { from: t.prepared[level - 1], to: t.prepared[level] },
+    cantrips: { from: t.cantrips[level - 1], to: t.cantrips[level] },
+    sorceryPoints: { from: t.sorceryPoints[level - 1], to: t.sorceryPoints[level] },
+  }
+}
+
+type RawSpell = { name: string; level: number; school?: string; classes?: string[]; cast_time?: string; range?: string; duration?: string; concentration?: boolean; components?: string; effect?: string; attack_roll?: boolean; save?: { ability?: string } | null; needs_review?: boolean; source?: string }
+
+/** The class list up to a spell level, from the owned dataset; Unearthed Arcana left out. */
+export function classSpells(cls: string, maxLevel: number): ClassSpell[] {
+  const want = classKey(cls)
+  return (spellsData as RawSpell[])
+    .filter((s) => (s.classes ?? []).some((c) => c.toLowerCase() === want) && s.level <= maxLevel && !/\(UA\)/.test(s.name) && !/\bUA\b/.test(String(s.source ?? "")))
+    .map((s) => ({
+      name: s.name, level: s.level, school: String(s.school ?? "").toLowerCase(), cast: s.cast_time ?? "", range: s.range ?? "",
+      dur: s.duration ?? "", conc: !!s.concentration, comp: s.components ?? "", effect: s.effect ?? "",
+      attack: !!s.attack_roll, save: s.save?.ability ?? null, review: !!s.needs_review,
+    }))
+    .sort((a, b) => a.level - b.level || a.name.localeCompare(b.name))
+}
+
+export function choicesOwed(features: unknown, level: number): boolean {
+  return Array.isArray(features) && features.some((f) => f && typeof f === "object" && (f as SheetFeature).source === PENDING_LEVEL_SOURCE && (f as SheetFeature).name === pendingName(level))
+}
+
+export interface Picks {
+  metamagic?: string[]
+  origin?: string | null
+  spells?: string[]
+  cantrips?: string[]
+  swapOut?: string | null
+  swapOutCantrip?: string | null
+}
+
+export interface CastingSheet {
+  cantrips?: string[] | null
+  prepared?: string[] | null
+  [k: string]: unknown
+}
+
+export type ChoiceResult =
+  | { ok: true; spellcasting: CastingSheet; features: SheetFeature[]; summary: string[] }
+  | { ok: false; error: string }
+
+/** Check the picks against the plan and the class list; build the new sheet_spellcasting and sheet_features. */
+export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, features: unknown, picks: Picks): ChoiceResult {
+  const list = classSpells(plan.cls, plan.maxSpellLevel)
+  const byName = new Map(list.map((s) => [s.name, s]))
+  const cantrips = [...(casting?.cantrips ?? [])]
+  const prepared = [...(casting?.prepared ?? [])]
+  const spells = uniq(picks.spells ?? []), newC = uniq(picks.cantrips ?? [])
+  const swapOut = picks.swapOut ?? null, swapOutC = picks.swapOutCantrip ?? null
+  if (swapOut && swapOutC) return { ok: false, error: "One swap per level." }
+  if (swapOut && !prepared.includes(swapOut)) return { ok: false, error: `${swapOut} is not on the sheet to swap out.` }
+  if (swapOutC && !cantrips.includes(swapOutC)) return { ok: false, error: `${swapOutC} is not on the sheet to swap out.` }
+  const needS = plan.newSpells + (swapOut ? 1 : 0), needC = plan.newCantrips + (swapOutC ? 1 : 0)
+  if (spells.length !== needS) return { ok: false, error: `Choose ${needS} spell${needS === 1 ? "" : "s"}.` }
+  if (newC.length !== needC) return { ok: false, error: needC ? `Choose ${needC} cantrip${needC === 1 ? "" : "s"}.` : "No new cantrip at this level." }
+  for (const n of spells) {
+    const s = byName.get(n)
+    if (!s || s.level < 1) return { ok: false, error: `${n} is not a sorcerer spell this level can prepare.` }
+    if (prepared.includes(n)) return { ok: false, error: `${n} is already prepared.` }
+  }
+  for (const n of newC) {
+    const s = byName.get(n)
+    if (!s || s.level !== 0) return { ok: false, error: `${n} is not a sorcerer cantrip.` }
+    if (cantrips.includes(n)) return { ok: false, error: `${n} is already known.` }
+  }
+  const meta = uniq(picks.metamagic ?? [])
+  if (meta.length !== plan.metamagic) return { ok: false, error: plan.metamagic ? `Choose ${plan.metamagic} Metamagic options.` : "No Metamagic at this level." }
+  const metaOpts = meta.map((n) => METAMAGIC.find((m) => m.name === n))
+  if (metaOpts.some((m) => !m)) return { ok: false, error: "Unknown Metamagic option." }
+  const origin = plan.origin ? ORIGINS.find((o) => o.name === picks.origin) : null
+  if (plan.origin && !origin) return { ok: false, error: "Choose a Sorcerous Origin." }
+  if (origin && !origin.open) return { ok: false, error: `${origin.name} is closed until the DM opens it.` }
+  if (!plan.origin && picks.origin) return { ok: false, error: "The origin is chosen at level 3." }
+
+  const nextPrepared = prepared.filter((n) => n !== swapOut).concat(spells)
+  const nextCantrips = cantrips.filter((n) => n !== swapOutC).concat(newC)
+  const spellcasting: CastingSheet = {
+    ...(casting ?? {}),
+    prepared: nextPrepared,
+    cantrips: nextCantrips,
+    prepared_max: plan.prepared.to,
+    cantrips_max: plan.cantrips.to,
+    sorcery_points: { max: plan.sorceryPoints.to, used: 0 },
+  }
+  const src = `Sorcerer ${plan.level}`
+  const kept = (Array.isArray(features) ? features : []).filter(
+    (f): f is SheetFeature => !!f && typeof f === "object" && typeof (f as SheetFeature).name === "string" && !((f as SheetFeature).source === PENDING_LEVEL_SOURCE && (f as SheetFeature).name === pendingName(plan.level)),
+  )
+  const added: SheetFeature[] = []
+  if (plan.level === 2) added.push({ name: "Font of Magic", desc: `${plan.sorceryPoints.to} sorcery points, regained on a long rest.`, source: src })
+  for (const m of metaOpts) added.push({ name: `Metamagic: ${m!.name}`, desc: `${m!.desc} (${m!.cost} SP)`, source: `${src} · verify against SRD 5.2.1` })
+  if (origin) added.push({ name: origin.name, desc: origin.desc, source: `${src} · ${origin.source} · the DM applies its features` })
+  const summary = [
+    ...metaOpts.map((m) => m!.name),
+    ...(origin ? [origin.name] : []),
+    ...spells, ...newC,
+    ...(swapOut ? [`swapped out ${swapOut}`] : []), ...(swapOutC ? [`swapped out ${swapOutC}`] : []),
+  ]
+  return { ok: true, spellcasting, features: [...kept, ...added], summary }
+}
+
+function uniq(a: string[]): string[] { return [...new Set(a.map((s) => String(s).trim()).filter(Boolean))] }

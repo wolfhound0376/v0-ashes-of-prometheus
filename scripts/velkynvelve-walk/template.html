@@ -11595,9 +11595,48 @@ function renderLevelPanel(a, s){
 // only while the sheet is still at the level it was shown at, so a second click lands on nothing.
 const cer = {for: null, busy: false};
 function closeLevelUp(){ const el = $("invCeremony"); if (el){ el.hidden = true; el.innerHTML = ""; } cer.for = null; cer.busy = false; }
+// THE LEVEL-UP SCREEN (Sam, 2026-10-28, the approved prototype https://claude.ai/artifact/5jSrEofrWEXGH5pmwvMf5M; skill
+// aop-level-up-experience). For the classes lib/level-choices.ts serves (the sorcerer, levels 2–3) the gold button opens
+// /velkynvelve-walk/level-up.html in a full-screen frame: hit points, the class choice, spells, LEVEL UP, the class film
+// and the floor sigil. It is its own page so its Arcane Reliquary styles never meet the walk's. It takes the level
+// through the same /api/walk-level-up and settles the choices through /api/walk-level-choices, then tells the walk
+// (postMessage) so the open sheet follows. Every other class keeps the ceremony below.
+const LEVEL_SCREEN = {sorcerer: 3};   // class → the highest level the screen serves
+function levelScreenFor(a){ const s = SHEETS[a.id] || {}, cls = String(s.cls || "").split(/[\s/]/)[0].toLowerCase(), top = LEVEL_SCREEN[cls]; return top && (s.level || 1) < top + 1 ? cls : null; }
+function openLevelScreen(a, cid){
+  closeLevelScreen();
+  const s = SHEETS[a.id] || {}, slots = s.magic && s.magic.slots ? Object.fromEntries(Object.entries(s.magic.slots).map(([k, v]) => [k, typeof v === "number" ? v : (v && v.max) || 0])) : {};
+  const wrap = document.createElement("div"); wrap.id = "levelScreen";
+  wrap.style.cssText = "position:fixed;inset:0;z-index:60;background:#0a0814";
+  const f = document.createElement("iframe"); f.title = "Level up"; f.allow = "autoplay";
+  f.style.cssText = "border:0;width:100%;height:100%;display:block";
+  f.src = `/velkynvelve-walk/level-up.html?cid=${encodeURIComponent(cid)}&hero=${encodeURIComponent(a.id)}&slots=${encodeURIComponent(JSON.stringify(slots))}`;
+  wrap.appendChild(f); document.body.appendChild(wrap);
+  levelScreenFor.frame = f; levelScreenFor.hero = a; bank("ui/open", .4);
+}
+function closeLevelScreen(){ const w = $("levelScreen"); if (w) w.remove(); levelScreenFor.frame = null; }
+addEventListener("message", e => {
+  if (e.origin !== location.origin || !e.data || e.data.source !== "aop-level-up") return;
+  const a = levelScreenFor.hero, f = levelScreenFor.frame; if (!a) return;
+  if (e.data.ready && f){ try { const c = document.createElement("canvas"); heroStage(a.id, c, 420); f.contentWindow.postMessage({source: "aop-walk", sprite: c.toDataURL()}, location.origin); } catch (err) {} }
+  if (e.data.level){   // the level is written: the open sheet follows the row (as takeLevel does)
+    const s = SHEETS[a.id], w = e.data.level.write || {};
+    if (s && w.level){ s.level = w.level; s.hp = w.hp_max; s.hpNow = w.hp_current; if (w.slots && s.magic){ s.magic.slots = Object.fromEntries(Object.entries(w.slots).map(([k, v]) => [k, (v && v.max) || 0])); } }
+    if (a.c && !inFightNow() && w.hp_max){ a.c.hpMax = w.hp_max; a.c.hp = w.hp_current; }
+    bank("ui/level_up", .9); log(`<b>${esc(fname(a))} reaches level ${w.level}.</b> ${esc(e.data.level.note || "")}`);
+  }
+  if (e.data.choices){
+    const s = SHEETS[a.id], cz = e.data.choices.casting || {};
+    if (s && s.magic){ if (cz.cantrips) s.magic.cantrips = cz.cantrips; if (cz.prepared) s.magic.prepared = cz.prepared; }
+    if (s && cz.sorcery_points) s.sorceryPoints = cz.sorcery_points.max;
+    log(`${esc(fname(a))} chooses: ${esc((e.data.choices.summary || []).join(", "))}.`);
+  }
+  if (e.data.close){ closeLevelScreen(); const s = SHEETS[a.id] || {}; try { renderBagSub(a, s); renderLevelPanel(a, s); renderBagChips(a, s); } catch (err) {} renderBag(); }
+});
 async function openLevelUp(a){
   if (inFightNow()){ toast("Not in the middle of a fight. After."); return; }
   const cid = characterIdOf(a.id); if (!APP || !cid){ toast(`${fname(a)} has no sheet on the server here.`); return; }
+  if (levelScreenFor(a)){ openLevelScreen(a, cid); return; }
   const el = $("invCeremony"); if (!el) return;
   cer.for = a.id; cer.busy = false; el.hidden = false;
   el.innerHTML = `<div class="cerHead"><h4>Reading the sheet…</h4></div>`;

@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<script src="/test-copy-silence.js"></script>
+<title>Level Up · Ashes of Prometheus</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<!-- The Underwalk level-up (Sam, 2026-10-28; prototype https://claude.ai/artifact/5jSrEofrWEXGH5pmwvMf5M). Opened by the walk
+     (scripts/velkynvelve-walk/template.html openLevelUp) in a full-screen frame: ?cid=<character uuid>&hero=<walk id>.
+     It reads /api/walk-level-up (the ceremony preview) and /api/walk-level-choices (what is left to choose), takes the
+     level, settles the choices, plays the class celebration, and tells the walk with postMessage. Skill:
+     aop-level-up-experience. -->
+<style>[hidden]{display:none!important}
+
+/* Layout: one Arcane Reliquary panel — the hero on his candlelit stage at the left, one choice per screen at the right,
+   big icon tiles, one line of words, BACK and NEXT. Gold hairlines, violet for what is chosen, candlelight at the edges.
+   Single dark theme by choice: it is the game's screen. */
+:root{
+  color-scheme:dark;
+  --room:#0a0814; --ar-panel:#15112a; --ar-panel2:#0d0b19; --ar-inset:#0b0914; --ar-brass:#6e5a34; --ar-gold:#c9a55c; --ar-gold-light:#f3dca0;
+  --ar-violet:#8b6cff; --ar-violet-deep:#4f3ac2; --ar-text:#efe6d6; --ar-secondary:#b9ad9d; --ar-muted:#7f7690; --ar-equipped:#5fd08a; --ar-deny:#d1684f; --ar-rule:#2a2440;
+  --face-display:"Cinzel",Georgia,"Times New Roman",serif; --face-body:"Crimson Text",Georgia,serif;
+}
+html,body{height:100%}
+body{margin:0;background:var(--room);color:var(--ar-text);font-family:var(--face-body);font-size:1.02rem;line-height:1.35;
+  padding-block:16px 24px;min-height:100%;box-sizing:border-box;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  background-image:radial-gradient(ellipse 60% 40% at 50% -5%,rgba(124,92,255,.22),transparent 70%),radial-gradient(ellipse 30% 40% at 0% 100%,rgba(255,150,60,.16),transparent 70%),radial-gradient(ellipse 30% 40% at 100% 100%,rgba(255,150,60,.16),transparent 70%)}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit;cursor:pointer;background:none;border:0;padding:0}
+button:focus-visible{outline:3px solid var(--ar-gold-light);outline-offset:2px}
+h1,h2,h3{text-wrap:balance;margin:0}
+.wrap{max-width:1120px;margin:0 auto;display:grid;gap:10px}
+/* the top bar: title with its diamond rule, the party tabs */
+.top{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-family:var(--face-display);font-size:.78rem;letter-spacing:.2em;text-transform:uppercase;color:var(--ar-gold-light)}
+.top .rule{flex:1;display:flex;align-items:center;gap:10px;min-width:60px}
+.top .rule::before,.top .rule::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,transparent,var(--ar-brass),transparent)}
+.top .rule i{color:var(--ar-gold);font-style:normal;font-size:.9rem}
+.party{display:flex;gap:4px}
+.party span{font-family:var(--face-display);font-size:.62rem;letter-spacing:.16em;padding:7px 14px;border:1px solid var(--ar-brass);border-radius:4px;background:#0b0914;color:var(--ar-muted)}
+.party span.on{color:var(--ar-gold-light);border-color:var(--ar-gold);box-shadow:0 0 12px rgba(201,165,92,.25)}
+.snd{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--ar-brass);border-radius:999px;padding:6px 14px;background:#0b0914;color:var(--ar-secondary);font-family:var(--face-display);font-size:.62rem;letter-spacing:.14em;text-transform:uppercase}
+.snd i{width:9px;height:9px;border-radius:50%;background:#3a3150;box-shadow:inset 0 0 0 1px #000}
+.snd.on{color:var(--ar-gold-light);border-color:var(--ar-gold)} .snd.on i{background:var(--ar-equipped);box-shadow:0 0 8px rgba(95,208,138,.6)}
+.note{font-family:var(--face-body);font-size:.9rem;letter-spacing:0;text-transform:none;color:var(--ar-muted)}
+/* the panel: gold hairline, dark inner line, arcane glow */
+.inv{background:linear-gradient(160deg,var(--ar-panel),var(--ar-panel2) 70%);border:1px solid var(--ar-gold);border-radius:6px;box-shadow:inset 0 0 0 1px #000,inset 0 0 0 2px rgba(201,165,92,.18),0 0 40px rgba(124,92,255,.12),0 12px 30px #000;display:grid;grid-template-columns:250px minmax(0,1fr);grid-template-rows:minmax(0,1fr);height:min(calc(100vh - 110px),780px);min-height:560px;overflow:hidden}
+@media (max-width:860px){.inv{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr);height:auto;min-height:0}.main{max-height:calc(100vh - 220px)}}
+/* hero column: the painted stage, candle warmth at the edges, a violet circle under his feet */
+.hero{position:relative;background:#0a0914 center/cover no-repeat;border-right:1px solid rgba(201,165,92,.35);display:grid;grid-template-rows:auto minmax(0,1fr) auto;min-height:0}
+.hero::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,9,20,.78),rgba(10,9,20,.1) 32%,rgba(10,9,20,.15) 66%,rgba(10,9,20,.94)),radial-gradient(ellipse 60% 22% at 50% 86%,rgba(139,108,255,.55),rgba(139,108,255,.12) 55%,transparent 72%),radial-gradient(ellipse 40% 50% at 0% 70%,rgba(255,150,60,.18),transparent 70%),radial-gradient(ellipse 40% 50% at 100% 70%,rgba(255,150,60,.18),transparent 70%)}
+.hero>*{position:relative}
+.hero .nm{padding:16px 14px 0;display:grid;gap:3px}
+.hero .nm h2{font-family:var(--face-display);font-weight:700;font-size:1.5rem;letter-spacing:.08em;color:var(--ar-gold-light);line-height:1.05;text-shadow:0 2px 6px #000}
+.hero .nm .src{font-family:var(--face-body);font-size:.92rem;letter-spacing:.04em;color:var(--ar-text);text-shadow:0 1px 4px #000}
+.hero .fig{display:grid;place-items:end center;padding-bottom:10px;min-height:0;overflow:hidden}
+.hero .fig img{height:306px;width:130px;max-height:100%;image-rendering:pixelated;filter:drop-shadow(0 10px 10px rgba(0,0,0,.75))}   /* the x3 sheet shown at 2× — a whole-number scale, Sam's rule */
+.hero .lv{display:grid;justify-items:center;gap:7px;padding:0 14px 16px}
+.badge{width:60px;height:60px;border-radius:50%;border:2px solid var(--ar-gold);display:grid;place-items:center;font-family:var(--face-display);font-weight:700;font-size:1.6rem;color:var(--ar-gold-light);background:radial-gradient(circle at 50% 35%,#241e3a,#0a0914 72%);box-shadow:0 0 0 3px #0a0914,0 0 0 4px var(--ar-brass),0 0 20px rgba(201,165,92,.35)}
+.badge small{font-size:.48rem;font-family:var(--face-display);letter-spacing:.14em;margin-top:-3px;color:var(--ar-secondary);font-weight:400}
+.stat{display:grid;grid-template-columns:1fr 1fr;gap:6px;width:100%;max-width:236px}
+.stat > span{font-family:var(--face-display);font-weight:600;font-size:.58rem;letter-spacing:.1em;text-transform:uppercase;color:var(--ar-gold-light);text-shadow:0 1px 2px #000,0 0 6px rgba(0,0,0,.8);border:0;border-radius:0;padding:0 8px 0 34px;height:34px;background:center/100% 100% no-repeat;white-space:nowrap;font-variant-numeric:tabular-nums;position:relative;display:flex;align-items:center;justify-content:center;gap:5px;filter:drop-shadow(0 3px 5px rgba(0,0,0,.6));min-width:0;overflow:hidden}
+.stat > span b{color:#fff6dc;font-weight:700;font-size:.72rem;letter-spacing:.02em}
+.stat > span.up b{color:var(--ar-equipped)}
+@media (max-width:860px){.hero{min-height:0;grid-template-rows:auto;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:10px 12px;border-right:0;border-bottom:1px solid rgba(201,165,92,.35)}.hero .nm{padding:0}.hero .fig{padding:0}.hero .fig img{height:96px;width:auto;max-height:none}.hero .lv{padding:0}.hero .stat{display:none}}
+/* main column */
+.main{display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:10px;padding:16px 18px 14px;min-width:0;min-height:0}
+.ttl{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding-bottom:10px;border-bottom:1px solid rgba(201,165,92,.3)}
+.ttl h1{font-family:var(--face-display);font-weight:700;font-size:1.3rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ar-gold-light);line-height:1.1}
+.ttl .sub{font-size:1rem;color:var(--ar-secondary);width:100%;font-style:italic}
+.dots{margin-left:auto;display:flex;gap:7px;align-items:center}
+.dots i{width:9px;height:9px;border-radius:50%;border:1px solid var(--ar-brass);background:#0b0914;transform:rotate(45deg);border-radius:1px}
+.dots i.on{background:var(--ar-violet);box-shadow:0 0 8px rgba(139,108,255,.7);border-color:var(--ar-gold-light)}
+.dots i.done{background:var(--ar-gold);border-color:var(--ar-gold)}
+.cnt{font-family:var(--face-display);font-size:.66rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ar-gold-light);border:1px solid var(--ar-gold);border-radius:999px;padding:5px 13px;background:#0b0914;font-variant-numeric:tabular-nums}
+.cnt.full{color:var(--ar-equipped);border-color:var(--ar-equipped)}
+.scr{display:grid;align-content:start;gap:12px;min-width:0;overflow:auto;padding:12px 2px 4px}
+/* tiles: dark, a gold hairline, the name beneath in small caps */
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:10px}
+.tiles.wide{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+.tile{display:grid;justify-items:center;gap:6px;padding:12px 8px 10px;border:1px solid #4a3d26;border-radius:6px;background:var(--ar-inset);text-align:center;min-width:0;position:relative;box-shadow:inset 0 0 0 1px #000;transition:border-color .12s,transform .12s,box-shadow .12s}
+.tile:hover{border-color:var(--ar-gold);transform:translateY(-2px);box-shadow:inset 0 0 0 1px #000,0 0 14px rgba(201,165,92,.2)}
+.tile.on{border-color:var(--ar-violet);box-shadow:inset 0 0 0 1px #000,0 0 0 1px rgba(139,108,255,.5),0 0 20px rgba(139,108,255,.35)}
+.tile.on .disc{box-shadow:0 0 0 1px #000,0 0 0 3px var(--ar-violet),0 0 18px rgba(139,108,255,.6)}
+.tile.need{border-color:var(--ar-gold)}
+.tile.need::after{content:"choose";position:absolute;top:-8px;right:8px;font-family:var(--face-display);font-size:.52rem;letter-spacing:.16em;text-transform:uppercase;color:#fff;background:linear-gradient(#9a7dff,#5b43d6);border:1px solid var(--ar-gold);border-radius:3px;padding:1px 7px;box-shadow:0 0 0 1px #000}
+.tile.done .disc{box-shadow:0 0 0 1px #000,0 0 0 2px var(--ar-equipped)}
+.tile.done::after{content:"✓";position:absolute;top:6px;right:8px;color:var(--ar-equipped);font-size:.85rem}
+.tile .mark{position:absolute;top:-6px;right:-6px;width:28px;height:28px;border-radius:7px;box-shadow:0 0 0 1px #000,0 2px 6px #000}
+.tile.auto::after{content:"auto";position:absolute;top:-8px;right:8px;font-family:var(--face-display);font-size:.52rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ar-secondary);background:#15112a;border:1px solid var(--ar-brass);border-radius:3px;padding:1px 7px}
+.tile.lock{opacity:.45;filter:saturate(.3)}
+.tile.swap .disc{box-shadow:0 0 0 1px #000,0 0 0 3px var(--ar-deny),0 0 14px rgba(209,104,79,.45)}
+.tile.deny{animation:shake .32s}
+@keyframes shake{0%{transform:translateX(0)}25%{transform:translateX(-4px)}50%{transform:translateX(4px)}75%{transform:translateX(-3px)}100%{transform:translateX(0)}}
+.disc{width:66px;height:66px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 50% 40%,var(--deep,#241e3a),#0a0914 75%);box-shadow:0 0 0 1px #000,0 0 0 2px rgba(201,165,92,.35);color:var(--g,var(--ar-gold));transition:box-shadow .12s}
+.disc svg{width:34px;height:34px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.disc img{width:50px;height:50px;image-rendering:pixelated}
+.disc.big{width:84px;height:84px} .disc.big img{width:64px;height:64px} .disc.big svg{width:42px;height:42px}
+.tile .t{font-family:var(--face-display);font-weight:600;font-size:.7rem;letter-spacing:.05em;color:var(--ar-text);line-height:1.2;max-width:100%;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;min-height:2.4em;overflow-wrap:anywhere}
+.tile .v{font-family:var(--face-display);font-weight:700;font-size:1.3rem;color:var(--ar-gold-light);line-height:1;font-variant-numeric:tabular-nums}
+.tile .v b{color:var(--ar-equipped);font-weight:700}
+.tile .s{font-family:var(--face-display);font-size:.52rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ar-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.tile .s.k{color:var(--ar-equipped)}
+.tile .cost{position:absolute;top:7px;left:8px;font-family:var(--face-display);font-size:.56rem;color:var(--ar-gold);letter-spacing:.08em}
+.grp{display:grid;gap:8px}
+.grp h3{font-family:var(--face-display);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--ar-gold);font-weight:600;display:flex;align-items:center;gap:10px}
+.grp h3::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--ar-brass),transparent)}
+.grp h3 .lk{color:var(--ar-muted)}
+/* the one line of detail — the selected row of the reference, violet-edged */
+.det{display:flex;gap:12px;align-items:center;padding:10px 12px;border:1px solid var(--ar-violet);border-radius:6px;background:linear-gradient(90deg,rgba(139,108,255,.08),rgba(11,9,20,.6) 60%);box-shadow:inset 0 0 0 1px #000,0 0 16px rgba(139,108,255,.18);min-height:68px}
+.det.empty{border-color:#4a3d26;box-shadow:inset 0 0 0 1px #000;background:var(--ar-inset)}
+.det .disc{width:46px;height:46px;flex:0 0 46px} .det .disc img{width:34px;height:34px} .det .disc svg{width:24px;height:24px}
+.det .tx{min-width:0;display:grid;gap:2px}
+.det .tx b{font-family:var(--face-display);font-weight:600;font-size:.95rem;color:var(--ar-gold-light);letter-spacing:.04em}
+.det .tx span{font-size:.95rem;color:var(--ar-secondary);line-height:1.3}
+.det .tx .src{font-family:var(--face-display);font-size:.52rem;letter-spacing:.12em;color:var(--ar-muted);text-transform:uppercase}
+.det .tx .src em{font-style:normal;color:#d9a05b}
+.det.empty .tx span{color:var(--ar-muted);font-style:italic}
+/* ASI */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:640px){.two{grid-template-columns:1fr}}
+.big{display:flex;gap:12px;align-items:center;padding:12px;border:1px solid #4a3d26;border-radius:6px;background:var(--ar-inset);text-align:left;box-shadow:inset 0 0 0 1px #000}
+.big:hover{border-color:var(--ar-gold)}
+.big.on{border-color:var(--ar-violet);box-shadow:inset 0 0 0 1px #000,0 0 16px rgba(139,108,255,.3)}
+.big .tx b{display:block;font-family:var(--face-display);font-weight:600;font-size:.85rem;letter-spacing:.06em;color:var(--ar-gold-light)}
+.big .tx span{font-size:.95rem;color:var(--ar-secondary)}
+.abil{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+@media (max-width:640px){.abil{grid-template-columns:repeat(3,1fr)}}
+.ab{display:grid;justify-items:center;gap:4px;padding:10px 4px;border:1px solid #4a3d26;border-radius:6px;background:var(--ar-inset);box-shadow:inset 0 0 0 1px #000}
+.ab.on{border-color:var(--ar-violet);box-shadow:inset 0 0 0 1px #000,0 0 14px rgba(139,108,255,.3)}
+.ab .k{font-family:var(--face-display);font-size:.58rem;letter-spacing:.16em;color:var(--ar-gold)}
+.ab .v{font-family:var(--face-display);font-weight:700;font-size:1.5rem;color:var(--ar-text);line-height:1;font-variant-numeric:tabular-nums}
+.ab .v b{color:var(--ar-equipped);font-weight:700}
+.ab .m{font-family:var(--face-body);font-size:.85rem;color:var(--ar-secondary)}
+.ab .pl{width:30px;height:30px;border-radius:50%;border:1px solid var(--ar-gold);color:var(--ar-gold-light);display:grid;place-items:center;font-size:1.1rem;line-height:1;margin-top:2px;background:#15112a}
+.ab .pl:hover{background:rgba(139,108,255,.25);border-color:var(--ar-violet)}
+/* seal + result */
+.sum{display:grid;gap:10px}
+.deltas{display:flex;gap:8px;flex-wrap:wrap}
+.delta{display:grid;justify-items:center;gap:3px;padding:10px 14px;border:1px solid #4a3d26;border-radius:6px;background:var(--ar-inset);min-width:110px;box-shadow:inset 0 0 0 1px #000}
+.delta .k{font-family:var(--face-display);font-size:.52rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ar-gold)}
+.delta .v{font-family:var(--face-display);font-weight:600;font-size:1.05rem;color:var(--ar-text);font-variant-numeric:tabular-nums}
+.delta .v b{color:var(--ar-equipped);font-weight:700}
+.picks{display:flex;gap:10px;flex-wrap:wrap}
+.pick{display:grid;justify-items:center;gap:5px;width:86px;text-align:center}
+.pick .t{font-family:var(--face-display);font-weight:600;font-size:.62rem;letter-spacing:.04em;color:var(--ar-text);line-height:1.2}
+.pick .s{font-family:var(--face-display);font-size:.5rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ar-muted)}
+.result{display:grid;justify-items:center;gap:12px;text-align:center;padding:22px 10px}
+.result .badge{width:96px;height:96px;font-size:2.6rem;animation:bloom .9s ease-out}
+@keyframes bloom{0%{transform:scale(.6);opacity:0}60%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
+.result h2{font-family:var(--face-display);font-weight:700;font-size:1.4rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ar-gold-light)}
+.result p{margin:0;color:var(--ar-secondary);max-width:52ch;font-size:1rem}
+/* footer: BACK in gold hairline, NEXT / LEVEL UP in the reliquary's violet with a gold edge */
+.foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:10px;border-top:1px solid rgba(201,165,92,.3)}
+.foot .hint{flex:1;font-family:var(--face-body);font-style:italic;font-size:.9rem;color:var(--ar-muted);min-width:0}
+.ghost{border:1px solid var(--ar-gold);border-radius:5px;padding:10px 20px;font-family:var(--face-display);font-weight:600;font-size:.66rem;letter-spacing:.18em;text-transform:uppercase;color:var(--ar-gold-light);background:#0b0914;box-shadow:inset 0 0 0 1px #000}
+.ghost:hover{background:#15112a;box-shadow:inset 0 0 0 1px #000,0 0 12px rgba(201,165,92,.25)}
+.lvlUp{font-family:var(--face-display);font-weight:700;font-size:.9rem;letter-spacing:.2em;text-transform:uppercase;padding:13px 36px;border:1px solid var(--ar-gold);border-radius:5px;background:linear-gradient(#9a7dff,#6c52e6 45%,#4b36b8);color:#fff6dc;text-shadow:0 1px 2px #2a1a6a;box-shadow:inset 0 0 0 1px #2a1a6a,0 0 0 2px #0a0914,0 0 22px rgba(139,108,255,.45),0 8px 16px rgba(0,0,0,.6)}
+.lvlUp:hover{filter:brightness(1.08)}
+.lvlUp.locked{background:linear-gradient(#2a2440,#15112a);color:var(--ar-muted);border-color:#4a3d26;text-shadow:none;box-shadow:inset 0 0 0 1px #000}
+.lvlUp.ready{animation:arPulse 2.6s ease-in-out infinite}
+@keyframes arPulse{0%,100%{box-shadow:inset 0 0 0 1px #2a1a6a,0 0 0 2px #0a0914,0 0 22px rgba(139,108,255,.45),0 8px 16px rgba(0,0,0,.6)}50%{box-shadow:inset 0 0 0 1px #2a1a6a,0 0 0 2px #0a0914,0 0 34px 6px rgba(139,108,255,.65),0 8px 16px rgba(0,0,0,.6)}}
+details.dm{border:1px solid #2a2440;border-radius:6px;padding:8px 12px;background:#0b0914;color:var(--ar-secondary);font-size:.95rem}
+details.dm summary{cursor:pointer;font-family:var(--face-display);font-size:.6rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ar-muted)}
+details.dm ul{margin:8px 0 2px;padding-left:18px;display:grid;gap:5px;max-width:78ch}
+details.dm code{font-family:ui-monospace,Menlo,monospace;font-size:.78rem;color:var(--ar-gold)}
+.toast{position:fixed;left:50%;bottom:max(18px,env(safe-area-inset-bottom,0px));transform:translateX(-50%) translateY(20px);opacity:0;background:#15112a;border:1px solid var(--ar-gold);color:var(--ar-text);padding:8px 16px;border-radius:6px;font-size:.95rem;pointer-events:none;transition:opacity .2s,transform .2s;max-width:min(90vw,520px);text-align:center;z-index:5;box-shadow:0 0 16px rgba(139,108,255,.25)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+@media (prefers-reduced-motion:reduce){.tile,.toast,.lvlUp.ready,.result .badge{animation:none!important;transition:none!important}.tile:hover{transform:none}}
+
+/* the painted slabs — Sam's icon sheets (OpenArt, same recipe as the action bar), the frame is in the picture */
+.slab{width:84px;height:84px;border-radius:12px;overflow:hidden;display:grid;place-items:center;background:#0a0914;box-shadow:0 0 0 1px #000,0 4px 10px rgba(0,0,0,.6);transition:box-shadow .12s}
+.slab img{width:100%;height:100%;display:block;object-fit:cover}
+.slab.rune{background:radial-gradient(circle at 50% 40%,var(--deep,#241e3a),#0a0914 75%);box-shadow:0 0 0 1px #000,inset 0 0 0 2px #3a3a44,inset 0 0 0 3px #1a1a22,0 4px 10px rgba(0,0,0,.6)}
+.slab.rune img{width:52px;height:52px;object-fit:contain;image-rendering:pixelated}
+.tile.on .slab{box-shadow:0 0 0 1px #000,0 0 0 3px var(--ar-violet),0 0 20px rgba(139,108,255,.7)}
+.tile.done .slab{box-shadow:0 0 0 1px #000,0 0 0 2px var(--ar-equipped)}
+.tile.swap .slab{box-shadow:0 0 0 1px #000,0 0 0 3px var(--ar-deny),0 0 14px rgba(209,104,79,.5)}
+.det .slab{width:54px;height:54px;flex:0 0 54px;border-radius:8px} .det .slab.rune img{width:34px;height:34px}
+.big .slab{width:64px;height:64px;flex:0 0 64px;border-radius:9px}
+.pick .slab{width:64px;height:64px;border-radius:9px}
+.tiles{grid-template-columns:repeat(auto-fill,minmax(124px,1fr))}
+
+/* HUD in the same paint: stat chips wear a small slab, the level medallion is the painted ring with the number
+   printed in its empty centre, the three buttons are empty painted plates with their words set on top */
+.stat > span .slab{position:absolute;left:5px;top:50%;transform:translateY(-50%);width:24px;height:24px;border-radius:5px;box-shadow:0 0 0 1px #000}
+.medal{position:relative;width:86px;height:86px;display:grid;place-items:center}
+.medal img{position:absolute;inset:0;width:100%;height:100%;border-radius:50%}
+.medal b{position:relative;font-family:var(--face-display);font-weight:700;font-size:1.9rem;color:var(--ar-gold-light);text-shadow:0 0 10px rgba(255,226,160,.7),0 2px 3px #000;line-height:1;font-variant-numeric:tabular-nums}
+.medal small{position:absolute;left:0;right:0;bottom:-14px;text-align:center;font-family:var(--face-display);font-size:.5rem;letter-spacing:.18em;text-transform:uppercase;color:var(--ar-gold)}
+.hero .lv{gap:16px}
+.result .medal{width:120px;height:120px;animation:bloom .9s ease-out} .result .medal b{font-size:2.8rem}
+.plate{position:relative;display:inline-grid;place-items:center;min-width:150px;height:52px;padding:0 26px;background:center/100% 100% no-repeat;font-family:var(--face-display);font-weight:700;font-size:.78rem;letter-spacing:.2em;text-transform:uppercase;color:#fff6dc;text-shadow:0 1px 2px #1a0f3a,0 0 8px rgba(0,0,0,.6);border:0;filter:drop-shadow(0 6px 10px rgba(0,0,0,.6))}
+.plate.back{min-width:130px;color:var(--ar-gold-light);padding-left:42px}
+.plate.up{min-width:210px;height:60px;font-size:.92rem}
+.plate:hover{filter:drop-shadow(0 6px 10px rgba(0,0,0,.6)) brightness(1.1)}
+.plate.locked{filter:grayscale(.85) brightness(.55) drop-shadow(0 6px 10px rgba(0,0,0,.6));color:var(--ar-muted);text-shadow:none}
+.plate.ready{animation:platePulse 2.6s ease-in-out infinite}
+@keyframes platePulse{0%,100%{filter:drop-shadow(0 6px 10px rgba(0,0,0,.6)) drop-shadow(0 0 0 rgba(139,108,255,0))}50%{filter:drop-shadow(0 6px 10px rgba(0,0,0,.6)) drop-shadow(0 0 14px rgba(139,108,255,.8))}}
+.plate .ar{width:22px;height:22px;border-radius:5px;position:absolute;top:50%;transform:translateY(-50%)}
+.plate.back .ar{left:10px} .plate.next .ar{right:10px}
+@media (prefers-reduced-motion:reduce){.plate.ready,.result .medal{animation:none!important}}
+
+/* the floor sigil: the sorcerer's evocation ring (public/vfx/sigilEvocationRing, Sam's art) laid flat under the hero,
+   breathing quietly; LEVEL UP flares it, bursts it, and sends the picks up out of it */
+.hero .fig{position:relative}
+.sigil{position:absolute;left:50%;bottom:-4px;width:230px;height:230px;transform:translateX(-50%) scaleY(.34);transform-origin:50% 100%;background-repeat:no-repeat;mix-blend-mode:screen;opacity:.55;pointer-events:none;filter:drop-shadow(0 0 10px rgba(255,170,60,.6))}
+.sigil.flare{animation:sigFlare 2.4s ease-out forwards}
+@keyframes sigFlare{0%{opacity:.55;filter:brightness(1) drop-shadow(0 0 10px rgba(255,170,60,.6))}12%{opacity:1;filter:brightness(2.2) drop-shadow(0 0 30px rgba(255,200,90,1))}100%{opacity:.85;filter:brightness(1.25) drop-shadow(0 0 16px rgba(255,170,60,.8))}}
+.burst{position:absolute;left:50%;bottom:10px;width:300px;height:300px;transform:translateX(-50%);background-repeat:no-repeat;mix-blend-mode:screen;pointer-events:none}
+.beam{position:absolute;left:50%;bottom:20px;width:120px;height:520px;transform:translateX(-50%) scaleY(0);transform-origin:50% 100%;background:linear-gradient(0deg,rgba(255,210,120,.0),rgba(255,210,120,.55) 20%,rgba(160,120,255,.35) 60%,transparent);filter:blur(6px);mix-blend-mode:screen;pointer-events:none;animation:beam 1.6s ease-out forwards}
+@keyframes beam{0%{transform:translateX(-50%) scaleY(0);opacity:0}20%{opacity:1}45%{transform:translateX(-50%) scaleY(1)}100%{transform:translateX(-50%) scaleY(1);opacity:0}}
+.fly{position:absolute;width:58px;height:58px;border-radius:10px;overflow:hidden;box-shadow:0 0 0 1px #000,0 0 18px rgba(255,210,120,.8);pointer-events:none;z-index:4}
+.fly img{width:100%;height:100%;display:block}
+.upicon{position:absolute;left:50%;top:22%;width:96px;height:96px;transform:translate(-50%,0) scale(.2);opacity:0;border-radius:14px;overflow:hidden;pointer-events:none;z-index:5;animation:upPop 1.9s cubic-bezier(.2,1.4,.4,1) forwards;box-shadow:0 0 30px rgba(255,210,120,.9)}
+.upicon img{width:100%;height:100%;display:block}
+@keyframes upPop{0%{opacity:0;transform:translate(-50%,40px) scale(.2)}25%{opacity:1;transform:translate(-50%,0) scale(1.15)}40%{transform:translate(-50%,0) scale(1)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-30px) scale(1)}}
+.spark{position:absolute;width:6px;height:6px;border-radius:50%;background:#ffe2a0;box-shadow:0 0 8px #ffcf6a;pointer-events:none;z-index:3}
+.hero.shake{animation:heroShake .5s}
+@keyframes heroShake{0%,100%{transform:none}20%{transform:translate(-2px,1px)}40%{transform:translate(2px,-1px)}60%{transform:translate(-1px,1px)}}
+@media (prefers-reduced-motion:reduce){.sigil.flare,.beam,.upicon,.hero.shake{animation:none!important}.fly,.spark{display:none}}
+
+/* Sam's "Sorcerer Awakening — Bright Runes v3" film (960×720, 6 s, its own sound) plays over the panel when the level is taken */
+.awaken{position:absolute;inset:0;z-index:8;background:#000;display:grid;place-items:center;opacity:0;transition:opacity .35s}
+.awaken.on{opacity:1}
+.awaken video{width:100%;height:100%;object-fit:cover}
+.awaken .skip{position:absolute;right:max(14px,env(safe-area-inset-right,0px));bottom:14px;font-family:var(--face-display);font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:var(--ar-gold-light);border:1px solid var(--ar-gold);border-radius:4px;padding:6px 12px;background:rgba(11,9,20,.7)}
+.inv{position:relative}
+</style>
+</head><body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l2 7 7 2-7 2-2 7-2-7-7-2 7-2z"/></symbol>
+  <symbol id="i-flame" viewBox="0 0 24 24"><path d="M12 3c1 4 5 6 5 10a5 5 0 0 1-10 0c0-2 1-3 2-5 1 1 2 2 2 3 1-2 1-5 1-8z"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+  <symbol id="i-far" viewBox="0 0 24 24"><path d="M3 12h15M14 7l5 5-5 5M3 9v6"/></symbol>
+  <symbol id="i-burst" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4M5 5l3 3M16 16l3 3M5 19l3-3M16 8l3-3"/></symbol>
+  <symbol id="i-hour" viewBox="0 0 24 24"><path d="M6 3h12M6 21h12M7 3c0 5 5 6 5 9s-5 4-5 9M17 3c0 5-5 6-5 9s5 4 5 9"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M6 6l6 6 6-6M6 12l6 6 6-6"/></symbol>
+  <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2L5 13h6l-1 9 8-12h-6z"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></symbol>
+  <symbol id="i-eyeoff" viewBox="0 0 24 24"><path d="M3 3l18 18M10.5 6.2A10 10 0 0 1 21 12c-.7 1.3-1.6 2.4-2.6 3.3M6.6 6.6A10 10 0 0 0 3 12a10 10 0 0 0 11.4 5.4"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></symbol>
+  <symbol id="i-cycle" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14 5M4 12a8 8 0 0 1 14-5M4 17v-5h5M20 7v5h-5"/></symbol>
+  <symbol id="i-twin" viewBox="0 0 24 24"><circle cx="9" cy="12" r="5"/><circle cx="15" cy="12" r="5"/></symbol>
+  <symbol id="i-scale" viewBox="0 0 24 24"><path d="M12 3l8 9-8 9-8-9z"/><path d="M8 12h8M12 7v10"/></symbol>
+  <symbol id="i-mind" viewBox="0 0 24 24"><circle cx="12" cy="11" r="6"/><path d="M9 17v4M15 17v4M8 11h8"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></symbol>
+  <symbol id="i-chaos" viewBox="0 0 24 24"><path d="M3 12c3-6 6 6 9 0s6 6 9 0"/><path d="M3 18c3-6 6 6 9 0s6 6 9 0"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 20V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 13V6a1.5 1.5 0 0 1 3 0v6M11 11V4a1.5 1.5 0 0 1 3 0v8M14 11V6a1.5 1.5 0 0 1 3 0v8M8 13l-2-2a1.5 1.5 0 0 0-2 2l3 5a5 5 0 0 0 4 3h2a5 5 0 0 0 5-5v-2"/></symbol>
+  <symbol id="i-leaf" viewBox="0 0 24 24"><path d="M12 21C6 15 6 7 20 4c-1 8-4 13-8 17z"/><path d="M12 21c0-5 3-9 7-13"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 14a8 8 0 1 1-10-10 6 6 0 0 0 10 10z"/></symbol>
+  <symbol id="i-waves" viewBox="0 0 24 24"><path d="M3 8c3-2 6 2 9 0s6 2 9 0M3 14c3-2 6 2 9 0s6 2 9 0M3 20c3-2 6 2 9 0s6 2 9 0"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 4h7a3 3 0 0 1 3 3v13a2 2 0 0 0-2-2H4zM20 4h-7a3 3 0 0 0-3 3v13a2 2 0 0 1 2-2h8z"/></symbol>
+  <symbol id="i-anvil" viewBox="0 0 24 24"><path d="M4 8h12a4 4 0 0 1 4 4H9a4 4 0 0 1-4-3zM9 12v4M15 12v4M6 16h12v3H6z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></symbol>
+  <symbol id="i-wand" viewBox="0 0 24 24"><path d="M4 20L15 9M15 9l2-2M17 3v2M21 7h-2M19 5l1-1M19 9l1 1M13 5l1 1"/></symbol>
+</svg>
+
+<div class="wrap">
+  <div class="top">
+    <span id="topName">Level up</span>
+    <span class="rule"><i>✦</i></span>
+    <span class="note" id="sndNote"></span>
+    <button class="snd on" id="sndBtn" type="button" aria-pressed="true"><i></i><span>Sound on</span></button>
+    <button class="snd" id="closeBtn" type="button">Close</button>
+  </div>
+
+  <section class="inv" id="inv" aria-label="Level up">
+    <aside class="hero" id="hero">
+      <div class="nm"><h2 id="heroName">…</h2><div class="src" id="heroSub">Sorcerer 1 · Half-elf</div></div>
+      <div class="fig" id="heroFig"><div class="sigil" id="sigil"></div><img id="heroImg" alt="" width="130" height="306" style="position:relative" hidden></div>
+      <div class="lv"><div class="medal" id="heroBadge"></div><div class="stat" id="heroStat"></div></div>
+    </aside>
+    <div class="main">
+      <div class="ttl" id="ttl"></div>
+      <div class="scr" id="scr"></div>
+      <div class="foot" id="foot"></div>
+    </div>
+  </section>
+
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const Q = new URLSearchParams(location.search), CID = Q.get("cid") || "", HERO = Q.get("hero") || "";
+const ICON = "/velkynvelve-walk/icons/level/", VOICE = "/sfx/voice/titles/";
+const slug = n => String(n).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+// every painted slab in icons/level/ (Sam's OpenArt sheets, 2026-10-28); a key not here falls back to the glyph disc
+const ART_KEYS = new Set(["cast", "aberrant-sorcery", "ability-score-improvement", "absorb-elements", "acid-splash", "aganazzar-s-scorcher", "alter-self", "back-arrow", "blade-ward", "blindness-deafness", "blur", "booming-blade", "burning-hands", "careful-spell", "catapult", "chaos-bolt", "charm-person", "chill-touch", "chromatic-orb", "clockwork-sorcery", "cloud-of-daggers", "color-spray", "comprehend-languages", "control-flames", "create-bonfire", "crown-of-madness", "dancing-lights", "darkness", "darkvision", "detect-magic", "detect-thoughts", "disguise-self", "distant-spell", "distort-value", "done", "draconic-sorcery", "dragon-s-breath", "dust-devil", "earth-tremor", "earthbind", "elemental-adept", "empowered-spell", "enhance-ability", "enlarge-reduce", "expeditious-retreat", "extended-spell", "false-life", "feather-fall", "fey-touched", "fire-bolt", "flame-blade", "flaming-sphere", "fog-cloud", "friends", "frostbite", "grease", "green-flame-blade", "gust", "gust-of-wind", "heightened-spell", "hit-points", "hold-person", "ice-knife", "infestation", "invisibility", "jump", "keen-mind", "knock", "level-medallion", "level-up-burst", "levitate", "light", "lightning-lure", "locked", "mage-armor", "mage-hand", "magic-missile", "magic-weapon", "maximillian-s-earthen-grasp", "mending", "message", "mind-sliver", "mind-spike", "minor-illusion", "mirror-image", "misty-step", "mold-earth", "next-arrow", "phantasmal-force", "plate-back", "plate-next", "plate-up", "poison-spray", "prestidigitation", "proficiency", "pyrotechnics", "quickened-spell", "ray-of-frost", "ray-of-sickness", "resilient", "scorching-ray", "see-invisibility", "seeking-spell", "shadow-blade", "shadow-touched", "shape-water", "shatter", "shield", "shocking-grasp", "silent-image", "sleep", "snilloc-s-snowball-storm", "sorcery-points", "spell-attack", "spell-save-dc", "spell-slot", "spell-sniper", "spider-climb", "subtle-spell", "suggestion", "swap", "sword-burst", "tasha-s-caustic-brew", "tasha-s-mind-whip", "telekinetic", "thunderclap", "thunderwave", "transmuted-spell", "true-strike", "twinned-spell", "war-caster", "warding-wind", "web", "wild-magic-sorcery", "witch-bolt"]);
+const D = {
+  spells: [], runes: {},
+  art: new Proxy({}, {get: (_, k) => ART_KEYS.has(String(k)) ? ICON + String(k) + ".webp" : undefined}),
+  voice: new Proxy({}, {get: (_, k) => VOICE + slug(String(k)) + ".mp3"}),
+  snd: {hover: "/sfx/ui/hover.mp3", press: "/sfx/ui/press.mp3", open: "/sfx/ui/open.mp3", close: "/sfx/ui/close.mp3", confirm: "/sfx/ui/confirm.mp3", cancel: "/sfx/ui/cancel.mp3", deny: "/sfx/ui/deny.mp3", swap: "/sfx/ui/swap.mp3", orb: "/sfx/walk/orb-select.mp3", sorcery: "/sfx/walk/innate-sorcery.mp3"},
+  fx: {sigilEvocationRing: "/vfx/sigilEvocationRing.webp", sigilEvocationBurst: "/vfx/sigilEvocationBurst.webp", awaken: null},
+  stage: "", kenta: "",
+};
+// the class's celebration: its film and its floor sigil (sorcerer: Sam's Sorcerer Awakening, the evocation ring)
+const CLASS_FX = {sorcerer: {film: "/velkynvelve-walk/film/sorcerer-awakening.mp4", stage: "/velkynvelve-walk/img/inventory-stage-wizard.jpg"}};
+let SPELLS = [];
+const RAMP = {abjuration:["#0b1e2f","#2479b0"], conjuration:["#132e13","#92ce5a"], divination:["#16152e","#7542b8"], enchantment:["#2d131e","#d0407c"], evocation:["#36120e","#e87618"], illusion:["#0d1d31","#3e96df"], necromancy:["#1b172b","#853cb1"], transmutation:["#311f10","#df9c31"]};
+const ORD = {0:"Cantrip", 1:"1st", 2:"2nd", 3:"3rd"};
+const ICONS_OF = {"Careful Spell":"shield","Distant Spell":"far","Empowered Spell":"burst","Extended Spell":"hour","Heightened Spell":"chev","Quickened Spell":"bolt","Seeking Spell":"target","Subtle Spell":"eyeoff","Transmuted Spell":"cycle","Twinned Spell":"twin","Draconic Sorcery":"scale","Aberrant Sorcery":"mind","Clockwork Sorcery":"gear","Wild Magic Sorcery":"chaos"};
+let SHEET = {scores:{}, cantrips:[], prepared:[], xp:0}, RULES = null, META = [], ORIGINS = [], FEATS = [], LV = {}, FLOW = {}, PRE = null, OWED = false, NAME = "", CLS = "", DC = null, ATK = null;
+const cur = {lvl:2, i:0, det:null, detKind:null, done:false, hp:null, busy:false, more:false, result:null};
+const tell = msg => { try { parent.postMessage(Object.assign({source: "aop-level-up", hero: HERO}, msg), location.origin); } catch (e) {} };
+addEventListener("message", e => { if (e.origin !== location.origin || !e.data || e.data.source !== "aop-walk") return; if (e.data.sprite){ D.kenta = e.data.sprite; const im = document.getElementById("heroImg"); if (im){ im.src = D.kenta; im.hidden = false; } } });
+async function boot(){
+  const scr = document.getElementById("scr");
+  scr.innerHTML = `<div class="det empty"><div class="tx"><b>Reading the sheet…</b></div></div>`;
+  try {
+    const [c, p] = await Promise.all([
+      fetch(`/api/walk-level-choices?character_id=${encodeURIComponent(CID)}`, {cache: "no-store"}).then(r => r.json()),
+      fetch(`/api/walk-level-up?character_id=${encodeURIComponent(CID)}`, {cache: "no-store"}).then(r => r.json()),
+    ]);
+    if (c.error) throw new Error(c.error);
+    OWED = !!c.owed; PRE = p.preview || null; NAME = c.name; CLS = String(c.class || "").split(/[\s/]/)[0].toLowerCase();
+    const plan = c.plan;
+    if (!plan) throw new Error(`${c.name}'s next choices are made on the dashboard sheet for now (this screen serves the sorcerer, levels 2 and 3).`);
+    if (!OWED && !(PRE && PRE.ok && PRE.earned)) throw new Error(PRE && PRE.gateNote ? PRE.gateNote : PRE && !PRE.earned ? `${(PRE.need || 0).toLocaleString()} XP to level ${PRE.next}.` : (PRE && PRE.refusal) || "This level cannot be taken yet.");
+    const L = plan.level; cur.lvl = L;
+    SPELLS = c.spells; D.spells = SPELLS;
+    SHEET = {scores: c.scores || {}, cantrips: c.casting.cantrips || [], prepared: c.casting.prepared || [], xp: PRE ? PRE.xp : 0};
+    DC = c.casting.save_dc; ATK = c.casting.attack_bonus;
+    META = c.metamagic.map(m => ({n: m.name, c: m.cost, i: ICONS_OF[m.name] || "wand", d: m.desc}));
+    ORIGINS = c.origins.map(o => ({n: o.name, i: ICONS_OF[o.name] || "scale", ok: o.open, src: o.source, d: o.desc}));
+    const slotsNow = {}, slotsNext = {};
+    (PRE && PRE.write && PRE.write.slots ? Object.entries(PRE.write.slots) : []).forEach(([k, v]) => { slotsNext[k] = (v && v.max) || 0; });
+    RULES = {prepared: {[L - 1]: plan.prepared.from, [L]: plan.prepared.to}, cantrips: {[L - 1]: plan.cantrips.from, [L]: plan.cantrips.to}, sp: {[L - 1]: plan.sorceryPoints.from, [L]: plan.sorceryPoints.to},
+      slots: {[L - 1]: Q.get("slots") ? JSON.parse(Q.get("slots")) : slotsNow, [L]: Object.keys(slotsNext).length ? slotsNext : (Q.get("slots") ? JSON.parse(Q.get("slots")) : {})}, maxSpell: {[L]: plan.maxSpellLevel}, metamagic: plan.metamagic};
+    LV = {[L]: {sealed: false, meta: [], origin: null, mode: null, asi: {}, feat: null, picks: [], cpicks: [], swapOut: null, swapOutC: null}};
+    const pick = plan.metamagic ? "meta" : plan.origin ? "origin" : null;
+    FLOW = {[L]: (OWED ? [] : ["gain"]).concat(pick ? [pick] : [], ["spells", "seal"])};
+    const fx = CLASS_FX[CLS] || {}; D.fx.awaken = fx.film || null; D.stage = fx.stage || `/velkynvelve-walk/img/inventory-stage-${CLS}.jpg`;
+    document.getElementById("heroName").textContent = NAME.split(" ")[0];
+    document.getElementById("topName").textContent = `Level up · ${NAME}`;
+    tell({ready: true});
+    render();
+  } catch (e) {
+    scr.innerHTML = `<div class="det"><div class="tx"><b>Not now</b><span>${esc(String(e && e.message || e))}</span></div></div>`;
+    document.getElementById("foot").innerHTML = plate("back", "Back to the pack", "", "close");
+    document.getElementById("ttl").innerHTML = `<h1>Level up</h1>`;
+  }
+}
+// ---- sound: the Underwalk's own clicks ----
+let armed = true, actx = null; const BUF = {}; let lastHover = 0;
+const GAIN = {hover:.12, press:.42, open:.35, close:.3, confirm:.45, cancel:.35, deny:.4, swap:.45, orb:.55, sorcery:.5};
+function ctx(){ return actx || (actx = new (window.AudioContext || window.webkitAudioContext)()); }
+function load(k){ if (BUF[k]) return BUF[k]; return BUF[k] = fetch(D.snd[k]).then(r => r.arrayBuffer()).then(b => ctx().decodeAudioData(b)).catch(() => null); }
+async function play(k){ if (!armed) return; try { const c = ctx(); if (c.state !== "running") await c.resume(); const buf = await load(k); if (!buf) return; const s = c.createBufferSource(); s.buffer = buf; s.playbackRate.value = 1 + (Math.random() * .08 - .04); const g = c.createGain(); g.gain.value = GAIN[k] ?? .4; s.connect(g).connect(c.destination); s.start(); } catch (e) {} }
+function hover(){ const t = performance.now(); if (t - lastHover < 90) return; lastHover = t; play("hover"); }
+document.getElementById("sndBtn").addEventListener("click", async () => {
+  armed = !armed; const b = document.getElementById("sndBtn"); b.classList.toggle("on", armed); b.setAttribute("aria-pressed", String(armed));
+  b.querySelector("span").textContent = armed ? "Sound on" : "Sound off";
+  
+  if (armed){ try { await ctx().resume(); } catch (e) {} Object.keys(D.snd).forEach(load); play("open"); }
+});
+
+
+// ---- the voice: a heroic woman says the title when it is chosen (ElevenLabs, Kira X; one clip per title) ----
+let vSrc = null;
+async function say(name){
+  if (!armed) return;
+  try { const c = ctx(); if (c.state !== "running") await c.resume(); const k = "v:" + name;
+    if (!BUF[k]) BUF[k] = fetch(D.voice[name]).then(r => r.arrayBuffer()).then(b => c.decodeAudioData(b)).catch(() => null);
+    const buf = await BUF[k]; if (!buf) return; if (vSrc) try { vSrc.stop(); } catch (e) {}
+    const s = c.createBufferSource(); s.buffer = buf; const g = c.createGain(); g.gain.value = .95; s.connect(g).connect(c.destination); s.start(); vSrc = s; } catch (e) {}
+}
+// ---- the floor sigil: 8 frames, 4 × 2, looping at 12 fps ----
+const SIG = {el:null, f:0};
+function sheet(el, url, cols, rows, f){ el.style.backgroundImage = `url(${url})`; el.style.backgroundSize = `${cols * 100}% ${rows * 100}%`; el.style.backgroundPosition = `${(f % cols) / (cols - 1) * 100}% ${Math.floor(f / cols) / (rows - 1) * 100}%`; }
+setInterval(() => { const el = document.getElementById("sigil"); if (!el || !D.fx) return; SIG.f = (SIG.f + 1) % 8; sheet(el, D.fx.sigilEvocationRing, 4, 2, SIG.f); }, 83);
+
+// the film first (sound only when the viewer switched it on), then the result screen with the sigil burst and the picks
+function awaken(then){
+  const inv = document.getElementById("inv"); if (!D.fx || !D.fx.awaken || matchMedia("(prefers-reduced-motion: reduce)").matches){ then(); say("Level up!"); return; }
+  const ov = document.createElement("div"); ov.className = "awaken";
+  ov.innerHTML = `<video playsinline preload="auto"></video><button class="skip" type="button">Skip</button>`;
+  inv.appendChild(ov); const v = ov.querySelector("video"); v.src = D.fx.awaken; v.muted = !armed;
+  let done = false; const end = () => { if (done) return; done = true; ov.classList.remove("on"); setTimeout(() => ov.remove(), 380); then(); };
+  v.addEventListener("ended", end); ov.querySelector(".skip").addEventListener("click", e => { e.stopPropagation(); play("close"); end(); });
+  setTimeout(() => say("Level up!"), 2900);   // the banner lands about here in the film
+  requestAnimationFrame(() => ov.classList.add("on")); v.play().catch(() => { v.muted = true; v.play().catch(end); });
+}
+function celebrate(L){
+  const hero = document.getElementById("hero"), fig = document.getElementById("heroFig"), sig = document.getElementById("sigil");
+  if (!hero || !fig) return;
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches){ sig && sig.classList.add("flare"); return; }
+  sig.classList.remove("flare"); void sig.offsetWidth; sig.classList.add("flare");
+  hero.classList.remove("shake"); void hero.offsetWidth; hero.classList.add("shake");
+  const beam = document.createElement("div"); beam.className = "beam"; fig.appendChild(beam); setTimeout(() => beam.remove(), 1700);
+  const burst = document.createElement("div"); burst.className = "burst"; fig.appendChild(burst); let f = 0;
+  const bt = setInterval(() => { sheet(burst, D.fx.sigilEvocationBurst, 4, 2, f); if (++f >= 8){ clearInterval(bt); setTimeout(() => burst.remove(), 60); } }, 50);
+  if (D.art["level-up-burst"]){ const up = document.createElement("div"); up.className = "upicon"; up.innerHTML = `<img src="${D.art["level-up-burst"]}" alt="">`; hero.appendChild(up); setTimeout(() => up.remove(), 2000); }
+  // sparks rise out of the ring
+  const fr = fig.getBoundingClientRect(), hr = hero.getBoundingClientRect(), cx = fr.left - hr.left + fr.width / 2, cy = fr.top - hr.top + fr.height - 20;
+  for (let i = 0; i < 26; i++){ const sp = document.createElement("div"); sp.className = "spark"; hero.appendChild(sp); const a = Math.random() * Math.PI * 2, r = 30 + Math.random() * 80;
+    sp.animate([{transform:`translate(${cx + Math.cos(a) * 90}px, ${cy}px) scale(1)`, opacity:1}, {transform:`translate(${cx + Math.cos(a) * r}px, ${cy - 160 - Math.random() * 220}px) scale(.3)`, opacity:0}], {duration:1100 + Math.random() * 900, easing:"cubic-bezier(.2,.7,.3,1)", delay:Math.random() * 300}).onfinish = () => sp.remove(); }
+  // the picks fly up out of the sigil to where they land on the result screen
+  setTimeout(() => { const s = LV[L], keys = (L === 2 ? s.meta : L === 3 ? [s.origin] : [s.mode === "feat" ? s.feat : "Ability Score Improvement"]).concat(s.picks, s.cpicks).filter(Boolean);
+    const targets = Array.from(document.querySelectorAll(".result .pick .slab, .result .pick .disc"));
+    keys.forEach((n, i) => { const x = byName(n), k = x ? slug(x.name) : slug(n), src = D.art[k]; if (!src) return; const el = document.createElement("div"); el.className = "fly"; el.innerHTML = `<img src="${src}" alt="">`; document.body.appendChild(el);
+      const t = targets[i] ? targets[i].getBoundingClientRect() : {left: innerWidth / 2, top: innerHeight / 2, width: 64, height: 64};
+      const sx = fr.left + fr.width / 2 - 29 + (i - keys.length / 2) * 14, sy = fr.top + fr.height - 60;
+      if (targets[i]) targets[i].style.opacity = "0";
+      el.animate([{transform:`translate(${sx}px, ${sy}px) scale(.3)`, opacity:0}, {transform:`translate(${sx}px, ${sy - 220}px) scale(1.15)`, opacity:1, offset:.45}, {transform:`translate(${t.left + t.width / 2 - 29}px, ${t.top + t.height / 2 - 29}px) scale(1)`, opacity:1}], {duration:1300, delay:i * 140, easing:"cubic-bezier(.3,.6,.2,1)", fill:"forwards"}).onfinish = () => { el.remove(); if (targets[i]) targets[i].style.opacity = ""; play("orb"); };
+    }); }, 260);
+}
+
+// ---- derived ----
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const byName = n => SPELLS.find(s => s.name === n);
+const newSpells = L => RULES.prepared[L] - RULES.prepared[L - 1];
+const newCantrips = L => RULES.cantrips[L] - RULES.cantrips[L - 1];
+function preparedBefore(L){ return SHEET.prepared.slice(); }
+function cantripsBefore(L){ return SHEET.cantrips.slice(); }
+function needSpells(L){ return newSpells(L) + (LV[L].swapOut ? 1 : 0); }
+function needCantrips(L){ return newCantrips(L) + (LV[L].swapOutC ? 1 : 0); }
+function stepDone(L, id){
+  const s = LV[L];
+  if (id === "gain") return OWED || !!cur.hp;
+  if (id === "meta") return s.meta.length === RULES.metamagic;
+  if (id === "origin") return !!s.origin;
+  if (id === "feat") return s.mode === "asi" ? Object.values(s.asi).reduce((a, b) => a + b, 0) === 2 : !!s.feat;
+  if (id === "spells") return s.picks.length === needSpells(L) && s.cpicks.length === needCantrips(L);
+  if (id === "seal") return s.sealed;
+}
+function toast(msg){ const t = document.getElementById("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("show"), 2600); }
+function shake(el){ if (!el) return; el.classList.remove("deny"); void el.offsetWidth; el.classList.add("deny"); }
+const chipArt = k => D.art[k] ? `<span class="slab"><img src="${D.art[k]}" alt=""></span>` : "";
+const chipBg = () => D.art["plate-back"] ? ` style="background-image:url(${D.art["plate-back"]})"` : "";
+const medal = (n, sub) => D.art["level-medallion"] ? `<img src="${D.art["level-medallion"]}" alt=""><b>${n}</b>${sub ? `<small>${sub}</small>` : ""}` : `<b>${n}</b>${sub ? `<small>${sub}</small>` : ""}`;
+const plate = (kind, label, cls = "", act, extra = "") => D.art[`plate-${kind}`] ? `<button class="plate ${kind} ${cls}" data-act="${act}" ${extra} style="background-image:url(${D.art[`plate-${kind}`]})">${kind === "back" && D.art["back-arrow"] ? `<img class="ar" src="${D.art["back-arrow"]}" alt="">` : ""}${label}${kind === "next" && D.art["next-arrow"] ? `<img class="ar" src="${D.art["next-arrow"]}" alt="">` : ""}</button>` : `<button class="${kind === "back" ? "ghost" : "lvlUp"} ${cls}" data-act="${act}" ${extra}>${label}</button>`;
+// the painted slab when Sam's sheet has it, else the SVG glyph on a disc (only the fallbacks nobody should see)
+const ico = (id, cls = "", artKey = null) => artKey && D.art[artKey] ? `<span class="slab ${cls}"><img src="${D.art[artKey]}" alt=""></span>` : `<span class="disc ${cls}"><svg aria-hidden="true"><use href="#i-${id}"/></svg></span>`;
+// a spell: its painted slab when the sheet has it, else the school rune in a slab of the same shape (art pending)
+const rune = (x, cls = "") => { const k = slug(x.name); if (D.art[k]) return `<span class="slab ${cls}"><img src="${D.art[k]}" alt=""></span>`; const r = RAMP[x.school] || ["#2a2330", "#d7af58"]; return `<span class="slab rune ${cls}" style="--deep:${r[0]};--g:${r[1]}"><img src="${D.runes[x.school] || ""}" alt=""></span>`; };
+
+// ---- screens ----
+function render(){
+  const L = cur.lvl, s = LV[L], id = FLOW[L][cur.i];
+  if (D.kenta){ const im = document.getElementById("heroImg"); im.src = D.kenta; im.hidden = false; }
+  document.getElementById("hero").style.backgroundImage = `url(${D.stage})`;
+  document.getElementById("heroSub").textContent = `${CLS ? CLS[0].toUpperCase() + CLS.slice(1) : ""} ${s.sealed ? L : L - 1} · ${Number(SHEET.xp || 0).toLocaleString()} XP`;
+  document.getElementById("heroBadge").innerHTML = medal(L, s.sealed ? "taken" : "next");
+  const slotsNow = Object.entries(RULES.slots[s.sealed ? L : L - 1] || {}).map(([l, n]) => `${n}× ${ORD[l]}`).join(" · ");
+  document.getElementById("heroStat").innerHTML = `<span${chipBg()}>${chipArt("spell-save-dc")}DC <b>${DC ?? "—"}</b></span><span${chipBg()}>${chipArt("spell-attack")}Atk <b>${ATK == null ? "—" : (ATK >= 0 ? "+" : "") + ATK}</b></span><span class="${L >= 2 ? "up" : ""}"${chipBg()}>${chipArt("sorcery-points")}SP <b>${RULES.sp[s.sealed ? L : L - 1]}</b></span><span${chipBg()}>${chipArt("spell-slot")}Slots <b>${slotsNow}</b></span>`;
+  const dots = FLOW[L].map((st, i) => `<i class="${i === cur.i ? "on" : stepDone(L, st) && i < cur.i ? "done" : ""}"></i>`).join("");
+  let ttl, body, foot;
+  if (s.sealed && id === "seal" && cur.done){ ttl = `<h1>Level ${L}</h1><div class="dots">${dots}</div>`; body = resultView(L); foot = ""; }
+  else if (id === "gain"){ ttl = `<h1>Level ${L}</h1><div class="dots">${dots}</div><div class="sub">${L === 4 ? "A look ahead — level 4 is not earned yet (2,700 XP)." : "What this level brings. Hit points first: roll the die or take the fixed value. The gold tiles are yours to choose."}</div>`; body = gainView(L); foot = footer(L, "Next", stepDone(L, "gain"), cur.hp ? "" : "roll the hit die, or take the fixed value"); }
+  else if (id === "meta"){ ttl = `<h1>Choose 2 Metamagic</h1><span class="cnt ${s.meta.length === 2 ? "full" : ""}">${s.meta.length} / 2</span><div class="dots">${dots}</div>`; body = metaView(); foot = footer(L, "Next", stepDone(L, "meta"), "two of ten · the next option comes at level 10"); }
+  else if (id === "origin"){ ttl = `<h1>Choose your origin</h1><span class="cnt ${s.origin ? "full" : ""}">${s.origin ? "1" : "0"} / 1</span><div class="dots">${dots}</div>`; body = originView(); foot = footer(L, "Next", stepDone(L, "origin"), "where the magic comes from · chosen once"); }
+  else if (id === "feat"){ ttl = `<h1>Improvement or feat</h1><span class="cnt ${stepDone(L, "feat") ? "full" : ""}">${stepDone(L, "feat") ? "1" : "0"} / 1</span><div class="dots">${dots}</div>`; body = featView(); foot = footer(L, "Next", stepDone(L, "feat"), "two points to place, or one feat"); }
+  else if (id === "spells"){ const n = needSpells(L), nc = needCantrips(L); const okS = s.picks.length === n, okC = s.cpicks.length === nc;
+    ttl = `<h1>Choose ${n} ${n === 1 ? "spell" : "spells"}${nc ? ` · ${nc} cantrip` : ""}</h1><span class="cnt ${okS && okC ? "full" : ""}">${s.picks.length} / ${n}${nc ? ` · ${s.cpicks.length} / ${nc}` : ""}</span><div class="dots">${dots}</div>`; body = spellsView(L); foot = footer(L, "Next", okS && okC, "tap a spell you already have to swap it out · one swap"); }
+  else { ttl = `<h1>Level ${L}</h1><div class="dots">${dots}</div><div class="sub">Everything in one place. LEVEL UP writes it to the sheet once.</div>`; body = sealView(L); foot = footer(L, cur.busy ? "WRITING…" : "LEVEL UP", !cur.busy, OWED ? "the level is taken · this settles its choices" : "anywhere but a fight · once"); }
+  document.getElementById("ttl").innerHTML = ttl; document.getElementById("scr").innerHTML = body; document.getElementById("foot").innerHTML = foot;
+}
+function footer(L, next, ok, hint = ""){
+  const back = cur.i > 0 ? plate("back", "Back", "", "back") : `<span></span>`;
+  const isUp = next === "LEVEL UP" || next === "WRITING…";
+  return `${back}<span class="hint">${esc(hint)}</span>${plate(isUp ? "up" : "next", next, ok ? (isUp ? "ready" : "") : "locked", isUp ? "seal" : "next", ok ? "" : 'aria-disabled="true"')}`;
+}
+function gainView(L){
+  const s = LV[L], t = [];
+  const tile = (cls, icon, title, val, sub) => `<div class="tile ${cls}">${icon}<div class="t">${title}</div><div class="v">${val}</div><div class="s">${sub}</div></div>`;
+  if (OWED) t.push(tile("done", ico("heart", "", "hit-points"), "Hit points", "✓", "taken"));
+  else { const con = PRE.con || 0, g = cur.hp ? Math.max(1, (cur.hp.method === "roll" ? cur.hp.face : PRE.average) + con) : null;
+    t.push(`<div class="tile ${cur.hp ? "done" : "need"}">${ico("heart", "", "hit-points")}<div class="t">Hit points</div><div class="v">${g ? `+<b>${g}</b>` : `d${PRE.die}`}</div><div class="s">${cur.hp ? (cur.hp.method === "roll" ? `rolled ${cur.hp.face}${con ? ` ${con > 0 ? "+" : ""}${con} con` : ""}` : `fixed ${PRE.average}${con ? ` ${con > 0 ? "+" : ""}${con} con` : ""}`) : "choose below"}</div></div>`); }
+  t.push(tile("auto", ico("spark", "", "sorcery-points"), "Sorcery points", `${RULES.sp[L - 1]} → <b>${RULES.sp[L]}</b>`, L === 2 ? "Font of Magic" : "one more"));
+  const sl = RULES.slots[L], pr = RULES.slots[L - 1];
+  const lvNew = Object.keys(sl).find(k => !pr[k]);
+  t.push(tile("auto", ico("flame", "", "spell-slot"), lvNew ? `${ORD[lvNew]}-level slots` : "Spell slots", lvNew ? `<b>${sl[lvNew]}</b> new` : `${pr[1]} → <b>${sl[1]}</b>`, lvNew ? `${ORD[lvNew]}-level spells open` : "1st level"));
+  if (L === 2) t.push(tile(stepDone(2, "meta") ? "done" : "need", ico("wand", "", "twinned-spell"), "Metamagic", "2", "choose two"));
+  if (L === 3) t.push(tile(stepDone(3, "origin") ? "done" : "need", ico("scale", "", "draconic-sorcery"), "Origin", "1", "choose one"));
+  if (L === 4) t.push(tile(stepDone(4, "feat") ? "done" : "need", ico("up", "", "ability-score-improvement"), "Improvement", "+2", "or a feat"));
+  t.push(tile(stepDone(L, "spells") ? "done" : "need", ico("book", "", "cast"), "Spells", `${RULES.prepared[L - 1]} → <b>${RULES.prepared[L]}</b>`, `choose ${newSpells(L)}`));
+  if (newCantrips(L)) t.push(tile(stepDone(L, "spells") ? "done" : "need", ico("spark", "", "cast"), "Cantrips", `${RULES.cantrips[L - 1]} → <b>${RULES.cantrips[L]}</b>`, "choose one"));
+  const hpRow = OWED || cur.hp ? "" : `<div class="two"><button class="big" data-act="hproll">${ico("burst", "", "level-up-burst")}<div class="tx"><b>Roll the d${PRE.die}</b><span>The die decides; minimum 1 per level after Constitution.</span></div></button><button class="big" data-act="hpavg">${ico("shield", "", "proficiency")}<div class="tx"><b>Take ${PRE.average}</b><span>The SRD's fixed value: half the die, rounded up, plus one.</span></div></button></div>`;
+  return `<div class="tiles wide">${t.join("")}</div>${hpRow}`;
+}
+function detLine(){
+  const k = cur.detKind, n = cur.det;
+  if (!n) return `<div class="det empty">${ico("check")}<div class="tx"><b>&nbsp;</b><span>Tap a tile to read it here.</span></div></div>`;
+  if (k === "spell"){ const x = byName(n); if (!x) return "";
+    const line = [x.cast, x.range, x.dur, x.comp].filter(Boolean).join(" · ");
+    const fx = [x.effect, x.attack ? "ranged spell attack +5" : "", x.save ? `${x.save} save DC 13` : "", x.conc ? "concentration" : ""].filter((v, i, a) => v && a.indexOf(v) === i).join(" · ");
+    return `<div class="det">${rune(x)}<div class="tx"><b>${esc(x.name)}</b><span>${esc(line)}</span><span>${esc(fx)}</span><span class="src">${ORD[x.level]}${x.level ? "-level" : ""} ${esc(x.school)} · lib/data/spells.json${x.review ? " · <em>needs_review in the dataset</em>" : ""}</span></div></div>`; }
+  const m = k === "meta" ? META.find(x => x.n === n) : k === "origin" ? ORIGINS.find(x => x.n === n) : FEATS.find(x => x.n === n);
+  if (!m) return "";
+  return `<div class="det">${ico(m.i, "", slug(m.n))}<div class="tx"><b>${esc(m.n)}${m.c ? ` · ${m.c} SP` : ""}</b><span>${esc(m.d)}</span><span class="src">${esc(m.src || (k === "meta" ? "PHB 2024 Metamagic" : "PHB 2024 General feat · +1 to a score"))} · <em>verify</em></span></div></div>`;
+}
+function metaView(){
+  const s = LV[2], full = s.meta.length >= 2;
+  return `<div class="tiles">${META.map(m => { const on = s.meta.includes(m.n); return `<button class="tile ${on ? "on" : ""} ${s.sealed && !on ? "lock" : ""}" data-act="meta" data-n="${esc(m.n)}">${ico(m.i, "", slug(m.n))}${on && D.art["done"] ? `<img class="mark" src="${D.art["done"]}" alt="">` : ""}<div class="t">${esc(m.n.replace(" Spell", ""))}</div><div class="s ${on ? "k" : ""}">${on ? "chosen" : `${m.c} SP`}</div></button>`; }).join("")}</div>${detLine()}`;
+}
+function originView(){
+  const s = LV[3];
+  return `<div class="tiles wide">${ORIGINS.map(o => { const on = s.origin === o.n; return `<button class="tile ${on ? "on" : ""} ${o.ok ? "" : "lock"}" data-act="origin" data-n="${esc(o.n)}">${ico(o.i, "", slug(o.n))}${on && D.art["done"] ? `<img class="mark" src="${D.art["done"]}" alt="">` : !o.ok && D.art["locked"] ? `<img class="mark" src="${D.art["locked"]}" alt="">` : ""}<div class="t">${esc(o.n.replace(" Sorcery", ""))}</div><div class="s ${on ? "k" : ""}">${on ? "chosen" : o.ok ? "SRD" : "needs the DM"}</div></button>`; }).join("")}</div>${detLine()}`;
+}
+function featView(){
+  const s = LV[4], a = s.asi, used = Object.values(a).reduce((x, y) => x + y, 0);
+  let h = `<div class="two"><button class="big ${s.mode === "asi" ? "on" : ""}" data-act="mode" data-m="asi">${ico("up", "", "ability-score-improvement")}<div class="tx"><b>Ability Score Improvement</b><span>+2 to one score, or +1 to two. Nothing above 20.</span></div></button><button class="big ${s.mode === "feat" ? "on" : ""}" data-act="mode" data-m="feat">${ico("wand", "", "war-caster")}<div class="tx"><b>A feat instead</b><span>One General feat, with its +1 to a score.</span></div></button></div>`;
+  if (s.mode === "asi") h += `<div class="abil">${Object.entries(SHEET.scores).map(([k, v]) => { const add = a[k] || 0, nv = v + add, mod = Math.floor((nv - 10) / 2); return `<div class="ab ${add ? "on" : ""}"><span class="k">${k}</span><span class="v">${add ? `<b>${nv}</b>` : v}</span><span class="m">${mod >= 0 ? "+" : ""}${mod}${add ? ` · +${add}` : ""}</span><button class="pl" data-act="asi" data-k="${k}" aria-label="${add ? `take back ${k}` : `add to ${k}`}">${add && used >= 2 ? "−" : "+"}</button></div>`; }).join("")}</div><div class="det ${used ? "" : "empty"}">${ico("up", "", "ability-score-improvement")}<div class="tx"><b>${used === 2 ? "Placed" : `${2 - used} point${used === 1 ? "" : "s"} to place`}</b><span>${a.CHA === 2 ? "Charisma 19: spell DC 14, spell attacks +6." : a.CHA === 1 ? "Charisma 18: spell DC 14, spell attacks +6." : "Tap + on a score. Twice on the same score for +2."}</span></div></div>`;
+  if (s.mode === "feat") h += `<div class="tiles">${FEATS.map(f => { const on = s.feat === f.n; return `<button class="tile ${on ? "on" : ""}" data-act="feat" data-n="${esc(f.n)}">${ico(f.i, "", slug(f.n))}${on && D.art["done"] ? `<img class="mark" src="${D.art["done"]}" alt="">` : ""}<div class="t">${esc(f.n)}</div><div class="s ${on ? "k" : ""}">${on ? "chosen" : "+1 score"}</div></button>`; }).join("")}</div>${detLine()}`;
+  return h;
+}
+function spellsView(L){
+  const s = LV[L], max = RULES.maxSpell[L], prepB = preparedBefore(L), cansB = cantripsBefore(L);
+  const spellTile = x => {
+    const known = x.level ? prepB.includes(x.name) : cansB.includes(x.name);
+    const picked = x.level ? s.picks.includes(x.name) : s.cpicks.includes(x.name);
+    const out = x.level ? s.swapOut === x.name : s.swapOutC === x.name;
+    const lock = x.level > max;
+    const sub = out ? "swapping out" : known ? "yours" : picked ? "chosen" : lock ? "locked" : D.art[slug(x.name)] ? "" : "art pending";
+    return `<button class="tile ${picked ? "on" : ""} ${out ? "swap" : ""} ${lock || (s.sealed && !picked && !known) ? "lock" : ""}" data-act="spell" data-n="${esc(x.name)}" data-lv="${x.level}">${rune(x)}${picked && D.art["done"] ? `<img class="mark" src="${D.art["done"]}" alt="">` : out && D.art["swap"] ? `<img class="mark" src="${D.art["swap"]}" alt="">` : lock && D.art["locked"] ? `<img class="mark" src="${D.art["locked"]}" alt="">` : ""}<div class="t">${esc(x.name)}</div><div class="s ${known || picked ? "k" : ""}">${sub || (x.conc ? "conc." : x.attack ? "attack" : x.save ? `${x.save.slice(0, 3)} save` : "")}</div></button>`; };
+  const groups = [];
+  if (L === 4) groups.push({t:`Cantrips · choose ${needCantrips(L)}`, lv:0});
+  if (L === 3) groups.push({t:"2nd level · new this level", lv:2});
+  groups.push({t:"1st level", lv:1});
+  if (L === 4) groups.push({t:"2nd level", lv:2});
+  const after = L === 2 ? `<div class="grp"><h3>2nd level <span class="lk">🔒 opens at level 3</span></h3></div>` : "";
+  const mine = `<div class="grp"><h3>Yours already · tap one to swap it out</h3><div class="tiles">${prepB.map(n => byName(n)).filter(Boolean).map(spellTile).join("")}${L < 4 ? cansB.map(n => byName(n)).filter(Boolean).map(spellTile).join("") : ""}</div></div>`;
+  return `${detLine()}${groups.map(g => `<div class="grp"><h3>${esc(g.t)}</h3><div class="tiles">${SPELLS.filter(x => x.level === g.lv && !(x.level ? prepB : cansB).includes(x.name)).map(spellTile).join("")}</div></div>`).join("")}${after}${mine}`;
+}
+function sealView(L){
+  const s = LV[L], picks = [];
+  if (L === 2) s.meta.forEach(n => { const m = META.find(x => x.n === n); picks.push(`<div class="pick">${ico(m.i, "", slug(n))}<div class="t">${esc(n)}</div><div class="s">${m.c} SP</div></div>`); });
+  if (L === 3 && s.origin){ const o = ORIGINS.find(x => x.n === s.origin); picks.push(`<div class="pick">${ico(o.i, "", slug(o.n))}<div class="t">${esc(o.n)}</div><div class="s">origin</div></div>`); }
+  if (L === 4){ if (s.mode === "feat" && s.feat){ const f = FEATS.find(x => x.n === s.feat); picks.push(`<div class="pick">${ico(f.i, "", slug(f.n))}<div class="t">${esc(f.n)}</div><div class="s">feat</div></div>`); } else Object.entries(s.asi).forEach(([k, v]) => v && picks.push(`<div class="pick">${ico("up", "", "ability-score-improvement")}<div class="t">+${v} ${k}</div><div class="s">${SHEET.scores[k]} → ${SHEET.scores[k] + v}</div></div>`)); }
+  s.picks.concat(s.cpicks).forEach(n => { const x = byName(n); picks.push(`<div class="pick">${rune(x)}<div class="t">${esc(n)}</div><div class="s">${ORD[x.level]}${x.level ? "-level" : ""}</div></div>`); });
+  const swaps = [s.swapOut, s.swapOutC].filter(Boolean);
+  const d = (k, a, b) => `<div class="delta"><span class="k">${k}</span><span class="v">${a} → <b>${b}</b></span></div>`;
+  return `<div class="sum"><div class="deltas">${d("Sorcery points", RULES.sp[L - 1], RULES.sp[L])}${d("Prepared", RULES.prepared[L - 1], RULES.prepared[L])}${newCantrips(L) ? d("Cantrips", RULES.cantrips[L - 1], RULES.cantrips[L]) : ""}${d("Slots", Object.entries(RULES.slots[L - 1]).map(([l, n]) => `${n}×${ORD[l]}`).join(" "), Object.entries(RULES.slots[L]).map(([l, n]) => `${n}×${ORD[l]}`).join(" "))}</div><div class="picks">${picks.join("")}</div>${swaps.length ? `<div class="det">${ico("cycle", "", "transmuted-spell")}<div class="tx"><b>Swapped out</b><span>${esc(swaps.join(", "))} — set down for the new picks above.</span></div></div>` : ""}</div>`;
+}
+function resultView(L){
+  const r = cur.result || {};
+  const btn = cur.more ? `${plate("up", `Take level ${L + 1}`, "ready", "again")}<div class="hint" style="font-style:italic;color:var(--ar-muted)">the XP already earns it</div>` : "";
+  return `<div class="result"><div class="medal">${medal(L, "")}</div><h2>${esc(NAME.split(" ")[0])} is level ${L}.</h2><p>${esc(r.note || "Written once to the sheet.")}</p>${sealView(L)}${btn}${plate("back", "Back to the pack", "", "close")}</div>`;
+}
+
+// ---- the writes: take the level (the ceremony's route), then settle its choices (once each) ----
+const claim = () => { try { return localStorage.getItem("aop_character_id") === CID ? localStorage.getItem("aop_claim_token") : null; } catch (e) { return null; } };
+const dmh = () => { try { const k = localStorage.getItem("aop_forge_key") || ""; return k ? {"x-dm-key": k} : {}; } catch (e) { return {}; } };
+async function post(url, body){ const r = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json", ...dmh()}, body: JSON.stringify({...body, claimToken: claim() || undefined})}).catch(() => null); const j = r ? await r.json().catch(() => ({})) : {}; return {ok: !!(r && r.ok && j.ok), j}; }
+async function seal(L){
+  const s = LV[L]; cur.busy = true; play("confirm"); render();
+  let level = null;
+  if (!OWED){
+    const a = await post("/api/walk-level-up", {characterId: CID, fromLevel: L - 1, method: cur.hp.method, face: cur.hp.face});
+    if (!a.ok && !(a.j.already && a.j.level === L)){ cur.busy = false; render(); toast(a.j.note || a.j.error || "The level could not be written."); play("deny"); return; }
+    level = a.j; OWED = true; tell({level: a.j});
+  }
+  const b = await post("/api/walk-level-choices", {characterId: CID, level: L, picks: {metamagic: s.meta, origin: s.origin, spells: s.picks, cantrips: s.cpicks, swapOut: s.swapOut, swapOutCantrip: s.swapOutC}});
+  cur.busy = false;
+  if (!b.ok){ render(); toast((b.j.already ? "Already settled. " : "") + (b.j.note || b.j.error || "The choices could not be written.")); play("deny"); if (b.j.already){ s.sealed = true; cur.done = true; render(); } return; }
+  s.sealed = true; cur.done = true; cur.more = !!(level && level.moreToTake);
+  cur.result = {note: level && level.note ? level.note.replace(/ — .*$/, ".") : `Level ${L} choices written to the sheet.`};
+  tell({choices: b.j, level});
+  awaken(() => { render(); celebrate(L); });
+}
+// ---- actions ----
+document.getElementById("inv").addEventListener("click", e => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const L = cur.lvl, s = LV[L], act = b.dataset.act, n = b.dataset.n, id = FLOW[L][cur.i];
+  if (act === "next"){ if (!stepDone(L, id)){ play("deny"); shake(b); toast(id === "spells" ? `Choose ${needSpells(L) - s.picks.length} more.` : "Choose first."); return; } cur.i++; cur.det = null; play("open"); render(); return; }
+  if (act === "back"){ cur.i = Math.max(0, cur.i - 1); cur.det = null; play("close"); render(); return; }
+  if (act === "seal"){ if (s.sealed) return; for (const st of FLOW[L]) if (!stepDone(L, st) && st !== "seal"){ play("deny"); shake(b); toast("A choice is still open."); return; } if (cur.busy) return; seal(L); return; }
+  if (act === "close"){ play("close"); tell({close: true}); return; }
+  if (act === "again"){ play("open"); cur.i = 0; cur.det = null; cur.done = false; cur.hp = null; cur.more = false; cur.result = null; boot(); return; }
+  if (act === "hproll"){ const face = 1 + Math.floor(crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296 * PRE.die); cur.hp = {method: "roll", face}; play("press"); say("Level up!"); render(); return; }
+  if (act === "hpavg"){ cur.hp = {method: "average", face: null}; play("confirm"); render(); return; }
+  if (act === "goto"){ cur.lvl = +b.dataset.l; cur.i = 0; cur.det = null; cur.done = false; play("open"); render(); return; }
+  if (act === "reset"){ return;  Object.assign(LV[2], {sealed:false, meta:[], picks:[], cpicks:[], swapOut:null, swapOutC:null}); Object.assign(LV[3], {sealed:false, origin:null, picks:[], cpicks:[], swapOut:null, swapOutC:null}); Object.assign(LV[4], {sealed:false, mode:null, asi:{}, feat:null, picks:[], cpicks:[], swapOut:null, swapOutC:null}); cur.lvl = 2; cur.i = 0; cur.det = null; cur.done = false; play("close"); render(); return; }
+  if (s.sealed) return;
+  if (act === "meta"){ cur.det = n; cur.detKind = "meta"; if (s.meta.includes(n)){ s.meta = s.meta.filter(x => x !== n); play("cancel"); } else if (s.meta.length >= 2){ play("deny"); shake(b); toast("Two at level 2. Tap a chosen one to take it back."); render(); return; } else { s.meta.push(n); play("sorcery"); say(n); } render(); return; }
+  if (act === "origin"){ const o = ORIGINS.find(x => x.n === n); cur.det = n; cur.detKind = "origin"; if (!o.ok){ play("deny"); shake(b); toast(`${o.n} is in the Player's Handbook, not the SRD. It opens when the DM says so.`); render(); return; } s.origin = s.origin === n ? null : n; play(s.origin ? "sorcery" : "cancel"); if (s.origin) say(n); render(); return; }
+  if (act === "mode"){ s.mode = b.dataset.m; cur.det = null; play("press"); say(s.mode === "asi" ? "Ability Score Improvement" : "A feat instead"); render(); return; }
+  if (act === "asi"){ const k = b.dataset.k, a = s.asi, used = Object.values(a).reduce((x, y) => x + y, 0);
+    if (a[k] && used >= 2){ delete a[k]; play("cancel"); } else if (used >= 2){ play("deny"); shake(b.closest(".ab")); toast("Both points are placed. Tap − to take one back."); return; } else if (SHEET.scores[k] + (a[k] || 0) >= 20){ play("deny"); toast("Nothing above 20."); return; } else if (a[k] && Object.keys(a).length > 1){ play("deny"); shake(b.closest(".ab")); toast("+1 and +1 go to two different scores; +2 goes to one."); return; } else { a[k] = (a[k] || 0) + 1; play("orb"); }
+    render(); return; }
+  if (act === "feat"){ cur.det = n; cur.detKind = "feat"; s.feat = s.feat === n ? null : n; play(s.feat ? "sorcery" : "cancel"); if (s.feat) say(n); render(); return; }
+  if (act === "spell"){ const x = byName(n), lv = x.level, max = RULES.maxSpell[L]; cur.det = n; cur.detKind = "spell";
+    const known = lv ? preparedBefore(L).includes(n) : cantripsBefore(L).includes(n);
+    if (known){ const key = lv ? "swapOut" : "swapOutC"; if (s[key] === n){ s[key] = null; play("cancel"); toast(`${n} stays.`); } else if (s.swapOut || s.swapOutC){ play("deny"); shake(b); toast("One swap per level. Tap the red one to keep it instead."); render(); return; } else { s[key] = n; play("swap"); toast(`${n} swapped out — choose one more ${lv ? "spell" : "cantrip"}.`); } render(); return; }
+    if (lv > max){ play("deny"); shake(b); toast(`${ORD[lv]}-level spells open at level ${lv === 2 ? 3 : 5}.`); render(); return; }
+    const list = lv ? s.picks : s.cpicks, need = lv ? needSpells(L) : needCantrips(L);
+    if (list.includes(n)){ (lv ? s.picks = s.picks.filter(y => y !== n) : s.cpicks = s.cpicks.filter(y => y !== n)); play("cancel"); }
+    else if (!need){ play("deny"); shake(b); toast(`Cantrips stay at ${RULES.cantrips[L]} until level 4. Tap one of yours to swap it out.`); render(); return; }
+    else if (list.length >= need){ play("deny"); shake(b); toast(`${need} this level. Tap a chosen one to take it back.`); render(); return; }
+    else { list.push(n); play("orb"); say(n); }
+    render(); return; }
+});
+document.getElementById("inv").addEventListener("mouseover", e => { if (e.target.closest(".tile, .ghost, .lvlUp, .big, .pl, .plate")) hover(); });
+document.getElementById("closeBtn").addEventListener("click", () => { play("close"); tell({close: true}); });
+addEventListener("keydown", e => { if (e.key === "Escape" && !document.querySelector(".awaken")) tell({close: true}); });
+if (!CID){ document.getElementById("scr").textContent = "No hero."; } else boot();
+</script>
+</body></html>
