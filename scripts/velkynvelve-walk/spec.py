@@ -32,7 +32,11 @@ NODES = {
    zones=[dict(rect=[803, 132, 901, 290], to=[4], label="Timber stair to the upper walkways"),
           dict(rect=[671, 1264, 990, 1336], to=[1], label="Passage out of the barracks"),
           dict(rect=[1486, 127, 1638, 348], to=[3], label="New exit"),
-          dict(rect=[2082, 343, 2149, 500], to=[4], label="New exit")]),
+          dict(rect=[2082, 343, 2149, 500], to=[4], label="New exit")],
+   # Sam, 2026-10-27 (wiring board heights): the walkway along the top, with the chests and the three exits, is a gallery 10 ft
+   # above the bunks; the big timber staircase is the way between them. Ront, Derendil and barbarians drop off the edge.
+   heights=[dict(poly=P((760,100),(2250,100),(2250,520),(1493,460),(953,400),(760,330)), ft=10, label="the upper gallery"),
+            dict(poly=P((789,288),(953,381),(1227,950),(1493,440),(2143,503)), stairs=True, label="the timber staircase")]),
  3: dict(slug="node-03-main-hall", name="Main Hall", scale=0.9,
    floors=[dict(poly=P((760,560),(1000,510),(1400,500),(1700,540),(1800,600),(1780,720),(1880,800),(1840,940),(1740,1060),(1600,1160),(1400,1200),(1200,1230),(940,1180),(660,1040),(520,900),(500,760),(600,660)))],
    obstacles=[dict(cx=890,cy=670,rx=120,ry=70),dict(cx=1350,cy=660,rx=120,ry=70),dict(cx=850,cy=890,rx=120,ry=70),dict(cx=1350,cy=890,rx=120,ry=70),dict(cx=1500,cy=470,rx=90,ry=50)],
@@ -305,6 +309,17 @@ for _k, _rle in _M['masks'].items():
     assert sum(_runs[1::2]) > 0, ('mask paints no floor at all', _k)
     _PLATES[_k]['mask'] = _rle
 print(len(_M['masks']), 'plates walk Sam\'s painted floor; traced shapes still used by:', ', '.join(k for k in _PLATES if k not in _M['masks']))
+
+# ── height on a plate ─────────────────────────────────────────────────────────────────────────────────────────────────
+# Optional per plate: heights=[dict(poly=P(...) | rect=[x0,y0,x1,y1] | ellipse=[cx,cy,rx,ry], ft=20, label="the gallery"),
+#                              dict(poly=P(...), stairs=True, label="the steps up")]
+# `ft` is how far that ledge stands above the plate's floor; walking never steps 10 ft or more up or down except on a
+# `stairs` shape, and Ront, Derendil and barbarians drop off it to close on a foe, taking the SRD fall (1d6 per 10 ft).
+# Checked here so a typo fails the build, not a fight.
+for _k, _n in _PLATES.items():
+    for _h in _n.get('heights', []):
+        assert sum(s in _h for s in ('poly', 'rect', 'ellipse')) == 1, ('a height needs exactly one shape', _k, _h.get('label'))
+        assert _h.get('stairs') or (isinstance(_h.get('ft'), (int, float)) and 0 < _h['ft'] <= 255), ('a height needs ft between 1 and 255 (or stairs=True)', _k, _h.get('label'))
 
 # sanity. Every way out must lead to a plate that exists. A walk link is expected to have a zone on both sides; the ones
 # that do not are listed here so they are a known gap and not a surprise (Sam's export, 2026-10-24: one_way_links_to_fix).

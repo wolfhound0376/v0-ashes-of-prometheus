@@ -880,7 +880,31 @@ function buildGrid(){
     if (inPoly(B.poly, x, y)) grid[cy * GW + cx] = 1;
   }
   if (depthMax - depthMin < 200){ depthMin -= 100; depthMax += 100; }
+  buildHeights();
 }
+// ---------- HEIGHT ON A PLATE ----------
+// Sam, 2026-10-27: "Derendil, Ront, and any barbarian can jump and will often do it to close the gap especially from up
+// high ... Fall damage as applicable." A plate was flat until now: height only existed BETWEEN plates (a ladder, the falls).
+// spec.py may now give a plate `heights`: [{poly|rect|ellipse, ft, label}] — a ledge, a platform, a gallery — standing `ft`
+// above the plate's floor. A shape with `stairs: true` is the way up and down (it joins any two levels it touches).
+// Nothing here guesses a height: a plate with no `heights` is flat, exactly as before.
+//
+// What a height DOES: walking never steps up or down LEDGE_FT or more except on stairs (gridPath, los), so the long way
+// round is the stairs; a leaper may instead go over the edge (planDrop) and take the fall (landFall).
+const LEDGE_FT = 10;
+let elevGrid = new Uint8Array(GW * GH), stairGrid = new Uint8Array(GW * GH);
+function buildHeights(){
+  elevGrid = new Uint8Array(GW * GH); stairGrid = new Uint8Array(GW * GH);
+  const H = node.heights || []; if (!H.length) return;
+  for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++){
+    const x = cx * CELL + CELL / 2, y = cy * CELL + CELL / 2, i = cy * GW + cx;
+    for (const h of H) if (inFloor(h, x, y)){ if (h.stairs) stairGrid[i] = 1; else elevGrid[i] = Math.max(elevGrid[i], Math.min(255, h.ft || 0)); }
+  }
+}
+const cellOf = (x, y) => Math.min(GW - 1, Math.max(0, Math.floor(x / CELL))) + Math.min(GH - 1, Math.max(0, Math.floor(y / CELL))) * GW;
+function elevAt(x, y){ return elevGrid[cellOf(x, y)]; }
+// one step between neighbouring cells, on foot: never up or down a ledge, except where the stairs are
+const stepOk = (i, j) => !!(stairGrid[i] || stairGrid[j] || Math.abs(elevGrid[i] - elevGrid[j]) < LEDGE_FT);
 function walkable(x, y){
   const cx = Math.floor(x / CELL), cy = Math.floor(y / CELL);
   return cx >= 0 && cy >= 0 && cx < GW && cy < GH && grid[cy * GW + cx] === 1;
@@ -904,7 +928,9 @@ function nearestWalkable(x, y, avoid){
 }
 function los(a, b){
   const d = Math.hypot(b.x - a.x, b.y - a.y), n = Math.ceil(d / 6);
-  for (let k = 1; k <= n; k++){ const t = k / n; if (!walkable(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t)) return false; }
+  let prev = cellOf(a.x, a.y);
+  for (let k = 1; k <= n; k++){ const t = k / n, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t; if (!walkable(x, y)) return false;
+    const i = cellOf(x, y); if (i !== prev && !stepOk(prev, i)) return false; prev = i; }   // straight off a ledge is not a walk
   return true;
 }
 function gridPath(from, to){
@@ -924,8 +950,8 @@ function gridPath(from, to){
     const x = i % GW, y = (i / GW) | 0;
     for (const [dx, dy, c] of D){
       const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue;
-      const j = ny * GW + nx; if (!grid[j] || closed[j]) continue;
-      if (dx && dy && (!grid[y * GW + nx] || !grid[ny * GW + x])) continue;
+      const j = ny * GW + nx; if (!grid[j] || closed[j] || !stepOk(i, j)) continue;
+      if (dx && dy && (!grid[y * GW + nx] || !grid[ny * GW + x] || !stepOk(i, y * GW + nx) || !stepOk(i, ny * GW + x))) continue;
       const ng = g[i] + c; if (ng < g[j]){ g[j] = ng; came[j] = i; push(ng + h(j), j); }
     }
   }
@@ -3825,17 +3851,18 @@ const FOE_BLOCKS = {
 // fists — Unarmed Strike, SRD 5.2.1: STR mod + proficiency to hit, 1 + STR mod bludgeoning — until a weapon reaches
 // them. `kit` is the block's own line for each weapon it lists; it is used only when they actually carry that weapon
 // (loadGear reads their inventory like a hero's). Derendil's claws are his body, so he always has them.
+// `leaper` (Sam, 2026-10-27): goes over a gap or off a ledge on their own to close on a foe (approachThen, leaperPlan).
 // `multi`: the block's Multiattack. Ront's Aggressive (bonus action: move up to his speed toward a hostile creature
 // he can see) and Derendil's Wounded Fury (10 HP or fewer: advantage, +2d6 on a melee hit) are their block traits.
 // Saves are ability modifiers, as for the foes (the rows carry no save list).
 const ALLY_SHEETS = {
-  ront:     {name: "Ront", cls: "Orc", hp: 15, ac: 13, init: 1, speed: 30, strScore: 16, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 0, cha: 0}, aggressive: true,
+  ront:     {name: "Ront", cls: "Orc", hp: 15, ac: 13, init: 1, speed: 30, strScore: 16, leaper: true, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 0, cha: 0}, aggressive: true,
              attacks: [{name: "Unarmed Strike", hit: 5, dmg: "4", type: "bludgeoning", reach: 5}],
              kit: {greataxe: {name: "Greataxe", hit: 5, dmg: "1d12+3", type: "slashing", reach: 5}, javelin: {name: "Javelin", hit: 5, dmg: "1d6+3", type: "piercing", reach: 5, thrown: 30}}},
   eldeth:   {name: "Eldeth", cls: "Shield dwarf", hp: 16, ac: 13, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 1, cha: 0}, multi: 2,
              attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
              kit: {shortsword: {name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, longbow: {name: "Longbow", hit: 4, dmg: "1d8+2", type: "piercing", reach: 150}}},
-  derendil: {name: "Derendil", cls: "Quaggoth", hp: 45, ac: 14, init: 1, speed: 30, strScore: 17, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, multi: 2, woundedFury: 10,
+  derendil: {name: "Derendil", cls: "Quaggoth", hp: 45, ac: 14, init: 1, speed: 30, strScore: 17, leaper: true, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, multi: 2, woundedFury: 10,
              attacks: [{name: "Claw", hit: 5, dmg: "1d6+3", type: "slashing", reach: 5}], kit: {}},
   sarith:   {name: "Sarith", cls: "Drow", race: "drow", hp: 13, ac: 13, init: 2, speed: 30, strScore: 10, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1},
              attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
@@ -5313,12 +5340,13 @@ function leapMove(a, g, to, done){
   const threat = provokedBy(a, g.land);
   combatBusy = true; closeMenu();
   const land = () => {
-    log(`${fname(a)} clears the ${Math.round(g.gapFt)} ft gap${g.standing ? " from a standing start" : ""}. ${a.c.move} ft left.`);
-    narrate(a, `${fname(a)} takes it in one leap.`);
+    if (g.drop){ log(`${fname(a)} goes over the edge and drops ${g.dropFt} ft. ${a.c.move} ft left.`); narrate(a, `${fname(a)} drops off the ledge, straight down into the fight.`); }
+    else { log(`${fname(a)} clears the ${Math.round(g.gapFt)} ft gap${g.standing ? " from a standing start" : ""}. ${a.c.move} ft left.`);
+    narrate(a, `${fname(a)} takes it in one leap.`); }
     if (Math.hypot(to.x - a.x, to.y - a.y) > 8 && a.c.move > 0) combatWalk(a, to, done);
     else { combatBusy = false; done && done(); }
   };
-  const spring = () => { if (a.down){ combatBusy = false; done && done(); return; } arcTo(a, g.land, land); };
+  const spring = () => { if (a.down){ combatBusy = false; done && done(); return; } arcTo(a, g.land, g.drop ? () => { landFall(a, g.dropFt); if (a.down){ combatBusy = false; done && done(); return; } standIfAble(a); land(); } : land); };
   const runUp = () => { if (g.runUpFt > 0.5){ a.path = [g.takeoff]; a.onArrive = spring; } else spring(); };
   if (threat.length){ const f = threat[0]; f.c.reactionUsed = true; a.path = [];
     log(`${fname(f)} takes a swing as ${fname(a)} breaks away.`); narrate(f, `${fname(f)} lashes out as ${fname(a)} springs clear.`);
@@ -5329,8 +5357,80 @@ function moveActor(a, w, done){
   const p = nearestWalkable(w.x, w.y);
   const g = a.kind === "pc" ? planLeap(a, p) : null;
   if (g && g.ok){ leapMove(a, g, p, done); return; }
+  // DOWN OFF A LEDGE: a hero who clicks below the edge and cannot get there on foot this turn (the stairs are too far, or
+  // there are none) goes over it. Anyone may jump down; the fall is the fall (landFall).
+  const dr = a.kind === "pc" ? planDrop(a, p) : null;
+  if (dr && dr.ok && walkFtTo(a, p) > a.c.move){ leapMove(a, dr, p, done); return; }
   if (g && g.why && !findPath(a, p).length) toast(g.why);   // nothing to walk round it either: say why
+  else if (dr && dr.why && !findPath(a, p).length) toast(dr.why);
   combatWalk(a, p, done);
+}
+// how far a walk to `p` really is, in feet, by the route a walker would take (Infinity: there is no route)
+function walkFtTo(a, p){
+  const path = findPath(a, p); if (!path.length) return Infinity;
+  let d = 0, prev = a; for (const q of path){ d += Math.hypot(q.x - prev.x, q.y - prev.y) + (q.jump ? (q.passFt || 0) * ftPx(a) : 0); prev = q; }
+  return d / ftPx(a);
+}
+// ----- going over the edge -----
+// SRD 5.1 has no separate "jump down" rule: you clear the horizontal distance as a long jump (STRENGTH SCORE in feet with
+// a 10 ft run-up, half from a standstill, a foot of movement per foot), and what you drop is a fall (landFall). Up is not
+// a jump: the high jump is 3 + STR modifier feet, short of any 10 ft ledge, so getting up a level is the stairs or a climb.
+// Shares planLeap's shape ({takeoff, land, runUpFt, gapFt, max, standing, ok|why}) so leapMove flies it unchanged.
+function planDrop(a, to){
+  const span = a.c.sheet.strScore; if (!span) return null;
+  if (["prone", "grappled", "restrained", "asleep"].some(c => a.c.conds.has(c))) return null;
+  const top = elevAt(a.x, a.y); if (top < LEDGE_FT) return null;                   // on the floor: nothing to drop from
+  const dx = to.x - a.x, dy = to.y - a.y, d = Math.hypot(dx, dy); if (d < 1) return null;
+  const n = Math.ceil(d / 6), at = i => ({x: a.x + dx * i / n, y: a.y + dy * i / n});
+  let i = 1;
+  while (i <= n && walkable(at(i).x, at(i).y) && elevAt(at(i).x, at(i).y) === top) i++;   // the run-up along the ledge
+  if (i > n) return null;
+  const takeoff = at(i - 1);
+  while (i <= n && !walkable(at(i).x, at(i).y)) i++;                                    // open air (a rail gap, a chasm)
+  if (i > n) return null;
+  const land = at(i), low = elevAt(land.x, land.y), dropFt = top - low;
+  if (dropFt < LEDGE_FT) return null;                                                   // not a drop: a gap at one level is planLeap's
+  const px = ftPx(a), g = {takeoff, land, drop: true, dropFt,
+    runUpFt: Math.hypot(takeoff.x - a.x, takeoff.y - a.y) / px, gapFt: Math.hypot(land.x - takeoff.x, land.y - takeoff.y) / px};
+  g.standing = g.runUpFt < 10; g.max = g.standing ? Math.floor(span / 2) : span;
+  const need = Math.round((g.runUpFt + g.gapFt) / 5) * 5;
+  if (g.gapFt > g.max) g.why = `Too far out from the ledge: about ${Math.round(g.gapFt)} ft. ${fname(a)} clears ${g.max}${g.standing ? " from a standstill" : ""}.`;
+  else if (need > a.c.move) g.why = `Not enough movement left: the run-up and the jump cost ${need} ft, ${fname(a)} has ${a.c.move}.`;
+  else g.ok = true;
+  return g;
+}
+// SRD 5.1, Falling: "At the end of a fall, a creature takes 1d6 bludgeoning damage for every 10 feet it fell, to a maximum
+// of 20d6. The creature lands prone, unless it avoids taking damage from the fall." Bludgeoning, so a raging barbarian
+// halves it (damage() reads rageResists) — which is exactly why they like the drop.
+function landFall(a, ft){
+  const dice = Math.min(20, Math.floor(ft / 10)); if (dice < 1) return;
+  const r = roll(`${dice}d6`), before = a.c.hp;
+  bank("movement/jump_land", 1); shake(6 + dice * 2); hitstop(90);
+  damage(a, r.total, "bludgeoning", false, null);
+  const took = before - a.c.hp;
+  log(`${fname(a)} falls ${ft} ft: ${dice}d6 bludgeoning [${r.rolls.join(", ")}] = ${r.total}${took !== r.total ? `, takes ${took}` : ""}.${took > 0 && !a.down ? " Lands prone." : ""}`);
+  if (took > 0 && !a.down) addCond(a, "prone");
+}
+// back on their feet off a drop: standing costs half their speed (SRD, Being Prone), and only if that much is left
+function standIfAble(a){
+  if (!a.c.conds.has("prone") || a.down) return;
+  const half = Math.floor((a.c.sheet.speed || 30) / 2);
+  if (a.c.move >= half){ a.c.move -= half; a.c.conds.delete("prone"); setAnim(a, "idle"); log(`${fname(a)} gets up (${half} ft).`); }
+  renderParty();
+}
+// WHO GOES OVER THE EDGE ON THEIR OWN (Sam, 2026-10-27): Ront, Derendil (`leaper` on their sheets) and anyone whose class is
+// barbarian. Everyone else on the AI's side walks round; a hero can always choose to jump.
+const isLeaper = a => !!(a && a.c && a.c.sheet && a.c.sheet.strScore && (a.c.sheet.leaper || isBarbarian(a.c.sheet.cls)));
+// A leaper closing on `goal`: over a gap or off a ledge when that is the way to get there this turn, or simply the shorter
+// way ("will often do it"). Returns the plan to fly, or null to walk.
+function leaperPlan(a, goal){
+  if (!isLeaper(a)) return null;
+  const walk = walkFtTo(a, goal), cost = g => Math.round((g.runUpFt + g.gapFt) / 5) * 5;
+  const drop = planDrop(a, goal);
+  if (drop && drop.ok && walk > cost(drop)) return drop;                               // from up high: nearly always
+  const gap = planLeap(a, goal);
+  if (gap && gap.ok && (walk > a.c.move || walk > cost(gap) + 5)) return gap;
+  return null;
 }
 
 // ----- resolving -----
@@ -5670,7 +5770,7 @@ function doShove(a, t, what){
       if (ok){ bank("combat/melee_miss", .6); popText(t, "holds", "#c9c4b8"); log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — it holds.`); return; }
       bank("walk:punch-bag", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx(what === "prone" ? MARTIAL_IMPACT.sweep : what === "push" ? MARTIAL_IMPACT.kick : MARTIAL_IMPACT.punch, {at: t, sq: 1.8, mirror: what === "prone" && t.x < a.x});   // the sweep takes their legs; a push is a kick
       if (what === "prone"){ addCond(t, "prone"); if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); narrate(a, `${fname(a)} knocks ${fname(t)} flat.`); }
-      else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ftPx(t) * 5, y: t.y + d.y * ftPx(t) * 5}; const to = nearestWalkable(raw.x, raw.y); if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a); else { t.x = to.x; t.y = to.y; } narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
+      else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ftPx(t) * 5, y: t.y + d.y * ftPx(t) * 5}; const to = nearestWalkable(raw.x, raw.y); if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a); else { const top = elevAt(t.x, t.y); t.x = to.x; t.y = to.y; const dropFt = top - elevAt(to.x, to.y); if (dropFt >= LEDGE_FT){ narrate(a, `${fname(a)} shoves ${fname(t)} off the edge.`); setTimeout(() => landFall(t, dropFt), 250); } } narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
       else { addCond(t, "grappled"); t.c.grappledBy = a; narrate(a, `${fname(a)} grabs hold of ${fname(t)}.`); }
       log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — <b>${what === "prone" ? "prone" : what === "push" ? "pushed 5 ft" : "grappled"}</b>.`);
     }, () => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(a); });
@@ -5928,7 +6028,6 @@ function approachThen(att, tgt, ft, then){
       return;
     }
   }
-  att.c.move = Math.max(0, att.c.move - walk.usedFt);
   // STILL OUT OF REACH WHEN THE MOVEMENT RUNS OUT: no swing (Sam, 2026-10-27: "Ront just landed a fist at distance"). A
   // hero gets the menu back to do something else. An ally or a foe used to swing anyway from wherever it stopped; now it
   // closes as far as it can and the turn passes.
@@ -5939,6 +6038,21 @@ function approachThen(att, tgt, ft, then){
     log(`${fname(att)} closes on ${fname(tgt)} but cannot reach them this turn.`);
     popText(att, "out of reach", "#cfc6b0", .8); combatBusy = false; setTimeout(() => passTurn(att), 600);
   };
+  // A LEAPER GOES OVER (Ront, Derendil, any barbarian): off the ledge or across the gap when that is how to get there.
+  // The landing spot is the one beside the target, not the walk's budget-trimmed goal: a jump is all or nothing.
+  if (cbt && isLeaper(att) && !att.c.conds.has("disengaged")){
+    const u = norm({x: tgt.x - att.x, y: tgt.y - att.y}), beside = nearestWalkable(tgt.x - u.x * reach * .8, tgt.y - u.y * reach * .8);
+    const g = leaperPlan(att, beside);
+    if (g){
+      leapMove(att, g, beside, () => {
+        combatBusy = true;                                            // leapMove hands the turn back idle; the swing is still to come
+        if (!cbt || att.down){ combatBusy = false; setTimeout(() => passTurn(att), 500); return; }
+        arrive();                                                     // in reach: swing; still short: no swing from out of reach
+      });
+      return;
+    }
+  }
+  att.c.move = Math.max(0, att.c.move - walk.usedFt);
   att.path = walk.pts; att.onArrive = arrive;
   if (!att.path.length) arrive();
 }
