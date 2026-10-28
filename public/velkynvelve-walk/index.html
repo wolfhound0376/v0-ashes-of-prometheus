@@ -213,9 +213,6 @@ header .tools input[type=range]{accent-color:#f2c55c}
 .combat:has(.cbt-dm:not([hidden])) .bossbar{right:68px}
 body.dm-open .cbt-dm{display:none}
 .cbt-flee b{display:block;color:#ffd27a;font-weight:600;letter-spacing:.1em}
-.cbt-top .btn{padding:4px 10px;font-size:var(--s-1)}
-.cbt-top .cbt-ctl{display:flex;flex-direction:column;gap:4px;padding-left:12px;border-left:1px solid var(--rule)}
-.cbt-top .cbt-ctl .btn{padding:2px 8px;font-size:.64rem;line-height:1.2;white-space:nowrap}
 /* THE BOSS BAR (Sam, 2026-10-27, from the Top Heroes comparison: "bosses" was the one axis with nothing built). At the
    top right (Sam, 2026-10-28: "put that bar maybe to the top right"), only while the fight has a boss (lib/boss-fight.mjs decides who): the face card, the name with the book's
    own epithet, and a wide hit-point bar wearing the action bar's slab (gold rim, dark lip, gloss). No number on it — a DM
@@ -259,7 +256,11 @@ body.dm-open .cbt-dm{display:none}
 /* The initiative order as player cards (Sam, 2026-10-13: "use player cards and not cut off the head"): the
    party's medallions, the canon faces for the foes, whole — a card is never cropped through the head. */
 .turns{display:flex;gap:10px;align-items:flex-end}
-.turn{display:flex;flex-direction:column;align-items:center;gap:4px;width:54px;color:var(--ink-dim);font-size:.62rem;line-height:1;text-align:center;opacity:.8;transition:opacity .25s,width .25s}
+/* THE STRIP'S CARDS are the demo's (Sam, 2026-10-28, with the demo's strip in hand: "This is actually how the initiative box
+   looked and who was fighting"): the pixel figure itself, head to the knees, a short name under it, the one whose turn it
+   is a size up and lit, foes rimmed red, the fallen grey. Not the painted face cards (those stay on the turn call and the
+   boss bar). The order never rotates: everyone keeps their place and the light moves along it, as it did in the demo. */
+.turn{display:flex;flex-direction:column;align-items:center;gap:4px;width:54px;color:var(--ink-dim);font-size:.62rem;line-height:1;text-align:center;opacity:.8;transition:opacity .25s,width .25s,transform .3s}
 .turn .card{position:relative;width:46px;height:58px;border-radius:5px;background:radial-gradient(circle at 50% 35%,rgba(255,235,200,.14),rgba(0,0,0,.6));border:1px solid var(--rule);overflow:hidden;transition:width .25s,height .25s}
 .turn .card img,.turn .card canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 12%;display:block}
 .turn .card img.whole{object-fit:contain;object-position:center}
@@ -755,20 +756,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 .turncall .twhat b{color:#ff9b8f;font-weight:600}
 .turncall .twhat i{font-style:normal;color:#ffd27a;margin:0 6px}
 .turncall.foe .tname{color:#ffb0a0}
-.initroll{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);min-width:300px;padding:12px 18px 14px;border:3px solid #9a6a1c;border-radius:14px;background:linear-gradient(180deg,rgba(32,16,12,.96),rgba(16,9,8,.94));box-shadow:inset 0 0 0 2px #000,0 6px 0 #000,0 16px 40px rgba(0,0,0,.7);pointer-events:none;z-index:41;transition:opacity .35s ease,transform .35s ease}
-.initroll[hidden]{display:none}
-.initroll.out{opacity:0;transform:translate(-50%,-90%) scale(.86)}
-.initroll h3{margin:0 0 8px;font-family:"Cinzel",Georgia,serif;font-size:1.05rem;letter-spacing:.14em;color:#ff9b8f;text-align:center}
-.initroll .row{display:grid;grid-template-columns:22px 30px 1fr auto;align-items:center;gap:10px;padding:3px 4px;opacity:0;transform:translateX(-10px);transition:opacity .2s ease,transform .2s ease}
-.initroll .row.in{opacity:1;transform:none}
-.initroll .row .n{font-family:var(--face-mono);font-size:.72rem;color:var(--ink-dim);text-align:right}
-.initroll .row .f{position:relative;width:30px;height:36px;border-radius:6px;border:1px solid #000;overflow:hidden;background:radial-gradient(circle at 50% 35%,rgba(255,235,200,.14),rgba(0,0,0,.6))}
-.initroll .row .f .card,.initroll .row .f .card img,.initroll .row .f .card canvas{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0;object-fit:cover;object-position:center 12%;image-rendering:pixelated}
-.initroll .row .nm{font-family:"Cinzel",Georgia,serif;font-size:.86rem;color:#e8dcc4;white-space:nowrap}
-.initroll .row.foe .nm{color:#ffb0a0}
-.initroll .row .r{font-family:var(--face-mono);font-size:.74rem;color:var(--ink-dim);white-space:nowrap}
-.initroll .row .r b{color:#ffe9a6;font-size:.95rem;margin-left:4px}
-@media (prefers-reduced-motion:reduce){.initroll .row,.turncall{transition:none}}
+@media (prefers-reduced-motion:reduce){.turn,.turncall{transition:none}}
 /* THE DEATH BEAT banner (the pop lanes, 2026-10-28): "Drow guard slain", "Fifi is down" — a moment at the top of the stage */
 .beat{position:absolute;left:50%;top:24%;transform:translate(-50%,-50%);font-family:"Cinzel",Georgia,serif;font-size:26px;font-weight:700;color:#f3d68a;letter-spacing:.1em;text-shadow:0 0 14px rgba(255,120,80,.5),0 2px 0 #2a0a08,0 4px 12px rgba(0,0,0,.85);opacity:0;pointer-events:none;white-space:nowrap;z-index:40}
 .beat.show{animation:beat 1.3s ease-out forwards}
@@ -822,7 +810,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button id="zIn" aria-label="Zoom in">+</button>
     </div>
     <div class="combat" id="combat" hidden>
-      <div class="cbt-top cbt-ui"><span class="lbl">Combat<span class="round" id="cbtRound"></span></span><div class="turns" id="turns"></div><span class="cbt-ctl"><button class="btn" id="quickBtn" title="DM: let the heroes fight on their own at speed. Weapons only, no spells or items. Every roll is real.">Quick resolve</button><button class="btn danger" id="endCombat">End fight</button></span></div>
+      <div class="cbt-top cbt-ui"><span class="lbl">Combat<span class="round" id="cbtRound"></span></span><div class="turns" id="turns"></div></div>
       <div class="cbt-flee" id="cbtFlee" hidden></div>
       <button class="cbt-dm cbt-ui" id="cbtDm" title="DM tools" hidden>DM</button>
       <div class="bossbar" id="bossBar" hidden aria-live="polite"><div class="bface" id="bossFace"></div><div class="btext"><div class="bname"><span class="kick">BOSS</span><span id="bossName"></span><small id="bossEpithet"></small></div><div class="bhp" title=""><i id="bossHp"></i><em></em><b>Bloodied</b></div></div></div>
@@ -855,6 +843,11 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     </div>
     <div class="dm" id="dm" hidden>
       <div class="dmHead"><b>DM tools</b><button class="tbtn" id="dmClose" aria-label="Close DM tools">✕</button></div>
+      <!-- Quick resolve and End fight lived in the turn strip until 2026-10-28; the demo's strip carries no buttons, so
+           they are the DM's here, first in the drawer behind the small DM button the fight keeps top right (#1055). -->
+      <details open><summary>The fight</summary>
+      <div class="dmCloudRow"><button class="btn" id="quickBtn" title="DM: let the heroes fight on their own at speed. Weapons only, no spells or items. Every roll is real.">Quick resolve</button><button class="btn danger" id="endCombat">End fight</button></div>
+      </details>
       <details open><summary>Characters on the map</summary>
       <div id="dmSeats" class="seats"></div>
       </details>
@@ -918,7 +911,6 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div id="victory" class="victory" hidden><div class="big"></div><div class="small"></div></div>
     <div id="beat" class="beat" aria-live="polite"></div>
     <div id="turnCall" class="turncall" aria-live="polite"><div class="tface" id="turnFace"></div><span class="tname" id="turnName"></span><span class="twhat" id="turnWhat"></span></div>
-    <div id="initRoll" class="initroll" hidden><h3>INITIATIVE</h3><div id="initRows"></div></div>
     <div id="bossIntro" class="bossIntro" hidden><div class="bface" id="bossIntroFace"></div><div><div class="kick">BOSS</div><div class="big" id="bossIntroName"></div><div class="small" id="bossIntroEpithet"></div></div></div>
     <div class="talk" id="obj" hidden>
       <div class="tcard" role="dialog" aria-labelledby="objWho">
@@ -6296,7 +6288,7 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   cbtLogBegin();   // THE COMBAT LOG opens with the fight; the centre strip and the fading lines fall silent until it ends
   cbt.boss = bossOfFight(foes); cbt.bossIntro = !!cbt.boss; $("combat").classList.toggle("has-boss", !!cbt.boss);
   $("combat").hidden = false; $("cbtMenu").hidden = true; stage.classList.add("fight"); renderTurns(); renderParty(); renderBossBar();
-  log(`<em>${esc(label || "Steel comes out.")}</em> Initiative: ${order.map(a => `${fname(a)} ${a.c.init}`).join(", ")}.${bystanders.length ? ` Not in it: ${bystanders.map(fname).join(", ")} — they run.` : ""}`);
+  log(`<em>${esc(label || "Steel comes out.")}</em> <span title="${esc(order.map(a => `${fname(a)} d20 ${a.c.initRoll} ${(a.c.sheet.init || 0) >= 0 ? "+" : "−"} ${Math.abs(a.c.sheet.init || 0)}`).join(" · "))}">Initiative: ${order.map(a => `${fname(a)} ${a.c.init}`).join(", ")}.</span>${bystanders.length ? ` Not in it: ${bystanders.map(fname).join(", ")} — they run.` : ""}`);
   renderFleeing(); setTimeout(bystandersFlee, 900);   // the first run, as steel comes out
   bank("ui/initiative_start", .8);
   for (const nm of ["physicalImpact", ...ALL_MARTIAL_IMPACTS, "pxSigilBurst", "pxSigilShatter"]) vfxLoad(nm);   // warm the sheets the first blows need
@@ -6488,17 +6480,32 @@ function faceCanvas(a, size){
   const m = SPR[a.id].json, [cw, ch] = m.cell, img = SPR[a.id].img.idle, k = Math.min(1.9, 96 / m.ppu * 1.25) * size / cw;   // same crop as the party portraits
   g.drawImage(img, 0, 0, cw, ch, (size - cw * k) / 2, size * .92 - m.pivot[1] * k, cw * k, ch * k); return c;
 }
+// The strip's card is the demo's: the sprite's own idle figure, head to the knees (the demo's crop: fit × 1.5, from the
+// top), never the painted face card. Big creatures (a 160/192 cell) get the same crop; their head is still at the top.
+function stripCard(a){
+  const d = document.createElement("div"); d.className = "card";
+  const c = document.createElement("canvas"); c.width = 60; c.height = 76; const g = c.getContext("2d"); g.imageSmoothingEnabled = false;
+  const m = SPR[a.id] && SPR[a.id].json, img = SPR[a.id] && SPR[a.id].img.idle;
+  if (!m || !img){ d.appendChild(cardFor(a).firstChild || c); return d; }
+  const [cw, ch] = m.cell, k = Math.min(76 / ch, 60 / cw) * 1.5;
+  g.drawImage(img, 0, 0, cw, ch, (60 - cw * k) / 2, 6, cw * k, ch * k); d.appendChild(c); return d;
+}
+// The name under the card, the demo's way: "Shoor", "Guard", "Fifi" — a named person's first name, a creature's kind.
+// The whole name stays on the card's tooltip and on the turn call.
+function stripName(a){
+  const full = fname(a), w = full.split(/\s+/);
+  if (w.length < 2) return full;
+  return /^[A-Z]/.test(w[1]) ? w[0] : w[w.length - 1].replace(/^./, ch => ch.toUpperCase());
+}
 function renderTurns(){
   if (!cbt) return;
   const el = $("turns"); el.innerHTML = "";
-  const n = cbt.order.length;
-  for (let k = 0; k < n; k++){
-    const i = (Math.max(0, cbt.idx) + k) % n, a = cbt.order[i];
+  cbt.order.forEach((a, i) => {
     const b = document.createElement("div"); b.className = "turn" + (a.kind === "foe" ? " foe" : "") + (a.down ? " down" : "") + (i === cbt.idx ? " now" : "");
-    b.appendChild(cardFor(a));
-    const s = document.createElement("span"); s.textContent = fname(a); b.appendChild(s); b.title = `${fname(a)} · initiative ${a.c.init}`;
+    b.appendChild(stripCard(a));
+    const s = document.createElement("span"); s.textContent = stripName(a); b.appendChild(s); b.title = `${fname(a)} · initiative ${a.c.init}`;
     el.appendChild(b);
-  }
+  });
   $("cbtRound").textContent = cbt.round ? `Round ${cbt.round}` : "";
   renderFleeing();
 }
@@ -8832,7 +8839,7 @@ function endCombat(won){
   }
   closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby(); poisonZones = []; dmPlace = null;
   $("bossBar").hidden = true; $("bossBar").classList.remove("show", "bloodied", "flash", "down"); delete $("bossBar").dataset.for; $("bossIntro").hidden = true; $("bossIntro").classList.remove("show");   // BOSS FIGHTS: the bar and the slam go with the fight
-  $("cbtFlee").hidden = true; turnCallHide(); $("initRoll").hidden = true; $("combat").classList.remove("has-boss");
+  $("cbtFlee").hidden = true; turnCallHide(); $("combat").classList.remove("has-boss");
   // The dead stay where they fell (Sam, 2026-10-13: "There should always be a carcass or dead body of
   // whatever died. This way we can search the body."). Only the living, called off, walk away.
   const slain = foes.filter(f => f.down);
@@ -8963,21 +8970,13 @@ function turnWhat(att, tgt, what, boon){
   if (tgt) cbt.marked = {t: tgt, boon, until: now + 2200};
 }
 function turnCallHide(){ const el = $("turnCall"); if (el) el.classList.remove("show"); }
-// THE INITIATIVE REVEAL: the order rolls out, a row a beat, then folds into the strip. Returns how long it holds the turn.
+// THE INITIATIVE REVEAL is the strip itself, as in the demo: the cards take their places one by one, highest first.
+// No panel and no arithmetic on screen (Sam, 2026-10-28: "we don't need it to show the calculations for initiative" —
+// the demo never had them; the rolls are on the log line's tooltip for a DM who wants them). Returns how long it holds.
 function initiativeReveal(order){
-  const box = $("initRoll"), rows = $("initRows"); if (!box || !order.length) return 0;
-  rows.innerHTML = ""; box.hidden = false; box.classList.remove("out");
-  order.forEach((a, i) => {
-    const r = document.createElement("div"); r.className = "row" + (a.kind === "foe" ? " foe" : "");
-    const bonus = a.c.sheet.init || 0, f = document.createElement("div"); f.className = "f"; f.appendChild(cardFor(a));
-    r.innerHTML = `<span class="n">${i + 1}</span>`; r.appendChild(f);
-    r.insertAdjacentHTML("beforeend", `<span class="nm">${esc(fname(a))}</span><span class="r">d20 ${a.c.initRoll ?? "?"} ${bonus >= 0 ? "+" : "−"} ${Math.abs(bonus)} =<b>${a.c.init}</b></span>`);
-    rows.appendChild(r); setTimeout(() => r.classList.add("in"), 250 + i * 110);
-  });
-  const hold = 250 + order.length * 110 + 1100;
-  setTimeout(() => box.classList.add("out"), hold);
-  setTimeout(() => { box.hidden = true; }, hold + 380);
-  return hold + 200;
+  const cards = [...$("turns").children]; if (!cards.length) return 0;
+  cards.forEach((el, i) => { el.style.opacity = "0"; el.style.transform = "translateY(-12px) scale(.86)"; setTimeout(() => { el.style.opacity = ""; el.style.transform = ""; }, 200 + i * 90); });
+  return 200 + cards.length * 90 + 300;
 }
 function burst(a, col, n){ const m = SPR[a.id].json, sc = actorScale(a), y = a.y - m.pivot[1] * sc * .5; for (let i = 0; i < n; i++){ const ang = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 160; sparks.push({x: a.x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * .6 - 60, col, t0: now, life: 420 + Math.random() * 300}); } }
 function hitstop(ms){ hitstopUntil = Math.max(hitstopUntil, performance.now() + ms); }
