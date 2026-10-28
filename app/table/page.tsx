@@ -16,6 +16,8 @@
 // an empty chair, and a cartoon Lich behind the screen. A hero who sits down is drawn as one of the seven,
 // chosen from their character id so they keep the same figure every session; no two at one table share one.
 // THE START (Sam): when the last light goes green the whole room darkens, a beat of black, then the Act.
+// THE SCREEN AND THE CANDLES (Sam, 2026-10-28): the three leaves of the DM screen wear the title poster's art
+// (SCREEN_LEAVES), every candle flame flickers on its own clock (FLAMES), and Camp Embers plays under it all.
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -26,7 +28,7 @@ import { assignFigures, type Light, type TableState } from "@/lib/table"
 import type { SeatView } from "@/lib/table-store"
 import { ENTERED_KEY, mapHref } from "@/lib/map-entry"
 import { fadeOutThemeAudio } from "@/components/theme-audio"
-import { introMusicOn } from "@/lib/settings"
+import { readSettings } from "@/lib/settings"
 
 const CHARACTER_LS_KEY = "aop_character_id"
 const TOKEN_LS_KEY = "aop_claim_token"
@@ -61,8 +63,69 @@ function Art({ still, loop, video, alt, className, style }: { still: string; loo
 // The screen in room.webp, as a polygon in percent of the painting: drawn again on top of the Lich so he
 // stands BEHIND it.
 const SCREEN_CLIP = "polygon(57.2% 32.3%, 59.9% 34.8%, 74.3% 37.4%, 83.5% 35.9%, 83.5% 55.7%, 74.3% 57.5%, 59.9% 54.4%, 57.2% 51.2%)"
+
+// THE SCREEN'S ART (Sam, 2026-10-28: "have some DND art on the screen the lich is using"). A real DM screen wears
+// art on the players' side, so the three leather leaves carry the campaign's own key art — the title poster
+// (public/images/intro-poster.webp, Sam's approved art) cut into three slices in public/table/: the elf on the
+// narrow left leaf, the Lich in the middle, the two men on the right. No new art. Each leaf is the quadrilateral
+// it paints in percent of the room (x0..x1 across; tl/tr/br/bl the four corners' heights); the art is skewed to
+// follow the leaf's slope and clipped to an octagon inside it, so the painted frame and the brass corners stay on
+// top. `pos` is object-position: which part of a slice shows where the leaf is a different shape from it.
+const SCREEN_LEAVES = [
+  { art: "/table/screen-left.webp", x0: 57.2, x1: 59.9, tl: 32.3, tr: 34.8, br: 54.4, bl: 51.2, chamfer: [0.7, 2.0], pos: "50% 50%" },
+  { art: "/table/screen-mid.webp", x0: 59.9, x1: 74.3, tl: 34.8, tr: 37.4, br: 57.5, bl: 54.4, chamfer: [1.6, 2.9], pos: "50% 50%" },
+  { art: "/table/screen-right.webp", x0: 74.3, x1: 83.5, tl: 37.4, tr: 35.9, br: 55.7, bl: 57.5, chamfer: [1.6, 2.9], pos: "50% 50%" },
+]
+type Leaf = (typeof SCREEN_LEAVES)[number]
+const ROOM_W = 1920, ROOM_H = 1072   // the room box's aspect (the painting is 2752x1536, the same shape)
+const LEAF_FRAME = [0.35, 0.65]      // the painted frame round each leaf, percent of the room (across, down)
+const LEAF_PAD = 1.5                 // the art box overhangs the leaf a little; the clip trims it
+
+/** The octagon inside a leaf: the quadrilateral inset by the frame, each corner cut off for the brass. */
+function leafClip(l: Leaf): string {
+  const [fx, fy] = LEAF_FRAME, [cx, cy] = l.chamfer
+  const x0 = l.x0 + fx, x1 = l.x1 - fx
+  const top = (x: number) => l.tl + ((l.tr - l.tl) * (x - l.x0)) / (l.x1 - l.x0) + fy
+  const bottom = (x: number) => l.bl + ((l.br - l.bl) * (x - l.x0)) / (l.x1 - l.x0) - fy
+  const pts = [
+    [x0 + cx, top(x0 + cx)], [x1 - cx, top(x1 - cx)],
+    [x1, top(x1) + cy], [x1, bottom(x1) - cy],
+    [x1 - cx, bottom(x1 - cx)], [x0 + cx, bottom(x0 + cx)],
+    [x0, bottom(x0) - cy], [x0, top(x0) + cy],
+  ]
+  return `polygon(${pts.map(([x, y]) => `${x.toFixed(2)}% ${y.toFixed(2)}%`).join(", ")})`
+}
+/** How far the leaf's top edge tilts, in degrees, so the art leans with it. */
+function leafSkew(l: Leaf): number {
+  return (Math.atan(((l.tr - l.tl) * ROOM_H) / ((l.x1 - l.x0) * ROOM_W)) * 180) / Math.PI
+}
+
+// THE CANDLES (Sam, 2026-10-28: "Candle lights should flicker"). Nine flames in the painting: two on the table at
+// the left, two at the right, five on the chandelier. Each gets a small living flame drawn over the painted one
+// (screen blend, so it only ever adds light) and a halo of candlelight on whatever is near it, and the whole room
+// breathes with them. Every flame runs on its own clock from its own start, so no two flicker together. x, y: the
+// middle of the painted flame; h: its height — all percent of the room.
+const FLAMES = [
+  { x: 48.6, y: 33.0, h: 3.6, dur: 1.9, delay: -0.3 },
+  { x: 51.8, y: 27.3, h: 4.6, dur: 2.3, delay: -1.1 },
+  { x: 88.5, y: 38.4, h: 3.8, dur: 2.1, delay: -0.7 },
+  { x: 93.2, y: 37.5, h: 4.0, dur: 1.7, delay: -1.5 },
+  { x: 43.5, y: 3.3, h: 4.4, dur: 2.0, delay: -0.2 },
+  { x: 49.3, y: 5.2, h: 2.6, dur: 1.6, delay: -0.9 },
+  { x: 50.7, y: 2.6, h: 5.0, dur: 2.2, delay: -1.3 },
+  { x: 58.2, y: 5.0, h: 2.6, dur: 1.8, delay: -0.5 },
+  { x: 61.3, y: 3.0, h: 4.8, dur: 2.4, delay: -1.7 },
+]
+const FLAME_W = 0.42 * (ROOM_H / ROOM_W)   // a flame is about 0.42 of its height wide; widths are percent of the room's width
 const DARK_MS = 2600   // the room goes dark, a beat of black, then the Act
+// Room music (Sam, 2026-10-28: "have some background music playing while at the table"): Camp Embers, the lute
+// over cello he approved for the camp, looped. It plays unless refused HERE (the speaker button, remembered under
+// TABLE_MUSIC_KEY) or the Settings sheet's intro-score switch is off. The dashboard's older global mute
+// (aop_music_off, lib/audio-prefs.ts) no longer silences the table — Sam's browser carried it from the dashboard,
+// so the table sat silent with no button to turn it on.
 const ROOM_MUSIC = "/audio/camp-embers.mp3"
+const ROOM_MUSIC_VOLUME = 0.45   // the file is levelled to -27 LUFS like the rest of the library
+const TABLE_MUSIC_KEY = "aop_table_music"   // "off" only when the speaker button was pressed at the table
 const ACT_TITLE = { act: "Act I", name: "Awakening into the Nightmare" }
 const ACT_CARD_MS = 4200
 
@@ -88,7 +151,10 @@ const TABLE_KEYFRAMES = `
 @keyframes aop-figure-sit { 0% { opacity: 0; translate: 0 -6%; } 60% { opacity: 1; translate: 0 1%; } 100% { opacity: 1; translate: 0 0; } }
 @keyframes aop-figure-idle { 0%,100% { translate: 0 0; } 50% { translate: 0 -0.8%; } }
 @keyframes aop-lich-loom { 0%,100% { translate: 0 0; scale: 1; } 50% { translate: 0 -1.2%; scale: 1.01; } }
-@keyframes aop-candles { 0% { opacity: .85 } 17% { opacity: 1 } 33% { opacity: .78 } 48% { opacity: .95 } 66% { opacity: .82 } 81% { opacity: 1 } }
+@keyframes aop-flame { 0% { transform: scale(1,1) skewX(0deg); opacity: .9 } 23% { transform: scale(.9,1.1) skewX(-5deg); opacity: 1 } 41% { transform: scale(1.08,.88) skewX(4deg); opacity: .78 } 58% { transform: scale(.94,1.14) skewX(-2deg); opacity: .96 } 77% { transform: scale(1.05,.94) skewX(6deg); opacity: .84 } 100% { transform: scale(1,1) skewX(0deg); opacity: .9 } }
+@keyframes aop-halo { 0% { opacity: .75; transform: scale(1) } 19% { opacity: 1; transform: scale(1.06) } 37% { opacity: .6; transform: scale(.95) } 55% { opacity: .9; transform: scale(1.03) } 72% { opacity: .7; transform: scale(.98) } 100% { opacity: .75; transform: scale(1) } }
+@keyframes aop-room-breathe { 0% { opacity: .7 } 13% { opacity: 1 } 29% { opacity: .55 } 46% { opacity: .85 } 61% { opacity: .65 } 80% { opacity: .95 } 100% { opacity: .7 } }
+@media (prefers-reduced-motion: reduce) { [data-flicker] { animation: none !important } }
 `
 
 const LIGHT_CLASS: Record<Light, string> = {
@@ -173,20 +239,36 @@ export default function TablePage() {
     }, DARK_MS)
   }, [view, role, dark, router])
 
-  // Room music: calm, looped, only on the real site and only if intro music is on (Sam's test-copy rule).
+  // Room music: calm, looped, only on the real site (Sam's test-copy rule) and only if the Settings sheet allows
+  // intro scores. The browser will not start sound before a click, so it tries at once and again on the first
+  // press anywhere; the speaker button shows as soon as the player exists, so a refused table is one press away.
   const music = useRef<HTMLAudioElement | null>(null)
   const [musicOn, setMusicOn] = useState(false)
+  const [hasMusic, setHasMusic] = useState(false)
   useEffect(() => {
     fadeOutThemeAudio()
     const real = typeof window !== "undefined" && window.location.hostname.endsWith("playacartagena.com")
-    if (!real || !introMusicOn()) return
-    const a = new Audio(ROOM_MUSIC); a.loop = true; a.volume = 0.35; music.current = a
-    const go = () => a.play().then(() => setMusicOn(true)).catch(() => {})
+    if (!real || !readSettings().introMusic) return
+    const a = new Audio(ROOM_MUSIC); a.loop = true; a.volume = ROOM_MUSIC_VOLUME; music.current = a
+    setHasMusic(true)
+    let refused = false
+    try { refused = window.localStorage.getItem(TABLE_MUSIC_KEY) === "off" } catch { /* storage blocked */ }
+    if (refused) return () => { a.pause() }
+    const go = () => { a.play().then(() => { setMusicOn(true); window.removeEventListener("pointerdown", go) }).catch(() => {}) }
     go()
-    window.addEventListener("pointerdown", go, { once: true })
+    window.addEventListener("pointerdown", go)
     return () => { a.pause(); window.removeEventListener("pointerdown", go) }
   }, [])
-  const toggleMusic = () => { const a = music.current; if (!a) return; if (a.paused) { a.play().then(() => setMusicOn(true)).catch(() => {}) } else { a.pause(); setMusicOn(false) } }
+  const toggleMusic = () => {
+    const a = music.current; if (!a) return
+    if (a.paused) {
+      a.play().then(() => setMusicOn(true)).catch(() => {})
+      try { window.localStorage.removeItem(TABLE_MUSIC_KEY) } catch { /* storage blocked */ }
+    } else {
+      a.pause(); setMusicOn(false)
+      try { window.localStorage.setItem(TABLE_MUSIC_KEY, "off") } catch { /* storage blocked */ }
+    }
+  }
 
   const leave = async () => {
     leaving.current = true
@@ -210,7 +292,7 @@ export default function TablePage() {
           <h1 className="mt-1 font-serif text-2xl tracking-[0.14em] text-[#e8c56a]">The Table</h1>
         </div>
         <div className="flex items-center gap-2">
-          {music.current && (
+          {hasMusic && (
             <button type="button" onClick={toggleMusic} className="rounded-sm border border-[#3d3428] p-2 text-stone-400 hover:text-[#e8c56a]" aria-label={musicOn ? "Music off" : "Music on"}>
               {musicOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
             </button>
@@ -268,9 +350,30 @@ function Room({ view, isDm, busy, dark, locked, onRemove, onExcuse, onReadmit }:
         </div>
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img src={ROOM} alt="" aria-hidden className="pointer-events-none absolute inset-0 h-full w-full object-cover" style={{ clipPath: SCREEN_CLIP }} />
-        {/* candle flicker and the DM's light on the screen */}
-        <div aria-hidden className="pointer-events-none absolute inset-0 mix-blend-screen animate-[aop-candles_2.3s_steps(1)_infinite]"
-          style={{ background: "radial-gradient(4% 7% at 48.4% 35%,rgba(255,190,90,.35),transparent 70%),radial-gradient(4% 7% at 51.6% 31%,rgba(255,190,90,.35),transparent 70%),radial-gradient(4% 7% at 88.4% 40%,rgba(255,190,90,.3),transparent 70%),radial-gradient(4% 7% at 93% 39%,rgba(255,190,90,.3),transparent 70%),radial-gradient(22% 10% at 55% 7%,rgba(255,180,80,.22),transparent 70%)" }} />
+        {/* the art on the three leaves of the screen */}
+        {SCREEN_LEAVES.map((l) => (
+          <div key={l.art} aria-hidden className="pointer-events-none absolute inset-0" style={{ clipPath: leafClip(l) }}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={l.art} alt="" className="absolute max-w-none object-cover"
+              style={{ left: `${l.x0}%`, top: `${l.tl - LEAF_PAD}%`, width: `${l.x1 - l.x0}%`, height: `${l.bl - l.tl + 2 * LEAF_PAD}%`, objectPosition: l.pos, transformOrigin: "0 0", transform: `skewY(${leafSkew(l).toFixed(2)}deg)` }} />
+            {/* candlelight on leather, not a lit painting: the art sits a shade darker than the poster */}
+            <div className="absolute inset-0" style={{ background: "linear-gradient(to bottom, rgba(28,12,6,.15), rgba(28,12,6,.36))" }} />
+          </div>
+        ))}
+        {/* the candles: a living flame over each painted one, its halo, and the room breathing with them */}
+        <div aria-hidden data-flicker className="pointer-events-none absolute inset-0 mix-blend-screen" style={{ background: "radial-gradient(ellipse 60% 55% at 60% 38%, rgba(255,170,70,.13), transparent 70%)", animation: "aop-room-breathe 3.7s ease-in-out infinite" }} />
+        {FLAMES.map((f, i) => {
+          const w = f.h * FLAME_W
+          return (
+            <div key={i} aria-hidden className="pointer-events-none absolute inset-0">
+              <div data-flicker className="absolute mix-blend-screen" style={{ left: `${f.x - w * 1.9}%`, top: `${f.y - f.h * .9}%`, width: `${w * 3.8}%`, height: `${f.h * 2.6}%`, transformOrigin: "50% 50%",
+                background: "radial-gradient(ellipse at 50% 50%, rgba(255,180,80,.38) 0%, rgba(255,140,40,.14) 42%, rgba(255,120,30,0) 70%)", animation: `aop-halo ${(f.dur * 1.37).toFixed(2)}s ease-in-out ${f.delay}s infinite` }} />
+              <div data-flicker className="absolute mix-blend-screen" style={{ left: `${f.x - w / 2}%`, top: `${f.y - f.h / 2}%`, width: `${w}%`, height: `${f.h}%`, transformOrigin: "50% 100%", filter: "blur(0.6px)",
+                background: "radial-gradient(ellipse 50% 58% at 50% 62%, rgba(255,252,220,.95) 0%, rgba(255,208,95,.85) 30%, rgba(255,140,30,.42) 58%, rgba(255,90,10,0) 78%)", animation: `aop-flame ${f.dur}s ease-in-out ${f.delay}s infinite` }} />
+            </div>
+          )
+        })}
+        {/* the DM's light on the screen */}
         <span className={cn("absolute left-[67.1%] top-[46%] aspect-square w-[1.5%] -translate-x-1/2 -translate-y-1/2 rounded-full transition-all duration-500", light ? LIGHT_CLASS[light] : "bg-stone-800")}
           aria-label={light ? `Dungeon Master: ${light}` : "The Dungeon Master is not here"} />
         {/* five chairs */}
