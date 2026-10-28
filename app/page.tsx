@@ -1215,9 +1215,22 @@ if (error) {
       )
       .subscribe()
 
+    // The sheet row itself: a level taken on the Underwalk (/api/walk-level-up, /api/walk-level-choices), XP paid
+    // after a fight (/api/walk-xp), the DM editing the row — until 2026-10-28 none of these reached an open Parley,
+    // which only re-read `characters` when an item or a chat turn moved. `characters` is in the realtime publication.
+    const sheetChannel = supabase
+      .channel(`sheet-${selectedCharacterId}`)
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'characters', filter: `id=eq.${selectedCharacterId}` },
+        () => { fetchCharacterData() }
+      )
+      .subscribe()
+
     return () => {
       supabase.removeChannel(inventoryChannel)
       supabase.removeChannel(equipmentChannel)
+      supabase.removeChannel(sheetChannel)
     }
   }, [selectedCharacterId, fetchCharacterData])
 

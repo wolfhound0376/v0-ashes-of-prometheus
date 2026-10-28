@@ -231,7 +231,13 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
   const src = `${plan.cls === "rogue" ? "Rogue" : "Sorcerer"} ${plan.level}`
   const kept = (Array.isArray(features) ? features : []).filter(
     (f): f is SheetFeature => !!f && typeof f === "object" && typeof (f as SheetFeature).name === "string" && !((f as SheetFeature).source === PENDING_LEVEL_SOURCE && (f as SheetFeature).name === pendingName(plan.level)),
-  )
+  ).map((f) => {
+    // the level-1 "Sneak Attack" line on the sheet says "+1d6"; when the level raises the dice, that line follows
+    // (SRD 5.2.1 Rogue table), so the sheet never carries two Sneak Attack numbers.
+    const sa = plan.sneakAttack
+    if (!sa || sa.from === sa.to || !/^sneak attack$/i.test(f.name.trim())) return f
+    return { ...f, desc: String(f.desc ?? "").replace(new RegExp(`\\+?${sa.from}\\b`, "g"), `+${sa.to}`) }
+  })
   const added: SheetFeature[] = []
   for (const g of plan.gains) added.push({ name: g.name, desc: g.desc, source: g.source })
   for (const m of metaOpts) added.push({ name: `Metamagic: ${m!.name}`, desc: `${m!.desc} (${m!.cost} SP)`, source: `${src} · verify against SRD 5.2.1` })
