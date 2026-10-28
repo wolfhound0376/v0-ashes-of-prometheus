@@ -293,6 +293,13 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .invChips{display:flex;gap:8px;flex-wrap:wrap}
 .efChip{display:flex;align-items:center;gap:9px;padding:6px 14px 6px 11px;border:1px solid var(--ef-brass);border-radius:6px;background:var(--ef-inset);box-shadow:inset 0 0 0 1px #000,0 2px 6px rgba(0,0,0,.4)}
 .efChip svg{width:22px;height:22px;flex:0 0 22px}
+.efChip .mark,.invName .mark{width:38px;height:38px;flex:0 0 38px;border-radius:7px;border:1px solid #000;box-shadow:0 0 0 1px var(--ef-brass),0 2px 4px rgba(0,0,0,.5)}
+.invName{grid-template-columns:auto 1fr;column-gap:12px;align-items:center}
+.invName .mark{grid-row:1/3;width:48px;height:48px;flex:0 0 48px}
+.lvlBadge small,.lvlBadge b{text-shadow:0 2px 0 #000,0 0 8px #000}
+.lvlXp .lbl .mark{width:18px;height:18px;border-radius:4px;vertical-align:-4px;margin-right:6px;border:1px solid #000}
+.lvlUp .mark{width:44px;height:44px;border-radius:8px;border:2px solid #000;box-shadow:0 2px 0 #000}
+.lvlUp .t{display:grid;justify-items:center;gap:3px}
 .efChip .t{display:grid;gap:2px;line-height:1}
 .efChip .k{font-family:var(--face-mono);font-size:.6rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ef-muted)}
 .efChip .v{font-family:var(--face-display);font-size:var(--s2);color:var(--ef-text)}
@@ -330,7 +337,8 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .invDoll .slot:hover,.invDoll .slot:focus-visible{border-color:var(--ef-gold)}
 .invDoll .slot[aria-pressed="true"]{border-color:var(--ef-selected);box-shadow:inset 0 0 0 1px #000,0 0 0 2px rgba(217,186,104,.5),0 0 16px rgba(215,175,88,.3)}
 .invDoll .slot img{width:72%;height:72%;object-fit:contain}
-.invDoll .slot.empty img{opacity:.32;filter:grayscale(1)}
+.invDoll .slot.empty img{width:100%;height:100%;object-fit:cover;border-radius:5px;opacity:.9}
+.invDoll .slot.empty:hover img,.invDoll .slot.empty[aria-pressed="true"] img{opacity:1;filter:brightness(1.15)}
 .invDoll .slot:not(.empty)::after{content:"";position:absolute;right:5px;top:5px;width:9px;height:9px;border-radius:50%;background:var(--ef-equipped);box-shadow:0 0 0 1px #000,0 0 6px var(--ef-equipped)}
 .invDoll .slot .lbl{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:4px;padding:1px 6px;border-radius:3px;background:rgba(9,9,13,.72);text-align:center;font-family:var(--face-mono);font-size:.56rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ef-secondary);text-shadow:0 1px 2px #000;white-space:nowrap}   /* a dark backing: the cleric's cathedral is bright stone */
 .invSel{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-height:30px;font-size:var(--s-1);color:var(--ef-secondary)}
@@ -348,7 +356,7 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .lvlBar{height:12px;border:1px solid var(--ef-brass);border-radius:6px;background:var(--ef-inset);box-shadow:inset 0 0 0 1px #000;overflow:hidden}
 .lvlBar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#8d6830,#d7af58 70%,#ffe2a0);transition:width .6s ease}
 .lvlBar.full i{box-shadow:0 0 10px rgba(255,226,160,.7)}
-.lvlUp{font:inherit;font-family:var(--face-display);font-size:var(--s2);letter-spacing:.14em;padding:11px 28px;border:2px solid var(--ef-gold);border-radius:6px;background:linear-gradient(#ffe2a0,#dca645 48%,#aa6a23);color:#35220f;font-weight:700;box-shadow:0 0 0 1px #000,0 6px 14px rgba(0,0,0,.5);cursor:pointer;flex:0 0 auto;display:grid;justify-items:center;gap:3px}
+.lvlUp{font:inherit;font-family:var(--face-display);font-size:var(--s2);letter-spacing:.14em;padding:11px 28px;border:2px solid var(--ef-gold);border-radius:6px;background:linear-gradient(#ffe2a0,#dca645 48%,#aa6a23);color:#35220f;font-weight:700;box-shadow:0 0 0 1px #000,0 6px 14px rgba(0,0,0,.5);cursor:pointer;flex:0 0 auto;display:flex;align-items:center;gap:12px;text-align:left}
 .lvlUp small{font-family:var(--face-body);font-size:.68rem;letter-spacing:0;font-weight:500;color:#5a3f16;text-transform:none}
 .lvlUp.locked{background:linear-gradient(#2a2430,#17141c);color:var(--ef-muted);border-color:#4a3f2a;box-shadow:inset 0 0 0 1px #000;cursor:default}
 .lvlUp.locked small{color:var(--ef-muted)}
@@ -587,7 +595,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     </div>
     <div class="inv" id="inv" role="dialog" aria-label="Inventory" hidden>
       <div class="invHead">
-        <div class="invName"><b id="invWho"></b><span class="invSub" id="invSub"></span></div>
+        <div class="invName"><img class="mark" id="invCrest" alt=""><b id="invWho"></b><span class="invSub" id="invSub"></span></div>
         <div class="invChips" id="invChips"></div>
         <div class="invTabs" id="invTabs"></div>
         <button class="tbtn" id="invClose" aria-label="Close the inventory">✕</button>
@@ -12542,6 +12550,11 @@ function stageFor(cls){
   return first ? {img: `inventory-stage-${first}.jpg`, foot: STAGE_BACKDROPS[first]} : {img: "inventory-stage.jpg", foot: .875};
 }
 const SLOT_ICON_BASE = APP ? "/icons/equipment/" : "https://ashes.playacartagena.com/icons/equipment/";
+// THE HERO SCREEN'S ILLUSTRATED SET (Sam, 2026-10-27: "make better icons for equipping areas, level up, name and HP/AC/Speed
+// in the same fashion as the dashboard" — the Top Heroes-style set the action bar wears). Two generated sheets, cut to
+// icons/hero/: a ghost-outline tile per empty slot, and painted marks for HP, AC, Speed, Level Up, the name crest and XP.
+// A worn item still shows its own picture; the dashboard's equipment icons stay for the drag ghost.
+const HERO_ICON_BASE = ICON_BASE + "hero/";
 const SLOT_ALIAS = {ring_1: "ring1", ring_2: "ring2", cloak: "back", gloves: "hands", gauntlets: "hands", feet: "legs", boots: "legs"};
 function normSlot(sl){ const k = String(sl || "").trim().toLowerCase(); return SLOT_ALIAS[k] || k; }
 const HAND = sl => sl === "main_hand" || sl === "off_hand";
@@ -12968,7 +12981,7 @@ function bagCan(a){ return canControl(a) && (!inFightNow() || (a === activeActor
 function renderBag(){
   const a = bagHero(), g = GEAR[a.id] || (GEAR[a.id] = {carried: [], doll: [], main: null, off: null});
   const fight = inFightNow(), mine = bagCan(a), c = a.c;
-  $("invWho").textContent = fname(a);
+  $("invWho").textContent = fname(a); $("invCrest").src = HERO_ICON_BASE + "crest.png";
   { const s = SHEETS[a.id] || {}, pc = PCS[a.id] || {}, race = String(s.race || pc.race || "").replace(/\b\w/g, ch => ch.toUpperCase());
     $("invSub").textContent = [race, s.cls || pc.cls || ""].filter(Boolean).join(" ") + (s.level ? ` · Level ${s.level}` : "");
     renderBagChips(a, s); renderLevelPanel(a, s); }
@@ -12991,7 +13004,7 @@ function renderBag(){
     const b = document.createElement("button"); b.className = "slot" + (w ? "" : " empty"); b.style.left = d.at[0] + "%"; b.style.top = d.at[1] + "%";
     b.setAttribute("aria-pressed", String(inv.slot === d.id)); b.title = w ? `${d.label}: ${w.name}` : `${d.label}: empty`;
     const src = w ? (it && (it.icon || (it.pixel ? ITEM_PX + it.pixel : ""))) || "" : "";
-    b.innerHTML = `<img src="${esc(src || SLOT_ICON_BASE + d.icon + ".png")}" alt=""><span class="lbl">${esc(d.label)}</span>`;
+    b.innerHTML = `<img src="${esc(src || HERO_ICON_BASE + (d.icon === "ring2" ? "ring" : d.icon) + ".png")}" alt=""><span class="lbl">${esc(d.label)}</span>`;
     b.onclick = () => { if (dragJustEnded) return; inv.slot = inv.slot === d.id ? null : d.id; renderBag(); };
     b.dataset.slot = d.id;
     if (w) dragSource(b, src || SLOT_ICON_BASE + d.icon + ".png", (x, y) => {
@@ -13085,9 +13098,8 @@ function renderBagChips(a, s){
   const hpMax = (a.c && a.c.hpMax) || s.hp || null;
   const hpNow = a.c && inFightNow() ? a.c.hp : (s.hpNow != null ? s.hpNow : hpMax);
   const chip = (k, v, svg) => `<div class="efChip" title="${esc(k)}">${svg}<span class="t"><span class="k">${esc(k)}</span><span class="v">${v}</span></span></div>`;
-  const heart = '<svg viewBox="0 0 24 24" fill="none" stroke="#e04a43" stroke-width="1.8" aria-hidden="true"><path d="M12 21s-7-4.6-9-9.1C1.6 8.4 3.6 5 7 5c2 0 3.4 1.2 5 3 1.6-1.8 3-3 5-3 3.4 0 5.4 3.4 4 6.9C19 16.4 12 21 12 21z"/></svg>';
-  const shield = '<svg viewBox="0 0 24 24" fill="none" stroke="#9fb6cf" stroke-width="1.8" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/></svg>';
-  const boot = '<svg viewBox="0 0 24 24" fill="none" stroke="#d7af58" stroke-width="1.8" aria-hidden="true"><path d="M7 3v9l-3 3v4h14l3-2c0-2-3-3-6-4l-3-1V3H7z"/></svg>';
+  const mark = k => `<img class="mark" src="${HERO_ICON_BASE}${k}.png" alt="">`;
+  const heart = mark("hp"), shield = mark("ac"), boot = mark("speed");
   el.innerHTML = chip("HP", hpMax ? `${hpNow}<small> / ${hpMax}</small>` : "—", heart) + chip("AC", s.ac != null ? s.ac : "—", shield) + chip("Speed", s.speed != null ? s.speed : "—", boot);
 }
 // THE LEVEL PANEL: level badge, the XP bar toward the next level, and the Level Up button as a state. The sheet's xp /
@@ -13104,8 +13116,8 @@ function renderLevelPanel(a, s){
   const state = ready ? "earned" : "locked";
   const small = ready ? `level ${level + 1} earned · take it at camp` : next == null ? "no further levels" : xp == null ? "XP is on the sheet, not here" : `${(next - xp).toLocaleString()} XP to level ${level + 1}`;
   el.innerHTML = `<div class="lvlBadge" title="Level ${level}"><small>Level</small><b>${level}</b></div>`
-    + `<div class="lvlXp"><div class="lbl"><span>Experience</span><span>${esc(right)}</span></div><div class="lvlBar${ready || frac >= 1 ? " full" : ""}"><i style="width:${Math.round((ready ? 1 : frac) * 100)}%"></i></div></div>`
-    + `<button class="lvlUp ${state}" id="lvlUpBtn"${ready ? "" : ' aria-disabled="true"'}>Level Up<small>${esc(small)}</small></button>`;
+    + `<div class="lvlXp"><div class="lbl"><span><img class="mark" src="${HERO_ICON_BASE}xp.png" alt="">Experience</span><span>${esc(right)}</span></div><div class="lvlBar${ready || frac >= 1 ? " full" : ""}"><i style="width:${Math.round((ready ? 1 : frac) * 100)}%"></i></div></div>`
+    + `<button class="lvlUp ${state}" id="lvlUpBtn"${ready ? "" : ' aria-disabled="true"'}><img class="mark" src="${HERO_ICON_BASE}level-up.png" alt=""><span class="t">Level Up<small>${esc(small)}</small></span></button>`;
   const b = $("lvlUpBtn");
   b.onclick = () => {
     if (!ready){ toast(next == null ? `${fname(a)} is at the top level.` : xp == null ? "This sheet carries no XP here; the dashboard has it." : `${(next - xp).toLocaleString()} XP still to earn.`); return; }
