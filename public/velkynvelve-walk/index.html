@@ -823,6 +823,19 @@ function mkActor(id, x, y, kind, extra = {}){
   return Object.assign({id, x, y, kind, face: 0, anim: "idle", t0: now, path: [], alpha: 1, flash: 0, once: null, repath: 0, lastBark: -1e9}, extra);
 }
 function setAnim(a, n){ if (a.anim !== n){ a.anim = n; a.t0 = now; } }
+// ---------- SPLIT PARTY (Sam, 2026-10-27: "lets make it so we can split across plates if needed"; rules approved:
+// "yes; looks good") ----------
+// Every hero carries the plate they are on (the One World hero record already did; heroAt keeps it on this screen,
+// for the heroes on other plates too). This screen draws only the heroes on ITS plate; a hero who walks off alone is
+// "elsewhere" here until they come back. An exit asks who goes: the whole party on this plate, or just the hero you
+// move (with the prisoners following them). The shared world's single plate (OW.plate) is now the plate of the last
+// WHOLE-party move: a player's screen stays on its own hero's plate and is never pulled back to it; the DM's follows it.
+const heroAt = {};            // hero id -> {plate, x, y}: where each hero was last known to stand
+let soloEntry = false;        // the plate change in progress moved a splinter, not the party: never moves the world's plate
+function noteHeroAt(id, plate, x, y){ if (plate == null) return; heroAt[id] = {plate: String(plate), x: x || 0, y: y || 0}; }
+function heroElsewhere(id){ const h = heroAt[id]; return !!h && String(h.plate) !== String(cur) && !party.some(p => p.id === id); }
+const playerScreen = () => !!mySlug && !isDm();
+const plateLabel = pl => { const s = SPEC[/^\d+$/.test(String(pl)) ? +pl : pl]; return s ? s.name : String(pl); };
 // the cast's release, on the animation's hit frame — or, for a caster with no cast or attack sheet (a Forge hero
 // baked with only idle and walk), a beat after the wind-up starts. Without this the hit was never called and the
 // spell silently did nothing: the menu closed, the turn ran on, nobody was struck (found on Kingasaur, 2026-10-25).
@@ -1825,6 +1838,15 @@ function renderParty(){
     nm.innerHTML = `<b>${esc(SHORT[id] || SPR[id].json.name)}</b><small>${a === leader ? "Moving" : "Waiting"}</small>`;
     b.appendChild(nm); b.onclick = () => setLeader(a); el.insertBefore(b, help);
   });
+  // the heroes split off on another plate: shown dim, with where they are (SPLIT PARTY)
+  PARTY.forEach(id => {
+    if (party.some(p => p.id === id) || !heroElsewhere(id) || !SPR[id]) return;
+    const b = document.createElement("button"); b.className = "pc away"; b.disabled = true; b.style.opacity = ".5";
+    const c = document.createElement("canvas"); portrait(id, c, 64); b.appendChild(c);
+    const nm = document.createElement("span"); nm.className = "nm";
+    nm.innerHTML = `<b>${esc(SHORT[id] || SPR[id].json.name)}</b><small>at ${esc(plateLabel(heroAt[id].plate))}</small>`;
+    b.appendChild(nm); b.title = "Split off on another plate. Walk there to rejoin."; el.insertBefore(b, help);
+  });
 }
 function setLeader(a){
   if (dmRun.has(a.id) && !isDm()){ uiSfx("deny"); toast(`${SHORT[a.id] || SPR[a.id].json.name} is in the DM's hands.`); return; }
@@ -1896,6 +1918,8 @@ function watchPost(n){
 }
 async function enterNode(n, opts = {}){
   const from = cur, fromScale = node.scale;
+  // a splinter's arrival (SPLIT PARTY), or any arrival by a group that is not on the world's plate, leaves the world's plate alone
+  soloEntry = !!opts.solo || (OW.on && booted && OW.plate != null && !owSame(from, OW.plate) && !owSame(n, OW.plate));
   // the freed prisoners come out of the pen with the party, and a companion who fell stays where they fell
   let joined = [];
   if (booted){
@@ -1908,7 +1932,7 @@ async function enterNode(n, opts = {}){
       if (laborLive()) joined = laborJoins();
       else if (sneak){ const left = PEN_NPCS.filter(d => npcs.some(x => x.id === d.id && !x.down && !x.body && !x.offStage && !companyNow().includes(d.id))).length;
         if (left) log(`The other prisoners stay in the pen. ${left > 1 ? "They" : "Whoever is left"} would never keep quiet behind you.`); }
-      else joined = prisonersJoin();
+      else if (!opts.solo) joined = prisonersJoin();          // just one hero slipping out leaves the pen's prisoners where they are
     }
     if (n === PEN && from !== PEN && laborLive()) state.company = companyNow().filter(id => !laborNpcs().includes(id));   // back to their places in the pen
   }
@@ -1930,7 +1954,9 @@ async function enterNode(n, opts = {}){
   } else if (opts.spawn){ spawn = nearestWalkable(opts.spawn.x, opts.spawn.y); }
   else spawn = nearestWalkable(centroid.x, centroid.y);
   // formation: keep how the party stood when they left, turned to face the new way in
-  const offs = opts.offs || PARTY.map((id, i) => ({id, dx: [0, -60, 55, -10][i], dy: [0, 40, 45, 85][i]}));
+  // a hero split off on a third plate is not swept along by a jump or an arrival (SPLIT PARTY)
+  const offs = (opts.offs || PARTY.map((id, i) => ({id, dx: [0, -60, 55, -10][i], dy: [0, 40, 45, 85][i]})))
+    .filter(o => !heroAt[o.id] || owSame(heroAt[o.id].plate, from) || owSame(heroAt[o.id].plate, n) || (opts.offs && opts.offs.length));
   const theta = opts.exitDir && arrival ? Math.atan2(entryDir.y, entryDir.x) - Math.atan2(opts.exitDir.y, opts.exitDir.x) : 0;
   const ratio = node.scale / (opts.fromScale || node.scale);
   const leadId = leader ? leader.id : PARTY[0];
@@ -1945,6 +1971,14 @@ async function enterNode(n, opts = {}){
     party.push(mkActor(o.id, p.x, p.y, "pc"));
   }
   if (!party.find(p => p.id === leadId)) party.unshift(L);
+  // heroes already standing on this plate (split off earlier): back together, where they stand (SPLIT PARTY)
+  for (const id of PARTY){
+    const h = heroAt[id];
+    if (party.some(p => p.id === id) || !h || !owSame(h.plate, n) || !SPR[id] || !(h.x || h.y)) continue;
+    const p = nearestWalkable(h.x, h.y, placed); placed.push(p);
+    party.push(mkActor(id, p.x, p.y, "pc"));
+  }
+  for (const p of party) noteHeroAt(p.id, n, p.x, p.y);
   leader = L;
   const face = arrival ? faceOf(entryDir.x, entryDir.y) : 0;
   party.forEach(p => p.face = face);
@@ -1953,10 +1987,14 @@ async function enterNode(n, opts = {}){
   // tell the server where the party now stands and who is here; the first step out of the pen is the moment the ward lets go
   // a work detail leaves the pen as prisoners, not escapees: labor_out / labor_back (lib/situation.ts)
   reportSituation({sub_location: node.slug, sub_label: node.name, party_present: partyPresent(), event: from === PEN && n !== PEN ? (laborLive() ? "labor_out" : "step_outside") : n === PEN && from !== PEN && laborLive() ? "labor_back" : undefined});
-  const comp = companyNow().filter(id => SPR[id]);
+  const compAll = companyNow().filter(id => SPR[id]);
+  // the company on THIS plate (SPLIT PARTY): a prisoner whose place is recorded elsewhere stays there; one never split walks with the party
+  const compAt = state.companyAt || {};
+  const comp = compAll.filter(id => compAt[id] == null || owSame(compAt[id], n));
+  for (const id of comp) if (state.companyAt) state.companyAt[id] = String(n);
   for (const np of whoIsHere(n)){
     if (np.hostile && state.cleared[n]) continue;
-    if (comp.includes(np.id)) continue;                 // a companion walks with the party, not at their old spot
+    if (compAll.includes(np.id)) continue;              // a companion walks with the party, not at their old spot
     if (np.id === surgeonDeadId()) continue;            // shot dead at the gate (The Drow Surgeon) and thrown over the falls
     if (!SPR[np.id]) continue;                          // no sprite baked for them yet: the record stays, the plate shows nobody
     const a = mkActor(np.id, np.x, np.y, "npc", {face: np.face || 0, talk: !!np.talk, talkLine: np.talkLine, barks: np.barks || [], home: {x: np.x, y: np.y},
@@ -2023,20 +2061,34 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 // the camera slides to the neighbouring plate, and they walk in from its matching edge.
 // `cut` (a work detail leaving the pen, Sam 2026-10-26): they walk out through the exit the same way, then ONE fade-cut
 // lands them on `to`, which need not be next door ({note} says how they got there). Every screen plays it alike.
-async function travel(to, z, fromWorld, cut){
+async function travel(to, z, fromWorld, cut, solo){
   if (mode === "travel") return;
-  if (!fromWorld) owLeavesPlate(to, z, !!cut);
+  // SPLIT PARTY: a splinter (just the leader, or a group that is not on the world's plate) does not move the world's
+  // plate; only the party's own move does, and every screen on this plate follows it.
+  const splinter = !!solo || (OW.on && OW.plate != null && !owSame(cur, OW.plate));
+  if (!fromWorld && !splinter) owLeavesPlate(to, z, !!cut);
+  else if (!fromWorld && !solo) owLeavesPlate(to, z, !!cut, true);       // a split-off group crossing together: its other screens follow
+  else if (!fromWorld && OW.on){ OW.localTravelUntil = Date.now() + 12000; OW.sent = {}; }
+  // Who walks out: the whole party here, or just the leader. Those who stay are noted where they stand; the prisoners
+  // go with the hero they are following (WHOSE PRISONERS) and stay with whoever stays.
+  const movers = solo ? [leader] : party.slice();
+  if (solo) for (const p of party) if (p !== leader) noteHeroAt(p.id, cur, p.x, p.y);
+  const compAt = state.companyAt || (state.companyAt = {});
+  for (const n of npcs) if (n.company){
+    const goes = !solo || (escortTarget(n.id).hero === leader && !laborLive());
+    compAt[n.id] = String(goes ? to : cur);
+  }
   state.jumped = null;
   mode = "travel"; hoverZone = null; tip.hidden = true; bubbles.forEach(b => b.until = 0);
   const zc = zoneCenter(z), exitDir = norm({x: zc.x - centroid.x, y: zc.y - centroid.y});
-  const offs = party.map(p => { let dx = p.x - leader.x, dy = p.y - leader.y; const d = Math.hypot(dx, dy), cap = 170 * node.scale;
+  const offs = movers.map(p => { let dx = p.x - leader.x, dy = p.y - leader.y; const d = Math.hypot(dx, dy), cap = 170 * node.scale;
     if (d > cap){ dx *= cap / d; dy *= cap / d; } return {id: p.id, dx, dy}; });
   const drop = z.kind === "water" && cur === 9, climb = z.climb;
   if (drop && (state.inPool || []).length){ for (const p of party) if (!actors.includes(p)){ actors.push(p); p.alpha = 1; p.fall = 0; p.x = zc.x; p.y = zc.y; } state.inPool = []; }
   const cr = z.cross || (z.crossBy && z.crossBy[String(to)]);
   const route = cr ? cr.map(([x, y, s, f]) => ({x, y, s, out: f === "out", jump: f === "jump"}))
     : [{x: zc.x, y: zc.y}, {x: zc.x + exitDir.x * 260, y: zc.y + exitDir.y * 260}];   // into the exit and a few steps on; the screen fades (below), nobody marches off the edge
-  const order = [leader, ...followOrder()];
+  const order = solo ? [leader] : [leader, ...followOrder()];
   order.forEach((a, i) => {
     stopActivity(a); a.kbd = false; a.onArrive = null; a.waitUntil = now + i * 300;
     if (drop){ a.path = [{x: zc.x + (i - 1.5) * 40, y: zc.y}]; a.onArrive = () => { a.fall = now; }; }
@@ -2047,7 +2099,7 @@ async function travel(to, z, fromWorld, cut){
   await wait(drop ? 1900 : climb ? 1600 + order.length * 650 : cr ? 2600 : 1500);
   if (cut){
     const via = arrivalFrom(SPEC, cur, to);
-    await enterNode(to, {from: owPlate(via), offs, fromScale: node.scale, note: cut.note || `The escort marches the detail through the outpost to <em>${esc(SPEC[to].name)}</em>.`});
+    await enterNode(to, {from: owPlate(via), offs, fromScale: node.scale, solo: splinter, note: cut.note || `The escort marches the detail through the outpost to <em>${esc(SPEC[to].name)}</em>.`});
     return;
   }
   // FADE, DON'T SLIDE (Sam, 2026-10-27: "the characters just leave to the right of the screen then appear to climb up or
@@ -2056,7 +2108,7 @@ async function travel(to, z, fromWorld, cut){
   // only the drop through the falls keeps its slide, because falling is the point.
   if (drop) await slideTo(to, dir); else { $("fade").classList.add("on"); await wait(420); }
   const verb = drop ? "The party drops through the falls" : climb ? (climb.dir === "up" ? "The party climbs up" : "The party climbs down") : z.kind === "water" ? "The party climbs" : "The party crosses";
-  await enterNode(to, {from: cur, offs, exitDir, fromScale: node.scale, slide: dir, drop, note: `${verb} to <em>${esc(SPEC[to].name)}</em>.`});
+  await enterNode(to, {from: cur, offs, exitDir, fromScale: node.scale, slide: dir, drop, solo: splinter, note: `${solo ? `${esc(SHORT[leader.id] || fname(leader))} goes on alone. ` : ""}${verb} to <em>${esc(SPEC[to].name)}</em>.`});
   $("fade").classList.remove("on");
 }
 async function slideTo(to, dir){
@@ -2081,10 +2133,21 @@ function showDialog({title, body, src = "", buttons}){
     e.onclick = () => { $("dialog").hidden = true; if (mode === "dialog") mode = prev === "dialog" ? "explore" : prev; b.fn && b.fn(); }; bx.appendChild(e); });
   $("dialog").hidden = false; bx.firstChild && bx.firstChild.focus();
 }
+// Who goes through an exit (SPLIT PARTY): the whole party on this plate, or just the hero you move (and the prisoners
+// following them). No card when the hero is alone here, or when this screen cannot move the leader.
+function whoGoes(z, to){
+  const others = party.filter(p => p !== leader && !p.ko && !p.down);
+  if (!others.length || !canControl(leader)){ travel(to, z); return; }
+  const nm = SHORT[leader.id] || fname(leader);
+  showDialog({title: `Toward ${plateLabel(to)}`, body: `Who goes? ${others.map(o => SHORT[o.id] || fname(o)).join(", ")} ${others.length > 1 ? "are" : "is"} here too.`, buttons: [
+    {label: "Whole party", primary: true, fn: () => travel(to, z)},
+    {label: `Just ${nm}`, fn: () => travel(to, z, false, null, true)},
+    {label: "Stay"}]});
+}
 function chooseDestination(z){
-  if (z.to.length === 1){ travel(z.to[0], z); return; }
+  if (z.to.length === 1){ whoGoes(z, z.to[0]); return; }
   showDialog({title: z.label.split(":")[0], body: "Where does the party head?", buttons: [
-    ...z.to.map(t => ({label: (z.routes && z.routes[t]) || `${t} · ${nameOf(t)}`, primary: true, fn: () => travel(t, z)})),
+    ...z.to.map(t => ({label: (z.routes && z.routes[t]) || `${t} · ${nameOf(t)}`, primary: true, fn: () => whoGoes(z, t)})),
     {label: "Stay here"}]});
 }
 function triggerZone(z){
@@ -2103,7 +2166,7 @@ function triggerZone(z){
   if (z.kind === "water" && cur === 9){ fallsDialog(z); return; }
   if (z.kind === "leave" && node.lift){ openLift(); return; }
   if (z.kind === "leave" || HANDOFFS[z.to[0]]){ goBeyond(z); return; }   // the way out of the outpost, by any name
-  travel(z.to[0], z);
+  whoGoes(z, z.to[0]);
 }
 // ---------- the cliff below the lift (5c): rappels and the web net ----------
 // Sam, 2026-10-26: "Rappel checks and fall into the web net." OotA Expanded p.45 (community supplement), Lift Trouble:
@@ -2238,6 +2301,8 @@ function pushOverFalls(t, to){ const z = cur === 9 ? node.zones.find(z => z.kind
 // party is standing on is the one /map hears about.
 function goBeyond(z){ const t = z.to[0]; if (t != null && SPEC[t]) travel(t, z); else leaveVelkynvelve(z); }
 function leaveVelkynvelve(z){
+  const away = PARTY.filter(heroElsewhere);
+  if (away.length){ toast(`The party leaves Velkynvelve together. ${away.map(id => `${SHORT[id] || id} (${plateLabel(heroAt[id].plate)})`).join(", ")} ${away.length > 1 ? "are" : "is"} elsewhere.`, 5000); return; }
   const key = z.to[0] != null ? z.to[0] : cur, h = key != null && HANDOFFS[key], head = z.label.split(":")[0].replace(/\s*[—-]\s*PROPOSED$/, "").replace(/^PROPOSED:\s*/, "");
   if (!h){ toast(head + ". That way leaves Velkynvelve, and where it comes out is not drawn yet."); return; }
   const proposed = z.proposed || /PROPOSED/.test(z.label);
@@ -8283,6 +8348,7 @@ function tickVermin(dt){
 // A seated character who was not on the plate when it loaded joins the party where the leader stands.
 function partyJoins(id){
   if (!SPR[id] || party.some(p => p.id === id) || !leader) return;   // on the plate already (PARTY can name a hero who is not drawn)
+  if (heroElsewhere(id)) return;                                     // split off on another plate (SPLIT PARTY): they come back by walking in
   PARTY = FULL_PARTY.filter(x => PARTY.includes(x) || x === id);
   const p = nearestWalkable(leader.x - 60 + Math.random() * 120, leader.y + 40, party.map(q => ({x: q.x, y: q.y})));
   const a = mkActor(id, p.x, p.y, "pc", {alpha: 0, fadeIn: true, home: {x: p.x, y: p.y}, face: leader.face});
@@ -12631,7 +12697,9 @@ function update(dt){
     tickJorlanPrivacy();
     // the rest of the party stays where they were put; they only come along when the party leaves the plate
     // exits
-    const z = mode === "explore" && !leader.walkIn ? zoneAt(leader.x, leader.y) : null;
+    // only a hero this screen drives walks it through an exit: a hero another screen drives (seen walking off on its
+    // own, SPLIT PARTY) must never carry this screen's party with it
+    const z = mode === "explore" && !leader.walkIn && !owRemote(leader) ? zoneAt(leader.x, leader.y) : null;
     if (z && z !== ackZone){ ackZone = z; triggerZone(z); }
     else if (!z && !leader.walkIn) ackZone = null;
     // ambush
@@ -12766,8 +12834,12 @@ async function owLoad(){
 /** The world as the boot's `saved` walk: the plate, the state, and every hero standing on that plate. */
 function owSaved(W, mine){
   const w = W.world; if (w.plate == null || !SPEC[w.plate]) return null;
-  const party = PARTY.map(id => w.heroes && w.heroes[id]).map((h, i) => h && owSame(h.plate, w.plate) ? {id: PARTY[i], x: h.x, y: h.y, face: h.face || 0} : null).filter(Boolean);
-  return {cur: owPlate(w.plate), run: runSeen, leader: mine || (party[0] && party[0].id), party, state: owClone(w.state || {}), bare: !party.length};
+  for (const [slug, h] of Object.entries(w.heroes || {})) if (h) noteHeroAt(slug, owPlate(h.plate), h.x, h.y);
+  // SPLIT PARTY: a player's screen opens where THEIR hero is, which need not be the party's plate
+  const myH = mine && !isDm() && w.heroes && w.heroes[mine], pl = myH && myH.plate != null && SPEC[owPlate(myH.plate)] ? myH.plate : w.plate;
+  OW.bootSplit = !owSame(pl, w.plate);
+  const party = PARTY.map(id => w.heroes && w.heroes[id]).map((h, i) => h && owSame(h.plate, pl) ? {id: PARTY[i], x: h.x, y: h.y, face: h.face || 0} : null).filter(Boolean);
+  return {cur: owPlate(pl), run: runSeen, leader: mine || (party[0] && party[0].id), party, state: owClone(w.state || {}), bare: !party.length};
 }
 function owStart(W){
   if (!W || !W.world || !owAuth()){ if (OW.status !== "rehearsal") owSetStatus("off"); return; }
@@ -12777,7 +12849,7 @@ function owStart(W){
   for (const k of Object.keys(w.state || {})) OW.synced[k] = owCanon(w.state[k]);
   for (const [slug, h] of Object.entries(w.heroes || {})) OW.seen[slug] = h.seq || 0;
   owSetStatus("catching-up");
-  if (w.plate == null || !owSame(w.plate, cur)) owEntered(true);      // a fresh world: this screen places the party
+  if (w.plate == null || (!owSame(w.plate, cur) && !OW.bootSplit)) owEntered(true);      // a fresh world: this screen places the party (not a screen whose hero is split off)
   setInterval(owHeroTick, 150); setInterval(owStateTick, 400); setInterval(owBeat, 2500);
   setTimeout(owBeat, 300);
   if (W.realtime && W.realtime.url && W.realtime.key) owRealtime(W.realtime);
@@ -12839,7 +12911,23 @@ function owHeroTick(){
     .catch(() => { for (const s of Object.keys(heroes)) delete OW.sent[s]; }).finally(() => { OW.inflight = false; });
 }
 function owApplyHero(slug, h){
-  const a = party.find(p => p.id === slug);
+  let a = party.find(p => p.id === slug);
+  // SPLIT PARTY: a hero someone else drives walks off this plate, or onto it
+  if (OW_CAN_MOVE() && mode !== "travel"){
+    if (a && owRemote(a) && h.plate != null && !owSame(h.plate, cur)){
+      noteHeroAt(slug, owPlate(h.plate), h.x, h.y);
+      party.splice(party.indexOf(a), 1); actors = actors.filter(x => x !== a);
+      if (leader === a) leader = party.find(p => canControl(p)) || party[0] || leader;
+      renderParty(); log(`${esc(SHORT[slug] || fname(a))} heads off to <em>${esc(plateLabel(h.plate))}</em>.`);
+      return;
+    }
+    if (!a && PARTY.includes(slug) && SPR[slug] && h.plate != null && owSame(h.plate, cur)){
+      const p = nearestWalkable(h.x, h.y, party.map(q => ({x: q.x, y: q.y})));
+      a = mkActor(slug, p.x, p.y, "pc", {alpha: 0, fadeIn: true, home: {x: p.x, y: p.y}, face: h.face | 0});
+      party.push(a); party.sort((x, y) => PARTY.indexOf(x.id) - PARTY.indexOf(y.id)); actors = [...party, ...npcs, ...foes];
+      noteHeroAt(slug, cur, p.x, p.y); renderParty(); log(`${esc(SHORT[slug] || SPR[slug].json.name)} joins you here.`);
+    }
+  }
   if (!a || !owSame(h.plate, cur) || mode === "travel" || mode === "load" || mode === "combat" || a.climbing || a.once){ if (a || PARTY.includes(slug)) OW.pending[slug] = h; return; }
   if (Math.hypot(a.x - h.x, a.y - h.y) > 220 * node.scale){ a.x = h.x; a.y = h.y; a.alpha = 1; }   // too far apart to walk it: put it there
   const dest = {x: h.tx, y: h.ty}; a.netDest = dest; OW.sent[slug] = {...h}; OW.last[slug] = h;
@@ -12858,16 +12946,19 @@ setInterval(() => {
   }
 }, 400);
 // --- plates ---
-function owLeavesPlate(to, z, cut){
+function owLeavesPlate(to, z, cut, splinter){
   if (!OW.on) return;
-  const seq = Math.max(owNow(), OW.travelSeq + 1); OW.travelSeq = seq; OW.plate = to; OW.localTravelUntil = Date.now() + 12000;
+  const seq = Math.max(owNow(), OW.travelSeq + 1); OW.travelSeq = seq; OW.localTravelUntil = Date.now() + 12000;
   OW.sent = {};                                                    // on the new plate every driven hero is re-sent
   const t = {seq, from: cur, to, zone: node.zones.indexOf(z)}; if (cut) t.cut = true;
+  if (splinter){ t.splinter = true; owPost("patch", {patch: {travel: t}}).then(owBumpVersion).catch(() => {}); return; }   // SPLIT PARTY: the party's plate stays put
+  OW.plate = to;
   owPost("patch", {patch: {travel: t, plate: to}}).then(owBumpVersion).catch(() => { OW.plate = null; });
 }
 function owEntered(force){
   if (!OW.on || OW.applyingPlate) return;
   OW.sent = {};
+  if (soloEntry && !force) return;                                   // SPLIT PARTY: only the party's own moves set the world's plate
   if (!force && owSame(cur, OW.plate)) return;
   OW.plate = cur;
   owPost("patch", {patch: {plate: cur}}).then(owBumpVersion).catch(() => { OW.plate = null; });
@@ -12883,7 +12974,7 @@ async function owGoTo(plate, t){
     $("obj").hidden = true; $("talk").hidden = true; $("dialog").hidden = true; talkNpc = null;   // nothing declined: the party just left
     if (z && OW_CAN_MOVE()){ mode = "explore"; await travel(plate, z, true, t.cut ? {} : null); }
     else await enterNode(plate, {note: "The party has moved on — you are with them."});
-  } finally { OW.applyingPlate = false; OW.plate = cur; OW.sent = {}; }
+  } finally { OW.applyingPlate = false; if (!(t && t.splinter)) OW.plate = cur; OW.sent = {}; }   // a splinter's crossing leaves the party's plate where it is
 }
 // --- state ---
 function owStateTick(){
@@ -12928,6 +13019,7 @@ function owReceive(w){
   for (const [slug, h] of Object.entries(w.heroes || {})){
     if (!h || (h.seq || 0) <= (OW.seen[slug] || 0)) continue;
     OW.seen[slug] = h.seq;
+    if (h.plate != null) noteHeroAt(slug, owPlate(h.plate), h.x, h.y);
     if (h.by === OW.key) continue;                                  // our own move coming back
     owApplyHero(slug, h);
   }
@@ -12935,13 +13027,23 @@ function owReceive(w){
   const t = w.travel;
   if (t && (t.seq || 0) > OW.travelSeq){
     OW.travelSeq = t.seq;
-    if (t.by !== OW.key && !owSame(t.to, cur)){ if (OW_CAN_MOVE()) owGoTo(t.to, t); else OW.pendingPlate = owPlate(t.to); return; }
+    // SPLIT PARTY: the party's move takes the screens that were with it (on the plate it left), and the DM's; a
+    // player whose hero is split off on another plate stays where they are
+    const withIt = owSame(t.from, cur) || (!playerScreen() && !t.splinter);
+    if (t.by !== OW.key && !owSame(t.to, cur) && withIt){ if (OW_CAN_MOVE()) owGoTo(t.to, t); else OW.pendingPlate = owPlate(t.to); return; }
   }
-  if (w.plate != null) OW.plate = owPlate(w.plate);
+  if (w.plate != null){
+    const np = owPlate(w.plate);
+    // the party's plate moved without a crossing (a DM jump, the falls, the lift): a player's screen that was with the
+    // party goes too; one split off elsewhere does not
+    if (playerScreen() && OW.plate != null && !owSame(np, OW.plate) && owSame(OW.plate, cur) && !owSame(np, cur) && !OW.applyingPlate && mode !== "travel") OW.pendingPlate = np;
+    OW.plate = np;
+  }
   owCheckPlate();
 }
 function owCheckPlate(){
-  const p = OW.pendingPlate != null ? OW.pendingPlate : OW.plate;
+  // a player's screen goes where its own hero goes; only a move it was part of (pendingPlate) takes it anywhere
+  const p = OW.pendingPlate != null ? OW.pendingPlate : playerScreen() ? null : OW.plate;
   if (p == null || owSame(p, cur) || !SPEC[p] || OW.applyingPlate) return;
   if (Date.now() < OW.localTravelUntil && mode === "travel") return;
   if (!OW_CAN_MOVE()) return;                                         // after the fight / the crossing
@@ -12951,7 +13053,7 @@ function owCheckPlate(){
 async function owBeat(){
   if (!OW.on) return;
   owCheckPlate();
-  const digest = AopOneWorld.worldDigest(cur, state);
+  const digest = AopOneWorld.worldDigest(owDigestPlate(), state);
   let j;
   try {
     j = await owPost("beat", {digest, version: OW.version, slug: mySlug, status: OW.status === "off" ? "in-step" : OW.status});
@@ -12961,12 +13063,15 @@ async function owBeat(){
     return;
   }
   if (j.world) owReceive(j.world);
-  const mine = AopOneWorld.worldDigest(cur, state);
+  const mine = AopOneWorld.worldDigest(owDigestPlate(), state);
   const v = AopOneWorld.heartbeatVerdict({digest: mine, dirty: owDirty(), travelling: mode === "travel" || OW.applyingPlate}, {digest: j.digest}, OW.misses);
   OW.misses = v.misses;
   if (v.resync) await owResync();
   owSetStatus(state.fightOn ? "fight-unshared" : v.status);
 }
+// The heartbeat's fingerprint carries the party's plate. A player whose hero is split off checks the world's state
+// against the party's plate the server holds, not against the plate this screen shows (SPLIT PARTY).
+function owDigestPlate(){ return playerScreen() && OW.plate != null ? OW.plate : cur; }
 async function owResync(){
   if (OW.resyncing) return; OW.resyncing = true;
   try {
@@ -12976,7 +13081,7 @@ async function owResync(){
     owApplyState(w.state || {}, true);
     OW.version = Number(w.version) || 0; OW.plate = owPlate(w.plate); OW.seen = {};
     for (const [slug, h] of Object.entries(w.heroes || {})){ OW.seen[slug] = h.seq || 0; if (h.by !== OW.key) owApplyHero(slug, h); }
-    if (w.plate != null && !owSame(w.plate, cur)){ OW.pendingPlate = owPlate(w.plate); owCheckPlate(); }
+    if (w.plate != null && !owSame(w.plate, cur) && !playerScreen()){ OW.pendingPlate = owPlate(w.plate); owCheckPlate(); }
   } catch (e) {} finally { OW.resyncing = false; }
 }
 // --- fights (not shared yet) ---
