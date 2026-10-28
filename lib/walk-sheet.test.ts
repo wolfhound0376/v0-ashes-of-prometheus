@@ -72,6 +72,12 @@ describe("walkSheetFromRow", () => {
     expect(s.tools).toEqual({ alchemist: 3, poisoner: null, herbalism: null })
   })
 
+  it("keeps the bare ability modifiers apart from the saves (Fifi: Dex save +5, Dex modifier +3)", () => {
+    const s = walkSheetFromRow({ ...FIFI, sheet_save_proficiencies: ["dex", "int"] })
+    expect(s.saves.dex).toBe(5)
+    expect(s.mods).toEqual({ str: -1, dex: 3, con: 0, int: 1, wis: 1, cha: 1 })
+  })
+
   it("gives a non-caster no magic", () => {
     expect(walkSheetFromRow(FIFI).magic).toBeNull()
   })

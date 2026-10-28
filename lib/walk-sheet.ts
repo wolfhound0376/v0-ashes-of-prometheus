@@ -40,6 +40,8 @@ export type WalkSheet = {
   init: number
   speed: number
   strScore: number
+  /** the ability modifiers themselves — NOT the saves, which carry class save proficiency. Attacks, checks and DCs read these. */
+  mods: { str: number; dex: number; con: number; int: number; wis: number; cha: number }
   saves: { str: number; dex: number; con: number; int: number; wis: number; cha: number }
   skills: { sleightOfHand: number; medicine: number; stealth: number; athletics: number; perception: number; investigation: number; thievesTools: number }
   /** the knowledge skills the loot card's checks roll (lib/item-lore.mjs): the bonus and the row's proficiency word */
@@ -181,6 +183,7 @@ export function walkSheetFromRow(row: Row): WalkSheet {
     init: num(row.initiative, m.dex),
     speed: speedOf(row.speed),
     strScore: num(row.str_score, 10),
+    mods: { ...m },
     saves: saves(row, m, prof),
     skills: {
       sleightOfHand: skill(row, "Sleight of Hand", m.dex, prof),

@@ -677,6 +677,7 @@ function noteSeats(seated){
   for (const s of seatsSeen) if (s.sheet) for (const id of seatedSlugs([s])) if (SHEETS[id] && !FORGED_ID[id]){
     if (s.sheet.saves) SHEETS[id].saves = {...SHEETS[id].saves, ...s.sheet.saves};
     if (s.sheet.skills) SHEETS[id].skills = {...SHEETS[id].skills, ...s.sheet.skills};
+    if (s.sheet.mods) SHEETS[id].mods = {...SHEETS[id].mods, ...s.sheet.mods};
     if (s.sheet.lore) SHEETS[id].lore = {...SHEETS[id].lore, ...s.sheet.lore};
     if (s.sheet.tools) SHEETS[id].tools = {...SHEETS[id].tools, ...s.sheet.tools}; }
   dmRun.clear();
@@ -1973,7 +1974,7 @@ function watchPost(n){
   if (laborLive()) return;                                   // an escorted work detail is not sneaking past anyone (Hard Labor)
   const seen = npcs.filter(a => a.hostile && !a.offStage);
   if (!seen.length) return;
-  const sheet = SHEETS[leader.id] || {}, mod = (sheet.skills || {}).stealth ?? (sheet.saves || {}).dex ?? 0, r = d20(isSmall(leader) ? 1 : 0, leader), total = r + mod;   // Small: advantage (house rule)
+  const sheet = SHEETS[leader.id] || {}, mod = (sheet.skills || {}).stealth ?? abilMod(sheet, "dex"), r = d20(isSmall(leader) ? 1 : 0, leader), total = r + mod;   // Small: advantage (house rule)
   if (total >= w.passive){ log(`${fname(leader)} slips past the watch: Stealth ${r} + ${mod} = ${total} against their passive ${w.passive}.`); return; }
   state.seen = state.seen || {}; state.seen[n] = true;
   for (const a of seen){ a.face = faceOf(leader.x - a.x, leader.y - a.y); a.alert = true; }
@@ -2672,7 +2673,7 @@ function openProp(pr, opts = {}){
       if (r.success) onWin(); else onLose();
     });
   };
-  const dex = (SHEETS[leader.id] || {}).saves ? SHEETS[leader.id].saves.dex || 0 : 0;
+  const dex = ((SHEETS[leader.id] || {}).skills || {}).thievesTools ?? abilMod(SHEETS[leader.id], "dex");   // thieves' tools: the sheet's own number, else bare Dex
   if (st.open){ $("objText").textContent = pr.text.open; add("Look inside", () => { close(); openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open, at: polyBase(pr.poly)}); }, "primary"); add("Close the lid", () => { close(); st.open = false; lids[pr.id].target = 0; setTimeout(() => sfx("door-close", .5), 500); }); add("Leave it", close); }
   else if (!st.locked){ $("objText").textContent = (pr.text && pr.text.unlocked) || "The lock is open. The lid is heavy."; add("Open it", () => { close(); openChest(pr); }, "primary"); add("Leave it", close); }
   else {
@@ -4162,21 +4163,27 @@ const SHEETS = {
   // Alchemist's Supplies; Scott: Arcana, Nature, History; Samson: Religion). A live sheet from /api/map-stage replaces them.
   // investigation and thievesTools are their own numbers now: heroMod used to fall back to the SAVE for them, so
   // Fifi picked locks at +3 instead of +5 (Rogue: thieves' tools proficiency). Re-read 2026-10-27 from the rows.
-  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 0, con: 4, int: -1, wis: -1, cha: 5}, lore: {investigation: {mod: -1, level: ""}, arcana: {mod: -1, level: ""}, religion: {mod: -1, level: ""}, nature: {mod: -1, level: ""}, history: {mod: -1, level: ""}}, tools: {alchemist: null, poisoner: null, herbalism: null}, skills: {sleightOfHand: 0, medicine: -1, stealth: 2, athletics: 1, perception: -1, investigation: -1, thievesTools: 0}, innateSorcery: 2,
+  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, strScore: 12, mods: {str: 1, dex: 0, con: 2, int: -1, wis: -1, cha: 3}, saves: {str: 1, dex: 0, con: 4, int: -1, wis: -1, cha: 5}, lore: {investigation: {mod: -1, level: ""}, arcana: {mod: -1, level: ""}, religion: {mod: -1, level: ""}, nature: {mod: -1, level: ""}, history: {mod: -1, level: ""}}, tools: {alchemist: null, poisoner: null, herbalism: null}, skills: {sleightOfHand: 0, medicine: -1, stealth: 2, athletics: 1, perception: -1, investigation: -1, thievesTools: 0}, innateSorcery: 2,
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Ray of Frost", "Shocking Grasp", "Chill Touch"], prepared: ["Fog Cloud"]}},
-  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 1, wis: 5, cha: 2}, lore: {investigation: {mod: 1, level: ""}, arcana: {mod: 1, level: ""}, religion: {mod: 3, level: "proficient"}, nature: {mod: 1, level: ""}, history: {mod: 1, level: ""}}, tools: {alchemist: null, poisoner: null, herbalism: null}, skills: {sleightOfHand: 2, medicine: 5, stealth: 2, athletics: 0, perception: 3, investigation: 1, thievesTools: 2},
+  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, mods: {str: 0, dex: 2, con: 1, int: 1, wis: 3, cha: 0}, saves: {str: 0, dex: 2, con: 1, int: 1, wis: 5, cha: 2}, lore: {investigation: {mod: 1, level: ""}, arcana: {mod: 1, level: ""}, religion: {mod: 3, level: "proficient"}, nature: {mod: 1, level: ""}, history: {mod: 1, level: ""}}, tools: {alchemist: null, poisoner: null, herbalism: null}, skills: {sleightOfHand: 2, medicine: 5, stealth: 2, athletics: 0, perception: 3, investigation: 1, thievesTools: 2},
            attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Toll the Dead"], prepared: ["Healing Word", "Guiding Bolt", "Shield of Faith"]}},
-  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 4, con: 2, int: 1, wis: 1, cha: 5}, lore: {investigation: {mod: 1, level: ""}, arcana: {mod: 3, level: "proficient"}, religion: {mod: 1, level: ""}, nature: {mod: 3, level: "proficient"}, history: {mod: 3, level: "proficient"}}, tools: {alchemist: null, poisoner: null, herbalism: null}, skills: {sleightOfHand: 2, medicine: 1, stealth: 2, athletics: 1, perception: 3, investigation: 1, thievesTools: 2},
+  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, strScore: 12, mods: {str: 1, dex: 2, con: 2, int: 1, wis: 1, cha: 3}, saves: {str: 1, dex: 4, con: 2, int: 1, wis: 1, cha: 5}, lore: {investigation: {mod: 1, level: ""}, arcana: {mod: 3, level: "proficient"}, religion: {mod: 1, level: ""}, nature: {mod: 3, level: "proficient"}, history: {mod: 3, level: "proficient"}}, tools: {alchemist: null, poisoner: null, herbalism: null}, skills: {sleightOfHand: 2, medicine: 1, stealth: 2, athletics: 1, perception: 3, investigation: 1, thievesTools: 2},
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Vicious Mockery"], prepared: ["Healing Word", "Faerie Fire", "Sleep", "Dissonant Whispers"]}, bardic: {uses: 3, die: 6}, music: true},
-  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, strScore: 8, saves: {str: -1, dex: 5, con: 0, int: 3, wis: 1, cha: 1}, lore: {investigation: {mod: 3, level: "proficient"}, arcana: {mod: 1, level: ""}, religion: {mod: 1, level: ""}, nature: {mod: 1, level: ""}, history: {mod: 1, level: ""}}, tools: {alchemist: 3, poisoner: null, herbalism: null}, skills: {sleightOfHand: 7, medicine: 1, stealth: 7, athletics: 1, perception: 1, investigation: 3, thievesTools: 5},
+  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, strScore: 8, mods: {str: -1, dex: 3, con: 0, int: 1, wis: 1, cha: 1}, saves: {str: -1, dex: 5, con: 0, int: 3, wis: 1, cha: 1}, lore: {investigation: {mod: 3, level: "proficient"}, arcana: {mod: 1, level: ""}, religion: {mod: 1, level: ""}, nature: {mod: 1, level: ""}, history: {mod: 1, level: ""}}, tools: {alchemist: 3, poisoner: null, herbalism: null}, skills: {sleightOfHand: 7, medicine: 1, stealth: 7, athletics: 1, perception: 1, investigation: 3, thievesTools: 5},
            // No weapon until she has one (Sam, 2026-10-15): her inventory holds none, so she fights with her fists; a weapon
            // she picks up and equips is added in front of this line (refreshAttacks). sneakDie is her Sneak Attack (rogue 1).
            sneakDie: "1d6", attacks: [{name: "Unarmed Strike", hit: 1, dmg: "1", type: "bludgeoning", reach: 5}],
            magic: null},
 };
+// THE ABILITY MODIFIERS ARE NOT THE SAVES. Since 2026-10-27 a hero's `saves` carry class save proficiency (Fifi's Dex
+// save +5), so anything that wants the bare modifier (a weapon's to-hit and damage, an ability check, a shove's DC, a
+// lock pick without the tools) reads `mods` through abilMod. Sam, 2026-10-27, on the bug this fixes: Fifi's Dex weapon
+// attacks were reading her +5 save instead of her +3 Dex. Foes' and allies' blocks carry no `mods`: their `saves` ARE
+// their ability modifiers (no save proficiencies on the rows), so abilMod falls back to them.
+const abilMod = (sh, ab) => ((sh || {}).mods || {})[ab] ?? ((sh || {}).saves || {})[ab] ?? 0;
 // Save modifiers for the sheets above are the ability modifiers (no save proficiency is applied yet;
 // sheet_save_proficiencies is wired in step 2). Monster saves below are their ability modifiers, as the rows carry no save list.
 // SRD 5.1 Drow: "Hand Crossbow. Ranged Weapon Attack: +4 to hit, range 30/120 ft., one target. Hit: 5 (1d6 + 2) piercing
@@ -4750,13 +4757,13 @@ function openMenu(a, sub){
       add(`Stabilize: ${fname(t)}`, `your action · Medicine ${sgn((s.skills || {}).medicine ?? 0)} vs DC 10`, c.action ? () => stabilize(a, t) : null); }
     if (c.conds.has("burning")) add("Put out the flames", "your action · DC 10 DEX", c.action ? () => putOutFire(a, () => afterAction(a)) : null);
     // "Hide", not "Sneak (Hide)": the old name read as Sneak Attack (Sam, 2026-10-14: "where is the rogue sneak attack?")
-    add("Hide", c.conds.has("hidden") ? "you are hidden" : `Stealth ${sgn((s.skills || {}).stealth ?? s.saves.dex)} vs their passive Perception`, c.action && !c.conds.has("hidden") ? () => doHide(a) : null);
+    add("Hide", c.conds.has("hidden") ? "you are hidden" : `Stealth ${sgn((s.skills || {}).stealth ?? abilMod(s, "dex"))} vs their passive Perception`, c.action && !c.conds.has("hidden") ? () => doHide(a) : null);
     add("Shove / Grapple", `unarmed · they save vs DC ${shoveDc(a)}`, c.action ? () => openMenu(a, "shove") : null);
     grp("action");
     add("Dash", `+${s.speed} ft of movement`, c.action ? () => { c.action = false; c.move += s.speed; popText(a, "dash", "#cfe8ff"); log(`${fname(a)} dashes.`); openMenu(a); } : null);
     add("Disengage", "leave reach without a free swing", c.action ? () => { c.action = false; addCond(a, "disengaged"); log(`${fname(a)} disengages.`); openMenu(a); } : null);
     add("Help", "an ally's next attack has advantage", c.action ? () => { closeMenu(); cbt.phase = "target"; cbt.pend = {help: true}; hint("Help: click a friend within 5 ft."); } : null);
-    add("Search", `Perception ${sgn((s.skills || {}).perception ?? s.saves.wis)}`, c.action ? () => doSearch(a) : null);
+    add("Search", `Perception ${sgn((s.skills || {}).perception ?? abilMod(s, "wis"))}`, c.action ? () => doSearch(a) : null);
     for (const it of (GEAR[a.id] || {carried: []}).carried.filter(c => isWeapon(c) && c.name !== GEAR[a.id].main))
       { ACTION_ICON["Equip: " + it.name] = "attack"; const n = GEAR[a.id].main ? 2 : 1, k = gearCost(a, n);
         add(`Equip: ${it.name}`, k.ok ? `${k.label}${n === 2 ? " · a swap" : ""}` : "no free interaction or action left", k.ok ? () => equipItem(a, it.name) : null); }
@@ -4784,7 +4791,7 @@ function openMenu(a, sub){
       if ((s.level || 1) >= 2){
         add("Cunning Action: Dash", `bonus action · +${s.speed} ft of movement`, c.bonus ? () => { c.bonus = false; c.move += s.speed; popText(a, "dash", "#cfe8ff"); log(`${fname(a)} dashes (Cunning Action).`); openMenu(a); } : null);
         add("Cunning Action: Disengage", "bonus action · leave reach without a free swing", c.bonus ? () => { c.bonus = false; addCond(a, "disengaged"); log(`${fname(a)} disengages (Cunning Action).`); openMenu(a); } : null);
-        add("Cunning Action: Hide", c.conds.has("hidden") ? "you are hidden" : `bonus action · Stealth ${sgn((s.skills || {}).stealth ?? s.saves.dex)} vs their passive Perception`, c.bonus && !c.conds.has("hidden") ? () => doHide(a, true) : null);
+        add("Cunning Action: Hide", c.conds.has("hidden") ? "you are hidden" : `bonus action · Stealth ${sgn((s.skills || {}).stealth ?? abilMod(s, "dex"))} vs their passive Perception`, c.bonus && !c.conds.has("hidden") ? () => doHide(a, true) : null);
       }
       const light = s.attacks.filter(k => k.light);
       if (light.length < 2 && (s.level || 1) < 2) add("No bonus action yet", `Cunning Action comes at rogue level 2${light.length === 1 ? "; an off-hand attack needs a second light weapon" : ""}`, null);
@@ -4912,7 +4919,7 @@ function isSmall(a){
   if (size) return /^small|^tiny/i.test(size);
   const r = rollerOf(a); return !!(r && SMALL_RACE.test(r.race));
 }
-function heroMod(a, skill, abil){ const sh = SHEETS[a.id] || {}; return (sh.skills || {})[skill] ?? (sh.saves || {})[abil] ?? 0; }
+function heroMod(a, skill, abil){ const sh = SHEETS[a.id] || {}; return (sh.skills || {})[skill] ?? abilMod(sh, abil); }
 /** A check the map rolls for the hero: d20 + skill, with advantage when a friend helped. */
 function mapCheck(a, skill, abil){
   let adv = 0; if (helpNext && helpNext.by !== a.id && now < helpNext.until){ adv = 1; helpNext = null; }
@@ -5791,8 +5798,8 @@ function afterAttackRoll(att){ if (att.c.rage) att.c.rage.attacked = true;   // 
   if (att.c.conds.has("hidden")){ att.c.conds.delete("hidden"); att.alpha = 1; } att.c.conds.delete("helped"); }
 // SRD 2024: the DC to resist a Shove or Grapple is 8 + STR mod + proficiency.
 const sgn = (n) => (n >= 0 ? "+" : "−") + Math.abs(n);
-const shoveDc = (a) => 8 + (a.c.sheet.saves.str || 0) + 2;
-function skillCheck(a, skill){ const small = skill === "stealth" && isSmall(a), r = d20(withEdge(rageAdvantage(a.c.rage, skill === "athletics" ? "str" : skill), small), a), mod = (a.c.sheet.skills || {})[skill] ?? (skill === "perception" ? a.c.sheet.saves.wis || 0 : skill === "athletics" ? a.c.sheet.saves.str || 0 : a.c.sheet.saves.dex || 0); return {r, mod, total: r + mod, small}; }   // Small: Stealth with advantage (house rule, Sam 2026-10-26)
+const shoveDc = (a) => 8 + abilMod(a.c.sheet, "str") + 2;   // SRD 5.2.1: 8 + Strength modifier + proficiency
+function skillCheck(a, skill){ const small = skill === "stealth" && isSmall(a), r = d20(withEdge(rageAdvantage(a.c.rage, skill === "athletics" ? "str" : skill), small), a), mod = (a.c.sheet.skills || {})[skill] ?? abilMod(a.c.sheet, skill === "perception" ? "wis" : skill === "athletics" ? "str" : "dex"); return {r, mod, total: r + mod, small}; }   // Small: Stealth with advantage (house rule, Sam 2026-10-26)
 function targetAc(t){ return t.c.ac + (t.c.conds.has("shielded") ? 2 : 0) + (t.c.conds.has("shieldSpell") ? 5 : 0); }
 // SHIELD, THE REACTION (Sam, 2026-10-10: "combat pauses like Baldur's Gate 3 for reactions like shield"). When an
 // attack is about to hit a caster who has Shield prepared, a level 1 slot and their reaction, and +5 AC would turn it,
@@ -6076,7 +6083,7 @@ function doHide(a, bonus){
 }
 function doSearch(a){
   const c = a.c; c.action = false; const k = skillCheck(a, "perception");
-  const found = standing(foes).filter(f => f.c.conds.has("hidden") && k.total >= 10 + ((f.c.sheet.skills || {}).stealth ?? f.c.sheet.saves.dex ?? 0));
+  const found = standing(foes).filter(f => f.c.conds.has("hidden") && k.total >= 10 + ((f.c.sheet.skills || {}).stealth ?? abilMod(f.c.sheet, "dex")));
   found.forEach(f => { f.c.conds.delete("hidden"); f.alpha = 1; popText(f, "found", "#ffe08a"); });
   log(`${fname(a)} searches: Perception ${k.r} + ${k.mod} = ${k.total}${found.length ? ` — finds ${found.map(fname).join(", ")}` : " — nothing hidden here"}.`);
   openMenu(a);
@@ -10042,7 +10049,7 @@ function attackFromItem(sheet, it){
   const ammo = wp.includes("ammunition") || (!thrown && !!p.range && !!SHOT_OF(String(baseWeapon(it) || it.name || "").toLowerCase()));
   const rng = String(p.range || "").split("/").map(Number), die = (String(p.damage || "1").match(/^\s*(\d+d\d+|\d+)/) || [0, "1"])[1];
   const type = p.damage_type && p.damage_type !== "none" ? p.damage_type : (String(p.damage || "").match(/([a-z]+)\s*$/i) || [0, "bludgeoning"])[1];
-  const str = sheet.saves.str || 0, dex = sheet.saves.dex || 0, mod = ammo ? dex : finesse ? Math.max(str, dex) : str;
+  const str = abilMod(sheet, "str"), dex = abilMod(sheet, "dex"), mod = ammo ? dex : finesse ? Math.max(str, dex) : str;   // the modifiers, not the saves
   // a "+1" weapon's catalogue row may carry one `bonus` for both (Lolth's Tooth does): it adds to the attack and the damage
   const prof = proficientWith(sheet.cls, it) ? 2 : 0, dm = mod + Number(p.damage_bonus ?? p.bonus ?? 0);       // proficiency +2 at levels 1-4
   const a = {name: it.name, hit: mod + prof + Number(p.attack_bonus ?? p.bonus ?? 0), dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
