@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "name": "Split crate (loot)",
+  "cell": [
+    60,
+    46
+  ],
+  "pivot": [
+    30,
+    45
+  ],
+  "ppu": 60,
+  "animations": {
+    "idle": {
+      "sheet": "idle.png",
+      "frames": 1,
+      "fps": 5,
+      "loop": true
+    }
+  },
+  "_src": "PixelLab create_object_pro_flash, Sam 2026-10-28: pixel loot for 5c in place of the painted bundles"
+}
