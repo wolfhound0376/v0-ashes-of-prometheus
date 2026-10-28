@@ -7,7 +7,8 @@
 //
 // Scope (Sam, 2026-10-28, the approved prototype https://claude.ai/artifact/5jSrEofrWEXGH5pmwvMf5M): the SORCERER and
 // the ROGUE (Sam, 2026-10-28: "go" on the rogues first, SRD subclass open, everyone on the 2024 rules) and the CLERIC
-// (Sam, 2026-10-28: Samson's pack, "for 2024 rules") and the BARD (Scott's pack, same night), levels 2 and 3. Level 4 and up wait on the class trial (lib/level-trial.ts, TRIAL_GATE_FROM_LEVEL = 4), so the
+// (Sam, 2026-10-28: Samson's pack, "for 2024 rules"), the BARD (Scott's pack, same night) and the WIZARD (Gandalf,
+// same night: "how about gandalf?"), levels 2 and 3. Level 4 and up wait on the class trial (lib/level-trial.ts, TRIAL_GATE_FROM_LEVEL = 4), so the
 // improvement / feat step is not wired here yet. Other classes keep the ceremony's "on your sheet" note.
 //
 // Rules source: the sheet's own (Kenta: sheet_spellcasting.rules_source "SRD 5.2.1"), i.e. the 2024 Sorcerer table:
@@ -44,13 +45,15 @@ export interface OriginOption {
   alwaysPrepared?: string[]
   /** new skill proficiencies of the player's choice it grants (College of Lore: 3) */
   bonusSkills?: number
+  /** spells it adds to a wizard's spellbook free, of one school (Evoker: two Evocation spells, 2nd level or lower) */
+  bonusBook?: { count: number; school: string; maxLevel: number }
 }
 
 /** A feature the level brings with nothing to choose (Cunning Action, Font of Magic); it is written with the choices. */
 export interface Gain { name: string; desc: string; source: string; icon: string }
 
 export interface LevelPlan {
-  cls: "sorcerer" | "rogue" | "cleric" | "bard"
+  cls: "sorcerer" | "rogue" | "cleric" | "bard" | "wizard"
   caster: boolean
   level: number
   /** what the class calls its level-3 pick ("Sorcerous Origin", "Rogue Subclass") */
@@ -69,8 +72,12 @@ export interface LevelPlan {
   sorceryPoints: { from: number; to: number }
   /** cleric Channel Divinity uses, before → after (0 → 0 for other classes) */
   channelDivinity: { from: number; to: number }
-  /** skill proficiencies the level turns into Expertise (bard 2: two) */
+  /** skill proficiencies the level turns into Expertise (bard 2: two; wizard 2, Scholar: one) */
   expertise: number
+  /** the skills Expertise may come from, when the class limits them (Scholar); null = any you are proficient in */
+  expertiseFrom: string[] | null
+  /** spells the level writes into a wizard's spellbook (2 per level); 0 for classes without one */
+  bookSpells: number
 }
 
 /** SRD 5.2.1 Sorcerer table, levels 1–4 (what this module serves). */
@@ -173,8 +180,34 @@ export const BARD_SUBCLASSES: OriginOption[] = [
   { name: "College of Valor", open: false, source: "PHB 2024 — not in the SRD", verify: true, desc: "Combat Inspiration and martial training. Needs the DM's say." },
 ]
 
+// SRD 5.2.1 Wizard (fetched 2026-10-28): prepared 4/5/6/7, cantrips 3/3/3/4; each level after 1st adds two Wizard
+// spells to the spellbook (of a level you have slots for), and the prepared list comes from the book (changed on any
+// long rest). 2nd Scholar: Expertise in one of Arcana, History, Investigation, Medicine, Nature or Religion you are
+// proficient in. 3rd a subclass; the SRD's one is the Evoker, quoted here. Abjurer, Diviner, Illusionist: PHB only.
+export const WIZARD_2024 = {
+  prepared: { 1: 4, 2: 5, 3: 6, 4: 7 } as Record<number, number>,
+  cantrips: { 1: 3, 2: 3, 3: 3, 4: 4 } as Record<number, number>,
+  maxSpellLevel: { 1: 1, 2: 1, 3: 2, 4: 2 } as Record<number, number>,
+}
+export const SCHOLAR_SKILLS = ["arcana", "history", "investigation", "medicine", "nature", "religion"]
+const WIZARD_GAINS: Record<number, Gain[]> = {
+  2: [{ name: "Scholar", desc: "Expertise in one of Arcana, History, Investigation, Medicine, Nature or Religion that you are proficient in.", source: "Wizard 2 · SRD 5.2.1", icon: "scholar" }],
+  3: [],
+}
+export const WIZARD_SUBCLASSES: OriginOption[] = [
+  { name: "Evoker", open: true, source: "SRD 5.2.1", verify: false, bonusBook: { count: 2, school: "evocation", maxLevel: 2 },
+    desc: "Evocation Savant (two Evocation spells into your book free) and Potent Cantrip.",
+    features: [
+      { name: "Evocation Savant", desc: "Two Evocation spells of 2nd level or lower go into your spellbook free; each time you gain a new level of spell slots, one more Evocation spell of that level does too.", source: "Wizard 3 · Evoker · SRD 5.2.1", icon: "evocation-savant" },
+      { name: "Potent Cantrip", desc: "When a creature avoids your damaging cantrip, by a missed attack or a successful save, it still takes half the cantrip's damage and no other effect.", source: "Wizard 3 · Evoker · SRD 5.2.1", icon: "potent-cantrip" },
+    ] },
+  { name: "Abjurer", open: false, source: "PHB 2024 — not in the SRD", verify: true, desc: "Arcane Ward: a magical shield that soaks damage. Needs the DM's say." },
+  { name: "Diviner", open: false, source: "PHB 2024 — not in the SRD", verify: true, desc: "Portent: two d20 rolls kept to replace any roll. Needs the DM's say." },
+  { name: "Illusionist", open: false, source: "PHB 2024 — not in the SRD", verify: true, desc: "Improved Illusions: illusions cast faster and with more reach. Needs the DM's say." },
+]
+
 /** The subclass options a plan offers. */
-export function subclassesFor(plan: LevelPlan | null): OriginOption[] { return !plan ? [] : plan.cls === "rogue" ? ROGUE_SUBCLASSES : plan.cls === "cleric" ? CLERIC_SUBCLASSES : plan.cls === "bard" ? BARD_SUBCLASSES : ORIGINS }
+export function subclassesFor(plan: LevelPlan | null): OriginOption[] { return !plan ? [] : plan.cls === "rogue" ? ROGUE_SUBCLASSES : plan.cls === "cleric" ? CLERIC_SUBCLASSES : plan.cls === "bard" ? BARD_SUBCLASSES : plan.cls === "wizard" ? WIZARD_SUBCLASSES : ORIGINS }
 
 export const CHOICES_SOURCE = "Level up — chosen"
 const pendingName = (level: number) => `Level ${level} — choices to make`
@@ -192,7 +225,7 @@ export function planFor(cls: string | null | undefined, level: number): LevelPla
     return { cls: "rogue", caster: false, level, subclassLabel: "Rogue Subclass", gains: ROGUE_GAINS[level] ?? [],
       sneakAttack: { from: "1d6", to: level === 3 ? "2d6" : "1d6" },
       newSpells: 0, newCantrips: 0, maxSpellLevel: 0, swaps: 0, metamagic: 0, origin: level === 3,
-      prepared: none, cantrips: none, sorceryPoints: none, channelDivinity: none, expertise: 0 }
+      prepared: none, cantrips: none, sorceryPoints: none, channelDivinity: none, expertise: 0, expertiseFrom: null, bookSpells: 0 }
   }
   if (k === "cleric") {
     const t = CLERIC_2024
@@ -200,7 +233,7 @@ export function planFor(cls: string | null | undefined, level: number): LevelPla
       newSpells: t.prepared[level] - t.prepared[level - 1], newCantrips: t.cantrips[level] - t.cantrips[level - 1],
       maxSpellLevel: t.maxSpellLevel[level], swaps: 1, metamagic: 0, origin: level === 3,
       prepared: { from: t.prepared[level - 1], to: t.prepared[level] }, cantrips: { from: t.cantrips[level - 1], to: t.cantrips[level] },
-      sorceryPoints: { from: 0, to: 0 }, channelDivinity: { from: t.channelDivinity[level - 1], to: t.channelDivinity[level] }, expertise: 0 }
+      sorceryPoints: { from: 0, to: 0 }, channelDivinity: { from: t.channelDivinity[level - 1], to: t.channelDivinity[level] }, expertise: 0, expertiseFrom: null, bookSpells: 0 }
   }
   if (k === "bard") {
     const t = BARD_2024
@@ -208,7 +241,16 @@ export function planFor(cls: string | null | undefined, level: number): LevelPla
       newSpells: t.prepared[level] - t.prepared[level - 1], newCantrips: t.cantrips[level] - t.cantrips[level - 1],
       maxSpellLevel: t.maxSpellLevel[level], swaps: 1, metamagic: 0, origin: level === 3,
       prepared: { from: t.prepared[level - 1], to: t.prepared[level] }, cantrips: { from: t.cantrips[level - 1], to: t.cantrips[level] },
-      sorceryPoints: { from: 0, to: 0 }, channelDivinity: { from: 0, to: 0 }, expertise: level === 2 ? 2 : 0 }
+      sorceryPoints: { from: 0, to: 0 }, channelDivinity: { from: 0, to: 0 }, expertise: level === 2 ? 2 : 0, expertiseFrom: null, bookSpells: 0 }
+  }
+  if (k === "wizard") {
+    const t = WIZARD_2024
+    return { cls: "wizard", caster: true, level, subclassLabel: "Wizard Subclass", gains: WIZARD_GAINS[level] ?? [], sneakAttack: null,
+      newSpells: t.prepared[level] - t.prepared[level - 1], newCantrips: t.cantrips[level] - t.cantrips[level - 1],
+      maxSpellLevel: t.maxSpellLevel[level], swaps: 1, metamagic: 0, origin: level === 3,
+      prepared: { from: t.prepared[level - 1], to: t.prepared[level] }, cantrips: { from: t.cantrips[level - 1], to: t.cantrips[level] },
+      sorceryPoints: { from: 0, to: 0 }, channelDivinity: { from: 0, to: 0 },
+      expertise: level === 2 ? 1 : 0, expertiseFrom: level === 2 ? SCHOLAR_SKILLS : null, bookSpells: 2 }
   }
   if (k !== "sorcerer") return null
   const t = SORCERER_2024
@@ -230,6 +272,8 @@ export function planFor(cls: string | null | undefined, level: number): LevelPla
     sorceryPoints: { from: t.sorceryPoints[level - 1], to: t.sorceryPoints[level] },
     channelDivinity: { from: 0, to: 0 },
     expertise: 0,
+    expertiseFrom: null,
+    bookSpells: 0,
   }
 }
 
@@ -262,12 +306,16 @@ export interface Picks {
   /** skill keys (snake_case, as sheet_skill_proficiencies) */
   expertise?: string[]
   skills?: string[]
+  /** wizard: the two spells the level writes into the spellbook, and the subclass's free ones (Evocation Savant) */
+  book?: string[]
+  bookFree?: string[]
 }
 
 export interface CastingSheet {
   cantrips?: string[] | null
   prepared?: string[] | null
   always_prepared?: string[] | null
+  spellbook?: string[] | null
   [k: string]: unknown
 }
 
@@ -290,6 +338,25 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
   if (swapOut && swapOutC) return { ok: false, error: "One swap per level." }
   if (swapOut && !prepared.includes(swapOut)) return { ok: false, error: `${swapOut} is not on the sheet to swap out.` }
   if (swapOutC && !cantrips.includes(swapOutC)) return { ok: false, error: `${swapOutC} is not on the sheet to swap out.` }
+  // the wizard's book: what the sheet holds (a sheet with no book yet starts from its prepared list), plus this level's picks
+  const bookBefore = plan.bookSpells ? uniq([...(casting?.spellbook ?? prepared)]) : []
+  const bookPicks = uniq(picks.book ?? []), bookFree = uniq(picks.bookFree ?? [])
+  if (plan.bookSpells) {
+    if (bookPicks.length !== plan.bookSpells) return { ok: false, error: `Write ${plan.bookSpells} spells into your spellbook.` }
+    for (const n of bookPicks) {
+      const s = byName.get(n)
+      if (!s || s.level < 1) return { ok: false, error: `${n} is not a wizard spell this level can write.` }
+      if (bookBefore.includes(n)) return { ok: false, error: `${n} is in your spellbook already.` }
+    }
+    const free = origin?.bonusBook
+    if (bookFree.length !== (free?.count ?? 0)) return { ok: false, error: free ? `Choose ${free.count} ${free.school} spells for your book.` : "No free spells at this level." }
+    for (const n of bookFree) {
+      const s = byName.get(n)
+      if (!s || s.level < 1 || s.level > free!.maxLevel || s.school !== free!.school) return { ok: false, error: `${n} is not an ${free!.school} spell of level ${free!.maxLevel} or lower.` }
+      if (bookBefore.includes(n) || bookPicks.includes(n)) return { ok: false, error: `${n} is in your spellbook already.` }
+    }
+  } else if (bookPicks.length || bookFree.length) return { ok: false, error: "Only a wizard keeps a spellbook." }
+  const bookNext = uniq([...bookBefore, ...bookPicks, ...bookFree])
   const needS = plan.newSpells + (swapOut ? 1 : 0), needC = plan.newCantrips + (swapOutC ? 1 : 0)
   if (spells.length !== needS) return { ok: false, error: `Choose ${needS} spell${needS === 1 ? "" : "s"}.` }
   if (newC.length !== needC) return { ok: false, error: needC ? `Choose ${needC} cantrip${needC === 1 ? "" : "s"}.` : "No new cantrip at this level." }
@@ -298,6 +365,7 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
     if (!s || s.level < 1) return { ok: false, error: `${n} is not a ${plan.cls} spell this level can prepare.` }
     if (prepared.includes(n)) return { ok: false, error: `${n} is already prepared.` }
     if (alwaysNext.includes(n)) return { ok: false, error: `${n} is always prepared already.` }
+    if (plan.bookSpells && !bookNext.includes(n)) return { ok: false, error: `${n} is not in your spellbook to prepare.` }
   }
   for (const n of newC) {
     const s = byName.get(n)
@@ -315,9 +383,10 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
   const sk: Record<string, string> = { ...(skillSheet ?? {}) }
   const exp = uniq(picks.expertise ?? []), newSk = uniq(picks.skills ?? [])
   const isSkill = (n: string) => (DND_SKILLS as readonly string[]).includes(n)
-  if (exp.length !== plan.expertise) return { ok: false, error: plan.expertise ? `Choose ${plan.expertise} skills for Expertise.` : "No Expertise at this level." }
+  if (exp.length !== plan.expertise) return { ok: false, error: plan.expertise ? `Choose ${plan.expertise} skill${plan.expertise === 1 ? "" : "s"} for Expertise.` : "No Expertise at this level." }
   for (const n of exp) {
     if (!isSkill(n)) return { ok: false, error: `${n} is not a skill.` }
+    if (plan.expertiseFrom && !plan.expertiseFrom.includes(n)) return { ok: false, error: `Scholar's Expertise comes from ${plan.expertiseFrom.join(", ")}; ${n} is not one.` }
     if (sk[n] === "expertise") return { ok: false, error: `${n} already has Expertise.` }
     if (sk[n] !== "proficient") return { ok: false, error: `Expertise needs a skill you are proficient in; ${n} is not one.` }
   }
@@ -345,6 +414,7 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
     ...(plan.cls === "sorcerer" ? { sorcery_points: { max: plan.sorceryPoints.to, used: 0 } } : {}),
     ...(plan.channelDivinity.to ? { channel_divinity: { max: plan.channelDivinity.to, used: Math.min(Number((casting?.channel_divinity as { used?: number } | undefined)?.used ?? 0) || 0, plan.channelDivinity.to) } } : {}),
     ...(alwaysNext.length !== always.length ? { always_prepared: alwaysNext } : {}),
+    ...(plan.bookSpells ? { spellbook: bookNext } : {}),
   }
   const src = `${Cls} ${plan.level}`
   const kept = (Array.isArray(features) ? features : []).filter(
@@ -361,13 +431,16 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
   for (const m of metaOpts) added.push({ name: `Metamagic: ${m!.name}`, desc: `${m!.desc} (${m!.cost} SP)`, source: `${src} · verify against SRD 5.2.1` })
   if (origin) added.push({ name: origin.name, desc: origin.desc, source: `${src} · ${origin.source}${origin.features ? "" : " · the DM applies its features"}` })
   for (const g of origin?.features ?? []) added.push({ name: g.name, desc: g.desc, source: g.source })
-  if (exp.length) added.push({ name: "Expertise", desc: `Double proficiency with ${exp.map(skillName).join(" and ")}.`, source: `${src} · SRD 5.2.1` })
+  if (exp.length && plan.cls === "wizard") {
+    const i = added.findIndex((f) => f.name === "Scholar"); if (i >= 0) added[i] = { ...added[i], desc: `Expertise in ${exp.map(skillName).join(" and ")}.` }
+  } else if (exp.length) added.push({ name: "Expertise", desc: `Double proficiency with ${exp.map(skillName).join(" and ")}.`, source: `${src} · SRD 5.2.1` })
   if (newSk.length) added.push({ name: "Bonus Proficiencies", desc: `Proficiency in ${newSk.map(skillName).join(", ")}.`, source: `${src} · ${origin!.name} · SRD 5.2.1` })
   const summary = [
     ...plan.gains.map((g) => g.name),
     ...metaOpts.map((m) => m!.name),
     ...(origin ? [origin.name, ...(origin.features ?? []).map((g) => g.name)] : []),
     ...exp.map((n) => `Expertise: ${skillName(n)}`), ...newSk.map((n) => `Proficient: ${skillName(n)}`),
+    ...bookPicks.map((n) => `Spellbook: ${n}`), ...bookFree.map((n) => `Spellbook (free): ${n}`),
     ...spells, ...newC,
     ...(swapOut ? [`swapped out ${swapOut}`] : []), ...(swapOutC ? [`swapped out ${swapOutC}`] : []),
   ]

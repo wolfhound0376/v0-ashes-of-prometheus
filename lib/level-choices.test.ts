@@ -11,7 +11,7 @@ describe("planFor", () => {
     expect(planFor("Sorcerer", 2)).toMatchObject({ newSpells: 2, newCantrips: 0, maxSpellLevel: 1, metamagic: 2, origin: false, sorceryPoints: { from: 0, to: 2 } })
     expect(planFor("Sorcerer", 3)).toMatchObject({ newSpells: 2, maxSpellLevel: 2, metamagic: 0, origin: true })
     expect(planFor("Sorcerer", 4)).toBeNull()
-    expect(planFor("Wizard", 2)).toBeNull()
+    expect(planFor("Fighter", 2)).toBeNull()
     expect(planFor("Rogue", 2)).toMatchObject({ caster: false, newSpells: 0, origin: false, gains: [{ name: "Cunning Action" }] })
     expect(planFor("Rogue", 3)).toMatchObject({ origin: true, subclassLabel: "Rogue Subclass", sneakAttack: { from: "1d6", to: "2d6" } })
   })
@@ -157,5 +157,35 @@ describe("the bard (SRD 5.2.1)", () => {
     if (!out.ok) return
     expect(out.features.map((f) => f.name)).toEqual(["College of Lore", "Cutting Words", "Bonus Proficiencies"])
     expect(out.skills).toMatchObject({ stealth: "proficient", insight: "proficient", deception: "proficient", performance: "expertise" })
+  })
+})
+
+describe("the wizard (SRD 5.2.1)", () => {
+  // Gandalf's live sheet, 2026-10-28: Wizard 1, 3 cantrips, 4 prepared, no spellbook recorded yet.
+  const gan = { cantrips: ["Fire Bolt", "Mage Hand", "Ray of Frost"], prepared: ["Chromatic Orb", "Shield", "Magic Missile", "Thunderwave"] }
+  const sk = { arcana: "proficient", history: "proficient", insight: "proficient" }
+  it("level 2: Scholar Expertise, two spells into the book, one more prepared from it", () => {
+    expect(planFor("Wizard", 2)).toMatchObject({ cls: "wizard", bookSpells: 2, newSpells: 1, expertise: 1 })
+    const out = settleChoices(planFor("Wizard", 2)!, gan, [marker(2)], { expertise: ["arcana"], book: ["Sleep", "Find Familiar"], spells: ["Sleep"] }, sk)
+    expect(out.ok).toBe(true)
+    if (!out.ok) return
+    expect(out.spellcasting).toMatchObject({ spellbook: [...gan.prepared, "Sleep", "Find Familiar"], prepared: [...gan.prepared, "Sleep"], prepared_max: 5 })
+    expect(out.skills).toMatchObject({ arcana: "expertise" })
+    expect(out.features.map((f) => f.name)).toEqual(["Scholar"])
+  })
+  it("refuses: Insight for Scholar, a spell not in the book, one book spell", () => {
+    expect(settleChoices(planFor("Wizard", 2)!, gan, [], { expertise: ["insight"], book: ["Sleep", "Find Familiar"], spells: ["Sleep"] }, sk)).toMatchObject({ ok: false })
+    expect(settleChoices(planFor("Wizard", 2)!, gan, [], { expertise: ["arcana"], book: ["Sleep", "Find Familiar"], spells: ["Grease"] }, sk)).toMatchObject({ ok: false })
+    expect(settleChoices(planFor("Wizard", 2)!, gan, [], { expertise: ["arcana"], book: ["Sleep"], spells: ["Sleep"] }, sk)).toMatchObject({ ok: false })
+  })
+  it("level 3 Evoker: two free Evocation spells, Potent Cantrip; the PHB schools stay closed", () => {
+    const l2 = { ...gan, spellbook: [...gan.prepared, "Sleep", "Find Familiar"], prepared: [...gan.prepared, "Sleep"] }
+    expect(settleChoices(planFor("Wizard", 3)!, l2, [marker(3)], { origin: "Diviner", book: ["Misty Step", "Web"], spells: ["Web"] }, sk)).toMatchObject({ ok: false })
+    expect(settleChoices(planFor("Wizard", 3)!, l2, [marker(3)], { origin: "Evoker", book: ["Misty Step", "Web"], bookFree: ["Scorching Ray", "Misty Step"], spells: ["Web"] }, sk)).toMatchObject({ ok: false })   // Misty Step is conjuration
+    const out = settleChoices(planFor("Wizard", 3)!, l2, [marker(3)], { origin: "Evoker", book: ["Misty Step", "Web"], bookFree: ["Scorching Ray", "Shatter"], spells: ["Scorching Ray"] }, sk)
+    expect(out.ok).toBe(true)
+    if (!out.ok) return
+    expect(out.features.map((f) => f.name)).toEqual(["Evoker", "Evocation Savant", "Potent Cantrip"])
+    expect(out.spellcasting!.spellbook).toHaveLength(10)
   })
 })
