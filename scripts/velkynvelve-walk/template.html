@@ -3019,13 +3019,36 @@ let hoverLoot = null;
 function lootSpotAt(w){ return (node.loot || []).find(l => inPoly(l.poly, w.x, w.y)) || null; }
 function lootCenter(l){ const xs = l.poly.map(p => p[0]), ys = l.poly.map(p => p[1]); return {x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) + 30}; }
 function openLootSpot(l){ if (atWorkPlate()) return laborDoPocket({id: l.id, name: l.name, poly: l.poly}); openLoot(l.id, l.name, {poly: l.poly, text: l.text, at: polyBase(l.poly)}); }   // at work: under the escort's eye (Hard Labor)
+// LOOT YOU CAN SEE, NOT BOXES ROUND IT (Sam, 2026-10-27: "replace painted lootboxes with size appropriate chests from
+// pixel art. They can glow yellow if they are interactable but these large yellow boxes are silly"). A loot spot that is
+// a chest (story.json `chest`: wooden | iron | ornate, standing at `at`) is drawn as that pixel chest from the sprite
+// library, about 3 1/2 ft across, over the painted one; any other spot (a rack, a sack, a table) gets a small gold glint
+// at its middle. Either glows gold, pulsing, when a hero is near or the pointer is on it: that is the "you can use this".
+const CHEST_FT = 3.4;
+const chestImgs = {};
+function chestImg(kind){ if (!chestImgs[kind]){ const im = new Image(); im.src = `${SPRITE_BASE}chest-${kind}/idle.png`; chestImgs[kind] = im; } return chestImgs[kind]; }
 function drawLootHighlight(){
-  if (mode !== "explore" && mode !== "dialog") return;
+  if (mode !== "explore" && mode !== "dialog" && mode !== "combat") return;
+  const pulse = .5 + .5 * Math.sin(now / 520);
   for (const l of node.loot || []){
-    const c = lootCenter(l), lit = hoverLoot === l || (leader && Math.hypot(leader.x - c.x, leader.y - c.y) < 300 * node.scale); if (!lit) continue;
-    const pulse = .5 + .5 * Math.sin(now / 520);
-    ctx.save(); ctx.beginPath(); l.poly.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
-    ctx.shadowColor = "rgba(240,170,80,.95)"; ctx.shadowBlur = 22; ctx.lineJoin = "round"; ctx.strokeStyle = `rgba(240,170,80,${.45 + .35 * pulse})`; ctx.lineWidth = 4; ctx.stroke(); ctx.restore();
+    const c = lootCenter(l), lit = mode !== "combat" && (hoverLoot === l || (leader && Math.hypot(leader.x - c.x, leader.y - c.y) < 300 * node.scale));
+    if (l.chest){
+      const im = chestImg(l.chest); if (!im.complete || !im.naturalWidth) continue;
+      const at = {x: l.at[0], y: l.at[1]}, side = CHEST_FT * ftPx(at) * 128 / 100;   // the chest fills ~100 of its 128 px
+      ctx.save(); ctx.imageSmoothingEnabled = false;
+      if (lit){ ctx.shadowColor = `rgba(255,200,90,${.55 + .4 * pulse})`; ctx.shadowBlur = 14 + 12 * pulse; }
+      ctx.drawImage(im, 0, 0, 128, 128, at.x - side / 2, at.y - side * 126 / 128, side, side);
+      ctx.restore();
+      continue;
+    }
+    if (!lit) continue;
+    const xs = l.poly.map(p => p[0]), ys = l.poly.map(p => p[1]), gx = (Math.min(...xs) + Math.max(...xs)) / 2, gy = (Math.min(...ys) + Math.max(...ys)) / 2;
+    const r = (5 + 3 * pulse) * node.scale;
+    ctx.save(); ctx.globalCompositeOperation = "lighter";
+    const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, r * 4); g.addColorStop(0, `rgba(255,214,110,${.55 + .3 * pulse})`); g.addColorStop(1, "rgba(255,214,110,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(gx, gy, r * 4, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = `rgba(255,246,210,${.7 + .3 * pulse})`; ctx.fillRect(gx - r * 1.6, gy - .7, r * 3.2, 1.4); ctx.fillRect(gx - .7, gy - r * 1.6, 1.4, r * 3.2);   // the four-point glint
+    ctx.restore();
   }
 }
 // A quick hand on a living guard. OotA ch.1, Acquisitions: "lift a key to the slave pen from a guard ... a successful

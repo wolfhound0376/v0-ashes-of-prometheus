@@ -860,6 +860,8 @@
         "id": "barracks-west",
         "name": "The barracks chests (west)",
         "_src": "OotA ch.1 area 2: six chests in each barracks; drow poison, clothing, trinkets. Traced by eye on the painted plate.",
+        "chest": "wooden",
+        "at": [882, 694],
         "poly": [
           [
             835,
@@ -884,6 +886,8 @@
         "id": "barracks-east",
         "name": "The barracks chests (east)",
         "_src": "OotA ch.1 area 2 (the same six chests, the other cave). Traced by eye on the painted plate.",
+        "chest": "wooden",
+        "at": [1192, 1138],
         "poly": [
           [
             1140,
