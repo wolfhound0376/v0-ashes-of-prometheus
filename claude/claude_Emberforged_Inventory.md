@@ -1,0 +1,43 @@
+# Emberforged Inventory — design of record (2026-10-27)
+
+**What it is.** The Underwalk's inventory (`I` key, `scripts/velkynvelve-walk/template.html` → built `public/velkynvelve-walk/index.html`) restyled to Sam's approved Emberforged concept, from his handoff pack (`Emberforged_Claude_Handoff.zip`: `CLAUDE_START_HERE.md`, `DESIGN_SPEC.md`, `tokens.css`, the ruined-castle backdrop, the 1586×992 reference). The pack's own rules were followed: the reference is the visual target, not inspiration; real sprites and real item art, never the flattened concept's reinterpretations; every number live; no power score, stars or equipment levels; no new rules edition inferred.
+
+**Where it came from.** Sam asked (2026-10-27) to elevate Kenta's inventory toward Top Heroes' hero screen without abandoning the paper doll. Three concepts went on a canvas (A Reliquary / B Hero Hall / C Hall of Ashes, https://claude.ai/artifact/54D5Ewe8k1WRsJonxTvt1o); Sam took concept A out to an image tool and came back with "01 · Emberforged" (the pack) and "03 · Arcane Reliquary" (the same layout, violet accents, inline Inspect/Equip). The build is Emberforged; Arcane Reliquary is a `--ef-*` token swap plus a backdrop if Sam prefers it.
+
+## Decisions (built in PR 1, branch `feat/emberforged-inventory`)
+
+- **Level Up is a state, never a purchase.** Top Heroes levels with gold; AoP levels by XP (SRD table) and takes the level at camp or a node flagged `allows_level_up` (camp house rules, 2026-09-26). The panel reads the row's `xp` and `level`; readiness = `levelForXp(xp) > level`. States: *locked* ("300 XP to level 2"), *earned* (bar full gold and breathing; "level 2 earned · take it at camp"; pressing it says so in a dialog). It writes nothing. After a fight, `/api/walk-xp`'s payout updates the open sheet so the bar moves without a reload.
+- **Chips are HP / AC / Speed** (the reference's three), off the sheet: `hp_current` when the row has it (live `c.hp` mid-fight), AC as the dashboard already computes it (worn armour counted there), speed. Nothing derived.
+- **Nine slots, not eight.** The reference drew eight tiles; the doll has two rings, so the right column carries the second ring (the pack's rule: expose every real slot). Columns: cloak / torso / main hand / ring left; head / neck / legs / off hand / ring right. Labels under the tiles, green dot = equipped, thin gold outline = selected, rarity as a separate accent (the loot fountain's `RARITY_COL`).
+- **The hero is Sam's sprite at a whole-number scale** (`heroStage()`, feet on the pedestal), replacing the CSS-scaled 256 canvas; the stage sizes by the height it has (`--ef-stage-h`), so the level panel and the card stay on screen at 1080p, 1600×1000 and 1280×800.
+- **Backpack card.** Clicking a row (its name is a real button for the keyboard) opens the selected-item card: kind, where it goes, count, rarity, the weapon's real attack line from `attackFromItem()` (so Kenta's shortsword reads +1 to hit, no proficiency), the catalogue description, and the same Equip / Take off buttons the row has — under the same mid-fight gear-cost rules. Rows keep only the short line.
+- **Nothing underneath changed:** `DOLL_SLOTS` ids, `fitsSlot`, drag on/off the body, `equipTo` / `removeFrom`, `/api/equipment`, the party tabs, `I` / `Esc`.
+- **The stage is painted per class.** Sam's second pack (`Emberforged_Class_Backgrounds_5.zip`, 2026-10-27: thirteen 4:3 paintings, twelve core classes plus Artificer, "decorative inventory environments, not mechanical") ships as `public/velkynvelve-walk/img/inventory-stage-<class>.jpg` (q82, ~300 KB each, 3.9 MB in all). `stageFor(cls)` picks by the first class word on the sheet ("Rogue 3 / Warlock 2" → rogue), falls back to the ruined castle, and sets `--ef-foot`, the pedestal line each figure stands on (tuned by eye per painting, .82–.84; the pack's suggested .76 is the surface's back edge). Cosmetic only. Slot labels got a dark backing because the cleric's cathedral is bright stone.
+- `lib/walk-sheet.ts` gained `hpNow` and `xp` (both null when the row has none — a preview or an unseated hero shows a quiet bar, no guessed number). Tests added; type gate clean (11 errors before and after, none new).
+
+## PR 2 — the Level Up ceremony (branch `feat/level-up-ceremony`, 2026-10-27)
+
+**Rulings (Sam, 2026-10-27).** "Unless D&D 5e rules say otherwise, let's permit level ups outside of camp, just not in combat. Otherwise it could be a while before the characters level up. No gated level until we get past level 3 for now." 5e never required a rest (the DMG only suggests one), so the ruling stands on the rules. These supersede the camp house rule of 2026-09-26 ("level-ups only at camp or at a node flagged `allows_level_up`"): `levelUpAllowedHere()` now answers "anywhere but a fight"; camp and `allows_level_up` nodes are still fine, just no longer the only places. The chat route's camp action follows the same function.
+
+**What it is.** The gold button on the Underwalk inventory, in its *earned* state, opens the ceremony over the backpack (`#invCeremony`): what the level fixes (hit points, proficiency, Hit Dice, a full caster's slots), the one choice the SRD leaves to the player (roll the Hit Die — the walk's own roll, spun in front of them — or take the fixed value), the choices owed on the sheet after (ASI, subclass, spells — listed from the engine, never picked here), then one Confirm. Mid-fight the button reads "after the fight" and refuses.
+
+**Engine.** `POST /api/walk-level-up` runs `lib/camp.ts levelUp()` + `levelUpPatch()` — the same code the camp action in `/api/chat` uses — so the walk invents nothing: HP gained = die (or the SRD fixed value) + CON, minimum 1 per level (PHB wording, house rule); hp_current rises by the same amount, so a wound carried in stays; proficiency, Hit Dice, slots per the SRD tables; pending choices banked on `sheet_features`. `GET ?character_id=` is the dry run the sheet shows before anything is written.
+
+**Once.** The write is `update … where id = ? and level = fromLevel`: a double click, a stale tab or a retry finds the level already advanced, writes nothing, and says so. Verified headless: three clicks on Confirm sent one request. One level per request; if the XP already earns another, the sheet offers it again as a fresh request.
+
+**Trial gate.** `trialGates(cls, next)` in `lib/level-trial.ts`: levels 2–3 never gate; from level 4 the classes with a trial (sorcerer, wizard, cleric, warlock + the proposed ones) are refused with a note until Sam sets the counts and something tracks them. Rogue, fighter, monk, barbarian (`kind: "none"`) never gate.
+
+**Who may take it.** The DM screen (`x-dm-key`) or the browser holding THIS character's claim — the same two doors as `/api/walk-xp`.
+
+**Owed after PR 2.** The spells-known pick for casters (the engine lists it as a pending choice; a picker needs the sheet's spell storage and the class lists); the class-trial tracking for levels 4+; proficiency-driven numbers on the map (saves, skills, attacks are baked per seat and re-read on the next reload — only matters from level 5).
+
+## Owed
+
+1. ~~PR 2 — the level-up ceremony~~ built on the Underwalk inventory (see PR 2 above); the spell pick and the trial tracking remain.
+2. Backpack weight in the header (the walk's catalogue select carries no `weight`; one column added to `/api/walk-items?catalog=1` does it).
+3. Arcane Reliquary variant, if Sam wants it: tokens + backdrop + inline Inspect/Equip.
+4. The "Rehearsal · own world" pill now sits under the dialog (dialog z 7); if the DM wants it visible while the bag is open, move the pill.
+
+## Verification
+
+Headless Chromium at 1920×1080, 1600×1000 and 1280×800 with a six-item bag injected (the live route is unreachable from the session); no page errors; equip/take-off buttons render under the existing `bagCan` rules. Not verified from the session: the live `/api/map-stage` sheet carrying `xp`/`hp_current` end to end (code path read, not run), and the drow guards' walk behaviour around the taller dialog.

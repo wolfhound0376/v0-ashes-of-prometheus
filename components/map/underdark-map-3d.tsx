@@ -15,47 +15,26 @@
 //      This is how the 2D map, the overworld mesh and the island meshes end up
 //      being one continuous space rather than three separate pictures.
 //   3. The wheel zooms the camera instead of scrolling the page (the canvas
-//      is viewport-locked and swallows the event).
+//      is viewport-locked and swallows the event).//
+// DIORAMA IS THE TRAVEL MAP (Sam, 2026-10-27, part 2 of 3: "lets work on part 2 of the 3d travel"). The march itself
+// (the day, pace, the leader vote, the departure sheet, the arrival beat, the cards, the halt) is the shared one in
+// ./use-travel.ts, drawn by ./travel-cards.tsx exactly as the 2D map draws it. This file is the picture: the terrain,
+// the rings, the walking party, and entering a place's own diorama. Every browser watches the party walk; only the
+// leader's (or the DM's) asks the server what waits at each marker, as on the 2D map.
 
-import { useEffect, useRef, useState } from "react"
-import { createClient } from "@/lib/supabase/client"
-import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
+import { useEffect, useMemo, useRef, useState } from "react"
 import * as THREE from "three"
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js"
 import { OrbitControls } from "three/addons/controls/OrbitControls.js"
 import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js"
+import { useTravel, type NodeRow, type EdgeRow } from "./use-travel"
+import { TravelCards, TravelPanels } from "./travel-cards"
 
 const MAP_W = 1672
 const MAP_H = 941
-const POLL_MS = 15000
 const SPRITE_BASE = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/maps/party-"
 const FLIP_Z = false
-
-type NodeRow = {
-  id: string
-  node_key: string
-  name: string
-  node_type: string
-  edge_id: string | null
-  edge_position: number | null
-  description: string | null
-  metadata: Record<string, any> | null
-  discovered_at?: string | null
-  name_known?: boolean
-}
-type EdgeRow = {
-  id: string
-  edge_key: string
-  from_node_id: string
-  to_node_id: string
-  distance_miles: number
-  danger_level: number
-  metadata: Record<string, any> | null
-  discovered_at?: string | null
-}
-type PartyRow = { node_id: string }
 type Facing = "south" | "north" | "east" | "west"
-
 function fnv(s: string) {
   let h = 2166136261
   for (const c of s) {
@@ -74,17 +53,16 @@ function mulberry(seed: number) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296
   }
 }
-
 export default function UnderdarkMap3D() {
   const mountRef = useRef<HTMLDivElement | null>(null)
-  const [nodes, setNodes] = useState<NodeRow[]>([])
-  const [edges, setEdges] = useState<EdgeRow[]>([])
-  const [party, setParty] = useState<PartyRow | null>(null)
-  const [modelUrl, setModelUrl] = useState<string | null>(null)
+  const travel = useTravel()
+  const { nodes, edges, party, dmKey, byId, routeBetween, reachNode, walkStarted, setArrivedAt, canLead, setConfirmNode, halt } = travel
+  const modelUrl = useMemo(() => {
+    const r = nodes.find((x) => x.metadata?.map_model_url)
+    return r ? (r.metadata!.map_model_url as string) : null
+  }, [nodes])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [status, setStatus] = useState("Consulting the cartographers…")
-  const [dmKey, setDmKeyState] = useState("")
-  const [refresh, setRefresh] = useState(0)
   const [inside, setInside] = useState<NodeRow | null>(null)
 
   const three = useRef<any>({})
@@ -93,74 +71,16 @@ export default function UnderdarkMap3D() {
   const walkTimer = useRef<any>(null)
 
   useEffect(() => {
-    setDmKeyState(getDmKey())
-    return onDmKeyChange(() => setDmKeyState(getDmKey()))
-  }, [])
-  useEffect(() => {
     dataRef.current = { nodes, edges }
   }, [nodes, edges])
 
-  // ---------- data ----------
-  useEffect(() => {
-    const supabase = createClient()
-    let alive = true
-    async function load() {
-      if (dmKey) {
-        try {
-          const res = await fetch("/api/travel", { headers: dmHeaders(), cache: "no-store" })
-          if (res.ok) {
-            const g = await res.json()
-            if (!alive) return
-            setNodes((g.nodes ?? []) as NodeRow[])
-            setEdges((g.edges ?? []) as EdgeRow[])
-            setParty((g.party as PartyRow) ?? null)
-            const r = (g.nodes ?? []).find((x: NodeRow) => x.metadata?.map_model_url)
-            if (r) setModelUrl(r.metadata!.map_model_url)
-            return
-          }
-        } catch {
-          /* fall through */
-        }
-      }
-      const [n, e, p] = await Promise.all([
-        supabase.from("travel_nodes_player").select("id,node_key,name,node_type,edge_id,edge_position,description,metadata,discovered_at,name_known"),
-        supabase.from("travel_edges").select("id,edge_key,from_node_id,to_node_id,distance_miles,danger_level,metadata,discovered_at"),
-        supabase.from("party_position").select("node_id").limit(1),
-      ])
-      if (!alive) return
-      if (n.data) {
-        setNodes(n.data as NodeRow[])
-        const r = (n.data as NodeRow[]).find((x) => x.metadata?.map_model_url)
-        if (r) setModelUrl(r.metadata!.map_model_url)
-      }
-      if (e.data) setEdges(e.data as EdgeRow[])
-      if (p.data) setParty((p.data[0] as PartyRow) ?? null)
-    }
-    load()
-    const t = setInterval(load, POLL_MS)
-    const ch = supabase
-      .channel("underdark-map-3d")
-      .on("postgres_changes", { event: "*", schema: "public", table: "party_position" }, load)
-      .on("postgres_changes", { event: "*", schema: "public", table: "travel_nodes" }, load)
-      .subscribe()
-    return () => {
-      alive = false
-      clearInterval(t)
-      supabase.removeChannel(ch)
-    }
-  }, [dmKey, refresh])
-
-  async function moveParty(nodeKey: string) {
-    await fetch("/api/travel", {
-      method: "POST",
-      headers: { ...dmHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "move", node_key: nodeKey }),
-    }).catch(() => {})
-    setRefresh((r) => r + 1)
+  /** Ask to set out for `n`: the shared departure sheet (pace, navigator) opens, as on the 2D map. */
+  function askToGo(n: NodeRow) {
+    if (!canLead || !party || party.node_id === n.id || halt) return
+    setConfirmNode(n)
   }
 
   // ---------- geometry helpers ----------
-  const byId = new Map(nodes.map((n) => [n.id, n]))
   const placed = nodes.filter((n) => n.node_type === "location" && typeof n.metadata?.map_x === "number")
   const pos = (n: NodeRow) => ({ x: n.metadata!.map_x as number, y: n.metadata!.map_y as number })
 
@@ -209,38 +129,6 @@ export default function UnderdarkMap3D() {
     p.setAttribute("d", `M ${A.x} ${A.y} Q ${mx + (-dy / len) * mag * sgn} ${my + (dx / len) * mag * sgn} ${B.x} ${B.y}`)
     return p
   }
-  function routeBetween(fromId: string, toId: string): string[] {
-    const adj = new Map<string, string[]>()
-    const roads = dataRef.current.edges.filter((e) => e.metadata?.is_road && e.metadata?.mode !== "sail")
-    for (const e of (roads.length ? roads : dataRef.current.edges)) {
-      if (!adj.has(e.from_node_id)) adj.set(e.from_node_id, [])
-      if (!adj.has(e.to_node_id)) adj.set(e.to_node_id, [])
-      adj.get(e.from_node_id)!.push(e.to_node_id)
-      adj.get(e.to_node_id)!.push(e.from_node_id)
-    }
-    const prevOf = new Map<string, string>()
-    const seen = new Set([fromId])
-    const q = [fromId]
-    while (q.length) {
-      const cur = q.shift()!
-      if (cur === toId) break
-      for (const nx of adj.get(cur) ?? []) {
-        if (seen.has(nx)) continue
-        seen.add(nx)
-        prevOf.set(nx, cur)
-        q.push(nx)
-      }
-    }
-    if (!seen.has(toId)) return []   // no road leads there — we do NOT fly
-    const out = [toId]
-    while (out[0] !== fromId) {
-      const p = prevOf.get(out[0])
-      if (!p) break
-      out.unshift(p)
-    }
-    return out
-  }
-
   // ---------- scene ----------
   useEffect(() => {
     if (!modelUrl || !mountRef.current || three.current.renderer) return
@@ -377,10 +265,10 @@ export default function UnderdarkMap3D() {
       const n = dataRef.current.nodes.find((x) => x.id === id)
       if (!n) return
       setSelectedId(id)
-      if (dmKey && party?.node_id !== id) moveParty(n.node_key)
+      askToGo(n)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dmKey, party?.node_id])
+  }, [canLead, party?.node_id, halt])
 
   // ---------- markers ----------
   useEffect(() => {
@@ -456,7 +344,13 @@ export default function UnderdarkMap3D() {
 
     // Build the walk: every leg of the route, pausing at each waypoint stone.
     const route = routeBetween(from, party.node_id)
-    if (route.length < 2) return
+    if (route.length < 2) {
+      // no road (or no boat) between: the party is where the DM put them; no journey is drawn that does not exist
+      setArrivedAt(byId.get(party.node_id) ?? null)
+      return
+    }
+    const startNode = byId.get(from)
+    if (startNode) walkStarted(startNode.node_key)
     const wpByEdge = new Map<string, NodeRow[]>()
     for (const n of dataRef.current.nodes) {
       if (n.node_type === "waypoint" && n.edge_id) {
@@ -464,7 +358,7 @@ export default function UnderdarkMap3D() {
         wpByEdge.get(n.edge_id)!.push(n)
       }
     }
-    const pts: { x: number; z: number; pause: boolean }[] = []
+    const pts: { x: number; z: number; pause: boolean; node?: string }[] = []
     for (let i = 0; i < route.length - 1; i++) {
       const A = byId.get(route[i])
       const B = byId.get(route[i + 1])
@@ -495,7 +389,9 @@ export default function UnderdarkMap3D() {
           my = pos(A).y + (pos(B).y - pos(A).y) * u
         }
         const [wx, wz] = toWorld(mx, my)
-        pts.push({ x: wx, z: wz, pause: stops.some((sv) => Math.abs(sv - u) < 0.5 / SAMPLES) })
+        const legEnd = i === route.length - 2
+        // arriving AT a marker is a beat (reachNode below), as on the 2D map; waypoint stones are a pause
+        pts.push({ x: wx, z: wz, pause: stops.some((sv) => Math.abs(sv - u) < 0.5 / SAMPLES) || (k === SAMPLES && !legEnd), node: k === SAMPLES ? route[i + 1] : undefined })
       }
     }
     if (!pts.length) return
@@ -522,8 +418,15 @@ export default function UnderdarkMap3D() {
       t.partySprite.position.set(p.x, py, p.z)
       t.torch.position.set(p.x, py + 0.05, p.z)
       t.controls.target.lerp(new THREE.Vector3(p.x, py, p.z), 0.08)
-      i++
-      walkTimer.current = setTimeout(tick, p.pause ? stepMs * 6 : stepMs)
+      const advance = () => {
+        i++
+        walkTimer.current = setTimeout(tick, p.pause ? stepMs * 6 : stepMs)
+      }
+      const n = p.node ? byId.get(p.node) : null
+      if (!n) return advance()
+      // what waits at this marker is the shared march's to say: it rolls (leader/DM only), plays the beat, opens the
+      // cards, and resolves when the party may walk on, after the halt card if it stopped them
+      void reachNode(n).then(advance)
     }
     tick()
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -571,6 +474,7 @@ export default function UnderdarkMap3D() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inside])
 
+
   const sel = selectedId ? nodes.find((n) => n.id === selectedId) : null
   const partyHere = sel && party && sel.id === party.node_id
 
@@ -578,7 +482,7 @@ export default function UnderdarkMap3D() {
     <div className="bg-[#0b0714] text-[#e8e0f0] p-3 font-mono">
       <div className="flex items-center justify-between flex-wrap gap-2 pb-2">
         <h1 className="text-[#f5c34d] text-lg tracking-widest" style={{ textShadow: "0 0 12px #f5c34d55" }}>
-          {inside ? (inside.name ?? "UNKNOWN PLACE").toUpperCase() : "THE UNDERDARK — DIORAMA"}
+          {inside ? (inside.name ?? "UNKNOWN PLACE").toUpperCase() : "THE UNDERDARK"}
         </h1>
         <div className="flex items-center gap-3">
           {inside && (
@@ -590,15 +494,15 @@ export default function UnderdarkMap3D() {
             </button>
           )}
           <span className="text-xs text-[#9a8fb0]">
-            {dmKey ? "drag to orbit · wheel to zoom · click a ring to send the party" : "drag to orbit · wheel to zoom · click a ring"}
+            {canLead ? "drag to orbit · wheel to zoom · click a ring to set out" : "drag to orbit · wheel to zoom · click a ring"}
           </span>
         </div>
       </div>
-      <div
-        ref={mountRef}
-        className="rounded-lg overflow-hidden border-[3px] border-[#2b2040] bg-[#05030a] touch-none"
-        style={{ height: "calc(100vh - 190px)", minHeight: 320 }}
-      />
+      {/* the map and its cards: the cards are the 2D map's own (travel-cards.tsx), laid over the diorama */}
+      <div className="relative rounded-lg overflow-hidden border-[3px] border-[#2b2040] bg-[#05030a]" style={{ height: "calc(100vh - 230px)", minHeight: 320 }}>
+        <div ref={mountRef} className="absolute inset-0 touch-none" />
+        {!inside && <TravelCards t={travel} />}
+      </div>
       <div className="mt-2 rounded-lg border-2 border-[#3a2c56] bg-[#171024ee] p-3 min-h-[56px] text-sm">
         {status ? (
           <div className="text-[#9a8fb0]">{status}</div>
@@ -615,23 +519,24 @@ export default function UnderdarkMap3D() {
                 ENTER {(sel.name ?? "THIS PLACE").toUpperCase()}
               </button>
             )}
-            {dmKey && !partyHere && (
+            {canLead && !partyHere && !halt && (
               <button
-                onClick={() => moveParty(sel.node_key)}
+                onClick={() => askToGo(sel)}
                 className="text-xs px-3 py-2 rounded border-2 bg-[#f5c34d] border-[#f5c34d] text-[#120b1e] hover:brightness-110"
               >
-                SEND PARTY HERE
+                SET OUT FOR {(sel.name ?? "THERE").toUpperCase()}
               </button>
             )}
           </div>
         ) : (
           <div className="text-[#9a8fb0]">
-            {dmKey
-              ? "Malachar's eyes. Click any ring to send the party walking there."
-              : "Click a gold ring to inspect a location. The party's torch burns where they stand."}
+            {canLead
+              ? "Click a ring to choose where the party goes. The day's pace and the navigator are asked before the first step."
+              : "Click a gold ring to inspect a place. The party's torch burns where they stand; you see them walk when the leader sets out."}
           </div>
         )}
       </div>
+      <TravelPanels t={travel} />
     </div>
   )
 }

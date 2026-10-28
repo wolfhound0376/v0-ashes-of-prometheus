@@ -10,6 +10,7 @@ import { readSeated } from "@/lib/seats"
 import { situationForChat } from "@/lib/situation"
 import { storedText } from "@/lib/address"
 import { readPartySituation } from "@/lib/situation-store"
+import { situationForSpeaker, splitForSpeaker, splitNote, type HeroRecord } from "@/lib/split-party"
 import { dryRun, newDryRunLog } from "@/lib/dry-run"
 import { startCombatFlag, endCombatFlag } from "@/lib/combat-flag"
 import { hasPlayableStats } from "@/lib/bestiary-stats"
@@ -61,7 +62,7 @@ import {
   // §17 — training: the teaching path of earned proficiency.
   decideTraining, parseTrainingArgs, settleTraining, type TeacherRow,
   // PR 4 — levelling at camp, and the one XP table.
-  normaliseCampAction, levelUp, levelUpPatch, faceRng, hitDieFace, levelForXp, xpToNext, xpShares,
+  normaliseCampAction, levelUp, levelUpPatch, levelUpAllowedHere, faceRng, hitDieFace, levelForXp, xpToNext, xpShares,
   // §18 — the crafting roll.
   craftMenu, craftSpec, craftModifier, keptD20, craftMaterialsGp, payFromPurse, settleCraftRoll, toolKey, toolForCrafter,
   parseCraftOptions, settleTake10, CRAFT_TAKE10_ACTIONS, craftingLine,
@@ -1506,7 +1507,28 @@ ${combatantRows
   // a party that has walked out onto the road leaves the row behind. Best-effort: never holds up a turn.
   let situation: { note: string; where: string } | null = null
   try {
-    if (timeAdmin) situation = situationForChat(await readPartySituation(timeAdmin), currentLocation)
+    if (timeAdmin) {
+      const row = await readPartySituation(timeAdmin)
+      situation = situationForChat(row, currentLocation)
+      // SPLIT PARTY (lib/split-party.ts): when the party stands on more than one plate, the speaker's turn is told
+      // where THEY are (from the walk's shared record, walk_world.heroes), who is with them and who is elsewhere.
+      // While the party is together this changes nothing. Best-effort like the rest: a failure keeps the party's row.
+      if (row && playerCharacter?.id) {
+        const { data: w } = await timeAdmin.from("walk_world").select("heroes").eq("campaign_run_id", row.campaign_run_id).maybeSingle()
+        const heroes = (w?.heroes ?? null) as Record<string, HeroRecord> | null
+        const cids = Object.values(heroes ?? {}).map((h) => h?.cid).filter((c): c is string => !!c)
+        const names: Record<string, string> = {}
+        if (cids.length) {
+          const { data: chars } = await timeAdmin.from("characters").select("id, name").in("id", cids)
+          for (const c of chars ?? []) names[c.id as string] = String(c.name ?? "")
+        }
+        const view = splitForSpeaker(heroes, names, playerCharacter.id)
+        if (view) {
+          const mine = situationForChat(situationForSpeaker(row, view), currentLocation)
+          if (mine) situation = { note: `${mine.note}\n${splitNote(view, playerCharacter.name || "This hero")}`, where: mine.where }
+        }
+      }
+    }
   } catch (e) { console.error("[situation] skipped:", e) }
   // The stage follows the finer location when the map has one: out of the pen is loose in the outpost.
   const stageLocation = (situation?.where ?? currentLocation).toLowerCase()
@@ -4336,12 +4358,12 @@ Rules:
               .update({ rest_actions_remaining: d.remaining, updated_at: new Date().toISOString() }).eq("id", row.id)
             if (error) { console.error("[camp] spend:", error.message); continue }
             row.rest_actions_remaining = d.remaining
-          } else {
-            const node = await readPartyNode()
-            if (node.metadata?.allows_level_up !== true) {
-              console.log(`[camp] action: ${row.name} — level up is taken at camp, or at a place that allows it; this is neither.`)
-              continue
-            }
+          } else if (!levelUpAllowedHere("exploration", await readPartyNode())) {
+            // Sam, 2026-10-27: a level may be taken anywhere but a fight — camp and `allows_level_up` nodes are no
+            // longer the only places. The dashboard runs no fights, so from here the gate always opens; the walk
+            // (which does) keeps its own refusal mid-fight. Kept as a call so one function holds the ruling.
+            console.log(`[camp] action: ${row.name} — level up refused here.`)
+            continue
           }
           // ROLLED: this player's roll for this Hit Die is in the reply, and no
           // other dice action has claimed it. Settled from the table's face

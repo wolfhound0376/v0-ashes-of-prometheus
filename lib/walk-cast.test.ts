@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { castKind, castList, entryFor, healAmount, planCast, spendSlot } from "./walk-cast"
+import { castKind, castList, castableInChains, componentsOf, entryFor, healAmount, planCast, spendSlot } from "./walk-cast"
 
 // Gandalf's and Samson's sheets as read 2026-10-23
 const GANDALF = { slots: { "1": { max: 2, used: 0 } }, cantrips: ["Fire Bolt", "Mage Hand", "Ray of Frost"], prepared: ["Chromatic Orb", "Shield", "Magic Missile", "Thunderwave"] }
@@ -39,5 +39,20 @@ describe("casting outside a fight", () => {
     if (!plan.ok) throw new Error(plan.why)
     expect(healAmount(plan.name, plan.entry, 3, () => 0)).toBe(2 + 3)       // two 1s
     expect(healAmount(plan.name, plan.entry, 3, () => 0.999)).toBe(8 + 3)   // two 4s
+  })
+})
+
+describe("casting in chains (Sam, 2026-10-27: spoken-word spells only on a detail)", () => {
+  it("reads V/S/M from the spell data", () => {
+    expect(componentsOf("Vicious Mockery")).toEqual({ v: true, s: false, m: false })
+    expect(componentsOf("Toll the Dead")).toEqual({ v: true, s: true, m: false })
+    expect(componentsOf("Sleep")).toEqual({ v: true, s: true, m: true })
+  })
+  it("lets only voice-only spells through", () => {
+    expect(castableInChains(componentsOf("Vicious Mockery"))).toBe(true)
+    expect(castableInChains(componentsOf("Healing Word"))).toBe(true)
+    expect(castableInChains(componentsOf("Toll the Dead"))).toBe(false)
+    expect(castableInChains(componentsOf("Fire Bolt"))).toBe(false)
+    expect(castableInChains(componentsOf("Not A Real Spell"))).toBe(false)
   })
 })

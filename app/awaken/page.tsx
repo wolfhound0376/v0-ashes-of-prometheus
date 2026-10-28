@@ -154,7 +154,7 @@ export default function AwakenPage() {
           // An unreadable table lets them through rather than locking the family out on a network blip.
           if (table && !table.error && !(table.state?.status === "live" && table.mine)) { router.replace("/table"); return }
           if (fortune?.rolled) { setStep("act"); return }   // a saved game: the Act I card, then the pen
-          setSeat({ id, token, name: claim?.character?.name ?? null, film: typeof heroFilm?.film === "string" ? heroFilm.film : null })
+          setSeat({ id, token, name: claim?.character?.name ?? null, film: typeof heroFilm?.film === "string" && heroFilm?.seen !== true ? heroFilm.film : null })
         })
         .catch(() => router.replace("/join"))
     } catch { router.replace("/join") }
@@ -271,12 +271,14 @@ export default function AwakenPage() {
     const show = cinematicsOn()
 
     const run = async () => {
-      if (show) {
-        setSkipShown(true)
-        // 0 — the hero's own film, when they have one. Its sound needs a gesture on a cold page:
-        //     if the browser refuses, ask for one tap, then play it.
+      // 0 — the hero's own film, when they have one and have not seen it this run (lib/hero-film.ts). It
+      //     plays whatever the Cinematics switch says (Sam, 2026-10-27: "make sure this plays whenever
+      //     lynkes plays for the first time or restarts campaign"). Its sound needs a gesture on a cold
+      //     page: if the browser refuses, ask for one tap, then play it.
+      {
         const fv = filmVid.current
         if (seat.film && fv) {
+          setSkipShown(true)
           setStep("film")
           fv.src = seat.film
           fv.currentTime = 0
@@ -297,10 +299,21 @@ export default function AwakenPage() {
           }
           fv.pause(); setFilmOn(false)
           guard()
+          // Watched or skipped, it counts as seen for this run; a restart clears the flag.
+          void fetch("/api/hero-film", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ characterId: seat.id, claimToken: seat.token }),
+          }).catch(() => { /* worst case the gate plays it once more */ })
           // Skip on the film skips the film only: the dream and the waker still play.
-          if (skipped.current) { rearmSkip(); setSkipShown(true) }
+          if (skipped.current) rearmSkip()
+          setSkipShown(show)
           await wait(900); guard()
         }
+      }
+
+      if (show) {
+        setSkipShown(true)
 
         // 1 — black. The character's voice. (A page loaded cold has no gesture yet: if the browser
         //     refuses the first sound, ask for one tap and start again from the top.)

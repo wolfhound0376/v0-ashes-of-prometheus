@@ -34,6 +34,7 @@ function apply(patch, by) {
   if (patch.heroes) for (const [k, v] of Object.entries(patch.heroes)) if ((v.seq || 0) > ((w.heroes[k] && w.heroes[k].seq) ?? -1)) w.heroes[k] = v
   if (patch.seats) w.seats = { ...w.seats, ...patch.seats }
   if ("plate" in patch) w.plate = patch.plate
+  if (process.env.OW_DEBUG && ("plate" in patch || patch.travel)) console.log("[server]", by, "plate", patch.plate, "travel", JSON.stringify(patch.travel || null))
   if (patch.travel) w.travel = patch.travel
   const rest = Object.keys(patch).filter((k) => k !== "seats")
   if (rest.length) { w.version++; w.updated_by = by; log.push({ by, keys: rest, v: w.version }) }
@@ -160,6 +161,68 @@ check("and recovers on its own", (await B.evaluate("OW.status")) === "in-step", 
   check("a late joiner lands on the same plate with the heroes where they stand", fc && fc.plate === fa.plate && Math.hypot(fc.x - fa.x, fc.y - fa.y) < 40, `A ${JSON.stringify(fa)} DM ${JSON.stringify(fc)}`)
   check("the DM sees every seat's light", (await C.evaluate("Object.keys(OW.seats).length")) >= 3, await C.evaluate("Object.keys(OW.seats).join()"))
   await C.evaluate(() => { $("owLight").click() }); await wait(300)
+
+  // 10. SPLIT PARTY (Sam, 2026-10-27: "lets make it so we can split across plates if needed")
+  const pickExit = () => { const z = node.zones.find((z) => z.to && z.to.length === 1 && SPEC[z.to[0]] && !z.climb && z.kind !== "water" && z.kind !== "leave"); return z ? { i: node.zones.indexOf(z), to: z.to[0] } : null }
+  const from = await A.evaluate("cur"), ex = await A.evaluate(pickExit)
+  if (!ex) check("an exit to split through", false, `none on plate ${from}`)
+  else {
+    // Fifi slips through alone ("Just me")
+    await A.evaluate((ex) => { if (mode !== "explore") mode = "explore"; leader = party.find((p) => p.id === "freia"); travel(ex.to, node.zones[ex.i], false, null, true) }, ex)
+    await wait(9000)
+    check("Just me: Fifi's screen goes to the new plate", String(await A.evaluate("cur")) === String(ex.to), `A ${await A.evaluate("cur")} want ${ex.to}`)
+    check("Just me: Gandalf's screen stays where Gandalf is", String(await B.evaluate("cur")) === String(from), `B ${await B.evaluate("cur")} want ${from}`)
+    check("Just me: the party's plate does not move", String(world.plate) === String(from), `world ${world.plate}`)
+    check("Just me: the DM stays with the party", String(await C.evaluate("cur")) === String(from), `DM ${await C.evaluate("cur")}`)
+    check("each screen draws only the heroes on its plate", (await A.evaluate("party.map(p=>p.id).join()")) === "freia" && (await B.evaluate("party.map(p=>p.id).join()")) === "gandalf", `A ${await A.evaluate("party.map(p=>p.id).join()")} B ${await B.evaluate("party.map(p=>p.id).join()")}`)
+    check("Gandalf's screen knows where Fifi went", await B.evaluate((to) => heroElsewhere("freia") && String(heroAt.freia.plate) === String(to), ex.to), JSON.stringify(await B.evaluate("heroAt.freia")))
+    await wait(8000)
+    check("split, nobody is snapped back", String(await A.evaluate("cur")) === String(ex.to) && String(await B.evaluate("cur")) === String(from), `A ${await A.evaluate("cur")} B ${await B.evaluate("cur")}`)
+    check("split, both lights stay In step", (await A.evaluate("OW.status")) === "in-step" && (await B.evaluate("OW.status")) === "in-step", `${await A.evaluate("OW.status")} / ${await B.evaluate("OW.status")}`)
+    // Gandalf walks after her: the party is back together, and the party's plate moves with him
+    await B.evaluate((ex) => { if (mode === "talk") closeTalk(false); mode = "explore"; travel(ex.to, node.zones[ex.i]) }, ex)
+    await wait(9000)
+    check("rejoined: both screens on the same plate", String(await A.evaluate("cur")) === String(ex.to) && String(await B.evaluate("cur")) === String(ex.to), `A ${await A.evaluate("cur")} B ${await B.evaluate("cur")}`)
+    check("rejoined: each screen draws both heroes", (await A.evaluate("party.map(p=>p.id).sort().join()")) === "freia,gandalf" && (await B.evaluate("party.map(p=>p.id).sort().join()")) === "freia,gandalf", `A ${await A.evaluate("party.map(p=>p.id).join()")} B ${await B.evaluate("party.map(p=>p.id).join()")}`)
+    check("rejoined: the party's plate and the DM follow", String(world.plate) === String(ex.to) && String(await C.evaluate("cur")) === String(ex.to), `world ${world.plate} DM ${await C.evaluate("cur")}`)
+    // 11. SPLIT PARTY, FIGHTS (part 2): a fight on one plate is that plate's alone; a hero who walks in joins it
+    const ex2 = await B.evaluate(pickExit)
+    if (!ex2) check("an exit to split through (fights)", false, `none on plate ${ex.to}`)
+    else {
+      await B.evaluate((ex) => { if (mode === "talk") closeTalk(false); mode = "explore"; leader = party.find((p) => p.id === "gandalf"); travel(ex.to, node.zones[ex.i], false, null, true) }, ex2)
+      await wait(9000)
+      const foe = await A.evaluate(() => { if (mode === "talk") closeTalk(false); if (mode !== "explore") mode = "explore"; const id = Object.keys(SPR).find((k) => /drow-guard/.test(k)) || Object.keys(SPR).find((k) => !PARTY.includes(k)); startCombat([id], "Steel comes out (test)."); return id })
+      await wait(5000)
+      check("a fight on Fifi's plate: Fifi's screen is fighting", (await A.evaluate("mode")) === "combat", `mode ${await A.evaluate("mode")} foe ${foe}`)
+      check("a fight on another plate leaves Gandalf's light In step", (await B.evaluate("OW.status")) === "in-step", `${await B.evaluate("OW.status")} (B on ${await B.evaluate("cur")}, fight on ${await A.evaluate("cur")})`)
+      // Gandalf walks back onto Fifi's plate mid-fight
+      await B.evaluate((ex) => { if (mode === "talk") closeTalk(false); mode = "explore"; const z = node.zones.find((z) => z.to && z.to.length === 1 && String(z.to[0]) === String(ex.back)); if (z) travel(z.to[0], z) }, { back: ex.to })
+      await wait(10000)
+      check("Gandalf walks back in: his screen is on the fighting plate", String(await B.evaluate("cur")) === String(ex.to), `B ${await B.evaluate("cur")}`)
+      const joined = await A.evaluate(() => { const g = cbt && cbt.order.find((a) => a.id === "gandalf"); return g ? { round: cbt.round, join: g.c.joinRound, init: g.c.init } : null })
+      check("he joins the fight on Fifi's screen, from the next round", !!joined && joined.join >= 1, JSON.stringify(joined))
+      check("and his light turns amber: a fight is on his plate", (await B.evaluate("OW.status")) === "fight-unshared", await B.evaluate("OW.status"))
+      check("his screen tells him a fight is underway here", await B.evaluate(() => /A fight is underway here/.test(document.body.innerText)), "")
+      // 12. SPLIT PARTY, THE DM'S VIEW (part 3): the strip shows who is where; the DM can watch either group
+      await B.evaluate((ex) => { if (mode === "talk") closeTalk(false); mode = "explore"; leader = party.find((p) => p.id === "gandalf"); travel(ex.to, node.zones[ex.i], false, null, true) }, ex2)
+      await wait(9000)
+      const strip = async (pg) => pg.evaluate(() => { const el = $("splitStrip"); return el && !el.hidden ? el.innerText.replace(/\s+/g, " ").trim() : "" })
+      const sB = await strip(B), sC = await strip(C)
+      if (process.env.SHOT) { await C.screenshot({ path: process.env.SHOT + "-dm.png" }); await B.screenshot({ path: process.env.SHOT + "-gandalf.png" }) }
+      check("split: every screen shows the who-is-where strip", /Party split/i.test(sB) && /Party split/i.test(sC), `B "${sB}" DM "${sC}"`)
+      check("the strip marks the plate with a fight", /fighting/.test(sC), sC)
+      const partyPlate = String(world.plate)
+      await C.evaluate((pl) => dmViewPlate(pl), String(ex2.to))
+      await wait(8000)
+      check("the DM picks Gandalf's group: the DM's screen goes there", String(await C.evaluate("cur")) === String(ex2.to), `DM ${await C.evaluate("cur")} want ${ex2.to}`)
+      check("and draws the heroes there, not the others", (await C.evaluate("party.map(p=>p.id).join()")) === "gandalf", await C.evaluate("party.map(p=>p.id).join()"))
+      check("watching does not move the party's plate", String(world.plate) === partyPlate, `world ${world.plate} was ${partyPlate}`)
+      check("the DM's screen is not snapped back while it watches", String(await C.evaluate("cur")) === String(ex2.to) && (await C.evaluate("OW.status")) === "in-step", `DM ${await C.evaluate("cur")} ${await C.evaluate("OW.status")}`)
+      await C.evaluate(() => dmViewPlate(null))
+      await wait(7000)
+      check("Follow the party brings the DM back", String(await C.evaluate("cur")) === partyPlate, `DM ${await C.evaluate("cur")} party ${partyPlate}`)
+    }
+  }
   }
 console.log(`\n${results.filter((r) => r.ok).length}/${results.length} passed; world version ${world.version}; writes ${log.length}`)
 await browser.close(); server.close()

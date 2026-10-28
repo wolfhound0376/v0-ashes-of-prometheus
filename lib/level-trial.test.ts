@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import spells from "./data/spells.json"
-import { adjustFavor, discoverSpells, trialStatus, type SpellRow } from "./level-trial"
+import { adjustFavor, discoverSpells, trialGates, trialStatus, TRIAL_GATE_FROM_LEVEL, type SpellRow } from "./level-trial"
 
 const seq = (...xs: number[]) => { let i = 0; return () => xs[i++ % xs.length] }
 
@@ -58,4 +58,24 @@ it("favor moves by the DM's hand and says why", () => {
   const r = adjustFavor({ id: "x", name: "Xan", class: "Warlock", favor: 0, patron: "the Fiend" }, -1, "refused the bargain")
   expect(r).toMatchObject({ favor: -1, cursePending: true })
   expect(r.note).toMatch(/the Fiend falls to -1 — refused the bargain/)
+})
+
+describe("trialGates", () => {
+  // Sam, 2026-10-27: "No gated level until we get past level 3 for now."
+  it("levels 2 and 3 are XP only, for every class", () => {
+    expect(TRIAL_GATE_FROM_LEVEL).toBe(4)
+    for (const cls of ["Sorcerer", "wizard", "Cleric", "warlock", "rogue", "fighter"]) {
+      expect(trialGates(cls, 2)).toBe(false)
+      expect(trialGates(cls, 3)).toBe(false)
+    }
+  })
+  it("from level 4 the classes with a trial wait on it; the rest do not", () => {
+    expect(trialGates("Sorcerer", 4)).toBe(true)
+    expect(trialGates("wizard", 5)).toBe(true)
+    expect(trialGates("Cleric", 4)).toBe(true)
+    expect(trialGates("rogue", 4)).toBe(false)
+    expect(trialGates("Fighter", 9)).toBe(false)
+    expect(trialGates("", 4)).toBe(false)
+    expect(trialGates(null, 4)).toBe(false)
+  })
 })

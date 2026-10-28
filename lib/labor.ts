@@ -81,6 +81,31 @@ export function shiftAt(minutesOfDay: number): Shift {
   return m >= SHIFT_STARTS[1] ? 2 : 1
 }
 
+/**
+ * [SAM] 2026-10-27: "the work detail should not start for at least 3 cycles (shift changes)". The party is not put to
+ * work until at least this many shift changes have passed since it reached the pen (the run's start on the game clock).
+ * The other prisoners keep working their shifts meanwhile.
+ */
+export const SHIFTS_BEFORE_FIRST_DETAIL = 3
+
+export interface ClockTime { day: number; minutes: number }
+
+/**
+ * The earliest shift the party may work: the one that begins at the `n`th shift change after `from`. A start exactly on
+ * a shift change does not count that change (the party has to sit through `n` more).
+ */
+export function firstWorkShift(from: ClockTime, n = SHIFTS_BEFORE_FIRST_DETAIL): { day: number; shift: Shift } {
+  const t = (Math.max(1, Math.floor(from.day)) - 1) * 1440 + Math.floor(from.minutes)
+  let day = Math.floor(t / 1440) + 1, seen = 0
+  for (;;) {
+    for (let i = 0; i < SHIFT_STARTS.length; i++) {
+      const at = (day - 1) * 1440 + SHIFT_STARTS[i]
+      if (at > t && ++seen >= Math.max(1, n)) return { day, shift: (i + 1) as Shift }
+    }
+    day++
+  }
+}
+
 // ─── Who goes ─────────────────────────────────────────────────────────────────────────────────────────────────
 
 export type Rng = () => number   // [0, 1)
@@ -224,6 +249,8 @@ export interface DayInput {
   jorlanOnDuty?: boolean
   /** The shift running now. A day planned part-way through puts the party's detail in this shift or a later one. */
   fromShift?: Shift
+  /** The first shift the party may work (firstWorkShift). Before it, the day has no party detail at all. */
+  notBefore?: { day: number; shift: Shift }
 }
 
 /**
@@ -231,7 +258,9 @@ export interface DayInput {
  * split across the other two shifts, two or three to a task, friends kept apart. Returns the details in shift order.
  */
 export function planDay(input: DayInput, rng: Rng): PlannedDetail[] {
-  const first = input.fromShift ?? 1
+  const nb = input.notBefore
+  if (nb && input.day < nb.day) return planNpcsOnly(input, rng)        // too soon after reaching the pen: only the NPCs work
+  const first = (nb && input.day === nb.day ? Math.max(input.fromShift ?? 1, nb.shift) : input.fromShift ?? 1) as Shift
   const partyShift = (first + Math.floor(rng() * (4 - first))) as Shift
   const companions = pickCompanions(input.npcs, npcCountFor(input.pcs.length, rng), rng, {
     seenFriends: input.seenFriends, timesWithParty: input.timesWithParty,
@@ -257,6 +286,24 @@ export function planDay(input: DayInput, rng: Rng): PlannedDetail[] {
     }
   }
   return out.sort((a, b) => a.shift - b.shift)
+}
+
+/** A day with no party detail: every prisoner NPC is dealt across all three shifts, crews of 2–3, friends kept apart. */
+function planNpcsOnly(input: DayInput, rng: Rng): PlannedDetail[] {
+  const base = { platesReady: input.platesReady, bookOnly: input.bookOnly, day: input.day }
+  const rest = shuffle([...input.npcs], rng), shifts: Shift[] = [1, 2, 3]
+  const byShift: Record<number, CrewMember[]> = { 1: [], 2: [], 3: [] }
+  rest.forEach((n, i) => byShift[shifts[i % 3]].push(n))
+  const out: PlannedDetail[] = []
+  for (const s of shifts) {
+    const used: TaskKey[] = []
+    for (const crew of crews(byShift[s], input.seenFriends ?? [])) {
+      const t = pickTask(rng, { ...base, exclude: used })
+      used.push(t.key)
+      out.push(detail(input.day, s, t, crew, false, escortFor()))
+    }
+  }
+  return out
 }
 
 function detail(day: number, shift: Shift, t: LaborTask, crew: CrewMember[], party: boolean, escort: Observer[]): PlannedDetail {

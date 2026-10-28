@@ -62,6 +62,22 @@ describe("walkSheetFromRow", () => {
     expect(walkSheetFromRow({ ...row, sheet_skill_proficiencies: { thieves_tools: "expertise" } }).skills.thievesTools).toBe(7)
   })
 
+  it("carries the loot card's knowledge skills and tools (Fifi: Investigation, Alchemist's Supplies)", () => {
+    const row = { ...FIFI, sheet_skill_proficiencies: { ...FIFI.sheet_skill_proficiencies, investigation: "proficient", arcana: "expertise" },
+      sheet_proficiencies: { tools: ["Thieves' Tools", "Alchemist's Supplies", "Dice Set"] } }
+    const s = walkSheetFromRow(row)
+    expect(s.lore.investigation).toEqual({ mod: 3, level: "proficient" })
+    expect(s.lore.arcana).toEqual({ mod: 5, level: "expertise" })
+    expect(s.lore.religion).toEqual({ mod: 1, level: "" })
+    expect(s.tools).toEqual({ alchemist: 3, poisoner: null, herbalism: null })
+  })
+
+  it("keeps the bare ability modifiers apart from the saves (Fifi: Dex save +5, Dex modifier +3)", () => {
+    const s = walkSheetFromRow({ ...FIFI, sheet_save_proficiencies: ["dex", "int"] })
+    expect(s.saves.dex).toBe(5)
+    expect(s.mods).toEqual({ str: -1, dex: 3, con: 0, int: 1, wis: 1, cha: 1 })
+  })
+
   it("gives a non-caster no magic", () => {
     expect(walkSheetFromRow(FIFI).magic).toBeNull()
   })
@@ -70,5 +86,16 @@ describe("walkSheetFromRow", () => {
     const s = walkSheetFromRow({ name: "Nobody" })
     expect(s).toMatchObject({ hp: 1, ac: 10, init: 0, speed: 30, strScore: 10, magic: null })
     expect(s.attacks[0]).toEqual({ name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5 })
+  })
+
+  // the Emberforged inventory (2026-10-27) reads current hit points and XP off the row; a row without them says so
+  // with null rather than a guessed number, so the panel can show a quiet bar instead of a wrong one
+  it("carries hp_current and xp when the row has them, null when it does not", () => {
+    expect(walkSheetFromRow({ ...KENTA, hp_current: 5, xp: 150 })).toMatchObject({ hp: 8, hpNow: 5, xp: 150 })
+    expect(walkSheetFromRow({ ...KENTA, hp_current: "3", xp: "900" })).toMatchObject({ hpNow: 3, xp: 900 })
+    expect(walkSheetFromRow({ ...KENTA, hp_current: 0, xp: 0 })).toMatchObject({ hpNow: 0, xp: 0 })
+    expect(walkSheetFromRow({ ...KENTA, hp_current: -2, xp: -5 })).toMatchObject({ hpNow: 0, xp: 0 })
+    expect(walkSheetFromRow(KENTA)).toMatchObject({ hpNow: null, xp: null })
+    expect(walkSheetFromRow({ ...KENTA, hp_current: null, xp: "" })).toMatchObject({ hpNow: null, xp: null })
   })
 })

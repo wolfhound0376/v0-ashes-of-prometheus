@@ -10,6 +10,7 @@ Inputs, all in this folder:
                  /*__MARTIAL__*/ is lib/martial-arts-rules.mjs pasted in whole (see martial_rules): which hit spark a strike plays
                  /*__LABOR__*/ is lib/labor-walk.mjs pasted in whole (see labor_rules): Hard Labor's routes, steps and lines
                  /*__GATE_WATCH__*/ is lib/gate-watch.mjs pasted in whole (see gate_rules): the pen gate warning's clock
+                 /*__ITEM_LORE__*/ is lib/item-lore.mjs pasted in whole (see item_lore_rules): the loot card's checks
   spec.json      per-plate walk floors, obstacles, exits, hazards, NPC spots, painted masks (built by spec.py from spec.py + masks.json); _handoffs = the cavern
                  plates a 'leave' exit hands the party to, _layout = Sam's editor board (not used by the page)
   story.json     who stands where, scripted crossings, chains; bark lines are placeholders
@@ -217,6 +218,13 @@ def gate_rules(root):
     return re.sub(r'^export ', '', src, flags=re.M)
 
 
+def item_lore_rules(root):
+    """lib/item-lore.mjs (the loot card's checks: what can be learned about an item and how, Sam 2026-10-27), pasted
+    whole minus `export`, like rage_rules. The map and lib/item-lore.test.ts read the SAME rules."""
+    src = open(os.path.join(root, 'lib', 'item-lore.mjs'), encoding='utf-8').read()
+    return re.sub(r'^export ', '', src, flags=re.M)
+
+
 def build_kit_tables(root):
     src = open(os.path.join(root, KIT_TS), encoding="utf-8").read()
     types = _ts_to_obj(_ts_block(src, "const TYPES"))
@@ -344,7 +352,7 @@ for k, n in spec.items():
 fx = open(os.path.join(HERE, 'fx.json')).read()
 t = open(os.path.join(HERE, 'template.html')).read()
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__TRAITS__*/', traits_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
-      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT))
+      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))
@@ -355,3 +363,8 @@ t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', ra
 out = os.path.join(ROOT, 'public', 'velkynvelve-walk'); os.makedirs(out, exist_ok=True)
 open(os.path.join(out, 'index.html'), 'w', encoding='utf-8').write(t)
 print('wrote', os.path.join(out, 'index.html'), len(t), 'bytes')
+# The plates' names for the server (lib/walk-plates.json): Malachar reads which plate each hero stands on from the
+# shared world (walk_world.heroes), and needs the plate's slug and name to say where that is (SPLIT PARTY, 2026-10-27).
+plates = {str(k): {'slug': v.get('slug'), 'name': v.get('name')} for k, v in spec.items() if isinstance(v, dict) and v.get('slug')}
+open(os.path.join(ROOT, 'lib', 'walk-plates.json'), 'w', encoding='utf-8').write(json.dumps(plates, indent=1, ensure_ascii=False) + '\n')
+print('wrote lib/walk-plates.json', len(plates), 'plates')

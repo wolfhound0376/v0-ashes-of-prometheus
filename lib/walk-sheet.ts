@@ -36,19 +36,32 @@ export type WalkSheet = {
   level: number
   race: string
   hp: number
+  /** hp_current when the row carries one, else null: the inventory's HP chip shows it over the max. */
+  hpNow: number | null
+  /** The row's XP (what /api/walk-xp pays), null when the row has none: the inventory's level panel reads it. */
+  xp: number | null
   ac: number
   init: number
   speed: number
   strScore: number
+  /** the ability modifiers themselves — NOT the saves, which carry class save proficiency. Attacks, checks and DCs read these. */
+  mods: { str: number; dex: number; con: number; int: number; wis: number; cha: number }
   saves: { str: number; dex: number; con: number; int: number; wis: number; cha: number }
   skills: { sleightOfHand: number; medicine: number; stealth: number; athletics: number; perception: number; investigation: number; thievesTools: number }
+  /** the knowledge skills the loot card's checks roll (lib/item-lore.mjs): the bonus and the row's proficiency word */
+  lore: Record<LoreSkill, { mod: number; level: "" | "proficient" | "expertise" }>
+  /** the tools the loot card's checks roll: Int + proficiency when the row lists the tool, null when it does not */
+  tools: Record<LoreTool, number | null>
   attacks: WalkAttack[]
   magic: { dc: number; hit: number; mod: number; slots: Record<string, number>; cantrips: string[]; prepared: string[] } | null
 }
 
+export type LoreSkill = "investigation" | "arcana" | "religion" | "nature" | "history"
+export type LoreTool = "alchemist" | "poisoner" | "herbalism"
+
 /** The columns walkSheetFromRow reads. Select exactly these. */
 export const WALK_SHEET_COLUMNS =
-  "id, name, class, level, hp_max, ac, initiative, speed, proficiency_bonus, " +
+  "id, name, class, level, hp_max, hp_current, xp, ac, initiative, speed, proficiency_bonus, " +
   "str_score, str_modifier, dex_modifier, con_modifier, int_modifier, wis_modifier, cha_modifier, " +
   "sheet_species, sheet_skill_proficiencies, sheet_save_proficiencies, sheet_proficiencies, sheet_attacks, sheet_spellcasting"
 
@@ -92,6 +105,27 @@ export function saves(row: Row, m: Record<Abil, number>, prof: number): WalkShee
   const listed = new Set(strList(row.sheet_save_proficiencies).map((x) => x.trim().toLowerCase().slice(0, 3)))
   const out = {} as WalkSheet["saves"]
   for (const a of ABILS) out[a] = m[a] + (listed.has(a) ? prof : 0)
+  return out
+}
+
+/** A skill's bonus with the proficiency word it came from ("" when none). */
+export function skillEntry(row: Row, label: string, mod: number, prof: number): { mod: number; level: "" | "proficient" | "expertise" } {
+  const b = skill(row, label, mod, prof)
+  return { mod: b, level: b === mod + 2 * prof && prof > 0 ? "expertise" : b === mod + prof && prof > 0 ? "proficient" : "" }
+}
+
+const LORE_TOOL_NAMES: Record<LoreTool, string> = { alchemist: "alchemistssupplies", poisoner: "poisonerskit", herbalism: "herbalismkit" }
+
+/**
+ * The loot card's tools (lib/item-lore.mjs). Intelligence plus proficiency when sheet_proficiencies.tools lists the
+ * tool, else null: a tool check is not offered to someone without the tool. Intelligence for working out what a
+ * substance is (Xanathar's tool notes): proposed by Claude, approved by Sam 2026-10-27.
+ */
+export function loreTools(row: Row, int: number, prof: number): Record<LoreTool, number | null> {
+  const p = (row.sheet_proficiencies && typeof row.sheet_proficiencies === "object" ? row.sheet_proficiencies : {}) as Record<string, unknown>
+  const have = new Set(strList(p.tools).map((t) => t.toLowerCase().replace(/[^a-z]/g, "")))
+  const out = {} as Record<LoreTool, number | null>
+  for (const k of Object.keys(LORE_TOOL_NAMES) as LoreTool[]) out[k] = have.has(LORE_TOOL_NAMES[k]) ? int + prof : null
   return out
 }
 
@@ -149,10 +183,13 @@ export function walkSheetFromRow(row: Row): WalkSheet {
     level: Math.max(1, num(row.level, 1)),
     race: str(row.sheet_species).toLowerCase(),
     hp: Math.max(1, num(row.hp_max, 1)),
+    hpNow: Number.isFinite(num(row.hp_current, NaN)) ? Math.max(0, num(row.hp_current)) : null,
+    xp: Number.isFinite(num(row.xp, NaN)) ? Math.max(0, num(row.xp)) : null,
     ac: num(row.ac, 10),
     init: num(row.initiative, m.dex),
     speed: speedOf(row.speed),
     strScore: num(row.str_score, 10),
+    mods: { ...m },
     saves: saves(row, m, prof),
     skills: {
       sleightOfHand: skill(row, "Sleight of Hand", m.dex, prof),
@@ -163,6 +200,14 @@ export function walkSheetFromRow(row: Row): WalkSheet {
       investigation: skill(row, "Investigation", m.int, prof),
       thievesTools: thievesTools(row, m.dex, prof),
     },
+    lore: {
+      investigation: skillEntry(row, "Investigation", m.int, prof),
+      arcana: skillEntry(row, "Arcana", m.int, prof),
+      religion: skillEntry(row, "Religion", m.int, prof),
+      nature: skillEntry(row, "Nature", m.int, prof),
+      history: skillEntry(row, "History", m.int, prof),
+    },
+    tools: loreTools(row, m.int, prof),
     attacks: [unarmed(row, m.str, prof)],
     magic: magicOf(row),
   }
