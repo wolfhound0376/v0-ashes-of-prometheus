@@ -4629,7 +4629,7 @@ function renderExploreBar(){
 //               (BG3-style, Sam 2026-10-24: "NPC vision areas highlighted ... characters inside roll Stealth").
 //               Walking into a view is tested against that watcher's passive Perception. With Follow on, it is a
 //               group check (SRD: the group succeeds if at least half succeed).
-//   Search here Wisdom (Perception) for the plate around the hero.      Listen  Perception at the nearest way out.
+//   Search      Wisdom (Perception) for the plate around the hero.      Listen  Perception at the nearest way out.
 //   Look closer Intelligence (Investigation) on the thing in reach.     Help    the next hero's check has advantage.
 //   Hero        Pray (cleric: silently or aloud — Sam 2026-10-01, a prayer is private unless spoken), Inspire (bard:
 //               Bardic Inspiration out of a fight), Scout ahead (rogue: sneak alone, the rest wait).
@@ -4666,7 +4666,7 @@ let sneak = null, helpNext = null, followOn = true, moreOpen = false;   // Follo
 // Help · Wait on the bar; Inventory, Short rest, Tell Malachar and Next hero fold behind More. Situational options
 // (a pile at your feet, a foe, a way out to listen at) still cut in near the front, since they are why you stopped.
 const BUTTON_PRI = [[/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
-  [/^Search here/, 4], [/^(Sneak|Stop sneaking|Scout)/, 5], [/^Pick .*pocket/, 5], [/^Cast/, 6], [/^Help/, 7], [/^(Follow|Wait)/, 8], [/^My company/, 8],
+  [/^Search$/, 4], [/^(Sneak|Stop sneaking|Scout)/, 5], [/^Pick .*pocket/, 5], [/^Cast/, 6], [/^Help/, 7], [/^(Follow|Wait)/, 8], [/^My company/, 8],
   [/^(Pray|Inspire)/, 9], [/^Quick drink/, 10], [/^Inventory/, 11], [/^Short rest/, 12], [/^Tell Malachar/, 13], [/^Next hero/, 14], [/^Talk$/, 30]];
 function priOf(b){ const t = (b.querySelector("span") || b).textContent; const hit = BUTTON_PRI.find(([re]) => re.test(t)); return (hit ? hit[1] : 15) + (b.disabled ? 20 : 0); }
 // Sam, 2026-10-26: "sneaking up should be and being small should have an advantage as well as line of sight." A Small
@@ -4699,7 +4699,7 @@ function exploreExtras(m, o, add, who){
   if (sneak) x(sneak.scout ? "Stop scouting" : "Stop sneaking", "◐", ART("sneak", "hide"), `Stealth ${sneak.line} · walk out of their sight`, () => endSneak("You stop moving quietly."), "on");
   else x("Sneak", "◐", ART("sneak", "hide"), `Stealth ${sgn(heroMod(L, "stealth", "dex"))} vs their passive Perception`, () => startSneak(false));
   if (o.mark) x(`Pick ${fname(o.mark)}'s pocket`, "✋", ART("pickpocket", "search"), `Sleight of Hand ${sgn(heroMod(L, "sleightOfHand", "dex"))} vs their passive Perception`, () => openPickpocket(o.mark));
-  x("Search here", "⌕", ART("search-here", "search"), `Perception ${sgn(heroMod(L, "perception", "wis"))} · the DM says what turns up`, () => searchHere());
+  x("Search", "⌕", ART("search-here", "search"), `Perception ${sgn(heroMod(L, "perception", "wis"))} · the DM says what turns up`, () => searchHere());
   if (exNear) x(`Listen at ${exitName(exNear)}`, "◖", ART("listen"), `Perception ${sgn(heroMod(L, "perception", "wis"))} · what is beyond`, () => listenAt(exNear));
   if (look) x(`Look closer at ${look}`, "◎", ART("look-closer"), `Investigation ${sgn(heroMod(L, "investigation", "int"))}`, () => GATE_LOOK_RE.test(look) ? openGateLook(look) : lookCloser(look));
   if (party.length > 1) x(helpNext && helpNext.by === L.id ? "Helping" : "Help", "✋", ART("help"), helpNext && helpNext.by === L.id ? "the next friend's check has advantage" : "the next friend's check gets advantage", helpNext && helpNext.by === L.id ? null : () => giveHelp());
