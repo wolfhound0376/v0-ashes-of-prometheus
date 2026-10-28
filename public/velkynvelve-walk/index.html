@@ -7817,17 +7817,19 @@ function jumpSquares(a){
   const key = `${a.id}|${Math.round(a.x)}|${Math.round(a.y)}|${a.c.move}|${[...a.c.conds].join()}`;
   if (jumpSq && jumpSq.key === key) return jumpSq.cells;
   // THE THREE COLOURS (Sam, 2026-10-28: "small green circles, with red circles that are within reach but illegal.
-  // Yellow circles require a skill check"). Every ground square within reach — 10 ft of run-up plus the Strength score,
-  // the most anyone can jump — is marked: green, a legal landing with no roll; yellow, legal but a roll first (the
-  // vault); red, within reach but not legal from here (someone is there, the run-up is blocked, no movement left, the
-  // line is not ground). A square that is not ground at all gets no mark.
-  const cell = 5 * ftPx(a), reach = 10 + (a.c.sheet.strScore || 0), n = Math.ceil(reach / 5), cells = [];
+  // Yellow circles require a skill check" — then "circle only show up on legal spaces based on strength and movement").
+  // A square gets a mark only when Strength and movement can carry the jumper there: within 10 ft of run-up plus the
+  // score, and within the movement left; a square the jump itself cannot reach gets nothing. Among those: green, a
+  // legal landing with no roll; yellow, legal but a roll first (the vault); red, in reach but barred by something
+  // else — someone is standing there, a foe blocks the run-up, no straight line of ground. Not ground at all: no mark.
+  const cell = 5 * ftPx(a), reach = Math.min(a.c.move, 10 + (a.c.sheet.strScore || 0)), n = Math.ceil(reach / 5), cells = [];
   if (a.c.sheet.strScore && a.c.move >= MIN_LEAP_FT){
     for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++){
       const p = {x: a.x + i * cell, y: a.y + j * cell};
       if (!i && !j) continue;
       if (Math.hypot(p.x - a.x, p.y - a.y) > reach * ftPx(a) || !walkable(p.x, p.y)) continue;
       const g = planLeap(a, p);
+      if (g && g.beyond) continue;   // Strength or movement cannot carry them there: no circle
       if (g && g.ok && Math.hypot(p.x - g.land.x, p.y - g.land.y) <= cell * .75) p.kind = g.check ? "check" : "ok";
       else { p.kind = "no"; p.why = (g && g.why) || "No straight line of ground from here."; }
       cells.push(p);
@@ -7893,9 +7895,9 @@ function planLeap(a, to){
   g.standing = g.runUpFt < 10;
   const need = Math.round((g.runUpFt + g.gapFt) / 5) * 5, taken = actors.find(o => o !== a && !o.down && actors.includes(o) && Math.hypot(o.x - g.land.x, o.y - g.land.y) < 2.5 * px);
   const inRunUp = leapBlocked(a, a, g.takeoff), over = inRunUp ? null : leapBlocked(a, g.takeoff, g.land);
-  if (g.gapFt > g.max) g.why = g.open ? `That is about ${Math.round(d)} ft. ${fname(a)} clears ${span} ft with a 10-ft run-up, ${Math.floor(span / 2)} standing.`
-    : `That gap is about ${Math.round(g.gapFt)} ft. ${fname(a)} clears ${g.max}${g.standing ? " from a standstill — back up for a run-up" : ""}.`;
-  else if (need > a.c.move) g.why = `Not enough movement left: the run-up and the jump cost ${need} ft, ${fname(a)} has ${a.c.move}.`;
+  if (g.gapFt > g.max){ g.beyond = true; g.why = g.open ? `That is about ${Math.round(d)} ft. ${fname(a)} clears ${span} ft with a 10-ft run-up, ${Math.floor(span / 2)} standing.`
+    : `That gap is about ${Math.round(g.gapFt)} ft. ${fname(a)} clears ${g.max}${g.standing ? " from a standstill — back up for a run-up" : ""}.`; }
+  else if (need > a.c.move){ g.beyond = true; g.why = `Not enough movement left: the run-up and the jump cost ${need} ft, ${fname(a)} has ${a.c.move}.`; }
   else if (taken) g.why = `${fname(taken)} is standing there.`;
   else if (inRunUp) g.why = `${fname(inRunUp)} is in the way of the run-up.`;
   else if (over && (over.big || a.big)) g.why = `${fname(over)} is too big to vault.`;
