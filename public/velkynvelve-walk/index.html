@@ -1467,6 +1467,17 @@ function outsidePen(p){
 }
 const balconyFloor = () => !!balcony() && (mode === "combat" || (state.gateOpen && !state.doorShut));
 const gatePassable = () => balconyFloor() && state.gateOpen && !state.doorShut;
+// A CLICK ON THE OPEN DOORWAY WALKS THROUGH IT (Sam, 2026-10-28: "Door is open why am I not able to move across").
+// The doorway itself is not floor, so a click on its dark opening snapped to the nearest floor, which is the pen side,
+// and the walker stopped at the threshold (or the gate's card popped). With the gate open, a click anywhere on the gate
+// now means "go through": the far side's landing point (the balcony landing from inside, the pen's inside spot from out
+// there), and findPath takes the way round behind the pillar as it already does.
+function throughGate(a, w){
+  if (!gatePassable() || !a || !w) return null;
+  const z = doorGate(); if (!z || !z.interact || !inPoly(z.interact.poly, w.x, w.y)) return null;
+  const B = balcony(), q = outsidePen(a) ? B.inside : B.landing;
+  return {x: q[0], y: q[1]};
+}
 // whether `a` can reach `b` only by going through the gate (one inside the pen, one out on the balcony)
 const gateWayTo = (a, b) => gatePassable() && outsidePen(a) !== outsidePen(b);
 function findPath(from, to){
@@ -7885,7 +7896,7 @@ function leapMove(a, g, to, done){
   } else runUp();
 }
 function moveActor(a, w, done){
-  const p = nearestWalkable(w.x, w.y);
+  const p = throughGate(a, w) || nearestWalkable(w.x, w.y);
   const g = a.kind === "pc" ? planLeap(a, p) : null;
   if (g && g.ok){ leapMove(a, g, p, done); return; }
   // DOWN OFF A LEDGE: a hero who clicks below the edge and cannot get there on foot this turn (the stairs are too far, or
@@ -13399,6 +13410,7 @@ function click(w){
     const pr = propAt(w); if (pr){ const pc = propCenter(pr); walkTo(nearestWalkable(pc.x, pc.y), () => openProp(pr)); return; }
     if (liftAt(w)){ walkTo(nearestWalkable(node.lift.spool[0], node.lift.spool[1]), () => openLift()); return; }
     const ls = !hitActor(npcs, w) ? lootSpotAt(w) : null; if (ls){ const lc = lootCenter(ls); walkTo(nearestWalkable(lc.x, lc.y), () => openLootSpot(ls)); return; }
+    { const thru = throughGate(leader, w); if (thru){ walkTo(thru); return; } }
     const ob = interactAt(w) || (zoneAt(w.x, w.y)?.interact ? zoneAt(w.x, w.y) : null);
     if (ob){ const zc = zoneCenter(ob); walkTo(nearestWalkable(zc.x, zc.y), () => openInteract(ob)); return; }
     const n = hitActor(npcs, w);
