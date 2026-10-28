@@ -71,6 +71,18 @@
   "slug": "node-14-pool-river",
   "name": "Pool / Underground River"
  },
+ "g3": {
+  "slug": "gr-03-blade-bazaar",
+  "name": "Gracklstugh: the Blade Bazaar"
+ },
+ "g6": {
+  "slug": "gr-06-ghohlbrorns-lair",
+  "name": "Ghohlbrorn's Lair"
+ },
+ "g3f": {
+  "slug": "gr-03f-bazaar-smithy",
+  "name": "The smith's stall"
+ },
  "tunnels": {
   "slug": "biome-tunnels",
   "name": "The tunnels"
