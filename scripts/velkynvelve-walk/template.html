@@ -2896,7 +2896,7 @@ function wolfSpiderComes(){
   let spot = nearestWalkable(near.x + 260, near.y + 40); if (!netAt(spot.x, spot.y)) spot = {x: 1560, y: 1260};   // it comes up through the silk, so it starts in the net
   const sp = mkActor("giant-wolf-spider", spot.x, spot.y, "npc", {face: 6, big: .55}); npcs.push(sp); actors.push(sp);
   if (APP) handOff(`While the party lingered in the web net below the lift, a giant wolf spider (SRD 5.1, CR 1/4) climbed up through the silk to attack.`);
-  startCombat([sp], "Something the size of a dog scuttles up through the silk. A giant wolf spider.", {noAllies: true});
+  startCombat([sp], "Something the size of a dog scuttles up through the silk. A giant wolf spider.", {noAllies: true, ambush: true});
 }
 async function fallIntoNet(a){
   if (cur !== "5c") return;
@@ -2913,7 +2913,7 @@ async function fallIntoNet(a){
     // the spider comes up from under the net, so it starts IN the net: the net is its own island of floor and a spider
     // spawned on a ledge could never reach the hero (startCombat takes an actor already on the plate as a foe)
     const sp = mkActor("giant-spider", 1560, 1260, "npc", {face: 6}); npcs.push(sp); actors.push(sp);
-    startCombat([sp], "The net shudders. A giant spider climbs up through the silk toward you.", {noAllies: true});
+    startCombat([sp], "The net shudders. A giant spider climbs up through the silk toward you.", {noAllies: true, ambush: true});
     if (a.c){ a.c.conds.add("restrained"); a.c.webDc = 12; renderParty && renderParty(); }
   }, 900);
 }
@@ -4944,7 +4944,7 @@ const FOE_BLOCKS = {
   // Giant Lizard's bite added as a second melee attack (SRD 5.1: +4, 1d8+2) and its climb (30 ft). XP is the two summed.
   "drow-lizard-rider": {name: "Drow lizard rider", race: "drow", xp: 100, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, {name: "Lizard's bite", hit: 4, dmg: "1d8+2", type: "piercing", reach: 5}, HAND_XBOW_DROW]},
   jorlan:              {name: "Jorlan", race: "drow", xp: 50, passive: 12, hp: 13, ac: 15, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1}, attacks: [{name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}]},
-  "giant-spider": {name: "Giant spider", xp: 200, passive: 10, hp: 26, ac: 14, speed: 30, init: 3, saves: {str: 2, dex: 3, con: 1, int: -4, wis: 0, cha: -3},
+  "giant-spider": {name: "Giant spider", xp: 200, passive: 10, stealth: 7, hp: 26, ac: 14, speed: 30, init: 3, saves: {str: 2, dex: 3, con: 1, int: -4, wis: 0, cha: -3},
                    attacks: [{name: "Bite", hit: 5, dmg: "1d8+3", type: "piercing", reach: 5, rider: {save: "con", dc: 11, dmg: "2d8", type: "poison", half: true}}],
                    // SRD: Web (Recharge 5–6) — ranged weapon attack +5, range 30/60 ft, one creature: restrained by webbing;
                    // as an action the target can make a DC 12 STR check to burst it (the webbing: AC 10, 5 HP, vulnerable to fire).
@@ -4952,7 +4952,7 @@ const FOE_BLOCKS = {
   // SRD 5.1 Giant Wolf Spider: Medium beast, AC 13, 11 hp (2d8+2), speed 40 ft (climb 40), passive 13, CR 1/4 (50 XP).
   // Bite +3, 1d6+1 piercing, DC 11 CON or 2d6 poison (half on a save). Web Walker. Drawn with the giant spider's sheet at
   // about half its size (no art of its own yet).
-  "giant-wolf-spider": {name: "Giant wolf spider", xp: 50, passive: 13, hp: 11, ac: 13, speed: 40, init: 3, saves: {str: 1, dex: 3, con: 1, int: -4, wis: 1, cha: -3},
+  "giant-wolf-spider": {name: "Giant wolf spider", xp: 50, passive: 13, stealth: 7, hp: 11, ac: 13, speed: 40, init: 3, saves: {str: 1, dex: 3, con: 1, int: -4, wis: 1, cha: -3},
                    attacks: [{name: "Bite", hit: 3, dmg: "1d6+1", type: "piercing", reach: 5, rider: {save: "con", dc: 11, dmg: "2d6", type: "poison", half: true}}]},
   quaggoth: {name: "Quaggoth", xp: 450, passive: 11, hp: 45, ac: 13, speed: 30, init: 1, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, immune: ["poison"], immuneCond: ["poisoned"],
              attacks: [{name: "Claw", hit: 5, dmg: "1d6+3", type: "slashing", reach: 5}], multi: 2, woundedFury: 10},
@@ -5082,7 +5082,7 @@ const SPELLS = {
 };
 // ---------- Rage and Wounded Fury: the rules, one copy (lib/rage.mjs, pasted in here by build_walk.py) ----------
 /*__RAGE__*/
-const COND_GLYPH = {poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
+const COND_GLYPH = {surprised: ["!", "#ffd27a", "Surprised: no move and no action on its first turn, no reaction until that turn ends"], poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
                     shielded: ["◇", "#cfe8ff", "+2 AC"], blessed: ["✚", "#ffe9a8", "Blessed: +1d4 to attack rolls and saving throws"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
                     hidden: ["◌", "#b8c7d6", "Hidden: unseen until you attack"], prone: ["▼", "#e0b070", "Prone: melee on it has advantage, ranged disadvantage; half speed to stand"],
                     grappled: ["✊", "#e0b070", "Grappled: speed 0"], helped: ["★", "#ffe08a", "Helped: advantage on the next attack"], disengaged: ["↷", "#cfe8ff", "Disengaged: no opportunity attacks"],
@@ -5243,7 +5243,8 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   // SURPRISE (SRD 5.1, Combat > Surprise; fightWith): a foe who never saw it coming is surprised — no move and no action
   // on its first turn, no reaction until that turn ends. And the one who struck from hiding goes first (Sam, 2026-10-27:
   // "If we sneak attack them we hit them first"): initiative is still rolled for the rest of the order.
-  for (const f of opts.surprised || []) if (f.c){ f.c.surprised = true; f.c.reactionUsed = true; }
+  for (const f of opts.surprised || []) if (f.c){ f.c.surprised = true; f.c.reactionUsed = true; f.c.conds.add("surprised"); }
+  if (opts.ambush) ambushSurprise(order.filter(a => hero(a)), foes);
   if (opts.opener && order.includes(opts.opener)){ order.splice(order.indexOf(opts.opener), 1); order.unshift(opts.opener); }
   cbt = {order, allies, bystanders, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null,
     id: `${cur}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`};   // the fight's own name: /api/walk-xp pays it once
@@ -5538,7 +5539,7 @@ function nextTurn(first){
     if (s >= (a.c.sleptDc || 13)){ a.c.conds.delete("asleep"); popText(a, "wakes", "#b0b8ff"); }
     else { popText(a, "asleep", "#b0b8ff"); log(`${fname(a)} sleeps through the turn.`); setTimeout(nextTurn, 900); return; }
   }
-  if (a.c.surprised){ a.c.surprised = false; popText(a, "surprised", "#ffd27a"); log(`${fname(a)} is caught by surprise and loses the turn.`); setTimeout(nextTurn, 900); return; }
+  if (a.c.surprised){ a.c.surprised = false; a.c.conds.delete("surprised"); popText(a, "surprised", "#ffd27a"); log(`${fname(a)} is caught by surprise and loses the turn.`); setTimeout(nextTurn, 900); return; }
   a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true; a.c.objFree = true;
   if (a.c.conds.has("numbed")){ a.c.move = Math.floor(a.c.move / 2 / 5) * 5; a.c.reactionUsed = true; a.c.conds.delete("numbed"); popText(a, "numb: half speed, no reactions", "#9fd8ff", .9); }   // the bhut's bite, one round (the reaction budget is reactionUsed, reset just above)
   // Alchemist's fire (SRD 5.1): "the target takes 1d4 fire damage at the start of each of its turns"
@@ -7851,6 +7852,29 @@ function leapTo(f, tgt, then){
   const d = norm({x: tgt.x - f.x, y: tgt.y - f.y}), reach = reachPx(f, tgt, 5), dist = Math.hypot(tgt.x - f.x, tgt.y - f.y) - reach;
   f.c.move = Math.max(0, f.c.move - Math.round(dist / ftPx(f) / 5) * 5);
   arcTo(f, nearestWalkable(f.x + d.x * dist, f.y + d.y * dist), () => { narrate(f, `${fname(f)} springs across the floor at ${fname(tgt)}.`); then && then(); });
+}
+// THE PARTY CAN BE SURPRISED TOO (Sam, 2026-10-28: "yes and if they are surprised they should show it with a surprised
+// status on them"). SRD 5.1, Combat > Surprise: "The DM compares the Dexterity (Stealth) checks of anyone hiding with the
+// passive Wisdom (Perception) score of each creature on the opposing side. Any character or monster that doesn't notice a
+// threat is surprised at the start of the encounter." Used where something LAY IN WAIT (startCombat opts.ambush): a
+// spider coming up through the net, a hidden hazard (the shrine's cushions). Each ambusher rolls Stealth once (the
+// block's `stealth`, else its DEX); a hero notices the threat if their passive Perception beats ANY of those checks,
+// else they are surprised: no move and no action on their first turn, no reaction until it ends. It shows on them as the
+// Surprised status (COND_GLYPH "!"), over their head, on their party card and in the turn strip, until the turn passes.
+// Foes walking openly into a fight, or rising where you can see them (the quaggoth den's nests), surprise no one.
+function ambushSurprise(heroesIn, ambushers){
+  const hiders = ambushers.filter(f => f.c && !f.down);
+  if (!hiders.length || !heroesIn.length) return;
+  const checks = hiders.map(f => { const b = FOE_BLOCKS[f.id] || {}, mod = b.stealth ?? ((b.saves && b.saves.dex) || 0), r = d20(0, f); return {f, total: r + mod}; });
+  const lowest = Math.min(...checks.map(c => c.total)), caught = [], ready = [];
+  for (const h of heroesIn){
+    const P = 10 + heroMod(h, "perception", "wis");
+    if (P >= lowest) ready.push(`${fname(h)} ${P}`);
+    else { caught.push(`${fname(h)} ${P}`); h.c.surprised = true; h.c.reactionUsed = true; h.c.conds.add("surprised"); popText(h, "surprised!", "#ffd27a", 1.1); }
+  }
+  log(`<b>Surprise?</b> ${checks.map(c => `${esc(fname(c.f))} Stealth ${c.total}`).join(", ")} vs passive Perception — ${caught.length ? `<b>surprised:</b> ${caught.join(", ")}` : "nobody is caught off guard"}${ready.length && caught.length ? ` · ready: ${ready.join(", ")}` : ""}.`);
+  if (caught.length) narrate(null, `${caught.length === heroesIn.length ? "It is on you before anyone sees it." : `${caught.map(x => x.replace(/ \d+$/, "")).join(", ")} ${caught.length === 1 ? "is" : "are"} caught flat-footed.`}`);
+  renderParty(); renderTurns();
 }
 function checkEnd(){
   if (!cbt) return true;
@@ -13008,7 +13032,7 @@ function update(dt){
     else if (!z && !leader.walkIn) ackZone = null;
     // ambush
     const hz = node.hazard;
-    if (mode === "explore" && hz && hz.kind === "ambush" && !state.cleared[cur] && !state.ambushOff && state.jumped !== cur && (inPoly(hz.poly, leader.x, leader.y) || inPoly(hz.poly, leader.x, leader.y - 30) || inPoly(hz.poly, leader.x, leader.y + 30))){ const here = npcs.filter(a => a.hostile && !a.offStage && !a.backdrop && !a.body && !a.down); startCombat(hz.fromPlate && here.length ? here : [...here, ...hz.foes], hz.label); }   // whoever is resting on the plate rises too; `fromPlate`: the hazard's list only stands in when the plate rolled nobody
+    if (mode === "explore" && hz && hz.kind === "ambush" && !state.cleared[cur] && !state.ambushOff && state.jumped !== cur && (inPoly(hz.poly, leader.x, leader.y) || inPoly(hz.poly, leader.x, leader.y - 30) || inPoly(hz.poly, leader.x, leader.y + 30))){ const here = npcs.filter(a => a.hostile && !a.offStage && !a.backdrop && !a.body && !a.down); startCombat(hz.fromPlate && here.length ? here : [...here, ...hz.foes], hz.label, {ambush: hz.surprise ?? !hz.fromPlate}); }   // whoever is resting on the plate rises too; `fromPlate`: the hazard's list only stands in when the plate rolled nobody
     // drow who are on watch
     if (mode === "explore" && !state.cleared[cur]){
       const watch = npcs.filter(n => n.hostile && !n.offStage);
