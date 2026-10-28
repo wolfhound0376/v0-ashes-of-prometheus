@@ -353,3 +353,8 @@ t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', ra
 out = os.path.join(ROOT, 'public', 'velkynvelve-walk'); os.makedirs(out, exist_ok=True)
 open(os.path.join(out, 'index.html'), 'w', encoding='utf-8').write(t)
 print('wrote', os.path.join(out, 'index.html'), len(t), 'bytes')
+# The plates' names for the server (lib/walk-plates.json): Malachar reads which plate each hero stands on from the
+# shared world (walk_world.heroes), and needs the plate's slug and name to say where that is (SPLIT PARTY, 2026-10-27).
+plates = {str(k): {'slug': v.get('slug'), 'name': v.get('name')} for k, v in spec.items() if isinstance(v, dict) and v.get('slug')}
+open(os.path.join(ROOT, 'lib', 'walk-plates.json'), 'w', encoding='utf-8').write(json.dumps(plates, indent=1, ensure_ascii=False) + '\n')
+print('wrote lib/walk-plates.json', len(plates), 'plates')
