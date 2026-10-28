@@ -59,6 +59,12 @@
       "frames": 5,
       "fps": 3,
       "loop": true
+    },
+    "jump": {
+      "sheet": "jump.png",
+      "frames": 8,
+      "fps": 12,
+      "loop": false
     }
   }
 }

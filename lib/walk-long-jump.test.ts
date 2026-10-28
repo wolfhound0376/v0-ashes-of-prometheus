@@ -68,9 +68,9 @@ const ftPx = (a: any) => (96 * BASE * node.scale * depthAt(a.y) * (a.big || 1)) 
 const fname = (a: any) => a.id
 
 const [, planLeap] = new Function(
-  "walkable", "ftPx", "fname", "MIN_LEAP_FT",
+  "walkable", "ftPx", "fname", "MIN_LEAP_FT", "balconyFloor", "outsidePen",
   `${grab("gapOnLine")}\n${grab("planLeap")}\nreturn [gapOnLine, planLeap];`,
-)(walkable, ftPx, fname, MIN_LEAP_FT) as [unknown, (a: any, to: Pt) => any]
+)(walkable, ftPx, fname, MIN_LEAP_FT, () => false, () => false)   // no pen gate on these plates: the leap rule alone as [unknown, (a: any, to: Pt) => any]
 
 // str_score off the characters table, the same numbers the sheets carry.
 const STR: Record<string, number> = { kenta: 12, samson: 11, scott: 12, freia: 8 }
@@ -157,6 +157,7 @@ describe("the walk's long jump", () => {
     const cleared: Record<string, number> = { kenta: 0, samson: 0, scott: 0, freia: 0 }
     let crossings = 0
     for (const key of Object.keys(SPEC)) {
+      if (key.startsWith("_") || !SPEC[key].floors) continue   // _handoffs, _layout: build metadata, not plates
       loadNode(key)
       for (const o of node.obstacles || []) {
         for (let t = 0; t < 16; t++) {
