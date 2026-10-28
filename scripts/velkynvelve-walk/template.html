@@ -7454,6 +7454,38 @@ function berserkTarget(f, pool){
   return pick;
 }
 // the monster's turn: close on the nearest standing hero and use the block's attack(s); a berserk one goes for the softest caster
+// ----- the thrown rock -----
+// SRD 5.1 / PHB 2014, Improvised Weapons: a thrown object that is not a weapon deals 1d4 damage, normal range 20 ft and
+// long range 60 ft (disadvantage beyond 20, which advantageOn applies from `reach`/`long`). Thrown, it uses the same
+// ability as a melee weapon: Strength. Proficiency is NOT added (the PHB lets the DM allow it; this does not). Picking
+// the rock up is the turn's free object interaction. The foe sheets carry ability modifiers in `saves` (none of these
+// creatures has a Strength save proficiency), so that is the Strength modifier read here.
+// Who has no hands to throw with: spiders, the ooze, the ghost. Everyone else in the outpost can stoop for a stone.
+const ROCK = {reach: 20, long: 60};
+const NO_HANDS = /spider|ooze|^ghost-|^giant-lizard/;
+function rockThrower(f){ return f.kind === "foe" && !NO_HANDS.test(f.id) && !f.c.sheet.noHands && !incapacitated(f) && !f.c.conds.has("restrained") && !f.c.conds.has("grappled"); }
+function rockFor(f){ const m = (f.c.sheet.saves || {}).str || 0;
+  return {name: "Thrown rock", hit: m, dmg: `1d4${m > 0 ? "+" + m : m < 0 ? m : ""}`, type: "bludgeoning", reach: ROCK.reach, long: ROCK.long, thrown: ROCK.long, rock: true}; }
+// can it get to swinging distance of `tgt` on foot this turn? (by the route a walker takes; no route at all is a no)
+function meleeThisTurn(f, tgt, atk){ const ft = walkFtTo(f, nearestWalkable(tgt.x, tgt.y)); return ft - (atk.reach || 5) - 2.5 <= (f.c.move || 0); }
+// Step up to the rock's normal range if the movement allows (never closer than that, it is not closing to fight), then throw.
+function throwRock(f, tgt){
+  const rock = rockFor(f), end = () => { combatBusy = false; if (cbt) cbt.phase = "idle"; setTimeout(() => passTurn(f), 500); };
+  const fire = () => {
+    if (!cbt || f.down || tgt.down || !actors.includes(tgt)){ end(); return; }
+    if (feetBetween(f, tgt) > ROCK.long + 2.5 || coverOf(f, tgt).total){ log(`${fname(f)} hefts a rock but has no throw at ${fname(tgt)} from here.`); end(); return; }
+    popText(f, "grabs a rock", "#cfc6b0", .8);
+    log(`${fname(f)} has nothing that reaches ${fname(tgt)} and snatches a rock off the floor (improvised, 1d4, 20/60 ft).`);
+    narrate(f, `${fname(f)} scoops up a rock and hurls it at ${fname(tgt)}.`);
+    attackWith(f, tgt, rock, end);
+  };
+  if (feetBetween(f, tgt) > ROCK.reach && (f.c.move || 0) > 0){
+    const u = norm({x: tgt.x - f.x, y: tgt.y - f.y}), px = ftPx(f), spot = nearestWalkable(tgt.x - u.x * (ROCK.reach - 2) * px, tgt.y - u.y * (ROCK.reach - 2) * px);
+    const walk = cutPath(f, findPath(f, spot), f.c.move * px);
+    if (walk.pts.length){ f.c.move = Math.max(0, f.c.move - walk.usedFt); combatBusy = true; cbt.phase = "busy"; f.path = walk.pts; f.onArrive = () => { f.onArrive = null; fire(); }; return; }
+  }
+  fire();
+}
 function foeTurn(f){
   if (!actors.includes(f) || f.down){ setTimeout(nextTurn, 100); return; }
   if (f.c.conds.has("prone")){ f.c.conds.delete("prone"); f.c.move = Math.floor(f.c.move / 2); log(`${fname(f)} gets up.`); }
@@ -7484,6 +7516,10 @@ function foeTurn(f){
   if (f.c.conds.has("burning") && Math.random() < .5){ putOutFire(f, () => setTimeout(() => passTurn(f), 500)); return; }
   if (s.web && f.c.webReady && !tgt.c.conds.has("restrained") && feetBetween(f, tgt) <= s.web.range){ shootWeb(f, tgt, () => { setTimeout(() => passTurn(f), 500); }); return; }
   if (s.leap && feetBetween(f, tgt) > 10 && feetBetween(f, tgt) <= s.leap + 5){ leapTo(f, tgt, () => { let n2 = 0; const go2 = () => { if (!cbt || tgt.down || f.down || n2 >= swings){ setTimeout(() => passTurn(f), 500); return; } n2++; attackWith(f, tgt, atk, () => setTimeout(go2, 250)); }; go2(); }); return; }
+  // NOTHING ELSE AT DISTANCE: A ROCK (Sam, 2026-10-28: "When at a distance NPCs can pick up rocks and throw them if there
+  // is nothing else available at distance"). A foe with hands, no bow or crossbow that can reach, and no way to get into
+  // melee this turn picks one up off the cave floor and throws it (throwRock) instead of closing and passing.
+  if (atk !== bow && !pressed && !blind && rockThrower(f) && !meleeThisTurn(f, tgt, atk) && feetBetween(f, tgt) <= ROCK.long + f.c.move){ throwRock(f, tgt); return; }
   // `rotate` (the bhut): Multiattack of two DIFFERENT attacks, one each — the nth swing is the nth attack in the block
   // a curse being spoken (the bhut) holds the turn until the words are out
   const after = ms => Math.max(ms, (f.cursingUntil || 0) - now + 150);
@@ -11754,12 +11790,14 @@ const SHOT_LOOK = {
   dart:   {len: .8,  w: .14, msPerFt: 6.0, arc: .06,  shaft: "#55555e", head: "#d0d6dc", fl: "#c04a3a", stick: true},
   needle: {len: .5,  w: .08, msPerFt: 4.0, arc: .01,  shaft: "#cfd6dc", head: "#ffffff", fl: null,      stick: true},
   stone:  {len: .25, w: .25, msPerFt: 5.0, arc: .06,  shaft: "#7d7a72", head: "#7d7a72", fl: null,      stick: false},
+  rock:   {len: .55, w: .55, msPerFt: 6.5, arc: .12,  shaft: "#6e685e", head: "#8a8477", fl: null,      stick: false},   // a fist-sized stone off the floor, lobbed
   thrown: {msPerFt: 7.0, arc: .10, stick: false, sprite: true},              // the weapon itself, tumbling
   flask:  {msPerFt: 8.0, arc: .16, stick: false, sprite: true},              // a lobbed bottle
 };
 const shots = [], stuck = []; let SHOT_MAX_MS = 560;            // a long shot still lands inside the attack
 function shotKind(atk, att, tgt){
   if (atk.flask) return "flask";
+  if (atk.rock) return "rock";
   const k = SHOT_OF(String(atk.name || "").toLowerCase()); if (k) return k;
   if (atk.thrown && atk.pixel && att && tgt && feetBetween(att, tgt) > 6) return "thrown";   // a throw from range flies; at arm's length it is a stab
   return null;
