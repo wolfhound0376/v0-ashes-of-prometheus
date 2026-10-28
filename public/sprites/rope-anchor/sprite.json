@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "name": "Rope anchor",
+  "cell": [
+    21,
+    29
+  ],
+  "pivot": [
+    10,
+    28
+  ],
+  "ppu": 21,
+  "animations": {
+    "idle": {
+      "sheet": "idle.png",
+      "frames": 1,
+      "fps": 5,
+      "loop": true
+    }
+  },
+  "_src": "PixelLab create_object_pro_flash, Sam 2026-10-28: the rappel ropes drawn as a thing you use, in place of the dashed boxes"
+}

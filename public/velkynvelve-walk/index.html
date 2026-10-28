@@ -1690,16 +1690,13 @@ function draw(){
         ctx.shadowBlur = 0; ctx.lineWidth = 1.5; ctx.strokeStyle = `rgba(255,240,210,${.5 + .3 * pulse})`; ctx.stroke(); ctx.restore();
         continue;
       }
+      if (z.kind === "rappel"){ drawRopeAnchor(z, hoverZone === z || (leader && Math.hypot(leader.x - cx, leader.y - cy) < 340 * node.scale), pulse); continue; }
       const locked = z.kind === "gate" && !state.gateOpen;
       const col = locked ? "208,69,58" : "240,190,90";   // every way out glows gold (Sam, 2026-10-27: the green "looks weird"); a locked gate stays red
       const rad = Math.max(40, Math.min(110, Math.min(x1 - x0, y1 - y0) * .8));
       const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
       g.addColorStop(0, `rgba(${col},${.30 + .25 * pulse})`); g.addColorStop(1, `rgba(${col},0)`);
       ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(cx, cy, rad, rad * .55, 0, 0, Math.PI * 2); ctx.fill();
-      if (hoverZone === z){
-        ctx.save(); ctx.setLineDash([10, 8]); ctx.lineWidth = 3 / (base * view.z); ctx.strokeStyle = `rgba(${col},.9)`;
-        ctx.strokeRect(x0, y0, x1 - x0, y1 - y0); ctx.restore();
-      }
     }
   }
   // click target marker
@@ -4132,6 +4129,19 @@ function drawLootSprite(im, sx, sy, sw, sh, dx, dy, dw, dh, lit, pulse){
   }
   ctx.drawImage(im, sx, sy, sw, sh, dx, dy, dw, dh);
   ctx.restore();
+}
+// THE ROPES ARE THINGS, NOT BOXES (Sam, 2026-10-28: "remove these boxes from the game and replace them with an
+// equivalently functioning pixel icon that you can interact or pickup that highlight around it's edges if you can
+// interact with it"). A rappel zone (the cliff below the lift's ropes, the net's anchor) used to be a gold blur with a
+// dashed box on hover. It is now a pixel rope anchor — an iron stake with the rope coiled on it — standing at the
+// middle of the zone, rim-lit gold (drawLootSprite) when a hero is close or the pointer is on it. The zone itself is
+// unchanged: the same rect is what the pointer finds and the click uses, so it works exactly as before.
+const ROPE_ANCHOR_FT = 1.3;
+function drawRopeAnchor(z, lit, pulse){
+  const im = lootImg(`${SPRITE_BASE}rope-anchor/idle.png`); if (!im.complete || !im.naturalWidth) return;
+  const [x0, y0, x1, y1] = z.rect, at = {x: (x0 + x1) / 2, y: (y0 + y1) / 2 + (y1 - y0) * .25};
+  const w = ROPE_ANCHOR_FT * ftPx(at), h = w * im.naturalHeight / im.naturalWidth;
+  drawLootSprite(im, 0, 0, im.naturalWidth, im.naturalHeight, at.x - w / 2, at.y - h, w, h, lit, pulse);
 }
 function drawLootHighlight(){
   if (mode !== "explore" && mode !== "dialog" && mode !== "combat") return;
@@ -13331,6 +13341,7 @@ stage.addEventListener("pointermove", e => {
   if (e.target.closest(".icard")){ tip.hidden = true; return; }
   if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui,.checkcard")){ tip.hidden = true; return; }
   const w = s2w(e.clientX, e.clientY), r = stage.getBoundingClientRect(); aimW = w;
+  hoverZone = null;   // set again below when the pointer is over one; never left over from an earlier move
   hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? (hitActor(foes, w) || hitActor(heroes(), w)) : null;
   { const ai = aimTargetFor(hoverActor), key = ai ? ai.t.id : null; if (key !== aimTickKey){ aimTickKey = key; if (ai) aimTick(ai.boon, key); } }
   hoverObj = mode === "explore" && !hoverActor ? interactAt(w) : null;
