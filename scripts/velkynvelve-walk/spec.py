@@ -26,7 +26,10 @@ NODES = {
    obstacles=[],
    zones=[dict(rect=[1110, 140, 1290, 330], to=[2], label="Stair up into the outpost"),
           dict(rect=[1030, 1230, 1370, 1339], to=["tunnels"], kind="leave", label="South passage — PROPOSED: south passage toward Gracklstugh (OotA p.20)", proposed=True)]),
- 2: dict(slug="node-02-barracks", name="Barracks", scale=1.05,
+ 2: dict(slug="node-02-barracks", name="Barracks", scale=1.05, img="node-02-barracks.jpg",
+   # `img`: the plate ships in the repo with the three painted chests painted out (Sam, 2026-10-27: the pixel chest
+   # sprites now stand there, and the painted ones showing underneath "look bad"). Fill is copied from the same plate
+   # (the rock wall and floor beside each chest) — scratch script erase.py from that session; no new art.
    floors=[dict(poly=P((840,720),(1000,700),(1090,880),(1320,890),(1400,940),(1320,1040),(1200,1120),(1280,1220),(1120,1339),(800,1339),(760,1200),(800,1080),(720,1000),(600,940),(760,840)))],
    obstacles=[],
    zones=[dict(rect=[803, 132, 901, 290], to=[4], label="Timber stair to the upper walkways"),
