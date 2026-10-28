@@ -192,7 +192,7 @@ header .tools input[type=range]{accent-color:#f2c55c}
    crowded"): the label and the round stacked in their own column at the left, the cards spaced, the buttons at the end.
    Fighters only (PR A): the bystanders are named in the chip at the top left instead. */
 .combat.has-boss .cbt-top{left:calc(50% - min(190px, 17%))}   /* a boss bar at the right: the strip centres in what is left */
-.combat.has-boss .cbt-flee{top:112px}
+.cbt-flee{top:112px}   /* always under the boss bar's place, never over the strip's buttons (Sam's screenshot, 2026-10-28) */
 .cbt-top{position:absolute;top:2px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:16px;background:linear-gradient(180deg,rgba(26,10,12,.94),rgba(14,8,10,.9));border:1px solid var(--blood);border-radius:10px;padding:8px 16px 9px;max-width:calc(100% - 24px);box-shadow:0 6px 24px rgba(0,0,0,.5)}
 .cbt-top .lbl{display:flex;flex-direction:column;gap:3px;font-family:var(--face-display);font-size:var(--s1);color:#ff9b8f;letter-spacing:.08em;padding-right:14px;border-right:1px solid var(--rule)}
 .cbt-top .round{font-family:var(--face-mono);font-size:.68rem;letter-spacing:.1em;color:var(--ink-dim);text-align:center;min-width:0;white-space:nowrap}
@@ -200,6 +200,8 @@ header .tools input[type=range]{accent-color:#f2c55c}
 .cbt-flee[hidden]{display:none}
 .cbt-flee b{display:block;color:#ffd27a;font-weight:600;letter-spacing:.1em}
 .cbt-top .btn{padding:4px 10px;font-size:var(--s-1)}
+.cbt-top .cbt-ctl{display:flex;flex-direction:column;gap:4px;padding-left:12px;border-left:1px solid var(--rule)}
+.cbt-top .cbt-ctl .btn{padding:2px 8px;font-size:.64rem;line-height:1.2;white-space:nowrap}
 /* THE BOSS BAR (Sam, 2026-10-27, from the Top Heroes comparison: "bosses" was the one axis with nothing built). At the
    top right (Sam, 2026-10-28: "put that bar maybe to the top right"), only while the fight has a boss (lib/boss-fight.mjs decides who): the face card, the name with the book's
    own epithet, and a wide hit-point bar wearing the action bar's slab (gold rim, dark lip, gloss). No number on it — a DM
@@ -806,7 +808,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button id="zIn" aria-label="Zoom in">+</button>
     </div>
     <div class="combat" id="combat" hidden>
-      <div class="cbt-top cbt-ui"><span class="lbl">Combat</span><div class="turns" id="turns"></div><span class="round" id="cbtRound"></span><button class="btn" id="quickBtn" title="DM: let the heroes fight on their own at speed. Weapons only, no spells or items. Every roll is real.">Quick resolve</button><button class="btn danger" id="endCombat">End fight</button></div>
+      <div class="cbt-top cbt-ui"><span class="lbl">Combat<span class="round" id="cbtRound"></span></span><div class="turns" id="turns"></div><span class="cbt-ctl"><button class="btn" id="quickBtn" title="DM: let the heroes fight on their own at speed. Weapons only, no spells or items. Every roll is real.">Quick resolve</button><button class="btn danger" id="endCombat">End fight</button></span></div>
       <div class="cbt-flee" id="cbtFlee" hidden></div>
       <div class="bossbar" id="bossBar" hidden aria-live="polite"><div class="bface" id="bossFace"></div><div class="btext"><div class="bname"><span class="kick">BOSS</span><span id="bossName"></span><small id="bossEpithet"></small></div><div class="bhp" title=""><i id="bossHp"></i><em></em><b>Bloodied</b></div></div></div>
       <div class="cbt-party cbt-ui" id="cbtParty"></div>
@@ -6801,7 +6803,14 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (sneak) att.c.sneakUsed = true;
       knock(tgt, att, (crit ? 34 : 20) * actorScale(tgt)); if (tgt.kind === "pc") redFlash();   // and a harder stagger on the one hit
       bank(crit ? "combat/crit_hit" : sneak ? "combat/sneak_attack" : ws.hit, crit ? .95 : .8); if (crit) bank("ui/nat20", .7);
-      if (!shot){ swipe(att, tgt, {...sw, crit}); if (crit) setTimeout(() => swipe(att, tgt, {...sw, crit: true, flip: sw.kind === "claw" ? -(sw.flip || 1) : sw.flip}), 90); }
+      // THE COMBO (Sam, 2026-10-28: "I want melee to function the same [as the demo]; it looked good. Not just one punch. The
+      // damage can stay whatever is rolled"). One roll, one number — but the blow is drawn as two strokes: the cut, then the
+      // follow-through from the other side 150 ms later with a second, smaller impact (a third stroke on a crit), and blood
+      // where a blade lands. A fall leaves a pool (fall()).
+      if (!shot){ swipe(att, tgt, {...sw, crit});
+        setTimeout(() => { if (!tgt.down || crit){ swipe(att, tgt, {...sw, crit, flip: -(sw.flip || 1)}); lunge(att, tgt, 10 * actorScale(att)); knock(tgt, att, 10 * actorScale(tgt)); spawnFx("physicalImpact", {at: tgt, sq: 1.4, mirror: tgt.x > att.x}); } }, 150);
+        if (crit) setTimeout(() => swipe(att, tgt, {...sw, crit: true, flip: sw.kind === "claw" ? -(sw.flip || 1) : sw.flip}), 290);
+        if (/piercing|slashing/.test(atk.type) && !/ooze/.test(tgt.id)) addBlood(tgt, crit ? 1.3 : .8, false); }
       { const sk = strikeSheet(atk, sneak, att, tgt, crit); spawnFx(sk.name, {at: tgt, mirror: sk.mirror, sq: shot ? (crit ? 1.8 : 1.3) : crit ? 2.6 : 2}); }
       if (atk.flask){ flaskHits(att, tgt, atk, crit, why); return; }
       let dmg = roll(offhand ? offDmg(atk) : atk.dmg, crit), parts = [`${dmg.total} ${atk.type}${offhand ? " (off hand)" : ""}`];
@@ -7186,6 +7195,7 @@ function fall(t){
   if (t.c.rage) endRage(t, "knocked unconscious");
   if (t.c.conc) endConc(t, "they go down");
   t.down = true; t.path = []; t.c.conds.clear();
+  if (cbt && !/ooze|ghost/.test(t.id) && !t.iced && !t.withered) setTimeout(() => addBlood(t, t.boss ? 1.3 : 1, true), 500);   // the pool spreads under the body
   if (t.kind === "pc") t.c.ds = {s: 0, f: 0, stable: !!t.ko, dead: false};
   const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_downed" : cs && cs.death ? cs.death : "creature/death_beast", .85);
   // Sam, 2026-10-14: "I don't see any carcasses of the creatures that are dead." Only creatures with a death
@@ -7710,7 +7720,7 @@ function popSpawn(a, s){
   if (live.length >= POP.cap){ const v = live.filter(p => !p.crit && !p.kill).sort((x, y) => x.born - y.born)[0] || live[0]; v.dying = now; }
   const value = s.kind === "num" ? (s.o.value != null ? s.o.value : parseInt(s.text, 10) || 0) : null;
   pops.push({a, kind: s.kind, text: s.text + (s.o.tag ? " " + s.o.tag : ""), value, tag: s.o.tag, src: s.o.src, col: s.col, size: s.size, crit: !!s.o.crit, kill: !!s.o.kill,
-    x: a.x + (word ? 22 : 0) + (Math.random() - .5) * 8, y: a.y - m.pivot[1] * sc * .75 + (word ? 10 : 0),
+    x: a.x + (word ? 26 + m.cell[0] * sc * .18 : 0) + (Math.random() - .5) * 8, y: a.y - m.pivot[1] * sc * .75 + (word ? 24 : 0),   // the word lane sits clear of the number
     born: now, punch: now, lift: 0, liftNow: 0, dying: 0, life: s.o.crit ? 1300 : word ? 700 : /^\+|^♪/.test(s.text) ? 1100 : 1000, rise: s.o.crit ? 40 : word ? 14 : /^\+|^♪/.test(s.text) ? 26 : 36});
 }
 // THE CRIT MARK, drawn behind the digits and never on them (Shweep: animate the thing behind the number, not the number):
@@ -7733,13 +7743,13 @@ function beatBanner(text){ const el = $("beat"); if (!el) return; el.textContent
 // THE TURN CALL: whose turn it is; then what they do, and to whom, with the target ringed
 function turnCall(a){
   const el = $("turnCall"); if (!el || !a || a.down) return;
-  $("turnFace").replaceChildren(cardFor(a)); $("turnName").textContent = fname(a); $("turnWhat").innerHTML = "";
+  turnCall.who = a; $("turnFace").replaceChildren(cardFor(a)); $("turnName").textContent = fname(a); $("turnWhat").innerHTML = "";
   el.classList.toggle("foe", a.kind === "foe"); el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
   clearTimeout(turnCall.t);
 }
 function turnWhat(att, tgt, what, boon){
   if (!cbt) return;
-  if (activeActor() !== att) turnCall(att);
+  if (turnCall.who !== att) turnCall(att);
   $("turnWhat").innerHTML = `<i>—</i><b>${esc(what)}</b>${tgt ? `<i>→</i>${esc(fname(tgt))}` : ""}`;
   if (tgt) cbt.marked = {t: tgt, boon, until: now + 2200};
 }
@@ -7897,8 +7907,19 @@ const KIT_MOTION = {
 };
 /*__KIT__*/
 const clings = [];   // Chill Touch's hands: {by: caster, p: the hand's fx}, let go when the caster's next turn starts
+// THE DEMO'S SPELL SHEETS (Sam, 2026-10-28: "I want melee and spells to look as good as the demo"). The Underwalk Combat
+// Play demo drew these spells with their own dedicated sheets from public/vfx — a charge in the hand, a travel sprite that
+// flies, an impact on the body — where the kit drew them by damage type. Those sheets win now, for these spells.
+const SPELL_LOOK = {
+  "Ray of Frost":  {gather: "frostRayCharge", travel: "frostRayTravel", impact: "frostRayImpact", route: "ball", motion: "dart", speed: 22, impactScale: 1.15},
+  "Guiding Bolt":  {gather: "guidingBoltCharge", travel: "guidingBoltTravel", impact: "guidingBoltImpact", route: "ball", motion: "dart", speed: 20, impactScale: 1.2},
+  "Vicious Mockery": {route: "impact", impact: "psychicImpact", impactScale: .9},
+  ...Object.fromEntries(["acid", "cold", "fire", "lightning", "poison", "thunder"].map(e => [`Chromatic Orb (${e})`, {gather: `orb${e[0].toUpperCase() + e.slice(1)}Form`, travel: `orb${e[0].toUpperCase() + e.slice(1)}Fly`, impact: `orb${e[0].toUpperCase() + e.slice(1)}Hit`, route: "ball", motion: "dart", speed: 16, impactScale: 1}])),
+};
 function kitFor(name, sp){
-  const type = sp.kind === "heal" ? "healing" : sp.type, base = KIT[type]; if (!base) return null;
+  const type = sp.kind === "heal" ? "healing" : sp.type, base0 = KIT[type]; if (!base0) return null;
+  if (SPELL_LOOK[name]) return {...base0, ...(KIT_BY_SPELL[name] || {}), ...SPELL_LOOK[name], type};
+  const base = base0;
   // the generated table title-cases the board's keys ("Toll The Dead"); look names up without regard to case
   const named = KIT_BY_SPELL[name] || Object.entries(KIT_BY_SPELL).find(([k]) => k.toLowerCase() === name.toLowerCase())?.[1]; if (named) return {...base, ...named, type};
   if (sp.kind === "attack" && base.route !== "ball" && base.route !== "beam")
