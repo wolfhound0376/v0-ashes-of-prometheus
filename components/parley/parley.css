@@ -36,7 +36,9 @@
   grid-template-columns: 380px minmax(0, 1fr) 320px;
   /* The middle row gets a floor: on a short window the page scrolls instead of
    * the three columns spilling down underneath the bottom strip. */
-  grid-template-rows: auto minmax(540px, 1fr) auto;
+  /* --mid-min comes from the dashboard: character card + gap + 200px, so the
+   * stage window and the sprite vignette always fit whole in this row. */
+  grid-template-rows: auto minmax(max(540px, var(--mid-min, 540px)), 1fr) auto;
   gap: 12px;
   padding: 12px;
 }
@@ -50,7 +52,11 @@
  * portrait, never the stage. --stage-min is the one knob. (2026-10-28) */
 .parley { --stage-min: 200px; }
 .parley .p-center { display: grid; grid-template-rows: minmax(0, var(--npc-h, 1fr)) minmax(var(--stage-min), 1fr); gap: 12px; min-width: 0; min-height: 0; }
-.parley .p-sheet { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; align-content: start; min-height: 0; min-width: 0; }
+/* The sprite vignette (middle of the right column) keeps a 200px floor, the
+ * same promise the stage window gets: when the column runs short the sheet
+ * scrolls to reach Conditions, it never crushes the sprite or lets it paint
+ * over the panel below. (Sam, 2026-10-28) */
+.parley .p-sheet { display: grid; grid-template-rows: auto minmax(200px, 1fr) auto; gap: 12px; align-content: start; min-height: 0; min-width: 0; }
 /* Each column keeps its contents inside its own box (2026-10-28): before this the
  * stage window, the sprite vignette and the conditions panel ran on past the
  * bottom of the middle row and sat under/over the SAY chips and the toggles.
@@ -229,7 +235,7 @@
 .parley .p-emb small { font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--p-gold-hi); }
 
 /* ---------- sprite + conditions ---------- */
-.parley .p-vig { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; padding: 10px 12px; min-height: 0; }
+.parley .p-vig { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 8px; padding: 10px 12px; min-height: 200px; overflow: hidden; }
 .parley .p-vighead { display: flex; justify-content: space-between; font-family: var(--p-font-head); font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--p-gold); }
 .parley .p-vig figure { border: 2px solid #000 !important; border-radius: 10px !important; background: radial-gradient(ellipse at 50% 90%, rgba(242,197,92,.18), transparent 50%), linear-gradient(180deg, #120b14, #05030a) !important; }
 .parley .p-vig figcaption { display: none; }
