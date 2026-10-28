@@ -1003,7 +1003,17 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
   useEffect(() => {
     const center = centerRef.current, card = cardRef.current
     if (!center || !card) return
-    const fit = () => { const h = card.getBoundingClientRect().bottom - center.getBoundingClientRect().top; if (h > 200) center.style.setProperty("--npc-h", `${Math.round(h)}px`) }
+    const fit = () => {
+      const h = card.getBoundingClientRect().bottom - center.getBoundingClientRect().top
+      if (h > 200) center.style.setProperty("--npc-h", `${Math.round(h)}px`)
+      // Dev tripwire: if the stage box ever gets squeezed under its floor again,
+      // say so in the console instead of silently clipping it.
+      if (process.env.NODE_ENV !== "production") {
+        const stage = center.lastElementChild as HTMLElement | null
+        const floor = parseFloat(getComputedStyle(center).getPropertyValue("--stage-min")) || 200
+        if (stage && stage.getBoundingClientRect().height < floor - 1) console.warn(`[parley] stage box squeezed to ${Math.round(stage.getBoundingClientRect().height)}px (floor ${floor}px) — something is stealing the middle row`)
+      }
+    }
     const ro = new ResizeObserver(fit); ro.observe(card); window.addEventListener("resize", fit); fit()
     return () => { ro.disconnect(); window.removeEventListener("resize", fit) }
   }, [narrowTalk])

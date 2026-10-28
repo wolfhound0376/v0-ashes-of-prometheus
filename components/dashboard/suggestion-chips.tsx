@@ -152,7 +152,7 @@ export function SuggestionChips(props: SuggestionChipsProps) {
               onClick={() => onPick?.(sent, suggestion.kind === "observe")}
               className={chipClass}
               data-ability={ability ?? undefined}
-              title={suggestion.skill ? `${suggestion.skill} check` : undefined}
+              title={suggestion.skill ? `${suggestion.text} — ${suggestion.skill} check` : suggestion.text}
             >
               {suggestion.text}
               {parley

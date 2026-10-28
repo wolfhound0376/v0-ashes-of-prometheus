@@ -44,7 +44,12 @@
 @media (max-width: 1024px) { .parley { grid-template-columns: 1fr; grid-template-rows: auto; } .parley .p-left, .parley .p-center, .parley .p-sheet { min-height: 0; } }
 .parley .p-left { display: grid; grid-template-rows: minmax(0, 1fr) auto auto; gap: 12px; min-width: 0; min-height: 0; }
 .parley .p-left.log-open { grid-template-rows: minmax(0, 1fr) minmax(0, 1.2fr) auto; }
-.parley .p-center { display: grid; grid-template-rows: var(--npc-h, minmax(0, 1fr)) minmax(0, 1fr); gap: 12px; min-width: 0; min-height: 0; }
+/* The lower centre box (the stage: pixel art, Fifi's box) always keeps a floor.
+ * The NPC box may only take what is left above that floor, so anything that
+ * steals height from the middle row (a taller strip, a short window) shrinks the
+ * portrait, never the stage. --stage-min is the one knob. (2026-10-28) */
+.parley { --stage-min: 200px; }
+.parley .p-center { display: grid; grid-template-rows: minmax(0, var(--npc-h, 1fr)) minmax(var(--stage-min), 1fr); gap: 12px; min-width: 0; min-height: 0; }
 .parley .p-sheet { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; align-content: start; min-height: 0; min-width: 0; }
 /* Each column keeps its contents inside its own box (2026-10-28): before this the
  * stage window, the sprite vignette and the conditions panel ran on past the
@@ -243,7 +248,11 @@
 .parley .p-hot { position: relative; z-index: 5; background: linear-gradient(180deg, var(--p-panel), var(--p-panel2)); }
 .parley .p-top { z-index: 6; }
 .parley .p-hot { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 12px 14px; border: 3px solid var(--p-rim); box-shadow: inset 0 0 0 2px #000, 0 4px 0 #000; }
-.parley .p-groups { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
+/* One line: the Talking-to cycler sits beside the chips instead of above them,
+ * and the chips get at most two rows (scroll past that), so the strip stays
+ * ~90px and can't grow into the middle row. (2026-10-28) */
+.parley .p-groups { display: flex; align-items: center; gap: 10px; flex-wrap: nowrap; min-width: 0; }
+.parley .p-groups > .p-cycler { flex: none; }
 .parley .p-cycler { padding: 6px 8px; gap: 6px; --c1: var(--p-teal); --c2: var(--p-teal2); cursor: default; }
 .parley .p-cycler:hover { transform: none; box-shadow: var(--p-slab); filter: none; }
 .parley .p-cycler .p-arrow { padding: 4px 8px; border-width: 2px; border-radius: 8px; --c1: #2a2330; --c2: #110e16; }
@@ -253,7 +262,13 @@
 .parley .p-cycler .p-mid b { font-size: 14px; }
 .parley .p-cycler .p-mid em { font-style: normal; font-size: 9px; opacity: .75; }
 .parley .p-saylbl { font-size: 9px; letter-spacing: .14em; color: var(--p-gold); margin-right: 4px; }
-.parley .p-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.parley .p-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex: 1; min-width: 0; }
+/* The chips themselves tile two-across, two rows tall; long lines ellipsize
+ * (full text is in the tooltip) rather than pushing the strip taller. */
+.parley .p-chips > .p-chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; max-height: 64px; overflow-y: auto; scrollbar-width: none; padding: 2px; }
+.parley .p-chips > .p-chips > .p-sug { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.parley .p-hot { padding: 8px 14px; max-height: 96px; }
+@media (max-width: 1024px) { .parley .p-groups { flex-wrap: wrap; } .parley .p-hot { max-height: none; } }
 .parley .p-sug { padding: 4px 10px; font-size: 12px; --c1: #2a2330; --c2: #110e16; color: #fff; }
 .parley .p-sug i { font-style: normal; font-size: 9px; letter-spacing: .1em; opacity: .85; margin-left: 2px; }
 .parley .p-sug[data-ability="str"] { color: #ff8a76; }
