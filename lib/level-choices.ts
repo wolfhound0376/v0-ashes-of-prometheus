@@ -6,7 +6,8 @@
 // level, checks a player's picks against the rules and the class list, and builds the one patch that settles them.
 //
 // Scope (Sam, 2026-10-28, the approved prototype https://claude.ai/artifact/5jSrEofrWEXGH5pmwvMf5M): the SORCERER and
-// the ROGUE (Sam, 2026-10-28: "go" on the rogues first, SRD subclass open, everyone on the 2024 rules), levels 2 and 3. Level 4 and up wait on the class trial (lib/level-trial.ts, TRIAL_GATE_FROM_LEVEL = 4), so the
+// the ROGUE (Sam, 2026-10-28: "go" on the rogues first, SRD subclass open, everyone on the 2024 rules) and the CLERIC
+// (Sam, 2026-10-28: Samson's pack, "for 2024 rules"), levels 2 and 3. Level 4 and up wait on the class trial (lib/level-trial.ts, TRIAL_GATE_FROM_LEVEL = 4), so the
 // improvement / feat step is not wired here yet. Other classes keep the ceremony's "on your sheet" note.
 //
 // Rules source: the sheet's own (Kenta: sheet_spellcasting.rules_source "SRD 5.2.1"), i.e. the 2024 Sorcerer table:
@@ -35,13 +36,19 @@ export interface ClassSpell {
 }
 
 export interface MetaOption { name: string; cost: number; desc: string; verify: true }
-export interface OriginOption { name: string; open: boolean; source: string; desc: string; verify: true }
+export interface OriginOption {
+  name: string; open: boolean; source: string; desc: string; verify: boolean
+  /** features the subclass brings at its first level, written with it (Life Domain); without them the DM applies its features */
+  features?: Gain[]
+  /** spells it keeps always prepared from that level (they do not count against the prepared number) */
+  alwaysPrepared?: string[]
+}
 
 /** A feature the level brings with nothing to choose (Cunning Action, Font of Magic); it is written with the choices. */
 export interface Gain { name: string; desc: string; source: string; icon: string }
 
 export interface LevelPlan {
-  cls: "sorcerer" | "rogue"
+  cls: "sorcerer" | "rogue" | "cleric"
   caster: boolean
   level: number
   /** what the class calls its level-3 pick ("Sorcerous Origin", "Rogue Subclass") */
@@ -58,6 +65,8 @@ export interface LevelPlan {
   prepared: { from: number; to: number }
   cantrips: { from: number; to: number }
   sorceryPoints: { from: number; to: number }
+  /** cleric Channel Divinity uses, before → after (0 → 0 for other classes) */
+  channelDivinity: { from: number; to: number }
 }
 
 /** SRD 5.2.1 Sorcerer table, levels 1–4 (what this module serves). */
@@ -105,8 +114,39 @@ const ROGUE_GAINS: Record<number, Gain[]> = {
   ],
 }
 
+// SRD 5.2.1 Cleric (p.36 onward, fetched 2026-10-28): prepared 4/5/6/7, cantrips 3/3/3/4, Channel Divinity at 2nd (two
+// uses: Divine Spark, Turn Undead), subclass at 3rd. The SRD's one subclass is the Life Domain, quoted here; Light,
+// Trickery and War are the Player's Handbook's and stay closed until Sam opens them. Clerics change their prepared
+// list on any long rest, so the level-up only adds the new spells (a swap is still allowed).
+export const CLERIC_2024 = {
+  prepared: { 1: 4, 2: 5, 3: 6, 4: 7 } as Record<number, number>,
+  cantrips: { 1: 3, 2: 3, 3: 3, 4: 4 } as Record<number, number>,
+  channelDivinity: { 1: 0, 2: 2, 3: 2, 4: 2 } as Record<number, number>,
+  maxSpellLevel: { 1: 1, 2: 1, 3: 2, 4: 2 } as Record<number, number>,
+}
+const CLERIC_GAINS: Record<number, Gain[]> = {
+  2: [
+    { name: "Channel Divinity", desc: "Two uses; one returns on a short rest, all on a long rest.", source: "Cleric 2 · SRD 5.2.1", icon: "channel-divinity" },
+    { name: "Divine Spark", desc: "Magic action, one creature within 30 ft: roll 1d8 + Wisdom modifier and heal it that much, or it makes a Constitution save, taking that much Necrotic or Radiant damage on a failure (half on a success).", source: "Cleric 2 · Channel Divinity · SRD 5.2.1", icon: "divine-spark" },
+    { name: "Turn Undead", desc: "Magic action: each Undead of your choice within 30 ft makes a Wisdom save or is Frightened and Incapacitated for 1 minute, moving away from you. It ends if it takes damage, or you are Incapacitated or die.", source: "Cleric 2 · Channel Divinity · SRD 5.2.1", icon: "turn-undead" },
+  ],
+  3: [],
+}
+export const CLERIC_SUBCLASSES: OriginOption[] = [
+  { name: "Life Domain", open: true, source: "SRD 5.2.1", verify: false,
+    desc: "Disciple of Life, Preserve Life, and Aid, Bless, Cure Wounds and Lesser Restoration always prepared.",
+    alwaysPrepared: ["Aid", "Bless", "Cure Wounds", "Lesser Restoration"],
+    features: [
+      { name: "Disciple of Life", desc: "When a spell you cast with a spell slot restores Hit Points to a creature, it regains extra Hit Points equal to 2 plus the slot's level.", source: "Cleric 3 · Life Domain · SRD 5.2.1", icon: "disciple-of-life" },
+      { name: "Preserve Life", desc: "Channel Divinity, Magic action: restore Hit Points equal to five times your Cleric level, divided among Bloodied creatures within 30 ft (you included), none above half its Hit Point maximum.", source: "Cleric 3 · Life Domain · SRD 5.2.1", icon: "preserve-life" },
+    ] },
+  { name: "Light Domain", open: false, source: "PHB 2024 — not in the SRD", verify: true, desc: "Radiance and Warding Flare. Needs the DM's say." },
+  { name: "Trickery Domain", open: false, source: "PHB 2024 — not in the SRD", verify: true, desc: "Blessing of the Trickster and illusory duplicates. Needs the DM's say." },
+  { name: "War Domain", open: false, source: "PHB 2024 — not in the SRD", verify: true, desc: "Guided Strike and War Priest attacks. Needs the DM's say." },
+]
+
 /** The subclass options a plan offers. */
-export function subclassesFor(plan: LevelPlan | null): OriginOption[] { return !plan ? [] : plan.cls === "rogue" ? ROGUE_SUBCLASSES : ORIGINS }
+export function subclassesFor(plan: LevelPlan | null): OriginOption[] { return !plan ? [] : plan.cls === "rogue" ? ROGUE_SUBCLASSES : plan.cls === "cleric" ? CLERIC_SUBCLASSES : ORIGINS }
 
 export const CHOICES_SOURCE = "Level up — chosen"
 const pendingName = (level: number) => `Level ${level} — choices to make`
@@ -124,7 +164,15 @@ export function planFor(cls: string | null | undefined, level: number): LevelPla
     return { cls: "rogue", caster: false, level, subclassLabel: "Rogue Subclass", gains: ROGUE_GAINS[level] ?? [],
       sneakAttack: { from: "1d6", to: level === 3 ? "2d6" : "1d6" },
       newSpells: 0, newCantrips: 0, maxSpellLevel: 0, swaps: 0, metamagic: 0, origin: level === 3,
-      prepared: none, cantrips: none, sorceryPoints: none }
+      prepared: none, cantrips: none, sorceryPoints: none, channelDivinity: none }
+  }
+  if (k === "cleric") {
+    const t = CLERIC_2024
+    return { cls: "cleric", caster: true, level, subclassLabel: "Divine Domain", gains: CLERIC_GAINS[level] ?? [], sneakAttack: null,
+      newSpells: t.prepared[level] - t.prepared[level - 1], newCantrips: t.cantrips[level] - t.cantrips[level - 1],
+      maxSpellLevel: t.maxSpellLevel[level], swaps: 1, metamagic: 0, origin: level === 3,
+      prepared: { from: t.prepared[level - 1], to: t.prepared[level] }, cantrips: { from: t.cantrips[level - 1], to: t.cantrips[level] },
+      sorceryPoints: { from: 0, to: 0 }, channelDivinity: { from: t.channelDivinity[level - 1], to: t.channelDivinity[level] } }
   }
   if (k !== "sorcerer") return null
   const t = SORCERER_2024
@@ -144,6 +192,7 @@ export function planFor(cls: string | null | undefined, level: number): LevelPla
     prepared: { from: t.prepared[level - 1], to: t.prepared[level] },
     cantrips: { from: t.cantrips[level - 1], to: t.cantrips[level] },
     sorceryPoints: { from: t.sorceryPoints[level - 1], to: t.sorceryPoints[level] },
+    channelDivinity: { from: 0, to: 0 },
   }
 }
 
@@ -153,7 +202,7 @@ type RawSpell = { name: string; level: number; school?: string; classes?: string
 export function classSpells(cls: string, maxLevel: number): ClassSpell[] {
   const want = classKey(cls)
   return (spellsData as RawSpell[])
-    .filter((s) => (s.classes ?? []).some((c) => c.toLowerCase() === want) && s.level <= maxLevel && !/\(UA\)/.test(s.name) && !/\bUA\b/.test(String(s.source ?? "")))
+    .filter((s) => (s.classes ?? []).some((c) => c.toLowerCase() === want) && s.level <= maxLevel && !/\((UA|HB)\)/.test(s.name) && !/\bUA\b/.test(String(s.source ?? "")))
     .map((s) => ({
       name: s.name, level: s.level, school: String(s.school ?? "").toLowerCase(), cast: s.cast_time ?? "", range: s.range ?? "",
       dur: s.duration ?? "", conc: !!s.concentration, comp: s.components ?? "", effect: s.effect ?? "",
@@ -178,6 +227,7 @@ export interface Picks {
 export interface CastingSheet {
   cantrips?: string[] | null
   prepared?: string[] | null
+  always_prepared?: string[] | null
   [k: string]: unknown
 }
 
@@ -191,6 +241,10 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
   const byName = new Map(list.map((s) => [s.name, s]))
   const cantrips = [...(casting?.cantrips ?? [])]
   const prepared = [...(casting?.prepared ?? [])]
+  const always = [...(casting?.always_prepared ?? [])]
+  const Cls = plan.cls[0].toUpperCase() + plan.cls.slice(1)
+  const origin = plan.origin ? subclassesFor(plan).find((o) => o.name === picks.origin) : null
+  const alwaysNext = uniq(always.concat(origin?.alwaysPrepared ?? []))
   const spells = uniq(picks.spells ?? []), newC = uniq(picks.cantrips ?? [])
   const swapOut = picks.swapOut ?? null, swapOutC = picks.swapOutCantrip ?? null
   if (swapOut && swapOutC) return { ok: false, error: "One swap per level." }
@@ -201,24 +255,26 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
   if (newC.length !== needC) return { ok: false, error: needC ? `Choose ${needC} cantrip${needC === 1 ? "" : "s"}.` : "No new cantrip at this level." }
   for (const n of spells) {
     const s = byName.get(n)
-    if (!s || s.level < 1) return { ok: false, error: `${n} is not a sorcerer spell this level can prepare.` }
+    if (!s || s.level < 1) return { ok: false, error: `${n} is not a ${plan.cls} spell this level can prepare.` }
     if (prepared.includes(n)) return { ok: false, error: `${n} is already prepared.` }
+    if (alwaysNext.includes(n)) return { ok: false, error: `${n} is always prepared already.` }
   }
   for (const n of newC) {
     const s = byName.get(n)
-    if (!s || s.level !== 0) return { ok: false, error: `${n} is not a sorcerer cantrip.` }
+    if (!s || s.level !== 0) return { ok: false, error: `${n} is not a ${plan.cls} cantrip.` }
     if (cantrips.includes(n)) return { ok: false, error: `${n} is already known.` }
   }
   const meta = uniq(picks.metamagic ?? [])
   if (meta.length !== plan.metamagic) return { ok: false, error: plan.metamagic ? `Choose ${plan.metamagic} Metamagic options.` : "No Metamagic at this level." }
   const metaOpts = meta.map((n) => METAMAGIC.find((m) => m.name === n))
   if (metaOpts.some((m) => !m)) return { ok: false, error: "Unknown Metamagic option." }
-  const origin = plan.origin ? subclassesFor(plan).find((o) => o.name === picks.origin) : null
   if (plan.origin && !origin) return { ok: false, error: `Choose a ${plan.subclassLabel}.` }
   if (origin && !origin.open) return { ok: false, error: `${origin.name} is closed until the DM opens it.` }
   if (!plan.origin && picks.origin) return { ok: false, error: `The ${plan.subclassLabel.toLowerCase()} is chosen at level 3.` }
 
-  const nextPrepared = prepared.filter((n) => n !== swapOut).concat(spells)
+  // a spell the new domain keeps always prepared leaves the chosen list (it is on the sheet once, as always prepared);
+  // the cleric fills the freed place on the next long rest (they re-prepare after any long rest)
+  const nextPrepared = prepared.filter((n) => n !== swapOut && !(origin?.alwaysPrepared ?? []).includes(n)).concat(spells)
   const nextCantrips = cantrips.filter((n) => n !== swapOutC).concat(newC)
   const spellcasting: CastingSheet | null = !plan.caster ? null : {
     ...(casting ?? {}),
@@ -226,9 +282,11 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
     cantrips: nextCantrips,
     prepared_max: plan.prepared.to,
     cantrips_max: plan.cantrips.to,
-    sorcery_points: { max: plan.sorceryPoints.to, used: 0 },
+    ...(plan.cls === "sorcerer" ? { sorcery_points: { max: plan.sorceryPoints.to, used: 0 } } : {}),
+    ...(plan.channelDivinity.to ? { channel_divinity: { max: plan.channelDivinity.to, used: Math.min(Number((casting?.channel_divinity as { used?: number } | undefined)?.used ?? 0) || 0, plan.channelDivinity.to) } } : {}),
+    ...(alwaysNext.length !== always.length ? { always_prepared: alwaysNext } : {}),
   }
-  const src = `${plan.cls === "rogue" ? "Rogue" : "Sorcerer"} ${plan.level}`
+  const src = `${Cls} ${plan.level}`
   const kept = (Array.isArray(features) ? features : []).filter(
     (f): f is SheetFeature => !!f && typeof f === "object" && typeof (f as SheetFeature).name === "string" && !((f as SheetFeature).source === PENDING_LEVEL_SOURCE && (f as SheetFeature).name === pendingName(plan.level)),
   ).map((f) => {
@@ -241,11 +299,12 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
   const added: SheetFeature[] = []
   for (const g of plan.gains) added.push({ name: g.name, desc: g.desc, source: g.source })
   for (const m of metaOpts) added.push({ name: `Metamagic: ${m!.name}`, desc: `${m!.desc} (${m!.cost} SP)`, source: `${src} · verify against SRD 5.2.1` })
-  if (origin) added.push({ name: origin.name, desc: origin.desc, source: `${src} · ${origin.source} · the DM applies its features` })
+  if (origin) added.push({ name: origin.name, desc: origin.desc, source: `${src} · ${origin.source}${origin.features ? "" : " · the DM applies its features"}` })
+  for (const g of origin?.features ?? []) added.push({ name: g.name, desc: g.desc, source: g.source })
   const summary = [
     ...plan.gains.map((g) => g.name),
     ...metaOpts.map((m) => m!.name),
-    ...(origin ? [origin.name] : []),
+    ...(origin ? [origin.name, ...(origin.features ?? []).map((g) => g.name)] : []),
     ...spells, ...newC,
     ...(swapOut ? [`swapped out ${swapOut}`] : []), ...(swapOutC ? [`swapped out ${swapOutC}`] : []),
   ]

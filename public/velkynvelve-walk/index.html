@@ -14106,7 +14106,7 @@ function closeLevelUp(){ const el = $("invCeremony"); if (el){ el.hidden = true;
 // and the floor sigil. It is its own page so its Arcane Reliquary styles never meet the walk's. It takes the level
 // through the same /api/walk-level-up and settles the choices through /api/walk-level-choices, then tells the walk
 // (postMessage) so the open sheet follows. Every other class keeps the ceremony below.
-const LEVEL_SCREEN = {sorcerer: 3, rogue: 3};   // class → the highest level the screen serves (rogue: Sam, 2026-10-28)
+const LEVEL_SCREEN = {sorcerer: 3, rogue: 3, cleric: 3};   // class → the highest level the screen serves (rogue: Sam, 2026-10-28)
 function levelScreenFor(a){ const s = SHEETS[a.id] || {}, cls = String(s.cls || "").split(/[\s/]/)[0].toLowerCase(), top = LEVEL_SCREEN[cls]; return top && (s.level || 1) < top + 1 ? cls : null; }
 function openLevelScreen(a, cid){
   closeLevelScreen();
