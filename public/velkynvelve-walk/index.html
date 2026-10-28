@@ -5078,8 +5078,47 @@ const TAUNTS = {
   "drow-guard-male": ["Back in your cage, meat.", "Lolth's spiders eat better than you fight.", "Kneel, and I will make it quick."],
   "drow-guard-female": ["Back in your cage, meat.", "Lolth's spiders eat better than you fight.", "Kneel, and I will make it quick."],
   jorlan: ["I know this pen better than you know your own hands.", "Fast. Not fast enough."],
+  // Sam, 2026-10-28: "make sure the NPCs are talking crap or communicating as well as the opponents at times". Drafts in
+  // the officers' characters (OotA ch.1: Shoor cruel and ambitious, Ilvara a sadist who serves Lolth) — not book text,
+  // Sam's to rewrite. The same 45% chance on their turn as every other taunting foe.
+  shoor: ["You cost me my sleep, slave.", "I'll hang what's left of you over the falls.", "Ilvara wants you breathing. I don't."],
+  ilvara: ["Lolth is watching. Crawl.", "Your screams are a prayer, and she is pleased.", "On your knees. You know the way."],
+  "drow-elite-warrior": ["You fight like surface rats.", "Is this the rebellion? Pathetic."],
+  "drow-lizard-rider": ["Run! She likes it when you run.", "Down, meat. The lizard is hungry."],
+  asha: ["The Spider Queen sees every one of you.", "Kneel and I may let you live to work."],
 };
-const GLOATS = {"drow-guard-male": ["One less mouth to feed."], "drow-guard-female": ["One less mouth to feed."], jorlan: ["Stay down."]};
+const GLOATS = {"drow-guard-male": ["One less mouth to feed."], "drow-guard-female": ["One less mouth to feed."], jorlan: ["Stay down."],
+  shoor: ["Next."], ilvara: ["Another gift for Lolth."], "drow-elite-warrior": ["Stay down, rat."], "drow-lizard-rider": ["Lizard food."], asha: ["Lolth takes you."]};
+// THE BANTER (Sam, 2026-10-28: "make sure the NPCs are talking crap or communicating as well as the opponents at times").
+// The fighting prisoners and the runners have their own lines now, spoken the way the foes' taunts are (taunt: in their
+// own tongue and saved voice, gibberish to a seat that doesn't share it). Drafts, in the characters the book gives them
+// (OotA ch.1: Ront the swaggering orc bully, Eldeth the proud shield dwarf of Gauntlgrym, Derendil the quaggoth who
+// believes he is an elf prince, Sarith the sullen drow; Buppido's cheerful menace, Jimjar the gambler, Topsy and Turvy
+// the jumpy twins, Shuushar the kuo-toa hermit who preaches calm). Not book text — Sam's to rewrite. Stool stays silent:
+// a myconid speaks by rapport spores, and that is the Parley's, not a battle bark.
+//   turn   — on their own turn, now and then        kill  — they drop a foe          cheer — a foe falls to someone else
+//   hurt   — they take a hard blow                  flee  — a bystander bolting       loss  — a foe sees one of its own fall
+const BANTER = {
+  ront:     {turn: ["Ha! Who's next?", "Come on, then! Ront's not done!", "Stand behind Ront, little ones."], kill: ["Down you go!", "Ront wins again!"], cheer: ["Ha! Good one!"], hurt: ["That tickled.", "You'll pay for that!"]},
+  eldeth:   {turn: ["For Gauntlgrym!", "Steady. Shoulder to shoulder.", "I've broken harder heads than yours, drow."], kill: ["One less.", "Moradin guide you to the dark."], cheer: ["Well struck!"], hurt: ["Is that all?"]},
+  derendil: {turn: ["Have at thee, foul knave!", "A prince of Nar'l Xibrindas does not yield!", "Bow, cur, before your betters!"], kill: ["Justice of the realm!"], cheer: ["A noble blow!"], hurt: ["You dare strike royalty?!"]},
+  sarith:   {turn: ["Make it quick.", "They'll remember my face."], kill: ["…Good."], cheer: ["Again."], hurt: ["…"]},
+  buppido:  {flee: ["Oh my, oh my, such a lot of blood!", "Don't mind Buppido, just passing through!"]},
+  jimjar:   {flee: ["Ten gold says the big one drops first!", "I'm betting on you! Don't make me lose!"], cheer: ["Pay up! I called that!"]},
+  topsy:    {flee: ["Hide, hide, hide!", "Turvy! Where are you?"]},
+  turvy:    {flee: ["Not again, not again!", "Topsy, this way!"]},
+  shuushar: {flee: ["Breathe. Let the anger pass through you.", "Violence feeds only violence."]},
+};
+const FOE_LOSS = {"drow-guard-male": ["Kill the orc first!", "Close ranks!"], "drow-guard-female": ["Close ranks!", "Alarm! The slaves are loose!"], shoor: ["Useless. All of you."], ilvara: ["Weak. Lolth has no use for the weak."], jorlan: ["Hold them!"]};
+// One voice at a time: nobody speaks within BANTER_GAP of the last line, and nobody twice within BANTER_OWN of their own.
+const BANTER_GAP = 2600, BANTER_OWN = 9000;
+function banter(a, kind, at, chance = 1){
+  if (!cbt || !a || a.down || !actors.includes(a) || Math.random() > chance) return false;
+  const pool = kind === "loss" ? FOE_LOSS[a.id] : kind === "gloat" ? GLOATS[a.id] : (BANTER[a.id] || {})[kind];
+  if (!pool || !pool.length) return false;
+  if (now - (taunt.last || -1e9) < BANTER_GAP || now - (a.lastBanter || -1e9) < BANTER_OWN) return false;
+  a.lastBanter = now; return taunt(a, {[a.id]: pool}, at);
+}
 // LANGUAGES IN THE FIGHT (Sam, 2026-10-26: "Wire languages into combat taunts"). A taunt is spoken in a real
 // tongue, picked the way every NPC line is (lib/languages.ts chooseLineLanguage): the first one the foe shares with
 // the hero it is aimed at, else its own first. A drow guard sneers at Fifi in Undercommon and at Kenta in Elvish.
@@ -5093,7 +5132,7 @@ function tauntTongue(f, at){
 }
 function taunt(f, pool, at){
   const ls = (pool || TAUNTS)[f.id]; if (!ls || !ls.length) return false;
-  const line = ls[Math.floor(Math.random() * ls.length)];
+  const line = ls[Math.floor(Math.random() * ls.length)]; taunt.last = now;
   const lang = tauntTongue(f, at), heard = heardText(line, lang);
   bark(f, heard, 2600, {talk: true, lang});
   interpret(f, line, lang);
@@ -6331,7 +6370,7 @@ function bystandersFlee(){
     const goal = safestFloor(a); if (!goal) continue;
     const walk = cutPath(a, findPath(a, goal), ft * ftPx(a)), to = walk.pts.length ? walk.pts[walk.pts.length - 1] : null;
     if (!to || Math.hypot(to.x - a.x, to.y - a.y) < CELL) continue;   // nowhere better: keeps their head down where they are
-    if (!(cbt.fled || (cbt.fled = new Set())).has(a)){ cbt.fled.add(a); popText(a, "flees", "#e8e2c8", .9); narrate(a, `${fname(a)} runs from the fight.`); }
+    if (!(cbt.fled || (cbt.fled = new Set())).has(a)){ setTimeout(() => banter(a, "flee", null, .45), 400 + Math.random() * 900); cbt.fled.add(a); popText(a, "flees", "#e8e2c8", .9); narrate(a, `${fname(a)} runs from the fight.`); }
     a.path = walk.pts; a.onArrive = null;
   }
   renderFleeing();
@@ -8169,6 +8208,8 @@ function damage(t, n, type, crit, from, magical = false){
     if (t.kind !== "pc" && !/ooze/.test(t.id)){ const fr = frameOf(t); t.withered = {t0: now, img: fr.img, f: fr.f, swap: now + DEATH_TOUCH_SWAP_MS}; } }
   const hpBefore = t.c.hp;                                                      // the boss bar's Bloodied beat reads the crossing
   t.c.hp = Math.max(0, t.c.hp - n); if (t.creature) t.hp = t.c.hp;
+  if (t.c.hp <= 0 && from) t.killedBy = from;
+  else if (t.ally && from && n >= t.c.hpMax * .25) setTimeout(() => banter(t, "hurt", from, .6), 700);   // a hard blow on an ally draws a word
   if (t.c.rage && n > 0) t.c.rage.hurt = true;                                 // SRD: "taken damage since then" keeps the rage going
   if (t.kind === "pc" && t.c.hp <= 0 && over >= t.c.hpMax && !koNow){ t.flash = now + 180; fall(t); dieNow(t, `${over} damage past 0, as much as their hit point maximum`); return; }
   t.flash = now + 180; t.flashCol = "#fff";
@@ -8266,6 +8307,12 @@ function fall(t){
     if (t.ko){ popText(t, "knocked out", "#ffd166", 1.2); log(`<b>${fname(t)} is knocked out</b>: unconscious and stable at 0 HP (SRD: a stable creature regains 1 HP after 1d4 hours).`); settleGrudge(t); }
     else { const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS, t), 1400); } }
   else narrate(t, `${fname(t)} falls.`);
+  // THE BANTER on a death: the ally who made the kill says so; else an ally or a gambler cheers; a foe sees one of its own drop
+  if (cbt && t.kind === "foe"){
+    const k = t.killedBy;
+    setTimeout(() => { if (!(k && k.ally && banter(k, "kill", null, .8))){ const fan = standing([...cbt.allies, ...cbt.bystanders]).sort((x, y) => Math.hypot(x.x - t.x, x.y - t.y) - Math.hypot(y.x - t.x, y.y - t.y)); for (const f of fan) if (banter(f, "cheer", null, .5)) break; } }, 900);
+    setTimeout(() => { const own = standing(foes).filter(f => f !== t); if (own.length) banter(own[Math.floor(Math.random() * own.length)], "loss", k, .5); }, 2200);
+  }
   if (t.bystander){ t.slain = true; if (PEN_NPCS.some(d => d.id === t.id)){ (state.slain ||= []).includes(t.id) || state.slain.push(t.id); }
     state.company = companyNow().filter(id => id !== t.id); narrate(t, `${fname(t)} is dead.`); }   // BYSTANDERS: no death saves
   else if (t.kind !== "pc") dropLoot(t);                                  // LOOT ON THE KILL: what survived the fight bursts out
@@ -8469,7 +8516,7 @@ function foeTurn(f){
   if (tgt && !grudgeOn && !f.c.berserk){ const pot = potShot(f); if (pot) tgt = pot; }   // BYSTANDERS: threats first, now and then a pot shot
   if (!tgt){ checkEnd(); return; }
   camTo(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600);
-  if (Math.random() < .45){ if (!taunt(f, null, tgt)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }
+  if (Math.random() < .45 && now - (taunt.last || -1e9) > BANTER_GAP){ if (!taunt(f, null, tgt)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }   // one voice at a time (THE BANTER)
   const s = f.c.sheet, swings = s.multi || 1, bow = s.attacks.find(k => k.ranged);
   // a drow with a hand crossbow shoots, unless a hero is already at its elbow (SRD: a ranged attack within 5 ft of a
   // hostile is at disadvantage), and then it is the shortsword. It closes only to the crossbow's normal range.
@@ -8500,6 +8547,7 @@ function foeTurn(f){
 function allyTurn(a){
   const end = () => { combatBusy = false; if (cbt) cbt.phase = "idle"; setTimeout(() => passTurn(a), 500); };   // only if the turn is still theirs (main #795)
   if (!actors.includes(a) || a.down){ setTimeout(nextTurn, 100); return; }
+  if (a.ally) banter(a, "turn", standing(foes)[0], .35);                   // THE BANTER: now and then a word as they go in
   if (a.c.conds.has("prone")){ a.c.conds.delete("prone"); a.c.move = Math.floor(a.c.move / 2); log(`${fname(a)} gets up.`); }
   if (a.c.conds.has("restrained")){   // the same Break free the party has: a STR (Athletics) check against the web, as the action
     const dc = a.c.webDc || 12, k = skillCheck(a, "athletics");
