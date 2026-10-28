@@ -305,6 +305,13 @@ const CLASS_FX = {
   sorcerer: {film: "/velkynvelve-walk/film/sorcerer-awakening.mp4", stage: "/velkynvelve-walk/img/inventory-stage-wizard.jpg", ring: {src: "/vfx/sigilEvocationRing.webp", cols: 4, rows: 2, frames: 8, loop: true}},
   rogue: {film: null, stage: "/velkynvelve-walk/img/inventory-stage-rogue.jpg", ring: {src: "/vfx/sigilIllusionRing.webp", cols: 4, rows: 3, frames: 12, loop: false, peak: 9}},
 };
+// a hero's own film wins over the class's. Fifi (walk id "freia"): Sam's "Fifi Manga Dagger Dance" (2026-10-28), 7 s,
+// its baked "LEVEL UP · FIFI · ROGUE ASSASSIN" card covered with the clean sky from before it fades in (3.95 s), because
+// Assassin is closed and the result screen names the subclass she actually takes. say: when "Level up!" is spoken.
+const HERO_FX = {
+  freia: {film: "/velkynvelve-walk/film/fifi-dagger-dance.mp4", say: 4100},
+};
+const SAY_AT = {sorcerer: 2900};
 let RING = CLASS_FX.sorcerer.ring;
 let SPELLS = [];
 const RAMP = {abjuration:["#0b1e2f","#2479b0"], conjuration:["#132e13","#92ce5a"], divination:["#16152e","#7542b8"], enchantment:["#2d131e","#d0407c"], evocation:["#36120e","#e87618"], illusion:["#0d1d31","#3e96df"], necromancy:["#1b172b","#853cb1"], transmutation:["#311f10","#df9c31"]};
@@ -341,7 +348,7 @@ async function boot(){
     const pick = plan.metamagic ? "meta" : plan.origin ? "origin" : null;
     FLOW = {[L]: (OWED ? [] : ["gain"]).concat(pick ? [pick] : [], plan.caster ? ["spells"] : [], ["seal"])};
     if (OWED && FLOW[L].length === 1) FLOW[L].unshift("gain");
-    const fx = CLASS_FX[CLS] || {}; D.fx.awaken = fx.film || null; if (fx.ring) RING = fx.ring; D.stage = fx.stage || `/velkynvelve-walk/img/inventory-stage-${CLS}.jpg`;
+    const fx = Object.assign({}, CLASS_FX[CLS] || {}, HERO_FX[HERO] || {}); D.fx.awaken = fx.film || null; D.fx.sayAt = fx.say || SAY_AT[CLS] || 2900; if (fx.ring) RING = fx.ring; D.stage = fx.stage || `/velkynvelve-walk/img/inventory-stage-${CLS}.jpg`;
     document.getElementById("heroName").textContent = NAME.split(" ")[0];
     document.getElementById("topName").textContent = `Level up · ${NAME}`;
     tell({ready: true});
@@ -389,7 +396,7 @@ function awaken(then){
   inv.appendChild(ov); const v = ov.querySelector("video"); v.src = D.fx.awaken; v.muted = !armed;
   let done = false; const end = () => { if (done) return; done = true; ov.classList.remove("on"); setTimeout(() => ov.remove(), 380); then(); };
   v.addEventListener("ended", end); ov.querySelector(".skip").addEventListener("click", e => { e.stopPropagation(); play("close"); end(); });
-  setTimeout(() => say("Level up!"), 2900);   // the banner lands about here in the film
+  setTimeout(() => say("Level up!"), D.fx.sayAt || 2900);   // the banner / the peak lands about here in the film
   requestAnimationFrame(() => ov.classList.add("on")); v.play().catch(() => { v.muted = true; v.play().catch(end); });
 }
 function celebrate(L){
