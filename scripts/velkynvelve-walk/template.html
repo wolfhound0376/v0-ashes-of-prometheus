@@ -8684,6 +8684,7 @@ function laborPropsClear(){ laborProps = []; }
 function laborPropsSet(){
   laborPropsClear();
   if (!atWorkPlate()) return;
+  if (paintedStations(cur, labor.task)) return;          // the plate has its work painted in: nothing to set down
   const list = (STATION_PROPS[labor.task] || []).filter(id => SPR[id]);
   if (!list.length) return;
   const at = nearestWalkable(centroid.x, centroid.y);
@@ -8718,8 +8719,15 @@ async function laborPerform(h, ambient){
   h.performing = true;
   let ok = true;
   try {
-    const i = Math.max(0, party.indexOf(h)), prop = laborProps.length ? laborProps[i % laborProps.length] : null;
-    if (prop){
+    const i = Math.max(0, party.indexOf(h)), painted = paintedStations(cur, labor.task);
+    const st = painted ? painted[i % painted.length] : null;
+    const prop = st ? null : laborProps.length ? laborProps[i % laborProps.length] : null;
+    if (st){                                          // the painted station: stand at it, face the wall it is painted on
+      const spread = Math.floor(i / painted.length) * 46;   // a second hero at the same station stands beside the first
+      ok = await laborGo(h, nearestWalkable(st.at[0] + spread, st.at[1] + spread * .35));
+      if (!ok) return;
+      h.face = faceOf(0, -1);
+    } else if (prop){
       const side = i % 2 ? 1 : -1;
       ok = await laborGo(h, nearestWalkable(prop.x + side * 50 * node.scale, prop.y + (20 + 14 * Math.floor(i / 2)) * node.scale));
       if (!ok) return;
@@ -8735,7 +8743,7 @@ async function laborPerform(h, ambient){
       if (hasSheet(h, "heave")) await new Promise(r => playOnce(h, "heave", r));
       const from = {x: h.x, y: h.y}, away = prop ? Math.sign(h.x - prop.x) || 1 : 1;
       h.walkAs = "carry";
-      ok = await laborGo(h, nearestWalkable(h.x + away * CARRY_PX * node.scale, h.y + 30 * node.scale));
+      ok = await laborGo(h, st && st.to ? nearestWalkable(st.to[0], st.to[1]) : nearestWalkable(h.x + away * CARRY_PX * node.scale, h.y + 30 * node.scale));
       if (!ok) return;
       await wait(500);
       ok = await laborGo(h, nearestWalkable(from.x, from.y));
