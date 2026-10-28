@@ -418,7 +418,6 @@ footer.party{display:flex;gap:8px;overflow-x:auto;min-width:0;align-items:stretc
 .pc[aria-pressed="true"]{border-color:var(--ember)}
 .pc[aria-pressed="true"] small{color:var(--ember)}
 .seats{display:flex;flex-direction:column;gap:4px}
-.help{margin-left:auto;align-self:center;font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink-dim);white-space:nowrap;padding-left:8px}
 .dmCloudRow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0}.dmCloudRow input{width:4.5em}
 button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outline-offset:2px}
 .loading{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--face-mono);color:var(--ink-dim);letter-spacing:.1em}
@@ -530,7 +529,6 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
   .brand .sub{max-width:44vw}
   .tcard{grid-template-columns:84px 1fr}
   .tcard canvas{width:80px;height:80px}
-  .help{display:none}
   .log{bottom:58px}
   input[type=range]{display:none}
 }
@@ -694,7 +692,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 
   <div class="cbt-menu" id="cbtMenu" hidden></div>
   <button class="cbt-mini" id="cbtMini" title="Close DM tools and bring the commands back">▲ Commands (DM tools open)</button>
-  <footer class="party" id="party"><span class="help">WASD / arrows or click to walk · 1–4 or Tab to switch · E to talk · walk into a glowing exit to travel</span></footer>
+  <footer class="party" id="party"></footer>
 </div>
 
 <audio id="mExplore" preload="auto"></audio>
@@ -2013,14 +2011,13 @@ function heroStage(id, canvas, stageH){
 }
 function renderParty(){
   const el = $("party"); el.querySelectorAll(".pc").forEach(n => n.remove());
-  const help = el.querySelector(".help");
   PARTY.forEach(id => {
     const a = party.find(p => p.id === id); if (!a) return;
     const b = document.createElement("button"); b.className = "pc"; b.setAttribute("aria-pressed", String(a === leader));
     const c = document.createElement("canvas"); portrait(id, c, 64); b.appendChild(c);
     const nm = document.createElement("span"); nm.className = "nm";
     nm.innerHTML = `<b>${esc(SHORT[id] || SPR[id].json.name)}</b><small>${a === leader ? "Moving" : "Waiting"}</small>`;
-    b.appendChild(nm); b.onclick = () => setLeader(a); el.insertBefore(b, help);
+    b.appendChild(nm); b.onclick = () => setLeader(a); el.appendChild(b);
   });
   // the heroes split off on another plate: shown dim, with where they are (SPLIT PARTY)
   PARTY.forEach(id => {
@@ -2029,7 +2026,7 @@ function renderParty(){
     const c = document.createElement("canvas"); portrait(id, c, 64); b.appendChild(c);
     const nm = document.createElement("span"); nm.className = "nm";
     nm.innerHTML = `<b>${esc(SHORT[id] || SPR[id].json.name)}</b><small>at ${esc(plateLabel(heroAt[id].plate))}</small>`;
-    b.appendChild(nm); b.title = "Split off on another plate. Walk there to rejoin."; el.insertBefore(b, help);
+    b.appendChild(nm); b.title = "Split off on another plate. Walk there to rejoin."; el.appendChild(b);
   });
 }
 function setLeader(a){
