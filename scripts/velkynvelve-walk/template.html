@@ -2177,6 +2177,7 @@ async function enterNode(n, opts = {}){
   const comp = compAll.filter(id => compAt[id] == null || owSame(compAt[id], n));
   for (const id of comp) if (state.companyAt) state.companyAt[id] = String(n);
   for (const np of whoIsHere(n)){
+    if ((state.slain || []).includes(np.id)) continue;   // BYSTANDERS: killed in a fight, gone for good
     if (np.hostile && state.cleared[n]) continue;
     if (compAll.includes(np.id)) continue;              // a companion walks with the party, not at their old spot
     if (np.id === surgeonDeadId()) continue;            // shot dead at the gate (The Drow Surgeon) and thrown over the falls
@@ -4576,6 +4577,10 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   mode = "combat"; [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); setAnim(p, "idle"); });
   if (balcony()) buildGrid();               // the balcony outside the pen gate is floor while the fight lasts
   const allies = opts.noAllies ? [] : alliesHere(); allies.forEach(n => { n.ally = true; n.talking = false; });
+  // BYSTANDERS (Sam, 2026-10-27): everyone on our side who is not fighting runs from it (bystanderTurn), can be hit, and
+  // can be protected; one who drops is dead (fall). They roll initiative so their running is a turn like anyone's.
+  const bystanders = npcs.filter(n => !allies.includes(n) && isBystander(n));
+  bystanders.forEach(n => { n.bystander = true; n.talking = false; n.c = ALLY_SHEETS[n.id] ? fighterFor(n) : bystanderFighter(n); });
   hoverZone = null; tip.hidden = true;
   const pc = party.reduce((s, p) => ({x: s.x + p.x / party.length, y: s.y + p.y / party.length}), {x: 0, y: 0});
   let dir;
@@ -4612,15 +4617,15 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   camTo(z, cx, cy, 900);
   $("vignette").classList.add("on"); pickCombatTrack(moodFor(foes, startCombat.flagMood)); startCombat.flagMood = null; setTrack("combat");
   // initiative: d20 + the sheet's bonus, everyone, highest first (ties: higher bonus, then the party)
-  const order = [...party, ...allies, ...foes].filter(a => !a.down);
-  for (const a of order){ a.c = a.c && hero(a) ? a.c : fighterFor(a); a.c.init = d20(0, a) + (a.c.sheet.init || 0); }
+  const order = [...party, ...allies, ...bystanders, ...foes].filter(a => !a.down);
+  for (const a of order){ a.c = a.c && (hero(a) || a.bystander) ? a.c : fighterFor(a); a.c.init = d20(0, a) + (a.c.sheet.init || 0); }
   order.sort((a, b) => b.c.init - a.c.init || (b.c.sheet.init || 0) - (a.c.sheet.init || 0) || (a.kind === "pc" ? -1 : 1));
   // SURPRISE (SRD 5.1, Combat > Surprise; fightWith): a foe who never saw it coming is surprised — no move and no action
   // on its first turn, no reaction until that turn ends. And the one who struck from hiding goes first (Sam, 2026-10-27:
   // "If we sneak attack them we hit them first"): initiative is still rolled for the rest of the order.
   for (const f of opts.surprised || []) if (f.c){ f.c.surprised = true; f.c.reactionUsed = true; }
   if (opts.opener && order.includes(opts.opener)){ order.splice(order.indexOf(opts.opener), 1); order.unshift(opts.opener); }
-  cbt = {order, allies, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null,
+  cbt = {order, allies, bystanders, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null,
     id: `${cur}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`};   // the fight's own name: /api/walk-xp pays it once
   $("combat").hidden = false; $("cbtMenu").hidden = true; stage.classList.add("fight"); renderTurns(); renderParty();
   log(`<em>${esc(label || "Steel comes out.")}</em> Initiative: ${order.map(a => `${fname(a)} ${a.c.init}`).join(", ")}.`);
@@ -4708,6 +4713,81 @@ function witherOutside(t){
   popText(t, "withered", "#b6f04a", 1.3); log(`<b>${fname(t)}</b> withers to bones.`);
 }
 const heroes = () => [...party, ...(cbt ? cbt.allies : [])];
+// ----- BYSTANDERS -----
+// Sam, 2026-10-27: "During combat, NPCs that aren't fighting run as far from the fight as possible. They can be targeted
+// in a fight and we can try to protect them with spells and abilities/potions. Opponents will prioritize threats first but
+// that doesn't mean they won't occasionally take a pot shot at NPCs. NPCs that drop just die no saving throw."
+// A bystander is anyone on the plate who is on our side or nobody's (the freed prisoners, townsfolk) and is not fighting:
+// not an ally in this fight, not hostile, not a foe's block, not scenery. A fighting ally (Ront) who sits a fight out
+// (opts.noAllies) is a bystander for that fight. Not heroes(): they never count toward winning or losing.
+const bystanders = () => cbt && cbt.bystanders ? cbt.bystanders.filter(b => !b.down && actors.includes(b)) : [];
+const friends = () => [...heroes(), ...bystanders()];       // who a heal, a buff, a Help, an inspiration or a potion may go to
+function isBystander(n){
+  return !!SPR[n.id] && !n.ally && !n.hostile && !n.backdrop && !n.offStage && !n.static && !n.fixedScale && !n.riding && !n.climbing
+    && !n.down && !n.body && n.kind !== "body" && !FOE_BLOCKS[n.id] && actors.includes(n);
+}
+// Their numbers: an NPC with no block of its own fights (and bleeds) as the SRD 5.1 Commoner — AC 10, 4 HP (1d8),
+// speed 30, Club +2 1d4. A stand-in, flagged, until their own OotA blocks are in; Ront, Eldeth, Derendil and Sarith keep theirs.
+const COMMONER = {cls: "Commoner (SRD 5.1)", hp: 4, ac: 10, init: 0, speed: 30, strScore: 10, saves: {str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0},
+  attacks: [{name: "Club", hit: 2, dmg: "1d4", type: "bludgeoning", reach: 5}], standIn: true};
+function bystanderFighter(n){
+  const s = {...COMMONER, name: SHORT[n.id] || SPR[n.id].json.name};
+  return {sheet: s, hp: s.hp, hpMax: s.hp, ac: s.ac, conds: new Set(), slots: {}, init: 0};
+}
+// Where to run: the floor farthest from the nearest foe, and away from the middle of the fight (the line between our
+// side and theirs is where the blows land). Sampled over the plate's walk grid every few cells; the turn then walks as
+// far toward it as a Dash allows, and next turn it looks again.
+function safestFloor(a){
+  const th = standing(foes); if (!th.length) return null;
+  const all = [...th, ...standing(heroes())], mid = {x: all.reduce((s, q) => s + q.x, 0) / all.length, y: all.reduce((s, q) => s + q.y, 0) / all.length};
+  // not on top of another runner: where the others stand or are running to is taken
+  const taken = bystanders().filter(o => o !== a).map(o => o.path && o.path.length ? o.path[o.path.length - 1] : o);
+  let best = null, bs = -1;
+  for (let y = CELL / 2; y < NAT_H; y += CELL * 3) for (let x = CELL / 2; x < NAT_W; x += CELL * 3){
+    if (!walkable(x, y) || taken.some(o => Math.hypot(o.x - x, o.y - y) < 80)) continue;
+    const dF = Math.min(...th.map(f => Math.hypot(f.x - x, f.y - y))), dM = Math.hypot(mid.x - x, mid.y - y), sc = dF + dM * .5;
+    if (sc > bs){ bs = sc; best = {x, y}; }
+  }
+  return best;
+}
+// A bystander's turn: the Dash action (SRD 5.1: extra movement equal to its speed), away. Running past a foe at its
+// elbow draws the opportunity attack, as it would for anyone. Webbed, asleep or otherwise held: it stays put.
+function bystanderTurn(a){
+  const end = () => { combatBusy = false; if (cbt) cbt.phase = "idle"; setTimeout(() => passTurn(a), 300); };
+  if (!actors.includes(a) || a.down){ setTimeout(nextTurn, 100); return; }
+  if (a.c.conds.has("prone")){ a.c.conds.delete("prone"); a.c.move = Math.floor(a.c.move / 2); log(`${fname(a)} scrambles up.`); }
+  if (a.c.conds.has("restrained") || a.c.conds.has("grappled") || incapacitated(a)){ log(`${fname(a)} cannot get away.`); end(); return; }
+  const goal = safestFloor(a); if (!goal){ end(); return; }
+  a.c.action = false; a.c.move += a.c.sheet.speed;                     // Dash
+  const walk = cutPath(a, findPath(a, goal), a.c.move * ftPx(a)), to = walk.pts.length ? walk.pts[walk.pts.length - 1] : null;
+  if (!to || Math.hypot(to.x - a.x, to.y - a.y) < CELL){ log(`${fname(a)} keeps their head down.`); end(); return; }
+  combatBusy = true; cbt.phase = "busy";
+  const go = () => {
+    if (!cbt || a.down){ end(); return; }
+    a.c.move = Math.max(0, a.c.move - walk.usedFt);
+    if (!(cbt.fled || (cbt.fled = new Set())).has(a)){ cbt.fled.add(a); popText(a, "flees", "#e8e2c8", .9); narrate(a, `${fname(a)} runs from the fight.`); }
+    log(`${fname(a)} runs for cover (Dash, ${walk.usedFt} ft).`);
+    a.path = walk.pts; a.onArrive = end;
+  };
+  const oa = standing(foes).find(f => !f.c.reactionUsed && !incapacitated(f) && feetBetween(a, f) <= 5 && Math.hypot(to.x - f.x, to.y - f.y) > reachPx(f, a, 5) + 6);
+  if (oa){
+    oa.c.reactionUsed = true;
+    log(`${fname(oa)} takes a swing as ${fname(a)} bolts (opportunity attack, their reaction).`);
+    attackWith(oa, a, meleeOf(oa), () => { combatBusy = true; go(); }, false, true);
+    return;
+  }
+  go();
+}
+// The pot shot: a foe goes for the threats first (foeTurn), but on a 6 on a d6 it turns on a bystander it can see and
+// reach this turn (by its crossbow's range, or its move plus reach) instead.
+function potShot(f){
+  const s = f.c.sheet, bow = s.attacks.find(k => k.ranged);
+  const can = bystanders().filter(b => !coverOf(f, b).total && (bow ? feetBetween(f, b) <= (bow.long || bow.reach) : feetBetween(f, b) <= (f.c.move || s.speed || 30) + 5));
+  if (!can.length || d6() < 6) return null;
+  const t = can.sort((x, y) => feetBetween(f, x) - feetBetween(f, y))[0];
+  log(`${fname(f)} turns on ${fname(t)} instead.`);
+  return t;
+}
 // Who of the four stands with the party when steel comes out: on this plate, not turned hostile, not part of the backdrop.
 const alliesHere = () => npcs.filter(n => ALLY_SHEETS[n.id] && !n.hostile && !n.backdrop && !n.offStage && !n.down && actors.includes(n));
 // SRD: an incapacitated creature can't take actions or reactions (asleep = unconscious, which includes it).
@@ -4802,6 +4882,7 @@ function nextTurn(first){
   if (a.c.holyOpen && --a.c.holyOpen <= 0){ delete a.c.holyOpen; popText(a, "resistance returns", "#aaa", .8); }
   if (a.c.retching && a.kind !== "pc"){ a.c.retching = false; retchTurn(a); return; }   // Stinking Cloud: the action goes on retching
   if (a.kind === "foe"){ bank("ui/turn_foe", .6); foeTurn(a); return; }
+  if (a.bystander){ bystanderTurn(a); return; }
   if (a.ally){ allyTurn(a); return; }
   if (a.kind === "pc" && cbt.quick){ allyTurn(a); return; }                      // QUICK RESOLVE: the hero fights on the allies' instincts
   // Another player's hero on this screen: each browser runs its own fight (nothing is shared between screens yet), so
@@ -5857,11 +5938,11 @@ function combatClick(w){
   }
   if (cbt.phase !== "target") return;
   const p = cbt.pend, sp = p.spell && SPELLS[p.spell];
-  if (p.inspire){ const t = hitActor(heroes(), w); if (!t || t === a || t.down) return; if (feetBetween(a, t) > 60){ toast("Too far: within 60 ft."); return; }
+  if (p.inspire){ const t = hitActor(friends(), w); if (!t || t === a || t.down) return; if (feetBetween(a, t) > 60){ toast("Too far: within 60 ft."); return; }
     if (t.c.conds.has("inspired")){ toast(`${fname(t)} already has an inspiration die.`); return; } inspire(a, t); return; }
-  if (p.help){ const t = hitActor(heroes(), w); if (!t || t === a) return; if (feetBetween(a, t) > 5){ toast("Too far to help: within 5 ft."); return; } a.c.action = false; addCond(t, "helped"); log(`${fname(a)} helps ${fname(t)}.`); narrate(a, `${fname(a)} sets ${fname(t)} up.`); openMenu(a); return; }
+  if (p.help){ const t = hitActor(friends(), w); if (!t || t === a) return; if (feetBetween(a, t) > 5){ toast("Too far to help: within 5 ft."); return; } a.c.action = false; addCond(t, "helped"); log(`${fname(a)} helps ${fname(t)}.`); narrate(a, `${fname(a)} sets ${fname(t)} up.`); openMenu(a); return; }
   if (p.shove){ const t = hitActor(foes, w); if (!t || t.down) return; if (feetBetween(a, t) > 5){ toast("Shove needs to be within 5 ft."); return; } doShove(a, t, p.shove); return; }
-  if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(heroes(), w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; }
+  if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(friends(), w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; }
     if (t !== a && coverOf(a, t).total){ toast(`No line of sight to ${fname(t)}.`); return; } castSpell(a, t, p.spell); return; }
   if (sp && (sp.kind === "cloud" || sp.kind === "fog") && Math.hypot(w.x - a.x, w.y - a.y) / ftPx(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
   if (sp && sp.area){ castSpell(a, w, p.spell); return; }
@@ -6275,7 +6356,7 @@ function castSpell(caster, tgt, name, done, darts){
         log(`${fname(caster)} ${name}: ${rolls.length} darts strike ${fname(tgt)}, ${rolls.join(" + ")} = <b>${tot}</b> ${sp.type}.`);
       }
       else {                                                                    // a save
-        const targets = (sp.area ? standing([...foes, ...party]).filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t)) : [tgt]).filter(t => !(sp.selfArea && t === caster));
+        const targets = (sp.area ? standing([...foes, ...party, ...bystanders()]).filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t)) : [tgt]).filter(t => !(sp.selfArea && t === caster));
         if (!targets.length){ log(`${fname(caster)} ${name}: nothing there.`); return; }
         const lines = [];
         targets.forEach((t, i) => setTimeout(() => {
@@ -6511,7 +6592,9 @@ function fall(t){
     if (t.ko){ popText(t, "knocked out", "#ffd166", 1.2); log(`<b>${fname(t)} is knocked out</b>: unconscious and stable at 0 HP (SRD: a stable creature regains 1 HP after 1d4 hours).`); settleGrudge(t); }
     else { const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS, t), 1400); } }
   else narrate(t, `${fname(t)} falls.`);
-  if (t.kind !== "pc") dropLoot(t);                                  // LOOT ON THE KILL: what survived the fight bursts out
+  if (t.bystander){ t.slain = true; if (PEN_NPCS.some(d => d.id === t.id)){ (state.slain ||= []).includes(t.id) || state.slain.push(t.id); }
+    state.company = companyNow().filter(id => id !== t.id); narrate(t, `${fname(t)} is dead.`); }   // BYSTANDERS: no death saves
+  else if (t.kind !== "pc") dropLoot(t);                                  // LOOT ON THE KILL: what survived the fight bursts out
   renderTurns();
   if (cbt && activeActor() === t) passWhenSettled(t);
 }
@@ -6685,7 +6768,8 @@ function foeTurn(f){
   const seen = inSight.length ? inSight : seen0;
   if (cbt && cbt.grudge && cbt.grudge.att === f && (cbt.grudge.done || cbt.grudge.tgt.down)){ setTimeout(() => passTurn(f), 400); return; }   // the score is settled: he does not go looking for another
   const grudgeOn = cbt && cbt.grudge && cbt.grudge.att === f && !cbt.grudge.tgt.down && actors.includes(cbt.grudge.tgt) ? cbt.grudge.tgt : null;
-  const tgt = grudgeOn ? grudgeOn : f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(heroes())) : (seen.length ? seen : standing(heroes())).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
+  let tgt = grudgeOn ? grudgeOn : f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(heroes())) : (seen.length ? seen : standing(heroes())).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
+  if (tgt && !grudgeOn && !f.c.berserk){ const pot = potShot(f); if (pot) tgt = pot; }   // BYSTANDERS: threats first, now and then a pot shot
   if (!tgt){ checkEnd(); return; }
   camTo(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600);
   if (Math.random() < .45){ if (!taunt(f, null, tgt)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }
@@ -6847,6 +6931,11 @@ function endCombat(won){
   // the walk keeps no clock between fights, so a spell held through the fight is let go at its end
   for (const a of [...heroes(), ...foes]) if (a.c && a.c.conc) endConc(a, "the fight is over");
   const allies = cbt ? cbt.allies : [], fightId = cbt ? cbt.id : null;
+  for (const b of (cbt && cbt.bystanders) || []){   // BYSTANDERS: the dead lie where they fell, searchable; the living stand down
+    b.bystander = false; b.path = [];
+    if (b.down){ b.kind = "body"; b.body = true; b.once = null; b.lootKey = `${cur}-${Math.round(b.x)}-${Math.round(b.y)}`; }
+    else { b.home = {x: b.x, y: b.y}; b.actUntil = now + 3000; }
+  }
   closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby(); poisonZones = []; dmPlace = null;
   // The dead stay where they fell (Sam, 2026-10-13: "There should always be a carcass or dead body of
   // whatever died. This way we can search the body."). Only the living, called off, walk away.
@@ -10947,9 +11036,9 @@ function renderBag(){
     for (const sl of worn) btn(HAND(sl) ? `Put away (${slotLabel(sl).toLowerCase()})` : "Take off", mine && (!fight || (HAND(sl) && gearCost(a, 1).ok)), fight ? (HAND(sl) ? gearHint(a, 1) : "not mid-fight") : "", () => removeFrom(a, sl));
     if (u.kind === "heal" || u.kind === "drink"){
       btn("Drink", mine && (!fight || c.bonus), fight ? "your bonus action" : "", () => drinkItem(a, it, a));
-      if (u.kind === "heal") for (const t of party){ if (t === a) continue;
+      if (u.kind === "heal") for (const t of [...party, ...(fight ? [...cbt.allies, ...bystanders()] : [])]){ if (t === a) continue;   // BYSTANDERS: theirs to save too
         const near = !fight || feetBetween(a, t) <= 5.5;
-        if (near) btn(`Give ${SHEETS[t.id] ? SHEETS[t.id].name.split(" ")[0] : t.id}`, mine && (!fight || c.bonus), fight ? "your bonus action · they must be within 5 ft" : "", () => drinkItem(a, it, t)); }
+        if (near) btn(`Give ${SHEETS[t.id] ? SHEETS[t.id].name.split(" ")[0] : SHORT[t.id] || fname(t)}`, mine && (!fight || c.bonus), fight ? "your bonus action · they must be within 5 ft" : "", () => drinkItem(a, it, t)); }
     }
     if (u.kind === "throw" && fight){ const fa = flaskAttacks(a).find(x => x.itemName === it.name);
       btn("Throw", mine && c.action && !!fa, "your action: click a foe within 20 ft", () => { toggleBag(false); aim(a, {atk: fa, throwing: true}); }); }
