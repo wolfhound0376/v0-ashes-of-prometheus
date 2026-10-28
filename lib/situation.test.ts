@@ -43,6 +43,23 @@ describe("the gate and the step outside (Sam, 2026-10-24)", () => {
   })
 })
 
+describe("the surrender (Sam, 2026-10-28)", () => {
+  it("recaptured puts an escaping party back in the pen: captive, gate locked, ward up", () => {
+    const opened = mergeSituation(startingSituation(RUN, T0), { event: "gate_open" }, "walk", T1)
+    const out = mergeSituation(opened, { event: "step_outside", sub_location: "node-10-guard-tower", sub_label: "Guard Tower" }, "walk", T1)
+    const back = mergeSituation(out, { event: "recaptured", sub_location: "node-11-slave-pen", sub_label: "Slave Pen", party_present: ["Fifi", "Kenta"] }, "walk", T1)
+    expect(back).toMatchObject({ stance: "captive", gate_state: "locked", ward_active: true, sub_label: "Slave Pen", party_present: ["Fifi", "Kenta"], updated_by: "walk" })
+  })
+  it("re-hangs a forced gate — the drow do not leave a slave pen without a door", () => {
+    const broken = mergeSituation(startingSituation(RUN, T0), { event: "gate_broken" }, "walk", T1)
+    expect(mergeSituation(broken, { event: "recaptured" }, "walk", T1).gate_state).toBe("locked")
+  })
+  it("is a walk event: a player's own browser may report it", () => {
+    expect(isWalkPatch(parsePatch({ event: "recaptured", sub_location: "node-11-slave-pen" }))).toBe(true)
+    expect(parsePatch({ event: "recaptured" })).toEqual({ event: "recaptured" })
+  })
+})
+
 describe("parsePatch", () => {
   it("drops unknown stances, gates and events", () => {
     expect(parsePatch({ stance: "dead", gate_state: "ajar", event: "teleport", node_key: "velkynvelve" })).toEqual({ node_key: "velkynvelve" })
