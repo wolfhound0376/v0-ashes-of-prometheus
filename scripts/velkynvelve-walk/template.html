@@ -9978,7 +9978,9 @@ function levelForXp(xp){ let l = 1; for (let k = 2; k <= 20; k++) if (xp >= XP_T
 // hero's feet sit on the pedestal's upper surface: `foot` is that line as a share of the stage height, tuned by eye per
 // painting (the pack's suggested 0.76 is the surface's back edge; the figure stands a little forward of it). A class
 // outside the pack, or a multiclass string the pack does not name first, gets the ruined castle from the first pack.
-const STAGE_BACKDROPS = {barbarian: .82, bard: .83, cleric: .84, druid: .83, fighter: .84, monk: .84, paladin: .82, ranger: .84, rogue: .84, sorcerer: .83, warlock: .83, wizard: .84, artificer: .83};
+// Sam, 2026-10-27, on the first four: "Everyone except samson needs to move back a bit because their feet are hanging out"
+// — so .79 (further up the pedestal) for the rest; the cleric's wider pedestal keeps .84.
+const STAGE_BACKDROPS = {barbarian: .79, bard: .79, cleric: .84, druid: .79, fighter: .79, monk: .79, paladin: .79, ranger: .79, rogue: .79, sorcerer: .79, warlock: .79, wizard: .79, artificer: .79};
 function stageFor(cls){
   const first = String(cls || "").toLowerCase().split(/[\s\/,]+/).find(w => w in STAGE_BACKDROPS);   // "Rogue 3 / Warlock 2" → rogue
   return first ? {img: `inventory-stage-${first}.jpg`, foot: STAGE_BACKDROPS[first]} : {img: "inventory-stage.jpg", foot: .875};
