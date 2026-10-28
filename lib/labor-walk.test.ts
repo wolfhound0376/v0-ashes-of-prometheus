@@ -245,3 +245,33 @@ describe("props, poses, voice, music (assets)", () => {
     expect(exists(join(AUDIO, `${W.WORK_SONG}.mp3`))).toBe(true)
   })
 })
+
+describe("painted stations (Sam, 2026-10-27)", () => {
+  const SPEC = JSON.parse(readFileSync(join(__dirname, "..", "scripts", "velkynvelve-walk", "spec.json"), "utf8"))
+  const GW = Math.ceil(2400 / 20)
+  const walkable = (plate: string, [x, y]: number[]) => {
+    const n = SPEC[plate]
+    if (n.mask) {
+      const m: number[] = []; let v = 0
+      for (const r of String(n.mask).split(",")) { for (let i = 0; i < Number(r); i++) m.push(v); v ^= 1 }
+      return m[Math.floor(y / 20) * GW + Math.floor(x / 20)] === 1
+    }
+    const inPoly = (poly: number[][]) => { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const [xi, yi] = poly[i], [xj, yj] = poly[j]; if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c } return c }
+    const inside = n.floors.some((f: { poly?: number[][] }) => f.poly && inPoly(f.poly))
+    const blocked = (n.obstacles || []).some((o: { cx: number; cy: number; rx: number; ry: number }) => ((x - o.cx) / o.rx) ** 2 + ((y - o.cy) / o.ry) ** 2 < 1)
+    return inside && !blocked
+  }
+  it("is only on the plates the task is worked on", () => {
+    for (const [plate, tasks] of Object.entries(W.PAINTED_STATIONS)) for (const task of Object.keys(tasks)) expect(String(W.WORK_PLATE[task as keyof typeof W.WORK_PLATE])).toBe(plate)
+  })
+  it("puts every standing spot and drop on walkable floor", () => {
+    for (const [plate, tasks] of Object.entries(W.PAINTED_STATIONS)) for (const list of Object.values(tasks) as { at: number[]; to?: number[] }[][])
+      for (const st of list) { expect(walkable(plate, st.at), `${plate} at ${st.at}`).toBe(true); if (st.to) expect(walkable(plate, st.to), `${plate} to ${st.to}`).toBe(true) }
+  })
+  it("gives a carry task somewhere to carry to, and leaves rocks to the props", () => {
+    for (const [plate, tasks] of Object.entries(W.PAINTED_STATIONS)) for (const [task, list] of Object.entries(tasks) as [string, { to?: number[] }[]][])
+      if (W.WORK_POSE[task as keyof typeof W.WORK_POSE] === "carry") for (const st of list) expect(st.to, `${plate} ${task}`).toBeTruthy()
+    expect(W.paintedStations("10b", "rocks")).toBeNull()
+    expect(W.paintedStations("10c", "supplies")?.length).toBe(4)
+  })
+})

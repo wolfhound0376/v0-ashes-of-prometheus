@@ -9718,6 +9718,38 @@ const STATION_PROPS = {
   supplies: ["labor-water-barrel", "labor-rope-coil"],
   "quaggoth-hair": [],
 }
+// THE PAINTED STATIONS (Sam, 2026-10-27: "build" — the plates made for Hard Labor already have their work painted in:
+// the armory's racks and crates, the kitchen's stove, table and basin, the rope on the tower wall, the snagged sacks on
+// the cliff). On these plates the heroes work THERE, not at a sprite set down in the middle of the floor. `at` is where
+// a hero stands to work it (walkable floor in front of the painted thing, checked against each plate's floor in
+// lib/labor-walk.test.ts); `to` is where a carried load goes and back again. Hero i takes station i mod n. A task with
+// no painted stations on its plate (stacking rocks in 10b: nothing painted to stack) keeps STATION_PROPS.
+const PAINTED_STATIONS = {
+  "10c": { supplies: [
+    { at: [520, 850], to: [960, 830], what: "the quiver and bolt shelves" },
+    { at: [930, 820], to: [1520, 830], what: "the mail racks and the sacks" },
+    { at: [1500, 815], to: [1960, 860], what: "the crates and hammers" },
+    { at: [1960, 860], to: [520, 850], what: "the weapon racks" }] },
+  "10b": { rope: [
+    { at: [1960, 900], to: [870, 830], what: "the rope on the wall" },
+    { at: [870, 830], to: [330, 930], what: "the foot of the ladder" }] },
+  "3k": {
+    kitchen: [
+      { at: [1010, 560], what: "the stove" },
+      { at: [1420, 630], what: "the cutting table" },
+      { at: [1680, 640], what: "the far end of the table" }],
+    dishes: [
+      { at: [1800, 710], what: "the wash basin" },
+      { at: [1990, 820], what: "the basin's near end" },
+      { at: [2120, 900], what: "the plate stacks at the end of the basin" }] },
+  "5c": { "lift-trouble": [
+    { at: [1470, 850], to: [1950, 870], what: "the snagged sack on the low ledge" },
+    { at: [960, 490], to: [1450, 500], what: "the sack on the middle ledge" },
+    { at: [980, 240], to: [500, 250], what: "the sacks under the lift" }] },
+}
+/** The painted stations for a task on a plate, or null (then the task's STATION_PROPS are set down instead). */
+const paintedStations = (plate, task) => (PAINTED_STATIONS[String(plate)] || {})[task] || null
+
 /** Where props stand around the work spot, in order (offset from the spot, painted-map px). */
 const PROP_OFFSETS = [[120, -30], [-130, -10], [10, -110]]
 
@@ -10295,6 +10327,7 @@ function laborPropsClear(){ laborProps = []; }
 function laborPropsSet(){
   laborPropsClear();
   if (!atWorkPlate()) return;
+  if (paintedStations(cur, labor.task)) return;          // the plate has its work painted in: nothing to set down
   const list = (STATION_PROPS[labor.task] || []).filter(id => SPR[id]);
   if (!list.length) return;
   const at = nearestWalkable(centroid.x, centroid.y);
@@ -10329,8 +10362,15 @@ async function laborPerform(h, ambient){
   h.performing = true;
   let ok = true;
   try {
-    const i = Math.max(0, party.indexOf(h)), prop = laborProps.length ? laborProps[i % laborProps.length] : null;
-    if (prop){
+    const i = Math.max(0, party.indexOf(h)), painted = paintedStations(cur, labor.task);
+    const st = painted ? painted[i % painted.length] : null;
+    const prop = st ? null : laborProps.length ? laborProps[i % laborProps.length] : null;
+    if (st){                                          // the painted station: stand at it, face the wall it is painted on
+      const spread = Math.floor(i / painted.length) * 46;   // a second hero at the same station stands beside the first
+      ok = await laborGo(h, nearestWalkable(st.at[0] + spread, st.at[1] + spread * .35));
+      if (!ok) return;
+      h.face = faceOf(0, -1);
+    } else if (prop){
       const side = i % 2 ? 1 : -1;
       ok = await laborGo(h, nearestWalkable(prop.x + side * 50 * node.scale, prop.y + (20 + 14 * Math.floor(i / 2)) * node.scale));
       if (!ok) return;
@@ -10346,7 +10386,7 @@ async function laborPerform(h, ambient){
       if (hasSheet(h, "heave")) await new Promise(r => playOnce(h, "heave", r));
       const from = {x: h.x, y: h.y}, away = prop ? Math.sign(h.x - prop.x) || 1 : 1;
       h.walkAs = "carry";
-      ok = await laborGo(h, nearestWalkable(h.x + away * CARRY_PX * node.scale, h.y + 30 * node.scale));
+      ok = await laborGo(h, st && st.to ? nearestWalkable(st.to[0], st.to[1]) : nearestWalkable(h.x + away * CARRY_PX * node.scale, h.y + 30 * node.scale));
       if (!ok) return;
       await wait(500);
       ok = await laborGo(h, nearestWalkable(from.x, from.y));
