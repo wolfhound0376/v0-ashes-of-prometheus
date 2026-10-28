@@ -15,7 +15,10 @@
 //   - Anything the DM has handed to a drow (the `carry` map in the walk-loot world flag) is on that drow instead:
 //     on its body when it dies, and in its pockets for a thief.
 
-export type LootEntry = { slug: string; qty: number; note?: string }
+// a part that only comes free with a check (Sam, 2026-10-27, gray ooze residue: "roll a medicine check to see if you can
+// extract its residue ... Otherwise it hurts you"). A failed try deals `fail` to the one trying; they may try again.
+export type HarvestCheck = { skill: string; dc: number; fail?: { dice: string; type: string } }
+export type LootEntry = { slug: string; qty: number; note?: string; check?: HarvestCheck }
 export type BookContainer = { node: string; title: string; source: string; stash?: "valuables" | "gear"; entries: LootEntry[] }
 
 export const BOOK_CONTAINERS: Record<string, BookContainer> = {
@@ -174,7 +177,7 @@ const ELITE_KIT: LootEntry[] = [
 export const CREATURE_PARTS: Record<string, LootEntry[]> = {
   quaggoth: [{ slug: "quaggoth-pelt", qty: 1, note: "a shaggy white pelt" }],
   "giant-spider": [{ slug: "spider-venom-gland", qty: 1, note: "cut clear of the jaws" }, { slug: "giant-spider-silk", qty: 2, note: "strands from the spinnerets" }, { slug: "spider-meat", qty: 2, note: "from the legs" }],
-  "gray-ooze": [{ slug: "gray-ooze-residue", qty: 1, note: "decanted; what its acid does is not ruled yet" }],
+  "gray-ooze": [{ slug: "gray-ooze-residue", qty: 1, note: "only with a Medicine check (DC 15)", check: { skill: "medicine", dc: 15, fail: { dice: "1d6", type: "acid" } } }],
   "hook-horror": [{ slug: "hook-horror-claw", qty: 2, note: "the two great hooks" }],
 }
 export const BODY_KIT: Record<string, LootEntry[]> = {
