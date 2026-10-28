@@ -2849,10 +2849,30 @@ const bank = (name, gain = .8) => sfx(name.startsWith("walk:") ? name : "bank:" 
 // on stone: the button is greyed out) and swap (leather and buckles: the next hero). Each plays a touch above or
 // below its pitch so a run of clicks never sounds like one sample. Kept low: they sit under the voices and music.
 const UI_GAIN = {hover: .12, press: .42, open: .35, close: .3, confirm: .45, cancel: .35, deny: .4, swap: .45};
+// THE TICK (Sam, 2026-10-28: "The current click button sounds like the inventory and sneak buttons. We need a higher
+// pitched click like what is heard on an apple phone for the other buttons."). The brass latch ("press") now belongs to
+// Inventory and Sneak only; every other ordinary button ticks: a bright, dry ~14 ms click (a 3.1 kHz ping inside a
+// burst of noise, gone in a couple of milliseconds, the low end cut so there is no thump), synthesised once here and
+// cached like a file, so it needs no sample. Confirm, cancel, deny, swap and the panel sounds are unchanged.
+UI_GAIN.tick = .5;
+function tickBuffer(){
+  const ctx = audioCtx(), sr = ctx.sampleRate, n = Math.round(sr * .014), buf = ctx.createBuffer(1, n, sr), d = buf.getChannelData(0);
+  let prev = 0, seed = 1234567;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x3fffffff - 1; };   // fixed noise: every tick is the same tick
+  for (let i = 0; i < n; i++){
+    const t = i / sr, env = Math.exp(-t / .0016) * Math.min(1, i / (sr * .0002));
+    const raw = (Math.sin(2 * Math.PI * 3100 * t) * .75 + rnd() * .5) * env;
+    d[i] = raw - prev * .92; prev = raw;                          // a one-pole high-pass: crisp, no body
+  }
+  let peak = 0; for (let i = 0; i < n; i++) peak = Math.max(peak, Math.abs(d[i]));
+  if (peak) for (let i = 0; i < n; i++) d[i] *= .9 / peak;
+  return buf;
+}
 let uiLast = {};
 function uiSfx(kind){
   if (!audioUnlocked) return;                                     // a page nobody has touched stays silent (previews included)
   const t = performance.now(); if (t - (uiLast[kind] || 0) < 45) return; uiLast[kind] = t;
+  if (kind === "tick" && !SFX["ui:tick"]) try { SFX["ui:tick"] = Promise.resolve(tickBuffer()); } catch (e) { return; }
   sfx("ui:" + kind, UI_GAIN[kind] || .35, .95 + Math.random() * .1);
 }
 const CANCEL_WORDS = /^(cancel|close|back|no\b|not now|leave it|never ?mind|decline|step back|stay|done)/i;
@@ -2861,7 +2881,9 @@ function uiKindOf(b){
   if (b.dataset.sfx) return b.dataset.sfx;
   if (b.id === "talkNo" || CANCEL_WORDS.test((b.textContent || "").trim())) return "cancel";
   if (b.classList.contains("primary")) return "confirm";
-  return "press";
+  const label = ((b.querySelector && b.querySelector(":scope > span") || b).textContent || "").trim();   // the bar's label, not its glyph or hint
+  if (b.id === "bagBtn" || b.dataset.cat === "sneak" || /^(inventory|sneak)\b/i.test(label)) return "press";   // the latch: Inventory and Sneak
+  return "tick";
 }
 // one listener for every button on the page, now and later: menus are rebuilt all the time
 addEventListener("pointerdown", e => {
