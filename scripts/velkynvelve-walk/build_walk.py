@@ -289,6 +289,8 @@ for i in P + N + F + V + LP:
     # the four allies fight beside the party (Sam, 2026-10-15), so they need their combat sheets too:
     # without 'attack' a swing has no hit frame and the roll never happens
     if i in ['ront', 'eldeth', 'derendil', 'sarith']: sh += ['sit', 'eat', 'sleep', 'attack', 'hurt', 'dead', 'dodge']
+    # Ront and Derendil go over gaps and ledges on their own (Sam, 2026-10-27; add-jump.py); the others are filtered out below
+    if i in ['ront', 'eldeth', 'derendil', 'sarith']: sh.append('jump')
     # Hard Labor's poses (scripts/sprites/add-labor-poses.py): the five main players have them; a sprite without
     # them is filtered out below and works in its idle
     if i in P: sh += ['scrub', 'heave', 'carry']
