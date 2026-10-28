@@ -1597,6 +1597,7 @@ function draw(){
     }
     if (a.leap){ const k = Math.min(1, (now - a.leap.t0) / a.leap.ms); a.x = a.leap.from.x + (a.leap.to.x - a.leap.from.x) * k; a.y = a.leap.from.y + (a.leap.to.y - a.leap.from.y) * k; fy -= Math.sin(k * Math.PI) * 90 * sc; }
     let dw = cw * sc, dh = ch * sc, dx = a.x - px * sc + (a.kx || 0), dy = a.y - py * sc + fy + (a.ky || 0);
+    if (a.id === "stool" && !a.down && !a.body) drawStoolAura(a, dx, dy, dw, dh, "glow");   // the glow sits behind him
     const dead = !!(a.down && pose);
     if (pose){                                   // asleep: dim, slow breath; one with no sleeping sheet settles low or lies on its side. Dead: no breath, darker.
       const breath = dead ? 1 : 1 + .025 * Math.sin(now / 650), k = (pose === "settle" ? .8 : 1) * breath;
@@ -1669,7 +1670,8 @@ function draw(){
     }
     if (mode === "combat") drawConds(a);
     if (mode === "combat" && a.kind === "pc" && a.down && a.c && a.c.ds) drawDeathSaves(a);
-    if (a.talk && !state.talked[a.id] && mode === "explore"){
+    if (a.id === "stool" && !a.down && !a.body) drawStoolAura(a, dx, dy, dw, dh, "spores");   // the spores drift in front
+    if (wantsWord(a) && mode === "explore"){
       ctx.globalAlpha = 1; const bob = Math.sin(now / 260) * 6, top = dy + dh * .18 - 26 + bob;
       ctx.fillStyle = "#e8a24a"; ctx.strokeStyle = "#1a0f05"; ctx.lineWidth = 4;
       ctx.font = "bold 44px 'IM Fell English SC', Georgia, serif"; ctx.textAlign = "center";
@@ -1849,7 +1851,7 @@ function updateOverlay(){
   if (nameTag){
     if (hoverActor && mode !== "talk"){
       const [sx, sy] = w2s(hoverActor.x, hoverActor.y); nameTag.hidden = false; nameTag.style.left = sx + "px"; nameTag.style.top = sy + "px";
-      nameTag.textContent = hoverActor.body ? `${fname(hoverActor)}'s body · ${hoverActor.searched ? "searched" : "click to search"}` : (SHORT[hoverActor.id] || SPR[hoverActor.id].json.name) + (dmRun.has(hoverActor.id) ? " · DM-run" : "") + (hoverActor.talk && !state.talked[hoverActor.id] ? " · wants a word" + (hoverActor.talkWho ? " with " + hoverActor.talkWho : "") : "");
+      nameTag.textContent = hoverActor.body ? `${fname(hoverActor)}'s body · ${hoverActor.searched ? "searched" : "click to search"}` : (SHORT[hoverActor.id] || SPR[hoverActor.id].json.name) + (dmRun.has(hoverActor.id) ? " · DM-run" : "") + (wantsWord(hoverActor) ? " · wants a word" + (hoverActor.talkWho ? " with " + hoverActor.talkWho : "") : "");
     } else nameTag.hidden = true;
   }
 }
@@ -8411,6 +8413,7 @@ async function pollLabor(){
   const was = labor && labor.status; labor = j.detail || null;
   if (j.overdue) laborOverdue();
   followCrews(j.crewsNow, j.day, j.shift);
+  noteTalkClock(j.day, j.shift);
   // the shift has come round: anyone at the table may call it (the server takes the first and refuses the rest)
   if (labor && j.due && labor.status === "scheduled" && cur === PEN && mode === "explore" && !surgeon && !state.gateOpen) await laborPost("call");
   laborFollow(was);
@@ -10336,8 +10339,56 @@ function speak(id, text){
 }
 // Who starts it matters (Sam, 2026-10-11): someone who wants a word speaks first, here and again on the
 // dashboard. When YOU go up to someone, they stay quiet until you say something.
-const wantsWord = n => !!(n && n.talk && !state.talked[n.id]);
+// WHO CALLS YOU OVER, AND WHEN (Sam, 2026-10-27: "why [is] Eldeth the only one that tries to talk to the players?" ...
+// "topsy and turvy won't call. Sarith won't either."). Six more prisoners now want a word (spec.py talkLine), but not all
+// at once: they come in this order, two at the start and one more each shift change in the pen (the game clock, from
+// the labor poll), and never more than two waiting at a time. Anyone with something to raise right now (talkSituation,
+// e.g. after a work detail) is never held back; nor is anyone not on this list.
+const TALK_QUEUE = ["eldeth", "ront", "stool", "derendil", "shuushar", "buppido", "jimjar"];
+const TALK_AT_START = 2, TALK_WAITING_MAX = 2;
+function noteTalkClock(day, shift){
+  if (!(day > 0) || !(shift > 0)) return;
+  const s = (day - 1) * 3 + (shift - 1);
+  if (state.talkClock == null) state.talkClock = {start: s, now: s}; else state.talkClock.now = s;
+}
+const shiftsInPen = () => state.talkClock ? Math.max(0, state.talkClock.now - state.talkClock.start) : 0;
+function talkReady(n){
+  const i = TALK_QUEUE.indexOf(n.id);
+  if (i < 0 || n.talkSituation) return true;
+  if (i >= TALK_AT_START + shiftsInPen()) return false;
+  const here = id => npcs.some(m => m.id === id && m.talk && !m.down && !m.body && !m.offStage);
+  return TALK_QUEUE.slice(0, i).filter(id => here(id) && !state.talked[id]).length < TALK_WAITING_MAX;
+}
+const wantsWord = n => !!(n && n.talk && !state.talked[n.id] && talkReady(n));
 const canTalkTo = n => !!(n && n.kind === "npc" && !n.backdrop && !n.hostile);
+// STOOL GLOWS (Sam, 2026-10-27: "Stool should animate a cool fluorescent glow and have a neat spore cloud that is subtle
+// when he attempts to talk"). A slow teal-to-violet bioluminescent pulse always; while he wants a word (or is talking)
+// the glow brightens and a thin cloud of spores drifts up around his cap. Drawn additively, low alpha: a light, not a halo.
+const STOOL_SPORES = Array.from({length: 14}, (_, i) => ({ph: i / 14, ang: (i * 2.399) % (Math.PI * 2), r: .25 + ((i * 37) % 10) / 22, sz: 1 + (i % 4) * .45}));
+function drawStoolAura(a, dx, dy, dw, dh, layer){
+  const calling = (wantsWord(a) && mode === "explore") || (typeof talkNpc !== "undefined" && talkNpc === a);
+  const t = now / 1000, pulse = .5 + .5 * Math.sin(t * (calling ? 2.2 : 1.1));
+  const cx = dx + dw / 2, cy = dy + dh * .42, rad = dw * (calling ? .62 : .5) * (.92 + .08 * pulse);
+  const hue = 165 + 120 * (.5 + .5 * Math.sin(t * .35));          // teal → violet, slowly
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  if (layer === "glow"){
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
+    g.addColorStop(0, `hsla(${hue},90%,62%,${(calling ? .42 : .26) * (.7 + .3 * pulse)})`);
+    g.addColorStop(.55, `hsla(${hue + 25},85%,55%,${calling ? .16 : .09})`);
+    g.addColorStop(1, `hsla(${hue},80%,50%,0)`);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI * 2); ctx.fill();
+  }
+  if (layer === "spores" && calling){
+    const capY = dy + dh * .3, span = dw * .55, rise = dh * .38;
+    for (const p of STOOL_SPORES){
+      const k = (t * .18 + p.ph) % 1, fade = Math.sin(k * Math.PI);
+      const sx = cx + Math.cos(p.ang + t * .6) * span * p.r * (.6 + k * .6), sy = capY - k * rise + Math.sin(t * 1.7 + p.ang) * 4;
+      ctx.fillStyle = `hsla(${hue + 40 * p.r},95%,75%,${.55 * fade})`;
+      ctx.beginPath(); ctx.arc(sx, sy, p.sz * (node ? node.scale : 1) * (1 + k * .6), 0, Math.PI * 2); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
 function approach(n){
   if (wantsWord(n)) return openTalk(n);
   if (canTalkTo(n)) return openTalk(n, {quiet: true});
@@ -12152,9 +12203,9 @@ function update(dt){
     // NPC comments and the one who wants to talk
     for (const n of npcs){
       const d = Math.hypot(n.x - leader.x, n.y - leader.y);
-      if (n.talk && !state.talked[n.id] && !state.declined[n.id] && d < 150 * node.scale && mode === "explore"){
+      if (wantsWord(n) && !state.declined[n.id] && d < 150 * node.scale && mode === "explore"){
         leader.path = []; openTalk(n);
-      } else if (!n.talk && d < 140 * node.scale && now - n.lastBark > 30000 && now - lastAnyBark > 4000 && (n.barks || []).length){
+      } else if (!wantsWord(n) && d < 140 * node.scale && now - n.lastBark > 30000 && now - lastAnyBark > 4000 && (n.barks || []).length){
         ambient(n);                                       // the line decides which way they look
       }
     }
