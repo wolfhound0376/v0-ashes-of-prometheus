@@ -26,6 +26,7 @@ import { useEffect, useState } from "react"
 import { classifySpeaker } from "@/lib/tts"
 import { getClassColor } from "@/lib/class-colors"
 import { buildSuggestionContext, type Suggestion } from "@/lib/suggestions"
+import { SKILL_ABILITY, normaliseSkill } from "@/lib/game-context"
 import type { Character, InventoryItem } from "@/lib/types/database"
 
 interface ChipDialogueEntry {
@@ -52,13 +53,26 @@ interface SuggestionChipsProps {
   /** isObserve is true for the look-around chip; the parent uses it to decide
    *  whether this pick may also roll a cinematic. */
   onPick?: (text: string, isObserve: boolean) => void
+  /** "parley": the Parley skin's slab chips — the option's text takes the colour of the ability its check
+   *  calls for (Sam, 2026-10-28), white when there is no check. Default: the classic green chips. */
+  variant?: "parley"
+}
+
+/** The ability a suggestion's skill rolls on ("Persuasion" → "cha"), or null for a check-free line. */
+function abilityOf(skill: string | null): string | null {
+  if (!skill) return null
+  const key = normaliseSkill(skill)
+  return key ? SKILL_ABILITY[key] : null
 }
 
 const CHIP_CLASS =
   "rounded-full border border-[#2f8f68] bg-[#08251c] px-3.5 py-1.5 text-xs bg-gradient-to-b from-[#fff4b0] via-[#f6c453] to-[#a96f08] bg-clip-text text-transparent drop-shadow-[0_1px_1px_rgba(255,255,255,0.35)] shadow-[0_0_8px_rgba(52,211,153,0.16)] hover:border-[#6ee7b7] hover:bg-[#0d3b2a] disabled:opacity-50"
 
 export function SuggestionChips(props: SuggestionChipsProps) {
-  const { character, dialogue, inventory, location, talkWith, onStage, fallback, disabled, onPick } = props
+  const { character, dialogue, inventory, location, talkWith, onStage, fallback, disabled, onPick, variant } = props
+  const parley = variant === "parley"
+  const chipClass = parley ? "p-slab p-sug" : CHIP_CLASS
+  const rowClass = parley ? "p-chips" : "flex flex-wrap gap-1.5 px-3 pt-2"
   const [suggestions, setSuggestions] = useState<Suggestion[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -117,9 +131,9 @@ export function SuggestionChips(props: SuggestionChipsProps) {
 
   if (character && loading && !suggestions.length) {
     return (
-      <div className="flex flex-wrap gap-1.5 px-3 pt-2" aria-busy="true">
+      <div className={rowClass} aria-busy="true">
         {[0, 1, 2].map((i) => (
-          <span key={i} className="h-7 w-28 animate-pulse rounded-full border border-[#4b3a19] bg-[#171109]" />
+          <span key={i} className={parley ? "p-slab p-sug ghost" : "h-7 w-28 animate-pulse rounded-full border border-[#4b3a19] bg-[#171109]"} />
         ))}
       </div>
     )
@@ -127,18 +141,23 @@ export function SuggestionChips(props: SuggestionChipsProps) {
 
   if (character && suggestions.length) {
     return (
-      <div className="flex flex-wrap gap-1.5 px-3 pt-2">
+      <div className={rowClass}>
         {suggestions.map((suggestion) => {
           const sent = suggestion.skill ? `${suggestion.text} (${suggestion.skill})` : suggestion.text
+          const ability = parley ? abilityOf(suggestion.skill) : null
           return (
             <button
               key={sent}
               disabled={disabled}
               onClick={() => onPick?.(sent, suggestion.kind === "observe")}
-              className={CHIP_CLASS}
+              className={chipClass}
+              data-ability={ability ?? undefined}
+              title={suggestion.skill ? `${suggestion.skill} check` : undefined}
             >
               {suggestion.text}
-              {suggestion.skill ? <span style={{ color: skillColor }}>{` (${suggestion.skill})`}</span> : null}
+              {parley
+                ? (ability ? <i>{ability.toUpperCase()}</i> : null)
+                : suggestion.skill ? <span style={{ color: skillColor }}>{` (${suggestion.skill})`}</span> : null}
             </button>
           )
         })}
@@ -147,13 +166,13 @@ export function SuggestionChips(props: SuggestionChipsProps) {
   }
 
   return (
-    <div className="flex flex-wrap gap-1.5 px-3 pt-2">
+    <div className={rowClass}>
       {fallback.map((reply) => (
         <button
           key={reply.text}
           disabled={disabled}
           onClick={() => onPick?.(reply.text, reply.kind === "observe")}
-          className={CHIP_CLASS}
+          className={chipClass}
         >
           {reply.text}
         </button>
