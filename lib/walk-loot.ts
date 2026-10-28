@@ -202,10 +202,52 @@ const ACID_FRAGILE = /sword|dagger|mail|shirt|shield|bolt|crossbow|mace|axe|spea
 const BREAKABLE = /potion|poison|vial|flask|elixir|wine|residue|antitoxin|oil/
 /** The d20 at or under which this piece is ruined, given what killed its owner ("fire", "acid", "cold", or anything else). */
 export function ruinOn(slug: string, kill?: string | null): number {
-  if (kill === "fire" && FIRE_FRAGILE.test(slug)) return 10
-  if (kill === "acid" && ACID_FRAGILE.test(slug)) return 10
-  if (kill === "cold" && BREAKABLE.test(slug)) return 5
-  return RUIN_ON
+  let on = RUIN_ON
+  if (kill === "fire" && FIRE_FRAGILE.test(slug)) on = 10
+  if (kill === "acid" && ACID_FRAGILE.test(slug)) on = 10
+  if (kill === "cold" && BREAKABLE.test(slug)) on = 5
+  // ARMOUR IS WHAT THE BLOWS WENT THROUGH (Sam, 2026-10-27, "yes" to the PHB reading: "Weapons and armor used by monsters
+  // are rarely in good enough condition to sell", "Selling Treasure"). A mail shirt, studded leather or a shield worn by
+  // the dead survives only on a d20 of 16 or more. ARMOUR_RUIN_ON is a house number for Sam to tune.
+  if (ARMOUR.test(slug)) on = Math.max(on, ARMOUR_RUIN_ON)
+  return on
+}
+export const ARMOUR_RUIN_ON = 15
+const ARMOUR = /^(chain-shirt|chain-mail|scale-mail|studded-leather-armor|leather-armor|hide-armor|breastplate|half-plate|ring-mail|splint|plate-armor|shield)$/
+
+// OFF DUTY ONLY (Sam, 2026-10-27, "yes"): the book's kit is a RESTING drow's (OotA ch.1 area 2). The silk rope and its
+// grappling hook are found on a rank-and-file guard only where the guards rest, the barracks (area 2); a guard killed at
+// his post carries his weapons and armour, not his climbing gear. `which` is the body's own place key (`<plate>-x-y`).
+const OFF_DUTY = new Set(["silk-rope", "grappling-hook"])
+export function onDutyKit(slug: string, which: string | undefined, kit: LootEntry[] | undefined): LootEntry[] | undefined {
+  if (!kit || !/^drow-guard/.test(slug) || /^2-/.test(which ?? "")) return kit
+  return kit.filter((e) => !OFF_DUTY.has(e.slug))
+}
+
+// THE PURSE (Sam, 2026-10-27, "yes"): DMG ch.7, "Individual Treasure" (5e 2014), one d100 per body on the table for its
+// challenge rating; coins never roll for wear.
+//   CR 0-4   01-30 5d6 cp · 31-60 4d6 sp · 61-70 3d6 ep · 71-95 3d6 gp · 96-00 1d6 pp
+//   CR 5-10  01-30 4d6x100 cp + 1d6x10 ep · 31-60 6d6x10 sp + 2d6x10 gp · 61-70 3d6x10 ep + 2d6x10 gp ·
+//            71-95 4d6x10 gp · 96-00 2d6x10 gp + 3d6 pp
+// Challenge ratings (MM): drow 1/4, priest 2 (Asha), drow elite warrior 5 (Shoor, Jorlan), drow priestess of Lolth 8
+// (Ilvara). Only people carry purses; a beast's body does not. Copper, electrum and platinum need
+// migrations/walk_loot_coins.sql; until it is run they show on the body as "not in the catalogue yet".
+export const PURSE_CR: Record<string, number> = { "drow-guard-male": 0.25, "drow-guard-female": 0.25, asha: 2, shoor: 5, jorlan: 5, ilvara: 8 }
+export function rollPurse(cr: number, rng: () => number = Math.random): LootEntry[] {
+  const d = (n: number, k: number) => { let t = 0; for (let i = 0; i < n; i++) t += 1 + Math.floor(rng() * k); return t }
+  const r = 1 + Math.floor(rng() * 100), coin = (slug: string, qty: number): LootEntry => ({ slug, qty, note: "in a coin purse" })
+  if (cr <= 4) {
+    if (r <= 30) return [coin("copper-coin", d(5, 6))]
+    if (r <= 60) return [coin("silver-coin", d(4, 6))]
+    if (r <= 70) return [coin("electrum-coin", d(3, 6))]
+    if (r <= 95) return [coin("gold-coin", d(3, 6))]
+    return [coin("platinum-coin", d(1, 6))]
+  }
+  if (r <= 30) return [coin("copper-coin", d(4, 6) * 100), coin("electrum-coin", d(1, 6) * 10)]
+  if (r <= 60) return [coin("silver-coin", d(6, 6) * 10), coin("gold-coin", d(2, 6) * 10)]
+  if (r <= 70) return [coin("electrum-coin", d(3, 6) * 10), coin("gold-coin", d(2, 6) * 10)]
+  if (r <= 95) return [coin("gold-coin", d(4, 6) * 10)]
+  return [coin("gold-coin", d(2, 6) * 10), coin("platinum-coin", d(3, 6))]
 }
 export function rollWear(entries: LootEntry[], rng: () => number = Math.random, kill?: string | null): { kept: LootEntry[]; ruined: Ruined[] } {
   const kept: LootEntry[] = [], ruined: Ruined[] = []
@@ -321,7 +363,7 @@ export function parseContainer(id: string): { kind: "book" | "body" | "pocket"; 
   if (BOOK_CONTAINERS[id]) return { kind: "book", key: id }
   const m = /^(body|pocket):([a-z0-9-]+)(?::([A-Za-z0-9:._-]+))?$/.exec(id)
   if (!m) return null
-  if (m[1] === "body") return { kind: "body", key: id, slug: m[2] }
+  if (m[1] === "body") return { kind: "body", key: id, slug: m[2], which: m[3] }   // which: the body's place, `<plate>-x-y`
   const which = m[3] || "default"
   return { kind: "pocket", key: m[3] ? `pocket:${m[2]}:${m[3]}` : `pocket:${m[2]}`, slug: m[2], which }
 }

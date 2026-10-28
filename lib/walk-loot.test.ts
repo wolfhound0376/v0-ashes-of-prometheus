@@ -85,8 +85,10 @@ describe("the named drow's stat-block gear, and what survives the fight", () => 
     expect(ruinOn("quaggoth-pelt", "fire")).toBe(10)
     expect(ruinOn("giant-spider-silk", "fire")).toBe(10)
     expect(ruinOn("shortsword", "fire")).toBe(RUIN_ON)          // a blade does not burn
-    expect(ruinOn("chain-shirt", "acid")).toBe(10)
-    expect(ruinOn("studded-leather-armor", "acid")).toBe(10)
+    // armour is already ruined on 15 or less whatever killed its owner (PHB Selling Treasure, Sam's "yes", 2026-10-27)
+    expect(ruinOn("chain-shirt", "acid")).toBe(ARMOUR_RUIN_ON)
+    expect(ruinOn("studded-leather-armor", "acid")).toBe(ARMOUR_RUIN_ON)
+    expect(ruinOn("dagger", "acid")).toBe(10)
     expect(ruinOn("common-clothes", "acid")).toBe(RUIN_ON)
     expect(ruinOn("potion-of-healing", "cold")).toBe(5)
     expect(ruinOn("drow-poison", "cold")).toBe(5)
@@ -107,5 +109,39 @@ describe("the named drow's stat-block gear, and what survives the fight", () => 
     expect(CREATURE_PARTS["gray-ooze"].map((e) => e.slug)).toEqual(["gray-ooze-residue"])
     expect(CREATURE_PARTS["hook-horror"].map((e) => e.slug)).toEqual(["hook-horror-claw"])
     for (const k of Object.keys(CREATURE_PARTS)) expect(BODY_KIT[k]).toBe(CREATURE_PARTS[k])
+  })
+})
+
+import { ARMOUR_RUIN_ON, onDutyKit, rollPurse, BODY_KIT as KIT, parseContainer } from "./walk-loot"
+
+describe("loot by the book (PHB Selling Treasure, DMG Individual Treasure)", () => {
+  it("ruins armour on 15 or less, weapons on the base 1-2, and keeps the kill-type rules", () => {
+    expect(ruinOn("chain-shirt")).toBe(ARMOUR_RUIN_ON)
+    expect(ruinOn("shield", "fire")).toBe(ARMOUR_RUIN_ON)
+    expect(ruinOn("shortsword")).toBe(2)
+    expect(ruinOn("shortsword", "acid")).toBe(10)
+  })
+  it("leaves the rope and hook off a guard killed at his post, keeps them in the barracks", () => {
+    const kit = KIT["drow-guard-male"]
+    expect(onDutyKit("drow-guard-male", "10-900-400", kit)!.map((e) => e.slug)).not.toContain("silk-rope")
+    expect(onDutyKit("drow-guard-male", "2-570-930", kit)!.map((e) => e.slug)).toContain("grappling-hook")
+    expect(onDutyKit("asha", "6-1-1", KIT.asha)).toEqual(KIT.asha)
+  })
+  it("reads a body's place from its id", () => {
+    expect(parseContainer("body:drow-guard-male:2-570-930")).toMatchObject({ kind: "body", slug: "drow-guard-male", which: "2-570-930" })
+  })
+  it("rolls a CR 0-4 purse of one coin type in the DMG's ranges", () => {
+    for (let i = 0; i < 2000; i++) {
+      const p = rollPurse(0.25)
+      expect(p).toHaveLength(1)
+      const [{ slug, qty }] = p
+      const max = { "copper-coin": 30, "silver-coin": 24, "electrum-coin": 18, "gold-coin": 18, "platinum-coin": 6 }[slug]
+      expect(max).toBeDefined(); expect(qty).toBeGreaterThanOrEqual(1); expect(qty).toBeLessThanOrEqual(max!)
+    }
+  })
+  it("rolls a CR 5-10 purse on the higher table", () => {
+    const seq = [0.0, ...Array(10).fill(0.99)]   // d100 = 1 → 4d6x100 cp + 1d6x10 ep, every die a 6
+    let i = 0
+    expect(rollPurse(5, () => seq[i++])).toEqual([{ slug: "copper-coin", qty: 2400, note: "in a coin purse" }, { slug: "electrum-coin", qty: 60, note: "in a coin purse" }])
   })
 })
