@@ -56,7 +56,7 @@ NODES = {
           # Sam, 2026-10-24: "Lift basket goes to the plate pool" — the basket sets the party down on area 14 (Pool / Underground
           # River), which has its own ways out; it is not a way off the map. `kind="leave"` stays only because the page keys the
           # basket's climb-out button on it (template.html openLift); with a plate in `to`, goBeyond walks there.
-          dict(rect=[1436, 819, 1526, 959], to=[14], kind="leave", label="The lift basket: DC 18 Strength to crank, 4 rounds down to the cavern floor by the pool (OotA p.17–18)"),
+          dict(rect=[1436, 819, 1526, 959], to=["wastes"], kind="leave", label="The lift basket: DC 18 Strength to crank, 4 rounds down to the Wastes (Sam, 2026-10-27; the book lowers it by the pool, OotA p.17–18)"),
           dict(rect=[914, 1255, 1099, 1339], to=[2], label="Down the Lift to the Wastes"),
           # Hard Labor module (Sam, 2026-10-26), Lift Trouble (OotA Expanded p.45): goods fell off the lift and snagged on the
           # cliff below; the prisoners are sent down on two tattered 25-ft ropes, three rappels. PROPOSED: the spot on the rail is
@@ -309,7 +309,7 @@ print(len(_M['masks']), 'plates walk Sam\'s painted floor; traced shapes still u
 # sanity. Every way out must lead to a plate that exists. A walk link is expected to have a zone on both sides; the ones
 # that do not are listed here so they are a known gap and not a surprise (Sam's export, 2026-10-24: one_way_links_to_fix).
 # A new one-way link fails the build until it gets its return zone or is added here on purpose.
-KNOWN_ONE_WAY = {("4", "1"), ("5", "2"), ("5", "14"), ("6", "10"), ("9", "14"), ("12", "10")}
+KNOWN_ONE_WAY = {("4", "1"), ("5", "2"), ("5", "wastes"), ("6", "10"), ("9", "14"), ("12", "10")}
 ALL = {str(k): v for k, v in NODES.items()}; ALL.update(CAVERNS)
 links = {(a, str(t)) for a, node in ALL.items() for z in node["zones"] for t in z["to"]}
 for a, b in links:
