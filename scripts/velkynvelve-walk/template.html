@@ -4447,7 +4447,7 @@ const COND_GLYPH = {poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on atta
                     shielded: ["◇", "#cfe8ff", "+2 AC"], blessed: ["✚", "#ffe9a8", "Blessed: +1d4 to attack rolls and saving throws"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
                     hidden: ["◌", "#b8c7d6", "Hidden: unseen until you attack"], prone: ["▼", "#e0b070", "Prone: melee on it has advantage, ranged disadvantage; half speed to stand"],
                     grappled: ["✊", "#e0b070", "Grappled: speed 0"], helped: ["★", "#ffe08a", "Helped: advantage on the next attack"], disengaged: ["↷", "#cfe8ff", "Disengaged: no opportunity attacks"],
-                    sorcery: ["✴", "#ff9bd2", "Innate Sorcery: DC +1, advantage on spell attacks"], dodging: ["◈", "#cfe8ff", "Dodging"],
+                    sorcery: ["✴", "#ff9bd2", "Innate Sorcery: DC +1, advantage on spell attacks"], readied: ["⌖", "#ffe08a", "Readied: a strike waits for the first foe in reach"], dodging: ["◈", "#cfe8ff", "Dodging"],
                     inspired: ["♪", "#ffd36a", "Bardic Inspiration: +d6 to one attack roll, ability check or saving throw"],
                     restrained: ["⌗", "#e8e2c8", "Restrained by webbing: speed 0, attacks on you have advantage, yours disadvantage"],
                     raging: ["✸", "#ff4a2a", "Raging: bonus melee damage with Strength, advantage on STR checks and saves, resists bludgeoning, piercing and slashing · ends if a turn passes with no attack made and no damage taken"],
@@ -4748,6 +4748,7 @@ function nextTurn(first){
   if (a.c.conc && cbt.round >= a.c.conc.endRound) endConc(a, "the spell runs its full time");
   for (let i = clings.length - 1; i >= 0; i--) if (clings[i].by === a || !clings[i].by){ clings[i].p.then(e => { if (e) e.until = now + 350; }); clings.splice(i, 1); }
   a.c.conds.delete("dodging"); a.c.conds.delete("shieldSpell"); a.c.reactionUsed = false;
+  if (a.c.ready){ a.c.ready = null; a.c.conds.delete("readied"); }   // SRD: a readied action lasts until the start of your next turn
   renderTurns(); renderParty();
   if (a.c.conds.has("asleep") && a.c.drugged){ popText(a, "out cold", "#8fd48f"); log(`${fname(a)} lies senseless from the drow poison. Damage or a shake will wake them.`); setTimeout(nextTurn, 900); return; }
   if (a.c.conds.has("asleep")){
@@ -4871,6 +4872,14 @@ function openMenu(a, sub){
     // "Hide", not "Sneak (Hide)": the old name read as Sneak Attack (Sam, 2026-10-14: "where is the rogue sneak attack?")
     add("Hide", c.conds.has("hidden") ? "you are hidden" : `Stealth ${sgn((s.skills || {}).stealth ?? s.saves.dex)} vs their passive Perception`, c.action && !c.conds.has("hidden") ? () => doHide(a) : null);
     add("Shove / Grapple", `unarmed · they save vs DC ${shoveDc(a)}`, c.action ? () => openMenu(a, "shove") : null);
+    // READY (SRD 5.1, Combat > Actions in Combat > Ready): "you can take the Ready action on your turn, which lets you
+    // act using your reaction before the start of your next turn. First, you decide what perceivable circumstance will
+    // trigger your reaction. Then, you choose the action you will take in response to that trigger." The trigger here
+    // is the one the fight can see: a foe coming into reach of the weapon in hand. It costs the action now and the
+    // reaction when it fires; it lapses at the start of the next turn (nextTurn). The swing is a readied attack, so it
+    // is made with the reaction, never the action (attackWith's `reaction` flag).
+    { const rw = meleeOf(a);
+      if (rw) add("Ready", c.ready ? `readied: ${rw.name} as the first foe comes within ${rw.reach || 5} ft` : `your action · strike with the ${rw.name} as the first foe comes within reach`, c.action && !c.ready && !c.reactionUsed ? () => readyAttack(a, rw) : null); }
     grp("action");
     add("Dash", `+${s.speed} ft of movement`, c.action ? () => { c.action = false; c.move += s.speed; popText(a, "dash", "#cfe8ff"); log(`${fname(a)} dashes.`); openMenu(a); } : null);
     add("Disengage", "leave reach without a free swing", c.action ? () => { c.action = false; addCond(a, "disengaged"); log(`${fname(a)} disengages.`); openMenu(a); } : null);
@@ -4933,6 +4942,10 @@ function openMenu(a, sub){
     for (const pile of pilesHere().filter(q => feetToPile(a, q) <= 6))
       { ACTION_ICON["Pick up: " + pile.name] = "use-object"; add(`Pick up: ${pile.name}`, c.move >= PICKUP_FT ? `${PICKUP_FT} ft of your movement` : `needs ${PICKUP_FT} ft of movement`, c.move >= PICKUP_FT ? () => pickUp(a, pile) : null); }
     add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
+    // JUMP, as a command (Sam, 2026-10-27: "where is the attack, jump, throw, push, entertain"). The leap itself is the
+    // long-jump rule below (planLeap/leapMove): a click on the far side of a gap already springs across it. The button
+    // names it, says what this hero clears, and aims the click at a gap (cbt.phase "jump").
+    if (s.strScore) add("Jump", `up to ${s.strScore} ft with a 10-ft run-up, ${Math.floor(s.strScore / 2)} standing · ${c.move} ft left`, c.move >= MIN_LEAP_FT && !["prone", "grappled", "restrained"].some(k => c.conds.has(k)) ? () => { closeMenu(); cbt.phase = "jump"; hint("Jump: click the far side of a gap. Esc to cancel."); } : null);
     if (c.conds.has("restrained")) add("Break free", `STR check vs DC ${c.webDc || 12} · your action`, c.action ? () => { c.action = false; const k = skillCheck(a, "athletics"); if (k.total >= (c.webDc || 12)){ c.conds.delete("restrained"); a.webFx && (a.webFx.until = now); bank("movement/web_tear", .8); popText(a, "free", "#e8e2c8"); log(`${fname(a)} tears out of the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${c.webDc || 12}.`); } else { bank("movement/chains_rattle", .5); popText(a, "stuck", "#c9c4b8"); log(`${fname(a)} strains at the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${c.webDc || 12} — stuck.`); } renderParty(); openMenu(a); } : null);
     const webbed = standing(heroes()).find(p => p !== a && p.c.conds.has("restrained") && feetBetween(a, p) <= 5);
     if (webbed) add("Cut free", `${fname(webbed)} · hit the webbing (AC 10)`, c.action ? () => { c.action = false; const r = d20(0, a); if (r + (s.attacks[0].hit || 0) >= 10 || r === 20){ webbed.c.conds.delete("restrained"); webbed.webFx && (webbed.webFx.until = now); bank("movement/web_tear", .8); popText(webbed, "free", "#e8e2c8"); log(`${fname(a)} cuts ${fname(webbed)} out of the web.`); } else { popText(webbed, "still stuck", "#c9c4b8"); log(`${fname(a)} hacks at the web and misses the strands.`); } renderParty(); openMenu(a); } : null);
@@ -5024,7 +5037,7 @@ const BAR_ART = {talk: "bar/talk", sneak: "bar/sneak", scout: "bar/sneak", "sear
   dash: "bar/dash", disengage: "bar/disengage", dodge: "bar/dodge", jump: "bar/jump", "end-turn": "bar/endturn"};
 const BAR_CAT = {"bar/talk": "talk", "bar/sneak": "sneak", "bar/hide": "sneak", "bar/search": "search", "bar/cast": "cast", "bar/help": "party", "bar/wait": "party",
   "bar/next": "party", "bar/inv": "meta", "bar/rest": "rest", "bar/dm": "dm", "bar/attack": "attack", "bar/throw": "attack", "bar/push": "attack",
-  "bar/entertain": "bard", "bar/dash": "move", "bar/disengage": "move", "bar/dodge": "move", "bar/jump": "move", "bar/endturn": "meta"};
+  "bar/entertain": "bard", "bar/dash": "move", "bar/disengage": "move", "bar/dodge": "move", "bar/jump": "move", "bar/endturn": "meta", "ready": "attack"};
 /** The slab's colour and hotkey tab, read off the picture it wears and the hint it carries ("E · say something"). */
 function dressButton(b, icon, sub){
   const cat = BAR_CAT[icon]; if (cat) b.dataset.cat = cat;
@@ -5032,13 +5045,13 @@ function dressButton(b, icon, sub){
 }
 const ART = (name, fallback) => BAR_ART[name] || (ICONS_HAVE.has(name) ? name : OPTION_ART[name] && ICONS_HAVE.has(OPTION_ART[name]) ? OPTION_ART[name] : fallback || null);   // Sam's icons drop in by name (velkynvelve-walk/icons/<name>.png)
 const VIEW_FT = 60, VIEW_HALF = Math.PI / 3;
-let sneak = null, helpNext = null, followOn = true, moreOpen = false;   // Follow is ON by default (Sam, 2026-10-27, AFK Journey: "party members following in a formation")
+let sneak = null, helpNext = null, followOn = true, moreOpen = false, exploreJump = false;   // Follow is ON by default (Sam, 2026-10-27, AFK Journey: "party members following in a formation")
 // The order is Sam's (2026-10-27, the action-bar concept): the thing in front of you first, then Search · Sneak · Cast ·
 // Help · Wait on the bar; Inventory, Short rest, Tell Malachar and Next hero fold behind More. Situational options
 // (a pile at your feet, a foe, a way out to listen at) still cut in near the front, since they are why you stopped.
 const BUTTON_PRI = [[/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
   [/^Search$/, 4], [/^(Sneak|Stop sneaking|Scout)/, 5], [/^Pick .*pocket/, 5], [/^Cast/, 6], [/^Help/, 7], [/^(Follow|Wait)/, 8], [/^My company/, 8],
-  [/^(Pray|Inspire)/, 9], [/^Quick drink/, 10], [/^Inventory/, 11], [/^Short rest/, 12], [/^Tell Malachar/, 13], [/^Next hero/, 14], [/^Talk$/, 30]];
+  [/^Jump/, 9], [/^(Pray|Inspire)/, 10], [/^Quick drink/, 11], [/^Inventory/, 12], [/^Short rest/, 13], [/^Tell Malachar/, 14], [/^Next hero/, 15], [/^Talk$/, 30]];
 function priOf(b){ const t = (b.querySelector("span") || b).textContent; const hit = BUTTON_PRI.find(([re]) => re.test(t)); return (hit ? hit[1] : 15) + (b.disabled ? 20 : 0); }
 // Sam, 2026-10-26: "sneaking up should be and being small should have an advantage as well as line of sight." A Small
 // hero (halfling, gnome, deep gnome, goblin, kobold — or a sheet that says size Small) rolls Stealth with advantage.
@@ -5081,6 +5094,9 @@ function exploreExtras(m, o, add, who){
   if (/rogue/.test(cls) && !sneak) x("Scout ahead", "➶", ART("scout"), "sneak alone; the others wait", () => startSneak(true));
   const pot = beltPotion(L); if (pot) x(`Quick drink: ${pot.name}`, "⚗", ART("quick-drink"), "from the belt", () => drinkItem(L, pot, L));
   if (party.length > 1) x(followOn ? "Wait here" : "Follow me", followOn ? "⏸" : "➜", ART(followOn ? "wait" : "follow"), followOn ? "the others stop where they are" : "the others come along behind", () => setFollow(!followOn));
+  // JUMP outside a fight: the same long-jump rule the fight uses (gapOnLine; STR score with a run-up, half standing), with
+  // no movement budget to spend. The click that follows picks the far side of the gap.
+  if (sh.strScore) x("Jump", "➶", ART("jump"), `up to ${sh.strScore} ft with a run-up · click the far side of a gap`, () => { exploreJump = true; hint("Jump: click the far side of a gap. Esc to cancel."); });
   for (const b of m.querySelectorAll("button")){
     const t = (b.querySelector("span") || b).textContent, key = /^Inventory/.test(t) ? "inventory" : /^Short rest/.test(t) ? "short-rest" : /^Talk/.test(t) ? "talk" : /^Next hero/.test(t) ? "next-hero" : /^Tell Malachar/.test(t) ? "tell-malachar" : null, g = b.querySelector(".ico");
     if (key && g && ART(key)){ const im = document.createElement("img"); im.className = "ico"; im.alt = ""; im.src = `${ICON_BASE}${ART(key)}.png`; g.replaceWith(im); dressButton(b, ART(key), (b.querySelector("small") || {}).textContent); }
@@ -5734,7 +5750,7 @@ const SPELL_ICON = {"Ray of Frost": "ray-of-frost", "Shocking Grasp": "shocking-
 // the fight's commands wear the illustrated set where one was drawn (BAR_ART), the commissioned art elsewhere; Bardic
 // Inspiration is the whistling bard (Sam: Scott whistles his effects, never sits down to play — no lute on the button)
 const ACTION_ICON = {Attack: "bar/attack", "Sneak Attack": "bar/attack", Throw: "bar/throw", Hide: "bar/hide", "Cunning Action: Dash": "bar/dash", "Cunning Action: Disengage": "bar/disengage", "Cunning Action: Hide": "bar/hide", "Off-hand attack": "offhand-attack", "Shove / Grapple": "bar/push", Shove: "bar/push", Grapple: "bar/push",
-  Dash: "bar/dash", Disengage: "bar/disengage", Help: "bar/help", Search: "bar/search", Dodge: "bar/dodge", Cast: "bar/cast", "Innate Sorcery": "cast-spell", "Bardic Inspiration": "bar/entertain", "End turn": "bar/endturn", Inventory: "bar/inv"};
+  Dash: "bar/dash", Disengage: "bar/disengage", Help: "bar/help", Search: "bar/search", Dodge: "bar/dodge", Cast: "bar/cast", "Innate Sorcery": "cast-spell", "Bardic Inspiration": "bar/entertain", "End turn": "bar/endturn", Inventory: "bar/inv", Ready: "ready", Jump: "bar/jump"};
 const ACTION_GLYPH = {Rage: "✸", "End rage": "✸", Move: "➶", "Stand up": "⇧", "End turn": "⏎", Back: "↩"};
 function hint(t){ $("cbtHint").textContent = t; $("cbtHint").hidden = !t; }
 // The command list is docked at the lower left, off the picture: beside the sprite it hid whoever stood
@@ -5777,11 +5793,17 @@ function fireDarts(a){
   while (p.darts.length < sp.darts) p.darts.push(last);
   const darts = p.darts.slice(); p.darts = null; castSpell(a, darts[0], p.spell, null, darts);
 }
-function cancelAim(){ if (cbt && cbt.phase === "target"){ const a = activeActor(); openMenu(a); } else if (cbt && cbt.phase === "move"){ openMenu(activeActor()); } }
+function cancelAim(){ if (cbt && cbt.phase === "target"){ const a = activeActor(); openMenu(a); } else if (cbt && (cbt.phase === "move" || cbt.phase === "jump")){ openMenu(activeActor()); } }
 function combatClick(w){
   if (!cbt || combatBusy) return;
   const a = activeActor(); if (!a || a.kind !== "pc" || !canControl(a)) return;
   if (cbt.phase === "move"){ moveActor(a, w, () => { if (cbt && activeActor() === a) openMenu(a); }); return; }
+  if (cbt.phase === "jump"){
+    const p = nearestWalkable(w.x, w.y), g = planLeap(a, p);
+    if (!g){ toast("No gap to jump there: walk instead."); return; }
+    if (!g.ok){ toast(g.why); return; }
+    leapMove(a, g, p, () => { if (cbt && activeActor() === a) openMenu(a); }); return;
+  }
   if (cbt.phase !== "target") return;
   const p = cbt.pend, sp = p.spell && SPELLS[p.spell];
   if (p.inspire){ const t = hitActor(heroes(), w); if (!t || t === a || t.down) return; if (feetBetween(a, t) > 60){ toast("Too far: within 60 ft."); return; }
@@ -5957,6 +5979,29 @@ const offDmg = (atk) => atk.dmg.replace(/\+\d+$/, "");
 // the weapon a hero swings with when there is no time to choose: their first real melee weapon, else a punch
 function meleeOf(h){ const a = h.c.sheet.attacks || []; return a.find(k => (k.reach || 5) <= 10 && !/unarmed/i.test(k.name)) || a[0]; }
 // `reaction`: an opportunity attack, made with the reaction, not the action.
+// ----- Ready -----
+function readyAttack(a, atk){
+  a.c.action = false; a.c.ready = {atk}; addCond(a, "readied");
+  log(`${fname(a)} readies the ${atk.name}: the first foe to come within ${atk.reach || 5} ft gets it.`);
+  narrate(a, `${fname(a)} waits, ${atk.name} raised.`); renderParty(); openMenu(a);
+}
+// A foe (or an ally) has just arrived in reach of someone who readied a strike. The fight stops and asks, as it does for
+// Shield (Sam, 2026-10-10: "combat pauses like Baldur's Gate 3 for reactions") — unless the hero is not driven from this
+// screen, in which case the readied blow simply lands, since that is what they said they would do.
+function readiedStrikeOn(att, cont){
+  if (!cbt || att.down || att.kind === "pc") { cont(); return; }
+  const side = att.ally ? standing(foes) : standing(heroes());
+  const h = side.find(p => p.c && p.c.ready && !p.c.reactionUsed && !incapacitated(p) && feetBetween(p, att) <= (p.c.ready.atk.reach || 5) + .5);
+  if (!h){ cont(); return; }
+  const atk = h.c.ready.atk;
+  const fire = () => { h.c.reactionUsed = true; h.c.ready = null; h.c.conds.delete("readied"); renderParty();
+    log(`${fname(h)}'s readied ${atk.name} lands as ${fname(att)} comes within reach (their reaction).`);
+    attackWith(h, att, atk, () => { combatBusy = true; if (!cbt) return; if (att.down){ combatBusy = false; setTimeout(() => passTurn(att), 500); return; } cont(); }, false, true); };
+  const hold = () => { h.c.ready = null; h.c.conds.delete("readied"); renderParty(); log(`${fname(h)} holds the ${atk.name}.`); cont(); };
+  if (h.kind !== "pc" || !canControl(h)){ fire(); return; }
+  showDialog({title: `${fname(h)}: readied ${atk.name}?`, body: `${fname(att)} comes within reach. ${fname(h)} readied a ${atk.name} for exactly this: strike now, with the reaction?`,
+    src: "Ready · 1 reaction", buttons: [{label: `Strike with the ${atk.name}`, primary: true, fn: fire}, {label: "Hold", fn: hold}]});
+}
 function attackWith(att, tgt, atk, done, offhand, reaction){
   const c = att.c; if (att.kind === "pc" && !reaction){ if (offhand) c.bonus = false; else { c.action = false; if (atk.light) c.lastLight = atk; } } closeMenu(); cbt.phase = "busy"; combatBusy = true;
   const reach = atk.thrown && feetBetween(att, tgt) > 5 ? atk.thrown : atk.reach;
@@ -6462,6 +6507,7 @@ function approachThen(att, tgt, ft, then){
   if (gateWayTo(att, tgt)){ approachViaGate(att, tgt, ft, then); return; }
   const reach = reachPx(att, tgt, ft), d = Math.hypot(tgt.x - att.x, tgt.y - att.y);
   if (d <= reach + 6){ then(); return; }
+  then = (t0 => () => readiedStrikeOn(att, t0))(then);   // a readied blow meets whoever walks in
   const budget = Math.max(0, (att.c.move || 0) * ftPx(att)), need = d - reach;
   // MOVEMENT IS MEASURED ALONG THE WAY ACTUALLY WALKED (Sam, 2026-10-27: "Did Eldeth and Sarith really only move 30
   // feet?"). The charge used to be the straight line toward the target, while the walk itself went round tables, bunks
@@ -9859,6 +9905,7 @@ function click(w){
   if (timeStopped) return;
   if (dmPlacing){ placePile(w); return; }
   if (mode === "explore"){
+    if (exploreJump){ exploreJump = false; hint(""); exploreLeap(nearestWalkable(w.x, w.y)); return; }
     const pile = !hitActor(npcs, w) ? pileAt(w) : null;
     if (pile){ const me0 = leader; walkTo(nearestWalkable(pile.x, pile.y + 8), () => pickUp(me0, pile)); return; }
     const me = hitActor(party, w);
@@ -9876,6 +9923,21 @@ function click(w){
   } else if (mode === "combat"){ if (dmPlace){ placeDmCloud(w); return; } combatClick(w); }
 }
 function nearNpc(n){ const d = norm({x: leader.x - n.x, y: leader.y - n.y}); return nearestWalkable(n.x + d.x * 80, n.y + d.y * 80); }
+// the explore-bar Jump: run up to the gap's edge, spring, land, walk on to where they clicked
+function exploreLeap(p){
+  const L = leader; if (!ownLeader()){ if (L) notYours(L); return; }
+  if (L.ko){ toast(`${fname(L)} is out cold.`); return; }
+  const span = (SHEETS[L.id] || {}).strScore; if (!span){ toast(`${fname(L)} has no Strength score on the sheet to jump by.`); return; }
+  if (balconyFloor() && outsidePen(L) !== outsidePen(p)){ toast("That is a wall, not a gap: the way is the gate."); return; }
+  const g = gapOnLine(L, p);
+  if (!g || g.gapFt < MIN_LEAP_FT){ toast("No gap to jump there: just walk."); return; }
+  const max = g.runUpFt >= 10 ? span : Math.floor(span / 2);
+  if (g.gapFt > max){ toast(`That gap is about ${Math.round(g.gapFt)} ft. ${fname(L)} clears ${max}${g.runUpFt < 10 ? " from a standstill — back up for a run-up" : ""}.`); return; }
+  stopActivity(L); L.slow = false; marker = {x: p.x, y: p.y, t: now};
+  const land = () => { log(`${fname(L)} clears the ${Math.round(g.gapFt)} ft gap.`); if (Math.hypot(p.x - L.x, p.y - L.y) > 8){ L.path = findPath(L, p); L.onArrive = null; } };
+  const spring = () => arcTo(L, g.land, land);
+  if (g.runUpFt > 0.5){ L.path = [g.takeoff]; L.onArrive = spring; } else spring();
+}
 function walkTo(p, cb){ if (!ownLeader()){ if (leader) notYours(leader); return; } if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
 $("zIn").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.3); };
 $("zOut").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.3); };
@@ -9890,6 +9952,7 @@ addEventListener("keydown", e => {
   if (e.key === "Escape" && dmPlacing){ dmPlacing = null; stage.classList.remove("placing"); hint(""); return; }
   if (e.code === "KeyI" && (mode === "explore" || mode === "combat")){ e.preventDefault(); toggleBag(); return; }
   if (e.key === "Escape" && bagOpen()){ toggleBag(false); return; }
+  if (e.key === "Escape" && exploreJump){ exploreJump = false; hint(""); return; }
   if (e.key === "Escape"){ if (!$("obj").hidden){ $("obj").hidden = true; mode = "explore"; } else if (!$("talk").hidden) $("talkNo").click(); else if (!$("dm").hidden) toggleDm(false); }
   if (e.key === "m" || e.key === "M") $("musicBtn").click();
   if (orbPick && mode === "combat" && cbt && cbt.phase === "menu"){
