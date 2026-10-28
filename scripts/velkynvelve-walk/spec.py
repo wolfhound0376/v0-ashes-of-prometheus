@@ -56,7 +56,7 @@ NODES = {
           # Sam, 2026-10-24: "Lift basket goes to the plate pool" — the basket sets the party down on area 14 (Pool / Underground
           # River), which has its own ways out; it is not a way off the map. `kind="leave"` stays only because the page keys the
           # basket's climb-out button on it (template.html openLift); with a plate in `to`, goBeyond walks there.
-          dict(rect=[1436, 819, 1526, 959], to=[14], kind="leave", label="The lift basket: DC 18 Strength to crank, 4 rounds down to the cavern floor by the pool (OotA p.17–18)"),
+          dict(rect=[1436, 819, 1526, 959], to=["wastes"], kind="leave", label="The lift basket: DC 18 Strength to crank, 4 rounds down to the Wastes (Sam, 2026-10-27; the book lowers it by the pool, OotA p.17–18)"),
           dict(rect=[914, 1255, 1099, 1339], to=[2], label="Down the Lift to the Wastes"),
           # Hard Labor module (Sam, 2026-10-26), Lift Trouble (OotA Expanded p.45): goods fell off the lift and snagged on the
           # cliff below; the prisoners are sent down on two tattered 25-ft ropes, three rappels. PROPOSED: the spot on the rail is
@@ -263,6 +263,47 @@ CAVERNS = {
           dict(rect=[2229, 665, 2400, 836], to=[], kind="leave", label="New exit")]),
 }
 
+# ── Gracklstugh, the first hub interiors ─────────────────────────────────────────────────────────────────────────────
+# Sam, 2026-10-27, from the Top Heroes comparison: "lets create shops and taverns like this" -> two PixelLab pixel-art
+# cutaway rooms (create_image_pro 688x384, jobs 55ad29a1 smithy / 0212db94 inn), Sam: "Keep as they are. Make sure you can
+# walk down those steps." Hub doc: claude/Gracklstugh_Hub_Pilot_2026-10-27.md. The painted Blade Bazaar (Gracklstugh room
+# plate 3, claude/Gracklstugh_Room_Plates_2026-10-13.md, Lanczos 2752x1536 -> 2400x1339) is their street. Keys carry a "g"
+# so they never collide with Velkynvelve's numbers; nothing in Velkynvelve links here, so for now the DM reaches them from
+# the jump list. Pixel rooms are cut by NEAREST x3.5 then centre-trimmed, so the pixels stay hard. Isometric art has no
+# perspective, so their depth is flat. Floors, obstacles and zones traced by Claude by eye; scale NOT checked by compositing.
+# Canon: Ghohlbrorn's Lair is an inn UNDER the Blade Bazaar, "frequently flooded" (OotA Expanded p.51); bazaar<->inn is the
+# sourced subnodal link 3-6. The smithy is Claude's: a smith's stall in the bazaar (the painted plate has one, right side).
+GRACKLSTUGH = {
+ "g3": dict(slug="gr-03-blade-bazaar", name="Gracklstugh: the Blade Bazaar", scale=1.8, depth=[0.6, 1.3], img="gr-03-blade-bazaar.jpg",
+   # the cobbled street between the stalls; the back stair climbs to the city (not walkable yet, so no zone)
+   floors=[dict(poly=P((1180,900),(1470,900),(1560,960),(1620,1000),(1760,1060),(1900,1130),(2000,1150),(2050,1339),(680,1339),(660,1200),(700,1060),(900,990),(1060,960)))],
+   obstacles=[dict(cx=757,cy=1035,rx=70,ry=45),dict(cx=1815,cy=1035,rx=70,ry=45),dict(cx=1095,cy=905,rx=40,ry=25),dict(cx=1545,cy=930,rx=40,ry=25),dict(cx=980,cy=975,rx=45,ry=35)],   # braziers, the barrel at the dagger stall
+   zones=[dict(rect=[1050, 1260, 1500, 1339], to=["g6"], label="Down the steps under the bazaar to Ghohlbrorn's Lair"),
+          dict(rect=[1600, 940, 1760, 1060], to=["g3f"], label="Into the smith's stall")]),
+ "g6": dict(slug="gr-06-ghohlbrorns-lair", name="Ghohlbrorn's Lair", scale=1.0, depth=[1.0, 1.0], img="gr-06-ghohlbrorns-lair.png",
+   # the flooded flagstones (the puddles are floor: shallow water, not a pool); the stair at the back-left is floor too,
+   # so you walk up it and the zone at its head takes you to the bazaar. Hearth and bar cut out of the shape.
+   floors=[dict(poly=P((440,580),(530,580),(545,840),(810,705),(1080,615),(1245,532),(1275,637),(1650,817),(1837,720),(2092,840),(1320,1275),(495,900),(290,880),(290,690),(400,620)))],
+   obstacles=[dict(cx=660,cy=705,rx=70,ry=40),                        # glow-caps by the stair
+              dict(cx=1395,cy=705,rx=35,ry=30),dict(cx=1522,cy=765,rx=35,ry=30),   # bar stools
+              dict(cx=1900,cy=765,rx=95,ry=50),dict(cx=2010,cy=832,rx=30,ry=25),     # the dice table and its stool
+              dict(cx=1500,cy=880,rx=130,ry=70),dict(cx=1680,cy=960,rx=120,ry=70),   # long table and benches
+              dict(cx=1140,cy=1050,rx=140,ry=70),dict(cx=1330,cy=1140,rx=130,ry=70), # front table and benches
+              dict(cx=1822,cy=900,rx=60,ry=35)],                                     # glow-caps by the dice table
+   zones=[dict(rect=[400, 520, 560, 660], to=["g3"], label="Up the stone stair to the Blade Bazaar",
+               # a `climb` (as on plate 7's ladder): arrivals come DOWN the steps to their foot and the company waits there, instead of
+               # walking in from behind the stair, which is inside the wall
+               climb=dict(foot=[540, 770], ladder=[480, 585], dir="up"))]),
+ "g3f": dict(slug="gr-03f-bazaar-smithy", name="The smith's stall", scale=1.0, depth=[1.0, 1.0], img="gr-03f-bazaar-smithy.png",
+   # the plank floor of the forge room; the forge, the anvil, the trough, the grindstones and the bench block
+   floors=[dict(poly=P((435,862),(1200,502),(2002,900),(1245,1287)))],
+   obstacles=[dict(cx=862,cy=720,rx=180,ry=90),dict(cx=592,cy=750,rx=150,ry=80),dict(cx=607,cy=870,rx=85,ry=45),dict(cx=1050,cy=585,rx=60,ry=50),
+              dict(cx=1185,cy=802,rx=90,ry=70),dict(cx=1357,cy=765,rx=125,ry=70),dict(cx=1515,cy=630,rx=90,ry=65),dict(cx=1785,cy=720,rx=165,ry=90),
+              dict(cx=1683,cy=772,rx=30,ry=25),dict(cx=1125,cy=1110,rx=165,ry=90),dict(cx=1372,cy=1065,rx=90,ry=80)],
+   zones=[dict(rect=[1500, 960, 1800, 1100], to=["g3"], label="Out through the shopfront into the Blade Bazaar")]),
+}
+NODES.update(GRACKLSTUGH)
+
 # Sam's editor layout (export 2026-10-25): where each plate sits on the overview board (editor pixels). Data for the editor, not for the page.
 LAYOUT = {
   "1": [80, 1180],
@@ -309,7 +350,7 @@ print(len(_M['masks']), 'plates walk Sam\'s painted floor; traced shapes still u
 # sanity. Every way out must lead to a plate that exists. A walk link is expected to have a zone on both sides; the ones
 # that do not are listed here so they are a known gap and not a surprise (Sam's export, 2026-10-24: one_way_links_to_fix).
 # A new one-way link fails the build until it gets its return zone or is added here on purpose.
-KNOWN_ONE_WAY = {("4", "1"), ("5", "2"), ("5", "14"), ("6", "10"), ("9", "14"), ("12", "10")}
+KNOWN_ONE_WAY = {("4", "1"), ("5", "2"), ("5", "wastes"), ("6", "10"), ("9", "14"), ("12", "10")}
 ALL = {str(k): v for k, v in NODES.items()}; ALL.update(CAVERNS)
 links = {(a, str(t)) for a, node in ALL.items() for z in node["zones"] for t in z["to"]}
 for a, b in links:

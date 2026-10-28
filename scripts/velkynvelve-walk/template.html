@@ -293,6 +293,13 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .invChips{display:flex;gap:8px;flex-wrap:wrap}
 .efChip{display:flex;align-items:center;gap:9px;padding:6px 14px 6px 11px;border:1px solid var(--ef-brass);border-radius:6px;background:var(--ef-inset);box-shadow:inset 0 0 0 1px #000,0 2px 6px rgba(0,0,0,.4)}
 .efChip svg{width:22px;height:22px;flex:0 0 22px}
+.efChip .mark,.invName .mark{width:38px;height:38px;flex:0 0 38px;border-radius:7px;border:1px solid #000;box-shadow:0 0 0 1px var(--ef-brass),0 2px 4px rgba(0,0,0,.5)}
+.invName{grid-template-columns:auto 1fr;column-gap:12px;align-items:center}
+.invName .mark{grid-row:1/3;width:48px;height:48px;flex:0 0 48px}
+.lvlBadge small,.lvlBadge b{text-shadow:0 2px 0 #000,0 0 8px #000}
+.lvlXp .lbl .mark{width:18px;height:18px;border-radius:4px;vertical-align:-4px;margin-right:6px;border:1px solid #000}
+.lvlUp .mark{width:44px;height:44px;border-radius:8px;border:2px solid #000;box-shadow:0 2px 0 #000}
+.lvlUp .t{display:grid;justify-items:center;gap:3px}
 .efChip .t{display:grid;gap:2px;line-height:1}
 .efChip .k{font-family:var(--face-mono);font-size:.6rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ef-muted)}
 .efChip .v{font-family:var(--face-display);font-size:var(--s2);color:var(--ef-text)}
@@ -330,7 +337,8 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .invDoll .slot:hover,.invDoll .slot:focus-visible{border-color:var(--ef-gold)}
 .invDoll .slot[aria-pressed="true"]{border-color:var(--ef-selected);box-shadow:inset 0 0 0 1px #000,0 0 0 2px rgba(217,186,104,.5),0 0 16px rgba(215,175,88,.3)}
 .invDoll .slot img{width:72%;height:72%;object-fit:contain}
-.invDoll .slot.empty img{opacity:.32;filter:grayscale(1)}
+.invDoll .slot.empty img{width:100%;height:100%;object-fit:cover;border-radius:5px;opacity:.9}
+.invDoll .slot.empty:hover img,.invDoll .slot.empty[aria-pressed="true"] img{opacity:1;filter:brightness(1.15)}
 .invDoll .slot:not(.empty)::after{content:"";position:absolute;right:5px;top:5px;width:9px;height:9px;border-radius:50%;background:var(--ef-equipped);box-shadow:0 0 0 1px #000,0 0 6px var(--ef-equipped)}
 .invDoll .slot .lbl{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:4px;padding:1px 6px;border-radius:3px;background:rgba(9,9,13,.72);text-align:center;font-family:var(--face-mono);font-size:.56rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ef-secondary);text-shadow:0 1px 2px #000;white-space:nowrap}   /* a dark backing: the cleric's cathedral is bright stone */
 .invSel{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-height:30px;font-size:var(--s-1);color:var(--ef-secondary)}
@@ -348,7 +356,7 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .lvlBar{height:12px;border:1px solid var(--ef-brass);border-radius:6px;background:var(--ef-inset);box-shadow:inset 0 0 0 1px #000;overflow:hidden}
 .lvlBar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#8d6830,#d7af58 70%,#ffe2a0);transition:width .6s ease}
 .lvlBar.full i{box-shadow:0 0 10px rgba(255,226,160,.7)}
-.lvlUp{font:inherit;font-family:var(--face-display);font-size:var(--s2);letter-spacing:.14em;padding:11px 28px;border:2px solid var(--ef-gold);border-radius:6px;background:linear-gradient(#ffe2a0,#dca645 48%,#aa6a23);color:#35220f;font-weight:700;box-shadow:0 0 0 1px #000,0 6px 14px rgba(0,0,0,.5);cursor:pointer;flex:0 0 auto;display:grid;justify-items:center;gap:3px}
+.lvlUp{font:inherit;font-family:var(--face-display);font-size:var(--s2);letter-spacing:.14em;padding:11px 28px;border:2px solid var(--ef-gold);border-radius:6px;background:linear-gradient(#ffe2a0,#dca645 48%,#aa6a23);color:#35220f;font-weight:700;box-shadow:0 0 0 1px #000,0 6px 14px rgba(0,0,0,.5);cursor:pointer;flex:0 0 auto;display:flex;align-items:center;gap:12px;text-align:left}
 .lvlUp small{font-family:var(--face-body);font-size:.68rem;letter-spacing:0;font-weight:500;color:#5a3f16;text-transform:none}
 .lvlUp.locked{background:linear-gradient(#2a2430,#17141c);color:var(--ef-muted);border-color:#4a3f2a;box-shadow:inset 0 0 0 1px #000;cursor:default}
 .lvlUp.locked small{color:var(--ef-muted)}
@@ -389,6 +397,71 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .invDetail .efDesc{font-style:italic;color:var(--ef-text);font-size:var(--s0);line-height:1.35;border-top:1px solid #2a2330;padding-top:6px;margin-top:6px}
 .invDetail .efActs{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
 .invDetail .efHint{font-family:var(--face-mono);font-size:.68rem;color:var(--ef-muted);letter-spacing:.08em}
+/* THE TOP HEROES SKIN (Sam, 2026-10-27, on the action bar's slabs: "use this style for the whole window"). The whole
+   inventory window wears what the command bar wears: a thick gold rim with a dark inner line, glossy top highlight, a
+   dark lip, a lift on hover and a sink on press. Everything that can be pressed is a slab; everything that holds is a
+   framed panel. Layout, data and handlers are untouched — this block only restyles what the rules above lay out. */
+.inv{--th-rim:#9a6a1c;--th-gold:#f2c55c;--th-gold-hi:#ffe9a6;--th-edge:#3a2a1b;
+  --th-slab:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.18),inset 0 -7px 0 rgba(0,0,0,.24),0 4px 0 #000,0 7px 14px rgba(0,0,0,.55);
+  --th-slab-up:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.26),inset 0 -7px 0 rgba(0,0,0,.24),0 6px 0 #000,0 0 20px rgba(242,197,92,.4),0 10px 18px rgba(0,0,0,.6);
+  --th-slab-down:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.12),inset 0 -4px 0 rgba(0,0,0,.24),0 2px 0 #000,0 4px 8px rgba(0,0,0,.6);
+  border:3px solid var(--th-rim);border-radius:16px;background:linear-gradient(#1d1420,#120b14);box-shadow:inset 0 0 0 2px #000,0 0 0 1px #000,0 18px 40px rgba(0,0,0,.7)}
+.inv::before,.inv::after{display:none}
+/* the framed panels */
+.inv .invPack,.inv .invLevel,.inv .invDetail,.inv .invHand,.inv .invRow{border:2px solid var(--th-edge);border-radius:12px;background:linear-gradient(180deg,#1d1420,#120b14);box-shadow:inset 0 0 0 1px #000,0 2px 0 #000}
+.inv .invDoll{border:2px solid var(--th-edge);border-radius:12px;box-shadow:inset 0 0 0 1px #000,0 2px 0 #000}   /* the stage keeps its painting (center bottom / cover, set above; the class plate is inline) */
+.inv .efChip,.inv .invTabs .tbtn,.inv #invClose,.inv .btn,.inv .lvlUp,.inv .invPic,.inv .invDetail .efBig,.inv .lvlBadge{position:relative}   /* the slots stay absolute on the stage */
+.inv .invRow{border-radius:10px;padding:8px 10px}
+.inv .invRow:hover{border-color:var(--th-rim)}
+.inv .invRow.fits{border-color:rgba(242,197,92,.55)}
+.inv .invRow.sel{outline:0;border-color:var(--th-gold);box-shadow:inset 0 0 0 1px #000,0 0 14px rgba(242,197,92,.35)}
+/* the slabs */
+.inv .efChip,.inv .invTabs .tbtn,.inv #invClose,.inv .btn,.inv .lvlUp,.inv .invDoll .slot,.inv .invPic,.inv .invDetail .efBig,.inv .lvlBadge{
+  --c1:#5e6a78;--c2:#343c46;border:3px solid var(--th-rim);border-radius:12px;background:linear-gradient(180deg,var(--c1),var(--c2));box-shadow:var(--th-slab);color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.6)}
+.inv .efChip::before,.inv .invTabs .tbtn::before,.inv .btn::before,.inv .lvlUp::before,.inv .invDoll .slot::before,.inv .invPic::before,.inv .invDetail .efBig::before{content:"";position:absolute;inset:3px 3px 50% 3px;border:0;border-radius:8px 8px 4px 4px;background:linear-gradient(rgba(255,255,255,.16),rgba(255,255,255,.02));pointer-events:none;z-index:3}
+.inv .invTabs .tbtn,.inv #invClose,.inv .btn,.inv .lvlUp,.inv .invDoll .slot{cursor:pointer;transition:transform .09s ease,filter .12s ease,border-color .12s ease,box-shadow .09s ease}
+.inv .invTabs .tbtn:hover,.inv #invClose:hover,.inv .btn:hover:not([disabled]),.inv .lvlUp.earned:hover,.inv .invDoll .slot:hover,.inv .invTabs .tbtn:focus-visible,.inv .btn:focus-visible,.inv .invDoll .slot:focus-visible{transform:translateY(-2px);border-color:var(--th-gold);filter:brightness(1.12);box-shadow:var(--th-slab-up);color:#fff}
+.inv .invTabs .tbtn:active,.inv #invClose:active,.inv .btn:active:not([disabled]),.inv .lvlUp.earned:active,.inv .invDoll .slot:active{transform:translateY(2px);box-shadow:var(--th-slab-down)}
+@media (prefers-reduced-motion:reduce){.inv .invTabs .tbtn,.inv #invClose,.inv .btn,.inv .lvlUp,.inv .invDoll .slot{transition:none}}
+/* chips: HP red, AC blue, Speed gold; label in pale gold, number white */
+.inv .efChip{padding:5px 14px 5px 6px;gap:10px}
+.inv .efChip[data-cat=hp]{--c1:#c8402e;--c2:#7a1f14}
+.inv .efChip[data-cat=ac]{--c1:#2e6ab8;--c2:#17406a}
+.inv .efChip[data-cat=speed]{--c1:#c9962a;--c2:#7a5312}
+.inv .efChip .k{color:var(--th-gold-hi);opacity:.9}
+.inv .efChip .v,.inv .efChip .v small{color:#fff}
+.inv .efChip .mark,.inv .invName .mark{border:2px solid #000;box-shadow:inset 0 0 0 1px rgba(255,233,166,.25),0 2px 0 #000;border-radius:9px}
+/* the hero tabs and the close */
+.inv .invTabs .tbtn{padding:9px 18px;color:#fff;letter-spacing:.1em}
+.inv .invTabs .tbtn[aria-pressed="true"]{--c1:#1f8f86;--c2:#0f5b57;border-color:var(--th-gold);color:var(--th-gold-hi);box-shadow:var(--th-slab),0 0 14px rgba(242,197,92,.35)}
+.inv #invClose{width:42px;height:42px;color:#fff;font-size:1.1rem}
+/* the item buttons: grey slab, the primary one green */
+.inv .btn{padding:7px 14px;color:#fff;font-weight:600}
+.inv .btn.primary{--c1:#4a9a3a;--c2:#2a5e20;color:#fff;border-color:var(--th-rim)}
+.inv .btn.primary:hover{color:#fff;filter:brightness(1.12)}
+.inv .btn[disabled]{opacity:.5;filter:saturate(.35);transform:none}
+/* the slots */
+.inv .invDoll .slot{--c1:#2a2330;--c2:#110e16;border-radius:12px}
+.inv .invDoll .slot.empty img{border-radius:8px}
+.inv .invDoll .slot[aria-pressed="true"]{border-color:var(--th-gold);box-shadow:var(--th-slab),0 0 16px rgba(242,197,92,.4)}
+.inv .invDoll .slot .lbl{background:rgba(9,9,13,.85);border:1px solid #000;border-radius:5px;color:var(--th-gold-hi)}
+.inv .invDoll .slot:not(.empty)::after{z-index:4}
+/* the backpack thumbnails and the selected item */
+.inv .invPic{--c1:#2a2330;--c2:#110e16;width:64px;height:64px;border-radius:10px}
+.inv .invDetail .efBig{--c1:#2a2330;--c2:#110e16;border-radius:12px}
+.inv .invDetail .efBig.empty{border-color:var(--th-edge);background:linear-gradient(180deg,#1d1420,#120b14)}
+.inv .invDetail h5,.inv .invPackHead{color:var(--th-gold)}
+/* the level panel */
+.inv .lvlBadge{--c1:#2a2330;--c2:#110e16;border-radius:50%;border-color:var(--th-gold)}
+.inv .lvlBadge small{color:var(--th-gold-hi);opacity:.85}.inv .lvlBadge b{color:#fff}
+.inv .lvlBar{border:2px solid var(--th-rim);border-radius:8px;height:14px;background:#0a0710;box-shadow:inset 0 0 0 1px #000,inset 0 2px 4px #000}
+.inv .lvlBar i{background:linear-gradient(90deg,#9a6a1c,#f2c55c 70%,#ffe9a6)}
+.inv .lvlUp{--c1:#e2b23a;--c2:#9a6a1c;color:#2a1a08;text-shadow:0 1px 0 rgba(255,233,166,.6);border-radius:12px;padding:9px 22px 9px 12px}
+.inv .lvlUp small{color:#4a3010}
+.inv .lvlUp.locked{--c1:#5e6a78;--c2:#343c46;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.6);opacity:.55;filter:saturate(.35);cursor:default;border-color:var(--th-rim)}
+.inv .lvlUp.locked small{color:#fff;opacity:.85}
+.inv .lvlUp.earned{border-color:var(--th-gold)}
+.inv .invEcon,.inv .invFoot,.inv .invSel{color:#b8a98a}
 /* THE LEVEL UP CEREMONY (PR 2): a sheet over the backpack — what the level fixes, the one choice it asks (the Hit Die:
    roll it or take the SRD's fixed value), the choices owed on the sheet after, and one Confirm that writes once. */
 .invPack{position:relative}
@@ -446,7 +519,6 @@ footer.party{display:flex;gap:8px;overflow-x:auto;min-width:0;align-items:stretc
 .pc[aria-pressed="true"]{border-color:var(--ember)}
 .pc[aria-pressed="true"] small{color:var(--ember)}
 .seats{display:flex;flex-direction:column;gap:4px}
-.help{margin-left:auto;align-self:center;font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink-dim);white-space:nowrap;padding-left:8px}
 .dmCloudRow{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:4px 0}.dmCloudRow input{width:4.5em}
 button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outline-offset:2px}
 .loading{position:absolute;inset:0;display:grid;place-items:center;font-family:var(--face-mono);color:var(--ink-dim);letter-spacing:.1em}
@@ -558,7 +630,6 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
   .brand .sub{max-width:44vw}
   .tcard{grid-template-columns:84px 1fr}
   .tcard canvas{width:80px;height:80px}
-  .help{display:none}
   .log{bottom:58px}
   input[type=range]{display:none}
 }
@@ -615,7 +686,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     </div>
     <div class="inv" id="inv" role="dialog" aria-label="Inventory" hidden>
       <div class="invHead">
-        <div class="invName"><b id="invWho"></b><span class="invSub" id="invSub"></span></div>
+        <div class="invName"><img class="mark" id="invCrest" alt=""><b id="invWho"></b><span class="invSub" id="invSub"></span></div>
         <div class="invChips" id="invChips"></div>
         <div class="invTabs" id="invTabs"></div>
         <button class="tbtn" id="invClose" aria-label="Close the inventory">✕</button>
@@ -723,7 +794,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 
   <div class="cbt-menu" id="cbtMenu" hidden></div>
   <button class="cbt-mini" id="cbtMini" title="Close DM tools and bring the commands back">▲ Commands (DM tools open)</button>
-  <footer class="party" id="party"><span class="help">WASD / arrows or click to walk · 1–4 or Tab to switch · E to talk · walk into a glowing exit to travel</span></footer>
+  <footer class="party" id="party"></footer>
 </div>
 
 <audio id="mExplore" preload="auto"></audio>
@@ -2042,14 +2113,13 @@ function heroStage(id, canvas, stageH){
 }
 function renderParty(){
   const el = $("party"); el.querySelectorAll(".pc").forEach(n => n.remove());
-  const help = el.querySelector(".help");
   PARTY.forEach(id => {
     const a = party.find(p => p.id === id); if (!a) return;
     const b = document.createElement("button"); b.className = "pc"; b.setAttribute("aria-pressed", String(a === leader));
     const c = document.createElement("canvas"); portrait(id, c, 64); b.appendChild(c);
     const nm = document.createElement("span"); nm.className = "nm";
     nm.innerHTML = `<b>${esc(SHORT[id] || SPR[id].json.name)}</b><small>${a === leader ? "Moving" : "Waiting"}</small>`;
-    b.appendChild(nm); b.onclick = () => setLeader(a); el.insertBefore(b, help);
+    b.appendChild(nm); b.onclick = () => setLeader(a); el.appendChild(b);
   });
   // the heroes split off on another plate: shown dim, with where they are (SPLIT PARTY)
   PARTY.forEach(id => {
@@ -2058,7 +2128,7 @@ function renderParty(){
     const c = document.createElement("canvas"); portrait(id, c, 64); b.appendChild(c);
     const nm = document.createElement("span"); nm.className = "nm";
     nm.innerHTML = `<b>${esc(SHORT[id] || SPR[id].json.name)}</b><small>at ${esc(plateLabel(heroAt[id].plate))}</small>`;
-    b.appendChild(nm); b.title = "Split off on another plate. Walk there to rejoin."; el.insertBefore(b, help);
+    b.appendChild(nm); b.title = "Split off on another plate. Walk there to rejoin."; el.appendChild(b);
   });
 }
 function setLeader(a){
@@ -2206,6 +2276,7 @@ async function enterNode(n, opts = {}){
   const comp = compAll.filter(id => compAt[id] == null || owSame(compAt[id], n));
   for (const id of comp) if (state.companyAt) state.companyAt[id] = String(n);
   for (const np of whoIsHere(n)){
+    if ((state.slain || []).includes(np.id)) continue;   // BYSTANDERS: killed in a fight, gone for good
     if (np.hostile && state.cleared[n]) continue;
     if (compAll.includes(np.id)) continue;              // a companion walks with the party, not at their old spot
     if (np.id === surgeonDeadId()) continue;            // shot dead at the gate (The Drow Surgeon) and thrown over the falls
@@ -4605,6 +4676,10 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   mode = "combat"; [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); setAnim(p, "idle"); });
   if (balcony()) buildGrid();               // the balcony outside the pen gate is floor while the fight lasts
   const allies = opts.noAllies ? [] : alliesHere(); allies.forEach(n => { n.ally = true; n.talking = false; });
+  // BYSTANDERS (Sam, 2026-10-27): everyone on our side who is not fighting runs from it (bystanderTurn), can be hit, and
+  // can be protected; one who drops is dead (fall). They roll initiative so their running is a turn like anyone's.
+  const bystanders = npcs.filter(n => !allies.includes(n) && isBystander(n));
+  bystanders.forEach(n => { n.bystander = true; n.talking = false; n.c = ALLY_SHEETS[n.id] ? fighterFor(n) : bystanderFighter(n); });
   hoverZone = null; tip.hidden = true;
   const pc = party.reduce((s, p) => ({x: s.x + p.x / party.length, y: s.y + p.y / party.length}), {x: 0, y: 0});
   let dir;
@@ -4641,15 +4716,15 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   camTo(z, cx, cy, 900);
   $("vignette").classList.add("on"); pickCombatTrack(moodFor(foes, startCombat.flagMood)); startCombat.flagMood = null; setTrack("combat");
   // initiative: d20 + the sheet's bonus, everyone, highest first (ties: higher bonus, then the party)
-  const order = [...party, ...allies, ...foes].filter(a => !a.down);
-  for (const a of order){ a.c = a.c && hero(a) ? a.c : fighterFor(a); a.c.init = d20(0, a) + (a.c.sheet.init || 0); }
+  const order = [...party, ...allies, ...bystanders, ...foes].filter(a => !a.down);
+  for (const a of order){ a.c = a.c && (hero(a) || a.bystander) ? a.c : fighterFor(a); a.c.init = d20(0, a) + (a.c.sheet.init || 0); }
   order.sort((a, b) => b.c.init - a.c.init || (b.c.sheet.init || 0) - (a.c.sheet.init || 0) || (a.kind === "pc" ? -1 : 1));
   // SURPRISE (SRD 5.1, Combat > Surprise; fightWith): a foe who never saw it coming is surprised — no move and no action
   // on its first turn, no reaction until that turn ends. And the one who struck from hiding goes first (Sam, 2026-10-27:
   // "If we sneak attack them we hit them first"): initiative is still rolled for the rest of the order.
   for (const f of opts.surprised || []) if (f.c){ f.c.surprised = true; f.c.reactionUsed = true; }
   if (opts.opener && order.includes(opts.opener)){ order.splice(order.indexOf(opts.opener), 1); order.unshift(opts.opener); }
-  cbt = {order, allies, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null,
+  cbt = {order, allies, bystanders, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null,
     id: `${cur}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`};   // the fight's own name: /api/walk-xp pays it once
   $("combat").hidden = false; $("cbtMenu").hidden = true; stage.classList.add("fight"); renderTurns(); renderParty();
   log(`<em>${esc(label || "Steel comes out.")}</em> Initiative: ${order.map(a => `${fname(a)} ${a.c.init}`).join(", ")}.`);
@@ -4737,6 +4812,81 @@ function witherOutside(t){
   popText(t, "withered", "#b6f04a", 1.3); log(`<b>${fname(t)}</b> withers to bones.`);
 }
 const heroes = () => [...party, ...(cbt ? cbt.allies : [])];
+// ----- BYSTANDERS -----
+// Sam, 2026-10-27: "During combat, NPCs that aren't fighting run as far from the fight as possible. They can be targeted
+// in a fight and we can try to protect them with spells and abilities/potions. Opponents will prioritize threats first but
+// that doesn't mean they won't occasionally take a pot shot at NPCs. NPCs that drop just die no saving throw."
+// A bystander is anyone on the plate who is on our side or nobody's (the freed prisoners, townsfolk) and is not fighting:
+// not an ally in this fight, not hostile, not a foe's block, not scenery. A fighting ally (Ront) who sits a fight out
+// (opts.noAllies) is a bystander for that fight. Not heroes(): they never count toward winning or losing.
+const bystanders = () => cbt && cbt.bystanders ? cbt.bystanders.filter(b => !b.down && actors.includes(b)) : [];
+const friends = () => [...heroes(), ...bystanders()];       // who a heal, a buff, a Help, an inspiration or a potion may go to
+function isBystander(n){
+  return !!SPR[n.id] && !n.ally && !n.hostile && !n.backdrop && !n.offStage && !n.static && !n.fixedScale && !n.riding && !n.climbing
+    && !n.down && !n.body && n.kind !== "body" && !FOE_BLOCKS[n.id] && actors.includes(n);
+}
+// Their numbers: an NPC with no block of its own fights (and bleeds) as the SRD 5.1 Commoner — AC 10, 4 HP (1d8),
+// speed 30, Club +2 1d4. A stand-in, flagged, until their own OotA blocks are in; Ront, Eldeth, Derendil and Sarith keep theirs.
+const COMMONER = {cls: "Commoner (SRD 5.1)", hp: 4, ac: 10, init: 0, speed: 30, strScore: 10, saves: {str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0},
+  attacks: [{name: "Club", hit: 2, dmg: "1d4", type: "bludgeoning", reach: 5}], standIn: true};
+function bystanderFighter(n){
+  const s = {...COMMONER, name: SHORT[n.id] || SPR[n.id].json.name};
+  return {sheet: s, hp: s.hp, hpMax: s.hp, ac: s.ac, conds: new Set(), slots: {}, init: 0};
+}
+// Where to run: the floor farthest from the nearest foe, and away from the middle of the fight (the line between our
+// side and theirs is where the blows land). Sampled over the plate's walk grid every few cells; the turn then walks as
+// far toward it as a Dash allows, and next turn it looks again.
+function safestFloor(a){
+  const th = standing(foes); if (!th.length) return null;
+  const all = [...th, ...standing(heroes())], mid = {x: all.reduce((s, q) => s + q.x, 0) / all.length, y: all.reduce((s, q) => s + q.y, 0) / all.length};
+  // not on top of another runner: where the others stand or are running to is taken
+  const taken = bystanders().filter(o => o !== a).map(o => o.path && o.path.length ? o.path[o.path.length - 1] : o);
+  let best = null, bs = -1;
+  for (let y = CELL / 2; y < NAT_H; y += CELL * 3) for (let x = CELL / 2; x < NAT_W; x += CELL * 3){
+    if (!walkable(x, y) || taken.some(o => Math.hypot(o.x - x, o.y - y) < 80)) continue;
+    const dF = Math.min(...th.map(f => Math.hypot(f.x - x, f.y - y))), dM = Math.hypot(mid.x - x, mid.y - y), sc = dF + dM * .5;
+    if (sc > bs){ bs = sc; best = {x, y}; }
+  }
+  return best;
+}
+// A bystander's turn: the Dash action (SRD 5.1: extra movement equal to its speed), away. Running past a foe at its
+// elbow draws the opportunity attack, as it would for anyone. Webbed, asleep or otherwise held: it stays put.
+function bystanderTurn(a){
+  const end = () => { combatBusy = false; if (cbt) cbt.phase = "idle"; setTimeout(() => passTurn(a), 300); };
+  if (!actors.includes(a) || a.down){ setTimeout(nextTurn, 100); return; }
+  if (a.c.conds.has("prone")){ a.c.conds.delete("prone"); a.c.move = Math.floor(a.c.move / 2); log(`${fname(a)} scrambles up.`); }
+  if (a.c.conds.has("restrained") || a.c.conds.has("grappled") || incapacitated(a)){ log(`${fname(a)} cannot get away.`); end(); return; }
+  const goal = safestFloor(a); if (!goal){ end(); return; }
+  a.c.action = false; a.c.move += a.c.sheet.speed;                     // Dash
+  const walk = cutPath(a, findPath(a, goal), a.c.move * ftPx(a)), to = walk.pts.length ? walk.pts[walk.pts.length - 1] : null;
+  if (!to || Math.hypot(to.x - a.x, to.y - a.y) < CELL){ log(`${fname(a)} keeps their head down.`); end(); return; }
+  combatBusy = true; cbt.phase = "busy";
+  const go = () => {
+    if (!cbt || a.down){ end(); return; }
+    a.c.move = Math.max(0, a.c.move - walk.usedFt);
+    if (!(cbt.fled || (cbt.fled = new Set())).has(a)){ cbt.fled.add(a); popText(a, "flees", "#e8e2c8", .9); narrate(a, `${fname(a)} runs from the fight.`); }
+    log(`${fname(a)} runs for cover (Dash, ${walk.usedFt} ft).`);
+    a.path = walk.pts; a.onArrive = end;
+  };
+  const oa = standing(foes).find(f => !f.c.reactionUsed && !incapacitated(f) && feetBetween(a, f) <= 5 && Math.hypot(to.x - f.x, to.y - f.y) > reachPx(f, a, 5) + 6);
+  if (oa){
+    oa.c.reactionUsed = true;
+    log(`${fname(oa)} takes a swing as ${fname(a)} bolts (opportunity attack, their reaction).`);
+    attackWith(oa, a, meleeOf(oa), () => { combatBusy = true; go(); }, false, true);
+    return;
+  }
+  go();
+}
+// The pot shot: a foe goes for the threats first (foeTurn), but on a 6 on a d6 it turns on a bystander it can see and
+// reach this turn (by its crossbow's range, or its move plus reach) instead.
+function potShot(f){
+  const s = f.c.sheet, bow = s.attacks.find(k => k.ranged);
+  const can = bystanders().filter(b => !coverOf(f, b).total && (bow ? feetBetween(f, b) <= (bow.long || bow.reach) : feetBetween(f, b) <= (f.c.move || s.speed || 30) + 5));
+  if (!can.length || d6() < 6) return null;
+  const t = can.sort((x, y) => feetBetween(f, x) - feetBetween(f, y))[0];
+  log(`${fname(f)} turns on ${fname(t)} instead.`);
+  return t;
+}
 // Who of the four stands with the party when steel comes out: on this plate, not turned hostile, not part of the backdrop.
 const alliesHere = () => npcs.filter(n => ALLY_SHEETS[n.id] && !n.hostile && !n.backdrop && !n.offStage && !n.down && actors.includes(n));
 // SRD: an incapacitated creature can't take actions or reactions (asleep = unconscious, which includes it).
@@ -4831,6 +4981,7 @@ function nextTurn(first){
   if (a.c.holyOpen && --a.c.holyOpen <= 0){ delete a.c.holyOpen; popText(a, "resistance returns", "#aaa", .8); }
   if (a.c.retching && a.kind !== "pc"){ a.c.retching = false; retchTurn(a); return; }   // Stinking Cloud: the action goes on retching
   if (a.kind === "foe"){ bank("ui/turn_foe", .6); foeTurn(a); return; }
+  if (a.bystander){ bystanderTurn(a); return; }
   if (a.ally){ allyTurn(a); return; }
   if (a.kind === "pc" && cbt.quick){ allyTurn(a); return; }                      // QUICK RESOLVE: the hero fights on the allies' instincts
   // Another player's hero on this screen: each browser runs its own fight (nothing is shared between screens yet), so
@@ -5886,11 +6037,11 @@ function combatClick(w){
   }
   if (cbt.phase !== "target") return;
   const p = cbt.pend, sp = p.spell && SPELLS[p.spell];
-  if (p.inspire){ const t = hitActor(heroes(), w); if (!t || t === a || t.down) return; if (feetBetween(a, t) > 60){ toast("Too far: within 60 ft."); return; }
+  if (p.inspire){ const t = hitActor(friends(), w); if (!t || t === a || t.down) return; if (feetBetween(a, t) > 60){ toast("Too far: within 60 ft."); return; }
     if (t.c.conds.has("inspired")){ toast(`${fname(t)} already has an inspiration die.`); return; } inspire(a, t); return; }
-  if (p.help){ const t = hitActor(heroes(), w); if (!t || t === a) return; if (feetBetween(a, t) > 5){ toast("Too far to help: within 5 ft."); return; } a.c.action = false; addCond(t, "helped"); log(`${fname(a)} helps ${fname(t)}.`); narrate(a, `${fname(a)} sets ${fname(t)} up.`); openMenu(a); return; }
+  if (p.help){ const t = hitActor(friends(), w); if (!t || t === a) return; if (feetBetween(a, t) > 5){ toast("Too far to help: within 5 ft."); return; } a.c.action = false; addCond(t, "helped"); log(`${fname(a)} helps ${fname(t)}.`); narrate(a, `${fname(a)} sets ${fname(t)} up.`); openMenu(a); return; }
   if (p.shove){ const t = hitActor(foes, w); if (!t || t.down) return; if (feetBetween(a, t) > 5){ toast("Shove needs to be within 5 ft."); return; } doShove(a, t, p.shove); return; }
-  if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(heroes(), w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; }
+  if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(friends(), w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; }
     if (t !== a && coverOf(a, t).total){ toast(`No line of sight to ${fname(t)}.`); return; } castSpell(a, t, p.spell); return; }
   if (sp && (sp.kind === "cloud" || sp.kind === "fog") && Math.hypot(w.x - a.x, w.y - a.y) / ftPx(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
   if (sp && sp.area){ castSpell(a, w, p.spell); return; }
@@ -6304,7 +6455,7 @@ function castSpell(caster, tgt, name, done, darts){
         log(`${fname(caster)} ${name}: ${rolls.length} darts strike ${fname(tgt)}, ${rolls.join(" + ")} = <b>${tot}</b> ${sp.type}.`);
       }
       else {                                                                    // a save
-        const targets = (sp.area ? standing([...foes, ...party]).filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t)) : [tgt]).filter(t => !(sp.selfArea && t === caster));
+        const targets = (sp.area ? standing([...foes, ...party, ...bystanders()]).filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t)) : [tgt]).filter(t => !(sp.selfArea && t === caster));
         if (!targets.length){ log(`${fname(caster)} ${name}: nothing there.`); return; }
         const lines = [];
         targets.forEach((t, i) => setTimeout(() => {
@@ -6540,7 +6691,9 @@ function fall(t){
     if (t.ko){ popText(t, "knocked out", "#ffd166", 1.2); log(`<b>${fname(t)} is knocked out</b>: unconscious and stable at 0 HP (SRD: a stable creature regains 1 HP after 1d4 hours).`); settleGrudge(t); }
     else { const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS, t), 1400); } }
   else narrate(t, `${fname(t)} falls.`);
-  if (t.kind !== "pc") dropLoot(t);                                  // LOOT ON THE KILL: what survived the fight bursts out
+  if (t.bystander){ t.slain = true; if (PEN_NPCS.some(d => d.id === t.id)){ (state.slain ||= []).includes(t.id) || state.slain.push(t.id); }
+    state.company = companyNow().filter(id => id !== t.id); narrate(t, `${fname(t)} is dead.`); }   // BYSTANDERS: no death saves
+  else if (t.kind !== "pc") dropLoot(t);                                  // LOOT ON THE KILL: what survived the fight bursts out
   renderTurns();
   if (cbt && activeActor() === t) passWhenSettled(t);
 }
@@ -6714,7 +6867,8 @@ function foeTurn(f){
   const seen = inSight.length ? inSight : seen0;
   if (cbt && cbt.grudge && cbt.grudge.att === f && (cbt.grudge.done || cbt.grudge.tgt.down)){ setTimeout(() => passTurn(f), 400); return; }   // the score is settled: he does not go looking for another
   const grudgeOn = cbt && cbt.grudge && cbt.grudge.att === f && !cbt.grudge.tgt.down && actors.includes(cbt.grudge.tgt) ? cbt.grudge.tgt : null;
-  const tgt = grudgeOn ? grudgeOn : f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(heroes())) : (seen.length ? seen : standing(heroes())).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
+  let tgt = grudgeOn ? grudgeOn : f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(heroes())) : (seen.length ? seen : standing(heroes())).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
+  if (tgt && !grudgeOn && !f.c.berserk){ const pot = potShot(f); if (pot) tgt = pot; }   // BYSTANDERS: threats first, now and then a pot shot
   if (!tgt){ checkEnd(); return; }
   camTo(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600);
   if (Math.random() < .45){ if (!taunt(f, null, tgt)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }
@@ -6876,6 +7030,11 @@ function endCombat(won){
   // the walk keeps no clock between fights, so a spell held through the fight is let go at its end
   for (const a of [...heroes(), ...foes]) if (a.c && a.c.conc) endConc(a, "the fight is over");
   const allies = cbt ? cbt.allies : [], fightId = cbt ? cbt.id : null;
+  for (const b of (cbt && cbt.bystanders) || []){   // BYSTANDERS: the dead lie where they fell, searchable; the living stand down
+    b.bystander = false; b.path = [];
+    if (b.down){ b.kind = "body"; b.body = true; b.once = null; b.lootKey = `${cur}-${Math.round(b.x)}-${Math.round(b.y)}`; }
+    else { b.home = {x: b.x, y: b.y}; b.actUntil = now + 3000; }
+  }
   closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby(); poisonZones = []; dmPlace = null;
   // The dead stay where they fell (Sam, 2026-10-13: "There should always be a carcass or dead body of
   // whatever died. This way we can search the body."). Only the living, called off, walk away.
@@ -10453,6 +10612,11 @@ function stageFor(cls){
   return first ? {img: `inventory-stage-${first}.jpg`, foot: STAGE_BACKDROPS[first]} : {img: "inventory-stage.jpg", foot: .875};
 }
 const SLOT_ICON_BASE = APP ? "/icons/equipment/" : "https://ashes.playacartagena.com/icons/equipment/";
+// THE HERO SCREEN'S ILLUSTRATED SET (Sam, 2026-10-27: "make better icons for equipping areas, level up, name and HP/AC/Speed
+// in the same fashion as the dashboard" — the Top Heroes-style set the action bar wears). Two generated sheets, cut to
+// icons/hero/: a ghost-outline tile per empty slot, and painted marks for HP, AC, Speed, Level Up, the name crest and XP.
+// A worn item still shows its own picture; the dashboard's equipment icons stay for the drag ghost.
+const HERO_ICON_BASE = ICON_BASE + "hero/";
 const SLOT_ALIAS = {ring_1: "ring1", ring_2: "ring2", cloak: "back", gloves: "hands", gauntlets: "hands", feet: "legs", boots: "legs"};
 function normSlot(sl){ const k = String(sl || "").trim().toLowerCase(); return SLOT_ALIAS[k] || k; }
 const HAND = sl => sl === "main_hand" || sl === "off_hand";
@@ -10880,7 +11044,7 @@ function bagCan(a){ return canControl(a) && (!inFightNow() || (a === activeActor
 function renderBag(){
   const a = bagHero(), g = GEAR[a.id] || (GEAR[a.id] = {carried: [], doll: [], main: null, off: null});
   const fight = inFightNow(), mine = bagCan(a), c = a.c;
-  $("invWho").textContent = fname(a);
+  $("invWho").textContent = fname(a); $("invCrest").src = HERO_ICON_BASE + "crest.png";
   if (cer.for && cer.for !== a.id) closeLevelUp();
   { const s = SHEETS[a.id] || {}; renderBagSub(a, s); renderBagChips(a, s); renderLevelPanel(a, s); }
   $("invEcon").textContent = !fight ? "out of combat: nothing costs a turn"
@@ -10902,7 +11066,7 @@ function renderBag(){
     const b = document.createElement("button"); b.className = "slot" + (w ? "" : " empty"); b.style.left = d.at[0] + "%"; b.style.top = d.at[1] + "%";
     b.setAttribute("aria-pressed", String(inv.slot === d.id)); b.title = w ? `${d.label}: ${w.name}` : `${d.label}: empty`;
     const src = w ? (it && (it.icon || (it.pixel ? ITEM_PX + it.pixel : ""))) || "" : "";
-    b.innerHTML = `<img src="${esc(src || SLOT_ICON_BASE + d.icon + ".png")}" alt=""><span class="lbl">${esc(d.label)}</span>`;
+    b.innerHTML = `<img src="${esc(src || HERO_ICON_BASE + (d.icon === "ring2" ? "ring" : d.icon) + ".png")}" alt=""><span class="lbl">${esc(d.label)}</span>`;
     b.onclick = () => { if (dragJustEnded) return; inv.slot = inv.slot === d.id ? null : d.id; renderBag(); };
     b.dataset.slot = d.id;
     if (w) dragSource(b, src || SLOT_ICON_BASE + d.icon + ".png", (x, y) => {
@@ -10976,9 +11140,9 @@ function renderBag(){
     for (const sl of worn) btn(HAND(sl) ? `Put away (${slotLabel(sl).toLowerCase()})` : "Take off", mine && (!fight || (HAND(sl) && gearCost(a, 1).ok)), fight ? (HAND(sl) ? gearHint(a, 1) : "not mid-fight") : "", () => removeFrom(a, sl));
     if (u.kind === "heal" || u.kind === "drink"){
       btn("Drink", mine && (!fight || c.bonus), fight ? "your bonus action" : "", () => drinkItem(a, it, a));
-      if (u.kind === "heal") for (const t of party){ if (t === a) continue;
+      if (u.kind === "heal") for (const t of [...party, ...(fight ? [...cbt.allies, ...bystanders()] : [])]){ if (t === a) continue;   // BYSTANDERS: theirs to save too
         const near = !fight || feetBetween(a, t) <= 5.5;
-        if (near) btn(`Give ${SHEETS[t.id] ? SHEETS[t.id].name.split(" ")[0] : t.id}`, mine && (!fight || c.bonus), fight ? "your bonus action · they must be within 5 ft" : "", () => drinkItem(a, it, t)); }
+        if (near) btn(`Give ${SHEETS[t.id] ? SHEETS[t.id].name.split(" ")[0] : SHORT[t.id] || fname(t)}`, mine && (!fight || c.bonus), fight ? "your bonus action · they must be within 5 ft" : "", () => drinkItem(a, it, t)); }
     }
     if (u.kind === "throw" && fight){ const fa = flaskAttacks(a).find(x => x.itemName === it.name);
       btn("Throw", mine && c.action && !!fa, "your action: click a foe within 20 ft", () => { toggleBag(false); aim(a, {atk: fa, throwing: true}); }); }
@@ -10999,10 +11163,9 @@ function renderBagChips(a, s){
   const el = $("invChips"); if (!el) return;
   const hpMax = (a.c && a.c.hpMax) || s.hp || null;
   const hpNow = a.c && inFightNow() ? a.c.hp : (s.hpNow != null ? s.hpNow : hpMax);
-  const chip = (k, v, svg) => `<div class="efChip" title="${esc(k)}">${svg}<span class="t"><span class="k">${esc(k)}</span><span class="v">${v}</span></span></div>`;
-  const heart = '<svg viewBox="0 0 24 24" fill="none" stroke="#e04a43" stroke-width="1.8" aria-hidden="true"><path d="M12 21s-7-4.6-9-9.1C1.6 8.4 3.6 5 7 5c2 0 3.4 1.2 5 3 1.6-1.8 3-3 5-3 3.4 0 5.4 3.4 4 6.9C19 16.4 12 21 12 21z"/></svg>';
-  const shield = '<svg viewBox="0 0 24 24" fill="none" stroke="#9fb6cf" stroke-width="1.8" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3z"/></svg>';
-  const boot = '<svg viewBox="0 0 24 24" fill="none" stroke="#d7af58" stroke-width="1.8" aria-hidden="true"><path d="M7 3v9l-3 3v4h14l3-2c0-2-3-3-6-4l-3-1V3H7z"/></svg>';
+  const chip = (k, v, svg) => `<div class="efChip" data-cat="${k.toLowerCase()}" title="${esc(k)}">${svg}<span class="t"><span class="k">${esc(k)}</span><span class="v">${v}</span></span></div>`;
+  const mark = k => `<img class="mark" src="${HERO_ICON_BASE}${k}.png" alt="">`;
+  const heart = mark("hp"), shield = mark("ac"), boot = mark("speed");
   el.innerHTML = chip("HP", hpMax ? `${hpNow}<small> / ${hpMax}</small>` : "—", heart) + chip("AC", s.ac != null ? s.ac : "—", shield) + chip("Speed", s.speed != null ? s.speed : "—", boot);
 }
 // THE LEVEL PANEL: level badge, the XP bar toward the next level, and the Level Up button as a state. The sheet's xp /
@@ -11019,8 +11182,8 @@ function renderLevelPanel(a, s){
   const state = ready ? "earned" : "locked";
   const small = ready ? (inFightNow() ? `level ${level + 1} earned · after the fight` : `level ${level + 1} earned · take it now`) : next == null ? "no further levels" : xp == null ? "XP is on the sheet, not here" : `${(next - xp).toLocaleString()} XP to level ${level + 1}`;
   el.innerHTML = `<div class="lvlBadge" title="Level ${level}"><small>Level</small><b>${level}</b></div>`
-    + `<div class="lvlXp"><div class="lbl"><span>Experience</span><span>${esc(right)}</span></div><div class="lvlBar${ready || frac >= 1 ? " full" : ""}"><i style="width:${Math.round((ready ? 1 : frac) * 100)}%"></i></div></div>`
-    + `<button class="lvlUp ${state}" id="lvlUpBtn"${ready ? "" : ' aria-disabled="true"'}>Level Up<small>${esc(small)}</small></button>`;
+    + `<div class="lvlXp"><div class="lbl"><span><img class="mark" src="${HERO_ICON_BASE}xp.png" alt="">Experience</span><span>${esc(right)}</span></div><div class="lvlBar${ready || frac >= 1 ? " full" : ""}"><i style="width:${Math.round((ready ? 1 : frac) * 100)}%"></i></div></div>`
+    + `<button class="lvlUp ${state}" id="lvlUpBtn"${ready ? "" : ' aria-disabled="true"'}><img class="mark" src="${HERO_ICON_BASE}level-up.png" alt=""><span class="t">Level Up<small>${esc(small)}</small></span></button>`;
   const b = $("lvlUpBtn");
   b.onclick = () => {
     if (!ready){ toast(next == null ? `${fname(a)} is at the top level.` : xp == null ? "This sheet carries no XP here; the dashboard has it." : `${(next - xp).toLocaleString()} XP still to earn.`); return; }
