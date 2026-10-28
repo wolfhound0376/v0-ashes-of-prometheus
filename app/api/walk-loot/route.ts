@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { CONFISCATION_STASH_NAME } from "@/lib/confiscation"
 import { bodyKit } from "@/lib/harvest"
-import { BOOK_CONTAINERS, BODY_KIT, CREATURE_PARTS, PEN_KEY_SLUG, POCKET_SPRITES, rollPockets, rollWear, isValuable, parseContainer, pocketEntries, type LootEntry, type Ruined } from "@/lib/walk-loot"
+import { BOOK_CONTAINERS, BODY_KIT, CREATURE_PARTS, PEN_KEY_SLUG, POCKET_SPRITES, rollPockets, rollWear, onDutyKit, rollPurse, PURSE_CR, isValuable, parseContainer, pocketEntries, type LootEntry, type Ruined } from "@/lib/walk-loot"
 
 // /api/walk-loot — what is in Velkynvelve's chests, on its dead and in its guards' pockets (see lib/walk-loot.ts).
 //
@@ -85,8 +85,13 @@ async function contents(db: Db, id: string, s: State, kill?: string | null): Pro
   // a body's kit rolls for wear the first time anyone looks — the map looks the moment it falls, saying what killed it
   // (lib/walk-loot.ts rollWear: 1-2 on a d20, worse by kill type) — then stays as rolled for the run
   let ruinedNow: Ruined[] | undefined
-  const kit = c.kind === "body" && !s.bodies[c.key] ? await kitFor(db, c.slug!) : undefined
-  if (c.kind === "body" && kit?.length && !s.bodies[c.key]){ s.bodies[c.key] = rollWear(kit, Math.random, kill); rolled = true; ruinedNow = s.bodies[c.key].ruined }
+  const kit = c.kind === "body" && !s.bodies[c.key] ? onDutyKit(c.slug!, c.which, await kitFor(db, c.slug!)) : undefined
+  const purseCr = c.kind === "body" ? PURSE_CR[c.slug!] : undefined
+  if (c.kind === "body" && (kit?.length || purseCr !== undefined) && !s.bodies[c.key]){
+    const worn = rollWear(kit ?? [], Math.random, kill)
+    s.bodies[c.key] = { kept: [...worn.kept, ...(purseCr !== undefined ? rollPurse(purseCr) : [])], ruined: worn.ruined }   // the kit as it survived, and the purse
+    rolled = true; ruinedNow = s.bodies[c.key].ruined
+  }
   const harvested = c.kind === "body" && (CREATURE_PARTS[c.slug!] || !BODY_KIT[c.slug!]) && !!(s.bodies[c.key]?.kept.length || s.bodies[c.key]?.ruined.length)
   const book: LootEntry[] = c.kind === "book" ? BOOK_CONTAINERS[id].entries : c.kind === "body" ? (s.bodies[c.key]?.kept ?? kit ?? BODY_KIT[c.slug!] ?? []) : guard ? s.pockets[c.key] : pocketEntries(c.slug!)
   const cat = await itemsBySlug(db, book.map((e) => e.slug))
