@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { CONFISCATION_STASH_NAME } from "@/lib/confiscation"
 import { bodyKit } from "@/lib/harvest"
-import { BOOK_CONTAINERS, BODY_KIT, CREATURE_PARTS, PEN_KEY_SLUG, POCKET_SPRITES, rollPockets, rollWear, isValuable, parseContainer, pocketEntries, type LootEntry, type Ruined } from "@/lib/walk-loot"
+import { BOOK_CONTAINERS, BODY_KIT, CREATURE_PARTS, PEN_KEY_SLUG, POCKET_SPRITES, rollPockets, rollWear, isValuable, parseContainer, pocketEntries, type HarvestCheck, type LootEntry, type Ruined } from "@/lib/walk-loot"
 
 // /api/walk-loot — what is in Velkynvelve's chests, on its dead and in its guards' pockets (see lib/walk-loot.ts).
 //
@@ -61,16 +61,17 @@ async function stashRows(db: Db, sid: string): Promise<StashRow[]> {
 // one row of what a container holds, as the walk shows it
 // `slot`: the catalogue's equippable slot, or null. On a living mark the map offers only slot-less things to a
 // pickpocket — a weapon, armour or a ring is worn or wielded, not in a pocket (Sam, 2026-10-27: "NOT equipped").
-type Shown = { kind: "book" | "stash"; slug?: string; rowId?: string; name: string; qty: number; note?: string; owner?: string | null; pixel: string | null; icon: string | null; missing?: boolean; slot?: string | null }
+type Shown = { kind: "book" | "stash"; slug?: string; rowId?: string; name: string; qty: number; note?: string; owner?: string | null; pixel: string | null; icon: string | null; missing?: boolean; slot?: string | null; check?: HarvestCheck }
 
 // what a carcass yields: the `creature_harvest` table (Sam, 2026-10-27: "I want all of this in databases and wired in the
 // game"; migrations/20261027200000_ingredients_and_harvest.sql). A creature with harvest rows drops those parts; a body
 // with a kit as well (none yet) keeps the kit and adds the parts. No table yet, a read error or no rows → the kit in
 // lib/walk-loot.ts, so the map never goes quiet while the migration is waiting to be run.
 async function harvestFor(db: Db, slug: string): Promise<LootEntry[] | null> {
-  const { data, error } = await db.from("creature_harvest").select("item_slug,qty,note").eq("bestiary_slug", slug).order("id")
+  const { data, error } = await db.from("creature_harvest").select("item_slug,qty,note,harvest_check").eq("bestiary_slug", slug).order("id")
   if (error || !data?.length) return null
-  return (data as { item_slug: string; qty: number; note: string | null }[]).map((r) => ({ slug: r.item_slug, qty: r.qty, ...(r.note ? { note: r.note } : {}) }))
+  return (data as { item_slug: string; qty: number; note: string | null; harvest_check: HarvestCheck | null }[])
+    .map((r) => ({ slug: r.item_slug, qty: r.qty, ...(r.note ? { note: r.note } : {}), ...(r.harvest_check ? { check: r.harvest_check } : {}) }))
 }
 async function kitFor(db: Db, slug: string): Promise<LootEntry[] | undefined> {
   return bodyKit(slug, await harvestFor(db, slug))
@@ -97,7 +98,7 @@ async function contents(db: Db, id: string, s: State, kill?: string | null): Pro
     const left = e.qty - (taken[e.slug] ?? 0)
     if (left <= 0 || (c.kind === "pocket" && e.slug === PEN_KEY_SLUG && penKeyGone)) continue
     const it = cat.get(e.slug)
-    rows.push({ kind: "book", slug: e.slug, name: it?.name ?? e.slug.replace(/-/g, " "), qty: left, note: e.note, pixel: it?.pixel_icon_url ?? null, icon: it?.icon_url ?? null, missing: !it, slot: c.kind === "pocket" ? null : it?.equippable_slot ?? null })   // what the book puts in a pocket is in the pocket, whatever slot the catalogue gives it
+    rows.push({ kind: "book", slug: e.slug, name: it?.name ?? e.slug.replace(/-/g, " "), qty: left, note: e.note, pixel: it?.pixel_icon_url ?? null, icon: it?.icon_url ?? null, missing: !it, slot: c.kind === "pocket" ? null : it?.equippable_slot ?? null, ...(e.check ? { check: e.check } : {}) })   // what the book puts in a pocket is in the pocket, whatever slot the catalogue gives it
   }
   const sid = await stashId(db)
   if (sid){
@@ -184,6 +185,8 @@ export async function POST(req: NextRequest) {
   const slug = String(body?.slug ?? "")
   const row = now.rows.find((r) => r.kind === "book" && r.slug === slug)
   if (!row) return NextResponse.json({ error: "It is not there any more." }, { status: 409 })
+  // a part behind a check (the ooze's residue) comes free only after the map has rolled it and it passed
+  if (row.check && body?.passed !== true) return NextResponse.json({ error: `${row.name} needs a ${row.check.skill} check (DC ${row.check.dc}) to come free.` }, { status: 409 })
   const it = (await itemsBySlug(db, [slug])).get(slug)
   if (!it) return NextResponse.json({ error: `${row.name} is not in the item catalogue yet, so it cannot be taken.` }, { status: 409 })
   ;(s.taken[c.key] ??= {})[slug] = (s.taken[c.key][slug] ?? 0) + row.qty

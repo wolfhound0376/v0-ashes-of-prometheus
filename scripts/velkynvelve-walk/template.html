@@ -2666,7 +2666,7 @@ const LOOT_BOOK = {
   // carcass parts on the kill (Sam, 2026-10-27): same lists as lib/walk-loot.ts CREATURE_PARTS
   "body:quaggoth": [["quaggoth-pelt", 1, "a shaggy white pelt"]],
   "body:giant-spider": [["spider-venom-gland", 1, "cut clear of the jaws"], ["giant-spider-silk", 2, "strands from the spinnerets"], ["spider-meat", 2, "from the legs"]],
-  "body:gray-ooze": [["gray-ooze-residue", 1, "decanted; what its acid does is not ruled yet"]],
+  "body:gray-ooze": [["gray-ooze-residue", 1, "only with a Medicine check (DC 15)", {skill: "medicine", dc: 15, fail: {dice: "1d6", type: "acid"}}]],
   "body:hook-horror": [["hook-horror-claw", 2, "the two great hooks"]],
   "pocket:drow-guard-male": [], "pocket:drow-guard-female": [],   // marks who has pockets; each guard's own are rolled (POCKET_TABLE)
   // Hard Labor plates (2026-10-26): same lists as lib/walk-loot.ts
@@ -2713,13 +2713,26 @@ async function fetchLoot(id, kill){
   if (pocketGuard && !pocketLocal[id]) pocketLocal[id] = rollPocketsLocal(pk.slice(2).join(":") || "default");
   const book = pocketGuard ? pocketLocal[id] : LOOT_BOOK[id] || LOOT_BOOK[id.split(":").slice(0, 2).join(":")] || [], taken = lootLocal[lootKeyOf(id)] || {}, penGone = Object.keys(lootLocal).some(k => k.startsWith("pocket:") && lootLocal[k]["slave-pen-key"]);
   const rows = [];
-  for (const [slug, qty, note] of book){
+  for (const [slug, qty, note, check] of book){
     const left = qty - (taken[slug] || 0); if (left <= 0 || (slug === "slave-pen-key" && penGone)) continue;
     const it = (catalog || []).find(i => i.slug === slug);
-    rows.push({kind: "book", slug, name: it ? it.name : slugName(slug), qty: left, note, pixel: it ? it.pixel_icon_url : null, missing: !it, slot: it ? it.equippable_slot : null, loose: pocketGuard && LOOSE_IN_POCKET.has(slug)});
+    rows.push({kind: "book", slug, name: it ? it.name : slugName(slug), qty: left, note, pixel: it ? it.pixel_icon_url : null, missing: !it, slot: it ? it.equippable_slot : null, loose: pocketGuard && LOOSE_IN_POCKET.has(slug), ...(check ? {check} : {})});
   }
   if (LOOT_STASH[id]) rows.push({kind: "preview-stash", name: LOOT_STASH[id], qty: 1});
   return {rows};
+}
+// A PART BEHIND A CHECK (Sam, 2026-10-27, gray ooze residue: "roll a medicine check to see if you can extract its residue
+// like a poison you can apply to a weapon or arrow for one combat set. Otherwise it hurts you." DC 15; a fail is 1d6 acid).
+// The hero who opened the body rolls; a fail burns them and the part stays, so they may try again (Claude's reading, flagged).
+const CHECK_SKILL = {medicine: "Medicine", nature: "Nature", survival: "Survival"};
+function checkLabel(c){ return `${CHECK_SKILL[c.skill] || c.skill} DC ${c.dc}`; }
+async function extractPart(a, row){
+  a.c = a.c || fighterFor(a);                                                  // the same hp the potions and the fights use
+  const c = row.check, {r, mod, total} = mapCheck(a, c.skill, c.skill === "medicine" || c.skill === "survival" ? "wis" : "int"), ok = total >= c.dc;
+  log(`${fname(a)} works the ${esc(row.name)} free: ${CHECK_SKILL[c.skill] || c.skill} ${r}${mod ? (mod > 0 ? " + " : " − ") + Math.abs(mod) : ""} = ${total} vs DC ${c.dc} — ${ok ? "it comes away clean" : "it bites back"}.`);
+  if (ok){ popText(a, "extracted", "#c8e6a0", 1); return true; }
+  if (c.fail){ const n = roll(c.fail.dice).total; damage(a, n, c.fail.type); log(`${fname(a)} takes ${n} ${c.fail.type} damage from the ${esc(row.name)}.`); }
+  return false;
 }
 function lootLabel(row){ return `${row.qty > 1 ? row.qty + " × " : ""}${row.name}${row.owner ? ` (${row.owner}'s)` : ""}${row.note ? ` — ${row.note}` : ""}`; }
 // said once per hero per page: what they pick up here is in this tab's pack and nowhere else
@@ -2739,7 +2752,7 @@ async function takeLoot(a, id, row){
   const cid = serverCid(a.id);
   if (APP && cid){
     try {
-      const r = await fetch("/api/walk-loot", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "take", characterId: cid, container: id, slug: row.slug, rowId: row.rowId})});
+      const r = await fetch("/api/walk-loot", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "take", characterId: cid, container: id, slug: row.slug, rowId: row.rowId, passed: row.passed === true})});
       const j = await r.json(); if (!r.ok || j.error){ toast(j.error || "It would not come free.", 3600); return false; }
     } catch (e){ toast("The game did not answer. Try again.", 3000); return false; }
     await loadGear(a.id);   // awaited: the equip offer below needs the pack to hold the weapon before it can ready it
@@ -2797,7 +2810,7 @@ const DROP_STAGGER = 110, DROP_FLIGHT = 620, DROP_REST = 1900;
 const polyBase = poly => { const xs = poly.map(p => p[0]), ys = poly.map(p => p[1]); return {x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) - 6}; };
 // Throw the rows up out of `at`. Returns how long the card should wait so the last one has landed (0 = nothing thrown).
 function lootFountain(at, rows, pick){
-  const list = rows.filter(r => !r.missing && r.kind !== "preview-stash").map(r => ({r, rar: rarityOf(r)}))
+  const list = rows.filter(r => !r.missing && r.kind !== "preview-stash" && !r.check).map(r => ({r, rar: rarityOf(r)}))   // a part behind a check stays on the body
     .sort((a, b) => RARITY_RANK[a.rar] - RARITY_RANK[b.rar]).slice(-8);     // eight at most, and the rarest are kept and land last
   if (!list.length) return 0;
   const sqPx = 5 * pxPerFtAt(at.y), n = list.length;
@@ -2870,7 +2883,8 @@ function dropLoot(t){
     const j = await fetchLoot(id, kill); await ensureCatalog();
     if (cur !== plate || j.error) return;
     (j.ruined || []).forEach((r, i) => setTimeout(() => { const it = (catalog || []).find(c => c.slug === r.slug); popText(t, `${it ? it.name : r.slug.replace(/-/g, " ")} ruined`, "#9a948a", .85); }, 250 + i * 260));
-    const rows = (j.rows || []).filter(r => !r.missing && r.kind !== "preview-stash");
+    const rows = (j.rows || []).filter(r => !r.missing && r.kind !== "preview-stash" && !r.check);
+    (j.rows || []).filter(r => r.check && !r.missing).forEach((r, i) => setTimeout(() => popText(t, `${r.name}: ${checkLabel(r.check)} to extract`, "#c8e6a0", .85), 900 + i * 300));
     if (!rows.length) return;
     fountained.add(lootKeyOf(id));                                              // the body card will not spill it again
     lootFountain(at, rows, {id, plate});
@@ -2922,11 +2936,20 @@ async function openLoot(id, title, opts = {}){
   }
   if ($("obj").hidden) return;
   box.innerHTML = "";
-  const rows = j.rows || [], can = rows.filter(r => !r.missing && r.kind !== "preview-stash");
+  const rows = j.rows || [], can = rows.filter(r => !r.missing && r.kind !== "preview-stash" && !r.check);
   if (j.error) $("objText").textContent = `The game did not answer (${j.error}).`;
   else if (!rows.length) $("objText").textContent = opts.empty || "Nothing is left in it.";
   else $("objText").textContent = (opts.text ? opts.text + " " : "") + `${fname(who)} can take:`;
   for (const row of rows){
+    if (row.check && !row.missing){                                             // behind a check: roll it here, then it comes free
+      const b = add(`Extract: ${row.name} · ${checkLabel(row.check)}`, async () => {
+        b.disabled = true;
+        if (await extractPart(who, row)){ if (await takeLoot(who, id, {...row, passed: true})){ close(); return; } }
+        if (mode === "dialog") b.disabled = false;
+      });
+      if (row.pixel){ const im = document.createElement("img"); im.src = ITEM_PX + row.pixel; im.alt = ""; im.className = "lootPx"; b.prepend(im); }
+      continue;
+    }
     const b = add(row.missing ? `${lootLabel(row)} · not in the catalogue yet` : row.kind === "preview-stash" ? row.name : `Take: ${lootLabel(row)}`,
       async () => { b.disabled = true; if (await takeLoot(who, id, row)){ close(); offerEquip(() => openLoot(id, title, opts)); } else b.disabled = false; }, "", !!row.missing);
     if (row.pixel){ const im = document.createElement("img"); im.src = ITEM_PX + row.pixel; im.alt = ""; im.className = "lootPx"; b.prepend(im); }
