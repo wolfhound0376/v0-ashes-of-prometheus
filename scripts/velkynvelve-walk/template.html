@@ -5929,8 +5929,18 @@ function approachThen(att, tgt, ft, then){
     }
   }
   att.c.move = Math.max(0, att.c.move - walk.usedFt);
-  att.path = walk.pts; att.onArrive = () => { if (Math.hypot(tgt.x - att.x, tgt.y - att.y) > reach + 40 && att.kind === "pc"){ toast("Out of reach."); combatBusy = false; cbt.phase = "idle"; att.c.action = true; settleCam(); openMenu(att); return; } then(); };
-  if (!att.path.length) then();
+  // STILL OUT OF REACH WHEN THE MOVEMENT RUNS OUT: no swing (Sam, 2026-10-27: "Ront just landed a fist at distance"). A
+  // hero gets the menu back to do something else. An ally or a foe used to swing anyway from wherever it stopped; now it
+  // closes as far as it can and the turn passes.
+  const stillFar = () => Math.hypot(tgt.x - att.x, tgt.y - att.y) > reach + 24;   // a grid cell of slack: the reach spot is snapped to the floor grid
+  const arrive = () => {
+    if (!stillFar()){ then(); return; }
+    if (att.kind === "pc"){ toast("Out of reach."); combatBusy = false; cbt.phase = "idle"; att.c.action = true; settleCam(); openMenu(att); return; }
+    log(`${fname(att)} closes on ${fname(tgt)} but cannot reach them this turn.`);
+    popText(att, "out of reach", "#cfc6b0", .8); combatBusy = false; setTimeout(() => passTurn(att), 600);
+  };
+  att.path = walk.pts; att.onArrive = arrive;
+  if (!att.path.length) arrive();
 }
 function strike(att, tgt, onHit, after, shot){
   att.face = faceOf(tgt.x - att.x, tgt.y - att.y);
