@@ -255,22 +255,17 @@ body.dm-open .cbt-dm{display:none}
 @media (prefers-reduced-motion:reduce){.bossIntro.show{animation-duration:.01s}.bossbar.flash{animation:none}}
 /* The initiative order as player cards (Sam, 2026-10-13: "use player cards and not cut off the head"): the
    party's medallions, the canon faces for the foes, whole — a card is never cropped through the head. */
-.turns{display:flex;gap:10px;align-items:flex-end}
-/* THE STRIP'S CARDS are the demo's (Sam, 2026-10-28, with the demo's strip in hand: "This is actually how the initiative box
-   looked and who was fighting"): the pixel figure itself, head to the knees, a short name under it, the one whose turn it
-   is a size up and lit, foes rimmed red, the fallen grey. Not the painted face cards (those stay on the turn call and the
-   boss bar). The order never rotates: everyone keeps their place and the light moves along it, as it did in the demo. */
-.turn{display:flex;flex-direction:column;align-items:center;gap:4px;width:54px;color:var(--ink-dim);font-size:.62rem;line-height:1;text-align:center;opacity:.8;transition:opacity .25s,width .25s,transform .3s}
-.turn .card{position:relative;width:46px;height:58px;border-radius:5px;background:radial-gradient(circle at 50% 35%,rgba(255,235,200,.14),rgba(0,0,0,.6));border:1px solid var(--rule);overflow:hidden;transition:width .25s,height .25s}
-.turn .card img,.turn .card canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 12%;display:block}
-.turn .card img.whole{object-fit:contain;object-position:center}
-.turn .card canvas{image-rendering:pixelated}
-.turn.foe .card{border-color:#a2423a}
-.turn.now{width:68px;opacity:1;color:var(--ink)}
-.turn.now .card{width:62px;height:78px;border:2px solid var(--ember);box-shadow:0 0 14px rgba(232,162,74,.55)}
-.turn.now.foe .card{border-color:#ff6b5e;box-shadow:0 0 14px rgba(255,107,94,.5)}
+.turns{display:flex;gap:11px;align-items:flex-end}
+/* THE STRIP IS THE DEMO'S LINE-UP (Sam, 2026-10-28, with the demo's strip in hand: "This is actually how the initiative box
+   looked and who was fighting" / "change the initiative strip for what I already gave you that looks cleaner"): no card
+   frames at all — the pixel figures themselves stand in a row, head to the knees, a short name under each; the one whose
+   turn it is has its name lit (the turn call under the strip says the rest); the fallen go grey. The numbers are the
+   demo's at its 1600-px stage (1em = 15px): a figure slot 3.6em wide, the 60×76 figure drawn over it at its own size. */
+.turn{display:flex;flex-direction:column;align-items:center;gap:2px;width:32px;color:var(--ink-dim);font-size:9px;line-height:1;text-align:center;opacity:.8;transition:opacity .25s,width .25s,transform .3s}
+.turn canvas{display:block;flex:none;image-rendering:pixelated}
+.turn.now{width:40px;opacity:1;color:var(--ink)}
 .turn.down{opacity:.35;filter:grayscale(1)}
-.turn span{max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.turn span{max-width:38px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .cbt-party{position:absolute;right:10px;bottom:58px;display:flex;flex-direction:column;gap:5px;width:208px}
 .cbt-party .cpc{background:linear-gradient(90deg,rgba(26,14,10,.94),rgba(18,10,8,.82));border:1px solid var(--rule);border-left:3px solid var(--rule);border-radius:5px;padding:5px 8px 6px;transition:border-color .2s,transform .2s}
 .cbt-party .cpc.now{border-color:var(--ember);border-left-color:var(--ember);transform:translateX(-6px);box-shadow:0 0 14px rgba(232,162,74,.25)}
@@ -5320,15 +5315,14 @@ function faceCanvas(a, size){
   const m = SPR[a.id].json, [cw, ch] = m.cell, img = SPR[a.id].img.idle, k = Math.min(1.9, 96 / m.ppu * 1.25) * size / cw;   // same crop as the party portraits
   g.drawImage(img, 0, 0, cw, ch, (size - cw * k) / 2, size * .92 - m.pivot[1] * k, cw * k, ch * k); return c;
 }
-// The strip's card is the demo's: the sprite's own idle figure, head to the knees (the demo's crop: fit × 1.5, from the
-// top), never the painted face card. Big creatures (a 160/192 cell) get the same crop; their head is still at the top.
+// The strip's figure is the demo's: the sprite's own idle frame on a bare 60×76 canvas, head to the knees (the demo's
+// crop: fit × 1.5, from the top), no frame around it — never the painted face card. A big creature (a 160/192 cell)
+// gets the same crop; its head is still at the top.
 function stripCard(a){
-  const d = document.createElement("div"); d.className = "card";
   const c = document.createElement("canvas"); c.width = 60; c.height = 76; const g = c.getContext("2d"); g.imageSmoothingEnabled = false;
-  const m = SPR[a.id] && SPR[a.id].json, img = SPR[a.id] && SPR[a.id].img.idle;
-  if (!m || !img){ d.appendChild(cardFor(a).firstChild || c); return d; }
+  const m = SPR[a.id] && SPR[a.id].json, img = SPR[a.id] && SPR[a.id].img.idle; if (!m || !img) return c;
   const [cw, ch] = m.cell, k = Math.min(76 / ch, 60 / cw) * 1.5;
-  g.drawImage(img, 0, 0, cw, ch, (60 - cw * k) / 2, 6, cw * k, ch * k); d.appendChild(c); return d;
+  g.drawImage(img, 0, 0, cw, ch, (60 - cw * k) / 2, 6, cw * k, ch * k); return c;
 }
 // The name under the card, the demo's way: "Shoor", "Guard", "Fifi" — a named person's first name, a creature's kind.
 // The whole name stays on the card's tooltip and on the turn call.
