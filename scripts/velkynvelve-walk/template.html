@@ -149,6 +149,44 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .cbt-top .lbl{font-family:var(--face-display);font-size:var(--s1);color:#ff9b8f;letter-spacing:.08em;padding:0 4px}
 .cbt-top .round{font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink-dim);min-width:60px;text-align:center}
 .cbt-top .btn{padding:4px 10px;font-size:var(--s-1)}
+/* THE BOSS BAR (Sam, 2026-10-27, from the Top Heroes comparison: "bosses" was the one axis with nothing built). Under the
+   turn strip, only while the fight has a boss (lib/boss-fight.mjs decides who): the face card, the name with the book's
+   own epithet, and a wide hit-point bar wearing the action bar's slab (gold rim, dark lip, gloss). No number on it — a DM
+   describes a wound rather than reading out hit points; the one thing the bar says aloud is BLOODIED at half, the mark
+   on the bar, the way every table says it. Nothing mechanical hangs off it (5e has no Bloodied condition). */
+.bossbar{position:absolute;top:106px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;width:min(620px,calc(100% - 40px));padding:6px 14px 7px 6px;border:3px solid #9a6a1c;border-radius:14px;background:linear-gradient(180deg,#2a1216,#140a0c);box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.12),inset 0 -6px 0 rgba(0,0,0,.28),0 4px 0 #000,0 8px 18px rgba(0,0,0,.6);opacity:0;transition:opacity .45s ease,transform .45s ease}
+.bossbar[hidden]{display:none}
+.bossbar.show{opacity:1}
+.bossbar.down{opacity:0;transform:translateX(-50%) translateY(-12px)}
+.bossbar .bface{position:relative;flex:none;width:50px;height:62px;border-radius:8px;border:2px solid #000;overflow:hidden;background:radial-gradient(circle at 50% 35%,rgba(255,235,200,.14),rgba(0,0,0,.6));box-shadow:0 0 0 2px #9a6a1c,0 0 14px rgba(255,80,60,.35)}
+.bossbar .bface .card{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0}
+.bossbar .btext{flex:1;min-width:0}
+.bossbar .bname{display:flex;align-items:baseline;gap:8px;font-family:var(--face-display);font-size:1rem;font-weight:700;color:#ffe9a6;letter-spacing:.06em;text-shadow:0 2px 0 #000,0 0 10px rgba(255,160,80,.35);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bossbar .bname small{font-family:var(--face-body);font-size:.76rem;font-weight:400;font-style:italic;color:#d9c7a6;letter-spacing:.02em}
+.bossbar .kick{font-family:var(--face-mono);font-size:.6rem;font-weight:700;letter-spacing:.18em;color:#1a0f0a;background:#ff6b5e;border:2px solid #000;border-radius:6px;padding:1px 6px;text-shadow:none;box-shadow:0 2px 0 #000;align-self:center}
+.bossbar .bhp{position:relative;height:16px;margin-top:5px;border:2px solid #000;border-radius:7px;background:#2a1612;box-shadow:inset 0 2px 4px rgba(0,0,0,.7),0 0 0 1px #5a3a1c;overflow:hidden}
+.bossbar .bhp i{position:absolute;inset:0;width:100%;background:linear-gradient(180deg,#ff8a6a 0%,#d63a2a 45%,#8e1a14 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.35);transition:width .45s cubic-bezier(.2,.8,.2,1)}
+.bossbar .bhp i::after{content:"";position:absolute;inset:0 0 50% 0;background:linear-gradient(rgba(255,255,255,.22),rgba(255,255,255,0))}
+.bossbar .bhp em{position:absolute;top:-2px;bottom:-2px;left:50%;width:2px;background:#ffe9a6;box-shadow:0 0 6px rgba(255,233,166,.8);opacity:.85}
+.bossbar .bhp b{position:absolute;inset:0;padding-right:10px;font-family:var(--face-mono);font-size:.58rem;line-height:16px;letter-spacing:.16em;text-align:right;color:#fff;text-shadow:0 0 3px #000,0 1px 0 #000;opacity:0;transition:opacity .3s}   /* right of the half mark, never through it */
+.bossbar.bloodied .bhp i{background:linear-gradient(180deg,#ffb07a 0%,#e0502a 45%,#7a1210 100%)}
+.bossbar.bloodied .bhp b{opacity:1}
+.bossbar.flash{animation:bossflash 1.4s ease-out}
+@keyframes bossflash{0%,20%,40%{box-shadow:0 0 0 3px #fff,0 0 28px rgba(255,120,90,.95),0 4px 0 #000}10%,30%,50%,100%{box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.12),inset 0 -6px 0 rgba(0,0,0,.28),0 4px 0 #000,0 8px 18px rgba(0,0,0,.6)}}
+/* THE ENTRANCE: the title slam when a boss fight opens — a dark band across the stage, the face card, a red BOSS kicker,
+   the name in the display face and the epithet under it. It holds BOSS_RULES.introMs with the camera on them, the boss
+   gets the first word (its taunt), then the first turn is taken. Same family as the victory banner above. */
+.bossIntro{position:absolute;left:50%;top:36%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:22px;pointer-events:none;z-index:41;opacity:0}
+.bossIntro[hidden]{display:none}
+.bossIntro::before{content:"";position:absolute;left:-60vw;right:-60vw;top:-26px;bottom:-26px;z-index:-1;background:linear-gradient(90deg,transparent 0%,rgba(0,0,0,.72) 18%,rgba(0,0,0,.72) 82%,transparent 100%);border-top:1px solid rgba(255,107,94,.35);border-bottom:1px solid rgba(255,107,94,.35)}
+.bossIntro.show{animation:bossintro 2.6s cubic-bezier(.2,.9,.2,1) forwards}
+.bossIntro .bface{position:relative;flex:none;width:92px;height:114px;border-radius:10px;border:3px solid #9a6a1c;overflow:hidden;background:radial-gradient(circle at 50% 35%,rgba(255,235,200,.14),rgba(0,0,0,.6));box-shadow:inset 0 0 0 2px #000,0 4px 0 #000,0 0 24px rgba(255,80,60,.45)}
+.bossIntro .bface .card{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0}
+.bossIntro .kick{display:inline-block;font-family:var(--face-mono);font-size:.7rem;font-weight:700;letter-spacing:.26em;color:#1a0f0a;background:#ff6b5e;border:2px solid #000;border-radius:6px;padding:2px 9px;box-shadow:0 2px 0 #000;margin-bottom:6px}
+.bossIntro .big{font-family:var(--face-display);font-size:50px;font-weight:700;color:#ffe9a6;letter-spacing:.1em;line-height:1.05;text-shadow:0 0 18px rgba(255,120,80,.6),0 3px 0 #2a0a08,0 6px 16px rgba(0,0,0,.85);white-space:nowrap}
+.bossIntro .small{font-family:var(--face-body);font-style:italic;font-size:21px;color:#e8dcc4;margin-top:6px;text-shadow:0 2px 6px rgba(0,0,0,.9)}
+@keyframes bossintro{0%{opacity:0;transform:translate(-50%,-50%) scale(1.22);filter:blur(6px)}12%{opacity:1;transform:translate(-50%,-50%) scale(1);filter:blur(0)}82%{opacity:1;transform:translate(-50%,-50%) scale(1)}100%{opacity:0;transform:translate(-50%,-55%) scale(.98)}}
+@media (prefers-reduced-motion:reduce){.bossIntro.show{animation-duration:.01s}.bossbar.flash{animation:none}}
 /* The initiative order as player cards (Sam, 2026-10-13: "use player cards and not cut off the head"): the
    party's medallions, the canon faces for the foes, whole — a card is never cropped through the head. */
 .turns{display:flex;gap:6px;align-items:flex-end}
@@ -681,6 +719,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     </div>
     <div class="combat" id="combat" hidden>
       <div class="cbt-top cbt-ui"><span class="lbl">Combat</span><div class="turns" id="turns"></div><span class="round" id="cbtRound"></span><button class="btn" id="quickBtn" title="DM: let the heroes fight on their own at speed. Weapons only, no spells or items. Every roll is real.">Quick resolve</button><button class="btn danger" id="endCombat">End fight</button></div>
+      <div class="bossbar" id="bossBar" hidden aria-live="polite"><div class="bface" id="bossFace"></div><div class="btext"><div class="bname"><span class="kick">BOSS</span><span id="bossName"></span><small id="bossEpithet"></small></div><div class="bhp" title=""><i id="bossHp"></i><em></em><b>Bloodied</b></div></div></div>
       <div class="cbt-party cbt-ui" id="cbtParty"></div>
       <div class="cbt-hint" id="cbtHint" hidden></div>
     </div>
@@ -771,6 +810,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     </div>
     <div class="dialog" id="dialog" hidden><div class="card" role="dialog" aria-modal="true" aria-labelledby="dlgTitle"><h3 id="dlgTitle"></h3><p id="dlgBody"></p><div class="src" id="dlgSrc"></div><div class="btns" id="dlgBtns"></div></div></div>
     <div id="victory" class="victory" hidden><div class="big"></div><div class="small"></div></div>
+    <div id="bossIntro" class="bossIntro" hidden><div class="bface" id="bossIntroFace"></div><div><div class="kick">BOSS</div><div class="big" id="bossIntroName"></div><div class="small" id="bossIntroEpithet"></div></div></div>
     <div class="talk" id="obj" hidden>
       <div class="tcard" role="dialog" aria-labelledby="objWho">
         <div class="who"><canvas id="objPic" width="128" height="128"></canvas><div class="name" id="objWho"></div></div>
@@ -2074,16 +2114,28 @@ const HIGH_XP = {1: 100, 2: 200, 3: 400, 4: 500, 5: 1100};
 // Creatures that should sound like a horror film rather than a brawl.
 const SCARY = /spider|ooze|undead|ghoul|ghast|ghost|zombie|skeleton|wight|wraith|specter|shadow|banshee|vampire|lich|mummy|aberration|fiend|demon|devil|cloaker|grell|hook.?horror|carrion|darkmantle|mind.?flayer|illithid|beholder|spectator|nothic|otyugh|myconid|chuul|gibbering|intellect.?devourer|bodak/i;
 function foeXp(f){ const s = f.c ? f.c.sheet : FOE_BLOCKS[f.id]; return (s && s.xp) || (f.creature && f.creature.xp) || 50; }
+// The party's Deadly encounter budget (the SRD thresholds above, per living hero at the party's average level): what the
+// music's mood and the boss bar both measure a fight against. One copy, so the two cannot disagree about the odds.
+function deadlyBudget(){
+  const live = party.filter(p => !p.down), n = Math.max(1, live.length);
+  const lvl = Math.max(1, Math.round(live.reduce((s, p) => s + ((SHEETS[p.id] && SHEETS[p.id].level) || 1), 0) / n));
+  return {n, budget: (HIGH_XP[Math.min(5, lvl)] || 100) * n};
+}
+// THE BOSS OF A FIGHT (Sam, 2026-10-27, Top Heroes-style bosses on 5e). lib/boss-fight.mjs decides: the block says so
+// (`boss: true`), or one foe carries most of the fight's XP and is deadly for the party on its own. Until 2026-10-27 that
+// same test lived only inside moodFor and picked the music; now the bar, the entrance and the music all read one answer.
+function bossOfFight(foeList){
+  const i = bossIndex(foeList.map(f => ({xp: foeXp(f), boss: !!(FOE_BLOCKS[f.id] || {}).boss})), deadlyBudget().budget);
+  return i >= 0 ? foeList[i] : null;
+}
 /** The mood of a fight: the DM's pick, then Malachar's, then the odds. Pure apart from what is on the plate. */
 function moodFor(foeList, flagMood){
   if (dmMood !== "auto" && COMBAT_TRACKS[dmMood]) return dmMood;
   if (flagMood && COMBAT_TRACKS[flagMood]) return flagMood;
-  const heroes = party.filter(p => !p.down), n = Math.max(1, heroes.length);
-  const lvl = Math.max(1, Math.round(heroes.reduce((s, p) => s + ((SHEETS[p.id] && SHEETS[p.id].level) || 1), 0) / n));
-  const budget = (HIGH_XP[Math.min(5, lvl)] || 100) * n;
-  const xps = foeList.map(foeXp), total = xps.reduce((s, x) => s + x, 0), top = Math.max(0, ...xps);
+  const {n, budget} = deadlyBudget();
+  const total = foeList.map(foeXp).reduce((s, x) => s + x, 0);
   if ((foeList.length >= 4 && foeList.length >= 2 * n) || total > 2 * budget) return "overwhelming";
-  if (foeList.some(f => (FOE_BLOCKS[f.id] || {}).boss) || (top >= budget && top >= .6 * total)) return "boss";
+  if (bossOfFight(foeList)) return "boss";
   if (foeList.some(f => SCARY.test(`${f.id} ${(f.creature && (f.creature.type || f.creature.name)) || ""} ${(FOE_BLOCKS[f.id] || {}).ctype || ""}`))) return "scary";
   return "regular";
 }
@@ -4417,6 +4469,49 @@ function strikeSheet(atk, sneak, att, tgt, crit){
 // in a warded area the Cast command is shut, and the reason is said.
 const wardsHere = () => node.wards || null;
 
+// ---------- BOSS FIGHTS (Sam, 2026-10-27: Top Heroes-style bosses, 5e underneath) ----------
+// The rules — who is the boss, bloodied at half, the title, the timing — are lib/boss-fight.mjs, pasted in whole by
+// build_walk.py (minus `export`) so the map and lib/boss-fight.test.ts read the SAME functions:
+/*__BOSS__*/
+// What the page adds is only what is SEEN: the entrance, the bar, the Bloodied beat and the fall. No roll, hit point,
+// action or save changes anywhere in this section.
+const bossFaceCard = f => cardFor(f);   // the tracker's card: the canon face where there is one, else the sprite, never cropped through the head
+/** The bar under the turn strip. Reads the boss's live hit points; shown once the entrance is over, hidden with the fight. */
+function renderBossBar(){
+  const bar = $("bossBar"), b = cbt && cbt.boss;
+  if (!b || !b.c || !actors.includes(b)){ bar.hidden = true; bar.classList.remove("show", "bloodied", "flash", "down"); return; }
+  const {name, epithet} = bossTitle(b.c.sheet), st = bossState(b.c.hp, b.c.hpMax);
+  if (bar.dataset.for !== b.id){ bar.dataset.for = b.id; $("bossFace").replaceChildren(bossFaceCard(b)); $("bossName").textContent = name; $("bossEpithet").textContent = epithet; }
+  $("bossHp").style.width = `${Math.round(bossFill(b.c.hp, b.c.hpMax) * 1000) / 10}%`;
+  bar.classList.toggle("bloodied", st !== "fresh"); bar.classList.toggle("down", st === "down");
+  bar.hidden = false; if (!cbt.bossIntro) requestAnimationFrame(() => bar.classList.add("show"));
+}
+/** The title slam: the band, the face, BOSS, the name, the epithet; the camera on them; the boss gets the first word. */
+function bossEntrance(b){
+  const {name, epithet} = bossTitle(b.c.sheet), el = $("bossIntro");
+  $("bossIntroFace").replaceChildren(bossFaceCard(b)); $("bossIntroName").textContent = name; $("bossIntroEpithet").textContent = epithet;
+  el.hidden = false; el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
+  camTo(Math.min(2.8, cbt.home.z * 1.3), b.x, b.y - 70, 700);
+  // its sound is the fight's own: the drow outpost's alarm gong for a drow boss, a beast's own call where the bank has one
+  // (CREATURE_SFX), nothing invented for the rest — the initiative sting has already played
+  const cs = CREATURE_SFX[b.id]; if (/^drow|^jorlan$|^shoor$|^asha$|^ilvara$/.test(b.id)) bank("creature/drow_alarm_gong", .7); else if (cs && cs.call) bank(cs.call, .8);
+  log(`<b>${esc(name)}</b>${epithet ? `, ${esc(epithet)},` : ""} steps into the fight.`);
+  setTimeout(() => { if (cbt && actors.includes(b) && !b.down && !taunt(b, null, leader)){ const k = FOE_BARK[b.id]; if (k) bark(b, k[0], 2200); } }, BOSS_RULES.introBarkMs);
+  setTimeout(() => { el.hidden = true; el.classList.remove("show"); if (cbt){ cbt.bossIntro = false; renderBossBar(); } }, BOSS_RULES.introMs);
+}
+/** One blow on the boss: the bar follows; the one that takes it to half is the Bloodied beat — callout, flash, a word. */
+function bossHit(b, hpBefore){
+  if (bossCrossedBloodied(hpBefore, b.c.hp, b.c.hpMax)){
+    const bar = $("bossBar"); bar.classList.remove("flash"); void bar.offsetWidth; bar.classList.add("flash");
+    popText(b, "BLOODIED", "#ff8a6a", 1.25); burst(b, "#ff5040", 18); hitstop(120); shake(7);
+    log(`<b>${esc(fname(b))} is bloodied.</b>`); narrate(b, `${fname(b)} is bloodied.`);
+    setTimeout(() => { if (cbt && actors.includes(b) && !b.down) taunt(b, null, leader); }, 500);
+  }
+  renderBossBar();
+}
+/** The boss goes down: a longer hold on the blow and a harder shake than any other fall; the bar drains and leaves. */
+function bossFalls(b){ hitstop(380); shake(16); renderBossBar(); }
+
 // ---------- combat (HD-2D) ----------
 // The fight runs on the painted plate with the party's own sprites, presented the Octopath way (Sam,
 // 2026-10-12: "have the combat run visually like this octopath system but use the DND system we have
@@ -4501,11 +4596,11 @@ const FOE_BLOCKS = {
                          attacks: [{name: "Shortsword", hit: 7, dmg: "1d6+4", type: "piercing", reach: 5, extra: {dmg: "3d6", type: "poison"}},
                                    {name: "Hand Crossbow", hit: 7, dmg: "1d6+4", type: "piercing", reach: 30, long: 120, ranged: true, drowPoison: {dc: 13}}]},
   // Shoor Vandree IS a drow elite warrior (OotA p.13); his sprite has an idle sheet only, so he stands and the hits land without a swing frame.
-  shoor:                {name: "Shoor Vandree", race: "drow", xp: 1800, passive: 15, hp: 71, ac: 18, speed: 30, init: 4, saves: {str: 1, dex: 4, con: 2, int: 0, wis: 1, cha: 1}, multi: 2, boss: true,
+  shoor:                {name: "Shoor Vandree", race: "drow", xp: 1800, passive: 15, hp: 71, ac: 18, speed: 30, init: 4, saves: {str: 1, dex: 4, con: 2, int: 0, wis: 1, cha: 1}, multi: 2, boss: true, epithet: "Drow elite warrior",
                          attacks: [{name: "Shortsword", hit: 7, dmg: "1d6+4", type: "piercing", reach: 5, extra: {dmg: "3d6", type: "poison"}},
                                    {name: "Hand Crossbow", hit: 7, dmg: "1d6+4", type: "piercing", reach: 30, long: 120, ranged: true, drowPoison: {dc: 13}}]},
   // Ilvara Mizzrym, drow priestess of Lolth (CR 8): two scourge lashes, or Ray of Sickness at range (its poisoned rider lasts a round; `rider` here is the damage-on-save shape the page has).
-  ilvara:               {name: "Ilvara Mizzrym", race: "drow", xp: 3900, passive: 13, hp: 71, ac: 16, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 1, int: 1, wis: 3, cha: 4}, multi: 2, boss: true,
+  ilvara:               {name: "Ilvara Mizzrym", race: "drow", xp: 3900, passive: 13, hp: 71, ac: 16, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 1, int: 1, wis: 3, cha: 4}, multi: 2, boss: true, epithet: "Priestess of Lolth",
                          attacks: [{name: "Scourge", hit: 5, dmg: "1d6+2", type: "piercing", reach: 5, extra: {dmg: "5d6", type: "poison"}},
                                    {name: "Ray of Sickness", hit: 6, dmg: "2d8", type: "poison", reach: 60, ranged: true}]},
   // Asha Vandree: SRD 5.1 Priest (AC 13, 27 HP, mace +2 1d6) with the drow's Fey Ancestry/Sunlight Sensitivity per OotA p.13; her spells (sacred flame, spirit guardians…) are not on the page.
@@ -4757,12 +4852,17 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   if (opts.opener && order.includes(opts.opener)){ order.splice(order.indexOf(opts.opener), 1); order.unshift(opts.opener); }
   cbt = {order, allies, bystanders, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null,
     id: `${cur}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`};   // the fight's own name: /api/walk-xp pays it once
-  $("combat").hidden = false; $("cbtMenu").hidden = true; stage.classList.add("fight"); renderTurns(); renderParty();
+  // THE BOSS (lib/boss-fight.mjs): the one foe the fight is about, if there is one. The entrance holds the first turn
+  // back by BOSS_RULES.introMs and the boss alone speaks during it; the other foes' barks wait for it to end.
+  cbt.boss = bossOfFight(foes); cbt.bossIntro = !!cbt.boss;
+  $("combat").hidden = false; $("cbtMenu").hidden = true; stage.classList.add("fight"); renderTurns(); renderParty(); renderBossBar();
   log(`<em>${esc(label || "Steel comes out.")}</em> Initiative: ${order.map(a => `${fname(a)} ${a.c.init}`).join(", ")}.`);
   bank("ui/initiative_start", .8);
   for (const nm of ["physicalImpact", ...ALL_MARTIAL_IMPACTS, "pxSigilBurst", "pxSigilShatter"]) vfxLoad(nm);   // warm the sheets the first blows need
-  setTimeout(() => foes.forEach((f, i) => setTimeout(() => { const b = FOE_BARK[f.id]; if (b && actors.includes(f)) bark(f, b[i % b.length], 2600); }, i * 500)), 700);
-  setTimeout(() => { if (cbt) nextTurn(true); }, 1400);
+  const introMs = cbt.boss ? BOSS_RULES.introMs : 0;
+  if (cbt.boss) setTimeout(() => { if (cbt && cbt.boss && actors.includes(cbt.boss)) bossEntrance(cbt.boss); else if (cbt){ cbt.bossIntro = false; renderBossBar(); } }, 350);
+  setTimeout(() => foes.forEach((f, i) => setTimeout(() => { const b = FOE_BARK[f.id]; if (b && actors.includes(f) && f !== (cbt && cbt.boss)) bark(f, b[i % b.length], 2600); }, i * 500)), 700 + introMs);
+  setTimeout(() => { if (cbt) nextTurn(true); }, 1400 + introMs);
 }
 const fname = a => a.kind === "pc" ? SHEETS[a.id].name : (a.creature && a.creature.name) || (a.c && a.c.sheet.name) || SHORT[a.id] || SPR[a.id].json.name;
 function standing(list){ return list.filter(a => !a.down && actors.includes(a)); }
@@ -6731,6 +6831,7 @@ function damage(t, n, type, crit, from, magical = false){
   if (n >= t.c.hp && type === "necrotic" && t.c.hp > 0 && !t.iced){
     t.necro = {t0: now};
     if (t.kind !== "pc" && !/ooze/.test(t.id)){ const fr = frameOf(t); t.withered = {t0: now, img: fr.img, f: fr.f, swap: now + DEATH_TOUCH_SWAP_MS}; } }
+  const hpBefore = t.c.hp;                                                      // the boss bar's Bloodied beat reads the crossing
   t.c.hp = Math.max(0, t.c.hp - n); if (t.creature) t.hp = t.c.hp;
   if (t.c.rage && n > 0) t.c.rage.hurt = true;                                 // SRD: "taken damage since then" keeps the rage going
   if (t.kind === "pc" && t.c.hp <= 0 && over >= t.c.hpMax && !koNow){ t.flash = now + 180; fall(t); dieNow(t, `${over} damage past 0, as much as their hit point maximum`); return; }
@@ -6746,6 +6847,7 @@ function damage(t, n, type, crit, from, magical = false){
   }
   if (t.c.hp > 0){ const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_hurt" : cs && cs.hurt ? cs.hurt : "creature/hurt_beast", .7); }
   if (t.c.hp <= 0){ t.killType = type; fall(t); } else if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); else if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle"));
+  if (cbt && cbt.boss === t){ if (t.c.hp <= 0) bossFalls(t); else bossHit(t, hpBefore); }   // BOSS FIGHTS: the bar follows every blow; half is the Bloodied beat
   renderParty();
 }
 function miss(t){ popText(t, "miss", "#c9c4b8", .9); if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle")); }
@@ -7187,6 +7289,7 @@ function endCombat(won){
     else { b.home = {x: b.x, y: b.y}; b.actUntil = now + 3000; }
   }
   closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby(); poisonZones = []; dmPlace = null;
+  $("bossBar").hidden = true; $("bossBar").classList.remove("show", "bloodied", "flash", "down"); delete $("bossBar").dataset.for; $("bossIntro").hidden = true; $("bossIntro").classList.remove("show");   // BOSS FIGHTS: the bar and the slam go with the fight
   // The dead stay where they fell (Sam, 2026-10-13: "There should always be a carcass or dead body of
   // whatever died. This way we can search the body."). Only the living, called off, walk away.
   const slain = foes.filter(f => f.down);

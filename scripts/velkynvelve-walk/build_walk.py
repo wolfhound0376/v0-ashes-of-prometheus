@@ -4,6 +4,7 @@ Python only (Sam's machine has no Node). From the repo root:  python scripts/vel
 
 Inputs, all in this folder:
   template.html  the page (HTML + JS); placeholders /*__SPEC__*/ /*__FX__*/ /*__SPRITES__*/ /*__KIT__*/
+                 /*__BOSS__*/ is lib/boss-fight.mjs pasted in whole (see boss_rules): who the boss of a fight is, bloodied at half
                  (/*__KIT__*/ is filled from the BOARD's spell tables -- see build_kit_tables)
                  /*__RAGE__*/ is lib/rage.mjs pasted in whole (see rage_rules): Rage and Wounded Fury have ONE copy
                  /*__TRAITS__*/ is lib/traits.mjs pasted in whole (see traits_rules): Halfling Luck and every roll-changing trait
@@ -225,6 +226,14 @@ def item_lore_rules(root):
     return re.sub(r'^export ', '', src, flags=re.M)
 
 
+def boss_rules(root):
+    """lib/boss-fight.mjs (boss fights, Top Heroes-style on 5e, Sam 2026-10-27: who the boss of a fight is, bloodied at
+    half, the title, the timing), pasted whole minus `export`, like rage_rules. The map and lib/boss-fight.test.ts read
+    the SAME rules, and the music's mood and the boss bar read the same answer."""
+    src = open(os.path.join(root, 'lib', 'boss-fight.mjs'), encoding='utf-8').read()
+    return re.sub(r'^export ', '', src, flags=re.M)
+
+
 def build_kit_tables(root):
     src = open(os.path.join(root, KIT_TS), encoding="utf-8").read()
     types = _ts_to_obj(_ts_block(src, "const TYPES"))
@@ -352,7 +361,7 @@ for k, n in spec.items():
 fx = open(os.path.join(HERE, 'fx.json')).read()
 t = open(os.path.join(HERE, 'template.html')).read()
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__TRAITS__*/', traits_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
-      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT))
+      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))
