@@ -1,0 +1,98 @@
+{
+ "1": {
+  "slug": "node-01-southern-watch-post",
+  "name": "Southern Watch Post"
+ },
+ "2": {
+  "slug": "node-02-barracks",
+  "name": "Barracks"
+ },
+ "3": {
+  "slug": "node-03-main-hall",
+  "name": "Main Hall"
+ },
+ "4": {
+  "slug": "node-04-elite-barracks",
+  "name": "Elite Barracks"
+ },
+ "5": {
+  "slug": "node-05-lift",
+  "name": "Lift"
+ },
+ "6": {
+  "slug": "node-06-shrine",
+  "name": "Shrine to Lolth"
+ },
+ "7": {
+  "slug": "node-07-ilvara-quarters",
+  "name": "Ilvara's Quarters"
+ },
+ "8": {
+  "slug": "node-08-shoor-quarters",
+  "name": "Shoor's Quarters"
+ },
+ "9": {
+  "slug": "node-09-waterfall",
+  "name": "Waterfall"
+ },
+ "10": {
+  "slug": "node-10-guard-tower",
+  "name": "Guard Tower"
+ },
+ "10b": {
+  "slug": "node-10b-guard-tower-lower",
+  "name": "Guard Tower, lower chamber"
+ },
+ "10c": {
+  "slug": "node-10c-guard-tower-armory",
+  "name": "Guard Tower, armory (upper chamber)"
+ },
+ "5c": {
+  "slug": "node-05c-lift-cliffside",
+  "name": "The cliff below the lift"
+ },
+ "3k": {
+  "slug": "node-03k-kitchen",
+  "name": "Main Hall kitchen"
+ },
+ "11": {
+  "slug": "node-11-slave-pen",
+  "name": "Slave Pen"
+ },
+ "12": {
+  "slug": "node-12-quaggoth-den",
+  "name": "Quaggoth Den"
+ },
+ "13": {
+  "slug": "node-13-northern-watch-post",
+  "name": "Northern Watch Post"
+ },
+ "14": {
+  "slug": "node-14-pool-river",
+  "name": "Pool / Underground River"
+ },
+ "tunnels": {
+  "slug": "biome-tunnels",
+  "name": "The tunnels"
+ },
+ "crystal": {
+  "slug": "biome-crystal",
+  "name": "The crystal passage"
+ },
+ "wastes": {
+  "slug": "biome-wastes",
+  "name": "The wastes"
+ },
+ "lair": {
+  "slug": "biome-lair",
+  "name": "The lair"
+ },
+ "shore": {
+  "slug": "biome-shore",
+  "name": "The Darklake shore"
+ },
+ "grove": {
+  "slug": "biome-grove",
+  "name": "The grove"
+ }
+}
