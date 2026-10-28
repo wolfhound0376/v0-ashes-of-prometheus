@@ -96,7 +96,9 @@ export async function POST(req: NextRequest) {
   const { data: written, error: werr } = await db.from("characters")
     .update({ ...(out.spellcasting ? { sheet_spellcasting: out.spellcasting } : {}), ...(out.skills ? { sheet_skill_proficiencies: out.skills } : {}), sheet_features: out.features, updated_at: new Date().toISOString() })
     .eq("id", characterId).eq("level", level)
-    .contains("sheet_features", [{ name: `Level ${level} — choices to make` }])
+    // a jsonb array needs its filter as JSON text: an array of objects passed raw is sent as cs.{[object Object]} and
+    // PostgREST rejects the write (400) — every settle failed with "could not be written" until this (Fifi, 2026-10-28)
+    .contains("sheet_features", JSON.stringify([{ name: `Level ${level} — choices to make` }]))
     .select("id")
   if (werr) return NextResponse.json({ error: "the choices could not be written — tell the DM" }, { status: 500 })
   if (!written || written.length === 0) return NextResponse.json({ ok: false, already: true, note: "Already settled; nothing more was written." })
