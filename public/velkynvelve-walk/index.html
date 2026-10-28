@@ -6330,6 +6330,14 @@ function fighterFor(a){
 }
 function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   if (mode !== "explore") return;
+  // A FIGHT ON A PLATE IS EVERYONE HOSTILE ON IT (Sam, 2026-10-28: "why is combat not attracting all the foes on the
+  // plate; it should"). Each way into a fight named its own foes: attacking someone brought in only the drow on watch
+  // (fightWith — a guard rule), so on the Lift the second quaggoth, hostile and standing 550 px away, watched its partner
+  // fight alone. Now whatever opens the fight, every hostile still standing on this plate is added to it, where it stands.
+  // Not the dead, not the off-stage, not anyone already named; prisoners and bystanders are not `hostile`.
+  { const named = new Set(foeIds.filter(f => typeof f === "object"));
+    const more = npcs.filter(n => n.hostile && !named.has(n) && !n.down && !n.body && !n.offStage && !n.backdrop && (n.alpha ?? 1) > .5 && actors.includes(n) && !(n.c && n.c.hp <= 0));
+    if (more.length){ foeIds = [...foeIds, ...more]; if (opts.surprised) opts.surprised = [...opts.surprised, ...more]; } }   // a sneak attack surprises them too: none saw it coming
   owFightBegins();
   // NOBODY FIGHTS IN THE AIR (Sam, 2026-10-27, the Barracks: "This combat is off and in the air"). A fight that opened
   // while the party and the prisoners were still walking in from the edge of the plate cleared their paths where they
@@ -6355,7 +6363,8 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   hoverZone = null; tip.hidden = true;
   const pc = party.reduce((s, p) => ({x: s.x + p.x / party.length, y: s.y + p.y / party.length}), {x: 0, y: 0});
   let dir;
-  if (foeIds.length && typeof foeIds[0] === "object"){ const fc = foeIds.reduce((s, f) => ({x: s.x + f.x / foeIds.length, y: s.y + f.y / foeIds.length}), {x: 0, y: 0}); dir = norm({x: fc.x - pc.x, y: fc.y - pc.y}); }
+  const onPlate = foeIds.filter(f => typeof f === "object");
+  if (onPlate.length){ const fc = onPlate.reduce((s, f) => ({x: s.x + f.x / onPlate.length, y: s.y + f.y / onPlate.length}), {x: 0, y: 0}); dir = norm({x: fc.x - pc.x, y: fc.y - pc.y}); }
   else if (node.hazard){ const hp = node.hazard.poly; const hc = hp.reduce((s, p) => ({x: s.x + p[0] / hp.length, y: s.y + p[1] / hp.length}), {x: 0, y: 0}); dir = norm({x: hc.x - pc.x, y: hc.y - pc.y}); }
   if (!dir || !isFinite(dir.x) || (Math.abs(dir.x) < .01 && Math.abs(dir.y) < .01)) dir = norm({x: centroid.x - pc.x || 1, y: centroid.y - pc.y});
   const perp = {x: -dir.y, y: dir.x}, L = {x: leader.x, y: leader.y}, sc = node.scale;
