@@ -377,6 +377,57 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 .checkcard .cc-x:hover{color:var(--ink)}
 @keyframes ccpulse{0%,100%{opacity:.55}50%{opacity:1}}
 @media (prefers-reduced-motion: reduce){.checkcard .cc-say.wait{animation:none}}
+
+/* THE ITEM CARD (Sam, 2026-10-27: "Hovering over loot should create an effect like this" -- a Diablo-style card; then,
+   from the canvas "Loot Hover Card Concepts": concept D's order with A's colour, no "canon" label, buttons, and checks
+   that pop up out of combat and roll with the holder's own stats). The frame, the name and the main button wear the
+   item's rarity colour (--rc, the loot fountain's RARITY_COL); --rg is its glow. Lives inside #stage like .checkcard,
+   so the stage's pointer handlers skip it. */
+.icard{position:absolute;z-index:26;width:min(372px,calc(100% - 24px));max-height:calc(100% - 24px);overflow:auto;background:#15110e;color:#ece4d4;
+  border:2px solid var(--rc,#e8e2d0);border-radius:10px;box-shadow:0 0 0 1px #000,0 18px 48px rgba(0,0,0,.65),0 0 34px var(--rg,transparent);
+  font-family:var(--face-body);font-size:.92rem;animation:fadein .14s ease}
+.icard[hidden]{display:none}
+.icard .ic-band{display:flex;justify-content:space-between;gap:8px;padding:6px 14px;font-family:var(--face-mono);font-size:.68rem;letter-spacing:.14em;background:var(--rb,#1a1815);border-bottom:1px solid #3a3128;border-radius:8px 8px 0 0}
+.icard .ic-band .unid{color:#f1c27a}.icard .ic-band .ok{color:#7fdc8a}.icard .ic-band .war{color:#ff7a6e}
+.icard .ic-head{display:flex;gap:12px;padding:12px 14px 10px;border-bottom:1px solid #3a3128}
+.icard .ic-pic{width:52px;height:52px;flex-shrink:0;border-radius:7px;border:2px solid var(--rc);background:#221a12;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 14px var(--rg)}
+.icard .ic-pic img{width:40px;height:40px;image-rendering:pixelated;object-fit:contain}
+.icard .ic-name{font-family:var(--face-display);font-size:1.32rem;line-height:1.08;color:var(--rc)}
+.icard .ic-sub{color:#c9bfae;font-size:.86rem;margin-top:3px}.icard .ic-sub b{color:var(--rc)}
+.icard .ic-pill{display:inline-block;margin-top:5px;font-size:.66rem;font-weight:700;letter-spacing:.08em;color:#f1c27a;border:1px solid #8a6a3a;border-radius:4px;padding:1px 6px}
+.icard .ic-sec{padding:9px 14px;border-bottom:1px solid #3a3128}
+.icard .ic-dmg{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}.icard .ic-dmg b{font-size:1.55rem;color:#fff4dc}.icard .ic-dmg span{color:#e4dac6}
+.icard .ic-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.icard .ic-chips span{font-size:.74rem;border:1px solid #4a3f33;border-radius:4px;padding:1px 7px;color:#d9cfbd}
+.icard .ic-chips .c-fin{color:#9fd0ff;border-color:#2f5577;background:#13202c}.icard .ic-chips .c-lit{color:#9fe6a8;border-color:#2f5a37;background:#13221a}
+.icard .ic-chips .c-thr{color:#ffc58a;border-color:#6a4a2a;background:#2a1d12}
+.icard .ic-lbl{font-family:var(--face-mono);font-size:.64rem;letter-spacing:.16em;margin-bottom:5px}
+.icard .ic-know{background:#120f0c}.icard .ic-know .ic-lbl{color:#f1c27a}
+.icard .ic-fact{display:flex;gap:7px;line-height:1.35;margin:3px 0}.icard .ic-fact i{font-style:normal;color:var(--rc)}
+.icard .ic-blur{height:9px;border-radius:3px;background:#2f2620;filter:blur(1.4px);margin:5px 0}
+.icard .ic-cmp .ic-lbl{color:#b3a892}.icard .ic-row{display:flex;gap:8px;align-items:baseline;margin:2px 0}
+.icard .up{color:#7fdc8a;font-weight:700}.icard .dn{color:#ff7a6e;font-weight:700}.icard .eq{color:#9d927f;font-weight:700}
+.icard .ic-heroes{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:7px}
+.icard .ic-heroes button{font:inherit;font-size:.78rem;color:#ece4d4;background:#141210;border:1px solid #2c251e;border-left:3px solid var(--hc);border-radius:5px;padding:4px 9px;cursor:pointer;min-height:30px}
+.icard .ic-heroes button[aria-pressed="true"]{background:#241c14;border-color:var(--hc)}
+.icard .ic-chk{display:flex;align-items:center;gap:8px;margin:5px 0}
+.icard .ic-chk button{flex:1;display:flex;justify-content:space-between;align-items:center;gap:8px;text-align:left;font:inherit;font-size:.86rem;color:#f3ead8;background:#1f1913;
+  border:1px solid var(--ac);border-left:4px solid var(--ac);border-radius:6px;padding:7px 10px;min-height:40px;cursor:pointer}
+.icard .ic-chk button:disabled{opacity:.55;cursor:default;background:#14110e;border-color:#2c251e;border-left-color:var(--ac)}
+.icard .ic-chk .ab{font-size:.62rem;font-weight:800;letter-spacing:.06em;color:#120f0c;background:var(--ac);border-radius:3px;padding:1px 5px;margin-right:7px}
+.icard .ic-chk small{color:#c9bda6;font-size:.74rem;white-space:nowrap}
+.icard .ic-bon{width:62px;text-align:right;line-height:1.05}.icard .ic-bon b{font-size:1.25rem}.icard .ic-bon small{display:block;font-size:.62rem}
+.icard .ic-hint{font-size:.74rem;color:#8fc4f5;margin:-1px 0 4px}
+.icard .ic-res{font-size:.8rem;line-height:1.4;padding:5px 9px;border-radius:5px;margin:2px 0 6px}
+.icard .ic-res.ok{background:#132617;color:#a8f0b0;border-left:3px solid #5fd06a}.icard .ic-res.no{background:#2c1512;color:#ffb8ae;border-left:3px solid #ff6a5a}
+.icard .ic-note{font-size:.8rem;color:#b9ae9a;line-height:1.4}
+.icard .ic-btns{display:flex;flex-wrap:wrap;gap:7px;padding:10px 14px 12px}
+.icard .ic-btns button{font:inherit;font-size:.86rem;font-weight:700;border-radius:6px;padding:8px 13px;min-height:40px;cursor:pointer;color:#ece4d4;background:transparent;border:1px solid var(--rc)}
+.icard .ic-btns button.main{color:#120f0c;background:var(--rc);border:none;font-weight:800}
+.icard .ic-btns button.study{color:#f1c27a;background:#2a2015;border-color:#8a6a3a}
+.icard .ic-taunt{padding:0 14px 11px;font-size:.84rem;font-style:italic;color:#c7a7e8}
+.icard .ic-foot{padding:0 14px 10px;font-size:.72rem;color:#9d927f}
+@media (prefers-reduced-motion: reduce){.icard{animation:none}}
 .cool.violet{background:radial-gradient(circle,rgba(225,200,255,.62) 0%,rgba(175,130,255,.28) 30%,rgba(140,100,255,.10) 52%,transparent 70%)}
 @media (max-width:700px){
   .brand .sub{max-width:44vw}
@@ -421,6 +472,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="fade" id="fade"></div>
     <div class="toast" id="toast" hidden></div>
     <div class="checkcard" id="checkCard" role="status" aria-live="polite" hidden><button class="cc-x" id="ccX" aria-label="Close">×</button><p class="cc-what" id="ccWhat"></p><div class="cc-roll" id="ccRoll"></div><div class="cc-say" id="ccSay"></div></div>
+    <div class="icard" id="icard" role="dialog" aria-label="Item" hidden></div>
     <div class="titlecard" id="titlecard"><div class="no" id="tcNo"></div><h2 id="tcName"></h2></div>
     <div class="log" id="log" aria-live="polite"></div>
     <div class="acts" id="acts" aria-live="polite"></div>
@@ -624,7 +676,9 @@ function noteSeats(seated){
   // too: a level-up or a new proficiency reaches the walk without a rebuild. Attacks and magic stay the snapshot's.
   for (const s of seatsSeen) if (s.sheet) for (const id of seatedSlugs([s])) if (SHEETS[id] && !FORGED_ID[id]){
     if (s.sheet.saves) SHEETS[id].saves = {...SHEETS[id].saves, ...s.sheet.saves};
-    if (s.sheet.skills) SHEETS[id].skills = {...SHEETS[id].skills, ...s.sheet.skills}; }
+    if (s.sheet.skills) SHEETS[id].skills = {...SHEETS[id].skills, ...s.sheet.skills};
+    if (s.sheet.lore) SHEETS[id].lore = {...SHEETS[id].lore, ...s.sheet.lore};
+    if (s.sheet.tools) SHEETS[id].tools = {...SHEETS[id].tools, ...s.sheet.tools}; }
   dmRun.clear();
   for (const s of seatsSeen) if (s.dm) for (const id of seatedSlugs([s])) dmRun.add(id);
   renderSeats();
@@ -3058,6 +3112,7 @@ async function openLoot(id, title, opts = {}){
     const rar = row.missing || row.kind === "preview-stash" ? "common" : rarityOf(row);
     if (RARITY_RANK[rar] >= 1){ const col = RARITY_COL[rar]; b.style.color = col; b.style.borderColor = col; b.style.boxShadow = `inset 3px 0 0 ${col}`;
       const tag = document.createElement("span"); tag.className = "lootRar"; tag.textContent = RARITY_LABEL[rar]; b.appendChild(tag); }
+    if (!row.missing && row.kind !== "preview-stash") icardBind(b, () => ({kind: "loot", row, slug: row.slug, name: row.name, onTake: () => b.click()}));   // the item card
   }
   if (can.length > 1) add("Take all", async () => {
     for (const b of box.querySelectorAll("button")) b.disabled = true;
@@ -3067,6 +3122,397 @@ async function openLoot(id, title, opts = {}){
   if (opts.extra) for (const [label, fn] of opts.extra) add(label, () => { close(); fn(); });
   add("Leave it", close);
   box.querySelector("button:not([disabled])")?.focus();
+}
+// ----- THE ITEM CARD -----
+// Sam, 2026-10-27: "Hovering over loot should create an effect like this" (a Diablo item card), then, from the canvas
+// "Loot Hover Card Concepts": concept D's order with A's colour, no "canon" label, buttons, and "buttons that pop up
+// (out of combat) if available with accompanying rolls that use the stats of the character". "looks good implement it".
+//
+// Where it opens: hovering a piece of loot on the floor (a pile, or a drop from the loot fountain), a row on a loot
+// card, a row in the inventory. On a phone or tablet: hold a finger on it. The card stays while the pointer is on it,
+// so its buttons can be reached.
+// What it shows: everything from the item's catalogue row (`items`) and nothing else. A magic item is UNIDENTIFIED
+// until someone studies it through a short rest (PHB): its bonus, its description and its attunement stay hidden,
+// and its curse is never shown at all. The rules for what can be learned, and how, are lib/item-lore.mjs (pasted
+// below), tested in lib/item-lore.test.ts.
+// The checks: out of a fight only, offered only when the item has something for them to find, rolled once per hero
+// with that hero's own bonus (lore and tools on the sheet: lib/walk-sheet.ts). What a success finds goes into the
+// shared world (`state["lore:<slug>"]`, the One World sync below), so every screen at the table knows it.
+// ITEM LORE — what a hero can learn about a piece of loot, and how. The rule, pure, in one copy.
+//
+// Sam, 2026-10-27, on the loot hover card (canvas "Loot Hover Card Concepts", the Final artboard): "a high end
+// version ... that removes the canon, has the buttons, and buttons that pop up (out of combat) if available with
+// accompanying rolls that use the stats of the character". Then: "looks good implement it".
+//
+// So a card over a piece of loot offers CHECKS, and each one:
+//   - appears only when the item has something for it to find (an Arcana check on a plain dagger finds nothing,
+//     so it is never offered), and some only after an earlier success (the residue is tested once the reservoir is
+//     found);
+//   - is rolled by the hero holding the card: d20 + that hero's own bonus, from their sheet, against a DC;
+//   - is rolled ONCE per hero per item. 5e has no free retries: a second try needs something new. Another hero
+//     may try;
+//   - on a success, adds lines to what the party knows about the item. Every line is built from the item's own
+//     catalogue row (`items`), never written here: nothing is invented (AGENTS.md: "Never invent game data").
+//
+// A magic item is UNIDENTIFIED until someone studies it through a short rest while holding it (PHB, "Identifying
+// a Magic Item": focus on it during a short rest while in physical contact). Until then the card shows what the
+// eye can see: the name, the base damage, the weapon's properties, its weight. Its bonus, its description and
+// its attunement stay hidden unless a check found them. A CURSE IS NEVER SHOWN, not by a check, not by study
+// (the DMG's cursed items are hidden from identification; Lolth's Tooth is a beacon the party must not see).
+//
+// THE DCs. An item row may carry its own (`properties.arcana_dc`: Lolth's Tooth has 15, Sam's ruling). Every
+// other DC here is a HOUSE NUMBER, Claude's, not Sam's: the DMG difficulty ladder (easy 10, medium 15, hard 20,
+// very hard 25, nearly impossible 30) read against the item's rarity. The card says which is which.
+//
+// Plain JavaScript for the same reason as lib/gate-watch.mjs: build_walk.py pastes this file into the painted map
+// at its ITEM_LORE placeholder (minus `export`), so the map and lib/item-lore.test.ts read the SAME rules. Every
+// name here starts with LORE_ or lore so the paste cannot collide with the page's own names.
+
+const LORE_RARITIES = ["common", "uncommon", "rare", "very_rare", "legendary", "artifact"]
+
+/** HOUSE (Claude's, pending Sam): the DMG difficulty ladder against rarity, and medium/easy for the rest. */
+const LORE_HOUSE_DC = {
+  arcana: { common: 10, uncommon: 10, rare: 15, very_rare: 20, legendary: 25, artifact: 30 },
+  examine: 15,
+  residue: 15,
+  ingredient: 10,
+  deity: 10,
+}
+
+/** The tools the card knows, as the rows spell them in sheet_proficiencies.tools. */
+const LORE_TOOLS = {
+  alchemist: "Alchemist's Supplies",
+  poisoner: "Poisoner's Kit",
+  herbalism: "Herbalism Kit",
+}
+
+const loreProps = (item) => (item && item.properties && typeof item.properties === "object" ? item.properties : {})
+const loreNum = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0 }
+
+/** "Very Rare" / "very rare" / "very_rare" → "very_rare". Anything unknown is common. */
+function loreRarity(item) {
+  const r = String((item && item.rarity) || "common").toLowerCase().trim().replace(/\s+/g, "_")
+  return LORE_RARITIES.includes(r) ? r : "common"
+}
+
+/** Is it magic: rarer than common, or the row says it carries magic (a bonus, attunement, a curse). */
+function loreIsMagic(item) {
+  if (!item) return false
+  const p = loreProps(item)
+  return loreRarity(item) !== "common" || p.magic === true || p.magical === true || loreNum(p.bonus) > 0 ||
+    loreNum(p.attack_bonus) > 0 || loreNum(p.damage_bonus) > 0 || item.attunement === true || item.cursed === true
+}
+
+const loreEffects = (item) => (Array.isArray(item && item.alchemy_effects) ? item.alchemy_effects.filter((e) => typeof e === "string" && e.trim()) : [])
+const loreReservoir = (item) => { const r = loreProps(item).reservoir; return r && typeof r === "object" ? r : null }
+
+/**
+ * The checks this item offers, in the order the card lists them. `known` is what the party already knows
+ * ({f: {examine: true}}): a check whose `needs` is not yet known is left out. Each check:
+ *   {key, label, skill?, tools?, dc, house}   house = true when the DC is Claude's house number
+ */
+function loreChecks(item, known) {
+  if (!item) return []
+  const p = loreProps(item), f = (known && known.f) || {}, out = []
+  const res = loreReservoir(item)
+  if (res) out.push({ key: "examine", label: "Examine it closely", skill: "investigation", dc: LORE_HOUSE_DC.examine, house: true })
+  if (typeof p.deity === "string" && p.deity.trim()) out.push({ key: "deity", label: "Read its marks", skill: "religion", dc: LORE_HOUSE_DC.deity, house: true })
+  if (loreIsMagic(item)) {
+    const own = loreNum(p.arcana_dc)
+    out.push({ key: "arcana", label: "Sense its magic", skill: "arcana", dc: own || LORE_HOUSE_DC.arcana[loreRarity(item)], house: !own })
+  }
+  if (res && res.poison && f.examine) out.push({ key: "residue", label: "Test the residue", tools: ["alchemist", "poisoner"], dc: LORE_HOUSE_DC.residue, house: true })
+  if (loreEffects(item).length) out.push({ key: "ingredient", label: "Work out its use", tools: ["alchemist", "herbalism"], skill: "nature", dc: LORE_HOUSE_DC.ingredient, house: true })
+  return out
+}
+
+const loreCap = (s) => String(s).replace(/^./, (c) => c.toUpperCase())
+const loreSlugWords = (s) => String(s).replace(/[-_]+/g, " ").trim()
+const LORE_SAVES = { str: "Strength", dex: "Dexterity", con: "Constitution", int: "Intelligence", wis: "Wisdom", cha: "Charisma" }
+
+/** The lines a success on `key` adds. Built from the row; [] when the row has nothing for that check. */
+function loreReveal(item, key) {
+  const p = loreProps(item), res = loreReservoir(item)
+  if (key === "deity") return typeof p.deity === "string" && p.deity.trim() ? [`It is consecrated to ${p.deity.trim()}.`] : []
+  if (key === "examine") {
+    if (!res) return []
+    const n = loreNum(res.doses)
+    return [n ? `A hidden reservoir in it holds ${n} ${n === 1 ? "dose" : "doses"}.` : "It has a hidden reservoir."]
+  }
+  if (key === "residue") {
+    if (!res || !res.poison) return []
+    const save = LORE_SAVES[String(res.save || "").toLowerCase().slice(0, 3)] || ""
+    const lines = []
+    if (res.dc && save && res.on_fail) lines.push(`Its venom: a DC ${loreNum(res.dc)} ${save} save, or ${String(res.on_fail).trim()}.`)
+    else lines.push(`It carries ${loreSlugWords(res.poison)}.`)
+    if (typeof res.damage === "string" && /^none/i.test(res.damage)) lines.push("It does no damage of its own.")
+    return lines
+  }
+  if (key === "arcana") {
+    if (!loreIsMagic(item)) return []
+    const lines = ["It is magic."]
+    const atk = loreNum(p.attack_bonus ?? p.bonus), dmg = loreNum(p.damage_bonus ?? p.bonus)
+    if (atk && atk === dmg) lines.push(`+${atk} to attack and damage rolls.`)
+    else { if (atk) lines.push(`+${atk} to attack rolls.`); if (dmg) lines.push(`+${dmg} to damage rolls.`) }
+    if (item.attunement === true) lines.push("It needs attunement.")
+    return lines
+  }
+  if (key === "ingredient") {
+    const fx = loreEffects(item)
+    return fx.length ? [`Used for: ${fx.map(loreSlugWords).join(", ")}.`] : []
+  }
+  return []
+}
+
+/**
+ * What the card may show. `known` = {f: {key: true}, s: true when studied}. Returns
+ *   {magic, identified, bonusKnown, facts: [lines], description}
+ * identified: not magic, or studied. facts: every line the known checks reveal, plus on study all of them.
+ * The curse is never in it.
+ */
+function loreView(item, known) {
+  const k = known || {}, f = k.f || {}, magic = loreIsMagic(item), identified = !magic || !!k.s
+  const keys = ["examine", "deity", "arcana", "residue", "ingredient"]
+  const facts = []
+  for (const key of keys) if (identified && magic ? true : f[key]) for (const line of loreReveal(item, key)) if (!facts.includes(line)) facts.push(line)
+  const desc = item && typeof item.description === "string" && item.description.trim() ? item.description.trim() : ""
+  return { magic, identified, bonusKnown: identified || !!f.arcana, facts, description: identified ? desc : "" }
+}
+
+/**
+ * The hero's bonus on a check, from their walk sheet: {mod, level} or null when they cannot make it (a tool
+ * check with no tool and no skill to fall back on). level: "Expertise" | "Proficient" | "Tool" | "".
+ * The sheet carries `lore` ({arcana: {mod, level}, ...}) and `tools` ({alchemist: mod | null, ...}).
+ */
+function loreMod(sheet, check) {
+  if (!sheet || !check) return null
+  const tools = sheet.tools || {}
+  if (check.tools) {
+    const best = check.tools.map((t) => tools[t]).filter((m) => typeof m === "number").sort((a, b) => b - a)[0]
+    if (typeof best === "number") return { mod: best, level: "Tool" }
+    if (!check.skill) return null
+  }
+  const e = (sheet.lore || {})[check.skill]
+  if (e && typeof e.mod === "number") return { mod: e.mod, level: e.level === "expertise" ? "Expertise" : e.level === "proficient" ? "Proficient" : "" }
+  return null
+}
+
+/** One roll's verdict. `d` the d20 face, `mod` the bonus. */
+function loreRoll(d, mod, dc) {
+  const total = d + mod
+  return { d, mod, total, ok: total >= dc }
+}
+
+/** The average of a damage expression ("1d4+1" → 3.5, "2d6" → 7, "1" → 1). */
+function loreAvg(expr) {
+  const s = String(expr || "").replace(/\s+/g, "")
+  let total = 0, any = false
+  for (const m of s.matchAll(/([+-]?)(\d+)(?:d(\d+))?/g)) {
+    const sign = m[1] === "-" ? -1 : 1, n = Number(m[2])
+    total += sign * (m[3] ? n * (Number(m[3]) + 1) / 2 : n); any = true
+  }
+  return any ? total : 0
+}
+
+const ICARD = {el: null, target: null, pinned: false, hideT: 0, who: null, last: null};
+const ICARD_HERO_COL = {Rogue: "#ff7a6e", Sorcerer: "#ff9a2e", Bard: "#ff8ad8", Cleric: "#f6d27a", Wizard: "#7fb6e6", Warlock: "#b46cff", Fighter: "#d9cfbd", Barbarian: "#ff5a4a", Paladin: "#f6d27a", Ranger: "#7fdc8a", Druid: "#7fdc8a", Monk: "#9fd0ff"};
+const ICARD_BAND = {common: "#1a1815", uncommon: "#101c11", rare: "#0f1a28", very_rare: "#1b1228", legendary: "#28190b", artifact: "#28190b"};
+const icardLoreKey = slug => "lore:" + slug;
+function icardKnown(slug){ const k = slug && state[icardLoreKey(slug)]; return k && typeof k === "object" ? k : {f: {}, r: {}}; }
+function icardSetKnown(slug, k){ state[icardLoreKey(slug)] = k; }
+// the catalogue row behind whatever the pointer is on
+function icardItem(t){
+  const cat = catalog || [];
+  const bySlug = t.slug && cat.find(i => i.slug === t.slug);
+  return bySlug || catalogItem(t.name) || {name: t.name, item_type: t.item_type || "", properties: t.properties || {}, pixel_icon_url: t.pixel || null, description: t.desc || ""};
+}
+// the piece of loot under a point on the plate: a pile on the floor, or a fountain drop that has landed
+function icardMapTarget(w){
+  for (const d of drops){
+    if (!d.pickup || d.pickup.plate !== cur || d.fly || now - d.t0 < DROP_FLIGHT) continue;
+    if (Math.hypot(w.x - d.x1, w.y - (d.y1 - d.sq * .4)) < d.sq * .75) return {kind: "drop", drop: d, slug: d.pickup.row.slug, name: d.pickup.row.name, at: {x: d.x1, y: d.y1 - d.sq * .6}};
+  }
+  const p = pileAt(w);
+  return p ? {kind: "pile", pile: p, slug: p.slug, name: p.name, at: {x: p.x, y: p.y - 10}} : null;
+}
+const icardSame = (a, b) => !!a && !!b && a.kind === b.kind && (a.drop || a.pile || a.row || a.it) === (b.drop || b.pile || b.row || b.it);
+function icardHover(t, cx, cy){
+  clearTimeout(ICARD.hideT);
+  if (ICARD.pinned && !icardSame(ICARD.target, t)) return;                       // a held card stays until it is closed
+  if (icardSame(ICARD.target, t) && !$("icard").hidden) return;
+  icardShow(t, cx, cy, false);
+}
+function icardLeave(){ if (ICARD.pinned || $("icard").hidden) return; clearTimeout(ICARD.hideT); ICARD.hideT = setTimeout(() => icardHide(), 260); }
+function icardHide(force){ if (ICARD.pinned && !force) return; clearTimeout(ICARD.hideT); $("icard").hidden = true; ICARD.target = null; ICARD.pinned = false; }
+// who rolls the checks: a hero this screen controls; the bag's hero when the card came from the bag
+function icardRollers(){ return party.filter(a => a.kind === "pc" && SHEETS[a.id] && canControl(a)); }
+async function icardShow(t, cx, cy, pin){
+  await ensureCatalog();
+  ICARD.target = t; ICARD.pinned = !!pin;
+  const rollers = icardRollers();
+  if (t.hero && rollers.includes(t.hero)) ICARD.who = t.hero;
+  else if (!ICARD.who || !rollers.includes(ICARD.who)) ICARD.who = (rollers.includes(leader) ? leader : rollers[0]) || null;
+  const el = $("icard"); el.hidden = false; icardRender();
+  // place it beside the thing: a map item by its spot on the plate, a row beside the panel it sits in
+  const sr = stage.getBoundingClientRect(), W = el.offsetWidth, H = el.offsetHeight;
+  let x, y;
+  if (t.anchor){ const box = (t.anchor.closest(".talk,.inv") || t.anchor).getBoundingClientRect(), row = t.anchor.getBoundingClientRect();
+    x = box.right - sr.left + 12; if (x + W > sr.width - 8) x = box.left - sr.left - W - 12; y = row.top - sr.top - 20; }
+  else { const [sx, sy] = t.at ? w2s(t.at.x, t.at.y) : [cx - sr.left, cy - sr.top];
+    x = sx + 30; if (x + W > sr.width - 8) x = sx - W - 30; y = sy - H * .45; }
+  el.style.left = Math.max(8, Math.min(sr.width - W - 8, x)) + "px"; el.style.top = Math.max(8, Math.min(sr.height - H - 8, y)) + "px";
+}
+const icardFmt = n => (n >= 0 ? "+" : "−") + Math.abs(n);
+function icardRender(){
+  const t = ICARD.target; if (!t) return;
+  const el = $("icard"), it = icardItem(t), p = it.properties || {}, slug = it.slug || t.slug || null;
+  const rar = loreRarity(it), col = RARITY_COL[rar] || RARITY_COL.common, known = icardKnown(slug), view = loreView(it, known);
+  const fight = inFightNow(), out = !fight && (mode === "explore" || mode === "dialog");
+  el.style.setProperty("--rc", col); el.style.setProperty("--rg", RARITY_RANK[rar] >= 1 ? col + "55" : "transparent"); el.style.setProperty("--rb", ICARD_BAND[rar]);
+  const weaponish = isWeapon(it) || !!p.damage, base = baseWeapon(it);
+  const type = weaponish ? `Weapon${base ? ` (${base})` : ""}` : (it.item_type ? it.item_type.replace(/^./, c => c.toUpperCase()) : "Item");
+  const pic = it.pixel_icon_url ? ITEM_PX + it.pixel_icon_url : it.icon_url || "";
+  const rarName = rar === "very_rare" ? "Very Rare" : rar.replace(/^./, c => c.toUpperCase());
+  let h = `<div class="ic-band"><span class="${view.identified ? "ok" : "unid"}">${view.magic ? (view.identified ? "IDENTIFIED" : "UNIDENTIFIED") : "ITEM"}</span><span class="${fight ? "war" : "ok"}">${fight ? "IN COMBAT" : "OUT OF COMBAT"}</span></div>`;
+  h += `<div class="ic-head"><div class="ic-pic">${pic ? `<img src="${esc(pic)}" alt="">` : ""}</div><div><div class="ic-name">${esc(it.name || t.name)}</div>`
+    + `<div class="ic-sub">${esc(type)} · <b>${esc(rarName)}</b></div>${view.identified && it.attunement ? `<span class="ic-pill">REQUIRES ATTUNEMENT</span>` : ""}</div></div>`;
+  // the eye can see the blade: base damage and properties; the bonus only once someone knows it
+  const chips = [];
+  for (const w of (p.weapon_properties || [])){ const k = String(w).toLowerCase(); chips.push(`<span class="${k === "finesse" ? "c-fin" : k === "light" ? "c-lit" : k === "thrown" ? "c-thr" : ""}">${esc(k.replace(/^./, c => c.toUpperCase()))}${k === "thrown" && p.range ? " " + esc(p.range) : ""}</span>`); }
+  if (p.range && !(p.weapon_properties || []).map(x => String(x).toLowerCase()).includes("thrown")) chips.push(`<span>Range ${esc(p.range)} ft</span>`);
+  if (Number(it.weight) > 0) chips.push(`<span>${esc(String(+it.weight))} lb</span>`);
+  if (Number(it.value) > 0) chips.push(`<span>${esc(String(it.value))} gp</span>`);
+  if (weaponish && p.damage){
+    const bon = view.bonusKnown ? Number(p.damage_bonus ?? p.bonus ?? 0) : 0, die = String(p.damage).match(/^\s*(\d+d\d+|\d+)/);
+    h += `<div class="ic-sec"><div class="ic-dmg"><b>${esc(die ? die[1] : p.damage)}${bon ? ` + ${bon}` : ""}</b><span>${esc(p.damage_type || "")}</span></div>${chips.length ? `<div class="ic-chips">${chips.join("")}</div>` : ""}</div>`;
+  } else if (chips.length) h += `<div class="ic-sec"><div class="ic-chips" style="margin:0">${chips.join("")}</div></div>`;
+  // what the party knows: the description of anything identified, and each line a check has found
+  const lines = [...(view.description ? [view.description] : []), ...view.facts];
+  if (view.magic || lines.length){
+    h += `<div class="ic-sec ic-know"><div class="ic-lbl">WHAT YOU KNOW</div>`;
+    if (!lines.length) h += `<div class="ic-blur" style="width:88%"></div><div class="ic-blur" style="width:66%"></div>`;
+    for (const l of lines) h += `<div class="ic-fact"><i aria-hidden="true">◆</i><span>${esc(l)}</span></div>`;
+    h += `</div>`;
+  }
+  // against what the hero holds now: to hit and average damage, from the page's own attack lines
+  const a = ICARD.who, sh = a && SHEETS[a.id];
+  if (a && sh && weaponish && p.damage && !(GEAR[a.id] && GEAR[a.id].main === it.name)){
+    const seen = view.bonusKnown ? it : {...it, properties: {...p, bonus: 0, attack_bonus: 0, damage_bonus: 0}};
+    const nu = attackFromItem(sh, seen), now0 = (sh.attacks || [])[0];
+    if (now0){
+      const dh = nu.hit - now0.hit, dd = Math.round((loreAvg(nu.dmg) - loreAvg(now0.dmg)) * 10) / 10;
+      const cls = n => n > 0 ? "up" : n < 0 ? "dn" : "eq";
+      h += `<div class="ic-sec ic-cmp"><div class="ic-lbl">${esc(fname(a).toUpperCase())} · VS ${esc(String(now0.name).toUpperCase())}</div>`
+        + `<div class="ic-row"><span class="${cls(dd)}">${dd > 0 ? "▲" : dd < 0 ? "▼" : "="} ${icardFmt(dd)}</span><span>average damage a hit</span></div>`
+        + `<div class="ic-row"><span class="${cls(dh)}">${dh > 0 ? "▲" : dh < 0 ? "▼" : "="} ${icardFmt(dh)}</span><span>to hit${proficientWith(sh.cls, it) ? "" : " · not proficient"}</span></div></div>`;
+    }
+  }
+  // the checks: out of a fight, the ones this item offers, rolled by a hero this screen controls
+  const checks = loreChecks(it, known), rollers = icardRollers();
+  if (fight) h += `<div class="ic-sec"><div class="ic-note">In combat there are no checks. Drawing or stowing it is your free object interaction.</div></div>`;
+  else if (out && checks.length && slug && rollers.length && a){
+    h += `<div class="ic-sec"><div class="ic-lbl" style="color:#7fb6e6">CHECKS · ${esc(fname(a).toUpperCase())}</div>`;
+    if (rollers.length > 1) h += `<div class="ic-heroes">${rollers.map(r => `<button type="button" data-hero="${esc(r.id)}" aria-pressed="${r === a}" style="--hc:${ICARD_HERO_COL[SHEETS[r.id].cls] || "#d9cfbd"}">${esc(fname(r))}</button>`).join("")}</div>`;
+    for (const c of checks){
+      const m = loreMod(sh, c);
+      const ab = c.tools && m && m.level === "Tool" ? "TOOL" : "INT", ac = ab === "TOOL" ? "#f1c27a" : "#4fa3ff";
+      const tool = ab === "TOOL" ? c.tools.find(x => typeof (sh.tools || {})[x] === "number") : null;
+      const what = tool ? LORE_TOOLS[tool] : (c.skill || "").replace(/^./, x => x.toUpperCase());
+      const rec = (known.r || {})[`${c.key}:${a.id}`];
+      if (!m){ continue; }
+      const lc = m.level === "Expertise" ? "#f1c27a" : m.level ? "#7fdc8a" : "#9d927f";
+      h += `<div class="ic-chk" style="--ac:${ac}"><button type="button" data-check="${esc(c.key)}" ${rec ? "disabled" : ""}><span><span class="ab">${ab}</span><b>${esc(c.label)}</b></span><small>${esc(what)} · DC ${c.dc}</small></button>`
+        + `<div class="ic-bon"><b style="color:${lc}">${icardFmt(m.mod)}</b><small style="color:${lc}">${esc(m.level || "Not proficient")}</small></div></div>`;
+      if (!rec){ const best = rollers.concat(party.filter(x => x.kind === "pc" && SHEETS[x.id] && !rollers.includes(x))).map(x => [x, loreMod(SHEETS[x.id], c)]).filter(([x, mm]) => x !== a && mm && mm.mod > m.mod).sort((u, v) => v[1].mod - u[1].mod)[0];
+        if (best) h += `<div class="ic-hint">${esc(fname(best[0]))} rolls this at ${icardFmt(best[1].mod)}.</div>`; }
+      else { const [d, tot, ok] = rec; const say = ok ? loreReveal(it, c.key).join(" ") : "Nothing you can make out.";
+        h += `<div class="ic-res ${ok ? "ok" : "no"}">d20 ${d} ${icardFmt(m.mod)} = ${tot} vs DC ${c.dc}: ${ok ? "success." : "fail."} ${esc(say)}</div>`; }
+    }
+    h += `</div>`;
+  }
+  // the buttons: what can be done with it from here
+  const btns = [], src = t.kind;
+  const carried = a && GEAR[a.id] && GEAR[a.id].carried.some(c => c.name === it.name);
+  if (!fight){
+    if (src === "drop" || src === "pile") btns.push(`<button type="button" class="main" data-act="take">Pick it up</button>`);
+    if ((src === "drop" || src === "pile") && weaponish) btns.push(`<button type="button" data-act="takeEquip">Pick up &amp; hold it</button>`);
+    if (src === "loot") btns.push(`<button type="button" class="main" data-act="take">Take it</button>`);
+    if (src === "bag" && weaponish && carried && !(GEAR[a.id].main === it.name)) btns.push(`<button type="button" class="main" data-act="equip">Hold it ready</button>`);
+    if (view.magic && !view.identified && slug){
+      if (src === "bag" && carried) btns.push(`<button type="button" class="study" data-act="study">${known.q === (a && a.id) ? "Studying at the next short rest" : "Study at the next short rest"}</button>`);
+    }
+  }
+  if (btns.length) h += `<div class="ic-btns">${btns.join("")}</div>`;
+  if (view.magic && !view.identified && slug && src !== "bag" && !fight) h += `<div class="ic-foot">Carry it and study it through a short rest to learn what it is.</div>`;
+  if (known.q && view.magic && !view.identified){ const q = party.find(x => x.id === known.q); if (q && src !== "bag") h += `<div class="ic-foot">${esc(fname(q))} will study it at the next short rest.</div>`; }
+  // Malachar's two lines (placeholders, Claude's words, for Sam to keep or cut)
+  if (view.magic && !view.identified){ const failed = Object.values(known.r || {}).some(r => r && r[2] === false);
+    h += `<div class="ic-taunt">Malachar: “${failed ? "Fumbling with things you don’t understand. How very you." : "Go on. Hold it. What’s the worst that could happen?"}”</div>`; }
+  if (!ICARD.pinned && !fight && (src === "drop" || src === "pile")) h += `<div class="ic-foot">${src === "drop" ? "Walk over it, or click it, to pick it up." : "Click it to pick it up."}</div>`;
+  el.innerHTML = h;
+  el.querySelectorAll("[data-hero]").forEach(b => b.onclick = () => { ICARD.who = party.find(x => x.id === b.dataset.hero) || ICARD.who; icardRender(); });
+  el.querySelectorAll("[data-check]").forEach(b => b.onclick = () => icardRoll(it, checks.find(c => c.key === b.dataset.check)));
+  el.querySelectorAll("[data-act]").forEach(b => b.onclick = () => icardAct(b.dataset.act, t, it));
+}
+function icardRoll(it, c){
+  const a = ICARD.who, sh = a && SHEETS[a.id], slug = it.slug; if (!c || !sh || !slug || inFightNow()) return;
+  const m = loreMod(sh, c); if (!m) return;
+  const known = icardKnown(slug), key = `${c.key}:${a.id}`; if ((known.r || {})[key]) return;   // once per hero: 5e has no free retries
+  const res = loreRoll(d20(0, a), m.mod, c.dc);
+  const next = {f: {...(known.f || {})}, r: {...(known.r || {}), [key]: [res.d, res.total, res.ok]}, ...(known.s ? {s: true} : {}), ...(known.q ? {q: known.q} : {})};
+  if (res.ok) next.f[c.key] = true;
+  icardSetKnown(slug, next);
+  sfx("bank:ui/item_pickup", .3, res.ok ? 1.3 : .8);
+  log(`${fname(a)} — ${esc(c.label.toLowerCase())}, ${esc(it.name)}: ${res.d} ${res.mod >= 0 ? "+" : "−"} ${Math.abs(res.mod)} = <b>${res.total}</b> vs DC ${c.dc}, ${res.ok ? "success" : "fail"}.`);
+  icardRender();
+}
+function icardAct(act, t, it){
+  const a = ICARD.who || leader;
+  if (act === "take" || act === "takeEquip"){
+    const hold = act === "takeEquip"; icardHide(true);
+    if (t.kind === "pile"){ const me = leader; walkTo(nearestWalkable(t.pile.x, t.pile.y + 8), async () => { await pickUp(me, t.pile); if (hold) equipItem(me, t.pile.name); }); return; }
+    if (t.kind === "drop"){ const d = t.drop, me = leader;
+      walkTo(nearestWalkable(d.x1, d.y1), async () => { const i = drops.indexOf(d); if (i < 0) return; drops.splice(i, 1);
+        if (await takeLoot(me, d.pickup.id, d.pickup.row)){ if (hold) equipItem(me, d.pickup.row.name); else if (pendingEquip && mode === "explore") offerEquip(); } }); return; }
+    if (t.kind === "loot" && t.onTake) t.onTake();
+    return;
+  }
+  if (act === "equip" && a){ equipItem(a, it.name); icardRender(); if (bagOpen()) renderBag(); return; }
+  if (act === "study" && a && it.slug){
+    // one item per hero per short rest (PHB): queuing this one takes the hero off any other
+    for (const k of Object.keys(state)) if (k.startsWith("lore:") && state[k] && state[k].q === a.id && k !== icardLoreKey(it.slug)){ const o = {...state[k]}; delete o.q; state[k] = o; }
+    const known = icardKnown(it.slug); icardSetKnown(it.slug, {...known, q: known.q === a.id ? undefined : a.id});
+    if (!state[icardLoreKey(it.slug)].q) delete state[icardLoreKey(it.slug)].q;
+    icardRender();
+  }
+}
+// after a short rest that was not broken: each hero who chose an item to study, and still carries it, now knows it
+function loreRestStudy(){
+  for (const k of Object.keys(state)){
+    const v = state[k]; if (!k.startsWith("lore:") || !v || !v.q) continue;
+    const a = party.find(x => x.id === v.q), it = icardItem({slug: k.slice(5), name: ""});
+    const o = {...v}; delete o.q;
+    if (a && GEAR[a.id] && GEAR[a.id].carried.some(c => c.name === it.name)){ o.s = true; log(`${fname(a)} studied the <b>${esc(it.name)}</b> through the rest and knows what it is now.`); }
+    state[k] = o;
+  }
+  if (!$("icard").hidden) icardRender();
+}
+// a row on a loot card or in the bag: hover shows the card beside the panel, a held finger opens it
+function icardBind(el, make){
+  el.addEventListener("pointerenter", e => { if (e.pointerType === "touch") return; clearTimeout(ICARD.hideT); const t = make(); t.anchor = el; if (!(ICARD.pinned && !icardSame(ICARD.target, t))) icardShow(t, e.clientX, e.clientY, false); });
+  el.addEventListener("pointerleave", e => { if (e.pointerType !== "touch") icardLeave(); });
+  let lp = 0;
+  el.addEventListener("pointerdown", e => { if (e.pointerType !== "touch") return; clearTimeout(lp); lp = setTimeout(() => { el.dataset.held = "1"; const t = make(); t.anchor = el; icardShow(t, e.clientX, e.clientY, true); }, 450); });
+  el.addEventListener("pointerup", () => clearTimeout(lp)); el.addEventListener("pointercancel", () => clearTimeout(lp));
+  el.addEventListener("click", e => { if (el.dataset.held){ delete el.dataset.held; e.stopImmediatePropagation(); e.preventDefault(); } }, true);   // the hold opened the card: not a take
+}
+{ const el = $("icard");
+  el.addEventListener("pointerenter", () => clearTimeout(ICARD.hideT));
+  el.addEventListener("pointerleave", e => { if (e.pointerType !== "touch") icardLeave(); });
+  // a card whose panel has closed, or whose thing is gone, goes with it
+  setInterval(() => { const t = ICARD.target; if (!t || el.hidden) return;
+    if ((t.kind === "loot" && $("obj").hidden) || (t.kind === "bag" && !bagOpen()) || (t.kind === "drop" && !drops.includes(t.drop)) || (t.kind === "pile" && !floor.includes(t.pile))) icardHide(true); }, 300);
+  addEventListener("keydown", e => { if (e.key === "Escape" && !el.hidden) icardHide(true); });
 }
 function plateCrop(poly){
   const c = $("objPic"), g = c.getContext("2d"), xs = poly.map(p => p[0]), ys = poly.map(p => p[1]);
@@ -4415,18 +4861,20 @@ const SHEETS = {
   // skills: from each character's row (sheet_skill_proficiencies; proficiency +2, expertise doubled).
   // saves: the ability modifier plus proficiency in the class's two saves (sheet_save_proficiencies). Until 2026-10-27
   // they were the bare modifiers, so Fifi's Dex save was +3 not +5 (Sam: "I don't think I'm getting my class bonuses").
+  // lore and tools: the loot card's checks (lib/item-lore.mjs), from the same rows 2026-10-27 (Fifi: Investigation and
+  // Alchemist's Supplies; Scott: Arcana, Nature, History; Samson: Religion). A live sheet from /api/map-stage replaces them.
   // investigation and thievesTools are their own numbers now: heroMod used to fall back to the SAVE for them, so
   // Fifi picked locks at +3 instead of +5 (Rogue: thieves' tools proficiency). Re-read 2026-10-27 from the rows.
-  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 0, con: 4, int: -1, wis: -1, cha: 5}, skills: {sleightOfHand: 0, medicine: -1, stealth: 2, athletics: 1, perception: -1, investigation: -1, thievesTools: 0}, innateSorcery: 2,
+  kenta:  {name: "Kenta", cls: "Sorcerer", hp: 8, ac: 10, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 0, con: 4, int: -1, wis: -1, cha: 5}, lore: {investigation: {mod: -1, level: ""}, arcana: {mod: -1, level: ""}, religion: {mod: -1, level: ""}, nature: {mod: -1, level: ""}, history: {mod: -1, level: ""}}, tools: {alchemist: null, poisoner: null, herbalism: null}, skills: {sleightOfHand: 0, medicine: -1, stealth: 2, athletics: 1, perception: -1, investigation: -1, thievesTools: 0}, innateSorcery: 2,
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Ray of Frost", "Shocking Grasp", "Chill Touch"], prepared: ["Fog Cloud"]}},
-  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 1, wis: 5, cha: 2}, skills: {sleightOfHand: 2, medicine: 5, stealth: 2, athletics: 0, perception: 3, investigation: 1, thievesTools: 2},
+  samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 1, wis: 5, cha: 2}, lore: {investigation: {mod: 1, level: ""}, arcana: {mod: 1, level: ""}, religion: {mod: 3, level: "proficient"}, nature: {mod: 1, level: ""}, history: {mod: 1, level: ""}}, tools: {alchemist: null, poisoner: null, herbalism: null}, skills: {sleightOfHand: 2, medicine: 5, stealth: 2, athletics: 0, perception: 3, investigation: 1, thievesTools: 2},
            attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Toll the Dead"], prepared: ["Healing Word", "Guiding Bolt", "Shield of Faith"]}},
-  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 4, con: 2, int: 1, wis: 1, cha: 5}, skills: {sleightOfHand: 2, medicine: 1, stealth: 2, athletics: 1, perception: 3, investigation: 1, thievesTools: 2},
+  scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, strScore: 12, saves: {str: 1, dex: 4, con: 2, int: 1, wis: 1, cha: 5}, lore: {investigation: {mod: 1, level: ""}, arcana: {mod: 3, level: "proficient"}, religion: {mod: 1, level: ""}, nature: {mod: 3, level: "proficient"}, history: {mod: 3, level: "proficient"}}, tools: {alchemist: null, poisoner: null, herbalism: null}, skills: {sleightOfHand: 2, medicine: 1, stealth: 2, athletics: 1, perception: 3, investigation: 1, thievesTools: 2},
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Vicious Mockery"], prepared: ["Healing Word", "Faerie Fire", "Sleep", "Dissonant Whispers"]}, bardic: {uses: 3, die: 6}, music: true},
-  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, strScore: 8, saves: {str: -1, dex: 5, con: 0, int: 3, wis: 1, cha: 1}, skills: {sleightOfHand: 7, medicine: 1, stealth: 7, athletics: 1, perception: 1, investigation: 3, thievesTools: 5},
+  freia:  {name: "Fifi", cls: "Rogue", level: 1, hp: 8, ac: 13, init: 3, speed: 30, strScore: 8, saves: {str: -1, dex: 5, con: 0, int: 3, wis: 1, cha: 1}, lore: {investigation: {mod: 3, level: "proficient"}, arcana: {mod: 1, level: ""}, religion: {mod: 1, level: ""}, nature: {mod: 1, level: ""}, history: {mod: 1, level: ""}}, tools: {alchemist: 3, poisoner: null, herbalism: null}, skills: {sleightOfHand: 7, medicine: 1, stealth: 7, athletics: 1, perception: 1, investigation: 3, thievesTools: 5},
            // No weapon until she has one (Sam, 2026-10-15): her inventory holds none, so she fights with her fists; a weapon
            // she picks up and equips is added in front of this line (refreshAttacks). sneakDie is her Sneak Attack (rogue 1).
            sneakDie: "1d6", attacks: [{name: "Unarmed Strike", hit: 1, dmg: "1", type: "bludgeoning", reach: 5}],
@@ -6156,6 +6604,7 @@ async function doRest(spend){
   }
   const lines = (j.characters || []).map(c => `${esc(c.name.split(" ")[0])}: ${c.healed > 0 ? `+${c.healed} hp (${c.hp}/${c.hpMax})` : `${c.hp}/${c.hpMax}`}${c.dice && c.dice.length ? ` · d: ${c.dice.join(", ")}` : ""}${c.hitDiceLeft != null ? ` · ${c.hitDiceLeft} HD left` : ""}`);
   log(`<b>Short rest.</b> An hour passes. ${lines.length ? lines.join("; ") + "." : ""}`);
+  loreRestStudy();                                              // the item card: whoever chose an item to study knows it now
   toast("Rested an hour.", 2400);
   renderExploreBar();
 }
@@ -11271,10 +11720,14 @@ function hitActor(list, w){
   return best;
 }
 stage.addEventListener("pointerdown", e => {
-  if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui,.checkcard")) return;
+  if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui,.checkcard,.icard")) return;
   unlockAudio();
+  if (ICARD.pinned) icardHide(true);
   ptr = {id: e.pointerId, x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false};
   stage.setPointerCapture(e.pointerId);
+  // a finger has no hover: hold it on a piece of loot to open its card (the tap still picks it up)
+  if (e.pointerType === "touch"){ const p0 = ptr; setTimeout(() => { if (ptr !== p0 || p0.moved) return;
+    const it = icardMapTarget(s2w(p0.x, p0.y)); if (it){ p0.held = true; icardShow(it, p0.x, p0.y, true); } }, 450); }
 });
 stage.addEventListener("pointermove", e => {
   if (ptr && e.pointerId === ptr.id){
@@ -11283,6 +11736,7 @@ stage.addEventListener("pointermove", e => {
     if (ptr.moved){ view.tx = ptr.tx + dx; view.ty = ptr.ty + dy; camTween = null; userPanAt = now; applyView(); }
     return;
   }
+  if (e.target.closest(".icard")){ tip.hidden = true; return; }
   if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui,.checkcard")){ tip.hidden = true; return; }
   const w = s2w(e.clientX, e.clientY), r = stage.getBoundingClientRect(); aimW = w;
   hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? (hitActor(foes, w) || hitActor(heroes(), w)) : null;
@@ -11290,6 +11744,9 @@ stage.addEventListener("pointermove", e => {
   hoverObj = mode === "explore" && !hoverActor ? interactAt(w) : null;
   hoverProp = mode === "explore" && !hoverActor && !hoverObj ? propAt(w) : null;
   hoverLoot = mode === "explore" && !hoverActor && !hoverObj && !hoverProp ? lootSpotAt(w) : null;
+  { const it = !hoverActor && (mode === "explore" || mode === "combat") ? icardMapTarget(w) : null;   // the item card (below)
+    if (it){ icardHover(it, e.clientX, e.clientY); tip.hidden = true; stage.classList.add("pointer"); return; }
+    icardLeave(); }
   if (hoverLoot){ tip.textContent = `${hoverLoot.name}: click to look inside`; tip.className = "tip"; tip.hidden = false;
     tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px"; stage.classList.add("pointer"); return; }
   if (mode === "explore" && !hoverActor && !hoverObj && !hoverProp && liftAt(w)){ tip.textContent = "The lift: click to use the spool"; tip.className = "tip"; tip.hidden = false;
@@ -11320,12 +11777,12 @@ stage.addEventListener("pointermove", e => {
 });
 function endPtr(e){
   if (!ptr || e.pointerId !== ptr.id) return;
-  const wasDrag = ptr.moved; ptr = null; stage.classList.remove("dragging");
+  const wasDrag = ptr.moved || ptr.held; ptr = null; stage.classList.remove("dragging");
   if (wasDrag || e.type === "pointercancel") return;
   click(s2w(e.clientX, e.clientY));
 }
 stage.addEventListener("pointerup", endPtr); stage.addEventListener("pointercancel", endPtr);
-stage.addEventListener("wheel", e => { if (e.target.closest(".checkcard")) return; e.preventDefault(); if (mode === "talk" || mode === "dialog") return; const r = stage.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, {passive: false});
+stage.addEventListener("wheel", e => { if (e.target.closest(".checkcard,.icard")) return; e.preventDefault(); if (mode === "talk" || mode === "dialog") return; const r = stage.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, {passive: false});
 function click(w){
   if (timeStopped) return;
   if (dmPlacing){ placePile(w); return; }
@@ -12293,6 +12750,7 @@ function renderBag(){
     row.innerHTML = `<span class="invPic">${pic ? `<img src="${esc(pic)}" alt="" loading="lazy">` : "◆"}</span>`
       + `<span class="invTxt"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}</b><small>${esc(what)}</small></span><span class="invBtns"></span>`;
     const img = row.querySelector("img"); if (img && it.icon && it.pixel) img.onerror = () => { img.onerror = null; img.src = ITEM_PX + it.pixel; };
+    icardBind(row, () => ({kind: "bag", it, slug: (catalogItem(it.name) || {}).slug, name: it.name, item_type: it.item_type, properties: it.properties, pixel: it.pixel, desc: it.desc, hero: a}));   // the item card
     const btns = row.querySelector(".invBtns");
     { const ic = row.querySelector(".invPic"); if (ic) dragSource(ic, pic || "", (x, y) => { const to = slotUnder(x, y); if (!to) return;
         if (fitsSlot(it, to) && !worn.includes(to)) equipTo(a, it, to); else toast(`${it.name} does not go in the ${slotLabel(to).toLowerCase()}.`); }); }

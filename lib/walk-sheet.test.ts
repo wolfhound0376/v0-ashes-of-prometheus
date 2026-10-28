@@ -62,6 +62,16 @@ describe("walkSheetFromRow", () => {
     expect(walkSheetFromRow({ ...row, sheet_skill_proficiencies: { thieves_tools: "expertise" } }).skills.thievesTools).toBe(7)
   })
 
+  it("carries the loot card's knowledge skills and tools (Fifi: Investigation, Alchemist's Supplies)", () => {
+    const row = { ...FIFI, sheet_skill_proficiencies: { ...FIFI.sheet_skill_proficiencies, investigation: "proficient", arcana: "expertise" },
+      sheet_proficiencies: { tools: ["Thieves' Tools", "Alchemist's Supplies", "Dice Set"] } }
+    const s = walkSheetFromRow(row)
+    expect(s.lore.investigation).toEqual({ mod: 3, level: "proficient" })
+    expect(s.lore.arcana).toEqual({ mod: 5, level: "expertise" })
+    expect(s.lore.religion).toEqual({ mod: 1, level: "" })
+    expect(s.tools).toEqual({ alchemist: 3, poisoner: null, herbalism: null })
+  })
+
   it("gives a non-caster no magic", () => {
     expect(walkSheetFromRow(FIFI).magic).toBeNull()
   })
