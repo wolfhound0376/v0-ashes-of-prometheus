@@ -856,6 +856,9 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
            they are the DM's here, first in the drawer behind the small DM button the fight keeps top right (#1055). -->
       <details open><summary>The fight</summary>
       <div class="dmCloudRow"><button class="btn" id="quickBtn" title="DM: let the heroes fight on their own at speed. Weapons only, no spells or items. Every roll is real.">Quick resolve</button><button class="btn danger" id="endCombat">End fight</button></div>
+      <!-- THE SURRENDER (Sam, 2026-10-28): when the party gives up to the drow — said to Malachar, or a fight they cannot win —
+           the DM makes the map match: a beating, the march back to the pen, one prisoner thrown into the chasm, the gate locked. -->
+      <div class="dmCloudRow"><button class="btn danger" id="dmSurrender" title="DM: the party surrenders to the drow. They are beaten (1d4 each), marched back to the slave pen, and one of the prisoners with them is thrown into the chasm as a warning.">They surrender</button></div>
       </details>
       <details open><summary>Characters on the map</summary>
       <div id="dmSeats" class="seats"></div>
@@ -2519,6 +2522,7 @@ async function enterNode(n, opts = {}){
       else if (!opts.solo) joined = prisonersJoin();          // just one hero slipping out leaves the pen's prisoners where they are
     }
     if (n === PEN && from !== PEN && laborLive()) state.company = companyNow().filter(id => !laborNpcs().includes(id));   // back to their places in the pen
+    if (n === PEN && from !== PEN && surrenderFresh()) surrenderCompanyHome();   // marched back after a surrender: every prisoner is back at their own spot (THE SURRENDER)
   }
   mode = "travel"; if (!opts.slide) $("fade").classList.add("on"); $("talk").hidden = true; $("dialog").hidden = true;
   $("combat").hidden = true; stage.classList.remove("fight"); cbt = null; combatBusy = false; $("vignette").classList.remove("on");
@@ -2638,6 +2642,7 @@ async function enterNode(n, opts = {}){
   nextAmbient = now + 6000 + Math.random() * 6000;
   surgeonOnEnter(n);
   laborOnEnter(n, from);
+  surrenderOnEnter(n, from);                              // THE SURRENDER: the bridge, the throw, the lock-in
   { const f = fightHere(); if (f && f.by !== OW.key) log(`<em>A fight is underway here, on ${esc(f.who)}'s screen.</em> ${esc(SHORT[leader.id] || fname(leader))} joins it at the next round; that screen plays it.`); }
   crewsOnEnter();                                         // prisoners out on another work crew are not in the pen
   owEntered();
@@ -2688,7 +2693,7 @@ async function travel(to, z, fromWorld, cut, solo){
     // escorted back into the pen"): out of the door, a held beat of dark, then the next place fades up
     const via = arrivalFrom(SPEC, cur, to);
     $("fade").classList.add("on"); await wait(cut.dark || 900);
-    await enterNode(to, {from: owPlate(via), offs, fromScale: node.scale, solo: splinter, note: cut.note || `The escort marches the detail through the outpost to <em>${esc(SPEC[to].name)}</em>.`});
+    await enterNode(to, {from: owPlate(via), offs, fromScale: node.scale, solo: splinter, note: cut.note || (surrenderFresh() && to === PEN ? SURRENDER_MARCH_NOTE : `The escort marches the detail through the outpost to <em>${esc(SPEC[to].name)}</em>.`)});
     $("fade").classList.remove("on");
     return;
   }
@@ -6015,7 +6020,7 @@ function confront(w){
   const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = () => { close(); fn(); }; box.appendChild(b); };
   add("Fight!", () => { guardsAlarm = null; guardsReact(w, h, "walking up in the open"); }, "primary");
   add("Talk your way past", () => { w.talkSituation = `${fname(h)} and the escaped prisoners walked openly into ${node.name}; ${name} has them at blade's point. If talk fails, emit [COMBAT_START: ...] naming every guard here.`; openTalk(w); });
-  add("Surrender", () => { if (APP) handOff(`${fname(h)} and the party, escaped from the pen, surrender to the guards in ${node.name}. Play the guards.`, true); else log(`${esc(fname(h))} goes down on one knee.`); });
+  add("Surrender", () => { guardsAlarm = null; surrenderBegins(w); });   // THE SURRENDER (Sam, 2026-10-28): a beating, the march back, one prisoner into the chasm
   $("obj").hidden = false; box.firstChild?.focus();
 }
 function guardsReact(w, h, why){
@@ -10671,7 +10676,7 @@ async function lianaLeaves(why){
 // ----- after a reload: the dead stay dead, and a scene cut off part-way picks up again -----
 function surgeonOnEnter(n){
   const s = surgeonSeen; if (!s) return;
-  if (String(n) === "14" && s.victim) placeBodyInPool(s.victim);
+  if (String(n) === "14" && s.victim) placeBodyInPool(s.victim);   // (the surrender's victims are placed by surrenderOnEnter)
   if (n !== PEN || surgeon) return;
   if (s.stage === "shooting"){ surgeon = {pc: leader, stage: "shooting", local: false}; surgeonStepped(); return; }
   if (s.stage === "down" && s.again){
@@ -10687,16 +10692,19 @@ function surgeonOnEnter(n){
   }
 }
 // The pool (area 14): the drow dump their waste there (OotA p.19), and the one they threw over the falls is in it.
-function placeBodyInPool(rec){
+// `bolt`: the surgeon's victim was shot (the bolt stays in the body); one thrown off the bridge (THE SURRENDER) was not.
+// More than one body can lie here: each takes the next spot along the pool's edge.
+function placeBodyInPool(rec, bolt = true){
   if (!SPR[rec.id] || npcs.some(n => n.id === rec.id)) return;
   const z = node.zones.find(q => q.interact && /pool/i.test(q.interact.name || "")), poly = z && z.interact.poly;
   const c = poly ? {x: poly.reduce((s, p) => s + p[0], 0) / poly.length, y: poly.reduce((s, p) => s + p[1], 0) / poly.length} : {x: 1600, y: 860};
-  const at = nearestWalkable(c.x, c.y);
+  const others = npcs.filter(n => n.body && n.kind === "body").length;
+  const at = nearestWalkable(c.x + (others % 2 ? -1 : 1) * Math.ceil(others / 2) * 70, c.y + others * 26, npcs.filter(n => n.body).map(n => ({x: n.x, y: n.y})));
   const b = mkActor(rec.id, at.x, at.y, "body", {down: true, body: true, deadT0: now - 60000, slain: true, face: Math.floor(Math.random() * 8)});
   if (SPR[rec.id].img.dead){ b.anim = "dead"; b.t0 = now - 60000; }
   b.lootKey = `14-${Math.round(at.x)}-${Math.round(at.y)}`;
   npcs.push(b); actors.push(b);
-  stuck.push({at: b, ox: 0, oy: -18, ang: -.9, kind: "bolt", t0: now});
+  if (bolt) stuck.push({at: b, ox: 0, oy: -18, ang: -.9, kind: "bolt", t0: now});
 }
 // after the record arrives: a body the reload put back in the pen goes, and the scene picks up where it stood
 async function surgeonAfterRead(){
@@ -10706,6 +10714,249 @@ async function surgeonAfterRead(){
   if (mode === "explore") surgeonOnEnter(cur);
 }
 if (APP) setTimeout(surgeonAfterRead, 1500);
+
+// ---------- THE SURRENDER ----------
+// Sam, 2026-10-28: "Surrendering takes you back to the pen after suffering some damage and throwing one of the NPCs
+// into the chasm as a warning." Until now the Surrender button a guard offers when he catches the party in the open
+// (confront) only handed the moment to Malachar in prose, and the map stood still. Two halves now, every screen
+// playing its own copy from the shared record:
+//   1. ON THE PLATE (surrenderBegins — the screen whose player chose Surrender, or the DM's "They surrender"): the
+//      guards close in; each hero kneels and takes a blow — crossbow stock, boot — /api/surrender rolls the SRD
+//      improvised weapon's 1d4, never below 1 HP; then the march: out through the exit and ONE cut to the pen
+//      (travel's `cut`, the way a work detail comes home), which every screen at the table follows.
+//   2. IN THE PEN (surrenderOnEnter, every screen as it arrives): the party is staged on the rope bridge outside the
+//      gate between two drow; the prisoner the route chose is pulled to the rail and thrown into the chasm (the
+//      body lies in the pool below the falls, area 14, from then on); the gate opens, the heroes are walked in the
+//      balcony's own way, the gate clangs shut and the key turns; the drow have their word through the bars and go.
+// The rules (victim, dice, lines) are lib/surrender.mjs, pasted below; the record is /api/surrender (world_flags
+// "surrender"): the dead stay dead, the rows carry the beating, the situation is CAPTIVE again, a fight on the shared
+// combat flag ends. The shared `state.surrender` ({seq, victim, area, by, done}) tells the other screens to play the
+// pen half; `state.slain` keeps the thrown prisoner out of the pen for good (the same key the fights use).
+/*__SURRENDER__*/
+const SURRENDER_MARCH_NOTE = "The drow march the party back through the outpost to the slave pen.";
+let surrenderSeen = null;              // the server's record (GET): who has been thrown, for the pool
+let surrenderPlayed = null;            // the seq whose pen half this screen has staged, so a replay of the record never replays the scene
+let surrenderBusy = false;
+function surrenderFresh(){ const s = state.surrender; return !!(s && !s.done && s.seq !== surrenderPlayed); }
+function surrenderCompanyHome(){ state.company = []; state.companyAt = {}; state.leftBehind = []; }
+function surrenderVictimsSeen(){ return (surrenderSeen && Array.isArray(surrenderSeen.victims)) ? surrenderSeen.victims : []; }
+async function readSurrender(){
+  if (!APP) return;
+  try { const j = await fetch("/api/surrender", {cache: "no-store"}).then(r => r.json()); if (j.record) surrenderSeen = j.record; } catch (e) {}
+}
+if (APP) setTimeout(readSurrender, 1800);
+async function surrenderApi(action, extra = {}){
+  const body = {action, ...extra};
+  try { body.claimId = localStorage.getItem("aop_character_id") || undefined; body.claimToken = localStorage.getItem("aop_claim_token") || undefined; } catch (e) {}
+  const r = await fetch("/api/surrender", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)}).catch(() => null);
+  const j = r ? await r.json().catch(() => ({})) : {};
+  if (!r || !r.ok) j.failed = true;
+  if (j.record) surrenderSeen = j.record;
+  return j;
+}
+// the stand-alone preview has no server: its own dice, the same rules
+function surrenderLocal(company, here){
+  const gone = [...(state.slain || []), ...(surgeonDeadId() ? [surgeonDeadId()] : [])];
+  const v = surrenderVictim(company, gone);
+  const beaten = here.map(p => { const sh = SHEETS[p.id] || {}, hpMax = sh.hp || 8, hp = sh.hpNow != null ? sh.hpNow : hpMax; const b = surrenderBeating(p.down ? 0 : hp);
+    return {slug: p.id, name: fname(p), rolls: b.rolls, dmg: b.dmg, hp: b.hpAfter, hpMax, skipped: b.skipped}; });
+  return {ok: true, seq: Date.now(), victim: v, beaten};
+}
+// a drow says it in Elvish: the bubble and the voice are what a hero without the tongue hears; a prisoner with it may pass it on
+function surrenderSays(a, line, ms = 5200){
+  if (!a || !actors.includes(a)) return;
+  const said = heardText(line, "Elvish");
+  bark(a, said, ms, {talk: true, lang: "Elvish"});
+  interpret(a, line, "Elvish");
+  if (voicesOn !== false) speak(escortVoice(a.id), said);
+}
+// carried off the bridge: out, then down — away from the camera, smaller, gone (the chasm is below the near rail)
+function fallAway(a, dx, dy, ms, done){
+  const x0 = a.x, y0 = a.y, b0 = a.big || 1, t0 = now;
+  a.static = true; a.path = []; a.onArrive = null; a.falling = true;
+  const id = setInterval(() => {
+    const k = Math.min(1, (now - t0) / ms), e = k * k;
+    a.x = x0 + dx * k; a.y = y0 + dy * e - 34 * Math.sin(Math.PI * Math.min(1, k * 1.7));
+    a.big = b0 * (1 - .55 * e); a.alpha = k < .5 ? 1 : Math.max(0, 1 - (k - .5) / .5);
+    if (k >= 1){ clearInterval(id); done && done(); }
+  }, 33);
+}
+// ----- 1. on the plate: the knees, the beating, the march -----
+async function surrenderBegins(w){
+  if (surrenderBusy || mode === "travel" || mode === "load") return;
+  const inPen = String(cur) === String(PEN);
+  if (!inPen && !routeBetween(SPEC, cur, PEN_PLATE) && !routeBetween(SPEC, cur, PEN_PLATE, {reverse: true})){ toast("There is no way to march them back to the pen from here.", 4200); return; }
+  surrenderBusy = true;
+  if (mode === "combat"){ endCombat(false); for (let t = 0; mode !== "explore" && t < 60; t++) await wait(100); }
+  if (sneak) endSneak();
+  mode = "dialog"; tip.hidden = true; $("obj").hidden = true;
+  const guards = guardsOnPlate().filter(g => !g.down && !g.body);
+  if (w && actors.includes(w) && !w.down && !w.body && !guards.includes(w)) guards.unshift(w);
+  const here = party.filter(p => actors.includes(p) && !p.ko);
+  here.forEach(p => { p.path = []; p.kbd = false; stopActivity(p); });
+  for (const g of guards){ g.path = []; g.hostile = false; g.actUntil = now + 90000; g.scanAt = now + 90000; faceTo(g, leader); }
+  for (const n of npcs) if (n.company){ n.path = []; stopActivity(n); n.actUntil = now + 90000; faceTo(n, leader); }
+  const company = npcs.filter(n => n.company && !n.down && !n.body && !n.offStage && (n.alpha ?? 1) > .5 && actors.includes(n)).map(n => n.id);
+  // the shared record goes up FIRST, provisional: a screen that sees the combat flag drop before this would end its fight as a win
+  state.surrender = {seq: "p" + Date.now().toString(36), at: Date.now(), area: String(cur), by: OW.key || "local", victim: null};
+  log(`<em>${esc(fname(leader))} and the party surrender.</em> The drow close in.`);
+  const speaker = guards[0] || null;
+  if (speaker) surrenderSays(speaker, SURRENDER_LINES.kneel, 4200);
+  here.forEach((p, i) => setTimeout(() => { if (!p.down) setAnim(p, hasSheet(p, "crouch") ? "crouch" : "idle"); }, 400 + i * 260));
+  const heroes = [...new Set(here.map(p => characterIdOf(p.id)).filter(Boolean))];
+  const j = APP ? await surrenderApi("begin", {area: String(cur), areaName: node.name, heroes, company, by: mySlug ? (SHORT[mySlug] || PLAYS_AS[mySlug] || mySlug) : (isDm() ? "the DM" : undefined)}) : surrenderLocal(company, here);
+  if (!j || j.failed){
+    toast((j && j.error) || "The game did not answer.", 4200);
+    state.surrender = null; here.forEach(p => setAnim(p, "idle")); mode = "explore"; surrenderBusy = false; return;
+  }
+  state.surrender = {seq: j.seq, at: Date.now(), area: String(cur), by: OW.key || "local", victim: j.victim ? {id: j.victim.id, name: j.victim.name, from: j.victim.from} : null};
+  if (j.victim){ const v = npcs.find(n => n.id === j.victim.id && !n.body); if (v) v.slain = true;   // the story has them marked: the stage poll must not drop them here
+    log(`<i>${j.victim.from === "party" ? `Malachar's d${j.victim.of} over the prisoners who ran with them` : `Nobody ran with them — Malachar's d${j.victim.of} over the pen`}: ${j.victim.roll}.</i>`); }
+  else log("<i>There is no prisoner left to make an example of.</i>");
+  await wait(1300);
+  // the beating: each hero in turn, from the nearest guard; the rows already carry it, the map shows it
+  const beatenOf = b => here.find(p => (b.id && characterIdOf(p.id) === b.id) || (b.slug && p.id === b.slug));
+  for (const b of j.beaten || []){
+    const h = beatenOf(b); if (!h) continue;
+    const sh = SHEETS[h.id]; if (sh){ sh.hpNow = b.hp; if (!sh.hp) sh.hp = b.hpMax; }
+    if (b.skipped){ log(`${esc(fname(h))} is already down; they leave them where they lie.`); continue; }
+    const g = guards.filter(x => actors.includes(x)).sort((a, c) => Math.hypot(a.x - h.x, a.y - h.y) - Math.hypot(c.x - h.x, c.y - h.y))[0] || null;
+    if (g){
+      const sc = node.scale || 1, beside = nearestWalkable(h.x + (g.x < h.x ? -1 : 1) * 62 * sc, h.y + 8 * sc, party.map(p => ({x: p.x, y: p.y})));
+      g.path = findPath(g, beside); if (!g.path.length) g.path = [beside]; g.slow = false;
+      await wait(Math.min(2600, 400 + Math.hypot(g.x - h.x, g.y - h.y) / (SPEED * .9) * 1000));
+      g.path = []; faceTo(g, h); faceTo(h, g); if (hasSheet(g, "attack")) playOnce(g, "attack", () => setAnim(g, "idle"));
+      await wait(260);
+    }
+    bank("combat/unarmed_hit", .8); bank("creature/player_hurt", .55);
+    if (b.dmg > 0){
+      popText(h, String(b.dmg), "#ff6b5e", 1.05); burst(h, "#ff5040", 8); h.flash = now + 180; addBlood(h, .5); hitstop(90); shake(4);
+      if (hasSheet(h, "hurt")) playOnce(h, "hurt", () => setAnim(h, hasSheet(h, "crouch") ? "crouch" : "idle"));
+    } else popText(h, "bruised", "#c9c4b8", .9);
+    log(`A crossbow stock takes ${esc(fname(h))}${b.rolls && b.rolls.length ? ` (1d4: ${b.rolls.join(", ")})` : ""}: <b>${b.dmg}</b> bludgeoning, ${b.hp}/${b.hpMax} HP.`);
+    await wait(700);
+  }
+  renderParty();
+  await wait(800);
+  if (speaker) surrenderSays(speaker, SURRENDER_LINES.march, 5200);
+  await wait(1900);
+  here.forEach(p => { if (!p.down) setAnim(p, "idle"); });
+  if (inPen){ mode = "explore"; surrenderBusy = false; surrenderOnEnter(PEN, null); return; }   // caught inside: straight out to the bridge
+  await surrenderMarch();
+  surrenderBusy = false;
+}
+// the march: out through the plate's exit toward the pen and one cut (every screen follows the crossing)
+async function surrenderMarch(){
+  const route = routeBetween(SPEC, cur, PEN_PLATE) || routeBetween(SPEC, cur, PEN_PLATE, {reverse: true});
+  if (!route){ mode = "explore"; return; }
+  mode = "explore";                                          // travel() takes it from here
+  const z = route.length > 1 ? exitTo(SPEC, cur, route[1]) : null;
+  if (z) await travel(PEN, z, false, {note: SURRENDER_MARCH_NOTE, dark: 1100});
+  else await enterNode(PEN, {from: owPlate(route.length > 1 ? route[route.length - 2] : cur), note: SURRENDER_MARCH_NOTE});
+}
+// ----- 2. in the pen: the bridge, the throw, the lock-in -----
+function surrenderOnEnter(n, from){
+  if (String(n) === "14"){ readSurrender().then(() => { if (String(cur) === "14") for (const rec of surrenderVictimsSeen()) placeBodyInPool(rec, false); }); return; }
+  if (n !== PEN || !surrenderFresh() || surgeon) return;
+  const S = state.surrender; surrenderPlayed = S.seq;
+  setTimeout(() => surrenderAtTheGate(S), 50);               // after the plate is built and the fade has lifted
+}
+async function surrenderAtTheGate(S){
+  const B = balcony();
+  if (cur !== PEN || !B){ surrenderLockOnly(S); return; }
+  laborSprites();
+  mode = "dialog"; tip.hidden = true; $("obj").hidden = true; $("talk").hidden = true;
+  setDoor(false);
+  const room = y => 1 / (node.scale * depthAt(y)), fs = B.scale || 1.35, [ax, ay] = B.landing;
+  const spot = i => ({x: ax - 50 * i, y: ay - 26 * i});       // up the rope bridge from the landing, one step a figure
+  const heroes = party.filter(p => !p.ko && !p.down && actors.includes(p) && !owRemote(p));   // a hero at 0 is dumped on the floor where the cut put them
+  const vid = S.victim && S.victim.id;
+  let v = vid ? npcs.find(x => x.id === vid && !x.body && actors.includes(x)) : null;
+  if (vid && !v && SPR[vid]){ v = mkActor(vid, ax, ay, "npc", {talk: false, barks: [], fixedScale: 0}); npcs.push(v); actors.push(v); }
+  if (v){ v.slain = true; v.talk = false; v.stroll = null; v.company = false; }
+  const mk = () => mkActor("escort-drow", ax, ay, "npc", {escort: true, relieved: true, talk: false, barks: [], static: true, fixedScale: 0, home: {x: ax, y: ay}, post: {x: ax, y: ay}});
+  const ahead = SPR["escort-drow"] ? mk() : null, behind = SPR["escort-drow"] ? mk() : null;
+  for (const a of [ahead, behind]) if (a){ npcs.push(a); actors.push(a); }
+  const line = [ahead, ...heroes, v, behind].filter(Boolean);
+  line.forEach((a, i) => { const p = spot(i); stopActivity(a); a.path = []; a.kbd = false; a.onArrive = null; a.performing = true; a.walkIn = false;
+    a.x = p.x; a.y = p.y; a.fixedScale = 0; a.big = fs * room(p.y); a.alpha = 1; a.face = faceOf(1, 1); });
+  heroes.forEach(h => setAnim(h, "idle"));
+  log(`The drow stop the line on the rope bridge outside the pen.`);
+  await wait(1400);
+  if (cur !== PEN) return;
+  // the throw
+  if (v && behind){
+    faceTo(behind, v); faceTo(v, behind);
+    surrenderSays(behind, SURRENDER_LINES.pick, 4200);
+    heroes.forEach(h => faceTo(h, v));
+    await wait(2300); if (cur !== PEN) return;
+    const sc = 1;
+    const rail = {x: v.x - 34 * sc, y: v.y + 14 * sc};   // the near rail, a step toward the camera
+    dragAlong(v, [rail], 900, null, () => {
+      if (hasSheet(behind, "attack")) playOnce(behind, "attack", () => setAnim(behind, "idle"));
+      setTimeout(() => {
+        bank("movement/web_tear", .35);
+        setTimeout(() => bank(/^(eldeth)$/.test(v.id) ? "creature/death_humanoid_female" : "creature/death_humanoid_male", .9), 180);
+        fallAway(v, -70, 300, SURRENDER_RULES.throwMs, () => {
+          v.alpha = 0; const i = actors.indexOf(v); if (i >= 0) actors.splice(i, 1); const k = npcs.indexOf(v); if (k >= 0) npcs.splice(k, 1);
+          (state.slain ||= []).includes(v.id) || state.slain.push(v.id);
+          setTimeout(() => bank("combat/melee_hit_bludgeon", .3), 700);
+        });
+      }, 320);
+    });
+    await wait(900 + 320 + SURRENDER_RULES.throwMs + 900);
+    log(`<b>${esc(SHORT[v.id] || fname(v))}</b> goes over the rail. Far below, the falls take the body.`);
+    const near = heroes[heroes.length - 1] || heroes[0]; if (near) setTimeout(() => bark(near, `${SHORT[v.id] || fname(v)}!`, 1800, {talk: true}), 200);
+    if (APP) surrenderApi("thrown", {seq: S.seq});               // the record: dead on the roster and the rows, the line for Malachar
+    await wait(1600); if (cur !== PEN) return;
+    if (behind) surrenderSays(behind, SURRENDER_LINES.warning, 4800);
+    await wait(2600);
+  } else if (!v) log("There is no prisoner left to make an example of. The drow are quiet about it.");
+  if (cur !== PEN) return;
+  await surrenderLockIn(S, {ahead, behind, heroes});
+}
+// the gate opens, the heroes are walked in the balcony's own way (behind the pillar, the threshold, the floor), the gate
+// clangs shut and the key turns; the drow have their word through the bars and go back over the bridge
+async function surrenderLockIn(S, {ahead, behind, heroes}){
+  const B = balcony(); if (!B){ surrenderLockOnly(S); return; }
+  const room = y => 1 / (node.scale * depthAt(y)), fs = B.scale || 1.35;
+  const [lx, ly] = B.behind || [545, 702], [tx, ty] = B.threshold, [ix, iy] = B.inside;
+  sfx("lock-picked", .8); await wait(600);
+  setDoor(true); sfx("door-open", .85);
+  if (ahead) surrenderSays(ahead, SURRENDER_LINES.in, 2600);
+  await wait(700);
+  await Promise.all(heroes.map((h, i) => { h.waitUntil = now + i * 750;
+    const spot = nearestWalkable(ix + ((i % 3) - 1) * 70, iy + 60 + Math.floor(i / 3) * 50);
+    return escortWalk(h, [{x: lx, y: ly, s: fs * room(ly), out: true}, {x: tx, y: ty, s: .95, jump: true}, {x: ix, y: iy, s: 1}, {x: spot.x, y: spot.y, s: 1}]); }));
+  for (const h of heroes){ h.performing = false; h.static = false; h.big = 1; h.face = faceOf(gateCenter() ? gateCenter().x - h.x : 0, -1); h.home = {x: h.x, y: h.y}; }
+  if (cur !== PEN) return;
+  await wait(500);
+  setDoor(false); sfx("door-close", .9);
+  await wait(650); sfx("lock-picked", .6);
+  state.gateOpen = false; state.doorShut = false; state.gateBroken = false;   // [CLAUDE] a gate torn off its hinges is re-hung: the drow do not keep slaves behind no door
+  if (balcony()) buildGrid();
+  log(`The gate clangs shut behind them, and the key turns.`);
+  if (behind){ behind.performing = false; behind.face = faceOf(ix - behind.x, iy - behind.y); surrenderSays(behind, SURRENDER_LINES.lockIn, 4800); }
+  if (ahead) ahead.performing = false;
+  await wait(2800);
+  escortLeaves();
+  S.done = true; if (state.surrender && state.surrender.seq === S.seq) state.surrender = {...state.surrender, done: true};
+  mode = "explore"; renderParty();
+  if (S.by === (OW.key || "local") && APP) handOff(`The party surrendered to the drow in ${plateLabel(S.area)} and has just been marched back into the slave pen; on the rope bridge a guard threw ${S.victim ? S.victim.name : "nobody — there was no prisoner left"} into the chasm as a warning. The gate is locked and the ward covers them. Narrate the lock-in in the guards' voices: short, contemptuous, no bargaining.`, true);
+}
+function surrenderLockOnly(S){
+  state.gateOpen = false; state.doorShut = false; state.gateBroken = false; if (balcony()) buildGrid(); setDoor(false);
+  if (S.victim){ (state.slain ||= []).includes(S.victim.id) || state.slain.push(S.victim.id); if (APP) surrenderApi("thrown", {seq: S.seq}); log(`<b>${esc(S.victim.name)}</b> was thrown into the chasm on the way back.`); }
+  S.done = true; if (state.surrender && state.surrender.seq === S.seq) state.surrender = {...state.surrender, done: true};
+  mode = "explore";
+}
+// a screen that hears of the surrender (the shared state) marks the chosen prisoner at once, wherever they stand, so the
+// stage poll — which drops a cast member the story has dead where they stand — leaves them for the bridge
+setInterval(() => {
+  const S = state.surrender; if (!S || S.done || !S.victim) return;
+  const v = npcs.find(n => n.id === S.victim.id && !n.body); if (v && !v.slain) v.slain = true;
+}, 500);
+$("dmSurrender").onclick = () => { toggleDm(false); if (APP && !isDm()){ toast("DM only."); return; } if (!party.length){ toast("Nobody is on the map."); return; } surrenderBegins(null); };
 
 // ---------- LOLTH'S TOOTH ----------
 // The drow ritual dagger Liana can smuggle out of Ilvara's things (The Drow Surgeon, favour 4). Sam, 2026-10-25: its venom
@@ -11581,7 +11832,7 @@ async function followCombatFlag(flag){
     startCombat(picked, flag.label || "Malachar calls for initiative.");
     if (cbt) cbt.fromFlag = true;
   } else if (!flag && mode === "combat" && cbt && cbt.fromFlag){
-    endCombat(true);
+    endCombat(!surrenderFresh());                       // the flag dropped because the party surrendered: no victory, the plate is not cleared
   }
 }
 if (APP){ readTime(); setInterval(readTime, 3000); }

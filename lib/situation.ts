@@ -60,6 +60,8 @@ export function startingSituation(runId: string, now = new Date().toISOString())
  *                     captive — they are prisoners at work, not escapees — and the pen's ward no longer covers them
  *                     (the manacles still do: lib/labor.ts castableInManacles)
  *   - `labor_back`    the detail walks them back into the pen: the ward covers them again
+ *   - `recaptured`    the party surrendered to the guards and was marched back into the pen (Sam, 2026-10-28,
+ *                     lib/surrender.mjs): stance -> captive from wherever it was, gate -> locked, ward back up
  */
 export interface SituationPatch {
   node_key?: string
@@ -69,7 +71,7 @@ export interface SituationPatch {
   ward_active?: boolean
   gate_state?: GateState
   party_present?: string[]
-  event?: "step_outside" | "gate_open" | "gate_broken" | "labor_out" | "labor_back"
+  event?: "step_outside" | "gate_open" | "gate_broken" | "labor_out" | "labor_back" | "recaptured"
 }
 
 /** The fields the walk page (a player's own browser) may change. Everything else needs the DM key. */
@@ -95,7 +97,7 @@ export function parsePatch(body: unknown): SituationPatch {
   if (typeof b.ward_active === "boolean") p.ward_active = b.ward_active
   if (isGate(b.gate_state)) p.gate_state = b.gate_state
   if (Array.isArray(b.party_present)) p.party_present = b.party_present.map((n) => clean(n, 60)).filter((n): n is string => !!n).slice(0, 12)
-  if (b.event === "step_outside" || b.event === "gate_open" || b.event === "gate_broken" || b.event === "labor_out" || b.event === "labor_back") p.event = b.event
+  if (b.event === "step_outside" || b.event === "gate_open" || b.event === "gate_broken" || b.event === "labor_out" || b.event === "labor_back" || b.event === "recaptured") p.event = b.event
   return p
 }
 
@@ -118,6 +120,10 @@ export function mergeSituation(prev: Situation, patch: SituationPatch, by: Write
     next.ward_active = false                                   // out of the pen, still captive
   } else if (patch.event === "labor_back") {
     if (next.stance === "captive") next.ward_active = true     // back inside the ward
+  } else if (patch.event === "recaptured") {
+    next.stance = "captive"                                    // prisoners again, whatever they were a moment ago
+    next.gate_state = "locked"
+    next.ward_active = true
   }
   if (patch.node_key !== undefined) next.node_key = patch.node_key
   if (patch.sub_location !== undefined) next.sub_location = patch.sub_location
