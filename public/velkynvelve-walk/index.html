@@ -266,6 +266,19 @@ body.dm-open .cbt-dm{display:none}
 .turn.now{width:40px;opacity:1;color:var(--ink)}
 .turn.down{opacity:.35;filter:grayscale(1)}
 .turn span{max-width:38px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* THE STRIP COMES AND GOES (Sam, 2026-10-28 03:36: "Show the initiative bar in the beginning and then it fades away. If you
+   hover at the top it will materialize briefly, otherwise you only see the active player's name. You only get a player's
+   stats if you click on their initiative card. Please don't leave this mess up there. When you click on it, it will
+   disappear after a few moments."). The strip shows for the opening — the order taking its places, the boss entrance, the
+   first turn call — then fades; a mouse along the top of the stage brings it back while it is there and for a moment
+   after; the turn call rides up to the top edge when the strip is gone. The party panel is hidden until a fighter's
+   card in the strip is clicked, and then shows that one fighter for a few seconds. */
+.combat .cbt-top{opacity:0;pointer-events:none;transform:translate(-50%,-10px);transition:opacity .4s,transform .4s}
+.combat.strip-on .cbt-top{opacity:1;pointer-events:auto;transform:translateX(-50%)}
+.turn{cursor:pointer}
+.combat .cbt-party{opacity:0;pointer-events:none;transition:opacity .35s}
+.combat.peek .cbt-party{opacity:1;pointer-events:auto}
+.stage:has(.combat.strip-on) .turncall{top:118px}   /* the turn call is the strip's sibling, not its child */
 .cbt-party{position:absolute;right:10px;bottom:58px;display:flex;flex-direction:column;gap:5px;width:208px}
 .cbt-party .cpc{background:linear-gradient(90deg,rgba(26,14,10,.94),rgba(18,10,8,.82));border:1px solid var(--rule);border-left:3px solid var(--rule);border-radius:5px;padding:5px 8px 6px;transition:border-color .2s,transform .2s}
 .cbt-party .cpc.now{border-color:var(--ember);border-left-color:var(--ember);transform:translateX(-6px);box-shadow:0 0 14px rgba(232,162,74,.25)}
@@ -741,7 +754,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
    comes out, the order rolls out in the middle of the stage, one row a beat, each with its face, its d20 and its bonus,
    then folds away into the strip. The call: under the strip, whose turn it is (face, name), then what they do and to
    whom ("Shortsword → Samson"), while the target's feet are ringed red (a heal or a buff, gold). Presentation only. */
-.turncall{position:absolute;top:118px;left:50%;transform:translateX(-50%) translateY(-6px);display:flex;align-items:center;gap:10px;padding:5px 16px 5px 6px;border:2px solid #9a6a1c;border-radius:12px;background:linear-gradient(180deg,rgba(32,16,12,.95),rgba(16,9,8,.92));box-shadow:0 3px 0 #000,0 8px 18px rgba(0,0,0,.55);opacity:0;transition:opacity .22s ease,transform .22s ease;pointer-events:none;z-index:7;max-width:min(560px,calc(100% - 40px))}
+.turncall{position:absolute;top:12px;left:50%;transform:translateX(-50%) translateY(-6px);display:flex;align-items:center;gap:10px;padding:5px 16px 5px 6px;border:2px solid #9a6a1c;border-radius:12px;background:linear-gradient(180deg,rgba(32,16,12,.95),rgba(16,9,8,.92));box-shadow:0 3px 0 #000,0 8px 18px rgba(0,0,0,.55);opacity:0;transition:opacity .22s ease,transform .22s ease,top .4s ease;pointer-events:none;z-index:7;max-width:min(560px,calc(100% - 40px))}
 .turncall.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .turncall.foe{border-color:#a2423a}
 .turncall .tface{position:relative;flex:none;width:36px;height:44px;border-radius:7px;border:2px solid #000;overflow:hidden;background:radial-gradient(circle at 50% 35%,rgba(255,235,200,.14),rgba(0,0,0,.6))}
@@ -6292,6 +6305,7 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   if (cbt.boss) setTimeout(() => { if (cbt && cbt.boss && actors.includes(cbt.boss)) bossEntrance(cbt.boss); else if (cbt){ cbt.bossIntro = false; renderBossBar(); } }, 350 + revealMs);
   setTimeout(() => foes.forEach((f, i) => setTimeout(() => { const b = FOE_BARK[f.id]; if (b && actors.includes(f) && f !== (cbt && cbt.boss)) bark(f, b[i % b.length], 2600); }, i * 500)), 700 + introMs);
   setTimeout(() => { if (cbt) nextTurn(true); }, 1400 + introMs);
+  stripShow(1400 + introMs + 3200);   // the opening: the order in place, the entrance, the first turn call; then it fades
 }
 const fname = a => a.kind === "pc" ? SHEETS[a.id].name : (a.creature && a.creature.name) || (a.c && a.c.sheet.name) || SHORT[a.id] || SPR[a.id].json.name;
 function standing(list){ return list.filter(a => !a.down && actors.includes(a)); }
@@ -6497,16 +6511,39 @@ function renderTurns(){
   cbt.order.forEach((a, i) => {
     const b = document.createElement("div"); b.className = "turn" + (a.kind === "foe" ? " foe" : "") + (a.down ? " down" : "") + (i === cbt.idx ? " now" : "");
     b.appendChild(stripCard(a));
-    const s = document.createElement("span"); s.textContent = stripName(a); b.appendChild(s); b.title = `${fname(a)} · initiative ${a.c.init}`;
+    const s = document.createElement("span"); s.textContent = stripName(a); b.appendChild(s); b.title = `${fname(a)} · initiative ${a.c.init} · click for their card`;
+    b.onclick = () => peekStats(a);
     el.appendChild(b);
   });
   $("cbtRound").textContent = cbt.round ? `Round ${cbt.round}` : "";
   renderFleeing();
 }
+// The strip is on screen for the opening and whenever the mouse is along the top of the stage; otherwise it is gone and
+// only the turn call says whose turn it is (Sam, 2026-10-28). `ms` > 0 shows it for that long; 0 shows it until stripHide.
+const STRIP_ZONE = 132, STRIP_LINGER = 700, PEEK_MS = 4000;
+function stripShow(ms){ const c = $("combat"); c.classList.add("strip-on"); clearTimeout(stripShow.t); if (ms) stripShow.t = setTimeout(() => stripHide(0), ms); }
+function stripHide(delay){ clearTimeout(stripShow.t); stripShow.t = setTimeout(() => { if (!stripShow.hover) $("combat").classList.remove("strip-on"); }, delay || 0); }
+function stripHover(on){ if (on === stripShow.hover) return; stripShow.hover = on; if (on) stripShow(0); else stripHide(STRIP_LINGER); }
+// A click on a fighter's card in the strip: their card in the party panel's place for a few seconds, then gone.
+function peekStats(a){
+  if (!cbt || !a) return;
+  cbt.peek = a; $("combat").classList.add("peek"); renderParty();
+  clearTimeout(peekStats.t); peekStats.t = setTimeout(() => { if (cbt) cbt.peek = null; $("combat").classList.remove("peek"); if (cbt) renderParty(); }, PEEK_MS);
+}
 function renderParty(){
   const el = $("cbtParty"); el.innerHTML = "";
-  for (const p of party){
+  // Only the fighter whose strip card was clicked (peekStats); the panel is hidden otherwise. A foe's card shows no
+  // numbers to a player — hit points and armour class are the DM's to know (the DM's screen sees them).
+  const list = cbt && cbt.peek ? [cbt.peek] : party;
+  for (const p of list){
     const c = p.c || fighterFor(p), row = document.createElement("div"); row.className = "cpc" + (p === activeActor() ? " now" : "") + (p.down ? " down" : "");
+    if (p.kind !== "pc"){
+      const open = hero(p) || !APP || isDm(), conds = [...c.conds].map(k => COND_GLYPH[k] ? `<b style="color:${COND_GLYPH[k][1]}" title="${COND_GLYPH[k][2]}">${COND_GLYPH[k][0]}</b>` : "").join("");
+      const sub = c.sheet.epithet || c.sheet.cls || (p.ally ? "ally" : p.kind === "foe" ? "foe" : "");
+      row.innerHTML = `<div class="nm">${esc(fname(p))} <small>${esc(sub)}${open ? ` · AC ${c.ac}` : ""}</small>${conds}${p.down ? `<b style="color:#ff6b5e">down</b>` : ""}</div>` +
+        (open ? `<div class="hp"><i style="width:${100 * Math.max(0, c.hp) / c.hpMax}%"></i><span>${Math.max(0, c.hp)} / ${c.hpMax}</span></div>` : "");
+      el.appendChild(row); continue;
+    }
     const slots = Object.entries(c.slots).map(([l, n]) => `<span class="slots" title="Level ${l} spell slots">${"●".repeat(n)}${"○".repeat(Math.max(0, (c.sheet.magic.slots[l] || 0) - n))}</span>`).join("");
     const conds = [...c.conds].map(k => COND_GLYPH[k] ? `<b style="color:${COND_GLYPH[k][1]}" title="${COND_GLYPH[k][2]}">${COND_GLYPH[k][0]}</b>` : "").join("");
     const conc = c.conc ? `<b class="conc" style="color:#9fe6ff" title="Concentrating on ${esc(c.conc.spell)}: taking damage means a CON save (DC 10 or half the damage)">◎ ${esc(c.conc.spell)}</b>` : "";
@@ -8869,7 +8906,7 @@ function endCombat(won){
   }
   closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby(); poisonZones = []; dmPlace = null;
   $("bossBar").hidden = true; $("bossBar").classList.remove("show", "bloodied", "flash", "down"); delete $("bossBar").dataset.for; $("bossIntro").hidden = true; $("bossIntro").classList.remove("show");   // BOSS FIGHTS: the bar and the slam go with the fight
-  $("cbtFlee").hidden = true; turnCallHide(); $("combat").classList.remove("has-boss");
+  $("cbtFlee").hidden = true; turnCallHide(); $("combat").classList.remove("has-boss", "strip-on", "peek"); clearTimeout(stripShow.t); clearTimeout(peekStats.t); stripShow.hover = false;
   // The dead stay where they fell (Sam, 2026-10-13: "There should always be a carcass or dead body of
   // whatever died. This way we can search the body."). Only the living, called off, walk away.
   const slain = foes.filter(f => f.down);
@@ -13219,7 +13256,9 @@ function hitActor(list, w){
   }
   return best;
 }
+stage.addEventListener("pointerleave", () => stripHover(false));
 stage.addEventListener("pointerdown", e => {
+  if (cbt && e.pointerType === "touch" && e.clientY - stage.getBoundingClientRect().top < STRIP_ZONE) stripShow(3000);   // no hover on a touch screen: a tap along the top
   if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui,.checkcard,.icard")) return;
   unlockAudio();
   if (ICARD.pinned) icardHide(true);
@@ -13230,6 +13269,7 @@ stage.addEventListener("pointerdown", e => {
     const it = icardMapTarget(s2w(p0.x, p0.y)); if (it){ p0.held = true; icardShow(it, p0.x, p0.y, true); } }, 450); }
 });
 stage.addEventListener("pointermove", e => {
+  if (cbt && e.pointerType !== "touch") stripHover(e.clientY - stage.getBoundingClientRect().top < STRIP_ZONE);   // the strip, while the mouse is along the top
   if (ptr && e.pointerId === ptr.id){
     const dx = e.clientX - ptr.x, dy = e.clientY - ptr.y;
     if (!ptr.moved && Math.hypot(dx, dy) > 6 && view.z > 1.01){ ptr.moved = true; stage.classList.add("dragging"); }
