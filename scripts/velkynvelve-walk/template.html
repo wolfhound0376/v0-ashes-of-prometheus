@@ -1752,6 +1752,7 @@ function draw(){
   for (const c of node.chains || []) drawChain(c);
   drawCombatGround(); drawStuckGround(); drawSurgeonGround();
   if (mode === "combat"){ drawIcePatches(); drawFxLayer(true); tickIce(); }
+  if (mode === "explore" && exploreJump && leader && actors.includes(leader)) drawExploreJumpSquares(leader);
   const list = actors.concat(vermin, laborProps).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);   // laborProps: Hard Labor's station props
   const cloudQ = mode === "combat" || clouds.length ? cloudPuffs() : [];   // the poison cloud, in depth order among the figures
   let barsAt = gateBarsY();                                       // the bars in front of a guard leaning at them, in depth order
@@ -11370,6 +11371,41 @@ function exploreLeap(p){
   const land = () => { log(`${fname(L)} clears the ${Math.round(g.gapFt)} ft gap.`); if (Math.hypot(p.x - L.x, p.y - L.y) > 8){ L.path = findPath(L, p); L.onArrive = null; } };
   const spring = () => arcTo(L, g.land, land);
   if (g.runUpFt > 0.5){ L.path = [g.takeoff]; L.onArrive = spring; } else spring();
+}
+// WHERE YOU CAN JUMP, OUT OF A FIGHT (Sam, 2026-10-28: "When I select jump please highlight in red hexes where I can
+// legally jump" / "why is my jump button not highlighting where I can jump"). The fight has its own discs (jumpSquares,
+// drawJumpSquares). Out of one, with Jump picked, every 5-ft square within reach of the leader is put to the same test
+// exploreLeap's click makes (a gap on the line, clearable with the run-up there is: exploreLeapOk), and the squares it
+// would land on are lit red. Added beside the fight's jump code, never inside it (it was once written over it: #1073).
+function exploreLeapOk(L, p, span){
+  if (balconyFloor() && outsidePen(L) !== outsidePen(p)) return null;
+  const g = gapOnLine(L, p); if (!g || g.gapFt < MIN_LEAP_FT) return null;
+  return g.gapFt <= (g.runUpFt >= 10 ? span : Math.floor(span / 2)) ? g : null;
+}
+let exploreJumpSq = null;
+function exploreJumpSquares(L){
+  const span = (SHEETS[L.id] || {}).strScore || 0, key = `${L.id}|${Math.round(L.x)}|${Math.round(L.y)}|${span}`;
+  if (exploreJumpSq && exploreJumpSq.key === key) return exploreJumpSq;
+  const cell = 5 * ftPx(L), reach = (span + 20) * ftPx(L), n = Math.ceil(reach / cell), cells = [];
+  if (span) for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++){
+    const q = {x: L.x + i * cell, y: L.y + j * cell};
+    if ((!i && !j) || Math.hypot(q.x - L.x, q.y - L.y) > reach || !walkable(q.x, q.y)) continue;
+    const g = exploreLeapOk(L, q, span);
+    if (g && Math.hypot(q.x - g.land.x, q.y - g.land.y) <= cell * .75) cells.push(q);
+  }
+  return (exploreJumpSq = {key, cells, cell});
+}
+function drawExploreJumpSquares(L){
+  const J = exploreJumpSquares(L), h = J.cell * .46, pulse = .5 + .5 * Math.sin(now / 260), lw = 2 / (base * view.z);
+  const hov = aimW && J.cells.find(p => Math.abs(aimW.x - p.x) <= h && Math.abs(aimW.y - p.y) <= h);
+  ctx.save();
+  for (const p of J.cells){
+    const on = p === hov;
+    ctx.fillStyle = on ? "rgba(255,92,72,.45)" : `rgba(220,48,40,${.16 + .1 * pulse})`;
+    ctx.strokeStyle = on ? "rgba(255,200,190,.95)" : "rgba(255,86,70,.85)"; ctx.lineWidth = on ? lw * 1.6 : lw;
+    ctx.beginPath(); ctx.rect(p.x - h, p.y - h, h * 2, h * 2); ctx.fill(); ctx.stroke();
+  }
+  ctx.restore();
 }
 function walkTo(p, cb){ if (!ownLeader()){ if (leader) notYours(leader); return; } if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
 $("zIn").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.3); };
