@@ -7,7 +7,7 @@
 //
 // Scope (Sam, 2026-10-28, the approved prototype https://claude.ai/artifact/5jSrEofrWEXGH5pmwvMf5M): the SORCERER and
 // the ROGUE (Sam, 2026-10-28: "go" on the rogues first, SRD subclass open, everyone on the 2024 rules) and the CLERIC
-// (Sam, 2026-10-28: Samson's pack, "for 2024 rules"), levels 2 and 3. Level 4 and up wait on the class trial (lib/level-trial.ts, TRIAL_GATE_FROM_LEVEL = 4), so the
+// (Sam, 2026-10-28: Samson's pack, "for 2024 rules") and the BARD (Scott's pack, same night), levels 2 and 3. Level 4 and up wait on the class trial (lib/level-trial.ts, TRIAL_GATE_FROM_LEVEL = 4), so the
 // improvement / feat step is not wired here yet. Other classes keep the ceremony's "on your sheet" note.
 //
 // Rules source: the sheet's own (Kenta: sheet_spellcasting.rules_source "SRD 5.2.1"), i.e. the 2024 Sorcerer table:
@@ -42,13 +42,15 @@ export interface OriginOption {
   features?: Gain[]
   /** spells it keeps always prepared from that level (they do not count against the prepared number) */
   alwaysPrepared?: string[]
+  /** new skill proficiencies of the player's choice it grants (College of Lore: 3) */
+  bonusSkills?: number
 }
 
 /** A feature the level brings with nothing to choose (Cunning Action, Font of Magic); it is written with the choices. */
 export interface Gain { name: string; desc: string; source: string; icon: string }
 
 export interface LevelPlan {
-  cls: "sorcerer" | "rogue" | "cleric"
+  cls: "sorcerer" | "rogue" | "cleric" | "bard"
   caster: boolean
   level: number
   /** what the class calls its level-3 pick ("Sorcerous Origin", "Rogue Subclass") */
@@ -67,6 +69,8 @@ export interface LevelPlan {
   sorceryPoints: { from: number; to: number }
   /** cleric Channel Divinity uses, before → after (0 → 0 for other classes) */
   channelDivinity: { from: number; to: number }
+  /** skill proficiencies the level turns into Expertise (bard 2: two) */
+  expertise: number
 }
 
 /** SRD 5.2.1 Sorcerer table, levels 1–4 (what this module serves). */
@@ -145,8 +149,32 @@ export const CLERIC_SUBCLASSES: OriginOption[] = [
   { name: "War Domain", open: false, source: "PHB 2024 — not in the SRD", verify: true, desc: "Guided Strike and War Priest attacks. Needs the DM's say." },
 ]
 
+// SRD 5.2.1 Bard (p.31 onward, fetched 2026-10-28): prepared 4/5/6/7, cantrips 2/2/2/3, Bardic die d6 through 4th;
+// 2nd Expertise (two of your skill proficiencies) and Jack of All Trades; 3rd a subclass. One spell may be replaced on
+// any Bard level. The SRD's one college is Lore, quoted here; Dance, Glamour and Valor are the Player's Handbook's.
+export const BARD_2024 = {
+  prepared: { 1: 4, 2: 5, 3: 6, 4: 7 } as Record<number, number>,
+  cantrips: { 1: 2, 2: 2, 3: 2, 4: 3 } as Record<number, number>,
+  maxSpellLevel: { 1: 1, 2: 1, 3: 2, 4: 2 } as Record<number, number>,
+}
+export const DND_SKILLS = ["acrobatics", "animal_handling", "arcana", "athletics", "deception", "history", "insight", "intimidation", "investigation", "medicine", "nature", "perception", "performance", "persuasion", "religion", "sleight_of_hand", "stealth", "survival"] as const
+const BARD_GAINS: Record<number, Gain[]> = {
+  2: [{ name: "Jack of All Trades", desc: "Add half your Proficiency Bonus (round down) to any ability check that uses a skill you lack proficiency in and that does not otherwise use your Proficiency Bonus.", source: "Bard 2 · SRD 5.2.1", icon: "jack-of-all-trades" }],
+  3: [],
+}
+export const BARD_SUBCLASSES: OriginOption[] = [
+  { name: "College of Lore", open: true, source: "SRD 5.2.1", verify: false, bonusSkills: 3,
+    desc: "Bonus Proficiencies (three skills of your choice) and Cutting Words.",
+    features: [
+      { name: "Cutting Words", desc: "Reaction, a creature you can see within 60 ft makes a damage roll or succeeds on an ability check or attack roll: expend a Bardic Inspiration, roll it, and subtract the number from the creature's roll.", source: "Bard 3 · College of Lore · SRD 5.2.1", icon: "cutting-words" },
+    ] },
+  { name: "College of Dance", open: false, source: "PHB 2024 — not in the SRD", verify: true, desc: "Dazzling Footwork and unarmed agility. Needs the DM's say." },
+  { name: "College of Glamour", open: false, source: "PHB 2024 — not in the SRD", verify: true, desc: "Beguiling Magic and the Mantle of Inspiration. Needs the DM's say." },
+  { name: "College of Valor", open: false, source: "PHB 2024 — not in the SRD", verify: true, desc: "Combat Inspiration and martial training. Needs the DM's say." },
+]
+
 /** The subclass options a plan offers. */
-export function subclassesFor(plan: LevelPlan | null): OriginOption[] { return !plan ? [] : plan.cls === "rogue" ? ROGUE_SUBCLASSES : plan.cls === "cleric" ? CLERIC_SUBCLASSES : ORIGINS }
+export function subclassesFor(plan: LevelPlan | null): OriginOption[] { return !plan ? [] : plan.cls === "rogue" ? ROGUE_SUBCLASSES : plan.cls === "cleric" ? CLERIC_SUBCLASSES : plan.cls === "bard" ? BARD_SUBCLASSES : ORIGINS }
 
 export const CHOICES_SOURCE = "Level up — chosen"
 const pendingName = (level: number) => `Level ${level} — choices to make`
@@ -164,7 +192,7 @@ export function planFor(cls: string | null | undefined, level: number): LevelPla
     return { cls: "rogue", caster: false, level, subclassLabel: "Rogue Subclass", gains: ROGUE_GAINS[level] ?? [],
       sneakAttack: { from: "1d6", to: level === 3 ? "2d6" : "1d6" },
       newSpells: 0, newCantrips: 0, maxSpellLevel: 0, swaps: 0, metamagic: 0, origin: level === 3,
-      prepared: none, cantrips: none, sorceryPoints: none, channelDivinity: none }
+      prepared: none, cantrips: none, sorceryPoints: none, channelDivinity: none, expertise: 0 }
   }
   if (k === "cleric") {
     const t = CLERIC_2024
@@ -172,7 +200,15 @@ export function planFor(cls: string | null | undefined, level: number): LevelPla
       newSpells: t.prepared[level] - t.prepared[level - 1], newCantrips: t.cantrips[level] - t.cantrips[level - 1],
       maxSpellLevel: t.maxSpellLevel[level], swaps: 1, metamagic: 0, origin: level === 3,
       prepared: { from: t.prepared[level - 1], to: t.prepared[level] }, cantrips: { from: t.cantrips[level - 1], to: t.cantrips[level] },
-      sorceryPoints: { from: 0, to: 0 }, channelDivinity: { from: t.channelDivinity[level - 1], to: t.channelDivinity[level] } }
+      sorceryPoints: { from: 0, to: 0 }, channelDivinity: { from: t.channelDivinity[level - 1], to: t.channelDivinity[level] }, expertise: 0 }
+  }
+  if (k === "bard") {
+    const t = BARD_2024
+    return { cls: "bard", caster: true, level, subclassLabel: "Bard College", gains: BARD_GAINS[level] ?? [], sneakAttack: null,
+      newSpells: t.prepared[level] - t.prepared[level - 1], newCantrips: t.cantrips[level] - t.cantrips[level - 1],
+      maxSpellLevel: t.maxSpellLevel[level], swaps: 1, metamagic: 0, origin: level === 3,
+      prepared: { from: t.prepared[level - 1], to: t.prepared[level] }, cantrips: { from: t.cantrips[level - 1], to: t.cantrips[level] },
+      sorceryPoints: { from: 0, to: 0 }, channelDivinity: { from: 0, to: 0 }, expertise: level === 2 ? 2 : 0 }
   }
   if (k !== "sorcerer") return null
   const t = SORCERER_2024
@@ -193,6 +229,7 @@ export function planFor(cls: string | null | undefined, level: number): LevelPla
     cantrips: { from: t.cantrips[level - 1], to: t.cantrips[level] },
     sorceryPoints: { from: t.sorceryPoints[level - 1], to: t.sorceryPoints[level] },
     channelDivinity: { from: 0, to: 0 },
+    expertise: 0,
   }
 }
 
@@ -222,6 +259,9 @@ export interface Picks {
   cantrips?: string[]
   swapOut?: string | null
   swapOutCantrip?: string | null
+  /** skill keys (snake_case, as sheet_skill_proficiencies) */
+  expertise?: string[]
+  skills?: string[]
 }
 
 export interface CastingSheet {
@@ -232,11 +272,11 @@ export interface CastingSheet {
 }
 
 export type ChoiceResult =
-  | { ok: true; spellcasting: CastingSheet | null; features: SheetFeature[]; summary: string[] }
+  | { ok: true; spellcasting: CastingSheet | null; features: SheetFeature[]; summary: string[]; skills: Record<string, string> | null }
   | { ok: false; error: string }
 
 /** Check the picks against the plan and the class list; build the new sheet_spellcasting and sheet_features. */
-export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, features: unknown, picks: Picks): ChoiceResult {
+export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, features: unknown, picks: Picks, skillSheet?: Record<string, string> | null): ChoiceResult {
   const list = classSpells(plan.cls, plan.maxSpellLevel)
   const byName = new Map(list.map((s) => [s.name, s]))
   const cantrips = [...(casting?.cantrips ?? [])]
@@ -271,6 +311,26 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
   if (plan.origin && !origin) return { ok: false, error: `Choose a ${plan.subclassLabel}.` }
   if (origin && !origin.open) return { ok: false, error: `${origin.name} is closed until the DM opens it.` }
   if (!plan.origin && picks.origin) return { ok: false, error: `The ${plan.subclassLabel.toLowerCase()} is chosen at level 3.` }
+  // skills: Expertise turns proficiencies you have into expertise; a subclass's bonus skills are new proficiencies
+  const sk: Record<string, string> = { ...(skillSheet ?? {}) }
+  const exp = uniq(picks.expertise ?? []), newSk = uniq(picks.skills ?? [])
+  const isSkill = (n: string) => (DND_SKILLS as readonly string[]).includes(n)
+  if (exp.length !== plan.expertise) return { ok: false, error: plan.expertise ? `Choose ${plan.expertise} skills for Expertise.` : "No Expertise at this level." }
+  for (const n of exp) {
+    if (!isSkill(n)) return { ok: false, error: `${n} is not a skill.` }
+    if (sk[n] === "expertise") return { ok: false, error: `${n} already has Expertise.` }
+    if (sk[n] !== "proficient") return { ok: false, error: `Expertise needs a skill you are proficient in; ${n} is not one.` }
+  }
+  const needSk = origin?.bonusSkills ?? 0
+  if (newSk.length !== needSk) return { ok: false, error: needSk ? `Choose ${needSk} new skills.` : "No new skills at this level." }
+  for (const n of newSk) {
+    if (!isSkill(n)) return { ok: false, error: `${n} is not a skill.` }
+    if (sk[n] === "proficient" || sk[n] === "expertise") return { ok: false, error: `${n} is already a proficiency.` }
+  }
+  for (const n of exp) sk[n] = "expertise"
+  for (const n of newSk) sk[n] = "proficient"
+  const skills = exp.length || newSk.length ? sk : null
+  const skillName = (n: string) => n.split("_").map((w) => (w === "of" ? w : w[0].toUpperCase() + w.slice(1))).join(" ")
 
   // a spell the new domain keeps always prepared leaves the chosen list (it is on the sheet once, as always prepared);
   // the cleric fills the freed place on the next long rest (they re-prepare after any long rest)
@@ -301,14 +361,17 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
   for (const m of metaOpts) added.push({ name: `Metamagic: ${m!.name}`, desc: `${m!.desc} (${m!.cost} SP)`, source: `${src} · verify against SRD 5.2.1` })
   if (origin) added.push({ name: origin.name, desc: origin.desc, source: `${src} · ${origin.source}${origin.features ? "" : " · the DM applies its features"}` })
   for (const g of origin?.features ?? []) added.push({ name: g.name, desc: g.desc, source: g.source })
+  if (exp.length) added.push({ name: "Expertise", desc: `Double proficiency with ${exp.map(skillName).join(" and ")}.`, source: `${src} · SRD 5.2.1` })
+  if (newSk.length) added.push({ name: "Bonus Proficiencies", desc: `Proficiency in ${newSk.map(skillName).join(", ")}.`, source: `${src} · ${origin!.name} · SRD 5.2.1` })
   const summary = [
     ...plan.gains.map((g) => g.name),
     ...metaOpts.map((m) => m!.name),
     ...(origin ? [origin.name, ...(origin.features ?? []).map((g) => g.name)] : []),
+    ...exp.map((n) => `Expertise: ${skillName(n)}`), ...newSk.map((n) => `Proficient: ${skillName(n)}`),
     ...spells, ...newC,
     ...(swapOut ? [`swapped out ${swapOut}`] : []), ...(swapOutC ? [`swapped out ${swapOutC}`] : []),
   ]
-  return { ok: true, spellcasting, features: [...kept, ...added], summary }
+  return { ok: true, spellcasting, features: [...kept, ...added], summary, skills }
 }
 
 function uniq(a: string[]): string[] { return [...new Set(a.map((s) => String(s).trim()).filter(Boolean))] }
