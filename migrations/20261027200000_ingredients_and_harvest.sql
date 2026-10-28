@@ -414,6 +414,7 @@ create table if not exists public.creature_harvest (
   provenance text not null check (provenance in ('srd','book','spell-component','registry-unverified','registry-homebrew','catalogue','sam')),
   source text not null,
   created_at timestamptz not null default now(),
+  harvest_check jsonb,
   unique (bestiary_slug, item_slug)
 );
 alter table public.creature_harvest enable row level security;
@@ -432,7 +433,7 @@ insert into public.creature_harvest (bestiary_slug, item_slug, qty, note, proven
   ('giant-spider', 'spider-venom-gland', 1, 'cut clear of the jaws', 'catalogue', 'items.spider-venom-gland harvest_from Giant Spider'),
   ('giant-spider', 'giant-spider-silk', 2, 'strands from the spinnerets', 'registry-unverified', 'Sam''s ingredient list (OotA): craftable material'),
   ('giant-spider', 'spider-meat', 2, 'from the legs', 'catalogue', 'items.spider-meat (Sam''s Underdark food list, 2026-09-29)'),
-  ('gray-ooze', 'gray-ooze-residue', 1, 'decanted; what its acid does is not ruled yet', 'catalogue', 'items.gray-ooze-residue harvest_from Gray Ooze'),
+  ('gray-ooze', 'gray-ooze-residue', 1, 'only with a Medicine check (DC 15); a failed try burns the harvester for 1d6 acid', 'catalogue', 'items.gray-ooze-residue harvest_from Gray Ooze'),
   ('hook-horror', 'hook-horror-claw', 2, 'the two great hooks', 'catalogue', 'items.hook-horror-claw harvest_from Hook Horror'),
   ('hook-horror-alpha', 'hook-horror-claw', 2, 'the two great hooks', 'catalogue', 'items.hook-horror-claw harvest_from Hook Horror'),
   ('hook-horror-clan-mother', 'hook-horror-claw', 2, 'the two great hooks', 'catalogue', 'items.hook-horror-claw harvest_from Hook Horror'),
@@ -495,6 +496,12 @@ update public.ingredient_registry set item_slug = 'rothe-meat' where slug = 'dee
 update public.ingredient_registry set item_slug = 'cavern-lizard-meat' where slug = 'riding-lizards' and item_slug is null;
 update public.ingredient_registry set item_slug = 'carrion-crawler-mucus' where slug = 'carrion-crawler-mucus-venom' and item_slug is null;
 
+
+-- Sam, 2026-10-27, gray ooze residue: "roll a medicine check to see if you can extract its residue like a poison you can apply to a
+-- weapon or arrow for one combat set. Otherwise it hurts you." Then: DC 15, 1d6 acid on a fail, +1d6 acid on every hit for one combat.
+alter table public.creature_harvest add column if not exists harvest_check jsonb;
+update public.creature_harvest set harvest_check = '{"skill": "medicine", "dc": 15, "fail": {"dice": "1d6", "type": "acid"}, "ruled": "Sam 2026-10-27"}'::jsonb where bestiary_slug = 'gray-ooze' and item_slug = 'gray-ooze-residue';
+update public.items set properties = coalesce(properties, '{}'::jsonb) || '{"harvest_check": {"skill": "medicine", "dc": 15, "fail": "1d6 acid to the harvester"}, "coating": {"applies_to": "a weapon or arrow", "lasts": "one combat", "on_hit": "+1d6 acid, every hit"}, "ruled": "Sam 2026-10-27"}'::jsonb where slug = 'gray-ooze-residue';
 
 -- Sam, 2026-10-27: "fix to match" — three existing parts brought into their creature's Xanathar's CR band
 update public.items set rarity = 'common', properties = coalesce(properties, '{}'::jsonb) || jsonb_build_object('rarity_rule', 'Xanathar''s p.128-129: harvest band of the creature''s CR (Quaggoth Thonot, CR 3)') where slug = 'thonot-psi-crystal';
