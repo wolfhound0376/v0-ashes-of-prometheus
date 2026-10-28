@@ -198,6 +198,16 @@ header .tools input[type=range]{accent-color:#f2c55c}
 .cbt-top .round{font-family:var(--face-mono);font-size:.68rem;letter-spacing:.1em;color:var(--ink-dim);text-align:center;min-width:0;white-space:nowrap}
 .cbt-flee{position:absolute;top:8px;right:10px;font-family:var(--face-mono);font-size:.66rem;line-height:1.35;color:var(--ink-dim);background:rgba(14,8,10,.88);border:1px solid var(--rule);border-radius:8px;padding:6px 10px;max-width:220px;pointer-events:none}
 .cbt-flee[hidden]{display:none}
+/* COMBAT WEARS NO TOP BAR (Sam, 2026-10-28: "The top bar doesn't need to be on during combat. A small DM button can stay
+   at the top right. Not in initiative box not useful."). The header steps out for the whole fight and the stage grows
+   into its room (the ResizeObserver on the stage refits the plate); the DM keeps one small button in the corner, and
+   the "Not in initiative" chip is gone. */
+.app:has(.stage.fight) > header{display:none}
+.cbt-dm{position:absolute;top:8px;right:10px;z-index:3;font-family:var(--face-display);font-size:.78rem;font-weight:700;letter-spacing:.06em;color:#fff;height:30px;padding:0 11px;border:3px solid #9a6a1c;border-radius:10px;background:linear-gradient(180deg,#5e3a7a,#2e1a40);box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.14),0 3px 0 #000,0 6px 12px rgba(0,0,0,.5);cursor:pointer}
+.cbt-dm:hover{border-color:#f2c55c;filter:brightness(1.12)}
+.cbt-dm[hidden]{display:none}
+.combat:has(.cbt-dm:not([hidden])) .bossbar{right:68px}
+body.dm-open .cbt-dm{display:none}
 .cbt-flee b{display:block;color:#ffd27a;font-weight:600;letter-spacing:.1em}
 .cbt-top .btn{padding:4px 10px;font-size:var(--s-1)}
 .cbt-top .cbt-ctl{display:flex;flex-direction:column;gap:4px;padding-left:12px;border-left:1px solid var(--rule)}
@@ -810,6 +820,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="combat" id="combat" hidden>
       <div class="cbt-top cbt-ui"><span class="lbl">Combat<span class="round" id="cbtRound"></span></span><div class="turns" id="turns"></div><span class="cbt-ctl"><button class="btn" id="quickBtn" title="DM: let the heroes fight on their own at speed. Weapons only, no spells or items. Every roll is real.">Quick resolve</button><button class="btn danger" id="endCombat">End fight</button></span></div>
       <div class="cbt-flee" id="cbtFlee" hidden></div>
+      <button class="cbt-dm cbt-ui" id="cbtDm" title="DM tools" hidden>DM</button>
       <div class="bossbar" id="bossBar" hidden aria-live="polite"><div class="bface" id="bossFace"></div><div class="btext"><div class="bname"><span class="kick">BOSS</span><span id="bossName"></span><small id="bossEpithet"></small></div><div class="bhp" title=""><i id="bossHp"></i><em></em><b>Bloodied</b></div></div></div>
       <div class="cbt-party cbt-ui" id="cbtParty"></div>
       <div class="cbt-hint" id="cbtHint" hidden></div>
@@ -5276,7 +5287,7 @@ function bystandersFlee(){
 function renderFleeing(){
   const el = $("cbtFlee"); if (!el) return;
   const bs = cbt ? cbt.bystanders.filter(b => actors.includes(b)) : [];
-  el.hidden = !cbt || !bs.length;
+  el.hidden = true; return;   // Sam, 2026-10-28: "Not in initiative box not useful." Bystanders still flee and draw pot shots; the chip just isn't drawn.
   if (bs.length) el.innerHTML = `<b>Not in initiative</b>${bs.map(b => esc(fname(b)) + (b.down ? " †" : "")).join(", ")} — ${bs.some(b => !b.down) ? "running" : "fallen"}`;
 }
 // The pot shot: a foe goes for the threats first (foeTurn), but on a 6 on a d6 it turns on a bystander it can see and
@@ -5558,7 +5569,7 @@ function openMenu(a, sub){
     // JUMP, as a command (Sam, 2026-10-27: "where is the attack, jump, throw, push, entertain"). The leap itself is the
     // long-jump rule below (planLeap/leapMove): a click on the far side of a gap already springs across it. The button
     // names it, says what this hero clears, and aims the click at a gap (cbt.phase "jump").
-    if (s.strScore) add("Jump", `up to ${s.strScore} ft with a 10-ft run-up, ${Math.floor(s.strScore / 2)} standing · ${c.move} ft left`, c.move >= MIN_LEAP_FT && !["prone", "grappled", "restrained"].some(k => c.conds.has(k)) ? () => { closeMenu(); cbt.phase = "jump"; hint("Jump: click the far side of a gap. Esc to cancel."); } : null);
+    if (s.strScore) add("Jump", `up to ${s.strScore} ft with a 10-ft run-up, ${Math.floor(s.strScore / 2)} standing · ${c.move} ft left`, c.move >= MIN_LEAP_FT && !["prone", "grappled", "restrained"].some(k => c.conds.has(k)) ? () => { closeMenu(); cbt.phase = "jump"; jumpSq = null; hint(jumpSquares(a).length ? "Jump: click a lit square. Esc to cancel." : "No gap you can clear from here. Esc to go back."); } : null);
     if (c.conds.has("restrained")) add("Break free", `STR check vs DC ${c.webDc || 12} · your action`, c.action ? () => { c.action = false; const k = skillCheck(a, "athletics"); if (k.total >= (c.webDc || 12)){ c.conds.delete("restrained"); a.webFx && (a.webFx.until = now); bank("movement/web_tear", .8); popText(a, "free", "#e8e2c8"); log(`${fname(a)} tears out of the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${c.webDc || 12}.`); } else { bank("movement/chains_rattle", .5); popText(a, "stuck", "#c9c4b8"); log(`${fname(a)} strains at the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${c.webDc || 12} — stuck.`); } renderParty(); openMenu(a); } : null);
     const webbed = standing(heroes()).find(p => p !== a && p.c.conds.has("restrained") && feetBetween(a, p) <= 5);
     if (webbed) add("Cut free", `${fname(webbed)} · hit the webbing (AC 10)`, c.action ? () => { c.action = false; const r = d20(0, a); if (r + (s.attacks[0].hit || 0) >= 10 || r === 20){ webbed.c.conds.delete("restrained"); webbed.webFx && (webbed.webFx.until = now); bank("movement/web_tear", .8); popText(webbed, "free", "#e8e2c8"); log(`${fname(a)} cuts ${fname(webbed)} out of the web.`); } else { popText(webbed, "still stuck", "#c9c4b8"); log(`${fname(a)} hacks at the web and misses the strands.`); } renderParty(); openMenu(a); } : null);
@@ -6542,6 +6553,40 @@ function gapOnLine(a, to){
   const px = ftPx(a);
   return {takeoff, land, runUpFt: Math.hypot(takeoff.x - a.x, takeoff.y - a.y) / px,
           gapFt: Math.hypot(land.x - takeoff.x, land.y - takeoff.y) / px};
+}
+// WHERE A JUMP CAN LAND (Sam, 2026-10-28: "where I can legally attempt to jump should be seen in hex squares or
+// something"). Every 5-ft square around the jumper is put to planLeap — the very test the click uses — and the ones it
+// would accept AS the landing (the first ground across the gap, not ground further on that is then walked) are lit.
+// So a lit square is exactly a click that springs, and an unlit far bank is a gap too wide or too costly from here.
+// Recomputed only when the jumper, their spot or their movement changes; a few hundred line tests, not per frame.
+let jumpSq = null;
+function jumpSquares(a){
+  const key = `${a.id}|${Math.round(a.x)}|${Math.round(a.y)}|${a.c.move}|${[...a.c.conds].join()}`;
+  if (jumpSq && jumpSq.key === key) return jumpSq.cells;
+  const cell = 5 * ftPx(a), n = Math.ceil(a.c.move / 5) + 1, cells = [];
+  if (a.c.sheet.strScore && a.c.move >= MIN_LEAP_FT){
+    for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++){
+      const p = {x: a.x + i * cell, y: a.y + j * cell};
+      if (!i && !j) continue;
+      if (Math.hypot(p.x - a.x, p.y - a.y) > (a.c.move + 5) * ftPx(a) || !walkable(p.x, p.y)) continue;
+      const g = planLeap(a, p);
+      if (g && g.ok && Math.hypot(p.x - g.land.x, p.y - g.land.y) <= cell * .75) cells.push(p);
+    }
+  }
+  jumpSq = {key, cells, cell};
+  return cells;
+}
+function drawJumpSquares(a){
+  const cells = jumpSquares(a), h = jumpSq.cell * .46, pulse = .5 + .5 * Math.sin(now / 260), lw = 2 / (base * view.z);
+  const hov = aimW && cells.find(p => Math.abs(aimW.x - p.x) <= h && Math.abs(aimW.y - p.y) <= h);
+  ctx.save();
+  for (const p of cells){
+    const on = p === hov;
+    ctx.fillStyle = on ? "rgba(255,214,102,.42)" : `rgba(232,162,74,${.14 + .08 * pulse})`;
+    ctx.strokeStyle = on ? "rgba(255,240,190,.95)" : "rgba(242,197,92,.8)"; ctx.lineWidth = on ? lw * 1.6 : lw;
+    ctx.beginPath(); ctx.rect(p.x - h, p.y - h, h * 2, h * 2); ctx.fill(); ctx.stroke();
+  }
+  ctx.restore();
 }
 function planLeap(a, to){
   const span = a.c.sheet.strScore; if (!span) return null;
@@ -8333,6 +8378,7 @@ function drawCombatGround(){
     const r = a.c.move * ftPx(a); ctx.save(); ctx.globalAlpha = .9; ctx.setLineDash([12, 10]); ctx.lineWidth = 2.5 / (base * view.z); ctx.strokeStyle = "rgba(232,162,74,.75)";
     ctx.beginPath(); ctx.ellipse(a.x, a.y, r, r * .55, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = "rgba(232,162,74,.07)"; ctx.fill(); ctx.restore();
   }
+  if (a.kind === "pc" && cbt.phase === "jump") drawJumpSquares(a);
   if (cbt.phase === "target" && hoverActor && hoverActor.kind === "foe" && !hoverActor.down && a.kind === "pc"){
     const cv = coverOf(a, hoverActor), col = cv.total ? "255,80,70" : cv.ac >= 5 ? "255,150,60" : cv.ac >= 2 ? "255,214,102" : "120,230,160";
     ctx.save(); ctx.setLineDash([10, 8]); ctx.lineWidth = 2.5 / (base * view.z); ctx.strokeStyle = `rgba(${col},.85)`;
@@ -11085,6 +11131,7 @@ $("dmBtn").onclick = () => toggleDm($("dm").hidden);
 // The DM tools are the DM's (Sam, 2026-10-25). A player's screen never shows the button; the server-backed tools
 // were already refused without the DM code, but the local ones (jump, gate, start a fight, ambush) ran for anyone.
 if (APP && !isDm()) $("dmBtn").hidden = true;
+$("cbtDm").hidden = APP && !isDm(); $("cbtDm").onclick = () => toggleDm(true);
 if (APP && !isDm()) $("quickBtn").hidden = true;   // quick resolve is the DM's call
 $("dmClose").onclick = () => toggleDm(false);
 Object.entries(SPEC).forEach(([n, s]) => { const o = document.createElement("option"); o.value = n; o.textContent = `${n} · ${s.name}`; $("jump").appendChild(o); });
