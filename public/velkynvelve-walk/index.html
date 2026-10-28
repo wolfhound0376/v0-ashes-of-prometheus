@@ -116,7 +116,7 @@ header .tools input[type=range]{accent-color:#f2c55c}
 .bubble.eldritch::before,.bubble.foe.eldritch::before{border-color:#3a0a10 transparent transparent transparent}
 .bubble.eldritch::after,.bubble.foe.eldritch::after{border-color:#0b0608 transparent transparent transparent}
 .bubble.drowish .elv{display:block;font-style:italic;letter-spacing:.05em;color:#5a2a7a}
-.bubble.drowish .tr{display:block;margin-top:4px;padding-top:4px;border-top:1px dashed rgba(20,17,15,.25);font-size:.92em}
+.bubble.drowish .tr{display:block}
 .bubble.eldritch svg{display:block;height:30px;filter:drop-shadow(0 0 3px rgba(255,60,40,.9));animation:eldritch .9s steps(3) infinite}
 .bubble.eldritch b,.bubble.foe.eldritch b{color:#ff6a5a}
 @keyframes eldritch{0%{opacity:1}33%{opacity:.78}66%{opacity:.92}100%{opacity:1}}
@@ -11995,16 +11995,18 @@ function dragAlong(a, pts, ms, each, done){
     if (k >= 1){ clearInterval(id); done && done(); }
   }, 33);
 }
-// ----- Liana's voice: always her own tongue; the translation only for those who have it -----
+// ----- Liana's voice: always her own tongue; the bubble in ONE language -----
+// Sam, 2026-10-28: "The text bubbles for translations are unnecessary unless someone is there to translate. If so, you
+// hear her language but see it in English." The voice is always Elvish. A seat that understands her (or the DM) reads
+// the bubble in English only; a seat that does not reads her Elvish only. Never both stacked.
 function lianaSays(key, ms = 7000){
   const a = surgeon && surgeon.liana, L = SURGEON_LINES[key]; if (!a || !L) return;
   if (APP) speakCanon("liana", L.elv, "Liana").catch(() => {});
   bubbles.filter(b => b.a === a).forEach(b => b.until = 0);
   const el = document.createElement("div"); el.className = "bubble said drowish";
   const who = document.createElement("b"); who.textContent = "Liana · in Elvish"; el.appendChild(who);
-  const tongue = document.createElement("span"); tongue.className = "elv"; tongue.textContent = L.elv; el.appendChild(tongue);
   const knows = viewerUnderstands();
-  if (knows){ const tr = document.createElement("span"); tr.className = "tr"; tr.textContent = L.en; el.appendChild(tr); }
+  const line = document.createElement("span"); line.className = knows ? "tr" : "elv"; line.textContent = knows ? L.en : L.elv; el.appendChild(line);
   over.appendChild(el); bubbles.push({a, el, until: now + ms}); a.lastBark = now; lastAnyBark = now;
   log(knows ? `<b>Liana</b> <i>(Elvish)</i>: “${esc(L.en)}”` : `<b>Liana</b> says something in Elvish.`);
 }
