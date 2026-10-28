@@ -1186,8 +1186,8 @@ function partyLeaves(slug){
   a.fading = true; setTimeout(() => { party = party.filter(p => p !== a); actors = actors.filter(p => p !== a); renderParty(); }, 1300);
   narrate(a, `${SHORT[slug] || SPR[slug].json.name} goes their own way.`);
 }
-const SHORT = {jorlan: "Jorlan", "drow-guard-male": "Drow guard", "drow-guard-female": "Drow guard", freia: "Fifi", derendil: "Derendil", eldeth: "Eldeth", sarith: "Sarith", ront: "Ront", buppido: "Buppido", shuushar: "Shuushar", "giant-spider": "Giant spider", quaggoth: "Quaggoth"};
-const FOE_BARK = {quaggoth: ["Hrrraagh!", "Grrrhh…"], "giant-spider": ["(chittering)", "(hiss)"], "ghost-male": ["(a rattle of wet chain)", "(a sound like water over bone)"]};   // sounds, not dialogue
+const SHORT = {jorlan: "Jorlan", "drow-guard-male": "Drow guard", "drow-guard-female": "Drow guard", freia: "Fifi", derendil: "Derendil", eldeth: "Eldeth", sarith: "Sarith", ront: "Ront", buppido: "Buppido", shuushar: "Shuushar", "giant-spider": "Giant spider", "giant-wolf-spider": "Wolf spider", quaggoth: "Quaggoth"};
+const FOE_BARK = {quaggoth: ["Hrrraagh!", "Grrrhh…"], "giant-spider": ["(chittering)", "(hiss)"], "giant-wolf-spider": ["(chittering)", "(a dry rasp)"], "ghost-male": ["(a rattle of wet chain)", "(a sound like water over bone)"]};   // sounds, not dialogue
 const BASE = 1.15, SPACING = 58, SPEED = 210;
 
 const $ = id => document.getElementById(id);
@@ -1475,7 +1475,7 @@ function cutPath(a, path, budget){
       if (cost > left) return done(false);
       pts.push(q); if (nx){ pts.push(nx); prev = nx; i++; } left -= cost; used += cost; continue;
     }
-    const d = Math.hypot(q.x - prev.x, q.y - prev.y);
+    const d = stepCost(a, prev, q);   // difficult terrain (the web net) counts double
     if (d > left){ const k = left / d; pts.push({x: prev.x + (q.x - prev.x) * k, y: prev.y + (q.y - prev.y) * k}); used += left; return done(false); }
     pts.push(q); left -= d; used += d; prev = q;
   }
@@ -2766,7 +2766,56 @@ function rappelGo(z){
     a.path = R.path.map(([x, y], j) => ({x: x + (j === R.path.length - 1 ? k : 0), y})); });
   setTimeout(() => { mode = "explore"; ackZone = zoneAt(leader.x, leader.y); }, 1400 + order.length * 450);
 }
-function inNet(a){ const net = node.floors && node.floors[node.floors.length - 1]; return cur === "5c" && !!net && inPoly(net.poly, a.x, a.y); }
+function netAt(x, y){ const net = cur === "5c" && node.floors && node.floors[node.floors.length - 1]; return !!net && inPoly(net.poly, x, y); }
+function inNet(a){ return netAt(a.x, a.y); }
+// THE NET IS DANGEROUS FOOTING (Sam, 2026-10-28, picking the second of two options Claude offered: "the web is dangerous
+// footing"). HOUSE RULE, Claude's numbers, flagged:
+//   - the net is difficult terrain (SRD 5.1, Movement: every foot of it costs 1 extra foot), so a 30-ft walker crosses 15 ft;
+//   - a creature that ENDS its turn in the net makes a DC 12 Dexterity save or is restrained by the silk. Breaking free
+//     is the same DC 12 Strength (Athletics) action as the giant spider's Web (SRD 5.1), and a friend can cut them out.
+// Spiders have Web Walker (SRD 5.1: "ignores movement restrictions caused by webbing") and ignore both.
+const NET_DC = 12;
+const webWalker = a => /spider/.test((a && a.id) || "");
+const netSlows = a => cur === "5c" && !webWalker(a);
+// the movement a step from p to q costs, in the same pixels as its length: double over the net for whoever it slows
+function stepCost(a, p, q){
+  const d = Math.hypot(q.x - p.x, q.y - p.y); if (!d || !netSlows(a)) return d;
+  const n = Math.max(1, Math.ceil(d / 8)); let c = 0;
+  for (let i = 0; i < n; i++){ const t = (i + .5) / n; c += (netAt(p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t) ? 2 : 1) * d / n; }
+  return c;
+}
+function netEndTurn(a){
+  if (!a || !a.c || a.down || webWalker(a) || !inNet(a) || a.c.conds.has("restrained")) return;
+  const sv = (a.c.sheet.saves && a.c.sheet.saves.dex) || 0, r = d20(rageAdvantage(a.c.rage, "dex"), a), total = r + sv, ok = total >= NET_DC;
+  log(`${fname(a)} ends the turn in the web net: DEX ${r} + ${sv} = ${total} vs DC ${NET_DC} — ${ok ? "keeps clear of the silk" : "<b>the silk takes hold</b>, restrained (DC " + NET_DC + " STR to break free)"}.`);
+  if (ok){ popText(a, "clear of the silk", "#e8e2c8", .8); return; }
+  addCond(a, "restrained"); a.c.webDc = NET_DC; a.path = []; bank("movement/web_tear", .4);
+  try { spawnFx("spiderWeb", {at: a, sq: 1.6, anchor: "mid", tail: 12, until: now + 600000, alpha: .9}).then(e => { a.webFx = e; }); } catch (e) {}
+  narrate(a, `The sticky silk wraps round ${fname(a)}'s legs.`);
+  renderParty && renderParty();
+}
+// THE NET DRAWS HUNTERS (Sam, 2026-10-28: "Sometimes hanging out here attracts a medium spider to attack"). A giant wolf
+// spider (SRD 5.1, Medium, CR 1/4) lives under the silk. HOUSE NUMBERS, Claude's, flagged: for every 45 seconds the
+// party spends in the net outside a fight, a d6; on a 5 or 6 the spider climbs up through the silk and attacks. Only one
+// at a time, and it can come again after the party leaves and returns.
+const NET_LURK = {everyMs: 45000, on: 5};
+let netLurkMs = 0;
+function tickNet(dt){
+  if (cur !== "5c" || cbt || mode !== "explore" || !party.some(p => inNet(p))){ if (!party.some(p => inNet(p))) netLurkMs = 0; return; }
+  if (npcs.some(n => n.id === "giant-wolf-spider" && !n.down && !n.body)) return;
+  netLurkMs += dt * 1000; if (netLurkMs < NET_LURK.everyMs) return; netLurkMs = 0;
+  const r = d6(); log(`<em>The net trembles under you (d6: ${r}).</em>`);
+  if (r >= NET_LURK.on) wolfSpiderComes();
+}
+function wolfSpiderComes(){
+  if (!SPR["giant-wolf-spider"] && SPR["giant-spider"]) SPR["giant-wolf-spider"] = {...SPR["giant-spider"], json: {...SPR["giant-spider"].json, name: "Giant wolf spider"}};
+  if (!SPR["giant-wolf-spider"]) return;
+  const near = party.filter(p => inNet(p))[0] || leader;
+  let spot = nearestWalkable(near.x + 260, near.y + 40); if (!netAt(spot.x, spot.y)) spot = {x: 1560, y: 1260};   // it comes up through the silk, so it starts in the net
+  const sp = mkActor("giant-wolf-spider", spot.x, spot.y, "npc", {face: 6, big: .55}); npcs.push(sp); actors.push(sp);
+  if (APP) handOff(`While the party lingered in the web net below the lift, a giant wolf spider (SRD 5.1, CR 1/4) climbed up through the silk to attack.`);
+  startCombat([sp], "Something the size of a dog scuttles up through the silk. A giant wolf spider.", {noAllies: true});
+}
 async function fallIntoNet(a){
   if (cur !== "5c") return;
   await playFilm("fall"); await playFilm("web");            // the fall, then the net and what climbs it
@@ -4547,6 +4596,7 @@ const FAMILY_OF = {cold: "cold", fire: "fire", lightning: "arcane", necrotic: "n
 const CREATURE_SFX = {quaggoth: {call: "creature/creature_quaggoth_roar", hurt: "creature/hurt_quaggoth", death: "creature/death_quaggoth"},
   "ghost-male": {hurt: "magic/necrotic_tail", death: "magic/necrotic_release"},
   "giant-spider": {call: "creature/creature_spider_hiss", hurt: "creature/hurt_spider", death: "creature/death_spider"},
+  "giant-wolf-spider": {call: "creature/creature_spider_hiss", hurt: "creature/hurt_spider", death: "creature/death_spider"},
   "gray-ooze": {hurt: "creature/hurt_beast", death: "creature/death_beast"},
   "drow-guard-male": {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}, "drow-guard-female": {hurt: "creature/hurt_humanoid_female", death: "creature/death_humanoid_female"},
   "drow-elite-warrior": {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}, shoor: {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"},
@@ -4736,6 +4786,11 @@ const FOE_BLOCKS = {
                    // SRD: Web (Recharge 5–6) — ranged weapon attack +5, range 30/60 ft, one creature: restrained by webbing;
                    // as an action the target can make a DC 12 STR check to burst it (the webbing: AC 10, 5 HP, vulnerable to fire).
                    web: {name: "Web", hit: 5, range: 60, dc: 12, recharge: 5}, leap: 20},
+  // SRD 5.1 Giant Wolf Spider: Medium beast, AC 13, 11 hp (2d8+2), speed 40 ft (climb 40), passive 13, CR 1/4 (50 XP).
+  // Bite +3, 1d6+1 piercing, DC 11 CON or 2d6 poison (half on a save). Web Walker. Drawn with the giant spider's sheet at
+  // about half its size (no art of its own yet).
+  "giant-wolf-spider": {name: "Giant wolf spider", xp: 50, passive: 13, hp: 11, ac: 13, speed: 40, init: 3, saves: {str: 1, dex: 3, con: 1, int: -4, wis: 1, cha: -3},
+                   attacks: [{name: "Bite", hit: 3, dmg: "1d6+1", type: "piercing", reach: 5, rider: {save: "con", dc: 11, dmg: "2d6", type: "poison", half: true}}]},
   quaggoth: {name: "Quaggoth", xp: 450, passive: 11, hp: 45, ac: 13, speed: 30, init: 1, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, immune: ["poison"], immuneCond: ["poisoned"],
              attacks: [{name: "Claw", hit: 5, dmg: "1d6+3", type: "slashing", reach: 5}], multi: 2, woundedFury: 10},
   // THE BHUT under Old Thessaly (Sam, 2026-10-24; stat block supplied by Sam, homebrew, in `bestiary` as `bhut`):
@@ -5252,6 +5307,7 @@ function nextTurn(first){
   closeMenu(); cbt.phase = "idle"; cbt.turnNo = (cbt.turnNo || 0) + 1;
   // A RAGE IS TESTED AS ITS OWNER'S TURN ENDS (SRD 5.1): "It ends early ... if your turn ends and you haven't attacked
   // a hostile creature since your last turn or taken damage since then", and after one minute. lib/rage.mjs decides.
+  if (!first) netEndTurn(cbt.order[cbt.idx]);   // ending a turn in the web net (5c): DEX save or restrained
   if (!first){ const was = cbt.order[cbt.idx]; if (was && was.c && was.c.rage){ const r = rageAfterTurn(was.c.rage, cbt.round); if (r.ended) endRage(was, r.ended); else was.c.rage = r.rage; } }
   for (let k = 0; k < cbt.order.length; k++){
     cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0){ cbt.round++; if (cbt.round > 1) bystandersFlee(); }   // the bystanders run as each round opens
@@ -12352,7 +12408,7 @@ function keyboardMove(a, dt){
         return;
       }
     }
-    a.c.kbdPx = (a.c.kbdPx || 0) + Math.hypot(nx - a.x, ny - a.y);
+    a.c.kbdPx = (a.c.kbdPx || 0) + Math.hypot(nx - a.x, ny - a.y) * (netSlows(a) && netAt(nx, ny) ? 2 : 1);   // the web net is difficult terrain
     while (a.c.kbdPx >= 5 * fp - .01 && a.c.move > 0){ a.c.move -= 5; a.c.kbdPx -= 5 * fp; }
     if (!a.kbdOut) hint(`Moving · ${a.c.move} ft left`);
   }
@@ -12516,7 +12572,7 @@ function step(a, dt, speed){
 function update(dt){
   if (cbt && poisonZones.length) tickPoisonZones();
   tickFootsteps();
-  tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt);
+  tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt);
   if (camTween){
     const k = Math.min(1, (now - camTween.t0) / camTween.ms), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
     view.z = camTween.from.z + (camTween.to.z - camTween.from.z) * e;

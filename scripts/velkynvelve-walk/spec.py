@@ -144,7 +144,13 @@ NODES = {
            # the web net (Expanded p.45: "a spider web netting ... 100' below for those who fall"). Floor only for whoever
            # lands in it: no path joins it to the ledges, so the only ways in are a failed rappel and the only way out is
            # the net's anchor rope back up to the lowest ledge.
-           dict(poly=P((474,913),(1005,999),(1435,1085),(2009,1056),(2182,1085),(2153,1286),(1722,1339),(574,1339),(431,1171)))],
+           # RETRACED 2026-10-28 (Sam: "Fifi and Kenta and Shuushar are in the air. We need to make sure that no one is
+           # actually in a chasm or the air"). The first trace ran its top edge along the foot of the cliff wall and its
+           # left corner over the dark spire, so heroes stood on bare rock face and over the drop. This one follows the
+           # dense sag of the webbing only: top edge along the main strands between the two anchor rings, bottom edge where
+           # the mesh thins out, the left spire left out. By eye at full size, Claude.
+           dict(poly=P((565,1092),(773,1071),(1014,1060),(1245,1113),(1508,1160),(1770,1155),(2033,1125),(2180,1102),
+                       (2169,1270),(1875,1307),(1350,1322),(825,1322),(640,1302),(560,1200)))],
    obstacles=[],
    # RAPPELS (Sam, 2026-10-26: "rappel checks and fall into the web net"). The scree between the ledges is not walkable:
    # each drop is a rope, crossed by a `rappel` zone that asks for Strength (Athletics) on the dashboard's dice
@@ -161,7 +167,7 @@ NODES = {
                rappel=dict(dir="down", path=[[1500, 640], [1540, 760], [1600, 860]])),
           dict(rect=[1440, 830, 1560, 920], to=[], kind="rappel", label="The rope up to the middle ledge",
                rappel=dict(dir="up", path=[[1480, 760], [1440, 640], [1400, 540]])),
-          dict(rect=[1800, 1040, 1960, 1120], to=[], kind="rappel", label="The net's anchor rope, back up to the lowest ledge",
+          dict(rect=[1800, 1135, 1960, 1210], to=[], kind="rappel", label="The net's anchor rope, back up to the lowest ledge",
                rappel=dict(dir="up", path=[[1860, 1000], [1860, 930], [1840, 880]], net=True))]),
  "3k": dict(slug="node-03k-kitchen", name="Main Hall kitchen", scale=2.4, depth=[0.8, 1.4], img="node-03k-kitchen.jpg",
    # Hard Labor module plate B (Sam, 2026-10-26). OotA p.12 lists food prep and service, and washing dishes, among the
