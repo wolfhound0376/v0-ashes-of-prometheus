@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { CONFISCATION_STASH_NAME } from "@/lib/confiscation"
+import { bodyKit } from "@/lib/harvest"
 import { BOOK_CONTAINERS, BODY_KIT, CREATURE_PARTS, PEN_KEY_SLUG, POCKET_SPRITES, rollPockets, rollWear, isValuable, parseContainer, pocketEntries, type LootEntry, type Ruined } from "@/lib/walk-loot"
 
 // /api/walk-loot — what is in Velkynvelve's chests, on its dead and in its guards' pockets (see lib/walk-loot.ts).
@@ -62,6 +63,19 @@ async function stashRows(db: Db, sid: string): Promise<StashRow[]> {
 // pickpocket — a weapon, armour or a ring is worn or wielded, not in a pocket (Sam, 2026-10-27: "NOT equipped").
 type Shown = { kind: "book" | "stash"; slug?: string; rowId?: string; name: string; qty: number; note?: string; owner?: string | null; pixel: string | null; icon: string | null; missing?: boolean; slot?: string | null }
 
+// what a carcass yields: the `creature_harvest` table (Sam, 2026-10-27: "I want all of this in databases and wired in the
+// game"; migrations/20261027200000_ingredients_and_harvest.sql). A creature with harvest rows drops those parts; a body
+// with a kit as well (none yet) keeps the kit and adds the parts. No table yet, a read error or no rows → the kit in
+// lib/walk-loot.ts, so the map never goes quiet while the migration is waiting to be run.
+async function harvestFor(db: Db, slug: string): Promise<LootEntry[] | null> {
+  const { data, error } = await db.from("creature_harvest").select("item_slug,qty,note").eq("bestiary_slug", slug).order("id")
+  if (error || !data?.length) return null
+  return (data as { item_slug: string; qty: number; note: string | null }[]).map((r) => ({ slug: r.item_slug, qty: r.qty, ...(r.note ? { note: r.note } : {}) }))
+}
+async function kitFor(db: Db, slug: string): Promise<LootEntry[] | undefined> {
+  return bodyKit(slug, await harvestFor(db, slug))
+}
+
 async function contents(db: Db, id: string, s: State, kill?: string | null): Promise<{ title: string; source: string; rows: Shown[]; rolled: boolean; ruinedNow?: Ruined[]; ruined?: Ruined[] } | null> {
   const c = parseContainer(id); if (!c) return null
   // a guard's pockets are rolled the first time anyone looks, then kept for the run (lib/walk-loot.ts POCKET_TABLE)
@@ -71,8 +85,10 @@ async function contents(db: Db, id: string, s: State, kill?: string | null): Pro
   // a body's kit rolls for wear the first time anyone looks — the map looks the moment it falls, saying what killed it
   // (lib/walk-loot.ts rollWear: 1-2 on a d20, worse by kill type) — then stays as rolled for the run
   let ruinedNow: Ruined[] | undefined
-  if (c.kind === "body" && BODY_KIT[c.slug!] && !s.bodies[c.key]){ s.bodies[c.key] = rollWear(BODY_KIT[c.slug!], Math.random, kill); rolled = true; ruinedNow = s.bodies[c.key].ruined }
-  const book: LootEntry[] = c.kind === "book" ? BOOK_CONTAINERS[id].entries : c.kind === "body" ? (s.bodies[c.key]?.kept ?? BODY_KIT[c.slug!] ?? []) : guard ? s.pockets[c.key] : pocketEntries(c.slug!)
+  const kit = c.kind === "body" && !s.bodies[c.key] ? await kitFor(db, c.slug!) : undefined
+  if (c.kind === "body" && kit?.length && !s.bodies[c.key]){ s.bodies[c.key] = rollWear(kit, Math.random, kill); rolled = true; ruinedNow = s.bodies[c.key].ruined }
+  const harvested = c.kind === "body" && (CREATURE_PARTS[c.slug!] || !BODY_KIT[c.slug!]) && !!(s.bodies[c.key]?.kept.length || s.bodies[c.key]?.ruined.length)
+  const book: LootEntry[] = c.kind === "book" ? BOOK_CONTAINERS[id].entries : c.kind === "body" ? (s.bodies[c.key]?.kept ?? kit ?? BODY_KIT[c.slug!] ?? []) : guard ? s.pockets[c.key] : pocketEntries(c.slug!)
   const cat = await itemsBySlug(db, book.map((e) => e.slug))
   const taken = s.taken[c.key] ?? {}
   const penKeyGone = Object.entries(s.taken).some(([k, v]) => k.startsWith("pocket:") && (v[PEN_KEY_SLUG] ?? 0) > 0)
@@ -95,7 +111,7 @@ async function contents(db: Db, id: string, s: State, kill?: string | null): Pro
     }
   }
   const title = c.kind === "book" ? BOOK_CONTAINERS[id].title : c.kind === "body" ? "The body" : /^drow-guard/.test(c.slug!) ? "The guard's belt and pockets" : "A belt and pockets"
-  const source = c.kind === "book" ? BOOK_CONTAINERS[id].source : c.kind === "body" ? (BODY_KIT[c.slug!] ? (CREATURE_PARTS[c.slug!] ? "What can be cut from the carcass (homebrew harvest)." : /^drow-guard/.test(c.slug!) ? "A drow warrior's kit, OotA ch.1 area 2." : "What their stat block fights with.") : "Only what the DM handed them.") : (guard ? "Rolled once for this guard: 1d6 draws on the pocket table (Sam's list, 2026-10-27). " : "") + "OotA ch.1, Acquisitions: \"lift a key to the slave pen from a guard\"."
+  const source = c.kind === "book" ? BOOK_CONTAINERS[id].source : c.kind === "body" ? (harvested ? "What can be cut from the carcass (creature_harvest; rarity from the creature's CR, Xanathar's pp.128-129)." : BODY_KIT[c.slug!] ? (CREATURE_PARTS[c.slug!] ? "What can be cut from the carcass (homebrew harvest)." : /^drow-guard/.test(c.slug!) ? "A drow warrior's kit, OotA ch.1 area 2." : "What their stat block fights with.") : "Only what the DM handed them.") : (guard ? "Rolled once for this guard: 1d6 draws on the pocket table (Sam's list, 2026-10-27). " : "") + "OotA ch.1, Acquisitions: \"lift a key to the slave pen from a guard\"."
   const ruined = c.kind === "body" ? s.bodies[c.key]?.ruined ?? [] : []
   const wrecked = ruined.length ? ` Ruined in the fight: ${ruined.map((r) => `${r.slug.replace(/-/g, " ")} (d20 ${r.roll})`).join(", ")}.` : ""
   return { title, source: source + wrecked, rows, rolled, ruinedNow, ruined }
