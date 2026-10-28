@@ -6589,7 +6589,11 @@ function combatClick(w){
   if (p.inspire){ const t = hitActor(friends(), w); if (!t || t === a || t.down) return; if (feetBetween(a, t) > 60){ toast("Too far: within 60 ft."); return; }
     if (t.c.conds.has("inspired")){ toast(`${fname(t)} already has an inspiration die.`); return; } inspire(a, t); return; }
   if (p.help){ const t = hitActor(friends(), w); if (!t || t === a) return; if (feetBetween(a, t) > 5){ toast("Too far to help: within 5 ft."); return; } a.c.action = false; addCond(t, "helped"); log(`${fname(a)} helps ${fname(t)}.`); narrate(a, `${fname(a)} sets ${fname(t)} up.`); openMenu(a); return; }
-  if (p.shove){ const t = hitActor(foes, w); if (!t || t.down) return; if (feetBetween(a, t) > 5){ toast("Shove needs to be within 5 ft."); return; } doShove(a, t, p.shove); return; }
+  // SHOVE WALKS IN LIKE A SWING (Sam, 2026-10-28: "Shove button doesn't seem to work"). The click used to refuse any
+  // foe more than 5 ft away with a small toast, while an Attack on the same foe walked up and struck; so a shove aimed
+  // across the room looked like a dead button. doShove approaches first (the movement left pays for it) and only then
+  // asks for the save; a foe still out of reach after the walk hands the action back.
+  if (p.shove){ const t = hitActor(foes, w); if (!t || t.down) return; doShove(a, t, p.shove); return; }
   if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(friends(), w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; }
     if (t !== a && coverOf(a, t).total){ toast(`No line of sight to ${fname(t)}.`); return; } castSpell(a, t, p.spell); return; }
   if (sp && (sp.kind === "cloud" || sp.kind === "fog") && Math.hypot(w.x - a.x, w.y - a.y) / ftPx(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
@@ -7165,11 +7169,17 @@ function doSearch(a){
 // 8 + your STR mod + proficiency. The map rolls its better save. Needs the action.
 function doShove(a, t, what){
   const c = a.c; c.action = false; closeMenu(); cbt.phase = "busy"; combatBusy = true;
+  const verb = what === "grapple" ? "grapple" : "shove";
   approachThen(a, t, 5, () => {
+    // still out of reach after walking as far as the movement allows: no shove, the action is handed back (as a shot
+    // too far is, attackWith)
+    if (feetBetween(a, t) > 5 + 2.5 && !gateWayTo(a, t)){ toast(`Too far to ${verb}: ${Math.round(feetBetween(a, t))} ft, and ${fname(a)} is out of movement.`); c.action = true; combatBusy = false; if (cbt){ cbt.phase = "idle"; openMenu(a); } return; }
     strike(a, t, () => {
       const sv = Math.max(t.c.sheet.saves.str || 0, t.c.sheet.saves.dex || 0), r = d20(rageAdvantage(t.c.rage, (t.c.sheet.saves.str || 0) >= (t.c.sheet.saves.dex || 0) ? "str" : "dex"), t), total = r + sv, dc = shoveDc(a), ok = total >= dc;
       lunge(a, t, 12 * actorScale(a)); afterAttackRoll(a);
-      if (ok){ bank("combat/melee_miss", .6); popText(t, "holds", "#c9c4b8"); log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — it holds.`); return; }
+      // THE SAVE HOLDS: say so loudly. "holds" in grey over the foe read as nothing happening — the player saw the
+      // hero step in and the foe stand there (Sam, 2026-10-28). The shove is a contest that was lost, not a dead click.
+      if (ok){ bank("combat/melee_miss", .6); popText(t, `${verb} fails`, "#ffb27a", 1.15); popText(a, "they hold", "#c9c4b8", .85); narrate(a, `${fname(a)} tries to ${verb} ${fname(t)}, who holds firm.`); log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — <b>it holds</b>.`); return; }
       bank("walk:punch-bag", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx(what === "prone" ? MARTIAL_IMPACT.sweep : what === "push" ? MARTIAL_IMPACT.kick : MARTIAL_IMPACT.punch, {at: t, sq: 1.8, mirror: what === "prone" && t.x < a.x});   // the sweep takes their legs; a push is a kick
       if (what === "prone"){ addCond(t, "prone"); if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); narrate(a, `${fname(a)} knocks ${fname(t)} flat.`); }
       else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ftPx(t) * 5, y: t.y + d.y * ftPx(t) * 5}; const to = nearestWalkable(raw.x, raw.y); if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a); else { const top = elevAt(t.x, t.y); t.x = to.x; t.y = to.y; const dropFt = top - elevAt(to.x, to.y); if (dropFt >= LEDGE_FT){ narrate(a, `${fname(a)} shoves ${fname(t)} off the edge.`); setTimeout(() => landFall(t, dropFt), 250); } } narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
