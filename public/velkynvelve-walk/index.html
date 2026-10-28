@@ -462,6 +462,34 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .inv .lvlUp.locked small{color:#fff;opacity:.85}
 .inv .lvlUp.earned{border-color:var(--th-gold)}
 .inv .invEcon,.inv .invFoot,.inv .invSel{color:#b8a98a}
+/* THE LEVEL UP CEREMONY (PR 2): a sheet over the backpack — what the level fixes, the one choice it asks (the Hit Die:
+   roll it or take the SRD's fixed value), the choices owed on the sheet after, and one Confirm that writes once. */
+.invPack{position:relative}
+.invCeremony{position:absolute;inset:0;z-index:3;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:10px;padding:14px 16px;box-sizing:border-box;border-radius:var(--ef-radius);background:linear-gradient(145deg,#17131c,#0d0c12 70%);box-shadow:inset 0 0 0 1px var(--ef-brass),inset 0 0 0 2px #000}
+.invCeremony[hidden]{display:none}
+.cerHead{display:flex;align-items:center;gap:14px}
+.cerHead .lvlBadge{box-shadow:0 0 0 1px #000,0 0 22px rgba(239,213,138,.45);border-color:var(--ef-gold-light)}
+.cerHead h4{margin:0;font-family:var(--face-display);font-weight:400;font-size:var(--s2);letter-spacing:.1em;color:var(--ef-gold)}
+.cerHead .sub{font-size:var(--s-1);color:var(--ef-secondary);margin-top:3px}
+.cerHead .back{margin-left:auto}
+.cerBody{overflow:auto;min-height:0;display:grid;align-content:start;gap:0}
+.cerRow{display:flex;align-items:flex-start;gap:12px;padding:11px 0;border-bottom:1px solid #2a2330}
+.cerRow:last-child{border-bottom:0}
+.cerRow .n{width:26px;height:26px;flex:0 0 26px;border-radius:50%;border:1px solid var(--ef-gold);display:grid;place-items:center;font-family:var(--face-display);font-size:.8rem;color:var(--ef-gold);background:rgba(215,175,88,.08)}
+.cerRow .n.done{border-color:var(--ef-equipped);color:var(--ef-equipped);background:rgba(88,206,133,.1)}
+.cerRow .t{font-family:var(--face-display);font-size:var(--s1);color:var(--ef-text);letter-spacing:.03em}
+.cerRow .d{font-size:var(--s-1);color:var(--ef-secondary);line-height:1.4;margin-top:3px}
+.cerRow .d b{color:var(--ef-text);font-weight:600}
+.cerRow .src{font-family:var(--face-mono);font-size:.62rem;color:var(--ef-muted);letter-spacing:.06em;margin-top:3px}
+.cerRow .cerActs{margin-left:auto;display:flex;gap:6px;flex:0 0 auto;align-items:center}
+.cerDie{width:52px;height:52px;flex:0 0 52px;display:grid;place-items:center;border:2px solid var(--ef-gold);border-radius:10px;background:radial-gradient(circle at 50% 35%,#2a2330,#0a0910 72%);font-family:var(--face-display);font-size:1.5rem;color:var(--ef-gold-light);box-shadow:0 0 0 1px #000,0 0 14px rgba(215,175,88,.3)}
+.cerDie.spin{animation:cerSpin .12s linear infinite}
+@keyframes cerSpin{0%{transform:rotate(-6deg) scale(1.04)}50%{transform:rotate(6deg) scale(.98)}100%{transform:rotate(-6deg) scale(1.04)}}
+.cerFoot{display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap}
+.cerFoot .lvlUp{font-size:var(--s1);padding:11px 30px}
+.cerFoot .note{width:100%;text-align:center;font-family:var(--face-mono);font-size:.66rem;color:var(--ef-muted);letter-spacing:.06em}
+.cerFlags{font-family:var(--face-mono);font-size:.64rem;color:var(--ef-muted);line-height:1.5;padding:6px 0 0}
+@media (prefers-reduced-motion:reduce){.cerDie.spin{animation:none}}
 .dm h4{margin:0;font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-dim);font-weight:500}
 .dm select{font:inherit;background:var(--stage);color:var(--ink);border:1px solid var(--rule);border-radius:4px;padding:6px}
 .dm .btn{text-align:left}
@@ -674,6 +702,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
           <div class="invPackHead" id="invPackHead">Backpack</div>
           <div class="invList" id="invList"></div>
           <div class="invDetail" id="invDetail" hidden></div>
+          <div class="invCeremony" id="invCeremony" role="region" aria-label="Level up" hidden></div>
         </div>
       </div>
       <div class="invHand" id="invHand" hidden></div>
@@ -13320,6 +13349,7 @@ function toggleBag(on, who){
   if (on){ inv.who = who || null; inv.slot = null; if (APP && !gearLoaded && seatsSeen.length){ gearLoaded = true; loadGear(); }
     const h = bagHero(); if (APP && h && !GEAR[h.id]) loadGear(h.id); renderBag(); }
   $("inv").hidden = !on; $("bagBtn").setAttribute("aria-expanded", String(on));
+  if (!on && typeof closeLevelUp === "function") closeLevelUp();   // the ceremony never outlives the inventory
 }
 // what this hero may do with the bag right now: anything out of a fight, only on their own turn in one
 function bagCan(a){ return canControl(a) && (!inFightNow() || (a === activeActor() && !combatBusy && !a.down)); }
@@ -13327,9 +13357,8 @@ function renderBag(){
   const a = bagHero(), g = GEAR[a.id] || (GEAR[a.id] = {carried: [], doll: [], main: null, off: null});
   const fight = inFightNow(), mine = bagCan(a), c = a.c;
   $("invWho").textContent = fname(a); $("invCrest").src = HERO_ICON_BASE + "crest.png";
-  { const s = SHEETS[a.id] || {}, pc = PCS[a.id] || {}, race = String(s.race || pc.race || "").replace(/\b\w/g, ch => ch.toUpperCase());
-    $("invSub").textContent = [race, s.cls || pc.cls || ""].filter(Boolean).join(" ") + (s.level ? ` · Level ${s.level}` : "");
-    renderBagChips(a, s); renderLevelPanel(a, s); }
+  if (cer.for && cer.for !== a.id) closeLevelUp();
+  { const s = SHEETS[a.id] || {}; renderBagSub(a, s); renderBagChips(a, s); renderLevelPanel(a, s); }
   $("invEcon").textContent = !fight ? "out of combat: nothing costs a turn"
     : !mine ? "not their turn: look, don't touch"
     : `this turn: ${c.action ? "action ready" : "action spent"} · ${c.bonus ? "bonus action ready" : "bonus action spent"} · only what is in hand can change mid-fight`;
@@ -13435,6 +13464,10 @@ function renderBag(){
   }
 }
 const sameBagItem = (it, ref) => it.item_key && ref.item_key ? it.item_key === ref.item_key : it.name === ref.name;
+function renderBagSub(a, s){
+  const pc = PCS[a.id] || {}, race = String(s.race || pc.race || "").replace(/\b\w/g, ch => ch.toUpperCase());
+  const el = $("invSub"); if (el) el.textContent = [race, s.cls || pc.cls || ""].filter(Boolean).join(" ") + (s.level ? ` · Level ${s.level}` : "");
+}
 // The three chips the reference carries: hit points, armor class, speed — the sheet's own numbers (hp_current when the
 // row has it, the fight's live total mid-fight, else the max), never a derived "power". The AC on the sheet is the
 // dashboard's, which already counts worn armour; the walk does not recompute it.
@@ -13459,16 +13492,110 @@ function renderLevelPanel(a, s){
   const frac = xp == null || next == null ? 0 : Math.max(0, Math.min(1, (xp - base) / (next - base)));
   const right = next == null ? "top level" : xp == null ? `level ${level + 1} at ${next.toLocaleString()} XP` : `${Math.min(xp, next).toLocaleString()} / ${next.toLocaleString()} XP`;
   const state = ready ? "earned" : "locked";
-  const small = ready ? `level ${level + 1} earned · take it at camp` : next == null ? "no further levels" : xp == null ? "XP is on the sheet, not here" : `${(next - xp).toLocaleString()} XP to level ${level + 1}`;
+  const small = ready ? (inFightNow() ? `level ${level + 1} earned · after the fight` : `level ${level + 1} earned · take it now`) : next == null ? "no further levels" : xp == null ? "XP is on the sheet, not here" : `${(next - xp).toLocaleString()} XP to level ${level + 1}`;
   el.innerHTML = `<div class="lvlBadge" title="Level ${level}"><small>Level</small><b>${level}</b></div>`
     + `<div class="lvlXp"><div class="lbl"><span><img class="mark" src="${HERO_ICON_BASE}xp.png" alt="">Experience</span><span>${esc(right)}</span></div><div class="lvlBar${ready || frac >= 1 ? " full" : ""}"><i style="width:${Math.round((ready ? 1 : frac) * 100)}%"></i></div></div>`
     + `<button class="lvlUp ${state}" id="lvlUpBtn"${ready ? "" : ' aria-disabled="true"'}><img class="mark" src="${HERO_ICON_BASE}level-up.png" alt=""><span class="t">Level Up<small>${esc(small)}</small></span></button>`;
   const b = $("lvlUpBtn");
   b.onclick = () => {
     if (!ready){ toast(next == null ? `${fname(a)} is at the top level.` : xp == null ? "This sheet carries no XP here; the dashboard has it." : `${(next - xp).toLocaleString()} XP still to earn.`); return; }
-    showDialog({title: `${fname(a)} is ready for level ${level + 1}`, body: `The XP is on the sheet. Levels are taken at camp, or where the DM allows one (hit points rolled, new features, the class's own trial). Nothing changes until then.`,
-      buttons: [{label: "Understood", primary: true}]});
+    openLevelUp(a);
   };
+}
+// THE CEREMONY (Sam, 2026-10-27: "permit level ups outside of camp, just not in combat" — superseding the camp-only
+// house rule — and "no gated level until we get past level 3"). The sheet asks /api/walk-level-up what the level
+// brings (lib/camp.ts levelUp(), the same engine the camp uses — nothing is computed here), shows it, takes the one
+// choice the SRD leaves to the player (roll the Hit Die, or the fixed value), and confirms ONCE: the route writes
+// only while the sheet is still at the level it was shown at, so a second click lands on nothing.
+const cer = {for: null, busy: false};
+function closeLevelUp(){ const el = $("invCeremony"); if (el){ el.hidden = true; el.innerHTML = ""; } cer.for = null; cer.busy = false; }
+async function openLevelUp(a){
+  if (inFightNow()){ toast("Not in the middle of a fight. After."); return; }
+  const cid = characterIdOf(a.id); if (!APP || !cid){ toast(`${fname(a)} has no sheet on the server here.`); return; }
+  const el = $("invCeremony"); if (!el) return;
+  cer.for = a.id; cer.busy = false; el.hidden = false;
+  el.innerHTML = `<div class="cerHead"><h4>Reading the sheet…</h4></div>`;
+  let p = null;
+  try { const j = await (await fetch(`/api/walk-level-up?character_id=${encodeURIComponent(cid)}`, {cache: "no-store"})).json(); p = j.preview || null; if (!p) throw new Error(j.error || "no preview"); }
+  catch (e) { el.innerHTML = `<div class="cerHead"><h4>Could not read the sheet</h4><button class="btn back" id="cerBack">Back</button></div><div class="cerBody"><div class="cerRow"><div class="d">${esc(String(e && e.message || e))}</div></div></div>`; $("cerBack").onclick = closeLevelUp; return; }
+  if (cer.for !== a.id) return;
+  renderCeremony(a, cid, p);
+}
+function renderCeremony(a, cid, p){
+  const el = $("invCeremony"); if (!el) return;
+  const s = SHEETS[a.id] || {}, die = p.die, con = p.con || 0, conTxt = con ? ` ${con > 0 ? "+" : ""}${con} CON` : "";
+  const profNow = Math.ceil(Math.max(1, p.level) / 4) + 1, profNext = p.write ? p.write.proficiency_bonus : profNow;   // SRD: +2 at 1–4, +3 at 5–8, …
+  const slotsNow = (s.magic && s.magic.slots) || {}, slotsNext = p.write && p.write.slots ? p.write.slots : null;
+  const ord = n => ({1: "1st", 2: "2nd", 3: "3rd"})[n] || `${n}th`;
+  const slotLine = slotsNext ? Object.keys(slotsNext).sort((x, y) => x - y).map(k => { const was = slotsNow[k] || 0, now = slotsNext[k].max || 0; return `${ord(+k)}: ${was !== now ? `${was} → <b>${now}</b>` : now}`; }).join(" · ") : null;
+  const choice = {method: null, face: null};
+  const gained = () => Math.max(1, (choice.method === "roll" ? choice.face : p.average) + con);
+  const okToGo = p.ok && !p.gated;
+  el.innerHTML = `<div class="cerHead"><div class="lvlBadge"><small>Level</small><b>${p.next}</b></div><div><h4>LEVEL ${p.next} AWAITS</h4><div class="sub">${esc(p.name)} · ${esc(String(p.class || ""))} · ${p.xp.toLocaleString()} / ${(p.need || 0).toLocaleString()} XP</div></div><button class="btn back" id="cerBack">Back</button></div>`
+    + `<div class="cerBody" id="cerBody"></div>`
+    + `<div class="cerFoot" id="cerFoot"></div>`;
+  $("cerBack").onclick = closeLevelUp;
+  const body = $("cerBody"), foot = $("cerFoot");
+  if (!okToGo){
+    body.innerHTML = `<div class="cerRow"><div class="n">!</div><div><div class="t">${p.gated ? "This level waits on a trial" : "Not yet"}</div><div class="d">${esc(p.gateNote || p.refusal || "")}</div></div></div>`;
+    foot.innerHTML = `<div class="note">${p.gated ? "Sam sets the trial counts; until then levels 4 and up are taken through the DM." : "The sheet is not ready for this level."}</div>`;
+    return;
+  }
+  const row = (n, t, d, src, acts, done) => `<div class="cerRow"><div class="n${done ? " done" : ""}">${n}</div><div style="flex:1 1 auto;min-width:0"><div class="t">${t}</div><div class="d">${d}</div>${src ? `<div class="src">${esc(src)}</div>` : ""}</div>${acts || ""}</div>`;
+  const draw = () => {
+    const hpDone = !!choice.method;
+    const hpDesc = hpDone ? `<b>+${gained()} hit points</b> — ${choice.method === "roll" ? `d${die} rolled ${choice.face}` : `fixed ${p.average}`}${conTxt}${(choice.method === "roll" ? choice.face : p.average) + con < 1 ? " · minimum 1 per level" : ""}. Max ${s.hp || "?"} → ${s.hp ? s.hp + gained() : "?"}; a wound carried in stays.`
+      : `Roll the d${die} here, or take the fixed <b>${p.average}</b> (the SRD's alternative: half the die, rounded up)${conTxt}. Minimum 1 per level.`;
+    const hpActs = hpDone ? `<div class="cerActs"><div class="cerDie" id="cerDie">${choice.method === "roll" ? choice.face : p.average}</div></div>`
+      : `<div class="cerActs"><button class="btn primary" id="cerRoll">Roll d${die}</button><button class="btn" id="cerAvg">Take ${p.average}</button></div>`;
+    let html = row(1, "Hit points", hpDesc, "SRD 5.1, Beyond 1st Level · minimum 1 is PHB wording (house rule)", hpActs, hpDone);
+    html += row(2, "Proficiency bonus", profNext !== profNow ? `+${profNow} → <b>+${profNext}</b> — every attack, save and skill you are proficient in moves with it (the map re-reads them when you next come in).` : `Stays <b>+${profNow}</b> until level ${profNow === 2 ? 5 : profNow === 3 ? 9 : profNow === 4 ? 13 : 17}.`, "SRD 5.1, Beyond 1st Level", "", true);
+    html += row(3, "Hit Dice", `<b>${esc(p.write.sheet_hit_dice)}</b> — one more to spend on a short rest.`, "SRD 5.1, Beyond 1st Level", "", true);
+    if (slotLine) html += row(4, "Spell slots", slotLine, "SRD 5.1, class spellcasting table", "", true);
+    const owed = (p.pendingChoices || []);
+    if (owed.length) html += row(slotLine ? 5 : 4, "Then, on your sheet", owed.map(c => `• ${esc(c.text)}`).join("<br>") + `<br><span style="color:var(--ef-muted)">Nothing here picks these for you — they are yours, on the dashboard sheet.</span>`, owed.map(c => c.source).filter((v, i, arr) => arr.indexOf(v) === i).join(" · "), "", false);
+    if (p.flags && p.flags.length) html += `<div class="cerFlags">${p.flags.map(esc).join("<br>")}</div>`;
+    body.innerHTML = html;
+    foot.innerHTML = `<button class="lvlUp ${hpDone ? "earned" : "locked"}" id="cerGo"${hpDone ? "" : ' aria-disabled="true"'}>Level Up<small>${hpDone ? `take level ${p.next} · writes the sheet once` : "choose the hit points first"}</small></button><div class="note">anywhere but a fight · one level at a time · the sheet keeps what it had</div>`;
+    const rollBtn = $("cerRoll"), avgBtn = $("cerAvg");
+    if (rollBtn) rollBtn.onclick = () => {
+      // the die spins in front of the player, then settles on the walk's own roll; that face goes to the route
+      const r = roll(`1d${die}`), face = r.rolls[0] || 1;
+      choice.method = "roll"; choice.face = face; draw();
+      const d = $("cerDie"); if (d){ d.classList.add("spin"); let n = 0; const t = setInterval(() => { d.textContent = 1 + Math.floor(Math.random() * die); if (++n > 9){ clearInterval(t); d.classList.remove("spin"); d.textContent = face; } }, 70); }
+      bank("ui/press", .5);
+    };
+    if (avgBtn) avgBtn.onclick = () => { choice.method = "average"; choice.face = null; draw(); bank("ui/confirm", .5); };
+    $("cerGo").onclick = () => { if (!hpDone || cer.busy) return; takeLevel(a, cid, p, choice); };
+  };
+  draw();
+}
+async function takeLevel(a, cid, p, choice){
+  cer.busy = true; const go = $("cerGo"); if (go){ go.classList.remove("earned"); go.classList.add("locked"); go.setAttribute("aria-disabled", "true"); go.innerHTML = `Level Up<small>writing the sheet…</small>`; }
+  const mine = (() => { try { return localStorage.getItem("aop_character_id") === cid ? localStorage.getItem("aop_claim_token") : null; } catch (e) { return null; } })();
+  const res = await fetch("/api/walk-level-up", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()},
+    body: JSON.stringify({characterId: cid, fromLevel: p.level, method: choice.method, face: choice.face, claimToken: mine || undefined})}).catch(() => null);
+  const j = res ? await res.json().catch(() => ({})) : {};
+  cer.busy = false;
+  const el = $("invCeremony"); if (!el || cer.for !== a.id) return;
+  if (!res || !j.ok){
+    const why = j.note || j.error || "The level could not be written.";
+    if (j.already && j.level){ const s = SHEETS[a.id]; if (s) s.level = j.level; }
+    el.innerHTML = `<div class="cerHead"><h4>${j.already ? "Already taken" : "Not written"}</h4><button class="btn back" id="cerBack">Back</button></div><div class="cerBody"><div class="cerRow"><div class="n">!</div><div class="d">${esc(why)}</div></div></div>`;
+    $("cerBack").onclick = () => { closeLevelUp(); renderBag(); }; log(`<i>${esc(why)}</i>`); return;
+  }
+  // the sheet on the map follows the row: level, hit points, slots; proficiency-driven numbers wait for a reload
+  const s = SHEETS[a.id]; const w = j.write || {};
+  if (s){ s.level = w.level; s.hp = w.hp_max; s.hpNow = w.hp_current; if (w.slots && s.magic){ s.magic.slots = Object.fromEntries(Object.entries(w.slots).map(([k, v]) => [k, (v && v.max) || 0])); } }
+  if (a.c && !inFightNow()){ a.c.hpMax = w.hp_max; a.c.hp = w.hp_current; }
+  bank("ui/level_up", .9); log(`<b>${esc(fname(a))} reaches level ${w.level}.</b> ${esc(j.note || "")}`);
+  const owed = (j.pendingChoices || []);
+  el.innerHTML = `<div class="cerHead"><div class="lvlBadge"><small>Level</small><b>${w.level}</b></div><div><h4>LEVEL ${w.level}</h4><div class="sub">${esc(j.note || "")}</div></div><button class="btn back" id="cerBack">Back to the pack</button></div>`
+    + `<div class="cerBody">${owed.length ? `<div class="cerRow"><div class="n">→</div><div><div class="t">On your sheet now</div><div class="d">${owed.map(c => `• ${esc(c.text)}`).join("<br>")}</div></div></div>` : ""}${(j.flags || []).length ? `<div class="cerFlags">${j.flags.map(esc).join("<br>")}</div>` : ""}</div>`
+    + `<div class="cerFoot">${j.moreToTake ? `<button class="lvlUp earned" id="cerMore">Level Up<small>the XP earns another — take it</small></button>` : ""}</div>`;
+  $("cerBack").onclick = () => { closeLevelUp(); renderBag(); };
+  const more = $("cerMore"); if (more) more.onclick = () => openLevelUp(a);
+  renderBagSub(a, s || {}); renderLevelPanel(a, s || {}); renderBagChips(a, s || {});
 }
 // THE ITEM CARD (Emberforged's selected-item panel): the real row's data — what it is, where it goes, how many, its
 // rarity — the catalogue description, and the same Equip / Take off buttons the row offers, under the same rules.
