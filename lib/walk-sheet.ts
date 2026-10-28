@@ -118,8 +118,8 @@ const LORE_TOOL_NAMES: Record<LoreTool, string> = { alchemist: "alchemistssuppli
 
 /**
  * The loot card's tools (lib/item-lore.mjs). Intelligence plus proficiency when sheet_proficiencies.tools lists the
- * tool, else null: a tool check is not offered to someone without the tool. Intelligence is Claude's reading of
- * Xanathar's tool notes for working out what a substance is; Sam has not ruled on it.
+ * tool, else null: a tool check is not offered to someone without the tool. Intelligence for working out what a
+ * substance is (Xanathar's tool notes): proposed by Claude, approved by Sam 2026-10-27.
  */
 export function loreTools(row: Row, int: number, prof: number): Record<LoreTool, number | null> {
   const p = (row.sheet_proficiencies && typeof row.sheet_proficiencies === "object" ? row.sheet_proficiencies : {}) as Record<string, unknown>
