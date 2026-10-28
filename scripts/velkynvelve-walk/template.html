@@ -1565,6 +1565,11 @@ function frameOf(a){
   if (a.down && a.withered) return now < a.withered.swap ? {img: a.withered.img, f: a.withered.f, pose: "withering", dead: true} : {img: sp.img.idle, f: 0, pose: "cadaver", dead: true};
   if (a.down && !hero(a) && pickCadaver(a)) return {img: sp.img.idle, f: 0, pose: "cadaver", dead: true};
   if (a.down && !hero(a) && !(sp.json.animations.dead && sp.img.dead)) return {img: sp.img.idle, f: 0, pose: /spider|rat/.test(a.id) ? "belly" : /ooze/.test(a.id) ? "puddle" : "side", dead: true};
+  // THE SLAIN STAY DOWN TOO (Sam, 2026-10-28: "why are the opponents who we defeated still here. It should just be the
+  // carcass or bones"). A foe with a death sheet lay down while it played, but once the fight ended something set its
+  // anim back to idle (on 5c the lizard rider and the female guard were down + body with anim "idle") and it was drawn
+  // standing. Down and not a hero means lying: the last frame of the death sheet, whatever the animation says.
+  if (a.down && !hero(a) && a.anim !== "dead"){ const A = sp.json.animations; return {img: sp.img.dead, f: A.dead.frames - 1, dead: true}; }
   // A FALLEN HERO STAYS DOWN, whatever else touches their animation (Sam, 2026-10-27: "why are characters that have
   // fallen standing up when it is their turn?"). The turn, a follow step or a camera move could set idle or walk on a
   // hero at 0 HP, and the sprite stood up. Down means lying: the last frame of the death sheet once it has played, or
@@ -3900,20 +3905,49 @@ function openLootSpot(l){ if (atWorkPlate()) return laborDoPocket({id: l.id, nam
 // library, about 3 1/2 ft across, over the painted one; any other spot (a rack, a sack, a table) gets a small gold glint
 // at its middle. Either glows gold, pulsing, when a hero is near or the pointer is on it: that is the "you can use this".
 const CHEST_FT = 3.4;
-const chestImgs = {};
-function chestImg(kind){ if (!chestImgs[kind]){ const im = new Image(); im.src = `${SPRITE_BASE}chest-${kind}/idle.png`; chestImgs[kind] = im; } return chestImgs[kind]; }
+// PAINTED BUNDLES OUT, PIXEL ONES IN (Sam, 2026-10-28: "Instead of glowing painted boxes or sacks on the ground, remove
+// the painted items and replace them with pixel art that glows on the rims"). A spot with `prop` (story.json: the sprite
+// folder under /sprites, standing bottom-centre at `at`, `w` plate px wide) is drawn as that sprite; the painted thing it
+// replaces is cloned out of the plate itself. Chests and props glow on their RIM: a gold silhouette of the sprite drawn a
+// pixel or two out all round, behind it, pulsing. The outline lights; no box, no halo. Racks and tables (fixtures, left
+// painted) keep the small four-point glint.
+const lootImgs = {}, rimCache = new Map();
+function lootImg(src){ if (!lootImgs[src]){ const im = new Image(); im.src = src; lootImgs[src] = im; } return lootImgs[src]; }
+function chestImg(kind){ return lootImg(`${SPRITE_BASE}chest-${kind}/idle.png`); }
+function rimOf(im){   // the sprite's shape in flat gold, made once per image
+  let c = rimCache.get(im); if (c) return c;
+  c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight;
+  const g = c.getContext("2d"); g.drawImage(im, 0, 0); g.globalCompositeOperation = "source-in"; g.fillStyle = "rgb(255,206,96)"; g.fillRect(0, 0, c.width, c.height);
+  rimCache.set(im, c); return c;
+}
+function drawLootSprite(im, sx, sy, sw, sh, dx, dy, dw, dh, lit, pulse){
+  ctx.save(); ctx.imageSmoothingEnabled = false;
+  if (lit){
+    const rim = rimOf(im), o = Math.max(1.5, dw / sw * 1.15);   // about one sprite pixel out
+    ctx.globalAlpha = .55 + .45 * pulse;
+    for (let k = 0; k < 8; k++){ const t = k * Math.PI / 4; ctx.drawImage(rim, sx, sy, sw, sh, dx + Math.cos(t) * o, dy + Math.sin(t) * o, dw, dh); }
+    ctx.globalAlpha = .25 + .25 * pulse; ctx.globalCompositeOperation = "lighter";   // a softer second ring, so the rim breathes
+    for (let k = 0; k < 8; k++){ const t = k * Math.PI / 4 + Math.PI / 8; ctx.drawImage(rim, sx, sy, sw, sh, dx + Math.cos(t) * o * 2.2, dy + Math.sin(t) * o * 2.2, dw, dh); }
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+  }
+  ctx.drawImage(im, sx, sy, sw, sh, dx, dy, dw, dh);
+  ctx.restore();
+}
 function drawLootHighlight(){
   if (mode !== "explore" && mode !== "dialog" && mode !== "combat") return;
   const pulse = .5 + .5 * Math.sin(now / 520);
   for (const l of node.loot || []){
     const c = lootCenter(l), lit = mode !== "combat" && (hoverLoot === l || (leader && Math.hypot(leader.x - c.x, leader.y - c.y) < 300 * node.scale));
+    if (l.prop){
+      const im = lootImg(`${SPRITE_BASE}${l.prop}/idle.png`); if (!im.complete || !im.naturalWidth) continue;
+      const w = l.w, h = w * im.naturalHeight / im.naturalWidth;
+      drawLootSprite(im, 0, 0, im.naturalWidth, im.naturalHeight, l.at[0] - w / 2, l.at[1] - h, w, h, lit, pulse);
+      continue;
+    }
     if (l.chest){
       const im = chestImg(l.chest); if (!im.complete || !im.naturalWidth) continue;
       const at = {x: l.at[0], y: l.at[1]}, side = CHEST_FT * ftPx(at) * 128 / 100;   // the chest fills ~100 of its 128 px
-      ctx.save(); ctx.imageSmoothingEnabled = false;
-      if (lit){ ctx.shadowColor = `rgba(255,200,90,${.55 + .4 * pulse})`; ctx.shadowBlur = 14 + 12 * pulse; }
-      ctx.drawImage(im, 0, 0, 128, 128, at.x - side / 2, at.y - side * 126 / 128, side, side);
-      ctx.restore();
+      drawLootSprite(im, 0, 0, 128, 128, at.x - side / 2, at.y - side * 126 / 128, side, side, lit, pulse);
       continue;
     }
     if (!lit) continue;

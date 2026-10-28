@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "name": "Burlap sack (loot)",
+  "cell": [
+    34,
+    42
+  ],
+  "pivot": [
+    17,
+    41
+  ],
+  "ppu": 34,
+  "animations": {
+    "idle": {
+      "sheet": "idle.png",
+      "frames": 1,
+      "fps": 5,
+      "loop": true
+    }
+  },
+  "_src": "PixelLab create_object_pro_flash, Sam 2026-10-28: pixel loot for 5c in place of the painted bundles"
+}

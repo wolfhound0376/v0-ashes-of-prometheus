@@ -2023,7 +2023,11 @@
             195
           ]
         ],
-        "text": "A burlap sack caught on a root, just under the lift. It smells of fruit."
+        "text": "A burlap sack caught on a root, just under the lift. It smells of fruit.",
+        "prop": "loot-sack",
+        "at": [951, 198],
+        "w": 66,
+        "_prop": "Sam 2026-10-28: the painted bundle is cloned out of the plate (rock from beside it, node-05c-lift-cliffside.jpg) and this PixelLab sprite stands in its place"
       },
       {
         "id": "cliff-crate",
@@ -2047,7 +2051,11 @@
             518
           ]
         ],
-        "text": "A crate split open on the rocks. A weapon belt is tangled in the slats."
+        "text": "A crate split open on the rocks. A weapon belt is tangled in the slats.",
+        "prop": "loot-split-crate",
+        "at": [972, 526],
+        "w": 200,
+        "_prop": "Sam 2026-10-28: the painted bundle is cloned out of the plate (rock from beside it, node-05c-lift-cliffside.jpg) and this PixelLab sprite stands in its place"
       },
       {
         "id": "cliff-low-sack",
@@ -2071,7 +2079,11 @@
             863
           ]
         ],
-        "text": "A sack wedged low on the scree. Something inside clinks like little glass vials."
+        "text": "A sack wedged low on the scree. Something inside clinks like little glass vials.",
+        "prop": "loot-sack",
+        "at": [1402, 868],
+        "w": 112,
+        "_prop": "Sam 2026-10-28: the painted bundle is cloned out of the plate (rock from beside it, node-05c-lift-cliffside.jpg) and this PixelLab sprite stands in its place"
       }
     ],
     "npcs": [
