@@ -724,6 +724,35 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
   .log{bottom:58px}
   input[type=range]{display:none}
 }
+/* THE TURN CALL and THE INITIATIVE REVEAL (Sam, 2026-10-28, after the combat-feel PRs: "what about the way fight was handled,
+   initiative was different, there was announcing of the attacker"). The demo's two beats, in the game. The reveal: as steel
+   comes out, the order rolls out in the middle of the stage, one row a beat, each with its face, its d20 and its bonus,
+   then folds away into the strip. The call: under the strip, whose turn it is (face, name), then what they do and to
+   whom ("Shortsword → Samson"), while the target's feet are ringed red (a heal or a buff, gold). Presentation only. */
+.turncall{position:absolute;top:118px;left:50%;transform:translateX(-50%) translateY(-6px);display:flex;align-items:center;gap:10px;padding:5px 16px 5px 6px;border:2px solid #9a6a1c;border-radius:12px;background:linear-gradient(180deg,rgba(32,16,12,.95),rgba(16,9,8,.92));box-shadow:0 3px 0 #000,0 8px 18px rgba(0,0,0,.55);opacity:0;transition:opacity .22s ease,transform .22s ease;pointer-events:none;z-index:7;max-width:min(560px,calc(100% - 40px))}
+.turncall.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.turncall.foe{border-color:#a2423a}
+.turncall .tface{position:relative;flex:none;width:36px;height:44px;border-radius:7px;border:2px solid #000;overflow:hidden;background:radial-gradient(circle at 50% 35%,rgba(255,235,200,.14),rgba(0,0,0,.6))}
+.turncall .tface .card,.turncall .tface .card img,.turncall .tface .card canvas{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0;object-fit:cover;object-position:center 12%;image-rendering:pixelated}
+.turncall .tname{font-family:"Cinzel",Georgia,serif;font-weight:700;font-size:1rem;color:#ffe9a6;letter-spacing:.06em;white-space:nowrap;text-shadow:0 2px 0 #000}
+.turncall .twhat{font-family:var(--face-body);font-size:.95rem;color:#e8dcc4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.turncall .twhat b{color:#ff9b8f;font-weight:600}
+.turncall .twhat i{font-style:normal;color:#ffd27a;margin:0 6px}
+.turncall.foe .tname{color:#ffb0a0}
+.initroll{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);min-width:300px;padding:12px 18px 14px;border:3px solid #9a6a1c;border-radius:14px;background:linear-gradient(180deg,rgba(32,16,12,.96),rgba(16,9,8,.94));box-shadow:inset 0 0 0 2px #000,0 6px 0 #000,0 16px 40px rgba(0,0,0,.7);pointer-events:none;z-index:41;transition:opacity .35s ease,transform .35s ease}
+.initroll[hidden]{display:none}
+.initroll.out{opacity:0;transform:translate(-50%,-90%) scale(.86)}
+.initroll h3{margin:0 0 8px;font-family:"Cinzel",Georgia,serif;font-size:1.05rem;letter-spacing:.14em;color:#ff9b8f;text-align:center}
+.initroll .row{display:grid;grid-template-columns:22px 30px 1fr auto;align-items:center;gap:10px;padding:3px 4px;opacity:0;transform:translateX(-10px);transition:opacity .2s ease,transform .2s ease}
+.initroll .row.in{opacity:1;transform:none}
+.initroll .row .n{font-family:var(--face-mono);font-size:.72rem;color:var(--ink-dim);text-align:right}
+.initroll .row .f{position:relative;width:30px;height:36px;border-radius:6px;border:1px solid #000;overflow:hidden;background:radial-gradient(circle at 50% 35%,rgba(255,235,200,.14),rgba(0,0,0,.6))}
+.initroll .row .f .card,.initroll .row .f .card img,.initroll .row .f .card canvas{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0;object-fit:cover;object-position:center 12%;image-rendering:pixelated}
+.initroll .row .nm{font-family:"Cinzel",Georgia,serif;font-size:.86rem;color:#e8dcc4;white-space:nowrap}
+.initroll .row.foe .nm{color:#ffb0a0}
+.initroll .row .r{font-family:var(--face-mono);font-size:.74rem;color:var(--ink-dim);white-space:nowrap}
+.initroll .row .r b{color:#ffe9a6;font-size:.95rem;margin-left:4px}
+@media (prefers-reduced-motion:reduce){.initroll .row,.turncall{transition:none}}
 /* THE DEATH BEAT banner (the pop lanes, 2026-10-28): "Drow guard slain", "Fifi is down" — a moment at the top of the stage */
 .beat{position:absolute;left:50%;top:24%;transform:translate(-50%,-50%);font-family:"Cinzel",Georgia,serif;font-size:26px;font-weight:700;color:#f3d68a;letter-spacing:.1em;text-shadow:0 0 14px rgba(255,120,80,.5),0 2px 0 #2a0a08,0 4px 12px rgba(0,0,0,.85);opacity:0;pointer-events:none;white-space:nowrap;z-index:40}
 .beat.show{animation:beat 1.3s ease-out forwards}
@@ -871,6 +900,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="dialog" id="dialog" hidden><div class="card" role="dialog" aria-modal="true" aria-labelledby="dlgTitle"><h3 id="dlgTitle"></h3><p id="dlgBody"></p><div class="src" id="dlgSrc"></div><div class="btns" id="dlgBtns"></div></div></div>
     <div id="victory" class="victory" hidden><div class="big"></div><div class="small"></div></div>
     <div id="beat" class="beat" aria-live="polite"></div>
+    <div id="turnCall" class="turncall" aria-live="polite"><div class="tface" id="turnFace"></div><span class="tname" id="turnName"></span><span class="twhat" id="turnWhat"></span></div>
+    <div id="initRoll" class="initroll" hidden><h3>INITIATIVE</h3><div id="initRows"></div></div>
     <div id="bossIntro" class="bossIntro" hidden><div class="bface" id="bossIntroFace"></div><div><div class="kick">BOSS</div><div class="big" id="bossIntroName"></div><div class="small" id="bossIntroEpithet"></div></div></div>
     <div class="talk" id="obj" hidden>
       <div class="tcard" role="dialog" aria-labelledby="objWho">
@@ -6140,7 +6171,7 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   $("vignette").classList.add("on"); pickCombatTrack(moodFor(foes, startCombat.flagMood)); startCombat.flagMood = null; setTrack("combat");
   // initiative: d20 + the sheet's bonus, everyone, highest first (ties: higher bonus, then the party)
   const order = [...party, ...allies, ...foes].filter(a => !a.down);   // fighters only: bystanders run between the turns
-  for (const a of order){ a.c = a.c && (hero(a) || a.bystander) ? a.c : fighterFor(a); a.c.init = d20(0, a) + (a.c.sheet.init || 0); }
+  for (const a of order){ a.c = a.c && (hero(a) || a.bystander) ? a.c : fighterFor(a); a.c.initRoll = d20(0, a); a.c.init = a.c.initRoll + (a.c.sheet.init || 0); }
   order.sort((a, b) => b.c.init - a.c.init || (b.c.sheet.init || 0) - (a.c.sheet.init || 0) || (a.kind === "pc" ? -1 : 1));
   // SURPRISE (SRD 5.1, Combat > Surprise; fightWith): a foe who never saw it coming is surprised — no move and no action
   // on its first turn, no reaction until that turn ends. And the one who struck from hiding goes first (Sam, 2026-10-27:
@@ -6158,8 +6189,9 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   renderFleeing(); setTimeout(bystandersFlee, 900);   // the first run, as steel comes out
   bank("ui/initiative_start", .8);
   for (const nm of ["physicalImpact", ...ALL_MARTIAL_IMPACTS, "pxSigilBurst", "pxSigilShatter"]) vfxLoad(nm);   // warm the sheets the first blows need
-  const introMs = cbt.boss ? BOSS_RULES.introMs : 0;
-  if (cbt.boss) setTimeout(() => { if (cbt && cbt.boss && actors.includes(cbt.boss)) bossEntrance(cbt.boss); else if (cbt){ cbt.bossIntro = false; renderBossBar(); } }, 350);
+  const revealMs = initiativeReveal(order);                     // THE INITIATIVE REVEAL plays first; everything after it waits
+  const introMs = (cbt.boss ? BOSS_RULES.introMs : 0) + revealMs;
+  if (cbt.boss) setTimeout(() => { if (cbt && cbt.boss && actors.includes(cbt.boss)) bossEntrance(cbt.boss); else if (cbt){ cbt.bossIntro = false; renderBossBar(); } }, 350 + revealMs);
   setTimeout(() => foes.forEach((f, i) => setTimeout(() => { const b = FOE_BARK[f.id]; if (b && actors.includes(f) && f !== (cbt && cbt.boss)) bark(f, b[i % b.length], 2600); }, i * 500)), 700 + introMs);
   setTimeout(() => { if (cbt) nextTurn(true); }, 1400 + introMs);
 }
@@ -6393,7 +6425,7 @@ function nextTurn(first){
   for (let i = clings.length - 1; i >= 0; i--) if (clings[i].by === a || !clings[i].by){ clings[i].p.then(e => { if (e) e.until = now + 350; }); clings.splice(i, 1); }
   a.c.conds.delete("dodging"); a.c.conds.delete("shieldSpell"); a.c.reactionUsed = false;
   if (a.c.ready){ a.c.ready = null; a.c.conds.delete("readied"); }   // SRD: a readied action lasts until the start of your next turn
-  renderTurns(); renderParty();
+  renderTurns(); renderParty(); turnCall(a);
   if (a.c.conds.has("asleep") && a.c.drugged){ popText(a, "out cold", "#8fd48f"); log(`${fname(a)} lies senseless from the drow poison. Damage or a shake will wake them.`); setTimeout(nextTurn, 900); return; }
   if (a.c.conds.has("asleep")){
     const s = d20(0, a) + (a.c.sheet.saves.wis || 0);
@@ -7787,7 +7819,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
     then();
   } : (then) => approachThen(att, tgt, reach, then);
   go(() => {
-    pushCam(att, tgt);
+    pushCam(att, tgt); if (!reaction) turnWhat(att, tgt, `${att.kind === "foe" && (att.c.sheet.multi || 1) > 1 ? "Multiattack · " : ""}${atk.name}`, false);
     const ws = weaponSfx(atk, tgt), cs = CREATURE_SFX[att.id];
     if (cs && cs.call && now - (att.lastCall || 0) > 1500){ att.lastCall = now; bank(cs.call, .7); }
     // a bow, crossbow, sling, dart or blowgun SHOOTS: the string sounds at the release, not before the wind-up,
@@ -7870,6 +7902,7 @@ function castSpell(caster, tgt, name, done, darts){
   const at = tgt;                                                                // a point or an actor
   if (tgt.id) caster.face = faceOf(tgt.x - caster.x, tgt.y - caster.y);
   if (tgt.id) pushCam(caster, tgt);
+  turnWhat(caster, tgt.id ? tgt : null, name, !!(tgt.id && hero(tgt) === hero(caster)));
   // the choreography (lib/target-sigil.ts): rune ring at the hands while it winds up, the sigil forming
   // flat under the target with its plume rising, then release, bolt, impact, and the sigil bursts or shatters
   const school = SCHOOL_OF[name] || "evocation", dtype = sp.kind === "heal" ? "heal" : sp.type || school, family = FAMILY_OF[dtype] || FAMILY_OF[school] || "arcane";
@@ -8636,7 +8669,7 @@ function endCombat(won){
   }
   closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby(); poisonZones = []; dmPlace = null;
   $("bossBar").hidden = true; $("bossBar").classList.remove("show", "bloodied", "flash", "down"); delete $("bossBar").dataset.for; $("bossIntro").hidden = true; $("bossIntro").classList.remove("show");   // BOSS FIGHTS: the bar and the slam go with the fight
-  $("cbtFlee").hidden = true; $("combat").classList.remove("has-boss");
+  $("cbtFlee").hidden = true; turnCallHide(); $("initRoll").hidden = true; $("combat").classList.remove("has-boss");
   // The dead stay where they fell (Sam, 2026-10-13: "There should always be a carcass or dead body of
   // whatever died. This way we can search the body."). Only the living, called off, walk away.
   const slain = foes.filter(f => f.down);
@@ -8753,6 +8786,36 @@ function drawCritMark(x, y, R, age){
 // THE DEATH BEAT (the research doc: a death is a screen-level event, never another word in the pile): the body already
 // flashes and falls; the words go to a banner at the top of the stage for a moment, and to the log.
 function beatBanner(text){ const el = $("beat"); if (!el) return; el.textContent = text; el.classList.remove("show"); void el.offsetWidth; el.classList.add("show"); }
+// THE TURN CALL: whose turn it is; then what they do, and to whom, with the target ringed
+function turnCall(a){
+  const el = $("turnCall"); if (!el || !a || a.down) return;
+  $("turnFace").replaceChildren(cardFor(a)); $("turnName").textContent = fname(a); $("turnWhat").innerHTML = "";
+  el.classList.toggle("foe", a.kind === "foe"); el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
+  clearTimeout(turnCall.t);
+}
+function turnWhat(att, tgt, what, boon){
+  if (!cbt) return;
+  if (activeActor() !== att) turnCall(att);
+  $("turnWhat").innerHTML = `<i>—</i><b>${esc(what)}</b>${tgt ? `<i>→</i>${esc(fname(tgt))}` : ""}`;
+  if (tgt) cbt.marked = {t: tgt, boon, until: now + 2200};
+}
+function turnCallHide(){ const el = $("turnCall"); if (el) el.classList.remove("show"); }
+// THE INITIATIVE REVEAL: the order rolls out, a row a beat, then folds into the strip. Returns how long it holds the turn.
+function initiativeReveal(order){
+  const box = $("initRoll"), rows = $("initRows"); if (!box || !order.length) return 0;
+  rows.innerHTML = ""; box.hidden = false; box.classList.remove("out");
+  order.forEach((a, i) => {
+    const r = document.createElement("div"); r.className = "row" + (a.kind === "foe" ? " foe" : "");
+    const bonus = a.c.sheet.init || 0, f = document.createElement("div"); f.className = "f"; f.appendChild(cardFor(a));
+    r.innerHTML = `<span class="n">${i + 1}</span>`; r.appendChild(f);
+    r.insertAdjacentHTML("beforeend", `<span class="nm">${esc(fname(a))}</span><span class="r">d20 ${a.c.initRoll ?? "?"} ${bonus >= 0 ? "+" : "−"} ${Math.abs(bonus)} =<b>${a.c.init}</b></span>`);
+    rows.appendChild(r); setTimeout(() => r.classList.add("in"), 250 + i * 110);
+  });
+  const hold = 250 + order.length * 110 + 1100;
+  setTimeout(() => box.classList.add("out"), hold);
+  setTimeout(() => { box.hidden = true; }, hold + 380);
+  return hold + 200;
+}
 function burst(a, col, n){ const m = SPR[a.id].json, sc = actorScale(a), y = a.y - m.pivot[1] * sc * .5; for (let i = 0; i < n; i++){ const ang = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 160; sparks.push({x: a.x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * .6 - 60, col, t0: now, life: 420 + Math.random() * 300}); } }
 function hitstop(ms){ hitstopUntil = Math.max(hitstopUntil, performance.now() + ms); }
 function shake(px){ shakeAmt = Math.max(shakeAmt, px); }
@@ -9612,6 +9675,11 @@ function drawCombatGround(){
   // their base with red if it is offensive and yellow if a boon/buff/heal."). It used to be a red ring under a
   // hovered foe only, so a heal or a buff aimed at a friend marked nobody. Now whoever the click would act on gets
   // a lit disc and a pulsing ring at their feet, red for harm and yellow for help, by the same rules the click uses.
+  // THE TURN CALL'S MARK: whoever the action in hand is aimed at, ringed while it resolves
+  const mk = cbt && cbt.marked && cbt.marked.until > now && actors.includes(cbt.marked.t) && !cbt.marked.t.down ? cbt.marked : null;
+  if (mk){ const t = mk.t, sc = actorScale(t), m = SPR[t.id].json, pulse = .5 + .5 * Math.sin(now / 120), col = mk.boon ? "255,224,58" : "255,96,80", rx = 44 * sc * (m.cell[0] / 128), ry = 16 * sc * (m.cell[0] / 128);
+    ctx.save(); ctx.beginPath(); ctx.ellipse(t.x, t.y, rx, ry, 0, 0, Math.PI * 2); ctx.fillStyle = `rgba(${col},${.14 + .1 * pulse})`; ctx.fill();
+    ctx.strokeStyle = `rgba(${col},${.7 + .3 * pulse})`; ctx.lineWidth = 3.5 / (base * view.z); ctx.stroke(); ctx.restore(); }
   const aimed = aimTargetFor(hoverActor);
   if (aimed){
     const t = aimed.t, sc = actorScale(t), m = SPR[t.id].json, pulse = .5 + .5 * Math.sin(now / 160);
