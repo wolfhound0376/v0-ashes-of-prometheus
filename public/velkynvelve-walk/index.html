@@ -145,23 +145,31 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .combat{position:absolute;inset:0;pointer-events:none;font-family:var(--face-body)}
 .combat[hidden]{display:none}
 .combat .cbt-ui{pointer-events:auto}
-.cbt-top{position:absolute;top:2px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:linear-gradient(180deg,rgba(26,10,12,.94),rgba(14,8,10,.9));border:1px solid var(--blood);border-radius:8px;padding:6px 10px;max-width:calc(100% - 24px);box-shadow:0 6px 24px rgba(0,0,0,.5)}
-.cbt-top .lbl{font-family:var(--face-display);font-size:var(--s1);color:#ff9b8f;letter-spacing:.08em;padding:0 4px}
-.cbt-top .round{font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink-dim);min-width:60px;text-align:center}
+/* THE STRIP, with room to breathe (Sam, 2026-10-28: "arrange the initiative box a little better so it doesn't look as
+   crowded"): the label and the round stacked in their own column at the left, the cards spaced, the buttons at the end.
+   Fighters only (PR A): the bystanders are named in the chip at the top left instead. */
+.combat.has-boss .cbt-top{left:calc(50% - min(190px, 17%))}   /* a boss bar at the right: the strip centres in what is left */
+.combat.has-boss .cbt-flee{top:112px}
+.cbt-top{position:absolute;top:2px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:16px;background:linear-gradient(180deg,rgba(26,10,12,.94),rgba(14,8,10,.9));border:1px solid var(--blood);border-radius:10px;padding:8px 16px 9px;max-width:calc(100% - 24px);box-shadow:0 6px 24px rgba(0,0,0,.5)}
+.cbt-top .lbl{display:flex;flex-direction:column;gap:3px;font-family:var(--face-display);font-size:var(--s1);color:#ff9b8f;letter-spacing:.08em;padding-right:14px;border-right:1px solid var(--rule)}
+.cbt-top .round{font-family:var(--face-mono);font-size:.68rem;letter-spacing:.1em;color:var(--ink-dim);text-align:center;min-width:0;white-space:nowrap}
+.cbt-flee{position:absolute;top:8px;right:10px;font-family:var(--face-mono);font-size:.66rem;line-height:1.35;color:var(--ink-dim);background:rgba(14,8,10,.88);border:1px solid var(--rule);border-radius:8px;padding:6px 10px;max-width:220px;pointer-events:none}
+.cbt-flee[hidden]{display:none}
+.cbt-flee b{display:block;color:#ffd27a;font-weight:600;letter-spacing:.1em}
 .cbt-top .btn{padding:4px 10px;font-size:var(--s-1)}
-/* THE BOSS BAR (Sam, 2026-10-27, from the Top Heroes comparison: "bosses" was the one axis with nothing built). Under the
-   turn strip, only while the fight has a boss (lib/boss-fight.mjs decides who): the face card, the name with the book's
+/* THE BOSS BAR (Sam, 2026-10-27, from the Top Heroes comparison: "bosses" was the one axis with nothing built). At the
+   top right (Sam, 2026-10-28: "put that bar maybe to the top right"), only while the fight has a boss (lib/boss-fight.mjs decides who): the face card, the name with the book's
    own epithet, and a wide hit-point bar wearing the action bar's slab (gold rim, dark lip, gloss). No number on it — a DM
    describes a wound rather than reading out hit points; the one thing the bar says aloud is BLOODIED at half, the mark
    on the bar, the way every table says it. Nothing mechanical hangs off it (5e has no Bloodied condition). */
-.bossbar{position:absolute;top:106px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:10px;width:min(620px,calc(100% - 40px));padding:6px 14px 7px 6px;border:3px solid #9a6a1c;border-radius:14px;background:linear-gradient(180deg,#2a1216,#140a0c);box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.12),inset 0 -6px 0 rgba(0,0,0,.28),0 4px 0 #000,0 8px 18px rgba(0,0,0,.6);opacity:0;transition:opacity .45s ease,transform .45s ease}
+.bossbar{position:absolute;top:8px;right:10px;display:flex;align-items:center;gap:10px;width:min(380px,34%);padding:6px 14px 7px 6px;border:3px solid #9a6a1c;border-radius:14px;background:linear-gradient(180deg,#2a1216,#140a0c);box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.12),inset 0 -6px 0 rgba(0,0,0,.28),0 4px 0 #000,0 8px 18px rgba(0,0,0,.6);opacity:0;transition:opacity .45s ease,transform .45s ease}
 .bossbar[hidden]{display:none}
 .bossbar.show{opacity:1}
-.bossbar.down{opacity:0;transform:translateX(-50%) translateY(-12px)}
-.bossbar .bface{position:relative;flex:none;width:50px;height:62px;border-radius:8px;border:2px solid #000;overflow:hidden;background:radial-gradient(circle at 50% 35%,rgba(255,235,200,.14),rgba(0,0,0,.6));box-shadow:0 0 0 2px #9a6a1c,0 0 14px rgba(255,80,60,.35)}
+.bossbar.down{opacity:0;transform:translateY(-12px)}
+.bossbar .bface{position:relative;flex:none;width:44px;height:54px;border-radius:8px;border:2px solid #000;overflow:hidden;background:radial-gradient(circle at 50% 35%,rgba(255,235,200,.14),rgba(0,0,0,.6));box-shadow:0 0 0 2px #9a6a1c,0 0 14px rgba(255,80,60,.35)}
 .bossbar .bface .card{position:absolute;inset:0;width:100%;height:100%;border:0;border-radius:0}
 .bossbar .btext{flex:1;min-width:0}
-.bossbar .bname{display:flex;align-items:baseline;gap:8px;font-family:var(--face-display);font-size:1rem;font-weight:700;color:#ffe9a6;letter-spacing:.06em;text-shadow:0 2px 0 #000,0 0 10px rgba(255,160,80,.35);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bossbar .bname{display:flex;align-items:baseline;gap:8px;font-family:var(--face-display);font-size:.92rem;font-weight:700;color:#ffe9a6;letter-spacing:.06em;text-shadow:0 2px 0 #000,0 0 10px rgba(255,160,80,.35);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .bossbar .bname small{font-family:var(--face-body);font-size:.76rem;font-weight:400;font-style:italic;color:#d9c7a6;letter-spacing:.02em}
 .bossbar .kick{font-family:var(--face-mono);font-size:.6rem;font-weight:700;letter-spacing:.18em;color:#1a0f0a;background:#ff6b5e;border:2px solid #000;border-radius:6px;padding:1px 6px;text-shadow:none;box-shadow:0 2px 0 #000;align-self:center}
 .bossbar .bhp{position:relative;height:16px;margin-top:5px;border:2px solid #000;border-radius:7px;background:#2a1612;box-shadow:inset 0 2px 4px rgba(0,0,0,.7),0 0 0 1px #5a3a1c;overflow:hidden}
@@ -189,8 +197,8 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 @media (prefers-reduced-motion:reduce){.bossIntro.show{animation-duration:.01s}.bossbar.flash{animation:none}}
 /* The initiative order as player cards (Sam, 2026-10-13: "use player cards and not cut off the head"): the
    party's medallions, the canon faces for the foes, whole — a card is never cropped through the head. */
-.turns{display:flex;gap:6px;align-items:flex-end}
-.turn{display:flex;flex-direction:column;align-items:center;gap:3px;width:52px;color:var(--ink-dim);font-size:.62rem;line-height:1;text-align:center;opacity:.8;transition:opacity .25s,width .25s}
+.turns{display:flex;gap:10px;align-items:flex-end}
+.turn{display:flex;flex-direction:column;align-items:center;gap:4px;width:54px;color:var(--ink-dim);font-size:.62rem;line-height:1;text-align:center;opacity:.8;transition:opacity .25s,width .25s}
 .turn .card{position:relative;width:46px;height:58px;border-radius:5px;background:radial-gradient(circle at 50% 35%,rgba(255,235,200,.14),rgba(0,0,0,.6));border:1px solid var(--rule);overflow:hidden;transition:width .25s,height .25s}
 .turn .card img,.turn .card canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center 12%;display:block}
 .turn .card img.whole{object-fit:contain;object-position:center}
@@ -719,6 +727,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     </div>
     <div class="combat" id="combat" hidden>
       <div class="cbt-top cbt-ui"><span class="lbl">Combat</span><div class="turns" id="turns"></div><span class="round" id="cbtRound"></span><button class="btn" id="quickBtn" title="DM: let the heroes fight on their own at speed. Weapons only, no spells or items. Every roll is real.">Quick resolve</button><button class="btn danger" id="endCombat">End fight</button></div>
+      <div class="cbt-flee" id="cbtFlee" hidden></div>
       <div class="bossbar" id="bossBar" hidden aria-live="polite"><div class="bface" id="bossFace"></div><div class="btext"><div class="bname"><span class="kick">BOSS</span><span id="bossName"></span><small id="bossEpithet"></small></div><div class="bhp" title=""><i id="bossHp"></i><em></em><b>Bloodied</b></div></div></div>
       <div class="cbt-party cbt-ui" id="cbtParty"></div>
       <div class="cbt-hint" id="cbtHint" hidden></div>
@@ -5257,7 +5266,9 @@ function bossFill(hp, hpMax) {
 
 // What the page adds is only what is SEEN: the entrance, the bar, the Bloodied beat and the fall. No roll, hit point,
 // action or save changes anywhere in this section.
-const bossFaceCard = f => cardFor(f);   // the tracker's card: the canon face where there is one, else the sprite, never cropped through the head
+// the tracker's card: the canon face where there is one, else the sprite, never cropped through the head. A sprite sheet still
+// loading draws nothing, so the card is drawn again once it lands (the bar used to show an empty frame on a cold start).
+function bossFaceCard(f){ const im = SPR[f.id] && SPR[f.id].img.idle; if (im && !(im.complete && im.naturalWidth)) im.addEventListener("load", () => { if (cbt && cbt.boss === f){ delete $("bossBar").dataset.for; renderBossBar(); $("bossIntroFace").replaceChildren(cardFor(f)); } }, {once: true}); return cardFor(f); }
 /** The bar under the turn strip. Reads the boss's live hit points; shown once the entrance is over, hidden with the fight. */
 function renderBossBar(){
   const bar = $("bossBar"), b = cbt && cbt.boss;
@@ -5964,8 +5975,11 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   mode = "combat"; [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); setAnim(p, "idle"); });
   if (balcony()) buildGrid();               // the balcony outside the pen gate is floor while the fight lasts
   const allies = opts.noAllies ? [] : alliesHere(); allies.forEach(n => { n.ally = true; n.talking = false; });
-  // BYSTANDERS (Sam, 2026-10-27): everyone on our side who is not fighting runs from it (bystanderTurn), can be hit, and
-  // can be protected; one who drops is dead (fall). They roll initiative so their running is a turn like anyone's.
+  // BYSTANDERS (Sam, 2026-10-27): everyone on our side who is not fighting runs from it, can be hit, and can be protected;
+  // one who drops is dead (fall). They used to roll initiative so their running was a turn like anyone's — until the strip
+  // carried seventeen cards. Sam, 2026-10-28: "Only active attackers and defenders need be given initiative. The
+  // noncombatant NPCs will try to run. They can still be targeted but they aren't really in combat." So they are NOT in
+  // the order: they run on the round clock (bystandersFlee, at the top of each round), never on a turn of their own.
   const bystanders = npcs.filter(n => !allies.includes(n) && isBystander(n));
   bystanders.forEach(n => { n.bystander = true; n.talking = false; n.c = ALLY_SHEETS[n.id] ? fighterFor(n) : bystanderFighter(n); });
   hoverZone = null; tip.hidden = true;
@@ -6004,7 +6018,7 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   camTo(z, cx, cy, 900);
   $("vignette").classList.add("on"); pickCombatTrack(moodFor(foes, startCombat.flagMood)); startCombat.flagMood = null; setTrack("combat");
   // initiative: d20 + the sheet's bonus, everyone, highest first (ties: higher bonus, then the party)
-  const order = [...party, ...allies, ...bystanders, ...foes].filter(a => !a.down);
+  const order = [...party, ...allies, ...foes].filter(a => !a.down);   // fighters only: bystanders run between the turns
   for (const a of order){ a.c = a.c && (hero(a) || a.bystander) ? a.c : fighterFor(a); a.c.init = d20(0, a) + (a.c.sheet.init || 0); }
   order.sort((a, b) => b.c.init - a.c.init || (b.c.sheet.init || 0) - (a.c.sheet.init || 0) || (a.kind === "pc" ? -1 : 1));
   // SURPRISE (SRD 5.1, Combat > Surprise; fightWith): a foe who never saw it coming is surprised — no move and no action
@@ -6016,9 +6030,10 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
     id: `${cur}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`};   // the fight's own name: /api/walk-xp pays it once
   // THE BOSS (lib/boss-fight.mjs): the one foe the fight is about, if there is one. The entrance holds the first turn
   // back by BOSS_RULES.introMs and the boss alone speaks during it; the other foes' barks wait for it to end.
-  cbt.boss = bossOfFight(foes); cbt.bossIntro = !!cbt.boss;
+  cbt.boss = bossOfFight(foes); cbt.bossIntro = !!cbt.boss; $("combat").classList.toggle("has-boss", !!cbt.boss);
   $("combat").hidden = false; $("cbtMenu").hidden = true; stage.classList.add("fight"); renderTurns(); renderParty(); renderBossBar();
-  log(`<em>${esc(label || "Steel comes out.")}</em> Initiative: ${order.map(a => `${fname(a)} ${a.c.init}`).join(", ")}.`);
+  log(`<em>${esc(label || "Steel comes out.")}</em> Initiative: ${order.map(a => `${fname(a)} ${a.c.init}`).join(", ")}.${bystanders.length ? ` Not in it: ${bystanders.map(fname).join(", ")} — they run.` : ""}`);
+  renderFleeing(); setTimeout(bystandersFlee, 900);   // the first run, as steel comes out
   bank("ui/initiative_start", .8);
   for (const nm of ["physicalImpact", ...ALL_MARTIAL_IMPACTS, "pxSigilBurst", "pxSigilShatter"]) vfxLoad(nm);   // warm the sheets the first blows need
   const introMs = cbt.boss ? BOSS_RULES.introMs : 0;
@@ -6134,41 +6149,45 @@ function safestFloor(a){
   const all = [...th, ...standing(heroes())], mid = {x: all.reduce((s, q) => s + q.x, 0) / all.length, y: all.reduce((s, q) => s + q.y, 0) / all.length};
   // not on top of another runner: where the others stand or are running to is taken
   const taken = bystanders().filter(o => o !== a).map(o => o.path && o.path.length ? o.path[o.path.length - 1] : o);
-  let best = null, bs = -1;
+  // REACHABLE, not just walkable (2026-10-28): the best-scoring cell used to be a sliver of floor at the plate's edge that
+  // no path reaches, so findPath came back empty and every bystander "kept their head down" where they stood — nobody ever
+  // ran on the pen plate. Now the candidates are ranked and the first one a path actually reaches is the goal.
+  const cands = [];
   for (let y = CELL / 2; y < NAT_H; y += CELL * 3) for (let x = CELL / 2; x < NAT_W; x += CELL * 3){
     if (!walkable(x, y) || taken.some(o => Math.hypot(o.x - x, o.y - y) < 80)) continue;
-    const dF = Math.min(...th.map(f => Math.hypot(f.x - x, f.y - y))), dM = Math.hypot(mid.x - x, mid.y - y), sc = dF + dM * .5;
-    if (sc > bs){ bs = sc; best = {x, y}; }
+    const dF = Math.min(...th.map(f => Math.hypot(f.x - x, f.y - y))), dM = Math.hypot(mid.x - x, mid.y - y);
+    cands.push({x, y, sc: dF + dM * .5});
   }
-  return best;
+  cands.sort((p, q) => q.sc - p.sc);
+  for (const c of cands.slice(0, 24)) if (findPath(a, c).length) return c;
+  return null;
 }
-// A bystander's turn: the Dash action (SRD 5.1: extra movement equal to its speed), away. Running past a foe at its
-// elbow draws the opportunity attack, as it would for anyone. Webbed, asleep or otherwise held: it stays put.
-function bystanderTurn(a){
-  const end = () => { combatBusy = false; if (cbt) cbt.phase = "idle"; setTimeout(() => passTurn(a), 300); };
-  if (!actors.includes(a) || a.down){ setTimeout(nextTurn, 100); return; }
-  if (a.c.conds.has("prone")){ a.c.conds.delete("prone"); a.c.move = Math.floor(a.c.move / 2); log(`${fname(a)} scrambles up.`); }
-  if (a.c.conds.has("restrained") || a.c.conds.has("grappled") || incapacitated(a)){ log(`${fname(a)} cannot get away.`); end(); return; }
-  const goal = safestFloor(a); if (!goal){ end(); return; }
-  a.c.action = false; a.c.move += a.c.sheet.speed;                     // Dash
-  const walk = cutPath(a, findPath(a, goal), a.c.move * ftPx(a)), to = walk.pts.length ? walk.pts[walk.pts.length - 1] : null;
-  if (!to || Math.hypot(to.x - a.x, to.y - a.y) < CELL){ log(`${fname(a)} keeps their head down.`); end(); return; }
-  combatBusy = true; cbt.phase = "busy";
-  const go = () => {
-    if (!cbt || a.down){ end(); return; }
-    a.c.move = Math.max(0, a.c.move - walk.usedFt);
+// THE BYSTANDERS RUN ON THE ROUND CLOCK (Sam, 2026-10-28: "they aren't really in combat"). Once as steel comes out and
+// once as each round opens, every bystander still standing runs for the safest floor — a Dash's worth of ground (SRD 5.1:
+// their speed, twice), the same distance a turn of their own gave them, but all at once and with no card in the strip.
+// Webbed, grappled, asleep or otherwise held: it stays put. One who is prone scrambles up first (half the distance).
+// What this drops, flagged: a bystander no longer draws an opportunity attack as it bolts past a foe. It was the one 5e
+// rule that reached them; Sam's wording is that they are not in the fight, so the foes' reactions are kept for those who are.
+function bystandersFlee(){
+  if (!cbt) return;
+  for (const a of bystanders()){
+    if (a.c.conds.has("restrained") || a.c.conds.has("grappled") || incapacitated(a)){ log(`${fname(a)} cannot get away.`); continue; }
+    let ft = a.c.sheet.speed * 2;
+    if (a.c.conds.has("prone")){ a.c.conds.delete("prone"); ft = Math.floor(ft / 2); }
+    const goal = safestFloor(a); if (!goal) continue;
+    const walk = cutPath(a, findPath(a, goal), ft * ftPx(a)), to = walk.pts.length ? walk.pts[walk.pts.length - 1] : null;
+    if (!to || Math.hypot(to.x - a.x, to.y - a.y) < CELL) continue;   // nowhere better: keeps their head down where they are
     if (!(cbt.fled || (cbt.fled = new Set())).has(a)){ cbt.fled.add(a); popText(a, "flees", "#e8e2c8", .9); narrate(a, `${fname(a)} runs from the fight.`); }
-    log(`${fname(a)} runs for cover (Dash, ${walk.usedFt} ft).`);
-    a.path = walk.pts; a.onArrive = end;
-  };
-  const oa = standing(foes).find(f => !f.c.reactionUsed && !incapacitated(f) && feetBetween(a, f) <= 5 && Math.hypot(to.x - f.x, to.y - f.y) > reachPx(f, a, 5) + 6);
-  if (oa){
-    oa.c.reactionUsed = true;
-    log(`${fname(oa)} takes a swing as ${fname(a)} bolts (opportunity attack, their reaction).`);
-    attackWith(oa, a, meleeOf(oa), () => { combatBusy = true; go(); }, false, true);
-    return;
+    a.path = walk.pts; a.onArrive = null;
   }
-  go();
+  renderFleeing();
+}
+// WHO IS NOT IN IT: a small chip at the top left names the bystanders while the fight lasts (the strip holds fighters only)
+function renderFleeing(){
+  const el = $("cbtFlee"); if (!el) return;
+  const bs = cbt ? cbt.bystanders.filter(b => actors.includes(b)) : [];
+  el.hidden = !cbt || !bs.length;
+  if (bs.length) el.innerHTML = `<b>Not in initiative</b>${bs.map(b => esc(fname(b)) + (b.down ? " †" : "")).join(", ")} — ${bs.some(b => !b.down) ? "running" : "fallen"}`;
 }
 // The pot shot: a foe goes for the threats first (foeTurn), but on a 6 on a d6 it turns on a bystander it can see and
 // reach this turn (by its crossbow's range, or its move plus reach) instead.
@@ -6216,6 +6235,7 @@ function renderTurns(){
     el.appendChild(b);
   }
   $("cbtRound").textContent = cbt.round ? `Round ${cbt.round}` : "";
+  renderFleeing();
 }
 function renderParty(){
   const el = $("cbtParty"); el.innerHTML = "";
@@ -6240,7 +6260,7 @@ function nextTurn(first){
   // a hostile creature since your last turn or taken damage since then", and after one minute. lib/rage.mjs decides.
   if (!first){ const was = cbt.order[cbt.idx]; if (was && was.c && was.c.rage){ const r = rageAfterTurn(was.c.rage, cbt.round); if (r.ended) endRage(was, r.ended); else was.c.rage = r.rage; } }
   for (let k = 0; k < cbt.order.length; k++){
-    cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0) cbt.round++;
+    cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0){ cbt.round++; if (cbt.round > 1) bystandersFlee(); }   // the bystanders run as each round opens
     const a = cbt.order[cbt.idx]; if ((!a.down || dyingNow(a)) && actors.includes(a) && !(a.c && a.c.joinRound > cbt.round)) break;   // a late arrival waits for the next round
   }
   const a = activeActor(); if (!a) return;
@@ -6274,7 +6294,6 @@ function nextTurn(first){
   if (a.c.holyOpen && --a.c.holyOpen <= 0){ delete a.c.holyOpen; popText(a, "resistance returns", "#aaa", .8); }
   if (a.c.retching && a.kind !== "pc"){ a.c.retching = false; retchTurn(a); return; }   // Stinking Cloud: the action goes on retching
   if (a.kind === "foe"){ bank("ui/turn_foe", .6); foeTurn(a); return; }
-  if (a.bystander){ bystanderTurn(a); return; }
   if (a.ally){ allyTurn(a); return; }
   if (a.kind === "pc" && cbt.quick){ allyTurn(a); return; }                      // QUICK RESOLVE: the hero fights on the allies' instincts
   // Another player's hero on this screen: each browser runs its own fight (nothing is shared between screens yet), so
@@ -8452,6 +8471,7 @@ function endCombat(won){
   }
   closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby(); poisonZones = []; dmPlace = null;
   $("bossBar").hidden = true; $("bossBar").classList.remove("show", "bloodied", "flash", "down"); delete $("bossBar").dataset.for; $("bossIntro").hidden = true; $("bossIntro").classList.remove("show");   // BOSS FIGHTS: the bar and the slam go with the fight
+  $("cbtFlee").hidden = true; $("combat").classList.remove("has-boss");
   // The dead stay where they fell (Sam, 2026-10-13: "There should always be a carcass or dead body of
   // whatever died. This way we can search the body."). Only the living, called off, walk away.
   const slain = foes.filter(f => f.down);
