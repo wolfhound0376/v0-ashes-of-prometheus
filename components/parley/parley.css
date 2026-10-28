@@ -34,7 +34,9 @@
 .parley {
   display: grid;
   grid-template-columns: 380px minmax(0, 1fr) 320px;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* The middle row gets a floor: on a short window the page scrolls instead of
+   * the three columns spilling down underneath the bottom strip. */
+  grid-template-rows: auto minmax(540px, 1fr) auto;
   gap: 12px;
   padding: 12px;
 }
@@ -44,6 +46,15 @@
 .parley .p-left.log-open { grid-template-rows: minmax(0, 1fr) minmax(0, 1.2fr) auto; }
 .parley .p-center { display: grid; grid-template-rows: var(--npc-h, minmax(0, 1fr)) minmax(0, 1fr); gap: 12px; min-width: 0; min-height: 0; }
 .parley .p-sheet { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; align-content: start; min-height: 0; min-width: 0; }
+/* Each column keeps its contents inside its own box (2026-10-28): before this the
+ * stage window, the sprite vignette and the conditions panel ran on past the
+ * bottom of the middle row and sat under/over the SAY chips and the toggles.
+ * The sheet scrolls in place; the left and centre just stop at their edge.
+ * The 6px bottom pad keeps the panels' drop shadows from being clipped. */
+.parley .p-left, .parley .p-center { overflow: hidden; padding-bottom: 6px; }
+.parley .p-sheet { overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--p-rim) transparent; padding: 0 4px 6px 0; }
+.parley .p-center .p-scene { min-height: 150px; }
+@media (max-width: 1024px) { .parley .p-left, .parley .p-center, .parley .p-sheet { overflow: visible; } }
 
 /* ---------- panels, boxes ---------- */
 .parley .p-panel {
@@ -228,6 +239,9 @@
 .parley .p-slots .p-slot { display: flex; justify-content: space-between; border: 2px solid var(--p-rim); border-radius: 8px; padding: 3px 8px; font-size: 11px; color: #c4aaff; background: #140d1c; }
 
 /* ---------- the strip ---------- */
+/* The strip is its own solid layer: nothing from the rows above paints over it. */
+.parley .p-hot { position: relative; z-index: 5; background: linear-gradient(180deg, var(--p-panel), var(--p-panel2)); }
+.parley .p-top { z-index: 6; }
 .parley .p-hot { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 12px 14px; border: 3px solid var(--p-rim); box-shadow: inset 0 0 0 2px #000, 0 4px 0 #000; }
 .parley .p-groups { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; }
 .parley .p-cycler { padding: 6px 8px; gap: 6px; --c1: var(--p-teal); --c2: var(--p-teal2); cursor: default; }
@@ -268,3 +282,5 @@
 
 /* the voice queue (DmNarration's chips) sits bottom-left of the NPC box */
 .parley .p-narr { position: absolute; left: 14px; bottom: 14px; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: calc(100% - 28px); }
+/* the voice chips leave room for the CR / HP tags in the bottom-right corner */
+.parley .p-center .p-scene:has(> .p-tags.br) .p-narr { max-width: calc(100% - 190px); }
