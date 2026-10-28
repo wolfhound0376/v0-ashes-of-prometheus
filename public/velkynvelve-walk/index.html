@@ -6809,7 +6809,14 @@ function approachThen(att, tgt, ft, then){
   const reach = reachPx(att, tgt, ft), d = Math.hypot(tgt.x - att.x, tgt.y - att.y);
   if (d <= reach + 6){ then(); return; }
   const budget = Math.max(0, (att.c.move || 0) * ftPx(att)), need = d - reach;
-  const k = Math.min(need, budget) / d, goal = nearestWalkable(att.x + (tgt.x - att.x) * k, att.y + (tgt.y - att.y) * k);
+  // MOVEMENT IS MEASURED ALONG THE WAY ACTUALLY WALKED (Sam, 2026-10-27: "Did Eldeth and Sarith really only move 30
+  // feet?"). The charge used to be the straight line toward the target, while the walk itself went round tables, bunks
+  // and pillars, so a creature with 30 ft could cover far more ground. Now the route to the spot in reach is found
+  // first and trimmed to what the movement left buys (cutPath, the heroes' own rule), and what is charged is what
+  // that trimmed route measures.
+  const reachSpot = nearestWalkable(att.x + (tgt.x - att.x) * (need / d), att.y + (tgt.y - att.y) * (need / d));
+  const walk = cutPath(att, findPath(att, reachSpot), budget);
+  const goal = walk.pts.length ? walk.pts[walk.pts.length - 1] : {x: att.x, y: att.y};
   // OPPORTUNITY ATTACKS, THE OTHER WAY (Sam, 2026-10-14: "are there opportunity attacks?"). A foe that moves out of
   // a hero's reach gives that hero a swing with their reaction (SRD 5.1: "You can make an opportunity attack when a
   // hostile creature that you can see moves out of your reach ... you use your reaction to make one melee attack
@@ -6829,8 +6836,8 @@ function approachThen(att, tgt, ft, then){
       return;
     }
   }
-  att.c.move = Math.max(0, att.c.move - Math.round(Math.min(need, budget) / ftPx(att) / 5) * 5);
-  att.path = findPath(att, goal); att.onArrive = () => { if (Math.hypot(tgt.x - att.x, tgt.y - att.y) > reach + 40 && att.kind === "pc"){ toast("Out of reach."); combatBusy = false; cbt.phase = "idle"; att.c.action = true; settleCam(); openMenu(att); return; } then(); };
+  att.c.move = Math.max(0, att.c.move - walk.usedFt);
+  att.path = walk.pts; att.onArrive = () => { if (Math.hypot(tgt.x - att.x, tgt.y - att.y) > reach + 40 && att.kind === "pc"){ toast("Out of reach."); combatBusy = false; cbt.phase = "idle"; att.c.action = true; settleCam(); openMenu(att); return; } then(); };
   if (!att.path.length) then();
 }
 function strike(att, tgt, onHit, after, shot){
