@@ -49,7 +49,7 @@ export async function GET(req: NextRequest) {
   const sc = row.sheet_spellcasting ?? {}
   return NextResponse.json({
     name: row.name, class: row.class, level, owed, plan,
-    casting: { cantrips: sc.cantrips ?? [], prepared: sc.prepared ?? [], always_prepared: sc.always_prepared ?? [], save_dc: sc.save_dc ?? null, attack_bonus: sc.attack_bonus ?? null, rules_source: sc.rules_source ?? null },
+    casting: { cantrips: sc.cantrips ?? [], prepared: sc.prepared ?? [], always_prepared: sc.always_prepared ?? [], spellbook: sc.spellbook ?? null, save_dc: sc.save_dc ?? null, attack_bonus: sc.attack_bonus ?? null, rules_source: sc.rules_source ?? null },
     skills: skillMap(row.sheet_skill_proficiencies),
     scores: { STR: row.str_score, DEX: row.dex_score, CON: row.con_score, INT: row.int_score, WIS: row.wis_score, CHA: row.cha_score },
     spells: plan && plan.caster ? classSpells(plan.cls, plan.maxSpellLevel) : [],
@@ -88,6 +88,8 @@ export async function POST(req: NextRequest) {
     swapOutCantrip: typeof body.picks?.swapOutCantrip === "string" ? body.picks.swapOutCantrip : null,
     expertise: Array.isArray(body.picks?.expertise) ? body.picks.expertise : [],
     skills: Array.isArray(body.picks?.skills) ? body.picks.skills : [],
+    book: Array.isArray(body.picks?.book) ? body.picks.book : [],
+    bookFree: Array.isArray(body.picks?.bookFree) ? body.picks.bookFree : [],
   }
   const out = settleChoices(plan, row.sheet_spellcasting, row.sheet_features, picks, skillMap(row.sheet_skill_proficiencies))
   if (!out.ok) return NextResponse.json({ ok: false, error: out.error }, { status: 400 })
@@ -98,5 +100,5 @@ export async function POST(req: NextRequest) {
     .select("id")
   if (werr) return NextResponse.json({ error: "the choices could not be written — tell the DM" }, { status: 500 })
   if (!written || written.length === 0) return NextResponse.json({ ok: false, already: true, note: "Already settled; nothing more was written." })
-  return NextResponse.json({ ok: true, summary: out.summary, casting: out.spellcasting ? { cantrips: out.spellcasting.cantrips, prepared: out.spellcasting.prepared, always_prepared: out.spellcasting.always_prepared ?? null, sorcery_points: out.spellcasting.sorcery_points ?? null, channel_divinity: out.spellcasting.channel_divinity ?? null } : null })
+  return NextResponse.json({ ok: true, summary: out.summary, casting: out.spellcasting ? { cantrips: out.spellcasting.cantrips, prepared: out.spellcasting.prepared, always_prepared: out.spellcasting.always_prepared ?? null, sorcery_points: out.spellcasting.sorcery_points ?? null, channel_divinity: out.spellcasting.channel_divinity ?? null, spellbook: out.spellcasting.spellbook ?? null } : null })
 }
