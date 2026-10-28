@@ -33,7 +33,7 @@
 
 ## Owed
 
-1. ~~PR 2 — the level-up ceremony~~ built on the Underwalk inventory (see PR 2 above); the spell pick and the trial tracking remain.
+1. ~~PR 2 — the level-up ceremony~~ built on the Underwalk inventory (see PR 2 above). ~~The spell pick~~ — PR 3 (`feat/level-up-choices`, below). The trial tracking remains.
 2. Backpack weight in the header (the walk's catalogue select carries no `weight`; one column added to `/api/walk-items?catalog=1` does it).
 3. Arcane Reliquary variant, if Sam wants it: tokens + backdrop + inline Inspect/Equip.
 4. The "Rehearsal · own world" pill now sits under the dialog (dialog z 7); if the DM wants it visible while the bag is open, move the pill.
@@ -41,3 +41,7 @@
 ## Verification
 
 Headless Chromium at 1920×1080, 1600×1000 and 1280×800 with a six-item bag injected (the live route is unreachable from the session); no page errors; equip/take-off buttons render under the existing `bagCan` rules. Not verified from the session: the live `/api/map-stage` sheet carrying `xp`/`hp_current` end to end (code path read, not run), and the drow guards' walk behaviour around the taller dialog.
+
+## PR 3 — the level-up choices (branch `feat/level-up-choices`, 2026-10-28)
+
+Sam approved the prototype (https://claude.ai/artifact/5jSrEofrWEXGH5pmwvMf5M) and asked for it in the game; the recipe is the skill `aop-level-up-experience`. For a sorcerer at levels 2–3 the gold button opens `public/velkynvelve-walk/level-up.html` full-screen (its own page, so the Arcane Reliquary styles never touch the walk's): hit points (roll or fixed), Metamagic ×2 (L2) or the Sorcerous Origin (L3; Draconic open, the PHB three closed until Sam opens them), spells (2 new, one swap), LEVEL UP. It takes the level through `/api/walk-level-up`, then settles the choices through the new `/api/walk-level-choices` (`lib/level-choices.ts`, tested): `sheet_spellcasting.prepared/cantrips/prepared_max/cantrips_max/sorcery_points` and `sheet_features` (Font of Magic, the Metamagic, the origin), once — the write only lands while the row is at that level and still carries the ceremony's "Level N — choices to make" marker. Then Sam's Sorcerer Awakening film, the floor sigil flare and the picks flying out of it. Every other class keeps the ceremony. Level 4+ waits on the class trial, so the improvement / feat step is not wired yet. Assets: 135 painted slabs `public/velkynvelve-walk/icons/level/`, 120 spoken titles `public/sfx/voice/titles/` (ElevenLabs, Kira X), the film `public/velkynvelve-walk/film/`.
