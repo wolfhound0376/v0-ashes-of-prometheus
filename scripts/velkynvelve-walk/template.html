@@ -7119,9 +7119,10 @@ function seekSight(f){
 function passTurn(a){ if (cbt && activeActor() === a && !checkEnd()) nextTurn(); }
 // get within reach, then strike; the roll lands on the attack sheet's hit frame
 function approachThen(att, tgt, ft, then){
+  const reachFt = ft;
   if (gateWayTo(att, tgt)){ approachViaGate(att, tgt, ft, then); return; }
   const reach = reachPx(att, tgt, ft), d = Math.hypot(tgt.x - att.x, tgt.y - att.y);
-  if (d <= reach + 6){ then(); return; }
+  if (d <= reach + 6){ if (reachFt <= 5 && cbt && !att.big && !(att.c && att.c.sheet.leap) && !att.climbing && !att.riding) bounceIn(att, tgt, then); else then(); return; }
   then = (t0 => () => readiedStrikeOn(att, t0))(then);   // a readied blow meets whoever walks in
   const budget = Math.max(0, (att.c.move || 0) * ftPx(att)), need = d - reach;
   // MOVEMENT IS MEASURED ALONG THE WAY ACTUALLY WALKED (Sam, 2026-10-27: "Did Eldeth and Sarith really only move 30
@@ -7380,7 +7381,11 @@ function arcTo(a, land, then){
 // THE MELEE HOP (Sam, 2026-10-28): the last leg of a close, sprung. `pts` is the walked route; the hop is the straight
 // leg from the last point of it that is within HOP_FT of the landing and reaches it over nothing but floor. Shorter than
 // a grid cell, or no clear leg: no hop, the whole route is walked.
-const HOP_FT = 10;
+// Sam, 2026-10-28 (after PR #1039 went live): "I just entered combat but didn't see the updated melee". A 10-ft hop on a
+// 42 px arc was too small to see, and never fired for a fighter already beside the target. Now it is the demo's: the
+// whole straight, clear run of the close is sprung (up to HOP_FT), the arc and the time grow with the distance, the feet
+// kick up dust on landing, and a fighter already in reach bounds in a half-step before the blow.
+const HOP_FT = 30;
 function meleeHopLeg(a, pts, reachFt){
   if (!pts.length || reachFt > 5 || a.big || (a.c && a.c.sheet.speed < 20) || (a.c && a.c.sheet.leap)) return null;
   const land = pts[pts.length - 1], maxPx = HOP_FT * ftPx(a), clear = (p, q) => { const n = Math.ceil(Math.hypot(q.x - p.x, q.y - p.y) / 12); for (let i = 1; i < n; i++) if (!walkable(p.x + (q.x - p.x) * i / n, p.y + (q.y - p.y) * i / n)) return false; return true; };
@@ -7389,12 +7394,24 @@ function meleeHopLeg(a, pts, reachFt){
   return null;
 }
 function hopTo(a, land, then){
-  const d = norm({x: land.x - a.x, y: land.y - a.y}), from = {x: a.x, y: a.y}, ms = 360;
+  const d = norm({x: land.x - a.x, y: land.y - a.y}), from = {x: a.x, y: a.y}, dist = Math.hypot(land.x - a.x, land.y - a.y), sc = actorScale(a);
+  const ms = Math.round(Math.min(640, 340 + dist * .9)), h = Math.min(120, 46 + dist * .22) / Math.max(.6, sc);   // a longer run, a higher, longer spring
   a.face = faceOf(d.x, d.y); a.path = [];
   if (SPR[a.id].img.jump){ a.anim = "jump"; a.t0 = now; }
-  a.leap = {from, to: land, t0: now, ms, h: 42};
-  setTimeout(() => { a.leap = null; a.x = land.x; a.y = land.y; setAnim(a, "idle"); bank("movement/jump_land", .5); shake(3); then && then(); }, ms);
+  a.leap = {from, to: land, t0: now, ms, h};
+  setTimeout(() => { a.leap = null; a.x = land.x; a.y = land.y; setAnim(a, "idle"); landDust(a); bank("movement/jump_land", .6); shake(4); then && then(); }, ms);
 }
+// already in reach: a half-step bound into the blow (presentation only — no feet are spent)
+function bounceIn(a, tgt, then){
+  const u = norm({x: tgt.x - a.x, y: tgt.y - a.y}); if (!isFinite(u.x)){ then(); return; }
+  const back = {x: a.x - u.x * 10, y: a.y - u.y * 10}, home = {x: a.x, y: a.y};
+  a.face = faceOf(u.x, u.y); a.path = [];
+  if (SPR[a.id].img.jump){ a.anim = "jump"; a.t0 = now; }
+  a.leap = {from: back, to: home, t0: now, ms: 260, h: 30};
+  setTimeout(() => { a.leap = null; a.x = home.x; a.y = home.y; setAnim(a, "idle"); landDust(a, .6); then && then(); }, 260);
+}
+// dust kicked up where the feet land
+function landDust(a, k = 1){ const n = Math.round(10 * k); for (let i = 0; i < n; i++){ const ang = Math.PI + Math.random() * Math.PI, sp = 40 + Math.random() * 90; sparks.push({x: a.x + (Math.random() - .5) * 16, y: a.y, vx: Math.cos(ang) * sp * 1.6, vy: Math.sin(ang) * sp * .35, g: 60, col: i % 3 ? "#b9a88e" : "#8c7c66", t0: now, life: 380 + Math.random() * 260}); } }
 // The spider: spring to within reach of its target, then bite.
 function leapTo(f, tgt, then){
   const d = norm({x: tgt.x - f.x, y: tgt.y - f.y}), reach = reachPx(f, tgt, 5), dist = Math.hypot(tgt.x - f.x, tgt.y - f.y) - reach;
