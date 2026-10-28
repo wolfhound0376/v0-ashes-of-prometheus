@@ -6281,7 +6281,7 @@ function renderExploreBar(){
 //   Search      Wisdom (Perception) for the plate around the hero.      Listen  Perception at the nearest way out.
 //   Look closer Intelligence (Investigation) on the thing in reach.     Help    the next hero's check has advantage.
 //   Hero        Pray (cleric: silently or aloud — Sam 2026-10-01, a prayer is private unless spoken), Inspire (bard:
-//               Bardic Inspiration out of a fight), Scout ahead (rogue: sneak alone, the rest wait).
+//               Bardic Inspiration out of a fight). Scout alone appears while the party sneaks together: the leader splits off.
 //   Quick drink the first potion on the belt, without opening the bag.  Follow / Wait  the party trails the leader.
 // HOUSE NUMBERS (Claude's, flagged in the PR): a watcher sees 60 ft in a 120-degree cone; Help lasts one minute.
 // Sam, 2026-10-25: "you have all the icons for actions in this project" — the commissioned gold-framed sets in
@@ -6388,7 +6388,10 @@ function exploreExtras(m, o, add, who){
     x("My company", "☰", ART("follow"), `${escortOf(L.id).length} with you · ${m === "follow" ? "following" : m === "wait" ? "waiting" : "with " + fname(party.find(p => p.id === m.slice(5)) || L)}`, canControl(L) ? () => openCompany() : null); }
   if (/cleric/.test(cls)) x("Pray", "✠", ART("pray"), "silently, or aloud", () => openPray());
   if (sh.bardic) x("Inspire", "♪", ART("inspire"), `Bardic Inspiration · ${inspLeftOf(L)} of ${sh.bardic.uses} left`, inspLeftOf(L) > 0 && party.length > 1 ? () => openInspire() : null);
-  if (/rogue/.test(cls) && !sneak) x("Scout ahead", "➶", ART("scout"), "sneak alone; the others wait", () => startSneak(true));
+  // SCOUT ALONE (Sam, 2026-10-27: "This should be an option that populates when sneaking away from the group"): not a
+  // standing rogue button any more. It appears only while the party is sneaking together, for whoever leads; taking it
+  // splits the leader off (they keep the Stealth they rolled) and the others wait where they stand.
+  if (sneak && !sneak.scout && followOn && party.length > 1) x("Scout alone", "➶", ART("scout"), "slip away from the group; the others wait", () => scoutAlone());
   const pot = beltPotion(L); if (pot) x(`Quick drink: ${pot.name}`, "⚗", ART("quick-drink"), "from the belt", () => drinkItem(L, pot, L));
   if (party.length > 1) x(followOn ? "Wait here" : "Follow me", followOn ? "⏸" : "➜", ART(followOn ? "wait" : "follow"), followOn ? "the others stop where they are" : "the others come along behind", () => setFollow(!followOn));
   // JUMP outside a fight: the same long-jump rule the fight uses (gapOnLine; STR score with a run-up, half standing), with
@@ -6410,6 +6413,15 @@ function startSneak(scout){
   const rolls = who.map(p => ({p, k: mapCheck(p, "stealth", "dex")}));
   sneak = {scout, cur, rolls, seenBy: new Set(), line: rolls.length === 1 ? String(rolls[0].k.total) : rolls.map(x => x.k.total).join(" / ")};
   log(`${rolls.map(({p, k}) => `${fname(p)}: ${rollLine(k, "stealth")}`).join(" · ")}. ${scout ? `${fname(leader)} slips ahead alone.` : rolls.length > 1 ? "The party moves quietly." : `${fname(leader)} moves quietly.`}`);
+  exploreKey = "";
+}
+function scoutAlone(){
+  if (!sneak) return;
+  if (followOn) setFollow(false);
+  const mine = sneak.rolls.filter(r => r.p === leader);
+  sneak.rolls = mine.length ? mine : [{p: leader, k: mapCheck(leader, "stealth", "dex")}];
+  sneak.scout = true; sneak.line = String(sneak.rolls[0].k.total);
+  log(`${fname(leader)} slips away from the group to scout alone (Stealth ${sneak.line}).`);
   exploreKey = "";
 }
 function endSneak(why){ if (!sneak) return; sneak = null; if (why) log(why); exploreKey = ""; }
