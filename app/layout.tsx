@@ -8,6 +8,7 @@ import ThemeAudio from '@/components/theme-audio'
 import { UiClickSound } from '@/components/ui-click-sound'
 import { StageProvider } from '@/components/stage/stage-provider'
 import { SessionGuard } from '@/components/session-guard'
+import { HeroFilmGate } from '@/components/hero-film-gate'
 
 import './globals.css'
 
@@ -106,6 +107,8 @@ export default function RootLayout({
         <StageProvider>{children}</StageProvider>
         {/* Sends players off in-game pages once the DM ends the game or removes them (lib/session-guard.ts). */}
         <SessionGuard />
+        {/* A forged hero's own intro film, first time into the story each run (lib/hero-film.ts). */}
+        <HeroFilmGate />
         <ThemeAudio />
         <UiClickSound />
 
