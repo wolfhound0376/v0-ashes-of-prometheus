@@ -3389,7 +3389,7 @@ function icardRender(){
   if (btns.length) h += `<div class="ic-btns">${btns.join("")}</div>`;
   if (view.magic && !view.identified && slug && src !== "bag" && !fight) h += `<div class="ic-foot">Carry it and study it through a short rest to learn what it is.</div>`;
   if (known.q && view.magic && !view.identified){ const q = party.find(x => x.id === known.q); if (q && src !== "bag") h += `<div class="ic-foot">${esc(fname(q))} will study it at the next short rest.</div>`; }
-  // Malachar's two lines (placeholders, Claude's words, for Sam to keep or cut)
+  // Malachar's two lines (Claude's words, kept by Sam 2026-10-27)
   if (view.magic && !view.identified){ const failed = Object.values(known.r || {}).some(r => r && r[2] === false);
     h += `<div class="ic-taunt">Malachar: “${failed ? "Fumbling with things you don’t understand. How very you." : "Go on. Hold it. What’s the worst that could happen?"}”</div>`; }
   if (!ICARD.pinned && !fight && (src === "drop" || src === "pile")) h += `<div class="ic-foot">${src === "drop" ? "Walk over it, or click it, to pick it up." : "Click it to pick it up."}</div>`;
