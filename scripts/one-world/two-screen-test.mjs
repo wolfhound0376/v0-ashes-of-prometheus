@@ -203,6 +203,24 @@ check("and recovers on its own", (await B.evaluate("OW.status")) === "in-step", 
       check("he joins the fight on Fifi's screen, from the next round", !!joined && joined.join >= 1, JSON.stringify(joined))
       check("and his light turns amber: a fight is on his plate", (await B.evaluate("OW.status")) === "fight-unshared", await B.evaluate("OW.status"))
       check("his screen tells him a fight is underway here", await B.evaluate(() => /A fight is underway here/.test(document.body.innerText)), "")
+      // 12. SPLIT PARTY, THE DM'S VIEW (part 3): the strip shows who is where; the DM can watch either group
+      await B.evaluate((ex) => { if (mode === "talk") closeTalk(false); mode = "explore"; leader = party.find((p) => p.id === "gandalf"); travel(ex.to, node.zones[ex.i], false, null, true) }, ex2)
+      await wait(9000)
+      const strip = async (pg) => pg.evaluate(() => { const el = $("splitStrip"); return el && !el.hidden ? el.innerText.replace(/\s+/g, " ").trim() : "" })
+      const sB = await strip(B), sC = await strip(C)
+      if (process.env.SHOT) { await C.screenshot({ path: process.env.SHOT + "-dm.png" }); await B.screenshot({ path: process.env.SHOT + "-gandalf.png" }) }
+      check("split: every screen shows the who-is-where strip", /Party split/i.test(sB) && /Party split/i.test(sC), `B "${sB}" DM "${sC}"`)
+      check("the strip marks the plate with a fight", /fighting/.test(sC), sC)
+      const partyPlate = String(world.plate)
+      await C.evaluate((pl) => dmViewPlate(pl), String(ex2.to))
+      await wait(8000)
+      check("the DM picks Gandalf's group: the DM's screen goes there", String(await C.evaluate("cur")) === String(ex2.to), `DM ${await C.evaluate("cur")} want ${ex2.to}`)
+      check("and draws the heroes there, not the others", (await C.evaluate("party.map(p=>p.id).join()")) === "gandalf", await C.evaluate("party.map(p=>p.id).join()"))
+      check("watching does not move the party's plate", String(world.plate) === partyPlate, `world ${world.plate} was ${partyPlate}`)
+      check("the DM's screen is not snapped back while it watches", String(await C.evaluate("cur")) === String(ex2.to) && (await C.evaluate("OW.status")) === "in-step", `DM ${await C.evaluate("cur")} ${await C.evaluate("OW.status")}`)
+      await C.evaluate(() => dmViewPlate(null))
+      await wait(7000)
+      check("Follow the party brings the DM back", String(await C.evaluate("cur")) === partyPlate, `DM ${await C.evaluate("cur")} party ${partyPlate}`)
     }
   }
   }

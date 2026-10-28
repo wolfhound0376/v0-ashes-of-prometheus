@@ -350,6 +350,13 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 .ward.flare .glow,.ward.flare .lines,.ward.flare .core{animation:none;opacity:1;filter:brightness(2.6) drop-shadow(0 0 14px #c89cff)}
 .ward.flare .bloom{animation:none;opacity:4}
 .marks.still *{animation:none!important}
+.split-strip{position:absolute;left:50%;top:52px;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px;max-width:calc(100% - 32px);z-index:30;font-size:13px}
+.split-strip .lbl{color:var(--ink-dim);letter-spacing:.08em;text-transform:uppercase;font-size:11px}
+.split-strip button{background:var(--panel);border:1px solid var(--rule);color:var(--ink);border-radius:5px;padding:4px 10px;cursor:default;font:inherit}
+.split-strip button.here{border-color:var(--ember)}
+.split-strip button.go{cursor:pointer}
+.split-strip button.go:hover{border-color:var(--ember)}
+.split-strip button .fight{color:#ff7a5c;margin-left:4px}
 .toast{position:absolute;left:50%;top:14px;transform:translateX(-50%);max-width:min(560px,calc(100% - 32px));background:var(--panel);border:1px solid var(--ember);color:var(--ink);border-radius:6px;padding:8px 14px;line-height:1.4;text-align:center;pointer-events:none;animation:fadein .2s ease}
 .toast[hidden]{display:none}
 /* THE CHECK CARD (Sam, 2026-10-27: "consolidate this cleanly at the top. The roll, the result ... Large enough to read
@@ -835,6 +842,10 @@ let soloEntry = false;        // the plate change in progress moved a splinter, 
 function noteHeroAt(id, plate, x, y){ if (plate == null) return; heroAt[id] = {plate: String(plate), x: x || 0, y: y || 0}; }
 function heroElsewhere(id){ const h = heroAt[id]; return !!h && String(h.plate) !== String(cur) && !party.some(p => p.id === id); }
 const playerScreen = () => !!mySlug && !isDm();
+// THE DM'S VIEW (SPLIT PARTY part 3, Sam 2026-10-27 "go"): the DM's screen follows the party's plate unless the DM picks
+// another group to watch from the strip (dmPin). A pinned DM's screen keeps its own view the way a player's does.
+let dmPin = null;
+const ownView = () => playerScreen() || (isDm() && dmPin != null);
 const plateLabel = pl => { const s = SPEC[/^\d+$/.test(String(pl)) ? +pl : pl]; return s ? s.name : String(pl); };
 // the cast's release, on the animation's hit frame — or, for a caster with no cast or attack sheet (a Forge hero
 // baked with only idle and walk), a beat after the wind-up starts. Without this the hit was never called and the
@@ -1986,7 +1997,7 @@ async function enterNode(n, opts = {}){
   party.sort((a, b) => PARTY.indexOf(a.id) - PARTY.indexOf(b.id));
   // tell the server where the party now stands and who is here; the first step out of the pen is the moment the ward lets go
   // a work detail leaves the pen as prisoners, not escapees: labor_out / labor_back (lib/situation.ts)
-  reportSituation({sub_location: node.slug, sub_label: node.name, party_present: partyPresent(), event: from === PEN && n !== PEN ? (laborLive() ? "labor_out" : "step_outside") : n === PEN && from !== PEN && laborLive() ? "labor_back" : undefined});
+  if (!opts.view) reportSituation({sub_location: node.slug, sub_label: node.name, party_present: partyPresent(), event: from === PEN && n !== PEN ? (laborLive() ? "labor_out" : "step_outside") : n === PEN && from !== PEN && laborLive() ? "labor_back" : undefined});
   const compAll = companyNow().filter(id => SPR[id]);
   // the company on THIS plate (SPLIT PARTY): a prisoner whose place is recorded elsewhere stays there; one never split walks with the party
   const compAt = state.companyAt || {};
@@ -2134,6 +2145,54 @@ function showDialog({title, body, src = "", buttons}){
     e.onclick = () => { $("dialog").hidden = true; if (mode === "dialog") mode = prev === "dialog" ? "explore" : prev; b.fn && b.fn(); }; bx.appendChild(e); });
   $("dialog").hidden = false; bx.firstChild && bx.firstChild.focus();
 }
+function dmWatch(pl, note){
+  const there = PARTY.filter(id => SPR[id] && heroAt[id] && owSame(heroAt[id].plate, pl));
+  if (!there.length || !SPEC[owPlate(pl)]) return false;
+  const h = heroAt[there[0]]; leader = {id: there[0]};
+  enterNode(owPlate(pl), {spawn: {x: h.x, y: h.y}, offs: [{id: there[0], dx: 0, dy: 0}], solo: true, view: true, note});
+  return true;
+}
+function dmViewPlate(pl){
+  if (!isDm()) return;
+  if (mode === "combat" || mode === "travel" || mode === "load"){ toast("Finish the fight or the crossing on this plate first."); return; }
+  if (pl == null || (OW.plate != null && owSame(pl, OW.plate))){          // back with the party
+    dmPin = null;
+    if (OW.plate != null && !owSame(OW.plate, cur) && !dmWatch(OW.plate, "The DM is back with the party.")){ OW.pendingPlate = OW.plate; owCheckPlate(); }
+    renderSplitStrip(); return;
+  }
+  if (owSame(pl, cur)){ dmPin = String(pl); renderSplitStrip(); return; }
+  if (dmWatch(pl, `The DM watches ${esc(plateLabel(pl))}.`)) dmPin = String(pl);
+  renderSplitStrip();
+}
+// WHO IS WHERE: a strip at the top while the party is on more than one plate. Everyone sees it; the DM's groups are
+// buttons that take the DM's screen there (dmViewPlate), and "Follow the party" brings it back. "fighting" marks a fight.
+function renderSplitStrip(){
+  let el = $("splitStrip");
+  if (!el){ el = document.createElement("div"); el.id = "splitStrip"; el.className = "split-strip"; el.hidden = true; $("stage").appendChild(el); }
+  const groups = {};
+  for (const id of PARTY){
+    if (!SPR[id]) continue;
+    const pl = party.some(p => p.id === id) ? String(cur) : heroAt[id] ? String(heroAt[id].plate) : null;
+    if (pl != null) (groups[pl] = groups[pl] || []).push(id);
+  }
+  const keys = Object.keys(groups), dm = isDm();
+  const show = mode !== "load" && (keys.length > 1 || (dm && dmPin != null));
+  const sig = JSON.stringify([show, groups, dmPin, String(cur), keys.map(k => !!(state[fightKey(k)] || (state.fightOn && owSame(state.fightOn.plate, k))))]);
+  if (sig === el.dataset.sig) return; el.dataset.sig = sig;
+  el.hidden = !show; el.innerHTML = ""; if (!show) return;
+  const lbl = document.createElement("span"); lbl.className = "lbl"; lbl.textContent = "Party split"; el.appendChild(lbl);
+  for (const k of keys){
+    const b = document.createElement("button"); b.type = "button";
+    b.className = (owSame(k, cur) ? "here " : "") + (dm ? "go" : "");   // not "dm": that class is the DM tools panel
+    const fight = state[fightKey(k)] || (state.fightOn && owSame(state.fightOn.plate, k));
+    b.innerHTML = `${esc(plateLabel(k))}: ${groups[k].map(id => esc(SHORT[id] || SPR[id].json.name)).join(", ")}${fight ? '<span class="fight" title="A fight is on here">· fighting</span>' : ""}`;
+    b.title = dm ? (owSame(k, cur) ? "You are watching this group" : "Watch this group") : owSame(k, cur) ? "Your plate" : "Elsewhere";
+    if (dm && !owSame(k, cur)) b.onclick = () => dmViewPlate(k); else b.tabIndex = -1;
+    el.appendChild(b);
+  }
+  if (dm && dmPin != null){ const f = document.createElement("button"); f.type = "button"; f.className = "go"; f.textContent = "Follow the party"; f.onclick = () => dmViewPlate(null); el.appendChild(f); }
+}
+setInterval(() => { try { renderSplitStrip(); } catch (e) {} }, 1000);
 // Who goes through an exit (SPLIT PARTY): the whole party on this plate, or just the hero you move (and the prisoners
 // following them). No card when the hero is alone here, or when this screen cannot move the leader.
 function whoGoes(z, to){
@@ -11000,7 +11059,7 @@ function owHeroTick(){
     const e = {x: Math.round(a.x), y: Math.round(a.y), tx: Math.round(dest.x), ty: Math.round(dest.y), face: a.face | 0, plate: cur, seq, cid: characterIdOf(a.id)};
     if (pose) e.pose = pose;
     OW.sent[a.id] = e; if (ordered) a.netDest = {x: dest.x, y: dest.y};
-    heroes[a.id] = e;
+    heroes[a.id] = e; noteHeroAt(a.id, cur, e.x, e.y);
   }
   if (!Object.keys(heroes).length) return;
   OW.inflight = true;
@@ -11144,21 +11203,21 @@ function owReceive(w){
     OW.travelSeq = t.seq;
     // SPLIT PARTY: the party's move takes the screens that were with it (on the plate it left), and the DM's; a
     // player whose hero is split off on another plate stays where they are
-    const withIt = owSame(t.from, cur) || (!playerScreen() && !t.splinter);
+    const withIt = owSame(t.from, cur) || (!ownView() && !t.splinter);
     if (t.by !== OW.key && !owSame(t.to, cur) && withIt){ if (OW_CAN_MOVE()) owGoTo(t.to, t); else OW.pendingPlate = owPlate(t.to); return; }
   }
   if (w.plate != null){
     const np = owPlate(w.plate);
     // the party's plate moved without a crossing (a DM jump, the falls, the lift): a player's screen that was with the
     // party goes too; one split off elsewhere does not
-    if (playerScreen() && OW.plate != null && !owSame(np, OW.plate) && owSame(OW.plate, cur) && !owSame(np, cur) && !OW.applyingPlate && mode !== "travel") OW.pendingPlate = np;
+    if (ownView() && OW.plate != null && !owSame(np, OW.plate) && owSame(OW.plate, cur) && !owSame(np, cur) && !OW.applyingPlate && mode !== "travel") OW.pendingPlate = np;
     OW.plate = np;
   }
   owCheckPlate();
 }
 function owCheckPlate(){
   // a player's screen goes where its own hero goes; only a move it was part of (pendingPlate) takes it anywhere
-  const p = OW.pendingPlate != null ? OW.pendingPlate : playerScreen() ? null : OW.plate;
+  const p = OW.pendingPlate != null ? OW.pendingPlate : ownView() ? null : OW.plate;
   if (p == null || owSame(p, cur) || !SPEC[p] || OW.applyingPlate) return;
   if (Date.now() < OW.localTravelUntil && mode === "travel") return;
   if (!OW_CAN_MOVE()) return;                                         // after the fight / the crossing
@@ -11186,7 +11245,7 @@ async function owBeat(){
 }
 // The heartbeat's fingerprint carries the party's plate. A player whose hero is split off checks the world's state
 // against the party's plate the server holds, not against the plate this screen shows (SPLIT PARTY).
-function owDigestPlate(){ return playerScreen() && OW.plate != null ? OW.plate : cur; }
+function owDigestPlate(){ return ownView() && OW.plate != null ? OW.plate : cur; }
 async function owResync(){
   if (OW.resyncing) return; OW.resyncing = true;
   try {
@@ -11196,7 +11255,7 @@ async function owResync(){
     owApplyState(w.state || {}, true);
     OW.version = Number(w.version) || 0; OW.plate = owPlate(w.plate); OW.seen = {};
     for (const [slug, h] of Object.entries(w.heroes || {})){ OW.seen[slug] = h.seq || 0; if (h.by !== OW.key) owApplyHero(slug, h); }
-    if (w.plate != null && !owSame(w.plate, cur) && !playerScreen()){ OW.pendingPlate = owPlate(w.plate); owCheckPlate(); }
+    if (w.plate != null && !owSame(w.plate, cur) && !ownView()){ OW.pendingPlate = owPlate(w.plate); owCheckPlate(); }
   } catch (e) {} finally { OW.resyncing = false; }
 }
 // --- fights (not shared yet) ---
