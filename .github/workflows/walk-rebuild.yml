@@ -1,0 +1,77 @@
+# Keep open Underwalk PRs mergeable (Sam, 2026-10-28: "do it").
+#
+# Every Underwalk PR commits the walk's BUILT files (public/velkynvelve-walk/index.html,
+# scripts/velkynvelve-walk/spec.json, lib/walk-plates.json). When one merges, every other open walk PR
+# conflicts on those files even though nobody edited them by hand. After each push to main this job finds the
+# open PRs that conflict, and for each one runs scripts/velkynvelve-walk/refresh_branch.sh:
+#   - only built files in the way  -> merge main in, rebuild them, push the merge to the PR branch
+#   - a real source conflict       -> leave the branch alone, comment on the PR naming the files
+# It never pushes to main, never force-pushes, and skips PRs from forks. Pushes made with GITHUB_TOKEN do not
+# start other workflows, so this cannot loop. It can also be run by hand from the Actions tab.
+name: Walk rebuild
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: walk-rebuild
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy pillow
+      - name: Refresh conflicting walk PRs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "walk-rebuild[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch -q origin '+refs/heads/*:refs/remotes/origin/*'
+          # GitHub works out mergeability lazily after a push to main: ask, wait, ask again
+          gh pr list --state open --limit 100 --json number > /dev/null
+          sleep 20
+          gh pr list --state open --limit 100 \
+            --json number,headRefName,isCrossRepository,mergeable,files \
+            --jq '.[] | select(.isCrossRepository | not) | select(.mergeable == "CONFLICTING")
+                  | select([.files[].path] | any(startswith("public/velkynvelve-walk/") or startswith("scripts/velkynvelve-walk/") or . == "lib/walk-plates.json"))
+                  | "\(.number) \(.headRefName)"' > prs.txt || true
+          echo "conflicting walk PRs:"; cat prs.txt || true
+          status=0
+          while read -r num br; do
+            [ -z "$num" ] && continue
+            echo "::group::PR #$num ($br)"
+            set +e; bash scripts/velkynvelve-walk/refresh_branch.sh "$br"; rc=$?; set -e
+            if [ $rc -eq 0 ]; then
+              if git push -q origin "$br:refs/heads/$br"; then
+                gh pr comment "$num" --body "Main moved and only the walk's built files were in the way, so I merged main in and rebuilt them (\`spec.py\` + \`build_walk.py\`). Nothing hand-written was changed. — walk-rebuild"
+              else
+                echo "push to $br was rejected (the branch moved meanwhile); the next run will try again"
+              fi
+            elif [ $rc -eq 3 ]; then
+              files=$(cat "$RUNNER_TEMP/real-conflicts-$(echo "$br" | tr '/' '_').txt" | sed 's/^/- `/; s/$/`/')
+              marker="walk-rebuild: real conflict"
+              if ! gh pr view "$num" --json comments --jq '.comments[].body' | grep -q "$marker"; then
+                gh pr comment "$num" --body "$(printf '%s\n\nThis PR conflicts with main in hand-written files, so it needs a person (or a Claude session) to resolve:\n%s\n\nThe built walk files will be rebuilt automatically once these are settled.' "$marker" "$files")"
+              fi
+            else
+              echo "refresh script failed for $br (exit $rc)"; status=1
+            fi
+            git checkout -q --detach origin/main
+            echo "::endgroup::"
+          done < prs.txt
+          exit $status
