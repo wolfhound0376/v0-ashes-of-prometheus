@@ -185,6 +185,25 @@ check("and recovers on its own", (await B.evaluate("OW.status")) === "in-step", 
     check("rejoined: both screens on the same plate", String(await A.evaluate("cur")) === String(ex.to) && String(await B.evaluate("cur")) === String(ex.to), `A ${await A.evaluate("cur")} B ${await B.evaluate("cur")}`)
     check("rejoined: each screen draws both heroes", (await A.evaluate("party.map(p=>p.id).sort().join()")) === "freia,gandalf" && (await B.evaluate("party.map(p=>p.id).sort().join()")) === "freia,gandalf", `A ${await A.evaluate("party.map(p=>p.id).join()")} B ${await B.evaluate("party.map(p=>p.id).join()")}`)
     check("rejoined: the party's plate and the DM follow", String(world.plate) === String(ex.to) && String(await C.evaluate("cur")) === String(ex.to), `world ${world.plate} DM ${await C.evaluate("cur")}`)
+    // 11. SPLIT PARTY, FIGHTS (part 2): a fight on one plate is that plate's alone; a hero who walks in joins it
+    const ex2 = await B.evaluate(pickExit)
+    if (!ex2) check("an exit to split through (fights)", false, `none on plate ${ex.to}`)
+    else {
+      await B.evaluate((ex) => { if (mode === "talk") closeTalk(false); mode = "explore"; leader = party.find((p) => p.id === "gandalf"); travel(ex.to, node.zones[ex.i], false, null, true) }, ex2)
+      await wait(9000)
+      const foe = await A.evaluate(() => { if (mode === "talk") closeTalk(false); if (mode !== "explore") mode = "explore"; const id = Object.keys(SPR).find((k) => /drow-guard/.test(k)) || Object.keys(SPR).find((k) => !PARTY.includes(k)); startCombat([id], "Steel comes out (test)."); return id })
+      await wait(5000)
+      check("a fight on Fifi's plate: Fifi's screen is fighting", (await A.evaluate("mode")) === "combat", `mode ${await A.evaluate("mode")} foe ${foe}`)
+      check("a fight on another plate leaves Gandalf's light In step", (await B.evaluate("OW.status")) === "in-step", `${await B.evaluate("OW.status")} (B on ${await B.evaluate("cur")}, fight on ${await A.evaluate("cur")})`)
+      // Gandalf walks back onto Fifi's plate mid-fight
+      await B.evaluate((ex) => { if (mode === "talk") closeTalk(false); mode = "explore"; const z = node.zones.find((z) => z.to && z.to.length === 1 && String(z.to[0]) === String(ex.back)); if (z) travel(z.to[0], z) }, { back: ex.to })
+      await wait(10000)
+      check("Gandalf walks back in: his screen is on the fighting plate", String(await B.evaluate("cur")) === String(ex.to), `B ${await B.evaluate("cur")}`)
+      const joined = await A.evaluate(() => { const g = cbt && cbt.order.find((a) => a.id === "gandalf"); return g ? { round: cbt.round, join: g.c.joinRound, init: g.c.init } : null })
+      check("he joins the fight on Fifi's screen, from the next round", !!joined && joined.join >= 1, JSON.stringify(joined))
+      check("and his light turns amber: a fight is on his plate", (await B.evaluate("OW.status")) === "fight-unshared", await B.evaluate("OW.status"))
+      check("his screen tells him a fight is underway here", await B.evaluate(() => /A fight is underway here/.test(document.body.innerText)), "")
+    }
   }
   }
 console.log(`\n${results.filter((r) => r.ok).length}/${results.length} passed; world version ${world.version}; writes ${log.length}`)

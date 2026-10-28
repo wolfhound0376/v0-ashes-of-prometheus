@@ -2053,6 +2053,7 @@ async function enterNode(n, opts = {}){
   nextAmbient = now + 6000 + Math.random() * 6000;
   surgeonOnEnter(n);
   laborOnEnter(n, from);
+  { const f = fightHere(); if (f && f.by !== OW.key) log(`<em>A fight is underway here, on ${esc(f.who)}'s screen.</em> ${esc(SHORT[leader.id] || fname(leader))} joins it at the next round; that screen plays it.`); }
   crewsOnEnter();                                         // prisoners out on another work crew are not in the pen
   owEntered();
 }
@@ -5173,7 +5174,7 @@ function nextTurn(first){
   if (!first){ const was = cbt.order[cbt.idx]; if (was && was.c && was.c.rage){ const r = rageAfterTurn(was.c.rage, cbt.round); if (r.ended) endRage(was, r.ended); else was.c.rage = r.rage; } }
   for (let k = 0; k < cbt.order.length; k++){
     cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0) cbt.round++;
-    const a = cbt.order[cbt.idx]; if ((!a.down || dyingNow(a)) && actors.includes(a)) break;
+    const a = cbt.order[cbt.idx]; if ((!a.down || dyingNow(a)) && actors.includes(a) && !(a.c && a.c.joinRound > cbt.round)) break;   // a late arrival waits for the next round
   }
   const a = activeActor(); if (!a) return;
   // a dying hero who starts the turn in Cloudkill still makes the save, and the poison, hitting them at 0, is a
@@ -12928,6 +12929,12 @@ function owHeroTick(){
 }
 function owApplyHero(slug, h){
   let a = party.find(p => p.id === slug);
+  // SPLIT PARTY, FIGHTS: a hero who walks onto this plate while this screen's fight is on joins it — rolls initiative and
+  // acts from the next round (5E: you enter an encounter when you arrive). They fight on their own instincts here, like
+  // every hero another player drives (fights are not shared between screens yet).
+  if (mode === "combat" && cbt && !a && PARTY.includes(slug) && SPR[slug] && h.plate != null && owSame(h.plate, cur)){
+    joinFight(slug, h); return;
+  }
   // SPLIT PARTY: a hero someone else drives walks off this plate, or onto it
   if (OW_CAN_MOVE() && mode !== "travel"){
     if (a && owRemote(a) && h.plate != null && !owSame(h.plate, cur)){
@@ -12951,6 +12958,18 @@ function owApplyHero(slug, h){
   a.netPose = h.pose === "carry" || h.pose === "scrub" ? h.pose : null; a.walkAs = a.netPose === "carry" ? "carry" : null;
   if (Math.hypot(dest.x - a.x, dest.y - a.y) > 6){ const p = findPath(a, nearestWalkable(dest.x, dest.y)); a.path = p && p.length ? p : [{x: dest.x, y: dest.y}]; }
   else { a.path = []; a.face = h.face | 0; }
+}
+function joinFight(slug, h){
+  const p = nearestWalkable(h.x, h.y, actors.map(q => ({x: q.x, y: q.y})));
+  const a = mkActor(slug, p.x, p.y, "pc", {alpha: 0, fadeIn: true, home: {x: p.x, y: p.y}, face: h.face | 0});
+  party.push(a); party.sort((x, y) => PARTY.indexOf(x.id) - PARTY.indexOf(y.id)); actors = [...party, ...npcs, ...foes];
+  noteHeroAt(slug, cur, p.x, p.y);
+  a.c = fighterFor(a); a.c.init = d20(0, a) + (a.c.sheet.init || 0); a.c.joinRound = cbt.round + 1;
+  // into the order by initiative; already-taken places stay where they are
+  let at = cbt.order.findIndex(o => o.c && o.c.init < a.c.init); if (at < 0) at = cbt.order.length;
+  cbt.order.splice(at, 0, a); if (at <= cbt.idx) cbt.idx++;
+  renderTurns(); renderParty();
+  log(`${esc(fname(a))} arrives in the middle of the fight. Initiative ${a.c.init} — they act from round ${a.c.joinRound}.`);
 }
 // a hero someone else drives scrubs once they have arrived where they scrub, and stops when its driver stops
 setInterval(() => {
@@ -13083,7 +13102,7 @@ async function owBeat(){
   const v = AopOneWorld.heartbeatVerdict({digest: mine, dirty: owDirty(), travelling: mode === "travel" || OW.applyingPlate}, {digest: j.digest}, OW.misses);
   OW.misses = v.misses;
   if (v.resync) await owResync();
-  owSetStatus(state.fightOn ? "fight-unshared" : v.status);
+  owSetStatus(fightHere() ? "fight-unshared" : v.status);
 }
 // The heartbeat's fingerprint carries the party's plate. A player whose hero is split off checks the world's state
 // against the party's plate the server holds, not against the plate this screen shows (SPLIT PARTY).
@@ -13101,8 +13120,18 @@ async function owResync(){
   } catch (e) {} finally { OW.resyncing = false; }
 }
 // --- fights (not shared yet) ---
-function owFightBegins(){ if (OW.on) state.fightOn = {by: OW.key, who: mySlug ? (SHORT[mySlug] || mySlug) : "the DM", plate: cur}; }
-function owFightEnds(){ if (OW.on && state.fightOn) state.fightOn = null; }
+// SPLIT PARTY, FIGHTS (Sam, 2026-10-27; part 2 of 4): one flag per plate (state["fight:<plate>"]) instead of one for the
+// table, so two plates can each have a fight, and the amber light shows only on the screens standing on a fighting
+// plate. A screen split off elsewhere stays In step. (The old single state.fightOn is still read, so a fight flagged
+// by a page from before this change keeps its light until it ends.)
+const fightKey = pl => "fight:" + String(pl);
+function fightHere(){ const f = state[fightKey(cur)] || state.fightOn; return f && owSame(f.plate, cur) ? f : null; }
+function owFightBegins(){ if (OW.on) state[fightKey(cur)] = {by: OW.key, who: mySlug ? (SHORT[mySlug] || mySlug) : "the DM", plate: cur}; }
+function owFightEnds(){
+  if (!OW.on) return;
+  if (state[fightKey(cur)]) state[fightKey(cur)] = null;            // null, not delete: a deleted key is never sent, so the others would keep it
+  if (state.fightOn && owSame(state.fightOn.plate, cur)) state.fightOn = null;
+}
 // --- the light ---
 const OW_LABEL = {"in-step": "In step", "catching-up": "Catching up…", "out-of-touch": "Out of touch", "fight-unshared": "Fight not shared", "off": "Not shared", "rehearsal": "Rehearsal · own world"};
 function owSetStatus(s){
@@ -13115,7 +13144,7 @@ function owSetStatus(s){
     const p = document.createElement("div"); p.id = "owSeats"; p.className = "ow-seats"; p.hidden = true; $("stage").appendChild(p);
   }
   el.dataset.s = s;
-  const f = state.fightOn;
+  const f = fightHere();
   el.textContent = OW_LABEL[s] || s;
   el.title = s === "fight-unshared" && f ? `A fight is running on ${f.who === (SHORT[mySlug] || mySlug) ? "this" : f.who + "'s"} screen. Fights are not shared between screens yet — the others do not see it.`
     : s === "rehearsal" ? "A DM rehearsal: this screen plays its own world and never touches the real game."
