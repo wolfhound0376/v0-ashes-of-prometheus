@@ -77,6 +77,15 @@ describe("the rogue", () => {
     const out = settleChoices(planFor("Rogue", 3)!, null, [marker(3)], { origin: "Thief" })
     expect(out.ok && out.features.map((f) => f.name)).toEqual(["Steady Aim", "Sneak Attack 2d6", "Thief"])
   })
+  it("level 3 raises the sheet's own Sneak Attack line from +1d6 to +2d6 (Fifi's row wording)", () => {
+    const sheet = [{ name: "Sneak Attack", desc: "Once per turn, +1d6 damage with a Finesse or Ranged weapon when you have Advantage.", source: "Rogue 1" }, marker(3)]
+    const out = settleChoices(planFor("Rogue", 3)!, null, sheet, { origin: "Thief" })
+    expect(out.ok && out.features.find((f) => f.name === "Sneak Attack")?.desc).toMatch(/\+2d6 damage/)
+    expect(out.ok && out.features.find((f) => f.name === "Sneak Attack")?.desc).not.toMatch(/1d6/)
+    // level 2 leaves it alone
+    const two = settleChoices(planFor("Rogue", 2)!, null, [sheet[0], marker(2)], {})
+    expect(two.ok && two.features.find((f) => f.name === "Sneak Attack")?.desc).toMatch(/\+1d6/)
+  })
   it("refuses spells and Metamagic", () => {
     expect(settleChoices(planFor("Rogue", 2)!, null, [], { spells: ["Shield"] })).toMatchObject({ ok: false })
     expect(settleChoices(planFor("Rogue", 2)!, null, [], { metamagic: ["Subtle Spell"] })).toMatchObject({ ok: false })

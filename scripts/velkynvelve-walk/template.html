@@ -965,11 +965,22 @@ function forgeHero(s){
   if (s.sheet) applyForgedSheet(slug, s.sheet);
   return slug;
 }
+// A rogue's Sneak Attack dice by level (SRD 5.2.1 Rogue table: 1d6 at levels 1–2, 2d6 at 3–4, one more d6 every two
+// levels). Read from the LEVEL, never a stored string, so the day a rogue takes level 3 the second die is there.
+function sneakDieFor(level){ return `${Math.max(1, Math.ceil(Math.max(1, Number(level) || 1) / 2))}d6`; }
+function isRogueSheet(s){ return /^rogue/i.test(String((s && s.cls) || "").trim()); }
+function followLevel(s){ if (s && isRogueSheet(s)) s.sneakDie = sneakDieFor(s.level || 1); }
+// the row's magic as the walk can cast it: the spells in SPELLS stay, the rest remain the dashboard's to cast
+function walkMagicOf(magic){
+  const ok = n => Object.prototype.hasOwnProperty.call(SPELLS, n) || !!SPELL_VARIANTS[n];
+  const m = magic ? {...magic, cantrips: (magic.cantrips || []).filter(ok), prepared: (magic.prepared || []).filter(ok)} : null;
+  return m && (m.cantrips.length || m.prepared.length) ? m : null;
+}
 function applyForgedSheet(slug, sh){
   // the walk resolves the spells in SPELLS; any other spell on the sheet stays the dashboard's to cast
-  const ok = n => Object.prototype.hasOwnProperty.call(SPELLS, n) || !!SPELL_VARIANTS[n];
-  const m = sh.magic ? {...sh.magic, cantrips: sh.magic.cantrips.filter(ok), prepared: sh.magic.prepared.filter(ok)} : null;
-  SHEETS[slug] = Object.assign(SHEETS[slug] || {}, sh, {magic: m && (m.cantrips.length || m.prepared.length) ? m : null, magicAll: sh.magic || null, caster: !!sh.magic});
+  const m = walkMagicOf(sh.magic);
+  SHEETS[slug] = Object.assign(SHEETS[slug] || {}, sh, {magic: m, magicAll: sh.magic || null, caster: !!sh.magic});
+  followLevel(SHEETS[slug]);
   PCS[slug] = {name: sh.name, race: sh.race || "", cls: String(sh.cls || "").toLowerCase()};
   if (SPR[slug].standIn){ const base = SPR[standInFor(sh.cls)]; SPR[slug] = {json: {...base.json, name: sh.name}, img: base.img, standIn: true}; }
 }
@@ -981,15 +992,26 @@ const dmRun = new Set();
 function noteSeats(seated){
   seatsSeen = Array.isArray(seated) ? seated : [];
   // the live level of each seated character (/api/map-stage), so a class feature switches on the day it is earned
-  for (const s of seatsSeen) if (typeof s.level === "number") for (const id of seatedSlugs([s])) if (SHEETS[id]) SHEETS[id].level = s.level;
-  // the live row's saves and skills (class save proficiencies included) over the page's snapshot, for the four premades
-  // too: a level-up or a new proficiency reaches the walk without a rebuild. Attacks and magic stay the snapshot's.
+  for (const s of seatsSeen) if (typeof s.level === "number") for (const id of seatedSlugs([s])) if (SHEETS[id]){ SHEETS[id].level = s.level; followLevel(SHEETS[id]); }
+  // the live row over the page's snapshot, for the four premades too (a forged hero takes the whole sheet above): saves
+  // and skills (class save proficiencies included), AND since 2026-10-28 the level's own numbers — hit points, XP, the
+  // spell slots and the spells chosen at a level-up. Until then a premade kept the page's baked 8 hp / 2 slots / no XP
+  // on every reload, so Kenta's Level Up button sat locked ("XP is on the sheet, not here") with 1,087 XP on his row,
+  // and a level taken in one browser never reached the next load or another seat. Attacks stay the snapshot's (they are
+  // rebuilt from the carried weapons, refreshAttacks); AC stays the snapshot's (worn gear).
   for (const s of seatsSeen) if (s.sheet) for (const id of seatedSlugs([s])) if (SHEETS[id] && !FORGED_ID[id]){
-    if (s.sheet.saves) SHEETS[id].saves = {...SHEETS[id].saves, ...s.sheet.saves};
-    if (s.sheet.skills) SHEETS[id].skills = {...SHEETS[id].skills, ...s.sheet.skills};
-    if (s.sheet.mods) SHEETS[id].mods = {...SHEETS[id].mods, ...s.sheet.mods};
-    if (s.sheet.lore) SHEETS[id].lore = {...SHEETS[id].lore, ...s.sheet.lore};
-    if (s.sheet.tools) SHEETS[id].tools = {...SHEETS[id].tools, ...s.sheet.tools}; }
+    const sh = s.sheet, S = SHEETS[id];
+    if (sh.saves) S.saves = {...S.saves, ...sh.saves};
+    if (sh.skills) S.skills = {...S.skills, ...sh.skills};
+    if (sh.mods) S.mods = {...S.mods, ...sh.mods};
+    if (sh.lore) S.lore = {...S.lore, ...sh.lore};
+    if (sh.tools) S.tools = {...S.tools, ...sh.tools};
+    if (typeof sh.level === "number") S.level = sh.level;
+    if (typeof sh.hp === "number" && sh.hp > 0) S.hp = sh.hp;
+    if (sh.hpNow != null) S.hpNow = sh.hpNow;   // mid-fight the chips read the fight's own a.c.hp, not this
+    if (sh.xp != null) S.xp = sh.xp;
+    if (sh.magic){ const m = walkMagicOf(sh.magic); if (m) S.magic = m; S.magicAll = sh.magic; S.caster = true; }
+    followLevel(S); }
   dmRun.clear();
   for (const s of seatsSeen) if (s.dm) for (const id of seatedSlugs([s])) dmRun.add(id);
   renderSeats();
@@ -11845,13 +11867,13 @@ addEventListener("message", e => {
   if (e.data.ready && f){ try { const c = document.createElement("canvas"); heroStage(a.id, c, 420); f.contentWindow.postMessage({source: "aop-walk", sprite: c.toDataURL()}, location.origin); } catch (err) {} }
   if (e.data.level){   // the level is written: the open sheet follows the row (as takeLevel does)
     const s = SHEETS[a.id], w = e.data.level.write || {};
-    if (s && w.level){ s.level = w.level; s.hp = w.hp_max; s.hpNow = w.hp_current; if (w.slots && s.magic){ s.magic.slots = Object.fromEntries(Object.entries(w.slots).map(([k, v]) => [k, (v && v.max) || 0])); } }
+    if (s && w.level){ s.level = w.level; s.hp = w.hp_max; s.hpNow = w.hp_current; if (w.slots && s.magic){ s.magic.slots = Object.fromEntries(Object.entries(w.slots).map(([k, v]) => [k, (v && v.max) || 0])); } followLevel(s); }
     if (a.c && !inFightNow() && w.hp_max){ a.c.hpMax = w.hp_max; a.c.hp = w.hp_current; }
     bank("ui/level_up", .9); log(`<b>${esc(fname(a))} reaches level ${w.level}.</b> ${esc(e.data.level.note || "")}`);
   }
   if (e.data.choices){
     const s = SHEETS[a.id], cz = e.data.choices.casting || {};
-    if (s && s.magic){ if (cz.cantrips) s.magic.cantrips = cz.cantrips; if (cz.prepared) s.magic.prepared = cz.prepared; }
+    if (s && (cz.cantrips || cz.prepared)){ const m = walkMagicOf({...(s.magicAll || s.magic || {}), cantrips: cz.cantrips || (s.magicAll || s.magic || {}).cantrips || [], prepared: cz.prepared || (s.magicAll || s.magic || {}).prepared || []}); if (m){ s.magic = {...(s.magic || {}), ...m}; s.caster = true; } s.magicAll = {...(s.magicAll || {}), cantrips: cz.cantrips || [], prepared: cz.prepared || []}; }
     if (s && cz.sorcery_points) s.sorceryPoints = cz.sorcery_points.max;
     log(`${esc(fname(a))} chooses: ${esc((e.data.choices.summary || []).join(", "))}.`);
   }
@@ -11935,7 +11957,7 @@ async function takeLevel(a, cid, p, choice){
   }
   // the sheet on the map follows the row: level, hit points, slots; proficiency-driven numbers wait for a reload
   const s = SHEETS[a.id]; const w = j.write || {};
-  if (s){ s.level = w.level; s.hp = w.hp_max; s.hpNow = w.hp_current; if (w.slots && s.magic){ s.magic.slots = Object.fromEntries(Object.entries(w.slots).map(([k, v]) => [k, (v && v.max) || 0])); } }
+  if (s){ s.level = w.level; s.hp = w.hp_max; s.hpNow = w.hp_current; if (w.slots && s.magic){ s.magic.slots = Object.fromEntries(Object.entries(w.slots).map(([k, v]) => [k, (v && v.max) || 0])); } followLevel(s); }
   if (a.c && !inFightNow()){ a.c.hpMax = w.hp_max; a.c.hp = w.hp_current; }
   bank("ui/level_up", .9); log(`<b>${esc(fname(a))} reaches level ${w.level}.</b> ${esc(j.note || "")}`);
   const owed = (j.pendingChoices || []);
