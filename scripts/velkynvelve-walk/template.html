@@ -184,23 +184,43 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .cbt-mini{all:unset;display:none;justify-self:center;cursor:pointer;font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.08em;color:var(--ember);background:rgba(16,10,8,.94);border:1px solid var(--ember);border-radius:6px 6px 0 0;padding:3px 14px;margin:0 auto}
 body.dm-open .cbt-menu:not([hidden]){display:none}
 body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
-.cbt-menu button{all:unset;display:grid;grid-template-columns:34px 1fr;grid-template-rows:auto auto;column-gap:6px;align-items:center;box-sizing:border-box;flex:1 1 132px;min-width:0;max-width:172px;min-height:44px;padding:3px 8px 3px 4px;border-radius:5px;border:1px solid rgba(203,160,90,.18);cursor:pointer;color:var(--ink);font-family:var(--face-display);font-size:.8rem;line-height:1.1;background:rgba(0,0,0,.18)}
-.cbt-menu button .ico{grid-row:1/3;width:34px;height:34px;border-radius:4px;border:1px solid rgba(203,160,90,.35);object-fit:cover;image-rendering:auto;background:#1a1410}
+/* THE BUTTONS (Sam, 2026-10-27: "make the button more pleasant appearing like those of Top Heroes"): a chunky rounded
+   slab with a thick gold rim and a dark inner line, a glossy top highlight and a darker lip at the bottom so it reads as a
+   physical button; it lifts and glows gold on hover, sinks on press. Colour says what kind of act it is (data-cat), the
+   hotkey rides as a gold tab (data-key, only the keys the map already answers to), and the picture is the illustrated
+   set in icons/bar/ (the concept Sam approved: https://claude.ai/artifact/NWun7fpc3Ean5QzrX6rZ3o). */
+.cbt-menu button{all:unset;position:relative;display:grid;grid-template-columns:46px 1fr;grid-template-rows:auto auto;column-gap:8px;align-items:center;box-sizing:border-box;flex:1 1 150px;min-width:0;max-width:200px;min-height:60px;padding:4px 10px 4px 5px;border-radius:14px;border:3px solid #9a6a1c;cursor:pointer;color:#fff;font-family:var(--face-display);font-size:.86rem;font-weight:700;letter-spacing:.01em;line-height:1.1;text-shadow:0 2px 0 rgba(0,0,0,.65),0 0 6px rgba(0,0,0,.45);--c1:#5e6a78;--c2:#343c46;background:linear-gradient(180deg,var(--c1) 0%,var(--c2) 100%);box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.2),inset 0 -7px 0 rgba(0,0,0,.24),0 4px 0 #000,0 7px 14px rgba(0,0,0,.55);transition:transform .09s ease,filter .12s ease,border-color .12s ease,box-shadow .09s ease}
+.cbt-menu button::before{content:"";position:absolute;inset:3px 3px 50% 3px;border-radius:10px 10px 5px 5px;background:linear-gradient(rgba(255,255,255,.16),rgba(255,255,255,.02));pointer-events:none}
+.cbt-menu button[data-key]::after{content:attr(data-key);position:absolute;top:-9px;right:8px;min-width:12px;height:18px;padding:0 6px;border-radius:6px;background:#f2c55c;color:#1a0f0a;font-family:var(--face-mono);font-size:10px;font-weight:700;letter-spacing:.04em;line-height:18px;text-align:center;text-shadow:none;border:2px solid #000;box-shadow:0 2px 0 #000;z-index:2}
+.cbt-menu button[data-cat=talk]{--c1:#1f8f86;--c2:#0f5b57}
+.cbt-menu button[data-cat=sneak]{--c1:#6b4fc1;--c2:#3d2b80}
+.cbt-menu button[data-cat=search]{--c1:#d1832a;--c2:#8a4f12}
+.cbt-menu button[data-cat=cast]{--c1:#c23f8a;--c2:#731f52}
+.cbt-menu button[data-cat=party]{--c1:#2f73c9;--c2:#1a4480}
+.cbt-menu button[data-cat=rest]{--c1:#4a9a3a;--c2:#2a5e20}
+.cbt-menu button[data-cat=dm]{--c1:#8a3a9c;--c2:#4d1b5c}
+.cbt-menu button[data-cat=attack]{--c1:#c8402e;--c2:#7a1f14}
+.cbt-menu button[data-cat=move]{--c1:#2e8ab8;--c2:#174a66}
+.cbt-menu button[data-cat=bard]{--c1:#c9962a;--c2:#7a5312}
+.cbt-menu button .ico{grid-row:1/3;width:46px;height:46px;border-radius:11px;border:2px solid rgba(0,0,0,.6);box-shadow:inset 0 0 0 1px rgba(255,233,166,.25),0 2px 0 #000;object-fit:cover;image-rendering:auto;background:#0a0710;position:relative;z-index:1}
+@media (prefers-reduced-motion:reduce){.cbt-menu button{transition:none}}
 .cbt-menu button.orbOn{outline:2px solid var(--ember);background:rgba(232,162,74,.16)}
 .cbt-menu .orbCycler{display:flex;flex-direction:column;align-items:stretch;gap:3px;flex:0 1 210px;min-width:160px}
 /* the menu's buttons grow along the row (flex 1 1 132px); in this column that basis became a 132-px-tall box */
 .cbt-menu .orbCycler button{max-width:none;flex:0 0 auto}
-.cbt-menu .orbCycler .orbStep{display:flex;justify-content:center;align-items:center;min-height:20px;height:20px;padding:0;font-size:11px;color:var(--ember);border:1px solid rgba(203,160,90,.35);border-radius:4px;cursor:pointer}
+.cbt-menu .orbCycler .orbStep{display:flex;justify-content:center;align-items:center;min-height:20px;height:20px;padding:0;font-size:11px;color:var(--ember);border:1px solid rgba(203,160,90,.35);border-radius:4px;cursor:pointer;background:rgba(0,0,0,.3);box-shadow:none;text-shadow:none}
+.cbt-menu .orbCycler .orbStep::before{display:none}
 .cbt-menu .orbCycler .orbStep span{grid-column:auto}
 .cbt-menu .orbCycler ~ button{align-self:center}
 .cbt-menu .orbCycler .orbStep:hover,.cbt-menu .orbCycler .orbStep:focus-visible{background:rgba(232,162,74,.16)}
-.cbt-menu button .ico.glyph{display:grid;place-items:center;font-size:20px;color:var(--ember)}
+.cbt-menu button .ico.glyph{display:grid;place-items:center;font-size:22px;color:#ffe9a6}
 .cbt-menu button span{grid-column:2}
-.cbt-menu button small{grid-column:2;font-family:var(--face-mono);font-size:.54rem;color:var(--ink-dim);letter-spacing:0;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-.cbt-menu button:hover,.cbt-menu button:focus-visible{background:rgba(232,162,74,.16);border-color:var(--ember)}
-.cbt-menu button.primary{color:#ffd9a0;border-color:rgba(255,217,160,.45)}
-.cbt-menu button.end{margin-left:auto;border-color:rgba(255,155,143,.4);color:#ff9b8f}
-.cbt-menu button:disabled{opacity:.36;cursor:default}
+.cbt-menu button small{grid-column:2;font-family:var(--face-mono);font-size:.56rem;font-weight:400;color:#fff;opacity:.82;letter-spacing:0;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-shadow:0 1px 0 rgba(0,0,0,.65)}
+.cbt-menu button:hover,.cbt-menu button:focus-visible{transform:translateY(-2px);border-color:#f2c55c;filter:brightness(1.12);box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.26),inset 0 -7px 0 rgba(0,0,0,.24),0 6px 0 #000,0 0 20px rgba(242,197,92,.4),0 10px 18px rgba(0,0,0,.6)}
+.cbt-menu button:active{transform:translateY(2px);box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.12),inset 0 -4px 0 rgba(0,0,0,.24),0 2px 0 #000,0 4px 8px rgba(0,0,0,.6)}
+.cbt-menu button.primary{border-color:#f2c55c}
+.cbt-menu button.end{margin-left:auto;--c1:#8a2d2d;--c2:#4d1414}
+.cbt-menu button:disabled{opacity:.45;filter:saturate(.35);cursor:default;transform:none}
 /* the Underwalk's More tray (2026-10-25): the six options that matter here stay on the bar, the rest fold behind More */
 .cbt-menu .moreTray{flex:1 1 100%;display:flex;flex-wrap:wrap;gap:5px;padding-top:5px;border-top:1px dashed rgba(203,160,90,.25)}
 .cbt-menu .moreTray[hidden]{display:none}
@@ -4398,14 +4418,15 @@ function openMenu(a, sub){
   m.onwheel = null; if (sub !== "orb"){ orbPick = null; orbDrop(); }
   const add = (label, hint, fn, cls) => { const b = document.createElement("button"); b.className = cls || ""; const ic = ACTION_ICON[label] || ACTION_ICON[label.replace(/:.*$/, "")] || ACTION_ICON[label.split(" ")[0]];
     const sic = SPELL_ICON[label];
-    b.innerHTML = `${sic ? `<img class="ico" src="${ICON_BASE}spells/${sic}.webp" alt="">` : ic ? `<img class="ico" src="${ICON_BASE}${ic}.png" alt="">` : `<i class="ico glyph">${ACTION_GLYPH[label] || "·"}</i>`}<span>${label}</span>${hint ? `<small>${hint}</small>` : ""}`; b.onclick = fn; b.disabled = !fn; m.appendChild(b); return b; };
+    b.innerHTML = `${sic ? `<img class="ico" src="${ICON_BASE}spells/${sic}.webp" alt="">` : ic ? `<img class="ico" src="${ICON_BASE}${ic}.png" alt="">` : `<i class="ico glyph">${ACTION_GLYPH[label] || "·"}</i>`}<span>${label}</span>${hint ? `<small>${hint}</small>` : ""}`;
+    dressButton(b, sic ? "bar/cast" : ic, hint); if (sic) b.dataset.cat = "cast"; b.onclick = fn; b.disabled = !fn; m.appendChild(b); return b; };
   const grp = (label) => { const s = document.createElement("i"); s.className = "sep"; m.appendChild(s); if (label){ const g = document.createElement("b"); g.className = "grp"; g.textContent = label; m.appendChild(g); } };
   const c = a.c, s = c.sheet;
   // a spell (or Bardic Inspiration) wears its own commissioned icon, the one the dashboard uses (lib/action-icons.ts)
   if (sub === "attack"){
-    for (const d of drawable(a)){ ACTION_ICON[d.label] = "attack";
+    for (const d of drawable(a)){ ACTION_ICON[d.label] = "bar/attack";
       add(d.label, c.objFree !== false ? `draw it (your free object interaction) and attack · ${d.hint}` : "your free object interaction is spent: draw it from the inventory instead", c.objFree !== false ? () => drawAndAttack(a, d.it) : null); }
-    for (const atk of s.attacks){ ACTION_ICON[atk.name] = atk.name.toLowerCase().includes("unarmed") ? "opportunity-attack" : "attack"; add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.sneak ? ` · sneak +${atk.sneak}` : ""}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk})); }
+    for (const atk of s.attacks){ ACTION_ICON[atk.name] = atk.name.toLowerCase().includes("unarmed") ? "opportunity-attack" : "bar/attack"; add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.sneak ? ` · sneak +${atk.sneak}` : ""}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk})); }
     add("Back", "", () => openMenu(a));
   } else if (sub === "orb"){
     // ONE CYCLER, UP OR DOWN (Sam, 2026-10-25: "Chromatic orb should be an option cycler going up or down"): an up
@@ -4464,16 +4485,16 @@ function openMenu(a, sub){
     // rules it is not a separate action: it rides on an Attack once per turn when the conditions are met. The command
     // makes that visible: it aims the finesse weapon and marks every foe it would work on right now (✓ SNEAK) — with
     // advantage, or an ally beside the target, and never at disadvantage.
-    if (sa){ ACTION_ICON["Sneak Attack"] = "attack";
+    if (sa){
       add("Sneak Attack", c.sneakUsed ? "already used this turn" : `+${sa.sneak} on a ${sa.name} hit · ✓ marks the foes it works on`, c.action && !c.sneakUsed ? () => aim(a, {atk: sa, sneakAim: true}) : null); }
     const thrown = s.attacks.find(k => k.thrown);
     if (thrown) add("Throw", `${thrown.name} · up to ${thrown.thrown} ft · +${thrown.hit}${thrown.item ? " · it lands on the floor" : ""}`, c.action ? () => aim(a, {atk: thrown, throwing: true}) : null);
-    for (const fa of flaskAttacks(a)){ ACTION_ICON["Throw: " + fa.name] = "offhand-attack";
+    for (const fa of flaskAttacks(a)){ ACTION_ICON["Throw: " + fa.name] = "bar/throw";
       add(`Throw: ${fa.name}`, `${fa.blurb} · up to ${fa.thrown} ft · +${fa.hit}${fa.qty > 1 ? ` · ${fa.qty} left` : ""}`, c.action ? () => aim(a, {atk: fa, throwing: true}) : null); }
     // shaking a friend out of a drow-poison stupor or a Sleep spell (SRD: "another creature takes an action to shake it awake")
-    for (const t of party) if (t !== a && t.c && t.c.conds.has("asleep") && !t.down && feetBetween(a, t) <= 5.5){ ACTION_ICON["Shake awake: " + fname(t)] = "help";
+    for (const t of party) if (t !== a && t.c && t.c.conds.has("asleep") && !t.down && feetBetween(a, t) <= 5.5){ ACTION_ICON["Shake awake: " + fname(t)] = "bar/help";
       add(`Shake awake: ${fname(t)}`, "your action", c.action ? () => { c.action = false; t.c.conds.delete("asleep"); t.c.drugged = false; popText(t, "awake", "#b0b8ff"); log(`${fname(a)} shakes ${fname(t)} awake.`); renderParty(); afterAction(a); } : null); }
-    for (const t of party) if (t !== a && dyingNow(t) && feetBetween(a, t) <= 5.5){ ACTION_ICON["Stabilize: " + fname(t)] = "help";
+    for (const t of party) if (t !== a && dyingNow(t) && feetBetween(a, t) <= 5.5){ ACTION_ICON["Stabilize: " + fname(t)] = "bar/help";
       add(`Stabilize: ${fname(t)}`, `your action · Medicine ${sgn((s.skills || {}).medicine ?? 0)} vs DC 10`, c.action ? () => stabilize(a, t) : null); }
     if (c.conds.has("burning")) add("Put out the flames", "your action · DC 10 DEX", c.action ? () => putOutFire(a, () => afterAction(a)) : null);
     // "Hide", not "Sneak (Hide)": the old name read as Sneak Attack (Sam, 2026-10-14: "where is the rogue sneak attack?")
@@ -4485,7 +4506,7 @@ function openMenu(a, sub){
     add("Help", "an ally's next attack has advantage", c.action ? () => { closeMenu(); cbt.phase = "target"; cbt.pend = {help: true}; hint("Help: click a friend within 5 ft."); } : null);
     add("Search", `Perception ${sgn((s.skills || {}).perception ?? s.saves.wis)}`, c.action ? () => doSearch(a) : null);
     for (const it of (GEAR[a.id] || {carried: []}).carried.filter(c => isWeapon(c) && c.name !== GEAR[a.id].main))
-      { ACTION_ICON["Equip: " + it.name] = "attack"; const n = GEAR[a.id].main ? 2 : 1, k = gearCost(a, n);
+      { ACTION_ICON["Equip: " + it.name] = "bar/attack"; const n = GEAR[a.id].main ? 2 : 1, k = gearCost(a, n);
         add(`Equip: ${it.name}`, k.ok ? `${k.label}${n === 2 ? " · a swap" : ""}` : "no free interaction or action left", k.ok ? () => equipItem(a, it.name) : null); }
     add("Dodge", "attacks on you at disadvantage", c.action ? () => { c.action = false; c.conds.add("dodging"); popText(a, "dodge", "#cfe8ff"); openMenu(a); } : null);
     if (s.magic || s.innateSorcery) grp("magic");
@@ -4537,7 +4558,7 @@ function openMenu(a, sub){
     }
     if (s.innateSorcery) add("Innate Sorcery", c.conds.has("sorcery") ? "active: DC +1, advantage on spell attacks" : `bonus action · ${c.sorceryLeft ?? s.innateSorcery} left · DC +1, advantage on spell attacks`, c.bonus && !c.conds.has("sorcery") && (c.sorceryLeft ?? s.innateSorcery) > 0 ? () => { c.bonus = false; c.sorceryLeft = (c.sorceryLeft ?? s.innateSorcery) - 1; addCond(a, "sorcery"); spawnFx("runeEvocation", {at: a, sq: 1.8, anchor: "mid", loop: true, until: now + 1800}); bank("walk:innate-sorcery", .8); log(`${fname(a)} draws on Innate Sorcery.`); openMenu(a); } : null);
     grp("move");
-    ACTION_ICON["Inventory"] = "use-object"; add("Inventory", "equip, put away, drink a potion (I)", () => toggleBag(true, a));
+    add("Inventory", "I · equip, put away, drink a potion", () => toggleBag(true, a));
     for (const pile of pilesHere().filter(q => feetToPile(a, q) <= 6))
       { ACTION_ICON["Pick up: " + pile.name] = "use-object"; add(`Pick up: ${pile.name}`, c.move >= PICKUP_FT ? `${PICKUP_FT} ft of your movement` : `needs ${PICKUP_FT} ft of movement`, c.move >= PICKUP_FT ? () => pickUp(a, pile) : null); }
     add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
@@ -4545,7 +4566,7 @@ function openMenu(a, sub){
     const webbed = standing(heroes()).find(p => p !== a && p.c.conds.has("restrained") && feetBetween(a, p) <= 5);
     if (webbed) add("Cut free", `${fname(webbed)} · hit the webbing (AC 10)`, c.action ? () => { c.action = false; const r = d20(0, a); if (r + (s.attacks[0].hit || 0) >= 10 || r === 20){ webbed.c.conds.delete("restrained"); webbed.webFx && (webbed.webFx.until = now); bank("movement/web_tear", .8); popText(webbed, "free", "#e8e2c8"); log(`${fname(a)} cuts ${fname(webbed)} out of the web.`); } else { popText(webbed, "still stuck", "#c9c4b8"); log(`${fname(a)} hacks at the web and misses the strands.`); } renderParty(); openMenu(a); } : null);
     if (c.conds.has("prone")) add("Stand up", `half your speed (${Math.floor(s.speed / 2)} ft)`, c.move >= Math.floor(s.speed / 2) ? () => { c.move -= Math.floor(s.speed / 2); c.conds.delete("prone"); setAnim(a, "idle"); renderParty(); openMenu(a); } : null);
-    add("End turn", "Enter", () => nextTurn(), "end");
+    add("End turn", "Enter · pass to the next in initiative", () => nextTurn(), "end");
   }
   placeMenu();
 }
@@ -4581,6 +4602,7 @@ function renderExploreBar(){
   exploreKey = key; m.dataset.kind = "explore"; m.innerHTML = ""; m.hidden = false;
   const add = (label, glyph, icon, sub, fn, cls) => { const b = document.createElement("button"); if (cls) b.className = cls;
     b.innerHTML = `${icon ? `<img class="ico" src="${ICON_BASE}${icon}.png" alt="">` : `<i class="ico glyph">${glyph}</i>`}<span>${esc(label)}</span>${sub ? `<small>${esc(sub)}</small>` : ""}`;
+    dressButton(b, icon, sub);
     if (fn) b.onclick = () => { unlockAudio(); fn(); exploreKey = ""; }; else b.disabled = true; m.appendChild(b); return b; };
   const nm = n => SHORT[n.id] || (SPR[n.id] && SPR[n.id].json.name) || n.id;
   add(o.talkNear ? `Talk to ${nm(o.talkNear)}` : "Talk", "❝", null, o.talkNear ? "E · say something to them" : o.talkable ? `walk closer to ${nm(o.talkable)}` : "no one here to talk to",
@@ -4590,8 +4612,8 @@ function renderExploreBar(){
   else if (o.obj) add(o.obj.interact.name, "✋", "use-object", state.gateOpen ? "use it" : "locked · see your options", () => openInteract(o.obj));
   add("Inventory", "▣", null, "I · equip, use, consume", () => toggleBag());
   const sh = SHEETS[leader.id];
-  if (sh && (sh.magic || sh.caster)) add("Cast", "✦", "cast-spell", wardsHere() ? "the ward on the wall drinks it here" : "a spell you have memorized", wardsHere() ? null : () => openCastMenu(o));
-  if (o.foe) add(`Attack ${nm(o.foe)}`, "⚔", "attack", "starts a fight · roll initiative", () => fightWith(o.foe, `${who} attacks!`), "end");
+  if (sh && (sh.magic || sh.caster)) add("Cast", "✦", ART("cast", "cast-spell"), wardsHere() ? "the ward on the wall drinks it here" : "a spell you have memorized", wardsHere() ? null : () => openCastMenu(o));
+  if (o.foe) add(`Attack ${nm(o.foe)}`, "⚔", ART("attack", "attack"), "starts a fight · roll initiative", () => fightWith(o.foe, `${who} attacks!`), "end");
   if (party.filter(canControl).length > 1) add("Next hero", "⇆", null, `Tab · now ${who}`, () => { const mine = party.filter(canControl); const i = mine.indexOf(leader); setLeader(mine[(i + 1) % mine.length]); });
   if (!o.foe) add("Short rest", "⌛", "dodge", restRisk().chance ? `an hour here · ${Math.round(restRisk().chance * 100)}% the locals find you` : "an hour here", () => openRest());
   add("Tell Malachar", "✎", null, "search, hide, anything else", () => { saveWalk();
@@ -4622,12 +4644,30 @@ const ICONS_HAVE = new Set(["attack", "cast-spell", "dash", "disengage", "dodge"
 // which commissioned picture stands for each option (the art names are the 5e actions they were drawn for)
 const OPTION_ART = {sneak: "hide", scout: "dash", "search-here": "search", listen: "ready", "look-closer": "detect-magic", help: "help",
   pray: "bless", inspire: "bardic-inspiration", "quick-drink": "use-item", follow: "disengage", wait: "dodge", inventory: "use-object", "short-rest": "second-wind"};
-const ART = (name, fallback) => ICONS_HAVE.has(name) ? name : OPTION_ART[name] && ICONS_HAVE.has(OPTION_ART[name]) ? OPTION_ART[name] : fallback || null;   // Sam's icons drop in by name (velkynvelve-walk/icons/<name>.png)
+// THE ILLUSTRATED SET (Sam, 2026-10-27, approved on the concept canvas): one painted picture per option, drawn as a
+// matched set so they share a palette and a light, in icons/bar/<id>.png at 120 px. An option with a picture here
+// wears it; everything else keeps the commissioned gold-framed art above. BAR_CAT is the colour of the slab.
+const BAR_ART = {talk: "bar/talk", sneak: "bar/sneak", scout: "bar/sneak", "search-here": "bar/search", cast: "bar/cast", help: "bar/help",
+  wait: "bar/wait", follow: "bar/wait", "next-hero": "bar/next", inventory: "bar/inv", "short-rest": "bar/rest", "tell-malachar": "bar/dm",
+  attack: "bar/attack", throw: "bar/throw", push: "bar/push", entertain: "bar/entertain", inspire: "bar/entertain", hide: "bar/hide",
+  dash: "bar/dash", disengage: "bar/disengage", dodge: "bar/dodge", jump: "bar/jump", "end-turn": "bar/endturn"};
+const BAR_CAT = {"bar/talk": "talk", "bar/sneak": "sneak", "bar/hide": "sneak", "bar/search": "search", "bar/cast": "cast", "bar/help": "party", "bar/wait": "party",
+  "bar/next": "party", "bar/inv": "meta", "bar/rest": "rest", "bar/dm": "dm", "bar/attack": "attack", "bar/throw": "attack", "bar/push": "attack",
+  "bar/entertain": "bard", "bar/dash": "move", "bar/disengage": "move", "bar/dodge": "move", "bar/jump": "move", "bar/endturn": "meta"};
+/** The slab's colour and hotkey tab, read off the picture it wears and the hint it carries ("E · say something"). */
+function dressButton(b, icon, sub){
+  const cat = BAR_CAT[icon]; if (cat) b.dataset.cat = cat;
+  const k = /^(E|I|Tab|Enter|Space)\s*·/.exec(sub || ""); if (k) b.dataset.key = k[1];
+}
+const ART = (name, fallback) => BAR_ART[name] || (ICONS_HAVE.has(name) ? name : OPTION_ART[name] && ICONS_HAVE.has(OPTION_ART[name]) ? OPTION_ART[name] : fallback || null);   // Sam's icons drop in by name (velkynvelve-walk/icons/<name>.png)
 const VIEW_FT = 60, VIEW_HALF = Math.PI / 3;
 let sneak = null, helpNext = null, followOn = true, moreOpen = false;   // Follow is ON by default (Sam, 2026-10-27, AFK Journey: "party members following in a formation")
+// The order is Sam's (2026-10-27, the action-bar concept): the thing in front of you first, then Search · Sneak · Cast ·
+// Help · Wait on the bar; Inventory, Short rest, Tell Malachar and Next hero fold behind More. Situational options
+// (a pile at your feet, a foe, a way out to listen at) still cut in near the front, since they are why you stopped.
 const BUTTON_PRI = [[/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
-  [/^(Sneak|Stop sneaking|Scout)/, 4], [/^Pick .*pocket/, 4], [/^Search here/, 5], [/^Cast/, 6], [/^Inventory/, 7], [/^(Pray|Inspire)/, 8], [/^Quick drink/, 9],
-  [/^Next hero/, 10], [/^Help/, 11], [/^(Follow|Wait)/, 12], [/^My company/, 12], [/^Short rest/, 13], [/^Tell Malachar/, 14], [/^Talk$/, 30]];
+  [/^Search here/, 4], [/^(Sneak|Stop sneaking|Scout)/, 5], [/^Pick .*pocket/, 5], [/^Cast/, 6], [/^Help/, 7], [/^(Follow|Wait)/, 8], [/^My company/, 8],
+  [/^(Pray|Inspire)/, 9], [/^Quick drink/, 10], [/^Inventory/, 11], [/^Short rest/, 12], [/^Tell Malachar/, 13], [/^Next hero/, 14], [/^Talk$/, 30]];
 function priOf(b){ const t = (b.querySelector("span") || b).textContent; const hit = BUTTON_PRI.find(([re]) => re.test(t)); return (hit ? hit[1] : 15) + (b.disabled ? 20 : 0); }
 // Sam, 2026-10-26: "sneaking up should be and being small should have an advantage as well as line of sight." A Small
 // hero (halfling, gnome, deep gnome, goblin, kobold — or a sheet that says size Small) rolls Stealth with advantage.
@@ -4672,7 +4712,7 @@ function exploreExtras(m, o, add, who){
   if (party.length > 1) x(followOn ? "Wait here" : "Follow me", followOn ? "⏸" : "➜", ART(followOn ? "wait" : "follow"), followOn ? "the others stop where they are" : "the others come along behind", () => setFollow(!followOn));
   for (const b of m.querySelectorAll("button")){
     const t = (b.querySelector("span") || b).textContent, key = /^Inventory/.test(t) ? "inventory" : /^Short rest/.test(t) ? "short-rest" : /^Talk/.test(t) ? "talk" : /^Next hero/.test(t) ? "next-hero" : /^Tell Malachar/.test(t) ? "tell-malachar" : null, g = b.querySelector(".ico");
-    if (key && g && ART(key)){ const im = document.createElement("img"); im.className = "ico"; im.alt = ""; im.src = `${ICON_BASE}${ART(key)}.png`; g.replaceWith(im); }
+    if (key && g && ART(key)){ const im = document.createElement("img"); im.className = "ico"; im.alt = ""; im.src = `${ICON_BASE}${ART(key)}.png`; g.replaceWith(im); dressButton(b, ART(key), (b.querySelector("small") || {}).textContent); }
   }
   // the More tray: the six that matter here stay on the bar (talk and a fight first), the rest fold away
   const btns = [...m.children].filter(b => b.tagName === "BUTTON");
@@ -5318,9 +5358,11 @@ const ICON_BASE = APP ? "/velkynvelve-walk/icons/" : "icons/";
 // (vtt-assets/spell-icons, the dashboard's — lib/action-icons.ts), copied beside the action icons in icons/spells/.
 const SPELL_ICON = {"Ray of Frost": "ray-of-frost", "Shocking Grasp": "shocking-grasp", "Chill Touch": "chill-touch", "Toll the Dead": "toll-the-dead",
   "Vicious Mockery": "vicious-mockery", "Guiding Bolt": "guiding-bolt", "Healing Word": "healing-word", "Shield of Faith": "shield-of-faith",
-  "Faerie Fire": "faerie-fire", "Sleep": "sleep", "Dissonant Whispers": "dissonant-whispers", "Bardic Inspiration": "bardic-inspiration"};
-const ACTION_ICON = {Attack: "attack", Throw: "offhand-attack", Hide: "hide", "Cunning Action: Dash": "dash", "Cunning Action: Disengage": "disengage", "Cunning Action: Hide": "hide", "Off-hand attack": "offhand-attack", "Shove / Grapple": "opportunity-attack", Shove: "opportunity-attack", Grapple: "opportunity-attack",
-  Dash: "dash", Disengage: "disengage", Help: "help", Search: "search", Dodge: "dodge", Cast: "cast-spell", "Innate Sorcery": "cast-spell"};
+  "Faerie Fire": "faerie-fire", "Sleep": "sleep", "Dissonant Whispers": "dissonant-whispers"};
+// the fight's commands wear the illustrated set where one was drawn (BAR_ART), the commissioned art elsewhere; Bardic
+// Inspiration is the whistling bard (Sam: Scott whistles his effects, never sits down to play — no lute on the button)
+const ACTION_ICON = {Attack: "bar/attack", "Sneak Attack": "bar/attack", Throw: "bar/throw", Hide: "bar/hide", "Cunning Action: Dash": "bar/dash", "Cunning Action: Disengage": "bar/disengage", "Cunning Action: Hide": "bar/hide", "Off-hand attack": "offhand-attack", "Shove / Grapple": "bar/push", Shove: "bar/push", Grapple: "bar/push",
+  Dash: "bar/dash", Disengage: "bar/disengage", Help: "bar/help", Search: "bar/search", Dodge: "bar/dodge", Cast: "bar/cast", "Innate Sorcery": "cast-spell", "Bardic Inspiration": "bar/entertain", "End turn": "bar/endturn", Inventory: "bar/inv"};
 const ACTION_GLYPH = {Rage: "✸", "End rage": "✸", Move: "➶", "Stand up": "⇧", "End turn": "⏎", Back: "↩"};
 function hint(t){ $("cbtHint").textContent = t; $("cbtHint").hidden = !t; }
 // The command list is docked at the lower left, off the picture: beside the sprite it hid whoever stood
