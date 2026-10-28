@@ -12,6 +12,8 @@ describe("planFor", () => {
     expect(planFor("Sorcerer", 3)).toMatchObject({ newSpells: 2, maxSpellLevel: 2, metamagic: 0, origin: true })
     expect(planFor("Sorcerer", 4)).toBeNull()
     expect(planFor("Cleric", 2)).toBeNull()
+    expect(planFor("Rogue", 2)).toMatchObject({ caster: false, newSpells: 0, origin: false, gains: [{ name: "Cunning Action" }] })
+    expect(planFor("Rogue", 3)).toMatchObject({ origin: true, subclassLabel: "Rogue Subclass", sneakAttack: { from: "1d6", to: "2d6" } })
   })
 })
 
@@ -30,14 +32,14 @@ describe("settleChoices", () => {
     const out = settleChoices(plan, casting, [marker(2)], { metamagic: ["Quickened Spell", "Subtle Spell"], spells: ["Chromatic Orb", "Shield"] })
     expect(out.ok).toBe(true)
     if (!out.ok) return
-    expect(out.spellcasting.prepared).toEqual(["Disguise Self", "Fog Cloud", "Chromatic Orb", "Shield"])
+    expect(out.spellcasting!.prepared).toEqual(["Disguise Self", "Fog Cloud", "Chromatic Orb", "Shield"])
     expect(out.spellcasting).toMatchObject({ prepared_max: 4, cantrips_max: 4, sorcery_points: { max: 2, used: 0 } })
     expect(out.features.some((f) => f.name.startsWith("Level 2"))).toBe(false)
     expect(out.features.map((f) => f.name)).toEqual(["Font of Magic", "Metamagic: Quickened Spell", "Metamagic: Subtle Spell"])
   })
   it("one swap adds one pick", () => {
     const out = settleChoices(plan, casting, [marker(2)], { metamagic: ["Careful Spell", "Twinned Spell"], spells: ["Shield", "Magic Missile", "Sleep"], swapOut: "Fog Cloud" })
-    expect(out.ok && out.spellcasting.prepared).toEqual(["Disguise Self", "Shield", "Magic Missile", "Sleep"])
+    expect(out.ok && out.spellcasting!.prepared).toEqual(["Disguise Self", "Shield", "Magic Missile", "Sleep"])
   })
   it("refuses what the rules refuse", () => {
     const base = { metamagic: ["Quickened Spell", "Subtle Spell"], spells: ["Chromatic Orb", "Shield"] }
@@ -60,5 +62,23 @@ describe("choicesOwed", () => {
     expect(choicesOwed([marker(2)], 2)).toBe(true)
     expect(choicesOwed([marker(2)], 3)).toBe(false)
     expect(choicesOwed(null, 2)).toBe(false)
+  })
+})
+
+describe("the rogue", () => {
+  it("level 2 writes Cunning Action and nothing to the spell sheet", () => {
+    const out = settleChoices(planFor("Rogue", 2)!, null, [marker(2)], {})
+    expect(out.ok).toBe(true)
+    if (out.ok){ expect(out.spellcasting).toBeNull(); expect(out.features.map((f) => f.name)).toEqual(["Cunning Action"]) }
+  })
+  it("level 3 needs the open subclass (Thief); the PHB three stay closed", () => {
+    expect(settleChoices(planFor("Rogue", 3)!, null, [marker(3)], {})).toMatchObject({ ok: false })
+    expect(settleChoices(planFor("Rogue", 3)!, null, [marker(3)], { origin: "Assassin" })).toMatchObject({ ok: false })
+    const out = settleChoices(planFor("Rogue", 3)!, null, [marker(3)], { origin: "Thief" })
+    expect(out.ok && out.features.map((f) => f.name)).toEqual(["Steady Aim", "Sneak Attack 2d6", "Thief"])
+  })
+  it("refuses spells and Metamagic", () => {
+    expect(settleChoices(planFor("Rogue", 2)!, null, [], { spells: ["Shield"] })).toMatchObject({ ok: false })
+    expect(settleChoices(planFor("Rogue", 2)!, null, [], { metamagic: ["Subtle Spell"] })).toMatchObject({ ok: false })
   })
 })
