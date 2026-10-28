@@ -985,7 +985,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       </Frame>
     </div>
 
-    <Frame title="NPC / Dungeon Master Window" className={cn("flex flex-col", narrowTalk ? "w-full max-w-[480px] flex-1" : "min-h-[690px]")} hideHeader action={<DmNarration dialogue={heardDialogue} audience={narrationAudience} npcs={talkVoices.npcs} players={talkVoices.players.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />}>
+    <Frame title="NPC / Dungeon Master Window" className={cn("flex flex-col", narrowTalk ? "w-full max-w-[480px] flex-1" : "min-h-[690px]")} hideHeader action={<DmNarration showControls={isDmView} dialogue={heardDialogue} audience={narrationAudience} npcs={talkVoices.npcs} players={talkVoices.players.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />}>
       {talkMode ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-[#4b3a19] px-3 py-2">
           <div className="min-w-0 flex-1">

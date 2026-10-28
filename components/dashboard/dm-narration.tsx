@@ -146,7 +146,7 @@ function castPersisted(line: Line, npcs: VoiceNpc[]): Utterance[] {
   return out.length ? out : cast(line.text, npcs)
 }
 
-export function DmNarration({ dialogue, npcs = [], players = [], audience = null, onSpeakingChange, className }: {
+export function DmNarration({ dialogue, npcs = [], players = [], audience = null, onSpeakingChange, showControls = true, className }: {
   dialogue: Line[]
   npcs?: VoiceNpc[]
   /** Player characters, same shape — their typed lines speak in their chosen
@@ -158,6 +158,11 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
    *  it is the DM or nobody. The queue is the only thing that knows who holds
    *  the floor, so the portrait is driven from here rather than guessed. */
   onSpeakingChange?: (npc: VoiceNpc | null) => void
+  /** The DM Voice / NPC Voices / Player Voices buttons are a DM-only control
+   *  for now (Sam, 2026-10-28). Off on a player's screen hides the buttons
+   *  ONLY: this component is also the voice player, so it stays mounted and
+   *  keeps speaking — unmounting it once silenced the whole game. */
+  showControls?: boolean
   className?: string
 }) {
   const [dmOn, setDmOn] = useState(false)
@@ -487,6 +492,8 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
       {label}
     </button>
   )
+
+  if (!showControls) return null
 
   return (
     <span className={cn("flex items-center gap-1", className)}>

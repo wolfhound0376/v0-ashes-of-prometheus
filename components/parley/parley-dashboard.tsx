@@ -1163,7 +1163,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
         </div> : null}
         <div className="p-narr">
           {talkMode ? <button type="button" onClick={props.onEndTalk} className="p-slab dark sm"><X className="h-3 w-3" />{props.talkFrom === "map" ? "Back to the map" : "Back to camp"}</button> : null}
-          <DmNarration dialogue={heardDialogue} audience={narrationAudience} npcs={talkVoices.npcs} players={talkVoices.players.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />
+          <DmNarration showControls={isDmView} dialogue={heardDialogue} audience={narrationAudience} npcs={talkVoices.npcs} players={talkVoices.players.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />
         </div>
       </div>
 
