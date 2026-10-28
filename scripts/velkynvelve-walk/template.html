@@ -1323,6 +1323,7 @@ function buildGrid(){
   outsideCells = null;   // the floor changed (the balcony became floor, a door shut): the sides are worked out again
   grid = new Uint8Array(GW * GH);
   let sx = 0, sy = 0, n = 0; depthMin = 1e9; depthMax = -1e9;
+  doorCells = node.doorMask ? unpackMask(node.doorMask) : null;
   const mask = node.mask ? unpackMask(node.mask) : null, outsideShut = !!(mask && balcony() && !balconyFloor());
   for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++){
     const x = cx * CELL + CELL / 2, y = cy * CELL + CELL / 2;
@@ -1340,6 +1341,9 @@ function buildGrid(){
     if (inPoly(B.poly, x, y)) grid[cy * GW + cx] = 1;
   }
   paintDoorway();
+  // THE PAINTED WAY THROUGH THE GATE (Sam, 2026-10-28, masks.json `doors`): floor while the gate stands open, stone
+  // when it is shut or locked — in a fight too, where the balcony is floor regardless.
+  if (doorCells && !gatePassable()) for (let i = 0; i < grid.length; i++) if (doorCells[i]) grid[i] = 0;
   if (depthMax - depthMin < 200){ depthMin -= 100; depthMax += 100; }
   buildHeights();
 }
@@ -1451,6 +1455,7 @@ function onBalcony(p){ const B = balcony(); return !!(B && p && p.x != null && i
 // no hero had a path to her — findPath saw two people "inside" and the wall between them — while she walked about
 // freely (Sam, 2026-10-27: "not able to get through the door ... but NPCs got through"). Now the side is the floor's:
 // on the trace, or on floor joined to the landing without going through the gate (one flood fill per grid build).
+let doorCells = null;      // Uint8Array: the painted way through the gate (masks.json doors), or null on a plate without one
 let outsideCells = null;   // Uint8Array over the grid: 1 = floor joined to the landing; rebuilt lazily after buildGrid
 function outsidePen(p){
   if (onBalcony(p)) return true;
@@ -1461,7 +1466,7 @@ function outsidePen(p){
     const q = [c0]; outsideCells[c0] = 1;
     while (q.length){ const i = q.pop(), x = i % GW, y = (i / GW) | 0;
       for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]){ const nx = x + dx, ny = y + dy; if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue;
-        const j = ny * GW + nx; if (grid[j] && !outsideCells[j]){ outsideCells[j] = 1; q.push(j); } } }
+        const j = ny * GW + nx; if (grid[j] && !outsideCells[j] && !(doorCells && doorCells[j])){ outsideCells[j] = 1; q.push(j); } } }   // the flood stops at the painted doorway: it is the pen's side
   }
   const cx = Math.floor(p.x / CELL), cy = Math.floor(p.y / CELL);
   return cx >= 0 && cy >= 0 && cx < GW && cy < GH && outsideCells[cy * GW + cx] === 1;
