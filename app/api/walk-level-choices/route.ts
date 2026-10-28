@@ -16,12 +16,21 @@ import { METAMAGIC, choicesOwed, classSpells, planFor, settleChoices, subclasses
 
 export const dynamic = "force-dynamic"
 
-const COLUMNS = "id, name, class, level, sheet_spellcasting, sheet_features, str_score, dex_score, con_score, int_score, wis_score, cha_score, is_player, character_type"
-type Row = { id: string; name: string; class: string | null; level: number; sheet_spellcasting: CastingSheet | null; sheet_features: unknown; is_player: boolean | null; character_type: string | null } & Record<string, unknown>
+const COLUMNS = "id, name, class, level, sheet_spellcasting, sheet_features, sheet_skill_proficiencies, str_score, dex_score, con_score, int_score, wis_score, cha_score, is_player, character_type"
+type Row = { id: string; name: string; class: string | null; level: number; sheet_spellcasting: CastingSheet | null; sheet_features: unknown; sheet_skill_proficiencies: Record<string, string> | null; is_player: boolean | null; character_type: string | null } & Record<string, unknown>
 
 function isDm(req: NextRequest): boolean {
   const required = process.env.DM_ACCESS_CODE
   return !!required && safeEquals(normalizeCode(req.headers.get("x-dm-key") ?? ""), normalizeCode(required))
+}
+// sheet_skill_proficiencies is an object keyed by snake_case skill ("proficient" | "expertise"); older rows may use
+// spaces or capitals, so the keys are normalised the way the Parley reads them
+function skillMap(raw: unknown): Record<string, string> {
+  const out: Record<string, string> = {}
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const n = k.trim().toLowerCase().replace(/[\s-]+/g, "_"); if (v) out[n] = v === "expertise" ? "expertise" : "proficient"
+  }
+  return out
 }
 const isPlayer = (r: Row) => r.is_player === true || r.character_type === "player"
 
@@ -41,6 +50,7 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     name: row.name, class: row.class, level, owed, plan,
     casting: { cantrips: sc.cantrips ?? [], prepared: sc.prepared ?? [], always_prepared: sc.always_prepared ?? [], save_dc: sc.save_dc ?? null, attack_bonus: sc.attack_bonus ?? null, rules_source: sc.rules_source ?? null },
+    skills: skillMap(row.sheet_skill_proficiencies),
     scores: { STR: row.str_score, DEX: row.dex_score, CON: row.con_score, INT: row.int_score, WIS: row.wis_score, CHA: row.cha_score },
     spells: plan && plan.caster ? classSpells(plan.cls, plan.maxSpellLevel) : [],
     metamagic: plan && plan.metamagic ? METAMAGIC : [], origins: subclassesFor(plan),
@@ -76,11 +86,13 @@ export async function POST(req: NextRequest) {
     cantrips: Array.isArray(body.picks?.cantrips) ? body.picks.cantrips : [],
     swapOut: typeof body.picks?.swapOut === "string" ? body.picks.swapOut : null,
     swapOutCantrip: typeof body.picks?.swapOutCantrip === "string" ? body.picks.swapOutCantrip : null,
+    expertise: Array.isArray(body.picks?.expertise) ? body.picks.expertise : [],
+    skills: Array.isArray(body.picks?.skills) ? body.picks.skills : [],
   }
-  const out = settleChoices(plan, row.sheet_spellcasting, row.sheet_features, picks)
+  const out = settleChoices(plan, row.sheet_spellcasting, row.sheet_features, picks, skillMap(row.sheet_skill_proficiencies))
   if (!out.ok) return NextResponse.json({ ok: false, error: out.error }, { status: 400 })
   const { data: written, error: werr } = await db.from("characters")
-    .update({ ...(out.spellcasting ? { sheet_spellcasting: out.spellcasting } : {}), sheet_features: out.features, updated_at: new Date().toISOString() })
+    .update({ ...(out.spellcasting ? { sheet_spellcasting: out.spellcasting } : {}), ...(out.skills ? { sheet_skill_proficiencies: out.skills } : {}), sheet_features: out.features, updated_at: new Date().toISOString() })
     .eq("id", characterId).eq("level", level)
     .contains("sheet_features", [{ name: `Level ${level} — choices to make` }])
     .select("id")

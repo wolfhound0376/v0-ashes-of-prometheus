@@ -11,7 +11,7 @@ describe("planFor", () => {
     expect(planFor("Sorcerer", 2)).toMatchObject({ newSpells: 2, newCantrips: 0, maxSpellLevel: 1, metamagic: 2, origin: false, sorceryPoints: { from: 0, to: 2 } })
     expect(planFor("Sorcerer", 3)).toMatchObject({ newSpells: 2, maxSpellLevel: 2, metamagic: 0, origin: true })
     expect(planFor("Sorcerer", 4)).toBeNull()
-    expect(planFor("Bard", 2)).toBeNull()
+    expect(planFor("Wizard", 2)).toBeNull()
     expect(planFor("Rogue", 2)).toMatchObject({ caster: false, newSpells: 0, origin: false, gains: [{ name: "Cunning Action" }] })
     expect(planFor("Rogue", 3)).toMatchObject({ origin: true, subclassLabel: "Rogue Subclass", sneakAttack: { from: "1d6", to: "2d6" } })
   })
@@ -128,5 +128,34 @@ describe("the cleric (SRD 5.2.1)", () => {
     const l2 = { ...sam, prepared: [...sam.prepared, "Cure Wounds"] }
     const out = settleChoices(planFor("Cleric", 3)!, l2, [marker(3)], { spells: ["Spiritual Weapon"], origin: "Life Domain" })
     expect(out.ok && out.spellcasting!.prepared).toEqual([...sam.prepared, "Spiritual Weapon"])
+  })
+})
+
+describe("the bard (SRD 5.2.1)", () => {
+  // Scott's live sheet, 2026-10-28: Bard 1, 2 cantrips, 4 prepared, seven skill proficiencies.
+  const scott = { cantrips: ["Mage Hand", "Vicious Mockery"], prepared: ["Healing Word", "Faerie Fire", "Sleep", "Dissonant Whispers"], always_prepared: [], rules_source: "SRD 5.2.1 p.31" }
+  const sk = { arcana: "proficient", nature: "proficient", history: "proficient", acrobatics: "proficient", perception: "proficient", persuasion: "proficient", performance: "proficient" }
+  it("level 2: Jack of All Trades, two Expertise, one spell", () => {
+    expect(planFor("Bard", 2)).toMatchObject({ cls: "bard", newSpells: 1, expertise: 2, origin: false })
+    const out = settleChoices(planFor("Bard", 2)!, scott, [marker(2)], { spells: ["Heroism"], expertise: ["performance", "persuasion"] }, sk)
+    expect(out.ok).toBe(true)
+    if (!out.ok) return
+    expect(out.skills).toMatchObject({ performance: "expertise", persuasion: "expertise", arcana: "proficient" })
+    expect(out.features.map((f) => f.name)).toEqual(["Jack of All Trades", "Expertise"])
+    expect(out.spellcasting).not.toHaveProperty("channel_divinity")
+  })
+  it("Expertise needs a proficiency you have, and two of them", () => {
+    expect(settleChoices(planFor("Bard", 2)!, scott, [], { spells: ["Heroism"], expertise: ["stealth", "persuasion"] }, sk)).toMatchObject({ ok: false })
+    expect(settleChoices(planFor("Bard", 2)!, scott, [], { spells: ["Heroism"], expertise: ["persuasion"] }, sk)).toMatchObject({ ok: false })
+  })
+  it("level 3 College of Lore: three new skills and Cutting Words; Valor stays closed", () => {
+    const sk2 = { ...sk, performance: "expertise", persuasion: "expertise" }
+    expect(settleChoices(planFor("Bard", 3)!, scott, [marker(3)], { spells: ["Shatter"], origin: "College of Valor" }, sk2)).toMatchObject({ ok: false })
+    expect(settleChoices(planFor("Bard", 3)!, scott, [marker(3)], { spells: ["Shatter"], origin: "College of Lore", skills: ["stealth", "insight", "arcana"] }, sk2)).toMatchObject({ ok: false })   // arcana already
+    const out = settleChoices(planFor("Bard", 3)!, scott, [marker(3)], { spells: ["Shatter"], origin: "College of Lore", skills: ["stealth", "insight", "deception"] }, sk2)
+    expect(out.ok).toBe(true)
+    if (!out.ok) return
+    expect(out.features.map((f) => f.name)).toEqual(["College of Lore", "Cutting Words", "Bonus Proficiencies"])
+    expect(out.skills).toMatchObject({ stealth: "proficient", insight: "proficient", deception: "proficient", performance: "expertise" })
   })
 })
