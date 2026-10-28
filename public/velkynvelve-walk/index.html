@@ -6822,7 +6822,7 @@ function openMenu(a, sub){
     // JUMP, as a command (Sam, 2026-10-27: "where is the attack, jump, throw, push, entertain"). The leap itself is the
     // long-jump rule below (planLeap/leapMove): a click on the far side of a gap already springs across it. The button
     // names it, says what this hero clears, and aims the click at a gap (cbt.phase "jump").
-    if (s.strScore) add("Jump", `up to ${s.strScore} ft with a 10-ft run-up, ${Math.floor(s.strScore / 2)} standing · ${c.move} ft left`, c.move >= MIN_LEAP_FT && !["prone", "grappled", "restrained"].some(k => c.conds.has(k)) ? () => { closeMenu(); cbt.phase = "jump"; jumpSq = null; hint(jumpSquares(a).length ? "Jump: click a lit square. Esc to cancel." : "No gap you can clear from here. Esc to go back."); } : null);
+    if (s.strScore) add("Jump", `up to ${s.strScore} ft with a 10-ft run-up, ${Math.floor(s.strScore / 2)} standing · ${c.move} ft left`, c.move >= MIN_LEAP_FT && !["prone", "grappled", "restrained"].some(k => c.conds.has(k)) ? () => { closeMenu(); cbt.phase = "jump"; jumpSq = null; hint(jumpSquares(a).length ? "Jump: click a red square. Esc to cancel." : "Nowhere to jump to from here. Esc to go back."); } : null);
     if (c.conds.has("restrained")) add("Break free", `STR check vs DC ${c.webDc || 12} · your action`, c.action ? () => { c.action = false; const k = skillCheck(a, "athletics"); if (k.total >= (c.webDc || 12)){ c.conds.delete("restrained"); a.webFx && (a.webFx.until = now); bank("movement/web_tear", .8); popText(a, "free", "#e8e2c8"); log(`${fname(a)} tears out of the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${c.webDc || 12}.`); } else { bank("movement/chains_rattle", .5); popText(a, "stuck", "#c9c4b8"); log(`${fname(a)} strains at the web: ${k.r} + ${k.mod} = ${k.total} vs DC ${c.webDc || 12} — stuck.`); } renderParty(); openMenu(a); } : null);
     const webbed = standing(heroes()).find(p => p !== a && p.c.conds.has("restrained") && feetBetween(a, p) <= 5);
     if (webbed) add("Cut free", `${fname(webbed)} · hit the webbing (AC 10)`, c.action ? () => { c.action = false; const r = d20(0, a); if (r + (s.attacks[0].hit || 0) >= 10 || r === 20){ webbed.c.conds.delete("restrained"); webbed.webFx && (webbed.webFx.until = now); bank("movement/web_tear", .8); popText(webbed, "free", "#e8e2c8"); log(`${fname(a)} cuts ${fname(webbed)} out of the web.`); } else { popText(webbed, "still stuck", "#c9c4b8"); log(`${fname(a)} hacks at the web and misses the strands.`); } renderParty(); openMenu(a); } : null);
@@ -7729,7 +7729,7 @@ function combatClick(w){
   if (cbt.phase === "move"){ moveActor(a, w, () => { if (cbt && activeActor() === a) openMenu(a); }); return; }
   if (cbt.phase === "jump"){
     const p = nearestWalkable(w.x, w.y), g = planLeap(a, p);
-    if (!g){ toast("No gap to jump there: walk instead."); return; }
+    if (!g){ toast("Can't jump there from here: no straight line of ground, or it is right under your feet."); return; }
     if (!g.ok){ toast(g.why); return; }
     leapMove(a, g, p, () => { if (cbt && activeActor() === a) openMenu(a); }); return;
   }
@@ -7816,12 +7816,12 @@ let jumpSq = null;
 function jumpSquares(a){
   const key = `${a.id}|${Math.round(a.x)}|${Math.round(a.y)}|${a.c.move}|${[...a.c.conds].join()}`;
   if (jumpSq && jumpSq.key === key) return jumpSq.cells;
-  const cell = 5 * ftPx(a), n = Math.ceil(a.c.move / 5) + 1, cells = [];
+  const cell = 5 * ftPx(a), reach = Math.min(a.c.move, 10 + (a.c.sheet.strScore || 0)), n = Math.ceil(reach / 5) + 1, cells = [];
   if (a.c.sheet.strScore && a.c.move >= MIN_LEAP_FT){
     for (let i = -n; i <= n; i++) for (let j = -n; j <= n; j++){
       const p = {x: a.x + i * cell, y: a.y + j * cell};
       if (!i && !j) continue;
-      if (Math.hypot(p.x - a.x, p.y - a.y) > (a.c.move + 5) * ftPx(a) || !walkable(p.x, p.y)) continue;
+      if (Math.hypot(p.x - a.x, p.y - a.y) > (reach + 5) * ftPx(a) || !walkable(p.x, p.y)) continue;
       const g = planLeap(a, p);
       if (g && g.ok && Math.hypot(p.x - g.land.x, p.y - g.land.y) <= cell * .75) cells.push(p);
     }
@@ -7835,22 +7835,55 @@ function drawJumpSquares(a){
   ctx.save();
   for (const p of cells){
     const on = p === hov;
-    ctx.fillStyle = on ? "rgba(255,214,102,.42)" : `rgba(232,162,74,${.14 + .08 * pulse})`;
-    ctx.strokeStyle = on ? "rgba(255,240,190,.95)" : "rgba(242,197,92,.8)"; ctx.lineWidth = on ? lw * 1.6 : lw;
+    ctx.fillStyle = on ? "rgba(255,110,90,.46)" : `rgba(255,80,60,${.14 + .08 * pulse})`;   // red: Sam's word for them
+    ctx.strokeStyle = on ? "rgba(255,225,210,.95)" : "rgba(255,120,100,.85)"; ctx.lineWidth = on ? lw * 1.6 : lw;
     ctx.beginPath(); ctx.rect(p.x - h, p.y - h, h * 2, h * 2); ctx.fill(); ctx.stroke();
   }
   ctx.restore();
+}
+// A JUMP NEEDS NO GAP (Sam, 2026-10-28: "Clicking it should create red hexes on legal squares I can attempt to jump. By
+// clicking the square I can jump it automatically if there is no skill check."). The long jump is movement (SRD 5.1,
+// Movement and Position > Jumping): with 10 ft of run-up on foot you clear up to your Strength score in feet, half that
+// from a standstill, and every foot costs a foot of movement. Nothing in the rule says there has to be a chasm under
+// you — a leap across open floor is legal, it just costs the same as walking. So planLeap now answers for ANY square:
+//   * a gap on the line (gapOnLine): run up to its edge, spring, land on the first ground across — as before;
+//   * open floor: a standing jump when the square is within half your score, otherwise a 10-ft run-up and the jump
+//     for the rest (a square inside 10 ft gets just the run-up it needs);
+//   * never through a standing foe's square (allies you may pass), never onto anyone's square, never off a cliff.
+// There is still no skill check to make: the DC 10 Athletics for a LOW OBSTACLE needs the obstacle's height, and the
+// DC 10 Acrobatics on landing needs DIFFICULT TERRAIN — the plates record neither (see MIN_LEAP_FT above). When the
+// data arrives, the check goes here and a lit square that needs one gets its own colour.
+function leapBlocked(a, from, to){
+  const px = ftPx(a), d = Math.hypot(to.x - from.x, to.y - from.y), n = Math.max(1, Math.ceil(d / 6));
+  const foesUp = a.kind === "pc" || hero(a) ? standing(foes) : standing(heroes());
+  for (let i = 1; i < n; i++){ const x = from.x + (to.x - from.x) * i / n, y = from.y + (to.y - from.y) * i / n;
+    const o = foesUp.find(o => Math.hypot(o.x - x, o.y - y) < 2.4 * px); if (o) return o; }
+  return null;
 }
 function planLeap(a, to){
   const span = a.c.sheet.strScore; if (!span) return null;
   if (balconyFloor() && outsidePen(a) !== outsidePen(to)) return null;   // between the pen and the balcony is a wall, not a gap: the way is the gate
   if (["prone", "grappled", "restrained", "asleep"].some(c => a.c.conds.has(c))) return null;
-  const g = gapOnLine(a, to); if (!g || g.gapFt < MIN_LEAP_FT) return null;
+  const px = ftPx(a), d = Math.hypot(to.x - a.x, to.y - a.y) / px;
+  if (d < MIN_LEAP_FT) return null;
+  let g = gapOnLine(a, to);
+  if (g && g.gapFt < MIN_LEAP_FT) g = null;   // a crack in the floor: step over it, that is walking
+  if (!g){
+    // OPEN FLOOR: the whole line must be ground (a second gap, or ground that runs out, is a walk, not a jump)
+    const n = Math.ceil(d * px / 6); for (let i = 1; i <= n; i++) if (!walkable(a.x + (to.x - a.x) * i / n, a.y + (to.y - a.y) * i / n)) return null;
+    const half = Math.floor(span / 2);
+    const runUpFt = d <= half ? 0 : d >= 10 ? 10 : Math.max(0, d - half);
+    const k = runUpFt / d;
+    g = {open: true, takeoff: {x: a.x + (to.x - a.x) * k, y: a.y + (to.y - a.y) * k}, land: {x: to.x, y: to.y}, runUpFt, gapFt: d - runUpFt};
+  }
   g.max = g.runUpFt >= 10 ? span : Math.floor(span / 2);
   g.standing = g.runUpFt < 10;
-  const need = Math.round((g.runUpFt + g.gapFt) / 5) * 5;
-  if (g.gapFt > g.max) g.why = `That gap is about ${Math.round(g.gapFt)} ft. ${fname(a)} clears ${g.max}${g.standing ? " from a standstill — back up for a run-up" : ""}.`;
+  const need = Math.round((g.runUpFt + g.gapFt) / 5) * 5, taken = actors.find(o => o !== a && !o.down && actors.includes(o) && Math.hypot(o.x - g.land.x, o.y - g.land.y) < 2.5 * px), inWay = leapBlocked(a, a, g.land);
+  if (g.gapFt > g.max) g.why = g.open ? `That is about ${Math.round(d)} ft. ${fname(a)} clears ${span} ft with a 10-ft run-up, ${Math.floor(span / 2)} standing.`
+    : `That gap is about ${Math.round(g.gapFt)} ft. ${fname(a)} clears ${g.max}${g.standing ? " from a standstill — back up for a run-up" : ""}.`;
   else if (need > a.c.move) g.why = `Not enough movement left: the run-up and the jump cost ${need} ft, ${fname(a)} has ${a.c.move}.`;
+  else if (taken) g.why = `${fname(taken)} is standing there.`;
+  else if (inWay) g.why = `${fname(inWay)} is in the way — you can't jump through a foe.`;
   else g.ok = true;
   return g;
 }
@@ -7861,6 +7894,7 @@ function leapMove(a, g, to, done){
   combatBusy = true; closeMenu();
   const land = () => {
     if (g.drop){ log(`${fname(a)} goes over the edge and drops ${g.dropFt} ft. ${a.c.move} ft left.`); narrate(a, `${fname(a)} drops off the ledge, straight down into the fight.`); }
+    else if (g.open){ log(`${fname(a)} leaps ${Math.round(g.gapFt)} ft${g.standing ? " from a standing start" : " after a run-up"}. ${a.c.move} ft left.`); narrate(a, `${fname(a)} springs across the floor and lands running.`); }
     else { log(`${fname(a)} clears the ${Math.round(g.gapFt)} ft gap${g.standing ? " from a standing start" : ""}. ${a.c.move} ft left.`);
     narrate(a, `${fname(a)} takes it in one leap.`); }
     if (Math.hypot(to.x - a.x, to.y - a.y) > 8 && a.c.move > 0) combatWalk(a, to, done);
@@ -7876,7 +7910,7 @@ function leapMove(a, g, to, done){
 function moveActor(a, w, done){
   const p = nearestWalkable(w.x, w.y);
   const g = a.kind === "pc" ? planLeap(a, p) : null;
-  if (g && g.ok){ leapMove(a, g, p, done); return; }
+  if (g && g.ok && !g.open){ leapMove(a, g, p, done); return; }   // Move walks the floor; the open-floor leap is the Jump button's
   // DOWN OFF A LEDGE: a hero who clicks below the edge and cannot get there on foot this turn (the stairs are too far, or
   // there are none) goes over it. Anyone may jump down; the fall is the fall (landFall).
   const dr = a.kind === "pc" ? planDrop(a, p) : null;
