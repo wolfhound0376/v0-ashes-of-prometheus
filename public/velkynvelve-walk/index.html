@@ -301,8 +301,9 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .invDollWrap{display:grid;grid-template-rows:auto auto auto;gap:10px;min-width:0}
 .invDoll{position:relative;height:var(--ef-stage-h);width:min(100%,calc(var(--ef-stage-h) * 754 / 670));margin:0 auto;border:1px solid var(--ef-brass);border-radius:var(--ef-radius);overflow:hidden;background:#0d0b11 center bottom/cover no-repeat;box-shadow:inset 0 0 0 1px #000,inset 0 0 90px rgba(0,0,0,.55)}
 .invDoll::before{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(6,5,8,.35),rgba(6,5,8,0) 30%,rgba(6,5,8,0) 70%,rgba(6,5,8,.45));pointer-events:none}
-.invDoll::after{content:"";position:absolute;left:50%;bottom:11%;width:36%;height:8%;transform:translate(-50%,50%);border-radius:50%;background:radial-gradient(ellipse,rgba(255,226,160,.26),rgba(255,226,160,0) 70%);pointer-events:none}
-.invDoll canvas{position:absolute;left:50%;bottom:12.5%;transform:translateX(-50%);image-rendering:pixelated;filter:drop-shadow(0 8px 10px rgba(0,0,0,.65));z-index:1}
+.invDoll{--ef-foot:87.5%}   /* where the feet stand, as a share of the stage height — set per painting by stageFor() */
+.invDoll::after{content:"";position:absolute;left:50%;bottom:calc(100% - var(--ef-foot) + 1.5%);width:36%;height:8%;transform:translate(-50%,50%);border-radius:50%;background:radial-gradient(ellipse,rgba(255,226,160,.26),rgba(255,226,160,0) 70%);pointer-events:none}
+.invDoll canvas{position:absolute;left:50%;bottom:calc(100% - var(--ef-foot));transform:translateX(-50%);image-rendering:pixelated;filter:drop-shadow(0 8px 10px rgba(0,0,0,.65));z-index:1}
 .invHand[hidden]{display:none}
 .invDoll .slot{all:unset;box-sizing:border-box;position:absolute;z-index:2;width:13.5%;aspect-ratio:1;display:grid;place-items:center;border:1px solid var(--ef-brass);border-radius:6px;background:rgba(9,9,13,.92);box-shadow:inset 0 0 0 1px #000,0 0 0 1px rgba(0,0,0,.6),0 4px 10px rgba(0,0,0,.5);cursor:pointer}
 .invDoll .slot::before{content:"";position:absolute;inset:3px;border:1px solid rgba(141,104,48,.4);border-radius:4px;pointer-events:none}
@@ -311,7 +312,7 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .invDoll .slot img{width:72%;height:72%;object-fit:contain}
 .invDoll .slot.empty img{opacity:.32;filter:grayscale(1)}
 .invDoll .slot:not(.empty)::after{content:"";position:absolute;right:5px;top:5px;width:9px;height:9px;border-radius:50%;background:var(--ef-equipped);box-shadow:0 0 0 1px #000,0 0 6px var(--ef-equipped)}
-.invDoll .slot .lbl{position:absolute;top:100%;left:-40%;right:-40%;margin-top:4px;text-align:center;font-family:var(--face-mono);font-size:.56rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ef-secondary);text-shadow:0 1px 2px #000,0 0 6px #000,0 0 10px #000;white-space:nowrap}
+.invDoll .slot .lbl{position:absolute;top:100%;left:50%;transform:translateX(-50%);margin-top:4px;padding:1px 6px;border-radius:3px;background:rgba(9,9,13,.72);text-align:center;font-family:var(--face-mono);font-size:.56rem;letter-spacing:.14em;text-transform:uppercase;color:var(--ef-secondary);text-shadow:0 1px 2px #000;white-space:nowrap}   /* a dark backing: the cleric's cathedral is bright stone */
 .invSel{display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-height:30px;font-size:var(--s-1);color:var(--ef-secondary)}
 .invSel .what b{color:var(--ef-text);font-family:var(--face-display);letter-spacing:.04em}
 .invSel .btns{display:flex;flex-wrap:wrap;gap:4px;margin-left:auto}.invSel .btn{padding:4px 10px}
@@ -11915,6 +11916,16 @@ const DOLL_SLOTS = [
 // level panel can say how far the next level is without a round trip. The level itself is only ever taken at camp.
 const XP_TABLE = {1: 0, 2: 300, 3: 900, 4: 2700, 5: 6500, 6: 14000, 7: 23000, 8: 34000, 9: 48000, 10: 64000, 11: 85000, 12: 100000, 13: 120000, 14: 140000, 15: 165000, 16: 195000, 17: 225000, 18: 265000, 19: 305000, 20: 355000};
 function levelForXp(xp){ let l = 1; for (let k = 2; k <= 20; k++) if (xp >= XP_TABLE[k]) l = k; return l; }
+// THE STAGE BEHIND THE HERO, by class (Sam's Emberforged class-background pack, 2026-10-27: thirteen 4:3 paintings,
+// "decorative inventory environments, not mechanical"). Cosmetic only — nothing on the sheet changes with the art. The
+// hero's feet sit on the pedestal's upper surface: `foot` is that line as a share of the stage height, tuned by eye per
+// painting (the pack's suggested 0.76 is the surface's back edge; the figure stands a little forward of it). A class
+// outside the pack, or a multiclass string the pack does not name first, gets the ruined castle from the first pack.
+const STAGE_BACKDROPS = {barbarian: .82, bard: .83, cleric: .84, druid: .83, fighter: .84, monk: .84, paladin: .82, ranger: .84, rogue: .84, sorcerer: .83, warlock: .83, wizard: .84, artificer: .83};
+function stageFor(cls){
+  const first = String(cls || "").toLowerCase().split(/[\s\/,]+/).find(w => w in STAGE_BACKDROPS);   // "Rogue 3 / Warlock 2" → rogue
+  return first ? {img: `inventory-stage-${first}.jpg`, foot: STAGE_BACKDROPS[first]} : {img: "inventory-stage.jpg", foot: .875};
+}
 const SLOT_ICON_BASE = APP ? "/icons/equipment/" : "https://ashes.playacartagena.com/icons/equipment/";
 const SLOT_ALIAS = {ring_1: "ring1", ring_2: "ring2", cloak: "back", gloves: "hands", gauntlets: "hands", feet: "legs", boots: "legs"};
 function normSlot(sl){ const k = String(sl || "").trim().toLowerCase(); return SLOT_ALIAS[k] || k; }
@@ -12354,7 +12365,8 @@ function renderBag(){
     b.setAttribute("aria-pressed", String(p === a)); b.onclick = () => { inv.who = p; inv.slot = null; renderBag(); }; tabs.appendChild(b); }
   // the doll
   const doll = $("invDoll"); doll.innerHTML = "";
-  doll.style.backgroundImage = `url(${PLATE_DIR}inventory-stage.jpg)`;   // the pack's ruined-castle plate, under the figure and the slots
+  { const st = stageFor((SHEETS[a.id] || {}).cls || (PCS[a.id] || {}).cls);   // the class's own painting, feet on its pedestal
+    doll.style.backgroundImage = `url(${PLATE_DIR}${st.img})`; doll.style.setProperty("--ef-foot", `${Math.round(st.foot * 1000) / 10}%`); }
   // the figure at a whole-number scale, shown 1:1 so every pixel stays square, feet on the pedestal — Sam's hero sprite,
   // never a reinterpretation. The stage's height is the CSS clamp (--ef-stage-h); hidden at first render, so the same sum.
   const stageH = doll.clientHeight || Math.min(670, Math.max(360, window.innerHeight - 430));
