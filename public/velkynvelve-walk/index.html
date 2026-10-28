@@ -1656,7 +1656,7 @@ function draw(){
         if (C.out && k >= 1){ a.alpha = 0; }
       }
     }
-    if (a.leap){ const k = Math.min(1, (now - a.leap.t0) / a.leap.ms); a.x = a.leap.from.x + (a.leap.to.x - a.leap.from.x) * k; a.y = a.leap.from.y + (a.leap.to.y - a.leap.from.y) * k; fy -= Math.sin(k * Math.PI) * 90 * sc; }
+    if (a.leap){ const k = Math.min(1, (now - a.leap.t0) / a.leap.ms); a.x = a.leap.from.x + (a.leap.to.x - a.leap.from.x) * k; a.y = a.leap.from.y + (a.leap.to.y - a.leap.from.y) * k; fy -= Math.sin(k * Math.PI) * (a.leap.h || 90) * sc; }
     let dw = cw * sc, dh = ch * sc, dx = a.x - px * sc + (a.kx || 0), dy = a.y - py * sc + fy + (a.ky || 0);
     if (a.id === "stool" && !a.down && !a.body) drawStoolAura(a, dx, dy, dw, dh, "glow");   // the glow sits behind him
     const dead = !!(a.down && pose);
@@ -7771,7 +7771,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (r === 1) bank("ui/nat1", .7);
       if (shot){ bank(ws.swing, .75); att.aimHold = now;
         flying = new Promise(res => fireShot(att, tgt, shot, hit, to => { landed = to; lands(); res(); }, atk)); }
-      else { lunge(att, tgt, 14 * actorScale(att)); lands(); }
+      else { lunge(att, tgt, 20 * actorScale(att)); lands(); }   // a longer lunge into the blow (Sam, 2026-10-28: "dynamic")
       function lands(){
       const sw = swipeStyle(atk, crit, att);
       if (shot === "thrown" && att.kind === "pc") restOnFloor(att, atk, hit ? tgt : (landed || tgt), !hit);     // at their feet, or where it fell
@@ -7788,7 +7788,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       // OR an ally is within 5 ft of the target and you do not have disadvantage.
       const sneak = !!(atk.sneak && !att.c.sneakUsed && adv >= 0 && (adv > 0 || standing(heroes()).some(p => p !== att && feetBetween(p, tgt) <= 5)));
       if (sneak) att.c.sneakUsed = true;
-      knock(tgt, att, (crit ? 26 : 16) * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
+      knock(tgt, att, (crit ? 34 : 20) * actorScale(tgt)); if (tgt.kind === "pc") redFlash();   // and a harder stagger on the one hit
       bank(crit ? "combat/crit_hit" : sneak ? "combat/sneak_attack" : ws.hit, crit ? .95 : .8); if (crit) bank("ui/nat20", .7);
       if (!shot){ swipe(att, tgt, {...sw, crit}); if (crit) setTimeout(() => swipe(att, tgt, {...sw, crit: true, flip: sw.kind === "claw" ? -(sw.flip || 1) : sw.flip}), 90); }
       { const sk = strikeSheet(atk, sneak, att, tgt, crit); spawnFx(sk.name, {at: tgt, mirror: sk.mirror, sq: shot ? (crit ? 1.8 : 1.3) : crit ? 2.6 : 2}); }
@@ -8292,6 +8292,14 @@ function approachThen(att, tgt, ft, then){
     }
   }
   att.c.move = Math.max(0, att.c.move - walk.usedFt);
+  // THE MELEE CLOSE (Sam, 2026-10-28, on the Underwalk Combat Play demo: "I want to make sure when melee characters are
+  // fighting they look like this: jump, are dynamic"). The last stretch of a melee close is a hop, not a walk: the route is
+  // walked up to its last HOP_FT, then the fighter springs the rest and the swing lands as their feet do. The feet spent
+  // and the opportunity attacks are decided above on the whole route exactly as before; only the last leg is DRAWN
+  // differently. Only for a melee reach, only over a clear straight leg (every point of the hop is floor), and not for
+  // a creature that crawls (speed under 20) or is Large.
+  const hop = meleeHopLeg(att, walk.pts, ft);
+  if (hop){ att.path = hop.before; att.onArrive = () => { att.onArrive = null; hopTo(att, hop.land, arrive); }; if (!hop.before.length) att.onArrive(); return; }
   att.path = walk.pts; att.onArrive = arrive;
   if (!att.path.length) arrive();
 }
@@ -8484,6 +8492,24 @@ function arcTo(a, land, then){
   const cs = CREATURE_SFX[a.id]; if (cs && cs.call) bank(cs.call, .5);
   a.leap = {from, to: land, t0: now, ms};
   setTimeout(() => { a.leap = null; a.x = land.x; a.y = land.y; setAnim(a, "idle"); bank("movement/jump_land", .8); shake(4); then && then(); }, ms);
+}
+// THE MELEE HOP (Sam, 2026-10-28): the last leg of a close, sprung. `pts` is the walked route; the hop is the straight
+// leg from the last point of it that is within HOP_FT of the landing and reaches it over nothing but floor. Shorter than
+// a grid cell, or no clear leg: no hop, the whole route is walked.
+const HOP_FT = 10;
+function meleeHopLeg(a, pts, reachFt){
+  if (!pts.length || reachFt > 5 || a.big || (a.c && a.c.sheet.speed < 20) || (a.c && a.c.sheet.leap)) return null;
+  const land = pts[pts.length - 1], maxPx = HOP_FT * ftPx(a), clear = (p, q) => { const n = Math.ceil(Math.hypot(q.x - p.x, q.y - p.y) / 12); for (let i = 1; i < n; i++) if (!walkable(p.x + (q.x - p.x) * i / n, p.y + (q.y - p.y) * i / n)) return false; return true; };
+  const from = [{x: a.x, y: a.y}, ...pts.slice(0, -1)];
+  for (let j = 0; j < from.length; j++){ const d = Math.hypot(land.x - from[j].x, land.y - from[j].y); if (d <= maxPx && d >= CELL && clear(from[j], land)) return {before: pts.slice(0, j), land}; }
+  return null;
+}
+function hopTo(a, land, then){
+  const d = norm({x: land.x - a.x, y: land.y - a.y}), from = {x: a.x, y: a.y}, ms = 360;
+  a.face = faceOf(d.x, d.y); a.path = [];
+  if (SPR[a.id].img.jump){ a.anim = "jump"; a.t0 = now; }
+  a.leap = {from, to: land, t0: now, ms, h: 42};
+  setTimeout(() => { a.leap = null; a.x = land.x; a.y = land.y; setAnim(a, "idle"); bank("movement/jump_land", .5); shake(3); then && then(); }, ms);
 }
 // The spider: spring to within reach of its target, then bite.
 function leapTo(f, tgt, then){
