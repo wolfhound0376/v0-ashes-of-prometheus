@@ -1339,6 +1339,7 @@ function buildGrid(){
     const x = cx * CELL + CELL / 2, y = cy * CELL + CELL / 2;
     if (inPoly(B.poly, x, y)) grid[cy * GW + cx] = 1;
   }
+  paintDoorway();
   if (depthMax - depthMin < 200){ depthMin -= 100; depthMax += 100; }
   buildHeights();
 }
@@ -1478,13 +1479,40 @@ function throughGate(a, w){
   const B = balcony(), q = outsidePen(a) ? B.inside : B.landing;
   return {x: q[0], y: q[1]};
 }
+// THE OPEN DOORWAY IS FLOOR (Sam, 2026-10-28: "I want to walk through. Paint it so I can, except when the door is
+// closed"). The gate's dark opening was wall in the grid, so the hero stopped at its foot and the way out was a hop from
+// the threshold. While the gate stands open (gatePassable: opened, broken, not shut again) the lower part of the opening
+// — the floor of the doorway, not the air above it — is painted walkable, joined to the pen floor, and the way out
+// starts from the back of it: the hero walks into the dark and is gone, then steps out onto the landing. Shut the gate
+// and buildGrid runs again without it, so the doorway is stone once more. The band is the gate's own outline from the
+// story (interact.gate.poly): per column, the part of it below FLOOR_FROM of its height.
+const DOOR_FLOOR_FROM = .55, DOOR_DEEP = .62;
+let doorDeepPt = null;
+function doorColumns(){
+  const z = doorGate(), P = z && z.interact && z.interact.poly; if (!P) return [];
+  const xs = P.map(q => q[0]), ys = P.map(q => q[1]), cols = [];
+  for (let cx = Math.floor(Math.min(...xs) / CELL); cx <= Math.floor(Math.max(...xs) / CELL); cx++){
+    const x = cx * CELL + CELL / 2; let lo = Infinity, hi = -Infinity;
+    for (let cy = Math.floor(Math.min(...ys) / CELL); cy <= Math.floor(Math.max(...ys) / CELL); cy++){ const y = cy * CELL + CELL / 2; if (inPoly(P, x, y)){ lo = Math.min(lo, y); hi = Math.max(hi, y); } }
+    if (hi > lo) cols.push({cx, x, lo, hi});
+  }
+  return cols;
+}
+function paintDoorway(){
+  doorDeepPt = null;
+  if (!gatePassable()) return;
+  const cols = doorColumns(); if (!cols.length) return;
+  for (const c of cols) for (let cy = 0; cy < GH; cy++){ const y = cy * CELL + CELL / 2; if (y >= c.lo + DOOR_FLOOR_FROM * (c.hi - c.lo) && y <= c.hi) grid[cy * GW + c.cx] = 1; }
+  const m = cols[Math.floor(cols.length / 2)], y = m.lo + DOOR_DEEP * (m.hi - m.lo);
+  doorDeepPt = {x: m.x, y: (Math.floor(y / CELL) + .5) * CELL};
+}
 // whether `a` can reach `b` only by going through the gate (one inside the pen, one out on the balcony)
 const gateWayTo = (a, b) => gatePassable() && outsidePen(a) !== outsidePen(b);
 function findPath(from, to){
   const p = gridPath(from, to); if (p.length || !gatePassable()) return p;
   const fb = outsidePen(from); if (fb === outsidePen(to)) return p;
   const B = balcony(), P = q => ({x: q[0], y: q[1]});
-  const L = P(B.landing), H = P(B.behind), T = P(B.threshold), I = P(B.inside);
+  const L = P(B.landing), H = P(B.behind), T = doorDeepPt || P(B.threshold), I = P(B.inside);   // the back of the painted doorway, when it is floor
   const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) <= 8;
   // out of sight on the near side ("out": fades as it goes), back into view on the far side ("jump": reappears)
   const [a, b] = fb ? [gridPath(from, L), gridPath(T, to)] : [gridPath(from, I), gridPath(L, to)];
