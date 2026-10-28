@@ -165,12 +165,13 @@ header .tools input[type=range]{accent-color:#f2c55c}
 .acts p.old{opacity:.5}
 .acts p.gone{opacity:0}
 .stage.frozen *{animation-play-state:paused!important}
-.ow-light{position:absolute;right:12px;bottom:58px;z-index:6;display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--rule);color:var(--ink-dim);border-radius:999px;padding:4px 11px 4px 9px;font:500 11px/1.2 'Alegreya Sans',sans-serif;letter-spacing:.06em;cursor:pointer}
+/* bottom-right corner, beside the zoom (Sam, 2026-10-28: "the rehearsal box is in the way. Relocate it to the bottom right"): it sat on the party cards */
+.ow-light{position:absolute;right:148px;bottom:16px;z-index:6;display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--rule);color:var(--ink-dim);border-radius:999px;padding:4px 11px 4px 9px;font:500 11px/1.2 'Alegreya Sans',sans-serif;letter-spacing:.06em;cursor:pointer}
 .ow-light::before{content:'';width:8px;height:8px;border-radius:50%;background:#62e3a0;box-shadow:0 0 6px #62e3a0}
 .ow-light[data-s=catching-up]::before,.ow-light[data-s=fight-unshared]::before,.ow-seats i[data-s=catching-up],.ow-seats i[data-s=fight-unshared]{background:#e8c04a;box-shadow:0 0 6px #e8c04a}
 .ow-light[data-s=out-of-touch]::before,.ow-light[data-s=off]::before,.ow-seats i[data-s=out-of-touch]{background:#d0453a;box-shadow:0 0 6px #d0453a}
 .ow-light[data-s=fight-unshared],.ow-light[data-s=off],.ow-light[data-s=out-of-touch]{color:var(--ink);border-color:var(--ember)}
-.ow-seats{position:absolute;right:12px;bottom:90px;z-index:6;min-width:190px;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:6px 10px;font:13px/1.5 'Alegreya Sans',sans-serif;color:var(--ink)}
+.ow-seats{position:absolute;right:148px;bottom:50px;z-index:6;min-width:190px;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:6px 10px;font:13px/1.5 'Alegreya Sans',sans-serif;color:var(--ink)}
 .ow-row{display:flex;align-items:center;gap:8px}.ow-row span{margin-left:auto;color:var(--ink-dim);font-size:11px}
 .ow-light[data-s=rehearsal]::before{background:#7aa7ff;box-shadow:0 0 6px #7aa7ff}
 .ow-seats i{width:8px;height:8px;border-radius:50%;background:#62e3a0;flex:none}
