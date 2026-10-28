@@ -8133,7 +8133,7 @@ function sneakState(att, tgt, atk, ranged){
   return {on: false, why: "no sneak attack: get advantage, or an ally beside it"};
 }
 function afterAttackRoll(att){ if (att.c.rage) att.c.rage.attacked = true;   // SRD: "attacked a hostile creature since your last turn"
-  if (att.c.conds.has("hidden")){ att.c.conds.delete("hidden"); att.alpha = 1; } att.c.conds.delete("helped"); }
+  if (att.c.conds.has("hidden")){ att.c.conds.delete("hidden"); delete att.c.hideDc; att.alpha = 1; } att.c.conds.delete("helped"); }
 // SRD 2024: the DC to resist a Shove or Grapple is 8 + STR mod + proficiency.
 const sgn = (n) => (n >= 0 ? "+" : "−") + Math.abs(n);
 const shoveDc = (a) => 8 + abilMod(a.c.sheet, "str") + 2;   // SRD 5.2.1: 8 + Strength modifier + proficiency
@@ -8446,7 +8446,7 @@ function doHide(a, bonus){
   if (near){ toast(`${fname(near)} is right on top of you — step away first.`); return; }
   if (bonus) c.bonus = false; else c.action = false; const k = skillCheck(a, "stealth"), best = Math.max(10, ...standing(foes).map(f => f.c.sheet.passive || 10));
   bank("combat/hide", .7);
-  if (k.total >= best){ addCond(a, "hidden"); log(`${fname(a)} hides: Stealth ${k.r}${k.small ? " (advantage: Small)" : ""} + ${k.mod} = ${k.total} vs passive ${best} — <b>hidden</b>.`); narrate(a, `${fname(a)} slips out of sight.`); a.alpha = .55; }
+  if (k.total >= best){ addCond(a, "hidden"); c.hideDc = k.total; log(`${fname(a)} hides: Stealth ${k.r}${k.small ? " (advantage: Small)" : ""} + ${k.mod} = ${k.total} vs passive ${best} — <b>hidden</b>.`); narrate(a, `${fname(a)} slips out of sight.`); a.alpha = .55; }
   else { log(`${fname(a)} tries to hide: Stealth ${k.r}${k.small ? " (advantage: Small)" : ""} + ${k.mod} = ${k.total} vs passive ${best} — spotted.`); popText(a, "spotted", "#c9c4b8"); }
   openMenu(a);
 }
@@ -8456,6 +8456,25 @@ function doSearch(a){
   found.forEach(f => { f.c.conds.delete("hidden"); f.alpha = 1; popText(f, "found", "#ffe08a"); });
   log(`${fname(a)} searches: Perception ${k.r} + ${k.mod} = ${k.total}${found.length ? ` — finds ${found.map(fname).join(", ")}` : " — nothing hidden here"}.`);
   openMenu(a);
+}
+// A foe's Search (see foeTurn, HIDDEN HEROES): one Wisdom (Perception) check against each hidden hero's Stealth total
+// (c.hideDc, set by doHide; an older hide without one uses 10 + Stealth). Found: no longer hidden. Either way the action
+// is gone and the turn passes.
+function foeSearch(f, hidden){
+  const s = f.c.sheet, mod = (s.skills || {}).perception ?? (Number.isFinite(s.passive) ? s.passive - 10 : abilMod(s, "wis"));
+  const r = d20(0, f), total = r + mod, sg = n => (n >= 0 ? "+" : "") + n;
+  const dcOf = p => p.c.hideDc ?? 10 + ((p.c.sheet.skills || {}).stealth ?? abilMod(p.c.sheet, "dex"));
+  const found = hidden.filter(p => total >= dcOf(p)), mark = hidden.slice().sort((a, b) => feetBetween(f, a) - feetBetween(f, b))[0];
+  if (mark) f.face = faceOf(mark.x - f.x, mark.y - f.y);
+  popText(f, "searching…", "#c9c4b8");
+  setTimeout(() => {
+    if (!cbt) return;
+    found.forEach(p => { p.c.conds.delete("hidden"); delete p.c.hideDc; p.alpha = 1; popText(p, "found", "#ffe08a"); });
+    if (found.length){ narrate(f, `${fname(f)} spots ${found.map(fname).join(" and ")}.`); }
+    else narrate(f, `${fname(f)} peers into the dark and sees nothing.`);
+    log(`${fname(f)} searches: Perception ${r} ${sg(mod)} = ${total} vs ${hidden.map(p => `${fname(p)} ${dcOf(p)}`).join(", ")} — ${found.length ? `<b>finds ${found.map(fname).join(", ")}</b>` : "finds no one"}. The turn is spent.`);
+    renderParty(); setTimeout(() => passTurn(f), 700);
+  }, 700);
 }
 // Shove and Grapple (SRD 2024 Unarmed Strike options): the target saves STR or DEX, its choice, against
 // 8 + your STR mod + proficiency. The map rolls its better save. Needs the action.
@@ -8904,6 +8923,15 @@ function foeTurn(f){
   let tgt = grudgeOn ? grudgeOn : f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(heroes())) : (seen.length ? seen : standing(heroes())).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
   if (tgt && !grudgeOn && !f.c.berserk){ const pot = potShot(f); if (pot) tgt = pot; }   // BYSTANDERS: threats first, now and then a pot shot
   if (!tgt){ checkEnd(); return; }
+  // HIDDEN HEROES (Sam, 2026-10-28: "They should look for me because they can't see me and lose their turn if they can't
+  // find me"). A foe whose quarry has vanished — every hero it could go for is hidden, the one it is after is hidden, or
+  // the nearest hero is — does not swing at a guess. It spends its action searching (SRD: the Search action, Wisdom
+  // (Perception) against the Stealth total the hider rolled) and that is its turn, found or not.
+  const hidNow = standing(heroes()).filter(p => p.c.conds.has("hidden"));
+  if (hidNow.length && !f.c.berserk){
+    const nearest = standing(heroes()).sort((a, b) => feetBetween(f, a) - feetBetween(f, b))[0];
+    if (tgt.c.conds.has("hidden") || (nearest && nearest.c.conds.has("hidden") && !seen.some(p => feetBetween(f, p) <= 5))){ foeSearch(f, hidNow); return; }
+  }
   fightCam(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600, [f, tgt]);
   if (Math.random() < .45 && now - (taunt.last || -1e9) > BANTER_GAP){ if (!taunt(f, null, tgt)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }   // one voice at a time (THE BANTER)
   const s = f.c.sheet, swings = s.multi || 1, bow = s.attacks.find(k => k.ranged);
