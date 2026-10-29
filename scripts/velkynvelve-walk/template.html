@@ -5337,7 +5337,7 @@ function drawFxLayer(flat){
   ctx.globalAlpha = 1;
 }
 // which sheets and sounds a spell uses, from its school (lib/spell-school-data) and damage type
-const SCHOOL_OF = {"Acid Splash": "conjuration", "Produce Flame": "conjuration", "Sacred Flame": "evocation", "Cure Wounds": "evocation", "Inflict Wounds": "necromancy", "Grease": "conjuration", "Shatter": "evocation", "Acid Arrow": "evocation", "Call Lightning": "conjuration",
+const SCHOOL_OF = {"Acid Splash": "evocation", "Produce Flame": "conjuration", "Sacred Flame": "evocation", "Cure Wounds": "abjuration", "Inflict Wounds": "necromancy", "Grease": "conjuration", "Shatter": "evocation", "Acid Arrow": "evocation", "Call Lightning": "conjuration",
   "Web": "conjuration", "Command (grovel)": "enchantment", "Hypnotic Pattern": "illusion", "True Strike": "divination", "Vampiric Touch": "necromancy", "Sanctuary": "abjuration",
   "Light": "evocation", "Thaumaturgy": "transmutation", "Druidcraft": "transmutation", "Message": "transmutation", "Mending": "transmutation", "Guidance": "divination", "Resistance": "abjuration","Eldritch Blast": "evocation", "Hex": "enchantment", "Fireball": "evocation", "Burning Hands": "evocation", "Entangle": "conjuration", "Hunter's Mark": "divination", "Hold Person": "enchantment", "Cloud of Daggers": "conjuration", "Flaming Sphere": "conjuration", "Green-Flame Blade": "evocation", "Mage Hand": "conjuration", "Minor Illusion": "illusion", "Prestidigitation": "transmutation", "Dancing Lights": "evocation", "Friends": "enchantment", "Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
   "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment",
@@ -5740,26 +5740,28 @@ const SPELLS = {
   // THE REST OF THE LAB'S SPELLS (Sam, 2026-10-29: "Everything, rules too" — no hero has these yet; they are here for
   // the day one learns them). SRD 5.1 unless marked. `aimRange`: an area aimed at the floor still has to be in range.
   "Fireball":           {lvl: 3, kind: "save", save: "dex", range: 150, area: 40, aimRange: true, dmg: "8d6", type: "fire", fx: "#ff8a3a"},
-  // ---------- SRD 5.1 HEAD START (Sam, 2026-10-29: "I don't want to have to add all the spells as I encounter them, I'd
+  // ---------- SRD HEAD START (Sam, 2026-10-29: "I don't want to have to add all the spells as I encounter them, I'd
   // like a head start on at least level 2 maybe 3"). Every SRD 5.1 spell of levels 0-3 on the casters' lists that the
   // engine can already resolve, so a hero who learns or prepares one can cast it. The rest need new mechanics (listed in
-  // the PR). Each says what it leaves out (NOT YET).
-  // SRD 5.1 Sanctuary: 1st-level abjuration, bonus action, 30 ft, 1 minute (not concentration). "Any creature who targets
-  // the warded creature with an attack or a harmful spell must first make a Wisdom saving throw. On a failed save, the
-  // creature must choose a new target or lose the attack or spell. This spell doesn't protect the warded creature from
-  // area effects ... If the warded creature makes an attack or casts a spell that affects an enemy creature, this spell
-  // ends." The ward: sanctuaryLets (below). The look (Sam, same day): the Shield bubble in radiant gold.
+  // the PR). Each says what it leaves out (NOT YET). RULES: SRD 5.2.1 where it differs from 5.1 (Sam, same day: "if we
+  // can we use 5.2.1" — the party's sheets are 5.2.1); checked against the 2024 text.
+  // SRD 5.2.1 Sanctuary: 1st-level abjuration, bonus action, 30 ft, 1 minute (not concentration). A creature that targets
+  // the warded creature with an attack roll or a damaging spell makes a Wisdom saving throw; on a failure it must "choose
+  // a new target or lose the attack or spell". Not area effects. "The spell ends if the warded creature makes an attack
+  // roll, casts a spell, or deals damage." The ward: sanctuaryLets (below). The look (Sam): the Shield bubble in radiant gold.
   "Sanctuary":          {lvl: 1, kind: "buff", range: 30, bonus: true, cond: "sanctuary", fx: "#fff3c0"},
-  // SRD 5.1 Acid Splash: conjuration cantrip, 60 ft, DEX save or 1d6 acid. NOT YET: the second creature within 5 ft.
-  "Acid Splash":        {lvl: 0, kind: "save", save: "dex", range: 60, dmg: "1d6", type: "acid", fx: "#9be37a"},
-  // SRD 5.1 Produce Flame: conjuration cantrip, hurled at a creature within 30 ft, ranged spell attack, 1d8 fire.
-  "Produce Flame":      {lvl: 0, kind: "attack", range: 30, dmg: "1d8", type: "fire", fx: "#ff8a3a"},
-  // SRD 5.1 Sacred Flame: evocation cantrip, 60 ft, DEX save or 1d8 radiant; "no benefit from cover" (castSpell skips cover for it).
+  // SRD 5.2.1 Acid Splash: evocation cantrip, 60 ft, "explodes in a 5-foot-radius Sphere"; DEX save or 1d6 acid.
+  "Acid Splash":        {lvl: 0, kind: "save", save: "dex", range: 60, area: 10, aimRange: true, dmg: "1d6", type: "acid", fx: "#9be37a"},
+  // SRD 5.2.1 Produce Flame: conjuration cantrip, hurled at a creature within 60 ft, ranged spell attack, 1d8 fire.
+  // NOT YET: 5.2.1 makes the flame with a bonus action and hurls it with the Magic action (here one action does both).
+  "Produce Flame":      {lvl: 0, kind: "attack", range: 60, dmg: "1d8", type: "fire", fx: "#ff8a3a"},
+  // SRD 5.1 and 5.2.1 Sacred Flame: evocation cantrip, 60 ft, DEX save or 1d8 radiant; "no benefit from cover" (castSpell skips cover for it).
   "Sacred Flame":       {lvl: 0, kind: "save", save: "dex", range: 60, dmg: "1d8", type: "radiant", fx: "#fff1b0"},
-  // SRD 5.1 Cure Wounds: 1st-level evocation, touch, 1d8 + spellcasting modifier. NOT YET: no effect on undead or constructs.
-  "Cure Wounds":        {lvl: 1, kind: "heal", range: 5, dmg: "1d8", fx: "#9ff2c8"},
-  // SRD 5.1 Inflict Wounds: 1st-level necromancy, touch, melee spell attack, 3d10 necrotic.
-  "Inflict Wounds":     {lvl: 1, kind: "attack", range: 5, dmg: "3d10", type: "necrotic", fx: "#8a5bb0"},
+  // SRD 5.2.1 Cure Wounds: 1st-level abjuration, touch, 2d8 + spellcasting modifier.
+  "Cure Wounds":        {lvl: 1, kind: "heal", range: 5, dmg: "2d8", fx: "#9ff2c8"},
+  // SRD 5.2.1 Inflict Wounds: 1st-level necromancy, touch: "makes a Constitution saving throw, taking 2d10 Necrotic damage
+  // on a failed save or half as much damage on a successful one."
+  "Inflict Wounds":     {lvl: 1, kind: "save", save: "con", range: 5, dmg: "2d10", type: "necrotic", fx: "#8a5bb0"},
   // SRD 5.1 Grease: 1st-level conjuration, 60 ft, 10-ft square: DEX save or fall prone. NOT YET: difficult terrain, the save on entering or ending a turn there.
   "Grease":             {lvl: 1, kind: "save", save: "dex", range: 60, area: 10, aimRange: true, cond: "prone", fx: "#c9b26a"},
   // SRD 5.1 Shatter: 2nd-level evocation, 60 ft, 10-ft-radius sphere, CON save, 3d8 thunder, half on a success. NOT YET: disadvantage for stone/crystal/metal creatures.
@@ -5778,7 +5780,8 @@ const SPELLS = {
   // SRD 5.1 Hypnotic Pattern: 3rd-level illusion, 120 ft, 30-ft cube, concentration 1 minute; WIS save or charmed —
   // incapacitated, speed 0, ends on damage or a shake. BENDS: carried by `asleep` (it also gets a WIS save each turn).
   "Hypnotic Pattern":   {lvl: 3, kind: "save", save: "wis", range: 120, area: 30, aimRange: true, cond: "asleep", fx: "#ff9bd2", conc: 10},
-  // SRD 5.1 True Strike: divination cantrip, concentration 1 round: advantage on your first attack next turn. BENDS: a self-buff (click yourself) giving `helped`.
+  // True Strike: BENDS. SRD 5.2.1 rewrote it (one weapon attack made with your spellcasting ability); the engine has no
+  // spell-driven weapon attack yet, so this keeps the 5.1 shape — a self-buff (click yourself) giving `helped`.
   "True Strike":        {lvl: 0, kind: "buff", range: 0, cond: "helped", fx: "#ffe08a"},
   // SRD 5.1 Vampiric Touch: 3rd-level necromancy, concentration 1 minute; melee spell attack, 3d6 necrotic, and you regain
   // half the necrotic damage dealt. NOT YET: the repeat attack on later turns without a slot.
@@ -7784,7 +7787,7 @@ function readiedStrikeOn(att, cont){
 function attackWith(att, tgt, atk, done, offhand, reaction){
   if (!sanctuaryLets(att, tgt)){ if (att.kind === "pc" && !reaction){ if (offhand) att.c.bonus = true; else att.c.action = true; }   // SRD: choose a new target or lose the attack
     combatBusy = false; if (cbt) cbt.phase = "idle"; if (done) setTimeout(done, 500); else if (att.kind === "pc") openMenu(att); return; }
-  if (att.c && att.c.conds.has("sanctuary") && tgt && tgt.c && hero(att) !== hero(tgt)) endSanctuary(att, "attacked");
+  if (att.c && att.c.conds.has("sanctuary")) endSanctuary(att, "made an attack");   // SRD 5.2.1: it ends if the warded creature makes an attack roll
   handWatch(att, tgt);
   const c = att.c; if (att.kind === "pc" && !reaction){ if (offhand) c.bonus = false; else { c.action = false; if (atk.light) c.lastLight = atk; } } closeMenu(); cbt.phase = "busy"; combatBusy = true;
   const reach = atk.thrown && feetBetween(att, tgt) > 5 ? atk.thrown : atk.reach;
@@ -7909,7 +7912,7 @@ function castSpell(caster, tgt, name, done, darts){
   const volley = darts && darts.length ? darts : null, distinct = volley ? [...new Set(volley)] : null;
   if (sp.bonus){ c.bonus = false; c.bonusSpell = true; } else { c.action = false; if (sp.lvl > 0) c.leveledSpell = true; }
   if (sp.lvl > 0) c.slots[sp.lvl] = Math.max(0, (c.slots[sp.lvl] || 0) - 1);
-  if (c.conds.has("sanctuary") && !["heal", "buff", "util", "fog"].includes(sp.kind)) endSanctuary(caster, "cast a spell at a foe");   // SRD: a spell that affects an enemy ends it
+  if (c.conds.has("sanctuary") && name !== "Sanctuary") endSanctuary(caster, "cast a spell");   // SRD 5.2.1: it ends if the warded creature casts a spell
   const at = tgt;                                                                // a point or an actor
   if (tgt.id) caster.face = faceOf(tgt.x - caster.x, tgt.y - caster.y);
   if (tgt.id) pushCam(caster, tgt);
@@ -8244,6 +8247,7 @@ function concSave(a, dmg){
 function damage(t, n, type, crit, from, magical = false){
   const s = t.c.sheet; if ((s.immune || []).includes(type)){ popText(t, "immune", "#aaa"); return; }
   handCheer(t, from);
+  if (from && from !== t && from.c && from.c.conds && from.c.conds.has("sanctuary") && n > 0) endSanctuary(from, "dealt damage");   // SRD 5.2.1: or deals damage
   if (crit) critBadge(t);   // "Crit when it occurs" (Sam, 2026-10-29)
   // a resistance is a TAG on the number ("5 ½"), not a word of its own over the head (the pop lanes, 2026-10-28)
   let tag = "";
