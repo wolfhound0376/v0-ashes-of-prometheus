@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest"
 import { CANON_HEROES, HERO_FILM_LOCATION, availability, canonById, canonBySlug, canonPayload, CANON_FORMAT } from "./canon-heroes"
 
 describe("canon heroes", () => {
-  it("are the four Sam named, with distinct ids and slugs", () => {
-    expect(CANON_HEROES.map((h) => h.name)).toEqual(["Kenta of Neverwinter", "Fifi of Waterdeep", "Scott Reedwind of Luskan", "Samson Stillwater"])
-    expect(new Set(CANON_HEROES.map((h) => h.id)).size).toBe(4)
-    expect(new Set(CANON_HEROES.map((h) => h.slug)).size).toBe(4)
+  it("are the four Sam named plus Lynkes and Gandalf (Sam, 2026-10-29), with distinct ids and slugs", () => {
+    expect(CANON_HEROES.map((h) => h.name)).toEqual(["Kenta of Neverwinter", "Fifi of Waterdeep", "Scott Reedwind of Luskan", "Samson Stillwater", "Lynkes", "Gandalf"])
+    expect(new Set(CANON_HEROES.map((h) => h.id)).size).toBe(6)
+    expect(new Set(CANON_HEROES.map((h) => h.slug)).size).toBe(6)
   })
 
   it("films are found by location hero-intro + state <slug>, not by scene_key", () => {
@@ -13,10 +13,19 @@ describe("canon heroes", () => {
     for (const h of CANON_HEROES) expect(h).not.toHaveProperty("sceneKey")
   })
 
+  it("only Lynkes's and Gandalf's films replay after a restart; the original four watch theirs once", () => {
+    expect(CANON_HEROES.filter((h) => h.filmReplays).map((h) => h.slug)).toEqual(["lynkes", "gandalf"])
+  })
+
+  it("Lynkes and Gandalf carry their live characters.id, so the chooser hands over the real rows", () => {
+    expect(canonBySlug("lynkes")?.id).toBe("a4b4c7cd-4bd6-45bb-9a32-a19a37bcb774")
+    expect(canonBySlug("gandalf")?.id).toBe("614cac3d-f119-4b35-af78-766ddb510619")
+  })
+
   it("looks up by slug and by id, and refuses anything else", () => {
     expect(canonBySlug("fifi")?.id).toBe("d00aa5b8-ced1-477d-9ec8-0861cca55498")
     expect(canonById("be060806-9938-4afd-9cf6-ad298d9eaa97")?.slug).toBe("samson")
-    expect(canonBySlug("gandalf")).toBeNull()
+    expect(canonBySlug("malachar")).toBeNull()
     expect(canonBySlug(undefined)).toBeNull()
     expect(canonById("not-a-hero")).toBeNull()
   })
