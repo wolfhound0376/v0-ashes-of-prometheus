@@ -473,6 +473,11 @@
           ],
           "passFt": 15,
           "keys": "^(drow|jorlan)",
+          "chasm": {
+            "_note": "Sam, 2026-10-28 (Pen Strip Pilot): 'create a zone where people can be thrown off and fall to their deaths'. A shove from the balcony that lands off its floor goes over the edge. Into `webs` (the silk under the near and far ends of the rope bridge): caught, restrained, unhurt (Sam's falls ruling, 2026-10-24: the webs below the outpost break a fall). Anywhere else (`drops`, or beyond them): the chasm, a fall of hundreds of feet, 20d6 (the SRD 5.1 cap) - dead. That depth is Claude's reading of the painting, not a number from the book. Polygons in pen plate px, traced in the close-up painting and carried back through the outside mesh.",
+            "webs": [[[232, 612], [292, 624], [322, 759], [254, 734]], [[13, 510], [109, 546], [68, 850], [-50, 861]]],
+            "drops": [[[109, 546], [229, 592], [217, 1067], [62, 1122]], [[274, 635], [300, 630], [382, 743], [394, 786], [379, 1044], [260, 1055]], [[-50, 861], [73, 850], [62, 1122], [-61, 1166]], [[454, 876], [532, 791], [539, 737], [562, 725], [637, 983], [439, 1028]]]
+          },
           "outside": {
             "_note": "Sam, 2026-10-28/29 (Pen Strip Pilot, 'lets wire what we have'): step out of the gate and the camera slides onto this close-up of the landing and the rope bridge; step in and it slides back. One world, two views: every point on the balcony keeps the pen plate's coordinates and is carried into the painting by the triangle mesh pen[i] -> art[i] (art in this painting's own px, 2400x1339; built by hand against both paintings, no triangle flipped). x0: where the painting sits beside the plate. ft: the painting's px per foot [far, near, at y far, at y near] (the pilot's sizes, the ones Sam okayed after 'minimize people looking like they are flying'). door: the painted gate's quad; doorFloor: the floor in front of it. domainX: the balcony side of the pen wall, in plate px.",
             "img": "pen-outside.jpg", "x0": -2600, "domainX": 640,

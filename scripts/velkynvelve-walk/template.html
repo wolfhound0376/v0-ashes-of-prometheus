@@ -883,7 +883,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="btn" id="dmGateShut">Shut and lock the pen gate</button>
       <button class="btn" id="dmLaborCall">Work detail: call it now</button>
       <button class="btn" id="dmLaborOff">Work detail: call it off</button>
-      <button class="btn" id="dmThrow">Throw the active character into the falls (area 9)</button>
+      <button class="btn" id="dmThrow">Throw the active character over the edge (the falls in area 9, the chasm off the pen landing)</button>
       <div class="dmCloudRow" id="dmCloudRow">
         <label>Cast <select id="dmCloudSpell" aria-label="Poison cloud spell"><option>Stinking Cloud</option><option>Cloudkill</option></select></label>
         <label>as <select id="dmCloudBy" aria-label="Who casts it"></select></label>
@@ -3120,6 +3120,63 @@ function overTheFalls(t, by){
 function applyInPool(){ for (const id of state.inPool || []){ const p = party.find(q => q.id === id); if (p) actors = actors.filter(a => a !== p); } if (leader && !actors.includes(leader)){ const l = party.find(p => actors.includes(p)); if (l) setLeader(l); } }
 // the push that sends someone over: only on the bridge over the falls, only when the push lands in the water zone
 function pushOverFalls(t, to){ const z = cur === 9 ? node.zones.find(z => z.kind === "water") : null; return !!(z && inRect(z.rect, to.x, to.y)); }
+// ---------- THE CHASM OFF THE PEN'S LANDING (Sam, 2026-10-28, Pen Strip Pilot: "create a zone where people can be
+// thrown off and fall to their deaths") ----------
+// A shove from the landing or the rope bridge (story.json interact.gate.balcony.chasm) that lands off their floor goes
+// over the edge. Under the near and far ends of the bridge the old webs catch the body: no damage (Sam's falls ruling,
+// 2026-10-24: the webs below the outpost break a fall), restrained in the silk (SRD 5.1 Giant Spider web, DC 12 Strength),
+// hanging below the planks until they tear free or a friend cuts them out; then they climb back up. Anywhere else it is
+// the open chasm: a fall of hundreds of feet, 20d6 bludgeoning (the SRD 5.1 cap), and nobody comes back from it. That
+// depth is Claude's reading of the painting, not a number from the book.
+function chasmOf(){ const B = balcony(); return (B && B.chasm) || null; }
+function chasmEdge(t, raw){
+  const C = chasmOf(); if (!C || !t || !raw) return null;
+  if (!(outsidePen(t) || onBalcony(t))) return null;                        // only from the landing and the bridge
+  if (walkable(raw.x, raw.y) || inPoly(balcony().poly, raw.x, raw.y)) return null;   // still on the floor: an ordinary push
+  return C.webs.some(w => inPoly(w, raw.x, raw.y)) ? "web" : "drop";
+}
+function chasmFall(t, at, by, kind){
+  t.path = []; stopActivity(t); t.onArrive = null;
+  const who = fname(t);
+  if (kind === "web"){
+    dragAlong(t, [at], 420, null, () => {
+      bank("movement/web_tear", .7); popText(t, "caught in the webs", "#e8e2c8", 1.05); t.inWeb = {t0: now};
+      if (t.c){ addCond(t, "restrained"); t.c.webDc = 12; }
+      try { spawnFx("spiderWeb", {at: t, sq: 1.6, anchor: "mid", tail: 12, until: now + 600000, alpha: .9, always: true}).then(e => { t.webFx = e; }); } catch (e) {}
+      log(`${who} goes off the ${by ? "edge" : "bridge"}${by ? `, shoved by ${fname(by)},` : ""} and drops into the old webs under the bridge: <b>caught</b>, unhurt, restrained (DC 12 Strength to tear free).`);
+      narrate(by || t, `${who} drops into the webs under the bridge and hangs there.`);
+      if (mode === "combat") renderParty && renderParty();
+    });
+    return;
+  }
+  t.fall = now; bank("walk:fall-cry", .5);
+  const r = roll("20d6");
+  log(`${who} goes over the edge${by ? `, shoved by ${fname(by)},` : ""} into the chasm: hundreds of feet, 20d6 bludgeoning [${r.rolls.join(", ")}] = ${r.total}. <b>${who} is gone.</b>`);
+  narrate(by || leader || t, by ? `${fname(by)} sends ${who} over the edge into the dark.` : `${who} falls into the dark.`);
+  setTimeout(() => {
+    t.alpha = 0; t.fading = true; t.offStage = true; t.down = true; t.chasm = true; t.path = [];   // fading: nothing brings the figure back into view
+    if (t.c){ t.c.hp = 0; if (t.c.conc) endConc(t, "they fall"); t.c.conds.clear(); }
+    if (t.kind === "pc" && t.c){ t.c.ds = {s: 0, f: 3, stable: false, dead: false}; dieNow(t, "fell into the chasm");
+      if (leader === t && mode !== "combat"){ const l = party.find(p => p !== t && actors.includes(p) && !p.down); if (l) setLeader(l); } }   // in a fight the turns pick who acts (setLeader's combat branch is stale)
+    else if (t.bystander || PEN_NPCS.some(d => d.id === t.id)){ t.slain = true; (state.slain ||= []).includes(t.id) || state.slain.push(t.id); }
+    if (mode === "combat") checkEnd();
+    saveWalk();
+  }, 950);
+}
+// out of the webs: once the silk lets go (Break free, Cut free, or the party hauling them up after a fight) they climb back
+// onto the nearest planks
+function tickChasmWebs(){
+  for (const a of actors){
+    if (!a.inWeb || a.down) continue;
+    const held = a.c && a.c.conds.has("restrained");
+    if (held && !cbt && now - a.inWeb.t0 > 2500){ a.c.conds.delete("restrained"); log(`${fname(a)} is hauled up out of the webs.`); }
+    if (a.c && a.c.conds.has("restrained")) continue;
+    if (!a.c && !cbt && now - a.inWeb.t0 < 2500) continue;
+    a.inWeb = null; if (a.webFx) a.webFx.until = now;
+    const p = nearestWalkable(a.x, a.y - 60); bank("movement/web_tear", .5);
+    dragAlong(a, [p], 900, null, () => { popText(a, "climbs back up", "#e8e2c8", .9); });
+  }
+}
 // ---------- leaving Velkynvelve ----------
 // Sam's editor (2026-10-24) names, for each way out, the cavern plate it hands the party to (spec.py CAVERNS -> HANDOFFS).
 // Those plates belong to the travel map, not to this page, so the hand-over is a link: /map carries which way the party
@@ -7788,7 +7845,7 @@ function doShove(a, t, what){
       if (ok){ bank("combat/melee_miss", .6); popText(t, `${verb} fails`, "#ffb27a", 1.15); popText(a, "they hold", "#c9c4b8", .85); narrate(a, `${fname(a)} tries to ${verb} ${fname(t)}, who holds firm.`); log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — <b>it holds</b>.`); return; }
       bank("walk:punch-bag", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx(what === "prone" ? MARTIAL_IMPACT.sweep : what === "push" ? MARTIAL_IMPACT.kick : MARTIAL_IMPACT.punch, {at: t, sq: 1.8, mirror: what === "prone" && t.x < a.x});   // the sweep takes their legs; a push is a kick
       if (what === "prone"){ addCond(t, "prone"); if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); narrate(a, `${fname(a)} knocks ${fname(t)} flat.`); }
-      else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ftPx(t) * 5, y: t.y + d.y * ftPx(t) * 5}; const to = nearestWalkable(raw.x, raw.y); if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a); else { const top = elevAt(t.x, t.y); t.x = to.x; t.y = to.y; const dropFt = top - elevAt(to.x, to.y); if (dropFt >= LEDGE_FT){ narrate(a, `${fname(a)} shoves ${fname(t)} off the edge.`); setTimeout(() => landFall(t, dropFt), 250); } } narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
+      else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ftPx(t) * 5, y: t.y + d.y * ftPx(t) * 5}; const to = nearestWalkable(raw.x, raw.y), ce = chasmEdge(t, raw); if (ce) chasmFall(t, raw, a, ce); else if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a); else { const top = elevAt(t.x, t.y); t.x = to.x; t.y = to.y; const dropFt = top - elevAt(to.x, to.y); if (dropFt >= LEDGE_FT){ narrate(a, `${fname(a)} shoves ${fname(t)} off the edge.`); setTimeout(() => landFall(t, dropFt), 250); } } narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
       else { addCond(t, "grappled"); t.c.grappledBy = a; narrate(a, `${fname(a)} grabs hold of ${fname(t)}.`); }
       log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — <b>${what === "prone" ? "prone" : what === "push" ? "pushed 5 ft" : "grappled"}</b>.`);
     }, () => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(a); });
@@ -12268,7 +12325,10 @@ function placeDmCloud(w){
   startConc(d.caster, d.name); bank("magic/nature_windup", .5);
   placePoisonCloud(d.caster, w, d.name, d.dc, CLOUD_RULES[d.name].level, true);
 }
-$("dmThrow").onclick = () => { if (cur !== 9){ toast("The falls are in area 9."); return; } toggleDm(false); const z = node.zones.find(z => z.kind === "water"); const c = zoneCenter(z); leader.x = c.x; leader.y = c.y; overTheFalls(leader, null); };
+$("dmThrow").onclick = () => {
+  if (chasmOf()){ const a = (cbt && activeActor()) || leader; if (!a || !(outsidePen(a) || onBalcony(a))){ toast("Out on the landing or the bridge first: the chasm is over its edge."); return; }
+    toggleDm(false); chasmFall(a, {x: a.x, y: a.y + 170}, null, "drop"); return; }
+  if (cur !== 9){ toast("The falls are in area 9."); return; } toggleDm(false); const z = node.zones.find(z => z.kind === "water"); const c = zoneCenter(z); leader.x = c.x; leader.y = c.y; overTheFalls(leader, null); };
 $("dmFlag").onclick = () => { toggleDm(false); followCombatFlag({status: "active", startedAt: String(Date.now()), label: "Malachar calls for initiative.", foes: [{name: "Gray Ooze", slug: "gray-ooze", aliases: [], hp: 22, hpMax: 22}, {name: "Drow Guard", slug: "drow-guard", aliases: ["drow"], hp: 13, hpMax: 13}]}); };
 // what [WATCH: change] / [WATCH: unattended] / [WATCH: posted] do, without the game: in the app the poll sets the watch
 const fakeWatch = st => { storyWatch = {state: st, since: new Date().toISOString()}; followWatch(storyWatch); };
@@ -13774,7 +13834,7 @@ function update(dt){
   if (cbt && poisonZones.length) tickPoisonZones();
   tickFootsteps();
   tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt);
-  ovTick();
+  ovTick(); tickChasmWebs();
   if (camTween){
     const k = Math.min(1, (now - camTween.t0) / camTween.ms), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
     view.z = camTween.from.z + (camTween.to.z - camTween.from.z) * e;
