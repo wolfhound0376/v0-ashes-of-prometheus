@@ -1917,6 +1917,7 @@ function draw(){
   if (mode === "combat"){ drawIcePatches(); drawFxLayer(true); tickIce(); }
   if (mode === "explore" && exploreJump && leader && actors.includes(leader)) drawExploreJumpSquares(leader);
   ovWrapGroup(drops, drawLootGround);   // the loot ceremony's floor light, under the figures
+  drawCrimGhosts();                     // a rogue or ranger's afterimages, under the figures
   const list = actors.concat(vermin, laborProps).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);   // laborProps: Hard Labor's station props
   const cloudQ = mode === "combat" || clouds.length ? cloudPuffs() : [];   // the poison cloud, in depth order among the figures
   let barsAt = gateBarsY();                                       // the bars in front of a guard leaning at them, in depth order
@@ -2005,7 +2006,8 @@ function draw(){
       const fx = a.x + a.kx, fyy = a.y + fy + a.ky;
       ctx.save(); ctx.translate(fx, fyy); ctx.rotate(sp.rot); ctx.scale(1, sp.sy);
       ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx - fx, dy - fyy, dw, dh); ctx.restore();
-    } else ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh);
+    } else { ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh);
+      if (a.trailUntil > now && !ovT && now - (a.ghostAt || 0) > 34){ a.ghostAt = now; crimGhosts.push({img, sx: f * cw, sy: a.face * ch, cw, ch, dx, dy, dw, dh, plate: cur, t0: now}); if (crimGhosts.length > 40) crimGhosts.shift(); } }
     if (pose) ctx.filter = "none";
     if (a.st > .02 && !pose){                     // the hidden veil: the frame again, filled with cave shadow, over the body
       ctx.globalAlpha = a.alpha * veilK * a.st * .55;
@@ -2061,7 +2063,7 @@ function draw(){
   while (cloudQ.length) drawPuff(cloudQ.shift());
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
   drawTolls();
-  ovWrapGroup(drops, drawDrops); drawCombatFx(); drawShots(); drawToothGlow();
+  ovWrapGroup(drops, drawDrops); drawCombatFx(); drawCrimPuffs(); drawShots(); drawToothGlow();
   ctx.globalAlpha = 1;
 }
 const tint = document.createElement("canvas");
@@ -8833,14 +8835,14 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         flying = new Promise(res => fireShot(att, tgt, shot, hit, to => { landed = to; lands(); res(); }, atk)); }
       else { lunge(att, tgt, 20 * actorScale(att)); lands(); }   // a longer lunge into the blow (Sam, 2026-10-28: "dynamic")
       function lands(){
-      const sw = swipeStyle(atk, crit, att);
+      const sw = swipeStyle(atk, crit, att), crimS = !shot && isStriker(att) && sw.kind !== "claw" && sw.kind !== "bite"; att.trailUntil = 0;
       if (shot === "thrown" && att.kind === "pc") restOnFloor(att, atk, hit ? tgt : (landed || tgt), !hit);     // at their feet, or where it fell
       if (shot === "flask") shatter(atk, hit ? {x: tgt.x, y: tgt.y} : (landed || tgt), hit ? tgt : null);
       if (!hit){
         // a melee blow that reached them is a sparring exchange (sparMiss); a shot, a flask, or a blow with stone in
         // the way is the plain miss it always was
         const how = !shot && !cv.total && !tgt.down ? sparMiss(att, tgt, r === 1 ? null : r + atk.hit + insp - acVs, sw, ws) : null;
-        if (!how){ if (!shot) swipe(att, tgt, {...sw, miss: true}); miss(tgt); bank(shot === "flask" ? "magic/spell_fizzle" : ws.miss, .7); }
+        if (!how){ if (!shot){ if (crimS) crimSlash(att, tgt, {miss: true}); else swipe(att, tgt, {...sw, miss: true}); } miss(tgt); bank(shot === "flask" ? "magic/spell_fizzle" : ws.miss, .7); }
         log(`${why} — ${how === "parry" ? "parried" : how === "duck" ? "ducked" : how === "dodge" ? "dodged" : "miss"}.`);
         narrate(att, shot ? `${fname(att)}'s shot goes wide of ${fname(tgt)}.` : how === "parry" ? `${fname(att)} swings at ${fname(tgt)}, who turns the blow aside.` : how === "duck" ? `${fname(att)} swings at ${fname(tgt)}, who ducks under it.` : how === "dodge" ? `${fname(att)} swings at ${fname(tgt)}, who slips out of the way.` : `${fname(att)} swings at ${fname(tgt)} and misses.`);
         if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt, null, att), 500); return; }
@@ -8848,17 +8850,27 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       // OR an ally is within 5 ft of the target and you do not have disadvantage.
       const sneak = !!(atk.sneak && !att.c.sneakUsed && adv >= 0 && (adv > 0 || standing(heroes()).some(p => p !== att && feetBetween(p, tgt) <= 5)));
       if (sneak) att.c.sneakUsed = true;
+      if (sneak && (crimS || (shot && isStriker(att)))){ if (!shot) crimShadow(att, .7); crimShadow(tgt, 1); }   // the rogue's Sneak Attack comes out of shadow
       knock(tgt, att, (crit ? 34 : 20) * actorScale(tgt)); if (tgt.kind === "pc") redFlash();   // and a harder stagger on the one hit
       bank(crit ? "combat/crit_hit" : sneak ? "combat/sneak_attack" : ws.hit, crit ? .95 : .8); if (crit) bank("ui/nat20", .7);
       // THE COMBO (Sam, 2026-10-28: "I want melee to function the same [as the demo]; it looked good. Not just one punch. The
       // damage can stay whatever is rolled"). One roll, one number — but the blow is drawn as two strokes: the cut, then the
       // follow-through from the other side 150 ms later with a second, smaller impact (a third stroke on a crit), and blood
       // where a blade lands. A fall leaves a pool (fall()).
-      if (!shot){ swipe(att, tgt, {...sw, crit});
+      // SNEAK ATTACK WITH A FINESSE BLADE (Sam's reference, 2026-10-29: dagger, short sword, any finesse weapon): the
+      // crescent, then the blade driven in as a crimson lance with a burst at the point, then the crimson spray.
+      if (!shot && crimS && sneak){ crimSlash(att, tgt, {crit});
+        setTimeout(() => { crimThrust(att, tgt); crimStar(att, tgt, true); lunge(att, tgt, 14 * actorScale(att)); knock(tgt, att, 12 * actorScale(tgt)); }, 170);
+        setTimeout(() => { crimStar(att, tgt, crit); crimMist(att, tgt, crit ? 34 : 24); if (/piercing|slashing/.test(atk.type) && !/skeleton|ooze/.test(tgt.id)) addBlood(tgt, 1.2, false); shake(crit ? 9 : 6); }, 330); }
+      else if (!shot && crimS){ crimSlash(att, tgt, {crit}); crimStar(att, tgt, crit); if (crit) crimThrust(att, tgt); if (/piercing|slashing/.test(atk.type)) crimMist(att, tgt, crit ? 26 : 8);   // the rogue & ranger strike
+        setTimeout(() => { if (!tgt.down || crit){ crimSlash(att, tgt, {crit, flip: -1, stab: /pierc/.test(atk.type)}); crimStar(att, tgt, false); lunge(att, tgt, 10 * actorScale(att)); knock(tgt, att, 10 * actorScale(tgt)); } }, 150);
+        if (crit) setTimeout(() => { crimThrust(att, tgt); crimStar(att, tgt, true); }, 290); }
+      if (!shot && !crimS){ swipe(att, tgt, {...sw, crit});
         setTimeout(() => { if (!tgt.down || crit){ swipe(att, tgt, {...sw, crit, flip: -(sw.flip || 1)}); lunge(att, tgt, 10 * actorScale(att)); knock(tgt, att, 10 * actorScale(tgt)); spawnFx("physicalImpact", {at: tgt, sq: 1.4, mirror: tgt.x > att.x}); } }, 150);
-        if (crit) setTimeout(() => swipe(att, tgt, {...sw, crit: true, flip: sw.kind === "claw" ? -(sw.flip || 1) : sw.flip}), 290);
+        if (crit) setTimeout(() => swipe(att, tgt, {...sw, crit: true, flip: sw.kind === "claw" ? -(sw.flip || 1) : sw.flip}), 290); }
+      if (!shot){
         if (/piercing|slashing/.test(atk.type) && !/ooze/.test(tgt.id)) addBlood(tgt, crit ? 1.3 : .8, false); }
-      { const sk = strikeSheet(atk, sneak, att, tgt, crit); spawnFx(sk.name, {at: tgt, mirror: sk.mirror, sq: shot ? (crit ? 1.8 : 1.3) : crit ? 2.6 : 2}); }
+      if (!crimS){ const sk = strikeSheet(atk, sneak, att, tgt, crit); spawnFx(sk.name, {at: tgt, mirror: sk.mirror, sq: shot ? (crit ? 1.8 : 1.3) : crit ? 2.6 : 2}); }   // a striker's hit (Sneak Attack too) has its own burst instead
       if (atk.flask){ flaskHits(att, tgt, atk, crit, why); return; }
       let dmg = roll(offhand ? offDmg(atk) : atk.dmg, crit), parts = [`${dmg.total} ${atk.type}${offhand ? " (off hand)" : ""}`];
       if (sneak){ const s = roll(atk.sneak, crit); dmg.total += s.total; parts.push(`sneak attack ${s.total}`); }
@@ -9402,6 +9414,7 @@ function approachThen(att, tgt, ft, then){
   // differently. Only for a melee reach, only over a clear straight leg (every point of the hop is floor), and not for
   // a creature that crawls (speed under 20) or is Large.
   const hop = meleeHopLeg(att, walk.pts, ft);
+  if (isStriker(att) && ft <= 5 && walk.pts.length){ att.trailUntil = now + 2500; landDust(att, .6); }   // the rogue & ranger dash: dust off the mark, afterimages behind
   if (hop){ att.path = hop.before; att.onArrive = () => { att.onArrive = null; hopTo(att, hop.land, arrive); }; if (!hop.before.length) att.onArrive(); return; }
   att.path = walk.pts; att.onArrive = arrive;
   if (!att.path.length) arrive();
@@ -9697,6 +9710,91 @@ function bounceIn(a, tgt, then){
 }
 // dust kicked up where the feet land
 function landDust(a, k = 1){ const n = Math.round(10 * k); for (let i = 0; i < n; i++){ const ang = Math.PI + Math.random() * Math.PI, sp = 40 + Math.random() * 90; sparks.push({x: a.x + (Math.random() - .5) * 16, y: a.y, vx: Math.cos(ang) * sp * 1.6, vy: Math.sin(ang) * sp * .35, g: 60, col: i % 3 ? "#b9a88e" : "#8c7c66", t0: now, life: 380 + Math.random() * 260}); } }
+// ---------- THE ROGUE & RANGER STRIKE (Sam, 2026-10-29: "I like it; lets make this the strike package for rogue and
+// rangers", from his crimson reference sheet tried out in the Combat Effects Lab) ----------
+// For a rogue or ranger's melee blade (not a claw or bite), the fighting-game swipe is swapped for: a thick glowing
+// crescent with a white-hot core, a spiked starburst where the blade lands, a puff of blood mist, and on the dash in, dust
+// and dark afterimages left behind. Heroes cut crimson; a rogue or ranger foe cuts shadow violet. Presentation only:
+// the roll, the damage, Sneak Attack and every sound are unchanged. Shots keep their arrows and bolts.
+const isStriker = a => !!(a && a.c && a.c.sheet && /rogue|ranger/i.test(a.c.sheet.cls || ""));
+const CRIM = {crimson: {edge: "#8a0a10", body: "#ff2a1e", mid: "#ff7a5a", core: "#fff1e4", glow: "rgba(255,40,30,.75)"},
+  violet: {edge: "#3a0a6a", body: "#8a3aff", mid: "#c08aff", core: "#f6ecff", glow: "rgba(150,70,255,.75)"}};
+const crimCol = att => CRIM[att && att.kind === "pc" ? "crimson" : "violet"];
+function crimSlash(att, tgt, o = {}){
+  const m = SPR[tgt.id].json, sc = actorScale(tgt), dir = Math.sign(tgt.x - att.x) || 1, bodyR = m.cell[0] * sc * .22, R = Math.max(54, bodyR * 4) * (o.crit ? 1.35 : 1), stab = !!o.stab;
+  sparks.push({crimson: true, a: tgt, x: tgt.x - dir * R * (stab ? .9 : .35), y: tgt.y - m.pivot[1] * sc * .5, R, W: R * (stab ? .3 : .42), dir: dir * (o.flip || 1), rot: stab ? (Math.random() - .5) * .24 : (Math.random() - .5) * .55 - .07 + (o.flip ? .9 : 0),
+    span: Math.PI * (stab ? .5 : 1.25), stab, C: crimCol(att), t0: now, life: o.crit ? 340 : 260, miss: !!o.miss});
+}
+function drawCrimson(s, k){
+  const head = 1 - Math.pow(1 - Math.min(1, k / .42), 3), tail = Math.pow(Math.max(0, (k - .12) / .88), 1.6), fade = k < .6 ? 1 : 1 - (k - .6) / .4; if (head - tail < .01) return;
+  const N = 28, a0 = -s.span / 2 - .25, pts = [];
+  for (let i = 0; i <= N; i++){ const u = tail + (head - tail) * i / N, v = i / N; pts.push([a0 + s.span * u, s.W * Math.pow(Math.sin(Math.PI * Math.min(1, v * 1.08)), .65) * (.35 + .65 * v)]); }
+  const shape = sc => { ctx.beginPath(); for (const [a, w] of pts) ctx.lineTo(Math.cos(a) * (s.R + w * sc * .5), Math.sin(a) * (s.R + w * sc * .5)); for (let i = pts.length - 1; i >= 0; i--){ const [a, w] = pts[i]; ctx.lineTo(Math.cos(a) * (s.R - w * sc * .5), Math.sin(a) * (s.R - w * sc * .5)); } ctx.closePath(); };
+  ctx.save(); ctx.translate(s.x, s.y); ctx.scale(s.dir, s.stab ? .55 : 1); ctx.rotate(s.rot); ctx.globalAlpha *= fade * (s.miss ? .45 : 1);
+  ctx.globalCompositeOperation = "lighter"; ctx.shadowColor = s.C.glow; ctx.shadowBlur = 34; ctx.fillStyle = s.C.edge; shape(1.5); ctx.fill(); ctx.shadowBlur = 0;
+  ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = s.C.body; shape(1); ctx.fill(); ctx.fillStyle = s.C.mid; shape(.6); ctx.fill(); ctx.fillStyle = s.C.core; shape(.26); ctx.fill();
+  ctx.restore();
+}
+function crimStar(att, tgt, crit){
+  const m = SPR[tgt.id].json, sc = actorScale(tgt), n = crit ? 16 : 9, rays = [];
+  for (let i = 0; i < n; i++) rays.push({a: i / n * Math.PI * 2 + (Math.random() - .5) * .5, L: (.45 + Math.random() * .55) * (i % 3 ? 1 : crit ? 1.9 : 1.4), w: .06 + Math.random() * .06});
+  sparks.push({crimStar: true, a: tgt, x: tgt.x, y: tgt.y - m.pivot[1] * sc * .5, R: Math.max(44, m.cell[0] * sc * .22 * 2.6) * (crit ? 2 : 1), rays, C: crimCol(att), t0: now, life: crit ? 300 : 220});
+}
+function drawCrimStar(s, k){
+  const grow = 1 - Math.pow(1 - Math.min(1, k / .3), 3), fade = k < .5 ? 1 : 1 - (k - .5) / .5;
+  ctx.save(); ctx.translate(s.x, s.y); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha *= fade;
+  for (const [col, lk, wk] of [[s.C.body, 1, 1], [s.C.core, .55, .45]]){ ctx.fillStyle = col; for (const r of s.rays){ const L = s.R * r.L * grow * lk, w = s.R * r.w * wk;
+    ctx.beginPath(); ctx.moveTo(Math.cos(r.a + Math.PI / 2) * w, Math.sin(r.a + Math.PI / 2) * w); ctx.lineTo(Math.cos(r.a) * L, Math.sin(r.a) * L); ctx.lineTo(Math.cos(r.a - Math.PI / 2) * w, Math.sin(r.a - Math.PI / 2) * w); ctx.closePath(); ctx.fill(); } }
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, s.R * .5 * grow + .1); g.addColorStop(0, "rgba(255,250,240,.95)"); g.addColorStop(.4, s.C.glow); g.addColorStop(1, "rgba(0,0,0,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, s.R * .5 * grow + .1, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+// THE CRITICAL (Sam's "Critical attack" reference, 2026-10-29): the blade throws a long crimson lance from the hand
+// clean through the target, the burst is twice the size with long spikes, the body flushes red, and the mist is a cloud.
+function crimThrust(att, tgt){
+  const h = handPoint(att), m = SPR[tgt.id].json, sc = actorScale(tgt), ty = tgt.y - m.pivot[1] * sc * .5, dx = tgt.x - h.x, dy = ty - h.y, d = Math.hypot(dx, dy) || 1;
+  sparks.push({crimThrust: true, x: h.x, y: h.y, ex: tgt.x + dx / d * 60 * sc, ey: ty + dy / d * 60 * sc, W: 16 * Math.max(.7, actorScale(att)), C: crimCol(att), t0: now, life: 360});
+  tgt.flash = now + 320; tgt.flashCol = crimCol(att).body;
+}
+function drawCrimThrust(s, k){
+  const head = 1 - Math.pow(1 - Math.min(1, k / .3), 3), tail = Math.max(0, (k - .35) / .65), fade = k < .55 ? 1 : 1 - (k - .55) / .45;
+  const x0 = s.x + (s.ex - s.x) * tail, y0 = s.y + (s.ey - s.y) * tail, x1 = s.x + (s.ex - s.x) * head, y1 = s.y + (s.ey - s.y) * head, L = Math.hypot(x1 - x0, y1 - y0); if (L < 2) return;
+  ctx.save(); ctx.translate(x0, y0); ctx.rotate(Math.atan2(y1 - y0, x1 - x0)); ctx.globalAlpha *= fade;
+  const lance = (w, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(L * .55, -w, L, 0); ctx.quadraticCurveTo(L * .55, w, 0, 0); ctx.fill(); };
+  ctx.globalCompositeOperation = "lighter"; ctx.shadowColor = s.C.glow; ctx.shadowBlur = 30; lance(s.W * 1.6, s.C.edge); ctx.shadowBlur = 0;
+  ctx.globalCompositeOperation = "source-over"; lance(s.W, s.C.body); lance(s.W * .5, s.C.mid); lance(s.W * .2, s.C.core);
+  ctx.restore();
+}
+// blood mist: soft red discs that swell and drift away from the blow (not from bone or ooze)
+const crimPuffs = [];
+function crimMist(att, tgt, n){
+  if (/skeleton|ooze|elemental/.test(tgt.id)) return; const m = SPR[tgt.id].json, sc = actorScale(tgt), dir = Math.sign(tgt.x - att.x) || 1, q = ovPt(tgt.x, tgt.y - m.pivot[1] * sc * .5);
+  for (let i = 0; i < n; i++) crimPuffs.push({x: q.x + (Math.random() - .5) * 14 * sc, y: q.y + (Math.random() - .5) * 20 * sc, vx: dir * (30 + Math.random() * 110) * sc, vy: (Math.random() - .6) * 50 * sc, r0: (4 + Math.random() * 5) * sc, r1: (16 + Math.random() * 18) * sc, t0: now, life: 420 + Math.random() * 340, rgb: [120 + Math.random() * 70 | 0, 8, 12], a: .55});
+}
+function drawCrimPuffs(){
+  for (let i = crimPuffs.length - 1; i >= 0; i--){ const p = crimPuffs[i], k = (now - p.t0) / p.life; if (k >= 1){ crimPuffs.splice(i, 1); continue; }
+    const x = p.x + p.vx * k, y = p.y + p.vy * k;
+    if (p.twinkle){ const al = (1 - k) * (.5 + .5 * Math.sin(now / 45 + p.ph)); ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = `rgba(${p.rgb[0]},${p.rgb[1]},${p.rgb[2]},${al})`; ctx.fillRect(x - p.r0, y - p.r0 / 4, p.r0 * 2, p.r0 / 2); ctx.fillRect(x - p.r0 / 4, y - p.r0, p.r0 / 2, p.r0 * 2); ctx.restore(); continue; }
+    if (p.wisp){ const al = .7 * (k < .15 ? k / .15 : 1 - (k - .15) / .85); ctx.save(); ctx.strokeStyle = `rgba(${p.rgb[0]},${p.rgb[1]},${p.rgb[2]},${al})`; ctx.lineWidth = p.r0 * (1 - k * .6); ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(x, y);
+      ctx.quadraticCurveTo(x + p.vx * .25 + p.bend, y - p.r1 * .3, x + p.vx * .5, y + p.vy * .5 - p.r1 * .2); ctx.stroke(); ctx.restore(); continue; }
+    const r = p.r0 + (p.r1 - p.r0) * (1 - Math.pow(1 - k, 2)), al = p.a * (k < .2 ? k / .2 : 1 - (k - .2) / .8), [R, G, B] = p.rgb;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(${R},${G},${B},${al})`); g.addColorStop(.6, `rgba(${R >> 1},${G >> 1},${B * .6 | 0},${al * .55})`); g.addColorStop(1, `rgba(${R >> 2},${G >> 2},${B >> 2},0)`);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
+}
+// THE SNEAK (Sam's "Sneak effect" reference, 2026-10-29): Sneak Attack lands out of a burst of purple shadow — smoke
+// that rolls out round the attacker and the target, dark wisps that whip past, and pinpoint sparkles in it.
+function crimShadow(at, power = 1){
+  const m = SPR[at.id].json, sc = actorScale(at), q = ovPt(at.x, at.y - m.pivot[1] * sc * .45);
+  for (let i = 0; i < 14 * power; i++){ const ang = Math.random() * Math.PI * 2, sp = (20 + Math.random() * 110) * sc;
+    crimPuffs.push({x: q.x + (Math.random() - .5) * 30 * sc, y: q.y + (Math.random() - .5) * 50 * sc, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * .5 - 25 * sc, r0: (16 + Math.random() * 14) * sc, r1: (46 + Math.random() * 50) * sc, t0: now, life: 900 + Math.random() * 700, rgb: Math.random() < .35 ? [160, 80, 240] : [80, 32, 140], a: .7}); }
+  for (let i = 0; i < 6 * power; i++){ const dir = Math.random() < .5 ? -1 : 1; crimPuffs.push({wisp: true, x: q.x - dir * 40 * sc, y: q.y + (Math.random() - .5) * 60 * sc, vx: dir * (120 + Math.random() * 120) * sc, vy: (Math.random() - .5) * 40 * sc, bend: (Math.random() - .5) * 60 * sc, r0: (3 + Math.random() * 4) * sc, r1: 40 * sc, t0: now, life: 380 + Math.random() * 260, rgb: [36, 12, 64]}); }
+  for (let i = 0; i < 12 * power; i++) crimPuffs.push({twinkle: true, x: q.x + (Math.random() - .5) * 110 * sc, y: q.y + (Math.random() - .5) * 90 * sc, vx: (Math.random() - .5) * 30 * sc, vy: -10 * sc, r0: (2 + Math.random() * 3) * sc, r1: 0, ph: Math.random() * 7, t0: now, life: 500 + Math.random() * 600, rgb: Math.random() < .5 ? [255, 240, 255] : [200, 140, 255]});
+}
+// afterimages: while a striker dashes in, the frame as drawn is left behind every ~34 ms, darkened, fading in 300 ms
+const crimGhosts = [];
+function drawCrimGhosts(){
+  for (let i = crimGhosts.length - 1; i >= 0; i--){ const g = crimGhosts[i], k = (now - g.t0) / 300; if (k >= 1 || g.plate !== cur){ crimGhosts.splice(i, 1); continue; }
+    const im = tintedSheet(g.img, "ghost:" + g.img.src, "#3a1c5a"); ctx.save(); ctx.globalAlpha = (1 - k) * .55; ctx.drawImage(im, g.sx, g.sy, g.cw, g.ch, g.dx, g.dy, g.dw, g.dh); ctx.restore(); }
+}
 // The spider: spring to within reach of its target, then bite.
 function leapTo(f, tgt, then){
   const d = norm({x: tgt.x - f.x, y: tgt.y - f.y}), reach = reachPx(f, tgt, 5), dist = Math.hypot(tgt.x - f.x, tgt.y - f.y) - reach;
@@ -10673,6 +10771,9 @@ function drawCombatFx(){
     const s = sparks[i], k = (now - s.t0) / s.life;
     if (k >= 1){ sparks.splice(i, 1); if (s.then){ const f = s.then; s.then = null; f(); } continue; }
     if (s.swipe){ ovWrapS(s, () => drawSwipe(s, k)); continue; }
+    if (s.crimson){ ovWrapS(s, () => drawCrimson(s, k)); continue; }
+    if (s.crimStar){ ovWrapS(s, () => drawCrimStar(s, k)); continue; }
+    if (s.crimThrust){ drawCrimThrust(s, k); continue; }
     if (s.star){ ovWrapS(s, () => drawStar(s, k)); continue; }
     if (s.orb){ ovWrapS(s, () => drawOrb(s, k)); continue; }
     if (s.strand){ ovWrapS(s, () => drawStrand(s, k)); continue; }
