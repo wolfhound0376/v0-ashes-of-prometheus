@@ -283,7 +283,13 @@ export default function AwakenPage() {
           fv.src = seat.film
           fv.currentTime = 0
           let ok = true
-          try { await fv.play() } catch {
+          // play() can sit pending for ever on a big file that will not buffer (Sam, 2026-10-29: Lynkes "stuck on
+          // awaken"), and an un-raced await ignores Skip. Race it against Skip and a 10 s ceiling; a film that has not
+          // started by then is passed over, never waited on.
+          try {
+            const started = await race(Promise.race([fv.play().then(() => true), sleep(10000).then(() => false)]))
+            if (started === false) ok = false
+          } catch {
             setStep("tap")
             await race(new Promise<void>((res) => window.addEventListener("pointerdown", () => res(), { once: true })))
             guard(); setStep("film")
