@@ -1756,6 +1756,7 @@ function draw(){
   drawCombatGround(); drawStuckGround(); drawSurgeonGround();
   if (mode === "combat"){ drawIcePatches(); drawFxLayer(true); tickIce(); }
   if (mode === "explore" && exploreJump && leader && actors.includes(leader)) drawExploreJumpSquares(leader);
+  drawLootGround();   // the loot ceremony's floor light, under the figures
   const list = actors.concat(vermin, laborProps).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);   // laborProps: Hard Labor's station props
   const cloudQ = mode === "combat" || clouds.length ? cloudPuffs() : [];   // the poison cloud, in depth order among the figures
   let barsAt = gateBarsY();                                       // the bars in front of a guard leaning at them, in depth order
@@ -3569,12 +3570,26 @@ function offerEquip(then){
 // ----- THE LOOT FOUNTAIN -----
 // Sam, 2026-10-27, from the Top Heroes comparison: "a loot fountain on a kill. Items burst out in their rarity colour
 // with a pickup sound." The 5e reading: nothing is revealed for free. A body is still searched and a chest still
-// opened (the carcass rule, 2026-10-13); the FIRST time anyone opens it, what is inside is thrown up out of it in an
-// arc, lands around it, and glows its rarity colour, rarest last, before the card comes up. Re-opening the same
+// opened (the carcass rule, 2026-10-13); the FIRST time anyone opens it, what is inside is thrown up out of it,
+// lands around it, and glows its rarity colour, rarest last, before the card comes up. Re-opening the same
 // container (after taking one thing) shows the card at once, and a pocket (Sleight of Hand) never fountains: a
 // pickpocket's prize does not leap into the air. Nothing here changes what is in a container or who may take it;
 // the card and /api/walk-loot are untouched. Pure presentation.
-// Rarity colours are lib/equipment.ts RARITY_TINT (Diablo's convention), so the map and the board agree.
+//
+// THE LOOT CEREMONY (Sam, 2026-10-28; demo https://claude.ai/artifact/EJsM1GQutNsc5HGnKV3eYP, his "ok, this works"):
+// - colours measured pixel by pixel from his Diablo III / IV loot shots; the light pillars "closer in resemblance and
+//   intensity" to the Diablo III shot: a thin saturated core in a soft sheath, added (not painted) so overlaps burn hot,
+//   brightest at the floor and still bright at the top of the screen, with the floor lit in the tier colour
+// - "more like an explosion, as in Top Heroes": a flash and shockwave, the screen kicks, everything flung out in every
+//   direction at once, spinning; the best piece (very rare and up) hangs back a beat and goes up on its own blast
+// - rare and very rare pillars 25% taller, then rare "taller and more intense" (82% of the screen, a hot core)
+// - every piece sits on a near-black disc with a thin full-strength ring; the ring alone says the tier
+// - coins: a leather purse disc, and a shower of shiny coins that stay on the floor; the purse lands with an 8-bit
+//   coin ding, and coins collected play the uncommon pickup sparkle
+// - sound: ElevenLabs effects (public/sfx/walk/loot_*.mp3); rare is the legendary bell pitched up a third, after
+//   three generated rare stings were turned down
+// Rarity colours in RARITY_COL stay what the inventory and cards use (lib/equipment.ts RARITY_TINT); LOOT_TIER below
+// is the fountain's own light, in the same colour families. Artifact gets the Diablo IV mythic magenta here.
 const RARITY_COL = {common: "#e8e2d0", uncommon: "#4fbf6a", rare: "#4a86d8", very_rare: "#a45fd0", legendary: "#d99a2b", artifact: "#d99a2b"};
 const RARITY_RANK = {common: 0, uncommon: 1, rare: 2, very_rare: 3, legendary: 4, artifact: 5};
 const RARITY_LABEL = {uncommon: "uncommon", rare: "rare", very_rare: "very rare", legendary: "legendary", artifact: "artifact"};
@@ -3583,64 +3598,334 @@ function rarityOf(row){
   const r = String(it.rarity || "common").toLowerCase().replace(/\s+/g, "_");
   return r in RARITY_RANK ? r : "common";
 }
+const LTAU = Math.PI * 2;
+const LOOT_TIER = {
+  common:    {label: "#ddd6c6", ring: "#a8a192"},
+  coins:     {label: "#ece25e", ring: "#c3cd05"},
+  uncommon:  {label: "#66dd50", ring: "#02a401", core: [130, 255, 38],  sheath: [32, 227, 3],   halo: [26, 140, 7],   beam: .16,  wide: .75},
+  rare:      {label: "#82a8ff", ring: "#7898ce", core: [165, 205, 255], sheath: [82, 136, 255], halo: [40, 72, 200],  beam: .82,  wide: 1.1, hot: true},
+  very_rare: {label: "#c88cff", ring: "#a45ff0", core: [205, 128, 255], sheath: [150, 70, 236], halo: [92, 38, 176],  beam: .925, wide: 1},
+  legendary: {label: "#ff8c2e", ring: "#df6300", core: [255, 182, 48],  sheath: [231, 101, 14], halo: [161, 72, 18],  beam: 1,    wide: 1,    hot: true},
+  artifact:  {label: "#f679ee", ring: "#e040d0", core: [255, 142, 250], sheath: [224, 62, 206], halo: [144, 61, 146], beam: 1,    wide: 1.75, hot: true}
+};
+const COIN_METAL = {   // face stops, edge, side, outline, rim
+  gold:     [["#fff6c8", "#ffd65a", "#d39a2a", "#8a5a14"], "#7a4f14", "#9a6a1e", "#5a3608", "rgba(138,90,20,.75)"],
+  electrum: [["#fffbe0", "#f0e08a", "#c4ad48", "#7c6a20"], "#6e5e1c", "#8e7c2a", "#4a3e0e", "rgba(124,106,32,.75)"],
+  silver:   [["#ffffff", "#e4e8ee", "#a9b0ba", "#5d636c"], "#5b6068", "#7a8089", "#3a3e44", "rgba(90,96,104,.75)"],
+  platinum: [["#ffffff", "#eef2f6", "#c6ccd4", "#7a828c"], "#6a7078", "#8a9098", "#44484e", "rgba(110,116,124,.7)"],
+  copper:   [["#ffe2c8", "#e8945a", "#b0582a", "#6a2e10"], "#6a3416", "#8a4a22", "#40200c", "rgba(120,60,24,.75)"]
+};
+const isCoinRow = row => /-coin$/.test(String(row.slug || ""));
+const metalOf = row => (String(row.slug || "").match(/^(copper|silver|electrum|gold|platinum)-coin$/) || [])[1] || "gold";
+const tierOf = row => isCoinRow(row) ? "coins" : rarityOf(row);
+const rankOf = tier => tier === "coins" ? 0 : (RARITY_RANK[tier] || 0);
+const lrgba = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
 const drops = [], fountained = new Set();
-const DROP_STAGGER = 110, DROP_FLIGHT = 620, DROP_REST = 1900;
+const DROP_STAGGER = 36, DROP_HOLD = 420, DROP_FLIGHT = 720, DROP_REST = 1900;
+const lootFx = [], lootMotes = [], lootTrails = [], lootBlasts = [], lootCoins = [];
+let lootFlash = null;
 // the base of a painted thing (a chest's poly): where its contents spill from
 const polyBase = poly => { const xs = poly.map(p => p[0]), ys = poly.map(p => p[1]); return {x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) - 6}; };
+// ---- sound
+function lootCoinDing(){                       // an original 8-bit coin chirp: two square notes, the second an octave up
+  try { const ac = audioCtx(), t = ac.currentTime; if (t - (lootCoinDing.last || 0) < .04) return; lootCoinDing.last = t;
+    const lp = ac.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 7000; lp.connect(ac.destination);
+    [[880, 0, .065, .06], [1760, .065, .42, .055]].forEach(([f, st, dur, gn]) => { const o = ac.createOscillator(), g = ac.createGain(); o.type = "square"; o.frequency.value = f;
+      g.gain.setValueAtTime(gn, t + st); g.gain.setValueAtTime(gn, t + st + Math.min(dur, .08)); g.gain.exponentialRampToValueAtTime(.0001, t + st + dur);
+      o.connect(g); g.connect(lp); o.start(t + st); o.stop(t + st + dur + .02); }); } catch (e) {}
+}
+function lootCoinPick(){                       // coins streaming in: the uncommon pickup sparkle, a hair higher each time
+  const t = performance.now(); if (t - (lootCoinPick.last || 0) < 50) return;
+  lootCoinPick.streak = t - (lootCoinPick.last || 0) < 400 ? (lootCoinPick.streak || 0) + 1 : 0; lootCoinPick.last = t;
+  sfx("walk:loot_pickup", .45, 1.03 + Math.min(.35, lootCoinPick.streak * .025));
+}
+function lootCeremonySound(rank){
+  const k = rank >= 5 ? "artifact" : rank >= 4 ? "legendary" : rank >= 3 ? "epic" : "rare";
+  sfx("walk:loot_" + k, rank >= 4 ? 1 : rank === 2 ? .9 : .85, rank === 1 ? 1.12 : 1);
+  if (rank >= 4) sfx("walk:loot_boom", .7, rank >= 5 ? .82 : 1);
+}
+// ---- art: the pillar (pre-rendered once per tier), the coin, the purse, the disc
+const LOOT_BEAM = {};
+function lootBeam(tier){
+  if (LOOT_BEAM[tier]) return LOOT_BEAM[tier];
+  const t = LOOT_TIER[tier], w = 96, h = 512, c = document.createElement("canvas"); c.width = w; c.height = h;
+  const g = c.getContext("2d"), img = g.createImageData(w, h), d = img.data, coreW = tier === "artifact" ? .12 : .085;
+  for (let y = 0; y < h; y++){
+    const v = 1 - y / (h - 1), up = Math.min(1, Math.max(0, (v - .3) / .7)), sm = up * up * (3 - 2 * up);
+    let fv = 1.08 - .38 * sm + .8 * Math.exp(-v / .03); if (v > .93) fv *= Math.pow(1 - (v - .93) / .07, 1.4);
+    const deep = .4 * sm;
+    for (let x = 0; x < w; x++){
+      const u = (x + .5) / w * 2 - 1, au = Math.abs(u);
+      const a = Math.max(Math.exp(-((u / coreW) ** 2)), Math.exp(-((u / .2) ** 2)) * .92, .22 * Math.exp(-((u / .55) ** 2)));
+      let col;
+      if (au < coreW) col = t.core;
+      else if (au < .26){ const m = (au - coreW) / (.26 - coreW); col = t.core.map((cc, i) => cc + (t.sheath[i] - cc) * m); }
+      else { const m = Math.min(1, (au - .26) / .44); col = t.sheath.map((cc, i) => cc + (t.halo[i] - cc) * m); }
+      col = col.map((cc, i) => cc + (t.halo[i] - cc) * deep * (au < .3 ? .6 : 0));
+      // the walk's figure layer is a transparent canvas over the painted plate, so the light carries its own alpha
+      // (an opaque black ground would black out the plate behind it): alpha = the brightest channel, colour un-premultiplied
+      const o = (y * w + x) * 4, s = a * fv, R = Math.min(255, col[0] * s), G = Math.min(255, col[1] * s), B = Math.min(255, col[2] * s), A = Math.max(R, G, B);
+      d[o] = A ? R * 255 / A : 0; d[o + 1] = A ? G * 255 / A : 0; d[o + 2] = A ? B * 255 / A : 0; d[o + 3] = A;
+    }
+  }
+  g.putImageData(img, 0, 0); return LOOT_BEAM[tier] = c;
+}
+function coinFace(x, y, r, tilt, dir, spin = 0, metal = "gold"){
+  const M = COIN_METAL[metal] || COIN_METAL.gold, w = Math.max(.08, Math.abs(tilt)) * r, th = r * .2 * (1 - Math.abs(tilt) * .55);
+  ctx.save(); ctx.translate(x, y);
+  ctx.beginPath(); ctx.ellipse(dir * th * .9, 0, w, r, 0, 0, LTAU); ctx.fillStyle = M[1]; ctx.fill();
+  ctx.beginPath(); ctx.rect(0, -r, dir * th * .9, r * 2); ctx.fillStyle = M[2]; ctx.fill();
+  let g = ctx.createRadialGradient(-w * .35, -r * .4, r * .05, 0, 0, r * 1.05);
+  g.addColorStop(0, M[0][0]); g.addColorStop(.28, M[0][1]); g.addColorStop(.7, M[0][2]); g.addColorStop(1, M[0][3]);
+  ctx.beginPath(); ctx.ellipse(0, 0, w, r, 0, 0, LTAU); ctx.fillStyle = g; ctx.fill(); ctx.lineWidth = r * .08; ctx.strokeStyle = M[3]; ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(0, 0, w * .76, r * .76, 0, 0, LTAU); ctx.lineWidth = r * .07; ctx.strokeStyle = M[4]; ctx.stroke();
+  if (Math.abs(tilt) > .35){ ctx.save(); ctx.scale(w / r, 1); ctx.beginPath();
+    for (let i = 0; i < 10; i++){ const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * .18 : r * .42; ctx.lineTo(Math.cos(a) * rr, Math.sin(a) * rr); }
+    ctx.closePath(); ctx.fillStyle = M[4]; ctx.fill(); ctx.lineWidth = r * .04; ctx.strokeStyle = "rgba(255,245,210,.55)"; ctx.stroke(); ctx.restore(); }
+  ctx.save(); ctx.beginPath(); ctx.ellipse(0, 0, w, r, 0, 0, LTAU); ctx.clip();
+  const sx = ((spin * .9) % 2 - 1) * r * 1.6; g = ctx.createLinearGradient(sx - r * .5, -r, sx + r * .5, r);
+  g.addColorStop(0, "rgba(255,255,240,0)"); g.addColorStop(.5, "rgba(255,255,240,.75)"); g.addColorStop(1, "rgba(255,255,240,0)");
+  ctx.fillStyle = g; ctx.fillRect(-r * 2, -r * 2, r * 4, r * 4); ctx.restore();
+  ctx.restore();
+}
+function lootGlint(x, y, s, a){ ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = a; ctx.fillStyle = "#fffbe6";
+  ctx.beginPath(); ctx.moveTo(x, y - s); ctx.lineTo(x + s * .16, y - s * .16); ctx.lineTo(x + s, y); ctx.lineTo(x + s * .16, y + s * .16);
+  ctx.lineTo(x, y + s); ctx.lineTo(x - s * .16, y + s * .16); ctx.lineTo(x - s, y); ctx.lineTo(x - s * .16, y - s * .16); ctx.closePath(); ctx.fill(); ctx.restore(); }
+function drawPurse(s, metal){                  // a shaded leather coin purse, gold cord, coins in its mouth and at its foot (unit box, scaled by s)
+  ctx.save(); ctx.scale(s * 1.28, s * 1.28); ctx.translate(0, -.04);
+  ctx.beginPath(); ctx.ellipse(0, .78, .62, .12, 0, 0, LTAU); ctx.fillStyle = "rgba(0,0,0,.45)"; ctx.fill();
+  ctx.beginPath(); ctx.moveTo(-.2, -.36); ctx.bezierCurveTo(-.78, -.18, -.86, .55, -.38, .74); ctx.quadraticCurveTo(0, .84, .38, .74);
+  ctx.bezierCurveTo(.86, .55, .78, -.18, .2, -.36); ctx.closePath();
+  let g = ctx.createRadialGradient(-.26, .02, .05, 0, .25, .9); g.addColorStop(0, "#e2a865"); g.addColorStop(.45, "#a8672f"); g.addColorStop(1, "#4a2710");
+  ctx.fillStyle = g; ctx.fill(); ctx.lineWidth = .06; ctx.strokeStyle = "#26130a"; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-.48, .1); ctx.quadraticCurveTo(-.3, .5, -.12, .7); ctx.moveTo(.42, .05); ctx.quadraticCurveTo(.36, .45, .16, .72);
+  ctx.lineWidth = .045; ctx.strokeStyle = "rgba(40,18,6,.55)"; ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(-.3, -.02, .14, .24, -.35, 0, LTAU); g = ctx.createRadialGradient(-.3, -.06, 0, -.3, -.02, .26);
+  g.addColorStop(0, "rgba(255,236,200,.55)"); g.addColorStop(1, "rgba(255,236,200,0)"); ctx.fillStyle = g; ctx.fill();
+  coinFace(-.12, -.6, .17, .2, 1, 0, metal); coinFace(.12, -.66, .16, .2, -1, 0, metal); coinFace(0, -.56, .17, .22, 1, 0, metal);
+  ctx.beginPath(); ctx.moveTo(-.34, -.5); ctx.quadraticCurveTo(-.4, -.66, -.28, -.7); ctx.lineTo(-.22, -.46); ctx.moveTo(.34, -.5); ctx.quadraticCurveTo(.42, -.66, .3, -.72); ctx.lineTo(.22, -.46);
+  ctx.lineWidth = .1; ctx.strokeStyle = "#8a5226"; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-.34, -.44); ctx.quadraticCurveTo(0, -.3, .34, -.44); ctx.quadraticCurveTo(.3, -.5, .22, -.5); ctx.quadraticCurveTo(0, -.42, -.22, -.5); ctx.quadraticCurveTo(-.3, -.5, -.34, -.44);
+  g = ctx.createLinearGradient(0, -.52, 0, -.3); g.addColorStop(0, "#c48545"); g.addColorStop(1, "#6a3a18"); ctx.fillStyle = g; ctx.fill(); ctx.lineWidth = .045; ctx.strokeStyle = "#26130a"; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(-.26, -.36); ctx.quadraticCurveTo(0, -.24, .26, -.36); ctx.lineWidth = .1; ctx.strokeStyle = "#2a1708"; ctx.stroke(); ctx.lineWidth = .065; ctx.strokeStyle = "#f0c75e"; ctx.stroke();
+  ctx.beginPath(); ctx.arc(.18, -.3, .07, 0, LTAU); ctx.fillStyle = "#ffd86e"; ctx.fill(); ctx.lineWidth = .03; ctx.strokeStyle = "#6a4210"; ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(.18, -.26); ctx.quadraticCurveTo(.26, -.08, .2, .06); ctx.moveTo(.2, -.26); ctx.quadraticCurveTo(.34, -.1, .34, .02); ctx.lineWidth = .045; ctx.strokeStyle = "#e8bd55"; ctx.stroke();
+  coinFace(-.5, .66, .2, .85, 1, 0, metal); coinFace(.54, .6, .19, .7, -1, 0, metal); coinFace(.28, .76, .2, .95, 1, 0, metal);
+  ctx.restore();
+}
+// a piece of loot on its rarity disc: black edge, the full-strength ring (with its glow), a black gap, the item's own icon
+function drawLootDisc(d, x, y, r, hot){
+  const t = LOOT_TIER[d.tier] || LOOT_TIER.common, rank = rankOf(d.tier);
+  ctx.save(); ctx.translate(x, y); if (hot) ctx.scale(1.08, 1.08);
+  ctx.beginPath(); ctx.arc(0, 0, r * 1.08, 0, LTAU); ctx.fillStyle = "#000"; ctx.fill();
+  const lw = r * .13;
+  ctx.shadowColor = t.ring; ctx.shadowBlur = (rank >= 1 || d.tier === "coins" ? r * .55 : 0) + (hot ? r * .5 : 0);
+  ctx.beginPath(); ctx.arc(0, 0, r - lw / 2, 0, LTAU); ctx.strokeStyle = t.ring; ctx.lineWidth = lw; ctx.stroke(); ctx.shadowBlur = 0;
+  const ri = r - lw; ctx.beginPath(); ctx.arc(0, 0, ri, 0, LTAU); ctx.fillStyle = "#000"; ctx.fill();
+  const g = ctx.createRadialGradient(0, -ri * .4, ri * .1, 0, 0, ri); g.addColorStop(0, "#2f1b0c"); g.addColorStop(1, "#0a0503");
+  ctx.beginPath(); ctx.arc(0, 0, ri * .95, 0, LTAU); ctx.fillStyle = g; ctx.fill();
+  if (d.tier === "coins") drawPurse(ri * .74, d.metal);
+  else { const img = itemImg(d.pixel);
+    if (img){ ctx.save(); ctx.beginPath(); ctx.arc(0, 0, ri * .93, 0, LTAU); ctx.clip(); ctx.imageSmoothingEnabled = false; ctx.drawImage(img, -ri * .8, -ri * .8, ri * 1.6, ri * 1.6); ctx.restore(); }
+    else { ctx.beginPath(); ctx.moveTo(-ri * .5, -ri * .1); ctx.lineTo(-ri * .28, -ri * .4); ctx.lineTo(ri * .28, -ri * .4); ctx.lineTo(ri * .5, -ri * .1); ctx.lineTo(0, ri * .5); ctx.closePath(); ctx.fillStyle = "#d5a445"; ctx.fill(); } }
+  ctx.beginPath(); ctx.arc(0, 0, ri * .9, Math.PI * 1.15, Math.PI * 1.85); ctx.strokeStyle = "rgba(255,240,210,.12)"; ctx.lineWidth = ri * .08; ctx.stroke();
+  ctx.restore();
+}
+// ---- the burst
+function lootBlast(x, y, col, size, sqPx){ lootBlasts.push({x, y, col, S: sqPx * size, t0: now}); }
 // Throw the rows up out of `at`. Returns how long the card should wait so the last one has landed (0 = nothing thrown).
 function lootFountain(at, rows, pick){
-  const list = rows.filter(r => !r.missing && r.kind !== "preview-stash" && !r.check).map(r => ({r, rar: rarityOf(r)}))   // a part behind a check stays on the body
-    .sort((a, b) => RARITY_RANK[a.rar] - RARITY_RANK[b.rar]).slice(-8);     // eight at most, and the rarest are kept and land last
+  const list = rows.filter(r => !r.missing && r.kind !== "preview-stash" && !r.check).map(r => ({r, tier: tierOf(r)}))   // a part behind a check stays on the body
+    .sort((a, b) => rankOf(a.tier) - rankOf(b.tier)).slice(-8);     // eight at most, and the rarest are kept and land last
   if (!list.length) return 0;
-  const sqPx = 5 * pxPerFtAt(at.y), n = list.length;
-  list.forEach(({r, rar}, i) => {
-    const ang = -Math.PI / 2 + (n === 1 ? 0 : (i / (n - 1) - .5) * Math.PI * 1.25) + (Math.random() - .5) * .25;   // a fan, mostly sideways
-    const dist = sqPx * (.55 + Math.random() * .45);
-    drops.push({x0: at.x, y0: at.y, x1: at.x + Math.cos(ang) * dist * 1.25, y1: at.y + Math.abs(Math.sin(ang)) * dist * .35 + 4,
-      h: sqPx * (1.1 + RARITY_RANK[rar] * .12 + Math.random() * .25) * (pick ? 1.25 : 1), sq: sqPx * (pick ? .55 : .42), pixel: r.pixel, rar, t0: now + i * DROP_STAGGER, landed: false, last: i === n - 1,
-      pickup: pick ? {id: pick.id, plate: pick.plate, row: r, cool: 0} : null});
-    setTimeout(() => sfx("bank:ui/item_pickup", .35, .9 + Math.random() * .25), i * DROP_STAGGER);
+  const sqPx = 5 * pxPerFtAt(at.y), n = list.length, hold = n > 1 && rankOf(list[n - 1].tier) >= 3, spin0 = Math.random() * LTAU;
+  const tg = list.map((e, i) => {
+    if (n === 1) return {x: at.x + sqPx * .12, y: at.y + sqPx * .45};
+    const ang = spin0 + (i / n) * LTAU + (Math.random() - .5) * .5, dist = sqPx * (.75 + Math.random() * .55) * (hold && i === n - 1 ? .75 : 1);
+    return {x: at.x + Math.cos(ang) * dist * 1.25, y: at.y + sqPx * .15 + Math.sin(ang) * dist * .55}; });
+  for (let it = 0; it < 14; it++) for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++){   // keep the discs from overlapping
+    const dx = tg[b].x - tg[a].x, dy = tg[b].y - tg[a].y, dd = Math.hypot(dx, dy) || .01, min = sqPx * .62;
+    if (dd < min){ const p = (min - dd) / 2, ux = dx / dd, uy = dy / dd; tg[a].x -= ux * p; tg[a].y -= uy * p; tg[b].x += ux * p; tg[b].y += uy * p; } }
+  const land = tg.map(p => nearestWalkable(p.x, p.y) || p);   // nothing lands inside a wall
+  let wait = 0;
+  list.forEach(({r, tier}, i) => {
+    const best = hold && i === n - 1, rk = rankOf(tier);
+    const t0 = now + 70 + (best ? (n - 2) * DROP_STAGGER + DROP_HOLD : i * DROP_STAGGER), flight = DROP_FLIGHT + (best ? 180 : 0);
+    drops.push({x0: at.x, y0: at.y, x1: land[i].x, y1: land[i].y, h: sqPx * (1.3 + rk * .17 + Math.random() * .5) * (best ? 1.45 : 1) * (pick ? 1.15 : 1),
+      sq: sqPx * (pick ? .58 : .46), pixel: r.pixel, name: r.name, qty: r.qty, tier, metal: metalOf(r), rar: tier === "coins" ? "common" : tier,
+      t0, flight, landed: false, last: i === n - 1, best, launched: false, spin: (Math.random() < .5 ? -1 : 1) * (1 + Math.random() * 1.6), id: Math.random() * 1e3,
+      pickup: pick ? {id: pick.id, plate: pick.plate, row: r, cool: 0} : null, plate: pick ? pick.plate : cur});
+    wait = Math.max(wait, t0 - now + flight + 180);
   });
-  return (n - 1) * DROP_STAGGER + DROP_FLIGHT + 180;
+  // the blast: a flash, a shockwave, sparks, a kick of the screen
+  lootBlast(at.x, at.y, [255, 226, 150], 1, sqPx * .5); shake(7);
+  for (let s = 0; s < 56; s++){ const a = Math.random() * LTAU, v = sqPx * (1.4 + Math.random() * 2.8);
+    lootFx.push({x: at.x, y: at.y - sqPx * .15, vx: Math.cos(a) * v, vy: Math.sin(a) * v * .7 - sqPx * 1.2, g: sqPx * 4.5, col: Math.random() < .5 ? [255, 236, 190] : [255, 180, 70], t0: now, life: 450 + Math.random() * 450, r: sqPx * (.012 + Math.random() * .012)}); }
+  sfx("walk:loot_boom", .9); sfx("walk:loot_burst", .75);
+  const coinRow = list.find(e => e.tier === "coins");
+  if (coinRow){ const metal = metalOf(coinRow.r), purse = drops[drops.length - list.length + list.indexOf(coinRow)];
+    for (let c = 0; c < 22; c++) lootCoins.push({x: at.x, y: at.y - sqPx * .2, vx: (Math.random() - .5) * sqPx * 3.4, vy: -(sqPx * 2 + Math.random() * sqPx * 2.6), fy: at.y + sqPx * (.05 + Math.random() * .7),
+      r: sqPx * (.06 + Math.random() * .02), a: Math.random() * LTAU, va: (Math.random() < .5 ? -1 : 1) * (8 + Math.random() * 10), t0: now + 40, metal, drop: purse, sqPx});
+    setTimeout(() => sfx("walk:loot_coins", .7), 260); }
+  return wait;
 }
-function drawDrops(){
-  for (let i = drops.length - 1; i >= 0; i--){
-    const d = drops[i], t = now - d.t0; if (t < 0) continue;
-    if (d.pickup){ if (d.pickup.plate !== cur) continue; if (drawPickup(d, i, t)) continue; }
-    else if (t > DROP_FLIGHT + DROP_REST){ drops.splice(i, 1); continue; }
-    const k = Math.min(1, t / DROP_FLIGHT), e = 1 - (1 - k) * (1 - k);              // ease out across the ground
-    const x = d.x0 + (d.x1 - d.x0) * e, gy = d.y0 + (d.y1 - d.y0) * e, arc = d.h * 4 * k * (1 - k);
-    const rest = Math.max(0, t - DROP_FLIGHT), bounce = k >= 1 && rest < 260 ? Math.sin(rest / 260 * Math.PI) * d.sq * .22 : 0;
-    const fade = d.pickup ? 1 : rest > DROP_REST - 400 ? (DROP_REST - rest) / 400 : 1, col = RARITY_COL[d.rar], rank = RARITY_RANK[d.rar];
-    if (k >= 1 && !d.landed){ d.landed = true;
-      if (d.pickup){ for (let s = 0; s < 5; s++){ const a = Math.random() * Math.PI * 2, v = 30 + Math.random() * 60; sparks.push({x, y: gy - d.sq * .3, vx: Math.cos(a) * v, vy: Math.sin(a) * v * .5 - 50, g: 140, col: "#fff6d8", t0: now, life: 300 + Math.random() * 200}); } sfx("bank:ui/item_pickup", .28, 1.35 + Math.random() * .2); }   // every landing twinkles, commons too
-      if (rank >= 1){ for (let s = 0; s < 6 + rank * 3; s++){ const a = Math.random() * Math.PI * 2, v = 40 + Math.random() * 90; sparks.push({x, y: gy - d.sq * .3, vx: Math.cos(a) * v, vy: Math.sin(a) * v * .5 - 60, g: 160, col, t0: now, life: 380 + Math.random() * 260}); } }
-      if (d.last && rank >= 1) sfx("bank:ui/item_pickup", .75, 1 + rank * .14);  // the best drop rings higher the rarer it is
-    }
-    ctx.save(); ctx.globalAlpha = fade;
-    // shadow on the floor, shrinking as it flies up
-    ctx.globalAlpha = fade * .45 * (1 - arc / (d.h + 1) * .6); ctx.fillStyle = "#000";
-    ctx.beginPath(); ctx.ellipse(x, gy, d.sq * .32, d.sq * .1, 0, 0, Math.PI * 2); ctx.fill();
-    if (rank >= 1 && k >= 1){                                                         // the rarity pool it lands in
-      const pulse = .6 + .4 * Math.sin(now / 260 + d.x1);
-      const g = ctx.createRadialGradient(x, gy, 0, x, gy, d.sq * .9); g.addColorStop(0, col + "aa"); g.addColorStop(1, col + "00");
-      ctx.globalAlpha = fade * pulse; ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(x, gy, d.sq * .9, d.sq * .32, 0, 0, Math.PI * 2); ctx.fill();
-      if (rank >= 2){                                                                   // rare and up: a column of light
-        const bh = d.sq * (2.4 + rank * .5), bg = ctx.createLinearGradient(x, gy, x, gy - bh); bg.addColorStop(0, col + "cc"); bg.addColorStop(1, col + "00");
-        ctx.globalAlpha = fade * (.8 + .2 * pulse); ctx.fillStyle = bg; ctx.fillRect(x - d.sq * .18, gy - bh, d.sq * .36, bh);
-        ctx.globalAlpha = fade * .9; ctx.fillStyle = bg; ctx.fillRect(x - d.sq * .05, gy - bh, d.sq * .1, bh);   // a hot core down the middle
-      }
-    }
-    ctx.globalAlpha = fade;
-    const bob = d.pickup && k >= 1 && rest > 260 ? Math.sin((now + d.x1 * 7) / 420) * d.sq * .06 : 0;
-    const img = itemImg(d.pixel), y = gy - arc - bounce - bob - d.sq * .62;
-    if (d.pickup && k >= 1 && (now + d.x1 * 13) % 1800 < 220){ const g = ((now + d.x1 * 13) % 1800) / 220, r = d.sq * .32 * Math.sin(g * Math.PI);   // a glint every couple of seconds
-      ctx.save(); ctx.globalAlpha = .9; ctx.strokeStyle = "#fffbe8"; ctx.lineWidth = Math.max(1.5, d.sq * .04); ctx.beginPath(); ctx.moveTo(x + d.sq * .22 - r, y + d.sq * .2); ctx.lineTo(x + d.sq * .22 + r, y + d.sq * .2); ctx.moveTo(x + d.sq * .22, y + d.sq * .2 - r); ctx.lineTo(x + d.sq * .22, y + d.sq * .2 + r); ctx.stroke(); ctx.restore(); }
-    if (rank >= 1){ ctx.shadowColor = col; ctx.shadowBlur = 10 + rank * 4; }
-    if (img) ctx.drawImage(img, x - d.sq / 2, y, d.sq, d.sq);
-    else { ctx.fillStyle = col; ctx.fillRect(x - 4, y + d.sq * .4, 8, 8); }
-    ctx.restore();
+function landLoot(d){
+  d.landed = true; d.landT = now;
+  const t = LOOT_TIER[d.tier], rank = rankOf(d.tier), col = t.core || [255, 236, 190];
+  for (let s = 0; s < 5 + rank * 4; s++){ const a = Math.random() * LTAU, v = d.sq * (1.2 + Math.random() * (1.8 + rank * .6));
+    lootFx.push({x: d.x1, y: d.y1 - d.sq * .3, vx: Math.cos(a) * v, vy: Math.sin(a) * v * .5 - d.sq * 2, g: d.sq * 5, col, t0: now, life: 380 + Math.random() * 300, r: d.sq * .025}); }
+  if (d.tier === "coins") lootCoinDing(); else sfx("walk:loot_land", .5, .96 + rank * .05 + Math.random() * .06);
+  if (d.last){ if (rank >= 1) lootCeremonySound(rank); if (rank >= 4) lootFlash = {t0: now, col: t.core};
+    if (rank >= 2){ lootBlast(d.x1, d.y1, t.core, .55 + rank * .1, d.sq); shake(2 + rank); } }
+  else if (rank >= 2) sfx("walk:loot_rare", .32, .9 + Math.random() * .15);
+}
+// ---- the floor light, drawn under the figures (draw() calls this before the actors)
+function drawLootGround(){
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  for (const d of drops){ const t = LOOT_TIER[d.tier]; if (!d.landed || !t.core || (d.plate !== cur) || d.fly) continue;
+    const k = Math.min(1, (now - d.landT) / 260) * lootFade(d), pulse = .9 + .1 * Math.sin(now / 300 + d.id), small = rankOf(d.tier) < 2 ? .6 : 1, S = d.sq / .58;
+    ctx.save(); ctx.translate(d.x1, d.y1); ctx.scale(1, .36);
+    const R = S * 2.4 * small * (t.wide > 1.5 ? 1.2 : 1); let g = ctx.createRadialGradient(0, 0, 0, 0, 0, R);
+    g.addColorStop(0, lrgba(t.sheath, .5 * k * pulse)); g.addColorStop(.5, lrgba(t.halo, .2 * k * pulse)); g.addColorStop(1, lrgba(t.sheath, 0)); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, R, 0, LTAU); ctx.fill();
+    const r = S * .82 * small; g = ctx.createRadialGradient(0, 0, 0, 0, 0, r);
+    g.addColorStop(0, lrgba(t.core, .95 * k)); g.addColorStop(.18, lrgba(t.core, .8 * k)); g.addColorStop(.5, lrgba(t.sheath, .55 * k)); g.addColorStop(1, lrgba(t.sheath, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, r, 0, LTAU); ctx.fill(); ctx.restore();
+    if (d.tier === "artifact"){ ctx.save(); ctx.translate(d.x1, d.y1); ctx.scale(1, .4); ctx.rotate(now / 2600);
+      for (let i = 0; i < 7; i++){ ctx.rotate(LTAU / 7); const gg = ctx.createLinearGradient(0, 0, S * 1.3, 0); gg.addColorStop(0, lrgba(t.core, .16 * k)); gg.addColorStop(1, lrgba(t.core, 0));
+        ctx.fillStyle = gg; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(S * 1.3, -S * .1); ctx.lineTo(S * 1.3, S * .1); ctx.closePath(); ctx.fill(); }
+      ctx.restore(); }
   }
+  ctx.restore();
+}
+// a container's spill fades after it rests; a kill's pickups stay until taken
+const lootFade = d => d.pickup ? 1 : Math.max(0, Math.min(1, (d.flight + DROP_REST - (now - d.t0)) / 400));
+function drawDrops(){
+  const Z = base * view.z, top = -view.ty / Z, dt = Math.min(.05, (now - (drawDrops.last || now)) / 1000); drawDrops.last = now;
+  ctx.save(); ctx.imageSmoothingEnabled = true;
+  const shown = [];
+  for (let i = drops.length - 1; i >= 0; i--){
+    const d = drops[i], t = now - d.t0; if (d.plate !== cur) continue; if (t < 0) continue;
+    if (d.best && !d.launched){ d.launched = true; const c = LOOT_TIER[d.tier].core || [255, 226, 150];
+      lootBlast(d.x0, d.y0, c, .8, d.sq); shake(4); sfx("walk:loot_burst", .45, 1.25);
+      for (let q = 0; q < 24; q++){ const a = Math.random() * LTAU, v = d.sq * (2 + Math.random() * 4); lootFx.push({x: d.x0, y: d.y0 - d.sq * .3, vx: Math.cos(a) * v, vy: Math.sin(a) * v * .6 - d.sq * 2, g: d.sq * 8, col: c, t0: now, life: 500 + Math.random() * 400, r: d.sq * .028}); } }
+    if (d.pickup){ if (drawPickup(d, i, t)) continue; }
+    else if (t > d.flight + DROP_REST){ drops.splice(i, 1); continue; }
+    const k = Math.min(1, t / d.flight), e = 1 - (1 - k) * (1 - k);
+    d.cx = d.x0 + (d.x1 - d.x0) * e; d.cgy = d.y0 + (d.y1 - d.y0) * e; d.carc = d.h * 4 * k * (1 - k);
+    d.crot = d.spin * LTAU * (1 - e); d.csc = Math.min(1, .35 + k * 2.6) + .22 * Math.sin(k * Math.PI);
+    if (rankOf(d.tier) >= 1 && k < 1) lootTrails.push({x: d.cx, y: d.cgy - d.carc - d.sq * .6, col: LOOT_TIER[d.tier].core || [255, 236, 190], t0: now, r: d.sq * .2});
+    if (k >= 1 && !d.landed) landLoot(d);
+    shown.push(d);
+  }
+  // pillars, behind every disc
+  ctx.globalCompositeOperation = "lighter";
+  for (const d of shown){ const t = LOOT_TIER[d.tier]; if (!d.landed || !t.core) continue;
+    const age = now - d.landT, rank = rankOf(d.tier), grow = rank >= 2 ? 1 - Math.pow(1 - Math.min(1, age / 240), 3) : Math.min(1, age / 320), fade = lootFade(d);
+    const full = t.beam >= 1 ? top - 12 : d.y1 - (d.y1 - top + 12) * t.beam, y0 = d.y1 - (d.y1 - full) * grow, bw = d.sq * 1.6 * t.wide, bh = d.y1 - y0 + d.sq * .12, sp = lootBeam(d.tier);
+    const fl = (d.tier === "artifact" ? .88 + .12 * Math.sin(now / 420) : .93 + .07 * Math.sin(now / 95 + d.id)) * fade;
+    ctx.globalAlpha = (d.tier === "rare" ? .4 : .26) * fl; ctx.drawImage(sp, d.x1 - bw * 1.2, y0, bw * 2.4, bh);
+    ctx.globalAlpha = fl; ctx.drawImage(sp, d.x1 - bw / 2, y0, bw, bh);
+    if (t.hot){ ctx.globalAlpha = (rank >= 4 ? .4 : .55) * fl; ctx.drawImage(sp, d.x1 - bw * .22, y0, bw * .44, bh); }
+    if (rank >= 2){ const fh = d.sq * (1.6 + rank * .35) * grow, fw = d.sq * (.9 + rank * .12) * t.wide;
+      ctx.save(); ctx.translate(d.x1, d.y1 - fh * .35); ctx.scale(fw / fh, 1);
+      const fg = ctx.createRadialGradient(0, 0, 0, 0, 0, fh); fg.addColorStop(0, lrgba(t.core, .75 * fl)); fg.addColorStop(.25, lrgba(t.core, .45 * fl)); fg.addColorStop(.55, lrgba(t.sheath, .22 * fl)); fg.addColorStop(1, lrgba(t.sheath, 0));
+      ctx.globalAlpha = 1; ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(0, 0, fh, 0, LTAU); ctx.fill(); ctx.restore();
+      if (age < 420){ const q = age / 420; ctx.globalAlpha = (1 - q) * .9; ctx.strokeStyle = lrgba(t.core, 1); ctx.lineWidth = d.sq * (.08 * (1 - q) + .02);
+        ctx.beginPath(); ctx.ellipse(d.x1, d.y1, d.sq * (.4 + 2.8 * q), d.sq * (.14 + q), 0, 0, LTAU); ctx.stroke(); } }
+    if (rank >= 2 && fade > .5 && now > (d.moteT || 0) && lootMotes.length < 260){ d.moteT = now + 90 + Math.random() * 120;
+      lootMotes.push({x: d.x1 + (Math.random() - .5) * bw * .28, y: d.y1 - Math.random() * d.sq * .6, vy: -(d.sq * 1.6 + Math.random() * d.sq * 2.4), col: t.core, t0: now, life: 1100 + Math.random() * 900, r: d.sq * .02}); }
+  }
+  for (let i = lootTrails.length - 1; i >= 0; i--){ const tr = lootTrails[i], q = (now - tr.t0) / 260; if (q >= 1){ lootTrails.splice(i, 1); continue; }
+    ctx.globalAlpha = 1; ctx.fillStyle = lrgba(tr.col, .35 * (1 - q)); ctx.beginPath(); ctx.arc(tr.x, tr.y, tr.r * (1 - q * .6), 0, LTAU); ctx.fill(); }
+  // the blasts: flash, shockwave on the floor, light streaks, a short column
+  for (let i = lootBlasts.length - 1; i >= 0; i--){ const b = lootBlasts[i], q = (now - b.t0) / 620; if (q >= 1){ lootBlasts.splice(i, 1); continue; }
+    const e = 1 - Math.pow(1 - Math.min(1, q * 1.25), 3), f = 1 - q, S = b.S;
+    let g = ctx.createRadialGradient(b.x, b.y - S * .4, 0, b.x, b.y - S * .4, S * (.8 + 3.4 * e));
+    g.addColorStop(0, lrgba([255, 255, 245], f * f)); g.addColorStop(.25, lrgba(b.col, .85 * f * f)); g.addColorStop(1, lrgba(b.col, 0));
+    ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y - S * .4, S * (.8 + 3.4 * e), 0, LTAU); ctx.fill();
+    ctx.strokeStyle = lrgba(b.col, .9 * f); ctx.lineWidth = Math.max(.5, S * .28 * f); ctx.beginPath(); ctx.ellipse(b.x, b.y, S * (.5 + 6 * e), S * (.2 + 2.5 * e), 0, 0, LTAU); ctx.stroke();
+    ctx.strokeStyle = lrgba([255, 250, 230], .8 * f); ctx.lineWidth = Math.max(.5, S * .06 * f);
+    for (let j = 0; j < 12; j++){ const a = j / 12 * LTAU + b.t0 % 1, r0 = S * (.4 + 1.2 * e), r1 = S * (1 + 4.6 * e);
+      ctx.beginPath(); ctx.moveTo(b.x + Math.cos(a) * r0, b.y - S * .4 + Math.sin(a) * r0 * .7); ctx.lineTo(b.x + Math.cos(a) * r1, b.y - S * .4 + Math.sin(a) * r1 * .7); ctx.stroke(); }
+    const ch = S * 5 * f, cg = ctx.createLinearGradient(0, b.y, 0, b.y - ch); cg.addColorStop(0, lrgba(b.col, .7 * f)); cg.addColorStop(1, lrgba(b.col, 0));
+    ctx.fillStyle = cg; ctx.fillRect(b.x - S * .35, b.y - ch, S * .7, ch); }
+  ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = 1;
+  // shadows, then the discs back to front
+  for (const d of shown){ const lift = d.carc / (d.h + 1), fade = lootFade(d);
+    ctx.globalAlpha = .5 * (1 - lift * .6) * fade; ctx.fillStyle = "#000"; ctx.beginPath(); ctx.ellipse(d.cx, d.cgy, d.sq * .42, d.sq * .13, 0, 0, LTAU); ctx.fill(); }
+  shown.sort((a, b) => a.cgy - b.cgy);
+  for (const d of shown){
+    const rest = d.landed ? now - d.landT : -1, bounce = rest >= 0 && rest < 260 ? Math.sin(rest / 260 * Math.PI) * d.sq * .22 : 0;
+    const bob = d.pickup && rest > 260 ? Math.sin((now + d.x1 * 7) / 420) * d.sq * .05 : 0, y = d.cgy - d.carc - bounce - bob - d.sq * .6;
+    const sqz = rest >= 0 && rest < 180 ? Math.sin(rest / 180 * Math.PI) * .22 : 0, sc = d.landed ? 1 : d.csc;
+    ctx.globalAlpha = lootFade(d);
+    ctx.save(); ctx.translate(d.cx, y); if (!d.landed) ctx.rotate(d.crot); ctx.scale(sc * (1 + sqz), sc * (1 - sqz));
+    drawLootDisc(d, 0, 0, d.sq * .5, ICARD && ICARD.target && ICARD.target.drop === d); ctx.restore();
+    if (d.pickup && rest > 260 && (now + d.x1 * 13) % 1900 < 220){ const g = ((now + d.x1 * 13) % 1900) / 220; lootGlint(d.cx + d.sq * .28, y - d.sq * .2, d.sq * .3 * Math.sin(g * Math.PI), .9); }
+  }
+  ctx.globalAlpha = 1;
+  drawLootCoins(dt);
+  // sparks and motes
+  ctx.globalCompositeOperation = "lighter";
+  for (let i = lootFx.length - 1; i >= 0; i--){ const s = lootFx[i], q = (now - s.t0) / s.life; if (q >= 1){ lootFx.splice(i, 1); continue; }
+    s.vy += s.g * dt; s.x += s.vx * dt; s.y += s.vy * dt; ctx.fillStyle = lrgba(s.col, 1 - q); ctx.beginPath(); ctx.arc(s.x, s.y, s.r * (1 - q * .5), 0, LTAU); ctx.fill(); }
+  for (let i = lootMotes.length - 1; i >= 0; i--){ const m = lootMotes[i], q = (now - m.t0) / m.life; if (q >= 1){ lootMotes.splice(i, 1); continue; }
+    m.y += m.vy * dt; ctx.fillStyle = lrgba(m.col, Math.sin(q * Math.PI) * .9); ctx.beginPath(); ctx.arc(m.x, m.y, m.r, 0, LTAU); ctx.fill(); }
+  if (lootFlash){ const q = (now - lootFlash.t0) / 520; if (q >= 1) lootFlash = null;
+    else { ctx.fillStyle = lrgba(lootFlash.col, .13 * (1 - q)); ctx.fillRect(-view.tx / Z, top, cv.width / dpr / Z, cv.height / dpr / Z); } }
+  ctx.globalCompositeOperation = "source-over";
+  drawLootLabels(shown, Z);
+  ctx.restore();
+}
+// the names over the floor, Diablo IV style, stacked so none overlaps a label or a disc
+function drawLootLabels(shown, Z){
+  const fs = 13.5 / Z, list = shown.filter(d => d.landed && now - d.landT > 120 && lootFade(d) > .05).sort((a, b) => rankOf(b.tier) - rankOf(a.tier));
+  if (!list.length) return;
+  ctx.font = `700 ${fs}px "Alegreya Sans", Georgia, serif`; ctx.textBaseline = "middle"; ctx.textAlign = "left";
+  const discs = list.map(d => ({x: d.x1 - d.sq * .55, y: d.y1 - d.sq * 1.15, w: d.sq * 1.1, h: d.sq * 1.1, own: d})), placed = [];
+  for (const d of list){
+    const text = (d.qty > 1 && d.tier !== "coins" ? d.qty + " " : "") + (d.tier === "coins" && d.qty ? `${d.qty} ${({gold: "gp", silver: "sp", copper: "cp", electrum: "ep", platinum: "pp"})[d.metal]}` : d.name);
+    const w = ctx.measureText(text).width + 14 / Z, h = fs + 9 / Z, box = {x: d.x1 - w / 2, y: d.y1 - d.sq * 1.3 - h, w, h, d, text};
+    for (let n = 0; n < 24; n++){ const hit = placed.concat(discs.filter(q => q.own !== d)).find(p => box.x < p.x + p.w + 3 / Z && box.x + box.w + 3 / Z > p.x && box.y < p.y + p.h + 2 / Z && box.y + box.h + 2 / Z > p.y);
+      if (!hit) break; box.y = hit.y - h - 3 / Z; }
+    placed.push(box);
+  }
+  for (const b of placed){ const t = LOOT_TIER[b.d.tier], a = Math.min(1, (now - b.d.landT - 120) / 160) * lootFade(b.d), anchorY = b.d.y1 - b.d.sq * 1.15;
+    ctx.globalAlpha = a;
+    if (b.y + b.h < anchorY - 6 / Z){ ctx.strokeStyle = t.ring; ctx.globalAlpha = a * .45; ctx.lineWidth = 1 / Z; ctx.beginPath(); ctx.moveTo(b.d.x1, b.y + b.h); ctx.lineTo(b.d.x1, anchorY); ctx.stroke(); ctx.globalAlpha = a; }
+    ctx.fillStyle = "rgba(8,6,4,.74)"; ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(b.x, b.y, b.w, b.h, 3 / Z); else ctx.rect(b.x, b.y, b.w, b.h); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,.07)"; ctx.lineWidth = 1 / Z; ctx.stroke();
+    ctx.fillStyle = "#000"; ctx.fillText(b.text, b.x + 7 / Z, b.y + b.h / 2 + 1.5 / Z); ctx.fillStyle = t.label; ctx.fillText(b.text, b.x + 7 / Z, b.y + b.h / 2 + .5 / Z); }
+  ctx.globalAlpha = 1;
+}
+// the coin shower: shiny coins that bounce, settle face-up and stay; any hero this screen controls who walks into them
+// takes the purse they came from (the same take as the card), and the whole shower streams in
+function lootHeroNear(x, y, r){ return party.filter(a => a.kind === "pc" && !a.down && canControl(a)).sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y)).find(a => Math.hypot(a.x - x, a.y - y) < r); }
+function lootCoinsTo(h, purse){ let j = 0; for (const c of lootCoins) if (c.drop === purse && !c.fly) c.fly = {h, t0: now + 60 + j++ * 55}; }
+function drawLootCoins(dt){
+  for (let i = lootCoins.length - 1; i >= 0; i--){ const c = lootCoins[i], age = now - c.t0; if (age < 0) continue;
+    const live = drops.includes(c.drop);
+    if (c.drop && c.drop.plate !== cur) continue;
+    if (!live && !c.fly){ c.gone = (c.gone || now); if (now - c.gone > 400){ lootCoins.splice(i, 1); continue; } }   // a container's spill fades with it
+    if (c.fly){ if (now < c.fly.t0) continue; if (c.fly.x0 == null){ c.fly.x0 = c.x; c.fly.y0 = c.y; }
+      const h = c.fly.h, m = SPR[h.id] && SPR[h.id].json, hy = h.y - (m ? m.pivot[1] * actorScale(h) * .5 : c.sqPx), k = Math.min(1, (now - c.fly.t0) / 230), e = k * k;
+      c.x = c.fly.x0 + (h.x - c.fly.x0) * e; c.y = c.fly.y0 + (hy - c.fly.y0) * e - Math.sin(k * Math.PI) * c.sqPx * .3; c.a += 20 * dt;
+      if (k >= 1){ lootCoins.splice(i, 1); lootCoinPick();
+        for (let q = 0; q < 4; q++){ const a = Math.random() * LTAU; lootFx.push({x: h.x, y: hy, vx: Math.cos(a) * c.sqPx * .6, vy: Math.sin(a) * c.sqPx * .6 - c.sqPx * .3, g: c.sqPx, col: [255, 226, 120], t0: now, life: 260, r: c.r * .25}); }
+        continue; } }
+    else if (c.rest){ const tgt = Math.round(c.a / Math.PI) * Math.PI; c.a += (tgt - c.a) * Math.min(1, dt * 9); c.x += c.vx * dt; c.vx *= .9;
+      const h = age > 350 && live && c.drop.pickup && !c.drop.fly && c.drop.landed ? lootHeroNear(c.x, c.fy, MAGNET_FT * pxPerFtAt(c.fy)) : null;
+      if (h){ c.drop.fly = {h, t0: now}; } }
+    else { c.vy += c.sqPx * 9 * dt; c.x += c.vx * dt; c.y += c.vy * dt; c.a += c.va * dt;
+      if (c.y > c.fy && c.vy > 0){ c.y = c.fy; c.vy *= -.38; c.vx *= .55; c.va *= .6; if (Math.abs(c.vy) < c.sqPx * .3){ c.vy = 0; c.rest = true; } } }
+    const fade = c.gone ? Math.max(0, 1 - (now - c.gone) / 400) : 1, cs = Math.cos(c.a);
+    if (!c.fly){ ctx.globalAlpha = .5 * fade; ctx.fillStyle = "#000"; ctx.beginPath(); ctx.ellipse(c.x, c.fy, c.r * 1.05, c.r * .34, 0, 0, LTAU); ctx.fill(); }
+    ctx.globalAlpha = fade; coinFace(c.x, c.y - c.r, c.r, cs, Math.sin(c.a) > 0 ? 1 : -1, c.a / LTAU + c.x * .01, c.metal);
+    const tw = (now * .004 + c.x * .07) % 6;
+    if (tw < .5) lootGlint(c.x - c.r * .35, c.y - c.r * 1.55, c.r * 1.3 * Math.sin(tw / .5 * Math.PI), .9 * fade);
+    else if (!c.rest && cs > .97) lootGlint(c.x - c.r * .35, c.y - c.r * 1.55, c.r * .8, .7 * fade);
+  }
+  ctx.globalAlpha = 1;
 }
 // ----- LOOT ON THE KILL -----
 // Sam, 2026-10-27: "When characters die their loot fountains after a roll to decide what they have (if applicable), it's
@@ -3671,24 +3956,24 @@ function dropLoot(t){
 }
 // one pickup's life after it lands: the magnet and the flight to the hero. Returns true when it has been drawn here.
 function drawPickup(d, i, t){
-  if (t < DROP_FLIGHT) return false;                                            // still flying out: the ordinary draw
+  if (t < d.flight) return false;                                               // still flying out: the ordinary draw
   const gx = d.x1, gy = d.y1;
   if (!d.fly && now > d.pickup.cool){
-    const r = MAGNET_FT * pxPerFtAt(gy);
-    const h = party.filter(a => a.kind === "pc" && !a.down && canControl(a)).sort((a, b) => Math.hypot(a.x - gx, a.y - gy) - Math.hypot(b.x - gx, b.y - gy))[0];   // a player's hero, never a companion
-    if (h && Math.hypot(h.x - gx, h.y - gy) < r) d.fly = {h, t0: now};
+    const h = lootHeroNear(gx, gy, MAGNET_FT * pxPerFtAt(gy));                  // a player's hero, never a companion
+    if (h) d.fly = {h, t0: now};
   }
   if (!d.fly) return false;
   const h = d.fly.h, k = Math.min(1, (now - d.fly.t0) / MAGNET_MS), e = k * k;   // eases in, like it is pulled
   const m = SPR[h.id].json, hy = h.y - m.pivot[1] * actorScale(h) * .5;
-  const x = gx + (h.x - gx) * e, y = gy - d.sq * .62 + (hy - gy) * e - Math.sin(k * Math.PI) * d.sq * .8, s = d.sq * (1 - .35 * k);
-  const img = itemImg(d.pixel), col = RARITY_COL[d.rar];
-  ctx.save(); ctx.shadowColor = RARITY_RANK[d.rar] >= 1 ? col : "#fff6d8"; ctx.shadowBlur = 12;
-  if (img) ctx.drawImage(img, x - s / 2, y, s, s); else { ctx.fillStyle = col; ctx.fillRect(x - 4, y, 8, 8); }
-  ctx.restore();
+  const x = gx + (h.x - gx) * e, y = gy - d.sq * .6 + (hy - gy) * e - Math.sin(k * Math.PI) * d.sq * .8, s = 1 - .35 * k;
+  const t2 = LOOT_TIER[d.tier], col = t2.core || [255, 236, 190];
+  lootTrails.push({x, y, col, t0: now, r: d.sq * .2});
+  ctx.save(); ctx.imageSmoothingEnabled = true; ctx.translate(x, y); ctx.scale(s, s); drawLootDisc(d, 0, 0, d.sq * .5, false); ctx.restore();
   if (k >= 1){
     drops.splice(i, 1);
-    burst(h, RARITY_RANK[d.rar] >= 1 ? col : "#fff1c8", 8);
+    burst(h, rankOf(d.tier) >= 1 || d.tier === "coins" ? t2.label : "#fff1c8", 8);
+    if (d.tier === "coins"){ sfx("walk:loot_pickup", .75, 1.03); lootCoinsTo(h, d); }
+    else { sfx("walk:loot_pickup", .75, 1 + rankOf(d.tier) * .03); if (rankOf(d.tier) >= 3) sfx("walk:loot_rare", .3, 1.2); }
     takeLoot(h, d.pickup.id, d.pickup.row).then(ok => { if (ok && pendingEquip && mode === "explore") offerEquip(); });   // a refusal (already taken from the card) just drops it
   }
   return true;
@@ -3778,7 +4063,7 @@ function icardItem(t){
 function icardMapTarget(w){
   for (const d of drops){
     if (!d.pickup || d.pickup.plate !== cur || d.fly || now - d.t0 < DROP_FLIGHT) continue;
-    if (Math.hypot(w.x - d.x1, w.y - (d.y1 - d.sq * .4)) < d.sq * .75) return {kind: "drop", drop: d, slug: d.pickup.row.slug, name: d.pickup.row.name, at: {x: d.x1, y: d.y1 - d.sq * .6}};
+    if (Math.hypot(w.x - d.x1, w.y - (d.y1 - d.sq * .6)) < d.sq * .7) return {kind: "drop", drop: d, slug: d.pickup.row.slug, name: d.pickup.row.name, at: {x: d.x1, y: d.y1 - d.sq * .9}};
   }
   const p = pileAt(w);
   return p ? {kind: "pile", pile: p, slug: p.slug, name: p.name, at: {x: p.x, y: p.y - 10}} : null;
@@ -3920,7 +4205,7 @@ function icardAct(act, t, it){
     const hold = act === "takeEquip"; icardHide(true);
     if (t.kind === "pile"){ const me = leader; walkTo(nearestWalkable(t.pile.x, t.pile.y + 8), async () => { await pickUp(me, t.pile); if (hold) equipItem(me, t.pile.name); }); return; }
     if (t.kind === "drop"){ const d = t.drop, me = leader;
-      walkTo(nearestWalkable(d.x1, d.y1), async () => { const i = drops.indexOf(d); if (i < 0) return; drops.splice(i, 1);
+      walkTo(nearestWalkable(d.x1, d.y1), async () => { const i = drops.indexOf(d); if (i < 0) return; drops.splice(i, 1); lootCoinsTo(me, d);
         if (await takeLoot(me, d.pickup.id, d.pickup.row)){ if (hold) equipItem(me, d.pickup.row.name); else if (pendingEquip && mode === "explore") offerEquip(); } }); return; }
     if (t.kind === "loot" && t.onTake) t.onTake();
     return;
