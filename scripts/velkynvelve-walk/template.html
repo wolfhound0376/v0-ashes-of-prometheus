@@ -1220,8 +1220,8 @@ function loadImg(src){ return new Promise((res, rej) => { const i = new Image();
 async function loadSprites(){
   const jobs = [];
   for (const [id, m] of Object.entries(SPR_META)){
-    SPR[id] = {json: m.json, img: {}};
-    for (const a of m.sheets) jobs.push(loadImg(`${SPRITE_BASE}${id}/${a}.png`).then(i => SPR[id].img[a] = i));
+    const e = SPR[id] = {json: m.json, img: {}};   // its own entry: dressHeroes may swap SPR[id] before the sheets land
+    for (const a of m.sheets) jobs.push(loadImg(`${SPRITE_BASE}${id}/${a}.png`).then(i => e.img[a] = i));
   }
   await Promise.all(jobs);
 }
@@ -1615,6 +1615,26 @@ function hiddenNow(a){
   try { return !!(sneak && mode === "explore" && sneak.rolls.some(x => x.p === a)); } catch (e){ return false; }   // `sneak` is declared further down
 }
 const HIDDEN_SHEET = {walk: "sneak", idle: "crouch"};
+// PRISON GARB (Sam, 2026-10-29: Lynkes's new rogue look everywhere, the old prisoner sprite "for the pen and Hard Labor
+// scenes"). A hero listed here wears the rags sprite (public/sprites/<slug>-prisoner, made by
+// scripts/sprites/new-hero-look.py) while the party is in the slave pen or while they are on a live labor detail, and
+// their own look everywhere else. The SPR entry itself is swapped, so everything that reads SPR[a.id] (scale, pivot,
+// frames, the labor poses that only the rags have) reads one consistent sheet set; the two looks are baked at the same
+// height, so nobody grows or shrinks walking out of the pen.
+const GARB = /*__GARB__*/{};   // slug -> prisoner slug (build_walk.py)
+const OWN_LOOK = {};
+function inPrisonScene(id){
+  if (cur === PEN) return true;
+  try { const a = party.find(p => p.id === id); return !!(a && laborLive() && crewHasHero(a)); } catch (e){ return false; }   // `labor` is declared further down
+}
+function dressHeroes(){
+  for (const id in GARB){
+    const rags = SPR[GARB[id]]; if (!rags || !SPR[id]) continue;
+    if (!OWN_LOOK[id] && SPR[id] !== rags) OWN_LOOK[id] = SPR[id];
+    const want = inPrisonScene(id) ? rags : OWN_LOOK[id];
+    if (want && SPR[id] !== want) SPR[id] = want;
+  }
+}
 function frameOf(a){
   const sp = SPR[a.id];
   if (a.down && a.iced) return {img: a.iced.img, f: a.iced.f, pose: "iced", dead: true};
@@ -1716,6 +1736,7 @@ function fightCam(z, cx, cy, ms, pts){
 }
 
 function draw(){
+  dressHeroes();
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
   const s = base * view.z * dpr;
   const shx = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0, shy = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0; shakeAmt = shakeAmt > .5 ? shakeAmt * .82 : 0;
@@ -9223,7 +9244,7 @@ function tickCreatures(){
 // Jorlan, the prisoners — are placed by story.json, but when the game says one of them has gone out of
 // sight they walk off the plate, and back on when he brings them in again. Nothing here reads the NPC
 // panel's spotlight (is_active); that switches off whenever the party talks to someone else.
-const CAST = new Set(Object.keys(SPR_META));
+const CAST = new Set(Object.keys(SPR_META).filter(id => !Object.values(GARB).includes(id)));   // a hero's prison garb is a costume, not a cast member
 // Generic names the game sometimes uses for one of the story's own cast. Velkynvelve has exactly one kuo-toa —
 // Shuushar the Awakened, a prisoner in the pen (OotA ch.1) — so a "Kuo-toa" on stage is him, never a second fish
 // walking in from the bridge (Sam, 2026-10-14: "I have a Kuo-Toa that just showed up").
