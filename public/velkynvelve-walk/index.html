@@ -5852,7 +5852,7 @@ function drawFxLayer(flat){
   ctx.globalAlpha = 1;
 }
 // which sheets and sounds a spell uses, from its school (lib/spell-school-data) and damage type
-const SCHOOL_OF = {"Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
+const SCHOOL_OF = {"Eldritch Blast": "evocation", "Hex": "enchantment", "Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
   "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment",
   "Stinking Cloud": "conjuration", "Cloudkill": "conjuration", "Fog Cloud": "conjuration", "Poison Spray": "necromancy"};
 const RUNE_OF = {cold: "runeFrost", fire: "runeFire", lightning: "runeStorm", necrotic: "runeNecrotic", psychic: "runePsychic", radiant: "runeRadiant", force: "runeForce", acid: "runeAcid", heal: "runeHealing"};
@@ -6501,6 +6501,16 @@ const SPELLS = {
   // level 5, 3d12 at 11, 4d12 at 17 — he is level 1). 5.2.1 is not ingested in campaign_chunks; checked against the
   // SRD 2024 text at virtualtabletoptools.com/spells/srd-2024_poison-spray. Drawn as a spray (build_walk.py WALK_BY_SPELL).
   "Poison Spray":       {lvl: 0, kind: "attack", range: 30, dmg: "1d12", type: "poison", fx: "#7fd16a"},
+  // THE WARLOCK'S TWO (Sam, 2026-10-29: "Ok, lets wire all of these effects" — Kingasaur has both on his sheet). SRD 5.1:
+  // Eldritch Blast, evocation cantrip, 120 ft, "a beam of crackling energy" — a ranged spell attack, 1d10 force; more beams
+  // at higher levels (two at 5th, three at 11th, four at 17th), each its own attack roll. Agonizing Blast adds the CHA
+  // modifier to each beam's damage; Repelling Blast pushes the target 10 ft away on each hit (invocations, PHB; read from
+  // the sheet's `invocations` when it has one).
+  "Eldritch Blast":     {lvl: 0, kind: "attack", range: 120, dmg: "1d10", type: "force", fx: "#a35bff", beams: true},
+  // Hex (PHB): 1st-level enchantment, bonus action, 90 ft, Concentration up to 1 hour. "Until the spell ends, you deal an
+  // extra 1d6 necrotic damage to the target whenever you hit it with an attack." NOT YET: the chosen ability's
+  // disadvantage on checks, and moving the hex to a new target when this one drops.
+  "Hex":                {lvl: 1, kind: "hex", range: 90, bonus: true, cond: "hexed", type: "necrotic", fx: "#a35bff", conc: 600},
 };
 // ---------- Rage and Wounded Fury: the rules, one copy (lib/rage.mjs, pasted in here by build_walk.py) ----------
 // Rage and Wounded Fury — the rules, pure, in one copy.
@@ -6677,7 +6687,7 @@ function attackRiders(att, atk, thrown) {
 function tintFor(a) { return a.raging || woundedFury(a.hp, a.woundedFury) ? RAGE_TINT : null }
 
 const COND_GLYPH = {surprised: ["!", "#ffd27a", "Surprised: no move and no action on its first turn, no reaction until that turn ends"], poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
-                    shielded: ["◇", "#cfe8ff", "+2 AC"], blessed: ["✚", "#ffe9a8", "Blessed: +1d4 to attack rolls and saving throws"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
+                    shielded: ["◇", "#cfe8ff", "+2 AC"], blessed: ["✚", "#ffe9a8", "Blessed: +1d4 to attack rolls and saving throws"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], hexed: ["⛧", "#c58aff", "Hexed: the warlock's hits deal +1d6 necrotic"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
                     hidden: ["◌", "#b8c7d6", "Hidden: unseen until you attack"], prone: ["▼", "#e0b070", "Prone: melee on it has advantage, ranged disadvantage; half speed to stand"],
                     grappled: ["✊", "#e0b070", "Grappled: speed 0"], helped: ["★", "#ffe08a", "Helped: advantage on the next attack"], disengaged: ["↷", "#cfe8ff", "Disengaged: no opportunity attacks"],
                     sorcery: ["✴", "#ff9bd2", "Innate Sorcery: DC +1, advantage on spell attacks"], readied: ["⌖", "#ffe08a", "Readied: a strike waits for the first foe in reach"], dodging: ["◈", "#cfe8ff", "Dodging"],
@@ -8938,7 +8948,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       { const rd = attackRiders({hp: att.c.hp, woundedFury: att.c.sheet.woundedFury, raging: att.c.rage, level: att.c.sheet.level || 1}, atk, shot === "thrown");
         for (const d of rd.dice){ const s = roll(d.dice, crit); dmg.total += s.total; parts.push(`${d.label} ${s.total}`); }
         for (const f of rd.flat){ dmg.total += f.amount; parts.push(`${f.label} +${f.amount}`); } }
-      damage(tgt, dmg.total, atk.type, crit, att, !!atk.magic);
+      damage(tgt, dmg.total, atk.type, crit, att, !!atk.magic); hexRider(att, tgt, crit);
       if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => bank(`magic/impact_${atk.extra.type}`, .55), 200); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att, true), 260); parts.push(`${e.total} ${atk.extra.type}`); }
       if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20(rageAdvantage(tgt.c.rage, atk.rider.save), tgt, atk.rider.cond) + (tgt.c.sheet.saves[atk.rider.save] || 0) + blessD4(tgt), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att, true); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
@@ -9055,14 +9065,18 @@ function castSpell(caster, tgt, name, done, darts){
       const land = (tg, taken, type) => { if (lab){ sigilEnd(tg, taken); if (taken){ bank(`magic/impact_${type}`, .8); lab.hit(caster, tg, sp); } else { bank("magic/spell_fizzle", .6); if (lab.miss) lab.miss(caster, tg); } return; }
         sigilEnd(tg, taken); if (taken && kit && kit.type === type){ bank(`magic/impact_${type}`, .8); kitImpact(tg, kit, {area: !!sp.area, by: caster}); if (GROUND_OF[type] && !kit.aftermath) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
       if (sp.kind === "attack"){
+      // Eldritch Blast's beams: each its own roll, one after another (the later ones drawn as they go)
+      const beams = sp.beams ? beamsOf(caster) : 1;
+      const one = (bi) => { if (bi && (tgt.down || !cbt)) return; if (bi && lab && lab.again) lab.again(caster, tgt);
         const cv = coverOf(caster, tgt), acVs = targetAc(tgt) + cv.ac;
         const adv = Math.sign(advantageOn(caster, tgt, true) + (caster.c.conds.has("sorcery") ? 1 : 0)), r = d20(adv, caster), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(caster, r + m.hit, acVs), hit = crit || (r !== 1 && r + m.hit + insp >= acVs); afterAttackRoll(caster);
         const why = `${fname(caster)} ${name}: ${r} + ${m.hit} vs AC ${acVs}${coverNote(cv)}`;
         if (r === 1) bank("ui/nat1", .7); if (crit) bank("ui/nat20", .7);
         if (!hit){ miss(tgt); land(tgt, false, sp.type); log(`${why} — miss.`); return; }
-        land(tgt, true, sp.type); knock(tgt, caster, 12 * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
+        if (lab) lab.crit = crit; land(tgt, true, sp.type); knock(tgt, caster, 12 * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
         narrate(caster, `${fname(caster)}'s ${name} ${sp.type === "cold" ? "frosts" : sp.type === "necrotic" ? "withers" : sp.type === "radiant" ? "sears" : "strikes"} ${fname(tgt)}.`);
-        const d = roll(sp.dmg, crit); damage(tgt, d.total, sp.type, crit, caster, true); if (sp.cond) addCond(tgt, sp.cond); if (name === "Ray of Frost") addCond(tgt, "slowed");
+        const d = roll(sp.dmg, crit); if (sp.beams && invoked(caster, "Agonizing Blast")) d.total += Math.max(0, abilMod(caster.c.sheet, "cha")); damage(tgt, d.total, sp.type, crit, caster, true); hexRider(caster, tgt, crit);
+        if (sp.beams && invoked(caster, "Repelling Blast") && !tgt.down) repel(caster, tgt, 10); if (sp.cond) addCond(tgt, sp.cond); if (name === "Ray of Frost") addCond(tgt, "slowed");
         if (sp.type === "cold" && sp.ice){ const patch = freezeGround(tgt.x, tgt.y, m.dc, caster); if (!tgt.down){ tgt.onIce = patch; iceSave(tgt, patch, "struck by the orb"); } }
         // SRD 5.1 Shocking Grasp: "On a hit ... it can't take reactions until the start of its next turn."
         if (name === "Shocking Grasp"){ tgt.c.reactionUsed = true; popText(tgt, "no reactions", "#fff27a", .8); }
@@ -9070,11 +9084,15 @@ function castSpell(caster, tgt, name, done, darts){
         // "the target can't regain HP until effect is gone") — the heals below read c.noHeal; the caster's next turn clears it
         if (name === "Chill Touch" && !tgt.down){ tgt.c.noHeal = caster; popText(tgt, "can't regain HP", "#9be04a", .8); sparks.push({labNoHeal: true, a: tgt, t0: now, life: 600000}); }
         log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d.total} ${sp.type}${sp.note ? " (" + sp.note + ")" : ""}.`);
+      }; for (let bi = 0; bi < beams; bi++) setTimeout(() => one(bi), bi * 340);
       } else if (sp.kind === "heal"){
         const d = tgt.c.noHeal ? 0 : roll(sp.dmg).total + m.mod; if (tgt.c.noHeal) popText(tgt, "can't regain HP", "#9be04a", .9); tgt.c.hp = Math.min(tgt.c.hpMax, tgt.c.hp + d); if (tgt.down && tgt.c.hp > 0){ tgt.down = false; setAnim(tgt, "idle"); }
         sigilEnd(tgt, true); bank("combat/heal", .8); setTimeout(() => bank("magic/heal_tail", .5), 300);
         kitImpact(tgt, KIT.healing);                                   // the shimmer comes down on them, the golden glow stays
         popText(tgt, `+${d}`, "#9ff2c8"); log(`${fname(caster)} ${name}: ${fname(tgt)} regains ${d}.`); renderParty();
+      } else if (sp.kind === "hex"){                                            // Hex: the curse lands, no roll
+        land(tgt, true, "necrotic"); addCond(tgt, "hexed"); tgt.c.hexedBy = caster; concHolds(caster, tgt, "hexed", name);
+        narrate(caster, `${fname(caster)} curses ${fname(tgt)}.`); log(`${fname(caster)} casts <b>Hex</b> on ${fname(tgt)}: +1d6 necrotic on each of ${fname(caster)}'s hits while it lasts (concentration).`); renderParty();
       } else if (sp.kind === "buff"){ sigilEnd(tgt, true); bank(`magic/${family}_release`, .6);
         // Shield of Faith (SRD 5.1: "A shimmering field appears and surrounds a creature of your choice ... granting it
         // a +2 bonus to AC"): Sam's sheet, a ring of gold on the floor that rises into a shimmering egg of light around
@@ -9196,6 +9214,17 @@ function addCond(t, k){ if ((t.c.sheet.immuneCond || []).includes(k)) { popText(
 //  - and it ends when its time is up (`conc` rounds, checked at the start of the caster's turn).
 // When it ends, whatever that spell put on people comes off: the shield (and its dome), Faerie Fire's light,
 // Sleep's slumber. A condition someone got from elsewhere (Guiding Bolt's light) is left alone.
+// THE WARLOCK'S RIDERS (Eldritch Blast, Hex; Sam 2026-10-29)
+const beamsOf = a => { const L = (a.c.sheet && a.c.sheet.level) || 1; return L >= 17 ? 4 : L >= 11 ? 3 : L >= 5 ? 2 : 1; };
+const invoked = (a, name) => ((a.c.sheet && (a.c.sheet.invocations || (SHEETS[a.id] || {}).invocations)) || []).some(x => String(x.name || x).toLowerCase() === name.toLowerCase());
+// Hex: +1d6 necrotic (doubled on a crit) when the hexer hits the hexed
+function hexRider(att, t, crit){ if (!t || t.down || !t.c || !t.c.conds.has("hexed") || t.c.hexedBy !== att) return; const h = roll("1d6", crit);
+  setTimeout(() => { labHexPulse(t); bank("walk:impact-necrotic", .45); damage(t, h.total, "necrotic", false, att, true); log(`Hex: +${h.total} necrotic on ${fname(t)}.`); }, 220); }
+// Repelling Blast: "push the creature up to 10 feet away from you in a straight line" — off a ledge or into the chasm if that is where it goes
+function repel(a, t, ft){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ftPx(t) * ft, y: t.y + d.y * ftPx(t) * ft}; const to = nearestWalkable(raw.x, raw.y), ce = chasmEdge(t, raw);
+  labRef("ebImpExpl", {x: t.x, y: t.y + 8, w: 170, life: 600, grow: [.5, 1.2], fade: [20, 380], anchorY: "bottom", add: false}); shake(8); bank("walk:thunder-clap", .5);
+  if (ce) chasmFall(t, raw, a, ce); else if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a);
+  else { const top = elevAt(t.x, t.y); t.x = to.x; t.y = to.y; const dropFt = top - elevAt(to.x, to.y); popText(t, `pushed ${ft} ft`, "#c58aff", .85); if (dropFt >= LEDGE_FT) setTimeout(() => landFall(t, dropFt), 250); } }
 function startConc(a, spell){
   if (a.c.conc) endConc(a, `casting ${spell} instead`);
   a.c.conc = {spell, endRound: (cbt ? cbt.round : 0) + SPELLS[spell].conc, holds: []};
@@ -9886,6 +9915,7 @@ function labRef(name, o = {}){
   if (e.follow) e.life = e.follow.ms; e.names.forEach(labImg); sparks.push(e); return e;
 }
 function drawLabRef(e){
+  if (e.whileCond && !(e.at && e.at.c && e.at.c.conds.has(e.whileCond) && !e.at.down)){ e.life = Math.min(e.life, now - e.t0 + e.fade[1]); e.whileCond = null; }   // a mark that lasts while the condition does
   const age = now - e.t0, k = Math.min(1, age / e.life); let x, y, rot = e.rot + e.spin * age / 1000;
   if (e.follow){ const f = e.follow, q = Math.min(1, age / f.ms); x = f.x0 + (f.x1 - f.x0) * q; y = f.y0 + (f.y1 - f.y0) * q - Math.sin(q * Math.PI) * (f.arc || 0); rot += Math.atan2(f.y1 - f.y0, f.x1 - f.x0); }
   else { x = e.at ? e.at.x + (e.at.kx || 0) + (e.ox || 0) : e.x; y = e.at ? (e.flat ? e.at.y : labMid(e.at)) + (e.oy || 0) : e.y; }
@@ -10047,12 +10077,31 @@ function labChillHit(caster, t){ const flip = t.x < caster.x;
 function drawLabNoHeal(s){ const t = s.a; if (t.down || !t.c || !t.c.noHeal){ s.life = 0; return; } const im = labImg("ctNoHeal"); if (!im.complete || !im.naturalWidth) return;
   const w = 26, x = t.x + labR(t) * 1.3, y = t.y - labH(t) - 8 + Math.sin(now / 300) * 2; ctx.save(); ctx.globalAlpha = .92; ctx.drawImage(im, x - w / 2, y - w / 2, w, w); ctx.restore(); }
 
+// ---- ELDRITCH BLAST (Kenta's Eldritch Blast sheet: void-orb at the palm, the void beam stretched hand-to-body with black
+// tendrils along it, the shatter impact with debris; a critical is the Empowered Blast — the big impact and a violet flash)
+function labEbDeliver(c, at, then){ const h = labHand(c, at), to = bodyPoint(at), flip = at.x < c.x;
+  labRef("ebOrb", {x: h.x, y: h.y, w: 46, life: 420, grow: [.2, 1], spin: 3, pulse: true, fade: [60, 120], flipX: flip}); lightFlash(h.x, h.y, "#a35bff", 160, 420); bank("walk:impact-necrotic", .3);
+  setTimeout(() => labRef("ebBeam", {follow: {x0: h.x, y0: h.y, x1: to.x, y1: to.y, ms: 300}, stretch: 30, hpx: 44, anchor: "right", boost: .4, add: false, then}), 300); }
+function labEbAgain(c, t){ const h = labHand(c, t), to = bodyPoint(t); labRef("ebBeam", {follow: {x0: h.x, y0: h.y, x1: to.x, y1: to.y, ms: 260}, stretch: 30, hpx: 40, anchor: "right", boost: .4, add: false}); }
+function labEbHit(c, t, crit){ const flip = t.x < c.x;
+  labRef(crit ? "ebImpact" : "ebImpStd", {x: t.x, y: t.y + 8, w: crit ? 240 : 120, life: crit ? 800 : 560, grow: [.5, 1.1], fade: [20, 360], anchorY: "bottom", add: false, flipX: flip});
+  labRef("ebOrb", {at: t, w: crit ? 120 : 70, life: 260, grow: [.6, 1.6], fade: [10, 220]}); lightFlash(t.x, labMid(t), "#a35bff", crit ? 360 : 260, 420);
+  if (crit){ shake(10); t.flash = now + 320; t.flashCol = "#a35bff"; } }
+// ---- HEX (the warlock sheet: the dark vortex opens at the palm, a black orb flies, the vortex settles flat under the cursed
+// one's feet and turns there while they are hexed; each extra d6 flashes a dark dart on them)
+function labHexDeliver(c, at, then){ const h = labHand(c, at), to = bodyPoint(at);
+  labRef("wlVortex", {x: h.x, y: h.y - 6, w: 80, life: 620, spin: -4, grow: [.2, 1], fade: [60, 160], add: false, alpha: .9});
+  setTimeout(() => labRef("wlOrb", {follow: {x0: h.x, y0: h.y, x1: to.x, y1: to.y, ms: 380, arc: 30}, w: 46, spin: 5, add: false, then}), 520); }
+function labHexHit(t){ labRef("wlVortex", {at: t, flat: true, w: labR(t) * 5, life: 3600000, spin: -.8, grow: [.3, 1], fade: [200, 600], add: false, alpha: .85, pulse: true, whileCond: "hexed"}); popText(t, "hexed", "#c58aff", .9); lightFlash(t.x, labMid(t), "#8c3cff", 220, 500); }
+function labHexPulse(t){ labRef("wlBoltDart", {at: t, w: 70, life: 260, fade: [10, 200]}); t.flash = now + 160; t.flashCol = "#8c3cff"; }
 // the looks castSpell uses in place of a kit: `deliver` carries it from the hand, `hit` plays on the body when it lands
 const LAB_LOOK = {
   "Fire Bolt": {deliver: (c, at, cb) => labFireBolt(c, at, cb), hit: (c, t) => labFireBoltHit(t)},
   "Chromatic Orb": {deliver: (c, at, cb, sp) => labOrbFly(c, at, sp.type, cb), hit: (c, t, sp) => labOrbHit(t, sp.type)},
   "Shocking Grasp": {deliver: (c, at, cb) => labTouch(c, at, cb, "shock"), hit: (c, t) => labZap(c, t, 800), miss: (c, t) => { const h = labHand(c, t); sparks.push({labZap: true, by: c, a: {x: h.x + 26 * (Math.sign(t.x - c.x) || 1), y: h.y + 20, id: t.id, kx: 0, down: true, face: t.face}, t0: now, life: 160, at: 0, bolts: []}); }},
   "Chill Touch": {deliver: (c, at, cb) => labTouch(c, at, cb, "chill"), hit: (c, t) => labChillHit(c, t)},
+  "Eldritch Blast": {deliver: (c, at, cb) => labEbDeliver(c, at, cb), again: (c, t) => labEbAgain(c, t), hit(c, t){ labEbHit(c, t, this.crit); }},
+  "Hex": {deliver: (c, at, cb) => labHexDeliver(c, at, cb), hit: (c, t) => labHexHit(t)},
 };
 const labLookOf = name => LAB_LOOK[name] || LAB_LOOK[name.replace(/ \(.*\)$/, "")];
 // the draw switch for this block, called from drawCombatFx; true when it drew the spark
