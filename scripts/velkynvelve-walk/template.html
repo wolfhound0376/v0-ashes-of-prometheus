@@ -7422,7 +7422,16 @@ function combatClick(w){
   { const cv = coverOf(a, t), round = p.atk && !p.throwing && (p.atk.reach || 5) <= 10 && gateWayTo(a, t);
     if (cv.total && !round){ toast(`No line of sight: ${fname(t)} is behind ${cv.why}.`); return; } }
   if (p.atk && p.throwing && feetBetween(a, t) > p.atk.thrown){ toast(`Too far to throw (${p.atk.thrown} ft).`); return; }
-  if (p.atk) attackWith(a, t, p.atk, null, p.offhand); else castSpell(a, t, p.spell);
+  if (p.atk){ attackWith(a, t, p.atk, null, p.offhand); return; }
+  // A SPELL HAS ITS RANGE (found 2026-10-29 while drafting the spell head start: a clicked foe at any distance took Fire
+  // Bolt, Hold Person or Hex). Past the spell's range it is refused; a touch spell (range 5 ft: Shocking Grasp, Chill
+  // Touch, Inflict Wounds, Vampiric Touch) walks the caster into reach first, the way a melee weapon does, if their
+  // movement left can get them there.
+  if (sp && sp.range){ const ft = feetBetween(a, t);
+    if (sp.range <= 5 && ft > 7.5){ const left = a.c.move || 0; if (ft - 5 > left + 2.5){ toast(`Too far to touch: ${Math.round(ft)} ft away, ${Math.round(left)} ft of movement left.`); return; }
+      closeMenu(); approachThen(a, t, 5, () => castSpell(a, t, p.spell)); return; }
+    if (sp.range > 5 && ft > sp.range + 2.5){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft (${fname(t)} is ${Math.round(ft)} ft away).`); return; } }
+  castSpell(a, t, p.spell);
 }
 // Opportunity attacks (SRD): a foe you leave the reach of, without Disengage, gets one swing as
 // its reaction. Leaving by air counts — a long jump is movement, so it provokes exactly as a walk does.
