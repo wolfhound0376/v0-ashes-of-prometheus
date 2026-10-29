@@ -329,8 +329,14 @@ for i in P + list(GARB.values()) + N + F + V + LP:
     # hidden poses (scripts/sprites/add-sneak-poses.py, Sam 2026-10-26): `sneak` walks and `crouch` stands while the
     # hero is hidden; the five main players have them, everyone else (Kingasaur) is filtered out below and walks
     if i in PG: sh += ['sneak', 'crouch']
+    # a bladed swing (scripts/sprites/add-hero-moves.py --dagger, Sam 2026-10-29 for Lynkes): strike() plays `dagger` instead of
+    # `attack` when the weapon is a blade and the sheet exists; a hero without one swings `attack` as before
+    if i in PG: sh.append('dagger')
     if i == 'scott': sh.append('perform')
     if i in ['jorlan', 'drow-guard-male', 'drow-guard-female']: sh += ['attack', 'dodge', 'hurt', 'dead']
+    # the hand crossbow (scripts/sprites/add-shoot-pose.py, Sam 2026-10-29 "go" on the drow audit): strike() plays
+    # `shoot` for a bolt when the sheet exists; a drow without one still stands and takes aim in its idle
+    if i in ['jorlan', 'drow-guard-male', 'drow-guard-female', 'drow-elite-warrior', 'shoor', 'drow-lizard-rider']: sh.append('shoot')
     # the guard at the bars (scripts/sprites/add-lean-pose.py, Sam 2026-10-27): back to the pen, arms crossed
     if i in ['drow-guard-male', 'drow-guard-female']: sh.append('lean')
     j = json.load(open(os.path.join(SPR, i, 'sprite.json')))
@@ -354,7 +360,7 @@ story = json.load(open(os.path.join(HERE, 'story.json')))
 for k, v in story.items():
     if k.startswith('_'): continue
     n = spec[k]; n['npcs'] = n.get('npcs', []) + v.get('npcs', [])
-    for f in ('chains', 'hostileLabel', 'interact', 'arrivals', 'wards', 'spots', 'props', 'loot', 'lift', 'objects', 'rolls', 'watch', 'decor', 'rest'):
+    for f in ('chains', 'hostileLabel', 'interact', 'arrivals', 'wards', 'spots', 'props', 'loot', 'lift', 'objects', 'rolls', 'watch', 'decor', 'rest', 'closeup'):
         if f in v: n[f] = v[f]
     n['cross'] = v.get('cross', {})
 # exits that lead to several places become one strip per destination, split across the way out

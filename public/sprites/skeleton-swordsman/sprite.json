@@ -16,6 +16,16 @@
       "frames": 1,
       "fps": 5,
       "loop": true
+    },
+    "emerge": {
+      "sheet": "emerge.png",
+      "frames": 25,
+      "fps": 12,
+      "loop": false
     }
+  },
+  "arrive": {
+    "anim": "emerge",
+    "sting": "undead-breach"
   }
 }

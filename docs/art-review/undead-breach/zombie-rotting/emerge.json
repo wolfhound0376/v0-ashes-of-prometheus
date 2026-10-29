@@ -1,0 +1,12 @@
+{
+  "sheet": "emerge.png",
+  "cell": [
+    168,
+    168
+  ],
+  "frames": 21,
+  "fps": 12,
+  "loop": false,
+  "on_complete": "idle",
+  "source": "PixelLab pixminimax, generated as a sink-into-ground clip and played in reverse"
+}

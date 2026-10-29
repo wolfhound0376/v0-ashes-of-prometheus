@@ -95,6 +95,12 @@ export interface SpriteManifest {
    * disguise, so the same token is the same body on every seat.
    */
   variants?: string[]
+  /**
+   * How the creature comes on stage when the painted map has no arrival of its own for it: `anim` is
+   * played where it will stand (the Undead Breach "emerge": up out of the floor), `sting` is a cue in
+   * public/sfx/walk played with it. Read by public/velkynvelve-walk (arrivalFor).
+   */
+  arrive?: { anim: SpriteState; sting?: string }
 }
 
 /** A sheet the figure can wear: one per state, plus the disguise. */
