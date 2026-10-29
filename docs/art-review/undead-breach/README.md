@@ -35,7 +35,12 @@ Sam: "Second skeleton is great. Zombie is great." So the zombie clip and the **l
 - Each `sprite.json` carries `"arrive": {"anim": "emerge", "sting": "undead-breach"}`. On a plate with no
   arrival written for that creature, the map (`arrivalFor` in `public/velkynvelve-walk/index.html`) makes it rise
   out of the floor where the plate's default arrival would have walked it to, instead of walking in.
-- A plain "Zombie" or "Skeleton" on stage is drawn by these two sprites (`ART_IS` in the same file).
+- A plain "Zombie" or "Skeleton" on stage is drawn by these two sprites (`ART_IS`), and so is a numbered one
+  ("Zombie 2", "Skeleton C"), which stays its own creature sharing the art (`artFor`).
+- Sam, 2026-10-29: "they need to appear in a variety of places based on how many were cast, not the same place".
+  Everything rising within 4 s is one breach (`riseSpot`): the first comes up near the plate's arrival point, each
+  later one further out on a golden-angle spiral (radius grows with the square root of the count), on a free walkable
+  square, about half a second after the one before. One music cue and one camera push per breach.
 - The music, `public/sfx/walk/undead-breach.mp3`: Sam asked for "brief Dawn of the Dead music", then "real slow and
   quiet like a horror movie". It's an original 11-second cue made in code (not a copy of the film's score): a sub drone
   swelling, a soft heartbeat pulse, a few out-of-tune music-box notes, a glassy semitone rub, ending on a low
