@@ -2060,6 +2060,7 @@ function draw(){
         ctx.drawImage(tint, 0, 0, cw, ch, dx - fx, dy - fyy, dw, dh); ctx.restore();
       } else ctx.drawImage(tint, 0, 0, cw, ch, dx, dy, dw, dh);
     }
+    if (a.faithGlow && !pose && !sp) drawFaithGlow(a, img, f, cw, ch, dx, dy, dw, dh);   // Shield of Faith's radiance
     if (mode === "combat") drawConds(a);
     if (mode === "combat" && a.kind === "pc" && a.down && a.c && a.c.ds) drawDeathSaves(a);
     if (a.id === "stool" && !a.down && !a.body) drawStoolAura(a, dx, dy, dw, dh, "spores");   // the spores drift in front
@@ -7980,7 +7981,8 @@ function castSpell(caster, tgt, name, done, darts){
         // a +2 bonus to AC"): Sam's sheet, a ring of gold on the floor that rises into a shimmering egg of light around
         // them. The dome stays, softened so the sprite shows through, for as long as they are shielded.
         if (name === "Shield of Faith"){ if (tgt.sofFx) tgt.sofFx.then(e => { if (e) e.until = now; });
-          tgt.sofFx = spawnFx("shieldOfFaith", {at: tgt, sq: 1.9, anchor: "base", lift: -.2, tail: 8, holdAlpha: .5, whileCond: "shielded"}); }
+          tgt.sofFx = spawnFx("shieldOfFaith", {at: tgt, sq: 1.9, anchor: "base", lift: -.2, tail: 8, holdAlpha: .5, whileCond: "shielded"});
+          tgt.faithGlow = {t0: now + 700}; setTimeout(() => { if (!tgt.down){ bank("magic/impact_radiant", .45); for (let i = 0; i < 18; i++){ const B = bodyPoint(tgt); sparks.push({x: B.x + labRnd(-1, 1) * labR(tgt), y: B.y + labRnd(-1.2, 1) * labR(tgt), vx: labRnd(-30, 30), vy: -labRnd(30, 100), g: -10, col: i % 2 ? "#fff3c0" : "#ffd25a", t0: now, life: labRnd(500, 1000)}); } } }, 700); }
         else spawnFx("sigilAbjurationRing", {at: tgt, sq: 2.2, flat: true, spin: .8});
         const more = sp.targets > 1 ? standing(heroes()).filter(h => h !== tgt && feetBetween(caster, h) <= sp.range).sort((x, y) => Math.hypot(x.x - tgt.x, x.y - tgt.y) - Math.hypot(y.x - tgt.x, y.y - tgt.y)).slice(0, sp.targets - 1) : [];
         for (const t of [tgt, ...more]){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); if (t !== tgt) spawnFx("sigilAbjurationRing", {at: t, sq: 2.2, flat: true, spin: .8}); }
@@ -8009,7 +8011,7 @@ function castSpell(caster, tgt, name, done, darts){
           if (sp.area && !marks.length) markTarget(t);
           if (name === "Sleep"){ if (!ok){ bank("spells/control-slumber-fall", .5); t.sheepT0 = now; } else bank("magic/spell_fizzle", .4); if (i === targets.length - 1) sigilEnd(t, !ok); }
           else if (sp.cond === "lit"){ if (!ok) spawnFx("pxGlow", {at: t, sq: 1.6, anchor: "mid", loop: true, until: now + 3000, alpha: .8}); land(t, !ok, "radiant"); }
-          else if (name === "Vicious Mockery"){ land(t, !ok, "psychic"); if (!ok) spawnFx("pxSwirl", {at: t, sq: .7, anchor: "top", lift: .45, loop: true, until: now + 2600, alpha: .95}); if (!ok) for (let g = 0; g < 3; g++) spawnFx("pxGhost", {at: t, sq: .34, anchor: "top", lift: .3, loop: true, until: now + 2600, alpha: .95, orbit: {r: .55, ry: .14, speed: 2.6, phase: g * Math.PI * 2 / 3}}); }
+          else if (name === "Vicious Mockery"){ land(t, !ok, "psychic"); if (!ok) labMockery(t); }
           else { if (name === "Toll the Dead" && ok) spawnFx("tollBell", {at: t, sq: 2, anchor: "base", lift: -.15, alpha: .8}); land(t, !ok, sp.type || "psychic"); }   // the bell tolls either way (SRD: "fills the air around it"); the damage is only on a failed save
           if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); const n = ok ? (sp.lvl ? Math.floor(d.total / 2) : 0) : d.total; if (n) damage(t, n, sp.type, false, caster, true); else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
           if (sp.cond && !ok){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); if (sp.cond === "restrained") t.c.webDc = dc; if (sp.cond === "paralyzed"){ t.c.heldDc = dc; t.path = []; } if (sp.cond === "asleep"){ t.c.sleptDc = m.dc; t.sleepT0 = now; t.path = []; } }
@@ -8927,14 +8929,96 @@ function drawGeoOrb(x, y, R, col, spin){
   ctx.restore();
 }
 // the orb held at the hand while the element is picked; shaped like spawnFx's promise so heldOrb/orbDrop keep working
-function labOrbHold(a, type){ const h = handPoint(a), s = {labGeo: true, a, x: h.x, y: h.y - 4, R: 18, col: LAB_ORB_COL[type] || "#9fdcff", t0: now, life: 600000, until: now + 600000}; sparks.push(s); return Promise.resolve(s); }
-function labOrbFly(caster, at, type, then){ const h = handPoint(caster), to = bodyPoint(at), col = LAB_ORB_COL[type] || "#9fdcff";
-  sparks.push({labGeo: true, x: h.x, y: h.y - 4, fly: {x0: h.x, y0: h.y - 4, x1: to.x, y1: to.y, ms: 320}, R: 18, col, t0: now, life: 320, then}); }
+// THE CHROMATIC ORB DECIDING (Sam, 2026-10-29, with his 12-frame rainbow sheet and his six element orbs: "when chromatic orb
+// is cast while the caster is deciding what type it floats in front of him spinning rapidly changing color in this
+// fashion until it launches and right before it becomes the color of the type of damage it is to become", then "should
+// float, spin fast, and change colors before it settles on the color that is chosen"). While the element is being
+// picked, Sam's rainbow orb floats in front of the caster, spinning fast, its whole hue sweeping round. At the throw it
+// flicks through his six element orbs like a roulette wheel, slowing, lands on the chosen one with a white flash, and
+// only then flies — his painted element orb, turning, trailing sparks in its colour.
+const CORB_ORDER = ["fire", "cold", "acid", "lightning", "thunder", "poison"];
+const corbCell = document.createElement("canvas");
+function labChromaAt(a){ const dir = labLeft(a) ? -1 : 1; return {x: a.x + (a.kx || 0) + dir * Math.max(26, labR(a) * 1.7), y: labMid(a) - 10}; }
+function labOrbHold(a, type){ const prev = a.chromaHeld, cont = prev && now - prev.until < 80;   // re-held as the choice moves: the same orb keeps floating
+  const s = {labChroma: true, a, t0: cont ? prev.t0 : now, life: 600000, until: now + 600000}; a.chromaHeld = s; sparks.push(s); return Promise.resolve(s); }
+function labOrbFly(caster, at, type, then){ const p = labChromaAt(caster), to = bodyPoint(at), col = LAB_ORB_COL[type] || "#9fdcff";
+  sparks.push({labChroma: true, a: caster, type, col, spin0: caster.chromaHeld ? caster.chromaHeld.t0 : now, t0: now, roul: 560, fly: {x0: p.x, y0: p.y, x1: to.x, y1: to.y, ms: 320}, life: 560 + 320, then}); }
+function drawLabChroma(s){ if (s.until && now > s.until){ s.life = 0; return; }
+  const spin = labImg("corbSpin"), age = now - s.t0, a = s.a, R0 = Math.max(16, labR(a) * .95); let x, y, R, show = null, flash = 0;
+  if (!s.fly){ const p = labChromaAt(a); x = p.x + Math.sin(age / 260) * 4; y = p.y + Math.sin(age / 170) * 5; R = R0 * (.35 + .65 * (1 - Math.pow(1 - Math.min(1, age / 300), 3))); }
+  else { const fin = CORB_ORDER.indexOf(s.type), land = s.roul - 120;
+    if (age < s.roul){ const p = labChromaAt(a); x = p.x + Math.sin(age / 260) * 4; y = p.y + Math.sin(age / 170) * 5; R = R0;
+      if (age >= land) show = s.type; else { const u = age / land, ticks = Math.floor(9 * (1 - Math.pow(1 - u, 2.2))); show = CORB_ORDER[((fin - (9 - ticks)) % 6 + 60) % 6]; }
+      flash = Math.max(0, 1 - Math.abs(age - land) / 110);
+      if (show !== s.lastShow){ s.lastShow = show; if (age < land) sfx("walk:loot_pickup", .12, 1.4 + CORB_ORDER.indexOf(show) * .08); }
+      if (!s.landed && age >= land){ s.landed = true; for (let i = 0; i < 12; i++){ const g = Math.random() * Math.PI * 2, sp = labRnd(60, 140); sparks.push({x, y, vx: Math.cos(g) * sp, vy: Math.sin(g) * sp, g: 0, col: s.col, t0: now, life: labRnd(250, 450)}); } } }
+    else { const q = Math.min(1, (age - s.roul) / s.fly.ms); x = s.fly.x0 + (s.fly.x1 - s.fly.x0) * q; y = s.fly.y0 + (s.fly.y1 - s.fly.y0) * q - Math.sin(q * Math.PI) * 12; R = R0 * .9; show = s.type;
+      if (Math.random() < .7) sparks.push({x: x + labRnd(-R, R) * .4, y: y + labRnd(-R, R) * .4, vx: labRnd(-30, 30), vy: labRnd(-30, 30), g: 0, col: s.col, t0: now, life: labRnd(250, 500)}); } }
+  const rot = (now - (s.spin0 || s.t0)) / 45, hue = (now / 1.1) % 360, [cr, cg, cb] = hexRgb(show ? (LAB_ORB_COL[show] || "#ffffff") : "#ffffff");
+  ctx.save(); ctx.translate(x, y); ctx.globalCompositeOperation = "lighter";
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 1.8); g.addColorStop(0, show ? `rgba(${cr},${cg},${cb},.4)` : `hsla(${hue | 0},100%,60%,.4)`); g.addColorStop(1, "rgba(0,0,0,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, R * 1.8, 0, 7); ctx.fill();
+  ctx.globalCompositeOperation = "source-over";
+  const spinOk = spin.complete && spin.naturalWidth, fw = spinOk ? spin.naturalWidth / 12 : 0, f = Math.floor((now - (s.spin0 || s.t0)) / 35) % 12;
+  if (!show && spinOk){ corbCell.width = fw; corbCell.height = spin.naturalHeight; const c2 = corbCell.getContext("2d"); c2.clearRect(0, 0, fw, corbCell.height); c2.drawImage(spin, f * fw, 0, fw, corbCell.height, 0, 0, fw, corbCell.height);
+    c2.globalCompositeOperation = "color"; c2.fillStyle = `hsla(${hue | 0},100%,55%,.6)`; c2.fillRect(0, 0, fw, corbCell.height); c2.globalCompositeOperation = "destination-in"; c2.drawImage(spin, f * fw, 0, fw, corbCell.height, 0, 0, fw, corbCell.height); c2.globalCompositeOperation = "source-over";
+    ctx.save(); ctx.rotate(rot); ctx.drawImage(corbCell, -R * 1.25, -R * 1.25, R * 2.5, R * 2.5); ctx.restore(); }
+  else if (show){ const im = labImg("corb_" + show); if (im.complete && im.naturalWidth){ ctx.save(); ctx.rotate(rot); ctx.drawImage(im, -R * 1.15, -R * 1.15, R * 2.3, R * 2.3); ctx.restore(); }
+    if (s.fly && age < s.roul - 120 && spinOk){ ctx.save(); ctx.rotate(-rot * .7); ctx.globalAlpha = .45; ctx.drawImage(spin, f * fw, 0, fw, spin.naturalHeight, -R * 1.3, -R * 1.3, R * 2.6, R * 2.6); ctx.restore(); } }
+  if (flash > 0){ ctx.globalCompositeOperation = "lighter"; const fg = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 2.2); fg.addColorStop(0, `rgba(255,255,255,${flash})`); fg.addColorStop(1, "rgba(255,255,255,0)"); ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(0, 0, R * 2.2, 0, 7); ctx.fill(); }
+  ctx.restore();
+  if (s.fly && !s.done && age >= s.roul + s.fly.ms - 17){ s.done = true; const fn = s.then; s.then = null; if (fn) fn(); } }
 function drawLabGeo(s){ if (s.until && now > s.until){ s.life = 0; return; } let x = s.x, y = s.y, R = s.R * (1 + Math.sin(now / 60) * .05);
   if (s.a && !s.fly){ const h = handPoint(s.a); x = h.x; y = h.y - 4; R *= Math.min(1, (now - s.t0) / 400) * .7 + .3; }
   if (s.fly){ const q = Math.min(1, (now - s.t0) / s.fly.ms); x = s.fly.x0 + (s.fly.x1 - s.fly.x0) * q; y = s.fly.y0 + (s.fly.y1 - s.fly.y0) * q;
     if (Math.random() < .7) sparks.push({x: x + labRnd(-R, R) * .4, y: y + labRnd(-R, R) * .4, vx: labRnd(-30, 30), vy: labRnd(-30, 30), g: 0, col: s.col, t0: now, life: labRnd(250, 500)}); }
   drawGeoOrb(x, y, R, s.col, (now - s.t0) / 260); }
+// FIRE BOLT BURNS (Sam, 2026-10-29: "Firebolt doesn't cause you to bleed or your head to fall off but it does cause you to
+// burn with some mild effervescent flames"): a hit that leaves them standing sets small flames licking up the body for
+// a moment, sparks fizzing off them; they die down on their own (presentation only — no ongoing damage).
+function labBoltFlames(t){ const ms = 1700, licks = []; for (let i = 0; i < 6; i++) licks.push({ox: labRnd(-.55, .55), oy: labRnd(-.9, .7), h: labRnd(.5, .85), ph: labRnd(0, 7), sp: labRnd(.012, .02), d: labRnd(0, 500)});
+  sparks.push({labBurn: true, a: t, licks, t0: now, life: ms}); bank("magic/impact_fire", .25); }
+function drawLabBurn(s){ const t = s.a; if (t.down){ s.life = 0; return; } const age = now - s.t0, R = labR(t), cx = t.x + (t.kx || 0), cy = labMid(t);
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  for (const L of s.licks){ const a2 = age - L.d; if (a2 < 0) continue; const k = a2 / (s.life - L.d), al = Math.max(0, k < .1 ? k / .1 : 1 - (k - .1) / .9) * .8, fl = .75 + .35 * Math.sin(now * L.sp + L.ph) + labRnd(-.08, .08), h = L.h * R * fl, w = h * .42, x = cx + L.ox * R + Math.sin(now / 90 + L.ph) * 2, y = cy + L.oy * R;
+    const g = ctx.createLinearGradient(x, y, x, y - h); g.addColorStop(0, `rgba(255,120,30,${al})`); g.addColorStop(.5, `rgba(255,190,70,${al * .8})`); g.addColorStop(1, "rgba(255,240,180,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(x - w, y); ctx.quadraticCurveTo(x - w * .9, y - h * .55, x + Math.sin(now / 70 + L.ph) * w * .5, y - h); ctx.quadraticCurveTo(x + w * .9, y - h * .55, x + w, y); ctx.quadraticCurveTo(x, y + w * .5, x - w, y); ctx.fill();
+    ctx.fillStyle = `rgba(255,250,220,${al * .7})`; ctx.beginPath(); ctx.ellipse(x, y - h * .18, w * .35, h * .22, 0, 0, 7); ctx.fill(); }
+  ctx.restore();
+  if (now - (s.ember || 0) > 180){ s.ember = now; for (let j = 0; j < 2; j++) sparks.push({x: cx + labRnd(-.5, .5) * R, y: cy + labRnd(-.6, .5) * R, vx: labRnd(-15, 15), vy: -labRnd(50, 120), g: -20, col: Math.random() < .5 ? "#ffb347" : "#fff1b8", t0: now, life: labRnd(250, 600)}); } }
+// VICIOUS MOCKERY'S DANCING GHOSTS (Sam, 2026-10-29: "a combination of this and the dancing ghosts that I had but just in the
+// same color and transparency as mage hand", then "should have some haunting taunting laughs that are subtle but can be
+// heard"): the three laughing ghosts circle the head — bobbing, swaying, squashing, turning the way they move — re-lit in
+// the Mage Hand's spectral blue and drawn the way the hand is (a see-through body and a soft flickering glow), a faint
+// blue swirl turning over the head, to quiet ghostly laughter.
+let mockGhostC = null; const MOCK_GHOST = new Image(); MOCK_GHOST.src = VFX_BASE + "pxGhost.webp";
+function mockGhostImg(){ if (mockGhostC) return mockGhostC; const im = MOCK_GHOST; if (!im || !im.complete || !im.naturalWidth) return null; const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight; const g = c.getContext("2d"); g.drawImage(im, 0, 0);
+  const d = g.getImageData(0, 0, c.width, c.height), px = d.data; for (let i = 0; i < px.length; i += 4){ if (!px[i + 3]) continue; const l = Math.min(1, .35 + 1.1 * (px[i] * .3 + px[i + 1] * .59 + px[i + 2] * .11) / 255); px[i] = Math.min(255, 73 * l + 40 * l * l); px[i + 1] = 206 * l; px[i + 2] = 255 * Math.min(1, l + .1); } g.putImageData(d, 0, 0); return mockGhostC = c; }
+function labMockery(t){ sparks.push({labMock: true, a: t, ph: labRnd(0, 6.28), t0: now, life: 2600}); bank("walk:mock-laugh", .45); }
+function drawLabMock(s){ const t = s.a, im = mockGhostImg(); if (!im || t.down) return; const age = now - s.t0, fade = Math.min(1, age / 250) * Math.min(1, (s.life - age) / 400), R = labR(t), cx = t.x + (t.kx || 0), cy = t.y - labH(t) * .86 - R * .2, gh = Math.max(30, R * 1.9), gw = gh * im.width / im.height;
+  ctx.save(); ctx.imageSmoothingEnabled = false; ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = .35 * fade; ctx.strokeStyle = "rgba(110,215,255,.9)"; ctx.lineWidth = 2;
+  for (let r = 0; r < 2; r++){ ctx.beginPath(); ctx.ellipse(cx, cy - R * .3, R * (.55 + r * .25), R * (.15 + r * .06), 0, age / 220 + r, age / 220 + r + 4.2); ctx.stroke(); }
+  for (let g = 0; g < 3; g++){ const a = age / 1000 * 2.6 + s.ph + g * 2.094, x = cx + Math.cos(a) * R * 1.9, y = cy + Math.sin(a) * R * .38 - Math.abs(Math.sin(age / 140 + g * 1.7)) * R * .35, back = Math.sin(a) < 0, sq = 1 + Math.sin(age / 110 + g) * .12, dir = -Math.sin(a) >= 0 ? 1 : -1;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(Math.sin(age / 160 + g * 2) * .28); ctx.scale(dir * (back ? .82 : 1) / sq, (back ? .82 : 1) * sq);
+    ctx.globalCompositeOperation = "source-over"; ctx.globalAlpha = .92 * .62 * fade * (back ? .7 : 1); ctx.drawImage(im, -gw / 2, -gh / 2, gw, gh);
+    ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = (.22 + .08 * Math.sin(now / 90)) * fade; ctx.drawImage(im, -gw / 2, -gh / 2, gw, gh); ctx.restore(); }
+  ctx.restore(); }
+// SHIELD OF FAITH'S RADIANCE (Sam, 2026-10-29: "shield of faith start out like my animation and then causes your armor to
+// glow brightly in radiant colors, eyes glow radiant, both then fade to soft subtle radiant hue"). After his ring and
+// egg of light, the shielded body is re-lit in gold by its own brightness — metal, buckles and highlights blaze, dark
+// folds stay dim — and the eyes burn; after about a second both settle to a soft radiant hue that holds while shielded.
+const RADIANT_C = {};
+function radiantSheet(img){ const k = img.src; if (RADIANT_C[k]) return RADIANT_C[k]; if (!img.complete || !img.naturalWidth) return null;
+  const c = document.createElement("canvas"); c.width = img.naturalWidth; c.height = img.naturalHeight; const g = c.getContext("2d"); g.drawImage(img, 0, 0); const d = g.getImageData(0, 0, c.width, c.height), px = d.data;
+  for (let i = 0; i < px.length; i += 4){ if (!px[i + 3]) continue; const l = Math.pow((px[i] * .3 + px[i + 1] * .59 + px[i + 2] * .11) / 255, .8), m = Math.max(px[i], px[i + 1], px[i + 2]) - Math.min(px[i], px[i + 1], px[i + 2]), metal = 1 - Math.min(1, m / 120);
+    const v = Math.min(1, .12 + l * (.55 + metal * .75)); px[i] = 255 * v; px[i + 1] = 214 * v; px[i + 2] = 120 * v; } g.putImageData(d, 0, 0); return RADIANT_C[k] = c; }
+function faithLevel(a){ const g = a.faithGlow; if (!g || now < g.t0 || a.down) return 0; const on = a.c && a.c.conds.has("shielded"); if (!on && !g.off) g.off = now; if (on) g.off = 0;
+  const out = g.off ? Math.max(0, 1 - (now - g.off) / 600) : 1; if (!out){ a.faithGlow = null; return 0; } const age = now - g.t0, k = age < 250 ? age / 250 : age < 1300 ? 1 : .22 + .78 * Math.exp(-(age - 1300) / 700); return k * out * (.92 + .08 * Math.sin(now / 260)); }
+function drawFaithGlow(a, img, f, cw, ch, dx, dy, dw, dh){ const fl = faithLevel(a); if (fl <= 0) return; const rs = radiantSheet(img); if (!rs) return; const a0 = ctx.globalAlpha;
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = Math.min(1, fl) * .62 * a.alpha; ctx.shadowColor = "#ffd76a"; ctx.shadowBlur = 4 + 14 * fl; ctx.drawImage(rs, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh); ctx.restore();
+  const left = labLeft(a) ? -1 : 1, R = labR(a), ey = a.y - labH(a) * .79 + (a.ky || 0), ex = a.x + (a.kx || 0) + left * R * .12;   // the eyes burn
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; for (const o of [-.5, .5]){ const x = ex + o * R * .26, rr = Math.max(2, R * .11) * (.8 + .5 * fl), gg = ctx.createRadialGradient(x, ey, 0, x, ey, rr * 2.6);
+    gg.addColorStop(0, `rgba(255,255,235,${Math.min(1, .5 + fl)})`); gg.addColorStop(.3, `rgba(255,215,110,${.85 * fl + .15})`); gg.addColorStop(1, "rgba(255,180,60,0)"); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(x, ey, rr * 2.6, 0, 7); ctx.fill(); }
+  ctx.restore(); ctx.globalAlpha = a0; }
 function labOrbHit(t, type){ const col = LAB_ORB_COL[type] || "#9fdcff", n = 10, rays = []; for (let j = 0; j < n; j++) rays.push({a: j / n * Math.PI * 2 + labRnd(-.2, .2), L: labRnd(.4, 1) * (j % 2 ? .6 : 1.3), w: labRnd(.04, .08)});
   sparks.push({crimStar: true, a: t, x: t.x, y: labMid(t), R: 70, rays, C: {body: col, core: "#ffffff", glow: col}, t0: now, life: 260});
   for (let i = 0; i < 18; i++){ const ang = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 160; sparks.push({x: t.x, y: labMid(t), vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * .6 - 60, col, t0: now, life: 420 + Math.random() * 300}); }
@@ -8980,7 +9064,9 @@ function labTouch(caster, at, then, kind){
 function drawLabCharge(s){ const h = labHand(s.a, s.t); if (now - s.at > 50){ s.at = now; s.arcs = []; for (let i = 0; i < 4; i++){ const ang = labRnd(0, Math.PI * 2), L = labRnd(10, 26); s.arcs.push(labZigzag(0, 0, Math.cos(ang) * L, Math.sin(ang) * L, 4, 4)); } }
   ctx.save(); ctx.globalCompositeOperation = "lighter"; const g = ctx.createRadialGradient(h.x, h.y, 0, h.x, h.y, 26); g.addColorStop(0, "rgba(200,235,255,.9)"); g.addColorStop(.4, "rgba(60,140,255,.45)"); g.addColorStop(1, "rgba(30,80,255,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(h.x, h.y, 26, 0, Math.PI * 2); ctx.fill(); ctx.restore();
   for (const a of s.arcs) labBolt(a.map(q => [h.x + q[0], h.y + q[1]]), 2); }
-function labZap(caster, t, ms){ sparks.push({labZap: true, by: caster, a: t, t0: now, life: ms, at: 0, bolts: []}); bank("walk:electrocute", .8); t.zappedAt = now; lightFlash(t.x, labMid(t), "#5ab4ff", 260, ms); }
+// the cartoon electrocution (Sam, 2026-10-29: "the electrocution sound should sound longer and sound like the cartoony
+// bzzzzzzzzzbzzzzzzz"): a 3 s recorded buzz — a long bzzz, a stutter, a second bzzz — and the zap held 2 s to match
+function labZap(caster, t, ms){ sparks.push({labZap: true, by: caster, a: t, t0: now, life: ms, at: 0, bolts: []}); bank("walk:electrocute-cartoon", .9); t.zappedAt = now; lightFlash(t.x, labMid(t), "#5ab4ff", 260, ms); }
 function drawLabZap(s){ const t = s.a, c = s.by, h = labHand(c, t), cx = t.x + (t.kx || 0), cy = labMid(t), R = labR(t), H = labH(t);
   if (now - s.at > 45){ s.at = now; s.on = !s.on; s.bolts = [labZigzag(h.x, h.y, cx + labRnd(-R * .4, R * .4), cy + labRnd(-R * .6, R * .6), 7, 9)];
     for (let i = 0; i < 5; i++){ const x0 = cx + labRnd(-R * 1.3, R * 1.3), y0 = t.y - labRnd(0, H * .95); s.bolts.push(labZigzag(x0, y0, x0 + labRnd(-R * 1.4, R * 1.4), y0 + labRnd(-R, R), 5, 6)); }
@@ -9216,9 +9302,9 @@ function drawLabIllusion(s, k){ const o = s.o, sq = ftPx(s) * 5, al = (k < .03 ?
   ctx.restore(); }
 // the looks castSpell uses in place of a kit: `deliver` carries it from the hand, `hit` plays on the body when it lands
 const LAB_LOOK = {
-  "Fire Bolt": {deliver: (c, at, cb) => labFireBolt(c, at, cb), hit: (c, t) => labFireBoltHit(t)},
+  "Fire Bolt": {deliver: (c, at, cb) => labFireBolt(c, at, cb), hit: (c, t) => { labFireBoltHit(t); setTimeout(() => { if (t.c && t.c.hp > 0 && !t.down) labBoltFlames(t); }, 90); }},
   "Chromatic Orb": {deliver: (c, at, cb, sp) => labOrbFly(c, at, sp.type, cb), hit: (c, t, sp) => labOrbHit(t, sp.type)},
-  "Shocking Grasp": {deliver: (c, at, cb) => labTouch(c, at, cb, "shock"), hit: (c, t) => labZap(c, t, 800), miss: (c, t) => { const h = labHand(c, t); sparks.push({labZap: true, by: c, a: {x: h.x + 26 * (Math.sign(t.x - c.x) || 1), y: h.y + 20, id: t.id, kx: 0, down: true, face: t.face}, t0: now, life: 160, at: 0, bolts: []}); }},
+  "Shocking Grasp": {deliver: (c, at, cb) => labTouch(c, at, cb, "shock"), hit: (c, t) => labZap(c, t, 2000), miss: (c, t) => { const h = labHand(c, t); sparks.push({labZap: true, by: c, a: {x: h.x + 26 * (Math.sign(t.x - c.x) || 1), y: h.y + 20, id: t.id, kx: 0, down: true, face: t.face}, t0: now, life: 160, at: 0, bolts: []}); }},
   "Chill Touch": {deliver: (c, at, cb) => labTouch(c, at, cb, "chill"), hit: (c, t) => labChillHit(c, t)},
   "Eldritch Blast": {deliver: (c, at, cb) => labEbDeliver(c, at, cb), again: (c, t) => labEbAgain(c, t), hit(c, t){ labEbHit(c, t, this.crit); }},
   "Hex": {deliver: (c, at, cb) => labHexDeliver(c, at, cb), hit: (c, t) => labHexHit(t)},
@@ -9235,6 +9321,9 @@ function drawLabSpark(s, k){
   if (s.labRef){ ovWrapS(s.at ? s : {x: s.follow ? s.follow.x1 : s.x, y: s.follow ? s.follow.y1 : s.y}, () => { if (s.fire === "bolt") drawLabFireLine(s); drawLabRef(s); }); return true; }
   if (s.labFlame){ drawLabFlame(s, k); return true; }
   if (s.labGeo){ drawLabGeo(s); return true; }
+  if (s.labChroma){ drawLabChroma(s); return true; }
+  if (s.labBurn){ ovWrapS(s, () => drawLabBurn(s)); return true; }
+  if (s.labMock){ ovWrapS(s, () => drawLabMock(s)); return true; }
   if (s.labSphere){ ovWrapS(s, () => drawLabSphere(s)); return true; }
   if (s.labCharge){ drawLabCharge(s); return true; }
   if (s.labZap){ ovWrapS(s, () => drawLabZap(s)); return true; }
