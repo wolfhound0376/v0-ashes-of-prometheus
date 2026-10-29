@@ -3250,7 +3250,7 @@ function openChest(pr){
 function needle(pr){
   const st = propState(pr); if (st.disarmed) return false;
   st.disarmed = true;   // it fires once
-  bank("creature/player_hurt", .6); leader.flash = now + 220; leader.flashCol = "#8fd48f"; popText(leader, "needle!", "#8fd48f", 1.1);
+  bank(voxFor(leader, "hit") || "creature/player_hurt", .5); leader.flash = now + 220; leader.flashCol = "#8fd48f"; popText(leader, "needle!", "#8fd48f", 1.1);
   log(`A needle snaps out of the lock into ${fname(leader)}'s hand: 1 piercing, and a <b>DC 13 Constitution</b> save against drow poison (fail: poisoned for an hour; fail by 5 or more: unconscious too).`);
   if (APP) handOff(`${fname(leader)} sets off the poison needle in the lock of ${pr.name}: 1 piercing damage and a DC 13 Constitution saving throw against drow poison (poisoned for 1 hour on a failure; unconscious too if it fails by 5 or more). Roll it.`);
   return true;
@@ -5534,6 +5534,21 @@ const CREATURE_SFX = {quaggoth: {call: "creature/creature_quaggoth_roar", hurt: 
   "drow-guard-male": {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}, "drow-guard-female": {hurt: "creature/hurt_humanoid_female", death: "creature/death_humanoid_female"},
   "drow-elite-warrior": {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}, shoor: {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"},
   ilvara: {hurt: "creature/hurt_humanoid_female", death: "creature/death_humanoid_female"}, asha: {hurt: "creature/hurt_humanoid_female", death: "creature/death_humanoid_female"}, jorlan: {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}};
+// HUMANOID VOICES (Sam, 2026-10-28, from the Pen Strip Pilot: "death sound needs to be improved. It shouldn't be a growl";
+// "I think the scream is too loud ... more subdued"; then "death sounds are great"). Every humanoid, hero or not, now
+// makes a human sound: a short pained grunt on a blow that leaves them standing, a gasp that fades on the one that
+// drops them. Men and women have their own takes (ElevenLabs sound effects, cut and levelled, public/sfx/walk/vox-*),
+// several of each, and the same take never plays twice in a row, so a long fight does not sound canned. Beasts,
+// oozes, the myconid and the kuo-toa keep their own calls (CREATURE_SFX); the kuo-toa "should sound nothing like a human".
+const VOX_HUMAN = /^(kenta|samson|scott|freia|lynkes|gandalf|kingasaur|eldeth|sarith|buppido|jimjar|topsy|turvy|ront|ilvara|asha|jorlan|shoor|liana)$|^drow-/;
+const VOX_FEMALE = /^(freia|eldeth|ilvara|asha|topsy|liana)$|female/;
+const VOX_TAKES = {"hit-m": 3, "hit-f": 4, "die-m": 2, "die-f": 4}, voxLast = {};
+function voxFor(t, kind){   // kind "hit" | "die" -> "walk:vox-hit-f2", or null for anything that is not a person
+  if (!t || !(t.kind === "pc" || VOX_HUMAN.test(t.id || ""))) return null;
+  const k = kind + "-" + (VOX_FEMALE.test(t.id || "") ? "f" : "m"), n = VOX_TAKES[k]; let i;
+  do { i = 1 + Math.floor(Math.random() * n); } while (n > 1 && i === voxLast[k]);
+  voxLast[k] = i; return `walk:vox-${k}${i}`;
+}
 const CLASS_TURN = {Sorcerer: "ui/turn_sorcerer", Cleric: "ui/turn_cleric", Bard: "ui/turn_bard", Rogue: "ui/turn_rogue"};
 // Opponents speak (Sam, 2026-10-13: "Opponents can speak and taunt"). Placeholder lines, not book text: the
 // drow in their saved voices (the game renders them live through /api/npc-tts; the preview plays the banked
@@ -8295,7 +8310,7 @@ function leapMove(a, g, to, done){
         const short = nearestWalkable(g.takeoff.x + dx / dd * back, g.takeoff.y + dy / dd * back);
         log(`${fname(a)} tries to vault ${fname(o)} and fails: Acrobatics ${k.r} + ${k.mod} = ${k.total} vs DC ${g.check.dc} — down in a heap in front of them.`);
         narrate(a, `${fname(a)} clips ${fname(o)} and goes sprawling.`); popText(a, "sprawl", "#ff9b8f");
-        arcTo(a, short, () => { addCond(a, "prone"); bank("creature/hurt_humanoid_male", .3); renderParty(); combatBusy = false; done && done(); }); return;
+        arcTo(a, short, () => { addCond(a, "prone"); bank(voxFor(a, "hit") || "creature/hurt_humanoid_male", .4); renderParty(); combatBusy = false; done && done(); }); return;
       }
     }
     arcTo(a, g.land, g.drop ? () => { landFall(a, g.dropFt); if (a.down){ combatBusy = false; done && done(); return; } standIfAble(a); land(); } : land); };
@@ -8882,7 +8897,7 @@ function damage(t, n, type, crit, from, magical = false){
     t.c.fury = true; popText(t, "WOUNDED FURY", RAGE_TINT, 1.2); burst(t, RAGE_TINT, 20);
     log(`<b>${fname(t)}</b> — Wounded Fury: advantage on his attacks and +2d6 on every claw that lands.`); narrate(t, `${fname(t)} roars, bleeding, and keeps coming.`);
   }
-  if (t.c.hp > 0){ const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_hurt" : cs && cs.hurt ? cs.hurt : "creature/hurt_beast", .7); }
+  if (t.c.hp > 0){ const cs = CREATURE_SFX[t.id], v = voxFor(t, "hit"); if (v) setTimeout(() => bank(v, .5), 70); else bank(t.kind === "pc" ? "creature/player_hurt" : cs && cs.hurt ? cs.hurt : "creature/hurt_beast", .7); }
   if (t.c.hp <= 0){ t.killType = type; fall(t); } else if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); else if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle"));
   if (cbt && cbt.boss === t){ if (t.c.hp <= 0) bossFalls(t); else bossHit(t, hpBefore); }   // BOSS FIGHTS: the bar follows every blow; half is the Bloodied beat
   renderParty();
@@ -8952,7 +8967,7 @@ function fall(t){
   t.down = true; t.path = []; t.c.conds.clear();
   if (cbt && !/ooze|ghost/.test(t.id) && !t.iced && !t.withered) setTimeout(() => addBlood(t, t.boss ? 1.3 : 1, true), 500);   // the pool spreads under the body
   if (t.kind === "pc") t.c.ds = {s: 0, f: 0, stable: !!t.ko, dead: false};
-  const cs = CREATURE_SFX[t.id]; bank(t.kind === "pc" ? "creature/player_downed" : cs && cs.death ? cs.death : "creature/death_beast", .85);
+  const cs = CREATURE_SFX[t.id], vd = voxFor(t, "die"); if (vd) setTimeout(() => bank(vd, t.kind === "pc" ? .48 : .55), 110); else bank(cs && cs.death ? cs.death : "creature/death_beast", .85);
   // Sam, 2026-10-14: "I don't see any carcasses of the creatures that are dead." Only creatures with a death
   // sheet used to stay; the rest (spider, quaggoth, Jorlan) faded out. Now everything that dies stays down:
   // its own death sheet when it has one, otherwise it is drawn dead (frameOf: belly-up or on its side).
@@ -12198,7 +12213,7 @@ async function laborVolleys(h){
     if (j.failed){ toast(j.error || "The game did not answer."); break; }
     for (const b of j.volley.bolts){
       if (d) faceTo(d, h); bank("combat/crossbow_release", .75);
-      if (d) fireShot(d, h, "bolt", b.hit, () => { if (b.hit){ popText(h, String(b.dmg), b.crit ? "#ffd166" : "#ff6b5e", b.crit ? 1.4 : 1); burst(h, "#ff5040", 10); bank("creature/player_hurt", .7); h.flash = now + 180; addBlood(h, .7); } else popText(h, "miss", "#c9c4b8", .9); }, null);
+      if (d) fireShot(d, h, "bolt", b.hit, () => { if (b.hit){ popText(h, String(b.dmg), b.crit ? "#ffd166" : "#ff6b5e", b.crit ? 1.4 : 1); burst(h, "#ff5040", 10); bank(voxFor(h, "hit") || "creature/player_hurt", .5); h.flash = now + 180; addBlood(h, .7); } else popText(h, "miss", "#c9c4b8", .9); }, null);
       await wait(450);
     }
     await wait(700);
@@ -12209,7 +12224,7 @@ async function laborVolleys(h){
   surgeon = null;
   if (!down) return;
   h.down = true; h.path = []; if (SPR[h.id].img.dead) playOnce(h, "dead", () => {});
-  bank("creature/player_downed", .85); popText(h, "down", "#ff6b5e", 1.3); hitstop(160); shake(9); addBlood(h, 1.3, true);
+  bank(voxFor(h, "die") || "creature/player_downed", .48); popText(h, "down", "#ff6b5e", 1.3); hitstop(160); shake(9); addBlood(h, 1.3, true);
   log(`<b>${esc(fname(h))}</b> drops, stable at 0. The quaggoth slings them over a shoulder. The detail is over.`);
   quaggothSays(LINES.quaggoth[0]);
   laborDowned = {slug: h.id, surgeon: first}; state.laborDowned = laborDowned; saveWalk();
@@ -12948,7 +12963,7 @@ async function drowSurgeonBegins(guards, pc = leader){
 function surgeonKill(v){
   surgeon.victim = v; v.slain = true; v.talk = false; v.stroll = null;
   popText(v, "slain", "#ffd166", 1.3); burst(v, "#a8140e", 16); hitstop(140); shake(8);
-  bank("creature/death_beast", .7); addBlood(v, 1.1, true);
+  bank(voxFor(v, "die") || "creature/death_beast", .55); addBlood(v, 1.1, true);
   castLeaves(v, true, true);                                // down where they stand: the out-of-fight death
   log(`A bolt takes <b>${esc(fname(v))}</b> in the chest. ${esc(fname(v))} is dead.`);
   const near = npcs.filter(n => n !== v && PEN_NPCS.some(d => d.id === n.id) && !n.down && !n.offStage && n.alpha > .5).sort((a, b) => Math.hypot(a.x - v.x, a.y - v.y) - Math.hypot(b.x - v.x, b.y - v.y))[0];
@@ -12966,7 +12981,7 @@ async function surgeonVolleyTick(){
   bolts.forEach((b, i) => setTimeout(() => {
     const gd = guards[i % guards.length]; faceTo(gd, pc); bank("combat/crossbow_release", .75);
     fireShot(gd, pc, "bolt", b.hit, () => {
-      if (b.hit){ popText(pc, String(b.dmg), b.crit ? "#ffd166" : "#ff6b5e", b.crit ? 1.4 : 1); burst(pc, "#ff5040", 10); bank("creature/player_hurt", .7); pc.flash = now + 180; addBlood(pc, .7);
+      if (b.hit){ popText(pc, String(b.dmg), b.crit ? "#ffd166" : "#ff6b5e", b.crit ? 1.4 : 1); burst(pc, "#ff5040", 10); bank(voxFor(pc, "hit") || "creature/player_hurt", .5); pc.flash = now + 180; addBlood(pc, .7);
         if (b.poisoned) setTimeout(() => popText(pc, b.ko ? "poison · out cold" : "poisoned", "#7be36b", .95), 260); }
       else popText(pc, "miss", "#c9c4b8", .9);
     }, null);
@@ -13012,7 +13027,7 @@ async function surgeonRecover(){
 function surgeonDown(vol){
   const S = surgeon, pc = S.pc; S.stage = "down"; mode = "dialog"; tip.hidden = true;
   pc.down = true; pc.surgeonDown = true; pc.path = []; if (SPR[pc.id].img.dead) playOnce(pc, "dead", () => {});
-  bank("creature/player_downed", .85); popText(pc, vol.ko && vol.hpAfter > 0 ? "out cold" : "down", "#ff6b5e", 1.3); hitstop(160); shake(9);
+  bank(voxFor(pc, "die") || "creature/player_downed", .48); popText(pc, vol.ko && vol.hpAfter > 0 ? "out cold" : "down", "#ff6b5e", 1.3); hitstop(160); shake(9);
   addBlood(pc, 1.3, true);
   log(vol.ko && vol.hpAfter > 0
     ? `<b>${esc(fname(pc))}</b> drops by the gate — <b>out cold from the drow poison</b>, ${vol.hpAfter} HP left. The shooting stops.`
@@ -13403,7 +13418,7 @@ async function surrenderBegins(w){
       g.path = []; faceTo(g, h); faceTo(h, g); if (hasSheet(g, "attack")) playOnce(g, "attack", () => setAnim(g, "idle"));
       await wait(260);
     }
-    bank("combat/unarmed_hit", .8); bank("creature/player_hurt", .55);
+    bank("combat/unarmed_hit", .8); bank(voxFor(h, "hit") || "creature/player_hurt", .5);
     if (b.dmg > 0){
       popText(h, String(b.dmg), "#ff6b5e", 1.05); burst(h, "#ff5040", 8); h.flash = now + 180; addBlood(h, .5); hitstop(90); shake(4);
       if (hasSheet(h, "hurt")) playOnce(h, "hurt", () => setAnim(h, hasSheet(h, "crouch") ? "crouch" : "idle"));
@@ -13471,7 +13486,7 @@ async function surrenderAtTheGate(S){
       if (hasSheet(behind, "attack")) playOnce(behind, "attack", () => setAnim(behind, "idle"));
       setTimeout(() => {
         bank("movement/web_tear", .35);
-        setTimeout(() => bank(/^(eldeth)$/.test(v.id) ? "creature/death_humanoid_female" : "creature/death_humanoid_male", .9), 180);
+        setTimeout(() => bank(voxFor(v, "die") || "walk:vox-die-m1", .55), 180);   // a prisoner thrown into the chasm: the human cry, not the growl
         fallAway(v, -70, 300, SURRENDER_RULES.throwMs, () => {
           v.alpha = 0; const i = actors.indexOf(v); if (i >= 0) actors.splice(i, 1); const k = npcs.indexOf(v); if (k >= 0) npcs.splice(k, 1);
           (state.slain ||= []).includes(v.id) || state.slain.push(v.id);
@@ -15582,7 +15597,7 @@ function deathMark(a, success, n, why){
 }
 function dieNow(a, why){
   const ds = a.c.ds || (a.c.ds = {s: 0, f: 0}); ds.dead = true; ds.f = 3; a.dead = true;
-  bank("creature/death_beast", .7); popText(a, "dead", "#ff6b5e", 1.5); shake(8);
+  bank(voxFor(a, "die") || "creature/death_beast", .5); popText(a, "dead", "#ff6b5e", 1.5); shake(8);
   log(`<b>${fname(a)} dies</b>${why ? ` (${why})` : ""}.`); narrate(a, `${fname(a)} is gone.`);
   const near = standing(party).filter(p => p !== a)[0]; if (near) setTimeout(() => bark(near, `No… ${fname(a)}!`, 2000, {talk: true}), 500);
   renderParty();
