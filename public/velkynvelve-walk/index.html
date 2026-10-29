@@ -4783,7 +4783,7 @@ addEventListener("message", e => { if (e.origin !== location.origin) return; con
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
 function rollOnDashboard(action, localMod, opts = {}){
-  if (!APP || window.parent === window){ const r = d20(opts.advantage ? 1 : 0, leader), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= (LOCAL_DC[action] ?? +((/^pickpocket:pp(\d+)$/.exec(action) || [])[1] || 20)), total, natural: r}); }
+  if (!APP || window.parent === window){ const r = d20(opts.advantage ? 1 : 0, opts.who || leader), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= (LOCAL_DC[action] ?? +((/^pickpocket:pp(\d+)$/.exec(action) || [])[1] || 20)), total, natural: r}); }
   const id = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   let characterId = null; try { characterId = myClaimId || characterIdOf(leader.id) || null; } catch (e) {}
   return new Promise(res => {
@@ -4878,6 +4878,52 @@ function ownLeader(){
 }
 const ILVARA_KEY = "Ilvara's chest key";   // catalogue row ilvara-chest-key (migrations/walk_loot_catalog_2.sql)
 function hasItemNamed(name){ return Object.values(GEAR).some(g => (g.carried || []).some(c => c.name === name)); }
+// THE PEN GATE IN A FIGHT (Sam, 2026-10-29, asked whether the party should be able to pick or force the gate during a
+// fight: "Yes, add it"). The gate card (openInteract) only opens outside a fight, so once steel was out the only way
+// through a locked gate was a drow with the key. Now a hero within reach of the gate, from inside the pen, gets the
+// card's same three ways on the command bar, rolled the same way (rollOnDashboard: the dashboard's dice and modifier,
+// the DC with the DM in lib/walk-roll.ts — 20 for both, OotA p.18), and costed as the SRD costs them: picking a lock
+// with thieves' tools and forcing a stuck or locked door are each an action; turning a key in a lock is the turn's free
+// object interaction. A gate that is shut but no longer locked opens with the free interaction too.
+function atPenGate(a){
+  const z = doorGate(); if (!z || !a || (typeof onBalcony === "function" && onBalcony(a))) return false;
+  const r = z.rect, cx = Math.max(r[0], Math.min(r[2], a.x)), cy = Math.max(r[1], Math.min(r[3], a.y));
+  return Math.hypot(a.x - cx, a.y - cy) <= 5 * ftPx(a) + 6;
+}
+function gateOptions(a, add){
+  if (!atPenGate(a)) return;
+  const c = a.c, free = c.objFree !== false;
+  for (const l of ["Unlock the gate", "Open the gate", "Pick the gate's lock", "Force the gate"]) ACTION_ICON[l] = "use-object";
+  const done = () => { if (cbt && activeActor() === a) openMenu(a); };
+  if (!state.gateOpen){
+    if (hasPenKey()) add("Unlock the gate", free ? "the pen key · your free object interaction" : "your free object interaction is spent", free ? () => {
+      c.objFree = false; faceGate(a); sfx("lock-picked", .9); log(`${fname(a)} turns the stolen key in the pen gate's lock.`); unlockGate(); done();
+    } : null);
+    add("Pick the gate's lock", `action · thieves' tools ${sgn(heroMod(a, "thievesTools", "dex"))}`, c.action ? () => gateTry(a, "pen-gate:pick", heroMod(a, "thievesTools", "dex"), () => {
+      sfx("lock-picked", .9); log(`${fname(a)} works the pen gate's lock in the middle of the fight. It gives with a soft click.`); setTimeout(() => unlockGate(), 650);
+    }, () => { sfx("lock-pick-fail", .8); log(`${fname(a)}'s pick slips in the wards. The lock holds.`); }) : null);
+    add("Force the gate", `action · Athletics ${sgn(heroMod(a, "athletics", "str"))}`, c.action ? () => gateTry(a, "pen-gate:force", heroMod(a, "athletics", "str"), () => {
+      log(`${fname(a)} throws their weight on the bars. The bolt tears from the stone.`); unlockGate(1);
+    }, () => { sfx("door-locked", .9); log(`${fname(a)} heaves at the bars. They shudder in their bolts, and hold.`); }) : null);
+  } else if (state.doorShut && !state.gateBroken){
+    add("Open the gate", free ? "your free object interaction" : "your free object interaction is spent", free ? () => {
+      c.objFree = false; faceGate(a); state.doorShut = false; setDoor(true); sfx("door-open", .85); if (balcony()) buildGrid(); log(`${fname(a)} swings the pen gate open.`); done();
+    } : null);
+  }
+}
+function faceGate(a){ const g = gateCenter(); if (g) a.face = faceOf(g.x - a.x, g.y - a.y); }
+// One gate check in a fight: the action is spent when the dice are thrown; stepping back from the roll panel, or dice
+// that never answer, give it back.
+function gateTry(a, action, mod, onWin, onLose){
+  const c = a.c; c.action = false; closeMenu(); combatBusy = true; faceGate(a);
+  rollOnDashboard(action, mod, {who: a}).then(k => {
+    combatBusy = false;
+    if (!cbt || activeActor() !== a) return;
+    if (!k || k.cancelled || !k.ok){ c.action = true; if (k && k.error) toast(k.error, 3200); openMenu(a); return; }
+    (k.success ? onWin : onLose)();
+    setTimeout(() => { if (cbt && activeActor() === a) openMenu(a); }, 900);
+  });
+}
 function hasPenKey(){ return !!state.penKey || Object.values(GEAR).some(g => (g.carried || []).some(c => c.name === PEN_KEY)); }
 // the gate comes open: the lock is beaten, the leaf swings, the way out is lit
 function unlockGate(forced){
@@ -7169,6 +7215,7 @@ function openMenu(a, sub){
     add("Disengage", "leave reach without a free swing", c.action ? () => { c.action = false; addCond(a, "disengaged"); log(`${fname(a)} disengages.`); openMenu(a); } : null);
     add("Help", "an ally's next attack has advantage", c.action ? () => { closeMenu(); cbt.phase = "target"; cbt.pend = {help: true}; hint("Help: click a friend within 5 ft."); } : null);
     add("Search", `Perception ${sgn((s.skills || {}).perception ?? abilMod(s, "wis"))}`, c.action ? () => doSearch(a) : null);
+    gateOptions(a, add);
     for (const it of (GEAR[a.id] || {carried: []}).carried.filter(c => isWeapon(c) && c.name !== GEAR[a.id].main))
       { ACTION_ICON["Equip: " + it.name] = "bar/attack"; const n = GEAR[a.id].main ? 2 : 1, k = gearCost(a, n);
         add(`Equip: ${it.name}`, k.ok ? `${k.label}${n === 2 ? " · a swap" : ""}` : "no free interaction or action left", k.ok ? () => equipItem(a, it.name) : null); }
