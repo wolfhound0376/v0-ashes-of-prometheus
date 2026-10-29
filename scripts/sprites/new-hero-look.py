@@ -2,7 +2,8 @@
 """
 Give a hero a new look on the map, and keep the old one for the pen and Hard Labor.
 
-    python scripts/sprites/new-hero-look.py <slug> <animations-dir> --idle breathing-idle --walk walk-v2 --sneak sneak-v2
+    python scripts/sprites/new-hero-look.py <slug> <animations-dir> --idle breathing-idle --walk walk-v2 --sneak sneak-v2 \
+        --crouch crouch
 
 <animations-dir> is the `animations` folder of a PixelLab character download (api.pixellab.ai/mcp/characters/<id>/download,
 unzipped: <state>/animations/<group>/<direction>/frame_<nnn>.png). Name the groups to use; anything else in the download
@@ -13,7 +14,10 @@ What it does:
      That is the PRISON GARB: the map dresses the hero in it inside the slave pen and on a Hard Labor detail
      (dressHeroes in scripts/velkynvelve-walk/template.html; build_walk.py bakes the pair). The labor poses
      (scrub/heave/carry) and the old crouch stay there with the rags they were drawn in.
-  2. Writes public/sprites/<slug>/ fresh: idle, walk and (optional) sneak sheets plus sprite.json.
+  2. Writes public/sprites/<slug>/ fresh: idle, walk and (optional) sneak and crouch sheets plus sprite.json.
+     crouch is PixelLab's `crouching` template: it sinks from standing over 5 frames and only the last is fully down,
+     so only that frame goes in (a still hold, add-sneak-poses.py's rule; --crouch-from N keeps frames N..). The map
+     stands a hidden hero in it (HIDDEN_SHEET in the template). Re-running is safe: the sheets come out the same.
 
 ONE CELL FOR EVERY SHEET. PixelLab returns the idle on the character's own canvas (128) but the v2 walk and sneak on a
 bigger one (176): the same figure at the same scale, with more room around it for the stride. sprite.json has one
@@ -45,7 +49,7 @@ _spec = importlib.util.spec_from_file_location("labor", Path(__file__).with_name
 labor = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(labor)
 ROWS = labor.ROWS
-PLAYBACK = {"idle": (5, True), "walk": (10, True), "sneak": (10, True)}
+PLAYBACK = {"idle": (5, True), "walk": (10, True), "sneak": (10, True), "crouch": (4, True)}
 
 
 def clip(src: Path, group: str, direction: str) -> list[Image.Image]:
@@ -67,6 +71,8 @@ def main() -> None:
     ap.add_argument("--idle", required=True)
     ap.add_argument("--walk", required=True)
     ap.add_argument("--sneak")
+    ap.add_argument("--crouch")
+    ap.add_argument("--crouch-from", type=int, default=None, help="first crouch frame to keep (default: the last only)")
     ap.add_argument("--name", help="display name (default: the old sprite's)")
     ap.add_argument("--feet", type=float, help="height in feet (default: keep the old look's height)")
     a = ap.parse_args()
@@ -83,8 +89,10 @@ def main() -> None:
                           for f in range(old["animations"]["idle"]["frames"])]) * 5 / old["ppu"]
 
     src = Path(a.animations_dir)
-    groups = {"idle": a.idle, "walk": a.walk, **({"sneak": a.sneak} if a.sneak else {})}
+    groups = {"idle": a.idle, "walk": a.walk, **({"sneak": a.sneak} if a.sneak else {}), **({"crouch": a.crouch} if a.crouch else {})}
     clips = {state: [clip(src, g, d) for d in ROWS] for state, g in groups.items()}
+    if "crouch" in clips:
+        clips["crouch"] = [r[min(a.crouch_from, len(r) - 1) if a.crouch_from is not None else len(r) - 1:] for r in clips["crouch"]]
     for state, rows in clips.items():                    # every row of a sheet must have the same frame count
         n = min(len(r) for r in rows)
         clips[state] = [r[:n] for r in rows]
