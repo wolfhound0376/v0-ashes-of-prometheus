@@ -1,0 +1,113 @@
+{
+ "version": 1,
+ "name": "Fifi (Masked Rogue)",
+ "cell": [
+  128,
+  128
+ ],
+ "pivot": [
+  64,
+  126
+ ],
+ "ppu": 80,
+ "animations": {
+  "jump": {
+   "sheet": "jump.png",
+   "frames": 8,
+   "fps": 12,
+   "loop": false
+  },
+  "walk": {
+   "sheet": "walk.png",
+   "frames": 6,
+   "fps": 10,
+   "loop": true
+  },
+  "dead": {
+   "sheet": "dead.png",
+   "frames": 9,
+   "fps": 8,
+   "loop": false
+  },
+  "idle": {
+   "sheet": "idle.png",
+   "frames": 4,
+   "fps": 5,
+   "loop": true
+  },
+  "hurt": {
+   "sheet": "hurt.png",
+   "frames": 6,
+   "fps": 10,
+   "loop": false
+  },
+  "attack": {
+   "sheet": "attack.png",
+   "frames": 8,
+   "fps": 12,
+   "loop": false,
+   "hit": 0.75
+  },
+  "cast": {
+   "sheet": "cast.png",
+   "frames": 8,
+   "fps": 10,
+   "loop": false,
+   "hit": 0.6
+  },
+  "ward": {
+   "sheet": "ward.png",
+   "frames": 9,
+   "fps": 12,
+   "loop": false
+  },
+  "sneak": {
+   "sheet": "sneak.png",
+   "frames": 6,
+   "fps": 10,
+   "loop": true
+  },
+  "crouch": {
+   "sheet": "crouch.png",
+   "frames": 1,
+   "fps": 4,
+   "loop": true
+  },
+  "scrub": {
+   "sheet": "scrub.png",
+   "frames": 4,
+   "fps": 10,
+   "loop": true
+  },
+  "heave": {
+   "sheet": "heave.png",
+   "frames": 9,
+   "fps": 10,
+   "loop": false
+  },
+  "carry": {
+   "sheet": "carry.png",
+   "frames": 8,
+   "fps": 10,
+   "loop": true
+  },
+  "eat": {
+   "sheet": "eat.png",
+   "frames": 6,
+   "fps": 6,
+   "loop": true
+  },
+  "sit": {
+   "sheet": "sit.png",
+   "frames": 3,
+   "fps": 4,
+   "loop": true
+  },
+  "sleep": {
+   "sheet": "sleep.png",
+   "frames": 3,
+   "fps": 3,
+   "loop": true
+  }
+ }
+}
