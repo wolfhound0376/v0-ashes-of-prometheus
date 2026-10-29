@@ -2,32 +2,32 @@
   "version": 1,
   "name": "Gandalf",
   "cell": [
-    128,
-    128
+    160,
+    160
   ],
   "pivot": [
-    64,
-    126
+    80,
+    158
   ],
-  "ppu": 96,
+  "ppu": 108,
   "animations": {
-    "dead": {
-      "sheet": "dead.png",
-      "frames": 7,
-      "fps": 8,
-      "loop": false
-    },
     "jump": {
       "sheet": "jump.png",
       "frames": 8,
       "fps": 12,
       "loop": false
     },
-    "idle": {
-      "sheet": "idle.png",
-      "frames": 4,
-      "fps": 5,
-      "loop": true
+    "hurt": {
+      "sheet": "hurt.png",
+      "frames": 6,
+      "fps": 10,
+      "loop": false
+    },
+    "dead": {
+      "sheet": "dead.png",
+      "frames": 7,
+      "fps": 8,
+      "loop": false
     },
     "attack": {
       "sheet": "attack.png",
@@ -42,18 +42,18 @@
       "fps": 10,
       "loop": true
     },
-    "hurt": {
-      "sheet": "hurt.png",
-      "frames": 6,
-      "fps": 10,
-      "loop": false
-    },
     "cast": {
       "sheet": "cast.png",
       "frames": 6,
       "fps": 10,
       "loop": false,
       "hit": 0.6
+    },
+    "idle": {
+      "sheet": "idle.png",
+      "frames": 4,
+      "fps": 5,
+      "loop": true
     },
     "eat": {
       "sheet": "eat.png",
