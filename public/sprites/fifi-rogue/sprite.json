@@ -9,7 +9,7 @@
   64,
   126
  ],
- "ppu": 80,
+ "ppu": 125,
  "animations": {
   "jump": {
    "sheet": "jump.png",
