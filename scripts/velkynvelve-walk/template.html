@@ -1593,7 +1593,7 @@ function ovWanted(){
 function ovTick(){
   if (!OV.tris || mode === "travel" || mode === "load") return;   // leaving the plate: the next plate sets its own camera
   const w = ovWanted(); if (w !== OV.want){ OV.want = w; OV.since = now; }
-  if (OV.want === OV.on || now - OV.since < 220) return;
+  if (OV.want === OV.on || now - OV.since < (mode === "combat" ? 1200 : 220)) return;   // a fight steps in and out of the doorway: wait for it to settle
   OV.on = OV.want;
   // the slide: the camera glides from one painting to the other; clamping waits until it lands
   const r = stage.getBoundingClientRect(), z = view.z, s = base * z, f = leader ? (OV.on ? ovActorPt(leader, leader.x, leader.y - 60) : {x: leader.x, y: leader.y - 60}) : {x: OV.on ? OV.cfg.x0 + NAT_W / 2 : NAT_W / 2, y: NAT_H / 2};
