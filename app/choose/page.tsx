@@ -27,6 +27,7 @@ import { useRouter } from "next/navigation"
 import { ClipboardCopy, Hammer } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { cinematicsOn } from "@/lib/settings"
+import { CANON_HEROES } from "@/lib/canon-heroes"
 import { getThemeAudio, playThemeAudio } from "@/components/theme-audio"
 
 type Hero = {
@@ -86,6 +87,18 @@ export default function ChooseHero() {
     setLeaving(true); window.setTimeout(() => router.push("/forge"), 380)
   }
 
+  // The hero this browser already holds (its id and door key are saved here). Sam, 2026-10-29: Gandalf "can't get in a
+  // new game because his character is darkened out" — Alejandro's own hero showed as taken ("seated" by Alejandro
+  // himself) and the card would not click. Your own hero is never taken from you: it stays lit and goes straight to
+  // the table, with no new claim for the DM to approve.
+  const [mineSlug, setMineSlug] = useState<string | null>(null)
+  useEffect(() => {
+    try {
+      const id = window.localStorage.getItem(CHARACTER_LS_KEY), token = window.localStorage.getItem(TOKEN_LS_KEY)
+      if (id && token) setMineSlug(CANON_HEROES.find((h) => h.id === id)?.slug ?? null)
+    } catch { /* storage blocked */ }
+  }, [])
+
   const reserved = (c: Claim, hero: Hero) => {
     writeClaim(c); setClaim(c)
     setStage(hero.film && cinematicsOn() ? "film" : "waiting")
@@ -129,7 +142,8 @@ export default function ChooseHero() {
               // on a phone.
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
                 {heroes.map((h, i) => (
-                  <HeroCard key={h.slug} hero={h} delay={i * 0.07} onPick={() => { setPicked(h); setStage("confirm") }} />
+                  <HeroCard key={h.slug} hero={h} mine={h.slug === mineSlug} delay={i * 0.07}
+                    onPick={() => { if (h.slug === mineSlug) { router.push("/table"); return } setPicked(h); setStage("confirm") }} />
                 ))}
                 <ForgeCard onPick={forge} delay={heroes.length * 0.07} />
               </div>
@@ -151,8 +165,8 @@ export default function ChooseHero() {
   )
 }
 
-function HeroCard({ hero, onPick, delay }: { hero: Hero; onPick: () => void; delay: number }) {
-  const free = hero.availability === "free"
+function HeroCard({ hero, onPick, delay, mine = false }: { hero: Hero; onPick: () => void; delay: number; mine?: boolean }) {
+  const free = mine || hero.availability === "free"
   return (
     <button
       type="button"
@@ -172,7 +186,9 @@ function HeroCard({ hero, onPick, delay }: { hero: Hero; onPick: () => void; del
       <div className="absolute inset-x-0 bottom-0 p-3 sm:p-4">
         <div className="text-[9px] uppercase tracking-[0.3em] text-[#c9a868]/90">{hero.clazz}{hero.origin ? ` · ${hero.origin}` : ""}</div>
         <div className="mt-1 font-serif text-base leading-tight text-[#f0dba8] sm:text-lg">{hero.name}</div>
-        {free ? (
+        {mine ? (
+          <p className="mt-2 text-[10px] uppercase tracking-[0.2em] text-[#e8c56a]">Yours — tap to go to the table</p>
+        ) : free ? (
           <p className="mt-2 hidden text-[11px] italic leading-snug text-stone-400 sm:block">{hero.hook}</p>
         ) : (
           <p className="mt-2 text-[10px] uppercase tracking-[0.2em] text-stone-500">{hero.availability === "seated" ? "Already walks the Underdark" : "Someone waits to be them"}</p>
