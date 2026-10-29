@@ -1,7 +1,8 @@
 # Gandalf HD — 160×160 base sprites
 
-Source art for an HD remake of Gandalf's battle sprite. **Not wired into the game yet.**
-The live sprite is still `public/sprites/gandalf/` (128px cells, prisoner tunic).
+Source art for Gandalf's HD prisoner sprite. **The prisoner is now the live sprite** in
+`public/sprites/gandalf/` (Sam, 2026-10-29: "replace the one we have now with the prisoner you created").
+The old 128px grey-tunic sprite is in git history (commit a875913a).
 
 ## Approved by Sam, 2026-10-29
 
@@ -19,6 +20,16 @@ their feet sit at y=148, which matches the package's pivot (80,148).
 `package/` is the production pack exactly as Sam supplied it: identity and concept
 boards, cropped references, `MASTER_PROMPT.txt`, one prompt per action in `prompts/`,
 `character_manifest.json`, and the README/QA checklist.
+
+## What went live (2026-10-29)
+
+PixelLab character `833e44ea-9445-4fa7-9038-df6455e73872`: 8 facings from the approved prisoner base,
+then template clips: idle `breathing-idle`, walk `walking-8-frames`, attack `cross-punch`, cast
+`fireball`, hurt `taking-punch`, dead `falling-back-death`, jump `running-jump`. Camp poses come from
+the states Camp Sit (30a4292e), Camp Eat (16331f69) and Camp Sleep (68f6f757): v3, south only, 5/7/5 frames.
+Built with `build-sprite.py --ppu 108` and `add-camp-poses.py`. Cell 160, pivot (80,158). His idle stands
+127 px, and 127/108 matches the old 113/96, so he is exactly as tall on the map as before.
+Known flaw, shipped anyway with Sam's OK: in a few side-view cast and hurt frames the long coat thins out to a jacket.
 
 ## Next steps (not done)
 
