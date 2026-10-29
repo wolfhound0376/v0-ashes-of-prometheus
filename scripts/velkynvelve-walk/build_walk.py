@@ -289,6 +289,10 @@ P = ['kenta', 'samson', 'scott', 'freia']
 # premades' sheets; a slug whose folder is not there yet is skipped so the page still builds.
 HEROES = {k: v for k, v in json.load(open(os.path.join(HERE, 'heroes.json'))).items() if not k.startswith('_') and os.path.exists(os.path.join(SPR, v, 'sprite.json'))}
 P = P + [v for v in HEROES.values() if v not in P]
+# PRISON GARB (Sam, 2026-10-29): a hero whose look changed after the pen keeps the old sprite at <slug>-prisoner, worn
+# in the slave pen and on Hard Labor (dressHeroes in the template; scripts/sprites/new-hero-look.py makes the pair).
+# Baked with the heroes' sheets so the labor poses come along.
+GARB = {v: v + '-prisoner' for v in P if os.path.exists(os.path.join(SPR, v + '-prisoner', 'sprite.json'))}
 N = ['ront', 'eldeth', 'derendil', 'sarith', 'buppido', 'jimjar', 'topsy', 'turvy', 'shuushar', 'stool', 'jorlan', 'drow-guard-male', 'drow-guard-female']
 # Liana, the drow surgeon (The Drow Surgeon, Sam 2026-10-25): baked once her sheets are in the repo; until then the page
 # dresses her in the female guard's sheets (lianaSprite in the template)
@@ -299,11 +303,12 @@ V = ['giant-rat']  # vermin: set dressing, idle sheet only
 LP = sorted(d for d in os.listdir(SPR) if d.startswith('labor-') and os.path.exists(os.path.join(SPR, d, 'sprite.json')))
 
 meta = {}
-for i in P + N + F + V + LP:
+PG = P + list(GARB.values())
+for i in P + list(GARB.values()) + N + F + V + LP:
     # 'jump' is asked for on both sides now that heroes long-jump too (arcTo/planLeap in the
     # page). A slug whose sprite has no jump.png is filtered out on the next line and falls
     # back to the walk sheet in the air, so asking for it early costs nothing.
-    sh = ['idle', 'walk'] + (['attack', 'sit', 'eat', 'sleep', 'hurt', 'dead', 'cast', 'jump', 'shoot'] if i in P else []) + (['attack', 'dodge', 'hurt', 'dead', 'jump', 'rage', 'curse'] if i in F else [])
+    sh = ['idle', 'walk'] + (['attack', 'sit', 'eat', 'sleep', 'hurt', 'dead', 'cast', 'jump', 'shoot'] if i in PG else []) + (['attack', 'dodge', 'hurt', 'dead', 'jump', 'rage', 'curse'] if i in F else [])
     # the four allies fight beside the party (Sam, 2026-10-15), so they need their combat sheets too:
     # without 'attack' a swing has no hit frame and the roll never happens
     if i in ['ront', 'eldeth', 'derendil', 'sarith']: sh += ['sit', 'eat', 'sleep', 'attack', 'hurt', 'dead', 'dodge']
@@ -311,10 +316,10 @@ for i in P + N + F + V + LP:
     if i in ['ront', 'eldeth', 'derendil', 'sarith']: sh.append('jump')
     # Hard Labor's poses (scripts/sprites/add-labor-poses.py): the five main players have them; a sprite without
     # them is filtered out below and works in its idle
-    if i in P: sh += ['scrub', 'heave', 'carry']
+    if i in PG: sh += ['scrub', 'heave', 'carry']
     # hidden poses (scripts/sprites/add-sneak-poses.py, Sam 2026-10-26): `sneak` walks and `crouch` stands while the
     # hero is hidden; the five main players have them, everyone else (Kingasaur) is filtered out below and walks
-    if i in P: sh += ['sneak', 'crouch']
+    if i in PG: sh += ['sneak', 'crouch']
     if i == 'scott': sh.append('perform')
     if i in ['jorlan', 'drow-guard-male', 'drow-guard-female']: sh += ['attack', 'dodge', 'hurt', 'dead']
     # the guard at the bars (scripts/sprites/add-lean-pose.py, Sam 2026-10-27): back to the pen, arms crossed
@@ -375,6 +380,7 @@ t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', ra
       .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))
       .replace('/*__HEROES__*/{}', json.dumps(HEROES, separators=(',', ':')))
+      .replace('/*__GARB__*/{}', json.dumps(GARB, separators=(',', ':')))
       .replace('/*__VOICE_BANK__*/{}', open(os.path.join(HERE, 'voice-bank.json')).read())
       .replace('/*__ITEMS__*/[]', open(os.path.join(HERE, 'items.json')).read())
       .replace('const APP = /*__APP__*/false;', 'const APP = true;').replace('<title>Velkynvelve Walk</title>', '<title>Velkynvelve</title>'))

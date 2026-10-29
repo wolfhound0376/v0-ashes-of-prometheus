@@ -221,7 +221,8 @@ describe("props, poses, voice, music (assets)", () => {
   })
 
   it("gave the five main players the three labor sheets", () => {
-    for (const h of ["kenta", "freia", "scott", "samson", "lynkes"]) {
+    // Lynkes's labor sheets live with his prison garb (the map dresses him in it on a labor detail; new-hero-look.py)
+    for (const h of ["kenta", "freia", "scott", "samson", "lynkes-prisoner"]) {
       const m = JSON.parse(readFileSync(join(SPRITES, h, "sprite.json"), "utf8"))
       for (const a of ["scrub", "heave", "carry"]) {
         expect(m.animations[a], `${h} ${a}`).toBeTruthy()
