@@ -8885,7 +8885,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         flying = new Promise(res => fireShot(att, tgt, shot, hit, to => { landed = to; lands(); res(); }, atk)); }
       else { lunge(att, tgt, 20 * actorScale(att)); lands(); }   // a longer lunge into the blow (Sam, 2026-10-28: "dynamic")
       function lands(){
-      const sw = swipeStyle(atk, crit, att), crimS = !shot && sw.kind !== "claw" && sw.kind !== "bite" && !/pseudopod|tentacle|slam/i.test(atk.name);   // every blade and fist takes the strike look; claws, bites and oozes keep their own
+      const sw = swipeStyle(atk, crit, att), fist = !shot && /unarmed|fist|punch/i.test(atk.name), crimS = !shot && !fist && sw.kind !== "claw" && sw.kind !== "bite" && !/pseudopod|tentacle|slam/i.test(atk.name);   // every blade and fist takes the strike look; claws, bites and oozes keep their own
       att.trailUntil = 0;
       if (shot === "thrown" && att.kind === "pc") restOnFloor(att, atk, hit ? tgt : (landed || tgt), !hit);     // at their feet, or where it fell
       if (shot === "flask") shatter(atk, hit ? {x: tgt.x, y: tgt.y} : (landed || tgt), hit ? tgt : null);
@@ -8893,7 +8893,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         // a melee blow that reached them is a sparring exchange (sparMiss); a shot, a flask, or a blow with stone in
         // the way is the plain miss it always was
         const how = !shot && !cv.total && !tgt.down ? sparMiss(att, tgt, r === 1 ? null : r + atk.hit + insp - acVs, sw, ws) : null;
-        if (!how){ if (!shot){ if (crimS) crimSlash(att, tgt, {miss: true}); else swipe(att, tgt, {...sw, miss: true}); } miss(tgt); bank(shot === "flask" ? "magic/spell_fizzle" : ws.miss, .7); }
+        if (!how){ if (!shot && !fist){ if (crimS) crimSlash(att, tgt, {miss: true}); else swipe(att, tgt, {...sw, miss: true}); } miss(tgt); bank(shot === "flask" ? "magic/spell_fizzle" : ws.miss, .7); }
         log(`${why} — ${how === "parry" ? "parried" : how === "duck" ? "ducked" : how === "dodge" ? "dodged" : "miss"}.`);
         narrate(att, shot ? `${fname(att)}'s shot goes wide of ${fname(tgt)}.` : how === "parry" ? `${fname(att)} swings at ${fname(tgt)}, who turns the blow aside.` : how === "duck" ? `${fname(att)} swings at ${fname(tgt)}, who ducks under it.` : how === "dodge" ? `${fname(att)} swings at ${fname(tgt)}, who slips out of the way.` : `${fname(att)} swings at ${fname(tgt)} and misses.`);
         if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt, null, att), 500); return; }
@@ -8916,7 +8916,11 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       else if (!shot && crimS){ crimSlash(att, tgt, {crit}); crimStar(att, tgt, crit); if (crit) crimThrust(att, tgt); if (/piercing|slashing/.test(atk.type)) crimMist(att, tgt, crit ? 26 : 8);   // the rogue & ranger strike
         setTimeout(() => { if (!tgt.down || crit){ crimSlash(att, tgt, {crit, flip: -1, stab: /pierc/.test(atk.type)}); crimStar(att, tgt, false); lunge(att, tgt, 10 * actorScale(att)); knock(tgt, att, 10 * actorScale(tgt)); } }, 150);
         if (crit) setTimeout(() => { crimThrust(att, tgt); crimStar(att, tgt, true); }, 290); }
-      if (!shot && !crimS){ swipe(att, tgt, {...sw, crit});
+      // BARE HANDS (Sam's comment on the lab, 2026-10-29: "striking with your hands doesn't create a crimson or gold arch
+      // effect"): no crescent and no swipe line — only Sam's own drawn martial spark (jab, kick, uppercut on a crit; strikeSheet
+      // below) and the second jolt of the combo.
+      if (fist) setTimeout(() => { if (!tgt.down){ lunge(att, tgt, 10 * actorScale(att)); knock(tgt, att, 10 * actorScale(tgt)); } }, 150);
+      if (!shot && !crimS && !fist){ swipe(att, tgt, {...sw, crit});
         setTimeout(() => { if (!tgt.down || crit){ swipe(att, tgt, {...sw, crit, flip: -(sw.flip || 1)}); lunge(att, tgt, 10 * actorScale(att)); knock(tgt, att, 10 * actorScale(tgt)); spawnFx("physicalImpact", {at: tgt, sq: 1.4, mirror: tgt.x > att.x}); } }, 150);
         if (crit) setTimeout(() => swipe(att, tgt, {...sw, crit: true, flip: sw.kind === "claw" ? -(sw.flip || 1) : sw.flip}), 290); }
       if (!shot){
