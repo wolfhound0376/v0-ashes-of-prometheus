@@ -35,6 +35,19 @@
    "frames": 9,
    "fps": 12,
    "loop": false
+  },
+  "hurt": {
+   "sheet": "hurt.png",
+   "frames": 7,
+   "fps": 10,
+   "loop": false
+  },
+  "shoot": {
+   "sheet": "shoot.png",
+   "frames": 9,
+   "fps": 12,
+   "loop": false,
+   "hit": 0.6
   }
  }
 }

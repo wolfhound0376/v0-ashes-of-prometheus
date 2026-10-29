@@ -51,6 +51,7 @@ def main() -> None:
     ap.add_argument("frames_dir")
     ap.add_argument("--fps", type=int, default=12)
     ap.add_argument("--hit", type=float, default=0.55)
+    ap.add_argument("--pose", default="shoot", help="sheet to write (shoot, or hurt for a missing flinch)")
     a = ap.parse_args()
 
     sprite_dir = ROOT / "public" / "sprites" / a.slug
@@ -83,11 +84,16 @@ def main() -> None:
             out.alpha_composite(im, (i * cell + round(rcx - fcx),
                                      r * cell + round(feet - fy1)))
 
-    out.save(sprite_dir / "shoot.png")
-    d["animations"]["shoot"] = {"sheet": "shoot.png", "frames": n,
-                                "fps": a.fps, "loop": False, "hit": a.hit}
-    manifest.write_text(json.dumps(d, indent=2) + "\n")
-    print(f"{a.slug}: shoot.png {out.size}, {n} frames @ {a.fps}fps "
+    out.save(sprite_dir / f"{a.pose}.png")
+    entry = {"sheet": f"{a.pose}.png", "frames": n, "fps": a.fps, "loop": False}
+    if a.pose == "shoot":
+        entry["hit"] = a.hit   # the release frame: the bolt leaves here
+    d["animations"][a.pose] = entry
+    # keep the file's own style (these manifests were written by different tools: 1- or 2-space, newline or not)
+    raw = manifest.read_text()
+    ind = len(raw.split("\n")[1]) - len(raw.split("\n")[1].lstrip()) or 2
+    manifest.write_text(json.dumps(d, indent=ind) + ("\n" if raw.endswith("\n") else ""))
+    print(f"{a.slug}: {a.pose}.png {out.size}, {n} frames @ {a.fps}fps "
           f"= {n / a.fps:.2f}s, figure {target_h}px to match idle")
 
 
