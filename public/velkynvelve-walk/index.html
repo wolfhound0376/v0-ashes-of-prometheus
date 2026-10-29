@@ -11104,7 +11104,17 @@ async function loadSpriteManifest(slug){
   } catch (e) { spriteMissing.add(slug); console.warn("no sprite for creature", slug, e); return false; }
 }
 function arrivalFor(slug, inside){
-  let arr = (node.arrivals || {})[slug] || (node.arrivals || {}).default;
+  const own = SPR[slug] && SPR[slug].json.arrive;
+  const mine = (node.arrivals || {})[slug];
+  // A creature whose sprite says how it arrives (sprite.json `arrive`) and that this plate has no entry of its own
+  // for: the undead climb up out of the floor where they will stand rather than walk in through a door (Sam,
+  // 2026-10-29: the Undead Breach clips). They rise where the plate's default arrival would have walked them to.
+  if (!mine && own && own.anim && SPR[slug].img[own.anim]){
+    const d = (node.arrivals || {}).default;
+    const to = nearestWalkable(...(d ? d.to : [centroid.x, centroid.y]));
+    return {from: to, to, anim: own.anim, big: 1, sting: own.sting || "", risen: true};
+  }
+  let arr = mine || (node.arrivals || {}).default;
   if (arr && inside && arr.inside) arr = arr.inside;                 // the way INTO the party's space (under the bars, through the gate)
   if (arr) return {from: {x: arr.from[0], y: arr.from[1]}, to: {x: arr.to[0], y: arr.to[1]}, anim: arr.anim || "walk", big: arr.big || 1, backdrop: !!arr.backdrop, fixedScale: arr.fixedScale || 0, via: arr.via || ""};
   // no arrival written for this plate: in through the exit the party last used, toward the room's middle
@@ -11123,18 +11133,20 @@ function creatureArrives(c){
     f.anim = a.anim; f.t0 = now; f.alpha = 1; f.fadeIn = false; f.waitUntil = now + SPR[c.slug].json.animations[a.anim].frames / SPR[c.slug].json.animations[a.anim].fps * 1000;
     f.path = [{x: land.x, y: land.y}];
   } else f.path = a.backdrop ? [{x: land.x, y: land.y}] : findPath(f, land);
-  f.inside = !!c.inside;
+  f.inside = !!c.inside; f.risen = !!a.risen;     // risen out of the floor inside the room: it never crosses in from outside
   f.onArrive = () => { setAnim(f, "idle"); f.home = {x: f.x, y: f.y}; };
-  narrate(f, `${c.name} comes in${a.via ? " " + a.via : a.anim === "emerge" ? ", heaving itself up over the edge" : ""}.`);
+  narrate(f, `${c.name} ${a.sting ? "claws its way up out of the ground" : `comes in${a.via ? " " + a.via : a.anim === "emerge" ? ", heaving itself up over the edge" : ""}`}.`);
   // the entrance is a moment: its own music sting (audio/arrive-<slug>.mp3, the film's cue) and the camera
   // pushing in on it, then easing back to the room once it is in
-  sfx(`arrive-${c.slug}`, .9);
+  // An Undead Breach rising has its own cue instead: slow and quiet, under the scene (Sam, 2026-10-29: "real slow and
+  // quiet like a horror movie"), shipped in public/sfx/walk.
+  if (a.sting) sfx(`walk:${a.sting}`, .9); else sfx(`arrive-${c.slug}`, .9);
   const hold = a.anim !== "walk" && SPR[c.slug].json.animations[a.anim] ? SPR[c.slug].json.animations[a.anim].frames / SPR[c.slug].json.animations[a.anim].fps * 1000 : 1800;
   userPanAt = now; camTo(1.7, a.from.x + (a.to.x - a.from.x) * .3, a.from.y + (a.to.y - a.from.y) * .3 - 40, 1100);
   setTimeout(() => { if (mode === "explore") camTo(1, NAT_W / 2, NAT_H / 2, 1400); }, hold + 1600);
 }
 function creatureCrosses(slug){
-  const f = creatures.get(slug); if (!f || f.inside || f.down) return;
+  const f = creatures.get(slug); if (!f || f.inside || f.down || f.risen) return;
   f.inside = true; const a = arrivalFor(slug, true); if (!node.arrivals || !((node.arrivals[slug] || node.arrivals.default || {}).inside)){ return; }
   const outside = arrivalFor(slug, false);
   f.path = [{x: outside.to.x, y: outside.to.y}]; f.slow = false; f.waitUntil = 0;
@@ -11190,6 +11202,9 @@ function stageMatch(entry, id){           // "jorlan-duskryn" is the map's "jorl
   const names = [entry.slug, ...(entry.aliases || [])];
   return names.some(s => s === id || id.startsWith(s + "-") || s.startsWith(id + "-") || s.split("-").some(tok => tok.length > 3 && id.split("-").includes(tok)));
 }
+// Generic names drawn by a particular sprite (Sam, 2026-10-29). A plain "Zombie" or "Skeleton" on stage is drawn by the
+// art that has the Undead Breach rising (public/sprites/<slug>/emerge.png), so they climb out of the ground with it.
+const ART_IS = {"zombie": "zombie-rotting", "zombies": "zombie-rotting", "skeleton": "skeleton-swordsman", "skeletons": "skeleton-swordsman"};
 let stageSeen = null;
 // The run number the map loaded under. A restart opens a new run (/api/restart-campaign); when the
 // number changes the map reloads itself, because everything it holds in memory — the gate it opened,
@@ -11211,6 +11226,7 @@ async function pollStage(){
       if (Array.isArray(j.seated) && j.seated.length) for (const id of PARTY.slice()) if (!seatedSlugs(j.seated).includes(id) && party.length > 1 && id !== (leader && leader.id)) partyLeaves(id);
     }
     const present = Array.isArray(j.present) ? j.present : [], gone = Array.isArray(j.gone) ? j.gone : [];
+    for (const c of [...present, ...gone]) if (ART_IS[c.slug]) c.slug = ART_IS[c.slug];
     // creatures: anyone present who is not part of the story's cast
     for (const c of present){
       if ([...CAST].some(id => stageMatch(c, id))) continue;

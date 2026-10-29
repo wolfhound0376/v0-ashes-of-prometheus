@@ -23,3 +23,22 @@ than the 128-px idle cell), and teach the renderer to play it once on spawn.
 
 Known nits: the skeleton's sword is missing while it climbs and appears only as it stands; the dirt/rubble disappears abruptly once the creature is fully standing; only the
 south facing exists so far.
+
+## Approved and wired in (Sam, 2026-10-29)
+
+Sam: "Second skeleton is great. Zombie is great." So the zombie clip and the **ledge** skeleton
+(`skeleton-swordsman-alt-ledge`) are now live on the painted map:
+
+- `public/sprites/zombie-rotting/emerge.png` (21 frames) and `public/sprites/skeleton-swordsman/emerge.png`
+  (25 frames), 12 fps, cut back to the 128-px cell. The last frame is pixel-identical to each idle and no
+  drawn pixel was clipped. Only the south view is drawn, so all eight rows repeat it.
+- Each `sprite.json` carries `"arrive": {"anim": "emerge", "sting": "undead-breach"}`. On a plate with no
+  arrival written for that creature, the map (`arrivalFor` in `public/velkynvelve-walk/index.html`) makes it rise
+  out of the floor where the plate's default arrival would have walked it to, instead of walking in.
+- A plain "Zombie" or "Skeleton" on stage is drawn by these two sprites (`ART_IS` in the same file).
+- The music, `public/sfx/walk/undead-breach.mp3`: Sam asked for "brief Dawn of the Dead music", then "real slow and
+  quiet like a horror movie". It's an original 11-second cue made in code (not a copy of the film's score): a sub drone
+  swelling, a soft heartbeat pulse, a few out-of-tune music-box notes, a glassy semitone rub, ending on a low
+  dissonant swell. -23.5 LUFS, much quieter than the other effects. Two Runway takes ("Undead Breach stinger
+  A/B") are in Sam's Runway library; this session could not download them (the host is blocked by its network
+  policy).
