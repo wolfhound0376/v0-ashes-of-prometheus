@@ -5857,7 +5857,7 @@ function drawFxLayer(flat){
 }
 // which sheets and sounds a spell uses, from its school (lib/spell-school-data) and damage type
 const SCHOOL_OF = {"Acid Splash": "evocation", "Produce Flame": "conjuration", "Sacred Flame": "evocation", "Cure Wounds": "abjuration", "Inflict Wounds": "necromancy", "Grease": "conjuration", "Shatter": "evocation", "Acid Arrow": "evocation", "Call Lightning": "conjuration",
-  "Web": "conjuration", "Command (grovel)": "enchantment", "Hypnotic Pattern": "illusion", "True Strike": "divination", "Vampiric Touch": "necromancy", "Sanctuary": "abjuration",
+  "Web": "conjuration", "Command (grovel)": "enchantment", "Scorching Ray": "evocation", "Mass Healing Word": "abjuration", "Lightning Bolt": "evocation", "Gust of Wind": "evocation", "Misty Step": "conjuration", "Hypnotic Pattern": "illusion", "True Strike": "divination", "Vampiric Touch": "necromancy", "Sanctuary": "abjuration",
   "Light": "evocation", "Thaumaturgy": "transmutation", "Druidcraft": "transmutation", "Message": "transmutation", "Mending": "transmutation", "Guidance": "divination", "Resistance": "abjuration","Eldritch Blast": "evocation", "Hex": "enchantment", "Fireball": "evocation", "Burning Hands": "evocation", "Entangle": "conjuration", "Hunter's Mark": "divination", "Hold Person": "enchantment", "Cloud of Daggers": "conjuration", "Flaming Sphere": "conjuration", "Green-Flame Blade": "evocation", "Mage Hand": "conjuration", "Minor Illusion": "illusion", "Prestidigitation": "transmutation", "Dancing Lights": "evocation", "Friends": "enchantment", "Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
   "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment",
   "Stinking Cloud": "conjuration", "Cloudkill": "conjuration", "Fog Cloud": "conjuration", "Poison Spray": "necromancy"};
@@ -6566,6 +6566,21 @@ const SPELLS = {
   // SRD 5.1 Vampiric Touch: 3rd-level necromancy, concentration 1 minute; melee spell attack, 3d6 necrotic, and you regain
   // half the necrotic damage dealt. NOT YET: the repeat attack on later turns without a slot.
   "Vampiric Touch":     {lvl: 3, kind: "attack", range: 5, dmg: "3d6", type: "necrotic", fx: "#6f3a8a", conc: 10},
+  // ---------- WAVE 2a (Sam, 2026-10-29: "go") — new shapes: rays, a mass heal, lines, a teleport. SRD 5.2.1 numbers. ----------
+  // Scorching Ray: 2nd-level evocation, 120 ft, "three rays": each a ranged spell attack, 2d6 fire; one target or several
+  // (picked one click per ray, like Magic Missile's darts). Drawn as Sam's fire comets.
+  "Scorching Ray":      {lvl: 2, kind: "attack", range: 120, darts: 3, dmg: "2d6", type: "fire", fx: "#ff8a3a"},
+  // Mass Healing Word: 3rd-level abjuration, bonus action, 60 ft, "up to six creatures ... regains Hit Points equal to 2d4
+  // plus your spellcasting ability modifier". Click one friend; the five nearest others in range are healed with them.
+  "Mass Healing Word":  {lvl: 3, kind: "heal", range: 60, dmg: "2d4", bonus: true, targets: 6, fx: "#9ff2c8"},
+  // Lightning Bolt: 3rd-level evocation, "a Line 100 feet long and 5 feet wide" from you; DEX save, 8d6 lightning, half on a success.
+  "Lightning Bolt":     {lvl: 3, kind: "save", save: "dex", range: 100, area: 5, line: [100, 5], selfArea: true, dmg: "8d6", type: "lightning", fx: "#cfe8ff"},
+  // Gust of Wind: 2nd-level evocation, "a Line of strong wind 60 feet long and 10 feet wide", concentration 1 minute; STR save
+  // or pushed 15 ft away along the line. NOT YET: the wind on later turns (difficult moving into it, the bonus-action turn).
+  "Gust of Wind":       {lvl: 2, kind: "save", save: "str", range: 60, area: 10, line: [60, 10], selfArea: true, push: 15, fx: "#d6e8f0", conc: 10},
+  // Misty Step: 2nd-level conjuration, bonus action, "Briefly surrounded by silvery mist, you teleport up to 30 feet to an
+  // unoccupied space you can see." Click the spot.
+  "Misty Step":         {lvl: 2, kind: "teleport", range: 30, bonus: true, fx: "#dfe8ff"},
   // utility cantrips (SRD 5.1): the cast and Malachar's word; what they do is the story's
   "Light":              {lvl: 0, kind: "util", range: 5, fx: "#fff6c8"},
   "Thaumaturgy":        {lvl: 0, kind: "util", range: 30, fx: "#ffb35a"},
@@ -8518,6 +8533,8 @@ function aim(a, what){
   const sp = what.spell && SPELLS[what.spell];
   if (what.shove){ hint(`${what.shove === "grapple" ? "Grapple" : "Shove"}: click a foe within 5 ft. Esc to cancel.`); return; }
   if (sp && (sp.kind === "heal" || sp.kind === "buff")){ hint(`${what.spell}: click a friend.`); return; }
+  if (sp && sp.kind === "teleport"){ hint(`${what.spell}: click a spot you can see within ${sp.range} ft.`); return; }
+  if (sp && sp.line){ hint(`${what.spell}: click the way it goes (a ${sp.line[0]}-ft line).`); return; }
   if (sp && sp.area){ hint(`${what.spell}: click where it lands (${sp.area}-ft area).`); return; }
   if (sp && sp.darts){ what.darts = []; hint(dartHint(what.spell, sp, [])); return; }
   const sn = what.atk && sneakState(a, null, what.atk);
@@ -8575,6 +8592,10 @@ function combatClick(w){
   if (sp && (sp.kind === "cloud" || sp.kind === "fog") && Math.hypot(w.x - a.x, w.y - a.y) / ftPx(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
   if (sp && sp.aimRange && Math.hypot(w.x - a.x, w.y - a.y) / ftPx(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
   if (sp && sp.kind === "util"){ castUtil(a, hitActor([...foes, ...friends()], w) || w, p.spell); return; }
+  if (sp && sp.kind === "teleport"){ const to = nearestWalkable(w.x, w.y), ft = Math.hypot(to.x - a.x, to.y - a.y) / ftPx(a);
+    if (ft > sp.range + 2.5){ toast(`Too far: ${p.spell} reaches ${sp.range} ft.`); return; }
+    if (standing([...foes, ...party, ...bystanders()]).some(o => o !== a && Math.hypot(o.x - to.x, o.y - to.y) < ftPx(a) * 2.5)){ toast("Someone is standing there."); return; }
+    castSpell(a, to, p.spell); return; }
   if (sp && sp.area){ castSpell(a, w, p.spell); return; }
   const t = hitActor(foes, w); if (!t || t.down) return;
   if (p.darts){ placeDart(a, t); return; }
@@ -9081,7 +9102,8 @@ function castSpell(caster, tgt, name, done, darts){
   const volley = darts && darts.length ? darts : null, distinct = volley ? [...new Set(volley)] : null;
   if (sp.bonus){ c.bonus = false; c.bonusSpell = true; } else { c.action = false; if (sp.lvl > 0) c.leveledSpell = true; }
   if (sp.lvl > 0) c.slots[sp.lvl] = Math.max(0, (c.slots[sp.lvl] || 0) - 1);
-  if (c.conds.has("sanctuary") && name !== "Sanctuary") endSanctuary(caster, "cast a spell");   // SRD 5.2.1: it ends if the warded creature casts a spell
+  if (c.conds.has("sanctuary") && name !== "Sanctuary") endSanctuary(caster, "cast a spell");
+  if (sp.kind === "teleport" && !wardsHere()){ mistyStep(caster, tgt, () => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(caster, done); }); return; }   // SRD 5.2.1: it ends if the warded creature casts a spell
   const at = tgt;                                                                // a point or an actor
   if (tgt.id) caster.face = faceOf(tgt.x - caster.x, tgt.y - caster.y);
   if (tgt.id) pushCam(caster, tgt);
@@ -9147,15 +9169,19 @@ function castSpell(caster, tgt, name, done, darts){
     if (volley){
       let landed = 0; const per = new Map();
       volley.forEach((t, i) => setTimeout(() => {
-        const fly = kit ? (cb) => kitDeliver(caster, t, kit, cb) : (cb) => spellBolt(caster, t, sp.fx, cb);
+        const fly = name === "Scorching Ray" ? (cb) => labFireBolt(caster, t, cb) : kit ? (cb) => kitDeliver(caster, t, kit, cb) : (cb) => spellBolt(caster, t, sp.fx, cb);
         fly(() => {
-          const d = roll(sp.dmg).total; per.set(t, (per.get(t) || []).concat(d));
-          if (!t.down) { knock(t, caster, 8 * actorScale(t)); if (t.kind === "pc") redFlash(); damage(t, d, sp.type, false, caster); }
+          // a ray (Scorching Ray) is its own ranged spell attack; a dart (Magic Missile) never misses
+          let crit = false, hitIt = true; if (sp.kind === "attack"){ const cv = coverOf(caster, t), r = d20(advantageOn(caster, t, true, {}), caster); crit = r === 20; hitIt = !cv.total && (crit || (r !== 1 && r + (c.sheet.magic.hit || 0) >= targetAc(t) + cv.ac)); }
+          if (!hitIt){ per.set(t, (per.get(t) || []).concat(0)); if (!t.down) miss(t); }
+          else { const d = roll(sp.dmg, crit).total; per.set(t, (per.get(t) || []).concat(d));
+          if (name === "Scorching Ray") labFireBoltHit(t);
+          if (!t.down) { knock(t, caster, 8 * actorScale(t)); if (t.kind === "pc") redFlash(); hitCtx = {spell: name, by: caster}; damage(t, d, sp.type, crit, caster, true); hitCtx = null; } }
           if (kit){ bank(`magic/impact_${sp.type}`, .6); kitImpact(t, kit, {by: caster}); }
           if (++landed === volley.length){
             distinct.forEach(x => sigilEnd(x, true));
-            const parts = distinct.map(x => `${per.get(x).length} dart${per.get(x).length === 1 ? "" : "s"} strike ${fname(x)} for ${per.get(x).join(" + ")} = <b>${per.get(x).reduce((u, v) => u + v, 0)}</b>`);
-            narrate(caster, `${fname(caster)}'s darts of light strike ${distinct.map(fname).join(" and ")}.`);
+            const w1 = sp.kind === "attack" ? "ray" : "dart", parts = distinct.map(x => `${per.get(x).length} ${w1}${per.get(x).length === 1 ? "" : "s"} at ${fname(x)}: ${per.get(x).map(v => v || "miss").join(" + ")} = <b>${per.get(x).reduce((u, v) => u + v, 0)}</b>`);
+            narrate(caster, sp.kind === "attack" ? `${fname(caster)}'s rays of fire streak at ${distinct.map(fname).join(" and ")}.` : `${fname(caster)}'s darts of light strike ${distinct.map(fname).join(" and ")}.`);
             log(`${fname(caster)} ${name}: ${parts.join("; ")} ${sp.type}.`);   // the turn moves on from the cast's own timer below, as for every spell
           }
         });
@@ -9163,6 +9189,7 @@ function castSpell(caster, tgt, name, done, darts){
       return;
     }
     const carry = quiet ? (cb) => setTimeout(cb, 420)
+      : sp.line ? (cb) => setTimeout(cb, 140)                                   // a line is drawn from the hand, not flown
       : lab ? (cb) => lab.deliver(caster, at, cb, sp)
       : kit ? (cb) => kitDeliver(caster, at, kit, cb)
       : sp.kind === "heal" ? (cb) => healBloom(caster, tgt, cb)
@@ -9202,6 +9229,9 @@ function castSpell(caster, tgt, name, done, darts){
         sigilEnd(tgt, true); bank("combat/heal", .8); setTimeout(() => bank("magic/heal_tail", .5), 300);
         kitImpact(tgt, KIT.healing);                                   // the shimmer comes down on them, the golden glow stays
         popText(tgt, `+${d}`, "#9ff2c8"); log(`${fname(caster)} ${name}: ${fname(tgt)} regains ${d}.`); renderParty();
+        if (sp.targets > 1){ const more = standing(heroes()).concat(heroes().filter(h => h.down)).filter((h, i, A) => A.indexOf(h) === i && h !== tgt && !(h.c.ds && h.c.ds.dead) && feetBetween(caster, h) <= sp.range).sort((x, y) => Math.hypot(x.x - tgt.x, x.y - tgt.y) - Math.hypot(y.x - tgt.x, y.y - tgt.y)).slice(0, sp.targets - 1);   // the others it reaches
+          more.forEach((h, i) => setTimeout(() => { const d2 = h.c.noHeal ? 0 : roll(sp.dmg).total + m.mod; h.c.hp = Math.min(h.c.hpMax, h.c.hp + d2); if (h.down && h.c.hp > 0){ h.down = false; setAnim(h, "idle"); }
+            kitImpact(h, KIT.healing); popText(h, h.c.noHeal ? "can't regain HP" : `+${d2}`, "#9ff2c8"); log(`${fname(caster)} ${name}: ${fname(h)} regains ${d2}.`); renderParty(); }, 180 * (i + 1))); }
       } else if (sp.kind === "zone"){                                           // Cloud of Daggers: the blades hang where it was cast
         sigilEnd(at, true); const z = {x: at.x, y: at.y, caster, name, dmg: sp.dmg, type: sp.type}; daggerZones.push(z); sparks.push({labDaggers: true, z, t0: now, life: 3600000});
         bank("combat/blade_whoosh", .6); log(`${fname(caster)} casts <b>${name}</b>: a 5-ft cube of whirling daggers (${sp.dmg} ${sp.type} to anyone who starts a turn in it; concentration).`);
@@ -9229,9 +9259,12 @@ function castSpell(caster, tgt, name, done, darts){
       }
       else {                                                                    // a save
         const pool = standing([...foes, ...party, ...bystanders()]), ang0 = Math.atan2(at.y - caster.y, at.x - caster.x);
-        const targets = (sp.cone ? pool.filter(t => feetBetween(caster, t) <= sp.area + 2.5 && Math.abs(((Math.atan2(t.y - caster.y, t.x - caster.x) - ang0 + Math.PI * 3) % (Math.PI * 2)) - Math.PI) <= .47)   // a cone: within its length and its 53°
+        if (sp.line) labLineLook(caster, at, sp);
+        const targets = (sp.line ? pool.filter(t => inLine(caster, at, t, sp.line))
+          : sp.cone ? pool.filter(t => feetBetween(caster, t) <= sp.area + 2.5 && Math.abs(((Math.atan2(t.y - caster.y, t.x - caster.x) - ang0 + Math.PI * 3) % (Math.PI * 2)) - Math.PI) <= .47)   // a cone: within its length and its 53°
           : sp.area ? pool.filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t)) : [tgt]).filter(t => !(sp.selfArea && t === caster));
         if (!targets.length){ log(`${fname(caster)} ${name}: nothing there.`); return; }
+        if (sp.push){ targets.forEach((t, i) => setTimeout(() => { const s0 = d20(0, t) + ((t.c.sheet.saves || {})[sp.save] || 0), ok = s0 >= m.dc; popText(t, ok ? "holds" : "blown back", "#d6e8f0", .85); log(`${fname(t)} ${sp.save.toUpperCase()} ${s0} vs DC ${m.dc}: ${ok ? "holds" : `pushed ${sp.push} ft`}.`); if (!ok) repel(caster, t, sp.push); }, 120 * i)); return; }
         const lines = [];
         targets.forEach((t, i) => setTimeout(() => {
           if (name === "Sleep" && (t.c.sheet.immuneCond || []).includes("asleep")) return;
@@ -10432,6 +10465,27 @@ function endSanctuary(t, why){ if (!t.c.conds.has("sanctuary")) return; t.c.cond
 // light, sunlit filaments crawling over it, held for as long as the ward lasts
 function sanctuarySphere(t){ const s = {labSphere: true, a: t, base: [255, 205, 90], arcCol: "rgba(255,250,215,.95)", cond: "sanctuary", hit: null, hitT: 0, t0: now, life: 600000, arcs: [], arcT: 0}; t.sanctSphere = s; sparks.push(s);
   bank("magic/impact_radiant", .5); lightFlash(t.x, labMid(t), "#ffd778", 220, 1200); for (let i = 0; i < 16; i++) sparks.push({x: t.x + labRnd(-30, 30), y: t.y - labRnd(0, 20), vx: labRnd(-20, 20), vy: -labRnd(40, 110), g: -10, col: i % 2 ? "#ffe9a8" : "#ffc94a", t0: now, life: labRnd(600, 1200)}); }
+// A LINE (Lightning Bolt, Gust of Wind): from the caster toward the click, `len` feet long and `wide` feet wide, measured
+// on the floor (the plate's depth squashed, as the area circles are)
+function inLine(c, at, t, [len, wide]){ const ft = ftPx(c), dx = at.x - c.x, dy = (at.y - c.y) / .55, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, px = t.x - c.x, py = (t.y - c.y) / .55;
+  const along = px * ux + py * uy, across = Math.abs(px * uy - py * ux); return along > 0 && along <= (len + 2.5) * ft && across <= (wide / 2 + 2.5) * ft; }
+function labLineLook(c, at, sp){ const ft = ftPx(c), dx = at.x - c.x, dy = (at.y - c.y) / .55, L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, len = sp.line[0] * ft, h = labHand(c, at);
+  const end = {x: c.x + ux * len, y: c.y + uy * len * .55 - (c.y - h.y)};
+  if (sp.type === "lightning"){ sparks.push({labLine: true, x0: h.x, y0: h.y, x1: end.x, y1: end.y, col: "#cfe8ff", t0: now, life: 420, seed: Math.random()}); bank("walk:thunder-clap", .55); bank("magic/impact_lightning", .7); lightFlash((h.x + end.x) / 2, (h.y + end.y) / 2, "#9fd0ff", 420, 380); shake(6); }
+  else { for (let i = 0; i < 26; i++){ const u = Math.random(), x = h.x + (end.x - h.x) * u, y = h.y + (end.y - h.y) * u + labRnd(-1, 1) * sp.line[1] * ft * .3; sparks.push({labWind: true, x, y, vx: ux * labRnd(300, 520), vy: uy * labRnd(300, 520) * .55, t0: now + labRnd(0, 300), life: labRnd(350, 650)}); } bank("combat/blade_whoosh", .7); } }
+function drawLabLine(s, k){ ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = k < .1 ? 1 : 1 - (k - .1) / .9; let r = Math.floor(s.seed * 1e6) + Math.floor(now / 50);
+  const rnd = () => (r = (r * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff, n = 22, pts = [];
+  for (let i = 0; i <= n; i++){ const u = i / n, j = (i === 0 || i === n) ? 0 : (rnd() - .5) * 26; pts.push([s.x0 + (s.x1 - s.x0) * u - (s.y1 - s.y0) / Math.hypot(s.x1 - s.x0, s.y1 - s.y0) * j, s.y0 + (s.y1 - s.y0) * u + (s.x1 - s.x0) / Math.hypot(s.x1 - s.x0, s.y1 - s.y0) * j]); }
+  for (const [w, col, blur] of [[9, "rgba(120,170,255,.55)", 24], [3.5, "rgba(230,245,255,1)", 8]]){ ctx.strokeStyle = col; ctx.lineWidth = w; ctx.shadowColor = s.col; ctx.shadowBlur = blur; ctx.lineJoin = "round"; ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke(); }
+  ctx.restore(); }
+function drawLabWind(s, k){ if (now < s.t0) return; const kk = (now - s.t0) / s.life; if (kk >= 1) return; const x = s.x + s.vx * (now - s.t0) / 1000, y = s.y + s.vy * (now - s.t0) / 1000, L = 26;
+  ctx.save(); ctx.globalAlpha = .55 * (1 - kk); ctx.strokeStyle = "#e8f4ff"; ctx.lineWidth = 2; ctx.lineCap = "round"; const m = Math.hypot(s.vx, s.vy) || 1; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - s.vx / m * L, y - s.vy / m * L); ctx.stroke(); ctx.restore(); }
+// MISTY STEP: silver mist swallows the caster, who is gone and then standing where they pointed, mist curling off them
+function mistyStep(a, to, then){ const puff = (x, y) => { for (let i = 0; i < 26; i++){ const g = labRnd(0, Math.PI * 2), sp = labRnd(20, 90); sparks.push({x: x + labRnd(-14, 14), y: y - labRnd(0, labH(a) * .8), vx: Math.cos(g) * sp, vy: Math.sin(g) * sp * .5 - 20, g: -10, col: i % 3 ? "#e8eef8" : "#b8c8e8", t0: now, life: labRnd(500, 1000)}); } };
+  playOnce(a, SPR[a.id].img.cast ? "cast" : "attack", () => setAnim(a, "idle")); bank("magic/arcane_release", .6); puff(a.x, a.y); const a0 = a.alpha;
+  setTimeout(() => { a.alpha = 0; }, 160);
+  setTimeout(() => { a.x = to.x; a.y = to.y; a.path = []; puff(a.x, a.y); a.alpha = a0 || 1; a.flash = now + 200; a.flashCol = "#e8eef8"; bank("magic/arcane_release", .4); log(`${fname(a)} casts <b>Misty Step</b> and steps through the mist.`); renderParty(); }, 480);
+  setTimeout(then, 900); }
 function labOrbHit(t, type){ const col = LAB_ORB_COL[type] || "#9fdcff", n = 10, rays = []; for (let j = 0; j < n; j++) rays.push({a: j / n * Math.PI * 2 + labRnd(-.2, .2), L: labRnd(.4, 1) * (j % 2 ? .6 : 1.3), w: labRnd(.04, .08)});
   sparks.push({crimStar: true, a: t, x: t.x, y: labMid(t), R: 70, rays, C: {body: col, core: "#ffffff", glow: col}, t0: now, life: 260});
   for (let i = 0; i < 18; i++){ const ang = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 160; sparks.push({x: t.x, y: labMid(t), vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * .6 - 60, col, t0: now, life: 420 + Math.random() * 300}); }
@@ -10735,6 +10789,8 @@ function drawLabSpark(s, k){
   if (s.labFlame){ drawLabFlame(s, k); return true; }
   if (s.labGeo){ drawLabGeo(s); return true; }
   if (s.labChroma){ drawLabChroma(s); return true; }
+  if (s.labLine){ drawLabLine(s, k); return true; }
+  if (s.labWind){ drawLabWind(s, k); return true; }
   if (s.labBurn){ ovWrapS(s, () => drawLabBurn(s)); return true; }
   if (s.labMock){ ovWrapS(s, () => drawLabMock(s)); return true; }
   if (s.labSphere){ ovWrapS(s, () => drawLabSphere(s)); return true; }
@@ -11790,6 +11846,11 @@ function drawCombatFx(){
 // spell uses to pick its targets (castSpell: area/2 + 2.5 ft from the point), so what you see is what it takes.
 function aoeRadiusAt(sp, y){ return (sp.area / 2 + 2.5) * ftPx({y}); }
 function drawAoe(x, y, sp, col, alpha, inside){
+  if (sp.line){ const a = activeActor(); if (!a) return; const ang = Math.atan2(y - a.y, x - a.x), L = sp.line[0] * ftPx(a), W = sp.line[1] * ftPx(a);
+    ctx.save(); ctx.globalAlpha = alpha; ctx.translate(a.x, a.y); ctx.scale(1, .55); ctx.rotate(Math.atan2((y - a.y) / .55, x - a.x)); ctx.fillStyle = col + "22"; ctx.strokeStyle = col; ctx.lineWidth = 2.5 / (base * view.z); ctx.setLineDash([10, 8]); ctx.lineDashOffset = -now / 60;
+    ctx.beginPath(); ctx.rect(0, -W / 2, L, W); ctx.fill(); ctx.stroke(); ctx.restore();
+    if (inside){ ctx.save(); ctx.globalAlpha = alpha * (.6 + .4 * Math.sin(now / 160)); ctx.strokeStyle = col; ctx.lineWidth = 2.5 / (base * view.z); for (const t of standing([...foes, ...party])) if (t !== a && inLine(a, {x, y}, t, sp.line)) ovWrapA(t, () => { ctx.beginPath(); ctx.ellipse(t.x, t.y, 30 * actorScale(t), 10 * actorScale(t), 0, 0, Math.PI * 2); ctx.stroke(); }); ctx.restore(); }
+    return; }
   const r = aoeRadiusAt(sp, y); ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = col + "22"; ctx.strokeStyle = col; ctx.lineWidth = 2.5 / (base * view.z);
   ctx.setLineDash([10, 8]); ctx.lineDashOffset = -now / 60; ovEllipsePath(x, y, r, r * .55); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
   if (inside) for (const t of standing([...foes, ...party])) if (Math.hypot(t.x - x, t.y - y) <= (sp.area / 2 + 2.5) * ftPx(t)){
