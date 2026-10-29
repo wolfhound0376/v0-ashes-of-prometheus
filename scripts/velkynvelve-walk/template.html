@@ -166,12 +166,12 @@ header .tools input[type=range]{accent-color:#f2c55c}
 .acts p.gone{opacity:0}
 .stage.frozen *{animation-play-state:paused!important}
 /* bottom-right corner, beside the zoom (Sam, 2026-10-28: "the rehearsal box is in the way. Relocate it to the bottom right"): it sat on the party cards */
-.ow-light{position:absolute;right:148px;bottom:16px;z-index:6;display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--rule);color:var(--ink-dim);border-radius:999px;padding:4px 11px 4px 9px;font:500 11px/1.2 'Alegreya Sans',sans-serif;letter-spacing:.06em;cursor:pointer}
+.ow-light{position:absolute;right:206px;bottom:16px;z-index:6;display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--rule);color:var(--ink-dim);border-radius:999px;padding:4px 11px 4px 9px;font:500 11px/1.2 'Alegreya Sans',sans-serif;letter-spacing:.06em;cursor:pointer}
 .ow-light::before{content:'';width:8px;height:8px;border-radius:50%;background:#62e3a0;box-shadow:0 0 6px #62e3a0}
 .ow-light[data-s=catching-up]::before,.ow-light[data-s=fight-unshared]::before,.ow-seats i[data-s=catching-up],.ow-seats i[data-s=fight-unshared]{background:#e8c04a;box-shadow:0 0 6px #e8c04a}
 .ow-light[data-s=out-of-touch]::before,.ow-light[data-s=off]::before,.ow-seats i[data-s=out-of-touch]{background:#d0453a;box-shadow:0 0 6px #d0453a}
 .ow-light[data-s=fight-unshared],.ow-light[data-s=off],.ow-light[data-s=out-of-touch]{color:var(--ink);border-color:var(--ember)}
-.ow-seats{position:absolute;right:148px;bottom:50px;z-index:6;min-width:190px;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:6px 10px;font:13px/1.5 'Alegreya Sans',sans-serif;color:var(--ink)}
+.ow-seats{position:absolute;right:206px;bottom:50px;z-index:6;min-width:190px;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:6px 10px;font:13px/1.5 'Alegreya Sans',sans-serif;color:var(--ink)}
 .ow-row{display:flex;align-items:center;gap:8px}.ow-row span{margin-left:auto;color:var(--ink-dim);font-size:11px}
 .ow-light[data-s=rehearsal]::before{background:#7aa7ff;box-shadow:0 0 6px #7aa7ff}
 .ow-seats i{width:8px;height:8px;border-radius:50%;background:#62e3a0;flex:none}
@@ -182,6 +182,7 @@ header .tools input[type=range]{accent-color:#f2c55c}
 .zoom{position:absolute;right:12px;bottom:12px;display:flex;align-items:center;gap:2px;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:4px}
 .zoom button{width:32px;height:32px;border:0;background:transparent;color:var(--ink);font-size:1.1rem;border-radius:4px;cursor:pointer}
 .zoom button:hover{background:var(--rule)}
+.zoom #zLight{width:auto;padding:0 8px;font-size:.78rem;letter-spacing:.04em}
 .zoom .fit{width:auto;padding:0 10px;font-family:var(--face-mono);font-size:var(--s-1)}
 
 /* combat: the Octopath-style frame over the plate. Nothing here is a board; it is HUD over the painting. */
@@ -838,6 +839,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button id="zOut" aria-label="Zoom out">−</button>
       <button class="fit" id="zFit">Fit</button>
       <button id="zIn" aria-label="Zoom in">+</button>
+      <button class="fit" id="zLight" title="Lighting: how dark the cave is">Dim</button>
     </div>
     <div class="combat" id="combat" hidden>
       <div class="cbt-top cbt-ui"><span class="lbl">Combat<span class="round" id="cbtRound"></span></span><div class="turns" id="turns"></div></div>
@@ -2068,12 +2070,50 @@ function draw(){
   if (barsAt != null) drawGateBars();
 
   while (cloudQ.length) drawPuff(cloudQ.shift());
+  drawLight();          // the dark, with the lamps, the heroes and landing spells cut out of it; everything after glows through
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
   drawTolls();
   ovWrapGroup(drops, drawDrops); drawCombatFx(); drawShots(); drawToothGlow();
   ctx.globalAlpha = 1;
 }
 const tint = document.createElement("canvas");
+// ── THE LIGHT LAYER (from the Combat Effects Lab, 2026-10-29) ─────────────────────────────────────────────────────────
+// A sheet of darkness laid over the plate and the figures, with holes cut where light is: the plate's own painted lamps
+// (fx.json fires = warm and flickering, cools = cyan crystal, violets = faerie glow), a faint circle round each hero so
+// a player can always find their own party, and a short burst wherever a spell lands (kitImpact). The coloured glow of
+// each light is then added on top. Drawn at half resolution in SCREEN space, so it covers the close-up painting too.
+// Spells, swipes, numbers and loot draw AFTER it, so they glow through the dark. Presentation only: no rule reads it.
+// Levels are a per-browser choice on the zoom bar (Off / Dim / Dark), Dim by default. Numbers are Claude's, flagged.
+const LIGHT_LEVELS = {off: 0, dim: .38, dark: .62};
+let lightLevel = "dim"; try { const v = localStorage.getItem("aop_walk_light"); if (v && v in LIGHT_LEVELS) lightLevel = v; } catch (e) {}
+const lightFlashes = [];                                    // {x, y, r, col:[r,g,b], t0, ms}
+const LC = document.createElement("canvas"), lcx = LC.getContext("2d");
+function hexRgb(h){ h = String(h || "#ffffff").replace("#", ""); if (h.length === 3) h = h.split("").map(c => c + c).join(""); const n = parseInt(h, 16); return isFinite(n) ? [(n >> 16) & 255, (n >> 8) & 255, n & 255] : [255, 255, 255]; }
+function lightFlash(x, y, col, r = 300, ms = 520){ if (lightLevel === "off") return; lightFlashes.push({x, y, r, col: Array.isArray(col) ? col : hexRgb(col), t0: now, ms}); if (lightFlashes.length > 24) lightFlashes.shift(); }
+function plateLights(){
+  const out = [], d = FX[node.slug], t = now / 1000, sc = node.scale || 1;
+  if (d){
+    (d.fires || []).forEach((p, i) => out.push({x: p.x, y: p.y, r: Math.max(160, p.r * 9), col: [255, 160, 70], a: .95 - .22 * (.5 + .5 * Math.sin(t * 11 + i * 1.7) * Math.sin(t * 6.3 + i)), glow: .18}));
+    (d.cools || []).forEach(p => out.push({x: p.x, y: p.y, r: Math.max(120, p.r * 2.4), col: [120, 210, 255], a: .7, glow: .08}));
+    (d.violets || []).forEach(p => out.push({x: p.x, y: p.y, r: Math.max(120, p.r * 2.2), col: [190, 120, 255], a: .7, glow: .08}));
+  }
+  for (const a of actors) if (a.kind === "pc" && !a.down && a.alpha > .2){ const q = ovPt(a.x, a.y); out.push({x: q.x, y: q.y - 50 * sc, r: 230 * sc, col: [255, 214, 160], a: .75, glow: 0}); }
+  for (let i = lightFlashes.length - 1; i >= 0; i--){ const f = lightFlashes[i], k = (now - f.t0) / f.ms; if (k >= 1){ lightFlashes.splice(i, 1); continue; } out.push({x: f.x, y: f.y, r: f.r * (.7 + .3 * k), col: f.col, a: 1 - k * k, glow: .45 * (1 - k)}); }
+  return out;
+}
+function drawLight(){
+  const dark = LIGHT_LEVELS[lightLevel]; if (!dark || mode === "load") return;
+  const W = Math.ceil(cv.width / 2), H = Math.ceil(cv.height / 2); if (LC.width !== W || LC.height !== H){ LC.width = W; LC.height = H; }
+  const m = ctx.getTransform(), lights = plateLights();
+  lcx.setTransform(1, 0, 0, 1, 0, 0); lcx.globalCompositeOperation = "source-over"; lcx.clearRect(0, 0, W, H);
+  lcx.fillStyle = `rgba(6,4,14,${dark})`; lcx.fillRect(0, 0, W, H);
+  lcx.setTransform(m.a / 2, m.b / 2, m.c / 2, m.d / 2, m.e / 2, m.f / 2); lcx.globalCompositeOperation = "destination-out";
+  for (const l of lights){ const g = lcx.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.r); g.addColorStop(0, `rgba(0,0,0,${l.a})`); g.addColorStop(.35, `rgba(0,0,0,${l.a * .8})`); g.addColorStop(.7, `rgba(0,0,0,${l.a * .3})`); g.addColorStop(1, "rgba(0,0,0,0)"); lcx.fillStyle = g; lcx.fillRect(l.x - l.r, l.y - l.r, l.r * 2, l.r * 2); }
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = true; ctx.drawImage(LC, 0, 0, cv.width, cv.height); ctx.restore();
+  ctx.save(); ctx.globalCompositeOperation = "lighter";      // the colour of each light, laid on top in plate space
+  for (const l of lights){ if (!l.glow) continue; const g = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.r * .8); g.addColorStop(0, `rgba(${l.col[0]},${l.col[1]},${l.col[2]},${l.glow * l.a})`); g.addColorStop(1, `rgba(${l.col[0]},${l.col[1]},${l.col[2]},0)`); ctx.fillStyle = g; ctx.fillRect(l.x - l.r, l.y - l.r, l.r * 2, l.r * 2); }
+  ctx.restore(); ctx.imageSmoothingEnabled = false;
+}
 // human-scale iron chains and manacles, drawn on the floor under everyone (a link is ~5 px; a cuff ~14 px across, wrist size)
 function drawChain(c){
   const pts = c.pts; ctx.save(); ctx.lineCap = "round";
@@ -9035,6 +9075,7 @@ function drawFlights(){
 // the arrival: the impact sheet with its punch, the flash, the shockwave, the sparks, then what it leaves
 function kitImpact(t, kit, opts = {}){
   const sky = kit.route === "sky", P = bodyPoint(t), b = kit.burst || {}, power = (b.power || 1) * (opts.area ? 1.3 : 1);
+  { const q = ovPt(P.x, P.y); lightFlash(q.x, q.y, b.tint || "#ffe9c0", 300 * power * (node.scale || 1), 560); }   // the light layer: a spell lights the room where it lands
   if (kit.impact){
     const p = spawnFx(kit.impact, {at: t, sq: (sky ? 1.9 : 2.1) * (kit.impactScale || 1), anchor: sky ? "base" : "mid", punch: !kit.noPunch, lift: kit.impactLift || 0,
       tail: kit.cling || 0, until: kit.cling ? now + 120000 : 0});
@@ -12339,6 +12380,9 @@ $("zFit").onclick = () => {
   camTween = null; userPanAt = -1e9; if (wholePlate){ view = {z: 1, tx: 0, ty: 0}; applyView(); }
 };
 $("zFit").textContent = wholePlate ? "Follow" : "Fit"; $("zFit").title = wholePlate ? "Follow your hero" : "Show the whole plate";
+function renderLightBtn(){ const b = $("zLight"); if (b) b.textContent = {off: "Lit", dim: "Dim", dark: "Dark"}[lightLevel]; }
+$("zLight").onclick = () => { lightLevel = {off: "dim", dim: "dark", dark: "off"}[lightLevel]; try { localStorage.setItem("aop_walk_light", lightLevel); } catch (e) {} renderLightBtn(); };
+renderLightBtn();
 addEventListener("keydown", e => {
   if (e.target.closest && e.target.closest("input,select")) return;
   if (e.key === "Escape" && dmPlacing){ dmPlacing = null; stage.classList.remove("placing"); hint(""); return; }
