@@ -48,6 +48,9 @@ PLAYBACK = {
     "hurt": {"fps": 10, "loop": False},
     "dead": {"fps": 8, "loop": False},
     "jump": {"fps": 12, "loop": False},
+    # a bladed swing, played instead of `attack` when the weapon is a dagger, sword or other blade (the walk's strike());
+    # the thrust lands on the 5th of 7 frames. Lynkes, 2026-10-29: his `attack` stays the bare-handed cross-punch.
+    "dagger": {"fps": 12, "loop": False, "hit": 0.62},
 }
 
 

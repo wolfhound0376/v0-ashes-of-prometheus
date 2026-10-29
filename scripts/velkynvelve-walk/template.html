@@ -166,12 +166,12 @@ header .tools input[type=range]{accent-color:#f2c55c}
 .acts p.gone{opacity:0}
 .stage.frozen *{animation-play-state:paused!important}
 /* bottom-right corner, beside the zoom (Sam, 2026-10-28: "the rehearsal box is in the way. Relocate it to the bottom right"): it sat on the party cards */
-.ow-light{position:absolute;right:148px;bottom:16px;z-index:6;display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--rule);color:var(--ink-dim);border-radius:999px;padding:4px 11px 4px 9px;font:500 11px/1.2 'Alegreya Sans',sans-serif;letter-spacing:.06em;cursor:pointer}
+.ow-light{position:absolute;right:206px;bottom:16px;z-index:6;display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--rule);color:var(--ink-dim);border-radius:999px;padding:4px 11px 4px 9px;font:500 11px/1.2 'Alegreya Sans',sans-serif;letter-spacing:.06em;cursor:pointer}
 .ow-light::before{content:'';width:8px;height:8px;border-radius:50%;background:#62e3a0;box-shadow:0 0 6px #62e3a0}
 .ow-light[data-s=catching-up]::before,.ow-light[data-s=fight-unshared]::before,.ow-seats i[data-s=catching-up],.ow-seats i[data-s=fight-unshared]{background:#e8c04a;box-shadow:0 0 6px #e8c04a}
 .ow-light[data-s=out-of-touch]::before,.ow-light[data-s=off]::before,.ow-seats i[data-s=out-of-touch]{background:#d0453a;box-shadow:0 0 6px #d0453a}
 .ow-light[data-s=fight-unshared],.ow-light[data-s=off],.ow-light[data-s=out-of-touch]{color:var(--ink);border-color:var(--ember)}
-.ow-seats{position:absolute;right:148px;bottom:50px;z-index:6;min-width:190px;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:6px 10px;font:13px/1.5 'Alegreya Sans',sans-serif;color:var(--ink)}
+.ow-seats{position:absolute;right:206px;bottom:50px;z-index:6;min-width:190px;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:6px 10px;font:13px/1.5 'Alegreya Sans',sans-serif;color:var(--ink)}
 .ow-row{display:flex;align-items:center;gap:8px}.ow-row span{margin-left:auto;color:var(--ink-dim);font-size:11px}
 .ow-light[data-s=rehearsal]::before{background:#7aa7ff;box-shadow:0 0 6px #7aa7ff}
 .ow-seats i{width:8px;height:8px;border-radius:50%;background:#62e3a0;flex:none}
@@ -182,6 +182,7 @@ header .tools input[type=range]{accent-color:#f2c55c}
 .zoom{position:absolute;right:12px;bottom:12px;display:flex;align-items:center;gap:2px;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:4px}
 .zoom button{width:32px;height:32px;border:0;background:transparent;color:var(--ink);font-size:1.1rem;border-radius:4px;cursor:pointer}
 .zoom button:hover{background:var(--rule)}
+.zoom #zLight{width:auto;padding:0 8px;font-size:.78rem;letter-spacing:.04em}
 .zoom .fit{width:auto;padding:0 10px;font-family:var(--face-mono);font-size:var(--s-1)}
 
 /* combat: the Octopath-style frame over the plate. Nothing here is a board; it is HUD over the painting. */
@@ -779,6 +780,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
    the whole window: black, then the letters in an arcade face, Malachar's line typed beneath, the way out. */
 .gameover{position:fixed;inset:0;z-index:9000;background:#000;opacity:0;transition:opacity 1.8s ease-in;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:30px;padding:16px;text-align:center}
 .gameover::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px)}
+.gameover[hidden]{display:none}   /* .gameover sets display:flex, which beats the hidden attribute: unhidden, the invisible black screen sat over the whole map and swallowed every click */
 .gameover.dark{opacity:1}
 .gameover.instant{transition:none}
 .gameover .go-big{display:flex;flex-wrap:wrap;justify-content:center;column-gap:.5em;font-family:"Press Start 2P",ui-monospace,monospace;font-size:clamp(34px,9vw,124px);line-height:1.2;color:#ff2a1f;text-shadow:.06em .06em 0 #5a0000,0 0 .3em rgba(255,42,31,.5);visibility:hidden}
@@ -837,6 +839,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button id="zOut" aria-label="Zoom out">−</button>
       <button class="fit" id="zFit">Fit</button>
       <button id="zIn" aria-label="Zoom in">+</button>
+      <button class="fit" id="zLight" title="Lighting: how dark the cave is">Dim</button>
     </div>
     <div class="combat" id="combat" hidden>
       <div class="cbt-top cbt-ui"><span class="lbl">Combat<span class="round" id="cbtRound"></span></span><div class="turns" id="turns"></div></div>
@@ -1549,7 +1552,12 @@ function paintDoorway(){
 // out there are the game's own. The painting sits beside the plate at x0 (left of it, with a dark gap), so the slide
 // between them is just the camera gliding.
 const OV = {on: false, want: false, since: 0, img: null, tris: null, cfg: null};
-function ovCfg(){ const B = balcony(); return (B && B.outside) || null; }
+// Every other plate can carry a close-up too (story.json <plate>.closeup, Sam 2026-10-29: "every plate", picked on the
+// close-up board https://claude.ai/artifact/5YffPngwBtF4t9QpiAZGgA). Same mesh and slide, but instead of the pen's
+// balcony side the close-up covers a `zone` polygon of the plate's own floor, and with no `ft` a figure is drawn at the
+// mesh's own stretch there (the close-up is that patch of floor, painted bigger), so it keeps its size against the room.
+function ovCfg(){ const B = balcony(); return (B && B.outside) || (node && node.closeup) || null; }
+const ovPenStyle = () => !!OV.cfg && OV.cfg.domainX != null;   // the pen's balcony (its own rules) or a plate's zone
 function ovAffine(P, Q){   // the affine map taking triangle P onto triangle Q: [a, b, c, d, e, f] with x' = a x + c y + e
   const [[x0, y0], [x1, y1], [x2, y2]] = P, [[u0, v0], [u1, v1], [u2, v2]] = Q, det = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
   const a = ((u1 - u0) * (y2 - y0) - (u2 - u0) * (y1 - y0)) / det, c = ((u2 - u0) * (x1 - x0) - (u1 - u0) * (x2 - x0)) / det;
@@ -1573,12 +1581,14 @@ const ovApply = (m, x, y) => ({x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3]
 function ovMap(x, y){ const t = ovTri(x, y, false); return t ? ovApply(t.f, x, y) : {x, y}; }
 function ovUnmap(x, y){ const t = ovTri(x, y, true); return t ? ovApply(t.g, x, y) : {x, y}; }
 // the balcony side of the pen wall, in the pen plate's coordinates (everything left of the doorway's floor)
-const ovDomain = (x, y) => !!OV.cfg && x < OV.cfg.domainX;
+const ovDomain = (x, y) => !!OV.cfg && (ovPenStyle() ? x < OV.cfg.domainX : inPoly(OV.cfg.zone, x, y));
+// how much the mesh enlarges the floor around a point (a plate close-up draws its figures at this)
+function ovStretch(x, y){ const t = ovTri(x, y, false); if (!t) return 1; const f = t.f; return Math.sqrt(Math.abs(f[0] * f[3] - f[1] * f[2])); }
 // the painting's own size of a foot at painting-height Y (a figure is drawn at this, not at the pen's)
 function ovArtFt(Y){ const [f0, f1, y0, y1] = OV.cfg.ft; return f0 + (f1 - f0) * Math.min(1, Math.max(0, (Y - y0) / (y1 - y0))); }
 const ovPenFt = a => 96 * BASE * (a.fixedScale ? a.fixedScale : paceAt(a) * (a.big || 1)) / 5;
 // Is this actor drawn in the close-up right now? Standing on the balcony side, with the close-up on.
-function ovDrawn(a){ return OV.on && !!a && a.x != null && ovDomain(a.x, a.y) && !(walkable(a.x, a.y) && !outsidePen(a)); }
+function ovDrawn(a){ return OV.on && !!a && a.x != null && ovDomain(a.x, a.y) && (!ovPenStyle() || !(walkable(a.x, a.y) && !outsidePen(a))); }
 // The local similarity at an actor's feet: pen point p -> painting, uniform scale k so the figure keeps its proportions.
 function ovActorT(a){
   let q = ovMap(a.x, a.y);
@@ -1587,18 +1597,18 @@ function ovActorT(a){
   // it (faded in on the landing) comes from there
   const D = OV.cfg.doorFloor, p0 = a.path && a.path[0], B = balcony(), L = B ? B.landing : [0, 0];
   if (D && B && a.alpha < 1 && ((p0 && p0.out) || (a.fadeIn && Math.hypot(a.x - L[0], a.y - L[1]) < 60))){ const t = 1 - a.alpha, dx = D[0] + OV.cfg.x0, dy = D[1]; q = {x: q.x + (dx - q.x) * t, y: q.y + (dy - q.y) * t}; }
-  const k = ovArtFt(q.y) / ovPenFt(a); return {q, k, ox: q.x - k * a.x, oy: q.y - k * a.y};
+  const k = OV.cfg.ft ? ovArtFt(q.y) / ovPenFt(a) : ovStretch(a.x, a.y); return {q, k, ox: q.x - k * a.x, oy: q.y - k * a.y};
 }
 // how much slower a walker goes out there: the mesh stretches the balcony about three and a half times, so at the pen's
 // pace a figure would race across the planks; this brings their stride back to the painting's scale
 function ovPace(a){
-  if (!OV.on || !ovDrawn(a)) return 1; const t = ovTri(a.x, a.y, false); if (!t) return 1;
+  if (!OV.on || !ovDrawn(a) || !OV.cfg.ft) return 1; const t = ovTri(a.x, a.y, false); if (!t) return 1;
   const f = t.f, det = Math.abs(f[0] * f[3] - f[1] * f[2]), k = ovArtFt(ovMap(a.x, a.y).y) / ovPenFt(a);
   return Math.min(1, Math.max(.25, k / Math.sqrt(det)));
 }
 function ovPushActor(a){ if (!ovDrawn(a)) return false; const T = ovActorT(a); ctx.save(); ctx.transform(T.k, 0, 0, T.k, T.ox, T.oy); return true; }
 // the same at a bare point on the balcony (a blood pool, a stuck bolt, a spell's ring): the balcony's foot there
-function ovPushAt(x, y){ if (!OV.on || !ovDomain(x, y)) return false; const q = ovMap(x, y), k = ovArtFt(q.y) / (96 * BASE * ((balcony() || {}).scale || 1.35) / 5); ctx.save(); ctx.transform(k, 0, 0, k, q.x - k * x, q.y - k * y); return true; }
+function ovPushAt(x, y){ if (!OV.on || !ovDomain(x, y)) return false; const q = ovMap(x, y), k = OV.cfg.ft ? ovArtFt(q.y) / (96 * BASE * ((balcony() || {}).scale || 1.35) / 5) : ovStretch(x, y); ctx.save(); ctx.transform(k, 0, 0, k, q.x - k * x, q.y - k * y); return true; }
 function ovPt(x, y){ return OV.on && ovDomain(x, y) ? ovMap(x, y) : {x, y}; }
 // a point on (or above) an actor, as the camera and the overlays see it
 function ovActorPt(a, x, y){ if (!ovDrawn(a)) return {x, y}; const T = ovActorT(a); return {x: T.k * x + T.ox, y: T.k * y + T.oy}; }
@@ -1607,8 +1617,9 @@ function ovActorPt(a, x, y){ if (!ovDrawn(a)) return {x, y}; const T = ovActorT(
 // hold stops it flickering on the threshold.
 function ovWanted(){
   if (!OV.tris || !OV.cfg || mode === "load" || mode === "travel") return false;
-  if (mode === "combat" && cbt){ const all = [...party, ...foes].filter(x => actors.includes(x) && !x.down); return all.length > 0 && all.every(x => outsidePen(x)); }
-  return !!(leader && actors.includes(leader) && outsidePen(leader) && leader.alpha > .05);
+  const there = x => ovPenStyle() ? outsidePen(x) : x.x != null && ovDomain(x.x, x.y);
+  if (mode === "combat" && cbt){ const all = [...party, ...foes].filter(x => actors.includes(x) && !x.down); return all.length > 0 && all.every(there); }
+  return !!(leader && actors.includes(leader) && there(leader) && leader.alpha > .05);
 }
 function ovTick(){
   if (!OV.tris || mode === "travel" || mode === "load") return;   // leaving the plate: the next plate sets its own camera
@@ -1917,6 +1928,7 @@ function draw(){
   if (mode === "combat"){ drawIcePatches(); drawFxLayer(true); tickIce(); }
   if (mode === "explore" && exploreJump && leader && actors.includes(leader)) drawExploreJumpSquares(leader);
   ovWrapGroup(drops, drawLootGround);   // the loot ceremony's floor light, under the figures
+  drawCrimGhosts();                     // a rogue or ranger's afterimages, under the figures
   const list = actors.concat(vermin, laborProps).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);   // laborProps: Hard Labor's station props
   const cloudQ = mode === "combat" || clouds.length ? cloudPuffs() : [];   // the poison cloud, in depth order among the figures
   let barsAt = gateBarsY();                                       // the bars in front of a guard leaning at them, in depth order
@@ -2005,7 +2017,8 @@ function draw(){
       const fx = a.x + a.kx, fyy = a.y + fy + a.ky;
       ctx.save(); ctx.translate(fx, fyy); ctx.rotate(sp.rot); ctx.scale(1, sp.sy);
       ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx - fx, dy - fyy, dw, dh); ctx.restore();
-    } else ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh);
+    } else { ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh);
+      if (a.trailUntil > now && !ovT && now - (a.ghostAt || 0) > 34){ a.ghostAt = now; crimGhosts.push({img, sx: f * cw, sy: a.face * ch, cw, ch, dx, dy, dw, dh, plate: cur, t0: now}); if (crimGhosts.length > 40) crimGhosts.shift(); } }
     if (pose) ctx.filter = "none";
     if (a.st > .02 && !pose){                     // the hidden veil: the frame again, filled with cave shadow, over the body
       ctx.globalAlpha = a.alpha * veilK * a.st * .55;
@@ -2059,12 +2072,50 @@ function draw(){
   if (barsAt != null) drawGateBars();
 
   while (cloudQ.length) drawPuff(cloudQ.shift());
+  drawLight();          // the dark, with the lamps, the heroes and landing spells cut out of it; everything after glows through
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
   drawTolls();
-  ovWrapGroup(drops, drawDrops); drawCombatFx(); drawShots(); drawToothGlow();
+  ovWrapGroup(drops, drawDrops); drawCombatFx(); drawCrimPuffs(); drawShots(); drawCritBadges(); drawToothGlow();
   ctx.globalAlpha = 1;
 }
 const tint = document.createElement("canvas");
+// ── THE LIGHT LAYER (from the Combat Effects Lab, 2026-10-29) ─────────────────────────────────────────────────────────
+// A sheet of darkness laid over the plate and the figures, with holes cut where light is: the plate's own painted lamps
+// (fx.json fires = warm and flickering, cools = cyan crystal, violets = faerie glow), a faint circle round each hero so
+// a player can always find their own party, and a short burst wherever a spell lands (kitImpact). The coloured glow of
+// each light is then added on top. Drawn at half resolution in SCREEN space, so it covers the close-up painting too.
+// Spells, swipes, numbers and loot draw AFTER it, so they glow through the dark. Presentation only: no rule reads it.
+// Levels are a per-browser choice on the zoom bar (Off / Dim / Dark), Dim by default. Numbers are Claude's, flagged.
+const LIGHT_LEVELS = {off: 0, dim: .38, dark: .62};
+let lightLevel = "dim"; try { const v = localStorage.getItem("aop_walk_light"); if (v && v in LIGHT_LEVELS) lightLevel = v; } catch (e) {}
+const lightFlashes = [];                                    // {x, y, r, col:[r,g,b], t0, ms}
+const LC = document.createElement("canvas"), lcx = LC.getContext("2d");
+function hexRgb(h){ h = String(h || "#ffffff").replace("#", ""); if (h.length === 3) h = h.split("").map(c => c + c).join(""); const n = parseInt(h, 16); return isFinite(n) ? [(n >> 16) & 255, (n >> 8) & 255, n & 255] : [255, 255, 255]; }
+function lightFlash(x, y, col, r = 300, ms = 520){ if (lightLevel === "off") return; lightFlashes.push({x, y, r, col: Array.isArray(col) ? col : hexRgb(col), t0: now, ms}); if (lightFlashes.length > 24) lightFlashes.shift(); }
+function plateLights(){
+  const out = [], d = FX[node.slug], t = now / 1000, sc = node.scale || 1;
+  if (d){
+    (d.fires || []).forEach((p, i) => out.push({x: p.x, y: p.y, r: Math.max(160, p.r * 9), col: [255, 160, 70], a: .95 - .22 * (.5 + .5 * Math.sin(t * 11 + i * 1.7) * Math.sin(t * 6.3 + i)), glow: .18}));
+    (d.cools || []).forEach(p => out.push({x: p.x, y: p.y, r: Math.max(120, p.r * 2.4), col: [120, 210, 255], a: .7, glow: .08}));
+    (d.violets || []).forEach(p => out.push({x: p.x, y: p.y, r: Math.max(120, p.r * 2.2), col: [190, 120, 255], a: .7, glow: .08}));
+  }
+  for (const a of actors) if (a.kind === "pc" && !a.down && a.alpha > .2){ const q = ovPt(a.x, a.y); out.push({x: q.x, y: q.y - 50 * sc, r: 230 * sc, col: [255, 214, 160], a: .75, glow: 0}); }
+  for (let i = lightFlashes.length - 1; i >= 0; i--){ const f = lightFlashes[i], k = (now - f.t0) / f.ms; if (k >= 1){ lightFlashes.splice(i, 1); continue; } out.push({x: f.x, y: f.y, r: f.r * (.7 + .3 * k), col: f.col, a: 1 - k * k, glow: .45 * (1 - k)}); }
+  return out;
+}
+function drawLight(){
+  const dark = LIGHT_LEVELS[lightLevel]; if (!dark || mode === "load") return;
+  const W = Math.ceil(cv.width / 2), H = Math.ceil(cv.height / 2); if (LC.width !== W || LC.height !== H){ LC.width = W; LC.height = H; }
+  const m = ctx.getTransform(), lights = plateLights();
+  lcx.setTransform(1, 0, 0, 1, 0, 0); lcx.globalCompositeOperation = "source-over"; lcx.clearRect(0, 0, W, H);
+  lcx.fillStyle = `rgba(6,4,14,${dark})`; lcx.fillRect(0, 0, W, H);
+  lcx.setTransform(m.a / 2, m.b / 2, m.c / 2, m.d / 2, m.e / 2, m.f / 2); lcx.globalCompositeOperation = "destination-out";
+  for (const l of lights){ const g = lcx.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.r); g.addColorStop(0, `rgba(0,0,0,${l.a})`); g.addColorStop(.35, `rgba(0,0,0,${l.a * .8})`); g.addColorStop(.7, `rgba(0,0,0,${l.a * .3})`); g.addColorStop(1, "rgba(0,0,0,0)"); lcx.fillStyle = g; lcx.fillRect(l.x - l.r, l.y - l.r, l.r * 2, l.r * 2); }
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = true; ctx.drawImage(LC, 0, 0, cv.width, cv.height); ctx.restore();
+  ctx.save(); ctx.globalCompositeOperation = "lighter";      // the colour of each light, laid on top in plate space
+  for (const l of lights){ if (!l.glow) continue; const g = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.r * .8); g.addColorStop(0, `rgba(${l.col[0]},${l.col[1]},${l.col[2]},${l.glow * l.a})`); g.addColorStop(1, `rgba(${l.col[0]},${l.col[1]},${l.col[2]},0)`); ctx.fillStyle = g; ctx.fillRect(l.x - l.r, l.y - l.r, l.r * 2, l.r * 2); }
+  ctx.restore(); ctx.imageSmoothingEnabled = false;
+}
 // human-scale iron chains and manacles, drawn on the floor under everyone (a link is ~5 px; a cuff ~14 px across, wrist size)
 function drawChain(c){
   const pts = c.pts; ctx.save(); ctx.lineCap = "round";
@@ -3265,7 +3316,10 @@ function loadSfx(name){
   return SFX[name] || (SFX[name] = fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
     .then(b => audioCtx().decodeAudioData(b)).catch(() => { delete SFX[name]; return null; }));
 }
-const bank = (name, gain = .8) => sfx(name.startsWith("walk:") ? name : "bank:" + name, gain);
+// the elements sound like what they are (Sam, 2026-10-29: "Cold spells should sound like a blizzard / fire like an inferno /
+// acid like corrosion / necrotic like eldritch / thunder like thunder!!!"): recorded files in public/sfx/walk take over the pack's
+const ELEMENT_SND = {"magic/impact_thunder": "walk:thunder-clap", "magic/impact_cold": "walk:impact-cold", "magic/impact_fire": "walk:impact-fire", "magic/impact_acid": "walk:impact-acid", "magic/impact_necrotic": "walk:impact-necrotic"};
+const bank = (name, gain = .8) => { name = ELEMENT_SND[name] || name; return sfx(name.startsWith("walk:") ? name : "bank:" + name, gain); };
 // ---------- the clicks ----------
 // Sam, 2026-10-25: "We also need more audible clicks." The map's buttons were silent (only loot, dice and initiative
 // made a sound). Eight short ElevenLabs effects (flow "AoP Underwalk explore music + UI clicks"), cut and levelled,
@@ -5279,7 +5333,7 @@ function drawFxLayer(flat){
   ctx.globalAlpha = 1;
 }
 // which sheets and sounds a spell uses, from its school (lib/spell-school-data) and damage type
-const SCHOOL_OF = {"Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
+const SCHOOL_OF = {"Eldritch Blast": "evocation", "Hex": "enchantment", "Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
   "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment",
   "Stinking Cloud": "conjuration", "Cloudkill": "conjuration", "Fog Cloud": "conjuration", "Poison Spray": "necromancy"};
 const RUNE_OF = {cold: "runeFrost", fire: "runeFire", lightning: "runeStorm", necrotic: "runeNecrotic", psychic: "runePsychic", radiant: "runeRadiant", force: "runeForce", acid: "runeAcid", heal: "runeHealing"};
@@ -5667,11 +5721,21 @@ const SPELLS = {
   // level 5, 3d12 at 11, 4d12 at 17 — he is level 1). 5.2.1 is not ingested in campaign_chunks; checked against the
   // SRD 2024 text at virtualtabletoptools.com/spells/srd-2024_poison-spray. Drawn as a spray (build_walk.py WALK_BY_SPELL).
   "Poison Spray":       {lvl: 0, kind: "attack", range: 30, dmg: "1d12", type: "poison", fx: "#7fd16a"},
+  // THE WARLOCK'S TWO (Sam, 2026-10-29: "Ok, lets wire all of these effects" — Kingasaur has both on his sheet). SRD 5.1:
+  // Eldritch Blast, evocation cantrip, 120 ft, "a beam of crackling energy" — a ranged spell attack, 1d10 force; more beams
+  // at higher levels (two at 5th, three at 11th, four at 17th), each its own attack roll. Agonizing Blast adds the CHA
+  // modifier to each beam's damage; Repelling Blast pushes the target 10 ft away on each hit (invocations, PHB; read from
+  // the sheet's `invocations` when it has one).
+  "Eldritch Blast":     {lvl: 0, kind: "attack", range: 120, dmg: "1d10", type: "force", fx: "#a35bff", beams: true},
+  // Hex (PHB): 1st-level enchantment, bonus action, 90 ft, Concentration up to 1 hour. "Until the spell ends, you deal an
+  // extra 1d6 necrotic damage to the target whenever you hit it with an attack." NOT YET: the chosen ability's
+  // disadvantage on checks, and moving the hex to a new target when this one drops.
+  "Hex":                {lvl: 1, kind: "hex", range: 90, bonus: true, cond: "hexed", type: "necrotic", fx: "#a35bff", conc: 600},
 };
 // ---------- Rage and Wounded Fury: the rules, one copy (lib/rage.mjs, pasted in here by build_walk.py) ----------
 /*__RAGE__*/
 const COND_GLYPH = {surprised: ["!", "#ffd27a", "Surprised: no move and no action on its first turn, no reaction until that turn ends"], poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
-                    shielded: ["◇", "#cfe8ff", "+2 AC"], blessed: ["✚", "#ffe9a8", "Blessed: +1d4 to attack rolls and saving throws"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
+                    shielded: ["◇", "#cfe8ff", "+2 AC"], blessed: ["✚", "#ffe9a8", "Blessed: +1d4 to attack rolls and saving throws"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], hexed: ["⛧", "#c58aff", "Hexed: the warlock's hits deal +1d6 necrotic"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
                     hidden: ["◌", "#b8c7d6", "Hidden: unseen until you attack"], prone: ["▼", "#e0b070", "Prone: melee on it has advantage, ranged disadvantage; half speed to stand"],
                     grappled: ["✊", "#e0b070", "Grappled: speed 0"], helped: ["★", "#ffe08a", "Helped: advantage on the next attack"], disengaged: ["↷", "#cfe8ff", "Disengaged: no opportunity attacks"],
                     sorcery: ["✴", "#ff9bd2", "Innate Sorcery: DC +1, advantage on spell attacks"], readied: ["⌖", "#ffe08a", "Readied: a strike waits for the first foe in reach"], dodging: ["◈", "#cfe8ff", "Dodging"],
@@ -6117,6 +6181,7 @@ function nextTurn(first){
   // death-save failure (damage() does that) -- before the turn's own death save
   if (a.down){ renderTurns(); renderParty(); if (a.kind === "pc") poisonTurnStart(a, true); if (deathSaveTurn(a)) return; }
   if (a.c.conc && cbt.round >= a.c.conc.endRound) endConc(a, "the spell runs its full time");
+  for (const x of [...party, ...foes, ...(cbt.allies || [])]) if (x.c && x.c.noHeal === a) x.c.noHeal = null;   // Chill Touch lets go
   for (let i = clings.length - 1; i >= 0; i--) if (clings[i].by === a || !clings[i].by){ clings[i].p.then(e => { if (e) e.until = now + 350; }); clings.splice(i, 1); }
   a.c.conds.delete("dodging"); a.c.conds.delete("shieldSpell"); a.c.reactionUsed = false;
   if (a.c.ready){ a.c.ready = null; a.c.conds.delete("readied"); }   // SRD: a readied action lasts until the start of your next turn
@@ -7593,7 +7658,7 @@ function askShield(t, att, atk, total, ac, cb){
   showDialog({title: `${fname(t)}: cast Shield?`, body: `${fname(att)}'s ${atk.name} would hit: ${total} against AC ${ac}. Shield raises AC to ${ac + 5} until the start of ${fname(t)}'s next turn, so this one misses. It uses the reaction and a level 1 slot (${t.c.slots[1]} left).`,
     src: "Shield · 1 reaction · level 1", buttons: [
       {label: "Cast Shield", primary: true, fn: () => { t.c.reactionUsed = true; t.c.slots[1] = Math.max(0, (t.c.slots[1] || 0) - 1); addCond(t, "shieldSpell");
-        bank("magic/arcane_release", .6); spawnFx("sigilAbjurationRing", {at: t, sq: 2, flat: true, spin: 1}); popText(t, "Shield +5", "#cfe8ff"); log(`${fname(t)} casts <b>Shield</b> (reaction): AC ${ac + 5}.`); renderParty(); cb(true); }},
+        bank("magic/arcane_release", .6); labSphere(t, att); popText(t, "Shield +5", "#cfe8ff"); log(`${fname(t)} casts <b>Shield</b> (reaction): AC ${ac + 5}.`); renderParty(); cb(true); }},
       {label: "Take the hit", fn: () => cb(false)}]});
 }
 // a weapon attack: close to reach, swing, roll on the hit frame, then the number
@@ -7653,6 +7718,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
     // a thrown weapon or flask leaves the hand: out of the bag now (the flask is spent; the weapon lands on the floor)
     if ((shot === "thrown" || shot === "flask") && att.kind === "pc") flung(att, atk, shot);
     let flying = null, landed = null, shieldWait = null;
+    att.bladeSwing = !shot && /dagger|sword|rapier|scimitar|knife|sickle|kukri|blade/i.test(atk.name);   // a sprite with a `dagger` sheet swings it for a blade (Lynkes, 2026-10-29)
     strike(att, tgt, () => {
       // cover is judged at the moment of the blow, from where they both stand now (SRD 5.1 Cover); a wall in the way
       // means there is no shot at all (a foe that walked as far as it could and still has stone between them)
@@ -7673,14 +7739,15 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         flying = new Promise(res => fireShot(att, tgt, shot, hit, to => { landed = to; lands(); res(); }, atk)); }
       else { lunge(att, tgt, 20 * actorScale(att)); lands(); }   // a longer lunge into the blow (Sam, 2026-10-28: "dynamic")
       function lands(){
-      const sw = swipeStyle(atk, crit, att);
+      const sw = swipeStyle(atk, crit, att), fist = !shot && /unarmed|fist|punch/i.test(atk.name), crimS = !shot && !fist && sw.kind !== "claw" && sw.kind !== "bite" && !/pseudopod|tentacle|slam/i.test(atk.name);   // every blade and fist takes the strike look; claws, bites and oozes keep their own
+      att.trailUntil = 0;
       if (shot === "thrown" && att.kind === "pc") restOnFloor(att, atk, hit ? tgt : (landed || tgt), !hit);     // at their feet, or where it fell
       if (shot === "flask") shatter(atk, hit ? {x: tgt.x, y: tgt.y} : (landed || tgt), hit ? tgt : null);
       if (!hit){
         // a melee blow that reached them is a sparring exchange (sparMiss); a shot, a flask, or a blow with stone in
         // the way is the plain miss it always was
         const how = !shot && !cv.total && !tgt.down ? sparMiss(att, tgt, r === 1 ? null : r + atk.hit + insp - acVs, sw, ws) : null;
-        if (!how){ if (!shot) swipe(att, tgt, {...sw, miss: true}); miss(tgt); bank(shot === "flask" ? "magic/spell_fizzle" : ws.miss, .7); }
+        if (!how){ if (!shot && !fist){ if (crimS) crimSlash(att, tgt, {miss: true}); else swipe(att, tgt, {...sw, miss: true}); } miss(tgt); bank(shot === "flask" ? "magic/spell_fizzle" : ws.miss, .7); }
         log(`${why} — ${how === "parry" ? "parried" : how === "duck" ? "ducked" : how === "dodge" ? "dodged" : "miss"}.`);
         narrate(att, shot ? `${fname(att)}'s shot goes wide of ${fname(tgt)}.` : how === "parry" ? `${fname(att)} swings at ${fname(tgt)}, who turns the blow aside.` : how === "duck" ? `${fname(att)} swings at ${fname(tgt)}, who ducks under it.` : how === "dodge" ? `${fname(att)} swings at ${fname(tgt)}, who slips out of the way.` : `${fname(att)} swings at ${fname(tgt)} and misses.`);
         if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt, null, att), 500); return; }
@@ -7688,17 +7755,31 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       // OR an ally is within 5 ft of the target and you do not have disadvantage.
       const sneak = !!(atk.sneak && !att.c.sneakUsed && adv >= 0 && (adv > 0 || standing(heroes()).some(p => p !== att && feetBetween(p, tgt) <= 5)));
       if (sneak) att.c.sneakUsed = true;
+      if (sneak && (crimS || (shot && isStriker(att)))){ if (!shot) crimShadow(att, .7); crimShadow(tgt, 1); }   // the rogue's Sneak Attack comes out of shadow
       knock(tgt, att, (crit ? 34 : 20) * actorScale(tgt)); if (tgt.kind === "pc") redFlash();   // and a harder stagger on the one hit
       bank(crit ? "combat/crit_hit" : sneak ? "combat/sneak_attack" : ws.hit, crit ? .95 : .8); if (crit) bank("ui/nat20", .7);
       // THE COMBO (Sam, 2026-10-28: "I want melee to function the same [as the demo]; it looked good. Not just one punch. The
       // damage can stay whatever is rolled"). One roll, one number — but the blow is drawn as two strokes: the cut, then the
       // follow-through from the other side 150 ms later with a second, smaller impact (a third stroke on a crit), and blood
       // where a blade lands. A fall leaves a pool (fall()).
-      if (!shot){ swipe(att, tgt, {...sw, crit});
+      // SNEAK ATTACK WITH A FINESSE BLADE (Sam's reference, 2026-10-29: dagger, short sword, any finesse weapon): the
+      // crescent, then the blade driven in as a crimson lance with a burst at the point, then the crimson spray.
+      if (!shot && crimS && sneak){ crimSlash(att, tgt, {crit});
+        setTimeout(() => { crimThrust(att, tgt); crimStar(att, tgt, true); lunge(att, tgt, 14 * actorScale(att)); knock(tgt, att, 12 * actorScale(tgt)); }, 170);
+        setTimeout(() => { crimStar(att, tgt, crit); crimMist(att, tgt, crit ? 34 : 24); if (/piercing|slashing/.test(atk.type) && !/skeleton|ooze/.test(tgt.id)) addBlood(tgt, 1.2, false); shake(crit ? 9 : 6); }, 330); }
+      else if (!shot && crimS){ crimSlash(att, tgt, {crit}); crimStar(att, tgt, crit); if (crit) crimThrust(att, tgt); if (/piercing|slashing/.test(atk.type)) crimMist(att, tgt, crit ? 26 : 8);   // the rogue & ranger strike
+        setTimeout(() => { if (!tgt.down || crit){ crimSlash(att, tgt, {crit, flip: -1, stab: /pierc/.test(atk.type)}); crimStar(att, tgt, false); lunge(att, tgt, 10 * actorScale(att)); knock(tgt, att, 10 * actorScale(tgt)); } }, 150);
+        if (crit) setTimeout(() => { crimThrust(att, tgt); crimStar(att, tgt, true); }, 290); }
+      // BARE HANDS (Sam's comment on the lab, 2026-10-29: "striking with your hands doesn't create a crimson or gold arch
+      // effect"): no crescent and no swipe line — only Sam's own drawn martial spark (jab, kick, uppercut on a crit; strikeSheet
+      // below) and the second jolt of the combo.
+      if (fist) setTimeout(() => { if (!tgt.down){ lunge(att, tgt, 10 * actorScale(att)); knock(tgt, att, 10 * actorScale(tgt)); } }, 150);
+      if (!shot && !crimS && !fist){ swipe(att, tgt, {...sw, crit});
         setTimeout(() => { if (!tgt.down || crit){ swipe(att, tgt, {...sw, crit, flip: -(sw.flip || 1)}); lunge(att, tgt, 10 * actorScale(att)); knock(tgt, att, 10 * actorScale(tgt)); spawnFx("physicalImpact", {at: tgt, sq: 1.4, mirror: tgt.x > att.x}); } }, 150);
-        if (crit) setTimeout(() => swipe(att, tgt, {...sw, crit: true, flip: sw.kind === "claw" ? -(sw.flip || 1) : sw.flip}), 290);
+        if (crit) setTimeout(() => swipe(att, tgt, {...sw, crit: true, flip: sw.kind === "claw" ? -(sw.flip || 1) : sw.flip}), 290); }
+      if (!shot){
         if (/piercing|slashing/.test(atk.type) && !/ooze/.test(tgt.id)) addBlood(tgt, crit ? 1.3 : .8, false); }
-      { const sk = strikeSheet(atk, sneak, att, tgt, crit); spawnFx(sk.name, {at: tgt, mirror: sk.mirror, sq: shot ? (crit ? 1.8 : 1.3) : crit ? 2.6 : 2}); }
+      if (!crimS){ const sk = strikeSheet(atk, sneak, att, tgt, crit); spawnFx(sk.name, {at: tgt, mirror: sk.mirror, sq: shot ? (crit ? 1.8 : 1.3) : crit ? 2.6 : 2}); }   // a striker's hit (Sneak Attack too) has its own burst instead
       if (atk.flask){ flaskHits(att, tgt, atk, crit, why); return; }
       let dmg = roll(offhand ? offDmg(atk) : atk.dmg, crit), parts = [`${dmg.total} ${atk.type}${offhand ? " (off hand)" : ""}`];
       if (sneak){ const s = roll(atk.sneak, crit); dmg.total += s.total; parts.push(`sneak attack ${s.total}`); }
@@ -7707,7 +7788,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       { const rd = attackRiders({hp: att.c.hp, woundedFury: att.c.sheet.woundedFury, raging: att.c.rage, level: att.c.sheet.level || 1}, atk, shot === "thrown");
         for (const d of rd.dice){ const s = roll(d.dice, crit); dmg.total += s.total; parts.push(`${d.label} ${s.total}`); }
         for (const f of rd.flat){ dmg.total += f.amount; parts.push(`${f.label} +${f.amount}`); } }
-      damage(tgt, dmg.total, atk.type, crit, att, !!atk.magic);
+      damage(tgt, dmg.total, atk.type, crit, att, !!atk.magic); hexRider(att, tgt, crit);
       if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => bank(`magic/impact_${atk.extra.type}`, .55), 200); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att, true), 260); parts.push(`${e.total} ${atk.extra.type}`); }
       if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20(rageAdvantage(tgt.c.rage, atk.rider.save), tgt, atk.rider.cond) + (tgt.c.sheet.saves[atk.rider.save] || 0) + blessD4(tgt), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att, true); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
@@ -7769,7 +7850,7 @@ function castSpell(caster, tgt, name, done, darts){
   if (sp.conc) startConc(caster, name);
   const ring = quiet || bardic ? Promise.resolve(null) : spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
   if (bardic) singAt(caster, quiet ? "#b0b8ff" : noteCol, 900);   // Sleep too (Sam, 2026-10-14: "sleep should be music"): a lullaby, sung
-  const kit = quiet ? null : kitFor(name, sp); kitGather(caster, kit);
+  const lab = quiet ? null : labLookOf(name), kit = quiet || lab ? null : kitFor(name, sp); kitGather(caster, kit);   // a lab look stands in for the kit
   const marks = [];
   // Sigils only, no plumes (Sam, 2026-10-13: "use the sigils but NOT the plumes. I will tell you when the
   // plume is appropriate"). sig[1] stays in the table for that day.
@@ -7784,7 +7865,7 @@ function castSpell(caster, tgt, name, done, darts){
   castRelease(caster, () => {
     ring.then(e => { if (e) e.until = now; }); if (thrown) thrown.then(e => { if (e) e.until = now; });
     if (!quiet) bank(`magic/${family}_release`, .7);
-    if (tgt.id && BOLT_OF[dtype] && !quiet && !kit) spawnFx(BOLT_OF[dtype], {at: caster, sq: .9, anchor: "mid", loop: true, until: now + 260, alpha: .95});
+    if (tgt.id && BOLT_OF[dtype] && !quiet && !kit && !lab) spawnFx(BOLT_OF[dtype], {at: caster, sq: .9, anchor: "mid", loop: true, until: now + 260, alpha: .95});
     // Healing is carried by an orb (Sam, 2026-10-13: "healing word should not look like a projectile but an
     // orb"): a soft glowing sphere leaves the caster's hands, arcs over to the ally and sinks into them;
     // the shimmer and the halo follow. Everything else that flies is a bolt.
@@ -7811,6 +7892,7 @@ function castSpell(caster, tgt, name, done, darts){
       return;
     }
     const carry = quiet ? (cb) => setTimeout(cb, 420)
+      : lab ? (cb) => lab.deliver(caster, at, cb, sp)
       : kit ? (cb) => kitDeliver(caster, at, kit, cb)
       : sp.kind === "heal" ? (cb) => healBloom(caster, tgt, cb)
       : (cb) => spellBolt(caster, at, sp.fx, cb);
@@ -7820,25 +7902,37 @@ function castSpell(caster, tgt, name, done, darts){
       if (sp.area && kit && kit.cloud) spawnCloud(kit.cloud, at.x, at.y, sp, caster, name);   // the gas arrives with the spell
       if (sp.kind === "fog"){ log(`<b>${fname(caster)}</b> casts <b>${name}</b>: a 20-ft sphere of fog, heavily obscured, while ${fname(caster)} concentrates.`);
         narrate(caster, `Grey fog rolls out where ${fname(caster)} points and swallows the ground.`); return; }
-      const land = (tg, taken, type) => { sigilEnd(tg, taken); if (taken && kit && kit.type === type){ bank(`magic/impact_${type}`, .8); kitImpact(tg, kit, {area: !!sp.area, by: caster}); if (GROUND_OF[type] && !kit.aftermath) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
+      const land = (tg, taken, type) => { if (lab){ sigilEnd(tg, taken); if (taken){ bank(`magic/impact_${type}`, .8); lab.hit(caster, tg, sp); } else { bank("magic/spell_fizzle", .6); if (lab.miss) lab.miss(caster, tg); } return; }
+        sigilEnd(tg, taken); if (taken && kit && kit.type === type){ bank(`magic/impact_${type}`, .8); kitImpact(tg, kit, {area: !!sp.area, by: caster}); if (GROUND_OF[type] && !kit.aftermath) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
       if (sp.kind === "attack"){
+      // Eldritch Blast's beams: each its own roll, one after another (the later ones drawn as they go)
+      const beams = sp.beams ? beamsOf(caster) : 1;
+      const one = (bi) => { if (bi && (tgt.down || !cbt)) return; if (bi && lab && lab.again) lab.again(caster, tgt);
         const cv = coverOf(caster, tgt), acVs = targetAc(tgt) + cv.ac;
         const adv = Math.sign(advantageOn(caster, tgt, true) + (caster.c.conds.has("sorcery") ? 1 : 0)), r = d20(adv, caster), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(caster, r + m.hit, acVs), hit = crit || (r !== 1 && r + m.hit + insp >= acVs); afterAttackRoll(caster);
         const why = `${fname(caster)} ${name}: ${r} + ${m.hit} vs AC ${acVs}${coverNote(cv)}`;
         if (r === 1) bank("ui/nat1", .7); if (crit) bank("ui/nat20", .7);
         if (!hit){ miss(tgt); land(tgt, false, sp.type); log(`${why} — miss.`); return; }
-        land(tgt, true, sp.type); knock(tgt, caster, 12 * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
+        if (lab) lab.crit = crit; land(tgt, true, sp.type); knock(tgt, caster, 12 * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
         narrate(caster, `${fname(caster)}'s ${name} ${sp.type === "cold" ? "frosts" : sp.type === "necrotic" ? "withers" : sp.type === "radiant" ? "sears" : "strikes"} ${fname(tgt)}.`);
-        const d = roll(sp.dmg, crit); damage(tgt, d.total, sp.type, crit, caster, true); if (sp.cond) addCond(tgt, sp.cond); if (name === "Ray of Frost") addCond(tgt, "slowed");
+        const d = roll(sp.dmg, crit); if (sp.beams && invoked(caster, "Agonizing Blast")) d.total += Math.max(0, abilMod(caster.c.sheet, "cha")); damage(tgt, d.total, sp.type, crit, caster, true); hexRider(caster, tgt, crit);
+        if (sp.beams && invoked(caster, "Repelling Blast") && !tgt.down) repel(caster, tgt, 10); if (sp.cond) addCond(tgt, sp.cond); if (name === "Ray of Frost") addCond(tgt, "slowed");
         if (sp.type === "cold" && sp.ice){ const patch = freezeGround(tgt.x, tgt.y, m.dc, caster); if (!tgt.down){ tgt.onIce = patch; iceSave(tgt, patch, "struck by the orb"); } }
         // SRD 5.1 Shocking Grasp: "On a hit ... it can't take reactions until the start of its next turn."
         if (name === "Shocking Grasp"){ tgt.c.reactionUsed = true; popText(tgt, "no reactions", "#fff27a", .8); }
+        // SRD 5.1 Chill Touch: on a hit the target "can't regain hit points until the start of your next turn" (Sam, 2026-10-29:
+        // "the target can't regain HP until effect is gone") — the heals below read c.noHeal; the caster's next turn clears it
+        if (name === "Chill Touch" && !tgt.down){ tgt.c.noHeal = caster; popText(tgt, "can't regain HP", "#9be04a", .8); sparks.push({labNoHeal: true, a: tgt, t0: now, life: 600000}); }
         log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d.total} ${sp.type}${sp.note ? " (" + sp.note + ")" : ""}.`);
+      }; for (let bi = 0; bi < beams; bi++) setTimeout(() => one(bi), bi * 340);
       } else if (sp.kind === "heal"){
-        const d = roll(sp.dmg).total + m.mod; tgt.c.hp = Math.min(tgt.c.hpMax, tgt.c.hp + d); if (tgt.down && tgt.c.hp > 0){ tgt.down = false; setAnim(tgt, "idle"); }
+        const d = tgt.c.noHeal ? 0 : roll(sp.dmg).total + m.mod; if (tgt.c.noHeal) popText(tgt, "can't regain HP", "#9be04a", .9); tgt.c.hp = Math.min(tgt.c.hpMax, tgt.c.hp + d); if (tgt.down && tgt.c.hp > 0){ tgt.down = false; setAnim(tgt, "idle"); }
         sigilEnd(tgt, true); bank("combat/heal", .8); setTimeout(() => bank("magic/heal_tail", .5), 300);
         kitImpact(tgt, KIT.healing);                                   // the shimmer comes down on them, the golden glow stays
         popText(tgt, `+${d}`, "#9ff2c8"); log(`${fname(caster)} ${name}: ${fname(tgt)} regains ${d}.`); renderParty();
+      } else if (sp.kind === "hex"){                                            // Hex: the curse lands, no roll
+        land(tgt, true, "necrotic"); addCond(tgt, "hexed"); tgt.c.hexedBy = caster; concHolds(caster, tgt, "hexed", name);
+        narrate(caster, `${fname(caster)} curses ${fname(tgt)}.`); log(`${fname(caster)} casts <b>Hex</b> on ${fname(tgt)}: +1d6 necrotic on each of ${fname(caster)}'s hits while it lasts (concentration).`); renderParty();
       } else if (sp.kind === "buff"){ sigilEnd(tgt, true); bank(`magic/${family}_release`, .6);
         // Shield of Faith (SRD 5.1: "A shimmering field appears and surrounds a creature of your choice ... granting it
         // a +2 bonus to AC"): Sam's sheet, a ring of gold on the floor that rises into a shimmering egg of light around
@@ -7960,6 +8054,17 @@ function addCond(t, k){ if ((t.c.sheet.immuneCond || []).includes(k)) { popText(
 //  - and it ends when its time is up (`conc` rounds, checked at the start of the caster's turn).
 // When it ends, whatever that spell put on people comes off: the shield (and its dome), Faerie Fire's light,
 // Sleep's slumber. A condition someone got from elsewhere (Guiding Bolt's light) is left alone.
+// THE WARLOCK'S RIDERS (Eldritch Blast, Hex; Sam 2026-10-29)
+const beamsOf = a => { const L = (a.c.sheet && a.c.sheet.level) || 1; return L >= 17 ? 4 : L >= 11 ? 3 : L >= 5 ? 2 : 1; };
+const invoked = (a, name) => ((a.c.sheet && (a.c.sheet.invocations || (SHEETS[a.id] || {}).invocations)) || []).some(x => String(x.name || x).toLowerCase() === name.toLowerCase());
+// Hex: +1d6 necrotic (doubled on a crit) when the hexer hits the hexed
+function hexRider(att, t, crit){ if (!t || t.down || !t.c || !t.c.conds.has("hexed") || t.c.hexedBy !== att) return; const h = roll("1d6", crit);
+  setTimeout(() => { labHexPulse(t); bank("walk:impact-necrotic", .45); damage(t, h.total, "necrotic", false, att, true); log(`Hex: +${h.total} necrotic on ${fname(t)}.`); }, 220); }
+// Repelling Blast: "push the creature up to 10 feet away from you in a straight line" — off a ledge or into the chasm if that is where it goes
+function repel(a, t, ft){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ftPx(t) * ft, y: t.y + d.y * ftPx(t) * ft}; const to = nearestWalkable(raw.x, raw.y), ce = chasmEdge(t, raw);
+  labRef("ebImpExpl", {x: t.x, y: t.y + 8, w: 170, life: 600, grow: [.5, 1.2], fade: [20, 380], anchorY: "bottom", add: false}); shake(8); bank("walk:thunder-clap", .5);
+  if (ce) chasmFall(t, raw, a, ce); else if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a);
+  else { const top = elevAt(t.x, t.y); t.x = to.x; t.y = to.y; const dropFt = top - elevAt(to.x, to.y); popText(t, `pushed ${ft} ft`, "#c58aff", .85); if (dropFt >= LEDGE_FT) setTimeout(() => landFall(t, dropFt), 250); } }
 function startConc(a, spell){
   if (a.c.conc) endConc(a, `casting ${spell} instead`);
   a.c.conc = {spell, endRound: (cbt ? cbt.round : 0) + SPELLS[spell].conc, holds: []};
@@ -7989,6 +8094,7 @@ function concSave(a, dmg){
 // only when it did not — a +1 blade or a cantrip goes through whole.
 function damage(t, n, type, crit, from, magical = false){
   const s = t.c.sheet; if ((s.immune || []).includes(type)){ popText(t, "immune", "#aaa"); return; }
+  if (crit) critBadge(t);   // "Crit when it occurs" (Sam, 2026-10-29)
   // a resistance is a TAG on the number ("5 ½"), not a word of its own over the head (the pop lanes, 2026-10-28)
   let tag = "";
   if (!magical && !t.c.holyOpen && !(s.resist || []).includes(type) && (s.resistNonmagical || []).includes(type)){ n = Math.floor(n / 2); tag = "½"; }
@@ -8044,7 +8150,7 @@ function damage(t, n, type, crit, from, magical = false){
   if (cbt && cbt.boss === t){ if (t.c.hp <= 0) bossFalls(t); else bossHit(t, hpBefore); }   // BOSS FIGHTS: the bar follows every blow; half is the Bloodied beat
   renderParty();
 }
-function miss(t){ popText(t, "miss", "#c9c4b8", .9); if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle")); }
+function miss(t){ popText(t, "miss", "#c9c4b8", .9); if (t.labSphere) labSphereAbsorb(t, null, "#c890ff"); if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle")); }
 // THE SPARRING EXCHANGE (Sam, 2026-10-22: "I would like misses in combat to look like real deflections, parries,
 // ducking. Such that melee attacks actually look like the two subjects are sparring."). A melee miss used to be the
 // word MISS over a body that stood still (only a few sprites have a drawn dodge) while a grey swipe went through it.
@@ -8107,6 +8213,7 @@ function fall(t){
   if (t.c.rage) endRage(t, "knocked unconscious");
   if (t.c.conc) endConc(t, "they go down");
   t.down = true; t.path = []; t.c.conds.clear();
+  if (t.zappedAt && now - t.zappedAt < 2000 && !hero(t)) labAsh(t);   // killed by Shocking Grasp: straight to ash (Sam, 2026-10-29)
   if (cbt && !/ooze|ghost/.test(t.id) && !t.iced && !t.withered) setTimeout(() => addBlood(t, t.boss ? 1.3 : 1, true), 500);   // the pool spreads under the body
   if (t.kind === "pc") t.c.ds = {s: 0, f: 0, stable: !!t.ko, dead: false};
   const cs = CREATURE_SFX[t.id], vd = voxFor(t, "die"); if (vd) setTimeout(() => bank(vd, t.kind === "pc" ? .48 : .55), 110); else bank(cs && cs.death ? cs.death : "creature/death_beast", .85);
@@ -8242,6 +8349,7 @@ function approachThen(att, tgt, ft, then){
   // differently. Only for a melee reach, only over a clear straight leg (every point of the hop is floor), and not for
   // a creature that crawls (speed under 20) or is Large.
   const hop = meleeHopLeg(att, walk.pts, ft);
+  if (isStriker(att) && ft <= 5 && walk.pts.length){ att.trailUntil = now + 2500; landDust(att, .6); }   // the rogue & ranger dash: dust off the mark, afterimages behind
   if (hop){ att.path = hop.before; att.onArrive = () => { att.onArrive = null; hopTo(att, hop.land, arrive); }; if (!hop.before.length) att.onArrive(); return; }
   att.path = walk.pts; att.onArrive = arrive;
   if (!att.path.length) arrive();
@@ -8250,7 +8358,7 @@ function strike(att, tgt, onHit, after, shot){
   att.face = faceOf(tgt.x - att.x, tgt.y - att.y);
   // A shot is not a punch. A sprite with a "shoot" sheet plays it; one without stands and takes aim (no fist thrown),
   // looses after a beat, and the bolt or arrow does the rest. Until now every shot played the cross-punch.
-  const pose = shot && shot !== "thrown" && shot !== "flask" ? (SPR[att.id].img.shoot ? "shoot" : null) : "attack";
+  const pose = shot && shot !== "thrown" && shot !== "flask" ? (SPR[att.id].img.shoot ? "shoot" : null) : (att.bladeSwing && SPR[att.id].img.dagger ? "dagger" : "attack");
   if (!pose){ setAnim(att, "idle"); att.aimHold = now; setTimeout(() => { onHit(); setTimeout(after, 380); }, 420); return; }
   playOnce(att, pose, () => { setAnim(att, "idle"); setTimeout(after, 320); });
   if (att.once) att.once.hit = onHit; else { onHit(); setTimeout(after, 320); }
@@ -8537,6 +8645,316 @@ function bounceIn(a, tgt, then){
 }
 // dust kicked up where the feet land
 function landDust(a, k = 1){ const n = Math.round(10 * k); for (let i = 0; i < n; i++){ const ang = Math.PI + Math.random() * Math.PI, sp = 40 + Math.random() * 90; sparks.push({x: a.x + (Math.random() - .5) * 16, y: a.y, vx: Math.cos(ang) * sp * 1.6, vy: Math.sin(ang) * sp * .35, g: 60, col: i % 3 ? "#b9a88e" : "#8c7c66", t0: now, life: 380 + Math.random() * 260}); } }
+// ---------- THE ROGUE & RANGER STRIKE (Sam, 2026-10-29: "I like it; lets make this the strike package for rogue and
+// rangers", from his crimson reference sheet tried out in the Combat Effects Lab) ----------
+// For a rogue or ranger's melee blade (not a claw or bite), the fighting-game swipe is swapped for: a thick glowing
+// crescent with a white-hot core, a spiked starburst where the blade lands, a puff of blood mist, and on the dash in, dust
+// and dark afterimages left behind. Heroes cut crimson; a rogue or ranger foe cuts shadow violet. Presentation only:
+// the roll, the damage, Sneak Attack and every sound are unchanged. Shots keep their arrows and bolts.
+const isStriker = a => !!(a && a.c && a.c.sheet && /rogue|ranger/i.test(a.c.sheet.cls || ""));
+const CRIM = {crimson: {edge: "#8a0a10", body: "#ff2a1e", mid: "#ff7a5a", core: "#fff1e4", glow: "rgba(255,40,30,.75)"},
+  violet: {edge: "#3a0a6a", body: "#8a3aff", mid: "#c08aff", core: "#f6ecff", glow: "rgba(150,70,255,.75)"}};
+  // EVERYONE ELSE (Sam, 2026-10-29: "Basic attacks and critical attacks for most other people", gold arc, red crit lance):
+  // a fighter, a cleric, a goblin with a scimitar cuts the same crescent in gold; a rogue or ranger keeps crimson (violet
+  // for a foe). A critical hit is the crimson lance and the big crimson burst for anyone at all.
+CRIM.gold = {edge: "#7a4a08", body: "#ffb62e", mid: "#ffe08a", core: "#fffbea", glow: "rgba(255,190,60,.7)"};
+const crimCol = att => isStriker(att) ? CRIM[att.kind === "pc" ? "crimson" : "violet"] : CRIM.gold;
+function crimSlash(att, tgt, o = {}){
+  const m = SPR[tgt.id].json, sc = actorScale(tgt), dir = Math.sign(tgt.x - att.x) || 1, bodyR = m.cell[0] * sc * .22, R = Math.max(54, bodyR * 4) * (o.crit ? 1.35 : 1), stab = !!o.stab;
+  sparks.push({crimson: true, a: tgt, x: tgt.x - dir * R * (stab ? .9 : .35), y: tgt.y - m.pivot[1] * sc * .5, R, W: R * (stab ? .3 : .42), dir: dir * (o.flip || 1), rot: stab ? (Math.random() - .5) * .24 : (Math.random() - .5) * .55 - .07 + (o.flip ? .9 : 0),
+    span: Math.PI * (stab ? .5 : 1.25), stab, C: o.crit ? CRIM.crimson : crimCol(att), t0: now, life: o.crit ? 340 : 260, miss: !!o.miss});
+}
+function drawCrimson(s, k){
+  const head = 1 - Math.pow(1 - Math.min(1, k / .42), 3), tail = Math.pow(Math.max(0, (k - .12) / .88), 1.6), fade = k < .6 ? 1 : 1 - (k - .6) / .4; if (head - tail < .01) return;
+  const N = 28, a0 = -s.span / 2 - .25, pts = [];
+  for (let i = 0; i <= N; i++){ const u = tail + (head - tail) * i / N, v = i / N; pts.push([a0 + s.span * u, s.W * Math.pow(Math.sin(Math.PI * Math.min(1, v * 1.08)), .65) * (.35 + .65 * v)]); }
+  const shape = sc => { ctx.beginPath(); for (const [a, w] of pts) ctx.lineTo(Math.cos(a) * (s.R + w * sc * .5), Math.sin(a) * (s.R + w * sc * .5)); for (let i = pts.length - 1; i >= 0; i--){ const [a, w] = pts[i]; ctx.lineTo(Math.cos(a) * (s.R - w * sc * .5), Math.sin(a) * (s.R - w * sc * .5)); } ctx.closePath(); };
+  ctx.save(); ctx.translate(s.x, s.y); ctx.scale(s.dir, s.stab ? .55 : 1); ctx.rotate(s.rot); ctx.globalAlpha *= fade * (s.miss ? .45 : 1);
+  ctx.globalCompositeOperation = "lighter"; ctx.shadowColor = s.C.glow; ctx.shadowBlur = 34; ctx.fillStyle = s.C.edge; shape(1.5); ctx.fill(); ctx.shadowBlur = 0;
+  ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = s.C.body; shape(1); ctx.fill(); ctx.fillStyle = s.C.mid; shape(.6); ctx.fill(); ctx.fillStyle = s.C.core; shape(.26); ctx.fill();
+  ctx.restore();
+}
+function crimStar(att, tgt, crit){
+  const m = SPR[tgt.id].json, sc = actorScale(tgt), n = crit ? 16 : 9, rays = [];
+  for (let i = 0; i < n; i++) rays.push({a: i / n * Math.PI * 2 + (Math.random() - .5) * .5, L: (.45 + Math.random() * .55) * (i % 3 ? 1 : crit ? 1.9 : 1.4), w: .06 + Math.random() * .06});
+  sparks.push({crimStar: true, a: tgt, x: tgt.x, y: tgt.y - m.pivot[1] * sc * .5, R: Math.max(44, m.cell[0] * sc * .22 * 2.6) * (crit ? 2 : 1), rays, C: crit ? CRIM.crimson : crimCol(att), t0: now, life: crit ? 300 : 220});
+}
+function drawCrimStar(s, k){
+  const grow = 1 - Math.pow(1 - Math.min(1, k / .3), 3), fade = k < .5 ? 1 : 1 - (k - .5) / .5;
+  ctx.save(); ctx.translate(s.x, s.y); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha *= fade;
+  for (const [col, lk, wk] of [[s.C.body, 1, 1], [s.C.core, .55, .45]]){ ctx.fillStyle = col; for (const r of s.rays){ const L = s.R * r.L * grow * lk, w = s.R * r.w * wk;
+    ctx.beginPath(); ctx.moveTo(Math.cos(r.a + Math.PI / 2) * w, Math.sin(r.a + Math.PI / 2) * w); ctx.lineTo(Math.cos(r.a) * L, Math.sin(r.a) * L); ctx.lineTo(Math.cos(r.a - Math.PI / 2) * w, Math.sin(r.a - Math.PI / 2) * w); ctx.closePath(); ctx.fill(); } }
+  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, s.R * .5 * grow + .1); g.addColorStop(0, "rgba(255,250,240,.95)"); g.addColorStop(.4, s.C.glow); g.addColorStop(1, "rgba(0,0,0,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, s.R * .5 * grow + .1, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+// THE CRITICAL (Sam's "Critical attack" reference, 2026-10-29): the blade throws a long crimson lance from the hand
+// clean through the target, the burst is twice the size with long spikes, the body flushes red, and the mist is a cloud.
+function crimThrust(att, tgt){
+  const h = handPoint(att), m = SPR[tgt.id].json, sc = actorScale(tgt), ty = tgt.y - m.pivot[1] * sc * .5, dx = tgt.x - h.x, dy = ty - h.y, d = Math.hypot(dx, dy) || 1;
+  sparks.push({crimThrust: true, x: h.x, y: h.y, ex: tgt.x + dx / d * 60 * sc, ey: ty + dy / d * 60 * sc, W: 16 * Math.max(.7, actorScale(att)), C: CRIM.crimson, t0: now, life: 360});
+  tgt.flash = now + 320; tgt.flashCol = CRIM.crimson.body;
+}
+function drawCrimThrust(s, k){
+  const head = 1 - Math.pow(1 - Math.min(1, k / .3), 3), tail = Math.max(0, (k - .35) / .65), fade = k < .55 ? 1 : 1 - (k - .55) / .45;
+  const x0 = s.x + (s.ex - s.x) * tail, y0 = s.y + (s.ey - s.y) * tail, x1 = s.x + (s.ex - s.x) * head, y1 = s.y + (s.ey - s.y) * head, L = Math.hypot(x1 - x0, y1 - y0); if (L < 2) return;
+  ctx.save(); ctx.translate(x0, y0); ctx.rotate(Math.atan2(y1 - y0, x1 - x0)); ctx.globalAlpha *= fade;
+  const lance = (w, col) => { ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(L * .55, -w, L, 0); ctx.quadraticCurveTo(L * .55, w, 0, 0); ctx.fill(); };
+  ctx.globalCompositeOperation = "lighter"; ctx.shadowColor = s.C.glow; ctx.shadowBlur = 30; lance(s.W * 1.6, s.C.edge); ctx.shadowBlur = 0;
+  ctx.globalCompositeOperation = "source-over"; lance(s.W, s.C.body); lance(s.W * .5, s.C.mid); lance(s.W * .2, s.C.core);
+  ctx.restore();
+}
+// blood mist: soft red discs that swell and drift away from the blow (not from bone or ooze)
+const crimPuffs = [];
+function crimMist(att, tgt, n){
+  if (/skeleton|ooze|elemental/.test(tgt.id)) return; const m = SPR[tgt.id].json, sc = actorScale(tgt), dir = Math.sign(tgt.x - att.x) || 1, q = ovPt(tgt.x, tgt.y - m.pivot[1] * sc * .5);
+  for (let i = 0; i < n; i++) crimPuffs.push({x: q.x + (Math.random() - .5) * 14 * sc, y: q.y + (Math.random() - .5) * 20 * sc, vx: dir * (30 + Math.random() * 110) * sc, vy: (Math.random() - .6) * 50 * sc, r0: (4 + Math.random() * 5) * sc, r1: (16 + Math.random() * 18) * sc, t0: now, life: 420 + Math.random() * 340, rgb: [120 + Math.random() * 70 | 0, 8, 12], a: .55});
+}
+function drawCrimPuffs(){
+  for (let i = crimPuffs.length - 1; i >= 0; i--){ const p = crimPuffs[i], k = (now - p.t0) / p.life; if (k >= 1){ crimPuffs.splice(i, 1); continue; }
+    const x = p.x + p.vx * k, y = p.y + p.vy * k;
+    if (p.twinkle){ const al = (1 - k) * (.5 + .5 * Math.sin(now / 45 + p.ph)); ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = `rgba(${p.rgb[0]},${p.rgb[1]},${p.rgb[2]},${al})`; ctx.fillRect(x - p.r0, y - p.r0 / 4, p.r0 * 2, p.r0 / 2); ctx.fillRect(x - p.r0 / 4, y - p.r0, p.r0 / 2, p.r0 * 2); ctx.restore(); continue; }
+    if (p.wisp){ const al = .7 * (k < .15 ? k / .15 : 1 - (k - .15) / .85); ctx.save(); ctx.strokeStyle = `rgba(${p.rgb[0]},${p.rgb[1]},${p.rgb[2]},${al})`; ctx.lineWidth = p.r0 * (1 - k * .6); ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(x, y);
+      ctx.quadraticCurveTo(x + p.vx * .25 + p.bend, y - p.r1 * .3, x + p.vx * .5, y + p.vy * .5 - p.r1 * .2); ctx.stroke(); ctx.restore(); continue; }
+    const r = p.r0 + (p.r1 - p.r0) * (1 - Math.pow(1 - k, 2)), al = p.a * (k < .2 ? k / .2 : 1 - (k - .2) / .8), [R, G, B] = p.rgb;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(${R},${G},${B},${al})`); g.addColorStop(.6, `rgba(${R >> 1},${G >> 1},${B * .6 | 0},${al * .55})`); g.addColorStop(1, `rgba(${R >> 2},${G >> 2},${B >> 2},0)`);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); }
+}
+// THE SNEAK (Sam's "Sneak effect" reference, 2026-10-29): Sneak Attack lands out of a burst of purple shadow — smoke
+// that rolls out round the attacker and the target, dark wisps that whip past, and pinpoint sparkles in it.
+function crimShadow(at, power = 1){
+  const m = SPR[at.id].json, sc = actorScale(at), q = ovPt(at.x, at.y - m.pivot[1] * sc * .45);
+  for (let i = 0; i < 14 * power; i++){ const ang = Math.random() * Math.PI * 2, sp = (20 + Math.random() * 110) * sc;
+    crimPuffs.push({x: q.x + (Math.random() - .5) * 30 * sc, y: q.y + (Math.random() - .5) * 50 * sc, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * .5 - 25 * sc, r0: (16 + Math.random() * 14) * sc, r1: (46 + Math.random() * 50) * sc, t0: now, life: 900 + Math.random() * 700, rgb: Math.random() < .35 ? [160, 80, 240] : [80, 32, 140], a: .7}); }
+  for (let i = 0; i < 6 * power; i++){ const dir = Math.random() < .5 ? -1 : 1; crimPuffs.push({wisp: true, x: q.x - dir * 40 * sc, y: q.y + (Math.random() - .5) * 60 * sc, vx: dir * (120 + Math.random() * 120) * sc, vy: (Math.random() - .5) * 40 * sc, bend: (Math.random() - .5) * 60 * sc, r0: (3 + Math.random() * 4) * sc, r1: 40 * sc, t0: now, life: 380 + Math.random() * 260, rgb: [36, 12, 64]}); }
+  for (let i = 0; i < 12 * power; i++) crimPuffs.push({twinkle: true, x: q.x + (Math.random() - .5) * 110 * sc, y: q.y + (Math.random() - .5) * 90 * sc, vx: (Math.random() - .5) * 30 * sc, vy: -10 * sc, r0: (2 + Math.random() * 3) * sc, r1: 0, ph: Math.random() * 7, t0: now, life: 500 + Math.random() * 600, rgb: Math.random() < .5 ? [255, 240, 255] : [200, 140, 255]});
+}
+// afterimages: while a striker dashes in, the frame as drawn is left behind every ~34 ms, darkened, fading in 300 ms
+const crimGhosts = [];
+function drawCrimGhosts(){
+  for (let i = crimGhosts.length - 1; i >= 0; i--){ const g = crimGhosts[i], k = (now - g.t0) / 300; if (k >= 1 || g.plate !== cur){ crimGhosts.splice(i, 1); continue; }
+    const im = tintedSheet(g.img, "ghost:" + g.img.src, "#3a1c5a"); ctx.save(); ctx.globalAlpha = (1 - k) * .55; ctx.drawImage(im, g.sx, g.sy, g.cw, g.ch, g.dx, g.dy, g.dw, g.dh); ctx.restore(); }
+}
+// ---------- THE COMBAT EFFECTS LAB, WIRED IN (Sam, 2026-10-29: "Ok, lets wire all of these effects") ----------
+// Sam's effect sheets, cut out in the Combat Effects Lab (public/vfx/lab/*.webp), and the lab's drawn effects, moved
+// here so the fight looks like the bench. Presentation only: no roll, no damage, no rule changes in this block — the
+// rules each spell needs live where castSpell already does them.
+const LAB_DIR = VFX_BASE + "lab/", LABIMG = {};
+function labImg(n){ if (!LABIMG[n]){ const i = new Image(); i.src = `${LAB_DIR}${n}.webp`; LABIMG[n] = i; } return LABIMG[n]; }
+// the body, the way the lab measures it
+const labH = a => SPR[a.id].json.pivot[1] * actorScale(a);
+const labR = a => SPR[a.id].json.cell[0] * actorScale(a) * .22;
+const labMid = a => a.y - labH(a) * .5;
+const labLeft = a => a.face >= 4 && a.face <= 6;
+function labHand(a, t){ const dir = t ? (Math.sign(t.x - a.x) || 1) : labLeft(a) ? -1 : 1, m = SPR[a.id].json, sc = actorScale(a); return {x: a.x + (a.kx || 0) + dir * m.cell[0] * sc * .17, y: a.y - m.pivot[1] * sc * .55, dir}; }
+const labRnd = (a, b) => a + Math.random() * (b - a);
+// labRef(name | [names to flicker], {x, y | at, follow: {x0, y0, x1, y1, ms, arc}, w, life, rot, spin, grow, fade, sx,
+// add, filter, anchor, anchorY, flipX, pulse, boost, alpha, hk, hpx, stretch, fire, then}) — one of Sam's cut-outs, placed,
+// flown or stretched; `then` runs when it lands (or when it ends)
+function labRef(name, o = {}){
+  const e = Object.assign({labRef: true, names: Array.isArray(name) ? name : [name], t0: now, life: 600, w: 120, rot: 0, spin: 0, grow: [1, 1], fade: [60, 200], sx: 1, add: true, dy: 0}, o);
+  if (e.follow) e.life = e.follow.ms; e.names.forEach(labImg); sparks.push(e); return e;
+}
+function drawLabRef(e){
+  if (e.whileCond && !(e.at && e.at.c && e.at.c.conds.has(e.whileCond) && !e.at.down)){ e.life = Math.min(e.life, now - e.t0 + e.fade[1]); e.whileCond = null; }   // a mark that lasts while the condition does
+  const age = now - e.t0, k = Math.min(1, age / e.life); let x, y, rot = e.rot + e.spin * age / 1000;
+  if (e.follow){ const f = e.follow, q = Math.min(1, age / f.ms); x = f.x0 + (f.x1 - f.x0) * q; y = f.y0 + (f.y1 - f.y0) * q - Math.sin(q * Math.PI) * (f.arc || 0); rot += Math.atan2(f.y1 - f.y0, f.x1 - f.x0); }
+  else { x = e.at ? e.at.x + (e.at.kx || 0) + (e.ox || 0) : e.x; y = e.at ? (e.flat ? e.at.y : labMid(e.at)) + (e.oy || 0) : e.y; }
+  const im = LABIMG[e.names[Math.floor(age / (e.flicker || 70)) % e.names.length]]; if (!im || !im.complete || !im.naturalWidth) return;
+  if (e.headLeft && e.follow){ rot += Math.PI; e.anchor = "left"; }   // Sam's comets are painted head-LEFT
+  if (e.fire) labFireTrail(e, x, y, rot);
+  const g = (e.grow[0] + (e.grow[1] - e.grow[0]) * (1 - Math.pow(1 - k, 2))) * (e.fire ? 1 + Math.sin(now / 37) * .05 : 1);
+  const w = e.stretch && e.follow ? Math.max(30, Math.hypot(x - e.follow.x0, y - e.follow.y0) + e.stretch) : e.w * g, h = e.hpx ? e.hpx * g : w * im.naturalHeight / im.naturalWidth * (e.hk || 1);
+  const al = Math.min(1, age / Math.max(1, e.fade[0])) * (e.follow ? 1 : Math.min(1, (e.life - age) / Math.max(1, e.fade[1]))) * (e.alpha == null ? 1 : e.alpha) * (e.pulse ? .82 + .18 * Math.sin(age / 70) : 1);
+  ctx.save(); ctx.globalAlpha = Math.max(0, al); if (e.add) ctx.globalCompositeOperation = "lighter"; if (e.filter) ctx.filter = e.filter; ctx.imageSmoothingEnabled = true;
+  ctx.translate(x, y + e.dy); if (e.flat) ctx.scale(1, .45); ctx.rotate(rot); ctx.scale(e.sx * (e.flipX ? -1 : 1), 1);
+  const ax = e.anchor === "left" ? 0 : e.anchor === "right" ? -w : -w / 2, ay = e.anchorY === "bottom" ? -h : -h / 2;
+  ctx.drawImage(im, ax, ay, w, h); if (e.boost){ ctx.globalAlpha *= e.boost; ctx.drawImage(im, ax, ay, w, h); }
+  ctx.restore(); ctx.imageSmoothingEnabled = false;
+}
+// a comet on fire: it sheds live flame and embers — for Fire Bolt a straight line of fire hanging along the whole path
+function labFireTrail(e, x, y, rot){
+  if (now - (e.lastEm || 0) < 14) return; e.lastEm = now; const back = rot + Math.PI, R = e.w * .22;
+  if (e.fire === "bolt"){ const lx = e.lx ?? x, ly = e.ly ?? y, n = Math.max(1, Math.ceil(Math.hypot(x - lx, y - ly) / 5)); e.lx = x; e.ly = y;
+    for (let j = 0; j < n; j++){ const u = j / n, px = lx + (x - lx) * u, py = ly + (y - ly) * u; sparks.push({labFlame: true, x: px, y: py + labRnd(-4, 4), vx: labRnd(-25, 25), vy: -labRnd(10, 45), r0: R * labRnd(.3, .6), t0: now, life: labRnd(320, 560)});
+      if (Math.random() < .35) sparks.push({x: px, y: py, vx: labRnd(-40, 40), vy: -labRnd(20, 90), g: -25, col: Math.random() < .5 ? "#ffd27a" : "#ff6a10", t0: now, life: labRnd(400, 900)}); }
+    (e.tr = e.tr || []).push({x, y, t: now}); return; }
+  for (let j = 0; j < 3; j++){ const sp = labRnd(-.5, .5); sparks.push({labFlame: true, x: x + labRnd(-R, R) * .4, y: y + labRnd(-R, R) * .4, vx: Math.cos(back + sp) * labRnd(60, 180), vy: Math.sin(back + sp) * labRnd(60, 180) - labRnd(20, 60), r0: R * labRnd(.35, .6), t0: now, life: labRnd(220, 420)}); }
+  sparks.push({x, y, vx: Math.cos(back) * labRnd(80, 220), vy: Math.sin(back) * labRnd(80, 220) - 40, g: -30, col: Math.random() < .5 ? "#ffd27a" : "#ff7a1a", t0: now, life: labRnd(300, 700)});
+}
+function drawLabFireLine(e){ const tr = (e.tr || []).filter(q => now - q.t < 260); e.tr = tr; if (tr.length < 2) return;
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.lineCap = "round";
+  for (const [col, wk, blur] of [["rgba(255,90,10,.55)", 1, 14], ["rgba(255,190,80,.8)", .45, 0], ["rgba(255,250,220,.9)", .15, 0]]){ ctx.strokeStyle = col; ctx.shadowColor = "#ff6a10"; ctx.shadowBlur = blur;
+    for (let i = 1; i < tr.length; i++){ ctx.lineWidth = Math.max(.5, e.w * .22 * wk * (1 - (now - tr[i].t) / 260)); ctx.beginPath(); ctx.moveTo(tr[i - 1].x, tr[i - 1].y); ctx.lineTo(tr[i].x, tr[i].y); ctx.stroke(); } }
+  ctx.restore(); }
+function drawLabFlame(s, k){ const x = s.x + s.vx * k * (s.life / 1000), y = s.y + s.vy * k * (s.life / 1000), r = s.r0 * (1 + k * 1.2) * (1 - k * .4); ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 1 - k;
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, s.col0 || (k < .3 ? "rgba(255,245,200,.95)" : "rgba(255,200,90,.8)")); g.addColorStop(.45, s.col1 || "rgba(255,120,20,.6)"); g.addColorStop(1, "rgba(200,30,0,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
+
+// ---- FIRE BOLT (Sam: "the smaller fire ball", "flies straight like a crossbow bolt", "sound like an inferno but not as loud")
+function labFireBolt(caster, at, then){
+  const h = labHand(caster, at), to = bodyPoint(at); bank("walk:impact-fire", .3);
+  labRef("fbTravel1", {follow: {x0: h.x, y0: h.y, x1: to.x, y1: to.y, ms: 300}, w: 80, headLeft: true, fire: "bolt", then});
+}
+function labFireBoltHit(t){ labRef("fbBurst", {at: t, w: 150, life: 420, grow: [.5, 1.15], fade: [20, 220], dy: -10}); labRef("fbSmokeBurst", {at: t, w: 140, life: 900, grow: [.7, 1.4], fade: [120, 500], add: false, alpha: .75, dy: -20}); lightFlash(t.x, labMid(t), "#ff8a3a", 300, 500); }
+
+// ---- CHROMATIC ORB (Sam's glowing lattice sphere, "adopt the color of the magic"): a turning geodesic ball of glowing strands
+const LAB_GEO = (() => { const t = (1 + Math.sqrt(5)) / 2; let V = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]].map(v => { const l = Math.hypot(...v); return v.map(c => c / l); });
+  const F = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]];
+  const mid = {}, m = (a, b) => { const k = a < b ? a + "," + b : b + "," + a; if (mid[k] != null) return mid[k]; const v = V[a].map((c, i) => (c + V[b][i]) / 2), l = Math.hypot(...v); V.push(v.map(c => c / l)); return mid[k] = V.length - 1; };
+  const F2 = []; for (const [a, b, c] of F){ const ab = m(a, b), bc = m(b, c), ca = m(c, a); F2.push([a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]); }
+  const E = new Set(); for (const [a, b, c] of F2) for (const [x, y] of [[a, b], [b, c], [c, a]]) E.add(x < y ? x + "," + y : y + "," + x);
+  return {V, E: [...E].map(k => k.split(",").map(Number))}; })();
+const LAB_ORB_COL = {cold: "#7fd4ff", fire: "#ff7a1a", lightning: "#a8c8ff", acid: "#4cff4a", poison: "#3ad8a0", thunder: "#b48aff"};
+function drawGeoOrb(x, y, R, col, spin){
+  const [r, g, b] = hexRgb(col), c = (a, m = 1) => `rgba(${Math.min(255, r * m + (m > 1 ? 60 : 0)) | 0},${Math.min(255, g * m + (m > 1 ? 60 : 0)) | 0},${Math.min(255, b * m + (m > 1 ? 60 : 0)) | 0},${a})`;
+  const ca = Math.cos(spin), sa = Math.sin(spin), cb = Math.cos(.45 + spin * .3), sb = Math.sin(.45 + spin * .3);
+  const P = LAB_GEO.V.map(([vx, vy, vz]) => { const x1 = vx * ca + vz * sa, z1 = -vx * sa + vz * ca, y1 = vy * cb - z1 * sb, z2 = vy * sb + z1 * cb; return [x + x1 * R, y + y1 * R, z2]; });
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  const gl = ctx.createRadialGradient(x, y, 0, x, y, R * 1.5); gl.addColorStop(0, c(.55, 1.4)); gl.addColorStop(.45, c(.28)); gl.addColorStop(.75, c(.12)); gl.addColorStop(1, c(0)); ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(x, y, R * 1.5, 0, Math.PI * 2); ctx.fill();
+  ctx.lineCap = "round";
+  for (const pass of [0, 1]){ for (const [i, j] of LAB_GEO.E){ if (((P[i][2] + P[j][2]) / 2 > 0) !== !!pass) continue; ctx.strokeStyle = pass ? c(.95, 1.3) : c(.28); ctx.lineWidth = pass ? Math.max(1, R * .035) : Math.max(.6, R * .02); ctx.shadowColor = col; ctx.shadowBlur = pass ? R * .25 : 0;
+    ctx.beginPath(); ctx.moveTo(P[i][0], P[i][1]); ctx.lineTo(P[j][0], P[j][1]); ctx.stroke(); } }
+  ctx.shadowBlur = R * .3; ctx.fillStyle = "rgba(255,255,255,.95)"; for (const q of P) if (q[2] > .1){ ctx.beginPath(); ctx.arc(q[0], q[1], Math.max(1, R * .045 * (.6 + q[2] * .6)), 0, Math.PI * 2); ctx.fill(); }
+  const core = ctx.createRadialGradient(x, y, 0, x, y, R * .45); core.addColorStop(0, "rgba(255,255,255,.9)"); core.addColorStop(1, c(0, 1.3)); ctx.fillStyle = core; ctx.beginPath(); ctx.arc(x, y, R * .45, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+// the orb held at the hand while the element is picked; shaped like spawnFx's promise so heldOrb/orbDrop keep working
+function labOrbHold(a, type){ const h = handPoint(a), s = {labGeo: true, a, x: h.x, y: h.y - 4, R: 18, col: LAB_ORB_COL[type] || "#9fdcff", t0: now, life: 600000, until: now + 600000}; sparks.push(s); return Promise.resolve(s); }
+function labOrbFly(caster, at, type, then){ const h = handPoint(caster), to = bodyPoint(at), col = LAB_ORB_COL[type] || "#9fdcff";
+  sparks.push({labGeo: true, x: h.x, y: h.y - 4, fly: {x0: h.x, y0: h.y - 4, x1: to.x, y1: to.y, ms: 320}, R: 18, col, t0: now, life: 320, then}); }
+function drawLabGeo(s){ if (s.until && now > s.until){ s.life = 0; return; } let x = s.x, y = s.y, R = s.R * (1 + Math.sin(now / 60) * .05);
+  if (s.a && !s.fly){ const h = handPoint(s.a); x = h.x; y = h.y - 4; R *= Math.min(1, (now - s.t0) / 400) * .7 + .3; }
+  if (s.fly){ const q = Math.min(1, (now - s.t0) / s.fly.ms); x = s.fly.x0 + (s.fly.x1 - s.fly.x0) * q; y = s.fly.y0 + (s.fly.y1 - s.fly.y0) * q;
+    if (Math.random() < .7) sparks.push({x: x + labRnd(-R, R) * .4, y: y + labRnd(-R, R) * .4, vx: labRnd(-30, 30), vy: labRnd(-30, 30), g: 0, col: s.col, t0: now, life: labRnd(250, 500)}); }
+  drawGeoOrb(x, y, R, s.col, (now - s.t0) / 260); }
+function labOrbHit(t, type){ const col = LAB_ORB_COL[type] || "#9fdcff", n = 10, rays = []; for (let j = 0; j < n; j++) rays.push({a: j / n * Math.PI * 2 + labRnd(-.2, .2), L: labRnd(.4, 1) * (j % 2 ? .6 : 1.3), w: labRnd(.04, .08)});
+  sparks.push({crimStar: true, a: t, x: t.x, y: labMid(t), R: 70, rays, C: {body: col, core: "#ffffff", glow: col}, t0: now, life: 260});
+  for (let i = 0; i < 18; i++){ const ang = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 160; sparks.push({x: t.x, y: labMid(t), vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * .6 - 60, col, t0: now, life: 420 + Math.random() * 300}); }
+  lightFlash(t.x, labMid(t), col, 280, 420); }
+
+// ---- SHIELD (Sam: "a sphere around the pixel caster as a reaction and absorb magic / missiles while changing colors doing so
+// briefly", from his blue lightning-bubble reference): a glass bubble round the body, lightning crawling on it; what is
+// thrown stops on the surface, which flashes that thing's colour from the contact point and cools back to blue
+function labSphere(t, from){ const s = {labSphere: true, a: t, from, base: [90, 170, 255], hit: null, hitT: 0, t0: now, life: 60000, arcs: [], arcT: 0}; t.labSphere = s; sparks.push(s); return s; }
+function labSphereAbsorb(t, from, col){ const s = t.labSphere; if (!s) return; from = from || s.from; const R = Math.max(46, labR(t) * 2.7), cx = t.x + (t.kx || 0), cy = labMid(t) - R * .1, ang = Math.atan2((from ? from.y : cy) - cy, (from ? from.x : cx - 1) - cx);
+  s.hit = hexRgb(col || "#c890ff"); s.hitT = now; s.hitAng = ang; const p = {x: cx + Math.cos(ang) * R, y: cy + Math.sin(ang) * R};
+  for (let i = 0; i < 12; i++){ const a2 = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 120; sparks.push({x: p.x, y: p.y, vx: Math.cos(a2) * sp, vy: Math.sin(a2) * sp * .6, g: 0, col: col || "#c890ff", t0: now, life: 320 + Math.random() * 200}); }
+  bank("magic/arcane_release", .5); shake(3); }
+function drawLabSphere(s){
+  const t = s.a; if (t.down || !t.c || !t.c.conds.has("shieldSpell")){ t.labSphere = null; s.life = 0; return; }
+  const R0 = Math.max(46, labR(t) * 2.7), cx = t.x + (t.kx || 0), cy = labMid(t) - R0 * .1, open = Math.min(1, (now - s.t0) / 160), R = R0 * (.6 + .4 * (1 - Math.pow(1 - open, 3)));
+  const hk = s.hit ? Math.max(0, 1 - (now - s.hitT) / 520) : 0, C = s.base.map((v, i) => Math.round(v + ((s.hit ? s.hit[i] : v) - v) * hk)), rgba = a => `rgba(${C[0]},${C[1]},${C[2]},${a})`;
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  const g = ctx.createRadialGradient(cx - R * .3, cy - R * .35, R * .1, cx, cy, R); g.addColorStop(0, rgba(.06)); g.addColorStop(.7, rgba(.1 + hk * .15)); g.addColorStop(.93, rgba(.45 + hk * .3)); g.addColorStop(1, rgba(0));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = rgba(.85); ctx.shadowColor = rgba(1); ctx.shadowBlur = 18; ctx.lineWidth = 2.5 + hk * 3; ctx.beginPath(); ctx.arc(cx, cy, R * .97, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.shadowBlur = 0; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, R * .82, Math.PI * 1.1, Math.PI * 1.45); ctx.stroke();
+  if (now - s.arcT > 70){ s.arcT = now; s.arcs = []; for (let j = 0; j < 4 + (hk > 0 ? 4 : 0); j++){ let a0 = labRnd(0, Math.PI * 2); if (hk > 0 && j < 4) a0 = s.hitAng + labRnd(-.8, .8); const pts = []; for (let i = 0; i < 7; i++){ const a = a0 + i * labRnd(.08, .16), r = R * labRnd(.86, 1.02); pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); } s.arcs.push(pts); } }
+  ctx.strokeStyle = "rgba(235,248,255,.9)"; ctx.shadowColor = rgba(1); ctx.shadowBlur = 10; ctx.lineWidth = 1.4;
+  for (const pts of s.arcs){ ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const q of pts) ctx.lineTo(q[0], q[1]); ctx.stroke(); }
+  if (hk > 0){ ctx.strokeStyle = rgba(hk * .8); ctx.lineWidth = 4 * hk; ctx.beginPath(); ctx.arc(cx, cy, R * (1 + (1 - hk) * .25), 0, Math.PI * 2); ctx.stroke(); }
+  ctx.restore();
+}
+
+// ---- SHOCKING GRASP (Sam: "touch range ... a crackling electrocution sound and the target briefly showing a cartoony skeleton
+// while being zapped unless he dies and then he just turns to ash"; "thinner and a bit more defined within the pixel art")
+function labZigzag(x0, y0, x1, y1, n, jit){ const pts = [[x0, y0]]; for (let i = 1; i < n; i++){ const u = i / n; pts.push([x0 + (x1 - x0) * u + labRnd(-jit, jit), y0 + (y1 - y0) * u + labRnd(-jit, jit)]); } pts.push([x1, y1]); return pts; }
+function labBolt(pts, w){ ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.lineJoin = "round"; ctx.lineCap = "round";
+  for (const [col, wk, blur] of [["rgba(40,120,255,.55)", 3, 16], ["#5ab4ff", 1.4, 8], ["#eaf6ff", .55, 0]]){ ctx.strokeStyle = col; ctx.shadowColor = "#3a8cff"; ctx.shadowBlur = blur; ctx.lineWidth = w * wk; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const q of pts) ctx.lineTo(q[0], q[1]); ctx.stroke(); }
+  ctx.restore(); }
+function labTouch(caster, at, then, kind){
+  // touch range: the caster leans in and the hand meets the body (the caster is already within 5 ft — castSpell's range check)
+  const t0 = now; caster.kx = (caster.kx || 0) + (Math.sign(at.x - caster.x) || 1) * 14 * actorScale(caster);
+  if (kind === "shock"){ sparks.push({labCharge: true, a: caster, t: at, t0: now, life: 420, arcs: [], at: 0}); bank("walk:electrocute", .25); }
+  else { labRef("ctAura", {at: caster, w: 70, life: 600, grow: [.4, 1], fade: [60, 200], pulse: true, flipX: at.x < caster.x}); }
+  setTimeout(then, 380);
+}
+function drawLabCharge(s){ const h = labHand(s.a, s.t); if (now - s.at > 50){ s.at = now; s.arcs = []; for (let i = 0; i < 4; i++){ const ang = labRnd(0, Math.PI * 2), L = labRnd(10, 26); s.arcs.push(labZigzag(0, 0, Math.cos(ang) * L, Math.sin(ang) * L, 4, 4)); } }
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; const g = ctx.createRadialGradient(h.x, h.y, 0, h.x, h.y, 26); g.addColorStop(0, "rgba(200,235,255,.9)"); g.addColorStop(.4, "rgba(60,140,255,.45)"); g.addColorStop(1, "rgba(30,80,255,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(h.x, h.y, 26, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  for (const a of s.arcs) labBolt(a.map(q => [h.x + q[0], h.y + q[1]]), 2); }
+function labZap(caster, t, ms){ sparks.push({labZap: true, by: caster, a: t, t0: now, life: ms, at: 0, bolts: []}); bank("walk:electrocute", .8); t.zappedAt = now; lightFlash(t.x, labMid(t), "#5ab4ff", 260, ms); }
+function drawLabZap(s){ const t = s.a, c = s.by, h = labHand(c, t), cx = t.x + (t.kx || 0), cy = labMid(t), R = labR(t), H = labH(t);
+  if (now - s.at > 45){ s.at = now; s.on = !s.on; s.bolts = [labZigzag(h.x, h.y, cx + labRnd(-R * .4, R * .4), cy + labRnd(-R * .6, R * .6), 7, 9)];
+    for (let i = 0; i < 5; i++){ const x0 = cx + labRnd(-R * 1.3, R * 1.3), y0 = t.y - labRnd(0, H * .95); s.bolts.push(labZigzag(x0, y0, x0 + labRnd(-R * 1.4, R * 1.4), y0 + labRnd(-R, R), 5, 6)); }
+    if (s.on && !t.down){ t.flash = now + 45; t.flashCol = "#2a6cff"; } t.kx = (t.kx || 0) + labRnd(-3, 3); }
+  if (s.on && !t.down) drawLabSkeleton(t);
+  for (const b of s.bolts) labBolt(b, 2.4); }
+function drawLabSkeleton(t){
+  const H = labH(t), cx = Math.round(t.x + (t.kx || 0)), top = t.y - H * .92, u = H / 10, f = labLeft(t) ? -1 : 1, P = v => Math.round(v) + .5;
+  const bw = Math.max(1.5, u * .26), jig = Math.sin(now / 25) * u * .5, neck = top + u * 2.3, hip = top + u * 5.5, foot = t.y - u * .15;
+  const bones = [], knobs = [], B = (x0, y0, x1, y1, w = 1) => { bones.push([x0, y0, x1, y1, w]); knobs.push([x0, y0], [x1, y1]); };
+  const shl = [cx - u * 1.3, neck + u * .35], shr = [cx + u * 1.3, neck + u * .35], ell = [cx - u * 2.1, neck + u * 1.9 + jig], elr = [cx + u * 2.1, neck + u * 1.9 - jig], wrl = [cx - u * 2.7, neck + u * .7 - jig], wrr = [cx + u * 2.7, neck + u * .7 + jig];
+  B(...shl, ...shr, .9); B(...shl, ...ell); B(...ell, ...wrl, .85); B(...shr, ...elr); B(...elr, ...wrr, .85);
+  const hl = [cx - u * .55, hip + u * .2], hr = [cx + u * .55, hip + u * .2], kl = [cx - u * .9, hip + (foot - hip) * .52], kr = [cx + u * .9, hip + (foot - hip) * .52], fl = [cx - u * .75 - jig * .25, foot], fr = [cx + u * .75 + jig * .25, foot];
+  B(...hl, ...kl); B(...kl, ...fl, .9); B(...hr, ...kr); B(...kr, ...fr, .9); B(fl[0], fl[1], fl[0] - u * .55, fl[1], .8); B(fr[0], fr[1], fr[0] + u * .55, fr[1], .8);
+  const fingers = []; for (const [w, e] of [[wrl, ell], [wrr, elr]]) for (let i = -1; i <= 1; i++){ const a = Math.atan2(w[1] - e[1], w[0] - e[0]) + i * .45; fingers.push([w[0], w[1], w[0] + Math.cos(a) * u * .55, w[1] + Math.sin(a) * u * .55]); }
+  const pass = (col, extra) => { ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineCap = "round";
+    for (const [x0, y0, x1, y1, w] of bones){ ctx.lineWidth = bw * w + extra; ctx.beginPath(); ctx.moveTo(P(x0), P(y0)); ctx.lineTo(P(x1), P(y1)); ctx.stroke(); }
+    for (const [x, y] of knobs){ ctx.beginPath(); ctx.arc(P(x), P(y), bw * .75 + extra / 2, 0, 7); ctx.fill(); }
+    ctx.lineWidth = Math.max(1, bw * .55) + extra; for (const [x0, y0, x1, y1] of fingers){ ctx.beginPath(); ctx.moveTo(P(x0), P(y0)); ctx.lineTo(P(x1), P(y1)); ctx.stroke(); }
+    for (let i = 0; i < 6; i++){ ctx.beginPath(); ctx.arc(cx + .5, P(neck + i * (hip - neck) / 6), bw * .62 + extra / 2, 0, 7); ctx.fill(); }
+    ctx.lineWidth = Math.max(1, bw * .6) + extra; for (let i = 0; i < 4; i++){ const y = neck + u * .55 + i * u * .58, w = u * (1.25 - i * .14); for (const d of [-1, 1]){ ctx.beginPath(); ctx.moveTo(cx + d * bw, P(y)); ctx.quadraticCurveTo(cx + d * w, P(y - u * .15), cx + d * w * .9, P(y + u * .35)); ctx.stroke(); } }
+    ctx.lineWidth = bw * .9 + extra; ctx.beginPath(); ctx.moveTo(cx - u * .9, P(hip)); ctx.quadraticCurveTo(cx, P(hip + u * .7), cx + u * .9, P(hip)); ctx.quadraticCurveTo(cx, P(hip - u * .25), cx - u * .9, P(hip)); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx, P(top + u * 1.05), u * .82 + extra / 2, u * .92 + extra / 2, 0, 0, 7); ctx.fill(); ctx.fillRect(P(cx - u * .45 - extra / 2), P(top + u * 1.6), u * .9 + extra, u * .5 + extra / 2); };
+  ctx.save(); pass("#0b1430", 2); pass("#f4ecd4", 0);
+  ctx.fillStyle = "#0b1430"; for (const d of [-1, 1]){ ctx.beginPath(); ctx.ellipse(P(cx + d * u * .33 + f * u * .1), P(top + u * .95), u * .22, u * .26, 0, 0, 7); ctx.fill(); }
+  ctx.fillRect(P(cx + f * u * .08 - 1), P(top + u * 1.3), 2, Math.max(2, u * .2));
+  for (let i = -2; i <= 2; i++) ctx.fillRect(P(cx + i * u * .17), P(top + u * 1.72), 1, Math.max(2, u * .3));
+  ctx.fillStyle = "#9ad8ff"; for (const d of [-1, 1]) ctx.fillRect(P(cx + d * u * .33 + f * u * .1) - 1, P(top + u * .95) - 1, 2, 2);
+  ctx.restore(); }
+// an electrocution kill does not fall: it blackens where it stands, sparks and smokes, and goes to ash (the vampire's ash pile)
+function labAsh(t){ const fr = frameOf(t); t.path = []; t.withered = {t0: now, img: fr.img, f: fr.f, swap: now + 520};
+  t.cadaver = {key: "vampire-male-ash", sq: 1.2 * Math.max(1, t.big || 1), flip: Math.random() < .5, t0: now + 520};
+  for (let i = 0; i < 16; i++) sparks.push({x: t.x + labRnd(-14, 14), y: labMid(t) + labRnd(-20, 20), vx: labRnd(-90, 90), vy: -labRnd(30, 140), col: i % 2 ? "#bfe4ff" : "#4aa8ff", t0: now, life: labRnd(300, 700)}); }
+
+// ---- CHILL TOUCH (Kenta's sheet: spectral hand, soul-drain swirl, death whispers, decay; "the target can't regain HP until
+// the effect is gone" — the no-heal badge rides by the head while it lasts)
+function labChillHit(caster, t){ const flip = t.x < caster.x;
+  labRef("ctHand", {at: t, ox: (flip ? 1 : -1) * labR(t) * .4, w: 46, life: 420, flipX: flip, boost: .4, fade: [20, 200]});
+  labRef("ctBurst", {at: t, w: 110, life: 420, grow: [.5, 1.2], fade: [20, 300], anchorY: "bottom", dy: labR(t) * 1.6});
+  labRef("ctSwirl", {at: t, w: labR(t) * 4, life: 1100, spin: -3, grow: [.5, 1], fade: [60, 500]});
+  setTimeout(() => { labRef("ctWhispers", {at: t, w: labR(t) * 3, life: 1300, grow: [.6, 1.2], fade: [80, 600], dy: -labR(t) * .6}); labRef("ctDecay", {at: t, w: labR(t) * 3.4, life: 1500, fade: [100, 700], anchorY: "bottom", dy: labR(t) * 1.7}); }, 250);
+  t.flash = now + 500; t.flashCol = "#8fe04a"; lightFlash(t.x, labMid(t), "#8fe04a", 260, 600); }
+function drawLabNoHeal(s){ const t = s.a; if (t.down || !t.c || !t.c.noHeal){ s.life = 0; return; } const im = labImg("ctNoHeal"); if (!im.complete || !im.naturalWidth) return;
+  const w = 26, x = t.x + labR(t) * 1.3, y = t.y - labH(t) - 8 + Math.sin(now / 300) * 2; ctx.save(); ctx.globalAlpha = .92; ctx.drawImage(im, x - w / 2, y - w / 2, w, w); ctx.restore(); }
+
+// ---- ELDRITCH BLAST (Kenta's Eldritch Blast sheet: void-orb at the palm, the void beam stretched hand-to-body with black
+// tendrils along it, the shatter impact with debris; a critical is the Empowered Blast — the big impact and a violet flash)
+function labEbDeliver(c, at, then){ const h = labHand(c, at), to = bodyPoint(at), flip = at.x < c.x;
+  labRef("ebOrb", {x: h.x, y: h.y, w: 46, life: 420, grow: [.2, 1], spin: 3, pulse: true, fade: [60, 120], flipX: flip}); lightFlash(h.x, h.y, "#a35bff", 160, 420); bank("walk:impact-necrotic", .3);
+  setTimeout(() => labRef("ebBeam", {follow: {x0: h.x, y0: h.y, x1: to.x, y1: to.y, ms: 300}, stretch: 30, hpx: 44, anchor: "right", boost: .4, add: false, then}), 300); }
+function labEbAgain(c, t){ const h = labHand(c, t), to = bodyPoint(t); labRef("ebBeam", {follow: {x0: h.x, y0: h.y, x1: to.x, y1: to.y, ms: 260}, stretch: 30, hpx: 40, anchor: "right", boost: .4, add: false}); }
+function labEbHit(c, t, crit){ const flip = t.x < c.x;
+  labRef(crit ? "ebImpact" : "ebImpStd", {x: t.x, y: t.y + 8, w: crit ? 240 : 120, life: crit ? 800 : 560, grow: [.5, 1.1], fade: [20, 360], anchorY: "bottom", add: false, flipX: flip});
+  labRef("ebOrb", {at: t, w: crit ? 120 : 70, life: 260, grow: [.6, 1.6], fade: [10, 220]}); lightFlash(t.x, labMid(t), "#a35bff", crit ? 360 : 260, 420);
+  if (crit){ shake(10); t.flash = now + 320; t.flashCol = "#a35bff"; } }
+// ---- HEX (the warlock sheet: the dark vortex opens at the palm, a black orb flies, the vortex settles flat under the cursed
+// one's feet and turns there while they are hexed; each extra d6 flashes a dark dart on them)
+function labHexDeliver(c, at, then){ const h = labHand(c, at), to = bodyPoint(at);
+  labRef("wlVortex", {x: h.x, y: h.y - 6, w: 80, life: 620, spin: -4, grow: [.2, 1], fade: [60, 160], add: false, alpha: .9});
+  setTimeout(() => labRef("wlOrb", {follow: {x0: h.x, y0: h.y, x1: to.x, y1: to.y, ms: 380, arc: 30}, w: 46, spin: 5, add: false, then}), 520); }
+function labHexHit(t){ labRef("wlVortex", {at: t, flat: true, w: labR(t) * 5, life: 3600000, spin: -.8, grow: [.3, 1], fade: [200, 600], add: false, alpha: .85, pulse: true, whileCond: "hexed"}); popText(t, "hexed", "#c58aff", .9); lightFlash(t.x, labMid(t), "#8c3cff", 220, 500); }
+function labHexPulse(t){ labRef("wlBoltDart", {at: t, w: 70, life: 260, fade: [10, 200]}); t.flash = now + 160; t.flashCol = "#8c3cff"; }
+// the looks castSpell uses in place of a kit: `deliver` carries it from the hand, `hit` plays on the body when it lands
+const LAB_LOOK = {
+  "Fire Bolt": {deliver: (c, at, cb) => labFireBolt(c, at, cb), hit: (c, t) => labFireBoltHit(t)},
+  "Chromatic Orb": {deliver: (c, at, cb, sp) => labOrbFly(c, at, sp.type, cb), hit: (c, t, sp) => labOrbHit(t, sp.type)},
+  "Shocking Grasp": {deliver: (c, at, cb) => labTouch(c, at, cb, "shock"), hit: (c, t) => labZap(c, t, 800), miss: (c, t) => { const h = labHand(c, t); sparks.push({labZap: true, by: c, a: {x: h.x + 26 * (Math.sign(t.x - c.x) || 1), y: h.y + 20, id: t.id, kx: 0, down: true, face: t.face}, t0: now, life: 160, at: 0, bolts: []}); }},
+  "Chill Touch": {deliver: (c, at, cb) => labTouch(c, at, cb, "chill"), hit: (c, t) => labChillHit(c, t)},
+  "Eldritch Blast": {deliver: (c, at, cb) => labEbDeliver(c, at, cb), again: (c, t) => labEbAgain(c, t), hit(c, t){ labEbHit(c, t, this.crit); }},
+  "Hex": {deliver: (c, at, cb) => labHexDeliver(c, at, cb), hit: (c, t) => labHexHit(t)},
+};
+const labLookOf = name => LAB_LOOK[name] || LAB_LOOK[name.replace(/ \(.*\)$/, "")];
+// the draw switch for this block, called from drawCombatFx; true when it drew the spark
+function drawLabSpark(s, k){
+  if (s.labRef){ ovWrapS(s.at ? s : {x: s.follow ? s.follow.x1 : s.x, y: s.follow ? s.follow.y1 : s.y}, () => { if (s.fire === "bolt") drawLabFireLine(s); drawLabRef(s); }); return true; }
+  if (s.labFlame){ drawLabFlame(s, k); return true; }
+  if (s.labGeo){ drawLabGeo(s); return true; }
+  if (s.labSphere){ ovWrapS(s, () => drawLabSphere(s)); return true; }
+  if (s.labCharge){ drawLabCharge(s); return true; }
+  if (s.labZap){ ovWrapS(s, () => drawLabZap(s)); return true; }
+  if (s.labNoHeal){ ovWrapS(s, () => drawLabNoHeal(s)); return true; }
+  return false;
+}
 // The spider: spring to within reach of its target, then bite.
 function leapTo(f, tgt, then){
   const d = norm({x: tgt.x - f.x, y: tgt.y - f.y}), reach = reachPx(f, tgt, 5), dist = Math.hypot(tgt.x - f.x, tgt.y - f.y) - reach;
@@ -8745,6 +9163,27 @@ function drawCritMark(x, y, R, age){
     const rg = ctx.createLinearGradient(x + Math.cos(ang) * r0, y + Math.sin(ang) * r0, x + Math.cos(ang) * r1, y + Math.sin(ang) * r1); rg.addColorStop(0, "rgba(255,236,170,.95)"); rg.addColorStop(1, "rgba(255,180,70,0)");
     ctx.strokeStyle = rg; ctx.beginPath(); ctx.moveTo(x + Math.cos(ang) * r0, y + Math.sin(ang) * r0); ctx.lineTo(x + Math.cos(ang) * r1, y + Math.sin(ang) * r1); ctx.stroke(); }
   ctx.restore();
+}
+// THE CRIT! BADGE (Sam's reference, 2026-10-29: "Crit when it occurs"): a comic-book CRIT! that slams in beside the
+// head of whoever took the critical hit, yellow into orange with a dark outline and a violet spark at its shoulder,
+// holds a moment and floats away. Once per blow (a second damage line of the same crit does not stamp it again).
+const critBadges = [];
+function critBadge(t){
+  if (!t || !SPR[t.id] || (t.critBadgeAt && now - t.critBadgeAt < 500)) return; t.critBadgeAt = now;
+  critBadges.push({a: t, t0: now, life: 1300, rot: (Math.random() - .5) * .16 - .1});
+}
+function drawCritBadges(){
+  for (let i = critBadges.length - 1; i >= 0; i--){ const b = critBadges[i], k = (now - b.t0) / b.life; if (k >= 1 || !SPR[b.a.id]){ critBadges.splice(i, 1); continue; }
+    const m = SPR[b.a.id].json, sc = actorScale(b.a), x = b.a.x + 34 * Math.max(.8, sc), y = b.a.y - m.pivot[1] * sc - 26 - k * 22;
+    const pop = k < .12 ? 1.6 - (k / .12) * .6 : 1, al = k < .7 ? 1 : 1 - (k - .7) / .3;
+    ovWrapS({a: b.a}, () => { ctx.save(); ctx.translate(x, y); ctx.rotate(b.rot); ctx.scale(pop, pop); ctx.globalAlpha *= al;
+      ctx.font = "34px Bangers, Impact, 'Arial Black', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineJoin = "round";
+      ctx.lineWidth = 7; ctx.strokeStyle = "#2a0d06"; ctx.strokeText("CRIT!", 0, 0);
+      const g = ctx.createLinearGradient(0, -16, 0, 16); g.addColorStop(0, "#fff36a"); g.addColorStop(.55, "#ffb020"); g.addColorStop(1, "#ff5a10"); ctx.fillStyle = g; ctx.fillText("CRIT!", 0, 0);
+      const sx = 46, sy = -16, r = 9 * (.8 + .2 * Math.sin(now / 60)); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = "#c58aff";
+      ctx.beginPath(); ctx.moveTo(sx, sy - r); ctx.lineTo(sx + r * .22, sy); ctx.lineTo(sx, sy + r); ctx.lineTo(sx - r * .22, sy); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(sx - r, sy); ctx.lineTo(sx, sy + r * .22); ctx.lineTo(sx + r, sy); ctx.lineTo(sx, sy - r * .22); ctx.closePath(); ctx.fill();
+      ctx.restore(); }); }
 }
 // THE DEATH BEAT (the research doc: a death is a screen-level event, never another word in the pile): the body already
 // flashes and falls; the words go to a banner at the top of the stage for a moment, and to the log.
@@ -8956,7 +9395,7 @@ let orbPick = null, heldOrb = null, orbSoundAt = 0;
 // the forming orb at the caster's hand, in element `i`; `quiet` skips the element's sound (opening the picker)
 function orbHold(a, i, quiet){
   const el = ORB_ELEMENTS[i]; orbDrop(); const h = handPoint(a);
-  heldOrb = spawnFx(`orb${el.key}Form`, {x: h.x, y: h.y, sq: .8, tail: 2, until: now + 600000, alpha: 1});
+  heldOrb = labOrbHold(a, el.type);   // Sam's lattice orb, in the element's colour (2026-10-29)
   if (!quiet && now - orbSoundAt > 90){ orbSoundAt = now; bank(`walk:orb-${el.type}`, el.gain); }
 }
 function orbDrop(){ if (heldOrb){ heldOrb.then(e => { if (e) e.until = now; }); heldOrb = null; } }
@@ -9026,6 +9465,7 @@ function drawFlights(){
 // the arrival: the impact sheet with its punch, the flash, the shockwave, the sparks, then what it leaves
 function kitImpact(t, kit, opts = {}){
   const sky = kit.route === "sky", P = bodyPoint(t), b = kit.burst || {}, power = (b.power || 1) * (opts.area ? 1.3 : 1);
+  { const q = ovPt(P.x, P.y); lightFlash(q.x, q.y, b.tint || "#ffe9c0", 300 * power * (node.scale || 1), 560); }   // the light layer: a spell lights the room where it lands
   if (kit.impact){
     const p = spawnFx(kit.impact, {at: t, sq: (sky ? 1.9 : 2.1) * (kit.impactScale || 1), anchor: sky ? "base" : "mid", punch: !kit.noPunch, lift: kit.impactLift || 0,
       tail: kit.cling || 0, until: kit.cling ? now + 120000 : 0});
@@ -9214,7 +9654,11 @@ function drawCombatFx(){
   for (let i = sparks.length - 1; i >= 0; i--){
     const s = sparks[i], k = (now - s.t0) / s.life;
     if (k >= 1){ sparks.splice(i, 1); if (s.then){ const f = s.then; s.then = null; f(); } continue; }
+    if (drawLabSpark(s, k)) continue;   // the lab's looks (Sam, 2026-10-29)
     if (s.swipe){ ovWrapS(s, () => drawSwipe(s, k)); continue; }
+    if (s.crimson){ ovWrapS(s, () => drawCrimson(s, k)); continue; }
+    if (s.crimStar){ ovWrapS(s, () => drawCrimStar(s, k)); continue; }
+    if (s.crimThrust){ drawCrimThrust(s, k); continue; }
     if (s.star){ ovWrapS(s, () => drawStar(s, k)); continue; }
     if (s.orb){ ovWrapS(s, () => drawOrb(s, k)); continue; }
     if (s.strand){ ovWrapS(s, () => drawStrand(s, k)); continue; }
@@ -12330,6 +12774,9 @@ $("zFit").onclick = () => {
   camTween = null; userPanAt = -1e9; if (wholePlate){ view = {z: 1, tx: 0, ty: 0}; applyView(); }
 };
 $("zFit").textContent = wholePlate ? "Follow" : "Fit"; $("zFit").title = wholePlate ? "Follow your hero" : "Show the whole plate";
+function renderLightBtn(){ const b = $("zLight"); if (b) b.textContent = {off: "Lit", dim: "Dim", dark: "Dark"}[lightLevel]; }
+$("zLight").onclick = () => { lightLevel = {off: "dim", dim: "dark", dark: "off"}[lightLevel]; try { localStorage.setItem("aop_walk_light", lightLevel); } catch (e) {} renderLightBtn(); };
+renderLightBtn();
 addEventListener("keydown", e => {
   if (e.target.closest && e.target.closest("input,select")) return;
   if (e.key === "Escape" && dmPlacing){ dmPlacing = null; stage.classList.remove("placing"); hint(""); return; }
@@ -13522,7 +13969,7 @@ function drinkItem(a, it, t){
   spendItem(a, it, t === a ? "drink" : "give", t);
   bank("ui/item_pickup", .5);
   if (u.kind === "heal"){
-    const d = roll(u.dice).total; t.c.hp = Math.min(t.c.hpMax, t.c.hp + d);
+    const d = t.c.noHeal ? 0 : roll(u.dice).total; if (t.c.noHeal) setTimeout(() => popText(t, "can't regain HP", "#9be04a", .9), 250); t.c.hp = Math.min(t.c.hpMax, t.c.hp + d);
     if (t.down && t.c.hp > 0){ t.down = false; setAnim(t, "idle"); }
     setTimeout(() => { kitImpact(t, KIT.healing); bank("combat/heal", .8); popText(t, `+${d}`, "#9ff2c8"); }, 250);
     log(t === a ? `${fname(a)} drinks the <b>${esc(it.name)}</b> and regains ${d} HP${fight ? " (bonus action)" : ""}.`

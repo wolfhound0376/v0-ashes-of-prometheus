@@ -47,6 +47,13 @@
       "frames": 1,
       "fps": 5,
       "loop": true
+    },
+    "shoot": {
+      "sheet": "shoot.png",
+      "frames": 9,
+      "fps": 12,
+      "loop": false,
+      "hit": 0.6
     }
   }
 }
