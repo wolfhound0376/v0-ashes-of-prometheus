@@ -12,6 +12,7 @@ Inputs, all in this folder:
                  /*__LABOR__*/ is lib/labor-walk.mjs pasted in whole (see labor_rules): Hard Labor's routes, steps and lines
                  /*__GATE_WATCH__*/ is lib/gate-watch.mjs pasted in whole (see gate_rules): the pen gate warning's clock
                  /*__SURRENDER__*/ is lib/surrender.mjs pasted in whole (see surrender_rules): the surrender's victim, beating and lines
+                 /*__GAME_OVER__*/ is lib/game-over.mjs pasted in whole (see game_over_rules): when the game is over and what follows
                  /*__ITEM_LORE__*/ is lib/item-lore.mjs pasted in whole (see item_lore_rules): the loot card's checks
   spec.json      per-plate walk floors, obstacles, exits, hazards, NPC spots, painted masks (built by spec.py from spec.py + masks.json); _handoffs = the cavern
                  plates a 'leave' exit hands the party to, _layout = Sam's editor board (not used by the page)
@@ -221,6 +222,14 @@ def surrender_rules(root):
     return re.sub(r'^export ', '', src, flags=re.M)
 
 
+def game_over_rules(root):
+    """lib/game-over.mjs (GAME OVER when every seated hero is dead, Sam 2026-10-29: darkness, Malachar, then the title
+    screen, or a reset in a sandbox), pasted whole minus `export`, like surrender_rules. The map and
+    lib/game-over.test.ts read the SAME rule and lines."""
+    src = open(os.path.join(root, 'lib', 'game-over.mjs'), encoding='utf-8').read()
+    return re.sub(r'^export ', '', src, flags=re.M)
+
+
 def gate_rules(root):
     """lib/gate-watch.mjs (the pen gate warning: 10 s to get away before the guards shoot, Sam 2026-10-27), pasted
     whole minus `export`, like rage_rules. The map and lib/gate-watch.test.ts read the SAME rule."""
@@ -375,7 +384,7 @@ for k, n in spec.items():
 fx = open(os.path.join(HERE, 'fx.json')).read()
 t = open(os.path.join(HERE, 'template.html')).read()
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__TRAITS__*/', traits_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
-      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__SURRENDER__*/', surrender_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
+      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__SURRENDER__*/', surrender_rules(ROOT)).replace('/*__GAME_OVER__*/', game_over_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))
