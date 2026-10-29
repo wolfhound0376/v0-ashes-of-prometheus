@@ -1549,7 +1549,12 @@ function paintDoorway(){
 // out there are the game's own. The painting sits beside the plate at x0 (left of it, with a dark gap), so the slide
 // between them is just the camera gliding.
 const OV = {on: false, want: false, since: 0, img: null, tris: null, cfg: null};
-function ovCfg(){ const B = balcony(); return (B && B.outside) || null; }
+// Every other plate can carry a close-up too (story.json <plate>.closeup, Sam 2026-10-29: "every plate", picked on the
+// close-up board https://claude.ai/artifact/5YffPngwBtF4t9QpiAZGgA). Same mesh and slide, but instead of the pen's
+// balcony side the close-up covers a `zone` polygon of the plate's own floor, and with no `ft` a figure is drawn at the
+// mesh's own stretch there (the close-up is that patch of floor, painted bigger), so it keeps its size against the room.
+function ovCfg(){ const B = balcony(); return (B && B.outside) || (node && node.closeup) || null; }
+const ovPenStyle = () => !!OV.cfg && OV.cfg.domainX != null;   // the pen's balcony (its own rules) or a plate's zone
 function ovAffine(P, Q){   // the affine map taking triangle P onto triangle Q: [a, b, c, d, e, f] with x' = a x + c y + e
   const [[x0, y0], [x1, y1], [x2, y2]] = P, [[u0, v0], [u1, v1], [u2, v2]] = Q, det = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
   const a = ((u1 - u0) * (y2 - y0) - (u2 - u0) * (y1 - y0)) / det, c = ((u2 - u0) * (x1 - x0) - (u1 - u0) * (x2 - x0)) / det;
@@ -1573,12 +1578,14 @@ const ovApply = (m, x, y) => ({x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3]
 function ovMap(x, y){ const t = ovTri(x, y, false); return t ? ovApply(t.f, x, y) : {x, y}; }
 function ovUnmap(x, y){ const t = ovTri(x, y, true); return t ? ovApply(t.g, x, y) : {x, y}; }
 // the balcony side of the pen wall, in the pen plate's coordinates (everything left of the doorway's floor)
-const ovDomain = (x, y) => !!OV.cfg && x < OV.cfg.domainX;
+const ovDomain = (x, y) => !!OV.cfg && (ovPenStyle() ? x < OV.cfg.domainX : inPoly(OV.cfg.zone, x, y));
+// how much the mesh enlarges the floor around a point (a plate close-up draws its figures at this)
+function ovStretch(x, y){ const t = ovTri(x, y, false); if (!t) return 1; const f = t.f; return Math.sqrt(Math.abs(f[0] * f[3] - f[1] * f[2])); }
 // the painting's own size of a foot at painting-height Y (a figure is drawn at this, not at the pen's)
 function ovArtFt(Y){ const [f0, f1, y0, y1] = OV.cfg.ft; return f0 + (f1 - f0) * Math.min(1, Math.max(0, (Y - y0) / (y1 - y0))); }
 const ovPenFt = a => 96 * BASE * (a.fixedScale ? a.fixedScale : paceAt(a) * (a.big || 1)) / 5;
 // Is this actor drawn in the close-up right now? Standing on the balcony side, with the close-up on.
-function ovDrawn(a){ return OV.on && !!a && a.x != null && ovDomain(a.x, a.y) && !(walkable(a.x, a.y) && !outsidePen(a)); }
+function ovDrawn(a){ return OV.on && !!a && a.x != null && ovDomain(a.x, a.y) && (!ovPenStyle() || !(walkable(a.x, a.y) && !outsidePen(a))); }
 // The local similarity at an actor's feet: pen point p -> painting, uniform scale k so the figure keeps its proportions.
 function ovActorT(a){
   let q = ovMap(a.x, a.y);
@@ -1587,18 +1594,18 @@ function ovActorT(a){
   // it (faded in on the landing) comes from there
   const D = OV.cfg.doorFloor, p0 = a.path && a.path[0], B = balcony(), L = B ? B.landing : [0, 0];
   if (D && B && a.alpha < 1 && ((p0 && p0.out) || (a.fadeIn && Math.hypot(a.x - L[0], a.y - L[1]) < 60))){ const t = 1 - a.alpha, dx = D[0] + OV.cfg.x0, dy = D[1]; q = {x: q.x + (dx - q.x) * t, y: q.y + (dy - q.y) * t}; }
-  const k = ovArtFt(q.y) / ovPenFt(a); return {q, k, ox: q.x - k * a.x, oy: q.y - k * a.y};
+  const k = OV.cfg.ft ? ovArtFt(q.y) / ovPenFt(a) : ovStretch(a.x, a.y); return {q, k, ox: q.x - k * a.x, oy: q.y - k * a.y};
 }
 // how much slower a walker goes out there: the mesh stretches the balcony about three and a half times, so at the pen's
 // pace a figure would race across the planks; this brings their stride back to the painting's scale
 function ovPace(a){
-  if (!OV.on || !ovDrawn(a)) return 1; const t = ovTri(a.x, a.y, false); if (!t) return 1;
+  if (!OV.on || !ovDrawn(a) || !OV.cfg.ft) return 1; const t = ovTri(a.x, a.y, false); if (!t) return 1;
   const f = t.f, det = Math.abs(f[0] * f[3] - f[1] * f[2]), k = ovArtFt(ovMap(a.x, a.y).y) / ovPenFt(a);
   return Math.min(1, Math.max(.25, k / Math.sqrt(det)));
 }
 function ovPushActor(a){ if (!ovDrawn(a)) return false; const T = ovActorT(a); ctx.save(); ctx.transform(T.k, 0, 0, T.k, T.ox, T.oy); return true; }
 // the same at a bare point on the balcony (a blood pool, a stuck bolt, a spell's ring): the balcony's foot there
-function ovPushAt(x, y){ if (!OV.on || !ovDomain(x, y)) return false; const q = ovMap(x, y), k = ovArtFt(q.y) / (96 * BASE * ((balcony() || {}).scale || 1.35) / 5); ctx.save(); ctx.transform(k, 0, 0, k, q.x - k * x, q.y - k * y); return true; }
+function ovPushAt(x, y){ if (!OV.on || !ovDomain(x, y)) return false; const q = ovMap(x, y), k = OV.cfg.ft ? ovArtFt(q.y) / (96 * BASE * ((balcony() || {}).scale || 1.35) / 5) : ovStretch(x, y); ctx.save(); ctx.transform(k, 0, 0, k, q.x - k * x, q.y - k * y); return true; }
 function ovPt(x, y){ return OV.on && ovDomain(x, y) ? ovMap(x, y) : {x, y}; }
 // a point on (or above) an actor, as the camera and the overlays see it
 function ovActorPt(a, x, y){ if (!ovDrawn(a)) return {x, y}; const T = ovActorT(a); return {x: T.k * x + T.ox, y: T.k * y + T.oy}; }
@@ -1607,8 +1614,9 @@ function ovActorPt(a, x, y){ if (!ovDrawn(a)) return {x, y}; const T = ovActorT(
 // hold stops it flickering on the threshold.
 function ovWanted(){
   if (!OV.tris || !OV.cfg || mode === "load" || mode === "travel") return false;
-  if (mode === "combat" && cbt){ const all = [...party, ...foes].filter(x => actors.includes(x) && !x.down); return all.length > 0 && all.every(x => outsidePen(x)); }
-  return !!(leader && actors.includes(leader) && outsidePen(leader) && leader.alpha > .05);
+  const there = x => ovPenStyle() ? outsidePen(x) : x.x != null && ovDomain(x.x, x.y);
+  if (mode === "combat" && cbt){ const all = [...party, ...foes].filter(x => actors.includes(x) && !x.down); return all.length > 0 && all.every(there); }
+  return !!(leader && actors.includes(leader) && there(leader) && leader.alpha > .05);
 }
 function ovTick(){
   if (!OV.tris || mode === "travel" || mode === "load") return;   // leaving the plate: the next plate sets its own camera

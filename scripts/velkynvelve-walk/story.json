@@ -870,6 +870,7 @@
     }
   },
   "2": {
+    "closeup": {"_note": "Sam, 2026-10-29 (close-up board, take B): climb the timber stair or step onto the raised walkway and the camera slides onto this close-up of the walkway and stair; come down to the bunks and it slides off. One world, two views, like the pen's balcony: the mesh pen[i] -> art[i] (art px, 2400x1339) is a least-squares fit on nine matching features (stair ends, mushrooms, lanterns, chests), about a 1.75x stretch, within ~15 px.", "img": "closeup-02-upper.jpg", "x0": -2600, "zone": [[800, 220], [2030, 220], [2030, 500], [1490, 500], [1290, 870], [1040, 870], [1250, 500], [800, 420]], "pen": [[640, 150], [2120, 150], [2120, 960], [640, 960]], "art": [[-45, -29], [2527, -16], [2518, 1409], [-54, 1396]], "tri": [[0, 1, 2], [0, 2, 3]]},
     "loot": [
       {
         "id": "barracks-west",
@@ -1086,6 +1087,7 @@
     }
   },
   "1": {
+    "closeup": {"_note": "Sam, 2026-10-29 (close-up board, take B): walk up toward the stair and the camera slides onto this close-up of the north end of the watch platform; walk back and it slides off. One world, two views, like the pen's balcony: everything keeps this plate's coordinates; the mesh pen[i] -> art[i] (art px, 2400x1339) carries the zone into the painting. Fitted by hand on matching features (the two stair lanterns, the coiled rope, the rail posts): one even 2.08x stretch.", "img": "closeup-01-stair.jpg", "x0": -2600, "zone": [[640, 90], [1760, 90], [1760, 680], [640, 680]], "pen": [[560, 30], [1840, 30], [1840, 740], [560, 740]], "art": [[-131, -66], [2531, -66], [2531, 1411], [-131, 1411]], "tri": [[0, 1, 2], [0, 2, 3]]},
     "objects": [
       {
         "name": "Warning trumpet",
