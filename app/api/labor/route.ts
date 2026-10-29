@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { readSeated } from "@/lib/seats"
 import { jorlanOnDuty, readStage } from "@/lib/stage-roster"
-import { disobey, firstWorkShift, planDay, seeded, shiftAt, suspicionReasons, type CrewMember, type PlannedDetail, type PocketResult } from "@/lib/labor"
+import { SHIFT_STARTS, disobey, firstWorkShift, planDay, seeded, shiftAt, suspicionReasons, type CrewMember, type PlannedDetail, type PocketResult } from "@/lib/labor"
 import { CONFISCATION_STASH_NAME } from "@/lib/confiscation"
 // plain .mjs, shared with the walk page (build_walk.py /*__LABOR__*/)
 import { PRISONERS, advance, arrivalStep, choiceEffect, prisonerSlug, shiftOver, shiftTimeout, tooBigToHide } from "@/lib/labor-walk.mjs"
@@ -107,6 +107,19 @@ async function applyShiftTimeout(db: Db, detail: DetailRow, clock: { day: number
   return { detail: (data as DetailRow | null) ?? detail, overdue: false }
 }
 
+/**
+ * Has the shift this row means actually begun (and not yet ended)? Shift 3 on day D is the one that starts at 22:00 on
+ * day D. The small hours of day D (00:00–06:00) are also "shift 3" to shiftAt(), but they are the tail of day D-1's
+ * night shift. Comparing only day + shift number called day 1's 22:00 detail at 00:00 on day 1 — the first minute of
+ * the run — so the party went to work the moment the session started (Sam, 2026-10-29: "the details started which it
+ * shouldn't this early"), against the three-shift-change wait (firstWorkShift).
+ */
+function shiftUnderway(d: { day: number; shift: number }, clock: { day: number; minutes: number }): boolean {
+  const start = (Math.max(1, Number(d.day) || 1) - 1) * 1440 + (SHIFT_STARTS[(Number(d.shift) || 1) - 1] ?? 0)
+  const now = (Math.max(1, clock.day) - 1) * 1440 + clock.minutes
+  return now >= start && now < start + 8 * 60
+}
+
 const hash = (s: string) => { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0 }
 
 /** Plans the day if it has no rows yet. Returns the day's rows. */
@@ -164,11 +177,11 @@ export async function GET() {
     if (out) detail = out
     let overdue = false
     if (detail && detail.status === "working") ({ detail, overdue } = await applyShiftTimeout(db, detail as DetailRow, { day, minutes }))
-    return NextResponse.json({ detail, due: !!detail && detail.status === "scheduled" && detail.day === day && detail.shift === shift, overdue, day, shift, minutes, others: rows.filter((r) => !r.party).length,
+    return NextResponse.json({ detail, due: !!detail && detail.status === "scheduled" && shiftUnderway(detail, { day, minutes }), overdue, day, shift, minutes, others: rows.filter((r) => !r.party).length,
       // Sam, 2026-10-26 ("yes" to making them visible): the prisoners NOT on the party's detail work their own shift.
       // The map takes these crews out of the pen while their shift runs and brings them back after. Derived from the
       // day's rota and the game clock, so every seat at the table sees the same prisoners gone.
-      crewsNow: rows.filter((r) => !r.party && r.shift === shift && r.status !== "aborted")
+      crewsNow: rows.filter((r) => !r.party && shiftUnderway(r, { day, minutes }) && r.status !== "aborted")
         .map((r) => ({ id: r.id, task: r.task, escort: r.escort ?? [], npcs: ((r.crew as CrewMember[]) ?? []).filter((c) => c.kind === "npc").map((c) => c.id) })) })
   } catch (e) {
     return NextResponse.json({ detail: null, error: String(e) }, { status: 200 })
@@ -299,7 +312,7 @@ export async function POST(req: NextRequest) {
   const clock = await clockNow(db)
   if (action === "call" && !dm) {
     // a player's browser may only call a detail whose shift is running now
-    if (row.day !== clock.day || row.shift !== shiftAt(clock.minutes)) return NextResponse.json({ error: "not this shift" }, { status: 409 })
+    if (!shiftUnderway(row, clock)) return NextResponse.json({ error: "not this shift" }, { status: 409 })
   }
   const next = advance(row.status, action)
   if (!next) return NextResponse.json({ error: `cannot ${action} a ${row.status} detail`, detail: row }, { status: 409 })
