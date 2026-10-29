@@ -797,6 +797,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="world" id="world">
       <img class="plate" id="plate" alt="">
       <img class="plate" id="plate2" alt="" hidden>
+      <img class="plate" id="plateOut" alt="" hidden>
       <div class="marks" id="marks"></div>
       <div class="fx" id="fx"></div>
     </div>
@@ -1514,6 +1515,116 @@ function paintDoorway(){
   const m = cols[Math.floor(cols.length / 2)], y = m.lo + DOOR_DEEP * (m.hi - m.lo);
   doorDeepPt = {x: m.x, y: (Math.floor(y / CELL) + .5) * CELL};
 }
+// ---------- THE VIEW OUTSIDE THE PEN (Sam, 2026-10-28/29) ----------
+// Sam: "a plate should represent one frame rather than 2 to 4", "it should feel at least just as ample as the original
+// plate but pan as we move through the doors", then "lets wire what we have" (the Pen Strip Pilot,
+// https://claude.ai/artifact/89EgB8Ryoohy2oQvd6Ds8V). The pen plate's painting crams the landing and the rope bridge into
+// its top-left corner. Now, when the hero steps out of the gate, the camera slides left onto a second painting of that
+// same place, close up (img/pen-outside.jpg), and slides back when they step in again.
+// ONE WORLD, TWO VIEWS. Nothing moves to another plate: the guards, Jorlan, the volleys, Hard Labor, the gate and every
+// fight keep the pen plate's own coordinates (story.json interact.gate.balcony). The close-up is only a way of DRAWING
+// the balcony: each point on it is carried into the painting by a triangle mesh (`outside.pen` -> `outside.art`, built
+// by hand against both paintings), and everything standing there is drawn at the painting's own size for its depth,
+// so feet stay on the planks and the rock. Clicks come back through the same mesh, so walking, talking and targeting
+// out there are the game's own. The painting sits beside the plate at x0 (left of it, with a dark gap), so the slide
+// between them is just the camera gliding.
+const OV = {on: false, want: false, since: 0, img: null, tris: null, cfg: null};
+function ovCfg(){ const B = balcony(); return (B && B.outside) || null; }
+function ovAffine(P, Q){   // the affine map taking triangle P onto triangle Q: [a, b, c, d, e, f] with x' = a x + c y + e
+  const [[x0, y0], [x1, y1], [x2, y2]] = P, [[u0, v0], [u1, v1], [u2, v2]] = Q, det = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+  const a = ((u1 - u0) * (y2 - y0) - (u2 - u0) * (y1 - y0)) / det, c = ((u2 - u0) * (x1 - x0) - (u1 - u0) * (x2 - x0)) / det;
+  const b = ((v1 - v0) * (y2 - y0) - (v2 - v0) * (y1 - y0)) / det, d = ((v2 - v0) * (x1 - x0) - (v1 - v0) * (x2 - x0)) / det;
+  return [a, b, c, d, u0 - a * x0 - c * y0, v0 - b * x0 - d * y0];
+}
+function ovBuild(){
+  const C = ovCfg(); OV.cfg = C; OV.tris = null; OV.on = OV.want = false; sliding = false;
+  const el = $("plateOut"); if (!el) return;
+  if (!C){ el.hidden = true; return; }
+  el.style.left = C.x0 + "px"; el.hidden = false; if (!el.src.endsWith(C.img)) el.src = PLATE_DIR + C.img;
+  OV.tris = C.tri.map(t => { const P = t.map(i => C.pen[i]), Q = t.map(i => [C.art[i][0] + C.x0, C.art[i][1]]); return {P, Q, f: ovAffine(P, Q), g: ovAffine(Q, P)}; });
+}
+function ovBary(T, x, y){ const [[x0, y0], [x1, y1], [x2, y2]] = T, d = (y1 - y2) * (x0 - x2) + (x2 - x1) * (y0 - y2);
+  const l0 = ((y1 - y2) * (x - x2) + (x2 - x1) * (y - y2)) / d, l1 = ((y2 - y0) * (x - x2) + (x0 - x2) * (y - y2)) / d; return Math.min(l0, l1, 1 - l0 - l1); }
+function ovTri(x, y, inverse){   // the triangle holding the point (or the nearest one, so the edges extrapolate gently)
+  let best = null, bv = -1e9; for (const t of OV.tris){ const v = ovBary(inverse ? t.Q : t.P, x, y); if (v > bv){ bv = v; best = t; } if (v >= 0) break; }
+  return best;
+}
+const ovApply = (m, x, y) => ({x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5]});
+function ovMap(x, y){ const t = ovTri(x, y, false); return t ? ovApply(t.f, x, y) : {x, y}; }
+function ovUnmap(x, y){ const t = ovTri(x, y, true); return t ? ovApply(t.g, x, y) : {x, y}; }
+// the balcony side of the pen wall, in the pen plate's coordinates (everything left of the doorway's floor)
+const ovDomain = (x, y) => !!OV.cfg && x < OV.cfg.domainX;
+// the painting's own size of a foot at painting-height Y (a figure is drawn at this, not at the pen's)
+function ovArtFt(Y){ const [f0, f1, y0, y1] = OV.cfg.ft; return f0 + (f1 - f0) * Math.min(1, Math.max(0, (Y - y0) / (y1 - y0))); }
+const ovPenFt = a => 96 * BASE * (a.fixedScale ? a.fixedScale : paceAt(a) * (a.big || 1)) / 5;
+// Is this actor drawn in the close-up right now? Standing on the balcony side, with the close-up on.
+function ovDrawn(a){ return OV.on && !!a && a.x != null && ovDomain(a.x, a.y) && !(walkable(a.x, a.y) && !outsidePen(a)); }
+// The local similarity at an actor's feet: pen point p -> painting, uniform scale k so the figure keeps its proportions.
+function ovActorT(a){
+  let q = ovMap(a.x, a.y);
+  // through the door: in the pen's painting the way in goes round behind a pillar and out of sight; in the close-up the
+  // door is in plain view, so a walker fading out on that stretch drifts into the doorway, and one just stepped out of
+  // it (faded in on the landing) comes from there
+  const D = OV.cfg.doorFloor, p0 = a.path && a.path[0], B = balcony(), L = B ? B.landing : [0, 0];
+  if (D && B && a.alpha < 1 && ((p0 && p0.out) || (a.fadeIn && Math.hypot(a.x - L[0], a.y - L[1]) < 60))){ const t = 1 - a.alpha, dx = D[0] + OV.cfg.x0, dy = D[1]; q = {x: q.x + (dx - q.x) * t, y: q.y + (dy - q.y) * t}; }
+  const k = ovArtFt(q.y) / ovPenFt(a); return {q, k, ox: q.x - k * a.x, oy: q.y - k * a.y};
+}
+// how much slower a walker goes out there: the mesh stretches the balcony about three and a half times, so at the pen's
+// pace a figure would race across the planks; this brings their stride back to the painting's scale
+function ovPace(a){
+  if (!OV.on || !ovDrawn(a)) return 1; const t = ovTri(a.x, a.y, false); if (!t) return 1;
+  const f = t.f, det = Math.abs(f[0] * f[3] - f[1] * f[2]), k = ovArtFt(ovMap(a.x, a.y).y) / ovPenFt(a);
+  return Math.min(1, Math.max(.25, k / Math.sqrt(det)));
+}
+function ovPushActor(a){ if (!ovDrawn(a)) return false; const T = ovActorT(a); ctx.save(); ctx.transform(T.k, 0, 0, T.k, T.ox, T.oy); return true; }
+// the same at a bare point on the balcony (a blood pool, a stuck bolt, a spell's ring): the balcony's foot there
+function ovPushAt(x, y){ if (!OV.on || !ovDomain(x, y)) return false; const q = ovMap(x, y), k = ovArtFt(q.y) / (96 * BASE * ((balcony() || {}).scale || 1.35) / 5); ctx.save(); ctx.transform(k, 0, 0, k, q.x - k * x, q.y - k * y); return true; }
+function ovPt(x, y){ return OV.on && ovDomain(x, y) ? ovMap(x, y) : {x, y}; }
+// a point on (or above) an actor, as the camera and the overlays see it
+function ovActorPt(a, x, y){ if (!ovDrawn(a)) return {x, y}; const T = ovActorT(a); return {x: T.k * x + T.ox, y: T.k * y + T.oy}; }
+// Which view. Exploring (and in a conversation or a scene) the leader decides; in a fight the close-up only when every
+// fighter still standing is out there, so a volley through the bars or a brawl in the doorway stays on the pen. A short
+// hold stops it flickering on the threshold.
+function ovWanted(){
+  if (!OV.tris || !OV.cfg || mode === "load" || mode === "travel") return false;
+  if (mode === "combat" && cbt){ const all = [...party, ...foes].filter(x => actors.includes(x) && !x.down); return all.length > 0 && all.every(x => outsidePen(x)); }
+  return !!(leader && actors.includes(leader) && outsidePen(leader) && leader.alpha > .05);
+}
+function ovTick(){
+  if (!OV.tris || mode === "travel" || mode === "load") return;   // leaving the plate: the next plate sets its own camera
+  const w = ovWanted(); if (w !== OV.want){ OV.want = w; OV.since = now; }
+  if (OV.want === OV.on || now - OV.since < (mode === "combat" ? 1200 : 220)) return;   // a fight steps in and out of the doorway: wait for it to settle
+  OV.on = OV.want;
+  // the slide: the camera glides from one painting to the other; clamping waits until it lands
+  const r = stage.getBoundingClientRect(), z = view.z, s = base * z, f = leader ? (OV.on ? ovActorPt(leader, leader.x, leader.y - 60) : {x: leader.x, y: leader.y - 60}) : {x: OV.on ? OV.cfg.x0 + NAT_W / 2 : NAT_W / 2, y: NAT_H / 2};
+  const to = {z, tx: r.width / 2 - f.x * s, ty: r.height / 2 - f.y * s}; clampView(to);
+  sliding = true; camTween = {from: {...view}, to, t0: now, ms: 900, slide: true}; userPanAt = now;
+}
+function ovSeam(){   // the dark gap between the two paintings, seen only mid-slide
+  if (!OV.cfg) return; const x0 = OV.cfg.x0 + NAT_W, g = ctx.createLinearGradient(x0 - 60, 0, 60, 0);
+  g.addColorStop(0, "rgba(6,4,10,0)"); g.addColorStop(.25, "rgba(6,4,10,.95)"); g.addColorStop(.75, "rgba(6,4,10,.95)"); g.addColorStop(1, "rgba(6,4,10,0)");
+  ctx.fillStyle = g; ctx.fillRect(x0 - 60, 0, -x0 + 120, NAT_H);
+}
+function ovDoor(){   // the painted gate stands shut; while the real one is open, its opening is dark
+  if (!OV.on || !OV.cfg.door || !(state.gateOpen && !state.doorShut)) return;
+  const P = OV.cfg.door.map(([x, y]) => [x + OV.cfg.x0, y]);
+  ctx.save(); ctx.beginPath(); P.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
+  const g = ctx.createLinearGradient(P[0][0], P[0][1], P[2][0], P[2][1]); g.addColorStop(0, "#07060c"); g.addColorStop(.75, "#151626"); g.addColorStop(1, "#262a40");
+  ctx.fillStyle = g; ctx.globalAlpha = .96; ctx.fill(); ctx.restore();
+}
+function ovWrap(x, y, fn){ const o = ovPushAt(x, y); try { fn(); } finally { if (o) ctx.restore(); } }
+function ovWrapS(s, fn){ const a = s.a || s.at; if (a && a.id) ovWrapA(a, fn); else ovWrap(s.x, s.y, fn); }
+function ovWrapA(a, fn){ const o = a && a.id ? ovPushActor(a) : false; try { fn(); } finally { if (o) ctx.restore(); } }
+// a group drawn together (a kill's loot): carried by the first of them that lies on the balcony
+function ovWrapGroup(list, fn){ const d = OV.on ? list.find(d => (d.plate == null || d.plate === cur) && ovDomain(d.x1 ?? d.x, d.y1 ?? d.y)) : null;
+  if (!d){ fn(); return; } ovWrap(d.x1 ?? d.x, d.y1 ?? d.y, fn); }
+// an ellipse on the floor, as a path: bent by the mesh in the close-up, so a reach or a spell's ring covers what it covers
+function ovEllipsePath(x, y, rx, ry){
+  ctx.beginPath();
+  if (!(OV.on && ovDomain(x, y))){ ctx.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); return; }
+  for (let i = 0; i <= 48; i++){ const t = i / 48 * Math.PI * 2, q = ovMap(x + Math.cos(t) * rx, y + Math.sin(t) * ry); i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y); }
+  ctx.closePath();
+}
 // whether `a` can reach `b` only by going through the gate (one inside the pen, one out on the balcony)
 const gateWayTo = (a, b) => gatePassable() && outsidePen(a) !== outsidePen(b);
 function findPath(from, to){
@@ -1673,8 +1784,8 @@ function frameOf(a){
 let view = {z: 1, tx: 0, ty: 0}, base = 1, dpr = 1, camTween = null, userPanAt = -1e9;
 function fitScale(){ const r = stage.getBoundingClientRect(); return Math.min(r.width / NAT_W, r.height / NAT_H); }
 function clampView(v){
-  const r = stage.getBoundingClientRect(), s = base * v.z, w = NAT_W * s, h = NAT_H * s;
-  v.tx = w <= r.width ? (r.width - w) / 2 : Math.min(0, Math.max(r.width - w, v.tx));
+  const r = stage.getBoundingClientRect(), s = base * v.z, w = NAT_W * s, h = NAT_H * s, fx = OV.on ? OV.cfg.x0 * s : 0;   // the close-up's frame sits at x0
+  v.tx = w <= r.width ? (r.width - w) / 2 - fx : Math.min(-fx, Math.max(r.width - w - fx, v.tx));
   v.ty = h <= r.height ? (r.height - h) / 2 : Math.min(0, Math.max(r.height - h, v.ty));
 }
 // ---------- THE FOLLOW CAMERA (Sam, 2026-10-27: AFK Journey's camera for the Underwalk; he asked Claude to pick by
@@ -1706,10 +1817,14 @@ function resize(){
   base = fitScale(); applyView();
 }
 function w2s(x, y){ const s = base * view.z; return [view.tx + x * s, view.ty + y * s]; }
-function s2w(cx, cy){ const r = stage.getBoundingClientRect(), s = base * view.z; return {x: (cx - r.left - view.tx) / s, y: (cy - r.top - view.ty) / s}; }
+function s2w(cx, cy){ const r = stage.getBoundingClientRect(), s = base * view.z, w = {x: (cx - r.left - view.tx) / s, y: (cy - r.top - view.ty) / s};
+  if (OV.on && w.x < OV.cfg.x0 + NAT_W + 100){ const p = ovUnmap(w.x, w.y); p.art = w; return p; }   // a click in the close-up lands on the balcony it shows
+  return w; }
 function camTo(z, cx, cy, ms){
+  if (OV.on){ if (ovDomain(cx, cy)){ const q = ovMap(cx, cy); cx = q.x; cy = q.y; } else cx += OV.cfg.x0; }   // the same aim, in the close-up
   const r = stage.getBoundingClientRect(), s = base * z;
   const to = {z, tx: r.width / 2 - cx * s, ty: r.height / 2 - cy * s}; clampView(to);
+  if (camTween && camTween.slide) sliding = false;   // a new aim cuts a slide short: clamp again
   camTween = {from: {...view}, to, t0: now, ms};
 }
 function zoomAt(px, py, f){
@@ -1726,13 +1841,13 @@ function zoomAt(px, py, f){
 function yourCam(){ if (cbt && !cbt.yourCam){ cbt.yourCam = true; const b = $("zFit"); if (b){ b.textContent = "Fit"; b.title = "Frame the fight again"; } } }
 function fightCam(z, cx, cy, ms, pts){
   if (!cbt || !cbt.yourCam){ camTo(z, cx, cy, ms); return; }
-  const r = stage.getBoundingClientRect(), m = 110, ps = (pts && pts.length ? pts : [{x: cx, y: cy}]).map(p => w2s(p.x, p.y - 40));
+  const r = stage.getBoundingClientRect(), m = 110, ps = (pts && pts.length ? pts : [{x: cx, y: cy}]).map(p => { const q = p.id ? ovActorPt(p, p.x, p.y - 40) : ovPt(p.x, p.y - 40); return w2s(q.x, q.y); });
   const x0 = Math.min(...ps.map(p => p[0])), x1 = Math.max(...ps.map(p => p[0])), y0 = Math.min(...ps.map(p => p[1])), y1 = Math.max(...ps.map(p => p[1]));
   let dx = 0, dy = 0;
   if (x1 - x0 > r.width - 2 * m) dx = r.width / 2 - (x0 + x1) / 2; else if (x0 < m) dx = m - x0; else if (x1 > r.width - m) dx = r.width - m - x1;
   if (y1 - y0 > r.height - 2 * m) dy = r.height / 2 - (y0 + y1) / 2; else if (y0 < m) dy = m - y0; else if (y1 > r.height - m) dy = r.height - m - y1;
   if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
-  const to = {z: view.z, tx: view.tx + dx, ty: view.ty + dy}; clampView(to); camTween = {from: {...view}, to, t0: now, ms};
+  const to = {z: view.z, tx: view.tx + dx, ty: view.ty + dy}; clampView(to); if (camTween && camTween.slide) sliding = false; camTween = {from: {...view}, to, t0: now, ms};
 }
 
 function draw(){
@@ -1742,16 +1857,18 @@ function draw(){
   const shx = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0, shy = shakeAmt ? (Math.random() - .5) * shakeAmt * 2 : 0; shakeAmt = shakeAmt > .5 ? shakeAmt * .82 : 0;
   ctx.setTransform(s, 0, 0, s, (view.tx + shx) * dpr, (view.ty + shy) * dpr);
   ctx.imageSmoothingEnabled = false;
+  if (OV.cfg){ ovSeam(); ovDoor(); }
   drawDoor(); drawProps(); drawDecor(); drawLift(); drawPropHighlight(); drawLootHighlight(); drawFloorItems(); drawSneakCones(); drawLaborCones();
   // exits: soft glows so players can see the ways out
   if (mode === "explore" || mode === "dialog"){
     const pulse = .5 + .5 * Math.sin(now / 520);
     for (const z of node.zones){
-      const [x0, y0, x1, y1] = z.rect, cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+      const [x0, y0, x1, y1] = z.rect; let cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
       if (z.interact){                        // things you can use light up when you are in reach, or point at them
         const lit = hoverObj === z || hoverZone === z || (leader && Math.hypot(leader.x - cx, leader.y - cy) < 340 * node.scale);
         if (!lit) continue;
-        const col = "240,190,90", pts = z.interact.poly;   // gold, open or shut (Sam, 2026-10-27: "highlighted in gold as an option")
+        if (OV.on && !(z === doorGate() && OV.cfg.door)) continue;   // the close-up: only the gate, on its own painting
+        const col = "240,190,90", pts = OV.on ? OV.cfg.door.map(([x, y]) => [x + OV.cfg.x0, y]) : z.interact.poly;   // gold, open or shut (Sam, 2026-10-27: "highlighted in gold as an option")
         ctx.save(); ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
         ctx.fillStyle = `rgba(${col},${.06 + .05 * pulse})`; ctx.fill();
         ctx.shadowColor = `rgba(${col},.95)`; ctx.shadowBlur = 24; ctx.lineJoin = "round";
@@ -1761,8 +1878,10 @@ function draw(){
       }
       if (z.kind === "rappel"){ drawRopeAnchor(z, hoverZone === z || (leader && Math.hypot(leader.x - cx, leader.y - cy) < 340 * node.scale), pulse); continue; }
       const locked = z.kind === "gate" && !state.gateOpen;
+      if (OV.on && !ovDomain(cx, cy)) continue;   // the close-up shows only the balcony's ways out
       const col = locked ? "208,69,58" : "240,190,90";   // every way out glows gold (Sam, 2026-10-27: the green "looks weird"); a locked gate stays red
-      const rad = Math.max(40, Math.min(110, Math.min(x1 - x0, y1 - y0) * .8));
+      const rad = Math.max(40, Math.min(110, Math.min(x1 - x0, y1 - y0) * .8)) * (OV.on ? 1.6 : 1);
+      if (OV.on){ const q = ovMap(cx, cy); cx = q.x; cy = q.y; }
       const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
       g.addColorStop(0, `rgba(${col},${.30 + .25 * pulse})`); g.addColorStop(1, `rgba(${col},0)`);
       ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(cx, cy, rad, rad * .55, 0, 0, Math.PI * 2); ctx.fill();
@@ -1771,19 +1890,20 @@ function draw(){
   // click target marker
   if (marker && now - marker.t < 600){
     const k = (now - marker.t) / 600; ctx.strokeStyle = `rgba(232,162,74,${1 - k})`; ctx.lineWidth = 3 / (base * view.z);
-    ctx.beginPath(); ctx.ellipse(marker.x, marker.y, 14 + 20 * k, (14 + 20 * k) * .5, 0, 0, Math.PI * 2); ctx.stroke();
+    const mq = ovPt(marker.x, marker.y); ctx.beginPath(); ctx.ellipse(mq.x, mq.y, 14 + 20 * k, (14 + 20 * k) * .5, 0, 0, Math.PI * 2); ctx.stroke();
   }
   for (const c of node.chains || []) drawChain(c);
   drawCombatGround(); drawStuckGround(); drawSurgeonGround();
   if (mode === "combat"){ drawIcePatches(); drawFxLayer(true); tickIce(); }
   if (mode === "explore" && exploreJump && leader && actors.includes(leader)) drawExploreJumpSquares(leader);
-  drawLootGround();   // the loot ceremony's floor light, under the figures
+  ovWrapGroup(drops, drawLootGround);   // the loot ceremony's floor light, under the figures
   const list = actors.concat(vermin, laborProps).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);   // laborProps: Hard Labor's station props
   const cloudQ = mode === "combat" || clouds.length ? cloudPuffs() : [];   // the poison cloud, in depth order among the figures
   let barsAt = gateBarsY();                                       // the bars in front of a guard leaning at them, in depth order
   for (const a of list){
     while (cloudQ.length && cloudQ[0].y <= a.y) drawPuff(cloudQ.shift());
     if (barsAt != null && barsAt <= a.y){ drawGateBars(); barsAt = null; }
+    const ovT = ovPushActor(a);   // out on the balcony with the close-up on: drawn into that painting, at its size
     const m = SPR[a.id].json, sc = actorScale(a), [cw, ch] = m.cell, [px, py] = m.pivot;
     // HIDDEN LOOKS HIDDEN (Sam, 2026-10-28, from the Pen Strip Pilot: "hiding should make people look a little more
     // invisible"). A hero who is hidden right now (hiddenNow: an unspotted sneaker, or Hide in a fight) fades toward the
@@ -1914,13 +2034,14 @@ function draw(){
       ctx.strokeText("!", a.x, top); ctx.fillText("!", a.x, top);
     }
     if (sp){ a.kx -= sp.ox; a.ky -= sp.oy; }
+    if (ovT) ctx.restore();
   }
   if (barsAt != null) drawGateBars();
 
   while (cloudQ.length) drawPuff(cloudQ.shift());
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
   drawTolls();
-  drawDrops(); drawCombatFx(); drawShots(); drawToothGlow();
+  ovWrapGroup(drops, drawDrops); drawCombatFx(); drawShots(); drawToothGlow();
   ctx.globalAlpha = 1;
 }
 const tint = document.createElement("canvas");
@@ -2074,7 +2195,7 @@ function updateSneakTags(){
   for (const [f, el] of sneakTags) if (!want.has(f)){ el.remove(); sneakTags.delete(f); }
   for (const f of want){
     let el = sneakTags.get(f); if (!el){ el = document.createElement("div"); el.className = "sneakTag"; el.textContent = "✓ SNEAK"; over.appendChild(el); sneakTags.set(f, el); }
-    const m = SPR[f.id].json, top = f.y - m.pivot[1] * actorScale(f); const [sx, sy] = w2s(f.x, top); el.style.left = sx + "px"; el.style.top = sy + "px";
+    const m = SPR[f.id].json, top = f.y - m.pivot[1] * actorScale(f), oq = ovActorPt(f, f.x, top); const [sx, sy] = w2s(oq.x, oq.y); el.style.left = sx + "px"; el.style.top = sy + "px";
   }
 }
 function updateOverlay(){
@@ -2083,11 +2204,11 @@ function updateOverlay(){
     const b = bubbles[i];
     if (now > b.until || !actors.includes(b.a)){ b.el.remove(); bubbles.splice(i, 1); continue; }
     const m = SPR[b.a.id].json, sc = actorScale(b.a), top = b.a.y - m.pivot[1] * sc + m.cell[1] * sc * .16;
-    const [sx, sy] = w2s(b.a.x, top); b.el.style.left = sx + "px"; b.el.style.top = sy + "px";
+    const oq = ovActorPt(b.a, b.a.x, top), [sx, sy] = w2s(oq.x, oq.y); b.el.style.left = sx + "px"; b.el.style.top = sy + "px";
   }
   if (nameTag){
     if (hoverActor && mode !== "talk"){
-      const [sx, sy] = w2s(hoverActor.x, hoverActor.y); nameTag.hidden = false; nameTag.style.left = sx + "px"; nameTag.style.top = sy + "px";
+      const oq = ovActorPt(hoverActor, hoverActor.x, hoverActor.y), [sx, sy] = w2s(oq.x, oq.y); nameTag.hidden = false; nameTag.style.left = sx + "px"; nameTag.style.top = sy + "px";
       nameTag.textContent = hoverActor.body ? `${fname(hoverActor)}'s body · ${hoverActor.searched ? "searched" : "click to search"}` : (SHORT[hoverActor.id] || SPR[hoverActor.id].json.name) + (dmRun.has(hoverActor.id) ? " · DM-run" : "") + (wantsWord(hoverActor) ? " · wants a word" + (hoverActor.talkWho ? " with " + hoverActor.talkWho : "") : "");
     } else nameTag.hidden = true;
   }
@@ -2565,6 +2686,7 @@ async function enterNode(n, opts = {}){
   $("combat").hidden = true; stage.classList.remove("fight"); cbt = null; combatBusy = false; $("vignette").classList.remove("on");
   bubbles.forEach(b => b.until = 0);
   if (!opts.slide) await new Promise(r => setTimeout(r, 360));
+  OV.on = OV.want = false; OV.cfg = null; OV.tris = null; sliding = false;   // the close-up belongs to the plate being left
   cur = n; node = SPEC[n];
   plateImg.src = plateUrl(n);
   try { await plateImg.decode(); } catch (e) {}
@@ -3169,6 +3291,7 @@ const DOOR_SFX = ["door-open", "door-close", "door-locked", "lock-picked", "lock
 const door = {k: 0, target: 0, leaf: null, img: null};
 function doorGate(){ return node.zones.find(z => z.interact && z.interact.leaf) || null; }
 function buildDoor(){
+  ovBuild();   // the close-up outside the pen (THE VIEW OUTSIDE THE PEN), or none on this plate
   const z = doorGate(); door.leaf = z ? z.interact.leaf : null; door.img = null;
   door.k = door.target = state.gateOpen && !state.doorShut ? 1 : 0;
   if (!door.leaf) return;
@@ -4127,7 +4250,7 @@ async function icardShow(t, cx, cy, pin){
   let x, y;
   if (t.anchor){ const box = (t.anchor.closest(".talk,.inv") || t.anchor).getBoundingClientRect(), row = t.anchor.getBoundingClientRect();
     x = box.right - sr.left + 12; if (x + W > sr.width - 8) x = box.left - sr.left - W - 12; y = row.top - sr.top - 20; }
-  else { const [sx, sy] = t.at ? w2s(t.at.x, t.at.y) : [cx - sr.left, cy - sr.top];
+  else { const oq = t.at ? ovActorPt(t.at, t.at.x, t.at.y) : null, [sx, sy] = t.at ? w2s(oq.x, oq.y) : [cx - sr.left, cy - sr.top];
     x = sx + 30; if (x + W > sr.width - 8) x = sx - W - 30; y = sy - H * .45; }
   el.style.left = Math.max(8, Math.min(sr.width - W - 8, x)) + "px"; el.style.top = Math.max(8, Math.min(sr.height - H - 8, y)) + "px";
 }
@@ -5063,7 +5186,7 @@ function drawFxLayer(flat){
     const cw = e.img.width / m.cols, ch = e.img.height / m.rows, punch = e.punch ? 1 + .35 * Math.max(0, 1 - (now - e.t0) / 120) : 1, w = e.sq * px * punch, h = w * ch / cw;
     const img = e.tint ? tintedSheet(e.img, e.name, (e.tintFrom && now - e.t0 < e.tintFrom) ? "#ffffff" : e.tint) : e.img;
     const sx = (f % m.cols) * cw, sy = Math.floor(f / m.cols) * ch;
-    ctx.save(); ctx.globalAlpha = e.alpha * (e.fade && !e.loop ? 1 - f / m.frames : 1) * (e.tail && e.until ? Math.min(1, (e.until - now) / 350) : 1) * (e.holdAlpha ? 1 - (1 - e.holdAlpha) * Math.min(1, Math.max(0, el - m.frames) / 6) : 1);
+    ctx.save(); const ovF = e.at && e.at.id ? ovPushActor(e.at) : ovPushAt(P.x, P.y); ctx.globalAlpha = e.alpha * (e.fade && !e.loop ? 1 - f / m.frames : 1) * (e.tail && e.until ? Math.min(1, (e.until - now) / 350) : 1) * (e.holdAlpha ? 1 - (1 - e.holdAlpha) * Math.min(1, Math.max(0, el - m.frames) / 6) : 1);
     if (e.flat){ ctx.translate(P.x, P.y + 2); ctx.scale(1, .5); if (e.spin) ctx.rotate((now - e.t0) / 1000 * e.spin); ctx.drawImage(img, sx, sy, cw, ch, -w / 2, -w / 2, w, w); }
     else {
       const y = e.anchor === "feet" || e.anchor === "base" ? P.y : e.anchor === "top" ? P.top : P.mid; let dx = e.dx || 0, lift = e.lift, flip = !!e.mirror;   // `mirror`: an arc drawn swinging right, thrown leftward
@@ -5073,6 +5196,7 @@ function drawFxLayer(flat){
       if (flip){ ctx.translate(P.x + dx * px, 0); ctx.scale(-1, 1); ctx.translate(-(P.x + dx * px), 0); }
       ctx.drawImage(img, sx, sy, cw, ch, P.x - w / 2 + dx * px, (e.anchor === "base" ? y - h : y - h / 2) - lift * px, w, h);
     }
+    if (ovF) ctx.restore();
     ctx.restore();
   }
   ctx.globalAlpha = 1;
@@ -6518,6 +6642,7 @@ function drawSneakCones(){
 }
 /** One watcher's view, drawn from sightShape: only the floor they really see is filled (the sneak cones' rule). */
 function drawSightFan(w, col, k, rim){
+  if (ovDrawn(w)){ ovSightFan(w, col, k, rim); return; }
   const sh = sightShape(w), r = sh.r, a0 = sh.a0, g = ctx.createRadialGradient(w.x, w.y, 0, w.x, w.y, r);
   g.addColorStop(0, `rgba(${col},${.24 * k})`); g.addColorStop(.7, `rgba(${col},${.1 * k})`); g.addColorStop(1, `rgba(${col},0)`);
   ctx.save(); ctx.fillStyle = g;
@@ -6537,6 +6662,21 @@ function drawSightFan(w, col, k, rim){
   ctx.restore();
 }
 
+// the same fan in the close-up outside the pen: its floor carried through the mesh, so it covers what the watcher sees
+function ovSightFan(w, col, k, rim){
+  const sh = sightShape(w), r = sh.r, a0 = sh.a0, c = ovMap(w.x, w.y), step = 2 * VIEW_HALF / SIGHT_RAYS;
+  const P = (ang, d) => ovMap(w.x + Math.cos(ang) * d, w.y + Math.sin(ang) * d);
+  let far = 0; for (let i = 0; i <= 8; i++){ const q = P(a0 - VIEW_HALF + 2 * VIEW_HALF * i / 8, r); far = Math.max(far, Math.hypot(q.x - c.x, q.y - c.y)); }
+  const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, far || 1);
+  g.addColorStop(0, `rgba(${col},${.24 * k})`); g.addColorStop(.7, `rgba(${col},${.1 * k})`); g.addColorStop(1, `rgba(${col},0)`);
+  ctx.save(); ctx.fillStyle = g; ctx.beginPath();
+  if (sh.full){ ctx.moveTo(c.x, c.y); for (let i = 0; i <= 24; i++){ const q = P(a0 - VIEW_HALF + 2 * VIEW_HALF * i / 24, r); ctx.lineTo(q.x, q.y); } ctx.closePath(); }
+  else for (const [i, d0, d1] of sh.segs){ const s0 = a0 - VIEW_HALF + step * i, s1 = s0 + step + .002, A = P(s0, d0), B = P(s0, d1), C = P(s1, d1), E = P(s1, Math.max(d0, .01));
+    ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.lineTo(C.x, C.y); ctx.lineTo(E.x, E.y); ctx.closePath(); }
+  ctx.fill();
+  if (rim && sh.full){ ctx.strokeStyle = `rgba(${col},${.38 * k})`; ctx.lineWidth = 2 / (base * view.z); ctx.setLineDash([8 / (base * view.z), 6 / (base * view.z)]); ctx.stroke(); }
+  ctx.restore();
+}
 // Search here, Listen, Look closer: the roll on the map, the finding from the DM core
 function askCheck(what, k, skill, text){
   openCheck(what, rollLine(k, skill));
@@ -7145,7 +7285,7 @@ function drawJumpSquares(a){
   for (const p of cells){
     const on = p === hov, [c, bright] = JUMP_INK[p.kind] || JUMP_INK.no, r = on ? rad * 1.35 : rad * (p.kind === "no" ? .8 : 1);
     ctx.fillStyle = `rgba(${c},${on ? .85 : .42 + .18 * pulse})`; ctx.strokeStyle = `rgba(${on ? bright : c},${on ? 1 : .9})`; ctx.lineWidth = on ? lw * 1.6 : lw;
-    ctx.beginPath(); ctx.ellipse(p.x, p.y, r, r * .62, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();   // a disc on the floor, foreshortened like the ground
+    const q = ovPt(p.x, p.y); ctx.beginPath(); ctx.ellipse(q.x, q.y, r, r * .62, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();   // a disc on the floor, foreshortened like the ground
   }
   // a red disc under the mouse says why; off it, the hint goes back to the instruction
   if (hov && hov.kind === "no" && hov.why){ if (drawJumpSquares.why !== hov.why){ drawJumpSquares.why = hov.why; hint(hov.why); } }
@@ -8967,16 +9107,16 @@ function drawCombatFx(){
   for (let i = sparks.length - 1; i >= 0; i--){
     const s = sparks[i], k = (now - s.t0) / s.life;
     if (k >= 1){ sparks.splice(i, 1); if (s.then){ const f = s.then; s.then = null; f(); } continue; }
-    if (s.swipe){ drawSwipe(s, k); continue; }
-    if (s.star){ drawStar(s, k); continue; }
-    if (s.orb){ drawOrb(s, k); continue; }
-    if (s.strand){ drawStrand(s, k); continue; }
-    if (s.glow){ drawGlow(s, k); continue; }
-    if (s.bloom){ drawBloom(s, k); continue; }
+    if (s.swipe){ ovWrapS(s, () => drawSwipe(s, k)); continue; }
+    if (s.star){ ovWrapS(s, () => drawStar(s, k)); continue; }
+    if (s.orb){ ovWrapS(s, () => drawOrb(s, k)); continue; }
+    if (s.strand){ ovWrapS(s, () => drawStrand(s, k)); continue; }
+    if (s.glow){ ovWrapS(s, () => drawGlow(s, k)); continue; }
+    if (s.bloom){ ovWrapS(s, () => drawBloom(s, k)); continue; }
     if (s.bolt){ const x = s.x + (s.tx - s.x) * k, y = s.y + (s.ty - s.y) * k; ctx.save(); ctx.shadowColor = s.col; ctx.shadowBlur = 24; ctx.fillStyle = s.col; ctx.globalAlpha = .95;
       ctx.beginPath(); ctx.ellipse(x, y, 9, 9, 0, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = .4; ctx.beginPath(); ctx.ellipse(x - (s.tx - s.x) * .06, y - (s.ty - s.y) * .06, 14, 6, Math.atan2(s.ty - s.y, s.tx - s.x), 0, Math.PI * 2); ctx.fill(); ctx.restore(); continue; }
     const t = (now - s.t0) / 1000, x = s.x + s.vx * t, y = s.y + s.vy * t + (s.g ?? 180) * t * t;
-    ctx.globalAlpha = 1 - k; ctx.fillStyle = s.col; ctx.fillRect(x - 2, y - 2, 4, 4);
+    ovWrapS(s, () => { ctx.globalAlpha = 1 - k; ctx.fillStyle = s.col; ctx.fillRect(x - 2, y - 2, 4, 4); });
   }
   for (let i = pops.length - 1; i >= 0; i--){
     const p = pops[i], age = now - p.born, k = Math.min(1, age / p.life);
@@ -8987,11 +9127,12 @@ function drawCombatFx(){
     let sc = p.size; const pa = now - p.punch; if (pa < 90) sc *= .6 + .55 * (pa / 90); else if (pa < 160) sc *= 1.15 - .15 * ((pa - 90) / 70);   // the spawn punch (and the re-punch on a merge)
     if (k > .65) sc *= Math.max(.85, 1 - (k - .65) * .3);                                   // shrinks as it goes, never past .85: still readable
     const x = p.x + (p.kind === "word" ? 8 * k : 0), y = p.y - rise - p.liftNow, sz = Math.round(30 * sc);
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = alpha; const ovP = p.a ? ovPushActor(p.a) : ovPushAt(p.x, p.y);
     if (p.crit) drawCritMark(x, y - sz * .36, sz * 1.05, age);
     ctx.font = `700 ${sz}px 'Alegreya Sans', 'Gill Sans', system-ui, sans-serif`; ctx.textAlign = "center"; ctx.lineJoin = "round";
     ctx.lineWidth = Math.max(3, 5 * sc); ctx.strokeStyle = "#140a06"; ctx.fillStyle = p.col; ctx.strokeText(p.text, x, y); ctx.fillText(p.text, x, y);
     if (p.crit){ ctx.globalAlpha = alpha * .5; ctx.fillStyle = "#fff6d0"; ctx.fillText(p.text, x, y - 1); }
+    if (ovP) ctx.restore();
   }
   ctx.globalAlpha = 1;
 }
@@ -9001,9 +9142,9 @@ function drawCombatFx(){
 function aoeRadiusAt(sp, y){ return (sp.area / 2 + 2.5) * ftPx({y}); }
 function drawAoe(x, y, sp, col, alpha, inside){
   const r = aoeRadiusAt(sp, y); ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = col + "22"; ctx.strokeStyle = col; ctx.lineWidth = 2.5 / (base * view.z);
-  ctx.setLineDash([10, 8]); ctx.lineDashOffset = -now / 60; ctx.beginPath(); ctx.ellipse(x, y, r, r * .55, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
+  ctx.setLineDash([10, 8]); ctx.lineDashOffset = -now / 60; ovEllipsePath(x, y, r, r * .55); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
   if (inside) for (const t of standing([...foes, ...party])) if (Math.hypot(t.x - x, t.y - y) <= (sp.area / 2 + 2.5) * ftPx(t)){
-    ctx.globalAlpha = alpha * (.6 + .4 * Math.sin(now / 160)); ctx.beginPath(); ctx.ellipse(t.x, t.y, 30 * actorScale(t), 10 * actorScale(t), 0, 0, Math.PI * 2); ctx.stroke(); }
+    ctx.globalAlpha = alpha * (.6 + .4 * Math.sin(now / 160)); ovWrapA(t, () => { ctx.beginPath(); ctx.ellipse(t.x, t.y, 30 * actorScale(t), 10 * actorScale(t), 0, 0, Math.PI * 2); ctx.stroke(); }); }
   ctx.restore();
 }
 // ICICLES ON A FROZEN BODY: a few pale spikes hang from the figure's lower edge and off its sides, a frost rim spreads
@@ -9085,13 +9226,13 @@ function drawCombatGround(){
   if (cbt.phase === "target" && aimW && a.kind === "pc"){ const sp = cbt.pend && cbt.pend.spell && SPELLS[cbt.pend.spell]; if (sp && sp.area) drawAoe(aimW.x, aimW.y, sp, sp.fx || "#e8a24a", .95, true); }
   if (a.kind === "pc" && (cbt.phase === "menu" || cbt.phase === "move") && a.c.move > 0){
     const r = a.c.move * ftPx(a); ctx.save(); ctx.globalAlpha = .9; ctx.setLineDash([12, 10]); ctx.lineWidth = 2.5 / (base * view.z); ctx.strokeStyle = "rgba(232,162,74,.75)";
-    ctx.beginPath(); ctx.ellipse(a.x, a.y, r, r * .55, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = "rgba(232,162,74,.07)"; ctx.fill(); ctx.restore();
+    ovEllipsePath(a.x, a.y, r, r * .55); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = "rgba(232,162,74,.07)"; ctx.fill(); ctx.restore();
   }
   if (a.kind === "pc" && cbt.phase === "jump") drawJumpSquares(a);
   if (cbt.phase === "target" && hoverActor && hoverActor.kind === "foe" && !hoverActor.down && a.kind === "pc"){
     const cv = coverOf(a, hoverActor), col = cv.total ? "255,80,70" : cv.ac >= 5 ? "255,150,60" : cv.ac >= 2 ? "255,214,102" : "120,230,160";
     ctx.save(); ctx.setLineDash([10, 8]); ctx.lineWidth = 2.5 / (base * view.z); ctx.strokeStyle = `rgba(${col},.85)`;
-    ctx.beginPath(); ctx.moveTo(a.x, a.y - 6); ctx.lineTo(hoverActor.x, hoverActor.y - 6); ctx.stroke(); ctx.restore();
+    const ca = ovActorPt(a, a.x, a.y - 6), cb = ovActorPt(hoverActor, hoverActor.x, hoverActor.y - 6); ctx.beginPath(); ctx.moveTo(ca.x, ca.y); ctx.lineTo(cb.x, cb.y); ctx.stroke(); ctx.restore();
   }
   // THE TARGET'S BASE GLOWS (Sam, 2026-10-22: "When selecting a target for a spell they should be highlighted at
   // their base with red if it is offensive and yellow if a boon/buff/heal."). It used to be a red ring under a
@@ -10832,10 +10973,11 @@ function drawSurgeonGround(){
   for (const b of bloodMarks){
     if (b.plate !== cur) continue;
     const k = Math.min(1, (now - b.t0) / b.grow), r = b.r * (b.pool ? .35 + .65 * k : 1);
+    const ovB = ovPushAt(b.x, b.y);
     ctx.save(); ctx.globalAlpha = b.pool ? .82 : .7; ctx.fillStyle = b.pool ? "#4e0808" : "#641010";
     ctx.beginPath(); ctx.ellipse(b.x, b.y, r, r * .42, b.rot, 0, Math.PI * 2); ctx.fill();
     if (b.pool){ ctx.globalAlpha = .35 * k; ctx.fillStyle = "#a01c16"; ctx.beginPath(); ctx.ellipse(b.x - r * .2, b.y - r * .08, r * .45, r * .16, b.rot, 0, Math.PI * 2); ctx.fill(); }
-    ctx.restore();
+    ctx.restore(); if (ovB) ctx.restore();
   }
 }
 // carried, not walked: a body moves along `pts` over `ms` (the walk loop would put a walking frame on it)
@@ -11924,8 +12066,9 @@ function hitActor(list, w){
   let best = null, bd = 1e9;
   for (const a of list){
     if (a.offStage || a.alpha < .05) continue;
-    const m = SPR[a.id].json, sc = actorScale(a), hw = 34 * sc * (m.cell[0] / 128), hh = 105 * sc * (m.cell[1] / 128);
-    if (w.x > a.x - hw && w.x < a.x + hw && w.y > a.y - hh && w.y < a.y + 10){ const d = Math.abs(w.y - (a.y - hh / 2)); if (d < bd){ bd = d; best = a; } }
+    const m = SPR[a.id].json, T = w.art && ovDrawn(a) ? ovActorT(a) : null, sc = actorScale(a) * (T ? T.k : 1), hw = 34 * sc * (m.cell[0] / 128), hh = 105 * sc * (m.cell[1] / 128);
+    const ax = T ? T.q.x : a.x, ay = T ? T.q.y : a.y, W = T ? w.art : w;   // in the close-up: tested where it is drawn
+    if (W.x > ax - hw && W.x < ax + hw && W.y > ay - hh && W.y < ay + 10){ const d = Math.abs(W.y - (ay - hh / 2)); if (d < bd){ bd = d; best = a; } }
   }
   return best;
 }
@@ -12066,7 +12209,7 @@ function drawExploreJumpSquares(L){
     const on = p === hov;
     ctx.fillStyle = on ? "rgba(255,92,72,.45)" : `rgba(220,48,40,${.16 + .1 * pulse})`;
     ctx.strokeStyle = on ? "rgba(255,200,190,.95)" : "rgba(255,86,70,.85)"; ctx.lineWidth = on ? lw * 1.6 : lw;
-    ctx.beginPath(); ctx.rect(p.x - h, p.y - h, h * 2, h * 2); ctx.fill(); ctx.stroke();
+    const q = ovPt(p.x, p.y); ctx.beginPath(); ctx.rect(q.x - h, q.y - h, h * 2, h * 2); ctx.fill(); ctx.stroke();
   }
   ctx.restore();
 }
@@ -12442,13 +12585,14 @@ function drawFloorItems(){
     // One square drew the icon canvas about three times too big beside the sprites (Sam, 2026-10-15: "Dagger size is a
     // little too big. Should be about 1/3 of that size"). FLOOR_ITEM_SCALE keeps the icons' own size ladder
     // (a dagger is fewer pixels than a spear) and shrinks them all together.
-    const img = itemImg(p.pixel), sq = 5 * pxPerFtAt(p.y) * FLOOR_ITEM_SCALE, bob = Math.sin(now / 600 + p.x) * .6;
+    const img = itemImg(p.pixel), sq = 5 * pxPerFtAt(p.y) * FLOOR_ITEM_SCALE, bob = Math.sin(now / 600 + p.x) * .6, ovQ = ovPushAt(p.x, p.y);
     ctx.save(); ctx.globalAlpha = .45; ctx.fillStyle = "#000"; ctx.beginPath(); ctx.ellipse(p.x, p.y, sq * .28, sq * .09, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
     if (img) ctx.drawImage(img, p.x - sq / 2, p.y - sq * .62 + bob, sq, sq);
     else { ctx.fillStyle = "#e8d9a8"; ctx.fillRect(p.x - 3, p.y - 8 + bob, 6, 6); }
     const k = (now / 1400 + p.x * .01) % 1;                                       // a glint now and then, so it reads as a thing
     if (k < .12){ ctx.save(); ctx.globalAlpha = 1 - k / .12; ctx.fillStyle = "#fff6d0"; const gx = p.x + sq * .12, gy = p.y - sq * .3 + bob, r = 2 + 4 * (k / .12);
       ctx.fillRect(gx - r, gy - .6, r * 2, 1.2); ctx.fillRect(gx - .6, gy - r, 1.2, r * 2); ctx.restore(); }
+    if (ovQ) ctx.restore();
   }
 }
 async function pickUp(a, p){
@@ -12855,14 +12999,16 @@ function drawShots(){
     if (p >= 1){ s.land(); continue; }
     const P = shotPos(s, p), Q = shotPos(s, Math.min(1, p + .02)), ang = Math.atan2(Q.y - P.y, Q.x - P.x), pxft = ftPx({x: P.x, y: P.y, big: 1});
     const T = shotPos(s, Math.max(0, p - .18));                                                    // a streak behind it
+    ovWrap(P.x, P.y, () => {   // out on the balcony with the close-up on: the bolt flies in that painting
     ctx.save(); ctx.globalAlpha = .35; ctx.strokeStyle = "#fff6e0"; ctx.lineWidth = Math.max(1, pxft * .06); ctx.beginPath(); ctx.moveTo(T.x, T.y); ctx.lineTo(P.x, P.y); ctx.stroke(); ctx.restore();
     if (SHOT_LOOK[s.kind].sprite){                                                              // a thrown thing: its own icon
       const sq = 5 * pxft * FLOOR_ITEM_SCALE * (s.kind === "flask" ? 1.2 : 1), rot = s.spin ? p * s.ms / 1000 * Math.PI * 2 * s.spin : ang + Math.PI / 4;
       if (s.img){ ctx.save(); ctx.translate(P.x, P.y); ctx.rotate(rot); ctx.drawImage(s.img, -sq / 2, -sq / 2, sq, sq); ctx.restore(); }
       else { ctx.fillStyle = "#cfd8e2"; ctx.fillRect(P.x - 2, P.y - 2, 4, 4); }
-      continue;
+      return;
     }
     drawShaft(P.x, P.y, ang, s.kind, pxft, 1, 1, now - s.t0);
+    });
   }
 }
 // stuck in a body: drawn right after that body, so it sits in front of it and behind whoever stands in front. It
@@ -12888,7 +13034,7 @@ function drawStuckOn(a, fy, pose){
 function drawStuckGround(){
   for (let i = stuck.length - 1; i >= 0; i--){ const q = stuck[i]; if (q.at) continue;
     if (now > q.until){ stuck.splice(i, 1); continue; }
-    const fade = Math.min(1, (q.until - now) / 800); drawShaft(q.x, q.y, q.ang, q.kind, ftPx({x: q.x, y: q.y, big: 1}), .7, fade);
+    const fade = Math.min(1, (q.until - now) / 800); ovWrap(q.x, q.y, () => drawShaft(q.x, q.y, q.ang, q.kind, ftPx({x: q.x, y: q.y, big: 1}), .7, fade));
   }
 }
 // ---------- the bag (I) ----------
@@ -13505,7 +13651,11 @@ function keyboardMove(a, dt){
       if (mode === "combat" && cbt && a === activeActor() && cbt.phase === "menu") openMenu(a); }   // the menu's "ft left" catches up
     return; }
   stopActivity(a); a.path = []; a.onArrive = null; a.kbd = true;
-  const n = norm(kd), sp = SPEED * node.scale * depthAt(a.y) * dt;
+  let n = norm(kd), sp = SPEED * node.scale * depthAt(a.y) * dt;
+  if (OV.on && ovDrawn(a)){   // the close-up: the key's direction on screen, carried back onto the balcony, at the painting's pace
+    const g = ovTri(a.x, a.y, false).g, v = {x: g[0] * n.x + g[2] * n.y, y: (g[1] * n.x + g[3] * n.y) / .8}, L = Math.hypot(v.x, v.y) || 1;
+    n = {x: v.x / L, y: v.y / L}; sp *= ovPace(a);
+  }
   let nx = a.x + n.x * sp, ny = a.y + n.y * sp * .8;
   if (!walkable(nx, ny)){ if (walkable(nx, a.y)) ny = a.y; else if (walkable(a.x, ny)) nx = a.x; else { nx = a.x; ny = a.y; } }
   // IN A FIGHT, THE KEYS SPEND MOVEMENT AND PROVOKE (Sam, 2026-10-15: "using keyboard for movement should trigger
@@ -13677,7 +13827,7 @@ function step(a, dt, speed){
     return;
   }
   if (a.path[0].s != null) a.big = (a.big || 1) + (a.path[0].s - (a.big || 1)) * Math.min(1, dt * 2.5);
-  const p = a.path[0], dx = p.x - a.x, dy = p.y - a.y, d = Math.hypot(dx, dy), sp = speed * paceAt(a) * dt;
+  const p = a.path[0], dx = p.x - a.x, dy = p.y - a.y, d = Math.hypot(dx, dy), sp = speed * paceAt(a) * dt * ovPace(a);
   if (p.out) a.alpha = Math.min(a.alpha, Math.max(0, (d - 4) / 70));   // walking into a doorway: gone by the threshold
   // Blocked by a body in the way (the press of a fight, a bystander): if the distance left has not shrunk
   // for a third of a second, this is as far as the walk goes — stop here and count it as arrived, so a
@@ -13692,11 +13842,13 @@ function update(dt){
   if (cbt && poisonZones.length) tickPoisonZones();
   tickFootsteps();
   tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt);
+  ovTick();
   if (camTween){
     const k = Math.min(1, (now - camTween.t0) / camTween.ms), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
     view.z = camTween.from.z + (camTween.to.z - camTween.from.z) * e;
     view.tx = camTween.from.tx + (camTween.to.tx - camTween.from.tx) * e;
     view.ty = camTween.from.ty + (camTween.to.ty - camTween.from.ty) * e;
+    if (k >= 1 && camTween.slide) sliding = false;   // landed on the other painting: clamp to it again
     applyView(); if (k >= 1) camTween = null;
   } else if (mode === "explore" && leader && now - userPanAt > 2500){
     // the follow camera (wantZ, below): ease the zoom about the middle of the screen, then glide onto the leader
@@ -13706,7 +13858,7 @@ function update(dt){
       view.z += (zt - view.z) * Math.min(1, dt * 2);
       const s1 = base * view.z; view.tx = r.width / 2 - mx * s1; view.ty = r.height / 2 - my * s1;
     }
-    const s = base * view.z, tx = r.width / 2 - leader.x * s, ty = r.height / 2 - leader.y * s;
+    const lp = ovActorPt(leader, leader.x, leader.y), s = base * view.z, tx = r.width / 2 - lp.x * s, ty = r.height / 2 - lp.y * s;
     view.tx += (tx - view.tx) * Math.min(1, dt * 3); view.ty += (ty - view.ty) * Math.min(1, dt * 3); applyView();
   }
   if (mode === "explore" || mode === "combat" || mode === "dialog"){

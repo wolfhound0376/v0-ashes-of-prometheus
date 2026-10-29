@@ -472,7 +472,17 @@
             880
           ],
           "passFt": 15,
-          "keys": "^(drow|jorlan)"
+          "keys": "^(drow|jorlan)",
+          "outside": {
+            "_note": "Sam, 2026-10-28/29 (Pen Strip Pilot, 'lets wire what we have'): step out of the gate and the camera slides onto this close-up of the landing and the rope bridge; step in and it slides back. One world, two views: every point on the balcony keeps the pen plate's coordinates and is carried into the painting by the triangle mesh pen[i] -> art[i] (art in this painting's own px, 2400x1339; built by hand against both paintings, no triangle flipped). x0: where the painting sits beside the plate. ft: the painting's px per foot [far, near, at y far, at y near] (the pilot's sizes, the ones Sam okayed after 'minimize people looking like they are flying'). door: the painted gate's quad; doorFloor: the floor in front of it. domainX: the balcony side of the pen wall, in plate px.",
+            "img": "pen-outside.jpg", "x0": -2600, "domainX": 640,
+            "pen": [[20, 370], [120, 395], [230, 440], [320, 480], [410, 540], [480, 575], [525, 625], [540, 690], [510, 730], [440, 738], [365, 712], [325, 655], [285, 615], [195, 570], [105, 520], [20, 480], [500, 688], [400, 620], [170, 500], [-150, 420], [432, 850], [400, 1100], [380, 1500], [-300, 200], [700, 300], [800, 900], [-300, 900]],
+            "art": [[0.0, 505.8], [300.0, 590.2], [675.0, 669.5], [1059.0, 699.3], [1500.0, 684.4], [1900.0, 711.2], [2040.0, 833.2], [2150.0, 952.2], [1980.0, 1140.6], [1420.0, 932.3], [1150.0, 937.3], [1080.0, 843.1], [1059.0, 791.5], [675.0, 748.8], [300.0, 662.6], [0.0, 565.4], [1700.0, 892.7], [1380.0, 793.5], [480.0, 674.5], [-420.0, 535.6], [1335.0, 1140.6], [1300.0, 1408.4], [1280.0, 1686.1], [-700.0, 198.4], [2500.0, 297.6], [2900.0, 1289.4], [-700.0, 1091.0]],
+            "tri": [[22, 21, 25], [26, 21, 22], [24, 0, 23], [1, 0, 24], [21, 20, 25], [2, 1, 24], [19, 26, 23], [0, 19, 23], [15, 0, 1], [15, 19, 0], [19, 15, 26], [10, 26, 13], [10, 21, 26], [10, 20, 21], [18, 2, 13], [2, 18, 1], [2, 3, 13], [4, 3, 24], [3, 2, 24], [3, 12, 13], [12, 3, 4], [20, 8, 25], [8, 7, 25], [6, 24, 25], [7, 6, 25], [14, 15, 1], [18, 14, 1], [14, 18, 13], [26, 14, 13], [15, 14, 26], [11, 10, 13], [12, 11, 13], [5, 4, 24], [6, 5, 24], [10, 9, 20], [9, 8, 20], [8, 16, 7], [16, 6, 7], [9, 16, 8], [16, 5, 6], [16, 17, 5], [11, 17, 10], [17, 9, 10], [17, 16, 9], [5, 17, 4], [17, 12, 4], [17, 11, 12]],
+            "ft": [23.25, 32.25, 417, 1309],
+            "door": [[1983, 577], [2130, 643], [2130, 855], [1983, 784]],
+            "doorFloor": [2040, 911]
+          }
         }
       }
     },
