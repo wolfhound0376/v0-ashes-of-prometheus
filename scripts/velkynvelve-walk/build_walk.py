@@ -329,6 +329,9 @@ for i in P + list(GARB.values()) + N + F + V + LP:
     # hidden poses (scripts/sprites/add-sneak-poses.py, Sam 2026-10-26): `sneak` walks and `crouch` stands while the
     # hero is hidden; the five main players have them, everyone else (Kingasaur) is filtered out below and walks
     if i in PG: sh += ['sneak', 'crouch']
+    # a bladed swing (scripts/sprites/add-hero-moves.py --dagger, Sam 2026-10-29 for Lynkes): strike() plays `dagger` instead of
+    # `attack` when the weapon is a blade and the sheet exists; a hero without one swings `attack` as before
+    if i in PG: sh.append('dagger')
     if i == 'scott': sh.append('perform')
     if i in ['jorlan', 'drow-guard-male', 'drow-guard-female']: sh += ['attack', 'dodge', 'hurt', 'dead']
     # the hand crossbow (scripts/sprites/add-shoot-pose.py, Sam 2026-10-29 "go" on the drow audit): strike() plays

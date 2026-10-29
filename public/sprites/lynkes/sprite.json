@@ -77,6 +77,13 @@
       "frames": 5,
       "fps": 3,
       "loop": true
+    },
+    "dagger": {
+      "sheet": "dagger.png",
+      "frames": 7,
+      "fps": 12,
+      "loop": false,
+      "hit": 0.62
     }
   }
 }
