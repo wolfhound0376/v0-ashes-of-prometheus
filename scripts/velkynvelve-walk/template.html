@@ -190,6 +190,8 @@ header .tools input[type=range]{accent-color:#f2c55c}
 .combat{position:absolute;inset:0;pointer-events:none;font-family:var(--face-body)}
 .combat[hidden]{display:none}
 .combat .cbt-ui{pointer-events:auto}
+.mhand{position:absolute;right:12px;bottom:96px;display:flex;gap:4px;align-items:center;pointer-events:auto;background:rgba(14,10,24,.88);border:1px solid #5a7ac8;border-radius:8px;padding:5px 6px;font:12px/1 ui-monospace,monospace;z-index:30}
+.mhand[hidden]{display:none}.mhand b{color:#9ad8ff;margin:0 4px}.mhand button{font:inherit;color:#e8f4ff;background:#1c2a4a;border:1px solid #4a6aa8;border-radius:5px;padding:5px 8px;cursor:pointer}.mhand button:hover{background:#2a3e6a}.mhand button.on{background:#3a5a9a;border-color:#9ad8ff}
 /* THE STRIP, with room to breathe (Sam, 2026-10-28: "arrange the initiative box a little better so it doesn't look as
    crowded"): the label and the round stacked in their own column at the left, the cards spaced, the buttons at the end.
    Fighters only (PR A): the bystanders are named in the chip at the top left instead. */
@@ -847,6 +849,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="cbt-dm cbt-ui" id="cbtDm" title="DM tools" hidden>DM</button>
       <div class="bossbar" id="bossBar" hidden aria-live="polite"><div class="bface" id="bossFace"></div><div class="btext"><div class="bname"><span class="kick">BOSS</span><span id="bossName"></span><small id="bossEpithet"></small></div><div class="bhp" title=""><i id="bossHp"></i><em></em><b>Bloodied</b></div></div></div>
       <div class="cbt-party cbt-ui" id="cbtParty"></div>
+      <div class="mhand cbt-ui" id="mhBar" hidden><b>Mage Hand</b><button type="button" data-h="steer">Steer</button><button type="button" data-h="push">Push</button><button type="button" data-h="slap">Slap</button><button type="button" data-h="pick">Pick up</button><button type="button" data-h="throw">Throw</button><button type="button" data-h="wave">Wave</button><button type="button" data-h="bye">Dismiss</button></div>
       <div class="cbt-hint" id="cbtHint" hidden></div>
     </div>
     <div class="inv" id="inv" role="dialog" aria-label="Inventory" hidden>
@@ -2075,7 +2078,7 @@ function draw(){
   drawLight();          // the dark, with the lamps, the heroes and landing spells cut out of it; everything after glows through
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
   drawTolls();
-  ovWrapGroup(drops, drawDrops); drawCombatFx(); drawCrimPuffs(); drawShots(); drawCritBadges(); drawToothGlow();
+  ovWrapGroup(drops, drawDrops); drawCombatFx(); drawMageHand(); drawCrimPuffs(); drawShots(); drawCritBadges(); drawToothGlow();
   ctx.globalAlpha = 1;
 }
 const tint = document.createElement("canvas");
@@ -7724,6 +7727,7 @@ function readiedStrikeOn(att, cont){
     src: "Ready · 1 reaction", buttons: [{label: `Strike with the ${atk.name}`, primary: true, fn: fire}, {label: "Hold", fn: hold}]});
 }
 function attackWith(att, tgt, atk, done, offhand, reaction){
+  handWatch(att, tgt);
   const c = att.c; if (att.kind === "pc" && !reaction){ if (offhand) c.bonus = false; else { c.action = false; if (atk.light) c.lastLight = atk; } } closeMenu(); cbt.phase = "busy"; combatBusy = true;
   const reach = atk.thrown && feetBetween(att, tgt) > 5 ? atk.thrown : atk.reach;
   // A BOW OR CROSSBOW SHOOTS FROM WHERE YOU STAND (Sam, 2026-10-24: "be able to fire from a distance. Not sure why fifi
@@ -7840,6 +7844,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
   });
 }
 function castSpell(caster, tgt, name, done, darts){
+  if (tgt && tgt.id) handWatch(caster, tgt);
   const sp = SPELLS[name], c = caster.c; closeMenu(); cbt.phase = "busy"; combatBusy = true;
   // a volley: `darts` is one actor per dart (repeats allowed); the mark goes under each distinct target
   const volley = darts && darts.length ? darts : null, distinct = volley ? [...new Set(volley)] : null;
@@ -8175,6 +8180,7 @@ function concSave(a, dmg){
 // only when it did not — a +1 blade or a cantrip goes through whole.
 function damage(t, n, type, crit, from, magical = false){
   const s = t.c.sheet; if ((s.immune || []).includes(type)){ popText(t, "immune", "#aaa"); return; }
+  handCheer(t, from);
   if (crit) critBadge(t);   // "Crit when it occurs" (Sam, 2026-10-29)
   // a resistance is a TAG on the number ("5 ½"), not a word of its own over the head (the pop lanes, 2026-10-28)
   let tag = "";
@@ -9108,13 +9114,91 @@ function labGfbHit(t){ labRef("fbBurst", {at: t, w: 110, life: 420, grow: [.5, 1
 function labGfbLeap(from, to, then){ labRef("fbTravel1", {follow: {x0: from.x, y0: labMid(from), x1: to.x, y1: labMid(to), ms: 260, arc: 40}, w: 70, filter: GFB_F, headLeft: true, boost: .5, then}); }
 // THE LITTLE ONES: Mage Hand, Minor Illusion, Prestidigitation, Dancing Lights, Friends
 function labUtil(name, c, t, pick){ const h = labHand(c, t && t.x != null ? t : null), tx = t ? t.x : h.x + 60, ty = t && t.id ? labMid(t) : t ? t.y - 30 : h.y;
-  if (name === "Mage Hand"){ const F = "hue-rotate(110deg) saturate(1.4) brightness(1.15)"; labRef("ctHand", {follow: {x0: h.x, y0: h.y - 30, x1: tx, y1: ty - 20, ms: 700, arc: 30}, w: 40, filter: F, pulse: true, then: () => labRef("ctHand", {x: tx, y: ty - 20, w: 40, life: 2000, filter: F, pulse: true, fade: [10, 300]})}); }
+  if (name === "Mage Hand") handSummon(c);   // the hand you fly (below), not a one-shot
   else if (name === "Minor Illusion"){ const x = t && t.id ? tx + (tx > c.x ? 70 : -70) : tx, y = t ? t.y : c.y; for (let i = 0; i < 18; i++) sparks.push({x: x + labRnd(-30, 30), y: y - labRnd(0, 90), vx: labRnd(-20, 20), vy: -labRnd(10, 40), g: 0, col: "#8fc8ff", t0: now, life: labRnd(400, 800)});
     const o = pick || ILLUSIONS[0], il = {labIllusion: true, o, x, y, face: c.face, t0: now, life: 60000}; if (o.spr) loadIllusionSprite(o); else labImg(o.img); sparks.push(il); }
   else if (name === "Prestidigitation"){ for (let i = 0; i < 30; i++) sparks.push({x: h.x, y: h.y, vx: labRnd(-120, 120), vy: -labRnd(40, 200), col: ["#ffd27a", "#ff7ad5", "#7ad8ff", "#ffffff"][i % 4], t0: now, life: labRnd(400, 900)}); }
   else if (name === "Dancing Lights"){ for (let i = 0; i < 4; i++){ const ang = i / 4 * Math.PI * 2, x = tx + Math.cos(ang) * 46, y = ty - 60 + Math.sin(ang) * 22; sparks.push({labMote: true, x, y, fly: {x0: h.x, y0: h.y, ms: 700}, ph: i * 1.7, t0: now + i * 120, life: 60000}); } }
   else if (name === "Friends"){ for (let i = 0; i < 12; i++) setTimeout(() => sparks.push({labHeart: true, x: h.x, y: h.y, vx: tx - h.x + labRnd(-20, 20), vy: ty - 30 - h.y + labRnd(-20, 20), r: labRnd(5, 8), col: i % 2 ? "#ff7ad5" : "#ffb0e6", t0: now, life: 600}), i * 50); }
 }
+// MAGE HAND YOU CAN FLY (Sam, 2026-10-29: "Mage hand should act like a character that I can control with the option of
+// pushing things, slapping things, pick things up, throwing things while flying. It should look animated as it moves and
+// transluscent." Then: a bard's or a wizard's hand waves, flips off whoever attacks its master and gives a thumbs up when
+// the master lands a hit, on its own; four painted poses; "smoothly like specters change from one gesture to another";
+// "Resting gesture is just an open palm".) The hand lives a minute (10 rounds) or until dismissed or recast, never goes
+// more than 30 ft from its caster, and by the rules can't attack, deal damage or carry more than 10 lb — so Push and
+// Slap are a nudge and a sting with no damage, and Throw is a distraction. In a fight, working it costs the caster's
+// action the first time on their turn (5e: "you can use your action to control the hand"); the rest of that turn is free.
+// Gestures are free. What the hand does shows on this screen only (the one-world sync carries positions, not effects).
+let mageHand = null;
+document.addEventListener("click", e => { const b = e.target.closest && e.target.closest("#mhBar button"); if (b) handDo(b.dataset.h); });
+const MH_IMG = {rest: "hand-wave", wave: "hand-wave", finger: "hand-finger", thumb: "hand-thumb"}, MH_MORPH = 550;
+const mhGestures = H => H && /bard|wizard/i.test((H.by.c && H.by.c.sheet && H.by.c.sheet.cls) || "") || (H && isMusical(H.by));
+function handSummon(c){ const h = labHand(c, null); if (mageHand) handGone(true);
+  mageHand = {by: c, x: h.x, y: h.y - 40, tx: h.x + h.dir * 70, ty: h.y - 50, vx: 0, bob: 0, pose: null, shown: "rest", prevPose: null, morphT: 0, carry: null, act: null, steer: false, aim: false, paid: -1,
+    endRound: cbt ? cbt.round + 10 : null, endAt: now + 60000, last: now};
+  for (let i = 0; i < 16; i++) sparks.push({x: mageHand.x, y: mageHand.y, vx: labRnd(-60, 60), vy: labRnd(-60, 30), g: 0, col: "#9ad8ff", t0: now, life: labRnd(300, 600)});
+  setTimeout(() => handGesture("wave"), 500); renderHandBar(); }
+function handGone(quiet){ const H = mageHand; if (!H) return; for (let i = 0; i < 20; i++) sparks.push({x: H.x, y: H.y, vx: labRnd(-80, 80), vy: labRnd(-80, 20), g: 0, col: "#9ad8ff", t0: now, life: labRnd(300, 700)});
+  mageHand = null; renderHandBar(); if (!quiet) log(`${fname(H.by)}'s spectral hand winks out.`); }
+function handLeash(x, y){ const c = mageHand.by, R = 30 * ftPx(c), cy = labMid(c), d = Math.hypot(x - c.x, y - cy); return d <= R ? {x, y} : {x: c.x + (x - c.x) / d * R, y: cy + (y - cy) / d * R}; }
+function handNearest(){ const H = mageHand, R = 5 * ftPx(H.by); let best = null, bd = R; for (const a of [...heroes(), ...foes, ...npcs]){ if (!a || a.offStage || a.down || a === H.by) continue; const d = Math.hypot(a.x - H.x, labMid(a) - H.y); if (d < bd){ bd = d; best = a; } } return best; }
+// the rule: in a fight the first command on the caster's turn spends their action
+function handMayAct(){ const H = mageHand; if (!H) return false; if (!cbt) return true; if (activeActor() !== H.by){ toast(`The hand moves on ${fname(H.by)}'s turn.`); return false; }
+  if (H.paid === cbt.turnNo) return true; if (!H.by.c.action){ toast(`${fname(H.by)} has no action left to work the hand.`); return false; }
+  H.by.c.action = false; H.paid = cbt.turnNo; log(`${fname(H.by)} uses their action to work the spectral hand.`); renderParty(); return true; }
+function handDo(what){ const H = mageHand; if (!H) return;
+  if (what === "bye"){ handGone(); return; } if (what === "wave"){ handGesture("wave", null, true); return; }
+  if (!handMayAct()) return; H.pose = null;
+  if (what === "steer"){ H.steer = !H.steer; H.aim = false; renderHandBar(); if (H.steer) toast("Click the floor to fly the hand there (30 ft from the caster)."); return; }
+  if (what === "push"){ const v = handNearest(); H.act = {kind: "push", t0: now}; if (!v){ toast("Nothing in the hand's reach."); return; }
+    setTimeout(() => { lunge(v, H, -14); popText(v, "nudged", "#9ad8ff", .8); bank("walk:impact-thunder", .15); }, 120); return; }
+  if (what === "slap"){ const v = handNearest(); H.act = {kind: "slap", t0: now}; if (!v){ toast("Nobody in the hand's reach."); return; }
+    setTimeout(() => { lunge(v, H, -8); v.flash = now + 140; popText(v, "SLAP!", "#bfe4ff", .95); bank("walk:electrocute", .08); for (let i = 0; i < 8; i++) sparks.push({x: v.x, y: v.y - labH(v) * .85, vx: labRnd(-90, 90), vy: labRnd(-90, -20), g: 120, col: "#ffffff", t0: now, life: labRnd(200, 400)}); }, 140); return; }
+  if (what === "pick"){ if (H.carry){ toast("The hand already holds something: throw it."); return; } H.act = {kind: "pick", t0: now}; H.carry = {kind: "pebble"}; popText(H.by, "the hand picks up a pebble", "#9ad8ff", .75); return; }
+  if (what === "throw"){ if (!H.carry){ toast("The hand isn't holding anything: Pick up first."); return; } H.aim = true; H.steer = false; renderHandBar(); toast("Click a creature to throw at."); }
+}
+// a click on the map while the hand is being steered or aimed
+function handClick(w){ const H = mageHand; if (!H || !(H.steer || H.aim)) return false;
+  if (H.aim){ const t = hitActor([...foes, ...heroes(), ...npcs], w); if (!t){ toast("Click a creature to throw at."); return true; } H.aim = false; renderHandBar(); const c = H.carry; H.carry = null; H.act = {kind: "throw", t0: now};
+    H.shot = {x0: H.x, y0: H.y, x1: t.x, y1: labMid(t), t0: now, ms: 360, t, c}; return true; }
+  const q = handLeash(w.x, w.y - 40); H.tx = q.x; H.ty = q.y; return true; }
+function handGesture(kind, at, asked){ const H = mageHand; if (!H || (!asked && !mhGestures(H))) return; if (H.pose && H.pose.kind === kind && now - H.pose.t0 < 500) return;
+  H.pose = {kind, t0: now, ms: kind === "wave" ? 1700 : 1600}; const c = H.by, side = at ? Math.sign(at.x - c.x) || 1 : (H.x >= c.x ? 1 : -1), q = handLeash(c.x + side * 80, c.y - labH(c) - 60); H.tx = q.x; H.ty = q.y;
+  if (kind === "finger") popText(c, "rude", "#9ad8ff", .8); if (kind === "thumb") popText(c, "nice", "#9ad8ff", .8); }
+// the automatic gestures: someone goes for its master; its master lands one
+function handWatch(att, tgt){ const H = mageHand; if (H && tgt === H.by && att && att !== H.by) handGesture("finger", att); }
+function handCheer(t, from){ const H = mageHand; if (!H || !from) return; if (t === H.by && from !== t) handGesture("finger", from); else if (from === H.by && t !== H.by) setTimeout(() => handGesture("thumb"), 350); }
+function renderHandBar(){ const b = $("mhBar"); if (!b) return; const H = mageHand; b.hidden = !H; if (!H) return;
+  b.querySelector('[data-h="steer"]').classList.toggle("on", !!H.steer); b.querySelector('[data-h="throw"]').classList.toggle("on", !!H.aim); }
+function mhPose(kind, t, H, a, ak){ const x = {rot: 0, sx: 1, sy: 1, oy: -30, ox: 0};
+  if (kind === "rest"){ x.oy = 22; x.rot = Math.abs(H.tx - H.x) > 4 ? Math.max(-.45, Math.min(.45, H.vx / 300)) : Math.sin(now / 600) * .07; x.sx = .8 + Math.sin(now / 180) * .03; x.sy = .8 - Math.sin(now / 180) * .02;
+    if (a && a.kind === "push"){ x.ox = Math.sin(ak * Math.PI) * 30; x.sx *= 1.15; } if (a && a.kind === "slap") x.rot += Math.sin(ak * Math.PI) * 1.4; if (a && (a.kind === "pick" || a.kind === "throw")) x.sy *= 1 - Math.sin(ak * Math.PI) * .35; }
+  if (kind === "wave") x.rot = Math.sin(t * Math.PI * 7) * .38;
+  if (kind === "finger" && t > .17){ x.sx = x.sy = 1 + Math.sin(now / 45) * .025; }
+  if (kind === "thumb"){ const b = Math.abs(Math.sin(t * Math.PI * 3)) * (1 - t); x.sy = 1 + b * .12; x.sx = 1 - b * .06; x.rot = -.08; }
+  return x; }
+function mhLayer(H, kind, t, alpha, blur, swell, a, ak, sc0){ const im = labImg(MH_IMG[kind]); if (!im.complete || !im.naturalWidth || alpha <= .01) return;
+  const x = mhPose(kind, t, H, a, ak), sc = 210 * sc0 / Math.max(im.naturalWidth, im.naturalHeight), w = im.naturalWidth * sc, h = im.naturalHeight * sc, flip = kind === "rest" && H.tx < H.x - 2;
+  ctx.save(); ctx.translate(H.x + x.ox * sc0, H.y + H.bob + x.oy * sc0); ctx.rotate(x.rot); ctx.scale((flip ? -1 : 1) * x.sx * swell, x.sy * swell); ctx.imageSmoothingEnabled = true;
+  if (blur > .2) ctx.filter = `blur(${blur.toFixed(1)}px)`; ctx.globalAlpha = .92 * alpha; ctx.drawImage(im, -w / 2, -h / 2, w, h);
+  ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = (.22 + .08 * Math.sin(now / 90)) * alpha; ctx.drawImage(im, -w / 2, -h / 2, w, h); ctx.restore(); }
+function drawMageHand(){ const H = mageHand; if (!H) return; const c = H.by, dt = Math.min(.05, (now - H.last) / 1000); H.last = now;
+  if (c.down || c.offStage || (cbt && H.endRound != null && cbt.round > H.endRound) || (!cbt && now > H.endAt)){ handGone(); return; }
+  if (cbt && H.endRound == null) H.endRound = cbt.round + 10;
+  const sc0 = Math.max(.6, Math.min(1.4, labH(c) / 150));   // the hand keeps to the size of the hero who cast it
+  const dx = H.tx - H.x, dy = H.ty - H.y, d = Math.hypot(dx, dy), sp = Math.min(d, 520 * dt); if (d > .5){ H.x += dx / d * sp; H.y += dy / d * sp; } H.vx = dx;
+  if (d > 4 && Math.random() < .6) sparks.push({x: H.x + labRnd(-8, 8), y: H.y + labRnd(-8, 8), vx: -dx / d * 30, vy: -dy / d * 30 - 10, g: 0, col: Math.random() < .5 ? "#9ad8ff" : "#d8f0ff", t0: now, life: labRnd(300, 600)});
+  if (H.pose && now - H.pose.t0 > H.pose.ms) H.pose = null; const kind = H.pose ? H.pose.kind : "rest";
+  if (H.shown !== kind){ H.prevPose = {kind: H.shown, t: 1}; H.shown = kind; H.morphT = now; for (let i = 0; i < 14; i++) sparks.push({x: H.x + labRnd(-30, 30), y: H.y + labRnd(-50, 30), vx: labRnd(-40, 40), vy: labRnd(-70, -10), g: 0, col: Math.random() < .5 ? "#9ad8ff" : "#e6f6ff", t0: now, life: labRnd(350, 700)}); }
+  H.bob = Math.sin(now / 260) * 5; const a = H.act && now - H.act.t0 < 360 ? H.act : null, ak = a ? (now - a.t0) / 360 : 0, m = Math.max(0, Math.min(1, (now - H.morphT) / MH_MORPH)), e = m * m * (3 - 2 * m);
+  ctx.save(); ctx.globalAlpha = .18; ctx.fillStyle = "#000"; ctx.beginPath(); ctx.ellipse(H.x, H.y + 90 * sc0, 22 * sc0, 7 * sc0, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  if (H.prevPose && m < 1) mhLayer(H, H.prevPose.kind, 1, 1 - e, e * 7, 1 + e * .12, a, ak, sc0);   // the old shape dissolves outward…
+  mhLayer(H, kind, H.pose ? (now - H.pose.t0) / H.pose.ms : 0, e, (1 - e) * 7, .9 + e * .1, a, ak, sc0);   // …as the new one condenses out of the same light
+  if (H.carry){ ctx.save(); ctx.fillStyle = "#8a8477"; ctx.beginPath(); ctx.ellipse(H.x, H.y + H.bob + 50 * sc0, 7, 5, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
+  if (H.shot){ const s = H.shot, k = (now - s.t0) / s.ms; if (k >= 1){ H.shot = null; lunge(s.t, H, -6); popText(s.t, "distracted", "#9ad8ff", .8); bank("walk:impact-thunder", .1); }
+    else { ctx.save(); ctx.fillStyle = "#8a8477"; ctx.beginPath(); ctx.ellipse(s.x0 + (s.x1 - s.x0) * k, s.y0 + (s.y1 - s.y0) * k - Math.sin(k * Math.PI) * 30, 6, 4, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore(); } }
+  if (H.steer){ ctx.save(); ctx.globalAlpha = .14; ctx.strokeStyle = "#9ad8ff"; ctx.setLineDash([4, 6]); ctx.beginPath(); ctx.ellipse(c.x, labMid(c), 30 * ftPx(c), 30 * ftPx(c) * .55, 0, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); } }
 function drawLabMote(s, k){ if (now < s.t0) return; const q = Math.min(1, (now - s.t0) / s.fly.ms), e = 1 - Math.pow(1 - q, 3), x = s.fly.x0 + (s.x - s.fly.x0) * e + Math.sin(now / 400 + s.ph) * 6, y = s.fly.y0 + (s.y - s.fly.y0) * e - Math.sin(q * Math.PI) * 30 + Math.cos(now / 330 + s.ph) * 5;
   const al = (k > .9 ? 1 - (k - .9) / .1 : 1) * (.85 + .15 * Math.sin(now / 60 + s.ph)); ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = al; const g = ctx.createRadialGradient(x, y, 0, x, y, 18); g.addColorStop(0, "rgba(255,255,255,.95)"); g.addColorStop(.25, "rgba(255,190,90,.9)"); g.addColorStop(1, "rgba(0,0,0,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.fill(); ctx.restore();
   if (now - (s.lit || 0) > 400){ s.lit = now; lightFlash(x, y + 40, "#ffbe5a", 150, 600); } }
@@ -12907,6 +12991,7 @@ stage.addEventListener("wheel", e => { if (e.target.closest(".checkcard,.icard")
 function click(w){
   if (timeStopped) return;
   if (dmPlacing){ placePile(w); return; }
+  if (handClick(w)) return;   // steering or aiming the Mage Hand
   if (mode === "explore"){
     if (exploreJump){ exploreJump = false; hint(""); exploreLeap(nearestWalkable(w.x, w.y)); return; }
     const pile = !hitActor(npcs, w) ? pileAt(w) : null;
