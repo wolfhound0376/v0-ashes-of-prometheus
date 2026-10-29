@@ -7662,6 +7662,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
     // a thrown weapon or flask leaves the hand: out of the bag now (the flask is spent; the weapon lands on the floor)
     if ((shot === "thrown" || shot === "flask") && att.kind === "pc") flung(att, atk, shot);
     let flying = null, landed = null, shieldWait = null;
+    att.bladeSwing = !shot && /dagger|sword|rapier|scimitar|knife|sickle|kukri|blade/i.test(atk.name);   // a sprite with a `dagger` sheet swings it for a blade (Lynkes, 2026-10-29)
     strike(att, tgt, () => {
       // cover is judged at the moment of the blow, from where they both stand now (SRD 5.1 Cover); a wall in the way
       // means there is no shot at all (a foe that walked as far as it could and still has stone between them)
@@ -8259,7 +8260,7 @@ function strike(att, tgt, onHit, after, shot){
   att.face = faceOf(tgt.x - att.x, tgt.y - att.y);
   // A shot is not a punch. A sprite with a "shoot" sheet plays it; one without stands and takes aim (no fist thrown),
   // looses after a beat, and the bolt or arrow does the rest. Until now every shot played the cross-punch.
-  const pose = shot && shot !== "thrown" && shot !== "flask" ? (SPR[att.id].img.shoot ? "shoot" : null) : "attack";
+  const pose = shot && shot !== "thrown" && shot !== "flask" ? (SPR[att.id].img.shoot ? "shoot" : null) : (att.bladeSwing && SPR[att.id].img.dagger ? "dagger" : "attack");
   if (!pose){ setAnim(att, "idle"); att.aimHold = now; setTimeout(() => { onHit(); setTimeout(after, 380); }, 420); return; }
   playOnce(att, pose, () => { setAnim(att, "idle"); setTimeout(after, 320); });
   if (att.once) att.once.hit = onHit; else { onHit(); setTimeout(after, 320); }
