@@ -6205,7 +6205,7 @@ function nextTurn(first){
   if (!first) netEndTurn(cbt.order[cbt.idx]);   // ending a turn in the web net (5c): DEX save or restrained
   if (!first){ const was = cbt.order[cbt.idx]; if (was && was.c && was.c.rage){ const r = rageAfterTurn(was.c.rage, cbt.round); if (r.ended) endRage(was, r.ended); else was.c.rage = r.rage; } }
   for (let k = 0; k < cbt.order.length; k++){
-    cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0){ cbt.round++; if (cbt.round > 1) bystandersFlee(); }   // the bystanders run as each round opens
+    cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0){ cbt.round++; if (cbt.round > 1) bystandersFlee(); arrowsWorkLoose(false); }   // the bystanders run as each round opens
     const a = cbt.order[cbt.idx]; if ((!a.down || dyingNow(a)) && actors.includes(a) && !(a.c && a.c.joinRound > cbt.round)) break;   // a late arrival waits for the next round
   }
   const a = activeActor(); if (!a) return;
@@ -9559,6 +9559,7 @@ function endCombat(won){
   setQuick(false, true);
   owFightEnds();
   // the living pull the bolts out of themselves; the dead keep theirs
+  arrowsWorkLoose(true);   // the heroes' arrows drop out as the fight ends
   for (let i = stuck.length - 1; i >= 0; i--){ const q = stuck[i]; if (!q.at || !(q.at.down && q.at.kind === "foe")) stuck.splice(i, 1); }
   for (const h of party) if (h.c){ h.c.conds.delete("burning"); }
   for (const h of party) if (h.c && h.c.rage) endRage(h, "the fight is over");   // no hostile left to attack: the next turn would end it anyway
@@ -14025,7 +14026,7 @@ function fireShot(att, tgt, kind, hit, land, atk){
     const ang = endAngle(s);
     if (L.stick){
       if (hit && tgt){ const sc = actorScale(tgt);
-        stuck.push({at: tgt, ox: (to.x - tgt.x - (tgt.kx || 0)) / sc, oy: (to.y - tgt.y - (tgt.ky || 0)) / sc, ang, kind, t0: now});
+        stuck.push({at: tgt, ox: (to.x - tgt.x - (tgt.kx || 0)) / sc, oy: (to.y - tgt.y - (tgt.ky || 0)) / sc, ang, kind, t0: now, round: cbt ? cbt.round || 1 : 0});
         const mine = stuck.filter(q => q.at === tgt); if (mine.length > 8) stuck.splice(stuck.indexOf(mine[0]), 1); }
       else stuck.push({x: to.x, y: to.y, ang: Math.atan2(Math.sin(ang) + .9, Math.cos(ang)), kind, t0: now, until: now + 6000});
     }
@@ -14128,6 +14129,14 @@ function drawStuckOn(a, fy, pose){
     drawShaft(bx + ox, by + oy, ang, q.kind, pxft, .68, a.alpha);
   }
 }
+// ARROWS STAY IN (Sam, 2026-10-29: "Arrows that hit players cause them to be stuck with those arrows until end of combat or
+// three rounds."). An arrow or bolt in a hero stays in them for three rounds (it went in on round r; it comes out as round
+// r + 3 opens) or until the fight ends, whichever is first; then it drops out and lies on the floor at their feet for a
+// few seconds. Arrows in foes are unchanged (they stay in the dead).
+function arrowsWorkLoose(all){ if (!stuck.length) return; const r = cbt ? cbt.round || 1 : 0;
+  for (const q of stuck){ const a = q.at; if (!a || !hero(a) || !(all || (q.round && r >= q.round + 3))) continue; const sc = actorScale(a);
+    q.at = null; q.x = a.x + (a.kx || 0) + q.ox * sc + (Math.random() - .5) * 10 * sc; q.y = a.y + (2 + Math.random() * 6) * sc; q.ang = Math.random() < .5 ? .08 : Math.PI - .08; q.t0 = now; q.until = now + 6000; }
+  if (!all) stuck.sort((x, y) => (x.at ? 1 : 0) - (y.at ? 1 : 0)); }
 // stuck in the floor: drawn with the floor, under everyone
 function drawStuckGround(){
   for (let i = stuck.length - 1; i >= 0; i--){ const q = stuck[i]; if (q.at) continue;
