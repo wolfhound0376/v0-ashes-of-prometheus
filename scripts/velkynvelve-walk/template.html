@@ -3316,7 +3316,10 @@ function loadSfx(name){
   return SFX[name] || (SFX[name] = fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
     .then(b => audioCtx().decodeAudioData(b)).catch(() => { delete SFX[name]; return null; }));
 }
-const bank = (name, gain = .8) => sfx(name.startsWith("walk:") ? name : "bank:" + name, gain);
+// the elements sound like what they are (Sam, 2026-10-29: "Cold spells should sound like a blizzard / fire like an inferno /
+// acid like corrosion / necrotic like eldritch / thunder like thunder!!!"): recorded files in public/sfx/walk take over the pack's
+const ELEMENT_SND = {"magic/impact_thunder": "walk:thunder-clap", "magic/impact_cold": "walk:impact-cold", "magic/impact_fire": "walk:impact-fire", "magic/impact_acid": "walk:impact-acid", "magic/impact_necrotic": "walk:impact-necrotic"};
+const bank = (name, gain = .8) => { name = ELEMENT_SND[name] || name; return sfx(name.startsWith("walk:") ? name : "bank:" + name, gain); };
 // ---------- the clicks ----------
 // Sam, 2026-10-25: "We also need more audible clicks." The map's buttons were silent (only loot, dice and initiative
 // made a sound). Eight short ElevenLabs effects (flow "AoP Underwalk explore music + UI clicks"), cut and levelled,
@@ -6168,6 +6171,7 @@ function nextTurn(first){
   // death-save failure (damage() does that) -- before the turn's own death save
   if (a.down){ renderTurns(); renderParty(); if (a.kind === "pc") poisonTurnStart(a, true); if (deathSaveTurn(a)) return; }
   if (a.c.conc && cbt.round >= a.c.conc.endRound) endConc(a, "the spell runs its full time");
+  for (const x of [...party, ...foes, ...(cbt.allies || [])]) if (x.c && x.c.noHeal === a) x.c.noHeal = null;   // Chill Touch lets go
   for (let i = clings.length - 1; i >= 0; i--) if (clings[i].by === a || !clings[i].by){ clings[i].p.then(e => { if (e) e.until = now + 350; }); clings.splice(i, 1); }
   a.c.conds.delete("dodging"); a.c.conds.delete("shieldSpell"); a.c.reactionUsed = false;
   if (a.c.ready){ a.c.ready = null; a.c.conds.delete("readied"); }   // SRD: a readied action lasts until the start of your next turn
@@ -7644,7 +7648,7 @@ function askShield(t, att, atk, total, ac, cb){
   showDialog({title: `${fname(t)}: cast Shield?`, body: `${fname(att)}'s ${atk.name} would hit: ${total} against AC ${ac}. Shield raises AC to ${ac + 5} until the start of ${fname(t)}'s next turn, so this one misses. It uses the reaction and a level 1 slot (${t.c.slots[1]} left).`,
     src: "Shield · 1 reaction · level 1", buttons: [
       {label: "Cast Shield", primary: true, fn: () => { t.c.reactionUsed = true; t.c.slots[1] = Math.max(0, (t.c.slots[1] || 0) - 1); addCond(t, "shieldSpell");
-        bank("magic/arcane_release", .6); spawnFx("sigilAbjurationRing", {at: t, sq: 2, flat: true, spin: 1}); popText(t, "Shield +5", "#cfe8ff"); log(`${fname(t)} casts <b>Shield</b> (reaction): AC ${ac + 5}.`); renderParty(); cb(true); }},
+        bank("magic/arcane_release", .6); labSphere(t, att); popText(t, "Shield +5", "#cfe8ff"); log(`${fname(t)} casts <b>Shield</b> (reaction): AC ${ac + 5}.`); renderParty(); cb(true); }},
       {label: "Take the hit", fn: () => cb(false)}]});
 }
 // a weapon attack: close to reach, swing, roll on the hit frame, then the number
@@ -7836,7 +7840,7 @@ function castSpell(caster, tgt, name, done, darts){
   if (sp.conc) startConc(caster, name);
   const ring = quiet || bardic ? Promise.resolve(null) : spawnFx(rune, {at: caster, sq: 1.6, anchor: "mid", loop: true, alpha: .9});
   if (bardic) singAt(caster, quiet ? "#b0b8ff" : noteCol, 900);   // Sleep too (Sam, 2026-10-14: "sleep should be music"): a lullaby, sung
-  const kit = quiet ? null : kitFor(name, sp); kitGather(caster, kit);
+  const lab = quiet ? null : labLookOf(name), kit = quiet || lab ? null : kitFor(name, sp); kitGather(caster, kit);   // a lab look stands in for the kit
   const marks = [];
   // Sigils only, no plumes (Sam, 2026-10-13: "use the sigils but NOT the plumes. I will tell you when the
   // plume is appropriate"). sig[1] stays in the table for that day.
@@ -7851,7 +7855,7 @@ function castSpell(caster, tgt, name, done, darts){
   castRelease(caster, () => {
     ring.then(e => { if (e) e.until = now; }); if (thrown) thrown.then(e => { if (e) e.until = now; });
     if (!quiet) bank(`magic/${family}_release`, .7);
-    if (tgt.id && BOLT_OF[dtype] && !quiet && !kit) spawnFx(BOLT_OF[dtype], {at: caster, sq: .9, anchor: "mid", loop: true, until: now + 260, alpha: .95});
+    if (tgt.id && BOLT_OF[dtype] && !quiet && !kit && !lab) spawnFx(BOLT_OF[dtype], {at: caster, sq: .9, anchor: "mid", loop: true, until: now + 260, alpha: .95});
     // Healing is carried by an orb (Sam, 2026-10-13: "healing word should not look like a projectile but an
     // orb"): a soft glowing sphere leaves the caster's hands, arcs over to the ally and sinks into them;
     // the shimmer and the halo follow. Everything else that flies is a bolt.
@@ -7878,6 +7882,7 @@ function castSpell(caster, tgt, name, done, darts){
       return;
     }
     const carry = quiet ? (cb) => setTimeout(cb, 420)
+      : lab ? (cb) => lab.deliver(caster, at, cb, sp)
       : kit ? (cb) => kitDeliver(caster, at, kit, cb)
       : sp.kind === "heal" ? (cb) => healBloom(caster, tgt, cb)
       : (cb) => spellBolt(caster, at, sp.fx, cb);
@@ -7887,7 +7892,8 @@ function castSpell(caster, tgt, name, done, darts){
       if (sp.area && kit && kit.cloud) spawnCloud(kit.cloud, at.x, at.y, sp, caster, name);   // the gas arrives with the spell
       if (sp.kind === "fog"){ log(`<b>${fname(caster)}</b> casts <b>${name}</b>: a 20-ft sphere of fog, heavily obscured, while ${fname(caster)} concentrates.`);
         narrate(caster, `Grey fog rolls out where ${fname(caster)} points and swallows the ground.`); return; }
-      const land = (tg, taken, type) => { sigilEnd(tg, taken); if (taken && kit && kit.type === type){ bank(`magic/impact_${type}`, .8); kitImpact(tg, kit, {area: !!sp.area, by: caster}); if (GROUND_OF[type] && !kit.aftermath) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
+      const land = (tg, taken, type) => { if (lab){ sigilEnd(tg, taken); if (taken){ bank(`magic/impact_${type}`, .8); lab.hit(caster, tg, sp); } else { bank("magic/spell_fizzle", .6); if (lab.miss) lab.miss(caster, tg); } return; }
+        sigilEnd(tg, taken); if (taken && kit && kit.type === type){ bank(`magic/impact_${type}`, .8); kitImpact(tg, kit, {area: !!sp.area, by: caster}); if (GROUND_OF[type] && !kit.aftermath) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else if (taken){ bank(`magic/impact_${type === "heal" ? "radiant" : type}`, .8); spawnFx(IMPACT_OF[type] || "forceHit", {at: tg, sq: type === "radiant" ? 2 : 2.2, anchor: type === "radiant" ? "feet" : "mid", lift: type === "radiant" ? 1 : 0}); if (GROUND_OF[type]) spawnFx(GROUND_OF[type], {at: tg, sq: 1.8, flat: true, fade: true}); } else bank("magic/spell_fizzle", .6); setTimeout(() => bank(`magic/${family}_tail`, .4), 200); };
       if (sp.kind === "attack"){
         const cv = coverOf(caster, tgt), acVs = targetAc(tgt) + cv.ac;
         const adv = Math.sign(advantageOn(caster, tgt, true) + (caster.c.conds.has("sorcery") ? 1 : 0)), r = d20(adv, caster), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(caster, r + m.hit, acVs), hit = crit || (r !== 1 && r + m.hit + insp >= acVs); afterAttackRoll(caster);
@@ -7900,9 +7906,12 @@ function castSpell(caster, tgt, name, done, darts){
         if (sp.type === "cold" && sp.ice){ const patch = freezeGround(tgt.x, tgt.y, m.dc, caster); if (!tgt.down){ tgt.onIce = patch; iceSave(tgt, patch, "struck by the orb"); } }
         // SRD 5.1 Shocking Grasp: "On a hit ... it can't take reactions until the start of its next turn."
         if (name === "Shocking Grasp"){ tgt.c.reactionUsed = true; popText(tgt, "no reactions", "#fff27a", .8); }
+        // SRD 5.1 Chill Touch: on a hit the target "can't regain hit points until the start of your next turn" (Sam, 2026-10-29:
+        // "the target can't regain HP until effect is gone") — the heals below read c.noHeal; the caster's next turn clears it
+        if (name === "Chill Touch" && !tgt.down){ tgt.c.noHeal = caster; popText(tgt, "can't regain HP", "#9be04a", .8); sparks.push({labNoHeal: true, a: tgt, t0: now, life: 600000}); }
         log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d.total} ${sp.type}${sp.note ? " (" + sp.note + ")" : ""}.`);
       } else if (sp.kind === "heal"){
-        const d = roll(sp.dmg).total + m.mod; tgt.c.hp = Math.min(tgt.c.hpMax, tgt.c.hp + d); if (tgt.down && tgt.c.hp > 0){ tgt.down = false; setAnim(tgt, "idle"); }
+        const d = tgt.c.noHeal ? 0 : roll(sp.dmg).total + m.mod; if (tgt.c.noHeal) popText(tgt, "can't regain HP", "#9be04a", .9); tgt.c.hp = Math.min(tgt.c.hpMax, tgt.c.hp + d); if (tgt.down && tgt.c.hp > 0){ tgt.down = false; setAnim(tgt, "idle"); }
         sigilEnd(tgt, true); bank("combat/heal", .8); setTimeout(() => bank("magic/heal_tail", .5), 300);
         kitImpact(tgt, KIT.healing);                                   // the shimmer comes down on them, the golden glow stays
         popText(tgt, `+${d}`, "#9ff2c8"); log(`${fname(caster)} ${name}: ${fname(tgt)} regains ${d}.`); renderParty();
@@ -8112,7 +8121,7 @@ function damage(t, n, type, crit, from, magical = false){
   if (cbt && cbt.boss === t){ if (t.c.hp <= 0) bossFalls(t); else bossHit(t, hpBefore); }   // BOSS FIGHTS: the bar follows every blow; half is the Bloodied beat
   renderParty();
 }
-function miss(t){ popText(t, "miss", "#c9c4b8", .9); if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle")); }
+function miss(t){ popText(t, "miss", "#c9c4b8", .9); if (t.labSphere) labSphereAbsorb(t, null, "#c890ff"); if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle")); }
 // THE SPARRING EXCHANGE (Sam, 2026-10-22: "I would like misses in combat to look like real deflections, parries,
 // ducking. Such that melee attacks actually look like the two subjects are sparring."). A melee miss used to be the
 // word MISS over a body that stood still (only a few sprites have a drawn dodge) while a grey swipe went through it.
@@ -8175,6 +8184,7 @@ function fall(t){
   if (t.c.rage) endRage(t, "knocked unconscious");
   if (t.c.conc) endConc(t, "they go down");
   t.down = true; t.path = []; t.c.conds.clear();
+  if (t.zappedAt && now - t.zappedAt < 2000 && !hero(t)) labAsh(t);   // killed by Shocking Grasp: straight to ash (Sam, 2026-10-29)
   if (cbt && !/ooze|ghost/.test(t.id) && !t.iced && !t.withered) setTimeout(() => addBlood(t, t.boss ? 1.3 : 1, true), 500);   // the pool spreads under the body
   if (t.kind === "pc") t.c.ds = {s: 0, f: 0, stable: !!t.ko, dead: false};
   const cs = CREATURE_SFX[t.id], vd = voxFor(t, "die"); if (vd) setTimeout(() => bank(vd, t.kind === "pc" ? .48 : .55), 110); else bank(cs && cs.death ? cs.death : "creature/death_beast", .85);
@@ -8695,6 +8705,207 @@ function drawCrimGhosts(){
   for (let i = crimGhosts.length - 1; i >= 0; i--){ const g = crimGhosts[i], k = (now - g.t0) / 300; if (k >= 1 || g.plate !== cur){ crimGhosts.splice(i, 1); continue; }
     const im = tintedSheet(g.img, "ghost:" + g.img.src, "#3a1c5a"); ctx.save(); ctx.globalAlpha = (1 - k) * .55; ctx.drawImage(im, g.sx, g.sy, g.cw, g.ch, g.dx, g.dy, g.dw, g.dh); ctx.restore(); }
 }
+// ---------- THE COMBAT EFFECTS LAB, WIRED IN (Sam, 2026-10-29: "Ok, lets wire all of these effects") ----------
+// Sam's effect sheets, cut out in the Combat Effects Lab (public/vfx/lab/*.webp), and the lab's drawn effects, moved
+// here so the fight looks like the bench. Presentation only: no roll, no damage, no rule changes in this block — the
+// rules each spell needs live where castSpell already does them.
+const LAB_DIR = VFX_BASE + "lab/", LABIMG = {};
+function labImg(n){ if (!LABIMG[n]){ const i = new Image(); i.src = `${LAB_DIR}${n}.webp`; LABIMG[n] = i; } return LABIMG[n]; }
+// the body, the way the lab measures it
+const labH = a => SPR[a.id].json.pivot[1] * actorScale(a);
+const labR = a => SPR[a.id].json.cell[0] * actorScale(a) * .22;
+const labMid = a => a.y - labH(a) * .5;
+const labLeft = a => a.face >= 4 && a.face <= 6;
+function labHand(a, t){ const dir = t ? (Math.sign(t.x - a.x) || 1) : labLeft(a) ? -1 : 1, m = SPR[a.id].json, sc = actorScale(a); return {x: a.x + (a.kx || 0) + dir * m.cell[0] * sc * .17, y: a.y - m.pivot[1] * sc * .55, dir}; }
+const labRnd = (a, b) => a + Math.random() * (b - a);
+// labRef(name | [names to flicker], {x, y | at, follow: {x0, y0, x1, y1, ms, arc}, w, life, rot, spin, grow, fade, sx,
+// add, filter, anchor, anchorY, flipX, pulse, boost, alpha, hk, hpx, stretch, fire, then}) — one of Sam's cut-outs, placed,
+// flown or stretched; `then` runs when it lands (or when it ends)
+function labRef(name, o = {}){
+  const e = Object.assign({labRef: true, names: Array.isArray(name) ? name : [name], t0: now, life: 600, w: 120, rot: 0, spin: 0, grow: [1, 1], fade: [60, 200], sx: 1, add: true, dy: 0}, o);
+  if (e.follow) e.life = e.follow.ms; e.names.forEach(labImg); sparks.push(e); return e;
+}
+function drawLabRef(e){
+  const age = now - e.t0, k = Math.min(1, age / e.life); let x, y, rot = e.rot + e.spin * age / 1000;
+  if (e.follow){ const f = e.follow, q = Math.min(1, age / f.ms); x = f.x0 + (f.x1 - f.x0) * q; y = f.y0 + (f.y1 - f.y0) * q - Math.sin(q * Math.PI) * (f.arc || 0); rot += Math.atan2(f.y1 - f.y0, f.x1 - f.x0); }
+  else { x = e.at ? e.at.x + (e.at.kx || 0) + (e.ox || 0) : e.x; y = e.at ? (e.flat ? e.at.y : labMid(e.at)) + (e.oy || 0) : e.y; }
+  const im = LABIMG[e.names[Math.floor(age / (e.flicker || 70)) % e.names.length]]; if (!im || !im.complete || !im.naturalWidth) return;
+  if (e.headLeft && e.follow){ rot += Math.PI; e.anchor = "left"; }   // Sam's comets are painted head-LEFT
+  if (e.fire) labFireTrail(e, x, y, rot);
+  const g = (e.grow[0] + (e.grow[1] - e.grow[0]) * (1 - Math.pow(1 - k, 2))) * (e.fire ? 1 + Math.sin(now / 37) * .05 : 1);
+  const w = e.stretch && e.follow ? Math.max(30, Math.hypot(x - e.follow.x0, y - e.follow.y0) + e.stretch) : e.w * g, h = e.hpx ? e.hpx * g : w * im.naturalHeight / im.naturalWidth * (e.hk || 1);
+  const al = Math.min(1, age / Math.max(1, e.fade[0])) * (e.follow ? 1 : Math.min(1, (e.life - age) / Math.max(1, e.fade[1]))) * (e.alpha == null ? 1 : e.alpha) * (e.pulse ? .82 + .18 * Math.sin(age / 70) : 1);
+  ctx.save(); ctx.globalAlpha = Math.max(0, al); if (e.add) ctx.globalCompositeOperation = "lighter"; if (e.filter) ctx.filter = e.filter; ctx.imageSmoothingEnabled = true;
+  ctx.translate(x, y + e.dy); if (e.flat) ctx.scale(1, .45); ctx.rotate(rot); ctx.scale(e.sx * (e.flipX ? -1 : 1), 1);
+  const ax = e.anchor === "left" ? 0 : e.anchor === "right" ? -w : -w / 2, ay = e.anchorY === "bottom" ? -h : -h / 2;
+  ctx.drawImage(im, ax, ay, w, h); if (e.boost){ ctx.globalAlpha *= e.boost; ctx.drawImage(im, ax, ay, w, h); }
+  ctx.restore(); ctx.imageSmoothingEnabled = false;
+}
+// a comet on fire: it sheds live flame and embers — for Fire Bolt a straight line of fire hanging along the whole path
+function labFireTrail(e, x, y, rot){
+  if (now - (e.lastEm || 0) < 14) return; e.lastEm = now; const back = rot + Math.PI, R = e.w * .22;
+  if (e.fire === "bolt"){ const lx = e.lx ?? x, ly = e.ly ?? y, n = Math.max(1, Math.ceil(Math.hypot(x - lx, y - ly) / 5)); e.lx = x; e.ly = y;
+    for (let j = 0; j < n; j++){ const u = j / n, px = lx + (x - lx) * u, py = ly + (y - ly) * u; sparks.push({labFlame: true, x: px, y: py + labRnd(-4, 4), vx: labRnd(-25, 25), vy: -labRnd(10, 45), r0: R * labRnd(.3, .6), t0: now, life: labRnd(320, 560)});
+      if (Math.random() < .35) sparks.push({x: px, y: py, vx: labRnd(-40, 40), vy: -labRnd(20, 90), g: -25, col: Math.random() < .5 ? "#ffd27a" : "#ff6a10", t0: now, life: labRnd(400, 900)}); }
+    (e.tr = e.tr || []).push({x, y, t: now}); return; }
+  for (let j = 0; j < 3; j++){ const sp = labRnd(-.5, .5); sparks.push({labFlame: true, x: x + labRnd(-R, R) * .4, y: y + labRnd(-R, R) * .4, vx: Math.cos(back + sp) * labRnd(60, 180), vy: Math.sin(back + sp) * labRnd(60, 180) - labRnd(20, 60), r0: R * labRnd(.35, .6), t0: now, life: labRnd(220, 420)}); }
+  sparks.push({x, y, vx: Math.cos(back) * labRnd(80, 220), vy: Math.sin(back) * labRnd(80, 220) - 40, g: -30, col: Math.random() < .5 ? "#ffd27a" : "#ff7a1a", t0: now, life: labRnd(300, 700)});
+}
+function drawLabFireLine(e){ const tr = (e.tr || []).filter(q => now - q.t < 260); e.tr = tr; if (tr.length < 2) return;
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.lineCap = "round";
+  for (const [col, wk, blur] of [["rgba(255,90,10,.55)", 1, 14], ["rgba(255,190,80,.8)", .45, 0], ["rgba(255,250,220,.9)", .15, 0]]){ ctx.strokeStyle = col; ctx.shadowColor = "#ff6a10"; ctx.shadowBlur = blur;
+    for (let i = 1; i < tr.length; i++){ ctx.lineWidth = Math.max(.5, e.w * .22 * wk * (1 - (now - tr[i].t) / 260)); ctx.beginPath(); ctx.moveTo(tr[i - 1].x, tr[i - 1].y); ctx.lineTo(tr[i].x, tr[i].y); ctx.stroke(); } }
+  ctx.restore(); }
+function drawLabFlame(s, k){ const x = s.x + s.vx * k * (s.life / 1000), y = s.y + s.vy * k * (s.life / 1000), r = s.r0 * (1 + k * 1.2) * (1 - k * .4); ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 1 - k;
+  const g = ctx.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, s.col0 || (k < .3 ? "rgba(255,245,200,.95)" : "rgba(255,200,90,.8)")); g.addColorStop(.45, s.col1 || "rgba(255,120,20,.6)"); g.addColorStop(1, "rgba(200,30,0,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
+
+// ---- FIRE BOLT (Sam: "the smaller fire ball", "flies straight like a crossbow bolt", "sound like an inferno but not as loud")
+function labFireBolt(caster, at, then){
+  const h = labHand(caster, at), to = bodyPoint(at); bank("walk:impact-fire", .3);
+  labRef("fbTravel1", {follow: {x0: h.x, y0: h.y, x1: to.x, y1: to.y, ms: 300}, w: 80, headLeft: true, fire: "bolt", then});
+}
+function labFireBoltHit(t){ labRef("fbBurst", {at: t, w: 150, life: 420, grow: [.5, 1.15], fade: [20, 220], dy: -10}); labRef("fbSmokeBurst", {at: t, w: 140, life: 900, grow: [.7, 1.4], fade: [120, 500], add: false, alpha: .75, dy: -20}); lightFlash(t.x, labMid(t), "#ff8a3a", 300, 500); }
+
+// ---- CHROMATIC ORB (Sam's glowing lattice sphere, "adopt the color of the magic"): a turning geodesic ball of glowing strands
+const LAB_GEO = (() => { const t = (1 + Math.sqrt(5)) / 2; let V = [[-1, t, 0], [1, t, 0], [-1, -t, 0], [1, -t, 0], [0, -1, t], [0, 1, t], [0, -1, -t], [0, 1, -t], [t, 0, -1], [t, 0, 1], [-t, 0, -1], [-t, 0, 1]].map(v => { const l = Math.hypot(...v); return v.map(c => c / l); });
+  const F = [[0, 11, 5], [0, 5, 1], [0, 1, 7], [0, 7, 10], [0, 10, 11], [1, 5, 9], [5, 11, 4], [11, 10, 2], [10, 7, 6], [7, 1, 8], [3, 9, 4], [3, 4, 2], [3, 2, 6], [3, 6, 8], [3, 8, 9], [4, 9, 5], [2, 4, 11], [6, 2, 10], [8, 6, 7], [9, 8, 1]];
+  const mid = {}, m = (a, b) => { const k = a < b ? a + "," + b : b + "," + a; if (mid[k] != null) return mid[k]; const v = V[a].map((c, i) => (c + V[b][i]) / 2), l = Math.hypot(...v); V.push(v.map(c => c / l)); return mid[k] = V.length - 1; };
+  const F2 = []; for (const [a, b, c] of F){ const ab = m(a, b), bc = m(b, c), ca = m(c, a); F2.push([a, ab, ca], [b, bc, ab], [c, ca, bc], [ab, bc, ca]); }
+  const E = new Set(); for (const [a, b, c] of F2) for (const [x, y] of [[a, b], [b, c], [c, a]]) E.add(x < y ? x + "," + y : y + "," + x);
+  return {V, E: [...E].map(k => k.split(",").map(Number))}; })();
+const LAB_ORB_COL = {cold: "#7fd4ff", fire: "#ff7a1a", lightning: "#a8c8ff", acid: "#4cff4a", poison: "#3ad8a0", thunder: "#b48aff"};
+function drawGeoOrb(x, y, R, col, spin){
+  const [r, g, b] = hexRgb(col), c = (a, m = 1) => `rgba(${Math.min(255, r * m + (m > 1 ? 60 : 0)) | 0},${Math.min(255, g * m + (m > 1 ? 60 : 0)) | 0},${Math.min(255, b * m + (m > 1 ? 60 : 0)) | 0},${a})`;
+  const ca = Math.cos(spin), sa = Math.sin(spin), cb = Math.cos(.45 + spin * .3), sb = Math.sin(.45 + spin * .3);
+  const P = LAB_GEO.V.map(([vx, vy, vz]) => { const x1 = vx * ca + vz * sa, z1 = -vx * sa + vz * ca, y1 = vy * cb - z1 * sb, z2 = vy * sb + z1 * cb; return [x + x1 * R, y + y1 * R, z2]; });
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  const gl = ctx.createRadialGradient(x, y, 0, x, y, R * 1.5); gl.addColorStop(0, c(.55, 1.4)); gl.addColorStop(.45, c(.28)); gl.addColorStop(.75, c(.12)); gl.addColorStop(1, c(0)); ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(x, y, R * 1.5, 0, Math.PI * 2); ctx.fill();
+  ctx.lineCap = "round";
+  for (const pass of [0, 1]){ for (const [i, j] of LAB_GEO.E){ if (((P[i][2] + P[j][2]) / 2 > 0) !== !!pass) continue; ctx.strokeStyle = pass ? c(.95, 1.3) : c(.28); ctx.lineWidth = pass ? Math.max(1, R * .035) : Math.max(.6, R * .02); ctx.shadowColor = col; ctx.shadowBlur = pass ? R * .25 : 0;
+    ctx.beginPath(); ctx.moveTo(P[i][0], P[i][1]); ctx.lineTo(P[j][0], P[j][1]); ctx.stroke(); } }
+  ctx.shadowBlur = R * .3; ctx.fillStyle = "rgba(255,255,255,.95)"; for (const q of P) if (q[2] > .1){ ctx.beginPath(); ctx.arc(q[0], q[1], Math.max(1, R * .045 * (.6 + q[2] * .6)), 0, Math.PI * 2); ctx.fill(); }
+  const core = ctx.createRadialGradient(x, y, 0, x, y, R * .45); core.addColorStop(0, "rgba(255,255,255,.9)"); core.addColorStop(1, c(0, 1.3)); ctx.fillStyle = core; ctx.beginPath(); ctx.arc(x, y, R * .45, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+// the orb held at the hand while the element is picked; shaped like spawnFx's promise so heldOrb/orbDrop keep working
+function labOrbHold(a, type){ const h = handPoint(a), s = {labGeo: true, a, x: h.x, y: h.y - 4, R: 18, col: LAB_ORB_COL[type] || "#9fdcff", t0: now, life: 600000, until: now + 600000}; sparks.push(s); return Promise.resolve(s); }
+function labOrbFly(caster, at, type, then){ const h = handPoint(caster), to = bodyPoint(at), col = LAB_ORB_COL[type] || "#9fdcff";
+  sparks.push({labGeo: true, x: h.x, y: h.y - 4, fly: {x0: h.x, y0: h.y - 4, x1: to.x, y1: to.y, ms: 320}, R: 18, col, t0: now, life: 320, then}); }
+function drawLabGeo(s){ if (s.until && now > s.until){ s.life = 0; return; } let x = s.x, y = s.y, R = s.R * (1 + Math.sin(now / 60) * .05);
+  if (s.a && !s.fly){ const h = handPoint(s.a); x = h.x; y = h.y - 4; R *= Math.min(1, (now - s.t0) / 400) * .7 + .3; }
+  if (s.fly){ const q = Math.min(1, (now - s.t0) / s.fly.ms); x = s.fly.x0 + (s.fly.x1 - s.fly.x0) * q; y = s.fly.y0 + (s.fly.y1 - s.fly.y0) * q;
+    if (Math.random() < .7) sparks.push({x: x + labRnd(-R, R) * .4, y: y + labRnd(-R, R) * .4, vx: labRnd(-30, 30), vy: labRnd(-30, 30), g: 0, col: s.col, t0: now, life: labRnd(250, 500)}); }
+  drawGeoOrb(x, y, R, s.col, (now - s.t0) / 260); }
+function labOrbHit(t, type){ const col = LAB_ORB_COL[type] || "#9fdcff", n = 10, rays = []; for (let j = 0; j < n; j++) rays.push({a: j / n * Math.PI * 2 + labRnd(-.2, .2), L: labRnd(.4, 1) * (j % 2 ? .6 : 1.3), w: labRnd(.04, .08)});
+  sparks.push({crimStar: true, a: t, x: t.x, y: labMid(t), R: 70, rays, C: {body: col, core: "#ffffff", glow: col}, t0: now, life: 260});
+  for (let i = 0; i < 18; i++){ const ang = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 160; sparks.push({x: t.x, y: labMid(t), vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * .6 - 60, col, t0: now, life: 420 + Math.random() * 300}); }
+  lightFlash(t.x, labMid(t), col, 280, 420); }
+
+// ---- SHIELD (Sam: "a sphere around the pixel caster as a reaction and absorb magic / missiles while changing colors doing so
+// briefly", from his blue lightning-bubble reference): a glass bubble round the body, lightning crawling on it; what is
+// thrown stops on the surface, which flashes that thing's colour from the contact point and cools back to blue
+function labSphere(t, from){ const s = {labSphere: true, a: t, from, base: [90, 170, 255], hit: null, hitT: 0, t0: now, life: 60000, arcs: [], arcT: 0}; t.labSphere = s; sparks.push(s); return s; }
+function labSphereAbsorb(t, from, col){ const s = t.labSphere; if (!s) return; from = from || s.from; const R = Math.max(46, labR(t) * 2.7), cx = t.x + (t.kx || 0), cy = labMid(t) - R * .1, ang = Math.atan2((from ? from.y : cy) - cy, (from ? from.x : cx - 1) - cx);
+  s.hit = hexRgb(col || "#c890ff"); s.hitT = now; s.hitAng = ang; const p = {x: cx + Math.cos(ang) * R, y: cy + Math.sin(ang) * R};
+  for (let i = 0; i < 12; i++){ const a2 = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 120; sparks.push({x: p.x, y: p.y, vx: Math.cos(a2) * sp, vy: Math.sin(a2) * sp * .6, g: 0, col: col || "#c890ff", t0: now, life: 320 + Math.random() * 200}); }
+  bank("magic/arcane_release", .5); shake(3); }
+function drawLabSphere(s){
+  const t = s.a; if (t.down || !t.c || !t.c.conds.has("shieldSpell")){ t.labSphere = null; s.life = 0; return; }
+  const R0 = Math.max(46, labR(t) * 2.7), cx = t.x + (t.kx || 0), cy = labMid(t) - R0 * .1, open = Math.min(1, (now - s.t0) / 160), R = R0 * (.6 + .4 * (1 - Math.pow(1 - open, 3)));
+  const hk = s.hit ? Math.max(0, 1 - (now - s.hitT) / 520) : 0, C = s.base.map((v, i) => Math.round(v + ((s.hit ? s.hit[i] : v) - v) * hk)), rgba = a => `rgba(${C[0]},${C[1]},${C[2]},${a})`;
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  const g = ctx.createRadialGradient(cx - R * .3, cy - R * .35, R * .1, cx, cy, R); g.addColorStop(0, rgba(.06)); g.addColorStop(.7, rgba(.1 + hk * .15)); g.addColorStop(.93, rgba(.45 + hk * .3)); g.addColorStop(1, rgba(0));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = rgba(.85); ctx.shadowColor = rgba(1); ctx.shadowBlur = 18; ctx.lineWidth = 2.5 + hk * 3; ctx.beginPath(); ctx.arc(cx, cy, R * .97, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.shadowBlur = 0; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, R * .82, Math.PI * 1.1, Math.PI * 1.45); ctx.stroke();
+  if (now - s.arcT > 70){ s.arcT = now; s.arcs = []; for (let j = 0; j < 4 + (hk > 0 ? 4 : 0); j++){ let a0 = labRnd(0, Math.PI * 2); if (hk > 0 && j < 4) a0 = s.hitAng + labRnd(-.8, .8); const pts = []; for (let i = 0; i < 7; i++){ const a = a0 + i * labRnd(.08, .16), r = R * labRnd(.86, 1.02); pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); } s.arcs.push(pts); } }
+  ctx.strokeStyle = "rgba(235,248,255,.9)"; ctx.shadowColor = rgba(1); ctx.shadowBlur = 10; ctx.lineWidth = 1.4;
+  for (const pts of s.arcs){ ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const q of pts) ctx.lineTo(q[0], q[1]); ctx.stroke(); }
+  if (hk > 0){ ctx.strokeStyle = rgba(hk * .8); ctx.lineWidth = 4 * hk; ctx.beginPath(); ctx.arc(cx, cy, R * (1 + (1 - hk) * .25), 0, Math.PI * 2); ctx.stroke(); }
+  ctx.restore();
+}
+
+// ---- SHOCKING GRASP (Sam: "touch range ... a crackling electrocution sound and the target briefly showing a cartoony skeleton
+// while being zapped unless he dies and then he just turns to ash"; "thinner and a bit more defined within the pixel art")
+function labZigzag(x0, y0, x1, y1, n, jit){ const pts = [[x0, y0]]; for (let i = 1; i < n; i++){ const u = i / n; pts.push([x0 + (x1 - x0) * u + labRnd(-jit, jit), y0 + (y1 - y0) * u + labRnd(-jit, jit)]); } pts.push([x1, y1]); return pts; }
+function labBolt(pts, w){ ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.lineJoin = "round"; ctx.lineCap = "round";
+  for (const [col, wk, blur] of [["rgba(40,120,255,.55)", 3, 16], ["#5ab4ff", 1.4, 8], ["#eaf6ff", .55, 0]]){ ctx.strokeStyle = col; ctx.shadowColor = "#3a8cff"; ctx.shadowBlur = blur; ctx.lineWidth = w * wk; ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const q of pts) ctx.lineTo(q[0], q[1]); ctx.stroke(); }
+  ctx.restore(); }
+function labTouch(caster, at, then, kind){
+  // touch range: the caster leans in and the hand meets the body (the caster is already within 5 ft — castSpell's range check)
+  const t0 = now; caster.kx = (caster.kx || 0) + (Math.sign(at.x - caster.x) || 1) * 14 * actorScale(caster);
+  if (kind === "shock"){ sparks.push({labCharge: true, a: caster, t: at, t0: now, life: 420, arcs: [], at: 0}); bank("walk:electrocute", .25); }
+  else { labRef("ctAura", {at: caster, w: 70, life: 600, grow: [.4, 1], fade: [60, 200], pulse: true, flipX: at.x < caster.x}); }
+  setTimeout(then, 380);
+}
+function drawLabCharge(s){ const h = labHand(s.a, s.t); if (now - s.at > 50){ s.at = now; s.arcs = []; for (let i = 0; i < 4; i++){ const ang = labRnd(0, Math.PI * 2), L = labRnd(10, 26); s.arcs.push(labZigzag(0, 0, Math.cos(ang) * L, Math.sin(ang) * L, 4, 4)); } }
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; const g = ctx.createRadialGradient(h.x, h.y, 0, h.x, h.y, 26); g.addColorStop(0, "rgba(200,235,255,.9)"); g.addColorStop(.4, "rgba(60,140,255,.45)"); g.addColorStop(1, "rgba(30,80,255,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(h.x, h.y, 26, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  for (const a of s.arcs) labBolt(a.map(q => [h.x + q[0], h.y + q[1]]), 2); }
+function labZap(caster, t, ms){ sparks.push({labZap: true, by: caster, a: t, t0: now, life: ms, at: 0, bolts: []}); bank("walk:electrocute", .8); t.zappedAt = now; lightFlash(t.x, labMid(t), "#5ab4ff", 260, ms); }
+function drawLabZap(s){ const t = s.a, c = s.by, h = labHand(c, t), cx = t.x + (t.kx || 0), cy = labMid(t), R = labR(t), H = labH(t);
+  if (now - s.at > 45){ s.at = now; s.on = !s.on; s.bolts = [labZigzag(h.x, h.y, cx + labRnd(-R * .4, R * .4), cy + labRnd(-R * .6, R * .6), 7, 9)];
+    for (let i = 0; i < 5; i++){ const x0 = cx + labRnd(-R * 1.3, R * 1.3), y0 = t.y - labRnd(0, H * .95); s.bolts.push(labZigzag(x0, y0, x0 + labRnd(-R * 1.4, R * 1.4), y0 + labRnd(-R, R), 5, 6)); }
+    if (s.on && !t.down){ t.flash = now + 45; t.flashCol = "#2a6cff"; } t.kx = (t.kx || 0) + labRnd(-3, 3); }
+  if (s.on && !t.down) drawLabSkeleton(t);
+  for (const b of s.bolts) labBolt(b, 2.4); }
+function drawLabSkeleton(t){
+  const H = labH(t), cx = Math.round(t.x + (t.kx || 0)), top = t.y - H * .92, u = H / 10, f = labLeft(t) ? -1 : 1, P = v => Math.round(v) + .5;
+  const bw = Math.max(1.5, u * .26), jig = Math.sin(now / 25) * u * .5, neck = top + u * 2.3, hip = top + u * 5.5, foot = t.y - u * .15;
+  const bones = [], knobs = [], B = (x0, y0, x1, y1, w = 1) => { bones.push([x0, y0, x1, y1, w]); knobs.push([x0, y0], [x1, y1]); };
+  const shl = [cx - u * 1.3, neck + u * .35], shr = [cx + u * 1.3, neck + u * .35], ell = [cx - u * 2.1, neck + u * 1.9 + jig], elr = [cx + u * 2.1, neck + u * 1.9 - jig], wrl = [cx - u * 2.7, neck + u * .7 - jig], wrr = [cx + u * 2.7, neck + u * .7 + jig];
+  B(...shl, ...shr, .9); B(...shl, ...ell); B(...ell, ...wrl, .85); B(...shr, ...elr); B(...elr, ...wrr, .85);
+  const hl = [cx - u * .55, hip + u * .2], hr = [cx + u * .55, hip + u * .2], kl = [cx - u * .9, hip + (foot - hip) * .52], kr = [cx + u * .9, hip + (foot - hip) * .52], fl = [cx - u * .75 - jig * .25, foot], fr = [cx + u * .75 + jig * .25, foot];
+  B(...hl, ...kl); B(...kl, ...fl, .9); B(...hr, ...kr); B(...kr, ...fr, .9); B(fl[0], fl[1], fl[0] - u * .55, fl[1], .8); B(fr[0], fr[1], fr[0] + u * .55, fr[1], .8);
+  const fingers = []; for (const [w, e] of [[wrl, ell], [wrr, elr]]) for (let i = -1; i <= 1; i++){ const a = Math.atan2(w[1] - e[1], w[0] - e[0]) + i * .45; fingers.push([w[0], w[1], w[0] + Math.cos(a) * u * .55, w[1] + Math.sin(a) * u * .55]); }
+  const pass = (col, extra) => { ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineCap = "round";
+    for (const [x0, y0, x1, y1, w] of bones){ ctx.lineWidth = bw * w + extra; ctx.beginPath(); ctx.moveTo(P(x0), P(y0)); ctx.lineTo(P(x1), P(y1)); ctx.stroke(); }
+    for (const [x, y] of knobs){ ctx.beginPath(); ctx.arc(P(x), P(y), bw * .75 + extra / 2, 0, 7); ctx.fill(); }
+    ctx.lineWidth = Math.max(1, bw * .55) + extra; for (const [x0, y0, x1, y1] of fingers){ ctx.beginPath(); ctx.moveTo(P(x0), P(y0)); ctx.lineTo(P(x1), P(y1)); ctx.stroke(); }
+    for (let i = 0; i < 6; i++){ ctx.beginPath(); ctx.arc(cx + .5, P(neck + i * (hip - neck) / 6), bw * .62 + extra / 2, 0, 7); ctx.fill(); }
+    ctx.lineWidth = Math.max(1, bw * .6) + extra; for (let i = 0; i < 4; i++){ const y = neck + u * .55 + i * u * .58, w = u * (1.25 - i * .14); for (const d of [-1, 1]){ ctx.beginPath(); ctx.moveTo(cx + d * bw, P(y)); ctx.quadraticCurveTo(cx + d * w, P(y - u * .15), cx + d * w * .9, P(y + u * .35)); ctx.stroke(); } }
+    ctx.lineWidth = bw * .9 + extra; ctx.beginPath(); ctx.moveTo(cx - u * .9, P(hip)); ctx.quadraticCurveTo(cx, P(hip + u * .7), cx + u * .9, P(hip)); ctx.quadraticCurveTo(cx, P(hip - u * .25), cx - u * .9, P(hip)); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx, P(top + u * 1.05), u * .82 + extra / 2, u * .92 + extra / 2, 0, 0, 7); ctx.fill(); ctx.fillRect(P(cx - u * .45 - extra / 2), P(top + u * 1.6), u * .9 + extra, u * .5 + extra / 2); };
+  ctx.save(); pass("#0b1430", 2); pass("#f4ecd4", 0);
+  ctx.fillStyle = "#0b1430"; for (const d of [-1, 1]){ ctx.beginPath(); ctx.ellipse(P(cx + d * u * .33 + f * u * .1), P(top + u * .95), u * .22, u * .26, 0, 0, 7); ctx.fill(); }
+  ctx.fillRect(P(cx + f * u * .08 - 1), P(top + u * 1.3), 2, Math.max(2, u * .2));
+  for (let i = -2; i <= 2; i++) ctx.fillRect(P(cx + i * u * .17), P(top + u * 1.72), 1, Math.max(2, u * .3));
+  ctx.fillStyle = "#9ad8ff"; for (const d of [-1, 1]) ctx.fillRect(P(cx + d * u * .33 + f * u * .1) - 1, P(top + u * .95) - 1, 2, 2);
+  ctx.restore(); }
+// an electrocution kill does not fall: it blackens where it stands, sparks and smokes, and goes to ash (the vampire's ash pile)
+function labAsh(t){ const fr = frameOf(t); t.path = []; t.withered = {t0: now, img: fr.img, f: fr.f, swap: now + 520};
+  t.cadaver = {key: "vampire-male-ash", sq: 1.2 * Math.max(1, t.big || 1), flip: Math.random() < .5, t0: now + 520};
+  for (let i = 0; i < 16; i++) sparks.push({x: t.x + labRnd(-14, 14), y: labMid(t) + labRnd(-20, 20), vx: labRnd(-90, 90), vy: -labRnd(30, 140), col: i % 2 ? "#bfe4ff" : "#4aa8ff", t0: now, life: labRnd(300, 700)}); }
+
+// ---- CHILL TOUCH (Kenta's sheet: spectral hand, soul-drain swirl, death whispers, decay; "the target can't regain HP until
+// the effect is gone" — the no-heal badge rides by the head while it lasts)
+function labChillHit(caster, t){ const flip = t.x < caster.x;
+  labRef("ctHand", {at: t, ox: (flip ? 1 : -1) * labR(t) * .4, w: 46, life: 420, flipX: flip, boost: .4, fade: [20, 200]});
+  labRef("ctBurst", {at: t, w: 110, life: 420, grow: [.5, 1.2], fade: [20, 300], anchorY: "bottom", dy: labR(t) * 1.6});
+  labRef("ctSwirl", {at: t, w: labR(t) * 4, life: 1100, spin: -3, grow: [.5, 1], fade: [60, 500]});
+  setTimeout(() => { labRef("ctWhispers", {at: t, w: labR(t) * 3, life: 1300, grow: [.6, 1.2], fade: [80, 600], dy: -labR(t) * .6}); labRef("ctDecay", {at: t, w: labR(t) * 3.4, life: 1500, fade: [100, 700], anchorY: "bottom", dy: labR(t) * 1.7}); }, 250);
+  t.flash = now + 500; t.flashCol = "#8fe04a"; lightFlash(t.x, labMid(t), "#8fe04a", 260, 600); }
+function drawLabNoHeal(s){ const t = s.a; if (t.down || !t.c || !t.c.noHeal){ s.life = 0; return; } const im = labImg("ctNoHeal"); if (!im.complete || !im.naturalWidth) return;
+  const w = 26, x = t.x + labR(t) * 1.3, y = t.y - labH(t) - 8 + Math.sin(now / 300) * 2; ctx.save(); ctx.globalAlpha = .92; ctx.drawImage(im, x - w / 2, y - w / 2, w, w); ctx.restore(); }
+
+// the looks castSpell uses in place of a kit: `deliver` carries it from the hand, `hit` plays on the body when it lands
+const LAB_LOOK = {
+  "Fire Bolt": {deliver: (c, at, cb) => labFireBolt(c, at, cb), hit: (c, t) => labFireBoltHit(t)},
+  "Chromatic Orb": {deliver: (c, at, cb, sp) => labOrbFly(c, at, sp.type, cb), hit: (c, t, sp) => labOrbHit(t, sp.type)},
+  "Shocking Grasp": {deliver: (c, at, cb) => labTouch(c, at, cb, "shock"), hit: (c, t) => labZap(c, t, 800), miss: (c, t) => { const h = labHand(c, t); sparks.push({labZap: true, by: c, a: {x: h.x + 26 * (Math.sign(t.x - c.x) || 1), y: h.y + 20, id: t.id, kx: 0, down: true, face: t.face}, t0: now, life: 160, at: 0, bolts: []}); }},
+  "Chill Touch": {deliver: (c, at, cb) => labTouch(c, at, cb, "chill"), hit: (c, t) => labChillHit(c, t)},
+};
+const labLookOf = name => LAB_LOOK[name] || LAB_LOOK[name.replace(/ \(.*\)$/, "")];
+// the draw switch for this block, called from drawCombatFx; true when it drew the spark
+function drawLabSpark(s, k){
+  if (s.labRef){ ovWrapS(s.at ? s : {x: s.follow ? s.follow.x1 : s.x, y: s.follow ? s.follow.y1 : s.y}, () => { if (s.fire === "bolt") drawLabFireLine(s); drawLabRef(s); }); return true; }
+  if (s.labFlame){ drawLabFlame(s, k); return true; }
+  if (s.labGeo){ drawLabGeo(s); return true; }
+  if (s.labSphere){ ovWrapS(s, () => drawLabSphere(s)); return true; }
+  if (s.labCharge){ drawLabCharge(s); return true; }
+  if (s.labZap){ ovWrapS(s, () => drawLabZap(s)); return true; }
+  if (s.labNoHeal){ ovWrapS(s, () => drawLabNoHeal(s)); return true; }
+  return false;
+}
 // The spider: spring to within reach of its target, then bite.
 function leapTo(f, tgt, then){
   const d = norm({x: tgt.x - f.x, y: tgt.y - f.y}), reach = reachPx(f, tgt, 5), dist = Math.hypot(tgt.x - f.x, tgt.y - f.y) - reach;
@@ -9135,7 +9346,7 @@ let orbPick = null, heldOrb = null, orbSoundAt = 0;
 // the forming orb at the caster's hand, in element `i`; `quiet` skips the element's sound (opening the picker)
 function orbHold(a, i, quiet){
   const el = ORB_ELEMENTS[i]; orbDrop(); const h = handPoint(a);
-  heldOrb = spawnFx(`orb${el.key}Form`, {x: h.x, y: h.y, sq: .8, tail: 2, until: now + 600000, alpha: 1});
+  heldOrb = labOrbHold(a, el.type);   // Sam's lattice orb, in the element's colour (2026-10-29)
   if (!quiet && now - orbSoundAt > 90){ orbSoundAt = now; bank(`walk:orb-${el.type}`, el.gain); }
 }
 function orbDrop(){ if (heldOrb){ heldOrb.then(e => { if (e) e.until = now; }); heldOrb = null; } }
@@ -9394,6 +9605,7 @@ function drawCombatFx(){
   for (let i = sparks.length - 1; i >= 0; i--){
     const s = sparks[i], k = (now - s.t0) / s.life;
     if (k >= 1){ sparks.splice(i, 1); if (s.then){ const f = s.then; s.then = null; f(); } continue; }
+    if (drawLabSpark(s, k)) continue;   // the lab's looks (Sam, 2026-10-29)
     if (s.swipe){ ovWrapS(s, () => drawSwipe(s, k)); continue; }
     if (s.crimson){ ovWrapS(s, () => drawCrimson(s, k)); continue; }
     if (s.crimStar){ ovWrapS(s, () => drawCrimStar(s, k)); continue; }
@@ -13708,7 +13920,7 @@ function drinkItem(a, it, t){
   spendItem(a, it, t === a ? "drink" : "give", t);
   bank("ui/item_pickup", .5);
   if (u.kind === "heal"){
-    const d = roll(u.dice).total; t.c.hp = Math.min(t.c.hpMax, t.c.hp + d);
+    const d = t.c.noHeal ? 0 : roll(u.dice).total; if (t.c.noHeal) setTimeout(() => popText(t, "can't regain HP", "#9be04a", .9), 250); t.c.hp = Math.min(t.c.hpMax, t.c.hp + d);
     if (t.down && t.c.hp > 0){ t.down = false; setAnim(t, "idle"); }
     setTimeout(() => { kitImpact(t, KIT.healing); bank("combat/heal", .8); popText(t, `+${d}`, "#9ff2c8"); }, 250);
     log(t === a ? `${fname(a)} drinks the <b>${esc(it.name)}</b> and regains ${d} HP${fight ? " (bonus action)" : ""}.`
