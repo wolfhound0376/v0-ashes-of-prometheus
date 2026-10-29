@@ -1764,7 +1764,13 @@ function draw(){
     while (cloudQ.length && cloudQ[0].y <= a.y) drawPuff(cloudQ.shift());
     if (barsAt != null && barsAt <= a.y){ drawGateBars(); barsAt = null; }
     const m = SPR[a.id].json, sc = actorScale(a), [cw, ch] = m.cell, [px, py] = m.pivot;
-    if (a.fall || a.fallIn || a.prop) {} else { ctx.globalAlpha = a.alpha * .45; ctx.fillStyle = "#000";
+    // HIDDEN LOOKS HIDDEN (Sam, 2026-10-28, from the Pen Strip Pilot: "hiding should make people look a little more
+    // invisible"). A hero who is hidden right now (hiddenNow: an unspotted sneaker, or Hide in a fight) fades toward the
+    // shadows: the body drops to about 45% with a faint shimmer, a dark veil lies over it, and the shadow on the floor
+    // nearly goes. It eases in and out over a few frames, so being found reads as stepping back into view.
+    const stT = hiddenNow(a) ? 1 : 0; a.st = (a.st || 0) + (stT - (a.st || 0)) * .1; if (a.st < .005) a.st = 0;
+    const veilK = 1 - a.st * (.55 - .07 * Math.sin(now / 160 + a.x * .05));
+    if (a.fall || a.fallIn || a.prop) {} else { ctx.globalAlpha = a.alpha * .45 * (1 - .7 * a.st); ctx.fillStyle = "#000";
     ctx.beginPath(); ctx.ellipse(a.x, a.y, 26 * sc * (cw / 128), 9 * sc * (cw / 128), 0, 0, Math.PI * 2); ctx.fill(); }
     if (a === leader && mode === "explore"){
       ctx.globalAlpha = .55 + .2 * Math.sin(now / 300); ctx.strokeStyle = "#e8a24a"; ctx.lineWidth = 2 / (base * view.z);
@@ -1774,7 +1780,7 @@ function draw(){
       ctx.globalAlpha = .8; ctx.strokeStyle = a.kind === "foe" ? "#ff6b5e" : "#e8a24a"; ctx.lineWidth = 3 / (base * view.z);
       ctx.beginPath(); ctx.ellipse(a.x, a.y, 34 * sc * (cw / 128), 12 * sc * (cw / 128), 0, 0, Math.PI * 2); ctx.stroke();
     }
-    ctx.globalAlpha = a.alpha;
+    ctx.globalAlpha = a.alpha * veilK;
     const {img, f, pose} = frameOf(a);
     let fy = 0;
     if (a.fall){ const k = Math.min(1, (now - a.fall) / 900); fy = k * k * 800; ctx.globalAlpha = a.alpha * (1 - k); }
@@ -1840,6 +1846,15 @@ function draw(){
       ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx - fx, dy - fyy, dw, dh); ctx.restore();
     } else ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh);
     if (pose) ctx.filter = "none";
+    if (a.st > .02 && !pose){                     // the hidden veil: the frame again, filled with cave shadow, over the body
+      ctx.globalAlpha = a.alpha * veilK * a.st * .55;
+      tint.width = cw; tint.height = ch; const vc = tint.getContext("2d");
+      vc.clearRect(0, 0, cw, ch); vc.drawImage(img, f * cw, a.face * ch, cw, ch, 0, 0, cw, ch);
+      vc.globalCompositeOperation = "source-in"; vc.fillStyle = "rgb(18,34,44)"; vc.fillRect(0, 0, cw, ch); vc.globalCompositeOperation = "source-over";
+      if (sp){ const fx = a.x + a.kx, fyy = a.y + fy + a.ky; ctx.save(); ctx.translate(fx, fyy); ctx.rotate(sp.rot); ctx.scale(1, sp.sy); ctx.drawImage(tint, 0, 0, cw, ch, dx - fx, dy - fyy, dw, dh); ctx.restore(); }
+      else ctx.drawImage(tint, 0, 0, cw, ch, dx, dy, dw, dh);
+      ctx.globalAlpha = a.alpha * veilK;
+    }
     if (held && !held.behind) drawHeld(a, held, sc, py, cw, fy);
     drawStuckOn(a, fy, pose);
     // THE BODY WEARS ITS STATE (playtest bug #1, 2026-10-24: "Fury/rage tints nothing"). The hit flash (180 ms, white)
@@ -7586,7 +7601,7 @@ function doHide(a, bonus){
   if (near){ toast(`${fname(near)} is right on top of you — step away first.`); return; }
   if (bonus) c.bonus = false; else c.action = false; const k = skillCheck(a, "stealth"), best = Math.max(10, ...standing(foes).map(f => f.c.sheet.passive || 10));
   bank("combat/hide", .7);
-  if (k.total >= best){ addCond(a, "hidden"); c.hideDc = k.total; log(`${fname(a)} hides: Stealth ${k.r}${k.small ? " (advantage: Small)" : ""} + ${k.mod} = ${k.total} vs passive ${best} — <b>hidden</b>.`); narrate(a, `${fname(a)} slips out of sight.`); a.alpha = .55; }
+  if (k.total >= best){ addCond(a, "hidden"); c.hideDc = k.total; log(`${fname(a)} hides: Stealth ${k.r}${k.small ? " (advantage: Small)" : ""} + ${k.mod} = ${k.total} vs passive ${best} — <b>hidden</b>.`); narrate(a, `${fname(a)} slips out of sight.`); }   // the faded look is drawn from hiddenNow (the veil in the actor loop), not a.alpha
   else { log(`${fname(a)} tries to hide: Stealth ${k.r}${k.small ? " (advantage: Small)" : ""} + ${k.mod} = ${k.total} vs passive ${best} — spotted.`); popText(a, "spotted", "#c9c4b8"); }
   openMenu(a);
 }
