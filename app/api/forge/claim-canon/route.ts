@@ -4,7 +4,8 @@ import { cleanName } from "@/lib/forge-submission"
 import { freshClaimCode } from "@/lib/forge-code"
 import { availability, canonBySlug, canonPayload, type ClaimLike } from "@/lib/canon-heroes"
 
-// POST /api/forge/claim-canon — a new player asks to walk in as one of the four canon heroes.
+// POST /api/forge/claim-canon — a new player asks to walk in as one of the canon heroes
+// (lib/canon-heroes.ts — the original four, plus Lynkes and Gandalf since 2026-10-29).
 // NO CODE REQUIRED, same as the Forge's own door.
 //
 //   POST { slug, playerName } → { ok, code, heroName }   |   { ok: false, error, availability? }

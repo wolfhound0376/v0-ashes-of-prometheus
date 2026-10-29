@@ -2,9 +2,10 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { readSeated } from "@/lib/seats"
 import { CANON_HEROES, HERO_FILM_LOCATION, availability, type ClaimLike } from "@/lib/canon-heroes"
 
-// GET /api/heroes — the four canon heroes for the chooser at /choose: who is free this run, and
-// each one's intro film when it has been made (cinematic_clips: location 'hero-intro', state <slug>). No code required: nothing here is a secret (the
-// cards show names, classes and canon art that are already public on the site).
+// GET /api/heroes — the canon heroes (lib/canon-heroes.ts: the original four plus Lynkes and Gandalf
+// since 2026-10-29) for the chooser at /choose: who is free this run, and each one's intro film when
+// it has been made (cinematic_clips: location 'hero-intro', state <slug>). No code required: nothing
+// here is a secret (the cards show names, classes and canon art that are already public on the site).
 //
 //   → { heroes: [{ slug, name, clazz, origin, hook, powers, portrait, availability, film }] }
 //

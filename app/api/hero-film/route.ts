@@ -3,12 +3,14 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { HERO_FILM_LOCATION, canonById } from "@/lib/canon-heroes"
 import { heroFilmSeenKey } from "@/lib/hero-film"
 
-// GET /api/hero-film?characterId=<uuid> — a FORGED hero's own intro film, for /awaken.
+// GET /api/hero-film?characterId=<uuid> — a hero's own intro film, for /awaken and the in-game gate.
 //
-// Canon heroes (Kenta, Fifi, Scott, Samson) already watch theirs on /choose, so this answers null
-// for them and /awaken never plays a film twice. Anyone else gets the cinematic_clips row with
-// location 'hero-intro' and their character_id (Lynkes was the first, 2026-10-27). No film → null,
-// and /awaken goes on exactly as before.
+// The four original canon heroes (Kenta, Fifi, Scott, Samson) watch theirs once on /choose, so this
+// answers null for them and /awaken never plays a film twice. Everyone else gets the cinematic_clips
+// row with location 'hero-intro' and their character_id (Lynkes was the first, 2026-10-27) — that
+// includes Lynkes and Gandalf now that they stand on /choose too (Sam, 2026-10-29), because their
+// film replays after every campaign restart (`filmReplays` in lib/canon-heroes.ts) and /choose marks
+// it seen when it plays there. No film → null, and /awaken goes on exactly as before.
 //
 //   → { film: "/videos/heroes/<slug>.mp4" | null, seen: boolean }
 //
@@ -27,7 +29,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("characterId") ?? ""
-  if (!UUID.test(id) || canonById(id)) return Response.json({ film: null })
+  if (!UUID.test(id)) return Response.json({ film: null })
+  const canon = canonById(id)
+  if (canon && !canon.filmReplays) return Response.json({ film: null })
 
   let admin: ReturnType<typeof createAdminClient>
   try { admin = createAdminClient() } catch { return Response.json({ film: null }) }

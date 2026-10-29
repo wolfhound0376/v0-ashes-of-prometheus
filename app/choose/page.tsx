@@ -6,9 +6,14 @@
 // showcases their abilities and history OR they may create their own character. THIS IS THE ONLY
 // WAY TO THE FORGE OUTSIDE THE DM CREATING ONE HIMSELF."
 //
-//   four canon cards  → confirm (your name) → the hero's film (Skip ▸; follows the Cinematics
+//   six canon cards   → confirm (your name) → the hero's film (Skip ▸; follows the Cinematics
 //                        switch) → three words → wait for the DM → Enter → /awaken
 //   Forge Your Own    → /forge
+//
+// Sam, 2026-10-29: "Lynkes and Gandalf should be options in start a new game" — the two Forge-made
+// heroes joined the original four (lib/canon-heroes.ts). Their films replay after a campaign restart
+// (/api/hero-film), so when the film plays HERE the claim remembers it (filmSeen) and Enter marks it
+// seen for this run — otherwise /awaken would show it a second time minutes later.
 //
 // A canon pick is reserved the moment it is confirmed (/api/forge/claim-canon) so two strangers
 // cannot both wait for Fifi; the DM opens the cell at /dm exactly as for a Forge hero. One of each
@@ -28,7 +33,8 @@ type Hero = {
   slug: string; name: string; clazz: string; origin: string | null; hook: string; powers: string[]; portrait: string
   availability: "free" | "seated" | "claimed"; film: string | null
 }
-type Claim = { code: string; slug: string; heroName: string }
+/** filmSeen: the hero's film ran (or was skipped) on this page during this claim — see the header. */
+type Claim = { code: string; slug: string; heroName: string; filmSeen?: boolean }
 type Stage = "list" | "confirm" | "film" | "waiting"
 
 const CLAIM_KEY = "aop_canon_claim_v1"
@@ -85,6 +91,12 @@ export default function ChooseHero() {
     setStage(hero.film && cinematicsOn() ? "film" : "waiting")
   }
 
+  // The film ended or was skipped: both count as seen, the same rule as lib/hero-film.ts.
+  const filmDone = () => {
+    if (claim) { const c = { ...claim, filmSeen: true }; writeClaim(c); setClaim(c) }
+    setStage("waiting")
+  }
+
   return (
     <div className="relative min-h-dvh overflow-x-hidden bg-black text-stone-200">
       {/* the title painting, dimmed and soft, so this reads as the next room of the same house */}
@@ -95,7 +107,7 @@ export default function ChooseHero() {
       </div>
 
       {stage === "film" && picked?.film && claim && (
-        <HeroFilm src={picked.film} onDone={() => setStage("waiting")} />
+        <HeroFilm src={picked.film} onDone={filmDone} />
       )}
 
       <div className={cn("relative z-10 mx-auto max-w-6xl px-4 pb-16 pt-10 transition-opacity duration-300 sm:px-8", leaving && "opacity-0")}>
@@ -112,7 +124,10 @@ export default function ChooseHero() {
             {heroes === null ? (
               <div className="py-24 text-center text-[11px] uppercase tracking-[0.4em] text-stone-600">Unlocking the cells…</div>
             ) : (
-              <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-5">
+              // Six heroes and the Forge door: two rows of four on a wide screen (the Forge card
+              // spans the last two cells so the second row is full), three across on a tablet, two
+              // on a phone.
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
                 {heroes.map((h, i) => (
                   <HeroCard key={h.slug} hero={h} delay={i * 0.07} onPick={() => { setPicked(h); setStage("confirm") }} />
                 ))}
@@ -173,7 +188,7 @@ function ForgeCard({ onPick, delay }: { onPick: () => void; delay: number }) {
       type="button"
       onClick={onPick}
       style={{ animationDelay: `${delay}s` }}
-      className="choose-in group relative col-span-2 flex aspect-auto min-h-40 flex-col items-center justify-center overflow-hidden rounded-[3px] border border-dashed border-[#8a6a3a]/70 bg-gradient-to-b from-[#1a120a]/90 to-black/90 p-6 text-center transition-all duration-300 hover:-translate-y-1 hover:border-solid hover:border-[#e8c56a] hover:shadow-[0_0_50px_rgba(255,140,40,0.3)] lg:col-span-1 lg:aspect-[3/5]"
+      className="choose-in group relative col-span-2 flex min-h-40 flex-col items-center justify-center overflow-hidden rounded-[3px] border border-dashed border-[#8a6a3a]/70 bg-gradient-to-b from-[#1a120a]/90 to-black/90 p-6 text-center transition-all duration-300 hover:-translate-y-1 hover:border-solid hover:border-[#e8c56a] hover:shadow-[0_0_50px_rgba(255,140,40,0.3)] sm:col-span-3 lg:col-span-2"
     >
       <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-[radial-gradient(ellipse_at_bottom,rgba(255,120,30,0.28)_0%,transparent_70%)] opacity-60 transition-opacity group-hover:opacity-100" />
       <Hammer className="relative h-10 w-10 text-[#c9a868] transition-transform duration-300 group-hover:-rotate-12 group-hover:text-[#ffcf7a]" />
@@ -299,6 +314,12 @@ function Waiting({ claim, onCancel, router }: { claim: Claim; onCancel: () => vo
       window.localStorage.setItem(ROLE_LS_KEY, "player")
       window.localStorage.setItem(CHARACTER_LS_KEY, j.character.id)
       window.localStorage.setItem(TOKEN_LS_KEY, j.claimToken)
+      // The film already ran on this page: tell this run so /awaken does not show it again. Only
+      // possible now — the claim token did not exist until the DM opened the cell. Best-effort: a
+      // failed mark means the film plays twice, which beats it never playing (lib/hero-film.ts).
+      if (claim.filmSeen) {
+        await fetch("/api/hero-film", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ characterId: j.character.id, claimToken: j.claimToken }) }).catch(() => {})
+      }
       writeClaim(null)
       router.replace("/awaken")
     } catch { setErr("Could not reach the door.") } finally { setEntering(false) }
