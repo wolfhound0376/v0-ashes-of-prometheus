@@ -7550,6 +7550,7 @@ function advantageOn(att, tgt, ranged, atk){
     if (atk && atk.long && feetBetween(att, tgt) > atk.reach) adv--;
   }
   if (tgt.c.conds.has("lit") || tgt.c.conds.has("asleep")) adv++;
+  if (tgt.kind === "pc" && tgt.down) adv++;                                   // SRD: unconscious — attack rolls against it have advantage
   if (tgt.c.conds.has("dodging") || att.c.conds.has("mocked")) adv--;
   if (att.c.conds.has("hidden") || att.c.conds.has("helped")) adv++;          // unseen attacker; an ally's Help
   if (tgt.c.conds.has("hidden")) adv--;                                       // swinging at where you think it is
@@ -7658,6 +7659,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       let cv = coverOf(att, tgt), acVs = targetAc(tgt) + cv.ac;
       const bl = blessD4(att);
       let adv = advantageOn(att, tgt, ranged, atk), r = d20(adv, att), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit + bl, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + bl + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
+      if (hit && !crit && tgt.kind === "pc" && tgt.down && !ranged && feetBetween(att, tgt) <= 7.5) crit = true;   // SRD: unconscious — a hit from within 5 ft is a critical hit
       if (bl) popText(att, `bless +${bl}`, "#ffe9a8", .8);
       if (hit && !crit && !cv.total && hero(tgt) && canShield(tgt) && r + atk.hit + bl + insp < acVs + 5){
         shieldWait = new Promise(res => askShield(tgt, att, atk, r + atk.hit + insp, acVs, used => { if (used){ acVs += 5; hit = false; } rest(); res(); }));
@@ -7677,7 +7679,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (!hit){
         // a melee blow that reached them is a sparring exchange (sparMiss); a shot, a flask, or a blow with stone in
         // the way is the plain miss it always was
-        const how = !shot && !cv.total ? sparMiss(att, tgt, r === 1 ? null : r + atk.hit + insp - acVs, sw, ws) : null;
+        const how = !shot && !cv.total && !tgt.down ? sparMiss(att, tgt, r === 1 ? null : r + atk.hit + insp - acVs, sw, ws) : null;
         if (!how){ if (!shot) swipe(att, tgt, {...sw, miss: true}); miss(tgt); bank(shot === "flask" ? "magic/spell_fizzle" : ws.miss, .7); }
         log(`${why} — ${how === "parry" ? "parried" : how === "duck" ? "ducked" : how === "dodge" ? "dodged" : "miss"}.`);
         narrate(att, shot ? `${fname(att)}'s shot goes wide of ${fname(tgt)}.` : how === "parry" ? `${fname(att)} swings at ${fname(tgt)}, who turns the blow aside.` : how === "duck" ? `${fname(att)} swings at ${fname(tgt)}, who ducks under it.` : how === "dodge" ? `${fname(att)} swings at ${fname(tgt)}, who slips out of the way.` : `${fname(att)} swings at ${fname(tgt)} and misses.`);
@@ -8351,6 +8353,22 @@ function throwRock(f, tgt){
   }
   fire();
 }
+// FINISHING THE FALLEN (SRD 5.1, "Damage at 0 Hit Points": "If you take any damage while you have 0 hit points, you
+// suffer a death saving throw failure. If the damage is from a critical hit, you suffer two failures instead";
+// "Unconscious": attack rolls against the creature have advantage, and any attack that hits it is a critical hit if the
+// attacker is within 5 feet). With nobody left on their feet to fight, a monster goes for the nearest hero still dying.
+// [CLAUDE] The drow and their servants (CAPTORS) do not: they keep slaves, they do not waste them — they stand over the
+// dying and let the dice decide, and what they do with the bodies is the DM core's, as before.
+function finishTarget(f){
+  if (!f || f.kind !== "foe" || CAPTORS.test(f.id) || incapacitated(f)) return null;
+  return party.filter(p => dyingNow(p) && actors.includes(p)).sort((a, b) => feetBetween(f, a) - feetBetween(f, b))[0] || null;
+}
+function finishTheFallen(f, t){
+  const atk = meleeOf(f), swings = f.c.sheet.multi || 1;
+  log(`${fname(f)} goes for ${fname(t)}, who is down and helpless.`);
+  let n = 0; const go = () => { if (!cbt || f.down || !dyingNow(t) || !actors.includes(t) || n >= swings){ setTimeout(() => passTurn(f), 500); return; } n++; attackWith(f, t, atk, () => setTimeout(go, 250)); };
+  setTimeout(go, 400);
+}
 function foeTurn(f){
   if (!actors.includes(f) || f.down){ setTimeout(nextTurn, 100); return; }
   if (f.c.conds.has("prone")){ f.c.conds.delete("prone"); f.c.move = Math.floor(f.c.move / 2); log(`${fname(f)} gets up.`); }
@@ -8362,7 +8380,12 @@ function foeTurn(f){
   const grudgeOn = cbt && cbt.grudge && cbt.grudge.att === f && !cbt.grudge.tgt.down && actors.includes(cbt.grudge.tgt) ? cbt.grudge.tgt : null;
   let tgt = grudgeOn ? grudgeOn : f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(heroes())) : (seen.length ? seen : standing(heroes())).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
   if (tgt && !grudgeOn && !f.c.berserk){ const pot = potShot(f); if (pot) tgt = pot; }   // BYSTANDERS: threats first, now and then a pot shot
-  if (!tgt){ checkEnd(); return; }
+  if (!tgt){
+    const fallen = finishTarget(f);
+    if (fallen){ finishTheFallen(f, fallen); return; }
+    if (!checkEnd()) setTimeout(() => passTurn(f), 400);
+    return;
+  }
   // HIDDEN HEROES (Sam, 2026-10-28: "They should look for me because they can't see me and lose their turn if they can't
   // find me"). A foe whose quarry has vanished — every hero it could go for is hidden, the one it is after is hidden, or
   // the nearest hero is — does not swing at a guess. It spends its action searching (SRD: the Search action, Wisdom
@@ -8548,6 +8571,11 @@ function checkEnd(){
   if (!standing(foes).length){ setTimeout(() => endCombat(true), 600); return true; }
   if (!standing(party).length){
     if (gameOverActive(PARTY, state.fallen)){ setTimeout(() => endCombat(false), 300); return true; }   // every seated hero is dead: GAME OVER takes it from here
+    // THE DYING KEEP ROLLING (Sam, 2026-10-29, "Go ahead" to: a downed party keeps rolling death saves until they die).
+    // The fight no longer stops the moment the last hero drops: while anyone is still dying (not stable, not dead) the
+    // turns go on, the dying make their saves, and the foes do what foes do (finishTarget). It stops once every hero is
+    // dead (GAME OVER) or nobody is left dying — stable or dead — and then the old way: the DM core decides.
+    if (party.some(p => dyingNow(p) && actors.includes(p))) return false;
     log("<b>The party falls.</b> The DM core decides what the drow do with the bodies."); setTimeout(() => endCombat(false), 1200); return true; }
   return false;
 }
