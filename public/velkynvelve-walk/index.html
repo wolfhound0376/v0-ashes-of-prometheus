@@ -1927,7 +1927,7 @@ function draw(){
     const mq = ovPt(marker.x, marker.y); ctx.beginPath(); ctx.ellipse(mq.x, mq.y, 14 + 20 * k, (14 + 20 * k) * .5, 0, 0, Math.PI * 2); ctx.stroke();
   }
   for (const c of node.chains || []) drawChain(c);
-  drawCombatGround(); drawStuckGround(); drawSurgeonGround();
+  drawCombatGround(); drawStuckGround(); drawSurgeonGround(); drawDeathBits(true);
   if (mode === "combat"){ drawIcePatches(); drawFxLayer(true); tickIce(); }
   if (mode === "explore" && exploreJump && leader && actors.includes(leader)) drawExploreJumpSquares(leader);
   ovWrapGroup(drops, drawLootGround);   // the loot ceremony's floor light, under the figures
@@ -2079,7 +2079,7 @@ function draw(){
   drawLight();          // the dark, with the lamps, the heroes and landing spells cut out of it; everything after glows through
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
   drawTolls();
-  ovWrapGroup(drops, drawDrops); drawCombatFx(); drawMageHand(); drawCrimPuffs(); drawShots(); drawCritBadges(); drawToothGlow();
+  ovWrapGroup(drops, drawDrops); drawDeathBits(false); drawCombatFx(); drawMageHand(); drawCrimPuffs(); drawShots(); drawCritBadges(); drawToothGlow();
   ctx.globalAlpha = 1;
 }
 const tint = document.createElement("canvas");
@@ -8987,7 +8987,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       { const rd = attackRiders({hp: att.c.hp, woundedFury: att.c.sheet.woundedFury, raging: att.c.rage, level: att.c.sheet.level || 1}, atk, shot === "thrown");
         for (const d of rd.dice){ const s = roll(d.dice, crit); dmg.total += s.total; parts.push(`${d.label} ${s.total}`); }
         for (const f of rd.flat){ dmg.total += f.amount; parts.push(`${f.label} +${f.amount}`); } }
-      damage(tgt, dmg.total, atk.type, crit, att, !!atk.magic); hexRider(att, tgt, crit); markRider(att, tgt, crit, atk); if (atk.gfb) gfbLeap(att, tgt, crit);
+      hitCtx = {weapon: atk.name || "", melee: !shot, by: att}; damage(tgt, dmg.total, atk.type, crit, att, !!atk.magic); hitCtx = null; hexRider(att, tgt, crit); markRider(att, tgt, crit, atk); if (atk.gfb) gfbLeap(att, tgt, crit);
       if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => bank(`magic/impact_${atk.extra.type}`, .55), 200); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att, true), 260); parts.push(`${e.total} ${atk.extra.type}`); }
       if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20(rageAdvantage(tgt.c.rage, atk.rider.save), tgt, atk.rider.cond) + (tgt.c.sheet.saves[atk.rider.save] || 0) + blessD4(tgt), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att, true); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
@@ -9115,7 +9115,7 @@ function castSpell(caster, tgt, name, done, darts){
         if (!hit){ miss(tgt); land(tgt, false, sp.type); log(`${why} — miss.`); return; }
         if (lab) lab.crit = crit; land(tgt, true, sp.type); knock(tgt, caster, 12 * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
         narrate(caster, `${fname(caster)}'s ${name} ${sp.type === "cold" ? "frosts" : sp.type === "necrotic" ? "withers" : sp.type === "radiant" ? "sears" : "strikes"} ${fname(tgt)}.`);
-        const d = roll(sp.dmg, crit); if (sp.beams && invoked(caster, "Agonizing Blast")) d.total += Math.max(0, abilMod(caster.c.sheet, "cha")); damage(tgt, d.total, sp.type, crit, caster, true); hexRider(caster, tgt, crit);
+        const d = roll(sp.dmg, crit); if (sp.beams && invoked(caster, "Agonizing Blast")) d.total += Math.max(0, abilMod(caster.c.sheet, "cha")); hitCtx = {spell: name, by: caster}; damage(tgt, d.total, sp.type, crit, caster, true); hitCtx = null; hexRider(caster, tgt, crit);
         if (sp.beams && invoked(caster, "Repelling Blast") && !tgt.down) repel(caster, tgt, 10); if (sp.cond) addCond(tgt, sp.cond); if (name === "Ray of Frost") addCond(tgt, "slowed");
         if (sp.type === "cold" && sp.ice){ const patch = freezeGround(tgt.x, tgt.y, m.dc, caster); if (!tgt.down){ tgt.onIce = patch; iceSave(tgt, patch, "struck by the orb"); } }
         // SRD 5.1 Shocking Grasp: "On a hit ... it can't take reactions until the start of its next turn."
@@ -9173,7 +9173,7 @@ function castSpell(caster, tgt, name, done, darts){
           else if (sp.cond === "lit"){ if (!ok) spawnFx("pxGlow", {at: t, sq: 1.6, anchor: "mid", loop: true, until: now + 3000, alpha: .8}); land(t, !ok, "radiant"); }
           else if (name === "Vicious Mockery"){ land(t, !ok, "psychic"); if (!ok) labMockery(t); }
           else { if (name === "Toll the Dead" && ok) spawnFx("tollBell", {at: t, sq: 2, anchor: "base", lift: -.15, alpha: .8}); land(t, !ok, sp.type || "psychic"); }   // the bell tolls either way (SRD: "fills the air around it"); the damage is only on a failed save
-          if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); const n = ok ? (sp.lvl ? Math.floor(d.total / 2) : 0) : d.total; if (n) damage(t, n, sp.type, false, caster, true); else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
+          if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); const n = ok ? (sp.lvl ? Math.floor(d.total / 2) : 0) : d.total; if (n){ hitCtx = {spell: name, area: sp.area || 0, by: caster, at}; damage(t, n, sp.type, false, caster, true); hitCtx = null; } else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
           if (sp.cond && !ok){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); if (sp.cond === "restrained") t.c.webDc = dc; if (sp.cond === "paralyzed"){ t.c.heldDc = dc; t.path = []; } if (sp.cond === "asleep"){ t.c.sleptDc = m.dc; t.sleepT0 = now; t.path = []; } }
           lines.push(line); if (i === targets.length - 1) log(`${fname(caster)} ${name}: ${lines.join("; ")}.`);
         }, i * 180));
@@ -9395,7 +9395,7 @@ function damage(t, n, type, crit, from, magical = false){
     log(`<b>${fname(t)}</b> — Wounded Fury: advantage on his attacks and +2d6 on every claw that lands.`); narrate(t, `${fname(t)} roars, bleeding, and keeps coming.`);
   }
   if (t.c.hp > 0){ const cs = CREATURE_SFX[t.id], v = voxFor(t, "hit"); if (v) setTimeout(() => bank(v, .5), 70); else bank(t.kind === "pc" ? "creature/player_hurt" : cs && cs.hurt ? cs.hurt : "creature/hurt_beast", .7); }
-  if (t.c.hp <= 0){ t.killType = type; fall(t); } else if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); else if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle"));
+  if (t.c.hp <= 0){ t.killType = type; if (!hero(t)) t.deathFx = pickDeathFx(t, type, crit, from, hitCtx); fall(t); } else if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); else if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle"));
   if (cbt && cbt.boss === t){ if (t.c.hp <= 0) bossFalls(t); else bossHit(t, hpBefore); }   // BOSS FIGHTS: the bar follows every blow; half is the Bloodied beat
   renderParty();
 }
@@ -9463,7 +9463,7 @@ function fall(t){
   if (t.c.conc) endConc(t, "they go down");
   t.down = true; t.path = []; t.c.conds.clear();
   if (t.zappedAt && now - t.zappedAt < 2000 && !hero(t)) labAsh(t);   // killed by Shocking Grasp: straight to ash (Sam, 2026-10-29)
-  if (cbt && !/ooze|ghost/.test(t.id) && !t.iced && !t.withered) setTimeout(() => addBlood(t, t.boss ? 1.3 : 1, true), 500);   // the pool spreads under the body
+  if (cbt && !/ooze|ghost/.test(t.id) && !t.iced && !t.withered && !(t.deathFx && t.deathFx.noPool)) setTimeout(() => addBlood(t, t.boss ? 1.3 : 1, true), 500);   // the pool spreads under the body
   if (t.kind === "pc") t.c.ds = {s: 0, f: 0, stable: !!t.ko, dead: false};
   const cs = CREATURE_SFX[t.id], vd = voxFor(t, "die"); if (vd) setTimeout(() => bank(vd, t.kind === "pc" ? .48 : .55), 110); else bank(cs && cs.death ? cs.death : "creature/death_beast", .85);
   // Sam, 2026-10-14: "I don't see any carcasses of the creatures that are dead." Only creatures with a death
@@ -9476,7 +9476,8 @@ function fall(t){
   log(`<b>${fname(t)}</b> ${hero(t) && !t.withered ? "goes down." : t.withered ? "withers to bones." : t.iced ? "is frozen where it stands." : t.cadaver && t.cadaver.frozen ? "is frozen where it lies." : "is dead."}`);
   if (t.creature) narrate(t, `${t.creature.name} is dead.`);
   { const fz = t.iced || (t.cadaver && t.cadaver.frozen), dn = hero(t) && !t.withered;
-    beatBanner(`${fname(t)} ${dn ? "is down" : t.withered ? "withers" : fz ? "is frozen" : "slain"}`); } hitstop(160); shake(10);   // the death beat: a banner, never another word in the pile
+    beatBanner(`${fname(t)} ${t.deathFx && t.deathFx.word ? t.deathFx.word : dn ? "is down" : t.withered ? "withers" : fz ? "is frozen" : "slain"}`); } hitstop(160); shake(10);
+  if (t.deathFx) playDeathFx(t);   // how it died by what killed it (deathsByType, below)   // the death beat: a banner, never another word in the pile
   if (t.kind === "pc"){ const near = standing(party).filter(p => p !== t).sort((a, b) => Math.hypot(a.x - t.x, a.y - t.y) - Math.hypot(b.x - t.x, b.y - t.y))[0]; if (near) setTimeout(() => bark(near, `${fname(t)}!`, 1600, {talk: true}), 400);
     if (t.ko){ popText(t, "knocked out", "#ffd166", 1.2); log(`<b>${fname(t)} is knocked out</b>: unconscious and stable at 0 HP (SRD: a stable creature regains 1 HP after 1d4 hours).`); settleGrudge(t); }
     else { const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS, t), 1400); } }
@@ -10179,6 +10180,151 @@ function drawFaithGlow(a, img, f, cw, ch, dx, dy, dw, dh){ const fl = faithLevel
   ctx.save(); ctx.globalCompositeOperation = "lighter"; for (const o of [-.5, .5]){ const x = ex + o * R * .26, rr = Math.max(2, R * .11) * (.8 + .5 * fl), gg = ctx.createRadialGradient(x, ey, 0, x, ey, rr * 2.6);
     gg.addColorStop(0, `rgba(255,255,235,${Math.min(1, .5 + fl)})`); gg.addColorStop(.3, `rgba(255,215,110,${.85 * fl + .15})`); gg.addColorStop(1, "rgba(255,180,60,0)"); ctx.fillStyle = gg; ctx.beginPath(); ctx.arc(x, ey, rr * 2.6, 0, 7); ctx.fill(); }
   ctx.restore(); ctx.globalAlpha = a0; }
+
+// ---------- DEATHS BY DAMAGE TYPE (Sam's rulings in the Combat Effects Lab, 2026-10-29) ----------
+// How a creature dies follows what killed it. Heroes are never taken by these (they go down and make death saves).
+//   • a blast (an area spell's fire, thunder or force — Fireball, Thunderwave…) blows the body apart: torso, head, arms,
+//     legs and meat fly, bounce and land in blood ("hamburger meat with pieces of his body everywhere"); a skeleton just
+//     comes apart as usual
+//   • radiant: a critical kill on a humanoid burns it to a crisp (Sam's sheet: the burning skeleton, crumbling to an
+//     ash heap that stays); any radiant kill on the undead disintegrates it to drifting dust
+//   • acid, critical kill: a Large creature melts (Sam's sheet, slime body to a steaming pool) with a sizzle; a humanoid
+//     dissolves — its own body turned to green slime that sags into a pool with bones in it (Sam's video and its audio)
+//   • Fire Bolt kills burn with the burning-skeleton sheet ("doesn't cause you to bleed or your head to fall off")
+//   • piercing kills explode in blood: a dark-red burst with glowing droplets, a pool under the body, and the killer's
+//     weapon hand drips for a few seconds ("dripping from the attacker")
+//   • HEADS OFF. A rogue (or a ninja) who finishes someone with a critical dagger or shortsword takes the head: it rolls
+//     like a basketball, Sam's blood fountain from the neck, and "Fatality!". A zombie or skeleton killed by a critical
+//     sword blow loses its head — no fountain. An Eldritch Blast critical kill blows the head off half the time (a
+//     fountain unless undead). The blood fountain is kept for those: "certain magical effects, rogues with daggers/short
+//     swords on critical kills, and ninjas."
+let hitCtx = null;                                   // what dealt the blow now landing (set round the damage() calls that matter)
+const deathBits = [];
+const isUndeadT = t => /zombie|skeleton|ghoul|ghast|wight|mummy|undead|bhut|ghost/.test(t.id) || (t.c && t.c.sheet && t.c.sheet.ctype === "undead");
+const isLargeT = t => (t.c && t.c.sheet && /large|huge|gargantuan/.test(t.c.sheet.size || "")) || /^quaggoth|ogre|troll|giant|hook-horror/.test(t.id) || (t.big || 1) > 1.2;
+const isHumanoidT = t => !!cadaverSpecies(t.id) && !/^myconid|^stool$/.test(t.id);
+function pickDeathFx(t, type, crit, from, ctx0){
+  if (t.iced || t.withered || t.necro || (t.zappedAt && now - t.zappedAt < 2000) || /ooze/.test(t.id)) return null;   // the cold, necrotic and Shocking Grasp deaths are their own
+  const H = ctx0 || {}, undead = isUndeadT(t), skel = /skeleton/.test(t.id), by = H.by || from, cls = (by && by.c && by.c.sheet && by.c.sheet.cls) || "";
+  const rogue = /rogue|ninja/i.test(cls) || /^freia|^lynkes/.test((by && by.id) || "") || /ninja/.test((by && by.id) || "");
+  if (H.spell && H.area && /fire|thunder|force/.test(type) && !skel) return {kind: "gibbed", noPool: true, word: "is blown apart", from: H.at || by};
+  if (crit && H.melee && rogue && /dagger|shortsword|short sword/i.test(H.weapon || "")) return {kind: "decap", fountain: !undead, fatality: true, from: by, word: "loses their head"};
+  if (crit && H.melee && undead && type === "slashing" && /sword|scimitar|blade/i.test(H.weapon || "")) return {kind: "decap", fountain: false, from: by, word: "loses its head"};
+  if (crit && type === "force" && H.spell === "Eldritch Blast" && Math.random() < .5) return {kind: "decap", fountain: !undead, blast: true, from: by, word: "loses their head"};
+  if (type === "radiant" && undead) return {kind: "disintegrate", noPool: true, word: "turns to dust"};
+  if (type === "radiant" && crit && isHumanoidT(t)) return {kind: "crisp", noPool: true, word: "is burned to a crisp"};
+  if (type === "acid" && crit && isLargeT(t)) return {kind: "melt", noPool: true, word: "melts into a puddle"};
+  if (type === "acid" && crit && isHumanoidT(t)) return {kind: "dissolve", noPool: true, word: "dissolves"};
+  if (type === "fire" && H.spell === "Fire Bolt") return {kind: "crisp", fire: true, noPool: true, word: "burns to the bone"};
+  if (type === "piercing" && !skel) return {kind: "bloodburst", from: by};
+  return null;
+}
+// the body as it stood, cut from its own frame: the canvas, where its pivot sits, and its size on the plate
+function bodyCut(t){ const fr = frameOf(t), m = SPR[t.id].json, cw = m.cell[0], ch = m.cell[1], sc = actorScale(t); if (!fr.img || !fr.img.complete) return null;
+  const c = document.createElement("canvas"); c.width = cw; c.height = ch; c.getContext("2d").drawImage(fr.img, (fr.f || 0) * cw, t.face * ch, cw, ch, 0, 0, cw, ch);
+  return {c, cw, ch, px: m.pivot[0], py: m.pivot[1], sc, x: t.x + (t.kx || 0), y: t.y}; }
+const deathU = t => labH(t) / 180;                    // the lab's sizes and speeds were tuned on a ~180 px figure
+function playDeathFx(t){ const D = t.deathFx; t.deathFx = null; const U = deathU(t);
+  if (D.kind === "bloodburst"){ deathBloodBurst(t, D.from); return; }
+  if (D.kind === "gibbed"){ t.alpha = 0; t.path = []; deathGibs(t, D.from); bank("combat/melee_hit_flesh", .9); bank("combat/crit_hit", .5); shake(14); return; }
+  if (D.kind === "crisp"){ const B = bodyPoint(t); t.flash = now + 300; t.flashCol = D.fire ? "#ff9632" : "#fff0be"; bank(D.fire ? "magic/impact_fire" : "magic/impact_radiant", .8); if (!D.fire) setTimeout(() => bank("walk:death-sm-disintegrate", .7), 250);
+    for (let i = 0; i < 24; i++) sparks.push({x: B.x + labRnd(-20, 20) * U, y: B.y + labRnd(-30, 30) * U, vx: labRnd(-30, 30), vy: -labRnd(40, 110), g: -20, col: Math.random() < .5 ? "#ff9a3a" : "#ffd166", t0: now, life: labRnd(500, 1000)});
+    setTimeout(() => { t.alpha = 0; deathBits.push({kind: "crisp", plate: cur, x: t.x + (t.kx || 0), y: t.y, h: labH(t) * 1.18, flip: labLeft(t), t0: now}); lightFlash(t.x, labMid(t), "#ffbe5a", 220, 2200); }, 300); return; }
+  if (D.kind === "melt"){ t.flash = now + 550; t.flashCol = "#96f046"; bank("walk:death-acid-melt", .9); const B = bodyPoint(t);
+    for (let i = 0; i < 30; i++) sparks.push({x: B.x + labRnd(-20, 20) * U, y: B.y + labRnd(-30, 30) * U, vx: labRnd(-160, 160) * U, vy: -labRnd(40, 220) * U, g: 600 * U, col: Math.random() < .5 ? "#b6ff3a" : "#6fd12a", t0: now, life: labRnd(400, 900)});
+    setTimeout(() => { t.alpha = 0; deathBits.push({kind: "melt", plate: cur, x: t.x + (t.kx || 0), y: t.y, h: labH(t) * 1.05, flip: labLeft(t), t0: now}); lightFlash(t.x, labMid(t), "#96ff50", 200, 2400); }, 550); return; }
+  if (D.kind === "dissolve"){ const b = bodyCut(t); if (!b) return; const g = b.c.getContext("2d"), d = g.getImageData(0, 0, b.cw, b.ch), px = d.data;
+    for (let i = 0; i < px.length; i += 4){ if (!px[i + 3]) continue; const l = (px[i] * .3 + px[i + 1] * .59 + px[i + 2] * .11) / 255; px[i] = 60 + 120 * l * l; px[i + 1] = 150 + 105 * l; px[i + 2] = 20 + 40 * l; } g.putImageData(d, 0, 0);   // its own shape, in green slime
+    t.flash = now + 260; t.flashCol = "#aaff50"; bank("walk:death-acid-dissolve", 1); const B = bodyPoint(t);
+    for (let i = 0; i < 26; i++) sparks.push({x: B.x + labRnd(-10, 10) * U, y: B.y + labRnd(-20, 10) * U, vx: labRnd(-170, 170) * U, vy: -labRnd(40, 240) * U, g: 620 * U, col: Math.random() < .5 ? "#b6ff3a" : "#6fd12a", t0: now, life: labRnd(400, 800)});
+    setTimeout(() => { t.alpha = 0; deathBits.push(Object.assign({kind: "dissolve", plate: cur, t0: now}, b)); }, 300); return; }
+  if (D.kind === "disintegrate"){ t.flash = now + 260; t.flashCol = "#ffe18c"; bank("walk:death-sm-disintegrate", 1); const bw = SPR[t.id].json.cell[0] * actorScale(t), x = t.x + (t.kx || 0);
+    setTimeout(() => { labRef("smDis1", {x, y: t.y + 6, anchorY: "bottom", w: bw * .95, life: 520, fade: [20, 200], add: false}); t.alpha = .35; }, 260);
+    setTimeout(() => { t.alpha = 0; labRef("smDis2", {x, y: t.y + 6, anchorY: "bottom", w: bw * 1.1, life: 900, grow: [1, 1.1], fade: [10, 700], add: false});
+      for (let i = 0; i < 40; i++) sparks.push({x: x + labRnd(-24, 24) * U, y: t.y - labRnd(0, bw * .8), vx: labRnd(-30, 30), vy: -labRnd(30, 120), g: -20, col: i % 3 ? "#ffd166" : "#fff2c0", t0: now, life: labRnd(600, 1400)}); }, 700); return; }
+  if (D.kind === "decap") deathDecap(t, D); }
+// PIERCED: the blood explosion (Sam's red-spray reference), a pool, and the killer's hand dripping
+function deathBloodBurst(t, from){ const B = bodyPoint(t), U = deathU(t), R = Math.max(50, labR(t) * 3.2), rays = []; for (let i = 0; i < 22; i++) rays.push({a: labRnd(0, Math.PI * 2), L: labRnd(.5, 1.1), w: labRnd(1.5, 3.5)});
+  deathBits.push({kind: "burst", plate: cur, x: B.x, y: B.y, R, rays, t0: now, life: 750});
+  for (let i = 0; i < 72; i++){ const a = labRnd(0, Math.PI * 2), sp = labRnd(50, 380) * U; sparks.push({x: B.x + labRnd(-6, 6), y: B.y + labRnd(-6, 6), vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 40 * U, g: 260 * U, col: Math.random() < .25 ? "#ff6a4a" : Math.random() < .5 ? "#e01818" : "#a00c0c", t0: now, life: labRnd(350, 900)}); }
+  addBlood(t, 1.2, false); bank("combat/melee_hit_flesh", .7);
+  if (from && from.id && SPR[from.id]){ const end = now + 3600; const drip = () => { if (now > end || from.down) return; const h = labHand(from, t); deathBits.push({kind: "drip", plate: cur, x: h.x + labRnd(-3, 3), y: h.y, floor: from.y + labRnd(-2, 4), vy: labRnd(0, 20), t0: now}); setTimeout(drip, labRnd(160, 420)); }; setTimeout(drip, 200); } }
+// BLOWN APART: Sam's pixel gibs (described as a zombie's), skin-tinted by species
+const GIB_SKIN = {drow: "brightness(.55) saturate(.7) hue-rotate(200deg)", human: "sepia(.5) saturate(1.4) hue-rotate(-35deg) brightness(1.05)", quaggoth: "saturate(.35) brightness(1.25)"};
+function deathGibs(t, from){ const U = deathU(t), cx = t.x + (t.kx || 0), cy = t.y, f = GIB_SKIN[cadaverSpecies(t.id) || (/^quaggoth/.test(t.id) ? "quaggoth" : "")] || null, near = from && Math.hypot(cx - from.x, cy - from.y) > 6, away = near ? Math.atan2(cy - from.y, cx - from.x) : labRnd(0, Math.PI * 2);
+  deathBits.push({kind: "gib", k: "pool", plate: cur, x: cx, y: cy + 4 * U, w: 110 * U, t0: now, flat: true, f, land: true});
+  for (const [k, w, fling] of [["torso", 46, 0], ["head", 30, .7], ["arm", 34, 1], ["arm", 34, 1], ["leg", 38, .9], ["leg", 38, .9], ["meat", 24, 1.2], ["meat", 20, 1.3], ["meat", 18, 1.4]]){ const ang = near ? away + labRnd(-1.3, 1.3) : labRnd(0, Math.PI * 2), sp = labRnd(140, 380) * fling * (k === "torso" ? .35 : 1) * U;
+    deathBits.push({kind: "gib", k, plate: cur, x: cx + labRnd(-8, 8) * U, y: cy, z: labH(t) * labRnd(.3, .7), vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * .5, vz: labRnd(220, 520) * Math.max(.3, fling) * U, rot: labRnd(0, 6.28), vr: labRnd(-14, 14), w: w * 1.8 * U, f, flip: Math.random() < .5, bounced: 0, U, t0: now}); }
+  for (let i = 0; i < 40; i++){ const ang = away + labRnd(-1.6, 1.6), sp = labRnd(80, 420) * U; sparks.push({x: cx, y: labMid(t), vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * .6 - labRnd(40, 160) * U, g: 520 * U, col: i % 3 ? "#8a0f12" : "#c41b1b", t0: now, life: labRnd(400, 900)}); }
+  addBlood(t, 1.6, true); }
+// HEADS OFF: the head is cut from the body's own frame and bounces away; the headless body stands a beat, the fountain
+// (when there is one) from the neck, then drops
+function deathDecap(t, D){ const b = bodyCut(t); if (!b){ return; } const g = b.c.getContext("2d"), px = g.getImageData(0, 0, b.cw, b.ch).data; let top = b.ch, bot = 0;
+  for (let y = 0; y < b.ch; y++) for (let x = 0; x < b.cw; x++) if (px[(y * b.cw + x) * 4 + 3] > 60){ if (y < top) top = y; if (y > bot) bot = y; }
+  if (bot <= top) return; const neck = Math.round(top + (bot - top) * (/^quaggoth/.test(t.id) ? .3 : .22)); let l = b.cw, r = 0;
+  for (let y = top; y < neck; y++) for (let x = 0; x < b.cw; x++) if (px[(y * b.cw + x) * 4 + 3] > 60){ if (x < l) l = x; if (x > r) r = x; }
+  const hw = r - l + 1, hh = neck - top, hc = document.createElement("canvas"); hc.width = hw; hc.height = hh; hc.getContext("2d").drawImage(b.c, l, top, hw, hh, 0, 0, hw, hh);
+  if (D.blast){ const cg = hc.getContext("2d"); cg.globalCompositeOperation = "source-atop"; cg.fillStyle = "rgba(60,20,90,.35)"; cg.fillRect(0, 0, hw, hh); }
+  g.clearRect(0, 0, b.cw, neck);   // the body, from the neck down
+  const U = deathU(t), sc = b.sc, hx = b.x + (l + hw / 2 - b.px) * sc, hy = b.y + (top + hh / 2 - b.py) * sc, dir = D.from ? (Math.sign(t.x - D.from.x) || 1) : 1;
+  t.alpha = 0; t.path = [];
+  deathBits.push(Object.assign({kind: "body", plate: cur, t0: now, dir, neck}, b));
+  deathBits.push({kind: "head", plate: cur, im: hc, x: hx, floor: b.y + 6 * U, z: b.y - hy, w: hw * sc, h: hh * sc, vx: dir * (D.blast ? labRnd(260, 360) : labRnd(150, 230)) * U, vy: labRnd(10, 40) * U, vz: (D.blast ? labRnd(520, 640) : labRnd(330, 420)) * U, rot: 0, bounces: 0, U, t0: now, rest: 0, fatality: !!D.fatality, dry: !D.fountain});
+  bank("combat/dagger_stab", .9); bank("combat/crit_hit", .6); hitstop(140); shake(8);
+  if (D.blast) for (let i = 0; i < 20; i++){ const a = labRnd(0, Math.PI * 2), sp = labRnd(60, 200) * U; sparks.push({x: hx, y: hy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0, col: "#b07aff", t0: now, life: labRnd(250, 500)}); }
+  const nx = b.x, ny = hy + hh * sc * .5;
+  if (D.fountain){ deathBits.push({kind: "fountain", plate: cur, x: nx, y: ny, dir, k: U * 1.5, t0: now});
+    for (let i = 0; i < 10; i++) setTimeout(() => { sparks.push({x: nx + labRnd(-3, 3), y: ny, vx: (labRnd(-30, 30) + dir * 60) * U, vy: -labRnd(200, 360) * U, g: 900 * U, col: Math.random() < .5 ? "#a3101a" : "#d01c22", t0: now, life: labRnd(400, 800)}); }, i * 70);
+    addBlood(t, 1.3, true); }
+  else if (!/skeleton/.test(t.id)) addBlood(t, .5, false); }
+function deathWord(text, col){ deathBits.push({kind: "word", plate: cur, text, col, t0: now}); }
+let deathLastT = 0;
+function drawDeathBits(floor){
+  const dt = floor ? 0 : Math.min(.05, deathLastT ? (now - deathLastT) / 1000 : 0); if (!floor) deathLastT = now;
+  for (let i = deathBits.length - 1; i >= 0; i--){ const b = deathBits[i]; if (b.plate !== cur){ if (b.kind === "word" || b.kind === "drip" || b.kind === "burst" || b.kind === "fountain") deathBits.splice(i, 1); continue; } const age = now - b.t0;
+    if (b.kind === "gib"){ const im = labImg("gib-" + b.k); if (!floor && !b.land){ b.vz -= 1400 * b.U * dt; b.z += b.vz * dt; b.x += b.vx * dt; b.y += b.vy * dt; b.rot += b.vr * dt;
+        if (b.z <= 0){ b.z = 0; if (b.bounced < 1 && b.vz < -260 * b.U){ b.vz = -b.vz * .32; b.vx *= .55; b.vy *= .55; b.vr *= .5; b.bounced++; addBlood({x: b.x, y: b.y - 2}, .7, false); } else { b.vz = 0; b.vx *= .82; b.vy *= .82; b.vr *= .7; if (Math.hypot(b.vx, b.vy) < 12 * b.U){ b.land = true; addBlood({x: b.x, y: b.y}, .9, false); } } } }
+      if (!!b.land !== floor || !im.complete || !im.naturalWidth) continue; const h = b.w * im.naturalHeight / im.naturalWidth;
+      ctx.save(); ctx.imageSmoothingEnabled = false; if (b.f) ctx.filter = b.f;
+      if (b.flat){ ctx.globalAlpha = Math.min(1, age / 500) * .9; ctx.translate(b.x, b.y); ctx.scale(1, .55); ctx.drawImage(im, -b.w / 2, -h / 2, b.w, h); }
+      else { ctx.translate(b.x, b.y - (b.z || 0) - h * .3); ctx.rotate(b.rot); if (b.flip) ctx.scale(-1, 1); ctx.drawImage(im, -b.w / 2, -h / 2, b.w, h); }
+      ctx.restore(); continue; }
+    if (b.kind === "crisp"){ const im = labImg("crisp"); if (!im.complete || !im.naturalWidth) continue; const SEQ = [2, 3, 2, 3, 4, 5, 5, 6, 6, 7], fi = SEQ[Math.min(SEQ.length - 1, Math.floor(age / 190))]; if ((fi >= 6) !== floor) continue;
+      const fw = im.naturalWidth / 8, fh = im.naturalHeight, h = b.h * (fi >= 5 ? .9 : 1), w = h * fw / fh;
+      if (!floor && fi <= 5 && Math.random() < .3) sparks.push({x: b.x + labRnd(-15, 15), y: b.y - labRnd(10, h * .7), vx: labRnd(-15, 15), vy: -labRnd(40, 110), g: -30, col: Math.random() < .5 ? "#ffd166" : "#ff9a3a", t0: now, life: labRnd(400, 900)});
+      ctx.save(); ctx.translate(b.x, b.y + 4); if (b.flip) ctx.scale(-1, 1); ctx.drawImage(im, fi * fw, 0, fw, fh, -w / 2, -h * .97, w, h); ctx.restore(); continue; }
+    if (b.kind === "melt"){ const im = labImg("acidMelt"); if (!im.complete || !im.naturalWidth) continue; const SEQ = [0, 0, 1, 1, 2, 3, 4], fi = SEQ[Math.min(SEQ.length - 1, Math.floor(age / 240))]; if ((fi >= 3) !== floor) continue;
+      const fw = im.naturalWidth / 5, fh = im.naturalHeight, h = b.h, w = h * fw / fh;
+      if (floor && Math.random() < .08) sparks.push({x: b.x + labRnd(-w * .3, w * .3), y: b.y - labRnd(0, 10), vx: labRnd(-5, 5), vy: -labRnd(20, 50), g: -10, col: "#9fe04a", t0: now, life: labRnd(400, 800)});
+      ctx.save(); ctx.translate(b.x, b.y + 6); if (b.flip) ctx.scale(-1, 1); ctx.drawImage(im, fi * fw, 0, fw, fh, -w / 2, -h, w, h); ctx.restore(); continue; }
+    if (b.kind === "dissolve"){ const e = age / 1000, sag = Math.min(1, e / 1.6), poolK = Math.max(0, Math.min(1, (e - 1.2) / .8)), dw = b.cw * b.sc, dh = b.ch * b.sc;
+      if (!floor && (sag < 1 || poolK < 1)){ ctx.save(); ctx.globalAlpha = 1 - poolK * .95; ctx.imageSmoothingEnabled = false; ctx.translate(b.x, b.y + 2); ctx.scale(1 + .35 * sag, 1 - .72 * sag * sag); ctx.drawImage(b.c, -b.px * b.sc, -b.py * b.sc, dw, dh); ctx.restore();
+        if (Math.random() < .5) sparks.push({x: b.x + labRnd(-dw * .2, dw * .2), y: b.y - dh * .5 * (1 - .72 * sag) * Math.random(), vx: labRnd(-6, 6), vy: labRnd(10, 40), g: 400, col: "#8fe04a", t0: now, life: labRnd(300, 600)}); }
+      const im = labImg("acidMelt"); if (floor && poolK > 0 && im.complete && im.naturalWidth){ const fw = im.naturalWidth / 5, fh = im.naturalHeight, fi = e < 2.6 ? 2 : e < 3.6 ? 3 : 4; const W2 = b.cw * b.sc * .75, H2 = W2 * fh / fw;
+        ctx.save(); ctx.globalAlpha = poolK; ctx.drawImage(im, fi * fw, 0, fw, fh, b.x - W2 / 2, b.y + 6 - H2, W2, H2); ctx.restore();
+        if (Math.random() < .06) sparks.push({x: b.x + labRnd(-W2 * .25, W2 * .25), y: b.y - 4, vx: labRnd(-4, 4), vy: -labRnd(20, 45), g: -10, col: "#9fe04a", t0: now, life: labRnd(500, 900)}); }
+      continue; }
+    if (b.kind === "body"){ const fallK = Math.max(0, Math.min(1, (age - 650) / 350)), lying = fallK >= 1; if (lying !== floor) continue; const dw = b.cw * b.sc, dh = b.ch * b.sc, e = fallK * fallK;
+      ctx.save(); ctx.imageSmoothingEnabled = false; ctx.translate(b.x, b.y); ctx.rotate(b.dir * Math.PI / 2 * .94 * e); if (lying) ctx.filter = "brightness(.6) saturate(.55)"; ctx.drawImage(b.c, -b.px * b.sc, -b.py * b.sc, dw, dh); ctx.restore();
+      if (fallK > 0 && !b.thud){ b.thud = true; bank("creature/death_beast", .25); } continue; }
+    if (b.kind === "head"){ if (!floor && !b.rest){ b.vz -= 1300 * b.U * dt; b.z += b.vz * dt; b.x += b.vx * dt; b.floor += b.vy * dt; b.rot += b.vx * dt / Math.max(8, b.w * .5);
+        if (b.z <= 0){ b.z = 0; if (b.vz < -90 * b.U){ b.vz = -b.vz * .62; b.vx *= .82; b.bounces++; if (!b.dry) addBlood({x: b.x, y: b.floor - 2}, .5, false); bank("combat/punch_hit", .35 / b.bounces); }
+          else { b.vz = 0; b.vx *= .94; if (Math.abs(b.vx) < 8 * b.U){ b.vx = 0; b.rest = now; if (b.fatality) setTimeout(() => { bank("walk:death-fatality", 1); deathWord("FATALITY", "#d01c22"); }, 250); } } } }
+      if (!!b.rest !== floor) continue;
+      ctx.save(); ctx.globalAlpha = .3; ctx.fillStyle = "#000"; ctx.beginPath(); ctx.ellipse(b.x, b.floor, b.w * .45, b.w * .15, 0, 0, 6.29); ctx.fill(); ctx.restore();
+      ctx.save(); ctx.imageSmoothingEnabled = false; ctx.translate(b.x, b.floor - b.z - b.h * .5); ctx.rotate(b.rot); if (b.rest) ctx.filter = "brightness(.7) saturate(.6)"; ctx.drawImage(b.im, -b.w / 2, -b.h / 2, b.w, b.h); ctx.restore(); continue; }
+    if (floor) continue;   // the rest are in the air
+    if (b.kind === "fountain"){ const im = labImg("bloodFountain"), SEQ = [0, 1, 2, 3, 3, 4, 3, 4, 5, 6, 7], fi = Math.floor(age / 85); if (fi >= SEQ.length){ deathBits.splice(i, 1); continue; } if (!im.complete || !im.naturalWidth) continue;
+      const fw = im.naturalWidth / 8, fh = im.naturalHeight, h = 150 * b.k, w = h * fw / fh; ctx.save(); ctx.translate(b.x, b.y); if (b.dir < 0) ctx.scale(-1, 1); ctx.drawImage(im, SEQ[fi] * fw, 0, fw, fh, -w * .1, -h * .95, w, h); ctx.restore(); continue; }
+    if (b.kind === "burst"){ const k = age / b.life; if (k >= 1){ deathBits.splice(i, 1); continue; } const e = 1 - Math.pow(1 - k, 3), al = k < .15 ? k / .15 : 1 - (k - .15) / .85;
+      ctx.save(); ctx.globalAlpha = Math.max(0, al); const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.R * e); g.addColorStop(0, "rgba(255,60,40,.85)"); g.addColorStop(.35, "rgba(170,10,10,.6)"); g.addColorStop(.75, "rgba(90,0,0,.35)"); g.addColorStop(1, "rgba(60,0,0,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, b.R * e, 0, 7); ctx.fill();
+      ctx.globalCompositeOperation = "lighter"; ctx.lineCap = "round"; for (const r of b.rays){ const L = b.R * r.L * e; ctx.strokeStyle = "rgba(220,30,20,.7)"; ctx.lineWidth = r.w; ctx.beginPath(); ctx.moveTo(b.x + Math.cos(r.a) * L * .3, b.y + Math.sin(r.a) * L * .3); ctx.lineTo(b.x + Math.cos(r.a) * L, b.y + Math.sin(r.a) * L); ctx.stroke(); }
+      ctx.restore(); continue; }
+    if (b.kind === "drip"){ b.vy += 900 * dt; b.y += b.vy * dt; if (b.y >= b.floor){ addBlood({x: b.x, y: b.floor - 3}, .25, false); deathBits.splice(i, 1); continue; } ctx.save(); ctx.fillStyle = "#7a1010"; ctx.beginPath(); ctx.arc(b.x, b.y, 2, 0, 7); ctx.fill(); ctx.restore(); continue; }
+    if (b.kind === "word"){ const k = age / 1800; if (k >= 1){ deathBits.splice(i, 1); continue; } const a = k < .1 ? k / .1 : k > .75 ? 1 - (k - .75) / .25 : 1, W = ctx.canvas.width, Hh = ctx.canvas.height;
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = a; ctx.font = `900 ${Math.round(W / 14 * (1 + Math.max(0, .1 - k) * 3))}px "IM Fell English SC","Cinzel",Georgia,serif`; ctx.textAlign = "center"; ctx.lineWidth = 10; ctx.strokeStyle = "rgba(0,0,0,.85)"; ctx.strokeText(b.text, W / 2, Hh * .42);
+      ctx.fillStyle = b.col; ctx.shadowColor = b.col; ctx.shadowBlur = 24; ctx.fillText(b.text, W / 2, Hh * .42); ctx.restore(); continue; } }
+  if (deathBits.length > 400) deathBits.splice(0, deathBits.length - 400); }
 function labOrbHit(t, type){ const col = LAB_ORB_COL[type] || "#9fdcff", n = 10, rays = []; for (let j = 0; j < n; j++) rays.push({a: j / n * Math.PI * 2 + labRnd(-.2, .2), L: labRnd(.4, 1) * (j % 2 ? .6 : 1.3), w: labRnd(.04, .08)});
   sparks.push({crimStar: true, a: t, x: t.x, y: labMid(t), R: 70, rays, C: {body: col, core: "#ffffff", glow: col}, t0: now, life: 260});
   for (let i = 0; i < 18; i++){ const ang = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 160; sparks.push({x: t.x, y: labMid(t), vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * .6 - 60, col, t0: now, life: 420 + Math.random() * 300}); }
