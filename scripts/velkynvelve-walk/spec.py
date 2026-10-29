@@ -102,9 +102,13 @@ NODES = {
           dict(rect=[1100,760,1320,805], to=[14], kind="water", label="The falls: the bridge passes right over the drop",
                secret="Below, through the spray: the webs the drow keep stretched beneath the outpost (OotA p.14), and past them the falls pouring into a pool on the cavern floor (p.18). A drop here lands in water.")]),
  10: dict(slug="node-10-guard-tower", name="Guard Tower", scale=0.9,
-   floors=[dict(poly=P((1060,700),(1240,640),(1600,660),(1860,680),(1920,800),(1900,940),(1760,1020),(1400,1040),(1120,980),(1040,860))),dict(poly=P((320,840),(1050,895),(1050,950),(320,905))),dict(rect=[0,720,330,950]),dict(poly=P((1900,875),(2400,810),(2400,870),(1900,935)))],
-   obstacles=[dict(cx=1480,cy=880,rx=140,ry=60),dict(cx=1780,cy=870,rx=60,ry=40)],
-   zones=[dict(rect=[524, 799, 834, 985], to=[9], label="Ledge west, toward the priestess tower and the falls"),
+   floors=[dict(poly=P((1060,700),(1240,640),(1600,660),(1860,680),(1920,800),(1900,940),(1760,1020),(1400,1040),(1120,980),(1040,860))),dict(poly=P((320,840),(1100,899),(1100,954),(320,905))),dict(rect=[0,720,330,950]),dict(poly=P((1900,875),(2400,810),(2400,870),(1900,935)))],
+   obstacles=[dict(cx=1478,cy=868,rx=135,ry=78),dict(cx=1780,cy=870,rx=60,ry=40)],
+   # Walk check, 2026-10-29 (Sam: "make sure the painted sections allow the characters to theoretically walk from the pen to
+   # the other end"): the west bridge's deck stopped 30 px short of the tower floor, so the tower and the ledge west were two
+   # floors and nobody could walk from the pen toward the falls; the deck now runs onto the tower floor. The table's block
+   # reaches its far edge, and the ledge-west exit is cut to the deck's height (it stood over the drop above and below it).
+   zones=[dict(rect=[524, 852, 834, 948], to=[9], label="Ledge west, toward the priestess tower and the falls"),
           dict(rect=[2321, 777, 2427, 892], to=[11], label="Rope bridge east to the slave pen"),
           # Sam, 2026-10-27: "When I try to go up or down ... the characters just leave to the right of the screen then
           # appear to climb." Neither ladder had climb data, so the party walked off the plate's edge. On the painting the
@@ -121,7 +125,9 @@ NODES = {
    # (public/velkynvelve-walk/img/, Sam's painting cut to 2400x1339) rather than the Supabase bucket, so no upload step.
    floors=[dict(poly=P((61,961),(580,838),(914,803),(2179,803),(2179,1031),(2400,1119),(2400,1339),(0,1339),(0,1066)))],
    obstacles=[dict(cx=1300,cy=803,rx=404,ry=193),dict(cx=2047,cy=750,rx=193,ry=105)],
-   zones=[dict(rect=[870, 2, 1057, 316], to=[10], label="the ladder up to the upper chamber", climb=dict(foot=[887, 838], ladder=[887, 750], dir="up"))]),
+   # Walk check, 2026-10-29: the exit sat at the TOP of the ladder (y 2-316) with the painted floor starting at y ~780, so
+   # a hero coming down landed on an island and could not reach the room. The exit is now the ladder's lower half, down to the floor.
+   zones=[dict(rect=[840, 560, 1000, 830], to=[10], label="the ladder up to the upper chamber", climb=dict(foot=[887, 838], ladder=[887, 750], dir="up"))]),
  "10c": dict(slug="node-10c-guard-tower-armory", name="Guard Tower, armory (upper chamber)", scale=3.2, img="node-10c-guard-tower-armory.jpg",
    # scale 3.2, not 0.95 (Sam, 2026-10-24: "We are tiny in the armory. Make us proportionately bigger"). The plate is a
    # close-up interior: the mail shirts and sword racks on the back wall measure ~65 px per foot, so a 6-ft hero there

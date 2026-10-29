@@ -1,0 +1,3 @@
+Young male half-elf wizard Gandalf. Long swept-back auburn hair, pointed ears, youthful clean-shaven face, blue eyes; ornate dark navy long coat with gold embroidery, dark trousers and boots. No beard, hat, staff, armor or costume changes. Preserve this specific character from the canonical board.
+Straighten proudly and raise one hand briefly, then return to idle.
+Fixed camera and scale. Crisp pixel clusters, transparent background, no text, no floor shadow. Preserve handedness and costume. Fixed feet pivot. Generate actual distinct animation frames; never substitute scaled copies.
