@@ -331,6 +331,9 @@ for i in P + list(GARB.values()) + N + F + V + LP:
     if i in PG: sh += ['sneak', 'crouch']
     if i == 'scott': sh.append('perform')
     if i in ['jorlan', 'drow-guard-male', 'drow-guard-female']: sh += ['attack', 'dodge', 'hurt', 'dead']
+    # the hand crossbow (scripts/sprites/add-shoot-pose.py, Sam 2026-10-29 "go" on the drow audit): strike() plays
+    # `shoot` for a bolt when the sheet exists; a drow without one still stands and takes aim in its idle
+    if i in ['jorlan', 'drow-guard-male', 'drow-guard-female', 'drow-elite-warrior', 'shoor', 'drow-lizard-rider']: sh.append('shoot')
     # the guard at the bars (scripts/sprites/add-lean-pose.py, Sam 2026-10-27): back to the pen, arms crossed
     if i in ['drow-guard-male', 'drow-guard-female']: sh.append('lean')
     j = json.load(open(os.path.join(SPR, i, 'sprite.json')))
