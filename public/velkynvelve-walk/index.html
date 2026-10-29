@@ -2063,7 +2063,7 @@ function draw(){
   while (cloudQ.length) drawPuff(cloudQ.shift());
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
   drawTolls();
-  ovWrapGroup(drops, drawDrops); drawCombatFx(); drawCrimPuffs(); drawShots(); drawToothGlow();
+  ovWrapGroup(drops, drawDrops); drawCombatFx(); drawCrimPuffs(); drawShots(); drawCritBadges(); drawToothGlow();
   ctx.globalAlpha = 1;
 }
 const tint = document.createElement("canvas");
@@ -8835,7 +8835,8 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         flying = new Promise(res => fireShot(att, tgt, shot, hit, to => { landed = to; lands(); res(); }, atk)); }
       else { lunge(att, tgt, 20 * actorScale(att)); lands(); }   // a longer lunge into the blow (Sam, 2026-10-28: "dynamic")
       function lands(){
-      const sw = swipeStyle(atk, crit, att), crimS = !shot && isStriker(att) && sw.kind !== "claw" && sw.kind !== "bite"; att.trailUntil = 0;
+      const sw = swipeStyle(atk, crit, att), crimS = !shot && sw.kind !== "claw" && sw.kind !== "bite" && !/pseudopod|tentacle|slam/i.test(atk.name);   // every blade and fist takes the strike look; claws, bites and oozes keep their own
+      att.trailUntil = 0;
       if (shot === "thrown" && att.kind === "pc") restOnFloor(att, atk, hit ? tgt : (landed || tgt), !hit);     // at their feet, or where it fell
       if (shot === "flask") shatter(atk, hit ? {x: tgt.x, y: tgt.y} : (landed || tgt), hit ? tgt : null);
       if (!hit){
@@ -9161,6 +9162,7 @@ function concSave(a, dmg){
 // only when it did not — a +1 blade or a cantrip goes through whole.
 function damage(t, n, type, crit, from, magical = false){
   const s = t.c.sheet; if ((s.immune || []).includes(type)){ popText(t, "immune", "#aaa"); return; }
+  if (crit) critBadge(t);   // "Crit when it occurs" (Sam, 2026-10-29)
   // a resistance is a TAG on the number ("5 ½"), not a word of its own over the head (the pop lanes, 2026-10-28)
   let tag = "";
   if (!magical && !t.c.holyOpen && !(s.resist || []).includes(type) && (s.resistNonmagical || []).includes(type)){ n = Math.floor(n / 2); tag = "½"; }
@@ -9719,11 +9721,15 @@ function landDust(a, k = 1){ const n = Math.round(10 * k); for (let i = 0; i < n
 const isStriker = a => !!(a && a.c && a.c.sheet && /rogue|ranger/i.test(a.c.sheet.cls || ""));
 const CRIM = {crimson: {edge: "#8a0a10", body: "#ff2a1e", mid: "#ff7a5a", core: "#fff1e4", glow: "rgba(255,40,30,.75)"},
   violet: {edge: "#3a0a6a", body: "#8a3aff", mid: "#c08aff", core: "#f6ecff", glow: "rgba(150,70,255,.75)"}};
-const crimCol = att => CRIM[att && att.kind === "pc" ? "crimson" : "violet"];
+  // EVERYONE ELSE (Sam, 2026-10-29: "Basic attacks and critical attacks for most other people", gold arc, red crit lance):
+  // a fighter, a cleric, a goblin with a scimitar cuts the same crescent in gold; a rogue or ranger keeps crimson (violet
+  // for a foe). A critical hit is the crimson lance and the big crimson burst for anyone at all.
+CRIM.gold = {edge: "#7a4a08", body: "#ffb62e", mid: "#ffe08a", core: "#fffbea", glow: "rgba(255,190,60,.7)"};
+const crimCol = att => isStriker(att) ? CRIM[att.kind === "pc" ? "crimson" : "violet"] : CRIM.gold;
 function crimSlash(att, tgt, o = {}){
   const m = SPR[tgt.id].json, sc = actorScale(tgt), dir = Math.sign(tgt.x - att.x) || 1, bodyR = m.cell[0] * sc * .22, R = Math.max(54, bodyR * 4) * (o.crit ? 1.35 : 1), stab = !!o.stab;
   sparks.push({crimson: true, a: tgt, x: tgt.x - dir * R * (stab ? .9 : .35), y: tgt.y - m.pivot[1] * sc * .5, R, W: R * (stab ? .3 : .42), dir: dir * (o.flip || 1), rot: stab ? (Math.random() - .5) * .24 : (Math.random() - .5) * .55 - .07 + (o.flip ? .9 : 0),
-    span: Math.PI * (stab ? .5 : 1.25), stab, C: crimCol(att), t0: now, life: o.crit ? 340 : 260, miss: !!o.miss});
+    span: Math.PI * (stab ? .5 : 1.25), stab, C: o.crit ? CRIM.crimson : crimCol(att), t0: now, life: o.crit ? 340 : 260, miss: !!o.miss});
 }
 function drawCrimson(s, k){
   const head = 1 - Math.pow(1 - Math.min(1, k / .42), 3), tail = Math.pow(Math.max(0, (k - .12) / .88), 1.6), fade = k < .6 ? 1 : 1 - (k - .6) / .4; if (head - tail < .01) return;
@@ -9738,7 +9744,7 @@ function drawCrimson(s, k){
 function crimStar(att, tgt, crit){
   const m = SPR[tgt.id].json, sc = actorScale(tgt), n = crit ? 16 : 9, rays = [];
   for (let i = 0; i < n; i++) rays.push({a: i / n * Math.PI * 2 + (Math.random() - .5) * .5, L: (.45 + Math.random() * .55) * (i % 3 ? 1 : crit ? 1.9 : 1.4), w: .06 + Math.random() * .06});
-  sparks.push({crimStar: true, a: tgt, x: tgt.x, y: tgt.y - m.pivot[1] * sc * .5, R: Math.max(44, m.cell[0] * sc * .22 * 2.6) * (crit ? 2 : 1), rays, C: crimCol(att), t0: now, life: crit ? 300 : 220});
+  sparks.push({crimStar: true, a: tgt, x: tgt.x, y: tgt.y - m.pivot[1] * sc * .5, R: Math.max(44, m.cell[0] * sc * .22 * 2.6) * (crit ? 2 : 1), rays, C: crit ? CRIM.crimson : crimCol(att), t0: now, life: crit ? 300 : 220});
 }
 function drawCrimStar(s, k){
   const grow = 1 - Math.pow(1 - Math.min(1, k / .3), 3), fade = k < .5 ? 1 : 1 - (k - .5) / .5;
@@ -9752,8 +9758,8 @@ function drawCrimStar(s, k){
 // clean through the target, the burst is twice the size with long spikes, the body flushes red, and the mist is a cloud.
 function crimThrust(att, tgt){
   const h = handPoint(att), m = SPR[tgt.id].json, sc = actorScale(tgt), ty = tgt.y - m.pivot[1] * sc * .5, dx = tgt.x - h.x, dy = ty - h.y, d = Math.hypot(dx, dy) || 1;
-  sparks.push({crimThrust: true, x: h.x, y: h.y, ex: tgt.x + dx / d * 60 * sc, ey: ty + dy / d * 60 * sc, W: 16 * Math.max(.7, actorScale(att)), C: crimCol(att), t0: now, life: 360});
-  tgt.flash = now + 320; tgt.flashCol = crimCol(att).body;
+  sparks.push({crimThrust: true, x: h.x, y: h.y, ex: tgt.x + dx / d * 60 * sc, ey: ty + dy / d * 60 * sc, W: 16 * Math.max(.7, actorScale(att)), C: CRIM.crimson, t0: now, life: 360});
+  tgt.flash = now + 320; tgt.flashCol = CRIM.crimson.body;
 }
 function drawCrimThrust(s, k){
   const head = 1 - Math.pow(1 - Math.min(1, k / .3), 3), tail = Math.max(0, (k - .35) / .65), fade = k < .55 ? 1 : 1 - (k - .55) / .45;
@@ -10003,6 +10009,27 @@ function drawCritMark(x, y, R, age){
     const rg = ctx.createLinearGradient(x + Math.cos(ang) * r0, y + Math.sin(ang) * r0, x + Math.cos(ang) * r1, y + Math.sin(ang) * r1); rg.addColorStop(0, "rgba(255,236,170,.95)"); rg.addColorStop(1, "rgba(255,180,70,0)");
     ctx.strokeStyle = rg; ctx.beginPath(); ctx.moveTo(x + Math.cos(ang) * r0, y + Math.sin(ang) * r0); ctx.lineTo(x + Math.cos(ang) * r1, y + Math.sin(ang) * r1); ctx.stroke(); }
   ctx.restore();
+}
+// THE CRIT! BADGE (Sam's reference, 2026-10-29: "Crit when it occurs"): a comic-book CRIT! that slams in beside the
+// head of whoever took the critical hit, yellow into orange with a dark outline and a violet spark at its shoulder,
+// holds a moment and floats away. Once per blow (a second damage line of the same crit does not stamp it again).
+const critBadges = [];
+function critBadge(t){
+  if (!t || !SPR[t.id] || (t.critBadgeAt && now - t.critBadgeAt < 500)) return; t.critBadgeAt = now;
+  critBadges.push({a: t, t0: now, life: 1300, rot: (Math.random() - .5) * .16 - .1});
+}
+function drawCritBadges(){
+  for (let i = critBadges.length - 1; i >= 0; i--){ const b = critBadges[i], k = (now - b.t0) / b.life; if (k >= 1 || !SPR[b.a.id]){ critBadges.splice(i, 1); continue; }
+    const m = SPR[b.a.id].json, sc = actorScale(b.a), x = b.a.x + 34 * Math.max(.8, sc), y = b.a.y - m.pivot[1] * sc - 26 - k * 22;
+    const pop = k < .12 ? 1.6 - (k / .12) * .6 : 1, al = k < .7 ? 1 : 1 - (k - .7) / .3;
+    ovWrapS({a: b.a}, () => { ctx.save(); ctx.translate(x, y); ctx.rotate(b.rot); ctx.scale(pop, pop); ctx.globalAlpha *= al;
+      ctx.font = "34px Bangers, Impact, 'Arial Black', sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineJoin = "round";
+      ctx.lineWidth = 7; ctx.strokeStyle = "#2a0d06"; ctx.strokeText("CRIT!", 0, 0);
+      const g = ctx.createLinearGradient(0, -16, 0, 16); g.addColorStop(0, "#fff36a"); g.addColorStop(.55, "#ffb020"); g.addColorStop(1, "#ff5a10"); ctx.fillStyle = g; ctx.fillText("CRIT!", 0, 0);
+      const sx = 46, sy = -16, r = 9 * (.8 + .2 * Math.sin(now / 60)); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = "#c58aff";
+      ctx.beginPath(); ctx.moveTo(sx, sy - r); ctx.lineTo(sx + r * .22, sy); ctx.lineTo(sx, sy + r); ctx.lineTo(sx - r * .22, sy); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(sx - r, sy); ctx.lineTo(sx, sy + r * .22); ctx.lineTo(sx + r, sy); ctx.lineTo(sx, sy - r * .22); ctx.closePath(); ctx.fill();
+      ctx.restore(); }); }
 }
 // THE DEATH BEAT (the research doc: a death is a screen-level event, never another word in the pile): the body already
 // flashes and falls; the words go to a banner at the top of the stage for a moment, and to the log.
