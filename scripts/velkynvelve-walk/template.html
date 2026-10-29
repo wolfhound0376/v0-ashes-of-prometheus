@@ -3142,37 +3142,49 @@ function applyInPool(){ for (const id of state.inPool || []){ const p = party.fi
 // the push that sends someone over: only on the bridge over the falls, only when the push lands in the water zone
 function pushOverFalls(t, to){ const z = cur === 9 ? node.zones.find(z => z.kind === "water") : null; return !!(z && inRect(z.rect, to.x, to.y)); }
 // ---------- THE CHASM OFF THE PEN'S LANDING (Sam, 2026-10-28, Pen Strip Pilot: "create a zone where people can be
-// thrown off and fall to their deaths") ----------
+// thrown off and fall to their deaths"; 2026-10-29: "It's a 50:50 possibility but if they go on the webs then the spiders
+// likely might try to eat them. Chasm at 20d6.") ----------
 // A shove from the landing or the rope bridge (story.json interact.gate.balcony.chasm) that lands off their floor goes
-// over the edge. Under the near and far ends of the bridge the old webs catch the body: no damage (Sam's falls ruling,
-// 2026-10-24: the webs below the outpost break a fall), restrained in the silk (SRD 5.1 Giant Spider web, DC 12 Strength),
-// hanging below the planks until they tear free or a friend cuts them out; then they climb back up. Anywhere else it is
-// the open chasm: a fall of hundreds of feet, 20d6 bludgeoning (the SRD 5.1 cap), and nobody comes back from it. That
-// depth is Claude's reading of the painting, not a number from the book.
+// over the edge, and a d6 says where they end up:
+//   1-3  the open chasm: a fall of hundreds of feet, 20d6 bludgeoning (the SRD 5.1 cap), and nobody comes back from it;
+//   4-6  the old webs under the bridge: no damage (Sam's falls ruling, 2026-10-24: the webs below the outpost break a
+//        fall), restrained in the silk (SRD 5.1 Giant Spider web, DC 12 Strength) until they tear free or a friend cuts
+//        them out, then they climb back up. And the webs have owners: on a d6 of 3-6 (CHASM.spiderOn, Claude's house
+//        number for "likely", flagged) a giant spider (SRD 5.1) comes up through the silk to eat them.
+const CHASM = {websOn: 4, spiderOn: 3};
 function chasmOf(){ const B = balcony(); return (B && B.chasm) || null; }
 function chasmEdge(t, raw){
   const C = chasmOf(); if (!C || !t || !raw) return null;
   if (!(outsidePen(t) || onBalcony(t))) return null;                        // only from the landing and the bridge
   if (walkable(raw.x, raw.y) || inPoly(balcony().poly, raw.x, raw.y)) return null;   // still on the floor: an ordinary push
-  return C.webs.some(w => inPoly(w, raw.x, raw.y)) ? "web" : "drop";
+  return "over";
+}
+// where a caught body hangs: in the web nearest the spot it went over
+function chasmWebSpot(at){
+  const C = chasmOf(), cen = w => ({x: w.reduce((s, q) => s + q[0], 0) / w.length, y: w.reduce((s, q) => s + q[1], 0) / w.length});
+  const w = C.webs.map(cen).sort((a, b) => Math.hypot(a.x - at.x, a.y - at.y) - Math.hypot(b.x - at.x, b.y - at.y))[0];
+  return {x: w.x + (Math.random() - .5) * 24, y: w.y + (Math.random() - .5) * 16};
 }
 function chasmFall(t, at, by, kind){
   t.path = []; stopActivity(t); t.onArrive = null;
-  const who = fname(t);
+  const who = fname(t), r6 = kind ? null : d6(); if (!kind) kind = r6 >= CHASM.websOn ? "web" : "drop";
+  const odds = r6 != null ? ` (d6: ${r6})` : "";
   if (kind === "web"){
-    dragAlong(t, [at], 420, null, () => {
+    const spot = chasmWebSpot(at || t);
+    dragAlong(t, [spot], 480, null, () => {
       bank("movement/web_tear", .7); popText(t, "caught in the webs", "#e8e2c8", 1.05); t.inWeb = {t0: now};
       if (t.c){ addCond(t, "restrained"); t.c.webDc = 12; }
       try { spawnFx("spiderWeb", {at: t, sq: 1.6, anchor: "mid", tail: 12, until: now + 600000, alpha: .9, always: true}).then(e => { t.webFx = e; }); } catch (e) {}
-      log(`${who} goes off the ${by ? "edge" : "bridge"}${by ? `, shoved by ${fname(by)},` : ""} and drops into the old webs under the bridge: <b>caught</b>, unhurt, restrained (DC 12 Strength to tear free).`);
+      log(`${who} goes over the edge${by ? `, shoved by ${fname(by)},` : ""}${odds} and drops into the old webs under the bridge: <b>caught</b>, unhurt, restrained (DC 12 Strength to tear free).`);
       narrate(by || t, `${who} drops into the webs under the bridge and hangs there.`);
       if (mode === "combat") renderParty && renderParty();
+      setTimeout(() => chasmSpider(t), 900);
     });
     return;
   }
   t.fall = now; bank("walk:fall-cry", .5);
   const r = roll("20d6");
-  log(`${who} goes over the edge${by ? `, shoved by ${fname(by)},` : ""} into the chasm: hundreds of feet, 20d6 bludgeoning [${r.rolls.join(", ")}] = ${r.total}. <b>${who} is gone.</b>`);
+  log(`${who} goes over the edge${by ? `, shoved by ${fname(by)},` : ""}${odds} into the chasm: hundreds of feet, 20d6 bludgeoning [${r.rolls.join(", ")}] = ${r.total}. <b>${who} is gone.</b>`);
   narrate(by || leader || t, by ? `${fname(by)} sends ${who} over the edge into the dark.` : `${who} falls into the dark.`);
   setTimeout(() => {
     t.alpha = 0; t.fading = true; t.offStage = true; t.down = true; t.chasm = true; t.path = [];   // fading: nothing brings the figure back into view
@@ -3183,6 +3195,29 @@ function chasmFall(t, at, by, kind){
     if (mode === "combat") checkEnd();
     saveWalk();
   }, 950);
+}
+// THE WEBS HAVE OWNERS: something heavy dropping into the silk brings a giant spider up out of the dark beneath it, for
+// the one hanging there. In a fight it joins at its own initiative (from the next round, like a late arrival); outside
+// one it starts a fight, as the net under the lift does (fallIntoNet).
+function chasmSpider(v){
+  if (!v || !v.inWeb || v.down || !SPR["giant-spider"]) return;
+  const r = d6(); log(`<em>The silk under ${esc(fname(v))} trembles (d6: ${r}).</em>`);
+  if (r < CHASM.spiderOn){ log(`<em>Nothing comes up out of the dark. This time.</em>`); return; }
+  const sp = mkActor("giant-spider", v.x + 46, v.y + 26, "npc", {face: 6, alpha: 0, fadeIn: true}); sp.web = true; sp.netHunter = v;
+  bank("creature/creature_spider_hiss", .8);
+  if (APP) handOff(`${fname(v)} fell from the pen's landing into the old webs under the rope bridge, and a giant spider (SRD 5.1) climbed up through the silk to eat them.`);
+  if (cbt && mode === "combat"){
+    sp.kind = "foe"; sp.hostile = true; foes.push(sp); actors = [...party, ...npcs, ...foes];
+    sp.c = fighterFor(sp); sp.c.initRoll = d20(0, sp); sp.c.init = sp.c.initRoll + (sp.c.sheet.init || 0); sp.c.joinRound = cbt.round + 1;
+    let i = cbt.order.findIndex(o => o.c && o.c.init < sp.c.init); if (i < 0) i = cbt.order.length;
+    cbt.order.splice(i, 0, sp); if (i <= cbt.idx) cbt.idx++;
+    renderTurns && renderTurns(); popText(sp, "!", "#ff6b5e", 1.4);
+    log(`<b>A giant spider</b> climbs up through the silk toward ${esc(fname(v))}. Initiative ${sp.c.init}; it acts from round ${sp.c.joinRound}.`);
+    narrate(sp, `Something with too many legs comes up through the webs for ${fname(v)}.`);
+  } else {
+    npcs.push(sp); actors.push(sp); if (mode === "dialog") mode = "explore";
+    startCombat([sp], `The webs shudder. A giant spider climbs up through the silk toward ${fname(v)}.`, {noAllies: true, ambush: true});
+  }
 }
 // out of the webs: once the silk lets go (Break free, Cut free, or the party hauling them up after a fight) they climb back
 // onto the nearest planks
@@ -7913,7 +7948,7 @@ function doShove(a, t, what){
       if (ok){ bank("combat/melee_miss", .6); popText(t, `${verb} fails`, "#ffb27a", 1.15); popText(a, "they hold", "#c9c4b8", .85); narrate(a, `${fname(a)} tries to ${verb} ${fname(t)}, who holds firm.`); log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — <b>it holds</b>.`); return; }
       bank("walk:punch-bag", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx(what === "prone" ? MARTIAL_IMPACT.sweep : what === "push" ? MARTIAL_IMPACT.kick : MARTIAL_IMPACT.punch, {at: t, sq: 1.8, mirror: what === "prone" && t.x < a.x});   // the sweep takes their legs; a push is a kick
       if (what === "prone"){ addCond(t, "prone"); if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); narrate(a, `${fname(a)} knocks ${fname(t)} flat.`); }
-      else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ftPx(t) * 5, y: t.y + d.y * ftPx(t) * 5}; const to = nearestWalkable(raw.x, raw.y), ce = chasmEdge(t, raw); if (ce) chasmFall(t, raw, a, ce); else if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a); else { const top = elevAt(t.x, t.y); t.x = to.x; t.y = to.y; const dropFt = top - elevAt(to.x, to.y); if (dropFt >= LEDGE_FT){ narrate(a, `${fname(a)} shoves ${fname(t)} off the edge.`); setTimeout(() => landFall(t, dropFt), 250); } } narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
+      else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ftPx(t) * 5, y: t.y + d.y * ftPx(t) * 5}; const to = nearestWalkable(raw.x, raw.y), ce = chasmEdge(t, raw); if (ce) chasmFall(t, raw, a, null); else if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a); else { const top = elevAt(t.x, t.y); t.x = to.x; t.y = to.y; const dropFt = top - elevAt(to.x, to.y); if (dropFt >= LEDGE_FT){ narrate(a, `${fname(a)} shoves ${fname(t)} off the edge.`); setTimeout(() => landFall(t, dropFt), 250); } } narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
       else { addCond(t, "grappled"); t.c.grappledBy = a; narrate(a, `${fname(a)} grabs hold of ${fname(t)}.`); }
       log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — <b>${what === "prone" ? "prone" : what === "push" ? "pushed 5 ft" : "grappled"}</b>.`);
     }, () => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(a); });
@@ -12395,7 +12430,7 @@ function placeDmCloud(w){
 }
 $("dmThrow").onclick = () => {
   if (chasmOf()){ const a = (cbt && activeActor()) || leader; if (!a || !(outsidePen(a) || onBalcony(a))){ toast("Out on the landing or the bridge first: the chasm is over its edge."); return; }
-    toggleDm(false); chasmFall(a, {x: a.x, y: a.y + 170}, null, "drop"); return; }
+    toggleDm(false); chasmFall(a, {x: a.x, y: a.y + 170}, null, null); return; }
   if (cur !== 9){ toast("The falls are in area 9."); return; } toggleDm(false); const z = node.zones.find(z => z.kind === "water"); const c = zoneCenter(z); leader.x = c.x; leader.y = c.y; overTheFalls(leader, null); };
 $("dmFlag").onclick = () => { toggleDm(false); followCombatFlag({status: "active", startedAt: String(Date.now()), label: "Malachar calls for initiative.", foes: [{name: "Gray Ooze", slug: "gray-ooze", aliases: [], hp: 22, hpMax: 22}, {name: "Drow Guard", slug: "drow-guard", aliases: ["drow"], hp: 13, hpMax: 13}]}); };
 // what [WATCH: change] / [WATCH: unattended] / [WATCH: posted] do, without the game: in the app the poll sets the watch
