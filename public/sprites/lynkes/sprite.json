@@ -2,14 +2,14 @@
  "version": 1,
  "name": "Lynkes",
  "cell": [
-  128,
-  128
+  176,
+  176
  ],
  "pivot": [
-  64,
-  126
+  88,
+  147
  ],
- "ppu": 200,
+ "ppu": 207,
  "animations": {
   "idle": {
    "sheet": "idle.png",
@@ -23,34 +23,10 @@
    "fps": 10,
    "loop": true
   },
-  "scrub": {
-   "sheet": "scrub.png",
-   "frames": 4,
-   "fps": 10,
-   "loop": true
-  },
-  "heave": {
-   "sheet": "heave.png",
-   "frames": 9,
-   "fps": 10,
-   "loop": false
-  },
-  "carry": {
-   "sheet": "carry.png",
-   "frames": 9,
-   "fps": 10,
-   "loop": true
-  },
   "sneak": {
    "sheet": "sneak.png",
    "frames": 6,
    "fps": 10,
-   "loop": true
-  },
-  "crouch": {
-   "sheet": "crouch.png",
-   "frames": 1,
-   "fps": 4,
    "loop": true
   }
  }
