@@ -11094,6 +11094,7 @@ const spriteMissing = new Set();
 // rising (ART_IS), and a numbered one ("Zombie 2", "Skeleton C", "Skeleton Swordsman 3") by the same art as its first:
 // each stays its own creature on the plate, with its own id, sharing the drawing (Sam, 2026-10-29).
 function artFor(slug){
+  if (slug.includes("#")){ const h = hordeOf({slug: slug.split("#")[0], name: ""}); return h ? h.art : null; }   // one of a horde
   if (ART_IS[slug]) return ART_IS[slug];
   const base = slug.replace(/-(\d+|[a-z])$/, "");
   return base !== slug ? ART_IS[base] || base : null;
@@ -11113,9 +11114,11 @@ async function loadSpriteManifest(slug){
     SPR[slug] = entry; return true;
   } catch (e) { spriteMissing.add(slug); console.warn("no sprite for creature", slug, e); return false; }
 }
-function arrivalFor(slug, inside){
+function arrivalFor(slug, inside, spot){
   const own = SPR[slug] && SPR[slug].json.arrive;
   const mine = (node.arrivals || {})[slug];
+  if (spot && own && own.anim && SPR[slug].img[own.anim])          // a horde member: its place on the summoning circle
+    return {from: spot, to: spot, anim: own.anim, big: 1, sting: own.sting || "", risen: true, delay: spot.delay};
   // A creature whose sprite says how it arrives (sprite.json `arrive`) and that this plate has no entry of its own
   // for: the undead climb up out of the floor where they will stand rather than walk in through a door (Sam,
   // 2026-10-29: the Undead Breach clips). They rise where the plate's default arrival would have walked them to.
@@ -11137,6 +11140,41 @@ function arrivalFor(slug, inside){
 // the square root of the count, so three stand apart and ten fill the floor). Each spot is a walkable square clear of
 // everyone already there, and each rises a beat after the last, so it reads as the ground giving them up one by one.
 const breach = {at: -1e9, n: 0, anchor: null, spin: 0};
+// A HORDE (Sam, 2026-10-29: "zombie plural always generates around the invisible AOE it's cast on"). One stage entry
+// in the plural - "Zombies", "3 zombies", "three skeletons", "Skeletons x4" - is that many separate creatures, raised
+// together around an unseen summoning circle: its centre is where the plate's arrivals land, its radius grows with the
+// count, and the bodies come up spaced evenly round its edge (a little jitter so it is not a clock face), one after
+// another. Each is its own creature with the entry's HP ("zombies#1", "zombies#2"); they leave or fall together when the
+// story says the entry has gone. A plural with no number raises HORDE_DEFAULT.
+const HORDE_DEFAULT = 3;
+const HORDE_WORDS = {two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12};
+const HORDE_ART = {zombies: "zombie-rotting", skeletons: "skeleton-swordsman"};
+function hordeOf(c){
+  const m = /^(?:(\d+|[a-z]+)-)?(?:(?:horde|pack|group|swarm)-of-)?(zombies|skeletons)(?:-x?(\d+))?$/.exec(c.slug);
+  if (!m) return null;
+  const n = +m[3] || +m[1] || HORDE_WORDS[m[1]] || HORDE_DEFAULT;
+  return {art: HORDE_ART[m[2]], n: Math.max(2, Math.min(12, n)), one: m[2] === "zombies" ? "Zombie" : "Skeleton"};
+}
+// A second summoning while the first is still rising draws its own circle beside the first, not on top of it.
+const lastCircle = {at: -1e9, x: 0, y: 0, R: 0};
+const hordeKeys = slug => [...creatures.keys()].filter(k => k.split("#")[0] === slug);
+async function hordeArrives(c, h){
+  if (hordeKeys(c.slug).length || mode === "load" || mode === "travel") return;
+  if (!(await loadSpriteManifest(h.art))) return;
+  const d = (node.arrivals || {}).default;
+  let centre = d ? {x: d.to[0], y: d.to[1]} : {x: centroid.x, y: centroid.y};
+  const sq = 5 * pxPerFtAt(centre.y), R = sq * (1.2 + .55 * Math.sqrt(h.n)), spin = Math.random() * Math.PI * 2;
+  if (now - lastCircle.at < 6000){ const o = Math.random() * Math.PI * 2, gap = lastCircle.R + R + sq;
+    centre = nearestWalkable(lastCircle.x + Math.cos(o) * gap, lastCircle.y + Math.sin(o) * gap * .7); }
+  Object.assign(lastCircle, {at: now, x: centre.x, y: centre.y, R});
+  const taken = [...actors];
+  for (let i = 0; i < h.n; i++){
+    const slug = `${c.slug}#${i + 1}`; SPR[slug] = SPR[h.art];
+    const ang = spin + i * 2 * Math.PI / h.n + (Math.random() - .5) * .5, r = R * (.8 + Math.random() * .3);
+    const at = nearestWalkable(centre.x + Math.cos(ang) * r, centre.y + Math.sin(ang) * r * .7, taken); taken.push(at);
+    creatureArrives({...c, slug, name: `${h.one} ${i + 1}`}, {x: at.x, y: at.y, delay: i ? i * 450 + Math.random() * 300 : 0});
+  }
+}
 function riseSpot(anchor){
   if (now - breach.at > 4000){ breach.n = 0; breach.anchor = anchor; breach.spin = Math.random() * Math.PI * 2; }
   breach.at = now;
@@ -11145,9 +11183,9 @@ function riseSpot(anchor){
   const spot = nearestWalkable(breach.anchor.x + Math.cos(ang) * r, breach.anchor.y + Math.sin(ang) * r * .7, actors);
   return {x: spot.x, y: spot.y, delay: k ? k * 550 + Math.random() * 350 : 0, first: k === 0};
 }
-function creatureArrives(c){
+function creatureArrives(c, spot){
   if (creatures.has(c.slug) || mode === "load" || mode === "travel") return;
-  const a = arrivalFor(c.slug, !!c.inside);
+  const a = arrivalFor(c.slug, !!c.inside, spot);
   const f = mkActor(c.slug, a.from.x, a.from.y, "foe", {alpha: 0, hp: c.hp ?? 1, hpMax: c.hpMax ?? 1, creature: c, slow: true, big: a.big, backdrop: a.backdrop, fixedScale: a.fixedScale});   // not `hostile`: that is the guards-on-watch trigger; a creature closes in on its own (tickCreatures)
   f.fadeIn = true; f.face = faceOf(a.to.x - a.from.x, a.to.y - a.from.y);
   creatures.set(c.slug, f); npcs.push(f); actors = [...party, ...npcs, ...foes];
@@ -11259,10 +11297,12 @@ async function pollStage(){
     // creatures: anyone present who is not part of the story's cast
     for (const c of present){
       if ([...CAST].some(id => stageMatch(c, id))) continue;
+      const horde = hordeOf(c); if (horde){ await hordeArrives(c, horde); continue; }
       if (!creatures.has(c.slug) && await loadSpriteManifest(c.slug)) creatureArrives(c);
       const f = creatures.get(c.slug); if (f){ f.hp = c.hp; f.hpMax = c.hpMax; if (c.inside && !f.inside) creatureCrosses(c.slug); }
     }
-    for (const slug of [...creatures.keys()]) if (!present.some(c => c.slug === slug && ![...CAST].some(id => stageMatch(c, id)))){ const g = gone.find(c => c.slug === slug); creatureLeaves(slug, !!(g && g.dead), g && g.cause); }
+    for (const key of [...creatures.keys()]){ const slug = key.split("#")[0];   // a horde member answers to its entry
+      if (!present.some(c => c.slug === slug && ![...CAST].some(id => stageMatch(c, id)))){ const g = gone.find(c => c.slug === slug); creatureLeaves(key, !!(g && g.dead), g && g.cause); } }
     // the cast: off the plate when the game says they have gone, back when it says they are here;
     // where Malachar put them ([NPC_MOVE:]) and whether they want a word ([NPC_WANTS_WORD:])
     storyWatch = j.watch || null;

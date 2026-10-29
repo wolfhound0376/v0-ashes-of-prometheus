@@ -47,3 +47,13 @@ Sam: "Second skeleton is great. Zombie is great." So the zombie clip and the **l
   dissonant swell. -23.5 LUFS, much quieter than the other effects. Two Runway takes ("Undead Breach stinger
   A/B") are in Sam's Runway library; this session could not download them (the host is blocked by its network
   policy).
+
+## Hordes (Sam, 2026-10-29)
+
+"Zombie plural always generates around the invisible AOE it's cast on." A plural stage entry ("Zombies",
+"3 zombies", "three skeletons", "Skeletons x4", "horde of zombies") is that many separate creatures
+(`hordeOf` / `hordeArrives` in `public/velkynvelve-walk/index.html`). They rise round the edge of an unseen
+summoning circle centred where the plate's arrivals land, with a radius that grows with the count, spaced evenly
+with a little jitter and about half a second apart. Each carries the entry's HP. They leave or fall together when
+the story says the entry has gone. A plural with no number raises 3 (`HORDE_DEFAULT`), capped at 12. A second
+summoning within 6 s draws its own circle beside the first.
