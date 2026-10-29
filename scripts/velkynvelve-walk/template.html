@@ -5337,7 +5337,9 @@ function drawFxLayer(flat){
   ctx.globalAlpha = 1;
 }
 // which sheets and sounds a spell uses, from its school (lib/spell-school-data) and damage type
-const SCHOOL_OF = {"Eldritch Blast": "evocation", "Hex": "enchantment", "Fireball": "evocation", "Burning Hands": "evocation", "Entangle": "conjuration", "Hunter's Mark": "divination", "Hold Person": "enchantment", "Cloud of Daggers": "conjuration", "Flaming Sphere": "conjuration", "Green-Flame Blade": "evocation", "Mage Hand": "conjuration", "Minor Illusion": "illusion", "Prestidigitation": "transmutation", "Dancing Lights": "evocation", "Friends": "enchantment", "Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
+const SCHOOL_OF = {"Acid Splash": "conjuration", "Produce Flame": "conjuration", "Sacred Flame": "evocation", "Cure Wounds": "evocation", "Inflict Wounds": "necromancy", "Grease": "conjuration", "Shatter": "evocation", "Acid Arrow": "evocation", "Call Lightning": "conjuration",
+  "Web": "conjuration", "Command (grovel)": "enchantment", "Hypnotic Pattern": "illusion", "True Strike": "divination", "Vampiric Touch": "necromancy", "Sanctuary": "abjuration",
+  "Light": "evocation", "Thaumaturgy": "transmutation", "Druidcraft": "transmutation", "Message": "transmutation", "Mending": "transmutation", "Guidance": "divination", "Resistance": "abjuration","Eldritch Blast": "evocation", "Hex": "enchantment", "Fireball": "evocation", "Burning Hands": "evocation", "Entangle": "conjuration", "Hunter's Mark": "divination", "Hold Person": "enchantment", "Cloud of Daggers": "conjuration", "Flaming Sphere": "conjuration", "Green-Flame Blade": "evocation", "Mage Hand": "conjuration", "Minor Illusion": "illusion", "Prestidigitation": "transmutation", "Dancing Lights": "evocation", "Friends": "enchantment", "Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
   "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment",
   "Stinking Cloud": "conjuration", "Cloudkill": "conjuration", "Fog Cloud": "conjuration", "Poison Spray": "necromancy"};
 const RUNE_OF = {cold: "runeFrost", fire: "runeFire", lightning: "runeStorm", necrotic: "runeNecrotic", psychic: "runePsychic", radiant: "runeRadiant", force: "runeForce", acid: "runeAcid", heal: "runeHealing"};
@@ -5558,7 +5560,7 @@ const SHEETS = {
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Ray of Frost", "Shocking Grasp", "Chill Touch"], prepared: ["Fog Cloud"]}},
   samson: {name: "Samson", cls: "Cleric", hp: 9, ac: 10, init: 2, speed: 30, strScore: 11, mods: {str: 0, dex: 2, con: 1, int: 1, wis: 3, cha: 0}, saves: {str: 0, dex: 2, con: 1, int: 1, wis: 5, cha: 2}, lore: {investigation: {mod: 1, level: ""}, arcana: {mod: 1, level: ""}, religion: {mod: 3, level: "proficient"}, nature: {mod: 1, level: ""}, history: {mod: 1, level: ""}}, tools: {alchemist: null, poisoner: null, herbalism: null}, skills: {sleightOfHand: 2, medicine: 5, stealth: 2, athletics: 0, perception: 3, investigation: 1, thievesTools: 2},
            attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
-           magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Toll the Dead"], prepared: ["Healing Word", "Guiding Bolt", "Shield of Faith"]}},
+           magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Toll the Dead"], prepared: ["Healing Word", "Guiding Bolt", "Shield of Faith", "Sanctuary"]}},
   scott:  {name: "Scott", cls: "Bard", hp: 10, ac: 12, init: 0, speed: 30, strScore: 12, mods: {str: 1, dex: 2, con: 2, int: 1, wis: 1, cha: 3}, saves: {str: 1, dex: 4, con: 2, int: 1, wis: 1, cha: 5}, lore: {investigation: {mod: 1, level: ""}, arcana: {mod: 3, level: "proficient"}, religion: {mod: 1, level: ""}, nature: {mod: 3, level: "proficient"}, history: {mod: 3, level: "proficient"}}, tools: {alchemist: null, poisoner: null, herbalism: null}, skills: {sleightOfHand: 2, medicine: 1, stealth: 2, athletics: 1, perception: 3, investigation: 1, thievesTools: 2},
            attacks: [{name: "Unarmed Strike", hit: 3, dmg: "2", type: "bludgeoning", reach: 5}],
            magic: {dc: 13, hit: 5, mod: 3, slots: {1: 2}, cantrips: ["Vicious Mockery"], prepared: ["Healing Word", "Faerie Fire", "Sleep", "Dissonant Whispers"]}, bardic: {uses: 3, die: 6}, music: true},
@@ -5670,7 +5672,7 @@ const ALLY_ROW = {ront: "2f539d01-6259-4beb-a685-4bd009f03f0d", eldeth: "05b6537
                   derendil: "e0c652fe-2f68-40ff-823d-bb7ac34f529f", sarith: "cc309888-e98d-4cfe-8bf1-d75787b8ec8e"};
 // SRD 5.2.1, as the party has them at level 1. `kind`: attack (spell attack roll), save, heal, buff.
 // a spell with a choice in it is offered as its choices (the sheet says "Chromatic Orb"; the menu offers each type)
-const SPELL_VARIANTS = {"Chromatic Orb": ["Chromatic Orb (acid)", "Chromatic Orb (cold)", "Chromatic Orb (fire)", "Chromatic Orb (lightning)", "Chromatic Orb (poison)", "Chromatic Orb (thunder)"]};
+const SPELL_VARIANTS = {"Command": ["Command (grovel)"], "Chromatic Orb": ["Chromatic Orb (acid)", "Chromatic Orb (cold)", "Chromatic Orb (fire)", "Chromatic Orb (lightning)", "Chromatic Orb (poison)", "Chromatic Orb (thunder)"]};
 const SPELLS = {
   "Ray of Frost":       {lvl: 0, kind: "attack", range: 60, dmg: "1d8", type: "cold", fx: "#9fdcff", note: "speed −10 ft"},
   // Gandalf's (2026-10-23). lib/data/spells.json: "ranged spell attack; 1d10 fire", 120 ft. The SRD's
@@ -5738,6 +5740,57 @@ const SPELLS = {
   // THE REST OF THE LAB'S SPELLS (Sam, 2026-10-29: "Everything, rules too" — no hero has these yet; they are here for
   // the day one learns them). SRD 5.1 unless marked. `aimRange`: an area aimed at the floor still has to be in range.
   "Fireball":           {lvl: 3, kind: "save", save: "dex", range: 150, area: 40, aimRange: true, dmg: "8d6", type: "fire", fx: "#ff8a3a"},
+  // ---------- SRD 5.1 HEAD START (Sam, 2026-10-29: "I don't want to have to add all the spells as I encounter them, I'd
+  // like a head start on at least level 2 maybe 3"). Every SRD 5.1 spell of levels 0-3 on the casters' lists that the
+  // engine can already resolve, so a hero who learns or prepares one can cast it. The rest need new mechanics (listed in
+  // the PR). Each says what it leaves out (NOT YET).
+  // SRD 5.1 Sanctuary: 1st-level abjuration, bonus action, 30 ft, 1 minute (not concentration). "Any creature who targets
+  // the warded creature with an attack or a harmful spell must first make a Wisdom saving throw. On a failed save, the
+  // creature must choose a new target or lose the attack or spell. This spell doesn't protect the warded creature from
+  // area effects ... If the warded creature makes an attack or casts a spell that affects an enemy creature, this spell
+  // ends." The ward: sanctuaryLets (below). The look (Sam, same day): the Shield bubble in radiant gold.
+  "Sanctuary":          {lvl: 1, kind: "buff", range: 30, bonus: true, cond: "sanctuary", fx: "#fff3c0"},
+  // SRD 5.1 Acid Splash: conjuration cantrip, 60 ft, DEX save or 1d6 acid. NOT YET: the second creature within 5 ft.
+  "Acid Splash":        {lvl: 0, kind: "save", save: "dex", range: 60, dmg: "1d6", type: "acid", fx: "#9be37a"},
+  // SRD 5.1 Produce Flame: conjuration cantrip, hurled at a creature within 30 ft, ranged spell attack, 1d8 fire.
+  "Produce Flame":      {lvl: 0, kind: "attack", range: 30, dmg: "1d8", type: "fire", fx: "#ff8a3a"},
+  // SRD 5.1 Sacred Flame: evocation cantrip, 60 ft, DEX save or 1d8 radiant; "no benefit from cover" (castSpell skips cover for it).
+  "Sacred Flame":       {lvl: 0, kind: "save", save: "dex", range: 60, dmg: "1d8", type: "radiant", fx: "#fff1b0"},
+  // SRD 5.1 Cure Wounds: 1st-level evocation, touch, 1d8 + spellcasting modifier. NOT YET: no effect on undead or constructs.
+  "Cure Wounds":        {lvl: 1, kind: "heal", range: 5, dmg: "1d8", fx: "#9ff2c8"},
+  // SRD 5.1 Inflict Wounds: 1st-level necromancy, touch, melee spell attack, 3d10 necrotic.
+  "Inflict Wounds":     {lvl: 1, kind: "attack", range: 5, dmg: "3d10", type: "necrotic", fx: "#8a5bb0"},
+  // SRD 5.1 Grease: 1st-level conjuration, 60 ft, 10-ft square: DEX save or fall prone. NOT YET: difficult terrain, the save on entering or ending a turn there.
+  "Grease":             {lvl: 1, kind: "save", save: "dex", range: 60, area: 10, aimRange: true, cond: "prone", fx: "#c9b26a"},
+  // SRD 5.1 Shatter: 2nd-level evocation, 60 ft, 10-ft-radius sphere, CON save, 3d8 thunder, half on a success. NOT YET: disadvantage for stone/crystal/metal creatures.
+  "Shatter":            {lvl: 2, kind: "save", save: "con", range: 60, area: 20, aimRange: true, dmg: "3d8", type: "thunder", fx: "#bfe3ff"},
+  // SRD 5.1 Acid Arrow: 2nd-level evocation, 90 ft, ranged spell attack, 4d4 acid. NOT YET: the 2d4 at the end of its next turn, half on a miss.
+  "Acid Arrow":         {lvl: 2, kind: "attack", range: 90, dmg: "4d4", type: "acid", fx: "#9be37a"},
+  // SRD 5.1 Call Lightning: 3rd-level conjuration, 120 ft, concentration 10 minutes; each creature within 5 ft of the point,
+  // DEX save, 3d10 lightning, half on a success. NOT YET: a new bolt as an action on later turns. RULING NEEDED: "The spell
+  // fails if you can't see a point in the air where the storm cloud could appear" — most Underdark caverns can't hold it.
+  "Call Lightning":     {lvl: 3, kind: "save", save: "dex", range: 120, area: 10, aimRange: true, dmg: "3d10", type: "lightning", fx: "#fff27a", conc: 100},
+  // SRD 5.1 Web: 2nd-level conjuration, 60 ft, 20-ft cube, concentration 1 hour; DEX save or restrained (STR check vs the DC
+  // to break free — the existing webDc). BENDS: the save is made once, at the cast. NOT YET: difficult terrain, burning it away.
+  "Web":                {lvl: 2, kind: "save", save: "dex", range: 60, area: 20, aimRange: true, cond: "restrained", fx: "#e8e2c8", conc: 600},
+  // SRD 5.1 Command: 1st-level enchantment, 60 ft, WIS save. Only "Grovel" ("falls prone and then ends its turn") is wired: offered as Command (grovel).
+  "Command (grovel)":   {lvl: 1, kind: "save", save: "wis", range: 60, cond: "prone", fx: "#ffd27a"},
+  // SRD 5.1 Hypnotic Pattern: 3rd-level illusion, 120 ft, 30-ft cube, concentration 1 minute; WIS save or charmed —
+  // incapacitated, speed 0, ends on damage or a shake. BENDS: carried by `asleep` (it also gets a WIS save each turn).
+  "Hypnotic Pattern":   {lvl: 3, kind: "save", save: "wis", range: 120, area: 30, aimRange: true, cond: "asleep", fx: "#ff9bd2", conc: 10},
+  // SRD 5.1 True Strike: divination cantrip, concentration 1 round: advantage on your first attack next turn. BENDS: a self-buff (click yourself) giving `helped`.
+  "True Strike":        {lvl: 0, kind: "buff", range: 0, cond: "helped", fx: "#ffe08a"},
+  // SRD 5.1 Vampiric Touch: 3rd-level necromancy, concentration 1 minute; melee spell attack, 3d6 necrotic, and you regain
+  // half the necrotic damage dealt. NOT YET: the repeat attack on later turns without a slot.
+  "Vampiric Touch":     {lvl: 3, kind: "attack", range: 5, dmg: "3d6", type: "necrotic", fx: "#6f3a8a", conc: 10},
+  // utility cantrips (SRD 5.1): the cast and Malachar's word; what they do is the story's
+  "Light":              {lvl: 0, kind: "util", range: 5, fx: "#fff6c8"},
+  "Thaumaturgy":        {lvl: 0, kind: "util", range: 30, fx: "#ffb35a"},
+  "Druidcraft":         {lvl: 0, kind: "util", range: 30, fx: "#9fd46a"},
+  "Message":            {lvl: 0, kind: "util", range: 120, fx: "#c8d8ff"},
+  "Mending":            {lvl: 0, kind: "util", range: 5, fx: "#ffd27a"},
+  "Guidance":           {lvl: 0, kind: "util", range: 5, fx: "#ffe9a8", conc: 10},
+  "Resistance":         {lvl: 0, kind: "util", range: 5, fx: "#cfe8ff", conc: 10},
   // 15-ft cone from the caster: `cone` — the targets are the ones within 15 ft and inside the cone's 53° toward the click
   "Burning Hands":      {lvl: 1, kind: "save", save: "dex", range: 15, area: 15, cone: true, selfArea: true, dmg: "3d6", type: "fire", fx: "#ff8a3a"},
   // a 20-ft square of grasping plants: STR save or restrained (an action and a STR check frees them); concentration 1 minute
@@ -5766,7 +5819,7 @@ const SPELLS = {
 };
 // ---------- Rage and Wounded Fury: the rules, one copy (lib/rage.mjs, pasted in here by build_walk.py) ----------
 /*__RAGE__*/
-const COND_GLYPH = {surprised: ["!", "#ffd27a", "Surprised: no move and no action on its first turn, no reaction until that turn ends"], poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
+const COND_GLYPH = {sanctuary: ["☩", "#fff3c0", "Sanctuary: a foe must pass a WIS save to attack it or target it with a harmful spell · ends if it attacks or harms a foe"], surprised: ["!", "#ffd27a", "Surprised: no move and no action on its first turn, no reaction until that turn ends"], poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
                     shielded: ["◇", "#cfe8ff", "+2 AC"], blessed: ["✚", "#ffe9a8", "Blessed: +1d4 to attack rolls and saving throws"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], hexed: ["⛧", "#c58aff", "Hexed: the warlock's hits deal +1d6 necrotic"], marked: ["⌖", "#ff5a5a", "Hunter's Mark: the ranger's weapon hits deal +1d6"], paralyzed: ["✖", "#d8b8ff", "Paralyzed: no moves or actions; attacks have advantage, a hit within 5 ft is a critical"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
                     hidden: ["◌", "#b8c7d6", "Hidden: unseen until you attack"], prone: ["▼", "#e0b070", "Prone: melee on it has advantage, ranged disadvantage; half speed to stand"],
                     grappled: ["✊", "#e0b070", "Grappled: speed 0"], helped: ["★", "#ffe08a", "Helped: advantage on the next attack"], disengaged: ["↷", "#cfe8ff", "Disengaged: no opportunity attacks"],
@@ -6216,6 +6269,7 @@ function nextTurn(first){
   for (const x of [...party, ...foes, ...(cbt.allies || [])]) if (x.c && x.c.noHeal === a) x.c.noHeal = null;   // Chill Touch lets go
   for (let i = clings.length - 1; i >= 0; i--) if (clings[i].by === a || !clings[i].by){ clings[i].p.then(e => { if (e) e.until = now + 350; }); clings.splice(i, 1); }
   a.c.conds.delete("dodging"); a.c.conds.delete("shieldSpell"); a.c.reactionUsed = false;
+  a.c.sanctuaryPassed = null; if (a.c.conds.has("sanctuary") && cbt.round >= (a.c.sanctuaryEnd || 0)) endSanctuary(a, "the minute is up");
   if (a.c.ready){ a.c.ready = null; a.c.conds.delete("readied"); }   // SRD: a readied action lasts until the start of your next turn
   renderTurns(); renderParty(); turnCall(a);
   if (a.c.conds.has("asleep") && a.c.drugged){ popText(a, "out cold", "#8fd48f"); log(`${fname(a)} lies senseless from the drow poison. Damage or a shake will wake them.`); setTimeout(nextTurn, 900); return; }
@@ -7728,6 +7782,9 @@ function readiedStrikeOn(att, cont){
     src: "Ready · 1 reaction", buttons: [{label: `Strike with the ${atk.name}`, primary: true, fn: fire}, {label: "Hold", fn: hold}]});
 }
 function attackWith(att, tgt, atk, done, offhand, reaction){
+  if (!sanctuaryLets(att, tgt)){ if (att.kind === "pc" && !reaction){ if (offhand) att.c.bonus = true; else att.c.action = true; }   // SRD: choose a new target or lose the attack
+    combatBusy = false; if (cbt) cbt.phase = "idle"; if (done) setTimeout(done, 500); else if (att.kind === "pc") openMenu(att); return; }
+  if (att.c && att.c.conds.has("sanctuary") && tgt && tgt.c && hero(att) !== hero(tgt)) endSanctuary(att, "attacked");
   handWatch(att, tgt);
   const c = att.c; if (att.kind === "pc" && !reaction){ if (offhand) c.bonus = false; else { c.action = false; if (atk.light) c.lastLight = atk; } } closeMenu(); cbt.phase = "busy"; combatBusy = true;
   const reach = atk.thrown && feetBetween(att, tgt) > 5 ? atk.thrown : atk.reach;
@@ -7852,6 +7909,7 @@ function castSpell(caster, tgt, name, done, darts){
   const volley = darts && darts.length ? darts : null, distinct = volley ? [...new Set(volley)] : null;
   if (sp.bonus){ c.bonus = false; c.bonusSpell = true; } else { c.action = false; if (sp.lvl > 0) c.leveledSpell = true; }
   if (sp.lvl > 0) c.slots[sp.lvl] = Math.max(0, (c.slots[sp.lvl] || 0) - 1);
+  if (c.conds.has("sanctuary") && !["heal", "buff", "util", "fog"].includes(sp.kind)) endSanctuary(caster, "cast a spell at a foe");   // SRD: a spell that affects an enemy ends it
   const at = tgt;                                                                // a point or an actor
   if (tgt.id) caster.face = faceOf(tgt.x - caster.x, tgt.y - caster.y);
   if (tgt.id) pushCam(caster, tgt);
@@ -7957,6 +8015,7 @@ function castSpell(caster, tgt, name, done, darts){
         if (lab) lab.crit = crit; land(tgt, true, sp.type); knock(tgt, caster, 12 * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
         narrate(caster, `${fname(caster)}'s ${name} ${sp.type === "cold" ? "frosts" : sp.type === "necrotic" ? "withers" : sp.type === "radiant" ? "sears" : "strikes"} ${fname(tgt)}.`);
         const d = roll(sp.dmg, crit); if (sp.beams && invoked(caster, "Agonizing Blast")) d.total += Math.max(0, abilMod(caster.c.sheet, "cha")); hitCtx = {spell: name, by: caster}; damage(tgt, d.total, sp.type, crit, caster, true); hitCtx = null; hexRider(caster, tgt, crit);
+        if (name === "Vampiric Touch" && d.total > 0){ const h = Math.floor(d.total / 2); caster.c.hp = Math.min(caster.c.hpMax, caster.c.hp + h); popText(caster, `+${h}`, "#9ff2c8"); renderParty(); }   // SRD 5.1: regain half the necrotic damage dealt
         if (sp.beams && invoked(caster, "Repelling Blast") && !tgt.down) repel(caster, tgt, 10); if (sp.cond) addCond(tgt, sp.cond); if (name === "Ray of Frost") addCond(tgt, "slowed");
         if (sp.type === "cold" && sp.ice){ const patch = freezeGround(tgt.x, tgt.y, m.dc, caster); if (!tgt.down){ tgt.onIce = patch; iceSave(tgt, patch, "struck by the orb"); } }
         // SRD 5.1 Shocking Grasp: "On a hit ... it can't take reactions until the start of its next turn."
@@ -7986,6 +8045,7 @@ function castSpell(caster, tgt, name, done, darts){
           tgt.faithGlow = {t0: now + 700}; setTimeout(() => { if (!tgt.down){ bank("magic/impact_radiant", .45); for (let i = 0; i < 18; i++){ const B = bodyPoint(tgt); sparks.push({x: B.x + labRnd(-1, 1) * labR(tgt), y: B.y + labRnd(-1.2, 1) * labR(tgt), vx: labRnd(-30, 30), vy: -labRnd(30, 100), g: -10, col: i % 2 ? "#fff3c0" : "#ffd25a", t0: now, life: labRnd(500, 1000)}); } } }, 700); }
         else spawnFx("sigilAbjurationRing", {at: tgt, sq: 2.2, flat: true, spin: .8});
         const more = sp.targets > 1 ? standing(heroes()).filter(h => h !== tgt && feetBetween(caster, h) <= sp.range).sort((x, y) => Math.hypot(x.x - tgt.x, x.y - tgt.y) - Math.hypot(y.x - tgt.x, y.y - tgt.y)).slice(0, sp.targets - 1) : [];
+        if (name === "Sanctuary"){ tgt.c.sanctuaryDc = c.sheet.magic.dc + (c.conds.has("sorcery") ? 1 : 0); tgt.c.sanctuaryEnd = (cbt ? cbt.round || 1 : 0) + 10; sanctuarySphere(tgt); }
         for (const t of [tgt, ...more]){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); if (t !== tgt) spawnFx("sigilAbjurationRing", {at: t, sq: 2.2, flat: true, spin: .8}); }
         log(`${fname(caster)} ${name} on ${[tgt, ...more].map(fname).join(", ")}: ${COND_GLYPH[sp.cond][2]}.`); renderParty(); }
       else if (sp.kind === "auto"){                                             // Magic Missile: the darts never miss
@@ -8006,7 +8066,7 @@ function castSpell(caster, tgt, name, done, darts){
           if (sp.humanoid && !isHumanoid(t)){ popText(t, "unaffected", "#aaa"); lines.push(`${fname(t)} is not a humanoid: unaffected`); if (i === targets.length - 1){ sigilEnd(t, false); log(`${fname(caster)} ${name}: ${lines.join("; ")}.`); } return; }
           // Fey Ancestry (SRD 5.1 elf/half-elf 2315/2320, drow 1608): magic can't put them to sleep. Shown, not silent.
           if (name === "Sleep"){ const fp = sleepProof(rollerOf(t)); if (fp){ traitPop(t, fp); lines.push(`${fname(t)} is untouched (Fey Ancestry)`); if (i === targets.length - 1){ sigilEnd(t, false); log(`${fname(caster)} ${name}: ${lines.join("; ")}.`); } return; } }
-          const cvS = sp.save === "dex" ? coverOf(caster, t) : {ac: 0};            // SRD: cover adds to DEX saves too
+          const cvS = sp.save === "dex" && name !== "Sacred Flame" ? coverOf(caster, t) : {ac: 0};            // SRD: cover adds to DEX saves too
           const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20(rageAdvantage(t.c.rage, sp.save), t, sp.cond) + (t.c.sheet.saves[sp.save] || 0) + cvS.ac, ok = s >= dc;
           let line = `${fname(t)} ${sp.save.toUpperCase()} ${s}${cvS.ac ? ` (cover +${cvS.ac})` : ""} vs DC ${dc}: ${ok ? "saves" : "fails"}`;
           if (sp.area && !marks.length) markTarget(t);
@@ -8149,7 +8209,7 @@ function illusionPicker(a, go){ const L = (a.c.sheet && a.c.sheet.level) || 1, b
   showDialog({title: `${fname(a)}: Minor Illusion`, body: "Conjure an image of…", src: "Minor Illusion · cantrip · 30 ft", buttons: opts.map((o, i) => ({label: o.key[2].toUpperCase() + o.key.slice(3), primary: i === 0, fn: () => go(o)}))}); }
 function castUtil(a, t, name){ a.c.action = false; closeMenu(); if (t.id) a.face = faceOf(t.x - a.x, t.y - a.y); if (SPELLS[name].conc) startConc(a, name);
   playOnce(a, SPR[a.id].img.cast ? "cast" : "attack", () => setAnim(a, "idle")); bank("magic/arcane_release", .5);
-  const go = (pick) => { labUtil(name, a, t, pick); const what = {"Mage Hand": "a spectral hand", "Minor Illusion": `an illusion${pick ? " of " + pick.key : ""}`, "Prestidigitation": "a minor trick", "Dancing Lights": "four dancing lights", "Friends": "a charm of friendship"}[name];
+  const go = (pick) => { labUtil(name, a, t, pick); const what = {"Mage Hand": "a spectral hand", "Minor Illusion": `an illusion${pick ? " of " + pick.key : ""}`, "Prestidigitation": "a minor trick", "Dancing Lights": "four dancing lights", "Friends": "a charm of friendship", "Light": "a steady light", "Thaumaturgy": "a minor wonder", "Druidcraft": "a small working of nature", "Message": "a whispered message", "Mending": "a mending", "Guidance": "a touch of guidance", "Resistance": "a ward of resistance"}[name] || "a small working";
     log(`${fname(a)} casts <b>${name}</b>: ${what}${t.id ? ` (${fname(t)})` : ""}.`); if (name === "Friends" && t.id) popText(t, "friendly… for now", "#ff9ad8", .85); renderParty(); afterAction(a); };
   if (name === "Minor Illusion") illusionPicker(a, go); else setTimeout(go, 300);
 }
@@ -8579,6 +8639,8 @@ function foeTurn(f){
   const grudgeOn = cbt && cbt.grudge && cbt.grudge.att === f && !cbt.grudge.tgt.down && actors.includes(cbt.grudge.tgt) ? cbt.grudge.tgt : null;
   let tgt = grudgeOn ? grudgeOn : f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(heroes())) : (seen.length ? seen : standing(heroes())).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
   if (tgt && !grudgeOn && !f.c.berserk){ const pot = potShot(f); if (pot) tgt = pot; }   // BYSTANDERS: threats first, now and then a pot shot
+  if (tgt && !sanctuaryLets(f, tgt)){ const alt = seen.filter(p => p !== tgt && !p.c.conds.has("sanctuary")).sort((a, b) => feetBetween(f, a) - feetBetween(f, b))[0];   // Sanctuary: another target, or the attack is lost
+    if (alt) tgt = alt; else { narrate(f, `${fname(f)} raises its weapon at ${fname(tgt)}, and lowers it.`); setTimeout(() => passTurn(f), 700); return; } }
   if (!tgt){
     const fallen = finishTarget(f);
     if (fallen){ finishTheFallen(f, fallen); return; }
@@ -9184,6 +9246,19 @@ function labSneakBurst(t, from, crit){ const left = from ? from.x > t.x : false,
   labRef("snBurst", {at: t, w: w * (crit ? 5.2 : 4), life: 380, grow: [.4, 1.2], fade: [10, 260], spin: .8, add: false});
   lightFlash(t.x, labMid(t), "#ff2a2a", 260, 360);
   for (let i = 0; i < 18; i++){ const ang = (left ? Math.PI : 0) + labRnd(-.9, .9), sp = labRnd(120, 360); sparks.push({x: t.x, y: labMid(t), vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * .6 - 60, g: 500, col: i % 2 ? "#ff2a2a" : "#b80f1a", t0: now, life: labRnd(300, 650)}); } }
+// SANCTUARY'S WARD (SRD 5.1; see SPELLS). true = the attack may go ahead against tgt. One save per attacker per turn.
+function sanctuaryLets(att, tgt){
+  if (!att || !att.c || !tgt || !tgt.c || !tgt.c.conds || !tgt.c.conds.has("sanctuary") || hero(att) === hero(tgt) || att === tgt) return true;
+  if (att.c.sanctuaryPassed === tgt) return true;
+  const s = d20(0, att, "charmed") + ((att.c.sheet.saves || {}).wis || 0) + blessD4(att), ok = s >= (tgt.c.sanctuaryDc || 13);
+  log(`${fname(att)} turns on ${fname(tgt)} — Sanctuary: WIS ${s} vs DC ${tgt.c.sanctuaryDc || 13}: ${ok ? "pushes through" : "can't bring itself to"}.`);
+  popText(tgt, ok ? "sanctuary broken through" : "sanctuary", "#fff3c0", .85); if (tgt.sanctSphere) labSphereAbsorb(tgt, att, ok ? "#ff6b5e" : "#fff3c0", tgt.sanctSphere);
+  if (ok) att.c.sanctuaryPassed = tgt; return ok; }
+function endSanctuary(t, why){ if (!t.c.conds.has("sanctuary")) return; t.c.conds.delete("sanctuary"); t.c.sanctuaryDc = t.c.sanctuaryEnd = null; popText(t, "sanctuary ends", "#c9c4b8", .8); log(`${fname(t)}'s Sanctuary ends: ${why}.`); renderParty(); }
+// the look (Sam, 2026-10-29: "Sanctuary should look like shield but in radiant colors"): the Shield bubble in gold and white
+// light, sunlit filaments crawling over it, held for as long as the ward lasts
+function sanctuarySphere(t){ const s = {labSphere: true, a: t, base: [255, 205, 90], arcCol: "rgba(255,250,215,.95)", cond: "sanctuary", hit: null, hitT: 0, t0: now, life: 600000, arcs: [], arcT: 0}; t.sanctSphere = s; sparks.push(s);
+  bank("magic/impact_radiant", .5); lightFlash(t.x, labMid(t), "#ffd778", 220, 1200); for (let i = 0; i < 16; i++) sparks.push({x: t.x + labRnd(-30, 30), y: t.y - labRnd(0, 20), vx: labRnd(-20, 20), vy: -labRnd(40, 110), g: -10, col: i % 2 ? "#ffe9a8" : "#ffc94a", t0: now, life: labRnd(600, 1200)}); }
 function labOrbHit(t, type){ const col = LAB_ORB_COL[type] || "#9fdcff", n = 10, rays = []; for (let j = 0; j < n; j++) rays.push({a: j / n * Math.PI * 2 + labRnd(-.2, .2), L: labRnd(.4, 1) * (j % 2 ? .6 : 1.3), w: labRnd(.04, .08)});
   sparks.push({crimStar: true, a: t, x: t.x, y: labMid(t), R: 70, rays, C: {body: col, core: "#ffffff", glow: col}, t0: now, life: 260});
   for (let i = 0; i < 18; i++){ const ang = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 160; sparks.push({x: t.x, y: labMid(t), vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * .6 - 60, col, t0: now, life: 420 + Math.random() * 300}); }
@@ -9193,12 +9268,12 @@ function labOrbHit(t, type){ const col = LAB_ORB_COL[type] || "#9fdcff", n = 10,
 // briefly", from his blue lightning-bubble reference): a glass bubble round the body, lightning crawling on it; what is
 // thrown stops on the surface, which flashes that thing's colour from the contact point and cools back to blue
 function labSphere(t, from){ const s = {labSphere: true, a: t, from, base: [90, 170, 255], hit: null, hitT: 0, t0: now, life: 60000, arcs: [], arcT: 0}; t.labSphere = s; sparks.push(s); return s; }
-function labSphereAbsorb(t, from, col){ const s = t.labSphere; if (!s) return; from = from || s.from; const R = Math.max(46, labR(t) * 2.7), cx = t.x + (t.kx || 0), cy = labMid(t) - R * .1, ang = Math.atan2((from ? from.y : cy) - cy, (from ? from.x : cx - 1) - cx);
+function labSphereAbsorb(t, from, col, sph){ const s = sph || t.labSphere; if (!s) return; from = from || s.from; const R = Math.max(46, labR(t) * 2.7), cx = t.x + (t.kx || 0), cy = labMid(t) - R * .1, ang = Math.atan2((from ? from.y : cy) - cy, (from ? from.x : cx - 1) - cx);
   s.hit = hexRgb(col || "#c890ff"); s.hitT = now; s.hitAng = ang; const p = {x: cx + Math.cos(ang) * R, y: cy + Math.sin(ang) * R};
   for (let i = 0; i < 12; i++){ const a2 = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 120; sparks.push({x: p.x, y: p.y, vx: Math.cos(a2) * sp, vy: Math.sin(a2) * sp * .6, g: 0, col: col || "#c890ff", t0: now, life: 320 + Math.random() * 200}); }
   bank("magic/arcane_release", .5); shake(3); }
 function drawLabSphere(s){
-  const t = s.a; if (t.down || !t.c || !t.c.conds.has("shieldSpell")){ t.labSphere = null; s.life = 0; return; }
+  const t = s.a; if (t.down || !t.c || !t.c.conds.has(s.cond || "shieldSpell")){ if (s.cond) t.sanctSphere = null; else t.labSphere = null; s.life = 0; return; }
   const R0 = Math.max(46, labR(t) * 2.7), cx = t.x + (t.kx || 0), cy = labMid(t) - R0 * .1, open = Math.min(1, (now - s.t0) / 160), R = R0 * (.6 + .4 * (1 - Math.pow(1 - open, 3)));
   const hk = s.hit ? Math.max(0, 1 - (now - s.hitT) / 520) : 0, C = s.base.map((v, i) => Math.round(v + ((s.hit ? s.hit[i] : v) - v) * hk)), rgba = a => `rgba(${C[0]},${C[1]},${C[2]},${a})`;
   ctx.save(); ctx.globalCompositeOperation = "lighter";
@@ -9207,7 +9282,7 @@ function drawLabSphere(s){
   ctx.strokeStyle = rgba(.85); ctx.shadowColor = rgba(1); ctx.shadowBlur = 18; ctx.lineWidth = 2.5 + hk * 3; ctx.beginPath(); ctx.arc(cx, cy, R * .97, 0, Math.PI * 2); ctx.stroke();
   ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.shadowBlur = 0; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, R * .82, Math.PI * 1.1, Math.PI * 1.45); ctx.stroke();
   if (now - s.arcT > 70){ s.arcT = now; s.arcs = []; for (let j = 0; j < 4 + (hk > 0 ? 4 : 0); j++){ let a0 = labRnd(0, Math.PI * 2); if (hk > 0 && j < 4) a0 = s.hitAng + labRnd(-.8, .8); const pts = []; for (let i = 0; i < 7; i++){ const a = a0 + i * labRnd(.08, .16), r = R * labRnd(.86, 1.02); pts.push([cx + Math.cos(a) * r, cy + Math.sin(a) * r]); } s.arcs.push(pts); } }
-  ctx.strokeStyle = "rgba(235,248,255,.9)"; ctx.shadowColor = rgba(1); ctx.shadowBlur = 10; ctx.lineWidth = 1.4;
+  ctx.strokeStyle = s.arcCol || "rgba(235,248,255,.9)"; ctx.shadowColor = rgba(1); ctx.shadowBlur = 10; ctx.lineWidth = 1.4;
   for (const pts of s.arcs){ ctx.beginPath(); ctx.moveTo(pts[0][0], pts[0][1]); for (const q of pts) ctx.lineTo(q[0], q[1]); ctx.stroke(); }
   if (hk > 0){ ctx.strokeStyle = rgba(hk * .8); ctx.lineWidth = 4 * hk; ctx.beginPath(); ctx.arc(cx, cy, R * (1 + (1 - hk) * .25), 0, Math.PI * 2); ctx.stroke(); }
   ctx.restore();
