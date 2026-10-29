@@ -5852,7 +5852,7 @@ function drawFxLayer(flat){
   ctx.globalAlpha = 1;
 }
 // which sheets and sounds a spell uses, from its school (lib/spell-school-data) and damage type
-const SCHOOL_OF = {"Eldritch Blast": "evocation", "Hex": "enchantment", "Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
+const SCHOOL_OF = {"Eldritch Blast": "evocation", "Hex": "enchantment", "Fireball": "evocation", "Burning Hands": "evocation", "Entangle": "conjuration", "Hunter's Mark": "divination", "Hold Person": "enchantment", "Cloud of Daggers": "conjuration", "Flaming Sphere": "conjuration", "Green-Flame Blade": "evocation", "Mage Hand": "conjuration", "Minor Illusion": "illusion", "Prestidigitation": "transmutation", "Dancing Lights": "evocation", "Friends": "enchantment", "Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
   "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment",
   "Stinking Cloud": "conjuration", "Cloudkill": "conjuration", "Fog Cloud": "conjuration", "Poison Spray": "necromancy"};
 const RUNE_OF = {cold: "runeFrost", fire: "runeFire", lightning: "runeStorm", necrotic: "runeNecrotic", psychic: "runePsychic", radiant: "runeRadiant", force: "runeForce", acid: "runeAcid", heal: "runeHealing"};
@@ -6511,6 +6511,34 @@ const SPELLS = {
   // extra 1d6 necrotic damage to the target whenever you hit it with an attack." NOT YET: the chosen ability's
   // disadvantage on checks, and moving the hex to a new target when this one drops.
   "Hex":                {lvl: 1, kind: "hex", range: 90, bonus: true, cond: "hexed", type: "necrotic", fx: "#a35bff", conc: 600},
+  // THE REST OF THE LAB'S SPELLS (Sam, 2026-10-29: "Everything, rules too" — no hero has these yet; they are here for
+  // the day one learns them). SRD 5.1 unless marked. `aimRange`: an area aimed at the floor still has to be in range.
+  "Fireball":           {lvl: 3, kind: "save", save: "dex", range: 150, area: 40, aimRange: true, dmg: "8d6", type: "fire", fx: "#ff8a3a"},
+  // 15-ft cone from the caster: `cone` — the targets are the ones within 15 ft and inside the cone's 53° toward the click
+  "Burning Hands":      {lvl: 1, kind: "save", save: "dex", range: 15, area: 15, cone: true, selfArea: true, dmg: "3d6", type: "fire", fx: "#ff8a3a"},
+  // a 20-ft square of grasping plants: STR save or restrained (an action and a STR check frees them); concentration 1 minute
+  "Entangle":           {lvl: 1, kind: "save", save: "str", range: 90, area: 20, aimRange: true, cond: "restrained", fx: "#7ec83a", conc: 10, druid: true},
+  // PHB: bonus action, 90 ft, concentration 1 hour — +1d6 on each weapon hit on the quarry
+  "Hunter's Mark":      {lvl: 1, kind: "hex", range: 90, bonus: true, cond: "marked", fx: "#ff3a4a", conc: 600},
+  // WIS save or paralyzed (humanoids only); the save again at each of its turns; attacks have advantage and a hit
+  // within 5 ft is a critical; concentration 1 minute
+  "Hold Person":        {lvl: 2, kind: "save", save: "wis", range: 60, cond: "paralyzed", humanoid: true, fx: "#c890ff", conc: 10},
+  // a 5-ft cube of spinning daggers: 4d4 slashing to a creature that starts its turn in it; concentration 1 minute.
+  // (The SRD also hurts one that enters it on its turn — not yet: walking is not checked against it.)
+  "Cloud of Daggers":   {lvl: 2, kind: "zone", range: 60, area: 5, aimRange: true, dmg: "4d4", type: "slashing", fx: "#dfe7ff", conc: 10},
+  // a 5-ft ball of fire beside the target: DEX save, 2d6 fire (half); it stays while the caster concentrates, and at the
+  // start of each of the caster's turns it rams the nearest foe within 30 ft for the same save (the PHB's bonus-action
+  // ram, made automatic — flagged)
+  "Flaming Sphere":     {lvl: 2, kind: "save", save: "dex", range: 60, dmg: "2d6", type: "fire", fx: "#ff8a3a", conc: 10, sphere: true},
+  // SCAG: a melee weapon attack; on a hit green fire leaps to another creature within 5 ft of the target for the spell
+  // modifier in fire (and at 5th level the target takes +1d8 fire)
+  "Green-Flame Blade":  {lvl: 0, kind: "blade", range: 5, type: "fire", fx: "#5aff6a"},
+  // the little cantrips: a look and a line in the log, no roll
+  "Mage Hand":          {lvl: 0, kind: "util", range: 30, fx: "#9ad8ff"},
+  "Minor Illusion":     {lvl: 0, kind: "util", range: 30, fx: "#8fb8ff"},
+  "Prestidigitation":   {lvl: 0, kind: "util", range: 10, fx: "#ffd27a"},
+  "Dancing Lights":     {lvl: 0, kind: "util", range: 120, fx: "#ffbe5a", conc: 10},
+  "Friends":            {lvl: 0, kind: "util", range: 10, fx: "#ff7ad5", conc: 10},
 };
 // ---------- Rage and Wounded Fury: the rules, one copy (lib/rage.mjs, pasted in here by build_walk.py) ----------
 // Rage and Wounded Fury — the rules, pure, in one copy.
@@ -6687,7 +6715,7 @@ function attackRiders(att, atk, thrown) {
 function tintFor(a) { return a.raging || woundedFury(a.hp, a.woundedFury) ? RAGE_TINT : null }
 
 const COND_GLYPH = {surprised: ["!", "#ffd27a", "Surprised: no move and no action on its first turn, no reaction until that turn ends"], poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
-                    shielded: ["◇", "#cfe8ff", "+2 AC"], blessed: ["✚", "#ffe9a8", "Blessed: +1d4 to attack rolls and saving throws"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], hexed: ["⛧", "#c58aff", "Hexed: the warlock's hits deal +1d6 necrotic"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
+                    shielded: ["◇", "#cfe8ff", "+2 AC"], blessed: ["✚", "#ffe9a8", "Blessed: +1d4 to attack rolls and saving throws"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], hexed: ["⛧", "#c58aff", "Hexed: the warlock's hits deal +1d6 necrotic"], marked: ["⌖", "#ff5a5a", "Hunter's Mark: the ranger's weapon hits deal +1d6"], paralyzed: ["✖", "#d8b8ff", "Paralyzed: no moves or actions; attacks have advantage, a hit within 5 ft is a critical"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
                     hidden: ["◌", "#b8c7d6", "Hidden: unseen until you attack"], prone: ["▼", "#e0b070", "Prone: melee on it has advantage, ranged disadvantage; half speed to stand"],
                     grappled: ["✊", "#e0b070", "Grappled: speed 0"], helped: ["★", "#ffe08a", "Helped: advantage on the next attack"], disengaged: ["↷", "#cfe8ff", "Disengaged: no opportunity attacks"],
                     sorcery: ["✴", "#ff9bd2", "Innate Sorcery: DC +1, advantage on spell attacks"], readied: ["⌖", "#ffe08a", "Readied: a strike waits for the first foe in reach"], dodging: ["◈", "#cfe8ff", "Dodging"],
@@ -7352,6 +7380,7 @@ function nextTurn(first){
     if (s >= (a.c.sleptDc || 13)){ a.c.conds.delete("asleep"); popText(a, "wakes", "#b0b8ff"); }
     else { popText(a, "asleep", "#b0b8ff"); log(`${fname(a)} sleeps through the turn.`); setTimeout(nextTurn, 900); return; }
   }
+  if (newSpellsTurnStart(a)) return;
   if (a.c.surprised){ a.c.surprised = false; a.c.conds.delete("surprised"); popText(a, "surprised", "#ffd27a"); log(`${fname(a)} is caught by surprise and loses the turn.`); setTimeout(nextTurn, 900); return; }
   a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true; a.c.objFree = true;
   if (a.c.conds.has("numbed")){ a.c.move = Math.floor(a.c.move / 2 / 5) * 5; a.c.reactionUsed = true; a.c.conds.delete("numbed"); popText(a, "numb: half speed, no reactions", "#9fd8ff", .9); }   // the bhut's bite, one round (the reaction budget is reactionUsed, reset just above)
@@ -8483,9 +8512,12 @@ function combatClick(w){
   if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(friends(), w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; }
     if (t !== a && coverOf(a, t).total){ toast(`No line of sight to ${fname(t)}.`); return; } castSpell(a, t, p.spell); return; }
   if (sp && (sp.kind === "cloud" || sp.kind === "fog") && Math.hypot(w.x - a.x, w.y - a.y) / ftPx(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
+  if (sp && sp.aimRange && Math.hypot(w.x - a.x, w.y - a.y) / ftPx(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
+  if (sp && sp.kind === "util"){ castUtil(a, hitActor([...foes, ...friends()], w) || w, p.spell); return; }
   if (sp && sp.area){ castSpell(a, w, p.spell); return; }
   const t = hitActor(foes, w); if (!t || t.down) return;
   if (p.darts){ placeDart(a, t); return; }
+  if (sp && sp.kind === "blade"){ const w0 = meleeOf(a); if (!w0){ toast("Green-Flame Blade needs a melee weapon."); return; } closeMenu(); attackWith(a, t, {...w0, name: `${w0.name} (Green-Flame Blade)`, gfb: true, magic: true}); return; }
   { const cv = coverOf(a, t), round = p.atk && !p.throwing && (p.atk.reach || 5) <= 10 && gateWayTo(a, t);
     if (cv.total && !round){ toast(`No line of sight: ${fname(t)} is behind ${cv.why}.`); return; } }
   if (p.atk && p.throwing && feetBetween(a, t) > p.atk.thrown){ toast(`Too far to throw (${p.atk.thrown} ft).`); return; }
@@ -8774,7 +8806,7 @@ function advantageOn(att, tgt, ranged, atk){
     if (near) adv--;                                                          // or beyond the weapon's normal range
     if (atk && atk.long && feetBetween(att, tgt) > atk.reach) adv--;
   }
-  if (tgt.c.conds.has("lit") || tgt.c.conds.has("asleep")) adv++;
+  if (tgt.c.conds.has("lit") || tgt.c.conds.has("asleep") || tgt.c.conds.has("paralyzed")) adv++;
   if (tgt.kind === "pc" && tgt.down) adv++;                                   // SRD: unconscious — attack rolls against it have advantage
   if (tgt.c.conds.has("dodging") || att.c.conds.has("mocked")) adv--;
   if (att.c.conds.has("hidden") || att.c.conds.has("helped")) adv++;          // unseen attacker; an ally's Help
@@ -8885,6 +8917,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       let cv = coverOf(att, tgt), acVs = targetAc(tgt) + cv.ac;
       const bl = blessD4(att);
       let adv = advantageOn(att, tgt, ranged, atk), r = d20(adv, att), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit + bl, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + bl + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
+      if (hit && !crit && tgt.c.conds.has("paralyzed") && feetBetween(att, tgt) <= 5.5) crit = true;   // SRD: a hit on the paralyzed from within 5 ft is a critical
       if (hit && !crit && tgt.kind === "pc" && tgt.down && !ranged && feetBetween(att, tgt) <= 7.5) crit = true;   // SRD: unconscious — a hit from within 5 ft is a critical hit
       if (bl) popText(att, `bless +${bl}`, "#ffe9a8", .8);
       if (hit && !crit && !cv.total && hero(tgt) && canShield(tgt) && r + atk.hit + bl + insp < acVs + 5){
@@ -8948,7 +8981,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       { const rd = attackRiders({hp: att.c.hp, woundedFury: att.c.sheet.woundedFury, raging: att.c.rage, level: att.c.sheet.level || 1}, atk, shot === "thrown");
         for (const d of rd.dice){ const s = roll(d.dice, crit); dmg.total += s.total; parts.push(`${d.label} ${s.total}`); }
         for (const f of rd.flat){ dmg.total += f.amount; parts.push(`${f.label} +${f.amount}`); } }
-      damage(tgt, dmg.total, atk.type, crit, att, !!atk.magic); hexRider(att, tgt, crit);
+      damage(tgt, dmg.total, atk.type, crit, att, !!atk.magic); hexRider(att, tgt, crit); markRider(att, tgt, crit, atk); if (atk.gfb) gfbLeap(att, tgt, crit);
       if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => bank(`magic/impact_${atk.extra.type}`, .55), 200); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att, true), 260); parts.push(`${e.total} ${atk.extra.type}`); }
       if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20(rageAdvantage(tgt.c.rage, atk.rider.save), tgt, atk.rider.cond) + (tgt.c.sheet.saves[atk.rider.save] || 0) + blessD4(tgt), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att, true); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
@@ -9090,9 +9123,12 @@ function castSpell(caster, tgt, name, done, darts){
         sigilEnd(tgt, true); bank("combat/heal", .8); setTimeout(() => bank("magic/heal_tail", .5), 300);
         kitImpact(tgt, KIT.healing);                                   // the shimmer comes down on them, the golden glow stays
         popText(tgt, `+${d}`, "#9ff2c8"); log(`${fname(caster)} ${name}: ${fname(tgt)} regains ${d}.`); renderParty();
+      } else if (sp.kind === "zone"){                                           // Cloud of Daggers: the blades hang where it was cast
+        sigilEnd(at, true); const z = {x: at.x, y: at.y, caster, name, dmg: sp.dmg, type: sp.type}; daggerZones.push(z); sparks.push({labDaggers: true, z, t0: now, life: 3600000});
+        bank("combat/blade_whoosh", .6); log(`${fname(caster)} casts <b>${name}</b>: a 5-ft cube of whirling daggers (${sp.dmg} ${sp.type} to anyone who starts a turn in it; concentration).`);
       } else if (sp.kind === "hex"){                                            // Hex: the curse lands, no roll
-        land(tgt, true, "necrotic"); addCond(tgt, "hexed"); tgt.c.hexedBy = caster; concHolds(caster, tgt, "hexed", name);
-        narrate(caster, `${fname(caster)} curses ${fname(tgt)}.`); log(`${fname(caster)} casts <b>Hex</b> on ${fname(tgt)}: +1d6 necrotic on each of ${fname(caster)}'s hits while it lasts (concentration).`); renderParty();
+        land(tgt, true, "necrotic"); addCond(tgt, sp.cond); tgt.c[sp.cond + "By"] = caster; concHolds(caster, tgt, sp.cond, name);
+        narrate(caster, sp.cond === "marked" ? `${fname(caster)} marks ${fname(tgt)} as quarry.` : `${fname(caster)} curses ${fname(tgt)}.`); log(`${fname(caster)} casts <b>${name}</b> on ${fname(tgt)}: +1d6 on each of ${fname(caster)}'s ${sp.cond === "marked" ? "weapon " : ""}hits while it lasts (concentration).`); renderParty();
       } else if (sp.kind === "buff"){ sigilEnd(tgt, true); bank(`magic/${family}_release`, .6);
         // Shield of Faith (SRD 5.1: "A shimmering field appears and surrounds a creature of your choice ... granting it
         // a +2 bonus to AC"): Sam's sheet, a ring of gold on the floor that rises into a shimmering egg of light around
@@ -9111,11 +9147,14 @@ function castSpell(caster, tgt, name, done, darts){
         log(`${fname(caster)} ${name}: ${rolls.length} darts strike ${fname(tgt)}, ${rolls.join(" + ")} = <b>${tot}</b> ${sp.type}.`);
       }
       else {                                                                    // a save
-        const targets = (sp.area ? standing([...foes, ...party, ...bystanders()]).filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t)) : [tgt]).filter(t => !(sp.selfArea && t === caster));
+        const pool = standing([...foes, ...party, ...bystanders()]), ang0 = Math.atan2(at.y - caster.y, at.x - caster.x);
+        const targets = (sp.cone ? pool.filter(t => feetBetween(caster, t) <= sp.area + 2.5 && Math.abs(((Math.atan2(t.y - caster.y, t.x - caster.x) - ang0 + Math.PI * 3) % (Math.PI * 2)) - Math.PI) <= .47)   // a cone: within its length and its 53°
+          : sp.area ? pool.filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t)) : [tgt]).filter(t => !(sp.selfArea && t === caster));
         if (!targets.length){ log(`${fname(caster)} ${name}: nothing there.`); return; }
         const lines = [];
         targets.forEach((t, i) => setTimeout(() => {
           if (name === "Sleep" && (t.c.sheet.immuneCond || []).includes("asleep")) return;
+          if (sp.humanoid && !isHumanoid(t)){ popText(t, "unaffected", "#aaa"); lines.push(`${fname(t)} is not a humanoid: unaffected`); if (i === targets.length - 1){ sigilEnd(t, false); log(`${fname(caster)} ${name}: ${lines.join("; ")}.`); } return; }
           // Fey Ancestry (SRD 5.1 elf/half-elf 2315/2320, drow 1608): magic can't put them to sleep. Shown, not silent.
           if (name === "Sleep"){ const fp = sleepProof(rollerOf(t)); if (fp){ traitPop(t, fp); lines.push(`${fname(t)} is untouched (Fey Ancestry)`); if (i === targets.length - 1){ sigilEnd(t, false); log(`${fname(caster)} ${name}: ${lines.join("; ")}.`); } return; } }
           const cvS = sp.save === "dex" ? coverOf(caster, t) : {ac: 0};            // SRD: cover adds to DEX saves too
@@ -9127,7 +9166,7 @@ function castSpell(caster, tgt, name, done, darts){
           else if (name === "Vicious Mockery"){ land(t, !ok, "psychic"); if (!ok) spawnFx("pxSwirl", {at: t, sq: .7, anchor: "top", lift: .45, loop: true, until: now + 2600, alpha: .95}); if (!ok) for (let g = 0; g < 3; g++) spawnFx("pxGhost", {at: t, sq: .34, anchor: "top", lift: .3, loop: true, until: now + 2600, alpha: .95, orbit: {r: .55, ry: .14, speed: 2.6, phase: g * Math.PI * 2 / 3}}); }
           else { if (name === "Toll the Dead" && ok) spawnFx("tollBell", {at: t, sq: 2, anchor: "base", lift: -.15, alpha: .8}); land(t, !ok, sp.type || "psychic"); }   // the bell tolls either way (SRD: "fills the air around it"); the damage is only on a failed save
           if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); const n = ok ? (sp.lvl ? Math.floor(d.total / 2) : 0) : d.total; if (n) damage(t, n, sp.type, false, caster, true); else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
-          if (sp.cond && !ok){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); if (sp.cond === "asleep"){ t.c.sleptDc = m.dc; t.sleepT0 = now; t.path = []; } }
+          if (sp.cond && !ok){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); if (sp.cond === "restrained") t.c.webDc = dc; if (sp.cond === "paralyzed"){ t.c.heldDc = dc; t.path = []; } if (sp.cond === "asleep"){ t.c.sleptDc = m.dc; t.sleepT0 = now; t.path = []; } }
           lines.push(line); if (i === targets.length - 1) log(`${fname(caster)} ${name}: ${lines.join("; ")}.`);
         }, i * 180));
       }
@@ -9218,6 +9257,9 @@ function addCond(t, k){ if ((t.c.sheet.immuneCond || []).includes(k)) { popText(
 const beamsOf = a => { const L = (a.c.sheet && a.c.sheet.level) || 1; return L >= 17 ? 4 : L >= 11 ? 3 : L >= 5 ? 2 : 1; };
 const invoked = (a, name) => ((a.c.sheet && (a.c.sheet.invocations || (SHEETS[a.id] || {}).invocations)) || []).some(x => String(x.name || x).toLowerCase() === name.toLowerCase());
 // Hex: +1d6 necrotic (doubled on a crit) when the hexer hits the hexed
+// Hunter's Mark: +1d6 of the weapon's own type on a weapon hit on the quarry
+function markRider(att, t, crit, atk){ if (!t || t.down || !t.c || !t.c.conds.has("marked") || t.c.markedBy !== att || !atk) return; const h = roll("1d6", crit);
+  setTimeout(() => { labMarkPulse(t); damage(t, h.total, atk.type || "piercing", false, att, false); log(`Hunter's Mark: +${h.total} on ${fname(t)}.`); }, 240); }
 function hexRider(att, t, crit){ if (!t || t.down || !t.c || !t.c.conds.has("hexed") || t.c.hexedBy !== att) return; const h = roll("1d6", crit);
   setTimeout(() => { labHexPulse(t); bank("walk:impact-necrotic", .45); damage(t, h.total, "necrotic", false, att, true); log(`Hex: +${h.total} necrotic on ${fname(t)}.`); }, 220); }
 // Repelling Blast: "push the creature up to 10 feet away from you in a straight line" — off a ledge or into the chasm if that is where it goes
@@ -9225,6 +9267,42 @@ function repel(a, t, ft){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const ra
   labRef("ebImpExpl", {x: t.x, y: t.y + 8, w: 170, life: 600, grow: [.5, 1.2], fade: [20, 380], anchorY: "bottom", add: false}); shake(8); bank("walk:thunder-clap", .5);
   if (ce) chasmFall(t, raw, a, ce); else if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a);
   else { const top = elevAt(t.x, t.y); t.x = to.x; t.y = to.y; const dropFt = top - elevAt(to.x, to.y); popText(t, `pushed ${ft} ft`, "#c58aff", .85); if (dropFt >= LEDGE_FT) setTimeout(() => landFall(t, dropFt), 250); } }
+// Green-Flame Blade (SCAG): on the hit green fire on the target (+1d8 fire from 5th level), and the flame leaps to one other
+// creature within 5 ft of it for the spell modifier in fire
+function gfbLeap(att, t, crit){ labGfbHit(t); bank("walk:impact-fire", .5); const L = (att.c.sheet && att.c.sheet.level) || 1, mod = (att.c.sheet.magic && att.c.sheet.magic.mod) || Math.max(0, abilMod(att.c.sheet, "int"), abilMod(att.c.sheet, "cha"));
+  if (L >= 5 && !t.down){ const d = roll(L >= 17 ? "3d8" : L >= 11 ? "2d8" : "1d8", crit).total; setTimeout(() => damage(t, d, "fire", false, att, true), 200); }
+  const nxt = standing(t.kind === "pc" || t.ally ? heroes() : foes).filter(v => v !== t && v !== att && feetBetween(v, t) <= 5.5).sort((p, q) => feetBetween(p, t) - feetBetween(q, t))[0];
+  if (!nxt || mod <= 0) return; setTimeout(() => labGfbLeap(t, nxt, () => { labGfbHit(nxt); bank("walk:impact-fire", .4); damage(nxt, mod, "fire", false, att, true); log(`Green-Flame Blade: the fire leaps to ${fname(nxt)}, ${mod} fire.`); }), 220); }
+const isHumanoid = t => t.kind === "pc" || /^(human|drow|duergar|goblin|deepgnome|kuotoa|elf|dwarf|halfling)$/.test(cadaverSpecies(t.id) || "") || /drow|bandit|thug|cult|mage|townsm|townsw|peddler|stranger/.test(t.id);
+// Cloud of Daggers and Flaming Sphere live while the caster concentrates (endConc clears them)
+let daggerZones = [], fireSpheres = [];
+function flameSphereCast(c, at, cb){ const side = Math.sign(c.x - at.x) || 1, z = {x: at.x + side * ftPx(at) * 5, y: at.y, caster: c}; fireSpheres.push(z); sparks.push({labFireSphere: true, z, t0: now, life: 3600000}); bank("walk:impact-fire", .5);
+  setTimeout(() => { z.move = {x0: z.x, y0: z.y, x1: at.x + side * ftPx(at) * 2.5, y1: at.y, t0: now, ms: 420}; setTimeout(cb, 420); }, 300); }
+// the new spells' turn-start rules: Hold Person's save, the daggers, the sphere's ram
+function newSpellsTurnStart(a){
+  if (a.c.conds.has("paralyzed") && a.c.heldDc){ const s = d20(0, a) + (a.c.sheet.saves.wis || 0); if (s >= a.c.heldDc){ a.c.conds.delete("paralyzed"); a.c.heldDc = 0; popText(a, "breaks free", "#d8b8ff"); log(`${fname(a)} shakes off Hold Person (WIS ${s}).`); }
+    else { popText(a, "held", "#d8b8ff"); log(`${fname(a)} is held fast (WIS ${s} vs DC ${a.c.heldDc}).`); setTimeout(nextTurn, 900); return true; } }
+  for (const z of daggerZones) if (!a.down && Math.hypot(a.x - z.x, a.y - z.y) <= ftPx(a) * 4){ const d = roll(z.dmg).total; bank("combat/blade_whoosh", .6); damage(a, d, z.type, false, z.caster, true); log(`${fname(a)} starts the turn in the Cloud of Daggers: ${d} ${z.type}.`); if (a.down) return true; }
+  for (const z of fireSpheres) if (z.caster === a){ const v = standing(hero(a) ? foes : heroes()).filter(f => Math.hypot(f.x - z.x, f.y - z.y) <= ftPx(f) * 30).sort((p, q) => Math.hypot(p.x - z.x, p.y - z.y) - Math.hypot(q.x - z.x, q.y - z.y))[0]; if (!v) continue;
+    const dc = a.c.sheet.magic.dc, s = d20(0, v) + (v.c.sheet.saves.dex || 0), d = roll("2d6").total, n = s >= dc ? Math.floor(d / 2) : d; z.move = {x0: z.x, y0: z.y, x1: v.x + (Math.sign(z.x - v.x) || 1) * ftPx(v) * 2.5, y1: v.y, t0: now, ms: 420};
+    setTimeout(() => { labFireHit(v); bank("walk:impact-fire", .6); damage(v, n, "fire", false, a, true); log(`The Flaming Sphere rams ${fname(v)}: DEX ${s} vs DC ${dc} — ${n} fire.`); }, 420); }
+  return false;
+}
+// the little cantrips: the action, the look, a line in the log
+// MINOR ILLUSION'S FIGURES (Sam, 2026-10-29): translucent arcane blue. Anyone: a cat; a drow from 3rd level; a human from
+// 5th. A bard has more: a beautiful maiden, a chicken, a menacing dildo, a chitin horror (an original creature — the
+// reference Sam sent was a film's alien, which the game can't use). `img`: an image in public/vfx/lab, `spr`: a sprite id.
+const ILLUSIONS = [{key: "a cat", img: "ill-cat", h: .45}, {key: "a drow", spr: "drow-guard-male", lvl: 3}, {key: "a human", spr: "wandering-peddler", lvl: 5},
+  {key: "a beautiful maiden", spr: "townswoman-young-slim", bard: true}, {key: "a chicken", img: "ill-chicken", h: .45, bard: true}, {key: "a menacing dildo", img: "ill-dildo", h: .9, bard: true}, {key: "a chitin horror", img: "ill-horror", h: 1.2, bard: true}];
+function illusionPicker(a, go){ const L = (a.c.sheet && a.c.sheet.level) || 1, bard = isMusical(a) || /bard/i.test(a.c.sheet.cls || "");
+  const opts = ILLUSIONS.filter(o => (!o.lvl || L >= o.lvl) && (!o.bard || bard));
+  showDialog({title: `${fname(a)}: Minor Illusion`, body: "Conjure an image of…", src: "Minor Illusion · cantrip · 30 ft", buttons: opts.map((o, i) => ({label: o.key[2].toUpperCase() + o.key.slice(3), primary: i === 0, fn: () => go(o)}))}); }
+function castUtil(a, t, name){ a.c.action = false; closeMenu(); if (t.id) a.face = faceOf(t.x - a.x, t.y - a.y); if (SPELLS[name].conc) startConc(a, name);
+  playOnce(a, SPR[a.id].img.cast ? "cast" : "attack", () => setAnim(a, "idle")); bank("magic/arcane_release", .5);
+  const go = (pick) => { labUtil(name, a, t, pick); const what = {"Mage Hand": "a spectral hand", "Minor Illusion": `an illusion${pick ? " of " + pick.key : ""}`, "Prestidigitation": "a minor trick", "Dancing Lights": "four dancing lights", "Friends": "a charm of friendship"}[name];
+    log(`${fname(a)} casts <b>${name}</b>: ${what}${t.id ? ` (${fname(t)})` : ""}.`); if (name === "Friends" && t.id) popText(t, "friendly… for now", "#ff9ad8", .85); renderParty(); afterAction(a); };
+  if (name === "Minor Illusion") illusionPicker(a, go); else setTimeout(go, 300);
+}
 function startConc(a, spell){
   if (a.c.conc) endConc(a, `casting ${spell} instead`);
   a.c.conc = {spell, endRound: (cbt ? cbt.round : 0) + SPELLS[spell].conc, holds: []};
@@ -9237,6 +9315,7 @@ function concHolds(caster, t, cond, spell){
 function endConc(a, why){
   const k = a.c.conc; if (!k) return; a.c.conc = null;
   poisonZones = poisonZones.filter(z => !(z.caster === a && z.name === k.spell));   // the gas goes with the concentration
+  if (k.spell === "Cloud of Daggers") daggerZones = daggerZones.filter(z => z.caster !== a); if (k.spell === "Flaming Sphere") fireSpheres = fireSpheres.filter(z => z.caster !== a);
   for (const {t, cond} of k.holds){
     if (!t.c || !t.c.condFrom || t.c.condFrom[cond] !== k) continue;      // since replaced by another source
     delete t.c.condFrom[cond]; if (!t.c.conds.has(cond)) continue;
@@ -10094,6 +10173,99 @@ function labHexDeliver(c, at, then){ const h = labHand(c, at), to = bodyPoint(at
   setTimeout(() => labRef("wlOrb", {follow: {x0: h.x, y0: h.y, x1: to.x, y1: to.y, ms: 380, arc: 30}, w: 46, spin: 5, add: false, then}), 520); }
 function labHexHit(t){ labRef("wlVortex", {at: t, flat: true, w: labR(t) * 5, life: 3600000, spin: -.8, grow: [.3, 1], fade: [200, 600], add: false, alpha: .85, pulse: true, whileCond: "hexed"}); popText(t, "hexed", "#c58aff", .9); lightFlash(t.x, labMid(t), "#8c3cff", 220, 500); }
 function labHexPulse(t){ labRef("wlBoltDart", {at: t, w: 70, life: 260, fade: [10, 200]}); t.flash = now + 160; t.flashCol = "#8c3cff"; }
+// ---- THE NEW SPELLS' LOOKS (Sam, 2026-10-29: "Everything, rules too" — from the Combat Effects Lab) ----
+// FIREBALL: the big comet flies straight, then the explosion in four beats (swirl, burst, smoke, flames left on the floor)
+function labFireballDeliver(c, at, then){ const h = labHand(c, at); bank("walk:impact-fire", .5);
+  labRef("fbTravel3", {follow: {x0: h.x, y0: h.y, x1: at.x, y1: at.y - 50, ms: 520}, w: 320, headLeft: true, fire: true, then: () => { labFireballBoom(at); then(); }}); }
+function labFireballBoom(at){ const R = ftPx({x: at.x, y: at.y}) * 20; labRef("fbSwirl", {x: at.x, y: at.y - 60, w: R * .7, life: 300, spin: 7, grow: [.3, 1.1], fade: [10, 120]});
+  setTimeout(() => { labRef("fbBurst", {x: at.x, y: at.y + 10, w: R * 1.5, life: 520, grow: [.5, 1.1], fade: [10, 260], anchorY: "bottom"}); shake(13); hitstop(90); bank("walk:thunder-clap", .4); lightFlash(at.x, at.y - 40, "#ff9a3a", R * 2, 1000);
+    labRef("fbSmokeBurst", {x: at.x, y: at.y - 50, w: R * 1.6, life: 1400, grow: [.6, 1.5], fade: [150, 800], add: false, alpha: .7});
+    for (let i = 0; i < 7; i++){ const ang = i / 7 * Math.PI * 2 + labRnd(-.2, .2), rr = R * labRnd(.35, .85); labRef("fbGround", {x: at.x + Math.cos(ang) * rr, y: at.y + Math.sin(ang) * rr * .45, w: labRnd(70, 110), life: 2400, fade: [200, 600], anchorY: "bottom", pulse: true, flipX: i % 2 === 1}); } }, 180); }
+// BURNING HANDS: fingers spread, the flame fans out of the hand in the cone
+function labBurningHands(c, at, then){ const h = labHand(c, at), ang = Math.atan2(at.y - h.y, at.x - h.x), len = ftPx(c) * 15; bank("walk:impact-fire", .6);
+  labRef("burningHands", {x: h.x, y: h.y, w: len * .55, life: 800, rot: ang, anchor: "left", grow: [.3, 1], fade: [60, 260], pulse: true, boost: .35});
+  for (let i = 0; i < 9; i++) setTimeout(() => { const sp = labRnd(-.45, .45); labRef(["fbTravel1", "fbTravel2"], {follow: {x0: h.x, y0: h.y, x1: h.x + Math.cos(ang + sp) * len, y1: h.y + Math.sin(ang + sp) * len * .8, ms: labRnd(260, 380)}, w: labRnd(50, 90), flicker: 50, headLeft: true, alpha: .85}); }, i * 80);
+  lightFlash(h.x + Math.cos(ang) * len * .4, h.y, "#ff8c32", len, 800); setTimeout(then, 300); }
+const labFireHit = t => { labRef("fbBurst", {at: t, w: 90, life: 340, grow: [.5, 1], fade: [20, 200]}); t.flash = now + 260; t.flashCol = "#ff8a3a"; };
+// DRUID MAGIC: no projectile — the caster's eyes burn neon emerald ("this is true with all druid spells")
+function labEyes(a, ms){ sparks.push({labEyes: true, a, t0: now, life: ms}); }
+function drawLabEyes(s, k){ const a = s.a; if (a.down) return; const sc = actorScale(a), f = labLeft(a) ? -1 : 1, y = a.y - labH(a) * .74, x = a.x + (a.kx || 0) + f * labR(a) * .22;
+  const on = Math.min(1, (now - s.t0) / 150) * (k > .85 ? 1 - (k - .85) / .15 : 1), fl = .85 + .15 * Math.sin(now / 40);
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = on; const g = ctx.createRadialGradient(x, y, 0, x, y, 26 * sc); g.addColorStop(0, "rgba(80,255,150,.55)"); g.addColorStop(1, "rgba(0,200,90,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 26 * sc, 0, Math.PI * 2); ctx.fill();
+  for (const dx of [-3.2, 3.2]){ const ex = x + dx * sc * f; ctx.shadowColor = "#30ff8a"; ctx.shadowBlur = 14; ctx.fillStyle = "#b8ffd8"; ctx.beginPath(); ctx.arc(ex, y, 1.9 * sc * fl, 0, Math.PI * 2); ctx.fill(); ctx.strokeStyle = `rgba(60,255,140,${.7 * fl})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(ex - 9 * sc, y); ctx.lineTo(ex + 9 * sc, y); ctx.stroke(); }
+  ctx.restore(); }
+// ENTANGLE: the ground trembles and cracks, thorned branches tear up near each creature, crawl to them and climb them
+function labEntangleDeliver(c, at, then){ labEyes(c, 2400); shake(4); for (let i = 1; i < 6; i++) setTimeout(() => shake(3 + (i % 2)), i * 110);
+  const R = ftPx({x: at.x, y: at.y}) * 10; for (let i = 0; i < 9; i++){ const ang = i / 9 * Math.PI * 2 + labRnd(-.3, .3), pts = [[at.x, at.y]]; let x = at.x, y = at.y; for (let j = 0; j < 6; j++){ x += Math.cos(ang + labRnd(-.5, .5)) * R / 6; y += Math.sin(ang + labRnd(-.5, .5)) * R / 6 * .45; pts.push([x, y]); } sparks.push({labCrack: true, pts, x: at.x, y: at.y, t0: now, life: 4000}); }
+  lightFlash(at.x, at.y - 30, "#78dc46", R * 1.8, 2000); bank("movement/web_tear", .5); setTimeout(then, 600); }
+function drawLabCrack(s, k){ const g = Math.min(1, (now - s.t0) / 260), n = Math.max(2, Math.ceil(s.pts.length * g)); ctx.save(); ctx.globalAlpha = k < .8 ? 1 : 1 - (k - .8) / .2; ctx.lineJoin = "round";
+  const path = () => { ctx.beginPath(); ctx.moveTo(s.pts[0][0], s.pts[0][1]); for (let i = 1; i < n; i++) ctx.lineTo(s.pts[i][0], s.pts[i][1]); ctx.stroke(); };
+  ctx.strokeStyle = "rgba(10,8,6,.85)"; ctx.lineWidth = 3; path(); ctx.globalCompositeOperation = "lighter"; ctx.strokeStyle = "rgba(60,200,90,.35)"; ctx.lineWidth = 1; path(); ctx.restore(); }
+function labThorns(t, held){ const R = labR(t), cx = t.x, top = labMid(t) - R * 1.3, n = held ? 12 : 5;
+  for (let i = 0; i < n; i++){ const ang = labRnd(0, Math.PI * 2), d = labRnd(R * 2.4, R * 4.2), x0 = cx + Math.cos(ang) * d, y0 = t.y + Math.sin(ang) * d * .45, side = Math.random() < .5 ? -1 : 1, pts = [];
+    for (let j = 0; j <= 10; j++){ const u = j / 10; pts.push({x: x0 + (cx + side * R * labRnd(.2, .9) - x0) * u + Math.sin(u * 7 + i) * 5, y: y0 + (t.y + labRnd(-4, 4) - y0) * u}); }
+    const turns = labRnd(.8, 1.6), hEnd = top + labRnd(0, R * 1.2); for (let j = 1; j <= 16; j++){ const u = j / 16, a2 = side * u * turns * Math.PI * 2; pts.push({x: cx + Math.sin(a2) * R * (1.05 - u * .3), y: t.y + (hEnd - t.y) * u - Math.cos(a2) * 4}); }
+    sparks.push({labThorn: true, a: t, pts, ox: t.x, oy: t.y, w: labRnd(9, 15), t0: now + i * 45, grow: labRnd(650, 950), life: held ? 3600000 : 1400, seed: Math.random() * 9, whileCond: held ? "restrained" : null}); } }
+function drawLabThorn(s, k){ const t = s.a; if (s.whileCond && !(t.c && t.c.conds.has(s.whileCond) && !t.down)){ s.whileCond = null; s.life = now - s.t0 + 600; s.t1 = now; }
+  const age = now - s.t0; if (age < 0) return; const g = Math.min(1, age / s.grow), dx = t.x - s.ox, dy = t.y - s.oy, P = s.pts.map(p => ({x: p.x + dx, y: p.y + dy})), n = Math.max(2, Math.ceil(P.length * (1 - Math.pow(1 - g, 2)))), al = s.t1 ? Math.max(0, 1 - (now - s.t1) / 600) : 1;
+  ctx.save(); ctx.globalAlpha = al; ctx.lineCap = "round";
+  for (const [col, wk] of [["#140b05", 1.3], ["#3a2210", 1], ["#5a3a1c", .4]]){ ctx.strokeStyle = col; for (let i = 1; i < n; i++){ ctx.lineWidth = Math.max(1, s.w * wk * (1 - i / P.length * .7)); ctx.beginPath(); ctx.moveTo(P[i - 1].x, P[i - 1].y); ctx.lineTo(P[i].x, P[i].y); ctx.stroke(); } }
+  ctx.fillStyle = "#2a1a0a"; for (let i = 2; i < n; i += 2){ const a = Math.atan2(P[i].y - P[i - 1].y, P[i].x - P[i - 1].x) + ((i + (s.seed | 0)) % 4 < 2 ? Math.PI / 2 : -Math.PI / 2), w = s.w * (1 - i / P.length * .7) * .5;
+    ctx.beginPath(); ctx.moveTo(P[i].x + Math.cos(a) * w * 2.2, P[i].y + Math.sin(a) * w * 2.2); ctx.lineTo(P[i].x + Math.cos(a + 1.6) * w * .6, P[i].y + Math.sin(a + 1.6) * w * .6); ctx.lineTo(P[i].x + Math.cos(a - 1.6) * w * .6, P[i].y + Math.sin(a - 1.6) * w * .6); ctx.fill(); }
+  ctx.fillStyle = "#5aa02a"; for (let i = 3; i < n; i += 4){ const a = (i * 1.7 + s.seed) % 6.28; ctx.save(); ctx.translate(P[i].x, P[i].y); ctx.rotate(a); ctx.beginPath(); ctx.ellipse(s.w * .6, 0, 5, 2.2, 0, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
+  ctx.globalCompositeOperation = "lighter"; ctx.strokeStyle = "rgba(90,200,70,.22)"; ctx.shadowColor = "#5ec040"; ctx.shadowBlur = 6; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(P[0].x, P[0].y); for (let i = 1; i < n; i++) ctx.lineTo(P[i].x, P[i].y); ctx.stroke();
+  ctx.restore(); }
+// HUNTER'S MARK: a thin red line from the hand, the blood-red stag sigil blooms over the quarry and hangs while marked
+function labMarkDeliver(c, at, then){ const h = labHand(c, at), to = bodyPoint(at); labRef("wlBoltDart", {follow: {x0: h.x, y0: h.y, x1: to.x, y1: to.y, ms: 220}, w: 50, filter: "hue-rotate(110deg) saturate(2)", then}); }
+function labMarkHit(t){ labRef("rgMark", {at: t, w: labR(t) * 4, life: 3600000, grow: [.3, 1], fade: [120, 500], pulse: true, dy: -labR(t) * 1.6, alpha: .9, whileCond: "marked"}); labRef("rgMark", {at: t, w: labR(t) * 5, life: 360, grow: [.6, 1.6], fade: [10, 300], dy: -labR(t) * 1.6}); lightFlash(t.x, labMid(t), "#ff2a3a", 200, 500); }
+function labMarkPulse(t){ labRef("rgMark", {at: t, w: labR(t) * 3, life: 300, grow: [.8, 1.4], fade: [10, 260], dy: -labR(t) * 1.6}); }
+// HOLD PERSON: violet bands of force snap round the body at four heights and lock
+function labHoldHit(t){ sparks.push({labHold: true, a: t, t0: now, life: 3600000}); t.flash = now + 200; t.flashCol = "#c890ff"; }
+function drawLabHold(s){ const t = s.a; if (t.down || !t.c || !t.c.conds.has("paralyzed")){ if (!s.t1){ s.t1 = now; for (let i = 0; i < 20; i++) sparks.push({x: t.x + labRnd(-20, 20), y: t.y - labRnd(0, 90), vx: labRnd(-120, 120), vy: labRnd(-80, 20), col: "#e6ccff", t0: now, life: labRnd(300, 600)}); } s.life = 0; return; }
+  const H = labH(t), R = labR(t) * 1.25, x = t.x + (t.kx || 0), al = Math.min(1, (now - s.t0) / 300);
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = al; ctx.lineWidth = 3; ctx.shadowColor = "#d8a8ff"; ctx.shadowBlur = 12;
+  for (let i = 0; i < 4; i++){ const y = t.y - H * (.18 + i * .2), ph = now / 500 + i * 1.3; ctx.strokeStyle = i % 2 ? "rgba(230,200,255,.9)" : "rgba(190,130,255,.9)"; ctx.beginPath(); ctx.ellipse(x, y, R, R * .32, 0, 0, Math.PI * 2); ctx.stroke();
+    for (let j = 0; j < 4; j++){ const a = ph * 2 + j * Math.PI / 2; ctx.fillStyle = "#f4e6ff"; ctx.fillRect(x + Math.cos(a) * R - 2, y + Math.sin(a) * R * .32 - 2, 4, 4); } }
+  ctx.restore(); }
+// CLOUD OF DAGGERS: spinning steel daggers in a 5-ft cube
+function drawLabDaggers(s){ const z = s.z; if (!daggerZones.includes(z)){ s.life = 0; return; } const im = labImg("dagger"); if (!im.complete || !im.naturalWidth) return; const R = ftPx(z) * 3.2;
+  for (let i = 0; i < 14; i++){ const a = now / (180 + (i % 3) * 40) + i * 2.4, rr = R * (.3 + (i % 4) * .2), x = z.x + Math.cos(a) * rr, y = z.y - 30 + Math.sin(a) * rr * .45 + Math.sin(now / 150 + i) * 14;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(now / 60 + i); ctx.drawImage(im, -9, -18, 18, 37); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = .35 + .35 * Math.sin(now / 90 + i); ctx.drawImage(im, -9, -18, 18, 37); ctx.restore(); } }
+// FLAMING SPHERE: a 5-ft ball of roaring fire, the swirl turning in it; it rolls to whoever it rams
+function drawLabSphereFire(s){ const z = s.z; if (!fireSpheres.includes(z)){ s.life = 0; return; } if (z.move){ const q = Math.min(1, (now - z.move.t0) / z.move.ms), e = q < .5 ? 2 * q * q : 1 - Math.pow(-2 * q + 2, 2) / 2; z.x = z.move.x0 + (z.move.x1 - z.move.x0) * e; z.y = z.move.y0 + (z.move.y1 - z.move.y0) * e; if (q >= 1) z.move = null; }
+  const R = ftPx(z) * 2.4 * (1 + Math.sin(now / 50) * .04), x = z.x, cy = z.y - R, im = labImg("fbSwirl");
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; const g = ctx.createRadialGradient(x, cy, 0, x, cy, R * 1.6); g.addColorStop(0, "rgba(255,250,200,1)"); g.addColorStop(.35, "rgba(255,170,40,.9)"); g.addColorStop(.7, "rgba(230,70,10,.6)"); g.addColorStop(1, "rgba(150,20,0,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, cy, R * 1.6, 0, Math.PI * 2); ctx.fill();
+  if (im.complete && im.naturalWidth){ ctx.translate(x, cy); ctx.rotate(now / 140); ctx.drawImage(im, -R * 1.3, -R * 1.3, R * 2.6, R * 2.6); } ctx.restore();
+  if (now - (z.em || 0) > 30){ z.em = now; sparks.push({labFlame: true, x: x + labRnd(-R, R) * .6, y: cy + labRnd(-R, R) * .5, vx: labRnd(-20, 20), vy: -labRnd(60, 140), r0: R * labRnd(.3, .5), t0: now, life: labRnd(250, 450)}); }
+  if (now - (z.lit || 0) > 500){ z.lit = now; lightFlash(x, cy, "#ff9a3a", 220, 700); } }
+// GREEN-FLAME BLADE: green fire on the blade, and it leaps to the next foe within 5 ft
+const GFB_F = "hue-rotate(85deg) saturate(1.8) brightness(1.15)";
+function labGfbHit(t){ labRef("fbBurst", {at: t, w: 110, life: 420, grow: [.5, 1.1], fade: [20, 260], filter: GFB_F}); lightFlash(t.x, labMid(t), "#5aff6a", 220, 400); }
+function labGfbLeap(from, to, then){ labRef("fbTravel1", {follow: {x0: from.x, y0: labMid(from), x1: to.x, y1: labMid(to), ms: 260, arc: 40}, w: 70, filter: GFB_F, headLeft: true, boost: .5, then}); }
+// THE LITTLE ONES: Mage Hand, Minor Illusion, Prestidigitation, Dancing Lights, Friends
+function labUtil(name, c, t, pick){ const h = labHand(c, t && t.x != null ? t : null), tx = t ? t.x : h.x + 60, ty = t && t.id ? labMid(t) : t ? t.y - 30 : h.y;
+  if (name === "Mage Hand"){ const F = "hue-rotate(110deg) saturate(1.4) brightness(1.15)"; labRef("ctHand", {follow: {x0: h.x, y0: h.y - 30, x1: tx, y1: ty - 20, ms: 700, arc: 30}, w: 40, filter: F, pulse: true, then: () => labRef("ctHand", {x: tx, y: ty - 20, w: 40, life: 2000, filter: F, pulse: true, fade: [10, 300]})}); }
+  else if (name === "Minor Illusion"){ const x = t && t.id ? tx + (tx > c.x ? 70 : -70) : tx, y = t ? t.y : c.y; for (let i = 0; i < 18; i++) sparks.push({x: x + labRnd(-30, 30), y: y - labRnd(0, 90), vx: labRnd(-20, 20), vy: -labRnd(10, 40), g: 0, col: "#8fc8ff", t0: now, life: labRnd(400, 800)});
+    const o = pick || ILLUSIONS[0], il = {labIllusion: true, o, x, y, face: c.face, t0: now, life: 60000}; if (o.spr) loadIllusionSprite(o); else labImg(o.img); sparks.push(il); }
+  else if (name === "Prestidigitation"){ for (let i = 0; i < 30; i++) sparks.push({x: h.x, y: h.y, vx: labRnd(-120, 120), vy: -labRnd(40, 200), col: ["#ffd27a", "#ff7ad5", "#7ad8ff", "#ffffff"][i % 4], t0: now, life: labRnd(400, 900)}); }
+  else if (name === "Dancing Lights"){ for (let i = 0; i < 4; i++){ const ang = i / 4 * Math.PI * 2, x = tx + Math.cos(ang) * 46, y = ty - 60 + Math.sin(ang) * 22; sparks.push({labMote: true, x, y, fly: {x0: h.x, y0: h.y, ms: 700}, ph: i * 1.7, t0: now + i * 120, life: 60000}); } }
+  else if (name === "Friends"){ for (let i = 0; i < 12; i++) setTimeout(() => sparks.push({labHeart: true, x: h.x, y: h.y, vx: tx - h.x + labRnd(-20, 20), vy: ty - 30 - h.y + labRnd(-20, 20), r: labRnd(5, 8), col: i % 2 ? "#ff7ad5" : "#ffb0e6", t0: now, life: 600}), i * 50); }
+}
+function drawLabMote(s, k){ if (now < s.t0) return; const q = Math.min(1, (now - s.t0) / s.fly.ms), e = 1 - Math.pow(1 - q, 3), x = s.fly.x0 + (s.x - s.fly.x0) * e + Math.sin(now / 400 + s.ph) * 6, y = s.fly.y0 + (s.y - s.fly.y0) * e - Math.sin(q * Math.PI) * 30 + Math.cos(now / 330 + s.ph) * 5;
+  const al = (k > .9 ? 1 - (k - .9) / .1 : 1) * (.85 + .15 * Math.sin(now / 60 + s.ph)); ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = al; const g = ctx.createRadialGradient(x, y, 0, x, y, 18); g.addColorStop(0, "rgba(255,255,255,.95)"); g.addColorStop(.25, "rgba(255,190,90,.9)"); g.addColorStop(1, "rgba(0,0,0,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  if (now - (s.lit || 0) > 400){ s.lit = now; lightFlash(x, y + 40, "#ffbe5a", 150, 600); } }
+function drawLabHeart(s, k){ const x = s.x + s.vx * k, y = s.y + s.vy * k - k * 20, r = s.r * (1 + k * .4); ctx.save(); ctx.globalAlpha = 1 - k; ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = s.col; ctx.shadowColor = s.col; ctx.shadowBlur = 8; ctx.translate(x, y);
+  ctx.beginPath(); ctx.moveTo(0, r * .35); ctx.bezierCurveTo(-r, -r * .3, -r * .5, -r, 0, -r * .45); ctx.bezierCurveTo(r * .5, -r, r, -r * .3, 0, r * .35); ctx.fill(); ctx.restore(); }
+const ILL_SPR = {};
+function loadIllusionSprite(o){ if (ILL_SPR[o.spr]) return; ILL_SPR[o.spr] = {}; fetch(`${SPRITE_BASE}${o.spr}/sprite.json`).then(r => r.json()).then(j => { ILL_SPR[o.spr].json = j; return loadImg(`${SPRITE_BASE}${o.spr}/idle.png`); }).then(i => ILL_SPR[o.spr].img = i).catch(() => {}); }
+// the illusion: the figure in translucent arcane blue, scan-lines crawling up it, a faint shimmer
+function drawLabIllusion(s, k){ const o = s.o, sq = ftPx(s) * 5, al = (k < .03 ? k / .03 : k > .95 ? 1 - (k - .95) / .05 : 1) * (.5 + .08 * Math.sin(now / 90));
+  let im, sx = 0, sy = 0, sw, sh, dw, dh, ax, ay;
+  if (o.spr){ const S = ILL_SPR[o.spr]; if (!S || !S.img || !S.json) return; const cw = S.json.cell[0], ch = S.json.cell[1]; im = tintedSheet(S.img, o.spr + "ill", "#3a7dff"); sx = 0; sy = (s.face || 0) * ch; sw = cw; sh = ch; const sc = sq / 1.25 / (S.json.ppu || 100) * 1.25; dw = cw * sc * .9; dh = ch * sc * .9; ax = S.json.pivot[0] * sc * .9; ay = S.json.pivot[1] * sc * .9; }
+  else { const I = LABIMG[o.img]; if (!I || !I.complete || !I.naturalWidth) return; im = tintedSheet(I, o.img + "ill", "#3a7dff"); sw = I.naturalWidth; sh = I.naturalHeight; dh = sq * (o.h || 1); dw = dh * sw / sh; ax = dw / 2; ay = dh; }
+  ctx.save(); ctx.globalAlpha = al; ctx.globalCompositeOperation = "lighter"; ctx.drawImage(im, sx, sy, sw, sh, s.x - ax + Math.sin(now / 70) * .8, s.y - ay, dw, dh);
+  ctx.globalAlpha = al * .35; ctx.drawImage(im, sx, sy, sw, sh, s.x - ax, s.y - ay, dw, dh); ctx.fillStyle = "rgba(160,200,255,.35)"; for (let i = 0; i < 3; i++) ctx.fillRect(s.x - dw * .3, s.y - ((now / 6 + i * dh / 3) % dh), dw * .6, 1);
+  ctx.restore(); }
 // the looks castSpell uses in place of a kit: `deliver` carries it from the hand, `hit` plays on the body when it lands
 const LAB_LOOK = {
   "Fire Bolt": {deliver: (c, at, cb) => labFireBolt(c, at, cb), hit: (c, t) => labFireBoltHit(t)},
@@ -10102,6 +10274,12 @@ const LAB_LOOK = {
   "Chill Touch": {deliver: (c, at, cb) => labTouch(c, at, cb, "chill"), hit: (c, t) => labChillHit(c, t)},
   "Eldritch Blast": {deliver: (c, at, cb) => labEbDeliver(c, at, cb), again: (c, t) => labEbAgain(c, t), hit(c, t){ labEbHit(c, t, this.crit); }},
   "Hex": {deliver: (c, at, cb) => labHexDeliver(c, at, cb), hit: (c, t) => labHexHit(t)},
+  "Fireball": {deliver: (c, at, cb) => labFireballDeliver(c, at, cb), hit: (c, t) => labFireHit(t)},
+  "Burning Hands": {deliver: (c, at, cb) => labBurningHands(c, at, cb), hit: (c, t) => labFireHit(t)},
+  "Entangle": {deliver: (c, at, cb) => labEntangleDeliver(c, at, cb), hit: (c, t) => labThorns(t, true), miss: (c, t) => labThorns(t, false)},
+  "Hunter's Mark": {deliver: (c, at, cb) => labMarkDeliver(c, at, cb), hit: (c, t) => labMarkHit(t)},
+  "Hold Person": {deliver: (c, at, cb) => { const h = labHand(c, at), to = bodyPoint(at); labRef("wlBoltDart", {follow: {x0: h.x, y0: h.y, x1: to.x, y1: to.y, ms: 240}, w: 50, filter: "hue-rotate(20deg)", then: cb}); }, hit: (c, t) => labHoldHit(t)},
+  "Flaming Sphere": {deliver: (c, at, cb) => flameSphereCast(c, at, cb), hit: (c, t) => labFireHit(t)},
 };
 const labLookOf = name => LAB_LOOK[name] || LAB_LOOK[name.replace(/ \(.*\)$/, "")];
 // the draw switch for this block, called from drawCombatFx; true when it drew the spark
@@ -10113,6 +10291,15 @@ function drawLabSpark(s, k){
   if (s.labCharge){ drawLabCharge(s); return true; }
   if (s.labZap){ ovWrapS(s, () => drawLabZap(s)); return true; }
   if (s.labNoHeal){ ovWrapS(s, () => drawLabNoHeal(s)); return true; }
+  if (s.labEyes){ ovWrapS(s, () => drawLabEyes(s, k)); return true; }
+  if (s.labCrack){ ovWrapS(s, () => drawLabCrack(s, k)); return true; }
+  if (s.labThorn){ ovWrapS(s, () => drawLabThorn(s, k)); return true; }
+  if (s.labHold){ ovWrapS(s, () => drawLabHold(s)); return true; }
+  if (s.labDaggers){ ovWrapS(s.z, () => drawLabDaggers(s)); return true; }
+  if (s.labFireSphere){ ovWrapS(s.z, () => drawLabSphereFire(s)); return true; }
+  if (s.labMote){ drawLabMote(s, k); return true; }
+  if (s.labHeart){ drawLabHeart(s, k); return true; }
+  if (s.labIllusion){ ovWrapS(s, () => drawLabIllusion(s, k)); return true; }
   return false;
 }
 // The spider: spring to within reach of its target, then bite.
@@ -10207,7 +10394,7 @@ function endCombat(won){
     if (b.down){ b.kind = "body"; b.body = true; b.once = null; b.lootKey = `${cur}-${Math.round(b.x)}-${Math.round(b.y)}`; }
     else { b.home = {x: b.x, y: b.y}; b.actUntil = now + 3000; }
   }
-  closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby(); poisonZones = []; dmPlace = null;
+  closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby(); poisonZones = []; daggerZones = []; fireSpheres = []; dmPlace = null;
   $("bossBar").hidden = true; $("bossBar").classList.remove("show", "bloodied", "flash", "down"); delete $("bossBar").dataset.for; $("bossIntro").hidden = true; $("bossIntro").classList.remove("show");   // BOSS FIGHTS: the bar and the slam go with the fight
   $("cbtFlee").hidden = true; turnCallHide(); $("combat").classList.remove("has-boss", "strip-on", "peek"); clearTimeout(stripShow.t); clearTimeout(peekStats.t); stripShow.hover = false;
   // The dead stay where they fell (Sam, 2026-10-13: "There should always be a carcass or dead body of
