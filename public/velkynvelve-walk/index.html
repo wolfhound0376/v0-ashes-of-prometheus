@@ -5857,7 +5857,7 @@ function drawFxLayer(flat){
 }
 // which sheets and sounds a spell uses, from its school (lib/spell-school-data) and damage type
 const SCHOOL_OF = {"Acid Splash": "evocation", "Produce Flame": "conjuration", "Sacred Flame": "evocation", "Cure Wounds": "abjuration", "Inflict Wounds": "necromancy", "Grease": "conjuration", "Shatter": "evocation", "Acid Arrow": "evocation", "Call Lightning": "conjuration",
-  "Web": "conjuration", "Command (grovel)": "enchantment", "Scorching Ray": "evocation", "Mass Healing Word": "abjuration", "Lightning Bolt": "evocation", "Gust of Wind": "evocation", "Misty Step": "conjuration", "Hypnotic Pattern": "illusion", "True Strike": "divination", "Vampiric Touch": "necromancy", "Sanctuary": "abjuration",
+  "Web": "conjuration", "Command (grovel)": "enchantment", "Scorching Ray": "evocation", "Bane": "enchantment", "Hideous Laughter": "enchantment", "Blindness/Deafness": "transmutation", "False Life": "necromancy", "Heroism": "enchantment", "Aid": "abjuration", "Mage Armor": "abjuration", "Barkskin": "transmutation", "Mass Healing Word": "abjuration", "Lightning Bolt": "evocation", "Gust of Wind": "evocation", "Misty Step": "conjuration", "Hypnotic Pattern": "illusion", "True Strike": "divination", "Vampiric Touch": "necromancy", "Sanctuary": "abjuration",
   "Light": "evocation", "Thaumaturgy": "transmutation", "Druidcraft": "transmutation", "Message": "transmutation", "Mending": "transmutation", "Guidance": "divination", "Resistance": "abjuration","Eldritch Blast": "evocation", "Hex": "enchantment", "Fireball": "evocation", "Burning Hands": "evocation", "Entangle": "conjuration", "Hunter's Mark": "divination", "Hold Person": "enchantment", "Cloud of Daggers": "conjuration", "Flaming Sphere": "conjuration", "Green-Flame Blade": "evocation", "Mage Hand": "conjuration", "Minor Illusion": "illusion", "Prestidigitation": "transmutation", "Dancing Lights": "evocation", "Friends": "enchantment", "Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
   "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment",
   "Stinking Cloud": "conjuration", "Cloudkill": "conjuration", "Fog Cloud": "conjuration", "Poison Spray": "necromancy"};
@@ -6581,6 +6581,28 @@ const SPELLS = {
   // Misty Step: 2nd-level conjuration, bonus action, "Briefly surrounded by silvery mist, you teleport up to 30 feet to an
   // unoccupied space you can see." Click the spot.
   "Misty Step":         {lvl: 2, kind: "teleport", range: 30, bonus: true, fx: "#dfe8ff"},
+  // ---------- WAVE 2b — new conditions, temporary hit points, AC setters (SRD 5.2.1, checked against the 2024 text) ----------
+  // Bane: 1st-level enchantment, 30 ft, "up to three creatures of your choice", CHA save; on a failure, subtract 1d4 from its
+  // attack rolls and saving throws; concentration 1 minute. Click one foe: the two nearest other foes within range join it.
+  "Bane":               {lvl: 1, kind: "save", save: "cha", range: 30, targets: 3, cond: "baned", fx: "#8a5bb0", conc: 10},
+  // Hideous Laughter: 1st-level enchantment, 30 ft, concentration 1 minute; WIS save or Prone and Incapacitated, unable to
+  // stand; the save again at the end of each of its turns and whenever it takes damage (with advantage then).
+  "Hideous Laughter":   {lvl: 1, kind: "save", save: "wis", range: 30, cond: "laughing", fx: "#ff9bd2", conc: 10},
+  // Blindness/Deafness: 2nd-level transmutation, 120 ft, 1 minute (not concentration); CON save or Blinded (the deafness choice
+  // is left out: nothing in a fight here reads hearing); the save again at the end of each of its turns.
+  "Blindness/Deafness": {lvl: 2, kind: "save", save: "con", range: 120, cond: "blinded", fx: "#3a3048"},
+  // False Life: 1st-level necromancy, self, "You gain 2d4 + 4 Temporary Hit Points." (click yourself)
+  "False Life":         {lvl: 1, kind: "buff", range: 0, cond: "falseLife", fx: "#7fbf6a"},
+  // Heroism: 1st-level enchantment, touch, concentration 1 minute: immune to Frightened, and Temporary Hit Points equal to
+  // your spellcasting modifier at the start of each of its turns.
+  "Heroism":            {lvl: 1, kind: "buff", range: 5, cond: "heroic", fx: "#ffd27a", conc: 10},
+  // Aid: 2nd-level abjuration, 30 ft, up to three creatures: Hit Point maximum and current Hit Points +5 for 8 hours.
+  "Aid":                {lvl: 2, kind: "buff", range: 30, targets: 3, cond: "aided", fx: "#fff3c0"},
+  // Mage Armor: 1st-level abjuration, touch, a willing creature not wearing armor: base AC 13 + its DEX modifier, 8 hours.
+  // NOT YET: the "not wearing armor" check (the walk has no worn-armor flag); it never lowers an AC.
+  "Mage Armor":         {lvl: 1, kind: "buff", range: 5, cond: "mageArmor", fx: "#8fc8ff"},
+  // Barkskin: 2nd-level transmutation, bonus action, touch, 1 hour (not concentration): AC 17 if it was lower.
+  "Barkskin":           {lvl: 2, kind: "buff", range: 5, bonus: true, cond: "barkskin", fx: "#a07a4a"},
   // utility cantrips (SRD 5.1): the cast and Malachar's word; what they do is the story's
   "Light":              {lvl: 0, kind: "util", range: 5, fx: "#fff6c8"},
   "Thaumaturgy":        {lvl: 0, kind: "util", range: 30, fx: "#ffb35a"},
@@ -6789,7 +6811,8 @@ function attackRiders(att, atk, thrown) {
  */
 function tintFor(a) { return a.raging || woundedFury(a.hp, a.woundedFury) ? RAGE_TINT : null }
 
-const COND_GLYPH = {sanctuary: ["☩", "#fff3c0", "Sanctuary: a foe must pass a WIS save to attack it or target it with a harmful spell · ends if it attacks or harms a foe"], surprised: ["!", "#ffd27a", "Surprised: no move and no action on its first turn, no reaction until that turn ends"], poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
+const COND_GLYPH = {baned: ["▼", "#b07ad8", "Baned: −1d4 on attack rolls and saving throws"], laughing: ["☺", "#ff9bd2", "Laughing: prone and incapacitated, can't stand · WIS save at the end of each turn and when hurt"], blinded: ["◉", "#8a8098", "Blinded: its attacks have disadvantage, attacks on it have advantage · CON save at the end of each turn"],
+  falseLife: ["♥", "#7fbf6a", "False Life: temporary hit points"], heroic: ["✪", "#ffd27a", "Heroism: immune to fear · temporary HP each turn"], aided: ["✚", "#fff3c0", "Aid: +5 hit points (maximum and current)"], mageArmor: ["⬡", "#8fc8ff", "Mage Armor: base AC 13 + DEX"], barkskin: ["❧", "#a07a4a", "Barkskin: AC at least 17"], sanctuary: ["☩", "#fff3c0", "Sanctuary: a foe must pass a WIS save to attack it or target it with a harmful spell · ends if it attacks or harms a foe"], surprised: ["!", "#ffd27a", "Surprised: no move and no action on its first turn, no reaction until that turn ends"], poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
                     shielded: ["◇", "#cfe8ff", "+2 AC"], blessed: ["✚", "#ffe9a8", "Blessed: +1d4 to attack rolls and saving throws"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], hexed: ["⛧", "#c58aff", "Hexed: the warlock's hits deal +1d6 necrotic"], marked: ["⌖", "#ff5a5a", "Hunter's Mark: the ranger's weapon hits deal +1d6"], paralyzed: ["✖", "#d8b8ff", "Paralyzed: no moves or actions; attacks have advantage, a hit within 5 ft is a critical"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
                     hidden: ["◌", "#b8c7d6", "Hidden: unseen until you attack"], prone: ["▼", "#e0b070", "Prone: melee on it has advantage, ranged disadvantage; half speed to stand"],
                     grappled: ["✊", "#e0b070", "Grappled: speed 0"], helped: ["★", "#ffe08a", "Helped: advantage on the next attack"], disengaged: ["↷", "#cfe8ff", "Disengaged: no opportunity attacks"],
@@ -6816,7 +6839,7 @@ const d6 = () => 1 + Math.floor(Math.random() * 6);
 const FAITH_ITEM = /book of prayers|holy symbol|amulet|emblem|reliquary/i;
 function hasFaithItem(a){ const g = typeof GEAR !== "undefined" && GEAR[a.id]; return !!(g && (g.carried || []).some(c => FAITH_ITEM.test(c.name || ""))); }
 // Bless (SRD 5.1): a d4 on the attack roll or saving throw of a blessed creature, rolled and shown each time
-function blessD4(a){ return a && a.c && a.c.conds && a.c.conds.has("blessed") ? 1 + Math.floor(Math.random() * 4) : 0; }
+function blessD4(a){ if (!a || !a.c || !a.c.conds) return 0; return (a.c.conds.has("blessed") ? 1 + Math.floor(Math.random() * 4) : 0) - (a.c.conds.has("baned") ? 1 + Math.floor(Math.random() * 4) : 0); }   // Bless +1d4, Bane −1d4, on attacks and saves
 // Roll-changing traits — lib/traits.mjs pasted in whole by build_walk.py (TRAITS placeholder), so the map,
 // the dashboard's dice and lib/traits.test.ts read ONE copy of Halfling Luck. (Sam, 2026-10-26: abilities tied
 // to rules must pop up when they are needed.)
@@ -7341,7 +7364,7 @@ function potShot(f){
 const alliesHere = () => npcs.filter(n => ALLY_SHEETS[n.id] && !n.hostile && !n.backdrop && !n.offStage && !n.down && actors.includes(n));
 // SRD: an incapacitated creature can't take actions or reactions (asleep = unconscious, which includes it).
 // Sam, 2026-10-14: "how did the spider do an opportunity attack if it is sleeping?" — it no longer can.
-const INCAP = ["asleep", "unconscious", "paralyzed", "stunned", "incapacitated", "petrified"];
+const INCAP = ["laughing", "asleep", "unconscious", "paralyzed", "stunned", "incapacitated", "petrified"];
 function incapacitated(a){ return !!(a.c && INCAP.some(k => a.c.conds.has(k))); }
 
 // ----- the strip and the column -----
@@ -7434,6 +7457,7 @@ function nextTurn(first){
   // A RAGE IS TESTED AS ITS OWNER'S TURN ENDS (SRD 5.1): "It ends early ... if your turn ends and you haven't attacked
   // a hostile creature since your last turn or taken damage since then", and after one minute. lib/rage.mjs decides.
   if (!first) netEndTurn(cbt.order[cbt.idx]);   // ending a turn in the web net (5c): DEX save or restrained
+  if (!first){ const was = cbt.order[cbt.idx]; if (was && was.c){ laughSave(was, false); blindSave(was); } }   // the saves at the end of its turn (Hideous Laughter, Blindness)
   if (!first){ const was = cbt.order[cbt.idx]; if (was && was.c && was.c.rage){ const r = rageAfterTurn(was.c.rage, cbt.round); if (r.ended) endRage(was, r.ended); else was.c.rage = r.rage; } }
   for (let k = 0; k < cbt.order.length; k++){
     cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0){ cbt.round++; if (cbt.round > 1) bystandersFlee(); arrowsWorkLoose(false); }   // the bystanders run as each round opens
@@ -7456,6 +7480,8 @@ function nextTurn(first){
     if (s >= (a.c.sleptDc || 13)){ a.c.conds.delete("asleep"); popText(a, "wakes", "#b0b8ff"); }
     else { popText(a, "asleep", "#b0b8ff"); log(`${fname(a)} sleeps through the turn.`); setTimeout(nextTurn, 900); return; }
   }
+  if (a.c.heroMod && a.c.conds.has("heroic")) a.c.tempHp = Math.max(a.c.tempHp || 0, a.c.heroMod);   // Heroism: temporary HP at the start of each of its turns
+  if (a.c.conds.has("laughing")){ popText(a, "HA HA HA", "#ff9bd2"); log(`${fname(a)} is on the floor, helpless with laughter.`); setTimeout(nextTurn, 900); return; }
   if (newSpellsTurnStart(a)) return;
   if (a.c.surprised){ a.c.surprised = false; a.c.conds.delete("surprised"); popText(a, "surprised", "#ffd27a"); log(`${fname(a)} is caught by surprise and loses the turn.`); setTimeout(nextTurn, 900); return; }
   a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true; a.c.objFree = true;
@@ -8905,6 +8931,7 @@ function advantageOn(att, tgt, ranged, atk){
   if (tgt.c.conds.has("prone")) adv += ranged ? -1 : 1;                      // SRD: prone — melee advantage, ranged disadvantage
   if (att.c.conds.has("prone")) adv--;
   if (tgt.c.conds.has("restrained")) adv++; if (att.c.conds.has("restrained")) adv--;
+  if (tgt.c.conds.has("blinded")) adv++; if (att.c.conds.has("blinded")) adv--;          // SRD 5.2.1 Blinded
   adv += attackRiders({hp: att.c.hp, woundedFury: att.c.sheet.woundedFury, raging: att.c.rage}, atk).adv;   // Wounded Fury: advantage on attack rolls at 10 HP or fewer (lib/rage.mjs)
   return Math.sign(adv);
 }
@@ -8927,7 +8954,29 @@ function afterAttackRoll(att){ if (att.c.rage) att.c.rage.attacked = true;   // 
 const sgn = (n) => (n >= 0 ? "+" : "−") + Math.abs(n);
 const shoveDc = (a) => 8 + abilMod(a.c.sheet, "str") + 2;   // SRD 5.2.1: 8 + Strength modifier + proficiency
 function skillCheck(a, skill){ const small = skill === "stealth" && isSmall(a), r = d20(withEdge(rageAdvantage(a.c.rage, skill === "athletics" ? "str" : skill), small), a), mod = (a.c.sheet.skills || {})[skill] ?? abilMod(a.c.sheet, skill === "perception" ? "wis" : skill === "athletics" ? "str" : "dex"); return {r, mod, total: r + mod, small}; }   // Small: Stealth with advantage (house rule, Sam 2026-10-26)
-function targetAc(t){ return t.c.ac + (t.c.conds.has("shielded") ? 2 : 0) + (t.c.conds.has("shieldSpell") ? 5 : 0); }
+function targetAc(t){ let ac = t.c.ac; if (t.c.conds.has("mageArmor")) ac = Math.max(ac, 13 + abilMod(t.c.sheet, "dex")); if (t.c.conds.has("barkskin")) ac = Math.max(ac, 17); return ac + (t.c.conds.has("shielded") ? 2 : 0) + (t.c.conds.has("shieldSpell") ? 5 : 0); }
+// the buffs that change numbers, as they land
+function buffTakes(caster, t, name){ const mod = (caster.c.sheet.magic || {}).mod || 0;
+  if (name === "False Life"){ const g = roll("2d4").total + 4; t.c.tempHp = Math.max(t.c.tempHp || 0, g); popText(t, `+${g} temp`, "#9fe0c0"); }
+  if (name === "Heroism"){ t.c.heroMod = mod; t.c.tempHp = Math.max(t.c.tempHp || 0, mod); t.c.conds.delete("frightened"); }
+  if (name === "Aid"){ t.c.hpMax += 5; t.c.hp += 5; if (t.down && t.c.hp > 0){ t.down = false; setAnim(t, "idle"); } popText(t, "+5", "#fff3c0"); }
+  condFlourish(t, SPELLS[name] && SPELLS[name].cond); renderParty(); }
+// each new condition's look as it lands
+function condFlourish(t, cond){ const B = bodyPoint(t), R = labR(t), burst = (n, cols, o = {}) => { for (let i = 0; i < n; i++){ const g = labRnd(0, Math.PI * 2), sp = labRnd(o.min || 20, o.max || 90); sparks.push({x: B.x + labRnd(-1, 1) * R, y: B.y + labRnd(-1.2, 1) * R, vx: Math.cos(g) * sp * (o.flat ? 1 : .6), vy: o.up ? -labRnd(30, 110) : o.down ? labRnd(20, 80) : Math.sin(g) * sp, g: o.g || 0, col: cols[i % cols.length], t0: now, life: labRnd(500, 1000)}); } };
+  if (cond === "baned"){ burst(18, ["#8a5bb0", "#3a2050", "#b07ad8"], {down: true}); bank("magic/necrotic_tail", .4); }
+  else if (cond === "laughing"){ for (let i = 0; i < 4; i++) setTimeout(() => popText(t, ["HA!", "HAHA", "hee hee", "HA HA HA"][i], "#ff9bd2", .8), i * 260); burst(10, ["#ff9bd2", "#ffd0ea"], {up: true}); }
+  else if (cond === "blinded"){ for (let i = 0; i < 20; i++) sparks.push({x: t.x + labRnd(-R, R) * .5, y: t.y - labH(t) * .82 + labRnd(-6, 6), vx: labRnd(-30, 30), vy: labRnd(-10, 10), g: 0, col: i % 2 ? "#1a1220" : "#3a3048", t0: now, life: labRnd(600, 1200)}); bank("magic/necrotic_tail", .35); }
+  else if (cond === "falseLife"){ burst(18, ["#7fbf6a", "#2a4020", "#b6ff7a"], {up: true}); bank("magic/necrotic_tail", .35); }
+  else if (cond === "heroic"){ burst(22, ["#ffd27a", "#fff3c0", "#ffb84a"], {up: true}); bank("magic/impact_radiant", .45); }
+  else if (cond === "aided"){ burst(16, ["#fff3c0", "#ffffff"], {up: true}); bank("combat/heal", .5); }
+  else if (cond === "mageArmor"){ spawnFx("sigilAbjurationRing", {at: t, sq: 1.8, flat: true, spin: .8}); burst(16, ["#8fc8ff", "#cfe8ff"]); bank("magic/arcane_release", .45); }
+  else if (cond === "barkskin"){ burst(20, ["#7a5430", "#a07a4a", "#5a3a1c", "#7ec83a"], {down: true, g: 200}); bank("magic/nature_windup", .45); } }
+// Hideous Laughter's save: at the end of each of its turns, and when it is hurt (with advantage)
+function laughSave(t, hurt){ if (!t.c.conds.has("laughing") || !t.c.laughDc || t.down) return; const s = d20(hurt ? 1 : 0, t) + (t.c.sheet.saves.wis || 0) + blessD4(t);
+  if (s >= t.c.laughDc){ t.c.conds.delete("laughing"); t.c.laughDc = 0; popText(t, "stops laughing", "#ff9bd2", .85); log(`${fname(t)} gets hold of themselves (WIS ${s}).`); renderParty(); }
+  else if (!hurt) log(`${fname(t)} is still helpless with laughter (WIS ${s} vs DC ${t.c.laughDc}).`); }
+function blindSave(t){ if (!t.c.conds.has("blinded") || !t.c.blindDc || t.down) return; const s = d20(0, t) + (t.c.sheet.saves.con || 0) + blessD4(t);
+  if (s >= t.c.blindDc){ t.c.conds.delete("blinded"); t.c.blindDc = 0; popText(t, "can see again", "#cfe8ff", .85); log(`${fname(t)} blinks the darkness away (CON ${s}).`); renderParty(); } }
 // SHIELD, THE REACTION (Sam, 2026-10-10: "combat pauses like Baldur's Gate 3 for reactions like shield"). When an
 // attack is about to hit a caster who has Shield prepared, a level 1 slot and their reaction, and +5 AC would turn it,
 // the fight stops and asks. Yes: the slot and the reaction are spent and they have +5 AC until the start of their
@@ -9014,7 +9063,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       let adv = advantageOn(att, tgt, ranged, atk), r = d20(adv, att), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit + bl, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + bl + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
       if (hit && !crit && tgt.c.conds.has("paralyzed") && feetBetween(att, tgt) <= 5.5) crit = true;   // SRD: a hit on the paralyzed from within 5 ft is a critical
       if (hit && !crit && tgt.kind === "pc" && tgt.down && !ranged && feetBetween(att, tgt) <= 7.5) crit = true;   // SRD: unconscious — a hit from within 5 ft is a critical hit
-      if (bl) popText(att, `bless +${bl}`, "#ffe9a8", .8);
+      if (bl) popText(att, bl > 0 ? `bless +${bl}` : `bane ${bl}`, bl > 0 ? "#ffe9a8" : "#b07ad8", .8);
       if (hit && !crit && !cv.total && hero(tgt) && canShield(tgt) && r + atk.hit + bl + insp < acVs + 5){
         shieldWait = new Promise(res => askShield(tgt, att, atk, r + atk.hit + insp, acVs, used => { if (used){ acVs += 5; hit = false; } rest(); res(); }));
         return;
@@ -9248,7 +9297,7 @@ function castSpell(caster, tgt, name, done, darts){
         else spawnFx("sigilAbjurationRing", {at: tgt, sq: 2.2, flat: true, spin: .8});
         const more = sp.targets > 1 ? standing(heroes()).filter(h => h !== tgt && feetBetween(caster, h) <= sp.range).sort((x, y) => Math.hypot(x.x - tgt.x, x.y - tgt.y) - Math.hypot(y.x - tgt.x, y.y - tgt.y)).slice(0, sp.targets - 1) : [];
         if (name === "Sanctuary"){ tgt.c.sanctuaryDc = c.sheet.magic.dc + (c.conds.has("sorcery") ? 1 : 0); tgt.c.sanctuaryEnd = (cbt ? cbt.round || 1 : 0) + 10; sanctuarySphere(tgt); }
-        for (const t of [tgt, ...more]){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); if (t !== tgt) spawnFx("sigilAbjurationRing", {at: t, sq: 2.2, flat: true, spin: .8}); }
+        for (const t of [tgt, ...more]){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); buffTakes(caster, t, name); if (t !== tgt) spawnFx("sigilAbjurationRing", {at: t, sq: 2.2, flat: true, spin: .8}); }
         log(`${fname(caster)} ${name} on ${[tgt, ...more].map(fname).join(", ")}: ${COND_GLYPH[sp.cond][2]}.`); renderParty(); }
       else if (sp.kind === "auto"){                                             // Magic Missile: the darts never miss
         const rolls = []; for (let i = 0; i < (sp.darts || 1); i++) rolls.push(roll(sp.dmg).total);
@@ -9262,7 +9311,9 @@ function castSpell(caster, tgt, name, done, darts){
         if (sp.line) labLineLook(caster, at, sp);
         const targets = (sp.line ? pool.filter(t => inLine(caster, at, t, sp.line))
           : sp.cone ? pool.filter(t => feetBetween(caster, t) <= sp.area + 2.5 && Math.abs(((Math.atan2(t.y - caster.y, t.x - caster.x) - ang0 + Math.PI * 3) % (Math.PI * 2)) - Math.PI) <= .47)   // a cone: within its length and its 53°
-          : sp.area ? pool.filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t)) : [tgt]).filter(t => !(sp.selfArea && t === caster));
+          : sp.area ? pool.filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t))
+          : sp.targets > 1 ? [tgt, ...standing(hero(tgt) ? heroes() : foes).filter(f => f !== tgt && feetBetween(caster, f) <= sp.range + 2.5).sort((x, y) => Math.hypot(x.x - tgt.x, x.y - tgt.y) - Math.hypot(y.x - tgt.x, y.y - tgt.y)).slice(0, sp.targets - 1)]
+          : [tgt]).filter(t => !(sp.selfArea && t === caster));
         if (!targets.length){ log(`${fname(caster)} ${name}: nothing there.`); return; }
         if (sp.push){ targets.forEach((t, i) => setTimeout(() => { const s0 = d20(0, t) + ((t.c.sheet.saves || {})[sp.save] || 0), ok = s0 >= m.dc; popText(t, ok ? "holds" : "blown back", "#d6e8f0", .85); log(`${fname(t)} ${sp.save.toUpperCase()} ${s0} vs DC ${m.dc}: ${ok ? "holds" : `pushed ${sp.push} ft`}.`); if (!ok) repel(caster, t, sp.push); }, 120 * i)); return; }
         const lines = [];
@@ -9272,7 +9323,7 @@ function castSpell(caster, tgt, name, done, darts){
           // Fey Ancestry (SRD 5.1 elf/half-elf 2315/2320, drow 1608): magic can't put them to sleep. Shown, not silent.
           if (name === "Sleep"){ const fp = sleepProof(rollerOf(t)); if (fp){ traitPop(t, fp); lines.push(`${fname(t)} is untouched (Fey Ancestry)`); if (i === targets.length - 1){ sigilEnd(t, false); log(`${fname(caster)} ${name}: ${lines.join("; ")}.`); } return; } }
           const cvS = sp.save === "dex" && name !== "Sacred Flame" ? coverOf(caster, t) : {ac: 0};            // SRD: cover adds to DEX saves too
-          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20(rageAdvantage(t.c.rage, sp.save), t, sp.cond) + (t.c.sheet.saves[sp.save] || 0) + cvS.ac, ok = s >= dc;
+          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20(rageAdvantage(t.c.rage, sp.save), t, sp.cond) + (t.c.sheet.saves[sp.save] || 0) + cvS.ac + blessD4(t), ok = s >= dc;
           let line = `${fname(t)} ${sp.save.toUpperCase()} ${s}${cvS.ac ? ` (cover +${cvS.ac})` : ""} vs DC ${dc}: ${ok ? "saves" : "fails"}`;
           if (sp.area && !marks.length) markTarget(t);
           if (name === "Sleep"){ if (!ok){ bank("spells/control-slumber-fall", .5); t.sheepT0 = now; } else bank("magic/spell_fizzle", .4); if (i === targets.length - 1) sigilEnd(t, !ok); }
@@ -9280,7 +9331,8 @@ function castSpell(caster, tgt, name, done, darts){
           else if (name === "Vicious Mockery"){ land(t, !ok, "psychic"); if (!ok) labMockery(t); }
           else { if (name === "Toll the Dead" && ok) spawnFx("tollBell", {at: t, sq: 2, anchor: "base", lift: -.15, alpha: .8}); land(t, !ok, sp.type || "psychic"); }   // the bell tolls either way (SRD: "fills the air around it"); the damage is only on a failed save
           if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); const n = ok ? (sp.lvl ? Math.floor(d.total / 2) : 0) : d.total; if (n){ hitCtx = {spell: name, area: sp.area || 0, by: caster, at}; damage(t, n, sp.type, false, caster, true); hitCtx = null; } else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
-          if (sp.cond && !ok){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); if (sp.cond === "restrained") t.c.webDc = dc; if (sp.cond === "paralyzed"){ t.c.heldDc = dc; t.path = []; } if (sp.cond === "asleep"){ t.c.sleptDc = m.dc; t.sleepT0 = now; t.path = []; } }
+          if (sp.cond && !ok){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); if (sp.cond === "restrained") t.c.webDc = dc; if (sp.cond === "paralyzed"){ t.c.heldDc = dc; t.path = []; } if (sp.cond === "asleep"){ t.c.sleptDc = m.dc; t.sleepT0 = now; t.path = []; }
+            if (sp.cond === "laughing"){ t.c.laughDc = dc; t.path = []; addCond(t, "prone"); } if (sp.cond === "blinded") t.c.blindDc = dc; condFlourish(t, sp.cond); }
           lines.push(line); if (i === targets.length - 1) log(`${fname(caster)} ${name}: ${lines.join("; ")}.`);
         }, i * 180));
       }
@@ -9395,7 +9447,7 @@ function flameSphereCast(c, at, cb){ const side = Math.sign(c.x - at.x) || 1, z 
   setTimeout(() => { z.move = {x0: z.x, y0: z.y, x1: at.x + side * ftPx(at) * 2.5, y1: at.y, t0: now, ms: 420}; setTimeout(cb, 420); }, 300); }
 // the new spells' turn-start rules: Hold Person's save, the daggers, the sphere's ram
 function newSpellsTurnStart(a){
-  if (a.c.conds.has("paralyzed") && a.c.heldDc){ const s = d20(0, a) + (a.c.sheet.saves.wis || 0); if (s >= a.c.heldDc){ a.c.conds.delete("paralyzed"); a.c.heldDc = 0; popText(a, "breaks free", "#d8b8ff"); log(`${fname(a)} shakes off Hold Person (WIS ${s}).`); }
+  if (a.c.conds.has("paralyzed") && a.c.heldDc){ const s = d20(0, a) + (a.c.sheet.saves.wis || 0) + blessD4(a); if (s >= a.c.heldDc){ a.c.conds.delete("paralyzed"); a.c.heldDc = 0; popText(a, "breaks free", "#d8b8ff"); log(`${fname(a)} shakes off Hold Person (WIS ${s}).`); }
     else { popText(a, "held", "#d8b8ff"); log(`${fname(a)} is held fast (WIS ${s} vs DC ${a.c.heldDc}).`); setTimeout(nextTurn, 900); return true; } }
   for (const z of daggerZones) if (!a.down && Math.hypot(a.x - z.x, a.y - z.y) <= ftPx(a) * 4){ const d = roll(z.dmg).total; bank("combat/blade_whoosh", .6); damage(a, d, z.type, false, z.caster, true); log(`${fname(a)} starts the turn in the Cloud of Daggers: ${d} ${z.type}.`); if (a.down) return true; }
   for (const z of fireSpheres) if (z.caster === a){ const v = standing(hero(a) ? foes : heroes()).filter(f => Math.hypot(f.x - z.x, f.y - z.y) <= ftPx(f) * 30).sort((p, q) => Math.hypot(p.x - z.x, p.y - z.y) - Math.hypot(q.x - z.x, q.y - z.y))[0]; if (!v) continue;
@@ -9462,6 +9514,9 @@ function damage(t, n, type, crit, from, magical = false){
       else { log(`${fname(t)} is hit while down: ${crit ? "two death-save failures" : "a death-save failure"}.`); deathMark(t, false, crit ? 2 : 1, "struck while dying"); } }
     return;
   }
+  // TEMPORARY HIT POINTS (False Life, Heroism): lost first (SRD 5.2.1)
+  if (t.c.tempHp > 0 && n > 0){ const a = Math.min(t.c.tempHp, n); t.c.tempHp -= a; n -= a; popText(t, `−${a} temp`, "#9fe0c0", .8, {src: popSrc + ":temp"}); if (n <= 0){ t.flash = now + 120; t.flashCol = "#9fe0c0"; renderParty(); return; } }
+  if (t.c.conds.has("laughing") && n > 0 && t.c.laughDc) setTimeout(() => laughSave(t, true), 200);   // hurt: the save again, with advantage
   const over = n - t.c.hp;
   // KNOCKING A CREATURE OUT (SRD 5.1, Combat: "When an attacker reduces a creature to 0 hit points with a melee attack,
   // the attacker can knock the creature out ... The creature falls unconscious and is stable"). The DM's grudge fight
