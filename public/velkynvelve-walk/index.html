@@ -5857,7 +5857,7 @@ function drawFxLayer(flat){
 }
 // which sheets and sounds a spell uses, from its school (lib/spell-school-data) and damage type
 const SCHOOL_OF = {"Acid Splash": "evocation", "Produce Flame": "conjuration", "Sacred Flame": "evocation", "Cure Wounds": "abjuration", "Inflict Wounds": "necromancy", "Grease": "conjuration", "Shatter": "evocation", "Acid Arrow": "evocation", "Call Lightning": "conjuration",
-  "Web": "conjuration", "Command (grovel)": "enchantment", "Scorching Ray": "evocation", "Bane": "enchantment", "Hideous Laughter": "enchantment", "Blindness/Deafness": "transmutation", "False Life": "necromancy", "Heroism": "enchantment", "Aid": "abjuration", "Mage Armor": "abjuration", "Barkskin": "transmutation", "Mass Healing Word": "abjuration", "Lightning Bolt": "evocation", "Gust of Wind": "evocation", "Misty Step": "conjuration", "Hypnotic Pattern": "illusion", "True Strike": "divination", "Vampiric Touch": "necromancy", "Sanctuary": "abjuration",
+  "Web": "conjuration", "Command (grovel)": "enchantment", "Scorching Ray": "evocation", "Bane": "enchantment", "Hideous Laughter": "enchantment", "Blindness/Deafness (blind)": "transmutation", "Blindness/Deafness (deafen)": "transmutation", "False Life": "necromancy", "Heroism": "enchantment", "Aid": "abjuration", "Mage Armor": "abjuration", "Barkskin": "transmutation", "Mass Healing Word": "abjuration", "Lightning Bolt": "evocation", "Gust of Wind": "evocation", "Misty Step": "conjuration", "Hypnotic Pattern": "illusion", "True Strike": "divination", "Vampiric Touch": "necromancy", "Sanctuary": "abjuration",
   "Light": "evocation", "Thaumaturgy": "transmutation", "Druidcraft": "transmutation", "Message": "transmutation", "Mending": "transmutation", "Guidance": "divination", "Resistance": "abjuration","Eldritch Blast": "evocation", "Hex": "enchantment", "Fireball": "evocation", "Burning Hands": "evocation", "Entangle": "conjuration", "Hunter's Mark": "divination", "Hold Person": "enchantment", "Cloud of Daggers": "conjuration", "Flaming Sphere": "conjuration", "Green-Flame Blade": "evocation", "Mage Hand": "conjuration", "Minor Illusion": "illusion", "Prestidigitation": "transmutation", "Dancing Lights": "evocation", "Friends": "enchantment", "Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
   "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment",
   "Stinking Cloud": "conjuration", "Cloudkill": "conjuration", "Fog Cloud": "conjuration", "Poison Spray": "necromancy"};
@@ -6452,7 +6452,7 @@ const ALLY_ROW = {ront: "2f539d01-6259-4beb-a685-4bd009f03f0d", eldeth: "05b6537
                   derendil: "e0c652fe-2f68-40ff-823d-bb7ac34f529f", sarith: "cc309888-e98d-4cfe-8bf1-d75787b8ec8e"};
 // SRD 5.2.1, as the party has them at level 1. `kind`: attack (spell attack roll), save, heal, buff.
 // a spell with a choice in it is offered as its choices (the sheet says "Chromatic Orb"; the menu offers each type)
-const SPELL_VARIANTS = {"Command": ["Command (grovel)"], "Chromatic Orb": ["Chromatic Orb (acid)", "Chromatic Orb (cold)", "Chromatic Orb (fire)", "Chromatic Orb (lightning)", "Chromatic Orb (poison)", "Chromatic Orb (thunder)"]};
+const SPELL_VARIANTS = {"Command": ["Command (grovel)"], "Blindness/Deafness": ["Blindness/Deafness (blind)", "Blindness/Deafness (deafen)"], "Chromatic Orb": ["Chromatic Orb (acid)", "Chromatic Orb (cold)", "Chromatic Orb (fire)", "Chromatic Orb (lightning)", "Chromatic Orb (poison)", "Chromatic Orb (thunder)"]};
 const SPELLS = {
   "Ray of Frost":       {lvl: 0, kind: "attack", range: 60, dmg: "1d8", type: "cold", fx: "#9fdcff", note: "speed −10 ft"},
   // Gandalf's (2026-10-23). lib/data/spells.json: "ranged spell attack; 1d10 fire", 120 ft. The SRD's
@@ -6587,10 +6587,18 @@ const SPELLS = {
   "Bane":               {lvl: 1, kind: "save", save: "cha", range: 30, targets: 3, cond: "baned", fx: "#8a5bb0", conc: 10},
   // Hideous Laughter: 1st-level enchantment, 30 ft, concentration 1 minute; WIS save or Prone and Incapacitated, unable to
   // stand; the save again at the end of each of its turns and whenever it takes damage (with advantage then).
+  // CHECKED against the 2024 text 2026-10-29 (PR #1124 wrote it from memory): "On a failed save, it has the Prone and
+  // Incapacitated conditions for the duration ... it can't end the Prone condition on itself. At the end of each of its turns,
+  // and each time it takes damage, it repeats the save, with Advantage if the trigger was damage. On a success, the spell
+  // ends." The 2014 "Intelligence 4 or lower is immune" clause is gone in 2024, so nothing here reads INT. Matches.
   "Hideous Laughter":   {lvl: 1, kind: "save", save: "wis", range: 30, cond: "laughing", fx: "#ff9bd2", conc: 10},
-  // Blindness/Deafness: 2nd-level transmutation, 120 ft, 1 minute (not concentration); CON save or Blinded (the deafness choice
-  // is left out: nothing in a fight here reads hearing); the save again at the end of each of its turns.
-  "Blindness/Deafness": {lvl: 2, kind: "save", save: "con", range: 120, cond: "blinded", fx: "#3a3048"},
+  // Blindness/Deafness: 2nd-level transmutation, 120 ft, 1 minute (not concentration); CON save or the condition the caster
+  // chose; the save again at the end of each of its turns. Offered as two rows, the way Command (grovel) and the Chromatic
+  // Orb elements are (SPELL_VARIANTS). Deafened changes little in a fight under SRD 5.2.1 — the 2024 Vicious Mockery and
+  // Dissonant Whispers no longer read the target's hearing — so the deafen row is honest about that in its glyph text;
+  // Malachar is told, so the story can use it (a deafened guard hears no shout).
+  "Blindness/Deafness (blind)":  {lvl: 2, kind: "save", save: "con", range: 120, cond: "blinded", fx: "#3a3048"},
+  "Blindness/Deafness (deafen)": {lvl: 2, kind: "save", save: "con", range: 120, cond: "deafened", fx: "#4a4058"},
   // False Life: 1st-level necromancy, self, "You gain 2d4 + 4 Temporary Hit Points." (click yourself)
   "False Life":         {lvl: 1, kind: "buff", range: 0, cond: "falseLife", fx: "#7fbf6a"},
   // Heroism: 1st-level enchantment, touch, concentration 1 minute: immune to Frightened, and Temporary Hit Points equal to
@@ -6599,7 +6607,8 @@ const SPELLS = {
   // Aid: 2nd-level abjuration, 30 ft, up to three creatures: Hit Point maximum and current Hit Points +5 for 8 hours.
   "Aid":                {lvl: 2, kind: "buff", range: 30, targets: 3, cond: "aided", fx: "#fff3c0"},
   // Mage Armor: 1st-level abjuration, touch, a willing creature not wearing armor: base AC 13 + its DEX modifier, 8 hours.
-  // NOT YET: the "not wearing armor" check (the walk has no worn-armor flag); it never lowers an AC.
+  // The "not wearing armor" check is at the click (combatClick → wornArmor, reading the doll's body slot the way inHeavyArmor
+  // does for Rage); it never lowers an AC. Still open: the spell ending if they don armour later (nothing dons armour mid-fight).
   "Mage Armor":         {lvl: 1, kind: "buff", range: 5, cond: "mageArmor", fx: "#8fc8ff"},
   // Barkskin: 2nd-level transmutation, bonus action, touch, 1 hour (not concentration): AC 17 if it was lower.
   "Barkskin":           {lvl: 2, kind: "buff", range: 5, bonus: true, cond: "barkskin", fx: "#a07a4a"},
@@ -6811,7 +6820,7 @@ function attackRiders(att, atk, thrown) {
  */
 function tintFor(a) { return a.raging || woundedFury(a.hp, a.woundedFury) ? RAGE_TINT : null }
 
-const COND_GLYPH = {baned: ["▼", "#b07ad8", "Baned: −1d4 on attack rolls and saving throws"], laughing: ["☺", "#ff9bd2", "Laughing: prone and incapacitated, can't stand · WIS save at the end of each turn and when hurt"], blinded: ["◉", "#8a8098", "Blinded: its attacks have disadvantage, attacks on it have advantage · CON save at the end of each turn"],
+const COND_GLYPH = {baned: ["▼", "#b07ad8", "Baned: −1d4 on attack rolls and saving throws"], laughing: ["☺", "#ff9bd2", "Laughing: prone and incapacitated, can't stand · WIS save at the end of each turn and when hurt"], blinded: ["◉", "#8a8098", "Blinded: its attacks have disadvantage, attacks on it have advantage · CON save at the end of each turn"], deafened: ["◌", "#9a90a8", "Deafened: hears nothing · fails any check that needs hearing · CON save at the end of each turn"],
   falseLife: ["♥", "#7fbf6a", "False Life: temporary hit points"], heroic: ["✪", "#ffd27a", "Heroism: immune to fear · temporary HP each turn"], aided: ["✚", "#fff3c0", "Aid: +5 hit points (maximum and current)"], mageArmor: ["⬡", "#8fc8ff", "Mage Armor: base AC 13 + DEX"], barkskin: ["❧", "#a07a4a", "Barkskin: AC at least 17"], sanctuary: ["☩", "#fff3c0", "Sanctuary: a foe must pass a WIS save to attack it or target it with a harmful spell · ends if it attacks or harms a foe"], surprised: ["!", "#ffd27a", "Surprised: no move and no action on its first turn, no reaction until that turn ends"], poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
                     shielded: ["◇", "#cfe8ff", "+2 AC"], blessed: ["✚", "#ffe9a8", "Blessed: +1d4 to attack rolls and saving throws"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], hexed: ["⛧", "#c58aff", "Hexed: the warlock's hits deal +1d6 necrotic"], marked: ["⌖", "#ff5a5a", "Hunter's Mark: the ranger's weapon hits deal +1d6"], paralyzed: ["✖", "#d8b8ff", "Paralyzed: no moves or actions; attacks have advantage, a hit within 5 ft is a critical"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
                     hidden: ["◌", "#b8c7d6", "Hidden: unseen until you attack"], prone: ["▼", "#e0b070", "Prone: melee on it has advantage, ranged disadvantage; half speed to stand"],
@@ -8614,7 +8623,10 @@ function combatClick(w){
   // asks for the save; a foe still out of reach after the walk hands the action back.
   if (p.shove){ const t = hitActor(foes, w); if (!t || t.down) return; doShove(a, t, p.shove); return; }
   if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(friends(), w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; }
-    if (t !== a && coverOf(a, t).total){ toast(`No line of sight to ${fname(t)}.`); return; } castSpell(a, t, p.spell); return; }
+    if (t !== a && coverOf(a, t).total){ toast(`No line of sight to ${fname(t)}.`); return; }
+    // SRD 5.2.1 Mage Armor: "a willing creature who isn't wearing armor" — refused here, before the action and the slot go
+    if (p.spell === "Mage Armor"){ const worn = wornArmor(t); if (worn){ toast(`${fname(t)} is wearing ${worn}: Mage Armor needs a creature not wearing armor.`); return; } }
+    castSpell(a, t, p.spell); return; }
   if (sp && (sp.kind === "cloud" || sp.kind === "fog") && Math.hypot(w.x - a.x, w.y - a.y) / ftPx(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
   if (sp && sp.aimRange && Math.hypot(w.x - a.x, w.y - a.y) / ftPx(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
   if (sp && sp.kind === "util"){ castUtil(a, hitActor([...foes, ...friends()], w) || w, p.spell); return; }
@@ -8965,6 +8977,7 @@ function buffTakes(caster, t, name){ const mod = (caster.c.sheet.magic || {}).mo
 function condFlourish(t, cond){ const B = bodyPoint(t), R = labR(t), burst = (n, cols, o = {}) => { for (let i = 0; i < n; i++){ const g = labRnd(0, Math.PI * 2), sp = labRnd(o.min || 20, o.max || 90); sparks.push({x: B.x + labRnd(-1, 1) * R, y: B.y + labRnd(-1.2, 1) * R, vx: Math.cos(g) * sp * (o.flat ? 1 : .6), vy: o.up ? -labRnd(30, 110) : o.down ? labRnd(20, 80) : Math.sin(g) * sp, g: o.g || 0, col: cols[i % cols.length], t0: now, life: labRnd(500, 1000)}); } };
   if (cond === "baned"){ burst(18, ["#8a5bb0", "#3a2050", "#b07ad8"], {down: true}); bank("magic/necrotic_tail", .4); }
   else if (cond === "laughing"){ for (let i = 0; i < 4; i++) setTimeout(() => popText(t, ["HA!", "HAHA", "hee hee", "HA HA HA"][i], "#ff9bd2", .8), i * 260); burst(10, ["#ff9bd2", "#ffd0ea"], {up: true}); }
+  else if (cond === "deafened"){ for (let i = 0; i < 3; i++) setTimeout(() => { const B = bodyPoint(t); for (let j = 0; j < 8; j++){ const g = j / 8 * Math.PI * 2; sparks.push({x: B.x + Math.cos(g) * R * .2, y: B.y - labH(t) * .3 + Math.sin(g) * R * .1, vx: Math.cos(g) * 70, vy: Math.sin(g) * 30, g: 0, col: j % 2 ? "#9a90a8" : "#4a4058", t0: now, life: 500}); } }, i * 180); bank("magic/spell_fizzle", .3); }   // rings of sound leaving them: silence
   else if (cond === "blinded"){ for (let i = 0; i < 20; i++) sparks.push({x: t.x + labRnd(-R, R) * .5, y: t.y - labH(t) * .82 + labRnd(-6, 6), vx: labRnd(-30, 30), vy: labRnd(-10, 10), g: 0, col: i % 2 ? "#1a1220" : "#3a3048", t0: now, life: labRnd(600, 1200)}); bank("magic/necrotic_tail", .35); }
   else if (cond === "falseLife"){ burst(18, ["#7fbf6a", "#2a4020", "#b6ff7a"], {up: true}); bank("magic/necrotic_tail", .35); }
   else if (cond === "heroic"){ burst(22, ["#ffd27a", "#fff3c0", "#ffb84a"], {up: true}); bank("magic/impact_radiant", .45); }
@@ -8975,8 +8988,9 @@ function condFlourish(t, cond){ const B = bodyPoint(t), R = labR(t), burst = (n,
 function laughSave(t, hurt){ if (!t.c.conds.has("laughing") || !t.c.laughDc || t.down) return; const s = d20(hurt ? 1 : 0, t) + (t.c.sheet.saves.wis || 0) + blessD4(t);
   if (s >= t.c.laughDc){ t.c.conds.delete("laughing"); t.c.laughDc = 0; popText(t, "stops laughing", "#ff9bd2", .85); log(`${fname(t)} gets hold of themselves (WIS ${s}).`); renderParty(); }
   else if (!hurt) log(`${fname(t)} is still helpless with laughter (WIS ${s} vs DC ${t.c.laughDc}).`); }
-function blindSave(t){ if (!t.c.conds.has("blinded") || !t.c.blindDc || t.down) return; const s = d20(0, t) + (t.c.sheet.saves.con || 0) + blessD4(t);
-  if (s >= t.c.blindDc){ t.c.conds.delete("blinded"); t.c.blindDc = 0; popText(t, "can see again", "#cfe8ff", .85); log(`${fname(t)} blinks the darkness away (CON ${s}).`); renderParty(); } }
+function blindSave(t){ if (!t.c.blindDc || t.down) return; const k = t.c.conds.has("blinded") ? "blinded" : t.c.conds.has("deafened") ? "deafened" : null; if (!k) return;   // one DC serves either half of the spell
+  const s = d20(0, t) + (t.c.sheet.saves.con || 0) + blessD4(t);
+  if (s >= t.c.blindDc){ t.c.conds.delete(k); t.c.blindDc = 0; popText(t, k === "blinded" ? "can see again" : "can hear again", "#cfe8ff", .85); log(`${fname(t)} ${k === "blinded" ? "blinks the darkness away" : "shakes the silence off"} (CON ${s}).`); renderParty(); } }
 // SHIELD, THE REACTION (Sam, 2026-10-10: "combat pauses like Baldur's Gate 3 for reactions like shield"). When an
 // attack is about to hit a caster who has Shield prepared, a level 1 slot and their reaction, and +5 AC would turn it,
 // the fight stops and asks. Yes: the slot and the reaction are spent and they have +5 AC until the start of their
@@ -9332,7 +9346,7 @@ function castSpell(caster, tgt, name, done, darts){
           else { if (name === "Toll the Dead" && ok) spawnFx("tollBell", {at: t, sq: 2, anchor: "base", lift: -.15, alpha: .8}); land(t, !ok, sp.type || "psychic"); }   // the bell tolls either way (SRD: "fills the air around it"); the damage is only on a failed save
           if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); const n = ok ? (sp.lvl ? Math.floor(d.total / 2) : 0) : d.total; if (n){ hitCtx = {spell: name, area: sp.area || 0, by: caster, at}; damage(t, n, sp.type, false, caster, true); hitCtx = null; } else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
           if (sp.cond && !ok){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); if (sp.cond === "restrained") t.c.webDc = dc; if (sp.cond === "paralyzed"){ t.c.heldDc = dc; t.path = []; } if (sp.cond === "asleep"){ t.c.sleptDc = m.dc; t.sleepT0 = now; t.path = []; }
-            if (sp.cond === "laughing"){ t.c.laughDc = dc; t.path = []; addCond(t, "prone"); } if (sp.cond === "blinded") t.c.blindDc = dc; condFlourish(t, sp.cond); }
+            if (sp.cond === "laughing"){ t.c.laughDc = dc; t.path = []; addCond(t, "prone"); } if (sp.cond === "blinded" || sp.cond === "deafened") t.c.blindDc = dc; if (sp.cond === "deafened" && APP) handOff(`${fname(caster)} cast Blindness/Deafness on ${fname(t)}, who is now Deafened for a minute (CON save at the end of each of its turns): it hears nothing — no shouts, no spoken words, no footsteps.`); condFlourish(t, sp.cond); }
           lines.push(line); if (i === targets.length - 1) log(`${fname(caster)} ${name}: ${lines.join("; ")}.`);
         }, i * 180));
       }
@@ -9792,6 +9806,15 @@ function inHeavyArmor(a){
   const g = GEAR[a.id]; if (!g) return false;
   const worn = g.doll.filter(d => ["body", "torso", "armor", "chest"].includes(d.slot)).map(d => g.carried.find(c => c.name === d.name)).filter(Boolean);
   return worn.some(it => String((it.properties || {}).armor_category || "").toLowerCase() === "heavy");
+}
+// armour worn at all (Mage Armor's "not wearing armor"): the same body slot holds a catalogue armour of any category — a shield
+// is not armour and does not count. Returns the item's name, or null. A hero with no doll (GEAR not loaded) counts as unarmoured,
+// which is what the walk's sheet AC already assumes for them.
+function wornArmor(a){
+  const g = GEAR[a.id]; if (!g) return null;
+  const worn = g.doll.filter(d => ["body", "torso", "armor", "chest"].includes(d.slot)).map(d => g.carried.find(c => c.name === d.name)).filter(Boolean);
+  const it = worn.find(it => (it.properties || {}).armor_category || ["armor", "armour"].includes(String(it.item_type || "").toLowerCase()));
+  return it ? it.name : null;
 }
 function enterRage(a){
   const c = a.c, s = c.sheet, used = RAGE_USED[a.id] || 0;
