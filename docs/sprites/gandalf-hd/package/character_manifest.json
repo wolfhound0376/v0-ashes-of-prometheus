@@ -1,0 +1,244 @@
+{
+  "character": "Gandalf",
+  "identity": "Young male half-elf wizard Gandalf. Long swept-back auburn hair, pointed ears, youthful clean-shaven face, blue eyes; ornate dark navy long coat with gold embroidery, dark trousers and boots. No beard, hat, staff, armor or costume changes. Preserve this specific character from the canonical board.",
+  "status": "reference-kit; animations need generation",
+  "source_size": [
+    1536,
+    1024
+  ],
+  "source_alpha": "RGBA with partial alpha; not validated as clean transparent sprites",
+  "canvas_proposal": [
+    160,
+    160
+  ],
+  "pivot_proposal": [
+    80,
+    148
+  ],
+  "direction_convention": "S faces viewer; E faces screen-right",
+  "animations": [
+    {
+      "action": "idle",
+      "status": "needs-generation",
+      "directions": [
+        "S",
+        "SW",
+        "W",
+        "NW",
+        "N",
+        "NE",
+        "E",
+        "SE"
+      ],
+      "suggested_frames": 6,
+      "suggested_fps": 8,
+      "loop": true,
+      "frames": []
+    },
+    {
+      "action": "walk",
+      "status": "needs-generation",
+      "directions": [
+        "S",
+        "SW",
+        "W",
+        "NW",
+        "N",
+        "NE",
+        "E",
+        "SE"
+      ],
+      "suggested_frames": 8,
+      "suggested_fps": 8,
+      "loop": true,
+      "frames": []
+    },
+    {
+      "action": "run",
+      "status": "needs-generation",
+      "directions": [
+        "S",
+        "SW",
+        "W",
+        "NW",
+        "N",
+        "NE",
+        "E",
+        "SE"
+      ],
+      "suggested_frames": 8,
+      "suggested_fps": 10,
+      "loop": true,
+      "frames": []
+    },
+    {
+      "action": "cast_projectile",
+      "status": "needs-generation",
+      "directions": [
+        "S",
+        "SW",
+        "W",
+        "NW",
+        "N",
+        "NE",
+        "E",
+        "SE"
+      ],
+      "suggested_frames": 6,
+      "suggested_fps": 8,
+      "loop": false,
+      "frames": []
+    },
+    {
+      "action": "cast_area",
+      "status": "needs-generation",
+      "directions": [
+        "S",
+        "SW",
+        "W",
+        "NW",
+        "N",
+        "NE",
+        "E",
+        "SE"
+      ],
+      "suggested_frames": 6,
+      "suggested_fps": 8,
+      "loop": false,
+      "frames": []
+    },
+    {
+      "action": "cast_shield",
+      "status": "needs-generation",
+      "directions": [
+        "S",
+        "SW",
+        "W",
+        "NW",
+        "N",
+        "NE",
+        "E",
+        "SE"
+      ],
+      "suggested_frames": 6,
+      "suggested_fps": 8,
+      "loop": false,
+      "frames": []
+    },
+    {
+      "action": "channel",
+      "status": "needs-generation",
+      "directions": [
+        "S",
+        "SW",
+        "W",
+        "NW",
+        "N",
+        "NE",
+        "E",
+        "SE"
+      ],
+      "suggested_frames": 6,
+      "suggested_fps": 8,
+      "loop": true,
+      "frames": []
+    },
+    {
+      "action": "study",
+      "status": "needs-generation",
+      "directions": [
+        "S",
+        "SW",
+        "W",
+        "NW",
+        "N",
+        "NE",
+        "E",
+        "SE"
+      ],
+      "suggested_frames": 6,
+      "suggested_fps": 8,
+      "loop": true,
+      "frames": []
+    },
+    {
+      "action": "interact",
+      "status": "needs-generation",
+      "directions": [
+        "S",
+        "SW",
+        "W",
+        "NW",
+        "N",
+        "NE",
+        "E",
+        "SE"
+      ],
+      "suggested_frames": 6,
+      "suggested_fps": 8,
+      "loop": false,
+      "frames": []
+    },
+    {
+      "action": "hurt",
+      "status": "needs-generation",
+      "directions": [
+        "S",
+        "SW",
+        "W",
+        "NW",
+        "N",
+        "NE",
+        "E",
+        "SE"
+      ],
+      "suggested_frames": 6,
+      "suggested_fps": 8,
+      "loop": false,
+      "frames": []
+    },
+    {
+      "action": "death",
+      "status": "needs-generation",
+      "directions": [
+        "S",
+        "SW",
+        "W",
+        "NW",
+        "N",
+        "NE",
+        "E",
+        "SE"
+      ],
+      "suggested_frames": 6,
+      "suggested_fps": 8,
+      "loop": false,
+      "frames": []
+    },
+    {
+      "action": "victory",
+      "status": "needs-generation",
+      "directions": [
+        "S",
+        "SW",
+        "W",
+        "NW",
+        "N",
+        "NE",
+        "E",
+        "SE"
+      ],
+      "suggested_frames": 6,
+      "suggested_fps": 8,
+      "loop": false,
+      "frames": []
+    }
+  ],
+  "vfx": "Separate layers. Release markers assigned after actual frame QA.",
+  "hitboxes": null,
+  "additional_art": [
+    "Gandalf_Full_Action_Board.png",
+    "Gandalf_Action_Key_Poses.png"
+  ],
+  "reference_notes": "Walk poses need alternating-leg correction; cast hand continuity needs QA. Art is concept, not registered frames."
+}

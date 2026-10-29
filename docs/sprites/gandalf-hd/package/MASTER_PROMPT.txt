@@ -1,0 +1,2 @@
+Young male half-elf wizard Gandalf. Long swept-back auburn hair, pointed ears, youthful clean-shaven face, blue eyes; ornate dark navy long coat with gold embroidery, dark trousers and boots. No beard, hat, staff, armor or costume changes. Preserve this specific character from the canonical board.
+Create one full-body 160x160 pixel-art idle sprite, south-facing three-quarter view. Feet at (80,148), transparent background, consistent pixel grid, restrained palette. Use canonical board for identity and concept sheet for clothing silhouette. No effects.
