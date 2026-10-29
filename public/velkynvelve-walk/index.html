@@ -8966,6 +8966,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       // BARE HANDS (Sam's comment on the lab, 2026-10-29: "striking with your hands doesn't create a crimson or gold arch
       // effect"): no crescent and no swipe line — only Sam's own drawn martial spark (jab, kick, uppercut on a crit; strikeSheet
       // below) and the second jolt of the combo.
+      if (fist) fistRibbons(att, tgt, crit);
       if (fist) setTimeout(() => { if (!tgt.down){ lunge(att, tgt, 10 * actorScale(att)); knock(tgt, att, 10 * actorScale(tgt)); } }, 150);
       if (!shot && !crimS && !fist){ swipe(att, tgt, {...sw, crit});
         setTimeout(() => { if (!tgt.down || crit){ swipe(att, tgt, {...sw, crit, flip: -(sw.flip || 1)}); lunge(att, tgt, 10 * actorScale(att)); knock(tgt, att, 10 * actorScale(tgt)); spawnFx("physicalImpact", {at: tgt, sq: 1.4, mirror: tgt.x > att.x}); } }, 150);
@@ -9226,6 +9227,7 @@ function doShove(a, t, what){
       // THE SAVE HOLDS: say so loudly. "holds" in grey over the foe read as nothing happening — the player saw the
       // hero step in and the foe stand there (Sam, 2026-10-28). The shove is a contest that was lost, not a dead click.
       if (ok){ bank("combat/melee_miss", .6); popText(t, `${verb} fails`, "#ffb27a", 1.15); popText(a, "they hold", "#c9c4b8", .85); narrate(a, `${fname(a)} tries to ${verb} ${fname(t)}, who holds firm.`); log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — <b>it holds</b>.`); return; }
+      if (what === "push") pushWaves(a, t);   // the golden shock rings (Sam, 2026-10-29)
       bank("walk:punch-bag", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx(what === "prone" ? MARTIAL_IMPACT.sweep : what === "push" ? MARTIAL_IMPACT.kick : MARTIAL_IMPACT.punch, {at: t, sq: 1.8, mirror: what === "prone" && t.x < a.x});   // the sweep takes their legs; a push is a kick
       if (what === "prone"){ addCond(t, "prone"); if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); narrate(a, `${fname(a)} knocks ${fname(t)} flat.`); }
       else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ftPx(t) * 5, y: t.y + d.y * ftPx(t) * 5}; const to = nearestWalkable(raw.x, raw.y), ce = chasmEdge(t, raw); if (ce) chasmFall(t, raw, a, ce); else if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a); else { const top = elevAt(t.x, t.y); t.x = to.x; t.y = to.y; const dropFt = top - elevAt(to.x, to.y); if (dropFt >= LEDGE_FT){ narrate(a, `${fname(a)} shoves ${fname(t)} off the edge.`); setTimeout(() => landFall(t, dropFt), 250); } } narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
@@ -9967,6 +9969,28 @@ function crimShadow(at, power = 1){
   for (let i = 0; i < 6 * power; i++){ const dir = Math.random() < .5 ? -1 : 1; crimPuffs.push({wisp: true, x: q.x - dir * 40 * sc, y: q.y + (Math.random() - .5) * 60 * sc, vx: dir * (120 + Math.random() * 120) * sc, vy: (Math.random() - .5) * 40 * sc, bend: (Math.random() - .5) * 60 * sc, r0: (3 + Math.random() * 4) * sc, r1: 40 * sc, t0: now, life: 380 + Math.random() * 260, rgb: [36, 12, 64]}); }
   for (let i = 0; i < 12 * power; i++) crimPuffs.push({twinkle: true, x: q.x + (Math.random() - .5) * 110 * sc, y: q.y + (Math.random() - .5) * 90 * sc, vx: (Math.random() - .5) * 30 * sc, vy: -10 * sc, r0: (2 + Math.random() * 3) * sc, r1: 0, ph: Math.random() * 7, t0: now, life: 500 + Math.random() * 600, rgb: Math.random() < .5 ? [255, 240, 255] : [200, 140, 255]});
 }
+// ---------- FISTS, THE PUSH, THE ARROW STREAK (Sam, 2026-10-29, from the Combat Effects Lab) ----------
+// BARE HANDS (his unarmed reference): no crescent — thin golden ribbons trail the fist round its swing, embers shed off
+// them, and a gold starburst flares at the knuckles on contact
+function fistRibbons(att, t, crit){ const dir = Math.sign(t.x - att.x) || 1, m = SPR[att.id].json, sc = actorScale(att), hy = att.y - m.pivot[1] * sc * .55, kx = t.x - dir * SPR[t.id].json.cell[0] * actorScale(t) * .12, ky = t.y - SPR[t.id].json.pivot[1] * actorScale(t) * .55, sw = sc * (crit ? 1.3 : 1);
+  for (const [k, off, w] of [[1, 0, 7], [.6, 14, 4]]) sparks.push({fistRibbon: true, a: att, pts: [{x: att.x - dir * 38 * sw, y: hy - 30 * sw + off}, {x: att.x - dir * 10 * sw, y: hy - 95 * sw - off}, {x: kx - dir * 70 * sw, y: ky - 70 * sw + off * .5}, {x: kx, y: ky}], w: w * sw, al: k, t0: now - 40, life: 300});
+  for (let i = 0; i < (crit ? 16 : 8); i++){ const u = Math.random() * .7 + .3; sparks.push({x: kx - dir * 60 * sw * (1 - u), y: ky - 50 * sw * Math.sin(u * Math.PI), vx: (Math.random() - .5) * 80, vy: -20 - Math.random() * 70, g: -10, col: i % 2 ? "#ffd27a" : "#ffb62e", t0: now, life: 400 + Math.random() * 400}); }
+  const n = crit ? 14 : 10, rays = []; for (let i = 0; i < n; i++) rays.push({a: i / n * Math.PI * 2 + (Math.random() - .5) * .3, L: (.4 + Math.random() * .6) * (i % 2 ? .6 : 1.3), w: .04 + Math.random() * .04});
+  sparks.push({crimStar: true, a: t, x: kx, y: ky, R: (crit ? 90 : 58) * Math.max(.7, actorScale(t)), rays, C: CRIM.gold, t0: now, life: crit ? 320 : 240}); }
+function drawFistRibbon(s, k){ const head = Math.min(1, k / .45), tail = Math.max(0, (k - .2) / .8); if (head - tail < .01) return; const P = s.pts, N = 26, pts = [];
+  for (let i = 0; i <= N; i++){ const u = tail + (head - tail) * i / N, v = 1 - u; pts.push({x: v*v*v*P[0].x + 3*v*v*u*P[1].x + 3*v*u*u*P[2].x + u*u*u*P[3].x, y: v*v*v*P[0].y + 3*v*v*u*P[1].y + 3*v*u*u*P[2].y + u*u*u*P[3].y, f: i / N}); }
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.lineCap = "round"; ctx.globalAlpha *= s.al * (k < .6 ? 1 : 1 - (k - .6) / .4);
+  for (const [col, wk, blur] of [["#ffb62e", 1, 16], ["#fff6d8", .35, 0]]){ ctx.strokeStyle = col; ctx.shadowColor = "#ffb62e"; ctx.shadowBlur = blur;
+    for (let i = 1; i < pts.length; i++){ ctx.lineWidth = Math.max(.5, s.w * wk * Math.sin(Math.PI * Math.min(1, pts[i].f * 1.05)) * (.3 + .7 * pts[i].f)); ctx.beginPath(); ctx.moveTo(pts[i - 1].x, pts[i - 1].y); ctx.lineTo(pts[i].x, pts[i].y); ctx.stroke(); } }
+  ctx.restore(); }
+// THE PUSH (his reference): an open palm, and a run of golden shock rings rolls off it toward the target
+function pushWaves(a, t){ const m = SPR[a.id].json, sc = actorScale(a), dir = Math.sign(t.x - a.x) || 1, hx = a.x + dir * m.cell[0] * sc * .17, hy = a.y - m.pivot[1] * sc * .55, tm = SPR[t.id].json, ts = actorScale(t), x1 = t.x + dir * tm.cell[0] * ts * .3, y1 = t.y - tm.pivot[1] * ts * .5, R = Math.max(70, tm.cell[0] * ts * .22 * 2.6) * 1.35;
+  for (let i = 0; i < 6; i++) sparks.push({pushWave: true, x0: hx, y0: hy, x1, y1, dir, R1: R * (1 - i * .08), w: 6 - i * .6, al: 1 - i * .13, t0: now + i * 45, life: 340});
+  for (let i = 0; i < 14; i++){ const u = Math.random(); sparks.push({x: hx + (x1 - hx) * u, y: hy + (y1 - hy) * u + (Math.random() - .5) * 80, vx: dir * (40 + Math.random() * 100), vy: (Math.random() - .7) * 40, g: 0, col: i % 2 ? "#ffd27a" : "#ffb62e", t0: now, life: 350 + Math.random() * 350}); } }
+function drawPushWave(s, k){ if (k < 0) return; const e = 1 - Math.pow(1 - k, 2), x = s.x0 + (s.x1 - s.x0) * e, y = s.y0 + (s.y1 - s.y0) * e, R = 14 + (s.R1 - 14) * e, al = s.al * (k < .15 ? k / .15 : 1 - (k - .15) / .85);
+  ctx.save(); ctx.translate(x, y); ctx.scale(s.dir * .42, 1); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha *= Math.max(0, al); ctx.lineCap = "round";
+  for (const [col, wk, blur] of [["#ffb62e", 1, 18], ["#fff3c8", .35, 0]]){ ctx.strokeStyle = col; ctx.shadowColor = "#ffb62e"; ctx.shadowBlur = blur; ctx.lineWidth = s.w * wk / .42 * .5; ctx.beginPath(); ctx.arc(0, 0, R, -1.15, 1.15); ctx.stroke(); }
+  ctx.restore(); }
 // afterimages: while a striker dashes in, the frame as drawn is left behind every ~34 ms, darkened, fading in 300 ms
 const crimGhosts = [];
 function drawCrimGhosts(){
@@ -11300,6 +11324,8 @@ function drawCombatFx(){
     const s = sparks[i], k = (now - s.t0) / s.life;
     if (k >= 1){ sparks.splice(i, 1); if (s.then){ const f = s.then; s.then = null; f(); } continue; }
     if (drawLabSpark(s, k)) continue;   // the lab's looks (Sam, 2026-10-29)
+    if (s.fistRibbon){ ovWrapS(s, () => drawFistRibbon(s, k)); continue; }
+    if (s.pushWave){ if (k >= 0) ovWrap(s.x1, s.y1, () => drawPushWave(s, k)); continue; }
     if (s.swipe){ ovWrapS(s, () => drawSwipe(s, k)); continue; }
     if (s.crimson){ ovWrapS(s, () => drawCrimson(s, k)); continue; }
     if (s.crimStar){ ovWrapS(s, () => drawCrimStar(s, k)); continue; }
@@ -16000,8 +16026,8 @@ function putOutFire(a, done){
 const SHOT_OF = n => /crossbow/.test(n) ? "bolt" : /bow/.test(n) ? "arrow" : /blowgun/.test(n) ? "needle" : /dart/.test(n) ? "dart" : /sling/.test(n) ? "stone" : null;
 // len in feet (a little over life size so it reads at this zoom), msPerFt the flight time
 const SHOT_LOOK = {
-  bolt:   {len: 1.5, w: .16, msPerFt: 4.2, arc: .015, shaft: "#5a3c22", head: "#cfd8e2", fl: "#e4dccb", stick: true, snap: "#ffffff"},
-  arrow:  {len: 2.2, w: .13, msPerFt: 5.4, arc: .07,  shaft: "#8a6236", head: "#b8c2cc", fl: "#eee6d6", stick: true, snap: "#fff3d6"},
+  bolt:   {len: 1.5, w: .16, msPerFt: 4.2, arc: 0,   shaft: "#5a3c22", head: "#cfd8e2", fl: "#e4dccb", stick: true, snap: "#ffffff"},
+  arrow:  {len: 2.2, w: .13, msPerFt: 5.4, arc: 0,   shaft: "#8a6236", head: "#b8c2cc", fl: "#eee6d6", stick: true, snap: "#fff3d6"},
   dart:   {len: .8,  w: .14, msPerFt: 6.0, arc: .06,  shaft: "#55555e", head: "#d0d6dc", fl: "#c04a3a", stick: true},
   needle: {len: .5,  w: .08, msPerFt: 4.0, arc: .01,  shaft: "#cfd6dc", head: "#ffffff", fl: null,      stick: true},
   stone:  {len: .25, w: .25, msPerFt: 5.0, arc: .06,  shaft: "#7d7a72", head: "#7d7a72", fl: null,      stick: false},
@@ -16111,7 +16137,15 @@ function drawShots(){
     const P = shotPos(s, p), Q = shotPos(s, Math.min(1, p + .02)), ang = Math.atan2(Q.y - P.y, Q.x - P.x), pxft = ftPx({x: P.x, y: P.y, big: 1});
     const T = shotPos(s, Math.max(0, p - .18));                                                    // a streak behind it
     ovWrap(P.x, P.y, () => {   // out on the balcony with the close-up on: the bolt flies in that painting
-    ctx.save(); ctx.globalAlpha = .35; ctx.strokeStyle = "#fff6e0"; ctx.lineWidth = Math.max(1, pxft * .06); ctx.beginPath(); ctx.moveTo(T.x, T.y); ctx.lineTo(P.x, P.y); ctx.stroke(); ctx.restore();
+    // AN ARROW OR BOLT FLIES DEAD STRAIGHT WITH A NEON YELLOW STREAK THAT FIZZES (Sam, 2026-10-29: "make sure the trajectory is
+    // straight", "neon yellow not green", "a trailing effervescent neon yellow"): the old shaft, a glowing line behind it and
+    // bright motes bubbling off it
+    if (s.kind === "arrow" || s.kind === "bolt"){ const S2 = shotPos(s, Math.max(0, p - .35));
+      ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.lineCap = "round"; const g = ctx.createLinearGradient(S2.x, S2.y, P.x, P.y); g.addColorStop(0, "rgba(255,236,0,0)"); g.addColorStop(1, "rgba(255,236,0,1)");
+      ctx.strokeStyle = g; ctx.shadowColor = "#ffe600"; ctx.shadowBlur = 20; ctx.lineWidth = Math.max(3, pxft * .2); ctx.beginPath(); ctx.moveTo(S2.x, S2.y); ctx.lineTo(P.x, P.y); ctx.stroke(); ctx.stroke();
+      ctx.shadowBlur = 0; ctx.strokeStyle = "rgba(255,255,220,1)"; ctx.lineWidth = Math.max(1, pxft * .06); ctx.beginPath(); ctx.moveTo(T.x, T.y); ctx.lineTo(P.x, P.y); ctx.stroke(); ctx.restore();
+      if (now - (s.fz || 0) > 16){ s.fz = now; for (let j = 0; j < 3; j++){ const u = Math.random(); sparks.push({x: T.x + (P.x - T.x) * u + (Math.random() - .5) * 6, y: T.y + (P.y - T.y) * u + (Math.random() - .5) * 6, vx: (Math.random() - .5) * 50, vy: -15 - Math.random() * 55, g: -30, col: Math.random() < .7 ? "#ffee00" : "#fffbb0", t0: now, life: 280 + Math.random() * 340}); } } }
+    else { ctx.save(); ctx.globalAlpha = .35; ctx.strokeStyle = "#fff6e0"; ctx.lineWidth = Math.max(1, pxft * .06); ctx.beginPath(); ctx.moveTo(T.x, T.y); ctx.lineTo(P.x, P.y); ctx.stroke(); ctx.restore(); }
     if (SHOT_LOOK[s.kind].sprite){                                                              // a thrown thing: its own icon
       const sq = 5 * pxft * FLOOR_ITEM_SCALE * (s.kind === "flask" ? 1.2 : 1), rot = s.spin ? p * s.ms / 1000 * Math.PI * 2 * s.spin : ang + Math.PI / 4;
       if (s.img){ ctx.save(); ctx.translate(P.x, P.y); ctx.rotate(rot); ctx.drawImage(s.img, -sq / 2, -sq / 2, sq, sq); ctx.restore(); }
