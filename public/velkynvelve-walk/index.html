@@ -4996,7 +4996,7 @@ function openInteract(z, opts = {}){
       log("The bolt tears from the stone."); unlockGate(1);
     }, () => { sfx("door-locked", .9); toast("The bars shudder in their bolts, and hold.", 3200); }));
     calls();
-    if (!APP || isDm()) add("DM: Jorlan opens it", () => { close(); openGate(); });
+    if (dmScreen()) add("DM: Jorlan opens it", () => { close(); openGate(); });
     add("Step back", close);
   } else if (state.doorShut){
     $("objText").textContent = "The gate is shut, but no longer locked.";
@@ -5119,6 +5119,18 @@ function checkCardTakes(text){
 $("ccX").onclick = closeCheck;
 addEventListener("keydown", e => { if (e.key === "Escape" && !$("checkCard").hidden){ closeCheck(); } });
 function isDm(){ try { return localStorage.getItem("aop_access_role") === "dm"; } catch (e) { return false; } }
+// WHAT THE DM'S SCREEN SEES, AND NOBODY ELSE (Sam, 2026-10-30: "the options that are DM only do not populate for
+// normal character"). `isDm()` alone is not that question. It reads one localStorage key, and a browser that was
+// once the DM's keeps aop_access_role="dm" for good; when that same browser later takes a hero's seat the key is
+// stale and the DM's own choices — "DM: Jorlan opens it", Malachar's hidden d4, the drow surgeon in both tongues —
+// came up on a player's card. A VERIFIED seat settles it: `mySlug` is set at boot only after /api/verify-claim
+// accepts this browser's claim (see the boot block), and the DM's screen holds no claim. So: the DM's screen, or
+// the stand-alone preview with no game around it, and never a seated hero.
+//
+// This is deliberately NOT used for AUTHORITY — canControl, dmHeaders, the DM drawer, the DM's API calls all stay
+// on isDm(), where the server is the real gate. Misjudging authority would take the map away from the DM;
+// misjudging a leak only hides something a player was never meant to see.
+function dmScreen(){ return !APP || (isDm() && !mySlug); }
 // WHO MOVES WHOM (Sam, 2026-10-25): "The DM is the only instance that can move characters that are not his" and a
 // player "CAN ONLY control his character on the dashboard UI and the pixel map." Everyone seated still walks together
 // on every screen (his ruling the same day); only the hero you play takes your clicks, keys and combat menu. The DM
@@ -14703,7 +14715,7 @@ const surgeonDone = () => !!(surgeonSeen || (surgeon && surgeon.stage) || surgeo
 const surgeonDeadId = () => { const s = surgeonSeen || surgeonLocalState.s; return s && s.victim ? s.victim.id : null; };
 function slugSpeaksElvish(slug){ if (!APP) return slug === "kenta"; const id = characterIdOf(slug); return !!id && surgeonElvish.has(id); }
 function viewerUnderstands(){
-  if (!APP || isDm()) return true;                        // the DM (and the preview) read her in both tongues
+  if (dmScreen()) return true;                            // the DM (and the preview) read her in both tongues
   try { const id = localStorage.getItem("aop_character_id"); return !!id && surgeonElvish.has(id); } catch (e) { return false; }
 }
 async function readSurgeon(){
@@ -15021,7 +15033,7 @@ async function lianaPersuaded(p, translator){
   log(`${esc(fname(p))}${translator ? `, through ${esc(translator)},` : ""} asks Liana for help. Persuasion: d20 ${r.rolls.length > 1 ? `[${r.rolls.join(", ")}] (disadvantage) ` : ""}${r.d20} ${r.bonus >= 0 ? "+" : "−"} ${Math.abs(r.bonus)} = <b>${r.total}</b> vs DC ${r.dc} — ${r.success ? "she listens" : "she does not"}.`);
   if (!r.success){ lianaSays("refuse", 4500); setTimeout(() => lianaLeaves("failed"), 3200); return; }
   const b = j.boon;
-  if (isDm() || !APP) log(`<i>Malachar's hidden d4: ${b.d4}.</i>`);
+  if (dmScreen()) log(`<i>Malachar's hidden d4: ${b.d4}.</i>`);
   lianaSays("offer" + b.d4, 8500);
   setTimeout(() => {
     if (j.granted){ bank("ui/item_pickup", .7); log(`Liana presses something into ${esc(j.granted.to)}'s hand: <b>${esc(j.granted.name)}</b>.`); }
@@ -15475,7 +15487,7 @@ function toothVenomHit(att, tgt){
 // taken in hand: the beacon (a line for Malachar; the table sees nothing unless the DM is looking)
 async function toothDrawn(a){
   const j = await toothApi("tooth-drawn", {characterId: characterIdOf(a.id) || undefined, area: node && node.name});
-  if (isDm() || !APP) log(TOOTH.uncursed ? `<i>Lolth's Tooth is drawn. The curse is lifted: Ilvara feels nothing.</i>` : `<i>DM: Lolth's Tooth is drawn by ${esc(fname(a))}. Ilvara feels it, and knows roughly where.</i>`);
+  if (dmScreen()) log(TOOTH.uncursed ? `<i>Lolth's Tooth is drawn. The curse is lifted: Ilvara feels nothing.</i>` : `<i>DM: Lolth's Tooth is drawn by ${esc(fname(a))}. Ilvara feels it, and knows roughly where.</i>`);
   return j;
 }
 function toothBagButtons(a, btn, mine, fight){
@@ -19013,7 +19025,7 @@ function owRenderSeats(){
     await enterNode(saved.cur, {});
   } else {
     if (mine) leader = {id: mine};
-    await enterNode(11, {spawn: {x: 1560, y: 960}, note: (!APP || isDm()) ? "You wake in the slave pen. The gate is locked. <em>DM tools</em> can open it, or jump the party anywhere." : "You wake in the slave pen. The gate is locked."});
+    await enterNode(11, {spawn: {x: 1560, y: 960}, note: dmScreen() ? "You wake in the slave pen. The gate is locked. <em>DM tools</em> can open it, or jump the party anywhere." : "You wake in the slave pen. The gate is locked."});
   }
   booted = true;
   if (APP) owStart(W);
