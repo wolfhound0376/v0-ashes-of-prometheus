@@ -39,6 +39,28 @@ describe("settingsFor", () => {
     expect(out).not.toHaveProperty("style")
     expect(out).not.toHaveProperty("similarity_boost")
   })
+
+  // Tempo (Sam, 2026-10-30, on the walk's narration strip read aloud: "make sure
+  // the tempo of this isn't too slow"). Speed has to survive on BOTH attempts: a
+  // v4 subset that silently dropped it would read the narration at the lich's
+  // natural drawl and nobody would know why the knob did nothing.
+  it("carries speed through on v4, not just on the fallback", () => {
+    expect(settingsFor(TTS_MODEL, { ...SETTINGS, speed: 1.15 })).toEqual({
+      stability: 0.5,
+      use_speaker_boost: true,
+      speed: 1.15,
+    })
+  })
+
+  it("carries speed through on the fallback", () => {
+    const out = settingsFor(TTS_FALLBACK_MODEL, { ...SETTINGS, speed: 1.15 })
+    expect(out).toHaveProperty("speed", 1.15)
+  })
+
+  it("adds no speed key when the caller sent none, so every existing call is byte-identical", () => {
+    expect(settingsFor(TTS_MODEL, SETTINGS)).not.toHaveProperty("speed")
+    expect(settingsFor(TTS_FALLBACK_MODEL, SETTINGS)).not.toHaveProperty("speed")
+  })
 })
 
 describe("shouldRetryOnFallback", () => {

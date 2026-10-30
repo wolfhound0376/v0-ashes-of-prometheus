@@ -35,6 +35,15 @@ export type VoiceSettings = {
   similarity_boost: number
   style: number
   use_speaker_boost: boolean
+  /**
+   * Delivery tempo. ElevenLabs accepts 0.7-1.2; 1.0 is the voice as designed.
+   * Sam, 2026-10-30, on the narration strip read aloud: "make sure the tempo
+   * of this isn't too slow" — Malachar's lich voice is built to drawl, which
+   * suits a monologue and drags badly on a line of scene narration the table
+   * is waiting to act on. Sent on every attempt; if v4 rejects it the existing
+   * fallback carries it to multilingual_v2, which has always taken it.
+   */
+  speed?: number
 }
 
 /**
@@ -44,7 +53,9 @@ export type VoiceSettings = {
  */
 export function settingsFor(model: string, settings: VoiceSettings): Partial<VoiceSettings> {
   if (model === TTS_FALLBACK_MODEL) return settings
-  return { stability: settings.stability, use_speaker_boost: settings.use_speaker_boost }
+  const subset: Partial<VoiceSettings> = { stability: settings.stability, use_speaker_boost: settings.use_speaker_boost }
+  if (settings.speed != null) subset.speed = settings.speed
+  return subset
 }
 
 /**

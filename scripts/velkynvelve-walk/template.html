@@ -55,6 +55,7 @@ header .tools .tbtn[aria-pressed="true"]::after{background:radial-gradient(circl
 header .tools #musicBtn[aria-pressed="true"]{--c1:#2e6ab8;--c2:#17406a}
 header .tools #motionBtn[aria-pressed="true"]{--c1:#1f8f86;--c2:#0f5b57}
 header .tools #voicesBtn[aria-pressed="true"]{--c1:#6b4fc1;--c2:#3d2b80}
+header .tools #narrBtn[aria-pressed="true"]{--c1:#9a5a22;--c2:#5a3010}
 header .tools #bagBtn{--c1:#1f8f86;--c2:#0f5b57;color:#fff}
 header .tools #dmBtn{--c1:#5e3a7a;--c2:#2e1a40;color:#fff}
 header .tools .tbtn[aria-expanded="true"]{border-color:#f2c55c;box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.14),inset 0 -6px 0 rgba(0,0,0,.24),0 3px 0 #000,0 0 14px rgba(242,197,92,.45)}
@@ -923,6 +924,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <input type="range" id="vol" min="0" max="100" value="40" aria-label="Music volume">
       <button class="tbtn" id="motionBtn" aria-pressed="true">Motion on</button>
       <button class="tbtn" id="voicesBtn" aria-pressed="true" title="Hear the story's lines on the map">Voices on</button>
+      <button class="tbtn" id="narrBtn" aria-pressed="true" title="Read the narration strip aloud">Narration on</button>
       <button class="tbtn" id="bagBtn" aria-expanded="false" title="What the hero carries and wears (I)">Inventory (I)</button>
       <button class="tbtn" id="dmBtn" aria-expanded="false">DM tools</button>
       <button class="tbtn" id="parleyBtn" title="Open the Parley dashboard. The map waits here: Return (M) there brings you back to this spot.">❝ Parley</button>
@@ -2290,6 +2292,7 @@ function narrate(a, text){
   while (el.children.length > 3) el.firstChild.remove();
   setTimeout(() => { p.classList.add("gone"); setTimeout(() => p.remove(), 1300); }, 8000);
   if (a){ a.lastBark = now; lastAnyBark = now; }
+  narrateAloud(p.textContent);                                        // read aloud in Malachar's voice, exactly as the strip shows it (see the narration block below)
 }
 // A character's idle line: narration unless it is written as speech (opens with a quotation mark).
 // The strip and the sprites must agree (Sam, 2026-10-11: "make sure the sprites match what is happening
@@ -13834,14 +13837,79 @@ $("dmLaborOff").onclick = async () => { toggleDm(false); if (!labor || !isLive(l
 // he SAID lived only on the dashboard. Now every line the table hears comes through here too (/api/map-dialogue,
 // polled): an NPC says it in a bubble over their own sprite and in their own voice (their row's ElevenLabs voice,
 // a myconid in the listener's, a kuo-toa croaking, the same as everywhere else); a player's line is a bubble over
-// their sprite, unvoiced, since they said it themselves; Malachar's narration runs in the strip, unvoiced, since
-// the dashboard is his stage. Someone talking who is not on this plate is still heard, and named in the log.
+// their sprite, unvoiced, since they said it themselves; Malachar's narration runs in the strip, and since
+// 2026-10-30 is read aloud there too in his own voice (see "THE NARRATION STRIP, READ ALOUD" below). Someone talking who is not on this plate is still heard, and named in the log.
 // Lines are taken in order and voiced one at a time. "Voices off" keeps the bubbles and silences the walk, for a
 // table that has the dashboard open beside it and would otherwise hear every line twice.
 let voicesOn = (() => { try { return localStorage.getItem("vk-voices") !== "off"; } catch (e) { return true; } })();
 function renderVoicesBtn(){ const b = $("voicesBtn"); if (!b) return; b.setAttribute("aria-pressed", String(voicesOn)); b.textContent = voicesOn ? "Voices on" : "Voices off"; }
 if ($("voicesBtn")){ $("voicesBtn").onclick = () => { voicesOn = !voicesOn; try { localStorage.setItem("vk-voices", voicesOn ? "on" : "off"); } catch (e) {} renderVoicesBtn(); }; renderVoicesBtn(); }
 if (!APP && $("voicesBtn")) $("voicesBtn").hidden = true;
+
+// ---------- THE NARRATION STRIP, READ ALOUD ----------
+// Sam, 2026-10-30, pointing at the strip under the painting ("The pen gate opens a hand's width..."):
+// "Speak these out loud (with option to turn off in a button). Make sure the tempo of this isn't too slow."
+// This supersedes the old rule a few lines up that the walk's narration stays unvoiced because the dashboard
+// is Malachar's stage. The narrator IS Malachar — the same lich voice the dashboard uses (/api/tts, voice
+// "onyx") — so the table hears one storyteller wherever they are looking.
+//
+// TEMPO. The lich voice is designed to drawl, which carries a monologue and drags on a line of scene
+// narration the table is waiting to act on. The line is sent at NARR_SPEED through ElevenLabs' own speed
+// control, so it reads faster without going up in pitch. 1.2 is the ceiling the provider accepts and sounds
+// hurried on this voice; 1.15 is Claude's pick and the one number to turn if Sam still wants it quicker.
+const NARR_SPEED = 1.15;
+let narrOn = (() => { try { return localStorage.getItem("vk-narration") !== "off"; } catch (e) { return true; } })();
+function renderNarrBtn(){ const b = $("narrBtn"); if (!b) return; b.setAttribute("aria-pressed", String(narrOn)); b.textContent = narrOn ? "Narration on" : "Narration off"; }
+if ($("narrBtn")){ $("narrBtn").onclick = () => { narrOn = !narrOn; try { localStorage.setItem("vk-narration", narrOn ? "on" : "off"); } catch (e) {} if (!narrOn) stopNarration(); renderNarrBtn(); wakeAudio(); }; renderNarrBtn(); }
+if (!APP && $("narrBtn")) $("narrBtn").hidden = true;   // the preview cannot reach ElevenLabs, and previews stay silent (Sam, 2026-10-22)
+
+// Lines are spoken one at a time and NEVER banked up: the strip shows at most three lines and drops them after
+// eight seconds, so a narrator working through a backlog would be describing something that left the screen.
+// At most two lines wait; anything older is dropped rather than read late.
+let narrAudio = null, narrBusy = false, narrLast = "";
+const narrQueue = [];
+function stopNarration(){ narrQueue.length = 0; if (narrAudio){ const s = narrAudio; narrAudio = null; try { s.stop(); } catch (e) {} } }
+function narrateAloud(text){
+  try {
+    if (!APP || !narrOn || !voicesOn) return;          // "Voices off" silences the whole map, the narrator with it
+    const t = String(text || "").trim();
+    if (!t || t === narrLast) return;                  // the same line twice running is the screen repeating itself, not the story
+    narrLast = t;
+    narrQueue.push(t);
+    if (narrQueue.length > 2) narrQueue.splice(0, narrQueue.length - 2);
+    if (!narrBusy) narrPump();
+  } catch (e) { console.warn("narration:", e); }
+}
+async function narrPump(){
+  narrBusy = true;
+  try {
+    while (narrQueue.length){
+      if (!narrOn || !voicesOn){ narrQueue.length = 0; break; }
+      const t = narrQueue.shift();
+      for (let i = 0; speaking && i < 20; i++) await wait(250);   // hold for whoever is talking
+      if (speaking) continue;                                     // still talking after 5 s: this line has gone stale, let it go
+      try { await narrSpeak(t); } catch (e) { console.warn("narration voice:", e); }
+      await wait(180);                                            // a beat between lines, not a gap
+    }
+  } finally { narrBusy = false; }
+}
+async function narrSpeak(text){
+  const res = await fetch("/api/tts", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text, voice: "onyx", speed: NARR_SPEED})});
+  if (!res.ok) throw new Error("tts " + res.status);
+  // WebAudio, not <audio>: the game found <audio> silently mute in some Chromium builds (same as speakCanon).
+  const ctx = audioCtx();
+  if (ctx.state !== "running") await Promise.race([ctx.resume().catch(() => {}), wait(1500)]);
+  if (ctx.state !== "running") throw new Error("audio locked");
+  const buf = await ctx.decodeAudioData(await res.arrayBuffer());
+  if (!narrOn || !voicesOn) return;                               // switched off while the line was coming back
+  await new Promise(done => {
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    const g = ctx.createGain(); g.gain.value = .9;                // a shade under a character's own voice: the narrator sits behind them
+    src.connect(g).connect(ctx.destination);
+    src.onended = () => { if (narrAudio === src) narrAudio = null; done(); };
+    narrAudio = src; src.start();
+  });
+}
 let talkCursor = null; const talkSeen = new Set(); let talkQueue = Promise.resolve();
 const slugOf = s => String(s || "").toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 function actorForSpeaker(name, type){
@@ -14082,6 +14150,7 @@ function rapportChain(ctx){
   return raw;
 }
 function playVoice(ctx, buf, profile){
+  stopNarration();                                   // someone speaking always wins over the narrator
   if (voiceAudio) try { voiceAudio.stop(); } catch (e) {}
   if (profile === true) profile = "rapport";
   const src = ctx.createBufferSource(); src.buffer = buf; if (profile === "croak") src.playbackRate.value = .8;
