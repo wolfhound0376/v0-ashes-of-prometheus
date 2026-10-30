@@ -704,6 +704,9 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .tcard .btn .ic{width:54px;height:54px;justify-self:center;pointer-events:none;display:block;filter:drop-shadow(0 2px 5px rgba(0,0,0,.65)) brightness(1.1)}
 .tcard .btn .lbl{min-width:0}
 .tcard .btn .lbl .chk{color:var(--dlg-gold)}        /* "[Thieves' tools]" — which check this choice asks for */
+.tcard .btn .lbl .note{display:block;font-family:var(--face-body);font-size:var(--s-1);letter-spacing:.04em;color:#e2704a;margin-top:2px}
+.tcard .btn .bdg.dis{opacity:.72}
+.tcard .btn .bdg.dis svg{filter:grayscale(.45)}
 .tcard .btn .bdg{display:flex;align-items:center;gap:9px;font-family:var(--face-body);font-weight:700;font-size:var(--s0);letter-spacing:.1em}
 .tcard .btn .bdg svg{width:30px;height:30px}
 /* the footer rule with its die, and the line under it */
@@ -1044,6 +1047,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
         <option value="water">Water</option><option value="off">Off (ambience only)</option></select></label>
       <button class="btn" id="dmTalk">An NPC wants to talk</button>
       <button class="btn" id="dmBark">Make an NPC comment</button>
+      <button class="btn" id="dmManacles" aria-pressed="true">Manacles: on (strike them off)</button>
       <button class="btn" id="dmReset">Reset ambushes</button>
       <button class="btn" id="dmAmbush" aria-pressed="false">Ambushes: on</button>
       <button class="btn" id="dmTooth" title="A Remove Curse on Lolth's Tooth: Ilvara no longer feels it drawn. The spider-sense stays.">Lolth's Tooth: lift the curse</button>
@@ -1393,7 +1397,13 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
   // walked into the pen and read the red scar, so the fight it starts only ever starts once.
   // All of these ride the One World sync (owStateTick patches every key of `state`), so they hold across
   // screens and across the session with no new column.
-  wardBroken: false, wardStudy: {}, wardTried: {}, sigilSeen: false};
+  wardBroken: false, wardStudy: {}, wardTried: {}, sigilSeen: false,
+  // MANACLES (Sam, 2026-10-30, looking at the pen gate card: "This should show disadvantaged because of
+  // [manacled]"). The party wakes in the pen in irons (OotA p.11: prisoners are manacled and stripped of their
+  // gear), so this starts TRUE and stays true until the cuffs are struck off. It is one flag for the party, not
+  // a per-hero condition — his call. It rides the One World sync like every other key of `state`, so the whole
+  // table agrees, and the DM drawer can strike them off.
+  manacled: true};
 // The watch on the pen and the pen gate as the STORY has them (/api/map-stage `watch` and `gate`, written from
 // Malachar's [WATCH:] / [GATE:] tags and from his prose by the stage director). Declared up here because a plate is
 // populated before the poll below ever runs. See "the watch and the gate" further down.
@@ -4941,20 +4951,21 @@ function openInteract(z, opts = {}){
     // DC stays with the DM and the result plays out here. The card shows what you can try, never the DC.
     const attempt = (action, localMod, onWin, onLose) => () => {
       close();
-      rollOnDashboard(action, localMod).then(k => {
+      rollOnDashboard(action, localMod, manacled() ? {disadvantage: true, edgeReason: MANACLE_NOTE} : {}).then(k => {
         if (k && k.cancelled){ openInteract(z, {again: true}); return; }   // stepped back from the roll panel: back to the choices
         if (!k || !k.ok){ toast((k && k.error) || "The dice did not roll.", 3200); return; }
         (k.success ? onWin : onLose)();
       });
     };
     if (hasPenKey()) add("Unlock it with the pen key", () => { close(); sfx("lock-picked", .9); log(`${fname(leader)} turns the stolen key in the lock.`); if (APP) handOff(`${fname(leader)} unlocks the slave pen gate with the key lifted from a guard.`, true); setTimeout(() => unlockGate(), 650); }, "primary", {icon: "key"});
-    add("Pick the lock", attempt("pen-gate:pick", heroMod(leader, "thievesTools", "dex"), () => {
+    // No tools, no option: a prisoner's kit is on the stash (Sam, 2026-10-30).
+    if (hasThievesTools(leader)) add("Pick the lock", attempt("pen-gate:pick", heroMod(leader, "thievesTools", "dex"), () => {
       sfx("lock-picked", .9); log("The lock gives with a soft click.");
       setTimeout(() => unlockGate(), 650);
-    }, () => { sfx("lock-pick-fail", .8); toast("The pick slips in the wards. The lock holds.", 3200); }), "primary", {icon: "pick", check: "Thieves' tools", ability: "dex"});
+    }, () => { sfx("lock-pick-fail", .8); toast("The pick slips in the wards. The lock holds.", 3200); }), "primary", {icon: "pick", check: "Thieves' tools", ability: "dex", note: manacled() ? MANACLE_NOTE : null});
     add("Force it", attempt("pen-gate:force", heroMod(leader, "athletics", "str"), () => {
       log("The bolt tears from the stone."); unlockGate(1);
-    }, () => { sfx("door-locked", .9); toast("The bars shudder in their bolts, and hold.", 3200); }), "", {icon: "force", check: "Athletics", ability: "str"});
+    }, () => { sfx("door-locked", .9); toast("The bars shudder in their bolts, and hold.", 3200); }), "", {icon: "force", check: "Athletics", ability: "str", note: manacled() ? MANACLE_NOTE : null});
     calls();
     if (dmScreen()) add("DM: Jorlan opens it", () => { close(); openGate(); }, "", {icon: "dm"});
     add("Step back", close, "", {icon: "back"});
@@ -5050,10 +5061,12 @@ function choiceRow(box, label, fn, cls = "", meta = {}){
   b.className = "btn " + cls;
   const chk = meta.check ? `<span class="chk">[${esc(meta.check)}]</span> ` : "";
   const ab = meta.ability && ABILITY[meta.ability];
-  b.innerHTML = `${rowIcon(meta.icon)}<span class="lbl">${chk}${esc(label)}</span>`
-    + (ab ? `<span class="bdg" style="color:${ab[1]}">${d20Svg(ab[1])}${ab[0]}</span>` : "");
+  const note = meta.note ? `<span class="note">disadvantage · ${esc(meta.note)}</span>` : "";
+  b.innerHTML = `${rowIcon(meta.icon)}<span class="lbl">${chk}${esc(label)}${note}</span>`
+    + (ab ? `<span class="bdg${meta.note ? " dis" : ""}" style="color:${ab[1]}">${d20Svg(ab[1])}${ab[0]}</span>` : "");
   // what a screen reader hears is the whole row, in words, not the glyphs
-  b.setAttribute("aria-label", meta.check ? `${label} — ${meta.check}${ab ? ", " + ab[0] : ""}` : label);
+  b.setAttribute("aria-label", (meta.check ? `${label} — ${meta.check}${ab ? ", " + ab[0] : ""}` : label)
+    + (meta.note ? `, at disadvantage: ${meta.note}` : ""));
   b.onclick = fn;
   if (/\bprimary\b/.test(cls)){ const lit = document.createElement("div"); lit.className = "lit"; lit.appendChild(b); box.appendChild(lit); }
   else box.appendChild(b);
@@ -5074,13 +5087,16 @@ function cardClose(fn){ const x = $("objX"); if (!x) return; x.hidden = !fn; x.o
 function firstChoice(box){ return box.querySelector(".btn"); }
 
 function rollOnDashboard(action, localMod, opts = {}){
-  if (!APP || window.parent === window){ const r = d20(opts.advantage ? 1 : 0, opts.who || leader), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= (LOCAL_DC[action] ?? +((/^pickpocket:pp(\d+)$/.exec(action) || [])[1] || 20)), total, natural: r}); }
+  // 5e: advantage and disadvantage cancel. lib/walk-roll.ts settles it again on the other side; this keeps the
+  // preview's own die honest too.
+  const edge = (opts.advantage ? 1 : 0) + (opts.disadvantage ? -1 : 0);
+  if (!APP || window.parent === window){ const r = d20(edge, opts.who || leader), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= (LOCAL_DC[action] ?? +((/^pickpocket:pp(\d+)$/.exec(action) || [])[1] || 20)), total, natural: r}); }
   const id = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   let characterId = null; try { characterId = myClaimId || characterIdOf(leader.id) || null; } catch (e) {}
   return new Promise(res => {
     const t = setTimeout(() => { ROLLS.delete(id); res({ok: false, error: "The dice did not answer. Try again."}); }, 8000);   // no panel opened
     ROLLS.set(id, {ack: () => clearTimeout(t), done: m => { clearTimeout(t); res(m); }});
-    try { window.parent.postMessage({type: "aop:roll", id, action, characterId, advantage: !!opts.advantage}, location.origin); } catch (e) { clearTimeout(t); ROLLS.delete(id); res({ok: false, error: "The dice did not answer."}); }
+    try { window.parent.postMessage({type: "aop:roll", id, action, characterId, advantage: edge > 0, disadvantage: edge < 0, edgeReason: edge < 0 ? (opts.edgeReason || MANACLE_NOTE) : undefined}, location.origin); } catch (e) { clearTimeout(t); ROLLS.delete(id); res({ok: false, error: "The dice did not answer."}); }
   });
 }
 // HAND-OFFS to Malachar (lib/walk-action.ts). `ask` marks one the player clicked in THIS browser: only those are
@@ -5181,6 +5197,21 @@ function ownLeader(){
 }
 const ILVARA_KEY = "Ilvara's chest key";   // catalogue row ilvara-chest-key (migrations/walk_loot_catalog_2.sql)
 function hasItemNamed(name){ return Object.values(GEAR).some(g => (g.carried || []).some(c => c.name === name)); }
+/** Does THIS hero carry the named thing? A tool check needs the tool in their own hands, not the party's. */
+function carries(a, name){
+  const g = a && GEAR[a.id]; if (!g) return false;
+  const want = String(name).toLowerCase();
+  return (g.carried || []).some(c => String(c.name || "").toLowerCase() === want);
+}
+/** THIEVES' TOOLS (Sam, 2026-10-30: "Don't offer [thieves tools] if you don't have it ... at this point it
+ *  wouldn't occur because you don't have it"). A prisoner's kit is on the stash, so the option is not offered
+ *  at all until someone is actually holding a set. Proficiency is a different question and lives on the sheet;
+ *  this is about the steel. The stand-alone preview has no gear rows, so it keeps the option. */
+const THIEVES_TOOLS = "Thieves' Tools";
+function hasThievesTools(a){ return !APP || carries(a, THIEVES_TOOLS); }
+/** In irons: every check that wants hands or shoulders is at disadvantage, and the card says why. */
+function manacled(){ return !!state.manacled; }
+const MANACLE_NOTE = "manacled";
 // THE PEN GATE IN A FIGHT (Sam, 2026-10-29, asked whether the party should be able to pick or force the gate during a
 // fight: "Yes, add it"). The gate card (openInteract) only opens outside a fight, so once steel was out the only way
 // through a locked gate was a drow with the key. Now a hero within reach of the gate, from inside the pen, gets the
@@ -5202,7 +5233,7 @@ function gateOptions(a, add){
     if (hasPenKey()) add("Unlock the gate", free ? "the pen key · your free object interaction" : "your free object interaction is spent", free ? () => {
       c.objFree = false; faceGate(a); sfx("lock-picked", .9); log(`${fname(a)} turns the stolen key in the pen gate's lock.`); unlockGate(); done();
     } : null);
-    add("Pick the gate's lock", `action · thieves' tools ${sgn(heroMod(a, "thievesTools", "dex"))}`, c.action ? () => gateTry(a, "pen-gate:pick", heroMod(a, "thievesTools", "dex"), () => {
+    if (hasThievesTools(a)) add("Pick the gate's lock", `action · thieves' tools ${sgn(heroMod(a, "thievesTools", "dex"))}${manacled() ? " · disadvantage: manacled" : ""}`, c.action ? () => gateTry(a, "pen-gate:pick", heroMod(a, "thievesTools", "dex"), () => {
       sfx("lock-picked", .9); log(`${fname(a)} works the pen gate's lock in the middle of the fight. It gives with a soft click.`); setTimeout(() => unlockGate(), 650);
     }, () => { sfx("lock-pick-fail", .8); log(`${fname(a)}'s pick slips in the wards. The lock holds.`); }) : null);
     add("Force the gate", `action · Athletics ${sgn(heroMod(a, "athletics", "str"))}`, c.action ? () => gateTry(a, "pen-gate:force", heroMod(a, "athletics", "str"), () => {
@@ -14471,6 +14502,14 @@ if (APP && !isDm()) $("dmBtn").hidden = true;
 $("cbtDm").hidden = APP && !isDm(); $("cbtDm").onclick = () => toggleDm(true);
 if (APP && !isDm()) $("quickBtn").hidden = true;   // quick resolve is the DM's call
 $("objLog").onclick = () => { const l = $("log"); if (l) l.hidden = !l.hidden; };
+// THE IRONS (Sam, 2026-10-30): one flag for the party, the DM's to clear when the cuffs come off.
+$("dmManacles").onclick = () => {
+  state.manacled = !state.manacled;
+  $("dmManacles").textContent = state.manacled ? "Manacles: on (strike them off)" : "Manacles: off (put them back on)";
+  $("dmManacles").setAttribute("aria-pressed", String(state.manacled));
+  log(state.manacled ? "<i>The irons go back on.</i>" : "<i>The manacles are struck off.</i>");
+  toast(state.manacled ? "Manacled." : "Free of the irons.", 2200);
+};
 $("dmClose").onclick = () => toggleDm(false);
 Object.entries(SPEC).forEach(([n, s]) => { const o = document.createElement("option"); o.value = n; o.textContent = `${n} · ${s.name}`; $("jump").appendChild(o); });
 $("jump").onchange = e => { const v = e.target.value, n = /^\d+$/.test(v) ? +v : v; /* "10b" is a plate too */ if (n === cur || mode === "combat" || mode === "travel") return; toggleDm(false);

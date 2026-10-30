@@ -79,7 +79,25 @@ describe("walkVerdict — SRD ability check", () => {
 describe("parseWalkRollRequest — closed vocabulary", () => {
   it("accepts a known action", () => {
     expect(parseWalkRollRequest({ type: "aop:roll", id: "r1", action: "pen-gate:pick", characterId: "c1" }))
-      .toEqual({ type: "aop:roll", id: "r1", action: "pen-gate:pick", characterId: "c1", advantage: false })
+      .toEqual({ type: "aop:roll", id: "r1", action: "pen-gate:pick", characterId: "c1", advantage: false, disadvantage: false, edgeReason: undefined })
+  })
+  // DISADVANTAGE (Sam, 2026-10-30): the map knows things the sheet does not — manacles, above all — so it may
+  // say "this one rolls badly", and the panel says why.
+  it("carries disadvantage and the words for it", () => {
+    const r = parseWalkRollRequest({ type: "aop:roll", id: "r1", action: "pen-gate:force", disadvantage: true, edgeReason: "manacled" })
+    expect(r).toMatchObject({ advantage: false, disadvantage: true, edgeReason: "manacled" })
+  })
+  it("cancels advantage against disadvantage, as 5e does, and drops the reason with it", () => {
+    const r = parseWalkRollRequest({ type: "aop:roll", id: "r1", action: "pen-gate:force", advantage: true, disadvantage: true, edgeReason: "manacled" })
+    expect(r).toMatchObject({ advantage: false, disadvantage: false, edgeReason: undefined })
+  })
+  it("ignores a reason that is not a short string, and one sent without disadvantage", () => {
+    expect(parseWalkRollRequest({ type: "aop:roll", id: "r1", action: "pen-gate:force", disadvantage: true, edgeReason: "x".repeat(61) }))
+      .toMatchObject({ disadvantage: true, edgeReason: undefined })
+    expect(parseWalkRollRequest({ type: "aop:roll", id: "r1", action: "pen-gate:force", disadvantage: true, edgeReason: { evil: 1 } }))
+      .toMatchObject({ disadvantage: true, edgeReason: undefined })
+    expect(parseWalkRollRequest({ type: "aop:roll", id: "r1", action: "pen-gate:force", edgeReason: "manacled" }))
+      .toMatchObject({ disadvantage: false, edgeReason: undefined })
   })
   it("refuses an unknown action, free text, or a missing id", () => {
     expect(parseWalkRollRequest({ type: "aop:roll", id: "r1", action: "open sesame" })).toBeNull()
