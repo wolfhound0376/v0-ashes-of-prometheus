@@ -1,0 +1,22 @@
+{
+ "version": 1,
+ "name": "Bonecap",
+ "cell": [
+  128,
+  128
+ ],
+ "pivot": [
+  64,
+  117
+ ],
+ "ppu": 220,
+ "animations": {
+  "idle": {
+   "sheet": "idle.png",
+   "frames": 1,
+   "fps": 5,
+   "loop": true
+  }
+ },
+ "_src": "PixelLab create_1_direction_object 128px sidescroller, review pack d1fe5ede-cf6b-4df0-8d8e-9bb014bfa870 \u2192 object 44dd5d5a-f2fd-452c-bea0-0b2765907a6e (2026-10-30). Pen fungi for plate 11."
+}

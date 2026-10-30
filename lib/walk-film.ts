@@ -38,6 +38,15 @@ export const WALK_FILMS = {
   "look-around": { kind: "environment", state: null, scope: "party", location: PEN_LOCATION, dc: GATE_LOOK_DC },
   /** Counting the guards through the bars — Fifi's own film on her seat, the general one for everyone else. */
   "count-guards": { kind: "action", state: "count-guards", scope: "solo", location: PEN_LOCATION, dc: GATE_LOOK_DC },
+  // THE PEN FUNGI (Sam, 2026-10-30): the first time a character names a USEFUL mushroom, a short silent film of
+  // that mushroom. Solo, because it is that character's discovery and the line over it is spoken in their own
+  // voice (the map lays it on; the clip carries no audio). The bonecap has no cue on purpose — it is the trap,
+  // and a discovery film over it would announce itself.
+  // No dc: the map has already adjudicated the identification check before it sends one of these, so the cue is
+  // a discovery being reported, not a look being attempted. The gate's two looks are the ones a roll decides.
+  "fungus-ormu-moss": { kind: "action", state: "fungus-ormu-moss", scope: "solo", location: PEN_LOCATION, dc: null },
+  "fungus-timmask": { kind: "action", state: "fungus-timmask", scope: "solo", location: PEN_LOCATION, dc: null },
+  "fungus-waterorb": { kind: "action", state: "fungus-waterorb", scope: "solo", location: PEN_LOCATION, dc: null },
 } as const satisfies Record<string, WalkFilm>
 
 export type WalkFilmCue = keyof typeof WALK_FILMS

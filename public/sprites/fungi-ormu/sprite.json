@@ -1,0 +1,22 @@
+{
+ "version": 1,
+ "name": "Ormu moss",
+ "cell": [
+  128,
+  128
+ ],
+ "pivot": [
+  66,
+  113
+ ],
+ "ppu": 220,
+ "animations": {
+  "idle": {
+   "sheet": "idle.png",
+   "frames": 1,
+   "fps": 5,
+   "loop": true
+  }
+ },
+ "_src": "PixelLab create_1_direction_object 128px sidescroller, review pack d1fe5ede-cf6b-4df0-8d8e-9bb014bfa870 \u2192 object 67f3c9be-8f53-44ef-9bc5-e411abae062a (2026-10-30). Pen fungi for plate 11."
+}
