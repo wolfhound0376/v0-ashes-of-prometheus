@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
-  CLOSED, MAX_SEATS, NOT_INVITED, assignFigures, cannotChooseFigure, cannotSit, dmLight, freeSeatNumber, isComplete, missingOf, readTableState, readinessOf,
+  CLOSED, MAX_SEATS, NOT_INVITED, assignFigures, assignSeatNumbers, cannotChooseFigure, cannotSit, dmLight, freeSeatNumber, isComplete, missingOf, readTableState, readinessOf,
   seatLight, sheetComplete, shouldStart, type CharacterRowForReadiness, type Readiness, type TableState,
 } from "./table"
 
@@ -147,5 +147,55 @@ describe("who you sit as (the seven cartoon players)", () => {
     expect(cannotChooseFigure(2, "a", seats)).toBeNull()
     expect(cannotChooseFigure(7, "b", seats)).toMatch(/not at this table/)
     expect(cannotChooseFigure("3", "b", seats)).toMatch(/not at this table/)
+  })
+})
+
+// Three players at once (Sam, 2026-10-29: "confirm it works with even three plays at the same time").
+// The old code picked a chair when a seat was WRITTEN, so three simultaneous Sit presses all read the
+// same free chair and all took it. Chairs are numbered on the READ now, so a collision cannot survive
+// one render — and these tests are what say so.
+describe("three players sitting at the same moment", () => {
+  it("gives three heroes who all wrote chair 1 three different chairs", () => {
+    const racing = [{ id: "fifi", seat: 1 }, { id: "alejandro", seat: 1 }, { id: "andres", seat: 1 }]
+    const chairs = assignSeatNumbers(racing)
+    expect(new Set(chairs.values()).size).toBe(3)
+    expect([...chairs.values()].every((n) => n >= 1 && n <= MAX_SEATS)).toBe(true)
+  })
+
+  it("whoever sat first keeps the chair they already hold", () => {
+    // Input is in `at` order (readSeated sorts by it), so the earliest sitter wins the contested chair.
+    const chairs = assignSeatNumbers([{ id: "fifi", seat: 2 }, { id: "alejandro", seat: 2 }, { id: "andres", seat: 2 }])
+    expect(chairs.get("fifi")).toBe(2)
+    expect(chairs.get("alejandro")).not.toBe(2)
+    expect(chairs.get("andres")).not.toBe(2)
+  })
+
+  it("nobody's chair moves when another player sits down later", () => {
+    const two = assignSeatNumbers([{ id: "fifi", seat: 1 }, { id: "alejandro", seat: 2 }])
+    const three = assignSeatNumbers([{ id: "fifi", seat: 1 }, { id: "alejandro", seat: 2 }, { id: "andres", seat: null }])
+    expect(three.get("fifi")).toBe(two.get("fifi"))
+    expect(three.get("alejandro")).toBe(two.get("alejandro"))
+    expect(three.get("andres")).toBe(3)
+  })
+
+  it("seats a whole table of three with no stored numbers at all", () => {
+    const chairs = assignSeatNumbers([{ id: "fifi" }, { id: "alejandro" }, { id: "andres" }])
+    expect([chairs.get("fifi"), chairs.get("alejandro"), chairs.get("andres")]).toEqual([1, 2, 3])
+  })
+
+  it("heals rubbish stored numbers instead of trusting them", () => {
+    const chairs = assignSeatNumbers([{ id: "a", seat: 0 }, { id: "b", seat: 99 }, { id: "c", seat: -1 }])
+    expect([...chairs.values()].sort()).toEqual([1, 2, 3])
+  })
+
+  it("fills a full table without handing out a chair twice", () => {
+    const five = ["a", "b", "c", "d", "e"].map((id) => ({ id, seat: 1 }))
+    const chairs = assignSeatNumbers(five)
+    expect(new Set(chairs.values()).size).toBe(MAX_SEATS)
+  })
+
+  it("the three chairs it hands out are the three the table then reports free", () => {
+    const chairs = assignSeatNumbers([{ id: "fifi" }, { id: "alejandro" }, { id: "andres" }])
+    expect(freeSeatNumber([...chairs.values()])).toBe(4)
   })
 })

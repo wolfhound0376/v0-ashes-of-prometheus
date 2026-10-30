@@ -9,7 +9,7 @@ import type { SupabaseClient } from "@supabase/supabase-js"
 import heroSprites from "@/scripts/velkynvelve-walk/heroes.json"
 import { readSeated, seatFlagKey, type Seat } from "@/lib/seats"
 import {
-  CLOSED, READINESS_COLUMNS, dmLight, freeSeatNumber, missingOf, readTableState, readinessOf, seatLight, shouldStart,
+  CLOSED, READINESS_COLUMNS, assignSeatNumbers, dmLight, freeSeatNumber, missingOf, readTableState, readinessOf, seatLight, shouldStart,
   type CharacterRowForReadiness, type Light, type Readiness, type TableState,
 } from "@/lib/table"
 
@@ -116,6 +116,9 @@ export async function readinessFor(db: SupabaseClient, ids: string[]): Promise<M
 export async function readTableView(db: SupabaseClient): Promise<TableView> {
   const [state, seated] = await Promise.all([readTable(db), readSeated(db)])
   const ready = await readinessFor(db, seated.map((s) => s.id))
+  // Chairs are numbered here, on the read, not when a seat was written — three players sitting at the
+  // same instant can otherwise all be handed the same chair (lib/table.ts assignSeatNumbers).
+  const chairs = assignSeatNumbers(seated)
   const seats: SeatView[] = seated.map((s) => {
     const found = ready.get(s.id)
     const r = found?.r ?? { sprite: false, sheet: false, voice: false, thumbnail: false }
@@ -123,7 +126,7 @@ export async function readTableView(db: SupabaseClient): Promise<TableView> {
     return {
       id: s.id,
       name: row?.name ?? s.name,
-      seat: s.seat ?? null,
+      seat: chairs.get(s.id) ?? null,
       dm: !!s.dm,
       ready: !!s.ready,
       light: seatLight(r, !!s.ready, !!s.dm),

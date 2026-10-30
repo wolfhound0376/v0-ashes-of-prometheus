@@ -26,7 +26,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { Check, DoorOpen, Eye, FlaskConical, Play, RotateCcw, Swords, UserMinus, UserPlus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { setDmKey, clearDmKey } from "@/lib/dm-key"
+import { setDmKey, clearDmKey, dmHeaders } from "@/lib/dm-key"
 import { cameThroughDmDoor, leaveDmDoor } from "@/lib/dm-door"
 import { HomeButton } from "@/components/home-button"
 import { canonBySlug } from "@/lib/canon-heroes"
@@ -134,6 +134,28 @@ function Gate({ armed, onOpen }: { armed: boolean; onOpen: () => void }) {
 
 // ---------------------------------------------------------------------------------------------
 
+/**
+ * What the table itself is doing, which the roster alone cannot tell you: an empty roster means something
+ * different under each of these. Closed, open-and-waiting, and live look nothing alike here on purpose.
+ */
+function TableStatusBanner({ table, seatError }: { table: { status: string; session: number } | null; seatError: string | null }) {
+  const look =
+    table?.status === "live" ? { tone: "border-emerald-700/60 bg-emerald-950/30 text-emerald-300", dot: "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]", label: `Session ${table.session} is live`, sub: "The roster is locked. Players at the table are in the game." }
+    : table?.status === "lobby" ? { tone: "border-[#8a6a3a]/60 bg-[#201a10] text-[#e8c56a]", dot: "bg-[#c9a868] shadow-[0_0_10px_rgba(201,168,104,0.6)]", label: `The table is open for session ${table.session}`, sub: "Waiting for players to sit down. Nobody is in the game yet." }
+    : table ? { tone: "border-stone-700/60 bg-black/50 text-stone-400", dot: "bg-stone-700", label: "The table is dark", sub: "No session is running. Continue the campaign below to open it." }
+    : { tone: "border-amber-900/60 bg-[#201a10] text-amber-400", dot: "bg-amber-500", label: "The table could not be read", sub: "This is not the same as an empty table — something went wrong reaching it." }
+  return (
+    <div className={cn("rounded-sm border px-4 py-3", look.tone)}>
+      <div className="flex items-center gap-3">
+        <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", look.dot)} />
+        <span className="font-serif text-[15px]">{look.label}</span>
+      </div>
+      <p className="mt-1 pl-[22px] text-[12px] text-stone-500">{look.sub}</p>
+      {seatError && <p role="alert" className="mt-2 pl-[22px] text-[12px] text-amber-400">The seats could not be read, so the roster below may be wrong: {seatError}</p>}
+    </div>
+  )
+}
+
 function Table({ onLock, router }: { onLock: () => void; router: ReturnType<typeof useRouter> }) {
   const [pending, setPending] = useState<Pending[]>([])
   const [recent, setRecent] = useState<Pending[]>([])
@@ -144,15 +166,24 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
   const [msg, setMsg] = useState<string | null>(null)
   const [open, setOpen] = useState<string | null>(null)
   const [askNew, setAskNew] = useState(false)
+  // THE SCREEN THAT COULD NOT TELL YOU ANYTHING (Sam, 2026-10-29). This page read /api/seat and nothing
+  // else, so a closed table, an open table nobody had sat down at, and a seat lookup that had failed all
+  // rendered the same: count 0, every hero "Resting". The one thing worth knowing was the one thing it
+  // did not show. It reads the table's own status now, and says out loud when a read fails.
+  const [table, setTable] = useState<{ status: string; session: number } | null>(null)
+  const [seatError, setSeatError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     try {
-      const [a, s] = await Promise.all([
+      const [a, s, t] = await Promise.all([
         fetch("/api/forge/activate", { cache: "no-store" }).then((r) => r.json()),
         fetch("/api/seat", { cache: "no-store" }).then((r) => r.json()),
+        fetch("/api/table", { cache: "no-store", headers: dmHeaders() }).then((r) => r.json()).catch(() => ({})),
       ])
       setPending(a.pending ?? []); setRecent(a.recent ?? []); setTableNote(a.error ?? null)
       setSeated(s.seated ?? []); setRoster(s.roster ?? [])
+      setSeatError(typeof s.error === "string" ? s.error : null)
+      setTable(t?.state ? { status: String(t.state.status ?? "closed"), session: Number(t.state.session ?? 0) } : null)
     } catch { setMsg("Could not read the table.") }
   }, [])
   useEffect(() => { load(); const t = window.setInterval(load, 8000); return () => window.clearInterval(t) }, [load])
@@ -279,6 +310,7 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
       </Section>
 
       {/* THE ROSTER */}
+      <TableStatusBanner table={table} seatError={seatError} />
       <Section title="The roster" count={seated.length} icon={<Swords className="h-4 w-4" />} sub="Players take their own seats at the staging table. While the table is open and before you press Start, seat a hero yourself to run them as a companion; once the session begins the roster is locked.">
         <ul className="divide-y divide-[#2a241e] rounded-sm border border-[#3d3428] bg-black/50">
           {roster.length === 0 && <li className="px-4 py-3 text-sm text-stone-500">No player characters yet.</li>}

@@ -35,16 +35,26 @@ import { MessagePlayerButton } from "@/components/message-player-button"
 const RECHECK_MS = 6000
 
 type Gate = "checking" | "dm" | "player"
+type Status = "closed" | "lobby" | "live" | null
 
 export default function VelkynvelvePage() {
   const router = useRouter()
   const [gate, setGate] = useState<Gate>("checking")
+  // THE GHOST MAP (Sam, 2026-10-29). The session had been ended at 18:14 and this page was still playing
+  // it nineteen minutes later, while /table said dark and the roster said nobody. The gate let the DM in
+  // and then never looked again, so a finished game kept walking until the tab was closed. The DM still
+  // always gets in — that rule stands — but the page now keeps reading the table and says so on the glass.
+  const [status, setStatus] = useState<Status>(null)
+  const [sandbox, setSandbox] = useState(false)
   const frameRef = useRef<HTMLIFrameElement>(null)
 
   useEffect(() => {
     let live = true
     let id = "", role = ""
     try { id = localStorage.getItem("aop_character_id") ?? ""; role = localStorage.getItem("aop_access_role") ?? "" } catch { /* storage blocked */ }
+    // A rehearsal deliberately ignores the session and saves nothing, so it must never be mistaken for a
+    // live game — the only thing that used to tell them apart was the DM frame, which a live DM has too.
+    try { setSandbox(new URLSearchParams(window.location.search).get("sandbox") === "1") } catch { /* no window */ }
     const check = async (first: boolean) => {
       try {
         const q = id ? `?characterId=${encodeURIComponent(id)}` : ""
@@ -52,11 +62,13 @@ export default function VelkynvelvePage() {
         const j = await r.json()
         if (!live) return
         if (j.error) { if (first) setGate("player"); return }   // the table could not be read: never lock the family out on a blip
+        const st: Status = j.state?.status === "lobby" || j.state?.status === "live" ? j.state.status : "closed"
+        setStatus(st)
         // The DM only where this browser signed in as the DM — the map inside reads the same flag for its DM
         // tools, so the frame and the tools can never disagree (Sam, 2026-10-25: Lynkes got the frame, the
         // DM's own map lost its tools).
         if (j.isDm && role === "dm") { setGate("dm"); return }
-        if (j.state?.status === "live" && j.mine && !j.mine.away) { setGate("player"); return }
+        if (st === "live" && j.mine && !j.mine.away) { setGate("player"); return }
         router.replace("/table")
       } catch {
         if (live && first) setGate("player")
@@ -72,6 +84,9 @@ export default function VelkynvelvePage() {
   }
 
   const dm = gate === "dm"
+  // A DM looking at a table that is no longer open: the map below is a finished session still walking.
+  // A rehearsal is supposed to ignore the table, so it is never a ghost.
+  const ghost = dm && status === "closed" && !sandbox
   // DICE (Sam, 2026-10-25: "Use the dashboard UI dice roll animation and math"). A check the map asks for — picking
   // the pen gate's lock, forcing it — is rolled here, on the dashboard's one dice engine with the dashboard's modifier,
   // logged to the table and sent to Malachar. The map never rolls these itself and never asks "what did you get".
@@ -96,6 +111,11 @@ export default function VelkynvelvePage() {
           </StageLink>
         )}
         <span className="font-serif text-xs uppercase tracking-[0.22em] text-stone-400">Velkynvelve</span>
+        {sandbox && (
+          <span className="rounded-sm border border-sky-500/50 bg-sky-500/10 px-2 py-0.5 font-serif text-[10px] uppercase tracking-[0.2em] text-sky-300">
+            Rehearsal · nothing saves
+          </span>
+        )}
         {dm ? <span className="ml-auto"><EndGameButton /></span> : <MessagePlayerButton variant="pixel" className="ml-auto" />}
       </header>
       <div className={dm ? "relative min-h-0 flex-1 p-[14px]" : "relative min-h-0 flex-1"}>
@@ -107,9 +127,32 @@ export default function VelkynvelvePage() {
           allow="autoplay; fullscreen"
         />
         {dm && <DmFrame />}
+        {ghost && <GhostNotice />}
       </div>
     </main>
     </DiceProvider>
+  )
+}
+
+// Shown over a DM's map when the table has closed under it. Not a bounce: yanking a projected map out from
+// under a DM mid-sentence is worse than the ghost. It states what happened and offers the way back.
+function GhostNotice() {
+  return (
+    <div className="absolute inset-0 grid place-items-center bg-[#07060b]/85 px-6 backdrop-blur-[2px]">
+      <div className="max-w-md rounded-sm border border-amber-700/50 bg-[#120d08] p-6 text-center shadow-[0_0_40px_rgba(0,0,0,0.8)]">
+        <p className="font-serif text-sm uppercase tracking-[0.22em] text-[#e8c56a]">This session has ended</p>
+        <p className="mt-3 text-sm leading-relaxed text-stone-400">
+          The table is closed and every seat is empty. What is still moving below is the session you just
+          finished, not a live game — nothing here is being saved.
+        </p>
+        <a
+          href="/table"
+          className="mt-5 inline-block rounded-sm border border-[#c9a23a] px-4 py-2 font-serif text-xs uppercase tracking-[0.2em] text-[#f4d77a] hover:bg-[#c9a23a]/10"
+        >
+          Back to the table
+        </a>
+      </div>
+    </div>
   )
 }
 
