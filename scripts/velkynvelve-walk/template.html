@@ -639,7 +639,7 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
    The pack's palette and its sizing floors are carried over as tokens so the whole card moves together.
    Not carried over: the pack's 1120px panel (this card lives in the map's stage, not a full page), and the DC —
    Sam, 2026-10-25: the card shows what you can try, never the number. */
-.tcard{--dlg-top:#162943;--dlg-bot:#070e1a;--dlg-brass:#c99a46;--dlg-gold:#ffdf9b;--dlg-ivory:#fdf3dc;--dlg-sky:#9abbd5;--dlg-focus:#67def2;--dlg-row-top:#1d3150;--dlg-row-bot:#0b1526;--dlg-cut:16px;
+.tcard{--dlg-top:#0f1e33;--dlg-bot:#05090f;--dlg-brass:#c99a46;--dlg-gold:#ffdf9b;--dlg-ivory:#fdf3dc;--dlg-sky:#9abbd5;--dlg-focus:#67def2;--dlg-row-top:#13223a;--dlg-row-bot:#070e1a;--dlg-cut:16px;
   position:relative;width:min(900px,100%);display:block;padding:0;border:0;border-radius:0;background:none;box-shadow:none;overflow:visible;color:var(--dlg-ivory);
   font-family:var(--face-display);margin-left:52px}
 /* THE FRAME: a gold plate, cut at the corners, with the navy panel inset inside it — the pack's double rule, not a
@@ -650,19 +650,24 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .tcard>*{position:relative;z-index:1}
 .tcard .port{position:absolute;left:-52px;top:-34px;width:150px;height:150px;border-radius:50%;z-index:2;
   background:linear-gradient(150deg,#ffe6ad,#8d6a2e 45%,#ffdf9b);padding:5px;box-shadow:0 10px 26px rgba(0,0,0,.6)}
-.tcard .port canvas{width:100%;height:100%;border-radius:50%;border:3px solid #0d1626;background:radial-gradient(circle at 50% 62%,#17283b,#070d15);image-rendering:pixelated;display:block}
+.tcard .port canvas,.tcard .port img{width:100%;height:100%;border-radius:50%;border:3px solid #0d1626;background:radial-gradient(circle at 50% 62%,#17283b,#070d15);display:block}
+.tcard .port canvas{image-rendering:pixelated}
+.tcard .port img{object-fit:cover}
+.tcard .port img[hidden],.tcard .port canvas[hidden]{display:none}
 .tcard .head{display:flex;align-items:flex-start;gap:12px;padding:16px 18px 0 112px;min-height:58px}
 /* the name banner: a tag with a cut right end, the way the pack draws it */
-.tcard .plate{display:grid;gap:1px;padding:8px 34px 8px 22px;background:linear-gradient(#17293f,#0e1a2a);
+.tcard .plate{display:grid;gap:1px;padding:8px 34px 8px 22px;background:linear-gradient(#0f1e33,#070e1a);
   clip-path:polygon(0 0,calc(100% - 16px) 0,100% 50%,calc(100% - 16px) 100%,0 100%);box-shadow:inset 0 0 0 1px var(--dlg-brass)}
 .tcard .plate .name{font-family:var(--face-title);font-weight:700;font-size:1.44rem;line-height:1.08;color:var(--dlg-ivory);letter-spacing:.07em;text-transform:uppercase;text-align:left;text-shadow:0 2px 0 rgba(0,0,0,.55)}
 .tcard .plate .sub{font-family:var(--face-body);font-size:var(--s0);color:#8fc4e8;letter-spacing:.02em}
 .tcard .plate .sub[hidden]{display:none}
 .tcard .tools{margin-left:auto;display:flex;gap:8px}
-.tcard .rnd{width:34px;height:34px;border-radius:50%;border:1px solid var(--dlg-brass);background:#15263a;color:var(--dlg-sky);
-  font:14px/1 var(--face-body);cursor:pointer;display:grid;place-items:center;transition:border-color .15s ease,color .15s ease}
-.tcard .rnd:hover{border-color:var(--dlg-gold);color:var(--dlg-ivory)}
-.tcard .rnd:focus-visible{outline:2px solid var(--dlg-focus);outline-offset:2px}
+.tcard .rnd{width:44px;height:44px;padding:0;border:0;border-radius:50%;background:none;cursor:pointer;display:block;
+  transition:filter .15s ease,transform .09s ease}
+.tcard .rnd img{width:100%;height:100%;display:block}
+.tcard .rnd:hover{filter:brightness(1.18) drop-shadow(0 0 6px rgba(255,223,155,.45))}
+.tcard .rnd:active{transform:translateY(1px)}
+.tcard .rnd:focus-visible{outline:2px solid var(--dlg-focus);outline-offset:3px}
 .tcard .narr{margin:12px 26px 16px 112px;font-family:var(--face-read);color:var(--dlg-ivory);font-size:1.62rem;font-style:normal;line-height:1.36}
 .tcard .said{margin:12px 26px 16px 112px;font-family:var(--face-read);color:var(--dlg-ivory);font-size:1.62rem;line-height:1.36}
 .tcard .thinking{margin-left:112px}
@@ -698,7 +703,7 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .tcard .foot{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;margin:16px 26px 16px;padding-bottom:2px}
 .tcard .frule{height:1px;background:linear-gradient(90deg,transparent,var(--dlg-brass))}
 .tcard .foot .frule:last-of-type{background:linear-gradient(90deg,var(--dlg-brass),transparent)}
-.tcard .fdie{width:22px;height:22px;color:var(--dlg-gold)}
+.tcard .fdie{width:36px;height:36px;display:block;filter:brightness(1.15)}
 .tcard .fsay{grid-column:1/-1;text-align:center;font-family:var(--face-body);font-size:var(--s0);color:#7fa8c9;letter-spacing:.05em}
 /* the loot list keeps its own compact rows: many lines, no icon cell */
 #obj .btns.loot{display:flex}
@@ -1043,11 +1048,11 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div id="bossIntro" class="bossIntro" hidden><div class="bface" id="bossIntroFace"></div><div><div class="kick">BOSS</div><div class="big" id="bossIntroName"></div><div class="small" id="bossIntroEpithet"></div></div></div>
     <div class="talk" id="obj" hidden>
       <div class="tcard" role="dialog" aria-labelledby="objWho">
-        <div class="port"><canvas id="objPic" width="128" height="128"></canvas></div>
+        <div class="port"><canvas id="objPic" width="128" height="128"></canvas><img id="objFace" alt="" hidden></div>
         <div class="head"><div class="plate"><span class="name" id="objWho"></span><span class="sub" id="objSub" hidden></span></div>
-          <div class="tools"><button class="rnd" id="objLog" aria-label="The log">&#9998;</button><button class="rnd" id="objX" aria-label="Step back">&#10005;</button></div></div>
+          <div class="tools"><button class="rnd" id="objLog" data-sfx="press" aria-label="The log"><img src="icons/ui-log.png" alt=""></button><button class="rnd" id="objX" data-sfx="cancel" aria-label="Step back"><img src="icons/ui-close.png" alt=""></button></div></div>
         <p class="narr" id="objText"></p><div class="btns" id="objBtns"></div>
-        <div class="foot"><span class="frule"></span><span class="fdie"></span><span class="frule"></span><span class="fsay">Choose your response</span></div>
+        <div class="foot"><span class="frule"></span><img class="fdie" src="icons/ui-die.png" alt=""><span class="frule"></span><span class="fsay">Choose your response</span></div>
       </div>
     </div>
     <div class="talk" id="talk" hidden>
@@ -4923,7 +4928,8 @@ function openInteract(z, opts = {}){
     if (isDoor && !state.gateBroken) add("Close the gate", () => { close(); state.doorShut = true; setDoor(false); if (balcony()) buildGrid(); setTimeout(() => sfx("door-close"), 650); }, "", {icon: "key"});
     add("Stay inside", close, "", {icon: "back"});
   }
-  showObjCard(); cardClose(close); firstChoice(box)?.focus();
+  showObjCard(); cardFace(isDoor ? "use-object" : null);   // a door card wears the door's own icon
+  cardClose(close); firstChoice(box)?.focus();
 }
 function victoryBanner(big, small){
   const el = $("victory"); el.querySelector(".big").textContent = big; el.querySelector(".small").textContent = small;
@@ -5014,8 +5020,15 @@ function choiceRow(box, label, fn, cls = "", meta = {}){
   return b;
 }
 /** The card's own close control (the round × beside the name). Shown only for a card that has somewhere to step back to. */
-function showObjCard(){ cardClose(null); $("obj").hidden = false; }
-function paintFootDie(){ for (const el of document.querySelectorAll(".fdie")) el.innerHTML = d20Svg("#f3d78f", 22); }
+function showObjCard(){ cardClose(null); cardFace(null); $("obj").hidden = false; }
+/** What goes in the circle: the subject's own painted icon when the card has one (Sam, 2026-10-30: "the circle
+ *  should have the icon image of whomever the box is for"), otherwise the object cut from the plate, as before.
+ *  A talk card keeps its portrait — that IS who the box is for. */
+function cardFace(icon){
+  const img = $("objFace"), cv = $("objPic"); if (!img || !cv) return;
+  if (icon){ img.src = `icons/${icon}.png`; img.hidden = false; cv.hidden = true; }
+  else { img.hidden = true; img.removeAttribute("src"); cv.hidden = false; }
+}
 function cardClose(fn){ const x = $("objX"); if (!x) return; x.hidden = !fn; x.onclick = fn || null; }
 /** The first choice on the card, whether or not it is wrapped in .lit. */
 function firstChoice(box){ return box.querySelector(".btn"); }
@@ -14075,7 +14088,6 @@ if (APP && !isDm()) $("dmBtn").hidden = true;
 $("cbtDm").hidden = APP && !isDm(); $("cbtDm").onclick = () => toggleDm(true);
 if (APP && !isDm()) $("quickBtn").hidden = true;   // quick resolve is the DM's call
 $("objLog").onclick = () => { const l = $("log"); if (l) l.hidden = !l.hidden; };
-paintFootDie();
 $("dmClose").onclick = () => toggleDm(false);
 Object.entries(SPEC).forEach(([n, s]) => { const o = document.createElement("option"); o.value = n; o.textContent = `${n} · ${s.name}`; $("jump").appendChild(o); });
 $("jump").onchange = e => { const v = e.target.value, n = /^\d+$/.test(v) ? +v : v; /* "10b" is a plate too */ if (n === cur || mode === "combat" || mode === "travel") return; toggleDm(false);
