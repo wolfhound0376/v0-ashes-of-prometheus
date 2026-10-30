@@ -495,6 +495,9 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .invDoll .slot:not(.empty),.invPic{cursor:grab}
 .invHand{display:flex;justify-content:space-between;align-items:center;gap:8px;border:1px solid var(--ef-brass);border-radius:6px;padding:6px 10px;background:var(--ef-inset)}
 .invList{display:grid;gap:6px;overflow:auto;min-height:0;align-content:start;padding-right:2px}
+/* macOS hides scrollbars until you scroll, so the backpack never looked scrollable. A styled bar stays visible in Chrome/Safari. */
+.invList{padding-right:6px}.invList::-webkit-scrollbar{width:10px}.invList::-webkit-scrollbar-track{background:#09090d;border-radius:6px}
+.invList::-webkit-scrollbar-thumb{background:#8d6830;border-radius:6px;border:2px solid #09090d}.invList::-webkit-scrollbar-thumb:hover{background:#d7af58}
 .invRow{display:grid;grid-template-columns:64px minmax(0,1fr) auto;gap:2px 12px;align-items:center;border:1px solid #2a2330;border-radius:6px;background:rgba(9,9,13,.6);padding:8px 10px;cursor:pointer}
 .invRow:hover{border-color:var(--ef-brass)}
 .invRow.fits{border-color:rgba(215,175,88,.5);background:rgba(215,175,88,.07)}
@@ -16915,7 +16918,11 @@ function endPtr(e){
   click(s2w(e.clientX, e.clientY));
 }
 stage.addEventListener("pointerup", endPtr); stage.addEventListener("pointercancel", endPtr);
-stage.addEventListener("wheel", e => { if (e.target.closest(".checkcard,.icard")) return; e.preventDefault(); if (mode === "talk" || mode === "dialog") return; const r = stage.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, {passive: false});
+// A WHEEL OVER A PANEL SCROLLS THE PANEL (Sam, 2026-10-30: Fifi couldn't move up and down the backpack on her MacBook —
+// the two-finger swipe zoomed the map behind it). The inventory, the DM tools and anything else that scrolls get the wheel;
+// only the open map zooms.
+function wheelScrolls(el){ for (; el && el !== stage; el = el.parentElement){ const o = getComputedStyle(el).overflowY; if ((o === "auto" || o === "scroll") && el.scrollHeight > el.clientHeight + 1) return true; } return false; }
+stage.addEventListener("wheel", e => { if (e.target.closest(".checkcard,.icard,.inv,.dm") || wheelScrolls(e.target)) return; e.preventDefault(); if (mode === "talk" || mode === "dialog") return; const r = stage.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, {passive: false});
 function click(w){
   if (timeStopped) return;
   if (dmPlacing){ placePile(w); return; }
@@ -17008,6 +17015,9 @@ addEventListener("keydown", e => {
   if (e.key === "Escape" && dmPlacing){ dmPlacing = null; stage.classList.remove("placing"); hint(""); return; }
   if (e.code === "KeyI" && (mode === "explore" || mode === "combat")){ e.preventDefault(); toggleBag(); return; }
   if (e.key === "Escape" && bagOpen()){ toggleBag(false); return; }
+  // With the bag open the arrows (and Page Up/Down, Home/End) move up and down the backpack instead of walking the hero.
+  if (bagOpen() && /^(ArrowUp|ArrowDown|PageUp|PageDown|Home|End)$/.test(e.code)){ e.preventDefault(); const l = $("invList"), pg = l.clientHeight * 0.85;
+    const by = {ArrowUp: -90, ArrowDown: 90, PageUp: -pg, PageDown: pg, Home: -l.scrollHeight, End: l.scrollHeight}[e.code]; l.scrollBy({top: by, behavior: "smooth"}); return; }
   if (e.key === "Escape" && exploreJump){ exploreJump = false; hint(""); return; }
   if (e.key === "Escape"){ if (!$("obj").hidden){ $("obj").hidden = true; mode = "explore"; } else if (!$("talk").hidden) $("talkNo").click(); else if (!$("dm").hidden) toggleDm(false); }
   if (e.key === "m" || e.key === "M") $("musicBtn").click();
