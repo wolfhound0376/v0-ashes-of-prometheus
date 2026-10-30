@@ -325,6 +325,19 @@ export function WalkRollBridge({ frameRef }: { frameRef: RefObject<HTMLIFrameEle
       const { error } = await supabase.from("dialogue").insert({ speaker: p.who, speaker_type: "player", channel: "dm", text: `🎲 ${logText}` })
       if (error) console.error("[walk-roll] failed to log the roll:", error)
     }
+    // The hidden tally. Until now the map's rolls reached no ledger at all, so
+    // earned proficiency (docs/claude_Earned_Proficiency.md) could never fire
+    // from the place the game is actually played — see lib/walk-check-record.ts.
+    // Rehearsal is excluded: a sandbox try must leave no mark on the real world.
+    // Fire-and-forget, and never await the game on it: the verdict is already
+    // on the map and a failed tally write must not stall the table.
+    if (!sandbox && p.characterId) {
+      void fetch("/api/walk-check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characterId: p.characterId, action: p.action, natural: out.reply.natural, total: out.reply.total }),
+      }).catch((err) => console.error("[walk-roll] the ledger did not take the check:", err))
+    }
     // Malachar hears it as this character. Only a seated browser can speak as one; the DM narrates their own.
     const seat = readSeat()
     // A roll the map narrates itself (pickpocketing) is told to Malachar by the map, with who and what; not twice.
