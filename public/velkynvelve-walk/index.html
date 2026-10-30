@@ -637,38 +637,85 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
    The pack's palette and its sizing floors are carried over as tokens so the whole card moves together.
    Not carried over: the pack's 1120px panel (this card lives in the map's stage, not a full page), and the DC —
    Sam, 2026-10-25: the card shows what you can try, never the number. */
-.tcard{--dlg-top:#101c2c;--dlg-bot:#080f19;--dlg-brass:#b58a43;--dlg-gold:#f3d78f;--dlg-ivory:#f6e9c5;--dlg-sky:#9abbd5;--dlg-focus:#67def2;--dlg-row:#7a7058;
-  width:min(640px,100%);background:linear-gradient(var(--dlg-top),var(--dlg-bot));border:2px solid var(--dlg-brass);border-radius:14px;color:var(--dlg-ivory);
-  box-shadow:0 18px 60px rgba(0,0,0,.72),inset 0 0 0 4px rgba(243,215,143,.06)}
-.tcard canvas{border:2px solid var(--dlg-brass);border-radius:10px;background:radial-gradient(circle at 50% 62%,#17283b,#070d15)}
-#talk .tcard canvas{border-radius:50%}                        /* a speaker is a portrait; an object is the thing itself */
-.tcard .name{color:var(--dlg-ivory)}
-.tcard .narr{color:var(--dlg-sky);font-size:var(--s1)}
-.tcard .said{color:var(--dlg-ivory)}
-/* the choices: one per row, never a wrapped strip */
-#obj .btns,#talk .btns{display:grid;gap:10px;max-height:52vh;overflow:auto}
-#obj .btns .btn,#talk .btns .btn{display:grid;grid-template-columns:40px 1fr auto;align-items:center;gap:14px;width:100%;min-height:52px;text-align:left;
-  padding:9px 18px;border:1px solid var(--dlg-row);border-radius:10px;background:linear-gradient(#1b293c,#101723);color:var(--dlg-ivory);
-  font-family:var(--face-display);font-size:var(--s1);line-height:1.25;
-  transition:border-color .15s ease,box-shadow .15s ease,transform .09s ease}
-#obj .btns .btn:hover,#talk .btns .btn:hover{border-color:var(--dlg-gold);color:var(--dlg-ivory);box-shadow:0 0 12px rgba(103,222,242,.3)}
-#obj .btns .btn:focus-visible,#talk .btns .btn:focus-visible{border-color:var(--dlg-gold);outline:2px solid var(--dlg-focus);outline-offset:2px}
+.tcard{--dlg-top:#13233a;--dlg-bot:#0a1322;--dlg-brass:#b58a43;--dlg-gold:#f3d78f;--dlg-ivory:#f6e9c5;--dlg-sky:#9abbd5;--dlg-focus:#67def2;--dlg-row-top:#1b2b42;--dlg-row-bot:#0f1a2a;--dlg-cut:16px;
+  position:relative;width:min(900px,100%);display:block;padding:0;border:0;border-radius:0;background:none;box-shadow:none;overflow:visible;color:var(--dlg-ivory);
+  font-family:var(--face-display);margin-left:52px}
+/* THE FRAME: a gold plate, cut at the corners, with the navy panel inset inside it — the pack's double rule, not a
+   rounded rectangle. clip-path cuts both, so the corners stay square-cut at any size (no stretched corner art). */
+.tcard::before,.tcard::after{content:"";position:absolute;inset:0;clip-path:polygon(var(--dlg-cut) 0,calc(100% - var(--dlg-cut)) 0,100% var(--dlg-cut),100% calc(100% - var(--dlg-cut)),calc(100% - var(--dlg-cut)) 100%,var(--dlg-cut) 100%,0 calc(100% - var(--dlg-cut)),0 var(--dlg-cut));pointer-events:none}
+.tcard::before{background:linear-gradient(160deg,#e7c67e,#9d7533 38%,#f3d78f 52%,#8d6a2e);filter:drop-shadow(0 18px 44px rgba(0,0,0,.7))}
+.tcard::after{inset:3px;--dlg-cut:14px;background:linear-gradient(var(--dlg-top),var(--dlg-bot));box-shadow:inset 0 0 0 1px rgba(243,215,143,.34)}
+.tcard>*{position:relative;z-index:1}
+.tcard .port{position:absolute;left:-52px;top:-34px;width:150px;height:150px;border-radius:50%;z-index:2;
+  background:linear-gradient(150deg,#e7c67e,#8d6a2e 45%,#f3d78f);padding:4px;box-shadow:0 10px 26px rgba(0,0,0,.6)}
+.tcard .port canvas{width:100%;height:100%;border-radius:50%;border:3px solid #0d1626;background:radial-gradient(circle at 50% 62%,#17283b,#070d15);image-rendering:pixelated;display:block}
+.tcard .head{display:flex;align-items:flex-start;gap:12px;padding:16px 18px 0 112px;min-height:58px}
+/* the name banner: a tag with a cut right end, the way the pack draws it */
+.tcard .plate{display:grid;gap:1px;padding:8px 34px 8px 22px;background:linear-gradient(#17293f,#0e1a2a);
+  clip-path:polygon(0 0,calc(100% - 16px) 0,100% 50%,calc(100% - 16px) 100%,0 100%);box-shadow:inset 0 0 0 1px var(--dlg-brass)}
+.tcard .plate .name{font-size:1.6rem;line-height:1.05;color:var(--dlg-ivory);font-variant:small-caps;letter-spacing:.04em;text-align:left}
+.tcard .plate .sub{font-family:var(--face-body);font-size:var(--s-1);color:var(--dlg-sky);letter-spacing:.03em}
+.tcard .plate .sub[hidden]{display:none}
+.tcard .tools{margin-left:auto;display:flex;gap:8px}
+.tcard .rnd{width:34px;height:34px;border-radius:50%;border:1px solid var(--dlg-brass);background:#15263a;color:var(--dlg-sky);
+  font:14px/1 var(--face-body);cursor:pointer;display:grid;place-items:center;transition:border-color .15s ease,color .15s ease}
+.tcard .rnd:hover{border-color:var(--dlg-gold);color:var(--dlg-ivory)}
+.tcard .rnd:focus-visible{outline:2px solid var(--dlg-focus);outline-offset:2px}
+.tcard .narr{margin:12px 26px 16px 112px;color:var(--dlg-ivory);font-size:1.52rem;font-style:normal;line-height:1.38}
+.tcard .said{margin:12px 26px 16px 112px;color:var(--dlg-ivory);font-size:1.52rem;line-height:1.38}
+.tcard .thinking{margin-left:112px}
+/* ---- the choices: one row each, cut corners, an icon cell, the check it asks for ---- */
+#obj .btns,#talk .btns{display:grid;gap:11px;margin:0 12px;padding:8px;max-height:46vh;overflow:auto}
+#obj .btns .btn,#talk .btns .btn{--dlg-cut:11px;position:relative;display:grid;grid-template-columns:52px 1fr auto;align-items:center;gap:16px;width:100%;
+  min-height:62px;text-align:left;padding:10px 22px;border:0;border-radius:0;background:linear-gradient(var(--dlg-row-top),var(--dlg-row-bot));
+  clip-path:polygon(var(--dlg-cut) 0,calc(100% - var(--dlg-cut)) 0,100% var(--dlg-cut),100% calc(100% - var(--dlg-cut)),calc(100% - var(--dlg-cut)) 100%,var(--dlg-cut) 100%,0 calc(100% - var(--dlg-cut)),0 var(--dlg-cut));
+  color:var(--dlg-ivory);font-family:var(--face-display);font-size:var(--s2);line-height:1.2;cursor:pointer;
+  --dlg-edge:#58698180;transition:transform .09s ease,filter .15s ease}
+#obj .btns .btn::before,#talk .btns .btn::before{content:"";position:absolute;inset:0;background:var(--dlg-edge);z-index:0;
+  clip-path:polygon(var(--dlg-cut) 0,calc(100% - var(--dlg-cut)) 0,100% var(--dlg-cut),100% calc(100% - var(--dlg-cut)),calc(100% - var(--dlg-cut)) 100%,var(--dlg-cut) 100%,0 calc(100% - var(--dlg-cut)),0 var(--dlg-cut))}
+#obj .btns .btn::after,#talk .btns .btn::after{content:"";position:absolute;inset:1.5px;--dlg-cut:10px;background:linear-gradient(var(--dlg-row-top),var(--dlg-row-bot));z-index:0;
+  clip-path:polygon(var(--dlg-cut) 0,calc(100% - var(--dlg-cut)) 0,100% var(--dlg-cut),100% calc(100% - var(--dlg-cut)),calc(100% - var(--dlg-cut)) 100%,var(--dlg-cut) 100%,0 calc(100% - var(--dlg-cut)),0 var(--dlg-cut))}
+.tcard .btn>*{position:relative;z-index:1}
+#obj .btns .btn:hover,#talk .btns .btn:hover{color:var(--dlg-ivory);--dlg-edge:var(--dlg-gold);filter:brightness(1.07)}
+#obj .btns .btn:focus-visible,#talk .btns .btn:focus-visible{outline:2px solid var(--dlg-focus);outline-offset:3px;--dlg-edge:var(--dlg-gold)}
 #obj .btns .btn:active,#talk .btns .btn:active{transform:translateY(1px)}
-#obj .btns .btn.primary,#talk .btns .btn.primary{border-color:var(--dlg-gold);background:linear-gradient(#24364d,#131f2e)}
-#obj .btns .btn.danger{border-color:var(--blood);color:#ffb7ad}
-#obj .btns .btn[disabled]{opacity:.5;transform:none}
-/* the icon cell, the check badge. Both are OPTIONAL: a row without them keeps its columns, so every label still lines up. */
-.tcard .btn .ic{width:26px;height:26px;color:var(--dlg-brass);justify-self:center;pointer-events:none}
-.tcard .btn:hover .ic,.tcard .btn:focus-visible .ic{color:var(--dlg-gold)}
+/* the lit row the pack draws: gold rule inside, cyan light outside. A wrapper carries the glow because a clipped
+   element cannot cast one — clip-path cuts the shadow off with everything else outside the shape. */
+#obj .btns .btn.primary,#talk .btns .btn.primary{--dlg-edge:var(--dlg-gold)}
+#obj .btns .btn.primary::before,#talk .btns .btn.primary::before{background:linear-gradient(160deg,#f3d78f,#b58a43 60%,#f3d78f)}
+#obj .btns .btn.primary::after,#talk .btns .btn.primary::after{inset:2.5px}
+#obj .btns .lit,#talk .btns .lit{display:grid;filter:drop-shadow(0 0 6px rgba(103,222,242,.85)) drop-shadow(0 0 16px rgba(103,222,242,.45))}
+#obj .btns .btn.danger{--dlg-edge:var(--blood);color:#ffb7ad}
+#obj .btns .btn[disabled]{opacity:.5;transform:none;cursor:default}
+.tcard .btn .ic{width:36px;height:36px;justify-self:center;pointer-events:none}
 .tcard .btn .lbl{min-width:0}
 .tcard .btn .lbl .chk{color:var(--dlg-gold)}        /* "[Thieves' tools]" — which check this choice asks for */
-.tcard .btn .bdg{display:flex;align-items:center;gap:6px;color:var(--dlg-focus);font-family:var(--face-body);font-weight:700;font-size:var(--s-1);letter-spacing:.09em}
-.tcard .btn .bdg svg{width:18px;height:18px}
+.tcard .btn .bdg{display:flex;align-items:center;gap:9px;font-family:var(--face-body);font-weight:700;font-size:var(--s0);letter-spacing:.1em}
+.tcard .btn .bdg svg{width:30px;height:30px}
+/* the footer rule with its die, and the line under it */
+.tcard .foot{display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:12px;margin:16px 26px 16px;padding-bottom:2px}
+.tcard .frule{height:1px;background:linear-gradient(90deg,transparent,var(--dlg-brass))}
+.tcard .foot .frule:last-of-type{background:linear-gradient(90deg,var(--dlg-brass),transparent)}
+.tcard .fdie{width:22px;height:22px;color:var(--dlg-gold)}
+.tcard .fsay{grid-column:1/-1;text-align:center;font-family:var(--face-body);font-size:var(--s0);color:var(--dlg-sky);letter-spacing:.04em}
 /* the loot list keeps its own compact rows: many lines, no icon cell */
 #obj .btns.loot{display:flex}
-#obj .btns.loot .btn{grid-template-columns:auto 1fr auto;min-height:0;padding:7px 12px;font-family:var(--face-body);font-size:var(--s0)}
-@media (prefers-reduced-motion:reduce){#obj .btns .btn,#talk .btns .btn{transition:none}}
-@media (max-width:700px){#obj .btns .btn,#talk .btns .btn{font-size:var(--s0);padding:8px 12px;gap:10px;grid-template-columns:32px 1fr auto}}
+#obj .btns.loot .btn{grid-template-columns:auto 1fr auto;min-height:0;padding:7px 12px;font-family:var(--face-body);font-size:var(--s0);clip-path:none;border-radius:6px}
+@media (prefers-reduced-motion:reduce){#obj .btns .btn,#talk .btns .btn,.tcard .rnd{transition:none}}
+@media (max-width:860px){
+  .tcard{margin-left:0;--dlg-cut:12px}
+  .tcard .port{position:relative;left:auto;top:auto;width:84px;height:84px;margin:14px 0 0 16px}   /* relative, not static: z-index is ignored on an unpositioned box and the panel layer painted over it */
+  .tcard .head{padding:10px 14px 0 14px;align-items:center}
+  .tcard .plate{padding:5px 22px 5px 14px}
+  .tcard .plate .name{font-size:var(--s1)}
+  .tcard .narr,.tcard .said{margin:10px 16px 12px;font-size:var(--s2)}
+  .tcard .thinking{margin:10px 16px 12px}
+  #obj .btns,#talk .btns{margin:0 8px;padding:6px}
+  #obj .btns .btn,#talk .btns .btn{font-size:var(--s1);padding:9px 14px;gap:11px;grid-template-columns:38px 1fr auto;min-height:54px}
+  .tcard .btn .ic{width:26px;height:26px}
+  .tcard .btn .bdg svg{width:22px;height:22px}
+  .tcard .foot{margin:12px 16px}
+}
 
 footer.party{display:flex;gap:8px;overflow-x:auto;min-width:0;align-items:stretch}
 .pc{flex:0 0 auto;display:flex;align-items:center;gap:8px;background:var(--stage);border:1px solid var(--rule);border-radius:6px;padding:4px 10px 4px 4px;cursor:pointer;color:var(--ink-dim);font:inherit}
@@ -788,8 +835,6 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 .cool.violet{background:radial-gradient(circle,rgba(225,200,255,.62) 0%,rgba(175,130,255,.28) 30%,rgba(140,100,255,.10) 52%,transparent 70%)}
 @media (max-width:700px){
   .brand .sub{max-width:44vw}
-  .tcard{grid-template-columns:84px 1fr}
-  .tcard canvas{width:80px;height:80px}
   .log{bottom:58px}
   input[type=range]{display:none}
 }
@@ -996,8 +1041,11 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div id="bossIntro" class="bossIntro" hidden><div class="bface" id="bossIntroFace"></div><div><div class="kick">BOSS</div><div class="big" id="bossIntroName"></div><div class="small" id="bossIntroEpithet"></div></div></div>
     <div class="talk" id="obj" hidden>
       <div class="tcard" role="dialog" aria-labelledby="objWho">
-        <div class="who"><canvas id="objPic" width="128" height="128"></canvas><div class="name" id="objWho"></div></div>
-        <div class="story"><p class="narr" id="objText"></p><div class="btns" id="objBtns"></div></div>
+        <div class="port"><canvas id="objPic" width="128" height="128"></canvas></div>
+        <div class="head"><div class="plate"><span class="name" id="objWho"></span><span class="sub" id="objSub" hidden></span></div>
+          <div class="tools"><button class="rnd" id="objLog" aria-label="The log">&#9998;</button><button class="rnd" id="objX" aria-label="Step back">&#10005;</button></div></div>
+        <p class="narr" id="objText"></p><div class="btns" id="objBtns"></div>
+        <div class="foot"><span class="frule"></span><span class="fdie"></span><span class="frule"></span><span class="fsay">Choose your response</span></div>
       </div>
     </div>
     <div class="talk" id="talk" hidden>
@@ -3627,7 +3675,7 @@ function openProp(pr, opts = {}){
     if (hasItemNamed(ILVARA_KEY)) add("Use Ilvara's key", () => { close(); st.locked = false; st.disarmed = true; sfx("lock-picked", .9); log(`${fname(leader)} turns Ilvara's key.`); setTimeout(() => openChest(pr), 600); });
     add("Leave it", close);
   }
-  $("obj").hidden = false; box.firstChild?.focus();
+  showObjCard(); box.firstChild?.focus();
 }
 // ---------- the lift (area 5) ----------
 // Sam, 2026-10-22: "Should be a way to interact with the crank and move on it if possible." The book, OotA ch.1 area 5:
@@ -3764,7 +3812,7 @@ function openLift(){
     if (riders.length) add("Everyone out", () => { riders.forEach(climbOut); close(); });
     add("Leave it", () => { if (aboard(leader)){ const s = onDeck[0]; if (s) setLeader(s); else { riders.forEach(climbOut); } } close(); });
   }
-  $("obj").hidden = false; box.firstChild?.focus();
+  showObjCard(); box.firstChild?.focus();
 }
 // ---------- loot: chests, bodies and pockets ----------
 // Sam, 2026-10-22: "Build all. Shoor's quarters is good. Some gear might be found on people's bodies after killing them
@@ -4331,14 +4379,14 @@ async function openLoot(id, title, opts = {}){
   const close = () => { $("obj").hidden = true; box.classList.remove("loot"); mode = "explore"; if (opts.onClose) opts.onClose(); };
   const add = (label, fn, cls = "", off = false) => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.disabled = off; if (fn) b.onclick = fn; box.appendChild(b); return b; };
   const fkey = lootKeyOf(id), spill = !!opts.at && !fountained.has(fkey);   // the first open of a body or chest spills it
-  if (!spill){ $("obj").hidden = false; add("…", null, "", true); }
+  if (!spill){ showObjCard(); add("…", null, "", true); }
   const j = await fetchLoot(id); await ensureCatalog();
   if (spill){
     fountained.add(fkey);
     const wait = j.error ? 0 : lootFountain(opts.at, j.rows || []);
     if (wait) await new Promise(r => setTimeout(r, wait));
     if (mode !== "dialog") return;                                                // closed or left while it flew
-    $("obj").hidden = false;
+    showObjCard();
   }
   if ($("obj").hidden) return;
   box.innerHTML = "";
@@ -4863,7 +4911,7 @@ async function openPockets(n){
   const box = $("objBtns"); box.innerHTML = "";
   const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); return b; };
   const close = () => { $("obj").hidden = true; mode = "explore"; };
-  $("objText").textContent = `${name} is close enough to touch.`; $("obj").hidden = false;
+  $("objText").textContent = `${name} is close enough to touch.`; showObjCard();
   const id = pocketId(n), j = await fetchLoot(id); if ($("obj").hidden) return;
   const rows = (j.rows || []).filter(r => r.kind !== "preview-stash");
   // Sleight of Hand on the dashboard's dice against the guard's passive Perception (lib/walk-roll.ts pickpocket:ppN, the
@@ -4925,7 +4973,7 @@ async function openPickpocket(n){
   const box = $("objBtns"); box.innerHTML = "";
   const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); return b; };
   const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
-  $("objText").textContent = `${fname(who)} slips a hand toward ${name}…`; $("obj").hidden = false;
+  $("objText").textContent = `${fname(who)} slips a hand toward ${name}…`; showObjCard();
   const j = await fetchLoot(id); if ($("obj").hidden) return;
   const rows = (j.rows || []).filter(r => r.kind !== "preview-stash" && (!r.slot || r.loose));   // a spare blade in a boot is loose; a worn or wielded one is not
   $("objText").textContent = j.error ? `The game did not answer (${j.error}).`
@@ -5048,7 +5096,7 @@ function openInteract(z, opts = {}){
     if (isDoor && !state.gateBroken) add("Close the gate", () => { close(); state.doorShut = true; setDoor(false); if (balcony()) buildGrid(); setTimeout(() => sfx("door-close"), 650); }, "", {icon: "key"});
     add("Stay inside", close, "", {icon: "back"});
   }
-  $("obj").hidden = false; box.firstChild?.focus();
+  showObjCard(); cardClose(close); firstChoice(box)?.focus();
 }
 function victoryBanner(big, small){
   const el = $("victory"); el.querySelector(".big").textContent = big; el.querySelector(".small").textContent = small;
@@ -5076,7 +5124,7 @@ function openBody(b){
     openLoot(`body:${b.id}:${b.lootKey}`, `${name}'s body`, {at: {x: b.x, y: b.y}, text: `${name} lies where it fell.`, empty: known ? `Nothing is left on ${name}.` : APP ? `Nothing the map knows of. What ${name} carried is Malachar's to say.` : "What it carried is Malachar's to say — in the game this goes to him as your action."});
   }, "primary");
   add("Leave it", close);
-  $("obj").hidden = false; box.firstChild?.focus();
+  showObjCard(); box.firstChild?.focus();
 }
 // The game-side hook for an action the map cannot resolve itself. Nothing listens yet; the dashboard will.
 // A check rolled on the dashboard's dice (Sam, 2026-10-25). The map names an action from lib/walk-roll.ts WALK_ACTIONS;
@@ -5088,37 +5136,60 @@ const ROLLS = new Map(), LOCAL_DC = {"falls:look": 12, "ilvara-chest:search": 20
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
-// THE CHOICE ROWS (Sam's UI pack, 2026-10-30). A row is an icon cell, the label, and — when the choice asks for a
-// roll — the check it asks for: "[Thieves' tools] Pick the lock" with the ability on the right, exactly as the
-// pack's reference draws "[Arcana] Examine the ward. INT". The DC is NOT here and never is (Sam, 2026-10-25).
-// The pack supplied no icon art ("Commission/generate separate art ... without labels"), so these are drawn in
-// line, monochrome on currentColor, and swap for art the day it exists by changing this one table.
+// THE CHOICE ROWS (Sam's Ashes_Dialogue_UI_Pack, 2026-10-30; his note the same day: "The card desktop should look
+// almost exactly like what I gave you"). A row is an icon, the label, and — when the choice asks for a roll — the
+// check it asks for, with the ability on a die of that ability's colour: the reference's "[Arcana] Examine the ward
+// · INT". The DC is NOT here and never is (Sam, 2026-10-25).
+//
+// The pack supplies no icon art ("Commission/generate separate art ... without labels"), so these are drawn in line
+// and keep the reference's colours — a teal book, blue speech, a gold compass, a red-orange back arrow. Real art
+// swaps in by changing this one table; nothing else knows what an icon is.
 const ROW_ICON = {
-  pick:  '<path d="M4 20l6-6M9 15l-3-3 7-7a4 4 0 115 5l-2 2-2-2"/>',
-  force: '<path d="M20 3v18"/><path d="M3 12h12M11 8l4 4-4 4"/><path d="M17.6 9.5l1.6-1.2M17.6 14.5l1.6 1.2"/>',
-  key:   '<circle cx="8" cy="12" r="3.2"/><path d="M11.2 12H21M18 12v3M15 12v2.4"/>',
-  talk:  '<path d="M4 6h16v9H9l-5 4z"/>',
-  way:   '<circle cx="12" cy="12" r="8"/><path d="M15 9l-2.2 5.4L7.4 16l2.2-5.4z"/>',
-  back:  '<path d="M10 7l-5 5 5 5M5 12h10a4 4 0 014 4v2"/>',
-  dm:    '<path d="M12 3l7 4v6c0 4-3 6.6-7 8-4-1.4-7-4-7-8V7z"/>',
+  pick:  ['#7fe3c4', '<path d="M5 27l7-7" stroke-width="2.4"/><path d="M11 21l-3.4-3.4 8-8a4.6 4.6 0 116.5 6.5l-2.3 2.3-2.6-2.6" stroke-width="2.2"/><circle cx="22.6" cy="13.4" r="1.5" fill="currentColor" stroke="none"/>'],
+  force: ['#f2824a', '<path d="M26 5v22" stroke-width="2.6"/><path d="M5 16h13M14 11l5 5-5 5" stroke-width="2.4"/><path d="M22 11.5l2.2-1.6M22 20.5l2.2 1.6" stroke-width="1.8"/>'],
+  key:   ['#f3d78f', '<circle cx="11" cy="16" r="4.4" stroke-width="2.3"/><path d="M15.4 16H28M24 16v4.2M20 16v3" stroke-width="2.3"/>'],
+  talk:  ['#7cc2f2', '<path d="M4 8h17v11H11l-7 6z" stroke-width="2.2"/><path d="M24 12h4v10h-3l-4 4v-4" stroke-width="2"/>'],
+  way:   ['#f3d78f', '<circle cx="16" cy="16" r="11" stroke-width="2.2"/><path d="M21 11l-3 7-7 3 3-7z" stroke-width="2" stroke-linejoin="round"/>'],
+  back:  ['#e2704a', '<path d="M13 9l-7 7 7 7" stroke-width="2.6"/><path d="M6 16h12a7 7 0 017 7v2" stroke-width="2.4"/>'],
+  dm:    ['#b78df2', '<path d="M16 4l10 5v8c0 5.4-4.2 9-10 11-5.8-2-10-5.6-10-11V9z" stroke-width="2.2" stroke-linejoin="round"/><path d="M16 11v9M11.5 15.5h9" stroke-width="2"/>'],
 };
-const ABILITY_NAME = {str: "STR", dex: "DEX", con: "CON", int: "INT", wis: "WIS", cha: "CHA"};
-function rowIcon(k){ const d = ROW_ICON[k]; return d ? `<svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>` : `<span class="ic"></span>`; }
-/** The d20 the pack draws beside the ability. */
-const D20_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M12 2l9 5.2v9.6L12 22l-9-5.2V7.2z"/><path d="M12 2l5 7.6-5 8.4-5-8.4z"/></svg>';
-/** One choice row. `meta`: {icon, check, ability} — all optional; a plain row keeps the same columns so labels line up. */
+/** The ability dice, in the reference's colours: a blue d20 for INT, a green one for CHA, and the rest to match. */
+const ABILITY = {str: ["STR", "#e2704a"], dex: ["DEX", "#4fd39b"], con: ["CON", "#e0a33a"], int: ["INT", "#4a9df2"], wis: ["WIS", "#b78df2"], cha: ["CHA", "#3fd2b0"]};
+function rowIcon(k){
+  const ic = ROW_ICON[k];
+  return ic ? `<svg class="ic" viewBox="0 0 32 32" fill="none" stroke="${ic[0]}" stroke-linecap="round" aria-hidden="true">${ic[1]}</svg>` : `<span class="ic"></span>`;
+}
+/** A d20 drawn in its ability's colour: the body, the lit face and a star, as the pack's dice are drawn. */
+function d20Svg(c, w){
+  return `<svg viewBox="0 0 32 32" aria-hidden="true" width="${w || 30}" height="${w || 30}">`
+    + `<path d="M16 2l12.1 7v14L16 30 3.9 23V9z" fill="${c}22" stroke="${c}" stroke-width="1.8" stroke-linejoin="round"/>`
+    + `<path d="M16 2l7.4 10.4L16 25 8.6 12.4z" fill="${c}3d" stroke="${c}" stroke-width="1.4" stroke-linejoin="round"/>`
+    + `<path d="M16 9.5l1.5 3.6 3.6 1.5-3.6 1.5L16 19.7l-1.5-3.6-3.6-1.5 3.6-1.5z" fill="${c}"/></svg>`;
+}
+/** One choice row. `meta`: {icon, check, ability} — all optional; a plain row keeps the same columns so labels line up.
+ *  A `primary` row is wrapped in .lit, because a clip-path element cannot cast the outer glow itself: the clip cuts
+ *  the shadow off with everything else outside the shape, so the light has to come from a parent. */
 function choiceRow(box, label, fn, cls = "", meta = {}){
   const b = document.createElement("button");
   b.className = "btn " + cls;
   const chk = meta.check ? `<span class="chk">[${esc(meta.check)}]</span> ` : "";
-  const ab = meta.ability && ABILITY_NAME[meta.ability];
-  b.innerHTML = `${rowIcon(meta.icon)}<span class="lbl">${chk}${esc(label)}</span>${ab ? `<span class="bdg">${D20_SVG}${ab}</span>` : ""}`;
+  const ab = meta.ability && ABILITY[meta.ability];
+  b.innerHTML = `${rowIcon(meta.icon)}<span class="lbl">${chk}${esc(label)}</span>`
+    + (ab ? `<span class="bdg" style="color:${ab[1]}">${d20Svg(ab[1])}${ab[0]}</span>` : "");
   // what a screen reader hears is the whole row, in words, not the glyphs
-  b.setAttribute("aria-label", meta.check ? `${label} — ${meta.check}${ab ? ", " + ab : ""}` : label);
+  b.setAttribute("aria-label", meta.check ? `${label} — ${meta.check}${ab ? ", " + ab[0] : ""}` : label);
   b.onclick = fn;
-  box.appendChild(b);
+  if (/\bprimary\b/.test(cls)){ const lit = document.createElement("div"); lit.className = "lit"; lit.appendChild(b); box.appendChild(lit); }
+  else box.appendChild(b);
   return b;
 }
+/** The card's own close control (the round × beside the name). Shown only for a card that has somewhere to step back to. */
+function showObjCard(){ cardClose(null); $("obj").hidden = false; }
+function paintFootDie(){ for (const el of document.querySelectorAll(".fdie")) el.innerHTML = d20Svg("#f3d78f", 22); }
+function cardClose(fn){ const x = $("objX"); if (!x) return; x.hidden = !fn; x.onclick = fn || null; }
+/** The first choice on the card, whether or not it is wrapped in .lit. */
+function firstChoice(box){ return box.querySelector(".btn"); }
+
 function rollOnDashboard(action, localMod, opts = {}){
   if (!APP || window.parent === window){ const r = d20(opts.advantage ? 1 : 0, opts.who || leader), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= (LOCAL_DC[action] ?? +((/^pickpocket:pp(\d+)$/.exec(action) || [])[1] || 20)), total, natural: r}); }
   const id = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -8114,7 +8185,7 @@ function confront(w){
   add("Fight!", () => { guardsAlarm = null; guardsReact(w, h, "walking up in the open"); }, "primary");
   add("Talk your way past", () => { w.talkSituation = `${fname(h)} and the escaped prisoners walked openly into ${node.name}; ${name} has them at blade's point. If talk fails, emit [COMBAT_START: ...] naming every guard here.`; openTalk(w); });
   add("Surrender", () => { guardsAlarm = null; surrenderBegins(w); });   // THE SURRENDER (Sam, 2026-10-28): a beating, the march back, one prisoner into the chasm
-  $("obj").hidden = false; box.firstChild?.focus();
+  showObjCard(); box.firstChild?.focus();
 }
 function guardsReact(w, h, why){
   if (!h || mode !== "explore" || laborLive() || surgeon || timeStopped) return false;
@@ -8517,7 +8588,7 @@ function beltPotion(a){ const g = GEAR[a.id]; if (!g || !g.carried) return null;
 function heroCard(title, text){
   $("objWho").textContent = title; $("objText").textContent = text;
   const c = $("objPic"), g = c.getContext("2d"); g.clearRect(0, 0, 128, 128); try { g.drawImage(faceCanvas(leader, 128), 0, 0); } catch (e) {}
-  const box = $("objBtns"); box.innerHTML = ""; box.classList.remove("loot"); $("obj").hidden = false; mode = "dialog";
+  const box = $("objBtns"); box.innerHTML = ""; box.classList.remove("loot"); showObjCard(); mode = "dialog";
   const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
   const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); return b; };
   return {add, close};
@@ -13635,7 +13706,7 @@ function laborAsk(){
   };
   add("Go quietly", "go", "primary"); add("Drag your feet", "drag"); add("Refuse", "refuse");
   const timer = setTimeout(() => answer("go"), CALL_TIMEOUT_MS);
-  $("obj").hidden = false; box.firstChild?.focus();
+  showObjCard(); box.firstChild?.focus();
 }
 async function laborWaitThenMarch(){
   // every hero on the detail answers (or the call times out for them) before anyone is marched off
@@ -14032,7 +14103,7 @@ async function laborPocketFrom(h, spot){
   const box = $("objBtns"); box.innerHTML = "";
   const close = () => { $("obj").hidden = true; mode = "explore"; };
   const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); return b; };
-  $("objWho").textContent = spot.name; $("objText").textContent = "…"; $("obj").hidden = false;
+  $("objWho").textContent = spot.name; $("objText").textContent = "…"; showObjCard();
   const j = await fetchLoot(spot.id); if ($("obj").hidden) return;
   const rows = (j.rows || []).filter(r => !r.missing && r.kind !== "preview-stash");
   $("objText").textContent = rows.length ? `What does ${fname(h)} try to slip into their rags? (Sleight of Hand — the escort's eyes are elsewhere, for now.)` : "Nothing here that would fit in a sleeve.";
@@ -14533,7 +14604,7 @@ function gateWarning(guards, g, h = leader){
     h.path = findPath(h, back); narrate(h, `${fname(h)} steps back from the gate.`);
   }, "primary");
   add("Stay where you are", () => { close(); gateWarn = null; gateGuardsShoot(gateGuards(), h); });   // not heeded
-  $("obj").hidden = false; box.firstChild?.focus();
+  showObjCard(); box.firstChild?.focus();
   // the card left unanswered: the countdown runs, and at 10 s the rule decides (still at the bars: they shoot)
   clearInterval(gateWarnTimer);
   gateWarnTimer = setInterval(() => {
@@ -15094,7 +15165,7 @@ function openLianaCard(){
   }
   if (!offered) log("Nobody here speaks Elvish. Liana does not wait to be understood.");
   add("Let her go", () => lianaLeaves(null));
-  $("obj").hidden = false; box.firstChild?.focus();
+  showObjCard(); box.firstChild?.focus();
 }
 async function lianaPersuaded(p, translator){
   $("obj").hidden = true;
@@ -16341,6 +16412,8 @@ $("dmBtn").onclick = () => toggleDm($("dm").hidden);
 if (APP && !isDm()) $("dmBtn").hidden = true;
 $("cbtDm").hidden = APP && !isDm(); $("cbtDm").onclick = () => toggleDm(true);
 if (APP && !isDm()) $("quickBtn").hidden = true;   // quick resolve is the DM's call
+$("objLog").onclick = () => { const l = $("log"); if (l) l.hidden = !l.hidden; };
+paintFootDie();
 $("dmClose").onclick = () => toggleDm(false);
 Object.entries(SPEC).forEach(([n, s]) => { const o = document.createElement("option"); o.value = n; o.textContent = `${n} · ${s.name}`; $("jump").appendChild(o); });
 $("jump").onchange = e => { const v = e.target.value, n = /^\d+$/.test(v) ? +v : v; /* "10b" is a plate too */ if (n === cur || mode === "combat" || mode === "travel") return; toggleDm(false);
