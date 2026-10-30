@@ -666,6 +666,17 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 /* a spell cast inside the pen: the ward drinks it — one hard flash, then back to breathing */
 .ward.flare .glow,.ward.flare .lines,.ward.flare .core{animation:none;opacity:1;filter:brightness(2.6) drop-shadow(0 0 14px #c89cff)}
 .ward.flare .bloom{animation:none;opacity:4}
+/* THE BROKEN WARD (Sam, 2026-10-30: "The effect is obvious because it glows red now"). A re-cut anchor stroke scars
+   the lattice: the violet goes red and the breath runs faster and out of step, so it reads as lit-but-not-holding.
+   CSS beats the inline stroke= presentation attributes on the same paths, so no second SVG body is needed. It is
+   permanent -- there is no code anywhere that takes this class off again. */
+.ward.broken .glow{stroke:#ff3b30}
+.ward.broken .lines{stroke:#ff9a90}
+.ward.broken .core{stroke:#ff6b5a}
+.ward.broken .bloom{background:radial-gradient(circle,rgba(255,70,60,.20) 0%,rgba(230,50,40,.07) 45%,transparent 70%)}
+.ward.broken .bloom,.ward.broken .glow,.ward.broken .lines{animation-duration:2.4s}
+.ward.broken .core{animation-duration:1.9s}
+.ward.broken .rune{animation-duration:3.1s}
 .marks.still *{animation:none!important}
 .split-strip{position:absolute;left:50%;top:52px;transform:translateX(-50%);display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px;max-width:calc(100% - 32px);z-index:30;font-size:13px}
 .split-strip .lbl{color:var(--ink-dim);letter-spacing:.08em;text-transform:uppercase;font-size:11px}
@@ -1120,6 +1131,12 @@ function reportSituation(patch){
   try {
     fetch("/api/party/situation", {method: "POST", keepalive: true, headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)}).catch(() => {});
   } catch (e) {}
+  // A CUT WARD DOES NOT COME BACK. `labor_back` and `recaptured` both raise ward_active again (lib/situation.ts) —
+  // correct while the sigil is whole, wrong once it has been cut open. The row has no memory of the cut and giving
+  // it one would be a new column, so the walk, which DOES remember (state.wardBroken rides the One World sync),
+  // simply re-asserts it. ward_active is not a field a player's browser may set (WALK_FIELDS), so this goes through
+  // the event, which is.
+  if (state.wardBroken && (patch.event === "labor_back" || patch.event === "recaptured")) setTimeout(() => reportSituation({event: "ward_broken"}), 400);
 }
 function partyPresent(){
   const names = party.map(p => { try { return fname(p); } catch (e) { return null; } });
@@ -1263,7 +1280,15 @@ let actors = [], party = [], npcs = [], foes = [];
 let leader = null, trail = [];
 let mode = "load";            // explore | combat | talk | dialog | travel
 let ackZone = null;
-const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {}, props: {}, rolls: {}};
+const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {}, props: {}, rolls: {},
+  // THE PEN WARD (Sam, 2026-10-30). wardBroken: a hero re-cut an anchor stroke and the nullification is gone --
+  // for EVERY caster, not just the one who cut it. wardStudy: what each hero's Arcana check read off the sigil,
+  // by hero id (the tier, and whether they got the 20+ that unlocks Alter). wardTried: who has already tried,
+  // so a failure cannot be retried until a long rest (the manacle rule, OotA). sigilSeen: a drow has already
+  // walked into the pen and read the red scar, so the fight it starts only ever starts once.
+  // All of these ride the One World sync (owStateTick patches every key of `state`), so they hold across
+  // screens and across the session with no new column.
+  wardBroken: false, wardStudy: {}, wardTried: {}, sigilSeen: false};
 // The watch on the pen and the pen gate as the STORY has them (/api/map-stage `watch` and `gate`, written from
 // Malachar's [WATCH:] / [GATE:] tags and from his prose by the stage director). Declared up here because a plate is
 // populated before the poll below ever runs. See "the watch and the gate" further down.
@@ -2368,6 +2393,8 @@ function buildFx(slug){
 // The drow ward over the pen (house rule: no spellcasting in Velkynvelve until the party reaches the tunnels).
 const MARKS = {"node-11-slave-pen": [{type: "ward", x: 1300, y: 508, r: 84, sx: .86, sk: 7, rot: -2,
   tip: "Drow ward sigil: while it holds, no one in Velkynvelve can cast spells"}]};
+// What the sigil says on hover now: the line above while it holds, and the scar once it does not.
+const WARD_TIP_BROKEN = "Drow ward sigil, broken: the nullification is gone and the scar is red. Any drow who comes in will read it.";
 function wardBody(){
   const C = 100, P = (r, a) => [C + r * Math.cos(a), C + r * Math.sin(a)].map(v => v.toFixed(1)).join(",");
   let runes = "";
@@ -2416,6 +2443,12 @@ function buildMarks(slug){
       </g></svg>`;
     el.appendChild(g); el.appendChild(l); m.el = l;
   }
+  paintWard();
+}
+// The red scar, applied on plate entry and again the instant the ward breaks (including when the break arrives
+// from ANOTHER player's screen through the One World sync, which is why this is a repaint and not a one-shot).
+function paintWard(){
+  for (const m of MARKS[node.slug] || []){ if (!m.el) continue; m.el.classList.toggle("broken", !!state.wardBroken); }
 }
 // the ward stutters now and then: magic pushing against it
 setInterval(() => { if (!motionOn) return; for (const m of MARKS[node.slug] || []){ if (!m.el || Math.random() > .35) continue;
@@ -6194,7 +6227,10 @@ function strikeSheet(atk, sneak, att, tgt, crit){
 }
 // Wards (lib/world-ai/campaigns.ts: "Magical wards block spells cast inside pen (but not from outside)"):
 // in a warded area the Cast command is shut, and the reason is said.
-const wardsHere = () => node.wards || null;
+// ONE GATE, NOT A PARALLEL CHECK (the ward is read in exactly three places: the Cast button's label, the teleport
+// branch, and the cast branch that plays wardDrinks). Breaking the sigil flips this one function, so every one of
+// them opens at once and no new casting path had to be written.
+const wardsHere = () => (node.wards && !state.wardBroken) ? node.wards : null;
 
 // ---------- BOSS FIGHTS (Sam, 2026-10-27: Top Heroes-style bosses, 5e underneath) ----------
 // The rules — who is the boss, bloodied at half, the title, the timing — are lib/boss-fight.mjs, pasted in whole by
@@ -7839,7 +7875,8 @@ function mapCheck(a, skill, abil){
   const small = skill === "stealth" && isSmall(a); if (small) adv = 1;              // house rule: Small sneaks with advantage
   const mod = heroMod(a, skill, abil), r = d20(adv, a); return {r, mod, total: r + mod, adv, small};
 }
-const SKILL_NAME = {stealth: "Dexterity (Stealth)", perception: "Wisdom (Perception)", investigation: "Intelligence (Investigation)", nature: "Intelligence (Nature)", medicine: "Wisdom (Medicine)"};
+const SKILL_NAME = {stealth: "Dexterity (Stealth)", perception: "Wisdom (Perception)", investigation: "Intelligence (Investigation)", nature: "Intelligence (Nature)", medicine: "Wisdom (Medicine)",
+  arcana: "Intelligence (Arcana)", dexterity: "Dexterity"};
 function rollLine(k, skill){ return `${SKILL_NAME[skill]} ${k.r}${k.adv ? (k.small ? " (advantage: Small)" : " (advantage)") : ""} ${k.mod >= 0 ? "+" : "−"} ${Math.abs(k.mod)} = <b>${k.total}</b>`; }
 function nearestExit(L){ return node.zones.filter(z => !z.interact && (z.to || []).length).map(z => [z, Math.hypot(zoneCenter(z).x - L.x, zoneCenter(z).y - L.y)]).sort((x, y) => x[1] - y[1])[0]; }
 function exitName(z){ const t = SPEC[(z.to || [])[0]]; return z.label || (t && t.name) || (z.kind === "leave" ? "the way out" : "the way on"); }
@@ -7867,6 +7904,14 @@ function exploreExtras(m, o, add, who){
   const fg = fungusReach(); if (fg) x(`Harvest ${fg.name.replace(/^(A|An|The) /i, "the ")}`, "✂", ART("search-here", "search"),
     fg.harvest ? `${SKILL_NAME[fg.harvest.clean_skill] || fg.harvest.clean_skill} DC ${fg.harvest.clean_dc} to cut it clean · it comes up either way` : "it comes up easily",
     () => fungusHarvest(fg));
+  // THE WARD SIGIL (Sam, 2026-10-30): a caster within reach of the wall can read it; a 20+ read unlocks the cut.
+  if (wardReach(L) && wardCaster(L) && !state.wardBroken){
+    const seen = state.wardStudy[L.id];
+    if (!state.wardTried[L.id])
+      x("Study the ward sigil", "✦", ART("look-closer"), `Arcana ${sgn(heroMod(L, "arcana", "int"))}${wardWizard(L) ? "" : " · disadvantage: not a wizard"}`, () => studySigil());
+    if (seen && seen.tier === "seam" && wardMayCut(L))
+      x("Alter the ward sigil", "✧", ART("look-closer"), `Dexterity DC ${WARD_CUT_DC} · it will scar red, and the drow will read it`, () => openSigilCut());
+  }
   const pot = beltPotion(L); if (pot) x(`Quick drink: ${pot.name}`, "⚗", ART("quick-drink"), "from the belt", () => drinkItem(L, pot, L));
   if (party.length > 1) x(followOn ? "Wait here" : "Follow me", followOn ? "⏸" : "➜", ART(followOn ? "wait" : "follow"), followOn ? "the others stop where they are" : "the others come along behind", () => setFollow(!followOn));
   // JUMP outside a fight: the same long-jump rule the fight uses (gapOnLine; STR score with a run-up, half standing), with
@@ -8319,6 +8364,169 @@ function gateLookFilm(cue){
   if (!APP || window.parent === window || !filmsOn()) return;
   try { window.parent.postMessage({type: "aop:walk-film", cue}, location.origin); } catch (e) {}
 }
+
+// ---------- THE WARD SIGIL: READ IT, AND CUT IT (Sam, 2026-10-30) ----------
+// Sam: "there should be an option for magic user to investigate the sigil which helps identify its nature to the
+// successful role and for rolls of 20+ successfully identifying it (wizards) (high DC) may be able to disrupt the
+// ward by altering it (takes Arcana and Dexterity)".
+//
+// HOMEBREW, AND SAYING SO. Out of the Abyss gives the pen one line — it is "magically warded against casting"
+// (ch.1) — and no rule at all for reading that ward or breaking it. Every DC, tier and consequence below is
+// Claude's number on Sam's mechanic, in the same spirit as the fungus block above. Nothing here is from the book.
+//
+// WHAT SAM RULED (design of record: project doc claude/Pen_Ward_Sigil_2026-10-30.md, v4):
+//   * Study     any spellcaster, Arcana, tiered on the TOTAL. Wizards roll straight; other casters at disadvantage.
+//               One attempt each (the manacle rule: no retry until a long rest -- and the map has no long rest, so
+//               on the map it is one attempt, full stop. state.wardTried keeps the key for a future rest hook).
+//   * Alter     unlocked by a Study of 20+. Wizards, or any caster PROFICIENT in Arcana. The 20+ Study IS the
+//               Arcana step (DC 20); the second roll is Dexterity DC 15 to re-cut the stroke without smudging it.
+//   * Success   "removes the magic nullification and allows magic user to use magic" -- for EVERY caster in the pen,
+//               not just the one who cut it. One flag, wardsHere(), so every casting path opens at once.
+//   * The scar  "The effect is obvious because it glows red now." Permanent. No timer, no hiding it.
+//   * The cost  "Any drow that visits the inside of the pen will be able to identify this and this will always
+//               trigger automatic combat." Sam, same message: a red sigil and a verified stolen pen key the group
+//               refused to return are the ONLY two exceptions to the standing volleys-only rule (2026-10-25).
+//               Both run through redSigilSeen() below so a third can never be invented by accident.
+//
+// MALACHAR DOES NOT LET ANYONE WALK INTO IT BLIND. The cost is on the confirm dialog, in plain words, BEFORE the
+// Dexterity roll is made. He is cruel in voice and scrupulous in mechanics.
+//
+// WHO OWNS WHAT. The map rolls the dice and shows the sigil; the DM core owns hit points and conditions. So the
+// backlash rolls its 1d6 here and HANDS THE NUMBER to Malachar to apply, rather than writing hp locally -- the
+// walk only ever READS hp (hp_current comes down the character poll and would overwrite anything written here).
+const WARD_REACH = 190;                 // plate px at scale 1: close enough to put a hand on the wall
+const WARD_STUDY_DC = 20;               // the total that reads the seam and unlocks the cut
+const WARD_CUT_DC = 15;                 // Dexterity to re-cut the anchor stroke cleanly
+const WARD_CUT_TOOLS = /thieves|flint|iron bar|dagger|shard|stylus|chisel/i;
+function wardMark(){ return (MARKS[node.slug] || []).find(m => m.type === "ward") || null; }
+function wardReach(h){
+  const m = wardMark(); if (!m || !h || h.x == null) return null;
+  return Math.hypot(h.x - m.x, (h.y - m.y) * .8) < WARD_REACH * (node.scale || 1) ? m : null;
+}
+const wardCaster = h => { const sh = SHEETS[h.id] || {}; return !!(sh.magic || sh.caster); };
+const wardWizard = h => /wizard/i.test((SHEETS[h.id] || {}).cls || "");
+const wardArcane = h => "arcana" in ((SHEETS[h.id] || {}).skills || {});     // proficient, not merely able to roll
+const wardMayCut = h => wardWizard(h) || wardArcane(h);
+// a blade, a pick, a shard, a bar -- anything with a point. Bare hands: disadvantage.
+function wardCutTool(h){
+  const g = GEAR[h.id] || {};
+  return ((g.carried || []).concat(g.worn || [])).find(c => c && WARD_CUT_TOOLS.test(c.name || "")) || null;
+}
+// The four tiers, on the TOTAL. Each says only what that roll earns -- a 12 never learns what a 17 learns.
+const WARD_TIERS = [
+  {min: 20, key: "seam", line: "The lattice is not one seal but many, and the many hang off a handful of anchor strokes. One of them could be re-cut.",
+   tell: "reads the seam: the nullification hangs on a few anchor strokes, and a stroke can be re-cut"},
+  {min: 15, key: "lolth", line: "Drow work, and Lolth's. It is renewed by a hand that knows it — the priestess's. It is a lattice, not a seal, and a lattice has seams.",
+   tell: "names it drow abjuration keyed to Lolth, renewed by the priestess, and sees it is a lattice with seams"},
+  {min: 10, key: "wide", line: "An abjuration, cut into the living rock and anchored there. It does not stop at the bars: it lies over the whole outpost. Walking to the far wall would change nothing.",
+   tell: "reads it as an abjuration anchored in the rock that covers the whole outpost, not only the pen"},
+  {min: 0, key: "none", line: "The grooves swallow the attention. Whatever is written there does not want to be read today.",
+   tell: "learns nothing from it"}
+];
+const wardTierOf = total => WARD_TIERS.find(t => total >= t.min);
+/** The Study roll. Wizards straight, every other caster at disadvantage (Sam's §4.1). */
+function studySigil(){
+  const h = leader; if (!h || mode !== "explore") return;
+  if (state.wardBroken){ toast("It is already cut. The scar is red and it is not holding anything."); exploreKey = ""; return; }
+  if (state.wardTried[h.id]){ toast(`${fname(h)} has already read what they can off it.`); exploreKey = ""; return; }
+  const adv = wardWizard(h) ? 0 : -1;
+  const mod = heroMod(h, "arcana", "int"), r = d20(adv, h), k = {r, mod, total: r + mod, adv};
+  const tier = wardTierOf(k.total);
+  state.wardTried[h.id] = true;
+  state.wardStudy[h.id] = {tier: tier.key, total: k.total};
+  log(`${fname(h)} studies the ward sigil: ${rollLine(k, "arcana")}. <i>${esc(tier.line)}</i>`);
+  toast(tier.line, 6200);
+  askCheck(`${fname(h)} studies the ward sigil`, k, "arcana",
+    `${fname(h)} studies the drow ward sigil cut into the pen wall. Intelligence (Arcana) ${k.total}${adv < 0 ? " (disadvantage: not a wizard)" : ""}. `
+    + `On this roll they learn exactly this and no more: ${tier.tell}. Narrate only that much — do not give them the next tier up.`);
+  if (tier.key === "seam") toast(`${fname(h)} could cut it. It would scar red, and every drow who came in would read it.`, 7000);
+  exploreKey = "";
+}
+/** The cut: Sam's cost stated first, then one Dexterity roll. */
+function openSigilCut(){
+  const h = leader; if (!h || mode !== "explore" || state.wardBroken) return;
+  const tool = wardCutTool(h);
+  // showDialog puts `body` in with textContent, so this is plain text: no markup, no esc().
+  showDialog({title: "Alter the ward sigil", body:
+    `${fname(h)} has the seam. Re-cutting the anchor stroke breaks the nullification for everyone in the pen — and the sigil `
+    + `scars RED where it is cut. It stays red. Any drow who comes into the pen will read it on sight, and that is a fight, `
+    + `not a warning.\n\nDexterity DC ${WARD_CUT_DC}${tool ? ` · cutting with ${tool.name}` : " · bare-handed: disadvantage"}.`,
+    buttons: [
+      {label: "Cut it", primary: true, fn: () => cutSigil()},
+      {label: "Leave it alone", fn: () => { exploreKey = ""; }}]});
+}
+function cutSigil(){
+  const h = leader; if (!h || state.wardBroken) return;
+  const tool = wardCutTool(h), adv = tool ? 0 : -1;
+  const mod = heroMod(h, "dexterity", "dex"), r = d20(adv, h), k = {r, mod, total: r + mod, adv};
+  const by = k.total - WARD_CUT_DC;
+  log(`${fname(h)} re-cuts the anchor stroke: ${rollLine(k, "dexterity")} vs DC ${WARD_CUT_DC}.`);
+  if (by >= 0) return breakWard(h, k);
+  state.wardTried[h.id] = true;
+  if (by > -5){                                    // a smudge: nothing happens, and the sigil knows it
+    wardDrinks();
+    toast("The stroke smudges. The sigil breathes on, untouched.", 5200);
+    askCheck(`${fname(h)} tries to re-cut the ward sigil`, k, "dexterity",
+      `${fname(h)} tries to re-cut an anchor stroke on the drow ward sigil and smudges it. Dexterity ${k.total} against DC ${WARD_CUT_DC} — a near miss. `
+      + `Nothing changes: the ward still holds and still drinks every spell cast in the pen. Narrate the near miss. They cannot try this again.`);
+    return;
+  }
+  backlash(h, k);                                  // missed by 5 or more: the ward bites back
+}
+/** Backlash. The map rolls it and shows it; Malachar applies the damage and the condition (hp is his, not the map's). */
+function backlash(h, k){
+  const dmg = 1 + Math.floor(Math.random() * 6);
+  for (const m of MARKS[node.slug] || []){ if (m.el){ m.el.classList.add("flare"); setTimeout(() => m.el.classList.remove("flare"), 1400); } }
+  bank("magic/spell_fizzle", .9); bank(voxFor(h, "hit") || "creature/player_hurt", .6);
+  popText(h, `${dmg} psychic`, "#c89cff", 1.3); h.flash = now + 400; h.flashCol = "#c89cff";
+  if (hasSheet(h, "hurt")) playOnce(h, "hurt", () => setAnim(h, "idle"));
+  log(`<b>The ward bites back.</b> ${fname(h)} takes <b>${dmg} psychic damage</b> and is stunned until the end of their next turn. <i>Far off, something that was not listening is listening now.</i>`);
+  toast("The sigil flares. Something on the other side of it felt that.", 6500);
+  askCheck(`${fname(h)} is thrown back by the ward sigil`, k, "dexterity",
+    `${fname(h)} botched a re-cut of the drow ward sigil: Dexterity ${k.total} against DC ${WARD_CUT_DC}, missed by ${WARD_CUT_DC - k.total}. BACKLASH. `
+    + `Apply ${dmg} psychic damage to ${fname(h)} and stun them until the end of their next turn. The ward HOLDS — it is not broken and it is not red. `
+    + `Ilvara felt it: she knows her ward was touched, and the drow will come and SEARCH the pen. This is a search, not a volley. They cannot try this again.`);
+  reportSituation({event: "ward_touched"});
+}
+/** The ward breaks. One flag, every casting path, every screen. */
+function breakWard(h, k){
+  state.wardBroken = true;
+  state.sigilSeen = false;
+  paintWard();
+  for (const m of MARKS[node.slug] || []){ if (m.el){ m.el.classList.add("flare"); setTimeout(() => m.el.classList.remove("flare"), 1200); } }
+  bank("magic/arcane_release", .9);
+  log(`<b>${fname(h)} cuts the anchor stroke.</b> The violet goes out of the grooves and comes back RED. <i>The pen is no longer warded: every caster here has their magic back.</i>`);
+  toast("The ward is broken. The sigil burns red — and it will stay red.", 8000);
+  askCheck(`${fname(h)} cuts the ward sigil open`, k, "dexterity",
+    `${fname(h)} re-cut an anchor stroke on the drow ward sigil: Dexterity ${k.total} against DC ${WARD_CUT_DC}. IT WORKED. The nullification is GONE — `
+    + `every spellcaster in the slave pen can cast again, not only ${fname(h)}. The sigil is now scarred RED and stays that way. `
+    + `Any drow who comes into the pen will read it on sight and attack on sight. Narrate the moment the violet turns red.`);
+  reportSituation({event: "ward_broken"});
+  exploreKey = "";
+}
+// THE RED SCAR IS READ (Sam: "Any drow that visits the inside of the pen will be able to identify this and this will
+// always trigger automatic combat"). Not wired into each entrance one at a time — the labor escort, the surgeon,
+// Jorlan and the shakedown party all arrive by their own paths, and a future one would be missed. Instead this is a
+// watch on the plate: a drow standing INSIDE the pen while the sigil is red reads it, once, and the fight starts.
+// This is one of exactly TWO exceptions to volleys-only; the other is the refused stolen pen key, which gets its own
+// input below when that lane is built (it is not built yet — see the PR body).
+const DROW_READS_SIGIL = /^(drow|jorlan|ilvara|shoor|asha|liana|escort-drow|surgeon)/i;
+function drowInsidePen(){
+  return [...npcs, ...foes].find(n => n && DROW_READS_SIGIL.test(n.id) && actors.includes(n)
+    && !n.down && !n.body && !n.offStage && !n.backdrop && (n.alpha ?? 1) > .5 && !outsidePen(n));
+}
+function redSigilSeen(){
+  if (!state.wardBroken || state.sigilSeen || cur !== PEN || mode !== "explore" || timeStopped || combatBusy) return;
+  const d = drowInsidePen(); if (!d) return;
+  state.sigilSeen = true;
+  faceTo(d, {x: (wardMark() || d).x, y: (wardMark() || d).y});
+  popText(d, "!", "#ff3b30", 1.5); bank("ui/initiative_start", .5);
+  narrate(d, "The drow stops dead. The scar on the wall is red, and it is the wrong colour.");
+  log("<b>The red sigil is seen.</b> <i>There is nothing to say to this one.</i>");
+  reportSituation({event: "ward_seen"});
+  setTimeout(() => { if (mode === "explore") startCombat([d], "The ward is read — and there is nothing to say."); }, 1500);
+}
+
 function giveHelp(){ helpNext = {by: leader.id, until: now + 60000}; log(`${fname(leader)} lends a hand: the next friend's check has advantage.`); exploreKey = ""; }
 
 // ---------- FORMATION (Sam, 2026-10-27: "Party members following in a formation rather than stacking", from AFK Journey) ----------
@@ -15928,7 +16136,7 @@ stage.addEventListener("pointermove", e => {
     stage.classList.add("pointer"); return;
   }
   const mk = mode === "explore" && !hoverActor && !hoverZone ? markAt(w) : null;
-  if (mk){ tip.textContent = mk.tip; tip.className = "tip"; tip.hidden = false; tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px"; return; }
+  if (mk){ tip.textContent = mk.type === "ward" && state.wardBroken ? WARD_TIP_BROKEN : mk.tip; tip.className = "tip"; tip.hidden = false; tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px"; return; }
   if (hoverZone){
     const locked = hoverZone.kind === "gate" && !state.gateOpen;
     tip.textContent = hoverZone.interact ? `${hoverZone.interact.name}${locked ? " (locked)" : ""}` : hoverZone.to.length ? `${hoverZone.label.split(":")[0]} → ${hoverZone.to.map(nameOf).join(" / ")}${locked ? " (locked)" : ""}` : hoverZone.label;
@@ -17902,6 +18110,7 @@ function update(dt){
   if (cbt && poisonZones.length) tickPoisonZones();
   tickFootsteps();
   tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt);
+  redSigilSeen();                       // a drow inside the pen reads the red scar: the fight starts once, however they got in
   tickFungus();
   ovTick(); tickChasmWebs();
   if (camTween){
@@ -18267,6 +18476,8 @@ function owApplyState(remote, all){
     if (typeof door !== "undefined" && door.leaf) setDoor(!!state.gateOpen && !state.doorShut);
     if (balcony()) buildGrid();
   }
+  // the ward broke on someone else's screen: this one scars red too, and its Cast buttons open with it
+  if (changed.includes("wardBroken")){ try { paintWard(); } catch (e) {} exploreKey = ""; }
 }
 // --- what comes back ---
 // The version this screen has SEEN only ever comes from a world row it actually read (owReceive). Taking it from the
