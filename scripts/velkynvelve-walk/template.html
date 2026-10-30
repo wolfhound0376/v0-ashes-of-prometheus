@@ -8847,6 +8847,7 @@ function fall(t){
     if (t.ko){ popText(t, "knocked out", "#ffd166", 1.2); log(`<b>${fname(t)} is knocked out</b>: unconscious and stable at 0 HP (SRD: a stable creature regains 1 HP after 1d4 hours).`); settleGrudge(t); }
     else { const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS, t), 1400); } }
   else narrate(t, `${fname(t)} falls.`);
+  bodyRemovalNote(t);     // everyone else: the drow come for them in two guard cycles (Sam, 2026-10-30)
   buppidoRisesCheck(t);   // the one prisoner who does not stay down (Sam, 2026-10-30)
   // THE BANTER on a death: the ally who made the kill says so; else an ally or a gambler cheers; a foe sees one of its own drop
   if (cbt && t.kind === "foe"){
@@ -15289,6 +15290,56 @@ function drawGraves(){
 }
 /** The graves on this plate, nearest last — GAME OVER pushes in on the one that just went up. */
 function gravesHere(){ return (Array.isArray(state.graves) ? state.graves : []).filter(v => v && v.plate === cur); }
+// ---------- THE DROW CLEAR THE PEN ----------
+// Sam, 2026-10-30: "When someone is murdered by the drow they will eventually (two drow) drag the dead body out
+// within two guard cycles." A cycle is five minutes, which Sam set when it turned out the map had never had one.
+// The rules and the clock are lib/body-removal.mjs, pasted below.
+/*__BODY_REMOVAL__*/
+/** A prisoner dies in the pen: start their ten minutes. Heroes are never offered — their death is the table's. */
+function bodyRemovalNote(t){
+  if (!t || t.kind === "pc" || hero(t) || cur !== BODY_REMOVAL_RULES.plate) return;
+  if (bodyRemovalSkips(t.id)) return;                       // Buppido stays; buppidoRisesCheck has him
+  t.bodyDiedAt = Date.now();
+}
+let bodyRemovalBusy = false;
+/** Once a tick: is anything due, and is there a pair free to carry it? */
+function bodyRemovalTick(){
+  if (bodyRemovalBusy || mode !== "explore" || cur !== BODY_REMOVAL_RULES.plate) return;
+  const body = npcs.find(n => n.down && n.bodyDiedAt && !n.bodyTaken && !n.offStage
+    && bodyRemovalReady({id: n.id, diedAt: n.bodyDiedAt, plate: cur, nowMs: Date.now()}));
+  if (!body) return;
+  const pair = gateGuards().slice(0, BODY_REMOVAL_RULES.bearers);
+  if (pair.length < BODY_REMOVAL_RULES.bearers) return;     // nobody spare on the gate: it waits for the next tick
+  body.bodyTaken = true;
+  bodyRemovalRun(body, pair);
+}
+async function bodyRemovalRun(body, pair){
+  bodyRemovalBusy = true;
+  const R = BODY_REMOVAL_RULES, gate = gateCenter() || {x: body.x, y: body.y - 200};
+  const home = pair.map(g => ({x: g.x, y: g.y, face: g.face}));
+  log(`<b>Two drow come in for ${esc(fname(body))}.</b>`);
+  setDoor(true); sfx("door-open", .7);                      // the gate is open the whole time they are inside
+
+  // in, one to each end
+  pair.forEach((g, i) => { g.static = false; g.path = [{x: body.x + (i ? 44 : -44) * (node.scale || 1), y: body.y + 10}]; });
+  await wait(R.walkMs);
+  pair.forEach(g => { g.path = []; g.face = faceOf(body.x - g.x, body.y - g.y); });
+  await wait(R.hoistMs);
+
+  // out, with it between them. The body rides with the pair rather than walking: dragAlong moves it along the path.
+  const out = [{x: gate.x, y: gate.y}];
+  pair.forEach(g => { g.path = out.slice(); });
+  await new Promise(res => dragAlong(body, out, R.carryMs, null, res));
+  body.offStage = true; body.alpha = 0;
+  narrate(body, `${fname(body)} is carried out of the pen.`);
+  log(`<b>${esc(fname(body))}</b> is carried out through the gate. Liana's standing order is the falls.`);
+
+  // the pair go back to their posts and the gate shuts behind them
+  pair.forEach((g, i) => { g.path = [{x: home[i].x, y: home[i].y}]; g.onArrive = () => { g.face = home[i].face; g.static = true; }; });
+  await wait(R.walkMs);
+  if (!state.gateOpen){ setDoor(false); sfx("door-close", .8); }
+  bodyRemovalBusy = false;
+}
 // ---------- BUPPIDO RISES ----------
 // Sam, 2026-10-30: "If Buppido dies (since he's evil) in the pen by being shot and RIP grave shows up (just for him)
 // his body doesn't get dragged away like the rest. After a little bit one zombie comes out from the ground (the mound)
@@ -15341,7 +15392,19 @@ async function playBuppidoRises(t){
   buppidoRisesAudience();
   await wait(R.surpriseMs);
 
-  startCombat([z], "something has climbed out of Buppido's grave");
+  // WHY THIS FIGHT IS NOT A SWARM (Sam, 2026-10-30: "There are a lot of prisoners that can all attack because they
+  // will have the initiative. They may be able to kill him before he attacks.") He is right, and the first build of
+  // this was wrong: four prisoners carry real blocks and fight as allies (ALLY_SHEETS: Ront, Eldeth, Derendil,
+  // Sarith), the zombie is AC 8 so nearly everything lands, and its initiative is -2 so it acts last. Nine attackers
+  // put it down before it ever swung. Two corrections, both of them things the fight already understood:
+  //   SURPRISED: it came out of the ground. Nobody at that table expected it, so nobody acts on the first turn
+  //     (SRD 5.1: a surprised creature "can't move or take an action on its first turn of the combat"), which with a
+  //     -2 initiative is what buys it the round of being the only thing moving.
+  //   NO ALLIES: a dwarf, an orc, a quaggoth and a drow will all swing at a guard. None of them swings at a corpse
+  //     that just stood up — they run, like every other bystander in the pen (Sam's bystander ruling, 2026-10-28),
+  //     and the gate is locked. That is the difference between nine attackers and the party on its own.
+  startCombat([z], "something has climbed out of Buppido's grave",
+              {noAllies: true, surprised: [...party, ...npcs.filter(n => actors.includes(n) && n !== z)]});
 }
 /** The horror cue. The engine already scores anything undead as `scary`; this just starts it before initiative does. */
 function buppidoRisesMusic(){ try { pickCombatTrack("scary"); setTrack("combat"); } catch (e) {} }
@@ -16032,6 +16095,7 @@ let timeStopped = false, pausedMs = 0;
 function frame(t){
   const raw = Math.min(50, t - lastT); lastT = t;
   gameOverTick();
+  bodyRemovalTick();   // a murdered prisoner goes out two guard cycles later (Sam, 2026-10-30)
   if (timeStopped && mode !== "load"){ pausedMs += raw; draw(); updateOverlay(); tickMusic(raw / 1000); requestAnimationFrame(frame); return; }
   if (!cbt && quickTimeout) setQuick(false, true);                                     // a fight that ended some other way never keeps the fast clock
   if (t < hitstopUntil && mode === "combat" && !(cbt && cbt.quick)){ pausedMs += raw; draw(); updateOverlay(); requestAnimationFrame(frame); return; }   // hit-stop: the world holds for a few frames on a blow
