@@ -8,33 +8,68 @@
 // player_initiated look, exactly like the dashboard's look-around chip.
 //
 // A closed list: the map names a moment, it never picks film.
+//
+// THE LOOK MUST BE EARNED (Sam, 2026-10-30). The pen gate's two looks used to play their film whatever the hero
+// rolled, so a 3 on Investigation still bought the sweeping view of the outpost. Now the map sends the check's
+// total with the cue and `dc` below decides: short of it, nothing is asked for and nothing plays — the hero just
+// gets Malachar's answer to a poor look. Nothing is spent on a failure, because the fetch never happens: no
+// cinematic_views row is written, so the film is still there the next time they come to the bars and look better.
+// A cue with `dc: null` is not a check at all (a discovery the map has already adjudicated) and always asks.
 
 export const PEN_LOCATION = "Scene_1_Velkynvelve (slave pen)"
 
-type WalkFilm = { kind: "action" | "environment"; state: string | null; scope: "solo" | "party"; location: string }
+/**
+ * Intelligence (Investigation) to earn a look through the pen bars. CLAUDE'S HOUSE NUMBER, not Sam's: an easy
+ * look at a place nobody is hiding, so most heroes clear it and a bad roll is a bad roll, not a locked door.
+ */
+export const GATE_LOOK_DC = 10
+
+type WalkFilm = {
+  kind: "action" | "environment"
+  state: string | null
+  scope: "solo" | "party"
+  location: string
+  /** The check the hero must meet for this film to be asked for at all. null = no check; the cue always asks. */
+  dc: number | null
+}
 
 export const WALK_FILMS = {
   /** The outpost beyond the bars — the pen's establishing film (what the dashboard's look-around chip rolls). */
-  "look-around": { kind: "environment", state: null, scope: "party", location: PEN_LOCATION },
+  "look-around": { kind: "environment", state: null, scope: "party", location: PEN_LOCATION, dc: GATE_LOOK_DC },
   /** Counting the guards through the bars — Fifi's own film on her seat, the general one for everyone else. */
-  "count-guards": { kind: "action", state: "count-guards", scope: "solo", location: PEN_LOCATION },
+  "count-guards": { kind: "action", state: "count-guards", scope: "solo", location: PEN_LOCATION, dc: GATE_LOOK_DC },
   // THE PEN FUNGI (Sam, 2026-10-30): the first time a character names a USEFUL mushroom, a short silent film of
   // that mushroom. Solo, because it is that character's discovery and the line over it is spoken in their own
   // voice (the map lays it on; the clip carries no audio). The bonecap has no cue on purpose — it is the trap,
   // and a discovery film over it would announce itself.
-  "fungus-ormu-moss": { kind: "action", state: "fungus-ormu-moss", scope: "solo", location: PEN_LOCATION },
-  "fungus-timmask": { kind: "action", state: "fungus-timmask", scope: "solo", location: PEN_LOCATION },
-  "fungus-waterorb": { kind: "action", state: "fungus-waterorb", scope: "solo", location: PEN_LOCATION },
+  // No dc: the map has already adjudicated the identification check before it sends one of these, so the cue is
+  // a discovery being reported, not a look being attempted. The gate's two looks are the ones a roll decides.
+  "fungus-ormu-moss": { kind: "action", state: "fungus-ormu-moss", scope: "solo", location: PEN_LOCATION, dc: null },
+  "fungus-timmask": { kind: "action", state: "fungus-timmask", scope: "solo", location: PEN_LOCATION, dc: null },
+  "fungus-waterorb": { kind: "action", state: "fungus-waterorb", scope: "solo", location: PEN_LOCATION, dc: null },
 } as const satisfies Record<string, WalkFilm>
 
 export type WalkFilmCue = keyof typeof WALK_FILMS
 
-/** Read a message from the map's frame. Anything but a known cue is null. The caller checks origin and source. */
-export function parseWalkFilm(data: unknown): WalkFilmCue | null {
+/**
+ * Read a message from the map's frame. Anything but a known cue is null. The caller checks origin and source.
+ * `total` is the check the hero rolled for this look, when the cue is one that takes a check; an older map that
+ * sends no total reads as null, and a cue that wants a check then fails earned() rather than playing unearned.
+ */
+export function parseWalkFilm(data: unknown): { cue: WalkFilmCue; total: number | null } | null {
   if (!data || typeof data !== "object") return null
   const m = data as Record<string, unknown>
   if (m.type !== "aop:walk-film" || typeof m.cue !== "string") return null
-  return Object.prototype.hasOwnProperty.call(WALK_FILMS, m.cue) ? (m.cue as WalkFilmCue) : null
+  if (!Object.prototype.hasOwnProperty.call(WALK_FILMS, m.cue)) return null
+  const total = typeof m.total === "number" && Number.isFinite(m.total) ? m.total : null
+  return { cue: m.cue as WalkFilmCue, total }
+}
+
+/** Did the roll earn the film? A cue with no DC always has; a cue with one needs a total that meets it. */
+export function filmEarned(cue: WalkFilmCue, total: number | null): boolean {
+  const dc = WALK_FILMS[cue].dc
+  if (dc === null) return true
+  return total !== null && total >= dc
 }
 
 /** The /api/cinematics query for a cue, as the seated character (or none, for an unseated window). */
