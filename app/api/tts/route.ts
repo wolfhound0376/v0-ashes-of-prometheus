@@ -3,7 +3,7 @@ import { TTS_MODEL, TTS_FALLBACK_MODEL, settingsFor, shouldRetryOnFallback } fro
 
 export async function POST(request: NextRequest) {
   try {
-    const { text, voice = "onyx" } = await request.json()
+    const { text, voice = "onyx", speed } = await request.json()
 
     if (!text) {
       return NextResponse.json({ error: "No text provided" }, { status: 400 })
@@ -24,11 +24,17 @@ export async function POST(request: NextRequest) {
 
     const voiceId = voiceIds[voice] || voiceIds.onyx
 
+    // `speed` is optional and clamped to ElevenLabs' accepted band. The walk's
+    // narration strip sends it (see the narration block in the walk template):
+    // the lich voice reads scene narration too slowly at its natural tempo.
     const settings = {
       stability: 0.5,
       similarity_boost: 0.75,
       style: voice === "onyx" ? 0.3 : 0.0,
       use_speaker_boost: true,
+      ...(typeof speed === "number" && Number.isFinite(speed)
+        ? { speed: Math.min(1.2, Math.max(0.7, speed)) }
+        : {}),
     }
 
     // Ask for v4; drop to the proven model if this account cannot use it.
