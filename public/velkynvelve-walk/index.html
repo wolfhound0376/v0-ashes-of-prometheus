@@ -7839,7 +7839,7 @@ function mapCheck(a, skill, abil){
   const small = skill === "stealth" && isSmall(a); if (small) adv = 1;              // house rule: Small sneaks with advantage
   const mod = heroMod(a, skill, abil), r = d20(adv, a); return {r, mod, total: r + mod, adv, small};
 }
-const SKILL_NAME = {stealth: "Dexterity (Stealth)", perception: "Wisdom (Perception)", investigation: "Intelligence (Investigation)"};
+const SKILL_NAME = {stealth: "Dexterity (Stealth)", perception: "Wisdom (Perception)", investigation: "Intelligence (Investigation)", nature: "Intelligence (Nature)", medicine: "Wisdom (Medicine)"};
 function rollLine(k, skill){ return `${SKILL_NAME[skill]} ${k.r}${k.adv ? (k.small ? " (advantage: Small)" : " (advantage)") : ""} ${k.mod >= 0 ? "+" : "−"} ${Math.abs(k.mod)} = <b>${k.total}</b>`; }
 function nearestExit(L){ return node.zones.filter(z => !z.interact && (z.to || []).length).map(z => [z, Math.hypot(zoneCenter(z).x - L.x, zoneCenter(z).y - L.y)]).sort((x, y) => x[1] - y[1])[0]; }
 function exitName(z){ const t = SPEC[(z.to || [])[0]]; return z.label || (t && t.name) || (z.kind === "leave" ? "the way out" : "the way on"); }
@@ -8128,6 +8128,7 @@ function askCheck(what, k, skill, text){
   exploreKey = "";
 }
 function searchHere(){
+  fungusSearch();                                     // anything growing in reach gets its own Nature roll (pen fungi)
   const k = mapCheck(leader, "perception", "wis");
   log(`${fname(leader)} searches ${esc(node.name)}: ${rollLine(k, "perception")}.`);
   askCheck(`${fname(leader)} searches ${node.name}`, k, "perception", `${fname(leader)} searches ${node.name} carefully. Wisdom (Perception) ${k.total}${k.adv ? " (with help)" : ""}. What do they find?`);
@@ -8141,6 +8142,107 @@ function lookCloser(what){
   const k = mapCheck(leader, "investigation", "int");
   log(`${fname(leader)} studies ${esc(what)}: ${rollLine(k, "investigation")}.`);
   askCheck(`${fname(leader)} looks closer at ${what}`, k, "investigation", `${fname(leader)} looks closely at ${what}. Intelligence (Investigation) ${k.total}${k.adv ? " (with help)" : ""}. What do they notice?`);
+}
+// ---------- PEN FUNGI: what grows in the corners, and who can name it ----------
+// Sam, 2026-10-30: mushrooms in the pen corners that "only a successful insight check when passing (passive) or
+// during the search will help you identify", one of them poisonous, all harvestable "even if you really can't make
+// the potion in the pen". Which mushrooms is not a judgement call: lib/alchemy.ts already names the reagents, and
+// the pen deliberately holds only part of each list (ormu + waterorb of the four a potion of healing needs; timmask
+// of the two drow poison needs — the spider glands come off a giant spider). So a hero can fill their pockets here
+// and still not brew anything until they are out, which is what Sam asked for.
+//
+// CLAUDE CHANGED THE SKILL, AND SAYS SO. Sam said Insight. Insight reads a creature's intentions (SRD, Using Ability
+// Scores) and cannot tell bonecap from supper, and this campaign has a history of invented mechanics reaching the
+// table. The MECHANIC is Sam's and is unchanged — passive while walking past, rolled on a Search. Only the skill
+// moved: Intelligence (Nature), with Wisdom (Medicine), a Herbalism Kit, or a Poisoner's Kit for the timmask, as the
+// substitutes any 5e table would allow. Every DC is Claude's house number; story.json carries that in each _src.
+//
+// ROLLS ARE NEVER DIALOGUE (Sam, 2026-10-26): the bubble carries the spoken line only, the numbers go to the log.
+const FUNGUS_LINE = "Curious, what do we have here?";
+const FUNGUS_NEAR = 170;              // plate px at scale 1: close enough to look down at it on the way past
+const FUNGUS_ABIL = {nature: "int", medicine: "wis"};
+function fungusSpots(){ return (node.loot || []).filter(l => l && l.identify); }
+function fungusKey(h, l){ return h.id + ":" + l.id; }
+/** Tool proficiency, tolerant of the sheet carrying tools as a list or as an object. */
+function hasKitNamed(h, name){
+  const t = (SHEETS[h.id] || {}).tools; if (!t) return false;
+  const list = Array.isArray(t) ? t : Object.values(t);
+  return list.some(v => typeof v === "string" && v.toLowerCase().includes(name));
+}
+/** The best modifier this hero can bring: the named skill, any allowed substitute skill, or a kit at proficiency. */
+function fungusMod(h, id){
+  const skills = [id.skill, ...(id.alt || [])].filter(s => FUNGUS_ABIL[s]);
+  let best = -99;
+  for (const s of skills) best = Math.max(best, heroMod(h, s, FUNGUS_ABIL[s]));
+  // A kit stands in for the skill at proficiency. SHEETS carries no proficiency bonus, so derive it from the
+  // level the way SRD 5.1 does (2 at 1-4, +1 every four levels) rather than assuming +2 and quietly shorting
+  // anyone above level 4.
+  const kits = {"herbalism-kit": "herbalism", "poisoners-kit": "poisoner"};
+  for (const k of (id.alt || [])) if (kits[k] && hasKitNamed(h, kits[k])){
+    const sh = SHEETS[h.id] || {}, pb = 2 + Math.floor(((sh.level || 1) - 1) / 4);
+    best = Math.max(best, pb + abilMod(sh, "int"));
+  }
+  return best === -99 ? abilMod(SHEETS[h.id] || {}, "int") : best;
+}
+function fungusIsKnown(h, l){ state.fungusKnown = state.fungusKnown || {}; return !!state.fungusKnown[fungusKey(h, l)]; }
+/** Mark it named, say the line in the hero's own voice, and ask for the discovery film the first time. */
+function fungusLearn(h, l){
+  state.fungusKnown = state.fungusKnown || {};
+  if (state.fungusKnown[fungusKey(h, l)]) return;
+  state.fungusKnown[fungusKey(h, l)] = true;
+  log(`${fname(h)} knows it: <em>${esc(l.identify.known)}</em>`);
+  if (!l.identify.useful) return;                    // the bonecap is a trap; it must not announce itself
+  bark(h, FUNGUS_LINE, 4200, {voice: true, talk: true});
+  fungusFilm(h, l);
+}
+// THE DISCOVERY FILM (Sam, 2026-10-30): the first time a character names something useful, a short film of that
+// mushroom, with the line spoken in the identifying character's own ElevenLabs voice (Sam: "the voice should be
+// from the character that identified it") — so the film itself is silent and character-agnostic, and the voice is
+// laid over it at playback. Three clips cover every hero instead of three per hero.
+// ONCE PER CHARACTER is kept in two places and needs both: /api/cinematics refuses a clip a character has already
+// watched (cinematic_views), which stops a repeat of the SAME mushroom for good; the guard below stops a second
+// mushroom firing a second film in this session. A character who names ormu today and timmask in a later session
+// can still see a second film — flagged, not hidden; one cue for all three would fix it at the cost of the film
+// matching the mushroom, which is Sam's call.
+function fungusFilm(h, l){
+  state.fungusFilmed = state.fungusFilmed || {};
+  if (state.fungusFilmed[h.id]) return;
+  state.fungusFilmed[h.id] = true;
+  if (!APP || window.parent === window || !filmsOn()) return;
+  try { window.parent.postMessage({type: "aop:walk-film", cue: "fungus-" + l.identify.item}, location.origin); } catch (e) {}
+}
+// WALKING PAST (Sam: "a successful insight check when passing (passive)"). No roll, no prompt: 10 + the modifier
+// against the DC, once per hero per mushroom. A hero who walks past without the score simply never notices, and
+// may still find it on a Search.
+function tickFungus(){
+  if (mode !== "explore" || !leader || laborLive()) return;
+  const spots = fungusSpots(); if (!spots.length) return;
+  state.fungusPassed = state.fungusPassed || {};
+  for (const l of spots){
+    const k = fungusKey(leader, l); if (state.fungusPassed[k] || fungusIsKnown(leader, l)) continue;
+    const c = lootCenter(l); if (Math.hypot(leader.x - c.x, leader.y - c.y) > FUNGUS_NEAR * node.scale) continue;
+    state.fungusPassed[k] = true;                                     // a walk-by is offered once; a Search is the second chance
+    const passive = 10 + fungusMod(leader, l.identify);
+    if (passive >= l.identify.dc){
+      log(`${fname(leader)} glances down in passing — passive ${SKILL_NAME[l.identify.skill] || l.identify.skill} ${passive} against DC ${l.identify.dc}.`);
+      fungusLearn(leader, l);
+    }
+  }
+}
+// SEARCHING (Sam: "or during the search"). The Search action already rolls Perception for the room and hands the
+// question to Malachar; this adds the fungus roll for anything unnamed within reach, and it is a real d20, so a
+// hero who failed the walk-by can still get there.
+function fungusSearch(){
+  const out = []; if (!leader) return out;
+  for (const l of fungusSpots()){
+    if (fungusIsKnown(leader, l)) continue;
+    const c = lootCenter(l); if (Math.hypot(leader.x - c.x, leader.y - c.y) > 340 * node.scale) continue;
+    const id = l.identify, mod = fungusMod(leader, id), r = d20(0, leader), total = r + mod;
+    log(`${fname(leader)} looks over ${esc(l.name)}: ${SKILL_NAME[id.skill] || id.skill} ${r} ${mod >= 0 ? "+" : "−"} ${Math.abs(mod)} = <b>${total}</b> against DC ${id.dc}.`);
+    if (total >= id.dc){ fungusLearn(leader, l); out.push(l); }
+    else log(`<em>${esc(id.unknown)}</em>`);
+  }
+  return out;
 }
 // LOOKING AT THE PEN GATE (Sam, 2026-10-27): Look closer asks "Look around or Count the guards". Each is a filmed
 // moment, played the first time each player picks it ("at least once for each player"):
@@ -17747,6 +17849,7 @@ function update(dt){
   if (cbt && poisonZones.length) tickPoisonZones();
   tickFootsteps();
   tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt);
+  tickFungus();
   ovTick(); tickChasmWebs();
   if (camTween){
     const k = Math.min(1, (now - camTween.t0) / camTween.ms), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
