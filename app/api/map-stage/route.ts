@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server"
+import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { jorlanOnDuty, readStage } from "@/lib/stage-roster"
+import { applyStageEvents, jorlanOnDuty, readStage, watchWriteEvents } from "@/lib/stage-roster"
+import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { readSeated } from "@/lib/seats"
 import { WALK_SHEET_COLUMNS, walkSheetFromRow, type WalkSheet } from "@/lib/walk-sheet"
 import { loadNpcLanguages } from "@/lib/npc-languages"
@@ -27,8 +28,57 @@ import { loadNpcLanguages } from "@/lib/npc-languages"
 // The map has read both since 2026-10-25 (followWatch / followGate) but this route never sent them, so no change of
 // watch, unattended post or story-opened gate ever reached it. `jorlanOnDuty` says whether Jorlan has come on the
 // watch yet (Sam, 2026-10-26: he arrives with the 2nd or 3rd rotation, not at the start); `rotations` is the count.
+//
+// POST — the DM changes the watch or the gate from the map (2026-10-30).
+//
+// Until now the ONLY way the watch could change was a [WATCH:] tag in Malachar's prose. The map's own DM button
+// ("Story: the watch changes") called a local `fakeWatch()` that set `storyWatch` in that one browser and played the
+// hand-over there — invisible to every other seat, and, because it never reached the server, it never incremented
+// `rotations`. Measured on the live game 2026-10-30: `watch: null`, `rotations: 0` — the watch had never changed in
+// the whole run, so Jorlan (who comes on with the 2nd or 3rd rotation) could never arrive, and neither could anything
+// else counted in rotations. This POST is that missing write path: one DM press, one real change, every seat agrees.
+//
+// DM only, by the same `x-dm-key` the labor route uses. Players do not move the watch — the drow do.
 
 export const dynamic = "force-dynamic"
+
+function isDm(req: NextRequest): boolean {
+  const required = process.env.DM_ACCESS_CODE
+  return !!required && safeEquals(normalizeCode(req.headers.get("x-dm-key") ?? ""), normalizeCode(required))
+}
+
+/**
+ * The body a map sends: `{ watch: "changing" }`, `{ gate: "open" }`, or both. The words are run through the same
+ * `watchStateOf` / `gateStateOf` vocabulary Malachar's tags use, so the button and the prose cannot drift apart —
+ * an unknown word is refused rather than guessed at.
+ */
+export async function POST(req: NextRequest) {
+  if (!isDm(req)) return NextResponse.json({ error: "DM key required" }, { status: 403 })
+
+  let body: unknown
+  try { body = await req.json() } catch { return NextResponse.json({ error: "bad JSON" }, { status: 400 }) }
+
+  const { events, error } = watchWriteEvents(body)
+  if (!events) return NextResponse.json({ error }, { status: 400 })
+
+  try {
+    const admin = createAdminClient()
+    await applyStageEvents(admin, events)
+    // Read back rather than trusting the write: the caller wants to know whether this is the rotation that
+    // brought Jorlan on, and `rotations`/`jorlanAt` are decided inside applyEventsTo, not here.
+    const stage = await readStage(admin)
+    return NextResponse.json({
+      ok: true,
+      watch: stage.watch ?? null,
+      gate: stage.gate ?? null,
+      rotations: stage.rotations ?? 0,
+      jorlanOnDuty: jorlanOnDuty(stage),
+      updatedAt: stage.updatedAt,
+    })
+  } catch (e) {
+    return NextResponse.json({ error: String(e) }, { status: 500 })
+  }
+}
 
 export async function GET() {
   try {

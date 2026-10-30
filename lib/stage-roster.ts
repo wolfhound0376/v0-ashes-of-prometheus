@@ -147,6 +147,32 @@ export function watchAndGateTags(text: string): StageEvent[] {
   return out
 }
 
+/**
+ * A DM map's `POST /api/map-stage` body → the stage events it asks for, or the reason it is refused (2026-10-30).
+ *
+ * Pure, so the vocabulary the DM button speaks is tested in one place and is exactly the vocabulary Malachar's
+ * [WATCH:] / [GATE:] tags speak — `watchStateOf` / `gateStateOf`, the same functions. The button and the prose
+ * cannot drift apart, and an unrecognised word is refused rather than guessed at, the same way a tag is dropped
+ * rather than guessed at.
+ */
+export function watchWriteEvents(body: unknown): { events: StageEvent[]; error: null } | { events: null; error: string } {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return { events: null, error: "body must be an object" }
+  const b = body as { watch?: unknown; gate?: unknown }
+  const events: StageEvent[] = []
+  if (typeof b.watch === "string") {
+    const state = watchStateOf(b.watch)
+    if (!state) return { events: null, error: `unknown watch state: ${b.watch}` }
+    events.push({ kind: "watch", state })
+  }
+  if (typeof b.gate === "string") {
+    const state = gateStateOf(b.gate)
+    if (!state) return { events: null, error: `unknown gate state: ${b.gate}` }
+    events.push({ kind: "gate", state })
+  }
+  if (!events.length) return { events: null, error: "nothing to change: send watch and/or gate" }
+  return { events, error: null }
+}
+
 /** "inside the pen", "through the bars", "in the cell" → inside the party's space; "bridge", "outside", "beyond the gate" → not. */
 export function isInsideWording(where: string): boolean {
   const w = where.toLowerCase()
