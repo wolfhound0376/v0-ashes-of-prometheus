@@ -11,18 +11,18 @@
   ],
   "ppu": 102,
   "animations": {
+    "attack": {
+      "sheet": "attack.png",
+      "frames": 7,
+      "fps": 12,
+      "loop": false,
+      "hit": 0.75
+    },
     "walk": {
       "sheet": "walk.png",
       "frames": 8,
       "fps": 10,
       "loop": true
-    },
-    "attack": {
-      "sheet": "attack.png",
-      "frames": 6,
-      "fps": 12,
-      "loop": false,
-      "hit": 0.75
     },
     "idle": {
       "sheet": "idle.png",
