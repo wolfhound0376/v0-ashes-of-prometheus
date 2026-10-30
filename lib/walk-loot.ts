@@ -186,6 +186,11 @@ export const BODY_KIT: Record<string, LootEntry[]> = {
   shoor: ELITE_KIT, jorlan: ELITE_KIT,
   ilvara: [{ slug: "scourge", qty: 1 }, { slug: "scale-mail", qty: 1 }],
   ...CREATURE_PARTS,
+  // THE THING OUT OF BUPPIDO'S GRAVE (Sam, 2026-10-30): "the only loot that pops out of the body ... the Scarab of
+  // Protection." One item and nothing else — no carcass parts, no scraps. It is listed here rather than in
+  // CREATURE_PARTS because it is not a part of the zombie: it is what Buppido was carrying, and it went into the
+  // ground with him. Very rare, attunement, 12 charges (`items` row `scarab-of-protection`, inserted 2026-10-30).
+  "zombie-rotting": [{ slug: "scarab-of-protection", qty: 1, note: "still closed in its fist" }],
 }
 
 // WHAT SURVIVED THE FIGHT (Sam, 2026-10-27: "unless it's damaged so you can make this part of the roll"; then, the same

@@ -13,6 +13,7 @@ Inputs, all in this folder:
                  /*__GATE_WATCH__*/ is lib/gate-watch.mjs pasted in whole (see gate_rules): the pen gate warning's clock
                  /*__SURRENDER__*/ is lib/surrender.mjs pasted in whole (see surrender_rules): the surrender's victim, beating and lines
                  /*__GAME_OVER__*/ is lib/game-over.mjs pasted in whole (see game_over_rules): when the game is over and what follows
+                 /*__BUPPIDO_RISES__*/ is lib/buppido-rises.mjs pasted in whole (see buppido_rises_rules): the thing out of Buppido's grave
                  /*__WATCH_THE_MAP__*/ is lib/watch-the-map.mjs pasted in whole (see watch_the_map_rules): the cue that pulls a dashboard here
                  /*__ITEM_LORE__*/ is lib/item-lore.mjs pasted in whole (see item_lore_rules): the loot card's checks
   spec.json      per-plate walk floors, obstacles, exits, hazards, NPC spots, painted masks (built by spec.py from spec.py + masks.json); _handoffs = the cavern
@@ -231,6 +232,14 @@ def game_over_rules(root):
     return re.sub(r'^export ', '', src, flags=re.M)
 
 
+def buppido_rises_rules(root):
+    """lib/buppido-rises.mjs (Sam, 2026-10-30: Buppido dies in the pen, his body stays, a zombie climbs out of his
+    grave and the guards watch), pasted whole minus `export`, like game_over_rules. The map and
+    lib/buppido-rises.test.ts read the SAME rule and lines."""
+    src = open(os.path.join(root, 'lib', 'buppido-rises.mjs'), encoding='utf-8').read()
+    return re.sub(r'^export ', '', src, flags=re.M)
+
+
 def watch_the_map_rules(root):
     """lib/watch-the-map.mjs (Sam, 2026-10-30: a dynamic action sequence or an NPC interrupting you sends the screen
     to the pixel map), pasted whole minus `export`, like game_over_rules. The map raises the cue, the dashboard
@@ -315,7 +324,7 @@ N = ['ront', 'eldeth', 'derendil', 'sarith', 'buppido', 'jimjar', 'topsy', 'turv
 # Liana, the drow surgeon (The Drow Surgeon, Sam 2026-10-25): baked once her sheets are in the repo; until then the page
 # dresses her in the female guard's sheets (lianaSprite in the template)
 if os.path.exists(os.path.join(SPR, 'liana', 'sprite.json')): N.append('liana')
-F = ['quaggoth', 'giant-spider', 'ghost-male', 'drow-elite-warrior', 'ilvara', 'shoor', 'asha', 'drow-lizard-rider']   # drow-lizard-rider: the mounted guard on the cliff below the lift (Sam, 2026-10-26); ghost-male: the bhut under Old Thessaly (Sam, 2026-10-24); the officers: Sam's playtest, 2026-10-24 (shoor and asha have idle sheets only)
+F = ['quaggoth', 'giant-spider', 'ghost-male', 'drow-elite-warrior', 'ilvara', 'shoor', 'asha', 'drow-lizard-rider', 'zombie-rotting']   # drow-lizard-rider: the mounted guard on the cliff below the lift (Sam, 2026-10-26); ghost-male: the bhut under Old Thessaly (Sam, 2026-10-24); the officers: Sam's playtest, 2026-10-24 (shoor and asha have idle sheets only); zombie-rotting: the thing out of Buppido's grave (Sam, 2026-10-30) — it alone also needs its `emerge` sheet, the climb out of the ground
 V = ['giant-rat']  # vermin: set dressing, idle sheet only
 # Hard Labor's station props (lib/labor-walk.mjs STATION_PROPS): PixelLab objects, one idle frame each
 LP = sorted(d for d in os.listdir(SPR) if d.startswith('labor-') and os.path.exists(os.path.join(SPR, d, 'sprite.json')))
@@ -327,6 +336,7 @@ for i in P + list(GARB.values()) + N + F + V + LP:
     # page). A slug whose sprite has no jump.png is filtered out on the next line and falls
     # back to the walk sheet in the air, so asking for it early costs nothing.
     sh = ['idle', 'walk'] + (['attack', 'sit', 'eat', 'sleep', 'hurt', 'dead', 'cast', 'jump', 'shoot'] if i in PG else []) + (['attack', 'dodge', 'hurt', 'dead', 'jump', 'rage', 'curse'] if i in F else [])
+    if i == 'zombie-rotting': sh = sh + ['emerge']   # the climb out of the mound (Sam, 2026-10-30); already drawn, 21 frames at 12 fps
     # the four allies fight beside the party (Sam, 2026-10-15), so they need their combat sheets too:
     # without 'attack' a swing has no hit frame and the roll never happens
     if i in ['ront', 'eldeth', 'derendil', 'sarith']: sh += ['sit', 'eat', 'sleep', 'attack', 'hurt', 'dead', 'dodge']
@@ -399,7 +409,7 @@ for k, n in spec.items():
 fx = open(os.path.join(HERE, 'fx.json')).read()
 t = open(os.path.join(HERE, 'template.html')).read()
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__TRAITS__*/', traits_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
-      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__SURRENDER__*/', surrender_rules(ROOT)).replace('/*__GAME_OVER__*/', game_over_rules(ROOT)).replace('/*__WATCH_THE_MAP__*/', watch_the_map_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
+      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__SURRENDER__*/', surrender_rules(ROOT)).replace('/*__GAME_OVER__*/', game_over_rules(ROOT)).replace('/*__BUPPIDO_RISES__*/', buppido_rises_rules(ROOT)).replace('/*__WATCH_THE_MAP__*/', watch_the_map_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))
