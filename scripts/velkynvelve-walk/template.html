@@ -7015,8 +7015,8 @@ function exploreExtras(m, o, add, who){
   // standing rogue button any more. It appears only while the party is sneaking together, for whoever leads; taking it
   // splits the leader off (they keep the Stealth they rolled) and the others wait where they stand.
   if (sneak && !sneak.scout && followOn && party.length > 1) x("Scout alone", "➶", ART("scout"), "slip away from the group; the others wait", () => scoutAlone());
-  const fg = fungusReach(); if (fg) x(`Harvest ${fg.name.replace(/^(A|An|The) /i, "the ")}`, "✂", ART("search-here", "search"),
-    fg.harvest ? `${SKILL_NAME[fg.harvest.clean_skill] || fg.harvest.clean_skill} DC ${fg.harvest.clean_dc} to cut it clean · it comes up either way` : "it comes up easily",
+  const fg = fungusReach(); if (fg && fungusTriesLeft(L, fg) > 0) x(`Harvest ${fg.name.replace(/^(A|An|The) /i, "the ")}`, "✂", ART("search-here", "search"),
+    fg.harvest ? `${SKILL_NAME[fg.harvest.skill] || fg.harvest.skill} DC ${fg.harvest.dc} · ${fungusTriesLeft(L, fg)} ${fungusTriesLeft(L, fg) === 1 ? "try" : "tries"} left` : "it comes up easily",
     () => fungusHarvest(fg));
   // THE WARD SIGIL (Sam, 2026-10-30): a caster within reach of the wall can read it; a 20+ read unlocks the cut.
   if (wardReach(L) && wardCaster(L) && !state.wardBroken){
@@ -7424,15 +7424,44 @@ function fungusReach(){
     .map(l => ({l, d: Math.hypot(leader.x - lootCenter(l).x, leader.y - lootCenter(l).y)}))
     .filter(o => o.d < 200 * node.scale).sort((a, b) => a.d - b.d).map(o => o.l)[0] || null;
 }
+// TAKING IT UP (Sam, 2026-10-30: "The mushrooms if not properly identified do not prompt the cinematic nor allow
+// you to harvest it. Harvesting successfully requires a DC check (may retry at least three times per mushroom).
+// This should populate the correct item harvested.")
+//   NAME IT FIRST. fungusReach only offers mushrooms THIS hero has already identified, so an unnamed one has no
+//   Harvest button at all — the same gate that holds the film back holds the harvest back.
+//   THE CHECK IS PER MUSHROOM, PER HERO, three tries. A failure costs the try, not the specimen; the third
+//   failure ruins it for that hero and the Harvest button goes away.
+//   THE ITEM comes from the loot container, which is keyed to this spot id in lib/walk-loot.ts, and every slug
+//   there is a reagent the alchemy module actually names (ormu-moss x2 and waterorb are what a potion of healing
+//   wants; timmask is the fungal half of drow poison). Nothing is handed over on a failure.
+//   THE TIMMASK still vents on a failure (OotA Encounters p.28) — that is what its failure looks like.
+function fungusTriesKey(h, l){ return fungusKey(h, l); }
+function fungusTriesLeft(h, l){
+  const hv = l.harvest; if (!hv) return 1;
+  state.fungusTries = state.fungusTries || {};
+  return Math.max(0, (hv.attempts || 3) - (state.fungusTries[fungusTriesKey(h, l)] || 0));
+}
 function fungusHarvest(l){
   const h = leader, hv = l.harvest;
-  if (hv){
-    const mod = fungusMod(h, {skill: hv.clean_skill, alt: hv.clean_alt || []}), r = d20(0, h), total = r + mod;
-    log(`${fname(h)} works ${esc(l.name)} loose: ${SKILL_NAME[hv.clean_skill] || hv.clean_skill} ${r} ${mod >= 0 ? "+" : "−"} ${Math.abs(mod)} = <b>${total}</b> against DC ${hv.clean_dc}.`);
-    if (total < hv.clean_dc) fungusVent(l, hv);
-    else log(`${fname(h)} cuts it at the base. Nothing stirs.`);
+  if (!h || !fungusIsKnown(h, l)) return;            // cannot take what you have not named
+  if (!hv){ openLootSpot(l); return; }               // a spot with no check defined: nothing to roll
+  const left = fungusTriesLeft(h, l);
+  if (left <= 0){ log(`<em>${esc(hv.ruined || "There is nothing usable left of it.")}</em>`); return; }
+  state.fungusTries = state.fungusTries || {};
+  const key = fungusTriesKey(h, l);
+  state.fungusTries[key] = (state.fungusTries[key] || 0) + 1;
+  const mod = fungusMod(h, {skill: hv.skill, alt: hv.alt || []}), r = d20(0, h), total = r + mod;
+  log(`${fname(h)} works ${esc(l.name)} loose: ${SKILL_NAME[hv.skill] || hv.skill} ${r} ${mod >= 0 ? "+" : "−"} ${Math.abs(mod)} = <b>${total}</b> against DC ${hv.dc}.`);
+  if (total >= hv.dc){
+    state.fungusTries[key] = hv.attempts || 3;       // done with it either way: the spot is emptied by the loot card
+    log(`${fname(h)} has it up whole.`);
+    openLootSpot(l);                                 // the container grants the catalogue item (lib/walk-loot.ts)
+    return;
   }
-  openLootSpot(l);                                   // the mushroom comes up either way
+  if (hv.vent) fungusVent(l, hv);                    // the timmask's failure IS the cloud
+  const now_left = fungusTriesLeft(h, l);
+  log(`<em>${esc(hv.fail || "It comes apart in your hands.")}</em>` + (now_left > 0 ? ` ${now_left} more ${now_left === 1 ? "try" : "tries"}.` : ""));
+  if (now_left <= 0) log(`<em>${esc(hv.ruined || "There is nothing usable left of it.")}</em>`);
 }
 function fungusVent(l, hv){
   const at = lootCenter(l), v = hv.vent || {}, dc = v.dc || 14, R = (v.radius_ft || 15) * ftPx(at);
