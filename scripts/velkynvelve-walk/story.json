@@ -71,6 +71,15 @@
         "w": 92,
         "poly": [[955, 700], [1065, 700], [1065, 795], [955, 795]],
         "text": "A cushion of green light low on the wet stone, where the mist off the chasm never dries.",
+        "harvest": {
+          "dc": 10,
+          "skill": "nature",
+          "alt": ["medicine", "herbalism-kit"],
+          "attempts": 3,
+          "fail": "The fronds tear and crumble between your fingers.",
+          "ruined": "What is left of the patch is pulp. Nothing usable comes off this wall.",
+          "_src": "Sam 2026-10-30: harvesting needs a DC check, retryable at least three times. DC, attempt count and the flavour are Claude's."
+        },
         "identify": {
           "item": "ormu-moss",
           "skill": "nature",
@@ -102,9 +111,12 @@
           "_src": "Skill and DC are Claude's house numbers (2026-10-30)."
         },
         "harvest": {
-          "clean_dc": 15,
-          "clean_skill": "nature",
-          "clean_alt": ["herbalism-kit", "poisoners-kit"],
+          "dc": 15,
+          "skill": "nature",
+          "alt": ["medicine", "herbalism-kit", "poisoners-kit"],
+          "attempts": 3,
+          "fail": "The stalk twists instead of cutting, and the cap splits.",
+          "ruined": "The cap is in shreds. Whatever was worth taking went into the air.",
           "alerts_watch": true,
           "vent": {"radius_ft": 15, "save": "con", "dc": 14, "effect": "poisoned", "_src": "OotA Encounters p.28 — the book's own numbers."},
           "_src": "Sam 2026-10-30: harvesting must be possible even though the potion cannot be brewed in the pen. That a clean cut avoids the cloud, and that a vent brings the gate watch, are Claude's house rules."
@@ -119,6 +131,15 @@
         "w": 76,
         "poly": [[2235, 900], [2335, 900], [2335, 995], [2235, 995]],
         "text": "Where the water seeps through the rock, something pale and round has swelled up fat with it.",
+        "harvest": {
+          "dc": 12,
+          "skill": "nature",
+          "alt": ["medicine", "herbalism-kit"],
+          "attempts": 3,
+          "fail": "The skin gives, and half the water runs out over your hands before you can lift it.",
+          "ruined": "The husk is spent and flat. There is no water left in it.",
+          "_src": "Sam 2026-10-30: harvesting needs a DC check, retryable at least three times. DC, attempt count and the flavour are Claude's. Higher than the moss because bursting it loses the water, which is the whole point of a waterorb."
+        },
         "identify": {
           "item": "waterorb",
           "skill": "nature",
@@ -139,6 +160,15 @@
         "w": 88,
         "poly": [[805, 1170], [915, 1170], [915, 1265], [805, 1265]],
         "text": "A clutch of pale caps has come up in the corner the chamber pots are emptied into.",
+        "harvest": {
+          "dc": 10,
+          "skill": "nature",
+          "alt": ["medicine", "herbalism-kit"],
+          "attempts": 3,
+          "fail": "The stalks snap off at the base and the caps go to powder.",
+          "ruined": "Nothing is left but white dust and a smell you will not shake.",
+          "_src": "Sam 2026-10-30: harvesting needs a DC check, retryable at least three times. DC, attempt count and the flavour are Claude's."
+        },
         "identify": {
           "item": "bonecap",
           "skill": "nature",
