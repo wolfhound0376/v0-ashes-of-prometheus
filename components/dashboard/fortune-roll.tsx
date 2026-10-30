@@ -16,7 +16,7 @@
 // determine what you start out with and Malachar narrates briefly."
 // ============================================================================
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { useDice } from "@/components/dice/dice-provider"
 import { DAYS_DIE, FORTUNE_DIE } from "@/lib/scavenged"
 
@@ -28,6 +28,8 @@ export function FortuneRoll({
   characterName,
   onNarrate,
   onDismiss,
+  autoRollMs,
+  autoDismissMs,
 }: {
   characterId: string | null
   claimToken: string | null
@@ -36,11 +38,20 @@ export function FortuneRoll({
   onNarrate: (direction: string) => void
   /** Told once the card is out of the way: already rolled this run, or dismissed after rolling. */
   onDismiss?: (rolled: boolean) => void
+  /**
+   * Never stall (Sam, 2026-10-29, /awaken "designed not to stall"): nobody presses Roll within this long →
+   * the dice roll themselves; the result card closes itself after autoDismissMs. Two failed rolls in this
+   * mode give up and dismiss without a roll, rather than looping. Unset = waits for the player, as before.
+   */
+  autoRollMs?: number
+  autoDismissMs?: number
 }) {
   const { roll } = useDice()
   const [state, setState] = useState<"unknown" | "due" | "rolling" | "done" | "dismissed">("unknown")
   const [fortune, setFortune] = useState<Fortune | null>(null)
   const [problem, setProblem] = useState<string | null>(null)
+  const failures = useRef(0)
+  const [left, setLeft] = useState<number | null>(null)
 
   // Is this character's fortune still unrolled for the run?
   useEffect(() => {
@@ -49,7 +60,8 @@ export function FortuneRoll({
     fetch(`/api/fortune-roll?characterId=${encodeURIComponent(characterId)}`, { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => { if (!live) return; if (j?.rolled){ setState("dismissed"); onDismiss?.(false) } else setState("due") })
-      .catch(() => { if (live) setState("unknown") })
+      // Unreadable: in never-stall mode offer the roll anyway (the POST is the real check); otherwise stay hidden.
+      .catch(() => { if (live) setState(autoRollMs ? "due" : "unknown") })
     return () => { live = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [characterId, claimToken])
@@ -67,7 +79,12 @@ export function FortuneRoll({
         body: JSON.stringify({ characterId, claimToken, days: days.rolls[0], d20: d20.rolls[0] }),
       })
       const j = await res.json().catch(() => null)
-      if (!res.ok || !j?.ok) { setProblem(j?.error || "The roll could not be recorded."); setState("due"); return }
+      if (!res.ok || !j?.ok) {
+        setProblem(j?.error || "The roll could not be recorded.")
+        failures.current += 1
+        if (autoRollMs && failures.current >= 2) { setState("dismissed"); onDismiss?.(false); return }
+        setState("due"); return
+      }
       const f: Fortune = j.fortune
       setFortune(f)
       setProblem(j.problem ?? null)
@@ -82,9 +99,28 @@ export function FortuneRoll({
     } catch (e) {
       console.error("[fortune] roll failed:", e)
       setProblem("The dice did not settle. Try again.")
+      failures.current += 1
+      if (autoRollMs && failures.current >= 2) { setState("dismissed"); onDismiss?.(false); return }
       setState("due")
     }
-  }, [characterId, claimToken, characterName, onNarrate, roll, state])
+  }, [characterId, claimToken, characterName, onNarrate, roll, state, autoRollMs, onDismiss])
+
+  // The clocks that keep the card from holding the table up. A visible countdown, so it never feels like a glitch.
+  const latest = useRef(doRoll)
+  latest.current = doRoll
+  useEffect(() => {
+    const ms = state === "due" ? autoRollMs : state === "done" ? autoDismissMs : undefined
+    if (!ms) { setLeft(null); return }
+    const end = Date.now() + ms
+    setLeft(Math.ceil(ms / 1000))
+    const tick = window.setInterval(() => setLeft(Math.max(0, Math.ceil((end - Date.now()) / 1000))), 500)
+    const fire = window.setTimeout(() => {
+      if (state === "due") void latest.current()
+      else { setState("dismissed"); onDismiss?.(true) }
+    }, ms)
+    return () => { window.clearInterval(tick); window.clearTimeout(fire) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, autoRollMs, autoDismissMs])
 
   if (state === "unknown" || state === "dismissed") return null
 
@@ -108,6 +144,7 @@ export function FortuneRoll({
             >
               {state === "rolling" ? "Rolling…" : "Roll d10, then d20"}
             </button>
+            {state === "due" && left != null && <p className="mt-3 text-[11px] text-stone-600">The dice roll themselves in {left}s.</p>}
           </>
         ) : fortune ? (
           <>
@@ -124,7 +161,7 @@ export function FortuneRoll({
               onClick={() => { setState("dismissed"); onDismiss?.(true) }}
               className="px-5 py-2 rounded bg-[#2a2520] border border-[#3d3428] text-stone-300 hover:text-stone-100 hover:border-stone-500 transition-colors"
             >
-              Into the dark
+              Into the dark{left != null ? ` (${left})` : ""}
             </button>
           </>
         ) : null}
