@@ -1948,8 +1948,10 @@ function draw(){
     // shadows: the body drops to about 45% with a faint shimmer, a dark veil lies over it, and the shadow on the floor
     // nearly goes. It eases in and out over a few frames, so being found reads as stepping back into view.
     const stT = hiddenNow(a) ? 1 : 0; a.st = (a.st || 0) + (stT - (a.st || 0)) * .1; if (a.st < .005) a.st = 0;
-    const veilK = 1 - a.st * (.55 - .07 * Math.sin(now / 160 + a.x * .05));
-    if (a.fall || a.fallIn || a.prop) {} else { ctx.globalAlpha = a.alpha * .45 * (1 - .7 * a.st); ctx.fillStyle = "#000";
+    // INVISIBLE (the spell): further than hidden, a shimmer of the figure, so its own player can still find it
+    const ivT = a.c && a.c.conds && a.c.conds.has("invisible") && !a.down ? 1 : 0; a.iv = (a.iv || 0) + (ivT - (a.iv || 0)) * .1; if (a.iv < .005) a.iv = 0;
+    const veilK = (1 - a.st * (.55 - .07 * Math.sin(now / 160 + a.x * .05))) * (1 - a.iv * (.74 - .1 * Math.sin(now / 140 + a.y * .03)));
+    if (a.fall || a.fallIn || a.prop) {} else { ctx.globalAlpha = a.alpha * .45 * (1 - .7 * Math.max(a.st, a.iv || 0)); ctx.fillStyle = "#000";
     ctx.beginPath(); ctx.ellipse(a.x, a.y, 26 * sc * (cw / 128), 9 * sc * (cw / 128), 0, 0, Math.PI * 2); ctx.fill(); }
     if (a === leader && mode === "explore"){
       ctx.globalAlpha = .55 + .2 * Math.sin(now / 300); ctx.strokeStyle = "#e8a24a"; ctx.lineWidth = 2 / (base * view.z);
@@ -1991,6 +1993,7 @@ function draw(){
     }
     const held = !pose && !a.climbing && heldWeapon(a);                              // what is in their hand, drawn on the sprite
     if (held && held.behind) drawHeld(a, held, sc, py, cw, fy);
+    if (!pose && a.c && a.c.images > 0 && !a.down) drawMirrorImages(a, img, f, cw, ch, dx, dy, dw, dh);   // Mirror Image: the duplicates drift about them
     if (pose === "cadaver"){                       // the species' body, lying where they fell; fades in over the fall
       const C = a.cadaver, im = cadaverImg(C.key), k = Math.min(1, (now - C.t0) / 450);
       if (im.complete && im.naturalWidth){
@@ -5860,7 +5863,7 @@ function drawFxLayer(flat){
 }
 // which sheets and sounds a spell uses, from its school (lib/spell-school-data) and damage type
 const SCHOOL_OF = {"Acid Splash": "evocation", "Produce Flame": "conjuration", "Sacred Flame": "evocation", "Cure Wounds": "abjuration", "Inflict Wounds": "necromancy", "Grease": "conjuration", "Shatter": "evocation", "Acid Arrow": "evocation", "Call Lightning": "conjuration",
-  "Web": "conjuration", "Command (grovel)": "enchantment", "Scorching Ray": "evocation", "Bane": "enchantment", "Hideous Laughter": "enchantment", "Blindness/Deafness (blind)": "transmutation", "Blindness/Deafness (deafen)": "transmutation", "False Life": "necromancy", "Heroism": "enchantment", "Aid": "abjuration", "Mage Armor": "abjuration", "Barkskin": "transmutation", "Mass Healing Word": "abjuration", "Lightning Bolt": "evocation", "Gust of Wind": "evocation", "Misty Step": "conjuration", "Hypnotic Pattern": "illusion", "True Strike": "divination", "Vampiric Touch": "necromancy", "Sanctuary": "abjuration",
+  "Web": "conjuration", "Command (grovel)": "enchantment", "Scorching Ray": "evocation", "Bane": "enchantment", "Hideous Laughter": "enchantment", "Blindness/Deafness (blind)": "transmutation", "Blindness/Deafness (deafen)": "transmutation", "False Life": "necromancy", "Heroism": "enchantment", "Aid": "abjuration", "Mage Armor": "abjuration", "Barkskin": "transmutation", "Spiritual Weapon": "evocation", "Spirit Guardians": "conjuration", "Fear": "illusion", "Hellish Rebuke": "evocation", "Mirror Image": "illusion", "Invisibility": "illusion", "Mass Healing Word": "abjuration", "Lightning Bolt": "evocation", "Gust of Wind": "evocation", "Misty Step": "conjuration", "Hypnotic Pattern": "illusion", "True Strike": "divination", "Vampiric Touch": "necromancy", "Sanctuary": "abjuration",
   "Light": "evocation", "Thaumaturgy": "transmutation", "Druidcraft": "transmutation", "Message": "transmutation", "Mending": "transmutation", "Guidance": "divination", "Resistance": "abjuration","Eldritch Blast": "evocation", "Hex": "enchantment", "Fireball": "evocation", "Burning Hands": "evocation", "Entangle": "conjuration", "Hunter's Mark": "divination", "Hold Person": "enchantment", "Cloud of Daggers": "conjuration", "Flaming Sphere": "conjuration", "Green-Flame Blade": "evocation", "Mage Hand": "conjuration", "Minor Illusion": "illusion", "Prestidigitation": "transmutation", "Dancing Lights": "evocation", "Friends": "enchantment", "Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
   "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment",
   "Stinking Cloud": "conjuration", "Cloudkill": "conjuration", "Fog Cloud": "conjuration", "Poison Spray": "necromancy"};
@@ -6615,6 +6618,37 @@ const SPELLS = {
   "Mage Armor":         {lvl: 1, kind: "buff", range: 5, cond: "mageArmor", fx: "#8fc8ff"},
   // Barkskin: 2nd-level transmutation, bonus action, touch, 1 hour (not concentration): AC 17 if it was lower.
   "Barkskin":           {lvl: 2, kind: "buff", range: 5, bonus: true, cond: "barkskin", fx: "#a07a4a"},
+  // ---------- WAVE 3a — the party's own spells (SRD 5.2.1, checked against the 2024 text 2026-10-30) ----------
+  // Spiritual Weapon: 2nd-level evocation, BONUS ACTION, 60 ft, concentration up to 1 minute (2024 made it concentration).
+  // A floating spectral weapon appears in range and makes a melee spell attack against a creature within 5 ft of it:
+  // 1d8 + your spellcasting modifier, Force. On later turns a bonus action moves it up to 20 ft and repeats the attack.
+  // Here: click a foe within 65 ft (where it can appear, plus its 5-ft reach); on later turns the menu's "Spiritual
+  // Weapon: strike" reaches a foe within 25 ft of it (the 20 it moves and the 5). It is not a spell cast, so the
+  // bonus-action spell rule does not stop it.
+  "Spiritual Weapon":   {lvl: 2, kind: "summon", range: 65, bonus: true, dmg: "1d8", addMod: true, type: "force", fx: "#ffd86a", conc: 10},
+  // Spirit Guardians: 3rd-level conjuration, action, self, concentration up to 10 minutes: a 15-ft Emanation of spirits.
+  // Creatures you designate are unaffected (here: party, allies and bystanders; only foes are hurt). An affected creature's
+  // speed is halved in it, and it makes a WIS save whenever the Emanation enters its space, it enters the Emanation, or it
+  // ends its turn there; only once per turn: 3d8 radiant (necrotic for an evil caster), half on a success.
+  "Spirit Guardians":   {lvl: 3, kind: "aura", range: 0, save: "wis", dmg: "3d8", type: "radiant", fx: "#fff1b0", conc: 100},
+  // Fear: 3rd-level illusion, action, self, 30-ft cone, concentration up to 1 minute. WIS save or it drops what it holds
+  // and is Frightened; a Frightened creature takes the Dash action and moves away by the safest route on each of its turns
+  // unless there is nowhere to move. If it ends its turn where it can't see you, it repeats the save; a success ends the
+  // spell for it. Friendly fire is on, as for every cone.
+  "Fear":               {lvl: 3, kind: "save", save: "wis", range: 30, area: 30, cone: true, selfArea: true, cond: "frightened", fx: "#b8a0d8", conc: 10},
+  // Hellish Rebuke: 1st-level evocation, REACTION when a creature you can see within 60 ft damages you. It makes a DEX save:
+  // 2d10 fire, half on a success, +1d10 per slot level above 1st. The lowest slot left is spent (a warlock's pact slots are
+  // all one level, so their level sets the dice). damage() offers it the way an attack offers Shield.
+  "Hellish Rebuke":     {lvl: 1, kind: "reaction", save: "dex", dmg: "2d10", type: "fire", fx: "#7fe04a", trigger: "offered when a foe you can see within 60 ft hurts you"},
+  // Mirror Image: 2nd-level illusion, action, self, 1 minute (NOT concentration): three illusory duplicates. Each time a
+  // creature hits you with an attack roll, roll a d6 for each duplicate left; if any is 3 or higher a duplicate is hit
+  // instead and destroyed. It ends when the three are gone. A Blinded attacker is not fooled; Blindsight and Truesight
+  // would not be either, but no sheet on the walk records senses yet. Click yourself.
+  "Mirror Image":       {lvl: 2, kind: "buff", range: 0, cond: "mirrored", fx: "#bfd0ff"},
+  // Invisibility: 2nd-level illusion, action, touch, concentration up to 1 hour: the Invisible condition (attacks against it
+  // at disadvantage, its own attacks at advantage, it can't be seen). It ends at once if the target makes an attack roll,
+  // deals damage or casts a spell.
+  "Invisibility":       {lvl: 2, kind: "buff", range: 5, cond: "invisible", fx: "#d8e4ff", conc: 600},
   // utility cantrips (SRD 5.1): the cast and Malachar's word; what they do is the story's
   "Light":              {lvl: 0, kind: "util", range: 5, fx: "#fff6c8"},
   "Thaumaturgy":        {lvl: 0, kind: "util", range: 30, fx: "#ffb35a"},
@@ -6824,7 +6858,8 @@ function attackRiders(att, atk, thrown) {
 function tintFor(a) { return a.raging || woundedFury(a.hp, a.woundedFury) ? RAGE_TINT : null }
 
 const COND_GLYPH = {baned: ["▼", "#b07ad8", "Baned: −1d4 on attack rolls and saving throws"], laughing: ["☺", "#ff9bd2", "Laughing: prone and incapacitated, can't stand · WIS save at the end of each turn and when hurt"], blinded: ["◉", "#8a8098", "Blinded: its attacks have disadvantage, attacks on it have advantage · CON save at the end of each turn"], deafened: ["◌", "#9a90a8", "Deafened: hears nothing · fails any check that needs hearing · CON save at the end of each turn"],
-  falseLife: ["♥", "#7fbf6a", "False Life: temporary hit points"], heroic: ["✪", "#ffd27a", "Heroism: immune to fear · temporary HP each turn"], aided: ["✚", "#fff3c0", "Aid: +5 hit points (maximum and current)"], mageArmor: ["⬡", "#8fc8ff", "Mage Armor: base AC 13 + DEX"], barkskin: ["❧", "#a07a4a", "Barkskin: AC at least 17"], sanctuary: ["☩", "#fff3c0", "Sanctuary: a foe must pass a WIS save to attack it or target it with a harmful spell · ends if it attacks or harms a foe"], surprised: ["!", "#ffd27a", "Surprised: no move and no action on its first turn, no reaction until that turn ends"], poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
+  falseLife: ["♥", "#7fbf6a", "False Life: temporary hit points"], heroic: ["✪", "#ffd27a", "Heroism: immune to fear · temporary HP each turn"], aided: ["✚", "#fff3c0", "Aid: +5 hit points (maximum and current)"], mageArmor: ["⬡", "#8fc8ff", "Mage Armor: base AC 13 + DEX"], barkskin: ["❧", "#a07a4a", "Barkskin: AC at least 17"], frightened: ["‼", "#b8a0d8", "Frightened: Dashes away from the one it fears on each of its turns · disadvantage on attacks while it can see them · WIS save when it ends a turn out of their sight"], invisible: ["✧", "#d8e4ff", "Invisible: attacks on it have disadvantage, its attacks have advantage · ends if it attacks, deals damage or casts a spell"], mirrored: ["❖", "#bfd0ff", "Mirror Image: illusory duplicates · a hit lands on one instead on a d6 of 3 or more per duplicate"],
+  sanctuary: ["☩", "#fff3c0", "Sanctuary: a foe must pass a WIS save to attack it or target it with a harmful spell · ends if it attacks or harms a foe"], surprised: ["!", "#ffd27a", "Surprised: no move and no action on its first turn, no reaction until that turn ends"], poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
                     shielded: ["◇", "#cfe8ff", "+2 AC"], blessed: ["✚", "#ffe9a8", "Blessed: +1d4 to attack rolls and saving throws"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], hexed: ["⛧", "#c58aff", "Hexed: the warlock's hits deal +1d6 necrotic"], marked: ["⌖", "#ff5a5a", "Hunter's Mark: the ranger's weapon hits deal +1d6"], paralyzed: ["✖", "#d8b8ff", "Paralyzed: no moves or actions; attacks have advantage, a hit within 5 ft is a critical"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
                     hidden: ["◌", "#b8c7d6", "Hidden: unseen until you attack"], prone: ["▼", "#e0b070", "Prone: melee on it has advantage, ranged disadvantage; half speed to stand"],
                     grappled: ["✊", "#e0b070", "Grappled: speed 0"], helped: ["★", "#ffe08a", "Helped: advantage on the next attack"], disengaged: ["↷", "#cfe8ff", "Disengaged: no opportunity attacks"],
@@ -7470,7 +7505,7 @@ function nextTurn(first){
   // A RAGE IS TESTED AS ITS OWNER'S TURN ENDS (SRD 5.1): "It ends early ... if your turn ends and you haven't attacked
   // a hostile creature since your last turn or taken damage since then", and after one minute. lib/rage.mjs decides.
   if (!first) netEndTurn(cbt.order[cbt.idx]);   // ending a turn in the web net (5c): DEX save or restrained
-  if (!first){ const was = cbt.order[cbt.idx]; if (was && was.c){ laughSave(was, false); blindSave(was); } }   // the saves at the end of its turn (Hideous Laughter, Blindness)
+  if (!first){ const was = cbt.order[cbt.idx]; if (was && was.c){ laughSave(was, false); blindSave(was); fearSave(was); guardianEndTurn(was); } }   // the saves at the end of its turn (Hideous Laughter, Blindness)
   if (!first){ const was = cbt.order[cbt.idx]; if (was && was.c && was.c.rage){ const r = rageAfterTurn(was.c.rage, cbt.round); if (r.ended) endRage(was, r.ended); else was.c.rage = r.rage; } }
   for (let k = 0; k < cbt.order.length; k++){
     cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0){ cbt.round++; if (cbt.round > 1) bystandersFlee(); arrowsWorkLoose(false); }   // the bystanders run as each round opens
@@ -7485,6 +7520,7 @@ function nextTurn(first){
   for (let i = clings.length - 1; i >= 0; i--) if (clings[i].by === a || !clings[i].by){ clings[i].p.then(e => { if (e) e.until = now + 350; }); clings.splice(i, 1); }
   a.c.conds.delete("dodging"); a.c.conds.delete("shieldSpell"); a.c.reactionUsed = false;
   a.c.sanctuaryPassed = null; if (a.c.conds.has("sanctuary") && cbt.round >= (a.c.sanctuaryEnd || 0)) endSanctuary(a, "the minute is up");
+  if (a.c.conds.has("mirrored") && cbt.round >= (a.c.mirrorEnd || 0)){ a.c.conds.delete("mirrored"); a.c.images = 0; popText(a, "the images fade", "#bfd0ff", .8); log(`${fname(a)}'s Mirror Image fades: the minute is up.`); }
   if (a.c.ready){ a.c.ready = null; a.c.conds.delete("readied"); }   // SRD: a readied action lasts until the start of your next turn
   renderTurns(); renderParty(); turnCall(a);
   if (a.c.conds.has("asleep") && a.c.drugged){ popText(a, "out cold", "#8fd48f"); log(`${fname(a)} lies senseless from the drow poison. Damage or a shake will wake them.`); setTimeout(nextTurn, 900); return; }
@@ -7498,6 +7534,7 @@ function nextTurn(first){
   if (newSpellsTurnStart(a)) return;
   if (a.c.surprised){ a.c.surprised = false; a.c.conds.delete("surprised"); popText(a, "surprised", "#ffd27a"); log(`${fname(a)} is caught by surprise and loses the turn.`); setTimeout(nextTurn, 900); return; }
   a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true; a.c.objFree = true;
+  guardianSlows(a);   // Spirit Guardians: half speed for a foe that starts its turn among the spirits
   if (a.c.conds.has("numbed")){ a.c.move = Math.floor(a.c.move / 2 / 5) * 5; a.c.reactionUsed = true; a.c.conds.delete("numbed"); popText(a, "numb: half speed, no reactions", "#9fd8ff", .9); }   // the bhut's bite, one round (the reaction budget is reactionUsed, reset just above)
   // Alchemist's fire (SRD 5.1): "the target takes 1d4 fire damage at the start of each of its turns"
   if (a.c.conds.has("burning")){ const d = roll("1d4").total; bank("magic/impact_fire", .6); spawnFx("fireImpact", {at: a, sq: 1.3, anchor: "mid"}); damage(a, d, "fire", false, null);
@@ -7511,6 +7548,7 @@ function nextTurn(first){
   if (a.kind === "foe" && a.c.sheet.web && !a.c.webReady){ const r = d6(); if (r >= a.c.sheet.web.recharge){ a.c.webReady = true; popText(a, "web ready", "#e8e2c8", .9); } }
   if (a.c.holyOpen && --a.c.holyOpen <= 0){ delete a.c.holyOpen; popText(a, "resistance returns", "#aaa", .8); }
   if (a.c.retching && a.kind !== "pc"){ a.c.retching = false; retchTurn(a); return; }   // Stinking Cloud: the action goes on retching
+  if (a.c.conds.has("frightened") && fearFlee(a)) return;   // Fear: it Dashes away from what it fears, and that is its turn
   if (a.kind === "foe"){ bank("ui/turn_foe", .6); foeTurn(a); return; }
   if (a.ally){ allyTurn(a); return; }
   if (a.kind === "pc" && cbt.quick){ allyTurn(a); return; }                      // QUICK RESOLVE: the hero fights on the allies' instincts
@@ -7579,7 +7617,7 @@ function openMenu(a, sub){
         add(base, why || `level 1 slot · ${left} of ${s.magic.slots[1] || 0} left · action · 3d8 of an element you choose · ${sp.range} ft`, why ? null : () => { bank("walk:orb-select", .45); openMenu(a, "orb"); });
         continue; }
       for (const nm of (SPELL_VARIANTS[base] || [base])){ const sp = SPELLS[nm]; if (!sp) continue; ACTION_ICON[nm] = "cast-spell";
-      if (sp.kind === "reaction"){ add(nm, `level ${sp.lvl} slot · your reaction · offered when an attack would hit you`, null); continue; }
+      if (sp.kind === "reaction"){ add(nm, `level ${sp.lvl} slot · your reaction · ${sp.trigger || "offered when an attack would hit you"}`, null); continue; }
       const left = c.slots[sp.lvl] || 0;
       const why = left <= 0 ? "no slot left" : sp.faith && !hasFaithItem(a) ? "needs his items of faith (the Book of Prayers or a holy symbol)" : sp.bonus ? (!c.bonus ? "bonus action used" : c.leveledSpell ? "you already cast a leveled spell with your action" : "") : (!c.action ? "action used" : c.bonusSpell ? "a bonus-action spell was cast: only cantrips now" : "");
       add(nm, why || `level ${sp.lvl} slot · ${left} of ${s.magic.slots[sp.lvl] || 0} left · ${sp.bonus ? "bonus action" : "action"}${sp.conc ? (c.conc ? ` · concentration: ends ${c.conc.spell}` : " · concentration") : ""} · ${sp.dmg ? (sp.darts ? sp.darts + " darts × " : "") + sp.dmg + (sp.type ? " " + sp.type : " healing") : sp.cond ? COND_GLYPH[sp.cond][2] : ""}${sp.area ? " · " + sp.area + "-ft area" : ""}`, why ? null : () => aim(a, {spell: nm})); }
@@ -7601,6 +7639,9 @@ function openMenu(a, sub){
       add("Sneak Attack", c.sneakUsed ? "already used this turn" : `+${sa.sneak} on a ${sa.name} hit · ✓ marks the foes it works on`, c.action && !c.sneakUsed ? () => aim(a, {atk: sa, sneakAim: true}) : null); }
     const thrown = s.attacks.find(k => k.thrown);
     if (thrown) add("Throw", `${thrown.name} · up to ${thrown.thrown} ft · +${thrown.hit}${thrown.item ? " · it lands on the floor" : ""}`, c.action ? () => aim(a, {atk: thrown, throwing: true}) : null);
+    // SPIRITUAL WEAPON on the turns after the cast: a bonus action moves it 20 ft and it strikes again (not a spell cast)
+    { const zw = spiritWeapons.find(z => z.caster === a), mg = s.magic || {hit: 0, mod: 0}; if (zw){ ACTION_ICON["Spiritual Weapon: strike"] = "cast-spell";
+      add("Spiritual Weapon: strike", c.bonus ? `bonus action · it moves up to 20 ft and strikes · +${mg.hit} · 1d8${mg.mod >= 0 ? "+" : ""}${mg.mod} force` : "bonus action used", c.bonus ? () => aim(a, {spiritStrike: true}) : null); } }
     for (const fa of flaskAttacks(a)){ ACTION_ICON["Throw: " + fa.name] = "bar/throw";
       add(`Throw: ${fa.name}`, `${fa.blurb} · up to ${fa.thrown} ft · +${fa.hit}${fa.qty > 1 ? ` · ${fa.qty} left` : ""}`, c.action ? () => aim(a, {atk: fa, throwing: true}) : null); }
     // shaking a friend out of a drow-poison stupor or a Sleep spell (SRD: "another creature takes an action to shake it awake")
@@ -8570,8 +8611,10 @@ function placeMenu(){}
 function aim(a, what){
   closeMenu(); cbt.phase = "target"; cbt.pend = what;
   const sp = what.spell && SPELLS[what.spell];
+  if (what.spiritStrike){ hint("Spiritual Weapon: click a foe within 25 ft of the weapon (it moves 20 ft and strikes). Esc to cancel."); return; }
+  if (sp && sp.kind === "aura"){ castSpell(a, a, what.spell); return; }   // Spirit Guardians: self, nothing to aim
   if (what.shove){ hint(`${what.shove === "grapple" ? "Grapple" : "Shove"}: click a foe within 5 ft. Esc to cancel.`); return; }
-  if (sp && (sp.kind === "heal" || sp.kind === "buff")){ hint(`${what.spell}: click a friend.`); return; }
+  if (sp && (sp.kind === "heal" || sp.kind === "buff")){ hint(sp.range === 0 ? `${what.spell}: click ${fname(a)} (yourself).` : `${what.spell}: click a friend.`); return; }
   if (sp && sp.kind === "teleport"){ hint(`${what.spell}: click a spot you can see within ${sp.range} ft.`); return; }
   if (sp && sp.line){ hint(`${what.spell}: click the way it goes (a ${sp.line[0]}-ft line).`); return; }
   if (sp && sp.area){ hint(`${what.spell}: click where it lands (${sp.area}-ft area).`); return; }
@@ -8626,7 +8669,13 @@ function combatClick(w){
   // across the room looked like a dead button. doShove approaches first (the movement left pays for it) and only then
   // asks for the save; a foe still out of reach after the walk hands the action back.
   if (p.shove){ const t = hitActor(foes, w); if (!t || t.down) return; doShove(a, t, p.shove); return; }
+  if (p.spiritStrike){ const t = hitActor(foes, w); if (!t || t.down) return; const z = spiritWeapons.find(q => q.caster === a);
+    if (!z){ toast("The spiritual weapon is gone."); openMenu(a); return; }
+    if (Math.hypot(t.x - z.x, t.y - z.y) / ftPx(t) > 27.5){ toast("Too far: the weapon moves 20 ft and strikes within 5 ft of it."); return; }
+    a.c.bonus = false; closeMenu(); cbt.phase = "busy"; combatBusy = true; turnWhat(a, t, "Spiritual Weapon", false);
+    spiritStrike(a, z, t, () => { combatBusy = false; if (cbt) cbt.phase = "idle"; settleCam(); afterAction(a); }); return; }
   if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(friends(), w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; }
+    if (sp.range === 0 && t !== a){ toast(`${p.spell} is on yourself only: click ${fname(a)}.`); return; }
     if (t !== a && coverOf(a, t).total){ toast(`No line of sight to ${fname(t)}.`); return; }
     // SRD 5.2.1 Mage Armor: "a willing creature who isn't wearing armor" — refused here, before the action and the slot go
     if (p.spell === "Mage Armor"){ const worn = wornArmor(t); if (worn){ toast(`${fname(t)} is wearing ${worn}: Mage Armor needs a creature not wearing armor.`); return; } }
@@ -8659,7 +8708,7 @@ function combatClick(w){
 // Opportunity attacks (SRD): a foe you leave the reach of, without Disengage, gets one swing as
 // its reaction. Leaving by air counts — a long jump is movement, so it provokes exactly as a walk does.
 function provokedBy(a, end){
-  if (a.kind !== "pc" || a.c.conds.has("disengaged")) return [];
+  if (a.kind !== "pc" || a.c.conds.has("disengaged") || a.c.conds.has("invisible")) return [];   // SRD: an opportunity attack is at a creature you can see
   return standing(foes).filter(f => !f.c.reactionUsed && !incapacitated(f) && feetBetween(a, f) <= 5
     && Math.hypot(end.x - f.x, end.y - f.y) > reachPx(f, a, 5) + 6);
 }
@@ -8948,6 +8997,8 @@ function advantageOn(att, tgt, ranged, atk){
   if (att.c.conds.has("prone")) adv--;
   if (tgt.c.conds.has("restrained")) adv++; if (att.c.conds.has("restrained")) adv--;
   if (tgt.c.conds.has("blinded")) adv++; if (att.c.conds.has("blinded")) adv--;          // SRD 5.2.1 Blinded
+  if (tgt.c.conds.has("invisible")) adv--; if (att.c.conds.has("invisible")) adv++;      // SRD 5.2.1 Invisible
+  if (att.c.conds.has("frightened") && att.c.fearBy && !att.c.fearBy.down && !coverOf(att, att.c.fearBy).total) adv--;   // Frightened, its fear in sight
   adv += attackRiders({hp: att.c.hp, woundedFury: att.c.sheet.woundedFury, raging: att.c.rage}, atk).adv;   // Wounded Fury: advantage on attack rolls at 10 HP or fewer (lib/rage.mjs)
   return Math.sign(adv);
 }
@@ -8965,6 +9016,7 @@ function sneakState(att, tgt, atk, ranged){
   return {on: false, why: "no sneak attack: get advantage, or an ally beside it"};
 }
 function afterAttackRoll(att){ if (att.c.rage) att.c.rage.attacked = true;   // SRD: "attacked a hostile creature since your last turn"
+  if (att.c.conds.has("invisible")) endInvisible(att, "made an attack roll");
   if (att.c.conds.has("hidden")){ att.c.conds.delete("hidden"); delete att.c.hideDc; att.alpha = 1; } att.c.conds.delete("helped"); }
 // SRD 2024: the DC to resist a Shove or Grapple is 8 + STR mod + proficiency.
 const sgn = (n) => (n >= 0 ? "+" : "−") + Math.abs(n);
@@ -8975,6 +9027,7 @@ function targetAc(t){ let ac = t.c.ac; if (t.c.conds.has("mageArmor")) ac = Math
 function buffTakes(caster, t, name){ const mod = (caster.c.sheet.magic || {}).mod || 0;
   if (name === "False Life"){ const g = roll("2d4").total + 4; t.c.tempHp = Math.max(t.c.tempHp || 0, g); popText(t, `+${g} temp`, "#9fe0c0"); }
   if (name === "Heroism"){ t.c.heroMod = mod; t.c.tempHp = Math.max(t.c.tempHp || 0, mod); t.c.conds.delete("frightened"); }
+  if (name === "Mirror Image"){ t.c.images = 3; t.c.mirrorEnd = (cbt ? cbt.round || 1 : 0) + 10; popText(t, "three images", "#bfd0ff"); }
   if (name === "Aid"){ t.c.hpMax += 5; t.c.hp += 5; if (t.down && t.c.hp > 0){ t.down = false; setAnim(t, "idle"); } popText(t, "+5", "#fff3c0"); }
   condFlourish(t, SPELLS[name] && SPELLS[name].cond); renderParty(); }
 // each new condition's look as it lands
@@ -8982,6 +9035,9 @@ function condFlourish(t, cond){ const B = bodyPoint(t), R = labR(t), burst = (n,
   if (cond === "baned"){ burst(18, ["#8a5bb0", "#3a2050", "#b07ad8"], {down: true}); bank("magic/necrotic_tail", .4); }
   else if (cond === "laughing"){ for (let i = 0; i < 4; i++) setTimeout(() => popText(t, ["HA!", "HAHA", "hee hee", "HA HA HA"][i], "#ff9bd2", .8), i * 260); burst(10, ["#ff9bd2", "#ffd0ea"], {up: true}); }
   else if (cond === "deafened"){ for (let i = 0; i < 3; i++) setTimeout(() => { const B = bodyPoint(t); for (let j = 0; j < 8; j++){ const g = j / 8 * Math.PI * 2; sparks.push({x: B.x + Math.cos(g) * R * .2, y: B.y - labH(t) * .3 + Math.sin(g) * R * .1, vx: Math.cos(g) * 70, vy: Math.sin(g) * 30, g: 0, col: j % 2 ? "#9a90a8" : "#4a4058", t0: now, life: 500}); } }, i * 180); bank("magic/spell_fizzle", .3); }   // rings of sound leaving them: silence
+  else if (cond === "frightened"){ for (let i = 0; i < 3; i++) setTimeout(() => popText(t, ["!", "!!", "‼"][i], "#d8c8f0", .7), i * 200); burst(14, ["#b8a0d8", "#e8e0f8", "#5a4878"], {up: true}); bank("magic/necrotic_tail", .35); }
+  else if (cond === "invisible"){ burst(26, ["#d8e4ff", "#ffffff", "#a8b8e8"], {min: 10, max: 60}); bank("magic/arcane_release", .4); }
+  else if (cond === "mirrored"){ burst(20, ["#bfd0ff", "#ffffff", "#8fa8e8"], {flat: true}); bank("magic/arcane_release", .45); }
   else if (cond === "blinded"){ for (let i = 0; i < 20; i++) sparks.push({x: t.x + labRnd(-R, R) * .5, y: t.y - labH(t) * .82 + labRnd(-6, 6), vx: labRnd(-30, 30), vy: labRnd(-10, 10), g: 0, col: i % 2 ? "#1a1220" : "#3a3048", t0: now, life: labRnd(600, 1200)}); bank("magic/necrotic_tail", .35); }
   else if (cond === "falseLife"){ burst(18, ["#7fbf6a", "#2a4020", "#b6ff7a"], {up: true}); bank("magic/necrotic_tail", .35); }
   else if (cond === "heroic"){ burst(22, ["#ffd27a", "#fff3c0", "#ffb84a"], {up: true}); bank("magic/impact_radiant", .45); }
@@ -9088,6 +9144,8 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       }
       rest();
       function rest(){
+      // MIRROR IMAGE (SRD 5.2.1): a hit rolls a d6 per duplicate left; any 3+ and a duplicate takes it and is destroyed
+      const mi = hit && !cv.total ? mirrorDiverts(att, tgt) : null; if (mi && mi.ok){ hit = false; crit = false; }
       const why = cv.total ? `${fname(att)} ${atk.name}: no clear ${ranged ? "shot" : "reach"}, ${cv.why} is in the way` : `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : " (dis)") : ""} + ${atk.hit} vs AC ${acVs}${coverNote(cv)}`;
       if (r === 1) bank("ui/nat1", .7);
       if (shot){ bank(ws.swing, .75); att.aimHold = now;
@@ -9099,6 +9157,9 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       att.trailUntil = 0;
       if (shot === "thrown" && att.kind === "pc") restOnFloor(att, atk, hit ? tgt : (landed || tgt), !hit);     // at their feet, or where it fell
       if (shot === "flask") shatter(atk, hit ? {x: tgt.x, y: tgt.y} : (landed || tgt), hit ? tgt : null);
+      if (!hit && mi && mi.ok){ mirrorShatter(tgt); if (!shot && !fist){ if (crimS) crimSlash(att, tgt, {miss: true}); else swipe(att, tgt, {...sw, miss: true}); }
+        log(`${why} — a hit, but on an image (d6 ${mi.rolls.join(", ")}): it shatters${mi.left ? `, ${mi.left} left` : ", the last of them"}.`);
+        narrate(att, `${fname(att)} strikes ${fname(tgt)}, and the figure bursts into glittering nothing.`); renderParty(); return; }
       if (!hit){
         // a melee blow that reached them is a sparring exchange (sparMiss); a shot, a flask, or a blow with stone in
         // the way is the plain miss it always was
@@ -9170,6 +9231,7 @@ function castSpell(caster, tgt, name, done, darts){
   if (sp.bonus){ c.bonus = false; c.bonusSpell = true; } else { c.action = false; if (sp.lvl > 0) c.leveledSpell = true; }
   if (sp.lvl > 0) c.slots[sp.lvl] = Math.max(0, (c.slots[sp.lvl] || 0) - 1);
   if (c.conds.has("sanctuary") && name !== "Sanctuary") endSanctuary(caster, "cast a spell");
+  if (c.conds.has("invisible")) endInvisible(caster, "cast a spell");   // SRD 5.2.1: it ends if the target casts a spell
   if (sp.kind === "teleport" && !wardsHere()){ mistyStep(caster, tgt, () => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(caster, done); }); return; }   // SRD 5.2.1: it ends if the warded creature casts a spell
   const at = tgt;                                                                // a point or an actor
   if (tgt.id) caster.face = faceOf(tgt.x - caster.x, tgt.y - caster.y);
@@ -9256,6 +9318,7 @@ function castSpell(caster, tgt, name, done, darts){
       return;
     }
     const carry = quiet ? (cb) => setTimeout(cb, 420)
+      : sp.kind === "summon" || sp.kind === "aura" ? (cb) => setTimeout(cb, 220)          // nothing flies: it appears
       : sp.line ? (cb) => setTimeout(cb, 140)                                   // a line is drawn from the hand, not flown
       : lab ? (cb) => lab.deliver(caster, at, cb, sp)
       : kit ? (cb) => kitDeliver(caster, at, kit, cb)
@@ -9263,6 +9326,8 @@ function castSpell(caster, tgt, name, done, darts){
       : (cb) => spellBolt(caster, at, sp.fx, cb);
     carry(() => {
       const m = c.sheet.magic;
+      if (sp.kind === "summon"){ sigilEnd(tgt, true); spiritCast(caster, tgt); return; }
+      if (sp.kind === "aura"){ sigilEnd(caster, true); guardianCast(caster); return; }
       if (sp.kind === "cloud"){ placePoisonCloud(caster, at, name, m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), sp.lvl); return; }
       if (sp.area && kit && kit.cloud) spawnCloud(kit.cloud, at.x, at.y, sp, caster, name);   // the gas arrives with the spell
       if (sp.kind === "fog"){ log(`<b>${fname(caster)}</b> casts <b>${name}</b>: a 20-ft sphere of fog, heavily obscured, while ${fname(caster)} concentrates.`);
@@ -9350,7 +9415,7 @@ function castSpell(caster, tgt, name, done, darts){
           else { if (name === "Toll the Dead" && ok) spawnFx("tollBell", {at: t, sq: 2, anchor: "base", lift: -.15, alpha: .8}); land(t, !ok, sp.type || "psychic"); }   // the bell tolls either way (SRD: "fills the air around it"); the damage is only on a failed save
           if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); const n = ok ? (sp.lvl ? Math.floor(d.total / 2) : 0) : d.total; if (n){ hitCtx = {spell: name, area: sp.area || 0, by: caster, at}; damage(t, n, sp.type, false, caster, true); hitCtx = null; } else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
           if (sp.cond && !ok){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); if (sp.cond === "restrained") t.c.webDc = dc; if (sp.cond === "paralyzed"){ t.c.heldDc = dc; t.path = []; } if (sp.cond === "asleep"){ t.c.sleptDc = m.dc; t.sleepT0 = now; t.path = []; }
-            if (sp.cond === "laughing"){ t.c.laughDc = dc; t.path = []; addCond(t, "prone"); } if (sp.cond === "blinded" || sp.cond === "deafened") t.c.blindDc = dc; if (sp.cond === "deafened" && APP) handOff(`${fname(caster)} cast Blindness/Deafness on ${fname(t)}, who is now Deafened for a minute (CON save at the end of each of its turns): it hears nothing — no shouts, no spoken words, no footsteps.`); condFlourish(t, sp.cond); }
+            if (sp.cond === "laughing"){ t.c.laughDc = dc; t.path = []; addCond(t, "prone"); } if (sp.cond === "blinded" || sp.cond === "deafened") t.c.blindDc = dc; if (sp.cond === "frightened"){ t.c.fearBy = caster; t.c.fearDc = dc; t.path = []; } if (sp.cond === "deafened" && APP) handOff(`${fname(caster)} cast Blindness/Deafness on ${fname(t)}, who is now Deafened for a minute (CON save at the end of each of its turns): it hears nothing — no shouts, no spoken words, no footsteps.`); condFlourish(t, sp.cond); }
           lines.push(line); if (i === targets.length - 1) log(`${fname(caster)} ${name}: ${lines.join("; ")}.`);
         }, i * 180));
       }
@@ -9425,7 +9490,7 @@ function afterAction(a, done){
   if (checkEnd()) return;
   if (a.kind === "pc" && activeActor() === a){ if (a.c.action || a.c.bonus || a.c.move > 0) openMenu(a); else nextTurn(); }
 }
-function addCond(t, k){ if ((t.c.sheet.immuneCond || []).includes(k)) { popText(t, "immune", "#aaa"); return; } t.c.conds.add(k);
+function addCond(t, k){ if ((t.c.sheet.immuneCond || []).includes(k)) { popText(t, "immune", "#aaa"); return; } if (k === "frightened" && t.c.conds.has("heroic")){ popText(t, "immune (Heroism)", "#ffd27a"); return; } t.c.conds.add(k);
   if (t.c.conc && INCAP.includes(k)) endConc(t, "they are incapacitated"); popText(t, COND_GLYPH[k] ? COND_GLYPH[k][2].split(":")[0].toLowerCase() : k, COND_GLYPH[k] ? COND_GLYPH[k][1] : "#fff"); renderParty(); }
 // ---------- concentration (SRD 5.1, "Concentration") ----------
 // Sam, 2026-10-14: "Well, lets track concentration". The rules, as the SRD has them:
@@ -9460,7 +9525,7 @@ function gfbLeap(att, t, crit){ labGfbHit(t); bank("walk:impact-fire", .5); cons
   if (!nxt || mod <= 0) return; setTimeout(() => labGfbLeap(t, nxt, () => { labGfbHit(nxt); bank("walk:impact-fire", .4); damage(nxt, mod, "fire", false, att, true); log(`Green-Flame Blade: the fire leaps to ${fname(nxt)}, ${mod} fire.`); }), 220); }
 const isHumanoid = t => t.kind === "pc" || /^(human|drow|duergar|goblin|deepgnome|kuotoa|elf|dwarf|halfling)$/.test(cadaverSpecies(t.id) || "") || /drow|bandit|thug|cult|mage|townsm|townsw|peddler|stranger/.test(t.id);
 // Cloud of Daggers and Flaming Sphere live while the caster concentrates (endConc clears them)
-let daggerZones = [], fireSpheres = [];
+let daggerZones = [], fireSpheres = []; let spiritWeapons = [], guardianAuras = [], reactionWait = null;   // wave 3a: Spiritual Weapon, Spirit Guardians, a reaction being asked
 function flameSphereCast(c, at, cb){ const side = Math.sign(c.x - at.x) || 1, z = {x: at.x + side * ftPx(at) * 5, y: at.y, caster: c}; fireSpheres.push(z); sparks.push({labFireSphere: true, z, t0: now, life: 3600000}); bank("walk:impact-fire", .5);
   setTimeout(() => { z.move = {x0: z.x, y0: z.y, x1: at.x + side * ftPx(at) * 2.5, y1: at.y, t0: now, ms: 420}; setTimeout(cb, 420); }, 300); }
 // the new spells' turn-start rules: Hold Person's save, the daggers, the sphere's ram
@@ -9473,6 +9538,170 @@ function newSpellsTurnStart(a){
     setTimeout(() => { labFireHit(v); bank("walk:impact-fire", .6); damage(v, n, "fire", false, a, true); log(`The Flaming Sphere rams ${fname(v)}: DEX ${s} vs DC ${dc} — ${n} fire.`); }, 420); }
   return false;
 }
+// ---------- WAVE 3a: Spiritual Weapon, Spirit Guardians, Fear, Hellish Rebuke, Mirror Image, Invisibility ----------
+// (SRD 5.2.1, each checked against the 2024 text on 2026-10-30; the rules are quoted at the SPELLS rows)
+//
+// SPIRITUAL WEAPON: a floating weapon of force, Lathander's mace for Samson, that lives while the caster concentrates.
+// It appears beside the foe it was cast at and swings at once; on later turns "Spiritual Weapon: strike" (a bonus
+// action) moves it up to 20 ft and swings again: a melee spell attack, 1d8 + the spellcasting modifier, force.
+function spiritCast(c, t){ const side = Math.sign(c.x - t.x) || 1, z = {x: t.x + side * ftPx(t) * 3, y: t.y, caster: c};
+  spiritWeapons = spiritWeapons.filter(q => q.caster !== c); spiritWeapons.push(z);
+  sparks.push({labSpiritWeapon: true, z, t0: now, life: 3600000}); lightFlash(z.x, z.y - ftPx(z) * 4, "#ffd86a", 260, 700); bank("magic/impact_radiant", .45);
+  log(`${fname(c)} casts <b>Spiritual Weapon</b> (bonus action): a mace of force hangs in the air beside ${fname(t)} (concentration).`);
+  spiritStrike(c, z, t, null); }
+function spiritStrike(c, z, t, done){
+  const m = c.c.sheet.magic || {hit: 0, mod: 0}, side = Math.sign(z.x - t.x) || 1;
+  z.move = {x0: z.x, y0: z.y, x1: t.x + side * ftPx(t) * 3, y1: t.y, t0: now, ms: 380};
+  if (c.c.conds.has("sanctuary")) endSanctuary(c, "made an attack");
+  setTimeout(() => {
+    if (!cbt || t.down || !spiritWeapons.includes(z)){ done && done(); return; }
+    z.swing = now; bank("combat/blade_whoosh", .6);
+    const r = d20(advantageOn(c, t, false), c), crit = r === 20, ac = targetAc(t), hit = crit || (r !== 1 && r + (m.hit || 0) >= ac); afterAttackRoll(c);
+    if (r === 1) bank("ui/nat1", .7); if (crit) bank("ui/nat20", .7);
+    const why = `${fname(c)}'s Spiritual Weapon: ${r} + ${m.hit || 0} vs AC ${ac}`;
+    setTimeout(() => {
+      if (!hit){ miss(t); log(`${why} — miss.`); }
+      else { const d = roll(`1d8${(m.mod || 0) >= 0 ? "+" : ""}${m.mod || 0}`, crit).total;
+        spawnFx(IMPACT_OF.force, {at: t, sq: 2, anchor: "mid"}); lightFlash(t.x, t.y - 40, "#ffe9a8", 240, 420); bank("magic/arcane_release", .5); knock(t, c, 8 * actorScale(t));
+        hitCtx = {spell: "Spiritual Weapon", by: c}; damage(t, d, "force", crit, c, true); hitCtx = null;
+        log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d} force.`); narrate(c, `${fname(c)}'s spectral mace comes down on ${fname(t)}.`); }
+      setTimeout(() => done && done(), 450);
+    }, 170);
+  }, 420); }
+// a mace of golden force, hovering head-high, bobbing; it rises and comes down on a swing
+function drawLabSpiritWeapon(s){ const z = s.z; if (!spiritWeapons.includes(z)){ s.life = 0; return; }
+  if (z.move){ const q = Math.min(1, (now - z.move.t0) / z.move.ms), e = q < .5 ? 2 * q * q : 1 - Math.pow(-2 * q + 2, 2) / 2; z.x = z.move.x0 + (z.move.x1 - z.move.x0) * e; z.y = z.move.y0 + (z.move.y1 - z.move.y0) * e; if (q >= 1) z.move = null; }
+  const L = ftPx(z) * 3.4, hy = z.y - ftPx(z) * 4 + Math.sin(now / 300) * 6, sw = z.swing && now - z.swing < 320 ? (now - z.swing) / 320 : -1;
+  const ang = sw >= 0 ? -1.4 + 2.5 * (sw < .5 ? 2 * sw * sw : 1 - Math.pow(-2 * sw + 2, 2) / 2) : -.35 + Math.sin(now / 600) * .12;
+  ctx.save(); ctx.translate(z.x, hy); ctx.rotate(ang * (z.x < z.caster.x ? -1 : 1)); ctx.globalCompositeOperation = "lighter";
+  const g = ctx.createRadialGradient(0, -L * .42, 0, 0, -L * .42, L * .75); g.addColorStop(0, "rgba(255,248,210,.55)"); g.addColorStop(.5, "rgba(255,210,110,.22)"); g.addColorStop(1, "rgba(255,180,60,0)");
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, -L * .42, L * .75, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = .9; ctx.lineCap = "round"; ctx.strokeStyle = "rgba(255,226,140,.95)"; ctx.lineWidth = Math.max(2, L * .07);
+  ctx.beginPath(); ctx.moveTo(0, L * .38); ctx.lineTo(0, -L * .32); ctx.stroke();                                  // the haft
+  ctx.fillStyle = "rgba(255,246,206,.95)"; ctx.beginPath(); ctx.ellipse(0, -L * .44, L * .12, L * .15, 0, 0, Math.PI * 2); ctx.fill();   // the head
+  ctx.lineWidth = Math.max(2, L * .05); for (let k = 0; k < 6; k++){ const a2 = k * Math.PI / 3; ctx.beginPath(); ctx.moveTo(Math.cos(a2) * L * .09, -L * .44 + Math.sin(a2) * L * .11); ctx.lineTo(Math.cos(a2) * L * .21, -L * .44 + Math.sin(a2) * L * .23); ctx.stroke(); }   // the flanges
+  ctx.restore();
+  if (now - (z.em || 0) > 70){ z.em = now; sparks.push({x: z.x + labRnd(-12, 12), y: hy + labRnd(-L * .6, L * .2), vx: labRnd(-14, 14), vy: -labRnd(20, 60), g: -10, col: Math.random() < .5 ? "#ffe9a8" : "#fff8e0", t0: now, life: labRnd(400, 800)}); } }
+//
+// SPIRIT GUARDIANS: an Emanation that moves with the caster. Only foes are affected. A foe is tested when it comes into
+// the 15 ft (it walks in, or the caster walks up to it) and when it ends its turn there, never twice in one turn. Turn
+// identity is the round and the slot in the order (turnKey), which is still the ending turn when nextTurn's end-of-turn
+// hook runs. The spirits appearing do not "enter" anyone: a foe already in it is first tested at the end of its turn.
+const GUARD_FT = 15;
+const turnKey = () => cbt ? `${cbt.round}:${cbt.idx}` : "";
+const inGuard = (g, t) => !!t && !t.down && foes.includes(t) && actors.includes(t) && feetBetween(g.caster, t) <= GUARD_FT + 2.5;
+function guardianCast(c){ const evil = /evil/i.test(String(c.c.sheet.alignment || (SHEETS[c.id] || {}).alignment || ""));
+  const z = {caster: c, dc: c.c.sheet.magic.dc + (c.c.conds.has("sorcery") ? 1 : 0), type: evil ? "necrotic" : "radiant", struck: new Map(), inside: new Set()};
+  guardianAuras = guardianAuras.filter(g => g.caster !== c); guardianAuras.push(z);
+  for (const f of standing(foes)) if (inGuard(z, f)) z.inside.add(f);
+  sparks.push({labGuardians: true, z, a: c, t0: now, life: 3600000}); bank("magic/impact_radiant", .55); lightFlash(c.x, c.y - 40, evil ? "#8a5bb0" : "#fff1b0", 340, 900);
+  log(`${fname(c)} casts <b>Spirit Guardians</b>: spirits wheel about them in 15 ft — a foe that comes among them or ends its turn there makes a WIS save (DC ${z.dc}), 3d8 ${z.type}, half on a success; half speed inside (concentration).`);
+  narrate(c, `${fname(c)} prays, and spirits of light wheel out around them.`); renderParty(); }
+function guardianTest(g, t, why){ if (!cbt || !t || t.down || g.caster.down) return; const k = turnKey(); if (g.struck.get(t) === k) return; g.struck.set(t, k);
+  const s = d20(0, t) + ((t.c.sheet.saves || {}).wis || 0) + blessD4(t), ok = s >= g.dc, d = roll("3d8").total, n = ok ? Math.floor(d / 2) : d;
+  spawnFx(IMPACT_OF[g.type] || "forceHit", {at: t, sq: 2, anchor: g.type === "radiant" ? "feet" : "mid", lift: g.type === "radiant" ? 1 : 0}); bank(`magic/impact_${g.type}`, .55);
+  hitCtx = {spell: "Spirit Guardians", by: g.caster}; damage(t, n, g.type, false, g.caster, true); hitCtx = null;
+  log(`Spirit Guardians — ${fname(t)} ${why}: WIS ${s} vs DC ${g.dc} — ${ok ? "half, " : ""}${n} ${g.type}.`); }
+function tickGuardians(){ if (!cbt || mode !== "combat") return;
+  for (const g of guardianAuras){ if (g.caster.down) continue;
+    for (const f of foes){ const inn = inGuard(g, f);
+      if (inn && !g.inside.has(f)){ g.inside.add(f); guardianTest(g, f, g.caster.path && g.caster.path.length ? "is swept by the spirits" : "comes among the spirits"); }
+      else if (!inn) g.inside.delete(f); } } }
+function guardianEndTurn(t){ for (const g of guardianAuras) if (inGuard(g, t)) guardianTest(g, t, "ends its turn among the spirits"); }
+// NOT YET, flagged: the half speed is applied to a foe that STARTS its turn inside; one that walks in mid-move keeps
+// the rest of its movement.
+function guardianSlows(a){ if (!foes.includes(a) || !guardianAuras.some(g => inGuard(g, a))) return; a.c.move = Math.floor(a.c.move / 2 / 5) * 5; popText(a, "half speed: the spirits", "#fff1b0", .8); }
+// spirits of light (or of shadow, for an evil caster) wheeling about the caster; no ring is drawn on the floor (Sam's
+// ruling on Cone of Cold: a drawn outline is "corny"), only a soft glow where the spirits are
+function drawLabGuardians(s){ const z = s.z, c = z.caster; if (!guardianAuras.includes(z) || !actors.includes(c)){ s.life = 0; return; }
+  const R = ftPx(c) * GUARD_FT, evil = z.type === "necrotic";
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  const g0 = ctx.createRadialGradient(c.x, c.y, R * .2, c.x, c.y, R); g0.addColorStop(0, evil ? "rgba(110,60,150,.10)" : "rgba(255,240,190,.10)"); g0.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = g0; ctx.globalAlpha = .9 + .1 * Math.sin(now / 400); ctx.beginPath(); ctx.ellipse(c.x, c.y, R, R * .45, 0, 0, Math.PI * 2); ctx.fill();
+  for (let i = 0; i < 9; i++){ const a = now / 950 + i * Math.PI * 2 / 9, rr = R * (.55 + .3 * Math.sin(now / 760 + i * 1.7)), x = c.x + Math.cos(a) * rr, y = c.y - 46 + Math.sin(a) * rr * .45 + Math.sin(now / 230 + i) * 10;
+    const gl = ctx.createRadialGradient(x, y, 0, x, y, 18); gl.addColorStop(0, evil ? "rgba(210,150,255,.95)" : "rgba(255,252,228,.95)"); gl.addColorStop(.4, evil ? "rgba(140,80,200,.45)" : "rgba(255,214,120,.45)"); gl.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.globalAlpha = .75; ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = .45; ctx.strokeStyle = evil ? "#c8a0f0" : "#fff1c8"; ctx.lineWidth = 1.5; const fl = Math.sin(now / 90 + i) * 4;   // a pair of wings
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x - 9, y - 9 - fl, x - 15, y - 2); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + 9, y - 9 - fl, x + 15, y - 2); ctx.stroke(); }
+  ctx.restore(); }
+//
+// FEAR: a Frightened creature runs. On each of its turns it takes the Dash action and moves away from the one it fears by
+// the safest route (fleeFloor: the reachable floor farthest from them), unless there is nowhere to move; then it acts as
+// usual, at disadvantage while they are in sight (advantageOn). It saves again only when it ends a turn where it cannot
+// see them. A hero is bound by it too: on a Frightened hero's turn they run, and the turn ends.
+// THE SAFEST ROUTE is the one that ends this turn's Dash farthest from them: the far corner of a room is no refuge if the
+// only way there runs past the caster (found in the playtest, 2026-10-30: a drow fleeing for the pen's far corner gained
+// 6 ft of a 60-ft Dash). So candidate floor, spread from far to near, is judged by where the Dash along its path stops.
+// NOT YET, flagged: "drops whatever it is holding" is not modelled — the walk's foes carry no droppable item.
+function fleeFloor(a, src, budgetPx){ const here = Math.hypot(a.x - src.x, a.y - src.y), all = [];
+  for (let y = CELL / 2; y < NAT_H; y += CELL * 2) for (let x = CELL / 2; x < NAT_W; x += CELL * 2){
+    if (!walkable(x, y)) continue; const d = Math.hypot(x - src.x, y - src.y); if (d > here + CELL) all.push({x, y, d}); }
+  all.sort((p, q) => q.d - p.d);
+  const step = Math.max(1, Math.floor(all.length / 40)); let best = null;
+  for (let i = 0; i < all.length; i += step){ const c = all[i], path = findPath(a, c); if (!path.length) continue;
+    const pts = cutPath(a, path, budgetPx).pts, end = pts.length ? pts[pts.length - 1] : null; if (!end) continue;
+    const e = Math.hypot(end.x - src.x, end.y - src.y); if (e > here + CELL && (!best || e > best.e)) best = {x: c.x, y: c.y, e}; }
+  return best; }
+function fearFlee(a){ const src = a.c.fearBy;
+  if (!src || src.down || !actors.includes(src)){ a.c.conds.delete("frightened"); return false; }
+  if (a.c.move <= 0 || a.c.conds.has("restrained") || a.c.conds.has("grappled") || incapacitated(a)) return false;   // nowhere to move: it acts, still Frightened
+  const goal = fleeFloor(a, src, a.c.move * 2 * ftPx(a)); if (!goal) return false;
+  a.c.action = false; a.c.move *= 2;                                                // the Dash
+  popText(a, "flees in terror", "#b8a0d8"); log(`${fname(a)} is Frightened of ${fname(src)} and Dashes away (Fear).`); narrate(a, `${fname(a)} breaks and runs from ${fname(src)}.`);
+  renderTurns(); renderParty(); if (a.kind === "pc") closeMenu();
+  combatWalk(a, goal, () => setTimeout(() => passTurn(a), 500));
+  return true; }
+function fearSave(t){ if (!t.c || !t.c.conds.has("frightened") || t.down) return; const src = t.c.fearBy;
+  if (!src || src.down || !actors.includes(src)){ t.c.conds.delete("frightened"); renderParty(); return; }
+  if (!coverOf(t, src).total) return;                                               // it can still see them: no save
+  const s = d20(0, t, "frightened") + ((t.c.sheet.saves || {}).wis || 0) + blessD4(t);
+  if (s >= (t.c.fearDc || 13)){ t.c.conds.delete("frightened"); popText(t, "steadies", "#d8c8f0", .85); log(`${fname(t)}, out of ${fname(src)}'s sight, shakes off the Fear (WIS ${s}).`); renderParty(); }
+  else log(`${fname(t)} is still terrified (WIS ${s} vs DC ${t.c.fearDc}).`); }
+//
+// MIRROR IMAGE: the duplicates, counted on the target (c.images); attackWith asks mirrorDiverts on every hit
+function mirrorDiverts(att, t){ if (!t || !t.c || !(t.c.images > 0) || (att && att.c && att.c.conds.has("blinded"))) return null;
+  const rolls = Array.from({length: t.c.images}, () => d6()); if (!rolls.some(r => r >= 3)) return {ok: false, rolls};
+  t.c.images--; if (!t.c.images) t.c.conds.delete("mirrored"); return {ok: true, rolls, left: t.c.images}; }
+function mirrorShatter(t){ const B = bodyPoint(t), R = labR(t); for (let i = 0; i < 24; i++){ const g = labRnd(0, Math.PI * 2), sp = labRnd(40, 150); sparks.push({x: B.x + labRnd(-1, 1) * R * .8, y: B.y + labRnd(-1, 1) * R, vx: Math.cos(g) * sp, vy: Math.sin(g) * sp * .6 - 20, g: 120, col: i % 3 ? "#cfe0ff" : "#ffffff", t0: now, life: labRnd(350, 700)}); }
+  bank("magic/spell_fizzle", .55); popText(t, "an image shatters", "#bfd0ff", .85); }
+function drawMirrorImages(a, img, f, cw, ch, dx, dy, dw, dh){ const a0 = ctx.globalAlpha, f0 = ctx.filter;
+  for (let i = 0; i < a.c.images; i++){ const ph = now / 520 + i * 2.09, ox = Math.cos(ph) * dw * .24, oy = Math.sin(ph * 1.3) * 4;
+    ctx.globalAlpha = a0 * (.3 + .1 * Math.sin(now / 200 + i)); ctx.filter = "brightness(1.3) saturate(.45)";
+    ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx + ox, dy + oy, dw, dh); }
+  ctx.globalAlpha = a0; ctx.filter = f0; }
+//
+// INVISIBILITY: ends at once when its target attacks, deals damage or casts a spell; the spell is the caster's
+// concentration, so that ends with it
+function endInvisible(t, why){ if (!t || !t.c || !t.c.conds.has("invisible")) return; t.c.conds.delete("invisible");
+  const k = t.c.condFrom && t.c.condFrom.invisible; if (k){ delete t.c.condFrom.invisible; const by = [...party, ...((cbt && cbt.allies) || [])].find(x => x.c && x.c.conc === k); if (by) endConc(by, `${fname(t)} gave the Invisibility away`); }
+  popText(t, "visible", "#d8e4ff", .85); log(`${fname(t)} becomes visible: ${why}.`); renderParty(); }
+//
+// HELLISH REBUKE: offered by damage() to a hero who has it prepared, a slot and the reaction, when a hostile creature they
+// can see within 60 ft hurts them. The fight waits for the answer (reactionWait, read by passTurn and the foe's swings),
+// as it does for Shield. A hero not driven from this screen rebukes on instinct, the way a readied strike lands.
+const rebukeSlot = t => { for (let L = 1; L <= 9; L++) if ((t.c.slots[L] || 0) > 0) return L; return 0; };
+function canRebuke(t, from){
+  if (!cbt || cbt.quick || reactionWait || !t.c || t.down || t.c.hp <= 0 || t.c.reactionUsed || incapacitated(t)) return false;
+  if (!from || from === t || !from.c || from.down || !actors.includes(from) || hero(from) === hero(t)) return false;
+  const s = SHEETS[t.id], all = s && (s.magicAll || s.magic); if (!all) return false;
+  if (![...(all.prepared || []), ...(all.always_prepared || [])].includes("Hellish Rebuke")) return false;
+  return feetBetween(t, from) <= 62.5 && !coverOf(t, from).total && rebukeSlot(t) > 0; }
+function rebukeFlames(t){ labRef("fbBurst", {at: t, w: 120, life: 520, grow: [.5, 1.2], fade: [20, 320], filter: GFB_F}); lightFlash(t.x, labMid(t), "#5aff6a", 260, 500);
+  const B = bodyPoint(t), R = labR(t); for (let i = 0; i < 22; i++) sparks.push({x: B.x + labRnd(-1, 1) * R, y: B.y + labRnd(-1, 1) * R, vx: labRnd(-20, 20), vy: -labRnd(40, 130), g: -20, col: i % 3 ? "#7fe04a" : "#d8ff9a", t0: now, life: labRnd(400, 800)}); }
+function offerRebuke(t, from){
+  const L = rebukeSlot(t), dice = `${L + 1}d10`, dc = (t.c.sheet.magic || {}).dc || 13; let res; reactionWait = new Promise(r => { res = r; });
+  const done = () => { reactionWait = null; renderParty(); res(); };
+  const fire = () => { if (!cbt || from.down){ done(); return; }
+    t.c.reactionUsed = true; t.c.slots[L] = Math.max(0, (t.c.slots[L] || 0) - 1);
+    if (t.c.conds.has("sanctuary")) endSanctuary(t, "cast a spell at a foe"); endInvisible(t, "cast Hellish Rebuke");
+    t.face = faceOf(from.x - t.x, from.y - t.y); playOnce(t, SPR[t.id].img.cast ? "cast" : "attack", () => setAnim(t, "idle")); bank("magic/fire_release", .5);
+    const s = d20(0, from) + ((from.c.sheet.saves || {}).dex || 0) + blessD4(from), ok = s >= dc, d = roll(dice).total, n = ok ? Math.floor(d / 2) : d;
+    setTimeout(() => { rebukeFlames(from); bank("walk:impact-fire", .6); hitCtx = {spell: "Hellish Rebuke", by: t}; damage(from, n, "fire", false, t, true); hitCtx = null;
+      log(`${fname(t)} casts <b>Hellish Rebuke</b> (reaction, level ${L} slot): ${fname(from)} DEX ${s} vs DC ${dc} — ${ok ? "half, " : ""}${n} fire.`);
+      narrate(t, `${fname(t)} points at ${fname(from)}, and green hellfire wraps it.`); setTimeout(done, 450); }, 350); };
+  if (!canControl(t)){ fire(); return; }
+  showDialog({title: `${fname(t)}: Hellish Rebuke?`, body: `${fname(from)} just hurt ${fname(t)}. Point and wreathe it in hellfire: a DEX save against DC ${dc}, ${dice} fire, half on a success. It uses the reaction and a level ${L} slot (${t.c.slots[L]} left).`,
+    src: `Hellish Rebuke · 1 reaction · level ${L}`, buttons: [{label: "Rebuke", primary: true, fn: fire}, {label: "Let it go", fn: done}]}); }
 // the little cantrips: the action, the look, a line in the log
 // MINOR ILLUSION'S FIGURES (Sam, 2026-10-29): translucent arcane blue. Anyone: a cat; a drow from 3rd level; a human from
 // 5th. A bard has more: a beautiful maiden, a chicken, a menacing dildo, a chitin horror (an original creature — the
@@ -9482,7 +9711,7 @@ const ILLUSIONS = [{key: "a cat", img: "ill-cat", h: .45}, {key: "a drow", spr: 
 function illusionPicker(a, go){ const L = (a.c.sheet && a.c.sheet.level) || 1, bard = isMusical(a) || /bard/i.test(a.c.sheet.cls || "");
   const opts = ILLUSIONS.filter(o => (!o.lvl || L >= o.lvl) && (!o.bard || bard));
   showDialog({title: `${fname(a)}: Minor Illusion`, body: "Conjure an image of…", src: "Minor Illusion · cantrip · 30 ft", buttons: opts.map((o, i) => ({label: o.key[2].toUpperCase() + o.key.slice(3), primary: i === 0, fn: () => go(o)}))}); }
-function castUtil(a, t, name){ a.c.action = false; closeMenu(); if (t.id) a.face = faceOf(t.x - a.x, t.y - a.y); if (SPELLS[name].conc) startConc(a, name);
+function castUtil(a, t, name){ a.c.action = false; closeMenu(); if (a.c.conds.has("invisible")) endInvisible(a, "cast a spell"); if (t.id) a.face = faceOf(t.x - a.x, t.y - a.y); if (SPELLS[name].conc) startConc(a, name);
   playOnce(a, SPR[a.id].img.cast ? "cast" : "attack", () => setAnim(a, "idle")); bank("magic/arcane_release", .5);
   const go = (pick) => { labUtil(name, a, t, pick); const what = {"Mage Hand": "a spectral hand", "Minor Illusion": `an illusion${pick ? " of " + pick.key : ""}`, "Prestidigitation": "a minor trick", "Dancing Lights": "four dancing lights", "Friends": "a charm of friendship", "Light": "a steady light", "Thaumaturgy": "a minor wonder", "Druidcraft": "a small working of nature", "Message": "a whispered message", "Mending": "a mending", "Guidance": "a touch of guidance", "Resistance": "a ward of resistance"}[name] || "a small working";
     log(`${fname(a)} casts <b>${name}</b>: ${what}${t.id ? ` (${fname(t)})` : ""}.`); if (name === "Friends" && t.id) popText(t, "friendly… for now", "#ff9ad8", .85); renderParty(); afterAction(a); };
@@ -9501,6 +9730,7 @@ function endConc(a, why){
   const k = a.c.conc; if (!k) return; a.c.conc = null;
   poisonZones = poisonZones.filter(z => !(z.caster === a && z.name === k.spell));   // the gas goes with the concentration
   if (k.spell === "Cloud of Daggers") daggerZones = daggerZones.filter(z => z.caster !== a); if (k.spell === "Flaming Sphere") fireSpheres = fireSpheres.filter(z => z.caster !== a);
+  if (k.spell === "Spiritual Weapon") spiritWeapons = spiritWeapons.filter(z => z.caster !== a); if (k.spell === "Spirit Guardians") guardianAuras = guardianAuras.filter(g => g.caster !== a);
   for (const {t, cond} of k.holds){
     if (!t.c || !t.c.condFrom || t.c.condFrom[cond] !== k) continue;      // since replaced by another source
     delete t.c.condFrom[cond]; if (!t.c.conds.has(cond)) continue;
@@ -9520,6 +9750,7 @@ function damage(t, n, type, crit, from, magical = false){
   const s = t.c.sheet; if ((s.immune || []).includes(type)){ popText(t, "immune", "#aaa"); return; }
   handCheer(t, from);
   if (from && from !== t && from.c && from.c.conds && from.c.conds.has("sanctuary") && n > 0) endSanctuary(from, "dealt damage");   // SRD 5.2.1: or deals damage
+  if (from && from !== t && from.c && from.c.conds && from.c.conds.has("invisible") && n > 0) endInvisible(from, "dealt damage");
   if (crit) critBadge(t);   // "Crit when it occurs" (Sam, 2026-10-29)
   // a resistance is a TAG on the number ("5 ½"), not a word of its own over the head (the pop lanes, 2026-10-28)
   let tag = "";
@@ -9577,6 +9808,7 @@ function damage(t, n, type, crit, from, magical = false){
   if (t.c.hp > 0){ const cs = CREATURE_SFX[t.id], v = voxFor(t, "hit"); if (v) setTimeout(() => bank(v, .5), 70); else bank(t.kind === "pc" ? "creature/player_hurt" : cs && cs.hurt ? cs.hurt : "creature/hurt_beast", .7); }
   if (t.c.hp <= 0){ t.killType = type; if (!hero(t)) t.deathFx = pickDeathFx(t, type, crit, from, hitCtx); fall(t); } else if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); else if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle"));
   if (cbt && cbt.boss === t){ if (t.c.hp <= 0) bossFalls(t); else bossHit(t, hpBefore); }   // BOSS FIGHTS: the bar follows every blow; half is the Bloodied beat
+  if (n > 0 && t.c.hp > 0 && t.kind === "pc" && canRebuke(t, from)) offerRebuke(t, from);   // HELLISH REBUKE: the fight stops and asks
   renderParty();
 }
 function miss(t){ popText(t, "miss", "#c9c4b8", .9); if (t.labSphere) labSphereAbsorb(t, null, "#c890ff"); if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle")); }
@@ -9711,7 +9943,8 @@ function seekSight(f){
   f.path = [{x: f.x + (g[0] - f.x) * k, y: f.y + (g[1] - f.y) * k}]; f.onArrive = () => { f.onArrive = null; setAnim(f, "idle"); look(); };
 }
 // end this actor's turn, but only if it is still theirs (callbacks that arrive late must not skip the next one)
-function passTurn(a){ if (cbt && activeActor() === a && !checkEnd()) nextTurn(); }
+function passTurn(a){ if (reactionWait){ reactionWait.then(() => setTimeout(() => passTurn(a), 250)); return; }   // a reaction is being asked: the turn waits for the answer
+  if (cbt && activeActor() === a && !checkEnd()) nextTurn(); }
 // get within reach, then strike; the roll lands on the attack sheet's hit frame
 function approachThen(att, tgt, ft, then){
   const reachFt = ft;
@@ -9919,7 +10152,7 @@ function finishTheFallen(f, t){
 function foeTurn(f){
   if (!actors.includes(f) || f.down){ setTimeout(nextTurn, 100); return; }
   if (f.c.conds.has("prone")){ f.c.conds.delete("prone"); f.c.move = Math.floor(f.c.move / 2); log(`${fname(f)} gets up.`); }
-  const seen0 = standing(heroes()).filter(p => !p.c.conds.has("hidden"));
+  const seen0 = standing(heroes()).filter(p => !p.c.conds.has("hidden") && !p.c.conds.has("invisible"));
   // someone it can see if it can (no wall between them); otherwise the nearest, and it goes round with its blade
   const inSight = seen0.filter(p => !coverOf(f, p).total), blind = !inSight.length && seen0.length > 0;
   const seen = inSight.length ? inSight : seen0;
@@ -9927,6 +10160,16 @@ function foeTurn(f){
   const grudgeOn = cbt && cbt.grudge && cbt.grudge.att === f && !cbt.grudge.tgt.down && actors.includes(cbt.grudge.tgt) ? cbt.grudge.tgt : null;
   let tgt = grudgeOn ? grudgeOn : f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(heroes())) : (seen.length ? seen : standing(heroes())).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
   if (tgt && !grudgeOn && !f.c.berserk){ const pot = potShot(f); if (pot) tgt = pot; }   // BYSTANDERS: threats first, now and then a pot shot
+  // INVISIBILITY (SRD 5.2.1 Invisible): it cannot see them. With nobody it can see, a foe goes for an invisible hero only if
+  // one is close enough to hear and feel (within 5 ft), at disadvantage (advantageOn); otherwise it searches for anyone
+  // merely hidden, or loses the turn looking.
+  if (tgt && tgt.c && tgt.c.conds.has("invisible") && !grudgeOn){
+    const felt = standing(heroes()).filter(p => p.c.conds.has("invisible") && feetBetween(f, p) <= 7.5).sort((p, q) => feetBetween(f, p) - feetBetween(f, q))[0];
+    if (felt) tgt = felt;
+    else { const hid = standing(heroes()).filter(p => p.c.conds.has("hidden") && !p.c.conds.has("invisible"));
+      if (hid.length && !f.c.berserk){ foeSearch(f, hid); return; }
+      popText(f, "where…?", "#c9c4b8"); narrate(f, `${fname(f)} turns in place, weapon up, and sees no one.`); log(`${fname(f)} can see no one to attack (Invisible): the turn is lost.`); setTimeout(() => passTurn(f), 800); return; }
+  }
   if (tgt && !sanctuaryLets(f, tgt)){ const alt = seen.filter(p => p !== tgt && !p.c.conds.has("sanctuary")).sort((a, b) => feetBetween(f, a) - feetBetween(f, b))[0];   // Sanctuary: another target, or the attack is lost
     if (alt) tgt = alt; else { narrate(f, `${fname(f)} raises its weapon at ${fname(tgt)}, and lowers it.`); setTimeout(() => passTurn(f), 700); return; } }
   if (!tgt){
@@ -9969,7 +10212,7 @@ function foeTurn(f){
   // `rotate` (the bhut): Multiattack of two DIFFERENT attacks, one each — the nth swing is the nth attack in the block
   // a curse being spoken (the bhut) holds the turn until the words are out
   const after = ms => Math.max(ms, (f.cursingUntil || 0) - now + 150);
-  let n = 0; const go = () => { if (!cbt || tgt.down || f.down || n >= swings){ setTimeout(() => passTurn(f), after(500)); return; } const a2 = s.rotate && atk === s.attacks[0] ? s.attacks[n % s.attacks.length] : atk; n++; attackWith(f, tgt, a2, () => { const b = FOE_BARK[f.id]; if (b && Math.random() < .4 && !(f.cursingUntil > now)) bark(f, b[1] || b[0], 1600); setTimeout(go, after(250)); }); };
+  let n = 0; const go = () => { if (reactionWait){ reactionWait.then(() => setTimeout(go, 250)); return; } if (!cbt || tgt.down || f.down || n >= swings){ setTimeout(() => passTurn(f), after(500)); return; } const a2 = s.rotate && atk === s.attacks[0] ? s.attacks[n % s.attacks.length] : atk; n++; attackWith(f, tgt, a2, () => { const b = FOE_BARK[f.id]; if (b && Math.random() < .4 && !(f.cursingUntil > now)) bark(f, b[1] || b[0], 1600); setTimeout(go, after(250)); }); };
   setTimeout(go, 500);
 }
 // An ally's turn (Ront, Eldeth, Derendil, Sarith). Plain 5e, no new numbers: close on the nearest foe they can
@@ -10885,6 +11128,8 @@ function drawLabSpark(s, k){
   if (s.labHold){ ovWrapS(s, () => drawLabHold(s)); return true; }
   if (s.labDaggers){ ovWrapS(s.z, () => drawLabDaggers(s)); return true; }
   if (s.labFireSphere){ ovWrapS(s.z, () => drawLabSphereFire(s)); return true; }
+  if (s.labSpiritWeapon){ ovWrapS(s.z, () => drawLabSpiritWeapon(s)); return true; }
+  if (s.labGuardians){ ovWrapS(s, () => drawLabGuardians(s)); return true; }
   if (s.labMote){ drawLabMote(s, k); return true; }
   if (s.labHeart){ drawLabHeart(s, k); return true; }
   if (s.labIllusion){ ovWrapS(s, () => drawLabIllusion(s, k)); return true; }
@@ -10983,7 +11228,7 @@ function endCombat(won){
     if (b.down){ b.kind = "body"; b.body = true; b.once = null; b.lootKey = `${cur}-${Math.round(b.x)}-${Math.round(b.y)}`; }
     else { b.home = {x: b.x, y: b.y}; b.actUntil = now + 3000; }
   }
-  closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby(); poisonZones = []; daggerZones = []; fireSpheres = []; dmPlace = null;
+  closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby(); poisonZones = []; daggerZones = []; fireSpheres = []; spiritWeapons = []; guardianAuras = []; reactionWait = null; dmPlace = null;
   $("bossBar").hidden = true; $("bossBar").classList.remove("show", "bloodied", "flash", "down"); delete $("bossBar").dataset.for; $("bossIntro").hidden = true; $("bossIntro").classList.remove("show");   // BOSS FIGHTS: the bar and the slam go with the fight
   $("cbtFlee").hidden = true; turnCallHide(); $("combat").classList.remove("has-boss", "strip-on", "peek"); clearTimeout(stripShow.t); clearTimeout(peekStats.t); stripShow.hover = false;
   // The dead stay where they fell (Sam, 2026-10-13: "There should always be a carcass or dead body of
@@ -18050,6 +18295,7 @@ function step(a, dt, speed){
 }
 function update(dt){
   if (cbt && poisonZones.length) tickPoisonZones();
+  if (cbt && guardianAuras.length) tickGuardians();
   tickFootsteps();
   tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt);
   ovTick(); tickChasmWebs();
