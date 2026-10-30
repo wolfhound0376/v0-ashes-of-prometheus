@@ -16051,10 +16051,41 @@ $("dmThrow").onclick = () => {
     toggleDm(false); chasmFall(a, {x: a.x, y: a.y + 170}, null, "drop"); return; }
   if (cur !== 9){ toast("The falls are in area 9."); return; } toggleDm(false); const z = node.zones.find(z => z.kind === "water"); const c = zoneCenter(z); leader.x = c.x; leader.y = c.y; overTheFalls(leader, null); };
 $("dmFlag").onclick = () => { toggleDm(false); followCombatFlag({status: "active", startedAt: String(Date.now()), label: "Malachar calls for initiative.", foes: [{name: "Gray Ooze", slug: "gray-ooze", aliases: [], hp: 22, hpMax: 22}, {name: "Drow Guard", slug: "drow-guard", aliases: ["drow"], hp: 13, hpMax: 13}]}); };
-// what [WATCH: change] / [WATCH: unattended] / [WATCH: posted] do, without the game: in the app the poll sets the watch
+// THE DM MOVES THE WATCH (2026-10-30).
+//
+// These two buttons used to call fakeWatch() alone: it set storyWatch in THIS browser and played the hand-over
+// here. Nobody else at the table saw it, and — because nothing reached the server — `rotations` never moved.
+// Measured on the live game that morning: watch null, rotations 0 for the whole run, so Jorlan (who comes on with
+// the 2nd or 3rd rotation) could never arrive and the pen-key shakedown's two-rotation timer could never start.
+//
+// In the app the press now goes to the game (POST /api/map-stage, PR #1139) and the change is real: every seat's
+// poll picks it up, and the server counts the rotation. We then apply the server's OWN watch object here, `since`
+// included, so the DM sees the hand-over immediately rather than waiting for the next poll — and because
+// followWatch dedupes on `since` (watchPlayed), that same poll arriving later is skipped instead of replaying it.
+//
+// Without the game (a local preview of this page, APP false) there is no server, so the old local behaviour
+// stands: fakeWatch plays it here and nothing is counted.
 const fakeWatch = st => { storyWatch = {state: st, since: new Date().toISOString()}; followWatch(storyWatch); };
-$("dmWatchChange").onclick = () => { toggleDm(false); if (cur !== PEN){ log("The watch is the pen's (Area 11)."); return; } fakeWatch("changing"); };
-$("dmWatchEmpty").onclick = () => { toggleDm(false); if (cur !== PEN){ log("The watch is the pen's (Area 11)."); return; } fakeWatch(postsEmpty() ? "posted" : "unattended"); };
+async function setWatch(st){
+  if (!APP){ fakeWatch(st); return; }                      // preview: no game to tell
+  let j;
+  try {
+    const r = await fetch("/api/map-stage", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify({watch: st})});
+    j = await r.json();
+    if (!r.ok) throw new Error(j && j.error ? j.error : `HTTP ${r.status}`);
+  } catch (e){
+    // The press did NOT happen in the story. Say so rather than playing it here and leaving this browser
+    // believing something the rest of the table never saw — that is the bug this whole change exists to end.
+    toast(`The watch did not change: ${String(e.message || e)}`, 5200);
+    return;
+  }
+  if (j.watch){ storyWatch = j.watch; followWatch(storyWatch); }
+  if (st === "changing") log(`The watch changes. Rotation ${j.rotations}${j.jorlanOnDuty ? " — Jorlan is on the watch." : "."}`);
+}
+$("dmWatchChange").onclick = () => { toggleDm(false); if (cur !== PEN){ log("The watch is the pen's (Area 11)."); return; } setWatch("changing"); };
+$("dmWatchEmpty").onclick = () => { toggleDm(false); if (cur !== PEN){ log("The watch is the pen's (Area 11)."); return; } setWatch(postsEmpty() ? "posted" : "unattended"); };
+// the labels say "(preview)" because that is all they were; with a game behind them they are the real thing
+if (APP){ $("dmWatchChange").textContent = "Story: the watch changes"; $("dmWatchEmpty").textContent = "Story: posts unattended / posted again"; }
 $("dmGuards").onclick = () => { toggleDm(false); const g = npcs.filter(n => /^drow-guard|^jorlan$/.test(n.id) && !offDuty(n)); if (!g.length){ log("No guards on this plate."); return; } g.forEach(n => { n.stroll = null; n.offStage ? castReturns(n) : castLeaves(n, false); }); };
 $("dmOoze").onclick = async () => { toggleDm(false); if (creatures.has("gray-ooze")) { const f = creatures.get("gray-ooze"); if (!f.inside) creatureCrosses("gray-ooze"); else creatureLeaves("gray-ooze", false); return; } if (await loadSpriteManifest("gray-ooze")) creatureArrives({slug: "gray-ooze", name: "Gray Ooze", hp: 22, hpMax: 22}); };
 function setTimeStopped(on){
