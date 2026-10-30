@@ -3755,8 +3755,10 @@ function openProp(pr, opts = {}){
     $("objText").textContent = pr.text.closed + (st.trapKnown ? (st.disarmed ? " The needle in the lock is harmless now." : " A needle hides in the lock, its tip dark with something.") : "");
     if (!opts.again) sfx("door-locked", .45);
     if (!st.trapKnown) add("Search it for traps", ask("ilvara-chest:search", heroMod(leader, "investigation", "int"), () => { st.trapKnown = true; toast("There: a needle set into the lock, its tip stained dark.", 3600); log(`${fname(leader)} finds a poison needle in the lock of ${pr.name}.`); }, () => { toast("You find nothing wrong with it.", 2800); }));
-    if (st.trapKnown && !st.disarmed) add("Disarm the needle (thieves' tools)", ask("ilvara-chest:disarm", dex, () => { st.disarmed = true; sfx("lock-picked", .7); log(`${fname(leader)} disarms the needle.`); }, () => { sfx("lock-pick-fail", .7); toast("The needle does not come free.", 2800); }));
-    add("Pick the lock (thieves' tools)", ask("ilvara-chest:pick", dex, () => { needle(pr); sfx("lock-picked", .9); st.locked = false; setTimeout(() => openChest(pr), 700); }, () => { needle(pr); sfx("lock-pick-fail", .8); toast("The lock holds.", 2800); }), "primary");
+    // THE TOOLS, HERE TOO (Sam, 2026-10-30: "make sure options are actual options that should be available to
+    // you"). The pen gate stopped offering a tool check to a hero with no tools; this card was still offering two.
+    if (st.trapKnown && !st.disarmed && hasThievesTools(leader)) add("Disarm the needle (thieves' tools)", ask("ilvara-chest:disarm", dex, () => { st.disarmed = true; sfx("lock-picked", .7); log(`${fname(leader)} disarms the needle.`); }, () => { sfx("lock-pick-fail", .7); toast("The needle does not come free.", 2800); }));
+    if (hasThievesTools(leader)) add("Pick the lock (thieves' tools)", ask("ilvara-chest:pick", dex, () => { needle(pr); sfx("lock-picked", .9); st.locked = false; setTimeout(() => openChest(pr), 700); }, () => { needle(pr); sfx("lock-pick-fail", .8); toast("The lock holds.", 2800); }), "primary");
     // only with the key in hand: OotA area 7, "Ilvara keeps the key in a hidden pocket on the inside of her belt" — lift
     // it from her (Pick Ilvara's pocket, lib/walk-loot.ts POCKETS) and the needle never fires
     if (hasItemNamed(ILVARA_KEY)) add("Use Ilvara's key", () => { close(); st.locked = false; st.disarmed = true; sfx("lock-picked", .9); log(`${fname(leader)} turns Ilvara's key.`); setTimeout(() => openChest(pr), 600); });
@@ -9195,7 +9197,7 @@ function renderCastMenu(caster, cid, list, o, healing){
   if (!list.length) add("No spells on the sheet", "·", null, "", null);
   for (const sp of list){
     const lvl = sp.level === 0 ? "cantrip" : `level ${sp.level} · ${sp.left} slot${sp.left === 1 ? "" : "s"} left`;
-    if (inChains() && !voiceOnly(sp.components)){ add(sp.name, "✦", null, `${lvl} · ${sp.components ? "needs your hands, and they are chained" : "needs more than a voice"}`, null); continue; }
+    if (handsBound() && !voiceOnly(sp.components)){ add(sp.name, "✦", null, `${lvl} · ${sp.components ? "needs your hands, and they are in irons" : "needs more than a voice"}`, null); continue; }
     if (sp.left === 0){ add(sp.name, "✦", null, `${lvl} · a long rest brings them back`, null); continue; }
     if (sp.kind === "fight" && inChains()){         // on a detail a spell at a guard is not a fight: it is defiance, and they see it
       if (o.foe) add(`${sp.name} at ${SHORT[o.foe.id] || SPR[o.foe.id].json.name}`, "✦", null, `${lvl} · they will see it`, () => doCast(caster, cid, sp, o.foe, null), "end");
@@ -9235,6 +9237,14 @@ async function doCast(caster, cid, sp, target, targetId){
 // gesture). Cast where the escort can see it, or at the escort, and it is defiance: the same ladder as keeping a
 // stolen thing (laborDisobey, cause "cast" — the server already knew the word).
 function inChains(){ return laborLive() && labor.status !== "called" && cur !== PEN; }
+/**
+ * HANDS BOUND. `inChains()` is about a WORK DETAIL — it is what the escort can see, and it is false in the pen.
+ * But the manacles are on in the pen too (OotA p.11: prisoners are manacled and stripped of components and
+ * focuses), so a spell that needs hands or a pouch was listed as castable there and refused on a detail — the
+ * same hero, the same cuffs, two answers. Sam, 2026-10-30: "make sure options are actual options that should be
+ * available to you." The components gate asks THIS; being seen by the escort still asks inChains().
+ */
+function handsBound(){ return inChains() || manacled(); }
 const voiceOnly = c => !!c && c.v && !c.s && !c.m;
 async function laborCastSeen(h, target){
   const eyes = laborWatchedBy(h), atThem = target && target.escort;
