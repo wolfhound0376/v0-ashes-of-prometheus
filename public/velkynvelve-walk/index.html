@@ -3921,7 +3921,7 @@ async function takeLoot(a, id, row){
     if (have) have.qty = (have.qty || 1) + row.qty;
     else g.carried.push({name: row.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: cat.pixel_icon_url || null, qty: row.qty, icon: cat.icon_url || null, desc: cat.description || ""});
   }
-  if (row.name === PEN_KEY) state.penKey = true;
+  if (row.name === PEN_KEY){ state.penKey = true; shakeKeyTaken(); }   // THE SHAKEDOWN: the drow start counting rotations
   if (bagOpen()) renderBag();
   popText(a, `+ ${row.qty > 1 ? row.qty + " " : ""}${row.name}`, row.missing || row.kind === "preview-stash" || RARITY_RANK[rarityOf(row)] < 1 ? "#e8d9a8" : RARITY_COL[rarityOf(row)]); bank("ui/item_pickup", .7);
   log(`${fname(a)} takes ${esc(row.qty > 1 ? row.qty + " × " : "")}<b>${esc(row.name)}</b>.`);
@@ -5316,6 +5316,7 @@ function unlockGate(forced){
   if (balcony()) buildGrid();
   const opened = forced ? "The pen gate tears open and hangs from one hinge." : "The pen gate swings open.";
   log(opened);
+  shakeKeyResolved();    // THE SHAKEDOWN: the key has done its work (or the gate is moot) -- the drow stop counting
   const r = npcs.find(n => n.id === "ront"); if (r && cur === 11) setTimeout(() => bark(r, "Finally.", 3000), 900);
 }
 function openGate(){
@@ -12996,6 +12997,10 @@ async function pollStage(){
     storyWatch = j.watch || null;
     // Jorlan's turn on the watch. Decided before the cast loop, which leaves him alone while he is off duty and must
     // not walk him back the instant he comes on (n.relief holds that until the relief has had its moment).
+    // THE SHAKEDOWN: the rotation count is the clock the drow keep on their missing key (Sam, 2026-10-30:
+    // "Shakedown is a rotation (but that ONLY occurs when the key has been stolen)"). Read here because this is
+    // the one place the page learns the count, and checked after the cast loop so the pen is staged first.
+    if (typeof j.rotations === "number" && !j.error) storyRotations = j.rotations;
     if (typeof j.jorlanOnDuty === "boolean" && !j.error){
       const was = jorlanDuty; jorlanDuty = j.jorlanOnDuty;
       const jn = cur === PEN ? npcs.find(n => n.id === "jorlan" && !n.body && !n.slain) : null;
@@ -13017,6 +13022,7 @@ async function pollStage(){
       if (!n.offStage){ if (here && here.where && here.where !== n.rosterWhere){ n.rosterWhere = here.where; castMovesTo(n, here.where); } castAsks(n, here ? here.wantsWord : null); }
     }
     followWatch(storyWatch); followGate(j.gate || null);
+    shakedownTick();                 // THE SHAKEDOWN: after the cast, so the pen is staged before the drow come in
     stageSeen = {present, gone};
   } catch (e) {}
 }
@@ -18119,6 +18125,230 @@ function bodyRemovalTotalMs() {
   return R.walkMs + R.hoistMs + R.carryMs
 }
 
+
+// ---------- THE PEN-KEY SHAKEDOWN (Sam, 2026-10-30) ----------
+// "after two guard rotations, the guards come in and check everyone for those key. Two guards and a Quaggoth enter
+// to enforce compliance." Then, on the unit: "Shakedown is a rotation (but that ONLY occurs when the key has been
+// stolen) so this shouldn't really happen frequently." And: "There should only be one shakedown because stealing a
+// key happens once most likely and after that they will likely stop leaning on the door."
+//
+// A ROTATION, NOT A CLOCK. This is deliberately NOT the five-minute guard cycle that body-removal above runs on.
+// Those two units were defined on the same day and they are different on purpose: a body is carried out on wall
+// time, the shakedown waits on the WATCH actually changing (the stage roster's `rotations`, the same counter that
+// brings Jorlan on). So a table that never changes the watch is never shaken down, which is the intent -- it is a
+// consequence of the story moving, not of time passing.
+//
+// The rules and the clock are lib/shakedown.mjs, pasted below. This half is the seam: when the key goes, when the
+// drow stop caring, and when it comes due. The scene itself -- the enforcers walking in, the consent card, the two
+// branches and the alarm waves -- is the next PR, modelled on THE SURRENDER above (a shared record so every screen
+// plays one copy, not a local guess).
+// The pen-key shakedown: what the drow do when their key goes missing and nothing happens.
+//
+// Design of record: project doc claude/Pen_Key_And_Watch_2026-10-30.md.
+// Sam's rulings, 2026-10-30. [SAM] his words; [HOUSE] Claude's proposal inside them; [BOOK] Out of the Abyss.
+//
+// The shape: a prisoner lifts the pen key off a guard (walk-loot pockets, PR #966/#971) and then sits on it. Two
+// guard rotations later the drow come in and search everyone. The party may submit — which costs a prisoner's life
+// — or fight, which opens the door and raises the alarm.
+//
+// Plain JavaScript for the same reason as lib/game-over.mjs and lib/body-removal.mjs: build_walk.py pastes this
+// file into the painted map at its /*__SHAKEDOWN__*/ placeholder, minus `export`.
+//
+// Pure: no DOM, no fetch, no Supabase. Rotations come from the stage roster (lib/stage-roster.ts `rotations`),
+// which is the same counter that brings Jorlan on — so this could not fire at all until the watch could actually
+// change (PRs #1139, #1144).
+
+/** The rotation gap between the key going missing (or the last shakedown) and the next one. [SAM] */
+const SHAKEDOWN_ROTATIONS = 2
+
+/**
+ * [SAM, 2026-10-30, superseding his earlier answer the same day] ONE shakedown, not a repeating one:
+ * "There should only be one shakedown because stealing a key happens once most likely and after that they will
+ * likely stop leaning on the door."
+ *
+ * That reasoning is load-bearing, so it is written down rather than just the rule: the opportunity to lift the key
+ * is itself scarce. The run gets 1d4 leans at the bars, a caught thief ends that guard's leaning permanently, and
+ * once the party holds a key no other guard offers one (walk-loot `penKeyGone`). So a second theft is the unlikely
+ * case, and a shakedown that kept recurring would punish a party for a scarcity the drow created.
+ *
+ * `done` is therefore terminal for the run. A later theft does not re-arm it.
+ */
+
+const noKeyWatch = () => ({ takenAtRotation: null, done: false, resolved: false })
+
+/** The key just came off a guard at `rotation`. A theft after the shakedown has played changes nothing. */
+function keyTaken(w, rotation) {
+  if (w.done) return w
+  return { takenAtRotation: rotation, done: false, resolved: false }
+}
+
+/** The key went back to the drow, or was used on the gate: the drow stop looking. */
+function keyResolved(w) {
+  return { ...w, resolved: true }
+}
+
+/** Is the shakedown due at `rotation`? Two rotations after the theft, and only if it has not already played. */
+function shakedownDue(w, rotation) {
+  if (w.done || w.resolved || w.takenAtRotation === null) return false
+  return rotation - w.takenAtRotation >= SHAKEDOWN_ROTATIONS
+}
+
+/** Record that it played. Terminal — nothing re-arms it for the rest of the run. */
+function shakedownHappened(w) {
+  return { ...w, done: true }
+}
+
+// ─── The consent step ─────────────────────────────────────────────────────────────────────────────────────────
+// [SAM] "all main characters have to agree or combat ensues".
+// [SAM, 2026-10-30] "They don't count if they are dead."
+//
+// So the vote is over the LIVING seated heroes. A dead hero is not a holdout and must not be able to force the
+// fight from beyond the grave — which matters because Branch A's whole premise is that the party has already been
+// losing people.
+
+
+/** Whose answer the submission is waiting on: living seats that have not agreed yet. */
+function pendingVoters(voters) {
+  return voters.filter((v) => !v.dead && !v.agreed).map((v) => v.id)
+}
+
+/**
+ * Do they submit? Every LIVING seat must agree. A table where everyone seated is dead cannot submit — there is
+ * nobody left to hand the key over — so that is not a silent yes; the caller is already in GAME OVER territory.
+ */
+function partySubmits(voters) {
+  const living = voters.filter((v) => !v.dead)
+  return living.length > 0 && living.every((v) => v.agreed)
+}
+
+// ─── Who comes in ─────────────────────────────────────────────────────────────────────────────────────────────
+// [SAM, 2026-10-30] "two guards and one quaggoth or one mounted guard and one elite drow."
+// The second is the harder draw: the elite's passive Perception is 14 against a regular drow's 12, and the mount
+// is the giant lizard already used at the labor plates (SRD, climb 30 ft), so it can follow anyone down the cliff.
+
+
+const ENFORCER_PARTIES = [
+  { slugs: ["drow-guard-male", "drow-guard-female", "quaggoth"], mounted: false, passive: 12, label: "two drow and a quaggoth" },
+  { slugs: ["drow-guard-male", "drow-elite-warrior"], mounted: true, passive: 14, label: "a mounted drow and an elite warrior" },
+]
+
+/** Which pair walks in. `rand` returns [0,1). */
+function rollEnforcers(rand = Math.random) {
+  return ENFORCER_PARTIES[Math.min(ENFORCER_PARTIES.length - 1, Math.floor(rand() * ENFORCER_PARTIES.length))]
+}
+
+// ─── Branch A: give up the key ────────────────────────────────────────────────────────────────────────────────
+// [SAM] "it is gone from inventory and an NPC is murdered at random, leaving a RIP tombstone for them - only
+// Buppido is spared during this interaction. The RIP tombstone replaces their body."
+// [SAM, 2026-10-30] Prisoner NPCs only — never a player character.
+
+/** Spared by name, always. [SAM] Buppido and no one else. */
+const SPARED = ["Buppido"]
+
+
+/**
+ * Who can be the one killed: a living prisoner NPC who is still here, minus Buppido.
+ *
+ * Player characters are not in this pool at all — the caller passes prisoner NPCs (lib/labor-walk PRISONERS),
+ * never the party. That is a ruling, not an oversight: the shakedown must never be able to delete someone's hero.
+ */
+function victimPool(present) {
+  return present
+    .filter((c) => !c.dead && !c.gone)
+    .map((c) => c.name)
+    .filter((n) => !SPARED.includes(n))
+}
+
+/** The one who dies, or null when there is nobody left to kill (every prisoner dead, or only Buppido remains). */
+function pickVictim(present, rand = Math.random) {
+  const pool = victimPool(present)
+  if (!pool.length) return null
+  return pool[Math.min(pool.length - 1, Math.floor(rand() * pool.length))]
+}
+
+// ─── Branch B: fight ──────────────────────────────────────────────────────────────────────────────────────────
+// [SAM] "If the group wins the fight then the door is left open to escape but now they will need to fight through
+// with the alarm on; soon drow will start pouring in from the map."
+// [SAM, 2026-10-30] Approved: two-minute waves, three waves, a countdown banner on the pixel map.
+//
+// [HOUSE] The numbers. Velkynvelve garrisons 19 drow and 12 quaggoths [BOOK], so the response must be finite or
+// the outpost abandons every post it has. Three waves commit 6 drow and 2 quaggoths; with the enforcers already
+// in the pen that is 8 of 19 — heavy, survivable, and it leaves the rest of the outpost plausibly manned.
+//
+// Two minutes is roughly 6-8 rounds: a full wave-gap to clear the plate. Sam's constraint was "make it reasonable
+// or this will be impossible to get out", and the banner is what makes that legible BEFORE the first bolt flies.
+
+const WAVE_INTERVAL_MS = 2 * 60 * 1000
+const WAVE_COUNT = 3
+
+
+const WAVES = [
+  { n: 1, atMs: 1 * WAVE_INTERVAL_MS, slugs: ["drow-guard-male", "drow-guard-female"], from: ["bridge"] },
+  { n: 2, atMs: 2 * WAVE_INTERVAL_MS, slugs: ["drow-guard-male", "drow-guard-female", "quaggoth"], from: ["bridge", "stairs"] },
+  { n: 3, atMs: 3 * WAVE_INTERVAL_MS, slugs: ["drow-guard-male", "drow-guard-female", "quaggoth"], from: ["bridge", "stairs"] },
+]
+
+/** Waves whose time has come but which have not landed yet, given how long the alarm has been up. */
+function wavesDue(elapsedMs, landed) {
+  return WAVES.filter((w) => w.n > landed && elapsedMs >= w.atMs)
+}
+
+/** The next wave still to come, or null once all three have landed. */
+function nextWave(landed) {
+  return WAVES.find((w) => w.n > landed) ?? null
+}
+
+/**
+ * What the banner reads. `null` once the last wave has landed — nothing more is coming, and a countdown to
+ * nothing is a lie the players would plan around.
+ */
+function bannerText(elapsedMs, landed) {
+  const w = nextWave(landed)
+  if (!w) return null
+  const left = Math.max(0, w.atMs - elapsedMs)
+  const mm = Math.floor(left / 60000)
+  const ss = Math.floor((left % 60000) / 1000)
+  const when = `${mm}:${String(ss).padStart(2, "0")}`
+  return w.n === 1 ? `ALARM RAISED — first spears in ${when}` : `WAVE ${w.n} in ${when}`
+}
+
+/**
+ * The alarm stops sending anyone once the party is off the pen plate and one plate beyond it [HOUSE] — the escape
+ * is through the outpost, not a last stand in the pen. Survivors still follow; nothing new spawns.
+ */
+// Namespaced, like every other pasted module: the page already has a PEN_PLATE from lib/labor-walk.mjs, and two
+// `const` of the same name in one script is a SyntaxError that kills the whole page, not a shadowed variable.
+const SHAKEDOWN_PEN_PLATE = "11"
+function wavesStopped(plate, platesLeft) {
+  return String(plate) !== SHAKEDOWN_PEN_PLATE && platesLeft >= 1
+}
+
+let storyRotations = 0;                       // the stage roster's count, from the poll
+const shakeWatch = () => state.keyWatch || (state.keyWatch = noKeyWatch());
+/** A prisoner just lifted the pen key: the drow begin counting from this rotation. */
+function shakeKeyTaken(){
+  state.keyWatch = keyTaken(shakeWatch(), storyRotations);
+  saveWalk();
+}
+/** The key went back, or turned in the lock: the drow stop looking, and the shakedown never comes. */
+function shakeKeyResolved(){
+  if (!state.keyWatch || state.keyWatch.resolved) return;
+  state.keyWatch = keyResolved(state.keyWatch);
+  saveWalk();
+}
+/**
+ * Due yet? Checked on the poll, in the pen only. One per run: shakedownHappened is terminal, so a party that keeps
+ * the key is not shaken down again -- Sam's reasoning being that the chance to lift it was scarce to begin with.
+ */
+function shakedownTick(){
+  if (!APP || cur !== PEN || mode !== "explore") return;
+  if (!shakedownDue(shakeWatch(), storyRotations)) return;
+  state.keyWatch = shakedownHappened(state.keyWatch); saveWalk();
+  const party = rollEnforcers();
+  log(`<b>The drow come in for their key.</b> ${esc(party.label)} cross the bridge and the gate swings wide.`);
+  // Until the scene is staged (next PR) the moment is Malachar's, so it plays at the table rather than being lost.
+  handOff(`The drow have missed the pen key for two watches. ${party.label} enter the pen to search every prisoner for it.`, true);
+}
 /** A prisoner dies in the pen: start their ten minutes. Heroes are never offered — their death is the table's. */
 function bodyRemovalNote(t){
   if (!t || t.kind === "pc" || hero(t) || cur !== BODY_REMOVAL_RULES.plate) return;
