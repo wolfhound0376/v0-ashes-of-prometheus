@@ -23,6 +23,7 @@ import { sanitizeForTTS, canSpeak, setDmVoiceEnabled, setNpcVoiceEnabled, setPla
 import { unlockSpeechAudio, type SpeechPlayback } from "@/lib/speech-playback"
 import { hearsNpcVoice, type VoiceAudience } from "@/lib/voice-audience"
 import { speakBlob } from "@/lib/speech-queue"
+import { runVoicePipeline } from "@/lib/voice-pipeline"
 // The speaker-attribution parser. It lives in the v3 center column today; when
 // that tree is finally deleted this should move to lib/ rather than be rewritten
 // — the quote-pairing and alias rules in it are hard-won.
@@ -217,14 +218,17 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
     }
   }, [])
 
-  // Speak one utterance, start to finish. Resolves when the audio ends (or
-  // fails), so the drain loop below never overlaps two of them.
+  // Fetching and playing are separate so the two can OVERLAP: lib/voice-pipeline.ts
+  // keeps the next lines in synthesis while this one is in the speakers, which
+  // is the whole of Sam's "long delay" (the measurements are in that file).
   //
   // The DM and the NPCs go to DIFFERENT endpoints on purpose. /api/tts is
   // Malachar's fixed lich voice; /api/npc-tts resolves and persists a distinct
   // voice per NPC row, so Eldeth does not sound like Jimjar.
-  const speak = useCallback(async (u: Utterance) => {
-    setStatus("loading")
+
+  /** Fetch one line's audio. Returns null when it cannot be made — a missing
+   *  line is logged and skipped, never retried into a stall. */
+  const fetchVoice = useCallback(async (u: Utterance): Promise<Blob | null> => {
     const [endpoint, payload] = u.kind === "dm"
       ? ["/api/tts", { text: u.text, voice: "onyx" }]
       : u.kind === "player"
@@ -248,32 +252,35 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
           npcId: u.npc.id,
           listenerCharacterId: listenerCharacterId(),   // a myconid's line is heard in this player's own voice
         }]
-    let res: Response
     try {
-      res = await fetch(endpoint as string, {
+      const res = await fetch(endpoint as string, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       })
+      if (!res.ok) {
+        console.log("[v0] narration TTS failed:", endpoint, res.status)
+        return null
+      }
+      return await res.blob()
     } catch (err) {
       console.log("[v0] narration fetch error:", err)
-      setStatus("idle")
-      return
+      return null
     }
-    if (!res.ok) {
-      console.log("[v0] narration TTS failed:", endpoint, res.status)
-      setStatus("idle")
-      return
-    }
-    // The toggle may have been switched off while the audio was downloading.
-    if (!enabledRef.current) { setStatus("idle"); return }
+  }, [])
+
+  /** Play one line, start to finish. Resolves when the audio ends (or fails),
+   *  so two utterances are never in the speakers at once. */
+  const play = useCallback(async (u: Utterance, blob: Blob | null) => {
+    // The toggle may have been switched off while the audio was being made.
+    if (!blob || !enabledRef.current) { setStatus("idle"); return }
 
     // The shared helper decodes the MP3 and plays it through WebAudio. Going
     // through an <audio> element instead is silently mute in some Chromium
     // builds — play() resolves and currentTime advances with no sound.
     const playback = speakBlob(
       u.kind === "player" ? "player" : u.kind === "npc" ? "npc" : "dm",
-      await res.blob(),
+      blob,
       { speaker: u.kind === "npc" ? u.npc.name : u.kind === "player" ? u.pc.name : "Malachar" },
     )
     audioRef.current = playback
@@ -299,14 +306,20 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
   const drain = useCallback(async () => {
     if (drainingRef.current) return
     drainingRef.current = true
-    while (enabledRef.current && queueRef.current.length) {
-      const next = queueRef.current.shift()
-      if (next) await speak(next)
+    try {
+      await runVoicePipeline<Utterance, Blob>({
+        take: () => queueRef.current.shift(),
+        fetchVoice,
+        play,
+        enabled: () => enabledRef.current,
+        onWaiting: () => setStatus("loading"),
+      })
+    } finally {
+      drainingRef.current = false
+      setFloor(null)
+      if (!enabledRef.current) setStatus("idle")
     }
-    drainingRef.current = false
-    setFloor(null)
-    if (!enabledRef.current) setStatus("idle")
-  }, [speak, setFloor])
+  }, [fetchVoice, play, setFloor])
 
   // Restore the saved preference after mount, so SSR and the first client
   // render agree (localStorage during render is a hydration mismatch).
@@ -447,12 +460,23 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
       const npc = npcsRef.current.find((entry) => entry.name.toLowerCase() === line.speaker.toLowerCase())
       const text = sanitizeForTTS(line.text)
       // An NPC answering another player is seen here but not heard (Sam, 2026-10-26); the DM hears them all.
-      if (npc && text) return hearsNpcVoice(line, audienceRef.current) ? [{ kind: "npc" as const, text, npc }] : []
+      if (npc && text) {
+        if (hearsNpcVoice(line, audienceRef.current)) return [{ kind: "npc" as const, text, npc }]
+        // SAY WHY IT IS QUIET. Every rule below this point drops a line in
+        // silence, with nothing in the console to tell a silent NPC apart from
+        // a broken one — which is how "no audio when talking to Ront" has no
+        // evidence behind it either way. These three lines are diagnostics
+        // only; they change no behaviour.
+        console.log("[v0] narration: held back —", line.speaker, "is answering", line.recipient, "not", audienceRef.current?.name)
+        return []
+      }
       // A player character's own typed line, in their chosen voice. Dice-roll
       // announcements stay silent — the table already watched the dice land.
       const pc = playersRef.current.find((entry) => entry.name.toLowerCase() === line.speaker.toLowerCase())
       const isRollLine = line.text.trimStart().startsWith("🎲") || line.text.includes("[Dice Roll]")
-      return pc && text && !isRollLine ? [{ kind: "player" as const, text, pc }] : []
+      if (pc && text && !isRollLine) return [{ kind: "player" as const, text, pc }]
+      if (!npc && !pc && text) console.log("[v0] narration: no voice row for", line.speaker, "— line not spoken")
+      return []
     })
       // One gate for both paths: DM utterances follow DM Voice, NPC utterances
       // follow NPC Voices. canSpeak classifies by speaker name so the Lich is
