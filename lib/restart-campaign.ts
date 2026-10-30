@@ -25,7 +25,12 @@
 //     NPCs were lost to a direct-SQL delete on 2026-08-01. Never again.
 //   - dm_phrasebook. Deliberate. It is Malachar's ban list of his own opening
 //     lines, and it exists precisely BECAUSE restart wipes the dialogue table.
-//     Clearing it here would restore the bug it was built to fix.
+//     Clearing it here would restore the bug it was built to fix. (Since
+//     2026-10-30 the wiped lines are archived rather than destroyed — but the
+//     ban list is still the only thing Malachar's prompt reads, and it must
+//     stay: the archive is for recaps and for recycling NPC and system lines,
+//     never for feeding Malachar his own old openings back.)
+//   - dialogue_archive. Never cleared by anything, by design. Step 1 fills it.
 //   - Curated environments (see isCuratedEnvironment below).
 //   - cinematic_clips and the films themselves. The LIBRARY survives; only the
 //     record of who has watched what is cleared (see step 1b).
@@ -63,6 +68,7 @@
 // everyone — an unset code means the gate is locked, not missing (changed
 // 2026-08-20 on Sam's order; the old fail-open rule let anyone in).
 
+import { randomUUID } from "node:crypto"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { startingSituation } from "@/lib/situation"
 
@@ -179,6 +185,43 @@ function isCuratedEnvironment(row: EnvironmentRow): boolean {
 
 export type RestartResult = { ok: boolean; report: Record<string, unknown>; problems: string[] }
 
+/** What step 1 did: numbers for the report, plus a problem string when the archive refused. */
+export type DialogueSweep = { report: Record<string, unknown>; problem: string | null }
+
+/**
+ * Copy the whole transcript into `dialogue_archive` under one batch id, and
+ * only then empty `dialogue`.
+ *
+ * Sam, 2026-10-30: "archive never delete as a rule." The order here IS the
+ * rule — the delete is unreachable unless the copy returned without error.
+ * Exported so the gate can be tested without standing up the whole restart.
+ */
+export async function archiveThenWipeDialogue(admin: SupabaseClient): Promise<DialogueSweep> {
+  const batch = randomUUID()
+  const { data: archived, error: archiveError } = await admin.rpc("archive_dialogue", { batch })
+  if (archiveError) {
+    console.error("[restart] dialogue archive FAILED — refusing to wipe the transcript:", archiveError)
+    return {
+      problem: "dialogue archive (wipe skipped)",
+      report: { dialogueArchived: 0, dialogueDeleted: 0, dialogueArchiveError: archiveError.message },
+    }
+  }
+
+  const { count, error } = await admin
+    .from("dialogue")
+    .delete({ count: "exact" })
+    .neq("id", "00000000-0000-0000-0000-000000000000")
+  if (error) console.error("[restart] dialogue:", error)
+  return {
+    problem: error ? "dialogue" : null,
+    report: {
+      dialogueArchived: typeof archived === "number" ? archived : 0,
+      dialogueArchiveBatch: batch,
+      dialogueDeleted: count ?? 0,
+    },
+  }
+}
+
 /** Wipe the run and put the party back in the pen. Never throws for a single failed step: each one
  *  is recorded in `problems`, and `ok` is false when any step failed. */
 export async function restartCampaign(admin: SupabaseClient): Promise<RestartResult> {
@@ -191,14 +234,24 @@ export async function restartCampaign(admin: SupabaseClient): Promise<RestartRes
     }
   }
 
-  // --- 1. dialogue --------------------------------------------------------
+  // --- 1. dialogue — ARCHIVE FIRST, then wipe ------------------------------
+  // Sam, 2026-10-30: "archive never delete as a rule."
+  //
+  // This step used to be a bare delete, and it is the reason there is no record
+  // of any session before the current one: every line Malachar and the NPCs
+  // ever spoke went out with the run. Now the whole table is copied into
+  // `dialogue_archive` under one batch id (one uuid per restart) before it is
+  // emptied — see supabase/migrations/20261030200000_dialogue_archive.sql.
+  //
+  // THE DELETE IS GATED ON THE ARCHIVE. If the copy fails for any reason — the
+  // migration not applied yet being the obvious one — the wipe does not run and
+  // the step is reported as a problem. A restart that leaves last run's lines
+  // in the table is a visible nuisance; a restart that destroys them is not
+  // recoverable, and the whole point of this change is that it stops happening.
   {
-    const { count, error } = await admin
-      .from("dialogue")
-      .delete({ count: "exact" })
-      .neq("id", "00000000-0000-0000-0000-000000000000")
-    note("dialogue", error)
-    report.dialogueDeleted = count ?? 0
+    const outcome = await archiveThenWipeDialogue(admin)
+    Object.assign(report, outcome.report)
+    if (outcome.problem) problems.push(outcome.problem)
   }
 
   // --- 1b. cinematic memory ----------------------------------------------
