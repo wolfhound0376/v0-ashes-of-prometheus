@@ -3745,6 +3745,8 @@ const LOOT_BOOK = {
   "body:giant-spider": [["spider-venom-gland", 1, "cut clear of the jaws"], ["giant-spider-silk", 2, "strands from the spinnerets"], ["spider-meat", 2, "from the legs"]],
   "body:gray-ooze": [["gray-ooze-residue", 1, "only with a Medicine check (DC 15)", {skill: "medicine", dc: 15, fail: {dice: "1d6", type: "acid"}}]],
   "body:hook-horror": [["hook-horror-claw", 2, "the two great hooks"]],
+  // Buppido's grave gives up one thing (Sam, 2026-10-30) — same list as lib/walk-loot.ts BODY_KIT
+  "body:zombie-rotting": [["scarab-of-protection", 1, "still closed in its fist"]],
   "pocket:drow-guard-male": [], "pocket:drow-guard-female": [],   // marks who has pockets; each guard's own are rolled (POCKET_TABLE)
   // Hard Labor plates (2026-10-26): same lists as lib/walk-loot.ts
   "cliff-top-sack": [["fresh-fruit", 1, "a container of it"]], "cliff-crate": [["dart", 5, "on a weapon belt"]], "cliff-low-sack": [["drow-poison", 3, "vials in a pouch"]],
@@ -5607,6 +5609,17 @@ const FOE_BLOCKS = {
                    attacks: [{name: "Bite", hit: 3, dmg: "1d6+1", type: "piercing", reach: 5, rider: {save: "con", dc: 11, dmg: "2d6", type: "poison", half: true}}]},
   quaggoth: {name: "Quaggoth", xp: 450, passive: 11, hp: 45, ac: 13, speed: 30, init: 1, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, immune: ["poison"], immuneCond: ["poisoned"],
              attacks: [{name: "Claw", hit: 5, dmg: "1d6+3", type: "slashing", reach: 5}], multi: 2, woundedFury: 10},
+  // THE THING THAT COMES OUT OF BUPPIDO'S GRAVE (Sam, 2026-10-30). SRD 5.1 Zombie, unchanged: AC 8, 22 hp (3d8+9),
+  // speed 20 (it shambles — half everyone else, and that is the whole shape of the fight in a closed pen), Slam +3 for
+  // 1d6+1 bludgeoning, immune to poison and the poisoned condition, passive Perception 8, CR 1/4.
+  // UNDEAD FORTITUDE is kept. Asked directly whether to soften it for a pen of level-1 prisoners with no weapons, Sam
+  // kept the canon rule (2026-10-30). It is the reason this fight is frightening rather than arithmetic: the thing gets
+  // back up, and the only ways to stop that are a critical hit or radiant damage, neither of which a stripped prisoner
+  // can count on.
+  "zombie-rotting": {name: "Zombie", ctype: "undead", xp: 50, passive: 8, hp: 22, ac: 8, speed: 20, init: -2,
+                     saves: {str: 1, dex: -2, con: 3, int: -4, wis: 0, cha: -3}, immune: ["poison"], immuneCond: ["poisoned"],
+                     undeadFortitude: true,
+                     attacks: [{name: "Slam", hit: 3, dmg: "1d6+1", type: "bludgeoning", reach: 5}]},
   // THE BHUT under Old Thessaly (Sam, 2026-10-24; stat block supplied by Sam, homebrew, in `bestiary` as `bhut`):
   // Medium undead, AC 13, 45 HP, speed 30; resists bludgeoning/piercing/slashing from NONMAGICAL attacks (Sam, 2026-10-24:
   // "He should resist most weapons except magic weapons" — `resistNonmagical`; a weapon is magic when its catalogue row is
@@ -5967,7 +5980,9 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   // fight alone. Now whatever opens the fight, every hostile still standing on this plate is added to it, where it stands.
   // Not the dead, not the off-stage, not anyone already named; prisoners and bystanders are not `hostile`.
   { const named = new Set(foeIds.filter(f => typeof f === "object"));
-    const more = npcs.filter(n => n.hostile && !named.has(n) && !n.down && !n.body && !n.offStage && !n.backdrop && (n.alpha ?? 1) > .5 && actors.includes(n) && !(n.c && n.c.hp <= 0));
+    // SPECTATORS stay out of it (Sam, 2026-10-30, on the drow while Buppido's zombie fights the party: "watch and
+    // enjoy it"). They are hostile, armed and standing right there, and this one fight is not theirs.
+    const more = npcs.filter(n => n.hostile && !named.has(n) && !buppidoRisesSpectator(n) && !n.down && !n.body && !n.offStage && !n.backdrop && (n.alpha ?? 1) > .5 && actors.includes(n) && !(n.c && n.c.hp <= 0));
     if (more.length){ foeIds = [...foeIds, ...more]; if (opts.surprised) opts.surprised = [...opts.surprised, ...more]; } }   // a sneak attack surprises them too: none saw it coming
   owFightBegins();
   // NOBODY FIGHTS IN THE AIR (Sam, 2026-10-27, the Barracks: "This combat is off and in the air"). A fight that opened
@@ -8400,6 +8415,21 @@ function damage(t, n, type, crit, from, magical = false){
     if (t.kind !== "pc" && !/ooze/.test(t.id)){ const fr = frameOf(t); t.withered = {t0: now, img: fr.img, f: fr.f, swap: now + DEATH_TOUCH_SWAP_MS}; } }
   const hpBefore = t.c.hp;                                                      // the boss bar's Bloodied beat reads the crossing
   t.c.hp = Math.max(0, t.c.hp - n); if (t.creature) t.hp = t.c.hp;
+  // UNDEAD FORTITUDE (SRD 5.1 Zombie; Sam kept it, 2026-10-30). "If damage reduces the zombie to 0 hit points, it must
+  // make a Constitution saving throw with a DC of 5 + the damage taken, unless the damage is radiant or from a critical
+  // hit. On a success, the zombie drops to 1 hit point instead." The kill effects above fire on the blow that would have
+  // killed it, so a successful save takes them back off: nothing has died, and the frozen/withered/necrotic overlays
+  // would otherwise sit on a creature still standing. [CLAUDE — the clean-up, not the rule]
+  if (s.undeadFortitude && t.c.hp <= 0 && n > 0 && type !== "radiant" && !crit){
+    const dc = 5 + n, sv = d20(0, t) + (t.c.sheet.saves.con || 0);
+    if (sv >= dc){
+      t.c.hp = 1; if (t.creature) t.hp = 1;
+      t.necro = null; t.withered = null; t.iced = null; t.deathFx = null;
+      popText(t, "UNDEAD FORTITUDE", "#9ad06a", 1.3); bank("creature/death_beast", .35);
+      log(`<b>${fname(t)}</b> — Undead Fortitude: CON save ${sv} vs DC ${dc}. <b>It does not go down.</b>`);
+      narrate(t, `${fname(t)} folds, and then keeps coming.`);
+    } else log(`<b>${fname(t)}</b> — Undead Fortitude: CON save ${sv} vs DC ${dc}. It fails.`);
+  }
   if (t.c.hp <= 0 && from) t.killedBy = from;
   else if (t.ally && from && n >= t.c.hpMax * .25) setTimeout(() => banter(t, "hurt", from, .6), 700);   // a hard blow on an ally draws a word
   if (t.c.rage && n > 0) t.c.rage.hurt = true;                                 // SRD: "taken damage since then" keeps the rage going
@@ -8502,6 +8532,7 @@ function fall(t){
     if (t.ko){ popText(t, "knocked out", "#ffd166", 1.2); log(`<b>${fname(t)} is knocked out</b>: unconscious and stable at 0 HP (SRD: a stable creature regains 1 HP after 1d4 hours).`); settleGrudge(t); }
     else { const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS, t), 1400); } }
   else narrate(t, `${fname(t)} falls.`);
+  buppidoRisesCheck(t);   // the one prisoner who does not stay down (Sam, 2026-10-30)
   // THE BANTER on a death: the ally who made the kill says so; else an ally or a gambler cheers; a foe sees one of its own drop
   if (cbt && t.kind === "foe"){
     const k = t.killedBy;
@@ -14870,8 +14901,10 @@ function dieNow(a, why){
 //     died and the party moves on, so this has not been worth a sort key; the body deathBit does the same.
 const GRAVE_FRAMES = 6;    // the sprite sheet: the floor cracks, the mound swells, the stone rises, seats, settles
 const GRAVE_MS = 150;      // per frame; the last frame is held for the rest of the session
-function graveRaise(a){
-  if (!a || a.kind !== "pc") return;
+function graveRaise(a, force){
+  // Heroes get a stone automatically. `force` is for the one NPC who also gets one: Buppido (Sam, 2026-10-30 —
+  // "just for him"). Every other prisoner who dies in the pen leaves a body and no marker.
+  if (!a || (a.kind !== "pc" && !force)) return;
   const g = Array.isArray(state.graves) ? state.graves : [];
   if (g.some(v => v && v.slug === a.id)) return;                    // one stone per hero, however they got there
   state.graves = g.concat([{slug: a.id, plate: cur, x: Math.round(a.x + (a.kx || 0)), y: Math.round(a.y),
@@ -14897,6 +14930,73 @@ function drawGraves(){
 }
 /** The graves on this plate, nearest last — GAME OVER pushes in on the one that just went up. */
 function gravesHere(){ return (Array.isArray(state.graves) ? state.graves : []).filter(v => v && v.plate === cur); }
+// ---------- BUPPIDO RISES ----------
+// Sam, 2026-10-30: "If Buppido dies (since he's evil) in the pen by being shot and RIP grave shows up (just for him)
+// his body doesn't get dragged away like the rest. After a little bit one zombie comes out from the ground (the mound)
+// using our animation prebuilt and starts attacking. The guards watch idly surprised. Cue horror music during the
+// duration of this sequence. Combat begins in the pen."
+// The rules, the timings and Malachar's lines are lib/buppido-rises.mjs, pasted below.
+/*__BUPPIDO_RISES__*/
+/**
+ * Every path that kills anyone ends in fall(), so this is hooked there rather than on one encounter — Sam, 2026-10-30,
+ * chose "any death in the pen" over "only the gate volley". Shot, stabbed, caught in a blast: he comes back either way.
+ * Once per campaign, and shared, so the whole table sees the one rise.
+ */
+function buppidoRisesCheck(t){
+  if (!t || !buppidoRisesActive({deadId: t.id, plate: cur, fired: !!state.buppidoRisen})) return;
+  state.buppidoRisen = {seq: "b" + Date.now().toString(36), at: Date.now(), by: OW.key || "local"};
+  saveWalk();
+  playBuppidoRises(t);
+}
+async function playBuppidoRises(t){
+  const R = BUPPIDO_RISES_RULES, line = buppidoRisesLine(state.buppidoRisen && state.buppidoRisen.seq);
+  // HIS BODY STAYS. Sam: "his body doesn't get dragged away like the rest." Nothing on this map drags bodies yet — the
+  // guards' drag is in the unmerged Drow Surgeon work — so this flag is the instruction waiting for it, not a change to
+  // behaviour that exists today. Whatever lands that drag reads `noDrag` and steps over him.
+  t.noDrag = true;
+  await wait(R.bodyMs);
+
+  // THE STONE. The grave system raises stones for heroes only; Buppido is the one NPC who gets one, which is Sam's
+  // "just for him" — the other prisoners who die in the pen leave a body and nothing else.
+  graveRaise(t, true);
+  buppidoRisesMusic();                                   // the horror cue, over the whole sequence and into the fight
+  log(`<b>Malachar:</b> "${esc(line)}"`);
+  buppidoRisesSay(line);
+  await wait(R.stoneMs);
+
+  // THE MOUND MOVES. Nothing has come out yet. This is the beat that does the work.
+  const g = (gravesHere().filter(v => v.slug === t.id))[0] || {x: t.x, y: t.y};
+  shake(5); bank("creature/death_beast", .3);
+  for (let i = 0; i < 3; i++) setTimeout(() => { shake(4); addBlood({x: g.x + labRnd(-14, 14), y: g.y}, .5, false); }, i * 420);
+  await wait(R.stirMs);
+
+  // IT CLIMBS OUT, on the prebuilt sheet: 21 frames at 12 fps, with the `undead-breach` sting its sprite.json names.
+  const z = mkActor(R.foe, g.x, g.y, "foe", {hostile: true, face: faceOf((leader ? leader.x : g.x) - g.x, (leader ? leader.y : g.y) - g.y), home: {x: g.x, y: g.y}});
+  npcs.push(z); actors.push(z);
+  shake(9); bank("walk:undead-breach", 1);
+  if (SPR[z.id] && SPR[z.id].img.emerge) playOnce(z, "emerge", () => setAnim(z, "idle")); else setAnim(z, "idle");
+  await wait(R.emergeMs);
+
+  // THE GUARDS WATCH. Sam, 2026-10-30, asked what they do: "watch and enjoy it." They are marked spectators, which
+  // keeps them out of the fight that is about to start even though they are hostile and standing right there.
+  buppidoRisesAudience();
+  await wait(R.surpriseMs);
+
+  startCombat([z], "something has climbed out of Buppido's grave");
+}
+/** The horror cue. The engine already scores anything undead as `scary`; this just starts it before initiative does. */
+function buppidoRisesMusic(){ try { pickCombatTrack("scary"); setTrack("combat"); } catch (e) {} }
+function buppidoRisesSay(line){ try { gameOverVoice(line); } catch (e) {} }   // Malachar's lich voice, the dashboard's
+/** Every drow who can see the pen becomes an audience: still hostile, still armed, and not in this fight. */
+function buppidoRisesAudience(){
+  for (const n of npcs){
+    if (!n.hostile || n.down || n.body || n.offStage || n.backdrop) continue;
+    n.spectator = true; n.path = []; stopActivity(n); setAnim(n, "idle");
+    n.face = faceOf((leader ? leader.x : n.x) - n.x, (leader ? leader.y : n.y) - n.y);
+  }
+  const watcher = npcs.filter(n => n.spectator)[0];
+  if (watcher) bark(watcher, "…what is that?", 2200, {talk: true});
+}
 // ---------- PULL THE DASHBOARD TO THE MAP ----------
 // Sam, 2026-10-30: "during dynamic action sequences like that or if someone is talking to you (interrupting) it
 // should go to the pixel map." "Like that" is the gate volleys he had just watched — the drow shot Gandalf down
