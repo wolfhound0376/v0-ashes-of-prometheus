@@ -9,7 +9,7 @@
 <title>Velkynvelve</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=Comic+Neue:wght@700&family=Bangers&family=Press+Start+2P&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=Comic+Neue:wght@700&family=Bangers&family=Press+Start+2P&display=swap">
 <style>
 /* A dark play room: one full-bleed stage for the painted plate, party roster beneath.
    Single dark theme by choice, same as the plate viewer: the paintings are dark and read best on near-black. */
@@ -20,6 +20,8 @@
   --ember:#e8a24a; --fungus:#62e3c6; --blood:#d0453a;
   --parch:#efe4cc; --parch-ink:#2a2018;
   --face-display:"IM Fell English SC","Iowan Old Style","Palatino Linotype",Georgia,serif;
+  --face-title:"Cinzel","Trajan Pro",Georgia,serif;        /* names and headings on the choice card */
+  --face-read:"Crimson Text","Iowan Old Style",Georgia,serif;  /* what is spoken, and the choices */
   --face-body:"Alegreya Sans","Gill Sans","Segoe UI",system-ui,sans-serif;
   --face-mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
   --s-1:.78rem; --s0:.92rem; --s1:1.05rem; --s2:1.35rem; --s3:2rem; --s4:3.1rem;
@@ -637,39 +639,39 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
    The pack's palette and its sizing floors are carried over as tokens so the whole card moves together.
    Not carried over: the pack's 1120px panel (this card lives in the map's stage, not a full page), and the DC —
    Sam, 2026-10-25: the card shows what you can try, never the number. */
-.tcard{--dlg-top:#13233a;--dlg-bot:#0a1322;--dlg-brass:#b58a43;--dlg-gold:#f3d78f;--dlg-ivory:#f6e9c5;--dlg-sky:#9abbd5;--dlg-focus:#67def2;--dlg-row-top:#1b2b42;--dlg-row-bot:#0f1a2a;--dlg-cut:16px;
+.tcard{--dlg-top:#162943;--dlg-bot:#070e1a;--dlg-brass:#c99a46;--dlg-gold:#ffdf9b;--dlg-ivory:#fdf3dc;--dlg-sky:#9abbd5;--dlg-focus:#67def2;--dlg-row-top:#1d3150;--dlg-row-bot:#0b1526;--dlg-cut:16px;
   position:relative;width:min(900px,100%);display:block;padding:0;border:0;border-radius:0;background:none;box-shadow:none;overflow:visible;color:var(--dlg-ivory);
   font-family:var(--face-display);margin-left:52px}
 /* THE FRAME: a gold plate, cut at the corners, with the navy panel inset inside it — the pack's double rule, not a
    rounded rectangle. clip-path cuts both, so the corners stay square-cut at any size (no stretched corner art). */
 .tcard::before,.tcard::after{content:"";position:absolute;inset:0;clip-path:polygon(var(--dlg-cut) 0,calc(100% - var(--dlg-cut)) 0,100% var(--dlg-cut),100% calc(100% - var(--dlg-cut)),calc(100% - var(--dlg-cut)) 100%,var(--dlg-cut) 100%,0 calc(100% - var(--dlg-cut)),0 var(--dlg-cut));pointer-events:none}
-.tcard::before{background:linear-gradient(160deg,#e7c67e,#9d7533 38%,#f3d78f 52%,#8d6a2e);filter:drop-shadow(0 18px 44px rgba(0,0,0,.7))}
+.tcard::before{background:linear-gradient(160deg,#ffe6ad,#a97c33 36%,#ffdf9b 52%,#8d6a2e);filter:drop-shadow(0 18px 44px rgba(0,0,0,.7))}
 .tcard::after{inset:3px;--dlg-cut:14px;background:linear-gradient(var(--dlg-top),var(--dlg-bot));box-shadow:inset 0 0 0 1px rgba(243,215,143,.34)}
 .tcard>*{position:relative;z-index:1}
 .tcard .port{position:absolute;left:-52px;top:-34px;width:150px;height:150px;border-radius:50%;z-index:2;
-  background:linear-gradient(150deg,#e7c67e,#8d6a2e 45%,#f3d78f);padding:4px;box-shadow:0 10px 26px rgba(0,0,0,.6)}
+  background:linear-gradient(150deg,#ffe6ad,#8d6a2e 45%,#ffdf9b);padding:5px;box-shadow:0 10px 26px rgba(0,0,0,.6)}
 .tcard .port canvas{width:100%;height:100%;border-radius:50%;border:3px solid #0d1626;background:radial-gradient(circle at 50% 62%,#17283b,#070d15);image-rendering:pixelated;display:block}
 .tcard .head{display:flex;align-items:flex-start;gap:12px;padding:16px 18px 0 112px;min-height:58px}
 /* the name banner: a tag with a cut right end, the way the pack draws it */
 .tcard .plate{display:grid;gap:1px;padding:8px 34px 8px 22px;background:linear-gradient(#17293f,#0e1a2a);
   clip-path:polygon(0 0,calc(100% - 16px) 0,100% 50%,calc(100% - 16px) 100%,0 100%);box-shadow:inset 0 0 0 1px var(--dlg-brass)}
-.tcard .plate .name{font-size:1.6rem;line-height:1.05;color:var(--dlg-ivory);font-variant:small-caps;letter-spacing:.04em;text-align:left}
-.tcard .plate .sub{font-family:var(--face-body);font-size:var(--s-1);color:var(--dlg-sky);letter-spacing:.03em}
+.tcard .plate .name{font-family:var(--face-title);font-weight:700;font-size:1.44rem;line-height:1.08;color:var(--dlg-ivory);letter-spacing:.07em;text-transform:uppercase;text-align:left;text-shadow:0 2px 0 rgba(0,0,0,.55)}
+.tcard .plate .sub{font-family:var(--face-body);font-size:var(--s0);color:#8fc4e8;letter-spacing:.02em}
 .tcard .plate .sub[hidden]{display:none}
 .tcard .tools{margin-left:auto;display:flex;gap:8px}
 .tcard .rnd{width:34px;height:34px;border-radius:50%;border:1px solid var(--dlg-brass);background:#15263a;color:var(--dlg-sky);
   font:14px/1 var(--face-body);cursor:pointer;display:grid;place-items:center;transition:border-color .15s ease,color .15s ease}
 .tcard .rnd:hover{border-color:var(--dlg-gold);color:var(--dlg-ivory)}
 .tcard .rnd:focus-visible{outline:2px solid var(--dlg-focus);outline-offset:2px}
-.tcard .narr{margin:12px 26px 16px 112px;color:var(--dlg-ivory);font-size:1.52rem;font-style:normal;line-height:1.38}
-.tcard .said{margin:12px 26px 16px 112px;color:var(--dlg-ivory);font-size:1.52rem;line-height:1.38}
+.tcard .narr{margin:12px 26px 16px 112px;font-family:var(--face-read);color:var(--dlg-ivory);font-size:1.62rem;font-style:normal;line-height:1.36}
+.tcard .said{margin:12px 26px 16px 112px;font-family:var(--face-read);color:var(--dlg-ivory);font-size:1.62rem;line-height:1.36}
 .tcard .thinking{margin-left:112px}
 /* ---- the choices: one row each, cut corners, an icon cell, the check it asks for ---- */
 #obj .btns,#talk .btns{display:grid;gap:11px;margin:0 12px;padding:8px;max-height:46vh;overflow:auto}
-#obj .btns .btn,#talk .btns .btn{--dlg-cut:11px;position:relative;display:grid;grid-template-columns:52px 1fr auto;align-items:center;gap:16px;width:100%;
-  min-height:62px;text-align:left;padding:10px 22px;border:0;border-radius:0;background:linear-gradient(var(--dlg-row-top),var(--dlg-row-bot));
+#obj .btns .btn,#talk .btns .btn{--dlg-cut:11px;position:relative;display:grid;grid-template-columns:62px 1fr auto;align-items:center;gap:18px;width:100%;
+  min-height:74px;text-align:left;padding:10px 22px;border:0;border-radius:0;background:linear-gradient(var(--dlg-row-top),var(--dlg-row-bot));
   clip-path:polygon(var(--dlg-cut) 0,calc(100% - var(--dlg-cut)) 0,100% var(--dlg-cut),100% calc(100% - var(--dlg-cut)),calc(100% - var(--dlg-cut)) 100%,var(--dlg-cut) 100%,0 calc(100% - var(--dlg-cut)),0 var(--dlg-cut));
-  color:var(--dlg-ivory);font-family:var(--face-display);font-size:var(--s2);line-height:1.2;cursor:pointer;
+  color:#fff8e6;font-family:var(--face-read);font-size:1.42rem;line-height:1.2;cursor:pointer;
   --dlg-edge:#58698180;transition:transform .09s ease,filter .15s ease}
 #obj .btns .btn::before,#talk .btns .btn::before{content:"";position:absolute;inset:0;background:var(--dlg-edge);z-index:0;
   clip-path:polygon(var(--dlg-cut) 0,calc(100% - var(--dlg-cut)) 0,100% var(--dlg-cut),100% calc(100% - var(--dlg-cut)),calc(100% - var(--dlg-cut)) 100%,var(--dlg-cut) 100%,0 calc(100% - var(--dlg-cut)),0 var(--dlg-cut))}
@@ -687,7 +689,7 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 #obj .btns .lit,#talk .btns .lit{display:grid;filter:drop-shadow(0 0 6px rgba(103,222,242,.85)) drop-shadow(0 0 16px rgba(103,222,242,.45))}
 #obj .btns .btn.danger{--dlg-edge:var(--blood);color:#ffb7ad}
 #obj .btns .btn[disabled]{opacity:.5;transform:none;cursor:default}
-.tcard .btn .ic{width:36px;height:36px;justify-self:center;pointer-events:none}
+.tcard .btn .ic{width:54px;height:54px;justify-self:center;pointer-events:none;display:block;filter:drop-shadow(0 2px 5px rgba(0,0,0,.65)) brightness(1.1)}
 .tcard .btn .lbl{min-width:0}
 .tcard .btn .lbl .chk{color:var(--dlg-gold)}        /* "[Thieves' tools]" — which check this choice asks for */
 .tcard .btn .bdg{display:flex;align-items:center;gap:9px;font-family:var(--face-body);font-weight:700;font-size:var(--s0);letter-spacing:.1em}
@@ -697,7 +699,7 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .tcard .frule{height:1px;background:linear-gradient(90deg,transparent,var(--dlg-brass))}
 .tcard .foot .frule:last-of-type{background:linear-gradient(90deg,var(--dlg-brass),transparent)}
 .tcard .fdie{width:22px;height:22px;color:var(--dlg-gold)}
-.tcard .fsay{grid-column:1/-1;text-align:center;font-family:var(--face-body);font-size:var(--s0);color:var(--dlg-sky);letter-spacing:.04em}
+.tcard .fsay{grid-column:1/-1;text-align:center;font-family:var(--face-body);font-size:var(--s0);color:#7fa8c9;letter-spacing:.05em}
 /* the loot list keeps its own compact rows: many lines, no icon cell */
 #obj .btns.loot{display:flex}
 #obj .btns.loot .btn{grid-template-columns:auto 1fr auto;min-height:0;padding:7px 12px;font-family:var(--face-body);font-size:var(--s0);clip-path:none;border-radius:6px}
@@ -712,7 +714,7 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
   .tcard .thinking{margin:10px 16px 12px}
   #obj .btns,#talk .btns{margin:0 8px;padding:6px}
   #obj .btns .btn,#talk .btns .btn{font-size:var(--s1);padding:9px 14px;gap:11px;grid-template-columns:38px 1fr auto;min-height:54px}
-  .tcard .btn .ic{width:26px;height:26px}
+  .tcard .btn .ic{width:34px;height:34px}
   .tcard .btn .bdg svg{width:22px;height:22px}
   .tcard .foot{margin:12px 16px}
 }
@@ -5145,26 +5147,29 @@ addEventListener("message", e => { if (e.origin !== location.origin) return; con
 // and keep the reference's colours — a teal book, blue speech, a gold compass, a red-orange back arrow. Real art
 // swaps in by changing this one table; nothing else knows what an icon is.
 const ROW_ICON = {
-  pick:  ['#7fe3c4', '<path d="M5 27l7-7" stroke-width="2.4"/><path d="M11 21l-3.4-3.4 8-8a4.6 4.6 0 116.5 6.5l-2.3 2.3-2.6-2.6" stroke-width="2.2"/><circle cx="22.6" cy="13.4" r="1.5" fill="currentColor" stroke="none"/>'],
-  force: ['#f2824a', '<path d="M26 5v22" stroke-width="2.6"/><path d="M5 16h13M14 11l5 5-5 5" stroke-width="2.4"/><path d="M22 11.5l2.2-1.6M22 20.5l2.2 1.6" stroke-width="1.8"/>'],
-  key:   ['#f3d78f', '<circle cx="11" cy="16" r="4.4" stroke-width="2.3"/><path d="M15.4 16H28M24 16v4.2M20 16v3" stroke-width="2.3"/>'],
-  talk:  ['#7cc2f2', '<path d="M4 8h17v11H11l-7 6z" stroke-width="2.2"/><path d="M24 12h4v10h-3l-4 4v-4" stroke-width="2"/>'],
-  way:   ['#f3d78f', '<circle cx="16" cy="16" r="11" stroke-width="2.2"/><path d="M21 11l-3 7-7 3 3-7z" stroke-width="2" stroke-linejoin="round"/>'],
-  back:  ['#e2704a', '<path d="M13 9l-7 7 7 7" stroke-width="2.6"/><path d="M6 16h12a7 7 0 017 7v2" stroke-width="2.4"/>'],
-  dm:    ['#b78df2', '<path d="M16 4l10 5v8c0 5.4-4.2 9-10 11-5.8-2-10-5.6-10-11V9z" stroke-width="2.2" stroke-linejoin="round"/><path d="M16 11v9M11.5 15.5h9" stroke-width="2"/>'],
+  pick:  "pick-lock",        // a hand on the picks in the keyhole
+  force: "force-door",       // a shoulder into the bars
+  key:   "use-object",       // the lantern at the lock
+  talk:  "talk",             // the speech bubbles
+  way:   "next-hero",        // the chevrons: go on
+  back:  "disengage",        // stepping back out of reach
+  dm:    "tell-malachar",    // the lich: this one is the DM's
 };
 /** The ability dice, in the reference's colours: a blue d20 for INT, a green one for CHA, and the rest to match. */
 const ABILITY = {str: ["STR", "#e2704a"], dex: ["DEX", "#4fd39b"], con: ["CON", "#e0a33a"], int: ["INT", "#4a9df2"], wis: ["WIS", "#b78df2"], cha: ["CHA", "#3fd2b0"]};
 function rowIcon(k){
   const ic = ROW_ICON[k];
-  return ic ? `<svg class="ic" viewBox="0 0 32 32" fill="none" stroke="${ic[0]}" stroke-linecap="round" aria-hidden="true">${ic[1]}</svg>` : `<span class="ic"></span>`;
+  return ic ? `<img class="ic" src="icons/${ic}.png" alt="" aria-hidden="true" decoding="async">` : `<span class="ic"></span>`;
 }
 /** A d20 drawn in its ability's colour: the body, the lit face and a star, as the pack's dice are drawn. */
 function d20Svg(c, w){
+  const id = "g" + c.replace("#", "") + (w || 30);
   return `<svg viewBox="0 0 32 32" aria-hidden="true" width="${w || 30}" height="${w || 30}">`
-    + `<path d="M16 2l12.1 7v14L16 30 3.9 23V9z" fill="${c}22" stroke="${c}" stroke-width="1.8" stroke-linejoin="round"/>`
-    + `<path d="M16 2l7.4 10.4L16 25 8.6 12.4z" fill="${c}3d" stroke="${c}" stroke-width="1.4" stroke-linejoin="round"/>`
-    + `<path d="M16 9.5l1.5 3.6 3.6 1.5-3.6 1.5L16 19.7l-1.5-3.6-3.6-1.5 3.6-1.5z" fill="${c}"/></svg>`;
+    + `<defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1">`
+    + `<stop offset="0" stop-color="${c}"/><stop offset="1" stop-color="${c}" stop-opacity=".35"/></linearGradient></defs>`
+    + `<path d="M16 1.6l12.6 7.3v14.2L16 30.4 3.4 23.1V8.9z" fill="url(#${id})" stroke="#f2e6c8" stroke-width="1.5" stroke-linejoin="round"/>`
+    + `<path d="M16 1.6l7.7 10.8L16 25.6 8.3 12.4z" fill="#ffffff" fill-opacity=".26" stroke="#ffffff" stroke-opacity=".5" stroke-width="1" stroke-linejoin="round"/>`
+    + `<path d="M16 8.4l1.9 4.3 4.3 1.9-4.3 1.9L16 20.8l-1.9-4.3-4.3-1.9 4.3-1.9z" fill="#fff" fill-opacity=".92"/></svg>`;
 }
 /** One choice row. `meta`: {icon, check, ability} — all optional; a plain row keeps the same columns so labels line up.
  *  A `primary` row is wrapped in .lit, because a clip-path element cannot cast the outer glow itself: the clip cuts
