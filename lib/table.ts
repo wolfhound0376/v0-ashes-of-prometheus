@@ -55,6 +55,31 @@ export function assignFigures(seats: { id: string; seat?: number | null; figure?
   return out
 }
 
+/**
+ * Which chair each seated hero holds (1..MAX_SEATS).
+ *
+ * Seat numbers used to be worked out when a seat was WRITTEN: read the table, find the lowest free
+ * chair, write it. Three players tapping Sit at the same moment all read the same free chair and all
+ * three wrote it — no lock, no unique constraint, nothing to stop them (Sam, 2026-10-29: three players
+ * at once is the case that matters). So the number is worked out when the table is READ instead.
+ *
+ * Pass the seats in the order they sat down (readSeated sorts by `at`): whoever sat first keeps the
+ * chair they already hold, so nobody's chair moves under them, and a duplicate from old data heals
+ * itself on the next read. Mirrors assignFigures deliberately.
+ */
+export function assignSeatNumbers(seats: { id: string; seat?: number | null }[]): Map<string, number> {
+  const out = new Map<string, number>(), used = new Set<number>()
+  const valid = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n) && n >= 1 && n <= MAX_SEATS
+  for (const s of seats) {
+    if (valid(s.seat) && !used.has(s.seat)) { out.set(s.id, s.seat); used.add(s.seat) }
+  }
+  for (const s of seats) {
+    if (out.has(s.id)) continue
+    for (let n = 1; n <= MAX_SEATS; n++) if (!used.has(n)) { out.set(s.id, n); used.add(n); break }
+  }
+  return out
+}
+
 /** Why this figure cannot be taken right now, or null. */
 export function cannotChooseFigure(figure: unknown, mineId: string, seats: { id: string; figure?: number | null }[]): string | null {
   if (typeof figure !== "number" || !Number.isInteger(figure) || figure < 0 || figure >= FIGURE_COUNT) return "That player is not at this table."
