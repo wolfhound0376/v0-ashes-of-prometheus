@@ -633,6 +633,24 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .tcard .said{margin:0;font-size:var(--s1);line-height:1.4}
 .tcard .thinking{color:var(--ink-dim);font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.08em}
 
+/* ---------- THE TALK CARD IS A CONVERSATION, NOT A CHOICE LIST ----------
+   Sam, 2026-10-30, on Ront's card: "This needs to be smaller for these dialogues."
+   The choice card below is sized to be SCANNED — icon rows, a check name, a die — and the talk card
+   inherited all of it: a 900px frame, 1.62rem body, and a 112px left gutter held open for the circular
+   portrait that card draws. The talk card keeps the OLD markup (.who + a square canvas above the text),
+   so that gutter is reserved for a portrait that is not there and the text sits oddly far in.
+   A conversation is READ, and it comes up constantly, so it carries less weight than a gate you are
+   deciding how to open. Same frame and palette — one system — at conversation scale.
+   Sizes are Claude's (Sam picked "smaller", not a number); this block is the one place to turn them. */
+#talk .tcard{width:min(760px,100%);margin-left:0;padding-top:14px}
+#talk .tcard a.btn{text-decoration:none}
+#talk .tcard .who{padding-top:4px}
+#talk .tcard canvas{width:88px;height:88px}
+#talk .tcard .name{font-size:1.04rem}
+#talk .tcard .narr,#talk .tcard .said{margin:10px 26px 12px;font-size:1.22rem;line-height:1.4}
+#talk .tcard .thinking{margin-left:26px}
+#talk .btns:not(:has(img.ic)) .btn{min-height:46px;font-size:1.05rem;padding:7px 18px}
+
 /* ---------- THE CHOICE CARD (Sam's Ashes_Dialogue_UI_Pack, 2026-10-30) ----------
    The approved direction for every card built into #objBtns — the pen gate, a body, a pile, the routes out — and
    for the talk card. One system, not a per-card look: midnight navy under brass, warm ivory serif, and choices as
@@ -683,6 +701,11 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
   clip-path:polygon(var(--dlg-cut) 0,calc(100% - var(--dlg-cut)) 0,100% var(--dlg-cut),100% calc(100% - var(--dlg-cut)),calc(100% - var(--dlg-cut)) 100%,var(--dlg-cut) 100%,0 calc(100% - var(--dlg-cut)),0 var(--dlg-cut))}
 #obj .btns .btn::after,#talk .btns .btn::after{content:"";position:absolute;inset:1.5px;--dlg-cut:10px;background:linear-gradient(var(--dlg-row-top),var(--dlg-row-bot));z-index:0;
   clip-path:polygon(var(--dlg-cut) 0,calc(100% - var(--dlg-cut)) 0,100% var(--dlg-cut),100% calc(100% - var(--dlg-cut)),calc(100% - var(--dlg-cut)) 100%,var(--dlg-cut) 100%,0 calc(100% - var(--dlg-cut)),0 var(--dlg-cut))}
+/* EVERY LABEL IN A CARD ROW MUST BE AN ELEMENT. The row's fill is painted by ::after (positioned,
+   z-index 0), and only ELEMENT children can be lifted above it — a bare text node cannot be targeted in
+   CSS and is painted over, so the row renders as an empty gold box with its text still in the DOM.
+   That is exactly how the talk card's "Talk"/"Decline" went blank (Sam, 2026-10-30). choiceRow() wraps
+   every label in <span class="lbl">; the two static buttons in #talk now do the same. */
 .tcard .btn>*{position:relative;z-index:1}
 #obj .btns .btn:hover,#talk .btns .btn:hover{color:var(--dlg-ivory);--dlg-edge:var(--dlg-gold);filter:brightness(1.07)}
 #obj .btns .btn:focus-visible,#talk .btns .btn:focus-visible{outline:2px solid var(--dlg-focus);outline-offset:3px;--dlg-edge:var(--dlg-gold)}
@@ -1085,8 +1108,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
         <div class="story">
           <div id="talkLine"></div>
           <div class="btns">
-            <a class="btn primary" id="talkGo" href="https://ashes.playacartagena.com" target="_blank" rel="noopener">Talk</a>
-            <button class="btn" id="talkNo">Decline</button>
+            <a class="btn primary" id="talkGo" href="https://ashes.playacartagena.com" target="_blank" rel="noopener"><span class="lbl">Talk</span></a>
+            <button class="btn" id="talkNo"><span class="lbl">Decline</span></button>
           </div>
         </div>
       </div>
@@ -14279,7 +14302,7 @@ function approach(n){
 let talkQuiet = false;
 async function openTalk(npc, opts = {}){
   if (!npc || mode === "talk") return;
-  talkQuiet = !!opts.quiet; $("talkNo").textContent = talkQuiet ? "Leave" : "Decline";
+  talkQuiet = !!opts.quiet; $("talkNo").querySelector(".lbl").textContent = talkQuiet ? "Leave" : "Decline";
   mode = "talk"; party.forEach(p => { p.path = []; setAnim(p, "idle"); });
   stopActivity(npc); npc.path = []; npc.face = faceOf(leader.x - npc.x, leader.y - npc.y);
   const nm = SPR[npc.id].json.name;
