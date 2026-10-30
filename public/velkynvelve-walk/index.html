@@ -694,6 +694,13 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 #obj .btns .lit,#talk .btns .lit{display:grid;filter:drop-shadow(0 0 6px rgba(103,222,242,.85)) drop-shadow(0 0 16px rgba(103,222,242,.45))}
 #obj .btns .btn.danger{--dlg-edge:var(--blood);color:#ffb7ad}
 #obj .btns .btn[disabled]{opacity:.5;transform:none;cursor:default}
+/* A card whose rows carry no icon (a warning, a yes/no, a short list) does not need the icon gutter or the full
+   row height — the 62px column and 74px row exist so icon rows line up with each other. Scoped to the whole box, so
+   a card with even one icon keeps the approved layout and its labels stay aligned. */
+#obj .btns:not(.loot):not(:has(img.ic)) .btn,#talk .btns:not(:has(img.ic)) .btn{grid-template-columns:1fr auto;min-height:56px;padding:9px 20px;gap:12px;font-size:1.26rem}
+#obj .btns:not(.loot):not(:has(img.ic)) .btn .ic,#talk .btns:not(:has(img.ic)) .btn .ic{display:none}
+/* a loot row is its own flex list (pixel icon, name, rarity) and keeps no icon gutter */
+#obj .btns.loot .btn .ic{display:none}
 .tcard .btn .ic{width:54px;height:54px;justify-self:center;pointer-events:none;display:block;filter:drop-shadow(0 2px 5px rgba(0,0,0,.65)) brightness(1.1)}
 .tcard .btn .lbl{min-width:0}
 .tcard .btn .lbl .chk{color:var(--dlg-gold)}        /* "[Thieves' tools]" — which check this choice asks for */
@@ -3691,7 +3698,7 @@ function openProp(pr, opts = {}){
   g.clearRect(0, 0, 128, 128); try { g.drawImage(plateImg, x0 * k, y0 * k, sz * k, sz * k, 0, 0, 128, 128); } catch (e) {}
   $("objWho").textContent = pr.name;
   const box = $("objBtns"); box.innerHTML = "";
-  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); };
+  const add = (label, fn, cls = "") => choiceRow(box, label, fn, cls);
   const close = () => { $("obj").hidden = true; mode = "explore"; };
   // each check is rolled on the dashboard's dice (lib/walk-roll.ts "ilvara-chest:*"); the map never asks what was rolled
   const ask = (key, localMod, onWin, onLose) => () => {
@@ -3715,7 +3722,7 @@ function openProp(pr, opts = {}){
     if (hasItemNamed(ILVARA_KEY)) add("Use Ilvara's key", () => { close(); st.locked = false; st.disarmed = true; sfx("lock-picked", .9); log(`${fname(leader)} turns Ilvara's key.`); setTimeout(() => openChest(pr), 600); });
     add("Leave it", close);
   }
-  showObjCard(); box.firstChild?.focus();
+  showObjCard(); box.querySelector("button")?.focus();
 }
 // ---------- the lift (area 5) ----------
 // Sam, 2026-10-22: "Should be a way to interact with the crank and move on it if possible." The book, OotA ch.1 area 5:
@@ -3822,7 +3829,7 @@ function openLift(){
   g.clearRect(0, 0, 128, 128); try { g.drawImage(plateImg, x0 * k, y0 * k, sz * k, sz * k, 0, 0, 128, 128); } catch (e) {}
   $("objWho").textContent = "The lift";
   const box = $("objBtns"); box.innerHTML = "";
-  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); return b; };
+  const add = (label, fn, cls = "") => choiceRow(box, label, fn, cls);
   const close = () => { $("obj").hidden = true; mode = "explore"; ackZone = zoneAt(leader.x, leader.y); };
   const down = lift.dy > 0, standing0 = party.filter(p => !p.down), onDeck = standing0.filter(p => !aboard(p)), riders = lift.riders.map(r => r.a);
   const spool = onDeck.includes(leader) ? leader : onDeck[0], help = onDeck.length > 1;
@@ -3852,7 +3859,7 @@ function openLift(){
     if (riders.length) add("Everyone out", () => { riders.forEach(climbOut); close(); });
     add("Leave it", () => { if (aboard(leader)){ const s = onDeck[0]; if (s) setLeader(s); else { riders.forEach(climbOut); } } close(); });
   }
-  showObjCard(); box.firstChild?.focus();
+  showObjCard(); box.querySelector("button")?.focus();
 }
 // ---------- loot: chests, bodies and pockets ----------
 // Sam, 2026-10-22: "Build all. Shoor's quarters is good. Some gear might be found on people's bodies after killing them
@@ -4417,7 +4424,7 @@ async function openLoot(id, title, opts = {}){
   const who = leader, box = $("objBtns");
   $("objWho").textContent = title; $("objText").textContent = opts.text || "You look inside."; box.innerHTML = ""; box.classList.add("loot");
   const close = () => { $("obj").hidden = true; box.classList.remove("loot"); mode = "explore"; if (opts.onClose) opts.onClose(); };
-  const add = (label, fn, cls = "", off = false) => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.disabled = off; if (fn) b.onclick = fn; box.appendChild(b); return b; };
+  const add = (label, fn, cls = "", off = false) => { const b = choiceRow(box, label, fn || null, cls); b.disabled = off; return b; };
   const fkey = lootKeyOf(id), spill = !!opts.at && !fountained.has(fkey);   // the first open of a body or chest spills it
   if (!spill){ showObjCard(); add("…", null, "", true); }
   const j = await fetchLoot(id); await ensureCatalog();
@@ -4949,7 +4956,7 @@ async function openPockets(n){
   try { portrait(n.id, $("objPic"), 128); } catch (e) {}
   $("objWho").textContent = name;
   const box = $("objBtns"); box.innerHTML = "";
-  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); return b; };
+  const add = (label, fn, cls = "") => choiceRow(box, label, fn, cls);
   const close = () => { $("obj").hidden = true; mode = "explore"; };
   $("objText").textContent = `${name} is close enough to touch.`; showObjCard();
   const id = pocketId(n), j = await fetchLoot(id); if ($("obj").hidden) return;
@@ -4968,7 +4975,7 @@ async function openPockets(n){
   if (!rows.length) $("objText").textContent = `${name} is close enough to touch, but nothing on them is within reach.`;
   if (wantsWord(n) || canTalkTo(n)) add("Talk to them", () => { close(); approach(n); });
   add("Leave them be", close);
-  box.firstChild?.focus();
+  box.querySelector("button")?.focus();
 }
 function caught(n, who, row){
   who.caughtUntil = now + CAUGHT_HOLD; if (gateWarn && gateWarn.who === who.id) gateWarn = null;   // Malachar plays it, not the watch (stealFrom)
@@ -5011,7 +5018,7 @@ async function openPickpocket(n){
   try { portrait(n.id, $("objPic"), 128); } catch (e) {}
   $("objWho").textContent = name;
   const box = $("objBtns"); box.innerHTML = "";
-  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); return b; };
+  const add = (label, fn, cls = "") => choiceRow(box, label, fn, cls);
   const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
   $("objText").textContent = `${fname(who)} slips a hand toward ${name}…`; showObjCard();
   const j = await fetchLoot(id); if ($("obj").hidden) return;
@@ -5165,7 +5172,7 @@ function openBody(b){
     openLoot(`body:${b.id}:${b.lootKey}`, `${name}'s body`, {at: {x: b.x, y: b.y}, text: `${name} lies where it fell.`, empty: known ? `Nothing is left on ${name}.` : APP ? `Nothing the map knows of. What ${name} carried is Malachar's to say.` : "What it carried is Malachar's to say — in the game this goes to him as your action."});
   }, "primary");
   add("Leave it", close);
-  showObjCard(); box.firstChild?.focus();
+  showObjCard(); box.querySelector("button")?.focus();
 }
 // The game-side hook for an action the map cannot resolve itself. Nothing listens yet; the dashboard will.
 // A check rolled on the dashboard's dice (Sam, 2026-10-25). The map names an action from lib/walk-roll.ts WALK_ACTIONS;
@@ -8248,11 +8255,11 @@ function confront(w){
   $("objText").textContent = `${name} levels a blade at ${fname(h)}${guards.length > 1 ? `; ${guards.length - 1 === 1 ? "the other guard reaches" : "the others reach"} for theirs` : ""}. "Slaves, out of the pen? Down on your knees — now."`;
   const box = $("objBtns"); box.innerHTML = "";
   const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
-  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = () => { close(); fn(); }; box.appendChild(b); };
+  const add = (label, fn, cls = "") => choiceRow(box, label, () => { close(); fn(); }, cls);
   add("Fight!", () => { guardsAlarm = null; guardsReact(w, h, "walking up in the open"); }, "primary");
   add("Talk your way past", () => { w.talkSituation = `${fname(h)} and the escaped prisoners walked openly into ${node.name}; ${name} has them at blade's point. If talk fails, emit [COMBAT_START: ...] naming every guard here.`; openTalk(w); });
   add("Surrender", () => { guardsAlarm = null; surrenderBegins(w); });   // THE SURRENDER (Sam, 2026-10-28): a beating, the march back, one prisoner into the chasm
-  showObjCard(); box.firstChild?.focus();
+  showObjCard(); box.querySelector("button")?.focus();
 }
 function guardsReact(w, h, why){
   if (!h || mode !== "explore" || laborLive() || surgeon || timeStopped) return false;
@@ -8978,7 +8985,7 @@ function heroCard(title, text){
   const c = $("objPic"), g = c.getContext("2d"); g.clearRect(0, 0, 128, 128); try { g.drawImage(faceCanvas(leader, 128), 0, 0); } catch (e) {}
   const box = $("objBtns"); box.innerHTML = ""; box.classList.remove("loot"); showObjCard(); mode = "dialog";
   const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
-  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); return b; };
+  const add = (label, fn, cls = "") => choiceRow(box, label, fn, cls);
   return {add, close};
 }
 function openPray(){
@@ -14087,7 +14094,7 @@ function laborAsk(){
   $("objText").textContent = `The gate stands open and the escort is waiting. What does ${fname(h)} do?`;
   const box = $("objBtns"); box.innerHTML = "";
   let answered = false;
-  const add = (label, choice, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = () => answer(choice); box.appendChild(b); };
+  const add = (label, choice, cls = "") => choiceRow(box, label, () => answer(choice), cls);
   const answer = choice => {
     if (answered) return; answered = true; clearTimeout(timer);
     $("obj").hidden = true; mode = "explore";
@@ -14100,7 +14107,7 @@ function laborAsk(){
   };
   add("Go quietly", "go", "primary"); add("Drag your feet", "drag"); add("Refuse", "refuse");
   const timer = setTimeout(() => answer("go"), CALL_TIMEOUT_MS);
-  showObjCard(); box.firstChild?.focus();
+  showObjCard(); box.querySelector("button")?.focus();
 }
 async function laborWaitThenMarch(){
   // every hero on the detail answers (or the call times out for them) before anyone is marched off
@@ -14496,7 +14503,7 @@ async function laborPocketFrom(h, spot){
   if (spot.poly) plateCrop(spot.poly); else { const c = $("objPic").getContext("2d"); c.clearRect(0, 0, 128, 128); }
   const box = $("objBtns"); box.innerHTML = "";
   const close = () => { $("obj").hidden = true; mode = "explore"; };
-  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); return b; };
+  const add = (label, fn, cls = "") => choiceRow(box, label, fn, cls);
   $("objWho").textContent = spot.name; $("objText").textContent = "…"; showObjCard();
   const j = await fetchLoot(spot.id); if ($("obj").hidden) return;
   const rows = (j.rows || []).filter(r => !r.missing && r.kind !== "preview-stash");
@@ -14527,7 +14534,7 @@ async function laborPocketFrom(h, spot){
     }
   }, "primary");
   add("Leave it", close);
-  box.firstChild?.focus();
+  box.querySelector("button")?.focus();
 }
 // the escort's gaze drifts while they work: now on the party, now away — the windows a quick hand waits for
 setInterval(() => {
@@ -14987,7 +14994,7 @@ function gateWarning(guards, g, h = leader){
   const showLeft = () => { $("objText").textContent = `${said} ${fname(h)} has ${left()} second${left() === 1 ? "" : "s"} to get away from the bars.`; };
   showLeft();
   const box = $("objBtns"); box.innerHTML = "";
-  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); };
+  const add = (label, fn, cls = "") => choiceRow(box, label, fn, cls);
   const close = () => { clearInterval(gateWarnTimer); gateWarnTimer = 0; $("obj").hidden = true; mode = "explore"; ackZone = zoneAt(leader.x, leader.y); };
   add("Step back", () => {
     // heeded: they walk away. The clock keeps running from the warning — still at the bars when it runs out, or back
@@ -14998,7 +15005,7 @@ function gateWarning(guards, g, h = leader){
     h.path = findPath(h, back); narrate(h, `${fname(h)} steps back from the gate.`);
   }, "primary");
   add("Stay where you are", () => { close(); gateWarn = null; gateGuardsShoot(gateGuards(), h); });   // not heeded
-  showObjCard(); box.firstChild?.focus();
+  showObjCard(); box.querySelector("button")?.focus();
   // the card left unanswered: the countdown runs, and at 10 s the rule decides (still at the bars: they shoot)
   clearInterval(gateWarnTimer);
   gateWarnTimer = setInterval(() => {
@@ -15544,7 +15551,7 @@ function openLianaCard(){
     ? `She wipes her needle and packs the satchel. “${SURGEON_LINES.brushOff.en}” One chance to ask her for something, and it has to be in Elvish.`
     : "She wipes her needle and packs the satchel, muttering in Elvish. One chance to ask her for something, if anyone can put it into her tongue.";
   const box = $("objBtns"); box.innerHTML = "";
-  const add = (label, fn, cls = "") => { const b = document.createElement("button"); b.className = "btn " + cls; b.textContent = label; b.onclick = fn; box.appendChild(b); };
+  const add = (label, fn, cls = "") => choiceRow(box, label, fn, cls);
   const standingParty = party.filter(p => !p.down);
   const elvishPc = standingParty.filter(p => slugSpeaksElvish(p.id));
   const npcTongue = npcs.filter(n => (n.id === "sarith" || n.id === "derendil") && !n.down && !n.offStage && !n.slain && actors.includes(n));
@@ -15559,7 +15566,7 @@ function openLianaCard(){
   }
   if (!offered) log("Nobody here speaks Elvish. Liana does not wait to be understood.");
   add("Let her go", () => lianaLeaves(null));
-  showObjCard(); box.firstChild?.focus();
+  showObjCard(); box.querySelector("button")?.focus();
 }
 async function lianaPersuaded(p, translator){
   $("obj").hidden = true;
