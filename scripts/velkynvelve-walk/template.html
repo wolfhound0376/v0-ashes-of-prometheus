@@ -2325,7 +2325,6 @@ function narrate(a, text){
   while (el.children.length > 3) el.firstChild.remove();
   setTimeout(() => { p.classList.add("gone"); setTimeout(() => p.remove(), 1300); }, 8000);
   if (a){ a.lastBark = now; lastAnyBark = now; }
-  narrateAloud(p.textContent);                                        // read aloud in Malachar's voice, exactly as the strip shows it (see the narration block below)
 }
 // A character's idle line: narration unless it is written as speech (opens with a quotation mark).
 // The strip and the sprites must agree (Sam, 2026-10-11: "make sure the sprites match what is happening
@@ -2459,8 +2458,13 @@ function updateOverlay(){
 }
 const tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true; over.appendChild(tip);
 const nameTag = document.createElement("div"); nameTag.className = "nametag"; nameTag.hidden = true; over.appendChild(nameTag);
-function log(html){
-  log.last = String(html).replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim().slice(0, 240) || log.last;
+// `opts.say` reads this line aloud in Malachar's voice. It is OPT-IN and stays that way: the log carries
+// rolls, damage and skill checks, which are never spoken (Sam's ruling, PR #940), and a blocklist would
+// start voicing — and paying for — every new line anyone adds. See the narration block further down.
+function log(html, opts){
+  const plain = String(html).replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim().slice(0, 240);
+  log.last = plain || log.last;
+  if (opts && opts.say) narrateAloud(plain);
   if (cbtLog.active){ cbtLogLine(html, false); return; }
   const el = $("log"); const p = document.createElement("p"); p.innerHTML = html; el.appendChild(p);
   [...el.children].forEach((c, i, all) => c.classList.toggle("old", i < all.length - 1));
@@ -4986,11 +4990,11 @@ function openInteract(z, opts = {}){
     if (hasPenKey()) add("Unlock it with the pen key", () => { close(); sfx("lock-picked", .9); log(`${fname(leader)} turns the stolen key in the lock.`); if (APP) handOff(`${fname(leader)} unlocks the slave pen gate with the key lifted from a guard.`, true); setTimeout(() => unlockGate(), 650); }, "primary", {icon: "key"});
     // No tools, no option: a prisoner's kit is on the stash (Sam, 2026-10-30).
     if (hasThievesTools(leader)) add("Pick the lock", attempt("pen-gate:pick", heroMod(leader, "thievesTools", "dex"), () => {
-      sfx("lock-picked", .9); log("The lock gives with a soft click.");
+      sfx("lock-picked", .9); log("The lock gives with a soft click.", {say: true});
       setTimeout(() => unlockGate(), 650);
     }, () => { sfx("lock-pick-fail", .8); toast("The pick slips in the wards. The lock holds.", 3200); }), "primary", {icon: "pick", check: "Thieves' tools", ability: "dex", note: manacled() ? MANACLE_NOTE : null});
     add("Force it", attempt("pen-gate:force", heroMod(leader, "athletics", "str"), () => {
-      log("The bolt tears from the stone."); unlockGate(1);
+      log("The bolt tears from the stone.", {say: true}); unlockGate(1);
     }, () => { sfx("door-locked", .9); toast("The bars shudder in their bolts, and hold.", 3200); }), "", {icon: "force", check: "Athletics", ability: "str", note: manacled() ? MANACLE_NOTE : null});
     calls();
     if (dmScreen()) add("DM: Jorlan opens it", () => { close(); openGate(); }, "", {icon: "dm"});
@@ -5304,7 +5308,7 @@ function openGate(){
   // Jorlan leaves his post on the landing, goes round behind the pillar, unlocks the door from outside and steps in.
   state.gateOpen = true; state.doorShut = false;                 // saved now; the door itself swings when he gets there
   reportSituation({event: "gate_open"});
-  log("Someone is at the lock. <em>Jorlan's gambit.</em>");
+  log("Someone is at the lock. <em>Jorlan's gambit.</em>", {say: true});
   j.static = false; j.patrol = null; stopActivity(j);
   const room = y => 1 / (node.scale * depthAt(y)), fs = j.fixedScale || 1.35;   // his size on the landing = Sarith's
   j.big = fs * room(j.y); j.fixedScale = 0;
@@ -7507,7 +7511,7 @@ function fungusVent(l, hv){
 function fungusAlertsWatch(at){
   const guards = gateGuards(); if (!guards.length) return;
   for (const g of guards){ g.path = []; g.scanAt = now; faceTo(g, at); popText(g, "?", "#ffd27a", 1.2); }
-  log("<em>On the bridge, the drow stop and turn toward the pen.</em>");
+  log("<em>On the bridge, the drow stop and turn toward the pen.</em>", {say: true});
 }
 // LOOKING AT THE PEN GATE (Sam, 2026-10-27): Look closer asks "Look around or Count the guards". Each is a filmed
 // moment, played the first time each player picks it ("at least once for each player"):
@@ -7694,7 +7698,7 @@ function redSigilSeen(){
   faceTo(d, {x: (wardMark() || d).x, y: (wardMark() || d).y});
   popText(d, "!", "#ff3b30", 1.5); bank("ui/initiative_start", .5);
   narrate(d, "The drow stops dead. The scar on the wall is red, and it is the wrong colour.");
-  log("<b>The red sigil is seen.</b> <i>There is nothing to say to this one.</i>");
+  log("<b>The red sigil is seen.</b> <i>There is nothing to say to this one.</i>", {say: true});
   reportSituation({event: "ward_seen"});
   setTimeout(() => { if (mode === "explore") startCombat([d], "The ward is read — and there is nothing to say."); }, 1500);
 }
@@ -10681,7 +10685,7 @@ function checkEnd(){
     // turns go on, the dying make their saves, and the foes do what foes do (finishTarget). It stops once every hero is
     // dead (GAME OVER) or nobody is left dying — stable or dead — and then the old way: the DM core decides.
     if (party.some(p => dyingNow(p) && actors.includes(p))) return false;
-    log("<b>The party falls.</b> The DM core decides what the drow do with the bodies."); setTimeout(() => endCombat(false), 1200); return true; }
+    log("<b>The party falls.</b> The DM core decides what the drow do with the bodies.", {say: true}); setTimeout(() => endCombat(false), 1200); return true; }
   return false;
 }
 // ----- QUICK RESOLVE -----
@@ -11944,7 +11948,7 @@ function followGate(g){
   if (g.state === "unlocked"){
     if (state.gateOpen) return;
     state.gateOpen = true; state.doorShut = true; if (balcony()) buildGrid();
-    if (!first){ sfx("lock-picked", .6); log("A soft click from the pen gate. <em>The lock is off.</em> It is shut, but it will open."); }
+    if (!first){ sfx("lock-picked", .6); log("A soft click from the pen gate. <em>The lock is off.</em> It is shut, but it will open.", {say: true}); }
   } else if (g.state === "open"){
     if (state.gateOpen && !state.doorShut) return;
     if (state.gateOpen){ state.doorShut = false; setDoor(true); if (!first) sfx("door-open", .85); if (balcony()) buildGrid(); return; }
@@ -11953,7 +11957,7 @@ function followGate(g){
   } else if (g.state === "locked"){
     if (!state.gateOpen || state.gateBroken) return;
     state.gateOpen = false; state.doorShut = false; setDoor(false); if (balcony()) buildGrid();
-    if (!first){ sfx("door-close", .8); log("The pen gate is shut and locked again."); }
+    if (!first){ sfx("door-close", .8); log("The pen gate is shut and locked again.", {say: true}); }
   }
 }
 
@@ -13291,7 +13295,7 @@ async function drowSurgeonBegins(guards, pc = leader){
     fireShot(shooter, v, "bolt", true, () => surgeonKill(v), null);
   } else if (st.victim) log(`<b>${esc(st.victim.name)}</b> is shot dead.`);
   // a beat to back off before the first volley: walk away from the bars and they stop (Sam: "until the player moves away")
-  setTimeout(() => { if (surgeon && surgeon.stage === "shooting"){ mode = "explore"; log("<em>They keep shooting until you get away from the gate.</em>"); setTimeout(surgeonVolleyTick, 1600); } }, 2400);
+  setTimeout(() => { if (surgeon && surgeon.stage === "shooting"){ mode = "explore"; log("<em>They keep shooting until you get away from the gate.</em>", {say: true}); setTimeout(surgeonVolleyTick, 1600); } }, 2400);
 }
 function surgeonKill(v){
   surgeon.victim = v; v.slain = true; v.talk = false; v.stroll = null;
@@ -13331,7 +13335,7 @@ async function surgeonVolleyTick(){
 async function surgeonStepped(){
   const S = surgeon; if (!S) return; S.stage = "stepped";
   await surgeonApi("stepped");
-  log("The guards lower their crossbows.");
+  log("The guards lower their crossbows.", {say: true});
   if (S.victim) setTimeout(() => surgeonRemoveBody(), 9000);   // nobody comes to stitch anyone; the body still goes over the falls
   surgeon = null;
 }
@@ -13348,7 +13352,7 @@ async function surgeonAgain(guards, pc = leader){
 // after a later drop nobody comes: stable at 0, back up with 1 HP after 1d4 hours (SRD 5.1, Stabilizing a Creature)
 async function surgeonRecover(){
   const S = surgeon; if (!S) return; const pc = S.pc;
-  log("Nobody comes. The guards go back to their watch.");
+  log("Nobody comes. The guards go back to their watch.", {say: true});
   const j = await surgeonApi("recover");
   if (j.failed){ toast(j.error || "The game did not answer."); surgeon = null; mode = "explore"; return; }
   setTimeout(() => {
@@ -13420,7 +13424,7 @@ function lianaArrives(next = lianaTends){
   const beside = nearestWalkable(pc.x + 60 * sc, pc.y + 10 * sc);
   a.path = [{x: gIn.x, y: gIn.y}, ...findPath({...a, x: gIn.x, y: gIn.y}, beside)]; a.slow = true;
   sfx("door-open", .5);
-  log("The pen gate opens a hand's width. A drow in a stained leather apron comes in with a satchel of vials, and the gate is locked behind her.");
+  log("The pen gate opens a hand's width. A drow in a stained leather apron comes in with a satchel of vials, and the gate is locked behind her.", {say: true});
   a.onArrive = () => { faceTo(a, pc); setAnim(a, "idle"); lianaSays("arrive", 4200); setTimeout(next, 3600); };
 }
 async function lianaTends(){
@@ -13448,7 +13452,7 @@ function surgeonRemoveBody(){
   let lastMark = {x: v.x, y: v.y};
   dragAlong(v, route, 5200, k => { if (Math.hypot(v.x - lastMark.x, v.y - lastMark.y) > 26 * (node.scale || 1)){ lastMark = {x: v.x, y: v.y}; addBlood(v, .6); } if (k > .85) v.alpha = Math.max(0, (1 - k) / .15); },
     () => { v.alpha = 0; const i = actors.indexOf(v); if (i >= 0) actors.splice(i, 1); const k = npcs.indexOf(v); if (k >= 0) npcs.splice(k, 1);
-      setTimeout(() => log("Somewhere below the bridge, something heavy goes into the falls."), 2600); });
+      setTimeout(() => log("Somewhere below the bridge, something heavy goes into the falls.", {say: true}), 2600); });
 }
 // ----- 5. the one chance to ask her -----
 function openLianaCard(){
@@ -13474,7 +13478,7 @@ function openLianaCard(){
     add(own ? `${fname(p)} asks her (Persuasion)` : `${fname(p)} asks, ${trName} translating (disadvantage)`, () => lianaPersuaded(p, trName), offered ? "" : "primary");
     offered++;
   }
-  if (!offered) log("Nobody here speaks Elvish. Liana does not wait to be understood.");
+  if (!offered) log("Nobody here speaks Elvish. Liana does not wait to be understood.", {say: true});
   add("Let her go", () => lianaLeaves(null));
   showObjCard(); box.querySelector("button")?.focus();
 }
@@ -13490,7 +13494,7 @@ async function lianaPersuaded(p, translator){
   lianaSays("offer" + b.d4, 8500);
   setTimeout(() => {
     if (j.granted){ bank("ui/item_pickup", .7); log(`Liana presses something into ${esc(j.granted.to)}'s hand: <b>${esc(j.granted.name)}</b>.`); }
-    else if (b.kind === "jorlan") log("Liana will speak to <b>Jorlan</b>, who hates Ilvara more than you do.");
+    else if (b.kind === "jorlan") log("Liana will speak to <b>Jorlan</b>, who hates Ilvara more than you do.", {say: true});
     lianaLeaves("helped");
   }, 4200);
 }
@@ -13646,7 +13650,7 @@ async function surrenderBegins(w){
   state.surrender = {seq: j.seq, at: Date.now(), area: String(cur), by: OW.key || "local", victim: j.victim ? {id: j.victim.id, name: j.victim.name, from: j.victim.from} : null};
   if (j.victim){ const v = npcs.find(n => n.id === j.victim.id && !n.body); if (v) v.slain = true;   // the story has them marked: the stage poll must not drop them here
     log(`<i>${j.victim.from === "party" ? `Malachar's d${j.victim.of} over the prisoners who ran with them` : `Nobody ran with them — Malachar's d${j.victim.of} over the pen`}: ${j.victim.roll}.</i>`); }
-  else log("<i>There is no prisoner left to make an example of.</i>");
+  else log("<i>There is no prisoner left to make an example of.</i>", {say: true});
   await wait(1300);
   // the beating: each hero in turn, from the nearest guard; the rows already carry it, the map shows it
   const beatenOf = b => here.find(p => (b.id && characterIdOf(p.id) === b.id) || (b.slug && p.id === b.slug));
@@ -13745,7 +13749,7 @@ async function surrenderAtTheGate(S){
     await wait(1600); if (cur !== PEN) return;
     if (behind) surrenderSays(behind, SURRENDER_LINES.warning, 4800);
     await wait(2600);
-  } else if (!v) log("There is no prisoner left to make an example of. The drow are quiet about it.");
+  } else if (!v) log("There is no prisoner left to make an example of. The drow are quiet about it.", {say: true});
   if (cur !== PEN) return;
   await surrenderLockIn(S, {ahead, behind, heroes});
 }
@@ -13877,7 +13881,7 @@ $("dmTooth").onclick = async () => {
   if (TOOTH.uncursed){ toast("The Tooth's curse is already lifted."); return; }
   const j = await toothApi("tooth-uncurse");
   if (APP && j.failed){ toast(j.error === "DM only" ? "That needs the DM code. Enter it on the dashboard first." : (j.error || "The game did not answer.")); return; }
-  TOOTH.uncursed = true; log("The curse on Lolth's Tooth is lifted: Ilvara can no longer feel it drawn. It still glows near spiders.");
+  TOOTH.uncursed = true; log("The curse on Lolth's Tooth is lifted: Ilvara can no longer feel it drawn. It still glows near spiders.", {say: true});
 };
 
 // ---------- someone talking to you comes over ----------
@@ -13929,12 +13933,23 @@ function renderVoicesBtn(){ const b = $("voicesBtn"); if (!b) return; b.setAttri
 if ($("voicesBtn")){ $("voicesBtn").onclick = () => { voicesOn = !voicesOn; try { localStorage.setItem("vk-voices", voicesOn ? "on" : "off"); } catch (e) {} renderVoicesBtn(); }; renderVoicesBtn(); }
 if (!APP && $("voicesBtn")) $("voicesBtn").hidden = true;
 
-// ---------- THE NARRATION STRIP, READ ALOUD ----------
-// Sam, 2026-10-30, pointing at the strip under the painting ("The pen gate opens a hand's width..."):
-// "Speak these out loud (with option to turn off in a button). Make sure the tempo of this isn't too slow."
+// ---------- THE STORY BEATS, READ ALOUD ----------
+// Sam, 2026-10-30: "Speak these out loud (with option to turn off in a button). Make sure the tempo of this
+// isn't too slow." He was pointing at the feed at the BOTTOM LEFT — log(), not the narration strip under the
+// painting. The first pass wired the strip; this is the correction.
 // This supersedes the old rule a few lines up that the walk's narration stays unvoiced because the dashboard
-// is Malachar's stage. The narrator IS Malachar — the same lich voice the dashboard uses (/api/tts, voice
-// "onyx") — so the table hears one storyteller wherever they are looking.
+// is Malachar's stage. The narrator IS Malachar — the same lich voice the dashboard uses — so the table hears
+// one storyteller wherever they are looking.
+//
+// WHAT IS SPOKEN, AND WHY SO LITTLE (Sam, 2026-10-30: "elevenlabs might have a lot to do"). Only beats marked
+// log(..., {say:true}) — a couple of dozen out of ~330 log lines. Three reasons, all pulling the same way:
+//   * the log is mostly rolls, damage and skill checks, and Sam already ruled those are never spoken (PR #940);
+//   * a narrator who reads everything becomes wallpaper, and the line that matters lands with no weight;
+//   * it costs real money per character.
+// Opt-in, never a blocklist: with a blocklist every new log line anyone adds starts talking, and billing.
+// The marked beats are FIXED STRINGS, so /api/narration-tts caches them by hash and ElevenLabs is charged once
+// per line ever. That is not a coincidence — the lines worth hearing are the ones that cache, and the
+// interpolated ones (names, dice) that could never cache are the ones not worth hearing.
 //
 // TEMPO. The lich voice is designed to drawl, which carries a monologue and drags on a line of scene
 // narration the table is waiting to act on. The line is sent at NARR_SPEED through ElevenLabs' own speed
@@ -13977,7 +13992,9 @@ async function narrPump(){
   } finally { narrBusy = false; }
 }
 async function narrSpeak(text){
-  const res = await fetch("/api/tts", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text, voice: "onyx", speed: NARR_SPEED})});
+  // /api/narration-tts, not /api/tts: same lich voice, but cached in storage by a hash of the line, so a
+  // beat is synthesised once ever and is free from the second time the table hears it.
+  const res = await fetch("/api/narration-tts", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text, speed: NARR_SPEED})});
   if (!res.ok) throw new Error("tts " + res.status);
   // WebAudio, not <audio>: the game found <audio> silently mute in some Chromium builds (same as speakCanon).
   const ctx = audioCtx();
@@ -14674,7 +14691,7 @@ $("dmGateShut").onclick = () => { toggleDm(false);
   if (state.gateBroken){ toast("The gate was torn off its hinges; it cannot be locked."); return; }
   if (!state.gateOpen){ toast("The pen gate is already shut and locked."); return; }
   state.gateOpen = false; state.doorShut = false; if (cur === PEN){ setDoor(false); sfx("door-close", .8); }
-  if (balcony()) buildGrid(); saveWalk(); log("The pen gate is shut and locked again."); };
+  if (balcony()) buildGrid(); saveWalk(); log("The pen gate is shut and locked again.", {say: true}); };
 // THE DM CASTS A POISON CLOUD (2026-10-25). No one on this map has a 3rd- or 5th-level slot yet and no Velkynvelve
 // stat block casts either spell, so the DM can put one in a fight on any combatant's behalf: it is that creature's
 // spell from then on (its concentration, its turn the fog rolls on, its DC unless one is typed). No slot or action
@@ -16136,7 +16153,7 @@ function noteFallen(a){
 function gameOverCheck(){
   if (state.gameOver || mode === "load" || !gameOverActive(PARTY, state.fallen)) return;
   state.gameOver = {seq: "g" + Date.now().toString(36), at: Date.now(), by: OW.key || "local"};
-  log("<b>Every hero at the table is dead.</b>");
+  log("<b>Every hero at the table is dead.</b>", {say: true});
 }
 function gameOverTick(){
   if (mode === "load") return;
