@@ -267,6 +267,15 @@ export interface WalkRollRequest {
   characterId?: string | null
   /** Roll with advantage: a friend's Help, as the map grants it (the spool, OotA area 5). */
   advantage?: boolean
+  /**
+   * Roll with DISADVANTAGE, because of something the map knows and the sheet does not — manacles, above all
+   * (Sam, 2026-10-30: picking or forcing the pen gate in cuffs "should show disadvantaged because of
+   * [manacled]"). The map sends the fact; `reason` is the words the roll panel shows for it.
+   * Advantage and disadvantage cancel, as 5e has them cancel: neither is applied.
+   */
+  disadvantage?: boolean
+  /** Why it is at disadvantage, in the player's words ("manacled"). Shown on the roll panel. */
+  edgeReason?: string
 }
 
 /** Page → map: "I have it, the roll panel is open." After this the map waits as long as the player does. */
@@ -295,5 +304,10 @@ export function parseWalkRollRequest(data: unknown): WalkRollRequest | null {
   if (typeof d.id !== "string" || d.id.length === 0 || d.id.length > 64) return null
   if (!isWalkActionKey(d.action)) return null
   const characterId = typeof d.characterId === "string" && d.characterId.length <= 64 ? d.characterId : null
-  return { type: "aop:roll", id: d.id, action: d.action, characterId, advantage: d.advantage === true }
+  const advantage = d.advantage === true, disadvantage = d.disadvantage === true
+  const reason = typeof d.edgeReason === "string" && d.edgeReason.length <= 60 ? d.edgeReason : undefined
+  // 5e: advantage and disadvantage cancel each other out, however many of each there are.
+  return { type: "aop:roll", id: d.id, action: d.action, characterId,
+    advantage: advantage && !disadvantage, disadvantage: disadvantage && !advantage,
+    edgeReason: disadvantage && !advantage ? reason : undefined }
 }
