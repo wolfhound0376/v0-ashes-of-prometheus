@@ -61,6 +61,96 @@
     }
   },
   "11": {
+    "loot": [
+      {
+        "id": "pen-ormu",
+        "name": "Glowing moss on the wet wall",
+        "_src": "OotA Appendix C, Fungi of the Underdark: ormu, bioluminescent green moss on damp stone. Placement in the pen's NW corner is Claude's (2026-10-30); anchor and approach cell both tested walkable against masks.json plate 11.",
+        "prop": "fungi-ormu",
+        "at": [1010, 790],
+        "w": 92,
+        "poly": [[955, 700], [1065, 700], [1065, 795], [955, 795]],
+        "text": "A cushion of green light low on the wet stone, where the mist off the chasm never dries.",
+        "identify": {
+          "item": "ormu-moss",
+          "skill": "nature",
+          "dc": 10,
+          "alt": ["medicine", "herbalism-kit"],
+          "useful": true,
+          "known": "Ormu. The glow is the plant, not a trick of the eye — and alchemists pay for it.",
+          "unknown": "Moss of some kind, glowing faintly. You could not say what.",
+          "_src": "Skill and DC are Claude's house numbers (2026-10-30). Sam ruled the mechanic (passive on a walk-by, rolled on a Search); Claude moved it off Insight onto Nature, since Insight reads creatures, not fungi."
+        }
+      },
+      {
+        "id": "pen-timmask",
+        "name": "A striped toadstool in the back shadow",
+        "_src": "OotA Encounters p.28: a two-foot-tall toadstool, orange and red stripes across a beige cap; uprooting or destroying it expels a 15-foot-radius cloud of poisonous spores, DC 14 Constitution or poisoned. Placement is Claude's (2026-10-30).",
+        "prop": "fungi-timmask",
+        "at": [1860, 545],
+        "w": 84,
+        "poly": [[1805, 450], [1915, 450], [1915, 550], [1805, 550]],
+        "text": "Something has grown tall in the dark at the back of the pen. Nobody has touched it.",
+        "identify": {
+          "item": "timmask",
+          "skill": "nature",
+          "dc": 15,
+          "alt": ["medicine", "herbalism-kit", "poisoners-kit"],
+          "useful": true,
+          "known": "The devil's mushroom. Tear it up carelessly and it answers with a cloud.",
+          "unknown": "A tall striped toadstool. It looks like it would rather you did not.",
+          "_src": "Skill and DC are Claude's house numbers (2026-10-30)."
+        },
+        "harvest": {
+          "clean_dc": 15,
+          "clean_skill": "nature",
+          "clean_alt": ["herbalism-kit", "poisoners-kit"],
+          "alerts_watch": true,
+          "vent": {"radius_ft": 15, "save": "con", "dc": 14, "effect": "poisoned", "_src": "OotA Encounters p.28 — the book's own numbers."},
+          "_src": "Sam 2026-10-30: harvesting must be possible even though the potion cannot be brewed in the pen. That a clean cut avoids the cloud, and that a vent brings the gate watch, are Claude's house rules."
+        }
+      },
+      {
+        "id": "pen-waterorb",
+        "name": "A swollen orb at the seep",
+        "_src": "OotA Appendix C, Fungi of the Underdark: waterorb, a bulbous sponge-fungus of shallow pools. Placement in the pen's E corner is Claude's (2026-10-30).",
+        "prop": "fungi-waterorb",
+        "at": [2285, 990],
+        "w": 76,
+        "poly": [[2235, 900], [2335, 900], [2335, 995], [2235, 995]],
+        "text": "Where the water seeps through the rock, something pale and round has swelled up fat with it.",
+        "identify": {
+          "item": "waterorb",
+          "skill": "nature",
+          "dc": 10,
+          "alt": ["medicine", "herbalism-kit"],
+          "useful": true,
+          "known": "A waterorb. Squeeze it and it gives up clean water; the pulp will keep you alive.",
+          "unknown": "A pale swollen growth. It gives under a finger like a full skin.",
+          "_src": "Skill and DC are Claude's house numbers (2026-10-30)."
+        }
+      },
+      {
+        "id": "pen-bonecap",
+        "name": "Pale mushrooms on the fouled ground",
+        "_src": "Catalogue slug 'bonecap' (items.source names Baldur's Gate III lore, no published mechanics). Using it as the pen's trap — it reads as edible — is Claude's (2026-10-30), per Sam's ask for one poisonous mushroom.",
+        "prop": "fungi-bonecap",
+        "at": [860, 1260],
+        "w": 88,
+        "poly": [[805, 1170], [915, 1170], [915, 1265], [805, 1265]],
+        "text": "A clutch of pale caps has come up in the corner the chamber pots are emptied into.",
+        "identify": {
+          "item": "bonecap",
+          "skill": "nature",
+          "dc": 13,
+          "alt": ["medicine", "herbalism-kit"],
+          "useful": false,
+          "known": "Bonecap. It roots in what is buried under it, and the flesh will etch metal. Not food.",
+          "unknown": "Mushrooms. Pale, ordinary, and you have not eaten since they took you.",
+          "_src": "Skill and DC are Claude's house numbers (2026-10-30). useful:false so a successful read fires no discovery film — the trap must not announce itself."
+        }
+      }
+    ],
     "npcs": [
       {
         "id": "drow-guard-female",

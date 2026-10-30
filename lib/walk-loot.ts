@@ -99,6 +99,31 @@ export const BOOK_CONTAINERS: Record<string, BookContainer> = {
   // fresh fruit, a weapon's belt (containing small throwing darts)". The book gives no counts: the 3 vials and 5 darts
   // are Claude's numbers. "Sleep poison" is read as drow poison, the catalogue row whose effect is unconsciousness.
   // Fresh fruit is catalogued as rations (migrations/walk_loot_fresh_fruit.sql, Sam 2026-10-28): one day of food, perishable.
+  // THE PEN FUNGI (Sam, 2026-10-30). Which mushrooms is not a choice made here: lib/alchemy.ts already names the
+  // reagents a potion of healing and drow poison need, and the pen deliberately holds only part of each list, so a
+  // prisoner can fill their pockets and still brew nothing until they are out. Quantities are Claude's.
+  // The timmask's cloud is rolled on the map before this container opens (template.html fungusHarvest): a botched
+  // cut costs the cloud, never the mushroom, which is Sam's ruling.
+  "pen-ormu": {
+    node: "11", title: "Glowing moss on the wet wall",
+    source: "OotA Appendix C, Fungi of the Underdark: ormu, bioluminescent moss on damp stone. A potion of healing needs two (lib/alchemy.ts). Quantity is Claude's.",
+    entries: [{ slug: "ormu-moss", qty: 2, note: "scraped off the wet stone" }],
+  },
+  "pen-timmask": {
+    node: "11", title: "A striped toadstool in the back shadow",
+    source: "OotA Encounters p.28. The fungal half of drow poison (lib/alchemy.ts); the spider glands are not in the pen.",
+    entries: [{ slug: "timmask", qty: 1, note: "cut at the base, cap intact" }],
+  },
+  "pen-waterorb": {
+    node: "11", title: "A swollen orb at the seep",
+    source: "OotA Appendix C, Fungi of the Underdark: waterorb, a sponge-fungus of shallow pools. One is what a potion of healing needs (lib/alchemy.ts).",
+    entries: [{ slug: "waterorb", qty: 1, note: "heavy with clean water" }],
+  },
+  "pen-bonecap": {
+    node: "11", title: "Pale mushrooms on the fouled ground",
+    source: "Catalogue slug bonecap (items.source names Baldur's Gate III lore, no published mechanics). The pen's trap: it reads as food and is sicken/rot/corrode. Quantity is Claude's.",
+    entries: [{ slug: "bonecap", qty: 3, note: "a clutch of pale caps" }],
+  },
   "cliff-top-sack": {
     node: "5c", title: "Snagged sack",
     source: "OotA Expanded p.45, Lift Trouble: a container of fresh fruit fell off the lift.",

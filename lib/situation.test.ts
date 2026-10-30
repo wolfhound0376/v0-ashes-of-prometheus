@@ -158,3 +158,46 @@ describe("work details (Hard Labor)", () => {
     expect(isWalkPatch(parsePatch({ event: "labor_back" }))).toBe(true)
   })
 })
+
+// THE WARD SIGIL CUT OPEN (Sam, 2026-10-30)
+describe("the ward sigil", () => {
+  const start = () => startingSituation(RUN, T0)
+  it("ward_broken lifts the ward", () => {
+    const s = mergeSituation(start(), parsePatch({ event: "ward_broken" }), "walk")
+    expect(s.ward_active).toBe(false)
+  })
+  it("ward_broken leaves the party where it is: it is the ward that changed, not the stance or the gate", () => {
+    const s = mergeSituation(start(), { event: "ward_broken" }, "walk")
+    expect(s.stance).toBe("captive")
+    expect(s.gate_state).toBe("locked")
+  })
+  it("a botched cut leaves the ward holding", () => {
+    const s = mergeSituation(start(), parsePatch({ event: "ward_touched" }), "walk")
+    expect(s.ward_active).toBe(true)
+  })
+  it("a drow reading the red scar changes nothing on the row", () => {
+    const s = mergeSituation(start(), parsePatch({ event: "ward_seen" }), "walk")
+    expect(s.ward_active).toBe(true)
+    expect(s.stance).toBe("captive")
+  })
+  it("labor_back raises the ward again, and the walk's re-assert puts it back down", () => {
+    // the row has no memory of the cut, so the walk re-sends ward_broken after labor_back (reportSituation)
+    const broken = mergeSituation(start(), { event: "ward_broken" }, "walk")
+    const back = mergeSituation(mergeSituation(broken, { event: "labor_out" }, "walk"), { event: "labor_back" }, "walk")
+    expect(back.ward_active).toBe(true)
+    expect(mergeSituation(back, { event: "ward_broken" }, "walk").ward_active).toBe(false)
+  })
+  it("recaptured raises it too, and the same re-assert answers it", () => {
+    const re = mergeSituation(start(), { event: "recaptured" }, "walk")
+    expect(re.ward_active).toBe(true)
+    expect(mergeSituation(re, { event: "ward_broken" }, "walk").ward_active).toBe(false)
+  })
+  it("all three are things a player's own browser may send", () => {
+    expect(isWalkPatch(parsePatch({ event: "ward_broken" }))).toBe(true)
+    expect(isWalkPatch(parsePatch({ event: "ward_touched" }))).toBe(true)
+    expect(isWalkPatch(parsePatch({ event: "ward_seen" }))).toBe(true)
+  })
+  it("ward_active itself is still not a field the walk may set", () => {
+    expect(isWalkPatch(parsePatch({ ward_active: false }))).toBe(false)
+  })
+})
