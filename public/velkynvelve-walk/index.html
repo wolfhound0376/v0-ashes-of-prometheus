@@ -8208,9 +8208,19 @@ function exploreExtras(m, o, add, who){
     fg.harvest ? `${SKILL_NAME[fg.harvest.skill] || fg.harvest.skill} DC ${fg.harvest.dc} · ${fungusTriesLeft(L, fg)} ${fungusTriesLeft(L, fg) === 1 ? "try" : "tries"} left` : "it comes up easily",
     () => fungusHarvest(fg));
   // THE WARD SIGIL (Sam, 2026-10-30): a caster within reach of the wall can read it; a 20+ read unlocks the cut.
-  if (wardReach(L) && wardCaster(L) && !state.wardBroken){
+  //
+  // SAYS WHY IT CANNOT (Sam, 2026-10-30, standing at the sigil: "why am I unable to examine it" — then, of the two
+  // reasons that were hiding it, "I like tried and caster"). Both rules stay exactly as they were. What changes is
+  // that they no longer make the option VANISH: within reach of the wall the row is always there, disabled, saying
+  // which of the two is in the way — the same way the spell list already lists a spell with no slots left. Reach
+  // and a broken ward still hide it, because then there is nothing on the wall to offer.
+  if (wardReach(L) && !state.wardBroken){
     const seen = state.wardStudy[L.id];
-    if (!state.wardTried[L.id])
+    if (!wardCaster(L))
+      x("Study the ward sigil", "✦", ART("look-closer"), "no magic of your own to read it with", null);
+    else if (state.wardTried[L.id])
+      x("Study the ward sigil", "✦", ART("look-closer"), "you have already read what you can off it", null);
+    else
       x("Study the ward sigil", "✦", ART("look-closer"), `Arcana ${sgn(heroMod(L, "arcana", "int"))}${wardWizard(L) ? "" : " · disadvantage: not a wizard"}`, () => studySigil());
     if (seen && seen.tier === "seam" && wardMayCut(L))
       x("Alter the ward sigil", "✧", ART("look-closer"), `Dexterity DC ${WARD_CUT_DC} · it will scar red, and the drow will read it`, () => openSigilCut());

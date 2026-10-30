@@ -31,5 +31,18 @@ ok(/laborCastSeen\(caster, target\)/.test(page) && /if \(inChains\(\)\) laborCas
 ok(/if \(hasThievesTools\(leader\)\) add\("Pick the lock"/.test(page), "the pen gate's lock pick needs tools");
 ok(/if \(hasPenKey\(\)\) add\("Unlock it with the pen key"/.test(page), "the pen key option needs the key");
 ok(/if \(dmScreen\(\)\) add\("DM: Jorlan opens it"/.test(page), "the DM option is still the DM's alone");
+// 5. An option a rule refuses SAYS SO rather than vanishing (Sam, 2026-10-30: "why am I unable to examine it",
+//    then "I like tried and caster"). The menu disables a row whose handler is null and shows its sub-line.
+ok(/if \(fn\) b\.onclick = [\s\S]{0,80}?else b\.disabled = true;/.test(page),
+   "a null handler renders the row disabled, with its reason as the sub-line");
+ok(/if \(wardReach\(L\) && !state\.wardBroken\)\{/.test(page),
+   "the ward row is built on reach alone — caster and tried no longer hide it");
+ok(/if \(!wardCaster\(L\)\)\s*\n\s*x\("Study the ward sigil"[\s\S]{0,120}?no magic of your own[\s\S]{0,60}?null\)/.test(page),
+   "a non-caster sees the row, disabled, told they have no magic for it");
+ok(/else if \(state\.wardTried\[L\.id\]\)\s*\n\s*x\("Study the ward sigil"[\s\S]{0,140}?already read[\s\S]{0,60}?null\)/.test(page),
+   "a hero who already tried sees the row, disabled, told why");
+ok(/else\s*\n\s*x\("Study the ward sigil"[\s\S]{0,200}?\(\) => studySigil\(\)\)/.test(page),
+   "everyone else still gets the live roll");
+
 console.log(bad ? `\n${bad} FAILED` : "\nall passed");
 process.exit(bad ? 1 : 0);
