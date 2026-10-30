@@ -4,6 +4,8 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { findNpcRow } from "@/lib/npc-acquaintance"
 import { TTS_MODEL, TTS_FALLBACK_MODEL, settingsFor, shouldRetryOnFallback, deliveryFor } from "@/lib/tts-model"
 import { isRapportSpeaker, isCroakSpeaker, RAPPORT_MIME, CROAK_MIME } from "@/lib/rapport"
+import { supabaseAdmin } from "@/lib/supabase-admin"
+import { ttsCacheKey, isCacheable, readCachedAudio, writeCachedAudio } from "@/lib/tts-cache"
 
 /**
  * Text-to-speech for a named NPC line.
@@ -140,6 +142,36 @@ export async function POST(request: NextRequest) {
     // A designed voice with a delivery profile (lib/tts-model.ts) speaks on
     // its own model, with its own direction and stability; everyone else on v4.
     const delivery = deliveryFor(resolvedVoiceId)
+
+    // ---- cache read ----
+    // Sam, 2026-10-30: all audio is recycled. A guard's "Step back" is the same
+    // bytes every time it is said, so it is synthesised once and kept
+    // (lib/tts-cache.ts). The delivery profile rides in the variant because a
+    // directed take sounds different from an undirected one; rapport and croak
+    // do not, because those are applied by the player on top of these bytes.
+    const cacheParts = {
+      voiceId: resolvedVoiceId,
+      text: clean,
+      settings: delivery ? { stability: delivery.stability, use_speaker_boost: settings.use_speaker_boost } : settings,
+      variant: delivery ? `${delivery.model}|${delivery.direction ?? ""}` : "",
+    }
+    const cacheable = isCacheable(cacheParts)
+    const cacheKey = cacheable ? ttsCacheKey(cacheParts) : ""
+    const mime = rapport ? RAPPORT_MIME : croak ? CROAK_MIME : "audio/mpeg"
+    if (cacheable) {
+      const hit = await readCachedAudio(supabaseAdmin, cacheKey, "npc-tts")
+      if (hit) {
+        return new NextResponse(hit, {
+          headers: {
+            "Content-Type": mime,
+            "Content-Length": String(hit.byteLength),
+            "X-Voice-Mode": rapport ? "rapport" : croak ? "croak" : "voice",
+            "X-Resolved-Voice": resolvedVoiceId || "",
+            "X-TTS-Cache": "hit",
+          },
+        })
+      }
+    }
     for (const model of [delivery?.model ?? TTS_MODEL, TTS_FALLBACK_MODEL]) {
       usedModel = model
       const onProfile = !!delivery && model === delivery.model
@@ -172,13 +204,18 @@ export async function POST(request: NextRequest) {
     console.log(`[v0] npc-tts spoke with ${usedModel}`)
 
     const audioBuffer = await response.arrayBuffer()
+
+    // ---- cache write ---- (best-effort; never fails the line)
+    if (cacheable) await writeCachedAudio(supabaseAdmin, cacheKey, audioBuffer, "npc-tts")
+
     return new NextResponse(audioBuffer, {
       headers: {
-        "Content-Type": rapport ? RAPPORT_MIME : croak ? CROAK_MIME : "audio/mpeg",
+        "Content-Type": mime,
         "Content-Length": audioBuffer.byteLength.toString(),
         "X-Voice-Mode": rapport ? "rapport" : croak ? "croak" : "voice",
         "X-Resolved-Voice": resolvedVoiceId || "",
         "X-TTS-Model": usedModel,
+        "X-TTS-Cache": cacheable ? "miss" : "skip",
       },
     })
   } catch (error) {
