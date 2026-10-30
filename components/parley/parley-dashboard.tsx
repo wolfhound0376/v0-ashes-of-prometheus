@@ -37,6 +37,7 @@ import { TimeStoppedBanner } from "@/components/dashboard/time-stop"
 import { canSpeak, classifySpeaker } from "@/lib/tts"
 import { isMusicOff, onMusicPrefChange, setMusicOff } from "@/lib/audio-prefs"
 import { isOnline, type WorldRow } from "@/lib/walk-world"
+import { shouldFollowPull } from "@/lib/watch-the-map.mjs"
 
 import { SuggestionChips } from "@/components/dashboard/suggestion-chips"
 import type { Suggestion } from "@/lib/suggestions"
@@ -969,6 +970,12 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
   // is catching up, red when one has lost the table or nobody can be reached.
   // The campaign run this screen was opened under; a different one means the world was restarted under it.
   const runSeenRef = useRef<string | null>(null)
+  // The last "come and watch this" cue this screen followed, so one cue pulls it once.
+  const pullSeenRef = useRef<string | null>(null)
+  // Who this screen is, read at the moment a cue arrives rather than when the poll was set up: the poll runs for the
+  // life of the page and the hero on it can change under it.
+  const whoAmIRef = useRef<{ dm: boolean; hero: string | null }>({ dm: false, hero: null })
+  useEffect(() => { whoAmIRef.current = { dm: isDmView, hero: selected?.name ?? null } }, [isDmView, selected?.name])
   const [tableSync, setTableSync] = useState<{ state: "ok" | "lag" | "off" | "idle"; label: string; detail: string }>({ state: "idle", label: "No map open", detail: "No one is on the Underwalk right now." })
   useEffect(() => {
     let alive = true
@@ -986,6 +993,16 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
           else if (runSeenRef.current !== j.run) { window.location.reload(); return }
         }
         const now = typeof j.now === "number" ? j.now : Date.now()
+        // WHEN THE GAME GETS UP AND MOVES, THIS SCREEN GOES WITH IT (Sam, 2026-10-30: "during dynamic action
+        // sequences like that or if someone is talking to you (interrupting) it should go to the pixel map").
+        // The map raises a cue in the shared state when a sequence starts; who follows it, and for how long it
+        // stays live, are lib/watch-the-map.mjs — the same copy the map reads.
+        const pull = (j.world?.state as { pull?: Parameters<typeof shouldFollowPull>[0] } | undefined)?.pull ?? null
+        if (shouldFollowPull(pull, { seen: pullSeenRef.current, dm: whoAmIRef.current.dm, hero: whoAmIRef.current.hero, now })) {
+          pullSeenRef.current = (pull as { seq?: string } | null)?.seq ?? null
+          window.location.href = "/velkynvelve"
+          return
+        }
         const seats = Object.values(j.world?.seats ?? {}).filter((s) => isOnline(s, now))
         if (!alive) return
         if (!seats.length) { setTableSync({ state: "idle", label: "No map open", detail: "No one is on the Underwalk right now." }); return }
