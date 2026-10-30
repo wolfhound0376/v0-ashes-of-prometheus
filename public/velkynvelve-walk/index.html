@@ -9924,6 +9924,7 @@ function fall(t){
     if (t.ko){ popText(t, "knocked out", "#ffd166", 1.2); log(`<b>${fname(t)} is knocked out</b>: unconscious and stable at 0 HP (SRD: a stable creature regains 1 HP after 1d4 hours).`); settleGrudge(t); }
     else { const killer = standing(foes)[0]; if (killer) setTimeout(() => taunt(killer, GLOATS, t), 1400); } }
   else narrate(t, `${fname(t)} falls.`);
+  bodyRemovalNote(t);     // everyone else: the drow come for them in two guard cycles (Sam, 2026-10-30)
   buppidoRisesCheck(t);   // the one prisoner who does not stay down (Sam, 2026-10-30)
   // THE BANTER on a death: the ally who made the kill says so; else an ally or a gambler cheers; a foe sees one of its own drop
   if (cbt && t.kind === "foe"){
@@ -17565,6 +17566,121 @@ function drawGraves(){
 }
 /** The graves on this plate, nearest last — GAME OVER pushes in on the one that just went up. */
 function gravesHere(){ return (Array.isArray(state.graves) ? state.graves : []).filter(v => v && v.plate === cur); }
+// ---------- THE DROW CLEAR THE PEN ----------
+// Sam, 2026-10-30: "When someone is murdered by the drow they will eventually (two drow) drag the dead body out
+// within two guard cycles." A cycle is five minutes, which Sam set when it turned out the map had never had one.
+// The rules and the clock are lib/body-removal.mjs, pasted below.
+// THE DROW CLEAR THE PEN — the rules, pure, in one copy.
+//
+// Sam, 2026-10-30: "When someone is murdered by the drow they will eventually (two drow) drag the dead body out
+// within two guard cycles." Asked how long a cycle is, because the map had never had one: "They should be at least
+// 5 minutes each."
+//
+// Plain JavaScript for the same reason as lib/game-over.mjs and lib/buppido-rises.mjs: build_walk.py pastes this file
+// into the painted map at its BODY_REMOVAL placeholder (minus `export`). Every name starts with BODY_REMOVAL_ or
+// bodyRemoval so the paste cannot collide with the page's names.
+//
+// THERE WAS NO GUARD CYCLE BEFORE THIS. The only cadence at the pen gate is the watch's sweep (GATE_WATCH.sweep,
+// 1800-3600 ms), which is how often a guard re-scans the bars — a glance, not a rotation. Nothing in the map modelled
+// a shift. So the five minutes below is Sam defining the unit, not a number read off anything that already existed.
+//
+// SOURCES
+//   [SAM 2026-10-30] two drow; the body goes out; within two guard cycles; a cycle is at least five minutes.
+//   [SAM 2026-10-30] Buppido is the exception — his body stays, and what happens next is lib/buppido-rises.mjs.
+//   [SOURCED] where it goes: Liana's order in The Drow Surgeon (Sam, 2026-10-25) is to take the body over the bridge
+//             and into the falls. The body leaves the pen through the gate and does not come back.
+//   [CLAUDE]  the walk and hoist timings, and the rule that the gate is open while they carry it.
+//
+// WHY IT MATTERS AT THE TABLE. Ten minutes is long enough that the corpse is a presence in the room — the party has to
+// keep talking and planning with it lying there — and short enough that it does not become furniture. It also gives
+// Buppido his tell: everyone else is carried out on a clock, so a body still lying there at minute eleven is the sign
+// that something is wrong, before anything has happened.
+
+const BODY_REMOVAL_RULES = {
+  plate: 11,             // the slave pen; the drow clear their own outpost, not the road
+  cycleMs: 300000,       // ONE GUARD CYCLE: five minutes [SAM 2026-10-30]
+  cycles: 2,             // "within two guard cycles" — so ten minutes from the death
+  bearers: 2,            // "(two drow)"
+  walkMs: 2600,          // in from the gate to the body
+  hoistMs: 900,          // an end each
+  carryMs: 3200,         // out again, with it between them
+}
+
+/** When the drow get round to this body. */
+function bodyRemovalDueAt(diedAtMs) {
+  const R = BODY_REMOVAL_RULES
+  return Number(diedAtMs || 0) + R.cycleMs * R.cycles
+}
+
+/**
+ * Whose body do they leave?
+ *
+ * Buppido only [SAM 2026-10-30: "his body doesn't get dragged away like the rest"]. Heroes are not on this list on
+ * purpose: a dead hero is the table's business, and a stone goes up where they fell (lib/game-over.mjs), so the drow
+ * never touch them either — that is handled by only ever offering this NPC bodies.
+ */
+function bodyRemovalSkips(id) {
+  return String(id || "") === "buppido"
+}
+
+/** Is this body ready to go? */
+function bodyRemovalReady({ id, diedAt, plate, nowMs, taken = false } = {}) {
+  if (taken || bodyRemovalSkips(id)) return false
+  if (Number(plate) !== BODY_REMOVAL_RULES.plate) return false
+  return Number(nowMs || 0) >= bodyRemovalDueAt(diedAt)
+}
+
+/** How long the whole removal takes once it starts, so a screen joining late can tell where in it we are. */
+function bodyRemovalTotalMs() {
+  const R = BODY_REMOVAL_RULES
+  return R.walkMs + R.hoistMs + R.carryMs
+}
+
+/** A prisoner dies in the pen: start their ten minutes. Heroes are never offered — their death is the table's. */
+function bodyRemovalNote(t){
+  if (!t || t.kind === "pc" || hero(t) || cur !== BODY_REMOVAL_RULES.plate) return;
+  if (bodyRemovalSkips(t.id)) return;                       // Buppido stays; buppidoRisesCheck has him
+  t.bodyDiedAt = Date.now();
+}
+let bodyRemovalBusy = false;
+/** Once a tick: is anything due, and is there a pair free to carry it? */
+function bodyRemovalTick(){
+  if (bodyRemovalBusy || mode !== "explore" || cur !== BODY_REMOVAL_RULES.plate) return;
+  const body = npcs.find(n => n.down && n.bodyDiedAt && !n.bodyTaken && !n.offStage
+    && bodyRemovalReady({id: n.id, diedAt: n.bodyDiedAt, plate: cur, nowMs: Date.now()}));
+  if (!body) return;
+  const pair = gateGuards().slice(0, BODY_REMOVAL_RULES.bearers);
+  if (pair.length < BODY_REMOVAL_RULES.bearers) return;     // nobody spare on the gate: it waits for the next tick
+  body.bodyTaken = true;
+  bodyRemovalRun(body, pair);
+}
+async function bodyRemovalRun(body, pair){
+  bodyRemovalBusy = true;
+  const R = BODY_REMOVAL_RULES, gate = gateCenter() || {x: body.x, y: body.y - 200};
+  const home = pair.map(g => ({x: g.x, y: g.y, face: g.face}));
+  log(`<b>Two drow come in for ${esc(fname(body))}.</b>`);
+  setDoor(true); sfx("door-open", .7);                      // the gate is open the whole time they are inside
+
+  // in, one to each end
+  pair.forEach((g, i) => { g.static = false; g.path = [{x: body.x + (i ? 44 : -44) * (node.scale || 1), y: body.y + 10}]; });
+  await wait(R.walkMs);
+  pair.forEach(g => { g.path = []; g.face = faceOf(body.x - g.x, body.y - g.y); });
+  await wait(R.hoistMs);
+
+  // out, with it between them. The body rides with the pair rather than walking: dragAlong moves it along the path.
+  const out = [{x: gate.x, y: gate.y}];
+  pair.forEach(g => { g.path = out.slice(); });
+  await new Promise(res => dragAlong(body, out, R.carryMs, null, res));
+  body.offStage = true; body.alpha = 0;
+  narrate(body, `${fname(body)} is carried out of the pen.`);
+  log(`<b>${esc(fname(body))}</b> is carried out through the gate. Liana's standing order is the falls.`);
+
+  // the pair go back to their posts and the gate shuts behind them
+  pair.forEach((g, i) => { g.path = [{x: home[i].x, y: home[i].y}]; g.onArrive = () => { g.face = home[i].face; g.static = true; }; });
+  await wait(R.walkMs);
+  if (!state.gateOpen){ setDoor(false); sfx("door-close", .8); }
+  bodyRemovalBusy = false;
+}
 // ---------- BUPPIDO RISES ----------
 // Sam, 2026-10-30: "If Buppido dies (since he's evil) in the pen by being shot and RIP grave shows up (just for him)
 // his body doesn't get dragged away like the rest. After a little bit one zombie comes out from the ground (the mound)
@@ -18590,6 +18706,7 @@ let timeStopped = false, pausedMs = 0;
 function frame(t){
   const raw = Math.min(50, t - lastT); lastT = t;
   gameOverTick();
+  bodyRemovalTick();   // a murdered prisoner goes out two guard cycles later (Sam, 2026-10-30)
   if (timeStopped && mode !== "load"){ pausedMs += raw; draw(); updateOverlay(); tickMusic(raw / 1000); requestAnimationFrame(frame); return; }
   if (!cbt && quickTimeout) setQuick(false, true);                                     // a fight that ended some other way never keeps the fast clock
   if (t < hitstopUntil && mode === "combat" && !(cbt && cbt.quick)){ pausedMs += raw; draw(); updateOverlay(); requestAnimationFrame(frame); return; }   // hit-stop: the world holds for a few frames on a blow
