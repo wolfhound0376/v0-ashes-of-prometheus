@@ -82,6 +82,10 @@ export async function GET() {
     if (!runId) return NextResponse.json({ error: "no active run" }, { status: 404 })
     const w = await readWorld(db, runId)
     return answer(w, {
+      // WHICH RUN THIS IS. A restart opens a new campaign_run (lib/restart-campaign.ts) and every screen must leave
+      // the world that just ended behind: the painted map already reloads on a run change (/api/map-stage), and the
+      // dashboard now follows the same signal from here rather than carrying a wiped campaign on screen.
+      run: runId,
       world: w,
       realtime: { url: process.env.NEXT_PUBLIC_SUPABASE_URL ?? null, key: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? null },
     })

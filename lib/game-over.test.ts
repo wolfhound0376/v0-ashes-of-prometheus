@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
-import { GAME_OVER_RULES, GAME_OVER_LINES, gameOverActive, gameOverNoteDeath, gameOverLine, gameOverAfter, gameOverIsReplay } from "./game-over.mjs"
+import { GAME_OVER_RULES, GAME_OVER_LINES, gameOverActive, gameOverNoteDeath, gameOverLine, gameOverAfter, gameOverAskLine, gameOverAskers, gameOverIsReplay, gameOverRestart } from "./game-over.mjs"
 
 describe("when the game is over", () => {
   it("is over only when every seated hero is dead", () => {
@@ -68,6 +68,35 @@ describe("the map carries it", () => {
   it("the template pastes the rules and uses them", () => {
     const t = readFileSync("scripts/velkynvelve-walk/template.html", "utf8")
     expect(t).toContain("/*__GAME_OVER__*/")
-    for (const name of ["gameOverActive(", "gameOverNoteDeath(", "gameOverLine(", "gameOverAfter(", "gameOverIsReplay("]) expect(t).toContain(name)
+    for (const name of ["gameOverActive(", "gameOverNoteDeath(", "gameOverLine(", "gameOverAfter(", "gameOverIsReplay(", "gameOverRestart(", "gameOverAskLine("]) expect(t).toContain(name)
   })
 })
+
+describe("death and restart (Sam, 2026-10-30)", () => {
+  it("a player's card asks the DM and waits — it must not leave on a timer", () => {
+    expect(gameOverRestart({ app: true, sandbox: false, dm: false }))
+      .toEqual({ offer: true, ask: true, do: false, wait: true, auto: false })
+  })
+  it("the DM's card is the only one that can actually do it", () => {
+    const dm = gameOverRestart({ app: true, sandbox: false, dm: true })
+    expect(dm.do).toBe(true); expect(dm.ask).toBe(false); expect(dm.wait).toBe(false)
+  })
+  it("a rehearsal and the stand-alone preview reset themselves instead, as before", () => {
+    expect(gameOverRestart({ app: true, sandbox: true, dm: false }).offer).toBe(false)
+    expect(gameOverRestart({ app: false, sandbox: false, dm: true }).offer).toBe(false)
+    expect(gameOverRestart({ app: true, sandbox: true, dm: false }).auto).toBe(true)
+  })
+  it("names the askers in the order they asked, by the name the map shows", () => {
+    const asks = { gandalf: 300, lynkes: 100, fifi: 200 }
+    expect(gameOverAskers(asks, { fifi: "Fifi" })).toEqual(["lynkes", "Fifi", "gandalf"])
+    expect(gameOverAskers(null)).toEqual([])
+    expect(gameOverAskers({ ghost: "not a time" })).toEqual([])
+  })
+  it("reads as a sentence however many are asking", () => {
+    expect(gameOverAskLine([])).toBe("")
+    expect(gameOverAskLine(["Lynkes"])).toBe("Lynkes is asking to start over.")
+    expect(gameOverAskLine(["Lynkes", "Gandalf"])).toBe("Lynkes and Gandalf are asking to start over.")
+    expect(gameOverAskLine(["Lynkes", "Gandalf", "Fifi"])).toBe("Lynkes, Gandalf and Fifi are asking to start over.")
+  })
+})
+
