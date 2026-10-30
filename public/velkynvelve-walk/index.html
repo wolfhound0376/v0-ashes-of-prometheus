@@ -8284,6 +8284,7 @@ function lookCloser(what){
   const k = mapCheck(leader, "investigation", "int");
   log(`${fname(leader)} studies ${esc(what)}: ${rollLine(k, "investigation")}.`);
   askCheck(`${fname(leader)} looks closer at ${what}`, k, "investigation", `${fname(leader)} looks closely at ${what}. Intelligence (Investigation) ${k.total}${k.adv ? " (with help)" : ""}. What do they notice?`);
+  return k;                                          // the caller may need the total: at the pen gate the film is earned
 }
 // LOOKING AT THE PEN GATE (Sam, 2026-10-27): Look closer asks "Look around or Count the guards". Each is a filmed
 // moment, played the first time each player picks it ("at least once for each player"):
@@ -8291,6 +8292,10 @@ function lookCloser(what){
 //                     look-around chip rolls (cinematic_clips kind=environment for the slave pen)
 //   Count the guards  count-guards: Fifi's seat gets her own film (Fifi sitting by the bars); everyone else gets
 //                     the general count-guards film once it is made (AI Creator Studio) and filed under that state
+// EARNED, NOT GIVEN (Sam, 2026-10-30): either way the hero rolls Investigation first, and the roll now decides
+// whether there is film at all. The total rides along with the cue; lib/walk-film.ts holds it against the DC. Short
+// of it, the look still happened and Malachar still answers it — there is simply nothing to watch, and because the
+// page never asks, no view is recorded and the film is still waiting the next time they study the bars.
 // Either way the hero still rolls Investigation and Malachar is told what they looked at. The map does not play film
 // itself: it asks the page around it (components/walk/walk-cue-bridge.tsx), and /api/cinematics keeps the rule —
 // once per seated character, recorded in cinematic_views. Only the browser that clicked asks, and it plays only
@@ -8299,13 +8304,14 @@ const GATE_LOOK_RE = /pen gate/i;
 function openGateLook(what){
   if (mode !== "explore" || !leader) return;
   showDialog({title: what, body: `${fname(leader)} steps close to the bars. What do they study?`, buttons: [
-    {label: "Look around", primary: true, fn: () => { lookCloser(`${what}, looking out over the outpost beyond it`); gateLookFilm("look-around"); }},
-    {label: "Count the guards", primary: true, fn: () => { lookCloser(`${what}, counting the guards and their rounds`); gateLookFilm("count-guards"); }},
+    {label: "Look around", primary: true, fn: () => { gateLookFilm("look-around", lookCloser(`${what}, looking out over the outpost beyond it`)); }},
+    {label: "Count the guards", primary: true, fn: () => { gateLookFilm("count-guards", lookCloser(`${what}, counting the guards and their rounds`)); }},
     {label: "Not now", fn: () => { exploreKey = ""; }}]});
 }
-function gateLookFilm(cue){
+function gateLookFilm(cue, k){
   if (!APP || window.parent === window || !filmsOn()) return;
-  try { window.parent.postMessage({type: "aop:walk-film", cue}, location.origin); } catch (e) {}
+  const total = k && typeof k.total === "number" ? k.total : null;
+  try { window.parent.postMessage({type: "aop:walk-film", cue, total}, location.origin); } catch (e) {}
 }
 function giveHelp(){ helpNext = {by: leader.id, until: now + 60000}; log(`${fname(leader)} lends a hand: the next friend's check has advantage.`); exploreKey = ""; }
 
