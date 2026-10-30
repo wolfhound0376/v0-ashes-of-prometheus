@@ -62,6 +62,13 @@ export function startingSituation(runId: string, now = new Date().toISOString())
  *   - `labor_back`    the detail walks them back into the pen: the ward covers them again
  *   - `recaptured`    the party surrendered to the guards and was marched back into the pen (Sam, 2026-10-28,
  *                     lib/surrender.mjs): stance -> captive from wherever it was, gate -> locked, ward back up
+ *   - `ward_broken`   a hero re-cut an anchor stroke on the pen's ward sigil (Sam, 2026-10-30): the nullification is
+ *                     gone for EVERY caster in the pen and the sigil is scarred red. The ward does not come back:
+ *                     the walk re-asserts this event after labor_back and recaptured, which would otherwise raise it.
+ *   - `ward_touched`  a hero botched that cut badly enough for the ward to bite back. The ward HOLDS — ward_active is
+ *                     untouched — but Ilvara felt it, so the drow come and search the pen.
+ *   - `ward_seen`     a drow walked into the pen and read the red scar. Combat, not a volley: one of exactly two
+ *                     exceptions to the volleys-only rule (the other is a refused stolen pen key).
  */
 export interface SituationPatch {
   node_key?: string
@@ -71,7 +78,7 @@ export interface SituationPatch {
   ward_active?: boolean
   gate_state?: GateState
   party_present?: string[]
-  event?: "step_outside" | "gate_open" | "gate_broken" | "labor_out" | "labor_back" | "recaptured"
+  event?: "step_outside" | "gate_open" | "gate_broken" | "labor_out" | "labor_back" | "recaptured" | "ward_broken" | "ward_touched" | "ward_seen"
 }
 
 /** The fields the walk page (a player's own browser) may change. Everything else needs the DM key. */
@@ -97,7 +104,8 @@ export function parsePatch(body: unknown): SituationPatch {
   if (typeof b.ward_active === "boolean") p.ward_active = b.ward_active
   if (isGate(b.gate_state)) p.gate_state = b.gate_state
   if (Array.isArray(b.party_present)) p.party_present = b.party_present.map((n) => clean(n, 60)).filter((n): n is string => !!n).slice(0, 12)
-  if (b.event === "step_outside" || b.event === "gate_open" || b.event === "gate_broken" || b.event === "labor_out" || b.event === "labor_back" || b.event === "recaptured") p.event = b.event
+  if (b.event === "step_outside" || b.event === "gate_open" || b.event === "gate_broken" || b.event === "labor_out" || b.event === "labor_back" || b.event === "recaptured"
+    || b.event === "ward_broken" || b.event === "ward_touched" || b.event === "ward_seen") p.event = b.event
   return p
 }
 
@@ -124,7 +132,12 @@ export function mergeSituation(prev: Situation, patch: SituationPatch, by: Write
     next.stance = "captive"                                    // prisoners again, whatever they were a moment ago
     next.gate_state = "locked"
     next.ward_active = true
+  } else if (patch.event === "ward_broken") {
+    next.ward_active = false                                   // cut open: it does not come back on its own
   }
+  // ward_touched and ward_seen change nothing on this row on purpose. A botched cut leaves the ward HOLDING, and a
+  // drow reading the red scar changes who is fighting, not where the party is. Both are here so the walk can tell
+  // the DM core what happened in one vocabulary; the row itself only tracks the ward being up or down.
   if (patch.node_key !== undefined) next.node_key = patch.node_key
   if (patch.sub_location !== undefined) next.sub_location = patch.sub_location
   if (patch.sub_label !== undefined) next.sub_label = patch.sub_label
