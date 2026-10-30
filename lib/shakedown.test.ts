@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
+import fs from "node:fs"
+import path from "node:path"
 import {
-  ENFORCER_PARTIES, PEN_PLATE, SHAKEDOWN_ROTATIONS, SPARED, WAVES, WAVE_COUNT, WAVE_INTERVAL_MS,
+  ENFORCER_PARTIES, SHAKEDOWN_PEN_PLATE, SHAKEDOWN_ROTATIONS, SPARED, WAVES, WAVE_COUNT, WAVE_INTERVAL_MS,
   bannerText, keyResolved, keyTaken, nextWave, noKeyWatch, partySubmits, pendingVoters, pickVictim,
   rollEnforcers, shakedownDue, shakedownHappened, victimPool, wavesDue, wavesStopped,
-} from "./shakedown"
+} from "./shakedown.mjs"
 
 // Sam's rulings, 2026-10-30. Design of record: claude/Pen_Key_And_Watch_2026-10-30.md.
 
@@ -200,8 +202,8 @@ describe("the countdown banner", () => {
 
 describe("the alarm stops sending when they get out", () => {
   it("keeps sending while they are still in the pen", () => {
-    expect(wavesStopped(PEN_PLATE, 0)).toBe(false)
-    expect(wavesStopped(PEN_PLATE, 5)).toBe(false)
+    expect(wavesStopped(SHAKEDOWN_PEN_PLATE, 0)).toBe(false)
+    expect(wavesStopped(SHAKEDOWN_PEN_PLATE, 5)).toBe(false)
   })
 
   it("stops once they are off the pen plate and one beyond", () => {
@@ -211,5 +213,41 @@ describe("the alarm stops sending when they get out", () => {
 
   it("does not stop merely for stepping off and back", () => {
     expect(wavesStopped("10", 0)).toBe(false)
+  })
+})
+
+// ─── The paste contract ───────────────────────────────────────────────────────────────────────────────────────
+// build_walk.py pastes this module into the painted map, so every name it exports lands in the page's one big
+// script alongside every other pasted module. Two `const` of the same name there is a SyntaxError that kills the
+// WHOLE page, not a shadowed variable — and it is invisible until someone opens the map.
+//
+// This caught a real one: SHAKEDOWN_PEN_PLATE was first written as PEN_PLATE, which lib/labor-walk.mjs already
+// exports. The test is here so the next module to be pasted finds out from vitest instead of from a blank map.
+describe("the paste contract", () => {
+  const ROOT = path.join(__dirname, "..")
+  const mine = fs.readFileSync(path.join(ROOT, "lib/shakedown.mjs"), "utf8")
+  const exported = [...mine.matchAll(/^export (?:function|const) (\w+)/gm)].map((m) => m[1])
+
+  it("exports something to begin with", () => {
+    expect(exported.length).toBeGreaterThan(10)
+  })
+
+  it("collides with no other module pasted into the map", () => {
+    const others = fs.readdirSync(path.join(ROOT, "lib")).filter((f) => f.endsWith(".mjs") && f !== "shakedown.mjs")
+    const taken = new Map<string, string>()
+    for (const f of others) {
+      const src = fs.readFileSync(path.join(ROOT, "lib", f), "utf8")
+      for (const m of src.matchAll(/^export (?:function|const) (\w+)/gm)) taken.set(m[1], f)
+    }
+    const clashes = exported.filter((n) => taken.has(n)).map((n) => `${n} (also lib/${taken.get(n)})`)
+    expect(clashes).toEqual([])
+  })
+
+  it("declares each of its names exactly once in the built page", () => {
+    const page = fs.readFileSync(path.join(ROOT, "public/velkynvelve-walk/index.html"), "utf8")
+    const twice = exported.filter(
+      (n) => (page.match(new RegExp(`^\\s*(?:function|const|let|var)\\s+${n}\\b`, "gm")) ?? []).length > 1,
+    )
+    expect(twice).toEqual([])
   })
 })

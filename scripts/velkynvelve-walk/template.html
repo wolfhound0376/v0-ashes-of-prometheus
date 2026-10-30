@@ -3888,7 +3888,7 @@ async function takeLoot(a, id, row){
     if (have) have.qty = (have.qty || 1) + row.qty;
     else g.carried.push({name: row.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: cat.pixel_icon_url || null, qty: row.qty, icon: cat.icon_url || null, desc: cat.description || ""});
   }
-  if (row.name === PEN_KEY) state.penKey = true;
+  if (row.name === PEN_KEY){ state.penKey = true; shakeKeyTaken(); }   // THE SHAKEDOWN: the drow start counting rotations
   if (bagOpen()) renderBag();
   popText(a, `+ ${row.qty > 1 ? row.qty + " " : ""}${row.name}`, row.missing || row.kind === "preview-stash" || RARITY_RANK[rarityOf(row)] < 1 ? "#e8d9a8" : RARITY_COL[rarityOf(row)]); bank("ui/item_pickup", .7);
   log(`${fname(a)} takes ${esc(row.qty > 1 ? row.qty + " × " : "")}<b>${esc(row.name)}</b>.`);
@@ -5108,6 +5108,7 @@ function unlockGate(forced){
   if (balcony()) buildGrid();
   const opened = forced ? "The pen gate tears open and hangs from one hinge." : "The pen gate swings open.";
   log(opened);
+  shakeKeyResolved();    // THE SHAKEDOWN: the key has done its work (or the gate is moot) -- the drow stop counting
   const r = npcs.find(n => n.id === "ront"); if (r && cur === 11) setTimeout(() => bark(r, "Finally.", 3000), 900);
 }
 function openGate(){
@@ -11169,6 +11170,10 @@ async function pollStage(){
     storyWatch = j.watch || null;
     // Jorlan's turn on the watch. Decided before the cast loop, which leaves him alone while he is off duty and must
     // not walk him back the instant he comes on (n.relief holds that until the relief has had its moment).
+    // THE SHAKEDOWN: the rotation count is the clock the drow keep on their missing key (Sam, 2026-10-30:
+    // "Shakedown is a rotation (but that ONLY occurs when the key has been stolen)"). Read here because this is
+    // the one place the page learns the count, and checked after the cast loop so the pen is staged first.
+    if (typeof j.rotations === "number" && !j.error) storyRotations = j.rotations;
     if (typeof j.jorlanOnDuty === "boolean" && !j.error){
       const was = jorlanDuty; jorlanDuty = j.jorlanOnDuty;
       const jn = cur === PEN ? npcs.find(n => n.id === "jorlan" && !n.body && !n.slain) : null;
@@ -11190,6 +11195,7 @@ async function pollStage(){
       if (!n.offStage){ if (here && here.where && here.where !== n.rosterWhere){ n.rosterWhere = here.where; castMovesTo(n, here.where); } castAsks(n, here ? here.wantsWord : null); }
     }
     followWatch(storyWatch); followGate(j.gate || null);
+    shakedownTick();                 // THE SHAKEDOWN: after the cast, so the pen is staged before the drow come in
     stageSeen = {present, gone};
   } catch (e) {}
 }
@@ -15295,6 +15301,50 @@ function gravesHere(){ return (Array.isArray(state.graves) ? state.graves : []).
 // within two guard cycles." A cycle is five minutes, which Sam set when it turned out the map had never had one.
 // The rules and the clock are lib/body-removal.mjs, pasted below.
 /*__BODY_REMOVAL__*/
+
+// ---------- THE PEN-KEY SHAKEDOWN (Sam, 2026-10-30) ----------
+// "after two guard rotations, the guards come in and check everyone for those key. Two guards and a Quaggoth enter
+// to enforce compliance." Then, on the unit: "Shakedown is a rotation (but that ONLY occurs when the key has been
+// stolen) so this shouldn't really happen frequently." And: "There should only be one shakedown because stealing a
+// key happens once most likely and after that they will likely stop leaning on the door."
+//
+// A ROTATION, NOT A CLOCK. This is deliberately NOT the five-minute guard cycle that body-removal above runs on.
+// Those two units were defined on the same day and they are different on purpose: a body is carried out on wall
+// time, the shakedown waits on the WATCH actually changing (the stage roster's `rotations`, the same counter that
+// brings Jorlan on). So a table that never changes the watch is never shaken down, which is the intent -- it is a
+// consequence of the story moving, not of time passing.
+//
+// The rules and the clock are lib/shakedown.mjs, pasted below. This half is the seam: when the key goes, when the
+// drow stop caring, and when it comes due. The scene itself -- the enforcers walking in, the consent card, the two
+// branches and the alarm waves -- is the next PR, modelled on THE SURRENDER above (a shared record so every screen
+// plays one copy, not a local guess).
+/*__SHAKEDOWN__*/
+let storyRotations = 0;                       // the stage roster's count, from the poll
+const shakeWatch = () => state.keyWatch || (state.keyWatch = noKeyWatch());
+/** A prisoner just lifted the pen key: the drow begin counting from this rotation. */
+function shakeKeyTaken(){
+  state.keyWatch = keyTaken(shakeWatch(), storyRotations);
+  saveWalk();
+}
+/** The key went back, or turned in the lock: the drow stop looking, and the shakedown never comes. */
+function shakeKeyResolved(){
+  if (!state.keyWatch || state.keyWatch.resolved) return;
+  state.keyWatch = keyResolved(state.keyWatch);
+  saveWalk();
+}
+/**
+ * Due yet? Checked on the poll, in the pen only. One per run: shakedownHappened is terminal, so a party that keeps
+ * the key is not shaken down again -- Sam's reasoning being that the chance to lift it was scarce to begin with.
+ */
+function shakedownTick(){
+  if (!APP || cur !== PEN || mode !== "explore") return;
+  if (!shakedownDue(shakeWatch(), storyRotations)) return;
+  state.keyWatch = shakedownHappened(state.keyWatch); saveWalk();
+  const party = rollEnforcers();
+  log(`<b>The drow come in for their key.</b> ${esc(party.label)} cross the bridge and the gate swings wide.`);
+  // Until the scene is staged (next PR) the moment is Malachar's, so it plays at the table rather than being lost.
+  handOff(`The drow have missed the pen key for two watches. ${party.label} enter the pen to search every prisoner for it.`, true);
+}
 /** A prisoner dies in the pen: start their ten minutes. Heroes are never offered — their death is the table's. */
 function bodyRemovalNote(t){
   if (!t || t.kind === "pc" || hero(t) || cur !== BODY_REMOVAL_RULES.plate) return;
