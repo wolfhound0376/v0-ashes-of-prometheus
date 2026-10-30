@@ -34,6 +34,12 @@
 // Invented vs sourced: the situation is the book's; the hook lines, the wakers' lines and Malachar's
 // "let's see what you kept" are written lines Sam approved in the storyboard.
 //
+// NEVER STALLS (Sam, 2026-10-29: "awaken shows the beats but is designed not to stall"). Every wait in
+// the show has a ceiling (CEILING below): a tap the browser asks for, a voice that won't load, a film that
+// stops buffering, Malachar's narration, the laugh. A beat whose media fails is passed over, never waited
+// on. The fortune roll rolls itself after AUTO_ROLL_MS and its result card closes itself after
+// AUTO_DISMISS_MS, so a player who walked away from the screen never holds the table up.
+//
 // SKIPPABLE (Sam, 2026-10-11: sitting through it every time is annoying; 2026-10-24: "an option to
 // not have cinematics or intro scores"). A Skip button is up for the whole of the show; with
 // Cinematics OFF in the settings (lib/settings.ts) the show is replaced by one still line and the
@@ -86,6 +92,22 @@ type WakerKey = (typeof WAKERS)[number]["key"]
 type Step = "seat" | "tap" | "film" | "where" | "dream" | "title" | "waker" | "roll" | "result" | "laugh" | "act" | "go"
 
 const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms))
+
+/** The longest any one beat may hold the show (ms). A beat that runs past it is passed over. */
+const CEILING = {
+  tap: 5000,        // the browser wants a gesture for sound: carry on silently after this
+  where: 10000,     // "Where am I?"
+  clip: 60000,      // one voice clip (the dream is the longest, ~40 s)
+  film: 150000,     // a hero film whose length the browser can't read
+  narration: 15000, // Malachar writing his line about the roll
+  meta: 4000,       // learning how long his voice runs
+  laugh: 15000,
+} as const
+const AUTO_ROLL_MS = 30000
+const AUTO_DISMISS_MS = 10000
+
+/** Resolves when p does, or after ms — whichever is first. */
+const within = <T,>(p: Promise<T>, ms: number): Promise<T | void> => Promise.race([p, sleep(ms)])
 
 function pcKeyFor(name: string | null): string | null {
   const first = (name || "").trim().split(/\s+/)[0]?.toLowerCase()
@@ -170,13 +192,13 @@ export default function AwakenPage() {
     if (!a || dead.current || skipped.current) return
     a.src = src
     a.currentTime = 0
-    await race(new Promise<void>((res) => {
+    await race(within(new Promise<void>((res) => {
       const done = () => { a.removeEventListener("ended", done); a.removeEventListener("error", done); res() }
       a.addEventListener("ended", done)
       a.addEventListener("error", done)
       a.play().catch(done)
-    }))
-    if (skipped.current) { a.pause() }
+    }), CEILING.clip))
+    if (skipped.current || !a.ended) { a.pause() }
   }, [race])
 
   const skip = useCallback(() => {
@@ -291,17 +313,20 @@ export default function AwakenPage() {
             if (started === false) ok = false
           } catch {
             setStep("tap")
-            await race(new Promise<void>((res) => window.addEventListener("pointerdown", () => res(), { once: true })))
+            const tapped = await race(within(new Promise<boolean>((res) => window.addEventListener("pointerdown", () => res(true), { once: true })), CEILING.tap))
             guard(); setStep("film")
-            if (!skipped.current) await fv.play().catch(() => { ok = false })
+            // No tap in time: the film plays without its sound rather than holding the show.
+            if (tapped !== true) fv.muted = true
+            if (!skipped.current) await within(fv.play(), CEILING.tap).catch(() => { ok = false })
           }
           if (ok && !skipped.current) {
             setFilmOn(true)
-            await race(new Promise<void>((res) => {
+            const runs = isFinite(fv.duration) && fv.duration > 0 ? (fv.duration - fv.currentTime) * 1000 + 5000 : CEILING.film
+            await race(within(new Promise<void>((res) => {
               if (fv.ended) return res()
               fv.addEventListener("ended", () => res(), { once: true })
               fv.addEventListener("error", () => res(), { once: true })
-            }))
+            }), runs))
           }
           fv.pause(); setFilmOn(false)
           guard()
@@ -328,14 +353,16 @@ export default function AwakenPage() {
         if (pcKey && !skipped.current) {
           const a = clip.current!
           a.src = `${MEDIA}/where-${pcKey}.mp3`
-          try { await a.play() } catch {
+          try { await within(a.play(), CEILING.tap) } catch {
             setStep("tap")
-            await race(new Promise<void>((res) => window.addEventListener("pointerdown", () => res(), { once: true })))
+            await race(within(new Promise<void>((res) => window.addEventListener("pointerdown", () => res(), { once: true })), CEILING.tap))
             guard(); setStep("where"); await wait(600)
-            if (!skipped.current) await a.play().catch(() => {})
+            // Still no sound allowed: show the line instead of saying it, and carry on.
+            if (!skipped.current) await within(a.play(), CEILING.tap).catch(() => setCaption("…where am I?"))
           }
-          await race(new Promise<void>((res) => { if (a.ended || a.paused) return res(); a.addEventListener("ended", () => res(), { once: true }) }))
-          if (skipped.current) a.pause()
+          await race(within(new Promise<void>((res) => { if (a.ended || a.paused) return res(); a.addEventListener("ended", () => res(), { once: true }) }), CEILING.where))
+          if (skipped.current || !a.ended) a.pause()
+          setCaption(null)
         } else if (!skipped.current) {
           setCaption("…where am I?"); await wait(2200); setCaption(null)
         }
@@ -411,27 +438,28 @@ export default function AwakenPage() {
       //     Skip here means straight to the pen; the roll already happened and the bag is written.
       setStep("result")
       setSkipShown(true)
-      const said = narration.current ? await race(narration.current) : { text: "", audio: null }
+      // His narration is a live model call plus a voice: if it hasn't come back in time, he says nothing.
+      const said = narration.current ? await race(within(narration.current, CEILING.narration)) : { text: "", audio: null }
       guard()
       if (said && said.text && !skipped.current) {
         if (said.audio) {
           // His voice: learn how long it runs so the crawl keeps pace with him.
           const a = clip.current!
           a.src = said.audio
-          await race(new Promise<void>((res) => {
+          await race(within(new Promise<void>((res) => {
             a.addEventListener("loadedmetadata", () => res(), { once: true })
             a.addEventListener("error", () => res(), { once: true })
             a.load()
-          }))
+          }), CEILING.meta))
           const seconds = isFinite(a.duration) && a.duration > 0 ? a.duration : 20
           if (show) setCrawl({ text: said.text, seconds: seconds + 5, key: 3 })
           else setCaption(said.text)
-          await race(new Promise<void>((res) => {
+          await race(within(new Promise<void>((res) => {
             a.addEventListener("ended", () => res(), { once: true })
             a.addEventListener("error", () => res(), { once: true })
             a.play().catch(() => res())
-          }))
-          if (skipped.current) a.pause()
+          }), seconds * 1000 + 4000))
+          if (skipped.current || !a.ended) a.pause()
           URL.revokeObjectURL(said.audio)
         } else {
           const seconds = Math.max(8, said.text.length / 14)
@@ -448,11 +476,11 @@ export default function AwakenPage() {
         if (lv) {
           lv.currentTime = 0; lv.volume = 1
           setLaughOn(true); musicTo(0.2, 600)
-          await race(new Promise<void>((res) => {
+          await race(within(new Promise<void>((res) => {
             lv.addEventListener("ended", () => res(), { once: true })
             lv.addEventListener("error", () => res(), { once: true })
             lv.play().catch(() => res())
-          }))
+          }), CEILING.laugh))
           guard()
           setLaughOn(false)
         }
@@ -537,6 +565,8 @@ export default function AwakenPage() {
             characterName={seat.name}
             onNarrate={narrate}
             onDismiss={(rolled) => rollDone.current(rolled)}
+            autoRollMs={AUTO_ROLL_MS}
+            autoDismissMs={AUTO_DISMISS_MS}
           />
         )}
       </DiceProvider>
