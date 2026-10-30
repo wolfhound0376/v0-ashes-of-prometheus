@@ -19,7 +19,9 @@
 //   6. WHAT YOU HAVE Malachar narrates the actual result (handed to him as a direction, spoken through
 //                    /api/tts in his own voice, shown as the same crawl) — then the lich cinematic
 //                    surfaces out of the black and he laughs.
-//   7. THE PEN       the music fades; /velkynvelve, Area 11.
+//   7. THE GATE      the music fades to black and they wait for the rest of the party (and the DM), then
+//                    everyone steps into /velkynvelve, Area 11, at the same moment (lib/entry.ts — Sam,
+//                    2026-10-29: "The DM should NOT enter the map after them but we all enter the same time").
 //
 // 0. THE HERO'S OWN FILM (Sam, 2026-10-27, for Lynkes: "add it"). A FORGED hero who has an intro
 //    film (cinematic_clips 'hero-intro' + their character_id, read by /api/hero-film) sees it first,
@@ -56,6 +58,7 @@ import { fadeOutThemeAudio } from "@/components/theme-audio"
 import { isMusicOff, onMusicPrefChange } from "@/lib/audio-prefs"
 import { cinematicsOn, introMusicOn, onSettingsChange } from "@/lib/settings"
 import { sanitizeForTTS } from "@/lib/tts"
+import { EntryGate } from "@/components/entry-gate"
 
 const PEN_ROUTE = "/velkynvelve"
 /** How long the Act I card holds when it plays on its own (a saved game, or Cinematics off). */
@@ -89,7 +92,7 @@ const WAKERS = [
 ] as const
 type WakerKey = (typeof WAKERS)[number]["key"]
 
-type Step = "seat" | "tap" | "film" | "where" | "dream" | "title" | "waker" | "roll" | "result" | "laugh" | "act" | "go"
+type Step = "seat" | "tap" | "film" | "where" | "dream" | "title" | "waker" | "roll" | "result" | "laugh" | "act" | "gate"
 
 const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms))
 
@@ -126,6 +129,8 @@ function pickWaker(): WakerKey {
 export default function AwakenPage() {
   const router = useRouter()
   const [seat, setSeat] = useState<{ id: string; token: string; name: string | null; film: string | null } | null>(null)
+  /** Who this browser is, for the gate — set on every path, the saved-game one included. */
+  const [door, setDoor] = useState<{ id: string; token: string } | null>(null)
   const [step, setStep] = useState<Step>("seat")
   const [caption, setCaption] = useState<string | null>(null)
   const [crawl, setCrawl] = useState<{ text: string; seconds: number; key: number } | null>(null)
@@ -175,7 +180,8 @@ export default function AwakenPage() {
           // Nobody walks in until the DM has started the session and they hold a seat at it (Sam, 2026-10-25).
           // An unreadable table lets them through rather than locking the family out on a network blip.
           if (table && !table.error && !(table.state?.status === "live" && table.mine)) { router.replace("/table"); return }
-          if (fortune?.rolled) { setStep("act"); return }   // a saved game: the Act I card, then the pen
+          setDoor({ id, token })
+          if (fortune?.rolled) { setStep("act"); return }   // a saved game: the Act I card, then the gate
           setSeat({ id, token, name: claim?.character?.name ?? null, film: typeof heroFilm?.film === "string" && heroFilm?.seen !== true ? heroFilm.film : null })
         })
         .catch(() => router.replace("/join"))
@@ -275,11 +281,13 @@ export default function AwakenPage() {
     })()
   }, [seat, sendMessage])
 
+  // The show is over: to the gate, where everyone steps onto the map together (components/entry-gate.tsx,
+  // lib/entry.ts — Sam, 2026-10-29: "we all enter the same time"). The name stays: the pen is still where it ends.
   const goToPen = useCallback(() => {
-    setStep("go")
+    setStep("gate")
     musicTo(0, 1200)
-    router.replace(PEN_ROUTE)
-  }, [router, musicTo])
+  }, [musicTo])
+  const stepThrough = useCallback(() => router.replace(PEN_ROUTE), [router])
 
   // --- the sequence -------------------------------------------------------------------------------
   useEffect(() => {
@@ -576,7 +584,7 @@ export default function AwakenPage() {
         {step === "tap" && <div className="animate-pulse text-[11px] uppercase tracking-[0.4em] text-stone-500">Tap to wake</div>}
         {caption && dark && <div className="whitespace-pre-line font-serif text-xl leading-relaxed text-[#cfd8e6] [text-wrap:balance]">{caption}</div>}
         {step === "act" && <ActCard onDone={goToPen} musicIn={musicIn} />}
-        {step === "go" && <GoNow onGo={goToPen} />}
+        {step === "gate" && <EntryGate who={door} onGo={stepThrough} />}
       </div>
 
       {/* Skip — up for the whole show, re-armed for the aftermath. Never shown over the roll. */}
@@ -601,10 +609,4 @@ function ActCard({ onDone, musicIn }: { onDone: () => void; musicIn: (at: number
     return () => window.clearTimeout(t)
   }, [onDone, musicIn])
   return null
-}
-
-/** Already rolled this run (a return visit): no sequence — straight to the pen after a beat. */
-function GoNow({ onGo }: { onGo: () => void }) {
-  useEffect(() => { const t = window.setTimeout(onGo, 400); return () => window.clearTimeout(t) }, [onGo])
-  return <div className="text-[11px] uppercase tracking-[0.4em] text-stone-600">The pen…</div>
 }

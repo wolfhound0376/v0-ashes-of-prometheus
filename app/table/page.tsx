@@ -24,6 +24,7 @@ import { useRouter } from "next/navigation"
 import { DoorOpen, LogOut, Play, RotateCcw, Square, UserMinus, UserPlus, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { dmHeaders } from "@/lib/dm-key"
+import { EntryGate } from "@/components/entry-gate"
 import { assignFigures, type Light, type TableState } from "@/lib/table"
 import type { SeatView } from "@/lib/table-store"
 import { ENTERED_KEY, mapHref } from "@/lib/map-entry"
@@ -171,6 +172,7 @@ export default function TablePage() {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
   const [act, setAct] = useState(false)
+  const [gate, setGate] = useState(false)
   const sat = useRef(false)
   const leaving = useRef(false)
 
@@ -226,11 +228,10 @@ export default function TablePage() {
     try { music.current?.pause() } catch { /* nothing playing */ }
     window.setTimeout(() => {
       if (role === "dm") {
+        // After his Act card the DM waits at the same gate as the players and steps onto the map with them
+        // (Sam, 2026-10-29: "The DM should NOT enter the map after them but we all enter the same time").
         setAct(true)
-        window.setTimeout(() => {
-          try { sessionStorage.setItem(ENTERED_KEY, "1"); sessionStorage.setItem("aop_intro_seen", "1") } catch { /* storage blocked */ }
-          router.push(mapHref(false))
-        }, ACT_CARD_MS)
+        window.setTimeout(() => { setAct(false); setGate(true) }, ACT_CARD_MS)
       } else {
         // /awaken plays the Act card itself (and, for a hero who has not rolled their fortune, the whole
         // opening), then drops them into the pen — so it is not played twice here.
@@ -277,6 +278,12 @@ export default function TablePage() {
   }
 
   if (act) return <ActCard />
+  if (gate) return (
+    <EntryGate dm headers={dmHeaders()} onGo={() => {
+      try { sessionStorage.setItem(ENTERED_KEY, "1"); sessionStorage.setItem("aop_intro_seen", "1") } catch { /* storage blocked */ }
+      router.push(mapHref(false))
+    }} />
+  )
 
   const status = view?.state.status ?? "closed"
 
