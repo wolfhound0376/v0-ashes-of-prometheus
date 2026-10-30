@@ -14217,6 +14217,12 @@ function gateGuardsShoot(guards, h = leader){
 //   [SOURCED] Topsy and Turvy are off the victim table: wererats, immune to nonmagical piercing (SRD 5.1 lycanthrope).
 //   [SAM]     the trigger, the instant kill, volleys until they step away or drop, the drag, Liana and her heal, the
 //             one persuasion, the hidden d4 and its four favours; no formal combat at any point.
+//   [SAM 2026-10-30] A HERO ONLY SURVIVES THIS ONCE: "They should have shot him and killed him the second time and game
+//             over. The first time the surgeon comes and tries to heal him." So the FIRST drop is the surgeon's scene
+//             (or, if she has already come and gone this run, stable at 0 and nobody comes) and the SECOND drop of the
+//             same hero is death — which is what hands the table to GAME OVER (lib/game-over.mjs) when it was the last
+//             hero standing. Evidence that it was not doing this: on 2026-10-30 Gandalf was dropped at the gate FIVE
+//             times between 15:59 and 16:08 and came round each time (dialogue rows), and the surgeon never came once.
 //   [SAM 2026-10-25, answering the doc] the d8 table as drawn; at 0 HP the prisoner is stable, no death saves; Lolth's
 //             Tooth glows brighter the nearer the spiders; its venom puts the target to sleep and does no damage.
 //   [CLAUDE]  Persuasion DC 15; one attempt; through a translator at disadvantage; Arcana DC 15; spider-sense 60 ft;
@@ -14309,6 +14315,23 @@ function surgeonVolley(t, guards, rng = Math.random) {
     if (b.down) break
   }
   return { bolts, hpAfter: hp, poisoned, ko, down: hp <= 0 || ko }
+}
+
+/**
+ * What happens the moment a prisoner drops (Sam, 2026-10-30). The ONE place this is decided, so the map, the route and
+ * the test cannot disagree about whether a hero gets up again.
+ *
+ *   "dead"    — they have been dropped here before and lived; this time the bolts finish them.
+ *   "surgeon" — their first drop, and Liana has not been called out this run: she comes and pours the potion.
+ *   "recover" — their first drop, but she has already come and gone (she is seen once a run): stable at 0, nobody
+ *               comes, 1 HP after 1d4 hours.
+ *
+ * `downsBefore` counts only THIS hero's earlier drops. A second hero's first drop is not a death — Sam's ruling is
+ * about surviving it twice, not about the pen's body count.
+ */
+function surgeonOnDown({ downsBefore = 0, surgeonCame = false } = {}) {
+  if (Number(downsBefore) >= 1) return "dead"
+  return surgeonCame ? "recover" : "surgeon"
 }
 
 /** Liana's potion: 2d4+2 from where they lie, never past their maximum. */
@@ -14426,11 +14449,17 @@ function surgeonLocal(action, x){
   }
   if (action === "volley"){
     const v = surgeonVolley({ac: sh.ac || 10, hp: L.hp, conSave: (sh.saves || {}).con || 0}, x.guards || 1);
-    L.hp = v.hpAfter; L.s.volleys++; if (v.down) L.s.stage = "down";
-    return {ok: true, volley: v, hp: L.hp, hpMax, state: L.s};
+    L.hp = v.hpAfter; L.s.volleys++;
+    // Sam, 2026-10-30: the second drop is fatal. Same rule the route runs, from the same file.
+    const downs = L.s.downs || (L.s.downs = {}), who = L.s.target.id;
+    const next = v.down ? surgeonOnDown({downsBefore: downs[who] || 0, surgeonCame: !!L.s.heal}) : null;
+    if (v.down) downs[who] = (downs[who] || 0) + 1;
+    if (next === "dead"){ L.hp = 0; L.s.stage = "killed"; }
+    else if (v.down) L.s.stage = "down";
+    return {ok: true, volley: v, hp: L.hp, hpMax, killed: next === "dead", next, state: L.s};
   }
   if (action === "stepped"){ L.s.stage = "stepped"; return {ok: true, state: L.s}; }
-  if (action === "tend"){ const h = surgeonHeal(L.hp, hpMax); L.hp = h.hpAfter; L.s.stage = "tended"; return {ok: true, heal: h, state: L.s}; }
+  if (action === "tend"){ const h = surgeonHeal(L.hp, hpMax); L.hp = h.hpAfter; L.s.stage = "tended"; L.s.heal = {amount: h.amount}; return {ok: true, heal: h, state: L.s}; }
   if (action === "persuade"){
     const sp = SHEETS[x.speakerSlug] || {}, r = surgeonPersuade((sp.saves || {}).cha || 0, !!x.translator);   // the preview has no Persuasion skill on its sheets: CHA alone
     let boon = null, granted = null;
@@ -14545,7 +14574,9 @@ async function surgeonVolleyTick(){
   const hits = bolts.filter(b => b.hit);
   setTimeout(() => {
     log(`The guards loose ${bolts.length === 1 ? "a bolt" : bolts.length + " bolts"} at ${esc(fname(pc))}: ${hits.length ? `${hits.length} hit, ${hits.reduce((n, b) => n + b.dmg, 0)} piercing` : "all miss"}. ${esc(fname(pc))} is at ${j.hp}/${j.hpMax} HP.`);
-    if (j.volley.down) surgeonDown(j.volley); else setTimeout(surgeonVolleyTick, SURGEON_RULES.volleyMs);
+    if (j.killed) surgeonSlain(j.volley);
+    else if (j.volley.down) surgeonDown(j.volley, j.next);
+    else setTimeout(surgeonVolleyTick, SURGEON_RULES.volleyMs);
   }, after);
 }
 async function surgeonStepped(){
@@ -14579,8 +14610,8 @@ async function surgeonRecover(){
   }, 3200);
 }
 // ----- 3. down, and dragged to the corner -----
-function surgeonDown(vol){
-  const S = surgeon, pc = S.pc; S.stage = "down"; mode = "dialog"; tip.hidden = true;
+function surgeonDown(vol, next){
+  const S = surgeon, pc = S.pc; S.stage = "down"; S.next = next || (S.again ? "recover" : "surgeon"); mode = "dialog"; tip.hidden = true;
   pc.down = true; pc.surgeonDown = true; pc.path = []; if (SPR[pc.id].img.dead) playOnce(pc, "dead", () => {});
   bank(voxFor(pc, "die") || "creature/player_downed", .48); popText(pc, vol.ko && vol.hpAfter > 0 ? "out cold" : "down", "#ff6b5e", 1.3); hitstop(160); shake(9);
   addBlood(pc, 1.3, true);
@@ -14610,9 +14641,25 @@ function surgeonDown(vol){
       draggers.forEach(d => { setAnim(d, "idle"); faceTo(d, pc); d.home = {x: d.x, y: d.y}; });
       addBlood(pc, 1, true);
       log(`${draggers.length ? draggers.map(d => esc(SHORT[d.id] || fname(d))).join(" and ") + " drag" + (draggers.length > 1 ? "" : "s") : "Someone drags"} ${esc(fname(pc))} to the corner of the pen, a red smear behind them.`);
-      setTimeout(S.again ? surgeonRecover : lianaArrives, 2800);
+      // Sam, 2026-10-30: the surgeon belongs to a hero's FIRST drop, however they got there — Gandalf stepped back
+      // the first time, was dropped five times after it, and nobody ever came. The route says which it is.
+      setTimeout(S.next === "recover" ? surgeonRecover : lianaArrives, 2800);
     });
   }, 2000);
+}
+// ----- a second drop is a death (Sam, 2026-10-30) -----
+// "They should have shot him and killed him the second time and game over." No drag to the corner, no surgeon, no
+// coming round: dieNow is the one place a hero dies, and it puts them on the shared fallen list — which is what calls
+// GAME OVER when that was the last hero standing (lib/game-over.mjs).
+function surgeonSlain(vol){
+  const S = surgeon, pc = S.pc; S.stage = "killed"; mode = "dialog"; tip.hidden = true;
+  pc.path = []; pc.down = true; pc.surgeonDown = false;
+  burst(pc, "#a8140e", 18); hitstop(170); shake(10); addBlood(pc, 1.4, true);
+  log(`<b>${esc(fname(pc))} has been shot down at this gate once already.</b> The drow do not waste a second mercy.`);
+  if (pc.c){ pc.c.ds = {s: 0, f: 3, stable: false, dead: false}; pc.c.hp = 0; }
+  dieNow(pc, "a second time at the pen gate");          // → noteFallen → GAME OVER if the table is empty
+  const guards = gateGuards(); guards.forEach(g => { g.actUntil = now + 4000; });
+  setTimeout(() => { surgeon = null; if (mode === "dialog") mode = "explore"; renderParty && renderParty(); }, 2600);
 }
 // ----- 4. the surgeon -----
 function lianaArrives(next = lianaTends){

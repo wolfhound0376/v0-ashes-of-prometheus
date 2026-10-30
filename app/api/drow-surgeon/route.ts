@@ -4,7 +4,7 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { applyStageEvents, readStage, slugOf } from "@/lib/stage-roster"
 import { skill } from "@/lib/walk-sheet"
 import {
-  SURGEON_TOOTH, SURGEON_VICTIMS, surgeonVictim, surgeonD, surgeonSpeaksElvish, surgeonVolley, surgeonHeal, surgeonPersuade, surgeonBoon,
+  SURGEON_TOOTH, SURGEON_VICTIMS, surgeonVictim, surgeonD, surgeonSpeaksElvish, surgeonVolley, surgeonHeal, surgeonOnDown, surgeonPersuade, surgeonBoon,
 } from "@/lib/drow-surgeon.mjs"
 
 // /api/drow-surgeon — The Drow Surgeon (Sam's homebrew, 2026-10-25; doc claude/The_Drow_Surgeon_2026-10-25.md).
@@ -25,8 +25,13 @@ import {
 //                               guards shoot again — no execution, no surgeon — volleys until they step away or drop
 //   POST {action:"labor"}       volleys at a hero who defied the escort twice on a work detail (Hard Labor): the surgeon's
 //                               first time if she has not come, else a later defiance — no execution bolt either way
-//   POST {action:"recover"}     after a later drop nobody comes: stable at 0, they regain 1 HP after 1d4 hours
-//                               (SRD 5.1, Combat: Stabilizing a Creature) — the time is reported to Malachar, not advanced here
+//   POST {action:"recover"}     a first drop that the surgeon does not come to: stable at 0, they regain 1 HP after 1d4
+//                               hours (SRD 5.1, Combat: Stabilizing a Creature) — reported to Malachar, not advanced here
+//
+// A HERO SURVIVES THIS ONCE (Sam, 2026-10-30). `volley` answers with `next`: "surgeon" the first time they drop,
+// "recover" if Liana has already been and gone this run, and "dead" the second time the same hero is dropped — the
+// bolts finish them, the route writes the death, and the map's dieNow hands the table to GAME OVER. The count of who
+// has been dropped before lives in the record (`downs`), so a reload cannot forget it. lib/drow-surgeon.mjs decides.
 //
 // LOLTH'S TOOTH (the dagger Liana can hand over; Sam's rulings 2026-10-25), its own record under "lolths-tooth":
 //   POST {action:"tooth-dose"}     a dose of venom spent on a hit (3 in the hilt)
@@ -55,7 +60,7 @@ async function writeTooth(db: Db, t: Tooth, note: string) {
   )
 }
 
-type Stage = "shooting" | "stepped" | "down" | "tended" | "settled"
+type Stage = "shooting" | "stepped" | "down" | "tended" | "settled" | "killed"
 type State = {
   stage: Stage
   again?: number                                   // 0/absent = the first time (the surgeon's scene); n = the n-th later defiance
@@ -63,6 +68,10 @@ type State = {
   victim: { id: string; name: string; roll: number } | null
   target: { id: string; name: string }
   volleys: number
+  /** How many times each hero (characters.id) has been dropped by these bolts. Sam, 2026-10-30: the second is fatal. */
+  downs?: Record<string, number>
+  /** Who the bolts have killed outright, so a reload does not stand them back up. */
+  killed?: { id: string; name: string; at: string } | null
   heal?: { amount: number; hp: number; hpMax: number } | null
   persuade?: { speaker: string; translator: string | null; rolls: number[]; total: number; dc: number; success: boolean } | null
   boon?: { d4: number; kind: string; slug?: string; shown?: string; to?: string } | null
@@ -196,7 +205,7 @@ export async function POST(req: NextRequest) {
   // record as a FIRST time (again absent), so after the drop `tend` brings her; if she has come, it is a later defiance
   // (again n), and after the drop `recover` applies. The walk hauls the downed hero back to the pen for either.
   if (action === "labor") {
-    if (state && state.stage !== "stepped" && state.stage !== "settled" && state.stage !== "tended") return NextResponse.json({ error: "the guards are already busy", state }, { status: 409 })
+    if (state && state.stage !== "stepped" && state.stage !== "settled" && state.stage !== "tended" && state.stage !== "killed") return NextResponse.json({ error: "the guards are already busy", state }, { status: 409 })
     const targetId = typeof body.targetId === "string" ? body.targetId : ""
     const { data: target } = await db.from("characters").select("id, name").eq("id", targetId).maybeSingle()
     if (!target) return NextResponse.json({ error: "no such character on the detail" }, { status: 400 })
@@ -213,7 +222,8 @@ export async function POST(req: NextRequest) {
 
   // ---------- a later defiance: volleys only ----------
   if (action === "again") {
-    if (state.stage !== "stepped" && state.stage !== "settled") return NextResponse.json({ error: "the guards are already busy", state }, { status: 409 })
+    // "killed" is a finished scene too: the guards are free again, and the next fool at the gate is a new target.
+    if (state.stage !== "stepped" && state.stage !== "settled" && state.stage !== "killed") return NextResponse.json({ error: "the guards are already busy", state }, { status: 409 })
     const targetId = typeof body.targetId === "string" ? body.targetId : ""
     const { data: target } = await db.from("characters").select("id, name").eq("id", targetId).maybeSingle()
     if (!target) return NextResponse.json({ error: "no such character at the gate" }, { status: 400 })
@@ -226,7 +236,9 @@ export async function POST(req: NextRequest) {
 
   // ---------- stable at 0 and nobody comes ----------
   if (action === "recover") {
-    if (state.stage !== "down" || !state.again) return NextResponse.json({ error: "nobody is lying there waiting", state }, { status: 409 })
+    // Nobody comes: a first drop with the surgeon already gone. A hero on their SECOND drop is dead and does not get up
+    // (the volley wrote that), so this can never raise them.
+    if (state.stage !== "down") return NextResponse.json({ error: "nobody is lying there waiting", state }, { status: 409 })
     const hours = surgeonD(4)
     const { data: t } = await db.from("characters").select("id, name, hp_current, conditions").eq("id", state.target.id).maybeSingle()
     if (!t) return NextResponse.json({ error: "the prisoner's row is gone" }, { status: 500 })
@@ -254,13 +266,36 @@ export async function POST(req: NextRequest) {
     let conds = conditionsOf(t.conditions)
     if (v.poisoned) conds = withCond(conds, "poisoned")
     if (v.down) conds = withCond(conds, "unconscious")
-    await db.from("characters").update({ hp_current: v.hpAfter, conditions: conds }).eq("id", t.id)
     state.volleys += 1
-    if (v.down) state.stage = "down"
-    await writeState(db, state, `volley ${state.volleys} at ${t.name}: ${hp} → ${v.hpAfter}${v.down ? ", down" : ""}`)
+
+    // WHAT THE DROP MEANS (Sam, 2026-10-30). The rule is lib/drow-surgeon.mjs; this is only the bookkeeping.
+    // `surgeonCame` is true once Liana has been in — she is seen once a run, so a later first-timer gets `recover`.
+    const downs = state.downs ?? {}
+    const next = v.down
+      ? surgeonOnDown({ downsBefore: downs[t.id] ?? 0, surgeonCame: !!state.heal })
+      : null
+    const killed = next === "dead"
+
+    if (v.down) downs[t.id] = (downs[t.id] ?? 0) + 1
+    state.downs = downs
+    if (killed) {
+      // Dead, not down. No death saves to fail and no coming round: the second time, the bolts finish it, and the
+      // map's dieNow puts them on the shared fallen list — which is what calls GAME OVER if they were the last one.
+      conds = withCond(withoutCond(conds, "unconscious"), "dead")
+      state.stage = "killed"
+      state.killed = { id: t.id, name: t.name, at: new Date().toISOString() }
+    } else if (v.down) {
+      state.stage = "down"
+    }
+    await db.from("characters").update({ hp_current: killed ? 0 : v.hpAfter, conditions: conds }).eq("id", t.id)
+    await writeState(db, state, `volley ${state.volleys} at ${t.name}: ${hp} → ${v.hpAfter}${killed ? ", KILLED (second drop)" : v.down ? ", down" : ""}`)
+
     const hits = v.bolts.filter((b) => b.hit)
-    await say(db, `The guards loose ${v.bolts.length === 1 ? "a bolt" : v.bolts.length + " bolts"} at ${t.name} (${hits.length ? `${hits.length} hit for ${hits.reduce((n, b) => n + b.dmg, 0)} piercing` : "all miss"}${v.poisoned ? "; the drow poison takes hold" : ""}). ${t.name} is at ${v.hpAfter}/${hpMax} HP${v.down ? (v.ko && v.hpAfter > 0 ? ", knocked out by the poison" : ", down and bleeding") + " — stable; the shooting stops" : ""}.`)
-    return NextResponse.json({ ok: true, volley: v, hp: v.hpAfter, hpMax, state })
+    const tally = `The guards loose ${v.bolts.length === 1 ? "a bolt" : v.bolts.length + " bolts"} at ${t.name} (${hits.length ? `${hits.length} hit for ${hits.reduce((n, b) => n + b.dmg, 0)} piercing` : "all miss"}${v.poisoned ? "; the drow poison takes hold" : ""}).`
+    await say(db, killed
+      ? `${tally} ${t.name} has been shot down here once already, and the drow do not waste a second mercy: the bolts finish them. ${t.name} is DEAD. (Sam's ruling, 2026-10-30: the first time the surgeon comes; the second time they die.)`
+      : `${tally} ${t.name} is at ${v.hpAfter}/${hpMax} HP${v.down ? (v.ko && v.hpAfter > 0 ? ", knocked out by the poison" : ", down and bleeding") + " — stable; the shooting stops" : ""}.`)
+    return NextResponse.json({ ok: true, volley: v, hp: killed ? 0 : v.hpAfter, hpMax, killed, next, state })
   }
 
   // ---------- stepped away before they dropped ----------
@@ -274,7 +309,11 @@ export async function POST(req: NextRequest) {
 
   // ---------- Liana's potion ----------
   if (action === "tend") {
-    if (state.stage !== "down" || state.again) return NextResponse.json({ error: "nobody is lying there for her", state }, { status: 409 })
+    // She comes to a hero's FIRST drop, whether or not they had defied the guards before (Sam, 2026-10-30 — Gandalf
+    // stepped back the first time and was then dropped five times with nobody ever coming for him). She is still seen
+    // only once a run: `state.heal` set means she has been and gone.
+    const firstDrop = (state.downs?.[state.target.id] ?? 0) <= 1
+    if (state.stage !== "down" || !firstDrop || state.heal) return NextResponse.json({ error: "nobody is lying there for her", state }, { status: 409 })
     const { data: t } = await db.from("characters").select("id, name, hp_current, hp_max, conditions").eq("id", state.target.id).maybeSingle()
     if (!t) return NextResponse.json({ error: "the prisoner's row is gone" }, { status: 500 })
     const hpMax = Number(t.hp_max) || 1

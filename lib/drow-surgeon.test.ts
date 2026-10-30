@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import {
+  surgeonOnDown,
   SURGEON_RULES, SURGEON_VICTIMS, SURGEON_BOONS, SURGEON_LINES,
   surgeonVictim, surgeonSpeaksElvish, surgeonRoll, surgeonBolt, surgeonVolley, surgeonHeal, surgeonPersuade, surgeonBoon,
 } from "./drow-surgeon.mjs"
@@ -105,6 +106,43 @@ describe("the favours (Sam's d4)", () => {
   })
   it("every line she says has both her tongue and the translation", () => {
     for (const l of Object.values(SURGEON_LINES)) { expect(l.en.length).toBeGreaterThan(0); expect(l.elv.length).toBeGreaterThan(0) }
+  })
+})
+
+describe("a hero only survives this once (Sam, 2026-10-30)", () => {
+  it("the first drop is the surgeon's scene", () => {
+    expect(surgeonOnDown({ downsBefore: 0, surgeonCame: false })).toBe("surgeon")
+  })
+  it("the first drop with Liana already gone is stable at 0, nobody coming", () => {
+    expect(surgeonOnDown({ downsBefore: 0, surgeonCame: true })).toBe("recover")
+  })
+  it("the SECOND drop of the same hero is death, whoever has or has not come", () => {
+    expect(surgeonOnDown({ downsBefore: 1, surgeonCame: false })).toBe("dead")
+    expect(surgeonOnDown({ downsBefore: 1, surgeonCame: true })).toBe("dead")
+    expect(surgeonOnDown({ downsBefore: 5, surgeonCame: true })).toBe("dead")
+  })
+  it("the count is per hero: a second hero's first drop is not a death", () => {
+    const downs: Record<string, number> = { gandalf: 1 }
+    expect(surgeonOnDown({ downsBefore: downs.gandalf ?? 0, surgeonCame: true })).toBe("dead")
+    expect(surgeonOnDown({ downsBefore: downs.lynkes ?? 0, surgeonCame: true })).toBe("recover")
+  })
+  it("defaults to the surgeon when it is asked with nothing", () => {
+    expect(surgeonOnDown()).toBe("surgeon")
+  })
+  it("what went wrong on 2026-10-30: five drops, five recoveries, no surgeon", () => {
+    // Gandalf stepped back at the gate the first time, so the old code treated every later drop as a "later
+    // defiance" and sent them all to `recover`. Replayed under the rule, his second drop ends it.
+    let came = false
+    const seen: string[] = []
+    let downs = 0
+    for (let drop = 0; drop < 5; drop++) {
+      const next = surgeonOnDown({ downsBefore: downs, surgeonCame: came })
+      seen.push(next)
+      if (next === "dead") break
+      if (next === "surgeon") came = true
+      downs += 1
+    }
+    expect(seen).toEqual(["surgeon", "dead"])
   })
 })
 
