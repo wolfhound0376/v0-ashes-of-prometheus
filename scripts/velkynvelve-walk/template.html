@@ -7681,7 +7681,29 @@ function studySigil(){
     + `${adv < 0 ? " (disadvantage: not a wizard)" : adv > 0 ? " (advantage: helped)" : helped ? " (helped, but not a wizard: the two cancel)" : ""}. `
     + `On this roll they learn exactly this and no more: ${tier.tell}. Narrate only that much — do not give them the next tier up.`);
   if (tier.key === "seam") toast(`${fname(h)} could cut it. It would scar red, and every drow who came in would read it.`, 7000);
+  if (tier.key !== "none") sigilFilm(h);                   // a reading that LANDED earns the film; a blank stare does not
   exploreKey = "";
+}
+// THE SIGIL FILM (Sam, 2026-10-30: "I'd like an eleven labs cinematic of the sigil in this pen cave when we
+// successfully investigate it", then "wire it to successful check").
+//
+// WHICH ROLL EARNS IT: any tier that learns something — 10+ on Sam's ladder. A ≤9 ("the grooves swallow the
+// attention") is the hero learning nothing, and a film over that would show them what they just failed to see.
+//
+// ONE FILM, EVERY TIER. The three successful tiers learn different things, so the film shows only the SIGIL —
+// the grooves breathing, the light stuttering — and never the seam. A 12 and a 20 see the same picture; what
+// separates them stays in Malachar's narration, which already gets `tier.tell` and is told not to give the next
+// tier up. That keeps one clip instead of three and cannot leak a tier.
+//
+// Once per hero per run, like the fungus film. The server holds the harder half of that rule: /api/cinematics
+// refuses a clip this character has already watched (cinematic_views), so it survives a reload and a new session
+// too. The guard here is the cheap one, and `wardAlreadyRead` means a hero only gets one study anyway.
+function sigilFilm(h){
+  state.sigilFilmed = state.sigilFilmed || {};
+  if (state.sigilFilmed[h.id]) return;
+  state.sigilFilmed[h.id] = true;
+  if (!APP || window.parent === window || !filmsOn()) return;
+  try { window.parent.postMessage({type: "aop:walk-film", cue: "ward-sigil"}, location.origin); } catch (e) {}
 }
 /** The cut: Sam's cost stated first, then one Dexterity roll. */
 function openSigilCut(){

@@ -47,6 +47,13 @@ export const WALK_FILMS = {
   "fungus-ormu-moss": { kind: "action", state: "fungus-ormu-moss", scope: "solo", location: PEN_LOCATION, dc: null },
   "fungus-timmask": { kind: "action", state: "fungus-timmask", scope: "solo", location: PEN_LOCATION, dc: null },
   "fungus-waterorb": { kind: "action", state: "fungus-waterorb", scope: "solo", location: PEN_LOCATION, dc: null },
+  // THE WARD SIGIL (Sam, 2026-10-30): a caster who successfully reads the sigil sees a short film of it — the
+  // grooves breathing, the light stuttering. Solo: it is that caster's reading, and each one gets one look.
+  // No dc, for the same reason as the fungi: the map has already rolled the Arcana check and applied Sam's tiers
+  // before it sends this cue, so a cue arriving here IS the success. Putting a DC here too would double-judge the
+  // same roll — and the tiers are not a pass/fail line the way the gate's DC 10 is.
+  // The film deliberately shows only the sigil, never the seam, so it cannot spoil what a 20 earns over a 12.
+  "ward-sigil": { kind: "action", state: "ward-sigil", scope: "solo", location: PEN_LOCATION, dc: null },
 } as const satisfies Record<string, WalkFilm>
 
 export type WalkFilmCue = keyof typeof WALK_FILMS
