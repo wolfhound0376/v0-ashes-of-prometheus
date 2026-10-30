@@ -7058,10 +7058,10 @@ function exploreExtras(m, o, add, who){
     const seen = state.wardStudy[L.id];
     if (!wardCaster(L))
       x("Study the ward sigil", "✦", ART("look-closer"), "no magic of your own to read it with", null);
-    else if (state.wardTried[L.id])
-      x("Study the ward sigil", "✦", ART("look-closer"), "you have already read what you can off it", null);
+    else if (wardAlreadyRead(L))
+      x("Study the ward sigil", "✦", ART("look-closer"), "you have read what you can off it · more Arcana would show more", null);
     else
-      x("Study the ward sigil", "✦", ART("look-closer"), `Arcana ${sgn(heroMod(L, "arcana", "int"))}${wardWizard(L) ? "" : " · disadvantage: not a wizard"}`, () => studySigil());
+      x("Study the ward sigil", "✦", ART("look-closer"), `Arcana ${sgn(heroMod(L, "arcana", "int"))}${wardWizard(L) ? "" : " · disadvantage: not a wizard"}${wardHelpers(L).length ? " · a hand is close" : ""}`, () => studySigilAsk());
     if (seen && seen.tier === "seam" && wardMayCut(L))
       x("Alter the ward sigil", "✧", ART("look-closer"), `Dexterity DC ${WARD_CUT_DC} · it will scar red, and the drow will read it`, () => openSigilCut());
   }
@@ -7595,6 +7595,30 @@ const wardCaster = h => { const sh = SHEETS[h.id] || {}; return !!(sh.magic || s
 const wardWizard = h => /wizard/i.test((SHEETS[h.id] || {}).cls || "");
 const wardArcane = h => "arcana" in ((SHEETS[h.id] || {}).skills || {});     // proficient, not merely able to roll
 const wardMayCut = h => wardWizard(h) || wardArcane(h);
+/**
+ * ONE STUDY PER HERO (Sam, 2026-10-30: "I agree long rest doesn't teach you arcane so unless you developed some
+ * arcana expertise or a special skill - NO. One study per hero.").
+ *
+ * This is the knowledge-check convention, not the manacle rule: rereading the wall does not make you better read,
+ * so a second roll is only dice-fishing. The DMG's test for a retry is whether it could produce a different
+ * outcome, and for identification it cannot — UNLESS the reader themself has changed. So what is remembered is
+ * not "tried" but WHAT THEY KNEW WHEN THEY TRIED: their Arcana standing. Gain proficiency, expertise or a better
+ * Intelligence at a level-up and the sigil is worth another look, because a different person is looking.
+ *
+ * A long rest does nothing here, deliberately.
+ */
+function wardArcanaKey(h){
+  const sh = SHEETS[h.id] || {}, lore = (sh.lore || {}).arcana || {};
+  return `${heroMod(h, "arcana", "int")}|${lore.level || ""}|${wardArcane(h) ? "p" : ""}${wardWizard(h) ? "w" : ""}`;
+}
+/** Has this hero already read it AT THEIR CURRENT STANDING? A legacy `true` is stamped with today's key, which
+ *  keeps them blocked now and lets a future level-up reopen it. */
+function wardAlreadyRead(h){
+  const was = state.wardTried[h.id];
+  if (!was) return false;
+  if (was === true) state.wardTried[h.id] = wardArcanaKey(h);
+  return state.wardTried[h.id] === wardArcanaKey(h);
+}
 // a blade, a pick, a shard, a bar -- anything with a point. Bare hands: disadvantage.
 function wardCutTool(h){
   const g = GEAR[h.id] || {};
@@ -7613,19 +7637,45 @@ const WARD_TIERS = [
 ];
 const wardTierOf = total => WARD_TIERS.find(t => total >= t.min);
 /** The Study roll. Wizards straight, every other caster at disadvantage (Sam's §4.1). */
+/** Who else is at the wall and could lend a hand: close to the sigil, on their feet, and not the reader. */
+function wardHelpers(h){
+  return party.filter(p => p !== h && !p.ko && !incapacitated(p) && wardReach(p) && canControl(p));
+}
+/**
+ * Before the roll, if someone is standing close, offer their hand (Sam, 2026-10-30). Help is the 5e answer to
+ * "I want better odds" — it is advantage, not a reroll — so it belongs HERE, in front of the one study this hero
+ * gets, rather than as a button they would have to know to press first.
+ */
+function studySigilAsk(){
+  const h = leader; if (!h || mode !== "explore") return;
+  const helpers = (helpNext && now < helpNext.until) ? [] : wardHelpers(h);
+  if (!helpers.length){ studySigil(); return; }
+  const {add, close} = heroCard(`${fname(h)} reads the sigil`,
+    `This is ${fname(h)}'s one look at it — a second reading would teach them nothing new. ${helpers.length === 1 ? `${fname(helpers[0])} is close enough to lend a hand.` : "Others are close enough to lend a hand."} A hand gives advantage.`);
+  for (const p of helpers) add(`${fname(p)} helps`, () => { close(); helpNext = {by: p.id, until: now + 60000}; log(`${fname(p)} steadies the light for ${fname(h)}.`); studySigil(); }, "primary");
+  add("Read it alone", () => { close(); studySigil(); });
+  add("Not now", close);
+}
 function studySigil(){
   const h = leader; if (!h || mode !== "explore") return;
   if (state.wardBroken){ toast("It is already cut. The scar is red and it is not holding anything."); exploreKey = ""; return; }
-  if (state.wardTried[h.id]){ toast(`${fname(h)} has already read what they can off it.`); exploreKey = ""; return; }
-  const adv = wardWizard(h) ? 0 : -1;
+  if (wardAlreadyRead(h)){ toast(`${fname(h)} has already read what they can off it.`); exploreKey = ""; return; }
+  // A FRIEND'S HAND (Sam, 2026-10-30: "The help action as a dialogue box can pop up if they are close to offer to
+  // help"). The map already had Help — it set `helpNext` and only mapCheck ever spent it, so the ward never saw
+  // it. Now it does, and 5e settles the rest: advantage from the help against disadvantage for not being a wizard
+  // cancel, so a helped non-wizard reads it at a straight roll.
+  let helped = null;
+  if (helpNext && helpNext.by !== h.id && now < helpNext.until){ helped = helpNext.by; helpNext = null; }
+  const adv = (helped ? 1 : 0) + (wardWizard(h) ? 0 : -1);
   const mod = heroMod(h, "arcana", "int"), r = d20(adv, h), k = {r, mod, total: r + mod, adv};
   const tier = wardTierOf(k.total);
-  state.wardTried[h.id] = true;
+  state.wardTried[h.id] = wardArcanaKey(h);
   state.wardStudy[h.id] = {tier: tier.key, total: k.total};
-  log(`${fname(h)} studies the ward sigil: ${rollLine(k, "arcana")}. <i>${esc(tier.line)}</i>`);
+  log(`${fname(h)} studies the ward sigil${helped ? `, with ${esc(SHORT[helped] || helped)}'s help` : ""}: ${rollLine(k, "arcana")}. <i>${esc(tier.line)}</i>`);
   toast(tier.line, 6200);
   askCheck(`${fname(h)} studies the ward sigil`, k, "arcana",
-    `${fname(h)} studies the drow ward sigil cut into the pen wall. Intelligence (Arcana) ${k.total}${adv < 0 ? " (disadvantage: not a wizard)" : ""}. `
+    `${fname(h)} studies the drow ward sigil cut into the pen wall. Intelligence (Arcana) ${k.total}`
+    + `${adv < 0 ? " (disadvantage: not a wizard)" : adv > 0 ? " (advantage: helped)" : helped ? " (helped, but not a wizard: the two cancel)" : ""}. `
     + `On this roll they learn exactly this and no more: ${tier.tell}. Narrate only that much — do not give them the next tier up.`);
   if (tier.key === "seam") toast(`${fname(h)} could cut it. It would scar red, and every drow who came in would read it.`, 7000);
   exploreKey = "";

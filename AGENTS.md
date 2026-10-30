@@ -335,6 +335,22 @@ on Anthropic models on the free tier), bare model strings through the AI Gateway
 
 ## 7. Conventions
 
+- **Which D&D rules this campaign runs on (Sam's ruling, 2026-10-30)**: **SRD 5.2.1 is
+  canon.** Fall back to **SRD 5.1** as the default only where 5.2.1 is unclear or is not
+  available to the session. Note the practical catch: only 5.1 is ingested into
+  `campaign_chunks`, so a 5.2.1 rule cannot be quoted or checked from a session — ingesting
+  5.2.1 is open work. Where the two differ and it matters, say so in the PR rather than
+  quietly picking one.
+- **Retrying an ability check (Sam's ruling, 2026-10-30)**: there is no blanket "one
+  attempt" rule in 5e — the DMG leaves it to the DM, and the test is whether a retry could
+  produce a different outcome. For a **knowledge** check (identifying a sigil, a creature, a
+  spell) it cannot, so it is **one attempt per hero**, and a long rest does NOT reopen it:
+  "long rest doesn't teach you arcane". It reopens only when the READER changes — new
+  proficiency, expertise, or a special skill. What the game stores is therefore the hero's
+  standing at the time of the attempt, not a bare "tried" flag. Another hero trying, the
+  **Help** action (advantage) and **Guidance** are the sanctioned ways to improve the odds;
+  none of them is a reroll.
+
 - **Path alias** `@/*` → repo root (`tsconfig.json`). shadcn "new-york", lucide icons.
 - **Styling**: `FantasyPanel` + raw Tailwind. Palette literals (`bg-[#0a0908]`, `amber-*`,
   `stone-*`) rather than shadcn tokens in the game UI. Dark mode is forced —

@@ -39,10 +39,28 @@ ok(/if \(wardReach\(L\) && !state\.wardBroken\)\{/.test(page),
    "the ward row is built on reach alone — caster and tried no longer hide it");
 ok(/if \(!wardCaster\(L\)\)\s*\n\s*x\("Study the ward sigil"[\s\S]{0,120}?no magic of your own[\s\S]{0,60}?null\)/.test(page),
    "a non-caster sees the row, disabled, told they have no magic for it");
-ok(/else if \(state\.wardTried\[L\.id\]\)\s*\n\s*x\("Study the ward sigil"[\s\S]{0,140}?already read[\s\S]{0,60}?null\)/.test(page),
-   "a hero who already tried sees the row, disabled, told why");
-ok(/else\s*\n\s*x\("Study the ward sigil"[\s\S]{0,200}?\(\) => studySigil\(\)\)/.test(page),
+ok(/else if \(wardAlreadyRead\(L\)\)\s*\n\s*x\("Study the ward sigil"[\s\S]{0,140}?read what you can[\s\S]{0,80}?null\)/.test(page),
+   "a hero who already read it sees the row, disabled, told why");
+ok(/else\s*\n\s*x\("Study the ward sigil"[\s\S]{0,260}?\(\) => studySigilAsk\(\)\)/.test(page),
    "everyone else still gets the live roll");
+
+// 6. One study per hero, reopened only by LEARNING something — not by resting (Sam, 2026-10-30).
+ok(/function wardArcanaKey\(h\)\{/.test(page), "what is remembered is the hero's Arcana standing, not a bare flag");
+ok(/state\.wardTried\[h\.id\] = wardArcanaKey\(h\);/.test(page), "the attempt stamps that standing");
+ok(/if \(was === true\) state\.wardTried\[h\.id\] = wardArcanaKey\(h\);/.test(page),
+   "a legacy `true` migrates to today's standing: still blocked now, reopened by a level-up");
+ok(!/(longRest|onLongRest|restDone|afterRest)[\s\S]{0,160}?wardTried/.test(page)
+   && !/wardTried[\s\S]{0,160}?(longRest|onLongRest|restDone|afterRest)/.test(page),
+   "no rest path clears wardTried — only a change in the reader reopens it");
+
+// 7. Help reaches the ward, and 5e settles it against the not-a-wizard disadvantage.
+ok(/function wardHelpers\(h\)\{/.test(page), "the map knows who is close enough to lend a hand");
+ok(/helpNext && helpNext\.by !== h\.id && now < helpNext\.until/.test(page),
+   "studySigil spends a pending Help, which only mapCheck used to");
+ok(/const adv = \(helped \? 1 : 0\) \+ \(wardWizard\(h\) \? 0 : -1\);/.test(page),
+   "help and not-being-a-wizard cancel, as 5e has advantage and disadvantage cancel");
+ok(/function studySigilAsk\(\)\{/.test(page) && /\(\) => studySigilAsk\(\)\)/.test(page),
+   "the offer comes up in front of the one study, not as a button to know about");
 
 console.log(bad ? `\n${bad} FAILED` : "\nall passed");
 process.exit(bad ? 1 : 0);
