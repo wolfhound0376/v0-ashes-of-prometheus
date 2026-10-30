@@ -780,6 +780,9 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 @keyframes victory{0%{opacity:0;transform:translate(-50%,-40%) scale(.9)}12%{opacity:1;transform:translate(-50%,-50%) scale(1.04)}20%{transform:translate(-50%,-50%) scale(1)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-58%)}}
 /* GAME OVER (Sam, 2026-10-29: "a GAME OVER in large letters like the 1980s games ... Cue darkness"). Over everything,
    the whole window: black, then the letters in an arcade face, Malachar's line typed beneath, the way out. */
+/* the beat before the dark (Sam, 2026-10-30): the camera pushes in on the last stone and the plate drains of colour,
+   so the final shot is a graveyard rather than a map that happens to have bodies on it */
+#stage.go-mourn{filter:saturate(.22) brightness(.78);transition:filter 1.1s ease-in}
 .gameover{position:fixed;inset:0;z-index:9000;background:#000;opacity:0;transition:opacity 1.8s ease-in;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:30px;padding:16px;text-align:center}
 .gameover::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px)}
 .gameover[hidden]{display:none}   /* .gameover sets display:flex, which beats the hidden attribute: unhidden, the invisible black screen sat over the whole map and swallowed every click */
@@ -1927,7 +1930,7 @@ function draw(){
     const mq = ovPt(marker.x, marker.y); ctx.beginPath(); ctx.ellipse(mq.x, mq.y, 14 + 20 * k, (14 + 20 * k) * .5, 0, 0, Math.PI * 2); ctx.stroke();
   }
   for (const c of node.chains || []) drawChain(c);
-  drawCombatGround(); drawStuckGround(); drawSurgeonGround(); drawDeathBits(true);
+  drawCombatGround(); drawStuckGround(); drawSurgeonGround(); drawDeathBits(true); drawGraves();
   if (mode === "combat"){ drawIcePatches(); drawFxLayer(true); tickIce(); }
   if (mode === "explore" && exploreJump && leader && actors.includes(leader)) drawExploreJumpSquares(leader);
   ovWrapGroup(drops, drawLootGround);   // the loot ceremony's floor light, under the figures
@@ -14816,8 +14819,54 @@ function dieNow(a, why){
   log(`<b>${fname(a)} dies</b>${why ? ` (${why})` : ""}.`); narrate(a, `${fname(a)} is gone.`);
   const near = standing(party).filter(p => p !== a)[0]; if (near) setTimeout(() => bark(near, `No… ${fname(a)}!`, 2000, {talk: true}), 500);
   renderParty();
+  graveRaise(a);
   noteFallen(a);
 }
+// ---------- GRAVES ----------
+// Sam, 2026-10-30: "When your last character dies you get the RIP tombstone with a mound in front of it. Then you cut
+// to the Game Over screen."
+//   - EVERY hero who dies gets their own stone, not only the last one [SAM 2026-10-30, agreeing the call]: by the time
+//     the table wipes the board is a graveyard, so GAME OVER's push-in lands on a field of stones rather than one.
+//   - TRUE DEATH ONLY. dieNow() is the one place a hero dies (three failed death saves, instant death, the chasm), so
+//     it is the one place a stone goes up. A hero at 0 HP is dying or stable and can still be saved — no stone.
+//   - WHERE THEY FELL, on the plate they fell on. Pinned to the plate, so the party can walk away and come back to it.
+//   - EVERY SCREEN: state.graves is One World state like state.fallen (owStateTick diffs every key of `state`), so a
+//     hero who dies on one screen is buried on all of them.
+//   - A SANDBOX WIPES CLEAN [SAM 2026-10-30]: "Rehearsal: start over" and the game-over reset both drop the saved
+//     session and reload, and state.graves goes with it. Nothing extra to do.
+//   - NO RAISE [SAM 2026-10-30]: there is no revival at Velkynvelve. A dead hero's player takes over a canon prisoner
+//     instead, and the stone stays standing with their old name under it. So nothing here removes a grave.
+//   - DEPTH: drawn in the ground pass, so a hero standing behind a stone is drawn over it. Stones sit where somebody
+//     died and the party moves on, so this has not been worth a sort key; the body deathBit does the same.
+const GRAVE_FRAMES = 6;    // the sprite sheet: the floor cracks, the mound swells, the stone rises, seats, settles
+const GRAVE_MS = 150;      // per frame; the last frame is held for the rest of the session
+function graveRaise(a){
+  if (!a || a.kind !== "pc") return;
+  const g = Array.isArray(state.graves) ? state.graves : [];
+  if (g.some(v => v && v.slug === a.id)) return;                    // one stone per hero, however they got there
+  state.graves = g.concat([{slug: a.id, plate: cur, x: Math.round(a.x + (a.kx || 0)), y: Math.round(a.y),
+                            h: Math.round(labH(a) * .58), t0: Date.now()}]);   // a new array: owStateTick diffs by value
+  // .58 of the hero's own height on this plate puts the stone's head at about waist-to-chest on the figure standing
+  // next to it, which is what a headstone looks like. Stored rather than recomputed, because the hero it was measured
+  // from is about to stop existing.
+  saveWalk();
+}
+function drawGraves(){
+  const g = Array.isArray(state.graves) ? state.graves : []; if (!g.length) return;
+  const im = labImg("grave"); if (!im.complete || !im.naturalWidth) return;
+  const fw = im.naturalWidth / GRAVE_FRAMES, fh = im.naturalHeight;
+  for (const v of g){
+    if (!v || v.plate !== cur) continue;
+    const age = Date.now() - (v.t0 || 0);
+    const fi = Math.max(0, Math.min(GRAVE_FRAMES - 1, Math.floor(age / GRAVE_MS)));
+    const h = v.h || 60, w = h * fw / fh;
+    ctx.save(); ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(im, fi * fw, 0, fw, fh, v.x - w / 2, v.y - h, w, h);
+    ctx.restore();
+  }
+}
+/** The graves on this plate, nearest last — GAME OVER pushes in on the one that just went up. */
+function gravesHere(){ return (Array.isArray(state.graves) ? state.graves : []).filter(v => v && v.plate === cur); }
 // ---------- GAME OVER ----------
 // Sam, 2026-10-29: "When all the active players are dead we need a GAME OVER in large letters like the 1980s games.
 // Malachar says something. Cue darkness and this will take us back to main page unless this is a sandbox. In sandbox
@@ -14849,11 +14898,28 @@ function gameOverTick(){
   const G = state.gameOver;
   if (G && G.seq && gameOverPlayed !== G.seq) playGameOver(G);
 }
+/**
+ * The beat between the last death and the dark (Sam, 2026-10-30).
+ *
+ * The last hero's stone is already going up — graveRaise() ran inside dieNow(), before any of this. So all this does is
+ * point the camera at it and drain the colour out of everything else, which is what turns a row of props into the last
+ * shot of the session. If the stone is on another plate (the DM watching from somewhere else), there is nothing here to
+ * push in on and we just hold.
+ */
+async function gameOverGraveBeat(){
+  const here = gravesHere(), g = here[here.length - 1];
+  stage.classList.add("go-mourn");
+  if (g){ try { camTo(Math.min(2.4, view.z * 1.35), g.x, g.y - (g.h || 60) * .5, 900); } catch (e) {} }
+  await wait(GAME_OVER_RULES.graveMs);
+}
 async function playGameOver(G){
   gameOverPlayed = G.seq;
   const replay = gameOverIsReplay(G.at, Date.now() + (OW.offset || 0));
   const after = gameOverAfter({sandbox: SANDBOX, app: APP, dm: isDm()}), line = gameOverLine(G.seq);
-  if (!replay) await wait(GAME_OVER_RULES.holdMs);            // the last body falls and the "dead" mark shows first
+  if (!replay){
+    await wait(GAME_OVER_RULES.holdMs);                       // the last body falls and the "dead" mark shows first
+    await gameOverGraveBeat();                                // then the stone goes up where they fell (Sam, 2026-10-30)
+  }
   if (mode === "combat") endCombat(false);
   if (sneak) endSneak();
   for (const id of ["obj", "dialog", "talk"]){ const e = $(id); if (e) e.hidden = true; }
