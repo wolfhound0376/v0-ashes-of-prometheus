@@ -64,4 +64,21 @@ describe("the built map", () => {
   it("only asks for cues the page knows", () => {
     for (const m of html.matchAll(/gateLookFilm\("([a-z-]+)"/g)) expect(Object.keys(WALK_FILMS)).toContain(m[1])
   })
+
+  // The ward sigil (Sam, 2026-10-30: "wire it to successful check").
+  it("fires the sigil film only on a Study that learned something", () => {
+    expect(html).toContain('if (tier.key !== "none") sigilFilm(h);')
+  })
+  it("asks for the ward-sigil cue, once per hero", () => {
+    expect(html).toMatch(/function sigilFilm\(h\)\{[\s\S]*?state\.sigilFilmed\[h\.id\] = true;/)
+    expect(html).toContain('cue: "ward-sigil"')
+  })
+  it("every cue the page posts is one this module knows", () => {
+    // The fungus cue is built at runtime ("fungus-" + the item), so its literal in the page is a PREFIX of a
+    // real cue rather than a whole one. A literal counts as known if it IS a cue or begins one.
+    const known = Object.keys(WALK_FILMS)
+    for (const m of html.matchAll(/cue: "([a-z-]+)"/g)) {
+      expect(known.some((c) => c === m[1] || c.startsWith(m[1]))).toBe(true)
+    }
+  })
 })
