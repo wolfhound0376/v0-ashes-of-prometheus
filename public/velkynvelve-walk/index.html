@@ -7864,6 +7864,9 @@ function exploreExtras(m, o, add, who){
   // standing rogue button any more. It appears only while the party is sneaking together, for whoever leads; taking it
   // splits the leader off (they keep the Stealth they rolled) and the others wait where they stand.
   if (sneak && !sneak.scout && followOn && party.length > 1) x("Scout alone", "➶", ART("scout"), "slip away from the group; the others wait", () => scoutAlone());
+  const fg = fungusReach(); if (fg) x(`Harvest ${fg.name.replace(/^(A|An|The) /i, "the ")}`, "✂", ART("search-here", "search"),
+    fg.harvest ? `${SKILL_NAME[fg.harvest.clean_skill] || fg.harvest.clean_skill} DC ${fg.harvest.clean_dc} to cut it clean · it comes up either way` : "it comes up easily",
+    () => fungusHarvest(fg));
   const pot = beltPotion(L); if (pot) x(`Quick drink: ${pot.name}`, "⚗", ART("quick-drink"), "from the belt", () => drinkItem(L, pot, L));
   if (party.length > 1) x(followOn ? "Wait here" : "Follow me", followOn ? "⏸" : "➜", ART(followOn ? "wait" : "follow"), followOn ? "the others stop where they are" : "the others come along behind", () => setFollow(!followOn));
   // JUMP outside a fight: the same long-jump rule the fight uses (gapOnLine; STR score with a run-up, half standing), with
@@ -8243,6 +8246,56 @@ function fungusSearch(){
     else log(`<em>${esc(id.unknown)}</em>`);
   }
   return out;
+}
+// HARVESTING, AND THE CLOUD (Sam, 2026-10-30: "You may be able to harvest it even if you really can't make the
+// potion in the pen", then "wire to the gate watch as appropriate").
+// Taking ormu, a waterorb or a bonecap is just taking it. The timmask is the one that bites: OotA Encounters p.28,
+// "Uprooting or destroying a timmask causes it to expel a 15-foot-radius cloud of poisonous spores. Creatures in the
+// area must succeed at a DC 14 Constitution saving throw or be poisoned." Those are the book's numbers. That a
+// careful cut avoids the cloud at all is Claude's house rule, and so is the DC for it.
+// THE HARVEST ALWAYS SUCCEEDS. Sam was explicit: a botched cut costs you the cloud, not the mushroom.
+// WHAT THE GUARDS DO. Not volleys — volleys are for defying the "step back" at the door (Sam, 2026-10-25, "Remove
+// formal fight. Volleys only"), and a prisoner coughing in a corner is not that. A vent makes the watch LOOK: the
+// guards break off their sweep, turn toward the noise and scan now, and whatever the normal gate rules then make of
+// where the heroes are standing is what happens. The DM core is told, so Malachar can play it.
+function fungusReach(){
+  if (mode !== "explore" || !leader) return null;
+  return fungusSpots().filter(l => fungusIsKnown(leader, l))
+    .map(l => ({l, d: Math.hypot(leader.x - lootCenter(l).x, leader.y - lootCenter(l).y)}))
+    .filter(o => o.d < 200 * node.scale).sort((a, b) => a.d - b.d).map(o => o.l)[0] || null;
+}
+function fungusHarvest(l){
+  const h = leader, hv = l.harvest;
+  if (hv){
+    const mod = fungusMod(h, {skill: hv.clean_skill, alt: hv.clean_alt || []}), r = d20(0, h), total = r + mod;
+    log(`${fname(h)} works ${esc(l.name)} loose: ${SKILL_NAME[hv.clean_skill] || hv.clean_skill} ${r} ${mod >= 0 ? "+" : "−"} ${Math.abs(mod)} = <b>${total}</b> against DC ${hv.clean_dc}.`);
+    if (total < hv.clean_dc) fungusVent(l, hv);
+    else log(`${fname(h)} cuts it at the base. Nothing stirs.`);
+  }
+  openLootSpot(l);                                   // the mushroom comes up either way
+}
+function fungusVent(l, hv){
+  const at = lootCenter(l), v = hv.vent || {}, dc = v.dc || 14, R = (v.radius_ft || 15) * ftPx(at);
+  log(`<em>The cap splits and lets go of a cloud — ${v.radius_ft || 15} feet of spores, and a <b>DC ${dc} Constitution</b> save for anyone in it.</em>`);
+  spawnFx("poisonCloud", {at, sq: 3, anchor: "mid", alpha: .95});
+  bank("magic/impact_poison", .7);
+  for (const a of actors){
+    if (a.body || a.down || a.offStage) continue;
+    if (Math.hypot(a.x - at.x, a.y - at.y) > R) continue;
+    const sh = SHEETS[a.id] || {}, mod = (sh.saves || {}).con ?? abilMod(sh, "con"), r = d20(0, a), total = r + mod;
+    if (total >= dc){ log(`${fname(a)} holds their breath: Constitution ${r} ${mod >= 0 ? "+" : "−"} ${Math.abs(mod)} = <b>${total}</b>.`); continue; }
+    log(`${fname(a)} breathes it in: Constitution ${r} ${mod >= 0 ? "+" : "−"} ${Math.abs(mod)} = <b>${total}</b> — poisoned.`);
+    addCond(a, "poisoned"); popText(a, "poisoned", "#8fd48f", 1.1);
+  }
+  if (hv.alerts_watch !== false) fungusAlertsWatch(at);
+  reportSituation({event: "spore_cloud", note: `a timmask vented in the pen; the guards heard it`});
+  if (APP) handOff(`${fname(leader)} tore a timmask up in the slave pen and it vented a 15-foot cloud of spores (DC ${dc} Constitution, poisoned on a failure). The drow on the bridge heard the coughing and are looking into the pen. What do they do?`, true);
+}
+/** The noise turns the watch. Not a volley — it ends their sweep early and makes them scan the pen now. */
+function fungusAlertsWatch(at){
+  const guards = gateGuards(); if (!guards.length) return;
+  for (const g of guards){ g.path = []; g.scanAt = now; faceTo(g, at); popText(g, "?", "#ffd27a", 1.2); }
+  log("<em>On the bridge, the drow stop and turn toward the pen.</em>");
 }
 // LOOKING AT THE PEN GATE (Sam, 2026-10-27): Look closer asks "Look around or Count the guards". Each is a filmed
 // moment, played the first time each player picks it ("at least once for each player"):
