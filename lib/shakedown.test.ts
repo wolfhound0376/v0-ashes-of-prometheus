@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest"
 import {
   ENFORCER_PARTIES, PEN_PLATE, SHAKEDOWN_ROTATIONS, SPARED, WAVES, WAVE_COUNT, WAVE_INTERVAL_MS,
-  bannerText, keyResolved, keyTaken, nextWave, noKeyWatch, pickVictim, rollEnforcers,
-  shakedownDue, shakedownHappened, victimPool, wavesDue, wavesStopped,
+  bannerText, keyResolved, keyTaken, nextWave, noKeyWatch, partySubmits, pendingVoters, pickVictim,
+  rollEnforcers, shakedownDue, shakedownHappened, victimPool, wavesDue, wavesStopped,
 } from "./shakedown"
 
 // Sam's rulings, 2026-10-30. Design of record: claude/Pen_Key_And_Watch_2026-10-30.md.
@@ -20,38 +20,68 @@ describe("the key clock", () => {
   })
 
   it("is due exactly two rotations after the theft, not before", () => {
-    const w = keyTaken(1)
+    const w = keyTaken(noKeyWatch(), 1)
     expect(shakedownDue(w, 1)).toBe(false)
     expect(shakedownDue(w, 2)).toBe(false)
     expect(shakedownDue(w, 3)).toBe(true)
     expect(SHAKEDOWN_ROTATIONS).toBe(2)
   })
 
-  // [SAM] "Once per every time two rotations pass with a key unaccounted for" — explicitly NOT a one-shot.
-  it("fires again every two rotations while the key is still held", () => {
-    let w = keyTaken(0)
+  // [SAM, 2026-10-30, superseding his earlier answer the same day] "There should only be one shakedown because
+  // stealing a key happens once most likely and after that they will likely stop leaning on the door."
+  it("plays once per run and never again", () => {
+    let w = keyTaken(noKeyWatch(), 0)
     expect(shakedownDue(w, 2)).toBe(true)
-    w = shakedownHappened(w, 2)
-    expect(shakedownDue(w, 3)).toBe(false)          // the clock restarts from the shakedown
-    expect(shakedownDue(w, 4)).toBe(true)
-    w = shakedownHappened(w, 4)
-    expect(shakedownDue(w, 5)).toBe(false)
-    expect(shakedownDue(w, 6)).toBe(true)
-  })
-
-  it("stops for good once the key goes back or is used", () => {
-    const w = keyResolved(shakedownHappened(keyTaken(0), 2))
+    w = shakedownHappened(w)
+    expect(shakedownDue(w, 3)).toBe(false)
     expect(shakedownDue(w, 4)).toBe(false)
     expect(shakedownDue(w, 40)).toBe(false)
   })
 
-  it("re-arms if they steal it again after resolving", () => {
-    const again = keyTaken(10)                       // a fresh theft replaces the resolved watch
-    expect(shakedownDue(again, 12)).toBe(true)
+  it("a second theft after it has played does not re-arm it", () => {
+    const done = shakedownHappened(keyTaken(noKeyWatch(), 0))
+    const again = keyTaken(done, 10)
+    expect(again.done).toBe(true)
+    expect(shakedownDue(again, 12)).toBe(false)
+    expect(shakedownDue(again, 99)).toBe(false)
+  })
+
+  it("stops if the key goes back or is used before it fires", () => {
+    const w = keyResolved(keyTaken(noKeyWatch(), 0))
+    expect(shakedownDue(w, 2)).toBe(false)
+    expect(shakedownDue(w, 40)).toBe(false)
   })
 
   it("catches up when several rotations pass unobserved", () => {
-    expect(shakedownDue(keyTaken(1), 9)).toBe(true)
+    expect(shakedownDue(keyTaken(noKeyWatch(), 1), 9)).toBe(true)
+  })
+})
+
+describe("the consent step", () => {
+  const seats = (...v: [string, boolean, boolean][]) => v.map(([id, dead, agreed]) => ({ id, dead, agreed }))
+
+  it("submits only when every living seat has agreed", () => {
+    expect(partySubmits(seats(["kenta", false, true], ["fifi", false, true]))).toBe(true)
+    expect(partySubmits(seats(["kenta", false, true], ["fifi", false, false]))).toBe(false)
+  })
+
+  // [SAM] "They don't count if they are dead."
+  it("a dead hero is not a holdout", () => {
+    expect(partySubmits(seats(["kenta", false, true], ["scott", true, false]))).toBe(true)
+    expect(pendingVoters(seats(["kenta", false, true], ["scott", true, false]))).toEqual([])
+  })
+
+  it("names who the submission is still waiting on", () => {
+    expect(pendingVoters(seats(["kenta", false, true], ["fifi", false, false], ["scott", true, false]))).toEqual(["fifi"])
+  })
+
+  // Not a silent yes: there is nobody left to hand the key over, and the caller is in GAME OVER territory.
+  it("a table where every seat is dead does not submit", () => {
+    expect(partySubmits(seats(["kenta", true, false], ["fifi", true, false]))).toBe(false)
+  })
+
+  it("one living holdout forces the fight however many are dead", () => {
+    expect(partySubmits(seats(["kenta", true, true], ["fifi", true, true], ["scott", false, false]))).toBe(false)
   })
 })
 

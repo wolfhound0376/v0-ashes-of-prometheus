@@ -15,27 +15,32 @@
 export const SHAKEDOWN_ROTATIONS = 2
 
 /**
- * [SAM, 2026-10-30] "Once per every time two rotations pass with a key unaccounted for" — so this is NOT a
- * one-shot. A party that keeps the key and does nothing is shaken down again, and again, each one costing
- * another prisoner under Branch A. Giving the key up or using it is what ends the cycle.
+ * [SAM, 2026-10-30, superseding his earlier answer the same day] ONE shakedown, not a repeating one:
+ * "There should only be one shakedown because stealing a key happens once most likely and after that they will
+ * likely stop leaning on the door."
  *
- * `since` is the rotation the clock last restarted from: the rotation at which the key went missing, or the
- * rotation of the last shakedown, whichever is later.
+ * That reasoning is load-bearing, so it is written down rather than just the rule: the opportunity to lift the key
+ * is itself scarce. The run gets 1d4 leans at the bars, a caught thief ends that guard's leaning permanently, and
+ * once the party holds a key no other guard offers one (walk-loot `penKeyGone`). So a second theft is the unlikely
+ * case, and a shakedown that kept recurring would punish a party for a scarcity the drow created.
+ *
+ * `done` is therefore terminal for the run. A later theft does not re-arm it.
  */
 export type KeyWatch = {
   /** The stage's rotation count when the key went missing. null = no key is unaccounted for. */
   takenAtRotation: number | null
-  /** The rotation of the most recent shakedown, so the next is due two rotations after THAT, not after the theft. */
-  lastShakedownRotation: number | null
-  /** The key has been handed back or used: the cycle is over and nothing re-arms it. */
+  /** The shakedown has been played. Terminal: there is only one per run. */
+  done: boolean
+  /** The key has been handed back or used: the drow stop looking before it ever fires. */
   resolved: boolean
 }
 
-export const noKeyWatch = (): KeyWatch => ({ takenAtRotation: null, lastShakedownRotation: null, resolved: false })
+export const noKeyWatch = (): KeyWatch => ({ takenAtRotation: null, done: false, resolved: false })
 
-/** The key just came off a guard at `rotation`. Re-arming after a resolution is deliberate: they can steal it again. */
-export function keyTaken(rotation: number): KeyWatch {
-  return { takenAtRotation: rotation, lastShakedownRotation: null, resolved: false }
+/** The key just came off a guard at `rotation`. A theft after the shakedown has played changes nothing. */
+export function keyTaken(w: KeyWatch, rotation: number): KeyWatch {
+  if (w.done) return w
+  return { takenAtRotation: rotation, done: false, resolved: false }
 }
 
 /** The key went back to the drow, or was used on the gate: the drow stop looking. */
@@ -43,16 +48,39 @@ export function keyResolved(w: KeyWatch): KeyWatch {
   return { ...w, resolved: true }
 }
 
-/** Is a shakedown due at `rotation`? Two rotations since the theft, or since the last one. */
+/** Is the shakedown due at `rotation`? Two rotations after the theft, and only if it has not already played. */
 export function shakedownDue(w: KeyWatch, rotation: number): boolean {
-  if (w.resolved || w.takenAtRotation === null) return false
-  const since = Math.max(w.takenAtRotation, w.lastShakedownRotation ?? w.takenAtRotation)
-  return rotation - since >= SHAKEDOWN_ROTATIONS
+  if (w.done || w.resolved || w.takenAtRotation === null) return false
+  return rotation - w.takenAtRotation >= SHAKEDOWN_ROTATIONS
 }
 
-/** Record that one just happened, so the next is due two rotations after this one. */
-export function shakedownHappened(w: KeyWatch, rotation: number): KeyWatch {
-  return { ...w, lastShakedownRotation: rotation }
+/** Record that it played. Terminal — nothing re-arms it for the rest of the run. */
+export function shakedownHappened(w: KeyWatch): KeyWatch {
+  return { ...w, done: true }
+}
+
+// ─── The consent step ─────────────────────────────────────────────────────────────────────────────────────────
+// [SAM] "all main characters have to agree or combat ensues".
+// [SAM, 2026-10-30] "They don't count if they are dead."
+//
+// So the vote is over the LIVING seated heroes. A dead hero is not a holdout and must not be able to force the
+// fight from beyond the grave — which matters because Branch A's whole premise is that the party has already been
+// losing people.
+
+export type Voter = { id: string; dead?: boolean; agreed?: boolean }
+
+/** Whose answer the submission is waiting on: living seats that have not agreed yet. */
+export function pendingVoters(voters: Voter[]): string[] {
+  return voters.filter((v) => !v.dead && !v.agreed).map((v) => v.id)
+}
+
+/**
+ * Do they submit? Every LIVING seat must agree. A table where everyone seated is dead cannot submit — there is
+ * nobody left to hand the key over — so that is not a silent yes; the caller is already in GAME OVER territory.
+ */
+export function partySubmits(voters: Voter[]): boolean {
+  const living = voters.filter((v) => !v.dead)
+  return living.length > 0 && living.every((v) => v.agreed)
 }
 
 // ─── Who comes in ─────────────────────────────────────────────────────────────────────────────────────────────
