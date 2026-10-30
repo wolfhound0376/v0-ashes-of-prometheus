@@ -17268,6 +17268,14 @@ function gravesHere(){ return (Array.isArray(state.graves) ? state.graves : []).
 //             Throws" and "Instant Death") — the map's dieNow(), the one place a hero dies.
 //   [CLAUDE]  "active players" = the heroes SEATED at the table this session (the map's PARTY: the roster lock). NPC
 //             companions (Ront, Eldeth, the prisoners) do not keep the game alive — the players do.
+//   [SAM 2026-10-30] DEATH AND RESTART: "prompt the DM to allow a restart ... you start in the camp as if it were the
+//             first day but a roll will be needed to determine what you start out with. Make sure it's wired right and
+//             the database has been cleared appropriately and game state synced." Asked where the restarted party
+//             wakes, he chose THE SLAVE PEN, DAY ONE — the campaign's own opening — and the EXISTING scavenge roll
+//             (1d10 days + d20 against the book's table, lib/scavenged.ts). So the restart is the campaign restart
+//             that already exists (lib/restart-campaign.ts): it opens a new run, clears every world flag (which is
+//             what makes each hero roll their fortune again at /awaken) and puts the party back in the pen.
+//             The card no longer sends the table to the title on a timer while they wait: it asks the DM.
 //   [CLAUDE]  "main page" = the title screen, /intro (the front door, PR #851).
 //   [CLAUDE]  the timings, the 8-bit sting and Malachar's three lines (original words; his voice is the lich voice the
 //             dashboard already uses, /api/tts "onyx").
@@ -17319,6 +17327,37 @@ function gameOverLine(seed) {
 function gameOverAfter({ sandbox = false, app = true, dm = false } = {}) {
   const kind = sandbox || !app ? "reset" : "title"
   return { kind, auto: !dm || kind === "reset" }
+}
+
+/**
+ * What the GAME OVER card offers (Sam, 2026-10-30). The DM is the only one who may start the campaign over, so a
+ * player's card asks him and then waits — it must NOT march them off to the title on a countdown while he decides.
+ *
+ *   offer  this card can lead to a restart at all (the real game; a rehearsal resets itself instead)
+ *   ask    show "Ask the DM to restart" — a player's card
+ *   do     show "Restart the campaign" — the DM's card
+ *   wait   say that it is now the DM's call
+ *   auto   may the card leave on its own after the countdown
+ */
+function gameOverRestart({ app = true, sandbox = false, dm = false } = {}) {
+  if (!app || sandbox) return { offer: false, ask: false, do: false, wait: false, auto: true }
+  return { offer: true, ask: !dm, do: !!dm, wait: !dm, auto: false }
+}
+
+/** The heroes who have asked for a restart, in the order they asked, named as the card shows them. */
+function gameOverAskers(asks, names = {}) {
+  const rows = Object.entries(asks && typeof asks === "object" ? asks : {})
+    .filter(([slug, at]) => slug && typeof at === "number")
+    .sort((a, b) => a[1] - b[1])
+  return rows.map(([slug]) => names[slug] || slug)
+}
+
+/** "Lynkes is asking" / "Lynkes and Gandalf are asking" / "Lynkes, Gandalf and Fifi are asking". */
+function gameOverAskLine(namesAsked) {
+  const n = (namesAsked || []).filter(Boolean)
+  if (!n.length) return ""
+  const who = n.length === 1 ? n[0] : n.slice(0, -1).join(", ") + " and " + n[n.length - 1]
+  return `${who} ${n.length === 1 ? "is" : "are"} asking to start over.`
 }
 
 /** A replay: the page was loaded (or reloaded) after the game ended, so it shows the card at once, silently. */
@@ -17381,12 +17420,45 @@ async function playGameOver(G){
   log(`<b>Malachar:</b> “${esc(line)}”`);
   if (!replay) gameOverVoice(line);
   await gameOverType(say, line, replay);
-  // the way out
+  // ----- the way out, and the way BACK (Sam, 2026-10-30: "Death and restart — prompt the DM to allow a restart") -----
+  // Only the DM may start the campaign over, so a player's card asks him and then waits. It no longer marches the
+  // table off to the title on a countdown while he is deciding. His yes runs the campaign restart that already
+  // exists: a new run, every world flag cleared (which is what makes each hero roll their fortune again), the party
+  // back in the slave pen on day one. Every other screen reloads itself when it sees the new run number.
+  const R = gameOverRestart({app: APP, sandbox: SANDBOX, dm: isDm()});
+  if (R.do){
+    const again = document.createElement("button"); again.className = "go-btn";
+    again.textContent = "Restart the campaign";
+    again.onclick = () => gameOverRestartNow(again);
+    btns.appendChild(again);
+  }
+  if (R.ask){
+    const askBtn = document.createElement("button"); askBtn.className = "go-btn";
+    const asked = () => !!(state.restartAsk && state.restartAsk[(leader && leader.id) || "someone"]);
+    askBtn.textContent = asked() ? "Asked — waiting for the DM" : "Ask the DM to restart";
+    askBtn.disabled = asked();
+    askBtn.onclick = () => {
+      const me = (leader && leader.id) || "someone";
+      state.restartAsk = Object.assign({}, state.restartAsk || {}, {[me]: Date.now()});   // owStateTick publishes it
+      askBtn.textContent = "Asked — waiting for the DM"; askBtn.disabled = true;
+      log("<em>Asked the DM to start the campaign over.</em>");
+    };
+    btns.appendChild(askBtn);
+  }
   const go = document.createElement("button"); go.className = "go-btn";
   go.textContent = after.kind === "reset" ? (SANDBOX ? "Start the rehearsal over" : "Start over") : "Return to the title";
   go.onclick = () => gameOverLeave(after.kind);
   btns.appendChild(go);
-  if (after.auto){
+  if (R.offer){
+    // who is asking (the DM's card), or who it is now up to (a player's)
+    const note = document.createElement("div"); note.className = "go-count"; btns.appendChild(note);
+    const show = () => {
+      const line = gameOverAskLine(gameOverAskers(state.restartAsk, SHORT));
+      note.textContent = R.do ? (line || "Only you can start the campaign over.") : (line ? line + " It is the DM's call." : "The DM decides whether the campaign starts over.");
+    };
+    show(); clearInterval(gameOverLeaveT); gameOverLeaveT = setInterval(show, 1000);
+  }
+  if (after.auto && !R.offer){
     const count = document.createElement("div"); count.className = "go-count"; btns.appendChild(count);
     let left = Math.round(GAME_OVER_RULES.leaveMs / 1000);
     const show = () => { count.textContent = `${after.kind === "reset" ? "Starting over" : "Back to the title"} in ${left}`; };
@@ -17427,6 +17499,26 @@ function gameOverSting(){
     }
     t += d;
   }
+}
+// The DM's yes. The wipe is lib/restart-campaign.ts behind /api/restart-campaign (DM key required): it opens a new
+// run, clears world_flags (so every hero rolls their fortune again at /awaken), puts the party back in the pen and
+// heals and un-deads the heroes. This screen reloads; every other screen reloads on its own when pollStage sees the
+// new run number, so nobody is left walking the world that just ended.
+async function gameOverRestartNow(btn){
+  if (btn){ btn.disabled = true; btn.textContent = "Starting the campaign over…"; }
+  let j = null;
+  try {
+    const r = await fetch("/api/restart-campaign", {method: "POST", headers: Object.assign({"Content-Type": "application/json"}, dmHeaders())});
+    j = await r.json().catch(() => null);
+    if (!r.ok || !j || j.ok === false) throw new Error((j && j.reason) || ("HTTP " + r.status));
+  } catch (e) {
+    if (btn){ btn.disabled = false; btn.textContent = "Restart the campaign"; }
+    toast("The restart did not go through: " + (e && e.message ? e.message : "no answer") + ". Nothing was changed.", 5200);
+    return;
+  }
+  walkResetting = true;
+  try { sessionStorage.removeItem("aop_walk_state"); } catch (e) {}
+  setTimeout(() => { try { location.reload(); } catch (e) {} }, 400);
 }
 function gameOverLeave(kind){
   clearInterval(gameOverLeaveT); gameOverLeaveT = null;

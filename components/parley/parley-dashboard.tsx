@@ -967,6 +967,8 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
   // Who's in sync with whom: the One World row (lib/walk-world) says what every
   // connected map screen believes. Green when they all agree, amber while one
   // is catching up, red when one has lost the table or nobody can be reached.
+  // The campaign run this screen was opened under; a different one means the world was restarted under it.
+  const runSeenRef = useRef<string | null>(null)
   const [tableSync, setTableSync] = useState<{ state: "ok" | "lag" | "off" | "idle"; label: string; detail: string }>({ state: "idle", label: "No map open", detail: "No one is on the Underwalk right now." })
   useEffect(() => {
     let alive = true
@@ -974,7 +976,15 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
       try {
         const r = await fetch("/api/walk-world", { cache: "no-store" })
         if (!r.ok) throw new Error(String(r.status))
-        const j = (await r.json()) as { world?: WorldRow; now?: number }
+        const j = (await r.json()) as { world?: WorldRow; now?: number; run?: string | null }
+        // A RESTART ENDS THIS SCREEN'S GAME TOO (Sam, 2026-10-30: "make sure ... game state synced"). The restart
+        // opens a new campaign run; the painted map already reloads itself when it sees one (pollStage), and until
+        // now a dashboard left open carried the wiped campaign — its party, its log, its scene — as if nothing had
+        // happened. The run id rides along on the sync poll this screen already makes.
+        if (typeof j.run === "string" && j.run) {
+          if (!runSeenRef.current) runSeenRef.current = j.run
+          else if (runSeenRef.current !== j.run) { window.location.reload(); return }
+        }
         const now = typeof j.now === "number" ? j.now : Date.now()
         const seats = Object.values(j.world?.seats ?? {}).filter((s) => isOnline(s, now))
         if (!alive) return
