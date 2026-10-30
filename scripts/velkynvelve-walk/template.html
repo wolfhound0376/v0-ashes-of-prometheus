@@ -14982,7 +14982,19 @@ async function playBuppidoRises(t){
   buppidoRisesAudience();
   await wait(R.surpriseMs);
 
-  startCombat([z], "something has climbed out of Buppido's grave");
+  // WHY THIS FIGHT IS NOT A SWARM (Sam, 2026-10-30: "There are a lot of prisoners that can all attack because they
+  // will have the initiative. They may be able to kill him before he attacks.") He is right, and the first build of
+  // this was wrong: four prisoners carry real blocks and fight as allies (ALLY_SHEETS: Ront, Eldeth, Derendil,
+  // Sarith), the zombie is AC 8 so nearly everything lands, and its initiative is -2 so it acts last. Nine attackers
+  // put it down before it ever swung. Two corrections, both of them things the fight already understood:
+  //   SURPRISED: it came out of the ground. Nobody at that table expected it, so nobody acts on the first turn
+  //     (SRD 5.1: a surprised creature "can't move or take an action on its first turn of the combat"), which with a
+  //     -2 initiative is what buys it the round of being the only thing moving.
+  //   NO ALLIES: a dwarf, an orc, a quaggoth and a drow will all swing at a guard. None of them swings at a corpse
+  //     that just stood up — they run, like every other bystander in the pen (Sam's bystander ruling, 2026-10-28),
+  //     and the gate is locked. That is the difference between nine attackers and the party on its own.
+  startCombat([z], "something has climbed out of Buppido's grave",
+              {noAllies: true, surprised: [...party, ...npcs.filter(n => actors.includes(n) && n !== z)]});
 }
 /** The horror cue. The engine already scores anything undead as `scary`; this just starts it before initiative does. */
 function buppidoRisesMusic(){ try { pickCombatTrack("scary"); setTrack("combat"); } catch (e) {} }
