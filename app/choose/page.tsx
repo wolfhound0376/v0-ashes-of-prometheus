@@ -6,9 +6,14 @@
 // showcases their abilities and history OR they may create their own character. THIS IS THE ONLY
 // WAY TO THE FORGE OUTSIDE THE DM CREATING ONE HIMSELF."
 //
-//   six canon cards   → confirm (your name) → the hero's film (Skip ▸; follows the Cinematics
-//                        switch) → three words → wait for the DM → Enter → /awaken
+//   six canon cards   → the hero's film (Skip ▸; follows the Cinematics switch) → confirm (your
+//                        name) → three words → wait for the DM → Enter → /awaken
 //   Forge Your Own    → /forge
+//
+// Sam, 2026-10-29: "the video plays when you click the character even if you aren't seated." The
+// film is the first thing a click does — before any claim, any seat, any name. Your own hero: film,
+// then the table. A hero someone else holds: their film still plays (it is a story, not a seat),
+// then you are back at the cards.
 //
 // Sam, 2026-10-29: "Lynkes and Gandalf should be options in start a new game" — the two Forge-made
 // heroes joined the original four (lib/canon-heroes.ts). Their films replay after a campaign restart
@@ -99,14 +104,41 @@ export default function ChooseHero() {
     } catch { /* storage blocked */ }
   }, [])
 
-  const reserved = (c: Claim, hero: Hero) => {
-    writeClaim(c); setClaim(c)
-    setStage(hero.film && cinematicsOn() ? "film" : "waiting")
+  // Films watched on this page, by slug. Ended or skipped both count, the same rule as lib/hero-film.ts.
+  const watched = useRef(new Set<string>())
+
+  /** What a card leads to once its film is over: your own hero → the table; a free one → confirm; a taken one → back. */
+  const afterFilm = (h: Hero) => {
+    if (h.slug === mineSlug) {
+      // Your own hero, film just watched: tell this run so /awaken does not show it again (needs the stored token).
+      if (watched.current.has(h.slug)) {
+        try {
+          const id = window.localStorage.getItem(CHARACTER_LS_KEY), token = window.localStorage.getItem(TOKEN_LS_KEY)
+          if (id && token) void fetch("/api/hero-film", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ characterId: id, claimToken: token }) }).catch(() => {})
+        } catch { /* storage blocked */ }
+      }
+      router.push("/table"); return
+    }
+    if (h.availability === "free") { setPicked(h); setStage("confirm"); return }
+    setPicked(null); setStage("list")
   }
 
-  // The film ended or was skipped: both count as seen, the same rule as lib/hero-film.ts.
+  /** A card was clicked. The film comes first, whoever you are (Sam, 2026-10-29). */
+  const pick = (h: Hero) => {
+    setPicked(h)
+    if (h.film && cinematicsOn()) { setStage("film"); return }
+    afterFilm(h)
+  }
+
   const filmDone = () => {
-    if (claim) { const c = { ...claim, filmSeen: true }; writeClaim(c); setClaim(c) }
+    if (!picked) { setStage("list"); return }
+    watched.current.add(picked.slug)
+    afterFilm(picked)
+  }
+
+  const reserved = (c: Claim, hero: Hero) => {
+    const withFilm = { ...c, filmSeen: watched.current.has(hero.slug) }
+    writeClaim(withFilm); setClaim(withFilm)
     setStage("waiting")
   }
 
@@ -119,7 +151,7 @@ export default function ChooseHero() {
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(0,0,0,0.35)_0%,rgba(0,0,0,0.9)_75%)]" />
       </div>
 
-      {stage === "film" && picked?.film && claim && (
+      {stage === "film" && picked?.film && (
         <HeroFilm src={picked.film} onDone={filmDone} />
       )}
 
@@ -142,8 +174,7 @@ export default function ChooseHero() {
               // on a phone.
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 lg:grid-cols-4">
                 {heroes.map((h, i) => (
-                  <HeroCard key={h.slug} hero={h} mine={h.slug === mineSlug} delay={i * 0.07}
-                    onPick={() => { if (h.slug === mineSlug) { router.push("/table"); return } setPicked(h); setStage("confirm") }} />
+                  <HeroCard key={h.slug} hero={h} mine={h.slug === mineSlug} filmOn={cinematicsOn()} delay={i * 0.07} onPick={() => pick(h)} />
                 ))}
                 <ForgeCard onPick={forge} delay={heroes.length * 0.07} />
               </div>
@@ -165,19 +196,21 @@ export default function ChooseHero() {
   )
 }
 
-function HeroCard({ hero, onPick, delay, mine = false }: { hero: Hero; onPick: () => void; delay: number; mine?: boolean }) {
+function HeroCard({ hero, onPick, delay, mine = false, filmOn = true }: { hero: Hero; onPick: () => void; delay: number; mine?: boolean; filmOn?: boolean }) {
   const free = mine || hero.availability === "free"
+  // A taken hero can't be claimed, but their film still plays on a click (Sam, 2026-10-29).
+  const watchOnly = !free && Boolean(hero.film) && filmOn
   return (
     <button
       type="button"
-      disabled={!free}
+      disabled={!free && !watchOnly}
       onClick={onPick}
       style={{ animationDelay: `${delay}s` }}
       className={cn(
         "choose-in group relative aspect-[3/5] overflow-hidden rounded-[3px] border text-left transition-all duration-300",
         free
           ? "border-[#7a5f33]/70 hover:-translate-y-1 hover:border-[#e8c56a] hover:shadow-[0_0_50px_rgba(232,197,106,0.35)]"
-          : "cursor-not-allowed border-[#2a241e]",
+          : watchOnly ? "border-[#2a241e] hover:border-[#5a4a33]" : "cursor-not-allowed border-[#2a241e]",
       )}
     >
       {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -191,7 +224,10 @@ function HeroCard({ hero, onPick, delay, mine = false }: { hero: Hero; onPick: (
         ) : free ? (
           <p className="mt-2 hidden text-[11px] italic leading-snug text-stone-400 sm:block">{hero.hook}</p>
         ) : (
-          <p className="mt-2 text-[10px] uppercase tracking-[0.2em] text-stone-500">{hero.availability === "seated" ? "Already walks the Underdark" : "Someone waits to be them"}</p>
+          <p className="mt-2 text-[10px] uppercase tracking-[0.2em] text-stone-500">
+            {hero.availability === "seated" ? "Already walks the Underdark" : "Someone waits to be them"}
+            {watchOnly && <span className="mt-1 block text-[#8a6a3a]">▸ Watch their story</span>}
+          </p>
         )}
       </div>
     </button>
