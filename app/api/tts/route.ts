@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from "next/server"
 import { TTS_MODEL, TTS_FALLBACK_MODEL, settingsFor, shouldRetryOnFallback } from "@/lib/tts-model"
+import { supabaseAdmin } from "@/lib/supabase-admin"
+import { ttsCacheKey, isCacheable, readCachedAudio, writeCachedAudio } from "@/lib/tts-cache"
+
+// Every utterance is paid for once: identical voice + settings + text is
+// fetched from storage instead of re-billed (lib/tts-cache.ts). A miss, or a
+// cache that cannot be reached at all, costs nothing but the usual credits.
 
 export async function POST(request: NextRequest) {
   try {
@@ -35,6 +41,24 @@ export async function POST(request: NextRequest) {
       ...(typeof speed === "number" && Number.isFinite(speed)
         ? { speed: Math.min(1.2, Math.max(0.7, speed)) }
         : {}),
+    }
+
+    // ---- cache read ----
+    const cacheParts = { voiceId, text: String(text), settings }
+    const cacheable = isCacheable(cacheParts)
+    const key = cacheable ? ttsCacheKey(cacheParts) : ""
+    if (cacheable) {
+      const hit = await readCachedAudio(supabaseAdmin, key, "TTS")
+      if (hit) {
+        return new NextResponse(hit, {
+          headers: {
+            "Content-Type": "audio/mpeg",
+            "Content-Length": String(hit.byteLength),
+            "X-TTS-Cache": "hit",
+            "Cache-Control": "public, max-age=31536000, immutable",
+          },
+        })
+      }
     }
 
     // Ask for v4; drop to the proven model if this account cannot use it.
@@ -74,11 +98,15 @@ export async function POST(request: NextRequest) {
 
     const audioBuffer = await response.arrayBuffer()
 
+    // ---- cache write ---- (best-effort; never fails the line)
+    if (cacheable) await writeCachedAudio(supabaseAdmin, key, audioBuffer, "TTS")
+
     return new NextResponse(audioBuffer, {
       headers: {
         "Content-Type": "audio/mpeg",
         "Content-Length": audioBuffer.byteLength.toString(),
         "X-TTS-Model": usedModel,
+        "X-TTS-Cache": cacheable ? "miss" : "skip",
       },
     })
   } catch (error) {
