@@ -923,22 +923,22 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 /* the beat before the dark (Sam, 2026-10-30): the camera pushes in on the last stone and the plate drains of colour,
    so the final shot is a graveyard rather than a map that happens to have bodies on it */
 #stage.go-mourn{filter:saturate(.22) brightness(.78);transition:filter 1.1s ease-in}
-.gameover{position:fixed;inset:0;z-index:9000;background:#000;opacity:0;transition:opacity 1.8s ease-in;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:30px;padding:16px;text-align:center}
+.gameover{position:fixed;inset:0;z-index:9000;background:#000;isolation:isolate;opacity:0;transition:opacity 1.8s ease-in;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:30px;padding:16px;text-align:center}
 .gameover::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 1px,transparent 1px 3px)}
 .gameover[hidden]{display:none}   /* .gameover sets display:flex, which beats the hidden attribute: unhidden, the invisible black screen sat over the whole map and swallowed every click */
 .gameover.dark{opacity:1}
 .gameover.instant{transition:none}
-.gameover .go-big{display:flex;flex-wrap:wrap;justify-content:center;column-gap:.5em;font-family:"Press Start 2P",ui-monospace,monospace;font-size:clamp(34px,9vw,124px);line-height:1.2;color:#ff2a1f;text-shadow:.06em .06em 0 #5a0000,0 0 .3em rgba(255,42,31,.5);visibility:hidden}
+.gameover .go-big{display:flex;flex-wrap:wrap;justify-content:center;column-gap:.5em;font-family:"Press Start 2P",ui-monospace,monospace;font-size:clamp(34px,9vw,124px);line-height:1.2;color:#ff1008;text-shadow:.05em .05em 0 #7a0000,0 0 .22em rgba(255,16,8,.85),0 0 .6em rgba(255,16,8,.45);visibility:hidden}
 .gameover.letters .go-big{visibility:visible;animation:goIn .9s steps(6) both}
 .gameover.instant .go-big{animation:none}
 @keyframes goIn{0%{transform:scale(3.2);opacity:0}100%{transform:scale(1);opacity:1}}
-.gameover .go-line{font-family:"Press Start 2P",ui-monospace,monospace;font-size:clamp(11px,1.5vw,16px);line-height:2;color:#e8dcc4;max-width:900px;min-height:4em}
-.gameover .go-line b{color:#b58cff;font-weight:400}
+.gameover .go-line{font-family:"Press Start 2P",ui-monospace,monospace;font-size:clamp(11px,1.5vw,16px);line-height:2;color:#fff;max-width:900px;min-height:4em}
+.gameover .go-line b{color:#c9a4ff;font-weight:400}
 .gameover .go-btns{display:flex;flex-direction:column;align-items:center;gap:14px;opacity:0;transition:opacity .6s;position:relative;z-index:1}
 .gameover .go-btns.on{opacity:1}
-.gameover .go-btn{font-family:"Press Start 2P",ui-monospace,monospace;font-size:12px;color:#000;background:#f3d68a;border:3px solid #fff;border-radius:0;padding:12px 18px;cursor:pointer;box-shadow:4px 4px 0 #5a3a08}
-.gameover .go-btn:hover,.gameover .go-btn:focus-visible{background:#fff;outline:none}
-.gameover .go-count{font-family:"Press Start 2P",ui-monospace,monospace;font-size:10px;color:#8a8170;letter-spacing:.1em;animation:goBlink 1.1s steps(2) infinite}
+.gameover .go-btn{font-family:"Press Start 2P",ui-monospace,monospace;font-size:12px;color:#000;background:#fff;border:3px solid #fff;border-radius:0;padding:12px 18px;cursor:pointer;box-shadow:4px 4px 0 #6b0000}
+.gameover .go-btn:hover,.gameover .go-btn:focus-visible{background:#ff1008;color:#fff;border-color:#ff1008;outline:none}
+.gameover .go-count{font-family:"Press Start 2P",ui-monospace,monospace;font-size:10px;color:#cfcfcf;letter-spacing:.1em;animation:goBlink 1.1s steps(2) infinite}
 @keyframes goBlink{50%{opacity:0}}
 @media (prefers-reduced-motion:reduce){.gameover .go-big,.gameover .go-count{animation:none}}
 .sneakTag{position:absolute;transform:translate(-50%,-140%);pointer-events:none;font:700 11px/1 ui-monospace,monospace;letter-spacing:.08em;color:#1a1208;background:#ffd166;border-radius:4px;padding:3px 6px;box-shadow:0 0 10px rgba(255,209,102,.7);white-space:nowrap}
@@ -1092,7 +1092,6 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     </div>
     <div class="dialog" id="dialog" hidden><div class="card" role="dialog" aria-modal="true" aria-labelledby="dlgTitle"><h3 id="dlgTitle"></h3><p id="dlgBody"></p><div class="src" id="dlgSrc"></div><div class="btns" id="dlgBtns"></div></div></div>
     <div id="victory" class="victory" hidden><div class="big"></div><div class="small"></div></div>
-    <div id="gameOver" class="gameover" hidden role="alertdialog" aria-live="assertive" aria-label="Game over"><div class="go-big"><span>GAME</span><span>OVER</span></div><div class="go-line" id="goLine"></div><div class="go-btns" id="goBtns"></div></div>
     <div id="beat" class="beat" aria-live="polite"></div>
     <div id="turnCall" class="turncall" aria-live="polite"><div class="tface" id="turnFace"></div><span class="tname" id="turnName"></span><span class="twhat" id="turnWhat"></span></div>
     <div id="bossIntro" class="bossIntro" hidden><div class="bface" id="bossIntroFace"></div><div><div class="kick">BOSS</div><div class="big" id="bossIntroName"></div><div class="small" id="bossIntroEpithet"></div></div></div>
@@ -1125,6 +1124,11 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
   <footer class="party" id="party"></footer>
 </div>
 
+
+<!-- GAME OVER lives OUTSIDE #stage: #stage.go-mourn drains the plate of colour for the last shot, and a CSS
+     filter applies to every descendant — inside the stage the black screen, the red letters and Malachar's line
+     were being desaturated and dimmed along with the map. -->
+<div id="gameOver" class="gameover" hidden role="alertdialog" aria-live="assertive" aria-label="Game over"><div class="go-big"><span>GAME</span><span>OVER</span></div><div class="go-line" id="goLine"></div><div class="go-btns" id="goBtns"></div></div>
 <audio id="mExplore" preload="auto"></audio>
 <audio id="mAmbience" loop preload="auto"></audio>
 <audio id="mCombat" loop preload="auto"></audio>
