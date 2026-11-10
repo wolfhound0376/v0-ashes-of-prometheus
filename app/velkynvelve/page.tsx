@@ -47,6 +47,21 @@ export default function VelkynvelvePage() {
   // always gets in — that rule stands — but the page now keeps reading the table and says so on the glass.
   const [status, setStatus] = useState<Status>(null)
   const [sandbox, setSandbox] = useState(false)
+  // THE INVENTORY IS THE WHOLE SCREEN (Sam, 2026-11-10: "just maximize the window so that the buttons and the table
+  // and end the game options are not there"). The map says when its inventory opens and closes (aop:bag); while it
+  // is open this page drops its own header and the DM frame, so nothing but the inventory is on the glass. A visit
+  // that came only for the inventory (?bag=1, from the Parley) starts that way, with no flash of the header.
+  const [bagOpen, setBagOpen] = useState(false)
+  useEffect(() => {
+    try { if (new URLSearchParams(window.location.search).get("bag") === "1") setBagOpen(true) } catch { /* no window */ }
+    const onMsg = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return
+      const d = e.data as { type?: string; open?: boolean } | null
+      if (d && d.type === "aop:bag") setBagOpen(Boolean(d.open))
+    }
+    window.addEventListener("message", onMsg)
+    return () => window.removeEventListener("message", onMsg)
+  }, [])
   const frameRef = useRef<HTMLIFrameElement>(null)
 
   useEffect(() => {
@@ -106,7 +121,7 @@ export default function VelkynvelvePage() {
     <WalkRollBridge frameRef={frameRef} />
     <WalkCueBridge frameRef={frameRef} />
     <main className="flex h-dvh flex-col bg-[#07060b] text-stone-200">
-      <header className="flex items-center gap-3 border-b border-amber-900/40 px-4 py-2">
+      <header className={bagOpen ? "hidden" : "flex items-center gap-3 border-b border-amber-900/40 px-4 py-2"}>
         {dm ? (
           <a href="/table" className="inline-flex items-center gap-1.5 font-serif text-xs uppercase tracking-[0.18em] text-[#e8c56a] hover:text-[#fff3cf]">
             <Crown className="h-3.5 w-3.5" aria-hidden />
@@ -129,7 +144,7 @@ export default function VelkynvelvePage() {
         )}
         {dm ? <span className="ml-auto"><EndGameButton /></span> : <MessagePlayerButton variant="pixel" className="ml-auto" />}
       </header>
-      <div className={dm ? "relative min-h-0 flex-1 p-[14px]" : "relative min-h-0 flex-1"}>
+      <div className={dm && !bagOpen ? "relative min-h-0 flex-1 p-[14px]" : "relative min-h-0 flex-1"}>
         <iframe
           ref={frameRef}
           src="/velkynvelve-walk/index.html"
@@ -137,7 +152,7 @@ export default function VelkynvelvePage() {
           className="h-full w-full border-0"
           allow="autoplay; fullscreen"
         />
-        {dm && <DmFrame />}
+        {dm && !bagOpen && <DmFrame />}
         {ghost && <GhostNotice />}
       </div>
     </main>
