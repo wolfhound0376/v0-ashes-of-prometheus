@@ -6179,6 +6179,12 @@ const SPELLS = {
   "Produce Flame":      {lvl: 0, kind: "attack", range: 60, dmg: "1d8", type: "fire", fx: "#ff8a3a"},
   // SRD 5.1 and 5.2.1 Sacred Flame: evocation cantrip, 60 ft, DEX save or 1d8 radiant; "no benefit from cover" (castSpell skips cover for it).
   "Sacred Flame":       {lvl: 0, kind: "save", save: "dex", range: 60, dmg: "1d8", type: "radiant", fx: "#fff1b0"},
+  // CHANNEL DIVINITY: DIVINE SPARK (SRD 5.2.1, Cleric level 2). Not spells: they ride the spell road for the aiming, the
+  // save and the look, cost a Channel Divinity use instead of a slot (cd), heal or harm 1d8 + WIS (the dice are set from
+  // the cleric's level by sparkDice when the menu opens), reach 30 ft, and are aimed at "another creature" (other).
+  "Divine Spark: heal":     {lvl: 0, kind: "heal", range: 30, dmg: "1d8", fx: "#ffe9a8", cd: true, other: true},
+  "Divine Spark: radiant":  {lvl: 0, kind: "save", save: "con", range: 30, dmg: "1d8", type: "radiant", fx: "#fff1b0", cd: true, half: true, addMod: true},
+  "Divine Spark: necrotic": {lvl: 0, kind: "save", save: "con", range: 30, dmg: "1d8", type: "necrotic", fx: "#8a5bb0", cd: true, half: true, addMod: true},
   // SRD 5.2.1 Cure Wounds: 1st-level abjuration, touch, 2d8 + spellcasting modifier.
   "Cure Wounds":        {lvl: 1, kind: "heal", range: 5, dmg: "2d8", fx: "#9ff2c8"},
   // SRD 5.2.1 Inflict Wounds: 1st-level necromancy, touch: "makes a Constitution saving throw, taking 2d10 Necrotic damage
@@ -6321,7 +6327,7 @@ const SPELLS = {
 };
 // ---------- Rage and Wounded Fury: the rules, one copy (lib/rage.mjs, pasted in here by build_walk.py) ----------
 /*__RAGE__*/
-const COND_GLYPH = {baned: ["▼", "#b07ad8", "Baned: −1d4 on attack rolls and saving throws"], laughing: ["☺", "#ff9bd2", "Laughing: prone and incapacitated, can't stand · WIS save at the end of each turn and when hurt"], blinded: ["◉", "#8a8098", "Blinded: its attacks have disadvantage, attacks on it have advantage · CON save at the end of each turn"], deafened: ["◌", "#9a90a8", "Deafened: hears nothing · fails any check that needs hearing · CON save at the end of each turn"],
+const COND_GLYPH = {turned: ["☼", "#ffe9a8", "Turned: Frightened and Incapacitated for a minute; it moves as far from the cleric as it can. Ends if it takes damage"], baned: ["▼", "#b07ad8", "Baned: −1d4 on attack rolls and saving throws"], laughing: ["☺", "#ff9bd2", "Laughing: prone and incapacitated, can't stand · WIS save at the end of each turn and when hurt"], blinded: ["◉", "#8a8098", "Blinded: its attacks have disadvantage, attacks on it have advantage · CON save at the end of each turn"], deafened: ["◌", "#9a90a8", "Deafened: hears nothing · fails any check that needs hearing · CON save at the end of each turn"],
   falseLife: ["♥", "#7fbf6a", "False Life: temporary hit points"], heroic: ["✪", "#ffd27a", "Heroism: immune to fear · temporary HP each turn"], aided: ["✚", "#fff3c0", "Aid: +5 hit points (maximum and current)"], mageArmor: ["⬡", "#8fc8ff", "Mage Armor: base AC 13 + DEX"], barkskin: ["❧", "#a07a4a", "Barkskin: AC at least 17"], frightened: ["‼", "#b8a0d8", "Frightened: Dashes away from the one it fears on each of its turns · disadvantage on attacks while it can see them · WIS save when it ends a turn out of their sight"], invisible: ["✧", "#d8e4ff", "Invisible: attacks on it have disadvantage, its attacks have advantage · ends if it attacks, deals damage or casts a spell"], mirrored: ["❖", "#bfd0ff", "Mirror Image: illusory duplicates · a hit lands on one instead on a d6 of 3 or more per duplicate"],
   sanctuary: ["☩", "#fff3c0", "Sanctuary: a foe must pass a WIS save to attack it or target it with a harmful spell · ends if it attacks or harms a foe"], surprised: ["!", "#ffd27a", "Surprised: no move and no action on its first turn, no reaction until that turn ends"], poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
                     shielded: ["◇", "#cfe8ff", "+2 AC"], blessed: ["✚", "#ffe9a8", "Blessed: +1d4 to attack rolls and saving throws"], shieldSpell: ["⬡", "#cfe8ff", "Shield: +5 AC until the start of their next turn"], hexed: ["⛧", "#c58aff", "Hexed: the warlock's hits deal +1d6 necrotic"], marked: ["⌖", "#ff5a5a", "Hunter's Mark: the ranger's weapon hits deal +1d6"], paralyzed: ["✖", "#d8b8ff", "Paralyzed: no moves or actions; attacks have advantage, a hit within 5 ft is a critical"], mocked: ["…", "#ff9bd2", "Disadvantage on next attack"], slowed: ["❄", "#9fdcff", "Speed −10 ft"],
@@ -6670,7 +6676,7 @@ function potShot(f){
 const alliesHere = () => npcs.filter(n => ALLY_SHEETS[n.id] && !n.hostile && !n.backdrop && !n.offStage && !n.down && actors.includes(n));
 // SRD: an incapacitated creature can't take actions or reactions (asleep = unconscious, which includes it).
 // Sam, 2026-10-14: "how did the spider do an opportunity attack if it is sleeping?" — it no longer can.
-const INCAP = ["laughing", "asleep", "unconscious", "paralyzed", "stunned", "incapacitated", "petrified"];
+const INCAP = ["laughing", "asleep", "unconscious", "paralyzed", "stunned", "incapacitated", "petrified", "turned"];   // turned (Turn Undead): Frightened AND Incapacitated
 function incapacitated(a){ return !!(a.c && INCAP.some(k => a.c.conds.has(k))); }
 
 // ----- the strip and the column -----
@@ -6806,6 +6812,7 @@ function nextTurn(first){
   if (a.kind === "foe" && a.c.sheet.web && !a.c.webReady){ const r = d6(); if (r >= a.c.sheet.web.recharge){ a.c.webReady = true; popText(a, "web ready", "#e8e2c8", .9); } }
   if (a.c.holyOpen && --a.c.holyOpen <= 0){ delete a.c.holyOpen; popText(a, "resistance returns", "#aaa", .8); }
   if (a.c.retching && a.kind !== "pc"){ a.c.retching = false; retchTurn(a); return; }   // Stinking Cloud: the action goes on retching
+  if (a.c.conds.has("turned") && turnedTurn(a)) return;     // Turn Undead: it moves as far from the cleric as it can, and that is its turn
   if (a.c.conds.has("frightened") && fearFlee(a)) return;   // Fear: it Dashes away from what it fears, and that is its turn
   if (a.kind === "foe"){ bank("ui/turn_foe", .6); foeTurn(a); return; }
   if (a.ally){ allyTurn(a); return; }
@@ -6835,6 +6842,14 @@ function openMenu(a, sub){
     for (const d of drawable(a)){ ACTION_ICON[d.label] = "bar/attack";
       add(d.label, c.objFree !== false ? `draw it (your free object interaction) and attack · ${d.hint}` : "your free object interaction is spent: draw it from the inventory instead", c.objFree !== false ? () => drawAndAttack(a, d.it) : null); }
     for (const atk of s.attacks){ ACTION_ICON[atk.name] = atk.name.toLowerCase().includes("unarmed") ? "opportunity-attack" : "bar/attack"; add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.sneak ? ` · sneak +${atk.sneak}` : ""}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk})); }
+    add("Back", "", () => openMenu(a));
+  } else if (sub === "channel"){
+    const dice = sparkDice(s.level || 1), mod = Math.max(0, (s.magic && s.magic.mod) || 0), dc = (s.magic && s.magic.dc) || 10, near = undeadNear(a);
+    for (const k of ["heal", "radiant", "necrotic"]) SPELLS[`Divine Spark: ${k}`].dmg = dice;   // 1d8, and another d8 at cleric levels 7, 13 and 18
+    add("Divine Spark: heal", `another creature within 30 ft regains ${dice} + ${mod}`, () => aim(a, {spell: "Divine Spark: heal"}));
+    add("Divine Spark: radiant", `${dice} + ${mod} radiant · CON save vs DC ${dc} for half · 30 ft`, () => aim(a, {spell: "Divine Spark: radiant"}));
+    add("Divine Spark: necrotic", `${dice} + ${mod} necrotic · CON save vs DC ${dc} for half · 30 ft`, () => aim(a, {spell: "Divine Spark: necrotic"}));
+    add("Turn Undead", near.length ? `${near.length} undead within 30 ft · WIS save vs DC ${dc} or it flees for a minute` : "no undead within 30 ft", near.length ? () => turnUndead(a) : null);
     add("Back", "", () => openMenu(a));
   } else if (sub === "orb"){
     // ONE CYCLER, UP OR DOWN (Sam, 2026-10-25: "Chromatic orb should be an option cycler going up or down"): an up
@@ -6936,6 +6951,10 @@ function openMenu(a, sub){
       if (sp.lvl === 0) return c.action; if ((c.slots[sp.lvl] || 0) <= 0) return false; return sp.bonus ? c.bonus && !c.leveledSpell : c.action && !c.bonusSpell; });
     if (c.conc) add("End concentration", `${c.conc.spell} · free, no action · ${Math.max(0, c.conc.endRound - cbt.round)} rounds left`, () => { endConc(a, "let go"); openMenu(a); });
     if (s.magic) add("Cast", !castable ? (c.rage ? "raging: no spells and no concentration" : "nothing left to cast this turn") : `DC ${s.magic.dc} · +${s.magic.hit} · slots ${Object.entries(c.slots).map(([l, n]) => `L${l} ${n}/${s.magic.slots[l] || 0}`).join(" ")}`, castable ? () => openMenu(a, "cast") : null, "primary");
+    // CHANNEL DIVINITY (SRD 5.2.1, Cleric level 2): any cleric, not Samson alone. A Magic action and one of the uses.
+    if (isClericSheet(s)){ const uses = cdUses(s.level || 1), left = cdLeftOf(a);
+      if (!uses) add("Channel Divinity", "comes at cleric level 2", null);
+      else add("Channel Divinity", `action · ${left} of ${uses} left · Divine Spark or Turn Undead`, c.action && left > 0 ? () => openMenu(a, "channel") : null); }
     // Bardic Inspiration (SRD 5.1, Bard): a bonus action, one creature other than you within 60 ft who can hear
     // you gains a d6, once per creature at a time; uses = Charisma modifier per long rest.
     if (s.bardic){ const left = c.inspLeft ?? s.bardic.uses;
@@ -8207,6 +8226,7 @@ async function doRest(spend){
   }
   const lines = (j.characters || []).map(c => `${esc(c.name.split(" ")[0])}: ${c.healed > 0 ? `+${c.healed} hp (${c.hp}/${c.hpMax})` : `${c.hp}/${c.hpMax}`}${c.dice && c.dice.length ? ` · d: ${c.dice.join(", ")}` : ""}${c.hitDiceLeft != null ? ` · ${c.hitDiceLeft} HD left` : ""}`);
   log(`<b>Short rest.</b> An hour passes. ${lines.length ? lines.join("; ") + "." : ""}`);
+  cdShortRest();                                                // SRD 5.2.1: a Short Rest gives back one Channel Divinity use
   loreRestStudy();                                              // the item card: whoever chose an item to study knows it now
   toast("Rested an hour.", 2400);
   renderExploreBar();
@@ -8312,6 +8332,7 @@ const SPELL_ICON = {"Ray of Frost": "ray-of-frost", "Shocking Grasp": "shocking-
 // Inspiration is the whistling bard (Sam: Scott whistles his effects, never sits down to play — no lute on the button)
 const ACTION_ICON = {Attack: "bar/attack", "Sneak Attack": "bar/attack", Throw: "bar/throw", Hide: "bar/hide", "Cunning Action: Dash": "bar/dash", "Cunning Action: Disengage": "bar/disengage", "Cunning Action: Hide": "bar/hide", "Off-hand attack": "offhand-attack", "Shove / Grapple": "bar/push", Shove: "bar/push", Grapple: "bar/push",
   Dash: "bar/dash", Disengage: "bar/disengage", Help: "bar/help", Search: "bar/search", Dodge: "bar/dodge", Cast: "bar/cast", "Innate Sorcery": "cast-spell", "Bardic Inspiration": "bar/entertain", "End turn": "bar/endturn", Inventory: "bar/inv", Ready: "ready", Jump: "bar/jump"};
+ACTION_ICON["Channel Divinity"] = ACTION_ICON["Divine Spark"] = ACTION_ICON["Turn Undead"] = "bless";   // the holy icon the Pray command wears
 const ACTION_GLYPH = {Rage: "✸", "End rage": "✸", Move: "➶", "Stand up": "⇧", "End turn": "⏎", Back: "↩"};
 function hint(t){ $("cbtHint").textContent = t; $("cbtHint").hidden = !t; }
 // The command list is docked at the lower left, off the picture: beside the sprite it hid whoever stood
@@ -8386,6 +8407,7 @@ function combatClick(w){
     spiritStrike(a, z, t, () => { combatBusy = false; if (cbt) cbt.phase = "idle"; settleCam(); afterAction(a); }); return; }
   if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(friends(), w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; }
     if (sp.range === 0 && t !== a){ toast(`${p.spell} is on yourself only: click ${fname(a)}.`); return; }
+    if (sp.other && t === a){ toast("Divine Spark is pointed at another creature: click a friend."); return; }
     if (t !== a && coverOf(a, t).total){ toast(`No line of sight to ${fname(t)}.`); return; }
     // SRD 5.2.1 Mage Armor: "a willing creature who isn't wearing armor" — refused here, before the action and the slot go
     if (p.spell === "Mage Armor"){ const worn = wornArmor(t); if (worn){ toast(`${fname(t)} is wearing ${worn}: Mage Armor needs a creature not wearing armor.`); return; } }
@@ -8941,8 +8963,10 @@ function castSpell(caster, tgt, name, done, darts){
   const volley = darts && darts.length ? darts : null, distinct = volley ? [...new Set(volley)] : null;
   if (sp.bonus){ c.bonus = false; c.bonusSpell = true; } else { c.action = false; if (sp.lvl > 0) c.leveledSpell = true; }
   if (sp.lvl > 0) c.slots[sp.lvl] = Math.max(0, (c.slots[sp.lvl] || 0) - 1);
-  if (c.conds.has("sanctuary") && name !== "Sanctuary") endSanctuary(caster, "cast a spell");
-  if (c.conds.has("invisible")) endInvisible(caster, "cast a spell");   // SRD 5.2.1: it ends if the target casts a spell
+  if (sp.cd) c.cdLeft = cdLeftOf(caster) - 1;                                   // Channel Divinity: a use, not a slot
+  const cdHeal = sp.cd && sp.kind === "heal";                                   // not a spell, no attack roll, no damage: the ward and the veil hold
+  if (c.conds.has("sanctuary") && name !== "Sanctuary" && !cdHeal) endSanctuary(caster, sp.cd ? "dealt damage" : "cast a spell");
+  if (c.conds.has("invisible") && !cdHeal) endInvisible(caster, sp.cd ? "dealt damage" : "cast a spell");   // SRD 5.2.1: it ends if the target casts a spell
   if (sp.kind === "teleport" && !wardsHere()){ mistyStep(caster, tgt, () => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(caster, done); }); return; }   // SRD 5.2.1: it ends if the warded creature casts a spell
   const at = tgt;                                                                // a point or an actor
   if (tgt.id) caster.face = faceOf(tgt.x - caster.x, tgt.y - caster.y);
@@ -9124,7 +9148,7 @@ function castSpell(caster, tgt, name, done, darts){
           else if (sp.cond === "lit"){ if (!ok) spawnFx("pxGlow", {at: t, sq: 1.6, anchor: "mid", loop: true, until: now + 3000, alpha: .8}); land(t, !ok, "radiant"); }
           else if (name === "Vicious Mockery"){ land(t, !ok, "psychic"); if (!ok) labMockery(t); }
           else { if (name === "Toll the Dead" && ok) spawnFx("tollBell", {at: t, sq: 2, anchor: "base", lift: -.15, alpha: .8}); land(t, !ok, sp.type || "psychic"); }   // the bell tolls either way (SRD: "fills the air around it"); the damage is only on a failed save
-          if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); const n = ok ? (sp.lvl ? Math.floor(d.total / 2) : 0) : d.total; if (n){ hitCtx = {spell: name, area: sp.area || 0, by: caster, at}; damage(t, n, sp.type, false, caster, true); hitCtx = null; } else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
+          if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); if (sp.addMod) d.total += Math.max(0, m.mod || 0); const n = ok ? (sp.lvl || sp.half ? Math.floor(d.total / 2) : 0) : d.total; if (n){ hitCtx = {spell: name, area: sp.area || 0, by: caster, at}; damage(t, n, sp.type, false, caster, true); hitCtx = null; } else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
           if (sp.cond && !ok){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); if (sp.cond === "restrained") t.c.webDc = dc; if (sp.cond === "paralyzed"){ t.c.heldDc = dc; t.path = []; } if (sp.cond === "asleep"){ t.c.sleptDc = m.dc; t.sleepT0 = now; t.path = []; }
             if (sp.cond === "laughing"){ t.c.laughDc = dc; t.path = []; addCond(t, "prone"); } if (sp.cond === "blinded" || sp.cond === "deafened") t.c.blindDc = dc; if (sp.cond === "frightened"){ t.c.fearBy = caster; t.c.fearDc = dc; t.path = []; } if (sp.cond === "deafened" && APP) handOff(`${fname(caster)} cast Blindness/Deafness on ${fname(t)}, who is now Deafened for a minute (CON save at the end of each of its turns): it hears nothing — no shouts, no spoken words, no footsteps.`); condFlourish(t, sp.cond); }
           lines.push(line); if (i === targets.length - 1) log(`${fname(caster)} ${name}: ${lines.join("; ")}.`);
@@ -9134,6 +9158,73 @@ function castSpell(caster, tgt, name, done, darts){
   });
   setTimeout(() => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(caster, done); }, 1500);
 }
+// ---------- CHANNEL DIVINITY (Sam, 2026-11-10: "build samson's channel divinity (actually channel divinity for any cleric)") ----------
+// SRD 5.2.1, Cleric. Level 2: "You can use this class's Channel Divinity twice. You regain one of its expended uses
+// when you finish a Short Rest, and you regain all expended uses when you finish a Long Rest"; three uses at level 6,
+// four at 18. "If a Channel Divinity effect requires a saving throw, the DC equals the spell save DC".
+//   Divine Spark  a Magic action; another creature within 30 ft; 1d8 + WIS (2d8 at level 7, 3d8 at 13, 4d8 at 18);
+//                 either it regains that many hit points, or it makes a CON save and takes that much Necrotic or
+//                 Radiant damage, half on a save. (The SPELLS entries above.)
+//   Turn Undead   a Magic action; each Undead of the cleric's choice within 30 ft makes a WIS save; on a failure it is
+//                 Frightened and Incapacitated for 1 minute and on its turns moves as far from the cleric as it can.
+//                 It ends early if the creature takes any damage, or the cleric is Incapacitated or dies.
+//   Sear Undead   level 5: on Turn Undead, roll WIS-modifier d8s (at least one); each Undead that failed takes that
+//                 much Radiant damage, and "this damage doesn't end the turn effect".
+// The uses live on the fighter for the session, the way Bardic Inspiration's do (c.cdLeft); a short rest on the map
+// gives one back. The look is art already in the game: the radiant column on the cleric and gold rings rolling out to
+// 30 ft for Turn Undead, the spell road's radiant/necrotic/healing looks for Divine Spark. [CLAUDE — the look. The Lab's
+// own sun, fountain and ring sheets and its sm-divinity sound are not in the repo yet.]
+const isClericSheet = s => !!s && /cleric/i.test(s.cls || "");
+const cdUses = L => L >= 18 ? 4 : L >= 6 ? 3 : L >= 2 ? 2 : 0;
+const sparkDice = L => `${L >= 18 ? 4 : L >= 13 ? 3 : L >= 7 ? 2 : 1}d8`;
+function cdLeftOf(a){ a.c = a.c || fighterFor(a); const s = a.c.sheet || SHEETS[a.id] || {}; return Math.min(cdUses(s.level || 1), a.c.cdLeft ?? cdUses(s.level || 1)); }
+function cdShortRest(){ for (const p of party){ const s = SHEETS[p.id]; if (!isClericSheet(s) || !p.c || p.c.cdLeft == null) continue; p.c.cdLeft = Math.min(cdUses(s.level || 1), p.c.cdLeft + 1); } }
+const undeadNear = a => standing(foes).filter(f => isUndeadT(f) && !f.c.conds.has("turned") && feetBetween(a, f) <= 30 + 2.5);
+let searing = false;
+function endTurned(t, why){ if (!t.c || !t.c.conds.has("turned")) return; t.c.conds.delete("turned"); t.c.turnedBy = null; popText(t, "no longer turned", "#ffe9a8", .85); if (why) log(`${fname(t)} is no longer turned: ${why}.`); renderParty(); }
+function turnedTurn(a){ const src = a.c.turnedBy;
+  if (!src || !actors.includes(src) || src.down || (src.c && src.c.ds && src.c.ds.dead)){ endTurned(a, "the cleric has fallen"); return false; }
+  if (incapacitated(src)){ endTurned(a, "the cleric is incapacitated"); return false; }
+  if (cbt.round >= (a.c.turnedEnd || 0)){ endTurned(a, "the minute is up"); return false; }
+  a.c.action = false; a.c.bonus = false; a.c.reactionUsed = true;                   // Incapacitated: no action, Bonus Action or Reaction
+  const stuck = a.c.move <= 0 || a.c.conds.has("restrained") || a.c.conds.has("grappled"), goal = stuck ? null : fleeFloor(a, src, a.c.move * ftPx(a));
+  popText(a, "turned", "#ffe9a8"); renderTurns(); renderParty();
+  if (!goal){ log(`${fname(a)} is turned and has nowhere to go.`); setTimeout(() => passTurn(a), 700); return true; }
+  log(`${fname(a)} is turned and moves away from ${fname(src)}.`);
+  combatWalk(a, goal, () => setTimeout(() => passTurn(a), 500));
+  return true; }
+function turnUndead(a){
+  if (!cbt || !a.c.action || cdLeftOf(a) <= 0) return;
+  const c = a.c, s = c.sheet, dc = (s.magic && s.magic.dc) || 10, targets = undeadNear(a);
+  closeMenu(); cbt.phase = "busy"; combatBusy = true; c.action = false; c.cdLeft = cdLeftOf(a) - 1;
+  turnWhat(a, null, "Turn Undead", false);
+  if (wardsHere()){ bank("magic/spell_fizzle", .6); popText(a, "the ward drinks it", "#b39ddb"); log(`<b>${fname(a)}</b> presents the holy symbol: <b>Turn Undead</b>. The ward on the wall drinks it.`);
+    setTimeout(() => { combatBusy = false; cbt && (cbt.phase = "idle"); afterAction(a); }, 900); return; }
+  playOnce(a, SPR[a.id].img.cast ? "cast" : "attack", () => setAnim(a, "idle"));
+  bank("magic/holy_windup", .6); setTimeout(() => bank("magic/holy_release", .8), 450);
+  spawnFx("radiantColumn", {at: a, sq: 2.6, anchor: "feet", lift: 1});
+  for (let i = 0; i < 3; i++) sparks.push({cdRing: true, x: a.x, y: a.y, R1: 30 * ftPx(a), t0: now + 350 + i * 220, life: 900});
+  log(`<b>${fname(a)}</b> presents the holy symbol: <b>Turn Undead</b> (${cdLeftOf(a)} of ${cdUses(s.level || 1)} Channel Divinity left).`);
+  narrate(a, `${fname(a)} raises the holy symbol and the light rolls out across the floor.`);
+  const sear = (s.level || 1) >= 5 ? roll(`${Math.max(1, (s.magic && s.magic.mod) || 1)}d8`).total : 0, lines = [];
+  targets.forEach((t, i) => setTimeout(() => {
+    if (t.down || !cbt) return;
+    const sv = d20(0, t, "frightened") + ((t.c.sheet.saves || {}).wis || 0) + blessD4(t), ok = sv >= dc;
+    spawnFx("radiantColumn", {at: t, sq: ok ? 1.2 : 1.8, anchor: "feet", lift: 1, alpha: ok ? .5 : 1}); bank(ok ? "magic/spell_fizzle" : "magic/impact_radiant", ok ? .4 : .7);
+    if (ok){ popText(t, "resists", "#ffe9a8", .85); lines.push(`${fname(t)} WIS ${sv} vs DC ${dc}: holds`); }
+    else { addCond(t, "turned");
+      if (t.c.conds.has("turned")){ t.c.turnedBy = a; t.c.turnedEnd = (cbt.round || 1) + 10; t.c.reactionUsed = true; t.path = [];
+        lines.push(`${fname(t)} WIS ${sv} vs DC ${dc}: <b>turned</b>`);
+        if (sear){ searing = true; try { hitCtx = {spell: "Turn Undead", by: a}; damage(t, sear, "radiant", false, a, true); } finally { hitCtx = null; searing = false; } lines.push(`Sear Undead ${sear} radiant`); } }
+      else lines.push(`${fname(t)} WIS ${sv} vs DC ${dc}: fails, but cannot be turned`); }
+    if (i === targets.length - 1) log(`Turn Undead: ${lines.join("; ")}.`);
+  }, 800 + i * 160));
+  setTimeout(() => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); renderTurns(); renderParty(); afterAction(a); }, 1400 + targets.length * 160);
+}
+function drawCdRing(s, k){ if (k < 0) return; const e = 1 - Math.pow(1 - k, 2), R = 20 + (s.R1 - 20) * e, al = k < .12 ? k / .12 : 1 - (k - .12) / .88;
+  ctx.save(); ctx.translate(s.x, s.y); ctx.scale(1, .5); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha *= Math.max(0, al) * .9;
+  for (const [col, w, blur] of [["#ffb62e", 7, 18], ["#fff3c8", 2.5, 0]]){ ctx.strokeStyle = col; ctx.shadowColor = "#ffb62e"; ctx.shadowBlur = blur; ctx.lineWidth = w; ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.restore(); }
 // Hide: a Stealth check against the best passive Perception among the foes still standing (SRD: you must
 // be unseen; the map takes "not within 5 ft of a foe" as enough cover in a cave this cluttered).
 function doHide(a, bonus){
@@ -9517,6 +9608,7 @@ function damage(t, n, type, crit, from, magical = false){
       narrate(t, `${fname(t)} folds, and then keeps coming.`);
     } else log(`<b>${fname(t)}</b> — Undead Fortitude: CON save ${sv} vs DC ${dc}. It fails.`);
   }
+  if (t.c.conds.has("turned") && n > 0 && !searing) endTurned(t, "it took damage");   // SRD 5.2.1: "This effect ends early on the creature if it takes any damage"
   if (t.c.hp <= 0 && from) t.killedBy = from;
   else if (t.ally && from && n >= t.c.hpMax * .25) setTimeout(() => banter(t, "hurt", from, .6), 700);   // a hard blow on an ally draws a word
   if (t.c.rage && n > 0) t.c.rage.hurt = true;                                 // SRD: "taken damage since then" keeps the rage going
@@ -11590,6 +11682,7 @@ function drawCombatFx(){
     const s = sparks[i], k = (now - s.t0) / s.life;
     if (k >= 1){ sparks.splice(i, 1); if (s.then){ const f = s.then; s.then = null; f(); } continue; }
     if (drawLabSpark(s, k)) continue;   // the lab's looks (Sam, 2026-10-29)
+    if (s.cdRing){ if (k >= 0) ovWrap(s.x, s.y, () => drawCdRing(s, k)); continue; }
     if (s.fistRibbon){ ovWrapS(s, () => drawFistRibbon(s, k)); continue; }
     if (s.pushWave){ if (k >= 0) ovWrap(s.x1, s.y1, () => drawPushWave(s, k)); continue; }
     if (s.swipe){ ovWrapS(s, () => drawSwipe(s, k)); continue; }
