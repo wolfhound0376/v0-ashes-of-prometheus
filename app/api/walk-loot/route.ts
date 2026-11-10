@@ -4,6 +4,7 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { CONFISCATION_STASH_NAME } from "@/lib/confiscation"
 import { canCarry, syncCarried } from "@/lib/carry"
 import { recordItemMove } from "@/lib/item-history"
+import { lootHolderId, rowsToMint } from "@/lib/floor-holder"
 import { bodyKit } from "@/lib/harvest"
 import { BOOK_CONTAINERS, BODY_KIT, CREATURE_PARTS, PEN_KEY_SLUG, POCKET_SPRITES, rollPockets, rollWear, onDutyKit, rollPurse, PURSE_CR, isValuable, parseContainer, pocketEntries, type HarvestCheck, type LootEntry, type Ruined } from "@/lib/walk-loot"
 
@@ -25,7 +26,10 @@ export const dynamic = "force-dynamic"
 const CAMPAIGN = "ashes-of-prometheus"
 const KEY = "walk-loot"
 type Db = ReturnType<typeof createAdminClient>
-type State = { taken: Record<string, Record<string, number>>; carry: Record<string, string>; pockets: Record<string, LootEntry[]>; bodies: Record<string, { kept: LootEntry[]; ruined: Ruined[] }> }
+// rows: the inventory_items rows that ARE the unique things still in a container, parked on the loot holder
+// (lib/floor-holder.ts, step 3 of the item-identity design). rows[container][slug] = row ids. Counts (`taken`) stay the
+// truth for what is left; the rows are who those things are.
+type State = { taken: Record<string, Record<string, number>>; carry: Record<string, string>; pockets: Record<string, LootEntry[]>; bodies: Record<string, { kept: LootEntry[]; ruined: Ruined[] }>; rows: Record<string, Record<string, string[]>> }
 type Item = { id: string; slug: string; name: string; item_type: string; rarity: string | null; icon_url: string | null; pixel_icon_url: string | null; description: string | null; equippable_slot: string | null; weight: number | null; value: number | null; stackable: boolean }
 
 function authorized(req: NextRequest): boolean {
@@ -36,7 +40,7 @@ function authorized(req: NextRequest): boolean {
 async function readState(db: Db): Promise<State> {
   const { data } = await db.from("world_flags").select("value").eq("campaign_id", CAMPAIGN).eq("key", KEY).maybeSingle()
   const v = (data?.value ?? {}) as Partial<State>
-  return { taken: v.taken ?? {}, carry: v.carry ?? {}, pockets: v.pockets ?? {}, bodies: v.bodies ?? {} }
+  return { taken: v.taken ?? {}, carry: v.carry ?? {}, pockets: v.pockets ?? {}, bodies: v.bodies ?? {}, rows: v.rows ?? {} }
 }
 async function writeState(db: Db, s: State, note: string) {
   const { error } = await db.from("world_flags").upsert({ campaign_id: CAMPAIGN, key: KEY, value: s, set_by: "walk", note }, { onConflict: "campaign_id,key" })
@@ -99,6 +103,18 @@ async function contents(db: Db, id: string, s: State, kill?: string | null): Pro
   const book: LootEntry[] = c.kind === "book" ? BOOK_CONTAINERS[id].entries : c.kind === "body" ? (s.bodies[c.key]?.kept ?? kit ?? BODY_KIT[c.slug!] ?? []) : guard ? s.pockets[c.key] : pocketEntries(c.slug!)
   const cat = await itemsBySlug(db, book.map((e) => e.slug))
   const taken = s.taken[c.key] ?? {}
+  // THE THINGS IN HERE ARE REAL BEFORE ANYONE TAKES THEM (Sam, 2026-11-10: "unique with their own ID like the original
+  // plan"). The first time a container is resolved — a body the moment it falls, a chest the first time it is opened —
+  // each unique thing left in it gets its inventory_items row, parked on the loot holder. Taking it moves that row.
+  // Best effort: if a row cannot be made, the take below makes one as it always did.
+  { const need = book.map((e) => ({ e, it: cat.get(e.slug), n: rowsToMint({ qty: e.qty, taken: taken[e.slug] ?? 0, have: s.rows[c.key]?.[e.slug]?.length ?? 0, stackable: !!cat.get(e.slug)?.stackable, inCatalogue: !!cat.get(e.slug) }) })).filter((x) => x.n > 0)
+    if (need.length) { const hid = await lootHolderId(db)
+      if (hid) for (const { e, it, n } of need) {
+        const { data: made } = await db.from("inventory_items").insert(Array.from({ length: n }, () => ({ character_id: hid, name: it!.name, quantity: 1, description: it!.description, item_type: it!.item_type,
+          icon_url: it!.icon_url, item_id: it!.id, equippable_slot: it!.equippable_slot, weight: it!.weight, value: it!.value }))).select("id")
+        const ids = ((made ?? []) as { id: string }[]).map((r) => r.id)
+        if (ids.length) { ((s.rows[c.key] ??= {})[e.slug] ??= []).push(...ids); rolled = true }
+      } } }
   const penKeyGone = Object.entries(s.taken).some(([k, v]) => k.startsWith("pocket:") && (v[PEN_KEY_SLUG] ?? 0) > 0)
   const rows: Shown[] = []
   for (const e of book){
@@ -209,15 +225,31 @@ export async function POST(req: NextRequest) {
   const { data: existing } = await db.from("inventory_items").select("id,quantity").eq("character_id", characterId).eq("item_id", it.id).is("confiscated_from", null).limit(1).maybeSingle()
   let rowId: string | null = existing && it.stackable ? existing.id : null
   let error: { message: string } | null = null
-  if (rowId) error = (await db.from("inventory_items").update({ quantity: (existing!.quantity ?? 0) + row.qty }).eq("id", rowId)).error
+  // the things' own rows, if this container minted them (see contents): they MOVE into the taker's pack. A take is "the
+  // whole of what is left" (two coils of rope are two rows), so every parked row of this kind goes, and only what had
+  // no row is made the old way.
+  const parkedIds = !it.stackable ? (s.rows[c.key]?.[slug] ?? []).slice(0, row.qty) : []
+  const hid = parkedIds.length ? await lootHolderId(db, false) : null
+  const moved: string[] = []
+  if (hid) for (const pid of parkedIds) {
+    const m = await db.from("inventory_items").update({ character_id: characterId }).eq("id", pid).eq("character_id", hid).select("id").maybeSingle()
+    if (m.data?.id) moved.push(pid)
+  }
+  if (parkedIds.length) { s.rows[c.key][slug] = (s.rows[c.key][slug] ?? []).slice(parkedIds.length); await writeState(db, s, `${it.name} left ${c.key}`) }   // moved or gone, they are no longer waiting here
+  const sameItem = moved.length > 0
+  const rest = row.qty - moved.length   // what had no row of its own
+  if (sameItem) rowId = moved[0]
+  if (rest <= 0) { /* every one of them was its own row */ }
+  else if (!sameItem && rowId) error = (await db.from("inventory_items").update({ quantity: (existing!.quantity ?? 0) + row.qty }).eq("id", rowId)).error
   else {
-    const ins = await db.from("inventory_items").insert({ character_id: characterId, name: it.name, quantity: row.qty, description: it.description, item_type: it.item_type, icon_url: it.icon_url,
+    const ins = await db.from("inventory_items").insert({ character_id: characterId, name: it.name, quantity: rest, description: it.description, item_type: it.item_type, icon_url: it.icon_url,
         item_id: it.id, equippable_slot: it.equippable_slot, weight: it.weight, value: it.value }).select("id").maybeSingle()
-    error = ins.error; rowId = (ins.data?.id as string) ?? null
+    error = ins.error; rowId = rowId ?? ((ins.data?.id as string) ?? null)
   }
   if (error){ s.taken[c.key][slug] -= row.qty; await writeState(db, s, `${it.name} put back: ${error.message}`); return NextResponse.json({ error: `Could not stow it: ${error.message}` }, { status: 500 }) }
   await syncCarried(db, characterId)
-  await recordItemMove(db, { inventoryItemId: rowId, characterId, kind: "acquire", detail: { from: where, container, slug, qty: row.qty } })   // where this thing came from (lib/item-history.ts)
+  await recordItemMove(db, { inventoryItemId: rowId, characterId, kind: "acquire", detail: { from: where, container, slug, qty: moved.length > 1 ? 1 : row.qty, same_item: sameItem ? true : undefined } })   // where this thing came from (lib/item-history.ts)
+  for (const pid of moved.slice(1)) await recordItemMove(db, { inventoryItemId: pid, characterId, kind: "acquire", detail: { from: where, container, slug, qty: 1, same_item: true } })
   await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text: `${who.name} takes ${row.qty > 1 ? row.qty + " × " : ""}${it.name} from ${where}.` })
   return NextResponse.json({ ok: true, took: it.name, qty: row.qty })
 }
