@@ -649,13 +649,16 @@ export function salvage(
  * therefore starts the next rung's project at zero, which is what "one rung
  * per project" means.
  */
+const MOVEMENT = new Set(["acquire", "pickup", "give", "drop", "consume"])   // lib/item-history.ts MOVEMENT_KINDS (not imported: this file stays dependency-free)
 export function bankedSuccesses(
   history: { kind: string; detail: unknown; to_condition?: string | null }[],
 ): { successes: number; attempts: number } {
   let successes = 0
   let attempts = 0
   for (const e of history) {
-    // history is newest-first; stop at the last event that moved the rung.
+    // history is newest-first; stop at the last event that moved the rung. A MOVEMENT (taken, handed over, picked
+    // up — lib/item-history.ts) is not a change of condition: a half-mended sword is still half-mended in new hands.
+    if (MOVEMENT.has(e.kind)) continue
     if (e.kind !== "repair") break
     const d = (e.detail ?? {}) as { success?: unknown; done?: unknown }
     if (d.done === true) break

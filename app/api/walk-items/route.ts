@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { canCarry, carriedNow, carryVerdict, syncCarried } from "@/lib/carry"
+import { recordItemMove } from "@/lib/item-history"
 
 // /api/walk-items — things lying on the floor of the walk (public/velkynvelve-walk).
 //
@@ -117,18 +118,23 @@ export async function POST(req: NextRequest) {
 
     const { data: existing } = await db.from("inventory_items").select("id,quantity")
       .eq("character_id", characterId).eq("name", item.name).limit(1).maybeSingle()
-    const { error } = existing && item.stackable
-      ? await db.from("inventory_items").update({ quantity: (existing.quantity ?? 0) + 1, item_id: item.id }).eq("id", existing.id)
-      : await db.from("inventory_items").insert({
+    let rowId: string | null = existing && item.stackable ? existing.id : null
+    let error: { message: string } | null = null
+    if (rowId) error = (await db.from("inventory_items").update({ quantity: (existing!.quantity ?? 0) + 1, item_id: item.id }).eq("id", rowId)).error
+    else {
+      const ins = await db.from("inventory_items").insert({
           character_id: characterId, name: item.name, quantity: 1, description: item.description,
           item_type: item.item_type, icon_url: item.icon_url, item_id: item.id,
           equippable_slot: item.equippable_slot, weight: item.weight, value: item.value,
-        })
+        }).select("id").maybeSingle()
+      error = ins.error; rowId = (ins.data?.id as string) ?? null
+    }
     if (error) {
       await writeFloor(db, piles, `${item.name} put back: ${error.message}`)    // back on the floor rather than lost
       return NextResponse.json({ error: `Could not stow it: ${error.message}` }, { status: 500 })
     }
     await syncCarried(db, characterId)
+    await recordItemMove(db, { inventoryItemId: rowId, characterId, kind: "pickup", detail: { from: "the floor", node: pile.node, x: pile.x, y: pile.y, qty: 1 } })
     await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text: `${who.name} picks up ${item.name}.` })
     return NextResponse.json({ ok: true, picked: item.name })
   }
@@ -158,6 +164,7 @@ export async function POST(req: NextRequest) {
     }
     await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text })
     await syncCarried(db, characterId)
+    if (left > 0) await recordItemMove(db, { inventoryItemId: row.id, characterId, kind: "consume", detail: { verb, qty: 1, left } })   // a used-up row is deleted, and its history with it (see lib/item-history.ts)
     return NextResponse.json({ ok: true, left: Math.max(0, left) })
   }
 
@@ -191,6 +198,7 @@ export async function POST(req: NextRequest) {
     if (err) return NextResponse.json({ error: err.message }, { status: 500 })
     await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text: `${who.name}'s ${item.name} lies on the floor${body?.thrown ? " where the throw left it" : ""}.` })
     await syncCarried(db, characterId)
+    if (left > 0) await recordItemMove(db, { inventoryItemId: row.id, characterId, kind: "drop", detail: { to: "the floor", node, x: Math.round(x), y: Math.round(y), thrown: body?.thrown ? true : undefined, qty: 1, left } })
     return NextResponse.json({ ok: true, pile })
   }
 
@@ -229,7 +237,9 @@ export async function POST(req: NextRequest) {
       : { data: null }
     const whole = want >= (row.quantity ?? 1)
     let error: { message: string } | null = null
+    let movedRowId: string | null = null   // the row that IS the thing in the receiver's pack afterwards
     if (theirs) {
+      movedRowId = theirs.id
       // into their stack first, then off the giver's: if the second step fails the thing is doubled, never lost
       error = (await db.from("inventory_items").update({ quantity: (theirs.quantity ?? 0) + want }).eq("id", theirs.id)).error
       if (!error) error = whole
@@ -237,14 +247,17 @@ export async function POST(req: NextRequest) {
         : (await db.from("inventory_items").update({ quantity: (row.quantity ?? 1) - want }).eq("id", row.id)).error
     } else if (whole) {
       error = (await db.from("inventory_items").update({ character_id: targetId }).eq("id", row.id)).error
+      movedRowId = row.id   // the same row: its condition, upgrades and history go with it
     } else {
       const { id: _id, created_at: _c, updated_at: _u, ...copy } = row as Record<string, unknown>
       void _id; void _c; void _u
-      error = (await db.from("inventory_items").insert({ ...copy, character_id: targetId, quantity: want })).error
+      const ins = await db.from("inventory_items").insert({ ...copy, character_id: targetId, quantity: want }).select("id").maybeSingle()
+      error = ins.error; movedRowId = (ins.data?.id as string) ?? null
       if (!error) error = (await db.from("inventory_items").update({ quantity: (row.quantity ?? 1) - want }).eq("id", row.id)).error
     }
     if (error) return NextResponse.json({ error: `Could not hand it over: ${error.message}` }, { status: 500 })
     await syncCarried(db, characterId, targetId)
+    await recordItemMove(db, { inventoryItemId: movedRowId, characterId: targetId, kind: "give", detail: { from: who.name, from_id: characterId, to: to.name, to_id: targetId, qty: want } })
     await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text: `${who.name} gives ${want > 1 ? `${want} × ` : ""}${row.name} to ${to.name}.` })
     return NextResponse.json({ ok: true, gave: row.name, quantity: want, to: to.name })
   }
