@@ -11012,7 +11012,38 @@ function approachThen(att, tgt, ft, then){
   att.path = walk.pts; att.onArrive = arrive;
   if (!att.path.length) arrive();
 }
+// A MELEE BLOW IS STRUCK FROM CONTACT (Sam, 2026-11-10: "Everyone seems to be attacking at a distance, at least
+// visually on the pixel art"). The rules were right and the picture was wrong. Reach is 5 ft measured between the
+// two creatures' feet, and on these plates 5 ft is about 135 px while a figure stands about 160 px tall: so every
+// sword, fist and claw was swung with more than a body's height of empty floor between the two (measured
+// 2026-11-10 in the pen: reach 166 px, up to 190 with the arrival slack, figure 162 px). Now the swing is drawn as
+// a lunge: the attacker springs in until the two bodies meet, strikes there, and springs back to where they stood.
+// PRESENTATION ONLY. No feet are spent, nobody's place in the fight changes, no opportunity attack is provoked, and
+// the roll, cover and reach were all decided from where the attacker really stands. Not for a shot or a throw, not
+// across cover (the pen's bars), and not for someone prone, restrained, grappled, climbing or mounted.
+function lungeSpot(att, tgt){
+  if (!cbt || !att || !tgt || att.leap || att.climbing || att.riding || att.static || att.lunging) return null;
+  const cn = att.c && att.c.conds; if (cn && (cn.has("prone") || cn.has("restrained") || cn.has("grappled"))) return null;
+  const cv = coverOf(att, tgt); if (cv && (cv.total || cv.ac)) return null;
+  const tall = a => SPR[a.id].json.cell[1] * actorScale(a), contact = .42 * (tall(att) + tall(tgt)) / 2;
+  const dx = tgt.x - att.x, dy = tgt.y - att.y, d = Math.hypot(dx, dy); if (!(d > contact + 10)) return null;
+  return {x: tgt.x - dx / d * contact, y: tgt.y - dy / d * contact};
+}
 function strike(att, tgt, onHit, after, shot){
+  const spot = shot ? null : lungeSpot(att, tgt);
+  if (!spot){ strikeFromHere(att, tgt, onHit, after, shot); return; }
+  const home = {x: att.x, y: att.y}, sc = actorScale(att);
+  att.lunging = true; att.path = []; att.face = faceOf(tgt.x - att.x, tgt.y - att.y);
+  att.leap = {from: home, to: spot, t0: now, ms: 150, h: 12 * sc};
+  setTimeout(() => {
+    att.leap = null; att.x = spot.x; att.y = spot.y;
+    strikeFromHere(att, tgt, onHit, () => {
+      att.leap = {from: {x: att.x, y: att.y}, to: home, t0: now, ms: 190, h: 9 * sc};
+      setTimeout(() => { att.leap = null; att.x = home.x; att.y = home.y; att.lunging = false; if (!att.down) att.face = faceOf(tgt.x - home.x, tgt.y - home.y); after && after(); }, 190);
+    }, shot);
+  }, 150);
+}
+function strikeFromHere(att, tgt, onHit, after, shot){
   att.face = faceOf(tgt.x - att.x, tgt.y - att.y);
   // A shot is not a punch. A sprite with a "shoot" sheet plays it; one without stands and takes aim (no fist thrown),
   // looses after a beat, and the bolt or arrow does the rest. Until now every shot played the cross-punch.
@@ -20257,6 +20288,7 @@ function update(dt){
     const bodies = actors.filter(a => a.kind !== "npc" && !a.fading);
     for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++){
       const a = bodies[i], b = bodies[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+      if (a.lunging || b.lunging) continue;   // a lunge closes to contact on purpose: nobody is shoved off their spot by it
       const min = (a.kind === "foe" || b.kind === "foe" ? 70 : 45) * node.scale;
       // Sam, 2026-10-14: a character that walked into someone kept walking against the push and stalled.
       // The one who is walking holds its line; only a standing body gives way (and never a leaping one).
