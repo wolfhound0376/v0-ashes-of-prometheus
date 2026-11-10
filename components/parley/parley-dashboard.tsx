@@ -433,10 +433,9 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
   const { roll, announce, busy: diceBusy } = useDice()
   const [logFilter, setLogFilter] = useState("All")
   const [interactiveLogMinimized, setInteractiveLogMinimized] = useState(true)
-  const [inventoryOpen, setInventoryOpen] = useState(false)
   // ONE INVENTORY (Sam, 2026-11-10: "lets make the pixel inventory system the main system of inventory UI even for
   // the parley UI"). The button goes to the map's own inventory, opened full screen on this hero, and closing it
-  // comes straight back to this page as it was. The old window below (EquipmentManager) is no longer opened from here.
+  // comes straight back to this page as it was. The old window (EquipmentManager, below) is not rendered anywhere now.
   const openPixelInventory = () => {
     const here = window.location.pathname + window.location.search
     const q = new URLSearchParams({ bag: "1", as: selected?.name ?? "", return: here })
@@ -1303,7 +1302,6 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
       character={{ ...toSheetCharacter(selected), ac: displayedAc, acBreakdown: acResult.text, initiative: displayedInitiative, learningSkills: [...learningSkills] }}
       inventory={props.inventory as any}
     />
-    {inventoryOpen ? <EquipmentManager character={selected} inventory={props.inventory} equipment={props.equipment} bonuses={equipmentBonus} onEquip={props.onEquipItem} onUnequip={props.onUnequipItem} onDrop={props.onDropItem} onClose={() => setInventoryOpen(false)} /> : null}
   </main>
 }
 
