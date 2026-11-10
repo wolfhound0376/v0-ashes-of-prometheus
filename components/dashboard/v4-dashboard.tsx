@@ -430,7 +430,17 @@ export function V4Dashboard(props: V4DashboardProps) {
   const [logFilter, setLogFilter] = useState("All")
   const [interactiveLogMinimized, setInteractiveLogMinimized] = useState(true)
   const [partyMinimized, setPartyMinimized] = useState(true)
-  const [inventoryOpen, setInventoryOpen] = useState(false)
+  // ONE INVENTORY, HERE TOO (Sam, 2026-11-10: "lets make the pixel inventory system the main system of inventory UI";
+  // then, shown the old "Inventory & Equipped Items" window: "This dialogue inventory does not look like" the pixel
+  // one). #1186 moved the Parley's button to the map's pixel inventory; this older layout (served only when
+  // NEXT_PUBLIC_DASHBOARD=v4) still opened the old window. Same road as the Parley's: the map's inventory, full
+  // screen on this hero, and closing it comes straight back here.
+  const openPixelInventory = () => {
+    const here = window.location.pathname + window.location.search
+    const q = new URLSearchParams({ bag: "1", as: selected?.name ?? "", return: here })
+    if (new URLSearchParams(window.location.search).get("sandbox") === "1") q.set("sandbox", "1")
+    window.location.href = `/velkynvelve?${q.toString()}`
+  }
   const [characterSheetOpen, setCharacterSheetOpen] = useState(false)
   const [diceOpen, setDiceOpen] = useState(false)
   const [spellbookOpen, setSpellbookOpen] = useState(false)
@@ -1113,7 +1123,7 @@ export function V4Dashboard(props: V4DashboardProps) {
               literal legend "Cleric class skill". */}
           <button data-tick="window" onClick={() => setCharacterSheetOpen(true)} className="mt-2 w-full rounded border border-[#a88745] py-2 font-serif text-[10px] text-[#d9c492] hover:bg-[#2a1e0e]">⌁ View Full Character Sheet</button>
         </div>
-        <button data-tick="window" onClick={() => setInventoryOpen(true)} className="flex h-9 shrink-0 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Inventory &amp; Equipment <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.inventory.reduce((sum, item) => sum + Number(item.weight ?? 0) * item.quantity, 0).toFixed(1)} / {selected?.weight_max ?? 105} lb · {props.equipment.length} equipped　▶</span></button>
+        <button data-tick="window" onClick={openPixelInventory} className="flex h-9 shrink-0 items-center rounded-lg border border-[#4b3a19] bg-[#100e09] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-[#cdb276]">Inventory &amp; Equipment <span className="ml-auto font-sans text-[9px] normal-case tracking-normal text-[#8f8061]">{props.inventory.reduce((sum, item) => sum + Number(item.weight ?? 0) * item.quantity, 0).toFixed(1)} / {selected?.weight_max ?? 105} lb · {props.equipment.length} equipped　▶</span></button>
       </Frame>
       {isMagicUser ? <button data-tick="window" onClick={() => setSpellbookOpen(true)} className="flex h-9 items-center rounded-lg border border-purple-900/70 bg-[linear-gradient(90deg,#100b12,#1b1020,#100b12)] px-3 font-serif text-[10px] font-bold uppercase tracking-[.14em] text-purple-300">{selected.class === "Cleric" || selected.class === "Monk" ? <><img src={BOOK_OF_PRAYERS_MEDIA.animation} alt="" aria-hidden className="mr-2 -my-1 h-10 w-10 shrink-0 object-contain motion-reduce:hidden" /><img src={BOOK_OF_PRAYERS_MEDIA.poster} alt="" aria-hidden className="mr-2 -my-1 hidden h-10 w-10 shrink-0 object-contain motion-reduce:block" /></> : <BookOpen className="mr-2 h-4 w-4" />}{selected.class === "Cleric" || selected.class === "Monk" ? "Book of Prayers" : "Book of Spells"} <span className="ml-auto font-sans text-[8px] normal-case tracking-normal text-purple-400">{characterExtra.subclass || `${selected.class === "Cleric" ? "Domain" : "Subclass"} not recorded`}　▶</span></button> : null}
       <CharacterSpriteVignette characterId={selected?.id} name={selected?.name} />
@@ -1133,7 +1143,6 @@ export function V4Dashboard(props: V4DashboardProps) {
       character={{ ...toSheetCharacter(selected), ac: displayedAc, acBreakdown: acResult.text, initiative: displayedInitiative, learningSkills: [...learningSkills] }}
       inventory={props.inventory as any}
     />
-    {inventoryOpen ? <EquipmentManager character={selected} inventory={props.inventory} equipment={props.equipment} bonuses={equipmentBonus} onEquip={props.onEquipItem} onUnequip={props.onUnequipItem} onDrop={props.onDropItem} onClose={() => setInventoryOpen(false)} /> : null}
   </main>
 }
 
