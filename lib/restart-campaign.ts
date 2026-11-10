@@ -83,7 +83,7 @@ const STARTING_NODE_KEY = "velkynvelve"
 const STARTING_SUBNODAL_MAP = "velkynvelve-nodes"
 const STARTING_SUBNODAL_NODE = 11
 /** The campaign the runs belong to (`campaign_runs.campaign_id`, as /api/travel reads it). */
-const CAMPAIGN_ID = "abyss"
+export const CAMPAIGN_ID = "abyss"
 
 /**
  * The shape the cast handler writes into `characters.sheet_spellcasting`.

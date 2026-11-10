@@ -17,6 +17,8 @@ export function isGuardedPath(pathname: string | null | undefined): boolean {
 
 export type TableReply = {
   error?: string
+  /** The id of the campaign run the server is on right now (changes on every New Game). */
+  run?: string | null
   isDm?: boolean
   state?: { status?: string } | null
   mine?: { away?: boolean; id?: string } | null
@@ -33,3 +35,23 @@ export function guardVerdict(reply: TableReply, role: string | null | undefined)
   if (reply.state?.status === "live" && reply.mine && !reply.mine.away) return "stay"
   return "leave"
 }
+
+/**
+ * Has the campaign been reset under this screen? (Sam, 2026-11-10: a reset should "close out all instances
+ * of the game everywhere even DM screens".) Every New Game ends the run and opens the next one, so a page
+ * that loaded under one run and now hears of another is showing a world that no longer exists. Unlike
+ * guardVerdict this has NO exception for the DM: his map and dashboard windows close too.
+ * `seen` is the run this page first heard of; either side unknown means "cannot tell", which is never a reset.
+ */
+export function wasReset(seen: string | null | undefined, reply: TableReply): boolean {
+  if (!reply || reply.error) return false
+  if (!seen || !reply.run) return false
+  return seen !== reply.run
+}
+
+/**
+ * Where a screen goes when the campaign was reset under it. A window the game opened itself (the DM's second
+ * window) can simply close; a browser refuses to close a tab the person opened by hand, so that one falls
+ * back to the table, which after a reset is the clean lobby.
+ */
+export const AFTER_RESET_PATH = "/table"

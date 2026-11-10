@@ -26,6 +26,7 @@ import { useRouter } from "next/navigation"
 import { StageLink } from "@/components/stage/stage-provider"
 import { ArrowLeft, Crown } from "lucide-react"
 import { dmHeaders } from "@/lib/dm-key"
+import { AFTER_RESET_PATH, wasReset } from "@/lib/session-guard"
 import { EndGameButton } from "@/components/end-game-button"
 import { DiceProvider } from "@/components/dice/dice-provider"
 import { WalkRollBridge } from "@/components/walk/walk-roll-bridge"
@@ -54,7 +55,9 @@ export default function VelkynvelvePage() {
     try { id = localStorage.getItem("aop_character_id") ?? ""; role = localStorage.getItem("aop_access_role") ?? "" } catch { /* storage blocked */ }
     // A rehearsal deliberately ignores the session and saves nothing, so it must never be mistaken for a
     // live game — the only thing that used to tell them apart was the DM frame, which a live DM has too.
-    try { setSandbox(new URLSearchParams(window.location.search).get("sandbox") === "1") } catch { /* no window */ }
+    let isSandbox = false
+    try { isSandbox = new URLSearchParams(window.location.search).get("sandbox") === "1"; setSandbox(isSandbox) } catch { /* no window */ }
+    let seenRun: string | null = null   // the run this map loaded under
     const check = async (first: boolean) => {
       try {
         const q = id ? `?characterId=${encodeURIComponent(id)}` : ""
@@ -62,6 +65,14 @@ export default function VelkynvelvePage() {
         const j = await r.json()
         if (!live) return
         if (j.error) { if (first) setGate("player"); return }   // the table could not be read: never lock the family out on a blip
+        // A New Game happened under this map: it closes for everyone, the DM's window too (Sam, 2026-11-10:
+        // "close out all instances of the game everywhere even DM screens"). A rehearsal is not the game.
+        if (!isSandbox && wasReset(seenRun, j)) {
+          try { window.close() } catch { /* not ours to close */ }
+          router.replace(AFTER_RESET_PATH)
+          return
+        }
+        if (!seenRun && typeof j.run === "string") seenRun = j.run
         const st: Status = j.state?.status === "lobby" || j.state?.status === "live" ? j.state.status : "closed"
         setStatus(st)
         // The DM only where this browser signed in as the DM — the map inside reads the same flag for its DM

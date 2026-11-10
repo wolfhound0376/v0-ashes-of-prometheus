@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { hasDmCookie, isDmRequest } from "@/lib/dm-session"
-import { restartCampaign } from "@/lib/restart-campaign"
+import { CAMPAIGN_ID, restartCampaign } from "@/lib/restart-campaign"
 import { MAX_SEATS, cannotChooseFigure, cannotSit, isComplete, missingOf, type TableState } from "@/lib/table"
 import { readSeated } from "@/lib/seats"
 import {
@@ -72,7 +72,10 @@ async function reply(db: Db, view: TableView, characterId?: string | null, extra
       return { id: c.id, name: c.name, cls: c.class ?? "", invited: invitedIds.has(c.id), seated: Boolean(seat), companion: Boolean(seat?.dm), away: Boolean(seat?.away) }
     })
   }
-  return NextResponse.json({ ...view, seats: open ? view.seats : [], mine, invited, ...(roster ? { roster } : {}), ...extra })
+  // Which run of the campaign this is. Every New Game ends the run and opens the next, so a screen that loaded
+  // under another run knows the world was reset under it and closes (lib/session-guard.ts wasReset).
+  const { data: liveRun } = await db.from("campaign_runs").select("id").eq("campaign_id", CAMPAIGN_ID).neq("status", "ended").order("run_number", { ascending: false }).limit(1).maybeSingle()
+  return NextResponse.json({ ...view, seats: open ? view.seats : [], mine, invited, run: liveRun?.id ?? null, ...(roster ? { roster } : {}), ...extra })
 }
 
 export async function GET(req: NextRequest) {
@@ -130,13 +133,15 @@ async function dmAction(db: Db, action: string, characterId: string) {
   }
 
   if (action === "new") {
-    // A new game is a new campaign, every time (Sam, 2026-10-25). Refused while a session is live: the DM ends
-    // it first, so nobody is wiped out from under their own map mid-scene.
-    if (t.status === "live") return NextResponse.json({ error: "A session is live. End it before you start a new game." }, { status: 409 })
+    // A new game is a new campaign, every time (Sam, 2026-10-25). It used to be refused while a session was
+    // live. Sam, 2026-11-10: a reset "should clear everything. Close out all instances of the game everywhere
+    // even DM screens, and let you enter the table clean" — so a live session no longer blocks it: the reset
+    // ends that session itself (the seats and the table go with the world flags), and every open screen, the
+    // DM's included, sees the run change and closes (lib/session-guard.ts wasReset).
     const restart = await restartCampaign(db)
     // The restart clears every world flag, the table and its seats included. Open the new run's table only when
     // the wipe finished cleanly; a half-wiped world is not a new game.
-    if (!restart.ok) return NextResponse.json({ error: "The campaign reset did not fully finish, so the table was not opened. Tell Claude before you play.", problems: restart.problems }, { status: 500 })
+    if (!restart.ok) return NextResponse.json({ error: `The campaign reset did not fully finish, so the table was not opened. Tell Claude this step failed: ${restart.problems.join("; ")}.`, problems: restart.problems }, { status: 500 })
     const after = await readTable(db)
     await clearSeats(db)
     await writeTable(db, { status: "lobby", dmReady: false, session: after.session + 1, openedAt: now, startedAt: null }, "The DM started a new game")
