@@ -4640,6 +4640,9 @@ function icardRender(){
   }
   // against what the hero holds now: to hit and average damage, from the page's own attack lines
   const a = ICARD.who, sh = a && SHEETS[a.id];
+  { const ar = armorOf(it);
+    if (ar) h += `<div class="ic-sec"><div class="ic-dmg"><b>${esc(ar.kind === "shield" ? `+${ar.bonus} AC` : `AC ${ar.base + ar.bonus}`)}</b><span>${esc(ar.kind === "shield" ? "shield" : `${ar.cat} armor${ar.cat === "heavy" ? "" : ar.cat === "medium" ? ` · + Dex (max ${ar.cap})` : " · + Dex"}`)}</span></div>`
+      + (a && sh ? `<div class="ic-note">${armorNote(a, it)}</div>` : "") + `</div>`; }
   if (a && sh && weaponish && p.damage && !(GEAR[a.id] && GEAR[a.id].main === it.name)){
     const seen = view.bonusKnown ? it : {...it, properties: {...p, bonus: 0, attack_bonus: 0, damage_bonus: 0}};
     const nu = attackFromItem(sh, seen), now0 = (sh.attacks || [])[0];
@@ -8687,6 +8690,7 @@ function leaperPlan(a, goal){
 function advantageOn(att, tgt, ranged, atk){
   let adv = 0;
   if (att.c.conds.has("poisoned")) adv--;                                     // SRD: poisoned — disadvantage on attack rolls
+  if (atk && atk.hit != null && att.c.sheet && (att.c.sheet.armorUntrained || []).length) adv--;   // SRD 5.1 Armor Proficiency: untrained armor, STR/DEX attack rolls
   if (ranged){                                                                // SRD: a ranged attack with a hostile within 5 ft,
     const near = (hero(att) ? standing(foes) : standing(heroes())).some(h => h !== tgt && !incapacitated(h) && feetBetween(att, h) <= 5) || (!incapacitated(tgt) && feetBetween(att, tgt) <= 5);
     if (near) adv--;                                                          // or beyond the weapon's normal range
@@ -11814,7 +11818,7 @@ function combatTargetHint(){
   const a = activeActor(), p = cbt.pend, t = hoverActor, sp = p.spell && SPELLS[p.spell];
   const cv = coverOf(a, t); if (cv.total) return `${fname(t)} · no line of sight: ${cv.why} is in the way`;
   if (sp && sp.kind === "save") return `${fname(t)} · ${sp.save.toUpperCase()} save vs DC ${a.c.sheet.magic.dc}${sp.save === "dex" && cv.ac ? ` · ${cv.label}` : ""}`;
-  const hit = p.atk ? p.atk.hit : a.c.sheet.magic.hit, ac = targetAc(t) + cv.ac, need = Math.max(2, Math.min(20, ac - hit)), adv = advantageOn(a, t);
+  const hit = p.atk ? p.atk.hit : a.c.sheet.magic.hit, ac = targetAc(t) + cv.ac, need = Math.max(2, Math.min(20, ac - hit)), adv = advantageOn(a, t, undefined, p.atk);
   let p1 = (21 - need) / 20; if (adv > 0) p1 = 1 - (1 - p1) ** 2; else if (adv < 0) p1 = p1 ** 2;
   const sn = p.atk ? sneakState(a, t, p.atk, feetBetween(a, t) > (p.atk.reach || 5) + 2) : null;
   return `${fname(t)} · AC ${ac}${cv.ac ? ` (${cv.label}: ${cv.why})` : ""} · +${hit} to hit · ${Math.round(p1 * 100)}%${adv ? adv > 0 ? " (advantage)" : " (disadvantage)" : ""} · ${feetBetween(a, t).toFixed(0)} ft${sn ? " · " + sn.why : ""}`;
@@ -15262,6 +15266,82 @@ function refreshAttacks(id){
   const g = GEAR[id], held = g ? [g.main, g.off].map(n => n && g.carried.find(c => c.name === n)).filter(it => it && isWeapon(it)) : [];
   s.attacks = [...held.map(it => attackFromItem(s, it)), ...s.baseAttacks];
 }
+// ARMOUR CLASS FROM WHAT IS WORN (Sam, 2026-11-10, Fifi in a chain shirt still reading AC 13: "why is the armor not
+// increasing my AC and why isn't there a comment regarding my proficiency in it or not?"). Until then the map showed,
+// and fought with, the sheet's snapshot AC whatever was on the doll: equipping wrote the equipment row and nothing
+// read it back. Now the AC is worked out from the worn pieces' own catalogue numbers (items.properties: base_ac,
+// dex_cap, armor_category, ac_bonus), by the SRD 5.1 armor table's rules:
+//   no armor   10 + DEX (or the sheet's own number where that is higher)
+//   light      base + DEX          medium  base + DEX (max 2)          heavy  base          shield  + its bonus
+// Armor training by class, SRD 5.1 class features. A hero may WEAR what they are not trained in and still gets its
+// AC, at the SRD's price ("Armor Proficiency": disadvantage on any ability check, saving throw or attack roll that
+// involves Strength or Dexterity, and no spellcasting). The map applies the attack-roll part (advantageOn); the
+// saves, checks and the spellcasting bar are stated on the card and NOT yet enforced here.
+const CLASS_ARMOR = {barbarian: ["light", "medium", "shield"], bard: ["light"], cleric: ["light", "medium", "shield"], druid: ["light", "medium", "shield"],
+  fighter: ["light", "medium", "heavy", "shield"], paladin: ["light", "medium", "heavy", "shield"], ranger: ["light", "medium", "shield"],
+  rogue: ["light"], warlock: ["light"], monk: [], sorcerer: [], wizard: []};
+function armorOf(it){
+  if (!it) return null; const p = it.properties || (catalogItem(it.name) || {}).properties || {}, cat = String(p.armor_category || "").toLowerCase();
+  if (cat === "shield" || (/shield/i.test(it.name || "") && Number(p.ac_bonus) > 0)) return {kind: "shield", cat: "shield", bonus: Number(p.ac_bonus) || 2, name: it.name};
+  if (typeof p.base_ac === "number") return {kind: "body", cat: cat || "light", base: p.base_ac, cap: typeof p.dex_cap === "number" ? p.dex_cap : 2, bonus: Number(p.ac_bonus) || 0, stealth: p.stealth || "", name: it.name};
+  return null;
+}
+const armorTrained = (cls, ar) => !ar || (CLASS_ARMOR[String(cls || "").toLowerCase()] || []).includes(ar.cat);
+const ARMOR_KIND = {light: "light armor", medium: "medium armor", heavy: "heavy armor", shield: "shields"};
+const ARMOR_PRICE = "disadvantage on Strength and Dexterity checks, saves and attack rolls, and no spellcasting";
+const armorFormula = ar => ar.kind === "shield" ? `+${ar.bonus} AC` : `AC ${ar.base + ar.bonus}${ar.cat === "heavy" ? "" : ar.cat === "medium" ? ` + Dex (max ${ar.cap})` : " + Dex"}`;
+/** The AC a hero has in what they wear now, or would have with `swap` worn instead of whatever is in its slot. */
+function acOf(id, swap){
+  const S = SHEETS[id]; if (!S) return null; if (S.acBase == null) S.acBase = S.ac;
+  const g = GEAR[id] || {}, dex = (S.mods || {}).dex || 0;
+  let worn = (g.doll || []).map(d => armorOf((g.carried || []).find(c => c.name === d.name) || {name: d.name})).filter(Boolean);
+  if (swap){ worn = worn.filter(w => w.kind !== swap.kind).concat([swap]); }
+  const body = worn.find(w => w.kind === "body") || null, shield = worn.find(w => w.kind === "shield") || null, parts = [];
+  let ac;
+  if (body){ const d = body.cat === "heavy" ? 0 : body.cat === "medium" ? Math.min(dex, body.cap) : dex; ac = body.base + body.bonus + d;
+    parts.push(`${body.base + body.bonus} ${body.name}`); if (body.cat !== "heavy") parts.push(`${d} Dex${body.cat === "medium" && dex > body.cap ? ` (max ${body.cap})` : ""}`); }
+  else { ac = Math.max(S.acBase || 0, 10 + dex); parts.push(ac === 10 + dex ? `10 + ${dex} Dex, no armor` : `${ac} unarmored`); }
+  if (shield){ ac += shield.bonus; parts.push(`${shield.bonus} ${shield.name}`); }
+  return {ac, body, shield, why: `${parts.join(" + ")} = ${ac}`, untrained: [body, shield].filter(x => x && !armorTrained(S.cls, x))};
+}
+function refreshAc(id){
+  const S = SHEETS[id]; if (!S || ALLY_SHEETS[id]) return; const r = acOf(id); if (!r) return;
+  S.ac = r.ac; S.acWhy = r.why; S.armorUntrained = r.untrained.map(x => x.cat);
+  const a = party.find(p => p.id === id); if (a && a.c) a.c.ac = r.ac;
+}
+/** One line about a piece of armor for THIS hero: what it gives, what their AC becomes, and whether they are trained. */
+function armorNote(a, it, short){
+  const ar = armorOf(it), S = a && SHEETS[a.id]; if (!ar || !S) return "";
+  const now = acOf(a.id), wearing = now && (now.body === null ? false : now.body.name === ar.name) || (now && now.shield && now.shield.name === ar.name);
+  const then = wearing ? now : acOf(a.id, ar);
+  const ok = armorTrained(S.cls, ar);
+  return `${esc(armorFormula(ar))} · ${wearing ? `your AC is <b>${now.ac}</b>` : `your AC would be <b>${then.ac}</b>${then.ac !== now.ac ? ` (now ${now.ac})` : ""}`}`
+    + ` · ${ok ? `<b style="color:#7fdc8a">trained in ${ARMOR_KIND[ar.cat]}</b>` : `<b style="color:#ff8a7a">not trained in ${ARMOR_KIND[ar.cat]}</b>${short ? "" : `: ${ARMOR_PRICE}`}`}`
+    + (ar.stealth ? ` · disadvantage on Stealth` : "");
+}
+// GIVE IT TO SOMEONE (Sam, 2026-11-10: "I should be able to look at my inventory items and have the option to transfer
+// it to a list of characters"). Any carried thing, to any other hero in the party or an ally who walks with it. One
+// at a time off a stack, or the whole stack. Worn or held things come off first. In a fight it is handing something
+// over: the other must be within 5 ft and it costs what stowing a weapon costs (the turn's object interaction).
+function giveTargets(a){ return [...party, ...npcs.filter(n => ALLY_ROW[n.id] && !n.down && !n.body)].filter(t => t !== a && !t.body); }
+function giveItem(a, it, t, n){
+  const g = GEAR[a.id]; if (!g || !bagCan(a) || !t) return; const fight = inFightNow();
+  n = Math.max(1, Math.min(n || 1, it.qty || 1));
+  if ((g.doll || []).some(d => d.name === it.name) && g.carried.filter(c => c.name === it.name).reduce((q, c) => q + (c.qty || 1), 0) - n < (g.doll || []).filter(d => d.name === it.name).length){ toast(`Take the ${it.name} off first.`); return; }
+  if (fight){ if (feetBetween(a, t) > 5.5){ toast(`${fname(t)} is out of reach: they must be within 5 ft.`); return; } const k = gearCost(a, 1); if (!k.ok){ toast(k.why); return; } k.pay(); }
+  it.qty = (it.qty || 1) - n; if (it.qty <= 0) g.carried = g.carried.filter(x => x !== it);
+  const tg = GEAR[t.id] || (GEAR[t.id] = {carried: [], doll: [], main: null, off: null});
+  const same = (catalogItem(it.name) || {}).stackable ? tg.carried.find(c => c.name === it.name) : null;
+  if (same) same.qty = (same.qty || 1) + n; else tg.carried.push({...it, qty: n});
+  if (inv.item && inv.item.name === it.name && it.qty <= 0) inv.item = null;
+  bank("ui/item_pickup", .5); popText(t, `${it.name}${n > 1 ? ` ×${n}` : ""}`, "#e8d9a8", .8);
+  log(`${fname(a)} hands ${n > 1 ? `${n} × ` : "the "}<b>${esc(it.name)}</b> to ${fname(t)}.`);
+  const from = serverCid(a.id), to = APP && !SANDBOX ? characterIdOf(t.id) : null;
+  if (from && to) fetch("/api/walk-items", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({action: "give", characterId: from, targetCharacterId: to, itemKey: it.item_key || null, itemName: it.name, quantity: n})})
+    .then(r => r.json()).then(j => { if (j && j.error){ toast(j.error); loadGear(a.id); loadGear(t.id); } }).catch(() => {});
+  if (fight){ renderParty(); } renderBag();
+}
 async function loadGear(only){
   if (!APP) return; await ensureCatalog();
   for (const id of (only ? [only] : [...party.map(p => p.id), ...Object.keys(ALLY_ROW)])){
@@ -15273,7 +15353,7 @@ async function loadGear(only){
         qty: r.quantity || 1, icon: r.icon_url || cat?.icon_url || null, desc: r.description || cat?.description || ""}; });
       const doll = (j.equipped || []).filter(e => e.equipped !== false).map(e => ({slot: normSlot(e.slot), name: e.name, item_key: e.item_key || null}));
       const inHand = sl => (doll.find(d => d.slot === sl) || {}).name || null;
-      GEAR[id] = {carried, doll, main: inHand("main_hand"), off: inHand("off_hand")}; refreshAttacks(id);
+      GEAR[id] = {carried, doll, main: inHand("main_hand"), off: inHand("off_hand")}; refreshAttacks(id); refreshAc(id);
     } catch (e) {}
   }
   if (cbt) renderParty();
@@ -15425,6 +15505,8 @@ function equipTo(a, it, sl){
   g.doll = (g.doll || []).filter(d => d.slot !== sl).concat([{slot: sl, name: it.name, item_key: it.item_key || null}]);
   if (sl === "main_hand") g.main = it.name; if (sl === "off_hand") g.off = it.name;
   if (HAND(sl)) refreshAttacks(a.id);
+  refreshAc(a.id);
+  { const ar = armorOf(it), S = SHEETS[a.id]; if (ar && S && !armorTrained(S.cls, ar)) toast(`${fname(a)} is not trained in ${ARMOR_KIND[ar.cat]}: ${ARMOR_PRICE}.`); }
   if (HAND(sl) && isTooth(it)) toothDrawn(a);
   popText(a, HAND(sl) ? `${it.name} in hand` : it.name, "#e8d9a8", .8);
   log(`${fname(a)} ${was && was.name !== it.name ? `takes off the ${esc(was.name)} and ` : ""}${HAND(sl) ? "readies" : "puts on"} the <b>${esc(it.name)}</b>${HAND(sl) ? "" : ` (${slotLabel(sl).toLowerCase()})`}${paid}.`);
@@ -15445,6 +15527,7 @@ function removeFrom(a, sl, how){
   g.doll = g.doll.filter(d => d.slot !== sl);
   if (sl === "main_hand") g.main = null; if (sl === "off_hand") g.off = null;
   if (HAND(sl)) refreshAttacks(a.id);
+  refreshAc(a.id);
   if (how !== "move") sfx(how === "drag" ? "walk:unequip-drag" : "walk:unequip-click", how === "drag" ? .55 : .4);   // moving between slots is not taking it off
   popText(a, `${was.name} off`, "#e8d9a8", .8); log(`${fname(a)} ${HAND(sl) ? "puts away" : "takes off"} the <b>${esc(was.name)}</b>.`);
   if (APP){ const cid = serverCid(a.id); if (cid) fetch("/api/equipment", {method: "POST", headers: {"Content-Type": "application/json"},
@@ -15887,7 +15970,7 @@ function renderBag(){
       : u.kind === "throw" ? `${FLASK_OF(it).blurb} · thrown up to 20 ft` : u.kind === "dm" ? `use it through the DM: ${u.why}` : (it.desc || "");
     // the row keeps the short line (what it is, or where it is worn); the long description lives on the item's card
     row.innerHTML = `<span class="invPic${worn.length ? " worn" : ""}"${RARITY_RANK[rar] > 0 ? ` style="border-color:${RARITY_COL[rar]}"` : ""}>${pic ? `<img src="${esc(pic)}" alt="" loading="lazy">` : "◆"}</span>`
-      + `<span class="invTxt"><button class="efPick" aria-pressed="${picked ? "true" : "false"}" title="${picked ? "Close the card" : "Open the card"}"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}${rarTag}</b></button><small>${esc(what)}</small></span><span class="invBtns"></span>`;
+      + `<span class="invTxt"><button class="efPick" aria-pressed="${picked ? "true" : "false"}" title="${picked ? "Close the card" : "Open the card"}"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}${rarTag}</b></button><small>${esc(what)}${armorOf(it) ? `${what ? " · " : ""}${armorNote(a, it, true)}` : ""}</small></span><span class="invBtns"></span>`;
     // the name is the real button (keyboard reaches it); a click anywhere else on the row does the same for the mouse
     const pick = () => { inv.item = picked ? null : {name: it.name, item_key: it.item_key || null}; renderBag(); };
     row.querySelector(".efPick").onclick = e => { e.stopPropagation(); pick(); };
@@ -15932,8 +16015,8 @@ function renderBagSub(a, s){
   const el = $("invSub"); if (el) el.textContent = [race, s.cls || pc.cls || ""].filter(Boolean).join(" ") + (s.level ? ` · Level ${s.level}` : "");
 }
 // The three chips the reference carries: hit points, armor class, speed — the sheet's own numbers (hp_current when the
-// row has it, the fight's live total mid-fight, else the max), never a derived "power". The AC on the sheet is the
-// dashboard's, which already counts worn armour; the walk does not recompute it.
+// row has it, the fight's live total mid-fight, else the max), never a derived "power". The AC is worked out from what
+// is worn (refreshAc), since 2026-11-10: the row's own `ac` is hand-entered and never moved when armor went on.
 function renderBagChips(a, s){
   const el = $("invChips"); if (!el) return;
   const hpMax = (a.c && a.c.hpMax) || s.hp || null;
@@ -15941,7 +16024,9 @@ function renderBagChips(a, s){
   const chip = (k, v, svg) => `<div class="efChip" data-cat="${k.toLowerCase()}" title="${esc(k)}">${svg}<span class="t"><span class="k">${esc(k)}</span><span class="v">${v}</span></span></div>`;
   const mark = k => `<img class="mark" src="${HERO_ICON_BASE}${k}.png" alt="">`;
   const heart = mark("hp"), shield = mark("ac"), boot = mark("speed");
-  el.innerHTML = chip("HP", hpMax ? `${hpNow}<small> / ${hpMax}</small>` : "—", heart) + chip("AC", s.ac != null ? s.ac : "—", shield) + chip("Speed", s.speed != null ? s.speed : "—", boot);
+  if (GEAR[a.id] && SHEETS[a.id] === s) refreshAc(a.id);
+  el.innerHTML = chip("HP", hpMax ? `${hpNow}<small> / ${hpMax}</small>` : "—", heart) + chip("AC", s.ac != null ? `${s.ac}${(s.armorUntrained || []).length ? `<small style="color:#ff8a7a" title="armor you are not trained in"> !</small>` : ""}` : "—", shield) + chip("Speed", s.speed != null ? s.speed : "—", boot);
+  { const acEl = el.querySelector('[data-cat="ac"]'); if (acEl && s.acWhy) acEl.title = `Armor Class: ${s.acWhy}${(s.armorUntrained || []).length ? `. Not trained in ${s.armorUntrained.map(c => ARMOR_KIND[c]).join(" or ")}: ${ARMOR_PRICE}.` : ""}`; }
 }
 // THE LEVEL PANEL: level badge, the XP bar toward the next level, and the Level Up button as a state. The sheet's xp /
 // xp_to_next are /api/walk-xp's (paid once per fight); readiness is the SRD table against the level the row holds.
@@ -16108,7 +16193,8 @@ function renderItemCard(a, g, it, u, worn, pic, what, fight, mine){
   const where = worn.length ? `${worn.some(HAND) ? "held" : "worn"} · ${worn.map(slotLabel).join(" and ").toLowerCase()}` : it.eslot && HAND(it.eslot) ? `held in the ${slotLabel(it.eslot).toLowerCase()}` : it.eslot ? `goes on the ${slotLabel(it.eslot).toLowerCase()}` : isWeapon(it) ? "held in a hand" : "carried";
   const atk = isWeapon(it) && SHEETS[a.id] ? attackFromItem(SHEETS[a.id], it) : null;
   const meta = [kind, where, (it.qty || 1) > 1 ? `×${it.qty}` : "", RARITY_RANK[rar] > 0 ? `<b style="color:${RARITY_COL[rar]}">${RARITY_LABEL[rar]}</b>` : ""].filter(Boolean).join(" · ")
-    + (atk ? `<br>${esc(atk.dmg)} ${esc(atk.type)} · +${atk.hit} to hit${atk.reach > 5 ? ` · ${atk.reach} ft` : ""}` : "");
+    + (atk ? `<br>${esc(atk.dmg)} ${esc(atk.type)} · +${atk.hit} to hit${atk.reach > 5 ? ` · ${atk.reach} ft` : ""}` : "")
+    + (armorOf(it) ? `<br>${armorNote(a, it)}` : "");
   d.innerHTML = `<div class="efBig${it.icon ? "" : " px"}">${pic ? `<img src="${esc(pic)}" alt="">` : "◆"}</div><div><h5>${esc(it.name)}</h5><div class="efMeta">${meta}</div>${it.desc ? `<div class="efDesc">${esc(it.desc)}</div>` : ""}<div class="efActs"></div></div>`;
   const acts = d.querySelector(".efActs");
   const btn = (label, ok, why, fn, primary) => { const b = document.createElement("button"); b.className = "btn" + (primary ? " primary" : ""); b.textContent = label; b.disabled = !ok; if (why) b.title = why; b.onclick = fn; acts.appendChild(b); };
@@ -16118,6 +16204,17 @@ function renderItemCard(a, g, it, u, worn, pic, what, fight, mine){
   if (to && !worn.includes(to)) btn(isWeapon(it) && HAND(to) ? `Equip · ${slotLabel(to).toLowerCase()}` : `Wear · ${slotLabel(to).toLowerCase()}`, can(to), cost(to), () => equipTo(a, it, to), true);
   for (const sl of worn) btn(HAND(sl) ? `Put away (${slotLabel(sl).toLowerCase()})` : "Take off", mine && (!fight || (HAND(sl) && gearCost(a, 1).ok)), fight ? (HAND(sl) ? gearHint(a, 1) : "not mid-fight") : "", () => removeFrom(a, sl));
   if (!acts.children.length) acts.innerHTML = `<span class="efHint">${worn.length ? "" : it.eslot || isWeapon(it) ? "pick a slot it fits, or drag it onto the body" : "nothing to wear here — use it from the row"}</span>`;
+  // give it to someone: the list of who walks with you. Refusals are shown with their reason, not hidden.
+  { const who = giveTargets(a);
+    if (who.length){ const box = document.createElement("span"); box.className = "efGive"; box.style.cssText = "display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap";
+      const sel = document.createElement("select"); sel.className = "btn"; sel.setAttribute("aria-label", `Give the ${it.name} to`);
+      sel.innerHTML = `<option value="">Give to…</option>` + who.map(t => { const far = fight && feetBetween(a, t) > 5.5; return `<option value="${esc(t.id)}"${far ? " disabled" : ""}>${esc(fname(t))}${far ? " (more than 5 ft away)" : ""}</option>`; }).join("");
+      const wornAll = worn.length && g.carried.filter(c => c.name === it.name).reduce((q, c) => q + (c.qty || 1), 0) <= worn.length;
+      sel.disabled = !mine || wornAll; sel.title = wornAll ? `${worn.some(HAND) ? "Put it away" : "Take it off"} first` : !mine ? "not yours to hand over" : fight ? `${gearHint(a, 1)} · they must be within 5 ft` : "";
+      box.appendChild(sel);
+      let all = null; if ((it.qty || 1) > 1){ all = document.createElement("label"); all.style.cssText = "font-size:.8rem;display:inline-flex;gap:4px;align-items:center"; all.innerHTML = `<input type="checkbox"> all ${it.qty}`; box.appendChild(all); }
+      sel.onchange = () => { const t = who.find(x => x.id === sel.value); if (t) giveItem(a, it, t, all && all.querySelector("input").checked ? it.qty : 1); };
+      acts.appendChild(box); } }
   // the full item card, on purpose rather than on hover: lore checks (INT or a tool), Study at the next rest
   { const b = document.createElement("button"); b.className = "btn"; b.textContent = "Examine"; b.title = "Look closer: lore checks, and Study for something magical you cannot name yet";
     b.onclick = () => { const r = b.getBoundingClientRect(); const t = {kind: "bag", it, slug: (catalogItem(it.name) || {}).slug, name: it.name, item_type: it.item_type, properties: it.properties, pixel: it.pixel, desc: it.desc, hero: a, anchor: b}; icardShow(t, r.left + r.width / 2, r.top, true); };
