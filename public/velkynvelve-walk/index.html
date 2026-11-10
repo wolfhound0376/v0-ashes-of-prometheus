@@ -9652,6 +9652,17 @@ function combatClick(w){
     if (sp.range > 5 && ft > sp.range + 2.5){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft (${fname(t)} is ${Math.round(ft)} ft away).`); return; } }
   castSpell(a, t, p.spell);
 }
+// THE OPPORTUNITY ATTACK IS SEEN (Sam, 2026-11-10: "opportunity attacks should have a small indicator showing that an
+// opportunity attack is happening"). Every opportunity attack, either way round, goes through oaCue: a gold "Opportunity
+// attack" tag over the one who swings, a ring on the one leaving, and a log line that carries the measured gap in feet,
+// so a swing that looks wrong on screen can be checked against the number the rule actually used (the same report
+// said one landed from about 30 ft away, which no measure here allows; the feet in the log will say what happened).
+function oaCue(att, tgt){
+  const ft = Math.round(feetBetween(tgt, att) * 10) / 10;
+  popText(att, "⚔ Opportunity attack", "#ffd27a", 1.05); popText(tgt, "leaving reach", "#ffb08a", .8);
+  bank("ui/item_pickup", .35);
+  log(`<b style="color:#ffd27a">Opportunity attack:</b> ${fname(att)} swings as ${fname(tgt)} leaves their reach (${ft} ft apart, their reaction).`);
+}
 // Opportunity attacks (SRD): a foe you leave the reach of, without Disengage, gets one swing as
 // its reaction. Leaving by air counts — a long jump is movement, so it provokes exactly as a walk does.
 function provokedBy(a, end){
@@ -9671,7 +9682,7 @@ function combatWalk(a, p, done){
   const threat = provokedBy(a, cut[cut.length - 1]);
   combatBusy = true; closeMenu(); a.path = cut;
   a.onArrive = () => { combatBusy = false; done && done(); };
-  if (threat.length){ const f = threat[0]; f.c.reactionUsed = true; a.path = []; log(`${fname(f)} takes a swing as ${fname(a)} pulls away.`); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
+  if (threat.length){ const f = threat[0]; f.c.reactionUsed = true; a.path = []; oaCue(f, a); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
     attackWith(f, a, f.c.sheet.attacks[0], () => { if (!a.down){ a.path = cut; a.onArrive = () => { combatBusy = false; done && done(); }; } else { combatBusy = false; done && done(); } }); }
 }
 
@@ -9842,7 +9853,7 @@ function leapMove(a, g, to, done){
     arcTo(a, g.land, g.drop ? () => { landFall(a, g.dropFt); if (a.down){ combatBusy = false; done && done(); return; } standIfAble(a); land(); } : land); };
   const runUp = () => { if (g.runUpFt > 0.5){ a.path = [g.takeoff]; a.onArrive = spring; } else spring(); };
   if (threat.length){ const f = threat[0]; f.c.reactionUsed = true; a.path = [];
-    log(`${fname(f)} takes a swing as ${fname(a)} breaks away.`); narrate(f, `${fname(f)} lashes out as ${fname(a)} springs clear.`);
+    oaCue(f, a); narrate(f, `${fname(f)} lashes out as ${fname(a)} springs clear.`);
     attackWith(f, a, f.c.sheet.attacks[0], () => { if (!a.down) runUp(); else { combatBusy = false; done && done(); } });
   } else runUp();
 }
@@ -11005,14 +11016,29 @@ function approachThen(att, tgt, ft, then){
   if ((att.kind === "foe" || att.ally) && !att.c.conds.has("disengaged")){
     const p = standing(att.ally ? foes : heroes()).find(h => h !== tgt && !h.c.reactionUsed && !incapacitated(h) && feetBetween(att, h) <= 5 && Math.hypot(goal.x - h.x, goal.y - h.y) > reachPx(h, att, 5) + 6);
     if (p){
-      p.c.reactionUsed = true; const atk = meleeOf(p);
-      log(`${fname(p)} takes a swing as ${fname(att)} breaks away (opportunity attack, their reaction).`); narrate(p, `${fname(p)} lashes out as ${fname(att)} pulls away.`);
-      attackWith(p, att, atk, () => {
-        combatBusy = true;
-        if (!cbt) return;
-        if (att.down){ combatBusy = false; setTimeout(() => passTurn(att), 500); return; }
-        approachThen(att, tgt, ft, then);
-      }, false, true);
+      // THE HERO IS ASKED (Sam, 2026-11-10: "If an opportunity happens to a player they can have a dialogue type box that
+      // gives them the options"). The fight pauses, as it does for Shield and a readied strike: one row per melee weapon
+      // the hero has (reach 10 ft or less: an opportunity attack is ONE melee attack, SRD 5.1), or let them go and keep
+      // the reaction. A hero no one at this screen drives, an ally, or a foe swings as before, with its first melee line.
+      const go = atk => { p.c.reactionUsed = true; oaCue(p, att); narrate(p, `${fname(p)} lashes out as ${fname(att)} pulls away.`);
+        attackWith(p, att, atk, () => {
+          combatBusy = true;
+          if (!cbt) return;
+          if (att.down){ combatBusy = false; setTimeout(() => passTurn(att), 500); return; }
+          approachThen(att, tgt, ft, then);
+        }, false, true); };
+      if (p.kind === "pc" && canControl(p)){
+        const melee = (p.c.sheet.attacks || []).filter(k => (k.reach || 5) <= 10 && !k.ammo);
+        const opts = melee.length ? melee : [meleeOf(p)];
+        popText(p, "⚔ Opportunity!", "#ffd27a", 1.05);
+        showDialog({title: `Opportunity attack: ${fname(p)}`,
+          body: `${fname(att)} is breaking away from ${fname(p)}. Strike once as they leave, using ${fname(p)}'s reaction? (A reaction spent now is gone until ${fname(p)}'s next turn, so no Shield or readied strike this round.)`,
+          src: "Opportunity attack · 1 reaction · SRD 5.1",
+          buttons: [...opts.map((k, i) => ({label: `${k.name} · +${k.hit} · ${k.dmg}`, primary: i === 0, fn: () => go(k)})),
+            {label: "Let them go", fn: () => { log(`${fname(p)} lets ${fname(att)} go and keeps the reaction.`); approachThen(att, tgt, ft, then); }}]});
+        return;
+      }
+      go(meleeOf(p));
       return;
     }
   }
@@ -20077,7 +20103,7 @@ function keyboardMove(a, dt){
       const f = standing(foes).find(f => { const r = reachPx(f, a, 5) + 6; return !f.c.reactionUsed && !incapacitated(f) && Math.hypot(a.x - f.x, a.y - f.y) <= r && Math.hypot(nx - f.x, ny - f.y) > r; });
       if (f){
         keys.clear(); a.kbd = false; setAnim(a, "idle"); f.c.reactionUsed = true; combatBusy = true; closeMenu();
-        log(`${fname(f)} takes a swing as ${fname(a)} pulls away.`); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
+        oaCue(f, a); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
         attackWith(f, a, f.c.sheet.attacks[0], () => { combatBusy = false; if (cbt && activeActor() === a && !a.down) openMenu(a); });
         return;
       }
