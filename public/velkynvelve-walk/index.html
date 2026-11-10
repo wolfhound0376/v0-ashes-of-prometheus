@@ -4475,14 +4475,14 @@ async function openLoot(id, title, opts = {}){
   const close = () => { $("obj").hidden = true; box.classList.remove("loot"); mode = "explore"; if (opts.onClose) opts.onClose(); };
   const add = (label, fn, cls = "", off = false) => { const b = choiceRow(box, label, fn || null, cls); b.disabled = off; return b; };
   const fkey = lootKeyOf(id), spill = !!opts.at && !fountained.has(fkey);   // the first open of a body or chest spills it
-  if (!spill){ showObjCard(); add("…", null, "", true); }
+  if (!spill){ showObjCard(); cardClose(close); add("…", null, "", true); }
   const j = await fetchLoot(id); await ensureCatalog();
   if (spill){
     fountained.add(fkey);
     const wait = j.error ? 0 : lootFountain(opts.at, j.rows || []);
     if (wait) await new Promise(r => setTimeout(r, wait));
     if (mode !== "dialog") return;                                                // closed or left while it flew
-    showObjCard();
+    showObjCard(); cardClose(close);
   }
   if ($("obj").hidden) return;
   box.innerHTML = "";
@@ -5287,6 +5287,12 @@ function choiceRow(box, label, fn, cls = "", meta = {}){
   return b;
 }
 /** The card's own close control (the round × beside the name). Shown only for a card that has somewhere to step back to. */
+// THE X ALWAYS CLOSES (Sam, 2026-11-10, on an emptied moss patch: "Clicking X doesn't work"). Only the interact card
+// gave the X a handler; every other card called cardClose(null), which sets `hidden` on the button and clears its
+// click. But `.tcard .rnd{display:block}` beats the hidden attribute, so the X stayed on screen and did nothing on
+// fourteen of the fifteen cards. Now every card's X steps back the way Escape always has, and a card with its own
+// way out (the loot card puts its container away, the interact card re-arms its zone) hands that in with cardClose(fn).
+function cardStepBack(){ if ($("obj").hidden) return; $("obj").hidden = true; $("objBtns").classList.remove("loot"); if (mode === "dialog") mode = "explore"; }
 function showObjCard(){ cardClose(null); cardFace(null); $("obj").hidden = false; }
 /** What goes in the circle: the subject's own painted icon when the card has one (Sam, 2026-10-30: "the circle
  *  should have the icon image of whomever the box is for"), otherwise the object cut from the plate, as before.
@@ -5296,7 +5302,7 @@ function cardFace(icon){
   if (icon){ img.src = `icons/${icon}.png`; img.hidden = false; cv.hidden = true; }
   else { img.hidden = true; img.removeAttribute("src"); cv.hidden = false; }
 }
-function cardClose(fn){ const x = $("objX"); if (!x) return; x.hidden = !fn; x.onclick = fn || null; }
+function cardClose(fn){ const x = $("objX"); if (!x) return; x.hidden = false; x.onclick = fn || cardStepBack; }
 /** The first choice on the card, whether or not it is wrapped in .lit. */
 function firstChoice(box){ return box.querySelector(".btn"); }
 
