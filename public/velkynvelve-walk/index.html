@@ -4137,6 +4137,7 @@ function noteLocalOnly(a){
 }
 // one thing into a hero's hands: the server first (it is the truth), then the bag here
 async function takeLoot(a, id, row){
+  const wasEnc = encumbered(a);
   if (row.missing){ toast(`${row.name} is not in the item catalogue yet, so it cannot be taken.`, 3600); return false; }
   // WHERE IT GOES. A seated hero in the real game: the server (their inventory). A REHEARSAL (?sandbox=1) or a hero with
   // no seat: this tab's pack only. Until 2026-10-27 the second case was refused with a toast, so a successful Sleight of
@@ -4162,6 +4163,7 @@ async function takeLoot(a, id, row){
   }
   if (row.name === PEN_KEY){ state.penKey = true; shakeKeyTaken(); }   // THE SHAKEDOWN: the drow start counting rotations
   if (bagOpen()) renderBag();
+  noteLoad(a, wasEnc);
   popText(a, `+ ${row.qty > 1 ? row.qty + " " : ""}${row.name}`, row.missing || row.kind === "preview-stash" || RARITY_RANK[rarityOf(row)] < 1 ? "#e8d9a8" : RARITY_COL[rarityOf(row)]); bank("ui/item_pickup", .7);
   log(`${fname(a)} takes ${esc(row.qty > 1 ? row.qty + " × " : "")}<b>${esc(row.name)}</b>.`);
   // A weapon off a rack gets the same offer a weapon off the floor does (pickUp): hold it ready, or pack it. Without
@@ -8104,7 +8106,8 @@ function nextTurn(first){
   if (a.c.conds.has("laughing")){ popText(a, "HA HA HA", "#ff9bd2"); log(`${fname(a)} is on the floor, helpless with laughter.`); setTimeout(nextTurn, 900); return; }
   if (newSpellsTurnStart(a)) return;
   if (a.c.surprised){ a.c.surprised = false; a.c.conds.delete("surprised"); popText(a, "surprised", "#ffd27a"); log(`${fname(a)} is caught by surprise and loses the turn.`); setTimeout(nextTurn, 900); return; }
-  a.c.move = a.c.sheet.speed - (a.c.conds.has("slowed") ? 10 : 0); a.c.conds.delete("slowed"); a.c.action = true; a.c.bonus = true; a.c.objFree = true;
+  a.c.move = Math.max(0, turnSpeed(a) - (a.c.conds.has("slowed") ? 10 : 0)); a.c.conds.delete("slowed");
+  if (encumbered(a)) popText(a, `encumbered: ${turnSpeed(a)} ft`, "#ff8a7a", .9); a.c.action = true; a.c.bonus = true; a.c.objFree = true;
   guardianSlows(a);   // Spirit Guardians: half speed for a foe that starts its turn among the spirits
   if (a.c.conds.has("numbed")){ a.c.move = Math.floor(a.c.move / 2 / 5) * 5; a.c.reactionUsed = true; a.c.conds.delete("numbed"); popText(a, "numb: half speed, no reactions", "#9fd8ff", .9); }   // the bhut's bite, one round (the reaction budget is reactionUsed, reset just above)
   // Alchemist's fire (SRD 5.1): "the target takes 1d4 fire damage at the start of each of its turns"
@@ -8245,7 +8248,7 @@ function openMenu(a, sub){
     { const rw = meleeOf(a);
       if (rw) add("Ready", c.ready ? `readied: ${rw.name} as the first foe comes within ${rw.reach || 5} ft` : `your action · strike with the ${rw.name} as the first foe comes within reach`, c.action && !c.ready && !c.reactionUsed ? () => readyAttack(a, rw) : null); }
     grp("action");
-    add("Dash", `+${s.speed} ft of movement`, c.action ? () => { c.action = false; c.move += s.speed; popText(a, "dash", "#cfe8ff"); log(`${fname(a)} dashes.`); openMenu(a); } : null);
+    add("Dash", `+${turnSpeed(a)} ft of movement`, c.action ? () => { c.action = false; c.move += turnSpeed(a); popText(a, "dash", "#cfe8ff"); log(`${fname(a)} dashes.`); openMenu(a); } : null);
     add("Disengage", "leave reach without a free swing", c.action ? () => { c.action = false; addCond(a, "disengaged"); log(`${fname(a)} disengages.`); openMenu(a); } : null);
     add("Help", "an ally's next attack has advantage", c.action ? () => { closeMenu(); cbt.phase = "target"; cbt.pend = {help: true}; hint("Help: click a friend within 5 ft."); } : null);
     add("Search", `Perception ${sgn((s.skills || {}).perception ?? abilMod(s, "wis"))}`, c.action ? () => doSearch(a) : null);
@@ -8280,7 +8283,7 @@ function openMenu(a, sub){
     if (s.cls === "Rogue"){
       grp("bonus action");
       if ((s.level || 1) >= 2){
-        add("Cunning Action: Dash", `bonus action · +${s.speed} ft of movement`, c.bonus ? () => { c.bonus = false; c.move += s.speed; popText(a, "dash", "#cfe8ff"); log(`${fname(a)} dashes (Cunning Action).`); openMenu(a); } : null);
+        add("Cunning Action: Dash", `bonus action · +${turnSpeed(a)} ft of movement`, c.bonus ? () => { c.bonus = false; c.move += turnSpeed(a); popText(a, "dash", "#cfe8ff"); log(`${fname(a)} dashes (Cunning Action).`); openMenu(a); } : null);
         add("Cunning Action: Disengage", "bonus action · leave reach without a free swing", c.bonus ? () => { c.bonus = false; addCond(a, "disengaged"); log(`${fname(a)} disengages (Cunning Action).`); openMenu(a); } : null);
         add("Cunning Action: Hide", c.conds.has("hidden") ? "you are hidden" : `bonus action · Stealth ${sgn((s.skills || {}).stealth ?? abilMod(s, "dex"))} vs their passive Perception`, c.bonus && !c.conds.has("hidden") ? () => doHide(a, true) : null);
       }
@@ -18205,6 +18208,7 @@ function giveItem(a, it, t, n, opts = {}){
   const g = GEAR[a.id]; if (!g || !bagCan(a) || !t) return; const fight = inFightNow();
   n = Math.max(1, Math.min(n || 1, it.qty || 1));
   { const no = carryRefusal(t, itemLb(it) * n, it.name); if (no){ toast(no, 4200); return; } }
+  const wasEncA = encumbered(a), wasEncT = encumbered(t);
   if ((g.doll || []).some(d => d.name === it.name) && g.carried.filter(c => c.name === it.name).reduce((q, c) => q + (c.qty || 1), 0) - n < (g.doll || []).filter(d => d.name === it.name).length){ toast(`Take the ${it.name} off first.`); return; }
   if (fight){ if (feetBetween(a, t) > 5.5){ toast(`${fname(t)} is out of reach: they must be within 5 ft.`); return; } const k = gearCost(a, 1); if (!k.ok){ toast(k.why); return; } k.pay(); }
   it.qty = (it.qty || 1) - n; if (it.qty <= 0) g.carried = g.carried.filter(x => x !== it);
@@ -18212,6 +18216,7 @@ function giveItem(a, it, t, n, opts = {}){
   const same = (catalogItem(it.name) || {}).stackable ? tg.carried.find(c => c.name === it.name) : null;
   if (same) same.qty = (same.qty || 1) + n; else tg.carried.push({...it, qty: n});
   if (inv.item && inv.item.name === it.name && it.qty <= 0) inv.item = null;
+  noteLoad(a, wasEncA); noteLoad(t, wasEncT);
   bank("ui/item_pickup", .5); popText(t, `${it.name}${n > 1 ? ` ×${n}` : ""}`, "#e8d9a8", .8);
   log(`${fname(a)} hands ${n > 1 ? `${n} × ` : "the "}<b>${esc(it.name)}</b> to ${fname(t)}.`);
   const from = serverCid(a.id), to = APP && !SANDBOX ? (opts.toId || characterIdOf(t.id)) : null;
@@ -18368,12 +18373,26 @@ function askEarned(allies){
 const itemLb = it => { const w = Number(it && it.wt); if (w > 0) return w; const c = it && catalogItem(it.name); return (c && Number(c.weight)) || 0; };
 const carriedLb = id => Math.round(((GEAR[id] || {}).carried || []).reduce((t, it) => t + itemLb(it) * (it.qty || 1), 0) * 10) / 10;
 function carryMaxLb(id){ const g = GEAR[id] || {}; if (g.carryMax !== undefined) return g.carryMax; const st = (SHEETS[id] || {}).strScore || (PCS[id] || {}).strScore; return st ? st * 15 : null; }
+// PAST CAPACITY THEY ARE ENCUMBERED, NOT REFUSED (Sam, 2026-11-10: "over capacity should create the encumbered variant
+// but function as slowed effectively"): 10 ft off their speed, the same price as the walk's "slowed", for as long as
+// the pack is over. The one hard stop is twice the capacity, the most anyone can lift (SRD, Push, Drag, or Lift).
+// Same numbers as lib/carry.ts — keep in step.
+const ENCUMBERED_SLOW_FT = 10;
+function encumbered(a){ if (!a || a.kind !== "pc") return false; const max = carryMaxLb(a.id); return max != null && carriedLb(a.id) > max + 1e-9; }
+/** A hero's speed this turn: the sheet's, less 10 ft while their pack is over their carrying capacity (never under 5). */
+function turnSpeed(a){ const sp = a.c.sheet.speed; return encumbered(a) ? Math.max(5, sp - ENCUMBERED_SLOW_FT) : sp; }
 /** Why this hero cannot take `lb` more pounds, or "" when they can. Heroes only: an NPC's pack is not weighed. */
 function carryRefusal(a, lb, name){
   if (!a || a.kind !== "pc" || !(lb > 0)) return "";
   const max = carryMaxLb(a.id); if (max == null) return "";
-  const has = carriedLb(a.id); if (has + lb <= max + 1e-9) return "";
-  return `${fname(a)} cannot carry that: ${has} of ${max} lb carried, and the ${name} weighs ${Math.round(lb * 10) / 10} lb. Drop or hand something off first.`;
+  const has = carriedLb(a.id); if (has + lb <= max * 2 + 1e-9) return "";
+  return `${fname(a)} cannot lift that: ${has} lb carried, the ${name} weighs ${Math.round(lb * 10) / 10} lb, and ${max * 2} lb is the most they can lift at all. Drop or hand something off first.`;
+}
+/** Say it once, at the moment a pack tips over (or back under) the hero's carrying capacity. `was` = encumbered(a) before the change. */
+function noteLoad(a, was){
+  const is = encumbered(a); if (is === was) return;
+  if (is){ toast(`${fname(a)} is encumbered: ${carriedLb(a.id)} of ${carryMaxLb(a.id)} lb. ${ENCUMBERED_SLOW_FT} ft slower until the pack is lighter.`, 4600); popText(a, "encumbered", "#ff8a7a", .9); }
+  else toast(`${fname(a)} is no longer encumbered.`, 2600);
 }
 async function loadGear(only){
   if (!APP) return; await ensureCatalog();
@@ -18424,6 +18443,7 @@ function drawFloorItems(){
   }
 }
 async function pickUp(a, p){
+  const wasEnc = encumbered(a);
   if (!floor.includes(p)) return;
   const inFight = mode === "combat" && cbt;
   await ensureCatalog();
@@ -18437,6 +18457,7 @@ async function pickUp(a, p){
   if (have) have.qty = (have.qty || 1) + 1;
   else g.carried.push({name: p.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: p.pixel, qty: 1, wt: Number(cat.weight) || 0, icon: cat.icon_url || null, desc: cat.description || ""});
   if (bagOpen()) renderBag();
+  noteLoad(a, wasEnc);
   popText(a, `+ ${p.name}`, "#e8d9a8"); log(`${fname(a)} picks up the <b>${esc(p.name)}</b>${inFight ? ` (${PICKUP_FT} ft of movement)` : ""}.`);
   bank("ui/item_pickup", .7);
   if (APP){ const cid = serverCid(a.id);
@@ -19004,8 +19025,8 @@ function renderBag(){
       b.onclick = () => removeFrom(a, inv.slot); bx.appendChild(b); sel.appendChild(bx); }
   } else sel.innerHTML = '<div class="what">Click a slot to equip or remove, or drag: an item onto a slot to wear it, a slot off the doll to take it off.</div>';
   { const n = g.carried.length;
-    const has = carriedLb(a.id), max = carryMaxLb(a.id), near = max != null && has >= max * .9;
-    const load = max != null ? `<span title="Carrying capacity: Strength × 15. Past it, nothing more goes in the pack."${near ? ' style="color:#ff8a7a"' : ""}>${has} / ${max} lb</span> · ` : has > 0 ? `${has} lb · ` : "";
+    const has = carriedLb(a.id), max = carryMaxLb(a.id), over = encumbered(a), near = max != null && has >= max * .9;
+    const load = max != null ? `<span title="Carrying capacity: Strength × 15. Past it you are encumbered: ${ENCUMBERED_SLOW_FT} ft slower. Past ${max * 2} lb nothing more can be lifted."${near ? ' style="color:#ff8a7a"' : ""}>${has} / ${max} lb${over ? ` · encumbered −${ENCUMBERED_SLOW_FT} ft` : ""}</span> · ` : has > 0 ? `${has} lb · ` : "";
     $("invPackHead").innerHTML = `Backpack<small>${inv.slot ? `fits the ${esc(slotLabel(inv.slot).toLowerCase())} first · ` : ""}${load}${n} item${n === 1 ? "" : "s"}</small>`; }
   const list = $("invList"); list.innerHTML = "";
   // the card's panel holds a card or is not there: no instruction text, no empty frame (Sam, 2026-11-10: "We don't
@@ -19102,7 +19123,7 @@ function renderBagChips(a, s){
   const mark = k => `<img class="mark" src="${HERO_ICON_BASE}${k}.png" alt="">`;
   const heart = mark("hp"), shield = mark("ac"), boot = mark("speed");
   if (GEAR[a.id] && SHEETS[a.id] === s) refreshAc(a.id);
-  el.innerHTML = chip("HP", hpMax ? `${hpNow}<small> / ${hpMax}</small>` : "—", heart) + chip("AC", s.ac != null ? `${s.ac}${(s.armorUntrained || []).length ? `<small style="color:#ff8a7a" title="armor you are not trained in"> !</small>` : ""}` : "—", shield) + chip("Speed", s.speed != null ? s.speed : "—", boot);
+  el.innerHTML = chip("HP", hpMax ? `${hpNow}<small> / ${hpMax}</small>` : "—", heart) + chip("AC", s.ac != null ? `${s.ac}${(s.armorUntrained || []).length ? `<small style="color:#ff8a7a" title="armor you are not trained in"> !</small>` : ""}` : "—", shield) + chip("Speed", s.speed != null ? (encumbered(a) ? `${Math.max(5, s.speed - ENCUMBERED_SLOW_FT)}<small style="color:#ff8a7a" title="encumbered: the pack is over your carrying capacity"> −${ENCUMBERED_SLOW_FT}</small>` : s.speed) : "—", boot);
   { const acEl = el.querySelector('[data-cat="ac"]'); if (acEl && s.acWhy) acEl.title = `Armor Class: ${s.acWhy}${(s.armorUntrained || []).length ? `. Not trained in ${s.armorUntrained.map(c => ARMOR_KIND[c]).join(" or ")}: ${ARMOR_PRICE}.` : ""}`; }
 }
 // THE LEVEL PANEL: level badge, the XP bar toward the next level, and the Level Up button as a state. The sheet's xp /
