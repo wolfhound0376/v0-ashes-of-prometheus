@@ -17628,7 +17628,7 @@ const isMagicWeapon = it => { if (!it) return false; const p = it.properties || 
   return p.magic === true || p.magical === true || Number(p.attack_bonus || p.bonus || 0) > 0 || /\+\s*\d/.test(it.name || "") || !/^(common|mundane|none|)$/.test(r); };
 // an attack line from a catalogue weapon, the way the sheet's own lines are written. `str` says the modifier used was
 // Strength (not finesse-with-DEX, not ammunition): Rage's damage bonus reads it (lib/rage.mjs isStrengthMelee).
-function attackFromItem(sheet, it){
+function attackFromItem(sheet, it, profAlways){
   const p = it.properties || {}, wp = (p.weapon_properties || []).map(s => String(s).toLowerCase());
   const finesse = wp.includes("finesse") || p.finesse === true, light = wp.includes("light") || p.light === true, thrown = wp.includes("thrown");
   // a launcher is ammunition even when its catalogue row forgets to say so: the hand crossbow's row has no
@@ -17638,7 +17638,7 @@ function attackFromItem(sheet, it){
   const type = p.damage_type && p.damage_type !== "none" ? p.damage_type : (String(p.damage || "").match(/([a-z]+)\s*$/i) || [0, "bludgeoning"])[1];
   const str = abilMod(sheet, "str"), dex = abilMod(sheet, "dex"), mod = ammo ? dex : finesse ? Math.max(str, dex) : str;   // the modifiers, not the saves
   // a "+1" weapon's catalogue row may carry one `bonus` for both (Lolth's Tooth does): it adds to the attack and the damage
-  const prof = proficientWith(sheet.cls, it) ? 2 : 0, dm = mod + Number(p.damage_bonus ?? p.bonus ?? 0);       // proficiency +2 at levels 1-4
+  const prof = profAlways || proficientWith(sheet.cls, it) ? 2 : 0, dm = mod + Number(p.damage_bonus ?? p.bonus ?? 0);       // proficiency +2 at levels 1-4
   const a = {name: it.name, hit: mod + prof + Number(p.attack_bonus ?? p.bonus ?? 0), dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
     reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, str: !ammo && (!finesse || str >= dex), ammo, item: true, itemName: it.name, pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null, magic: isMagicWeapon(it)};
   if (ammo && rng[1]) a.long = rng[1];
@@ -17650,9 +17650,19 @@ function attackFromItem(sheet, it){
 // a hero's attack lines: the equipped weapon first, then what the sheet always has (a fist)
 function refreshAttacks(id){
   if (ALLY_SHEETS[id]){   // an ally: the block's own line for each weapon of theirs they actually carry, then the base
+    // ANY WEAPON HANDED TO THEM, NOT ONLY THE BLOCK'S (Sam, 2026-11-10: "Why are not eldith and ront using weapons
+    // distributed to them"). Eldeth was given a drow's hand crossbow; her block lists only a shortsword and a longbow,
+    // so the crossbow matched nothing and she kept punching. A weapon the block lists still uses the block's own line;
+    // any other weapon is built the way a hero's is (attackFromItem: the weapon's SRD damage + their own STR or DEX
+    // modifier), counted as PROFICIENT (+2). That +2 is a ruling, not the book: a stat block names only its own weapons.
     const s = ALLY_SHEETS[id]; if (!s.baseAttacks) s.baseAttacks = s.attacks.slice();
-    const have = ((GEAR[id] || {}).carried || []).map(c => baseWeapon(c)).filter(Boolean);
-    s.attacks = [...Object.entries(s.kit).filter(([k]) => have.includes(k)).map(([, v]) => v), ...s.baseAttacks];
+    const lines = [], seen = new Set();
+    for (const it of ((GEAR[id] || {}).carried || [])){
+      const b = baseWeapon(it); if (!isWeapon(it) || seen.has(b || it.name)) continue; seen.add(b || it.name);
+      const kit = b && s.kit[b];
+      lines.push(kit ? {...kit, itemName: it.name} : attackFromItem(s, it, true));
+    }
+    s.attacks = [...lines, ...s.baseAttacks];
     return;
   }
   const s = SHEETS[id]; if (!s) return; if (!s.baseAttacks) s.baseAttacks = s.attacks.slice();
@@ -17733,6 +17743,7 @@ function giveItem(a, it, t, n){
   if (from && to) fetch("/api/walk-items", {method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({action: "give", characterId: from, targetCharacterId: to, itemKey: it.item_key || null, itemName: it.name, quantity: n})})
     .then(r => r.json()).then(j => { if (j && j.error){ toast(j.error); loadGear(a.id); loadGear(t.id); } }).catch(() => {});
+  refreshAttacks(a.id); refreshAttacks(t.id);   // the giver may have handed over their weapon; the taker now has one
   if (fight){ renderParty(); } renderBag();
 }
 async function loadGear(only){
