@@ -2085,6 +2085,7 @@ function draw(){
   if (OV.cfg){ ovSeam(); ovDoor(); }
   drawDoor(); drawProps(); drawDecor(); drawLift(); drawPropHighlight(); drawLootHighlight(); drawFloorItems(); drawSneakCones(); drawLaborCones();
   // exits: soft glows so players can see the ways out
+  exitSigns.length = 0;
   if (mode === "explore" || mode === "dialog"){
     const pulse = .5 + .5 * Math.sin(now / 520);
     for (const z of node.zones){
@@ -2106,7 +2107,12 @@ function draw(){
       if (OV.on && !ovDomain(cx, cy)) continue;   // the close-up shows only the balcony's ways out
       const col = locked ? "208,69,58" : "240,190,90";   // every way out glows gold (Sam, 2026-10-27: the green "looks weird"); a locked gate stays red
       const rad = Math.max(40, Math.min(110, Math.min(x1 - x0, y1 - y0) * .8)) * (OV.on ? 1.6 : 1);
+      const near = leader ? Math.hypot(leader.x - cx, leader.y - cy) : 1e9, wc = {x: cx, y: cy};
       if (OV.on){ const q = ovMap(cx, cy); cx = q.x; cy = q.y; }
+      // THE SIGNPOST (Sam, 2026-11-10: "build the signposts"): where this way out leads, shown as the hero comes near
+      // it or the pointer rests on it. Drawn last (drawExitSigns), over the figures and the dark.
+      if (mode === "explore" && (z.to || []).length){ const R1 = 480 * node.scale, R0 = 340 * node.scale, a = hoverZone === z ? 1 : Math.max(0, Math.min(1, (R1 - near) / (R1 - R0)));
+        if (a > 0) exitSigns.push({x: cx, y: cy - rad * .55, a, locked, text: z.to.map(nameOf).join(" / "), arrow: exitArrow(z, wc)}); }
       const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
       g.addColorStop(0, `rgba(${col},${.30 + .25 * pulse})`); g.addColorStop(1, `rgba(${col},0)`);
       ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(cx, cy, rad, rad * .55, 0, 0, Math.PI * 2); ctx.fill();
@@ -2274,7 +2280,41 @@ function draw(){
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
   drawTolls();
   ovWrapGroup(drops, drawDrops); drawDeathBits(false); drawCombatFx(); drawMageHand(); drawCrimPuffs(); drawShots(); drawCritBadges(); drawToothGlow();
+  drawExitSigns();
   ctx.globalAlpha = 1;
+}
+// ---------- EXIT SIGNPOSTS (Sam, 2026-11-10; lane 2 of claude/FF_Node_Movement_2026-10-30.md: "Exits drawn as glowing
+// thresholds or arrows, labelled") ----------
+// Every way out already glows gold. What it did not say, until the pointer rested on it, was where it goes. Now a small
+// plate rises over the glow as the hero walks up to it: an arrow for the way (a ladder says up or down; a traced
+// crossing points along its walk; anything else points to the edge of the painting it sits on) and the name of the
+// place beyond. It fades in over the last stretch, so a room with four exits does not wear four labels at once. A
+// locked way says so, in the red its glow already wears. Explore only: nothing is drawn in a fight or over a card.
+// The names are the plates' own (spec.py). Sizes, distances and the look are Claude's. [CLAUDE]
+const exitSigns = [];
+function exitArrow(z, c){
+  if (z.climb) return z.climb.dir === "up" ? "\u25B2" : "\u25BC";
+  let d = null;
+  if (z.cross && z.cross.length){ const e = z.cross[z.cross.length - 1]; d = {x: e[0] - c.x, y: e[1] - c.y}; }
+  if (!d || (Math.abs(d.x) < 1 && Math.abs(d.y) < 1)) d = zoneSide(z);
+  return Math.abs(d.x) >= Math.abs(d.y) ? (d.x < 0 ? "\u25C0" : "\u25B6") : (d.y < 0 ? "\u25B2" : "\u25BC");
+}
+function drawExitSigns(){
+  if (!exitSigns.length) return;
+  const k = 1 / (base * view.z), bob = Math.sin(now / 620) * 2;
+  for (const g of exitSigns){
+    const gold = g.locked ? "232,96,84" : "240,190,90", label = (g.locked ? "Locked \u00B7 " : "") + g.text;
+    ctx.save(); ctx.translate(g.x, g.y); ctx.scale(k, k); ctx.globalAlpha = g.a;
+    ctx.font = '600 13px "IM Fell English SC","Iowan Old Style",Georgia,serif'; ctx.textBaseline = "middle";
+    const tw = ctx.measureText(label.toUpperCase()).width, w = tw + 44, h = 26, x0 = -w / 2, y0 = -h - 12 + bob, r = 7;
+    ctx.beginPath(); ctx.moveTo(x0 + r, y0); ctx.lineTo(x0 + w - r, y0); ctx.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r); ctx.lineTo(x0 + w, y0 + h - r); ctx.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
+    ctx.lineTo(8, y0 + h); ctx.lineTo(0, y0 + h + 7); ctx.lineTo(-8, y0 + h); ctx.lineTo(x0 + r, y0 + h); ctx.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r); ctx.lineTo(x0, y0 + r); ctx.quadraticCurveTo(x0, y0, x0 + r, y0); ctx.closePath();
+    ctx.fillStyle = "rgba(16,11,9,.88)"; ctx.shadowColor = `rgba(${gold},.55)`; ctx.shadowBlur = 12; ctx.fill(); ctx.shadowBlur = 0;
+    ctx.lineWidth = 1.5; ctx.strokeStyle = `rgba(${gold},.9)`; ctx.stroke();
+    ctx.fillStyle = `rgb(${gold})`; ctx.font = '11px sans-serif'; ctx.textAlign = "left"; ctx.fillText(g.arrow, x0 + 11, y0 + h / 2 + 1);
+    ctx.font = '600 13px "IM Fell English SC","Iowan Old Style",Georgia,serif'; ctx.fillStyle = "#f3e6c6"; ctx.fillText(label.toUpperCase(), x0 + 30, y0 + h / 2 + 1);
+    ctx.restore();
+  }
 }
 const tint = document.createElement("canvas");
 // ── THE LIGHT LAYER (from the Combat Effects Lab, 2026-10-29) ─────────────────────────────────────────────────────────
