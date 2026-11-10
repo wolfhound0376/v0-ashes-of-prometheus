@@ -57,12 +57,15 @@ export function FortuneRoll({
   useEffect(() => {
     if (!characterId || !claimToken) { setState("unknown"); return }
     let live = true
+    // Never-stall mode: an answer that has not come in 6 s is treated like an unreadable one — offer the roll
+    // (the POST is the real check). Without this a hung read left the card invisible for good.
+    const slow = autoRollMs ? window.setTimeout(() => { if (live) setState((s) => (s === "unknown" ? "due" : s)) }, 6000) : null
     fetch(`/api/fortune-roll?characterId=${encodeURIComponent(characterId)}`, { cache: "no-store" })
       .then((r) => r.json())
-      .then((j) => { if (!live) return; if (j?.rolled){ setState("dismissed"); onDismiss?.(false) } else setState("due") })
+      .then((j) => { if (!live) return; if (j?.rolled){ setState((s) => { if (s !== "unknown" && s !== "due") return s; queueMicrotask(() => onDismiss?.(false)); return "dismissed" }) } else setState((s) => (s === "unknown" ? "due" : s)) })
       // Unreadable: in never-stall mode offer the roll anyway (the POST is the real check); otherwise stay hidden.
       .catch(() => { if (live) setState(autoRollMs ? "due" : "unknown") })
-    return () => { live = false }
+    return () => { live = false; if (slow) window.clearTimeout(slow) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [characterId, claimToken])
 
