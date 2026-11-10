@@ -99,6 +99,9 @@ header .tools input[type=range]{accent-color:#f2c55c}
 .fade{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity .35s ease}
 .fade.on{opacity:1}
 .fade.quick{transition:opacity .2s ease}   /* a door: a short dip to black, not a held fade (DOORS DON'T WAIT) */
+/* THE IRIS (Sam, 2026-11-10): the dark closes in a circle on the doorway the party walked into and opens from the one
+   they come out of. --ix/--iy are the circle's centre on the stage, --ir its radius; travel() drives them. */
+.iris{position:absolute;inset:0;pointer-events:none;background:radial-gradient(circle at var(--ix,50%) var(--iy,50%),transparent var(--ir,0px),#000 calc(var(--ir,0px) + 3px))}
 .titlecard{position:absolute;left:50%;top:16%;transform:translateX(-50%);text-align:center;pointer-events:none;opacity:0;transition:opacity .6s ease;text-shadow:0 2px 14px #000,0 0 3px #000}
 .titlecard.on{opacity:1}
 .titlecard .no{font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.2em;color:var(--ember);text-transform:uppercase}
@@ -987,6 +990,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="vignette" id="vignette"></div>
     <div class="over" id="over"></div>
     <div class="fade" id="fade"></div>
+    <div class="iris" id="iris" hidden></div>
     <div class="toast" id="toast" hidden></div>
     <div class="checkcard" id="checkCard" role="status" aria-live="polite" hidden><button class="cc-x" id="ccX" aria-label="Close">×</button><p class="cc-what" id="ccWhat"></p><div class="cc-roll" id="ccRoll"></div><div class="cc-say" id="ccSay"></div></div>
     <div class="icard" id="icard" role="dialog" aria-label="Item" hidden></div>
@@ -3142,7 +3146,11 @@ async function travel(to, z, fromWorld, cut, solo){
     stopActivity(a); a.kbd = false; a.onArrive = null; a.waitUntil = now + i * 300;
     if (drop){ a.path = [{x: zc.x + (i - 1.5) * 40, y: zc.y}]; a.onArrive = () => { a.fall = now; }; }
     else if (climb){ a.waitUntil = now + i * 650; a.path = [{x: climb.foot[0], y: climb.foot[1]}]; a.onArrive = () => { a.climbing = {t0: now, dir: climb.dir, from: {x: a.x, y: a.y}, to: {x: climb.ladder[0], y: climb.ladder[1]}, out: true}; a.face = faceOf(0, -1); bank("movement/jump_land", .25); }; }
-    else { const j = route.findIndex(p => p.jump); a.path = (j >= 0 && outsidePen(a) ? route.slice(j + 1) : route).map(p => ({...p})); }
+    else { const j = route.findIndex(p => p.jump); let r = j >= 0 && outsidePen(a) ? route.slice(j + 1) : route;
+      // already out on the balcony (the bridge or the stairhead are exits of their own now): pick the walk up at the
+      // point nearest them and go on from there, never back toward the gate first
+      if (cr && j >= 0 && outsidePen(a) && r.length > 1){ let b = 0, bd = Infinity; r.forEach((p, i) => { const d = Math.hypot(p.x - a.x, p.y - a.y); if (d < bd){ bd = d; b = i; } }); r = r.slice(Math.min(b + 1, r.length - 1)); }
+      a.path = r.map(p => ({...p})); }
   });
   const dir = drop ? {x: 0, y: 1} : Math.abs(exitDir.x) >= Math.abs(exitDir.y) ? {x: Math.sign(exitDir.x) || 1, y: 0} : {x: 0, y: Math.sign(exitDir.y) || 1};
   // a plain door fades as the leader steps into it (one waypoint, the few steps on, still ahead); a traced crossing
@@ -3162,19 +3170,56 @@ async function travel(to, z, fromWorld, cut, solo){
   // down. That looks horrible ... we fade out"). The plate used to slide sideways to the next one whatever the way was —
   // a ladder up or down included. Now the party goes into the exit (or up or down its ladder) and the screen fades;
   // only the drop through the falls keeps its slide, because falling is the point.
-  if (drop) await slideTo(to, dir); else { $("fade").classList.add("quick", "on"); await wait(230); }
+  // PAN WHERE THE TWO PAINTINGS MEET, IRIS WHERE THEY DO NOT (Sam, 2026-11-10: "Going through the door should just pan
+  // to the next submap plate"; "Agreed" to the slide). His 2026-10-27 objection above still rules: a slide is only honest
+  // when the way out is on one edge of this painting and the way in is on the OPPOSITE edge of the next (or both ends
+  // are the same ladder). doorPlan() checks exactly that; 14 of the outpost's exits pass it, plus the ladders that have
+  // a ladder at both ends. Every other exit closes an iris on the doorway and opens it from the arrival's doorway, so
+  // nobody is ever shown walking off the right-hand edge and coming in from below. The falls keep their drop.
+  const plan = drop ? {how: "slide", dir} : doorPlan(z, to, climb);
+  if (plan.how === "slide") await slideTo(to, plan.dir, drop ? 1100 : 720);
+  else if (plan.how === "iris") await irisTo(order[0], false);
+  else { $("fade").classList.add("quick", "on"); await wait(230); }
   const verb = drop ? "The party drops through the falls" : climb ? (climb.dir === "up" ? "The party climbs up" : "The party climbs down") : z.kind === "water" ? "The party climbs" : "The party crosses";
   await enterNode(to, {from: cur, offs, exitDir, fromScale: node.scale, slide: dir, drop, solo: splinter, note: `${solo ? `${esc(SHORT[leader.id] || fname(leader))} goes on alone. ` : ""}${verb} to <em>${esc(SPEC[to].name)}</em>.`});
   $("fade").classList.remove("on"); setTimeout(() => $("fade").classList.remove("quick"), 400);
+  if (plan.how === "iris") irisTo(leader, true);   // not awaited: the party is already walking in as it opens
 }
-async function slideTo(to, dir){
+// Which edge of its painting a zone sits on: the dominant axis of its centre from the middle of the plate.
+function zoneSide(z){ const c = zoneCenter(z), nx = (c.x - NAT_W / 2) / (NAT_W / 2), ny = (c.y - NAT_H / 2) / (NAT_H / 2);
+  return Math.abs(nx) >= Math.abs(ny) ? {x: Math.sign(nx) || 1, y: 0} : {x: 0, y: Math.sign(ny) || 1}; }
+function doorPlan(z, to, climb){
+  let still = false; try { still = matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+  if (still) return {how: "fade"};
+  const back = SPEC[to] && (SPEC[to].zones || []).find(b => (b.to || []).some(t => owSame(t, cur)));
+  if (OV.on || !back) return {how: "iris"};                       // a close-up is not the plate's own geometry; a one-way has no doorway to line up with
+  if (climb || back.climb){                                       // a ladder: up one painting and down into the next, only when both ends are the ladder
+    if (climb && back.climb && climb.dir !== back.climb.dir) return {how: "slide", dir: {x: 0, y: climb.dir === "up" ? -1 : 1}};
+    return {how: "iris"}; }
+  const out = zoneSide(z), inn = zoneSide(back);
+  return out.x === -inn.x && out.y === -inn.y ? {how: "slide", dir: out} : {how: "iris"};
+}
+// The iris: closing (open = false) it shuts on `a` and leaves the stage black; opening, it grows from where `a` is headed.
+function irisTo(a, open){
+  const el = $("iris"), r = stage.getBoundingClientRect(), R = Math.hypot(r.width, r.height);
+  const t = open && a.path && a.path.length ? a.path[a.path.length - 1] : a, q = ovActorPt(a, t.x, t.y - 50), [sx, sy] = w2s(q.x, q.y);
+  el.style.setProperty("--ix", Math.max(0, Math.min(r.width, sx)) + "px"); el.style.setProperty("--iy", Math.max(0, Math.min(r.height, sy)) + "px");
+  el.hidden = false; const t0 = performance.now(), ms = open ? 420 : 320, tok = irisTo.tok = (irisTo.tok || 0) + 1;
+  return new Promise(res => { (function step(){
+    if (irisTo.tok !== tok){ res(); return; }
+    const k = Math.min(1, (performance.now() - t0) / ms), e = open ? 1 - Math.pow(1 - k, 2) : 1 - k * k;
+    el.style.setProperty("--ir", (open ? e : e) * R + "px");
+    if (k < 1){ requestAnimationFrame(step); return; }
+    if (open) el.hidden = true; res(); })(); });
+}
+async function slideTo(to, dir, ms = 1100){
   const p2 = $("plate2"); p2.src = plateUrl(to);
   try { await p2.decode(); } catch (e) {}
   p2.style.inset = "auto"; p2.style.left = dir.x * NAT_W + "px"; p2.style.top = dir.y * NAT_H + "px"; p2.hidden = false;
   const r = stage.getBoundingClientRect(), s = base;
   const to2 = {z: 1, tx: (r.width - NAT_W * s) / 2 - dir.x * NAT_W * s, ty: (r.height - NAT_H * s) / 2 - dir.y * NAT_H * s};
-  sliding = true; camTween = {from: {...view}, to: to2, t0: performance.now(), ms: 1100};
-  await wait(1180);
+  sliding = true; camTween = {from: {...view}, to: to2, t0: now, ms};
+  await wait(ms + 80);
 }
 function toast(text, ms = 3200){
   const t = $("toast"); t.textContent = text; t.hidden = false; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, ms);
@@ -3237,16 +3282,17 @@ function renderSplitStrip(){
   if (dm && dmPin != null){ const f = document.createElement("button"); f.type = "button"; f.className = "go"; f.textContent = "Follow the party"; f.onclick = () => dmViewPlate(null); el.appendChild(f); }
 }
 setInterval(() => { try { renderSplitStrip(); } catch (e) {} }, 1000);
-// Who goes through an exit (SPLIT PARTY): the whole party on this plate, or just the hero you move (and the prisoners
-// following them). No card when the hero is alone here, or when this screen cannot move the leader.
+// Who goes through an exit (SPLIT PARTY). No card (Sam, 2026-11-10: "Going through the door should just pan to the next
+// submap plate not ask you where you are going"; and "Yes" to letting Follow answer it). It used to ask "Who goes? Whole
+// party / Just <hero> / Stay" at every exit whenever another hero stood on the plate. Now the Follow command the bar
+// already has decides it: with Follow ON the party walks through together; with Follow OFF ("Wait here") only the hero
+// you are moving goes and the others stay where they stand. A hero another player drives is never taken along — their
+// player walks them (Sam, 2026-10-30: "They don't have to be together") — so with one of those on the plate the leader
+// goes alone, with the prisoners who follow them. Staying is not stepping into the doorway.
 function whoGoes(z, to){
   const others = party.filter(p => p !== leader && !p.ko && !p.down);
   if (!others.length || !canControl(leader)){ travel(to, z); return; }
-  const nm = SHORT[leader.id] || fname(leader);
-  showDialog({title: `Toward ${plateLabel(to)}`, body: `Who goes? ${others.map(o => SHORT[o.id] || fname(o)).join(", ")} ${others.length > 1 ? "are" : "is"} here too.`, buttons: [
-    {label: "Whole party", primary: true, fn: () => travel(to, z)},
-    {label: `Just ${nm}`, fn: () => travel(to, z, false, null, true)},
-    {label: "Stay"}]});
+  if (!followOn || others.some(owRemote)) travel(to, z, false, null, true); else travel(to, z);
 }
 function chooseDestination(z){
   if (z.to.length === 1){ whoGoes(z, z.to[0]); return; }
@@ -4633,7 +4679,8 @@ function icardRender(){
   const rarName = rar === "very_rare" ? "Very Rare" : rar.replace(/^./, c => c.toUpperCase());
   let h = `<div class="ic-band"><span class="${view.identified ? "ok" : "unid"}">${view.magic ? (view.identified ? "IDENTIFIED" : "UNIDENTIFIED") : "ITEM"}</span><span class="${fight ? "war" : "ok"}">${fight ? "IN COMBAT" : "OUT OF COMBAT"}</span></div>`;
   h += `<div class="ic-head"><div class="ic-pic">${pic ? `<img src="${esc(pic)}" alt="">` : ""}</div><div><div class="ic-name">${esc(it.name || t.name)}</div>`
-    + `<div class="ic-sub">${esc(type)} · <b>${esc(rarName)}</b></div>${view.identified && it.attunement ? `<span class="ic-pill">REQUIRES ATTUNEMENT</span>` : ""}</div></div>`;
+    + `<div class="ic-sub">${esc(type)} · <b>${esc(rarName)}</b></div>${view.identified && it.attunement ? `<span class="ic-pill" title="${esc(ATTUNE_PRICE)}">REQUIRES ATTUNEMENT</span>` : ""}</div></div>`
+    + (view.identified && it.attunement ? `<div class="ic-sec"><div class="ic-note"><b style="color:#c9a6ff">Requires attunement:</b> ${esc(ATTUNE_PRICE)}.</div></div>` : "");
   // the eye can see the blade: base damage and properties; the bonus only once someone knows it
   const chips = [];
   for (const w of (p.weapon_properties || [])){ const k = String(w).toLowerCase(); chips.push(`<span class="${k === "finesse" ? "c-fin" : k === "light" ? "c-lit" : k === "thrown" ? "c-thr" : ""}">${esc(k.replace(/^./, c => c.toUpperCase()))}${k === "thrown" && p.range ? " " + esc(p.range) : ""}</span>`); }
@@ -4665,7 +4712,8 @@ function icardRender(){
       const cls = n => n > 0 ? "up" : n < 0 ? "dn" : "eq";
       h += `<div class="ic-sec ic-cmp"><div class="ic-lbl">${esc(fname(a).toUpperCase())} · VS ${esc(String(now0.name).toUpperCase())}</div>`
         + `<div class="ic-row"><span class="${cls(dd)}">${dd > 0 ? "▲" : dd < 0 ? "▼" : "="} ${icardFmt(dd)}</span><span>average damage a hit</span></div>`
-        + `<div class="ic-row"><span class="${cls(dh)}">${dh > 0 ? "▲" : dh < 0 ? "▼" : "="} ${icardFmt(dh)}</span><span>to hit${proficientWith(sh.cls, it) ? "" : " · not proficient"}</span></div></div>`;
+        + `<div class="ic-row"><span class="${cls(dh)}">${dh > 0 ? "▲" : dh < 0 ? "▼" : "="} ${icardFmt(dh)}</span><span>to hit${trainedWith(sh, it) ? "" : " · not trained"}</span></div>`
+        + `<div class="ic-note">${weaponNote(sh, it)}</div></div>`;
     }
   }
   // the checks: out of a fight, the ones this item offers, rolled by a hero this screen controls
@@ -8454,6 +8502,17 @@ function combatClick(w){
     if (sp.range > 5 && ft > sp.range + 2.5){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft (${fname(t)} is ${Math.round(ft)} ft away).`); return; } }
   castSpell(a, t, p.spell);
 }
+// THE OPPORTUNITY ATTACK IS SEEN (Sam, 2026-11-10: "opportunity attacks should have a small indicator showing that an
+// opportunity attack is happening"). Every opportunity attack, either way round, goes through oaCue: a gold "Opportunity
+// attack" tag over the one who swings, a ring on the one leaving, and a log line that carries the measured gap in feet,
+// so a swing that looks wrong on screen can be checked against the number the rule actually used (the same report
+// said one landed from about 30 ft away, which no measure here allows; the feet in the log will say what happened).
+function oaCue(att, tgt){
+  const ft = Math.round(feetBetween(tgt, att) * 10) / 10;
+  popText(att, "⚔ Opportunity attack", "#ffd27a", 1.05); popText(tgt, "leaving reach", "#ffb08a", .8);
+  bank("ui/item_pickup", .35);
+  log(`<b style="color:#ffd27a">Opportunity attack:</b> ${fname(att)} swings as ${fname(tgt)} leaves their reach (${ft} ft apart, their reaction).`);
+}
 // Opportunity attacks (SRD): a foe you leave the reach of, without Disengage, gets one swing as
 // its reaction. Leaving by air counts — a long jump is movement, so it provokes exactly as a walk does.
 function provokedBy(a, end){
@@ -8473,7 +8532,7 @@ function combatWalk(a, p, done){
   const threat = provokedBy(a, cut[cut.length - 1]);
   combatBusy = true; closeMenu(); a.path = cut;
   a.onArrive = () => { combatBusy = false; done && done(); };
-  if (threat.length){ const f = threat[0]; f.c.reactionUsed = true; a.path = []; log(`${fname(f)} takes a swing as ${fname(a)} pulls away.`); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
+  if (threat.length){ const f = threat[0]; f.c.reactionUsed = true; a.path = []; oaCue(f, a); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
     attackWith(f, a, f.c.sheet.attacks[0], () => { if (!a.down){ a.path = cut; a.onArrive = () => { combatBusy = false; done && done(); }; } else { combatBusy = false; done && done(); } }); }
 }
 
@@ -8644,7 +8703,7 @@ function leapMove(a, g, to, done){
     arcTo(a, g.land, g.drop ? () => { landFall(a, g.dropFt); if (a.down){ combatBusy = false; done && done(); return; } standIfAble(a); land(); } : land); };
   const runUp = () => { if (g.runUpFt > 0.5){ a.path = [g.takeoff]; a.onArrive = spring; } else spring(); };
   if (threat.length){ const f = threat[0]; f.c.reactionUsed = true; a.path = [];
-    log(`${fname(f)} takes a swing as ${fname(a)} breaks away.`); narrate(f, `${fname(f)} lashes out as ${fname(a)} springs clear.`);
+    oaCue(f, a); narrate(f, `${fname(f)} lashes out as ${fname(a)} springs clear.`);
     attackWith(f, a, f.c.sheet.attacks[0], () => { if (!a.down) runUp(); else { combatBusy = false; done && done(); } });
   } else runUp();
 }
@@ -9807,14 +9866,29 @@ function approachThen(att, tgt, ft, then){
   if ((att.kind === "foe" || att.ally) && !att.c.conds.has("disengaged")){
     const p = standing(att.ally ? foes : heroes()).find(h => h !== tgt && !h.c.reactionUsed && !incapacitated(h) && feetBetween(att, h) <= 5 && Math.hypot(goal.x - h.x, goal.y - h.y) > reachPx(h, att, 5) + 6);
     if (p){
-      p.c.reactionUsed = true; const atk = meleeOf(p);
-      log(`${fname(p)} takes a swing as ${fname(att)} breaks away (opportunity attack, their reaction).`); narrate(p, `${fname(p)} lashes out as ${fname(att)} pulls away.`);
-      attackWith(p, att, atk, () => {
-        combatBusy = true;
-        if (!cbt) return;
-        if (att.down){ combatBusy = false; setTimeout(() => passTurn(att), 500); return; }
-        approachThen(att, tgt, ft, then);
-      }, false, true);
+      // THE HERO IS ASKED (Sam, 2026-11-10: "If an opportunity happens to a player they can have a dialogue type box that
+      // gives them the options"). The fight pauses, as it does for Shield and a readied strike: one row per melee weapon
+      // the hero has (reach 10 ft or less: an opportunity attack is ONE melee attack, SRD 5.1), or let them go and keep
+      // the reaction. A hero no one at this screen drives, an ally, or a foe swings as before, with its first melee line.
+      const go = atk => { p.c.reactionUsed = true; oaCue(p, att); narrate(p, `${fname(p)} lashes out as ${fname(att)} pulls away.`);
+        attackWith(p, att, atk, () => {
+          combatBusy = true;
+          if (!cbt) return;
+          if (att.down){ combatBusy = false; setTimeout(() => passTurn(att), 500); return; }
+          approachThen(att, tgt, ft, then);
+        }, false, true); };
+      if (p.kind === "pc" && canControl(p)){
+        const melee = (p.c.sheet.attacks || []).filter(k => (k.reach || 5) <= 10 && !k.ammo);
+        const opts = melee.length ? melee : [meleeOf(p)];
+        popText(p, "⚔ Opportunity!", "#ffd27a", 1.05);
+        showDialog({title: `Opportunity attack: ${fname(p)}`,
+          body: `${fname(att)} is breaking away from ${fname(p)}. Strike once as they leave, using ${fname(p)}'s reaction? (A reaction spent now is gone until ${fname(p)}'s next turn, so no Shield or readied strike this round.)`,
+          src: "Opportunity attack · 1 reaction · SRD 5.1",
+          buttons: [...opts.map((k, i) => ({label: `${k.name} · +${k.hit} · ${k.dmg}`, primary: i === 0, fn: () => go(k)})),
+            {label: "Let them go", fn: () => { log(`${fname(p)} lets ${fname(att)} go and keeps the reaction.`); approachThen(att, tgt, ft, then); }}]});
+        return;
+      }
+      go(meleeOf(p));
       return;
     }
   }
@@ -9855,7 +9929,38 @@ function approachThen(att, tgt, ft, then){
   att.path = walk.pts; att.onArrive = arrive;
   if (!att.path.length) arrive();
 }
+// A MELEE BLOW IS STRUCK FROM CONTACT (Sam, 2026-11-10: "Everyone seems to be attacking at a distance, at least
+// visually on the pixel art"). The rules were right and the picture was wrong. Reach is 5 ft measured between the
+// two creatures' feet, and on these plates 5 ft is about 135 px while a figure stands about 160 px tall: so every
+// sword, fist and claw was swung with more than a body's height of empty floor between the two (measured
+// 2026-11-10 in the pen: reach 166 px, up to 190 with the arrival slack, figure 162 px). Now the swing is drawn as
+// a lunge: the attacker springs in until the two bodies meet, strikes there, and springs back to where they stood.
+// PRESENTATION ONLY. No feet are spent, nobody's place in the fight changes, no opportunity attack is provoked, and
+// the roll, cover and reach were all decided from where the attacker really stands. Not for a shot or a throw, not
+// across cover (the pen's bars), and not for someone prone, restrained, grappled, climbing or mounted.
+function lungeSpot(att, tgt){
+  if (!cbt || !att || !tgt || att.leap || att.climbing || att.riding || att.static || att.lunging) return null;
+  const cn = att.c && att.c.conds; if (cn && (cn.has("prone") || cn.has("restrained") || cn.has("grappled"))) return null;
+  const cv = coverOf(att, tgt); if (cv && (cv.total || cv.ac)) return null;
+  const tall = a => SPR[a.id].json.cell[1] * actorScale(a), contact = .42 * (tall(att) + tall(tgt)) / 2;
+  const dx = tgt.x - att.x, dy = tgt.y - att.y, d = Math.hypot(dx, dy); if (!(d > contact + 10)) return null;
+  return {x: tgt.x - dx / d * contact, y: tgt.y - dy / d * contact};
+}
 function strike(att, tgt, onHit, after, shot){
+  const spot = shot ? null : lungeSpot(att, tgt);
+  if (!spot){ strikeFromHere(att, tgt, onHit, after, shot); return; }
+  const home = {x: att.x, y: att.y}, sc = actorScale(att);
+  att.lunging = true; att.path = []; att.face = faceOf(tgt.x - att.x, tgt.y - att.y);
+  att.leap = {from: home, to: spot, t0: now, ms: 150, h: 12 * sc};
+  setTimeout(() => {
+    att.leap = null; att.x = spot.x; att.y = spot.y;
+    strikeFromHere(att, tgt, onHit, () => {
+      att.leap = {from: {x: att.x, y: att.y}, to: home, t0: now, ms: 190, h: 9 * sc};
+      setTimeout(() => { att.leap = null; att.x = home.x; att.y = home.y; att.lunging = false; if (!att.down) att.face = faceOf(tgt.x - home.x, tgt.y - home.y); after && after(); }, 190);
+    }, shot);
+  }, 150);
+}
+function strikeFromHere(att, tgt, onHit, after, shot){
   att.face = faceOf(tgt.x - att.x, tgt.y - att.y);
   // A shot is not a punch. A sprite with a "shoot" sheet plays it; one without stands and takes aim (no fist thrown),
   // looses after a beat, and the bolt or arrow does the rest. Until now every shot played the cross-punch.
@@ -15341,6 +15446,26 @@ const CLASS_WEAPONS = {Rogue: ["simple", "hand crossbow", "longsword", "rapier",
   Cleric: ["simple"], Sorcerer: ["dagger", "dart", "sling", "quarterstaff", "light crossbow"]};
 function baseWeapon(it){ const n = String((it.properties || {}).srd_stats_as || it.name || "").toLowerCase();
   return [...SIMPLE_WEAPONS, ...MARTIAL_WEAPONS].filter(b => n.includes(b)).sort((a, b) => b.length - a.length)[0] || null; }
+// TRAINED WITH IT: a hero by class (CLASS_WEAPONS), an ally by its stat block (the weapons the block lists by name)
+function trainedWith(sheet, it){ if (!sheet) return false; if (sheet.kit){ const b = baseWeapon(it); return !!b && !!sheet.kit[b]; } return proficientWith(sheet.cls, it); }
+// WHAT UNTRAINED AND UNATTUNED MEAN, ON THE CARD (Sam, 2026-11-10: "I don't think it is clear on the inventory options what
+// happens when you are untrained on an inventory option or not attuned to a magical item").
+//   Weapon proficiency, SRD 5.1: proficiency lets you add your proficiency bonus to the attack roll. Untrained, you can
+//   still attack with it; the bonus (+2 at levels 1-4) is simply not added. Damage is unchanged.
+//   Attunement, SRD 5.1: an item that requires attunement gives only its nonmagical benefits until a creature attunes
+//   to it, which takes a short rest in contact with it; a creature can be attuned to no more than three items at once.
+const UNTRAINED_PRICE = "you can still use it, but your +2 proficiency bonus is not added to the attack roll (damage is the same)";
+const ATTUNE_PRICE = "until you attune to it (a short rest with it in hand; 3 attuned items at most) it works only as an ordinary item, with none of its magic";
+function weaponNote(sheet, it, short){
+  if (!sheet || !isWeapon(it)) return ""; const b = baseWeapon(it) || "this weapon";
+  return trainedWith(sheet, it) ? `<b style="color:#7fdc8a">trained with ${esc(b)}</b>${short ? "" : ": +2 proficiency to hit"}`
+    : `<b style="color:#ff8a7a">not trained with ${esc(b)}</b>${short ? ": no +2 to hit" : `: ${UNTRAINED_PRICE}`}`;
+}
+function attuneNote(it, short){
+  const cat = catalogItem(it.name) || it; if (cat.attunement !== true) return "";
+  if (typeof loreView === "function" && !loreView(cat, icardKnown(cat.slug)).identified) return "";   // hidden until identified, like the card's pill
+  return `<b style="color:#c9a6ff">requires attunement</b>${short ? "" : `: ${ATTUNE_PRICE}`}`;
+}
 function proficientWith(cls, it){ const b = baseWeapon(it), list = CLASS_WEAPONS[cls] || []; return !!b && (list.includes(b) || (list.includes("simple") && SIMPLE_WEAPONS.includes(b))); }
 const isWeapon = it => !!it && ((it.item_type || "") === "weapon" || !!baseWeapon(it));
 // A magic weapon: its catalogue row is rarer than common (the six magic weapons in `items` all are; every mundane
@@ -15349,7 +15474,7 @@ const isMagicWeapon = it => { if (!it) return false; const p = it.properties || 
   return p.magic === true || p.magical === true || Number(p.attack_bonus || p.bonus || 0) > 0 || /\+\s*\d/.test(it.name || "") || !/^(common|mundane|none|)$/.test(r); };
 // an attack line from a catalogue weapon, the way the sheet's own lines are written. `str` says the modifier used was
 // Strength (not finesse-with-DEX, not ammunition): Rage's damage bonus reads it (lib/rage.mjs isStrengthMelee).
-function attackFromItem(sheet, it, profAlways){
+function attackFromItem(sheet, it){
   const p = it.properties || {}, wp = (p.weapon_properties || []).map(s => String(s).toLowerCase());
   const finesse = wp.includes("finesse") || p.finesse === true, light = wp.includes("light") || p.light === true, thrown = wp.includes("thrown");
   // a launcher is ammunition even when its catalogue row forgets to say so: the hand crossbow's row has no
@@ -15359,7 +15484,7 @@ function attackFromItem(sheet, it, profAlways){
   const type = p.damage_type && p.damage_type !== "none" ? p.damage_type : (String(p.damage || "").match(/([a-z]+)\s*$/i) || [0, "bludgeoning"])[1];
   const str = abilMod(sheet, "str"), dex = abilMod(sheet, "dex"), mod = ammo ? dex : finesse ? Math.max(str, dex) : str;   // the modifiers, not the saves
   // a "+1" weapon's catalogue row may carry one `bonus` for both (Lolth's Tooth does): it adds to the attack and the damage
-  const prof = profAlways || proficientWith(sheet.cls, it) ? 2 : 0, dm = mod + Number(p.damage_bonus ?? p.bonus ?? 0);       // proficiency +2 at levels 1-4
+  const prof = trainedWith(sheet, it) ? 2 : 0, dm = mod + Number(p.damage_bonus ?? p.bonus ?? 0);       // proficiency +2 at levels 1-4
   const a = {name: it.name, hit: mod + prof + Number(p.attack_bonus ?? p.bonus ?? 0), dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
     reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, str: !ammo && (!finesse || str >= dex), ammo, item: true, itemName: it.name, pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null, magic: isMagicWeapon(it)};
   if (ammo && rng[1]) a.long = rng[1];
@@ -15375,13 +15500,14 @@ function refreshAttacks(id){
     // distributed to them"). Eldeth was given a drow's hand crossbow; her block lists only a shortsword and a longbow,
     // so the crossbow matched nothing and she kept punching. A weapon the block lists still uses the block's own line;
     // any other weapon is built the way a hero's is (attackFromItem: the weapon's SRD damage + their own STR or DEX
-    // modifier), counted as PROFICIENT (+2). That +2 is a ruling, not the book: a stat block names only its own weapons.
+    // modifier). Off-block, they are UNTRAINED: no proficiency bonus on the attack roll (Sam, 2026-11-10: "allies should
+    // be counted as using it as untrained"). A stat block's listed weapons are the ones it is trained with.
     const s = ALLY_SHEETS[id]; if (!s.baseAttacks) s.baseAttacks = s.attacks.slice();
     const lines = [], seen = new Set();
     for (const it of ((GEAR[id] || {}).carried || [])){
       const b = baseWeapon(it); if (!isWeapon(it) || seen.has(b || it.name)) continue; seen.add(b || it.name);
       const kit = b && s.kit[b];
-      lines.push(kit ? {...kit, itemName: it.name} : attackFromItem(s, it, true));
+      lines.push(kit ? {...kit, itemName: it.name} : attackFromItem(s, it));
     }
     s.attacks = [...lines, ...s.baseAttacks];
     return;
@@ -16257,7 +16383,7 @@ function renderBag(){
       : u.kind === "throw" ? `${FLASK_OF(it).blurb} · thrown up to 20 ft` : u.kind === "dm" ? `use it through the DM: ${u.why}` : (it.desc || "");
     // the row keeps the short line (what it is, or where it is worn); the long description lives on the item's card
     row.innerHTML = `<span class="invPic${worn.length ? " worn" : ""}"${RARITY_RANK[rar] > 0 ? ` style="border-color:${RARITY_COL[rar]}"` : ""}>${pic ? `<img src="${esc(pic)}" alt="" loading="lazy">` : "◆"}</span>`
-      + `<span class="invTxt"><button class="efPick" aria-pressed="${picked ? "true" : "false"}"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}${rarTag}</b></button><small>${esc(what)}${armorOf(it) ? `${what ? " · " : ""}${armorNote(a, it, true)}` : ""}</small></span><span class="invBtns"></span>`;
+      + `<span class="invTxt"><button class="efPick" aria-pressed="${picked ? "true" : "false"}"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}${rarTag}</b></button><small>${esc(what)}${armorOf(it) ? `${what ? " · " : ""}${armorNote(a, it, true)}` : ""}${[weaponNote(SHEETS[a.id], it, true), attuneNote(it, true)].filter(Boolean).map(x => ` · ${x}`).join("")}</small></span><span class="invBtns"></span>`;
     // the name is the real button (keyboard reaches it); a click anywhere else on the row does the same for the mouse
     // THE CARD OPENS ITSELF (Sam, 2026-11-10: "When we hover for a few seconds or click on the item this should happen
     // automatically and execute cleanly"). A click opens it at once; the mouse resting on a row for BAG_HOVER_MS opens
@@ -16497,7 +16623,8 @@ function renderItemCard(a, g, it, u, worn, pic, what, fight, mine){
   const atk = isWeapon(it) && SHEETS[a.id] ? attackFromItem(SHEETS[a.id], it) : null;
   const meta = [kind, where, (it.qty || 1) > 1 ? `×${it.qty}` : "", RARITY_RANK[rar] > 0 ? `<b style="color:${RARITY_COL[rar]}">${RARITY_LABEL[rar]}</b>` : ""].filter(Boolean).join(" · ")
     + (atk ? `<br>${esc(atk.dmg)} ${esc(atk.type)} · +${atk.hit} to hit${atk.reach > 5 ? ` · ${atk.reach} ft` : ""}` : "")
-    + (armorOf(it) ? `<br>${armorNote(a, it)}` : "");
+    + (armorOf(it) ? `<br>${armorNote(a, it)}` : "")
+    + (atk ? `<br>${weaponNote(SHEETS[a.id], it)}` : "") + (attuneNote(it) ? `<br>${attuneNote(it)}` : "");
   d.innerHTML = `<div class="efBig${it.icon ? "" : " px"}">${pic ? `<img src="${esc(pic)}" alt="">` : "◆"}</div><div><h5>${esc(it.name)}</h5><div class="efMeta">${meta}</div>${it.desc ? `<div class="efDesc">${esc(it.desc)}</div>` : ""}<div class="efActs"></div></div>`;
   const acts = d.querySelector(".efActs");
   const btn = (label, ok, why, fn, primary) => { const b = document.createElement("button"); b.className = "btn" + (primary ? " primary" : ""); b.textContent = label; b.disabled = !ok; if (why) b.title = why; b.onclick = fn; acts.appendChild(b); };
@@ -17222,7 +17349,7 @@ function keyboardMove(a, dt){
       const f = standing(foes).find(f => { const r = reachPx(f, a, 5) + 6; return !f.c.reactionUsed && !incapacitated(f) && Math.hypot(a.x - f.x, a.y - f.y) <= r && Math.hypot(nx - f.x, ny - f.y) > r; });
       if (f){
         keys.clear(); a.kbd = false; setAnim(a, "idle"); f.c.reactionUsed = true; combatBusy = true; closeMenu();
-        log(`${fname(f)} takes a swing as ${fname(a)} pulls away.`); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
+        oaCue(f, a); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
         attackWith(f, a, f.c.sheet.attacks[0], () => { combatBusy = false; if (cbt && activeActor() === a && !a.down) openMenu(a); });
         return;
       }
@@ -17475,6 +17602,7 @@ function update(dt){
     const bodies = actors.filter(a => a.kind !== "npc" && !a.fading);
     for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++){
       const a = bodies[i], b = bodies[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
+      if (a.lunging || b.lunging) continue;   // a lunge closes to contact on purpose: nobody is shoved off their spot by it
       const min = (a.kind === "foe" || b.kind === "foe" ? 70 : 45) * node.scale;
       // Sam, 2026-10-14: a character that walked into someone kept walking against the push and stalled.
       // The one who is walking holds its line; only a standing body gives way (and never a leaping one).
