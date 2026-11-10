@@ -6995,7 +6995,8 @@ function openMenu(a, sub){
     add("Help", "an ally's next attack has advantage", c.action ? () => { closeMenu(); cbt.phase = "target"; cbt.pend = {help: true}; hint("Help: click a friend within 5 ft."); } : null);
     add("Search", `Perception ${sgn((s.skills || {}).perception ?? abilMod(s, "wis"))}`, c.action ? () => doSearch(a) : null);
     gateOptions(a, add);
-    for (const it of (GEAR[a.id] || {carried: []}).carried.filter(c => isWeapon(c) && c.name !== GEAR[a.id].main))
+    // one box per weapon NAME: a pack with twelve looted hand crossbows used to draw twelve identical Equip boxes
+    for (const it of (GEAR[a.id] || {carried: []}).carried.filter((c, i, all) => isWeapon(c) && c.name !== GEAR[a.id].main && all.findIndex(x => x.name === c.name) === i))
       { ACTION_ICON["Equip: " + it.name] = "bar/attack"; const n = GEAR[a.id].main ? 2 : 1, k = gearCost(a, n);
         add(`Equip: ${it.name}`, k.ok ? `${k.label}${n === 2 ? " · a swap" : ""}` : "no free interaction or action left", k.ok ? () => equipItem(a, it.name) : null); }
     add("Dodge", "attacks on you at disadvantage", c.action ? () => { c.action = false; c.conds.add("dodging"); popText(a, "dodge", "#cfe8ff"); openMenu(a); } : null);
@@ -7065,8 +7066,9 @@ function openMenu(a, sub){
     if (webbed) add("Cut free", `${fname(webbed)} · hit the webbing (AC 10)`, c.action ? () => { c.action = false; const r = d20(0, a); if (r + (s.attacks[0].hit || 0) >= 10 || r === 20){ webbed.c.conds.delete("restrained"); webbed.webFx && (webbed.webFx.until = now); bank("movement/web_tear", .8); popText(webbed, "free", "#e8e2c8"); log(`${fname(a)} cuts ${fname(webbed)} out of the web.`); } else { popText(webbed, "still stuck", "#c9c4b8"); log(`${fname(a)} hacks at the web and misses the strands.`); } renderParty(); openMenu(a); } : null);
     if (c.conds.has("prone")) add("Stand up", `half your speed (${Math.floor(s.speed / 2)} ft)`, c.move >= Math.floor(s.speed / 2) ? () => { c.move -= Math.floor(s.speed / 2); c.conds.delete("prone"); setAnim(a, "idle"); renderParty(); openMenu(a); } : null);
     add("End turn", "Enter · pass to the next in initiative", () => nextTurn(), "end");
-    foldBar(m, COMBAT_PRI, COMBAT_KEEP);   // Sam's order, the rest behind More
+    foldBar(m, COMBAT_PRI, COMBAT_KEEP);   // by utility, the rest behind More
   }
+  for (const b of [...m.querySelectorAll("button:disabled")]) b.remove();   // the submenus too: only what can be done is offered
   placeMenu();
 }
 function closeMenu(){ $("cbtMenu").hidden = true; hint(""); }
@@ -7168,22 +7170,25 @@ const EXPLORE_KEEP = 7;
 const BUTTON_PRI = [[/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
   [/^(Sneak|Stop sneaking)/, 4], [/^Pick .*pocket/, 4], [/^Cast/, 5], [/^Search$/, 6], [/^Inventory/, 7], [/^Tell Malachar/, 8], [/^Next hero/, 9],
   [/^(Scout|Jump|Pray|Inspire|Quick drink)/, 10], [/^My company/, 11], [/^Short rest/, 12], [/^Help/, 13], [/^(Follow|Wait)/, 14], [/^Talk$/, 30]];
-//   combat bar   Attack · Cast · Jump · Shove · Throw · Bardic Inspiration · End turn     behind More  Hide · Dash · Disengage · Dodge · Help · Inventory
-// Move stays on the bar beside Jump (it was not on the canvas; the fight needs it in reach). What the moment demands — up
-// off the floor, out of a web, a friend bleeding beside you — cuts in at the front, as on the explore bar. Class bonus
-// actions, Ready, Search and the gear swaps fold behind More.
+// THE COMBAT BAR (Sam, 2026-11-10: "Don't offer bubble boxes for actions that aren't available. Offer boxes in order of
+// priority and utility." — this replaces the 2026-10-27 canvas order for the fight). Only what the hero can do RIGHT NOW
+// gets a box (foldBar drops the rest), so the order is by usefulness, not by habit:
+//   what the moment demands (up off the floor, out of a web, a friend bleeding) · Attack · Off-hand attack · Cast · Throw ·
+//   class features (Bardic Inspiration, Rage, Innate Sorcery) · Move · Cunning Action · Dash · Disengage · Dodge · Hide ·
+//   Shove · Help · Ready · Jump · Equip · Search · Inventory.   End turn is always the last box on the bar, never folded.
 const COMBAT_KEEP = 8;
 const COMBAT_PRI = [[/^(Stand up|Break free|Cut free|Put out the flames|Shake awake|Stabilize|End concentration|Pick up)/, 0],
-  [/^(Attack|Sneak Attack)/, 1], [/^Cast/, 2], [/^Jump/, 3], [/^Move/, 4], [/^Shove/, 5], [/^Throw/, 6], [/^Bardic Inspiration/, 7], [/^End turn/, 8],
-  [/^Hide/, 10], [/^Dash/, 11], [/^Disengage/, 12], [/^Dodge/, 13], [/^Help/, 14], [/^Inventory/, 15], [/^Ready/, 16], [/^Search/, 17],
-  [/^(Cunning Action|Off-hand|Rage|End rage|Innate Sorcery|No bonus action)/, 18], [/^Equip/, 19], [/^—/, 25]];
-// a spent command stays where it was in a fight (a bar that reshuffles after every act is a bar you cannot learn)
-function priOf(b, table = BUTTON_PRI){ const t = (b.querySelector("span") || b).textContent; const hit = table.find(([re]) => re.test(t)); return (hit ? hit[1] : 15) + (b.disabled && table !== COMBAT_PRI ? 20 : 0); }
+  [/^(Attack|Sneak Attack)/, 1], [/^Off-hand/, 2], [/^Cast/, 3], [/^Throw/, 4], [/^(Bardic Inspiration|Rage|End rage|Innate Sorcery)/, 5],
+  [/^Move/, 6], [/^Cunning Action/, 7], [/^Dash/, 8], [/^Disengage/, 9], [/^Dodge/, 10], [/^Hide/, 11], [/^Shove/, 12], [/^Help/, 13],
+  [/^Ready/, 14], [/^Jump/, 15], [/^Equip/, 16], [/^Search/, 17], [/^Inventory/, 18], [/^End turn/, 90]];
+function priOf(b, table = BUTTON_PRI){ const t = (b.querySelector("span") || b).textContent; const hit = table.find(([re]) => re.test(t)); return hit ? hit[1] : 15; }
 /** Sort a bar by its table and fold everything past `keepN` into a More tray. The buttons keep their handlers; only the
  * order and the tray are new. Group labels and separators (the old Octopath list) are dropped: the colour of the slab
  * says what kind of act it is now. */
 function foldBar(m, table, keepN){
   for (const el of [...m.children]) if (el.classList.contains("sep") || el.classList.contains("grp") || el.classList.contains("moreTray") || el.classList.contains("more")) el.remove();
+  // a box is an offer: what cannot be done right now is not on the bar at all, on either bar (Sam, 2026-11-10)
+  for (const b of [...m.children]) if (b.tagName === "BUTTON" && b.disabled) b.remove();
   const btns = [...m.children].filter(b => b.tagName === "BUTTON");
   btns.forEach((b, i) => { b.dataset.pri = priOf(b, table) * 100 + i; });
   const sorted = btns.slice().sort((a, b) => a.dataset.pri - b.dataset.pri);
