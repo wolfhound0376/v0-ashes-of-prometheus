@@ -410,7 +410,7 @@ function Waiting({ claim, onCancel, router }: { claim: Claim; onCancel: () => vo
           {entering ? "…" : "Enter"}
         </button>
       )}
-      {status === "pending" && <p className="mt-4 text-[12px] text-stone-600">This page keeps watch. You can close it and come back through <span className="text-stone-400">Play Saved Game</span> with your words.</p>}
+      {status === "pending" && <p className="mt-4 text-[12px] text-stone-600">This page keeps watch. You can close it and come back through <span className="text-stone-400">Saved Game</span> with your words.</p>}
       {err && <p className="mt-3 text-[12px] text-red-400/90">{err}</p>}
 
       {(status === "rejected" || status === "unknown") && (
