@@ -9517,6 +9517,7 @@ function damage(t, n, type, crit, from, magical = false){
   t.flash = now + 180; t.flashCol = "#fff";
   popText(t, String(n), crit ? "#ffd166" : hero(t) ? "#ff6b5e" : "#fff4d8", crit ? 1.6 : 1, {src: popSrc, tag, value: n, crit, kill: t.c.hp <= 0});
   burst(t, from && from.kind === "foe" ? "#ff5040" : "#ffe3a0", crit ? 22 : 12); hitstop(crit ? 140 : 80); shake(crit ? 9 : 5);
+  if (crit) critBeat(t);   // THE CRIT BEAT: the camera punches in on the one who took it and the world runs slow for a breath
   t.c.conds.delete("asleep"); t.c.drugged = false; if (t.c.conds.has("hidden")){ t.c.conds.delete("hidden"); t.alpha = 1; }
   if (t.c.conc && t.c.hp > 0 && n > 0) concSave(t, n);
   if (t.kind === "foe" && woundedFury(t.c.hp, s.woundedFury) && !t.c.berserk) goBerserk(t);
@@ -11114,6 +11115,31 @@ function initiativeReveal(order){
 }
 function burst(a, col, n){ const m = SPR[a.id].json, sc = actorScale(a), y = a.y - m.pivot[1] * sc * .5; for (let i = 0; i < n; i++){ const ang = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 160; sparks.push({x: a.x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * .6 - 60, col, t0: now, life: 420 + Math.random() * 300}); } }
 function hitstop(ms){ hitstopUntil = Math.max(hitstopUntil, performance.now() + ms); }
+// THE CRIT BEAT (Sam, 2026-11-10: "Build the zoom punch and slow-mo" — the Combat Effects Lab's "Hit feel" card: "The
+// crit zoom is a BG3-style punch-in with a short slow-motion beat"). The Lab fires it on a critical hit and on nothing
+// else, and so does this. The numbers are the Lab's own for a blade crit: zoomPunch(t, 1.18, 480) and slowmo(300, .4).
+//   - the slow-motion starts when the hit-stop lets go, so the two are felt one after the other, not on top of each other;
+//   - the punch-in is the fight's own camera: once the player has touched the camera it is theirs and never pushes in
+//     on a blow (Sam, 2026-10-28), so then only the slow-motion plays; a reduced-motion setting skips the punch-in too;
+//   - Quick resolve (the DM's fast clock) gets neither, like the hit-stop.
+// No rule is touched: the damage is already rolled and applied by the time this runs. No sound, no new art.
+const CRIT_ZOOM = 1.18, CRIT_ZOOM_MS = 480, CRIT_SLOW_MS = 300, CRIT_SLOW_K = .4;
+let slowUntil = 0, slowK = 1, critBeatAt = 0;
+function slowmo(ms, k){ slowUntil = Math.max(hitstopUntil, performance.now()) + ms; slowK = k; }
+function critBeat(t){
+  if (!cbt || cbt.quick || !t) return;
+  const real = performance.now(); if (real - critBeatAt < 700) return; critBeatAt = real;   // one beat per blow, however many dice it carried
+  slowmo(CRIT_SLOW_MS, CRIT_SLOW_K);
+  let still = false; try { still = matchMedia("(prefers-reduced-motion: reduce)").matches; } catch (e) {}
+  if (cbt.yourCam || still) return;
+  const fight = cbt, wasPushed = !!camPushed, back = camTween ? {...camTween.to} : {...view};   // where the camera was headed before the punch
+  camTo(Math.min(4, back.z * CRIT_ZOOM), t.x, t.y - 50, 140);
+  setTimeout(() => {
+    if (cbt !== fight || cbt.yourCam) return;
+    if (wasPushed && camPushed){ camTween = {from: {...view}, to: back, t0: now, ms: 260}; return; }   // back to the push on the two of them; settleCam takes it home
+    if (!camPushed) camTo(cbt.home.z, cbt.home.cx, cbt.home.cy, 420);                                    // the blow is already over: home
+  }, CRIT_ZOOM_MS);
+}
 function shake(px){ shakeAmt = Math.max(shakeAmt, px); }
 function pushCam(a, b){ if (!cbt) return; if (cbt.yourCam){ fightCam(0, 0, 0, 420, [a, b]); return; } camPushed = true; camTo(Math.min(2.8, cbt.home.z * 1.25), (a.x + b.x) / 2, (a.y + b.y) / 2 - 50, 420); }
 function settleCam(){ if (!cbt || !camPushed) return; camPushed = null; if (!cbt.yourCam) camTo(cbt.home.z, cbt.home.cx, cbt.home.cy, 700); }
@@ -17072,11 +17098,12 @@ function frame(t){
   if (timeStopped && mode !== "load"){ pausedMs += raw; draw(); updateOverlay(); tickMusic(raw / 1000); requestAnimationFrame(frame); return; }
   if (!cbt && quickTimeout) setQuick(false, true);                                     // a fight that ended some other way never keeps the fast clock
   if (t < hitstopUntil && mode === "combat" && !(cbt && cbt.quick)){ pausedMs += raw; draw(); updateOverlay(); requestAnimationFrame(frame); return; }   // hit-stop: the world holds for a few frames on a blow
-  now = t - pausedMs; const dt = raw / 1000;
+  let slow = 1; if (t < slowUntil && t >= hitstopUntil && mode === "combat" && !(cbt && cbt.quick)){ slow = slowK; pausedMs += raw * (1 - slow); }   // the crit beat: the world's clock runs slow
+  now = t - pausedMs; const dt = raw / 1000 * slow;
   if (mode !== "load"){ update(dt);
     if (cbt && cbt.quick) for (let i = 1; i < QUICK_SPEED; i++){ pausedMs -= raw; now += raw; update(dt); }   // quick resolve: the world runs QUICK_SPEED times a frame
     draw(); updateOverlay(); if (mode === "combat") placeMenu(); }
-  tickMusic(dt);
+  tickMusic(raw / 1000);   // the music keeps real time through a slow beat
   requestAnimationFrame(frame);
 }
 
