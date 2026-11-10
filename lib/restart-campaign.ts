@@ -277,6 +277,20 @@ export async function restartCampaign(admin: SupabaseClient): Promise<RestartRes
     report.cinematicViewsCleared = count ?? 0
   }
 
+  // How the NPCs feel about the heroes, and whose names they have learned (Sam, 2026-11-10, NPC asks: an
+  // NPC calls a hero by name only once told it, and by how warm they are). Both belong to the run: a new
+  // game that kept them would open with Ront already holding a grudge and Eldeth already saying "Fifi".
+  // The relationship tables were empty until /api/npc-ask began writing them; npc_knowledge was simply
+  // never cleared (11 learned names had outlived their runs when this was added).
+  for (const table of ["relationship_events", "character_relationships", "npc_knowledge"] as const) {
+    const { count, error } = await admin
+      .from(table)
+      .delete({ count: "exact" })
+      .neq("id", "00000000-0000-0000-0000-000000000000")
+    note(table, error)
+    report.relationshipsCleared = (Number(report.relationshipsCleared) || 0) + (count ?? 0)
+  }
+
   // --- 2. Malachar's session history -------------------------------------
   // The reason this route exists. Beats first: they reference a session.
   {

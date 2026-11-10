@@ -27,6 +27,19 @@ export async function findNpcRow(db: Db, npcName: string): Promise<{ id: string;
   return titled.data?.[0] ?? null
 }
 
+/** The NPC's own row in `characters` (the prisoners all have one), which is what relationships hang off. */
+export async function npcCharacterId(db: Db, npcName: string): Promise<string | null> {
+  const name = npcName.trim()
+  if (!name) return null
+  const exact = await db.from("characters").select("id").eq("is_player", false).ilike("name", name).limit(1)
+  if (exact.data?.[0]) return exact.data[0].id
+  const first = firstWord(name)
+  const loose = await db.from("characters").select("id").eq("is_player", false).ilike("name", `${first}%`).limit(1)
+  if (loose.data?.[0]) return loose.data[0].id
+  const titled = await db.from("characters").select("id").eq("is_player", false).ilike("name", `% ${first}%`).limit(1)
+  return titled.data?.[0]?.id ?? null
+}
+
 /** True once this NPC has learned this character's name. */
 export async function npcKnowsName(db: Db, npcName: string, characterId: string): Promise<boolean> {
   if (!npcName || !characterId) return false
@@ -62,12 +75,21 @@ export async function learnName(db: Db, npcName: string, character: { id: string
 /** The NPC's standing toward the character, in words, from character_relationships. Null = strangers. */
 export async function relationshipSummary(db: Db, npcId: string, characterId: string): Promise<string | null> {
   if (!npcId || !characterId) return null
-  const { data } = await db
+  // `character_relationships.subject_id` is a `characters` id, and both callers hand this an `npc_encounters`
+  // id (findNpcRow). Until 2026-11-10 that never mattered because the table was empty; it would have read
+  // "strangers" forever. So: the id as given, and failing that the NPC's own `characters` row, by name.
+  const read = (subject: string) => db
     .from("character_relationships")
     .select(RELATIONSHIP_DIMS.join(", "))
-    .eq("subject_id", npcId)
+    .eq("subject_id", subject)
     .eq("object_id", characterId)
     .maybeSingle()
+  let { data } = await read(npcId)
+  if (!data) {
+    const enc = await db.from("npc_encounters").select("name").eq("id", npcId).maybeSingle()
+    const own = enc.data?.name ? await npcCharacterId(db, enc.data.name) : null
+    if (own && own !== npcId) data = (await read(own)).data
+  }
   if (!data) return null
   const parts = RELATIONSHIP_DIMS
     .map((d) => [d, Number((data as Record<string, unknown>)[d] ?? 0)] as const)

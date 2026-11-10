@@ -134,6 +134,13 @@ header .tools input[type=range]{accent-color:#f2c55c}
 .bubble.foe::after{border-top-color:#fff1ec}
 .bubble.foe b{color:#b3200f}
 .bubble.said{max-width:280px}
+/* an ASK (Sam, 2026-11-10): still only a bubble, with the two answers on it. The plate ignores the pointer; these do not. */
+.bubble.ask{max-width:290px;pointer-events:auto;z-index:6}
+.bubble.ask .askrow{display:flex;gap:8px;justify-content:center;margin-top:8px}
+.bubble.ask button{font:inherit;font-size:.82rem;font-weight:700;padding:3px 12px 4px;border-radius:999px;border:2px solid #14110f;background:#f3e3b0;color:#14110f;cursor:pointer;box-shadow:2px 2px 0 rgba(0,0,0,.4)}
+.bubble.ask button:hover{background:#ffd76a}
+.bubble.ask button.no{background:#fffdf6}
+.bubble.ask button.no:hover{background:#e9e4d8}
 @keyframes pop{from{opacity:0;scale:.85}to{opacity:1;scale:1}}
 .tip{position:absolute;transform:translate(14px,14px);background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:4px 8px;font-size:var(--s-1);white-space:nowrap;color:var(--ink)}
 .tip.locked{border-color:var(--blood)}
@@ -6927,6 +6934,9 @@ const ALLY_SHEETS = {
 // their `characters` ids, so the walk can read what they carry the way it reads a hero's (/api/equipment)
 const ALLY_ROW = {ront: "2f539d01-6259-4beb-a685-4bd009f03f0d", eldeth: "05b65375-f25e-4773-bf41-641be0f12b86",
                   derendil: "e0c652fe-2f68-40ff-823d-bb7ac34f529f", sarith: "cc309888-e98d-4cfe-8bf1-d75787b8ec8e"};
+// the other prisoners' `characters` rows: what they are handed when they ask for something lands there (NPC ASKS)
+const ASK_ROW = {buppido: "1c5161a5-b0be-4f39-bb6f-8b1b0486120e", jimjar: "ffcd12e5-ccdc-4126-954b-bfabb8d083de", shuushar: "0805aedd-c6e9-4647-b285-bea6e33861ed",
+                 topsy: "408c24ed-0e17-403c-be62-58cd6ebb31a6", turvy: "c472d5dc-3c61-4d4d-9d20-d2c53dbd0e36"};
 // SRD 5.2.1, as the party has them at level 1. `kind`: attack (spell attack roll), save, heal, buff.
 // a spell with a choice in it is offered as its choices (the sheet says "Chromatic Orb"; the menu offers each type)
 const SPELL_VARIANTS = {"Command": ["Command (grovel)"], "Blindness/Deafness": ["Blindness/Deafness (blind)", "Blindness/Deafness (deafen)"], "Chromatic Orb": ["Chromatic Orb (acid)", "Chromatic Orb (cold)", "Chromatic Orb (fire)", "Chromatic Orb (lightning)", "Chromatic Orb (poison)", "Chromatic Orb (thunder)"]};
@@ -12304,6 +12314,7 @@ function setQuick(on, quiet){
 }
 function endCombat(won){
   if (mode !== "combat") return;
+  if (won !== false && cbt) askEarned((cbt.allies || []).filter(n => askRowOf(n.id) && !n.down));   // they fought beside you and know it (NPC ASKS)
   setQuick(false, true);
   owFightEnds();
   // the living pull the bolts out of themselves; the dead keep theirs
@@ -17958,7 +17969,7 @@ function armorNote(a, it, short){
 // at a time off a stack, or the whole stack. Worn or held things come off first. In a fight it is handing something
 // over: the other must be within 5 ft and it costs what stowing a weapon costs (the turn's object interaction).
 function giveTargets(a){ return [...party, ...npcs.filter(n => ALLY_ROW[n.id] && !n.down && !n.body)].filter(t => t !== a && !t.body); }
-function giveItem(a, it, t, n){
+function giveItem(a, it, t, n, opts = {}){
   const g = GEAR[a.id]; if (!g || !bagCan(a) || !t) return; const fight = inFightNow();
   n = Math.max(1, Math.min(n || 1, it.qty || 1));
   if ((g.doll || []).some(d => d.name === it.name) && g.carried.filter(c => c.name === it.name).reduce((q, c) => q + (c.qty || 1), 0) - n < (g.doll || []).filter(d => d.name === it.name).length){ toast(`Take the ${it.name} off first.`); return; }
@@ -17970,17 +17981,157 @@ function giveItem(a, it, t, n){
   if (inv.item && inv.item.name === it.name && it.qty <= 0) inv.item = null;
   bank("ui/item_pickup", .5); popText(t, `${it.name}${n > 1 ? ` ×${n}` : ""}`, "#e8d9a8", .8);
   log(`${fname(a)} hands ${n > 1 ? `${n} × ` : "the "}<b>${esc(it.name)}</b> to ${fname(t)}.`);
-  const from = serverCid(a.id), to = APP && !SANDBOX ? characterIdOf(t.id) : null;
+  const from = serverCid(a.id), to = APP && !SANDBOX ? (opts.toId || characterIdOf(t.id)) : null;
+  if (!opts.ask && openAsk && openAsk.n === t && openAsk.h === a && openAsk.ask.itemName === it.name) askAnswered("gave");   // handed over from the bag: the same answer
   if (from && to) fetch("/api/walk-items", {method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({action: "give", characterId: from, targetCharacterId: to, itemKey: it.item_key || null, itemName: it.name, quantity: n})})
     .then(r => r.json()).then(j => { if (j && j.error){ toast(j.error); loadGear(a.id); loadGear(t.id); } }).catch(() => {});
   refreshAttacks(a.id); refreshAttacks(t.id);   // the giver may have handed over their weapon; the taker now has one
   if (fight){ renderParty(); } renderBag();
 }
+
+// ---------- NPC ASKS (Sam, 2026-11-10) ----------
+// "NPCs may from time to time based on their personality ask for items (food if they know you have it, weapons if
+// they can use it, gold if they feel they've earned it, etc). This effects the players gravity to them accordingly.
+// They should be limited to bubbles and not trigger a dialogue. If it is of something of great import then an
+// exclamation on them will trigger a dialogue if parley is accepted. Bubbles should address the character 'Hey
+// shorty, or hey fifi, or hey dwarf, or Bard, or Scott' depending on their gravity with us and their personality."
+//
+// The rules (who asks for what, what they call you, the lines, what each answer does to how they feel) are in
+// lib/npc-asks.ts and are applied by /api/npc-ask, which knows whether they have learned your name and how they
+// stand with you. The map's part is what only the map can see:
+//   * WHAT THEY KNOW YOU HAVE: a thing that came into a hero's pack while the NPC was on the same plate. Nobody asks
+//     for what they never saw (state.askSeen, kept with the walk).
+//   * WHEN: now and then, out of a fight, from someone standing near, never from someone who already wants a word.
+//   * THE BUBBLE: the line, with Give and Not now on it. No card, no talk. Letting it lapse is an answer too.
+//   * GREAT IMPORT: no bubble. Their "!" goes up and walking over opens the usual Talk / Decline card, the opener
+//     told what they are after.
+// Each seat raises asks only for its own hero, so a table does not hear one ask four times.
+// THE NUMBERS ARE CLAUDE'S (how often, how near, how long the bubble waits, five coins at a time).
+const askRowOf = id => ALLY_ROW[id] || ASK_ROW[id] || null;
+const ASK_EVERY = [150000, 270000], ASK_PER_NPC = 420000, ASK_WAIT = 16000, ASK_NEAR = 460, ASK_COINS = 5;
+let openAsk = null, nextAsk = 0, askPrev = {}, askSeenAt = 0, askBusy = false;
+const askBoot = performance.now();
+function askHero(){                                    // whose asks this screen raises
+  if (mySlug) return party.find(p => p.id === mySlug && !p.down && !p.body) || null;
+  if (APP && seatsSeen.length) return null;            // a DM screen at a seated table: the players' screens raise their own
+  return leader && canControl(leader) && !leader.down ? leader : null;
+}
+// what each bystander has seen go into a pack (run every couple of seconds; cheap)
+function askWatch(){
+  if (now - askBoot < 8000) return;                   // the packs are still loading: what was already there was not "seen"
+  state.askSeen = state.askSeen || {};
+  const eyes = npcs.filter(n => askRowOf(n.id) && !n.hostile && !n.offStage && !n.down && !n.body && n.act !== "sleep").map(n => n.id);
+  for (const h of party){
+    const g = GEAR[h.id]; if (!g) continue;
+    const names = new Set(g.carried.map(c => c.name)), prev = askPrev[h.id]; askPrev[h.id] = names;
+    if (!prev || !eyes.length) continue;
+    for (const nm of names) if (!prev.has(nm)){ const seen = (state.askSeen[h.id] = state.askSeen[h.id] || {}); seen[nm] = [...new Set([...(seen[nm] || []), ...eyes])]; }
+    const seen = state.askSeen[h.id]; if (seen) for (const nm of Object.keys(seen)) if (!names.has(nm)) delete seen[nm];   // gone from the pack: nothing to ask for
+  }
+}
+function askOffers(n, h){
+  const g = GEAR[h.id], seen = (state.askSeen || {})[h.id] || {}; if (!g) return [];
+  const armed = (GEAR[n.id] || {carried: []}).carried.some(isWeapon) || !!(GEAR[n.id] || {}).main;
+  const out = [];
+  for (const it of g.carried){
+    if (!(seen[it.name] || []).includes(n.id)) continue;
+    const cat = catalogItem(it.name) || {};
+    if (isCoinRow(cat) || (it.item_type || cat.item_type) === "currency"){ if (/gold/i.test(it.name)) out.push({kind: "gold", itemName: it.name}); }
+    else if (isWeapon(it)){ if (!armed && it.name !== g.main && it.name !== g.off && !(g.doll || []).some(d => d.name === it.name)) out.push({kind: "weapon", itemName: it.name}); }   // never the one in your hand
+    else if ((useOf(it) || {}).kind === "food") out.push({kind: "food", itemName: it.name});
+  }
+  return out;
+}
+async function tickAsks(){
+  if (now - askSeenAt > 2000){ askSeenAt = now; askWatch(); }
+  if (openAsk){                                          // an open ask ends without a verdict if the moment itself is gone
+    const gone = !actors.includes(openAsk.n) || mode !== "explore" || !openAsk.bubble.el.isConnected || now > openAsk.until + 4000;
+    if (gone){ openAsk.bubble.until = 0; openAsk = null; }
+    else if (now > openAsk.until) askAnswered("ignored");
+  }
+  if (!nextAsk) nextAsk = now + ASK_EVERY[0] * (.5 + Math.random() * .5);
+  if (askBusy || openAsk || now < nextAsk || mode !== "explore" || talkNpc || (typeof bagOpen === "function" && bagOpen()) || sneak) return;
+  const h = askHero(); if (!h) return;
+  state.askAt = state.askAt || {};
+  const pool = npcs.filter(n => askRowOf(n.id) && !n.hostile && !n.offStage && !n.down && !n.body && !n.backdrop && !n.waking && n.act !== "sleep" && !wantsWord(n)
+    && !isRapport(n.id) && Date.now() - (state.askAt[n.id] || 0) > ASK_PER_NPC && Math.hypot(n.x - h.x, n.y - h.y) < ASK_NEAR * node.scale)
+    .map(n => ({n, offers: askOffers(n, h)})).filter(x => x.offers.length);
+  nextAsk = now + (pool.length ? ASK_EVERY[0] + Math.random() * (ASK_EVERY[1] - ASK_EVERY[0]) : 20000);   // nobody has anything to ask for: look again soon
+  if (!pool.length) return;
+  const {n, offers} = pool[Math.floor(Math.random() * pool.length)];
+  let ask = null; askBusy = true;
+  try {
+    if (APP && !SANDBOX){
+      const cid = characterIdOf(h.id);
+      const j = cid ? await fetch("/api/npc-ask", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({action: "ask", npcName: SPR[n.id].json.name, characterId: cid, offers})}).then(r => r.json()) : null;
+      ask = j && j.ask;
+    } else {                                            // the preview and a rehearsal: a stranger asks for food, and nothing is recorded
+      const o = offers.find(x => x.kind === "food"), who = (PCS[h.id] || {}).race || "you";
+      if (o) ask = {kind: o.kind, itemName: o.itemName, address: who, important: false, line: `Hey ${who}. Spare some of that ${o.itemName.toLowerCase()}?`, replies: {gave: "Good.", refused: "Hm.", ignored: ""}};
+    }
+  } catch (e) {} finally { askBusy = false; }
+  if (!ask || mode !== "explore" || talkNpc || !actors.includes(n) || !(GEAR[h.id] || {carried: []}).carried.some(c => c.name === ask.itemName)) return;
+  state.askAt[n.id] = Date.now();
+  if (ask.important){                                   // too big for a bubble: the "!" and, if they accept, a word
+    if (n.id === "jorlan") return;
+    if (n.storyTalk === undefined) n.storyTalk = !!n.talk;
+    n.talk = true; n.talkWho = fname(h); n.talkSituation = ask.situation || null;
+    delete state.talked[n.id]; delete state.declined[n.id];
+    narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} wants a word with ${fname(h)}.`);
+    return;
+  }
+  showAsk(n, h, ask);
+}
+function showAsk(n, h, ask){
+  stopActivity(n); n.path = []; faceTo(n, h);
+  bark(n, ask.line, ASK_WAIT); speak(n.id, ask.line);    // in their own voice, like every line said to you (Sam, 2026-10-12)
+  const b = bubbles[bubbles.length - 1]; if (!b || b.a !== n) return;
+  b.el.classList.add("ask");
+  const row = document.createElement("div"); row.className = "askrow";
+  const btn = (label, cls, fn) => { const x = document.createElement("button"); x.type = "button"; x.textContent = label; if (cls) x.className = cls;
+    for (const ev of ["pointerdown", "mousedown", "mouseup", "touchstart"]) x.addEventListener(ev, e => e.stopPropagation());
+    x.addEventListener("click", e => { e.stopPropagation(); e.preventDefault(); fn(); }); row.appendChild(x); };
+  btn(ask.kind === "gold" ? "Pay" : "Give", "", () => askGive());
+  btn("Not now", "no", () => askAnswered("refused"));
+  b.el.appendChild(row);
+  b.until = now + ASK_WAIT + 600;                       // the bubble outlives the wait by a breath, so lapsing reads as "ignored"
+  openAsk = {n, h, ask, until: now + ASK_WAIT, bubble: b};
+  log(`${esc(SHORT[n.id] || SPR[n.id].json.name)} asks ${fname(h)} for ${ask.kind === "gold" ? "coin" : `the <b>${esc(ask.itemName)}</b>`}.`);
+}
+function askGive(){
+  const a = openAsk; if (!a) return;
+  const it = (GEAR[a.h.id] || {carried: []}).carried.find(c => c.name === a.ask.itemName);
+  if (!it){ toast(`${fname(a.h)} no longer has the ${a.ask.itemName}.`); askAnswered("refused"); return; }
+  const hand = () => { if (openAsk !== a) return; giveItem(a.h, it, a.n, a.ask.kind === "gold" ? Math.min(it.qty || 1, ASK_COINS) : 1, {toId: askRowOf(a.n.id), ask: true}); askAnswered("gave"); };
+  if (feetBetween(a.h, a.n) <= 10 || a.h !== leader) return hand();
+  a.until = now + ASK_WAIT;                              // they wait while you walk over
+  if (a.bubble) a.bubble.until = now + ASK_WAIT + 600;
+  walkTo(nearNpc(a.n), hand);
+}
+function askAnswered(outcome){
+  const a = openAsk; if (!a) return; openAsk = null;
+  if (a.bubble) a.bubble.until = 0;
+  const reply = (a.ask.replies || {})[outcome];
+  if (reply && actors.includes(a.n)) setTimeout(() => { if (mode === "explore" && actors.includes(a.n)) bark(a.n, reply, 3200); }, outcome === "ignored" ? 0 : 500);
+  if (outcome !== "gave") log(`${fname(a.h)} ${outcome === "refused" ? "says no" : "does not answer"}.`);
+  if (APP && !SANDBOX){ const cid = characterIdOf(a.h.id);
+    if (cid) fetch("/api/npc-ask", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({action: "resolve", npcName: SPR[a.n.id].json.name, characterId: cid, kind: a.ask.kind, itemName: a.ask.itemName, outcome})}).catch(() => {}); }
+  nextAsk = now + ASK_EVERY[0] + Math.random() * (ASK_EVERY[1] - ASK_EVERY[0]);
+}
+// Those who fought beside the party feel owed ("gold if they feel they've earned it"). Told once per fight, by one screen.
+function askEarned(allies){
+  if (!APP || SANDBOX || !allies.length || (seatsSeen.length && !isDm() && party[0] && party[0].id !== mySlug)) return;
+  const ids = party.map(p => characterIdOf(p.id)).filter(Boolean);
+  if (ids.length) fetch("/api/npc-ask", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({action: "earned", npcNames: allies.map(n => SPR[n.id].json.name), characterIds: ids})}).catch(() => {});
+}
 async function loadGear(only){
   if (!APP) return; await ensureCatalog();
-  for (const id of (only ? [only] : [...party.map(p => p.id), ...Object.keys(ALLY_ROW)])){
-    const cid = characterIdOf(id); if (!cid) continue;
+  for (const id of (only ? [only] : [...party.map(p => p.id), ...Object.keys(ALLY_ROW), ...Object.keys(ASK_ROW)])){
+    const cid = characterIdOf(id) || ASK_ROW[id]; if (!cid) continue;
     try {
       const j = await (await fetch(`/api/equipment?character_id=${encodeURIComponent(cid)}`, {cache: "no-store"})).json();
       const carried = (j.carried || []).map(r => { const cat = catalogItem(r.name); return {name: r.name, item_key: r.item_key, item_type: r.items?.item_type || r.item_type || cat?.item_type, properties: r.items?.properties || cat?.properties || {}, pixel: cat?.pixel_icon_url || null,
@@ -20349,8 +20500,9 @@ function update(dt){
         ambient(n);                                       // the line decides which way they look
       }
     }
+    tickAsks();                                           // someone asks for something you carry (NPC ASKS)
     if (now > nextAmbient && npcs.length){
-      const pool = npcs.filter(n => (n.barks || []).length && now - n.lastBark > 15000);   // creatures carry no barks; without the guard the ambient timer threw once one was on the plate
+      const pool = npcs.filter(n => (n.barks || []).length && now - n.lastBark > 15000 && !(openAsk && openAsk.n === n));   // creatures carry no barks; without the guard the ambient timer threw once one was on the plate
       if (pool.length) ambient(pool[Math.floor(Math.random() * pool.length)]);
       nextAmbient = now + 14000 + Math.random() * 10000;
     }
