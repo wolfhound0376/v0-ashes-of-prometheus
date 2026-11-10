@@ -4848,7 +4848,7 @@ function icardRender(){
   let h = `<div class="ic-band"><span class="${view.identified ? "ok" : "unid"}">${view.magic ? (view.identified ? "IDENTIFIED" : "UNIDENTIFIED") : "ITEM"}</span><span class="${fight ? "war" : "ok"}">${fight ? "IN COMBAT" : "OUT OF COMBAT"}</span></div>`;
   h += `<div class="ic-head"><div class="ic-pic">${pic ? `<img src="${esc(pic)}" alt="">` : ""}</div><div><div class="ic-name">${esc(it.name || t.name)}</div>`
     + `<div class="ic-sub">${esc(type)} · <b>${esc(rarName)}</b></div>${view.identified && it.attunement ? `<span class="ic-pill" title="${esc(ATTUNE_PRICE)}">REQUIRES ATTUNEMENT</span>` : ""}</div></div>`
-    + (view.identified && it.attunement ? `<div class="ic-sec"><div class="ic-note"><b style="color:#c9a6ff">Requires attunement:</b> ${esc(ATTUNE_PRICE)}.</div></div>` : "");
+    + (view.identified && it.attunement ? `<div class="ic-sec"><div class="ic-note">${ICARD.who && SHEETS[ICARD.who.id] ? `${esc(fname(ICARD.who))}: ${attuneNote(it, false, ICARD.who.id)}.` : `<b style="color:#c9a6ff">Requires attunement:</b> ${esc(ATTUNE_PRICE)}.`}</div></div>` : "");
   // the eye can see the blade: base damage and properties; the bonus only once someone knows it
   const chips = [];
   for (const w of (p.weapon_properties || [])){ const k = String(w).toLowerCase(); chips.push(`<span class="${k === "finesse" ? "c-fin" : k === "light" ? "c-lit" : k === "thrown" ? "c-thr" : ""}">${esc(k.replace(/^./, c => c.toUpperCase()))}${k === "thrown" && p.range ? " " + esc(p.range) : ""}</span>`); }
@@ -4919,6 +4919,11 @@ function icardRender(){
       if (src === "bag" && carried) btns.push(`<button type="button" class="study" data-act="study">${known.q === (a && a.id) ? "Studying at the next short rest" : "Study at the next short rest"}</button>`);
     }
   }
+  if (!fight && src === "bag" && carried && a && SHEETS[a.id] && view.identified && it.attunement === true){
+    const av = attuneOf(a.id), on = attunedTo(a.id, it), full = !on && av.q !== slug && attunePrune(a.id).length >= ATTUNE_MAX;
+    btns.push(on ? `<button type="button" data-act="attuneEnd">End attunement</button>`
+      : `<button type="button" class="study" data-act="attune"${full ? ` disabled title="${ATTUNE_MAX} items attuned already: end one first"` : ""}>${av.q === slug ? "Attuning at the next short rest" : full ? `${ATTUNE_MAX} attuned already` : "Attune at the next short rest"}</button>`);
+  }
   if (btns.length) h += `<div class="ic-btns">${btns.join("")}</div>`;
   if (view.magic && !view.identified && slug && src !== "bag" && !fight) h += `<div class="ic-foot">Carry it and study it through a short rest to learn what it is.</div>`;
   if (known.q && view.magic && !view.identified){ const q = party.find(x => x.id === known.q); if (q && src !== "bag") h += `<div class="ic-foot">${esc(fname(q))} will study it at the next short rest.</div>`; }
@@ -4955,7 +4960,10 @@ function icardAct(act, t, it){
     return;
   }
   if (act === "equip" && a){ equipItem(a, it.name); icardRender(); if (bagOpen()) renderBag(); return; }
+  if (act === "attune" && a && it.slug){ const why = attuneQueue(a, it); if (why) toast(why); icardRender(); if (bagOpen()) renderBag(); return; }
+  if (act === "attuneEnd" && a && it.slug){ attuneEnd(a, it); icardRender(); if (bagOpen()) renderBag(); return; }
   if (act === "study" && a && it.slug){
+    { const v = attuneOf(a.id); if (v.q) state[attuneKey(a.id)] = {on: v.on, q: null}; }   // one rest, one focus: studying drops a queued attunement
     // one item per hero per short rest (PHB): queuing this one takes the hero off any other
     for (const k of Object.keys(state)) if (k.startsWith("lore:") && state[k] && state[k].q === a.id && k !== icardLoreKey(it.slug)){ const o = {...state[k]}; delete o.q; state[k] = o; }
     const known = icardKnown(it.slug); icardSetKnown(it.slug, {...known, q: known.q === a.id ? undefined : a.id});
@@ -9447,6 +9455,7 @@ async function doRest(spend){
   const lines = (j.characters || []).map(c => `${esc(c.name.split(" ")[0])}: ${c.healed > 0 ? `+${c.healed} hp (${c.hp}/${c.hpMax})` : `${c.hp}/${c.hpMax}`}${c.dice && c.dice.length ? ` · d: ${c.dice.join(", ")}` : ""}${c.hitDiceLeft != null ? ` · ${c.hitDiceLeft} HD left` : ""}`);
   log(`<b>Short rest.</b> An hour passes. ${lines.length ? lines.join("; ") + "." : ""}`);
   cdShortRest();                                                // SRD 5.2.1: a Short Rest gives back one Channel Divinity use
+  restAttune();                                                 // attunement: whoever chose an item is attuned to it now
   loreRestStudy();                                              // the item card: whoever chose an item to study knows it now
   toast("Rested an hour.", 2400);
   renderExploreBar();
@@ -17845,9 +17854,61 @@ function weaponNote(sheet, it, short){
   return trainedWith(sheet, it) ? `<b style="color:#7fdc8a">trained with ${esc(b)}</b>${short ? "" : ": +2 proficiency to hit"}`
     : `<b style="color:#ff8a7a">not trained with ${esc(b)}</b>${short ? ": no +2 to hit" : `: ${UNTRAINED_PRICE}`}`;
 }
-function attuneNote(it, short){
+// ATTUNEMENT (Sam, 2026-11-10: "Build attunement"). SRD 5.1, Magic Items > Attunement:
+//   "Without becoming attuned to an item that requires attunement, a creature gains only its nonmagical benefits";
+//   "Attuning to an item requires a creature to spend a short rest focused on only that item while being in physical
+//   contact with it ... This focus can't be the same short rest used to learn the item's properties";
+//   "a creature can be attuned to no more than three magic items at a time".
+// Kept per hero in the shared world (state["attune:<hero>"] = {on: [slugs], q: slug}), the way item lore is, so every
+// screen at the table agrees and New Game clears it. A hero picks ONE item to attune at the next short rest (the card's
+// button); the rest that is not broken makes it so (restAttune, beside loreRestStudy).
+// Simplified, and flagged: attunement ends the moment the item leaves the hero's pack (the SRD gives it 24 hours and
+// 100 ft), ending one by choice is immediate (the SRD asks for another short rest), an item must be identified before
+// it can be attuned (the card hides that it needs attunement until then), and class or alignment prerequisites
+// (Dawnbringer: non-evil) are not checked. Allies and foes never attune.
+const ATTUNE_MAX = 3;
+const attuneKey = id => "attune:" + id;
+function attuneOf(id){ const v = state[attuneKey(id)]; return v && typeof v === "object" ? {on: Array.isArray(v.on) ? v.on : [], q: v.q || null} : {on: [], q: null}; }
+const needsAttune = it => { const c = it && (catalogItem(it.name) || it); return !!c && c.attunement === true; };
+const slugOfItem = it => (it && (it.slug || (catalogItem(it.name) || {}).slug)) || null;
+const carriesItem = (id, it) => !!(GEAR[id] && (GEAR[id].carried || []).some(c => c.name === it.name));
+/** Is this hero attuned to this item right now: on their list, and still on them. */
+function attunedTo(id, it){ const sl = slugOfItem(it); return !!(id && sl && attuneOf(id).on.includes(sl) && carriesItem(id, it)); }
+/** Does the item's magic work for this hero: it asks for no attunement, or they are attuned to it. */
+function magicWorksFor(id, it){ return !needsAttune(it) || attunedTo(id, it); }
+/** the map id a sheet belongs to (a hero's; an ally's or a foe's block has none, and they never attune) */
+function sheetHero(sheet){ for (const k in SHEETS) if (SHEETS[k] === sheet) return k; return null; }
+/** the attuned items a hero no longer carries fall off the list */
+function attunePrune(id){ const v = attuneOf(id), on = v.on.filter(sl => (GEAR[id] && GEAR[id].carried || []).some(c => slugOfItem(c) === sl)); if (on.length !== v.on.length) state[attuneKey(id)] = {...v, on}; return on; }
+/** queue (or un-queue) the one item this hero attunes at the next short rest; says why not when it cannot be */
+function attuneQueue(a, it){
+  const id = a.id, sl = slugOfItem(it), v = attuneOf(id); if (!sl) return "";
+  if (v.q === sl){ state[attuneKey(id)] = {on: v.on, q: null}; return ""; }
+  if (attunePrune(id).length >= ATTUNE_MAX) return `${fname(a)} is attuned to ${ATTUNE_MAX} items already: end one first.`;
+  state[attuneKey(id)] = {on: attuneOf(id).on, q: sl};
+  // the same rest cannot both learn an item and attune one (SRD): this hero stops studying anything
+  for (const k of Object.keys(state)) if (k.startsWith("lore:") && state[k] && state[k].q === id){ const o = {...state[k]}; delete o.q; state[k] = o; }
+  return "";
+}
+function attuneEnd(a, it){ const v = attuneOf(a.id), sl = slugOfItem(it); state[attuneKey(a.id)] = {on: v.on.filter(x => x !== sl), q: v.q};
+  log(`${fname(a)} lets go of the <b>${esc(it.name)}</b>: no longer attuned.`); refreshAttacks(a.id); refreshAc(a.id); if (cbt) renderParty(); }
+// after a short rest that was not broken: each hero who chose an item, still carries it and has room, is attuned
+function restAttune(){
+  for (const a of party){
+    const v = attuneOf(a.id); if (!v.q) continue;
+    const on = attunePrune(a.id), it = (GEAR[a.id] && GEAR[a.id].carried || []).find(c => slugOfItem(c) === v.q);
+    if (it && on.length < ATTUNE_MAX && !on.includes(v.q)){ on.push(v.q); log(`${fname(a)} spent the rest with the <b>${esc(it.name)}</b> and is <b style="color:#c9a6ff">attuned</b> to it (${on.length} of ${ATTUNE_MAX}).`); popText(a, "attuned", "#c9a6ff", .9); }
+    state[attuneKey(a.id)] = {on, q: null}; refreshAttacks(a.id); refreshAc(a.id);
+  }
+  if (!$("icard").hidden) icardRender(); if (bagOpen()) renderBag();
+}
+function attuneNote(it, short, id){
   const cat = catalogItem(it.name) || it; if (cat.attunement !== true) return "";
   if (typeof loreView === "function" && !loreView(cat, icardKnown(cat.slug)).identified) return "";   // hidden until identified, like the card's pill
+  if (id && SHEETS[id]){
+    if (attunedTo(id, it)) return `<b style="color:#7fdc8a">attuned</b>${short ? "" : `: its magic is yours (${attuneOf(id).on.length} of ${ATTUNE_MAX} attuned)`}`;
+    return `<b style="color:#ff8a7a">not attuned</b>${short ? ": no magic yet" : `: ${ATTUNE_PRICE}`}${attuneOf(id).q === slugOfItem(it) ? " · <b>attuning at the next short rest</b>" : ""}`;
+  }
   return `<b style="color:#c9a6ff">requires attunement</b>${short ? "" : `: ${ATTUNE_PRICE}`}`;
 }
 function proficientWith(cls, it){ const b = baseWeapon(it), list = CLASS_WEAPONS[cls] || []; return !!b && (list.includes(b) || (list.includes("simple") && SIMPLE_WEAPONS.includes(b))); }
@@ -17868,13 +17929,16 @@ function attackFromItem(sheet, it){
   const type = p.damage_type && p.damage_type !== "none" ? p.damage_type : (String(p.damage || "").match(/([a-z]+)\s*$/i) || [0, "bludgeoning"])[1];
   const str = abilMod(sheet, "str"), dex = abilMod(sheet, "dex"), mod = ammo ? dex : finesse ? Math.max(str, dex) : str;   // the modifiers, not the saves
   // a "+1" weapon's catalogue row may carry one `bonus` for both (Lolth's Tooth does): it adds to the attack and the damage
-  const prof = trainedWith(sheet, it) ? 2 : 0, dm = mod + Number(p.damage_bonus ?? p.bonus ?? 0);       // proficiency +2 at levels 1-4
-  const a = {name: it.name, hit: mod + prof + Number(p.attack_bonus ?? p.bonus ?? 0), dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
-    reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, str: !ammo && (!finesse || str >= dex), ammo, item: true, itemName: it.name, pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null, magic: isMagicWeapon(it)};
+  // UNATTUNED, IT IS AN ORDINARY WEAPON (SRD: "only its nonmagical benefits"): no bonus to hit or damage, not magical
+  const live = !needsAttune(it) || magicWorksFor(sheetHero(sheet), it), bonusHit = live ? Number(p.attack_bonus ?? p.bonus ?? 0) : 0, bonusDmg = live ? Number(p.damage_bonus ?? p.bonus ?? 0) : 0;
+  const prof = trainedWith(sheet, it) ? 2 : 0, dm = mod + bonusDmg;       // proficiency +2 at levels 1-4
+  const a = {name: it.name, hit: mod + prof + bonusHit, dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
+    reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, str: !ammo && (!finesse || str >= dex), ammo, item: true, itemName: it.name, pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null, magic: live && isMagicWeapon(it)};
+  if (!live) a.unattuned = true;
   if (ammo && rng[1]) a.long = rng[1];
   if (light) a.light = true; if (thrown && rng[0]) a.thrown = rng[0];
   if (sheet.sneakDie && (finesse || ammo)) a.sneak = sheet.sneakDie;
-  if (isTooth(it)) a.tooth = true;                                      // Lolth's Tooth: the venom in the hilt (below)
+  if (isTooth(it) && live) a.tooth = true;                                      // Lolth's Tooth: the venom in the hilt (below)
   return a;
 }
 // a hero's attack lines: the equipped weapon first, then what the sheet always has (a fist)
@@ -17930,6 +17994,8 @@ function acOf(id, swap){
   const g = GEAR[id] || {}, dex = (S.mods || {}).dex || 0;
   let worn = (g.doll || []).map(d => armorOf((g.carried || []).find(c => c.name === d.name) || {name: d.name})).filter(Boolean);
   if (swap){ worn = worn.filter(w => w.kind !== swap.kind).concat([swap]); }
+  // unattuned armour is ordinary armour: its magical bonus to AC waits for attunement (a shield keeps its plain +2)
+  worn = worn.map(w => magicWorksFor(id, w) ? w : {...w, bonus: w.kind === "shield" ? Math.min(w.bonus, 2) : 0});
   const body = worn.find(w => w.kind === "body") || null, shield = worn.find(w => w.kind === "shield") || null, parts = [];
   let ac;
   if (body){ const d = body.cat === "heavy" ? 0 : body.cat === "medium" ? Math.min(dex, body.cap) : dex; ac = body.base + body.bonus + d;
@@ -18627,7 +18693,7 @@ function renderBag(){
       : u.kind === "throw" ? `${FLASK_OF(it).blurb} · thrown up to 20 ft` : u.kind === "dm" ? `use it through the DM: ${u.why}` : (it.desc || "");
     // the row keeps the short line (what it is, or where it is worn); the long description lives on the item's card
     row.innerHTML = `<span class="invPic${worn.length ? " worn" : ""}"${RARITY_RANK[rar] > 0 ? ` style="border-color:${RARITY_COL[rar]}"` : ""}>${pic ? `<img src="${esc(pic)}" alt="" loading="lazy">` : "◆"}</span>`
-      + `<span class="invTxt"><button class="efPick" aria-pressed="${picked ? "true" : "false"}"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}${rarTag}</b></button><small>${esc(what)}${armorOf(it) ? `${what ? " · " : ""}${armorNote(a, it, true)}` : ""}${[weaponNote(SHEETS[a.id], it, true), attuneNote(it, true)].filter(Boolean).map(x => ` · ${x}`).join("")}</small></span><span class="invBtns"></span>`;
+      + `<span class="invTxt"><button class="efPick" aria-pressed="${picked ? "true" : "false"}"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}${rarTag}</b></button><small>${esc(what)}${armorOf(it) ? `${what ? " · " : ""}${armorNote(a, it, true)}` : ""}${[weaponNote(SHEETS[a.id], it, true), attuneNote(it, true, a.id)].filter(Boolean).map(x => ` · ${x}`).join("")}</small></span><span class="invBtns"></span>`;
     // the name is the real button (keyboard reaches it); a click anywhere else on the row does the same for the mouse
     // THE CARD OPENS ITSELF (Sam, 2026-11-10: "When we hover for a few seconds or click on the item this should happen
     // automatically and execute cleanly"). A click opens it at once; the mouse resting on a row for BAG_HOVER_MS opens
@@ -18868,7 +18934,7 @@ function renderItemCard(a, g, it, u, worn, pic, what, fight, mine){
   const meta = [kind, where, (it.qty || 1) > 1 ? `×${it.qty}` : "", RARITY_RANK[rar] > 0 ? `<b style="color:${RARITY_COL[rar]}">${RARITY_LABEL[rar]}</b>` : ""].filter(Boolean).join(" · ")
     + (atk ? `<br>${esc(atk.dmg)} ${esc(atk.type)} · +${atk.hit} to hit${atk.reach > 5 ? ` · ${atk.reach} ft` : ""}` : "")
     + (armorOf(it) ? `<br>${armorNote(a, it)}` : "")
-    + (atk ? `<br>${weaponNote(SHEETS[a.id], it)}` : "") + (attuneNote(it) ? `<br>${attuneNote(it)}` : "");
+    + (atk ? `<br>${weaponNote(SHEETS[a.id], it)}` : "") + (attuneNote(it, false, a.id) ? `<br>${attuneNote(it, false, a.id)}` : "");
   d.innerHTML = `<div class="efBig${it.icon ? "" : " px"}">${pic ? `<img src="${esc(pic)}" alt="">` : "◆"}</div><div><h5>${esc(it.name)}</h5><div class="efMeta">${meta}</div>${it.desc ? `<div class="efDesc">${esc(it.desc)}</div>` : ""}<div class="efActs"></div></div>`;
   const acts = d.querySelector(".efActs");
   const btn = (label, ok, why, fn, primary) => { const b = document.createElement("button"); b.className = "btn" + (primary ? " primary" : ""); b.textContent = label; b.disabled = !ok; if (why) b.title = why; b.onclick = fn; acts.appendChild(b); };
