@@ -44,7 +44,9 @@
 //     creature is not canon, it is a leftover of a spell that no longer
 //     happened.
 //   - Ground items nobody dropped. Placed loot is canon; see 5f.
-//   - Character rows, stats, XP and levels.
+//   - Character ROWS (who the hero is: name, class, art, voice, seat). Their level, XP, purse and everything
+//     a level brought do NOT survive: step 3z puts each hero back on their starting sheet (Sam, 2026-11-10:
+//     "New game restarts EVERYTHING"). This line used to read "Character rows, stats, XP and levels".
 //   NOT on this list: world_flags. Every flag is a fact about one run of the
 //   story (the pen door, a Gas Spore Infection's clock), so all are cleared
 //   (step 2b).
@@ -69,6 +71,7 @@
 // 2026-08-20 on Sam's order; the old fail-open rule let anyone in).
 
 import { randomUUID } from "node:crypto"
+import { baselinePatch, baselinePlan, type HeroRow } from "@/lib/hero-baseline"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { startingSituation } from "@/lib/situation"
 
@@ -416,6 +419,40 @@ export async function restartCampaign(admin: SupabaseClient): Promise<RestartRes
       else reset += 1
     }
     report.npcsReset = reset
+  }
+
+  // --- 3z. back to the starting sheet ---------------------------------------
+  // Sam, 2026-11-10: "New game restarts EVERYTHING." Levels, XP, the features and spells a level brought, the
+  // purse — all of it goes back to the hero's baseline (lib/hero-baseline.ts). This runs BEFORE step 4 reads the
+  // heroes, so the heal below fills them to their level-1 hit points, not the ones they had last run.
+  {
+    const { data: heroes, error: heroesErr } = await admin.from("characters").select("*").eq("is_player", true).is("archived_at", null)
+    note("heroes read (baseline)", heroesErr)
+    const { data: bases, error: basesErr } = await admin.from("character_baselines").select("character_id, sheet")
+    if (basesErr) {
+      // No table, no reset: say so loudly rather than pretend the levels went back.
+      note("character_baselines read — LEVELS NOT RESET", basesErr)
+    } else {
+      const byId = new Map((bases || []).map((b: { character_id: string; sheet: Record<string, unknown> }) => [b.character_id, b.sheet]))
+      const plan = baselinePlan((heroes || []) as HeroRow[], new Set(byId.keys()))
+      let restored = 0, captured = 0
+      for (const h of plan.restore) {
+        const patch = baselinePatch(byId.get(h.id))
+        if (!patch) { note(`baseline ${h.id}`, { message: "baseline row is not a character sheet" }); continue }
+        const { error } = await admin.from("characters").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", h.id)
+        if (error) note(`baseline restore ${h.id}`, error); else restored += 1
+      }
+      for (const h of plan.capture) {
+        const sheet = { ...h, xp: 0 }
+        const { error } = await admin.from("character_baselines").insert({ character_id: h.id, sheet, taken_by: "restart" })
+        if (error) { note(`baseline capture ${h.id}`, error); continue }
+        captured += 1
+        if (Number(h.xp) > 0) { const { error: xpErr } = await admin.from("characters").update({ xp: 0 }).eq("id", h.id); note(`xp reset ${h.id}`, xpErr) }
+      }
+      report.levelsReset = restored
+      report.baselinesCaptured = captured
+      report.noBaseline = plan.missing.map((h) => h.name ?? h.id)
+    }
   }
 
   // --- 4. inventory + equipment ------------------------------------------
