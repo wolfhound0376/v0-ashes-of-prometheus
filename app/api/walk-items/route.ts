@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
+import { canCarry, carriedNow, carryVerdict, syncCarried } from "@/lib/carry"
 
 // /api/walk-items — things lying on the floor of the walk (public/velkynvelve-walk).
 //
@@ -106,6 +107,10 @@ export async function POST(req: NextRequest) {
       .select("id,name,description,item_type,icon_url,equippable_slot,weight,value,stackable").eq("id", pile.itemId).maybeSingle()
     if (!item) return NextResponse.json({ error: "Not in the item catalogue." }, { status: 404 })
 
+    // carrying capacity (lib/carry.ts): refused while the thing is still on the floor
+    { const v = await canCarry(db, characterId, Number(item.weight ?? 0), item.name)
+      if (!v.ok) return NextResponse.json({ error: v.why, carry: v }, { status: 409 }) }
+
     // Off the floor first, so two hands cannot take the same pile.
     const err = await writeFloor(db, piles.filter((p) => p.id !== pileId), `${who.name} picked up ${item.name}`)
     if (err) return NextResponse.json({ error: err.message }, { status: 500 })
@@ -123,6 +128,7 @@ export async function POST(req: NextRequest) {
       await writeFloor(db, piles, `${item.name} put back: ${error.message}`)    // back on the floor rather than lost
       return NextResponse.json({ error: `Could not stow it: ${error.message}` }, { status: 500 })
     }
+    await syncCarried(db, characterId)
     await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text: `${who.name} picks up ${item.name}.` })
     return NextResponse.json({ ok: true, picked: item.name })
   }
@@ -151,6 +157,7 @@ export async function POST(req: NextRequest) {
       text = `${who.name} gives ${row.name} to ${to?.name ?? "an ally"}.`
     }
     await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text })
+    await syncCarried(db, characterId)
     return NextResponse.json({ ok: true, left: Math.max(0, left) })
   }
 
@@ -183,6 +190,7 @@ export async function POST(req: NextRequest) {
     const err = await writeFloor(db, [...piles, pile], `${who.name} ${body?.thrown ? "threw" : "dropped"} ${item.name}`)
     if (err) return NextResponse.json({ error: err.message }, { status: 500 })
     await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text: `${who.name}'s ${item.name} lies on the floor${body?.thrown ? " where the throw left it" : ""}.` })
+    await syncCarried(db, characterId)
     return NextResponse.json({ ok: true, pile })
   }
 
@@ -209,6 +217,11 @@ export async function POST(req: NextRequest) {
       .eq("character_id", characterId).eq("name", row.name).neq("equipped", false)
     if (have - want < (wornCount ?? 0)) return NextResponse.json({ error: `Take the ${row.name} off first.` }, { status: 409 })
 
+    // carrying capacity (lib/carry.ts) — a HERO's pack has a limit; an NPC taking what they asked for is not weighed
+    { const theirsNow = await carriedNow(db, targetId)
+      if (theirsNow.isPlayer) { const v = carryVerdict(theirsNow.name, theirsNow.carried, theirsNow.max, Number(row.weight ?? 0) * want, row.name, want)
+        if (!v.ok) return NextResponse.json({ error: v.why, carry: v }, { status: 409 }) } }
+
     let stackable = false
     if (row.item_id) stackable = Boolean((await db.from("items").select("stackable").eq("id", row.item_id).maybeSingle()).data?.stackable)
     const { data: theirs } = stackable
@@ -231,6 +244,7 @@ export async function POST(req: NextRequest) {
       if (!error) error = (await db.from("inventory_items").update({ quantity: (row.quantity ?? 1) - want }).eq("id", row.id)).error
     }
     if (error) return NextResponse.json({ error: `Could not hand it over: ${error.message}` }, { status: 500 })
+    await syncCarried(db, characterId, targetId)
     await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text: `${who.name} gives ${want > 1 ? `${want} × ` : ""}${row.name} to ${to.name}.` })
     return NextResponse.json({ ok: true, gave: row.name, quantity: want, to: to.name })
   }

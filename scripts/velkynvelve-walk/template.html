@@ -4101,6 +4101,7 @@ async function takeLoot(a, id, row){
   // Hand at the pen guard lifted nothing (Sam: "picked the key from the guard successfully but didn't acquire the key").
   // A rehearsal never writes the real heroes' inventories, the same rule as the shared world (owLoad).
   const cid = serverCid(a.id);
+  { await ensureCatalog(); const no = carryRefusal(a, (Number((catalogItem(row.name) || {}).weight) || 0) * (row.qty || 1), row.name); if (no){ toast(no, 4200); return false; } }   // carrying capacity; the server checks again
   if (APP && cid){
     try {
       const r = await fetch("/api/walk-loot", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "take", characterId: cid, container: id, slug: row.slug, rowId: row.rowId, passed: row.passed === true})});
@@ -15582,6 +15583,7 @@ function giveTargets(a){ return [...party, ...npcs.filter(n => ALLY_ROW[n.id] &&
 function giveItem(a, it, t, n, opts = {}){
   const g = GEAR[a.id]; if (!g || !bagCan(a) || !t) return; const fight = inFightNow();
   n = Math.max(1, Math.min(n || 1, it.qty || 1));
+  { const no = carryRefusal(t, itemLb(it) * n, it.name); if (no){ toast(no, 4200); return; } }
   if ((g.doll || []).some(d => d.name === it.name) && g.carried.filter(c => c.name === it.name).reduce((q, c) => q + (c.qty || 1), 0) - n < (g.doll || []).filter(d => d.name === it.name).length){ toast(`Take the ${it.name} off first.`); return; }
   if (fight){ if (feetBetween(a, t) > 5.5){ toast(`${fname(t)} is out of reach: they must be within 5 ft.`); return; } const k = gearCost(a, 1); if (!k.ok){ toast(k.why); return; } k.pay(); }
   it.qty = (it.qty || 1) - n; if (it.qty <= 0) g.carried = g.carried.filter(x => x !== it);
@@ -15738,6 +15740,20 @@ function askEarned(allies){
   if (ids.length) fetch("/api/npc-ask", {method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({action: "earned", npcNames: allies.map(n => SPR[n.id].json.name), characterIds: ids})}).catch(() => {});
 }
+// CARRYING CAPACITY (Sam, 2026-11-10: "Is weight getting factored into these items?" ... "Weight next."). SRD 5.1,
+// Lifting and Carrying: "Your carrying capacity is your Strength score multiplied by 15." The server is the judge
+// (lib/carry.ts, asked by /api/walk-loot and /api/walk-items); these three say the same thing on the map first, so a
+// hero is told before they spend movement on a thing they cannot lift. A piece's weight is its row's, else the catalogue's.
+const itemLb = it => { const w = Number(it && it.wt); if (w > 0) return w; const c = it && catalogItem(it.name); return (c && Number(c.weight)) || 0; };
+const carriedLb = id => Math.round(((GEAR[id] || {}).carried || []).reduce((t, it) => t + itemLb(it) * (it.qty || 1), 0) * 10) / 10;
+function carryMaxLb(id){ const g = GEAR[id] || {}; if (g.carryMax !== undefined) return g.carryMax; const st = (SHEETS[id] || {}).strScore || (PCS[id] || {}).strScore; return st ? st * 15 : null; }
+/** Why this hero cannot take `lb` more pounds, or "" when they can. Heroes only: an NPC's pack is not weighed. */
+function carryRefusal(a, lb, name){
+  if (!a || a.kind !== "pc" || !(lb > 0)) return "";
+  const max = carryMaxLb(a.id); if (max == null) return "";
+  const has = carriedLb(a.id); if (has + lb <= max + 1e-9) return "";
+  return `${fname(a)} cannot carry that: ${has} of ${max} lb carried, and the ${name} weighs ${Math.round(lb * 10) / 10} lb. Drop or hand something off first.`;
+}
 async function loadGear(only){
   if (!APP) return; await ensureCatalog();
   for (const id of (only ? [only] : [...party.map(p => p.id), ...Object.keys(ALLY_ROW), ...Object.keys(ASK_ROW)])){
@@ -15746,10 +15762,11 @@ async function loadGear(only){
       const j = await (await fetch(`/api/equipment?character_id=${encodeURIComponent(cid)}`, {cache: "no-store"})).json();
       const carried = (j.carried || []).map(r => { const cat = catalogItem(r.name); return {name: r.name, item_key: r.item_key, item_type: r.items?.item_type || r.item_type || cat?.item_type, properties: r.items?.properties || cat?.properties || {}, pixel: cat?.pixel_icon_url || null,
         eslot: normSlot(r.equippable_slot || r.items?.equippable_slot || cat?.equippable_slot || ""),
+        wt: Number(r.weight ?? r.items?.weight ?? cat?.weight ?? 0) || 0,
         qty: r.quantity || 1, icon: r.icon_url || cat?.icon_url || null, desc: r.description || cat?.description || ""}; });
       const doll = (j.equipped || []).filter(e => e.equipped !== false).map(e => ({slot: normSlot(e.slot), name: e.name, item_key: e.item_key || null}));
       const inHand = sl => (doll.find(d => d.slot === sl) || {}).name || null;
-      GEAR[id] = {carried, doll, main: inHand("main_hand"), off: inHand("off_hand")}; refreshAttacks(id); refreshAc(id);
+      GEAR[id] = {carried, doll, main: inHand("main_hand"), off: inHand("off_hand"), carryMax: j.carry ? j.carry.max : undefined}; refreshAttacks(id); refreshAc(id);
     } catch (e) {}
   }
   if (cbt) renderParty();
@@ -15788,13 +15805,16 @@ function drawFloorItems(){
 async function pickUp(a, p){
   if (!floor.includes(p)) return;
   const inFight = mode === "combat" && cbt;
-  if (inFight){ if (a.c.move < PICKUP_FT){ toast(`Picking it up costs ${PICKUP_FT} ft of movement.`); return; } a.c.move -= PICKUP_FT; }
-  floor = floor.filter(q => q !== p); await ensureCatalog();
+  await ensureCatalog();
   const cat = catalogItem(p.name) || {};
+  { const no = carryRefusal(a, Number(cat.weight) || 0, p.name); if (no){ toast(no, 4200); return; } }   // too heavy: it stays on the floor, nothing is spent
+  if (!floor.includes(p)) return;
+  if (inFight){ if (a.c.move < PICKUP_FT){ toast(`Picking it up costs ${PICKUP_FT} ft of movement.`); return; } a.c.move -= PICKUP_FT; }
+  floor = floor.filter(q => q !== p);
   const g = GEAR[a.id] || (GEAR[a.id] = {carried: [], main: null});
   const have = g.carried.find(c => c.name === p.name && !isWeapon(c));
   if (have) have.qty = (have.qty || 1) + 1;
-  else g.carried.push({name: p.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: p.pixel, qty: 1, icon: cat.icon_url || null, desc: cat.description || ""});
+  else g.carried.push({name: p.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: p.pixel, qty: 1, wt: Number(cat.weight) || 0, icon: cat.icon_url || null, desc: cat.description || ""});
   if (bagOpen()) renderBag();
   popText(a, `+ ${p.name}`, "#e8d9a8"); log(`${fname(a)} picks up the <b>${esc(p.name)}</b>${inFight ? ` (${PICKUP_FT} ft of movement)` : ""}.`);
   bank("ui/item_pickup", .7);
@@ -16363,7 +16383,9 @@ function renderBag(){
       b.onclick = () => removeFrom(a, inv.slot); bx.appendChild(b); sel.appendChild(bx); }
   } else sel.innerHTML = '<div class="what">Click a slot to equip or remove, or drag: an item onto a slot to wear it, a slot off the doll to take it off.</div>';
   { const n = g.carried.length;
-    $("invPackHead").innerHTML = `Backpack<small>${inv.slot ? `fits the ${esc(slotLabel(inv.slot).toLowerCase())} first · ` : ""}${n} item${n === 1 ? "" : "s"}</small>`; }
+    const has = carriedLb(a.id), max = carryMaxLb(a.id), near = max != null && has >= max * .9;
+    const load = max != null ? `<span title="Carrying capacity: Strength × 15. Past it, nothing more goes in the pack."${near ? ' style="color:#ff8a7a"' : ""}>${has} / ${max} lb</span> · ` : has > 0 ? `${has} lb · ` : "";
+    $("invPackHead").innerHTML = `Backpack<small>${inv.slot ? `fits the ${esc(slotLabel(inv.slot).toLowerCase())} first · ` : ""}${load}${n} item${n === 1 ? "" : "s"}</small>`; }
   const list = $("invList"); list.innerHTML = "";
   // the card's panel holds a card or is not there: no instruction text, no empty frame (Sam, 2026-11-10: "We don't
   // need this button instruction"). Resting on a row or clicking it fills it — see openCard below.
@@ -16626,7 +16648,8 @@ function renderItemCard(a, g, it, u, worn, pic, what, fight, mine){
   const kind = u.kind === "weapon" ? "Weapon" : isArmorish(it) ? "Armor" : u.kind === "heal" || u.kind === "drink" ? "Potion" : u.kind === "food" ? "Provisions" : u.kind === "throw" ? "Thrown" : it.eslot ? "Wearable" : (it.item_type ? String(it.item_type).replace(/\b\w/g, c => c.toUpperCase()) : "Gear");
   const where = worn.length ? `${worn.some(HAND) ? "held" : "worn"} · ${worn.map(slotLabel).join(" and ").toLowerCase()}` : it.eslot && HAND(it.eslot) ? `held in the ${slotLabel(it.eslot).toLowerCase()}` : it.eslot ? `goes on the ${slotLabel(it.eslot).toLowerCase()}` : isWeapon(it) ? "held in a hand" : "carried";
   const atk = isWeapon(it) && SHEETS[a.id] ? attackFromItem(SHEETS[a.id], it) : null;
-  const meta = [kind, where, (it.qty || 1) > 1 ? `×${it.qty}` : "", RARITY_RANK[rar] > 0 ? `<b style="color:${RARITY_COL[rar]}">${RARITY_LABEL[rar]}</b>` : ""].filter(Boolean).join(" · ")
+  const lbEach = itemLb(it);
+  const meta = [kind, where, (it.qty || 1) > 1 ? `×${it.qty}` : "", lbEach > 0 ? `${Math.round(lbEach * (it.qty || 1) * 10) / 10} lb${(it.qty || 1) > 1 ? ` (${lbEach} each)` : ""}` : "", RARITY_RANK[rar] > 0 ? `<b style="color:${RARITY_COL[rar]}">${RARITY_LABEL[rar]}</b>` : ""].filter(Boolean).join(" · ")
     + (atk ? `<br>${esc(atk.dmg)} ${esc(atk.type)} · +${atk.hit} to hit${atk.reach > 5 ? ` · ${atk.reach} ft` : ""}` : "")
     + (armorOf(it) ? `<br>${armorNote(a, it)}` : "")
     + (atk ? `<br>${weaponNote(SHEETS[a.id], it)}` : "") + (attuneNote(it) ? `<br>${attuneNote(it)}` : "");

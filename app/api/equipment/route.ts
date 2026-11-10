@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { canEquip, interactionsFor, type EquippedRow } from "@/lib/equipped"
 import { interactionCost, type InteractionEconomy } from "@/lib/ground-items"
+import { packWeight } from "@/lib/carry"
 
 // ============================================================================
 // /api/equipment — putting something in your hand, and taking it out again.
@@ -38,13 +39,17 @@ export async function GET(req: NextRequest) {
   const characterId = req.nextUrl.searchParams.get("character_id")
   if (!characterId) return NextResponse.json({ error: "character_id required" }, { status: 400 })
   const db = createAdminClient()
-  const [doll, pack] = await Promise.all([
+  const [doll, pack, who] = await Promise.all([
     db.from("equipment_items").select("id,slot,item_key,name,icon_url,equipped").eq("character_id", characterId),
     db.from("inventory_items")
-      .select("id,name,item_key,item_type,equippable_slot,icon_url,quantity,description,items(item_type,properties,equippable_slot)")
+      .select("id,name,item_key,item_type,equippable_slot,icon_url,quantity,description,weight,confiscated_from,items(item_type,properties,equippable_slot,weight)")
       .eq("character_id", characterId),
+    db.from("characters").select("weight_max").eq("id", characterId).maybeSingle(),
   ])
-  return NextResponse.json({ equipped: doll.data ?? [], carried: pack.data ?? [] })
+  // carry: what the pack weighs and the limit (lib/carry.ts) — the inventory sheet shows it
+  const carried = pack.data ?? []
+  const carry = { carried: packWeight(carried.filter((r) => !r.confiscated_from)), max: who.data?.weight_max != null && Number(who.data.weight_max) > 0 ? Number(who.data.weight_max) : null }
+  return NextResponse.json({ equipped: doll.data ?? [], carried, carry })
 }
 
 export async function POST(req: NextRequest) {
