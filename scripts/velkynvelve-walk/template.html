@@ -8613,8 +8613,13 @@ function oaCue(att, tgt){
 }
 // Opportunity attacks (SRD): a foe you leave the reach of, without Disengage, gets one swing as
 // its reaction. Leaving by air counts — a long jump is movement, so it provokes exactly as a walk does.
+// NOBODY SWINGS AT WHAT THEY CANNOT SEE (Sam, 2026-11-10, a quaggoth striking hidden Fifi as she slipped away: "This
+// quaggoth took an opportunity attack on me while I was hidden"). SRD 5.1: "You can make an opportunity attack when a
+// hostile creature THAT YOU CAN SEE moves out of your reach." Invisible was already excused; hidden was not, on any of
+// the four ways one can be provoked. One test for all of them, both ways round.
+const unseenMover = a => !!(a && a.c && (a.c.conds.has("hidden") || a.c.conds.has("invisible")));
 function provokedBy(a, end){
-  if (a.kind !== "pc" || a.c.conds.has("disengaged") || a.c.conds.has("invisible")) return [];   // SRD: an opportunity attack is at a creature you can see
+  if (a.kind !== "pc" || a.c.conds.has("disengaged") || unseenMover(a)) return [];   // SRD: an opportunity attack is at a creature you can see
   return standing(foes).filter(f => !f.c.reactionUsed && !incapacitated(f) && feetBetween(a, f) <= 5
     && pxBetween(end, f, a) > reachPx(f, a, 5) + 6);
 }
@@ -10043,7 +10048,7 @@ function approachThen(att, tgt, ft, then){
   // hostile creature that you can see moves out of your reach ... you use your reaction to make one melee attack
   // against the provoking creature. The attack occurs right before the creature leaves your reach."). Heroes
   // leaving a foe's reach were already covered (moveActor).
-  if ((att.kind === "foe" || att.ally) && !att.c.conds.has("disengaged")){
+  if ((att.kind === "foe" || att.ally) && !att.c.conds.has("disengaged") && !unseenMover(att)){
     const p = standing(att.ally ? foes : heroes()).find(h => h !== tgt && !h.c.reactionUsed && !incapacitated(h) && feetBetween(att, h) <= 5 && pxBetween(goal, h, att) > reachPx(h, att, 5) + 6);
     if (p){
       // THE HERO IS ASKED (Sam, 2026-11-10: "If an opportunity happens to a player they can have a dialogue type box that
@@ -17629,7 +17634,7 @@ function keyboardMove(a, dt){
     const fp = ruleFt(a), left = a.c.move * fp - (a.c.kbdPx || 0), d = Math.hypot(nx - a.x, ny - a.y);
     if (left <= .5){ nx = a.x; ny = a.y; if (!a.kbdOut){ a.kbdOut = true; hint("No movement left this turn."); } }
     else if (d > left){ const k = left / d; nx = a.x + (nx - a.x) * k; ny = a.y + (ny - a.y) * k; }
-    if (!a.c.conds.has("disengaged")){
+    if (!a.c.conds.has("disengaged") && !unseenMover(a)){
       // one measure for both sides of the line: inside its reach this frame, outside it on the next step
       const f = standing(foes).find(f => { const r = reachPx(f, a, 5) + 6; return !f.c.reactionUsed && !incapacitated(f) && pxBetween(a, f, a) <= r && pxBetween({x: nx, y: ny}, f, a) > r; });
       if (f){
