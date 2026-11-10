@@ -1017,13 +1017,16 @@ export default function DashboardPage() {
         .from('dialogue')
         .select('id, speaker, text, speech_segments, speaker_type, channel, created_at, recipient')
         .eq('channel', 'dm')
-        .order('created_at', { ascending: true })
+        // THE LATEST 50, not the first 50 (Sam, 2026-11-10: the reply chips offered lines for a talk with Sarith
+        // from eleven days earlier). Ascending + limit took the OLDEST 50 rows in the table, so once a transcript
+        // passed 50 lines a freshly loaded dashboard showed its beginning, and the chips answered that.
+        .order('created_at', { ascending: false })
         .limit(50)
 
 if (error) {
         console.error('Error fetching dialogue:', error)
       } else if (data) {
-        setDialogue(data as DialogueMessage[])
+        setDialogue((data as DialogueMessage[]).slice().reverse())
       }
     }
     fetchDialogue()
