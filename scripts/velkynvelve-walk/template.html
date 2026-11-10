@@ -5065,7 +5065,10 @@ function openBody(b){
   $("objWho").textContent = `${name}'s body`;
   $("objText").textContent = b.searched ? `You have already been through ${name}'s things.` : `${name} lies where it fell.`;
   const box = $("objBtns"); box.innerHTML = "";
-  const add = (label, fn, cls = "") => { const el = document.createElement("button"); el.className = "btn " + cls; el.textContent = label; el.onclick = fn; box.appendChild(el); };
+  // THROUGH choiceRow, LIKE EVERY OTHER CARD (Sam, 2026-11-10, a drow guard's body: two empty gold boxes). This card
+  // was the last one still writing its label as a bare text node, which the row's ::after fill paints over (see the CSS
+  // note "EVERY LABEL IN A CARD ROW MUST BE AN ELEMENT", the same bug PR #1159 fixed on the talk card).
+  const add = (label, fn, cls = "", meta = {}) => choiceRow(box, label, fn, cls, meta);
   const close = () => { $("obj").hidden = true; mode = "explore"; };
   b.lootKey = b.lootKey || `${cur}-${Math.round(b.x)}-${Math.round(b.y)}`;
   const known = !!LOOT_BOOK["body:" + b.id];
@@ -5074,8 +5077,8 @@ function openBody(b){
     if (!known && first && APP) handOff(`${fname(leader)} searches ${name}'s body.`, true);                 // not a kit the book lists: Malachar says
     openLoot(`body:${b.id}:${b.lootKey}`, `${name}'s body`, {at: {x: b.x, y: b.y}, text: `${name} lies where it fell.`, empty: known ? `Nothing is left on ${name}.` : APP ? `Nothing the map knows of. What ${name} carried is Malachar's to say.` : "What it carried is Malachar's to say — in the game this goes to him as your action."});
   }, "primary");
-  add("Leave it", close);
-  showObjCard(); box.querySelector("button")?.focus();
+  add("Leave it", close, "", {icon: "back"});
+  showObjCard(); cardClose(close); box.querySelector("button")?.focus();
 }
 // The game-side hook for an action the map cannot resolve itself. Nothing listens yet; the dashboard will.
 // A check rolled on the dashboard's dice (Sam, 2026-10-25). The map names an action from lib/walk-roll.ts WALK_ACTIONS;
