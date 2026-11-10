@@ -1019,7 +1019,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
         </div>
       </div>
       <div class="invHand" id="invHand" hidden></div>
-      <div class="invFoot">Click a slot to see what fits it · click an item for its card · drag gear on or off the body · I opens and closes · Esc closes</div>
+      <div class="invFoot">Click a slot to see what fits it · rest on or click an item for its card · drag gear on or off the body · I opens and closes · Esc closes</div>
     </div>
     <div class="dm" id="dm" hidden>
       <div class="dmHead"><b>DM tools</b><button class="tbtn" id="dmClose" aria-label="Close DM tools">✕</button></div>
@@ -18281,6 +18281,8 @@ function bagHero(){
   return inv.who && party.includes(inv.who) ? inv.who : leader;
 }
 const bagOpen = () => !$("inv").hidden;
+const BAG_HOVER_MS = 1000;   // how long the mouse rests on a backpack row before its card opens by itself
+let bagHoverT = 0;
 function toggleBag(on, who){
   if (on === undefined) on = !bagOpen();
   if (on){ inv.who = who || null; inv.slot = null; if (APP && !gearLoaded && seatsSeen.length){ gearLoaded = true; loadGear(); }
@@ -18341,8 +18343,9 @@ function renderBag(){
   { const n = g.carried.length;
     $("invPackHead").innerHTML = `Backpack<small>${inv.slot ? `fits the ${esc(slotLabel(inv.slot).toLowerCase())} first · ` : ""}${n} item${n === 1 ? "" : "s"}</small>`; }
   const list = $("invList"); list.innerHTML = "";
-  const detail = $("invDetail"); detail.hidden = false;
-  detail.innerHTML = `<div class="efBig empty"></div><div><div class="efHint">${g.carried.length ? "Click an item for its card: what it is, where it goes, what it does — and the buttons to wear or put it away." : ""}</div></div>`;
+  // the card's panel holds a card or is not there: no instruction text, no empty frame (Sam, 2026-11-10: "We don't
+  // need this button instruction"). Resting on a row or clicking it fills it — see openCard below.
+  const detail = $("invDetail"); detail.hidden = true; detail.innerHTML = ""; clearTimeout(bagHoverT);
   if (!g.carried.length){ list.innerHTML = `<p class="invEmpty">${APP ? "Nothing carried yet." : "Nothing carried. In the preview, put something on the floor from DM tools → Items and pick it up."}</p>`; return; }
   if (inv.item && !g.carried.some(it => sameBagItem(it, inv.item))) inv.item = null;   // the card's item left the pack (used, dropped)
   const order = {weapon: 0, heal: 1, drink: 2, throw: 3, food: 4, dm: 5, none: 6};
@@ -18363,16 +18366,32 @@ function renderBag(){
       : u.kind === "throw" ? `${FLASK_OF(it).blurb} · thrown up to 20 ft` : u.kind === "dm" ? `use it through the DM: ${u.why}` : (it.desc || "");
     // the row keeps the short line (what it is, or where it is worn); the long description lives on the item's card
     row.innerHTML = `<span class="invPic${worn.length ? " worn" : ""}"${RARITY_RANK[rar] > 0 ? ` style="border-color:${RARITY_COL[rar]}"` : ""}>${pic ? `<img src="${esc(pic)}" alt="" loading="lazy">` : "◆"}</span>`
-      + `<span class="invTxt"><button class="efPick" aria-pressed="${picked ? "true" : "false"}" title="${picked ? "Close the card" : "Open the card"}"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}${rarTag}</b></button><small>${esc(what)}${armorOf(it) ? `${what ? " · " : ""}${armorNote(a, it, true)}` : ""}</small></span><span class="invBtns"></span>`;
+      + `<span class="invTxt"><button class="efPick" aria-pressed="${picked ? "true" : "false"}"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}${rarTag}</b></button><small>${esc(what)}${armorOf(it) ? `${what ? " · " : ""}${armorNote(a, it, true)}` : ""}</small></span><span class="invBtns"></span>`;
     // the name is the real button (keyboard reaches it); a click anywhere else on the row does the same for the mouse
-    const pick = () => { inv.item = picked ? null : {name: it.name, item_key: it.item_key || null}; renderBag(); };
-    row.querySelector(".efPick").onclick = e => { e.stopPropagation(); pick(); };
-    row.addEventListener("click", e => { if (dragJustEnded || (e.target.closest && e.target.closest("button"))) return; pick(); });
+    // THE CARD OPENS ITSELF (Sam, 2026-11-10: "When we hover for a few seconds or click on the item this should happen
+    // automatically and execute cleanly"). A click opens it at once; the mouse resting on a row for BAG_HOVER_MS opens
+    // it too. Opening only ever opens — a click on the open row leaves it open, so a hover followed by a click never
+    // shuts the card the hover just opened. Only the card and the row highlight change: the list is NOT rebuilt, so
+    // nothing moves under the pointer and a button being pressed is never swapped out mid-click.
+    const openCard = () => {
+      if (!row.isConnected || (inv.item && sameBagItem(it, inv.item) && !detail.hidden)) return;
+      inv.item = {name: it.name, item_key: it.item_key || null};
+      for (const r of list.children){ const on = r === row; r.classList.toggle("sel", on); const p = r.querySelector(".efPick"); if (p) p.setAttribute("aria-pressed", String(on)); }
+      renderItemCard(a, g, it, u, worn, pic, what, fight, mine);
+      row.scrollIntoView({block: "nearest"});   // the card takes room under the list; keep this row in sight
+    };
+    row.querySelector(".efPick").onclick = e => { e.stopPropagation(); clearTimeout(bagHoverT); openCard(); };
+    row.addEventListener("click", e => { if (dragJustEnded || (e.target.closest && e.target.closest("button"))) return; clearTimeout(bagHoverT); openCard(); });
+    // a real mouse only (a finger has no hover), and never while a button is held (that is a drag, not a look)
+    row.addEventListener("pointerenter", e => { if (e.pointerType !== "mouse") return; clearTimeout(bagHoverT);
+      bagHoverT = setTimeout(() => { if (bagOpen() && !document.querySelector(".invGhost")) openCard(); }, BAG_HOVER_MS); });
+    row.addEventListener("pointerleave", () => clearTimeout(bagHoverT));
+    row.addEventListener("pointerdown", () => clearTimeout(bagHoverT));
     if (picked) renderItemCard(a, g, it, u, worn, pic, what, fight, mine);
     const img = row.querySelector("img"); if (img && it.icon && it.pixel) img.onerror = () => { img.onerror = null; img.src = ITEM_PX + it.pixel; };
-    // No hover card on the backpack rows (Sam, 2026-10-28: "The item zoom on hover is not necessary because we already
-    // have an explanatory box"). The detail panel explains the item; its Examine button opens the card on purpose, for
-    // the lore checks and Study that only the card has.
+    // No floating zoom card on the backpack rows (Sam, 2026-10-28: "The item zoom on hover is not necessary because we
+    // already have an explanatory box"). Hover fills that explanatory box instead (openCard above); its Examine button
+    // opens the full card on purpose, for the lore checks and Study that only the card has.
     const btns = row.querySelector(".invBtns");
     { const ic = row.querySelector(".invPic"); if (ic) dragSource(ic, pic || "", (x, y) => { const to = slotUnder(x, y); if (!to) return;
         if (fitsSlot(it, to) && !worn.includes(to)) equipTo(a, it, to); else toast(`${it.name} does not go in the ${slotLabel(to).toLowerCase()}.`); }); }
