@@ -4,19 +4,25 @@
 //
 // Sam, 2026-10-24: "The intro to most players should have a start new game and then route you
 // immediately into character creation", "Play Saved Game … will ask for your code", and the DM
-// entrance "should only be an administrative way with the code." So the door is three choices and
-// nothing else:
+// entrance "should only be an administrative way with the code."
 //
-//   START NEW GAME     → /choose  one of the four canon heroes, or Forge Your Own (Sam, 2026-10-25)
-//   PLAY SAVED GAME    → /join    pick your card, speak your three words, wake in the pen
-//   Dungeon Master     → DM_HREF  small, bottom-left, out of a player's way
+// THE DOOR READS THE TABLE (Sam, 2026-11-10; lib/title-door.ts; project doc
+// claude/One_Door_Entry_Flow_2026-11-10.md). It asks /api/table what the table is doing and puts one
+// obvious button first, re-reading every few seconds so the button changes the moment the table opens:
 //
-// A browser that already holds a seat gets CONTINUE first, which re-enters its own game.
+//   a browser nobody has played on   NEW HERO → /choose        SAVED GAME → /join
+//   a returning player, table open   TAKE YOUR SEAT → /table   (no code on this device)
+//   a returning player, table dark   WAIT AT THE TABLE → /table
+//   a returning player, seated, live RETURN TO THE GAME → /
+//   Host a Game                      → DM_HREF  small, bottom-left (was "Dungeon Master")
 //
-// The opening film plays once per browser session on top of all this — click anywhere or Skip —
-// but only while Cinematics is ON in the settings sheet (bottom-right gear, lib/settings.ts). The
-// title score follows the Intro music switch the same way. Sam, 2026-10-11: sitting through the intro
-// every time is annoying, so the dashboard never sends a browser back here once it has been seen.
+// Labels are Sam's: "Saved Game is fine"; New Hero and Take Your Seat approved the same day.
+//
+// The opening film plays once per DEVICE per CAMPAIGN RUN — a New Game earns one more showing, and
+// "Watch the opening" brings it back — click anywhere or Skip, and only while Cinematics is ON in
+// the settings sheet (bottom-right gear, lib/settings.ts). It used to replay every browser session,
+// i.e. every game night (Sam, 2026-10-11: sitting through the intro every time is annoying). The
+// title score follows the Intro music switch the same way.
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -27,11 +33,15 @@ import { SettingsSheet } from "@/components/settings-sheet"
 import { isMusicOff, onMusicPrefChange, setMusicOff } from "@/lib/audio-prefs"
 import { cinematicsOn, introMusicOn, onSettingsChange } from "@/lib/settings"
 import { markDmDoor } from "@/lib/dm-door"
+import { createClient } from "@/lib/supabase/client"
+import { doorMenu, doorTableOf, shouldPlayFilm, FILM_RUN_KEY, FILM_RUN_UNKNOWN, HOST_LINK_LABEL, type DoorTable } from "@/lib/title-door"
 
-/** Where the small "Dungeon Master" link goes: the DM door (/dm) — code, then the table. This link is the
+/** Where the small "Host a Game" link goes (it read "Dungeon Master" until 2026-11-10): the DM door (/dm) — code, then the table. This link is the
  *  only way in; /dm sends anyone without its stamp back here (Sam, 2026-10-25; lib/dm-door.ts). */
 const DM_HREF = "/dm"
-const FILM_SEEN_KEY = "aop_title_film_seen" // sessionStorage: the film plays once per browser session
+const FILM_SEEN_KEY = "aop_title_film_seen" // sessionStorage: never twice in one browser session
+const TABLE_POLL_MS = 5000 // how often the door re-reads the table
+const FILM_WAIT_MS = 1500 // the longest the first paint waits on the table before deciding film or menu
 
 type Stage = "film" | "title"
 
@@ -45,6 +55,10 @@ export default function TitleScreen() {
   const [needsTap, setNeedsTap] = useState(false)
   const [filmNeedsTap, setFilmNeedsTap] = useState(false)
   const [leaving, setLeaving] = useState<string | null>(null)
+  const [table, setTable] = useState<DoorTable>("unknown")
+  const [seat, setSeat] = useState({ seated: false, away: false })
+  const [heroName, setHeroName] = useState<string | null>(null)
+  const runRef = useRef<string | null>(null) // the campaign run the table last reported
 
   // First paint: remember that this browser has seen the door, learn whether it already holds a
   // seat, and decide film or title from the device's settings.
@@ -60,14 +74,53 @@ export default function TitleScreen() {
       if (role === "dm") setSeated("dm")
       else if (role === "player" && token && character) setSeated("player")
     } catch { /* storage blocked */ }
-    let filmSeen = false
-    try { filmSeen = window.sessionStorage.getItem(FILM_SEEN_KEY) === "1" } catch { /* storage blocked */ }
-    setStage(cinematicsOn() && !filmSeen ? "film" : "title")
     setMusicOffState(!introMusicOn())
-    return onSettingsChange(() => {
+
+    // Who is at the door, for the table read and the "As <hero>" line.
+    let characterId: string | null = null
+    try {
+      if (window.localStorage.getItem("aop_access_role") === "player" && window.localStorage.getItem("aop_claim_token")) characterId = window.localStorage.getItem("aop_character_id")
+    } catch { /* storage blocked */ }
+    if (characterId) {
+      createClient().from("characters").select("name").eq("id", characterId).limit(1).maybeSingle()
+        .then(({ data }: { data: { name?: string } | null }) => { if (data?.name) setHeroName(data.name) })
+    }
+
+    // Film or menu? Decided once, after the first table read (it carries the campaign run) or after
+    // FILM_WAIT_MS, whichever comes first — a slow or failed read never holds the door shut.
+    let decided = false
+    const decide = () => {
+      if (decided) return
+      decided = true
+      let seenThisSession = false, seenRun: string | null = null
+      try {
+        seenThisSession = window.sessionStorage.getItem(FILM_SEEN_KEY) === "1"
+        seenRun = window.localStorage.getItem(FILM_RUN_KEY)
+      } catch { /* storage blocked */ }
+      setStage(shouldPlayFilm({ cinematics: cinematicsOn(), seenThisSession, seenRun, currentRun: runRef.current }) ? "film" : "title")
+    }
+    const wait = window.setTimeout(decide, FILM_WAIT_MS)
+
+    // The table: what it is doing, and whether this player holds a chair. Re-read while the door is up.
+    let live = true
+    const readTable = async () => {
+      try {
+        const q = characterId ? `?characterId=${encodeURIComponent(characterId)}` : ""
+        const j = await fetch(`/api/table${q}`, { cache: "no-store" }).then((r) => r.json())
+        if (!live || j?.error) return
+        if (typeof j.run === "string") runRef.current = j.run
+        setTable(doorTableOf(j?.state?.status))
+        setSeat({ seated: Boolean(j?.mine), away: Boolean(j?.mine?.away) })
+      } catch { /* the next read will do */ }
+    }
+    readTable().finally(decide)
+    const poll = window.setInterval(readTable, TABLE_POLL_MS)
+
+    const offSettings = onSettingsChange(() => {
       setMusicOffState(!introMusicOn())
       if (!cinematicsOn()) setStage("title")
     })
+    return () => { live = false; window.clearTimeout(wait); window.clearInterval(poll); offSettings() }
   }, [])
 
   // The film. Since 2026-10-25 it is "Into the Underdark" (Sam: "Use this as the new intro to the
@@ -131,7 +184,11 @@ export default function TitleScreen() {
   }, [stage])
 
   const finishFilm = useCallback(() => {
-    try { window.sessionStorage.setItem(FILM_SEEN_KEY, "1") } catch { /* storage blocked */ }
+    try {
+      window.sessionStorage.setItem(FILM_SEEN_KEY, "1")
+      // Remember it against this run of the campaign, so the next game night goes straight to the menu.
+      window.localStorage.setItem(FILM_RUN_KEY, runRef.current ?? window.localStorage.getItem(FILM_RUN_KEY) ?? FILM_RUN_UNKNOWN)
+    } catch { /* storage blocked */ }
     setStage("title")
   }, [])
 
@@ -148,6 +205,7 @@ export default function TitleScreen() {
   }
 
   const filmUp = stage === "film"
+  const menu = doorMenu(seated ?? "none", table, seat, heroName)
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-black text-stone-200">
@@ -212,21 +270,33 @@ export default function TitleScreen() {
               <div className="ttl-rule mx-auto mt-3 h-px w-40 bg-gradient-to-r from-transparent via-[#c9a868] to-transparent" />
             </div>
 
-            {seated && (
-              <MenuButton primary onClick={() => go("/")} delay=".08s" sub={seated === "dm" ? "Back behind the screen" : "Your seat is kept"}>
-                Continue
-              </MenuButton>
+            {/* what the table is doing — the pill is left out when it could not be read */}
+            {menu.status.open !== null && (
+              <div className="mb-4 flex justify-center" style={{ animationDelay: ".04s" }}>
+                <div role="status" className="flex items-center gap-2.5 rounded-full border border-[#5a4a30] bg-black/70 px-4 py-2 font-serif text-[11px] uppercase tracking-[0.24em] text-[#f0dba8]">
+                  <span aria-hidden className={cn("h-2.5 w-2.5 rounded-full", menu.status.open ? "bg-emerald-300 shadow-[0_0_12px_rgba(110,231,168,0.9)]" : "border-2 border-stone-400")} />
+                  {menu.status.text}
+                </div>
+              </div>
             )}
-            <MenuButton primary={!seated} onClick={() => go("/choose")} delay={seated ? ".16s" : ".08s"} sub="Choose your hero. The drow will take the rest.">
-              Start New Game
-            </MenuButton>
-            <MenuButton onClick={() => go("/join")} delay={seated ? ".24s" : ".16s"} sub="Speak your three words">
-              Play Saved Game
-            </MenuButton>
 
-            <p className="mt-5 text-center text-[11px] leading-relaxed text-stone-600" style={{ animationDelay: ".32s" }}>
-              New heroes wait for the Dungeon Master to open their cell.
+            <MenuButton primary onClick={() => go(menu.primary.href)} delay=".08s" sub={menu.primary.sub}>
+              {menu.primary.label}
+            </MenuButton>
+            {menu.others.map((b, i) => (
+              <MenuButton key={b.key} onClick={() => go(b.href)} delay={`${0.16 + i * 0.08}s`} sub={b.sub}>
+                {b.label}
+              </MenuButton>
+            ))}
+
+            <p className="mt-5 text-center text-[11px] leading-relaxed text-stone-500" style={{ animationDelay: ".32s" }}>
+              A new hero waits for the host to let them in.
             </p>
+            <div className="mt-2 text-center" style={{ animationDelay: ".36s" }}>
+              <button type="button" onClick={() => setStage("film")} className="px-3 py-2 font-serif text-[10px] uppercase tracking-[0.3em] text-[#8a6a3a] transition-colors hover:text-[#e8c56a]">
+                Watch the opening
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -262,7 +332,7 @@ export default function TitleScreen() {
           className="group fixed bottom-5 left-6 z-50 flex items-center gap-2 text-[10px] uppercase tracking-[0.35em] text-stone-600 transition-colors hover:text-[#c9a868]"
         >
           <span className="grid h-6 w-6 place-items-center rounded-full border border-stone-700 font-serif text-[11px] text-stone-500 transition-colors group-hover:border-[#c9a868] group-hover:text-[#e8c56a]">☠</span>
-          Dungeon Master
+          {HOST_LINK_LABEL}
         </button>
       )}
 

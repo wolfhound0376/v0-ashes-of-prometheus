@@ -48,7 +48,7 @@ export async function POST(req: Request) {
   // DM's own. A hero handed in without either is turned away (lib/forge-pass.ts).
   const cookie = req.headers.get("cookie")
   if (!verifyForgePass(forgePassFromCookieHeader(cookie)) && !verifyDmToken(dmTokenFromCookieHeader(cookie))) {
-    return Response.json({ ok: false, error: "The Forge is reached through Start New Game. Go back to the title and choose Forge Your Own." }, { status: 403 })
+    return Response.json({ ok: false, error: "The Forge is reached through New Hero. Go back to the title, choose New Hero, then Forge Your Own." }, { status: 403 })
   }
   const raw = await req.text().catch(() => "")
   if (raw.length > MAX_SUBMISSION_BYTES) return Response.json({ ok: false, error: "That hero is too large to hand in." }, { status: 413 })

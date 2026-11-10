@@ -261,7 +261,7 @@ export default function JoinPage() {
             {status === "pending" && <p role="status" className="mt-3 text-center text-sm text-[#d9bd7e]">The Dungeon Master hasn&apos;t opened {pendingHero ? `${pendingHero}'s` : "your"} cell yet. Ask them, then try again.</p>}
             {status === "rejected" && <p role="alert" className="mt-3 text-center text-sm text-red-400/90">The Dungeon Master turned {pendingHero ?? "that hero"} away at the Forge. Talk to them.</p>}
             {status === "welcome" && <p role="status" className="mt-3 text-center text-sm text-[#d9bd7e]">The door opens…</p>}
-            {status === "dmDoor" && <p role="alert" className="mt-3 text-center text-sm text-[#d9bd7e]">Those are the Dungeon Master&apos;s words. The Dungeon Master enters by his own door on the title screen.</p>}
+            {status === "dmDoor" && <p role="alert" className="mt-3 text-center text-sm text-[#d9bd7e]">Those are the Dungeon Master&apos;s words. The Dungeon Master enters through Host a Game on the title screen.</p>}
             <div className="mt-6 flex items-center justify-center gap-3">
               <button type="button" onClick={() => { setPick(null); setStatus("idle") }} disabled={busy} className="px-4 py-2.5 text-[11px] uppercase tracking-[0.25em] text-stone-500 hover:text-stone-300">
                 Back
