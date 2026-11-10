@@ -15873,6 +15873,53 @@ async function surgeonAfterRead(){
 }
 if (APP) setTimeout(surgeonAfterRead, 1500);
 
+// ---------- THE WAKER, ON THE MAP ----------
+// Sam, 2026-11-10: the start "is a bit slow" — "Go on the faster start." The opening film ended with a prisoner's face
+// filling the screen for 16-20 s to wake the hero, and only then the roll and the map. That beat now happens HERE: the
+// film stops at the title, and the same prisoner (Jimjar, Eldeth or Derendil — /awaken still picks, and leaves the
+// pick in sessionStorage `aop_wake`) walks over on the pen plate and says the same recorded line, in a speech bubble
+// and in the same recorded voice (public/awaken/wake-<who>.mp3 — the words below are a transcript of those files,
+// ElevenLabs Scribe, 2026-11-10; "Nelrindenvane" is the book's spelling of what Derendil says). The player lands in
+// the pen already being spoken to, which also shows them whom they can talk to.
+// One screen only (the pick is this tab's), once (the key is removed when read), and only on the pen plate.
+const WAKE_LINES = {
+  jimjar: "Hey, hey, up. You've been talking in your sleep, and I'd have bet against you waking at all. Velkynvelve, drow outpost, slave pen, the cheap seats. Don't rattle the collar. They listen for it.",
+  eldeth: "Up on your feet, or near enough. You're in Velkynvelve, a drow hole in the rock, and this is their pen. Three guards across the bridge, a locked gate, wards on the walls. Breathe, then we talk.",
+  derendil: "Wake, stranger. You are in the pens of Velkynvelve, in the keeping of the drow. I am Derendil, Prince of Nelrindenvane. Though you would not know it to look at me. Rise. Even here there is such a thing as bearing.",
+};
+const WAKE_SECONDS = {jimjar: 16, eldeth: 17, derendil: 20};
+// the recorded line through Web Audio (so the test-copy and hidden-tab sound rules cover it). A context that is not
+// running — no gesture on this page yet — plays nothing rather than a line twenty seconds late.
+async function wakeVoice(who){
+  try {
+    const ctx = audioCtx(); if (ctx.state === "suspended") await Promise.race([ctx.resume(), new Promise(r => setTimeout(r, 400))]);
+    if (ctx.state !== "running") return;
+    const buf = await fetch(`/awaken/wake-${who}.mp3`).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); }).then(b => ctx.decodeAudioData(b));
+    const src = ctx.createBufferSource(), g = ctx.createGain(); g.gain.value = .9; src.buffer = buf; src.connect(g); g.connect(ctx.destination); src.start();
+  } catch (e) {}
+}
+function wakeOnMap(tries = 0){
+  let who = null; try { who = sessionStorage.getItem("aop_wake"); } catch (e) {}
+  if (!who || !WAKE_LINES[who]) return;
+  if (mode === "load" || mode === "travel"){ if (tries < 20) setTimeout(() => wakeOnMap(tries + 1), 500); return; }   // the plate is not up yet
+  try { sessionStorage.removeItem("aop_wake"); } catch (e) {}
+  if (cur !== PEN || mode !== "explore" || !leader) return;
+  const a = npcs.find(n => n.id === who && !n.down && !n.offStage && !n.body && !n.slain && n.alpha > .5); if (!a) return;
+  const hero = party.find(p => p.id === mySlug) || leader, sc = node.scale || 1, ms = (WAKE_SECONDS[who] || 16) * 1000;
+  stopActivity(a); a.keep = a.keep || {patrol: a.patrol, static: a.static}; a.patrol = null; a.static = false; a.actUntil = now + ms + 12000;
+  a.waking = true;                                  // their own "a word?" card waits until the line is said
+  const spot = nearestWalkable(hero.x + 78 * sc, hero.y + 18 * sc, [{x: hero.x, y: hero.y}]);
+  a.path = findPath(a, spot); if (!a.path.length) a.path = [spot]; a.slow = false;
+  let said = false;
+  const say = () => { if (said) return; said = true; a.onArrive = null;
+    if (mode !== "explore" || a.down || !actors.includes(a)){ a.waking = false; return; }   // a fight or a card got there first: the moment has passed
+    faceTo(a, hero); setAnim(a, "idle"); bark(a, WAKE_LINES[who], ms + 1500, {talk: true}); wakeVoice(who);
+    setTimeout(() => { a.waking = false; if (a.keep){ a.patrol = a.keep.patrol; a.static = a.keep.static; a.keep = null; } a.home = {x: a.x, y: a.y}; a.actUntil = now + 4000; }, ms + 2000); };
+  a.onArrive = say;
+  setTimeout(say, 9000);                                                                // a blocked path still gets the line said
+}
+if (APP) setTimeout(wakeOnMap, 2200);
+
 // ---------- THE SURRENDER ----------
 // Sam, 2026-10-28: "Surrendering takes you back to the pen after suffering some damage and throwing one of the NPCs
 // into the chasm as a warning." Until now the Surrender button a guard offers when he catches the party in the open
@@ -19809,7 +19856,7 @@ function update(dt){
     // NPC comments and the one who wants to talk
     for (const n of npcs){
       const d = Math.hypot(n.x - leader.x, n.y - leader.y);
-      if (wantsWord(n) && !state.declined[n.id] && d < 150 * node.scale && mode === "explore"){
+      if (wantsWord(n) && !n.waking && !state.declined[n.id] && d < 150 * node.scale && mode === "explore"){   // (a prisoner still saying their wake-up line finishes it first: THE WAKER, ON THE MAP)
         leader.path = []; openTalk(n);
       } else if (!wantsWord(n) && d < 140 * node.scale && now - n.lastBark > 30000 && now - lastAnyBark > 4000 && (n.barks || []).length){
         ambient(n);                                       // the line decides which way they look

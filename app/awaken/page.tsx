@@ -106,8 +106,8 @@ const CEILING = {
   meta: 4000,       // learning how long his voice runs
   laugh: 15000,
 } as const
-const AUTO_ROLL_MS = 30000
-const AUTO_DISMISS_MS = 10000
+const AUTO_ROLL_MS = 20000
+const AUTO_DISMISS_MS = 7000
 /** The roll beat's own ceiling: the card's two clocks, the dice, and slack. Past it the show goes on without a roll. */
 const ROLL_BEAT_MS = AUTO_ROLL_MS + AUTO_DISMISS_MS + 45000
 
@@ -298,8 +298,12 @@ export default function AwakenPage() {
     if (!seat || started.current) return
     started.current = true
     const pcKey = pcKeyFor(seat.name)
+    // THE WAKER HAS MOVED TO THE MAP (Sam, 2026-11-10: the start "is a bit slow" — "Go on the faster start"). Their
+    // face used to fill this screen for 16-20 s before the roll. The pick is still made here, and handed to the
+    // Underwalk in sessionStorage: the same prisoner walks over on the pen plate and says the same recorded line
+    // (scripts/velkynvelve-walk/template.html, wakeOnMap). The film now stops at the title.
     const w = pickWaker()
-    setWaker(w)
+    try { window.sessionStorage.setItem("aop_wake", w) } catch { /* no storage: nobody walks over, nothing breaks */ }
     const guard = () => { if (dead.current) throw new Error("left") }
 
     const show = cinematicsOn()
@@ -397,25 +401,9 @@ export default function AwakenPage() {
           setStep("title"); musicTo(0.6, 1500)
           await wait(4200); guard()
           music.current?.pause()
-          setStep("waker")
           await wait(700); guard()
         }
 
-        // 4 — the waker. Eyes open on the idle loop; the talking loop takes the line.
-        if (!skipped.current) {
-          idleVid.current?.play().catch(() => {})
-          await wait(250)
-          setFaceOpen(true)
-          await wait(2800); guard()
-          talkVid.current?.play().catch(() => {})
-          setTalking(true)
-          await playClip(`${MEDIA}/wake-${w}.mp3`); guard()
-          setTalking(false); talkVid.current?.pause()
-          await wait(1200)
-          setFaceOpen(false)
-          await wait(1200); guard()
-          idleVid.current?.pause()
-        }
       }
 
       // 5 — back into the dark: the music returns, "let's see what you kept", then the real roll.
@@ -514,7 +502,6 @@ export default function AwakenPage() {
     run().catch((e) => { if (!dead.current) console.error("[awaken]", e) })
   }, [seat, playClip, musicIn, musicTo, goToPen, race, wait, rearmSkip])
 
-  const wakerLoop = waker ? WAKERS.find((x) => x.key === waker)!.loop : null
   const dark = step === "where" || step === "dream" || step === "tap" || step === "roll" || step === "result"
 
   return (
@@ -540,16 +527,6 @@ export default function AwakenPage() {
       {/* the bed and the voices */}
       <audio ref={music} preload="auto" src={`${MEDIA}/dark-and-stormy.mp3`} />
       <audio ref={clip} preload="auto" />
-
-      {/* the waker's face */}
-      <div className={`awk-face${faceOpen ? " open" : ""}`} aria-hidden={!faceOpen}>
-        {wakerLoop && (
-          <>
-            <video ref={idleVid} className={talking ? "" : "on"} muted loop playsInline preload="auto" src={`${LOOPS}/${wakerLoop}_idle.webm`} />
-            <video ref={talkVid} className={talking ? "on" : ""} muted loop playsInline preload="auto" src={`${LOOPS}/${wakerLoop}_talking.webm`} />
-          </>
-        )}
-      </div>
 
       {/* a forged hero's own intro film — step 0 */}
       <div className={`awk-lich${filmOn ? " on" : ""}`} aria-hidden={!filmOn}>
