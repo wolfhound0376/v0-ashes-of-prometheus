@@ -19891,13 +19891,30 @@ async function owPost(op, extra){
   if (j.seats) OW.seats = j.seats;
   return j;
 }
+// A TEST COPY CAN JOIN THE TABLE, ON SAM'S SAY-SO (Sam, 2026-11-10: his DM screen on the live site and his player screen
+// on a pull request's preview showed two different pens — "This is a problem"). A test copy plays its own world by
+// design, so nothing a session opens can move the real heroes; but that also meant a preview could never be played
+// with two screens. Same answer as its sound: a switch that only a person presses, for this tab only. Click the
+// "Rehearsal · own world" light and choose "Join the real table". ?oneworld=1 still works (now on the app's own
+// address too, not just the bare page). Automated browsers (navigator.webdriver) are never offered it; a DM
+// rehearsal (?sandbox=1) never is either.
+const OW_TEST_KEY = "aop-test-copy-oneworld";
+const OW_TEST_HOST = !/(^|\.)playacartagena\.com$/.test(location.hostname);
+function owTestJoined(){
+  try {
+    if (new URLSearchParams(location.search).get("oneworld") === "1") return true;
+    if (window.top !== window && new URLSearchParams(window.top.location.search).get("oneworld") === "1") return true;
+    return !navigator.webdriver && sessionStorage.getItem(OW_TEST_KEY) === "on";
+  } catch (e) { return false; }
+}
+function owTestSwitch(on){ try { if (on) sessionStorage.setItem(OW_TEST_KEY, "on"); else sessionStorage.removeItem(OW_TEST_KEY); } catch (e) {} location.reload(); }
 /** Boot: read the shared world. Null (and a "Not shared" light) when there is none to read. */
 async function owLoad(){
   if (!APP || !window.AopOneWorld) return null;
   if (SANDBOX){ owSetStatus("rehearsal"); return null; }      // a DM rehearsal never touches the real game's world
   // A session's local test copy (any host but the live site, AGENTS.md §8) must never move the real game's heroes —
   // the same rule as its sound. The two-screen test opts in with ?oneworld=1 against its own stand-in server.
-  if (!/(^|\.)playacartagena\.com$/.test(location.hostname) && new URLSearchParams(location.search).get("oneworld") !== "1"){ owSetStatus("rehearsal"); return null; }
+  if (OW_TEST_HOST && !owTestJoined()){ owSetStatus("rehearsal"); return null; }
   try {
     const r = await fetch("/api/walk-world", {cache: "no-store"}); const j = await r.json();
     if (!r.ok || !j.world) throw new Error(j.error || r.status);
@@ -20207,7 +20224,7 @@ function owSetStatus(s){
   const f = fightHere();
   el.textContent = OW_LABEL[s] || s;
   el.title = s === "fight-unshared" && f ? `A fight is running on ${f.who === (SHORT[mySlug] || mySlug) ? "this" : f.who + "'s"} screen. Fights are not shared between screens yet — the others do not see it.`
-    : s === "rehearsal" ? "A DM rehearsal: this screen plays its own world and never touches the real game."
+    : s === "rehearsal" ? (OW_TEST_HOST && !SANDBOX ? "A test copy: this screen plays its own world and the other screens do not see it. Click to join the real table." : "A DM rehearsal: this screen plays its own world and never touches the real game.")
     : s === "off" ? "This screen is not sharing its world with the others. Tell the DM."
     : s === "out-of-touch" ? "This screen cannot reach the game. It will catch up on its own when the connection comes back."
     : s === "catching-up" ? "This screen is bringing itself in line with the shared world." : "Every screen at the table sees the same world.";
@@ -20215,12 +20232,20 @@ function owSetStatus(s){
 }
 function owRenderSeats(){
   const p = $("owSeats"); if (!p || p.hidden) return;
+  const offer = APP && OW_TEST_HOST && !SANDBOX && !navigator.webdriver;      // a person, on a test copy of the app
+  if (offer && OW.status === "rehearsal"){
+    p.innerHTML = `<div class="ow-row" style="display:block;max-width:250px">This is a test copy, so it plays its own world. The other screens do not see it.</div><div class="ow-row"><button type="button" id="owJoin" style="font:inherit;cursor:pointer;padding:4px 10px;border-radius:5px;border:1px solid var(--ember);background:#1c1610;color:#f1dfae">Join the real table (this tab)</button></div>`;
+    $("owJoin").onclick = () => owTestSwitch(true);
+    return;
+  }
+  const back = offer && owTestJoined() ? `<div class="ow-row"><button type="button" id="owLeave" style="font:inherit;cursor:pointer;padding:3px 8px;border-radius:5px;border:1px solid var(--rule);background:none;color:inherit">Back to rehearsal (this tab)</button></div>` : "";
   const t = owNow(), rows = Object.entries(OW.seats || {}).sort((a, b) => (a[1].dm ? -1 : 0) - (b[1].dm ? -1 : 0) || (a[1].seat || 9) - (b[1].seat || 9));
   p.innerHTML = rows.length ? rows.map(([k, s]) => {
     const live = AopOneWorld.isOnline(s, t), st = live ? s.status : "out-of-touch";
     const name = s.dm ? "DM" : (s.slug && (SHORT[s.slug] || PLAYS_AS[s.slug])) || "Seat " + (s.seat || "?");
     return `<div class="ow-row"><i data-s="${esc(st)}"></i>${esc(name)}<span>${esc(live ? OW_LABEL[st] || st : "away")}</span></div>`;
   }).join("") : `<div class="ow-row">No screen has checked in yet.</div>`;
+  if (back){ p.insertAdjacentHTML("beforeend", back); $("owLeave").onclick = () => owTestSwitch(false); }
 }
 
 // ---------- boot ----------
