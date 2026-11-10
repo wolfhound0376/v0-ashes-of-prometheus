@@ -20,6 +20,7 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 //   POST {action:"pickup"}        → a pile off the floor into a character's inventory_items
 //   POST {action:"consume"}       → one off a stack the character carries (a potion drunk, a meal eaten, a flask thrown)
 //   POST {action:"drop"}          → one of the character's own items onto the floor (a thrown dagger where it landed)
+//   POST {action:"give"}          → one of the character's own items into another character's inventory
 //
 // WHAT IT COSTS is decided on the walk, which runs the fight: picking up spends movement, equipping
 // spends the action (Sam's ruling above). This route only moves the thing.
@@ -185,5 +186,54 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, pile })
   }
 
-  return NextResponse.json({ error: "expected action place, remove, pickup, consume or drop" }, { status: 400 })
+  if (action === "give") {
+    // Sam, 2026-11-10: "I should be able to look at my inventory items and have the option to transfer it to a list
+    // of characters." One character's own item into another's inventory. Only what they carry, never more than they
+    // carry, and never the piece they are wearing or holding (the walk says "take it off first"; this checks again).
+    // A whole row moves as itself, so its condition, upgrades and brew go with it; part of a stack is split off.
+    const characterId = String(body?.characterId ?? ""), targetId = String(body?.targetCharacterId ?? "")
+    const itemKey = String(body?.itemKey ?? ""), itemName = String(body?.itemName ?? "")
+    if (!characterId || !targetId || (!itemKey && !itemName)) return NextResponse.json({ error: "characterId, targetCharacterId and an item required" }, { status: 400 })
+    if (characterId === targetId) return NextResponse.json({ error: "That is already yours." }, { status: 409 })
+    const { data: people } = await db.from("characters").select("id,name").in("id", [characterId, targetId])
+    const who = (people ?? []).find((p) => p.id === characterId), to = (people ?? []).find((p) => p.id === targetId)
+    if (!who || !to) return NextResponse.json({ error: "No such character." }, { status: 404 })
+    let q = db.from("inventory_items").select("*").eq("character_id", characterId)
+    q = itemKey ? q.eq("item_key", itemKey) : q.eq("name", itemName)
+    const { data: rows } = await q
+    const row = (rows ?? [])[0]
+    if (!row) return NextResponse.json({ error: "You are not carrying that." }, { status: 409 })
+    const have = (rows ?? []).reduce((n, x) => n + (x.quantity ?? 1), 0)
+    const want = Math.max(1, Math.min(Math.floor(Number(body?.quantity) || 1), row.quantity ?? 1))
+    const { count: wornCount } = await db.from("equipment_items").select("id", { count: "exact", head: true })
+      .eq("character_id", characterId).eq("name", row.name).neq("equipped", false)
+    if (have - want < (wornCount ?? 0)) return NextResponse.json({ error: `Take the ${row.name} off first.` }, { status: 409 })
+
+    let stackable = false
+    if (row.item_id) stackable = Boolean((await db.from("items").select("stackable").eq("id", row.item_id).maybeSingle()).data?.stackable)
+    const { data: theirs } = stackable
+      ? await db.from("inventory_items").select("id,quantity").eq("character_id", targetId).eq("name", row.name).limit(1).maybeSingle()
+      : { data: null }
+    const whole = want >= (row.quantity ?? 1)
+    let error: { message: string } | null = null
+    if (theirs) {
+      // into their stack first, then off the giver's: if the second step fails the thing is doubled, never lost
+      error = (await db.from("inventory_items").update({ quantity: (theirs.quantity ?? 0) + want }).eq("id", theirs.id)).error
+      if (!error) error = whole
+        ? (await db.from("inventory_items").delete().eq("id", row.id)).error
+        : (await db.from("inventory_items").update({ quantity: (row.quantity ?? 1) - want }).eq("id", row.id)).error
+    } else if (whole) {
+      error = (await db.from("inventory_items").update({ character_id: targetId }).eq("id", row.id)).error
+    } else {
+      const { id: _id, created_at: _c, updated_at: _u, ...copy } = row as Record<string, unknown>
+      void _id; void _c; void _u
+      error = (await db.from("inventory_items").insert({ ...copy, character_id: targetId, quantity: want })).error
+      if (!error) error = (await db.from("inventory_items").update({ quantity: (row.quantity ?? 1) - want }).eq("id", row.id)).error
+    }
+    if (error) return NextResponse.json({ error: `Could not hand it over: ${error.message}` }, { status: 500 })
+    await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text: `${who.name} gives ${want > 1 ? `${want} × ` : ""}${row.name} to ${to.name}.` })
+    return NextResponse.json({ ok: true, gave: row.name, quantity: want, to: to.name })
+  }
+
+  return NextResponse.json({ error: "expected action place, remove, pickup, consume, drop or give" }, { status: 400 })
 }
