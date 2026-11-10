@@ -15702,11 +15702,24 @@ function lianaArrives(next = lianaTends){
   log("The pen gate opens a hand's width. A drow in a stained leather apron comes in with a satchel of vials, and the gate is locked behind her.", {say: true});
   a.onArrive = () => { faceTo(a, pc); setAnim(a, "idle"); lianaSays("arrive", 4200); setTimeout(next, 3600); };
 }
+// THE SCENE CATCHES UP (Sam, 2026-11-10: "I'm still down and I'm not sure what liana is doing"). The surgeon's record
+// is one per game, but each screen plays its own copy of the scene. A screen that came to it late (loaded while the
+// hero lay there, or a second screen beside the one that drove it) walked Liana in and asked the game to tend — and
+// the game, already past that, answered 409. The old code showed a toast and stopped: the hero lay there for good,
+// Liana stood over them for good, and `surgeon` stayed set. Now a refusal means "you are behind": the hero gets up
+// (the record has the heal), and Liana either asks her one question (still owed) or goes.
+function surgeonCatchUp(st){
+  const S = surgeon; if (!S) return;
+  const pc = S.pc;
+  if (pc && (!st || st.heal || st.stage !== "down")){ pc.down = false; pc.surgeonDown = false; pc.once = null; setAnim(pc, "idle"); }
+  if (st && st.stage === "tended"){ openLianaCard(); return; }
+  lianaLeaves("gone");
+}
 async function lianaTends(){
   const S = surgeon, pc = S.pc, a = S.liana;
   lianaSays("working", 6500);
   const j = await surgeonApi("tend");
-  if (j.failed){ toast(j.error || "The game did not answer."); return; }
+  if (j.failed){ if (j.status !== 409) toast(j.error || "The game did not answer."); surgeonCatchUp(j.state || surgeonSeen); return; }
   setTimeout(() => {
     bank("combat/heal", .8); burst(pc, "#9be37b", 14);
     popText(pc, `+${j.heal.amount}`, "#9be37b", 1.2);
@@ -15760,7 +15773,8 @@ function openLianaCard(){
 async function lianaPersuaded(p, translator){
   $("obj").hidden = true;
   const j = await surgeonApi("persuade", {speakerId: characterIdOf(p.id) || undefined, translator: translator || undefined, speakerSlug: p.id, speakerName: fname(p)});
-  if (j.failed){ toast(j.error || "The game did not answer."); openLianaCard(); return; }
+  if (j.failed){ if (j.status === 409){ lianaLeaves("gone"); return; }   // already asked, on another screen: she is done here
+    toast(j.error || "The game did not answer."); openLianaCard(); return; }
   const r = j.persuade;
   log(`${esc(fname(p))}${translator ? `, through ${esc(translator)},` : ""} asks Liana for help. Persuasion: d20 ${r.rolls.length > 1 ? `[${r.rolls.join(", ")}] (disadvantage) ` : ""}${r.d20} ${r.bonus >= 0 ? "+" : "−"} ${Math.abs(r.bonus)} = <b>${r.total}</b> vs DC ${r.dc} — ${r.success ? "she listens" : "she does not"}.`);
   if (!r.success){ lianaSays("refuse", 4500); setTimeout(() => lianaLeaves("failed"), 3200); return; }
