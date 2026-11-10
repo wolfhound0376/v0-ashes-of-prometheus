@@ -74,6 +74,7 @@ import { randomUUID } from "node:crypto"
 import { baselinePatch, baselinePlan, type HeroRow } from "@/lib/hero-baseline"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { startingSituation } from "@/lib/situation"
+import { FLOOR_HOLDER_NAME } from "@/lib/floor-holder"
 
 /** Where the party stands after a restart. Must match an `environments.name`. */
 const STARTING_LOCATION = "Scene_1_Velkynvelve (slave pen)"
@@ -528,6 +529,16 @@ export async function restartCampaign(admin: SupabaseClient): Promise<RestartRes
     }
     report.playersHealed = healed
     report.spellSlotsRestored = slotsRestored
+  }
+
+  {
+    // What was lying on the Underwalk's floor (lib/floor-holder.ts). The piles themselves are the `walk-floor` world
+    // flag, cleared with every other flag; the rows parked under them would otherwise outlive the run they belong to.
+    const { data: floor } = await admin.from("characters").select("id").eq("name", FLOOR_HOLDER_NAME).limit(1).maybeSingle()
+    if (floor?.id) {
+      const { error } = await admin.from("inventory_items").delete().eq("character_id", floor.id)
+      note("floor items", error)
+    }
   }
 
   if (playerIds.length) {
