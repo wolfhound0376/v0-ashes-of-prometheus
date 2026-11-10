@@ -7,7 +7,7 @@
 import { useEffect } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { dmHeaders } from "@/lib/dm-key"
-import { guardVerdict, isGuardedPath } from "@/lib/session-guard"
+import { AFTER_RESET_PATH, guardVerdict, isGuardedPath, wasReset } from "@/lib/session-guard"
 
 const RECHECK_MS = 6000
 
@@ -17,6 +17,9 @@ export function SessionGuard() {
   useEffect(() => {
     if (!isGuardedPath(pathname)) return
     let live = true
+    // The run this page loaded under. Kept per page, not per tab: the tab that pressed New Game walks on into
+    // the new run and must not be thrown out of it for remembering the old one.
+    let seenRun: string | null = null
     const check = async () => {
       let id = "", role = ""
       try { id = localStorage.getItem("aop_character_id") ?? ""; role = localStorage.getItem("aop_access_role") ?? "" } catch { /* storage blocked */ }
@@ -24,7 +27,15 @@ export function SessionGuard() {
         const q = id ? `?characterId=${encodeURIComponent(id)}` : ""
         const r = await fetch(`/api/table${q}`, { cache: "no-store", headers: dmHeaders() })
         const j = await r.json()
-        if (live && guardVerdict(j, role) === "leave") router.replace("/table")
+        if (!live) return
+        // A New Game happened under this screen: it closes, DM or not (Sam, 2026-11-10).
+        if (wasReset(seenRun, j)) {
+          try { window.close() } catch { /* not ours to close */ }
+          router.replace(AFTER_RESET_PATH)
+          return
+        }
+        if (!seenRun && typeof j?.run === "string") seenRun = j.run
+        if (guardVerdict(j, role) === "leave") router.replace("/table")
       } catch { /* offline: stay */ }
     }
     check()

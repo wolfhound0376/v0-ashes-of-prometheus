@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { guardVerdict, isGuardedPath } from "./session-guard"
+import { guardVerdict, isGuardedPath, wasReset } from "./session-guard"
 
 describe("isGuardedPath", () => {
   it("guards the in-game pages only", () => {
@@ -27,5 +27,21 @@ describe("guardVerdict", () => {
   it("never kicks on a read failure", () => {
     expect(guardVerdict({ error: "boom" }, "player")).toBe("stay")
     expect(guardVerdict(null, "player")).toBe("stay")
+  })
+})
+
+describe("wasReset", () => {
+  it("a screen that loaded under one run and hears of another was reset", () => {
+    expect(wasReset("run-51", { run: "run-52" })).toBe(true)
+    expect(wasReset("run-52", { run: "run-52" })).toBe(false)
+  })
+  it("the DM gets no exception: his screens close too", () => {
+    expect(wasReset("run-51", { run: "run-52", isDm: true, state: { status: "lobby" } })).toBe(true)
+  })
+  it("cannot tell is never a reset", () => {
+    expect(wasReset(null, { run: "run-52" })).toBe(false)       // first look: nothing to compare against
+    expect(wasReset("run-51", { run: null })).toBe(false)       // the run could not be read
+    expect(wasReset("run-51", { error: "boom" })).toBe(false)
+    expect(wasReset("run-51", null)).toBe(false)
   })
 })
