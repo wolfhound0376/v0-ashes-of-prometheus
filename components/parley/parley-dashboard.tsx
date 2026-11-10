@@ -434,6 +434,15 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
   const [logFilter, setLogFilter] = useState("All")
   const [interactiveLogMinimized, setInteractiveLogMinimized] = useState(true)
   const [inventoryOpen, setInventoryOpen] = useState(false)
+  // ONE INVENTORY (Sam, 2026-11-10: "lets make the pixel inventory system the main system of inventory UI even for
+  // the parley UI"). The button goes to the map's own inventory, opened full screen on this hero, and closing it
+  // comes straight back to this page as it was. The old window below (EquipmentManager) is no longer opened from here.
+  const openPixelInventory = () => {
+    const here = window.location.pathname + window.location.search
+    const q = new URLSearchParams({ bag: "1", as: selected?.name ?? "", return: here })
+    if (new URLSearchParams(window.location.search).get("sandbox") === "1") q.set("sandbox", "1")
+    window.location.href = `/velkynvelve?${q.toString()}`
+  }
   const [characterSheetOpen, setCharacterSheetOpen] = useState(false)
   const [diceOpen, setDiceOpen] = useState(false)
   const [spellbookOpen, setSpellbookOpen] = useState(false)
@@ -1225,7 +1234,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
           <button type="button" className="p-emb" onClick={() => setStatDetail("speed")} title="Speed"><span className="p-shield" style={{ backgroundPosition: "33.333% 40%" }} /><span className="p-val">{speedMatch ? <>{speedMatch[1]}<i>ft</i></> : speedText}</span><small>Speed</small></button>
         </div>
         <button type="button" data-tick="window" onClick={() => setCharacterSheetOpen(true)} className="p-slab dark wide">✧ View Full Character Sheet</button>
-        <button type="button" data-tick="window" onClick={() => setInventoryOpen(true)} className="p-slab dark wide" style={{ justifyContent: "flex-start" }}><img className="p-ico" src="/velkynvelve-walk/icons/bar/inv.png" alt="" />Inventory &amp; Equipment<small style={{ marginLeft: "auto", textAlign: "right" }}>{carried.toFixed(1)} / {selected?.weight_max ?? 105} lb · {props.equipment.length} equipped</small><span className="p-key">I</span></button>
+        <button type="button" data-tick="window" onClick={openPixelInventory} className="p-slab dark wide" style={{ justifyContent: "flex-start" }}><img className="p-ico" src="/velkynvelve-walk/icons/bar/inv.png" alt="" />Inventory &amp; Equipment<small style={{ marginLeft: "auto", textAlign: "right" }}>{carried.toFixed(1)} / {selected?.weight_max ?? 105} lb · {props.equipment.length} equipped</small><span className="p-key">I</span></button>
         {isMagicUser ? <button type="button" data-tick="window" onClick={() => setSpellbookOpen(true)} className="p-slab violet wide" style={{ justifyContent: "flex-start" }}>{selected.class === "Cleric" || selected.class === "Monk" ? <img className="p-ico" src={BOOK_OF_PRAYERS_MEDIA.poster} alt="" /> : <BookOpen className="h-5 w-5" />}{selected.class === "Cleric" || selected.class === "Monk" ? "Book of Prayers" : "Book of Spells"}<small style={{ marginLeft: "auto" }}>{characterExtra.subclass || ""}</small></button> : null}
       </div>
 
