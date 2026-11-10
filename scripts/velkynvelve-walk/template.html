@@ -6988,7 +6988,10 @@ function openMenu(a, sub){
   if (sub === "attack"){
     for (const d of drawable(a)){ ACTION_ICON[d.label] = "bar/attack";
       add(d.label, c.objFree !== false ? `draw it (your free object interaction) and attack · ${d.hint}` : "your free object interaction is spent: draw it from the inventory instead", c.objFree !== false ? () => drawAndAttack(a, d.it) : null); }
-    for (const atk of s.attacks){ ACTION_ICON[atk.name] = atk.name.toLowerCase().includes("unarmed") ? "opportunity-attack" : "bar/attack"; add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.sneak ? ` · sneak +${atk.sneak}` : ""}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk})); }
+    for (const atk of s.attacks){ ACTION_ICON[atk.name] = atk.name.toLowerCase().includes("unarmed") ? "opportunity-attack" : "bar/attack"; add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.sneak ? ` · sneak +${atk.sneak}` : ""}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk}));
+      // the weapon's own special attacks (WEAPON_ARTS): one row each, in its lane, spent ones shown with the reason
+      for (const art of artsFor(a, atk)){ const label = `${art.name} · ${atk.name}`; ACTION_ICON[label] = ART_ICON[art.key] || "bar/attack";
+        add(label, art.used ? "used · a short rest brings it back" : `${ART_LANE[art.ab]} · ${art.blurb}${art.save ? ` · DC ${art.dc}` : ""} · once per short rest`, art.used ? null : () => aim(a, {atk: {...atk, art: art.key}})); } }
     add("Back", "", () => openMenu(a));
   } else if (sub === "channel"){
     const dice = sparkDice(s.level || 1), mod = Math.max(0, (s.magic && s.magic.mod) || 0), dc = (s.magic && s.magic.dc) || 10, near = undeadNear(a);
@@ -7230,6 +7233,8 @@ function renderExploreBar(){
 // Sam, 2026-10-25: "you have all the icons for actions in this project" — the commissioned gold-framed sets in
 // vtt-assets/action-icons and vtt-assets/spell-icons, copied here at 96 px beside the first fifteen. Untitled art only:
 // most spell icons carry their name painted in, which would mislabel a button.
+// the weapon arts' own bar icons (public/velkynvelve-walk/icons/art-*.png); until one is painted the row wears the attack icon
+const ART_ICON = {};
 const ICONS_HAVE = new Set(["attack", "cast-spell", "dash", "disengage", "dodge", "help", "hide", "offhand-attack", "opportunity-attack", "ready", "search", "use-object",
   "detect-magic", "use-item", "second-wind", "bless", "bardic-inspiration",
   "talk", "next-hero", "tell-malachar", "more"]);   // Sam's own four, 2026-10-25 (Still_Glyphs_96x96.zip)
@@ -8379,6 +8384,7 @@ async function doRest(spend){
   const lines = (j.characters || []).map(c => `${esc(c.name.split(" ")[0])}: ${c.healed > 0 ? `+${c.healed} hp (${c.hp}/${c.hpMax})` : `${c.hp}/${c.hpMax}`}${c.dice && c.dice.length ? ` · d: ${c.dice.join(", ")}` : ""}${c.hitDiceLeft != null ? ` · ${c.hitDiceLeft} HD left` : ""}`);
   log(`<b>Short rest.</b> An hour passes. ${lines.length ? lines.join("; ") + "." : ""}`);
   cdShortRest();                                                // SRD 5.2.1: a Short Rest gives back one Channel Divinity use
+  artsRest();                                                   // weapon arts: all of them are back
   restAttune();                                                 // attunement: whoever chose an item is attuned to it now
   loreRestStudy();                                              // the item card: whoever chose an item to study knows it now
   toast("Rested an hour.", 2400);
@@ -8971,6 +8977,81 @@ const offDmg = (atk) => atk.dmg.replace(/\+\d+$/, "");
 // the weapon a hero swings with when there is no time to choose: their first real melee weapon, else a punch
 function meleeOf(h){ const a = h.c.sheet.attacks || []; return a.find(k => (k.reach || 5) <= 10 && !/unarmed/i.test(k.name)) || a[0]; }
 // `reaction`: an opportunity attack, made with the reaction, not the action.
+// ----- Weapon arts -----
+// SPECIAL ATTACKS BY WEAPON (Sam, 2026-11-10: "Offer athletic and dexterity build options during attack for
+// (barbarians, fighters, rogues, and monks) for special attacks based on the weapon you have proficiency with like
+// Baldur's gate"). HOMEBREW, in Baldur's Gate 3's shape: the weapon in your hand offers its own special attacks if you
+// are trained with it, each one usable ONCE PER SHORT REST. A weapon art IS the turn's attack (the same roll, the same
+// damage) with something more on a hit.
+// What each one does is taken from SRD 5.2.1's Weapon Mastery properties, which are the rules this campaign runs on:
+//   Topple  "you can force the creature to make a Constitution saving throw (DC 8 plus the ability modifier used to
+//           make the attack roll and your Proficiency Bonus). On a failed save, the creature has the Prone condition."
+//   Cleave  "you can make a melee attack roll with the weapon against a second creature within 5 feet of the first
+//           that is also within your reach. On a hit, the second creature takes the weapon's damage, but don't add
+//           your ability modifier to that damage"
+//   Slow    "you can reduce its Speed by 10 feet until the start of your next turn"
+//   Sap     "that creature has Disadvantage on its next attack roll before the start of your next turn"
+//   Vex     "you have Advantage on your next attack roll against that creature before the end of your next turn"
+// Where this departs from the book, on purpose: 5.2.1 gives masteries at will, to barbarians, fighters, paladins,
+// rangers and rogues, by the weapon's own property. Here it is Sam's four classes (monks in, with their fists), once per
+// short rest, and each art is filed as ATHLETIC (Strength sets the save DC) or FINESSE (Dexterity does), so a strong
+// build and a quick build get different tools from the same rack. Staggering Blow has no 5.2.1 twin: it is BG3's
+// Concussive Smash, built from this map's own "numbed" (half speed and no reactions on its next turn).
+// The conditions are the ones the map already had (prone, slowed, mocked, helped, numbed); nothing new was invented.
+const ART_CLASSES = ["barbarian", "fighter", "rogue", "monk"];
+const WEAPON_ARTS = {
+  topple:  {name: "Topple", ab: "str", save: "con", cond: "prone", says: "knocked prone", blurb: "CON save or knocked prone",
+            weapons: ["quarterstaff", "greatclub", "maul", "warhammer", "club", "spear", "trident", "unarmed"]},
+  cleave:  {name: "Cleave", ab: "str", cleave: true, blurb: "a second foe within 5 ft of the first takes the weapon's dice too",
+            weapons: ["greataxe", "greatsword", "battleaxe", "halberd", "glaive", "longsword"]},
+  stagger: {name: "Staggering Blow", ab: "str", save: "con", cond: "numbed", says: "staggered", blurb: "CON save or staggered: half speed and no reactions on its next turn",
+            weapons: ["mace", "morningstar", "flail", "light hammer", "warhammer", "maul", "greatclub"]},
+  maim:    {name: "Maiming Strike", ab: "str", cond: "slowed", says: "slowed", blurb: "its speed drops 10 ft on its next turn",
+            weapons: ["handaxe", "battleaxe", "greataxe", "war pick", "glaive", "halberd"]},
+  vex:     {name: "Flourish", ab: "dex", self: "helped", says: "off balance", blurb: "you have advantage on your next attack",
+            weapons: ["rapier", "shortsword", "scimitar", "dagger", "whip"]},
+  sap:     {name: "Weakening Jab", ab: "dex", cond: "mocked", says: "weakened", blurb: "disadvantage on its next attack",
+            weapons: ["dagger", "dart", "sickle", "whip", "shortsword", "unarmed"]},
+  hamstring: {name: "Hamstring Shot", ab: "dex", cond: "slowed", says: "hamstrung", blurb: "its speed drops 10 ft on its next turn",
+            weapons: ["shortbow", "longbow", "light crossbow", "hand crossbow", "heavy crossbow", "sling", "dart", "javelin"]},
+};
+const ART_LANE = {str: "Athletic · STR", dex: "Finesse · DEX"};
+const artsKey = id => "arts:" + id;
+const artsUsed = id => Array.isArray(state[artsKey(id)]) ? state[artsKey(id)] : [];
+function artSpend(a, key){ if (!artsUsed(a.id).includes(key)) state[artsKey(a.id)] = [...artsUsed(a.id), key]; }
+function artsRest(){ for (const k of Object.keys(state)) if (k.startsWith("arts:")) delete state[k]; }   // a short rest brings them all back
+/** the base weapon an attack line is made with ("unarmed" for a monk's fists; null when it has no art to give) */
+function artWeapon(a, atk){
+  const cls = String((a.c.sheet.cls || "")).toLowerCase(); if (a.kind !== "pc" || !ART_CLASSES.includes(cls) || atk.flask) return null;
+  if (/unarmed/i.test(atk.name)) return cls === "monk" ? "unarmed" : null;
+  if (!atk.item) return null;
+  const it = {name: atk.itemName || atk.name}; return trainedWith(a.c.sheet, it) ? baseWeapon(it) : null;
+}
+/** the arts this attack line offers this hero, each with its DC and whether it is spent */
+function artsFor(a, atk){
+  const w = artWeapon(a, atk); if (!w) return [];
+  return Object.entries(WEAPON_ARTS).filter(([, v]) => v.weapons.includes(w)).map(([key, v]) => ({key, ...v, dc: 8 + 2 + abilMod(a.c.sheet, v.ab), used: artsUsed(a.id).includes(key)}));
+}
+/** what the art adds to a hit; returns the words for the log */
+function artRider(att, tgt, atk, crit){
+  const v = WEAPON_ARTS[atk.art]; if (!v) return ""; const dc = 8 + 2 + abilMod(att.c.sheet, v.ab);
+  popText(att, v.name, "#ffd27a", 1);
+  if (v.self){ addCond(att, v.self); popText(tgt, v.says, "#ffe08a", .85); return `${v.name}: ${fname(tgt)} is ${v.says}, ${v.blurb}`; }
+  if (v.cleave){
+    const reach = atk.reach || 5, t2 = standing(hero(att) ? foes : heroes()).filter(o => o !== tgt && feetBetween(tgt, o) <= 5.5 && feetBetween(att, o) <= reach + 2.5).sort((p, q) => feetBetween(tgt, p) - feetBetween(tgt, q))[0];
+    if (!t2) return `${v.name}: nobody else within reach`;
+    const r = d20(advantageOn(att, t2, false, atk), att), ac = targetAc(t2), ok = r === 20 || (r !== 1 && r + atk.hit >= ac);
+    if (!ok){ popText(t2, "miss", "#c9c4b8", .8); return `${v.name} at ${fname(t2)}: ${r} + ${atk.hit} vs AC ${ac}, miss`; }
+    const dice = String(atk.dmg).replace(/[+-]\s*\d+\s*$/, ""), d = roll(dice, r === 20);   // the weapon's dice, no ability modifier (5.2.1 Cleave)
+    setTimeout(() => damage(t2, d.total, atk.type, r === 20, att, !!atk.magic), 220);
+    return `${v.name} at ${fname(t2)}: ${r} + ${atk.hit} vs AC ${ac}, hit, ${d.total} ${atk.type}`;
+  }
+  if (tgt.down) return "";
+  if (!v.save){ addCond(tgt, v.cond); popText(tgt, v.says, "#ffe08a", .85); return `${v.name}: ${fname(tgt)} is ${v.says}`; }
+  const s0 = d20(rageAdvantage(tgt.c.rage, v.save), tgt, v.cond) + (tgt.c.sheet.saves[v.save] || 0) + blessD4(tgt), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, dc) : 0), ok = sv >= dc;
+  if (!ok){ addCond(tgt, v.cond); if (v.cond === "numbed") tgt.c.reactionUsed = true; popText(tgt, v.says, "#ffe08a", .85); }
+  return `${v.name}: ${v.save.toUpperCase()} save ${sv} vs DC ${dc}, ${ok ? "holds" : v.says}`;
+}
 // ----- Ready -----
 function readyAttack(a, atk){
   a.c.action = false; a.c.ready = {atk}; addCond(a, "readied");
@@ -9000,6 +9081,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
   if (att.c && att.c.conds.has("sanctuary")) endSanctuary(att, "made an attack");   // SRD 5.2.1: it ends if the warded creature makes an attack roll
   handWatch(att, tgt);
   const c = att.c; if (att.kind === "pc" && !reaction){ if (offhand) c.bonus = false; else { c.action = false; if (atk.light) c.lastLight = atk; } } closeMenu(); cbt.phase = "busy"; combatBusy = true;
+  if (atk.art) artSpend(att, atk.art);   // a weapon art is spent on the swing, hit or miss
   const reach = atk.thrown && feetBetween(att, tgt) > 5 ? atk.thrown : atk.reach;
   // A BOW OR CROSSBOW SHOOTS FROM WHERE YOU STAND (Sam, 2026-10-24: "be able to fire from a distance. Not sure why fifi
   // had to move closer"). approachThen walks into reach first, and for a target beyond the pen's bars it walks to the
@@ -9111,6 +9193,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (atk.tooth && !tgt.down){ const v = toothVenomHit(att, tgt); if (v) parts.push(v); }
       if (atk.numb && !tgt.down){ const s0 = d20(0, tgt) + (tgt.c.sheet.saves[atk.numb.save] || 0) + blessD4(tgt), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.numb.dc) : 0), ok = sv >= atk.numb.dc;
         if (!ok){ addCond(tgt, "numbed"); tgt.c.reactionUsed = true; popText(tgt, "numbed", "#9fd8ff"); } parts.push(`${atk.numb.save.toUpperCase()} save ${sv} vs ${atk.numb.dc}: ${ok ? "shakes it off" : "numbed"}`); }
+      if (atk.art){ const w = artRider(att, tgt, atk, crit); if (w) parts.push(w); }
       if (atk.curse && !tgt.down && hero(tgt)) setTimeout(() => curseBy(att, tgt), 420);
       if (tgt.c.sheet.holyVulnerable && !atk.flask && att.c.conds.has("blessed")) holyOpen(tgt, `${fname(att)}'s blessed blow`);
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
@@ -15535,8 +15618,12 @@ const catalogItem = name => (catalog || []).find(i => i.name.toLowerCase() === S
 // weapons per the SRD weapons table.
 const SIMPLE_WEAPONS = ["club", "dagger", "greatclub", "handaxe", "javelin", "light hammer", "mace", "quarterstaff", "sickle", "spear", "light crossbow", "dart", "shortbow", "sling"];
 const MARTIAL_WEAPONS = ["battleaxe", "flail", "glaive", "greataxe", "greatsword", "halberd", "lance", "longsword", "maul", "morningstar", "pike", "rapier", "scimitar", "shortsword", "trident", "war pick", "warhammer", "whip", "blowgun", "hand crossbow", "heavy crossbow", "longbow", "net"];
-const CLASS_WEAPONS = {Rogue: ["simple", "hand crossbow", "longsword", "rapier", "shortsword"], Bard: ["simple", "hand crossbow", "longsword", "rapier", "shortsword"],
-  Cleric: ["simple"], Sorcerer: ["dagger", "dart", "sling", "quarterstaff", "light crossbow"]};
+// weapon training by class, SRD 5.1 class features (every class, so a fighter, a barbarian or a monk forged later is
+// read right; the lookup ignores case, because sheets carry both "Rogue" and "rogue")
+const CLASS_WEAPONS = {rogue: ["simple", "hand crossbow", "longsword", "rapier", "shortsword"], bard: ["simple", "hand crossbow", "longsword", "rapier", "shortsword"],
+  cleric: ["simple"], sorcerer: ["dagger", "dart", "sling", "quarterstaff", "light crossbow"], wizard: ["dagger", "dart", "sling", "quarterstaff", "light crossbow"],
+  warlock: ["simple"], monk: ["simple", "shortsword"], barbarian: ["simple", "martial"], fighter: ["simple", "martial"], paladin: ["simple", "martial"], ranger: ["simple", "martial"],
+  druid: ["club", "dagger", "dart", "javelin", "mace", "quarterstaff", "scimitar", "sickle", "sling", "spear"]};
 function baseWeapon(it){ const n = String((it.properties || {}).srd_stats_as || it.name || "").toLowerCase();
   return [...SIMPLE_WEAPONS, ...MARTIAL_WEAPONS].filter(b => n.includes(b)).sort((a, b) => b.length - a.length)[0] || null; }
 // TRAINED WITH IT: a hero by class (CLASS_WEAPONS), an ally by its stat block (the weapons the block lists by name)
@@ -15611,7 +15698,7 @@ function attuneNote(it, short, id){
   }
   return `<b style="color:#c9a6ff">requires attunement</b>${short ? "" : `: ${ATTUNE_PRICE}`}`;
 }
-function proficientWith(cls, it){ const b = baseWeapon(it), list = CLASS_WEAPONS[cls] || []; return !!b && (list.includes(b) || (list.includes("simple") && SIMPLE_WEAPONS.includes(b))); }
+function proficientWith(cls, it){ const b = baseWeapon(it), list = CLASS_WEAPONS[String(cls || "").toLowerCase()] || []; return !!b && (list.includes(b) || (list.includes("simple") && SIMPLE_WEAPONS.includes(b)) || (list.includes("martial") && MARTIAL_WEAPONS.includes(b))); }
 const isWeapon = it => !!it && ((it.item_type || "") === "weapon" || !!baseWeapon(it));
 // A magic weapon: its catalogue row is rarer than common (the six magic weapons in `items` all are; every mundane
 // blade is common), or its properties say so. What it means: damage that gets past `resistNonmagical`.
