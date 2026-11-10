@@ -108,6 +108,8 @@ const CEILING = {
 } as const
 const AUTO_ROLL_MS = 30000
 const AUTO_DISMISS_MS = 10000
+/** The roll beat's own ceiling: the card's two clocks, the dice, and slack. Past it the show goes on without a roll. */
+const ROLL_BEAT_MS = AUTO_ROLL_MS + AUTO_DISMISS_MS + 45000
 
 /** Resolves when p does, or after ms — whichever is first. */
 const within = <T,>(p: Promise<T>, ms: number): Promise<T | void> => Promise.race([p, sleep(ms)])
@@ -160,6 +162,8 @@ export default function AwakenPage() {
   const rollDone = useRef<(rolled: boolean) => void>(() => {})
 
   useEffect(() => () => { dead.current = true }, [])
+  // A breadcrumb per beat, so a stall can be read off the browser console instead of guessed at.
+  useEffect(() => { console.info(`[awaken] ${step}`) }, [step])
 
   // The seat this browser holds. Nobody seated: the door. Already rolled this run: the pen.
   useEffect(() => {
@@ -421,6 +425,13 @@ export default function AwakenPage() {
       // queued, so it plays here on its own, before the roll.
       if (!show){ setStep("title"); await sleep(ACT_CARD_MS); guard() }
       setSkipShown(false)
+      // THE ROLL BEAT CANNOT STALL (Sam, 2026-11-10: "Stalling on playerside with awaken. Requires refreshing it" —
+      // his screenshot is this beat: black, no Skip, no card). It was the one beat with no ceiling, and it listened
+      // for the card's answer only AFTER Malachar's "let's see what you kept" line had finished, while the card was
+      // already on screen and able to answer during it; an answer in that window fell on a no-op and the show then
+      // waited for ever on a black screen. Now the answer is listened for before the card exists, and the beat has
+      // a ceiling like every other: past it the show goes on to the gate without a roll.
+      const answered = new Promise<boolean>((res) => { rollDone.current = res })
       setStep("roll")
       music.current?.pause()
       const showWasSkipped = skipped.current
@@ -438,7 +449,7 @@ export default function AwakenPage() {
         await sleep(2600); guard()
         setCaption(null)
       }
-      const rolled = await new Promise<boolean>((res) => { rollDone.current = res })
+      const rolled = (await within(answered, ROLL_BEAT_MS)) === true
       guard()
       if (!rolled) { goToPen(); return }
 
