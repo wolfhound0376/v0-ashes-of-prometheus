@@ -1860,16 +1860,18 @@ function findPath(from, to){
 // Trim a path to what `budget` pixels of movement buys. The hidden passage is all or nothing: it costs passFt, and a
 // walker who cannot afford it stops on the near side rather than vanishing behind the pillar half way.
 function cutPath(a, path, budget){
-  const px = ftPx(a); let left = budget, prev = a, used = 0; const pts = [];
+  const px = ruleFt(a); let left = budget, prev = a, used = 0; const pts = [];
+  // a leg on the painted floor is longer in feet than the same pixels in the pen: price it by the foot where it lies
+  const where = (p, q) => { const d = Math.hypot(q.x - p.x, q.y - p.y); return d < .01 ? 1 : feetSeg(p, q, a.big) * px / d; };
   const done = reached => ({pts, usedFt: Math.round(used / px / 5) * 5, reached});
   for (let i = 0; i < path.length; i++){
     const q = path[i];
     if (q.out){
-      const nx = path[i + 1], cost = Math.hypot(q.x - prev.x, q.y - prev.y) + (nx && nx.jump ? (nx.passFt || 0) * px : 0);
+      const nx = path[i + 1], cost = Math.hypot(q.x - prev.x, q.y - prev.y) * where(prev, q) + (nx && nx.jump ? (nx.passFt || 0) * px : 0);
       if (cost > left) return done(false);
       pts.push(q); if (nx){ pts.push(nx); prev = nx; i++; } left -= cost; used += cost; continue;
     }
-    const d = stepCost(a, prev, q);   // difficult terrain (the web net) counts double
+    const d = stepCost(a, prev, q) * where(prev, q);   // difficult terrain (the web net) counts double
     if (d > left){ const k = left / d; pts.push({x: prev.x + (q.x - prev.x) * k, y: prev.y + (q.y - prev.y) * k}); used += left; return done(false); }
     pts.push(q); left -= d; used += d; prev = q;
   }
@@ -1896,7 +1898,7 @@ function goOpenGate(f){
   };
   if (Math.hypot(L.x - f.x, L.y - f.y) <= 12){ unlock(); return; }
   const path = gridPath(f, L); if (!path.length){ log(`${fname(f)} cannot get to the gate and holds.`); setTimeout(() => passTurn(f), 600); return; }
-  const c = cutPath(f, path, (f.c.move || 0) * ftPx(f));
+  const c = cutPath(f, path, (f.c.move || 0) * ruleFt(f));
   f.c.move = Math.max(0, (f.c.move || 0) - c.usedFt);
   log(`${fname(f)} makes for the pen gate${c.reached ? "" : " and does not reach it this turn"}.`);
   f.path = c.pts; f.onArrive = () => { f.onArrive = null; setAnim(f, "idle"); if (c.reached) unlock(); else setTimeout(() => passTurn(f), 400); };
@@ -1907,7 +1909,7 @@ function goOpenGate(f){
 function approachViaGate(att, tgt, ft, then){
   const B = balcony(), reach = reachPx(att, tgt, ft);
   const entry = outsidePen(tgt) ? {x: B.landing[0], y: B.landing[1]} : {x: B.threshold[0], y: B.threshold[1]};
-  const dd = Math.hypot(tgt.x - entry.x, tgt.y - entry.y), k = Math.max(0, dd - reach * .8) / (dd || 1);
+  const dd = pxBetween(entry, tgt, tgt), k = Math.max(0, dd - reach * .8) / (dd || 1);
   const goal = nearestWalkable(entry.x + (tgt.x - entry.x) * k, entry.y + (tgt.y - entry.y) * k);
   const hero = party.includes(att);
   const stop = why => {
@@ -1916,7 +1918,7 @@ function approachViaGate(att, tgt, ft, then){
     else { log(`${fname(att)} ${why}`); setTimeout(() => passTurn(att), 400); }
   };
   const full = findPath(att, goal); if (!full.length){ stop("has no way through the gate."); return; }
-  const c = cutPath(att, full, Math.max(0, (att.c.move || 0) * ftPx(att)));
+  const c = cutPath(att, full, Math.max(0, (att.c.move || 0) * ruleFt(att)));
   if (!c.pts.length){ stop(hero ? `Not enough movement to go round through the gate (${B.passFt} ft for the way behind the pillar).` : "cannot make it through the gate this turn."); return; }
   att.c.move = Math.max(0, (att.c.move || 0) - c.usedFt);
   att.path = c.pts; att.onArrive = () => {
@@ -5135,7 +5137,7 @@ const CAUGHT_HOLD = 60000;   // ms the automatic guard reactions leave a caught 
 const caughtHeld = h => !!h && now < (h.caughtUntil || 0);
 function pickpocketMark(L){
   if (!L || !sneak || mode !== "explore" || !sneak.rolls.some(x => x.p === L)) return null;
-  const reach = PICKPOCKET_FT * ftPx(L);
+  const reach = PICKPOCKET_FT * ruleFt(L);
   let best = null, bd = Infinity;
   for (const n of npcs){
     if (n.down || n.body || n.offStage || !actors.includes(n) || (n.alpha ?? 1) < .5 || /^labor-/.test(n.id)) continue;
@@ -5528,7 +5530,7 @@ const MANACLE_NOTE = "manacled";
 function atPenGate(a){
   const z = doorGate(); if (!z || !a || (typeof onBalcony === "function" && onBalcony(a))) return false;
   const r = z.rect, cx = Math.max(r[0], Math.min(r[2], a.x)), cy = Math.max(r[1], Math.min(r[3], a.y));
-  return Math.hypot(a.x - cx, a.y - cy) <= 5 * ftPx(a) + 6;
+  return Math.hypot(a.x - cx, a.y - cy) <= 5 * ruleFt(a) + 6;
 }
 function gateOptions(a, add){
   if (!atPenGate(a)) return;
@@ -6217,7 +6219,7 @@ function driftAway(centre, caster, distance, last = null) {
 let poisonZones = [], dmPlace = null;
 // A creature's half-width in feet: 2.5 for Small and Medium, more for the big ones the map scales up.
 function bodyFtOf(t){ return 2.5 * Math.max(1, t.big || 1, (t.c && t.c.sheet && t.c.sheet.size === "large") ? 2 : 1); }
-function zoneFt(z, t){ return Math.hypot(t.x - z.x, t.y - z.y) / ftPx(t); }
+function zoneFt(z, t){ return Math.hypot(t.x - z.x, t.y - z.y) / ruleFt(t); }
 function fightersIn(){ return cbt ? cbt.order.filter(t => !t.down && actors.includes(t)) : []; }
 function refreshInside(z){ z.inside = new Set(fightersIn().filter(t => inCloud(zoneFt(z, t), z.rule, bodyFtOf(t)))); }
 function placePoisonCloud(caster, at, name, dc, slot, byDm){
@@ -6271,7 +6273,7 @@ function retchTurn(a){
   const z = poisonZones.find(q => inCloud(zoneFt(q, a), q.rule, bodyFtOf(a)));
   if (!z){ setTimeout(nextTurn, 900); return; }
   const d = Math.hypot(a.x - z.x, a.y - z.y) || 1, ux = (a.x - z.x) / d || 1, uy = (a.y - z.y) / d;
-  const need = (z.rule.radiusFt + bodyFtOf(a) + 2.5) * ftPx(a) - d, step = Math.max(0, Math.min(need, a.c.move * ftPx(a)));
+  const need = (z.rule.radiusFt + bodyFtOf(a) + 2.5) * ruleFt(a) - d, step = Math.max(0, Math.min(need, a.c.move * ruleFt(a)));
   a.path = findPath(a, nearestWalkable(a.x + ux * step, a.y + uy * step));
   if (!a.path.length){ setTimeout(nextTurn, 900); return; }
   a.onArrive = () => setTimeout(nextTurn, 400);
@@ -7607,8 +7609,39 @@ function d20(adv, who, vs){
 function ftPx(a){ return 96 * BASE * paceAt(a) * (a.big || 1) / 5; }
 // how big a five-foot step is where `a` stands: the pen's depth rule, or out on the balcony the guards' own size
 function paceAt(a){ const B = balconyFloor() && outsidePen(a) ? balcony() : null; return B ? B.scale : node.scale * depthAt(a.y); }
-function feetBetween(a, b){ return Math.hypot(b.x - a.x, b.y - a.y) / ftPx(a); }
-function reachPx(att, tgt, ft){ const m = SPR[tgt.id].json; return ft * ftPx(att) + 22 * actorScale(tgt) * (m.cell[0] / 128); }
+// THE RULES' FOOT FOLLOWS THE PAINTING (Sam, 2026-11-10, after an opportunity attack and a shortsword hit from what
+// looked like 30 ft: "Lets make distance (2)"). On the pen's balcony and bridge the close-up places figures through a
+// mesh that spreads them about three times wider than the pen plate's own foot (ftPx) measures, so two figures the
+// rules held within 5 ft stood 15-25 ft apart on screen. Sam chose to make the rules agree with what is painted:
+// out there a foot is the PAINTING's foot (ovArtFt) carried back through the mesh's stretch into plate pixels.
+// ftPx stays what things are DRAWN at (the close-up scales drawings by the painting's foot itself); ruleFt is what
+// movement, reach and range are MEASURED in. Everywhere else the two are the same number. The rule does not change
+// with which view is showing: the balcony is the painting's size whether or not the camera has slid out to it.
+function onPaintedFloor(a){ return !!(a && a.x != null && OV.tris && OV.cfg && OV.cfg.ft && ovPenStyle() && balconyFloor() && outsidePen(a)); }
+function ruleFt(a){
+  const f = ftPx(a); if (!onPaintedFloor(a)) return f;
+  const q = ovMap(a.x, a.y), s = ovStretch(a.x, a.y) || 1;
+  return ovArtFt(q.y) * (a.big || 1) / s;
+}
+// Two points in feet. Both on the painted floor: the distance AS PAINTED (each point carried through the mesh, over the
+// painting's foot at that depth). The mesh stretches the balcony far more one way than the other, so nothing simpler
+// agrees with the picture. Anywhere else: plate pixels over the foot where the first one stands, as it always was.
+function feetSeg(p, q, big){
+  if (onPaintedFloor(p) && onPaintedFloor(q)){ const P = ovMap(p.x, p.y), Q = ovMap(q.x, q.y); return Math.hypot(Q.x - P.x, Q.y - P.y) / ((ovArtFt(P.y) + ovArtFt(Q.y)) / 2) / (big || 1); }
+  return Math.hypot(q.x - p.x, q.y - p.y) / ruleFt({x: p.x, y: p.y, big});
+}
+function feetBetween(a, b){ return feetSeg(a, b, a.big); }
+// The same distance as plate pixels in the foot where `at` stands, so it can be held against reachPx(…, at, …):
+// pxBetween(p, q, at) <= reachPx(att, at, ft) says exactly "within ft feet, as painted". Off the painted floor it is
+// the plain pixel distance it always was.
+function pxBetween(p, q, at){ return onPaintedFloor(p) && onPaintedFloor(q) ? feetSeg(p, q, 1) * ruleFt({x: at.x, y: at.y}) : Math.hypot(q.x - p.x, q.y - p.y); }
+// reach in plate pixels: the feet, plus the target's own body, both in the rules' foot where the attacker stands
+// (on the painted floor the foot is taken where the TARGET stands: that is where the blow lands, and the foot changes across the balcony)
+function reachPx(att, tgt, ft){
+  const m = SPR[tgt.id].json, body = 22 * actorScale(tgt) * (m.cell[0] / 128);
+  if (!onPaintedFloor(tgt)) return ft * ftPx(att) + body;
+  const at = {x: tgt.x, y: tgt.y, big: att.big}; return ft * ruleFt(at) + body * (ruleFt(at) / ftPx(at));
+}
 
 let cbt = null;                                   // the running fight
 const activeActor = () => cbt ? cbt.order[cbt.idx] : null;
@@ -7863,7 +7896,7 @@ function bystandersFlee(){
     let ft = a.c.sheet.speed * 2;
     if (a.c.conds.has("prone")){ a.c.conds.delete("prone"); ft = Math.floor(ft / 2); }
     const goal = safestFloor(a); if (!goal) continue;
-    const walk = cutPath(a, findPath(a, goal), ft * ftPx(a)), to = walk.pts.length ? walk.pts[walk.pts.length - 1] : null;
+    const walk = cutPath(a, findPath(a, goal), ft * ruleFt(a)), to = walk.pts.length ? walk.pts[walk.pts.length - 1] : null;
     if (!to || Math.hypot(to.x - a.x, to.y - a.y) < CELL) continue;   // nowhere better: keeps their head down where they are
     if (!(cbt.fled || (cbt.fled = new Set())).has(a)){ setTimeout(() => banter(a, "flee", null, .45), 400 + Math.random() * 900); cbt.fled.add(a); popText(a, "flees", "#e8e2c8", .9); narrate(a, `${fname(a)} runs from the fight.`); }
     a.path = walk.pts; a.onArrive = null;
@@ -8866,7 +8899,7 @@ function fungusHarvest(l){
   if (now_left <= 0) log(`<em>${esc(hv.ruined || "There is nothing usable left of it.")}</em>`);
 }
 function fungusVent(l, hv){
-  const at = lootCenter(l), v = hv.vent || {}, dc = v.dc || 14, R = (v.radius_ft || 15) * ftPx(at);
+  const at = lootCenter(l), v = hv.vent || {}, dc = v.dc || 14, R = (v.radius_ft || 15) * ruleFt(at);
   log(`<em>The cap splits and lets go of a cloud — ${v.radius_ft || 15} feet of spores, and a <b>DC ${dc} Constitution</b> save for anyone in it.</em>`);
   spawnFx("poisonCloud", {at, sq: 3, anchor: "mid", alpha: .95});
   bank("magic/impact_poison", .7);
@@ -9622,7 +9655,7 @@ function combatClick(w){
   if (p.shove){ const t = hitActor(foes, w); if (!t || t.down) return; doShove(a, t, p.shove); return; }
   if (p.spiritStrike){ const t = hitActor(foes, w); if (!t || t.down) return; const z = spiritWeapons.find(q => q.caster === a);
     if (!z){ toast("The spiritual weapon is gone."); openMenu(a); return; }
-    if (Math.hypot(t.x - z.x, t.y - z.y) / ftPx(t) > 27.5){ toast("Too far: the weapon moves 20 ft and strikes within 5 ft of it."); return; }
+    if (Math.hypot(t.x - z.x, t.y - z.y) / ruleFt(t) > 27.5){ toast("Too far: the weapon moves 20 ft and strikes within 5 ft of it."); return; }
     a.c.bonus = false; closeMenu(); cbt.phase = "busy"; combatBusy = true; turnWhat(a, t, "Spiritual Weapon", false);
     spiritStrike(a, z, t, () => { combatBusy = false; if (cbt) cbt.phase = "idle"; settleCam(); afterAction(a); }); return; }
   if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(friends(), w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; }
@@ -9632,12 +9665,12 @@ function combatClick(w){
     // SRD 5.2.1 Mage Armor: "a willing creature who isn't wearing armor" — refused here, before the action and the slot go
     if (p.spell === "Mage Armor"){ const worn = wornArmor(t); if (worn){ toast(`${fname(t)} is wearing ${worn}: Mage Armor needs a creature not wearing armor.`); return; } }
     castSpell(a, t, p.spell); return; }
-  if (sp && (sp.kind === "cloud" || sp.kind === "fog") && Math.hypot(w.x - a.x, w.y - a.y) / ftPx(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
-  if (sp && sp.aimRange && Math.hypot(w.x - a.x, w.y - a.y) / ftPx(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
+  if (sp && (sp.kind === "cloud" || sp.kind === "fog") && Math.hypot(w.x - a.x, w.y - a.y) / ruleFt(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
+  if (sp && sp.aimRange && Math.hypot(w.x - a.x, w.y - a.y) / ruleFt(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
   if (sp && sp.kind === "util"){ castUtil(a, hitActor([...foes, ...friends()], w) || w, p.spell); return; }
-  if (sp && sp.kind === "teleport"){ const to = nearestWalkable(w.x, w.y), ft = Math.hypot(to.x - a.x, to.y - a.y) / ftPx(a);
+  if (sp && sp.kind === "teleport"){ const to = nearestWalkable(w.x, w.y), ft = Math.hypot(to.x - a.x, to.y - a.y) / ruleFt(a);
     if (ft > sp.range + 2.5){ toast(`Too far: ${p.spell} reaches ${sp.range} ft.`); return; }
-    if (standing([...foes, ...party, ...bystanders()]).some(o => o !== a && Math.hypot(o.x - to.x, o.y - to.y) < ftPx(a) * 2.5)){ toast("Someone is standing there."); return; }
+    if (standing([...foes, ...party, ...bystanders()]).some(o => o !== a && Math.hypot(o.x - to.x, o.y - to.y) < ruleFt(a) * 2.5)){ toast("Someone is standing there."); return; }
     castSpell(a, to, p.spell); return; }
   if (sp && sp.area){ castSpell(a, w, p.spell); return; }
   const t = hitActor(foes, w); if (!t || t.down) return;
@@ -9673,7 +9706,7 @@ function oaCue(att, tgt){
 function provokedBy(a, end){
   if (a.kind !== "pc" || a.c.conds.has("disengaged") || a.c.conds.has("invisible")) return [];   // SRD: an opportunity attack is at a creature you can see
   return standing(foes).filter(f => !f.c.reactionUsed && !incapacitated(f) && feetBetween(a, f) <= 5
-    && Math.hypot(end.x - f.x, end.y - f.y) > reachPx(f, a, 5) + 6);
+    && pxBetween(end, f, a) > reachPx(f, a, 5) + 6);
 }
 // walk up to the movement left, deducting what is used
 // Named combatWalk, not walkTo: the explore click handler further down declares its own walkTo(p, cb) for the leader,
@@ -9681,7 +9714,7 @@ function provokedBy(a, end){
 // and nobody moved (6e1f3e8, 2026-10-15).
 function combatWalk(a, p, done){
   let path = findPath(a, p); if (!path.length){ combatBusy = false; done && done(); return; }
-  const c = cutPath(a, path, a.c.move * ftPx(a)), cut = c.pts;
+  const c = cutPath(a, path, a.c.move * ruleFt(a)), cut = c.pts;
   if (!cut.length){ toast(`Not enough movement to go round through the gate (${balcony() ? balcony().passFt : 15} ft for the way behind the pillar).`); combatBusy = false; done && done(); return; }
   a.c.move = Math.max(0, a.c.move - c.usedFt); marker = {x: cut[cut.length - 1].x, y: cut[cut.length - 1].y, t: now};
   const threat = provokedBy(a, cut[cut.length - 1]);
@@ -9721,7 +9754,7 @@ function gapOnLine(a, to){
   if (i > n) return null;                                   // no ground on the far side
   const land = at(i);
   for (let k = i; k <= n; k++) if (!walkable(at(k).x, at(k).y)) return null;  // a second gap: walk it
-  const px = ftPx(a);
+  const px = ruleFt(a);
   return {takeoff, land, runUpFt: Math.hypot(takeoff.x - a.x, takeoff.y - a.y) / px,
           gapFt: Math.hypot(land.x - takeoff.x, land.y - takeoff.y) / px};
 }
@@ -9785,7 +9818,7 @@ const JUMP_HINT = "Jump: click a green circle. Yellow needs a roll; red is out. 
 // DC 10 Acrobatics on landing needs DIFFICULT TERRAIN — the plates record neither (see MIN_LEAP_FT above). When the
 // data arrives, the check goes here and a lit square that needs one gets its own colour.
 function leapBlocked(a, from, to){
-  const px = ftPx(a), d = Math.hypot(to.x - from.x, to.y - from.y), n = Math.max(1, Math.ceil(d / 6));
+  const px = ruleFt(a), d = Math.hypot(to.x - from.x, to.y - from.y), n = Math.max(1, Math.ceil(d / 6));
   const foesUp = a.kind === "pc" || hero(a) ? standing(foes) : standing(heroes());
   for (let i = 1; i < n; i++){ const x = from.x + (to.x - from.x) * i / n, y = from.y + (to.y - from.y) * i / n;
     const o = foesUp.find(o => Math.hypot(o.x - x, o.y - y) < 2.4 * px); if (o) return o; }
@@ -9795,7 +9828,7 @@ function planLeap(a, to){
   const span = a.c.sheet.strScore; if (!span) return null;
   if (balconyFloor() && outsidePen(a) !== outsidePen(to)) return null;   // between the pen and the balcony is a wall, not a gap: the way is the gate
   if (["prone", "grappled", "restrained", "asleep"].some(c => a.c.conds.has(c))) return null;
-  const px = ftPx(a), d = Math.hypot(to.x - a.x, to.y - a.y) / px;
+  const px = ruleFt(a), d = Math.hypot(to.x - a.x, to.y - a.y) / px;
   if (d < MIN_LEAP_FT) return null;
   let g = gapOnLine(a, to);
   if (g && g.gapFt < MIN_LEAP_FT) g = null;   // a crack in the floor: step over it, that is walking
@@ -9845,7 +9878,7 @@ function leapMove(a, g, to, done){
   };
   const spring = () => { if (a.down){ combatBusy = false; done && done(); return; }
     if (g.check){   // the vault: roll as they leave the ground
-      const k = skillCheck(a, g.check.skill), o = g.check.over, px = ftPx(a);
+      const k = skillCheck(a, g.check.skill), o = g.check.over, px = ruleFt(a);
       if (k.total >= g.check.dc || k.r === 20){ log(`${fname(a)} vaults ${fname(o)}: Acrobatics ${k.r} + ${k.mod} = ${k.total} vs DC ${g.check.dc}.`); narrate(a, `${fname(a)} goes clean over ${fname(o)}.`); popText(a, "vault", "#ffd27a"); }
       else {   // the collision: down in the last clear square before the foe, prone
         const dx = o.x - g.takeoff.x, dy = o.y - g.takeoff.y, dd = Math.hypot(dx, dy), back = Math.max(0, dd - 5 * px);
@@ -9877,8 +9910,8 @@ function moveActor(a, w, done){
 // how far a walk to `p` really is, in feet, by the route a walker would take (Infinity: there is no route)
 function walkFtTo(a, p){
   const path = findPath(a, p); if (!path.length) return Infinity;
-  let d = 0, prev = a; for (const q of path){ d += Math.hypot(q.x - prev.x, q.y - prev.y) + (q.jump ? (q.passFt || 0) * ftPx(a) : 0); prev = q; }
-  return d / ftPx(a);
+  let d = 0, prev = a; for (const q of path){ d += feetSeg(prev, q, a.big) + (q.jump ? (q.passFt || 0) : 0); prev = q; }
+  return d;
 }
 // ----- going over the edge -----
 // SRD 5.1 has no separate "jump down" rule: you clear the horizontal distance as a long jump (STRENGTH SCORE in feet with
@@ -9899,7 +9932,7 @@ function planDrop(a, to){
   if (i > n) return null;
   const land = at(i), low = elevAt(land.x, land.y), dropFt = top - low;
   if (dropFt < LEDGE_FT) return null;                                                   // not a drop: a gap at one level is planLeap's
-  const px = ftPx(a), g = {takeoff, land, drop: true, dropFt,
+  const px = ruleFt(a), g = {takeoff, land, drop: true, dropFt,
     runUpFt: Math.hypot(takeoff.x - a.x, takeoff.y - a.y) / px, gapFt: Math.hypot(land.x - takeoff.x, land.y - takeoff.y) / px};
   g.standing = g.runUpFt < 10; g.max = g.standing ? Math.floor(span / 2) : span;
   const need = Math.round((g.runUpFt + g.gapFt) / 5) * 5;
@@ -10360,7 +10393,7 @@ function castSpell(caster, tgt, name, done, darts){
         if (sp.line) labLineLook(caster, at, sp);
         const targets = (sp.line ? pool.filter(t => inLine(caster, at, t, sp.line))
           : sp.cone ? pool.filter(t => feetBetween(caster, t) <= sp.area + 2.5 && Math.abs(((Math.atan2(t.y - caster.y, t.x - caster.x) - ang0 + Math.PI * 3) % (Math.PI * 2)) - Math.PI) <= .47)   // a cone: within its length and its 53°
-          : sp.area ? pool.filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t))
+          : sp.area ? pool.filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ruleFt(t))
           : sp.targets > 1 ? [tgt, ...standing(hero(tgt) ? heroes() : foes).filter(f => f !== tgt && feetBetween(caster, f) <= sp.range + 2.5).sort((x, y) => Math.hypot(x.x - tgt.x, x.y - tgt.y) - Math.hypot(y.x - tgt.x, y.y - tgt.y)).slice(0, sp.targets - 1)]
           : [tgt]).filter(t => !(sp.selfArea && t === caster));
         if (!targets.length){ log(`${fname(caster)} ${name}: nothing there.`); return; }
@@ -10418,7 +10451,7 @@ function turnedTurn(a){ const src = a.c.turnedBy;
   if (incapacitated(src)){ endTurned(a, "the cleric is incapacitated"); return false; }
   if (cbt.round >= (a.c.turnedEnd || 0)){ endTurned(a, "the minute is up"); return false; }
   a.c.action = false; a.c.bonus = false; a.c.reactionUsed = true;                   // Incapacitated: no action, Bonus Action or Reaction
-  const stuck = a.c.move <= 0 || a.c.conds.has("restrained") || a.c.conds.has("grappled"), goal = stuck ? null : fleeFloor(a, src, a.c.move * ftPx(a));
+  const stuck = a.c.move <= 0 || a.c.conds.has("restrained") || a.c.conds.has("grappled"), goal = stuck ? null : fleeFloor(a, src, a.c.move * ruleFt(a));
   popText(a, "turned", "#ffe9a8"); renderTurns(); renderParty();
   if (!goal){ log(`${fname(a)} is turned and has nowhere to go.`); setTimeout(() => passTurn(a), 700); return true; }
   log(`${fname(a)} is turned and moves away from ${fname(src)}.`);
@@ -10511,7 +10544,7 @@ function doShove(a, t, what){
       if (what === "push") pushWaves(a, t);   // the golden shock rings (Sam, 2026-10-29)
       bank("walk:punch-bag", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx(what === "prone" ? MARTIAL_IMPACT.sweep : what === "push" ? MARTIAL_IMPACT.kick : MARTIAL_IMPACT.punch, {at: t, sq: 1.8, mirror: what === "prone" && t.x < a.x});   // the sweep takes their legs; a push is a kick
       if (what === "prone"){ addCond(t, "prone"); if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); narrate(a, `${fname(a)} knocks ${fname(t)} flat.`); }
-      else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ftPx(t) * 5, y: t.y + d.y * ftPx(t) * 5}; const to = nearestWalkable(raw.x, raw.y), ce = chasmEdge(t, raw); if (ce) chasmFall(t, raw, a, ce); else if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a); else { const top = elevAt(t.x, t.y); t.x = to.x; t.y = to.y; const dropFt = top - elevAt(to.x, to.y); if (dropFt >= LEDGE_FT){ narrate(a, `${fname(a)} shoves ${fname(t)} off the edge.`); setTimeout(() => landFall(t, dropFt), 250); } } narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
+      else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ruleFt(t) * 5, y: t.y + d.y * ruleFt(t) * 5}; const to = nearestWalkable(raw.x, raw.y), ce = chasmEdge(t, raw); if (ce) chasmFall(t, raw, a, ce); else if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a); else { const top = elevAt(t.x, t.y); t.x = to.x; t.y = to.y; const dropFt = top - elevAt(to.x, to.y); if (dropFt >= LEDGE_FT){ narrate(a, `${fname(a)} shoves ${fname(t)} off the edge.`); setTimeout(() => landFall(t, dropFt), 250); } } narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
       else { addCond(t, "grappled"); t.c.grappledBy = a; narrate(a, `${fname(a)} grabs hold of ${fname(t)}.`); }
       log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — <b>${what === "prone" ? "prone" : what === "push" ? "pushed 5 ft" : "grappled"}</b>.`);
     }, () => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(a); });
@@ -10546,7 +10579,7 @@ function markRider(att, t, crit, atk){ if (!t || t.down || !t.c || !t.c.conds.ha
 function hexRider(att, t, crit){ if (!t || t.down || !t.c || !t.c.conds.has("hexed") || t.c.hexedBy !== att) return; const h = roll("1d6", crit);
   setTimeout(() => { labHexPulse(t); bank("walk:impact-necrotic", .45); damage(t, h.total, "necrotic", false, att, true); log(`Hex: +${h.total} necrotic on ${fname(t)}.`); }, 220); }
 // Repelling Blast: "push the creature up to 10 feet away from you in a straight line" — off a ledge or into the chasm if that is where it goes
-function repel(a, t, ft){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ftPx(t) * ft, y: t.y + d.y * ftPx(t) * ft}; const to = nearestWalkable(raw.x, raw.y), ce = chasmEdge(t, raw);
+function repel(a, t, ft){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ruleFt(t) * ft, y: t.y + d.y * ruleFt(t) * ft}; const to = nearestWalkable(raw.x, raw.y), ce = chasmEdge(t, raw);
   labRef("ebImpExpl", {x: t.x, y: t.y + 8, w: 170, life: 600, grow: [.5, 1.2], fade: [20, 380], anchorY: "bottom", add: false}); shake(8); bank("walk:thunder-clap", .5);
   if (ce) chasmFall(t, raw, a, ce); else if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a);
   else { const top = elevAt(t.x, t.y); t.x = to.x; t.y = to.y; const dropFt = top - elevAt(to.x, to.y); popText(t, `pushed ${ft} ft`, "#c58aff", .85); if (dropFt >= LEDGE_FT) setTimeout(() => landFall(t, dropFt), 250); } }
@@ -10565,8 +10598,8 @@ function flameSphereCast(c, at, cb){ const side = Math.sign(c.x - at.x) || 1, z 
 function newSpellsTurnStart(a){
   if (a.c.conds.has("paralyzed") && a.c.heldDc){ const s = d20(0, a) + (a.c.sheet.saves.wis || 0) + blessD4(a); if (s >= a.c.heldDc){ a.c.conds.delete("paralyzed"); a.c.heldDc = 0; popText(a, "breaks free", "#d8b8ff"); log(`${fname(a)} shakes off Hold Person (WIS ${s}).`); }
     else { popText(a, "held", "#d8b8ff"); log(`${fname(a)} is held fast (WIS ${s} vs DC ${a.c.heldDc}).`); setTimeout(nextTurn, 900); return true; } }
-  for (const z of daggerZones) if (!a.down && Math.hypot(a.x - z.x, a.y - z.y) <= ftPx(a) * 4){ const d = roll(z.dmg).total; bank("combat/blade_whoosh", .6); damage(a, d, z.type, false, z.caster, true); log(`${fname(a)} starts the turn in the Cloud of Daggers: ${d} ${z.type}.`); if (a.down) return true; }
-  for (const z of fireSpheres) if (z.caster === a){ const v = standing(hero(a) ? foes : heroes()).filter(f => Math.hypot(f.x - z.x, f.y - z.y) <= ftPx(f) * 30).sort((p, q) => Math.hypot(p.x - z.x, p.y - z.y) - Math.hypot(q.x - z.x, q.y - z.y))[0]; if (!v) continue;
+  for (const z of daggerZones) if (!a.down && Math.hypot(a.x - z.x, a.y - z.y) <= ruleFt(a) * 4){ const d = roll(z.dmg).total; bank("combat/blade_whoosh", .6); damage(a, d, z.type, false, z.caster, true); log(`${fname(a)} starts the turn in the Cloud of Daggers: ${d} ${z.type}.`); if (a.down) return true; }
+  for (const z of fireSpheres) if (z.caster === a){ const v = standing(hero(a) ? foes : heroes()).filter(f => Math.hypot(f.x - z.x, f.y - z.y) <= ruleFt(f) * 30).sort((p, q) => Math.hypot(p.x - z.x, p.y - z.y) - Math.hypot(q.x - z.x, q.y - z.y))[0]; if (!v) continue;
     const dc = a.c.sheet.magic.dc, s = d20(0, v) + (v.c.sheet.saves.dex || 0), d = roll("2d6").total, n = s >= dc ? Math.floor(d / 2) : d; z.move = {x0: z.x, y0: z.y, x1: v.x + (Math.sign(z.x - v.x) || 1) * ftPx(v) * 2.5, y1: v.y, t0: now, ms: 420};
     setTimeout(() => { labFireHit(v); bank("walk:impact-fire", .6); damage(v, n, "fire", false, a, true); log(`The Flaming Sphere rams ${fname(v)}: DEX ${s} vs DC ${dc} — ${n} fire.`); }, 420); }
   return false;
@@ -10678,7 +10711,7 @@ function fleeFloor(a, src, budgetPx){ const here = Math.hypot(a.x - src.x, a.y -
 function fearFlee(a){ const src = a.c.fearBy;
   if (!src || src.down || !actors.includes(src)){ a.c.conds.delete("frightened"); return false; }
   if (a.c.move <= 0 || a.c.conds.has("restrained") || a.c.conds.has("grappled") || incapacitated(a)) return false;   // nowhere to move: it acts, still Frightened
-  const goal = fleeFloor(a, src, a.c.move * 2 * ftPx(a)); if (!goal) return false;
+  const goal = fleeFloor(a, src, a.c.move * 2 * ruleFt(a)); if (!goal) return false;
   a.c.action = false; a.c.move *= 2;                                                // the Dash
   popText(a, "flees in terror", "#b8a0d8"); log(`${fname(a)} is Frightened of ${fname(src)} and Dashes away (Fear).`); narrate(a, `${fname(a)} breaks and runs from ${fname(src)}.`);
   renderTurns(); renderParty(); if (a.kind === "pc") closeMenu();
@@ -10988,7 +11021,7 @@ function seekSight(f){
     say();
   };
   if (!g || Math.hypot(f.x - g[0], f.y - g[1]) < 12){ look(); return; }
-  const fp = ftPx(f), d = Math.hypot(g[0] - f.x, g[1] - f.y), k = Math.min(1, (f.c.move || 0) * fp / d);
+  const fp = ruleFt(f), d = Math.hypot(g[0] - f.x, g[1] - f.y), k = Math.min(1, (f.c.move || 0) * fp / d);
   if (k <= 0){ look(); return; }
   f.c.move = Math.max(0, (f.c.move || 0) - Math.round(d * k / fp / 5) * 5);
   log(`${fname(f)} moves to get a line through the gate.`);
@@ -11001,16 +11034,21 @@ function passTurn(a){ if (reactionWait){ reactionWait.then(() => setTimeout(() =
 function approachThen(att, tgt, ft, then){
   const reachFt = ft;
   if (gateWayTo(att, tgt)){ approachViaGate(att, tgt, ft, then); return; }
-  const reach = reachPx(att, tgt, ft), d = Math.hypot(tgt.x - att.x, tgt.y - att.y);
+  const reach = reachPx(att, tgt, ft), d = pxBetween(att, tgt, tgt);
   if (d <= reach + 6){ if (reachFt <= 5 && cbt && !att.big && !(att.c && att.c.sheet.leap) && !att.climbing && !att.riding) bounceIn(att, tgt, then); else then(); return; }
   then = (t0 => () => readiedStrikeOn(att, t0))(then);   // a readied blow meets whoever walks in
-  const budget = Math.max(0, (att.c.move || 0) * ftPx(att)), need = d - reach;
+  const budget = Math.max(0, (att.c.move || 0) * ruleFt(att)), need = d - reach;
   // MOVEMENT IS MEASURED ALONG THE WAY ACTUALLY WALKED (Sam, 2026-10-27: "Did Eldeth and Sarith really only move 30
   // feet?"). The charge used to be the straight line toward the target, while the walk itself went round tables, bunks
   // and pillars, so a creature with 30 ft could cover far more ground. Now the route to the spot in reach is found
   // first and trimmed to what the movement left buys (cutPath, the heroes' own rule), and what is charged is what
   // that trimmed route measures.
-  const reachSpot = nearestWalkable(att.x + (tgt.x - att.x) * (need / d), att.y + (tgt.y - att.y) * (need / d));
+  // on the painted floor the foot changes along the way, so the spot is searched for, not interpolated: the point on
+  // the straight line whose painted distance to the target is the reach
+  let kSpot = need / d;
+  if (onPaintedFloor(att) && onPaintedFloor(tgt)){ let lo = 0, hi = 1; for (let i = 0; i < 12; i++){ const m = (lo + hi) / 2, q = {x: att.x + (tgt.x - att.x) * m, y: att.y + (tgt.y - att.y) * m};
+      if (pxBetween(q, tgt, tgt) > reach * .92) lo = m; else hi = m; } kSpot = lo; }
+  const reachSpot = nearestWalkable(att.x + (tgt.x - att.x) * kSpot, att.y + (tgt.y - att.y) * kSpot);
   const walk = cutPath(att, findPath(att, reachSpot), budget);
   const goal = walk.pts.length ? walk.pts[walk.pts.length - 1] : {x: att.x, y: att.y};
   // OPPORTUNITY ATTACKS, THE OTHER WAY (Sam, 2026-10-14: "are there opportunity attacks?"). A foe that moves out of
@@ -11019,7 +11057,7 @@ function approachThen(att, tgt, ft, then){
   // against the provoking creature. The attack occurs right before the creature leaves your reach."). Heroes
   // leaving a foe's reach were already covered (moveActor).
   if ((att.kind === "foe" || att.ally) && !att.c.conds.has("disengaged")){
-    const p = standing(att.ally ? foes : heroes()).find(h => h !== tgt && !h.c.reactionUsed && !incapacitated(h) && feetBetween(att, h) <= 5 && Math.hypot(goal.x - h.x, goal.y - h.y) > reachPx(h, att, 5) + 6);
+    const p = standing(att.ally ? foes : heroes()).find(h => h !== tgt && !h.c.reactionUsed && !incapacitated(h) && feetBetween(att, h) <= 5 && pxBetween(goal, h, att) > reachPx(h, att, 5) + 6);
     if (p){
       // THE HERO IS ASKED (Sam, 2026-11-10: "If an opportunity happens to a player they can have a dialogue type box that
       // gives them the options"). The fight pauses, as it does for Shield and a readied strike: one row per melee weapon
@@ -11050,7 +11088,7 @@ function approachThen(att, tgt, ft, then){
   // STILL OUT OF REACH WHEN THE MOVEMENT RUNS OUT: no swing (Sam, 2026-10-27: "Ront just landed a fist at distance"). A
   // hero gets the menu back to do something else. An ally or a foe used to swing anyway from wherever it stopped; now it
   // closes as far as it can and the turn passes.
-  const stillFar = () => Math.hypot(tgt.x - att.x, tgt.y - att.y) > reach + 24;   // a grid cell of slack: the reach spot is snapped to the floor grid
+  const stillFar = () => pxBetween(att, tgt, tgt) > reach + 24;   // a grid cell of slack: the reach spot is snapped to the floor grid
   const arrive = () => {
     if (!stillFar()){ then(); return; }
     if (att.kind === "pc"){ toast("Out of reach."); combatBusy = false; cbt.phase = "idle"; att.c.action = true; settleCam(); openMenu(att); return; }
@@ -11225,7 +11263,7 @@ function throwRock(f, tgt){
     attackWith(f, tgt, rock, end);
   };
   if (feetBetween(f, tgt) > ROCK.reach && (f.c.move || 0) > 0){
-    const u = norm({x: tgt.x - f.x, y: tgt.y - f.y}), px = ftPx(f), spot = nearestWalkable(tgt.x - u.x * (ROCK.reach - 2) * px, tgt.y - u.y * (ROCK.reach - 2) * px);
+    const u = norm({x: tgt.x - f.x, y: tgt.y - f.y}), px = ruleFt(f), spot = nearestWalkable(tgt.x - u.x * (ROCK.reach - 2) * px, tgt.y - u.y * (ROCK.reach - 2) * px);
     const walk = cutPath(f, findPath(f, spot), f.c.move * px);
     if (walk.pts.length){ f.c.move = Math.max(0, f.c.move - walk.usedFt); combatBusy = true; cbt.phase = "busy"; f.path = walk.pts; f.onArrive = () => { f.onArrive = null; fire(); }; return; }
   }
@@ -11345,7 +11383,7 @@ function allyTurn(a){
   (cbt.lastAllyTarget || (cbt.lastAllyTarget = new Map())).set(a, tgt);
   fightCam(Math.min(2.4, cbt.home.z * 1.08), (a.x + tgt.x) / 2, (a.y + tgt.y) / 2 - 50, 600, [a, tgt]);
   const s = a.c.sheet, atk = meleeOf(a), swings = s.multi || 1;
-  const gapFt = () => Math.max(0, (Math.hypot(tgt.x - a.x, tgt.y - a.y) - reachPx(a, tgt, atk.reach || 5)) / ftPx(a));
+  const gapFt = () => Math.max(0, (pxBetween(a, tgt, tgt) - reachPx(a, tgt, atk.reach || 5)) / ruleFt(onPaintedFloor(tgt) ? {x: tgt.x, y: tgt.y, big: a.big} : a));
   if (gapFt() > a.c.move && s.aggressive && a.c.bonus){
     a.c.bonus = false; a.c.move += s.speed; log(`${fname(a)} charges (Aggressive, bonus action: +${s.speed} ft toward ${fname(tgt)}).`);
   }
@@ -11403,7 +11441,7 @@ function arcTo(a, land, then){
 const HOP_FT = 30;
 function meleeHopLeg(a, pts, reachFt){
   if (!pts.length || reachFt > 5 || a.big || (a.c && a.c.sheet.speed < 20) || (a.c && a.c.sheet.leap)) return null;
-  const land = pts[pts.length - 1], maxPx = HOP_FT * ftPx(a), clear = (p, q) => { const n = Math.ceil(Math.hypot(q.x - p.x, q.y - p.y) / 12); for (let i = 1; i < n; i++) if (!walkable(p.x + (q.x - p.x) * i / n, p.y + (q.y - p.y) * i / n)) return false; return true; };
+  const land = pts[pts.length - 1], maxPx = HOP_FT * ruleFt(a), clear = (p, q) => { const n = Math.ceil(Math.hypot(q.x - p.x, q.y - p.y) / 12); for (let i = 1; i < n; i++) if (!walkable(p.x + (q.x - p.x) * i / n, p.y + (q.y - p.y) * i / n)) return false; return true; };
   const from = [{x: a.x, y: a.y}, ...pts.slice(0, -1)];
   for (let j = 0; j < from.length; j++){ const d = Math.hypot(land.x - from[j].x, land.y - from[j].y); if (d <= maxPx && d >= CELL && clear(from[j], land)) return {before: pts.slice(0, j), land}; }
   return null;
@@ -12236,7 +12274,7 @@ function drawLabSpark(s, k){
 // The spider: spring to within reach of its target, then bite.
 function leapTo(f, tgt, then){
   const d = norm({x: tgt.x - f.x, y: tgt.y - f.y}), reach = reachPx(f, tgt, 5), dist = Math.hypot(tgt.x - f.x, tgt.y - f.y) - reach;
-  f.c.move = Math.max(0, f.c.move - Math.round(dist / ftPx(f) / 5) * 5);
+  f.c.move = Math.max(0, f.c.move - Math.round(dist / ruleFt(f) / 5) * 5);
   arcTo(f, nearestWalkable(f.x + d.x * dist, f.y + d.y * dist), () => { narrate(f, `${fname(f)} springs across the floor at ${fname(tgt)}.`); then && then(); });
 }
 // THE PARTY CAN BE SURPRISED TOO (Sam, 2026-10-28: "yes and if they are surprised they should show it with a surprised
@@ -13304,7 +13342,7 @@ function drawAoe(x, y, sp, col, alpha, inside){
     return; }
   const r = aoeRadiusAt(sp, y); ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = col + "22"; ctx.strokeStyle = col; ctx.lineWidth = 2.5 / (base * view.z);
   ctx.setLineDash([10, 8]); ctx.lineDashOffset = -now / 60; ovEllipsePath(x, y, r, r * .55); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
-  if (inside) for (const t of standing([...foes, ...party])) if (Math.hypot(t.x - x, t.y - y) <= (sp.area / 2 + 2.5) * ftPx(t)){
+  if (inside) for (const t of standing([...foes, ...party])) if (Math.hypot(t.x - x, t.y - y) <= (sp.area / 2 + 2.5) * ruleFt(t)){
     ctx.globalAlpha = alpha * (.6 + .4 * Math.sin(now / 160)); ovWrapA(t, () => { ctx.beginPath(); ctx.ellipse(t.x, t.y, 30 * actorScale(t), 10 * actorScale(t), 0, 0, Math.PI * 2); ctx.stroke(); }); }
   ctx.restore();
 }
@@ -20100,12 +20138,12 @@ function keyboardMove(a, dt){
   // speed (carried in feet, 5 ft at a time), the hero stops when it runs out, and stepping out of a foe's reach
   // without Disengage gives that foe its opportunity attack (SRD 5.1), right before the hero leaves.
   if (mode === "combat" && cbt && a === activeActor()){
-    const fp = ftPx(a), left = a.c.move * fp - (a.c.kbdPx || 0), d = Math.hypot(nx - a.x, ny - a.y);
+    const fp = ruleFt(a), left = a.c.move * fp - (a.c.kbdPx || 0), d = Math.hypot(nx - a.x, ny - a.y);
     if (left <= .5){ nx = a.x; ny = a.y; if (!a.kbdOut){ a.kbdOut = true; hint("No movement left this turn."); } }
     else if (d > left){ const k = left / d; nx = a.x + (nx - a.x) * k; ny = a.y + (ny - a.y) * k; }
     if (!a.c.conds.has("disengaged")){
       // one measure for both sides of the line: inside its reach this frame, outside it on the next step
-      const f = standing(foes).find(f => { const r = reachPx(f, a, 5) + 6; return !f.c.reactionUsed && !incapacitated(f) && Math.hypot(a.x - f.x, a.y - f.y) <= r && Math.hypot(nx - f.x, ny - f.y) > r; });
+      const f = standing(foes).find(f => { const r = reachPx(f, a, 5) + 6; return !f.c.reactionUsed && !incapacitated(f) && pxBetween(a, f, a) <= r && pxBetween({x: nx, y: ny}, f, a) > r; });
       if (f){
         keys.clear(); a.kbd = false; setAnim(a, "idle"); f.c.reactionUsed = true; combatBusy = true; closeMenu();
         oaCue(f, a); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
@@ -20361,10 +20399,11 @@ function update(dt){
     for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++){
       const a = bodies[i], b = bodies[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
       if (a.lunging || b.lunging) continue;   // a lunge closes to contact on purpose: nobody is shoved off their spot by it
-      const min = (a.kind === "foe" || b.kind === "foe" ? 70 : 45) * node.scale;
+      // (on the painted floor the gap is taken as painted: 70 plate px out there is 5-12 painted feet, which held two bodies out of each other's reach)
+      const min = (a.kind === "foe" || b.kind === "foe" ? 70 : 45) * node.scale, gap = onPaintedFloor(a) && onPaintedFloor(b) ? feetSeg(a, b, 1) * ftPx(a) : d;
       // Sam, 2026-10-14: a character that walked into someone kept walking against the push and stalled.
       // The one who is walking holds its line; only a standing body gives way (and never a leaping one).
-      if (d > 0 && d < min){ const push = Math.min(4, (min - d) / 2), ux = dx / d, uy = dy / d, aw = a.path.length > 0 || a.leap, bw = b.path.length > 0 || b.leap;
+      if (d > 0 && gap < min){ const push = Math.min(4, (min - gap) / 2), ux = dx / d, uy = dy / d, aw = a.path.length > 0 || a.leap, bw = b.path.length > 0 || b.leap;
         if (!b.once && !bw && walkable(b.x + ux * push, b.y + uy * push)){ b.x += ux * push; b.y += uy * push; }
         if (!a.once && !aw && walkable(a.x - ux * push, a.y - uy * push)){ a.x -= ux * push; a.y -= uy * push; } }
     }
