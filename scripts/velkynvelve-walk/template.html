@@ -7236,8 +7236,9 @@ function renderExploreBar(){
 // Sam, 2026-10-25: "you have all the icons for actions in this project" — the commissioned gold-framed sets in
 // vtt-assets/action-icons and vtt-assets/spell-icons, copied here at 96 px beside the first fifteen. Untitled art only:
 // most spell icons carry their name painted in, which would mislabel a button.
-// the weapon arts' own bar icons (public/velkynvelve-walk/icons/art-*.png); until one is painted the row wears the attack icon
-const ART_ICON = {};
+// the weapon arts' own bar icons (icons/bar/art-*.png): PixelLab objects 38e58690 (athletic) and ec47f34d (finesse),
+// 2026-11-10, each set on a dark tile in its lane's colour (warm for Athletic, teal for Finesse)
+const ART_ICON = {topple: "bar/art-topple", cleave: "bar/art-cleave", stagger: "bar/art-stagger", maim: "bar/art-maim", vex: "bar/art-vex", sap: "bar/art-sap", hamstring: "bar/art-hamstring"};
 const ICONS_HAVE = new Set(["attack", "cast-spell", "dash", "disengage", "dodge", "help", "hide", "offhand-attack", "opportunity-attack", "ready", "search", "use-object",
   "detect-magic", "use-item", "second-wind", "bless", "bardic-inspiration",
   "talk", "next-hero", "tell-malachar", "more"]);   // Sam's own four, 2026-10-25 (Still_Glyphs_96x96.zip)
