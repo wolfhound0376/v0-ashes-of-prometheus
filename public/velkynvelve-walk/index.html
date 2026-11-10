@@ -4794,7 +4794,8 @@ function icardRender(){
   const rarName = rar === "very_rare" ? "Very Rare" : rar.replace(/^./, c => c.toUpperCase());
   let h = `<div class="ic-band"><span class="${view.identified ? "ok" : "unid"}">${view.magic ? (view.identified ? "IDENTIFIED" : "UNIDENTIFIED") : "ITEM"}</span><span class="${fight ? "war" : "ok"}">${fight ? "IN COMBAT" : "OUT OF COMBAT"}</span></div>`;
   h += `<div class="ic-head"><div class="ic-pic">${pic ? `<img src="${esc(pic)}" alt="">` : ""}</div><div><div class="ic-name">${esc(it.name || t.name)}</div>`
-    + `<div class="ic-sub">${esc(type)} · <b>${esc(rarName)}</b></div>${view.identified && it.attunement ? `<span class="ic-pill">REQUIRES ATTUNEMENT</span>` : ""}</div></div>`;
+    + `<div class="ic-sub">${esc(type)} · <b>${esc(rarName)}</b></div>${view.identified && it.attunement ? `<span class="ic-pill" title="${esc(ATTUNE_PRICE)}">REQUIRES ATTUNEMENT</span>` : ""}</div></div>`
+    + (view.identified && it.attunement ? `<div class="ic-sec"><div class="ic-note"><b style="color:#c9a6ff">Requires attunement:</b> ${esc(ATTUNE_PRICE)}.</div></div>` : "");
   // the eye can see the blade: base damage and properties; the bonus only once someone knows it
   const chips = [];
   for (const w of (p.weapon_properties || [])){ const k = String(w).toLowerCase(); chips.push(`<span class="${k === "finesse" ? "c-fin" : k === "light" ? "c-lit" : k === "thrown" ? "c-thr" : ""}">${esc(k.replace(/^./, c => c.toUpperCase()))}${k === "thrown" && p.range ? " " + esc(p.range) : ""}</span>`); }
@@ -4826,7 +4827,8 @@ function icardRender(){
       const cls = n => n > 0 ? "up" : n < 0 ? "dn" : "eq";
       h += `<div class="ic-sec ic-cmp"><div class="ic-lbl">${esc(fname(a).toUpperCase())} · VS ${esc(String(now0.name).toUpperCase())}</div>`
         + `<div class="ic-row"><span class="${cls(dd)}">${dd > 0 ? "▲" : dd < 0 ? "▼" : "="} ${icardFmt(dd)}</span><span>average damage a hit</span></div>`
-        + `<div class="ic-row"><span class="${cls(dh)}">${dh > 0 ? "▲" : dh < 0 ? "▼" : "="} ${icardFmt(dh)}</span><span>to hit${proficientWith(sh.cls, it) ? "" : " · not proficient"}</span></div></div>`;
+        + `<div class="ic-row"><span class="${cls(dh)}">${dh > 0 ? "▲" : dh < 0 ? "▼" : "="} ${icardFmt(dh)}</span><span>to hit${trainedWith(sh, it) ? "" : " · not trained"}</span></div>`
+        + `<div class="ic-note">${weaponNote(sh, it)}</div></div>`;
     }
   }
   // the checks: out of a fight, the ones this item offers, rolled by a hero this screen controls
@@ -17713,6 +17715,26 @@ const CLASS_WEAPONS = {Rogue: ["simple", "hand crossbow", "longsword", "rapier",
   Cleric: ["simple"], Sorcerer: ["dagger", "dart", "sling", "quarterstaff", "light crossbow"]};
 function baseWeapon(it){ const n = String((it.properties || {}).srd_stats_as || it.name || "").toLowerCase();
   return [...SIMPLE_WEAPONS, ...MARTIAL_WEAPONS].filter(b => n.includes(b)).sort((a, b) => b.length - a.length)[0] || null; }
+// TRAINED WITH IT: a hero by class (CLASS_WEAPONS), an ally by its stat block (the weapons the block lists by name)
+function trainedWith(sheet, it){ if (!sheet) return false; if (sheet.kit){ const b = baseWeapon(it); return !!b && !!sheet.kit[b]; } return proficientWith(sheet.cls, it); }
+// WHAT UNTRAINED AND UNATTUNED MEAN, ON THE CARD (Sam, 2026-11-10: "I don't think it is clear on the inventory options what
+// happens when you are untrained on an inventory option or not attuned to a magical item").
+//   Weapon proficiency, SRD 5.1: proficiency lets you add your proficiency bonus to the attack roll. Untrained, you can
+//   still attack with it; the bonus (+2 at levels 1-4) is simply not added. Damage is unchanged.
+//   Attunement, SRD 5.1: an item that requires attunement gives only its nonmagical benefits until a creature attunes
+//   to it, which takes a short rest in contact with it; a creature can be attuned to no more than three items at once.
+const UNTRAINED_PRICE = "you can still use it, but your +2 proficiency bonus is not added to the attack roll (damage is the same)";
+const ATTUNE_PRICE = "until you attune to it (a short rest with it in hand; 3 attuned items at most) it works only as an ordinary item, with none of its magic";
+function weaponNote(sheet, it, short){
+  if (!sheet || !isWeapon(it)) return ""; const b = baseWeapon(it) || "this weapon";
+  return trainedWith(sheet, it) ? `<b style="color:#7fdc8a">trained with ${esc(b)}</b>${short ? "" : ": +2 proficiency to hit"}`
+    : `<b style="color:#ff8a7a">not trained with ${esc(b)}</b>${short ? ": no +2 to hit" : `: ${UNTRAINED_PRICE}`}`;
+}
+function attuneNote(it, short){
+  const cat = catalogItem(it.name) || it; if (cat.attunement !== true) return "";
+  if (typeof loreView === "function" && !loreView(cat, icardKnown(cat.slug)).identified) return "";   // hidden until identified, like the card's pill
+  return `<b style="color:#c9a6ff">requires attunement</b>${short ? "" : `: ${ATTUNE_PRICE}`}`;
+}
 function proficientWith(cls, it){ const b = baseWeapon(it), list = CLASS_WEAPONS[cls] || []; return !!b && (list.includes(b) || (list.includes("simple") && SIMPLE_WEAPONS.includes(b))); }
 const isWeapon = it => !!it && ((it.item_type || "") === "weapon" || !!baseWeapon(it));
 // A magic weapon: its catalogue row is rarer than common (the six magic weapons in `items` all are; every mundane
@@ -17721,7 +17743,7 @@ const isMagicWeapon = it => { if (!it) return false; const p = it.properties || 
   return p.magic === true || p.magical === true || Number(p.attack_bonus || p.bonus || 0) > 0 || /\+\s*\d/.test(it.name || "") || !/^(common|mundane|none|)$/.test(r); };
 // an attack line from a catalogue weapon, the way the sheet's own lines are written. `str` says the modifier used was
 // Strength (not finesse-with-DEX, not ammunition): Rage's damage bonus reads it (lib/rage.mjs isStrengthMelee).
-function attackFromItem(sheet, it, profAlways){
+function attackFromItem(sheet, it){
   const p = it.properties || {}, wp = (p.weapon_properties || []).map(s => String(s).toLowerCase());
   const finesse = wp.includes("finesse") || p.finesse === true, light = wp.includes("light") || p.light === true, thrown = wp.includes("thrown");
   // a launcher is ammunition even when its catalogue row forgets to say so: the hand crossbow's row has no
@@ -17731,7 +17753,7 @@ function attackFromItem(sheet, it, profAlways){
   const type = p.damage_type && p.damage_type !== "none" ? p.damage_type : (String(p.damage || "").match(/([a-z]+)\s*$/i) || [0, "bludgeoning"])[1];
   const str = abilMod(sheet, "str"), dex = abilMod(sheet, "dex"), mod = ammo ? dex : finesse ? Math.max(str, dex) : str;   // the modifiers, not the saves
   // a "+1" weapon's catalogue row may carry one `bonus` for both (Lolth's Tooth does): it adds to the attack and the damage
-  const prof = profAlways || proficientWith(sheet.cls, it) ? 2 : 0, dm = mod + Number(p.damage_bonus ?? p.bonus ?? 0);       // proficiency +2 at levels 1-4
+  const prof = trainedWith(sheet, it) ? 2 : 0, dm = mod + Number(p.damage_bonus ?? p.bonus ?? 0);       // proficiency +2 at levels 1-4
   const a = {name: it.name, hit: mod + prof + Number(p.attack_bonus ?? p.bonus ?? 0), dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
     reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, str: !ammo && (!finesse || str >= dex), ammo, item: true, itemName: it.name, pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null, magic: isMagicWeapon(it)};
   if (ammo && rng[1]) a.long = rng[1];
@@ -17747,13 +17769,14 @@ function refreshAttacks(id){
     // distributed to them"). Eldeth was given a drow's hand crossbow; her block lists only a shortsword and a longbow,
     // so the crossbow matched nothing and she kept punching. A weapon the block lists still uses the block's own line;
     // any other weapon is built the way a hero's is (attackFromItem: the weapon's SRD damage + their own STR or DEX
-    // modifier), counted as PROFICIENT (+2). That +2 is a ruling, not the book: a stat block names only its own weapons.
+    // modifier). Off-block, they are UNTRAINED: no proficiency bonus on the attack roll (Sam, 2026-11-10: "allies should
+    // be counted as using it as untrained"). A stat block's listed weapons are the ones it is trained with.
     const s = ALLY_SHEETS[id]; if (!s.baseAttacks) s.baseAttacks = s.attacks.slice();
     const lines = [], seen = new Set();
     for (const it of ((GEAR[id] || {}).carried || [])){
       const b = baseWeapon(it); if (!isWeapon(it) || seen.has(b || it.name)) continue; seen.add(b || it.name);
       const kit = b && s.kit[b];
-      lines.push(kit ? {...kit, itemName: it.name} : attackFromItem(s, it, true));
+      lines.push(kit ? {...kit, itemName: it.name} : attackFromItem(s, it));
     }
     s.attacks = [...lines, ...s.baseAttacks];
     return;
@@ -18467,7 +18490,7 @@ function renderBag(){
       : u.kind === "throw" ? `${FLASK_OF(it).blurb} · thrown up to 20 ft` : u.kind === "dm" ? `use it through the DM: ${u.why}` : (it.desc || "");
     // the row keeps the short line (what it is, or where it is worn); the long description lives on the item's card
     row.innerHTML = `<span class="invPic${worn.length ? " worn" : ""}"${RARITY_RANK[rar] > 0 ? ` style="border-color:${RARITY_COL[rar]}"` : ""}>${pic ? `<img src="${esc(pic)}" alt="" loading="lazy">` : "◆"}</span>`
-      + `<span class="invTxt"><button class="efPick" aria-pressed="${picked ? "true" : "false"}" title="${picked ? "Close the card" : "Open the card"}"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}${rarTag}</b></button><small>${esc(what)}${armorOf(it) ? `${what ? " · " : ""}${armorNote(a, it, true)}` : ""}</small></span><span class="invBtns"></span>`;
+      + `<span class="invTxt"><button class="efPick" aria-pressed="${picked ? "true" : "false"}" title="${picked ? "Close the card" : "Open the card"}"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}${rarTag}</b></button><small>${esc(what)}${armorOf(it) ? `${what ? " · " : ""}${armorNote(a, it, true)}` : ""}${[weaponNote(SHEETS[a.id], it, true), attuneNote(it, true)].filter(Boolean).map(x => ` · ${x}`).join("")}</small></span><span class="invBtns"></span>`;
     // the name is the real button (keyboard reaches it); a click anywhere else on the row does the same for the mouse
     const pick = () => { inv.item = picked ? null : {name: it.name, item_key: it.item_key || null}; renderBag(); };
     row.querySelector(".efPick").onclick = e => { e.stopPropagation(); pick(); };
@@ -18691,7 +18714,8 @@ function renderItemCard(a, g, it, u, worn, pic, what, fight, mine){
   const atk = isWeapon(it) && SHEETS[a.id] ? attackFromItem(SHEETS[a.id], it) : null;
   const meta = [kind, where, (it.qty || 1) > 1 ? `×${it.qty}` : "", RARITY_RANK[rar] > 0 ? `<b style="color:${RARITY_COL[rar]}">${RARITY_LABEL[rar]}</b>` : ""].filter(Boolean).join(" · ")
     + (atk ? `<br>${esc(atk.dmg)} ${esc(atk.type)} · +${atk.hit} to hit${atk.reach > 5 ? ` · ${atk.reach} ft` : ""}` : "")
-    + (armorOf(it) ? `<br>${armorNote(a, it)}` : "");
+    + (armorOf(it) ? `<br>${armorNote(a, it)}` : "")
+    + (atk ? `<br>${weaponNote(SHEETS[a.id], it)}` : "") + (attuneNote(it) ? `<br>${attuneNote(it)}` : "");
   d.innerHTML = `<div class="efBig${it.icon ? "" : " px"}">${pic ? `<img src="${esc(pic)}" alt="">` : "◆"}</div><div><h5>${esc(it.name)}</h5><div class="efMeta">${meta}</div>${it.desc ? `<div class="efDesc">${esc(it.desc)}</div>` : ""}<div class="efActs"></div></div>`;
   const acts = d.querySelector(".efActs");
   const btn = (label, ok, why, fn, primary) => { const b = document.createElement("button"); b.className = "btn" + (primary ? " primary" : ""); b.textContent = label; b.disabled = !ok; if (why) b.title = why; b.onclick = fn; acts.appendChild(b); };
