@@ -197,8 +197,14 @@ NODES = {
           # ladder to #12 the Quaggoth Den or to the right where the guard tower #10 is." The rock landing outside the bars
           # (story.json interact.gate.balcony.landing) is floor once the gate stands open; stepping onto it asks which way.
           # `landing` = only floor while the gate is open; `nosplit` = one zone with two ways, never cut into strips.
-          dict(rect=[400,640,545,745], to=[10,12], label="The landing outside the gate: the rope bridge to the Guard Tower, or the cliff stairs down to the Quaggoth Den",
-               landing=True, nosplit=True, routes={"10": "Across the rope bridge to the Guard Tower", "12": "Down the cliff stairs to the Quaggoth Den"})],
+          # Sam, 2026-11-10: "Going through the door should just pan to the next submap plate not ask you where you are
+          # going." The landing was ONE zone with two ways, so stepping onto it asked "Where does the party head?" — the
+          # only exit in the outpost that asked. The painting outside the gate (img/pen-outside.jpg) shows both ways, so
+          # each is its own exit now and walking decides: out along the rope bridge is the Guard Tower, the head of the
+          # stone stairs at the landing's south edge is the Quaggoth Den. The landing itself is just floor again.
+          # Both stay `landing` (floor only while the gate stands open) and each takes its walk from story.json `cross`.
+          dict(rect=[20,365,150,525], to=[10], label="The rope bridge: across the chasm to the Guard Tower", landing=True),
+          dict(rect=[368,712,446,746], to=[12], label="The cliff stairs: down to the Quaggoth Den", landing=True)],
    npcs=[dict(id="ront",x=1700,y=760,face=2,talk=True,talkLine="Ront grunts and jerks his chin at you. He has a plan, and it involves drow throats.",barks=["Ront mutters something about orc blood and drow throats."]),
          dict(id="eldeth",x=1300,y=1000,face=6,talk=True,talkLine="Eldeth Feldrun catches your eye. She wants a word."),
          dict(id="derendil",x=2050,y=900,face=2,talk=True,talkLine="Derendil draws himself up. A prince of Nelrindenvane requires a word with you.",barks=["Derendil reminds everyone, again, that he is a prince of Nelrindenvane."]),

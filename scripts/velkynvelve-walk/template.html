@@ -446,7 +446,14 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
    can select/equip/remove items"): the hero in the middle, the dashboard's slots around them with its own icons.
    Emberforged puts them in two columns beside the figure (cloak/torso/main hand/ring left, head/neck/legs/off hand/ring
    right) on the painted stage; the hero and the backpack split the width about evenly. */
-.inv{--ef-stage-h:clamp(360px,calc(100vh - 430px),670px)}   /* the stage's height budget: viewport minus the walk's bars, the head, the level panel */
+.inv{--ef-stage-h:clamp(360px,calc(100vh - 300px),900px)}
+/* MAXIMIZED (Sam, 2026-11-10: "just maximize the window so that the buttons and the table and end the game options are
+   not there"). The inventory is the whole screen while it is open: over the top bar and the action bar here, and the
+   page around the map hides its own header for as long (the map tells it: postMessage aop:bag). Fixed, not absolute,
+   so the stage's overflow does not clip it; z 24 keeps the check card (25), the item card (26) and a dragged item
+   (60) above it. */
+.inv{position:fixed;inset:0;top:0;left:0;transform:none;width:100%;height:100%;max-height:none;border-radius:0;z-index:24}
+body.bagOpen .toast,body.bagOpen .dialog{z-index:30}   /* the stage's height budget: viewport minus the walk's bars, the head, the level panel */
 .invBody{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px;align-items:start}
 @media (max-width:980px){.invBody{grid-template-columns:1fr}}
 .invDollWrap{display:grid;grid-template-rows:auto auto auto;gap:10px;min-width:0}
@@ -1019,7 +1026,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
         </div>
       </div>
       <div class="invHand" id="invHand" hidden></div>
-      <div class="invFoot">Click a slot to see what fits it · click an item for its card · drag gear on or off the body · I opens and closes · Esc closes</div>
+      <div class="invFoot">Click a slot to see what fits it · rest on or click an item for its card · drag gear on or off the body · I opens and closes · Esc closes</div>
     </div>
     <div class="dm" id="dm" hidden>
       <div class="dmHead"><b>DM tools</b><button class="tbtn" id="dmClose" aria-label="Close DM tools">✕</button></div>
@@ -3128,7 +3135,11 @@ async function travel(to, z, fromWorld, cut, solo){
     stopActivity(a); a.kbd = false; a.onArrive = null; a.waitUntil = now + i * 300;
     if (drop){ a.path = [{x: zc.x + (i - 1.5) * 40, y: zc.y}]; a.onArrive = () => { a.fall = now; }; }
     else if (climb){ a.waitUntil = now + i * 650; a.path = [{x: climb.foot[0], y: climb.foot[1]}]; a.onArrive = () => { a.climbing = {t0: now, dir: climb.dir, from: {x: a.x, y: a.y}, to: {x: climb.ladder[0], y: climb.ladder[1]}, out: true}; a.face = faceOf(0, -1); bank("movement/jump_land", .25); }; }
-    else { const j = route.findIndex(p => p.jump); a.path = (j >= 0 && outsidePen(a) ? route.slice(j + 1) : route).map(p => ({...p})); }
+    else { const j = route.findIndex(p => p.jump); let r = j >= 0 && outsidePen(a) ? route.slice(j + 1) : route;
+      // already out on the balcony (the bridge or the stairhead are exits of their own now): pick the walk up at the
+      // point nearest them and go on from there, never back toward the gate first
+      if (cr && j >= 0 && outsidePen(a) && r.length > 1){ let b = 0, bd = Infinity; r.forEach((p, i) => { const d = Math.hypot(p.x - a.x, p.y - a.y); if (d < bd){ bd = d; b = i; } }); r = r.slice(Math.min(b + 1, r.length - 1)); }
+      a.path = r.map(p => ({...p})); }
   });
   const dir = drop ? {x: 0, y: 1} : Math.abs(exitDir.x) >= Math.abs(exitDir.y) ? {x: Math.sign(exitDir.x) || 1, y: 0} : {x: 0, y: Math.sign(exitDir.y) || 1};
   // a plain door fades as the leader steps into it (one waypoint, the few steps on, still ahead); a traced crossing
@@ -3223,16 +3234,17 @@ function renderSplitStrip(){
   if (dm && dmPin != null){ const f = document.createElement("button"); f.type = "button"; f.className = "go"; f.textContent = "Follow the party"; f.onclick = () => dmViewPlate(null); el.appendChild(f); }
 }
 setInterval(() => { try { renderSplitStrip(); } catch (e) {} }, 1000);
-// Who goes through an exit (SPLIT PARTY): the whole party on this plate, or just the hero you move (and the prisoners
-// following them). No card when the hero is alone here, or when this screen cannot move the leader.
+// Who goes through an exit (SPLIT PARTY). No card (Sam, 2026-11-10: "Going through the door should just pan to the next
+// submap plate not ask you where you are going"; and "Yes" to letting Follow answer it). It used to ask "Who goes? Whole
+// party / Just <hero> / Stay" at every exit whenever another hero stood on the plate. Now the Follow command the bar
+// already has decides it: with Follow ON the party walks through together; with Follow OFF ("Wait here") only the hero
+// you are moving goes and the others stay where they stand. A hero another player drives is never taken along — their
+// player walks them (Sam, 2026-10-30: "They don't have to be together") — so with one of those on the plate the leader
+// goes alone, with the prisoners who follow them. Staying is not stepping into the doorway.
 function whoGoes(z, to){
   const others = party.filter(p => p !== leader && !p.ko && !p.down);
   if (!others.length || !canControl(leader)){ travel(to, z); return; }
-  const nm = SHORT[leader.id] || fname(leader);
-  showDialog({title: `Toward ${plateLabel(to)}`, body: `Who goes? ${others.map(o => SHORT[o.id] || fname(o)).join(", ")} ${others.length > 1 ? "are" : "is"} here too.`, buttons: [
-    {label: "Whole party", primary: true, fn: () => travel(to, z)},
-    {label: `Just ${nm}`, fn: () => travel(to, z, false, null, true)},
-    {label: "Stay"}]});
+  if (!followOn || others.some(owRemote)) travel(to, z, false, null, true); else travel(to, z);
 }
 function chooseDestination(z){
   if (z.to.length === 1){ whoGoes(z, z.to[0]); return; }
@@ -16018,13 +16030,34 @@ function bagHero(){
   return inv.who && party.includes(inv.who) ? inv.who : leader;
 }
 const bagOpen = () => !$("inv").hidden;
+const BAG_HOVER_MS = 1000;   // how long the mouse rests on a backpack row before its card opens by itself
+let bagHoverT = 0;
 function toggleBag(on, who){
   if (on === undefined) on = !bagOpen();
   if (on){ inv.who = who || null; inv.slot = null; if (APP && !gearLoaded && seatsSeen.length){ gearLoaded = true; loadGear(); }
     const h = bagHero(); if (APP && h && !GEAR[h.id]) loadGear(h.id); renderBag(); }
+  const was = bagOpen();
   $("inv").hidden = !on; $("bagBtn").setAttribute("aria-expanded", String(on));
+  document.body.classList.toggle("bagOpen", !!on);
+  try { if (window.parent !== window) window.parent.postMessage({type: "aop:bag", open: !!on}, location.origin); } catch (e) {}
   if (!on && typeof closeLevelUp === "function") closeLevelUp();   // the ceremony never outlives the inventory
+  // came here from the Parley's Inventory button: closing the bag goes straight back to the conversation
+  if (!on && was && BAG_VISIT && BAG_VISIT.back){ const back = BAG_VISIT.back; BAG_VISIT.back = null; saveWalk(); try { window.top.location.href = back; } catch (e) { location.href = back; } }
 }
+// THE ONE INVENTORY (Sam, 2026-11-10: "lets make the pixel inventory system the main system of inventory UI even for
+// the parley UI"). The Parley's Inventory button comes to the map as /velkynvelve?bag=1&as=<hero>&return=<the Parley>:
+// the bag opens at once on that hero, full screen, and closing it returns to the Parley. One inventory, one set of
+// rules, and no second copy of the map running inside the conversation.
+var BAG_VISIT = (() => { try { const q = new URLSearchParams((window.top !== window ? window.top : window).location.search);
+    if (q.get("bag") !== "1") return {on: false, back: null, as: ""};
+    const ret = q.get("return") || ""; return {on: true, as: String(q.get("as") || "").toLowerCase(), back: /^\/(?!\/)/.test(ret) ? ret : null};
+  } catch (e) { return {on: false, back: null, as: ""}; } })();
+function openBagVisit(){
+  if (!BAG_VISIT.on || BAG_VISIT.done) return; BAG_VISIT.done = true;
+  const who = party.find(p => String(PLAYS_AS[p.id] || "").toLowerCase() === BAG_VISIT.as || String((SHEETS[p.id] || {}).name || "").toLowerCase() === BAG_VISIT.as) || null;
+  toggleBag(true, who);
+}
+if (BAG_VISIT.on){ document.body.classList.add("bagOpen"); setTimeout(openBagVisit, APP ? 1800 : 300); }
 // what this hero may do with the bag right now: anything out of a fight, only on their own turn in one
 function bagCan(a){ return canControl(a) && (!inFightNow() || (a === activeActor() && !combatBusy && !a.down)); }
 function renderBag(){
@@ -16078,8 +16111,9 @@ function renderBag(){
   { const n = g.carried.length;
     $("invPackHead").innerHTML = `Backpack<small>${inv.slot ? `fits the ${esc(slotLabel(inv.slot).toLowerCase())} first · ` : ""}${n} item${n === 1 ? "" : "s"}</small>`; }
   const list = $("invList"); list.innerHTML = "";
-  const detail = $("invDetail"); detail.hidden = false;
-  detail.innerHTML = `<div class="efBig empty"></div><div><div class="efHint">${g.carried.length ? "Click an item for its card: what it is, where it goes, what it does — and the buttons to wear or put it away." : ""}</div></div>`;
+  // the card's panel holds a card or is not there: no instruction text, no empty frame (Sam, 2026-11-10: "We don't
+  // need this button instruction"). Resting on a row or clicking it fills it — see openCard below.
+  const detail = $("invDetail"); detail.hidden = true; detail.innerHTML = ""; clearTimeout(bagHoverT);
   if (!g.carried.length){ list.innerHTML = `<p class="invEmpty">${APP ? "Nothing carried yet." : "Nothing carried. In the preview, put something on the floor from DM tools → Items and pick it up."}</p>`; return; }
   if (inv.item && !g.carried.some(it => sameBagItem(it, inv.item))) inv.item = null;   // the card's item left the pack (used, dropped)
   const order = {weapon: 0, heal: 1, drink: 2, throw: 3, food: 4, dm: 5, none: 6};
@@ -16100,16 +16134,32 @@ function renderBag(){
       : u.kind === "throw" ? `${FLASK_OF(it).blurb} · thrown up to 20 ft` : u.kind === "dm" ? `use it through the DM: ${u.why}` : (it.desc || "");
     // the row keeps the short line (what it is, or where it is worn); the long description lives on the item's card
     row.innerHTML = `<span class="invPic${worn.length ? " worn" : ""}"${RARITY_RANK[rar] > 0 ? ` style="border-color:${RARITY_COL[rar]}"` : ""}>${pic ? `<img src="${esc(pic)}" alt="" loading="lazy">` : "◆"}</span>`
-      + `<span class="invTxt"><button class="efPick" aria-pressed="${picked ? "true" : "false"}" title="${picked ? "Close the card" : "Open the card"}"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}${rarTag}</b></button><small>${esc(what)}${armorOf(it) ? `${what ? " · " : ""}${armorNote(a, it, true)}` : ""}${[weaponNote(SHEETS[a.id], it, true), attuneNote(it, true)].filter(Boolean).map(x => ` · ${x}`).join("")}</small></span><span class="invBtns"></span>`;
+      + `<span class="invTxt"><button class="efPick" aria-pressed="${picked ? "true" : "false"}"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}${rarTag}</b></button><small>${esc(what)}${armorOf(it) ? `${what ? " · " : ""}${armorNote(a, it, true)}` : ""}${[weaponNote(SHEETS[a.id], it, true), attuneNote(it, true)].filter(Boolean).map(x => ` · ${x}`).join("")}</small></span><span class="invBtns"></span>`;
     // the name is the real button (keyboard reaches it); a click anywhere else on the row does the same for the mouse
-    const pick = () => { inv.item = picked ? null : {name: it.name, item_key: it.item_key || null}; renderBag(); };
-    row.querySelector(".efPick").onclick = e => { e.stopPropagation(); pick(); };
-    row.addEventListener("click", e => { if (dragJustEnded || (e.target.closest && e.target.closest("button"))) return; pick(); });
+    // THE CARD OPENS ITSELF (Sam, 2026-11-10: "When we hover for a few seconds or click on the item this should happen
+    // automatically and execute cleanly"). A click opens it at once; the mouse resting on a row for BAG_HOVER_MS opens
+    // it too. Opening only ever opens — a click on the open row leaves it open, so a hover followed by a click never
+    // shuts the card the hover just opened. Only the card and the row highlight change: the list is NOT rebuilt, so
+    // nothing moves under the pointer and a button being pressed is never swapped out mid-click.
+    const openCard = () => {
+      if (!row.isConnected || (inv.item && sameBagItem(it, inv.item) && !detail.hidden)) return;
+      inv.item = {name: it.name, item_key: it.item_key || null};
+      for (const r of list.children){ const on = r === row; r.classList.toggle("sel", on); const p = r.querySelector(".efPick"); if (p) p.setAttribute("aria-pressed", String(on)); }
+      renderItemCard(a, g, it, u, worn, pic, what, fight, mine);
+      row.scrollIntoView({block: "nearest"});   // the card takes room under the list; keep this row in sight
+    };
+    row.querySelector(".efPick").onclick = e => { e.stopPropagation(); clearTimeout(bagHoverT); openCard(); };
+    row.addEventListener("click", e => { if (dragJustEnded || (e.target.closest && e.target.closest("button"))) return; clearTimeout(bagHoverT); openCard(); });
+    // a real mouse only (a finger has no hover), and never while a button is held (that is a drag, not a look)
+    row.addEventListener("pointerenter", e => { if (e.pointerType !== "mouse") return; clearTimeout(bagHoverT);
+      bagHoverT = setTimeout(() => { if (bagOpen() && !document.querySelector(".invGhost")) openCard(); }, BAG_HOVER_MS); });
+    row.addEventListener("pointerleave", () => clearTimeout(bagHoverT));
+    row.addEventListener("pointerdown", () => clearTimeout(bagHoverT));
     if (picked) renderItemCard(a, g, it, u, worn, pic, what, fight, mine);
     const img = row.querySelector("img"); if (img && it.icon && it.pixel) img.onerror = () => { img.onerror = null; img.src = ITEM_PX + it.pixel; };
-    // No hover card on the backpack rows (Sam, 2026-10-28: "The item zoom on hover is not necessary because we already
-    // have an explanatory box"). The detail panel explains the item; its Examine button opens the card on purpose, for
-    // the lore checks and Study that only the card has.
+    // No floating zoom card on the backpack rows (Sam, 2026-10-28: "The item zoom on hover is not necessary because we
+    // already have an explanatory box"). Hover fills that explanatory box instead (openCard above); its Examine button
+    // opens the full card on purpose, for the lore checks and Study that only the card has.
     const btns = row.querySelector(".invBtns");
     { const ic = row.querySelector(".invPic"); if (ic) dragSource(ic, pic || "", (x, y) => { const to = slotUnder(x, y); if (!to) return;
         if (fitsSlot(it, to) && !worn.includes(to)) equipTo(a, it, to); else toast(`${it.name} does not go in the ${slotLabel(to).toLowerCase()}.`); }); }
