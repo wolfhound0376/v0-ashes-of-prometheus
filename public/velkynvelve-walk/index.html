@@ -4932,7 +4932,7 @@ function icardRender(){
       const cls = n => n > 0 ? "up" : n < 0 ? "dn" : "eq";
       h += `<div class="ic-sec ic-cmp"><div class="ic-lbl">${esc(fname(a).toUpperCase())} · VS ${esc(String(now0.name).toUpperCase())}</div>`
         + `<div class="ic-row"><span class="${cls(dd)}">${dd > 0 ? "▲" : dd < 0 ? "▼" : "="} ${icardFmt(dd)}</span><span>average damage a hit</span></div>`
-        + `<div class="ic-row"><span class="${cls(dh)}">${dh > 0 ? "▲" : dh < 0 ? "▼" : "="} ${icardFmt(dh)}</span><span>to hit${trainedWith(sh, it) ? "" : " · not trained"}</span></div>`
+        + `<div class="ic-row"><span class="${cls(dh)}">${dh > 0 ? "▲" : dh < 0 ? "▼" : "="} ${icardFmt(dh)}</span><span>to hit${trainedWith(sh, it) ? "" : " · not proficient"}</span></div>`
         + `<div class="ic-note">${weaponNote(sh, it)}</div></div>`;
     }
   }
@@ -17935,8 +17935,12 @@ const UNTRAINED_PRICE = "you can still use it, but your +2 proficiency bonus is 
 const ATTUNE_PRICE = "until you attune to it (a short rest with it in hand; 3 attuned items at most) it works only as an ordinary item, with none of its magic";
 function weaponNote(sheet, it, short){
   if (!sheet || !isWeapon(it)) return ""; const b = baseWeapon(it) || "this weapon";
-  return trainedWith(sheet, it) ? `<b style="color:#7fdc8a">trained with ${esc(b)}</b>${short ? "" : ": +2 proficiency to hit"}`
-    : `<b style="color:#ff8a7a">not trained with ${esc(b)}</b>${short ? ": no +2 to hit" : `: ${UNTRAINED_PRICE}`}`;
+  // ONE WORD (Sam, 2026-11-10: "you don't need to say trained with hand crossbow, etc. A simple word like Proficient /
+  // Not Proficient / Expertise"). The 5e and Baldur's Gate 3 word. A row says only the word; the card adds what it costs.
+  // Weapons and armour have no Expertise in 5e or BG3 (it doubles the bonus on a SKILL or tool), so it is never shown here.
+  void b;
+  return trainedWith(sheet, it) ? `<b style="color:#7fdc8a">Proficient</b>${short ? "" : ": +2 to hit"}`
+    : `<b style="color:#ff8a7a">Not proficient</b>${short ? "" : `: ${UNTRAINED_PRICE}`}`;
 }
 function attuneNote(it, short){
   const cat = catalogItem(it.name) || it; if (cat.attunement !== true) return "";
@@ -18043,7 +18047,7 @@ function armorNote(a, it, short){
   const then = wearing ? now : acOf(a.id, ar);
   const ok = armorTrained(S.cls, ar);
   return `${esc(armorFormula(ar))} · ${wearing ? `your AC is <b>${now.ac}</b>` : `your AC would be <b>${then.ac}</b>${then.ac !== now.ac ? ` (now ${now.ac})` : ""}`}`
-    + ` · ${ok ? `<b style="color:#7fdc8a">trained in ${ARMOR_KIND[ar.cat]}</b>` : `<b style="color:#ff8a7a">not trained in ${ARMOR_KIND[ar.cat]}</b>${short ? "" : `: ${ARMOR_PRICE}`}`}`
+    + ` · ${ok ? `<b style="color:#7fdc8a">Proficient</b>` : `<b style="color:#ff8a7a">Not proficient</b>${short ? "" : `: ${ARMOR_PRICE}`}`}`
     + (ar.stealth ? ` · disadvantage on Stealth` : "");
 }
 // GIVE IT TO SOMEONE (Sam, 2026-11-10: "I should be able to look at my inventory items and have the option to transfer
@@ -18411,7 +18415,7 @@ function equipTo(a, it, sl){
   if (sl === "main_hand") g.main = it.name; if (sl === "off_hand") g.off = it.name;
   if (HAND(sl)) refreshAttacks(a.id);
   refreshAc(a.id);
-  { const ar = armorOf(it), S = SHEETS[a.id]; if (ar && S && !armorTrained(S.cls, ar)) toast(`${fname(a)} is not trained in ${ARMOR_KIND[ar.cat]}: ${ARMOR_PRICE}.`); }
+  { const ar = armorOf(it), S = SHEETS[a.id]; if (ar && S && !armorTrained(S.cls, ar)) toast(`${fname(a)} is not proficient with ${ARMOR_KIND[ar.cat]}: ${ARMOR_PRICE}.`); }
   if (HAND(sl) && isTooth(it)) toothDrawn(a);
   popText(a, HAND(sl) ? `${it.name} in hand` : it.name, "#e8d9a8", .8);
   log(`${fname(a)} ${was && was.name !== it.name ? `takes off the ${esc(was.name)} and ` : ""}${HAND(sl) ? "readies" : "puts on"} the <b>${esc(it.name)}</b>${HAND(sl) ? "" : ` (${slotLabel(sl).toLowerCase()})`}${paid}.`);
@@ -18970,8 +18974,8 @@ function renderBagChips(a, s){
   const mark = k => `<img class="mark" src="${HERO_ICON_BASE}${k}.png" alt="">`;
   const heart = mark("hp"), shield = mark("ac"), boot = mark("speed");
   if (GEAR[a.id] && SHEETS[a.id] === s) refreshAc(a.id);
-  el.innerHTML = chip("HP", hpMax ? `${hpNow}<small> / ${hpMax}</small>` : "—", heart) + chip("AC", s.ac != null ? `${s.ac}${(s.armorUntrained || []).length ? `<small style="color:#ff8a7a" title="armor you are not trained in"> !</small>` : ""}` : "—", shield) + chip("Speed", s.speed != null ? (encumbered(a) ? `${Math.max(5, s.speed - ENCUMBERED_SLOW_FT)}<small style="color:#ff8a7a" title="encumbered: the pack is over your carrying capacity"> −${ENCUMBERED_SLOW_FT}</small>` : s.speed) : "—", boot);
-  { const acEl = el.querySelector('[data-cat="ac"]'); if (acEl && s.acWhy) acEl.title = `Armor Class: ${s.acWhy}${(s.armorUntrained || []).length ? `. Not trained in ${s.armorUntrained.map(c => ARMOR_KIND[c]).join(" or ")}: ${ARMOR_PRICE}.` : ""}`; }
+  el.innerHTML = chip("HP", hpMax ? `${hpNow}<small> / ${hpMax}</small>` : "—", heart) + chip("AC", s.ac != null ? `${s.ac}${(s.armorUntrained || []).length ? `<small style="color:#ff8a7a" title="Not proficient with this armor"> !</small>` : ""}` : "—", shield) + chip("Speed", s.speed != null ? (encumbered(a) ? `${Math.max(5, s.speed - ENCUMBERED_SLOW_FT)}<small style="color:#ff8a7a" title="encumbered: the pack is over your carrying capacity"> −${ENCUMBERED_SLOW_FT}</small>` : s.speed) : "—", boot);
+  { const acEl = el.querySelector('[data-cat="ac"]'); if (acEl && s.acWhy) acEl.title = `Armor Class: ${s.acWhy}${(s.armorUntrained || []).length ? `. Not proficient with ${s.armorUntrained.map(c => ARMOR_KIND[c]).join(" or ")}: ${ARMOR_PRICE}.` : ""}`; }
 }
 // THE LEVEL PANEL: level badge, the XP bar toward the next level, and the Level Up button as a state. The sheet's xp /
 // xp_to_next are /api/walk-xp's (paid once per fight); readiness is the SRD table against the level the row holds.
