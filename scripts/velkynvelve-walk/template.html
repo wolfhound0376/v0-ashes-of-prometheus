@@ -3135,7 +3135,11 @@ async function travel(to, z, fromWorld, cut, solo){
     stopActivity(a); a.kbd = false; a.onArrive = null; a.waitUntil = now + i * 300;
     if (drop){ a.path = [{x: zc.x + (i - 1.5) * 40, y: zc.y}]; a.onArrive = () => { a.fall = now; }; }
     else if (climb){ a.waitUntil = now + i * 650; a.path = [{x: climb.foot[0], y: climb.foot[1]}]; a.onArrive = () => { a.climbing = {t0: now, dir: climb.dir, from: {x: a.x, y: a.y}, to: {x: climb.ladder[0], y: climb.ladder[1]}, out: true}; a.face = faceOf(0, -1); bank("movement/jump_land", .25); }; }
-    else { const j = route.findIndex(p => p.jump); a.path = (j >= 0 && outsidePen(a) ? route.slice(j + 1) : route).map(p => ({...p})); }
+    else { const j = route.findIndex(p => p.jump); let r = j >= 0 && outsidePen(a) ? route.slice(j + 1) : route;
+      // already out on the balcony (the bridge or the stairhead are exits of their own now): pick the walk up at the
+      // point nearest them and go on from there, never back toward the gate first
+      if (cr && j >= 0 && outsidePen(a) && r.length > 1){ let b = 0, bd = Infinity; r.forEach((p, i) => { const d = Math.hypot(p.x - a.x, p.y - a.y); if (d < bd){ bd = d; b = i; } }); r = r.slice(Math.min(b + 1, r.length - 1)); }
+      a.path = r.map(p => ({...p})); }
   });
   const dir = drop ? {x: 0, y: 1} : Math.abs(exitDir.x) >= Math.abs(exitDir.y) ? {x: Math.sign(exitDir.x) || 1, y: 0} : {x: 0, y: Math.sign(exitDir.y) || 1};
   // a plain door fades as the leader steps into it (one waypoint, the few steps on, still ahead); a traced crossing
@@ -3230,16 +3234,17 @@ function renderSplitStrip(){
   if (dm && dmPin != null){ const f = document.createElement("button"); f.type = "button"; f.className = "go"; f.textContent = "Follow the party"; f.onclick = () => dmViewPlate(null); el.appendChild(f); }
 }
 setInterval(() => { try { renderSplitStrip(); } catch (e) {} }, 1000);
-// Who goes through an exit (SPLIT PARTY): the whole party on this plate, or just the hero you move (and the prisoners
-// following them). No card when the hero is alone here, or when this screen cannot move the leader.
+// Who goes through an exit (SPLIT PARTY). No card (Sam, 2026-11-10: "Going through the door should just pan to the next
+// submap plate not ask you where you are going"; and "Yes" to letting Follow answer it). It used to ask "Who goes? Whole
+// party / Just <hero> / Stay" at every exit whenever another hero stood on the plate. Now the Follow command the bar
+// already has decides it: with Follow ON the party walks through together; with Follow OFF ("Wait here") only the hero
+// you are moving goes and the others stay where they stand. A hero another player drives is never taken along — their
+// player walks them (Sam, 2026-10-30: "They don't have to be together") — so with one of those on the plate the leader
+// goes alone, with the prisoners who follow them. Staying is not stepping into the doorway.
 function whoGoes(z, to){
   const others = party.filter(p => p !== leader && !p.ko && !p.down);
   if (!others.length || !canControl(leader)){ travel(to, z); return; }
-  const nm = SHORT[leader.id] || fname(leader);
-  showDialog({title: `Toward ${plateLabel(to)}`, body: `Who goes? ${others.map(o => SHORT[o.id] || fname(o)).join(", ")} ${others.length > 1 ? "are" : "is"} here too.`, buttons: [
-    {label: "Whole party", primary: true, fn: () => travel(to, z)},
-    {label: `Just ${nm}`, fn: () => travel(to, z, false, null, true)},
-    {label: "Stay"}]});
+  if (!followOn || others.some(owRemote)) travel(to, z, false, null, true); else travel(to, z);
 }
 function chooseDestination(z){
   if (z.to.length === 1){ whoGoes(z, z.to[0]); return; }
