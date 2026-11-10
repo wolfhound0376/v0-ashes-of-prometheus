@@ -134,6 +134,13 @@ header .tools input[type=range]{accent-color:#f2c55c}
 .bubble.foe::after{border-top-color:#fff1ec}
 .bubble.foe b{color:#b3200f}
 .bubble.said{max-width:280px}
+/* an ASK (Sam, 2026-11-10): still only a bubble, with the two answers on it. The plate ignores the pointer; these do not. */
+.bubble.ask{max-width:290px;pointer-events:auto;z-index:6}
+.bubble.ask .askrow{display:flex;gap:8px;justify-content:center;margin-top:8px}
+.bubble.ask button{font:inherit;font-size:.82rem;font-weight:700;padding:3px 12px 4px;border-radius:999px;border:2px solid #14110f;background:#f3e3b0;color:#14110f;cursor:pointer;box-shadow:2px 2px 0 rgba(0,0,0,.4)}
+.bubble.ask button:hover{background:#ffd76a}
+.bubble.ask button.no{background:#fffdf6}
+.bubble.ask button.no:hover{background:#e9e4d8}
 @keyframes pop{from{opacity:0;scale:.85}to{opacity:1;scale:1}}
 .tip{position:absolute;transform:translate(14px,14px);background:var(--panel);border:1px solid var(--rule);border-radius:4px;padding:4px 8px;font-size:var(--s-1);white-space:nowrap;color:var(--ink)}
 .tip.locked{border-color:var(--blood)}
@@ -1860,16 +1867,18 @@ function findPath(from, to){
 // Trim a path to what `budget` pixels of movement buys. The hidden passage is all or nothing: it costs passFt, and a
 // walker who cannot afford it stops on the near side rather than vanishing behind the pillar half way.
 function cutPath(a, path, budget){
-  const px = ftPx(a); let left = budget, prev = a, used = 0; const pts = [];
+  const px = ruleFt(a); let left = budget, prev = a, used = 0; const pts = [];
+  // a leg on the painted floor is longer in feet than the same pixels in the pen: price it by the foot where it lies
+  const where = (p, q) => { const d = Math.hypot(q.x - p.x, q.y - p.y); return d < .01 ? 1 : feetSeg(p, q, a.big) * px / d; };
   const done = reached => ({pts, usedFt: Math.round(used / px / 5) * 5, reached});
   for (let i = 0; i < path.length; i++){
     const q = path[i];
     if (q.out){
-      const nx = path[i + 1], cost = Math.hypot(q.x - prev.x, q.y - prev.y) + (nx && nx.jump ? (nx.passFt || 0) * px : 0);
+      const nx = path[i + 1], cost = Math.hypot(q.x - prev.x, q.y - prev.y) * where(prev, q) + (nx && nx.jump ? (nx.passFt || 0) * px : 0);
       if (cost > left) return done(false);
       pts.push(q); if (nx){ pts.push(nx); prev = nx; i++; } left -= cost; used += cost; continue;
     }
-    const d = stepCost(a, prev, q);   // difficult terrain (the web net) counts double
+    const d = stepCost(a, prev, q) * where(prev, q);   // difficult terrain (the web net) counts double
     if (d > left){ const k = left / d; pts.push({x: prev.x + (q.x - prev.x) * k, y: prev.y + (q.y - prev.y) * k}); used += left; return done(false); }
     pts.push(q); left -= d; used += d; prev = q;
   }
@@ -1896,7 +1905,7 @@ function goOpenGate(f){
   };
   if (Math.hypot(L.x - f.x, L.y - f.y) <= 12){ unlock(); return; }
   const path = gridPath(f, L); if (!path.length){ log(`${fname(f)} cannot get to the gate and holds.`); setTimeout(() => passTurn(f), 600); return; }
-  const c = cutPath(f, path, (f.c.move || 0) * ftPx(f));
+  const c = cutPath(f, path, (f.c.move || 0) * ruleFt(f));
   f.c.move = Math.max(0, (f.c.move || 0) - c.usedFt);
   log(`${fname(f)} makes for the pen gate${c.reached ? "" : " and does not reach it this turn"}.`);
   f.path = c.pts; f.onArrive = () => { f.onArrive = null; setAnim(f, "idle"); if (c.reached) unlock(); else setTimeout(() => passTurn(f), 400); };
@@ -1907,7 +1916,7 @@ function goOpenGate(f){
 function approachViaGate(att, tgt, ft, then){
   const B = balcony(), reach = reachPx(att, tgt, ft);
   const entry = outsidePen(tgt) ? {x: B.landing[0], y: B.landing[1]} : {x: B.threshold[0], y: B.threshold[1]};
-  const dd = Math.hypot(tgt.x - entry.x, tgt.y - entry.y), k = Math.max(0, dd - reach * .8) / (dd || 1);
+  const dd = pxBetween(entry, tgt, tgt), k = Math.max(0, dd - reach * .8) / (dd || 1);
   const goal = nearestWalkable(entry.x + (tgt.x - entry.x) * k, entry.y + (tgt.y - entry.y) * k);
   const hero = party.includes(att);
   const stop = why => {
@@ -1916,7 +1925,7 @@ function approachViaGate(att, tgt, ft, then){
     else { log(`${fname(att)} ${why}`); setTimeout(() => passTurn(att), 400); }
   };
   const full = findPath(att, goal); if (!full.length){ stop("has no way through the gate."); return; }
-  const c = cutPath(att, full, Math.max(0, (att.c.move || 0) * ftPx(att)));
+  const c = cutPath(att, full, Math.max(0, (att.c.move || 0) * ruleFt(att)));
   if (!c.pts.length){ stop(hero ? `Not enough movement to go round through the gate (${B.passFt} ft for the way behind the pillar).` : "cannot make it through the gate this turn."); return; }
   att.c.move = Math.max(0, (att.c.move || 0) - c.usedFt);
   att.path = c.pts; att.onArrive = () => {
@@ -2078,6 +2087,7 @@ function draw(){
   if (OV.cfg){ ovSeam(); ovDoor(); }
   drawDoor(); drawProps(); drawDecor(); drawLift(); drawPropHighlight(); drawLootHighlight(); drawFloorItems(); drawSneakCones(); drawLaborCones();
   // exits: soft glows so players can see the ways out
+  exitSigns.length = 0;
   if (mode === "explore" || mode === "dialog"){
     const pulse = .5 + .5 * Math.sin(now / 520);
     for (const z of node.zones){
@@ -2099,7 +2109,12 @@ function draw(){
       if (OV.on && !ovDomain(cx, cy)) continue;   // the close-up shows only the balcony's ways out
       const col = locked ? "208,69,58" : "240,190,90";   // every way out glows gold (Sam, 2026-10-27: the green "looks weird"); a locked gate stays red
       const rad = Math.max(40, Math.min(110, Math.min(x1 - x0, y1 - y0) * .8)) * (OV.on ? 1.6 : 1);
+      const near = leader ? Math.hypot(leader.x - cx, leader.y - cy) : 1e9, wc = {x: cx, y: cy};
       if (OV.on){ const q = ovMap(cx, cy); cx = q.x; cy = q.y; }
+      // THE SIGNPOST (Sam, 2026-11-10: "build the signposts"): where this way out leads, shown as the hero comes near
+      // it or the pointer rests on it. Drawn last (drawExitSigns), over the figures and the dark.
+      if (mode === "explore" && (z.to || []).length){ const R1 = 480 * node.scale, R0 = 340 * node.scale, a = hoverZone === z ? 1 : Math.max(0, Math.min(1, (R1 - near) / (R1 - R0)));
+        if (a > 0) exitSigns.push({x: cx, y: cy - rad * .55, a, locked, text: z.to.map(nameOf).join(" / "), arrow: exitArrow(z, wc)}); }
       const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
       g.addColorStop(0, `rgba(${col},${.30 + .25 * pulse})`); g.addColorStop(1, `rgba(${col},0)`);
       ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(cx, cy, rad, rad * .55, 0, 0, Math.PI * 2); ctx.fill();
@@ -2267,7 +2282,41 @@ function draw(){
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
   drawTolls();
   ovWrapGroup(drops, drawDrops); drawDeathBits(false); drawCombatFx(); drawMageHand(); drawCrimPuffs(); drawShots(); drawCritBadges(); drawToothGlow();
+  drawExitSigns();
   ctx.globalAlpha = 1;
+}
+// ---------- EXIT SIGNPOSTS (Sam, 2026-11-10; lane 2 of claude/FF_Node_Movement_2026-10-30.md: "Exits drawn as glowing
+// thresholds or arrows, labelled") ----------
+// Every way out already glows gold. What it did not say, until the pointer rested on it, was where it goes. Now a small
+// plate rises over the glow as the hero walks up to it: an arrow for the way (a ladder says up or down; a traced
+// crossing points along its walk; anything else points to the edge of the painting it sits on) and the name of the
+// place beyond. It fades in over the last stretch, so a room with four exits does not wear four labels at once. A
+// locked way says so, in the red its glow already wears. Explore only: nothing is drawn in a fight or over a card.
+// The names are the plates' own (spec.py). Sizes, distances and the look are Claude's. [CLAUDE]
+const exitSigns = [];
+function exitArrow(z, c){
+  if (z.climb) return z.climb.dir === "up" ? "\u25B2" : "\u25BC";
+  let d = null;
+  if (z.cross && z.cross.length){ const e = z.cross[z.cross.length - 1]; d = {x: e[0] - c.x, y: e[1] - c.y}; }
+  if (!d || (Math.abs(d.x) < 1 && Math.abs(d.y) < 1)) d = zoneSide(z);
+  return Math.abs(d.x) >= Math.abs(d.y) ? (d.x < 0 ? "\u25C0" : "\u25B6") : (d.y < 0 ? "\u25B2" : "\u25BC");
+}
+function drawExitSigns(){
+  if (!exitSigns.length) return;
+  const k = 1 / (base * view.z), bob = Math.sin(now / 620) * 2;
+  for (const g of exitSigns){
+    const gold = g.locked ? "232,96,84" : "240,190,90", label = (g.locked ? "Locked \u00B7 " : "") + g.text;
+    ctx.save(); ctx.translate(g.x, g.y); ctx.scale(k, k); ctx.globalAlpha = g.a;
+    ctx.font = '600 13px "IM Fell English SC","Iowan Old Style",Georgia,serif'; ctx.textBaseline = "middle";
+    const tw = ctx.measureText(label.toUpperCase()).width, w = tw + 44, h = 26, x0 = -w / 2, y0 = -h - 12 + bob, r = 7;
+    ctx.beginPath(); ctx.moveTo(x0 + r, y0); ctx.lineTo(x0 + w - r, y0); ctx.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r); ctx.lineTo(x0 + w, y0 + h - r); ctx.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
+    ctx.lineTo(8, y0 + h); ctx.lineTo(0, y0 + h + 7); ctx.lineTo(-8, y0 + h); ctx.lineTo(x0 + r, y0 + h); ctx.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r); ctx.lineTo(x0, y0 + r); ctx.quadraticCurveTo(x0, y0, x0 + r, y0); ctx.closePath();
+    ctx.fillStyle = "rgba(16,11,9,.88)"; ctx.shadowColor = `rgba(${gold},.55)`; ctx.shadowBlur = 12; ctx.fill(); ctx.shadowBlur = 0;
+    ctx.lineWidth = 1.5; ctx.strokeStyle = `rgba(${gold},.9)`; ctx.stroke();
+    ctx.fillStyle = `rgb(${gold})`; ctx.font = '11px sans-serif'; ctx.textAlign = "left"; ctx.fillText(g.arrow, x0 + 11, y0 + h / 2 + 1);
+    ctx.font = '600 13px "IM Fell English SC","Iowan Old Style",Georgia,serif'; ctx.fillStyle = "#f3e6c6"; ctx.fillText(label.toUpperCase(), x0 + 30, y0 + h / 2 + 1);
+    ctx.restore();
+  }
 }
 const tint = document.createElement("canvas");
 // ── THE LIGHT LAYER (from the Combat Effects Lab, 2026-10-29) ─────────────────────────────────────────────────────────
@@ -4094,6 +4143,7 @@ async function takeLoot(a, id, row){
   // Hand at the pen guard lifted nothing (Sam: "picked the key from the guard successfully but didn't acquire the key").
   // A rehearsal never writes the real heroes' inventories, the same rule as the shared world (owLoad).
   const cid = serverCid(a.id);
+  { await ensureCatalog(); const no = carryRefusal(a, (Number((catalogItem(row.name) || {}).weight) || 0) * (row.qty || 1), row.name); if (no){ toast(no, 4200); return false; } }   // carrying capacity; the server checks again
   if (APP && cid){
     try {
       const r = await fetch("/api/walk-loot", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "take", characterId: cid, container: id, slug: row.slug, rowId: row.rowId, passed: row.passed === true})});
@@ -4848,7 +4898,7 @@ function icardRender(){
   let h = `<div class="ic-band"><span class="${view.identified ? "ok" : "unid"}">${view.magic ? (view.identified ? "IDENTIFIED" : "UNIDENTIFIED") : "ITEM"}</span><span class="${fight ? "war" : "ok"}">${fight ? "IN COMBAT" : "OUT OF COMBAT"}</span></div>`;
   h += `<div class="ic-head"><div class="ic-pic">${pic ? `<img src="${esc(pic)}" alt="">` : ""}</div><div><div class="ic-name">${esc(it.name || t.name)}</div>`
     + `<div class="ic-sub">${esc(type)} · <b>${esc(rarName)}</b></div>${view.identified && it.attunement ? `<span class="ic-pill" title="${esc(ATTUNE_PRICE)}">REQUIRES ATTUNEMENT</span>` : ""}</div></div>`
-    + (view.identified && it.attunement ? `<div class="ic-sec"><div class="ic-note"><b style="color:#c9a6ff">Requires attunement:</b> ${esc(ATTUNE_PRICE)}.</div></div>` : "");
+    + (view.identified && it.attunement ? `<div class="ic-sec"><div class="ic-note">${ICARD.who && SHEETS[ICARD.who.id] ? `${esc(fname(ICARD.who))}: ${attuneNote(it, false, ICARD.who.id)}.` : `<b style="color:#c9a6ff">Requires attunement:</b> ${esc(ATTUNE_PRICE)}.`}</div></div>` : "");
   // the eye can see the blade: base damage and properties; the bonus only once someone knows it
   const chips = [];
   for (const w of (p.weapon_properties || [])){ const k = String(w).toLowerCase(); chips.push(`<span class="${k === "finesse" ? "c-fin" : k === "light" ? "c-lit" : k === "thrown" ? "c-thr" : ""}">${esc(k.replace(/^./, c => c.toUpperCase()))}${k === "thrown" && p.range ? " " + esc(p.range) : ""}</span>`); }
@@ -4919,6 +4969,11 @@ function icardRender(){
       if (src === "bag" && carried) btns.push(`<button type="button" class="study" data-act="study">${known.q === (a && a.id) ? "Studying at the next short rest" : "Study at the next short rest"}</button>`);
     }
   }
+  if (!fight && src === "bag" && carried && a && SHEETS[a.id] && view.identified && it.attunement === true){
+    const av = attuneOf(a.id), on = attunedTo(a.id, it), full = !on && av.q !== slug && attunePrune(a.id).length >= ATTUNE_MAX;
+    btns.push(on ? `<button type="button" data-act="attuneEnd">End attunement</button>`
+      : `<button type="button" class="study" data-act="attune"${full ? ` disabled title="${ATTUNE_MAX} items attuned already: end one first"` : ""}>${av.q === slug ? "Attuning at the next short rest" : full ? `${ATTUNE_MAX} attuned already` : "Attune at the next short rest"}</button>`);
+  }
   if (btns.length) h += `<div class="ic-btns">${btns.join("")}</div>`;
   if (view.magic && !view.identified && slug && src !== "bag" && !fight) h += `<div class="ic-foot">Carry it and study it through a short rest to learn what it is.</div>`;
   if (known.q && view.magic && !view.identified){ const q = party.find(x => x.id === known.q); if (q && src !== "bag") h += `<div class="ic-foot">${esc(fname(q))} will study it at the next short rest.</div>`; }
@@ -4955,7 +5010,10 @@ function icardAct(act, t, it){
     return;
   }
   if (act === "equip" && a){ equipItem(a, it.name); icardRender(); if (bagOpen()) renderBag(); return; }
+  if (act === "attune" && a && it.slug){ const why = attuneQueue(a, it); if (why) toast(why); icardRender(); if (bagOpen()) renderBag(); return; }
+  if (act === "attuneEnd" && a && it.slug){ attuneEnd(a, it); icardRender(); if (bagOpen()) renderBag(); return; }
   if (act === "study" && a && it.slug){
+    { const v = attuneOf(a.id); if (v.q) state[attuneKey(a.id)] = {on: v.on, q: null}; }   // one rest, one focus: studying drops a queued attunement
     // one item per hero per short rest (PHB): queuing this one takes the hero off any other
     for (const k of Object.keys(state)) if (k.startsWith("lore:") && state[k] && state[k].q === a.id && k !== icardLoreKey(it.slug)){ const o = {...state[k]}; delete o.q; state[k] = o; }
     const known = icardKnown(it.slug); icardSetKnown(it.slug, {...known, q: known.q === a.id ? undefined : a.id});
@@ -5135,7 +5193,7 @@ const CAUGHT_HOLD = 60000;   // ms the automatic guard reactions leave a caught 
 const caughtHeld = h => !!h && now < (h.caughtUntil || 0);
 function pickpocketMark(L){
   if (!L || !sneak || mode !== "explore" || !sneak.rolls.some(x => x.p === L)) return null;
-  const reach = PICKPOCKET_FT * ftPx(L);
+  const reach = PICKPOCKET_FT * ruleFt(L);
   let best = null, bd = Infinity;
   for (const n of npcs){
     if (n.down || n.body || n.offStage || !actors.includes(n) || (n.alpha ?? 1) < .5 || /^labor-/.test(n.id)) continue;
@@ -5528,7 +5586,7 @@ const MANACLE_NOTE = "manacled";
 function atPenGate(a){
   const z = doorGate(); if (!z || !a || (typeof onBalcony === "function" && onBalcony(a))) return false;
   const r = z.rect, cx = Math.max(r[0], Math.min(r[2], a.x)), cy = Math.max(r[1], Math.min(r[3], a.y));
-  return Math.hypot(a.x - cx, a.y - cy) <= 5 * ftPx(a) + 6;
+  return Math.hypot(a.x - cx, a.y - cy) <= 5 * ruleFt(a) + 6;
 }
 function gateOptions(a, add){
   if (!atPenGate(a)) return;
@@ -6217,7 +6275,7 @@ function driftAway(centre, caster, distance, last = null) {
 let poisonZones = [], dmPlace = null;
 // A creature's half-width in feet: 2.5 for Small and Medium, more for the big ones the map scales up.
 function bodyFtOf(t){ return 2.5 * Math.max(1, t.big || 1, (t.c && t.c.sheet && t.c.sheet.size === "large") ? 2 : 1); }
-function zoneFt(z, t){ return Math.hypot(t.x - z.x, t.y - z.y) / ftPx(t); }
+function zoneFt(z, t){ return Math.hypot(t.x - z.x, t.y - z.y) / ruleFt(t); }
 function fightersIn(){ return cbt ? cbt.order.filter(t => !t.down && actors.includes(t)) : []; }
 function refreshInside(z){ z.inside = new Set(fightersIn().filter(t => inCloud(zoneFt(z, t), z.rule, bodyFtOf(t)))); }
 function placePoisonCloud(caster, at, name, dc, slot, byDm){
@@ -6271,7 +6329,7 @@ function retchTurn(a){
   const z = poisonZones.find(q => inCloud(zoneFt(q, a), q.rule, bodyFtOf(a)));
   if (!z){ setTimeout(nextTurn, 900); return; }
   const d = Math.hypot(a.x - z.x, a.y - z.y) || 1, ux = (a.x - z.x) / d || 1, uy = (a.y - z.y) / d;
-  const need = (z.rule.radiusFt + bodyFtOf(a) + 2.5) * ftPx(a) - d, step = Math.max(0, Math.min(need, a.c.move * ftPx(a)));
+  const need = (z.rule.radiusFt + bodyFtOf(a) + 2.5) * ruleFt(a) - d, step = Math.max(0, Math.min(need, a.c.move * ruleFt(a)));
   a.path = findPath(a, nearestWalkable(a.x + ux * step, a.y + uy * step));
   if (!a.path.length){ setTimeout(nextTurn, 900); return; }
   a.onArrive = () => setTimeout(nextTurn, 400);
@@ -6927,6 +6985,9 @@ const ALLY_SHEETS = {
 // their `characters` ids, so the walk can read what they carry the way it reads a hero's (/api/equipment)
 const ALLY_ROW = {ront: "2f539d01-6259-4beb-a685-4bd009f03f0d", eldeth: "05b65375-f25e-4773-bf41-641be0f12b86",
                   derendil: "e0c652fe-2f68-40ff-823d-bb7ac34f529f", sarith: "cc309888-e98d-4cfe-8bf1-d75787b8ec8e"};
+// the other prisoners' `characters` rows: what they are handed when they ask for something lands there (NPC ASKS)
+const ASK_ROW = {buppido: "1c5161a5-b0be-4f39-bb6f-8b1b0486120e", jimjar: "ffcd12e5-ccdc-4126-954b-bfabb8d083de", shuushar: "0805aedd-c6e9-4647-b285-bea6e33861ed",
+                 topsy: "408c24ed-0e17-403c-be62-58cd6ebb31a6", turvy: "c472d5dc-3c61-4d4d-9d20-d2c53dbd0e36"};
 // SRD 5.2.1, as the party has them at level 1. `kind`: attack (spell attack roll), save, heal, buff.
 // a spell with a choice in it is offered as its choices (the sheet says "Chromatic Orb"; the menu offers each type)
 const SPELL_VARIANTS = {"Command": ["Command (grovel)"], "Blindness/Deafness": ["Blindness/Deafness (blind)", "Blindness/Deafness (deafen)"], "Chromatic Orb": ["Chromatic Orb (acid)", "Chromatic Orb (cold)", "Chromatic Orb (fire)", "Chromatic Orb (lightning)", "Chromatic Orb (poison)", "Chromatic Orb (thunder)"]};
@@ -7607,8 +7668,39 @@ function d20(adv, who, vs){
 function ftPx(a){ return 96 * BASE * paceAt(a) * (a.big || 1) / 5; }
 // how big a five-foot step is where `a` stands: the pen's depth rule, or out on the balcony the guards' own size
 function paceAt(a){ const B = balconyFloor() && outsidePen(a) ? balcony() : null; return B ? B.scale : node.scale * depthAt(a.y); }
-function feetBetween(a, b){ return Math.hypot(b.x - a.x, b.y - a.y) / ftPx(a); }
-function reachPx(att, tgt, ft){ const m = SPR[tgt.id].json; return ft * ftPx(att) + 22 * actorScale(tgt) * (m.cell[0] / 128); }
+// THE RULES' FOOT FOLLOWS THE PAINTING (Sam, 2026-11-10, after an opportunity attack and a shortsword hit from what
+// looked like 30 ft: "Lets make distance (2)"). On the pen's balcony and bridge the close-up places figures through a
+// mesh that spreads them about three times wider than the pen plate's own foot (ftPx) measures, so two figures the
+// rules held within 5 ft stood 15-25 ft apart on screen. Sam chose to make the rules agree with what is painted:
+// out there a foot is the PAINTING's foot (ovArtFt) carried back through the mesh's stretch into plate pixels.
+// ftPx stays what things are DRAWN at (the close-up scales drawings by the painting's foot itself); ruleFt is what
+// movement, reach and range are MEASURED in. Everywhere else the two are the same number. The rule does not change
+// with which view is showing: the balcony is the painting's size whether or not the camera has slid out to it.
+function onPaintedFloor(a){ return !!(a && a.x != null && OV.tris && OV.cfg && OV.cfg.ft && ovPenStyle() && balconyFloor() && outsidePen(a)); }
+function ruleFt(a){
+  const f = ftPx(a); if (!onPaintedFloor(a)) return f;
+  const q = ovMap(a.x, a.y), s = ovStretch(a.x, a.y) || 1;
+  return ovArtFt(q.y) * (a.big || 1) / s;
+}
+// Two points in feet. Both on the painted floor: the distance AS PAINTED (each point carried through the mesh, over the
+// painting's foot at that depth). The mesh stretches the balcony far more one way than the other, so nothing simpler
+// agrees with the picture. Anywhere else: plate pixels over the foot where the first one stands, as it always was.
+function feetSeg(p, q, big){
+  if (onPaintedFloor(p) && onPaintedFloor(q)){ const P = ovMap(p.x, p.y), Q = ovMap(q.x, q.y); return Math.hypot(Q.x - P.x, Q.y - P.y) / ((ovArtFt(P.y) + ovArtFt(Q.y)) / 2) / (big || 1); }
+  return Math.hypot(q.x - p.x, q.y - p.y) / ruleFt({x: p.x, y: p.y, big});
+}
+function feetBetween(a, b){ return feetSeg(a, b, a.big); }
+// The same distance as plate pixels in the foot where `at` stands, so it can be held against reachPx(…, at, …):
+// pxBetween(p, q, at) <= reachPx(att, at, ft) says exactly "within ft feet, as painted". Off the painted floor it is
+// the plain pixel distance it always was.
+function pxBetween(p, q, at){ return onPaintedFloor(p) && onPaintedFloor(q) ? feetSeg(p, q, 1) * ruleFt({x: at.x, y: at.y}) : Math.hypot(q.x - p.x, q.y - p.y); }
+// reach in plate pixels: the feet, plus the target's own body, both in the rules' foot where the attacker stands
+// (on the painted floor the foot is taken where the TARGET stands: that is where the blow lands, and the foot changes across the balcony)
+function reachPx(att, tgt, ft){
+  const m = SPR[tgt.id].json, body = 22 * actorScale(tgt) * (m.cell[0] / 128);
+  if (!onPaintedFloor(tgt)) return ft * ftPx(att) + body;
+  const at = {x: tgt.x, y: tgt.y, big: att.big}; return ft * ruleFt(at) + body * (ruleFt(at) / ftPx(at));
+}
 
 let cbt = null;                                   // the running fight
 const activeActor = () => cbt ? cbt.order[cbt.idx] : null;
@@ -7863,7 +7955,7 @@ function bystandersFlee(){
     let ft = a.c.sheet.speed * 2;
     if (a.c.conds.has("prone")){ a.c.conds.delete("prone"); ft = Math.floor(ft / 2); }
     const goal = safestFloor(a); if (!goal) continue;
-    const walk = cutPath(a, findPath(a, goal), ft * ftPx(a)), to = walk.pts.length ? walk.pts[walk.pts.length - 1] : null;
+    const walk = cutPath(a, findPath(a, goal), ft * ruleFt(a)), to = walk.pts.length ? walk.pts[walk.pts.length - 1] : null;
     if (!to || Math.hypot(to.x - a.x, to.y - a.y) < CELL) continue;   // nowhere better: keeps their head down where they are
     if (!(cbt.fled || (cbt.fled = new Set())).has(a)){ setTimeout(() => banter(a, "flee", null, .45), 400 + Math.random() * 900); cbt.fled.add(a); popText(a, "flees", "#e8e2c8", .9); narrate(a, `${fname(a)} runs from the fight.`); }
     a.path = walk.pts; a.onArrive = null;
@@ -8872,7 +8964,7 @@ function fungusHarvest(l){
   if (now_left <= 0) log(`<em>${esc(hv.ruined || "There is nothing usable left of it.")}</em>`);
 }
 function fungusVent(l, hv){
-  const at = lootCenter(l), v = hv.vent || {}, dc = v.dc || 14, R = (v.radius_ft || 15) * ftPx(at);
+  const at = lootCenter(l), v = hv.vent || {}, dc = v.dc || 14, R = (v.radius_ft || 15) * ruleFt(at);
   log(`<em>The cap splits and lets go of a cloud — ${v.radius_ft || 15} feet of spores, and a <b>DC ${dc} Constitution</b> save for anyone in it.</em>`);
   spawnFx("poisonCloud", {at, sq: 3, anchor: "mid", alpha: .95});
   bank("magic/impact_poison", .7);
@@ -9454,6 +9546,7 @@ async function doRest(spend){
   log(`<b>Short rest.</b> An hour passes. ${lines.length ? lines.join("; ") + "." : ""}`);
   cdShortRest();                                                // SRD 5.2.1: a Short Rest gives back one Channel Divinity use
   artsRest();                                                   // weapon arts: all of them are back
+  restAttune();                                                 // attunement: whoever chose an item is attuned to it now
   loreRestStudy();                                              // the item card: whoever chose an item to study knows it now
   toast("Rested an hour.", 2400);
   renderExploreBar();
@@ -9629,7 +9722,7 @@ function combatClick(w){
   if (p.shove){ const t = hitActor(foes, w); if (!t || t.down) return; doShove(a, t, p.shove); return; }
   if (p.spiritStrike){ const t = hitActor(foes, w); if (!t || t.down) return; const z = spiritWeapons.find(q => q.caster === a);
     if (!z){ toast("The spiritual weapon is gone."); openMenu(a); return; }
-    if (Math.hypot(t.x - z.x, t.y - z.y) / ftPx(t) > 27.5){ toast("Too far: the weapon moves 20 ft and strikes within 5 ft of it."); return; }
+    if (Math.hypot(t.x - z.x, t.y - z.y) / ruleFt(t) > 27.5){ toast("Too far: the weapon moves 20 ft and strikes within 5 ft of it."); return; }
     a.c.bonus = false; closeMenu(); cbt.phase = "busy"; combatBusy = true; turnWhat(a, t, "Spiritual Weapon", false);
     spiritStrike(a, z, t, () => { combatBusy = false; if (cbt) cbt.phase = "idle"; settleCam(); afterAction(a); }); return; }
   if (sp && (sp.kind === "heal" || sp.kind === "buff")){ const t = hitActor(friends(), w); if (!t) return; if (feetBetween(a, t) > sp.range){ toast("Out of range."); return; }
@@ -9639,12 +9732,12 @@ function combatClick(w){
     // SRD 5.2.1 Mage Armor: "a willing creature who isn't wearing armor" — refused here, before the action and the slot go
     if (p.spell === "Mage Armor"){ const worn = wornArmor(t); if (worn){ toast(`${fname(t)} is wearing ${worn}: Mage Armor needs a creature not wearing armor.`); return; } }
     castSpell(a, t, p.spell); return; }
-  if (sp && (sp.kind === "cloud" || sp.kind === "fog") && Math.hypot(w.x - a.x, w.y - a.y) / ftPx(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
-  if (sp && sp.aimRange && Math.hypot(w.x - a.x, w.y - a.y) / ftPx(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
+  if (sp && (sp.kind === "cloud" || sp.kind === "fog") && Math.hypot(w.x - a.x, w.y - a.y) / ruleFt(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
+  if (sp && sp.aimRange && Math.hypot(w.x - a.x, w.y - a.y) / ruleFt(a) > sp.range){ toast(`Out of range: ${p.spell} reaches ${sp.range} ft.`); return; }
   if (sp && sp.kind === "util"){ castUtil(a, hitActor([...foes, ...friends()], w) || w, p.spell); return; }
-  if (sp && sp.kind === "teleport"){ const to = nearestWalkable(w.x, w.y), ft = Math.hypot(to.x - a.x, to.y - a.y) / ftPx(a);
+  if (sp && sp.kind === "teleport"){ const to = nearestWalkable(w.x, w.y), ft = Math.hypot(to.x - a.x, to.y - a.y) / ruleFt(a);
     if (ft > sp.range + 2.5){ toast(`Too far: ${p.spell} reaches ${sp.range} ft.`); return; }
-    if (standing([...foes, ...party, ...bystanders()]).some(o => o !== a && Math.hypot(o.x - to.x, o.y - to.y) < ftPx(a) * 2.5)){ toast("Someone is standing there."); return; }
+    if (standing([...foes, ...party, ...bystanders()]).some(o => o !== a && Math.hypot(o.x - to.x, o.y - to.y) < ruleFt(a) * 2.5)){ toast("Someone is standing there."); return; }
     castSpell(a, to, p.spell); return; }
   if (sp && sp.area){ castSpell(a, w, p.spell); return; }
   const t = hitActor(foes, w); if (!t || t.down) return;
@@ -9680,7 +9773,7 @@ function oaCue(att, tgt){
 function provokedBy(a, end){
   if (a.kind !== "pc" || a.c.conds.has("disengaged") || a.c.conds.has("invisible")) return [];   // SRD: an opportunity attack is at a creature you can see
   return standing(foes).filter(f => !f.c.reactionUsed && !incapacitated(f) && feetBetween(a, f) <= 5
-    && Math.hypot(end.x - f.x, end.y - f.y) > reachPx(f, a, 5) + 6);
+    && pxBetween(end, f, a) > reachPx(f, a, 5) + 6);
 }
 // walk up to the movement left, deducting what is used
 // Named combatWalk, not walkTo: the explore click handler further down declares its own walkTo(p, cb) for the leader,
@@ -9688,7 +9781,7 @@ function provokedBy(a, end){
 // and nobody moved (6e1f3e8, 2026-10-15).
 function combatWalk(a, p, done){
   let path = findPath(a, p); if (!path.length){ combatBusy = false; done && done(); return; }
-  const c = cutPath(a, path, a.c.move * ftPx(a)), cut = c.pts;
+  const c = cutPath(a, path, a.c.move * ruleFt(a)), cut = c.pts;
   if (!cut.length){ toast(`Not enough movement to go round through the gate (${balcony() ? balcony().passFt : 15} ft for the way behind the pillar).`); combatBusy = false; done && done(); return; }
   a.c.move = Math.max(0, a.c.move - c.usedFt); marker = {x: cut[cut.length - 1].x, y: cut[cut.length - 1].y, t: now};
   const threat = provokedBy(a, cut[cut.length - 1]);
@@ -9728,7 +9821,7 @@ function gapOnLine(a, to){
   if (i > n) return null;                                   // no ground on the far side
   const land = at(i);
   for (let k = i; k <= n; k++) if (!walkable(at(k).x, at(k).y)) return null;  // a second gap: walk it
-  const px = ftPx(a);
+  const px = ruleFt(a);
   return {takeoff, land, runUpFt: Math.hypot(takeoff.x - a.x, takeoff.y - a.y) / px,
           gapFt: Math.hypot(land.x - takeoff.x, land.y - takeoff.y) / px};
 }
@@ -9792,7 +9885,7 @@ const JUMP_HINT = "Jump: click a green circle. Yellow needs a roll; red is out. 
 // DC 10 Acrobatics on landing needs DIFFICULT TERRAIN — the plates record neither (see MIN_LEAP_FT above). When the
 // data arrives, the check goes here and a lit square that needs one gets its own colour.
 function leapBlocked(a, from, to){
-  const px = ftPx(a), d = Math.hypot(to.x - from.x, to.y - from.y), n = Math.max(1, Math.ceil(d / 6));
+  const px = ruleFt(a), d = Math.hypot(to.x - from.x, to.y - from.y), n = Math.max(1, Math.ceil(d / 6));
   const foesUp = a.kind === "pc" || hero(a) ? standing(foes) : standing(heroes());
   for (let i = 1; i < n; i++){ const x = from.x + (to.x - from.x) * i / n, y = from.y + (to.y - from.y) * i / n;
     const o = foesUp.find(o => Math.hypot(o.x - x, o.y - y) < 2.4 * px); if (o) return o; }
@@ -9802,7 +9895,7 @@ function planLeap(a, to){
   const span = a.c.sheet.strScore; if (!span) return null;
   if (balconyFloor() && outsidePen(a) !== outsidePen(to)) return null;   // between the pen and the balcony is a wall, not a gap: the way is the gate
   if (["prone", "grappled", "restrained", "asleep"].some(c => a.c.conds.has(c))) return null;
-  const px = ftPx(a), d = Math.hypot(to.x - a.x, to.y - a.y) / px;
+  const px = ruleFt(a), d = Math.hypot(to.x - a.x, to.y - a.y) / px;
   if (d < MIN_LEAP_FT) return null;
   let g = gapOnLine(a, to);
   if (g && g.gapFt < MIN_LEAP_FT) g = null;   // a crack in the floor: step over it, that is walking
@@ -9852,7 +9945,7 @@ function leapMove(a, g, to, done){
   };
   const spring = () => { if (a.down){ combatBusy = false; done && done(); return; }
     if (g.check){   // the vault: roll as they leave the ground
-      const k = skillCheck(a, g.check.skill), o = g.check.over, px = ftPx(a);
+      const k = skillCheck(a, g.check.skill), o = g.check.over, px = ruleFt(a);
       if (k.total >= g.check.dc || k.r === 20){ log(`${fname(a)} vaults ${fname(o)}: Acrobatics ${k.r} + ${k.mod} = ${k.total} vs DC ${g.check.dc}.`); narrate(a, `${fname(a)} goes clean over ${fname(o)}.`); popText(a, "vault", "#ffd27a"); }
       else {   // the collision: down in the last clear square before the foe, prone
         const dx = o.x - g.takeoff.x, dy = o.y - g.takeoff.y, dd = Math.hypot(dx, dy), back = Math.max(0, dd - 5 * px);
@@ -9884,8 +9977,8 @@ function moveActor(a, w, done){
 // how far a walk to `p` really is, in feet, by the route a walker would take (Infinity: there is no route)
 function walkFtTo(a, p){
   const path = findPath(a, p); if (!path.length) return Infinity;
-  let d = 0, prev = a; for (const q of path){ d += Math.hypot(q.x - prev.x, q.y - prev.y) + (q.jump ? (q.passFt || 0) * ftPx(a) : 0); prev = q; }
-  return d / ftPx(a);
+  let d = 0, prev = a; for (const q of path){ d += feetSeg(prev, q, a.big) + (q.jump ? (q.passFt || 0) : 0); prev = q; }
+  return d;
 }
 // ----- going over the edge -----
 // SRD 5.1 has no separate "jump down" rule: you clear the horizontal distance as a long jump (STRENGTH SCORE in feet with
@@ -9906,7 +9999,7 @@ function planDrop(a, to){
   if (i > n) return null;
   const land = at(i), low = elevAt(land.x, land.y), dropFt = top - low;
   if (dropFt < LEDGE_FT) return null;                                                   // not a drop: a gap at one level is planLeap's
-  const px = ftPx(a), g = {takeoff, land, drop: true, dropFt,
+  const px = ruleFt(a), g = {takeoff, land, drop: true, dropFt,
     runUpFt: Math.hypot(takeoff.x - a.x, takeoff.y - a.y) / px, gapFt: Math.hypot(land.x - takeoff.x, land.y - takeoff.y) / px};
   g.standing = g.runUpFt < 10; g.max = g.standing ? Math.floor(span / 2) : span;
   const need = Math.round((g.runUpFt + g.gapFt) / 5) * 5;
@@ -10444,7 +10537,7 @@ function castSpell(caster, tgt, name, done, darts){
         if (sp.line) labLineLook(caster, at, sp);
         const targets = (sp.line ? pool.filter(t => inLine(caster, at, t, sp.line))
           : sp.cone ? pool.filter(t => feetBetween(caster, t) <= sp.area + 2.5 && Math.abs(((Math.atan2(t.y - caster.y, t.x - caster.x) - ang0 + Math.PI * 3) % (Math.PI * 2)) - Math.PI) <= .47)   // a cone: within its length and its 53°
-          : sp.area ? pool.filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ftPx(t))
+          : sp.area ? pool.filter(t => Math.hypot(t.x - at.x, t.y - at.y) <= (sp.area / 2 + 2.5) * ruleFt(t))
           : sp.targets > 1 ? [tgt, ...standing(hero(tgt) ? heroes() : foes).filter(f => f !== tgt && feetBetween(caster, f) <= sp.range + 2.5).sort((x, y) => Math.hypot(x.x - tgt.x, x.y - tgt.y) - Math.hypot(y.x - tgt.x, y.y - tgt.y)).slice(0, sp.targets - 1)]
           : [tgt]).filter(t => !(sp.selfArea && t === caster));
         if (!targets.length){ log(`${fname(caster)} ${name}: nothing there.`); return; }
@@ -10502,7 +10595,7 @@ function turnedTurn(a){ const src = a.c.turnedBy;
   if (incapacitated(src)){ endTurned(a, "the cleric is incapacitated"); return false; }
   if (cbt.round >= (a.c.turnedEnd || 0)){ endTurned(a, "the minute is up"); return false; }
   a.c.action = false; a.c.bonus = false; a.c.reactionUsed = true;                   // Incapacitated: no action, Bonus Action or Reaction
-  const stuck = a.c.move <= 0 || a.c.conds.has("restrained") || a.c.conds.has("grappled"), goal = stuck ? null : fleeFloor(a, src, a.c.move * ftPx(a));
+  const stuck = a.c.move <= 0 || a.c.conds.has("restrained") || a.c.conds.has("grappled"), goal = stuck ? null : fleeFloor(a, src, a.c.move * ruleFt(a));
   popText(a, "turned", "#ffe9a8"); renderTurns(); renderParty();
   if (!goal){ log(`${fname(a)} is turned and has nowhere to go.`); setTimeout(() => passTurn(a), 700); return true; }
   log(`${fname(a)} is turned and moves away from ${fname(src)}.`);
@@ -10595,7 +10688,7 @@ function doShove(a, t, what){
       if (what === "push") pushWaves(a, t);   // the golden shock rings (Sam, 2026-10-29)
       bank("walk:punch-bag", .8); knock(t, a, (what === "push" ? 40 : 18) * actorScale(t)); spawnFx(what === "prone" ? MARTIAL_IMPACT.sweep : what === "push" ? MARTIAL_IMPACT.kick : MARTIAL_IMPACT.punch, {at: t, sq: 1.8, mirror: what === "prone" && t.x < a.x});   // the sweep takes their legs; a push is a kick
       if (what === "prone"){ addCond(t, "prone"); if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); narrate(a, `${fname(a)} knocks ${fname(t)} flat.`); }
-      else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ftPx(t) * 5, y: t.y + d.y * ftPx(t) * 5}; const to = nearestWalkable(raw.x, raw.y), ce = chasmEdge(t, raw); if (ce) chasmFall(t, raw, a, ce); else if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a); else { const top = elevAt(t.x, t.y); t.x = to.x; t.y = to.y; const dropFt = top - elevAt(to.x, to.y); if (dropFt >= LEDGE_FT){ narrate(a, `${fname(a)} shoves ${fname(t)} off the edge.`); setTimeout(() => landFall(t, dropFt), 250); } } narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
+      else if (what === "push"){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ruleFt(t) * 5, y: t.y + d.y * ruleFt(t) * 5}; const to = nearestWalkable(raw.x, raw.y), ce = chasmEdge(t, raw); if (ce) chasmFall(t, raw, a, ce); else if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a); else { const top = elevAt(t.x, t.y); t.x = to.x; t.y = to.y; const dropFt = top - elevAt(to.x, to.y); if (dropFt >= LEDGE_FT){ narrate(a, `${fname(a)} shoves ${fname(t)} off the edge.`); setTimeout(() => landFall(t, dropFt), 250); } } narrate(a, `${fname(a)} shoves ${fname(t)} back.`); }
       else { addCond(t, "grappled"); t.c.grappledBy = a; narrate(a, `${fname(a)} grabs hold of ${fname(t)}.`); }
       log(`${fname(a)} ${what === "grapple" ? "grapples" : "shoves"} ${fname(t)}: save ${r} + ${sv} = ${total} vs DC ${dc} — <b>${what === "prone" ? "prone" : what === "push" ? "pushed 5 ft" : "grappled"}</b>.`);
     }, () => { combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(a); });
@@ -10630,7 +10723,7 @@ function markRider(att, t, crit, atk){ if (!t || t.down || !t.c || !t.c.conds.ha
 function hexRider(att, t, crit){ if (!t || t.down || !t.c || !t.c.conds.has("hexed") || t.c.hexedBy !== att) return; const h = roll("1d6", crit);
   setTimeout(() => { labHexPulse(t); bank("walk:impact-necrotic", .45); damage(t, h.total, "necrotic", false, att, true); log(`Hex: +${h.total} necrotic on ${fname(t)}.`); }, 220); }
 // Repelling Blast: "push the creature up to 10 feet away from you in a straight line" — off a ledge or into the chasm if that is where it goes
-function repel(a, t, ft){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ftPx(t) * ft, y: t.y + d.y * ftPx(t) * ft}; const to = nearestWalkable(raw.x, raw.y), ce = chasmEdge(t, raw);
+function repel(a, t, ft){ const d = norm({x: t.x - a.x, y: t.y - a.y}); const raw = {x: t.x + d.x * ruleFt(t) * ft, y: t.y + d.y * ruleFt(t) * ft}; const to = nearestWalkable(raw.x, raw.y), ce = chasmEdge(t, raw);
   labRef("ebImpExpl", {x: t.x, y: t.y + 8, w: 170, life: 600, grow: [.5, 1.2], fade: [20, 380], anchorY: "bottom", add: false}); shake(8); bank("walk:thunder-clap", .5);
   if (ce) chasmFall(t, raw, a, ce); else if (pushOverFalls(t, raw) || pushOverFalls(t, to)) overTheFalls(t, a);
   else { const top = elevAt(t.x, t.y); t.x = to.x; t.y = to.y; const dropFt = top - elevAt(to.x, to.y); popText(t, `pushed ${ft} ft`, "#c58aff", .85); if (dropFt >= LEDGE_FT) setTimeout(() => landFall(t, dropFt), 250); } }
@@ -10649,8 +10742,8 @@ function flameSphereCast(c, at, cb){ const side = Math.sign(c.x - at.x) || 1, z 
 function newSpellsTurnStart(a){
   if (a.c.conds.has("paralyzed") && a.c.heldDc){ const s = d20(0, a) + (a.c.sheet.saves.wis || 0) + blessD4(a); if (s >= a.c.heldDc){ a.c.conds.delete("paralyzed"); a.c.heldDc = 0; popText(a, "breaks free", "#d8b8ff"); log(`${fname(a)} shakes off Hold Person (WIS ${s}).`); }
     else { popText(a, "held", "#d8b8ff"); log(`${fname(a)} is held fast (WIS ${s} vs DC ${a.c.heldDc}).`); setTimeout(nextTurn, 900); return true; } }
-  for (const z of daggerZones) if (!a.down && Math.hypot(a.x - z.x, a.y - z.y) <= ftPx(a) * 4){ const d = roll(z.dmg).total; bank("combat/blade_whoosh", .6); damage(a, d, z.type, false, z.caster, true); log(`${fname(a)} starts the turn in the Cloud of Daggers: ${d} ${z.type}.`); if (a.down) return true; }
-  for (const z of fireSpheres) if (z.caster === a){ const v = standing(hero(a) ? foes : heroes()).filter(f => Math.hypot(f.x - z.x, f.y - z.y) <= ftPx(f) * 30).sort((p, q) => Math.hypot(p.x - z.x, p.y - z.y) - Math.hypot(q.x - z.x, q.y - z.y))[0]; if (!v) continue;
+  for (const z of daggerZones) if (!a.down && Math.hypot(a.x - z.x, a.y - z.y) <= ruleFt(a) * 4){ const d = roll(z.dmg).total; bank("combat/blade_whoosh", .6); damage(a, d, z.type, false, z.caster, true); log(`${fname(a)} starts the turn in the Cloud of Daggers: ${d} ${z.type}.`); if (a.down) return true; }
+  for (const z of fireSpheres) if (z.caster === a){ const v = standing(hero(a) ? foes : heroes()).filter(f => Math.hypot(f.x - z.x, f.y - z.y) <= ruleFt(f) * 30).sort((p, q) => Math.hypot(p.x - z.x, p.y - z.y) - Math.hypot(q.x - z.x, q.y - z.y))[0]; if (!v) continue;
     const dc = a.c.sheet.magic.dc, s = d20(0, v) + (v.c.sheet.saves.dex || 0), d = roll("2d6").total, n = s >= dc ? Math.floor(d / 2) : d; z.move = {x0: z.x, y0: z.y, x1: v.x + (Math.sign(z.x - v.x) || 1) * ftPx(v) * 2.5, y1: v.y, t0: now, ms: 420};
     setTimeout(() => { labFireHit(v); bank("walk:impact-fire", .6); damage(v, n, "fire", false, a, true); log(`The Flaming Sphere rams ${fname(v)}: DEX ${s} vs DC ${dc} — ${n} fire.`); }, 420); }
   return false;
@@ -10762,7 +10855,7 @@ function fleeFloor(a, src, budgetPx){ const here = Math.hypot(a.x - src.x, a.y -
 function fearFlee(a){ const src = a.c.fearBy;
   if (!src || src.down || !actors.includes(src)){ a.c.conds.delete("frightened"); return false; }
   if (a.c.move <= 0 || a.c.conds.has("restrained") || a.c.conds.has("grappled") || incapacitated(a)) return false;   // nowhere to move: it acts, still Frightened
-  const goal = fleeFloor(a, src, a.c.move * 2 * ftPx(a)); if (!goal) return false;
+  const goal = fleeFloor(a, src, a.c.move * 2 * ruleFt(a)); if (!goal) return false;
   a.c.action = false; a.c.move *= 2;                                                // the Dash
   popText(a, "flees in terror", "#b8a0d8"); log(`${fname(a)} is Frightened of ${fname(src)} and Dashes away (Fear).`); narrate(a, `${fname(a)} breaks and runs from ${fname(src)}.`);
   renderTurns(); renderParty(); if (a.kind === "pc") closeMenu();
@@ -11072,7 +11165,7 @@ function seekSight(f){
     say();
   };
   if (!g || Math.hypot(f.x - g[0], f.y - g[1]) < 12){ look(); return; }
-  const fp = ftPx(f), d = Math.hypot(g[0] - f.x, g[1] - f.y), k = Math.min(1, (f.c.move || 0) * fp / d);
+  const fp = ruleFt(f), d = Math.hypot(g[0] - f.x, g[1] - f.y), k = Math.min(1, (f.c.move || 0) * fp / d);
   if (k <= 0){ look(); return; }
   f.c.move = Math.max(0, (f.c.move || 0) - Math.round(d * k / fp / 5) * 5);
   log(`${fname(f)} moves to get a line through the gate.`);
@@ -11085,16 +11178,21 @@ function passTurn(a){ if (reactionWait){ reactionWait.then(() => setTimeout(() =
 function approachThen(att, tgt, ft, then){
   const reachFt = ft;
   if (gateWayTo(att, tgt)){ approachViaGate(att, tgt, ft, then); return; }
-  const reach = reachPx(att, tgt, ft), d = Math.hypot(tgt.x - att.x, tgt.y - att.y);
+  const reach = reachPx(att, tgt, ft), d = pxBetween(att, tgt, tgt);
   if (d <= reach + 6){ if (reachFt <= 5 && cbt && !att.big && !(att.c && att.c.sheet.leap) && !att.climbing && !att.riding) bounceIn(att, tgt, then); else then(); return; }
   then = (t0 => () => readiedStrikeOn(att, t0))(then);   // a readied blow meets whoever walks in
-  const budget = Math.max(0, (att.c.move || 0) * ftPx(att)), need = d - reach;
+  const budget = Math.max(0, (att.c.move || 0) * ruleFt(att)), need = d - reach;
   // MOVEMENT IS MEASURED ALONG THE WAY ACTUALLY WALKED (Sam, 2026-10-27: "Did Eldeth and Sarith really only move 30
   // feet?"). The charge used to be the straight line toward the target, while the walk itself went round tables, bunks
   // and pillars, so a creature with 30 ft could cover far more ground. Now the route to the spot in reach is found
   // first and trimmed to what the movement left buys (cutPath, the heroes' own rule), and what is charged is what
   // that trimmed route measures.
-  const reachSpot = nearestWalkable(att.x + (tgt.x - att.x) * (need / d), att.y + (tgt.y - att.y) * (need / d));
+  // on the painted floor the foot changes along the way, so the spot is searched for, not interpolated: the point on
+  // the straight line whose painted distance to the target is the reach
+  let kSpot = need / d;
+  if (onPaintedFloor(att) && onPaintedFloor(tgt)){ let lo = 0, hi = 1; for (let i = 0; i < 12; i++){ const m = (lo + hi) / 2, q = {x: att.x + (tgt.x - att.x) * m, y: att.y + (tgt.y - att.y) * m};
+      if (pxBetween(q, tgt, tgt) > reach * .92) lo = m; else hi = m; } kSpot = lo; }
+  const reachSpot = nearestWalkable(att.x + (tgt.x - att.x) * kSpot, att.y + (tgt.y - att.y) * kSpot);
   const walk = cutPath(att, findPath(att, reachSpot), budget);
   const goal = walk.pts.length ? walk.pts[walk.pts.length - 1] : {x: att.x, y: att.y};
   // OPPORTUNITY ATTACKS, THE OTHER WAY (Sam, 2026-10-14: "are there opportunity attacks?"). A foe that moves out of
@@ -11103,7 +11201,7 @@ function approachThen(att, tgt, ft, then){
   // against the provoking creature. The attack occurs right before the creature leaves your reach."). Heroes
   // leaving a foe's reach were already covered (moveActor).
   if ((att.kind === "foe" || att.ally) && !att.c.conds.has("disengaged")){
-    const p = standing(att.ally ? foes : heroes()).find(h => h !== tgt && !h.c.reactionUsed && !incapacitated(h) && feetBetween(att, h) <= 5 && Math.hypot(goal.x - h.x, goal.y - h.y) > reachPx(h, att, 5) + 6);
+    const p = standing(att.ally ? foes : heroes()).find(h => h !== tgt && !h.c.reactionUsed && !incapacitated(h) && feetBetween(att, h) <= 5 && pxBetween(goal, h, att) > reachPx(h, att, 5) + 6);
     if (p){
       // THE HERO IS ASKED (Sam, 2026-11-10: "If an opportunity happens to a player they can have a dialogue type box that
       // gives them the options"). The fight pauses, as it does for Shield and a readied strike: one row per melee weapon
@@ -11134,7 +11232,7 @@ function approachThen(att, tgt, ft, then){
   // STILL OUT OF REACH WHEN THE MOVEMENT RUNS OUT: no swing (Sam, 2026-10-27: "Ront just landed a fist at distance"). A
   // hero gets the menu back to do something else. An ally or a foe used to swing anyway from wherever it stopped; now it
   // closes as far as it can and the turn passes.
-  const stillFar = () => Math.hypot(tgt.x - att.x, tgt.y - att.y) > reach + 24;   // a grid cell of slack: the reach spot is snapped to the floor grid
+  const stillFar = () => pxBetween(att, tgt, tgt) > reach + 24;   // a grid cell of slack: the reach spot is snapped to the floor grid
   const arrive = () => {
     if (!stillFar()){ then(); return; }
     if (att.kind === "pc"){ toast("Out of reach."); combatBusy = false; cbt.phase = "idle"; att.c.action = true; settleCam(); openMenu(att); return; }
@@ -11309,7 +11407,7 @@ function throwRock(f, tgt){
     attackWith(f, tgt, rock, end);
   };
   if (feetBetween(f, tgt) > ROCK.reach && (f.c.move || 0) > 0){
-    const u = norm({x: tgt.x - f.x, y: tgt.y - f.y}), px = ftPx(f), spot = nearestWalkable(tgt.x - u.x * (ROCK.reach - 2) * px, tgt.y - u.y * (ROCK.reach - 2) * px);
+    const u = norm({x: tgt.x - f.x, y: tgt.y - f.y}), px = ruleFt(f), spot = nearestWalkable(tgt.x - u.x * (ROCK.reach - 2) * px, tgt.y - u.y * (ROCK.reach - 2) * px);
     const walk = cutPath(f, findPath(f, spot), f.c.move * px);
     if (walk.pts.length){ f.c.move = Math.max(0, f.c.move - walk.usedFt); combatBusy = true; cbt.phase = "busy"; f.path = walk.pts; f.onArrive = () => { f.onArrive = null; fire(); }; return; }
   }
@@ -11429,7 +11527,7 @@ function allyTurn(a){
   (cbt.lastAllyTarget || (cbt.lastAllyTarget = new Map())).set(a, tgt);
   fightCam(Math.min(2.4, cbt.home.z * 1.08), (a.x + tgt.x) / 2, (a.y + tgt.y) / 2 - 50, 600, [a, tgt]);
   const s = a.c.sheet, atk = meleeOf(a), swings = s.multi || 1;
-  const gapFt = () => Math.max(0, (Math.hypot(tgt.x - a.x, tgt.y - a.y) - reachPx(a, tgt, atk.reach || 5)) / ftPx(a));
+  const gapFt = () => Math.max(0, (pxBetween(a, tgt, tgt) - reachPx(a, tgt, atk.reach || 5)) / ruleFt(onPaintedFloor(tgt) ? {x: tgt.x, y: tgt.y, big: a.big} : a));
   if (gapFt() > a.c.move && s.aggressive && a.c.bonus){
     a.c.bonus = false; a.c.move += s.speed; log(`${fname(a)} charges (Aggressive, bonus action: +${s.speed} ft toward ${fname(tgt)}).`);
   }
@@ -11487,7 +11585,7 @@ function arcTo(a, land, then){
 const HOP_FT = 30;
 function meleeHopLeg(a, pts, reachFt){
   if (!pts.length || reachFt > 5 || a.big || (a.c && a.c.sheet.speed < 20) || (a.c && a.c.sheet.leap)) return null;
-  const land = pts[pts.length - 1], maxPx = HOP_FT * ftPx(a), clear = (p, q) => { const n = Math.ceil(Math.hypot(q.x - p.x, q.y - p.y) / 12); for (let i = 1; i < n; i++) if (!walkable(p.x + (q.x - p.x) * i / n, p.y + (q.y - p.y) * i / n)) return false; return true; };
+  const land = pts[pts.length - 1], maxPx = HOP_FT * ruleFt(a), clear = (p, q) => { const n = Math.ceil(Math.hypot(q.x - p.x, q.y - p.y) / 12); for (let i = 1; i < n; i++) if (!walkable(p.x + (q.x - p.x) * i / n, p.y + (q.y - p.y) * i / n)) return false; return true; };
   const from = [{x: a.x, y: a.y}, ...pts.slice(0, -1)];
   for (let j = 0; j < from.length; j++){ const d = Math.hypot(land.x - from[j].x, land.y - from[j].y); if (d <= maxPx && d >= CELL && clear(from[j], land)) return {before: pts.slice(0, j), land}; }
   return null;
@@ -12320,7 +12418,7 @@ function drawLabSpark(s, k){
 // The spider: spring to within reach of its target, then bite.
 function leapTo(f, tgt, then){
   const d = norm({x: tgt.x - f.x, y: tgt.y - f.y}), reach = reachPx(f, tgt, 5), dist = Math.hypot(tgt.x - f.x, tgt.y - f.y) - reach;
-  f.c.move = Math.max(0, f.c.move - Math.round(dist / ftPx(f) / 5) * 5);
+  f.c.move = Math.max(0, f.c.move - Math.round(dist / ruleFt(f) / 5) * 5);
   arcTo(f, nearestWalkable(f.x + d.x * dist, f.y + d.y * dist), () => { narrate(f, `${fname(f)} springs across the floor at ${fname(tgt)}.`); then && then(); });
 }
 // THE PARTY CAN BE SURPRISED TOO (Sam, 2026-10-28: "yes and if they are surprised they should show it with a surprised
@@ -12388,6 +12486,7 @@ function setQuick(on, quiet){
 }
 function endCombat(won){
   if (mode !== "combat") return;
+  if (won !== false && cbt) askEarned((cbt.allies || []).filter(n => askRowOf(n.id) && !n.down));   // they fought beside you and know it (NPC ASKS)
   setQuick(false, true);
   owFightEnds();
   // the living pull the bolts out of themselves; the dead keep theirs
@@ -13388,7 +13487,7 @@ function drawAoe(x, y, sp, col, alpha, inside){
     return; }
   const r = aoeRadiusAt(sp, y); ctx.save(); ctx.globalAlpha = alpha; ctx.fillStyle = col + "22"; ctx.strokeStyle = col; ctx.lineWidth = 2.5 / (base * view.z);
   ctx.setLineDash([10, 8]); ctx.lineDashOffset = -now / 60; ovEllipsePath(x, y, r, r * .55); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
-  if (inside) for (const t of standing([...foes, ...party])) if (Math.hypot(t.x - x, t.y - y) <= (sp.area / 2 + 2.5) * ftPx(t)){
+  if (inside) for (const t of standing([...foes, ...party])) if (Math.hypot(t.x - x, t.y - y) <= (sp.area / 2 + 2.5) * ruleFt(t)){
     ctx.globalAlpha = alpha * (.6 + .4 * Math.sin(now / 160)); ovWrapA(t, () => { ctx.beginPath(); ctx.ellipse(t.x, t.y, 30 * actorScale(t), 10 * actorScale(t), 0, 0, Math.PI * 2); ctx.stroke(); }); }
   ctx.restore();
 }
@@ -17933,9 +18032,61 @@ function weaponNote(sheet, it, short){
   return trainedWith(sheet, it) ? `<b style="color:#7fdc8a">trained with ${esc(b)}</b>${short ? "" : ": +2 proficiency to hit"}`
     : `<b style="color:#ff8a7a">not trained with ${esc(b)}</b>${short ? ": no +2 to hit" : `: ${UNTRAINED_PRICE}`}`;
 }
-function attuneNote(it, short){
+// ATTUNEMENT (Sam, 2026-11-10: "Build attunement"). SRD 5.1, Magic Items > Attunement:
+//   "Without becoming attuned to an item that requires attunement, a creature gains only its nonmagical benefits";
+//   "Attuning to an item requires a creature to spend a short rest focused on only that item while being in physical
+//   contact with it ... This focus can't be the same short rest used to learn the item's properties";
+//   "a creature can be attuned to no more than three magic items at a time".
+// Kept per hero in the shared world (state["attune:<hero>"] = {on: [slugs], q: slug}), the way item lore is, so every
+// screen at the table agrees and New Game clears it. A hero picks ONE item to attune at the next short rest (the card's
+// button); the rest that is not broken makes it so (restAttune, beside loreRestStudy).
+// Simplified, and flagged: attunement ends the moment the item leaves the hero's pack (the SRD gives it 24 hours and
+// 100 ft), ending one by choice is immediate (the SRD asks for another short rest), an item must be identified before
+// it can be attuned (the card hides that it needs attunement until then), and class or alignment prerequisites
+// (Dawnbringer: non-evil) are not checked. Allies and foes never attune.
+const ATTUNE_MAX = 3;
+const attuneKey = id => "attune:" + id;
+function attuneOf(id){ const v = state[attuneKey(id)]; return v && typeof v === "object" ? {on: Array.isArray(v.on) ? v.on : [], q: v.q || null} : {on: [], q: null}; }
+const needsAttune = it => { const c = it && (catalogItem(it.name) || it); return !!c && c.attunement === true; };
+const slugOfItem = it => (it && (it.slug || (catalogItem(it.name) || {}).slug)) || null;
+const carriesItem = (id, it) => !!(GEAR[id] && (GEAR[id].carried || []).some(c => c.name === it.name));
+/** Is this hero attuned to this item right now: on their list, and still on them. */
+function attunedTo(id, it){ const sl = slugOfItem(it); return !!(id && sl && attuneOf(id).on.includes(sl) && carriesItem(id, it)); }
+/** Does the item's magic work for this hero: it asks for no attunement, or they are attuned to it. */
+function magicWorksFor(id, it){ return !needsAttune(it) || attunedTo(id, it); }
+/** the map id a sheet belongs to (a hero's; an ally's or a foe's block has none, and they never attune) */
+function sheetHero(sheet){ for (const k in SHEETS) if (SHEETS[k] === sheet) return k; return null; }
+/** the attuned items a hero no longer carries fall off the list */
+function attunePrune(id){ const v = attuneOf(id), on = v.on.filter(sl => (GEAR[id] && GEAR[id].carried || []).some(c => slugOfItem(c) === sl)); if (on.length !== v.on.length) state[attuneKey(id)] = {...v, on}; return on; }
+/** queue (or un-queue) the one item this hero attunes at the next short rest; says why not when it cannot be */
+function attuneQueue(a, it){
+  const id = a.id, sl = slugOfItem(it), v = attuneOf(id); if (!sl) return "";
+  if (v.q === sl){ state[attuneKey(id)] = {on: v.on, q: null}; return ""; }
+  if (attunePrune(id).length >= ATTUNE_MAX) return `${fname(a)} is attuned to ${ATTUNE_MAX} items already: end one first.`;
+  state[attuneKey(id)] = {on: attuneOf(id).on, q: sl};
+  // the same rest cannot both learn an item and attune one (SRD): this hero stops studying anything
+  for (const k of Object.keys(state)) if (k.startsWith("lore:") && state[k] && state[k].q === id){ const o = {...state[k]}; delete o.q; state[k] = o; }
+  return "";
+}
+function attuneEnd(a, it){ const v = attuneOf(a.id), sl = slugOfItem(it); state[attuneKey(a.id)] = {on: v.on.filter(x => x !== sl), q: v.q};
+  log(`${fname(a)} lets go of the <b>${esc(it.name)}</b>: no longer attuned.`); refreshAttacks(a.id); refreshAc(a.id); if (cbt) renderParty(); }
+// after a short rest that was not broken: each hero who chose an item, still carries it and has room, is attuned
+function restAttune(){
+  for (const a of party){
+    const v = attuneOf(a.id); if (!v.q) continue;
+    const on = attunePrune(a.id), it = (GEAR[a.id] && GEAR[a.id].carried || []).find(c => slugOfItem(c) === v.q);
+    if (it && on.length < ATTUNE_MAX && !on.includes(v.q)){ on.push(v.q); log(`${fname(a)} spent the rest with the <b>${esc(it.name)}</b> and is <b style="color:#c9a6ff">attuned</b> to it (${on.length} of ${ATTUNE_MAX}).`); popText(a, "attuned", "#c9a6ff", .9); }
+    state[attuneKey(a.id)] = {on, q: null}; refreshAttacks(a.id); refreshAc(a.id);
+  }
+  if (!$("icard").hidden) icardRender(); if (bagOpen()) renderBag();
+}
+function attuneNote(it, short, id){
   const cat = catalogItem(it.name) || it; if (cat.attunement !== true) return "";
   if (typeof loreView === "function" && !loreView(cat, icardKnown(cat.slug)).identified) return "";   // hidden until identified, like the card's pill
+  if (id && SHEETS[id]){
+    if (attunedTo(id, it)) return `<b style="color:#7fdc8a">attuned</b>${short ? "" : `: its magic is yours (${attuneOf(id).on.length} of ${ATTUNE_MAX} attuned)`}`;
+    return `<b style="color:#ff8a7a">not attuned</b>${short ? ": no magic yet" : `: ${ATTUNE_PRICE}`}${attuneOf(id).q === slugOfItem(it) ? " · <b>attuning at the next short rest</b>" : ""}`;
+  }
   return `<b style="color:#c9a6ff">requires attunement</b>${short ? "" : `: ${ATTUNE_PRICE}`}`;
 }
 function proficientWith(cls, it){ const b = baseWeapon(it), list = CLASS_WEAPONS[String(cls || "").toLowerCase()] || []; return !!b && (list.includes(b) || (list.includes("simple") && SIMPLE_WEAPONS.includes(b)) || (list.includes("martial") && MARTIAL_WEAPONS.includes(b))); }
@@ -17956,13 +18107,16 @@ function attackFromItem(sheet, it){
   const type = p.damage_type && p.damage_type !== "none" ? p.damage_type : (String(p.damage || "").match(/([a-z]+)\s*$/i) || [0, "bludgeoning"])[1];
   const str = abilMod(sheet, "str"), dex = abilMod(sheet, "dex"), mod = ammo ? dex : finesse ? Math.max(str, dex) : str;   // the modifiers, not the saves
   // a "+1" weapon's catalogue row may carry one `bonus` for both (Lolth's Tooth does): it adds to the attack and the damage
-  const prof = trainedWith(sheet, it) ? 2 : 0, dm = mod + Number(p.damage_bonus ?? p.bonus ?? 0);       // proficiency +2 at levels 1-4
-  const a = {name: it.name, hit: mod + prof + Number(p.attack_bonus ?? p.bonus ?? 0), dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
-    reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, str: !ammo && (!finesse || str >= dex), ammo, item: true, itemName: it.name, pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null, magic: isMagicWeapon(it)};
+  // UNATTUNED, IT IS AN ORDINARY WEAPON (SRD: "only its nonmagical benefits"): no bonus to hit or damage, not magical
+  const live = !needsAttune(it) || magicWorksFor(sheetHero(sheet), it), bonusHit = live ? Number(p.attack_bonus ?? p.bonus ?? 0) : 0, bonusDmg = live ? Number(p.damage_bonus ?? p.bonus ?? 0) : 0;
+  const prof = trainedWith(sheet, it) ? 2 : 0, dm = mod + bonusDmg;       // proficiency +2 at levels 1-4
+  const a = {name: it.name, hit: mod + prof + bonusHit, dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
+    reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, str: !ammo && (!finesse || str >= dex), ammo, item: true, itemName: it.name, pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null, magic: live && isMagicWeapon(it)};
+  if (!live) a.unattuned = true;
   if (ammo && rng[1]) a.long = rng[1];
   if (light) a.light = true; if (thrown && rng[0]) a.thrown = rng[0];
   if (sheet.sneakDie && (finesse || ammo)) a.sneak = sheet.sneakDie;
-  if (isTooth(it)) a.tooth = true;                                      // Lolth's Tooth: the venom in the hilt (below)
+  if (isTooth(it) && live) a.tooth = true;                                      // Lolth's Tooth: the venom in the hilt (below)
   return a;
 }
 // a hero's attack lines: the equipped weapon first, then what the sheet always has (a fist)
@@ -18018,6 +18172,8 @@ function acOf(id, swap){
   const g = GEAR[id] || {}, dex = (S.mods || {}).dex || 0;
   let worn = (g.doll || []).map(d => armorOf((g.carried || []).find(c => c.name === d.name) || {name: d.name})).filter(Boolean);
   if (swap){ worn = worn.filter(w => w.kind !== swap.kind).concat([swap]); }
+  // unattuned armour is ordinary armour: its magical bonus to AC waits for attunement (a shield keeps its plain +2)
+  worn = worn.map(w => magicWorksFor(id, w) ? w : {...w, bonus: w.kind === "shield" ? Math.min(w.bonus, 2) : 0});
   const body = worn.find(w => w.kind === "body") || null, shield = worn.find(w => w.kind === "shield") || null, parts = [];
   let ac;
   if (body){ const d = body.cat === "heavy" ? 0 : body.cat === "medium" ? Math.min(dex, body.cap) : dex; ac = body.base + body.bonus + d;
@@ -18046,9 +18202,10 @@ function armorNote(a, it, short){
 // at a time off a stack, or the whole stack. Worn or held things come off first. In a fight it is handing something
 // over: the other must be within 5 ft and it costs what stowing a weapon costs (the turn's object interaction).
 function giveTargets(a){ return [...party, ...npcs.filter(n => ALLY_ROW[n.id] && !n.down && !n.body)].filter(t => t !== a && !t.body); }
-function giveItem(a, it, t, n){
+function giveItem(a, it, t, n, opts = {}){
   const g = GEAR[a.id]; if (!g || !bagCan(a) || !t) return; const fight = inFightNow();
   n = Math.max(1, Math.min(n || 1, it.qty || 1));
+  { const no = carryRefusal(t, itemLb(it) * n, it.name); if (no){ toast(no, 4200); return; } }
   if ((g.doll || []).some(d => d.name === it.name) && g.carried.filter(c => c.name === it.name).reduce((q, c) => q + (c.qty || 1), 0) - n < (g.doll || []).filter(d => d.name === it.name).length){ toast(`Take the ${it.name} off first.`); return; }
   if (fight){ if (feetBetween(a, t) > 5.5){ toast(`${fname(t)} is out of reach: they must be within 5 ft.`); return; } const k = gearCost(a, 1); if (!k.ok){ toast(k.why); return; } k.pay(); }
   it.qty = (it.qty || 1) - n; if (it.qty <= 0) g.carried = g.carried.filter(x => x !== it);
@@ -18058,25 +18215,180 @@ function giveItem(a, it, t, n){
   if (inv.item && inv.item.name === it.name && it.qty <= 0) inv.item = null;
   bank("ui/item_pickup", .5); popText(t, `${it.name}${n > 1 ? ` ×${n}` : ""}`, "#e8d9a8", .8);
   log(`${fname(a)} hands ${n > 1 ? `${n} × ` : "the "}<b>${esc(it.name)}</b> to ${fname(t)}.`);
-  const from = serverCid(a.id), to = APP && !SANDBOX ? characterIdOf(t.id) : null;
+  const from = serverCid(a.id), to = APP && !SANDBOX ? (opts.toId || characterIdOf(t.id)) : null;
+  if (!opts.ask && openAsk && openAsk.n === t && openAsk.h === a && openAsk.ask.itemName === it.name) askAnswered("gave");   // handed over from the bag: the same answer
   if (from && to) fetch("/api/walk-items", {method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({action: "give", characterId: from, targetCharacterId: to, itemKey: it.item_key || null, itemName: it.name, quantity: n})})
     .then(r => r.json()).then(j => { if (j && j.error){ toast(j.error); loadGear(a.id); loadGear(t.id); } }).catch(() => {});
   refreshAttacks(a.id); refreshAttacks(t.id);   // the giver may have handed over their weapon; the taker now has one
   if (fight){ renderParty(); } renderBag();
 }
+
+// ---------- NPC ASKS (Sam, 2026-11-10) ----------
+// "NPCs may from time to time based on their personality ask for items (food if they know you have it, weapons if
+// they can use it, gold if they feel they've earned it, etc). This effects the players gravity to them accordingly.
+// They should be limited to bubbles and not trigger a dialogue. If it is of something of great import then an
+// exclamation on them will trigger a dialogue if parley is accepted. Bubbles should address the character 'Hey
+// shorty, or hey fifi, or hey dwarf, or Bard, or Scott' depending on their gravity with us and their personality."
+//
+// The rules (who asks for what, what they call you, the lines, what each answer does to how they feel) are in
+// lib/npc-asks.ts and are applied by /api/npc-ask, which knows whether they have learned your name and how they
+// stand with you. The map's part is what only the map can see:
+//   * WHAT THEY KNOW YOU HAVE: a thing that came into a hero's pack while the NPC was on the same plate. Nobody asks
+//     for what they never saw (state.askSeen, kept with the walk).
+//   * WHEN: now and then, out of a fight, from someone standing near, never from someone who already wants a word.
+//   * THE BUBBLE: the line, with Give and Not now on it. No card, no talk. Letting it lapse is an answer too.
+//   * GREAT IMPORT: no bubble. Their "!" goes up and walking over opens the usual Talk / Decline card, the opener
+//     told what they are after.
+// Each seat raises asks only for its own hero, so a table does not hear one ask four times.
+// THE NUMBERS ARE CLAUDE'S (how often, how near, how long the bubble waits, five coins at a time).
+const askRowOf = id => ALLY_ROW[id] || ASK_ROW[id] || null;
+const ASK_EVERY = [150000, 270000], ASK_PER_NPC = 420000, ASK_WAIT = 16000, ASK_NEAR = 460, ASK_COINS = 5;
+let openAsk = null, nextAsk = 0, askPrev = {}, askSeenAt = 0, askBusy = false;
+const askBoot = performance.now();
+function askHero(){                                    // whose asks this screen raises
+  if (mySlug) return party.find(p => p.id === mySlug && !p.down && !p.body) || null;
+  if (APP && seatsSeen.length) return null;            // a DM screen at a seated table: the players' screens raise their own
+  return leader && canControl(leader) && !leader.down ? leader : null;
+}
+// what each bystander has seen go into a pack (run every couple of seconds; cheap)
+function askWatch(){
+  if (now - askBoot < 8000) return;                   // the packs are still loading: what was already there was not "seen"
+  state.askSeen = state.askSeen || {};
+  const eyes = npcs.filter(n => askRowOf(n.id) && !n.hostile && !n.offStage && !n.down && !n.body && n.act !== "sleep").map(n => n.id);
+  for (const h of party){
+    const g = GEAR[h.id]; if (!g) continue;
+    const names = new Set(g.carried.map(c => c.name)), prev = askPrev[h.id]; askPrev[h.id] = names;
+    if (!prev || !eyes.length) continue;
+    for (const nm of names) if (!prev.has(nm)){ const seen = (state.askSeen[h.id] = state.askSeen[h.id] || {}); seen[nm] = [...new Set([...(seen[nm] || []), ...eyes])]; }
+    const seen = state.askSeen[h.id]; if (seen) for (const nm of Object.keys(seen)) if (!names.has(nm)) delete seen[nm];   // gone from the pack: nothing to ask for
+  }
+}
+function askOffers(n, h){
+  const g = GEAR[h.id], seen = (state.askSeen || {})[h.id] || {}; if (!g) return [];
+  const armed = (GEAR[n.id] || {carried: []}).carried.some(isWeapon) || !!(GEAR[n.id] || {}).main;
+  const out = [];
+  for (const it of g.carried){
+    if (!(seen[it.name] || []).includes(n.id)) continue;
+    const cat = catalogItem(it.name) || {};
+    if (isCoinRow(cat) || (it.item_type || cat.item_type) === "currency"){ if (/gold/i.test(it.name)) out.push({kind: "gold", itemName: it.name}); }
+    else if (isWeapon(it)){ if (!armed && it.name !== g.main && it.name !== g.off && !(g.doll || []).some(d => d.name === it.name)) out.push({kind: "weapon", itemName: it.name}); }   // never the one in your hand
+    else if ((useOf(it) || {}).kind === "food") out.push({kind: "food", itemName: it.name});
+  }
+  return out;
+}
+async function tickAsks(){
+  if (now - askSeenAt > 2000){ askSeenAt = now; askWatch(); }
+  if (openAsk){                                          // an open ask ends without a verdict if the moment itself is gone
+    const gone = !actors.includes(openAsk.n) || mode !== "explore" || !openAsk.bubble.el.isConnected || now > openAsk.until + 4000;
+    if (gone){ openAsk.bubble.until = 0; openAsk = null; }
+    else if (now > openAsk.until) askAnswered("ignored");
+  }
+  if (!nextAsk) nextAsk = now + ASK_EVERY[0] * (.5 + Math.random() * .5);
+  if (askBusy || openAsk || now < nextAsk || mode !== "explore" || talkNpc || (typeof bagOpen === "function" && bagOpen()) || sneak) return;
+  const h = askHero(); if (!h) return;
+  state.askAt = state.askAt || {};
+  const pool = npcs.filter(n => askRowOf(n.id) && !n.hostile && !n.offStage && !n.down && !n.body && !n.backdrop && !n.waking && n.act !== "sleep" && !wantsWord(n)
+    && !isRapport(n.id) && Date.now() - (state.askAt[n.id] || 0) > ASK_PER_NPC && Math.hypot(n.x - h.x, n.y - h.y) < ASK_NEAR * node.scale)
+    .map(n => ({n, offers: askOffers(n, h)})).filter(x => x.offers.length);
+  nextAsk = now + (pool.length ? ASK_EVERY[0] + Math.random() * (ASK_EVERY[1] - ASK_EVERY[0]) : 20000);   // nobody has anything to ask for: look again soon
+  if (!pool.length) return;
+  const {n, offers} = pool[Math.floor(Math.random() * pool.length)];
+  let ask = null; askBusy = true;
+  try {
+    if (APP && !SANDBOX){
+      const cid = characterIdOf(h.id);
+      const j = cid ? await fetch("/api/npc-ask", {method: "POST", headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({action: "ask", npcName: SPR[n.id].json.name, characterId: cid, offers})}).then(r => r.json()) : null;
+      ask = j && j.ask;
+    } else {                                            // the preview and a rehearsal: a stranger asks for food, and nothing is recorded
+      const o = offers.find(x => x.kind === "food"), who = (PCS[h.id] || {}).race || "you";
+      if (o) ask = {kind: o.kind, itemName: o.itemName, address: who, important: false, line: `Hey ${who}. Spare some of that ${o.itemName.toLowerCase()}?`, replies: {gave: "Good.", refused: "Hm.", ignored: ""}};
+    }
+  } catch (e) {} finally { askBusy = false; }
+  if (!ask || mode !== "explore" || talkNpc || !actors.includes(n) || !(GEAR[h.id] || {carried: []}).carried.some(c => c.name === ask.itemName)) return;
+  state.askAt[n.id] = Date.now();
+  if (ask.important){                                   // too big for a bubble: the "!" and, if they accept, a word
+    if (n.id === "jorlan") return;
+    if (n.storyTalk === undefined) n.storyTalk = !!n.talk;
+    n.talk = true; n.talkWho = fname(h); n.talkSituation = ask.situation || null;
+    delete state.talked[n.id]; delete state.declined[n.id];
+    narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} wants a word with ${fname(h)}.`);
+    return;
+  }
+  showAsk(n, h, ask);
+}
+function showAsk(n, h, ask){
+  stopActivity(n); n.path = []; faceTo(n, h);
+  bark(n, ask.line, ASK_WAIT); speak(n.id, ask.line);    // in their own voice, like every line said to you (Sam, 2026-10-12)
+  const b = bubbles[bubbles.length - 1]; if (!b || b.a !== n) return;
+  b.el.classList.add("ask");
+  const row = document.createElement("div"); row.className = "askrow";
+  const btn = (label, cls, fn) => { const x = document.createElement("button"); x.type = "button"; x.textContent = label; if (cls) x.className = cls;
+    for (const ev of ["pointerdown", "mousedown", "mouseup", "touchstart"]) x.addEventListener(ev, e => e.stopPropagation());
+    x.addEventListener("click", e => { e.stopPropagation(); e.preventDefault(); fn(); }); row.appendChild(x); };
+  btn(ask.kind === "gold" ? "Pay" : "Give", "", () => askGive());
+  btn("Not now", "no", () => askAnswered("refused"));
+  b.el.appendChild(row);
+  b.until = now + ASK_WAIT + 600;                       // the bubble outlives the wait by a breath, so lapsing reads as "ignored"
+  openAsk = {n, h, ask, until: now + ASK_WAIT, bubble: b};
+  log(`${esc(SHORT[n.id] || SPR[n.id].json.name)} asks ${fname(h)} for ${ask.kind === "gold" ? "coin" : `the <b>${esc(ask.itemName)}</b>`}.`);
+}
+function askGive(){
+  const a = openAsk; if (!a) return;
+  const it = (GEAR[a.h.id] || {carried: []}).carried.find(c => c.name === a.ask.itemName);
+  if (!it){ toast(`${fname(a.h)} no longer has the ${a.ask.itemName}.`); askAnswered("refused"); return; }
+  const hand = () => { if (openAsk !== a) return; giveItem(a.h, it, a.n, a.ask.kind === "gold" ? Math.min(it.qty || 1, ASK_COINS) : 1, {toId: askRowOf(a.n.id), ask: true}); askAnswered("gave"); };
+  if (feetBetween(a.h, a.n) <= 10 || a.h !== leader) return hand();
+  a.until = now + ASK_WAIT;                              // they wait while you walk over
+  if (a.bubble) a.bubble.until = now + ASK_WAIT + 600;
+  walkTo(nearNpc(a.n), hand);
+}
+function askAnswered(outcome){
+  const a = openAsk; if (!a) return; openAsk = null;
+  if (a.bubble) a.bubble.until = 0;
+  const reply = (a.ask.replies || {})[outcome];
+  if (reply && actors.includes(a.n)) setTimeout(() => { if (mode === "explore" && actors.includes(a.n)) bark(a.n, reply, 3200); }, outcome === "ignored" ? 0 : 500);
+  if (outcome !== "gave") log(`${fname(a.h)} ${outcome === "refused" ? "says no" : "does not answer"}.`);
+  if (APP && !SANDBOX){ const cid = characterIdOf(a.h.id);
+    if (cid) fetch("/api/npc-ask", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({action: "resolve", npcName: SPR[a.n.id].json.name, characterId: cid, kind: a.ask.kind, itemName: a.ask.itemName, outcome})}).catch(() => {}); }
+  nextAsk = now + ASK_EVERY[0] + Math.random() * (ASK_EVERY[1] - ASK_EVERY[0]);
+}
+// Those who fought beside the party feel owed ("gold if they feel they've earned it"). Told once per fight, by one screen.
+function askEarned(allies){
+  if (!APP || SANDBOX || !allies.length || (seatsSeen.length && !isDm() && party[0] && party[0].id !== mySlug)) return;
+  const ids = party.map(p => characterIdOf(p.id)).filter(Boolean);
+  if (ids.length) fetch("/api/npc-ask", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({action: "earned", npcNames: allies.map(n => SPR[n.id].json.name), characterIds: ids})}).catch(() => {});
+}
+// CARRYING CAPACITY (Sam, 2026-11-10: "Is weight getting factored into these items?" ... "Weight next."). SRD 5.1,
+// Lifting and Carrying: "Your carrying capacity is your Strength score multiplied by 15." The server is the judge
+// (lib/carry.ts, asked by /api/walk-loot and /api/walk-items); these three say the same thing on the map first, so a
+// hero is told before they spend movement on a thing they cannot lift. A piece's weight is its row's, else the catalogue's.
+const itemLb = it => { const w = Number(it && it.wt); if (w > 0) return w; const c = it && catalogItem(it.name); return (c && Number(c.weight)) || 0; };
+const carriedLb = id => Math.round(((GEAR[id] || {}).carried || []).reduce((t, it) => t + itemLb(it) * (it.qty || 1), 0) * 10) / 10;
+function carryMaxLb(id){ const g = GEAR[id] || {}; if (g.carryMax !== undefined) return g.carryMax; const st = (SHEETS[id] || {}).strScore || (PCS[id] || {}).strScore; return st ? st * 15 : null; }
+/** Why this hero cannot take `lb` more pounds, or "" when they can. Heroes only: an NPC's pack is not weighed. */
+function carryRefusal(a, lb, name){
+  if (!a || a.kind !== "pc" || !(lb > 0)) return "";
+  const max = carryMaxLb(a.id); if (max == null) return "";
+  const has = carriedLb(a.id); if (has + lb <= max + 1e-9) return "";
+  return `${fname(a)} cannot carry that: ${has} of ${max} lb carried, and the ${name} weighs ${Math.round(lb * 10) / 10} lb. Drop or hand something off first.`;
+}
 async function loadGear(only){
   if (!APP) return; await ensureCatalog();
-  for (const id of (only ? [only] : [...party.map(p => p.id), ...Object.keys(ALLY_ROW)])){
-    const cid = characterIdOf(id); if (!cid) continue;
+  for (const id of (only ? [only] : [...party.map(p => p.id), ...Object.keys(ALLY_ROW), ...Object.keys(ASK_ROW)])){
+    const cid = characterIdOf(id) || ASK_ROW[id]; if (!cid) continue;
     try {
       const j = await (await fetch(`/api/equipment?character_id=${encodeURIComponent(cid)}`, {cache: "no-store"})).json();
       const carried = (j.carried || []).map(r => { const cat = catalogItem(r.name); return {name: r.name, item_key: r.item_key, item_type: r.items?.item_type || r.item_type || cat?.item_type, properties: r.items?.properties || cat?.properties || {}, pixel: cat?.pixel_icon_url || null,
         eslot: normSlot(r.equippable_slot || r.items?.equippable_slot || cat?.equippable_slot || ""),
+        wt: Number(r.weight ?? r.items?.weight ?? cat?.weight ?? 0) || 0,
         qty: r.quantity || 1, icon: r.icon_url || cat?.icon_url || null, desc: r.description || cat?.description || ""}; });
       const doll = (j.equipped || []).filter(e => e.equipped !== false).map(e => ({slot: normSlot(e.slot), name: e.name, item_key: e.item_key || null}));
       const inHand = sl => (doll.find(d => d.slot === sl) || {}).name || null;
-      GEAR[id] = {carried, doll, main: inHand("main_hand"), off: inHand("off_hand")}; refreshAttacks(id); refreshAc(id);
+      GEAR[id] = {carried, doll, main: inHand("main_hand"), off: inHand("off_hand"), carryMax: j.carry ? j.carry.max : undefined}; refreshAttacks(id); refreshAc(id);
     } catch (e) {}
   }
   if (cbt) renderParty();
@@ -18115,13 +18427,16 @@ function drawFloorItems(){
 async function pickUp(a, p){
   if (!floor.includes(p)) return;
   const inFight = mode === "combat" && cbt;
-  if (inFight){ if (a.c.move < PICKUP_FT){ toast(`Picking it up costs ${PICKUP_FT} ft of movement.`); return; } a.c.move -= PICKUP_FT; }
-  floor = floor.filter(q => q !== p); await ensureCatalog();
+  await ensureCatalog();
   const cat = catalogItem(p.name) || {};
+  { const no = carryRefusal(a, Number(cat.weight) || 0, p.name); if (no){ toast(no, 4200); return; } }   // too heavy: it stays on the floor, nothing is spent
+  if (!floor.includes(p)) return;
+  if (inFight){ if (a.c.move < PICKUP_FT){ toast(`Picking it up costs ${PICKUP_FT} ft of movement.`); return; } a.c.move -= PICKUP_FT; }
+  floor = floor.filter(q => q !== p);
   const g = GEAR[a.id] || (GEAR[a.id] = {carried: [], main: null});
   const have = g.carried.find(c => c.name === p.name && !isWeapon(c));
   if (have) have.qty = (have.qty || 1) + 1;
-  else g.carried.push({name: p.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: p.pixel, qty: 1, icon: cat.icon_url || null, desc: cat.description || ""});
+  else g.carried.push({name: p.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: p.pixel, qty: 1, wt: Number(cat.weight) || 0, icon: cat.icon_url || null, desc: cat.description || ""});
   if (bagOpen()) renderBag();
   popText(a, `+ ${p.name}`, "#e8d9a8"); log(`${fname(a)} picks up the <b>${esc(p.name)}</b>${inFight ? ` (${PICKUP_FT} ft of movement)` : ""}.`);
   bank("ui/item_pickup", .7);
@@ -18690,7 +19005,9 @@ function renderBag(){
       b.onclick = () => removeFrom(a, inv.slot); bx.appendChild(b); sel.appendChild(bx); }
   } else sel.innerHTML = '<div class="what">Click a slot to equip or remove, or drag: an item onto a slot to wear it, a slot off the doll to take it off.</div>';
   { const n = g.carried.length;
-    $("invPackHead").innerHTML = `Backpack<small>${inv.slot ? `fits the ${esc(slotLabel(inv.slot).toLowerCase())} first · ` : ""}${n} item${n === 1 ? "" : "s"}</small>`; }
+    const has = carriedLb(a.id), max = carryMaxLb(a.id), near = max != null && has >= max * .9;
+    const load = max != null ? `<span title="Carrying capacity: Strength × 15. Past it, nothing more goes in the pack."${near ? ' style="color:#ff8a7a"' : ""}>${has} / ${max} lb</span> · ` : has > 0 ? `${has} lb · ` : "";
+    $("invPackHead").innerHTML = `Backpack<small>${inv.slot ? `fits the ${esc(slotLabel(inv.slot).toLowerCase())} first · ` : ""}${load}${n} item${n === 1 ? "" : "s"}</small>`; }
   const list = $("invList"); list.innerHTML = "";
   // the card's panel holds a card or is not there: no instruction text, no empty frame (Sam, 2026-11-10: "We don't
   // need this button instruction"). Resting on a row or clicking it fills it — see openCard below.
@@ -18715,7 +19032,7 @@ function renderBag(){
       : u.kind === "throw" ? `${FLASK_OF(it).blurb} · thrown up to 20 ft` : u.kind === "dm" ? `use it through the DM: ${u.why}` : (it.desc || "");
     // the row keeps the short line (what it is, or where it is worn); the long description lives on the item's card
     row.innerHTML = `<span class="invPic${worn.length ? " worn" : ""}"${RARITY_RANK[rar] > 0 ? ` style="border-color:${RARITY_COL[rar]}"` : ""}>${pic ? `<img src="${esc(pic)}" alt="" loading="lazy">` : "◆"}</span>`
-      + `<span class="invTxt"><button class="efPick" aria-pressed="${picked ? "true" : "false"}"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}${rarTag}</b></button><small>${esc(what)}${armorOf(it) ? `${what ? " · " : ""}${armorNote(a, it, true)}` : ""}${[weaponNote(SHEETS[a.id], it, true), attuneNote(it, true)].filter(Boolean).map(x => ` · ${x}`).join("")}</small></span><span class="invBtns"></span>`;
+      + `<span class="invTxt"><button class="efPick" aria-pressed="${picked ? "true" : "false"}"><b>${esc(it.name)}${(it.qty || 1) > 1 ? ` <i>×${it.qty}</i>` : ""}${rarTag}</b></button><small>${esc(what)}${armorOf(it) ? `${what ? " · " : ""}${armorNote(a, it, true)}` : ""}${[weaponNote(SHEETS[a.id], it, true), attuneNote(it, true, a.id)].filter(Boolean).map(x => ` · ${x}`).join("")}</small></span><span class="invBtns"></span>`;
     // the name is the real button (keyboard reaches it); a click anywhere else on the row does the same for the mouse
     // THE CARD OPENS ITSELF (Sam, 2026-11-10: "When we hover for a few seconds or click on the item this should happen
     // automatically and execute cleanly"). A click opens it at once; the mouse resting on a row for BAG_HOVER_MS opens
@@ -18953,10 +19270,11 @@ function renderItemCard(a, g, it, u, worn, pic, what, fight, mine){
   const kind = u.kind === "weapon" ? "Weapon" : isArmorish(it) ? "Armor" : u.kind === "heal" || u.kind === "drink" ? "Potion" : u.kind === "food" ? "Provisions" : u.kind === "throw" ? "Thrown" : it.eslot ? "Wearable" : (it.item_type ? String(it.item_type).replace(/\b\w/g, c => c.toUpperCase()) : "Gear");
   const where = worn.length ? `${worn.some(HAND) ? "held" : "worn"} · ${worn.map(slotLabel).join(" and ").toLowerCase()}` : it.eslot && HAND(it.eslot) ? `held in the ${slotLabel(it.eslot).toLowerCase()}` : it.eslot ? `goes on the ${slotLabel(it.eslot).toLowerCase()}` : isWeapon(it) ? "held in a hand" : "carried";
   const atk = isWeapon(it) && SHEETS[a.id] ? attackFromItem(SHEETS[a.id], it) : null;
-  const meta = [kind, where, (it.qty || 1) > 1 ? `×${it.qty}` : "", RARITY_RANK[rar] > 0 ? `<b style="color:${RARITY_COL[rar]}">${RARITY_LABEL[rar]}</b>` : ""].filter(Boolean).join(" · ")
+  const lbEach = itemLb(it);
+  const meta = [kind, where, (it.qty || 1) > 1 ? `×${it.qty}` : "", lbEach > 0 ? `${Math.round(lbEach * (it.qty || 1) * 10) / 10} lb${(it.qty || 1) > 1 ? ` (${lbEach} each)` : ""}` : "", RARITY_RANK[rar] > 0 ? `<b style="color:${RARITY_COL[rar]}">${RARITY_LABEL[rar]}</b>` : ""].filter(Boolean).join(" · ")
     + (atk ? `<br>${esc(atk.dmg)} ${esc(atk.type)} · +${atk.hit} to hit${atk.reach > 5 ? ` · ${atk.reach} ft` : ""}` : "")
     + (armorOf(it) ? `<br>${armorNote(a, it)}` : "")
-    + (atk ? `<br>${weaponNote(SHEETS[a.id], it)}` : "") + (attuneNote(it) ? `<br>${attuneNote(it)}` : "");
+    + (atk ? `<br>${weaponNote(SHEETS[a.id], it)}` : "") + (attuneNote(it, false, a.id) ? `<br>${attuneNote(it, false, a.id)}` : "");
   d.innerHTML = `<div class="efBig${it.icon ? "" : " px"}">${pic ? `<img src="${esc(pic)}" alt="">` : "◆"}</div><div><h5>${esc(it.name)}</h5><div class="efMeta">${meta}</div>${it.desc ? `<div class="efDesc">${esc(it.desc)}</div>` : ""}<div class="efActs"></div></div>`;
   const acts = d.querySelector(".efActs");
   const btn = (label, ok, why, fn, primary) => { const b = document.createElement("button"); b.className = "btn" + (primary ? " primary" : ""); b.textContent = label; b.disabled = !ok; if (why) b.title = why; b.onclick = fn; acts.appendChild(b); };
@@ -20188,12 +20506,12 @@ function keyboardMove(a, dt){
   // speed (carried in feet, 5 ft at a time), the hero stops when it runs out, and stepping out of a foe's reach
   // without Disengage gives that foe its opportunity attack (SRD 5.1), right before the hero leaves.
   if (mode === "combat" && cbt && a === activeActor()){
-    const fp = ftPx(a), left = a.c.move * fp - (a.c.kbdPx || 0), d = Math.hypot(nx - a.x, ny - a.y);
+    const fp = ruleFt(a), left = a.c.move * fp - (a.c.kbdPx || 0), d = Math.hypot(nx - a.x, ny - a.y);
     if (left <= .5){ nx = a.x; ny = a.y; if (!a.kbdOut){ a.kbdOut = true; hint("No movement left this turn."); } }
     else if (d > left){ const k = left / d; nx = a.x + (nx - a.x) * k; ny = a.y + (ny - a.y) * k; }
     if (!a.c.conds.has("disengaged")){
       // one measure for both sides of the line: inside its reach this frame, outside it on the next step
-      const f = standing(foes).find(f => { const r = reachPx(f, a, 5) + 6; return !f.c.reactionUsed && !incapacitated(f) && Math.hypot(a.x - f.x, a.y - f.y) <= r && Math.hypot(nx - f.x, ny - f.y) > r; });
+      const f = standing(foes).find(f => { const r = reachPx(f, a, 5) + 6; return !f.c.reactionUsed && !incapacitated(f) && pxBetween(a, f, a) <= r && pxBetween({x: nx, y: ny}, f, a) > r; });
       if (f){
         keys.clear(); a.kbd = false; setAnim(a, "idle"); f.c.reactionUsed = true; combatBusy = true; closeMenu();
         oaCue(f, a); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
@@ -20437,8 +20755,9 @@ function update(dt){
         ambient(n);                                       // the line decides which way they look
       }
     }
+    tickAsks();                                           // someone asks for something you carry (NPC ASKS)
     if (now > nextAmbient && npcs.length){
-      const pool = npcs.filter(n => (n.barks || []).length && now - n.lastBark > 15000);   // creatures carry no barks; without the guard the ambient timer threw once one was on the plate
+      const pool = npcs.filter(n => (n.barks || []).length && now - n.lastBark > 15000 && !(openAsk && openAsk.n === n));   // creatures carry no barks; without the guard the ambient timer threw once one was on the plate
       if (pool.length) ambient(pool[Math.floor(Math.random() * pool.length)]);
       nextAmbient = now + 14000 + Math.random() * 10000;
     }
@@ -20449,10 +20768,11 @@ function update(dt){
     for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++){
       const a = bodies[i], b = bodies[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
       if (a.lunging || b.lunging) continue;   // a lunge closes to contact on purpose: nobody is shoved off their spot by it
-      const min = (a.kind === "foe" || b.kind === "foe" ? 70 : 45) * node.scale;
+      // (on the painted floor the gap is taken as painted: 70 plate px out there is 5-12 painted feet, which held two bodies out of each other's reach)
+      const min = (a.kind === "foe" || b.kind === "foe" ? 70 : 45) * node.scale, gap = onPaintedFloor(a) && onPaintedFloor(b) ? feetSeg(a, b, 1) * ftPx(a) : d;
       // Sam, 2026-10-14: a character that walked into someone kept walking against the push and stalled.
       // The one who is walking holds its line; only a standing body gives way (and never a leaping one).
-      if (d > 0 && d < min){ const push = Math.min(4, (min - d) / 2), ux = dx / d, uy = dy / d, aw = a.path.length > 0 || a.leap, bw = b.path.length > 0 || b.leap;
+      if (d > 0 && gap < min){ const push = Math.min(4, (min - gap) / 2), ux = dx / d, uy = dy / d, aw = a.path.length > 0 || a.leap, bw = b.path.length > 0 || b.leap;
         if (!b.once && !bw && walkable(b.x + ux * push, b.y + uy * push)){ b.x += ux * push; b.y += uy * push; }
         if (!a.once && !aw && walkable(a.x - ux * push, a.y - uy * push)){ a.x -= ux * push; a.y -= uy * push; } }
     }

@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { CONFISCATION_STASH_NAME } from "@/lib/confiscation"
+import { canCarry, syncCarried } from "@/lib/carry"
 import { bodyKit } from "@/lib/harvest"
 import { BOOK_CONTAINERS, BODY_KIT, CREATURE_PARTS, PEN_KEY_SLUG, POCKET_SPRITES, rollPockets, rollWear, onDutyKit, rollPurse, PURSE_CR, isValuable, parseContainer, pocketEntries, type HarvestCheck, type LootEntry, type Ruined } from "@/lib/walk-loot"
 
@@ -179,8 +180,12 @@ export async function POST(req: NextRequest) {
     const row = now.rows.find((r) => r.kind === "stash" && r.rowId === String(body.rowId))
     if (!row) return NextResponse.json({ error: "It is not there any more." }, { status: 409 })
     const sid = await stashId(db)
+    { const { data: w } = await db.from("inventory_items").select("weight,quantity").eq("id", row.rowId!).maybeSingle()   // carrying capacity (lib/carry.ts)
+      const v = await canCarry(db, characterId, Number(w?.weight ?? 0) * Number(w?.quantity ?? 1), row.name, Number(w?.quantity ?? 1))
+      if (!v.ok) return NextResponse.json({ error: v.why, carry: v }, { status: 409 }) }
     const { error } = await db.from("inventory_items").update({ character_id: characterId, confiscated_from: null }).eq("id", row.rowId!).eq("character_id", sid!)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    await syncCarried(db, characterId)
     delete s.carry[row.rowId!]; await writeState(db, s, `${who.name} took ${row.name}`)
     await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text: `${who.name} takes ${row.qty > 1 ? row.qty + " × " : ""}${row.name}${row.owner && row.owner !== who.name ? ` (${row.owner}'s)` : ""} from ${where}.` })
     return NextResponse.json({ ok: true, took: row.name, qty: row.qty })
@@ -194,6 +199,8 @@ export async function POST(req: NextRequest) {
   if (row.check && body?.passed !== true) return NextResponse.json({ error: `${row.name} needs a ${row.check.skill} check (DC ${row.check.dc}) to come free.` }, { status: 409 })
   const it = (await itemsBySlug(db, [slug])).get(slug)
   if (!it) return NextResponse.json({ error: `${row.name} is not in the item catalogue yet, so it cannot be taken.` }, { status: 409 })
+  { const v = await canCarry(db, characterId, Number(it.weight ?? 0) * row.qty, it.name, row.qty)   // carrying capacity (lib/carry.ts): refused before anything leaves the container
+    if (!v.ok) return NextResponse.json({ error: v.why, carry: v }, { status: 409 }) }
   ;(s.taken[c.key] ??= {})[slug] = (s.taken[c.key][slug] ?? 0) + row.qty
   const err = await writeState(db, s, `${who.name} took ${it.name}`)
   if (err) return NextResponse.json({ error: err.message }, { status: 500 })
@@ -203,6 +210,7 @@ export async function POST(req: NextRequest) {
     : await db.from("inventory_items").insert({ character_id: characterId, name: it.name, quantity: row.qty, description: it.description, item_type: it.item_type, icon_url: it.icon_url,
         item_id: it.id, equippable_slot: it.equippable_slot, weight: it.weight, value: it.value })
   if (error){ s.taken[c.key][slug] -= row.qty; await writeState(db, s, `${it.name} put back: ${error.message}`); return NextResponse.json({ error: `Could not stow it: ${error.message}` }, { status: 500 }) }
+  await syncCarried(db, characterId)
   await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text: `${who.name} takes ${row.qty > 1 ? row.qty + " × " : ""}${it.name} from ${where}.` })
   return NextResponse.json({ ok: true, took: it.name, qty: row.qty })
 }
