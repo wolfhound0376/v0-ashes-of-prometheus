@@ -5021,14 +5021,14 @@ function openInteract(z, opts = {}){
         (k.success ? onWin : onLose)();
       });
     };
-    if (hasPenKey()) add("Unlock it with the pen key", () => { close(); sfx("lock-picked", .9); log(`${fname(leader)} turns the stolen key in the lock.`); if (APP) handOff(`${fname(leader)} unlocks the slave pen gate with the key lifted from a guard.`, true); setTimeout(() => unlockGate(), 650); }, "primary", {icon: "key"});
+    if (hasPenKey()) add("Unlock it with the pen key", () => { close(); sfx("lock-picked", .9); log(`${fname(leader)} turns the stolen key in the lock.`); if (APP) handOff(`${fname(leader)} unlocks the slave pen gate with the key lifted from a guard.`, true); breakoutBy = "key"; setTimeout(() => unlockGate(), 650); }, "primary", {icon: "key"});
     // No tools, no option: a prisoner's kit is on the stash (Sam, 2026-10-30).
     if (hasThievesTools(leader)) add("Pick the lock", attempt("pen-gate:pick", heroMod(leader, "thievesTools", "dex"), () => {
       sfx("lock-picked", .9); log("The lock gives with a soft click.", {say: true});
-      setTimeout(() => unlockGate(), 650);
+      breakoutBy = "pick"; setTimeout(() => unlockGate(), 650);
     }, () => { sfx("lock-pick-fail", .8); toast("The pick slips in the wards. The lock holds.", 3200); }), "primary", {icon: "pick", check: "Thieves' tools", ability: "dex", note: manacled() ? MANACLE_NOTE : null});
     add("Force it", attempt("pen-gate:force", heroMod(leader, "athletics", "str"), () => {
-      log("The bolt tears from the stone.", {say: true}); unlockGate(1);
+      log("The bolt tears from the stone.", {say: true}); breakoutBy = "force"; unlockGate(1);
     }, () => { sfx("door-locked", .9); toast("The bars shudder in their bolts, and hold.", 3200); }), "", {icon: "force", check: "Athletics", ability: "str", note: manacled() ? MANACLE_NOTE : null});
     calls();
     if (dmScreen()) add("DM: Jorlan opens it", () => { close(); openGate(); }, "", {icon: "dm"});
@@ -5340,6 +5340,86 @@ function unlockGate(forced){
   log(opened);
   shakeKeyResolved();    // THE SHAKEDOWN: the key has done its work (or the gate is moot) -- the drow stop counting
   const r = npcs.find(n => n.id === "ront"); if (r && cur === 11) setTimeout(() => bark(r, "Finally.", 3000), 900);
+  if (breakoutBy){ const by = breakoutBy; breakoutBy = null; if (cur === PEN) setTimeout(() => breakout(by), 500); }   // THE BREAKOUT: only when a prisoner's hand opened it
+}
+// ---------- THE BREAKOUT ----------
+// Sam, 2026-11-10: "I used the key to get out and the door opened. The guards just stood there and so did the
+// prisoners. No option available to attack. Nothing. Very awkward" — then, to the proposal: "Build the breakout."
+// unlockGate swung the door, logged a line and had Ront say "Finally."; nothing told anyone else the gate was open,
+// while on the dashboard Malachar was already narrating a guard drawing his sword. Now the moment is staged here:
+//   1. the swing — a short freeze, the camera goes to the gate;
+//   2. the guards — posted and looking: a "!" and the shout Sam wrote on 2026-10-30 (in their tongue; read only by a
+//      hero who has it). Not looking (the hero is sneaking): they have not noticed. No guard at the post: nobody sees;
+//   3. the prisoners — the ones who fight (ALLY_SHEETS) come up to the hero, the rest back away from the gate,
+//      Shuushar stays where he sits (a pacifist: lib/world-ai/campaigns.ts), Stool gets behind the hero;
+//   4. the choice — Fight / Shut it / Surrender when seen; Strike first (they are surprised) / Slip out / Shut it
+//      when not. Every row is something the hero can do right now.
+// Only when a PRISONER opened it (key, pick or force, out of a fight): the drow opening their own gate, a gate
+// opened mid-fight and Jorlan's gambit are not this. One per gate-opening.
+// NOT HERE YET (second PR, Sam's go): the horn and the three two-minute alarm waves, a roll on shutting the gate in
+// their faces (today Malachar plays that), "run for it" under fire, voiced prisoner lines.
+let breakoutBy = null;
+const BREAKOUT_SHOUT = "The key! They had it all along and they are escaping! Set the alarm and kill them all!";   // Sam's line, 2026-10-30
+const BREAKOUT_SHOUT_FORCED = "They are escaping! Set the alarm and kill them all!";                                // the same line without the key
+function breakout(by){
+  if (cur !== PEN || mode !== "explore" || laborLive() || surgeon || timeStopped || !leader) return;
+  const h = leader, guards = gateGuards(), g = gateCenter() || {x: h.x, y: h.y}, sc = node.scale || 1, seen = !sneak;
+  hitstop(140); shake(4); try { camTo(Math.max(view.z, 1.35), g.x, g.y, 450); } catch (e) {}
+  // the prisoners
+  const fighters = alliesHere(), others = npcs.filter(n => !fighters.includes(n) && isBystander(n) && PEN_NPCS.some(d => d.id === n.id));
+  const placed = [{x: h.x, y: h.y}];
+  // nobody stops for "a word?" while this plays: a prisoner walking up to the hero would open their own talk card
+  // and take the moment. Their wish to talk comes back afterwards.
+  for (const n of [...fighters, ...others]) if (n.talk){ n.talk = false; setTimeout(() => { n.talk = true; }, 30000); }
+  fighters.forEach((n, i) => { stopActivity(n); n.actUntil = now + 20000;
+    const spot = nearestWalkable(h.x + (i % 2 ? 1 : -1) * (70 + 40 * Math.floor(i / 2)) * sc, h.y + (26 + 18 * Math.floor(i / 2)) * sc, placed); placed.push(spot);
+    n.path = findPath(n, spot); if (!n.path.length) n.path = [spot]; n.slow = false; n.onArrive = () => faceTo(n, g); });
+  const away = norm({x: centroid.x - g.x, y: centroid.y - g.y});
+  others.forEach((n, i) => {
+    if (n.id === "shuushar"){ faceTo(n, g); return; }                                       // he does not move
+    stopActivity(n); n.actUntil = now + 20000;
+    const spot = n.id === "stool" ? nearestWalkable(h.x + away.x * 80 * sc, h.y + away.y * 80 * sc, placed)
+      : nearestWalkable(centroid.x + away.x * (260 + 50 * i) * sc + (i % 2 ? 60 : -60) * sc, centroid.y + away.y * (200 + 40 * i) * sc, placed);
+    placed.push(spot); n.path = findPath(n, spot); if (!n.path.length) n.path = [spot]; n.slow = false; n.onArrive = () => faceTo(n, g); });
+  const names = l => l.map(n => esc(SHORT[n.id] || fname(n)));
+  const list = a => a.length > 1 ? a.slice(0, -1).join(", ") + " and " + a[a.length - 1] : a[0];
+  if (fighters.length) log(`${list(names(fighters))} ${fighters.length > 1 ? "come" : "comes"} up beside ${esc(fname(h))}.${others.some(n => n.id !== "shuushar") ? " The others back away from the open gate." : ""}`);
+  // the guards
+  if (!guards.length){ log("<em>Nobody is at the post.</em> The landing outside the gate is empty — for now.", {say: true}); return; }
+  const w = guards.slice().sort((a, b) => Math.hypot(a.x - g.x, a.y - g.y) - Math.hypot(b.x - g.x, b.y - g.y))[0];
+  if (!seen){ log(`<em>The gate is open and the watch has not turned round.</em>`); setTimeout(() => breakoutCard(w, guards, false, by), 900); return; }
+  for (const d of guards){ d.path = []; d.actUntil = now + 60000; d.scanAt = now + 60000; faceTo(d, h); }
+  popText(w, "!", "#ff6b5a", 1.4); bank("ui/nat1", .4);
+  const line = by === "key" ? BREAKOUT_SHOUT : BREAKOUT_SHOUT_FORCED;
+  if (viewerUnderstands()) bark(w, line, 5200, {talk: true, lang: "Elvish"}); else narrate(w, `(${fname(w)} shouts something in Elvish, and the others answer.)`);
+  setTimeout(() => breakoutCard(w, guards, true, by), 1500);
+}
+function breakoutCard(w, guards, seen, by){
+  if (cur !== PEN || mode !== "explore" || !state.gateOpen) return;                          // a fight or another card got there first
+  const h = leader, name = fname(w), many = guards.length > 1;
+  party.forEach(p => { p.path = []; }); mode = "dialog"; tip.hidden = true;
+  try { portrait(w.id, $("objPic"), 128); } catch (e) {}
+  $("objWho").textContent = seen ? "The gate is open" : "The gate is open — unseen";
+  $("objText").textContent = seen
+    ? `${name} has seen it${many ? `, and ${guards.length - 1 === 1 ? "the other guard is" : "the others are"} raising crossbows` : ""}. Whatever ${fname(h)} does next, it happens now.`
+    : `${many ? "The guards have" : name + " has"} not noticed. ${fname(h)} is still out of sight.`;
+  const box = $("objBtns"); box.innerHTML = "";
+  const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
+  const add = (label, fn, cls = "") => choiceRow(box, label, () => { close(); fn(); }, cls);
+  const shut = quiet => { if (state.gateBroken) return;
+    state.doorShut = true; setDoor(false); if (balcony()) buildGrid(); setTimeout(() => sfx("door-close"), 650);
+    log(quiet ? `${esc(fname(h))} eases the gate shut again. Nobody saw.` : `${esc(fname(h))} drags the gate shut in their faces.`);
+    if (!quiet && APP) handOff(`${fname(h)} opened the slave pen gate ${by === "key" ? "with a stolen key" : by === "pick" ? "by picking the lock" : "by force"}, was seen by the drow guards, and has pulled it shut again and backed away. The gate is unlocked but closed. Play the guards: they saw it open.`); };
+  if (seen){
+    add("Fight at the gate", () => startCombat(guards, "the breakout at the pen gate"), "primary");
+    if (!state.gateBroken) add("Shut the gate and back away", () => shut(false));
+    add("Surrender", () => surrenderBegins(w));
+  } else {
+    add("Strike first — they are surprised", () => { endSneak(); startCombat(guards, "the breakout at the pen gate", {surprised: guards.slice()}); }, "primary");
+    add("Slip out quietly", () => { log(`${esc(fname(h))} stays low. The way out is open.`); });
+    if (!state.gateBroken) add("Shut it again", () => shut(true));
+  }
+  showObjCard(); cardClose(close); box.querySelector("button")?.focus();
 }
 function openGate(){
   if (state.gateOpen) return;
