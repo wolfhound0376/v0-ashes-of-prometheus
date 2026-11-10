@@ -98,6 +98,7 @@ header .tools input[type=range]{accent-color:#f2c55c}
 .vignette.on{opacity:1}
 .fade{position:absolute;inset:0;background:#000;opacity:0;pointer-events:none;transition:opacity .35s ease}
 .fade.on{opacity:1}
+.fade.quick{transition:opacity .2s ease}   /* a door: a short dip to black, not a held fade (DOORS DON'T WAIT) */
 .titlecard{position:absolute;left:50%;top:16%;transform:translateX(-50%);text-align:center;pointer-events:none;opacity:0;transition:opacity .6s ease;text-shadow:0 2px 14px #000,0 0 3px #000}
 .titlecard.on{opacity:1}
 .titlecard .no{font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.2em;color:var(--ember);text-transform:uppercase}
@@ -3036,16 +3037,16 @@ async function enterNode(n, opts = {}){
       else if (arrival && arrival.climb){ const C = arrival.climb; p.x = C.ladder[0]; p.y = C.ladder[1]; p.face = faceOf(0, -1);   // hidden by the climb until their turn (alpha stays 1 so the draw loop reaches them)
         p.climbing = {t0: now + i * 650, dir: C.dir === "up" ? "down" : "up", from: {x: C.ladder[0], y: C.ladder[1]}, to: {x: C.foot[0], y: C.foot[1]}, out: false};
         p.waitUntil = now + i * 650 + 1100; p.path = [{x: C.foot[0], y: C.foot[1]}, {x: fx, y: fy}]; }
-      else { const back = 520 + i * 70; p.x = fx - entryDir.x * back; p.y = fy - entryDir.y * back; p.path = [{x: fx, y: fy}]; p.waitUntil = now + i * 260; p.walkIn = true; p.onArrive = () => { p.walkIn = false; }; }
+      else { const back = 320 + i * 60; p.x = fx - entryDir.x * back; p.y = fy - entryDir.y * back; p.path = [{x: fx, y: fy}]; p.waitUntil = now + i * 180; p.walkIn = true; p.onArrive = () => { p.walkIn = false; }; }   // from the threshold (was 520 back, 260 ms apart): exits stay locked until the leader lands, so a long walk-in is a long wait (DOORS DON'T WAIT)
     });
     // THE PRISONERS COME IN BEHIND YOU (Sam, 2026-10-27: "Why are NPCs ahead of us. We should arrive first and they
     // should trickle in"). They were set down around the spawn point at once while the heroes walked in from the edge,
     // so they were already standing in the room. Now they start further back along the same way and follow in, a beat
     // apart, after the last hero. (A climb or a drop keeps them where they are: there is no edge to walk in from.)
     if (!opts.drop && !(arrival && arrival.climb)){
-      const lag = party.length * 260 + 700;
+      const lag = party.length * 180 + 500;
       npcs.filter(a => a.company).forEach((c, i) => {
-        const fx = c.x, fy = c.y, back = 640 + i * 60;
+        const fx = c.x, fy = c.y, back = 440 + i * 60;
         c.x = fx - entryDir.x * back; c.y = fy - entryDir.y * back; c.path = [{x: fx, y: fy}];
         c.waitUntil = now + lag + i * (380 + Math.random() * 260); c.actUntil = c.waitUntil + 4000; c.walkIn = true;
         c.onArrive = () => { c.walkIn = false; c.home = {x: c.x, y: c.y}; };
@@ -3068,8 +3069,29 @@ async function enterNode(n, opts = {}){
   { const f = fightHere(); if (f && f.by !== OW.key) log(`<em>A fight is underway here, on ${esc(f.who)}'s screen.</em> ${esc(SHORT[leader.id] || fname(leader))} joins it at the next round; that screen plays it.`); }
   crewsOnEnter();                                         // prisoners out on another work crew are not in the pen
   owEntered();
+  setTimeout(() => { if (cur === n) warmPlates(n); }, 1200);   // once this plate has settled, fetch the ones next door (DOORS DON'T WAIT)
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
+// DOORS DON'T WAIT (Sam, 2026-11-10: "improving gameplay and map fluidity"; FF node movement lane 2, the timing half).
+// Three things made every door slow, and none of them was the walk itself:
+//   1. the next painting was only fetched once the screen was already black, so the dark lasted as long as the download;
+//   2. the party walked out on a fixed timer (1.5 s, 2.6 s on a traced crossing) however near the exit the leader stood;
+//   3. the fade was held 420 ms on a 350 ms transition, and the walk-in began half a screen back with exits locked till it ended.
+// Now: the plates next door are fetched and decoded while the party is still exploring this one (warmPlates), the fade
+// starts when the leader actually reaches the way out (leaderOut, with the old timings kept as the ceiling), and a door
+// is a 200 ms dip. Ladders, the drop through the falls and the work detail's cut through black keep their own pacing.
+const PLATE_WARM = {};
+function warmPlates(n){
+  const next = new Set(); for (const z of (SPEC[n] && SPEC[n].zones) || []) for (const t of z.to || []) if (SPEC[t] && String(t) !== String(n)) next.add(String(t));
+  for (const k of Object.keys(PLATE_WARM)) if (!next.has(k)) delete PLATE_WARM[k];   // only next door is kept: a painting two rooms back is let go
+  for (const k of next){ if (PLATE_WARM[k]) continue; const im = new Image(); im.decoding = "async"; im.src = plateUrl(k); PLATE_WARM[k] = im; if (im.decode) im.decode().catch(() => {}); }
+}
+// the leader has gone into the way out: `left` waypoints or fewer still ahead of them (never sooner than `min`, never later than `max`)
+function leaderOut(a, left, min, max){
+  const t0 = performance.now();
+  return new Promise(res => { const tick = () => { const el = performance.now() - t0;
+    if (el >= max || (el >= min && (!a || !a.path || a.path.length <= left) && !(a && a.waitUntil && now < a.waitUntil))) res(); else setTimeout(tick, 40); }; tick(); });
+}
 // Leaving a plate: the party walks out along the exit (across the bridge, down the stairs, off the edge),
 // the camera slides to the neighbouring plate, and they walk in from its matching edge.
 // `cut` (a work detail leaving the pen, Sam 2026-10-26): they walk out through the exit the same way, then ONE fade-cut
@@ -3109,7 +3131,10 @@ async function travel(to, z, fromWorld, cut, solo){
     else { const j = route.findIndex(p => p.jump); a.path = (j >= 0 && outsidePen(a) ? route.slice(j + 1) : route).map(p => ({...p})); }
   });
   const dir = drop ? {x: 0, y: 1} : Math.abs(exitDir.x) >= Math.abs(exitDir.y) ? {x: Math.sign(exitDir.x) || 1, y: 0} : {x: 0, y: Math.sign(exitDir.y) || 1};
-  await wait(drop ? 1900 : climb ? 1600 + order.length * 650 : cr ? 2600 : 1500);
+  // a plain door fades as the leader steps into it (one waypoint, the few steps on, still ahead); a traced crossing
+  // (the bridge, a stair) fades when the leader has walked it. The old fixed waits are the ceiling, never the rule.
+  if (drop) await wait(1900); else if (climb) await wait(1600 + order.length * 650);
+  else if (cr) await leaderOut(order[0], 0, 500, 2600); else await leaderOut(order[0], 1, 320, 1500);
   if (cut){
     // the cut goes through black (Sam, 2026-10-27: the shift ends — "exits the plate, darkens, and shows them being
     // escorted back into the pen"): out of the door, a held beat of dark, then the next place fades up
@@ -3123,10 +3148,10 @@ async function travel(to, z, fromWorld, cut, solo){
   // down. That looks horrible ... we fade out"). The plate used to slide sideways to the next one whatever the way was —
   // a ladder up or down included. Now the party goes into the exit (or up or down its ladder) and the screen fades;
   // only the drop through the falls keeps its slide, because falling is the point.
-  if (drop) await slideTo(to, dir); else { $("fade").classList.add("on"); await wait(420); }
+  if (drop) await slideTo(to, dir); else { $("fade").classList.add("quick", "on"); await wait(230); }
   const verb = drop ? "The party drops through the falls" : climb ? (climb.dir === "up" ? "The party climbs up" : "The party climbs down") : z.kind === "water" ? "The party climbs" : "The party crosses";
   await enterNode(to, {from: cur, offs, exitDir, fromScale: node.scale, slide: dir, drop, solo: splinter, note: `${solo ? `${esc(SHORT[leader.id] || fname(leader))} goes on alone. ` : ""}${verb} to <em>${esc(SPEC[to].name)}</em>.`});
-  $("fade").classList.remove("on");
+  $("fade").classList.remove("on"); setTimeout(() => $("fade").classList.remove("quick"), 400);
 }
 async function slideTo(to, dir){
   const p2 = $("plate2"); p2.src = plateUrl(to);
