@@ -4,6 +4,7 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { shortRest, hitDieFor, type ShortRester, type ShortRestOutcome, type SongOfRest } from "@/lib/camp"
 import { vitalityOf } from "@/lib/death-saves"
 import { logTimeEvent } from "@/lib/time-tracking"
+import { readSeated } from "@/lib/seats"
 
 // /api/walk-rest — a short rest taken on the painted map, away from camp (Sam, 2026-10-24: "Short rests should be
 // able to be taken even when not in camp but risk an encounter with locals").
@@ -62,7 +63,13 @@ export async function POST(req: NextRequest) {
     .select("id,name,class,level,hp_current,hp_max,hit_dice_remaining,sheet_hit_dice,sheet_spellcasting,conditions,death_saves,con_score")
     .eq("is_player", true).is("archived_at", null)
   if (readErr) return NextResponse.json({ error: "could not read the party" }, { status: 500 })
-  const rows = (partyRaw ?? []) as Row[]
+  // ONLY THE HEROES AT THE TABLE REST (Sam, 2026-11-10: one seated hero took a short rest and the log listed all
+  // seven — and every one of them, at full health, burned their only Hit Die). The route read every player
+  // character on the sheets; now it is the seated ones (lib/seats.ts), not stepped out by the DM. With no seats at
+  // all (a rehearsal, an old run) it falls back to everyone, as before.
+  const everyone = (partyRaw ?? []) as Row[]
+  const seatedIds = new Set((await readSeated(db)).filter((s) => !s.away).map((s) => s.id))
+  const rows = seatedIds.size ? everyone.filter((r) => seatedIds.has(String(r.id))) : everyone
   if (!rows.length) return NextResponse.json({ error: "nobody is seated" }, { status: 400 })
 
   // who may rest the party: the DM, or the claimed browser of a seated player
@@ -102,7 +109,9 @@ export async function POST(req: NextRequest) {
       id: String(p.id), name: String(p.name), level: p.level as number | null, class: p.class as string | null,
       sheet_hit_dice: p.sheet_hit_dice as string | null, hp: p.hp_current as number | null, hpMax: p.hp_max as number | null,
       hitDiceRemaining: p.hit_dice_remaining as number | null, con_score: p.con_score as number | null,
-      spend: spend === "max" ? 1 : 0, spellcasting: (p.sheet_spellcasting ?? null) as ShortRester["spellcasting"],
+      // A HERO AT FULL HEALTH SPENDS NOTHING (same report: "I didn't heal after using hit dice" — the first rest had
+      // spent Fifi's one die at 8/8 for 0 hp, so the next rest, at 4/8, had none to spend). "max" means "until full".
+      spend: spend === "max" && Math.max(0, Number(p.hp_current ?? 0)) < Number(p.hp_max ?? 0) ? 1 : 0, spellcasting: (p.sheet_spellcasting ?? null) as ShortRester["spellcasting"],
       vitality: vitalityOf(p.hp_current as number | null, conditions),
     }
     const first = shortRest([rester], rng, song)
