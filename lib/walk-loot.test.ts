@@ -180,3 +180,50 @@ describe("loot by the book (PHB Selling Treasure, DMG Individual Treasure)", () 
     expect(rollPurse(5, () => seq[i++])).toEqual([{ slug: "copper-coin", qty: 2400, note: "in a coin purse" }, { slug: "electrum-coin", qty: 60, note: "in a coin purse" }])
   })
 })
+
+import { variedGuardKit, GUARD_EXTRAS } from "./walk-loot"
+
+describe("no two guards carry quite the same (Sam, 2026-11-10)", () => {
+  const base = KIT["drow-guard-male"]
+  const onDuty = onDutyKit("drow-guard-male", "11-140-475", base)!
+  // three d20s in order: bolts, armour, extra
+  const rolls = (...d: number[]) => { let i = 0; return () => (d[i++] - 1) / 20 + 0.001 }
+
+  it("always leaves what the stat block fights with", () => {
+    for (let n = 0; n < 500; n++) {
+      const slugs = variedGuardKit("drow-guard-female", onDuty)!.map((e) => e.slug)
+      expect(slugs).toContain("shortsword"); expect(slugs).toContain("hand-crossbow")
+      expect(slugs.some((s) => s === "chain-shirt" || s === "studded-leather-armor")).toBe(true)
+    }
+  })
+  it("the plain roll is the book's kit", () => {
+    expect(variedGuardKit("drow-guard-male", onDuty, rolls(10, 10, 5))!.map((e) => e.slug)).toEqual(onDuty.map((e) => e.slug))
+  })
+  it("a low bolts roll means the case is empty", () => {
+    expect(variedGuardKit("drow-guard-male", onDuty, rolls(5, 10, 5))!.map((e) => e.slug)).not.toContain("bolts-20")
+    expect(variedGuardKit("drow-guard-male", onDuty, rolls(6, 10, 5))!.map((e) => e.slug)).toContain("bolts-20")
+  })
+  it("a high armour roll means studded leather instead of the chain shirt", () => {
+    const k = variedGuardKit("drow-guard-male", onDuty, rolls(10, 15, 5))!.map((e) => e.slug)
+    expect(k).toContain("studded-leather-armor"); expect(k).not.toContain("chain-shirt")
+  })
+  it("the extra roll adds a whip, manacles, a belt knife or a cloak", () => {
+    const extra = (r: number) => variedGuardKit("drow-guard-male", onDuty, rolls(10, 10, r))!.map((e) => e.slug).filter((s) => !onDuty.some((e) => e.slug === s))
+    expect(extra(9)).toEqual([]); expect(extra(10)).toEqual(["whip"]); expect(extra(13)).toEqual(["manacles"])
+    expect(extra(16)).toEqual(["dagger"]); expect(extra(20)).toEqual(["travelers-cloak"])
+    expect(GUARD_EXTRAS[GUARD_EXTRAS.length - 1].upTo).toBe(20)
+  })
+  it("keeps the off-duty rope and hook where the guard rests", () => {
+    const barracks = variedGuardKit("drow-guard-male", onDutyKit("drow-guard-male", "2-570-930", base), rolls(10, 10, 5))!.map((e) => e.slug)
+    expect(barracks).toContain("silk-rope"); expect(barracks).toContain("grappling-hook")
+  })
+  it("leaves the named drow and the beasts exactly as they were", () => {
+    expect(variedGuardKit("shoor", KIT.shoor, rolls(1, 20, 20))).toBe(KIT.shoor)
+    expect(variedGuardKit("quaggoth", KIT.quaggoth, rolls(1, 20, 20))).toBe(KIT.quaggoth)
+    expect(variedGuardKit("drow-guard-male", undefined)).toBeUndefined()
+  })
+  it("does not change the book's own list", () => {
+    variedGuardKit("drow-guard-male", base, rolls(1, 20, 20))
+    expect(base.map((e) => e.slug)).toEqual(["shortsword", "hand-crossbow", "bolts-20", "chain-shirt", "silk-rope", "grappling-hook"])
+  })
+})
