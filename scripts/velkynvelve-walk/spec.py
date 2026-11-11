@@ -45,8 +45,12 @@ NODES = {
           # Sam, 2026-11-10: "Lift -> yes." This exit said "Passage to the lift" and led to Shoor's Quarters (8), and no
           # plate led to the Lift at all: the only way onto plate 5 was climbing back up from the cliff below it, which is
           # itself only reached from plate 5. OotA p.15: the lift is "attached to the edge of the barracks platform", the
-          # platform the hall opens onto. Shoor's rope bridge still arrives in the hall; it has no way back from here (known one-way).
+          # platform the hall opens onto.
           dict(rect=[122, 208, 294, 393], to=[5], label="Passage to the lift"),
+          # Shoor's rope bridge (plate 8's "Rope bridge west") still needs its end in the hall: the labor escort walks the
+          # kitchen detail home over it (lib/labor-walk.mjs). PROPOSED position: the painted bridge that runs off the hall's
+          # east edge, which had no exit on it; Claude's by eye, on Sam's painted floor.
+          dict(rect=[2260, 590, 2400, 690], to=[8], label="PROPOSED: rope bridge east to Shoor's Quarters", proposed=True),
           # Hard Labor module (Sam, 2026-10-26): the kitchen is its own painted plate ("3k"), reached past the pantry
           # shelves at the back of the hall. PROPOSED: where the door sits is Claude's pick, on the painted floor by the counter.
           dict(rect=[1380, 480, 1560, 560], to=["3k"], label="PROPOSED: behind the serving counter, into the kitchen", proposed=True)]),
@@ -414,7 +418,7 @@ for _k, _n in _PLATES.items():
 # that do not are listed here so they are a known gap and not a surprise (Sam's export, 2026-10-24: one_way_links_to_fix).
 # A new one-way link fails the build until it gets its return zone or is added here on purpose.
 KNOWN_ONE_WAY = {("4", "1"), ("5", "2"), ("5", "wastes"), ("6", "10"), ("9", "14"), ("12", "10"),
-                 ("lair", "tunnels"), ("8", "3")}   # 2026-11-10: the tunnels' "deeper in" is the way off the outpost now; the lair waits for its road marker
+                 ("lair", "tunnels")}   # 2026-11-10: the tunnels' "deeper in" is the way off the outpost now; the lair waits for its road marker
 ALL = {str(k): v for k, v in NODES.items()}; ALL.update(CAVERNS)
 links = {(a, str(t)) for a, node in ALL.items() for z in node["zones"] for t in z["to"]}
 for a, b in links:
