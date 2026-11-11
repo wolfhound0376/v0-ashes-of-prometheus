@@ -3116,6 +3116,8 @@ async function enterNode(n, opts = {}){
   for (const id of comp) if (state.companyAt) state.companyAt[id] = String(n);
   for (const np of whoIsHere(n)){
     if ((state.slain || []).includes(np.id)) continue;   // BYSTANDERS: killed in a fight, gone for good
+    { const fk = MIND_RANK[np.id] ? np.id : np.hostile ? `${n}-post-${Math.round(np.x)}-${Math.round(np.y)}` : null;
+      if (fk && state.fledFrom && state.fledFrom[fk]) continue; }   // ran from a fight: not at the old spot any more (refugeesHere)
     if (np.hostile && state.cleared[n]) continue;
     if (compAll.includes(np.id)) continue;              // a companion walks with the party, not at their old spot
     if (np.id === surgeonDeadId()) continue;            // shot dead at the gate (The Drow Surgeon) and thrown over the falls
@@ -3128,6 +3130,7 @@ async function enterNode(n, opts = {}){
     a.pocketKey = `${n === PEN ? "pen" : "p" + n}-${Math.round(np.x)}-${Math.round(np.y)}`;   // this guard's own pockets, the same every visit (pocketId)
     a.t0 = now - Math.random() * 1000; a.actUntil = now + 2000 + Math.random() * 7000; npcs.push(a);
   }
+  for (const a of refugeesHere(n)) npcs.push(a);
   // the posts left unattended in the story: the drow the story layer would stand there are not there (Sam, 2026-10-25:
   // "If they leave it unattended they all MUST be gone"). Kept on the plate, hidden, so [WATCH: posted] can walk them back.
   if (postsEmpty()) for (const a of npcs) if (DROW_POST(a)){ a.keep = {patrol: a.patrol, static: a.static}; a.patrol = null; a.static = false; a.offStage = true; a.alpha = 0; a.talk = false; }
@@ -10533,9 +10536,9 @@ function mindWants(f, plan){
 function exitFor(f){
   let best = null, bd = Infinity;
   for (const z of (node && node.zones) || []){
-    if (!z.to || !z.to.length || !z.rect) continue;
+    if (!z.to || !z.to.length || !z.rect || !SPEC[z.to[0]]) continue;
     const c = zoneCenter(z), q = nearestWalkable(c.x, c.y), d = Math.hypot(q.x - f.x, q.y - f.y);
-    if (d < bd){ bd = d; best = q; }
+    if (d < bd){ bd = d; best = {x: q.x, y: q.y, to: z.to[0]}; }
   }
   return best;
 }
@@ -10597,21 +10600,77 @@ function giveOrder(f, o){
   log(`<i>${esc(fname(f))} orders ${under.length > 1 ? "the others" : under.length ? esc(fname(under[0])) : "nobody"}: ${o.kind === "focus" ? "take " + esc(fname(target)) : o.kind === "protect" ? "guard me" : o.kind === "fall_back" ? "fall back" : "hold"}.</i>`);
 }
 // FALLING BACK: a Dash's worth (twice the speed, SRD) toward the nearest way out, then out of the fight
+// FALLING BACK, FOR REAL (Sam, 2026-11-10: "fix retreating drow"). A Dash toward the nearest way out (SRD 5.1: twice the
+// speed) — and a Dash is not a Disengage: every hero (or ally) whose reach the drow leaves gets their opportunity attack
+// first, the heroes at this screen asked as they are when a foe walks off them (oaGauntlet). One who reaches the way out
+// is gone from THIS fight, not from the world: they are standing on the plate beyond it, wounds and all (fleeTo), and
+// the plate they left no longer has them. With no way out they do not vanish: they stop retreating and fight on.
 function retreatTurn(f){
-  let gone = false;
-  const done = () => { if (gone) return; gone = true; leaveFight(f); setTimeout(() => passTurn(f), 300); };
   const ex = exitFor(f);
-  if (!ex){ done(); return; }
+  if (!ex){ f.retreating = false; f.mindPlan = {fallback: true}; foeTurn(f); return; }
   const walk = cutPath(f, findPath(f, ex), (f.c.sheet.speed || 30) * 2 * ruleFt(f));
-  if (!walk.pts.length){ done(); return; }
-  f.path = walk.pts; f.onArrive = done; setTimeout(done, 2600);
+  const goal = walk.pts.length ? walk.pts[walk.pts.length - 1] : {x: f.x, y: f.y};
+  const out = walk.pts.length && Math.hypot(goal.x - ex.x, goal.y - ex.y) < 30;     // this turn's Dash reaches the way out
+  log(`${esc(fname(f))} breaks off and runs for the way out${out ? "" : " (not there yet)"}.`);
+  combatBusy = true;
+  oaGauntlet(f, goal, () => {
+    if (!cbt || f.down) return;
+    let gone = false;
+    const done = () => { if (gone) return; gone = true; combatBusy = false; if (out) leaveFight(f, ex.to); else setAnim(f, "idle"); setTimeout(() => passTurn(f), 300); };
+    if (!walk.pts.length){ done(); return; }
+    f.path = walk.pts; f.onArrive = done; setTimeout(done, 2600);
+  });
 }
-function leaveFight(f){
+// every reach the runner leaves, one at a time; a drop ends the run where it stands
+function oaGauntlet(f, goal, go){
+  if (f.c.conds.has("disengaged") || unseenMover(f)){ go(); return; }
+  const p = standing(heroes()).find(h => !h.c.reactionUsed && h.c.oaLetGo !== f && !incapacitated(h) && feetBetween(f, h) <= 5 && pxBetween(goal, h, f) > reachPx(h, f, 5) + 6);
+  if (!p){ go(); return; }
+  const next = () => { if (!cbt) return; if (f.down){ combatBusy = false; setTimeout(() => passTurn(f), 500); return; } oaGauntlet(f, goal, go); };
+  const swing = atk => { p.c.reactionUsed = true; oaCue(p, f); narrate(p, `${fname(p)} lashes out as ${fname(f)} runs.`); attackWith(p, f, atk, () => { combatBusy = true; next(); }, false, true); };
+  if (p.kind === "pc" && canControl(p)){
+    const melee = (p.c.sheet.attacks || []).filter(k => (k.reach || 5) <= 10 && !k.ammo), opts = melee.length ? melee : [meleeOf(p)];
+    popText(p, "⚔ Opportunity!", "#ffd27a", 1.05);
+    showDialog({title: `Opportunity attack: ${fname(p)}`,
+      body: `${fname(f)} is running from ${fname(p)}. Strike once as they go, using ${fname(p)}'s reaction?`,
+      src: "Opportunity attack · 1 reaction · SRD 5.1",
+      buttons: [...opts.map((k, i) => ({label: `${k.name} · +${k.hit} · ${k.dmg}`, primary: i === 0, fn: () => swing(k)})),
+        {label: "Let them go", fn: () => { p.c.oaLetGo = f; log(`${fname(p)} lets ${fname(f)} go and keeps the reaction.`); next(); }}]});
+    return;
+  }
+  swing(meleeOf(p));
+}
+// WHO A FLEEING DROW IS, FOR THE WORLD: a named one by name; a guard the story posts by its post (the plate and spot it
+// was put on, the same key its loot uses); a drow who arrived in a wave has no home to be missing from.
+function fleeKey(f){ return MIND_RANK[f.id] ? f.id : f.lootPost || f.fleeKey || null; }
+function leaveFight(f, to){
   if (f.left) return;
   f.left = true; f.retreating = false; f.path = []; f.onArrive = null;
-  popText(f, "falls back", "#e8e2c8", .9); narrate(f, `${fname(f)} is gone from the fight.`);
+  popText(f, "falls back", "#e8e2c8", .9); narrate(f, `${fname(f)} is gone from the fight${to != null && SPEC[to] ? `, toward ${SPEC[to].name || "the next room"}` : ""}.`);
+  if (to != null) fleeTo(f, to);
   f.fading = true;
   setTimeout(() => { actors = actors.filter(a => a !== f); foes = foes.filter(a => a !== f); }, 1000);
+}
+// state.refuge (shared with every screen by One World's state sync): key -> where the runner now stands and how hurt.
+// state.fledFrom: keys a plate must no longer stand up at their old spot.
+function fleeTo(f, to){
+  const key = fleeKey(f) || `${f.id}@${cur}-${Math.round(f.x)}-${Math.round(f.y)}-${cbt ? cbt.round : 0}`;
+  (state.refuge ||= {})[key] = {id: f.id, plate: String(to), from: String(cur), hp: f.c ? f.c.hp : f.hp, hpMax: f.c ? f.c.hpMax : f.hpMax, lootPost: f.lootPost || null};
+  (state.fledFrom ||= {})[key] = true;
+}
+// entering a plate: the runners who fled here stand by the way in from where they came, alert, with the wounds they took
+function refugeesHere(n){
+  const out = [];
+  for (const [key, r] of Object.entries(state.refuge || {})){
+    if (String(r.plate) !== String(n) || !SPR[r.id]) continue;
+    const back = ((SPEC[n] && SPEC[n].zones) || []).find(z => z.rect && (z.to || []).some(t => String(t) === String(r.from)));
+    const c = back ? zoneCenter(back) : centroid, k = out.length;
+    const q = nearestWalkable(c.x + (k % 2 ? 1 : -1) * 60 * k, c.y + 50 * k);
+    const a = mkActor(r.id, q.x, q.y, "npc", {hostile: true, home: {x: q.x, y: q.y}, post: {x: q.x, y: q.y}, lootPost: r.lootPost || undefined, face: 0, barks: []});
+    a.hp = r.hp; a.hpMax = r.hpMax; a.fleeKey = key; a.refugee = true; a.t0 = now; a.actUntil = now + 4000;
+    out.push(a);
+  }
+  return out;
 }
 // THE FIGHT ENDS IN TALK: everyone stops. The commander and those under them stand down where they are (endCombat keeps
 // them on the plate); anyone else fighting (a beast, not theirs to command) withdraws as at any fight's end. The guards
@@ -11825,7 +11884,8 @@ function endCombat(won, opts = {}){
     payXp(fightId, slain);
   }
   setTimeout(() => {
-    for (const f of slain){ f.kind = "body"; f.body = true; f.path = []; f.once = null; f.lootKey = bodyKeyOf(f); npcs.push(f); }
+    for (const f of slain){ f.kind = "body"; f.body = true; f.path = []; f.once = null; f.lootKey = bodyKeyOf(f); npcs.push(f);
+      if (f.fleeKey && state.refuge && state.refuge[f.fleeKey]){ delete state.refuge[f.fleeKey]; } }
     // THE FIGHT ENDED IN TALK (NPC MINDS): the leader and everyone under them lower their weapons and stay on the plate,
     // people again, with the wounds they took; they are not hostile while the talk lasts (the truce, fightEndsInTalk)
     for (const f of foes) if (f.parley && !f.down && actors.includes(f)){
