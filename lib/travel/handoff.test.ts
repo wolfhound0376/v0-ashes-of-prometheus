@@ -65,11 +65,32 @@ describe("the nodal side — which roads a way out opens on the travel map (Sam'
     expect(keys("shore", withCaverns)).toEqual(["cliff-pool"])
     expect(keys("grove", withCaverns)).toEqual(["road-09"])
   })
-  it("the tunnels keep both of Sam's markers in his order", () => {
-    expect(keys("tunnels", withCaverns)).toEqual(["road-07", "road-10"])
+  it("the tunnels keep Sam's markers in his order, then the south passage's road", () => {
+    expect(keys("tunnels", withCaverns)).toEqual(["road-07", "road-10", "road-15"])
+  })
+  it("one mouth of a cavern opens only the road it names: the tunnels' south passage is road-15 alone (Sam, 2026-11-10)", () => {
+    const south = parseWalkHandoff("?from=velkynvelve&via=tunnels&plate=tunnels&roads=road-15")!
+    expect(south.roads).toEqual(["road-15"])
+    expect(roadsOpenedBy(south, V, nodes, withCaverns).map((r) => r.node.node_key)).toEqual(["road-15"])
+    expect(roadsOpenedBy(south, V, nodes, withCaverns)[0].heading).toBe("south-east")
+  })
+  it("a link can narrow a cavern's roads but never add one the hand-off does not list", () => {
+    expect(parseWalkHandoff("?via=tunnels&roads=road-15,road-21,menzoberranzan")!.roads).toEqual(["road-15"])
+    expect(parseWalkHandoff("?via=wastes&roads=road-21")!.roads).toEqual([])
+    expect(parseWalkHandoff("?via=wastes&roads=")!.roads).toEqual(["road-10"])
+  })
+  it("the north passage opens the two long routes, and only the cities the map already knows (Sam, 2026-11-10)", () => {
+    const MENZO = { id: "mz", node_key: "menzoberranzan", metadata: { map_x: 1435, map_y: 685 } }
+    const BLING = { id: "bl", node_key: "blingdenstone", metadata: { map_x: 955, map_y: 585 } }
+    const book = [...withCaverns, { from_node_id: "v", to_node_id: "mz" }, { from_node_id: "v", to_node_id: "bl" }]
+    const north = parseWalkHandoff("?from=velkynvelve&via=north&plate=tunnels")!
+    expect(north).toMatchObject({ via: "north", name: "The north passage", biome: "tunnels" })
+    expect(roadsOpenedBy(north, V, [...nodes, MENZO, BLING], book).map((r) => r.node.node_key)).toEqual(["menzoberranzan", "blingdenstone"])
+    expect(roadsOpenedBy(north, V, [...nodes, BLING], book).map((r) => r.node.node_key)).toEqual(["blingdenstone"])
+    expect(roadsOpenedBy(north, V, nodes, book)).toEqual([])
   })
   it("each road is named by where it lies from the outpost, not by an invented place-name", () => {
-    expect(roadsOpenedBy(arrival("tunnels"), V, nodes, withCaverns).map((r) => r.heading)).toEqual(["south-west", "south-west"])
+    expect(roadsOpenedBy(arrival("tunnels"), V, nodes, withCaverns).map((r) => r.heading)).toEqual(["south-west", "south-west", "south-east"])
     expect(roadsOpenedBy(arrival("shore"), V, nodes, withCaverns)[0].heading).toBe("south")
     expect(roadsOpenedBy(arrival("lair"), V, nodes, withCaverns)[0].heading).toBe("south-east")
   })
