@@ -51,8 +51,11 @@ describe("where each task is worked", () => {
     expect(back).toEqual([...out!].reverse())
   })
 
-  it("uses a cut only where a door is missing — today, barracks to lift", () => {
-    expect(W.cutsIn(SPEC, W.detailRoute(SPEC, "lift").out)).toEqual([["2", "5"]])
+  // Until 2026-11-10 no plate led to the Lift, so the lift detail was cut from the barracks ([["2", "5"]]). The Main
+  // Hall's "Passage to the lift" leads there now (Sam: "Lift -> yes"), so every detail walks through real doors.
+  it("uses a cut only where a door is missing — today, nowhere", () => {
+    expect(W.cutsIn(SPEC, W.detailRoute(SPEC, "lift").out)).toEqual([])
+    expect(W.cutsIn(SPEC, W.detailRoute(SPEC, "lift").back)).toEqual([])
     for (const t of ["water", "clean", "pots", "kitchen", "rocks", "supplies", "quaggoth-hair"]) {
       const r = W.detailRoute(SPEC, t)
       expect(W.cutsIn(SPEC, r.out), t).toEqual([])
