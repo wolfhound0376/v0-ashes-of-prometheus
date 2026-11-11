@@ -15736,8 +15736,11 @@ function playVoice(ctx, buf, profile){
   src.connect(profile === "rapport" ? rapportChain(ctx) : profile === "croak" ? croakChain(ctx) : ctx.destination);
   src.onended = () => { speaking = false; }; speaking = true; src.start(); voiceAudio = src;
 }
+// A HERO SPEAKS BY THEIR SEAT NAME (Sam, 2026-11-10: "'Curious what do we have here' isn't in my voice"). The sprite
+// names are short ("Samson", "Kenta", "Scott") and Fifi's still says "Freía la Fey"; /api/npc-tts finds a hero's saved
+// voice by their FULL name, so those four fell through to a stock voice. PLAYS_AS holds the full names.
 async function speakCanon(id, text, npcName){         // the game's ElevenLabs route: the voice saved on the row (Eldeth, Ront...); a myconid in the listener's own
-  const res = await fetch("/api/npc-tts", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text, npcName: npcName || SPR[id].json.name, listenerName: PLAYS_AS[leader?.id] || undefined})});
+  const res = await fetch("/api/npc-tts", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text, npcName: npcName || PLAYS_AS[id] || SPR[id].json.name, listenerName: PLAYS_AS[leader?.id] || undefined})});
   if (!res.ok) throw new Error("tts " + res.status);
   const ct = res.headers.get("content-type") || "";
   const rapport = /profile=rapport/i.test(ct) ? "rapport" : /profile=croak/i.test(ct) ? "croak" : profileFor(id);
