@@ -8,8 +8,10 @@
 // Scope (Sam, 2026-10-28, the approved prototype https://claude.ai/artifact/5jSrEofrWEXGH5pmwvMf5M): the SORCERER and
 // the ROGUE (Sam, 2026-10-28: "go" on the rogues first, SRD subclass open, everyone on the 2024 rules) and the CLERIC
 // (Sam, 2026-10-28: Samson's pack, "for 2024 rules"), the BARD (Scott's pack, same night) and the WIZARD (Gandalf,
-// same night: "how about gandalf?"), levels 2 and 3. Level 4 and up wait on the class trial (lib/level-trial.ts, TRIAL_GATE_FROM_LEVEL = 4), so the
-// improvement / feat step is not wired here yet. Other classes keep the ceremony's "on your sheet" note.
+// same night: "how about gandalf?"), levels 2, 3 and 4. Level 4 still waits on the class trial before the ceremony takes it
+// (lib/level-trial.ts, TRIAL_GATE_FROM_LEVEL = 4); once it is taken, its choices are settled here: the Ability Score
+// Improvement or a feat instead (Sam, 2026-11-10: "feats pack yes. Go on feats." — the catalogue is lib/feats.ts),
+// plus the level's spells. Other classes keep the ceremony's "on your sheet" note.
 //
 // Rules source: the sheet's own (Kenta: sheet_spellcasting.rules_source "SRD 5.2.1"), i.e. the 2024 Sorcerer table:
 // prepared 2/4/6/7, cantrips 4/4/4/5, sorcery points 0/2/3/4, Metamagic ×2 at level 2, subclass at 3 (Sam,
@@ -19,7 +21,8 @@
 // ============================================================================
 
 import spellsData from "@/lib/data/spells.json"
-import { PENDING_LEVEL_SOURCE, type SheetFeature } from "@/lib/camp"
+import { ASI_LEVELS, PENDING_LEVEL_SOURCE, type SheetFeature } from "@/lib/camp"
+import { ABILITIES, abilityMod, featBlocked, featByName, type Ability } from "@/lib/feats"
 
 export interface ClassSpell {
   name: string
@@ -78,6 +81,8 @@ export interface LevelPlan {
   expertiseFrom: string[] | null
   /** spells the level writes into a wizard's spellbook (2 per level); 0 for classes without one */
   bookSpells: number
+  /** an Ability Score Improvement level (4, 8, …): +2/+1+1, or a feat instead (lib/feats.ts) */
+  improvement: boolean
 }
 
 /** SRD 5.2.1 Sorcerer table, levels 1–4 (what this module serves). */
@@ -219,13 +224,16 @@ export function classKey(cls: string | null | undefined): string {
 /** What level `level` asks the class to choose, or null when this module does not serve it. */
 export function planFor(cls: string | null | undefined, level: number): LevelPlan | null {
   const k = classKey(cls)
-  if (!(level === 2 || level === 3)) return null
+  if (!(level >= 2 && level <= 4)) return null
+  const improvement = (ASI_LEVELS as readonly number[]).includes(level)
   if (k === "rogue") {
     const none = { from: 0, to: 0 }
+    // SRD 5.2.1 Rogue table: Sneak Attack 1d6 at 1–2, 2d6 at 3–4 (3d6 at 5)
+    const sa = (l: number) => (l >= 3 ? "2d6" : "1d6")
     return { cls: "rogue", caster: false, level, subclassLabel: "Rogue Subclass", gains: ROGUE_GAINS[level] ?? [],
-      sneakAttack: { from: "1d6", to: level === 3 ? "2d6" : "1d6" },
+      sneakAttack: { from: sa(level - 1), to: sa(level) },
       newSpells: 0, newCantrips: 0, maxSpellLevel: 0, swaps: 0, metamagic: 0, origin: level === 3,
-      prepared: none, cantrips: none, sorceryPoints: none, channelDivinity: none, expertise: 0, expertiseFrom: null, bookSpells: 0 }
+      prepared: none, cantrips: none, sorceryPoints: none, channelDivinity: none, expertise: 0, expertiseFrom: null, bookSpells: 0, improvement }
   }
   if (k === "cleric") {
     const t = CLERIC_2024
@@ -233,7 +241,7 @@ export function planFor(cls: string | null | undefined, level: number): LevelPla
       newSpells: t.prepared[level] - t.prepared[level - 1], newCantrips: t.cantrips[level] - t.cantrips[level - 1],
       maxSpellLevel: t.maxSpellLevel[level], swaps: 1, metamagic: 0, origin: level === 3,
       prepared: { from: t.prepared[level - 1], to: t.prepared[level] }, cantrips: { from: t.cantrips[level - 1], to: t.cantrips[level] },
-      sorceryPoints: { from: 0, to: 0 }, channelDivinity: { from: t.channelDivinity[level - 1], to: t.channelDivinity[level] }, expertise: 0, expertiseFrom: null, bookSpells: 0 }
+      sorceryPoints: { from: 0, to: 0 }, channelDivinity: { from: t.channelDivinity[level - 1], to: t.channelDivinity[level] }, expertise: 0, expertiseFrom: null, bookSpells: 0, improvement }
   }
   if (k === "bard") {
     const t = BARD_2024
@@ -241,7 +249,7 @@ export function planFor(cls: string | null | undefined, level: number): LevelPla
       newSpells: t.prepared[level] - t.prepared[level - 1], newCantrips: t.cantrips[level] - t.cantrips[level - 1],
       maxSpellLevel: t.maxSpellLevel[level], swaps: 1, metamagic: 0, origin: level === 3,
       prepared: { from: t.prepared[level - 1], to: t.prepared[level] }, cantrips: { from: t.cantrips[level - 1], to: t.cantrips[level] },
-      sorceryPoints: { from: 0, to: 0 }, channelDivinity: { from: 0, to: 0 }, expertise: level === 2 ? 2 : 0, expertiseFrom: null, bookSpells: 0 }
+      sorceryPoints: { from: 0, to: 0 }, channelDivinity: { from: 0, to: 0 }, expertise: level === 2 ? 2 : 0, expertiseFrom: null, bookSpells: 0, improvement }
   }
   if (k === "wizard") {
     const t = WIZARD_2024
@@ -250,7 +258,7 @@ export function planFor(cls: string | null | undefined, level: number): LevelPla
       maxSpellLevel: t.maxSpellLevel[level], swaps: 1, metamagic: 0, origin: level === 3,
       prepared: { from: t.prepared[level - 1], to: t.prepared[level] }, cantrips: { from: t.cantrips[level - 1], to: t.cantrips[level] },
       sorceryPoints: { from: 0, to: 0 }, channelDivinity: { from: 0, to: 0 },
-      expertise: level === 2 ? 1 : 0, expertiseFrom: level === 2 ? SCHOLAR_SKILLS : null, bookSpells: 2 }
+      expertise: level === 2 ? 1 : 0, expertiseFrom: level === 2 ? SCHOLAR_SKILLS : null, bookSpells: 2, improvement }
   }
   if (k !== "sorcerer") return null
   const t = SORCERER_2024
@@ -274,6 +282,7 @@ export function planFor(cls: string | null | undefined, level: number): LevelPla
     expertise: 0,
     expertiseFrom: null,
     bookSpells: 0,
+    improvement,
   }
 }
 
@@ -309,7 +318,28 @@ export interface Picks {
   /** wizard: the two spells the level writes into the spellbook, and the subclass's free ones (Evocation Savant) */
   book?: string[]
   bookFree?: string[]
+  /** level 4, 8, …: the Ability Score Improvement ({CHA: 2} or {DEX: 1, WIS: 1}) — or, instead, a feat */
+  asi?: Partial<Record<Ability, number>> | null
+  feat?: string | null
+  /** where the feat's +1 goes, when it offers more than one score (Grappler: STR or DEX) */
+  featAbility?: Ability | null
+  /** Skilled: the three skills (snake_case keys) */
+  featSkills?: string[]
 }
+
+/** The numbers an improvement changes, read from the characters row. */
+export interface HeroStats {
+  scores: Partial<Record<Ability, number | null>>
+  hp_max: number | null
+  hp_current: number | null
+  initiative: number | null
+  proficiency_bonus: number | null
+  /** names already on sheet_features — a non-repeatable feat already there is refused */
+  featureNames?: string[]
+}
+
+const ABILITY_COLUMN: Record<Ability, string> = { STR: "str", DEX: "dex", CON: "con", INT: "int", WIS: "wis", CHA: "cha" }
+const ABILITY_WORD: Record<string, Ability> = { strength: "STR", dexterity: "DEX", constitution: "CON", intelligence: "INT", wisdom: "WIS", charisma: "CHA" }
 
 export interface CastingSheet {
   cantrips?: string[] | null
@@ -320,11 +350,13 @@ export interface CastingSheet {
 }
 
 export type ChoiceResult =
-  | { ok: true; spellcasting: CastingSheet | null; features: SheetFeature[]; summary: string[]; skills: Record<string, string> | null }
+  | { ok: true; spellcasting: CastingSheet | null; features: SheetFeature[]; summary: string[]; skills: Record<string, string> | null
+      /** characters columns an improvement rewrites: *_score, *_modifier, hp_max, hp_current, initiative (null = none) */
+      columns: Record<string, number> | null }
   | { ok: false; error: string }
 
 /** Check the picks against the plan and the class list; build the new sheet_spellcasting and sheet_features. */
-export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, features: unknown, picks: Picks, skillSheet?: Record<string, string> | null): ChoiceResult {
+export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, features: unknown, picks: Picks, skillSheet?: Record<string, string> | null, stats?: HeroStats | null): ChoiceResult {
   const list = classSpells(plan.cls, plan.maxSpellLevel)
   const byName = new Map(list.map((s) => [s.name, s]))
   const cantrips = [...(casting?.cantrips ?? [])]
@@ -398,7 +430,64 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
   }
   for (const n of exp) sk[n] = "expertise"
   for (const n of newSk) sk[n] = "proficient"
-  const skills = exp.length || newSk.length ? sk : null
+
+  // ---- the Ability Score Improvement, or a feat instead (SRD 5.2.1; catalogue in lib/feats.ts) ----
+  const asiIn = picks.asi && typeof picks.asi === "object" ? Object.entries(picks.asi).filter(([, v]) => Number(v) > 0) : []
+  const featName = picks.feat ? String(picks.feat).trim() : ""
+  const before: Partial<Record<Ability, number>> = {}
+  for (const a of ABILITIES) before[a] = Math.trunc(Number(stats?.scores?.[a] ?? 10)) || 10
+  const raise: Partial<Record<Ability, number>> = {}
+  let feat = featName ? featByName(featName) : undefined
+  const featSk = uniq(picks.featSkills ?? [])
+  if (!plan.improvement) {
+    if (asiIn.length || featName) return { ok: false, error: `Level ${plan.level} brings no Ability Score Improvement.` }
+  } else {
+    if (!stats) return { ok: false, error: "The sheet's scores could not be read." }
+    if (asiIn.length && featName) return { ok: false, error: "The improvement or a feat — not both." }
+    if (!asiIn.length && !featName) return { ok: false, error: "Choose the Ability Score Improvement or a feat." }
+    if (asiIn.length) {
+      const pts = asiIn.map(([k, v]) => [k, Math.trunc(Number(v))] as [string, number])
+      if (pts.some(([k]) => !(ABILITIES as string[]).includes(k))) return { ok: false, error: "Unknown ability score." }
+      const total = pts.reduce((a, [, v]) => a + v, 0)
+      if (total !== 2 || !(pts.length === 1 || (pts.length === 2 && pts.every(([, v]) => v === 1)))) return { ok: false, error: "+2 to one score, or +1 to two." }
+      for (const [k, v] of pts) raise[k as Ability] = v
+    } else {
+      if (!feat) return { ok: false, error: `${featName} is not a feat this screen knows.` }
+      const why = featBlocked(feat, { level: plan.level, scores: before, featureNames: stats.featureNames ?? [], spellcasting: plan.caster, fightingStyle: (stats.featureNames ?? []).some((n) => /^fighting style/i.test(n)) })
+      if (why) return { ok: false, error: `${feat.name}: ${why}` }
+      if (feat.abilities.length) {
+        const ab = feat.abilities.length === 1 ? feat.abilities[0] : picks.featAbility
+        if (!ab || !feat.abilities.includes(ab)) return { ok: false, error: `${feat.name}: choose where its +1 goes (${feat.abilities.join(" or ")}).` }
+        raise[ab] = 1
+      } else if (picks.featAbility) return { ok: false, error: `${feat.name} raises no score.` }
+      const needFs = feat.skills ?? 0
+      if (featSk.length !== needFs) return { ok: false, error: needFs ? `${feat.name}: choose ${needFs} skills.` : `${feat.name} grants no skills.` }
+      for (const n of featSk) {
+        if (!isSkill(n)) return { ok: false, error: `${n} is not a skill.` }
+        if (sk[n] === "proficient" || sk[n] === "expertise") return { ok: false, error: `${n} is already a proficiency.` }
+      }
+      for (const n of featSk) sk[n] = "proficient"
+    }
+    for (const [k, v] of Object.entries(raise)) if ((before[k as Ability] ?? 10) + (v ?? 0) > 20) return { ok: false, error: `${k} cannot go above 20.` }
+  }
+  if (!plan.improvement || asiIn.length) feat = undefined
+  let columns: Record<string, number> | null = null
+  const castAb = ABILITY_WORD[String(casting?.ability ?? casting?.spellcasting_ability ?? "").trim().toLowerCase()] ?? null
+  let castDelta = 0
+  if (Object.keys(raise).length || feat?.initiativePb) {
+    columns = {}
+    for (const [k, v] of Object.entries(raise) as [Ability, number][]) {
+      const was = before[k] ?? 10, now = was + v, d = abilityMod(now) - abilityMod(was)
+      columns[`${ABILITY_COLUMN[k]}_score`] = now
+      columns[`${ABILITY_COLUMN[k]}_modifier`] = abilityMod(now)
+      // a higher CON modifier raises the Hit Point maximum by 1 per level, retroactively (SRD 5.2.1, Hit Points)
+      if (k === "CON" && d) { columns.hp_max = Math.max(1, Math.trunc(Number(stats?.hp_max ?? 0)) + d * plan.level); columns.hp_current = Math.max(0, Math.trunc(Number(stats?.hp_current ?? 0)) + d * plan.level) }
+      if (k === "DEX" && d) columns.initiative = Math.trunc(Number(columns.initiative ?? stats?.initiative ?? 0)) + d
+      if (k === castAb) castDelta = d
+    }
+    if (feat?.initiativePb) columns.initiative = Math.trunc(Number(columns.initiative ?? stats?.initiative ?? 0)) + Math.trunc(Number(stats?.proficiency_bonus ?? 2))
+  }
+  const skills = exp.length || newSk.length || featSk.length ? sk : null
   const skillName = (n: string) => n.split("_").map((w) => (w === "of" ? w : w[0].toUpperCase() + w.slice(1))).join(" ")
 
   // a spell the new domain keeps always prepared leaves the chosen list (it is on the sheet once, as always prepared);
@@ -415,6 +504,9 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
     ...(plan.channelDivinity.to ? { channel_divinity: { max: plan.channelDivinity.to, used: Math.min(Number((casting?.channel_divinity as { used?: number } | undefined)?.used ?? 0) || 0, plan.channelDivinity.to) } } : {}),
     ...(alwaysNext.length !== always.length ? { always_prepared: alwaysNext } : {}),
     ...(plan.bookSpells ? { spellbook: bookNext } : {}),
+    // the casting score rose past a modifier step: the save DC and spell attack follow it
+    ...(castDelta && casting?.save_dc != null ? { save_dc: Number(casting.save_dc) + castDelta } : {}),
+    ...(castDelta && casting?.attack_bonus != null ? { attack_bonus: Number(casting.attack_bonus) + castDelta } : {}),
   }
   const src = `${Cls} ${plan.level}`
   const kept = (Array.isArray(features) ? features : []).filter(
@@ -435,16 +527,21 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
     const i = added.findIndex((f) => f.name === "Scholar"); if (i >= 0) added[i] = { ...added[i], desc: `Expertise in ${exp.map(skillName).join(" and ")}.` }
   } else if (exp.length) added.push({ name: "Expertise", desc: `Double proficiency with ${exp.map(skillName).join(" and ")}.`, source: `${src} · SRD 5.2.1` })
   if (newSk.length) added.push({ name: "Bonus Proficiencies", desc: `Proficiency in ${newSk.map(skillName).join(", ")}.`, source: `${src} · ${origin!.name} · SRD 5.2.1` })
+  // the source names no class, so the dashboard files these under Feats
+  const raised = (Object.entries(raise) as [Ability, number][]).map(([k, v]) => `+${v} ${k} (${before[k]} → ${(before[k] ?? 10) + v})`)
+  if (plan.improvement && !feat) added.push({ name: "Ability Score Improvement", desc: `${raised.join(", ")}.`, source: `Feat · SRD 5.2.1 · level ${plan.level}` })
+  if (feat) added.push({ name: feat.name, desc: [feat.desc, raised.length ? `Took ${raised.join(", ")}.` : "", featSk.length ? `Skills: ${featSk.map(skillName).join(", ")}.` : ""].filter(Boolean).join(" "), source: `Feat · ${feat.source} · level ${plan.level}${feat.verify ? " · verify" : ""}` })
   const summary = [
     ...plan.gains.map((g) => g.name),
     ...metaOpts.map((m) => m!.name),
     ...(origin ? [origin.name, ...(origin.features ?? []).map((g) => g.name)] : []),
-    ...exp.map((n) => `Expertise: ${skillName(n)}`), ...newSk.map((n) => `Proficient: ${skillName(n)}`),
+    ...(plan.improvement ? (feat ? [`Feat: ${feat.name}`] : ["Ability Score Improvement"]) : []), ...raised,
+    ...exp.map((n) => `Expertise: ${skillName(n)}`), ...newSk.map((n) => `Proficient: ${skillName(n)}`), ...featSk.map((n) => `Proficient: ${skillName(n)}`),
     ...bookPicks.map((n) => `Spellbook: ${n}`), ...bookFree.map((n) => `Spellbook (free): ${n}`),
     ...spells, ...newC,
     ...(swapOut ? [`swapped out ${swapOut}`] : []), ...(swapOutC ? [`swapped out ${swapOutC}`] : []),
   ]
-  return { ok: true, spellcasting, features: [...kept, ...added], summary, skills }
+  return { ok: true, spellcasting, features: [...kept, ...added], summary, skills, columns }
 }
 
 function uniq(a: string[]): string[] { return [...new Set(a.map((s) => String(s).trim()).filter(Boolean))] }

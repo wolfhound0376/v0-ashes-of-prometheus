@@ -7,10 +7,11 @@ const casting = { cantrips: ["Ray of Frost", "Shocking Grasp", "Minor Illusion",
 const marker = (l: number) => ({ name: `Level ${l} — choices to make`, desc: "…", source: PENDING_LEVEL_SOURCE })
 
 describe("planFor", () => {
-  it("serves the sorcerer at 2 and 3 only (4+ waits on the class trial)", () => {
+  it("serves the sorcerer at 2, 3 and 4 (5+ is not here yet)", () => {
     expect(planFor("Sorcerer", 2)).toMatchObject({ newSpells: 2, newCantrips: 0, maxSpellLevel: 1, metamagic: 2, origin: false, sorceryPoints: { from: 0, to: 2 } })
     expect(planFor("Sorcerer", 3)).toMatchObject({ newSpells: 2, maxSpellLevel: 2, metamagic: 0, origin: true })
-    expect(planFor("Sorcerer", 4)).toBeNull()
+    expect(planFor("Sorcerer", 4)).toMatchObject({ improvement: true, newSpells: 1, newCantrips: 1, maxSpellLevel: 2, origin: false })
+    expect(planFor("Sorcerer", 5)).toBeNull()
     expect(planFor("Fighter", 2)).toBeNull()
     expect(planFor("Rogue", 2)).toMatchObject({ caster: false, newSpells: 0, origin: false, gains: [{ name: "Cunning Action" }] })
     expect(planFor("Rogue", 3)).toMatchObject({ origin: true, subclassLabel: "Rogue Subclass", sneakAttack: { from: "1d6", to: "2d6" } })
