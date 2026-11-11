@@ -332,9 +332,9 @@
  * have"). The die is the dice launcher's own d20 (public/images/ui/dice-stills/d20-launcher.png) cut off its table —
  * public/parley/roll-d20.webp. Everywhere else in the Parley it is the button's small icon, where the emoji was. */
 .parley .p-roll .p-roll-die { width: 22px; height: 22px; object-fit: contain; flex: none; filter: drop-shadow(0 1px 0 #000); }
-.parley.audience .p-tail .p-roll { min-width: 200px; height: 64px; justify-content: center; overflow: visible; --c1: #2b1c3d; --c2: #0d0814; }
-.parley.audience .p-roll .p-roll-die { position: absolute; left: 50%; bottom: 0; width: 84px; height: auto; transform: translateX(-50%) rotate(-7deg); filter: drop-shadow(0 6px 8px rgba(0,0,0,.8)); pointer-events: none; transition: transform .18s; }
-.parley.audience .p-roll:hover .p-roll-die { transform: translateX(-50%) rotate(6deg) scale(1.06); }
+.parley.audience .p-tail .p-roll { min-width: 200px; height: 60px; justify-content: center; overflow: visible; background: radial-gradient(ellipse at 50% 55%, rgba(226,166,42,.42), rgba(120,60,160,.22) 45%, transparent 72%), linear-gradient(180deg, #2b1c3d, #0d0814); }
+.parley.audience .p-roll .p-roll-die { position: absolute; left: 50%; top: 50%; width: auto; height: 76px; transform: translate(-50%, -50%) rotate(-7deg); filter: brightness(1.45) saturate(1.15) drop-shadow(0 5px 6px rgba(0,0,0,.85)); pointer-events: none; transition: transform .18s; }
+.parley.audience .p-roll:hover .p-roll-die { transform: translate(-50%, -50%) rotate(6deg) scale(1.06); }
 .parley.audience .p-roll > span { position: relative; font-family: var(--p-font-head); font-size: 1.5rem; letter-spacing: .18em; text-transform: uppercase; color: #ffe9a6; -webkit-text-stroke: 1px #000; paint-order: stroke fill; text-shadow: 0 2px 0 #000, 0 0 10px #000, 0 0 18px #000; }
 @media (prefers-reduced-motion: reduce) { .parley.audience .p-roll .p-roll-die { transition: none; } }
 @media (prefers-reduced-motion: reduce) { .parley .p-mal-room { display: none; } }
