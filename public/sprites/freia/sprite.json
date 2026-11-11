@@ -108,6 +108,20 @@
    "frames": 1,
    "fps": 4,
    "loop": true
+  },
+  "art-sap": {
+   "sheet": "art-sap.png",
+   "frames": 8,
+   "fps": 12,
+   "loop": false,
+   "hit": 0.45
+  },
+  "art-vex": {
+   "sheet": "art-vex.png",
+   "frames": 8,
+   "fps": 12,
+   "loop": false,
+   "hit": 0.45
   }
  }
 }

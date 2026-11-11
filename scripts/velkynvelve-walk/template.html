@@ -9117,10 +9117,12 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
     if ((shot === "thrown" || shot === "flask") && att.kind === "pc") flung(att, atk, shot);
     let flying = null, landed = null, shieldWait = null;
     att.bladeSwing = !shot && /dagger|sword|rapier|scimitar|knife|sickle|kukri|blade/i.test(atk.name);   // a sprite with a `dagger` sheet swings it for a blade (Lynkes, 2026-10-29)
+    att.artSwing = !shot && atk.art && SPR[att.id].img["art-" + atk.art] ? atk.art : null;   // a special attack with its own sheet plays it (Fifi, 2026-11-10)
     strike(att, tgt, () => {
       // cover is judged at the moment of the blow, from where they both stand now (SRD 5.1 Cover); a wall in the way
       // means there is no shot at all (a foe that walked as far as it could and still has stone between them)
       let cv = coverOf(att, tgt), acVs = targetAc(tgt) + cv.ac;
+      if (att.artSwing) artSwingFx(att, tgt, att.artSwing);
       const bl = blessD4(att);
       let adv = advantageOn(att, tgt, ranged, atk), r = d20(adv, att), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit + bl, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + bl + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
       if (hit && !crit && tgt.c.conds.has("paralyzed") && feetBetween(att, tgt) <= 5.5) crit = true;   // SRD: a hit on the paralyzed from within 5 ft is a critical
@@ -9178,6 +9180,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       // BARE HANDS (Sam's comment on the lab, 2026-10-29: "striking with your hands doesn't create a crimson or gold arch
       // effect"): no crescent and no swipe line — only Sam's own drawn martial spark (jab, kick, uppercut on a crit; strikeSheet
       // below) and the second jolt of the combo.
+      if (att.artSwing) artHitFx(att, tgt, att.artSwing, crit);
       if (fist) fistRibbons(att, tgt, crit);
       if (fist) setTimeout(() => { if (!tgt.down){ lunge(att, tgt, 10 * actorScale(att)); knock(tgt, att, 10 * actorScale(tgt)); } }, 150);
       if (!shot && !crimS && !fist){ swipe(att, tgt, {...sw, crit});
@@ -10149,7 +10152,7 @@ function strikeFromHere(att, tgt, onHit, after, shot){
   att.face = faceOf(tgt.x - att.x, tgt.y - att.y);
   // A shot is not a punch. A sprite with a "shoot" sheet plays it; one without stands and takes aim (no fist thrown),
   // looses after a beat, and the bolt or arrow does the rest. Until now every shot played the cross-punch.
-  const pose = shot && shot !== "thrown" && shot !== "flask" ? (SPR[att.id].img.shoot ? "shoot" : null) : (att.bladeSwing && SPR[att.id].img.dagger ? "dagger" : "attack");
+  const pose = shot && shot !== "thrown" && shot !== "flask" ? (SPR[att.id].img.shoot ? "shoot" : null) : (att.artSwing ? "art-" + att.artSwing : att.bladeSwing && SPR[att.id].img.dagger ? "dagger" : "attack");
   if (!pose){ setAnim(att, "idle"); att.aimHold = now; setTimeout(() => { onHit(); setTimeout(after, 380); }, 420); return; }
   playOnce(att, pose, () => { setAnim(att, "idle"); setTimeout(after, 320); });
   if (att.once) att.once.hit = onHit; else { onHit(); setTimeout(after, 320); }
@@ -10515,6 +10518,30 @@ function drawCrimThrust(s, k){
   ctx.globalCompositeOperation = "source-over"; lance(s.W, s.C.body); lance(s.W * .5, s.C.mid); lance(s.W * .2, s.C.core);
   ctx.restore();
 }
+// ---------- SPECIAL-ATTACK SWINGS (Sam, 2026-11-10, on Fifi's first clips: the pommel blow "looks great ... add pixel
+// hero like swings SFX around it"; the feint and stab "looks good but lets have a sput of blood spray when it hits") ----------
+// Only a sprite that has the art's own sheet (art-<key>) gets these, so the drawing and the effect always go together.
+// Presentation only: the roll, the damage and the art's rider are untouched.
+//   sap (Weakening Jab, drawn as an overhead pommel blow): two crescents chopping down around the swing, speed lines, a thud.
+//   vex (Flourish, drawn as a feint and a stab): a spurt of blood out of the far side of the target, in square drops that fall.
+function artSwingFx(att, tgt, key){
+  if (key !== "sap") return;
+  const m = SPR[tgt.id].json, sc = actorScale(tgt), dir = Math.sign(tgt.x - att.x) || 1, R = Math.max(44, m.cell[0] * sc * .22 * 2.6), C = crimCol(att);
+  const top = tgt.y - m.pivot[1] * sc * .78;
+  for (const [i, dl] of [[0, 0], [1, 70]]) setTimeout(() => sparks.push({crimson: true, a: tgt, x: tgt.x - dir * R * (.5 + i * .12), y: top + R * (.55 + i * .1), R: R * (1 - i * .22), W: R * (.4 - i * .1), dir,
+    rot: -1.25 + i * .18, span: Math.PI * .95, stab: false, C, t0: now, life: 250}), dl);
+  const q = ovPt(tgt.x, top);
+  for (let i = 0; i < 5; i++) crimPuffs.push({drop: true, line: true, x: q.x + (i - 2) * 9 * sc - dir * 10 * sc, y: q.y - (46 + Math.random() * 26) * sc, vx: 0, vy: (70 + Math.random() * 40) * sc, g: 0, r0: 2 * sc, len: (16 + Math.random() * 14) * sc, t0: now + i * 12, life: 190, rgb: [255, 244, 220], a: .9});
+  bank("combat/blade_whoosh", .5);
+}
+function artHitFx(att, tgt, key, crit){
+  if (key === "sap"){ crimStar(att, tgt, crit); shake(crit ? 8 : 5); bank("combat/melee_hit_bludgeon", .7); return; }
+  if (key !== "vex" || /skeleton|ooze|elemental|ghost/.test(tgt.id)) return;
+  const m = SPR[tgt.id].json, sc = actorScale(tgt), dx = tgt.x - att.x, dy = tgt.y - att.y, d = Math.hypot(dx, dy) || 1, q = ovPt(tgt.x, tgt.y - m.pivot[1] * sc * .5), n = crit ? 34 : 22;
+  for (let i = 0; i < n; i++){ const sp = (90 + Math.random() * 230) * sc, a = Math.atan2(dy, dx) + (Math.random() - .5) * 1.1;
+    crimPuffs.push({drop: true, x: q.x, y: q.y + (Math.random() - .5) * 10 * sc, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * .6 - (40 + Math.random() * 90) * sc, g: 520 * sc, r0: (2 + (Math.random() * 3 | 0)) * sc, t0: now, life: 380 + Math.random() * 260, rgb: [150 + Math.random() * 80 | 0, 8, 14], a: 1}); }
+  crimMist(att, tgt, crit ? 16 : 9); addBlood(tgt, crit ? 1.2 : .9, false);
+}
 // blood mist: soft red discs that swell and drift away from the blow (not from bone or ooze)
 const crimPuffs = [];
 function crimMist(att, tgt, n){
@@ -10523,7 +10550,10 @@ function crimMist(att, tgt, n){
 }
 function drawCrimPuffs(){
   for (let i = crimPuffs.length - 1; i >= 0; i--){ const p = crimPuffs[i], k = (now - p.t0) / p.life; if (k >= 1){ crimPuffs.splice(i, 1); continue; }
+    if (k < 0) continue;
     const x = p.x + p.vx * k, y = p.y + p.vy * k;
+    if (p.drop){ const t = k * p.life / 1000, X = p.x + p.vx * t, Y = p.y + p.vy * t + .5 * p.g * t * t, al = p.a * (k < .7 ? 1 : 1 - (k - .7) / .3), z = Math.max(1, Math.round(p.r0));   // square drops, on whole pixels
+      ctx.fillStyle = `rgba(${p.rgb[0]},${p.rgb[1]},${p.rgb[2]},${al})`; if (p.line) ctx.fillRect(Math.round(X), Math.round(Y), z, Math.round(p.len * (1 - k * .5))); else ctx.fillRect(Math.round(X), Math.round(Y), z, z); continue; }
     if (p.twinkle){ const al = (1 - k) * (.5 + .5 * Math.sin(now / 45 + p.ph)); ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = `rgba(${p.rgb[0]},${p.rgb[1]},${p.rgb[2]},${al})`; ctx.fillRect(x - p.r0, y - p.r0 / 4, p.r0 * 2, p.r0 / 2); ctx.fillRect(x - p.r0 / 4, y - p.r0, p.r0 / 2, p.r0 * 2); ctx.restore(); continue; }
     if (p.wisp){ const al = .7 * (k < .15 ? k / .15 : 1 - (k - .15) / .85); ctx.save(); ctx.strokeStyle = `rgba(${p.rgb[0]},${p.rgb[1]},${p.rgb[2]},${al})`; ctx.lineWidth = p.r0 * (1 - k * .6); ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(x, y);
       ctx.quadraticCurveTo(x + p.vx * .25 + p.bend, y - p.r1 * .3, x + p.vx * .5, y + p.vy * .5 - p.r1 * .2); ctx.stroke(); ctx.restore(); continue; }
