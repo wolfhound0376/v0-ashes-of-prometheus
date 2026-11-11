@@ -78,7 +78,10 @@ function writeLastRead(v: Record<string, string>) {
   try { localStorage.setItem(READ_KEY, JSON.stringify(v)) } catch { /* storage blocked */ }
 }
 
-export function MessagePlayerButton({ variant = "gold", align = "right", className }: { variant?: Variant; align?: "left" | "right"; className?: string }) {
+export function MessagePlayerButton({ variant = "gold", align = "right", drop = "down", className }: { variant?: Variant; align?: "left" | "right"; drop?: "down" | "up"; className?: string }) {
+  // "up" = the button sits at the bottom of the screen (the Underwalk, Sam 2026-11-10: "make this a button on the
+  // bottom"), so the thread and the arrival bubble open above it instead of below.
+  const where = drop === "up" ? "bottom-full mb-2" : "top-full mt-2"
   const pixel = variant === "pixel"
   const voiced = !pixel
   useEffect(() => { if (voiced) wireAudioUnlock() }, [voiced])
@@ -253,7 +256,7 @@ export function MessagePlayerButton({ variant = "gold", align = "right", classNa
           role="status"
           aria-live="polite"
           onClick={() => { uiLatch(); setWithName(bubble.speaker.trim()); setOpen(true); setBubble(null) }}
-          className={cn(s.pop, align === "right" ? "right-0" : "left-0")}
+          className={cn(s.pop, where, align === "right" ? "right-0" : "left-0")}
         >
           <span className={s.popFrom}>{bubble.speaker} <span className="opacity-60">→ {me && isForMe(bubble, me.name) ? "you" : bubble.recipient}</span></span>
           <span className={s.popText}>{bubble.text}</span>
@@ -262,7 +265,7 @@ export function MessagePlayerButton({ variant = "gold", align = "right", classNa
       )}
 
       {open && (
-        <div role="dialog" aria-label="Message a player" className={cn(s.panel, align === "right" ? "right-0" : "left-0")}>
+        <div role="dialog" aria-label="Message a player" className={cn(s.panel, where, align === "right" ? "right-0" : "left-0")}>
           <div className={s.head}>
             {withName ? (
               <button type="button" onClick={() => setWithName(null)} className={s.iconBtn} aria-label="Back to players">
@@ -346,7 +349,7 @@ const GOLD = {
   button: "relative inline-flex items-center gap-1.5 rounded-[3px] border border-[#7a5f33]/60 bg-[#120e0a] px-3 py-1.5 text-xs text-[#e0cfa0] transition-colors hover:border-[#c9a868] hover:bg-[#1f1710] hover:text-[#f3dc9c] hover:shadow-[0_0_12px_rgba(201,168,104,0.35)]",
   badge: "absolute -right-1.5 -top-1.5 grid h-4 min-w-4 place-items-center rounded-full bg-[#c9563f] px-1 text-[9px] font-semibold text-white shadow-[0_0_8px_rgba(201,86,63,0.7)]",
   badgeInline: "grid h-4 min-w-4 place-items-center rounded-full bg-[#c9563f] px-1 text-[9px] font-semibold text-white",
-  panel: "absolute top-full z-50 mt-2 w-80 overflow-hidden rounded-[4px] border border-[#7a5f33]/70 bg-[#0d0a07]/97 text-stone-200 shadow-[0_12px_40px_rgba(0,0,0,0.7)] backdrop-blur",
+  panel: "absolute z-50 w-80 overflow-hidden rounded-[4px] border border-[#7a5f33]/70 bg-[#0d0a07]/97 text-stone-200 shadow-[0_12px_40px_rgba(0,0,0,0.7)] backdrop-blur",
   head: "flex items-center gap-2 border-b border-[#3d3428] px-3 py-2 font-serif text-[11px] uppercase tracking-[0.18em] text-[#c4a777]",
   iconBtn: "rounded-sm p-1 text-[#c9a868] transition-colors hover:bg-[#241a10] hover:text-[#f0cd7a]",
   contact: "flex w-full items-center gap-2.5 rounded-[3px] px-2 py-1.5 text-[13px] text-stone-200 transition-colors hover:bg-[#1f1710]",
@@ -357,7 +360,7 @@ const GOLD = {
   composer: "flex items-center gap-2 rounded-[3px] border border-[#7a5f33]/50 bg-[#0a0908] p-1",
   input: "flex-1 bg-transparent px-2 py-1 text-[13px] text-stone-200 placeholder:text-stone-600 focus:outline-none",
   notice: "border-t border-[#3d3428] px-3 py-1.5 text-[11px] text-[#e8a38f]",
-  pop: "absolute top-full z-50 mt-2 flex w-72 flex-col gap-0.5 rounded-[6px] rounded-tr-none border border-[#c9a868]/80 bg-[#15100a]/97 px-3 py-2 text-left shadow-[0_0_18px_rgba(201,168,104,0.35),0_12px_32px_rgba(0,0,0,0.7)] backdrop-blur animate-in fade-in slide-in-from-top-1",
+  pop: "absolute z-50 flex w-72 flex-col gap-0.5 rounded-[6px] rounded-tr-none border border-[#c9a868]/80 bg-[#15100a]/97 px-3 py-2 text-left shadow-[0_0_18px_rgba(201,168,104,0.35),0_12px_32px_rgba(0,0,0,0.7)] backdrop-blur animate-in fade-in slide-in-from-top-1",
   popFrom: "font-serif text-[10px] uppercase tracking-[0.18em] text-[#c9a868]",
   popText: "line-clamp-3 text-[13px] text-[#f0e2bd]",
   popHint: "text-[10px] italic text-stone-500",
@@ -368,7 +371,7 @@ const PIXEL = {
   button: "relative inline-flex items-center gap-1.5 border-2 border-black bg-[#2a1606] px-2.5 py-1 font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-[#f4d77a] shadow-[inset_0_0_0_1px_#c9a23a,2px_2px_0_0_#000] [image-rendering:pixelated] hover:bg-[#3a1f08] hover:text-[#fff3cf] active:translate-x-px active:translate-y-px",
   badge: "absolute -right-2 -top-2 grid h-4 min-w-4 place-items-center border-2 border-black bg-[#8b3dff] px-0.5 font-mono text-[9px] font-bold text-white",
   badgeInline: "grid h-4 min-w-4 place-items-center border-2 border-black bg-[#8b3dff] px-0.5 font-mono text-[9px] font-bold text-white",
-  panel: "absolute top-full z-50 mt-2 w-80 border-2 border-black bg-[#120a04] font-mono text-[#f4e7c4] shadow-[inset_0_0_0_2px_#c9a23a,4px_4px_0_0_#000]",
+  panel: "absolute z-50 w-80 border-2 border-black bg-[#120a04] font-mono text-[#f4e7c4] shadow-[inset_0_0_0_2px_#c9a23a,4px_4px_0_0_#000]",
   head: "flex items-center gap-2 border-b-2 border-[#c9a23a] bg-[#2a1606] px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-[#f4d77a]",
   iconBtn: "p-1 text-[#f4d77a] hover:bg-[#3a1f08] hover:text-[#fff3cf]",
   contact: "flex w-full items-center gap-2.5 px-2 py-1.5 text-[12px] text-[#f4e7c4] hover:bg-[#2a1606] hover:shadow-[inset_0_0_0_1px_#c9a23a]",
@@ -379,7 +382,7 @@ const PIXEL = {
   composer: "flex items-center gap-2 border-2 border-black bg-[#0a0603] p-1 shadow-[inset_0_0_0_1px_#7a5418]",
   input: "flex-1 bg-transparent px-2 py-1 text-[12px] text-[#f4e7c4] placeholder:text-[#7a6a4a] focus:outline-none",
   notice: "border-t-2 border-[#c9a23a] px-3 py-1.5 text-[11px] text-[#ff9a7a]",
-  pop: "absolute top-full z-50 mt-2 flex w-72 flex-col gap-0.5 border-2 border-black bg-[#1d1440] px-3 py-2 text-left font-mono shadow-[inset_0_0_0_2px_#8b3dff,4px_4px_0_0_#000] [image-rendering:pixelated]",
+  pop: "absolute z-50 flex w-72 flex-col gap-0.5 border-2 border-black bg-[#1d1440] px-3 py-2 text-left font-mono shadow-[inset_0_0_0_2px_#8b3dff,4px_4px_0_0_#000] [image-rendering:pixelated]",
   popFrom: "text-[10px] font-bold uppercase tracking-[0.14em] text-[#f4d77a]",
   popText: "line-clamp-3 text-[12px] text-[#e9defc]",
   popHint: "text-[10px] text-[#a8936a]",
