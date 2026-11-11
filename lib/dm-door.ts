@@ -1,5 +1,9 @@
 // THE DM DOOR — the one way a table opens.
 //
+// 2026-11-10: /dm NO LONGER BOUNCES a tab without the stamp back to the title screen (Sam: "why is it when I
+// hit enter the DM door it just cuts to the intro scene"). The DM code is the lock; the stamp is now only a
+// hint the title link leaves. The history below is kept for the record.
+//
 // Sam, 2026-10-25: "The DM entrance for the intro screen is the ONLY way to open up a table that
 // permits players joining the staging area."
 //
