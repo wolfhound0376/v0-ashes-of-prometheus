@@ -3329,6 +3329,7 @@ function toast(text, ms = 3200){
 
 // ---------- dialogs ----------
 function showDialog({title, body, src = "", buttons}){
+  if (FIGHT.auth && FIGHT.promptFor){ routeDialog({title, body, src, buttons}); return; }   // ONE FIGHT: the card goes to that hero's screen
   const prev = mode; mode = "dialog";
   $("dlgTitle").textContent = title; $("dlgBody").textContent = body; $("dlgSrc").textContent = src; $("dlgSrc").hidden = !src;
   const bx = $("dlgBtns"); bx.innerHTML = "";
@@ -3733,7 +3734,7 @@ function loadSfx(name){
 // the elements sound like what they are (Sam, 2026-10-29: "Cold spells should sound like a blizzard / fire like an inferno /
 // acid like corrosion / necrotic like eldritch / thunder like thunder!!!"): recorded files in public/sfx/walk take over the pack's
 const ELEMENT_SND = {"magic/impact_thunder": "walk:thunder-clap", "magic/impact_cold": "walk:impact-cold", "magic/impact_fire": "walk:impact-fire", "magic/impact_acid": "walk:impact-acid", "magic/impact_necrotic": "walk:impact-necrotic"};
-const bank = (name, gain = .8) => { name = ELEMENT_SND[name] || name; return sfx(name.startsWith("walk:") ? name : "bank:" + name, gain); };
+const bank = (name, gain = .8) => { relaySound(name, gain); name = ELEMENT_SND[name] || name; return sfx(name.startsWith("walk:") ? name : "bank:" + name, gain); };
 // ---------- the clicks ----------
 // Sam, 2026-10-25: "We also need more audible clicks." The map's buttons were silent (only loot, dice and initiative
 // made a sound). Eight short ElevenLabs effects (flow "AoP Underwalk explore music + UI clicks"), cut and levelled,
@@ -5703,6 +5704,7 @@ function dmScreen(){ return !APP || (isDm() && !mySlug); }
 let mySlug = null;
 function canControl(a){
   if (!a) return false;
+  if (FIGHT.applying && FIGHT.applying === a) return true;            // ONE FIGHT: a press from that hero's own screen, played here
   if (!APP || isDm()) return true;
   if (dmRun.has(a.id)) return false;
   return !!mySlug && a.id === mySlug;
@@ -7907,6 +7909,8 @@ function fighterFor(a){
           hp, hpMax, ac: s ? s.ac : 10, conds: new Set(), slots: s && s.magic ? {...s.magic.slots} : {}, init: 0};
 }
 function startCombat(foeIds, label, opts = {}){ bardTuneStop();
+  if (FIGHT.mirror) return;                                    // ONE FIGHT: this screen is showing a fight run elsewhere
+  if (fightShared() && FIGHT.live && owSame(FIGHT.live.plate, cur) && FIGHT.live.auth_key !== OW.key){ talkGivesWay(); enterMirror(FIGHT.live); return; }
   talkGivesWay();                           // NPC MINDS, the other way round: a fight that starts ends the talk
   if (mode !== "explore") return;
   pullToMap(label ? String(label) : "a fight has broken out");
@@ -8005,6 +8009,7 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   setTimeout(() => foes.forEach((f, i) => setTimeout(() => { const b = FOE_BARK[f.id]; if (b && actors.includes(f) && f !== (cbt && cbt.boss)) bark(f, b[i % b.length], 2600); }, i * 500)), 700 + introMs);
   setTimeout(() => { if (cbt) nextTurn(true); }, 1400 + introMs);
   stripShow(1400 + introMs + 3200);   // the opening: the order in place, the entrance, the first turn call; then it fades
+  oneFightOpened();                   // ONE FIGHT: ask to run it for the whole table (or show the one already running)
 }
 const fname = a => a.kind === "pc" ? SHEETS[a.id].name : (a.creature && a.creature.name) || (a.c && a.c.sheet.name) || SHORT[a.id] || SPR[a.id].json.name;
 function standing(list){ return list.filter(a => !a.down && !a.left && actors.includes(a)); }   // `left`: fell back out of the fight (NPC MINDS)
@@ -8313,6 +8318,8 @@ function nextTurn(first){
   // Another player's hero on this screen: each browser runs its own fight (nothing is shared between screens yet), so
   // rather than freeze this one on a turn its player cannot take, that hero fights on its own the way the freed
   // prisoners do. The DM's screen drives every hero. (Sam, 2026-10-25: only the DM moves a hero who is not his.)
+  // ONE FIGHT: a hero someone else at the table drives — the fight waits for their player, who chooses on their own screen
+  if (a.kind === "pc" && oneFightWaitsFor(a)){ fightCam(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 60, 500, [a]); openMenu(a); return; }
   if (a.kind === "pc" && !canControl(a)){ log(`${fname(a)} acts on their own instincts here — their player drives them on their own screen.`); allyTurn(a); return; }
   // no sound as the turn passes to a hero or an ally: the camera moving to them is the cue (Sam, 2026-10-22: "it shouldn't
   // say bard", then "Please remove the bell between players as the system move to the active player")
@@ -8322,6 +8329,8 @@ function nextTurn(first){
 // the Octopath-style command list beside whoever is up
 function openMenu(a, sub){
   if (!a || a.down) return;                                    // the fallen get no commands; passWhenSettled moves the turn on
+  if (FIGHT.mirror) return;                                    // ONE FIGHT: a mirror shows the authority's list (mirrorMenu)
+  if (oneFightWaitsFor(a)) queueMicrotask(() => { if (activeActor() === a && !FIGHT.applying) $("cbtMenu").hidden = true; });   // built here, pressed there
   const m = $("cbtMenu"); m.hidden = false; m.innerHTML = ""; m.dataset.kind = "combat"; exploreKey = ""; castOpen = null; cbt.phase = "menu"; cbt.pend = null;
   m.onwheel = null; if (sub !== "orb"){ orbPick = null; orbDrop(); }
   const add = (label, hint, fn, cls) => { const b = document.createElement("button"); b.className = cls || ""; const ic = ACTION_ICON[label] || ACTION_ICON[label.replace(/:.*$/, "")] || ACTION_ICON[label.split(" ")[0]];
@@ -9916,6 +9925,7 @@ function cancelAim(){ if (cbt && cbt.phase === "target"){ const a = activeActor(
 function combatClick(w){
   if (!cbt || combatBusy) return;
   const a = activeActor(); if (!a || a.kind !== "pc" || !canControl(a)) return;
+  if (oneFightWaitsFor(a) && FIGHT.applying !== a) return;                // ONE FIGHT: that hero's player clicks, on their own screen
   if (cbt.phase === "move"){ moveActor(a, w, () => { if (cbt && activeActor() === a) openMenu(a); }); return; }
   if (cbt.phase === "jump"){
     const p = nearestWalkable(w.x, w.y), g = planLeap(a, p);
@@ -10450,7 +10460,7 @@ function readiedStrikeOn(att, cont){
     log(`${fname(h)}'s readied ${atk.name} lands as ${fname(att)} comes within reach (their reaction).`);
     attackWith(h, att, atk, () => { combatBusy = true; if (!cbt) return; if (att.down){ combatBusy = false; setTimeout(() => passTurn(att), 500); return; } cont(); }, false, true); };
   const hold = () => { h.c.ready = null; h.c.conds.delete("readied"); renderParty(); log(`${fname(h)} holds the ${atk.name}.`); cont(); };
-  if (h.kind !== "pc" || !canControl(h)){ fire(); return; }
+  if (h.kind !== "pc" || !askable(h)){ fire(); return; }
   showDialog({title: `${fname(h)}: readied ${atk.name}?`, body: `${fname(att)} comes within reach. ${fname(h)} readied a ${atk.name} for exactly this: strike now, with the reaction?`,
     src: "Ready · 1 reaction", buttons: [{label: `Strike with the ${atk.name}`, primary: true, fn: fire}, {label: "Hold", fn: hold}]});
 }
@@ -11141,7 +11151,7 @@ function offerRebuke(t, from){
     setTimeout(() => { rebukeFlames(from); bank("walk:impact-fire", .6); hitCtx = {spell: "Hellish Rebuke", by: t}; damage(from, n, "fire", false, t, true); hitCtx = null;
       log(`${fname(t)} casts <b>Hellish Rebuke</b> (reaction, level ${L} slot): ${fname(from)} DEX ${s} vs DC ${dc} — ${ok ? "half, " : ""}${n} fire.`);
       narrate(t, `${fname(t)} points at ${fname(from)}, and green hellfire wraps it.`); setTimeout(done, 450); }, 350); };
-  if (!canControl(t)){ fire(); return; }
+  if (!askable(t)){ fire(); return; }
   showDialog({title: `${fname(t)}: Hellish Rebuke?`, body: `${fname(from)} just hurt ${fname(t)}. Point and wreathe it in hellfire: a DEX save against DC ${dc}, ${dice} fire, half on a success. It uses the reaction and a level ${L} slot (${t.c.slots[L]} left).`,
     src: `Hellish Rebuke · 1 reaction · level ${L}`, buttons: [{label: "Rebuke", primary: true, fn: fire}, {label: "Let it go", fn: done}]}); }
 // the little cantrips: the action, the look, a line in the log
@@ -11448,7 +11458,7 @@ function approachThen(att, tgt, ft, then){
           if (att.down){ combatBusy = false; setTimeout(() => passTurn(att), 500); return; }
           approachThen(att, tgt, ft, then);
         }, false, true); };
-      if (p.kind === "pc" && canControl(p)){
+      if (p.kind === "pc" && askable(p)){
         const melee = (p.c.sheet.attacks || []).filter(k => (k.reach || 5) <= 10 && !k.ammo);
         const opts = melee.length ? melee : [meleeOf(p)];
         popText(p, "⚔ Opportunity!", "#ffd27a", 1.05);
@@ -11837,6 +11847,7 @@ async function helpArrives(){
 }
 // a wave or a runner's help walks in at `at` (a doorway): joins the fight here, or starts one
 async function reinforce(ids, at, why){
+  if (FIGHT.mirror) return true;                                        // ONE FIGHT: the fight's own screen brings them in; this one shows it
   await Promise.all([...new Set(ids)].map(id => loadSpriteManifest(id)));
   if (mode === "combat" && cbt){
     ids.forEach((id, i) => { const q = nearestWalkable(at.x + (i % 2 ? 1 : -1) * 50 * i * node.scale, at.y + 30 * i * node.scale); const f = foeJoins(id, q, {}); if (f) popText(f, "!", "#ff6a4a", 1); });
@@ -12044,7 +12055,7 @@ function oaGauntlet(f, goal, go){
   if (!p){ go(); return; }
   const next = () => { if (!cbt) return; if (f.down){ combatBusy = false; setTimeout(() => passTurn(f), 500); return; } oaGauntlet(f, goal, go); };
   const swing = atk => { p.c.reactionUsed = true; oaCue(p, f); narrate(p, `${fname(p)} lashes out as ${fname(f)} runs.`); attackWith(p, f, atk, () => { combatBusy = true; next(); }, false, true); };
-  if (p.kind === "pc" && canControl(p)){
+  if (p.kind === "pc" && askable(p)){
     const melee = (p.c.sheet.attacks || []).filter(k => (k.reach || 5) <= 10 && !k.ammo), opts = melee.length ? melee : [meleeOf(p)];
     popText(p, "⚔ Opportunity!", "#ffd27a", 1.05);
     showDialog({title: `Opportunity attack: ${fname(p)}`,
@@ -13257,7 +13268,7 @@ function setQuick(on, quiet){
   const b = $("quickBtn"); if (b){ b.textContent = on ? "Stop quick resolve" : "Quick resolve"; b.classList.toggle("primary", on); }
 }
 function endCombat(won, opts = {}){
-  if (mode !== "combat") return;
+  if (mode !== "combat" || FIGHT.mirror) return;
   if (cbt && cbt.fromFlag) fightFlagOver();   // the server's "a fight is on" comes down with the fight
   const victors = cbt ? [...(cbt.allies || [])] : [];   // THE TRIUMPH: who of ours is still up to strike a pose when it is won
   const fellNpcs = cbt ? (cbt.bystanders || []).filter(b => b.down) : [];   // the NPCs who died in this fight: buried below, once it is over (npcBury)
@@ -13323,6 +13334,7 @@ function endCombat(won, opts = {}){
     trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: leader.x, y: leader.y}]);
     party.forEach(p => { p.home = {x: p.x, y: p.y}; p.actUntil = now + 4000 + Math.random() * 6000; });
     mode = "explore"; setTrack("explore"); log(opts.talk ? "Weapons down. They talk." : won ? "The fight is over. The DM core settles the wounds and the loot." : "The fight is over.");
+    oneFightEnded(won);                // ONE FIGHT: every mirror lays the dead down and stands the rest down the same way
     cbtLog.active = false;   // the log stays, collapsed, with the fight's last line in its ticker; the next fight starts it over
   }, 700);
 }
@@ -18292,6 +18304,7 @@ stage.addEventListener("pointermove", e => {
   const w = s2w(e.clientX, e.clientY), r = stage.getBoundingClientRect(); aimW = w;
   hoverZone = null;   // set again below when the pointer is over one; never left over from an earlier move
   hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? (hitActor(foes, w) || hitActor(heroes(), w)) : null;
+  if (FIGHT.mirror) oneFightHover(w);
   { const ai = aimTargetFor(hoverActor), key = ai ? ai.t.id : null; if (key !== aimTickKey){ aimTickKey = key; if (ai) aimTick(ai.boon, key); } }
   hoverObj = mode === "explore" && !hoverActor ? interactAt(w) : null;
   hoverProp = mode === "explore" && !hoverActor && !hoverObj ? propAt(w) : null;
@@ -18341,6 +18354,7 @@ function wheelScrolls(el){ for (; el && el !== stage; el = el.parentElement){ co
 stage.addEventListener("wheel", e => { if (e.target.closest(".checkcard,.icard,.inv,.dm") || wheelScrolls(e.target)) return; e.preventDefault(); if (mode === "talk" || mode === "dialog") return; const r = stage.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, {passive: false});
 function click(w){
   if (timeStopped) return;
+  if (FIGHT.mirror && mode === "combat"){ oneFightMirrorClick(w); return; }   // ONE FIGHT: aimed here, played there
   if (dmPlacing){ placePile(w); return; }
   if (handClick(w)) return;   // steering or aiming the Mage Hand
   if (mode === "explore"){
@@ -18428,6 +18442,8 @@ $("zLight").onclick = () => { lightLevel = {off: "dim", dim: "dark", dark: "off"
 renderLightBtn();
 addEventListener("keydown", e => {
   if (e.target.closest && e.target.closest("input,select")) return;
+  if (mode === "combat" && FIGHT.mirror && oneFightKey(e)) return;                                   // ONE FIGHT: your turn, played there
+  if (mode === "combat" && FIGHT.auth && oneFightWaitsFor(activeActor()) && (e.code === "Enter" || MOVE_KEYS.has(e.code))) return;   // not this screen's hero to move
   if (e.key === "Escape" && dmPlacing){ dmPlacing = null; stage.classList.remove("placing"); hint(""); return; }
   if (e.code === "KeyI" && (mode === "explore" || mode === "combat")){ e.preventDefault(); toggleBag(); return; }
   if (e.key === "Escape" && bagOpen()){ toggleBag(false); return; }
@@ -18652,6 +18668,13 @@ async function followCombatFlag(flag){
     for (let i = picked.length - 1; i >= 0; i--) if (picked.indexOf(picked[i]) !== i) picked.splice(i, 1);   // two "Drow guard"s name the same two
     if (!picked.length){ log(`<em>${esc(flag.label || "Initiative!")}</em> Nobody he named is still standing on this plate.`); return; }
     for (const f of picked){ f.hp = f.hp ?? (flag.foes.find(x => x.slug === f.id) || {}).hp; }
+    // ONE FIGHT: every screen hears the flag at once; the DM's opens the fight, the others look a moment later for it
+    if (fightShared() && !FIGHT.auth){
+      if (!isDm()) await new Promise(r => setTimeout(r, 1200 + Math.random() * 600));
+      const lv = await fightLiveNow();
+      if (lv && owSame(lv.plate, cur) && lv.auth_key !== OW.key){ talkGivesWay(); if (mode === "explore") enterMirror(lv); return; }
+      if (mode !== "explore") return;
+    }
     startCombat.flagMood = flag.music || null;          // Malachar may name the mood; otherwise the odds decide
     startCombat(picked, flag.label || "Malachar calls for initiative.");
     if (cbt) cbt.fromFlag = true;
@@ -19789,7 +19812,8 @@ function openBagVisit(){
 }
 if (BAG_VISIT.on){ document.body.classList.add("bagOpen"); setTimeout(openBagVisit, APP ? 1800 : 300); }
 // what this hero may do with the bag right now: anything out of a fight, only on their own turn in one
-function bagCan(a){ return canControl(a) && (!inFightNow() || (a === activeActor() && !combatBusy && !a.down)); }
+function bagCan(a){ if (FIGHT.mirror) return canControl(a) && a === activeActor() && myTurnHere() && !a.down;   // ONE FIGHT: your bag, your turn, played there
+  return canControl(a) && (!inFightNow() || (a === activeActor() && !combatBusy && !a.down)); }
 function renderBag(){
   const a = bagHero(), g = GEAR[a.id] || (GEAR[a.id] = {carried: [], doll: [], main: null, off: null});
   const fight = inFightNow(), mine = bagCan(a), c = a.c;
@@ -21601,8 +21625,8 @@ function step(a, dt, speed){
   else { a.x += dx / d * sp; a.y += dy / d * sp; a.face = faceOf(dx, dy); setAnim(a, a.walkAs && hasSheet(a, a.walkAs) ? a.walkAs : "walk"); }   // walkAs: Hard Labor's carry
 }
 function update(dt){
-  if (cbt && poisonZones.length) tickPoisonZones();
-  if (cbt && guardianAuras.length) tickGuardians();
+  if (cbt && !cbt.mirror && poisonZones.length) tickPoisonZones();
+  if (cbt && !cbt.mirror && guardianAuras.length) tickGuardians();
   tickFootsteps();
   tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt);
   redSigilSeen();                       // a drow inside the pen reads the red scar: the fight starts once, however they got in
@@ -21683,7 +21707,7 @@ function update(dt){
     }
   }
   // in a fight, bodies keep their distance
-  if (mode === "combat"){
+  if (mode === "combat" && !FIGHT.mirror){
     const bodies = actors.filter(a => a.kind !== "npc" && !a.fading);
     for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++){
       const a = bodies[i], b = bodies[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
@@ -21697,7 +21721,7 @@ function update(dt){
         if (!a.once && !aw && walkable(a.x - ux * push, a.y - uy * push)){ a.x -= ux * push; a.y -= uy * push; } }
     }
   }
-  if (mode === "combat" && !combatBusy && canControl(activeActor())) keyboardMove(activeActor(), dt);
+  if (mode === "combat" && !combatBusy && !FIGHT.mirror && canControl(activeActor()) && !oneFightWaitsFor(activeActor())) keyboardMove(activeActor(), dt);
   // idle life: whoever you're not moving potters about, like at camp
   if (mode === "explore") for (const a of [...party, ...npcs]) idleLife(a);
   if (now - (renderExploreBar.at || 0) > 250){ renderExploreBar.at = now; renderExploreBar(); }
@@ -21886,7 +21910,7 @@ function owApplyHero(slug, h){
   // SPLIT PARTY, FIGHTS: a hero who walks onto this plate while this screen's fight is on joins it — rolls initiative and
   // acts from the next round (5E: you enter an encounter when you arrive). They fight on their own instincts here, like
   // every hero another player drives (fights are not shared between screens yet).
-  if (mode === "combat" && cbt && !a && PARTY.includes(slug) && SPR[slug] && h.plate != null && owSame(h.plate, cur)){
+  if (mode === "combat" && cbt && !cbt.mirror && !a && PARTY.includes(slug) && SPR[slug] && h.plate != null && owSame(h.plate, cur)){
     joinFight(slug, h); return;
   }
   // SPLIT PARTY: a hero someone else drives walks off this plate, or onto it
@@ -22075,6 +22099,386 @@ async function owResync(){
     if (w.plate != null && !owSame(w.plate, cur) && !ownView()){ OW.pendingPlate = owPlate(w.plate); owCheckPlate(); }
   } catch (e) {} finally { OW.resyncing = false; }
 }
+// ---------- ONE FIGHT (Sam, 2026-11-10: "fight MUST be synced and wait for other players actions, and have complete
+// parity. Make sure of this.") ----------
+// Before this, every screen at the table ran its own copy of a fight: its own dice, its own drow choices, and another
+// player's hero fighting "on its own instincts". Now one screen RUNS the fight (the AUTHORITY: the screen that opened
+// it, granted by /api/walk-fight so two screens never both do) and every other screen on that plate SHOWS it (a MIRROR):
+//   - STATE. Four times a second the authority sends what changed: every fighter's place, pose, hit points, conditions,
+//     slots and the rest of its fight sheet; the turn order, the round and whose turn it is; the standing zones (clouds,
+//     guardians, ice). A mirror runs no fight logic at all — it draws exactly that. Every 2.5 s it sends the whole of it.
+//   - WHAT HAPPENED. Every log line, damage number, bubble, sound, shake, flash, spell effect, bolt, arrow and spark the
+//     authority makes is recorded where it is made (RELAY_FNS, RELAY_ARRAYS) and played on every mirror in order. Nothing
+//     is rolled twice, so nothing can come out different.
+//   - YOUR TURN. The hero's driver (One World's: the player while their screen is connected, else the DM's map, else the
+//     lowest seat) gets the command list on THEIR screen — the authority's own list, as it builds it, rebuilt there — and
+//     what they press, click on the map, hover over to aim, or answer in a reaction card (an opportunity attack, a
+//     readied strike, Hellish Rebuke) is sent to the authority and played there as if pressed there. The fight WAITS for
+//     them: no hero fights on its own while its player is at the table.
+//   - THE END. The authority ends it once; the mirrors put the dead where they fell and stand the rest down as it did.
+// Without the tables (migration unapplied), with One World off, or on a test copy, nothing changes: each screen fights alone.
+const FIGHT = {id: null, auth: false, mirror: false, plate: null, live: null, since: 0, inSince: 0, out: [], sent: {}, fullAt: 0, menuSig: "", dlgSig: "",
+  serial: 0, dlgs: {}, dlgSeq: 0, promptFor: null, applying: null, polling: false, lastOk: 0, failed: false, hoverAt: 0, pendingActors: new Set(), endSent: false};
+const RELAY = {depth: 0, orig: {}, imgs: {}};
+const RELAY_FNS = ["log", "narrate", "popText", "bark", "shake", "hitstop", "redFlash", "critBeat", "toast", "victoryBanner", "triumph", "spawnFx", "slowmo"];
+const fightOn = () => !!(FIGHT.id && (FIGHT.auth || FIGHT.mirror));
+const relayOn = () => FIGHT.auth && FIGHT.id && !RELAY.depth;
+// --- who is who between screens: a hero by name; a plate's person by where the plate stands them; a newcomer by number
+function akey(a){
+  if (!a) return null;
+  if (a.fk) return a.fk;
+  if (a.kind === "pc") return a.fk = a.id;
+  if (a.post && !a.spawned) return a.fk = `${a.id}@${Math.round(a.post.x)},${Math.round(a.post.y)}`;
+  return a.fk = `${a.id}#${++FIGHT.serial}`;
+}
+function byKey(k){ return k == null ? null : (actors.find(a => akey(a) === k) || npcs.find(a => akey(a) === k) || party.find(a => akey(a) === k) || null); }
+const isActor = v => v && typeof v === "object" && typeof v.x === "number" && typeof v.id === "string" && typeof v.kind === "string" && "face" in v;
+const TIME_KEY = /^(t0|t|until|end|born|start|startAt|hitAt|dieAt|t1|ends|expires|at0)$/;
+// a value as data another screen can rebuild: actors by key, sets as lists, pictures by address, clocks as "this long from now"
+function enc(v, depth = 0, key = ""){
+  if (v == null || typeof v === "boolean" || typeof v === "string") return v;
+  if (typeof v === "number") return !isFinite(v) ? 0 : (TIME_KEY.test(key) && Math.abs(v - now) < 600000 ? {$t: Math.round(v - now)} : v);
+  if (typeof v === "function") return {$fn: 1};
+  if (depth > 5) return null;
+  if (isActor(v)) return {$a: akey(v)};
+  if (typeof HTMLImageElement !== "undefined" && v instanceof HTMLImageElement) return v.src ? {$img: v.src} : null;
+  if (v instanceof Set) return {$set: [...v].map(x => enc(x, depth + 1))};
+  if (Array.isArray(v)) return v.map(x => enc(x, depth + 1));
+  if (v instanceof Map || v instanceof Promise || (typeof Node !== "undefined" && v instanceof Node) || ArrayBuffer.isView(v) || v instanceof HTMLCanvasElement) return null;
+  const o = {}; for (const k of Object.keys(v)){ if (k === "sheet") continue; const e = enc(v[k], depth + 1, k); if (e !== undefined) o[k] = e; } return o;
+}
+function dec(v, miss){
+  if (v == null || typeof v !== "object") return v;
+  if (Array.isArray(v)) return v.map(x => dec(x, miss));
+  if ("$t" in v) return now + v.$t;
+  if (v.$fn) return () => {};
+  if ("$a" in v){ const a = byKey(v.$a); if (!a && miss) miss.n++; return a; }
+  if (v.$img){ let i = RELAY.imgs[v.$img]; if (!i){ i = RELAY.imgs[v.$img] = new Image(); i.src = v.$img; } return i; }
+  if (v.$set) return new Set(v.$set.map(x => dec(x, miss)));
+  const o = {}; for (const k of Object.keys(v)) o[k] = dec(v[k], miss); return o;
+}
+// --- WHAT HAPPENED: recorded on the authority where it is made, played on the mirrors
+function relayInstall(){
+  for (const n of RELAY_FNS){
+    const f = window[n]; if (typeof f !== "function" || RELAY.orig[n]) continue;
+    RELAY.orig[n] = f;
+    const w = function(...args){ if (relayOn()) FIGHT.out.push({f: n, a: args.map(x => enc(x))}); RELAY.depth++; try { return f.apply(this, args); } finally { RELAY.depth--; } };
+    Object.assign(w, f);                                                   // log.recent and friends ride along
+    try { eval(`${n} = w`); } catch (e) {}
+  }
+  for (const [n, arr] of Object.entries(relayArrays())){
+    if (arr.__relay) continue; arr.__relay = true;
+    arr.push = function(...items){ if (relayOn()) for (const it of items) FIGHT.out.push({p: n, v: enc(it)}); return Array.prototype.push.apply(this, items); };
+  }
+}
+function relayArrays(){ return {sparks, flights, shots, stuck, notes, deathBits, bloodMarks, lightFlashes, critBadges, crimPuffs, crimGhosts}; }
+function relaySound(name, gain){ if (relayOn()) FIGHT.out.push({f: "bank", a: [name, gain]}); }
+function relayPlay(ev){
+  RELAY.depth++;
+  try {
+    if (ev.f === "bank"){ bank(ev.a[0], ev.a[1]); return; }
+    if (ev.f){
+      const fn = RELAY.orig[ev.f] || window[ev.f]; if (typeof fn !== "function") return;
+      const miss = {n: 0}, args = ev.a.map(x => dec(x, miss)); if (miss.n) return;           // someone this screen does not have: skip it
+      if (ev.f === "spawnFx" && args[1] && !args[1].until && args[1].loop !== false) args[1].until = now + 2500;   // a loop the authority ends later ends here on its own
+      fn(...args); return;
+    }
+    if (ev.p){ const arr = relayArrays()[ev.p]; if (!arr) return; const miss = {n: 0}, it = dec(ev.v, miss); if (miss.n || !it) return;
+      if (ev.p === "shots" && typeof it.land !== "function") it.land = () => {};          // the authority hangs the landing on after the push
+      if (ev.p === "flights" && typeof it.then !== "function") it.then = () => {};
+      Array.prototype.push.call(arr, it); }
+  } catch (e) { console.warn("[one-fight] could not play", ev.f || ev.p, e); }
+  finally { RELAY.depth--; }
+}
+// --- the fight as data
+const ACTOR_KEYS = ["id", "kind", "x", "y", "face", "alpha", "down", "ko", "fading", "flash", "flashCol", "ally", "bystander", "left", "body", "hostile", "spawned", "parley", "offStage", "riding", "climbing"];
+function snapActor(a, noC){
+  const s = {k: akey(a)}; for (const k of ACTOR_KEYS) if (a[k] !== undefined) s[k] = typeof a[k] === "number" ? Math.round(a[k] * 10) / 10 : a[k];
+  s.anim = a.anim; s.age = Math.round(now - (a.t0 || now)); if (a.once) s.ol = Math.round(a.once.end - now);
+  if (a.c && !noC) s.c = enc(a.c);
+  return s;
+}
+function fightActors(){ return [...new Set([...party, ...foes, ...((cbt && cbt.allies) || []), ...((cbt && cbt.bystanders) || []), ...npcs.filter(n => n.body && actors.includes(n))])].filter(a => actors.includes(a) || foes.includes(a)); }
+const ZONE_NAMES = ["poisonZones", "daggerZones", "fireSpheres", "spiritWeapons", "guardianAuras", "icePatches", "aoeMarks"];
+function zonesNow(){ const z = {}; for (const n of ZONE_NAMES) try { z[n] = enc(eval(n)); } catch (e) {} return z; }
+function menuNow(){
+  const a = activeActor(); if (!a || a.kind !== "pc" || !cbt) return null;
+  const drv = owDriver(a); if (drv == null || drv === OW.key) return null;
+  const m = $("cbtMenu"), rows = [];
+  if (cbt.phase === "menu") for (const el of m.children){
+    if (el.tagName === "BUTTON"){ const img = el.querySelector("img"); rows.push({b: 1, label: (el.querySelector("span") || el).textContent, hint: (el.querySelector("small") || {}).textContent || "", cls: el.className, off: el.disabled, ico: img ? img.getAttribute("src") : null, glyph: img ? null : (el.querySelector(".glyph") || {}).textContent || "·", cat: el.dataset.cat || ""}); }
+    else if (el.classList.contains("sep")) rows.push({sep: 1});
+    else if (el.classList.contains("grp")) rows.push({grp: el.textContent});
+  }
+  return {for: akey(a), drv, phase: cbt.phase, rows, hint: $("cbtHint").hidden ? "" : $("cbtHint").textContent};
+}
+// --- THE AUTHORITY
+async function fightPost(op, extra){ const a = owAuth(); if (!a) throw new Error("no seat");
+  const r = await fetch("/api/walk-fight", {method: "POST", headers: {"Content-Type": "application/json", ...a.headers}, body: JSON.stringify({op, ...a.body, ...extra})});
+  const j = await r.json().catch(() => ({})); if (!r.ok) { const e = new Error(j.error || String(r.status)); e.status = r.status; e.ended = j.ended; throw e; } return j; }
+async function fightGet(q){ const r = await fetch("/api/walk-fight" + q, {cache: "no-store"}); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.status); return j; }
+const fightShared = () => OW.on && APP && !SANDBOX && !FIGHT.failed;
+// called as a fight opens on this screen: ask to run it; if another screen already does, show theirs instead
+async function oneFightOpened(){
+  if (!fightShared() || FIGHT.mirror) return;
+  const plate = String(cur);
+  try {
+    const j = await fightPost("open", {plate});
+    if (j.auth){ Object.assign(FIGHT, {id: j.fight.id, auth: true, mirror: false, plate, out: [], sent: {}, sentC: {}, fullAt: 0, inSince: 0, menuSig: "", dlgSig: "", dlgs: {}, endSent: false});
+      relayInstall(); fightTick(); return; }
+    if (j.fight && owSame(j.fight.plate, cur)){ abandonLocalFight(); enterMirror(j.fight); }
+  } catch (e) { if (e.status === 503) FIGHT.failed = true; }        // no tables yet: this screen fights alone, as before
+}
+function fightTick(){
+  if (!FIGHT.auth || !FIGHT.id) return;
+  try { fightTickBody(); } catch (e) { console.warn("[one-fight] tick", e && e.stack ? e.stack.slice(0, 300) : e); setTimeout(fightTick, 250); }
+}
+function fightTickBody(){
+  fightWaitBadge();
+  const full = now - FIGHT.fullAt > 2500, actorsOut = [], gone = [];
+  const list = fightActors(), keys = new Set(list.map(akey));
+  // the pose (place, frame) and the fight sheet are compared apart: a step does not resend hit points and slots
+  for (const a of list){
+    const s = snapActor(a, true), k = s.k, pj = JSON.stringify({...s, age: Math.round(s.age / 500)}), c = a.c ? enc(a.c) : null, cj = c ? JSON.stringify(c) : "";
+    FIGHT.sentC ||= {};
+    const poseNew = full || FIGHT.sent[k] !== pj, cNew = full || FIGHT.sentC[k] !== cj;
+    if (poseNew || cNew){ if (cNew && c) s.c = c; actorsOut.push(s); FIGHT.sent[k] = pj; FIGHT.sentC[k] = cj; }
+  }
+  for (const k of Object.keys(FIGHT.sent)) if (!keys.has(k)){ gone.push(k); delete FIGHT.sent[k]; if (FIGHT.sentC) delete FIGHT.sentC[k]; }
+  const body = {t: Date.now()};
+  if (actorsOut.length) body.actors = actorsOut;
+  if (gone.length) body.gone = gone;
+  if (full) FIGHT.fullAt = now;
+  if (cbt){ const c = {id: cbt.id, round: cbt.round, idx: cbt.idx, order: cbt.order.map(akey), phase: cbt.phase, pend: enc(cbt.pend), boss: akey(cbt.boss), quick: !!cbt.quick, allies: (cbt.allies || []).map(akey), bystanders: (cbt.bystanders || []).map(akey)};
+    const j = JSON.stringify(c); if (full || j !== FIGHT.cbtSig){ body.cbt = c; FIGHT.cbtSig = j; } }
+  { const z = zonesNow(), j = JSON.stringify(z); if (full || j !== FIGHT.zoneSig){ body.zones = z; FIGHT.zoneSig = j; } }
+  { const m = menuNow(), j = JSON.stringify(m); if (full || j !== FIGHT.menuSig){ body.menu = m; FIGHT.menuSig = j; } }
+  { const d = Object.values(FIGHT.dlgs).map(x => x.pub), j = JSON.stringify(d); if (full || j !== FIGHT.dlgSig){ body.dlgs = d; FIGHT.dlgSig = j; } }
+  if (FIGHT.out.length){ body.ev = FIGHT.out; FIGHT.out = []; }
+  const send = Object.keys(body).length > 1 ? fightPost("tick", {fight: FIGHT.id, body}).catch(e => { if (e.ended) fightLetGo(); }) : Promise.resolve();
+  send.finally(() => fightInputs().finally(() => { if (FIGHT.auth) setTimeout(fightTick, 250); }));
+}
+async function fightInputs(){
+  try {
+    const j = await fightGet(`?fight=${FIGHT.id}&kind=in&since=${FIGHT.inSince}`);
+    for (const m of j.msgs || []){ FIGHT.inSince = Math.max(FIGHT.inSince, m.id); fightInput(m.by_key, m.body || {}); }
+  } catch (e) {}
+}
+// a player's press, played here as if pressed here — only from the screen that drives the hero whose turn it is
+function fightInput(by, b){
+  if (!cbt) return;
+  if (b.t === "dlg"){ const d = FIGHT.dlgs[b.id]; if (!d || d.pub.drv !== by) return; const fn = d.fns[b.i]; delete FIGHT.dlgs[b.id]; if (fn){ FIGHT.applying = d.who; try { fn(); } finally { FIGHT.applying = null; } } return; }
+  const a = activeActor(); if (!a || a.kind !== "pc" || owDriver(a) !== by) return;
+  FIGHT.applying = a;
+  try {
+    if (b.t === "btn" && cbt.phase === "menu"){
+      const bs = [...$("cbtMenu").querySelectorAll("button")], el = bs[b.i];
+      if (el && !el.disabled && (el.querySelector("span") || el).textContent === b.label) el.click();
+    } else if (b.t === "click" && typeof b.x === "number"){
+      const on = b.on ? byKey(b.on) : null;
+      click(on && actors.includes(on) ? bodyPoint(on) : {x: b.x, y: b.y});
+    }
+    else if (b.t === "rpc" && BAG_RPC.includes(b.fn) && byKey(b.a) === a){
+      const fn = window[b.fn], rest = (b.rest || []).map(x => dec(x));
+      if (b.fn === "removeFrom"){ if (b.it === null && rest.length) fn(a, ...rest); }
+      else { const it = itemFrom(a, b.it); if (it) fn(a, it, ...rest); }
+    }
+    else if (b.t === "hover" && typeof b.x === "number"){ aimW = {x: b.x, y: b.y}; hoverActor = hitActor(foes, aimW) || hitActor(heroes(), aimW); }
+    else if (b.t === "key"){
+      if (b.k === "Escape") cancelAim();
+      else if (b.k === "Enter" && cbt.phase === "menu" && !combatBusy) nextTurn();
+      else if (b.k === "Enter" && cbt.phase === "target" && cbt.pend && cbt.pend.darts && cbt.pend.darts.length) fireDarts(a);
+    }
+  } finally { FIGHT.applying = null; }
+}
+// the authority's own screen while it waits: who it is waiting for; and if that player's screen has gone (One World hands
+// the hero to the DM's map or the lowest seat), the menu opens here instead
+function fightWaitBadge(){
+  const a = activeActor(); let el = $("fightWait");
+  const waiting = cbt && a && a.kind === "pc" && !a.down && oneFightWaitsFor(a);
+  if (cbt && FIGHT.waitingFor && a === FIGHT.waitingFor && !waiting && cbt.phase === "menu" && $("cbtMenu").hidden){ FIGHT.waitingFor = null; openMenu(a); }
+  if (waiting) FIGHT.waitingFor = a;
+  if (!el && waiting){ el = document.createElement("div"); el.id = "fightWait"; el.style.cssText = "position:absolute;left:50%;bottom:120px;transform:translateX(-50%);z-index:40;padding:6px 14px;border-radius:6px;background:rgba(20,16,30,.86);border:1px solid #9a8cff;color:#e6e0ff;font:600 13px/1.2 Georgia,serif;pointer-events:none"; stage.appendChild(el); }
+  if (el){ el.hidden = !waiting; if (waiting) el.textContent = `Waiting for ${fname(a)} — their player is choosing on their own screen.`; }
+}
+// whose turn the authority waits on: a hero someone else at the table drives
+function oneFightWaitsFor(a){ if (!FIGHT.auth || !a || a.kind !== "pc") return false; const d = owDriver(a); return d != null && d !== OW.key; }
+// a reaction card for a hero driven elsewhere goes to that screen; the authority keeps the answers
+function askable(p){ const ok = canControl(p) || oneFightWaitsFor(p); FIGHT.promptFor = ok && !canControl(p) ? p : null; return ok; }
+function routeDialog(o){
+  const p = FIGHT.promptFor; FIGHT.promptFor = null;
+  const id = `d${++FIGHT.dlgSeq}`;
+  FIGHT.dlgs[id] = {who: p, fns: o.buttons.map(b => b.fn), pub: {id, for: akey(p), drv: owDriver(p), title: o.title, body: o.body, src: o.src || "", labels: o.buttons.map(b => b.label)}};
+  hint(`Waiting for ${fname(p)}…`);
+}
+function oneFightEnded(won){
+  if (!FIGHT.auth || !FIGHT.id || FIGHT.endSent) return;
+  FIGHT.endSent = true;
+  const final = [...party, ...npcs].filter(a => actors.includes(a) || npcs.includes(a)).map(snapActor);
+  const body = {won, actors: final, ev: FIGHT.out}; FIGHT.out = [];
+  const id = FIGHT.id; FIGHT.auth = false; FIGHT.id = null;
+  fightPost("end", {fight: id, body}).catch(() => {});
+}
+function fightLetGo(){ FIGHT.auth = false; FIGHT.mirror = false; FIGHT.id = null; }
+// the loser of a race to open: this screen started the same fight a moment late; it goes quietly and shows theirs
+function abandonLocalFight(){
+  if (mode !== "combat" || !cbt) return;
+  for (const f of foes) if (npcs.includes(f) || f.wasHostile !== undefined){ f.kind = "npc"; f.hostile = !!f.wasHostile; if (!npcs.includes(f)) npcs.push(f); }
+  actors = actors.filter(a => a.kind !== "foe"); foes = [];
+  closeMenu(); cbt = null; combatBusy = false; mode = "explore";
+}
+// --- A MIRROR
+function enterMirror(f){
+  if (FIGHT.mirror && FIGHT.id === f.id) return;
+  Object.assign(FIGHT, {id: f.id, mirror: true, auth: false, plate: String(f.plate), since: 0, dlgShown: null});
+  mirrorBagInstall();
+  mode = "combat"; combatBusy = false;
+  cbt = {mirror: true, order: [], idx: -1, round: 0, phase: "idle", pend: null, allies: [], bystanders: [], home: {z: view.z, cx: NAT_W / 2, cy: NAT_H / 2}, id: f.id};
+  [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); });
+  cbtLogBegin(); $("combat").hidden = false; $("cbtMenu").hidden = true; stage.classList.add("fight"); $("vignette").classList.add("on"); setTrack("combat");
+  log(`<em>A fight — shown here as it is fought on ${f.auth_key === "dm" ? "the DM's" : "another"} screen.</em>`);
+  mirrorPoll();
+}
+async function mirrorPoll(){
+  if (!FIGHT.mirror || !FIGHT.id) return;
+  try {
+    const j = await fightGet(`?fight=${FIGHT.id}&kind=tick&since=${FIGHT.since}`);
+    for (const m of j.msgs || []){ FIGHT.since = Math.max(FIGHT.since, m.id); if (m.kind === "end"){ mirrorEnd(m.body || {}); return; } await mirrorApply(m.body || {}); }
+    if (j.fight && j.fight.ended_at && !(j.msgs || []).some(m => m.kind === "end")){ mirrorEnd({}); return; }
+    FIGHT.lastOk = now;
+  } catch (e) { console.warn("[one-fight] mirror", e && e.stack ? e.stack.slice(0, 300) : e); }
+  setTimeout(mirrorPoll, 250);
+}
+async function mirrorActor(s){
+  let a = byKey(s.k);
+  if (!a){
+    if (s.kind === "pc") return null;                                 // a hero who is not on this plate here: One World brings them
+    if (!SPR[s.id]){ if (!FIGHT.pendingActors.has(s.id)){ FIGHT.pendingActors.add(s.id); await loadSpriteManifest(s.id); FIGHT.pendingActors.delete(s.id); } if (!SPR[s.id]) return null; }
+    a = mkActor(s.id, s.x, s.y, s.kind || "foe", {alpha: s.alpha ?? 1}); a.fk = s.k; a.path = [];
+    if (a.kind === "foe") foes.push(a); actors.push(a);
+  }
+  for (const k of ACTOR_KEYS) if (k !== "x" && k !== "y" && s[k] !== undefined) a[k] = s[k];
+  const d = Math.hypot(s.x - a.x, s.y - a.y);
+  if (d > 400 * node.scale || a.down){ a.x = s.x; a.y = s.y; a.path = []; } else if (d > 3) a.path = [{x: s.x, y: s.y}];
+  if (s.anim && (s.anim !== a.anim || Math.abs((now - a.t0) - s.age) > 400)){ a.anim = s.anim; a.t0 = now - s.age; }
+  a.once = s.ol > 0 ? {end: now + s.ol, cb: null} : null;
+  if (s.c){ const sheet = a.c && a.c.sheet || (fighterFor(a) || {}).sheet; const c = dec(s.c); c.sheet = sheet; a.c = c; }
+  if (a.kind === "foe" && !foes.includes(a)){ foes.push(a); npcs = npcs.filter(n => n !== a); }
+  if (a.kind === "foe" && !actors.includes(a)) actors.push(a);
+  return a;
+}
+async function mirrorApply(b){
+  for (const s of b.actors || []) await mirrorActor(s);
+  for (const k of b.gone || []){ const a = byKey(k); if (a && a.kind !== "pc"){ actors = actors.filter(x => x !== a); foes = foes.filter(x => x !== a); } }
+  if (b.cbt){ const c = b.cbt, turnWas = activeActor();
+    Object.assign(cbt, {round: c.round, idx: c.idx, phase: c.phase, quick: c.quick, order: c.order.map(byKey).filter(Boolean), boss: byKey(c.boss),
+      allies: c.allies.map(byKey).filter(Boolean), bystanders: c.bystanders.map(byKey).filter(Boolean), pend: dec(c.pend)});
+    renderTurns(); renderParty();
+    const a = activeActor(); if (a && a !== turnWas){ try { camTo(Math.max(view.z, 1.2), a.x, a.y - 60, 500); } catch (e) {} }
+  }
+  if (b.zones) for (const [n, v] of Object.entries(b.zones)) try { eval(`${n} = dec(v) || []`); } catch (e) {}
+  for (const ev of b.ev || []) relayPlay(ev);
+  if (b.actors) renderParty();
+  if ("menu" in b) mirrorMenu(b.menu);
+  if (b.dlgs) mirrorDialogs(b.dlgs);
+}
+// your hero's turn, here: the authority's command list rebuilt, and every press sent to it
+function mirrorMenu(mn){
+  FIGHT.menu = mn;
+  const m = $("cbtMenu");
+  const mine = mn && mn.drv === OW.key;
+  if (!mine){ m.hidden = true; const a = activeActor(); hint(a && a.kind === "pc" && mn ? `${fname(a)}'s turn: their player is choosing.` : ""); return; }
+  hint(mn.hint || "");
+  if (mn.phase !== "menu"){ m.hidden = true; return; }
+  m.innerHTML = ""; m.dataset.kind = "combat"; m.hidden = false; let i = -1;
+  for (const r of mn.rows){
+    if (r.sep){ const s = document.createElement("i"); s.className = "sep"; m.appendChild(s); continue; }
+    if (r.grp){ const g = document.createElement("b"); g.className = "grp"; g.textContent = r.grp; m.appendChild(g); continue; }
+    const idx = ++i, b = document.createElement("button"); b.className = String(r.cls || "").replace(/[^\w\s-]/g, "");
+    if (r.ico && /^[\w\/.:-]+$/.test(r.ico)){ const im = document.createElement("img"); im.className = "ico"; im.src = r.ico; im.alt = ""; b.appendChild(im); }
+    else { const g = document.createElement("i"); g.className = "ico glyph"; g.textContent = r.glyph || "·"; b.appendChild(g); }
+    const sp = document.createElement("span"); sp.textContent = r.label; b.appendChild(sp);
+    if (r.hint){ const sm = document.createElement("small"); sm.textContent = r.hint; b.appendChild(sm); }
+    if (r.cat) b.dataset.cat = r.cat;
+    b.disabled = !!r.off;
+    b.onclick = r.label === "Inventory" ? () => toggleBag(true, activeActor())                     // the bag opens HERE; what you do in it is sent (BAG_RPC)
+      : () => { fightSend({t: "btn", i: idx, label: r.label}); m.hidden = true; };
+    m.appendChild(b);
+  }
+}
+function mirrorDialogs(list){
+  const mine = list.find(d => d.drv === OW.key);
+  if (!mine || FIGHT.dlgShown === mine.id) return;
+  FIGHT.dlgShown = mine.id;
+  showDialog({title: mine.title, body: mine.body, src: mine.src, buttons: mine.labels.map((label, i) => ({label, primary: i === 0, fn: () => fightSend({t: "dlg", id: mine.id, i})}))});
+}
+function fightSend(b){ fightPost("in", {fight: FIGHT.id, body: b}).catch(() => {}); }
+// YOUR BAG IN YOUR TURN: drinking, eating, handing over, equipping and putting away — chosen in the bag on your own screen,
+// done on the fight's screen (its copy of your gear, the same rows), so the bonus action, the reach and the potion's dice
+// are the fight's
+const BAG_RPC = ["drinkItem", "eatItem", "giveItem", "equipTo", "removeFrom"];
+const itemRef = (a, it) => { const g = GEAR[a.id] || {}; const all = [...(g.carried || []), ...(g.doll || [])]; return it ? {k: it.item_key || null, n: it.name || null, i: all.indexOf(it)} : null; };
+function itemFrom(a, r){ if (!r) return null; const g = GEAR[a.id] || {}, all = [...(g.carried || []), ...(g.doll || [])];
+  return all.find(x => r.k && x.item_key === r.k) || all[r.i] && all[r.i].name === r.n && all[r.i] || all.find(x => x.name === r.n) || null; }
+function mirrorBagInstall(){
+  for (const n of BAG_RPC){
+    const f = window[n]; if (typeof f !== "function" || f.__rpc) continue;
+    const w = function(a, it, ...rest){
+      if (!FIGHT.mirror) return f.call(this, a, it, ...rest);
+      if (!myTurnHere() || a !== activeActor()){ toast("Only in your own turn."); return; }
+      if (n === "removeFrom") fightSend({t: "rpc", fn: n, a: akey(a), it: null, rest: [enc(it), ...rest.map(x => enc(x))]});   // (a, slot, how)
+      else fightSend({t: "rpc", fn: n, a: akey(a), it: itemRef(a, it), rest: rest.map(x => enc(x))});
+      toggleBag(false);
+    };
+    w.__rpc = true; Object.assign(w, f);
+    try { eval(`${n} = w`); } catch (e) {}
+  }
+}
+const myTurnHere = () => FIGHT.mirror && FIGHT.menu && FIGHT.menu.drv === OW.key;
+// a click on someone is sent as WHO, not only where: the authority aims at them where they stand there (the picture here
+// trails the fight by a quarter second, and a fighter may still be stepping)
+function oneFightMirrorClick(w){
+  if (!myTurnHere() || FIGHT.menu.phase === "menu") return;
+  const on = hitActor(foes, w) || hitActor(heroes(), w) || hitActor(npcs.filter(n => n.bystander), w);
+  fightSend({t: "click", x: Math.round(w.x), y: Math.round(w.y), on: on ? akey(on) : null});
+}
+function oneFightHover(w){ if (!myTurnHere() || FIGHT.menu.phase === "menu" || now - FIGHT.hoverAt < 150) return; FIGHT.hoverAt = now; fightSend({t: "hover", x: Math.round(w.x), y: Math.round(w.y)}); }
+function oneFightKey(e){
+  if (!FIGHT.mirror) return false;
+  if (e.key === "Escape" || e.code === "Enter"){ if (myTurnHere()) fightSend({t: "key", k: e.key === "Escape" ? "Escape" : "Enter"}); e.preventDefault(); return true; }
+  return MOVE_KEYS.has(e.code);                                            // arrows do not walk a mirrored hero
+}
+function mirrorEnd(b){
+  const fin = new Map((b.actors || []).map(s => [s.k, s]));
+  for (const ev of b.ev || []) relayPlay(ev);
+  for (const f of [...foes]){
+    const s = fin.get(akey(f));
+    if (s && (s.kind === "body" || s.kind === "npc")){ f.kind = s.kind; f.down = !!s.down; f.body = s.kind === "body"; f.once = null; f.path = []; f.hostile = !!s.hostile; if (f.body) f.lootKey = bodyKeyOf(f); if (!npcs.includes(f)) npcs.push(f); }
+    else f.fading = true;
+  }
+  for (const [k, s] of fin){ const a = byKey(k); if (!a || a.kind !== "pc") continue; a.down = !!s.down; a.ko = !!s.ko; if (s.c){ const sheet = a.c && a.c.sheet; a.c = dec(s.c); a.c.sheet = sheet; } }
+  const gone = foes.filter(f => f.fading);
+  setTimeout(() => { actors = actors.filter(a => !gone.includes(a)); }, 900);
+  foes = [];
+  closeMenu(); cbt = null; combatBusy = false; mode = "explore"; FIGHT.mirror = false; FIGHT.id = null; FIGHT.menu = null; FIGHT.dlgShown = null;
+  poisonZones = []; daggerZones = []; fireSpheres = []; spiritWeapons = []; guardianAuras = []; icePatches = []; aoeMarks = [];
+  $("bossBar").hidden = true; $("cbtFlee").hidden = true; turnCallHide(); $("combat").classList.remove("has-boss", "strip-on", "peek");
+  $("combat").hidden = true; stage.classList.remove("fight"); $("vignette").classList.remove("on"); setTrack("explore"); cbtLog.active = false;
+  party.forEach(p => { p.home = {x: p.x, y: p.y}; p.path = []; });
+  try { camTo(1, NAT_W / 2, NAT_H / 2, 800); } catch (e) {}
+  renderParty(); hint("");
+}
+async function fightLiveNow(){ try { const j = await fightGet(""); FIGHT.live = j.fight || null; } catch (e) {} return FIGHT.live; }
+// THE WATCH: a screen that is not in a fight looks, every two seconds, for one being fought on its plate
+setInterval(async () => {
+  if (!fightShared() || FIGHT.auth || FIGHT.mirror || FIGHT.polling) return;
+  if (!(mode === "explore" || mode === "talk" || mode === "dialog")) return;
+  FIGHT.polling = true;
+  try { const j = await fightGet(""); FIGHT.live = j.fight || null;
+    if (j.fight && owSame(j.fight.plate, cur) && j.fight.auth_key !== OW.key && !FIGHT.mirror && !FIGHT.auth){ talkGivesWay(); if (mode === "explore") enterMirror(j.fight); }
+  } catch (e) { if (/does not exist|relation/.test(String(e.message))) FIGHT.failed = true; }
+  finally { FIGHT.polling = false; }
+}, 2000);
 // --- fights (not shared yet) ---
 // SPLIT PARTY, FIGHTS (Sam, 2026-10-27; part 2 of 4): one flag per plate (state["fight:<plate>"]) instead of one for the
 // table, so two plates can each have a fight, and the amber light shows only on the screens standing on a fighting
