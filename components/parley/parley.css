@@ -337,3 +337,4 @@
 .parley .p-mal-lich { transition: opacity .18s linear; }
 .parley .p-mal-lich.off { opacity: 0; }
 .parley .p-malachar[data-mood="angry"] .p-mal-shade { background: linear-gradient(180deg, rgba(60,4,6,.22), rgba(40,2,4,.5)); }
+.parley .p-malachar[data-mood="angry"] .p-mal-lich:not(.off) { filter: drop-shadow(0 0 26px rgba(255,40,30,.55)) drop-shadow(0 14px 22px rgba(0,0,0,.75)); }
