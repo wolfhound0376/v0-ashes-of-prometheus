@@ -20193,6 +20193,9 @@ function deathMark(a, success, n, why){
   renderParty();
 }
 function dieNow(a, why){
+  // A hero who dies OUTSIDE a fight has no combat record yet (Sam, 2026-11-10: Fifi shot dead at the pen gate a second
+  // time, "we are not in sync"): `a.c.ds` threw, so no grave and no shared `fallen`, and no other screen ever saw her die.
+  a.c = a.c || fighterFor(a);
   const ds = a.c.ds || (a.c.ds = {s: 0, f: 0}); ds.dead = true; ds.f = 3; a.dead = true;
   bank(voxFor(a, "die") || "creature/death_beast", .5); popText(a, "dead", "#ff6b5e", 1.5); shake(8);
   log(`<b>${fname(a)} dies</b>${why ? ` (${why})` : ""}.`); narrate(a, `${fname(a)} is gone.`);
