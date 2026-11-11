@@ -504,7 +504,7 @@ export function TravelPanels({ t, embedded = false }: { t: Travel; embedded?: bo
           ) : (
             <>
               <span className="text-[#e4d8bf]">
-                {lead.leader ? `${lead.roster.find((c) => c.id === lead.leader)?.name ?? "?"} leads${lead.by_vote ? " (by vote)" : " (DM's choice)"}` : "No leader yet"}
+                {lead.leader ? `${lead.roster.find((c) => c.id === lead.leader)?.name ?? "?"} leads${lead.by_vote ? " (by vote)" : lead.by === "host" ? " (hosting the game)" : " (DM's choice)"}` : "No leader yet"}
                 {lead.leader === me.characterId && me.characterId ? " — that's you" : ""}
               </span>
               <span className="text-[#9a8fb0]">· {lead.needed} of {lead.roster.length} votes carry it</span>
@@ -529,12 +529,12 @@ export function TravelPanels({ t, embedded = false }: { t: Travel; embedded?: bo
               )}
               {dmKey && (
                 <select
-                  value={lead.by_vote || !lead.leader ? "" : lead.leader}
+                  value={lead.by_vote || lead.by === "host" || !lead.leader ? "" : lead.leader}
                   onChange={(e) => void leadAction({ action: "leader", character_id: e.target.value || null })}
                   className="ml-auto rounded border border-[#4a3c2b] bg-[#241a12] px-2 py-1 text-[#e4d8bf]"
-                  title="The DM's override; blank lets the vote decide"
+                  title="The DM's override; blank leaves it to the host (or to the vote, at a table with no host)"
                 >
-                  <option value="">Let the vote decide</option>
+                  <option value="">Let the host lead</option>
                   {lead.roster.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name} leads{lead.counts[c.id] ? ` (${lead.counts[c.id]} votes)` : ""}

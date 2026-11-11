@@ -20,7 +20,7 @@ import {
   type ForcedMarchOutcome,
   type Navigator,
 } from "@/lib/travel/march"
-import { mayLead, tallyLeader } from "@/lib/travel/leader"
+import { mayLead, tallyLeader, whoLeads } from "@/lib/travel/leader"
 import { noticeAt, noticeSpec, type Eyes } from "@/lib/travel/notice"
 import { arrivalCue } from "@/lib/travel/stingers"
 import { malacharRoadLine, sayOnTheRoad, worthAWord } from "@/lib/travel/narrate"
@@ -201,10 +201,11 @@ export async function GET(req: NextRequest) {
       navigator: (march?.navigator as Navigator | null) ?? null,
     },
     guides: GUIDES,
-    // Who leads: the DM's override if set, else whoever the vote carried.
+    // Who leads: the DM's override if set, else the host, else whoever the vote carried.
     leader: {
-      character_id: lead.leader ?? tally.leader,
-      by_vote: !lead.leader && !!tally.leader,
+      character_id: whoLeads(lead.leader, lead.host, tally.leader).leader,
+      by_vote: whoLeads(lead.leader, lead.host, tally.leader).by_vote,
+      by: whoLeads(lead.leader, lead.host, tally.leader).by,
       votes: lead.votes,
       counts: tally.counts,
       needed: tally.needed,
@@ -419,7 +420,8 @@ export async function POST(req: NextRequest) {
   const lead = await readLeader(dbA, runIdA)
   const party = await roster(dbA)
   const tally = tallyLeader(lead.votes, party.map((c) => c.id))
-  const leaderId = lead.leader ?? tally.leader
+  const leaderId = whoLeads(lead.leader, lead.host, tally.leader).leader
+  const leadOut = (w: ReturnType<typeof whoLeads>) => ({ leader: w.leader, by_vote: w.by_vote, by: w.by })
   if (["depart", "move", "arrive", "continue", "choose", "enter", "leave"].includes(action) && !mayLead(who, leaderId)) {
     return NextResponse.json({ error: "only the party's leader (or the DM) may move the party", leader: leaderId }, { status: 403 })
   }
@@ -439,11 +441,11 @@ export async function POST(req: NextRequest) {
     if (forId) votes[voter] = forId
     else delete votes[voter]
     const next = tallyLeader(votes, party.map((c) => c.id))
-    // The vote never overrides the DM's hand: an explicit leader stays until
-    // the DM clears it. Without one, the tally decides.
+    // The vote never overrides the DM's hand or the host: an explicit leader stays
+    // until the DM clears it, then the host leads; only a table with no host is led by the tally.
     const { error: verr } = await dbA.from("travel_march").update({ leader_votes: votes, updated_at: new Date().toISOString() }).eq("campaign_run_id", runIdA)
     if (verr) return NextResponse.json({ error: verr.message }, { status: 500 })
-    return NextResponse.json({ ok: true, action, votes, counts: next.counts, needed: next.needed, leader: lead.leader ?? next.leader, by_vote: !lead.leader && !!next.leader })
+    return NextResponse.json({ ok: true, action, votes, counts: next.counts, needed: next.needed, ...leadOut(whoLeads(lead.leader, lead.host, next.leader)) })
   }
 
   if (action === "leader") {
@@ -456,7 +458,7 @@ export async function POST(req: NextRequest) {
     if (!existing) await dbA.from("travel_march").insert({ campaign_run_id: runIdA })
     const { error: lerr } = await dbA.from("travel_march").update({ leader_character_id: id, updated_at: new Date().toISOString() }).eq("campaign_run_id", runIdA)
     if (lerr) return NextResponse.json({ error: lerr.message }, { status: 500 })
-    return NextResponse.json({ ok: true, action, leader: id ?? tally.leader, by_vote: !id && !!tally.leader })
+    return NextResponse.json({ ok: true, action, ...leadOut(whoLeads(id, lead.host, tally.leader)) })
   }
 
   if (action === "depart") {

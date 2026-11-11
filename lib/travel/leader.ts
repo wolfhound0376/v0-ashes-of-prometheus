@@ -8,6 +8,11 @@
 // when a new candidate passes half, the lead changes. The DM may set the leader outright (an
 // override), and the DM may always move the party regardless of who leads.
 //
+// THE HOST LEADS (Sam, 2026-11-10): "Whomever is the host of the game should be the leader." The hero who
+// started the campaign (lib/host.ts, world flag `host`) leads the march without a vote. The order is:
+// the DM's named leader if there is one, else the host, else whoever the vote carried. So the vote only
+// decides at a table that has no host, and the DM can still hand the lead to someone else.
+//
 // Pure. The route stores votes in travel_march.leader_votes and the result in
 // travel_march.leader_character_id (migrations/travel_march_leader.sql).
 
@@ -39,4 +44,15 @@ export function tallyLeader(votes: Record<string, string> | null | undefined, el
 export function mayLead(actor: { dm: boolean; characterId: string | null }, leader: string | null): boolean {
   if (actor.dm) return true
   return !!actor.characterId && actor.characterId === leader
+}
+
+/**
+ * Who leads, and whether the vote is what decided it. `named` is the DM's override, `host` the hero who
+ * started the campaign, `voted` the vote's winner; each may be null.
+ */
+export function whoLeads(named: string | null, host: string | null, voted: string | null): { leader: string | null; by_vote: boolean; by: "dm" | "host" | "vote" | null } {
+  if (named) return { leader: named, by_vote: false, by: "dm" }
+  if (host) return { leader: host, by_vote: false, by: "host" }
+  if (voted) return { leader: voted, by_vote: true, by: "vote" }
+  return { leader: null, by_vote: false, by: null }
 }
