@@ -95,7 +95,7 @@ import {
   type GameClock,
 } from "@/lib/time-tracking"
 import { loadInfectionBlock } from "@/lib/gas-spore-clock"
-import { cuesForMalachar } from "@/lib/cinematic-doors"
+import { cueLines, cuesForMalachar, offerToMalachar, type CueRow, type OfferedCue } from "@/lib/cinematic-doors"
 import * as fal from "@fal-ai/serverless-client"
 
 // Configure Fal client
@@ -1509,10 +1509,13 @@ ${combatantRows
   // "Slave Pen" while they stand in Shoor's quarters. Trusted only while the graph agrees on the place;
   // a party that has walked out onto the road leaves the row behind. Best-effort: never holds up a turn.
   let situation: { note: string; where: string } | null = null
+  // The plate the SPEAKER stands on (e.g. "node-11-slave-pen"), for films filed to one plate. Null = not known.
+  let speakerPlate: string | null = null
   try {
     if (timeAdmin) {
       const row = await readPartySituation(timeAdmin)
       situation = situationForChat(row, currentLocation)
+      if (situation) speakerPlate = row?.sub_location ?? null
       // SPLIT PARTY (lib/split-party.ts): when the party stands on more than one plate, the speaker's turn is told
       // where THEY are (from the walk's shared record, walk_world.heroes), who is with them and who is elsewhere.
       // While the party is together this changes nothing. Best-effort like the rest: a failure keeps the party's row.
@@ -1528,7 +1531,7 @@ ${combatantRows
         const view = splitForSpeaker(heroes, names, playerCharacter.id)
         if (view) {
           const mine = situationForChat(situationForSpeaker(row, view), currentLocation)
-          if (mine) situation = { note: `${mine.note}\n${splitNote(view, playerCharacter.name || "This hero")}`, where: mine.where }
+          if (mine) { situation = { note: `${mine.note}\n${splitNote(view, playerCharacter.name || "This hero")}`, where: mine.where }; speakerPlate = view.here.slug }
         }
       }
     }
@@ -1627,6 +1630,8 @@ ${combatantRows
   // scene_key normalisation goes through the same RPC resolve_cinematic uses,
   // so "Velkynvelve (slave pen)" and "Scene_1_Velkynvelve (slave pen)" agree.
   let availableCinematicCues: string[] = []
+  // The same list with each cue's `moment` sentence — what Malachar and the second look actually read.
+  let offeredCues: OfferedCue[] = []
   try {
     // No film is offered for a camp talk, so Malachar and the second look
     // have nothing to cue while the player is mid-conversation.
@@ -1639,19 +1644,27 @@ ${combatantRows
       // location='generic', and must be offerable anywhere. resolve_cinematic
       // already matches generic rows by state (its generic_fallback tier), so
       // offering them here is what makes that tier reachable by a cue at all.
-      const { data: cueRows } = await supabase
-        .from("cinematic_clips")
-        .select("state")
-        .eq("kind", "action")
-        .in("scene_key", [cueSceneKey as string, "generic"])
-        .not("state", "is", null)
-        .not("video_url", "is", null)
-        .gt("weight", 0)
-      // ONE DOOR PER CUE (lib/cinematic-doors.ts). A cue the rules engine or the map fires itself is
-      // never offered here: Malachar knows a cue only by its name, so "notice-success" (the ROAD film,
-      // filed generic) rolled in the slave pen whenever someone noticed anything, and "ward-sigil"
-      // played without the Arcana reading that is supposed to earn it.
-      availableCinematicCues = cuesForMalachar((cueRows || []).map((r: { state: string | null }) => r.state))
+      // THE ROW IS THE TRIGGER (lib/cinematic-doors.ts). Each film says when it fires (`moment`), who fires
+      // it (`fired_by`), which plate it belongs to and whose it is. Malachar is offered only what is his to
+      // name, here, for this speaker — and he is told the moment, not just the name. He used to get bare
+      // names, so "notice-success" (the ROAD film, filed generic) rolled in the slave pen.
+      const cueQuery = (cols: string) =>
+        supabase
+          .from("cinematic_clips")
+          .select(cols)
+          .eq("kind", "action")
+          .in("scene_key", [cueSceneKey as string, "generic"])
+          .not("state", "is", null)
+          .not("video_url", "is", null)
+          .gt("weight", 0)
+      let { data: cueRows, error: cueErr } = await cueQuery("state, moment, fired_by, plate, retired, character_id")
+      // A database without the trigger columns yet (a stale sandbox copy) still gets the names.
+      if (cueErr) ({ data: cueRows } = await cueQuery("state"))
+      offeredCues = offerToMalachar((cueRows || []) as unknown as CueRow[], {
+        plate: speakerPlate,
+        characterId: playerCharacter?.id ?? null,
+      })
+      availableCinematicCues = cuesForMalachar(offeredCues.map((c) => c.state))
     }
   } catch (e) {
     // A cue lookup failure must never break the turn: no list simply means no
@@ -1662,8 +1675,10 @@ ${combatantRows
   const cinematicCueBlock =
     availableCinematicCues.length > 0
       ? `=== CINEMATIC CUES \u2014 CLOSED LIST ===
-Some moments in this location have film shot for them. When one of them actually happens in your narration, emit [CINEMATIC: <cue>] on its own line using EXACTLY one of these cue names: ${availableCinematicCues.join(", ")}.
+Some moments in this location have film shot for them. When one of them actually happens in your narration, emit [CINEMATIC: <cue>] on its own line using EXACTLY one of these cue names. Each is listed with the moment it was filmed for:
+${cueLines(offeredCues)}
 Rules:
+- The sentence after each cue is what the film SHOWS. Emit the cue only when that moment, as described, is what happened. A cue whose name merely sounds close is the wrong film.
 - ONLY these cue names exist. Never invent a cue, never vary the spelling, never emit one that is not on this list. An invented cue plays nothing.
 - Emit a cue ONLY for something that genuinely happened this turn. Never for an intention, a hypothetical, or an attempt that did not resolve.
 - "Happened" is not only active success. A moment counts if your narration says it occurred: sleeping and dreaming, a rest, a song, a shift changing, a failure that actually failed. Cue names ending in -fail belong to the failure happening, not to a success.
@@ -5129,13 +5144,14 @@ Rules:
               role: "user",
               content: `A tabletop RPG turn just happened. Some moments in this room have film shot for them.
 
-Cue names: ${availableCinematicCues.join(", ")}
+Cues, each with the moment its film shows:
+${cueLines(offeredCues)}
 
 The player's action: ${message}
 
 What the DM narrated: ${rawText.slice(0, 1500)}
 
-Which ONE cue name describes a moment that GENUINELY HAPPENED in that narration? A cue about sleeping needs the character to have slept; a cue ending -success needs the attempt to have succeeded; a cue ending -fail needs it to have failed. Quiet moments count — sleeping, resting, a song — as long as the narration says they occurred.
+Which ONE cue name describes a moment that GENUINELY HAPPENED in that narration? Judge by the moment written beside the cue, not by its name: if the narration does not show that moment, the answer is NONE. A cue about sleeping needs the character to have slept; a cue ending -success needs the attempt to have succeeded; a cue ending -fail needs it to have failed. Quiet moments count — sleeping, resting, a song — as long as the narration says they occurred.
 
 Answer with exactly one cue name from the list, or the single word NONE. No other words.`,
             },

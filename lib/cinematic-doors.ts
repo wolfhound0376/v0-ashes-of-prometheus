@@ -54,3 +54,52 @@ export function cuesForMalachar(states: ReadonlyArray<string | null | undefined>
   }
   return out
 }
+
+// ── THE CATALOGUE ROW IS THE WHOLE TRIGGER (Sam, 2026-11-10: "go on the pipeline") ──────────────────────
+// cinematic_clips now says, per film: `moment` (one sentence — WHEN it fires), `fired_by` (which door),
+// `plate` (which Underwalk plate, null = anywhere in the scene) and `retired`. Malachar is told the moment,
+// not just the name; a film for another plate, another hero or another door is never put in front of him.
+// Migration: supabase/migrations/20261111030000_cinematic_trigger_columns.sql.
+
+export type CueRow = {
+  state: string | null
+  moment?: string | null
+  fired_by?: string | null
+  plate?: string | null
+  retired?: boolean | null
+  character_id?: string | null
+}
+
+export type OfferedCue = { state: string; moment: string | null }
+
+/**
+ * The cues to put in front of Malachar this turn.
+ *   plate        where the SPEAKER stands (party_situation.sub_location, or their own plate when the party is
+ *                split). null = not known: plated cues are then still offered, as they were before plates existed.
+ *   characterId  the speaker. A film bound to another hero is not offered — the server would refuse it anyway.
+ * A cue the code itself fires (doorFor) is never offered whatever the row says: the row can narrow, never widen.
+ */
+export function offerToMalachar(
+  rows: ReadonlyArray<CueRow>,
+  ctx: { plate: string | null; characterId: string | null },
+): OfferedCue[] {
+  const out: OfferedCue[] = []
+  for (const r of rows) {
+    const state = (r.state || "").trim()
+    if (!state || r.retired) continue
+    if (doorFor(state) !== "malachar") continue
+    if (r.fired_by && r.fired_by !== "malachar") continue
+    if (r.plate && ctx.plate && r.plate !== ctx.plate) continue
+    if (r.character_id && r.character_id !== ctx.characterId) continue
+    const moment = (r.moment || "").trim() || null
+    const seen = out.find((o) => o.state === state)
+    if (seen) { if (!seen.moment && moment) seen.moment = moment; continue }
+    out.push({ state, moment })
+  }
+  return out
+}
+
+/** The list as Malachar (and the second look) reads it: one cue per line, with the moment it belongs to. */
+export function cueLines(cues: ReadonlyArray<OfferedCue>): string {
+  return cues.map((c) => (c.moment ? `- ${c.state}: ${c.moment}` : `- ${c.state}`)).join("\n")
+}
