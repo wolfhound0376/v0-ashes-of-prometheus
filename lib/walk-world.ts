@@ -48,12 +48,16 @@ export type Hero = {
   by: string
   /** the hero's owner (characters.id), when it has one */
   cid: string | null
-  /** Hard Labor's work pose while the driver's screen plays it ("carry" | "scrub"); absent when the hero is not working */
+  /** Hard Labor's work pose while the driver's screen plays it ("carry" | "scrub"), or "sneak" while the hero is moving
+   *  quietly; absent otherwise */
   pose?: HeroPose
 }
 
-/** The work poses other screens are told about (Sam, 2026-10-27: "no work animations"). Anything else is dropped. */
-export const HERO_POSES = ["carry", "scrub"] as const
+/**
+ * The poses other screens are told about: Hard Labor's work poses (Sam, 2026-10-27: "no work animations") and the
+ * crouched sneak (Sam, 2026-11-10: "On Fifi's screen she is sneaking but not on mine"). Anything else is dropped.
+ */
+export const HERO_POSES = ["carry", "scrub", "sneak"] as const
 export type HeroPose = (typeof HERO_POSES)[number]
 
 /**
