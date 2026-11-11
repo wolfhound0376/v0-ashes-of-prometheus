@@ -201,7 +201,10 @@ export async function confiscateOnImport(
 
   let confiscated = 0
   if (inventoryRows.length > 0) {
-    const stashed = inventoryRows.map((row) => ({ ...row, character_id: stashId }))
+    // Each row keeps its owner's name on it (`confiscated_from`). OotA ch.1 area 7: the drow hold what was "once held
+    // by the characters". Without this the chest cannot say whose a thing is, and a New Game cannot hand it back to
+    // the right hero's pile: four heroes' kits sat in the stash ownerless until 2026-11-11.
+    const stashed = inventoryRows.map((row) => ({ ...row, character_id: stashId, confiscated_from: characterId }))
     const { error: stashError } = await admin.from("inventory_items").insert(stashed)
     if (stashError) {
       console.error("[v0] confiscation: stash insert failed:", stashError)
