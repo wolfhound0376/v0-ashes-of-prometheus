@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
-import { startCombatFlag, COMBAT_FLAG } from "@/lib/combat-flag"
+import { startCombatFlag, endCombatFlag, COMBAT_FLAG } from "@/lib/combat-flag"
 
 // POST /api/walk-spotted — guards on the painted map have seen someone, and they attack.
 //
@@ -27,8 +27,34 @@ function isDm(req: NextRequest): boolean {
 
 const clip = (v: unknown, n: number) => String(v ?? "").trim().slice(0, n)
 
+// WHEN THE MAP'S FIGHT IS OVER, THE FLAG COMES DOWN (Sam, 2026-11-10: "why does refresh screen seem to start an
+// encounter?"). The flag was only ever cleared by Malachar's [COMBAT_END] or a surrender. A fight simply WON on the
+// map left it "active" for good, and the map remembers which flag it has already opened only in memory — so every
+// reload found an active fight it had "never seen" and opened it again (calling in a fresh quaggoth when the named
+// ones were dead). Found live: flag started 00:05:22 UTC, the win paid at 00:09:02, flag still active 30 minutes on.
+// POST {action: "over", startedAt} takes down the fight the map just finished, and only that one: a newer call to
+// initiative (a different startedAt) is left standing.
+async function fightOver(req: NextRequest, body: Record<string, unknown>) {
+  const db = createAdminClient()
+  if (!isDm(req)) {
+    const claimId = clip(body.claimId, 64), claimToken = typeof body.claimToken === "string" ? body.claimToken : ""
+    if (!claimId || !claimToken) return NextResponse.json({ error: "DM or a seated player only" }, { status: 403 })
+    const { data: secret } = await db.from("character_secrets").select("claim_token").eq("character_id", claimId).maybeSingle()
+    if (!secret?.claim_token || !safeEquals(String(secret.claim_token), claimToken)) return NextResponse.json({ error: "DM or a seated player only" }, { status: 403 })
+  }
+  const startedAt = clip(body.startedAt, 40)
+  if (!startedAt) return NextResponse.json({ error: "startedAt is required" }, { status: 400 })
+  const { data: existing } = await db.from("world_flags").select("value").eq("campaign_id", CAMPAIGN).eq("key", COMBAT_FLAG).maybeSingle()
+  const flag = (existing?.value ?? null) as { status?: string; startedAt?: string } | null
+  if (!flag || flag.status !== "active") return NextResponse.json({ ok: true, cleared: false, why: "no fight on the flag" })
+  if (flag.startedAt !== startedAt) return NextResponse.json({ ok: true, cleared: false, why: "a different fight is on the flag" })
+  await endCombatFlag(db)
+  return NextResponse.json({ ok: true, cleared: true })
+}
+
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}))
+  if (body?.action === "over") return fightOver(req, body)
   const foes = (Array.isArray(body.foes) ? body.foes : [])
     .slice(0, MAX_FOES)
     .map((f: { name?: unknown; aliases?: unknown; hp?: unknown; hpMax?: unknown }) => ({
