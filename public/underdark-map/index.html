@@ -300,17 +300,18 @@ slab.position.y=-0.31; scene.add(slab);
 /* fog of war: a mist sheet with holes where the party has been */
 const fogCv=document.createElement("canvas"); fogCv.width=1672; fogCv.height=941;
 const fogTex=new THREE.CanvasTexture(fogCv);
-const fogMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{mask:{value:fogTex},t:{value:0}},
+const fogMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{mask:{value:fogTex},t:{value:0},solid:{value:GAME?1:0}},
   vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
-  fragmentShader:`uniform sampler2D mask; uniform float t; varying vec2 vUv;
+  fragmentShader:`uniform sampler2D mask; uniform float t; uniform float solid; varying vec2 vUv;
   float h(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
   float n(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x),f.y); }
   float fbm(vec2 p){ float v=0.,a=.5; for(int i=0;i<4;i++){ v+=a*n(p); p*=2.03; a*=.5; } return v; }
   void main(){ float m=texture2D(mask,vUv).a;
     float c=fbm(vUv*vec2(9.,5.)+vec2(t*.015,t*.008)); float c2=n(vUv*vec2(23.,13.)-vec2(t*.02,0.));
-    float a=m*(.78+.22*c)*smoothstep(0.,.35,m+.15*c2-.1);
+    float a=m*mix(.78+.22*c,1.,solid)*smoothstep(0.,.35,m+.15*c2-.1);
     vec3 col=mix(vec3(.05,.03,.10),vec3(.20,.14,.32),c*c2*1.6);
-    gl_FragColor=vec4(col,a*.94); }`});
+    col=mix(col,col*.45,solid);
+    gl_FragColor=vec4(col,a*mix(.94,1.,solid)); }`});
 const fog=new THREE.Mesh(new THREE.PlaneGeometry(W,H),fogMat); fog.rotation.x=-Math.PI/2; fog.position.y=0.06; scene.add(fog);
 function drawFog(){
   const c=fogCv.getContext("2d"); c.clearRect(0,0,1672,941);
