@@ -28,6 +28,22 @@ def bottom(im, x, y, w, h):
     return None if not bb else bb[3]
 
 
+# Sam, the same evening, after the first pass: "Eldeth, fifi, ront are floating." Resting the LOWEST pixel on the ground
+# was not enough: in several facings the last frame is a body still tumbling, one hand or heel hanging down and the
+# trunk well above it, so the hand touched the floor and the body hung in the air. The body is now also rested on its
+# weight: the middle of its mass (the alpha-weighted mean row) is brought to HALF_BODY sprite pixels above the ground
+# point, about half the thickness of a figure lying down. Whichever asks for more wins, and the extra is eased in over
+# the fall so nothing jumps. A trailing hand or foot then lies a little past the ground point, on the shadow.
+HALF_BODY = 9
+
+
+def mass_row(im, x, y, w, h):
+    import numpy as np
+    a = np.asarray(im.crop((x, y, x + w, y + h)))[:, :, 3].astype(float)
+    t = a.sum()
+    return None if t <= 0 else float((a.sum(axis=1) * np.arange(h)).sum() / t)
+
+
 def main():
     want = set(sys.argv[1:])
     for d in sorted((ROOT / "public" / "sprites").iterdir()):
@@ -44,7 +60,12 @@ def main():
             raw = [0 if b is None else max(0, base - b) for b in bots]
             # never lower a frame by more than every later frame needs: a body knocked up into the air mid-fall keeps
             # its hop, and only the height it never comes down from is taken out
-            drop.append([min(raw[f:]) for f in range(n)])
+            row = [min(raw[f:]) for f in range(n)]
+            mid = mass_row(im, (n - 1) * cw, r * ch, cw, ch)
+            if mid is not None:
+                extra = max(0, round((base - HALF_BODY) - mid) - row[-1])        # what resting on its weight asks beyond the lowest pixel
+                row = [row[f] + round(extra * f / max(1, n - 1)) for f in range(n)]
+            drop.append(row)
         if max(max(r) for r in drop) < 3:                                       # already on the ground: nothing to record
             if "drop" in an: del an["drop"]; mf.write_text(json.dumps(man, indent=2) + "\n")
             continue
