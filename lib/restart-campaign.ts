@@ -307,6 +307,48 @@ export async function restartCampaign(admin: SupabaseClient): Promise<RestartRes
     report.relationshipsCleared = (Number(report.relationshipsCleared) || 0) + (count ?? 0)
   }
 
+  // THE REST OF THE RUN (Sam, 2026-11-10: "go PR5"; ruling "New game restarts EVERYTHING"). These were never
+  // cleared, so a new game kept the old one's dice history, skill practice, prayers and favour, rests, crafting,
+  // spell resources, unread journal offers, the last road arrival and the Underwalk's event feed. Saved games
+  // keep the old world on the shelf (#1215), so clearing them loses nothing. Children before parents.
+  // Not touched on purpose: the clock and its log (they belong to a session and go with it, below), the tables
+  // keyed by campaign run (a new run starts them fresh), session_telemetry (analytics, not the game),
+  // story_dialogue (the retired Greenest prototype), and what the Sandbox Alchemist was given for testing.
+  {
+    let cleared = 0
+    const wipe = async (table: string, key = "id") => {
+      const q = admin.from(table).delete({ count: "exact" })
+      const { count, error } = key === "id" ? await q.neq("id", "00000000-0000-0000-0000-000000000000") : await q.neq(key, "")
+      note(table, error)
+      cleared += count ?? 0
+    }
+    for (const t of ["skill_progress", "roll_attempts", "roll_requests", "faith_events", "prayers", "rest_events",
+      "crafting_projects", "magical_resources", "journal_offers", "travel_arrivals"]) await wipe(t)
+    await wipe("walk_events", "sig")
+    // What the heroes learned in play (runes, recipes, effects, weaknesses). Player heroes only.
+    const { data: playerRows } = await admin.from("characters").select("id").eq("is_player", true)
+    const playerIds = (playerRows ?? []).map((r) => r.id as string)
+    if (playerIds.length) {
+      for (const t of ["character_known_runes", "character_known_recipes", "character_known_effects", "character_known_weaknesses"]) {
+        const { count, error } = await admin.from(t).delete({ count: "exact" }).in("character_id", playerIds)
+        note(t, error)
+        cleared += count ?? 0
+      }
+    }
+    // A cleric keeps their god (that is who they are); the god's attention, favour, debts, vows and missions start over.
+    {
+      const { error } = await admin.from("character_faith")
+        .update({ state: "unknown", attention: 0, accord: 0, debt: 0, vows: [], missions: [], last_prayer_day: null, last_reason: "New game", updated_at: new Date().toISOString() })
+        .neq("id", "00000000-0000-0000-0000-000000000000")
+      note("character_faith", error)
+    }
+    {
+      const { error } = await admin.from("party_supplies").update({ supplies: 0, updated_at: new Date().toISOString() }).neq("id", "00000000-0000-0000-0000-000000000000")
+      note("party_supplies", error)
+    }
+    report.runStateCleared = cleared
+  }
+
   // --- 2. Malachar's session history -------------------------------------
   // The reason this route exists. Beats first: they reference a session.
   {

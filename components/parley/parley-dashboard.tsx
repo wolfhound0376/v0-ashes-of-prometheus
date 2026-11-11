@@ -1300,7 +1300,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
         {props.onToggleVoices ? <button type="button" className={cn("p-slab p-tog", props.voicesOn && "on")} data-tog="voices" onClick={props.onToggleVoices} aria-pressed={!!props.voicesOn} title={props.voicesOn ? "Voices on — click to mute Malachar and the NPCs" : "Voices off"}><i />Voices</button> : null}
         <button type="button" className={cn("p-slab p-tog", musicOn && "on")} data-tog="music" onClick={() => setMusicOff(musicOn)} aria-pressed={musicOn} title={musicOn ? "Music on — click to mute" : "Music off"}><i />Music</button>
         <button type="button" className={cn("p-slab p-tog", cinematicsOn && "on")} data-tog="cinematics" onClick={toggleCinematics} aria-pressed={cinematicsOn} title={cinematicsOn ? "Cinematics play when you look around" : "Cinematics off"}><i />Cinematics</button>
-        <button type="button" className="p-slab green p-roll" onClick={() => setDiceOpen(true)} title="Open the dice tray">🎲 Roll</button>
+        <button type="button" className="p-slab green p-roll" onClick={() => setDiceOpen(true)} title="Open the dice tray"><img className="p-roll-die" src="/parley/roll-d20.webp" alt="" aria-hidden="true" /><span>Roll</span></button>
         {props.dmMode ? <button type="button" disabled={diceBusy} onClick={() => void rollInitiative()} className="p-slab dark sm" title="Roll initiative with physics and report the result">{diceBusy ? "Rolling…" : `Initiative ${signed(displayedInitiative)}`}</button> : null}
       </div>
     </div>

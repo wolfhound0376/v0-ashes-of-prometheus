@@ -42,7 +42,11 @@ NODES = {
    obstacles=[dict(cx=890,cy=670,rx=120,ry=70),dict(cx=1350,cy=660,rx=120,ry=70),dict(cx=850,cy=890,rx=120,ry=70),dict(cx=1350,cy=890,rx=120,ry=70),dict(cx=1500,cy=470,rx=90,ry=50)],
    zones=[dict(rect=[942, 1214, 1194, 1417], to=[2], label="Rope walkway west"),
           dict(rect=[62, 786, 354, 941], to=[7], label="Walkway east"),
-          dict(rect=[122, 208, 294, 393], to=[8], label="Passage to the lift"),
+          # Sam, 2026-11-10: "Lift -> yes." This exit said "Passage to the lift" and led to Shoor's Quarters (8), and no
+          # plate led to the Lift at all: the only way onto plate 5 was climbing back up from the cliff below it, which is
+          # itself only reached from plate 5. OotA p.15: the lift is "attached to the edge of the barracks platform", the
+          # platform the hall opens onto. Shoor's rope bridge still arrives in the hall; it has no way back from here (known one-way).
+          dict(rect=[122, 208, 294, 393], to=[5], label="Passage to the lift"),
           # Hard Labor module (Sam, 2026-10-26): the kitchen is its own painted plate ("3k"), reached past the pantry
           # shelves at the back of the hall. PROPOSED: where the door sits is Claude's pick, on the painted floor by the counter.
           dict(rect=[1380, 480, 1560, 560], to=["3k"], label="PROPOSED: behind the serving counter, into the kitchen", proposed=True)]),
@@ -56,12 +60,15 @@ NODES = {
  5: dict(slug="node-05-lift", name="Lift", scale=0.95,
    floors=[dict(poly=P((740,640),(960,580),(1280,600),(1480,640),(1520,720),(1490,940),(1440,1040),(1200,1120),(940,1120),(700,1040),(640,940),(660,820),(700,740))),dict(rect=[160,750,720,860])],
    obstacles=[dict(cx=1140,cy=690,rx=150,ry=80)],
-   zones=[dict(rect=[150, 740, 260, 870], to=[2], label="Walkway to the main hall"),
+   # 2026-11-10: the walkway's label said the main hall and it led to the Barracks. It is the other end of the hall's
+   # "Passage to the lift" now, so a party coming from the hall arrives on it. (Claude's call, following the label.)
+   zones=[dict(rect=[150, 740, 260, 870], to=[3], label="Walkway to the main hall"),
           # Sam, 2026-10-24: "Lift basket goes to the plate pool" — the basket sets the party down on area 14 (Pool / Underground
           # River), which has its own ways out; it is not a way off the map. `kind="leave"` stays only because the page keys the
           # basket's climb-out button on it (template.html openLift); with a plate in `to`, goBeyond walks there.
           dict(rect=[1436, 819, 1526, 959], to=["wastes"], kind="leave", label="The lift basket: DC 18 Strength to crank, 4 rounds down to the Wastes (Sam, 2026-10-27; the book lowers it by the pool, OotA p.17–18)"),
-          dict(rect=[914, 1255, 1099, 1339], to=[2], label="Down the Lift to the Wastes"),
+          # 2026-11-10: was labelled "Down the Lift to the Wastes" (that is the basket above); it leads to the Barracks.
+          dict(rect=[914, 1255, 1099, 1339], to=[2], label="Along the platform to the barracks"),
           # Hard Labor module (Sam, 2026-10-26), Lift Trouble (OotA Expanded p.45): goods fell off the lift and snagged on the
           # cliff below; the prisoners are sent down on two tattered 25-ft ropes, three rappels. PROPOSED: the spot on the rail is
           # Claude's pick. The rappel checks are not built yet (labor module PR 3); for now this simply walks.
@@ -219,13 +226,20 @@ NODES = {
    floors=[dict(poly=P((520,460),(960,300),(1280,240),(1720,280),(2000,400),(2200,660),(2120,1040),(1800,1200),(1240,1180),(800,1120),(320,1000),(180,840),(280,600))),dict(rect=[1260,0,1440,280]),dict(rect=[880,1140,1200,1339])],
    obstacles=[dict(cx=x*2,cy=y*2,rx=95,ry=55) for (x,y) in [(350,270),(510,210),(630,260),(770,205),(880,265),(330,350),(500,320),(710,330),(935,350),(560,425),(770,410),(330,465),(960,440),(690,505),(930,570)]],
    zones=[dict(rect=[1276, 26, 1427, 232], to=[11], label="Stone steps up toward the slave pen"),
-          dict(rect=[2101, 556, 2260, 721], to=[10], label="Perimeter walkway north to the watch post"),
+          # 2026-11-10: was labelled "north to the watch post"; it leads to the Guard Tower (the watch post is the exit below).
+          dict(rect=[2101, 556, 2260, 721], to=[10], label="Perimeter walkway to the Guard Tower"),
           dict(rect=[891, 1211, 1079, 1441], to=[13], label="New exit")],
    hazard=dict(poly=P((620,500),(1900,440),(2040,700),(1880,1080),(720,1060),(480,800)), kind="ambush", foes=["quaggoth","quaggoth","quaggoth"], fromPlate=True, label="The quaggoths rise from their nests. You are not drow.")),
  13: dict(slug="node-13-northern-watch-post", name="Northern Watch Post", scale=1.0,
    floors=[dict(poly=P((540,720),(840,700),(1040,660),(1400,660),(1520,720),(1760,700),(1920,740),(1860,840),(1720,900),(1400,940),(1380,1020),(1320,1080),(1320,1339),(1080,1339),(1060,1080),(1000,1000),(960,940),(660,940),(520,840)))],
    obstacles=[dict(cx=1540,cy=800,rx=120,ry=60),dict(cx=840,cy=740,rx=35,ry=25)],
-   zones=[dict(rect=[1080, 1260, 1320, 1339], to=[12], label="Walkway down to the den perimeter")]),
+   # THE NORTH PASSAGE (Sam, 2026-11-10: "We can use your recommendation via the North Passage. Two long routes.").
+   # OotA p.15: watch posts lie "near the northern and southern entrances to the cavern"; p.20: the north passage "leads
+   # toward Menzoberranzan and Blingdenstone". Sam's 2026-10-24 re-trace had dropped this plate's way out, so the post led
+   # nowhere. `via` names the hand-off (lib/travel/handoff.ts "north": the two book-distance routes, 156 and 180 miles).
+   # PROPOSED position: the gap in the back rail under the painted cave mouth, Claude's by eye over the painted floor.
+   zones=[dict(rect=[1080, 1260, 1320, 1339], to=[12], label="Walkway down to the den perimeter"),
+          dict(rect=[1110, 650, 1290, 720], to=[], kind="leave", via="north", label="The north passage: toward Menzoberranzan and Blingdenstone (OotA p.20)")]),
  14: dict(slug="node-14-pool-river", name="Pool / Underground River", scale=0.9,
    floors=[dict(poly=P((300,840),(640,790),(940,820),(1120,880),(1400,860),(1520,940),(1640,1120),(1760,1280),(1760,1339),(400,1339),(300,1120))),dict(poly=P((1640,660),(1900,580),(2120,640),(2200,800),(2080,940),(1800,940),(1600,860))),dict(poly=P((1400,840),(1600,800),(1640,920),(1520,960)))],
    obstacles=[],
@@ -250,9 +264,17 @@ CAVERNS = {
    floors=[dict(poly=P((240,800),(450,590),(500,420),(780,330),(1050,520),(1800,560),(1900,330),(2230,330),(2300,700),(2300,900),(2100,1150),(1750,1339),(420,1339),(200,1150),(120,1000)))],
    obstacles=[dict(cx=2060,cy=870,rx=60,ry=45),dict(cx=280,cy=770,rx=120,ry=55),dict(cx=420,cy=1150,rx=140,ry=70),dict(cx=1600,cy=560,rx=80,ry=35)],
    zones=[dict(rect=[892, 1224, 1523, 1404], to=[1], label="PROPOSED: back up the south passage to the Southern Watch Post", proposed=True),
-          dict(rect=[477, 146, 781, 517], to=["wastes"], label="PROPOSED: back up the north passage to the Northern Watch Post"),
+          # Sam, 2026-11-10: "North passage can go to the wastes." The label used to promise the Northern Watch Post while the
+          # exit led to the wastes; the destination stands, the label now says so.
+          dict(rect=[477, 146, 781, 517], to=["wastes"], label="The north passage: on across the cavern floor to the wastes"),
           dict(rect=[103, 838, 243, 1178], to=["shore"], label="PROPOSED: on west to the Darklake", proposed=True),
-          dict(rect=[1887, 289, 2232, 633], to=["lair"], label="PROPOSED: deeper in — the road marker decides which biome")]),
+          # Sam, 2026-11-10: "base it on the campaign literature." OotA p.20: the south passage "leads toward Gracklstugh".
+          # This exit used to walk onto the lair plate every time (its label said "the road marker decides", and nothing
+          # decided). It is the way off the outpost now: `roads` narrows this cavern's hand-off to the one road this mouth
+          # opens (lib/travel/handoff.ts; road-15 is Sam's own pick for the south passage, Exit Picker 2026-10-24). The
+          # lair is the Hook Horror Hunt of ch.2 (p.33), days down that road, not a neighbour of the outpost: its plate is
+          # reached from the DM's jump list until road markers open their own plates.
+          dict(rect=[1887, 289, 2232, 633], to=[], kind="leave", roads=["road-15"], label="Deeper in: the south passage runs on toward Gracklstugh (OotA p.20)")]),
  "crystal": dict(slug="biome-crystal", name="The crystal passage", biome="tunnels", scale=1.0, img="biome-crystal.jpg",
    # the pool of crystal-lit floor; the geodes and the big clusters block
    floors=[dict(poly=P((350,590),(800,490),(1500,450),(1700,330),(1820,330),(2060,590),(2230,900),(1950,1220),(1500,1339),(520,1339),(310,1050)))],
@@ -281,7 +303,8 @@ CAVERNS = {
    # the dirt clearing under the giant caps; the roots and the mushroom clumps block
    floors=[dict(poly=P((375,825),(650,625),(950,550),(1300,550),(1625,600),(1900,750),(2230,750),(2230,900),(2000,1075),(1700,1250),(1400,1339),(750,1339),(425,1200),(250,1000),(140,900),(140,700)))],
    obstacles=[dict(cx=375,cy=625,rx=80,ry=40),dict(cx=1650,cy=525,rx=80,ry=40),dict(cx=1825,cy=950,rx=80,ry=50),dict(cx=1525,cy=1100,rx=100,ry=60)],
-   zones=[dict(rect=[0, 560, 140, 900], to=[14], label="PROPOSED: back to the tunnels"),
+   # OotA p.19: the river runs from the pool to the Darklake; the grove is reached along it from plate 14, so back is the pool.
+   zones=[dict(rect=[0, 560, 140, 900], to=[14], label="Back up the river to the pool"),
           dict(rect=[2229, 665, 2400, 836], to=[], kind="leave", label="New exit")]),
 }
 
@@ -390,7 +413,8 @@ for _k, _n in _PLATES.items():
 # sanity. Every way out must lead to a plate that exists. A walk link is expected to have a zone on both sides; the ones
 # that do not are listed here so they are a known gap and not a surprise (Sam's export, 2026-10-24: one_way_links_to_fix).
 # A new one-way link fails the build until it gets its return zone or is added here on purpose.
-KNOWN_ONE_WAY = {("4", "1"), ("5", "2"), ("5", "wastes"), ("6", "10"), ("9", "14"), ("12", "10")}
+KNOWN_ONE_WAY = {("4", "1"), ("5", "2"), ("5", "wastes"), ("6", "10"), ("9", "14"), ("12", "10"),
+                 ("lair", "tunnels"), ("8", "3")}   # 2026-11-10: the tunnels' "deeper in" is the way off the outpost now; the lair waits for its road marker
 ALL = {str(k): v for k, v in NODES.items()}; ALL.update(CAVERNS)
 links = {(a, str(t)) for a, node in ALL.items() for z in node["zones"] for t in z["to"]}
 for a, b in links:
@@ -399,8 +423,32 @@ one_way = {(a, b) for (a, b) in links if (b, a) not in links}
 unexpected = one_way - KNOWN_ONE_WAY
 assert not unexpected, ("one-way links not on the known list", sorted(unexpected))
 print(len(links), "ways out across", len(ALL), "plates;", len(one_way), "one-way (known):", ", ".join(f"{a}→{b}" for a, b in sorted(one_way)))
+# A LABEL MUST NOT NAME A PLACE ITS EXIT DOES NOT LEAD TO (Sam, 2026-11-10: "I'm not sure they were wired correctly").
+# Four exits promised one plate and led to another; the tunnels' "north passage to the Northern Watch Post" took a whole
+# party to the wastes. Each phrase below names the plate(s) a label using it may lead to. An exit that leaves for the
+# map (no `to`) and a label naming its own plate are not checked. KNOWN_LABEL_MISMATCH are exits from Sam's 2026-10-24
+# re-trace whose label and destination disagree and where which of the two is right is HIS call: (plate, phrase, where it goes).
+# A new mismatch fails the build.
+PLACE_WORDS = {"southern watch post": {"1"}, "northern watch post": {"13"}, "watch post": {"1", "13"}, "main hall": {"3"},
+               "kitchen": {"3k"}, "elite barracks": {"4"}, "the lift": {"5"}, "shrine": {"6"}, "ilvara": {"7"}, "shoor": {"8"},
+               "toward the waterfall": {"9"}, "guard tower": {"10"}, "lower chamber": {"10b"}, "armory": {"10c"},
+               "slave pen": {"11"}, "quaggoth den": {"12"}, "to the pool": {"14"}, "the wastes": {"wastes"},
+               "the tunnels": {"tunnels"}, "darklake": {"shore"}, "the lair": {"lair"}, "the grove": {"grove"}}
+KNOWN_LABEL_MISMATCH = set()   # the four from the 2026-10-24 re-trace were settled 2026-11-10 (Sam: "Lift -> yes")
+mismatch = set()
+for a, node in ALL.items():
+    for z in node["zones"]:
+        dest = {str(t) for t in z["to"]}
+        if not dest: continue
+        lab = z["label"].lower()
+        for phrase, ok in PLACE_WORDS.items():
+            if phrase in lab and a not in ok and not (dest & ok): mismatch.add((a, phrase, ",".join(sorted(dest))))
+assert not (mismatch - KNOWN_LABEL_MISMATCH), ("an exit's label names a place it does not lead to", sorted(mismatch - KNOWN_LABEL_MISMATCH))
+print("labels that name another place (known, Sam's call):", "; ".join(f"{a}: '{p}' → {d}" for a, p, d in sorted(mismatch)) or "none")
 print("still PROPOSED, unreviewed:", "; ".join(f"{a}: {z['label'].split(':')[0]} → {','.join(map(str, z['to']))}" for a, node in ALL.items() for z in node["zones"] if z.get("proposed")))
 out = {str(k): v for k, v in NODES.items()}
 out.update({k: {kk: vv for kk, vv in v.items() if kk != "biome"} for k, v in CAVERNS.items()})   # walkable plates of the page
 out["_handoffs"] = {k: dict(name=v["name"], biome=v["biome"]) for k, v in CAVERNS.items()}; out["_layout"] = LAYOUT
+# a way off the outpost that is not a cavern plate: an exit names it with `via` (plate 13's north passage)
+out["_handoffs"]["north"] = dict(name="The north passage", biome="tunnels")
 json.dump(out, open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'spec.json'), 'w'), separators=(',', ':'))

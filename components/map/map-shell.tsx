@@ -71,7 +71,7 @@ export default function MapShell() {
       {arrival && (
         <div className="flex items-center gap-3 px-3 pt-2 max-w-[1360px] mx-auto text-xs font-mono tracking-wider text-[#e1d0a8]">
           <span className="px-2 py-1 rounded border border-[#6b5123] bg-[#221936]">OUT OF VELKYNVELVE</span>
-          <span className="text-[#9a8fb0]">{arrival.name}. The cavern beyond the outpost is not painted yet; the road from here is the map’s.</span>
+          <span className="text-[#9a8fb0]">{arrival.name}. The road from here is the map’s.</span>
           <button className="text-[#9a8fb0] hover:text-[#f5c34d]" onClick={() => setArrival(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
