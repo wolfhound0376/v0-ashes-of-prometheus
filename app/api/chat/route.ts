@@ -95,6 +95,7 @@ import {
   type GameClock,
 } from "@/lib/time-tracking"
 import { loadInfectionBlock } from "@/lib/gas-spore-clock"
+import { cuesForMalachar } from "@/lib/cinematic-doors"
 import * as fal from "@fal-ai/serverless-client"
 
 // Configure Fal client
@@ -1646,13 +1647,11 @@ ${combatantRows
         .not("state", "is", null)
         .not("video_url", "is", null)
         .gt("weight", 0)
-      availableCinematicCues = Array.from(
-        new Set(
-          (cueRows || [])
-            .map((r: { state: string | null }) => (r.state || "").trim())
-            .filter((v: string) => v.length > 0),
-        ),
-      )
+      // ONE DOOR PER CUE (lib/cinematic-doors.ts). A cue the rules engine or the map fires itself is
+      // never offered here: Malachar knows a cue only by its name, so "notice-success" (the ROAD film,
+      // filed generic) rolled in the slave pen whenever someone noticed anything, and "ward-sigil"
+      // played without the Arcana reading that is supposed to earn it.
+      availableCinematicCues = cuesForMalachar((cueRows || []).map((r: { state: string | null }) => r.state))
     }
   } catch (e) {
     // A cue lookup failure must never break the turn: no list simply means no
