@@ -3613,6 +3613,37 @@ function leaveVelkynvelve(z){
     buttons: [{label: `Leave Velkynvelve → ${h.name}`, primary: true, fn: () => {
         location.href = `/map?from=velkynvelve&via=${encodeURIComponent(key)}&plate=${encodeURIComponent(h.biome)}`; }},
       {label: "Stay"}]});
+  adviceAtTheWayOut();
+}
+// WHERE TO GO (Sam, 2026-11-10: "offering advice on where to go in the underdark. In fact, any underdark creature NPCs may
+// offer advice if they are inclined based on their personality and gravity/motives"). When the party stands at a way out
+// of the outpost, the prisoners who are there with them may speak up: at most two, each in a bubble in their own voice,
+// and their words go under the question on the card. Who knows what is the book's guide table (lib/travel/march.ts
+// GUIDES, OotA ch.2 "Where to Go?"); whether they say it is how they stand with this hero, bent by their own motive
+// (lib/npc-advice.ts, /api/npc-advice). Nobody lies about the road. Not more than once a minute, so stepping back and
+// forth at the gate does not start a chorus. A rehearsal and the preview ask nobody: one stranger's line, one time in three.
+const ADVISER_IDS = ["jimjar", "buppido", "shuushar", "sarith", "eldeth"];
+let adviceAt = -1e9;
+async function adviceAtTheWayOut(){
+  if (now - adviceAt < 60000) return; const h = leader; if (!h) return;
+  const here = npcs.filter(n => ADVISER_IDS.includes(n.id) && !n.down && !n.hostile && !n.buried && actors.includes(n)); if (!here.length) return;
+  adviceAt = now; let advice = [];
+  try {
+    if (APP && !SANDBOX){
+      const cid = characterIdOf(h.id);
+      const j = cid ? await fetch("/api/npc-advice", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({npcNames: here.map(n => SPR[n.id].json.name), characterId: cid})}).then(r => r.json()) : null;
+      advice = (j && Array.isArray(j.advice)) ? j.advice : [];
+    } else if (Math.random() < 1 / 3){ const n = here[Math.floor(Math.random() * here.length)]; advice = [{npc: SPR[n.id].json.name, line: "I know a way from here, if you want it.", note: null}]; }
+  } catch (e) {}
+  advice.slice(0, 2).forEach((a, i) => {
+    const key = String(a.npc || "").trim().split(/\s+/)[0].toLowerCase(), n = here.find(x => x.id === key); if (!n || !a.line) return;
+    setTimeout(() => {
+      if (!actors.includes(n) || n.down) return;
+      stopActivity(n); n.path = []; faceTo(n, h); bark(n, a.line, 6500); speak(n.id, a.line);
+      log(`<b>${SHORT[n.id] || SPR[n.id].json.name}:</b> ${esc(a.line)}${a.note ? ` <i>(${esc(a.note)})</i>` : ""}`);
+      if (!$("dialog").hidden && mode === "dialog"){ $("dlgBody").style.whiteSpace = "pre-line"; $("dlgBody").textContent += `\n\n${SHORT[n.id] || SPR[n.id].json.name}: “${a.line}”`; }
+    }, 500 + i * 3200);
+  });
 }
 // ---------- sound effects (door, lock) ----------
 // WebAudio like the voices: decoded once, played instantly. Files live beside the plates (sfx/*.mp3).
