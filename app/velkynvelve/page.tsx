@@ -143,7 +143,7 @@ export default function VelkynvelvePage() {
           </span>
         )}
         {dm ? <span className="ml-auto"><EndGameButton /></span> : (
-          <span className="ml-auto inline-flex items-center gap-2"><EndGameButton asHost /><MessagePlayerButton variant="pixel" /></span>
+          <span className="ml-auto"><EndGameButton asHost /></span>
         )}
       </header>
       <div className={dm && !bagOpen ? "relative min-h-0 flex-1 p-[14px]" : "relative min-h-0 flex-1"}>
@@ -157,6 +157,14 @@ export default function VelkynvelvePage() {
         {dm && !bagOpen && <DmFrame />}
         {ghost && <GhostNotice />}
       </div>
+      {/* Message a player lives at the bottom (Sam, 2026-11-10: "make this a button on the bottom"). Its own strip
+          under the map, not floated over it, so it never covers the action bar, the log or the zoom. The strip
+          only shows when the button does (a seated player): no seat, no button, no empty bar. */}
+      {!dm && !bagOpen && (
+        <footer className="hidden items-center justify-end border-t border-amber-900/40 px-4 py-1.5 has-[button]:flex">
+          <MessagePlayerButton variant="pixel" drop="up" />
+        </footer>
+      )}
     </main>
     </DiceProvider>
   )
