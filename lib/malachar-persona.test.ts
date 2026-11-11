@@ -15,10 +15,10 @@ describe("Malachar's persona", () => {
   })
 
   it("binds him to the rules in both directions", () => {
-    expect(MALACHAR_PERSONA).toMatch(/cannot fudge a roll/)
+    expect(MALACHAR_PERSONA).toMatch(/cannot change a number/)
     expect(MALACHAR_PERSONA).toMatch(/deny a success they earned/)
-    expect(MALACHAR_PERSONA).toMatch(/never adjust them in either direction/)
-    expect(MALACHAR_PERSONA).toMatch(/direct rules question gets a true and complete answer/)
+    expect(MALACHAR_PERSONA).toMatch(/never adjust one in either direction/)
+    expect(MALACHAR_PERSONA).toMatch(/tell them the truth, whole and plain/)
   })
 
   it("has none of the old softeners", () => {
@@ -27,9 +27,17 @@ describe("Malachar's persona", () => {
     }
   })
 
+  // Sam, 2026-11-10: "He shouldn't really speak like a DM … They aren't going to be overly verbose."
+  it("gives him a lich's voice: few words, and never the language of a game", () => {
+    expect(MALACHAR_PERSONA).toMatch(/Few words\. This is the first law of your voice/)
+    expect(MALACHAR_PERSONA).toMatch(/You never speak of the game/)
+    expect(MALACHAR_PERSONA).not.toMatch(/HECKLER|COMEDIAN/)
+    expect(MALACHAR_LAST_WORD).toMatch(/Never the language of a game/)
+  })
+
   it("still forbids hints", () => {
     expect(MALACHAR_PERSONA).toMatch(/You never hint/)
-    expect(MALACHAR_LAST_WORD).toMatch(/no hints/)
+    expect(MALACHAR_LAST_WORD).toMatch(/no hints/i)
   })
 
   it("has no asterisks or backticks, which TTS would read aloud", () => {
