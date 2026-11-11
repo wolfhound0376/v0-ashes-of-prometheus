@@ -1,0 +1,1130 @@
+<!doctype html><html><head><script src="/test-copy-silence.js"></script><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+
+<title>Underdark World Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;800&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<style>
+/* Layout: one full-bleed 3D world map; UI floats over it in the corners, a travel card at the bottom. Single dark look on purpose (the game's own world). */
+:root{
+  --ink:#06040b; --parch:#f1e4c3; --parch-edge:#b8913f; --inkText:#2a1a0b; --gold:#f5c34d; --gold-hi:#ffe39a;
+  --mist:#1b1030; --text:#e9dcc0; --muted:#a99a7e; --boat:#6fd8ff; --panel:#0d0a07ee; --rule:#6b5123;
+  --display:"Cinzel","Trajan Pro",Georgia,serif; --body:"Crimson Text",Georgia,serif; --ui:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+html,body{height:100%;margin:0;background:var(--ink);color:var(--text);overflow:hidden}
+body{font-family:var(--body)}
+#stage{position:fixed;inset:0}
+canvas#gl{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
+/* tilt-shift: the far and near edges go soft, like a model railway photographed up close */
+.tilt{position:fixed;left:0;right:0;pointer-events:none;backdrop-filter:blur(3.5px);-webkit-backdrop-filter:blur(3.5px)}
+.tilt.top{top:0;height:24%;-webkit-mask-image:linear-gradient(#000,transparent);mask-image:linear-gradient(#000,transparent)}
+.tilt.bot{bottom:0;height:16%;-webkit-mask-image:linear-gradient(transparent,#000);mask-image:linear-gradient(transparent,#000)}
+.vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 55%,transparent 55%,#05030ad0 100%)}
+
+/* labels */
+#labels{position:fixed;inset:0;pointer-events:none}
+.banner{position:absolute;left:0;top:0;will-change:transform,opacity;white-space:nowrap;pointer-events:auto;cursor:pointer;text-align:center;
+  font-family:var(--display);font-weight:800;letter-spacing:.08em;font-size:24px;color:#fff3d2;
+  text-shadow:0 0 2px #000,0 0 3px #000,0 1px 0 #000,1px 0 0 #000,-1px 0 0 #000,0 -1px 0 #000,0 2px 10px #000c;transition:opacity .25s ease}
+.banner.here{color:var(--gold-hi)}
+.banner.unknown{color:#cdbf9f;letter-spacing:.32em}
+.banner.dmonly{color:#b9acd6}
+.banner small{display:block;font-family:var(--ui);font-weight:600;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#d8c69c;margin-top:1px}
+.banner.faded{opacity:.18}
+.banner.poi{font-size:15px;color:#bff3ff;letter-spacing:.1em}
+.banner.lesser{font-size:18px}                                    /* 25% under the 24px great places (Sam) */
+.banner.lesser small{color:#c7b4e8;letter-spacing:.12em}
+.banner.guardtag{font-size:14px;color:#d8c4ff;letter-spacing:.14em}
+.small{opacity:.7;font-size:.85em}
+.banner.marker{font-family:var(--ui);font-size:11px;font-weight:700;letter-spacing:.06em;color:#e9d9ad;opacity:.85}
+.banner.scenery{font-family:var(--ui);font-size:11px;font-weight:600;letter-spacing:.08em;color:#d9cfe9;border:1px dashed #9c8fbf;background:#0d0a07b0;padding:2px 6px;cursor:default}
+.legend{left:18px;top:96px;width:236px;max-height:calc(100vh - 230px);overflow:auto;background:var(--panel);border:1px solid var(--rule);box-shadow:0 10px 30px #000a;padding:10px 12px;font-family:var(--ui);font-size:11.5px;color:var(--text)}
+.legbtn{all:unset;cursor:pointer;display:flex;justify-content:space-between;align-items:center;width:100%}
+.legbtn #legArrow{font-family:var(--ui);font-size:10px;letter-spacing:.08em;color:#1a1208;background:var(--gold);padding:2px 7px}
+.legbtn:focus-visible{outline:2px solid var(--gold-hi);outline-offset:2px}
+.legend.closed{width:auto;padding:6px 10px} .legend.closed h3{margin:0}
+.legend h3{margin:0 0 6px;font-family:var(--display);font-size:13px;letter-spacing:.12em;color:var(--gold-hi)}
+.legend ul[hidden]{display:none}
+.legend ul{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.legend li{line-height:1.35}
+.legend li button{all:unset;cursor:pointer;display:block;width:100%;padding:4px 2px;border-bottom:1px solid #6b512355}
+.legend li button:hover,.legend li button:focus-visible{background:#f5c34d14;outline:none}
+.legend li b{display:block;color:var(--gold-hi);font-weight:600}
+.legend li span:last-child{color:var(--muted)} .legend b{color:var(--text);font-weight:600}
+@media (max-width:760px){ .legend{top:auto;bottom:12px;left:12px;width:auto;right:12px;max-height:38vh} }
+.tollbtn{all:unset;cursor:pointer;display:inline-block;margin-top:6px;font-family:var(--ui);font-size:12px;font-weight:700;color:#1a1208;background:var(--gold);padding:6px 10px}
+.tollbtn:focus-visible{outline:2px solid var(--gold-hi);outline-offset:2px}
+.pip{position:absolute;transform:translate(-50%,-140%);font-family:var(--ui);font-size:11px;font-weight:700;letter-spacing:.08em;color:#1a1208;background:var(--gold-hi);border-radius:10px;padding:2px 7px;box-shadow:0 2px 8px #000a;pointer-events:none;opacity:0;transition:opacity .2s}
+.pip.on{opacity:1}
+
+/* chrome */
+.hud{position:fixed;z-index:5}
+.title{left:18px;top:14px;padding:10px 16px 9px;background:var(--panel);border:1px solid var(--rule);box-shadow:0 10px 30px #000a}
+.title h1{margin:0;font-family:var(--display);font-weight:800;font-size:20px;letter-spacing:.14em;color:var(--gold-hi)}
+.title p{margin:2px 0 0;font-family:var(--ui);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+/* Sam 2026-10-13: "Need a way for DM to return to main part of this Map Module" — the Campaign Atlas (places, plates, sub-artifacts). DM view only. */
+.title .atlas{display:block;margin-top:7px;padding-top:6px;border-top:1px solid var(--rule);font-family:var(--ui);font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--gold-hi);text-decoration:none}
+.title .atlas:hover,.title .atlas:focus-visible{color:#fff;outline:none}
+.title .atlas[hidden]{display:none}
+.toggles{right:18px;top:14px;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:60vw}
+.tg{all:unset;cursor:pointer;font-family:var(--ui);font-size:12px;font-weight:600;letter-spacing:.06em;color:var(--text);background:var(--panel);border:1px solid var(--rule);padding:8px 12px}
+.tg[aria-pressed="true"]{color:#1a1208;background:var(--gold);border-color:var(--gold-hi)}
+.tg:focus-visible,.go:focus-visible{outline:2px solid var(--gold-hi);outline-offset:2px}
+.card{left:50%;bottom:18px;transform:translateX(-50%);width:min(560px,calc(100vw - 32px));box-sizing:border-box;background:var(--panel);border:1px solid var(--rule);
+  box-shadow:0 14px 40px #000c;padding:12px 16px;display:grid;grid-template-columns:1fr;gap:4px}
+.card h2{margin:0;font-family:var(--display);font-weight:800;font-size:18px;letter-spacing:.06em;color:var(--gold-hi)}
+.card .meta{font-family:var(--ui);font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.card .meta b{color:var(--text);font-weight:600}
+.go{all:unset;cursor:pointer;grid-row:1/3;grid-column:2;font-family:var(--display);font-weight:800;font-size:14px;letter-spacing:.1em;color:#1a1208;background:linear-gradient(#ffe39a,#d9a43c);border:1px solid #fff0c2;padding:11px 16px;box-shadow:0 3px 0 #6b4f1c}
+.go[disabled]{opacity:.4;pointer-events:none}
+.keys{left:18px;bottom:18px;font-family:var(--ui);font-size:11px;color:var(--muted);background:var(--panel);border:1px solid var(--rule);padding:8px 10px;line-height:1.6;max-width:240px}
+.keys kbd{font-family:var(--ui);font-size:10px;color:var(--text);border:1px solid #6b5123;border-bottom-width:2px;padding:0 4px;border-radius:3px}
+.clock{right:18px;bottom:18px;font-family:var(--ui);font-size:12px;color:var(--text);background:var(--panel);border:1px solid var(--rule);padding:8px 12px;font-variant-numeric:tabular-nums;text-align:right}
+.clock span{display:block;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.boatpick{display:flex;gap:0}.boatpick .tg+.tg{border-left:0}
+.music{right:18px;top:64px;display:flex;flex-direction:column;align-items:flex-end;gap:4px}
+.sndrow{display:flex}.sndrow .tg+.tg{border-left:0}
+.music #trackName{font-family:var(--ui);font-size:10px;letter-spacing:.08em;color:var(--muted);background:var(--panel);padding:2px 6px}
+.music #trackName:empty{display:none}
+.zoom{right:18px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px}
+.zoom .tg{width:20px;text-align:center;font-size:16px;padding:6px 10px}
+.zoom .tg.wide{width:auto;font-size:11px;letter-spacing:.06em;padding:6px 8px;white-space:nowrap}
+
+/* GAME MODE: the leader and the boat come from the game; a player who is not the DM sees the map, the place card, zoom and sound, nothing else */
+body.game #leadRow,body.game .boatpick,body.game .clock,body.game #cineBtn,body.game #trackName{display:none !important}
+body.game:not(.gm) .hud.toggles,body.game:not(.gm) .hud.keys,body.game:not(.gm) #legend,body.game:not(.gm) #atlasLink{display:none !important}
+body.game:not(.lead) #entEnter{display:none !important}
+#loading{position:fixed;inset:0;display:grid;place-items:center;background:var(--ink);z-index:20;font-family:var(--display);letter-spacing:.2em;color:var(--gold);transition:opacity .6s}
+@media (max-width:760px){ .music{top:auto;bottom:110px;right:12px} .keys,.clock{display:none} .title{left:12px;top:10px} .toggles{left:12px;right:12px;top:66px;max-width:none;justify-content:flex-start} .tg{padding:6px 9px;font-size:11px} .banner{font-size:17px} .banner.lesser{font-size:13px} .title h1{font-size:16px} .zoom{top:auto;bottom:150px;transform:none} }
+@media (prefers-reduced-motion: reduce){ .banner{transition:none} }
+/* arrival cinematic: letterbox, a slow push-in on the painted entrance, a title card */
+#cine{position:fixed;inset:0;z-index:40;background:#000;overflow:hidden}
+#cine[hidden]{display:none}
+#cine .plate{position:absolute;inset:0;background-size:cover;background-position:center;opacity:0;transform:scale(1.10)}
+#cine.play .plate{animation:cinePlate 7.5s cubic-bezier(.2,.6,.2,1) forwards}
+@keyframes cinePlate{0%{opacity:0;transform:scale(1.10)}18%{opacity:1}100%{opacity:1;transform:scale(1.0)}}
+#cine video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+#cine .bar{position:absolute;left:0;right:0;height:12vh;background:#000;z-index:2}
+#cine .bar.top{top:0} #cine .bar.bot{bottom:0}
+#cine .titlecard{position:absolute;left:0;right:0;top:50%;transform:translateY(-50%);text-align:center;z-index:3;opacity:0;pointer-events:none}
+#cine.play .titlecard{animation:cineTitle 6.5s ease forwards 1.1s}
+@keyframes cineTitle{0%{opacity:0;letter-spacing:.3em}25%{opacity:1;letter-spacing:.18em}80%{opacity:1}100%{opacity:0}}
+#cine .titlecard small{display:block;font-family:var(--ui);font-size:12px;letter-spacing:.3em;text-transform:uppercase;color:var(--gold);margin-bottom:10px}
+#cine .titlecard h2{margin:0;font-family:var(--display);font-weight:800;font-size:clamp(28px,5vw,56px);letter-spacing:.18em;color:var(--gold-hi);text-shadow:0 2px 18px rgba(0,0,0,.9),0 0 40px rgba(255,200,90,.25)}
+#cine .skip{position:absolute;right:18px;bottom:calc(12vh + 14px);z-index:4}
+/* the entrance: a 4K painted plate in the distance, its own ground in front, the party standing at the threshold */
+#entrance{position:fixed;inset:0;z-index:38;background:#000;overflow:hidden}
+#entrance[hidden]{display:none}
+#entrance .far,#entrance .near{position:absolute;inset:-3%;background-size:cover;background-position:center;will-change:transform;opacity:0;transition:opacity .7s ease}
+#entrance.lit .far,#entrance.lit .near{opacity:1}
+#entrance video.loop{position:absolute;inset:-3%;width:106%;height:106%;object-fit:cover;opacity:0;transition:opacity .9s ease;will-change:transform}
+#entrance.live video.loop{opacity:1}
+#entrance.live .near{opacity:0}
+.card .meta.say{color:#f3e4bb;font-style:italic;margin-top:4px;font-family:var(--body);font-size:13px}
+#entrance .near{-webkit-mask-image:linear-gradient(to top,#000 0,#000 18%,transparent 34%);mask-image:linear-gradient(to top,#000 0,#000 18%,transparent 34%);transform:scale(1.04)}
+#entrance .mist{position:absolute;inset:0;pointer-events:none;background:radial-gradient(60% 35% at 30% 78%,rgba(120,150,255,.10),transparent 70%),radial-gradient(50% 30% at 72% 72%,rgba(180,120,255,.08),transparent 70%);animation:mist 14s ease-in-out infinite alternate}
+@keyframes mist{from{transform:translateX(-1.5%)}to{transform:translateX(1.5%)}}
+#entrance canvas{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;image-rendering:pixelated}
+#entrance .vig{position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.55) 100%)}
+#entrance .entHud{position:absolute;left:18px;right:18px;bottom:22px;display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+#entrance .entHud h2{margin:0;font-family:var(--display);font-weight:800;font-size:22px;letter-spacing:.08em;color:var(--gold-hi);text-shadow:0 2px 12px #000}
+#entrance .entHud p{margin:4px 0 0;font-family:var(--ui);font-size:12px;color:var(--muted);text-shadow:0 1px 6px #000;max-width:560px}
+#entrance .entHud .btns{display:flex;gap:8px}
+.soon{display:inline-block;margin-left:6px;padding:1px 6px;border-radius:9px;font-size:9px;letter-spacing:.1em;background:rgba(255,200,90,.18);color:var(--gold-hi);vertical-align:1px}
+@media (prefers-reduced-motion: reduce){ #cine.play .plate{animation:none;opacity:1;transform:none} #entrance .mist{animation:none} }
+</style>
+
+<div id="stage"><canvas id="gl"></canvas></div>
+<div class="tilt top"></div><div class="tilt bot"></div><div class="vignette"></div>
+<div id="labels"></div>
+<div class="pip" id="pip"></div>
+
+<div class="hud title"><h1>The Underdark</h1><p id="where">Velkynvelve</p>
+  <a class="atlas" id="atlasLink" href="https://claude.ai/code/artifact/2e5c8ec6-48f0-40a9-af63-a6cb7a782012" target="_blank" rel="noopener" hidden title="The DM's Campaign Atlas: every place, its entrance and room plates, the films, and the whole artifact library">&#x27F5; Campaign Atlas</a></div>
+<div class="hud toggles" role="group" aria-label="View">
+  <button class="tg" id="tgPlayer" aria-pressed="true">Player view</button>
+  <button class="tg" id="tgDM" aria-pressed="false">DM view</button>
+  <span class="boatpick" role="group" aria-label="Boat"><button class="tg" id="bNone" aria-pressed="true">No boat</button><button class="tg" id="bDuergar" aria-pressed="false">Duergar keelboat</button><button class="tg" id="bDrow" aria-pressed="false">Drow riverboat</button></span>
+</div>
+<div class="hud music"><span class="sndrow" role="group" aria-label="Who leads" id="leadRow"><button class="tg" data-lead="fifi" aria-pressed="true" title="Fifi leads: her lines on arrival">Fifi</button><button class="tg" data-lead="kenta" aria-pressed="false">Kenta</button><button class="tg" data-lead="samson" aria-pressed="false">Samson</button><button class="tg" data-lead="scott" aria-pressed="false">Scott</button></span><span class="sndrow"><button class="tg" id="sfxBtn" aria-pressed="true" title="Marching and discovery sound">🔔 Sound on</button><button class="tg" id="musicBtn" aria-pressed="false" title="Music (M)">♪ Music off</button><button class="tg" id="cineBtn" aria-pressed="true" title="Arrival cinematics">🎬 Cinematics on</button></span><span id="trackName"></span></div>
+<div class="hud zoom"><button class="tg" id="zin" aria-label="Zoom in">+</button><button class="tg" id="zout" aria-label="Zoom out">−</button><button class="tg wide" id="zAll" title="Pull back to the whole Underdark (Home)">⌂ Whole map</button><button class="tg wide" id="zParty" title="Back to the party (P)">◎ Party</button></div>
+<aside class="hud legend" id="legend" hidden aria-label="DM marker notes"><h3><button id="legBtn" class="legbtn" aria-expanded="true" aria-controls="legList">DM marker notes <span id="legArrow">Hide ▴</span></button></h3><ul id="legList"></ul></aside>
+<div class="hud keys"><kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd> walk to the next stop<br>Hover a stop to see the route · click to walk there · wheel to zoom · drag to look around</div>
+<div class="hud clock"><span>Marched</span><b id="miles">0 mi</b> · <b id="days">day 1</b></div>
+<div class="hud card" id="card" aria-live="polite">
+  <h2 id="cName">Velkynvelve</h2>
+  <div class="meta" id="cMeta">You are here.</div>
+</div>
+<div id="cine" hidden aria-live="polite"><div class="plate" id="cinePlate"></div><div class="bar top"></div><div class="bar bot"></div>
+  <div class="titlecard"><small id="cineKicker">You arrive at</small><h2 id="cineTitle"></h2></div><button class="tg skip" id="cineSkip">Skip ▸</button></div>
+<div id="entrance" hidden role="dialog" aria-label="Entrance"><div class="far" id="entFar"></div><video class="loop" id="entVid" muted loop playsinline preload="auto"></video><div class="near" id="entNear"></div><div class="mist"></div><canvas id="entHero"></canvas><div class="vig"></div>
+  <div class="entHud"><div><h2 id="entTitle"></h2><p id="entSub"></p></div><div class="btns"><button class="tg" id="entEnter">Enter<span class="soon">soon</span></button><button class="tg" id="entBack">Back to the map</button></div></div></div>
+<div id="loading">THE UNDERDARK</div>
+
+<script type="importmap">{"imports":{"three":"./vendor/three.module.min.js"}}</script>
+<script type="module">
+import * as THREE from "three";
+const MAP="img/map.jpg", FX_MASK="img/fx-mask.png", GROVE_ART="img/grove.png", WALK="img/fifi-walk.png", IDLE="img/fifi-idle.png";
+const BOAT_ART={"duergar": ["img/boat-duergar-0.png", "img/boat-duergar-1.png", "img/boat-duergar-2.png", "img/boat-duergar-3.png", "img/boat-duergar-4.png", "img/boat-duergar-5.png", "img/boat-duergar-6.png", "img/boat-duergar-7.png"], "drow": ["img/boat-drow-0.png", "img/boat-drow-1.png", "img/boat-drow-2.png", "img/boat-drow-3.png", "img/boat-drow-4.png", "img/boat-drow-5.png", "img/boat-drow-6.png", "img/boat-drow-7.png"]};
+/* entrance plates for the great places (4K, Runway nano-banana-pro, 2026-10-11) — candidates until Sam approves each one */
+/* Entrance plates are served from this page's own file store (2560-wide copies of the approved 4K plates); the artifact sandbox does not load images from outside hosts, which is what left the gate black. `src4k` keeps the bucket original on record. */
+const PLATES={"velkynvelve": {"loop": "", "url": "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/entrance/velkynvelve.jpg", "src4k": "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/entrance/velkynvelve.jpg", "sub": "The drow outpost, a hundred feet up the cavern wall. The slave pen is above you.", "approved": "2026-10-11"}, "gracklstugh": {"loop": "", "url": "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/entrance/gracklstugh.jpg", "src4k": "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/entrance/gracklstugh.jpg", "sub": "The City of Blades. Forge-smoke on the lake wind; the duergar gate ahead.", "approved": "2026-10-11"}, "sloobludop": {"loop": "", "url": "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/entrance/sloobludop.jpg", "src4k": "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/entrance/sloobludop.jpg", "sub": "The kuo-toa village on stilts over the Darklake.", "approved": "2026-10-11"}, "blingdenstone": {"loop": "", "url": "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/entrance/blingdenstone.jpg", "src4k": "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/entrance/blingdenstone.jpg", "sub": "The deep gnome city. Its gate is carved into the living rock.", "approved": "2026-10-11"}, "neverlight-grove": {"loop": "", "url": "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/entrance/neverlight-grove.jpg", "src4k": "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/entrance/neverlight-grove.jpg", "sub": "The myconid colony. The spores drift; the grove is quiet.", "approved": "2026-10-11"}, "menzoberranzan": {"loop": "", "url": "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/entrance/menzoberranzan.jpg", "src4k": "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/entrance/menzoberranzan.jpg", "sub": "The City of Spiders. Faerie fire on a thousand spires.", "approved": "2026-10-11"}, "road-05": {"loop": "", "url": "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/entrance/shrine-of-ibrandul.jpg", "src4k": "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/entrance/shrine-of-ibrandul.jpg", "sub": "A half-drowned shrine on an islet in the Darklake.", "approved": "2026-10-11"}, "vitrine-grove": {"url": "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/entrance/vitrine-grove.jpg", "src4k": "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/entrance/vitrine-grove.jpg", "sub": "A chamber of black glass, warm from the vent at its back.", "approved": "2026-10-12 (take B)", "loop": ""}};
+const BOAT_CENTRE={"duergar": [[0.505, 0.474], [0.515, 0.469], [0.531, 0.515], [0.515, 0.485], [0.505, 0.474], [0.505, 0.485], [0.485, 0.515], [0.505, 0.469]], "drow": [[0.51, 0.49], [0.495, 0.541], [0.51, 0.51], [0.479, 0.51], [0.51, 0.49], [0.531, 0.51], [0.5, 0.51], [0.51, 0.541]]}; // middle of each hull, so the boat sits on the lane instead of sinking into the map // 8 headings each: south, south-east, east, north-east, north, north-west, west, south-west
+// Where the deck is, measured per heading as the offset from each boat's own anchor to its hull floor.
+// The boat keeps its anchor so it still sits on the lane; only the figure moves, or she rides the sail.
+const DECK_OFF={"duergar": [[-0.005, 0.023], [-0.011, 0.004], [-0.032, -0.128], [-0.014, 0.013], [-0.005, 0.029], [0.004, 0.013], [0.021, -0.128], [0.001, 0.004]], "drow": [[-0.005, -0.138], [0.001, -0.193], [-0.02, -0.221], [-0.014, -0.183], [-0.006, -0.189], [0.002, -0.178], [0.008, -0.221], [-0.003, -0.204]]};
+let G={"nodes":[{"k":"neverlight-grove","n":"Neverlight Grove","t":"location","x":1408,"y":225,"d":false,"nk":false},{"k":"blingdenstone","n":"Blingdenstone","t":"location","x":955,"y":585,"d":false,"nk":false},{"k":"menzoberranzan","n":"Menzoberranzan","t":"location","x":1435,"y":685,"d":false,"nk":false},{"k":"velkynvelve","n":"Velkynvelve","t":"location","x":470,"y":120,"d":true,"nk":true},{"k":"gracklstugh","n":"Gracklstugh","t":"location","x":1075,"y":125,"d":true,"nk":false},{"k":"sloobludop","n":"Sloobludop","t":"location","x":615,"y":465,"d":true,"nk":false},{"k":"road-01","n":"Road Marker 01","t":"waypoint","x":170,"y":611,"d":false,"nk":false},{"k":"road-02","n":"Road Marker 02","t":"waypoint","x":172,"y":400,"d":false,"nk":false},{"k":"road-03","n":"Road Marker 03","t":"waypoint","x":204,"y":490,"d":false,"nk":false},{"k":"road-04","n":"Road Marker 04","t":"waypoint","x":237,"y":727,"d":false,"nk":false},{"k":"road-06","n":"Road Marker 06","t":"waypoint","x":321,"y":511,"d":false,"nk":false},{"k":"road-07","n":"Road Marker 07","t":"waypoint","x":345,"y":231,"d":false,"nk":false},{"k":"road-08","n":"Road Marker 08","t":"waypoint","x":348,"y":829,"d":false,"nk":false},{"k":"road-09","n":"Road Marker 09","t":"waypoint","x":398,"y":288,"d":false,"nk":false,"poi":"A glowing pool"},{"k":"road-10","n":"Road Marker 10","t":"waypoint","x":414,"y":197,"d":false,"nk":false},{"k":"road-11","n":"Road Marker 11","t":"waypoint","x":462,"y":398,"d":false,"nk":false},{"k":"road-12","n":"Road Marker 12","t":"waypoint","x":479,"y":510,"d":false,"nk":false},{"k":"road-13","n":"Road Marker 13","t":"waypoint","x":504,"y":789,"d":false,"nk":false},{"k":"road-16","n":"Road Marker 16","t":"waypoint","x":602,"y":488,"d":false,"nk":false},{"k":"road-19","n":"Road Marker 19","t":"waypoint","x":682,"y":727,"d":false,"nk":false},{"k":"road-20","n":"Road Marker 20","t":"waypoint","x":703,"y":618,"d":false,"nk":false},{"k":"road-23","n":"Road Marker 23","t":"waypoint","x":814,"y":623,"d":false,"nk":false},{"k":"road-25","n":"Road Marker 25","t":"waypoint","x":1005,"y":704,"d":false,"nk":false},{"k":"road-28","n":"Road Marker 28","t":"waypoint","x":1135,"y":315,"d":false,"nk":false},{"k":"road-29","n":"Road Marker 29","t":"waypoint","x":1135,"y":683,"d":false,"nk":false},{"k":"road-30","n":"Road Marker 30","t":"waypoint","x":1162,"y":185,"d":false,"nk":false},{"k":"road-31","n":"Road Marker 31","t":"waypoint","x":1233,"y":521,"d":false,"nk":false},{"k":"road-32","n":"Road Marker 32","t":"waypoint","x":1298,"y":387,"d":false,"nk":false},{"k":"road-33","n":"Road Marker 33","t":"waypoint","x":1483,"y":393,"d":false,"nk":false},{"k":"road-14","n":"Road Marker 14","t":"waypoint","x":549,"y":332,"d":true,"nk":false},{"k":"road-15","n":"Road Marker 15","t":"waypoint","x":576,"y":209,"d":true,"nk":false},{"k":"road-17","n":"Road Marker 17","t":"waypoint","x":632,"y":234,"d":true,"nk":false},{"k":"road-21","n":"Road Marker 21","t":"waypoint","x":750,"y":267,"d":true,"nk":false},{"k":"road-27","n":"Road Marker 27","t":"waypoint","x":1113,"y":226,"d":true,"nk":false},{"k":"road-34","n":"Road Marker 34","t":"waypoint","x":1502,"y":440,"d":false,"nk":false},{"k":"road-18","n":"Road Marker 18","t":"waypoint","x":664,"y":485,"d":true,"nk":false},{"k":"road-22","n":"Road Marker 22","t":"waypoint","x":813,"y":386,"d":true,"nk":false},{"k":"road-24","n":"Road Marker 24","t":"waypoint","x":886,"y":228,"d":true,"nk":false},{"k":"road-26","n":"Road Marker 26","t":"waypoint","x":1007,"y":283,"d":true,"nk":false},{"k":"vitrine-grove","n":"The Vitrine Grove","t":"location","x":1240,"y":295,"d":false,"nk":false,"lesser":true,"sub":"Spore druid grove"},{"k":"road-05","n":"Shrine of Ibrandul","t":"location","x":264,"y":324,"d":false,"nk":false},{"k":"pool-cave","n":"The cave under the pool","t":"waypoint","x":352,"y":338,"d":false,"nk":false,"poi":"A drowned cave"}],"edges":[{"a":"velkynvelve","b":"road-15","m":"walk","o":-30,"mi":20.72,"d":true},{"a":"road-14","b":"road-17","m":"walk","o":-20,"mi":19.23,"d":true},{"a":"road-17","b":"road-21","m":"walk","o":-10,"mi":18.34,"d":true},{"a":"road-21","b":"road-24","m":"walk","o":10,"mi":21.19,"d":true},{"a":"road-24","b":"road-26","m":"walk","o":0,"mi":19.9,"d":true},{"a":"blingdenstone","b":"road-25","m":"walk","o":25,"mi":19.33,"d":false},{"a":"road-07","b":"road-09","m":"walk","o":-10,"mi":11.65,"d":false},{"a":"road-07","b":"road-10","m":"walk","o":-20,"mi":11.51,"d":false},{"a":"road-10","b":"velkynvelve","m":"walk","o":-20,"mi":14.25,"d":false},{"a":"road-01","b":"road-03","m":"sail","o":-60,"mi":18.82,"d":false},{"a":"road-01","b":"road-04","m":"sail","o":-50,"mi":20.06,"d":false},{"a":"road-01","b":"road-06","m":"sail","o":30,"mi":27.12,"d":false},{"a":"road-03","b":"road-06","m":"sail","o":-20,"mi":17.8,"d":false},{"a":"road-04","b":"road-08","m":"sail","o":10,"mi":22.56,"d":false},{"a":"road-18","b":"road-20","m":"walk","o":-10,"mi":20.75,"d":false},{"a":"road-19","b":"road-23","m":"walk","o":0,"mi":25.16,"d":false},{"a":"road-20","b":"road-23","m":"walk","o":-10,"mi":16.64,"d":false},{"a":"road-25","b":"road-29","m":"walk","o":0,"mi":19.72,"d":false},{"a":"road-26","b":"road-28","m":"walk","o":-10,"mi":19.75,"d":false},{"a":"road-27","b":"road-28","m":"walk","o":20,"mi":13.73,"d":false},{"a":"road-18","b":"road-22","m":"walk","o":0,"mi":26.79,"d":true},{"a":"road-16","b":"road-18","m":"walk","o":0,"mi":9.3,"d":false},{"a":"road-16","b":"sloobludop","m":"walk","o":0,"mi":3.95,"d":false},{"a":"road-23","b":"road-25","m":"walk","o":55,"mi":31.07,"d":false},{"a":"blingdenstone","b":"road-23","m":"walk","o":-65,"mi":21.86,"d":false},{"a":"road-27","b":"road-30","m":"walk","o":0,"mi":9.57,"d":false},{"a":"road-29","b":"road-31","m":"walk","o":-70,"mi":28.34,"d":false},{"a":"gracklstugh","b":"road-30","m":"walk","o":-40,"mi":15.83,"d":false},{"a":"road-31","b":"road-32","m":"walk","o":-20,"mi":22.3,"d":false},{"a":"road-32","b":"road-33","m":"walk","o":-40,"mi":27.72,"d":false},{"a":"neverlight-grove","b":"road-32","m":"walk","o":-80,"mi":29.32,"d":false},{"a":"neverlight-grove","b":"road-33","m":"walk","o":60,"mi":27.55,"d":false},{"a":"road-33","b":"road-34","m":"walk","o":0,"mi":7.59,"d":false},{"a":"road-02","b":"road-03","m":"sail","o":20,"mi":14.3,"d":false},{"a":"road-15","b":"road-17","m":"walk","o":-20,"mi":9.18,"d":true},{"a":"road-06","b":"road-12","m":"sail","o":-40,"mi":23.66,"d":false},{"a":"road-08","b":"road-13","m":"sail","o":30,"mi":24.11,"d":false},{"a":"road-11","b":"road-12","m":"sail","o":20,"mi":16.96,"d":false},{"a":"road-11","b":"road-14","m":"sail","o":10,"mi":16.35,"d":false},{"a":"road-12","b":"road-16","m":"sail","o":0,"mi":18.72,"d":false},{"a":"road-13","b":"road-19","m":"sail","o":-30,"mi":28.22,"d":false},{"a":"road-18","b":"sloobludop","m":"walk","o":0,"mi":7.92,"d":true},{"a":"road-34","b":"menzoberranzan","m":"walk","o":10,"mi":38.14,"d":false},{"a":"road-31","b":"menzoberranzan","m":"walk","o":-10,"mi":39.12,"d":false},{"a":"road-29","b":"menzoberranzan","m":"walk","o":10,"mi":44.97,"d":false},{"a":"road-05","b":"road-11","m":"sail","o":20,"mi":32.28,"d":false},{"a":"road-02","b":"road-05","m":"sail","o":-20,"mi":18.34,"d":false},{"a":"road-21","b":"road-22","m":"walk","o":110,"mi":28.08,"d":false},{"a":"road-22","b":"road-28","m":"walk","o":81,"mi":51.29,"d":false,"g":true},{"a":"road-10","b":"road-15","m":"walk","o":26,"mi":24.73,"d":false},{"a":"road-09","b":"pool-cave","m":"dive","o":0,"mi":0.1,"d":false},{"a":"pool-cave","b":"road-14","m":"portal","o":40,"mi":0,"d":false,"oneWay":true},{"a":"vitrine-grove","b":"road-32","m":"walk","o":-14,"mi":16.28,"d":false,"s":true}],"party":"velkynvelve"};
+const PACE=24; // SRD normal pace, miles per day
+
+/* ---------- GAME MODE (scripts/underdark-map/game_mode.py) ----------
+   Inside the game the page decides nothing: what exists, what is known, who leads, whose sprite walks
+   and every move come from the game. Fog of war is the default for everyone, the DM included. */
+const GAME=new URLSearchParams(location.search).get("game")==="1"&&window.parent!==window;
+const post=m=>{ if(GAME) parent.postMessage(m,location.origin); };
+const LAYOUT_N=new Map(G.nodes.map(n=>[n.k,n])), LAYOUT_E=new Map(G.edges.map(e=>[e.a<e.b?e.a+"|"+e.b:e.b+"|"+e.a,e]));
+let GS=null, gameDM=false, gameLead=false, gameLegP=null, gameLast=true;
+const placed=n=>Number.isFinite(n.x)&&Number.isFinite(n.y);
+function gameNode(n){ const l=LAYOUT_N.get(n.k)||{}; const o={k:n.k,n:n.n||null,t:n.t==="location"?"location":"waypoint",x:n.x,y:n.y,d:!!n.d,nk:!!n.nk};
+  if(l.poi) o.poi=l.poi; if(l.sub) o.sub=l.sub; if(l.lesser) o.lesser=true; return o; }
+// The bend of each road is the artifact's (it follows the painting); a road the artifact never drew runs straight.
+function gameEdge(e){ const l=LAYOUT_E.get(e.a<e.b?e.a+"|"+e.b:e.b+"|"+e.a);
+  return {a:e.a,b:e.b,m:e.m==="sail"||e.m==="dive"?e.m:"walk",o:l?(l.a===e.a?l.o:-l.o):0,mi:Number(e.mi)||1,d:!!e.d}; }
+if(GAME){
+  GS=await new Promise(res=>{ const h=ev=>{ if(ev.origin!==location.origin||!ev.data||ev.data.type!=="aop:map-state") return; removeEventListener("message",h); res(ev.data); };
+    addEventListener("message",h); post({type:"aop:map-ready"}); });
+  const nodes=GS.nodes.filter(placed).map(gameNode), has=new Set(nodes.map(n=>n.k));
+  const edges=GS.edges.filter(e=>e.road===true&&has.has(e.a)&&has.has(e.b)).map(gameEdge);
+  // a party standing somewhere the painting has no spot for (inside a place, say) is shown at the outpost gate
+  G={nodes,edges,party:has.has(GS.party)?GS.party:has.has(G.party)?G.party:nodes[0].k};
+}
+
+/* ---------- graph ---------- */
+const N=new Map(G.nodes.map(n=>[n.k,{...n}]));
+const E=G.edges.map(e=>({...e}));
+let party=G.party, dm=false, boat=false, caveFound=false, fallsOff=false, swimOk=false, groveFound=false;
+if(GAME){ caveFound=true; fallsOff=true; }   // the game has no dive or falls rule: a road is a road
+const known=new Set(G.nodes.filter(n=>n.d).map(n=>n.k));
+const knownE=new Set(E.filter(e=>e.d).map(eKey));
+function eKey(e){ return e.a<e.b? e.a+"|"+e.b : e.b+"|"+e.a }
+function eKnown(e){ return GAME ? (known.has(e.a)&&known.has(e.b)) : knownE.has( eKey(e) ); }
+// Proposed rule shown here: standing somewhere reveals every road out of it and the stop at its far end.
+function revealAround(k){ known.add(k); if(GAME) return; for(const e of E){ if((e.a===k||e.b===k)&&(e.m!=="sail"||boat)&&(e.m!=="dive"||caveFound)&&(e.m!=="portal"||e.a===k)&&(!e.s||groveFound)){ knownE.add(eKey(e)); known.add(e.a===k?e.b:e.a); } } }
+revealAround(party);
+// A player sees a path only if they know it AND can walk it from where they stand (boat lanes need a boat).
+const usable=e=> eKnown(e) && (e.m!=="sail" || boat) && (e.m!=="dive" || caveFound) && (!e.s || groveFound);
+let reach=new Set();
+function computeReach(){ reach=new Set([party]); let grew=true;
+  while(grew){ grew=false; for(const e of E){ if(!usable(e)) continue;
+    if(reach.has(e.a)&&!reach.has(e.b)){ reach.add(e.b); grew=true; } else if(reach.has(e.b)&&!reach.has(e.a)){ reach.add(e.a); grew=true; } } } }
+const visibleNode=k=> dm || (GAME ? known.has(k) : reach.has(k));
+// The DM sees every route, boat lanes included; nobody can travel a boat lane without a boat.
+const visibleEdge=e=> dm ? true : GAME ? usable(e) : (usable(e) && reach.has(e.a) && reach.has(e.b));
+let tollPaid=false;
+const walkable=(e,allowGuard)=> visibleEdge(e) && (e.m!=="sail"||boat) && (e.m!=="dive"||caveFound) && (!e.g||tollPaid||allowGuard);
+
+/* ---------- world space: 2x painting, 100 px per unit ---------- */
+const W=33.44, H=18.82;
+const toW=(x,y)=>new THREE.Vector3(x*2/100-W/2, 0, y*2/100-H/2);
+function curvePts(e,n=48){
+  const A=N.get(e.a), B=N.get(e.b); const dx=B.x-A.x, dy=B.y-A.y, L=Math.hypot(dx,dy)||1;
+  const cx=(A.x+B.x)/2-dy/L*e.o, cy=(A.y+B.y)/2+dx/L*e.o, pts=[];
+  for(let i=0;i<=n;i++){ const t=i/n; pts.push(toW((1-t)**2*A.x+2*(1-t)*t*cx+t*t*B.x,(1-t)**2*A.y+2*(1-t)*t*cy+t*t*B.y)); }
+  return pts;
+}
+
+/* ---------- renderer ---------- */
+const canvas=document.getElementById("gl");
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.5)); renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.toneMapping=THREE.ACESFilmicToneMapping; renderer.toneMappingExposure=1.15;
+const scene=new THREE.Scene(); scene.background=new THREE.Color(0x06040b); scene.fog=new THREE.Fog(0x06040b,26,60);
+const camera=new THREE.PerspectiveCamera(32,1,0.1,200);
+scene.add(new THREE.AmbientLight(0xb8a8ff,0.9));
+const sun=new THREE.DirectionalLight(0xffe7c2,1.4); sun.position.set(-6,14,8); scene.add(sun);
+
+/* the painting */
+const loader=new THREE.TextureLoader();
+const mapTex=loader.load(MAP,()=>{ document.getElementById("loading").style.opacity=0; setTimeout(()=>document.getElementById("loading").remove(),700); });
+mapTex.colorSpace=THREE.SRGBColorSpace; mapTex.anisotropy=renderer.capabilities.getMaxAnisotropy();
+/* The painting comes alive: a mask marks the lakes (R), the waterfalls (G, placed by hand) and the crystals (B).
+   Water ripples and catches moving caustic light, falls stream downward, crystals breathe, only the small fires in Gracklstugh flicker, and the lights of Neverlight Grove and Menzoberranzan glow. */
+const fxMask=loader.load(FX_MASK); fxMask.colorSpace=THREE.NoColorSpace;
+const reduceMotion=matchMedia("(prefers-reduced-motion: reduce)").matches;
+const fxU={fxT:{value:0},fxMask:{value:fxMask},forgeC:{value:new THREE.Vector2(1085/1672,1-130/941)},forgeR:{value:new THREE.Vector2(215/1672,150/941)},
+  neverC:{value:new THREE.Vector2(1420/1672,1-300/941)},neverR:{value:new THREE.Vector2(250/1672,195/941)},
+  menzoC:{value:new THREE.Vector2(1440/1672,1-670/941)},menzoR:{value:new THREE.Vector2(220/1672,205/941)}};
+const groundMat=new THREE.MeshBasicMaterial({map:mapTex});
+function living(extraU,extraCode){ return sh=>{
+  Object.assign(sh.uniforms,fxU,extraU||{});
+  sh.fragmentShader=sh.fragmentShader.replace("#include <common>",`#include <common>
+uniform float fxT; uniform sampler2D fxMask; uniform vec2 forgeC, forgeR, neverC, neverR, menzoC, menzoR, cutC, cutR;
+float fxh(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+float fxn(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.-2.*f); return mix(mix(fxh(i),fxh(i+vec2(1,0)),f.x),mix(fxh(i+vec2(0,1)),fxh(i+vec2(1,1)),f.x),f.y); }`)
+  .replace("#include <map_fragment>",`
+  vec3 fm=texture2D(fxMask,vMapUv).rgb; float t=fxT;
+  // lakes: a slow ripple that bends the painting a hair, plus drifting caustic light
+  vec2 wuv=vMapUv+fm.r*vec2(sin(vMapUv.y*260.+t*1.4)*.00045,cos(vMapUv.x*210.+t*1.1)*.00045);
+  vec3 col=texture2D(map,wuv).rgb;
+  float c1=fxn(vMapUv*vec2(300.,170.)+vec2(t*.22,t*.15)), c2=fxn(vMapUv*vec2(340.,190.)-vec2(t*.19,-t*.13));
+  float wPatch=smoothstep(.45,.85,fxn(vMapUv*vec2(38.,22.)+vec2(t*.04,-t*.03)));
+  col+=fm.r*wPatch*pow(1.-abs(c1-c2),7.)*vec3(.025,.075,.10);
+  // waterfalls: bright threads streaming down the painted falls, foam pulsing at their feet
+  float st=fxn(vec2(vMapUv.x*1400.,vMapUv.y*70.+t*2.6)), st2=fxn(vec2(vMapUv.x*900.+7.,vMapUv.y*110.+t*3.9));
+  col+=fm.g*(smoothstep(.55,.95,st)*.55+smoothstep(.6,.95,st2)*.35)*vec3(.55,.85,1.);
+  // blue channel: crystals everywhere else; inside Gracklstugh it marks only the small fires the painter lit
+  float inCity=step(length((vMapUv-forgeC)/forgeR),1.);
+  float inNever=step(length((vMapUv-neverC)/neverR),1.), inMenzo=step(length((vMapUv-menzoC)/menzoR),1.), inGlow=max(inNever,inMenzo);
+  // Neverlight Grove and Menzoberranzan: their painted lights glow, with a soft halo around each light (nothing else is tinted)
+  vec2 px=vec2(1./1672.,1./941.); float halo=0.;
+  for(int i=0;i<8;i++){ float a=float(i)*.785398; vec2 o=vec2(cos(a),sin(a)); halo+=texture2D(fxMask,vMapUv+o*px*5.).b+texture2D(fxMask,vMapUv+o*px*11.).b*.6; }
+  halo=halo/12.8*inGlow;
+  float bio=.55+.45*sin(t*1.1+fxn(vMapUv*300.)*9.);   // fungus: slow breathing
+  float fae=.6+.4*sin(t*2.4+fxn(vMapUv*420.)*14.);   // faerie fire: quicker shimmer
+  float pulse=inNever*bio+inMenzo*(1.-inNever)*fae;
+  vec3 glowCol=inNever>.5? vec3(1.,.42,.85) : vec3(.62,.38,1.);
+  col+=inGlow*fm.b*col*pulse*.9 + halo*glowCol*pulse*.22;
+  // crystals: each one breathes on its own clock
+  col+=(1.-inCity)*(1.-inGlow)*fm.b*col*(.5+.5*sin(t*1.8+fxn(vMapUv*520.)*18.))*.65;
+  // fires: each flame flickers on its own, nothing else in the city changes
+  float fl=fxn(vec2(vMapUv.x*900.,t*7.))*.6+fxn(vec2(vMapUv.y*700.+3.,t*13.))*.4;
+  col+=inCity*fm.b*col*vec3(1.1,.55,.15)*(fl*1.1-.15);
+  diffuseColor.rgb*=col;`+(extraCode||""));
+}; }
+groundMat.onBeforeCompile=living();
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(W,H),groundMat);
+ground.rotation.x=-Math.PI/2; scene.add(ground);
+// a dark slab under the painting so the edges read as a carved table, not a floating sheet
+const slab=new THREE.Mesh(new THREE.BoxGeometry(W+0.6,0.6,H+0.6),new THREE.MeshStandardMaterial({color:0x120c1c,roughness:.9}));
+slab.position.y=-0.31; scene.add(slab);
+
+/* fog of war: a mist sheet with holes where the party has been */
+const fogCv=document.createElement("canvas"); fogCv.width=1672; fogCv.height=941;
+const fogTex=new THREE.CanvasTexture(fogCv);
+const fogMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,uniforms:{mask:{value:fogTex},t:{value:0}},
+  vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader:`uniform sampler2D mask; uniform float t; varying vec2 vUv;
+  float h(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+  float n(vec2 p){ vec2 i=floor(p),f=fract(p); f=f*f*(3.-2.*f); return mix(mix(h(i),h(i+vec2(1,0)),f.x),mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x),f.y); }
+  float fbm(vec2 p){ float v=0.,a=.5; for(int i=0;i<4;i++){ v+=a*n(p); p*=2.03; a*=.5; } return v; }
+  void main(){ float m=texture2D(mask,vUv).a;
+    float c=fbm(vUv*vec2(9.,5.)+vec2(t*.015,t*.008)); float c2=n(vUv*vec2(23.,13.)-vec2(t*.02,0.));
+    float a=m*(.78+.22*c)*smoothstep(0.,.35,m+.15*c2-.1);
+    vec3 col=mix(vec3(.05,.03,.10),vec3(.20,.14,.32),c*c2*1.6);
+    gl_FragColor=vec4(col,a*.94); }`});
+const fog=new THREE.Mesh(new THREE.PlaneGeometry(W,H),fogMat); fog.rotation.x=-Math.PI/2; fog.position.y=0.06; scene.add(fog);
+function drawFog(){
+  const c=fogCv.getContext("2d"); c.clearRect(0,0,1672,941);
+  if(dm){ fogTex.needsUpdate=true; return; }
+  c.globalCompositeOperation="source-over"; c.fillStyle="rgba(0,0,0,1)"; c.fillRect(0,0,1672,941);
+  c.globalCompositeOperation="destination-out";
+  for(const k of known){ const n=N.get(k); const r=n.t==="location"?210:105; const g=c.createRadialGradient(n.x,n.y,r*.35,n.x,n.y,r);
+    g.addColorStop(0,"rgba(0,0,0,1)"); g.addColorStop(1,"rgba(0,0,0,0)"); c.fillStyle=g; c.beginPath(); c.arc(n.x,n.y,r,0,7); c.fill(); }
+  c.lineCap="round"; c.filter="blur(14px)"; c.strokeStyle="rgba(0,0,0,.95)"; c.lineWidth=110;
+  for(const e of E){ if(!eKnown(e)) continue; const A=N.get(e.a),B=N.get(e.b),dx=B.x-A.x,dy=B.y-A.y,L=Math.hypot(dx,dy)||1;
+    c.beginPath(); c.moveTo(A.x,A.y); c.quadraticCurveTo((A.x+B.x)/2-dy/L*e.o,(A.y+B.y)/2+dx/L*e.o,B.x,B.y); c.stroke(); }
+  c.filter="none"; fogTex.needsUpdate=true;
+}
+
+/* roads: soft glowing ribbons over the painted ones. Built once; visibility is toggled, never rebuilt. */
+const roadGroup=new THREE.Group(); scene.add(roadGroup);
+function ribbon(pts,color,opacity,width=.07){
+  const geo=new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts.map(p=>p.clone().setY(.03))),pts.length*2,width,5,false);
+  return new THREE.Mesh(geo,new THREE.MeshBasicMaterial({color,transparent:true,opacity,blending:THREE.AdditiveBlending,depthWrite:false}));
+}
+const roadMesh=new Map();
+function addRoad(e){ const sail=e.m==="sail", dive=e.m==="dive"; const portal=e.m==="portal"; const m=ribbon(curvePts(e),portal?0xb07bff:dive?0x5fffe0:sail?0x6fd8ff:0xffc95a,.26,portal||dive?.045:sail?.05:.07); roadGroup.add(m); roadMesh.set(eKey(e),m); e.pts=curvePts(e,40); }
+for(const e of E) addRoad(e);
+
+/* stops: glowing rings sized to the painted ones, a beam over each great place. Built once. */
+const stopGroup=new THREE.Group(); scene.add(stopGroup);
+const stops=new Map();
+const ringGeo=new THREE.TorusGeometry(.17,.028,10,48), bigRing=new THREE.TorusGeometry(.68,.07,14,96), beamGeo=new THREE.CylinderGeometry(.24,.4,2.2,24,1,true);
+const beamMat=new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,uniforms:{t:{value:0},c:{value:new THREE.Color(0xffd27a)}},
+  vertexShader:`varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+  fragmentShader:`uniform float t; uniform vec3 c; varying vec2 vUv; void main(){ float a=pow(1.-vUv.y,2.2)*(.55+.25*sin(t*2.+vUv.y*9.)); gl_FragColor=vec4(c,a*.35); }`});
+function addStop(n){
+  const big=n.t==="location"&&!n.lesser, g=new THREE.Group(); g.position.copy(toW(n.x,n.y));
+  const ringMat=new THREE.MeshStandardMaterial({color:0xffc95a,emissive:0xffa62b,emissiveIntensity:1.1,roughness:.35,metalness:.6});
+  const ring=new THREE.Mesh(big?bigRing:ringGeo,ringMat); ring.rotation.x=Math.PI/2; ring.position.y=.04; g.add(ring);
+  if(big){ const beam=new THREE.Mesh(beamGeo,beamMat); beam.position.y=1.14; g.add(beam); }
+  g.userData={k:n.k,ring,ringMat,base:1.1}; stopGroup.add(g); stops.set(n.k,g);
+}
+for(const n of N.values()) addStop(n);
+
+/* Coming close to a great place: the camera leans in and the place itself grows out of the painting (Sam, 2026-10-11:
+   "the city or location should blow up to about 3x the scale and become animated"). Each cut-out is a feathered piece of the
+   same painting, lit by the same living shader, so its waterfalls, fires and lights keep moving while it grows. */
+const CUT={velkynvelve:[470,110,175,105],gracklstugh:[1075,120,200,120],sloobludop:[615,460,135,110],blingdenstone:[955,590,140,120],
+  "neverlight-grove":[1430,290,220,170],menzoberranzan:[1440,680,210,200],"road-05":[264,330,95,80]};
+const POP=1.5, ZONE=3.4, ZOOM_DIST=7.5;   // on screen: camera 15→7.5 (≈2×) × art ×1.5 ≈ 3× the normal view
+const cuts=new Map();
+for(const [k,[cx,cy,rx,ry]] of Object.entries(CUT)){ if(!N.has(k)) continue;
+  const geo=new THREE.PlaneGeometry(2*rx/50,2*ry/50); const uv=geo.attributes.uv;
+  for(let i=0;i<uv.count;i++){ uv.setXY(i,(cx-rx+uv.getX(i)*2*rx)/1672, 1-(cy+ry-uv.getY(i)*2*ry)/941); }
+  const mat=new THREE.MeshBasicMaterial({map:mapTex,transparent:true,depthWrite:false});
+  mat.onBeforeCompile=living({cutC:{value:new THREE.Vector2(cx/1672,1-cy/941)},cutR:{value:new THREE.Vector2(rx/1672,ry/941)}},
+    `\n  diffuseColor.a*=smoothstep(1.,.74,length((vMapUv-cutC)/cutR));`);
+  const m=new THREE.Mesh(geo,mat); m.rotation.x=-Math.PI/2; m.position.copy(toW(cx,cy)).setY(.045); m.renderOrder=-1; m.visible=false; scene.add(m);
+  cuts.set(k,m); }
+let zone=null, zoneT=0, zoneSaved=null;
+
+/* Sam's painted grove (2026-10-11, v1 compact marker — Sam's pick): it stands on its node and appears only when the place does */
+const groveNode=[...N.values()].find(n=>n.k==="vitrine-grove");
+let groveArt=null;
+if(groveNode){
+  const t=loader.load(GROVE_ART); t.colorSpace=THREE.SRGBColorSpace; t.magFilter=t.minFilter=THREE.NearestFilter;
+  groveArt=new THREE.Sprite(new THREE.SpriteMaterial({map:t,transparent:true,depthWrite:false}));
+  groveArt.scale.set(2.6,2.6,1); groveArt.center.set(.5,.12); groveArt.renderOrder=-1;
+  groveArt.position.copy(toW(groveNode.x,groveNode.y)).setY(.03);
+  groveArt.visible=false; scene.add(groveArt);
+}
+
+/* the sentinel on the guarded bridge: a dark pillar of plate with a violet ward ring (stand-in until his art exists) */
+const bridgeE=E.find(e=>e.g); const guard=new THREE.Group();
+if(bridgeE){ const mid=bridgeE.pts[Math.floor(bridgeE.pts.length/2)];
+  guard.position.set(mid.x,0,mid.z);
+  const body=new THREE.Mesh(new THREE.CylinderGeometry(.09,.16,.62,12),new THREE.MeshStandardMaterial({color:0x14101c,metalness:.8,roughness:.35})); body.position.y=.31; guard.add(body);
+  const helm=new THREE.Mesh(new THREE.SphereGeometry(.1,16,12),new THREE.MeshStandardMaterial({color:0x1a1424,metalness:.85,roughness:.3,emissive:0x5a2bff,emissiveIntensity:.35})); helm.position.y=.7; guard.add(helm);
+  const ward=new THREE.Mesh(new THREE.TorusGeometry(.32,.025,8,48),new THREE.MeshBasicMaterial({color:0xa07bff,transparent:true,opacity:.8,blending:THREE.AdditiveBlending})); ward.rotation.x=Math.PI/2; ward.position.y=.04; guard.add(ward);
+  const gl=new THREE.PointLight(0x8a5cff,1.6,2.2); gl.position.y=.6; guard.add(gl);
+  guard.userData={ward}; scene.add(guard); }
+
+/* the party's boat: an 8-heading pixel sprite that waits at the shore and carries the party along the lanes */
+let boatKind=null;
+const boatTex={}; for(const [k,list] of Object.entries(BOAT_ART)){ boatTex[k]=list.map(src=>{ const t=loader.load(src); t.colorSpace=THREE.SRGBColorSpace; t.magFilter=t.minFilter=THREE.NearestFilter; return t; }); }
+const boatMat=new THREE.SpriteMaterial({transparent:true,depthWrite:false,depthTest:false});
+const boatSprite=new THREE.Sprite(boatMat); boatSprite.scale.set(2.5,2.5,1); boatSprite.center.set(.5,.5); boatSprite.renderOrder=5; boatSprite.visible=false; scene.add(boatSprite);
+const wake=new THREE.Mesh(new THREE.RingGeometry(.5,.62,40),new THREE.MeshBasicMaterial({color:0x9fe6ff,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false}));
+wake.rotation.x=-Math.PI/2; wake.scale.set(1,.55,1); scene.add(wake);
+function setBoatHeading(dx,dz){ if(!boatKind) return; const row=rowFor(dx,dz); boatMat.map=boatTex[boatKind][row]; const c=BOAT_CENTRE[boatKind][row]; boatSprite.center.set(c[0],c[1]); boatMat.needsUpdate=true; }
+// where the boat waits: at the party's stop, nudged out along the first known lane, when there is one
+function dockAt(k){
+  if(!boatKind) return null;
+  const e=E.find(e=>e.m==="sail"&&(e.a===k||e.b===k)&&(dm||eKnown(e))); if(!e) return null;
+  const pts=e.a===k?e.pts:[...e.pts].reverse(); const a=pts[0], b=pts[Math.min(6,pts.length-1)];
+  return {pos:a.clone().lerp(b,.55),dx:b.x-a.x,dz:b.z-a.z};
+}
+function placeDocked(){ const d=walking?null:dockAt(party); boatSprite.visible=!!d; if(d){ boatSprite.position.set(d.pos.x,.02,d.pos.z); setBoatHeading(d.dx,d.dz); } }
+
+/* Fifi, billboarded, walking the roads */
+const sheets={walk:loader.load(WALK),idle:loader.load(IDLE)};
+for(const s of Object.values(sheets)){ s.colorSpace=THREE.SRGBColorSpace; s.magFilter=THREE.NearestFilter; s.minFilter=THREE.NearestFilter; s.wrapS=s.wrapT=THREE.RepeatWrapping; }
+const heroMat=new THREE.SpriteMaterial({map:sheets.idle,transparent:true,depthWrite:false});
+const hero=new THREE.Sprite(heroMat); hero.scale.set(1.0,1.0,1); hero.center.set(.5,.02); scene.add(hero);
+const shadow=new THREE.Mesh(new THREE.CircleGeometry(.26,32),new THREE.MeshBasicMaterial({color:0,transparent:true,opacity:.45,depthWrite:false}));
+shadow.rotation.x=-Math.PI/2; shadow.scale.set(1,.55,1); scene.add(shadow);
+const torch=new THREE.PointLight(0xffb347,2.2,4); scene.add(torch);
+let heroAnim="idle", heroRow=0, heroT=0;
+function setSheet(kind){ if(heroAnim===kind) return; heroAnim=kind; heroT=0; heroMat.map=sheets[kind]; heroMat.needsUpdate=true; }
+const sheetMeta={walk:{frames:6,fps:12},idle:{frames:4,fps:5}}; let heroK=1;
+function frameSprite(dt){
+  heroT+=dt; const frames=sheetMeta[heroAnim].frames, fps=sheetMeta[heroAnim].fps, f=Math.floor(heroT*fps)%frames;
+  const m=heroMat.map; m.repeat.set(1/frames,1/8); m.offset.set(f/frames,1-(heroRow+1)/8);
+}
+// rows are south, south-east, east, north-east, north, north-west, west, south-west
+function rowFor(dx,dz){ const a=Math.atan2(dz,dx)*180/Math.PI; const order=[2,1,0,7,6,5,4,3]; return order[(Math.round(a/45)+8)%8]; }
+const heroPos=toW(N.get(party).x,N.get(party).y);
+const wisp=new THREE.Mesh(new THREE.SphereGeometry(.12,16,12),new THREE.MeshBasicMaterial({color:0xc9a2ff,transparent:true,opacity:.9,blending:THREE.AdditiveBlending,depthWrite:false}));
+wisp.add(new THREE.PointLight(0x9a6bff,2.5,3)); wisp.visible=false; scene.add(wisp);
+
+/* banners: HTML pinned to 3D points, always crisp. Built once; text and visibility refresh. */
+const labelsEl=document.getElementById("labels"); const banners=new Map();
+const visited=new Set([party]);
+function addBanner(n){
+  const b=document.createElement("div"); b.className="banner"+(n.t!=="location"&&!n.poi?" marker":""); b.onclick=()=>goTo(n.k);
+  b.onpointerenter=()=>hover(n.k); b.onpointerleave=()=>hover(null);
+  labelsEl.appendChild(b); banners.set(n.k,b); }
+for(const n of N.values()) addBanner(n);
+const nameShown=n=> GAME ? (!!n.n && (dm || n.nk)) : (dm || n.nk || visited.has(n.k));
+/* DM-only tags on painted features that are art, not places: no stop, no route, nobody can travel there */
+const SCENERY=[{x:390,y:749,t:"Painted island · not in the game"},{x:451,y:650,t:"Painted dock · not in the game"}];
+for(const s of SCENERY){ s.el=document.createElement("div"); s.el.className="banner scenery"; s.el.textContent=s.t; s.el.hidden=true; s.p=toW(s.x,s.y); labelsEl.appendChild(s.el); }
+const legendEl=document.getElementById("legend");
+/* DM notes per marker: only what Sam has decided. Click one to fly the camera there. */
+const MARKER_NOTES=[
+  ["road-09","Marker 09 · A glowing pool","Dead end below Velkynvelve's west cliff. Diving can find the hidden cave: Athletics DC 12 against the current, then Perception DC 15 (proposed house rule). Failing by 5+ snags the diver; risk of drowning."],
+  ["pool-cave","The cave under the pool","Ancient drow wizard's study (lore to be decided; supplies; arcane books), a scrying pool, the switch that shuts the falls off from inside, a one-way portal to Marker 14, treasure at the far end (items to be chosen)."],
+  ["vitrine-grove","The Vitrine Grove","Hidden. Standing at Marker 32 reveals nothing — someone must search the forest edge (Wisdom (Perception), proposed DC 15). Found once, it stays found. A spore druid grove: the gray druid Ghorra Nul wardens it. The rest is in the subquest doc."],
+  ["road-14","Marker 14 · Portal exit","Where the cave's one-way portal comes out. Nothing here reveals the portal."],
+  ["road-10","Marker 10 → Marker 15 · Bypass","Sam's path along the cliffs below Velkynvelve. Hidden until found."],
+  ["road-22","Marker 22 → Marker 28 · Guarded bridge","A dark eldritch knight holds the gate and wants a toll. Toll and stat block still to be decided (homebrew)."],
+  ["road-05","Shrine of Ibrandul","Reachable only by boat for now. Open: a foot path?"],
+  ["vitrine-grove","Entrance plates","All eight approved (seven on 2026-10-11, the Vitrine Grove's take B on 2026-10-12). 4K originals in vtt-assets/scenes/entrance/; the page shows 2560-wide copies from its own store. The grove has no ambient loop yet."]];
+const legList=document.getElementById("legList");
+for(const [k,title,note] of MARKER_NOTES){ const li=document.createElement("li"), b=document.createElement("button"); b.innerHTML=`<b>${title}</b>${note}`;
+  b.onclick=()=>flyTo(k); b.onpointerenter=()=>hover(k); b.onpointerleave=()=>hover(null); li.appendChild(b); legList.appendChild(li); }
+function flyTo(k){ const q=stops.get(k).position; cam.look.set(THREE.MathUtils.clamp(q.x-cam.target.x,-12,12),THREE.MathUtils.clamp(q.z-cam.target.z,-4,7)); hover(k); }
+function setLegend(open){ document.getElementById("legList").hidden=!open; legendEl.classList.toggle("closed",!open); document.getElementById("legBtn").setAttribute("aria-expanded",String(open));
+  document.getElementById("legArrow").textContent=open?"Hide ▴":"Show ▾"; try{ localStorage.setItem("wm_legend",open?"1":"0"); }catch(e){} }
+document.getElementById("legBtn").onclick=()=>setLegend(document.getElementById("legList").hidden);
+try{ if(localStorage.getItem("wm_legend")==="0") setLegend(false); }catch(e){}
+const guardTag=document.createElement("div"); guardTag.className="banner guardtag"; guardTag.textContent="A dark knight"; guardTag.onclick=()=>showToll(); guardTag.hidden=true; labelsEl.appendChild(guardTag);
+
+function refresh(){
+  computeReach(); drawFog(); placeDocked(); legendEl.hidden=!dm; document.getElementById("atlasLink").hidden=!dm; for(const s of SCENERY) s.el.hidden=!dm;
+  if(bridgeE){ const vis=visibleEdge(bridgeE); guard.visible=vis; guardTag.hidden=!vis; guardTag.textContent= tollPaid? "The knight stands aside" : "A dark knight"; }
+  for(const e of E){ const m=roadMesh.get(eKey(e)); const vis=visibleEdge(e); m.visible=vis;
+    if(vis){ const dmOnly=dm&&!eKnown(e); m.material.opacity= e.m==="portal" ? (eKnown(e)?.45:.14) : e.m==="dive" ? (caveFound?(fallsOff?.5:.4):.12) : e.m==="sail" ? (boat?.34:.24) : (dmOnly?.10:.26); } }
+  if(groveArt) groveArt.visible=visibleNode("vitrine-grove");
+  for(const [k,g] of stops){ const vis=visibleNode(k); g.visible=vis; const dmOnly=dm&&!known.has(k);
+    g.userData.base=dmOnly?.25:1.1; g.userData.ringMat.color.set(dmOnly?0x8a7bb0:0xffc95a); g.userData.ringMat.emissiveIntensity=g.userData.base; }
+  for(const [k,b] of banners){ const n=N.get(k), vis=visibleNode(k);
+    if(b.classList.contains("marker")){ b.hidden=!(dm&&vis); if(dm) b.textContent=(n.n||"").replace("Road Marker ","Marker "); continue; }
+    b.hidden=!vis; if(!vis) continue;
+    const shown=nameShown(n)||!!n.poi; b.textContent= n.poi? n.poi : shown? n.n : "? ? ?"; b.classList.toggle("unknown",!shown); b.classList.toggle("poi",!!n.poi);
+    b.classList.toggle("lesser",!!n.lesser);
+    if(n.sub && shown){ const t=document.createElement("small"); t.textContent=n.sub; b.appendChild(t); }
+    b.classList.toggle("dmonly",dm&&!known.has(k));
+    if(dm&&!n.nk&&!n.poi){ const s=document.createElement("small"); s.textContent="players don't know this name"; b.appendChild(s); } }
+}
+
+/* ---------- camera ---------- */
+const cam={target:heroPos.clone(),dist:15,goalDist:15,yaw:0,pitch:.92,look:new THREE.Vector2()};
+function placeCamera(){
+  const p=cam.pitch, d=cam.dist;
+  camera.position.set(cam.target.x+Math.sin(cam.yaw)*Math.cos(p)*d+cam.look.x, cam.target.y+Math.sin(p)*d, cam.target.z+Math.cos(cam.yaw)*Math.cos(p)*d+cam.look.y);
+  camera.lookAt(cam.target.x+cam.look.x*.6,0,cam.target.z+cam.look.y*.6);
+}
+function resize(){ const w=innerWidth,h=innerHeight; renderer.setSize(w,h,false); camera.aspect=w/h; camera.updateProjectionMatrix(); }
+addEventListener("resize",resize); resize();
+// smooth, proportional zoom: trackpads and wheels both feel continuous
+addEventListener("wheel",e=>{ e.preventDefault(); cam.goalDist=THREE.MathUtils.clamp(cam.goalDist*Math.exp(e.deltaY*.0015),4.5,30); },{passive:false});
+document.getElementById("zin").onclick=()=>cam.goalDist=Math.max(4.5,cam.goalDist*.8);
+document.getElementById("zout").onclick=()=>cam.goalDist=Math.min(30,cam.goalDist*1.25);
+/* Sam 2026-10-13 (comment on the map): "Need a way for DM to return to main part of this Map Module."
+   Whole map: pull right back to the full Underdark, view centred, and stop any place-zoom from pulling the camera in again until the party moves.
+   Party: drop back to the party at the normal distance. Home and P keys do the same. */
+let overview=false;
+function wholeMap(){ overview=true; cam.goalDist=30; cam.look.set(0,0); zoneSaved=null; hover(null); }
+function toParty(){ overview=false; cam.look.set(0,0); cam.goalDist= zone? ZOOM_DIST : 15; zoneSaved=null; hover(null); }
+document.getElementById("zAll").onclick=wholeMap; document.getElementById("zParty").onclick=toParty;
+addEventListener("keydown",e=>{ if(e.target&&/INPUT|TEXTAREA/.test(e.target.tagName)) return; if(e.code==="Home") wholeMap(); if(e.code==="KeyP") toParty(); });
+let drag=null;
+canvas.addEventListener("pointerdown",e=>{ drag={x:e.clientX,y:e.clientY,lx:cam.look.x,ly:cam.look.y,moved:false}; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener("pointermove",e=>{
+  if(drag){ const dx=e.clientX-drag.x, dy=e.clientY-drag.y; if(Math.hypot(dx,dy)>8) drag.moved=true;
+    if(drag.moved){ const s=cam.dist/innerHeight*1.4; cam.look.set(THREE.MathUtils.clamp(drag.lx-dx*s,-12,12),THREE.MathUtils.clamp(drag.ly-dy*s,-4,7)); } return; }
+  hoverAt(e);
+});
+canvas.addEventListener("pointerup",e=>{ if(drag && !drag.moved){ const k=stopAt(e); if(k) goTo(k); } drag=null; });
+
+/* ---------- picking, routes, travel ---------- */
+const ray=new THREE.Raycaster(), mouse=new THREE.Vector2();
+function stopAt(e){
+  mouse.set(e.clientX/innerWidth*2-1,-(e.clientY/innerHeight)*2+1); ray.setFromCamera(mouse,camera);
+  const hit=ray.intersectObject(ground)[0]; if(!hit) return null;
+  let best=null, bd=.7+cam.dist*.02;
+  for(const [k,g] of stops){ if(!g.visible) continue; const d=g.position.distanceTo(hit.point)-(N.get(k).t==="location"?.5:0); if(d<bd){ bd=d; best=k; } }
+  return best;
+}
+let hoverT=0; function hoverAt(e){ const now=performance.now(); if(now-hoverT<50) return; hoverT=now; hover(stopAt(e)); canvas.style.cursor=hovered?"pointer":"grab"; }
+function route(from,to,allowGuard){
+  const adj=new Map(); for(const e of E){ if(!walkable(e,allowGuard)) continue; for(const [a,b] of (e.oneWay?[[e.a,e.b]]:[[e.a,e.b],[e.b,e.a]])){ if(!adj.has(a)) adj.set(a,[]); adj.get(a).push({to:b,e}); } }
+  const dist=new Map([[from,0]]), prev=new Map(), done=new Set();
+  for(;;){ let cur=null,best=1e9; for(const [k,v] of dist) if(!done.has(k)&&v<best){best=v;cur=k;} if(!cur||cur===to) break; done.add(cur);
+    for(const {to:nx,e} of adj.get(cur)||[]){ const nd=best+e.mi; if(nd<(dist.get(nx)??1e9)){ dist.set(nx,nd); prev.set(nx,{k:cur,e}); } } }
+  if(!dist.has(to)) return null;
+  const legs=[]; let k=to; while(k!==from){ const p=prev.get(k); legs.unshift({from:p.k,to:k,e:p.e}); k=p.k; }
+  return {miles:dist.get(to),legs};
+}
+const placeName=n=>{ if(n.poi) return n.poi; if(n.t==="location") return nameShown(n)? n.n : "Unknown place";
+  const ways=E.filter(e=>(e.a===n.k||e.b===n.k)&&visibleEdge(e)).length; return ways<=1? "Dead end" : ways===2? "On the road" : "A fork in the road"; };
+const card={name:document.getElementById("cName"),meta:document.getElementById("cMeta")};  // moving is one press; the card only informs
+const preview=new THREE.Group(); scene.add(preview);
+let hovered=null;
+function showCard(k,mode){
+  const n=N.get(k); card.name.textContent=placeName(n);
+  if(k===party){ card.meta.innerHTML= walking? "On the march." : (GAME&&!gameLead)? "You are here." : "You are here. Arrow keys or WASD walk to the next stop.";
+    if(!walking&&PLATES[k]){ card.meta.innerHTML+=' <br><button class="tollbtn" id="gateBtn">Stand at the gate</button>'; document.getElementById("gateBtn").onclick=()=>openEntrance(k); }
+    if(!walking&&!GAME) poolCard(k); return; }
+  const p=route(party,k);
+  if(!p){ const viaBridge=route(party,k,true);
+    if(viaBridge&&viaBridge.legs.some(L=>L.e.g)){ card.meta.innerHTML="The way runs over the guarded bridge. The knight will want his toll."+(mode==="hover"?" · click to walk to the gate":""); return viaBridge; }
+    const needsBoat=E.some(e=>visibleEdge(e)&&e.m==="sail"&&(e.a===k||e.b===k));
+    card.meta.innerHTML= needsBoat&&!boat ? "Only reachable by water. You need a boat." : "No known road leads there yet."; return p; }
+  if(p.legs.every(L=>L.e.m==="portal")){ card.meta.innerHTML="<b>Instant</b> · through the drow wizard's portal"+(mode==="hover"?" · click to step through":""); return p; }
+  if(GAME){ card.meta.innerHTML=`<b>${p.miles.toFixed(1)} mi</b> by the roads you know${mode==="hover"&&gameLead?" · click to set out":""}`; return p; }
+  const days=p.miles/PACE;
+  card.meta.innerHTML=`<b>${p.miles.toFixed(1)} mi</b> · <b>${days<1?"under a day":days.toFixed(1)+" days"}</b> at normal pace${mode==="hover"?" · click to walk":""}`;
+  return p;
+}
+function hover(k){
+  if(k===hovered) return; hovered=k; preview.clear(); post({type:"aop:map-hover",k:k||null});
+  for(const [kk,g] of stops) g.userData.ringMat.emissiveIntensity= kk===k? 2.6 : g.userData.base;
+  if(!k){ showCard(walking?walking.dest:party); return; }
+  const p=showCard(k,"hover");
+  if(p&&!walking) for(const L of p.legs) preview.add(ribbon(L.from===L.e.a?L.e.pts:[...L.e.pts].reverse(),0xffffff,.45,.085));
+}
+
+/* travel: one press, eased start and stop, a small hop on arrival, and a queued next step */
+let walking=null, marched=0, queued=null, hop=0, travelSail=false;
+function goTo(k){
+  if(overview&&k!==party&&!downed){ overview=false; cam.goalDist=Math.min(cam.goalDist,15); }   // setting off again brings the camera back down to the party
+  if(PLATES[k]){ const P=PLATES[k]; const img=P._pre||(P._pre=new Image()); if(!img.src) img.src=P.url; }   // start fetching the 4K entrance plate while the party walks
+  if(k===party||downed) return;
+  if(walking){ if(!GAME) queued={k}; return; }
+  if(GAME&&!gameLegP){ if(gameLead) post({type:"aop:map-pick",k}); return; }
+  let p=gameLegP||route(party,k), atGate=false; gameLegP=null;
+  if(!p){ const b=route(party,k,true);
+    if(b&&b.legs.some(L=>L.e.g)){ const i=b.legs.findIndex(L=>L.e.g);
+      if(i===0){ showToll(); return; }
+      const legs=b.legs.slice(0,i); p={legs,miles:legs.reduce((m,L)=>m+L.e.mi,0)}; k=legs[legs.length-1].to; atGate=true; }
+    else { showCard(k); return; } }
+  // the way into the cave is a swim against the falls' current, until someone shuts the falls off from inside
+  const di=p.legs.findIndex(L=>L.e.m==="dive"&&L.to==="pool-cave");
+  if(di>=0 && !fallsOff && !swimOk){ if(di===0){ dive(); return; } const legs=p.legs.slice(0,di); p={legs,miles:legs.reduce((m,L)=>m+L.e.mi,0)}; k="road-09"; }
+  swimOk=false;
+  // split the route into stretches on foot and stretches afloat; boarding and landing sit between them
+  const segs=[]; for(const L of p.legs){ const mode=L.e.m; const c=L.from===L.e.a?L.e.pts:[...L.e.pts].reverse();
+    if(!segs.length||segs[segs.length-1].mode!==mode) segs.push({mode,pts:[]}); const S=segs[segs.length-1]; c.forEach((q,i)=>{ if(i||!S.pts.length) S.pts.push(q); }); }
+  const plan=[]; segs.forEach((S,i)=>{ const curve=new THREE.CatmullRomCurve3(S.pts), len=curve.getLength();
+    if(S.mode==="sail" && (i===0||segs[i-1].mode!=="sail")) plan.push({kind:"board",curve,dur:.5});
+    plan.push({kind:S.mode==="dive"&&fallsOff?"walk":S.mode,curve,len,dur:S.mode==="portal"?2.4:S.mode==="dive"?1.6:Math.max(.55,len/(S.mode==="sail"?4.4:5.2))});
+    if(S.mode==="sail" && (i===segs.length-1||segs[i+1].mode!=="sail")) plan.push({kind:"land",curve,dur:.5}); });
+  walking={plan,i:0,t:0,legs:p.legs,miles:p.miles,dest:k,atGate}; travelSail=p.legs.some(L=>L.e.m==="sail");
+  playTrack(trackFor(k,true)); marchStart(); setBed(bedFor(k,true)); duckMusic(true);
+  preview.clear(); hovered=null; setSheet(plan[0].kind==="walk"?"walk":"idle"); showCard(k);
+  card.meta.innerHTML+= p.legs.some(L=>L.e.m==="portal") ? (p.legs.every(L=>L.e.m==="portal")?"":" · through the portal") : p.legs.some(L=>L.e.m==="dive") ? (fallsOff?" · in behind the stopped falls":" · down through the pool") : p.legs.some(L=>L.e.m==="sail") ? " · by water and road" : " · walking";
+}
+/* Sam 2026-10-11: "The character leading should make some comment about what she sees in her voice."
+   Fifi of Copperas Cove, eleven_v3 with her own voice_id from the characters table, trimmed and levelled to -18 LUFS.
+   She speaks once, on the first arrival at a place, about a second in (over the arrival cinematic when it plays); the music ducks under her. */
+/* Sam 2026-10-12: "similar, character specific comments for the other main players for each main plate entrance." — one table per leader,
+   each in that character's own ElevenLabs voice_id from the characters table (Kenta CmPJSgS8eysQjjc65BUe, Samson uIyyEzVnE1YV2AEF55B7, Scott xe2eWMCGG8JtZEOkNNhG). Claude-written; Sam to veto. */
+const LEADERS={fifi:"Fifi",kenta:"Kenta",samson:"Samson",scott:"Scott"};
+let leader="fifi"; try{ const v=localStorage.getItem("wm_leader"); if(v&&LEADERS[v]) leader=v; }catch(e){}
+const LINES={
+  "fifi":{
+    "velkynvelve":{u:"",t:"Velkynvelve. Lord. I swore I'd never look at that cliff again... and here I am, lookin' at it."},
+    "sloobludop":{u:"",t:"A whole town of fish-folk, singin' at the water. Smells like a bait shop, sounds like a church. I kinda like it."},
+    "gracklstugh":{u:"",t:"Gracklstugh. Everything here is hot, loud, and wants to either sell you somethin' or chain you. Keep your hands in your pockets."},
+    "neverlight-grove":{u:"",t:"Oh, that's... pretty. Too pretty. Mushrooms don't sing where I'm from, and I'd like to know why these ones do."},
+    "blingdenstone":{u:"",t:"Little folk, little doors, actual lamps. Y'all... I think this is the first place down here that ain't tryin' to kill us."},
+    "menzoberranzan":{u:"",t:"Menzoberranzan. Whole city's lit up like a spider's eye. Nobody say my name out loud. Nobody say anybody's name."},
+    "road-05":{u:"",t:"There's a lamp burnin' out on that rock, and nobody's rowed out to light it. I don't love that. I don't love that at all."},
+    "vitrine-grove":{u:"",t:"Somethin's screamin' up ahead... and it's keepin' time. Either that's a real bad sign, or somebody down here's got a sense of humor."},
+    "pool-cave":{u:"",t:"A cave behind the falls. Dry, quiet, and nobody knows we're here. First breath I've taken since the pen."}
+  },
+  "kenta":{
+    "velkynvelve":{u:"",t:"Velkynvelve. They took my coin, my caravan, and nine days of my life here. I keep a ledger. This one's... not balanced yet."},
+    "sloobludop":{u:"",t:"Fish-folk. A whole market of them, and not one merchant who knows what anything is worth. Could be useful. Could be dinner. Stay close."},
+    "gracklstugh":{u:"",t:"Gracklstugh. Duergar quote you a price before they quote you a name. My father would have loved it. I'd rather not be sold here twice."},
+    "neverlight-grove":{u:"",t:"Singing mushrooms. Nothing in my lessons about singing mushrooms. Don't breathe deep, and don't touch anything that glows. Especially the pretty ones."},
+    "blingdenstone":{u:"",t:"Gnomes. Doors. Lamps somebody actually pays to keep lit. I could do business here. I could sleep here. I don't remember the last time I said that."},
+    "menzoberranzan":{u:"",t:"Menzoberranzan. The city that sold us. Kelemvor keeps a count of everyone who dies here. I'd like to stay off it. Or put someone else on it."},
+    "road-05":{u:"",t:"A lamp lit on a rock in a dead lake, and nobody to light it. Ibrandul, they say. God of the lost. I pray to the god of the dead. We should get along."},
+    "vitrine-grove":{u:"",t:"Something's screaming on a count of four. That's not an animal. That's a signal. Someone built that. Someone wants us closer. Fine. Slowly."},
+    "pool-cave":{u:"",t:"A dry cave behind the falls. No tracks. No lights. Nobody selling anything. First place down here I'd call a fair price."}
+  },
+  "samson":{
+    "velkynvelve":{u:"",t:"Velkynvelve. I prayed for a sign in this place, and the Morninglord sent me a drow with a whip. I have thought about that sign every day since. I still don't like what it meant."},
+    "sloobludop":{u:"",t:"They sing to the water as if it hears them. Lathander forgive me, it's closer to worship than half the temples I've stood in. Mind your step. Mind your tongue."},
+    "gracklstugh":{u:"",t:"Gracklstugh. Every forge is a sunrise that never finishes. That's an omen if I ever saw one. Chains on every third wall. Judge them later. Pray now."},
+    "neverlight-grove":{u:"",t:"Mushrooms, singing. A grove in a place with no dawn. I don't know whose hymn that is, but it isn't mine. Tread carefully. Something here is listening back."},
+    "blingdenstone":{u:"",t:"Lamps lit. Doors swept. Children's voices behind a wall. The Morninglord's hand reaches even here. I'll thank him for it. And I'll still check the locks."},
+    "menzoberranzan":{u:"",t:"Menzoberranzan. The city that sold us at a discount. A thousand lights, and not one of them a sunrise. Eyes down. Hands off your holy symbols. Mine especially."},
+    "road-05":{u:"",t:"A lamp on the water, lit by no one. Ibrandul. A god of the lost, they say. Dead, or forgotten. I don't trust a lamp with no keeper. I'll pray anyway. Someone should."},
+    "vitrine-grove":{u:"",t:"Screaming. Measured. In a rhythm. That's not fear, that's liturgy. Whoever keeps time down there has a congregation. Let's not join it."},
+    "pool-cave":{u:"",t:"A dry cave behind the water, and no one knows we're here. Thank you, Morninglord. I'll take this as the sign I asked for. And I won't ask what it cost."}
+  },
+  "scott":{
+    "velkynvelve":{u:"",t:"Velkynvelve. Last time I was here I had an audience of forty drow and no say in the setlist. Let's not do a second show."},
+    "sloobludop":{u:"",t:"A fish-folk choir, singing flat, to a lake. Oh, I've played worse rooms. Tip your hat, keep your coin, and whatever you do... don't request a song."},
+    "gracklstugh":{u:"",t:"Gracklstugh. The whole city sounds like a drum solo nobody asked for. Duergar don't clap, by the way. They bill you. Keep walking."},
+    "neverlight-grove":{u:"",t:"Now that's... that's a key I've never heard. The mushrooms are singing, friends, and they're in tune. That's the part that worries me."},
+    "blingdenstone":{u:"",t:"Lamps, doors, something that might be bread. Deep gnomes. I'd give a finger for a warm room and a crowd that laughs on the right line. Let's find out what they charge."},
+    "menzoberranzan":{u:"",t:"Menzoberranzan. Loveliest place I've ever been dragged through in chains. Don't look up, don't look rich, and for the love of every god, don't let me sing."},
+    "road-05":{u:"",t:"A lamp on a rock, and no one rowed out to light it. That's either a hymn or a trap, and in my experience it's usually both. Hush, now."},
+    "vitrine-grove":{u:"",t:"Something's screaming in four-four time. Honestly? Decent tempo. Whoever's conducting that, I want a word. From very far away."},
+    "pool-cave":{u:"",t:"A cave behind the falls. Dry. Quiet. No audience. Twenty years I've spent trying to fill a room, and I have never been so glad to find one empty."}
+  }
+};
+const LINE_VOL=.9; let lineAudio=null, lineTimer=null, lineCap=null;
+function sayLine(k,now){
+  const L=(LINES[leader]||{})[k]; if(!L||!L.u||!sfxOn||!unlocked) return;
+  clearTimeout(lineTimer);
+  lineTimer=setTimeout(()=>{
+    if(party!==k) return;
+    if(lineAudio){ try{ lineAudio.pause(); }catch(e){} }
+    const a=new Audio(L.u); a.preload="auto"; a.volume=LINE_VOL; lineAudio=a;
+    const m=decks[deck], restore=()=>{ if(!m.paused) fade(m,ducked?VOL*.8:VOL,900); if(lineCap){ lineCap.remove(); lineCap=null; } };
+    if(!m.paused) fade(m,VOL*.45,500);
+    a.onended=restore; a.onerror=restore;
+    a.play().then(()=>{
+      lineCap=document.createElement("div"); lineCap.className="meta say"; lineCap.innerHTML='<b>'+LEADERS[leader]+'</b> — \u201c'+L.t+'\u201d'; document.getElementById("card").appendChild(lineCap);
+    }).catch(restore);
+    (window.__sfxLog=window.__sfxLog||[]).push("line:"+k);
+  }, now?0:1100);
+}
+function arrive(){
+  const w=walking; walking=null; const firstVisit=!visited.has(w.dest); party=w.dest; playTrack(trackFor(party,false));
+  arrivals[party]=(arrivals[party]||0)+1; visited.add(party); marched+=w.miles; hop=1;
+  // an ordinary arrival is silent now; only the first sight of a great place sounds
+  marchStop(); duckMusic(false); setBed(bedFor(party,false));
+  if(firstVisit && N.get(party).t==="location") sfx("discover");
+  if(firstVisit && LINES[leader][party]) sayLine(party);
+  if(!w.atGate && PLATES[party] && cineOn && (!GAME||gameLast)) setTimeout(()=>startCinematic(party),420);
+  for(const L of w.legs){ knownE.add(eKey(L.e)); revealAround(L.to); }
+  setSheet("idle"); refresh(); showCard(party);
+  const n=N.get(party); document.getElementById("where").textContent = n.t==="location"&&nameShown(n) ? n.n : "On the road";
+  document.getElementById("miles").textContent=marched.toFixed(1)+" mi";
+  document.getElementById("days").textContent="day "+(1+Math.floor(marched/PACE));
+  if(GAME){ gameWhere(); post({type:"aop:map-reached",k:party}); return; }
+  if(w.atGate){ queued=null; showToll(); return; }
+  if(queued){ const q=queued; queued=null; if(q.dir) step(q.dir); else goTo(q.k); }
+}
+function step(d){
+  if(GAME&&(!gameLead||walking)) return;
+  if(walking){ queued={dir:d}; return; }
+  // screen-space directions, so "up" is always up on the screen whatever the camera is doing
+  const here=stops.get(party).position.clone().project(camera); let best=null, bestE=null, bs=.35;
+  for(const e of E){ if(!walkable(e,true)) continue; const o= e.a===party?e.b: (e.b===party&&!e.oneWay)?e.a : null; if(!o) continue;
+    const there=stops.get(o).position.clone().project(camera); const vx=there.x-here.x, vy=-(there.y-here.y), L=Math.hypot(vx,vy)||1, s=(vx*d[0]+vy*d[1])/L;
+    if(s>bs){ bs=s; best=o; bestE=e; } }
+  // stepping onto the guarded bridge meets the knight, never a long detour around him
+  if(best && bestE.g && !tollPaid){ showToll(); return; }
+  if(best) goTo(best);
+}
+/* the guarded bridge: a dark knight with eldritch light about him demands a toll. The toll itself is Sam's to set later. */
+function showToll(){
+  card.name.textContent="The guarded bridge";
+  card.meta.innerHTML="A knight in black plate bars the gate, faint eldritch light crawling over his gauntlets. No one crosses until his toll is paid."
+    + (dm ? ' <button class="tollbtn" id="tollBtn">Toll paid · let them cross</button>' : " <i>What he asks is not yet known.</i>");
+  const b=document.getElementById("tollBtn"); if(b) b.onclick=()=>{ tollPaid=true; refresh(); card.meta.innerHTML="The knight steps aside. The bridge is open to you."; };
+}
+/* ---------- the hidden grove: found only by looking for it (Sam 2026-10-11) ----------
+   Standing at the junction below reveals nothing. Someone has to search the forest edge, and the
+   DC is a PROPOSED HOUSE RULE — Sam's to change, like the pool's. Fifi's Perception is +1. */
+const GROVE={dc:15,per:1,from:"road-32",node:"vitrine-grove"};
+let groveTries=0;
+function searchGrove(){
+  if(walking||groveFound||party!==GROVE.from) return; groveTries++;
+  const r=d20(), t=r+GROVE.per;
+  const roll=`<b>${t}</b> <span class="small">(d20 ${r} ${GROVE.per>=0?"+":"−"} ${Math.abs(GROVE.per)}, DC ${GROVE.dc})</span>`;
+  card.name.textContent="The forest edge";
+  if(t>=GROVE.dc){
+    groveFound=true; revealAround(GROVE.from); known.add(GROVE.node); refresh();
+    card.meta.innerHTML=`Perception ${roll} <br><b>Behind the caps, a track climbs to a chamber of black glass — a spore druid grove, and something is tending it.</b>`
+      +' <br><button class="tollbtn" id="goGrove">Take the track up</button>';
+    document.getElementById("goGrove").onclick=()=>goTo(GROVE.node);
+  } else {
+    card.meta.innerHTML=`Perception ${roll} · Mushroom caps and more mushroom caps. <span class="small">Search ${groveTries}.</span>`
+      +' <br><button class="tollbtn" id="searchBtn">Search again</button>';
+    document.getElementById("searchBtn").onclick=searchGrove;
+  }
+}
+/* ---------- the glowing pool: a hidden cave that MAY be found by diving ----------
+   Breath and drowning are SRD 5.1 (Suffocating): hold breath 1 + CON modifier minutes (min 30 s);
+   out of breath, survive CON modifier rounds (min 1), then drop to 0 hp and be dying.
+   The DCs and the snag rule are a PROPOSED HOUSE RULE, not from the book. Sam sets the real numbers.
+   Fifi's modifiers are read from her sheet: Athletics +1 (proficient, STR -1), Perception +1, CON +0. */
+const DIVE={athDC:12,perDC:15,ath:1,per:1,con:0,who:"Fifi"};
+const breathText=()=>{ const m=1+DIVE.con; return m>=1? m+" minute"+(m>1?"s":"") : "30 seconds"; };
+let downed=false, dives=0, forced=[];
+const d20=()=> forced.length? forced.shift() : 1+Math.floor(Math.random()*20);
+function poolCard(k){
+  if(k==="road-09"){
+    if(downed){ card.meta.innerHTML+=' <br><b>'+DIVE.who+' is at 0 hit points and dying at the bottom of the pool.</b> Someone must dive in and pull her out.'; return; }
+    if(fallsOff){ card.meta.innerHTML="The falls have stopped. Where they poured, a dripping cave mouth stands open above the still pool."
+      +' <br><button class="tollbtn" id="diveBtn">Walk in behind the falls</button>'; document.getElementById("diveBtn").onclick=()=>goTo("pool-cave"); return; }
+    card.meta.innerHTML="Cold, still water glowing from somewhere far beneath. Falls feed it from the cliff; the current pulls downward."
+      + (caveFound? " <b>You know where the opening is now</b>, but the current still has to be beaten." : "")
+      + ' <br><button class="tollbtn" id="diveBtn">'+(caveFound?"Dive down to the cave":"Dive into the pool")+'</button>'
+      + ' <span class="small">Breath: '+breathText()+' (CON '+(DIVE.con>=0?"+":"")+DIVE.con+')</span>';
+    document.getElementById("diveBtn").onclick=dive;
+  } else if(k==="pool-cave") caveCard();
+  else if(k===GROVE.from && !groveFound && !walking){
+    card.meta.innerHTML+=' <br><span class="small">Mushroom caps crowd the rock above the junction.</span>'
+      +' <br><button class="tollbtn" id="searchBtn">Search the forest edge</button>';
+    document.getElementById("searchBtn").onclick=searchGrove;
+  } else if(k===GROVE.node && !walking){
+    card.meta.innerHTML="A chamber of black volcanic glass at the forest's west edge, warm from the vent beneath it, and a fungal bed still clean."
+      + (dm? " <i class=\"small\">Ghorra Nul, the gray druid, is the warden here. The rest is in the subquest doc.</i>" : "");
+  }
+}
+/* Inside the cave, as Sam described it (2026-10-10). The lore, the treasure and the study's contents are his to fill in. */
+const CAVE=[
+  ["The drow wizard's study","ancient and abandoned; supplies and arcane books on the shelves","lore to be decided"],
+  ["A scrying pool","a still basin that shows far places","what it shows is the DM's call"],
+  ["The falls' mechanism","shuts the waterfall off from inside so the whole party can walk in",""],
+  ["A portal","carries you along the underground way to Road Marker 14",""],
+  ["Treasure","at the far end of the cave","items still to be chosen from the catalog"]];
+function caveCard(){
+  card.name.textContent="The cave under the pool";
+  card.meta.innerHTML="Air, at last, in a black dripping cave behind the falls."+CAVE.map(([a,b,c])=>`<br>· <b>${a}</b>, ${b}${dm&&c?` <i class="small">(${c})</i>`:""}`).join("")
+    +' <br><button class="tollbtn" id="fallsBtn">'+(fallsOff?"Let the falls run again":"Shut off the falls")+'</button> '
+    +'<button class="tollbtn" id="portalBtn">Step through the portal</button> '
+    +'<button class="tollbtn" id="scryBtn">Look into the scrying pool</button> '
+    +'<button class="tollbtn" id="upBtn">'+(fallsOff?"Walk back out":"Swim back up")+'</button>';
+  document.getElementById("fallsBtn").onclick=()=>{ fallsOff=!fallsOff; refresh(); caveCard(); };
+  document.getElementById("portalBtn").onclick=()=>goTo("road-14");
+  document.getElementById("scryBtn").onclick=()=>{ card.meta.innerHTML="The water stills, and something far away swims up into it…"+(dm?" <i>You decide what she sees.</i>":"")+' <br><button class="tollbtn" id="backBtn">Look away</button>'; document.getElementById("backBtn").onclick=caveCard; };
+  document.getElementById("upBtn").onclick=()=>goTo("road-09");
+}
+const fmt=(name,r,mod,dc)=>`${name} <b>${r+mod}</b> <span class="small">(d20 ${r} ${mod>=0?"+":"−"} ${Math.abs(mod)}, DC ${dc})</span>`;
+function dive(){
+  if(walking||downed||party!=="road-09") return; dives++;
+  const a=d20(), at=a+DIVE.ath; const log=[`<b>Dive ${dives}.</b> `+fmt("Athletics",a,DIVE.ath,DIVE.athDC)];
+  hop=1;
+  if(at>=DIVE.athDC && caveFound){ swimOk=true; goTo("pool-cave"); card.name.textContent="A glowing pool"; card.meta.innerHTML=log.join(" ")+" She rides the current down and through the gap in the weed."; return; }
+  if(at>=DIVE.athDC){
+    const p=d20(), pt=p+DIVE.per; log.push("She fights down against the current to the glowing floor. "+fmt("Perception",p,DIVE.per,DIVE.perDC));
+    if(pt>=DIVE.perDC){ caveFound=true; knownE.add("pool-cave|road-09"); revealAround("road-09"); known.add("pool-cave");
+      log.push("<b>Behind a curtain of weed, the rock opens into a passage, and there is air beyond it.</b>"); refresh();
+      log.push(' <br><button class="tollbtn" id="diveBtn">Swim through to the cave</button>');
+      card.name.textContent="A glowing pool"; card.meta.innerHTML=log.join(" "); document.getElementById("diveBtn").onclick=()=>{ swimOk=true; goTo("pool-cave"); }; return; }
+    log.push("Nothing but stone and light. She surfaces with burning lungs.");
+  } else if(at>DIVE.athDC-5){
+    log.push("The current shoves her back before she reaches the bottom. She surfaces, coughing.");
+  } else {
+    // failed by 5 or more: snagged in the weed until her breath is gone (SRD: then CON-modifier rounds, minimum 1)
+    const rounds=Math.max(1,DIVE.con), b=d20(), bt=b+DIVE.ath;
+    log.push(`The weed wraps her ankle and holds. Her ${breathText()} of breath runs out; she has ${rounds} round${rounds>1?"s":""} before she drowns. `+fmt("Athletics to tear free",b,DIVE.ath,DIVE.athDC));
+    if(bt>=DIVE.athDC) log.push("She rips loose and claws to the surface, half-drowned.");
+    else { downed=true; log.push("<b>She drops to 0 hit points and is dying.</b> Someone has to go in after her."); }
+  }
+  card.name.textContent="A glowing pool"; card.meta.innerHTML=log.join(" ")+(downed?"":' <br><button class="tollbtn" id="diveBtn">Dive again</button>');
+  const btn=document.getElementById("diveBtn"); if(btn) btn.onclick=dive;
+}
+/* ---------- music: the game's own tracks, chosen by the game's own rules (components/dashboard/dynamic-music.tsx) ----------
+   Velkynvelve -> Spider's Den; groves -> Forest Night; temples/shrines -> Defiled Temple; caves, the Darklake and the open road
+   -> the Underdark pool's Cavern of Lost Souls; anywhere the game has no pool for -> its neutral default, Dungeon I.
+   Files live in this page's own storage; volume 0.45 like the dashboard player; crossfade on change. */
+const MUSIC={"spiders-den": {"n": "Spider's Den", "u": "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/242_Spiders_Den-jhj2HhGVWhAxraKZoDDR7uidVZlPlw.mp3"}, "cavern-of-lost-souls": {"n": "Cavern of Lost Souls", "u": "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/99_Cavern_of_Lost_Souls-THx80DYk2x7Bbhv3h7KPAeIxLPywTO.mp3"}, "forest-night": {"n": "Forest Night", "u": "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/69_Forest_Night-yoTFITQmWIo10M19aihusJXdwHWoAz.mp3"}, "defiled-temple": {"n": "Defiled Temple", "u": "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/236_Defiled_Temple-p4Q6B5PT3BW3VNy0Enip9G6vGukwGe.mp3"}, "dungeon-i": {"n": "Dungeon I", "u": "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/65_Dungeon_I-WsSVzmxTgz560Sm8gohVCOHBINDeoZ.mp3"}};
+const POOLS=[[/velkynvelve|outpost|drow|spider/i,"spiders-den"],[/tunnel|underdark|cavern|\bcave\b|abyss|wastes|deep|darklake/i,"cavern-of-lost-souls"],[/forest|wood|grove|fey/i,"forest-night"],[/temple|shrine|altar/i,"defiled-temple"]];
+/* Sam 2026-10-11: "Entering each location should cue dark, horror-like music or playful fishing village / bizarre music (myconid area)."
+   Nine ElevenLabs themes (eleven_music_v2_5, one take each, loop-crossfaded 1.5 s, -15 LUFS), one per named place; the road keeps the library track. */
+function trackFor(k,travelling){ if(travelling) return "cavern-of-lost-souls"; if(MUSIC["theme-"+k]) return "theme-"+k; const n=N.get(k); if(!n) return "dungeon-i";
+  if(n.t!=="location") return k==="pool-cave"? "cavern-of-lost-souls" : "cavern-of-lost-souls"; // road stops are out on the Underdark roads
+  for(const [re,id] of POOLS) if(re.test(n.n)) return id; return "dungeon-i"; }
+const VOL=.45; let musicOn=false, curTrack=null; const decks=[new Audio(),new Audio()]; let deck=0;
+for(const a of decks){ a.loop=true; a.preload="none"; a.volume=0; }
+try{ musicOn=localStorage.getItem("wm_music")!=="0"; }catch(e){ musicOn=true; }
+const musicBtn=document.getElementById("musicBtn"), trackEl=document.getElementById("trackName");
+function fade(a,to,ms,done){ const from=a.volume, t0=performance.now(); (function f(){ const u=Math.min(1,(performance.now()-t0)/ms); a.volume=from+(to-from)*u; if(u<1) requestAnimationFrame(f); else if(done) done(); })(); }
+let unlocked=false;
+function playTrack(id){
+  if(!musicOn||!unlocked){ curTrack=id; showTrack(); return; }
+  if(id===curTrack && !decks[deck].paused) return;
+  const old=decks[deck]; deck=1-deck; const a=decks[deck]; curTrack=id;
+  a.src=MUSIC[id].u; a.currentTime=0; a.volume=0; a.play().then(()=>fade(a,ducked?VOL*.8:VOL,2200)).catch(()=>{});
+  fade(old,0,2200,()=>old.pause()); showTrack();
+}
+// the march and the music share the same air: drop the music a fifth while the party is moving
+let ducked=false;
+function duckMusic(on){ if(ducked===on) return; ducked=on; const a=decks[deck]; if(!a||a.paused) return;
+  const from=a.volume, to=on? VOL*.8 : VOL, t0=Date.now();
+  const iv=setInterval(()=>{ const u=Math.min(1,(Date.now()-t0)/500); a.volume=Math.max(0,Math.min(1,from+(to-from)*u)); if(u>=1) clearInterval(iv); },40); }
+function showTrack(){ musicBtn.textContent= musicOn? "♪ Music on" : "♪ Music off"; musicBtn.setAttribute("aria-pressed",String(musicOn)); trackEl.textContent= musicOn&&curTrack? MUSIC[curTrack].n+(unlocked?"":" · click the map to start") : ""; }
+function setMusic(on){ musicOn=on; try{ localStorage.setItem("wm_music",on?"1":"0"); }catch(e){}
+  if(on){ unlocked=true; const id=curTrack||trackFor(party,!!walking); curTrack=null; playTrack(id); } else { for(const a of decks) fade(a,0,600,()=>a.pause()); showTrack(); } }
+musicBtn.onclick=()=>setMusic(!musicOn);
+// browsers only allow sound after the viewer touches the page: start on the first click or key press
+function unlock(){ if(unlocked) return; unlocked=true; if(musicOn){ const id=curTrack||trackFor(party,false); curTrack=null; playTrack(id); } else showTrack();
+  setBed(bedFor(party,!!walking)); }
+/* ---------- travel sound (Sam, 2026-10-11: movement is a small army marching; no arrival sound) ----------
+   march  — ElevenLabs loop M3, boots on stone at ~105 steps a minute, crossfaded into a seamless loop.
+            It runs for as long as the party is moving and fades out when they stop.
+   discover — Sam's C1, kept for the first sight of a great place. Nothing plays on an ordinary arrival.
+   Both come from the artifact's own file store, with a copy embedded in the page in case that fetch fails. */
+const SFX_SRC={"march": {"url": "sfx/march.mp3", "data": "sfx/march.mp3"}, "discover": {"url": "sfx/discover.mp3", "data": "sfx/discover.mp3"}};
+let sfxOn=true; try{ sfxOn=localStorage.getItem("wm_sfx")!=="0"; }catch(e){}
+const MARCH_VOL=.5, DISCOVER_VOL=.85;
+function mkAudio(src,loop){ const a=new Audio(); a.preload="auto"; a.loop=!!loop; a.src=src.url;
+  // the stored file could not be fetched: fall back to the copy in the page, and resume if it was meant to be sounding
+  a.onerror=()=>{ if(a.src!==src.data){ const wanted=!a.paused||a.volume>0; a.src=src.data; if(wanted) a.play().catch(()=>{}); } };
+  return a; }
+const march=mkAudio(SFX_SRC.march,true); march.volume=0;
+const discoverPool={i:0,a:[0,1].map(()=>mkAudio(SFX_SRC.discover,false))};
+let marchFade=null;
+// A plain timer, not an animation frame: the frame-driven version stalled after its first step
+// when the stop came from inside the render loop, and the march never actually faded out.
+function rampMarch(to,ms){ (window.__rampLog=window.__rampLog||[]).push([to,+march.volume.toFixed(2)]);
+  if(marchFade) clearInterval(marchFade);
+  const from=march.volume, t0=Date.now(), stepMs=25;
+  marchFade=setInterval(()=>{ const u=Math.min(1,(Date.now()-t0)/ms);
+    march.volume=Math.max(0,Math.min(1,from+(to-from)*u));
+    if(u>=1){ clearInterval(marchFade); marchFade=null; if(to===0) march.pause(); } },stepMs);
+}
+function marchStart(){ (window.__sfxLog=window.__sfxLog||[]).push("march:start"); if(!sfxOn||!unlocked) return;
+  if(march.paused){ march.currentTime=0; march.play().catch(()=>{}); } rampMarch(MARCH_VOL,450); }
+function marchStop(){ (window.__sfxLog=window.__sfxLog||[]).push("march:stop"); if(march.paused) return; rampMarch(0,600); }
+function sfx(name){ (window.__sfxLog=window.__sfxLog||[]).push(name); if(!sfxOn||!unlocked) return;
+  if(name!=="discover") return;                        // arrivals are silent now; only a first discovery sounds
+  const a=discoverPool.a[discoverPool.i]; discoverPool.i=(discoverPool.i+1)%discoverPool.a.length;
+  try{ a.currentTime=0; }catch(e){} a.volume=DISCOVER_VOL; a.play().catch(()=>{}); }
+/* ---------- place beds: a quiet loop of the room the party is standing in ----------
+   Six of them, each about 12 s and crossfaded at the wrap. They are deliberately far under the
+   music (0.25 against 0.45) — the point is that you stop hearing them and only notice the change. */
+const BED_SRC={"water": {"url": "sfx/water.mp3", "data": "sfx/water.mp3"}, "tunnel": {"url": "sfx/tunnel.mp3", "data": "sfx/tunnel.mp3"}, "forge": {"url": "sfx/forge.mp3", "data": "sfx/forge.mp3"}, "grove": {"url": "sfx/grove.mp3", "data": "sfx/grove.mp3"}, "falls": {"url": "sfx/falls.mp3", "data": "sfx/falls.mp3"}, "city": {"url": "sfx/city.mp3", "data": "sfx/city.mp3"}};
+const BED_VOL=.25;
+const bedDeck=[0,1].map(()=>{ const a=new Audio(); a.preload="none"; a.loop=true; a.volume=0; return a; });
+let bedI=0, bedNow=null, bedFades=[null,null];
+function bedFor(k,travelling){
+  if(travelling) return travelSail? "water" : "tunnel";       // on the road, or out on the water
+  if(k==="velkynvelve"||k==="road-09"||k==="pool-cave") return "falls";
+  if(k==="gracklstugh") return "forge";
+  if(k==="neverlight-grove"||k==="vitrine-grove") return "grove";
+  if(k==="menzoberranzan") return "city";
+  if(k==="sloobludop") return "water";                              // a fishing town on the Darklake shore
+  if(E.some(e=>e.m==="sail"&&(e.a===k||e.b===k))) return "water";   // anywhere on the Darklake shore
+  return "tunnel";
+}
+function fadeTo(a,to,ms,idx){ if(bedFades[idx]) clearInterval(bedFades[idx]);
+  const from=a.volume, t0=Date.now();
+  bedFades[idx]=setInterval(()=>{ const u=Math.min(1,(Date.now()-t0)/ms); a.volume=Math.max(0,Math.min(1,from+(to-from)*u));
+    if(u>=1){ clearInterval(bedFades[idx]); bedFades[idx]=null; if(to===0) a.pause(); } },40); }
+function setBed(name){
+  if(!sfxOn||!unlocked){ bedNow=name; return; }
+  if(name===bedNow && !bedDeck[bedI].paused) return;
+  const old=bedDeck[bedI]; bedI=1-bedI; const a=bedDeck[bedI]; bedNow=name;
+  const src=BED_SRC[name]; if(!src) return;
+  if(a.src!==src.url && a.src!==src.data){ a.src=src.url;
+    a.onerror=()=>{ if(a.src!==src.data){ a.src=src.data; if(bedNow===name && sfxOn) a.play().catch(()=>{}); } }; }
+  a.volume=0; a.play().catch(()=>{}); fadeTo(a,BED_VOL,1500,bedI);
+  if(!old.paused) fadeTo(old,0,1500,1-bedI);
+}
+function bedsStop(){ bedDeck.forEach((a,i)=>{ if(!a.paused) fadeTo(a,0,500,i); }); }
+/* who leads: picks whose voice speaks on arrival. Changing it while standing somewhere with a line says that line at once (so every line can be auditioned). */
+function showLeader(){ document.querySelectorAll("#leadRow .tg").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.lead===leader))); }
+document.querySelectorAll("#leadRow .tg").forEach(b=>b.onclick=()=>{ leader=b.dataset.lead; try{ localStorage.setItem("wm_leader",leader); }catch(e){} showLeader(); unlocked=true; if(!walking&&LINES[leader][party]) sayLine(party,true); });
+showLeader();
+const sfxBtn=document.getElementById("sfxBtn");
+function showSfx(){ sfxBtn.textContent= sfxOn? "🔔 Sound on" : "🔕 Sound off"; sfxBtn.setAttribute("aria-pressed",String(sfxOn)); }
+sfxBtn.onclick=()=>{ sfxOn=!sfxOn; try{ localStorage.setItem("wm_sfx",sfxOn?"1":"0"); }catch(e){} showSfx(); if(!sfxOn){ marchStop(); bedsStop(); } else { unlocked=true; setBed(bedFor(party,!!walking)); if(walking) marchStart(); } }; showSfx();
+addEventListener("pointerdown",unlock,{once:false}); addEventListener("keydown",e=>{ if(e.code==="KeyM"){ setMusic(!musicOn); return; } unlock(); });
+curTrack=trackFor(party,false); showTrack();
+addEventListener("keydown",e=>{
+  const dirs={ArrowUp:[0,-1],KeyW:[0,-1],ArrowDown:[0,1],KeyS:[0,1],ArrowLeft:[-1,0],KeyA:[-1,0],ArrowRight:[1,0],KeyD:[1,0]};
+  const d=dirs[e.code]; if(!d) return; e.preventDefault(); if(cineK||entK) return; if(e.repeat&&walking) return; step(d);
+});
+
+/* ---------- arrival cinematic and the entrance (Sam, 2026-10-11) ----------
+   "whenever we enter a major location we should break into a cinematic, and then enter a large painted biome plate that is
+   representative of the entrance to that location … a high def 4K background in the distance showing us the overall surroundings."
+   The cinematic is a slow push-in on the plate with a title card; when a real clip exists (`cinematic_clips`), PLATES[k].clip plays instead. */
+let cineOn=true; try{ cineOn=localStorage.getItem("wm_cine")!=="0"; }catch(e){}
+const cineBtn=document.getElementById("cineBtn");
+function showCine(){ cineBtn.textContent= cineOn? "🎬 Cinematics on" : "🎬 Cinematics off"; cineBtn.setAttribute("aria-pressed",String(cineOn)); }
+cineBtn.onclick=()=>{ cineOn=!cineOn; try{ localStorage.setItem("wm_cine",cineOn?"1":"0"); }catch(e){} showCine(); }; showCine();
+const cineEl=document.getElementById("cine"), entEl=document.getElementById("entrance");
+let cineK=null, cineTimer=null, entK=null, entRAF=null;
+function startCinematic(k){
+  const P=PLATES[k]; if(!P||cineK) return; cineK=k; clearTimeout(cineTimer);
+  document.getElementById("cineTitle").textContent=placeName(N.get(k));
+  document.getElementById("cineKicker").textContent= visited.has(k)&&arrivals[k]>1 ? "You return to" : "You arrive at";
+  const plate=document.getElementById("cinePlate"); cineEl.querySelectorAll("video").forEach(x=>x.remove());
+  const clip=P.clip||(reduceMotion?null:P.loop);
+  if(clip){ plate.style.backgroundImage=`url("${P.url}")`; const vd=document.createElement("video"); vd.src=clip; vd.poster=P.url; vd.muted=true; vd.playsInline=true; vd.autoplay=true; vd.style.opacity="0"; vd.style.transition="opacity .8s ease"; vd.onplaying=()=>{ vd.style.opacity="1"; }; cineEl.prepend(vd); vd.onended=()=>openEntrance(k); vd.onerror=()=>{ clearTimeout(cineTimer); cineTimer=setTimeout(()=>openEntrance(k),8000); };   // clip won't decode here: the painted push-in carries the cinematic as before
+    vd.play().catch(()=>{}); cineTimer=setTimeout(()=>openEntrance(k),P.clip?30000:9500); }   // an ambient loop longer than 9 s is cut at the usual cinematic length
+  else { plate.style.backgroundImage=`url("${P.url}")`;
+    // the push-in starts on a decoded frame, never on a black one: wait for the 4K plate (2.5 s at most), then roll
+    const img=P._pre||(P._pre=new Image()); if(!img.src) img.src=P.url; let began=false;
+    const begin=()=>{ if(began||cineK!==k) return; began=true; cineEl.classList.add("play"); cineTimer=setTimeout(()=>openEntrance(k),reduceMotion?2200:7400); };
+    (img.decode?img.decode():Promise.resolve()).catch(()=>{}).then(begin); setTimeout(begin,2500); }
+  cineEl.hidden=false; cineEl.classList.remove("play"); void cineEl.offsetWidth; if(clip) cineEl.classList.add("play");
+  (window.__sfxLog=window.__sfxLog||[]).push("cine:"+k);
+}
+document.getElementById("cineSkip").onclick=()=>{ if(cineK) openEntrance(cineK); };
+cineEl.onclick=e=>{ if(e.target.id!=="cineSkip"&&cineK) openEntrance(cineK); };
+const arrivals={};
+function openEntrance(k){
+  clearTimeout(cineTimer); cineK=null; cineEl.hidden=true; cineEl.classList.remove("play"); cineEl.querySelectorAll("video").forEach(x=>x.remove());
+  const P=PLATES[k]; if(!P) return; entK=k;
+  // never a black screen: the plate goes up only once it is decoded (preloaded on setting off, see goTo), and fades in
+  entEl.classList.remove("lit");
+  const img=P._pre||(P._pre=new Image()); if(!img.src) img.src=P.url;
+  const lit=()=>{ if(entK!==k) return; document.getElementById("entFar").style.backgroundImage=document.getElementById("entNear").style.backgroundImage=`url("${P.url}")`; requestAnimationFrame(()=>entEl.classList.add("lit")); };
+  (img.decode?img.decode():Promise.resolve()).catch(()=>{}).then(lit); setTimeout(lit,3000);
+  document.getElementById("entTitle").textContent=placeName(N.get(k));
+  document.getElementById("entSub").textContent= P.sub || "The threshold. What lies beyond is not built yet.";
+  // the place is alive (Sam 2026-10-12): a 1080p loop of the same painting plays over the still once it can, and the near strip steps aside for it
+  const vid=document.getElementById("entVid"); entEl.classList.remove("live"); vid.pause();
+  if(P.loop && !reduceMotion){ vid.poster=P.url; if(vid.getAttribute("src")!==P.loop) vid.src=P.loop; vid.currentTime=0;
+    const live=()=>{ if(entK!==k) return; vid.play().then(()=>entEl.classList.add("live")).catch(()=>{}); };
+    if(vid.readyState>=3) live(); else vid.oncanplay=live; }
+  else { vid.removeAttribute("src"); vid.load(); }
+  entEl.hidden=false; entPar.x=entPar.y=0; drawEntHero(0);
+  (window.__sfxLog=window.__sfxLog||[]).push("entrance:"+k);
+}
+function closeEntrance(){ entK=null; entEl.hidden=true; document.getElementById("entVid").pause(); entEl.classList.remove("live"); if(entRAF) cancelAnimationFrame(entRAF); entRAF=null; showCard(party); }
+document.getElementById("entBack").onclick=closeEntrance;
+document.getElementById("entEnter").onclick=()=>{ if(GAME&&(GS.enterable||[]).includes(entK)){ post({type:"aop:map-enter",k:entK}); return; } const s=document.getElementById("entSub"); s.textContent="Not built yet — the inside of "+placeName(N.get(entK))+" is still to come."; };
+addEventListener("keydown",e=>{ if(e.code==="Escape"){ if(cineK) openEntrance(cineK); else if(entK) closeEntrance(); } if(e.code==="Enter"&&cineK) openEntrance(cineK); });
+/* parallax: the far plate drifts a little with the pointer, the near ground a little more */
+const entPar={x:0,y:0,tx:0,ty:0};
+addEventListener("pointermove",e=>{ if(!entK) return; entPar.tx=(e.clientX/innerWidth-.5)*2; entPar.ty=(e.clientY/innerHeight-.5)*2; });
+/* the party at the threshold: Fifi's idle sheet drawn on a canvas, pixel-crisp */
+const entCv=document.getElementById("entHero"), entCtx=entCv.getContext("2d"); const idleImg=new Image(); idleImg.src=IDLE; let entIdleFrames=4;
+let entT0=null;
+function drawEntHero(ts){
+  if(!entK) return; if(entT0==null) entT0=ts; const t=(ts-entT0)/1000;
+  const w=innerWidth, h=innerHeight; if(entCv.width!==w||entCv.height!==h){ entCv.width=w; entCv.height=h; }
+  entPar.x+=(entPar.tx-entPar.x)*.06; entPar.y+=(entPar.ty-entPar.y)*.06;
+  if(!reduceMotion){ document.getElementById("entFar").style.transform=document.getElementById("entVid").style.transform=`translate(${-entPar.x*1.2}%,${-entPar.y*.8}%)`; document.getElementById("entNear").style.transform=`scale(1.04) translate(${-entPar.x*2.6}%,${-entPar.y*1.6}%)`; }
+  entCtx.clearRect(0,0,w,h); entCtx.imageSmoothingEnabled=false;
+  if(idleImg.complete&&idleImg.naturalWidth){ const fw=idleImg.naturalWidth/entIdleFrames, fh=idleImg.naturalHeight/8, f=Math.floor(t*5)%entIdleFrames, row=4; // row 4 = facing north, into the place
+    const P=PLATES[entK]||{}, sx=(P.spot?P.spot[0]:.5)*w, sy=(P.spot?P.spot[1]:.90)*h, scale=Math.max(2,Math.round(h*.13/fh));
+    const dw=fw*scale, dh=fh*scale; const px=-entPar.x*w*.026, py=-entPar.y*h*.016;
+    entCtx.globalAlpha=.45; entCtx.fillStyle="#000"; entCtx.beginPath(); entCtx.ellipse(sx+px,sy+py,dw*.28,dh*.08,0,0,7); entCtx.fill(); entCtx.globalAlpha=1;
+    entCtx.drawImage(idleImg,f*fw,row*fh,fw,fh,Math.round(sx+px-dw/2),Math.round(sy+py-dh),dw,dh); }
+  entRAF=requestAnimationFrame(drawEntHero);
+}
+
+/* toggles */
+const tgP=document.getElementById("tgPlayer"), tgD=document.getElementById("tgDM");
+const boatBtns={none:document.getElementById("bNone"),duergar:document.getElementById("bDuergar"),drow:document.getElementById("bDrow")};
+function chooseBoat(k){ boatKind=k==="none"?null:k; boat=!!boatKind; for(const [kk,b] of Object.entries(boatBtns)) b.setAttribute("aria-pressed",String(kk===k));
+  if(boat) for(const n of [...known]) revealAround(n); refresh(); showCard(party); }
+for(const [k,b] of Object.entries(boatBtns)) b.onclick=()=>{ if(!walking) chooseBoat(k); };
+tgP.onclick=()=>{ dm=false; tgP.setAttribute("aria-pressed","true"); tgD.setAttribute("aria-pressed","false"); refresh(); showCard(party); };
+tgD.onclick=()=>{ dm=true; tgD.setAttribute("aria-pressed","true"); tgP.setAttribute("aria-pressed","false"); refresh(); showCard(party); };
+refresh(); showCard(party);
+
+/* ---------- loop ---------- */
+const clock=new THREE.Clock(); const v=new THREE.Vector3();
+const ease=x=>x<.5?2*x*x:1-Math.pow(-2*x+2,2)/2;
+function tick(){
+  requestAnimationFrame(tick);
+  const dt=Math.min(.1,clock.getDelta()), t=clock.elapsedTime;
+  fogMat.uniforms.t.value=t; beamMat.uniforms.t.value=t; if(!reduceMotion) fxU.fxT.value=t;
+
+  let aboard=false, jump=0;
+  if(walking){
+    const S=walking.plan[walking.i]; walking.t=Math.min(1,walking.t+dt/S.dur);
+    if(S.kind==="portal"){
+      // she steps into violet light, a mote of it runs the underground way, and she steps out at the far end
+      const u=ease(walking.t), p=S.curve.getPointAt(u); heroPos.copy(p); setSheet("idle");
+      heroMat.opacity= u<.15? 1-u/.15 : u>.85? (u-.85)/.15 : 0; wisp.visible=true; wisp.position.set(p.x,.35,p.z); wisp.scale.setScalar(1+.25*Math.sin(t*12));
+    } else if(S.kind==="dive"){
+      // under the water and out the other side: she sinks, fades, and comes up in the cave
+      const u=ease(walking.t), p=S.curve.getPointAt(u); heroPos.copy(p); jump=-Math.sin(u*Math.PI)*.35; heroMat.opacity=1-Math.sin(u*Math.PI)*.9; setSheet("idle");
+    } else if(S.kind==="walk"||S.kind==="sail"){
+      const u=ease(walking.t), p=S.curve.getPointAt(u), ahead=S.curve.getPointAt(Math.min(1,u+.02));
+      heroPos.copy(p); const dx=ahead.x-p.x, dz=ahead.z-p.z;
+      if(Math.hypot(dx,dz)>1e-4){ heroRow=rowFor(dx,dz); if(S.kind==="sail") setBoatHeading(dx,dz); }
+      if(S.kind==="sail"){ aboard=true; boatSprite.visible=true; boatSprite.position.set(p.x,.02,p.z); wake.position.set(p.x,.04,p.z); wake.material.opacity=.35+.15*Math.sin(t*6); }
+    } else {
+      // board: hop from the shore onto the waiting deck; land: hop from the deck back to the shore
+      const start=S.curve.getPointAt(S.kind==="board"?0:1), deck=S.curve.getPointAt(S.kind==="board"?.04:.96);
+      const a=S.kind==="board"?start:deck, b=S.kind==="board"?deck:start, u=ease(walking.t);
+      heroPos.copy(a).lerp(b,u); jump=Math.sin(u*Math.PI)*.38; aboard=S.kind==="board"?u>.5:u<.5;
+      boatSprite.visible=true; boatSprite.position.set(deck.x,.02,deck.z);
+      const dir=S.curve.getTangentAt(S.kind==="board"?.02:.98); setBoatHeading(dir.x,dir.z);
+      setSheet("idle");
+    }
+    cam.look.multiplyScalar(Math.max(0,1-dt*3)); // travelling re-centres the view
+    if(walking.t>=1){ walking.i++; walking.t=0; const n=walking.plan[walking.i];
+      heroMat.opacity=1; wisp.visible=false; if(!n) arrive(); else setSheet(n.kind==="walk"?"walk":"idle"); }
+  } else wake.material.opacity=0;
+  hop=Math.max(0,hop-dt*4);
+  const bounce=Math.sin(hop*Math.PI)*.12;
+  let deckX=0, deckLift=0;
+  if(aboard && boatKind){ const o=DECK_OFF[boatKind][heroRow]; deckX=o[0]*2.5; deckLift=.05+o[1]*2.5; } hero.renderOrder= aboard? 6 : 0; heroMat.depthTest=!aboard; hero.scale.setScalar((aboard?.82:1)*heroK); shadow.visible=!aboard;
+  hero.position.set(heroPos.x+deckX,heroPos.y+.02+bounce+deckLift+jump,heroPos.z); shadow.position.set(heroPos.x,.05,heroPos.z); torch.position.set(heroPos.x,.9,heroPos.z);
+  frameSprite(dt);
+  const here=stops.get(party); if(here) here.userData.ring.rotation.z+=dt*.9;
+  const k=1-Math.exp(-dt*6);
+  // the zone: the nearest known great place within reach of the party
+  { let best=null, bd=ZONE; for(const kk of Object.keys(PLATES)){ if(!stops.has(kk)||!visibleNode(kk)) continue; const d=stops.get(kk).position.distanceTo(heroPos); if(d<bd){ bd=d; best=kk; } }
+    if(best!==zone){ if(best&&!zone&&!overview){ zoneSaved=cam.goalDist; cam.goalDist=Math.min(cam.goalDist,ZOOM_DIST); }
+      else if(!best&&zone){ if(zoneSaved!=null&&Math.abs(cam.goalDist-ZOOM_DIST)<.01) cam.goalDist=zoneSaved; zoneSaved=null; }
+      zone=best; if(zone&&PLATES[zone]&&!PLATES[zone]._pre){ PLATES[zone]._pre=new Image(); PLATES[zone]._pre.src=PLATES[zone].url; } } }   // coming close preloads the plate, so the cinematic opens on a painted frame
+  zoneT=THREE.MathUtils.clamp(zoneT+(zone?dt/1.1:-dt/.8),0,1); const pop=1+(POP-1)*ease(zoneT);
+  for(const [kk,m] of cuts){ const on=kk===zone&&zoneT>0; m.visible=on||(zoneT>0&&m.scale.x>1.001); if(kk===zone) m.scale.setScalar(pop); else if(m.visible) m.scale.setScalar(Math.max(1,m.scale.x-(POP-1)*dt/.8)); if(m.scale.x<=1.001&&kk!==zone) m.visible=false; }
+  if(groveArt){ const s=2.6*(zone==="vitrine-grove"?pop:1); groveArt.scale.set(s,s,1); }
+  cam.dist+=(cam.goalDist-cam.dist)*k;
+  if(overview){ v.set(0,0,0); cam.target.lerp(v,1-Math.exp(-dt*3)); }
+  else if(zone&&stops.has(zone)){ v.copy(heroPos).lerp(stops.get(zone).position,.5*ease(zoneT)); cam.target.lerp(v,1-Math.exp(-dt*4)); } else cam.target.lerp(heroPos,1-Math.exp(-dt*4));
+  { const reach=cam.dist*.42, side=cam.dist*.55;
+    cam.target.z=THREE.MathUtils.clamp(cam.target.z,-H/2+reach,Math.max(-H/2+reach,H/2-cam.dist*.12));
+    cam.target.x=THREE.MathUtils.clamp(cam.target.x,-W/2+side,Math.max(-W/2+side,W/2-side)); }
+  placeCamera(); renderer.render(scene,camera);
+  heroScr=v.copy(heroPos).project(camera); heroScr={x:(heroScr.x*.5+.5)*innerWidth,y:(-heroScr.y*.5+.5)*innerHeight};
+  if(bridgeE && guard.visible){ guard.userData.ward.rotation.z+=dt*1.2; v.copy(guard.position).project(camera);
+    const gx=(v.x*.5+.5)*innerWidth, gy=(-v.y*.5+.5)*innerHeight; guardTag.style.transform=`translate(${gx}px,${gy+16}px) translate(-50%,0)`; guardTag.style.visibility=v.z>1?"hidden":"visible"; }
+  for(const s of SCENERY){ if(s.el.hidden) continue; v.copy(s.p).project(camera); const x=(v.x*.5+.5)*innerWidth, y=(-v.y*.5+.5)*innerHeight;
+    s.el.style.visibility=v.z>1?"hidden":"visible"; s.el.style.transform=`translate(${x}px,${y}px) translate(-50%,-50%)`; }
+  const list=[];
+  for(const [kk,b] of banners){ if(b.hidden) continue; const g=stops.get(kk); v.copy(g.position); v.project(camera);
+    const x=(v.x*.5+.5)*innerWidth, y=(-v.y*.5+.5)*innerHeight, off=v.z>1||x<-100||x>innerWidth+100||y<-60||y>innerHeight+60;
+    b.style.visibility=off?"hidden":"visible"; if(off) continue; b.style.transform=`translate(${x}px,${y+ringPx(g)}px) translate(-50%,0)`;
+    const near=(kk!==party&&Math.hypot(x-heroScr.x,y+ringPx(g)-heroScr.y)<70)||Math.hypot(x-pointer.x,y+ringPx(g)+10-pointer.y)<60; b.classList.toggle("faded",near&&kk!==hovered);
+    b.classList.toggle("here",kk===party); list.push([v.z,b]); }
+  list.sort((a,b)=>b[0]-a[0]).forEach(([,b],i)=>b.style.zIndex=10+i);
+  const show=hovered&&hovered!==party&&N.get(hovered).t!=="location";
+  if(show){ v.copy(stops.get(hovered).position); v.y+=.25; v.project(camera);
+    pip.style.left=(v.x*.5+.5)*innerWidth+"px"; pip.style.top=(-v.y*.5+.5)*innerHeight+"px"; const p=route(party,hovered); pip.textContent=p?p.miles.toFixed(0)+" mi":"no road"; }
+  pip.classList.toggle("on",!!show);
+}
+const pip=document.getElementById("pip");
+let heroScr={x:-999,y:-999}; const pointer={x:-999,y:-999};
+addEventListener("pointermove",e=>{ pointer.x=e.clientX; pointer.y=e.clientY; });
+// pixels from a stop's centre to just below its ring, so the label sits under the place, not on it
+const tmpA=new THREE.Vector3(), tmpB=new THREE.Vector3();
+function ringPx(g){ const r=N.get(g.userData.k).t==="location"?.80:.24; tmpA.copy(g.position).project(camera); tmpB.copy(g.position).add(new THREE.Vector3(0,0,r)).project(camera);
+  return Math.max(14,(tmpA.y-tmpB.y)*.5*innerHeight+6); }
+
+/* ---------- GAME MODE: live state, legs and the leader's sprite ---------- */
+let heroSrc="";
+function setHero(h){ if(!h||!h.walk||!h.idle) return; const key=h.walk.src+"|"+h.idle.src; if(key===heroSrc) return; heroSrc=key;
+  let n=0; const got={};
+  for(const kind of ["walk","idle"]) loader.load(h[kind].src,t=>{ t.colorSpace=THREE.SRGBColorSpace; t.magFilter=t.minFilter=THREE.NearestFilter; t.wrapS=t.wrapT=THREE.RepeatWrapping; got[kind]=t;
+    if(++n<2||heroSrc!==key) return;   // swap both sheets together, never a half-dressed figure
+    for(const kk of ["walk","idle"]){ sheets[kk]=got[kk]; sheetMeta[kk]={frames:h[kk].frames,fps:h[kk].fps}; }
+    heroK=(h.cell||128)/128; heroT=0; heroMat.map=sheets[heroAnim]; heroMat.needsUpdate=true; idleImg.src=h.idle.src; entIdleFrames=h.idle.frames; });
+}
+function gameWhere(){ const n=N.get(party); document.getElementById("where").textContent = n&&n.t==="location"&&nameShown(n) ? n.n : "On the road"; }
+function applyState(s,first){
+  GS=s; gameDM=!!s.dm; gameLead=!!s.lead; document.body.classList.toggle("gm",gameDM); document.body.classList.toggle("lead",gameLead);
+  if(!gameDM&&dm){ dm=false; tgP.setAttribute("aria-pressed","true"); tgD.setAttribute("aria-pressed","false"); }
+  const seen=new Set(); let moved=false;
+  for(const n of s.nodes){ if(!placed(n)) continue; seen.add(n.k); const cur=N.get(n.k);
+    if(!cur){ const o=gameNode(n); N.set(o.k,o); addStop(o); addBanner(o); }
+    else { if(cur.x!==n.x||cur.y!==n.y) moved=true; cur.n=n.n||null; cur.nk=!!n.nk; cur.d=!!n.d; } }
+  if(moved&&!first){ location.reload(); return; }   // the DM moved a stop on the painting: draw it again from scratch
+  known.clear(); for(const n of N.values()) if(n.d&&seen.has(n.k)) known.add(n.k); known.add(party);
+  for(const e of s.edges){ if(e.road!==true||!N.has(e.a)||!N.has(e.b)) continue; const o=gameEdge(e); if(roadMesh.has(eKey(o))) continue; E.push(o); addRoad(o); }
+  const bk=s.boat?"duergar":"none"; if((boatKind||"none")!==bk) chooseBoat(bk);
+  setHero(s.hero); refresh(); gameWhere(); if(!cineK&&!entK) showCard(walking?walking.dest:(hovered||party));
+}
+function gamePlace(k){ if(!N.has(k)||walking) return; party=k; visited.add(k); heroPos.copy(stops.get(k).position).setY(0); setSheet("idle"); known.add(k);
+  playTrack(trackFor(party,false)); setBed(bedFor(party,false)); refresh(); gameWhere(); showCard(party); }
+// One leg of a walk the game has already allowed. A leg with no drawn road still walks, straight, so the token never jumps.
+function gameLeg(a,b,last){
+  if(!N.has(a)||!N.has(b)||walking){ if(N.has(b)&&!walking) gamePlace(b); post({type:"aop:map-reached",k:b}); return; }
+  if(party!==a){ party=a; heroPos.copy(stops.get(a).position).setY(0); }
+  let e=E.find(e=>(e.a===a&&e.b===b)||(e.a===b&&e.b===a));
+  if(!e){ e={a,b,m:"walk",o:0,mi:1,d:false}; e.pts=curvePts(e,40); }
+  gameLast=!!last; gameLegP={legs:[{from:a,to:b,e}],miles:e.mi}; queued=null; goTo(b);
+}
+if(GAME){
+  document.body.classList.add("game");
+  const soon=document.querySelector("#entEnter .soon"); if(soon) soon.remove();
+  applyState(GS,true);
+  addEventListener("message",ev=>{ if(ev.origin!==location.origin||!ev.data) return; const m=ev.data;
+    if(m.type==="aop:map-state") applyState(m,false);
+    else if(m.type==="aop:map-leg") gameLeg(m.a,m.b,m.last);
+    else if(m.type==="aop:map-place") gamePlace(m.k); });
+}
+tick();
+window.__wm={goTo,step,trackFor,sayLine,startCinematic,openEntrance,lines:()=>Object.keys(LINES),leaders:LEADERS,setLeader:(l)=>{leader=l;showLeader();},getLeader:()=>leader,themes:()=>Object.keys(MUSIC).filter(k=>k.startsWith("theme-")),toll:()=>({tollPaid,guardVisible:guard.visible,card:card.meta.textContent}),payToll:()=>{tollPaid=true;refresh();},state:()=>({party,walking:!!walking,known:known.size,queued:!!queued}),
+  audit:()=>{ const drawn=E.filter(e=>roadMesh.get(eKey(e)).visible); const bad=drawn.filter(e=>!(dm||(usable(e)&&reach.has(e.a)&&reach.has(e.b)))); const lanes=drawn.filter(e=>e.m==="sail").length;
+    const rings=[...stops].filter(([k,g])=>g.visible).map(([k])=>k); const strayRings=rings.filter(k=>!dm&&!reach.has(k));
+    const unrouted=[...N.values()].filter(n=>!E.some(e=>e.a===n.k||e.b===n.k)).map(n=>n.n);
+    return {dm,boat,drawn:drawn.length,boatLanes:lanes,notWalkable:bad.length,strayRings:strayRings.length,placesWithNoRoute:unrouted}; },
+  grove:(rolls)=>{ forced=rolls||[]; searchGrove(); return {groveFound,groveTries,visible:stops.get("vitrine-grove").visible,card:card.meta.textContent}; },
+  groveState:()=>({groveFound,visible:stops.get("vitrine-grove").visible,edge:roadMesh.get("road-32|vitrine-grove").visible}),
+  dive:(rolls)=>{ forced=rolls||[]; dive(); return {caveFound,downed,dives,card:card.meta.textContent,caveVisible:stops.get("pool-cave").visible}; },
+  rescue:()=>{ downed=false; showCard(party); }, falls:(on)=>{ fallsOff=on; refresh(); showCard(party); }, cave:()=>({caveFound,fallsOff,portalDrawn:roadMesh.get("pool-cave|road-14").visible,caveVisible:stops.get("pool-cave").visible,edgeDrawn:roadMesh.get("pool-cave|road-09").visible}),
+  chimes:()=>({march:{src:march.src.slice(0,24),ready:march.readyState,paused:march.paused,vol:+march.volume.toFixed(2),loop:march.loop,played:march.played.length>0},
+    discover:{src:discoverPool.a[0].src.slice(0,24),ready:discoverPool.a[0].readyState,played:discoverPool.a.some(x=>x.played.length>0)}}),
+  beds:()=>({now:bedNow,a:bedDeck.map(a=>({src:(a.src||"").slice(0,24),paused:a.paused,vol:+a.volume.toFixed(2)})),ducked}), bedFor,
+  sfxLog:[], music:()=>({sfxOn,musicOn,unlocked,curTrack,src:decks[deck].src,label:trackEl.textContent}), trackFor,
+  zone:()=>({zone,zoneT:+zoneT.toFixed(2),goalDist:+cam.goalDist.toFixed(2),dist:+cam.dist.toFixed(2),cut:zone&&cuts.has(zone)?+cuts.get(zone).scale.x.toFixed(2):null,grove:+groveArt.scale.x.toFixed(2)}),
+  cine:()=>({cineK,entK,cineHidden:cineEl.hidden,entHidden:entEl.hidden,title:document.getElementById("cineTitle").textContent,plate:(document.getElementById("cinePlate").style.backgroundImage||"").slice(0,40)}), skipCine:()=>{ if(cineK) openEntrance(cineK); }, closeEntrance, startCinematic,
+  toggle:(w)=>document.getElementById(w).click(), boat:()=>({boatKind,visible:boatSprite.visible,aboard:hero.scale.x<.9})};
+</script>
+
+
+</body></html>

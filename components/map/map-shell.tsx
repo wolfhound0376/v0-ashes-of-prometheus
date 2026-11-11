@@ -1,22 +1,25 @@
 "use client"
 
-// /map — view switcher between the 2D painted map and the 3D diorama.
-// Both views read the same travel graph; they are two windows on one truth.
+// /map — the travel map. The Map Module (Sam's "Underdark World Map" artifact, 2026-11-10) is the map everyone
+// gets. The older 2D painted map and the 3D diorama stay one click away for the DM only, until the Map Module
+// has been played through. All three read the same travel graph; they are windows on one truth.
 
 import { useEffect, useState } from "react"
 import { StageLink } from "@/components/stage/stage-provider"
 import UnderdarkMap from "./underdark-map"
 import UnderdarkMap3D from "./underdark-map-3d"
+import UnderdarkMapModule from "./underdark-map-module"
 import { clearDmKey, hasDmKey, onDmKeyChange, setDmKey } from "@/lib/dm-key"
 import { parseWalkHandoff, type WalkArrival } from "@/lib/travel/handoff"
 
 export default function MapShell() {
-  // The diorama is the travel map (Sam, 2026-10-27, diorama part 2); the painted 2D map stays one click away, and a
-  // browser that picked 2D keeps it.
-  const [mode, setModeState] = useState<"2d" | "3d">("3d")
-  const setMode = (m: "2d" | "3d") => {
+  // The Map Module is the travel map. A new storage key on purpose: a browser that once picked 2D or the diorama
+  // starts on the Map Module too. Only the DM can switch, so a player's stored choice is never read.
+  type Mode = "module" | "2d" | "3d"
+  const [mode, setModeState] = useState<Mode>("module")
+  const setMode = (m: Mode) => {
     setModeState(m)
-    try { localStorage.setItem("aop:map-mode", m) } catch {}
+    try { localStorage.setItem("aop:map-view", m) } catch {}
   }
   const [dm, setDm] = useState(false)
   // The party just walked out of Velkynvelve: the walk page sends them here with the way out in the query string
@@ -24,10 +27,15 @@ export default function MapShell() {
   const [arrival, setArrival] = useState<WalkArrival | null>(null)
   useEffect(() => {
     setDm(hasDmKey())
-    try { if (localStorage.getItem("aop:map-mode") === "2d") setModeState("2d") } catch {}
+    try {
+      const v = localStorage.getItem("aop:map-view")
+      if (hasDmKey() && (v === "2d" || v === "3d")) setModeState(v)
+    } catch {}
     try { setArrival(parseWalkHandoff(window.location.search)) } catch { setArrival(null) }
     return onDmKeyChange(() => setDm(hasDmKey()))
   }, [])
+  // a player never sees the old maps, whatever this browser stored while it held the DM code
+  const view: Mode = dm ? mode : "module"
   const btn = (active: boolean) =>
     `text-xs px-3 py-2 rounded border-2 font-mono tracking-wider ${
       active
@@ -44,12 +52,19 @@ export default function MapShell() {
           ← DASHBOARD
         </StageLink>
         <span className="flex-1" />
-        <button className={btn(mode === "2d")} onClick={() => setMode("2d")}>
-          2D MAP
-        </button>
-        <button className={btn(mode === "3d")} onClick={() => setMode("3d")}>
-          3D DIORAMA
-        </button>
+        {dm && (
+          <>
+            <button className={btn(view === "module")} onClick={() => setMode("module")}>
+              MAP
+            </button>
+            <button className={btn(view === "2d")} onClick={() => setMode("2d")}>
+              OLD 2D
+            </button>
+            <button className={btn(view === "3d")} onClick={() => setMode("3d")}>
+              OLD 3D
+            </button>
+          </>
+        )}
         <button
           className={`text-xs px-3 py-2 rounded border-2 font-mono tracking-wider ${
             dm
@@ -75,7 +90,7 @@ export default function MapShell() {
           <button className="text-[#9a8fb0] hover:text-[#f5c34d]" onClick={() => setArrival(null)} aria-label="Dismiss">✕</button>
         </div>
       )}
-      {mode === "2d" ? <UnderdarkMap /> : <UnderdarkMap3D />}
+      {view === "2d" ? <UnderdarkMap /> : view === "3d" ? <UnderdarkMap3D /> : <UnderdarkMapModule />}
     </div>
   )
 }
