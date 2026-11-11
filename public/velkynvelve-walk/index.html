@@ -7910,7 +7910,7 @@ function fighterFor(a){
 }
 function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   if (FIGHT.mirror) return;                                    // ONE FIGHT: this screen is showing a fight run elsewhere
-  if (fightShared() && FIGHT.live && owSame(FIGHT.live.plate, cur) && FIGHT.live.auth_key !== OW.key){ talkGivesWay(); enterMirror(FIGHT.live); return; }
+  if (fightShared() && fightElsewhere(FIGHT.live)){ talkGivesWay(); enterMirror(FIGHT.live); return; }
   talkGivesWay();                           // NPC MINDS, the other way round: a fight that starts ends the talk
   if (mode !== "explore") return;
   pullToMap(label ? String(label) : "a fight has broken out");
@@ -8262,6 +8262,7 @@ function renderParty(){
 // ----- turns -----
 function nextTurn(first){
   if (!cbt || (combatBusy && !first)) return;
+  if (FIGHT.mirror) return;                                    // ONE FIGHT: a timer left from a fight this screen stood down from; the fight's own screen runs the turns
   closeMenu(); cbt.phase = "idle"; cbt.turnNo = (cbt.turnNo || 0) + 1;
   // A RAGE IS TESTED AS ITS OWNER'S TURN ENDS (SRD 5.1): "It ends early ... if your turn ends and you haven't attacked
   // a hostile creature since your last turn or taken damage since then", and after one minute. lib/rage.mjs decides.
@@ -18672,7 +18673,7 @@ async function followCombatFlag(flag){
     if (fightShared() && !FIGHT.auth){
       if (!isDm()) await new Promise(r => setTimeout(r, 1200 + Math.random() * 600));
       const lv = await fightLiveNow();
-      if (lv && owSame(lv.plate, cur) && lv.auth_key !== OW.key){ talkGivesWay(); if (mode === "explore") enterMirror(lv); return; }
+      if (fightElsewhere(lv)){ talkGivesWay(); if (mode === "explore") enterMirror(lv); return; }
       if (mode !== "explore") return;
     }
     startCombat.flagMood = flag.music || null;          // Malachar may name the mood; otherwise the odds decide
@@ -22125,9 +22126,23 @@ async function owResync(){
 //     readied strike, Hellish Rebuke) is sent to the authority and played there as if pressed there. The fight WAITS for
 //     them: no hero fights on its own while its player is at the table.
 //   - THE END. The authority ends it once; the mirrors put the dead where they fell and stand the rest down as it did.
+//   - A FIGHT SURVIVES ITS SCREEN (review of #1272, 2026-11-11: reload or close the screen that runs a fight and every
+//     other screen stayed frozen in combat for good, because nothing ever looked at how long the authority had been
+//     silent except the NEXT fight's opening). Now every mirror reads the authority's silence off each poll. After
+//     FIGHT_NOTICE_MS it says so in a small plain notice. After FIGHT_HANDOVER_MS the fight is HANDED ON: the mirrors
+//     ask /api/walk-fight to take it, in One World's own hand-over order (the DM, then the lowest seat; the screen that
+//     went quiet last), each place FIGHT_HANDOVER_STEP_MS later than the one before, and the server gives it to exactly
+//     one. That screen stops being a mirror and RUNS the fight from what the last tick showed (fightCarryOn): the same
+//     fighters, hit points, conditions, order, round and turn. Nothing is rolled again. A screen that reloads comes
+//     back into the fight as a mirror, even when it was the one running it. A screen whose fight was handed on while
+//     it was away (a sleeping laptop, a hidden tab) becomes a mirror when it returns (fightStoodDown). If nobody can
+//     carry it for FIGHT_LOST_MS, the fight is ended on every screen and the log says so.
 // Without the tables (migration unapplied), with One World off, or on a test copy, nothing changes: each screen fights alone.
+// The same numbers as lib/walk-fight.ts (the server decides; these only time the asking). My picks, not Sam's.
+const FIGHT_NOTICE_MS = 4000, FIGHT_HANDOVER_MS = 8000, FIGHT_HANDOVER_STEP_MS = 2000, FIGHT_LOST_MS = 30000, FIGHT_RETRY_MISSING_MS = 5 * 60000;
 const FIGHT = {id: null, auth: false, mirror: false, plate: null, live: null, since: 0, inSince: 0, out: [], sent: {}, fullAt: 0, menuSig: "", dlgSig: "",
-  serial: 0, dlgs: {}, dlgSeq: 0, promptFor: null, applying: null, polling: false, lastOk: 0, failed: false, hoverAt: 0, pendingActors: new Set(), endSent: false};
+  serial: 0, dlgs: {}, dlgSeq: 0, promptFor: null, applying: null, polling: false, lastOk: 0, failed: false, hoverAt: 0, pendingActors: new Set(), endSent: false,
+  quiet: 0, taking: false, takeAt: 0, lostAt: 0, opening: false, endedId: null, orderKeys: null, cbtId: null, fromFlag: false, heardAt: 0};
 const RELAY = {depth: 0, orig: {}, imgs: {}};
 const RELAY_FNS = ["log", "narrate", "popText", "bark", "shake", "hitstop", "redFlash", "critBeat", "toast", "victoryBanner", "triumph", "spawnFx", "slowmo"];
 const fightOn = () => !!(FIGHT.id && (FIGHT.auth || FIGHT.mirror));
@@ -22224,19 +22239,34 @@ function menuNow(){
 // --- THE AUTHORITY
 async function fightPost(op, extra){ const a = owAuth(); if (!a) throw new Error("no seat");
   const r = await fetch("/api/walk-fight", {method: "POST", headers: {"Content-Type": "application/json", ...a.headers}, body: JSON.stringify({op, ...a.body, ...extra})});
-  const j = await r.json().catch(() => ({})); if (!r.ok) { const e = new Error(j.error || String(r.status)); e.status = r.status; e.ended = j.ended; throw e; } return j; }
-async function fightGet(q){ const r = await fetch("/api/walk-fight" + q, {cache: "no-store"}); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.status); return j; }
+  const j = await r.json().catch(() => ({})); if (!r.ok) { const e = new Error(j.error || String(r.status)); e.status = r.status; e.ended = j.ended; e.moved = j.moved; e.fight = j.fight; e.missing = j.missing; throw e; } return j; }
+async function fightGet(q){ const r = await fetch("/api/walk-fight" + q, {cache: "no-store"}); const j = await r.json().catch(() => ({})); if (!r.ok){ const e = new Error(j.error || r.status); e.status = r.status; e.missing = j.missing; throw e; } return j; }
 const fightShared = () => OW.on && APP && !SANDBOX && !FIGHT.failed;
+// THE TABLES ARE NOT THERE (migration unapplied). PostgREST's own words are code PGRST205, "Could not find the table
+// 'public.walk_fights' in the schema cache" — not "relation does not exist", which is all this page used to look for, so
+// it kept asking every two seconds and getting a 503 each time. Seen once, the page stops asking, and looks again
+// FIGHT_RETRY_MISSING_MS later in case the migration has been applied since.
+const fightTableMissing = e => !!e && (e.missing || /PGRST205|schema cache|does not exist|relation/.test(String(e.message)));
+function fightUnavailable(){ if (FIGHT.failed) return; FIGHT.failed = true; console.warn("[one-fight] the shared-fight tables are not there; fights stay on their own screens. Looking again in a few minutes.");
+  setTimeout(() => { FIGHT.failed = false; }, FIGHT_RETRY_MISSING_MS); }
+// a live fight on this plate that this screen is not running: show it. Its own key does not make it this screen's
+// (a screen that reloaded comes back with no fight in hand); the fight it has just ended is not one to show.
+const fightElsewhere = f => !!f && !f.ended_at && owSame(f.plate, cur) && f.id !== FIGHT.endedId && !FIGHT.opening && !(FIGHT.auth && FIGHT.id === f.id);
 // called as a fight opens on this screen: ask to run it; if another screen already does, show theirs instead
 async function oneFightOpened(){
   if (!fightShared() || FIGHT.mirror) return;
   const plate = String(cur);
+  FIGHT.opening = true;
   try {
     const j = await fightPost("open", {plate});
-    if (j.auth){ Object.assign(FIGHT, {id: j.fight.id, auth: true, mirror: false, plate, out: [], sent: {}, sentC: {}, fullAt: 0, inSince: 0, menuSig: "", dlgSig: "", dlgs: {}, endSent: false});
+    FIGHT.opening = false;
+    if (FIGHT.auth && j.fight && FIGHT.id === j.fight.id) return;
+    // `joined`: the fight was already there under this screen's key (it reloaded mid-fight): show it, do not restart it
+    if (j.auth && !j.joined){ Object.assign(FIGHT, {id: j.fight.id, auth: true, mirror: false, plate, out: [], sent: {}, sentC: {}, fullAt: 0, inSince: 0, menuSig: "", dlgSig: "", dlgs: {}, endSent: false});
       relayInstall(); fightTick(); return; }
     if (j.fight && owSame(j.fight.plate, cur)){ abandonLocalFight(); enterMirror(j.fight); }
-  } catch (e) { if (e.status === 503) FIGHT.failed = true; }        // no tables yet: this screen fights alone, as before
+  } catch (e) { if (fightTableMissing(e)) fightUnavailable(); else if (e.status === 503) FIGHT.failed = true; }        // no tables yet: this screen fights alone, as before
+  finally { FIGHT.opening = false; }
 }
 function fightTick(){
   if (!FIGHT.auth || !FIGHT.id) return;
@@ -22244,7 +22274,12 @@ function fightTick(){
 }
 function fightTickBody(){
   fightWaitBadge();
-  const full = now - FIGHT.fullAt > 2500, actorsOut = [], gone = [];
+  // the whole of it every 2.5 s of the fight's own clock — which is also how the mirrors know this screen is alive. While
+  // the DM has stopped time that clock stands still on purpose, so the wall clock keeps the beat (or the mirrors would
+  // take a paused fight for an abandoned one). A hidden tab is different: nothing runs there, and the fight is handed on.
+  const beat = timeStopped && !document.hidden && Date.now() - (FIGHT.beatAt || 0) > 2500;
+  const full = now - FIGHT.fullAt > 2500 || beat, actorsOut = [], gone = [];
+  if (full) FIGHT.beatAt = Date.now();
   const list = fightActors(), keys = new Set(list.map(akey));
   // the pose (place, frame) and the fight sheet are compared apart: a step does not resend hit points and slots
   for (const a of list){
@@ -22258,13 +22293,13 @@ function fightTickBody(){
   if (actorsOut.length) body.actors = actorsOut;
   if (gone.length) body.gone = gone;
   if (full) FIGHT.fullAt = now;
-  if (cbt){ const c = {id: cbt.id, round: cbt.round, idx: cbt.idx, order: cbt.order.map(akey), phase: cbt.phase, pend: enc(cbt.pend), boss: akey(cbt.boss), quick: !!cbt.quick, allies: (cbt.allies || []).map(akey), bystanders: (cbt.bystanders || []).map(akey)};
+  if (cbt){ const c = {id: cbt.id, round: cbt.round, idx: cbt.idx, order: cbt.order.map(akey), phase: cbt.phase, pend: enc(cbt.pend), boss: akey(cbt.boss), quick: !!cbt.quick, allies: (cbt.allies || []).map(akey), bystanders: (cbt.bystanders || []).map(akey), fromFlag: !!cbt.fromFlag};
     const j = JSON.stringify(c); if (full || j !== FIGHT.cbtSig){ body.cbt = c; FIGHT.cbtSig = j; } }
   { const z = zonesNow(), j = JSON.stringify(z); if (full || j !== FIGHT.zoneSig){ body.zones = z; FIGHT.zoneSig = j; } }
   { const m = menuNow(), j = JSON.stringify(m); if (full || j !== FIGHT.menuSig){ body.menu = m; FIGHT.menuSig = j; } }
   { const d = Object.values(FIGHT.dlgs).map(x => x.pub), j = JSON.stringify(d); if (full || j !== FIGHT.dlgSig){ body.dlgs = d; FIGHT.dlgSig = j; } }
   if (FIGHT.out.length){ body.ev = FIGHT.out; FIGHT.out = []; }
-  const send = Object.keys(body).length > 1 ? fightPost("tick", {fight: FIGHT.id, body}).catch(e => { if (e.ended) fightLetGo(); }) : Promise.resolve();
+  const send = Object.keys(body).length > 1 ? fightPost("tick", {fight: FIGHT.id, body}).catch(e => { if (e.moved) fightStoodDown(e.fight); else if (e.ended) fightEndedUnderUs(); }) : Promise.resolve();
   send.finally(() => fightInputs().finally(() => { if (FIGHT.auth) setTimeout(fightTick, 250); }));
 }
 async function fightInputs(){
@@ -22325,10 +22360,106 @@ function oneFightEnded(won){
   FIGHT.endSent = true;
   const final = [...party, ...npcs].filter(a => actors.includes(a) || npcs.includes(a)).map(snapActor);
   const body = {won, actors: final, ev: FIGHT.out}; FIGHT.out = [];
-  const id = FIGHT.id; FIGHT.auth = false; FIGHT.id = null;
+  const id = FIGHT.id; FIGHT.auth = false; FIGHT.id = null; FIGHT.endedId = id;
   fightPost("end", {fight: id, body}).catch(() => {});
 }
 function fightLetGo(){ FIGHT.auth = false; FIGHT.mirror = false; FIGHT.id = null; }
+// THIS SCREEN WAS AWAY AND THE FIGHT WENT ON WITHOUT IT. It had gone quiet (asleep, hidden, offline) for longer than
+// FIGHT_HANDOVER_MS, another screen was given the fight, and the server now refuses this one's ticks. It puts its own
+// copy down and shows the fight as every other screen does. Two screens never both run it.
+function fightStoodDown(f){
+  if (!FIGHT.auth) return;
+  FIGHT.auth = false; FIGHT.id = null; FIGHT.waitingFor = null; FIGHT.dlgs = {}; FIGHT.out = [];
+  { const el = $("fightWait"); if (el) el.hidden = true; }
+  reactionWait = null; abandonLocalFight();
+  if (f && !f.ended_at && owSame(f.plate, cur)){ enterMirror(f); log("<em>This screen went quiet for a while, so another screen is running the fight now. It is shown here.</em>"); }
+}
+// ...or nobody could carry it, and it was ended for everyone (op "lost"): it ends here too, and says so
+function fightEndedUnderUs(){
+  if (!FIGHT.auth) return;
+  FIGHT.endedId = FIGHT.id; fightLetGo(); FIGHT.endSent = true;
+  log(FIGHT_LOST_LINE); toast("The shared fight ended while this screen was away.", 6000);
+  if (mode === "combat" && cbt) endCombat(false);
+}
+const FIGHT_LOST_LINE = "<em>The screen that was running this fight went quiet and no other screen could carry it on, so the fight has been ended for everyone. Nothing was won or lost by it; the DM can call it again.</em>";
+// --- THE HAND-OVER
+function fightNotice(text){
+  let el = $("fightNotice");
+  if (!el){ if (!text) return; el = document.createElement("div"); el.id = "fightNotice"; el.setAttribute("role", "status");
+    el.style.cssText = "position:absolute;left:50%;top:86px;transform:translateX(-50%);z-index:41;max-width:80%;padding:6px 14px;border-radius:6px;background:rgba(20,16,30,.9);border:1px solid #d9b45a;color:#f3e6c4;font:600 13px/1.3 Georgia,serif;pointer-events:none;text-align:center"; stage.appendChild(el); }
+  el.hidden = !text; if (text) el.textContent = text;
+}
+// this screen's place in the hand-over order: One World's own (driverOf with no owner: the DM, then the lowest seat),
+// the screen that went quiet last. lib/walk-fight.ts handoverOrder is the same list, and the server's is the one that counts.
+function fightPlace(authKey){
+  const left = {...(OW.seats || {})}, order = [], t = owNow();
+  for (let k = AopOneWorld.driverOf(null, left, t); k != null && order.length < 64; k = AopOneWorld.driverOf(null, left, t)){ order.push(k); delete left[k]; }
+  const o = order.includes(authKey) ? [...order.filter(k => k !== authKey), authKey] : order, i = o.indexOf(OW.key);
+  return i < 0 ? o.length : i;
+}
+// can this screen run the fight from what it has been shown? Only with the whole order in hand, everyone in it on stage
+const fightCanCarry = () => !!(FIGHT.mirror && cbt && cbt.mirror && FIGHT.since > 0 && FIGHT.orderKeys && FIGHT.orderKeys.length && FIGHT.orderKeys.every(byKey) && cbt.idx >= 0 && owAuth());
+// read off every poll: how long has the fight's screen been silent (the server's clock, both ends), and what to do about it
+async function fightQuiet(j){
+  const f = j.fight; if (!f || f.ended_at || !FIGHT.mirror) return;
+  const quiet = FIGHT.quiet = Math.max(0, (typeof j.now === "number" ? j.now : owNow()) - Date.parse(f.auth_seen));
+  fightNotice(quiet < FIGHT_NOTICE_MS ? "" : quiet < FIGHT_LOST_MS ? "The screen running this fight has gone quiet. Handing the fight to another screen, one moment…"
+    : "No screen could carry this fight on. Ending it…");
+  if (quiet < FIGHT_HANDOVER_MS || FIGHT.taking || Date.now() < FIGHT.takeAt) return;
+  if (quiet >= FIGHT_LOST_MS){
+    if (quiet >= FIGHT_LOST_MS + 8000){ mirrorEnd({lost: true}); return; }                 // the server could not be told either: end it here at least
+    FIGHT.takeAt = Date.now() + 2000; fightPost("lost", {fight: FIGHT.id}).catch(() => {}); return;
+  }
+  if (!fightCanCarry() || quiet < FIGHT_HANDOVER_MS + fightPlace(f.auth_key) * FIGHT_HANDOVER_STEP_MS) return;
+  FIGHT.taking = true; FIGHT.takeAt = Date.now() + 1500;
+  try { const r = await fightPost("take", {fight: FIGHT.id}); if (r.auth && FIGHT.mirror && FIGHT.id === r.fight.id) fightCarryOn(r.fight); }
+  catch (e) {} finally { FIGHT.taking = false; }
+}
+// THE FIGHT IS THIS SCREEN'S NOW. Everything a mirror was shown is the fight: the fighters where they stand, their sheets
+// (hit points, conditions, slots, what is left of this turn's action, bonus action and movement), the order, the round,
+// whose turn it is, the zones. This screen stops showing and starts running, from exactly that. No initiative is
+// rolled, nobody is healed or moved. What cannot cross: whatever the old screen was in the middle of (a swing in the air,
+// a reaction card waiting for an answer) — see fightResumeTurn.
+function fightCarryOn(f){
+  try {
+    const was = activeActor(), order = FIGHT.orderKeys.map(byKey).filter(Boolean);
+    let serial = 0; for (const a of [...actors, ...npcs]){ const m = /#(\d+)$/.exec(a.fk || ""); if (m) serial = Math.max(serial, +m[1]); }
+    Object.assign(FIGHT, {id: f.id, auth: true, mirror: false, plate: String(f.plate), out: [], sent: {}, sentC: {}, fullAt: 0, inSince: FIGHT.since, menuSig: "", dlgSig: "", cbtSig: "", zoneSig: "",
+      dlgs: {}, endSent: false, menu: null, waitingFor: null, quiet: 0, serial: Math.max(FIGHT.serial, serial)});
+    if (FIGHT.dlgShown && !$("dialog").hidden) $("dialog").hidden = true;                   // a reaction card the old screen was asking: its question went with it
+    FIGHT.dlgShown = null;
+    delete cbt.mirror;
+    Object.assign(cbt, {order, idx: Math.max(0, order.indexOf(was)), id: FIGHT.cbtId || cbt.id, phase: "idle", pend: null, lastTarget: null, bossIntro: false, fromFlag: !!FIGHT.fromFlag, allies: cbt.allies || [], bystanders: cbt.bystanders || []});
+    combatBusy = false; reactionWait = null; $("cbtMenu").hidden = true; hint(""); fightNotice("");
+    for (const a of [...order, ...cbt.bystanders]){ a.path = []; a.onArrive = null; }
+    relayInstall();
+    log(`<em>The screen that was running this fight went quiet. ${isDm() ? "The DM's screen" : mySlug && SHEETS[mySlug] ? esc(SHEETS[mySlug].name) + "'s screen" : "Another screen"} carries it on from where it stood: the same order, the same wounds, round ${cbt.round}.</em>`);
+    console.warn("[one-fight] this screen now runs the fight", f.id);
+    renderTurns(); renderParty(); renderBossBar();
+    fightTick();
+    setTimeout(fightResumeTurn, 700);
+  } catch (e) {
+    console.warn("[one-fight] could not carry the fight on", e && e.stack ? e.stack.slice(0, 400) : e);
+    const id = FIGHT.id; FIGHT.auth = false; FIGHT.mirror = true;
+    fightPost("end", {fight: id, body: {lost: true}}).catch(() => {}); mirrorEnd({lost: true});
+  }
+}
+// The turn that was under way. A HERO keeps what is left of the turn (what was spent stays spent) and gets the command
+// list again, on their own screen. A FOE or an ally caught mid-turn ends its turn there: whether its blow had already
+// landed cannot be known from here, and a blow struck twice would be worse than one lost. (My call, not Sam's.)
+function fightResumeTurn(){
+  if (!FIGHT.auth || !cbt || mode !== "combat") return;
+  if (checkEnd()) return;
+  const a = activeActor();
+  if (!a || a.down || !actors.includes(a) || a.kind !== "pc" || cbt.quick){
+    if (a && !a.down && actors.includes(a)) log(`${fname(a)}'s turn was cut short by the hand-over.`);
+    nextTurn(); return;
+  }
+  renderTurns(); renderParty(); turnCall(a);
+  fightCam(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 60, 500, [a]);
+  if (oneFightWaitsFor(a) || canControl(a)) openMenu(a);
+  else { log(`${fname(a)} acts on their own instincts here — their player drives them on their own screen.`); allyTurn(a); }
+}
 // the loser of a race to open: this screen started the same fight a moment late; it goes quietly and shows theirs
 function abandonLocalFight(){
   if (mode !== "combat" || !cbt) return;
@@ -22339,7 +22470,7 @@ function abandonLocalFight(){
 // --- A MIRROR
 function enterMirror(f){
   if (FIGHT.mirror && FIGHT.id === f.id) return;
-  Object.assign(FIGHT, {id: f.id, mirror: true, auth: false, plate: String(f.plate), since: 0, dlgShown: null});
+  Object.assign(FIGHT, {id: f.id, mirror: true, auth: false, plate: String(f.plate), since: 0, dlgShown: null, quiet: 0, taking: false, takeAt: 0, orderKeys: null, cbtId: null, fromFlag: false, menu: null});
   mirrorBagInstall();
   mode = "combat"; combatBusy = false;
   cbt = {mirror: true, order: [], idx: -1, round: 0, phase: "idle", pend: null, allies: [], bystanders: [], home: {z: view.z, cx: NAT_W / 2, cy: NAT_H / 2}, id: f.id};
@@ -22352,9 +22483,12 @@ async function mirrorPoll(){
   if (!FIGHT.mirror || !FIGHT.id) return;
   try {
     const j = await fightGet(`?fight=${FIGHT.id}&kind=tick&since=${FIGHT.since}`);
-    for (const m of j.msgs || []){ FIGHT.since = Math.max(FIGHT.since, m.id); if (m.kind === "end"){ mirrorEnd(m.body || {}); return; } await mirrorApply(m.body || {}); }
-    if (j.fight && j.fight.ended_at && !(j.msgs || []).some(m => m.kind === "end")){ mirrorEnd({}); return; }
+    for (const m of j.msgs || []){ if (!FIGHT.mirror) return; FIGHT.since = Math.max(FIGHT.since, m.id); if (m.kind === "end"){ mirrorEnd(m.body || {}); return; } await mirrorApply(m.body || {}); }
+    if (!FIGHT.mirror) return;                                              // it became this screen's while the ticks were being played
+    if (!j.fight || (j.fight.ended_at && !(j.msgs || []).some(m => m.kind === "end"))){ mirrorEnd({lost: true}); return; }   // ended with no last word: say so
     FIGHT.lastOk = now;
+    await fightQuiet(j);                                                    // A FIGHT SURVIVES ITS SCREEN: the hand-over
+    if (!FIGHT.mirror) return;
   } catch (e) { console.warn("[one-fight] mirror", e && e.stack ? e.stack.slice(0, 300) : e); }
   setTimeout(mirrorPoll, 250);
 }
@@ -22380,6 +22514,7 @@ async function mirrorApply(b){
   for (const s of b.actors || []) await mirrorActor(s);
   for (const k of b.gone || []){ const a = byKey(k); if (a && a.kind !== "pc"){ actors = actors.filter(x => x !== a); foes = foes.filter(x => x !== a); } }
   if (b.cbt){ const c = b.cbt, turnWas = activeActor();
+    FIGHT.orderKeys = c.order; FIGHT.cbtId = c.id || FIGHT.cbtId; FIGHT.fromFlag = !!c.fromFlag;      // what a hand-over needs (fightCarryOn)
     Object.assign(cbt, {round: c.round, idx: c.idx, phase: c.phase, quick: c.quick, order: c.order.map(byKey).filter(Boolean), boss: byKey(c.boss),
       allies: c.allies.map(byKey).filter(Boolean), bystanders: c.bystanders.map(byKey).filter(Boolean), pend: dec(c.pend)});
     renderTurns(); renderParty();
@@ -22458,6 +22593,8 @@ function oneFightKey(e){
   return MOVE_KEYS.has(e.code);                                            // arrows do not walk a mirrored hero
 }
 function mirrorEnd(b){
+  FIGHT.endedId = FIGHT.id; fightNotice("");
+  if (b.lost){ log(FIGHT_LOST_LINE); toast("The fight could not be carried on and has ended.", 6000); console.warn("[one-fight] the fight was lost with its screen; ended here"); }
   const fin = new Map((b.actors || []).map(s => [s.k, s]));
   for (const ev of b.ev || []) relayPlay(ev);
   for (const f of [...foes]){
@@ -22484,8 +22621,8 @@ setInterval(async () => {
   if (!(mode === "explore" || mode === "talk" || mode === "dialog")) return;
   FIGHT.polling = true;
   try { const j = await fightGet(""); FIGHT.live = j.fight || null;
-    if (j.fight && owSame(j.fight.plate, cur) && j.fight.auth_key !== OW.key && !FIGHT.mirror && !FIGHT.auth){ talkGivesWay(); if (mode === "explore") enterMirror(j.fight); }
-  } catch (e) { if (/does not exist|relation/.test(String(e.message))) FIGHT.failed = true; }
+    if (fightElsewhere(j.fight) && !FIGHT.mirror && !FIGHT.auth){ talkGivesWay(); if (mode === "explore") enterMirror(j.fight); }
+  } catch (e) { if (fightTableMissing(e)) fightUnavailable(); }
   finally { FIGHT.polling = false; }
 }, 2000);
 // --- fights (not shared yet) ---
