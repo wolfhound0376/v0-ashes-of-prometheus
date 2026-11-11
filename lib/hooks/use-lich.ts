@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from "react"
 import type { RollRequestSpec } from "@/lib/roll-requests"
+import { emitMalacharMood } from "@/lib/malachar-mood"
 
 interface LichResponse {
   text: string
@@ -27,6 +28,8 @@ interface LichResponse {
   /** Player-safe vague time-of-day derived server-side from the world clock. */
   timeOfDay?: string
   cinematicCue?: string
+  /** The look on Malachar's face this turn (lib/malachar-mood.ts). */
+  mood?: string
   /** Sounds this turn earned, as full bucket paths. Played by lib/sfx-cues. */
   sfxCues?: { type: "raw"; key: string; scope?: "self" | "party" }[]
   rollRequest?: RollRequestSpec
@@ -114,6 +117,7 @@ export function useLich(campaignId: string = "abyss") {
       }
 
       const data = await response.json()
+      if (typeof data.mood === "string") emitMalacharMood(data.mood)   // his face, on the Talk to Malachar screen
       return {
         text: data.text || "",
         speechSegments: Array.isArray(data.speechSegments) ? data.speechSegments : null,
@@ -123,6 +127,7 @@ export function useLich(campaignId: string = "abyss") {
         updatedLocation: data.updatedLocation,
         timeOfDay: typeof data.timeOfDay === "string" ? data.timeOfDay : undefined,
         cinematicCue: typeof data.cinematicCue === "string" ? data.cinematicCue : undefined,
+        mood: typeof data.mood === "string" ? data.mood : undefined,
         // Shape-checked here rather than trusted: playCues tolerates rubbish,
         // but the hook is where this response stops being untyped JSON.
         sfxCues: Array.isArray(data.sfxCues) ? data.sfxCues : undefined,
