@@ -158,16 +158,47 @@ export const SMUGGLED_EFFECTS = [
   },
 ]
 
+// THE BOOK A CASTER KEPT (Sam, 2026-11-10: "Gandalf should have his spellbook hidden with him just like the cleric
+// having a book of prayers."). HOMEBREW, Sam's call: OotA ch.1 area 7 puts confiscated spellbooks in Ilvara's chest;
+// in this campaign a wizard's spellbook and a cleric's book of prayers came through the search the way the journals
+// did, so a New Game hands them back with the journal. Keyed by `characters.class`, lower case. Weights and values
+// are the catalogue's (`items` rows `spellbook`, `book-of-prayers`).
+export const CLASS_KEEPSAKES: Record<string, { slug: string; name: string; description: string; quantity: number; weight: string; value: string; item_type: string }> = {
+  wizard: {
+    slug: "spellbook",
+    name: "Spellbook",
+    description: "Your own spellbook, kept hidden through the drow search. Every spell you have learned is in it.",
+    quantity: 1,
+    weight: "3",
+    value: "50",
+    item_type: "gear",
+  },
+  cleric: {
+    slug: "book-of-prayers",
+    name: "Book of Prayers",
+    description: "A leather-bound book of prayers, kept hidden through the drow search.",
+    quantity: 1,
+    weight: "3",
+    value: "25",
+    item_type: "gear",
+  },
+}
+
+type Smuggler = string | { id: string; class?: string | null }
+
 /**
- * The journal and quill rows a New Game hands every hero, each tied to its catalogue kind (`items.id`) the way the
- * rags are. They used to go in with no `item_id`, so sixteen rows a run sat outside the catalogue the rest of the
- * inventory validates against (Item_Identity_Design, step 4). A kind the catalogue has lost still gets issued,
- * unlinked: a hero without a journal is worse than a row without a link.
+ * The rows a New Game hands every hero: a journal and a quill, plus the book their class kept (CLASS_KEEPSAKES).
+ * Each is tied to its catalogue kind (`items.id`) the way the rags are. They used to go in with no `item_id`, so
+ * sixteen rows a run sat outside the catalogue the rest of the inventory validates against (Item_Identity_Design,
+ * step 4). A kind the catalogue has lost still gets issued, unlinked: a hero without a journal is worse than a row
+ * without a link.
  */
-export function smuggledRows(playerIds: readonly string[], catalogue: ReadonlyMap<string, string>) {
-  return playerIds.flatMap((character_id) =>
-    SMUGGLED_EFFECTS.map(({ slug, ...item }) => ({ character_id, item_id: catalogue.get(slug) ?? null, ...item })),
-  )
+export function smuggledRows(players: readonly Smuggler[], catalogue: ReadonlyMap<string, string>) {
+  return players.flatMap((p) => {
+    const character_id = typeof p === "string" ? p : p.id
+    const keepsake = typeof p === "string" ? undefined : CLASS_KEEPSAKES[String(p.class ?? "").trim().toLowerCase()]
+    return [...SMUGGLED_EFFECTS, ...(keepsake ? [keepsake] : [])].map(({ slug, ...item }) => ({ character_id, item_id: catalogue.get(slug) ?? null, ...item }))
+  })
 }
 
 interface EnvironmentRow {
@@ -533,7 +564,7 @@ export async function restartCampaign(admin: SupabaseClient): Promise<RestartRes
   // player and is therefore untouched here.
   const { data: players, error: playersErr } = await admin
     .from("characters")
-    .select("id, name, hp_max, sheet_spellcasting")
+    .select("id, name, class, hp_max, sheet_spellcasting")
     .eq("is_player", true)
   note("characters read", playersErr)
 
@@ -688,12 +719,12 @@ export async function restartCampaign(admin: SupabaseClient): Promise<RestartRes
     const { data: kinds, error: kindsErr } = await admin
       .from("items")
       .select("id, slug")
-      .in("slug", SMUGGLED_EFFECTS.map((e) => e.slug))
+      .in("slug", [...SMUGGLED_EFFECTS, ...Object.values(CLASS_KEEPSAKES)].map((e) => e.slug))
     note("smuggled effects catalogue", kindsErr)
     const catalogue = new Map(((kinds || []) as { id: string; slug: string }[]).map((k) => [k.slug, k.id]))
-    const { error: effectsErr } = await admin.from("inventory_items").insert(smuggledRows(playerIds, catalogue))
+    const { error: effectsErr } = await admin.from("inventory_items").insert(smuggledRows((players || []) as { id: string; class?: string | null }[], catalogue))
     note("issue smuggled effects", effectsErr)
-    report.smuggledEffectsIssued = effectsErr ? 0 : playerIds.length * SMUGGLED_EFFECTS.length
+    report.smuggledEffectsIssued = effectsErr ? 0 : smuggledRows((players || []) as { id: string; class?: string | null }[], catalogue).length
   }
 
   // --- 5. environments ----------------------------------------------------

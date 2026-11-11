@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { archiveThenWipeDialogue, smuggledRows, SMUGGLED_EFFECTS } from "./restart-campaign"
+import { archiveThenWipeDialogue, smuggledRows, SMUGGLED_EFFECTS, CLASS_KEEPSAKES } from "./restart-campaign"
 
 // Sam, 2026-10-30: "archive never delete as a rule." These tests exist for one
 // claim only — that the wipe is unreachable unless the archive succeeded. If
@@ -107,5 +107,33 @@ describe("smuggledRows", () => {
     const rows = smuggledRows(["a"], new Map([["small-quill", "id-quill"]]))
     expect(rows.map((r) => r.item_id)).toEqual([null, "id-quill"])
     expect(rows[0].name).toBe("Tattered Journal")
+  })
+})
+
+// Sam, 2026-11-10: "Gandalf should have his spellbook hidden with him just like the cleric having a book of prayers."
+describe("the book a caster kept", () => {
+  const catalogue = new Map([["tattered-journal", "id-journal"], ["small-quill", "id-quill"], ["spellbook", "id-spellbook"], ["book-of-prayers", "id-prayers"]])
+  const names = (rows: { name: string }[]) => rows.map((r) => r.name)
+
+  it("gives the wizard his spellbook with the journal and quill", () => {
+    const rows = smuggledRows([{ id: "gandalf", class: "Wizard" }], catalogue)
+    expect(names(rows)).toEqual(["Tattered Journal", "Small Quill", "Spellbook"])
+    expect(rows[2]).toMatchObject({ character_id: "gandalf", item_id: "id-spellbook", quantity: 1 })
+  })
+
+  it("gives the cleric a book of prayers", () => {
+    const rows = smuggledRows([{ id: "samson", class: "cleric" }], catalogue)
+    expect(names(rows)).toEqual(["Tattered Journal", "Small Quill", "Book of Prayers"])
+    expect(rows[2].item_id).toBe("id-prayers")
+  })
+
+  it("gives every other class the journal and quill only", () => {
+    for (const cls of ["Rogue", "Sorcerer", "Warlock", "Bard", "Barbarian", null, undefined, ""])
+      expect(names(smuggledRows([{ id: "x", class: cls }], catalogue))).toEqual(["Tattered Journal", "Small Quill"])
+  })
+
+  it("names only classes that exist, and never writes the slug as a column", () => {
+    expect(Object.keys(CLASS_KEEPSAKES).sort()).toEqual(["cleric", "wizard"])
+    for (const r of smuggledRows([{ id: "g", class: "Wizard" }], catalogue)) expect(r).not.toHaveProperty("slug")
   })
 })
