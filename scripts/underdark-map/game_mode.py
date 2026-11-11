@@ -135,6 +135,12 @@ PATCHES = [
     ("  if(w.atGate){ queued=null; showToll(); return; }", "  if(GAME){ gameWhere(); post({type:\"aop:map-reached\",k:party}); return; }\n  if(w.atGate){ queued=null; showToll(); return; }"),
     ("function step(d){\n  if(walking){ queued={dir:d}; return; }", "function step(d){\n  if(GAME&&(!gameLead||walking)) return;\n  if(walking){ queued={dir:d}; return; }"),
     ("document.getElementById(\"entEnter\").onclick=()=>{ const s=", "document.getElementById(\"entEnter\").onclick=()=>{ if(GAME&&(GS.enterable||[]).includes(entK)){ post({type:\"aop:map-enter\",k:entK}); return; } const s="),
+    # ---- fog (Sam, 2026-11-10: "I can see through the fog of war"). The artifact's fog was a mist, 73-94% opaque,
+    # so the painted roads, rings and cities showed through it. In the game the unknown is black: nothing shows.
+    ("uniforms:{mask:{value:fogTex},t:{value:0}},", "uniforms:{mask:{value:fogTex},t:{value:0},solid:{value:GAME?1:0}},"),
+    ("fragmentShader:`uniform sampler2D mask; uniform float t; varying vec2 vUv;\n  float h(vec2 p)", "fragmentShader:`uniform sampler2D mask; uniform float t; uniform float solid; varying vec2 vUv;\n  float h(vec2 p)"),
+    ("    float a=m*(.78+.22*c)*smoothstep(0.,.35,m+.15*c2-.1);", "    float a=m*mix(.78+.22*c,1.,solid)*smoothstep(0.,.35,m+.15*c2-.1);"),
+    ("    gl_FragColor=vec4(col,a*.94); }`});", "    col=mix(col,col*.45,solid);\n    gl_FragColor=vec4(col,a*mix(.94,1.,solid)); }`});"),
     # ---- chrome
     ("guardTag.onclick=()=>showToll(); labelsEl.appendChild(guardTag);", "guardTag.onclick=()=>showToll(); guardTag.hidden=true; labelsEl.appendChild(guardTag);"),
     ("#loading{position:fixed;", GAME_CSS + "#loading{position:fixed;"),
