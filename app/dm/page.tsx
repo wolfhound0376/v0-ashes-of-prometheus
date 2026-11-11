@@ -27,7 +27,7 @@ import { useRouter } from "next/navigation"
 import { Check, DoorOpen, Eye, FlaskConical, Play, RotateCcw, Swords, UserMinus, UserPlus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { setDmKey, clearDmKey, dmHeaders } from "@/lib/dm-key"
-import { cameThroughDmDoor, leaveDmDoor } from "@/lib/dm-door"
+import { leaveDmDoor } from "@/lib/dm-door"
 import { HomeButton } from "@/components/home-button"
 import { canonBySlug } from "@/lib/canon-heroes"
 import { SaveShelf } from "@/components/save-shelf"
@@ -44,7 +44,7 @@ type Pending = {
   assets: { look: string | null; sprite: { status: string; previewUrl: string | null; characterId: string | null } | null; voice: string; voiceSample: string | null; facePhotos: string[] }
 }
 type Seat = { id: string; name: string; at: string; dm?: boolean }
-type RosterRow = { id: string; name: string; cls: string }
+type RosterRow = { id: string; name: string; cls: string; img: string | null }
 
 export default function DmPage() {
   const router = useRouter()
@@ -52,9 +52,10 @@ export default function DmPage() {
   const [gateArmed, setGateArmed] = useState(true)
 
   useEffect(() => {
-    // The only way in is the title screen's Dungeon Master link (Sam, 2026-10-25: it is the ONLY way to
-    // open a table). A typed URL, a bookmark or a hop from Play Saved Game goes back to the title screen.
-    if (!cameThroughDmDoor()) { router.replace("/intro"); return }
+    // NO BOUNCE (Sam, 2026-11-10: "why is it when I hit enter the DM door it just cuts to the intro scene").
+    // This page used to send anyone without the title link's tab stamp back to /intro — a new tab, a refresh
+    // or Back did it, and after a New Game the title replayed the film. The DM code below is the real lock
+    // (only it mints the cookie that can open a table or reset the campaign), so the page just asks for it.
     fetch("/api/dm/session", { cache: "no-store" }).then((r) => r.json()).then((j) => {
       setGateArmed(Boolean(j.gate))
       setPhase(j.dm ? "table" : "gate")
@@ -379,23 +380,50 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
 
       {msg && <p className="text-center text-sm text-[#d9bd7e]">{msg}</p>}
 
-      {/* THE SHELF — which saved game Continue opens (Sam, 2026-11-10). Hidden until the saves migration is applied. */}
-      <div className="mx-auto w-full max-w-md"><SaveShelf me={null} onLoaded={load} /></div>
-
-      {/* WHO HOSTS — the hero the person holding the DM code will play (lib/host.ts) */}
-      <div className="mx-auto w-full max-w-md rounded-sm border border-[#3d3428] bg-black/50 p-4">
-        <label htmlFor="host-pick" className="block text-[10px] uppercase tracking-[0.35em] text-[#8a6a3a]">Who is hosting?</label>
-        <select id="host-pick" value={hostId} onChange={(e) => { hostTouched.current = true; setHostId(e.target.value) }} disabled={busy !== null}
-          className="mt-2 w-full rounded-sm border border-[#5a4a30] bg-[#120e0a] px-3 py-2.5 font-serif text-[15px] text-[#e8d9ae] disabled:opacity-40">
-          <option value="">Nobody plays — I run it as Dungeon Master only</option>
-          {roster.map((c) => <option key={c.id} value={c.id}>{c.name}{c.cls ? ` · ${c.cls}` : ""}{currentHost?.id === c.id ? " — hosting now" : ""}</option>)}
-        </select>
-        <p className="mt-2 text-[12px] leading-relaxed text-stone-500">
+      {/* WHO ARE YOU PLAYING — the first thing the host does (Sam, 2026-11-10: "When I host a game, shouldn't I
+          also choose a character?"). The hero picked hosts: this browser becomes that player and runs the table
+          from the table with no code (lib/host.ts). "DM only" keeps the old way: no hero, every DM tool. */}
+      <div className="mx-auto w-full max-w-2xl">
+        <div className="text-center text-[10px] uppercase tracking-[0.35em] text-[#8a6a3a]">Who are you playing tonight?</div>
+        <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {roster.map((c) => {
+            const on = hostId === c.id
+            return (
+              <li key={c.id}>
+                <button type="button" disabled={busy !== null} aria-pressed={on}
+                  onClick={() => { hostTouched.current = true; setHostId(c.id) }}
+                  className={`group relative w-full overflow-hidden rounded-sm border bg-black/60 text-left transition-all disabled:opacity-40 ${on ? "border-[#e8c56a] shadow-[0_0_28px_rgba(232,197,106,0.45)]" : "border-[#3d3428] hover:border-[#8a6a3a]"}`}>
+                  {c.img ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={c.img} alt="" className={`aspect-[3/4] w-full object-cover object-top transition-opacity ${on ? "opacity-100" : "opacity-70 group-hover:opacity-90"}`} />
+                  ) : (
+                    <div className="grid aspect-[3/4] w-full place-items-center font-serif text-4xl text-[#8a6a3a]">{c.name.charAt(0)}</div>
+                  )}
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/80 to-transparent px-2 pb-2 pt-6">
+                    <div className="truncate font-serif text-[14px] text-[#e8d9ae]">{c.name}</div>
+                    <div className="text-[10px] uppercase tracking-[0.2em] text-stone-500">{c.cls}{currentHost?.id === c.id ? " · hosting now" : ""}</div>
+                  </div>
+                  {on && <div className="absolute right-1.5 top-1.5 rounded-full border border-[#e8c56a] bg-black/70 px-2 py-0.5 text-[9px] uppercase tracking-[0.2em] text-[#e8c56a]">Host</div>}
+                </button>
+              </li>
+            )
+          })}
+        </ul>
+        <div className="mt-3 text-center">
+          <button type="button" disabled={busy !== null} onClick={() => { hostTouched.current = true; setHostId("") }}
+            className={`text-[11px] uppercase tracking-[0.25em] ${hostId === "" ? "text-[#e8c56a]" : "text-stone-600 hover:text-stone-400"}`}>
+            {hostId === "" ? "✓ " : ""}Nobody — I run it as Dungeon Master only
+          </button>
+        </div>
+        <p className="mt-2 text-center text-[12px] leading-relaxed text-stone-500">
           {hostId
-            ? "This browser sits down as that hero and runs the table from there: open it, let players in, Start, End. No code on game night. The DM tools on the map still need the Dungeon Master sign-in for now."
-            : "As before: this browser stays signed in as the Dungeon Master, with every DM tool and no hero."}
+            ? "This browser sits down as that hero and runs the table from there: open it, let players in, Start, End. No code on game night."
+            : "This browser stays signed in as the Dungeon Master, with every DM tool and no hero."}
         </p>
       </div>
+
+      {/* THE SHELF — which saved game Continue opens (Sam, 2026-11-10). Hidden until the saves migration is applied. */}
+      <div className="mx-auto w-full max-w-md"><SaveShelf me={null} onLoaded={load} /></div>
 
       {/* BEGIN */}
       <div className="flex flex-col items-center gap-3 pt-2">
