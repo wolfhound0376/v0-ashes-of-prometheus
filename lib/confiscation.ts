@@ -48,11 +48,11 @@ export const STASH_MARK = "from_stash"
  * exists leaves the row ownerless rather than failing the move. Pure, so it can be tested.
  */
 export function returnsToStash(
-  events: readonly { inventory_item_id: string | null; detail: Record<string, unknown> | null; created_at?: string | null }[],
+  events: readonly { inventory_item_id: string | null; detail: Record<string, unknown> | null; occurred_at?: string | null }[],
   liveCharacterIds: ReadonlySet<string>,
 ): Map<string, string | null> {
   const out = new Map<string, string | null>()
-  const sorted = [...events].sort((a, b) => String(a.created_at ?? "").localeCompare(String(b.created_at ?? "")))
+  const sorted = [...events].sort((a, b) => String(a.occurred_at ?? "").localeCompare(String(b.occurred_at ?? "")))
   for (const e of sorted) {
     if (!e.inventory_item_id || e.detail?.[STASH_MARK] !== true) continue
     const owner = typeof e.detail.owner_id === "string" && liveCharacterIds.has(e.detail.owner_id) ? e.detail.owner_id : null
