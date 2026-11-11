@@ -1253,7 +1253,7 @@ async function handlePost(req: NextRequest) {
       await db.from("vtt_tokens").delete().eq("id", h.id)
       await narrate(db, `${h.label ?? MAGE_HAND.name} is left more than ${MAGE_HAND.leashFt} ft behind, and fades.`)
     }
-    const next = { ...state, moved_ft: usedFt + feet }
+    const next: Record<string, unknown> = { ...state, moved_ft: usedFt + feet }
     // Spending the action in the same write as the move: no window exists in
     // which the player has the extra movement but has not yet paid for it.
     if (wantsDash && !alreadyDashed) {
@@ -2985,8 +2985,8 @@ async function handlePost(req: NextRequest) {
       // Helpless within 5 ft: any hit is a critical.
       if (hit && against.autoCrit) crit = true
       if (hit) {
-        amount = rollDice(entry.dice)
-        if (crit) amount += rollDice(entry.dice)
+        amount = rollDice(entry.dice ?? "")
+        if (crit) amount += rollDice(entry.dice ?? "")
       }
       line = `${caster.label} casts ${ability} at ${victim.label} — ${showDice(thrown)}+${attackBonus} = ${total} vs AC ${ac}: ${crit ? "CRITICAL" : hit ? "hit" : "miss"}${hit ? ` for ${amount}` : ""}.${againstNote}`
     } else if (entry.resolve === "save") {
@@ -2999,7 +2999,7 @@ async function handlePost(req: NextRequest) {
       total = roll + saveMod
       dc = saveDc
       saved = total >= saveDc
-      const full = rollDice(entry.dice)
+      const full = rollDice(entry.dice ?? "")
       amount = saved ? (entry.halfOnSave ? Math.floor(full / 2) : 0) : full
       hit = amount > 0
       line = `${caster.label} casts ${ability} — ${victim.label} rolls ${roll}${saveMod >= 0 ? "+" : ""}${saveMod} = ${total} vs DC ${saveDc}: ${saved ? "saves" : "fails"}${amount ? ` and takes ${amount}` : ""}.`
@@ -3016,7 +3016,7 @@ async function handlePost(req: NextRequest) {
       amount = heal.total
       line = formatHealLine(caster.label, ability, victim.label, heal)
     } else {
-      amount = rollDice(entry.dice)
+      amount = rollDice(entry.dice ?? "")
       line = `${caster.label} casts ${ability} on ${victim.label} for ${amount}.`
     }
 
