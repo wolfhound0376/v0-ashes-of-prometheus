@@ -136,6 +136,9 @@ export default function UnderdarkMapModule() {
     const from = prevParty.current
     prevParty.current = party.node_id
     const here = byId.get(party.node_id) ?? null
+    // The party stopped where the figure already stands (a long rest at a marker part-way along the road):
+    // the walk is over, and there is nothing to draw.
+    if (here && shown.current === here.node_key) { walk.current = null; return }
     const route = routeBetween(from, party.node_id)
     const keys = route.map((id) => byId.get(id)?.node_key).filter((k): k is string => !!k)
     if (route.length < 2 || keys.length !== route.length) {

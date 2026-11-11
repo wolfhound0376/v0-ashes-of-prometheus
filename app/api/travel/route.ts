@@ -25,6 +25,7 @@ import { noticeAt, noticeSpec, type Eyes } from "@/lib/travel/notice"
 import { arrivalCue } from "@/lib/travel/stingers"
 import { malacharRoadLine, sayOnTheRoad, worthAWord } from "@/lib/travel/narrate"
 import { costLine, offerOptions, readOptions, resolveChoice, type NodeOption } from "@/lib/travel/options"
+import { STANDING_SOURCE, isStandingKey, paceChosenText, paceOfKey, standingOptions } from "@/lib/travel/standing"
 import { entranceFor } from "@/lib/travel/entrance"
 import { applyTransition } from "@/lib/game-context"
 import { formatPersonality, type LichPersonality } from "@/lib/world-ai/book-retrieval"
@@ -579,8 +580,40 @@ export async function POST(req: NextRequest) {
     const runId = runIdA
     if (!runId) return NextResponse.json({ error: "no active campaign run" }, { status: 409 })
 
-    const { data: node0 } = await dbc.from("travel_nodes").select("id,node_key,name,metadata").eq("node_key", nodeKey).maybeSingle()
+    const { data: node0 } = await dbc.from("travel_nodes").select("id,node_key,name,node_type,metadata").eq("node_key", nodeKey).maybeSingle()
     if (!node0) return NextResponse.json({ error: "unknown node_key" }, { status: 404 })
+
+    // THE STANDING CHOICES (lib/travel/standing.ts): what every road marker offers, straight from the
+    // book's travel rules. They are not rows in travel_node_events, so they are answered here.
+    if (isStandingKey(optionKey)) {
+      const { data: m0 } = await dbc.from("travel_march").select("*").eq("campaign_run_id", runId).maybeSingle()
+      const day0 = normaliseDay(m0 as Record<string, unknown> | null)
+      const picked0 = standingOptions({ node_type: node0.node_type, metadata: (node0.metadata as Record<string, unknown> | null) ?? null }, day0, false).find((o) => o.key === optionKey)
+      if (!picked0) return NextResponse.json({ error: "no such option here" }, { status: 404 })
+      const option = { key: picked0.key, label: picked0.label }
+      const pace = paceOfKey(optionKey)
+      if (pace) {
+        const next = { ...day0, pace }
+        await saveDay(dbc, runId, next)
+        return NextResponse.json({ ok: true, action, node_key: node0.node_key, option, success: true, roll: null, text: paceChosenText(pace), revealed: null, line: null, day: next, source: STANDING_SOURCE })
+      }
+      // MAKE CAMP: LONG REST. The party stops HERE: the walk the browser was showing ends at this marker,
+      // so the party's position is this marker, not the far end of the road it set out for. Then the same
+      // camp halt nightfall opens; "continue" breaks camp and starts the new day (newDay, above).
+      const { error: perr } = await dbc.from("party_position").upsert({ campaign_run_id: runId, node_id: node0.id, node_type: node0.node_type, arrived_at: new Date().toISOString() })
+      if (perr) return NextResponse.json({ error: perr.message }, { status: 500 })
+      const title = `Camp at ${node0.name ?? node0.node_key}`
+      const campBody = `The party stops for a long rest after ${Math.round(day0.hours_today * 10) / 10} hours on the road. Breaking camp starts a new day, and the navigator checks the way again.`
+      const { error: herr } = await dbc.from("travel_arrivals").insert({
+        node_id: node0.id,
+        event_id: null,
+        halted: true,
+        outcome: { kind: "camp", title, body: campBody, rolls: [], source: STANDING_SOURCE, chosen: true, day: day0 },
+      })
+      // One open halt at a time (unique index). Losing that race means the march is already stopped, which is what was asked for.
+      if (herr && !/duplicate key/i.test(herr.message)) return NextResponse.json({ error: herr.message }, { status: 500 })
+      return NextResponse.json({ ok: true, action, node_key: node0.node_key, option, success: true, roll: null, text: null, revealed: null, line: null, halt: true, kind: "camp", title, body: campBody, rolls: [], source: STANDING_SOURCE, camp: "/camp", day: day0 })
+    }
 
     const [{ data: evs }, { data: marchRow }, { data: sheets }, { data: boats }] = await Promise.all([
       dbc.from("travel_node_events").select("id,kind,title,body,payload,fires_once,priority").eq("node_id", node0.id),
@@ -974,7 +1007,16 @@ export async function POST(req: NextRequest) {
       { node_key: node.node_key, name: full?.name ?? null, node_type: String(full?.node_type ?? node.node_type), metadata: (full?.metadata as Record<string, unknown> | null) ?? null },
       process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
     )
-    const authored: NodeOption[] = events.flatMap((e) => readOptions(e.payload))
+    // Plus what every road marker offers (lib/travel/standing.ts; Sam, 2026-11-10): a long rest at the
+    // Camp Module and the book's paces. Not when the march was already stopped here: that card speaks first.
+    const authored: NodeOption[] = [
+      ...events.flatMap((e) => readOptions(e.payload)),
+      ...standingOptions(
+        { node_type: String(full?.node_type ?? node.node_type), metadata: (full?.metadata as Record<string, unknown> | null) ?? null },
+        dayAfter,
+        !!halt,
+      ),
+    ]
     const offered = offerOptions(authored, {
       noticed: !!notice?.noticed,
       has: (boatsRes.data ?? []).length ? ["boat"] : [],
