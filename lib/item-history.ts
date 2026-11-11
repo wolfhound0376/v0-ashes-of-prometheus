@@ -42,3 +42,33 @@ export async function recordItemMove(db: Db, m: ItemMove): Promise<void> {
   if (!row) return
   try { await db.from("item_events").insert(row) } catch { /* history is a record, not a gate */ }
 }
+
+// THE ONE LINE A PLAYER SEES (Item_Identity_Design, step 5; Sam's ruling 5: "Players see a one-line provenance; the DM
+// sees the full trail"). Built from the movement lines above, oldest first. Nothing is invented: a thing with no
+// history (starting rags, the journal) gets no line.
+
+export type HistoryLine = { kind: string; detail?: Record<string, unknown> | null; occurred_at?: string | null }
+
+const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : "")
+
+/** Where a thing came from, in one short sentence, or null when there is nothing on record. Pure. */
+export function provenanceLine(events: readonly HistoryLine[]): string | null {
+  const moves = events.filter((e) => isMovementKind(e.kind)).sort((a, b) => String(a.occurred_at ?? "").localeCompare(String(b.occurred_at ?? "")))
+  // a pick-up of the very row that was dropped is the same thing coming back, not a new source
+  const all = moves.filter((e) => e.kind === "acquire" || e.kind === "pickup")
+  const fresh = all.filter((e) => !(e.kind === "pickup" && e.detail?.same_item === true))
+  const sources = fresh.length ? fresh : all.slice(0, 1)
+  const last = moves[moves.length - 1]
+  const handed = last && last.kind === "give" && str(last.detail?.from) ? `given by ${str(last.detail?.from)}` : ""
+  if (!sources.length) return handed ? `${handed[0].toUpperCase()}${handed.slice(1)}.` : null
+  const places = new Set(sources.map((e) => str(e.detail?.from) || (e.kind === "pickup" ? "the floor" : "")))
+  let line: string
+  if (places.size > 1) line = "Gathered from more than one place"   // a stack that grew: one line cannot name them all
+  else {
+    const first = sources[0], d = first.detail ?? {}, from = str(d.from)
+    if (first.kind === "pickup") line = "Picked up off the floor"
+    else if (d.from_stash === true) line = `Recovered from ${from || "the drow's stores"}${str(d.confiscated_from) ? `, where the drow kept what they took from ${str(d.confiscated_from)}` : ""}`
+    else line = from ? `Taken from ${from}` : "Taken as loot"
+  }
+  return `${line}${handed ? `, then ${handed}` : ""}.`
+}
