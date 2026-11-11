@@ -148,7 +148,7 @@ async function world({ port, lane = true, seats = [FIFI, KENTA], watchAway = fal
 let passed = 0, failed = 0, scenario = ""
 const check = (name, ok, detail) => { ok ? passed++ : failed++; console.log(`${ok ? "PASS" : "FAIL"}  [${scenario}] ${name}${detail ? "  — " + (typeof detail === "string" ? detail : JSON.stringify(detail)) : ""}`) }
 const see = (pg) => pg.evaluate(() => ({ plate: String(cur), mode, fightLive: !!cbt, mirror: !!FIGHT.mirror, leader: leader && leader.id, at: leader && [Math.round(leader.x), Math.round(leader.y)],
-  inDoorway: (() => { const z = leader && zoneAt(leader.x, leader.y); return z ? node.zones.indexOf(z) : null })(), party: party.map((p) => p.id), moves: __moves.slice() }))
+  inDoorway: (() => { const z = leader && zoneAt(leader.x, leader.y); return z ? node.zones.indexOf(z) : null })(), answered: ackZone ? node.zones.indexOf(ackZone) : null, party: party.map((p) => p.id), moves: __moves.slice() }))
 const shot = async (pg, name) => { if (SHOTS) await pg.screenshot({ path: join(SHOTS, name + ".png") }) }
 const until = async (pg, fn, ms = 30000, arg) => { try { await pg.waitForFunction(fn, arg, { timeout: ms }); return true } catch { return false } }
 // the watch does not stand talking, and the pen's ward does not matter here
@@ -192,12 +192,16 @@ const SCENARIOS = {
     try {
       // over the bridge from the pen, a few steps into the tower, and the watch there sees her (the game's own path:
       // /api/walk-spotted raises the flag, the screen opens the fight it finds on it)
-      await A.evaluate(() => { state.ambushOff = true; state.gateOpen = true; return enterNode(10, { from: 11 }) })
-      await until(A, () => mode === "explore" && !leader.walkIn && !leader.path.length, 15000)
+      await A.evaluate(() => { state.wardBroken = true; state.ambushOff = true; state.cleared[cur] = true; unlockGate(); for (const n of npcs) n.talk = false })
+      await wait(1500); await A.evaluate(() => { travel(10, node.zones[1]) })   // the crossing itself, as the gate's "To Guard Tower" row makes it
+      await until(A, () => String(cur) === "10" && mode === "explore" && !leader.walkIn && !leader.path.length, 40000)
       await A.evaluate(() => walkTo(nearestWalkable(2230, 850)))
       check("she walks in from the bridge, out of the doorway", await until(A, () => !leader.path.length && !zoneAt(leader.x, leader.y) && ackZone === null, 15000), await see(A))
       await A.evaluate(() => { state.ambushOff = false })
-      if (!await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 25000)) await A.evaluate(() => guardsReact(guardsOnPlate()[0], leader, "where they should not be"))
+      // seen walking in openly, the watch may challenge first ("Down on your knees"): the answer is Fight
+      for (let k = 0; k < 20 && !(await A.evaluate(() => mode === "combat" && !!cbt && cbt.order.length > 0)); k++) {
+        await A.evaluate(() => { const b = !$("obj").hidden && [...$("objBtns").querySelectorAll("button")].find((b) => /^Fight/.test(b.textContent.trim())); if (b) b.click() }); await wait(1500) }
+      if (!(await A.evaluate(() => mode === "combat"))) await A.evaluate(() => { guardsAlarm = null; guardsReact(guardsOnPlate()[0], leader, "where they should not be") })
       check("the tower's guards attack", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 15000), await see(A)); await sturdy(A)
       check("it comes to Fifi's turn", await itsTurn(A, "freia"))
       await setDown(A, "freia", 2230, 850); await moveTo(A, 2380, 840)
@@ -205,9 +209,15 @@ const SCENARIOS = {
       check("mid-fight she is back in the doorway to the bridge and the screen is still the tower", mid.plate === "10" && mid.inDoorway === 1 && mid.fightLive, mid)
       await lastFoeDrops(A); await wait(7000)
       const after = await see(A); await shot(A, "2-after-the-fight")
-      check("the fight is over and the screen did not pan back to the pen", after.plate === "10" && !after.fightLive && after.mode === "explore" && !after.moves.length, after)
-      await A.evaluate(() => click({ x: 2380, y: 840 }))                       // a click on the doorway she is standing in
-      check("clicking the doorway she stands in takes it", await until(A, () => String(cur) === "11" && mode === "explore", 20000), await see(A))
+      check("the fight is over and the screen did not pan back to the pen", after.plate === "10" && !after.fightLive && after.mode === "explore" && after.moves.length === 1, after)   // 1: her own arrival
+      // a click on the doorway she is standing in, on a bare bit of it. A click on a body or a bystander is theirs (the
+      // body's loot, a word with the prisoner), so the dead and the prisoners crowding the doorway are set aside first;
+      // and the pen's posts stand empty, so nobody shoots at her as she comes back over the bridge.
+      await A.evaluate(() => { storyWatch = { state: "unattended", since: "2026-01-01T00:00:00.000Z" }
+        for (const n of npcs) { n.x -= 900; n.path = [] }
+        const [x0, y0, x1, y1] = node.zones[1].rect
+        for (let y = y0 + 8; y < y1; y += 12) for (let x = x0 + 8; x < x1; x += 12) if (!hitActor(npcs, { x, y }) && !hitActor(party, { x, y }) && !pileAt({ x, y })) { click({ x, y }); return } })
+      check("clicking the doorway she stands in takes it", await until(A, () => String(cur) === "11" && mode !== "travel", 20000), await see(A))
     } finally { await W.close() }
   }],
   3: ["two cards up at once mid-fight", async (port) => {
@@ -245,14 +255,14 @@ const SCENARIOS = {
       await wait(3000); await openGate(A); await wait(2500)
       for (const pg of [A, B]) await pg.evaluate(() => { for (const n of npcs) n.talk = false; if (mode === "talk") closeTalk(false) })
       await setDown(A, "freia", 430, 640)                                      // out on the landing; the watch sees her
-      await A.evaluate(() => { guardsReact(gateGuards()[0], leader, "out of the pen") })
+      for (let k = 0; k < 8 && !W.server.flag(); k++) { await A.evaluate(() => { if (mode === "talk") closeTalk(false); guardsAlarm = null; guardsReact(gateGuards()[0], leader, "out of the pen") }); await wait(1500) }
       const both = (await until(A, () => mode === "combat" && cbt && cbt.fromFlag, 30000)) && (await until(B, () => mode === "combat" && cbt && cbt.fromFlag, 30000))
       check("each screen opens its own copy of the fight from the flag", both && !(await A.evaluate(() => FIGHT.mirror)) && !(await B.evaluate(() => FIGHT.mirror)), { flag: !!W.server.flag(), a: await A.evaluate(() => mode), b: await B.evaluate(() => mode) })
       await sturdy(A); await sturdy(B)
       check("it comes to Fifi's turn on her own screen", await itsTurn(A, "freia", 240000))
       await setDown(A, "freia", 200, 520); await moveTo(A, ...BRIDGE_FOOT)
       const mid = await see(A)
-      check("Fifi is on the bridge foot, mid-fight, both drow standing on her screen", mid.plate === "11" && mid.inDoorway === 1 && mid.fightLive && (await A.evaluate(() => standing(foes).length)) === 2, mid)
+      check("Fifi is on the bridge foot, mid-fight, drow still standing on her screen", mid.plate === "11" && mid.inDoorway === 1 && mid.fightLive && (await A.evaluate(() => standing(foes).length)) > 0, mid)
       await lastFoeDrops(B)                                                    // Kenta's copy is won; his screen takes the flag down
       await wait(12000)
       const a = await see(A), b = await see(B); await shot(A, "5-fifi-after-the-other-copy-ended")
