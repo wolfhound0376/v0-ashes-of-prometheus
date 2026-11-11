@@ -75,6 +75,7 @@ import { baselinePatch, baselinePlan, type HeroRow } from "@/lib/hero-baseline"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { startingSituation } from "@/lib/situation"
 import { FLOOR_HOLDER_NAME, LOOT_HOLDER_NAME } from "@/lib/floor-holder"
+import { CONFISCATION_STASH_NAME, STASH_MARK, returnsToStash } from "@/lib/confiscation"
 
 /** Where the party stands after a restart. Must match an `environments.name`. */
 const STARTING_LOCATION = "Scene_1_Velkynvelve (slave pen)"
@@ -543,6 +544,30 @@ export async function restartCampaign(admin: SupabaseClient): Promise<RestartRes
     }
     report.playersHealed = healed
     report.spellSlotsRestored = slotsRestored
+  }
+
+  {
+    // The party's own confiscated kit goes back in the stash BEFORE any pack or holder is emptied (Sam, 2026-11-10).
+    // A hero who robbed the chest holds the row itself; so might the floor, or an NPC they handed it to. Wherever it
+    // is, the history line written at the take says it came from the stash (returnsToStash, lib/confiscation.ts).
+    // What was used up or merged into another stack has no row left to return.
+    const { data: stash } = await admin.from("characters").select("id").eq("name", CONFISCATION_STASH_NAME).order("created_at", { ascending: true }).limit(1).maybeSingle()
+    if (stash?.id) {
+      const { data: takes, error: takesErr } = await admin.from("item_events").select("inventory_item_id, detail, created_at").eq("kind", "acquire").eq(`detail->>${STASH_MARK}`, "true")
+      note("stash takes read", takesErr)
+      const ownerIds = [...new Set(((takes || []) as { detail: Record<string, unknown> | null }[]).map((t) => t.detail?.owner_id).filter((v): v is string => typeof v === "string"))]
+      const { data: owners } = ownerIds.length ? await admin.from("characters").select("id").in("id", ownerIds) : { data: [] }
+      const plan = returnsToStash((takes || []) as Parameters<typeof returnsToStash>[0], new Set(((owners || []) as { id: string }[]).map((o) => o.id)))
+      let returned = 0
+      for (const [rowId, owner] of plan) {
+        const { data: back, error } = await admin.from("inventory_items").update({ character_id: stash.id, confiscated_from: owner }).eq("id", rowId).neq("character_id", stash.id).select("id")
+        if (error) note(`stash return ${rowId}`, error)
+        else returned += (back || []).length
+      }
+      // Item history does not survive a New Game (Sam, 2026-11-11). These rows outlive the run, so theirs is cleared here.
+      if (plan.size) { const { error } = await admin.from("item_events").delete().in("inventory_item_id", [...plan.keys()]); note("stash return history", error) }
+      report.stashGearReturned = returned
+    }
   }
 
   {
