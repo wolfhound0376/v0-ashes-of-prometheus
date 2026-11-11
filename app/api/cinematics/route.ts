@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
+import { isFiredBy, isPlate } from "@/lib/cinematic-health"
 
 // /api/cinematics — create and delete cinematic clip entries. (PR-4)
 //
@@ -365,6 +366,41 @@ export async function GET(request: NextRequest) {
   return NextResponse.json({ clip: clip ? { ...clip, scope: clipScope } : null, resolution })
 }
 
+// THE ROW IS THE TRIGGER (Sam, 2026-11-10). A film's own row says when it fires (`moment`), who fires it
+// (`fired_by`), which Underwalk plate it belongs to (`plate`), whose it is (`character_id`) and whether it is
+// retired. This reads those fields off a request body: only the keys actually sent come back, each either a
+// valid value or an error. Closed lists are checked here because the DM tab is not the only possible caller.
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+function triggerFields(body: Record<string, unknown> | null): { fields: Record<string, unknown> } | { error: string } {
+  const out: Record<string, unknown> = {}
+  if (!body) return { fields: out }
+  if ("moment" in body) {
+    const m = typeof body.moment === "string" ? body.moment.trim().slice(0, 300) : ""
+    out.moment = m || null
+  }
+  if ("fired_by" in body) {
+    if (!isFiredBy(body.fired_by)) return { error: "Unknown 'fired by' value" }
+    out.fired_by = body.fired_by
+  }
+  if ("plate" in body) {
+    if (body.plate === null || body.plate === "") out.plate = null
+    else if (isPlate(body.plate)) out.plate = body.plate
+    else return { error: "Unknown plate" }
+  }
+  if ("character_id" in body) {
+    if (body.character_id === null || body.character_id === "") out.character_id = null
+    else if (typeof body.character_id === "string" && UUID.test(body.character_id)) out.character_id = body.character_id
+    else return { error: "Unknown hero" }
+  }
+  if ("retired" in body) {
+    if (typeof body.retired !== "boolean") return { error: "Retired must be true or false" }
+    out.retired = body.retired
+  }
+  return { fields: out }
+}
+
+const CLIP_COLUMNS = "id, location, state, scope, kind, video_url, moment, fired_by, plate, retired, character_id"
+
 export async function POST(request: NextRequest) {
   if (!authorized(request)) return NextResponse.json({ error: "Not authorized" }, { status: 403 })
 
@@ -383,6 +419,8 @@ export async function POST(request: NextRequest) {
   const kind = KINDS.includes(body?.kind) ? (body.kind as (typeof KINDS)[number]) : null
 
   if (!location) return NextResponse.json({ error: "Location is required" }, { status: 400 })
+  const trigger = triggerFields(body)
+  if ("error" in trigger) return NextResponse.json({ error: trigger.error }, { status: 400 })
   if (!scope) return NextResponse.json({ error: "Scope must be solo or party" }, { status: 400 })
   if (!kind) return NextResponse.json({ error: "Kind must be environment, action or filler" }, { status: 400 })
 
@@ -415,13 +453,53 @@ export async function POST(request: NextRequest) {
 
   const { data, error } = await admin
     .from("cinematic_clips")
-    .insert({ location: canonicalLocation, state, scope, kind })
-    .select("id, location, state, scope, kind, video_url")
+    .insert({ location: canonicalLocation, state, scope, kind, ...trigger.fields })
+    .select(CLIP_COLUMNS)
     .single()
   if (error) {
     console.error("[cinematics] insert failed:", error.message)
     return NextResponse.json({ error: "Could not create the clip" }, { status: 500 })
   }
+  return NextResponse.json({ clip: data })
+}
+
+// PATCH json: { id, moment?, fired_by?, plate?, character_id?, retired?, scope? } → edit a film's trigger.
+// Location, cue name and kind are the film's identity and are not editable here: change those by filing a
+// new clip, so a film can never be quietly re-pointed at a different moment. DM-keyed like POST and DELETE.
+export async function PATCH(request: NextRequest) {
+  if (!authorized(request)) return NextResponse.json({ error: "Not authorized" }, { status: 403 })
+
+  let admin: ReturnType<typeof createAdminClient>
+  try {
+    admin = createAdminClient()
+  } catch (e) {
+    console.error("[cinematics] admin client unavailable:", e)
+    return NextResponse.json({ error: "Server not configured" }, { status: 500 })
+  }
+
+  const body = await request.json().catch(() => null)
+  const id = typeof body?.id === "string" && UUID.test(body.id) ? body.id : ""
+  if (!id) return NextResponse.json({ error: "Clip id is required" }, { status: 400 })
+  const trigger = triggerFields(body)
+  if ("error" in trigger) return NextResponse.json({ error: trigger.error }, { status: 400 })
+  const fields: Record<string, unknown> = { ...trigger.fields }
+  if (body && "scope" in body) {
+    if (!SCOPES.includes(body.scope)) return NextResponse.json({ error: "Scope must be solo or party" }, { status: 400 })
+    fields.scope = body.scope
+  }
+  if (Object.keys(fields).length === 0) return NextResponse.json({ error: "Nothing to change" }, { status: 400 })
+
+  const { data, error } = await admin
+    .from("cinematic_clips")
+    .update({ ...fields, updated_at: new Date().toISOString() })
+    .eq("id", id)
+    .select(CLIP_COLUMNS)
+    .maybeSingle()
+  if (error) {
+    console.error("[cinematics] update failed:", error.message)
+    return NextResponse.json({ error: "Could not save the change" }, { status: 500 })
+  }
+  if (!data) return NextResponse.json({ error: "No such clip" }, { status: 404 })
   return NextResponse.json({ clip: data })
 }
 
