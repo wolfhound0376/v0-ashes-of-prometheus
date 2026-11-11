@@ -20759,8 +20759,16 @@ async function playBuppidoRises(t){
   await wait(R.stirMs);
 
   // IT CLIMBS OUT, on the prebuilt sheet: 21 frames at 12 fps, with the `undead-breach` sting its sprite.json names.
-  const z = mkActor(R.foe, g.x, g.y, "foe", {hostile: true, face: faceOf((leader ? leader.x : g.x) - g.x, (leader ? leader.y : g.y) - g.y), home: {x: g.x, y: g.y}});
-  npcs.push(z); actors.push(z);
+  // ONE FIGHT (2026-11-10): the rise takes ~10 s, and a fight can open in the meantime. Then startCombat() below is a
+  // no-op and the zombie was left standing on this screen alone, outside the fight, unseen by every other screen. So:
+  // while this screen is only SHOWING someone else's fight it waits for that fight to end; while it RUNS a fight, the
+  // zombie joins that fight, which the fight sync then carries to every screen.
+  for (let i = 0; i < 600 && FIGHT.mirror; i++) await wait(500);
+  const joining = mode === "combat" && cbt && !FIGHT.mirror;
+  const z = joining ? foeJoins(R.foe, {x: g.x, y: g.y}) : mkActor(R.foe, g.x, g.y, "foe", {hostile: true, face: faceOf((leader ? leader.x : g.x) - g.x, (leader ? leader.y : g.y) - g.y), home: {x: g.x, y: g.y}});
+  if (!z) return;
+  z.hostile = true; z.home = {x: g.x, y: g.y};
+  npcs.push(z); if (!joining) actors.push(z);
   shake(9); bank("walk:undead-breach", 1);
   if (SPR[z.id] && SPR[z.id].img.emerge) playOnce(z, "emerge", () => setAnim(z, "idle")); else setAnim(z, "idle");
   await wait(R.emergeMs);
@@ -20781,6 +20789,7 @@ async function playBuppidoRises(t){
   //   NO ALLIES: a dwarf, an orc, a quaggoth and a drow will all swing at a guard. None of them swings at a corpse
   //     that just stood up — they run, like every other bystander in the pen (Sam's bystander ruling, 2026-10-28),
   //     and the gate is locked. That is the difference between nine attackers and the party on its own.
+  if (joining){ if (inFight(z)) log(`<b>Something has climbed out of Buppido's grave</b> and joins the fight.`); return; }
   startCombat([z], "something has climbed out of Buppido's grave",
               {noAllies: true, surprised: [...party, ...npcs.filter(n => actors.includes(n) && n !== z)]});
 }

@@ -172,7 +172,12 @@ check("his bag works in his turn on his screen; the potion is drunk on the fight
 await B.evaluate(() => { if (FIGHT.menu && FIGHT.menu.phase === "menu"){ const b = [...$("cbtMenu").querySelectorAll("button")].find(b => /End turn/.test(b.textContent)); if (b) b.click(); } })
 await wait(4000)
 check("his End turn moved the fight on", (await A.evaluate(() => activeActor() && activeActor().id)) !== "kenta")
-// a reaction card for Kenta goes to Kenta's screen
+// a reaction card for Kenta goes to Kenta's screen. A real one may already be up (a drow walked past him: an
+// opportunity attack, routed to his screen as it should be). Answer it first, so the test card has the stage.
+for (let i = 0; i < 4 && await B.evaluate(() => !$("dialog").hidden); i++){
+  await B.evaluate(() => { const bs = [...$("dialog").querySelectorAll("button")].filter(b => !b.hidden && b.offsetParent); if (bs.length) bs[bs.length - 1].click() })
+  await wait(2500)
+}
 await A.evaluate(() => { window.__answered = null; const k = party.find(p => p.id === "kenta"); if (askable(k)) showDialog({title: "Test card", body: "for Kenta", buttons: [{label: "Yes", fn: () => { window.__answered = "yes" }}, {label: "No", fn: () => { window.__answered = "no" }}]}) })
 await wait(2500)
 const dB = await B.evaluate(() => ({shown: !$("dialog").hidden, title: $("dlgTitle").textContent}))
@@ -200,6 +205,8 @@ check("two screens opening at once: exactly one runs it, the other shows it", (r
 check("no doubled drow on the screen that lost the race", JSON.stringify(rA.foes) === JSON.stringify(rB.foes) && rA.dup === rB.dup, {rA, rB})
 const authPg = rA.auth ? A : B
 await authPg.evaluate(() => endCombat(false)); await wait(4000)
-check("and it ends on both", (await A.evaluate("mode")) === "explore" && (await B.evaluate("mode")) === "explore")
+// "Ended" is no fight and the same mode on both: a prisoner who wants a word after a fight (Eldeth) opens talk on both
+const zA = await A.evaluate(() => ({mode, fight: FIGHT.id, mirror: FIGHT.mirror})), zB = await B.evaluate(() => ({mode, fight: FIGHT.id, mirror: FIGHT.mirror}))
+check("and it ends on both", zA.mode !== "combat" && zA.mode === zB.mode && !zA.fight && !zB.fight && !zA.mirror && !zB.mirror, {zA, zB})
 console.log("ticks+inputs stored:", msgs.length, "bytes:", bytes)
 await browser.close(); server.close(); process.exit(0)
