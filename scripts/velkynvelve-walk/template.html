@@ -13121,7 +13121,10 @@ let runSeen = null;
 async function pollStage(){
   if (!APP || timeStopped) return;
   try {
-    const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json();
+    // TIME PASSES WHILE YOU PLAY (Sam, 2026-11-10): out walking (not mid-fight, not crossing, not in a rehearsal) this
+    // poll asks the game to move the clock on; the server writes at most one tick a real minute (lib/world-time)
+    const tick = !SANDBOX && (mode === "explore" || mode === "dialog" || mode === "talk") ? "?tick=1" : "";
+    const r = await fetch("/api/map-stage" + tick, {cache: "no-store"}); const j = await r.json();
     noteNpcTongues(j);
     if (typeof j.run === "number"){
       if (runSeen === null) runSeen = j.run;

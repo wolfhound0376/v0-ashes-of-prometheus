@@ -23,6 +23,8 @@
  */
 
 import { advanceGasSporeInfections } from "./gas-spore-clock"
+import { applyStageEvents, type StageEvent } from "./stage-roster"
+import { shiftChangesBetween } from "./world-time"
 
 // The event types the app logs. Every one except `cinematic_cut` is expected to
 // have a matching row in time_advancement_rules, so the trigger can fill in
@@ -47,6 +49,9 @@ export const TIME_EVENT_TYPES = [
   // hours lost to wandering. Minutes are explicit — a rule row cannot know the
   // leg's length — so the trigger never has to guess.
   "travel_march",
+  // Time passing while the table plays (lib/world-time; Sam, 2026-11-10). Minutes are explicit: the real time that
+  // passed, at the house rate.
+  "time_passes",
 ] as const
 
 /** Event types that take no time and are logged with an explicit 0. */
@@ -55,7 +60,7 @@ export const ZERO_MINUTE_EVENTS: ReadonlySet<TimeEventType> = new Set<TimeEventT
 export type TimeEventType = (typeof TIME_EVENT_TYPES)[number]
 
 /** Event types that require an explicit minutes_advanced value on insert. */
-export const MINUTES_REQUIRED: ReadonlySet<TimeEventType> = new Set<TimeEventType>(["cinematic_cut", "training", "travel_march"])
+export const MINUTES_REQUIRED: ReadonlySet<TimeEventType> = new Set<TimeEventType>(["cinematic_cut", "training", "travel_march", "time_passes"])
 
 /** A hidden roll recorded against a story-advancement event. Never shown to players. */
 export interface HiddenRoll {
@@ -141,6 +146,8 @@ export async function logTimeEvent(admin: any, sessionId: string | null, event: 
     const { data: stopped } = await admin.from("world_flags").select("key").eq("campaign_id", "ashes-of-prometheus").eq("key", "time-stopped").maybeSingle()
     if (stopped) { console.log(`[time] ${event.eventType} not logged: time is stopped`); return }
   } catch { /* if the flag cannot be read, keep time as before */ }
+  // where the clock stood before, so the shift changes this event carries it across can be counted (below)
+  const before = await readGameClock(admin, sessionId)
   const payload: Record<string, unknown> = { session_id: sessionId, event_type: event.eventType }
   if (typeof event.minutesAdvanced === "number") payload.minutes_advanced = Math.max(0, Math.round(event.minutesAdvanced))
   if (event.hiddenRoll) payload.hidden_roll = event.hiddenRoll
@@ -155,6 +162,14 @@ export async function logTimeEvent(admin: any, sessionId: string | null, event: 
     // comes through here, so nothing that keeps time can be skipped by one.
     const clock = await readGameClock(admin, sessionId)
     if (clock) await advanceGasSporeInfections(admin, { day: clock.day, minutesOfDay: clock.minutesOfDay })
+    // EVERY SHIFT CHANGE IS A CHANGE OF THE WATCH (Sam, 2026-11-10: "tie the guard to the shifts"). The guards hand
+    // over when the work shifts do, so each one the clock just crossed is counted on the stage — which is what brings
+    // Jorlan on with the 2nd or 3rd relief. lib/world-time.
+    const changes = shiftChangesBetween(before, clock)
+    if (changes > 0) {
+      const events: StageEvent[] = Array.from({ length: changes }, () => ({ kind: "watch", state: "changing" }))
+      await applyStageEvents(admin, events)
+    }
   } catch (e) {
     console.error(`[time] logTimeEvent(${event.eventType}) threw:`, e)
   }
