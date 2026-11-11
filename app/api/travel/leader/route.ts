@@ -19,11 +19,17 @@ export const dynamic = "force-dynamic"
 export async function GET() {
   const db = createAdminClient()
   const runId = await activeRunId(db)
-  const [lead, party, marchRes] = await Promise.all([
+  const [lead, party, marchRes, haltRes] = await Promise.all([
     readLeader(db, runId),
     roster(db),
     runId ? db.from("travel_march").select("pace,hours_today,day_miles").eq("campaign_run_id", runId).maybeSingle() : Promise.resolve({ data: null }),
+    // The march's open halt, if any. A browser that left the map for the camp comes back to a fresh page;
+    // without this the camp card - and with it "break camp", which starts the new day - would be gone.
+    db.from("travel_arrivals").select("outcome,node_id").eq("halted", true).is("resolved_at", null).limit(1).maybeSingle(),
   ])
+  const ho = (haltRes.data?.outcome ?? null) as { kind?: unknown; title?: unknown; body?: unknown; source?: unknown } | null
+  // Only a camp crosses here: an encounter's title and text stay with the browser that rolled it.
+  const openHalt = ho && ho.kind === "camp" ? { kind: "camp", title: String(ho.title ?? "Camp"), body: typeof ho.body === "string" ? ho.body : null, source: String(ho.source ?? "") } : null
   const tally = tallyLeader(lead.votes, party.map((c) => c.id))
   const leads = whoLeads(lead.leader, lead.host, tally.leader)
   const day = normaliseDay((marchRes.data as Record<string, unknown> | null) ?? null)
@@ -36,6 +42,7 @@ export async function GET() {
     needed: tally.needed,
     roster: party,
     available: lead.available,
+    open_halt: openHalt,
     day: { pace: day.pace, hours_today: day.hours_today, day_miles: Number(marchRes.data?.day_miles) || 7 },
   })
 }

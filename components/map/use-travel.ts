@@ -86,6 +86,8 @@ export type LeadInfo = {
   roster: { id: string; name: string }[]
   available: boolean
   day: { pace: Pace; hours_today: number; day_miles: number }
+  /** A camp the march is stopped at right now (a long rest, or nightfall), so a page that comes back from the fire finds its card. */
+  open_halt?: { kind: string; title: string; body: string | null; source: string } | null
 }
 
 export type Halt = {
@@ -110,6 +112,9 @@ export function useTravel() {
   // cannot walk the party past an ambush.
   const [halt, setHalt] = useState<Halt | null>(null)
   const resumeRef = useRef<(() => void) | null>(null)
+  // The options card holds the walk too (Sam, 2026-11-10: a card at every stop). Released when the card,
+  // the result of a choice, and any halt the choice opened have all been put away.
+  const optionsResumeRef = useRef<(() => void) | null>(null)
   const lastNodeKey = useRef<string | null>(null)
   // The party's boats (party_vessels, lost_at null). The Darklake crossings
   // stay closed until one is earned in the fiction and recorded by the DM.
@@ -131,6 +136,8 @@ export function useTravel() {
   // road controls - set out, walk, break camp - never the reveal buttons.
   const [me, setMe] = useState<{ characterId: string | null; claimToken: string | null }>({ characterId: null, claimToken: null })
   const [lead, setLead] = useState<LeadInfo | null>(null)
+  const meRef = useRef(me)
+  meRef.current = me
   const canLead = !!dmKey || (!!lead?.leader && !!me.characterId && lead.leader === me.characterId)
   const canLeadRef = useRef(false)
   canLeadRef.current = canLead
@@ -214,6 +221,16 @@ export function useTravel() {
       const out = res.ok ? await res.json() : null
       if (!out?.ok) return
       setOptions(null)
+      if (out.halt && out.kind === "camp") {
+        // MAKE CAMP: LONG REST. The march is stopped at this marker on the server; show its card and go
+        // to the Camp Module. The card (and "break camp", which starts the new day) is waiting on the
+        // way back, restored from the server's open halt.
+        setHalt({ kind: "camp", title: out.title ?? "Camp", body: out.body ?? null, rolls: [], source: out.source ?? "" })
+        if (out.day) setMarch((m) => ({ ...m, ...out.day }))
+        setRefresh((r) => r + 1)
+        void stage.go(typeof out.camp === "string" ? out.camp : "/camp", { caption: "A fire, if you can call it one. Sit. Eat. Sleep, if the dark lets you." })
+        return
+      }
       setChosen({ label: out.option?.label ?? "", success: !!out.success, text: out.text ?? null, roll: out.roll ? { name: out.roll.name, arithmetic: out.roll.arithmetic } : null, line: out.line ?? null, revealed: out.revealed ?? null })
       if (out.day) setMarch((m) => ({ ...m, ...out.day }))
       if (typeof out.line === "string" && out.line) {
@@ -314,6 +331,11 @@ export function useTravel() {
           const li = (await lr.json()) as LeadInfo
           if (!alive) return
           setLead(li)
+          // Back from the fire: the camp is still standing on the server, so its card stands here again.
+          // Only for a browser that may break camp, and never over a halt this page is already showing.
+          const oh = li.open_halt
+          const mine = !!dmKey || (!!li.leader && !!meRef.current.characterId && li.leader === meRef.current.characterId)
+          if (oh && mine) setHalt((h) => h ?? { kind: oh.kind, title: oh.title, body: oh.body, rolls: [], source: oh.source })
           if (!dmKey && li.day) setMarch((m) => ({ ...m, pace: li.day.pace, hours_today: li.day.hours_today, day_miles: li.day.day_miles }))
         }
       } catch {
@@ -510,7 +532,18 @@ export function useTravel() {
         }
       })
     }
+    // A stop with choices is a stop: the party stands at the marker until the card is answered.
+    if (Array.isArray(out?.options) && out.options.length) {
+      await new Promise<void>((resolve) => { optionsResumeRef.current = resolve })
+    }
   }
+  // Release the walk once nothing the stop put up is still on screen.
+  useEffect(() => {
+    if (options || chosen || halt) return
+    const go = optionsResumeRef.current
+    optionsResumeRef.current = null
+    if (go) go()
+  }, [options, chosen, halt])
   /** The walk is setting out from `start`: the first arrive reports where it came from. */
   function walkStarted(startKey: string) {
     lastNodeKey.current = startKey
