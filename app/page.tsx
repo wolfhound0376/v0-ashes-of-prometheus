@@ -467,6 +467,23 @@ export default function DashboardPage() {
     url.searchParams.delete("as")
     window.history.replaceState(null, "", url.pathname + url.search + url.hash)
   }, [])
+  // TALK TO MALACHAR (Sam, 2026-11-10: "Talk to Malachar in the pixel game should open a dialogue box in the
+  // dashboard UI directly to the DM ... a more simplified Dashboard UI for this exact purpose"). The map's
+  // "Tell Malachar" links here as /?view=full&from=map&dm=1: the Parley opens as an audience with him alone and
+  // every line is addressed to the DM. Until now that button opened the plain Parley, which kept whoever was last
+  // on stage, so the box read "Say something to Quaggoth". `dm` stays in the address so a refresh stays here.
+  const [dmAudience, setDmAudience] = useState(false)
+  useEffect(() => {
+    const url = new URL(window.location.href)
+    if (url.searchParams.get("dm") !== "1") return
+    setDmAudience(true)
+    setAddressPick("dm")
+    const area = url.searchParams.get("area")?.trim()
+    if (area) setTalkArea(area.slice(0, 60))
+    const as = url.searchParams.get("as")?.trim()
+    if (as) setTalkAs(as.slice(0, 60))
+  }, [])
+  useEffect(() => { if (dmAudience && addressPick !== "dm") setAddressPick("dm") }, [dmAudience, addressPick])
   // The camp scene's Alchemy tile links here as /?view=compact&from=camp&bench=1
   // (Sam, 2026-10-01: "make sure the alchemy bench is wired to the camp at the
   // fire"): the compact view opens on Camp with the real alchemy bench already
@@ -2027,6 +2044,7 @@ if (error) {
     </>
   ) : USE_PARLEY ? (
   <ParleyDashboard
+  audience={dmAudience}
   voicesOn={!isTTSMuted}
   onToggleVoices={toggleTTSMute}
   onJournal={() => openSection("journal")}

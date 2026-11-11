@@ -8386,7 +8386,7 @@ function renderExploreBar(){
   if (o.foe) add(`Attack ${nm(o.foe)}`, "⚔", ART("attack", "attack"), "starts a fight · roll initiative", () => fightWith(o.foe, `${who} attacks!`), "end");
   if (party.filter(canControl).length > 1) add("Next hero", "⇆", null, `Tab · now ${who}`, () => { const mine = party.filter(canControl); const i = mine.indexOf(leader); setLeader(mine[(i + 1) % mine.length]); });
   if (!o.foe) add("Short rest", "⌛", "dodge", restRisk().chance ? `an hour here · ${Math.round(restRisk().chance * 100)}% the locals find you` : "an hour here", () => openRest());
-  add("Tell Malachar", "✎", null, "search, hide, anything else", () => openParley());
+  add("Tell Malachar", "✎", null, "search, hide, anything else", () => openParley(true));
   exploreExtras(m, o, add, who);
 }
 // ---------- THE UNDERWALK'S OPTIONS (Sam, 2026-10-25: "we need more options") ----------
@@ -17503,12 +17503,13 @@ const PLAYS_AS = {kenta: "Kenta of Neverwinter", samson: "Samson Stillwater", sc
 const PLATES = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/velkynvelve/walk/";
 // THE PARLEY (Sam, 2026-10-28: "I also need a parley dashboard button"). The same trip "Tell Malachar" takes: save the
 // walk, open the dashboard's Parley view with the map as its return, so Return (M) there lands the party where it stood.
-function parleyUrl(){
+function parleyUrl(toDm){
   const q = new URLSearchParams({view: "full", from: "map", return: SANDBOX ? "/velkynvelve?sandbox=1" : "/velkynvelve", area: node.name, as: (leader && PLAYS_AS[leader.id]) || ""});
+  if (toDm) q.set("dm", "1");                         // TALK TO MALACHAR (Sam, 2026-11-10): the audience with the DM alone, not the whole Parley
   if (SANDBOX) q.set("sandbox", "1");
   return (APP ? "/?" : "https://ashes.playacartagena.com/?") + q.toString();
 }
-function openParley(){ saveWalk(); const url = parleyUrl(); if (APP) window.top.location.href = url; else window.open(url, "_blank"); }
+function openParley(toDm){ saveWalk(); const url = parleyUrl(toDm === true); if (APP) window.top.location.href = url; else window.open(url, "_blank"); }
 if ($("parleyBtn")) $("parleyBtn").onclick = () => openParley();
 function talkUrl(npc, said){
   const q = new URLSearchParams({view: "full", from: "map", talk: SPR[npc.id].json.name, return: SANDBOX ? "/velkynvelve?sandbox=1" : "/velkynvelve", scene: SPEC[cur].img ? location.origin + PLATE_DIR + SPEC[cur].img : `${PLATES}img/${node.slug}.jpg`, area: node.name, as: PLAYS_AS[leader?.id] || ""});
