@@ -538,6 +538,7 @@ body.bagOpen .toast,body.bagOpen .dialog{z-index:30}   /* the stage's height bud
 .invDetail h5{margin:0;font-family:var(--face-display);font-weight:400;font-size:var(--s2);color:var(--ef-text);letter-spacing:.03em}
 .invDetail .efMeta{font-size:var(--s0);color:var(--ef-secondary);line-height:1.5}
 .invDetail .efMeta b{color:var(--ef-text);font-weight:600}
+.invDetail .efFrom{color:var(--ef-secondary);font-size:var(--s0);line-height:1.3;margin-top:5px}
 .invDetail .efDesc{font-style:italic;color:var(--ef-text);font-size:var(--s0);line-height:1.35;border-top:1px solid #2a2330;padding-top:6px;margin-top:6px}
 .invDetail .efActs{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
 .invDetail .efHint{font-family:var(--face-mono);font-size:.68rem;color:var(--ef-muted);letter-spacing:.08em}
@@ -16140,7 +16141,7 @@ async function loadGear(only){
       const carried = (j.carried || []).map(r => { const cat = catalogItem(r.name); return {name: r.name, item_key: r.item_key, item_type: r.items?.item_type || r.item_type || cat?.item_type, properties: r.items?.properties || cat?.properties || {}, pixel: cat?.pixel_icon_url || null,
         eslot: normSlot(r.equippable_slot || r.items?.equippable_slot || cat?.equippable_slot || ""),
         wt: Number(r.weight ?? r.items?.weight ?? cat?.weight ?? 0) || 0,
-        qty: r.quantity || 1, icon: r.icon_url || cat?.icon_url || null, desc: r.description || cat?.description || ""}; });
+        qty: r.quantity || 1, icon: r.icon_url || cat?.icon_url || null, desc: r.description || cat?.description || "", origin: r.origin || ""}; });
       const doll = (j.equipped || []).filter(e => e.equipped !== false).map(e => ({slot: normSlot(e.slot), name: e.name, item_key: e.item_key || null}));
       const inHand = sl => (doll.find(d => d.slot === sl) || {}).name || null;
       GEAR[id] = {carried, doll, main: inHand("main_hand"), off: inHand("off_hand"), carryMax: j.carry ? j.carry.max : undefined}; refreshAttacks(id); refreshAc(id);
@@ -17032,7 +17033,7 @@ function renderItemCard(a, g, it, u, worn, pic, what, fight, mine){
     + (atk ? `<br>${esc(atk.dmg)} ${esc(atk.type)} · +${atk.hit} to hit${atk.reach > 5 ? ` · ${atk.reach} ft` : ""}` : "")
     + (armorOf(it) ? `<br>${armorNote(a, it)}` : "")
     + (atk ? `<br>${weaponNote(SHEETS[a.id], it)}` : "") + (attuneNote(it, false, a.id) ? `<br>${attuneNote(it, false, a.id)}` : "");
-  d.innerHTML = `<div class="efBig${it.icon ? "" : " px"}">${pic ? `<img src="${esc(pic)}" alt="">` : "◆"}</div><div><h5>${esc(it.name)}</h5><div class="efMeta">${meta}</div>${it.desc ? `<div class="efDesc">${esc(it.desc)}</div>` : ""}<div class="efActs"></div></div>`;
+  d.innerHTML = `<div class="efBig${it.icon ? "" : " px"}">${pic ? `<img src="${esc(pic)}" alt="">` : "◆"}</div><div><h5>${esc(it.name)}</h5><div class="efMeta">${meta}</div>${it.desc ? `<div class="efDesc">${esc(it.desc)}</div>` : ""}${it.origin ? `<div class="efFrom">${esc(it.origin)}</div>` : ""}<div class="efActs"></div></div>`;
   const acts = d.querySelector(".efActs");
   const btn = (label, ok, why, fn, primary) => { const b = document.createElement("button"); b.className = "btn" + (primary ? " primary" : ""); b.textContent = label; b.disabled = !ok; if (why) b.title = why; b.onclick = fn; acts.appendChild(b); };
   const cost = sl => fight ? (HAND(sl) ? gearHint(a, wornIn(g, sl) ? 2 : 1) : "not mid-fight") : "";
