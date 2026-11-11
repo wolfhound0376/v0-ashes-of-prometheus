@@ -1,6 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { restartCampaign } from "@/lib/restart-campaign"
+import { newSaveName } from "@/lib/saves"
+import { shelveWorldInPlay, startNewSave } from "@/lib/save-store"
 
 // POST /api/restart-campaign — the real "start over" button (the DM's red button at /table).
 // The wipe itself lives in lib/restart-campaign.ts, shared with /api/table's `new` — the DM door's
@@ -27,5 +29,11 @@ export async function POST(req: Request) {
     console.error("[restart] admin client unavailable:", e)
     return Response.json({ ok: false, reason: "server" }, { status: 500 })
   }
-  return Response.json(await restartCampaign(admin), { status: 200 })
+  // SAVED GAMES (Sam, 2026-11-10, ruling 1): the world in play goes on the shelf before it is wiped, and the fresh
+  // world becomes a new save. A failed save stops the wipe. Skipped until the saves migration is applied.
+  const shelved = await shelveWorldInPlay(admin, "Before the new game")
+  if (!shelved.ok && !shelved.missing) return Response.json({ ok: false, reason: "save", problems: [`The game in play could not be saved, so nothing was reset: ${shelved.error}`] }, { status: 500 })
+  const result = await restartCampaign(admin)
+  if (result.ok && shelved.ok) await startNewSave(admin, newSaveName())
+  return Response.json(result, { status: 200 })
 }
