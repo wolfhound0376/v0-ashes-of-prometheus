@@ -122,6 +122,20 @@
    "fps": 12,
    "loop": false,
    "hit": 0.45
+  },
+  "shoot": {
+   "sheet": "shoot.png",
+   "frames": 8,
+   "fps": 12,
+   "loop": false,
+   "hit": 0.45
+  },
+  "shoot-bow": {
+   "sheet": "shoot-bow.png",
+   "frames": 8,
+   "fps": 12,
+   "loop": false,
+   "hit": 0.6
   }
  }
 }

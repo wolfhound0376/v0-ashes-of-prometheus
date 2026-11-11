@@ -34,9 +34,13 @@ export async function GET() {
     const db = createAdminClient()
     const [seated, { data }] = await Promise.all([
       readSeated(db),
-      db.from("characters").select("id, name, class").eq("is_player", true).is("archived_at", null).order("created_at", { ascending: true }),
+      db.from("characters").select("id, name, class, portrait_image_url, avatar_image_url, face_image_url, hero_image_url").eq("is_player", true).is("archived_at", null).order("created_at", { ascending: true }),
     ])
-    const roster = (data ?? []).map((c) => ({ id: c.id as string, name: c.name as string, cls: (c.class as string | null) ?? "" }))
+    // `img`: the hero's portrait, for the host's "Who are you playing tonight?" cards (Sam, 2026-11-10).
+    const roster = (data ?? []).map((c) => ({
+      id: c.id as string, name: c.name as string, cls: (c.class as string | null) ?? "",
+      img: ((c.portrait_image_url ?? c.avatar_image_url ?? c.face_image_url ?? c.hero_image_url) as string | null) ?? null,
+    }))
     return NextResponse.json({ seated, roster })
   } catch (e) {
     return NextResponse.json({ seated: [], roster: [], error: String(e) })

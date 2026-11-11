@@ -86,7 +86,7 @@ def main() -> None:
 
     out.save(sprite_dir / f"{a.pose}.png")
     entry = {"sheet": f"{a.pose}.png", "frames": n, "fps": a.fps, "loop": False}
-    if a.pose == "shoot" or a.pose.startswith("art-"):
+    if a.pose.startswith("shoot") or a.pose.startswith("art-"):
         entry["hit"] = a.hit   # the release frame: the bolt leaves here (a special attack's swing: the blow lands here)
     d["animations"][a.pose] = entry
     # keep the file's own style (these manifests were written by different tools: 1- or 2-space, newline or not)

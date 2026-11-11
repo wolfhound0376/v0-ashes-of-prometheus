@@ -538,6 +538,7 @@ body.bagOpen .toast,body.bagOpen .dialog{z-index:30}   /* the stage's height bud
 .invDetail h5{margin:0;font-family:var(--face-display);font-weight:400;font-size:var(--s2);color:var(--ef-text);letter-spacing:.03em}
 .invDetail .efMeta{font-size:var(--s0);color:var(--ef-secondary);line-height:1.5}
 .invDetail .efMeta b{color:var(--ef-text);font-weight:600}
+.invDetail .efFrom{color:var(--ef-secondary);font-size:var(--s0);line-height:1.3;margin-top:5px}
 .invDetail .efDesc{font-style:italic;color:var(--ef-text);font-size:var(--s0);line-height:1.35;border-top:1px solid #2a2330;padding-top:6px;margin-top:6px}
 .invDetail .efActs{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
 .invDetail .efHint{font-family:var(--face-mono);font-size:.68rem;color:var(--ef-muted);letter-spacing:.08em}
@@ -2532,6 +2533,7 @@ const nameTag = document.createElement("div"); nameTag.className = "nametag"; na
 function log(html, opts){
   const plain = String(html).replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim().slice(0, 240);
   log.last = plain || log.last;
+  if (plain){ (log.recent ||= []).push(plain); if (log.recent.length > 8) log.recent.shift(); }   // NPC MINDS: what a named NPC "remembers" of the fight
   if (opts && opts.say) narrateAloud(plain);
   if (cbtLog.active){ cbtLogLine(html, false); return; }
   const el = $("log"); const p = document.createElement("p"); p.innerHTML = html; el.appendChild(p);
@@ -6202,13 +6204,13 @@ const FOE_BLOCKS = {
 // he can see) and Derendil's Wounded Fury (10 HP or fewer: advantage, +2d6 on a melee hit) are their block traits.
 // Saves are ability modifiers, as for the foes (the rows carry no save list).
 const ALLY_SHEETS = {
-  ront:     {name: "Ront", style: "melee", cls: "Orc", hp: 15, ac: 13, init: 1, speed: 30, strScore: 16, leaper: true, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 0, cha: 0}, aggressive: true,
+  ront:     {name: "Ront", style: "melee", rages: true, cls: "Orc", hp: 15, ac: 13, init: 1, speed: 30, strScore: 16, leaper: true, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 0, cha: 0}, aggressive: true,
              attacks: [{name: "Unarmed Strike", hit: 5, dmg: "4", type: "bludgeoning", reach: 5}],
              kit: {greataxe: {name: "Greataxe", hit: 5, dmg: "1d12+3", type: "slashing", reach: 5}, javelin: {name: "Javelin", hit: 5, dmg: "1d6+3", type: "piercing", reach: 5, thrown: 30}}},
   eldeth:   {name: "Eldeth", style: "ranged", cls: "Shield dwarf", hp: 16, ac: 13, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 1, cha: 0}, multi: 2,
              attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
              kit: {shortsword: {name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, longbow: {name: "Longbow", hit: 4, dmg: "1d8+2", type: "piercing", reach: 150}}},
-  derendil: {name: "Derendil", style: "melee", cls: "Quaggoth", hp: 45, ac: 14, init: 1, speed: 30, strScore: 17, leaper: true, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, multi: 2, woundedFury: 10,
+  derendil: {name: "Derendil", style: "melee", rages: true, cls: "Quaggoth", hp: 45, ac: 14, init: 1, speed: 30, strScore: 17, leaper: true, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, multi: 2, woundedFury: 10,
              attacks: [{name: "Claw", hit: 5, dmg: "1d6+3", type: "slashing", reach: 5}], kit: {}},
   sarith:   {name: "Sarith", style: "ranged", cls: "Drow", race: "drow", hp: 13, ac: 13, init: 2, speed: 30, strScore: 10, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1},
              attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
@@ -6575,6 +6577,7 @@ function fighterFor(a){
           hp, hpMax, ac: s ? s.ac : 10, conds: new Set(), slots: s && s.magic ? {...s.magic.slots} : {}, init: 0};
 }
 function startCombat(foeIds, label, opts = {}){ bardTuneStop();
+  talkGivesWay();                           // NPC MINDS, the other way round: a fight that starts ends the talk
   if (mode !== "explore") return;
   pullToMap(label ? String(label) : "a fight has broken out");
   // A FIGHT ON A PLATE IS EVERYONE HOSTILE ON IT (Sam, 2026-10-28: "why is combat not attracting all the foes on the
@@ -6626,7 +6629,7 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
     const k = i - (foeIds.length - 1) / 2;
     let f, start;
     if (typeof id === "object"){                 // someone already on the plate turns hostile, where they stand
-      f = id; f.kind = "foe"; f.alpha = 1; f.hostile = false; f.path = []; stopActivity(f);
+      f = id; f.wasHostile = !!f.hostile; f.kind = "foe"; f.alpha = 1; f.hostile = false; f.path = []; stopActivity(f); f.left = false; f.retreating = false; f.parley = false; f.calledHelp = false;
       npcs = npcs.filter(n => n !== f); placed.push({x: f.x, y: f.y});
       return f;
     } else {
@@ -6674,7 +6677,7 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   stripShow(1400 + introMs + 3200);   // the opening: the order in place, the entrance, the first turn call; then it fades
 }
 const fname = a => a.kind === "pc" ? SHEETS[a.id].name : (a.creature && a.creature.name) || (a.c && a.c.sheet.name) || SHORT[a.id] || SPR[a.id].json.name;
-function standing(list){ return list.filter(a => !a.down && actors.includes(a)); }
+function standing(list){ return list.filter(a => !a.down && !a.left && actors.includes(a)); }   // `left`: fell back out of the fight (NPC MINDS)
 // The heroes' side of a fight: the party plus the allies fighting beside them (cbt.allies).
 const hero = a => !!a && (a.kind === "pc" || !!a.ally);
 // CADAVER SETS (Sam, 2026-10-24: "for humanoids you can create a set of cadavers/skeletons for death animations" → "make
@@ -9128,11 +9131,14 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
     let flying = null, landed = null, shieldWait = null;
     att.bladeSwing = !shot && /dagger|sword|rapier|scimitar|knife|sickle|kukri|blade/i.test(atk.name);   // a sprite with a `dagger` sheet swings it for a blade (Lynkes, 2026-10-29)
     att.artSwing = !shot && atk.art && SPR[att.id].img["art-" + atk.art] ? atk.art : null;   // a special attack with its own sheet plays it (Fifi, 2026-11-10)
+    // every rogue's special attack shows the same effects, whichever art they are drawn with (Sam, 2026-11-10: "Make sure all the
+    // rogues have similar abilities and effects"); anyone else gets them only with the art's own sheet
+    att.artFx = atk.art && (att.artSwing || /rogue/i.test(String(att.c.sheet.cls || ""))) ? atk.art : null;
     strike(att, tgt, () => {
       // cover is judged at the moment of the blow, from where they both stand now (SRD 5.1 Cover); a wall in the way
       // means there is no shot at all (a foe that walked as far as it could and still has stone between them)
       let cv = coverOf(att, tgt), acVs = targetAc(tgt) + cv.ac;
-      if (att.artSwing) artSwingFx(att, tgt, att.artSwing);
+      if (att.artFx && !shot) artSwingFx(att, tgt, att.artFx);
       const bl = blessD4(att);
       let adv = advantageOn(att, tgt, ranged, atk), r = d20(adv, att), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit + bl, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + bl + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
       if (hit && !crit && tgt.c.conds.has("paralyzed") && feetBetween(att, tgt) <= 5.5) crit = true;   // SRD: a hit on the paralyzed from within 5 ft is a critical
@@ -9190,7 +9196,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       // BARE HANDS (Sam's comment on the lab, 2026-10-29: "striking with your hands doesn't create a crimson or gold arch
       // effect"): no crescent and no swipe line — only Sam's own drawn martial spark (jab, kick, uppercut on a crit; strikeSheet
       // below) and the second jolt of the combo.
-      if (att.artSwing) artHitFx(att, tgt, att.artSwing, crit);
+      if (att.artFx) artHitFx(att, tgt, att.artFx, crit);
       if (fist) fistRibbons(att, tgt, crit);
       if (fist) setTimeout(() => { if (!tgt.down){ lunge(att, tgt, 10 * actorScale(att)); knock(tgt, att, 10 * actorScale(tgt)); } }, 150);
       if (!shot && !crimS && !fist){ swipe(att, tgt, {...sw, crit});
@@ -9987,6 +9993,7 @@ function fall(t){
   // THE BANTER on a death: the ally who made the kill says so; else an ally or a gambler cheers; a foe sees one of its own drop
   if (cbt && t.kind === "foe"){
     const k = t.killedBy;
+    if (k && k.ally && toughFor(k, t)) k.triumphDue = true;
     setTimeout(() => { if (!(k && k.ally && banter(k, "kill", null, .8))){ const fan = standing([...cbt.allies, ...cbt.bystanders]).sort((x, y) => Math.hypot(x.x - t.x, x.y - t.y) - Math.hypot(y.x - t.x, y.y - t.y)); for (const f of fan) if (banter(f, "cheer", null, .5)) break; } }, 900);
     setTimeout(() => { const own = standing(foes).filter(f => f !== t); if (own.length) banter(own[Math.floor(Math.random() * own.length)], "loss", k, .5); }, 2200);
   }
@@ -10162,7 +10169,7 @@ function strikeFromHere(att, tgt, onHit, after, shot){
   att.face = faceOf(tgt.x - att.x, tgt.y - att.y);
   // A shot is not a punch. A sprite with a "shoot" sheet plays it; one without stands and takes aim (no fist thrown),
   // looses after a beat, and the bolt or arrow does the rest. Until now every shot played the cross-punch.
-  const pose = shot && shot !== "thrown" && shot !== "flask" ? (SPR[att.id].img.shoot ? "shoot" : null) : (att.artSwing ? "art-" + att.artSwing : att.bladeSwing && SPR[att.id].img.dagger ? "dagger" : "attack");
+  const pose = shot && shot !== "thrown" && shot !== "flask" ? (shot === "arrow" && SPR[att.id].img["shoot-bow"] ? "shoot-bow" : SPR[att.id].img.shoot ? "shoot" : null) : (att.artSwing ? "art-" + att.artSwing : att.bladeSwing && SPR[att.id].img.dagger ? "dagger" : "attack");
   if (!pose){ setAnim(att, "idle"); att.aimHold = now; setTimeout(() => { onHit(); setTimeout(after, 380); }, 420); return; }
   playOnce(att, pose, () => { setAnim(att, "idle"); setTimeout(after, 320); });
   if (att.once) att.once.hit = onHit; else { onHit(); setTimeout(after, 320); }
@@ -10207,6 +10214,27 @@ function enterRage(a){
   log(`<b>${fname(a)} rages.</b> +${rageDamageBonus(s.level || 1)} on melee weapon damage with Strength, advantage on Strength checks and saves, resistance to bludgeoning, piercing and slashing. It ends if a turn passes with no attack made and no damage taken${uses === Infinity ? "" : ` · ${Math.max(0, uses - used - 1)} of ${uses} left`}.`);
   narrate(a, `${fname(a)}'s breathing goes ragged, and something behind the eyes stops being careful.`);
   renderParty(); if (cbt && activeActor() === a) openMenu(a);
+}
+// THE BRUTES RAGE TOO (Sam, 2026-11-10: "They should also be able to rage if they are barbarian types (Derendil and
+// Ront should be able to)"). Neither stat block has Rage (the orc has Aggressive, the quaggoth Wounded Fury), so this is
+// Sam's ruling, not the book: a sheet with `rages` rages as a 1st-level barbarian does (lib/rage.mjs, the same rule the
+// heroes use: +2 melee damage with Strength, advantage on Strength checks and saves, resistance to bludgeoning, piercing
+// and slashing, twice per page-load, ends on a turn with no attack made and no damage taken). They choose it themselves,
+// as their bonus action, and not every fight: only once they are bleeding or the thing in front of them is big
+// (a boss, or more hit points than they have). Derendil's Wounded Fury is untouched and stacks with it.
+function allyWantsRage(a, tgt){
+  const c = a.c, s = c.sheet; if (!s.rages || c.rage || !c.bonus || (RAGE_USED[a.id] || 0) >= ragesPerLongRest(1)) return false;
+  const hurt = c.hp < c.hpMax, big = !!tgt && !!tgt.c && ((cbt && cbt.boss === tgt) || tgt.c.hpMax > c.hpMax);
+  return hurt || big;
+}
+function allyRage(a){
+  const c = a.c; c.bonus = false; RAGE_USED[a.id] = (RAGE_USED[a.id] || 0) + 1; c.rage = beginRage(cbt ? cbt.round : 0); c.conds.add("raging");
+  popText(a, "RAGE", RAGE_TINT, 1.4); burst(a, RAGE_TINT, 26); shake(6); a.flash = now + 220; a.flashCol = RAGE_TINT;
+  const cs = CREATURE_SFX[a.id === "derendil" ? "quaggoth" : a.id]; if (cs && cs.call) bank(cs.call, .6);
+  if (SPR[a.id].img.rage) playOnce(a, "rage", () => setAnim(a, "idle"));
+  log(`<b>${fname(a)} rages.</b> +${rageDamageBonus(1)} on melee damage with Strength, advantage on Strength checks and saves, resistance to bludgeoning, piercing and slashing.`);
+  narrate(a, a.id === "derendil" ? `${fname(a)} throws back his head and roars, and the prince is gone from his eyes.` : `${fname(a)} bellows, and something behind the eyes stops being careful.`);
+  renderParty();
 }
 function endRage(a, why){
   const c = a.c; if (!c || !c.rage) return;
@@ -10290,9 +10318,166 @@ function finishTheFallen(f, t){
   let n = 0; const go = () => { if (!cbt || f.down || !dyingNow(t) || !actors.includes(t) || n >= swings){ setTimeout(() => passTurn(f), 500); return; } n++; attackWith(f, t, atk, () => setTimeout(go, 250)); };
   setTimeout(go, 400);
 }
+// ---------- NPC MINDS (Sam, 2026-11-10) ----------
+// "Named characters should use AI to use AI bubbles, how they fight, cast spells, call for help, retreat, negotiate,
+// etc. Characters that have status should be able to control the other NPCs under them accordingly. Since they are on
+// an algorithm this has to be wired well to prevent one character ending a fight and the fight continuing. Also, if a
+// fight ends in dialogue, it should STOP the fight and vice versa."
+//
+// WHO HAS A MIND: the named drow with a block on this page (MIND_RANK). The guards stay the algorithm (Sam, 2026-08-28).
+// THE TURN: the map builds the offer — only what the page can do this turn: an attack from the NPC's own block on a hero
+// it can see, a shout for help (once a fight), retreat when the plate has a way out, and for the COMMANDER alone:
+// negotiate, surrender (bloodied only), and one order to those under them. /api/npc-mind picks inside it and says one
+// line (the bubble); lib/npc-mind.ts throws away anything outside it. No answer in MIND_WAIT, or no game around the
+// page: the algorithm below is the turn, as it always was.
+// THE CHAIN OF COMMAND: the commander is the highest-ranked named drow still in the fight; those under them are every
+// other drow in it of lower rank. Only the commander can stop the fight, and when they do it stops for EVERYONE
+// (fightEndsInTalk → endCombat): nobody under them fights on headless. A commander who retreats takes them along
+// (retreating, a turn each to get out). If the commander falls or leaves, the next in rank commands; their orders lapse.
+// THE OTHER WAY ROUND: a fight that opens while a talk card is open closes the card first (talkGivesWay).
+// THE RANKS ARE CLAUDE'S, read from Out of the Abyss ch.1 (Ilvara commands Velkynvelve; Shoor and Asha serve under her;
+// Jorlan, disgraced, below them; every other drow is 1). The bloodied rule for surrender and the waits are house numbers.
+const MIND_RANK = {ilvara: 4, shoor: 3, asha: 3, jorlan: 2};
+const MIND_WAIT = 4500, TRUCE_MS = 300000;   // ms
+const isMind = f => !!(f && MIND_RANK[f.id]);
+const drowSide = f => !!f && ((f.c && f.c.sheet && f.c.sheet.race === "drow") || isGuard(f));
+const mindRank = f => MIND_RANK[f.id] || (drowSide(f) ? 1 : 0);
+const inFight = f => !!cbt && !!f && !f.down && !f.left && actors.includes(f);
+function mindUrl(){ return APP ? "/api/npc-mind" : (window.__npcMindUrl || null); }   // the preview stays silent unless a test points it somewhere
+function commander(){ return foes.filter(f => isMind(f) && inFight(f) && drowSide(f)).sort((a, b) => mindRank(b) - mindRank(a))[0] || null; }
+function underOf(lead){ return lead ? foes.filter(f => f !== lead && inFight(f) && drowSide(f) && mindRank(f) < mindRank(lead)) : []; }
+function orderFor(f){
+  const o = cbt && cbt.orders;
+  return o && inFight(o.by) && o.by === commander() && underOf(o.by).includes(f) ? o : null;
+}
+function mindWants(f, plan){
+  const up = standing(heroes());
+  if (plan && plan.target) return up.includes(plan.target) ? plan.target : null;
+  const o = isMind(f) ? null : orderFor(f); if (!o) return null;
+  if (o.kind === "focus") return up.includes(o.target) ? o.target : null;
+  if (o.kind === "protect") return up.sort((a, b) => feetBetween(o.by, a) - feetBetween(o.by, b))[0] || null;
+  return null;
+}
+// the nearest way off the plate, as floor: a doorway zone that leads somewhere
+function exitFor(f){
+  let best = null, bd = Infinity;
+  for (const z of (node && node.zones) || []){
+    if (!z.to || !z.to.length || !z.rect) continue;
+    const c = zoneCenter(z), q = nearestWalkable(c.x, c.y), d = Math.hypot(q.x - f.x, q.y - f.y);
+    if (d < bd){ bd = d; best = q; }
+  }
+  return best;
+}
+async function mindTurn(f){
+  const fightId = cbt.id, lead = commander(), boss = lead === f, s = f.c.sheet;
+  const seen = standing(heroes()).filter(p => !p.c.conds.has("invisible") && !p.c.conds.has("hidden"));
+  const actions = [];
+  if (seen.length) actions.push("attack");
+  if (!f.calledHelp) actions.push("call_for_help");
+  if (exitFor(f)) actions.push("retreat");
+  if (boss){ actions.push("negotiate"); if (f.c.hp <= f.c.hpMax / 2) actions.push("surrender"); }
+  const o = cbt.orders && cbt.orders.by !== f && inFight(cbt.orders.by) ? cbt.orders : null;
+  const body = {
+    npc: {id: f.id, name: fname(f), epithet: s.epithet || "", hp: f.c.hp, hpMax: f.c.hpMax, conds: [...f.c.conds].join(", "),
+          attacks: (s.attacks || []).map(a => ({name: a.name, ranged: !!a.ranged, range: a.long || a.reach || 5, spell: !!SPELLS[a.name] || /^ray of/i.test(a.name)}))},
+    offer: {actions, targets: seen.map(p => p.id), attacks: (s.attacks || []).map(a => a.name), canOrder: boss && underOf(f).length > 0},
+    heroes: seen.map(p => ({key: p.id, name: fname(p), cls: (p.c.sheet && p.c.sheet.cls) || "", hp: p.c.hp, hpMax: p.c.hpMax, ft: Math.round(feetBetween(f, p)), conds: [...p.c.conds].join(", ")})),
+    side: foes.filter(x => x !== f && inFight(x)).map(x => ({name: fname(x), hp: x.c.hp, hpMax: x.c.hpMax, under: boss && underOf(f).includes(x)})),
+    commander: lead && !boss ? fname(lead) : "", orderFromAbove: o ? `${o.kind}${o.target ? " " + fname(o.target) : ""}` : "",
+    log: (log.recent || []).slice(-6), area: node.name, round: cbt.round,
+  };
+  popText(f, "…", "#c9c4b8", .9);
+  let choice = null;
+  try {
+    const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), MIND_WAIT);
+    const r = await fetch(mindUrl(), {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body), signal: ctl.signal});
+    clearTimeout(t); const j = await r.json(); choice = (j && j.choice) || null;
+  } catch (e) {}
+  // the world may have moved on while it thought: a different fight, the turn gone, the NPC down or away
+  if (!cbt || cbt.id !== fightId || mode !== "combat" || activeActor() !== f || !inFight(f)) return;
+  mindAct(f, choice, actions);
+}
+function mindAct(f, ch, offered){
+  if (!ch || !offered.includes(ch.action)){ f.mindPlan = {fallback: true}; foeTurn(f); return; }   // no answer: the algorithm's turn
+  if (ch.line) bark(f, ch.line, 4200);
+  if (ch.order && f === commander()) giveOrder(f, ch.order);
+  if (ch.action === "negotiate" || ch.action === "surrender"){ fightEndsInTalk(f, ch.action, ch.line); return; }
+  if (ch.action === "retreat"){
+    if (f === commander()) for (const x of underOf(f)) x.retreating = true;   // the commander goes: everyone under them goes
+    log(`<b>${esc(fname(f))} falls back</b>${f === commander() && underOf(f).length ? ", and calls the others after" : ""}.`);
+    retreatTurn(f); return;
+  }
+  if (ch.action === "call_for_help"){
+    f.calledHelp = true; popText(f, "help!", "#ffcf6a", 1.1); bank("ui/initiative_start", .3);
+    log(`<b>${esc(fname(f))} shouts for help.</b>`);
+    if (APP) handOff(`${fname(f)} shouts for help in the middle of the fight in ${node.name} (round ${cbt.round}). Malachar decides whether anyone comes.`);
+    setTimeout(() => passTurn(f), 1400); return;
+  }
+  const t = heroes().find(h => h.id === ch.target), atk = (f.c.sheet.attacks || []).find(a => a.name === ch.attack) || null;
+  f.mindPlan = {target: t || null, atk, spoke: !!ch.line}; foeTurn(f);
+}
+function giveOrder(f, o){
+  const target = o.kind === "focus" ? heroes().find(h => h.id === o.target) || null : null;
+  if (o.kind === "focus" && !target) return;
+  cbt.orders = {by: f, kind: o.kind, target};
+  const under = underOf(f);
+  if (o.kind === "fall_back") for (const x of under) x.retreating = true;
+  for (const x of under) popText(x, "!", "#ffcf6a", .9);
+  log(`<i>${esc(fname(f))} orders ${under.length > 1 ? "the others" : under.length ? esc(fname(under[0])) : "nobody"}: ${o.kind === "focus" ? "take " + esc(fname(target)) : o.kind === "protect" ? "guard me" : o.kind === "fall_back" ? "fall back" : "hold"}.</i>`);
+}
+// FALLING BACK: a Dash's worth (twice the speed, SRD) toward the nearest way out, then out of the fight
+function retreatTurn(f){
+  let gone = false;
+  const done = () => { if (gone) return; gone = true; leaveFight(f); setTimeout(() => passTurn(f), 300); };
+  const ex = exitFor(f);
+  if (!ex){ done(); return; }
+  const walk = cutPath(f, findPath(f, ex), (f.c.sheet.speed || 30) * 2 * ruleFt(f));
+  if (!walk.pts.length){ done(); return; }
+  f.path = walk.pts; f.onArrive = done; setTimeout(done, 2600);
+}
+function leaveFight(f){
+  if (f.left) return;
+  f.left = true; f.retreating = false; f.path = []; f.onArrive = null;
+  popText(f, "falls back", "#e8e2c8", .9); narrate(f, `${fname(f)} is gone from the fight.`);
+  f.fading = true;
+  setTimeout(() => { actors = actors.filter(a => a !== f); foes = foes.filter(a => a !== f); }, 1000);
+}
+// THE FIGHT ENDS IN TALK: everyone stops. The commander and those under them stand down where they are (endCombat keeps
+// them on the plate); anyone else fighting (a beast, not theirs to command) withdraws as at any fight's end. The guards
+// hold their reaction for the truce, the shared combat flag comes down (endCombat → fightFlagOver), and the commander's
+// talk card opens with what just happened, so Malachar plays the terms. If the talk fails, he calls [COMBAT_START:].
+function fightEndsInTalk(lead, kind, line){
+  if (!cbt || mode !== "combat") return;
+  const stay = [lead, ...underOf(lead)];
+  for (const x of stay) x.parley = true;
+  log(`<b>${esc(fname(lead))} ${kind === "surrender" ? "yields" : "calls a halt"}.</b> The fight stops.`, {say: true});
+  guardsAlarm = {cur, until: now + TRUCE_MS};
+  const plate = cur;
+  endCombat(false, {talk: true});
+  lead.talkSituation = kind === "surrender"
+    ? `Mid-fight in ${node.name}, ${fname(lead)} (HP ${lead.c.hp}/${lead.c.hpMax}) yielded${line ? `, saying "${line}"` : ""}. The fight has stopped and every drow under ${fname(lead)} has lowered their weapons. ${fname(lead)} bargains for their life. If the party attacks again, emit [COMBAT_START: ...] naming ${fname(lead)} and every drow here.`
+    : `Mid-fight in ${node.name}, ${fname(lead)} called a halt and offered terms${line ? `: "${line}"` : ""}. The fight has stopped; every drow under ${fname(lead)} lowers their weapons and waits on the word. If the talk fails, emit [COMBAT_START: ...] naming ${fname(lead)} and every drow here.`;
+  setTimeout(() => { if (cur === plate && mode === "explore" && actors.includes(lead) && !lead.down){ delete state.talked[lead.id]; delete state.declined[lead.id]; openTalk(lead); } }, 1000);
+  setTimeout(() => { lead.talkSituation = null; }, 120000);
+  setTimeout(() => { if (cur !== plate || mode === "combat") return; for (const x of stay) if (npcs.includes(x) && !x.down) x.hostile = !!x.wasHostile; }, TRUCE_MS);   // the truce runs out
+}
+// A FIGHT ENDS THE TALK: whatever card is up — the talk card, or a choice card (not the surrender's march) — closes
+function talkGivesWay(){
+  if (mode === "talk"){
+    if (voiceAudio) try { voiceAudio.stop(); } catch (e) {}
+    $("talk").hidden = true; talkNpc = null; mode = "explore"; log("<em>The talking is over.</em>");
+  } else if (mode === "dialog" && !$("obj").hidden && !surrenderBusy){
+    $("obj").hidden = true; mode = "explore"; exploreKey = "";
+  }
+}
 function foeTurn(f){
   if (!actors.includes(f) || f.down){ setTimeout(nextTurn, 100); return; }
   if (f.c.conds.has("prone")){ f.c.conds.delete("prone"); f.c.move = Math.floor(f.c.move / 2); log(`${fname(f)} gets up.`); }
+  // NPC MINDS: one who has been told to fall back (or chose to) spends the turn getting out; a named NPC asks its mind
+  // first (mindTurn), which comes back here with a plan — or with none, and then this algorithm is the turn
+  if (f.retreating){ retreatTurn(f); return; }
+  const plan = f.mindPlan || null; f.mindPlan = null;
+  if (!plan && isMind(f) && mindUrl()){ mindTurn(f); return; }
   const seen0 = standing(heroes()).filter(p => !p.c.conds.has("hidden") && !p.c.conds.has("invisible"));
   // someone it can see if it can (no wall between them); otherwise the nearest, and it goes round with its blade
   const inSight = seen0.filter(p => !coverOf(f, p).total), blind = !inSight.length && seen0.length > 0;
@@ -10300,7 +10485,11 @@ function foeTurn(f){
   if (cbt && cbt.grudge && cbt.grudge.att === f && (cbt.grudge.done || cbt.grudge.tgt.down)){ setTimeout(() => passTurn(f), 400); return; }   // the score is settled: he does not go looking for another
   const grudgeOn = cbt && cbt.grudge && cbt.grudge.att === f && !cbt.grudge.tgt.down && actors.includes(cbt.grudge.tgt) ? cbt.grudge.tgt : null;
   let tgt = grudgeOn ? grudgeOn : f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(heroes())) : (seen.length ? seen : standing(heroes())).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
-  if (tgt && !grudgeOn && !f.c.berserk){ const pot = potShot(f); if (pot) tgt = pot; }   // BYSTANDERS: threats first, now and then a pot shot
+  // NPC MINDS: the target the mind chose, or the commander's order (focus one hero, or protect: whoever is nearest the
+  // commander). Only someone still standing; the rules below (invisible, Sanctuary, hidden) still apply to them.
+  const wanted = grudgeOn || f.c.berserk ? null : mindWants(f, plan);
+  if (wanted) tgt = wanted;
+  if (tgt && !grudgeOn && !f.c.berserk && !wanted){ const pot = potShot(f); if (pot) tgt = pot; }   // BYSTANDERS: threats first, now and then a pot shot
   // INVISIBILITY (SRD 5.2.1 Invisible): it cannot see them. With nobody it can see, a foe goes for an invisible hero only if
   // one is close enough to hear and feel (within 5 ft), at disadvantage (advantageOn); otherwise it searches for anyone
   // merely hidden, or loses the turn looking.
@@ -10329,12 +10518,13 @@ function foeTurn(f){
     if (tgt.c.conds.has("hidden") || (nearest && nearest.c.conds.has("hidden") && !seen.some(p => feetBetween(f, p) <= 5))){ foeSearch(f, hidNow); return; }
   }
   fightCam(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600, [f, tgt]);
-  if (Math.random() < .45 && now - (taunt.last || -1e9) > BANTER_GAP){ if (!taunt(f, null, tgt)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }   // one voice at a time (THE BANTER)
+  if (!(plan && plan.spoke) && Math.random() < .45 && now - (taunt.last || -1e9) > BANTER_GAP){ if (!taunt(f, null, tgt)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }   // one voice at a time (THE BANTER)
   const s = f.c.sheet, swings = s.multi || 1, bow = s.attacks.find(k => k.ranged);
   // a drow with a hand crossbow shoots, unless a hero is already at its elbow (SRD: a ranged attack within 5 ft of a
   // hostile is at disadvantage), and then it is the shortsword. It closes only to the crossbow's normal range.
   const pressed = standing(heroes()).some(p => !incapacitated(p) && feetBetween(f, p) <= 5);
-  const atk = bow && !blind && !pressed && feetBetween(f, tgt) > 5 && feetBetween(f, tgt) <= (bow.long || bow.reach) ? bow : s.attacks[0];
+  let atk = bow && !blind && !pressed && feetBetween(f, tgt) > 5 && feetBetween(f, tgt) <= (bow.long || bow.reach) ? bow : s.attacks[0];
+  if (plan && plan.atk && s.attacks.includes(plan.atk) && !(plan.atk.ranged && blind)) atk = plan.atk;   // the mind's choice of weapon or spell (the block's own)
   // NOBODY IN SIGHT (a wall between it and every hero): it does not hack at the stone. If the room has a place to see
   // in from (story.json `spots`: the pen gate, where the bars give three-quarters cover), it goes there, as far as its
   // speed allows, and shoots through if it can; otherwise it holds and watches.
@@ -10373,6 +10563,18 @@ function foeTurn(f){
 // No style and nothing but fists and a bow: they shoot. Everything is drawn from what they actually carry (the block's
 // own weapons or anything handed to them, refreshAttacks). Claude's assignment of the four styles, from their OotA
 // stat blocks (scout, drow; orc, quaggoth); Sam's to change.
+// THE TRIUMPH (Sam, 2026-11-10: "the main NPCs should have some triumphant poses they occasionally do when they kill a
+// tough creature or win. Not always."; then "Ront and Derrendil and Eldith"). One short pose each, turned to the viewer
+// (PixelLab v3, south only, every row of the sheet the same: scripts/sprites/add-triumph-pose.py): Ront beats his chest,
+// Derendil throws up both arms and roars, Eldeth raises a fist. Two moments: at the end of the turn in which they
+// dropped something tough (a boss, or a creature with at least their own hit points), three times in five; and when
+// the fight is won, always for the one who dropped the tough one and one time in three for the others. Never while
+// they are down, and a sprite without the sheet does nothing.
+const toughFor = (k, t) => !!(k && t && k.c && t.c && ((cbt && cbt.boss === t) || t.c.hpMax >= k.c.hpMax));
+function triumph(a, chance){
+  if (!a || a.down || !a.c || a.c.hp <= 0 || !SPR[a.id] || !SPR[a.id].img.triumph || Math.random() >= chance) return false;
+  a.triumphDue = false; playOnce(a, "triumph", () => setAnim(a, "idle")); return true;
+}
 function allyAttackPick(a, tgt){
   const s = a.c.sheet, list = s.attacks || [], blade = meleeOf(a), fists = !blade || /unarmed/i.test(blade.name) || (blade.reach || 5) > 10;
   const ft = feetBetween(a, tgt), reaches = k => ft <= (k.long || k.reach || 5) + 2.5;
@@ -10390,7 +10592,7 @@ function allyAttackPick(a, tgt){
   return {atk: blade || list[0], reach: (blade || list[0]).reach || 5, how: "close"};
 }
 function allyTurn(a){
-  const end = () => { combatBusy = false; if (cbt) cbt.phase = "idle"; setTimeout(() => passTurn(a), 500); };   // only if the turn is still theirs (main #795)
+  const end = () => { combatBusy = false; if (cbt) cbt.phase = "idle"; const posed = !!(a.triumphDue && cbt && standing(foes).length && triumph(a, .6)); setTimeout(() => passTurn(a), posed ? 1500 : 500); };   // only if the turn is still theirs (main #795)
   if (!actors.includes(a) || a.down){ setTimeout(nextTurn, 100); return; }
   if (a.ally) banter(a, "turn", standing(foes)[0], .35);                   // THE BANTER: now and then a word as they go in
   if (a.c.conds.has("prone")){ a.c.conds.delete("prone"); a.c.move = Math.floor(a.c.move / 2); log(`${fname(a)} gets up.`); }
@@ -10419,6 +10621,7 @@ function allyTurn(a){
   const swings = /crossbow/i.test(atk.itemName || atk.name) ? 1 : (s.multi || 1);   // SRD Loading: one bolt per action, however many attacks the block has
   if (pick.how !== "close") log(`${fname(a)} ${pick.how === "throw" ? "hefts" : "levels"} the ${esc(atk.itemName || atk.name)} at ${fname(tgt)}.`);
   const gapFt = () => Math.max(0, (pxBetween(a, tgt, tgt) - reachPx(a, tgt, pick.reach || 5)) / ruleFt(onPaintedFloor(tgt) ? {x: tgt.x, y: tgt.y, big: a.big} : a));
+  if (pick.how === "close" && gapFt() <= a.c.move && allyWantsRage(a, tgt)) allyRage(a);   // only on a turn the blow will land: a rage with no attack made ends at once
   if (gapFt() > a.c.move && s.aggressive && a.c.bonus){
     a.c.bonus = false; a.c.move += s.speed; log(`${fname(a)} charges (Aggressive, bonus action: +${s.speed} ft toward ${fname(tgt)}).`);
   }
@@ -10564,6 +10767,7 @@ function drawCrimThrust(s, k){
 // Presentation only: the roll, the damage and the art's rider are untouched.
 //   sap (Weakening Jab, drawn as an overhead pommel blow): two crescents chopping down around the swing, speed lines, a thud.
 //   vex (Flourish, drawn as a feint and a stab): a spurt of blood out of the far side of the target, in square drops that fall.
+//   hamstring (Hamstring Shot, a bow or crossbow shot at the legs): the same spurt, smaller, at the shins.
 function artSwingFx(att, tgt, key){
   if (key !== "sap") return;
   const m = SPR[tgt.id].json, sc = actorScale(tgt), dir = Math.sign(tgt.x - att.x) || 1, R = Math.max(44, m.cell[0] * sc * .22 * 2.6), C = crimCol(att);
@@ -10576,8 +10780,9 @@ function artSwingFx(att, tgt, key){
 }
 function artHitFx(att, tgt, key, crit){
   if (key === "sap"){ crimStar(att, tgt, crit); shake(crit ? 8 : 5); bank("combat/melee_hit_bludgeon", .7); return; }
-  if (key !== "vex" || /skeleton|ooze|elemental|ghost/.test(tgt.id)) return;
-  const m = SPR[tgt.id].json, sc = actorScale(tgt), dx = tgt.x - att.x, dy = tgt.y - att.y, d = Math.hypot(dx, dy) || 1, q = ovPt(tgt.x, tgt.y - m.pivot[1] * sc * .5), n = crit ? 34 : 22;
+  if ((key !== "vex" && key !== "hamstring") || /skeleton|ooze|elemental|ghost/.test(tgt.id)) return;
+  // hamstring (Hamstring Shot): the same spurt, smaller and down at the legs where the shot lands
+  const leg = key === "hamstring", m = SPR[tgt.id].json, sc = actorScale(tgt), dx = tgt.x - att.x, dy = tgt.y - att.y, d = Math.hypot(dx, dy) || 1, q = ovPt(tgt.x, tgt.y - m.pivot[1] * sc * (leg ? .16 : .5)), n = leg ? (crit ? 20 : 13) : crit ? 34 : 22;
   for (let i = 0; i < n; i++){ const sp = (90 + Math.random() * 230) * sc, a = Math.atan2(dy, dx) + (Math.random() - .5) * 1.1;
     crimPuffs.push({drop: true, x: q.x, y: q.y + (Math.random() - .5) * 10 * sc, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * .6 - (40 + Math.random() * 90) * sc, g: 520 * sc, r0: (2 + (Math.random() * 3 | 0)) * sc, t0: now, life: 380 + Math.random() * 260, rgb: [150 + Math.random() * 80 | 0, 8, 14], a: 1}); }
   crimMist(att, tgt, crit ? 16 : 9); addBlood(tgt, crit ? 1.2 : .9, false);
@@ -11402,9 +11607,10 @@ function setQuick(on, quiet){
   }
   const b = $("quickBtn"); if (b){ b.textContent = on ? "Stop quick resolve" : "Quick resolve"; b.classList.toggle("primary", on); }
 }
-function endCombat(won){
+function endCombat(won, opts = {}){
   if (mode !== "combat") return;
   if (cbt && cbt.fromFlag) fightFlagOver();   // the server's "a fight is on" comes down with the fight
+  const victors = cbt ? [...(cbt.allies || [])] : [];   // THE TRIUMPH: who of ours is still up to strike a pose when it is won
   const fellNpcs = cbt ? (cbt.bystanders || []).filter(b => b.down) : [];   // the NPCs who died in this fight: buried below, once it is over (npcBury)
   if (won !== false && cbt) askEarned((cbt.allies || []).filter(n => askRowOf(n.id) && !n.down));   // they fought beside you and know it (NPC ASKS)
   setQuick(false, true);
@@ -11413,7 +11619,7 @@ function endCombat(won){
   arrowsWorkLoose(true);   // the heroes' arrows drop out as the fight ends
   for (let i = stuck.length - 1; i >= 0; i--){ const q = stuck[i]; if (!q.at || !(q.at.down && q.at.kind === "foe")) stuck.splice(i, 1); }
   for (const h of party) if (h.c){ h.c.conds.delete("burning"); }
-  for (const h of party) if (h.c && h.c.rage) endRage(h, "the fight is over");   // no hostile left to attack: the next turn would end it anyway
+  for (const h of new Set([...party, ...actors])) if (h.c && h.c.rage && h.kind !== "foe") endRage(h, "the fight is over");   // no hostile left to attack: the next turn would end it anyway
   shots.length = 0; icePatches = []; for (const a of actors) a.onIce = null;
   // anyone of ours still out on the balcony walks back in through the gate before it stops being floor
   if (gatePassable()) for (const h of [...party, ...(cbt ? cbt.allies : [])]) if (!h.down && outsidePen(h)){
@@ -11435,19 +11641,26 @@ function endCombat(won){
   // The dead stay where they fell (Sam, 2026-10-13: "There should always be a carcass or dead body of
   // whatever died. This way we can search the body."). Only the living, called off, walk away.
   const slain = foes.filter(f => f.down);
-  foes.forEach(f => { if (!slain.includes(f)) f.fading = true; });
+  foes.forEach(f => { if (!slain.includes(f) && !f.parley) f.fading = true; });   // those who stopped to talk stay (NPC MINDS)
   $("combat").hidden = true; stage.classList.remove("fight"); $("vignette").classList.remove("on");
   if (won && slain.length){
     // XP from the bestiary row on each block (Drow 50, Giant Spider 200, Quaggoth 450, Gray Ooze 100),
     // split across the party; and a short triumphant sting (ui/victory in the bank).
     const xp = slain.reduce((s, f) => s + (f.c.sheet.xp || 0), 0), live = party.filter(p => !p.down).length || party.length;
     bank("ui/victory", .9);
+    setTimeout(() => victors.forEach(a => { triumph(a, a.triumphDue ? 1 : 1 / 3); a.triumphDue = false; }), 700);
     setTimeout(() => victoryBanner(`${xp} XP`, `${slain.map(f => fname(f)).join(", ")} slain · ${Math.floor(xp / live)} each`), 300);
     log(`<b>Victory.</b> ${xp} XP (${Math.floor(xp / live)} each).`);
     payXp(fightId, slain);
   }
   setTimeout(() => {
     for (const f of slain){ f.kind = "body"; f.body = true; f.path = []; f.once = null; f.lootKey = bodyKeyOf(f); npcs.push(f); }
+    // THE FIGHT ENDED IN TALK (NPC MINDS): the leader and everyone under them lower their weapons and stay on the plate,
+    // people again, with the wounds they took; they are not hostile while the talk lasts (the truce, fightEndsInTalk)
+    for (const f of foes) if (f.parley && !f.down && actors.includes(f)){
+      f.parley = false; f.kind = "npc"; f.hostile = false; f.hp = f.c ? f.c.hp : f.hp; f.path = []; f.alert = false;
+      f.home = {x: f.x, y: f.y}; f.actUntil = now + 20000; setAnim(f, "idle"); if (!npcs.includes(f)) npcs.push(f);
+    }
     actors = actors.filter(a => a.kind !== "foe"); foes = [];
     fellNpcs.forEach(npcBury);
     for (const [slug, f] of [...creatures]) if (f.down || !actors.includes(f)) creatures.delete(slug);
@@ -11459,7 +11672,7 @@ function endCombat(won){
     allies.forEach(n => { n.ally = false; n.path = []; if (n.down){ n.down = false; setAnim(n, "idle"); if (n.c) n.c.hp = 1; } n.home = {x: n.x, y: n.y}; n.post = {x: n.x, y: n.y}; });
     trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: leader.x, y: leader.y}]);
     party.forEach(p => { p.home = {x: p.x, y: p.y}; p.actUntil = now + 4000 + Math.random() * 6000; });
-    mode = "explore"; setTrack("explore"); log(won ? "The fight is over. The DM core settles the wounds and the loot." : "The fight is over.");
+    mode = "explore"; setTrack("explore"); log(opts.talk ? "Weapons down. They talk." : won ? "The fight is over. The DM core settles the wounds and the loot." : "The fight is over.");
     cbtLog.active = false;   // the log stays, collapsed, with the fight's last line in its ticker; the next fight starts it over
   }, 700);
 }
@@ -15575,6 +15788,7 @@ async function followCombatFlag(flag){
   if (flag && flag.status === "active"){
     if (flag.startedAt === combatFlagSeen) return;
     if (flag.startedAt === flagDone()){ combatFlagSeen = flag.startedAt; return; }   // already fought to its end on this screen
+    talkGivesWay();                                     // the talk ended in steel: the card closes, the fight opens (NPC MINDS)
     if (mode !== "explore") return;                     // once we are free, the next poll opens it
     combatFlagSeen = flag.startedAt;
     const picked = [];
@@ -16113,7 +16327,7 @@ async function loadGear(only){
       const carried = (j.carried || []).map(r => { const cat = catalogItem(r.name); return {name: r.name, item_key: r.item_key, item_type: r.items?.item_type || r.item_type || cat?.item_type, properties: r.items?.properties || cat?.properties || {}, pixel: cat?.pixel_icon_url || null,
         eslot: normSlot(r.equippable_slot || r.items?.equippable_slot || cat?.equippable_slot || ""),
         wt: Number(r.weight ?? r.items?.weight ?? cat?.weight ?? 0) || 0,
-        qty: r.quantity || 1, icon: r.icon_url || cat?.icon_url || null, desc: r.description || cat?.description || ""}; });
+        qty: r.quantity || 1, icon: r.icon_url || cat?.icon_url || null, desc: r.description || cat?.description || "", origin: r.origin || ""}; });
       const doll = (j.equipped || []).filter(e => e.equipped !== false).map(e => ({slot: normSlot(e.slot), name: e.name, item_key: e.item_key || null}));
       const inHand = sl => (doll.find(d => d.slot === sl) || {}).name || null;
       GEAR[id] = {carried, doll, main: inHand("main_hand"), off: inHand("off_hand"), carryMax: j.carry ? j.carry.max : undefined}; refreshAttacks(id); refreshAc(id);
@@ -17005,7 +17219,7 @@ function renderItemCard(a, g, it, u, worn, pic, what, fight, mine){
     + (atk ? `<br>${esc(atk.dmg)} ${esc(atk.type)} · +${atk.hit} to hit${atk.reach > 5 ? ` · ${atk.reach} ft` : ""}` : "")
     + (armorOf(it) ? `<br>${armorNote(a, it)}` : "")
     + (atk ? `<br>${weaponNote(SHEETS[a.id], it)}` : "") + (attuneNote(it, false, a.id) ? `<br>${attuneNote(it, false, a.id)}` : "");
-  d.innerHTML = `<div class="efBig${it.icon ? "" : " px"}">${pic ? `<img src="${esc(pic)}" alt="">` : "◆"}</div><div><h5>${esc(it.name)}</h5><div class="efMeta">${meta}</div>${it.desc ? `<div class="efDesc">${esc(it.desc)}</div>` : ""}<div class="efActs"></div></div>`;
+  d.innerHTML = `<div class="efBig${it.icon ? "" : " px"}">${pic ? `<img src="${esc(pic)}" alt="">` : "◆"}</div><div><h5>${esc(it.name)}</h5><div class="efMeta">${meta}</div>${it.desc ? `<div class="efDesc">${esc(it.desc)}</div>` : ""}${it.origin ? `<div class="efFrom">${esc(it.origin)}</div>` : ""}<div class="efActs"></div></div>`;
   const acts = d.querySelector(".efActs");
   const btn = (label, ok, why, fn, primary) => { const b = document.createElement("button"); b.className = "btn" + (primary ? " primary" : ""); b.textContent = label; b.disabled = !ok; if (why) b.title = why; b.onclick = fn; acts.appendChild(b); };
   const cost = sl => fight ? (HAND(sl) ? gearHint(a, wornIn(g, sl) ? 2 : 1) : "not mid-fight") : "";

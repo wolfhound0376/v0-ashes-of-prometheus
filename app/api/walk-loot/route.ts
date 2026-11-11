@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
-import { CONFISCATION_STASH_NAME } from "@/lib/confiscation"
+import { CONFISCATION_STASH_NAME, STASH_MARK } from "@/lib/confiscation"
 import { canCarry, syncCarried } from "@/lib/carry"
 import { recordItemMove } from "@/lib/item-history"
 import { lootHolderId, rowsToMint } from "@/lib/floor-holder"
@@ -197,13 +197,15 @@ export async function POST(req: NextRequest) {
     const row = now.rows.find((r) => r.kind === "stash" && r.rowId === String(body.rowId))
     if (!row) return NextResponse.json({ error: "It is not there any more." }, { status: 409 })
     const sid = await stashId(db)
-    { const { data: w } = await db.from("inventory_items").select("weight,quantity").eq("id", row.rowId!).maybeSingle()   // carrying capacity (lib/carry.ts)
+    let ownerId: string | null = null   // whose confiscated kit this was, so a New Game can put it back (returnsToStash, lib/confiscation.ts)
+    { const { data: w } = await db.from("inventory_items").select("weight,quantity,confiscated_from").eq("id", row.rowId!).maybeSingle()   // carrying capacity (lib/carry.ts)
+      ownerId = (w?.confiscated_from as string | null) ?? null
       const v = await canCarry(db, characterId, Number(w?.weight ?? 0) * Number(w?.quantity ?? 1), row.name, Number(w?.quantity ?? 1))
       if (!v.ok) return NextResponse.json({ error: v.why, carry: v }, { status: 409 }) }
     const { error } = await db.from("inventory_items").update({ character_id: characterId, confiscated_from: null }).eq("id", row.rowId!).eq("character_id", sid!)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     await syncCarried(db, characterId)
-    await recordItemMove(db, { inventoryItemId: row.rowId, characterId, kind: "acquire", detail: { from: where, container, qty: row.qty, confiscated_from: row.owner ?? undefined } })
+    await recordItemMove(db, { inventoryItemId: row.rowId, characterId, kind: "acquire", detail: { from: where, container, qty: row.qty, confiscated_from: row.owner ?? undefined, [STASH_MARK]: true, owner_id: ownerId ?? undefined } })
     delete s.carry[row.rowId!]; await writeState(db, s, `${who.name} took ${row.name}`)
     await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text: `${who.name} takes ${row.qty > 1 ? row.qty + " × " : ""}${row.name}${row.owner && row.owner !== who.name ? ` (${row.owner}'s)` : ""} from ${where}.` })
     return NextResponse.json({ ok: true, took: row.name, qty: row.qty })

@@ -72,7 +72,7 @@ export function SaveShelf({ me, onLoaded }: { me: Me; onLoaded?: () => void }) {
     <div className="mt-6 rounded-sm border border-[#5a4a30] bg-black/60 p-4 text-left">
       <div className="flex items-center justify-between">
         <div className="text-[10px] uppercase tracking-[0.35em] text-[#8a6a3a]">Saved games · {saves.length}</div>
-        {s.is_loaded && <span className="rounded-full border border-emerald-700/70 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.2em] text-emerald-300">In play</span>}
+        {s.is_loaded && <span className="rounded-full border border-emerald-700/70 px-2.5 py-0.5 text-[10px] uppercase tracking-[0.2em] text-emerald-300">{dark ? "Loaded" : "In play"}</span>}
       </div>
       <div className="mt-3 flex items-center gap-3">
         <button type="button" onClick={() => step(-1)} disabled={saves.length < 2} aria-label="Previous save" className="grid h-11 w-11 shrink-0 place-items-center rounded-sm border border-[#8a6a3a] text-[#e8d9ae] hover:border-[#f4e0a8] disabled:opacity-30"><ChevronLeft className="h-4 w-4" /></button>
@@ -106,6 +106,9 @@ export function SaveShelf({ me, onLoaded }: { me: Me; onLoaded?: () => void }) {
           </button>
         )}
       </div>
+      {/* Sam, 2026-11-10: "Still not able to force close this active game" — with the table dark nothing is being
+          played; the green badge only marks which world is set up on the table, so say so. */}
+      {dark && s.is_loaded && <p className="mt-2 text-center text-[12px] text-stone-500">The table is closed — nobody is playing. This is the world that is set up for next time.</p>}
       {!dark && !s.is_loaded && <p className="mt-2 text-center text-[12px] text-stone-500">End the session to change games.</p>}
       {msg && <p role="status" className="mt-2 text-center text-[12px] text-[#d9bd7e]">{msg}</p>}
     </div>

@@ -33,6 +33,34 @@ export const PRISONER_ISSUE_SLUG = "rags"
  */
 export const CONFISCATION_ACTIVE = process.env.CONFISCATE_STARTING_INVENTORY !== "false"
 
+/**
+ * The key an `acquire` history line carries (item_events.detail) when the thing was lifted out of the stash. It is
+ * how a New Game knows which rows in the heroes' packs are the party's own confiscated kit rather than loot.
+ */
+export const STASH_MARK = "from_stash"
+
+/**
+ * NEW GAME PUTS THE STASH BACK. Sam, 2026-11-10 ("Yes"): a hero who robs Shoor's chest takes the row itself into
+ * their pack, and a restart deletes every hero's pack, so each run used to eat the party's real gear for good.
+ *
+ * Given the stash-take history lines and the characters that still exist, says which inventory rows go back to the
+ * stash and whose confiscated property each becomes again. The newest line for a row wins; an owner who no longer
+ * exists leaves the row ownerless rather than failing the move. Pure, so it can be tested.
+ */
+export function returnsToStash(
+  events: readonly { inventory_item_id: string | null; detail: Record<string, unknown> | null; occurred_at?: string | null }[],
+  liveCharacterIds: ReadonlySet<string>,
+): Map<string, string | null> {
+  const out = new Map<string, string | null>()
+  const sorted = [...events].sort((a, b) => String(a.occurred_at ?? "").localeCompare(String(b.occurred_at ?? "")))
+  for (const e of sorted) {
+    if (!e.inventory_item_id || e.detail?.[STASH_MARK] !== true) continue
+    const owner = typeof e.detail.owner_id === "string" && liveCharacterIds.has(e.detail.owner_id) ? e.detail.owner_id : null
+    out.set(e.inventory_item_id, owner)
+  }
+  return out
+}
+
 export type ConfiscationResult = {
   /** Items moved into the stash rather than onto the character. */
   confiscated: number
