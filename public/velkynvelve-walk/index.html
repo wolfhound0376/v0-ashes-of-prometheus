@@ -1990,6 +1990,9 @@ function asleepNow(a){ return !!(a.c && a.c.conds.has("asleep") && !a.down); }
 function hiddenNow(a){
   if (!a || a.kind !== "pc" || a.down) return false;
   if (a.c && a.c.conds && a.c.conds.has("hidden")) return true;
+  // a hero another screen drives that is sneaking THERE (One World pose "sneak"; Sam, 2026-11-10: "On Fifi's screen she
+  // is sneaking but not on mine") crouches here too
+  if (a.netPose === "sneak" && mode === "explore" && typeof owRemote === "function" && owRemote(a)) return true;
   try { return !!(sneak && mode === "explore" && sneak.rolls.some(x => x.p === a)); } catch (e){ return false; }   // `sneak` is declared further down
 }
 const HIDDEN_SHEET = {walk: "sneak", idle: "crouch"};
@@ -21860,7 +21863,8 @@ function owHeroTick(){
       }
       continue;
     }
-    const pose = a.walkAs === "carry" ? "carry" : a.anim === "scrub" ? "scrub" : null;   // Hard Labor's work poses, seen at the table
+    // Hard Labor's work poses, and a quiet sneak, seen at the table
+    const pose = a.walkAs === "carry" ? "carry" : a.anim === "scrub" ? "scrub" : !owRemote(a) && hiddenNow(a) ? "sneak" : null;
     const moved = !last || Math.hypot(dest.x - last.tx, dest.y - last.ty) > 8 || (a.kbd && Math.hypot(a.x - last.x, a.y - last.y) > 24) || (!a.path.length && Math.hypot(a.x - last.x, a.y - last.y) > 30) || (last.pose || null) !== pose;
     if (!moved) continue;
     const seq = Math.max(owNow(), (OW.seen[a.id] || 0) + 1); OW.seen[a.id] = seq;
@@ -21902,7 +21906,7 @@ function owApplyHero(slug, h){
   if (Math.hypot(a.x - h.x, a.y - h.y) > 220 * node.scale){ a.x = h.x; a.y = h.y; a.alpha = 1; }   // too far apart to walk it: put it there
   const dest = {x: h.tx, y: h.ty}; a.netDest = dest; OW.sent[slug] = {...h}; OW.last[slug] = h;
   stopActivity(a); a.kbd = false; a.onArrive = null; a.walkIn = false;
-  a.netPose = h.pose === "carry" || h.pose === "scrub" ? h.pose : null; a.walkAs = a.netPose === "carry" ? "carry" : null;
+  a.netPose = h.pose === "carry" || h.pose === "scrub" || h.pose === "sneak" ? h.pose : null; a.walkAs = a.netPose === "carry" ? "carry" : null;
   if (Math.hypot(dest.x - a.x, dest.y - a.y) > 6){ const p = findPath(a, nearestWalkable(dest.x, dest.y)); a.path = p && p.length ? p : [{x: dest.x, y: dest.y}]; }
   else { a.path = []; a.face = h.face | 0; }
 }

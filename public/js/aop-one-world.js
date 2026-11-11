@@ -43,7 +43,7 @@ var AopOneWorld = (() => {
   var ONLINE_MS = 12e3;
   var MISSES_BEFORE_RESYNC = 2;
   var LIMITS = { stateBytes: 64e3, heroesPerPatch: 12, coord: 4e3 };
-  var HERO_POSES = ["carry", "scrub"];
+  var HERO_POSES = ["carry", "scrub", "sneak"];
   var PLATE_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
   function plateId(v) {
     if (typeof v === "number") return Number.isInteger(v) && v >= 0 && v <= 999 ? String(v) : null;
