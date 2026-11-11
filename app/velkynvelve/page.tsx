@@ -161,8 +161,8 @@ export default function VelkynvelvePage() {
           under the map, not floated over it, so it never covers the action bar, the log or the zoom. The strip
           only shows when the button does (a seated player): no seat, no button, no empty bar. */}
       {!dm && !bagOpen && (
-        <footer className="hidden items-center justify-end border-t border-amber-900/40 px-4 py-1.5 has-[button]:flex">
-          <MessagePlayerButton variant="pixel" drop="up" />
+        <footer className="hidden items-center justify-end border-t border-amber-900/40 px-4 pb-3 pt-2.5 has-[button]:flex">
+          <MessagePlayerButton variant="action" drop="up" />
         </footer>
       )}
     </main>
