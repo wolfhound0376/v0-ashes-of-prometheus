@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { mayLead, tallyLeader } from "./leader"
+import { mayLead, tallyLeader, whoLeads } from "./leader"
 
 describe("who leads", () => {
   const party = ["fifi", "kenta", "samson", "scott"]
@@ -28,5 +28,12 @@ describe("who leads", () => {
     expect(mayLead({ dm: false, characterId: "fifi" }, "fifi")).toBe(true)
     expect(mayLead({ dm: false, characterId: "kenta" }, "fifi")).toBe(false)
     expect(mayLead({ dm: false, characterId: null }, null)).toBe(false)
+  })
+  it("the host leads without a vote; the DM can still name someone else; the vote decides only with no host", () => {
+    expect(whoLeads(null, "fifi", null)).toEqual({ leader: "fifi", by_vote: false, by: "host" })
+    expect(whoLeads(null, "fifi", "kenta")).toEqual({ leader: "fifi", by_vote: false, by: "host" })
+    expect(whoLeads("samson", "fifi", "kenta")).toEqual({ leader: "samson", by_vote: false, by: "dm" })
+    expect(whoLeads(null, null, "kenta")).toEqual({ leader: "kenta", by_vote: true, by: "vote" })
+    expect(whoLeads(null, null, null)).toEqual({ leader: null, by_vote: false, by: null })
   })
 })

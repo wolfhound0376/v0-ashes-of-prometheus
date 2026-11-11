@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
-import { tallyLeader } from "@/lib/travel/leader"
+import { tallyLeader, whoLeads } from "@/lib/travel/leader"
 import { activeRunId, readLeader, roster } from "@/lib/travel/leader-store"
 import { normaliseDay } from "@/lib/travel/march"
 
@@ -25,10 +25,12 @@ export async function GET() {
     runId ? db.from("travel_march").select("pace,hours_today,day_miles").eq("campaign_run_id", runId).maybeSingle() : Promise.resolve({ data: null }),
   ])
   const tally = tallyLeader(lead.votes, party.map((c) => c.id))
+  const leads = whoLeads(lead.leader, lead.host, tally.leader)
   const day = normaliseDay((marchRes.data as Record<string, unknown> | null) ?? null)
   return NextResponse.json({
-    leader: lead.leader ?? tally.leader,
-    by_vote: !lead.leader && !!tally.leader,
+    leader: leads.leader,
+    by_vote: leads.by_vote,
+    by: leads.by,
     votes: lead.votes,
     counts: tally.counts,
     needed: tally.needed,

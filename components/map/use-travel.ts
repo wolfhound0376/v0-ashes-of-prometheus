@@ -78,6 +78,8 @@ export type EntranceInfo = { slug: string; plate: string; name: string; scene: s
 export type LeadInfo = {
   leader: string | null
   by_vote: boolean
+  /** What decided it: the DM named them, they host the game, or the vote carried them (lib/travel/leader.ts, whoLeads). */
+  by?: "dm" | "host" | "vote" | null
   votes: Record<string, string>
   counts: Record<string, number>
   needed: number
@@ -253,7 +255,7 @@ export function useTravel() {
     try {
       const res = await fetch("/api/travel", { method: "POST", headers: travelHeaders(), body: travelBody(body) })
       const out = res.ok ? await res.json() : null
-      if (out && lead) setLead({ ...lead, leader: out.leader ?? null, by_vote: !!out.by_vote, votes: out.votes ?? lead.votes, counts: out.counts ?? lead.counts })
+      if (out && lead) setLead({ ...lead, leader: out.leader ?? null, by_vote: !!out.by_vote, by: out.by ?? null, votes: out.votes ?? lead.votes, counts: out.counts ?? lead.counts })
     } catch {
       /* the next poll will say where the vote stands */
     }
