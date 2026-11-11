@@ -5195,7 +5195,7 @@ function openBody(b){
   add(b.searched ? "Look again" : "Search the body", () => { close(); const first = !b.searched; b.searched = true;
     if (first){ bank("ui/item_pickup", .7); log(`${fname(leader)} searches ${name}'s body.`); }
     if (!known && first && APP) handOff(`${fname(leader)} searches ${name}'s body.`, true);                 // not a kit the book lists: Malachar says
-    openLoot(`body:${b.id}:${b.lootKey}`, `${name}'s body`, {at: {x: b.x, y: b.y}, text: `${name} lies where it fell.`, empty: known ? `Nothing is left on ${name}.` : APP ? `Nothing the map knows of. What ${name} carried is Malachar's to say.` : "What it carried is Malachar's to say — in the game this goes to him as your action."});
+    openLoot(`body:${b.id}:${b.lootKey}`, b.buried ? `${name}'s grave` : `${name}'s body`, {at: {x: b.x, y: b.y}, text: b.buried ? `${name} lies under the stone. What they carried was left with them.` : `${name} lies where it fell.`, empty: known ? `Nothing is left on ${name}.` : APP ? `Nothing the map knows of. What ${name} carried is Malachar's to say.` : "What it carried is Malachar's to say — in the game this goes to him as your action."});
   }, "primary");
   add("Leave it", close, "", {icon: "back"});
   showObjCard(); cardClose(close); box.querySelector("button")?.focus();
@@ -6197,15 +6197,15 @@ const FOE_BLOCKS = {
 // he can see) and Derendil's Wounded Fury (10 HP or fewer: advantage, +2d6 on a melee hit) are their block traits.
 // Saves are ability modifiers, as for the foes (the rows carry no save list).
 const ALLY_SHEETS = {
-  ront:     {name: "Ront", cls: "Orc", hp: 15, ac: 13, init: 1, speed: 30, strScore: 16, leaper: true, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 0, cha: 0}, aggressive: true,
+  ront:     {name: "Ront", style: "melee", cls: "Orc", hp: 15, ac: 13, init: 1, speed: 30, strScore: 16, leaper: true, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 0, cha: 0}, aggressive: true,
              attacks: [{name: "Unarmed Strike", hit: 5, dmg: "4", type: "bludgeoning", reach: 5}],
              kit: {greataxe: {name: "Greataxe", hit: 5, dmg: "1d12+3", type: "slashing", reach: 5}, javelin: {name: "Javelin", hit: 5, dmg: "1d6+3", type: "piercing", reach: 5, thrown: 30}}},
-  eldeth:   {name: "Eldeth", cls: "Shield dwarf", hp: 16, ac: 13, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 1, cha: 0}, multi: 2,
+  eldeth:   {name: "Eldeth", style: "ranged", cls: "Shield dwarf", hp: 16, ac: 13, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 1, cha: 0}, multi: 2,
              attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
              kit: {shortsword: {name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, longbow: {name: "Longbow", hit: 4, dmg: "1d8+2", type: "piercing", reach: 150}}},
-  derendil: {name: "Derendil", cls: "Quaggoth", hp: 45, ac: 14, init: 1, speed: 30, strScore: 17, leaper: true, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, multi: 2, woundedFury: 10,
+  derendil: {name: "Derendil", style: "melee", cls: "Quaggoth", hp: 45, ac: 14, init: 1, speed: 30, strScore: 17, leaper: true, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, multi: 2, woundedFury: 10,
              attacks: [{name: "Claw", hit: 5, dmg: "1d6+3", type: "slashing", reach: 5}], kit: {}},
-  sarith:   {name: "Sarith", cls: "Drow", race: "drow", hp: 13, ac: 13, init: 2, speed: 30, strScore: 10, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1},
+  sarith:   {name: "Sarith", style: "ranged", cls: "Drow", race: "drow", hp: 13, ac: 13, init: 2, speed: 30, strScore: 10, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1},
              attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
              kit: {shortsword: {name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, "hand crossbow": {name: "Hand Crossbow", hit: 4, dmg: "1d6+2", type: "piercing", reach: 30}}},
 };
@@ -10353,6 +10353,34 @@ function foeTurn(f){
 // uses Aggressive (his bonus action, move up to his speed toward the foe); anyone still short takes the Dash
 // action and closes instead of swinging. A hero who is restrained in webbing beside them gets cut free first,
 // as the party already does for each other (the web's own rule: an action to free a creature next to you).
+// WHO SHOOTS AND WHO CLOSES (Sam, 2026-11-10: "attacks don't always have to jump. They can fire or throw things at a
+// distance if possible, I would base this on their character type" — and, the same message: "I'm not seeing NPCs using
+// items given to them"). Until now an ally's turn asked meleeOf() and nothing else: the first blade in the pack, every
+// time. So Eldeth handed a hand crossbow while she held a shortsword never loosed a bolt, and Ront with a javelin on
+// his back ran the whole plate rather than throw it. Now the weapon is chosen by who they are (the block's `style`):
+//   ranged  (Eldeth the scout, Sarith the drow)  shoot whenever they hold something that shoots and nobody hostile is
+//           at their elbow (SRD: a ranged attack within 5 ft of a hostile is at disadvantage); blade when pressed.
+//   melee   (Ront, Derendil, and anyone unlisted with a blade)  close and strike when the movement gets them there this
+//           turn; when it does not, throw what can be thrown or shoot what can be shot before running the gap.
+// No style and nothing but fists and a bow: they shoot. Everything is drawn from what they actually carry (the block's
+// own weapons or anything handed to them, refreshAttacks). Claude's assignment of the four styles, from their OotA
+// stat blocks (scout, drow; orc, quaggoth); Sam's to change.
+function allyAttackPick(a, tgt){
+  const s = a.c.sheet, list = s.attacks || [], blade = meleeOf(a), fists = !blade || /unarmed/i.test(blade.name) || (blade.reach || 5) > 10;
+  const ft = feetBetween(a, tgt), reaches = k => ft <= (k.long || k.reach || 5) + 2.5;
+  const shots = list.filter(k => (k.reach || 5) > 10 && !k.thrown), tossed = list.filter(k => k.thrown && (k.reach || 5) <= 10 && ft > 5 && ft <= k.thrown + 2.5);
+  const pressed = standing(foes).some(f => !incapacitated(f) && feetBetween(a, f) <= 5);
+  const style = s.style || (fists && shots.length ? "ranged" : "melee");
+  const closes = k => Math.max(0, ft - (k.reach || 5)) <= (a.c.move || 0) + 2.5;     // can the feet get there this turn (straight line; the walk itself is measured by approachThen)
+  if (style === "ranged"){
+    if (shots.length && (!pressed || fists)) return {atk: shots.find(reaches) || shots[0], reach: (shots.find(reaches) || shots[0]).reach, how: "shoot"};
+    return {atk: blade || list[0], reach: (blade || list[0]).reach || 5, how: "close"};
+  }
+  if (!fists && closes(blade)) return {atk: blade, reach: blade.reach || 5, how: "close"};
+  if (!pressed && tossed.length) return {atk: tossed[0], reach: tossed[0].thrown, how: "throw"};
+  if (!pressed && shots.some(reaches)) { const k = shots.find(reaches); return {atk: k, reach: k.reach, how: "shoot"}; }
+  return {atk: blade || list[0], reach: (blade || list[0]).reach || 5, how: "close"};
+}
 function allyTurn(a){
   const end = () => { combatBusy = false; if (cbt) cbt.phase = "idle"; setTimeout(() => passTurn(a), 500); };   // only if the turn is still theirs (main #795)
   if (!actors.includes(a) || a.down){ setTimeout(nextTurn, 100); return; }
@@ -10379,15 +10407,17 @@ function allyTurn(a){
   if (!tgt){ checkEnd() || end(); return; }
   (cbt.lastAllyTarget || (cbt.lastAllyTarget = new Map())).set(a, tgt);
   fightCam(Math.min(2.4, cbt.home.z * 1.08), (a.x + tgt.x) / 2, (a.y + tgt.y) / 2 - 50, 600, [a, tgt]);
-  const s = a.c.sheet, atk = meleeOf(a), swings = s.multi || 1;
-  const gapFt = () => Math.max(0, (pxBetween(a, tgt, tgt) - reachPx(a, tgt, atk.reach || 5)) / ruleFt(onPaintedFloor(tgt) ? {x: tgt.x, y: tgt.y, big: a.big} : a));
+  const s = a.c.sheet, pick = allyAttackPick(a, tgt), atk = pick.atk;
+  const swings = /crossbow/i.test(atk.itemName || atk.name) ? 1 : (s.multi || 1);   // SRD Loading: one bolt per action, however many attacks the block has
+  if (pick.how !== "close") log(`${fname(a)} ${pick.how === "throw" ? "hefts" : "levels"} the ${esc(atk.itemName || atk.name)} at ${fname(tgt)}.`);
+  const gapFt = () => Math.max(0, (pxBetween(a, tgt, tgt) - reachPx(a, tgt, pick.reach || 5)) / ruleFt(onPaintedFloor(tgt) ? {x: tgt.x, y: tgt.y, big: a.big} : a));
   if (gapFt() > a.c.move && s.aggressive && a.c.bonus){
     a.c.bonus = false; a.c.move += s.speed; log(`${fname(a)} charges (Aggressive, bonus action: +${s.speed} ft toward ${fname(tgt)}).`);
   }
   if (gapFt() > a.c.move){
     a.c.action = false; a.c.move += s.speed; combatBusy = true; cbt.phase = "busy";
     log(`${fname(a)} dashes toward ${fname(tgt)}.`); narrate(a, `${fname(a)} runs at ${fname(tgt)}.`);
-    approachThen(a, tgt, atk.reach || 5, end); return;
+    approachThen(a, tgt, pick.reach || 5, end); return;
   }
   let n = 0; const go = () => { if (!cbt || tgt.down || a.down || n >= swings){ end(); return; } n++; attackWith(a, tgt, atk, () => setTimeout(go, 250)); };
   setTimeout(go, 400);
@@ -11339,6 +11369,7 @@ function setQuick(on, quiet){
 }
 function endCombat(won){
   if (mode !== "combat") return;
+  const fellNpcs = cbt ? (cbt.bystanders || []).filter(b => b.down) : [];   // the NPCs who died in this fight: buried below, once it is over (npcBury)
   if (won !== false && cbt) askEarned((cbt.allies || []).filter(n => askRowOf(n.id) && !n.down));   // they fought beside you and know it (NPC ASKS)
   setQuick(false, true);
   owFightEnds();
@@ -11382,6 +11413,7 @@ function endCombat(won){
   setTimeout(() => {
     for (const f of slain){ f.kind = "body"; f.body = true; f.path = []; f.once = null; f.lootKey = bodyKeyOf(f); npcs.push(f); }
     actors = actors.filter(a => a.kind !== "foe"); foes = [];
+    fellNpcs.forEach(npcBury);
     for (const [slug, f] of [...creatures]) if (f.down || !actors.includes(f)) creatures.delete(slug);
     camTo(1, NAT_W / 2, NAT_H / 2, 800);
     { const b = $("zFit"); if (b){ b.textContent = wholePlate ? "Follow" : "Fit"; b.title = wholePlate ? "Follow your hero" : "Show the whole plate"; } }   // the fight's "Fit" is over
@@ -17036,6 +17068,23 @@ function dieNow(a, why){
 //     died and the party moves on, so this has not been worth a sort key; the body deathBit does the same.
 const GRAVE_FRAMES = 6;    // the sprite sheet: the floor cracks, the mound swells, the stone rises, seats, settles
 const GRAVE_MS = 150;      // per frame; the last frame is held for the rest of the session
+// AN NPC WHO DIES IN A FIGHT IS BURIED WHEN IT ENDS (Sam, 2026-11-10: "When an NPC dies it should be a RIP tombstone
+// with a mound at the end of combat"). The prisoners and anyone else who is not a foe: when the fight is over the
+// mound swells where they fell, the stone rises (the heroes' own stone and animation), and the body sinks out of
+// sight under it. The spot stays searchable, as "<name>'s grave", so nothing they carried is lost with them.
+//   - FOES KEEP THEIR CARCASS (Sam, 2026-10-13: "There should always be a carcass or dead body of whatever died. This
+//     way we can search the body."). This is for the people on the party's side of the bars, not the drow.
+//   - AT THE END OF THE FIGHT, not at the blow: the fight goes on around the body until then.
+//   - THE DROW DO NOT COME FOR A BURIED BODY. Their dragging-out (two guard cycles) is for someone murdered by the
+//     volleys with no fight; one who fell in a fight is under a stone. Claude's reading of the two rulings together.
+//   - Buppido keeps his own sequence (buppidoRises): his stone is already up by then, and graveRaise raises one per name.
+function npcBury(b){
+  if (!b || b.kind === "pc" || hero(b) || b.buried) return;
+  b.buried = true; b.noDrag = true; b.bodyDiedAt = null;
+  graveRaise(b, true);
+  setTimeout(() => { b.fadeOut = true; const t0 = now, tick = () => { b.alpha = Math.max(0, 1 - (now - t0) / 700); if (b.alpha > 0) requestAnimationFrame(tick); }; tick(); }, GRAVE_MS * 3);
+  log(`A stone goes up over <b>${esc(fname(b))}</b>.`);
+}
 function graveRaise(a, force){
   // Heroes get a stone automatically. `force` is for the one NPC who also gets one: Buppido (Sam, 2026-10-30 —
   // "just for him"). Every other prisoner who dies in the pen leaves a body and no marker.
