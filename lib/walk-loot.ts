@@ -290,6 +290,40 @@ export function onDutyKit(slug: string, which: string | undefined, kit: LootEntr
   return kit.filter((e) => !OFF_DUTY.has(e.slug))
 }
 
+// NO TWO GUARDS CARRY QUITE THE SAME (Sam, 2026-11-10: "we should vary kits a bit per guard"). A rank-and-file drow
+// guard's kit is rolled once, when he falls, before the wear roll, and kept for the run like everything else on a body.
+// "A bit" is the brief: he still carries what his stat block FIGHTS with (shortsword, hand crossbow), so the body
+// never contradicts the fight. What varies is around it. HOUSE TABLE, for Sam to tune; three d20s:
+//
+//   bolts    1-5  none left (he shot the case empty)        6-20  the case of 20
+//   armour   1-14 chain shirt (the stat block's AC)          15-20 studded leather instead
+//   extra    1-9  nothing   10-12 a slaver's whip   13-15 manacles   16-18 a belt knife (dagger)   19-20 a traveler's cloak
+//
+// Only the rank-and-file (`drow-guard-*`). The named drow (Asha, Shoor, Jorlan, Ilvara) keep their stat-block gear, and
+// the off-duty rope and hook are still decided by where he is (onDutyKit). Pockets are a different roll (POCKET_TABLE).
+export const GUARD_EXTRAS: { upTo: number; entry: LootEntry | null }[] = [
+  { upTo: 9, entry: null },
+  { upTo: 12, entry: { slug: "whip", qty: 1, note: "a slaver's whip, coiled at the hip" } },
+  { upTo: 15, entry: { slug: "manacles", qty: 1, note: "a spare set, for the next prisoner" } },
+  { upTo: 18, entry: { slug: "dagger", qty: 1, note: "a belt knife" } },
+  { upTo: 20, entry: { slug: "travelers-cloak", qty: 1, note: "a dark travelling cloak" } },
+]
+/** One guard's kit, varied a little from the book's. Anyone who is not a rank-and-file drow guard gets `kit` back unchanged. */
+export function variedGuardKit(slug: string, kit: LootEntry[] | undefined, rng: () => number = Math.random): LootEntry[] | undefined {
+  if (!kit || !/^drow-guard/.test(slug)) return kit
+  const d20 = () => 1 + Math.floor(rng() * 20)
+  const bolts = d20(), armour = d20(), extra = d20()
+  const out: LootEntry[] = []
+  for (const e of kit) {
+    if (e.slug === "bolts-20" && bolts <= 5) continue                                                   // shot the case empty
+    if (e.slug === "chain-shirt" && armour >= 15) { out.push({ slug: "studded-leather-armor", qty: 1 }); continue }
+    out.push({ ...e })
+  }
+  const x = GUARD_EXTRAS.find((r) => extra <= r.upTo)?.entry
+  if (x) out.push({ ...x })
+  return out
+}
+
 // THE PURSE (Sam, 2026-10-27, "yes"): DMG ch.7, "Individual Treasure" (5e 2014), one d100 per body on the table for its
 // challenge rating; coins never roll for wear.
 //   CR 0-4   01-30 5d6 cp · 31-60 4d6 sp · 61-70 3d6 ep · 71-95 3d6 gp · 96-00 1d6 pp

@@ -6,7 +6,7 @@ import { canCarry, syncCarried } from "@/lib/carry"
 import { recordItemMove } from "@/lib/item-history"
 import { lootHolderId, rowsToMint } from "@/lib/floor-holder"
 import { bodyKit } from "@/lib/harvest"
-import { BOOK_CONTAINERS, BODY_KIT, CREATURE_PARTS, PEN_KEY_SLUG, POCKET_SPRITES, rollPockets, rollWear, onDutyKit, rollPurse, PURSE_CR, isValuable, parseContainer, pocketEntries, type HarvestCheck, type LootEntry, type Ruined } from "@/lib/walk-loot"
+import { BOOK_CONTAINERS, BODY_KIT, CREATURE_PARTS, PEN_KEY_SLUG, POCKET_SPRITES, rollPockets, rollWear, onDutyKit, variedGuardKit, rollPurse, PURSE_CR, isValuable, parseContainer, pocketEntries, type HarvestCheck, type LootEntry, type Ruined } from "@/lib/walk-loot"
 
 // /api/walk-loot — what is in Velkynvelve's chests, on its dead and in its guards' pockets (see lib/walk-loot.ts).
 //
@@ -92,7 +92,7 @@ async function contents(db: Db, id: string, s: State, kill?: string | null): Pro
   // a body's kit rolls for wear the first time anyone looks — the map looks the moment it falls, saying what killed it
   // (lib/walk-loot.ts rollWear: its own number for each kind of thing, worse by kill type) — then stays as rolled for the run
   let ruinedNow: Ruined[] | undefined
-  const kit = c.kind === "body" && !s.bodies[c.key] ? onDutyKit(c.slug!, c.which, await kitFor(db, c.slug!)) : undefined
+  const kit = c.kind === "body" && !s.bodies[c.key] ? variedGuardKit(c.slug!, onDutyKit(c.slug!, c.which, await kitFor(db, c.slug!))) : undefined   // a guard's kit varies a bit (lib/walk-loot.ts)
   const purseCr = c.kind === "body" ? PURSE_CR[c.slug!] : undefined
   if (c.kind === "body" && (kit?.length || purseCr !== undefined) && !s.bodies[c.key]){
     const worn = rollWear(kit ?? [], Math.random, kill)
