@@ -42,7 +42,11 @@ NODES = {
    obstacles=[dict(cx=890,cy=670,rx=120,ry=70),dict(cx=1350,cy=660,rx=120,ry=70),dict(cx=850,cy=890,rx=120,ry=70),dict(cx=1350,cy=890,rx=120,ry=70),dict(cx=1500,cy=470,rx=90,ry=50)],
    zones=[dict(rect=[942, 1214, 1194, 1417], to=[2], label="Rope walkway west"),
           dict(rect=[62, 786, 354, 941], to=[7], label="Walkway east"),
-          dict(rect=[122, 208, 294, 393], to=[8], label="Passage to the lift"),
+          # Sam, 2026-11-10: "Lift -> yes." This exit said "Passage to the lift" and led to Shoor's Quarters (8), and no
+          # plate led to the Lift at all: the only way onto plate 5 was climbing back up from the cliff below it, which is
+          # itself only reached from plate 5. OotA p.15: the lift is "attached to the edge of the barracks platform", the
+          # platform the hall opens onto. Shoor's rope bridge still arrives in the hall; it has no way back from here (known one-way).
+          dict(rect=[122, 208, 294, 393], to=[5], label="Passage to the lift"),
           # Hard Labor module (Sam, 2026-10-26): the kitchen is its own painted plate ("3k"), reached past the pantry
           # shelves at the back of the hall. PROPOSED: where the door sits is Claude's pick, on the painted floor by the counter.
           dict(rect=[1380, 480, 1560, 560], to=["3k"], label="PROPOSED: behind the serving counter, into the kitchen", proposed=True)]),
@@ -56,12 +60,15 @@ NODES = {
  5: dict(slug="node-05-lift", name="Lift", scale=0.95,
    floors=[dict(poly=P((740,640),(960,580),(1280,600),(1480,640),(1520,720),(1490,940),(1440,1040),(1200,1120),(940,1120),(700,1040),(640,940),(660,820),(700,740))),dict(rect=[160,750,720,860])],
    obstacles=[dict(cx=1140,cy=690,rx=150,ry=80)],
-   zones=[dict(rect=[150, 740, 260, 870], to=[2], label="Walkway to the main hall"),
+   # 2026-11-10: the walkway's label said the main hall and it led to the Barracks. It is the other end of the hall's
+   # "Passage to the lift" now, so a party coming from the hall arrives on it. (Claude's call, following the label.)
+   zones=[dict(rect=[150, 740, 260, 870], to=[3], label="Walkway to the main hall"),
           # Sam, 2026-10-24: "Lift basket goes to the plate pool" — the basket sets the party down on area 14 (Pool / Underground
           # River), which has its own ways out; it is not a way off the map. `kind="leave"` stays only because the page keys the
           # basket's climb-out button on it (template.html openLift); with a plate in `to`, goBeyond walks there.
           dict(rect=[1436, 819, 1526, 959], to=["wastes"], kind="leave", label="The lift basket: DC 18 Strength to crank, 4 rounds down to the Wastes (Sam, 2026-10-27; the book lowers it by the pool, OotA p.17–18)"),
-          dict(rect=[914, 1255, 1099, 1339], to=[2], label="Down the Lift to the Wastes"),
+          # 2026-11-10: was labelled "Down the Lift to the Wastes" (that is the basket above); it leads to the Barracks.
+          dict(rect=[914, 1255, 1099, 1339], to=[2], label="Along the platform to the barracks"),
           # Hard Labor module (Sam, 2026-10-26), Lift Trouble (OotA Expanded p.45): goods fell off the lift and snagged on the
           # cliff below; the prisoners are sent down on two tattered 25-ft ropes, three rappels. PROPOSED: the spot on the rail is
           # Claude's pick. The rappel checks are not built yet (labor module PR 3); for now this simply walks.
@@ -219,7 +226,8 @@ NODES = {
    floors=[dict(poly=P((520,460),(960,300),(1280,240),(1720,280),(2000,400),(2200,660),(2120,1040),(1800,1200),(1240,1180),(800,1120),(320,1000),(180,840),(280,600))),dict(rect=[1260,0,1440,280]),dict(rect=[880,1140,1200,1339])],
    obstacles=[dict(cx=x*2,cy=y*2,rx=95,ry=55) for (x,y) in [(350,270),(510,210),(630,260),(770,205),(880,265),(330,350),(500,320),(710,330),(935,350),(560,425),(770,410),(330,465),(960,440),(690,505),(930,570)]],
    zones=[dict(rect=[1276, 26, 1427, 232], to=[11], label="Stone steps up toward the slave pen"),
-          dict(rect=[2101, 556, 2260, 721], to=[10], label="Perimeter walkway north to the watch post"),
+          # 2026-11-10: was labelled "north to the watch post"; it leads to the Guard Tower (the watch post is the exit below).
+          dict(rect=[2101, 556, 2260, 721], to=[10], label="Perimeter walkway to the Guard Tower"),
           dict(rect=[891, 1211, 1079, 1441], to=[13], label="New exit")],
    hazard=dict(poly=P((620,500),(1900,440),(2040,700),(1880,1080),(720,1060),(480,800)), kind="ambush", foes=["quaggoth","quaggoth","quaggoth"], fromPlate=True, label="The quaggoths rise from their nests. You are not drow.")),
  13: dict(slug="node-13-northern-watch-post", name="Northern Watch Post", scale=1.0,
@@ -406,7 +414,7 @@ for _k, _n in _PLATES.items():
 # that do not are listed here so they are a known gap and not a surprise (Sam's export, 2026-10-24: one_way_links_to_fix).
 # A new one-way link fails the build until it gets its return zone or is added here on purpose.
 KNOWN_ONE_WAY = {("4", "1"), ("5", "2"), ("5", "wastes"), ("6", "10"), ("9", "14"), ("12", "10"),
-                 ("lair", "tunnels")}   # 2026-11-10: the tunnels' "deeper in" is the way off the outpost now; the lair waits for its road marker
+                 ("lair", "tunnels"), ("8", "3")}   # 2026-11-10: the tunnels' "deeper in" is the way off the outpost now; the lair waits for its road marker
 ALL = {str(k): v for k, v in NODES.items()}; ALL.update(CAVERNS)
 links = {(a, str(t)) for a, node in ALL.items() for z in node["zones"] for t in z["to"]}
 for a, b in links:
@@ -426,7 +434,7 @@ PLACE_WORDS = {"southern watch post": {"1"}, "northern watch post": {"13"}, "wat
                "toward the waterfall": {"9"}, "guard tower": {"10"}, "lower chamber": {"10b"}, "armory": {"10c"},
                "slave pen": {"11"}, "quaggoth den": {"12"}, "to the pool": {"14"}, "the wastes": {"wastes"},
                "the tunnels": {"tunnels"}, "darklake": {"shore"}, "the lair": {"lair"}, "the grove": {"grove"}}
-KNOWN_LABEL_MISMATCH = {("3", "the lift", "8"), ("5", "main hall", "2"), ("5", "the wastes", "2"), ("12", "watch post", "10")}
+KNOWN_LABEL_MISMATCH = set()   # the four from the 2026-10-24 re-trace were settled 2026-11-10 (Sam: "Lift -> yes")
 mismatch = set()
 for a, node in ALL.items():
     for z in node["zones"]:
