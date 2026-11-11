@@ -5894,10 +5894,15 @@ const CREATURE_SFX = {quaggoth: {call: "creature/creature_quaggoth_roar", hurt: 
 // oozes, the myconid and the kuo-toa keep their own calls (CREATURE_SFX); the kuo-toa "should sound nothing like a human".
 const VOX_HUMAN = /^(kenta|samson|scott|freia|lynkes|gandalf|kingasaur|eldeth|sarith|buppido|jimjar|topsy|turvy|ront|ilvara|asha|jorlan|shoor|liana)$|^drow-/;
 const VOX_FEMALE = /^(freia|eldeth|ilvara|asha|topsy|liana)$|female/;
-const VOX_TAKES = {"hit-m": 3, "hit-f": 4, "die-m": 2, "die-f": 4}, voxLast = {};
+// DERENDIL'S GRUNTS (Sam, 2026-11-10: "make the hit sounds for derendil (grunts) a little better"). He had the pack's one
+// generic beast yelp on every blow. He is a quaggoth who believes he is an elf prince, so a blow now draws one of three
+// deep, gruff, half-growl grunts of his own (ElevenLabs sound effects, cut and levelled like the people's,
+// public/sfx/walk/vox-hit-q1..3; Sam kept three of the four takes). His death call is unchanged.
+const VOX_TAKES = {"hit-m": 3, "hit-f": 4, "die-m": 2, "die-f": 4, "hit-q": 3}, voxLast = {};
 function voxFor(t, kind){   // kind "hit" | "die" -> "walk:vox-hit-f2", or null for anything that is not a person
-  if (!t || !(t.kind === "pc" || VOX_HUMAN.test(t.id || ""))) return null;
-  const k = kind + "-" + (VOX_FEMALE.test(t.id || "") ? "f" : "m"), n = VOX_TAKES[k]; let i;
+  const quag = !!t && t.id === "derendil" && kind === "hit";
+  if (!t || !(quag || t.kind === "pc" || VOX_HUMAN.test(t.id || ""))) return null;
+  const k = quag ? "hit-q" : kind + "-" + (VOX_FEMALE.test(t.id || "") ? "f" : "m"), n = VOX_TAKES[k]; let i;
   do { i = 1 + Math.floor(Math.random() * n); } while (n > 1 && i === voxLast[k]);
   voxLast[k] = i; return `walk:vox-${k}${i}`;
 }
