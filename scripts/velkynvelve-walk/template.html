@@ -937,6 +937,44 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 .victory .big{font-family:"Cinzel",Georgia,serif;font-size:56px;font-weight:700;color:#f3d68a;letter-spacing:.08em;text-shadow:0 0 18px rgba(243,214,138,.55),0 2px 0 #2a1a08,0 4px 14px rgba(0,0,0,.8)}
 .victory .small{font-family:"Crimson Text",Georgia,serif;font-size:19px;color:#e8dcc4;margin-top:6px;text-shadow:0 2px 6px rgba(0,0,0,.9)}
 @keyframes victory{0%{opacity:0;transform:translate(-50%,-40%) scale(.9)}12%{opacity:1;transform:translate(-50%,-50%) scale(1.04)}20%{transform:translate(-50%,-50%) scale(1)}80%{opacity:1}100%{opacity:0;transform:translate(-50%,-58%)}}
+/* THE LEVEL-UP BANNER (Sam, 2026-11-10: "a cool effect and sounds like the XP banner when characters are leveled up").
+   The victory banner's big brother, in the level-up ceremony's colours (Arcane Reliquary: gold over violet): a spinning
+   halo of light rays, the laurel chevron slamming in, LEVEL UP in gold with a violet glow, sparks flying out, and who
+   earned which level. It plays when the XP saved after a fight carries a hero over the line (and after the victory
+   banner, never on top of it). Sound: the bank's level-up sting, the epic loot shimmer and the ceremony's own voice. */
+.lvlBanner{position:absolute;left:50%;top:34%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;z-index:41;opacity:0;width:640px;max-width:96%}
+.lvlBanner.show{animation:lvlBan 5s ease-out forwards}
+.lvlBanner .halo{position:absolute;left:50%;top:62px;width:420px;height:420px;margin:-210px 0 0 -210px;border-radius:50%;
+  background:repeating-conic-gradient(from 0deg,rgba(255,214,122,.55) 0deg 6deg,rgba(255,214,122,0) 6deg 18deg,rgba(166,124,255,.45) 18deg 22deg,rgba(166,124,255,0) 22deg 30deg);
+  -webkit-mask:radial-gradient(circle,#000 0 18%,rgba(0,0,0,.85) 30%,transparent 68%);mask:radial-gradient(circle,#000 0 18%,rgba(0,0,0,.85) 30%,transparent 68%);
+  filter:blur(1px);animation:lvlSpin 9s linear infinite;mix-blend-mode:screen}
+.lvlBanner .glow{position:absolute;left:50%;top:62px;width:300px;height:300px;margin:-150px 0 0 -150px;border-radius:50%;background:radial-gradient(circle,rgba(255,236,170,.75) 0,rgba(196,150,255,.45) 35%,rgba(120,70,220,0) 70%);mix-blend-mode:screen}
+.lvlBanner .medal{position:relative;width:132px;height:132px;display:block;margin:0 auto;-webkit-mask:radial-gradient(circle,#000 0 56%,transparent 71%);mask:radial-gradient(circle,#000 0 56%,transparent 71%);filter:drop-shadow(0 0 18px rgba(255,214,122,.9)) drop-shadow(0 0 34px rgba(166,124,255,.7));animation:lvlMedal 5s cubic-bezier(.2,1.4,.4,1) forwards}
+.lvlBanner .big{position:relative;font-family:"Cinzel",Georgia,serif;font-size:66px;font-weight:700;letter-spacing:.1em;line-height:1;margin-top:2px;
+  background:linear-gradient(180deg,#fff6d0 0%,#f3d68a 38%,#c98a1e 62%,#ffe9a6 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 2px 0 #2a1a08) drop-shadow(0 0 14px rgba(166,124,255,.85)) drop-shadow(0 4px 14px rgba(0,0,0,.8));animation:lvlSlam 5s ease-out forwards}
+.lvlBanner .big::after{content:"";position:absolute;inset:0;background:linear-gradient(105deg,transparent 35%,rgba(255,255,255,.85) 50%,transparent 65%);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;color:transparent;animation:lvlShine 1.6s .5s ease-in-out 2}
+.lvlBanner .small,.lvlBanner .hint{display:inline-block;background:radial-gradient(ellipse at center,rgba(12,6,22,.82) 0,rgba(12,6,22,.6) 60%,rgba(12,6,22,0) 100%);padding:2px 26px;border-radius:20px}
+.lvlBanner .small{position:relative;font-family:"Crimson Text",Georgia,serif;font-size:21px;color:#efe2ff;margin-top:8px;text-shadow:0 0 10px rgba(166,124,255,.8),0 2px 6px rgba(0,0,0,.95)}
+.lvlBanner .hint{position:relative;font-family:var(--face-mono);font-size:12px;letter-spacing:.06em;color:#f2c55c;margin-top:4px;text-shadow:0 2px 4px #000}
+.lvlBanner .spark{position:absolute;left:50%;top:62px;width:7px;height:7px;margin:-3.5px;border-radius:50%;background:#fff3c4;box-shadow:0 0 8px #ffd27a,0 0 14px #a67cff;opacity:0;animation:lvlSpark 1.4s var(--d) ease-out forwards}
+.lvlBanner .spark:nth-child(3n){background:#e2d0ff;box-shadow:0 0 8px #c4a0ff,0 0 14px #7a4fe0}
+@keyframes lvlBan{0%{opacity:0}6%{opacity:1}84%{opacity:1}100%{opacity:0;transform:translate(-50%,-56%)}}
+@keyframes lvlSpin{to{transform:rotate(360deg)}}
+@keyframes lvlMedal{0%{transform:scale(0) rotate(-25deg)}10%{transform:scale(1.35) rotate(6deg)}18%{transform:scale(1) rotate(0)}100%{transform:scale(1)}}
+@keyframes lvlSlam{0%,8%{opacity:0;transform:scale(2.2);letter-spacing:.5em}17%{opacity:1;transform:scale(.94);letter-spacing:.1em}23%{transform:scale(1)}100%{opacity:1}}
+@keyframes lvlShine{from{background-position:120% 0}to{background-position:-20% 0}}
+@keyframes lvlSpark{0%{opacity:1;transform:translate(0,0) scale(1)}100%{opacity:0;transform:translate(var(--x),var(--y)) scale(.3)}}
+/* the bar's Level Up box, lit while a level is waiting to be taken (Sam, 2026-11-10: "something should be lit up that
+   indicates level up (a button)"): violet slab, gold rim breathing light, the chevron shimmering */
+.cbt-menu button.lvlReady{--c1:#8a5ae0;--c2:#4a2690;border-color:#f2c55c;animation:lvlBreath 1.6s ease-in-out infinite}
+.cbt-menu button.lvlReady .ico{animation:lvlIco 1.6s ease-in-out infinite}
+@keyframes lvlBreath{0%,100%{box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.2),inset 0 -7px 0 rgba(0,0,0,.24),0 4px 0 #000,0 0 8px rgba(242,197,92,.35)}50%{box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.3),inset 0 -7px 0 rgba(0,0,0,.24),0 4px 0 #000,0 0 26px rgba(242,197,92,.95),0 0 44px rgba(166,124,255,.6)}}
+@keyframes lvlIco{0%,100%{filter:brightness(1)}50%{filter:brightness(1.45) drop-shadow(0 0 6px #ffd27a)}}
+/* Talk cycles through whoever is close (Sam, 2026-11-10: "Just Talk and then let you cycle to anyone close") */
+.cbt-menu button .talkCyc{position:absolute;bottom:-8px;right:8px;z-index:2;height:18px;padding:0 7px;border-radius:6px;background:#0f5b57;color:#dffaf6;border:2px solid #000;box-shadow:0 2px 0 #000;font-family:var(--face-mono);font-size:10px;font-weight:700;line-height:14px;text-shadow:none;cursor:pointer}
+.cbt-menu button .talkCyc:hover{background:#1f8f86;color:#fff}
+@media (prefers-reduced-motion:reduce){.lvlBanner .halo,.lvlBanner .spark,.lvlBanner .big::after{animation:none;display:none}.lvlBanner .medal,.lvlBanner .big{animation:none}.cbt-menu button.lvlReady,.cbt-menu button.lvlReady .ico{animation:none;box-shadow:0 0 18px rgba(242,197,92,.8)}}
 /* GAME OVER (Sam, 2026-10-29: "a GAME OVER in large letters like the 1980s games ... Cue darkness"). Over everything,
    the whole window: black, then the letters in an arcade face, Malachar's line typed beneath, the way out. */
 /* the beat before the dark (Sam, 2026-10-30): the camera pushes in on the last stone and the plate drains of colour,
@@ -1112,6 +1150,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     </div>
     <div class="dialog" id="dialog" hidden><div class="card" role="dialog" aria-modal="true" aria-labelledby="dlgTitle"><h3 id="dlgTitle"></h3><p id="dlgBody"></p><div class="src" id="dlgSrc"></div><div class="btns" id="dlgBtns"></div></div></div>
     <div id="victory" class="victory" hidden><div class="big"></div><div class="small"></div></div>
+    <div id="lvlBanner" class="lvlBanner" hidden aria-live="polite"></div>
     <div id="beat" class="beat" aria-live="polite"></div>
     <div id="turnCall" class="turncall" aria-live="polite"><div class="tface" id="turnFace"></div><span class="tname" id="turnName"></span><span class="twhat" id="turnWhat"></span></div>
     <div id="bossIntro" class="bossIntro" hidden><div class="bface" id="bossIntroFace"></div><div><div class="kick">BOSS</div><div class="big" id="bossIntroName"></div><div class="small" id="bossIntroEpithet"></div></div></div>
@@ -2153,6 +2192,11 @@ function draw(){
     if (a === leader && mode === "explore"){
       ctx.globalAlpha = .55 + .2 * Math.sin(now / 300); ctx.strokeStyle = "#e8a24a"; ctx.lineWidth = 2 / (base * view.z);
       ctx.beginPath(); ctx.ellipse(a.x, a.y, 30 * sc, 11 * sc, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    if (a === talkShown && mode === "explore" && !a.down){   // who Talk / E will speak to (Q cycles when several are close)
+      ctx.globalAlpha = .75 + .25 * Math.sin(now / 260); ctx.strokeStyle = "#5ff0e0"; ctx.lineWidth = (talkCount > 1 ? 3 : 2) / (base * view.z);
+      ctx.setLineDash([8 / (base * view.z), 5 / (base * view.z)]); ctx.lineDashOffset = -now / 60 / (base * view.z);
+      ctx.beginPath(); ctx.ellipse(a.x, a.y, 32 * sc, 12 * sc, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
     }
     if (mode === "combat" && a === activeActor()){
       ctx.globalAlpha = .8; ctx.strokeStyle = a.kind === "foe" ? "#ff6b5e" : "#e8a24a"; ctx.lineWidth = 3 / (base * view.z);
@@ -3675,6 +3719,7 @@ function loadSfx(name){
   const url = name.startsWith("bank:") ? `${SFX_BANK}${name.slice(5)}.ogg`
     : name.startsWith("walk:") ? `${APP ? "/" : ""}sfx/walk/${name.slice(5)}.mp3`        // Sam's ElevenLabs picks, shipped with the app (public/sfx/walk)
     : name.startsWith("ui:") ? `${APP ? "/" : ""}sfx/ui/${name.slice(3)}.mp3`            // the map's button clicks (public/sfx/ui)
+    : name.startsWith("voice:") ? `${APP ? "/" : ""}sfx/voice/titles/${name.slice(6)}.mp3`   // the level-up ceremony's spoken titles
     : `${ASSET}${name.startsWith("arrive-") ? "audio" : "sfx"}/${name}.mp3`;
   return SFX[name] || (SFX[name] = fetch(url).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
     .then(b => audioCtx().decodeAudioData(b)).catch(() => { delete SFX[name]; return null; }));
@@ -5213,7 +5258,33 @@ function openInteract(z, opts = {}){
 function victoryBanner(big, small){
   const el = $("victory"); el.querySelector(".big").textContent = big; el.querySelector(".small").textContent = small;
   el.hidden = false; el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
+  victoryBanner.until = performance.now() + 4200;
   setTimeout(() => { el.hidden = true; }, 4200);
+}
+// THE LEVEL-UP BANNER (see .lvlBanner): who crossed the line and to which level. Waits for the victory banner to finish
+// (the XP is saved after the win is shown), and a second hero's banner waits for the first.
+const lvlQueue = []; let lvlShowing = false;
+function levelUpBanner(heroes){
+  if (!heroes || !heroes.length) return;
+  lvlQueue.push(heroes); if (!lvlShowing) nextLevelBanner();
+}
+function nextLevelBanner(){
+  const heroes = lvlQueue.shift(); if (!heroes){ lvlShowing = false; return; }
+  lvlShowing = true;
+  const wait = Math.max(0, (victoryBanner.until || 0) - performance.now() + 250);
+  setTimeout(() => {
+    const el = $("lvlBanner"), who = heroes.map(h => `${h.name} · level ${h.level}`).join("  ·  ");
+    let sparks = ""; for (let i = 0; i < 22; i++){ const ang = (i / 22) * Math.PI * 2 + Math.random() * .2, r = 150 + Math.random() * 130;
+      sparks += `<i class="spark" style="--x:${Math.round(Math.cos(ang) * r)}px;--y:${Math.round(Math.sin(ang) * r * .75)}px;--d:${(.35 + Math.random() * .35).toFixed(2)}s"></i>`; }
+    el.innerHTML = `<div class="halo"></div><div class="glow"></div>${sparks}<img class="medal" src="${ICON_BASE}hero/level-up.png" alt=""><div class="big">LEVEL UP!</div>`
+      + `<div class="small">${esc(who)}</div><br><div class="hint">${inFightNow() ? "take it after the fight" : "take it from the glowing Level Up button"}</div>`;
+    el.hidden = false; el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
+    // the sound: the bank's level-up sting, the epic loot shimmer under it, then the ceremony's own voice ("Level up!")
+    bank("ui/level_up", .95); setTimeout(() => sfx("walk:loot_epic", .5), 140); setTimeout(() => sfx("voice:level-up", .9), 650);
+    for (const h of heroes){ const a = party.find(p => p.id === h.id); if (a) popText(a, "LEVEL UP!", "#f3d68a", 1.3); }
+    exploreKey = "";   // light the bar's button now
+    setTimeout(() => { el.hidden = true; nextLevelBanner(); }, 5000);
+  }, wait);
 }
 // A body on the floor: walk up and search it. The map does not decide what it carries — that is Layer 1's
 // (items are canon, never invented here), so the search is handed to the game and the body is marked.
@@ -7261,16 +7332,33 @@ function closeMenu(){ $("cbtMenu").hidden = true; hint(""); }
 // interactables, Bag is the bag, Attack starts the fight the way walking into a watching drow does, and anything
 // else ("I search the cell", "I hide") goes to Malachar on the dashboard, who rules on it.
 let exploreKey = "";
+// TALK, ONE BUTTON (Sam, 2026-11-10: "the talk button should be more generic. Just Talk and then let you cycle to anyone
+// close"). Everyone within talking range is a candidate, nearest first; Q (or the ⟳ tab on the button) steps to the next
+// one, the chosen one wears a teal ring on the floor, and Talk / E speak to whoever is chosen.
+var talkPickId = null, talkShown = null, talkCount = 0;   // var: draw() reads these and may run before this line
 function exploreOptions(){
   const L = leader; if (!L) return null;
   const sc = node.scale, dist = n => Math.hypot(n.x - L.x, n.y - L.y);
-  const talkable = npcs.filter(n => canTalkTo(n) && !n.offStage && !n.body && !n.down && n.alpha > .5).sort((a, b) => dist(a) - dist(b))[0];
-  const talkNear = talkable && dist(talkable) < 260 * sc ? talkable : null;
+  const talkAll = npcs.filter(n => canTalkTo(n) && !n.offStage && !n.body && !n.down && n.alpha > .5).sort((a, b) => dist(a) - dist(b));
+  const talkable = talkAll[0];
+  const talkList = talkAll.filter(n => dist(n) < 260 * sc);
+  const talkNear = talkList.find(n => n.id === talkPickId) || talkList[0] || null;
   const pile = pilesHere().map(p => [p, feetToPile(L, p)]).filter(([, d]) => d <= 6).sort((x, y) => x[1] - y[1])[0];
   const body = npcs.filter(n => n.body && dist(n) < 190 * sc).sort((a, b) => dist(a) - dist(b))[0];
   const obj = node.zones.find(z => z.interact && Math.hypot(zoneCenter(z).x - L.x, zoneCenter(z).y - L.y) < 320 * sc);
   const foe = npcs.filter(n => n.hostile && !n.offStage && !n.down && !n.body && n.alpha > .5).sort((a, b) => dist(a) - dist(b))[0];
-  return {talkNear, talkable, pile: pile && pile[0], body, obj, foe};
+  return {talkNear, talkable, talkList, pile: pile && pile[0], body, obj, foe};
+}
+function cycleTalk(){
+  const o = exploreOptions(); if (!o || o.talkList.length < 2) return;
+  const i = o.talkList.indexOf(o.talkNear); talkPickId = o.talkList[(i + 1) % o.talkList.length].id;
+  uiSfx("swap"); exploreKey = ""; renderExploreBar();
+}
+/** A level the sheet's XP has earned and the sheet has not taken yet (the SRD table, the same test as the level panel). */
+function levelReady(id){
+  const s = SHEETS[id]; if (!s) return 0;
+  const xp = Number(s.xp); if (!Number.isFinite(xp) || s.xp == null) return 0;
+  const level = Math.max(1, Math.trunc(s.level || 1)); return levelForXp(xp) > level ? level + 1 : 0;
 }
 function renderExploreBar(){
   const m = $("cbtMenu");
@@ -7278,19 +7366,29 @@ function renderExploreBar(){
   if (!m.hidden && m.dataset.kind === "combat") return;
   if (castOpen){ if (castOpen.leader === leader.id) return; castOpen = null; }   // the cast list stays up until it is used or closed
   const o = exploreOptions(); if (!o) return;
+  talkShown = o.talkNear; talkCount = o.talkList.length;
+  const lvlNext = canControl(leader) && !inFightNow() ? levelReady(leader.id) : 0;
   const who = SHORT[leader.id] || (SHEETS[leader.id] && SHEETS[leader.id].name.split(" ")[0]) || SPR[leader.id].json.name;
   o.mark = pickpocketMark(leader);   // someone in reach of a hand while this hero is sneaking unseen
-  const key = [leader.id, o.talkNear && o.talkNear.id, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, o.mark && o.mark.id, party.length].join("|");
+  const key = [leader.id, o.talkNear && o.talkNear.id, o.talkList.length, lvlNext, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, o.mark && o.mark.id, party.length].join("|");
   if (key === exploreKey && !m.hidden) return;
   exploreKey = key; m.dataset.kind = "explore"; m.innerHTML = ""; m.hidden = false;
   const add = (label, glyph, icon, sub, fn, cls) => { const b = document.createElement("button"); if (cls) b.className = cls;
-    b.innerHTML = `${icon ? `<img class="ico" src="${ICON_BASE}${icon}.png" alt="">` : `<i class="ico glyph">${glyph}</i>`}<span>${esc(label)}</span>${sub ? `<small>${esc(sub)}</small>` : ""}`;
+    b.innerHTML = `${icon ? `<img class="ico" src="${ICON_BASE}${icon}${/\.\w+$/.test(icon) ? "" : ".png"}" alt="">` : `<i class="ico glyph">${glyph}</i>`}<span>${esc(label)}</span>${sub ? `<small>${esc(sub)}</small>` : ""}`;
     b.title = sub ? `${label} · ${sub}` : label;
     dressButton(b, icon, sub);
     if (fn) b.onclick = () => { unlockAudio(); fn(); exploreKey = ""; }; else b.disabled = true; m.appendChild(b); return b; };
   const nm = n => SHORT[n.id] || (SPR[n.id] && SPR[n.id].json.name) || n.id;
-  add(o.talkNear ? `Talk to ${nm(o.talkNear)}` : "Talk", "❝", null, o.talkNear ? "E · say something to them" : o.talkable ? `walk closer to ${nm(o.talkable)}` : "no one here to talk to",
+  // the lit Level Up box: only while a level is waiting and never in a fight (levels are taken anywhere but mid-combat)
+  if (lvlNext) add("Level Up", "▲", "level/level-up-burst.webp", `level ${lvlNext} earned · take it now`, () => openLevelUp(leader), "lvlReady");
+  const tb = add("Talk", "❝", null, o.talkNear ? `E · ${nm(o.talkNear)}` : o.talkable ? `walk closer to ${nm(o.talkable)}` : "no one here to talk to",
       o.talkNear ? () => approach(o.talkNear) : o.talkable ? () => { leader.path = findPath(leader, nearestWalkable(o.talkable.x, o.talkable.y + 40)); } : null, o.talkNear ? "primary" : "");
+  tb.dataset.rank = o.talkNear ? 1 : 30;   // near someone it leads the bar; far away it waits at the back
+  if (o.talkList.length > 1){
+    tb.title = `Talk to ${nm(o.talkNear)} · Q for the next person nearby (${o.talkList.map(nm).join(", ")})`;
+    const cyc = document.createElement("b"); cyc.className = "talkCyc"; cyc.textContent = `Q ⟳ ${o.talkList.indexOf(o.talkNear) + 1}/${o.talkList.length}`;
+    cyc.onclick = e => { e.stopPropagation(); cycleTalk(); }; tb.appendChild(cyc);
+  }
   if (o.pile) add(`Pick up ${o.pile.name}`, "⇩", "use-object", "E · it is at your feet", () => interact());
   else if (o.body) add(`Search ${nm(o.body)}`, "⌕", "search", "E · see what they carried", () => interact());
   else if (o.obj) add(o.obj.interact.name, "✋", "use-object", state.gateOpen ? "use it" : "locked · see your options", () => openInteract(o.obj));
@@ -7352,7 +7450,7 @@ let sneak = null, helpNext = null, followOn = true, moreOpen = false, exploreJum
 // Situational options (a pile at your feet, a foe, a way out to listen at) still cut in near the front, since they are why
 // you stopped; hero-specific ones (Pray, Inspire, Scout, Quick drink, Jump) sit between the bar and the tray.
 const EXPLORE_KEEP = 7;
-const BUTTON_PRI = [[/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
+const BUTTON_PRI = [[/^Level Up/, .5], [/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
   [/^(Sneak|Stop sneaking)/, 4], [/^Pick .*pocket/, 4], [/^Cast/, 5], [/^Search$/, 6], [/^Inventory/, 7], [/^Tell Malachar/, 8], [/^Next hero/, 9],
   [/^(Scout|Jump|Pray|Inspire|Quick drink)/, 10], [/^My company/, 11], [/^Short rest/, 12], [/^Help/, 13], [/^(Follow|Wait)/, 14], [/^Talk$/, 30]];
 // THE COMBAT BAR (Sam, 2026-11-10: "Don't offer bubble boxes for actions that aren't available. Offer boxes in order of
@@ -7366,7 +7464,7 @@ const COMBAT_PRI = [[/^(Stand up|Break free|Cut free|Put out the flames|Shake aw
   [/^(Attack|Sneak Attack)/, 1], [/^Off-hand/, 2], [/^Cast/, 3], [/^Throw/, 4], [/^(Bardic Inspiration|Rage|End rage|Innate Sorcery)/, 5],
   [/^Move/, 6], [/^Cunning Action/, 7], [/^Dash/, 8], [/^Disengage/, 9], [/^Dodge/, 10], [/^Hide/, 11], [/^Shove/, 12], [/^Help/, 13],
   [/^Ready/, 14], [/^Jump/, 15], [/^Equip/, 16], [/^Search/, 17], [/^Inventory/, 18], [/^End turn/, 90]];
-function priOf(b, table = BUTTON_PRI){ const t = (b.querySelector("span") || b).textContent; const hit = table.find(([re]) => re.test(t)); return hit ? hit[1] : 15; }
+function priOf(b, table = BUTTON_PRI){ if (b.dataset.rank) return +b.dataset.rank; const t = (b.querySelector("span") || b).textContent; const hit = table.find(([re]) => re.test(t)); return hit ? hit[1] : 15; }
 /** Sort a bar by its table and fold everything past `keepN` into a More tray. The buttons keep their handlers; only the
  * order and the tray are new. Group labels and separators (the old Octopath list) are dropped: the colour of the slab
  * says what kind of act it is now. */
@@ -11771,8 +11869,9 @@ async function payXp(fightId, slain){
   log(`<i>${j.share} XP saved to ${(j.paid || []).map(p => esc(p.name.split(" ")[0])).join(", ")}.</i>`);
   if (ready.length){
     const names = ready.map(p => `${esc(p.name.split(" ")[0])} (level ${p.nextLevel})`).join(", ");
-    log(`<b>Ready to level up:</b> ${names}. Level up at camp.`);
-    setTimeout(() => toast(`Ready to level up: ${ready.map(p => p.name.split(" ")[0]).join(", ")}. Level up at camp.`, 6000), 2400);
+    log(`<b>Ready to level up:</b> ${names}.`);
+    // the banner, sound and the lit button replace the old toast ("Level up at camp" stopped being true on 2026-10-27)
+    levelUpBanner(ready.map(p => ({id: Object.keys(FORGED_ID).find(k => FORGED_ID[k] === p.id) || party.map(x => x.id).find(x => characterIdOf(x) === p.id), name: p.name.split(" ")[0], level: p.nextLevel})));
   }
 }
 
@@ -15679,6 +15778,7 @@ addEventListener("keydown", e => {
     if (/^Digit[1-4]$/.test(e.code)){ const a = party.find(p => p.id === PARTY[+e.code.slice(5) - 1]); if (a) pickLeader(a); }
     if (e.code === "Tab"){ e.preventDefault(); const mine = party.filter(canControl); if (mine.length > 1){ const i = mine.indexOf(leader); setLeader(mine[(i + (e.shiftKey ? mine.length - 1 : 1)) % mine.length]); } }
     if (e.code === "KeyE" || e.code === "Space"){ e.preventDefault(); interact(); }
+    if (e.code === "KeyQ"){ e.preventDefault(); cycleTalk(); }
   } else if (mode === "combat"){ if (e.code === "Enter" && !e.target.closest("button")){ if (cbt && cbt.phase === "target" && cbt.pend && cbt.pend.darts && cbt.pend.darts.length) fireDarts(activeActor()); else nextTurn(); } if (e.key === "Escape") cancelAim(); }
   if (e.key === "+" || e.key === "="){ const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.2); }
   if (e.key === "-" || e.key === "_"){ const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.2); }
@@ -15689,6 +15789,8 @@ function interact(){
   const near = pilesHere().map(p => [p, feetToPile(leader, p)]).filter(([, d]) => d <= 6).sort((x, y) => x[1] - y[1])[0];
   if (near){ pickUp(leader, near[0]); return; }
   const n = npcs.map(a => [a, Math.hypot(a.x - leader.x, a.y - leader.y)]).filter(([, d]) => d < 190 * node.scale).sort((a, b) => a[1] - b[1])[0];
+  const pick = (exploreOptions() || {}).talkNear;   // the person Talk is pointed at (Q cycles), unless a body lies nearer
+  if (pick && !(n && n[0].body && n[1] < Math.hypot(pick.x - leader.x, pick.y - leader.y))){ approach(pick); return; }
   if (!n){ log("No one close enough. Walk up to someone and press <em>E</em>."); return; }
   const a = n[0];
   if (a.body){ openBody(a); return; }
