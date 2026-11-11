@@ -167,7 +167,10 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
   const [msg, setMsg] = useState<string | null>(null)
   const [table, setTable] = useState<{ status: string; session: number } | null>(null)
   const [seatError, setSeatError] = useState<string | null>(null)
-  const [hostId, setHostId] = useState<string>("")
+  // null = not chosen yet. "To the table" waits for a choice: a hero, or "Nobody — DM only" on purpose (Sam,
+  // 2026-11-10: "I entered the game as the host but I should have came in with a character" — the page used to
+  // start on DM-only, so pressing straight through left him with no hero).
+  const [hostId, setHostId] = useState<string | null>(null)
   const [currentHost, setCurrentHost] = useState<{ id: string; name: string } | null>(null)
   const hostTouched = useRef(false)
 
@@ -191,6 +194,7 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
     setBusy("go"); setMsg(null)
     try {
       try { window.sessionStorage.setItem("aop_intro_seen", "1") } catch { /* storage blocked */ }
+      if (hostId === null) { setMsg("Choose who you are playing tonight first."); return }
       if (!hostId) {
         try { window.localStorage.setItem(ROLE_LS_KEY, "dm") } catch { /* storage blocked */ }
         router.push("/table")
@@ -259,7 +263,9 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
           </button>
         </div>
         <p className="mt-2 text-center text-[12px] leading-relaxed text-stone-500">
-          {hostId
+          {hostId === null
+            ? "Tap the hero you are playing tonight."
+            : hostId
             ? "This browser sits down as that hero and runs the table from there: open it, let players in, Start, End. No code on game night."
             : "This browser stays signed in as the Dungeon Master, with every DM tool and no hero."}
         </p>
@@ -268,7 +274,7 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
       {msg && <p className="text-center text-sm text-[#d9bd7e]">{msg}</p>}
 
       <div className="flex flex-col items-center gap-3 pt-2">
-        <button type="button" disabled={busy !== null} onClick={toTable} className="flex items-center gap-3 rounded-sm border-2 border-[#8a6a3a] bg-gradient-to-b from-[#2a2015]/90 via-black/80 to-[#2a2015]/90 px-12 py-4 font-serif text-xl uppercase tracking-[0.35em] text-[#e8c56a] shadow-[0_0_40px_rgba(201,168,104,0.35)] transition-all hover:border-[#f4e0a8] hover:text-[#fff3cf] hover:shadow-[0_0_80px_rgba(232,197,106,0.6)] disabled:opacity-40">
+        <button type="button" disabled={busy !== null || hostId === null} onClick={toTable} className="flex items-center gap-3 rounded-sm border-2 border-[#8a6a3a] bg-gradient-to-b from-[#2a2015]/90 via-black/80 to-[#2a2015]/90 px-12 py-4 font-serif text-xl uppercase tracking-[0.35em] text-[#e8c56a] shadow-[0_0_40px_rgba(201,168,104,0.35)] transition-all hover:border-[#f4e0a8] hover:text-[#fff3cf] hover:shadow-[0_0_80px_rgba(232,197,106,0.6)] disabled:opacity-40">
           <Play className="h-5 w-5" /> {busy === "go" ? "…" : "To the table"}
         </button>
         <p className="max-w-md text-center text-[12px] leading-relaxed text-stone-500">The table is the host screen: the saved games, Open, Start, End, New Game, and the heroes waiting at the door.</p>
