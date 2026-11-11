@@ -135,8 +135,9 @@ const STARTING_GARMENT = {
 
 // Sam's ruling (17 Aug 2026): journals are always part of inventory unless
 // taken — every prisoner smuggled theirs through confiscation, quill included.
-const SMUGGLED_EFFECTS = [
+export const SMUGGLED_EFFECTS = [
   {
+    slug: "tattered-journal",
     name: "Tattered Journal",
     description:
       "A battered personal journal, smuggled through the drow confiscation. Its pages remember what its owner survives.",
@@ -146,6 +147,7 @@ const SMUGGLED_EFFECTS = [
     item_type: "misc",
   },
   {
+    slug: "small-quill",
     name: "Small Quill",
     description: "A stub of quill and a pinch of soot-ink, hidden in a seam. Enough to keep writing.",
     quantity: 1,
@@ -154,6 +156,18 @@ const SMUGGLED_EFFECTS = [
     item_type: "misc",
   },
 ]
+
+/**
+ * The journal and quill rows a New Game hands every hero, each tied to its catalogue kind (`items.id`) the way the
+ * rags are. They used to go in with no `item_id`, so sixteen rows a run sat outside the catalogue the rest of the
+ * inventory validates against (Item_Identity_Design, step 4). A kind the catalogue has lost still gets issued,
+ * unlinked: a hero without a journal is worse than a row without a link.
+ */
+export function smuggledRows(playerIds: readonly string[], catalogue: ReadonlyMap<string, string>) {
+  return playerIds.flatMap((character_id) =>
+    SMUGGLED_EFFECTS.map(({ slug, ...item }) => ({ character_id, item_id: catalogue.get(slug) ?? null, ...item })),
+  )
+}
 
 interface EnvironmentRow {
   id: string
@@ -604,9 +618,13 @@ export async function restartCampaign(admin: SupabaseClient): Promise<RestartRes
 
     // Re-issue the smuggled journal + quill to every player. Their previous
     // pages were burned above — a restart is a fresh book (Sam's ruling).
-    const { error: effectsErr } = await admin.from("inventory_items").insert(
-      playerIds.flatMap((character_id) => SMUGGLED_EFFECTS.map((item) => ({ character_id, ...item }))),
-    )
+    const { data: kinds, error: kindsErr } = await admin
+      .from("items")
+      .select("id, slug")
+      .in("slug", SMUGGLED_EFFECTS.map((e) => e.slug))
+    note("smuggled effects catalogue", kindsErr)
+    const catalogue = new Map(((kinds || []) as { id: string; slug: string }[]).map((k) => [k.slug, k.id]))
+    const { error: effectsErr } = await admin.from("inventory_items").insert(smuggledRows(playerIds, catalogue))
     note("issue smuggled effects", effectsErr)
     report.smuggledEffectsIssued = effectsErr ? 0 : playerIds.length * SMUGGLED_EFFECTS.length
   }
