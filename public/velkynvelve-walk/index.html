@@ -6530,7 +6530,7 @@ function drawFxLayer(flat){
   ctx.globalAlpha = 1;
 }
 // which sheets and sounds a spell uses, from its school (lib/spell-school-data) and damage type
-const SCHOOL_OF = {"Acid Splash": "evocation", "Produce Flame": "conjuration", "Sacred Flame": "evocation", "Cure Wounds": "abjuration", "Inflict Wounds": "necromancy", "Grease": "conjuration", "Shatter": "evocation", "Acid Arrow": "evocation", "Call Lightning": "conjuration",
+const SCHOOL_OF = {"Insect Plague": "conjuration", "Conjure Animals": "conjuration", "Acid Splash": "evocation", "Produce Flame": "conjuration", "Sacred Flame": "evocation", "Cure Wounds": "abjuration", "Inflict Wounds": "necromancy", "Grease": "conjuration", "Shatter": "evocation", "Acid Arrow": "evocation", "Call Lightning": "conjuration",
   "Web": "conjuration", "Command (grovel)": "enchantment", "Scorching Ray": "evocation", "Bane": "enchantment", "Hideous Laughter": "enchantment", "Blindness/Deafness (blind)": "transmutation", "Blindness/Deafness (deafen)": "transmutation", "False Life": "necromancy", "Heroism": "enchantment", "Aid": "abjuration", "Mage Armor": "abjuration", "Barkskin": "transmutation", "Spiritual Weapon": "evocation", "Spirit Guardians": "conjuration", "Fear": "illusion", "Hellish Rebuke": "evocation", "Mirror Image": "illusion", "Invisibility": "illusion", "Mass Healing Word": "abjuration", "Lightning Bolt": "evocation", "Gust of Wind": "evocation", "Misty Step": "conjuration", "Hypnotic Pattern": "illusion", "True Strike": "divination", "Vampiric Touch": "necromancy", "Sanctuary": "abjuration",
   "Light": "evocation", "Thaumaturgy": "transmutation", "Druidcraft": "transmutation", "Message": "transmutation", "Mending": "transmutation", "Guidance": "divination", "Resistance": "abjuration","Eldritch Blast": "evocation", "Hex": "enchantment", "Fireball": "evocation", "Burning Hands": "evocation", "Entangle": "conjuration", "Hunter's Mark": "divination", "Hold Person": "enchantment", "Cloud of Daggers": "conjuration", "Flaming Sphere": "conjuration", "Green-Flame Blade": "evocation", "Mage Hand": "conjuration", "Minor Illusion": "illusion", "Prestidigitation": "transmutation", "Dancing Lights": "evocation", "Friends": "enchantment", "Magic Missile": "evocation", "Thunderwave": "evocation", "Chromatic Orb (acid)": "evocation", "Chromatic Orb (cold)": "evocation", "Chromatic Orb (fire)": "evocation", "Chromatic Orb (lightning)": "evocation", "Chromatic Orb (poison)": "evocation", "Chromatic Orb (thunder)": "evocation", "Shield": "abjuration", "Fire Bolt": "evocation", "Ray of Frost": "evocation", "Shocking Grasp": "evocation", "Chill Touch": "necromancy", "Toll the Dead": "necromancy", "Vicious Mockery": "enchantment",
   "Guiding Bolt": "evocation", "Healing Word": "evocation", "Shield of Faith": "abjuration", "Faerie Fire": "evocation", "Sleep": "enchantment", "Dissonant Whispers": "enchantment",
@@ -7106,10 +7106,24 @@ const FOE_BLOCKS = {
   // Ilvara Mizzrym, drow priestess of Lolth (CR 8): two scourge lashes, or Ray of Sickness at range (its poisoned rider lasts a round; `rider` here is the damage-on-save shape the page has).
   ilvara:               {name: "Ilvara Mizzrym", race: "drow", xp: 3900, passive: 13, hp: 71, ac: 16, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 1, int: 1, wis: 3, cha: 4}, multi: 2, boss: true, epithet: "Priestess of Lolth",
                          attacks: [{name: "Scourge", hit: 5, dmg: "1d6+2", type: "piercing", reach: 5, extra: {dmg: "5d6", type: "poison"}},
-                                   {name: "Ray of Sickness", hit: 6, dmg: "2d8", type: "poison", reach: 60, ranged: true}]},
+                                   {name: "Ray of Sickness", hit: 6, dmg: "2d8", type: "poison", reach: 60, ranged: true}],
+                         // HER BOOK (Sam, 2026-11-10: "Fix NPC book of spells"). The Drow Priestess of Lolth's spellcasting: 10th-level,
+                         // Wisdom, save DC 14, +6 to hit (MM p.129, the same DC her Ray of Sickness already uses here), slots 4/3/3/3/2,
+                         // and the innate 1/day faerie fire. Only the spells this page can resolve for a foe are listed; `magic.book` is
+                         // the rest of the book, shown to her mind as known but not castable here. (Our bestiary row says DC 15/+7 and
+                         // lists inflict wounds and spirit guardians; it disagrees with the MM and with its own Ray DC 14 — Sam's call.)
+                         magic: {dc: 14, hit: 6, mod: 3, casterLevel: 10, slots: {1: 4, 2: 3, 3: 3, 4: 3, 5: 2},
+                                 cantrips: ["Poison Spray"], prepared: ["Cure Wounds", "Web", "Conjure Animals", "Insect Plague"], innate: {"Faerie Fire": 1},
+                                 book: ["guidance", "resistance", "spare the dying", "thaumaturgy", "animal friendship", "detect poison and disease", "lesser restoration", "protection from poison", "dispel magic", "divination", "freedom of movement", "mass cure wounds", "darkness (1/day)", "levitate (1/day)", "summon demon (1/day)"]}},
   // Asha Vandree: SRD 5.1 Priest (AC 13, 27 HP, mace +2 1d6) with the drow's Fey Ancestry/Sunlight Sensitivity per OotA p.13; her spells (sacred flame, spirit guardians…) are not on the page.
   asha:                 {name: "Asha Vandree", race: "drow", xp: 450, passive: 13, hp: 27, ac: 13, speed: 30, init: 0, saves: {str: 0, dex: 0, con: 1, int: 1, wis: 3, cha: 1},
-                         attacks: [{name: "Mace", hit: 2, dmg: "1d6", type: "bludgeoning", reach: 5}]},
+                         attacks: [{name: "Mace", hit: 2, dmg: "1d6", type: "bludgeoning", reach: 5}],
+                        // HER BOOK: the SRD 5.1 Priest is a 5th-level spellcaster, Wisdom, save DC 13, +5 to hit, slots 4/3/2. Castable here:
+                        // sacred flame, cure wounds, guiding bolt, sanctuary. Spiritual weapon and spirit guardians are built for a hero's side
+                        // of the fight (they strike the party's foes), so they stay in `book` until they can strike the party.
+                        magic: {dc: 13, hit: 5, mod: 3, casterLevel: 5, slots: {1: 4, 2: 3, 3: 2},
+                                cantrips: ["Sacred Flame"], prepared: ["Cure Wounds", "Guiding Bolt", "Sanctuary"],
+                                book: ["light", "thaumaturgy", "lesser restoration", "spiritual weapon", "dispel magic", "spirit guardians"]}},
   "gray-ooze": {name: "Gray ooze", xp: 100, passive: 8, hp: 22, ac: 8, speed: 10, init: -2, saves: {str: 1, dex: -2, con: 3, int: -5, wis: -2, cha: -4}, resist: ["acid", "cold", "fire"],
                 immuneCond: ["blinded", "charmed", "deafened", "frightened", "prone"],
                 attacks: [{name: "Pseudopod", hit: 3, dmg: "1d6+1", type: "bludgeoning", reach: 5, extra: {dmg: "2d6", type: "acid"}}]},
@@ -7256,6 +7270,12 @@ const SPELLS = {
   "Call Lightning":     {lvl: 3, kind: "save", save: "dex", range: 120, area: 10, aimRange: true, dmg: "3d10", type: "lightning", fx: "#fff27a", conc: 100},
   // SRD 5.1 Web: 2nd-level conjuration, 60 ft, 20-ft cube, concentration 1 hour; DEX save or restrained (STR check vs the DC
   // to break free — the existing webDc). BENDS: the save is made once, at the cast. NOT YET: difficult terrain, burning it away.
+  // INSECT PLAGUE (SRD 5.1): a 20-ft-radius sphere of locusts within 300 ft; Constitution save, 4d10 piercing, half on a
+  // success; concentration, 10 minutes. The swarm's damage on later turns and its difficult terrain are not on the page yet.
+  "Insect Plague":      {lvl: 5, kind: "save", save: "con", range: 300, area: 40, aimRange: true, dmg: "4d10", type: "piercing", fx: "#b59a52", conc: 100},
+  // CONJURE ANIMALS (SRD 5.1), as the Drow Priestess of Lolth casts it (MM: "2 giant spiders"): concentration, 1 hour. Only
+  // a foe casts it on this page (conjureSpiders); the spiders join the fight right after her and go when the spell does.
+  "Conjure Animals":    {lvl: 3, kind: "conjure", range: 60, fx: "#c9b8ff", conc: 600},
   "Web":                {lvl: 2, kind: "save", save: "dex", range: 60, area: 20, aimRange: true, cond: "restrained", fx: "#e8e2c8", conc: 600},
   // SRD 5.1 Command: 1st-level enchantment, 60 ft, WIS save. Only "Grovel" ("falls prone and then ends its turn") is wired: offered as Command (grovel).
   "Command (grovel)":   {lvl: 1, kind: "save", save: "wis", range: 60, cond: "prone", fx: "#ffd27a"},
@@ -10562,9 +10582,17 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
     }, () => Promise.resolve(shieldWait).then(() => flying).then(() => setTimeout(() => { att.aimAt = null; combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(att, done); }, flying ? 250 : 0)), shot);
   });
 }
+// A CANTRIP GROWS WITH ITS CASTER (SRD 5.1: one more die at 5th, 11th and 17th level). The heroes are below 5th; a block
+// that carries `magic.casterLevel` (Ilvara 10th, Asha 5th) rolls the dice its level gives.
+function scaledSpell(sp, c){
+  const lv = c && c.sheet && c.sheet.magic && c.sheet.magic.casterLevel;
+  if (!lv || sp.lvl !== 0 || !sp.dmg) return sp;
+  const n = 1 + (lv >= 5) + (lv >= 11) + (lv >= 17), m = /^(\d+)d(\d+)(.*)$/.exec(sp.dmg);
+  return m ? {...sp, dmg: `${+m[1] * n}d${m[2]}${m[3]}`} : sp;
+}
 function castSpell(caster, tgt, name, done, darts){
   if (tgt && tgt.id) handWatch(caster, tgt);
-  const sp = SPELLS[name], c = caster.c; closeMenu(); cbt.phase = "busy"; combatBusy = true;
+  const c = caster.c, sp = scaledSpell(SPELLS[name], c); closeMenu(); cbt.phase = "busy"; combatBusy = true;
   // a volley: `darts` is one actor per dart (repeats allowed); the mark goes under each distinct target
   const volley = darts && darts.length ? darts : null, distinct = volley ? [...new Set(volley)] : null;
   if (sp.bonus){ c.bonus = false; c.bonusSpell = true; } else { c.action = false; if (sp.lvl > 0) c.leveledSpell = true; }
@@ -11139,6 +11167,7 @@ function endConc(a, why){
   poisonZones = poisonZones.filter(z => !(z.caster === a && z.name === k.spell));   // the gas goes with the concentration
   if (k.spell === "Cloud of Daggers") daggerZones = daggerZones.filter(z => z.caster !== a); if (k.spell === "Flaming Sphere") fireSpheres = fireSpheres.filter(z => z.caster !== a);
   if (k.spell === "Spiritual Weapon") spiritWeapons = spiritWeapons.filter(z => z.caster !== a); if (k.spell === "Spirit Guardians") guardianAuras = guardianAuras.filter(g => g.caster !== a);
+  if (k.spell === "Conjure Animals") for (const x of a.summons || []) if (!x.down && !x.left){ x.left = true; x.fading = true; popText(x, "gone", "#c9b8ff"); setTimeout(() => { actors = actors.filter(y => y !== x); foes = foes.filter(y => y !== x); renderTurns(); }, 900); }
   for (const {t, cond} of k.holds){
     if (!t.c || !t.c.condFrom || t.c.condFrom[cond] !== k) continue;      // since replaced by another source
     delete t.c.condFrom[cond]; if (!t.c.conds.has(cond)) continue;
@@ -11699,19 +11728,104 @@ function exitFor(f){
   }
   return best;
 }
+// ---------- A NAMED NPC'S BOOK (Sam, 2026-11-10: "Fix NPC (Ilvara, etc) book of spells") ----------
+// What the block's `magic` lets them cast THIS turn: a cantrip always; a leveled spell while a slot of its level or higher
+// is left (SRD 5.1: a spell can be cast with a higher slot); an innate spell while its daily use is. Never inside the
+// pen's wards (their own magic would be drunk too). Conjure Animals once its spiders are gone; healing only when
+// someone on their side is hurt.
+const ON_OF = {heal: "ally", buff: "self", conjure: "self"};
+function mindKey(x){ return foes.filter(y => y.id === x.id).length > 1 ? `${x.id}-${foes.indexOf(x) + 1}` : x.id; }
+function sideOf(f){ return foes.filter(x => inFight(x)); }
+function slotFor(c, lvl){ for (let l = lvl; l <= 9; l++) if ((c.slots[l] || 0) > 0) return l; return 0; }
+function castableNow(f, seen){
+  const m = f.c.sheet.magic; if (!m || wardsHere() || f.c.conds.has("silenced")) return [];
+  const out = [], hurt = sideOf(f).some(x => x.c.hp < x.c.hpMax);
+  const add = name => {
+    const sp = SPELLS[name]; if (!sp) return;
+    const on = ON_OF[sp.kind] || "hero";
+    if (on === "hero" && !seen.length) return;
+    if (on === "ally" && !hurt) return;
+    if (sp.kind === "conjure" && (f.summons || []).some(x => inFight(x))) return;
+    if (name === "Sanctuary" && f.c.conds.has("sanctuary")) return;
+    out.push({name, on});
+  };
+  for (const n of m.cantrips || []) add(n);
+  for (const n of m.prepared || []){ const sp = SPELLS[n]; if (sp && slotFor(f.c, sp.lvl)) add(n); }
+  for (const [n, left] of Object.entries((f.c.innate ||= {...(m.innate || {})}))) if (left > 0 && !out.some(o => o.name === n)) add(n);
+  return out;
+}
+function spellWhat(f, name){
+  const sp = SPELLS[name], c = f.c, lv = sp.lvl ? `level ${sp.lvl}` : "cantrip";
+  const book = (c.sheet.magic.prepared || []).includes(name);
+  const left = sp.lvl ? (!book && c.innate && c.innate[name] > 0 ? "innate, 1 use left today" : `${c.slots[sp.lvl] || 0} level-${sp.lvl} slots left`) : "at will";
+  const eff = sp.kind === "heal" ? `heals ${sp.dmg}` : sp.kind === "conjure" ? "two giant spiders join the fight" : sp.kind === "buff" ? `wards them (${sp.cond})`
+    : `${sp.save ? sp.save.toUpperCase() + " save, " : "spell attack, "}${sp.dmg ? scaledSpell(sp, c).dmg + " " + sp.type : sp.cond || ""}${sp.area ? `, ${sp.area / 2}-ft radius` : ""}`;
+  return `${lv}, ${left}, ${sp.range || "self"} ft, ${eff}${sp.conc ? ", concentration" : ""}`;
+}
+// THE CAST: in range first (walking as far as the turn allows), then the page's own spell — the same sigils, rolls and
+// saves a hero's cast gets. An innate cast spends its daily use instead of a slot. The turn passes when it lands.
+function foeCast(f, name, t){
+  const sp = SPELLS[name], c = f.c, done = () => passTurn(f);
+  const m = c.sheet.magic, innate = !!(c.innate && c.innate[name] > 0) && !(m.cantrips || []).includes(name) && !(m.prepared || []).includes(name);   // not in the book's slots: the daily use
+  const go = () => {
+    if (!cbt || activeActor() !== f || !inFight(f)) return;
+    if (sp.lvl){
+      if (innate){ c.innate[name]--; c.slots[sp.lvl] = (c.slots[sp.lvl] || 0) + 1; }   // castSpell takes a slot; an innate use puts it back
+      else { const l = slotFor(c, sp.lvl); if (l !== sp.lvl){ c.slots[l]--; c.slots[sp.lvl] = (c.slots[sp.lvl] || 0) + 1; } }   // cast with the higher slot
+    }
+    if (sp.kind === "conjure"){ conjureSpiders(f, name, done); return; }
+    castSpell(f, t, name, done);
+  };
+  if (t !== f && feetBetween(f, t) > (sp.range || 5) + 2.5){ approachThen(f, t, sp.range || 5, () => { if (feetBetween(f, t) <= (sp.range || 5) + 2.5) go(); else done(); }); return; }
+  go();
+}
+// CONJURE ANIMALS as she casts it: two giant spiders (SRD 5.1 Giant Spider) appear within 60 ft of her and fight under her
+// command, acting right after her; they go when her concentration does (endConc).
+async function conjureSpiders(f, name, done){
+  const c = f.c; c.action = false; c.slots[SPELLS[name].lvl] = Math.max(0, (c.slots[SPELLS[name].lvl] || 0) - 1);
+  startConc(f, name); bank("magic/arcane_windup", .55);
+  playOnce(f, SPR[f.id].img.cast ? "cast" : "attack", () => setAnim(f, "idle"));
+  log(`<b>${esc(fname(f))}</b> casts <b>${name}</b>: two giant spiders drop out of the dark to her side.`, {say: true});
+  await loadSpriteManifest("giant-spider");
+  if (!cbt || !inFight(f)){ return; }
+  f.summons = [];
+  for (let i = 0; i < 2; i++){
+    const at = nearestWalkable(f.x + (i ? 1 : -1) * 90 * node.scale, f.y + 40 * node.scale);
+    const sp = foeJoins("giant-spider", at, {after: f, summoner: f});
+    if (sp){ f.summons.push(sp); spawnFx("pxSigilBurst", {at: sp, sq: 1.4, anchor: "mid"}); }
+  }
+  setTimeout(done, 900);
+}
+// SOMEONE JOINS A FIGHT ALREADY RUNNING (a summons now; reinforcements next): on the plate where `at` is, in the initiative
+// right after `after` (or rolled), a foe.
+function foeJoins(id, at, opts = {}){
+  if (!cbt || !SPR[id]) return null;
+  const f = mkActor(id, at.x, at.y, "foe", {alpha: 1}); f.path = [];
+  f.c = fighterFor(f); f.c.initRoll = d20(0, f); f.c.init = f.c.initRoll + (f.c.sheet.init || 0);
+  if (opts.summoner){ f.summoner = opts.summoner; f.c.init = opts.summoner.c.init; }
+  foes.push(f); actors.push(f);
+  const i = opts.after ? cbt.order.indexOf(opts.after) : -1;
+  if (i >= 0) cbt.order.splice(i + 1 + cbt.order.slice(i + 1).filter(x => x.summoner === opts.after).length, 0, f);
+  else { let j = cbt.order.findIndex((x, k) => k > cbt.idx && x.c.init < f.c.init); if (j < 0) j = cbt.order.length; cbt.order.splice(j, 0, f); }
+  renderTurns();
+  return f;
+}
 async function mindTurn(f){
   const fightId = cbt.id, lead = commander(), boss = lead === f, s = f.c.sheet;
   const seen = standing(heroes()).filter(p => !p.c.conds.has("invisible") && !p.c.conds.has("hidden"));
-  const actions = [];
+  const actions = [], book = castableNow(f, seen);
   if (seen.length) actions.push("attack");
+  if (book.length) actions.push("cast");
   if (!f.calledHelp) actions.push("call_for_help");
   if (exitFor(f)) actions.push("retreat");
   if (boss){ actions.push("negotiate"); if (f.c.hp <= f.c.hpMax / 2) actions.push("surrender"); }
   const o = cbt.orders && cbt.orders.by !== f && inFight(cbt.orders.by) ? cbt.orders : null;
   const body = {
     npc: {id: f.id, name: fname(f), epithet: s.epithet || "", hp: f.c.hp, hpMax: f.c.hpMax, conds: [...f.c.conds].join(", "),
-          attacks: (s.attacks || []).map(a => ({name: a.name, ranged: !!a.ranged, range: a.long || a.reach || 5, spell: !!SPELLS[a.name] || /^ray of/i.test(a.name)}))},
-    offer: {actions, targets: seen.map(p => p.id), attacks: (s.attacks || []).map(a => a.name), canOrder: boss && underOf(f).length > 0},
+          attacks: (s.attacks || []).map(a => ({name: a.name, ranged: !!a.ranged, range: a.long || a.reach || 5, spell: !!SPELLS[a.name] || /^ray of/i.test(a.name)})),
+          spells: book.map(b => ({name: b.name, on: b.on, what: spellWhat(f, b.name)})), book: ((s.magic && s.magic.book) || []).join(", ")},
+    offer: {actions, targets: seen.map(p => p.id), attacks: (s.attacks || []).map(a => a.name), spells: book.map(b => ({name: b.name, on: b.on})),
+            allies: sideOf(f).map(mindKey), canOrder: boss && underOf(f).length > 0},
     heroes: seen.map(p => ({key: p.id, name: fname(p), cls: (p.c.sheet && p.c.sheet.cls) || "", hp: p.c.hp, hpMax: p.c.hpMax, ft: Math.round(feetBetween(f, p)), conds: [...p.c.conds].join(", ")})),
     side: foes.filter(x => x !== f && inFight(x)).map(x => ({name: fname(x), hp: x.c.hp, hpMax: x.c.hpMax, under: boss && underOf(f).includes(x)})),
     commander: lead && !boss ? fname(lead) : "", orderFromAbove: o ? `${o.kind}${o.target ? " " + fname(o.target) : ""}` : "",
@@ -11743,6 +11857,12 @@ function mindAct(f, ch, offered){
     log(`<b>${esc(fname(f))} shouts for help.</b>`);
     if (APP) handOff(`${fname(f)} shouts for help in the middle of the fight in ${node.name} (round ${cbt.round}). Malachar decides whether anyone comes.`);
     setTimeout(() => passTurn(f), 1400); return;
+  }
+  if (ch.action === "cast" && ch.spell){
+    const on = (castableNow(f, standing(heroes())).find(b => b.name === ch.spell) || {}).on;
+    const t = on === "self" ? f : on === "ally" ? sideOf(f).find(x => mindKey(x) === ch.target) : heroes().find(h => h.id === ch.target);
+    if (on && t && !t.down){ foeCast(f, ch.spell, t); return; }
+    f.mindPlan = {fallback: true}; foeTurn(f); return;                   // the moment for it passed: the algorithm's turn
   }
   const t = heroes().find(h => h.id === ch.target), atk = (f.c.sheet.attacks || []).find(a => a.name === ch.attack) || null;
   f.mindPlan = {target: t || null, atk, spoke: !!ch.line}; foeTurn(f);
