@@ -5,6 +5,7 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { readSeated } from "@/lib/seats"
 import { WALK_SHEET_COLUMNS, walkSheetFromRow, type WalkSheet } from "@/lib/walk-sheet"
 import { loadNpcLanguages } from "@/lib/npc-languages"
+import { tickWorldTime } from "@/lib/world-time-tick"
 
 // /api/map-stage — who is in the area with the party, as Malachar has narrated it (lib/stage-roster.ts).
 //
@@ -80,9 +81,13 @@ export async function POST(req: NextRequest) {
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const admin = createAdminClient()
+    // Game time passes while the table plays (lib/world-time; Sam, 2026-11-10): an open map out walking asks for a
+    // tick, and whichever screen asks first after a real minute writes it. Before the stage read, so a shift change
+    // the tick crossed (and the change of the watch it brings) is in this very answer.
+    if (req.nextUrl.searchParams.get("tick") === "1") await tickWorldTime(admin)
     const [stage, seated, runRes] = await Promise.all([
       readStage(admin),
       readSeated(admin),
