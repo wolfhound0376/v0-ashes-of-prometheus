@@ -3882,7 +3882,7 @@ function openProp(pr, opts = {}){
   // each check is rolled on the dashboard's dice (lib/walk-roll.ts "ilvara-chest:*"); the map never asks what was rolled
   const ask = (key, localMod, onWin, onLose) => () => {
     close();
-    rollOnDashboard(key, localMod).then(r => {
+    rollWithHelp(key, localMod).then(r => {
       if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3200); return; }
       if (r.success) onWin(); else onLose();
     });
@@ -5315,7 +5315,7 @@ function openInteract(z, opts = {}){
     // DC stays with the DM and the result plays out here. The card shows what you can try, never the DC.
     const attempt = (action, localMod, onWin, onLose) => () => {
       close();
-      rollOnDashboard(action, localMod, manacled() ? {disadvantage: true, edgeReason: MANACLE_NOTE} : {}).then(k => {
+      rollWithHelp(action, localMod, manacled() ? {disadvantage: true, edgeReason: MANACLE_NOTE} : {}).then(k => {
         if (k && k.cancelled){ openInteract(z, {again: true}); return; }   // stepped back from the roll panel: back to the choices
         if (!k || !k.ok){ toast((k && k.error) || "The dice did not roll.", 3200); return; }
         (k.success ? onWin : onLose)();
@@ -5459,6 +5459,38 @@ function cardClose(fn){ const x = $("objX"); if (!x) return; x.hidden = false; x
 /** The first choice on the card, whether or not it is wrapped in .lit. */
 function firstChoice(box){ return box.querySelector(".btn"); }
 
+// A HAND WITH THE CHECK (Sam, 2026-11-10: "Jimjar MAY (depending on his disposition and gravity with the characters)
+// during certain skill checks on the map offer to help (like picking a lock, may participate in identifying traps and
+// addressing them if the team has trap disarm kits)"). Before one of these checks is rolled, if Jimjar is here and on
+// his feet, the game is asked whether he steps in (/api/npc-help: how he stands with this hero decides the odds, never
+// certain, never once he has soured). If he does he says so in a bubble, in his own voice, and the check is rolled
+// with advantage: the SRD's Help ("Working Together"). The disarm needs thieves' tools in the party, which the card
+// already requires before it offers the choice. A rehearsal and the preview ask nobody and write nothing: a stranger's
+// one-in-four, with a plain line.
+const HELP_KIND = {"ilvara-chest:pick": "lock", "pen-gate:pick": "lock", "ilvara-chest:search": "trap-find", "ilvara-chest:disarm": "trap-disarm"};
+const HELPER_IDS = ["jimjar"];
+async function helpWith(action, who){
+  const kind = HELP_KIND[action], h = who || leader; if (!kind || !h) return null;
+  const n = npcs.find(x => HELPER_IDS.includes(x.id) && !x.down && !x.hostile && !x.buried && actors.includes(x)); if (!n) return null;
+  let help = null;
+  try {
+    if (APP && !SANDBOX){
+      const cid = characterIdOf(h.id);
+      const j = cid ? await Promise.race([fetch("/api/npc-help", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({npcName: SPR[n.id].json.name, characterId: cid, kind})}).then(r => r.json()), new Promise(r => setTimeout(() => r(null), 2500))]) : null;
+      help = j && j.help;
+    } else if (Math.random() < .25) help = {kind, address: (PCS[h.id] || {}).race || "you", line: "Budge up. Two picks beat one."};
+  } catch (e) {}
+  if (!help) return null;
+  stopActivity(n); n.path = []; faceTo(n, h); bark(n, help.line, 4200); speak(n.id, help.line);
+  log(`<b>${SHORT[n.id] || SPR[n.id].json.name} lends a hand</b> (Help: ${fname(h)} rolls with advantage).`);
+  return {by: n, line: help.line};
+}
+/** The checks someone may lend a hand with go through here; everything else calls rollOnDashboard as before. */
+async function rollWithHelp(action, localMod, opts = {}){
+  const hp = HELP_KIND[action] ? await helpWith(action, opts.who) : null;
+  if (hp){ opts = {...opts, advantage: true}; await new Promise(r => setTimeout(r, 900)); }   // a beat for his line before the dice
+  return rollOnDashboard(action, localMod, opts);
+}
 function rollOnDashboard(action, localMod, opts = {}){
   // 5e: advantage and disadvantage cancel. lib/walk-roll.ts settles it again on the other side; this keeps the
   // preview's own die honest too.
