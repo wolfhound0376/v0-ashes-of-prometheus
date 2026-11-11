@@ -100,3 +100,28 @@ describe("death and restart (Sam, 2026-10-30)", () => {
   })
 })
 
+
+import { heroGameOver, heroGameOverLine, HERO_GAME_OVER_LINES } from "./game-over.mjs"
+
+describe("heroGameOver (Sam, 2026-11-10: Fifi dead at the gate, Samson alive — game over for her)", () => {
+  it("shows on the dead hero's own screen while the table plays on", () => {
+    expect(heroGameOver("freia", ["freia"], ["freia", "samson"])).toBe(true)
+  })
+  it("not on a living hero's screen", () => {
+    expect(heroGameOver("samson", ["freia"], ["freia", "samson"])).toBe(false)
+  })
+  it("never on the DM's screen", () => {
+    expect(heroGameOver("freia", ["freia"], ["freia", "samson"], true)).toBe(false)
+  })
+  it("gives way to the table's GAME OVER when everyone is dead", () => {
+    expect(heroGameOver("freia", ["freia", "samson"], ["freia", "samson"])).toBe(false)
+  })
+  it("no hero, no card", () => {
+    expect(heroGameOver(null, ["freia"], ["freia"])).toBe(false)
+    expect(heroGameOver("freia", null, ["freia", "samson"])).toBe(false)
+  })
+  it("Malachar's line is one of his and steady per hero", () => {
+    expect(HERO_GAME_OVER_LINES).toContain(heroGameOverLine("freia"))
+    expect(heroGameOverLine("freia")).toBe(heroGameOverLine("freia"))
+  })
+})
