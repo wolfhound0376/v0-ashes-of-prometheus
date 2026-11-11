@@ -1,11 +1,14 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
-import { METAMAGIC, choicesOwed, classSpells, planFor, settleChoices, subclassesFor, type CastingSheet, type Picks } from "@/lib/level-choices"
+import { METAMAGIC, choicesOwed, classSpells, planFor, settleChoices, subclassesFor, type CastingSheet, type HeroStats, type Picks } from "@/lib/level-choices"
+import { ABILITIES, featOptions, type Ability } from "@/lib/feats"
 
 // /api/walk-level-choices — the choices a level leaves after the ceremony (lib/level-choices.ts).
 //
-//   GET  ?character_id=<uuid>   → {owed, plan, casting, scores, spells, metamagic, origins}
+//   GET  ?character_id=<uuid>   → {owed, plan, casting, scores, spells, metamagic, origins, feats}
+//          feats: at an Ability Score Improvement level (4, 8, …), every feat the screen shows, each with ok/why
+//          for THIS hero (lib/feats.ts featOptions) — the screen never decides eligibility on its own
 //          owed: true  — the row's current level still carries its "choices to make" marker (taken, not chosen)
 //          owed: false — the plan is for the NEXT level, so the walk can show the choices before the level is taken
 //   POST {characterId, level, picks, claimToken?} → settle them, once
@@ -16,7 +19,7 @@ import { METAMAGIC, choicesOwed, classSpells, planFor, settleChoices, subclasses
 
 export const dynamic = "force-dynamic"
 
-const COLUMNS = "id, name, class, level, sheet_spellcasting, sheet_features, sheet_skill_proficiencies, str_score, dex_score, con_score, int_score, wis_score, cha_score, is_player, character_type"
+const COLUMNS = "id, name, class, level, sheet_spellcasting, sheet_features, sheet_skill_proficiencies, str_score, dex_score, con_score, int_score, wis_score, cha_score, hp_max, hp_current, initiative, proficiency_bonus, is_player, character_type"
 type Row = { id: string; name: string; class: string | null; level: number; sheet_spellcasting: CastingSheet | null; sheet_features: unknown; sheet_skill_proficiencies: Record<string, string> | null; is_player: boolean | null; character_type: string | null } & Record<string, unknown>
 
 function isDm(req: NextRequest): boolean {
@@ -33,6 +36,13 @@ function skillMap(raw: unknown): Record<string, string> {
   return out
 }
 const isPlayer = (r: Row) => r.is_player === true || r.character_type === "player"
+const featureNames = (raw: unknown): string[] => (Array.isArray(raw) ? raw : []).map((f) => (f && typeof f === "object" ? String((f as { name?: unknown }).name ?? "") : "")).filter(Boolean)
+function heroStats(r: Row): HeroStats {
+  const scores: Partial<Record<Ability, number | null>> = {}
+  for (const a of ABILITIES) scores[a] = Number(r[`${a.toLowerCase()}_score`] ?? 10)
+  const n = (k: string) => (r[k] == null ? null : Number(r[k]))
+  return { scores, hp_max: n("hp_max"), hp_current: n("hp_current"), initiative: n("initiative"), proficiency_bonus: n("proficiency_bonus"), featureNames: featureNames(r.sheet_features) }
+}
 
 export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("character_id")?.trim() ?? ""
@@ -54,6 +64,7 @@ export async function GET(req: NextRequest) {
     scores: { STR: row.str_score, DEX: row.dex_score, CON: row.con_score, INT: row.int_score, WIS: row.wis_score, CHA: row.cha_score },
     spells: plan && plan.caster ? classSpells(plan.cls, plan.maxSpellLevel) : [],
     metamagic: plan && plan.metamagic ? METAMAGIC : [], origins: subclassesFor(plan),
+    feats: plan && plan.improvement ? featOptions({ level: plan.level, scores: heroStats(row).scores, featureNames: featureNames(row.sheet_features), spellcasting: plan.caster, fightingStyle: featureNames(row.sheet_features).some((n) => /^fighting style/i.test(n)) }) : [],
   })
 }
 
@@ -90,11 +101,15 @@ export async function POST(req: NextRequest) {
     skills: Array.isArray(body.picks?.skills) ? body.picks.skills : [],
     book: Array.isArray(body.picks?.book) ? body.picks.book : [],
     bookFree: Array.isArray(body.picks?.bookFree) ? body.picks.bookFree : [],
+    asi: body.picks?.asi && typeof body.picks.asi === "object" && !Array.isArray(body.picks.asi) ? body.picks.asi : null,
+    feat: typeof body.picks?.feat === "string" ? body.picks.feat : null,
+    featAbility: typeof body.picks?.featAbility === "string" && (ABILITIES as string[]).includes(body.picks.featAbility) ? body.picks.featAbility as Ability : null,
+    featSkills: Array.isArray(body.picks?.featSkills) ? body.picks.featSkills : [],
   }
-  const out = settleChoices(plan, row.sheet_spellcasting, row.sheet_features, picks, skillMap(row.sheet_skill_proficiencies))
+  const out = settleChoices(plan, row.sheet_spellcasting, row.sheet_features, picks, skillMap(row.sheet_skill_proficiencies), heroStats(row))
   if (!out.ok) return NextResponse.json({ ok: false, error: out.error }, { status: 400 })
   const { data: written, error: werr } = await db.from("characters")
-    .update({ ...(out.spellcasting ? { sheet_spellcasting: out.spellcasting } : {}), ...(out.skills ? { sheet_skill_proficiencies: out.skills } : {}), sheet_features: out.features, updated_at: new Date().toISOString() })
+    .update({ ...(out.spellcasting ? { sheet_spellcasting: out.spellcasting } : {}), ...(out.skills ? { sheet_skill_proficiencies: out.skills } : {}), ...(out.columns ?? {}), sheet_features: out.features, updated_at: new Date().toISOString() })
     .eq("id", characterId).eq("level", level)
     // a jsonb array needs its filter as JSON text: an array of objects passed raw is sent as cs.{[object Object]} and
     // PostgREST rejects the write (400) — every settle failed with "could not be written" until this (Fifi, 2026-10-28)
@@ -102,5 +117,5 @@ export async function POST(req: NextRequest) {
     .select("id")
   if (werr) return NextResponse.json({ error: "the choices could not be written — tell the DM" }, { status: 500 })
   if (!written || written.length === 0) return NextResponse.json({ ok: false, already: true, note: "Already settled; nothing more was written." })
-  return NextResponse.json({ ok: true, summary: out.summary, casting: out.spellcasting ? { cantrips: out.spellcasting.cantrips, prepared: out.spellcasting.prepared, always_prepared: out.spellcasting.always_prepared ?? null, sorcery_points: out.spellcasting.sorcery_points ?? null, channel_divinity: out.spellcasting.channel_divinity ?? null, spellbook: out.spellcasting.spellbook ?? null } : null })
+  return NextResponse.json({ ok: true, summary: out.summary, columns: out.columns, casting: out.spellcasting ? { cantrips: out.spellcasting.cantrips, prepared: out.spellcasting.prepared, always_prepared: out.spellcasting.always_prepared ?? null, sorcery_points: out.spellcasting.sorcery_points ?? null, channel_divinity: out.spellcasting.channel_divinity ?? null, spellbook: out.spellcasting.spellbook ?? null } : null })
 }
