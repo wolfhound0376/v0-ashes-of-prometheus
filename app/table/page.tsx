@@ -208,6 +208,7 @@ export default function TablePage() {
       const j: View = await r.json()
       if (!r.ok) { setMsg(j.error ?? "That did not work."); return null }
       if (j.refused) setMsg(j.refused)
+      else if (j.note) setMsg(j.note)
       setView(j)
       return j
     } catch { setMsg("Could not reach the table."); return null } finally { setBusy(false) }
@@ -490,7 +491,7 @@ function SeatInvites({ view, busy, send }: { view: View; busy: boolean; send: (a
           </li>
         ))}
       </ul>
-      {status === "closed" && <p className="border-t border-[#2a241e] px-4 py-2 text-[12px] text-stone-600">Open the table, then open a seat to each player. Nobody sits uninvited.</p>}
+      {status === "closed" && <p className="border-t border-[#2a241e] px-4 py-2 text-[12px] text-stone-600">Open the table and the usual party of this saved game gets their seats back. Open a seat to anyone else. Nobody sits uninvited.</p>}
     </div>
   )
 }
