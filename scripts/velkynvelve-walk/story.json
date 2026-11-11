@@ -1218,6 +1218,7 @@
         "kind": "interact"
       }
     ],
+    "alarm": {"name": "Warning trumpet", "x": 1500, "y": 640, "_src": "OotA p.15 area 1: the sentries blow the warning trumpet only at a significant threat. It hangs by the second sentry's post (Claude's placement)."},
     "npcs": [
       {
         "id": "drow-guard-male",
@@ -1899,6 +1900,7 @@
         "kind": "interact"
       }
     ],
+    "alarm": {"name": "Warning horn", "x": 1500, "y": 720, "_src": "OotA p.19 area 13: same as area 1, a warning horn at the northern watch post. By the second sentry, who fingers it (story bark)."},
     "npcs": [
       {
         "id": "drow-guard-male",
