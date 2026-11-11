@@ -146,6 +146,13 @@ it — so Malachar cannot invent a cue. The cue name alone crosses to the client
 `lib/cinematic-cue.ts`); resolution, the once-per-character rule and solo-vs-party scope
 stay in `/api/cinematics`.
 
+**A film's trigger lives on its `cinematic_clips` row** (Sam, 2026-11-10): `moment` (one sentence — when it
+fires; Malachar reads it beside the cue name), `fired_by` (`malachar` / `engine` / `map` / `look` / `system` /
+`dm`), `plate` (a `party_situation.sub_location` slug, null = anywhere in the scene) and `retired`. "Awaiting
+film" is not stored — it is `video_url is null`. `lib/cinematic-doors.ts` builds Malachar's list from those
+columns; a cue the rules engine or the map fires itself is never offered to him, whatever the row says. A new
+film needs a `moment`, or Malachar is back to guessing from the name.
+
 `lib/tts.ts` `sanitizeForTTS()` strips these before speech. If you add a tag, add it there too.
 
 ### Components (`components/`)
