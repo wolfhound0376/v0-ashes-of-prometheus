@@ -7101,7 +7101,7 @@ function nextTurn(first){
   if (!first){ const was = cbt.order[cbt.idx]; if (was && was.c){ laughSave(was, false); blindSave(was); fearSave(was); guardianEndTurn(was); } }   // the saves at the end of its turn (Hideous Laughter, Blindness)
   if (!first){ const was = cbt.order[cbt.idx]; if (was && was.c && was.c.rage){ const r = rageAfterTurn(was.c.rage, cbt.round); if (r.ended) endRage(was, r.ended); else was.c.rage = r.rage; } }
   for (let k = 0; k < cbt.order.length; k++){
-    cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0){ cbt.round++; if (cbt.round > 1) bystandersFlee(); arrowsWorkLoose(false); }   // the bystanders run as each round opens
+    cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0){ cbt.round++; if (cbt.round > 1) bystandersFlee(); arrowsWorkLoose(false); helpArrives(); }   // the bystanders run as each round opens
     const a = cbt.order[cbt.idx]; if ((!a.down || dyingNow(a)) && actors.includes(a) && !(a.c && a.c.joinRound > cbt.round)) break;   // a late arrival waits for the next round
   }
   const a = activeActor(); if (!a) return;
@@ -10571,6 +10571,144 @@ function exitFor(f){
   }
   return best;
 }
+// ---------- THE ALARM AND REINFORCEMENTS (Sam, 2026-11-10: "Shouting for help or setting alarm should bring in
+// reinforcements if they have an alarm device, drum, or run off the screen to get help") ----------
+// THE DEVICE: story.json `alarm` — the warning trumpet at the southern watch post (area 1) and the warning horn at the
+// northern one (area 13), OotA p.15/p.19: the sentries "blow the warning trumpet only at a significant threat"; a fight is
+// one. A drow has to get to it (a hero may strike as he runs, or drop him on the way) and spend its action blowing it.
+// THE ALARM (Sam, 2026-10-30, approved for the breakout: "TWO-MINUTE waves, three waves, with a countdown banner on top
+// of the pixel map"; the numbers are Claude's, "make it reasonable or this will be impossible to get out"): blown once,
+// the whole outpost knows (state.alarm, shared with every screen). Every two minutes a wave walks onto whatever numbered
+// Velkynvelve plate the party is on — 2 drow; 2 drow and an elite warrior; 3 drow and an elite warrior — joining a fight
+// already running or starting one. The Underdark beyond the outpost is out of earshot.
+// NO DEVICE: someone runs for help. A commander sends the nearest drow under them (or goes), who Dashes for the nearest
+// way out under the heroes' opportunity attacks; once out, they come back three rounds later through the same way with two
+// more drow (HELP_ROUNDS; out of a fight, half a minute). Dropped before the door, nobody is coming.
+// Ordinary guards (the algorithm) run for the horn too: on a plate that has one, the drow nearest it goes the moment a
+// fight is on. Called once a fight per caller.
+const ALARM_WAVE_MS = 120000, HELP_ROUNDS = 3, HELP_MS = 30000;
+const ALARM_WAVES = [["drow-guard-male", "drow-guard-female"], ["drow-guard-male", "drow-guard-female", "drow-elite-warrior"], ["drow-guard-male", "drow-guard-female", "drow-guard-male", "drow-elite-warrior"]];
+const inOutpost = n => /^\d/.test(String(n));
+const alarmUp = () => !!(state.alarm && state.alarm.at);
+let pendingHelp = [];                       // runners who got out: {plate, ids, at: {x, y}, dueRound, fightId, dueAt}
+const alarmLocal = new Set();               // waves this screen has walked in (by alarm time + wave)
+function helpHow(f){
+  if (node.alarm && !alarmUp() && inOutpost(cur)) return `sound the ${node.alarm.name.toLowerCase()} (${Math.round(feetBetween(f, node.alarm))} ft away): every two minutes a wave of the garrison arrives, three waves`;
+  if (alarmUp()) return null;                                          // the horn is already blowing: nobody else to fetch
+  if (exitFor(f)) return `send a runner out the nearest way (${f === commander() && underOf(f).length ? "one of yours goes" : "you go yourself"}): two drow come back with them in about three rounds`;
+  return null;
+}
+function callForHelp(f){
+  f.calledHelp = true; popText(f, "help!", "#ffcf6a", 1.1); bank("ui/initiative_start", .3);
+  const dev = node.alarm && !alarmUp() && inOutpost(cur) ? node.alarm : null, lead = f === commander();
+  const pool = [f, ...(lead ? underOf(f) : [])].filter(x => inFight(x) && !x.task);
+  if (dev){
+    const who = pool.sort((a, b) => Math.hypot(a.x - dev.x, a.y - dev.y) - Math.hypot(b.x - dev.x, b.y - dev.y))[0] || f;
+    who.task = "alarm";
+    log(`<b>${esc(fname(f))} shouts for the ${esc(dev.name.toLowerCase())}!</b>${who !== f ? ` ${esc(fname(who))} runs for it.` : ""}`, {say: true});
+    if (who === f){ alarmTurn(f); return; }
+    popText(who, "!", "#ffcf6a", 1); setTimeout(() => passTurn(f), 1200); return;
+  }
+  const ex = exitFor(f);
+  if (!ex){ log(`<b>${esc(fname(f))} shouts for help</b>, and nobody is near enough to hear.`); setTimeout(() => passTurn(f), 1200); return; }
+  const who = pool.filter(x => x !== f).sort((a, b) => Math.hypot(a.x - ex.x, a.y - ex.y) - Math.hypot(b.x - ex.x, b.y - ex.y))[0] || f;
+  who.task = "runner";
+  log(`<b>${esc(fname(f))} shouts for help</b> — ${who === f ? "and runs for it" : `${esc(fname(who))} runs for the way out`}.`, {say: true});
+  if (APP) handOff(`${fname(f)} sends ${who === f ? "themself" : fname(who)} running for help out of ${node.name} mid-fight (round ${cbt.round}); two more drow come back in about three rounds unless the runner is stopped.`);
+  if (who === f){ runnerTurn(f); return; }
+  popText(who, "!", "#ffcf6a", 1); setTimeout(() => passTurn(f), 1200);
+}
+// an ordinary guard on a plate with a horn: the drow nearest it goes for it, once, if nobody is already going
+function guardTakesHorn(f){
+  const dev = node.alarm;
+  if (!cbt || !dev || alarmUp() || !inOutpost(cur) || isMind(f) || !drowSide(f) || f.calledHelp) return false;
+  if (foes.some(x => x.task === "alarm" && inFight(x))) return false;
+  const drow = foes.filter(x => inFight(x) && drowSide(x) && !x.task && !x.retreating);
+  if (drow.sort((a, b) => Math.hypot(a.x - dev.x, a.y - dev.y) - Math.hypot(b.x - dev.x, b.y - dev.y))[0] !== f) return false;
+  f.calledHelp = true; f.task = "alarm";
+  log(`<b>${esc(fname(f))} runs for the ${esc(dev.name.toLowerCase())}!</b>`, {say: true}); popText(f, "!", "#ffcf6a", 1.1);
+  return true;
+}
+// to the horn (its movement, under opportunity attacks), and if in reach, the blast: the action
+function alarmTurn(f){
+  const dev = node.alarm;
+  if (!dev || alarmUp()){ f.task = null; f.mindPlan = {fallback: true}; foeTurn(f); return; }
+  const spot = nearestWalkable(dev.x, dev.y), reach = 6 * ruleFt(f);
+  const blow = () => { combatBusy = false; if (!cbt || f.down || !inFight(f)) return; if (Math.hypot(f.x - spot.x, f.y - spot.y) <= reach + 30){ raiseAlarm(f); setTimeout(() => passTurn(f), 1400); } else { setAnim(f, "idle"); setTimeout(() => passTurn(f), 300); } };
+  if (Math.hypot(f.x - spot.x, f.y - spot.y) <= reach + 30){ blow(); return; }
+  const walk = cutPath(f, findPath(f, spot), (f.c.move ?? (f.c.sheet.speed || 30)) * ruleFt(f));
+  const goal = walk.pts.length ? walk.pts[walk.pts.length - 1] : {x: f.x, y: f.y};
+  combatBusy = true;
+  oaGauntlet(f, goal, () => {
+    if (!cbt || f.down) return;
+    let fired = false; const done = () => { if (fired) return; fired = true; blow(); };
+    if (!walk.pts.length){ done(); return; }
+    f.path = walk.pts; f.onArrive = done; setTimeout(done, 2600);
+  });
+}
+function raiseAlarm(f){
+  const dev = node.alarm; f.task = null;
+  state.alarm = {plate: String(cur), at: owNow(), by: fname(f), name: dev.name};
+  bank("creature/drow_alarm_gong", .95); shake(5); popText(f, dev.name.split(" ").pop().toUpperCase() + "!", "#ff6a4a", 1.2);
+  log(`<b>${esc(fname(f))} blows the ${esc(dev.name.toLowerCase())}.</b> The whole outpost has heard it.`, {say: true});
+  toast(`The ${dev.name.toLowerCase()}! The garrison is coming: a wave every two minutes.`, 4200);
+  if (APP) handOff(`${fname(f)} blew the ${dev.name.toLowerCase()} at ${node.name}. The alarm is up across Velkynvelve: three waves of the garrison, one every two minutes, come at the party wherever it is in the outpost.`);
+  alarmTick();
+}
+// the runner: a Dash for the way out (retreatTurn's own run, opportunity attacks and all); out, they are fetching help
+function runnerTurn(f){
+  const ex = exitFor(f);
+  if (!ex){ f.task = null; f.mindPlan = {fallback: true}; foeTurn(f); return; }
+  f.retreating = true; f.runner = ex; retreatTurn(f);
+}
+function runnerGotOut(f, ex){
+  f.task = null;
+  pendingHelp.push({plate: String(cur), ids: [f.id, "drow-guard-male", "drow-guard-female"], at: {x: ex.x, y: ex.y}, fightId: cbt ? cbt.id : null, dueRound: cbt ? cbt.round + HELP_ROUNDS : 0, dueAt: now + HELP_MS, hp: f.c.hp, hpMax: f.c.hpMax, who: fname(f)});
+}
+// help comes back: into the fight still running here, or (the fight over) as a new one if the party is still here
+async function helpArrives(){
+  const due = pendingHelp.filter(h => owSame(h.plate, cur) && ((cbt && cbt.id === h.fightId && cbt.round >= h.dueRound) || (!cbt && now >= h.dueAt)));
+  if (!due.length) return;
+  pendingHelp = pendingHelp.filter(h => !due.includes(h));
+  for (const h of due) await reinforce(h.ids, h.at, `${h.who} is back with help`);
+}
+// a wave or a runner's help walks in at `at` (a doorway): joins the fight here, or starts one
+async function reinforce(ids, at, why){
+  await Promise.all([...new Set(ids)].map(id => loadSpriteManifest(id)));
+  if (mode === "combat" && cbt){
+    ids.forEach((id, i) => { const q = nearestWalkable(at.x + (i % 2 ? 1 : -1) * 50 * i * node.scale, at.y + 30 * i * node.scale); const f = foeJoins(id, q, {}); if (f) popText(f, "!", "#ff6a4a", 1); });
+    log(`<b>${esc(why)}:</b> ${ids.length} more drow come through the way in.`, {say: true}); bank("creature/drow_alarm_gong", .5);
+    return true;
+  }
+  if (mode === "explore" || mode === "talk"){ startCombat(ids, why); return true; }
+  return false;                                                         // a card that holds the moment (a march, a film): next tick
+}
+// the waves: one every two minutes after the blast, on the plate the party is on, if it is in the outpost
+async function alarmTick(){
+  const A = state.alarm; renderAlarmBanner();
+  if (!A || !A.at || !leader) return;
+  const due = Math.min(ALARM_WAVES.length, Math.floor((owNow() - A.at) / ALARM_WAVE_MS));
+  for (let w = 1; w <= due; w++){
+    const key = `${A.at}:${w}`; if (alarmLocal.has(key)) continue;
+    if (!inOutpost(cur)){ alarmLocal.add(key); continue; }               // out of the outpost: the wave searches in vain
+    const zs = (node.zones || []).filter(z => z.rect && (z.to || []).length);
+    const z = zs.find(q => (q.to || []).some(t => String(t) === String(A.plate))) || zs[w % Math.max(1, zs.length)];
+    const c = z ? zoneCenter(z) : centroid, at = nearestWalkable(c.x, c.y);
+    if (await reinforce(ALARM_WAVES[w - 1], at, `The alarm: wave ${w} of ${ALARM_WAVES.length}`)) alarmLocal.add(key);
+  }
+}
+function renderAlarmBanner(){
+  let el = $("alarmBanner");
+  const A = state.alarm;
+  if (!A || !A.at){ if (el) el.hidden = true; return; }
+  if (!el){ el = document.createElement("div"); el.id = "alarmBanner"; el.style.cssText = "position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:40;padding:6px 16px;border-radius:6px;background:rgba(90,10,6,.88);border:1px solid #ff6a4a;color:#ffd9c8;font:600 14px/1.2 Georgia,serif;letter-spacing:.04em;pointer-events:none;text-shadow:0 1px 2px #000"; (stage || document.body).appendChild(el); }
+  const t = owNow() - A.at, w = Math.floor(t / ALARM_WAVE_MS);
+  if (w >= ALARM_WAVES.length && t > ALARM_WAVES.length * ALARM_WAVE_MS + 20000){ el.hidden = true; return; }
+  const left = Math.max(0, ALARM_WAVE_MS - (t % ALARM_WAVE_MS)), mm = Math.floor(left / 60000), ss = String(Math.floor(left / 1000) % 60).padStart(2, "0");
+  el.textContent = w >= ALARM_WAVES.length ? `⚠ ALARM — the whole garrison is out` : `⚠ ALARM (${A.name}) — wave ${w + 1} of ${ALARM_WAVES.length} in ${mm}:${ss}${inOutpost(cur) ? "" : " · out of earshot here"}`;
+  el.hidden = false;
+}
+setInterval(() => { alarmTick(); helpArrives(); }, 1000);
 // ---------- A NAMED NPC'S BOOK (Sam, 2026-11-10: "Fix NPC (Ilvara, etc) book of spells") ----------
 // What the block's `magic` lets them cast THIS turn: a cantrip always; a leveled spell while a slot of its level or higher
 // is left (SRD 5.1: a spell can be cast with a higher slot); an innate spell while its daily use is. Never inside the
@@ -10659,7 +10797,7 @@ async function mindTurn(f){
   const actions = [], book = castableNow(f, seen);
   if (seen.length) actions.push("attack");
   if (book.length) actions.push("cast");
-  if (!f.calledHelp) actions.push("call_for_help");
+  if (!f.calledHelp && helpHow(f)) actions.push("call_for_help");
   if (exitFor(f)) actions.push("retreat");
   if (boss){ actions.push("negotiate"); if (f.c.hp <= f.c.hpMax / 2) actions.push("surrender"); }
   const o = cbt.orders && cbt.orders.by !== f && inFight(cbt.orders.by) ? cbt.orders : null;
@@ -10671,7 +10809,7 @@ async function mindTurn(f){
             allies: sideOf(f).map(mindKey), canOrder: boss && underOf(f).length > 0},
     heroes: seen.map(p => ({key: p.id, name: fname(p), cls: (p.c.sheet && p.c.sheet.cls) || "", hp: p.c.hp, hpMax: p.c.hpMax, ft: Math.round(feetBetween(f, p)), conds: [...p.c.conds].join(", ")})),
     side: foes.filter(x => x !== f && inFight(x)).map(x => ({name: fname(x), hp: x.c.hp, hpMax: x.c.hpMax, under: boss && underOf(f).includes(x)})),
-    commander: lead && !boss ? fname(lead) : "", orderFromAbove: o ? `${o.kind}${o.target ? " " + fname(o.target) : ""}` : "",
+    commander: lead && !boss ? fname(lead) : "", helpHow: helpHow(f) || "", orderFromAbove: o ? `${o.kind}${o.target ? " " + fname(o.target) : ""}` : "",
     log: (log.recent || []).slice(-6), area: node.name, round: cbt.round,
   };
   popText(f, "…", "#c9c4b8", .9);
@@ -10695,12 +10833,7 @@ function mindAct(f, ch, offered){
     log(`<b>${esc(fname(f))} falls back</b>${f === commander() && underOf(f).length ? ", and calls the others after" : ""}.`);
     retreatTurn(f); return;
   }
-  if (ch.action === "call_for_help"){
-    f.calledHelp = true; popText(f, "help!", "#ffcf6a", 1.1); bank("ui/initiative_start", .3);
-    log(`<b>${esc(fname(f))} shouts for help.</b>`);
-    if (APP) handOff(`${fname(f)} shouts for help in the middle of the fight in ${node.name} (round ${cbt.round}). Malachar decides whether anyone comes.`);
-    setTimeout(() => passTurn(f), 1400); return;
-  }
+  if (ch.action === "call_for_help"){ callForHelp(f); return; }
   if (ch.action === "cast" && ch.spell){
     const on = (castableNow(f, standing(heroes())).find(b => b.name === ch.spell) || {}).on;
     const t = on === "self" ? f : on === "ally" ? sideOf(f).find(x => mindKey(x) === ch.target) : heroes().find(h => h.id === ch.target);
@@ -10736,7 +10869,7 @@ function retreatTurn(f){
   oaGauntlet(f, goal, () => {
     if (!cbt || f.down) return;
     let gone = false;
-    const done = () => { if (gone) return; gone = true; combatBusy = false; if (out) leaveFight(f, ex.to); else setAnim(f, "idle"); setTimeout(() => passTurn(f), 300); };
+    const done = () => { if (gone) return; gone = true; combatBusy = false; if (out){ if (f.task === "runner") runnerGotOut(f, ex); leaveFight(f, f.runner ? null : ex.to); } else setAnim(f, "idle"); setTimeout(() => passTurn(f), 300); };
     if (!walk.pts.length){ done(); return; }
     f.path = walk.pts; f.onArrive = done; setTimeout(done, 2600);
   });
@@ -10826,6 +10959,9 @@ function foeTurn(f){
   // NPC MINDS: one who has been told to fall back (or chose to) spends the turn getting out; a named NPC asks its mind
   // first (mindTurn), which comes back here with a plan — or with none, and then this algorithm is the turn
   if (f.retreating){ retreatTurn(f); return; }
+  if (f.task === "alarm"){ alarmTurn(f); return; }                 // THE ALARM: on the way to the horn
+  if (f.task === "runner"){ runnerTurn(f); return; }               // gone for help
+  if (guardTakesHorn(f)){ alarmTurn(f); return; }
   const plan = f.mindPlan || null; f.mindPlan = null;
   if (!plan && isMind(f) && mindUrl()){ mindTurn(f); return; }
   const seen0 = standing(heroes()).filter(p => !p.c.conds.has("hidden") && !p.c.conds.has("invisible"));
