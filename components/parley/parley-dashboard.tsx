@@ -1140,7 +1140,8 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
           {DM_MAPS.map((m) => <a key={m.id} role="menuitem" href={m.href ?? walkHref} className="p-slab dark sm" style={{ width: "100%", justifyContent: "space-between", gap: 12 }} title={m.sub}><span>{m.label}</span><small style={{ opacity: 0.7 }}>{m.sub}</small></a>)}
         </div> : null}
       </span> : null}
-      {isDmView ? <EndGameButton /> : null}
+      {/* The host (a player who runs the table) ends the game from here too (Sam, 2026-11-10; lib/host.ts). */}
+      {isDmView ? <EndGameButton /> : <EndGameButton asHost />}
       {props.dmScreen && props.onNpcs ? <button type="button" className="p-slab dark sm" onClick={props.onNpcs} title="NPC canon: faces, loops, voices">NPCs</button> : null}
       {props.onCompact ? <button type="button" className="p-slab dark sm" onClick={props.onCompact} title="The phone / camp layout">Phone</button> : null}
       <button type="button" className="p-slab gold" onClick={goBack} title={talkMode ? (props.talkFrom === "map" ? "Back to the map" : "Back to camp") : "Back to the Underwalk map"}><img className="p-ico" src="/velkynvelve-walk/icons/bar/jump.png" alt="" />Return<span className="p-key">M</span></button>
