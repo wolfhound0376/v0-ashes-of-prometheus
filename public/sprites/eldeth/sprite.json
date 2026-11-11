@@ -59,6 +59,12 @@
       "frames": 5,
       "fps": 3,
       "loop": true
+    },
+    "triumph": {
+      "sheet": "triumph.png",
+      "frames": 9,
+      "fps": 7,
+      "loop": false
     }
   }
 }

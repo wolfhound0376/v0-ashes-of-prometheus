@@ -357,6 +357,8 @@ for i in P + list(GARB.values()) + N + F + V + LP:
     if i in ['ront', 'eldeth', 'derendil', 'sarith']: sh += ['sit', 'eat', 'sleep', 'attack', 'hurt', 'dead', 'dodge']
     # Ront and Derendil go over gaps and ledges on their own (Sam, 2026-10-27; add-jump.py); the others are filtered out below
     if i in ['ront', 'eldeth', 'derendil', 'sarith']: sh.append('jump')
+    # the triumph pose (Sam, 2026-11-10; scripts/sprites/add-triumph-pose.py): Ront, Derendil and Eldeth have one
+    if i in ['ront', 'eldeth', 'derendil']: sh.append('triumph')
     # Hard Labor's poses (scripts/sprites/add-labor-poses.py): the five main players have them; a sprite without
     # them is filtered out below and works in its idle
     if i in PG: sh += ['scrub', 'heave', 'carry']
