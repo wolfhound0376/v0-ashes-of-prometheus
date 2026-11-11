@@ -1,0 +1,42 @@
+# Type check every pull request (Sam, 2026-11-10: "add the check").
+#
+# `main` carried 11 type errors for weeks because nothing ran the checker; they were cleared in PR #1248. This job
+# runs `tsc --noEmit` on every PR and on every push to main, so the next one shows as a red check on the PR that
+# introduces it instead of joining a list everybody has learned to ignore.
+#
+# It only reads the code. It does not run the tests (8 are failing on main for unrelated reasons, 2026-11-10) and it
+# does not build or deploy; Vercel does that.
+#
+# pnpm is pinned to 10 to match the lockfile (lockfileVersion 9.0). `--ignore-scripts` skips package build steps
+# (esbuild's binary), which the type checker does not need.
+name: Type check
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: typecheck-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tsc:
+    name: tsc --noEmit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm exec tsc --noEmit
