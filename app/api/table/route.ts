@@ -6,10 +6,11 @@ import { CAMPAIGN_ID, restartCampaign } from "@/lib/restart-campaign"
 import { MAX_SEATS, cannotChooseFigure, cannotSit, isComplete, missingOf, type TableState } from "@/lib/table"
 import { readSeated } from "@/lib/seats"
 import {
-  clearInvites, clearSeats, nextSeatNumber, readInvitedIds, readTable, readTableView, readinessFor, removeInvite, removeSeat,
-  startIfReady, writeInvite, writeSeat, writeTable,
+  clearInvites, clearSeats, nextSeatNumber, readHost, readInvitedIds, readTable, readTableView, readinessFor, removeInvite, removeSeat,
+  startIfReady, writeHost, writeInvite, writeSeat, writeTable,
   type TableView,
 } from "@/lib/table-store"
+import { actorFor, type Actor, type Host } from "@/lib/host"
 
 // /api/table — the staging table (lib/table.ts has the rules and Sam's words).
 //
@@ -30,6 +31,17 @@ import {
 //                                  readmit {characterId}   live: let an excused player back in
 //     player (characterId + claimToken):  sit · ready · unready · leave · figure {figure: 0..6}
 //
+//   THE HOST (lib/host.ts; Sam, 2026-11-10: "the host can play", "whomever started the campaign is the host",
+//   "only people with keys can start a campaign"). The hero named when the campaign was started is its host.
+//   With that hero's claim alone (hostId + hostToken in the body) the host may do every DM action above
+//   EXCEPT the reset:  open · start · unstart · companion · end · invite · uninvite · remove · excuse · readmit.
+//     DM, door cookie ONLY:        new {hostId?}   as above, and names the host of the new campaign
+//                                  host {hostId}   names (or changes) the host of the campaign in play
+//                                  Both answer with that hero's claim token, so the browser that typed the
+//                                  DM code can sit down as the host without typing three more words.
+//   The host is always invited to their own table, and their Start counts as their Ready.
+//   GET tells the host they are the host only when `x-claim-token` proves it (then it shows them the roster).
+//
 // A player who has no invitation and no seat sees the state and their own `invited: false`, and an empty room —
 // "NO player can sit at the table without me FIRST opening up the seat to them" (Sam, 2026-10-25).
 //
@@ -39,8 +51,7 @@ import {
 export const dynamic = "force-dynamic"
 export const maxDuration = 60 // `new` runs the whole campaign reset first
 
-const DM_ACTIONS = new Set(["open", "new", "start", "unstart", "remove", "companion", "end", "invite", "uninvite", "excuse", "readmit"])
-const DOOR_ACTIONS = new Set(["open", "new"]) // the DM door's own cookie only
+const DM_ACTIONS = new Set(["open", "new", "host", "start", "unstart", "remove", "companion", "end", "invite", "uninvite", "excuse", "readmit"])
 const PLAYER_ACTIONS = new Set(["sit", "ready", "unready", "leave", "figure"])
 
 function isDm(req: NextRequest): boolean {
@@ -61,8 +72,9 @@ type Db = ReturnType<typeof createAdminClient>
  */
 async function reply(db: Db, view: TableView, characterId?: string | null, extra: Record<string, unknown> = {}, dm = false) {
   const mine = characterId ? view.seats.find((s) => s.id === characterId) ?? null : null
-  const invitedIds = await readInvitedIds(db)
-  const invited = characterId ? invitedIds.has(characterId) : false
+  const [invitedIds, host] = await Promise.all([readInvitedIds(db), readHost(db)])
+  // The host never needs an invitation to their own table.
+  const invited = characterId ? invitedIds.has(characterId) || host?.id === characterId : false
   const open = dm || mine != null || invited
   let roster: unknown[] | undefined
   if (dm) {
@@ -75,7 +87,20 @@ async function reply(db: Db, view: TableView, characterId?: string | null, extra
   // Which run of the campaign this is. Every New Game ends the run and opens the next, so a screen that loaded
   // under another run knows the world was reset under it and closes (lib/session-guard.ts wasReset).
   const { data: liveRun } = await db.from("campaign_runs").select("id").eq("campaign_id", CAMPAIGN_ID).neq("status", "ended").order("run_number", { ascending: false }).limit(1).maybeSingle()
-  return NextResponse.json({ ...view, seats: open ? view.seats : [], mine, invited, run: liveRun?.id ?? null, ...(roster ? { roster } : {}), ...extra })
+  return NextResponse.json({ ...view, seats: open ? view.seats : [], mine, invited, host: host ? { id: host.id, name: host.name } : null, run: liveRun?.id ?? null, ...(roster ? { roster } : {}), ...extra })
+}
+
+/** Is this the campaign's host, proved by the host hero's own claim? */
+async function hostProved(db: Db, host: Host | null, characterId: string, claimToken: string): Promise<boolean> {
+  return Boolean(host && characterId && host.id === characterId && (await claimOk(db, characterId, claimToken)))
+}
+
+/** The hero the DM code named as host: must be a live player character. Returns it with its claim token. */
+async function hostHero(db: Db, hostId: string): Promise<{ id: string; name: string; claimToken: string | null } | null> {
+  const { data: ch } = await db.from("characters").select("id, name, is_player").eq("id", hostId).is("archived_at", null).maybeSingle()
+  if (!ch?.is_player) return null
+  const { data: secret } = await db.from("character_secrets").select("claim_token").eq("character_id", ch.id).maybeSingle()
+  return { id: ch.id, name: ch.name, claimToken: (secret?.claim_token as string | undefined) ?? null }
 }
 
 export async function GET(req: NextRequest) {
@@ -83,7 +108,9 @@ export async function GET(req: NextRequest) {
     const db = createAdminClient()
     const view = await readTableView(db)
     const dm = isDm(req)
-    return await reply(db, view, req.nextUrl.searchParams.get("characterId"), { isDm: dm }, dm)
+    const characterId = req.nextUrl.searchParams.get("characterId")
+    const isHost = characterId ? await hostProved(db, await readHost(db), characterId, req.headers.get("x-claim-token") ?? "") : false
+    return await reply(db, view, characterId, { isDm: dm, isHost }, dm || isHost)
   } catch (e) {
     return NextResponse.json({ error: String(e) }, { status: 500 })
   }
@@ -98,11 +125,12 @@ export async function POST(req: NextRequest) {
 
   try {
     if (DM_ACTIONS.has(action)) {
-      if (!isDm(req)) return NextResponse.json({ error: "Only the Dungeon Master can do that." }, { status: 403 })
-      if (DOOR_ACTIONS.has(action) && !hasDmCookie(req)) {
-        return NextResponse.json({ error: "The table opens only from the Dungeon Master's door on the title screen." }, { status: 403 })
-      }
-      return await dmAction(db, action, characterId)
+      const hostId = typeof body.hostId === "string" ? body.hostId : ""
+      const hostToken = typeof body.hostToken === "string" ? body.hostToken : ""
+      const host = await readHost(db)
+      const who = actorFor(action, { dm: isDm(req), dmCookie: hasDmCookie(req), host: await hostProved(db, host, hostId, hostToken) })
+      if ("refused" in who) return NextResponse.json({ error: who.refused }, { status: 403 })
+      return await dmAction(db, action, characterId, who.actor, host, hostId)
     }
     if (PLAYER_ACTIONS.has(action)) {
       const claimToken = typeof body.claimToken === "string" ? body.claimToken : ""
@@ -116,10 +144,21 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function dmAction(db: Db, action: string, characterId: string) {
-  const replyDm = (view: TableView, extra: Record<string, unknown> = {}) => reply(db, view, null, extra, true)
+async function dmAction(db: Db, action: string, characterId: string, actor: Actor, host: Host | null, hostId: string) {
+  // The host is also a player at this table, so their answer carries their own seat (`mine`); the DM's does not.
+  const replyDm = (view: TableView, extra: Record<string, unknown> = {}) =>
+    actor === "host" && host ? reply(db, view, host.id, { isHost: true, ...extra }, true) : reply(db, view, null, extra, true)
   const t = await readTable(db)
   const now = new Date().toISOString()
+  const by = actor === "host" && host ? host.name || "The host" : "The DM"
+
+  if (action === "host") {
+    // Name (or change) who hosts the campaign in play. DM code only (lib/host.ts).
+    const hero = await hostHero(db, hostId)
+    if (!hero) return NextResponse.json({ error: "Choose a player character to host as." }, { status: 404 })
+    await writeHost(db, hero)
+    return reply(db, await readTableView(db), null, { hostClaim: hero.claimToken ? { characterId: hero.id, claimToken: hero.claimToken } : null }, true)
+  }
 
   if (action === "open") {
     if (t.status === "live") return replyDm(await readTableView(db), { note: "The session is already live." })
@@ -127,7 +166,7 @@ async function dmAction(db: Db, action: string, characterId: string) {
       // A new session: nobody is seated until they sit down at this table (the old seats are from the last one).
       await clearSeats(db)
       const next: TableState = { status: "lobby", dmReady: false, session: t.session + 1, openedAt: now, startedAt: null }
-      await writeTable(db, next, `The DM opened the table for session ${next.session}`)
+      await writeTable(db, next, `${by} opened the table for session ${next.session}`)
     }
     return replyDm(await readTableView(db))
   }
@@ -138,6 +177,10 @@ async function dmAction(db: Db, action: string, characterId: string) {
     // even DM screens, and let you enter the table clean" — so a live session no longer blocks it: the reset
     // ends that session itself (the seats and the table go with the world flags), and every open screen, the
     // DM's included, sees the run change and closes (lib/session-guard.ts wasReset).
+    // Whoever starts the campaign is its host (Sam, 2026-11-10). Checked BEFORE the reset, so a bad pick
+    // never costs a campaign.
+    const newHost = hostId ? await hostHero(db, hostId) : null
+    if (hostId && !newHost) return NextResponse.json({ error: "Choose a player character to host as. Nothing was reset." }, { status: 404 })
     const restart = await restartCampaign(db)
     // The restart clears every world flag, the table and its seats included. Open the new run's table only when
     // the wipe finished cleanly; a half-wiped world is not a new game.
@@ -145,7 +188,12 @@ async function dmAction(db: Db, action: string, characterId: string) {
     const after = await readTable(db)
     await clearSeats(db)
     await writeTable(db, { status: "lobby", dmReady: false, session: after.session + 1, openedAt: now, startedAt: null }, "The DM started a new game")
-    return replyDm(await readTableView(db), { newGame: true, run: (restart.report.run as { number?: number } | undefined)?.number ?? null })
+    // The reset wiped the old host with every other flag; the new campaign's host is whoever started it.
+    if (newHost) await writeHost(db, newHost)
+    return replyDm(await readTableView(db), {
+      newGame: true, run: (restart.report.run as { number?: number } | undefined)?.number ?? null,
+      hostClaim: newHost?.claimToken ? { characterId: newHost.id, claimToken: newHost.claimToken } : null,
+    })
   }
 
   if (action === "end") {
@@ -153,13 +201,23 @@ async function dmAction(db: Db, action: string, characterId: string) {
     // next session starts at the door again. A brand-new campaign is still the Restart.
     await clearSeats(db)
     await clearInvites(db)
-    await writeTable(db, { status: "closed", dmReady: false, session: t.session, openedAt: null, startedAt: null }, `The DM ended session ${t.session}`)
+    await writeTable(db, { status: "closed", dmReady: false, session: t.session, openedAt: null, startedAt: null }, `${by} ended session ${t.session}`)
     return replyDm(await readTableView(db))
   }
 
   if (action === "start" || action === "unstart") {
     if (t.status !== "lobby") return NextResponse.json({ error: t.status === "live" ? "The session is already live." : "Open the table first." }, { status: 409 })
-    await writeTable(db, { ...t, dmReady: action === "start" }, action === "start" ? "The DM is ready" : "The DM is not ready")
+    // The host's Start is also their Ready: one press, not two. A host whose hero still lacks something
+    // (a red light) is told what, and nothing starts.
+    if (action === "start" && actor === "host" && host) {
+      const seat = (await readSeated(db)).find((x) => x.id === host.id)
+      if (seat && !seat.dm && !seat.ready) {
+        const r = (await readinessFor(db, [host.id])).get(host.id)?.r
+        if (!r || !isComplete(r)) return NextResponse.json({ error: `Not yet — your own hero is still missing: ${r ? missingOf(r).join(", ") : "everything"}.` }, { status: 409 })
+        await writeSeat(db, { ...seat, ready: true }, "seat", `${seat.name} is ready`)
+      }
+    }
+    await writeTable(db, { ...t, dmReady: action === "start" }, action === "start" ? `${by} is ready` : `${by} is not ready`)
     return replyDm(await startIfReady(db, await readTableView(db)))
   }
 
@@ -226,7 +284,8 @@ async function playerAction(db: Db, action: string, characterId: string, figure?
   const mine = view.seats.find((s) => s.id === characterId)
 
   if (action === "sit") {
-    const invited = (await readInvitedIds(db)).has(characterId)
+    // The host is always invited to their own table (lib/host.ts).
+    const invited = (await readInvitedIds(db)).has(characterId) || (await readHost(db))?.id === characterId
     // A player taking over their own DM-run companion's chair needs the invitation too.
     const why = cannotSit(t, view.seats.length, Boolean(mine && !mine.dm), invited)
     if (why) return reply(db, view, characterId, { refused: why })

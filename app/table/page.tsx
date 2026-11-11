@@ -131,7 +131,9 @@ const ACT_TITLE = { act: "Act I", name: "Awakening into the Nightmare" }
 const ACT_CARD_MS = 4200
 
 type RosterEntry = { id: string; name: string; cls: string; invited: boolean; seated: boolean; companion: boolean; away: boolean }
-type View = { state: TableState; dmLight: Light | null; seats: SeatView[]; mine: SeatView | null; isDm?: boolean; invited?: boolean; roster?: RosterEntry[]; refused?: string; note?: string; error?: string }
+type View = { state: TableState; dmLight: Light | null; seats: SeatView[]; mine: SeatView | null; isDm?: boolean; invited?: boolean;
+  /** This browser proved it holds the host hero's claim (lib/host.ts): a player who also runs the table. */
+  isHost?: boolean; host?: { id: string; name: string } | null; roster?: RosterEntry[]; refused?: string; note?: string; error?: string }
 
 // The five chairs, by seat number: where the chair's feet stand (percent of the painting) and how tall the
 // figure is. The players were drawn facing up and to the right; the right-hand chairs are mirrored so every
@@ -190,14 +192,17 @@ export default function TablePage() {
 
   const load = useCallback(async () => {
     const q = me ? `?characterId=${encodeURIComponent(me.id)}` : ""
-    try { setView(await fetch(`/api/table${q}`, { cache: "no-store", headers: dmHeaders() }).then((r) => r.json())) } catch { /* next tick */ }
+    // The claim rides along so the table can tell the host they are the host (lib/host.ts).
+    const headers = me ? { ...dmHeaders(), "x-claim-token": me.token } : dmHeaders()
+    try { setView(await fetch(`/api/table${q}`, { cache: "no-store", headers }).then((r) => r.json())) } catch { /* next tick */ }
   }, [me])
   useEffect(() => { if (!role) return; load(); const t = window.setInterval(load, 2000); return () => window.clearInterval(t) }, [load, role])
 
   const send = useCallback(async (action: string, extra: Record<string, unknown> = {}) => {
     setBusy(true); setMsg(null)
     try {
-      const body = role === "player" && me ? { action, characterId: me.id, claimToken: me.token, ...extra } : { action, ...extra }
+      // hostId/hostToken prove the host for the table-running actions, where `characterId` names the hero acted on.
+      const body = role === "player" && me ? { action, characterId: me.id, claimToken: me.token, hostId: me.id, hostToken: me.token, ...extra } : { action, ...extra }
       const r = await fetch("/api/table", { method: "POST", headers: { "Content-Type": "application/json", ...dmHeaders() }, body: JSON.stringify(body) })
       const j: View = await r.json()
       if (!r.ok) { setMsg(j.error ?? "That did not work."); return null }
@@ -220,8 +225,15 @@ export default function TablePage() {
   // The session began (Sam, 2026-10-25): "The whole table should darken after they start. Then after a
   // second or so the cinematic for the act starts up." Everyone in the room sees the dark first.
   const [dark, setDark] = useState(false)
+  // The host is a player who also runs the table (Sam, 2026-11-10). They come back to this page mid-session
+  // to end it or step a player out, so a host who ARRIVES at a table already live stays here; a host who
+  // watched it go live from the lobby goes in with everyone else.
+  const hostMode = role === "player" && Boolean(view?.isHost)
+  const arrivedLive = useRef<boolean | null>(null)
+  useEffect(() => { if (view && arrivedLive.current === null) arrivedLive.current = view.state.status === "live" }, [view])
   useEffect(() => {
     if (!view || view.state.status !== "live" || dark) return
+    if (hostMode && arrivedLive.current) return
     // A player the DM has stepped out waits here; he lets them back in and they go in with the rest.
     if (role !== "dm" && !(role === "player" && view.mine && !view.mine.away)) return
     setDark(true)
@@ -238,7 +250,7 @@ export default function TablePage() {
         router.replace("/awaken")
       }
     }, DARK_MS)
-  }, [view, role, dark, router])
+  }, [view, role, dark, router, hostMode])
 
   // Room music: calm, looped, only on the real site (Sam's test-copy rule) and only if the Settings sheet allows
   // intro scores. The browser will not start sound before a click, so it tries at once and again on the first
@@ -313,7 +325,7 @@ export default function TablePage() {
       </header>
 
       {/* the room */}
-      <Room view={view} isDm={role === "dm"} busy={busy} dark={dark}
+      <Room view={view} isDm={role === "dm" || hostMode} busy={busy} dark={dark}
         locked={role !== "dm" && view != null && view.state.status === "lobby" && !view.mine && !view.invited}
         onRemove={(id) => send("remove", { characterId: id })} onExcuse={(id) => send("excuse", { characterId: id })} onReadmit={(id) => send("readmit", { characterId: id })} />
 
@@ -324,7 +336,14 @@ export default function TablePage() {
         {view && role === "dm" && <DmControls view={view} busy={busy} send={send} onRehearse={() => router.push(mapHref(true))} />}
         {view && role === "dm" && <SeatInvites view={view} busy={busy} send={send} />}
         {view && role === "dm" && <RestartCampaign busy={busy} onDone={load} />}
-        {view && role === "player" && <PlayerBox view={view} busy={busy} send={send} />}
+        {/* THE HOST: the same table controls, minus the reset and the sandbox (those need the DM code). */}
+        {view && hostMode && <DmControls host view={view} busy={busy} send={send} onRehearse={() => {}} />}
+        {view && hostMode && view.state.status === "live" && view.mine && !view.mine.away && (
+          <a href="/" className="mt-3 block rounded-sm border border-[#8a6a3a] py-3 text-[12px] uppercase tracking-[0.3em] text-[#e8c56a] hover:border-[#f4e0a8]">Return to the game</a>
+        )}
+        {view && hostMode && <SeatInvites view={view} busy={busy} send={send} />}
+        {/* A host's Start is their Ready, so their own box shows only when it has something to tell them. */}
+        {view && role === "player" && (!hostMode || view.mine?.light === "red") && <PlayerBox view={view} busy={busy} send={send} />}
         {view && role === "player" && view.state.status === "lobby" && view.mine && <FigurePicker view={view} busy={busy} send={send} />}
         {view && role === "none" && (
           <div className="rounded-sm border border-[#3d3428] bg-black/60 p-4 text-sm text-stone-400">
@@ -472,9 +491,20 @@ function SeatInvites({ view, busy, send }: { view: View; busy: boolean; send: (a
   )
 }
 
-function DmControls({ view, busy, send, onRehearse }: { view: View; busy: boolean; send: (a: string, e?: Record<string, unknown>) => Promise<View | null>; onRehearse: () => void }) {
+function DmControls({ view, busy, send, onRehearse, host = false }: { view: View; busy: boolean; send: (a: string, e?: Record<string, unknown>) => Promise<View | null>; onRehearse: () => void; host?: boolean }) {
   const s = view.state
   const waiting = view.seats.filter((x) => x.light !== "green")
+  if (s.status === "closed" && host) {
+    // The host opens their own table, with no code (Sam, 2026-11-10; lib/host.ts).
+    return (
+      <div className="space-y-3">
+        <p className="text-sm text-stone-400">The table is dark. You are the host — open it and the party can sit down.</p>
+        <button type="button" disabled={busy} onClick={() => send("open")} className="flex w-full items-center justify-center gap-3 rounded-sm border-2 border-[#8a6a3a] bg-gradient-to-b from-[#2a2015] to-[#120e0a] py-4 font-serif text-lg uppercase tracking-[0.3em] text-[#e8c56a] shadow-[0_0_40px_rgba(201,168,104,0.3)] hover:border-[#f4e0a8] disabled:opacity-40">
+          <DoorOpen className="h-5 w-5" /> Open the table
+        </button>
+      </div>
+    )
+  }
   if (s.status === "closed") {
     // No Open button here: the table opens ONLY from the DM door on the title screen (Sam, 2026-10-25;
     // lib/dm-door.ts). Rehearsal still lives here, since it never opens the table.

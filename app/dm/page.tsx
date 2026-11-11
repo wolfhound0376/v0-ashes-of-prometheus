@@ -22,7 +22,7 @@
 // button. Sam's call to flip it.
 
 import { ENTERED_KEY, mapHref } from "@/lib/map-entry"
-import { useCallback, useEffect, useState, type FormEvent } from "react"
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { Check, DoorOpen, Eye, FlaskConical, Play, RotateCcw, Swords, UserMinus, UserPlus, X } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -172,6 +172,13 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
   // did not show. It reads the table's own status now, and says out loud when a read fails.
   const [table, setTable] = useState<{ status: string; session: number } | null>(null)
   const [seatError, setSeatError] = useState<string | null>(null)
+  // THE HOST (Sam, 2026-11-10: "the host can play"; "whomever started the campaign is the host"; lib/host.ts).
+  // Whoever types the DM code names the hero they will play. That hero hosts: this browser becomes that
+  // player, and runs the table from the table with no code. "" = nobody plays — run it as DM only, as before
+  // (the map's DM tools still need that until the in-game lock ships).
+  const [hostId, setHostId] = useState<string>("")
+  const [currentHost, setCurrentHost] = useState<{ id: string; name: string } | null>(null)
+  const hostTouched = useRef(false)
 
   const load = useCallback(async () => {
     try {
@@ -184,6 +191,9 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
       setSeated(s.seated ?? []); setRoster(s.roster ?? [])
       setSeatError(typeof s.error === "string" ? s.error : null)
       setTable(t?.state ? { status: String(t.state.status ?? "closed"), session: Number(t.state.session ?? 0) } : null)
+      const h = t?.host && typeof t.host.id === "string" ? { id: String(t.host.id), name: String(t.host.name ?? "") } : null
+      setCurrentHost(h)
+      if (!hostTouched.current && h) setHostId(h.id) // the picker starts on whoever hosts now
     } catch { setMsg("Could not read the table.") }
   }, [])
   useEffect(() => { load(); const t = window.setInterval(load, 8000); return () => window.clearInterval(t) }, [load])
@@ -240,11 +250,41 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
     }
     setBusy(mode === "new" ? "new" : "open"); setMsg(null)
     try {
-      const r = await fetch("/api/table", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: mode === "new" ? "new" : "open" }) })
-      if (!r.ok) { const j = await r.json().catch(() => ({})); setMsg(j.error ?? (mode === "new" ? "Could not start a new game." : "Could not open the table.")); return }
+      const post = (body: Record<string, unknown>) => fetch("/api/table", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      let hostClaim: { characterId: string; claimToken: string } | null = null
+      if (mode === "continue" && hostId) {
+        // Name the host of the campaign in play first (it answers with that hero's claim), then open.
+        const h = await post({ action: "host", hostId })
+        const hj = await h.json().catch(() => ({}))
+        if (!h.ok) { setMsg(hj.error ?? "Could not name the host."); return }
+        hostClaim = hj.hostClaim ?? null
+      }
+      const r = await post(mode === "new" ? { action: "new", hostId } : { action: "open" })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) { setMsg(j.error ?? (mode === "new" ? "Could not start a new game." : "Could not open the table.")); return }
       if (mode === "new") {
+        hostClaim = j.hostClaim ?? null
         // Bring every screen that follows the shared stage back to the table, as the old restart did.
         fetch("/api/stage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "table", by: "dm", at: new Date().toISOString(), caption: "A new game begins." }) }).catch(() => {})
+      }
+      if (hostId && !hostClaim) {
+        // The table is open and the host is named, but that hero has no door code on file, so this browser
+        // cannot sit down as them. Stay signed in as the DM rather than strand the table without anyone running it.
+        setMsg("The table is open, but that hero has no door code yet, so this browser could not sit down as them. You are still signed in as the Dungeon Master.")
+        router.push("/table")
+        return
+      }
+      if (hostClaim) {
+        // This browser becomes the host's own player: the hero's claim in, the DM code out. From here the
+        // table knows them by the claim alone (lib/host.ts); the DM code is only needed again for a reset.
+        try {
+          window.localStorage.setItem(ROLE_LS_KEY, "player")
+          window.localStorage.setItem(CHARACTER_LS_KEY, hostClaim.characterId)
+          window.localStorage.setItem(TOKEN_LS_KEY, hostClaim.claimToken)
+        } catch { /* storage blocked */ }
+        clearDmKey()
+        await fetch("/api/dm/logout", { method: "POST" }).catch(() => {})
+        leaveDmDoor()
       }
       router.push("/table")
     } catch { setMsg("Could not reach the table.") } finally { setBusy(null); setAskNew(false) }
@@ -337,6 +377,21 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
       </Section>
 
       {msg && <p className="text-center text-sm text-[#d9bd7e]">{msg}</p>}
+
+      {/* WHO HOSTS — the hero the person holding the DM code will play (lib/host.ts) */}
+      <div className="mx-auto w-full max-w-md rounded-sm border border-[#3d3428] bg-black/50 p-4">
+        <label htmlFor="host-pick" className="block text-[10px] uppercase tracking-[0.35em] text-[#8a6a3a]">Who is hosting?</label>
+        <select id="host-pick" value={hostId} onChange={(e) => { hostTouched.current = true; setHostId(e.target.value) }} disabled={busy !== null}
+          className="mt-2 w-full rounded-sm border border-[#5a4a30] bg-[#120e0a] px-3 py-2.5 font-serif text-[15px] text-[#e8d9ae] disabled:opacity-40">
+          <option value="">Nobody plays — I run it as Dungeon Master only</option>
+          {roster.map((c) => <option key={c.id} value={c.id}>{c.name}{c.cls ? ` · ${c.cls}` : ""}{currentHost?.id === c.id ? " — hosting now" : ""}</option>)}
+        </select>
+        <p className="mt-2 text-[12px] leading-relaxed text-stone-500">
+          {hostId
+            ? "This browser sits down as that hero and runs the table from there: open it, let players in, Start, End. No code on game night. The DM tools on the map still need the Dungeon Master sign-in for now."
+            : "As before: this browser stays signed in as the Dungeon Master, with every DM tool and no hero."}
+        </p>
+      </div>
 
       {/* BEGIN */}
       <div className="flex flex-col items-center gap-3 pt-2">

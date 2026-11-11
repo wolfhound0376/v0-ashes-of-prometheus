@@ -8,6 +8,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js"
 import heroSprites from "@/scripts/velkynvelve-walk/heroes.json"
 import { readSeated, seatFlagKey, type Seat } from "@/lib/seats"
+import { HOST_KEY, readHostValue, type Host } from "@/lib/host"
 import {
   CLOSED, READINESS_COLUMNS, assignSeatNumbers, dmLight, freeSeatNumber, missingOf, readTableState, readinessOf, seatLight, shouldStart,
   type CharacterRowForReadiness, type Light, type Readiness, type TableState,
@@ -77,6 +78,21 @@ export async function removeInvite(db: SupabaseClient, characterId: string): Pro
 export async function clearInvites(db: SupabaseClient): Promise<void> {
   const { error } = await db.from("world_flags").delete().eq("campaign_id", CAMPAIGN).like("key", `${INVITE_PREFIX}%`)
   if (error) throw new Error(`invites not cleared: ${error.message}`)
+}
+
+// The host (lib/host.ts): one world flag, wiped with the rest by a reset and written again by the New Game
+// that caused it.
+export async function readHost(db: SupabaseClient): Promise<Host | null> {
+  const { data } = await db.from("world_flags").select("value").eq("campaign_id", CAMPAIGN).eq("key", HOST_KEY).maybeSingle()
+  return data ? readHostValue(data.value) : null
+}
+
+export async function writeHost(db: SupabaseClient, c: { id: string; name: string }): Promise<void> {
+  const { error } = await db.from("world_flags").upsert(
+    { campaign_id: CAMPAIGN, key: HOST_KEY, value: { id: c.id, name: c.name, at: new Date().toISOString() }, set_by: "dm", note: `${c.name} hosts this campaign` },
+    { onConflict: "campaign_id,key" },
+  )
+  if (error) throw new Error(`host not written: ${error.message}`)
 }
 
 export type SeatView = {

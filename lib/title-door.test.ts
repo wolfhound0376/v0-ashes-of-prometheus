@@ -87,3 +87,22 @@ describe("shouldPlayFilm — once per device per run", () => {
     expect(shouldPlayFilm({ ...base, seenThisSession: true })).toBe(false)
   })
 })
+
+describe("doorMenu — the host", () => {
+  it("table dark: Open the Table", () => {
+    const m = doorMenu("player", "closed", { seated: false, away: false }, "Fifi of Waterdeep", true)
+    expect(m.primary.label).toBe("Open the Table")
+    expect(m.primary.href).toBe("/table")
+  })
+  it("live and seated: Return to the Game first, The Table second", () => {
+    const m = doorMenu("player", "live", { seated: true, away: false }, null, true)
+    expect(m.primary.label).toBe("Return to the Game")
+    expect(m.others[0]).toMatchObject({ label: "The Table", href: "/table" })
+  })
+  it("table open: takes a seat like anyone else", () => {
+    expect(doorMenu("player", "lobby", { seated: false, away: false }, null, true).primary.label).toBe("Take Your Seat")
+  })
+  it("a player who is not the host never sees Open the Table", () => {
+    expect(doorMenu("player", "closed").primary.label).toBe("Wait at the Table")
+  })
+})
