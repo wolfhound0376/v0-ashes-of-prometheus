@@ -1852,7 +1852,9 @@ function ovActorPt(a, x, y){ if (!ovDrawn(a)) return {x, y}; const T = ovActorT(
 function ovWanted(){
   if (!OV.tris || !OV.cfg || mode === "load" || mode === "travel") return false;
   const there = x => ovPenStyle() ? outsidePen(x) : x.x != null && ovDomain(x.x, x.y);
-  if (mode === "combat" && cbt){ const all = [...party, ...foes].filter(x => actors.includes(x) && !x.down); return all.length > 0 && all.every(there); }
+  // the prisoners fighting beside the party count too: the close-up used to come up while they were still in the pen, and
+  // their turns were then played off screen (HOW A FIGHT IS STAGED)
+  if (mode === "combat" && cbt){ const all = [...party, ...foes, ...(cbt.allies || [])].filter(x => actors.includes(x) && !x.down && !x.left); return all.length > 0 && all.every(there); }
   return !!(leader && actors.includes(leader) && there(leader) && leader.alpha > .05);
 }
 function ovTick(){
@@ -2132,9 +2134,11 @@ const FIGHT_LOOK = {
   blowZoomMax: 2.8,                            // closest zoom as the blow is struck (the small push-in; none with motion off)
   turnMs: 450, pairMs: 380, blowMs: 300, backMs: 600,   // how long each glide takes
   camDeadPx: 36, camDeadZoom: .05,             // a new framing this close to the old one does not move the camera
-  fanGapX: .34, fanGapY: .17,                  // feet closer than this (in figure widths, across and in depth) are fanned apart
-  fanMax: .5,                                  // the furthest a figure is ever drawn from where it really stands (figure widths)
+  fanGapX: .38, fanGapY: .2,                   // feet closer than this (in figure widths, across and in depth) are fanned apart
+  fanMax: .85,                                 // the furthest a figure is ever drawn from where it really stands (figure widths)
+  fanFront: .3,                                // in a knot of figures, the one acting and the one aimed at are drawn in front (figure widths of depth)
   fanEase: 9,                                  // how fast the fan opens and closes (per second)
+  keepEveryMs: 200, keepMargin: 90,            // a walking fighter this close (px) to the screen's edge pulls the camera along
 };
 const figW = a => SPR[a.id].json.cell[0] * actorScale(a), figH = a => SPR[a.id].json.pivot[1] * actorScale(a);
 function fightFrame(list, zMax, ms){
@@ -2145,7 +2149,9 @@ function fightFrame(list, zMax, ms){
   let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
   for (const a of L){ const k = ovDrawn(a) ? ovActorT(a).k : 1, q = ovActorPt(a, a.x, a.y), hw = figW(a) * k * .3, top = q.y - figH(a) * k * K.camHead;
     x0 = Math.min(x0, q.x - hw); x1 = Math.max(x1, q.x + hw); y0 = Math.min(y0, top); y1 = Math.max(y1, q.y + 12); }
-  const availW = Math.max(200, r.width - 2 * K.camSide), availH = Math.max(160, r.height - K.camTop - K.camBottom);
+  const menu = $("cbtMenu"), mr = menu && !menu.hidden ? menu.getBoundingClientRect() : null;   // the command list, while it is up, is not part of the picture
+  const bottom = Math.max(K.camBottom, mr && mr.height && mr.top > r.top + r.height * .5 ? r.bottom - mr.top + 16 : 0);
+  const availW = Math.max(200, r.width - 2 * K.camSide), availH = Math.max(160, r.height - K.camTop - bottom);
   const z = Math.max(1, Math.min(zMax, 4, availW / ((x1 - x0) * base), availH / ((y1 - y0) * base))), s = base * z;
   const to = {z, tx: r.width / 2 - (x0 + x1) / 2 * s, ty: K.camTop + availH / 2 - (y0 + y1) / 2 * s}; clampView(to);
   const at = camTween && !camTween.slide ? camTween.to : view;
@@ -2167,6 +2173,15 @@ function turnCam(a){
   const opp = standing(hero(a) ? foes : heroes()).filter(o => o !== a && (o.alpha ?? 1) > .5).sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y));
   fightFrame([a, ...opp.slice(0, FIGHT_LOOK.turnShows)], FIGHT_LOOK.turnZoomMax, FIGHT_LOOK.turnMs);
 }
+// a long walk can carry the acting fighter out of the frame their turn opened on: bring the camera along (checked a
+// few times a second, only when the camera is at rest and still the fight's own)
+let camKeepAt = 0;
+function camKeep(){
+  if (!cbt || mode !== "combat" || camTween || cbt.yourCam || now - camKeepAt < FIGHT_LOOK.keepEveryMs) return; camKeepAt = now;
+  const a = activeActor(); if (!a || a.down || !(a.path && a.path.length) || !SPR[a.id]) return;
+  const r = stage.getBoundingClientRect(), q = ovActorPt(a, a.x, a.y - figH(a) * .5), [sx, sy] = w2s(q.x, q.y), m = FIGHT_LOOK.keepMargin;
+  if (sx < m || sx > r.width - m || sy < m || sy > r.height - m) turnCam(a);
+}
 // an attacker has picked a target: both in the picture before anything is swung
 function pairCam(a, b){ if (cbt) fightFrame([a, b], FIGHT_LOOK.pairZoomMax, FIGHT_LOOK.pairMs); }
 // FIGHTERS ON ONE SPOT, FANNED APART IN THE DRAWING ONLY.
@@ -2179,11 +2194,13 @@ function fanSolve(){
   const B = actors.filter(a => a.c && (a.kind === "pc" || a.kind === "foe" || a.ally) && !a.down && !a.body && !a.offStage && !a.fall && !a.climbing && !a.riding && !a.prop && (a.alpha ?? 1) > .5 && !(a.path && a.path.length))
     .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : a.x - b.x || a.y - b.y);
   const o = B.map(() => ({x: 0, y: 0})), pin = B.map(fanPinned), w = B.map(figW);
-  for (let it = 0; it < 10; it++) for (let i = 0; i < B.length; i++) for (let j = i + 1; j < B.length; j++){
+  const knot = B.map(() => false);
+  for (let it = 0; it < 16; it++) for (let i = 0; i < B.length; i++) for (let j = i + 1; j < B.length; j++){
     if (pin[i] && pin[j]) continue;
     const gx = K.fanGapX * (w[i] + w[j]) / 2, gy = K.fanGapY * (w[i] + w[j]) / 2;
     let u = (B[j].x + o[j].x - B[i].x - o[i].x) / gx, v = (B[j].y + o[j].y - B[i].y - o[i].y) / gy, d = Math.hypot(u, v);
     if (d >= 1) continue;
+    knot[i] = knot[j] = true;
     if (d < .02){ const g = i * 2.4 + j * 1.3; u = Math.cos(g); v = Math.sin(g) * .5; d = Math.hypot(u, v); u /= d; v /= d; d = 0; } else { u /= d; v /= d; }
     const push = 1 - d, ki = pin[i] ? 0 : pin[j] ? 1 : .5, kj = pin[j] ? 0 : pin[i] ? 1 : .5;
     o[i].x -= u * push * gx * ki; o[i].y -= v * push * gy * ki; o[j].x += u * push * gx * kj; o[j].y += v * push * gy * kj;
@@ -2198,8 +2215,8 @@ function fanSolve(){
         if (k === .5 && walkable(a.x + t.x * .5, a.y + t.y * .5)) ok = {x: t.x * .5, y: t.y * .5}; }
       t = ok || {x: 0, y: 0};
     }
-    const f = a.fan || (a.fan = {x: 0, y: 0}), e = Math.min(1, dt * K.fanEase);
-    f.x += (t.x - f.x) * e; f.y += (t.y - f.y) * e;
+    const f = a.fan || (a.fan = {x: 0, y: 0, front: 0}), e = Math.min(1, dt * K.fanEase);
+    f.x += (t.x - f.x) * e; f.y += (t.y - f.y) * e; f.front = pin[i] && knot[i] ? K.fanFront * w[i] : 0;
   });
   for (const a of actors) if (a.fan && !seen.has(a)){ const e = Math.min(1, dt * K.fanEase * 1.5); a.fan.x -= a.fan.x * e; a.fan.y -= a.fan.y * e; if (Math.abs(a.fan.x) + Math.abs(a.fan.y) < .3) a.fan = null; }
 }
@@ -2282,7 +2299,8 @@ function drawFrame(){
   if (mode === "explore" && exploreJump && leader && actors.includes(leader)) drawExploreJumpSquares(leader);
   ovWrapGroup(drops, drawLootGround);   // the loot ceremony's floor light, under the figures
   drawCrimGhosts();                     // a rogue or ranger's afterimages, under the figures
-  const list = actors.concat(vermin, laborProps).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);   // laborProps: Hard Labor's station props
+  const depth = a => a.y + (a.fan && cbt ? a.fan.front || 0 : 0);   // in a knot of fighters the one acting and the one aimed at are in front (fanSolve)
+  const list = actors.concat(vermin, laborProps).filter(a => a.alpha > 0.01).sort((a, b) => depth(a) - depth(b));   // laborProps: Hard Labor's station props
   const cloudQ = mode === "combat" || clouds.length ? cloudPuffs() : [];   // the poison cloud, in depth order among the figures
   let barsAt = gateBarsY();                                       // the bars in front of a guard leaning at them, in depth order
   for (const a of list){
@@ -8392,7 +8410,7 @@ function nextTurn(first){
   a.c.sanctuaryPassed = null; if (a.c.conds.has("sanctuary") && cbt.round >= (a.c.sanctuaryEnd || 0)) endSanctuary(a, "the minute is up");
   if (a.c.conds.has("mirrored") && cbt.round >= (a.c.mirrorEnd || 0)){ a.c.conds.delete("mirrored"); a.c.images = 0; popText(a, "the images fade", "#bfd0ff", .8); log(`${fname(a)}'s Mirror Image fades: the minute is up.`); }
   if (a.c.ready){ a.c.ready = null; a.c.conds.delete("readied"); }   // SRD: a readied action lasts until the start of your next turn
-  renderTurns(); renderParty(); turnCall(a);
+  renderTurns(); renderParty(); turnCall(a); turnCam(a);   // every turn opens framed, a foe's and an ally's too (HOW A FIGHT IS STAGED)
   if (a.c.conds.has("asleep") && a.c.drugged){ popText(a, "out cold", "#8fd48f"); log(`${fname(a)} lies senseless from the drow poison. Damage or a shake will wake them.`); setTimeout(nextTurn, 900); return; }
   if (a.c.conds.has("asleep")){
     const s = d20(0, a) + (a.c.sheet.saves.wis || 0);
@@ -8428,12 +8446,11 @@ function nextTurn(first){
   // rather than freeze this one on a turn its player cannot take, that hero fights on its own the way the freed
   // prisoners do. The DM's screen drives every hero. (Sam, 2026-10-25: only the DM moves a hero who is not his.)
   // ONE FIGHT: a hero someone else at the table drives — the fight waits for their player, who chooses on their own screen
-  if (a.kind === "pc" && oneFightWaitsFor(a)){ turnCam(a); openMenu(a); return; }
+  if (a.kind === "pc" && oneFightWaitsFor(a)){ openMenu(a); turnCam(a); return; }
   if (a.kind === "pc" && !canControl(a)){ log(`${fname(a)} acts on their own instincts here — their player drives them on their own screen.`); allyTurn(a); return; }
   // no sound as the turn passes to a hero or an ally: the camera moving to them is the cue (Sam, 2026-10-22: "it shouldn't
   // say bard", then "Please remove the bell between players as the system move to the active player")
-  turnCam(a);
-  openMenu(a);
+  openMenu(a); turnCam(a);   // framed again once the command list is up, clear of it
 }
 // the Octopath-style command list beside whoever is up
 function openMenu(a, sub){
@@ -21755,7 +21772,7 @@ function update(dt){
   tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt);
   redSigilSeen();                       // a drow inside the pen reads the red scar: the fight starts once, however they got in
   tickFungus();
-  ovTick(); tickChasmWebs();
+  ovTick(); tickChasmWebs(); camKeep();
   if (camTween){
     const k = Math.min(1, (now - camTween.t0) / camTween.ms), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
     view.z = camTween.from.z + (camTween.to.z - camTween.from.z) * e;
@@ -22245,7 +22262,8 @@ const FIGHT = {id: null, auth: false, mirror: false, plate: null, live: null, si
   serial: 0, dlgs: {}, dlgSeq: 0, promptFor: null, applying: null, polling: false, lastOk: 0, failed: false, hoverAt: 0, pendingActors: new Set(), endSent: false};
 const RELAY = {depth: 0, orig: {}, imgs: {}};
 const RELAY_FNS = ["log", "narrate", "popText", "bark", "shake", "hitstop", "redFlash", "critBeat", "toast", "victoryBanner", "triumph", "spawnFx", "slowmo",
-  "pairCam", "pushCam", "settleCam"];   // the camera's cues (HOW A FIGHT IS STAGED): each screen frames the same two fighters for itself
+  "pairCam", "pushCam", "settleCam",    // the camera's cues (HOW A FIGHT IS STAGED): each screen frames the same two fighters for itself
+  "turnCall", "turnWhat"];              // whose turn, what they do and to whom (the banner and the target's ring): a screen showing the fight had neither
 const fightOn = () => !!(FIGHT.id && (FIGHT.auth || FIGHT.mirror));
 const relayOn = () => FIGHT.auth && FIGHT.id && !RELAY.depth;
 // --- who is who between screens: a hero by name; a plate's person by where the plate stands them; a newcomer by number
