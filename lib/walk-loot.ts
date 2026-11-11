@@ -223,30 +223,63 @@ export const BODY_KIT: Record<string, LootEntry[]> = {
 // body falls, every piece of its kit rolls a d20; on its ruin number or lower it was wrecked in the fight (a mail shirt
 // hacked open, a crossbow string cut, a blade snapped) and is left out. The roll is made once and kept for the run, so
 // every screen finds the same body.
-//   base: 1-2 (10%)
-//   a FIRE kill: cloth, hide, silk, rope, paper and food burn on 1-10
-//   an ACID kill: metal and leather are eaten on 1-10
-//   a COLD kill: potions, poisons and vials crack on 1-5
+// The numbers are in the table below (rewritten 2026-11-10, much harsher and by kind).
 // The material lists are Claude's reading of the item names (the catalogue carries no material column).
-export const RUIN_ON = 2
+// MUCH HARSHER, AND BY KIND (Sam, 2026-11-10, shown that the party pulled five hand crossbows off eleven dead pen guards:
+// "much Harsher salvage rolls, passive roll for variety of weapons and items"). The roll is still passive (nobody's
+// skill is involved) and still one d20 per piece, but each KIND of thing now has its own ruin number, read off what a
+// fight does to it. HOUSE NUMBERS, all here for Sam to tune. The d20 at or under the number means ruined:
+//
+//   armour and shields        1-17  15% survive   it is what the blows went through (PHB "Selling Treasure")
+//   bows, crossbows, slings   1-14  30%           strings cut, arms cracked, mechanisms bent
+//   potions, vials, flasks    1-12  40%           glass on a body that hit the floor
+//   swords, axes, polearms    1-11  45%           notched, bent, snapped at the tang
+//   bolts, arrows, needles    1-10  50%           the case is crushed, shafts split
+//   simple sturdy weapons     1-8   60%           a dagger, a mace, a club, a spear: little to break
+//   rope, clothes, soft goods 1-8   60%           cut, soaked, trodden
+//   hooks, tools, hard kit    1-6   70%
+//   anything else             1-2   90%           carcass parts and the unclassified keep the old base
+//   NEVER ruined                                  keys, coins, gems, and named or magic things (the scarab, wands,
+//                                                 rings, a +1 shield): the story needs them to exist
+//
+// What made the kill still makes it worse for the stuff it destroys (never better):
+//   a FIRE kill: cloth, hide, silk, rope, paper and food burn on 1-16
+//   an ACID kill: metal and leather are eaten on 1-17
+//   a COLD kill: potions, poisons and vials crack on 1-16
+export const RUIN_ON = 2                 // anything not named below
+export const ARMOUR_RUIN_ON = 17
+export const SALVAGE = { strung: 14, fragile: 12, blade: 11, ammo: 10, sturdy: 8, soft: 8, hard: 6 } as const
+export const KILL_RUIN = { fire: 16, acid: 17, cold: 16 } as const
 export type Ruined = { slug: string; roll: number }
 const FIRE_FRAGILE = /clothes|cloak|robe|rope|silk|pelt|hide|scroll|paper|book|map|net\b|tackle|meat|mushroom|fruit|ration|bandage|cards|gland/
 const ACID_FRAGILE = /sword|dagger|mail|shirt|shield|bolt|crossbow|mace|axe|spear|hammer|spike|caltrop|hook|key|scourge|chain|plate|leather|armor|armour/
 const BREAKABLE = /potion|poison|vial|flask|elixir|wine|residue|antitoxin|oil/
-/** The d20 at or under which this piece is ruined, given what killed its owner ("fire", "acid", "cold", or anything else). */
+const ARMOUR = /^(chain-shirt|chain-mail|scale-mail|studded-leather-armor|leather-armor|hide-armor|breastplate|half-plate|ring-mail|splint|plate-armor|shield)$/
+// keys, coins, gems, and named or magic things: never rolled
+const NEVER = /(^|-)key$|-coin$|^scarab-|^ring-of-|^wand-of-|-plus-\d|^dawnbringer$|^hazirawn$|^tentacle-rod$|^dark-justiciar-blade$|moonstone|headdress|onyx|gem\b/
+const STRUNG = /crossbow$|bow$|^sling$|^blowgun$/
+const AMMO = /^bolts|bolt$|^arrows?$|needles$|bullets$/
+const BLADE = /sword$|scimitar|rapier|axe$|pike|morningstar|warhammer|war-pick|scourge|whip|pitchfork|^net$|gauntlets$/
+const STURDY = /dagger|^mace$|club$|quarterstaff|^spear$|javelin|^dart$|sickle|light-hammer|shuriken|iron-bar|^rock$|obsidian/
+const SOFT = /rope|clothes|cloak|robe|boots|gloves|pouch|quiver|^rags$|parchment|^book/
+const HARD = /hook|crowbar|manacles|lantern|shovel|spikes|bell$|horn$|kit$|tools$|supplies$|still$|hammer$|trap$|flute|lute|cauldron|barrel/
+/** The d20 at or under which this piece is ruined, given what killed its owner ("fire", "acid", "cold", or anything else). 0 = never. */
 export function ruinOn(slug: string, kill?: string | null): number {
-  let on = RUIN_ON
-  if (kill === "fire" && FIRE_FRAGILE.test(slug)) on = 10
-  if (kill === "acid" && ACID_FRAGILE.test(slug)) on = 10
-  if (kill === "cold" && BREAKABLE.test(slug)) on = 5
-  // ARMOUR IS WHAT THE BLOWS WENT THROUGH (Sam, 2026-10-27, "yes" to the PHB reading: "Weapons and armor used by monsters
-  // are rarely in good enough condition to sell", "Selling Treasure"). A mail shirt, studded leather or a shield worn by
-  // the dead survives only on a d20 of 16 or more. ARMOUR_RUIN_ON is a house number for Sam to tune.
-  if (ARMOUR.test(slug)) on = Math.max(on, ARMOUR_RUIN_ON)
+  if (NEVER.test(slug)) return 0
+  let on: number = ARMOUR.test(slug) ? ARMOUR_RUIN_ON
+    : STRUNG.test(slug) ? SALVAGE.strung
+    : AMMO.test(slug) ? SALVAGE.ammo
+    : BREAKABLE.test(slug) ? SALVAGE.fragile
+    : BLADE.test(slug) ? SALVAGE.blade
+    : STURDY.test(slug) ? SALVAGE.sturdy
+    : SOFT.test(slug) ? SALVAGE.soft
+    : HARD.test(slug) ? SALVAGE.hard
+    : RUIN_ON
+  if (kill === "fire" && FIRE_FRAGILE.test(slug)) on = Math.max(on, KILL_RUIN.fire)
+  if (kill === "acid" && ACID_FRAGILE.test(slug)) on = Math.max(on, KILL_RUIN.acid)
+  if (kill === "cold" && BREAKABLE.test(slug)) on = Math.max(on, KILL_RUIN.cold)
   return on
 }
-export const ARMOUR_RUIN_ON = 15
-const ARMOUR = /^(chain-shirt|chain-mail|scale-mail|studded-leather-armor|leather-armor|hide-armor|breastplate|half-plate|ring-mail|splint|plate-armor|shield)$/
 
 // OFF DUTY ONLY (Sam, 2026-10-27, "yes"): the book's kit is a RESTING drow's (OotA ch.1 area 2). The silk rope and its
 // grappling hook are found on a rank-and-file guard only where the guards rest, the barracks (area 2); a guard killed at
