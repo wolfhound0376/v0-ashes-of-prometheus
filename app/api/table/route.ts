@@ -12,7 +12,7 @@ import {
 } from "@/lib/table-store"
 import { actorFor, type Actor, type Host } from "@/lib/host"
 import { cleanSaveName, newSaveName } from "@/lib/saves"
-import { shelveWorldInPlay, startNewSave } from "@/lib/save-store"
+import { shelveWorldInPlay, startNewSave, usualParty } from "@/lib/save-store"
 
 // /api/table — the staging table (lib/table.ts has the rules and Sam's words).
 //
@@ -169,6 +169,10 @@ async function dmAction(db: Db, action: string, characterId: string, actor: Acto
       await clearSeats(db)
       const next: TableState = { status: "lobby", dmReady: false, session: t.session + 1, openedAt: now, startedAt: null }
       await writeTable(db, next, `${by} opened the table for session ${next.session}`)
+      // THE USUAL PARTY (Sam, 2026-11-10): whoever sat at this saved game last time gets their seat opened now.
+      const party = await usualParty(db)
+      for (const c of party) await writeInvite(db, c)
+      if (party.length) return replyDm(await readTableView(db), { note: `Seats opened for the usual party: ${party.map((c) => c.name).join(", ")}.` })
     }
     return replyDm(await readTableView(db))
   }

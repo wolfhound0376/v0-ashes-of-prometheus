@@ -50,3 +50,29 @@ export async function loadSave(db: SupabaseClient, id: string): Promise<ShelfRes
   if (error) return isSavesMissing(error) ? { ok: false, missing: true } : { ok: false, missing: false, error: error.message }
   return { ok: true, id }
 }
+
+// THE USUAL PARTY (Sam, 2026-11-10: approved "the usual party" — players stay invited for the whole campaign).
+// A save remembers who was at the table when it was last written (campaign_save_meta: the seated heroes' names).
+// When the host opens the table, those heroes get their seats opened straight away, so nobody waits on an invite
+// they had last time. Matched by name to live player characters; a hero since archived or renamed is skipped.
+export function matchParty(names: unknown, roster: { id: string; name: string }[]): { id: string; name: string }[] {
+  if (!Array.isArray(names)) return []
+  const want = new Set(names.filter((n): n is string => typeof n === "string").map((n) => n.trim().toLowerCase()).filter(Boolean))
+  const seen = new Set<string>()
+  return roster.filter((c) => {
+    const k = c.name.trim().toLowerCase()
+    if (!want.has(k) || seen.has(c.id)) return false
+    seen.add(c.id)
+    return true
+  })
+}
+
+/** The usual party of the save in play: [] before the saves migration, with nothing loaded, or on any error. */
+export async function usualParty(db: SupabaseClient): Promise<{ id: string; name: string }[]> {
+  try {
+    const { data, error } = await db.from("campaign_saves").select("party").eq("is_loaded", true).maybeSingle()
+    if (error || !data) return []
+    const { data: chars } = await db.from("characters").select("id, name").eq("is_player", true).is("archived_at", null)
+    return matchParty((data as { party?: unknown }).party, (chars ?? []) as { id: string; name: string }[])
+  } catch { return [] }
+}
