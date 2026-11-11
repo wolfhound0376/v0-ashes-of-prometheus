@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { archiveThenWipeDialogue } from "./restart-campaign"
+import { archiveThenWipeDialogue, smuggledRows, SMUGGLED_EFFECTS } from "./restart-campaign"
 
 // Sam, 2026-10-30: "archive never delete as a rule." These tests exist for one
 // claim only — that the wipe is unreachable unless the archive succeeded. If
@@ -82,5 +82,30 @@ describe("archiveThenWipeDialogue", () => {
     const out = await archiveThenWipeDialogue(admin)
     expect(out.report.dialogueArchived).toBe(0)
     expect(out.report.dialogueDeleted).toBe(7)
+  })
+})
+
+// Item identity, step 4: the journal and quill a New Game issues are catalogue items like everything else.
+describe("smuggledRows", () => {
+  const catalogue = new Map([["tattered-journal", "id-journal"], ["small-quill", "id-quill"]])
+
+  it("gives every hero a journal and a quill, each linked to its catalogue kind", () => {
+    const rows = smuggledRows(["a", "b"], catalogue)
+    expect(rows).toHaveLength(2 * SMUGGLED_EFFECTS.length)
+    expect(rows.filter((r) => r.character_id === "a").map((r) => [r.name, r.item_id])).toEqual([
+      ["Tattered Journal", "id-journal"],
+      ["Small Quill", "id-quill"],
+    ])
+    expect(rows.every((r) => r.item_id)).toBe(true)
+  })
+
+  it("does not write the slug as a column", () => {
+    for (const r of smuggledRows(["a"], catalogue)) expect(r).not.toHaveProperty("slug")
+  })
+
+  it("still issues the item, unlinked, when the catalogue has lost the kind", () => {
+    const rows = smuggledRows(["a"], new Map([["small-quill", "id-quill"]]))
+    expect(rows.map((r) => r.item_id)).toEqual([null, "id-quill"])
+    expect(rows[0].name).toBe("Tattered Journal")
   })
 })
