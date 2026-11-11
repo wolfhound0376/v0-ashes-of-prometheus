@@ -12,7 +12,7 @@
 
 import { CAMP_PLATES, type CampBiome } from "@/lib/camp-plates"
 
-export type WalkHandoffKey = "tunnels" | "wastes" | "shore" | "lair" | "grove" | "crystal"
+export type WalkHandoffKey = "tunnels" | "wastes" | "shore" | "lair" | "grove" | "crystal" | "north"
 
 export interface WalkHandoff {
   /** The cavern as the walk names it. */
@@ -41,19 +41,27 @@ export interface WalkHandoff {
  *   lair    "Hook Horror Layer"            → road-21
  *   shore   "Traverse the Darklake"        → cliff-pool (the Glowing pool)
  *   grove   "New exit"                     → road-09
- *   tunnels "On west to the Darklake"      → road-07, road-10 (that zone walks onto the shore plate today, so this list
- *                                             waits for an outward exit on the tunnels plate)
+ *   tunnels "On west to the Darklake"      → road-07, road-10 (that zone walks onto the shore plate today)
+ *   tunnels "Deeper in" (the south passage) → road-15 (his pick for the south passage; OotA p.20, toward Gracklstugh).
+ *                                             The exit itself says which of the cavern's roads it opens: `&roads=` on the
+ *                                             link, read by parseWalkHandoff. It can only narrow this list, never add to it.
  *   crystal — nothing picked.
  * The lift is not a way off the map (Sam: it goes down to the pool plate, area 14), so it has no entry here.
  * A pick with no edge in `travel_edges` from the party's node is not offered until the edge exists (see roadsOpenedBy).
  */
 export const WALK_HANDOFFS: Readonly<Record<WalkHandoffKey, WalkHandoff>> = {
-  tunnels: { name: "The tunnels", biome: "tunnels", proposed: true, roads: ["road-07", "road-10"] },
+  tunnels: { name: "The tunnels", biome: "tunnels", proposed: true, roads: ["road-07", "road-10", "road-15"] },
   wastes: { name: "The wastes", biome: "tunnels", proposed: true, roads: ["road-10"] },
   shore: { name: "The Darklake shore", biome: "shore", proposed: true, roads: ["cliff-pool"] },
   lair: { name: "The lair", biome: "tunnels", proposed: true, roads: ["road-21"] },
   grove: { name: "The grove", biome: "fungal", proposed: false, roads: ["road-09"] },
   crystal: { name: "The crystal passage", biome: "tunnels", proposed: false, roads: [] },
+  // THE NORTH PASSAGE (Sam, 2026-11-10: "We can use your recommendation via the North Passage. Two long routes.").
+  // Not a cavern plate: the Northern Watch Post's own way out (spec.py plate 13, `via: "north"`). OotA p.20: it "leads
+  // toward Menzoberranzan and Blingdenstone". Both are joined to Velkynvelve by the book-distance edges already in
+  // `travel_edges` (156 and 180 miles); neither is a painted road. A city the party's map does not know yet is not
+  // offered (roadsOpenedBy keeps only nodes the map has loaded), so the DM reveals it first or the banner alone shows.
+  north: { name: "The north passage", biome: "tunnels", proposed: false, roads: ["menzoberranzan", "blingdenstone"] },
 }
 
 export interface WalkArrival {
@@ -144,5 +152,9 @@ export function parseWalkHandoff(search: string | URLSearchParams): WalkArrival 
   const h = WALK_HANDOFFS[via]
   const plate = q.get("plate")
   const biome: CampBiome = plate && plate in CAMP_PLATES ? (plate as CampBiome) : h.biome
-  return { from: q.get("from") || "velkynvelve", via, name: h.name, biome, plate: CAMP_PLATES[biome], roads: h.roads }
+  // One mouth of a cavern may open fewer roads than the cavern as a whole: the link says which. Only roads the
+  // hand-off already lists are kept, so a hand-typed link cannot open a road this file does not know.
+  const asked = (q.get("roads") || "").split(",").map((r) => r.trim()).filter(Boolean)
+  const roads = asked.length ? h.roads.filter((r) => asked.includes(r)) : h.roads
+  return { from: q.get("from") || "velkynvelve", via, name: h.name, biome, plate: CAMP_PLATES[biome], roads }
 }

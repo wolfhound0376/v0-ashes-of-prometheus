@@ -3611,12 +3611,15 @@ function goBeyond(z){ const t = z.to[0]; if (t != null && SPEC[t]) travel(t, z);
 function leaveVelkynvelve(z){
   const away = PARTY.filter(heroElsewhere);
   if (away.length){ toast(`The party leaves Velkynvelve together. ${away.map(id => `${SHORT[id] || id} (${plateLabel(heroAt[id].plate)})`).join(", ")} ${away.length > 1 ? "are" : "is"} elsewhere.`, 5000); return; }
-  const key = z.to[0] != null ? z.to[0] : cur, h = key != null && HANDOFFS[key], head = z.label.split(":")[0].replace(/\s*[—-]\s*PROPOSED$/, "").replace(/^PROPOSED:\s*/, "");
+  // `via` (spec.py): a way out that is not a cavern plate names its own hand-off (plate 13's north passage). `roads`
+  // narrows a cavern's hand-off to the road(s) THIS mouth opens (the tunnels' south passage), so two mouths of one
+  // cavern need not offer the same roads; /map still keeps only roads an edge really joins (lib/travel/handoff.ts).
+  const key = z.via || (z.to[0] != null ? z.to[0] : cur), h = key != null && HANDOFFS[key], head = z.label.split(":")[0].replace(/\s*[—-]\s*PROPOSED$/, "").replace(/^PROPOSED:\s*/, "");
   if (!h){ toast(head + ". That way leaves Velkynvelve, and where it comes out is not drawn yet."); return; }
   const proposed = z.proposed || /PROPOSED/.test(z.label);
   showDialog({title: head, body: `${z.label}. Past here the party is out of the outpost and on the Underdark map.${proposed ? " This way out is a proposal from the guide, not yet reviewed by Sam." : ""}`,
     buttons: [{label: `Leave Velkynvelve → ${h.name}`, primary: true, fn: () => {
-        location.href = `/map?from=velkynvelve&via=${encodeURIComponent(key)}&plate=${encodeURIComponent(h.biome)}`; }},
+        location.href = `/map?from=velkynvelve&via=${encodeURIComponent(key)}&plate=${encodeURIComponent(h.biome)}${Array.isArray(z.roads) && z.roads.length ? "&roads=" + encodeURIComponent(z.roads.join(",")) : ""}`; }},
       {label: "Stay"}]});
   adviceAtTheWayOut();
 }
