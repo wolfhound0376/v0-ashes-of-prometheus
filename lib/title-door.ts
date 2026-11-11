@@ -39,9 +39,10 @@ function statusOf(table: DoorTable): DoorMenu["status"] {
  * The menu for this browser, right now.
  *
  * `seat`: what the table says about this player's own chair — held (`seated`) and not stepped out
- * by the host (`away`). `heroName` is only for the sub-line; null reads fine.
+ * by the host (`away`). `heroName` is only for the sub-line; null reads fine. `isHost`: this browser's
+ * hero is the campaign's host (a label only — the table checks the claim before it obeys).
  */
-export function doorMenu(who: DoorWho, table: DoorTable, seat: { seated: boolean; away: boolean } = { seated: false, away: false }, heroName: string | null = null): DoorMenu {
+export function doorMenu(who: DoorWho, table: DoorTable, seat: { seated: boolean; away: boolean } = { seated: false, away: false }, heroName: string | null = null, isHost = false): DoorMenu {
   const status = statusOf(table)
   const as = heroName ? `As ${heroName}.` : "Your hero is remembered on this device."
 
@@ -56,6 +57,14 @@ export function doorMenu(who: DoorWho, table: DoorTable, seat: { seated: boolean
 
   if (who === "player") {
     const elsewhere = [{ ...NEW_HERO, sub: "Play someone else." }, { ...SAVED_GAME, sub: "A different hero? Three words bring them back." }]
+    // THE HOST (lib/host.ts) opens their own table, and can always get back to it while the game is on.
+    if (isHost && table === "closed") {
+      return { status, primary: { key: "open", label: "Open the Table", sub: `${as} You are the host.`, href: "/table" }, others: elsewhere }
+    }
+    if (isHost && table === "live" && seat.seated && !seat.away) {
+      const theTable: DoorButton = { key: "table", label: "The Table", sub: "End the session, or step a player out.", href: "/table" }
+      return { status, primary: { key: "return", label: "Return to the Game", sub: `${as} Your seat is kept.`, href: "/" }, others: [theTable, ...elsewhere] }
+    }
     if (table === "live" && seat.seated && !seat.away) {
       return { status, primary: { key: "return", label: "Return to the Game", sub: `${as} Your seat is kept.`, href: "/" }, others: elsewhere }
     }

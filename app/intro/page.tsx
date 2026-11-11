@@ -58,6 +58,7 @@ export default function TitleScreen() {
   const [table, setTable] = useState<DoorTable>("unknown")
   const [seat, setSeat] = useState({ seated: false, away: false })
   const [heroName, setHeroName] = useState<string | null>(null)
+  const [isHost, setIsHost] = useState(false) // this browser's hero hosts the campaign (lib/host.ts)
   const runRef = useRef<string | null>(null) // the campaign run the table last reported
 
   // First paint: remember that this browser has seen the door, learn whether it already holds a
@@ -111,6 +112,7 @@ export default function TitleScreen() {
         if (typeof j.run === "string") runRef.current = j.run
         setTable(doorTableOf(j?.state?.status))
         setSeat({ seated: Boolean(j?.mine), away: Boolean(j?.mine?.away) })
+        setIsHost(Boolean(characterId && j?.host?.id === characterId))
       } catch { /* the next read will do */ }
     }
     readTable().finally(decide)
@@ -205,7 +207,7 @@ export default function TitleScreen() {
   }
 
   const filmUp = stage === "film"
-  const menu = doorMenu(seated ?? "none", table, seat, heroName)
+  const menu = doorMenu(seated ?? "none", table, seat, heroName, isHost)
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-black text-stone-200">
