@@ -158,228 +158,71 @@ function TableStatusBanner({ table, seatError }: { table: { status: string; sess
   )
 }
 
+// THE HOST DOOR (Sam, 2026-11-10: "go PR2" — one host, one screen). Behind the code there is one question now:
+// who are you playing tonight? Everything else — the saved games, Open, Start, End, New Game, the heroes at the
+// door, inviting players, Rehearsal — lives on the table (/table), which is the one host screen.
 function Table({ onLock, router }: { onLock: () => void; router: ReturnType<typeof useRouter> }) {
-  const [pending, setPending] = useState<Pending[]>([])
-  const [recent, setRecent] = useState<Pending[]>([])
-  const [tableNote, setTableNote] = useState<string | null>(null)
-  const [seated, setSeated] = useState<Seat[]>([])
   const [roster, setRoster] = useState<RosterRow[]>([])
   const [busy, setBusy] = useState<string | null>(null)
   const [msg, setMsg] = useState<string | null>(null)
-  const [open, setOpen] = useState<string | null>(null)
-  const [askNew, setAskNew] = useState(false)
-  // THE SCREEN THAT COULD NOT TELL YOU ANYTHING (Sam, 2026-10-29). This page read /api/seat and nothing
-  // else, so a closed table, an open table nobody had sat down at, and a seat lookup that had failed all
-  // rendered the same: count 0, every hero "Resting". The one thing worth knowing was the one thing it
-  // did not show. It reads the table's own status now, and says out loud when a read fails.
   const [table, setTable] = useState<{ status: string; session: number } | null>(null)
   const [seatError, setSeatError] = useState<string | null>(null)
-  // THE HOST (Sam, 2026-11-10: "the host can play"; "whomever started the campaign is the host"; lib/host.ts).
-  // Whoever types the DM code names the hero they will play. That hero hosts: this browser becomes that
-  // player, and runs the table from the table with no code. "" = nobody plays — run it as DM only, as before
-  // (the map's DM tools still need that until the in-game lock ships).
   const [hostId, setHostId] = useState<string>("")
   const [currentHost, setCurrentHost] = useState<{ id: string; name: string } | null>(null)
   const hostTouched = useRef(false)
 
   const load = useCallback(async () => {
     try {
-      const [a, s, t] = await Promise.all([
-        fetch("/api/forge/activate", { cache: "no-store" }).then((r) => r.json()),
+      const [s, t] = await Promise.all([
         fetch("/api/seat", { cache: "no-store" }).then((r) => r.json()),
         fetch("/api/table", { cache: "no-store", headers: dmHeaders() }).then((r) => r.json()).catch(() => ({})),
       ])
-      setPending(a.pending ?? []); setRecent(a.recent ?? []); setTableNote(a.error ?? null)
-      setSeated(s.seated ?? []); setRoster(s.roster ?? [])
+      setRoster(s.roster ?? [])
       setSeatError(typeof s.error === "string" ? s.error : null)
       setTable(t?.state ? { status: String(t.state.status ?? "closed"), session: Number(t.state.session ?? 0) } : null)
       const h = t?.host && typeof t.host.id === "string" ? { id: String(t.host.id), name: String(t.host.name ?? "") } : null
       setCurrentHost(h)
-      if (!hostTouched.current && h) setHostId(h.id) // the picker starts on whoever hosts now
+      if (!hostTouched.current && h) setHostId(h.id) // the cards start on whoever hosts now
     } catch { setMsg("Could not read the table.") }
   }, [])
-  useEffect(() => { load(); const t = window.setInterval(load, 8000); return () => window.clearInterval(t) }, [load])
+  useEffect(() => { load() }, [load])
 
-  const act = async (id: string, action: "activate" | "reject", confirmDuplicate = false) => {
-    const claim = pending.find((p) => p.id === id)
-    if (action === "activate" && claim?.canon && !confirmDuplicate && !window.confirm(`Hand ${claim.heroName} to ${claim.playerName}? Whoever held ${claim.heroName} before loses their words and their seat link.`)) return
-    setBusy(id); setMsg(null)
+  const toTable = async () => {
+    setBusy("go"); setMsg(null)
     try {
-      const r = await fetch("/api/forge/activate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, action, confirmDuplicate }) })
-      const j = await r.json()
-      if (r.status === 409 && j.duplicate) {
-        if (window.confirm(`${j.error} Open the cell anyway, as a second copy?`)) return act(id, action, true)
-        return
-      }
-      if (!r.ok) { setMsg(j.error ?? "That did not work."); return }
-      setMsg(action === "activate" ? (j.codeKept ? "Cell opened. Their words are good at the door." : `Cell opened, but their words could not be kept — new words: ${j.claimCode ?? "none issued"}.`) : "Turned away.")
-      await load()
-    } catch { setMsg("Could not reach the table.") } finally { setBusy(null) }
-  }
-
-  const seat = async (characterId: string) => {
-    setBusy(characterId); setMsg(null)
-    try {
-      const r = await fetch("/api/seat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ characterId }) })
-      const j = await r.json()
-      if (!r.ok) { setMsg(j.error ?? "Could not seat them."); return }
-      setSeated(j.seated ?? [])
-    } finally { setBusy(null) }
-  }
-  const unseat = async (characterId: string) => {
-    setBusy(characterId); setMsg(null)
-    try {
-      const r = await fetch(`/api/seat?characterId=${encodeURIComponent(characterId)}`, { method: "DELETE" })
-      const j = await r.json()
-      if (!r.ok) { setMsg(j.error ?? "Could not send them away."); return }
-      setSeated(j.seated ?? [])
-    } finally { setBusy(null) }
-  }
-
-  // Three ways out of Behind the Screen (Sam, 2026-10-25):
-  //   Continue the campaign  → open the table; the world is exactly as the last session left it.
-  //   New game               → the campaign is RESET, then the table opens ("starting a new game ALWAYS resets
-  //                            the campaign"). Server side it is one action (/api/table `new`), so a reset is never
-  //                            half-done with the table left shut, or the table opened on the old world.
-  //   Rehearsal              → the sandbox; skips the table, saves nothing.
-  // The player's Start New Game on the title screen only picks or forges a hero — it never resets anything.
-  const begin = async (mode: "continue" | "new" | "sandbox") => {
-    try { window.localStorage.setItem(ROLE_LS_KEY, "dm"); window.sessionStorage.setItem("aop_intro_seen", "1") } catch { /* storage blocked */ }
-    if (mode === "sandbox") {
-      try { window.sessionStorage.setItem(ENTERED_KEY, "1") } catch { /* storage blocked */ }
-      router.push(mapHref(true))
-      return
-    }
-    setBusy(mode === "new" ? "new" : "open"); setMsg(null)
-    try {
-      const post = (body: Record<string, unknown>) => fetch("/api/table", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
-      let hostClaim: { characterId: string; claimToken: string } | null = null
-      if (mode === "continue" && hostId) {
-        // Name the host of the campaign in play first (it answers with that hero's claim), then open.
-        const h = await post({ action: "host", hostId })
-        const hj = await h.json().catch(() => ({}))
-        if (!h.ok) { setMsg(hj.error ?? "Could not name the host."); return }
-        hostClaim = hj.hostClaim ?? null
-      }
-      const r = await post(mode === "new" ? { action: "new", hostId } : { action: "open" })
-      const j = await r.json().catch(() => ({}))
-      if (!r.ok) { setMsg(j.error ?? (mode === "new" ? "Could not start a new game." : "Could not open the table.")); return }
-      if (mode === "new") {
-        hostClaim = j.hostClaim ?? null
-        // Bring every screen that follows the shared stage back to the table, as the old restart did.
-        fetch("/api/stage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "table", by: "dm", at: new Date().toISOString(), caption: "A new game begins." }) }).catch(() => {})
-      }
-      if (hostId && !hostClaim) {
-        // The table is open and the host is named, but that hero has no door code on file, so this browser
-        // cannot sit down as them. Stay signed in as the DM rather than strand the table without anyone running it.
-        setMsg("The table is open, but that hero has no door code yet, so this browser could not sit down as them. You are still signed in as the Dungeon Master.")
+      try { window.sessionStorage.setItem("aop_intro_seen", "1") } catch { /* storage blocked */ }
+      if (!hostId) {
+        try { window.localStorage.setItem(ROLE_LS_KEY, "dm") } catch { /* storage blocked */ }
         router.push("/table")
         return
       }
-      if (hostClaim) {
-        // This browser becomes the host's own player: the hero's claim in, the DM code out. From here the
-        // table knows them by the claim alone (lib/host.ts); the DM code is only needed again for a reset.
-        try {
-          window.localStorage.setItem(ROLE_LS_KEY, "player")
-          window.localStorage.setItem(CHARACTER_LS_KEY, hostClaim.characterId)
-          window.localStorage.setItem(TOKEN_LS_KEY, hostClaim.claimToken)
-        } catch { /* storage blocked */ }
-        clearDmKey()
-        await fetch("/api/dm/logout", { method: "POST" }).catch(() => {})
-        leaveDmDoor()
+      // Name the host (answers with that hero's claim). This browser becomes the host's own player: the claim
+      // in, the DM code out. The table knows them by the claim from here (lib/host.ts).
+      const h = await fetch("/api/table", { method: "POST", headers: { "Content-Type": "application/json", ...dmHeaders() }, body: JSON.stringify({ action: "host", hostId }) })
+      const hj = await h.json().catch(() => ({}))
+      if (!h.ok) { setMsg(hj.error ?? "Could not name the host."); return }
+      const claim = hj.hostClaim as { characterId?: string; claimToken?: string } | null | undefined
+      if (!claim?.characterId || !claim.claimToken) {
+        setMsg("That hero has no door words yet, so this browser cannot sit down as them. You go to the table as the Dungeon Master.")
+        try { window.localStorage.setItem(ROLE_LS_KEY, "dm") } catch { /* storage blocked */ }
+        router.push("/table")
+        return
       }
+      try {
+        window.localStorage.setItem(ROLE_LS_KEY, "player")
+        window.localStorage.setItem(CHARACTER_LS_KEY, claim.characterId)
+        window.localStorage.setItem(TOKEN_LS_KEY, claim.claimToken)
+      } catch { /* storage blocked */ }
+      clearDmKey()
+      await fetch("/api/dm/logout", { method: "POST" }).catch(() => {})
+      leaveDmDoor()
       router.push("/table")
-    } catch { setMsg("Could not reach the table.") } finally { setBusy(null); setAskNew(false) }
+    } catch { setMsg("Could not reach the table.") } finally { setBusy(null) }
   }
-
-  const seatOf = (id: string) => seated.find((s) => s.id === id)
 
   return (
     <div className="space-y-8">
-      {/* WAITING FOR YOU */}
-      <Section title="Waiting for you" count={pending.length} icon={<DoorOpen className="h-4 w-4" />}>
-        {tableNote && <p className="mb-3 rounded-sm border border-amber-900/50 bg-[#201a10] p-3 text-sm text-amber-400">{tableNote}</p>}
-        {pending.length === 0 && !tableNote && <p className="text-sm text-stone-500">Nobody at the Forge door.</p>}
-        <ul className="space-y-3">
-          {pending.map((p) => (
-            <li key={p.id} className="rounded-sm border border-[#3d3428] bg-black/50">
-              <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
-                <div className="flex items-center gap-3">
-                  {p.canon && canonBySlug(p.canon) ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={canonBySlug(p.canon)!.portrait} alt="" className="h-12 w-12 rounded-sm border border-[#8a6a3a] bg-black object-cover object-top" />
-                  ) : p.assets.sprite?.previewUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.assets.sprite.previewUrl} alt="" className="h-12 w-12 rounded-sm border border-[#3d3428] bg-black object-contain [image-rendering:pixelated]" />
-                  ) : (
-                    <div className="grid h-12 w-12 place-items-center rounded-sm border border-[#3d3428] font-serif text-lg text-[#8a6a3a]">{p.heroName.charAt(0)}</div>
-                  )}
-                  <div>
-                    <div className="font-serif text-lg text-[#e8d9ae]">{p.heroName} <span className="text-sm text-stone-500">· {p.playerName}</span>{p.canon && <span className="ml-2 rounded-sm border border-[#8a6a3a]/70 px-1.5 py-0.5 align-middle text-[9px] uppercase tracking-[0.25em] text-[#c9a868]">Canon hero</span>}</div>
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">{[p.sheet.species, p.sheet.clazz, p.sheet.background, p.sheet.level != null ? `Lv ${p.sheet.level}` : null].filter(Boolean).join(" · ")}{p.sheet.ac != null ? ` · AC ${p.sheet.ac}` : ""}{p.sheet.hp != null ? ` · HP ${p.sheet.hp}` : ""}</div>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => setOpen(open === p.id ? null : p.id)} className="flex items-center gap-1.5 rounded-sm border border-[#3d3428] px-3 py-2 text-[11px] uppercase tracking-[0.2em] text-stone-400 hover:border-[#8a6a3a] hover:text-stone-200"><Eye className="h-3.5 w-3.5" /> Review</button>
-                  <button type="button" disabled={busy === p.id} onClick={() => act(p.id, "reject")} className="flex items-center gap-1.5 rounded-sm border border-[#5a2a2a]/70 px-3 py-2 text-[11px] uppercase tracking-[0.2em] text-red-300/80 hover:border-red-500/70 hover:text-red-200 disabled:opacity-40"><X className="h-3.5 w-3.5" /> Turn away</button>
-                  <button type="button" disabled={busy === p.id} onClick={() => act(p.id, "activate")} className="flex items-center gap-1.5 rounded-sm border border-emerald-500/70 bg-gradient-to-b from-[#1d3527] to-[#122018] px-4 py-2 font-serif text-[12px] uppercase tracking-[0.2em] text-emerald-100 hover:border-emerald-300 disabled:opacity-40"><Check className="h-3.5 w-3.5" /> {busy === p.id ? "Opening…" : "Open the cell"}</button>
-                </div>
-              </div>
-              {open === p.id && (
-                <div className="grid gap-3 border-t border-[#2a241e] px-4 py-3 text-sm sm:grid-cols-2">
-                  <div><div className="text-[10px] uppercase tracking-[0.25em] text-stone-600">Look</div><div className="text-stone-400">{p.assets.look ?? "Left to the DM"}{p.assets.sprite ? ` · figure: ${p.assets.sprite.status}` : ""}</div></div>
-                  <div><div className="text-[10px] uppercase tracking-[0.25em] text-stone-600">Voice</div><div className="text-stone-400">{p.assets.voice}</div>{p.assets.voiceSample && <audio controls src={p.assets.voiceSample} className="mt-2 h-8 w-full" />}</div>
-                  <div className="sm:col-span-2"><div className="text-[10px] uppercase tracking-[0.25em] text-stone-600">Face</div>
-                    {p.assets.facePhotos.length ? (
-                      <div className="mt-2 flex gap-2">{p.assets.facePhotos.map((u) => (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img key={u} src={u} alt="" className="h-24 w-32 rounded-sm border border-[#3d3428] object-cover" />
-                      ))}</div>
-                    ) : <div className="text-stone-400">Skipped</div>}
-                  </div>
-                  <div className="text-[11px] text-stone-600 sm:col-span-2">Handed in {new Date(p.createdAt).toLocaleString()}. {p.canon ? `A canon hero: opening the cell hands the existing ${p.heroName} — sheet, sprite, voice and art — to these words. Nothing is imported.` : "Opening the cell runs the same import as /forge/import, with their own words as the door code. Figure animations, voice clone and film stills are NOT started here yet."}</div>
-                </div>
-              )}
-            </li>
-          ))}
-        </ul>
-        {recent.length > 0 && (
-          <details className="mt-4 text-sm text-stone-500">
-            <summary className="cursor-pointer text-[11px] uppercase tracking-[0.25em] text-stone-600 hover:text-stone-400">Recently decided ({recent.length})</summary>
-            <ul className="mt-2 space-y-1">{recent.map((r) => <li key={r.id}>{r.heroName} · {r.playerName} — <span className={r.status === "activated" ? "text-emerald-300/80" : "text-red-300/70"}>{r.status}</span>{r.note ? ` · ${r.note}` : ""}</li>)}</ul>
-          </details>
-        )}
-      </Section>
-
-      {/* THE ROSTER */}
       <TableStatusBanner table={table} seatError={seatError} />
-      <Section title="The roster" count={seated.length} icon={<Swords className="h-4 w-4" />} sub="Players take their own seats at the staging table. While the table is open and before you press Start, seat a hero yourself to run them as a companion; once the session begins the roster is locked.">
-        <ul className="divide-y divide-[#2a241e] rounded-sm border border-[#3d3428] bg-black/50">
-          {roster.length === 0 && <li className="px-4 py-3 text-sm text-stone-500">No player characters yet.</li>}
-          {roster.map((c) => {
-            const s = seatOf(c.id)
-            return (
-              <li key={c.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
-                <div className="flex items-center gap-3">
-                  <span className={cn("h-2.5 w-2.5 rounded-full", s ? (s.dm ? "bg-[#c9a868]" : "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.6)]") : "bg-stone-700")} />
-                  <div>
-                    <div className="font-serif text-[15px] text-[#e8d9ae]">{c.name}</div>
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">{c.cls || "Adventurer"} · {s ? (s.dm ? "DM-run companion" : "Seated by their player") : "Resting"}</div>
-                  </div>
-                </div>
-                <div>
-                  {!s && <button type="button" disabled={busy === c.id} onClick={() => seat(c.id)} className="flex items-center gap-1.5 rounded-sm border border-[#3d3428] px-3 py-1.5 text-[11px] uppercase tracking-[0.2em] text-stone-400 hover:border-[#c9a868] hover:text-[#e8c56a] disabled:opacity-40"><UserPlus className="h-3.5 w-3.5" /> Seat as companion</button>}
-                  {s?.dm && <button type="button" disabled={busy === c.id} onClick={() => unseat(c.id)} className="flex items-center gap-1.5 rounded-sm border border-[#3d3428] px-3 py-1.5 text-[11px] uppercase tracking-[0.2em] text-stone-400 hover:border-red-500/60 hover:text-red-200 disabled:opacity-40"><UserMinus className="h-3.5 w-3.5" /> Send away</button>}
-                  {s && !s.dm && <span className="text-[11px] uppercase tracking-[0.2em] text-stone-600">theirs</span>}
-                </div>
-              </li>
-            )
-          })}
-        </ul>
-      </Section>
-
-      {msg && <p className="text-center text-sm text-[#d9bd7e]">{msg}</p>}
-
       {/* WHO ARE YOU PLAYING — the first thing the host does (Sam, 2026-11-10: "When I host a game, shouldn't I
           also choose a character?"). The hero picked hosts: this browser becomes that player and runs the table
           from the table with no code (lib/host.ts). "DM only" keeps the old way: no hero, every DM tool. */}
@@ -422,36 +265,13 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
         </p>
       </div>
 
-      {/* THE SHELF — which saved game Continue opens (Sam, 2026-11-10). Hidden until the saves migration is applied. */}
-      <div className="mx-auto w-full max-w-md"><SaveShelf me={null} onLoaded={load} /></div>
+      {msg && <p className="text-center text-sm text-[#d9bd7e]">{msg}</p>}
 
-      {/* BEGIN */}
       <div className="flex flex-col items-center gap-3 pt-2">
-        <button type="button" disabled={busy !== null} onClick={() => begin("continue")} className="flex items-center gap-3 rounded-sm border-2 border-[#8a6a3a] bg-gradient-to-b from-[#2a2015]/90 via-black/80 to-[#2a2015]/90 px-12 py-4 font-serif text-xl uppercase tracking-[0.35em] text-[#e8c56a] shadow-[0_0_40px_rgba(201,168,104,0.35)] transition-all hover:border-[#f4e0a8] hover:text-[#fff3cf] hover:shadow-[0_0_80px_rgba(232,197,106,0.6)] disabled:opacity-40">
-          <Play className="h-5 w-5" /> {busy === "open" ? "Opening…" : "Continue the campaign"}
+        <button type="button" disabled={busy !== null} onClick={toTable} className="flex items-center gap-3 rounded-sm border-2 border-[#8a6a3a] bg-gradient-to-b from-[#2a2015]/90 via-black/80 to-[#2a2015]/90 px-12 py-4 font-serif text-xl uppercase tracking-[0.35em] text-[#e8c56a] shadow-[0_0_40px_rgba(201,168,104,0.35)] transition-all hover:border-[#f4e0a8] hover:text-[#fff3cf] hover:shadow-[0_0_80px_rgba(232,197,106,0.6)] disabled:opacity-40">
+          <Play className="h-5 w-5" /> {busy === "go" ? "…" : "To the table"}
         </button>
-        {askNew ? (
-          <div className="w-full max-w-md rounded-sm border border-red-800/70 bg-[#1a0b0b]/90 p-4 text-left">
-            <div className="font-serif text-base text-red-100">Start a new game?</div>
-            <p className="mt-2 text-sm leading-relaxed text-stone-400">
-              A new game starts the campaign over: the story so far, what Malachar and the NPCs remember, every choice the
-              world recorded and everything the party carries. The game in play is put on the saved-games shelf first, so
-              you can load it again later. The heroes keep their art and voices and start at level 1. Then the table opens
-              and the party wakes in the slave pen of Velkynvelve.
-            </p>
-            <div className="mt-3 flex gap-2">
-              <button type="button" disabled={busy !== null} onClick={() => begin("new")} className="rounded-sm border border-red-600/80 bg-[#3a1414] px-4 py-2 font-serif text-[12px] uppercase tracking-[0.25em] text-red-100 hover:border-red-400 disabled:opacity-40">{busy === "new" ? "Resetting…" : "Reset and open the table"}</button>
-              <button type="button" disabled={busy !== null} onClick={() => setAskNew(false)} className="rounded-sm border border-[#3d3428] px-4 py-2 text-[11px] uppercase tracking-[0.25em] text-stone-400 hover:text-stone-200 disabled:opacity-40">Keep the campaign</button>
-            </div>
-          </div>
-        ) : (
-          <button type="button" disabled={busy !== null} onClick={() => setAskNew(true)} className="flex items-center gap-2 rounded-sm border border-red-900/70 px-6 py-2.5 font-serif text-[13px] uppercase tracking-[0.3em] text-red-200/80 hover:border-red-500/70 hover:text-red-100 disabled:opacity-40">
-            <RotateCcw className="h-4 w-4" /> New game — resets the campaign
-          </button>
-        )}
-        <button type="button" onClick={() => begin("sandbox")} className="flex items-center gap-2 rounded-sm border border-[#3d3428] px-5 py-2 text-[11px] uppercase tracking-[0.3em] text-stone-500 hover:border-[#8a6a3a] hover:text-stone-300">
-          <FlaskConical className="h-3.5 w-3.5" /> Rehearsal — sandbox, nothing saves
-        </button>
+        <p className="max-w-md text-center text-[12px] leading-relaxed text-stone-500">The table is the host screen: the saved games, Open, Start, End, New Game, and the heroes waiting at the door.</p>
         <button type="button" onClick={onLock} className="mt-4 text-[10px] uppercase tracking-[0.3em] text-stone-700 hover:text-stone-500">Lock the screen</button>
       </div>
     </div>
