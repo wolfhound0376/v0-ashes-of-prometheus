@@ -24,6 +24,10 @@ export type DoorMenu = {
 }
 
 export const HOST_LINK_LABEL = "Host a Game"
+/** The second small corner link (Sam, 2026-11-10: "a clean way" into the sandbox from the title). It goes to
+ *  /rehearsal, which asks for the DM code once and then opens the sandbox map — no table, no host, no save. */
+export const REHEARSAL_LINK_LABEL = "Rehearsal"
+export const REHEARSAL_HREF = "/rehearsal"
 
 const NEW_HERO: DoorButton = { key: "new", label: "New Hero", sub: "Choose one of six, or forge your own.", href: "/choose" }
 const SAVED_GAME: DoorButton = { key: "saved", label: "Saved Game", sub: "Played before? Three words bring your hero back.", href: "/join" }

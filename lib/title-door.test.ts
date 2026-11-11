@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { doorMenu, doorTableOf, shouldPlayFilm, HOST_LINK_LABEL } from "./title-door"
+import { doorMenu, doorTableOf, shouldPlayFilm, HOST_LINK_LABEL, REHEARSAL_HREF, REHEARSAL_LINK_LABEL } from "./title-door"
 
 describe("doorMenu — a browser nobody has played on", () => {
   it("offers New Hero first and Saved Game second, whatever the table is doing", () => {
@@ -63,6 +63,10 @@ describe("doorMenu — the DM's browser (unchanged until the host PR)", () => {
     expect(m.primary.href).toBe("/")
   })
   it("the corner link is Host a Game", () => { expect(HOST_LINK_LABEL).toBe("Host a Game") })
+  it("the second corner link is Rehearsal, and it goes to its own door, not the host screen", () => {
+    expect(REHEARSAL_LINK_LABEL).toBe("Rehearsal")
+    expect(REHEARSAL_HREF).toBe("/rehearsal")
+  })
 })
 
 describe("doorTableOf", () => {

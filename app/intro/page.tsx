@@ -26,7 +26,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { Settings, Volume2, VolumeX } from "lucide-react"
+import { FlaskConical, Settings, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getThemeAudio, playThemeAudio } from "@/components/theme-audio"
 import { SettingsSheet } from "@/components/settings-sheet"
@@ -34,7 +34,7 @@ import { isMusicOff, onMusicPrefChange, setMusicOff } from "@/lib/audio-prefs"
 import { cinematicsOn, introMusicOn, onSettingsChange } from "@/lib/settings"
 import { markDmDoor } from "@/lib/dm-door"
 import { createClient } from "@/lib/supabase/client"
-import { doorMenu, doorTableOf, shouldPlayFilm, FILM_RUN_KEY, FILM_RUN_UNKNOWN, HOST_LINK_LABEL, type DoorTable } from "@/lib/title-door"
+import { doorMenu, doorTableOf, shouldPlayFilm, FILM_RUN_KEY, FILM_RUN_UNKNOWN, HOST_LINK_LABEL, REHEARSAL_HREF, REHEARSAL_LINK_LABEL, type DoorTable } from "@/lib/title-door"
 
 /** Where the small "Host a Game" link goes (it read "Dungeon Master" until 2026-11-10): the DM door (/dm) — code, then the table. This link is the
  *  only way in; /dm sends anyone without its stamp back here (Sam, 2026-10-25; lib/dm-door.ts). */
@@ -335,6 +335,18 @@ export default function TitleScreen() {
         >
           <span className="grid h-6 w-6 place-items-center rounded-full border border-stone-700 font-serif text-[11px] text-stone-500 transition-colors group-hover:border-[#c9a868] group-hover:text-[#e8c56a]">☠</span>
           {HOST_LINK_LABEL}
+        </button>
+      )}
+      {/* THE REHEARSAL DOOR (Sam, 2026-11-10: "a clean way" into the sandbox): the DM code once, then the sandbox map. */}
+      {stage === "title" && (
+        <button
+          type="button"
+          onClick={() => go(REHEARSAL_HREF)}
+          title="The sandbox: Malachar answers, nothing is saved"
+          className="group fixed bottom-14 left-6 z-50 flex items-center gap-2 text-[10px] uppercase tracking-[0.35em] text-stone-600 transition-colors hover:text-[#c9a868]"
+        >
+          <span className="grid h-6 w-6 place-items-center rounded-full border border-stone-700 text-stone-500 transition-colors group-hover:border-[#c9a868] group-hover:text-[#e8c56a]"><FlaskConical className="h-3 w-3" /></span>
+          {REHEARSAL_LINK_LABEL}
         </button>
       )}
 
