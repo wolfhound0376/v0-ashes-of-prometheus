@@ -11369,6 +11369,7 @@ function setQuick(on, quiet){
 }
 function endCombat(won){
   if (mode !== "combat") return;
+  if (cbt && cbt.fromFlag) fightFlagOver();   // the server's "a fight is on" comes down with the fight
   const fellNpcs = cbt ? (cbt.bystanders || []).filter(b => b.down) : [];   // the NPCs who died in this fight: buried below, once it is over (npcBury)
   if (won !== false && cbt) askEarned((cbt.allies || []).filter(n => askRowOf(n.id) && !n.down));   // they fought beside you and know it (NPC ASKS)
   setQuick(false, true);
@@ -15519,9 +15520,25 @@ async function readTime(){
 // creatures he named, and closes when he ends it. The map never starts a fight on its own in the game;
 // the proximity and guards-on-watch triggers are the preview's.
 let combatFlagSeen = null;
+// A FIGHT THAT IS OVER STAYS OVER (Sam, 2026-11-10: "why does refresh screen seem to start an encounter?"). The flag
+// used to outlive a fight won on the map, and `combatFlagSeen` above is this page's memory only, so a reload opened the
+// same fight again. Two things now: the map tells the server when its flag-fight ends (fightFlagOver → /api/walk-spotted
+// "over"), and it keeps the finished fight's stamp in this browser, so even a flag that failed to clear is not replayed
+// here. A reload in the MIDDLE of a fight still reopens it, on purpose: that fight is not over.
+const FLAG_DONE_KEY = "aop_combat_flag_done";
+const flagDone = () => { try { return localStorage.getItem(FLAG_DONE_KEY) || ""; } catch (e) { return ""; } };
+function fightFlagOver(){
+  const at = combatFlagSeen; if (!at) return;
+  try { localStorage.setItem(FLAG_DONE_KEY, at); } catch (e) {}
+  if (!APP || SANDBOX) return;
+  const body = {action: "over", startedAt: at};
+  try { body.claimId = localStorage.getItem("aop_character_id") || undefined; body.claimToken = localStorage.getItem("aop_claim_token") || undefined; } catch (e) {}
+  fetch("/api/walk-spotted", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)}).catch(() => {});
+}
 async function followCombatFlag(flag){
   if (flag && flag.status === "active"){
     if (flag.startedAt === combatFlagSeen) return;
+    if (flag.startedAt === flagDone()){ combatFlagSeen = flag.startedAt; return; }   // already fought to its end on this screen
     if (mode !== "explore") return;                     // once we are free, the next poll opens it
     combatFlagSeen = flag.startedAt;
     const picked = [];
