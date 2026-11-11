@@ -20928,6 +20928,34 @@ function gameOverActive(seated, fallen) {
   return s.every((slug) => f.has(slug))
 }
 
+/**
+ * YOUR GAME IS OVER (Sam, 2026-11-10, Fifi shot dead at the pen gate a second time while Samson lived: "It should show
+ * game over for her, in this situation, as per rules. No way to bring her back if Liana doesn't help her").
+ * A player whose OWN hero is dead gets the GAME OVER card on their screen, even while the rest of the table plays on.
+ * Never the DM (he has no hero of his own), never when the whole table is dead (that is the table's GAME OVER, above).
+ */
+function heroGameOver(mine, fallen, seated, dm = false) {
+  if (dm || !mine) return false
+  const f = Array.isArray(fallen) ? fallen : []
+  if (!f.includes(mine)) return false
+  return !gameOverActive(seated, fallen)
+}
+
+// Malachar to the one who died, while the others are still alive. Claude's lines (flagged) — Sam to keep, cut or rewrite.
+const HERO_GAME_OVER_LINES = [
+  "You're done. Sit back and watch the others try. It won't take long.",
+  "Dead. The pen keeps what it kills, and it is keeping you.",
+  "That's your story finished. The rest of them can carry on without you. They'll manage. Probably not.",
+]
+
+/** Which line Malachar says to this hero: the same one on every reload, from the hero's slug. */
+function heroGameOverLine(slug) {
+  const s = String(slug ?? "")
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+  return HERO_GAME_OVER_LINES[h % HERO_GAME_OVER_LINES.length]
+}
+
 /** The fallen list with one more hero on it (no repeats, no blanks). Returns a new array. */
 function gameOverNoteDeath(fallen, slug) {
   const f = Array.isArray(fallen) ? fallen.filter(Boolean) : []
@@ -21004,6 +21032,44 @@ function gameOverTick(){
   gameOverCheck();
   const G = state.gameOver;
   if (G && G.seq && gameOverPlayed !== G.seq) playGameOver(G);
+  else if (!G && heroGameOverPlayed !== mySlug && heroGameOver(mySlug, state.fallen, PARTY, isDm())) playHeroGameOver(mySlug);
+}
+// YOUR HERO IS DEAD, THE TABLE IS NOT (Sam, 2026-11-10: "It should show game over for her, in this situation, as per
+// rules. No way to bring her back if Liana doesn't help her"). The same 1980s card, on that player's screen only:
+// darkness, the letters, Malachar's line to them. state.fallen is One World state, so this plays wherever their hero
+// died — on their own screen or on another one at the table. No restart offer: the campaign is still running for
+// everyone else, and only a wiped table asks the DM to start over. The way out is the title, or staying to watch.
+// The replacement hero (Sam, 2026-10-30: a dead player takes an unchosen canon hero, thrown into the pen) is NOT built.
+let heroGameOverPlayed = null;
+async function playHeroGameOver(slug){
+  heroGameOverPlayed = slug;
+  const grave = (Array.isArray(state.graves) ? state.graves : []).find(g => g && g.slug === slug);
+  const replay = gameOverIsReplay(grave && grave.t0, Date.now() + (OW.offset || 0));
+  const line = heroGameOverLine(slug);
+  if (!replay){ await wait(GAME_OVER_RULES.holdMs); await gameOverGraveBeat(); }
+  if (state.gameOver) return;                                   // the whole table fell meanwhile: its card takes over
+  for (const id of ["obj", "dialog", "talk"]){ const e = $(id); if (e) e.hidden = true; }
+  tip.hidden = true;
+  const el = $("gameOver"), say = $("goLine"), btns = $("goBtns");
+  say.innerHTML = ""; btns.innerHTML = ""; btns.classList.remove("on");
+  el.classList.remove("dark", "letters"); el.classList.toggle("instant", replay); el.hidden = false; void el.offsetWidth;
+  el.classList.add("dark");
+  await wait(replay ? 0 : GAME_OVER_RULES.darkMs);
+  el.classList.add("letters"); if (!replay) gameOverSting();
+  await wait(replay ? 0 : GAME_OVER_RULES.lettersMs);
+  log(`<b>Malachar</b>, to ${esc(SHORT[slug] || slug)}: “${esc(line)}”`);
+  if (!replay) gameOverVoice(line);
+  await gameOverType(say, line, replay);
+  if (state.gameOver) return;
+  const watch = document.createElement("button"); watch.className = "go-btn";
+  watch.textContent = "Watch the others";
+  watch.onclick = () => { el.hidden = true; stage.classList.remove("go-mourn"); };
+  btns.appendChild(watch);
+  const go = document.createElement("button"); go.className = "go-btn";
+  go.textContent = "Return to the title";
+  go.onclick = () => gameOverLeave("title");
+  if (APP && !SANDBOX) btns.appendChild(go);
+  btns.classList.add("on"); try { watch.focus(); } catch (e) {}
 }
 /**
  * The beat between the last death and the dark (Sam, 2026-10-30).
