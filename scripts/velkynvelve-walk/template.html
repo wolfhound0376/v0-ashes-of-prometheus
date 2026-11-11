@@ -9990,6 +9990,7 @@ function fall(t){
   // THE BANTER on a death: the ally who made the kill says so; else an ally or a gambler cheers; a foe sees one of its own drop
   if (cbt && t.kind === "foe"){
     const k = t.killedBy;
+    if (k && k.ally && toughFor(k, t)) k.triumphDue = true;
     setTimeout(() => { if (!(k && k.ally && banter(k, "kill", null, .8))){ const fan = standing([...cbt.allies, ...cbt.bystanders]).sort((x, y) => Math.hypot(x.x - t.x, x.y - t.y) - Math.hypot(y.x - t.x, y.y - t.y)); for (const f of fan) if (banter(f, "cheer", null, .5)) break; } }, 900);
     setTimeout(() => { const own = standing(foes).filter(f => f !== t); if (own.length) banter(own[Math.floor(Math.random() * own.length)], "loss", k, .5); }, 2200);
   }
@@ -10397,6 +10398,18 @@ function foeTurn(f){
 // No style and nothing but fists and a bow: they shoot. Everything is drawn from what they actually carry (the block's
 // own weapons or anything handed to them, refreshAttacks). Claude's assignment of the four styles, from their OotA
 // stat blocks (scout, drow; orc, quaggoth); Sam's to change.
+// THE TRIUMPH (Sam, 2026-11-10: "the main NPCs should have some triumphant poses they occasionally do when they kill a
+// tough creature or win. Not always."; then "Ront and Derrendil and Eldith"). One short pose each, turned to the viewer
+// (PixelLab v3, south only, every row of the sheet the same: scripts/sprites/add-triumph-pose.py): Ront beats his chest,
+// Derendil throws up both arms and roars, Eldeth raises a fist. Two moments: at the end of the turn in which they
+// dropped something tough (a boss, or a creature with at least their own hit points), three times in five; and when
+// the fight is won, always for the one who dropped the tough one and one time in three for the others. Never while
+// they are down, and a sprite without the sheet does nothing.
+const toughFor = (k, t) => !!(k && t && k.c && t.c && ((cbt && cbt.boss === t) || t.c.hpMax >= k.c.hpMax));
+function triumph(a, chance){
+  if (!a || a.down || !a.c || a.c.hp <= 0 || !SPR[a.id] || !SPR[a.id].img.triumph || Math.random() >= chance) return false;
+  a.triumphDue = false; playOnce(a, "triumph", () => setAnim(a, "idle")); return true;
+}
 function allyAttackPick(a, tgt){
   const s = a.c.sheet, list = s.attacks || [], blade = meleeOf(a), fists = !blade || /unarmed/i.test(blade.name) || (blade.reach || 5) > 10;
   const ft = feetBetween(a, tgt), reaches = k => ft <= (k.long || k.reach || 5) + 2.5;
@@ -10414,7 +10427,7 @@ function allyAttackPick(a, tgt){
   return {atk: blade || list[0], reach: (blade || list[0]).reach || 5, how: "close"};
 }
 function allyTurn(a){
-  const end = () => { combatBusy = false; if (cbt) cbt.phase = "idle"; setTimeout(() => passTurn(a), 500); };   // only if the turn is still theirs (main #795)
+  const end = () => { combatBusy = false; if (cbt) cbt.phase = "idle"; const posed = !!(a.triumphDue && cbt && standing(foes).length && triumph(a, .6)); setTimeout(() => passTurn(a), posed ? 1500 : 500); };   // only if the turn is still theirs (main #795)
   if (!actors.includes(a) || a.down){ setTimeout(nextTurn, 100); return; }
   if (a.ally) banter(a, "turn", standing(foes)[0], .35);                   // THE BANTER: now and then a word as they go in
   if (a.c.conds.has("prone")){ a.c.conds.delete("prone"); a.c.move = Math.floor(a.c.move / 2); log(`${fname(a)} gets up.`); }
@@ -11432,6 +11445,7 @@ function setQuick(on, quiet){
 function endCombat(won){
   if (mode !== "combat") return;
   if (cbt && cbt.fromFlag) fightFlagOver();   // the server's "a fight is on" comes down with the fight
+  const victors = cbt ? [...(cbt.allies || [])] : [];   // THE TRIUMPH: who of ours is still up to strike a pose when it is won
   const fellNpcs = cbt ? (cbt.bystanders || []).filter(b => b.down) : [];   // the NPCs who died in this fight: buried below, once it is over (npcBury)
   if (won !== false && cbt) askEarned((cbt.allies || []).filter(n => askRowOf(n.id) && !n.down));   // they fought beside you and know it (NPC ASKS)
   setQuick(false, true);
@@ -11469,6 +11483,7 @@ function endCombat(won){
     // split across the party; and a short triumphant sting (ui/victory in the bank).
     const xp = slain.reduce((s, f) => s + (f.c.sheet.xp || 0), 0), live = party.filter(p => !p.down).length || party.length;
     bank("ui/victory", .9);
+    setTimeout(() => victors.forEach(a => { triumph(a, a.triumphDue ? 1 : 1 / 3); a.triumphDue = false; }), 700);
     setTimeout(() => victoryBanner(`${xp} XP`, `${slain.map(f => fname(f)).join(", ")} slain · ${Math.floor(xp / live)} each`), 300);
     log(`<b>Victory.</b> ${xp} XP (${Math.floor(xp / live)} each).`);
     payXp(fightId, slain);
