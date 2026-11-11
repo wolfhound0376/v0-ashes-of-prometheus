@@ -18,7 +18,11 @@ describe("the leader's figure on the world map", () => {
   })
   it("a forged hero with a baked sprite walks as themselves", () => {
     expect(mapHeroSlug("a4b4c7cd-4bd6-45bb-9a32-a19a37bcb774")).toBe("lynkes")
-    expect(mapHeroFromManifest("lynkes", manifest("lynkes"))!.cell).toBe(176)
+    const lynkes = mapHeroFromManifest("lynkes", manifest("lynkes"))!
+    expect(lynkes.cell).toBe(176)
+    // his feet are 29 px above the bottom of his cell: drawn from the cell's edge he floats (Sam, 2026-11-10)
+    expect(lynkes.foot).toBeCloseTo(29 / 176, 5)
+    expect(mapHeroFromManifest("freia", manifest("freia"))!.foot).toBeCloseTo(2 / 128, 5)
   })
   it("nobody leading, or a hero with no sprite yet, walks as Fifi", () => {
     expect(mapHeroSlug(null)).toBe(MAP_HERO_FALLBACK)
