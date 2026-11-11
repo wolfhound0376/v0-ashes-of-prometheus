@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils"
 import { cinematicsOn } from "@/lib/settings"
 import { CANON_HEROES } from "@/lib/canon-heroes"
 import { getThemeAudio, playThemeAudio } from "@/components/theme-audio"
+import { HomeButton } from "@/components/home-button"
 
 type Hero = {
   slug: string; name: string; clazz: string; origin: string | null; hook: string; powers: string[]; portrait: string
@@ -154,6 +155,11 @@ export default function ChooseHero() {
       {stage === "film" && picked?.film && (
         <HeroFilm src={picked.film} onDone={filmDone} />
       )}
+
+      {/* The way out (Sam, 2026-11-10: "This needs an exit button"). Back to the title screen; nothing is lost —
+          a claim already made is kept on this device (CLAIM_KEY) and resumes when the player comes back. Hidden
+          while a hero's film plays, which has its own Skip. */}
+      {stage !== "film" && <HomeButton className="right-4" />}
 
       <div className={cn("relative z-10 mx-auto max-w-6xl px-4 pb-16 pt-10 transition-opacity duration-300 sm:px-8", leaving && "opacity-0")}>
         <header className="mb-8 text-center">
