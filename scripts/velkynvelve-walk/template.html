@@ -2181,6 +2181,11 @@ function draw(){
     }
     if (a.leap){ const k = Math.min(1, (now - a.leap.t0) / a.leap.ms); a.x = a.leap.from.x + (a.leap.to.x - a.leap.from.x) * k; a.y = a.leap.from.y + (a.leap.to.y - a.leap.from.y) * k; fy -= Math.sin(k * Math.PI) * (a.leap.h || 90) * sc; }
     let dw = cw * sc, dh = ch * sc, dx = a.x - px * sc + (a.kx || 0), dy = a.y - py * sc + fy + (a.ky || 0);
+    // THE FALLEN LIE ON THE FLOOR (Sam, 2026-11-10: "When characters drop they sometimes look like they are floating").
+    // The heroes' and the prisoners' death sheets draw the lying body in the middle of the cell, 16 to 48 sprite pixels
+    // above the ground point, a different amount for each facing; the drow sheets end on it, so only some floated.
+    // scripts/sprites/add-dead-drop.py measures every frame and writes animations.dead.drop; the frame is lowered by it.
+    if (a.anim === "dead" && !pose){ const dr = SPR[a.id].json.animations.dead && SPR[a.id].json.animations.dead.drop; if (dr && dr[a.face]) dy += (dr[a.face][f] || 0) * sc; }
     if (a.id === "stool" && !a.down && !a.body) drawStoolAura(a, dx, dy, dw, dh, "glow");   // the glow sits behind him
     const dead = !!(a.down && pose);
     if (pose){                                   // asleep: dim, slow breath; one with no sleeping sheet settles low or lies on its side. Dead: no breath, darker.
