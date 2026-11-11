@@ -2102,6 +2102,113 @@ function zoomAt(px, py, f){
   const s0 = base * view.z, s1 = base * nz, wx = (px - view.tx) / s0, wy = (py - view.ty) / s0;
   view.z = nz; view.tx = px - wx * s1; view.ty = py - wy * s1; camTween = null; userPanAt = now; yourCam(); applyView();
 }
+// ---------- HOW A FIGHT IS STAGED (Sam, 2026-11-11, on the fight at the pen gate: "it didn't look good ... I'm looking
+// for solutions that will make this and future fight scenes be engaging, dynamic, and good looking") ----------
+// Recorded and measured before anything was changed (the audit is in the PR): in the pen-gate fight at 1920x1080 a pile
+// of fighters stood on one another in 88% of frames (three allies on the very same spot), the fighter whose turn it was
+// was off the screen in 12% of frames (26% at 1366x768), one blow in six was struck with the attacker or the target
+// out of the picture, and the camera started a new move 70 times a minute. Two causes, both in how the fight is SHOWN:
+//   1. THE CAMERA aimed at a point (a fighter, or the middle of an attacker and a target) at a zoom fixed when the fight
+//      opened. Two fighters further apart than that zoom shows were both off screen; and after every blow it went back
+//      to a "home" worked out from where everyone stood at the START, then straight out again to the next fighter.
+//      Now it FRAMES (fightFrame): it is given the fighters who matter this moment and picks the closest zoom, up to a
+//      cap, that keeps all of them in the picture, clear of the turn strip and the log. A turn opens on the fighter and
+//      the opponents nearest them; a blow frames the attacker and the target; it does not go home between turns, and it
+//      does not move at all when the new framing is nearly the one it has. "Home" (Fit, the crit beat's way back) is
+//      worked out again each turn from where the fighters stand NOW.
+//   2. FIGHTERS ON ONE SPOT were drawn on one spot. The rules allow it (allies close on the same reach point), and no
+//      rule position is touched here: fanSolve() works out a small DRAWING offset for fighters whose feet overlap, eased
+//      in and out, never off the floor. The fighter acting, anyone lunging and the marked target are never moved, so a
+//      blow, its spark and its number land exactly where the rules have them; the others step aside around them.
+// Every number below is Claude's pick, gathered here so Sam can tune them. Presentation only: no dice, hit point,
+// distance, turn or rule position reads any of it. Each screen works both out for itself from the fight's shared state,
+// so a screen showing a fight run elsewhere (ONE FIGHT) stages it the same way.
+const FIGHT_LOOK = {
+  camSide: 120, camTop: 130, camBottom: 110,   // px of screen kept clear around the framed fighters (turn strip above, log below)
+  camHead: .9,                                 // of a figure's height kept in the frame above its feet
+  turnZoomMax: 2.2,                            // closest zoom as a turn opens (the fighter and the nearest opponents)
+  turnShows: 2,                                // how many of the nearest opponents a turn's opening frame keeps in view
+  pairZoomMax: 2.4,                            // closest zoom on an attacker and a target while the attack is chosen
+  blowZoomMax: 2.8,                            // closest zoom as the blow is struck (the small push-in; none with motion off)
+  turnMs: 450, pairMs: 380, blowMs: 300, backMs: 600,   // how long each glide takes
+  camDeadPx: 36, camDeadZoom: .05,             // a new framing this close to the old one does not move the camera
+  fanGapX: .34, fanGapY: .17,                  // feet closer than this (in figure widths, across and in depth) are fanned apart
+  fanMax: .5,                                  // the furthest a figure is ever drawn from where it really stands (figure widths)
+  fanEase: 9,                                  // how fast the fan opens and closes (per second)
+};
+const figW = a => SPR[a.id].json.cell[0] * actorScale(a), figH = a => SPR[a.id].json.pivot[1] * actorScale(a);
+function fightFrame(list, zMax, ms){
+  if (!cbt) return;
+  const L = (list || []).filter(a => a && a.x != null && SPR[a.id]); if (!L.length) return;
+  if (cbt.yourCam){ fightCam(0, 0, 0, ms, L); return; }                 // the player's own camera: slide only as far as it must
+  const K = FIGHT_LOOK, r = stage.getBoundingClientRect();
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  for (const a of L){ const k = ovDrawn(a) ? ovActorT(a).k : 1, q = ovActorPt(a, a.x, a.y), hw = figW(a) * k * .3, top = q.y - figH(a) * k * K.camHead;
+    x0 = Math.min(x0, q.x - hw); x1 = Math.max(x1, q.x + hw); y0 = Math.min(y0, top); y1 = Math.max(y1, q.y + 12); }
+  const availW = Math.max(200, r.width - 2 * K.camSide), availH = Math.max(160, r.height - K.camTop - K.camBottom);
+  const z = Math.max(1, Math.min(zMax, 4, availW / ((x1 - x0) * base), availH / ((y1 - y0) * base))), s = base * z;
+  const to = {z, tx: r.width / 2 - (x0 + x1) / 2 * s, ty: K.camTop + availH / 2 - (y0 + y1) / 2 * s}; clampView(to);
+  const at = camTween && !camTween.slide ? camTween.to : view;
+  if (Math.abs(to.z - at.z) < K.camDeadZoom && Math.abs(to.tx - at.tx) < K.camDeadPx && Math.abs(to.ty - at.ty) < K.camDeadPx) return;
+  if (camTween && camTween.slide) sliding = false;
+  camTween = {from: {...view}, to, t0: now, ms};
+}
+// where the whole fight is, now: what "Fit" and the crit beat go back to (startCombat's was where it all STARTED)
+function fightHome(){
+  const L = cbt ? [...standing(heroes()), ...standing(foes)].filter(a => a.x != null && (a.alpha ?? 1) > .5) : []; if (!L.length) return cbt && cbt.home;
+  const r = stage.getBoundingClientRect(), xs = L.map(a => a.x), ys = L.map(a => a.y), tops = L.map(a => a.y - figH(a));
+  const x0 = Math.min(...xs) - 250, x1 = Math.max(...xs) + 250, y0 = Math.min(...tops) - 80, y1 = Math.max(...ys) + 130;
+  return {z: Math.max(1, Math.min(2.4, r.width / ((x1 - x0) * base), r.height / ((y1 - y0) * base))), cx: (x0 + x1) / 2, cy: (y0 + y1) / 2};
+}
+// a turn opens: the fighter, and the opponents nearest them (who they may go for, or who may come for them)
+function turnCam(a){
+  if (!cbt || !a) return;
+  cbt.home = fightHome() || cbt.home;
+  const opp = standing(hero(a) ? foes : heroes()).filter(o => o !== a && (o.alpha ?? 1) > .5).sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y));
+  fightFrame([a, ...opp.slice(0, FIGHT_LOOK.turnShows)], FIGHT_LOOK.turnZoomMax, FIGHT_LOOK.turnMs);
+}
+// an attacker has picked a target: both in the picture before anything is swung
+function pairCam(a, b){ if (cbt) fightFrame([a, b], FIGHT_LOOK.pairZoomMax, FIGHT_LOOK.pairMs); }
+// FIGHTERS ON ONE SPOT, FANNED APART IN THE DRAWING ONLY.
+const fanPinned = a => a === activeActor() || a.lunging || a.leap || (cbt.marked && cbt.marked.t === a && cbt.marked.until > now);
+let fanAt = 0;
+function fanSolve(){
+  const dt = Math.min(.1, Math.max(0, (now - fanAt) / 1000)); fanAt = now;
+  if (!cbt || mode !== "combat"){ for (const a of actors) if (a.fan) a.fan = null; return; }
+  const K = FIGHT_LOOK;
+  const B = actors.filter(a => a.c && (a.kind === "pc" || a.kind === "foe" || a.ally) && !a.down && !a.body && !a.offStage && !a.fall && !a.climbing && !a.riding && !a.prop && (a.alpha ?? 1) > .5 && !(a.path && a.path.length))
+    .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : a.x - b.x || a.y - b.y);
+  const o = B.map(() => ({x: 0, y: 0})), pin = B.map(fanPinned), w = B.map(figW);
+  for (let it = 0; it < 10; it++) for (let i = 0; i < B.length; i++) for (let j = i + 1; j < B.length; j++){
+    if (pin[i] && pin[j]) continue;
+    const gx = K.fanGapX * (w[i] + w[j]) / 2, gy = K.fanGapY * (w[i] + w[j]) / 2;
+    let u = (B[j].x + o[j].x - B[i].x - o[i].x) / gx, v = (B[j].y + o[j].y - B[i].y - o[i].y) / gy, d = Math.hypot(u, v);
+    if (d >= 1) continue;
+    if (d < .02){ const g = i * 2.4 + j * 1.3; u = Math.cos(g); v = Math.sin(g) * .5; d = Math.hypot(u, v); u /= d; v /= d; d = 0; } else { u /= d; v /= d; }
+    const push = 1 - d, ki = pin[i] ? 0 : pin[j] ? 1 : .5, kj = pin[j] ? 0 : pin[i] ? 1 : .5;
+    o[i].x -= u * push * gx * ki; o[i].y -= v * push * gy * ki; o[j].x += u * push * gx * kj; o[j].y += v * push * gy * kj;
+  }
+  const seen = new Set(B);
+  B.forEach((a, i) => {
+    let t = pin[i] ? {x: 0, y: 0} : o[i]; const max = K.fanMax * w[i], len = Math.hypot(t.x, t.y);
+    if (len > max){ t = {x: t.x / len * max, y: t.y / len * max}; }
+    if (len > .5 && !walkable(a.x + t.x, a.y + t.y)){                 // never drawn off the floor: turn it along the floor, or shorten it
+      let ok = null;
+      for (const k of [1, .5]){ for (const g of [.7, -.7, 1.4, -1.4, 2.4, -2.4]){ const c = Math.cos(g), sn = Math.sin(g), q = {x: (t.x * c - t.y * sn) * k, y: (t.x * sn + t.y * c) * k}; if (walkable(a.x + q.x, a.y + q.y)){ ok = q; break; } } if (ok) break;
+        if (k === .5 && walkable(a.x + t.x * .5, a.y + t.y * .5)) ok = {x: t.x * .5, y: t.y * .5}; }
+      t = ok || {x: 0, y: 0};
+    }
+    const f = a.fan || (a.fan = {x: 0, y: 0}), e = Math.min(1, dt * K.fanEase);
+    f.x += (t.x - f.x) * e; f.y += (t.y - f.y) * e;
+  });
+  for (const a of actors) if (a.fan && !seen.has(a)){ const e = Math.min(1, dt * K.fanEase * 1.5); a.fan.x -= a.fan.x * e; a.fan.y -= a.fan.y * e; if (Math.abs(a.fan.x) + Math.abs(a.fan.y) < .3) a.fan = null; }
+}
+// the offset a figure is drawn with right now (also where a click finds it: hitActor)
+function fanOf(a){ return a && a.fan && cbt && mode === "combat" && !a.leap && !a.climbing && !a.lunging ? a.fan : null; }
+// draw() and the overlay read everyone's place from a.x / a.y, in a hundred places: for the length of one frame's drawing
+// the fanned figures stand at their drawn place, and are put back before anything else runs
+function fanShow(){ const out = []; for (const a of actors){ const f = fanOf(a); if (f && (Math.abs(f.x) > .3 || Math.abs(f.y) > .3)){ a.x += f.x; a.y += f.y; out.push([a, f.x, f.y]); } } return out; }
+function fanHide(out){ for (const [a, x, y] of out){ a.x -= x; a.y -= y; } }
 // THE FIGHT CAMERA IS YOURS ONCE YOU TOUCH IT (Sam, 2026-10-28: "Should be able to zoom out a bit and move the camera a
 // bit to be able to see the fight better"). Until then the fight frames itself: the whole line-up at the start, a glide to
 // each fighter on their turn, a push on a blow and a settle after. The first wheel, zoom button or drag during the fight
@@ -2120,7 +2227,8 @@ function fightCam(z, cx, cy, ms, pts){
   const to = {z: view.z, tx: view.tx + dx, ty: view.ty + dy}; clampView(to); if (camTween && camTween.slide) sliding = false; camTween = {from: {...view}, to, t0: now, ms};
 }
 
-function draw(){
+function draw(){ fanSolve(); const fanned = fanShow(); try { drawFrame(); } finally { fanHide(fanned); } }
+function drawFrame(){
   dressHeroes();
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
   const s = base * view.z * dpr;
@@ -2562,7 +2670,8 @@ function updateSneakTags(){
     const m = SPR[f.id].json, top = f.y - m.pivot[1] * actorScale(f), oq = ovActorPt(f, f.x, top); const [sx, sy] = w2s(oq.x, oq.y); el.style.left = sx + "px"; el.style.top = sy + "px";
   }
 }
-function updateOverlay(){
+function updateOverlay(){ const fanned = fanShow(); try { updateOverlayFrame(); } finally { fanHide(fanned); } }
+function updateOverlayFrame(){
   updateSneakTags();
   for (let i = bubbles.length - 1; i >= 0; i--){
     const b = bubbles[i];
@@ -7159,11 +7268,11 @@ function nextTurn(first){
   // rather than freeze this one on a turn its player cannot take, that hero fights on its own the way the freed
   // prisoners do. The DM's screen drives every hero. (Sam, 2026-10-25: only the DM moves a hero who is not his.)
   // ONE FIGHT: a hero someone else at the table drives — the fight waits for their player, who chooses on their own screen
-  if (a.kind === "pc" && oneFightWaitsFor(a)){ fightCam(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 60, 500, [a]); openMenu(a); return; }
+  if (a.kind === "pc" && oneFightWaitsFor(a)){ turnCam(a); openMenu(a); return; }
   if (a.kind === "pc" && !canControl(a)){ log(`${fname(a)} acts on their own instincts here — their player drives them on their own screen.`); allyTurn(a); return; }
   // no sound as the turn passes to a hero or an ally: the camera moving to them is the cue (Sam, 2026-10-22: "it shouldn't
   // say bard", then "Please remove the bell between players as the system move to the active player")
-  fightCam(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 60, 500, [a]);
+  turnCam(a);
   openMenu(a);
 }
 // the Octopath-style command list beside whoever is up
@@ -11017,7 +11126,7 @@ function foeTurn(f){
     const nearest = standing(heroes()).sort((a, b) => feetBetween(f, a) - feetBetween(f, b))[0];
     if (tgt.c.conds.has("hidden") || (nearest && nearest.c.conds.has("hidden") && !seen.some(p => feetBetween(f, p) <= 5))){ foeSearch(f, hidNow); return; }
   }
-  fightCam(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600, [f, tgt]);
+  pairCam(f, tgt);
   if (!(plan && plan.spoke) && Math.random() < .45 && now - (taunt.last || -1e9) > BANTER_GAP){ if (!taunt(f, null, tgt)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }   // one voice at a time (THE BANTER)
   const s = f.c.sheet, swings = s.multi || 1, bow = s.attacks.find(k => k.ranged);
   // a drow with a hand crossbow shoots, unless a hero is already at its elbow (SRD: a ranged attack within 5 ft of a
@@ -11116,7 +11225,7 @@ function allyTurn(a){
   const tgt = (cbt.lastAllyTarget && cbt.lastAllyTarget.get(a) && seen.includes(cbt.lastAllyTarget.get(a))) ? cbt.lastAllyTarget.get(a) : seen.sort(near)[0];
   if (!tgt){ checkEnd() || end(); return; }
   (cbt.lastAllyTarget || (cbt.lastAllyTarget = new Map())).set(a, tgt);
-  fightCam(Math.min(2.4, cbt.home.z * 1.08), (a.x + tgt.x) / 2, (a.y + tgt.y) / 2 - 50, 600, [a, tgt]);
+  pairCam(a, tgt);
   const s = a.c.sheet, pick = allyAttackPick(a, tgt), atk = pick.atk;
   const swings = /crossbow/i.test(atk.itemName || atk.name) ? 1 : (s.multi || 1);   // SRD Loading: one bolt per action, however many attacks the block has
   if (pick.how !== "close") log(`${fname(a)} ${pick.how === "throw" ? "hefts" : "levels"} the ${esc(atk.itemName || atk.name)} at ${fname(tgt)}.`);
@@ -12337,8 +12446,13 @@ function critBeat(t){
   }, CRIT_ZOOM_MS);
 }
 function shake(px){ shakeAmt = Math.max(shakeAmt, px); }
-function pushCam(a, b){ if (!cbt) return; if (cbt.yourCam){ fightCam(0, 0, 0, 420, [a, b]); return; } camPushed = true; camTo(Math.min(2.8, cbt.home.z * 1.25), (a.x + b.x) / 2, (a.y + b.y) / 2 - 50, 420); }
-function settleCam(){ if (!cbt || !camPushed) return; camPushed = null; if (!cbt.yourCam) camTo(cbt.home.z, cbt.home.cx, cbt.home.cy, 700); }
+// THE BLOW (HOW A FIGHT IS STAGED, by fightFrame): the attacker and the target are both in the picture, pushed in as far
+// as keeps them both there (no push-in with motion off). Afterwards the camera does NOT go home and out again: it stays
+// on the two of them until the next turn frames itself, except for a hero whose player is still choosing, who gets
+// their turn's framing back.
+function pushCam(a, b){ if (!cbt) return; if (cbt.yourCam){ fightCam(0, 0, 0, 420, [a, b]); return; } camPushed = true; fightFrame([a, b], motionOn ? FIGHT_LOOK.blowZoomMax : FIGHT_LOOK.pairZoomMax, FIGHT_LOOK.blowMs); }
+function settleCam(){ if (!cbt || !camPushed) return; camPushed = null; if (cbt.yourCam) return;
+  const a = activeActor(); if (a && a.kind === "pc" && !a.down && !cbt.quick && (canControl(a) || oneFightWaitsFor(a))){ const m = FIGHT_LOOK.turnMs; FIGHT_LOOK.turnMs = FIGHT_LOOK.backMs; try { turnCam(a); } finally { FIGHT_LOOK.turnMs = m; } } }
 // a bolt of light from the caster to the target, then the hit
 // The fighting-game swipe (Sam, 2026-10-13: "street fighter like swipes during melee attacks"): a thick
 // crescent that sweeps across the target in ~7 frames, a brighter core inside a coloured blade, with
@@ -15931,7 +16045,8 @@ function hitActor(list, w){
   for (const a of list){
     if (a.offStage || a.alpha < .05) continue;
     const m = SPR[a.id].json, T = w.art && ovDrawn(a) ? ovActorT(a) : null, sc = actorScale(a) * (T ? T.k : 1), hw = 34 * sc * (m.cell[0] / 128), hh = 105 * sc * (m.cell[1] / 128);
-    const ax = T ? T.q.x : a.x, ay = T ? T.q.y : a.y, W = T ? w.art : w;   // in the close-up: tested where it is drawn
+    const fo = fanOf(a) || {x: 0, y: 0};                                    // fanned apart in a fight (fanSolve): tested where it is drawn
+    const ax = (T ? T.q.x + fo.x * T.k : a.x + fo.x), ay = (T ? T.q.y + fo.y * T.k : a.y + fo.y), W = T ? w.art : w;   // in the close-up: tested where it is drawn
     if (W.x > ax - hw && W.x < ax + hw && W.y > ay - hh && W.y < ay + 10){ const d = Math.abs(W.y - (ay - hh / 2)); if (d < bd){ bd = d; best = a; } }
   }
   return best;
@@ -19196,7 +19311,8 @@ async function owResync(){
 const FIGHT = {id: null, auth: false, mirror: false, plate: null, live: null, since: 0, inSince: 0, out: [], sent: {}, fullAt: 0, menuSig: "", dlgSig: "",
   serial: 0, dlgs: {}, dlgSeq: 0, promptFor: null, applying: null, polling: false, lastOk: 0, failed: false, hoverAt: 0, pendingActors: new Set(), endSent: false};
 const RELAY = {depth: 0, orig: {}, imgs: {}};
-const RELAY_FNS = ["log", "narrate", "popText", "bark", "shake", "hitstop", "redFlash", "critBeat", "toast", "victoryBanner", "triumph", "spawnFx", "slowmo"];
+const RELAY_FNS = ["log", "narrate", "popText", "bark", "shake", "hitstop", "redFlash", "critBeat", "toast", "victoryBanner", "triumph", "spawnFx", "slowmo",
+  "pairCam", "pushCam", "settleCam"];   // the camera's cues (HOW A FIGHT IS STAGED): each screen frames the same two fighters for itself
 const fightOn = () => !!(FIGHT.id && (FIGHT.auth || FIGHT.mirror));
 const relayOn = () => FIGHT.auth && FIGHT.id && !RELAY.depth;
 // --- who is who between screens: a hero by name; a plate's person by where the plate stands them; a newcomer by number
@@ -19450,7 +19566,7 @@ async function mirrorApply(b){
     Object.assign(cbt, {round: c.round, idx: c.idx, phase: c.phase, quick: c.quick, order: c.order.map(byKey).filter(Boolean), boss: byKey(c.boss),
       allies: c.allies.map(byKey).filter(Boolean), bystanders: c.bystanders.map(byKey).filter(Boolean), pend: dec(c.pend)});
     renderTurns(); renderParty();
-    const a = activeActor(); if (a && a !== turnWas){ try { camTo(Math.max(view.z, 1.2), a.x, a.y - 60, 500); } catch (e) {} }
+    const a = activeActor(); if (a && a !== turnWas){ try { turnCam(a); } catch (e) {} }
   }
   if (b.zones) for (const [n, v] of Object.entries(b.zones)) try { eval(`${n} = dec(v) || []`); } catch (e) {}
   for (const ev of b.ev || []) relayPlay(ev);
