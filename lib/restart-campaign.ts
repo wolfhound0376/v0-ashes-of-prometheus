@@ -553,7 +553,7 @@ export async function restartCampaign(admin: SupabaseClient): Promise<RestartRes
     // What was used up or merged into another stack has no row left to return.
     const { data: stash } = await admin.from("characters").select("id").eq("name", CONFISCATION_STASH_NAME).order("created_at", { ascending: true }).limit(1).maybeSingle()
     if (stash?.id) {
-      const { data: takes, error: takesErr } = await admin.from("item_events").select("inventory_item_id, detail, created_at").eq("kind", "acquire").eq(`detail->>${STASH_MARK}`, "true")
+      const { data: takes, error: takesErr } = await admin.from("item_events").select("inventory_item_id, detail, occurred_at").eq("kind", "acquire").eq(`detail->>${STASH_MARK}`, "true")
       note("stash takes read", takesErr)
       const ownerIds = [...new Set(((takes || []) as { detail: Record<string, unknown> | null }[]).map((t) => t.detail?.owner_id).filter((v): v is string => typeof v === "string"))]
       const { data: owners } = ownerIds.length ? await admin.from("characters").select("id").in("id", ownerIds) : { data: [] }

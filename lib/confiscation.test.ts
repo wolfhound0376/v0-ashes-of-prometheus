@@ -7,7 +7,7 @@ describe("returnsToStash", () => {
   const take = (row: string, owner?: string, at = "2026-11-11T00:00:00Z") => ({
     inventory_item_id: row,
     detail: { [STASH_MARK]: true, ...(owner ? { owner_id: owner } : {}) },
-    created_at: at,
+    occurred_at: at,
   })
 
   it("sends a stash take back, as its owner's confiscated property again", () => {
@@ -15,7 +15,7 @@ describe("returnsToStash", () => {
   })
 
   it("leaves loot from bodies and chests alone", () => {
-    const loot = { inventory_item_id: "crossbow-1", detail: { from: "a body", same_item: true }, created_at: "x" }
+    const loot = { inventory_item_id: "crossbow-1", detail: { from: "a body", same_item: true }, occurred_at: "x" }
     expect(returnsToStash([loot], live).size).toBe(0)
   })
 
