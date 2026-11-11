@@ -366,6 +366,9 @@ for i in P + list(GARB.values()) + N + F + V + LP:
     # a bladed swing (scripts/sprites/add-hero-moves.py --dagger, Sam 2026-10-29 for Lynkes): strike() plays `dagger` instead of
     # `attack` when the weapon is a blade and the sheet exists; a hero without one swings `attack` as before
     if i in PG: sh.append('dagger')
+    # a special attack's own swing (scripts/sprites/add-shoot-pose.py --pose art-<key>, Sam 2026-11-10 for Fifi): strike() plays
+    # `art-<key>` when the hero uses that weapon art and the sheet exists; without one the plain swing plays as before
+    if i in PG: sh += ['art-vex', 'art-sap']
     if i == 'scott': sh.append('perform')
     if i in ['jorlan', 'drow-guard-male', 'drow-guard-female']: sh += ['attack', 'dodge', 'hurt', 'dead']
     # the hand crossbow (scripts/sprites/add-shoot-pose.py, Sam 2026-10-29 "go" on the drow audit): strike() plays
