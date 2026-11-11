@@ -49,6 +49,11 @@ export async function POST(req: NextRequest) {
     const attacks = (Array.isArray(npc.attacks) ? npc.attacks : []).slice(0, 6).map((a: Record<string, unknown>) =>
       `- ${clip(a.name, 40)}: ${a.ranged ? `ranged, ${num(a.range)} ft` : "melee"}${a.spell ? " (a spell)" : ""}`,
     )
+    const spells = (Array.isArray(npc.spells) ? npc.spells : []).slice(0, 10).map((x: Record<string, unknown>) =>
+      `- ${clip(x.name, 40)}: ${clip(x.what, 160)} (${x.on === "hero" ? "aim at a hero key" : x.on === "ally" ? "on one of their own side, by name key" : "on themself"})`,
+    )
+    const book = clip(npc.book, 400)
+    const allyKeys = (Array.isArray(body?.offer?.allies) ? body.offer.allies : []).slice(0, 12).map((k: unknown) => clip(k, 30)).join(", ")
     const log = (Array.isArray(body?.log) ? body.log : []).slice(-6).map((l: unknown) => `- ${clip(l, 160)}`)
     const order = clip(body?.orderFromAbove, 120)
 
@@ -64,11 +69,14 @@ Their own side:
 ${side.join("\n") || "- nobody else"}
 Their attacks:
 ${attacks.join("\n") || "- none"}
+${spells.length ? `Spells they can cast now (slots and uses already counted):\n${spells.join("\n")}${allyKeys ? `\nKeys for their own side: ${allyKeys}` : ""}` : ""}
+${book ? `Also in their book, but NOT castable here (never choose these): ${book}` : ""}
 Lately:
 ${log.join("\n") || "- the fight has just begun"}
 
 Choose what they do NOW. Allowed actions: ${offer.actions.join(", ")}.
 - attack: needs "target" (a hero key) and "attack" (one of their attack names).
+- cast: needs "spell" (one of the castable spells) and "target" as that spell says (a hero key, an own-side key, or "" for themself).
 - call_for_help: shout for reinforcements; spends the turn.
 - retreat: leave the fight by the nearest way out${offer.canOrder ? " — everyone under them falls back too" : ""}.
 - negotiate: call a halt and offer terms; the WHOLE fight stops and becomes a conversation.
@@ -76,7 +84,7 @@ Choose what they do NOW. Allowed actions: ${offer.actions.join(", ")}.
 Play them as the book would: proud drow do not parley at full strength, cowards break when bloodied, priestesses of Lolth despise weakness. Most turns are attacks.
 ${offer.canOrder ? 'They may also give one order to those under them: "order": {"kind": "focus", "target": "<hero key>"} | {"kind": "protect"} | {"kind": "fall_back"} | {"kind": "hold"}, or null.' : ""}
 "line": what they shout this turn, in character, at most 12 words (or "" to stay silent). Do not invent spells, items or facts.
-Reply with only JSON: {"action": "...", "target": "...", "attack": "...", "line": "...", "order": null}`
+Reply with only JSON: {"action": "...", "target": "...", "attack": "...", "spell": "...", "line": "...", "order": null}`
 
     const result = await generateText({
       model: anthropic("claude-haiku-4-5-20251001"),

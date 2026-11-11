@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest"
 import { cleanOffer, parseMindReply, type MindOffer } from "./npc-mind"
 
 const offer: MindOffer = {
-  actions: ["attack", "call_for_help", "retreat", "negotiate"],
+  actions: ["attack", "cast", "call_for_help", "retreat", "negotiate"],
   targets: ["kenta", "samson"],
   attacks: ["Scourge", "Ray of Sickness"],
+  spells: [{ name: "Web", on: "hero" }, { name: "Cure Wounds", on: "ally" }, { name: "Conjure Animals", on: "self" }],
+  allies: ["ilvara", "shoor"],
   canOrder: true,
 }
 
@@ -14,7 +16,7 @@ describe("the gate between the model and the map", () => {
       'Sure: {"action":"attack","target":"kenta","attack":"Ray of Sickness","line":"Kneel, worm.","order":{"kind":"focus","target":"samson"}}',
       offer,
     )
-    expect(c).toEqual({ action: "attack", target: "kenta", attack: "Ray of Sickness", line: "Kneel, worm.", order: { kind: "focus", target: "samson" } })
+    expect(c).toEqual({ action: "attack", target: "kenta", attack: "Ray of Sickness", spell: null, line: "Kneel, worm.", order: { kind: "focus", target: "samson" } })
   })
   it("throws away an action that was not offered", () => {
     expect(parseMindReply('{"action":"surrender","line":"Mercy"}', offer)).toBeNull()
@@ -40,6 +42,17 @@ describe("the gate between the model and the map", () => {
     expect(parseMindReply(JSON.stringify({ action: "negotiate", line: long }), offer)!.line!.split(" ").length).toBeLessThanOrEqual(18)
   })
   it("cleans the offer: unknown actions out, no attack without a target", () => {
-    expect(cleanOffer({ actions: ["attack", "teleport", "retreat"], targets: [], attacks: ["Mace"] })).toEqual({ actions: ["retreat"], targets: [], attacks: ["Mace"], canOrder: false })
+    expect(cleanOffer({ actions: ["attack", "teleport", "retreat"], targets: [], attacks: ["Mace"] })).toEqual({ actions: ["retreat"], targets: [], attacks: ["Mace"], spells: [], allies: [], canOrder: false })
+  })
+  it("casts only an offered spell, on the side it is aimed at", () => {
+    expect(parseMindReply('{"action":"cast","spell":"Web","target":"kenta","line":"Sleep, flies."}', offer)).toMatchObject({ action: "cast", spell: "Web", target: "kenta" })
+    expect(parseMindReply('{"action":"cast","spell":"Web","target":"shoor"}', offer)).toBeNull()          // web aimed at her own
+    expect(parseMindReply('{"action":"cast","spell":"Cure Wounds","target":"shoor"}', offer)).toMatchObject({ spell: "Cure Wounds", target: "shoor" })
+    expect(parseMindReply('{"action":"cast","spell":"Cure Wounds","target":"kenta"}', offer)).toBeNull()  // healing the enemy
+    expect(parseMindReply('{"action":"cast","spell":"Conjure Animals","target":"kenta"}', offer)).toMatchObject({ spell: "Conjure Animals", target: null })
+    expect(parseMindReply('{"action":"cast","spell":"Fireball","target":"kenta"}', offer)).toBeNull()      // not in her book
+  })
+  it("offers no cast without a spell", () => {
+    expect(cleanOffer({ actions: ["cast", "retreat"], targets: ["kenta"], spells: [] }).actions).toEqual(["retreat"])
   })
 })
