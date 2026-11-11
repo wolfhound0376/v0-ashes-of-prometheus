@@ -5454,8 +5454,10 @@ function nextLevelBanner(){
     el.innerHTML = `<div class="halo"></div><div class="glow"></div>${sparks}<img class="medal" src="${ICON_BASE}hero/level-up.png" alt=""><div class="big">LEVEL UP!</div>`
       + `<div class="small">${esc(who)}</div><br><div class="hint">${inFightNow() ? "take it after the fight" : "take it from the glowing Level Up button"}</div>`;
     el.hidden = false; el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
-    // the sound: the bank's level-up sting, the epic loot shimmer under it, then the ceremony's own voice ("Level up!")
-    bank("ui/level_up", .95); setTimeout(() => sfx("walk:loot_epic", .5), 140); setTimeout(() => sfx("voice:level-up", .9), 650);
+    // the sound: Sam's level-up fanfare (ElevenLabs, 2026-11-10, take 4 of the mobile-RPG batch: a quick rising harp and
+    // glockenspiel run landing on a brass chord and boom, public/sfx/walk/level-up-fanfare.mp3), then the ceremony's own
+    // voice ("Level up!") as the chord rings out, so the two never talk over each other
+    sfx("walk:level-up-fanfare", .9); setTimeout(() => sfx("voice:level-up", .85), 1900);
     for (const h of heroes){ const a = party.find(p => p.id === h.id); if (a) popText(a, "LEVEL UP!", "#f3d68a", 1.3); }
     exploreKey = "";   // light the bar's button now
     setTimeout(() => { el.hidden = true; nextLevelBanner(); }, 5000);
