@@ -14,17 +14,23 @@
 // The holder is created on first use, column for column like the stash. It is not a player and is never seated.
 
 export const FLOOR_HOLDER_NAME = "Velkynvelve Floor"
+// Step 3: what is still in a chest, on a body or in a guard's pockets. Same pattern, a second holder, so "on the floor"
+// and "not yet taken" are never confused. Which container a row belongs to is kept in the `walk-loot` world flag
+// (`rows[container][slug]`), beside the counts that already live there.
+export const LOOT_HOLDER_NAME = "Velkynvelve Loot"
 
 type Db = { from: (t: string) => any }   // eslint-disable-line @typescript-eslint/no-explicit-any
 
 /** The floor holder's character id; created the first time something is put down. null = could not (the caller falls back). */
-export async function floorHolderId(db: Db, create = true): Promise<string | null> {
+export const floorHolderId = (db: Db, create = true) => holderId(db, FLOOR_HOLDER_NAME, create)
+export const lootHolderId = (db: Db, create = true) => holderId(db, LOOT_HOLDER_NAME, create)
+async function holderId(db: Db, name: string, create: boolean): Promise<string | null> {
   try {
-    const { data } = await db.from("characters").select("id").eq("name", FLOOR_HOLDER_NAME).order("created_at", { ascending: true }).limit(1).maybeSingle()
+    const { data } = await db.from("characters").select("id").eq("name", name).order("created_at", { ascending: true }).limit(1).maybeSingle()
     if (data?.id) return data.id as string
     if (!create) return null
     const { data: made } = await db.from("characters").insert({
-      name: FLOOR_HOLDER_NAME, class: "Storage", level: 0, hp_current: 1, hp_max: 1, ac: 10, initiative: 0,
+      name, class: "Storage", level: 0, hp_current: 1, hp_max: 1, ac: 10, initiative: 0,
       proficiency_bonus: 0, passive_perception: 0,
       str_score: 10, str_modifier: 0, dex_score: 10, dex_modifier: 0, con_score: 10, con_modifier: 0,
       int_score: 10, int_modifier: 0, wis_score: 10, wis_modifier: 0, cha_score: 10, cha_modifier: 0,
@@ -32,6 +38,12 @@ export async function floorHolderId(db: Db, create = true): Promise<string | nul
     }).select("id").maybeSingle()
     return (made?.id as string) ?? null
   } catch { return null }
+}
+
+/** How many rows a container still needs minted for one unique kind: what is left of it, less the rows it already has. */
+export function rowsToMint(o: { qty: number; taken: number; have: number; stackable: boolean; inCatalogue: boolean }): number {
+  if (o.stackable || !o.inCatalogue) return 0          // stacks stay stacks; nothing is invented
+  return Math.max(0, o.qty - o.taken - o.have)
 }
 
 /** What a pickup does with the row parked under a pile. Pure, so the rule is tested. */

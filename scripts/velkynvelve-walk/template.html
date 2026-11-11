@@ -3069,7 +3069,10 @@ async function enterNode(n, opts = {}){
     if (compAll.includes(np.id)) continue;              // a companion walks with the party, not at their old spot
     if (np.id === surgeonDeadId()) continue;            // shot dead at the gate (The Drow Surgeon) and thrown over the falls
     if (!SPR[np.id]) continue;                          // no sprite baked for them yet: the record stays, the plate shows nobody
-    const a = mkActor(np.id, np.x, np.y, "npc", {face: np.face || 0, talk: !!np.talk, talkLine: np.talkLine, barks: np.barks || [], home: {x: np.x, y: np.y},
+    // lootPost: who this is, for loot (not `post`: the pen's people already carry a `post` object, where they stand). A guard the story POSTS here is one guard with one kit for the run, wherever he falls
+    // and however many times the plate is fought (Sam's ruling 3, 2026-11-10: only drow the story brings in arrive with
+    // new gear). bodyKeyOf() uses it; a drow who arrives in a wave has no post and is keyed by where he fell, as before.
+    const a = mkActor(np.id, np.x, np.y, "npc", {lootPost: np.hostile ? `${n}-post-${Math.round(np.x)}-${Math.round(np.y)}` : undefined, face: np.face || 0, talk: !!np.talk, talkLine: np.talkLine, barks: np.barks || [], home: {x: np.x, y: np.y},
       hostile: !!np.hostile, static: !!np.static, backdrop: !!np.backdrop, fixedScale: np.fixedScale || 0, patrol: np.patrol || null, post: {x: np.x, y: np.y}});
     a.pocketKey = `${n === PEN ? "pen" : "p" + n}-${Math.round(np.x)}-${Math.round(np.y)}`;   // this guard's own pockets, the same every visit (pocketId)
     a.t0 = now - Math.random() * 1000; a.actUntil = now + 2000 + Math.random() * 7000; npcs.push(a);
@@ -4089,6 +4092,8 @@ function rollPocketsLocal(which){
 // places them); a named NPC (Ilvara, Shoor, the prisoners — #970) is one pocket wherever they stand
 const pocketId = n => n.id === "escort-drow" ? "pocket:drow-guard-male:escort" : /^drow-guard-/.test(n.id) && n.pocketKey ? `pocket:${n.id}:${n.pocketKey}` : `pocket:${n.id}`;   // a named NPC is one pocket wherever they stand
 const lootLocal = {};                                   // preview only: container key -> {slug: taken}
+/** The key a body's loot is kept under: its post if the story posted it here, else the spot it fell. */
+const bodyKeyOf = t => (typeof t.lootPost === "string" && t.lootPost) || `${cur}-${Math.round(t.x)}-${Math.round(t.y)}`;
 const lootKeyOf = id => id.startsWith("pocket:") ? id : id.startsWith("body:") ? "body:" + id.split(":")[1] + ":" + id.split(":").slice(2).join(":") : id;
 const localLootKey = row => row.slug || ("row:" + row.rowId);   // a book row by slug, a confiscated (stash) row by its id
 const slugName = s => s.replace(/-/g, " ").replace(/^./, c => c.toUpperCase());
@@ -4557,7 +4562,7 @@ const MAGNET_FT = 7, MAGNET_MS = 300;
 function dropLoot(t){
   if (!t || !t.c || t.kind === "pc" || t.ally || t.lootDropped) return;
   t.lootDropped = true;
-  t.lootKey = t.lootKey || `${cur}-${Math.round(t.x)}-${Math.round(t.y)}`;   // the same key the body card uses
+  t.lootKey = t.lootKey || bodyKeyOf(t);   // the same key the body card uses
   const id = `body:${t.id}:${t.lootKey}`, plate = cur, kill = t.killType || "", at = {x: t.x, y: t.y};
   setTimeout(async () => {
     const j = await fetchLoot(id, kill); await ensureCatalog();
@@ -5185,7 +5190,7 @@ function openBody(b){
   // note "EVERY LABEL IN A CARD ROW MUST BE AN ELEMENT", the same bug PR #1159 fixed on the talk card).
   const add = (label, fn, cls = "", meta = {}) => choiceRow(box, label, fn, cls, meta);
   const close = () => { $("obj").hidden = true; mode = "explore"; };
-  b.lootKey = b.lootKey || `${cur}-${Math.round(b.x)}-${Math.round(b.y)}`;
+  b.lootKey = b.lootKey || bodyKeyOf(b);
   const known = !!LOOT_BOOK["body:" + b.id];
   add(b.searched ? "Look again" : "Search the body", () => { close(); const first = !b.searched; b.searched = true;
     if (first){ bank("ui/item_pickup", .7); log(`${fname(leader)} searches ${name}'s body.`); }
@@ -11354,7 +11359,7 @@ function endCombat(won){
   const allies = cbt ? cbt.allies : [], fightId = cbt ? cbt.id : null;
   for (const b of (cbt && cbt.bystanders) || []){   // BYSTANDERS: the dead lie where they fell, searchable; the living stand down
     b.bystander = false; b.path = [];
-    if (b.down){ b.kind = "body"; b.body = true; b.once = null; b.lootKey = `${cur}-${Math.round(b.x)}-${Math.round(b.y)}`; }
+    if (b.down){ b.kind = "body"; b.body = true; b.once = null; b.lootKey = bodyKeyOf(b); }
     else { b.home = {x: b.x, y: b.y}; b.actUntil = now + 3000; }
   }
   closeMenu(); cbt = null; combatBusy = false; fx.length = 0; stopLullaby(); poisonZones = []; daggerZones = []; fireSpheres = []; spiritWeapons = []; guardianAuras = []; reactionWait = null; dmPlace = null;
@@ -11375,7 +11380,7 @@ function endCombat(won){
     payXp(fightId, slain);
   }
   setTimeout(() => {
-    for (const f of slain){ f.kind = "body"; f.body = true; f.path = []; f.once = null; f.lootKey = `${cur}-${Math.round(f.x)}-${Math.round(f.y)}`; npcs.push(f); }
+    for (const f of slain){ f.kind = "body"; f.body = true; f.path = []; f.once = null; f.lootKey = bodyKeyOf(f); npcs.push(f); }
     actors = actors.filter(a => a.kind !== "foe"); foes = [];
     for (const [slug, f] of [...creatures]) if (f.down || !actors.includes(f)) creatures.delete(slug);
     camTo(1, NAT_W / 2, NAT_H / 2, 800);
