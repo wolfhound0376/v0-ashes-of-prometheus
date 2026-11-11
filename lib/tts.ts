@@ -103,6 +103,7 @@ export function sanitizeForTTS(text: string): string {
     .replace(/\[TIME:[^\]]*\]/g, "") // world-clock time tags
     .replace(/\[STORY_ADVANCE[^\]]*\]/g, "")
     .replace(/\[CINEMATIC:[^\]]*\]/g, "") // action-cinematic cues
+    .replace(/\[MOOD:[^\]]*\]/gi, "") // the look on Malachar's face (lib/malachar-mood.ts)
     .replace(/\[COMBAT_START:[^\]]*\]/g, "") // initiative call (lib/combat-flag.ts)
     .replace(/\[COMBAT_END\]/g, "")
     .replace(/\[NPC_MOVE:[^\]]*\]/g, "")

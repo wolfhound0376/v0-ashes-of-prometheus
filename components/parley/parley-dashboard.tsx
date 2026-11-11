@@ -43,6 +43,7 @@ import { SuggestionChips } from "@/components/dashboard/suggestion-chips"
 import type { Suggestion } from "@/lib/suggestions"
 import { createClient } from "@/lib/supabase/client"
 import { CharacterSpriteVignette } from "@/components/dashboard/character-sprite-vignette"
+import { onMalacharMood, type MalacharMood } from "@/lib/malachar-mood"
 import { onCinematicCue } from "@/lib/cinematic-cue"
 import { triggerFor, shouldPlay, readPlayed, rememberPlayed } from "@/lib/cinematic-replay"
 import { useSpeechInput } from "@/lib/hooks/use-speech-input"
@@ -1328,23 +1329,49 @@ const CINEMATICS_OFF_KEY = "aop-parley-cinematics-off"
  * WebM alpha is black in Safari, so Safari gets the still.
  */
 const MALACHAR_ROOMS = ["/parley/malachar/throne.mp4", "/parley/malachar/library.mp4"]
+// HIS FACE (Sam, 2026-11-10: "laugh when something is funny, look annoyed at what might be perceived as a dumb
+// question, mock you, or act indifferent. Eyes will occasionally glow red when he's angry"). Six loops of the same
+// cartoon lich, stacked, one showing at a time:
+//   at rest      the indifferent loop, barely moving
+//   his reply    its mood plays once through as a reaction (lib/malachar-mood.ts; an indifferent reply has none)
+//   his voice    the talking loop, for as long as the voice is actually playing
+// A reaction outranks the voice for its five seconds, so a laugh is not cut off by the first word.
+const MALACHAR_LOOPS = ["indifferent", "talking", "laughing", "annoyed", "mocking", "angry"] as const
+type MalacharLoop = (typeof MALACHAR_LOOPS)[number]
+const MALACHAR_REACTION_MS = 5000
 function MalacharAudience({ speaking }: { speaking: boolean }) {
   const [room] = useState(() => MALACHAR_ROOMS[Math.floor(Math.random() * MALACHAR_ROOMS.length)])
   const [still, setStill] = useState(false)
-  const loop = useRef<HTMLVideoElement | null>(null)
+  const [reaction, setReaction] = useState<MalacharMood | null>(null)
+  const loops = useRef<Partial<Record<MalacharLoop, HTMLVideoElement | null>>>({})
   useEffect(() => { setStill(/^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent)) }, [])
   useEffect(() => {
-    const v = loop.current
-    if (!v) return
-    if (speaking) { void v.play().catch(() => {}) } else { v.pause(); try { v.currentTime = 0 } catch { /* not loaded yet */ } }
-  }, [speaking, still])
-  return <div className="p-malachar">
+    let timer: number | undefined
+    const off = onMalacharMood((mood) => {
+      if (mood === "indifferent") return
+      setReaction(mood)
+      window.clearTimeout(timer)
+      timer = window.setTimeout(() => setReaction(null), MALACHAR_REACTION_MS)
+    })
+    return () => { off(); window.clearTimeout(timer) }
+  }, [])
+  const showing: MalacharLoop = reaction ?? (speaking ? "talking" : "indifferent")
+  useEffect(() => {
+    for (const name of MALACHAR_LOOPS) {
+      const v = loops.current[name]
+      if (!v) continue
+      if (name === showing) { if (name !== "indifferent" && name !== "talking") { try { v.currentTime = 0 } catch { /* not loaded yet */ } } void v.play().catch(() => {}) }
+      else v.pause()
+    }
+  }, [showing, still])
+  const label = reaction === "laughing" ? "Malachar laughs" : reaction === "annoyed" ? "Malachar is annoyed" : reaction === "mocking" ? "Malachar mocks you" : reaction === "angry" ? "Malachar is angry" : speaking ? "Malachar speaks" : "Malachar listens"
+  return <div className="p-malachar" data-mood={showing}>
     <video className="p-mal-room" src={room} autoPlay loop muted playsInline aria-hidden="true" />
     <div className="p-mal-shade" />
     {still
       ? <img className="p-mal-lich" src="/table/lich.webp" alt="Malachar, the Dungeon Master" />
-      : <video ref={loop} className="p-mal-lich" src="/parley/malachar/talking.webm" poster="/table/lich.webp" loop muted playsInline preload="auto" aria-label="Malachar, the Dungeon Master" onError={() => setStill(true)} />}
-    <div className="p-tags"><span className={cn("p-slab sm", speaking ? "gold" : "dark")}>{speaking ? <span className="p-speak">Malachar speaks <span className="p-eq">▮▮▯▯</span></span> : "Malachar listens"}</span></div>
+      : MALACHAR_LOOPS.map((name) => <video key={name} ref={(el) => { loops.current[name] = el }} className={cn("p-mal-lich", name !== showing && "off")} src={`/parley/malachar/${name}.webm`} loop muted playsInline preload="auto" aria-hidden={name !== showing} aria-label={name === showing ? "Malachar, the Dungeon Master" : undefined} onError={name === "indifferent" || name === "talking" ? () => setStill(true) : undefined} />)}
+    <div className="p-tags"><span className={cn("p-slab sm", reaction === "angry" ? "red" : speaking || reaction ? "gold" : "dark")}>{speaking && !reaction ? <span className="p-speak">Malachar speaks <span className="p-eq">▮▮▯▯</span></span> : label}</span></div>
   </div>
 }
 

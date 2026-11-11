@@ -3,6 +3,7 @@ import { addressedNpc, type RosterNpc } from "@/lib/addressed-npc"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { MALACHAR_MOOD_RULE, readMalacharMood, stripMalacharMood } from "@/lib/malachar-mood"
 import { findNpcRow, learnName, npcKnowsName, relationshipSummary, saysOwnName } from "@/lib/npc-acquaintance"
 import { applyStageEvents, jorlanOnDuty, readStage, watchAndGateTags, type StageEvent } from "@/lib/stage-roster"
 import { directorPrompt, namesTaggedIn, parseDirector, wantsDirector, type DirectorCast } from "@/lib/stage-director"
@@ -1778,6 +1779,8 @@ These rules are MANDATORY. The dashboard CANNOT detect game state changes from p
 
 9. CINEMATIC CUES: When a moment listed in the CINEMATIC CUES section actually happens, emit [CINEMATIC: <cue>] using a cue name from that list, at most one per response. If no CINEMATIC CUES section appears above, this location has no film and you MUST NOT emit the tag at all. The test is whether the moment HAPPENED in your narration, not whether it was dramatic or actively willed \u2014 a character who sleeps and dreams has had the moment as surely as one who picks a lock. What you must not do is fire a cue for something that did not occur: an intention, a hypothetical, or a moment you invented to justify the film.
 
+${MALACHAR_MOOD_RULE}
+
 10. JOURNAL PAGES: Each prisoner smuggled a battered journal past the drow. When a character WRITES IN IT — says they are noting something down, recording what they saw, keeping a tally, marking the days — emit [JOURNAL: <the page>] on its own line.
 
 - The page is THEIRS, not yours. Write what the character would have written, in their voice: what they observed, what they decided, what they are afraid of. First person.
@@ -2270,6 +2273,10 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
   }
 
   let rawText = result.text || ""
+  // MALACHAR'S MOOD (lib/malachar-mood.ts): read off the reply, then cut out before anything below stores, voices or
+  // parses the prose, so the tag can never reach the log, a speech segment or a player's ears.
+  const malacharMood = readMalacharMood(rawText)
+  rawText = stripMalacharMood(rawText)
   // Who was already on stage before this turn: anyone encountered now who was not, has just arrived.
   const activeNamesBefore = new Set<string>()
   // A bestiary creature described in the prose but not tagged is tagged for him (see missingCreatureTags).
@@ -3581,6 +3588,7 @@ ${pacingBlock ? `\n${pacingBlock}` : ""}${infectionBlock ? `\n\n${infectionBlock
     .replace(/\[TIME:[^\]]*\]/gi, "")
     .replace(/\[STORY_ADVANCE[^\]]*\]/gi, "")
     .replace(/\[CINEMATIC:[^\]]*\]/gi, "")
+    .replace(/\[MOOD:[^\]]*\]/gi, "")
     .replace(CAMP_ACTION_STRIP_RE, "")
     .replace(/\[JOURNAL:[^\]]*\]/gi, "")
     .replace(QUEST_STRIP_RE, "")
@@ -5275,6 +5283,8 @@ Answer with exactly one cue name from the list, or the single word NONE. No othe
     // A validated action-cinematic cue, if this turn earned one. The client
     // asks /api/cinematics to resolve it; a null cue means no film this turn.
     cinematicCue: cinematicCue || undefined,
+    // The look on Malachar's face this turn, for the Talk to Malachar screen (lib/malachar-mood.ts).
+    mood: malacharMood || undefined,
     // Derived from writes this turn actually made. Reaches the caller only -
     // see the note in lib/sfx-cues.ts about table-wide delivery.
     sfxCues,

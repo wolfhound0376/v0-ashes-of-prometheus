@@ -332,3 +332,8 @@
 @media (prefers-reduced-motion: reduce) { .parley .p-mal-room { display: none; } }
 .parley.audience .p-lines { align-content: start; }
 .parley.audience .p-cycler { padding: 6px 18px; min-width: 176px; justify-content: center; }
+
+/* his six loops sit on top of each other; only the one showing is visible (no reload, so no flash between moods) */
+.parley .p-mal-lich { transition: opacity .18s linear; }
+.parley .p-mal-lich.off { opacity: 0; }
+.parley .p-malachar[data-mood="angry"] .p-mal-shade { background: linear-gradient(180deg, rgba(60,4,6,.22), rgba(40,2,4,.5)); }
