@@ -363,7 +363,7 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
           <div className="absolute inset-0 grid place-items-center bg-[#0a0612cc] p-4">
             <div className={`w-full max-w-md rounded-lg border-2 ${halt.kind === "camp" ? "border-[#7a5c2b]" : "border-[#7a2b2b]"} bg-[#1a1020] p-4 shadow-[0_0_40px_#000]`}>
               <div className={`text-[10px] uppercase tracking-[.22em] ${halt.kind === "camp" ? "text-[#e0a35c]" : "text-[#c96a6a]"}`}>
-                {halt.kind === "encounter" ? "Encounter" : halt.kind === "challenge" ? "Challenge" : halt.kind === "cinematic" ? "Cinematic" : halt.kind === "camp" ? "Nightfall — make camp" : halt.kind === "forced_march" ? "Forced march — the price" : "The party stops"}
+                {halt.kind === "encounter" ? "Encounter" : halt.kind === "challenge" ? "Challenge" : halt.kind === "cinematic" ? "Cinematic" : halt.kind === "camp" ? (march.hours_today >= MARCH_HOURS_PER_DAY ? "Nightfall — make camp" : "Camp — long rest") : halt.kind === "forced_march" ? "Forced march — the price" : "The party stops"}
               </div>
               <div className="mt-1 font-serif text-lg leading-snug text-[#f5c34d]">{halt.title}</div>
               {halt.body && <p className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-[#c9bcd8]">{halt.body}</p>}
@@ -410,7 +410,8 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
               >
                 {halt.kind === "camp" ? "BREAK CAMP — WALK ON" : halt.kind === "forced_march" ? "WALK ON" : "CONTINUE THE MARCH"}
               </button>
-              {halt.kind === "camp" && (
+              {halt.kind === "camp" && march.hours_today >= MARCH_HOURS_PER_DAY && (
+                // Only at nightfall: a camp the party chose before the eight hours were up has nothing to force.
                 // FORCED MARCH (SRD 5.1, Travel Pace). The day goes on past
                 // eight; every whole hour past it, everyone saves CON vs
                 // DC 10 + hours past eight or gains a level of exhaustion.
