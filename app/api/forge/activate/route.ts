@@ -5,6 +5,7 @@ import { importCharacter } from "@/lib/forge-import"
 import type { ForgeAssets } from "@/lib/forge-submission"
 import { randomUUID } from "crypto"
 import { readSeated } from "@/lib/seats"
+import { proveHost } from "@/lib/table-store"
 import { canonById } from "@/lib/canon-heroes"
 
 // /api/forge/activate — the DM opens (or shuts) a Forge hero's cell. DM only.
@@ -25,12 +26,20 @@ import { canonById } from "@/lib/canon-heroes"
 
 export const dynamic = "force-dynamic"
 
-function dmOnly(req: Request): Response | null {
-  return isDmRequest(req, normalizeCode, safeEquals) ? null : Response.json({ error: "DM only" }, { status: 403 })
+// The DM, or the campaign's host proving themselves with their hero's claim (Sam, 2026-11-10: the host runs the
+// table, so the heroes knocking at the door are let in from the table too; lib/host.ts).
+async function dmOnly(req: Request): Promise<Response | null> {
+  if (isDmRequest(req, normalizeCode, safeEquals)) return null
+  const id = req.headers.get("x-character-id") ?? ""
+  const token = req.headers.get("x-claim-token") ?? ""
+  if (id && token) {
+    try { if (await proveHost(createAdminClient(), id, token)) return null } catch { /* fall through */ }
+  }
+  return Response.json({ error: "DM only" }, { status: 403 })
 }
 
 export async function GET(req: Request) {
-  const no = dmOnly(req); if (no) return no
+  const no = await dmOnly(req); if (no) return no
   let admin: ReturnType<typeof createAdminClient>
   try { admin = createAdminClient() } catch { return Response.json({ error: "Server not configured" }, { status: 500 }) }
   const { data, error } = await admin
@@ -62,7 +71,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const no = dmOnly(req); if (no) return no
+  const no = await dmOnly(req); if (no) return no
   const body = await req.json().catch(() => null)
   const id = typeof body?.id === "string" ? body.id : ""
   const action = body?.action === "reject" ? "reject" : body?.action === "activate" ? "activate" : null

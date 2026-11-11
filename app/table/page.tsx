@@ -335,16 +335,17 @@ export default function TablePage() {
         {msg && <p role="alert" className="mb-3 text-sm text-[#d9bd7e]">{msg}</p>}
         {!view && <p className="text-[11px] uppercase tracking-[0.4em] text-stone-600">Lighting the candles…</p>}
         {view && role === "dm" && <DmControls view={view} busy={busy} send={send} onRehearse={() => router.push(mapHref(true))} />}
+        {view && (role === "dm" || hostMode) && <DoorKnocks me={hostMode ? me : null} />}
         {view && role === "dm" && <SeatInvites view={view} busy={busy} send={send} />}
-        {view && role === "dm" && <RestartCampaign busy={busy} onDone={load} />}
-        {/* THE HOST: the same table controls, minus the reset and the sandbox (those need the DM code). */}
-        {view && hostMode && <DmControls host view={view} busy={busy} send={send} onRehearse={() => {}} />}
+        {/* THE HOST: the same table controls. New Game asks for the DM code (lib/host.ts KEY_ONLY_ACTIONS). */}
+        {view && hostMode && <DmControls host view={view} busy={busy} send={send} onRehearse={() => router.push(mapHref(true))} />}
         {view && hostMode && view.state.status === "live" && view.mine && !view.mine.away && (
           <a href="/" className="mt-3 block rounded-sm border border-[#8a6a3a] py-3 text-[12px] uppercase tracking-[0.3em] text-[#e8c56a] hover:border-[#f4e0a8]">Return to the game</a>
         )}
         {view && hostMode && <SeatInvites view={view} busy={busy} send={send} />}
         {/* THE SHELF (Sam, 2026-11-10): the saved games, for the host or the DM, while the table is dark. */}
         {view && view.state.status === "closed" && (role === "dm" || hostMode) && <SaveShelf me={hostMode ? me : null} onLoaded={load} />}
+        {view && view.state.status === "closed" && (role === "dm" || hostMode) && <NewGame me={hostMode ? me : null} onDone={load} />}
         {/* A host's Start is their Ready, so their own box shows only when it has something to tell them. */}
         {view && role === "player" && (!hostMode || view.mine?.light === "red") && <PlayerBox view={view} busy={busy} send={send} />}
         {view && role === "player" && view.state.status === "lobby" && view.mine && <FigurePicker view={view} busy={busy} send={send} />}
@@ -501,22 +502,22 @@ function DmControls({ view, busy, send, onRehearse, host = false }: { view: View
     // The host opens their own table, with no code (Sam, 2026-11-10; lib/host.ts).
     return (
       <div className="space-y-3">
-        <p className="text-sm text-stone-400">The table is dark. You are the host — open it and the party can sit down.</p>
+        <p className="text-sm text-stone-400">The table is dark. You are the host — load a saved game below if you want a different one, then open it.</p>
         <button type="button" disabled={busy} onClick={() => send("open")} className="flex w-full items-center justify-center gap-3 rounded-sm border-2 border-[#8a6a3a] bg-gradient-to-b from-[#2a2015] to-[#120e0a] py-4 font-serif text-lg uppercase tracking-[0.3em] text-[#e8c56a] shadow-[0_0_40px_rgba(201,168,104,0.3)] hover:border-[#f4e0a8] disabled:opacity-40">
           <DoorOpen className="h-5 w-5" /> Open the table
         </button>
+        <button type="button" onClick={onRehearse} className="text-[11px] uppercase tracking-[0.3em] text-stone-600 hover:text-stone-400">Rehearsal — sandbox, nothing saves</button>
       </div>
     )
   }
   if (s.status === "closed") {
-    // The table opens from the host door (/dm: the DM code, then who you are playing). This used to send the
-    // DM to the title screen to find a small corner link (Sam, 2026-11-10: "what does the To the DM Door do").
+    // ONE HOST SCREEN (Sam, 2026-11-10: "go PR2"). The DM opens the table right here, no trip to the title screen.
     return (
       <div className="space-y-3">
-        <p className="text-sm text-stone-400">The table is dark. Host a Game opens it: choose who you are playing, then Continue or start a New Game.</p>
-        <a href="/dm" className="flex w-full items-center justify-center gap-3 rounded-sm border-2 border-[#8a6a3a] bg-gradient-to-b from-[#2a2015] to-[#120e0a] py-4 font-serif text-lg uppercase tracking-[0.3em] text-[#e8c56a] shadow-[0_0_40px_rgba(201,168,104,0.3)] hover:border-[#f4e0a8]">
-          <DoorOpen className="h-5 w-5" /> Host a Game
-        </a>
+        <p className="text-sm text-stone-400">The table is dark. Load a saved game below if you want a different one, then open it.</p>
+        <button type="button" disabled={busy} onClick={() => send("open")} className="flex w-full items-center justify-center gap-3 rounded-sm border-2 border-[#8a6a3a] bg-gradient-to-b from-[#2a2015] to-[#120e0a] py-4 font-serif text-lg uppercase tracking-[0.3em] text-[#e8c56a] shadow-[0_0_40px_rgba(201,168,104,0.3)] hover:border-[#f4e0a8] disabled:opacity-40">
+          <DoorOpen className="h-5 w-5" /> Open the table
+        </button>
         <button type="button" onClick={onRehearse} className="text-[11px] uppercase tracking-[0.3em] text-stone-600 hover:text-stone-400">Rehearsal — sandbox, nothing saves</button>
       </div>
     )
@@ -561,58 +562,121 @@ function EndButton({ busy, send, label = "End the session", prominent = false }:
   )
 }
 
-// Start the whole campaign over (Sam, 2026-10-25: "I also want to reset the game button so we can restart the
-// campaign"). The dashboard had this, but the DM no longer has a dashboard, so it lives at his table now. The
-// work is /api/restart-campaign (DM only): it wipes the run and keeps the heroes. It also clears every world
-// flag, which closes this table and empties every seat, so anyone still in the game is sent back to the table
-// (components/session-guard.tsx). Two steps, because it cannot be undone.
-function RestartCampaign({ busy, onDone }: { busy: boolean; onDone: () => void }) {
+// ONE NEW GAME (Sam, 2026-11-10: "go PR2"). There used to be two resets — "New game" behind the DM door and
+// "Restart the campaign" here — that did nearly the same thing. This is the one: /api/table `new`, which puts the
+// game in play on the saved-games shelf first, resets the campaign, opens the table and starts a new save. It
+// needs the DM code (lib/host.ts KEY_ONLY_ACTIONS); a host types it here and keeps hosting afterwards.
+function NewGame({ me, onDone }: { me: { id: string; token: string } | null; onDone: () => void }) {
   const [step, setStep] = useState<"idle" | "ask" | "working">("idle")
+  const [code, setCode] = useState("")
   const [note, setNote] = useState<string | null>(null)
-  const restart = async () => {
+  const go = async () => {
     setStep("working"); setNote(null)
     try {
-      const r = await fetch("/api/restart-campaign", { method: "POST", headers: { "Content-Type": "application/json", ...dmHeaders() } })
-      const j = await r.json().catch(() => null)
-      if (r.status === 403) { setNote("The server did not accept your DM code. Nothing was restarted. Sign in at the DM door again."); return }
-      if (!r.ok || !j?.ok) { setNote("The restart did not fully finish. Some of the old run may still be there; tell Claude before you play."); return }
-      // Bring every screen that follows the shared stage back to the table, as the dashboard's restart did.
+      if (me) {
+        const l = await fetch("/api/dm/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) })
+        const lj = await l.json().catch(() => ({}))
+        if (!l.ok || !lj.ok) { setNote(l.status === 429 ? "Too many tries. Wait a few minutes." : "That is not the DM code. Nothing was reset."); return }
+      }
+      const r = await fetch("/api/table", { method: "POST", headers: { "Content-Type": "application/json", ...dmHeaders() }, body: JSON.stringify(me ? { action: "new", hostId: me.id } : { action: "new" }) })
+      const j = await r.json().catch(() => ({}))
+      if (me) {
+        // The host keeps hosting with their hero's claim; the code is not left behind on this browser.
+        const claim = j?.hostClaim as { characterId?: string; claimToken?: string } | null | undefined
+        if (claim?.characterId && claim.claimToken) { try { localStorage.setItem(CHARACTER_LS_KEY, claim.characterId); localStorage.setItem(TOKEN_LS_KEY, claim.claimToken) } catch { /* storage blocked */ } }
+        await fetch("/api/dm/logout", { method: "POST" }).catch(() => {})
+      }
+      if (!r.ok) { setNote(j?.error ?? "The new game did not start. Nothing was reset."); return }
       fetch("/api/stage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "table", by: "dm", at: new Date().toISOString(), caption: "A new game begins." }) }).catch(() => {})
-      const run = typeof j.report?.run?.number === "number" ? ` Run ${j.report.run.number} begins.` : ""
-      setNote(`The campaign is back at the beginning.${run} Open the table when the players are ready.`)
+      setNote(j?.note ?? "A new game begins. The old one is on the shelf, and the table is open.")
+      setCode("")
       onDone()
     } catch {
       setNote("Could not reach the server. Nothing was changed.")
     } finally {
-      setStep("idle")
+      setStep((s) => (s === "working" ? "idle" : s))
     }
   }
   return (
-    <div className="mt-10 border-t border-[#2a221a] pt-5">
+    <div className="mt-6 text-center">
       {note && <p role="status" className="mb-3 text-sm text-[#d9bd7e]">{note}</p>}
-      {step === "ask" ? (
+      {step === "idle" ? (
+        <button type="button" onClick={() => setStep("ask")} className="inline-flex items-center gap-2 rounded-sm border border-red-900/60 px-4 py-2 text-[11px] uppercase tracking-[0.3em] text-red-300/80 hover:border-red-500/80 hover:text-red-200">
+          <RotateCcw className="h-3.5 w-3.5" /> New Game
+        </button>
+      ) : (
         <div className="rounded-sm border border-red-800/70 bg-[#1a0b0b]/90 p-4 text-left">
-          <div className="font-serif text-base text-red-100">Restart the whole campaign?</div>
+          <div className="font-serif text-base text-red-100">Start a new game?</div>
           <p className="mt-2 text-sm leading-relaxed text-stone-400">
-            Everything that happened in this campaign is wiped: the story so far, what Malachar and the NPCs remember, every
-            choice the world recorded, everything the party carries, and every seat at this table. The heroes themselves are kept,
-            with their sheets, levels and art. The party wakes again in rags, in the slave pen of Velkynvelve.
+            The game in play goes on the saved-games shelf first, so you can load it again. Then the campaign starts over:
+            the heroes keep their art and voices and start at level 1, and the party wakes in the slave pen of Velkynvelve.
+            The table opens{me ? " with you hosting" : ""}.
           </p>
-          <p className="mt-2 text-sm text-red-300/90">This cannot be undone.</p>
-          <div className="mt-4 flex gap-2">
-            <button type="button" onClick={restart} disabled={busy} className="flex flex-1 items-center justify-center gap-2 rounded-sm border-2 border-red-700/80 bg-gradient-to-b from-[#3a1414] to-[#1f0b0b] py-3 font-serif text-sm uppercase tracking-[0.25em] text-red-100 hover:border-red-400 disabled:opacity-40">
-              <RotateCcw className="h-4 w-4" /> Yes, start over
+          {me && (
+            <input value={code} onChange={(e) => setCode(e.target.value)} type="password" autoComplete="off" placeholder="the DM code"
+              className="mt-3 w-full rounded-sm border border-[#7a5f33]/70 bg-black/70 px-3 py-2 text-center font-mono text-[15px] tracking-widest text-stone-100 placeholder:text-stone-700 focus:border-[#c9a868] focus:outline-none" />
+          )}
+          <div className="mt-3 flex gap-2">
+            <button type="button" disabled={step === "working" || (me != null && !code.trim())} onClick={go} className="flex flex-1 items-center justify-center gap-2 rounded-sm border-2 border-red-700/80 bg-gradient-to-b from-[#3a1414] to-[#1f0b0b] py-3 font-serif text-sm uppercase tracking-[0.25em] text-red-100 hover:border-red-400 disabled:opacity-40">
+              <RotateCcw className="h-4 w-4" /> {step === "working" ? "Starting…" : "Start a new game"}
             </button>
-            <button type="button" onClick={() => setStep("idle")} className="flex-1 rounded-sm border border-[#3d3428] py-3 text-[12px] uppercase tracking-[0.25em] text-stone-400 hover:text-stone-200">
-              Keep this campaign
+            <button type="button" disabled={step === "working"} onClick={() => { setStep("idle"); setCode("") }} className="flex-1 rounded-sm border border-[#3d3428] py-3 text-[12px] uppercase tracking-[0.25em] text-stone-400 hover:text-stone-200 disabled:opacity-40">
+              Keep this game
             </button>
           </div>
         </div>
-      ) : (
-        <button type="button" disabled={busy || step === "working"} onClick={() => setStep("ask")} className="inline-flex items-center gap-2 rounded-sm border border-red-900/60 px-4 py-2 text-[11px] uppercase tracking-[0.3em] text-red-300/80 hover:border-red-500/80 hover:text-red-200 disabled:opacity-40">
-          <RotateCcw className="h-3.5 w-3.5" /> {step === "working" ? "Restarting…" : "Restart the campaign"}
-        </button>
       )}
+    </div>
+  )
+}
+
+// HEROES AT THE DOOR (Sam, 2026-11-10: "go PR2"). Heroes forged or claimed at the door wait for the host to let
+// them in. This used to live behind the DM door; it is here now, for the DM or the host (/api/forge/activate
+// accepts the host's claim). Shown only when someone is waiting.
+type Knock = { id: string; playerName: string; heroName: string; canon: string | null; sheet: { species: string | null; clazz: string | null; level: number | null } }
+function DoorKnocks({ me }: { me: { id: string; token: string } | null }) {
+  const [knocks, setKnocks] = useState<Knock[]>([])
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [note, setNote] = useState<string | null>(null)
+  const headers = useCallback((): Record<string, string> => (me ? { ...dmHeaders(), "x-character-id": me.id, "x-claim-token": me.token } : dmHeaders()), [me])
+  const load = useCallback(async () => {
+    try {
+      const j = await fetch("/api/forge/activate", { cache: "no-store", headers: headers() }).then((r) => r.json())
+      setKnocks(Array.isArray(j.pending) ? j.pending : [])
+    } catch { /* next tick */ }
+  }, [headers])
+  useEffect(() => { load(); const t = window.setInterval(load, 8000); return () => window.clearInterval(t) }, [load])
+  const act = async (k: Knock, action: "activate" | "reject", confirmDuplicate = false) => {
+    if (action === "activate" && k.canon && !confirmDuplicate && !window.confirm(`Hand ${k.heroName} to ${k.playerName}? Whoever held ${k.heroName} before loses their words and their seat link.`)) return
+    setBusyId(k.id); setNote(null)
+    try {
+      const r = await fetch("/api/forge/activate", { method: "POST", headers: { "Content-Type": "application/json", ...headers() }, body: JSON.stringify({ id: k.id, action, confirmDuplicate }) })
+      const j = await r.json().catch(() => ({}))
+      if (r.status === 409 && j.duplicate) { if (window.confirm(`${j.error} Let them in anyway, as a second copy?`)) return act(k, action, true); return }
+      if (!r.ok) { setNote(j.error ?? "That did not work."); return }
+      setNote(action === "activate" ? (j.codeKept ? `${k.heroName} is in. Their words are good at the door.` : `${k.heroName} is in. New words: ${j.claimCode ?? "none issued"}.`) : `${k.heroName} was turned away.`)
+      await load()
+    } catch { setNote("Could not reach the door.") } finally { setBusyId(null) }
+  }
+  if (knocks.length === 0 && !note) return null
+  return (
+    <div className="mt-6 rounded-sm border border-[#7a5f33]/70 bg-black/60 text-left">
+      <div className="border-b border-[#2a241e] px-4 py-2 text-[10px] uppercase tracking-[0.35em] text-[#c9a868]">At the door · {knocks.length}</div>
+      {note && <p className="px-4 pt-3 text-sm text-[#d9bd7e]">{note}</p>}
+      <ul className="divide-y divide-[#2a241e]">
+        {knocks.map((k) => (
+          <li key={k.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+            <div>
+              <div className="font-serif text-[15px] text-[#e8d9ae]">{k.heroName} <span className="text-sm text-stone-500">· {k.playerName}</span></div>
+              <div className="text-[11px] uppercase tracking-[0.18em] text-stone-500">{[k.sheet.species, k.sheet.clazz, k.sheet.level != null ? `Lv ${k.sheet.level}` : null].filter(Boolean).join(" · ") || "A new hero"}{k.canon ? " · canon hero" : ""}</div>
+            </div>
+            <div className="flex gap-2">
+              <button type="button" disabled={busyId !== null} onClick={() => act(k, "activate")} className="flex items-center gap-1.5 rounded-sm border border-emerald-700/70 px-3 py-1.5 text-[11px] uppercase tracking-[0.2em] text-emerald-200 hover:border-emerald-400 disabled:opacity-40"><UserPlus className="h-3.5 w-3.5" /> Let in</button>
+              <button type="button" disabled={busyId !== null} onClick={() => act(k, "reject")} className="flex items-center gap-1.5 rounded-sm border border-[#3d3428] px-3 py-1.5 text-[11px] uppercase tracking-[0.2em] text-stone-400 hover:border-red-500/60 hover:text-red-200 disabled:opacity-40"><UserMinus className="h-3.5 w-3.5" /> Turn away</button>
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }
