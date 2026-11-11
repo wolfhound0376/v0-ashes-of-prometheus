@@ -3230,12 +3230,13 @@ function leaderOut(a, left, min, max){
 // Heroes have no "flee through the door" of their own; the one way a party leaves a fight is the surrender, which ends
 // the fight first and only then marches (surrenderBegins), so it passes rule 1 as it always did.
 const fightHoldsPlate = () => !!cbt || mode === "combat";
+let fightDoor = null;       // the doorway a fight's end left the leader standing in (rule 2): a click on it goes through
 function fightLetsGo(){
   if (!leader) return;
   // a step the fight's end cut short stops where it is; the walk back in through the pen gate (endCombat) goes on
   for (const p of party) if (p.path && p.path.length && !p.walkIn && !owRemote(p)){ p.path = []; p.onArrive = null; }
   const at = leader.path && leader.path.length ? leader.path[leader.path.length - 1] : leader;
-  ackZone = zoneAt(at.x, at.y);
+  ackZone = fightDoor = zoneAt(at.x, at.y);
 }
 async function travel(to, z, fromWorld, cut, solo){
   if (mode === "travel") return;
@@ -16052,8 +16053,8 @@ function click(w){
     if (n && n.body){ walkTo(nearNpc(n), () => openBody(n)); return; }
     if (n && POCKETED(n.id) && !n.hostile){ walkTo(nearNpc(n), () => openPockets(n)); return; }
     if (n){ if (wantsWord(n) || canTalkTo(n)) walkTo(nearNpc(n), () => approach(n)); else ambient(n); return; }
-    // the doorway you already stand in (you arrived by it, or a fight ended with you in it): a click on it goes through
-    { const zx = zoneAt(w.x, w.y); if (zx && zx === ackZone && zx === zoneAt(leader.x, leader.y) && canControl(leader) && !leader.path.length){ ackZone = null; return; } }
+    // a fight ended with you standing in this doorway (fightLetsGo): a click on it goes through
+    { const zx = zoneAt(w.x, w.y); if (zx && zx === fightDoor && zx === ackZone && zx === zoneAt(leader.x, leader.y) && canControl(leader) && !leader.path.length){ ackZone = fightDoor = null; return; } }
     const p = nearestWalkable(w.x, w.y); marker = {x: p.x, y: p.y, t: now}; walkTo(p);
   } else if (mode === "combat"){ if (dmPlace){ placeDmCloud(w); return; } combatClick(w); }
 }
