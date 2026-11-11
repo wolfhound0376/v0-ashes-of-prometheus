@@ -90,7 +90,7 @@ async function contents(db: Db, id: string, s: State, kill?: string | null): Pro
   let rolled = false
   if (guard && !s.pockets[c.key]){ s.pockets[c.key] = rollPockets(c.which!); rolled = true }
   // a body's kit rolls for wear the first time anyone looks — the map looks the moment it falls, saying what killed it
-  // (lib/walk-loot.ts rollWear: 1-2 on a d20, worse by kill type) — then stays as rolled for the run
+  // (lib/walk-loot.ts rollWear: its own number for each kind of thing, worse by kill type) — then stays as rolled for the run
   let ruinedNow: Ruined[] | undefined
   const kit = c.kind === "body" && !s.bodies[c.key] ? onDutyKit(c.slug!, c.which, await kitFor(db, c.slug!)) : undefined
   const purseCr = c.kind === "body" ? PURSE_CR[c.slug!] : undefined
