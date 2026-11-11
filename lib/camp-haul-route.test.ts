@@ -1,5 +1,5 @@
 // The haul route against a fake database: what it writes, and what it refuses.
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 
 type Row = Record<string, unknown>
 const tables: Record<string, Row[]> = {}
@@ -38,7 +38,11 @@ function fakeFrom(table: string) {
 
 vi.mock("@/lib/supabase/admin", () => ({ createAdminClient: () => ({ from: fakeFrom }) }))
 
-const { POST, GET } = await import("@/app/api/camp/haul/route")
+// Loaded after the mock above is registered. In a hook rather than a top-level await, which the project's
+// TypeScript target (ES6) does not allow.
+type HaulRoute = typeof import("@/app/api/camp/haul/route")
+let POST: HaulRoute["POST"], GET: HaulRoute["GET"]
+beforeAll(async () => { ({ POST, GET } = await import("@/app/api/camp/haul/route")) })
 
 function post(body: unknown) {
   return POST(new Request("http://x/api/camp/haul", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }) as never)

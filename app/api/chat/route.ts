@@ -2353,7 +2353,7 @@ ${MALACHAR_LAST_WORD}`
   console.log("[v0] journal tag scan:", journalTags.length ? journalTags.join(" ") : "NO [JOURNAL] TAG IN RESPONSE")
   if (journalTags.length && playerCharacter?.id) {
     // One page per turn. If he emitted two, the first is the one he meant.
-    const body = journalTags[0].replace(/^\[JOURNAL:\s*/i, "").replace(/\]$/, "").trim()
+    const body = (journalTags[0] ?? "").replace(/^\[JOURNAL:\s*/i, "").replace(/\]$/, "").trim()
     if (body) {
       // Service-role write: author='malachar' is refused to the anon key (see above).
       const { error: jerr } = await adminClient().from("journal_entries").insert({
@@ -2368,7 +2368,7 @@ ${MALACHAR_LAST_WORD}`
       else console.log("[v0] journal page written for", playerCharacter.name, "-", body.slice(0, 60))
     }
   } else if (journalTags.length) {
-    console.warn("[v0] journal tag emitted with no acting character - page dropped:", journalTags[0].slice(0, 80))
+    console.warn("[v0] journal tag emitted with no acting character - page dropped:", (journalTags[0] ?? "").slice(0, 80))
   }
 
   // === QUESTS ===

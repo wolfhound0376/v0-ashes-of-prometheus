@@ -411,7 +411,8 @@ export function repairMaterialsGp(value: number | null | undefined, from: Repair
  * hours come from CRAFT_BY_RARITY — the same table crafting rolls against.
  */
 export function repairSpec(
-  item: { name: string; rarity?: string | null; item_type?: string | null; value?: number | null; properties?: { repair?: RepairRecipe | null } | null },
+  // `properties` is a catalogue row's whole jsonb: it may carry `repair` and anything else (rusted, breaks_on_nat_1…)
+  item: { name: string; rarity?: string | null; item_type?: string | null; value?: number | null; properties?: ({ repair?: RepairRecipe | null } & Record<string, unknown>) | null },
   from: Condition,
   opts: { tool?: string | null; facilities?: string[] | null } = {},
 ): { spec: RepairSpec | null; reason: string | null } {
