@@ -142,7 +142,9 @@ export default function VelkynvelvePage() {
             Rehearsal · nothing saves
           </span>
         )}
-        {dm ? <span className="ml-auto"><EndGameButton /></span> : <MessagePlayerButton variant="pixel" className="ml-auto" />}
+        {dm ? <span className="ml-auto"><EndGameButton /></span> : (
+          <span className="ml-auto inline-flex items-center gap-2"><EndGameButton asHost /><MessagePlayerButton variant="pixel" /></span>
+        )}
       </header>
       <div className={dm && !bagOpen ? "relative min-h-0 flex-1 p-[14px]" : "relative min-h-0 flex-1"}>
         <iframe
