@@ -6982,13 +6982,13 @@ const FOE_BLOCKS = {
 // he can see) and Derendil's Wounded Fury (10 HP or fewer: advantage, +2d6 on a melee hit) are their block traits.
 // Saves are ability modifiers, as for the foes (the rows carry no save list).
 const ALLY_SHEETS = {
-  ront:     {name: "Ront", style: "melee", cls: "Orc", hp: 15, ac: 13, init: 1, speed: 30, strScore: 16, leaper: true, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 0, cha: 0}, aggressive: true,
+  ront:     {name: "Ront", style: "melee", rages: true, cls: "Orc", hp: 15, ac: 13, init: 1, speed: 30, strScore: 16, leaper: true, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 0, cha: 0}, aggressive: true,
              attacks: [{name: "Unarmed Strike", hit: 5, dmg: "4", type: "bludgeoning", reach: 5}],
              kit: {greataxe: {name: "Greataxe", hit: 5, dmg: "1d12+3", type: "slashing", reach: 5}, javelin: {name: "Javelin", hit: 5, dmg: "1d6+3", type: "piercing", reach: 5, thrown: 30}}},
   eldeth:   {name: "Eldeth", style: "ranged", cls: "Shield dwarf", hp: 16, ac: 13, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 1, cha: 0}, multi: 2,
              attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
              kit: {shortsword: {name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, longbow: {name: "Longbow", hit: 4, dmg: "1d8+2", type: "piercing", reach: 150}}},
-  derendil: {name: "Derendil", style: "melee", cls: "Quaggoth", hp: 45, ac: 14, init: 1, speed: 30, strScore: 17, leaper: true, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, multi: 2, woundedFury: 10,
+  derendil: {name: "Derendil", style: "melee", rages: true, cls: "Quaggoth", hp: 45, ac: 14, init: 1, speed: 30, strScore: 17, leaper: true, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, multi: 2, woundedFury: 10,
              attacks: [{name: "Claw", hit: 5, dmg: "1d6+3", type: "slashing", reach: 5}], kit: {}},
   sarith:   {name: "Sarith", style: "ranged", cls: "Drow", race: "drow", hp: 13, ac: 13, init: 2, speed: 30, strScore: 10, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1},
              attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
@@ -11368,6 +11368,27 @@ function enterRage(a){
   narrate(a, `${fname(a)}'s breathing goes ragged, and something behind the eyes stops being careful.`);
   renderParty(); if (cbt && activeActor() === a) openMenu(a);
 }
+// THE BRUTES RAGE TOO (Sam, 2026-11-10: "They should also be able to rage if they are barbarian types (Derendil and
+// Ront should be able to)"). Neither stat block has Rage (the orc has Aggressive, the quaggoth Wounded Fury), so this is
+// Sam's ruling, not the book: a sheet with `rages` rages as a 1st-level barbarian does (lib/rage.mjs, the same rule the
+// heroes use: +2 melee damage with Strength, advantage on Strength checks and saves, resistance to bludgeoning, piercing
+// and slashing, twice per page-load, ends on a turn with no attack made and no damage taken). They choose it themselves,
+// as their bonus action, and not every fight: only once they are bleeding or the thing in front of them is big
+// (a boss, or more hit points than they have). Derendil's Wounded Fury is untouched and stacks with it.
+function allyWantsRage(a, tgt){
+  const c = a.c, s = c.sheet; if (!s.rages || c.rage || !c.bonus || (RAGE_USED[a.id] || 0) >= ragesPerLongRest(1)) return false;
+  const hurt = c.hp < c.hpMax, big = !!tgt && !!tgt.c && ((cbt && cbt.boss === tgt) || tgt.c.hpMax > c.hpMax);
+  return hurt || big;
+}
+function allyRage(a){
+  const c = a.c; c.bonus = false; RAGE_USED[a.id] = (RAGE_USED[a.id] || 0) + 1; c.rage = beginRage(cbt ? cbt.round : 0); c.conds.add("raging");
+  popText(a, "RAGE", RAGE_TINT, 1.4); burst(a, RAGE_TINT, 26); shake(6); a.flash = now + 220; a.flashCol = RAGE_TINT;
+  const cs = CREATURE_SFX[a.id === "derendil" ? "quaggoth" : a.id]; if (cs && cs.call) bank(cs.call, .6);
+  if (SPR[a.id].img.rage) playOnce(a, "rage", () => setAnim(a, "idle"));
+  log(`<b>${fname(a)} rages.</b> +${rageDamageBonus(1)} on melee damage with Strength, advantage on Strength checks and saves, resistance to bludgeoning, piercing and slashing.`);
+  narrate(a, a.id === "derendil" ? `${fname(a)} throws back his head and roars, and the prince is gone from his eyes.` : `${fname(a)} bellows, and something behind the eyes stops being careful.`);
+  renderParty();
+}
 function endRage(a, why){
   const c = a.c; if (!c || !c.rage) return;
   c.rage = null; c.conds.delete("raging");
@@ -11579,6 +11600,7 @@ function allyTurn(a){
   const swings = /crossbow/i.test(atk.itemName || atk.name) ? 1 : (s.multi || 1);   // SRD Loading: one bolt per action, however many attacks the block has
   if (pick.how !== "close") log(`${fname(a)} ${pick.how === "throw" ? "hefts" : "levels"} the ${esc(atk.itemName || atk.name)} at ${fname(tgt)}.`);
   const gapFt = () => Math.max(0, (pxBetween(a, tgt, tgt) - reachPx(a, tgt, pick.reach || 5)) / ruleFt(onPaintedFloor(tgt) ? {x: tgt.x, y: tgt.y, big: a.big} : a));
+  if (pick.how === "close" && gapFt() <= a.c.move && allyWantsRage(a, tgt)) allyRage(a);   // only on a turn the blow will land: a rage with no attack made ends at once
   if (gapFt() > a.c.move && s.aggressive && a.c.bonus){
     a.c.bonus = false; a.c.move += s.speed; log(`${fname(a)} charges (Aggressive, bonus action: +${s.speed} ft toward ${fname(tgt)}).`);
   }
@@ -12573,7 +12595,7 @@ function endCombat(won){
   arrowsWorkLoose(true);   // the heroes' arrows drop out as the fight ends
   for (let i = stuck.length - 1; i >= 0; i--){ const q = stuck[i]; if (!q.at || !(q.at.down && q.at.kind === "foe")) stuck.splice(i, 1); }
   for (const h of party) if (h.c){ h.c.conds.delete("burning"); }
-  for (const h of party) if (h.c && h.c.rage) endRage(h, "the fight is over");   // no hostile left to attack: the next turn would end it anyway
+  for (const h of new Set([...party, ...actors])) if (h.c && h.c.rage && h.kind !== "foe") endRage(h, "the fight is over");   // no hostile left to attack: the next turn would end it anyway
   shots.length = 0; icePatches = []; for (const a of actors) a.onIce = null;
   // anyone of ours still out on the balcony walks back in through the gate before it stops being floor
   if (gatePassable()) for (const h of [...party, ...(cbt ? cbt.allies : [])]) if (!h.down && outsidePen(h)){
