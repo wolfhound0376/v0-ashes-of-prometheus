@@ -315,6 +315,9 @@ interface ParleyDashboardProps {
   addressee?: string | null
   addressChoices?: string[]
   addressPick?: string | null
+  /** TALK TO MALACHAR (Sam, 2026-11-10): the map's "Tell Malachar" opens the Parley as an audience with the DM alone —
+   *  no scene, no NPC stage, no picker; every line goes to him. The page also pins addressPick to "dm". */
+  audience?: boolean
   onAddressPick?: (who: string | null) => void
   characters: Character[]
   selectedCharacter?: Character
@@ -1100,7 +1103,18 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
   }
   const portraitSrc = selected?.portrait_image_url || selected?.avatar_image_url || null
 
-  return <main style={talkPlate && narrowTalk ? { backgroundImage: `linear-gradient(#050403b3, #050403e6), url(${talkPlate})`, backgroundSize: "cover", backgroundPosition: "51% 64%" } : undefined} className={cn("parley aop-lich-dashboard min-h-0 flex-1 overflow-y-auto", narrowTalk && "narrow")}>
+  // TALK TO MALACHAR: the thread is the hero and the DM, nobody else's lines, and it is always open.
+  const logMini = interactiveLogMinimized && !props.audience
+  const shownLines = props.audience ? displayedDialogue.filter((entry) => classifySpeaker(entry.speaker) === "dm" || (!!selected?.name && entry.speaker.toLowerCase() === selected.name.toLowerCase())) : displayedDialogue
+  const sayBox = (
+      <div className="p-panel p-say">
+        <input value={props.dialogueInput} disabled={props.timeStopped} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder={props.timeStopped ? "Time is stopped. The world waits for the DM." : props.audience ? "Say something to Malachar…" : props.addressPick === "dm" ? "Ask the DM — nobody in the scene hears this…" : (props.addressPick ?? props.addressee) ? `Say something to ${(props.addressPick ?? props.addressee)!.split(/\s+/)[0]}, or act…` : "Say something, or tell Malachar what you do…"} className={cn(props.addressPick === "dm" && "to-dm")} aria-label="Say something" />
+        <button type="button" disabled={!micSupported} onClick={() => { if (!micListening) speechBaseRef.current = props.dialogueInput; toggleMic() }} className={cn("p-slab dark p-mic", micListening && "live red")} title={micSupported ? micListening ? "Stop dictation" : "Dictate your response" : "Voice input is not supported in this browser"}><Mic className="h-4 w-4" /></button>
+        <button type="button" onClick={props.onDialogueSubmit} disabled={props.timeStopped} className="p-slab" style={{ ["--c1" as string]: "#b8252a", ["--c2" as string]: "#5a0e12" } as CSSProperties}>Send</button>
+      </div>
+  )
+
+  return <main style={talkPlate && narrowTalk ? { backgroundImage: `linear-gradient(#050403b3, #050403e6), url(${talkPlate})`, backgroundSize: "cover", backgroundPosition: "51% 64%" } : undefined} className={cn("parley aop-lich-dashboard min-h-0 flex-1 overflow-y-auto", narrowTalk && "narrow", props.audience && "audience")}>
     <TimeStoppedBanner stopped={Boolean(props.timeStopped)} isDm={Boolean(props.dmMode)} />
 
     {/* ---------- top bar ---------- */}
@@ -1132,7 +1146,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
     </div>
 
     {/* ---------- left: where you are, the log, the say box ---------- */}
-    <div className={cn("p-left", !interactiveLogMinimized && "log-open", narrowTalk && "hidden")}>
+    <div className={cn("p-left", !logMini && "log-open", narrowTalk && "hidden")}>
       <div className="p-scene">
         <img className="p-plate" src={sceneImage} alt={props.environment.name} style={talkPlate ? { objectPosition: "51% 64%" } : undefined} />
         <div className="p-vignette" />
@@ -1148,12 +1162,12 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
         )}
       </div>
 
-      <div className={cn("p-log", interactiveLogMinimized ? "p-raised mini" : "p-panel")} onClick={interactiveLogMinimized ? () => setInteractiveLogMinimized(false) : undefined} role={interactiveLogMinimized ? "button" : undefined} title={interactiveLogMinimized ? "Open the full log" : undefined}>
-        <div className="p-loghead"><span className="p-lbl">Interactive Log</span><button type="button" className="p-slab sm" style={{ ["--c1" as string]: "#b8252a", ["--c2" as string]: "#5a0e12" } as CSSProperties} onClick={(e) => { e.stopPropagation(); setInteractiveLogMinimized((v) => !v) }} aria-expanded={!interactiveLogMinimized}>{interactiveLogMinimized ? "⤢ Show all" : "⤡ Latest only"}</button></div>
+      <div className={cn("p-log", logMini ? "p-raised mini" : "p-panel")} onClick={logMini ? () => setInteractiveLogMinimized(false) : undefined} role={logMini ? "button" : undefined} title={logMini ? "Open the full log" : undefined}>
+        <div className="p-loghead"><span className="p-lbl">{props.audience ? "You and Malachar" : "Interactive Log"}</span><button type="button" className="p-slab sm" style={{ ["--c1" as string]: "#b8252a", ["--c2" as string]: "#5a0e12" } as CSSProperties} onClick={(e) => { e.stopPropagation(); setInteractiveLogMinimized((v) => !v) }} aria-expanded={!logMini}>{logMini ? "⤢ Show all" : "⤡ Latest only"}</button></div>
         <div className="p-filters">{["All", "Narration", "Dialogue", "Combat", "System"].map((filter) => <button key={filter} type="button" onClick={() => setLogFilter(filter)} className={cn("p-slab sm", logFilter === filter ? "gold" : "dark")}>{filter}</button>)}</div>
         <div className="p-lines">
-          {displayedDialogue.length === 0 ? <p className="p-thinking" style={{ animation: "none", color: "#6f6380" }}>The log is empty. Malachar is waiting.</p> : null}
-          {displayedDialogue.map((entry, index) => {
+          {shownLines.length === 0 ? <p className="p-thinking" style={{ animation: "none", color: "#6f6380" }}>{props.audience ? "He is listening. Say something." : "The log is empty. Malachar is waiting."}</p> : null}
+          {shownLines.map((entry, index) => {
             const kind = classifySpeaker(entry.speaker)
             const sys = entry.speaker === "System" || entry.speaker === "Combat"
             const cls = sys ? "sys" : kind === "dm" ? "dm" : kind === "player" ? "pc" : "npc"
@@ -1168,16 +1182,13 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
         </div>
       </div>
 
-      <div className="p-panel p-say">
-        <input value={props.dialogueInput} disabled={props.timeStopped} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder={props.timeStopped ? "Time is stopped. The world waits for the DM." : props.addressPick === "dm" ? "Ask the DM — nobody in the scene hears this…" : (props.addressPick ?? props.addressee) ? `Say something to ${(props.addressPick ?? props.addressee)!.split(/\s+/)[0]}, or act…` : "Say something, or tell Malachar what you do…"} className={cn(props.addressPick === "dm" && "to-dm")} aria-label="Say something" />
-        <button type="button" disabled={!micSupported} onClick={() => { if (!micListening) speechBaseRef.current = props.dialogueInput; toggleMic() }} className={cn("p-slab dark p-mic", micListening && "live red")} title={micSupported ? micListening ? "Stop dictation" : "Dictate your response" : "Voice input is not supported in this browser"}><Mic className="h-4 w-4" /></button>
-        <button type="button" onClick={props.onDialogueSubmit} disabled={props.timeStopped} className="p-slab" style={{ ["--c1" as string]: "#b8252a", ["--c2" as string]: "#5a0e12" } as CSSProperties}>Send</button>
-      </div>
+      {props.audience ? null : sayBox}
     </div>
 
     {/* ---------- centre: the one you're speaking to, then you ---------- */}
     <div ref={centerRef} className={cn("p-center", narrowTalk && "narrow")}>
       <div className="p-scene" data-npc-window>
+        {props.audience ? <MalacharAudience speaking={floor?.rank === "dm"} /> : null}
         {stageBackdrop ? (<><img className="p-plate" src={stageBackdrop} alt="" aria-hidden style={talkPlate ? { objectPosition: "51% 64%" } : undefined} /><div className="p-vignette" /></>) : null}
         {npcPortrait ? (isVideoUrl(npcPortrait)
           ? <video key={npcPortrait} src={npcPortrait} autoPlay loop muted playsInline style={npcFrame} className={cn("absolute inset-0 h-full w-full object-contain object-top transition-opacity duration-500", lichShown && "opacity-0")} />
@@ -1255,12 +1266,13 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
     {/* ---------- the strip: who you're talking to, what you might say, the dice ---------- */}
     <div className={cn("p-panel p-hot", narrowTalk && "hidden")}>
       <div className="p-groups">
-        {props.onAddressPick ? <span className={cn("p-slab p-cycler", addressCurrent?.dm && "dm")} title="Who hears what you type">
+        {props.audience ? <><span className="p-slab p-cycler dm" title="Every line here goes to the Dungeon Master"><span className="p-mid"><small>Talking to</small><b>Malachar</b><em>The Dungeon Master</em></span></span>{sayBox}</> : null}
+        {!props.audience && props.onAddressPick ? <span className={cn("p-slab p-cycler", addressCurrent?.dm && "dm")} title="Who hears what you type">
           <button type="button" className="p-slab p-arrow" onClick={() => cycleAddress(-1)} aria-label="Previous">◀</button>
           <span className="p-mid"><small>Talking to</small><b>{addressCurrent?.label}</b><em>{addressCurrent?.sub}</em></span>
           <button type="button" className="p-slab p-arrow" onClick={() => cycleAddress(1)} aria-label="Next">▶</button>
         </span> : null}
-        <span className="p-chips">
+        <span className="p-chips" hidden={!!props.audience}>
           <small className="p-saylbl">SAY</small>
           <SuggestionChips
             variant="parley"
@@ -1306,6 +1318,35 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
 }
 
 const CINEMATICS_OFF_KEY = "aop-parley-cinematics-off"
+
+/**
+ * TALK TO MALACHAR — the DM on his own stage (Sam, 2026-11-10: "Lets use this as the lich cartoon as the (DM) ...
+ * animated"; "We have animated backgrounds for the lich we can use from his throne room and library, we can cycle
+ * through"). The cartoon lich from the staging table over one of Sam's two rooms; one room per visit, a new one the
+ * next time. His talking loop runs only while his voice is actually coming out of the speakers (the shared speech
+ * floor, rank "dm"), and rests on its first frame otherwise, so there is no jump between a still and a film.
+ * WebM alpha is black in Safari, so Safari gets the still.
+ */
+const MALACHAR_ROOMS = ["/parley/malachar/throne.mp4", "/parley/malachar/library.mp4"]
+function MalacharAudience({ speaking }: { speaking: boolean }) {
+  const [room] = useState(() => MALACHAR_ROOMS[Math.floor(Math.random() * MALACHAR_ROOMS.length)])
+  const [still, setStill] = useState(false)
+  const loop = useRef<HTMLVideoElement | null>(null)
+  useEffect(() => { setStill(/^((?!chrome|android|crios|fxios).)*safari/i.test(navigator.userAgent)) }, [])
+  useEffect(() => {
+    const v = loop.current
+    if (!v) return
+    if (speaking) { void v.play().catch(() => {}) } else { v.pause(); try { v.currentTime = 0 } catch { /* not loaded yet */ } }
+  }, [speaking, still])
+  return <div className="p-malachar">
+    <video className="p-mal-room" src={room} autoPlay loop muted playsInline aria-hidden="true" />
+    <div className="p-mal-shade" />
+    {still
+      ? <img className="p-mal-lich" src="/table/lich.webp" alt="Malachar, the Dungeon Master" />
+      : <video ref={loop} className="p-mal-lich" src="/parley/malachar/talking.webm" poster="/table/lich.webp" loop muted playsInline preload="auto" aria-label="Malachar, the Dungeon Master" onError={() => setStill(true)} />}
+    <div className="p-tags"><span className={cn("p-slab sm", speaking ? "gold" : "dark")}>{speaking ? <span className="p-speak">Malachar speaks <span className="p-eq">▮▮▯▯</span></span> : "Malachar listens"}</span></div>
+  </div>
+}
 
 /** Conditions wear the colour of their kind (Sam, 2026-10-28): grey restraint,
  *  amber fatigue, violet corruption, red harm, green blessing, blue ward. */

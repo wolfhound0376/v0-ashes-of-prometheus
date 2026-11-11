@@ -305,3 +305,30 @@
 .parley .p-narr { position: absolute; left: 14px; bottom: 14px; z-index: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: calc(100% - 28px); }
 /* the voice chips leave room for the CR / HP tags in the bottom-right corner */
 .parley .p-center .p-scene:has(> .p-tags.br) .p-narr { max-width: calc(100% - 190px); }
+
+/* ---------- TALK TO MALACHAR — the audience (Sam, 2026-11-10; his board B) ----------
+ * The same Parley with everything that is not the conversation taken away: the top bar keeps the title and Return,
+ * the left column is the thread between you and him, the centre is him in one of his rooms, your own column stays,
+ * and the strip is who you are talking to, the say box and the dice. */
+.parley.audience .p-top > *:not(.p-sync):not(.min-w-0):not(.p-sp):not(.gold) { display: none; }
+.parley.audience .p-left { grid-template-rows: minmax(0, 1fr); }
+.parley.audience .p-left > .p-scene { display: none; }
+.parley.audience .p-log { grid-template-rows: auto minmax(0, 1fr); }
+.parley.audience .p-log .p-filters, .parley.audience .p-loghead > button { display: none; }
+.parley.audience .p-log .p-line.sys, .parley.audience .p-log .p-line.npc { display: none; }
+.parley.audience .p-center { grid-template-rows: minmax(0, 1fr); }
+.parley.audience [data-stage-window] { display: none; }
+.parley.audience [data-npc-window] > *:not(.p-malachar):not(.p-narr) { display: none; }
+.parley.audience .p-narr > button { display: none; }
+.parley .p-malachar { position: absolute; inset: 0; overflow: hidden; background: #0a0710; }
+.parley .p-mal-room { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.parley .p-mal-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(6,4,10,.18), rgba(6,4,10,.42)); }
+/* never cropped through the crown: contained, standing on the floor of the box */
+.parley .p-mal-lich { position: absolute; left: 50%; bottom: 0; height: min(82%, 620px); max-width: 96%; transform: translateX(-50%); object-fit: contain; object-position: center bottom; filter: drop-shadow(0 14px 22px rgba(0,0,0,.75)); }
+.parley.audience .p-hot .p-groups { flex: 1; }
+.parley.audience .p-hot .p-groups > .p-say { flex: 1; min-width: 0; padding: 6px 10px; }
+.parley.audience .p-tail .p-tog { display: none; }
+.parley.audience .p-tail .p-roll { min-width: 200px; justify-content: center; font-size: 1.05rem; }
+@media (prefers-reduced-motion: reduce) { .parley .p-mal-room { display: none; } }
+.parley.audience .p-lines { align-content: start; }
+.parley.audience .p-cycler { padding: 6px 18px; min-width: 176px; justify-content: center; }
