@@ -36,7 +36,7 @@ const SEAT_POLL_MS = 15000
 const BUBBLE_MS = 9000
 const READ_KEY = "aop_dm_last_read"
 
-type Variant = "gold" | "pixel"
+type Variant = "gold" | "pixel" | "action"
 
 // The sender's saved hero voice, through the same route the map uses (/api/npc-tts resolves a hero by name),
 // played through the dashboard's ONE mouth (lib/speech-queue: takes its turn behind whoever is talking, WebAudio
@@ -82,7 +82,10 @@ export function MessagePlayerButton({ variant = "gold", align = "right", drop = 
   // "up" = the button sits at the bottom of the screen (the Underwalk, Sam 2026-11-10: "make this a button on the
   // bottom"), so the thread and the arrival bubble open above it instead of below.
   const where = drop === "up" ? "bottom-full mb-2" : "top-full mt-2"
-  const pixel = variant === "pixel"
+  // "action": the Underwalk bottom bar's look — the same chunky card as Pray / Jump / More (Sam, 2026-11-10: "Make the
+  // message button like the same style as the pray button"). The panel it opens keeps the pixel look.
+  const action = variant === "action"
+  const pixel = variant === "pixel" || action
   const voiced = !pixel
   useEffect(() => { if (voiced) wireAudioUnlock() }, [voiced])
   const supabaseRef = useRef(createClient())
@@ -232,7 +235,7 @@ export function MessagePlayerButton({ variant = "gold", align = "right", drop = 
 
   if (!me) return null
 
-  const s = pixel ? PIXEL : GOLD
+  const s = action ? ACTION : pixel ? PIXEL : GOLD
   return (
     <div ref={boxRef} className={cn("relative", className)}>
       <button
@@ -245,8 +248,18 @@ export function MessagePlayerButton({ variant = "gold", align = "right", drop = 
         title="Message a player"
         className={s.button}
       >
-        <Mail className="h-3.5 w-3.5" aria-hidden />
-        <span>Message</span>
+        {action ? (
+          <>
+            <span className={ACTION_TILE} aria-hidden><Mail className="h-6 w-6" strokeWidth={2.25} /></span>
+            <span className={ACTION_TITLE}>Message</span>
+            <small className={ACTION_SUB}>{total ? `${total} unread · tap to read` : "a player at the table"}</small>
+          </>
+        ) : (
+          <>
+            <Mail className="h-3.5 w-3.5" aria-hidden />
+            <span>Message</span>
+          </>
+        )}
         {total > 0 && <span className={s.badge}>{total > 9 ? "9+" : total}</span>}
       </button>
 
@@ -386,4 +399,17 @@ const PIXEL = {
   popFrom: "text-[10px] font-bold uppercase tracking-[0.14em] text-[#f4d77a]",
   popText: "line-clamp-3 text-[12px] text-[#e9defc]",
   popHint: "text-[10px] text-[#a8936a]",
+}
+
+// The Underwalk bar's card (the map's .cbt-menu button, rebuilt in Tailwind because the bar lives in the map's iframe
+// and this button lives in the page around it): grey steel gradient, 3px bronze rim, a glossy top half, a 46px dark
+// icon tile on the left, a small-caps serif title over a mono subtitle, a hard black drop, and on hover the lift and
+// gold rim the bar's buttons get. The thread panel stays the pixel one.
+const ACTION_TILE = "row-span-2 grid h-[46px] w-[46px] place-items-center rounded-[11px] border-2 border-black/60 bg-[#0a0710] text-[#ffe9a6] shadow-[inset_0_0_0_1px_rgba(255,233,166,0.25),0_2px_0_#000] relative z-[1]"
+const ACTION_TITLE = "col-start-2 self-end text-left font-[family-name:var(--font-quill)] text-[0.95rem] font-bold leading-[1.1] [font-variant:small-caps] tracking-[0.01em]"
+const ACTION_SUB = "col-start-2 self-start text-left font-mono text-[0.56rem] font-normal leading-[1.15] tracking-normal opacity-[0.82] [text-shadow:0_1px_0_rgba(0,0,0,0.65)]"
+const ACTION = {
+  ...PIXEL,
+  button: "relative grid min-h-[60px] min-w-[170px] cursor-pointer grid-cols-[46px_1fr] grid-rows-[auto_auto] items-center gap-x-2 rounded-[14px] border-[3px] border-[#9a6a1c] bg-[linear-gradient(180deg,#5e6a78_0%,#343c46_100%)] py-1 pl-[5px] pr-3 text-white [text-shadow:0_2px_0_rgba(0,0,0,0.65),0_0_6px_rgba(0,0,0,0.45)] shadow-[inset_0_0_0_2px_rgba(0,0,0,0.5),inset_0_2px_0_3px_rgba(255,255,255,0.2),inset_0_-7px_0_rgba(0,0,0,0.24),0_4px_0_#000,0_7px_14px_rgba(0,0,0,0.55)] transition-[transform,filter,border-color,box-shadow] duration-100 before:pointer-events-none before:absolute before:inset-x-[3px] before:top-[3px] before:bottom-1/2 before:rounded-[10px_10px_5px_5px] before:bg-[linear-gradient(rgba(255,255,255,0.16),rgba(255,255,255,0.02))] before:content-[''] hover:-translate-y-0.5 hover:border-[#f2c55c] hover:brightness-110 hover:shadow-[inset_0_0_0_2px_rgba(0,0,0,0.5),inset_0_2px_0_3px_rgba(255,255,255,0.26),inset_0_-7px_0_rgba(0,0,0,0.24),0_6px_0_#000,0_0_20px_rgba(242,197,92,0.4),0_10px_18px_rgba(0,0,0,0.6)] focus-visible:-translate-y-0.5 focus-visible:border-[#f2c55c] focus-visible:outline-none active:translate-y-0.5 motion-reduce:transition-none",
+  badge: "absolute -right-2 -top-2.5 z-[2] grid h-[18px] min-w-[18px] place-items-center rounded-md border-2 border-black bg-[#f2c55c] px-1.5 font-mono text-[10px] font-bold text-[#1a0f0a] [text-shadow:none] shadow-[0_2px_0_#000]",
 }
