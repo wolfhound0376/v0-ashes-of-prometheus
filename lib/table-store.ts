@@ -95,6 +95,15 @@ export async function writeHost(db: SupabaseClient, c: { id: string; name: strin
   if (error) throw new Error(`host not written: ${error.message}`)
 }
 
+/** Does this claim prove the campaign's host? (lib/host.ts) */
+export async function proveHost(db: SupabaseClient, characterId: string, claimToken: string): Promise<boolean> {
+  if (!characterId || !claimToken) return false
+  const host = await readHost(db)
+  if (!host || host.id !== characterId) return false
+  const { data } = await db.from("character_secrets").select("claim_token").eq("character_id", characterId).maybeSingle()
+  return Boolean(data && data.claim_token === claimToken)
+}
+
 export type SeatView = {
   id: string
   name: string

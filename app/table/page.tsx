@@ -30,6 +30,7 @@ import type { SeatView } from "@/lib/table-store"
 import { ENTERED_KEY, mapHref } from "@/lib/map-entry"
 import { fadeOutThemeAudio } from "@/components/theme-audio"
 import { readSettings } from "@/lib/settings"
+import { SaveShelf } from "@/components/save-shelf"
 
 const CHARACTER_LS_KEY = "aop_character_id"
 const TOKEN_LS_KEY = "aop_claim_token"
@@ -342,6 +343,8 @@ export default function TablePage() {
           <a href="/" className="mt-3 block rounded-sm border border-[#8a6a3a] py-3 text-[12px] uppercase tracking-[0.3em] text-[#e8c56a] hover:border-[#f4e0a8]">Return to the game</a>
         )}
         {view && hostMode && <SeatInvites view={view} busy={busy} send={send} />}
+        {/* THE SHELF (Sam, 2026-11-10): the saved games, for the host or the DM, while the table is dark. */}
+        {view && view.state.status === "closed" && (role === "dm" || hostMode) && <SaveShelf me={hostMode ? me : null} onLoaded={load} />}
         {/* A host's Start is their Ready, so their own box shows only when it has something to tell them. */}
         {view && role === "player" && (!hostMode || view.mine?.light === "red") && <PlayerBox view={view} busy={busy} send={send} />}
         {view && role === "player" && view.state.status === "lobby" && view.mine && <FigurePicker view={view} busy={busy} send={send} />}

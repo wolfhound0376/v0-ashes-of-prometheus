@@ -30,6 +30,7 @@ import { setDmKey, clearDmKey, dmHeaders } from "@/lib/dm-key"
 import { cameThroughDmDoor, leaveDmDoor } from "@/lib/dm-door"
 import { HomeButton } from "@/components/home-button"
 import { canonBySlug } from "@/lib/canon-heroes"
+import { SaveShelf } from "@/components/save-shelf"
 
 const ROLE_LS_KEY = "aop_access_role"
 const TOKEN_LS_KEY = "aop_claim_token"
@@ -378,6 +379,9 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
 
       {msg && <p className="text-center text-sm text-[#d9bd7e]">{msg}</p>}
 
+      {/* THE SHELF — which saved game Continue opens (Sam, 2026-11-10). Hidden until the saves migration is applied. */}
+      <div className="mx-auto w-full max-w-md"><SaveShelf me={null} onLoaded={load} /></div>
+
       {/* WHO HOSTS — the hero the person holding the DM code will play (lib/host.ts) */}
       <div className="mx-auto w-full max-w-md rounded-sm border border-[#3d3428] bg-black/50 p-4">
         <label htmlFor="host-pick" className="block text-[10px] uppercase tracking-[0.35em] text-[#8a6a3a]">Who is hosting?</label>
@@ -402,9 +406,10 @@ function Table({ onLock, router }: { onLock: () => void; router: ReturnType<type
           <div className="w-full max-w-md rounded-sm border border-red-800/70 bg-[#1a0b0b]/90 p-4 text-left">
             <div className="font-serif text-base text-red-100">Start a new game?</div>
             <p className="mt-2 text-sm leading-relaxed text-stone-400">
-              A new game resets the whole campaign: the story so far, what Malachar and the NPCs remember, every choice the
-              world recorded and everything the party carries. The heroes are kept, with their sheets, levels and art. Then
-              the table opens and the party wakes in the slave pen of Velkynvelve. This cannot be undone.
+              A new game starts the campaign over: the story so far, what Malachar and the NPCs remember, every choice the
+              world recorded and everything the party carries. The game in play is put on the saved-games shelf first, so
+              you can load it again later. The heroes keep their art and voices and start at level 1. Then the table opens
+              and the party wakes in the slave pen of Velkynvelve.
             </p>
             <div className="mt-3 flex gap-2">
               <button type="button" disabled={busy !== null} onClick={() => begin("new")} className="rounded-sm border border-red-600/80 bg-[#3a1414] px-4 py-2 font-serif text-[12px] uppercase tracking-[0.25em] text-red-100 hover:border-red-400 disabled:opacity-40">{busy === "new" ? "Resetting…" : "Reset and open the table"}</button>

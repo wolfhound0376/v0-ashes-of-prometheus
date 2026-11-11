@@ -11,6 +11,8 @@ import {
   type TableView,
 } from "@/lib/table-store"
 import { actorFor, type Actor, type Host } from "@/lib/host"
+import { cleanSaveName, newSaveName } from "@/lib/saves"
+import { shelveWorldInPlay, startNewSave } from "@/lib/save-store"
 
 // /api/table — the staging table (lib/table.ts has the rules and Sam's words).
 //
@@ -130,7 +132,7 @@ export async function POST(req: NextRequest) {
       const host = await readHost(db)
       const who = actorFor(action, { dm: isDm(req), dmCookie: hasDmCookie(req), host: await hostProved(db, host, hostId, hostToken) })
       if ("refused" in who) return NextResponse.json({ error: who.refused }, { status: 403 })
-      return await dmAction(db, action, characterId, who.actor, host, hostId)
+      return await dmAction(db, action, characterId, who.actor, host, hostId, cleanSaveName(body.saveName))
     }
     if (PLAYER_ACTIONS.has(action)) {
       const claimToken = typeof body.claimToken === "string" ? body.claimToken : ""
@@ -144,7 +146,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function dmAction(db: Db, action: string, characterId: string, actor: Actor, host: Host | null, hostId: string) {
+async function dmAction(db: Db, action: string, characterId: string, actor: Actor, host: Host | null, hostId: string, saveName: string | null = null) {
   // The host is also a player at this table, so their answer carries their own seat (`mine`); the DM's does not.
   const replyDm = (view: TableView, extra: Record<string, unknown> = {}) =>
     actor === "host" && host ? reply(db, view, host.id, { isHost: true, ...extra }, true) : reply(db, view, null, extra, true)
@@ -181,6 +183,11 @@ async function dmAction(db: Db, action: string, characterId: string, actor: Acto
     // never costs a campaign.
     const newHost = hostId ? await hostHero(db, hostId) : null
     if (hostId && !newHost) return NextResponse.json({ error: "Choose a player character to host as. Nothing was reset." }, { status: 404 })
+    // SAVED GAMES (Sam, 2026-11-10, ruling 1: "New Game keeps the old world on the shelf"). The world in play is
+    // saved first; if that save fails, nothing is reset. Before the saves migration is applied this is skipped
+    // and New Game resets exactly as it always did (lib/save-store.ts).
+    const shelved = await shelveWorldInPlay(db, "Before the new game")
+    if (!shelved.ok && !shelved.missing) return NextResponse.json({ error: `The game in play could not be saved, so nothing was reset. ${shelved.error}` }, { status: 500 })
     const restart = await restartCampaign(db)
     // The restart clears every world flag, the table and its seats included. Open the new run's table only when
     // the wipe finished cleanly; a half-wiped world is not a new game.
@@ -190,7 +197,10 @@ async function dmAction(db: Db, action: string, characterId: string, actor: Acto
     await writeTable(db, { status: "lobby", dmReady: false, session: after.session + 1, openedAt: now, startedAt: null }, "The DM started a new game")
     // The reset wiped the old host with every other flag; the new campaign's host is whoever started it.
     if (newHost) await writeHost(db, newHost)
+    // The fresh world is a new save, and the one in play (with its own host and party — ruling 3).
+    const fresh = shelved.ok ? await startNewSave(db, saveName ?? newSaveName()) : null
     return replyDm(await readTableView(db), {
+      ...(fresh && !fresh.ok && !fresh.missing ? { note: `The new game started, but it could not be put on the shelf: ${fresh.error}` } : {}),
       newGame: true, run: (restart.report.run as { number?: number } | undefined)?.number ?? null,
       hostClaim: newHost?.claimToken ? { characterId: newHost.id, claimToken: newHost.claimToken } : null,
     })
@@ -199,10 +209,13 @@ async function dmAction(db: Db, action: string, characterId: string, actor: Acto
   if (action === "end") {
     // End = save: the world is already written as it was played. The table closes and the seats empty, so the
     // next session starts at the door again. A brand-new campaign is still the Restart.
+    // SAVED GAMES: the save in play is written now, before the seats empty, so it remembers who was at the table.
+    // A failed save never stops the End — the world is still exactly as it was played — but it is reported.
+    const saved = await shelveWorldInPlay(db, "Out of the Abyss")
     await clearSeats(db)
     await clearInvites(db)
     await writeTable(db, { status: "closed", dmReady: false, session: t.session, openedAt: null, startedAt: null }, `${by} ended session ${t.session}`)
-    return replyDm(await readTableView(db))
+    return replyDm(await readTableView(db), !saved.ok && !saved.missing ? { note: `The session ended, but the save could not be written: ${saved.error}` } : {})
   }
 
   if (action === "start" || action === "unstart") {
