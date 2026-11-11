@@ -27,7 +27,13 @@ export function mapHeroSlug(characterId: string | null | undefined): string {
   return PREMADE[characterId] ?? FORGED[characterId] ?? MAP_HERO_FALLBACK
 }
 
-export type MapHero = { walk: { src: string; frames: number; fps: number }; idle: { src: string; frames: number; fps: number }; cell: number }
+export type MapHero = {
+  walk: { src: string; frames: number; fps: number }
+  idle: { src: string; frames: number; fps: number }
+  cell: number
+  /** How far up the cell the feet stand, 0..1 (the manifest's pivot). Not every sheet draws its figure down to the bottom edge. */
+  foot: number
+}
 
 /** Turn a sprite manifest (public/sprites/<slug>/sprite.json) into what the map page needs; null if it has no walk or idle. */
 export function mapHeroFromManifest(slug: string, manifest: unknown): MapHero | null {
@@ -42,5 +48,7 @@ export function mapHeroFromManifest(slug: string, manifest: unknown): MapHero | 
   const idle = one("idle")
   if (!walk || !idle) return null
   const cell = Array.isArray(m?.cell) && Number(m.cell[0]) > 0 ? Number(m.cell[0]) : 128
-  return { walk, idle, cell }
+  const p = (m as { pivot?: unknown } | null)?.pivot
+  const pivotY = Array.isArray(p) && Number(p[1]) > 0 && Number(p[1]) <= cell ? Number(p[1]) : cell
+  return { walk, idle, cell, foot: Math.max(0, 1 - pivotY / cell) }
 }

@@ -956,7 +956,7 @@ addEventListener("keydown",e=>{ if(e.code==="Escape"){ if(cineK) openEntrance(ci
 const entPar={x:0,y:0,tx:0,ty:0};
 addEventListener("pointermove",e=>{ if(!entK) return; entPar.tx=(e.clientX/innerWidth-.5)*2; entPar.ty=(e.clientY/innerHeight-.5)*2; });
 /* the party at the threshold: Fifi's idle sheet drawn on a canvas, pixel-crisp */
-const entCv=document.getElementById("entHero"), entCtx=entCv.getContext("2d"); const idleImg=new Image(); idleImg.src=IDLE; let entIdleFrames=4;
+const entCv=document.getElementById("entHero"), entCtx=entCv.getContext("2d"); const idleImg=new Image(); idleImg.src=IDLE; let entIdleFrames=4, heroFoot=.02;
 let entT0=null;
 function drawEntHero(ts){
   if(!entK) return; if(entT0==null) entT0=ts; const t=(ts-entT0)/1000;
@@ -968,7 +968,7 @@ function drawEntHero(ts){
     const P=PLATES[entK]||{}, sx=(P.spot?P.spot[0]:.5)*w, sy=(P.spot?P.spot[1]:.90)*h, scale=Math.max(2,Math.round(h*.13/fh));
     const dw=fw*scale, dh=fh*scale; const px=-entPar.x*w*.026, py=-entPar.y*h*.016;
     entCtx.globalAlpha=.45; entCtx.fillStyle="#000"; entCtx.beginPath(); entCtx.ellipse(sx+px,sy+py,dw*.28,dh*.08,0,0,7); entCtx.fill(); entCtx.globalAlpha=1;
-    entCtx.drawImage(idleImg,f*fw,row*fh,fw,fh,Math.round(sx+px-dw/2),Math.round(sy+py-dh),dw,dh); }
+    entCtx.drawImage(idleImg,f*fw,row*fh,fw,fh,Math.round(sx+px-dw/2),Math.round(sy+py-dh+dh*heroFoot),dw,dh); }
   entRAF=requestAnimationFrame(drawEntHero);
 }
 
@@ -1067,13 +1067,13 @@ function ringPx(g){ const r=N.get(g.userData.k).t==="location"?.80:.24; tmpA.cop
   return Math.max(14,(tmpA.y-tmpB.y)*.5*innerHeight+6); }
 
 /* ---------- GAME MODE: live state, legs and the leader's sprite ---------- */
-let heroSrc="";
+let heroSrc="";   // heroFoot: how far up its cell the figure's feet stand (the sprite's pivot), so nobody floats above the road
 function setHero(h){ if(!h||!h.walk||!h.idle) return; const key=h.walk.src+"|"+h.idle.src; if(key===heroSrc) return; heroSrc=key;
   let n=0; const got={};
   for(const kind of ["walk","idle"]) loader.load(h[kind].src,t=>{ t.colorSpace=THREE.SRGBColorSpace; t.magFilter=t.minFilter=THREE.NearestFilter; t.wrapS=t.wrapT=THREE.RepeatWrapping; got[kind]=t;
     if(++n<2||heroSrc!==key) return;   // swap both sheets together, never a half-dressed figure
     for(const kk of ["walk","idle"]){ sheets[kk]=got[kk]; sheetMeta[kk]={frames:h[kk].frames,fps:h[kk].fps}; }
-    heroK=(h.cell||128)/128; heroT=0; heroMat.map=sheets[heroAnim]; heroMat.needsUpdate=true; idleImg.src=h.idle.src; entIdleFrames=h.idle.frames; });
+    heroK=(h.cell||128)/128; heroFoot=Number.isFinite(h.foot)?h.foot:.02; hero.center.set(.5,heroFoot); heroT=0; heroMat.map=sheets[heroAnim]; heroMat.needsUpdate=true; idleImg.src=h.idle.src; entIdleFrames=h.idle.frames; });
 }
 function gameWhere(){ const n=N.get(party); document.getElementById("where").textContent = n&&n.t==="location"&&nameShown(n) ? n.n : "On the road"; }
 function applyState(s,first){

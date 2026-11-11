@@ -40,13 +40,13 @@ if(GAME){
 
 GAME_TAIL = r'''
 /* ---------- GAME MODE: live state, legs and the leader's sprite ---------- */
-let heroSrc="";
+let heroSrc="";   // heroFoot: how far up its cell the figure's feet stand (the sprite's pivot), so nobody floats above the road
 function setHero(h){ if(!h||!h.walk||!h.idle) return; const key=h.walk.src+"|"+h.idle.src; if(key===heroSrc) return; heroSrc=key;
   let n=0; const got={};
   for(const kind of ["walk","idle"]) loader.load(h[kind].src,t=>{ t.colorSpace=THREE.SRGBColorSpace; t.magFilter=t.minFilter=THREE.NearestFilter; t.wrapS=t.wrapT=THREE.RepeatWrapping; got[kind]=t;
     if(++n<2||heroSrc!==key) return;   // swap both sheets together, never a half-dressed figure
     for(const kk of ["walk","idle"]){ sheets[kk]=got[kk]; sheetMeta[kk]={frames:h[kk].frames,fps:h[kk].fps}; }
-    heroK=(h.cell||128)/128; heroT=0; heroMat.map=sheets[heroAnim]; heroMat.needsUpdate=true; idleImg.src=h.idle.src; entIdleFrames=h.idle.frames; });
+    heroK=(h.cell||128)/128; heroFoot=Number.isFinite(h.foot)?h.foot:.02; hero.center.set(.5,heroFoot); heroT=0; heroMat.map=sheets[heroAnim]; heroMat.needsUpdate=true; idleImg.src=h.idle.src; entIdleFrames=h.idle.frames; });
 }
 function gameWhere(){ const n=N.get(party); document.getElementById("where").textContent = n&&n.t==="location"&&nameShown(n) ? n.n : "On the road"; }
 function applyState(s,first){
@@ -120,7 +120,8 @@ PATCHES = [
     ("function frameSprite(dt){\n  heroT+=dt; const frames=heroAnim===\"walk\"?6:4, fps=heroAnim===\"walk\"?12:5, f=",
      "const sheetMeta={walk:{frames:6,fps:12},idle:{frames:4,fps:5}}; let heroK=1;\nfunction frameSprite(dt){\n  heroT+=dt; const frames=sheetMeta[heroAnim].frames, fps=sheetMeta[heroAnim].fps, f="),
     ("hero.scale.setScalar(aboard?.82:1);", "hero.scale.setScalar((aboard?.82:1)*heroK);"),
-    ("const idleImg=new Image(); idleImg.src=IDLE;", "const idleImg=new Image(); idleImg.src=IDLE; let entIdleFrames=4;"),
+    ("const idleImg=new Image(); idleImg.src=IDLE;", "const idleImg=new Image(); idleImg.src=IDLE; let entIdleFrames=4, heroFoot=.02;"),
+    ("Math.round(sy+py-dh),dw,dh); }", "Math.round(sy+py-dh+dh*heroFoot),dw,dh); }"),
     ("const fw=idleImg.naturalWidth/4, fh=idleImg.naturalHeight/8, f=Math.floor(t*5)%4, row=4;", "const fw=idleImg.naturalWidth/entIdleFrames, fh=idleImg.naturalHeight/8, f=Math.floor(t*5)%entIdleFrames, row=4;"),
     # ---- the card: no prototype rules, no instructions for someone who cannot move the party
     ("card.meta.innerHTML= walking? \"On the march.\" : \"You are here. Arrow keys or WASD walk to the next stop.\";",
