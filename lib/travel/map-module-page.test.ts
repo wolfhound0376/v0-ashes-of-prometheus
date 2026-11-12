@@ -24,8 +24,11 @@ describe("the Map Module page", () => {
     for (const s of ["aop:map-ready", "aop:map-pick", "aop:map-reached", "aop:map-enter", "aop:map-state", "aop:map-leg", "aop:map-place"]) expect(html, s).toContain(s)
     // a player who does not lead cannot post a move
     expect(html).toContain('if(GAME&&!gameLegP){ if(gameLead) post({type:"aop:map-pick",k}); return; }')
-    // fog is the default: the DM view starts off and only a DM's page shows the switch
+    // the view starts as the player's; in the game nobody gets the Player/DM switch or the directions box
+    // (Sam, 2026-11-12, PR #1290), and DM mode is the DM view, marked by the DM mode light
     expect(html).toContain("let party=G.party, dm=false,")
-    expect(html).toContain("body.game:not(.gm) .hud.toggles")
+    expect(html).toContain("body.game .hud.toggles,body.game .hud.keys")
+    expect(html).toContain("body.game.gm .dmlight")
+    expect(html).toContain("if(dm!==gameDM){ dm=gameDM;")
   })
 })
