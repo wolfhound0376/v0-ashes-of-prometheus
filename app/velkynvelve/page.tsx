@@ -24,7 +24,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { StageLink } from "@/components/stage/stage-provider"
-import { ArrowLeft, Crown } from "lucide-react"
+import { ArrowLeft, Crown, Clapperboard } from "lucide-react"
 import { dmHeaders } from "@/lib/dm-key"
 import { AFTER_RESET_PATH, wasReset } from "@/lib/session-guard"
 import { EndGameButton } from "@/components/end-game-button"
@@ -142,7 +142,15 @@ export default function VelkynvelvePage() {
             Rehearsal · nothing saves
           </span>
         )}
-        {dm ? <span className="ml-auto"><EndGameButton /></span> : (
+        {/* The DM's films, one click from the map (Sam, 2026-11-12: "I need an easier way to get to my cinematics").
+            A new tab on purpose: the map is usually on the projector and must not be navigated away. */}
+        {dm && (
+          <a href="/cinematics" target="_blank" rel="noopener" className="ml-auto inline-flex items-center gap-1.5 font-serif text-xs uppercase tracking-[0.18em] text-[#e8c56a] hover:text-[#fff3cf]">
+            <Clapperboard className="h-3.5 w-3.5" aria-hidden />
+            Cinematics
+          </a>
+        )}
+        {dm ? <span><EndGameButton /></span> : (
           <span className="ml-auto"><EndGameButton asHost /></span>
         )}
       </header>

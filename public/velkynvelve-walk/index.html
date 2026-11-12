@@ -1365,7 +1365,7 @@ async function seatCompanion(who, override = false){
   noteSeats(seated);
   const seat = seated.find(x => (body.characterId && x.id === body.characterId) || String(x.name || "").toLowerCase() === String(body.name || "").toLowerCase());
   const slug = seat ? seatedSlugs([seat])[0] : null;
-  if (slug && mode === "explore") partyJoins(slug);
+  if (slug && mode === "explore") partyJoins(slug); else if (slug) lateHeroJoins(slug);   // THE LATE HERO
   renderSeats();
 }
 async function unseatCompanion(slug){
@@ -14790,6 +14790,7 @@ async function pollStage(){
       for (const id of seatedSlugs(j.seated)) if (!party.some(p => p.id === id)) partyJoins(id);
       if (Array.isArray(j.seated) && j.seated.length) for (const id of PARTY.slice()) if (!seatedSlugs(j.seated).includes(id) && party.length > 1 && id !== (leader && leader.id)) partyLeaves(id);
     }
+    else for (const id of seatedSlugs(j.seated)) lateHeroJoins(id);   // THE LATE HERO: mid-fight they join the fight (below)
     const present = Array.isArray(j.present) ? j.present : [], gone = Array.isArray(j.gone) ? j.gone : [];
     // creatures: anyone present who is not part of the story's cast
     for (const c of present){
@@ -22154,6 +22155,23 @@ function owApplyHero(slug, h){
   if (Math.hypot(dest.x - a.x, dest.y - a.y) > 6){ const p = findPath(a, nearestWalkable(dest.x, dest.y)); a.path = p && p.length ? p : [{x: dest.x, y: dest.y}]; }
   else { a.path = []; a.face = h.face | 0; }
 }
+// THE LATE HERO (Sam, 2026-11-12: "We need to find a solution to the late joiner"). A hero seated after a fight began
+// used to wait outside it until it ended ("never mid-fight — next poll"): their player watched a fight their hero was
+// not in. Now the screen that RUNS the fight takes them in with the rule a hero walking onto the plate already had
+// (joinFight: initiative, acts from the next round — 5E, you enter an encounter when you arrive), and One Fight carries
+// them to every screen (mirrorActor draws a hero this screen did not have). Only a hero with art and a sheet, not
+// already here and not split off on another plate. They come in beside the hero standing farthest from the foes: at
+// the back, not into the line (the place is Claude's pick).
+function lateHeroJoins(id){
+  if (mode !== "combat" || !cbt || cbt.mirror || !leader) return;       // only the screen running the fight adds a fighter
+  if (!SPR[id] || !SHEETS[id] || party.some(p => p.id === id) || heroElsewhere(id)) return;
+  PARTY = FULL_PARTY.filter(x => PARTY.includes(x) || x === id);
+  const up = foes.filter(f => !f.down && !f.left), mates = party.filter(p => !p.down);
+  const gap = p => up.length ? Math.min(...up.map(f => Math.hypot(f.x - p.x, f.y - p.y))) : 0;
+  const back = mates.sort((a, b) => gap(b) - gap(a))[0] || leader;
+  joinFight(id, {x: back.x - 50, y: back.y + 40, face: back.face | 0});
+  if (APP) loadGear(id);
+}
 function joinFight(slug, h){
   const p = nearestWalkable(h.x, h.y, actors.map(q => ({x: q.x, y: q.y})));
   const a = mkActor(slug, p.x, p.y, "pc", {alpha: 0, fadeIn: true, home: {x: p.x, y: p.y}, face: h.face | 0});
@@ -22573,10 +22591,18 @@ async function mirrorPoll(){
 async function mirrorActor(s){
   let a = byKey(s.k);
   if (!a){
-    if (s.kind === "pc") return null;                                 // a hero who is not on this plate here: One World brings them
+    if (s.kind === "pc"){                                             // THE LATE HERO: the fight took in a hero this screen does not have
+      // not before this screen's own seat poll has their sheet (noteSeats): a fighter drawn with a stand-in sheet breaks the party panel
+      if (!SPR[s.id] || !SHEETS[s.id] || !seatedSlugs(seatsSeen).includes(s.id) || party.some(p => p.id === s.id)) return null;
+      PARTY = FULL_PARTY.filter(x => PARTY.includes(x) || x === s.id);
+      a = mkActor(s.id, s.x, s.y, "pc", {alpha: 0, fadeIn: true, home: {x: s.x, y: s.y}}); a.path = [];
+      party.push(a); party.sort((x, y) => PARTY.indexOf(x.id) - PARTY.indexOf(y.id)); actors.push(a);
+      noteHeroAt(s.id, cur, s.x, s.y); renderParty();
+    } else {
     if (!SPR[s.id]){ if (!FIGHT.pendingActors.has(s.id)){ FIGHT.pendingActors.add(s.id); await loadSpriteManifest(s.id); FIGHT.pendingActors.delete(s.id); } if (!SPR[s.id]) return null; }
     a = mkActor(s.id, s.x, s.y, s.kind || "foe", {alpha: s.alpha ?? 1}); a.fk = s.k; a.path = [];
     if (a.kind === "foe") foes.push(a); actors.push(a);
+    }
   }
   for (const k of ACTOR_KEYS) if (k !== "x" && k !== "y" && s[k] !== undefined) a[k] = s[k];
   const d = Math.hypot(s.x - a.x, s.y - a.y);

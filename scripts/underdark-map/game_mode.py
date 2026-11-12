@@ -9,7 +9,7 @@ and is driven by components/map/underdark-map-module.tsx over postMessage:
                  aop:map-hover  {k|null}           the pointer is over a stop
                  aop:map-reached{k}                the token finished walking a leg
                  aop:map-enter  {k}                "Enter" at a painted entrance
-  game -> page   aop:map-state  {nodes,edges,party,dm,lead,boat,hero}
+  game -> page   aop:map-state  {nodes,edges,party,dm,lead,boat,hero,followers}
                  aop:map-leg    {a,b,last}         walk one leg now
                  aop:map-place  {k}                the party is simply there (no road walked)
 """
@@ -46,7 +46,50 @@ function setHero(h){ if(!h||!h.walk||!h.idle) return; const key=h.walk.src+"|"+h
   for(const kind of ["walk","idle"]) loader.load(h[kind].src,t=>{ t.colorSpace=THREE.SRGBColorSpace; t.magFilter=t.minFilter=THREE.NearestFilter; t.wrapS=t.wrapT=THREE.RepeatWrapping; got[kind]=t;
     if(++n<2||heroSrc!==key) return;   // swap both sheets together, never a half-dressed figure
     for(const kk of ["walk","idle"]){ sheets[kk]=got[kk]; sheetMeta[kk]={frames:h[kk].frames,fps:h[kk].fps}; }
-    heroK=(h.cell||128)/128; heroFoot=Number.isFinite(h.foot)?h.foot:.02; hero.center.set(.5,heroFoot); heroT=0; heroMat.map=sheets[heroAnim]; heroMat.needsUpdate=true; idleImg.src=h.idle.src; entIdleFrames=h.idle.frames; });
+    heroK=Number.isFinite(h.scale)?h.scale:(h.cell||128)/128; heroFoot=Number.isFinite(h.foot)?h.foot:.02; hero.center.set(.5,heroFoot); heroT=0; heroMat.map=sheets[heroAnim]; heroMat.needsUpdate=true; idleImg.src=h.idle.src; entIdleFrames=h.idle.frames; });
+}
+/* ---------- GAME MODE: the marching line and the rim light (Sam, 2026-11-12) ----------
+   "The marching line with real walk cycles": the leader walks in front and every other seated hero follows
+   in file, each on its own sheets, at its own size. Followers walk the leader's own footsteps (a trail of
+   crumbs), so they take the bends of the road the way the leader did. They decide nothing and send nothing.
+   Rim light: a thin warm edge drawn around each figure inside its sprite shader, so it reads on the dark map. */
+function rimLight(mat){ const px={value:new THREE.Vector2(1/768,1/1024)}; mat.userData.rimPx=px;
+  mat.onBeforeCompile=s=>{ s.uniforms.rimPx=px;
+    s.fragmentShader=s.fragmentShader.replace("uniform float opacity;","uniform float opacity;\nuniform vec2 rimPx;").replace("#include <map_fragment>",`#include <map_fragment>
+	#ifdef USE_MAP
+	if(diffuseColor.a<.5*opacity){ float rimA=max(max(texture2D(map,vMapUv+vec2(rimPx.x,0.)).a,texture2D(map,vMapUv-vec2(rimPx.x,0.)).a),max(texture2D(map,vMapUv+vec2(0.,rimPx.y)).a,texture2D(map,vMapUv-vec2(0.,rimPx.y)).a));
+	  if(rimA>.5) diffuseColor=vec4(1.,.84,.5,opacity*.95); }
+	#endif`); };
+  mat.customProgramCacheKey=()=>"aop-rim"; mat.needsUpdate=true; }
+function rimSize(mat){ const im=mat.map&&mat.map.image, px=mat.userData.rimPx; if(px&&im&&im.width) px.value.set(1.5/im.width,1.5/im.height); }
+const FOL_GAP=.5, FOL_REST=[[-.42,.16],[-.8,-.12],[-1.16,.18],[-1.5,-.1],[-1.86,.14]];
+let fol=[], folKey="", crumbs=[];
+function setFollowers(list){ list=(Array.isArray(list)?list:[]).filter(h=>h&&h.walk&&h.idle).slice(0,FOL_REST.length);
+  const key=list.map(h=>h.walk.src).join("|"); if(key===folKey) return; folKey=key;
+  for(const f of fol){ scene.remove(f.sprite); scene.remove(f.shadow); f.mat.dispose(); f.tex.walk.dispose(); f.tex.idle.dispose(); } fol=[];
+  list.forEach((h,i)=>{ const tex={};
+    for(const kind of ["walk","idle"]){ const t=loader.load(h[kind].src); t.colorSpace=THREE.SRGBColorSpace; t.magFilter=t.minFilter=THREE.NearestFilter; t.wrapS=t.wrapT=THREE.RepeatWrapping; t.repeat.set(1/h[kind].frames,1/8); tex[kind]=t; }
+    const mat=new THREE.SpriteMaterial({map:tex.idle,transparent:true,depthWrite:false}); rimLight(mat);
+    const sprite=new THREE.Sprite(mat); sprite.scale.setScalar(Number.isFinite(h.scale)?h.scale:(h.cell||128)/128); sprite.center.set(.5,Number.isFinite(h.foot)?h.foot:.02); scene.add(sprite);
+    const sh=shadow.clone(); scene.add(sh); const o=FOL_REST[i];
+    fol.push({h,tex,mat,sprite,shadow:sh,pos:new THREE.Vector3(heroPos.x+o[0],0,heroPos.z+o[1]),row:0,anim:"idle",t:i*.37,still:1}); });
+}
+function trailTick(dt,aboard){
+  rimSize(heroMat); if(!fol.length) return;
+  const last=crumbs[crumbs.length-1], step=last?Math.hypot(heroPos.x-last.x,heroPos.z-last.z):0;
+  if(!last||step>2){ crumbs=[{x:heroPos.x,z:heroPos.z}];   // the party was simply put somewhere: nobody runs across the map to catch up
+    if(last) fol.forEach((f,i)=>f.pos.set(heroPos.x+FOL_REST[i][0],0,heroPos.z+FOL_REST[i][1])); }
+  else if(step>.04){ crumbs.push({x:heroPos.x,z:heroPos.z}); if(crumbs.length>600) crumbs.shift(); }
+  const show=hero.visible&&!aboard, k=1-Math.exp(-dt*7);
+  fol.forEach((f,i)=>{ const want=(i+1)*FOL_GAP; let ax=heroPos.x, az=heroPos.z, acc=0, tx=null, tz=0;
+    for(let j=crumbs.length-1;j>=0;j--){ const b=crumbs[j], d=Math.hypot(ax-b.x,az-b.z); if(d>0&&acc+d>=want){ const u=(want-acc)/d; tx=ax+(b.x-ax)*u; tz=az+(b.z-az)*u; break; } acc+=d; ax=b.x; az=b.z; }
+    if(tx==null){ const r=1-acc/want; tx=ax+FOL_REST[i][0]*r; tz=az+FOL_REST[i][1]*r; }   // the trail is still short: stand where the walk began
+    const dx=(tx-f.pos.x)*k, dz=(tz-f.pos.z)*k; f.pos.x+=dx; f.pos.z+=dz;
+    if(Math.hypot(dx,dz)/Math.max(dt,1e-3)>.25){ f.still=0; f.row=rowFor(dx,dz); } else f.still+=dt;
+    const anim=f.still<.18?"walk":"idle"; if(anim!==f.anim){ f.anim=anim; f.t=0; f.mat.map=f.tex[anim]; f.mat.needsUpdate=true; }
+    f.t+=dt; const meta=f.h[anim], m=f.mat.map, fr=Math.floor(f.t*meta.fps)%meta.frames; m.repeat.set(1/meta.frames,1/8); m.offset.set(fr/meta.frames,1-(f.row+1)/8);
+    rimSize(f.mat); f.mat.opacity=heroMat.opacity; f.sprite.visible=f.shadow.visible=show;
+    f.sprite.position.set(f.pos.x,.02,f.pos.z); f.shadow.position.set(f.pos.x,.05,f.pos.z); });
 }
 function gameWhere(){ const n=N.get(party); document.getElementById("where").textContent = n&&n.t==="location"&&nameShown(n) ? n.n : "On the road"; }
 function applyState(s,first){
@@ -60,7 +103,7 @@ function applyState(s,first){
   known.clear(); for(const n of N.values()) if(n.d&&seen.has(n.k)) known.add(n.k); known.add(party);
   for(const e of s.edges){ if(e.road!==true||!N.has(e.a)||!N.has(e.b)) continue; const o=gameEdge(e); if(roadMesh.has(eKey(o))) continue; E.push(o); addRoad(o); }
   const bk=s.boat?"duergar":"none"; if((boatKind||"none")!==bk) chooseBoat(bk);
-  setHero(s.hero); refresh(); gameWhere(); if(!cineK&&!entK) showCard(walking?walking.dest:(hovered||party));
+  setHero(s.hero); setFollowers(s.followers); refresh(); gameWhere(); if(!cineK&&!entK) showCard(walking?walking.dest:(hovered||party));
 }
 function gamePlace(k){ if(!N.has(k)||walking) return; party=k; visited.add(k); heroPos.copy(stops.get(k).position).setY(0); setSheet("idle"); known.add(k);
   playTrack(trackFor(party,false)); setBed(bedFor(party,false)); refresh(); gameWhere(); showCard(party); }
@@ -73,7 +116,7 @@ function gameLeg(a,b,last){
   gameLast=!!last; gameLegP={legs:[{from:a,to:b,e}],miles:e.mi}; queued=null; goTo(b);
 }
 if(GAME){
-  document.body.classList.add("game");
+  document.body.classList.add("game"); rimLight(heroMat);
   const soon=document.querySelector("#entEnter .soon"); if(soon) soon.remove();
   applyState(GS,true);
   addEventListener("message",ev=>{ if(ev.origin!==location.origin||!ev.data) return; const m=ev.data;
@@ -145,5 +188,7 @@ PATCHES = [
     # ---- chrome
     ("guardTag.onclick=()=>showToll(); labelsEl.appendChild(guardTag);", "guardTag.onclick=()=>showToll(); guardTag.hidden=true; labelsEl.appendChild(guardTag);"),
     ("#loading{position:fixed;", GAME_CSS + "#loading{position:fixed;"),
+    # ---- the marching line: the followers are moved in the page's own frame loop, right after the leader
+    ("  frameSprite(dt);\n  const here=stops.get(party);", "  frameSprite(dt); if(GAME) trailTick(dt,aboard);\n  const here=stops.get(party);"),
     ("tick();\nwindow.__wm={", GAME_TAIL + "tick();\nwindow.__wm={"),
 ]
