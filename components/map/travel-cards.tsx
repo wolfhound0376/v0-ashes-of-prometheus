@@ -366,6 +366,11 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
                 {halt.kind === "encounter" ? "Encounter" : halt.kind === "challenge" ? "Challenge" : halt.kind === "cinematic" ? "Cinematic" : halt.kind === "camp" ? (march.hours_today >= MARCH_HOURS_PER_DAY ? "Nightfall — make camp" : "Camp — long rest") : halt.kind === "forced_march" ? "Forced march — the price" : "The party stops"}
               </div>
               <div className="mt-1 font-serif text-lg leading-snug text-[#f5c34d]">{halt.title}</div>
+              {halt.meeting && (
+                <div className={`mt-2 w-fit rounded-full border px-3 py-1 text-[11px] tracking-wide ${halt.meeting.first === "party" ? "border-[#f5c34d] text-[#f5c34d]" : "border-[#c96a6a] text-[#e6a3a3]"}`}>
+                  {halt.meeting.chip}
+                </div>
+              )}
               {halt.body && <p className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-[#c9bcd8]">{halt.body}</p>}
               {halt.kind === "camp" && (
                 <>

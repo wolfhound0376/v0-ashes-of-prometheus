@@ -22,6 +22,7 @@ import {
 } from "@/lib/travel/march"
 import { mayLead, tallyLeader, whoLeads } from "@/lib/travel/leader"
 import { noticeAt, noticeSpec, type Eyes } from "@/lib/travel/notice"
+import { meetingAt } from "@/lib/travel/meeting"
 import { arrivalCue } from "@/lib/travel/stingers"
 import { malacharRoadLine, sayOnTheRoad, worthAWord } from "@/lib/travel/narrate"
 import { costLine, offerOptions, readOptions, resolveChoice, type NodeOption } from "@/lib/travel/options"
@@ -911,6 +912,10 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // THE MEETING (lib/travel/meeting.ts; Sam, 2026-11-12). The dice said whether creatures are here; the
+    // passive roll just made says who saw whom first. Only when the encounter itself is what stopped the march.
+    const meeting = outcome.halt && outcome.kind === "encounter" ? meetingAt(notice, outcome.rolls) : null
+
     // A forced march that cost somebody a level of exhaustion stops the party
     // too - not to camp, but so the price is seen before they go on.
     const forcedHalt = !!forced && Object.keys(forced.exhaustion).length > 0
@@ -919,6 +924,7 @@ export async function POST(req: NextRequest) {
     const title = outcome.halt ? outcome.title : nightfall ? `Nightfall at ${full?.name ?? node.node_key} - make camp` : `Forced march to ${full?.name ?? node.node_key}`
     const bodyParts = [
       outcome.body,
+      meeting?.line ?? null,
       navigation?.lost ? navigation.note : null,
       nightfall ? `Day ${dayAfter.days_marched} of the march is done after ${Math.round(dayAfter.hours_today * 10) / 10} hours. The party camps here; Continue breaks camp tomorrow - or push on, and pay for every hour past eight.` : null,
       forced?.note || null,
@@ -951,6 +957,7 @@ export async function POST(req: NextRequest) {
             ...(outcome.water ? { water: outcome.water } : {}),
             ...(forced ? { forced } : {}),
             ...(notice ? { notice: { dc: notice.dc, chip: notice.chip, noticed: notice.noticed, revealed: revealedName } } : {}),
+            ...(meeting ? { meeting } : {}),
           },
         })
         .select("id")
@@ -1033,6 +1040,7 @@ export async function POST(req: NextRequest) {
       options: offered,
       notice: notice ? { dc: notice.dc, chip: notice.chip, noticed: notice.noticed, best: notice.best, text: notice.text, revealed: revealedName, source: notice.source } : null,
       line,
+      meeting,
       ...outcome,
       // The day overrides what the encounter alone would have said.
       halt,
