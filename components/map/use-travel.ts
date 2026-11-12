@@ -22,6 +22,7 @@ import { parseWalkHandoff, roadsOpenedBy, type RoadChoice, type WalkArrival } fr
 import { STINGER_GAIN, stingerUrl, type StingerCue } from "@/lib/travel/stingers"
 import { speakBlob } from "@/lib/speech-queue"
 import { emitCheckCue } from "@/lib/check-cue"
+import type { Foe, StanceOption, StanceResult } from "@/lib/travel/stance"
 
 /**
  * The arrival cue (lib/travel/stingers.ts). A missing file is silence: the
@@ -96,6 +97,10 @@ export type LeadInfo = {
 export type Halt = {
   /** Who saw whom first, when creatures were met here (lib/travel/meeting.ts). */
   meeting?: { first: "party" | "them"; chip: string } | null
+  /** The encounter box (lib/travel/stance.ts): who they are, the choices still open, and what the last choice came to. */
+  foes?: Pick<Foe, "result" | "line">[]
+  stances?: StanceOption[]
+  stance?: StanceResult | null
   kind: string
   title: string
   body: string | null
@@ -527,7 +532,7 @@ export function useTravel() {
         .catch(() => {})
     }
     if (out?.halt) {
-      setHalt({ kind: out.kind, title: out.title, body: out.body, rolls: out.rolls ?? [], source: out.source, meeting: out.meeting ? { first: out.meeting.first, chip: out.meeting.chip } : null })
+      setHalt({ kind: out.kind, title: out.title, body: out.body, rolls: out.rolls ?? [], source: out.source, meeting: out.meeting ? { first: out.meeting.first, chip: out.meeting.chip } : null, foes: Array.isArray(out.foes) ? out.foes : [], stances: Array.isArray(out.stances) ? out.stances : [], stance: null })
       // Picked up again by the Continue button, from exactly this step.
       await new Promise<void>((resolve) => {
         resumeRef.current = () => {
@@ -564,6 +569,21 @@ export function useTravel() {
     void chooseOption(here.node_key, LONG_REST_KEY)
   }
 
+  /** The encounter box: the leader's answer (talk, slip past, ambush, fight). The server rolls and keeps it. */
+  const [stanceBusy, setStanceBusy] = useState(false)
+  async function takeStance(key: string) {
+    if (stanceBusy) return
+    setStanceBusy(true)
+    try {
+      const res = await fetch("/api/travel", { method: "POST", headers: travelHeaders(), body: travelBody({ action: "stance", stance_key: key }) })
+      const out = await res.json().catch(() => null)
+      if (out?.ok) setHalt((h) => (h ? { ...h, stance: out.stance, stances: Array.isArray(out.stances) ? out.stances : [] } : h))
+      // Already answered (another browser got there first): show what was chosen and let the march go on.
+      else if (out?.stance) setHalt((h) => (h ? { ...h, stance: out.stance, stances: [] } : h))
+    } catch { /* the card stays up; the choice can be made again */ }
+    setStanceBusy(false)
+  }
+
   /** The halt card's buttons: walk on (or break camp), or push on into a forced march. */
   function continueMarch(force: boolean) {
     const go = resumeRef.current
@@ -586,7 +606,7 @@ export function useTravel() {
   return {
     nodes, edges, party, loaded, dmKey, setRefresh,
     confirmNode, setConfirmNode, arrivedAt, setArrivedAt,
-    halt, setHalt, continueMarch, reachNode, walkStarted,
+    halt, setHalt, continueMarch, takeStance, stanceBusy, reachNode, walkStarted,
     vessels, hasBoat, march, setMarch, guides, pcs,
     pace, setPace, navSel, setNavSel, pcFamiliar, setPcFamiliar, pcHasMap, setPcHasMap,
     me, lead, canLead, hoverNode, setHoverNode,
