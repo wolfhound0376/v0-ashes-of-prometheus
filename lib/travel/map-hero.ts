@@ -62,6 +62,17 @@ export const MAP_LAIRS: Readonly<Record<string, string>> = {
   "road-21": "hook-horror",
 }
 
+/**
+ * LYNKES STANDS AS TALL AS FIFI (Sam, 2026-11-10 and again 2026-11-12: "Lynkes should be about the same size of Fifi").
+ * A manifest's `ppu` is meant to be figure pixels x 5 / feet (AGENTS.md, sprite height rule). Lynkes's says 208, but
+ * his figure is about 118 px tall, which at a halfling's 3.8 ft is 155. At 208 the map drew him at about 73% of
+ * Fifi's height. The map reads the corrected number from here. His sprite.json is left alone in this change: the
+ * Underwalk page bakes that number in, so changing it there is a rebuild of the walk and a ruling of its own.
+ */
+const MAP_PPU: Readonly<Record<string, number>> = {
+  lynkes: 155,
+}
+
 export type MapHero = {
   walk: { src: string; frames: number; fps: number }
   idle: { src: string; frames: number; fps: number }
@@ -91,7 +102,7 @@ export function mapHeroFromManifest(slug: string, manifest: unknown): MapHero | 
   const cell = Array.isArray(m?.cell) && Number(m.cell[0]) > 0 ? Number(m.cell[0]) : 128
   const p = (m as { pivot?: unknown } | null)?.pivot
   const pivotY = Array.isArray(p) && Number(p[1]) > 0 && Number(p[1]) <= cell ? Number(p[1]) : cell
-  const ppu = Number((m as { ppu?: unknown } | null)?.ppu)
+  const ppu = MAP_PPU[slug] ?? Number((m as { ppu?: unknown } | null)?.ppu)
   const scale = (cell / 128) * (ppu > 0 ? 96 / ppu : 1)
   return { walk, idle, cell, foot: Math.max(0, 1 - pivotY / cell), scale }
 }
