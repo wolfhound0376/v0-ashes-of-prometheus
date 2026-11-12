@@ -19627,6 +19627,10 @@ function fitsSlot(it, sl){
   return sl === "off_hand" && want === "main_hand" && isWeapon(it) && !twoHanded(it);
 }
 const wornIn = (g, sl) => (g.doll || []).find(d => d.slot === sl) || null;
+// HOW MANY OF A THING THE HERO HAS, across every row of it (Sam, 2026-11-12: Lynkes, two shortswords, one in the off hand,
+// "wouldn't let me equip despite being free"). Two looted shortswords are two pack rows of one each, and the hand checks
+// read one row's quantity, so the second sword counted as the one already held.
+const copiesOf = (g, name) => ((g && g.carried) || []).filter(c => c.name === name).reduce((n, c) => n + (c.qty || 1), 0);
 const wornSlotsOf = (g, it) => (g.doll || []).filter(d => d.item_key && it.item_key ? d.item_key === it.item_key : d.name === it.name).map(d => d.slot);
 function homeSlot(g, it){   // where "Wear" puts it: its own slot, a ring on the first free finger
   const want = it.eslot || (isWeapon(it) ? "main_hand" : ""); if (!want) return null;
@@ -19656,11 +19660,12 @@ function dragSource(el, img, drop){
 // put it on / take it off: here at once, then in the character's real equipment (/api/equipment), which can still
 // refuse — then the doll is reloaded from the server and the reason is said
 function equipTo(a, it, sl){
-  const g = GEAR[a.id]; if (!g || !bagCan(a)) return;
+  const g = GEAR[a.id]; if (!g){ toast(`${fname(a)}'s pack has not loaded yet. Try again in a moment.`); return; }
+  if (!bagCan(a)){ toast(bagWhyNot(a)); return; }   // it used to return in silence: the box said "free" and nothing happened
   const fight = inFightNow(), was = wornIn(g, sl);
   if (fight && !HAND(sl)){ toast("Not in the middle of a fight: getting into or out of that takes longer than a turn."); return; }
   const other = sl === "main_hand" ? "off_hand" : sl === "off_hand" ? "main_hand" : null;
-  if (other && (it.qty || 1) < 2 && (wornIn(g, other) || {}).name === it.name){ toast(`There is only one ${it.name}, and it is already in the other hand.`); return; }
+  if (other && copiesOf(g, it.name) < 2 && (wornIn(g, other) || {}).name === it.name){ toast(`There is only one ${it.name}, and it is already in the other hand.`); return; }
   // a two-handed weapon takes both hands (SRD 5.1 "Two-Handed: This weapon requires two hands when you attack with it")
   const heldIn = sl2 => { const w = wornIn(g, sl2); return w && g.carried.find(x => x.name === w.name); };
   if (sl === "off_hand" && heldIn("main_hand") && twoHanded(heldIn("main_hand"))){ toast(`The ${heldIn("main_hand").name} takes both hands. Put it away first.`); return; }
@@ -19712,7 +19717,7 @@ function drawable(a){
   const heldTwo = (() => { const w = wornIn(g, "main_hand"), h = w && g.carried.find(x => x.name === w.name); return h && twoHanded(h); })(); if (heldTwo) return [];
   const out = [];
   for (const it of g.carried){
-    if (!isWeapon(it) || (it.qty || 1) <= (g.doll || []).filter(d => d.name === it.name).length) continue;   // every copy is already in a hand
+    if (!isWeapon(it) || copiesOf(g, it.name) <= (g.doll || []).filter(d => d.name === it.name).length) continue;   // every copy is already in a hand
     const sl = hands.includes("main_hand") ? "main_hand" : (!twoHanded(it) ? "off_hand" : null); if (!sl) continue;
     const atk = attackFromItem(a.c.sheet, it);
     out.push({it, slot: sl, label: `Draw ${it.name}`, hint: `+${atk.hit} · ${atk.dmg} ${atk.type}`});
@@ -20082,6 +20087,14 @@ function openBagVisit(){
 }
 if (BAG_VISIT.on){ document.body.classList.add("bagOpen"); setTimeout(openBagVisit, APP ? 1800 : 300); }
 // what this hero may do with the bag right now: anything out of a fight, only on their own turn in one
+/** Why bagCan(a) said no, in words (Sam, 2026-11-12: an Equip box that said "free" did nothing at all). */
+function bagWhyNot(a){
+  if (!canControl(a)) return `${fname(a)} is played on another screen.`;
+  if (a.down) return `${fname(a)} is down.`;
+  if (inFightNow() && a !== activeActor()) return `Not ${fname(a)}'s turn.`;
+  if (combatBusy) return "Wait for the swing to finish, then try again.";
+  return "Not now: try again on your turn.";
+}
 function bagCan(a){ if (FIGHT.mirror) return canControl(a) && a === activeActor() && myTurnHere() && !a.down;   // ONE FIGHT: your bag, your turn, played there
   return canControl(a) && (!inFightNow() || (a === activeActor() && !combatBusy && !a.down)); }
 function renderBag(){
