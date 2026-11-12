@@ -92,7 +92,11 @@ canvas#gl{display:block;width:100%;height:100%;touch-action:none;cursor:grab}
 
 /* GAME MODE: the leader and the boat come from the game; a player who is not the DM sees the map, the place card, zoom and sound, nothing else */
 body.game #leadRow,body.game .boatpick,body.game .clock,body.game #cineBtn,body.game #trackName{display:none !important}
-body.game:not(.gm) .hud.toggles,body.game:not(.gm) .hud.keys,body.game:not(.gm) #legend,body.game:not(.gm) #atlasLink{display:none !important}
+/* Sam 2026-11-12: no Player/DM view switch and no directions box in the game, DM included; the DM gets a DM mode light instead */
+body.game .hud.toggles,body.game .hud.keys,body.game:not(.gm) #legend,body.game:not(.gm) #atlasLink{display:none !important}
+.dmlight{display:none}
+body.game.gm .dmlight{display:flex;align-items:center;gap:7px;right:18px;top:14px;font-family:var(--ui);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#f3e6ff;background:var(--panel);border:1px solid #b44df5;padding:7px 11px;box-shadow:0 0 14px #b44df555}
+body.game.gm .dmlight i{width:8px;height:8px;border-radius:50%;background:#d48bff;box-shadow:0 0 8px #d48bff,0 0 2px #fff}
 body.game:not(.lead) #entEnter{display:none !important}
 #loading{position:fixed;inset:0;display:grid;place-items:center;background:var(--ink);z-index:20;font-family:var(--display);letter-spacing:.2em;color:var(--gold);transition:opacity .6s}
 @media (max-width:760px){ .music{top:auto;bottom:110px;right:12px} .keys,.clock{display:none} .title{left:12px;top:10px} .toggles{left:12px;right:12px;top:66px;max-width:none;justify-content:flex-start} .tg{padding:6px 9px;font-size:11px} .banner{font-size:17px} .banner.lesser{font-size:13px} .title h1{font-size:16px} .zoom{top:auto;bottom:150px;transform:none} }
@@ -149,6 +153,7 @@ body.game:not(.lead) #entEnter{display:none !important}
 <div class="hud music"><span class="sndrow" role="group" aria-label="Who leads" id="leadRow"><button class="tg" data-lead="fifi" aria-pressed="true" title="Fifi leads: her lines on arrival">Fifi</button><button class="tg" data-lead="kenta" aria-pressed="false">Kenta</button><button class="tg" data-lead="samson" aria-pressed="false">Samson</button><button class="tg" data-lead="scott" aria-pressed="false">Scott</button></span><span class="sndrow"><button class="tg" id="sfxBtn" aria-pressed="true" title="Marching and discovery sound">🔔 Sound on</button><button class="tg" id="musicBtn" aria-pressed="false" title="Music (M)">♪ Music off</button><button class="tg" id="cineBtn" aria-pressed="true" title="Arrival cinematics">🎬 Cinematics on</button></span><span id="trackName"></span></div>
 <div class="hud zoom"><button class="tg" id="zin" aria-label="Zoom in">+</button><button class="tg" id="zout" aria-label="Zoom out">−</button><button class="tg wide" id="zAll" title="Pull back to the whole Underdark (Home)">⌂ Whole map</button><button class="tg wide" id="zParty" title="Back to the party (P)">◎ Party</button></div>
 <aside class="hud legend" id="legend" hidden aria-label="DM marker notes"><h3><button id="legBtn" class="legbtn" aria-expanded="true" aria-controls="legList">DM marker notes <span id="legArrow">Hide ▴</span></button></h3><ul id="legList"></ul></aside>
+<div class="hud dmlight" title="You are in DM mode"><i></i>DM mode</div>
 <div class="hud keys"><kbd>←</kbd><kbd>↑</kbd><kbd>→</kbd><kbd>↓</kbd> walk to the next stop<br>Hover a stop to see the route · click to walk there · wheel to zoom · drag to look around</div>
 <div class="hud clock"><span>Marched</span><b id="miles">0 mi</b> · <b id="days">day 1</b></div>
 <div class="hud card" id="card" aria-live="polite">
@@ -535,7 +540,7 @@ const preview=new THREE.Group(); scene.add(preview);
 let hovered=null;
 function showCard(k,mode){
   const n=N.get(k); card.name.textContent=placeName(n);
-  if(k===party){ card.meta.innerHTML= walking? "On the march." : (GAME&&!gameLead)? "You are here." : "You are here. Arrow keys or WASD walk to the next stop.";
+  if(k===party){ card.meta.innerHTML= walking? "On the march." : GAME? "You are here." : "You are here. Arrow keys or WASD walk to the next stop.";
     if(!walking&&PLATES[k]){ card.meta.innerHTML+=' <br><button class="tollbtn" id="gateBtn">Stand at the gate</button>'; document.getElementById("gateBtn").onclick=()=>openEntrance(k); }
     if(!walking&&!GAME) poolCard(k); return; }
   const p=route(party,k);
@@ -1151,7 +1156,8 @@ function loomTick(t){ let up=false;
 function gameWhere(){ const n=N.get(party); document.getElementById("where").textContent = n&&n.t==="location"&&nameShown(n) ? n.n : "On the road"; }
 function applyState(s,first){
   GS=s; gameDM=!!s.dm; gameLead=!!s.lead; document.body.classList.toggle("gm",gameDM); document.body.classList.toggle("lead",gameLead);
-  if(!gameDM&&dm){ dm=false; tgP.setAttribute("aria-pressed","true"); tgD.setAttribute("aria-pressed","false"); }
+  // Sam 2026-11-12: no Player view / DM view switch in the game ("it'll be obvious"): DM mode is the DM view
+  if(dm!==gameDM){ dm=gameDM; tgP.setAttribute("aria-pressed",String(!dm)); tgD.setAttribute("aria-pressed",String(dm)); }
   const seen=new Set(); let moved=false;
   for(const n of s.nodes){ if(!placed(n)) continue; seen.add(n.k); const cur=N.get(n.k);
     if(!cur){ const o=gameNode(n); N.set(o.k,o); addStop(o); addBanner(o); }
