@@ -22185,12 +22185,18 @@ async function owRealtime(cfg){
     // she doesn't have it"). The row had moved to her (inventory_items, written by /api/walk-items give), but her page
     // had loaded the packs once at the start and never again. Now any change to a party hero's or ally's rows reloads
     // that pack here, a moment later (several rows of one give arrive together), and the open bag redraws.
+    // HANDS TOO (Sam, 2026-11-12, after Lynkes punched while dual wielding): the doll and the hands live in
+    // equipment_items, which nothing here listened to, so a weapon readied on one screen stayed out of the hero's hands
+    // on every other screen until a reload. A delete carries only the row id (the table's replica identity is the
+    // default), so a hand emptied elsewhere reloads every hero's pack — 700 ms later, once (packChanged debounces).
+    const onPack = p => {
+      const cid = (p && ((p.new && p.new.character_id) || (p.old && p.old.character_id))) || null;
+      const ids = [...party.map(x => x.id), ...Object.keys(ALLY_ROW)].filter(id => !cid || characterIdOf(id) === cid);
+      for (const id of ids) packChanged(id);
+    };
     OW.packs = sb.channel("walk-packs-" + OW.run)
-      .on("postgres_changes", {event: "*", schema: "public", table: "inventory_items"}, p => {
-        const cid = (p && ((p.new && p.new.character_id) || (p.old && p.old.character_id))) || null; if (!cid) return;
-        const ids = [...party.map(x => x.id), ...Object.keys(ALLY_ROW)].filter(id => characterIdOf(id) === cid);
-        for (const id of ids) packChanged(id);
-      })
+      .on("postgres_changes", {event: "*", schema: "public", table: "inventory_items"}, onPack)
+      .on("postgres_changes", {event: "*", schema: "public", table: "equipment_items"}, onPack)
       .subscribe();
   } catch (e) {}                                                   // the heartbeat still carries every change, a beat later
 }
