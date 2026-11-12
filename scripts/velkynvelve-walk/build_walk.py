@@ -431,6 +431,20 @@ for k, n in spec.items():
 
 fx = open(os.path.join(HERE, 'fx.json')).read()
 t = open(os.path.join(HERE, 'template.html')).read()
+def somatic_table(root):
+    # which spells need a gesture: lib/data/spells.json, the same rows lib/walk-cast.ts reads (componentsOf), so the
+    # fight's cast menu and the explore one darken the same spells under the manacles (Sam, 2026-11-12)
+    import json as _j
+    d = _j.load(open(os.path.join(root, 'lib', 'data', 'spells.json'), encoding='utf-8'))
+    rows = d if isinstance(d, list) else list(d.values())
+    out = {}
+    for r in rows:
+        c = r.get('components')
+        if isinstance(r.get('name'), str) and isinstance(c, str) and c.strip():
+            out[r['name'].lower()] = 'S' in [x.strip() for x in c.split('(')[0].upper().split(',')]
+    return 'const SOMATIC = ' + _j.dumps(out, sort_keys=True, separators=(',', ':')) + ';'
+
+t = t.replace('/*__SOMATIC__*/', somatic_table(ROOT))
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__TRAITS__*/', traits_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
       .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__SURRENDER__*/', surrender_rules(ROOT)).replace('/*__GAME_OVER__*/', game_over_rules(ROOT)).replace('/*__BUPPIDO_RISES__*/', buppido_rises_rules(ROOT)).replace('/*__BODY_REMOVAL__*/', body_removal_rules(ROOT)).replace('/*__SHAKEDOWN__*/', shakedown_rules(ROOT)).replace('/*__WATCH_THE_MAP__*/', watch_the_map_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
