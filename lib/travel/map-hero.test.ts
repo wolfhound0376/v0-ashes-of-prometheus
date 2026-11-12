@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import { MAP_FOLLOWERS_MAX, MAP_HERO_FALLBACK, MAP_SPRITE_HERO_IDS, mapFollowerIds, mapHeroFromManifest, mapHeroSlug } from "./map-hero"
+import { MAP_FOLLOWERS_MAX, MAP_HERO_FALLBACK, MAP_LAIRS, MAP_SPRITE_HERO_IDS, mapFollowerIds, mapHeroFromManifest, mapHeroSlug } from "./map-hero"
 import { PREMADE_SPRITE_IDS } from "@/lib/table"
 
 const manifest = (slug: string) => JSON.parse(readFileSync(`public/sprites/${slug}/sprite.json`, "utf8"))
@@ -60,5 +60,18 @@ describe("the marching line behind the leader (Sam, 2026-11-12)", () => {
       expect(hero, slug).not.toBeNull()
       expect(() => readFileSync(`public${hero!.walk.src}`)).not.toThrow()
     }
+  })
+})
+
+describe("what looms at a lair (Sam, 2026-11-12)", () => {
+  it("every lair names a creature whose sheets exist", () => {
+    for (const [k, slug] of Object.entries(MAP_LAIRS)) {
+      const fig = mapHeroFromManifest(slug, manifest(slug))
+      expect(fig, `${k} -> ${slug}`).not.toBeNull()
+      expect(() => readFileSync(`public${fig!.idle.src}`)).not.toThrow()
+    }
+  })
+  it("the hook horror stands well above a human", () => {
+    expect(mapHeroFromManifest("hook-horror", manifest("hook-horror"))!.scale).toBeGreaterThan(1.3)
   })
 })

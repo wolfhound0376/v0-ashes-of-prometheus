@@ -23,7 +23,7 @@ import { useEffect, useRef, useState } from "react"
 import { useTravel, type NodeRow } from "./use-travel"
 import { TravelCards, TravelPanels } from "./travel-cards"
 import { entranceFor, WALKABLE_SCENES } from "@/lib/travel/entrance"
-import { MAP_SPRITE_HERO_IDS, mapFollowerIds, mapHeroFromManifest, mapHeroSlug, type MapHero } from "@/lib/travel/map-hero"
+import { MAP_LAIRS, MAP_SPRITE_HERO_IDS, mapFollowerIds, mapHeroFromManifest, mapHeroSlug, type MapHero } from "@/lib/travel/map-hero"
 
 const PAGE = "/underdark-map/index.html?game=1"
 
@@ -79,6 +79,21 @@ export default function UnderdarkMapModule() {
     return () => { alive = false }
   }, [followerKey])
 
+  // What looms at a lair (lib/travel/map-hero.ts, MAP_LAIRS): the creature's own sprite, sent with its stop.
+  const [lairs, setLairs] = useState<{ k: string; fig: MapHero }[]>([])
+  useEffect(() => {
+    let alive = true
+    Promise.all(
+      Object.entries(MAP_LAIRS).map(([k, slug]) =>
+        fetch(`/sprites/${slug}/sprite.json`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((m) => { const fig = mapHeroFromManifest(slug, m); return fig ? { k, fig } : null })
+          .catch(() => null),
+      ),
+    ).then((list) => { if (alive) setLairs(list.filter((l): l is { k: string; fig: MapHero } => !!l)) })
+    return () => { alive = false }
+  }, [])
+
   // Where the page's figure stands. It trails `party` while a walk is being shown.
   const shown = useRef<string | null>(null)
   const walk = useRef<{ keys: string[]; i: number; ids: string[] } | null>(null)
@@ -87,7 +102,7 @@ export default function UnderdarkMapModule() {
   const stateKey = JSON.stringify([
     nodes.map((n) => [n.node_key, n.name, n.metadata?.map_x, n.metadata?.map_y, !!n.discovered_at, n.name_known, (n as NodeRow & { name_known_at?: string | null }).name_known_at ?? null]),
     edges.map((e) => [e.id, e.metadata?.is_road, e.metadata?.mode]),
-    !!dmKey, canLead, hasBoat, hero?.walk.src ?? null, followers.map((f) => f.walk.src),
+    !!dmKey, canLead, hasBoat, hero?.walk.src ?? null, followers.map((f) => f.walk.src), lairs.map((l) => l.k),
   ])
   useEffect(() => {
     if (!ready || !loaded) return
@@ -117,6 +132,7 @@ export default function UnderdarkMapModule() {
       boat: hasBoat,
       hero,
       followers,
+      lairs,
       enterable: Object.keys(WALKABLE_SCENES),
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps

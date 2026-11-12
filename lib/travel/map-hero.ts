@@ -51,6 +51,17 @@ export function mapFollowerIds(leaderId: string | null | undefined, seated: read
  */
 export const MAP_SPRITE_HERO_IDS: readonly string[] = [...Object.keys(PREMADE), ...Object.keys(FORGED)]
 
+/**
+ * WHAT LOOMS AT A LAIR (Sam, 2026-11-12: "oversized boss silhouettes"). travel_nodes.node_key -> the sprite of the
+ * creature whose lair lies off that stop. The map draws it as a large dark shape behind the stop once the party
+ * can see the stop. Every entry needs a source: nothing here is invented.
+ *   road-21  the hook horror: Sam's Exit Picker pick of 2026-10-24 ("Hook Horror Layer" -> road-21, see
+ *            lib/travel/handoff.ts), the Hook Horror Hunt of Out of the Abyss ch.2.
+ */
+export const MAP_LAIRS: Readonly<Record<string, string>> = {
+  "road-21": "hook-horror",
+}
+
 export type MapHero = {
   walk: { src: string; frames: number; fps: number }
   idle: { src: string; frames: number; fps: number }
