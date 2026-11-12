@@ -22022,7 +22022,28 @@ async function owRealtime(cfg){
     OW.rt = sb.channel("walk-world-" + OW.run)
       .on("postgres_changes", {event: "*", schema: "public", table: "walk_world", filter: `campaign_run_id=eq.${OW.run}`}, p => { if (p && p.new) owReceive(p.new); })
       .subscribe();
+    // A PACK CHANGED ON ANOTHER SCREEN (Sam, 2026-11-10: "I gave Fifi something (short sword) I can see it on mine but
+    // she doesn't have it"). The row had moved to her (inventory_items, written by /api/walk-items give), but her page
+    // had loaded the packs once at the start and never again. Now any change to a party hero's or ally's rows reloads
+    // that pack here, a moment later (several rows of one give arrive together), and the open bag redraws.
+    OW.packs = sb.channel("walk-packs-" + OW.run)
+      .on("postgres_changes", {event: "*", schema: "public", table: "inventory_items"}, p => {
+        const cid = (p && ((p.new && p.new.character_id) || (p.old && p.old.character_id))) || null; if (!cid) return;
+        const ids = [...party.map(x => x.id), ...Object.keys(ALLY_ROW)].filter(id => characterIdOf(id) === cid);
+        for (const id of ids) packChanged(id);
+      })
+      .subscribe();
   } catch (e) {}                                                   // the heartbeat still carries every change, a beat later
+}
+const packTimers = {};
+function packChanged(id){
+  clearTimeout(packTimers[id]);
+  packTimers[id] = setTimeout(async () => {
+    delete packTimers[id];
+    try { await loadGear(id); } catch (e) { return; }
+    try { refreshAttacks(id); } catch (e) {}
+    if (document.body.classList.contains("bagOpen")) try { renderBag(); } catch (e) {}
+  }, 700);
 }
 // --- who drives whom ---
 function owDriver(a){ return AopOneWorld.driverOf(characterIdOf(a.id), OW.seats, owNow()); }
