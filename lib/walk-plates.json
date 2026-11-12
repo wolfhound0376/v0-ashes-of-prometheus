@@ -83,6 +83,18 @@
   "slug": "gr-03f-bazaar-smithy",
   "name": "The smith's stall"
  },
+ "road-rope-bridge": {
+  "slug": "road-rope-bridge",
+  "name": "Road: the rope bridge"
+ },
+ "road-boneyard": {
+  "slug": "road-boneyard",
+  "name": "Road: the boneyard"
+ },
+ "road-webs": {
+  "slug": "road-webs",
+  "name": "Road: the webs"
+ },
  "tunnels": {
   "slug": "biome-tunnels",
   "name": "The tunnels"
