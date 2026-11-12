@@ -1,3 +1,5 @@
+import { featNamesOn } from "./feats"
+
 // ============================================================================
 // WALK SHEET — a seated character's combat sheet for the painted map, read from
 // their own `characters` row.
@@ -54,6 +56,10 @@ export type WalkSheet = {
   tools: Record<LoreTool, number | null>
   attacks: WalkAttack[]
   magic: { dc: number; hit: number; mod: number; slots: Record<string, number>; cantrips: string[]; prepared: string[] } | null
+  /** the proficiency bonus (Lucky's points are this many) */
+  prof: number
+  /** the FEATS on the sheet (lib/feats.ts featNamesOn) — "Lucky" here is the feat, never Halfling Luck */
+  feats: string[]
 }
 
 export type LoreSkill = "investigation" | "arcana" | "religion" | "nature" | "history"
@@ -63,7 +69,8 @@ export type LoreTool = "alchemist" | "poisoner" | "herbalism"
 export const WALK_SHEET_COLUMNS =
   "id, name, class, level, hp_max, hp_current, xp, ac, initiative, speed, proficiency_bonus, " +
   "str_score, str_modifier, dex_modifier, con_modifier, int_modifier, wis_modifier, cha_modifier, " +
-  "sheet_species, sheet_skill_proficiencies, sheet_save_proficiencies, sheet_proficiencies, sheet_attacks, sheet_spellcasting"
+  "sheet_species, sheet_skill_proficiencies, sheet_save_proficiencies, sheet_proficiencies, sheet_attacks, sheet_spellcasting, sheet_features"
+
 
 type Row = Record<string, unknown>
 
@@ -210,5 +217,7 @@ export function walkSheetFromRow(row: Row): WalkSheet {
     tools: loreTools(row, m.int, prof),
     attacks: [unarmed(row, m.str, prof)],
     magic: magicOf(row),
+    prof,
+    feats: featNamesOn(row.sheet_features),
   }
 }

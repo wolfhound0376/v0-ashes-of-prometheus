@@ -334,8 +334,10 @@ export interface HeroStats {
   hp_current: number | null
   initiative: number | null
   proficiency_bonus: number | null
-  /** names already on sheet_features — a non-repeatable feat already there is refused */
+  /** the FEATS already on the sheet (lib/feats.ts featNamesOn) — a non-repeatable feat already there is refused */
   featureNames?: string[]
+  /** the sheet has the Fighting Style feature (Fighting Style feats need it) */
+  fightingStyle?: boolean
 }
 
 const ABILITY_COLUMN: Record<Ability, string> = { STR: "str", DEX: "dex", CON: "con", INT: "int", WIS: "wis", CHA: "cha" }
@@ -453,7 +455,7 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
       for (const [k, v] of pts) raise[k as Ability] = v
     } else {
       if (!feat) return { ok: false, error: `${featName} is not a feat this screen knows.` }
-      const why = featBlocked(feat, { level: plan.level, scores: before, featureNames: stats.featureNames ?? [], spellcasting: plan.caster, fightingStyle: (stats.featureNames ?? []).some((n) => /^fighting style/i.test(n)) })
+      const why = featBlocked(feat, { level: plan.level, scores: before, featureNames: stats.featureNames ?? [], spellcasting: plan.caster, fightingStyle: !!stats.fightingStyle })
       if (why) return { ok: false, error: `${feat.name}: ${why}` }
       if (feat.abilities.length) {
         const ab = feat.abilities.length === 1 ? feat.abilities[0] : picks.featAbility
@@ -474,7 +476,7 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
   let columns: Record<string, number> | null = null
   const castAb = ABILITY_WORD[String(casting?.ability ?? casting?.spellcasting_ability ?? "").trim().toLowerCase()] ?? null
   let castDelta = 0
-  if (Object.keys(raise).length || feat?.initiativePb) {
+  if (Object.keys(raise).length || feat?.initiativePb || feat?.hpPerLevel) {
     columns = {}
     for (const [k, v] of Object.entries(raise) as [Ability, number][]) {
       const was = before[k] ?? 10, now = was + v, d = abilityMod(now) - abilityMod(was)
@@ -485,6 +487,8 @@ export function settleChoices(plan: LevelPlan, casting: CastingSheet | null, fea
       if (k === "DEX" && d) columns.initiative = Math.trunc(Number(columns.initiative ?? stats?.initiative ?? 0)) + d
       if (k === castAb) castDelta = d
     }
+    // Tough: twice the character level now (lib/camp.ts levelUp adds the 2 at every later level)
+    if (feat?.hpPerLevel) { const add = feat.hpPerLevel * plan.level; columns.hp_max = Math.trunc(Number(columns.hp_max ?? stats?.hp_max ?? 0)) + add; columns.hp_current = Math.trunc(Number(columns.hp_current ?? stats?.hp_current ?? 0)) + add }
     if (feat?.initiativePb) columns.initiative = Math.trunc(Number(columns.initiative ?? stats?.initiative ?? 0)) + Math.trunc(Number(stats?.proficiency_bonus ?? 2))
   }
   const skills = exp.length || newSk.length || featSk.length ? sk : null

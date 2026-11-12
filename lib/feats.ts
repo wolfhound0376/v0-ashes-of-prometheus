@@ -12,6 +12,9 @@
 // a feat (Sam, 2026-10-30: "make sure options are actual options").
 // What is CLOSED: the Player's Handbook 2024 feats. Same rule as the PHB subclasses (lib/level-choices.ts): shown
 // locked, "needs the DM", until Sam opens one by flipping `open`. Their one-liners are from memory: `verify`.
+// OPENED BY SAM: Tough and Lucky (2026-11-12: "tough and lucky"). Each is wired, not just listed — Tough writes its
+// hit points here and on every later level-up (lib/camp.ts levelUp), Lucky spends its points in the map's d20
+// (lib/traits.mjs luckyOffense / luckyDefense).
 //
 // A feat lands on sheet_features as {name, desc, source: "Feat · <book> · level N"}: the source names no class, so
 // the dashboard's sheet files it under Feats (character-sheet-slideover.tsx featureGroup).
@@ -39,6 +42,10 @@ export interface Feat {
   skills?: number
   /** Alert: Proficiency Bonus added to Initiative — written to the initiative column */
   initiativePb?: boolean
+  /** Tough: hit points per character level, now and at every later level-up */
+  hpPerLevel?: number
+  /** who opened a non-SRD feat, and when */
+  openedBy?: string
   /** painted slab slug in public/velkynvelve-walk/icons/level (falls back to a glyph disc when it is missing) */
   icon: string
   verify: boolean
@@ -101,9 +108,9 @@ export const FEATS: Feat[] = [
     desc: "+1 STR or DEX. Opportunity Attacks stop a creature's movement, even after Disengage, and punish attacks on your allies." },
   { name: "Inspiring Leader", category: "general", source: PHB, open: false, abilities: ["WIS", "CHA"], icon: "inspiring-leader", verify: true, prereq: { ...L4, minScore: { any: ["WIS", "CHA"], min: 13 } },
     desc: "+1 WIS or CHA. After a rest, allies gain Temporary Hit Points equal to your level plus the raised modifier." },
-  { name: "Lucky", category: "origin", source: PHB, open: false, abilities: [], icon: "lucky", verify: true,
-    desc: "Luck points equal to your Proficiency Bonus: spend one for Advantage, or to give an attacker Disadvantage." },
-  { name: "Tough", category: "origin", source: PHB, open: false, abilities: [], icon: "tough", verify: true,
+  { name: "Lucky", category: "origin", source: PHB, open: true, openedBy: "Sam, 2026-11-12", abilities: [], icon: "lucky", verify: true,
+    desc: "Luck points equal to your Proficiency Bonus, back after a Long Rest. Spend one for Advantage on a D20 Test, or to give Disadvantage to an attack against you. In the map a point is spent only when it can change the result." },
+  { name: "Tough", category: "origin", source: PHB, open: true, openedBy: "Sam, 2026-11-12", abilities: [], icon: "tough", verify: true, hpPerLevel: 2,
     desc: "Your Hit Point maximum rises by twice your level, and by 2 more each level after." },
   { name: "Healer", category: "origin", source: PHB, open: false, abilities: [], icon: "healer", verify: true,
     desc: "Battle Medic with a Healer's Kit, and reroll 1s on healing dice." },
@@ -112,7 +119,7 @@ export const FEATS: Feat[] = [
 export interface FeatContext {
   level: number
   scores: Partial<Record<Ability, number | null>>
-  /** names already on sheet_features (a feat taken once cannot be taken again unless repeatable) */
+  /** the FEATS already on the sheet (featNamesOn) — a feat taken once cannot be taken again unless repeatable */
   featureNames: string[]
   spellcasting: boolean
   fightingStyle: boolean
@@ -127,7 +134,18 @@ export interface FeatOption {
   why: string | null
 }
 
-/** Is `name` already on the sheet as a feat? Matches "Lucky" and older "Feat: Lucky" lines alike. */
+/**
+ * The FEATS on a sheet_features array: lines whose source says Feat (what the level-up writes: "Feat · …"). A species
+ * trait that shares a feat's name is not the feat — Lynkes's "Lucky" (source "Halfling") is Halfling Luck, and must
+ * not stop him taking the Lucky feat.
+ */
+export function featNamesOn(features: unknown): string[] {
+  return (Array.isArray(features) ? features : [])
+    .filter((f) => f && typeof f === "object" && /^feat\b/i.test(String((f as { source?: unknown }).source ?? "")))
+    .map((f) => String((f as { name?: unknown }).name ?? "").trim()).filter(Boolean)
+}
+
+/** Is `name` already on the sheet as a feat? `names` are feat lines only (featNamesOn). */
 function onSheet(names: string[], feat: string): boolean {
   const f = feat.toLowerCase()
   return names.some((n) => { const x = String(n).toLowerCase().trim(); return x === f || x === `feat: ${f}` })

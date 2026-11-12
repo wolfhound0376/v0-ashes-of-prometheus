@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 import { PENDING_LEVEL_SOURCE } from "./camp"
-import { FEATS, featBlocked, featOptions } from "./feats"
+import { FEATS, featBlocked, featNamesOn, featOptions } from "./feats"
+import { levelUp } from "./camp"
 import { planFor, settleChoices, type HeroStats } from "./level-choices"
 
 const marker = (l: number) => ({ name: `Level ${l} — choices to make`, desc: "…", source: PENDING_LEVEL_SOURCE })
@@ -16,8 +17,9 @@ describe("the feat catalogue", () => {
     for (const f of FEATS) { expect(f.name).toBeTruthy(); expect(f.desc.length).toBeGreaterThan(10); expect(f.source).toMatch(/SRD 5\.2\.1|PHB 2024/) }
     expect(new Set(FEATS.map((f) => f.name)).size).toBe(FEATS.length)
   })
-  it("opens only SRD feats; PHB feats and Magic Initiate stay locked with a reason", () => {
-    for (const f of FEATS.filter((x) => x.open)) expect(f.source).toBe("SRD 5.2.1")
+  it("opens only SRD feats and the ones Sam opened; other PHB feats and Magic Initiate stay locked with a reason", () => {
+    for (const f of FEATS.filter((x) => x.open)) expect(f.source === "SRD 5.2.1" || !!f.openedBy).toBe(true)
+    expect(FEATS.filter((x) => x.openedBy).map((x) => x.name).sort()).toEqual(["Lucky", "Tough"])
     const ctx = { level: 4, scores: lynkesStats.scores, featureNames: [], spellcasting: false, fightingStyle: false }
     expect(featBlocked(FEATS.find((f) => f.name === "War Caster")!, ctx)).toMatch(/Player's Handbook/)
     expect(featBlocked(FEATS.find((f) => f.name === "Magic Initiate")!, ctx)).toMatch(/DM/)
@@ -32,7 +34,7 @@ describe("the feat catalogue", () => {
     const opts = featOptions({ level: 4, scores: lynkesStats.scores, featureNames: [], spellcasting: false, fightingStyle: false })
     expect(opts.some((o) => o.name === "Archery")).toBe(false)
     expect(opts[0].ok).toBe(true)
-    expect(opts.filter((o) => o.ok).map((o) => o.name).sort()).toEqual(["Alert", "Grappler", "Savage Attacker", "Skilled"])
+    expect(opts.filter((o) => o.ok).map((o) => o.name).sort()).toEqual(["Alert", "Grappler", "Lucky", "Savage Attacker", "Skilled", "Tough"])
     expect(featOptions({ level: 4, scores: {}, featureNames: ["Fighting Style"], spellcasting: false, fightingStyle: true }).some((o) => o.name === "Archery" && o.ok)).toBe(true)
   })
 })
@@ -96,5 +98,30 @@ describe("level 4: the Ability Score Improvement or a feat (SRD 5.2.1)", () => {
     expect(settleChoices(rogue, null, [marker(4)], { feat: "Sharpshooter" }, {}, lynkesStats)).toMatchObject({ ok: false })
     expect(settleChoices(rogue, null, [marker(4)], { feat: "Alert" }, {}, { ...lynkesStats, featureNames: ["Alert"] })).toMatchObject({ ok: false })
     expect(settleChoices(planFor("Rogue", 3)!, null, [marker(3)], { origin: "Thief", asi: { DEX: 2 } }, {}, lynkesStats)).toMatchObject({ ok: false })
+  })
+})
+
+describe("Tough and Lucky (opened by Sam, 2026-11-12)", () => {
+  const halflingLucky = [{ name: "Lucky", desc: "…", source: "Halfling" }, { name: "Alert", desc: "…", source: "Feat · SRD 5.2.1 · level 4" }]
+  it("a species trait named Lucky is not the feat: Lynkes may still take it", () => {
+    expect(featNamesOn(halflingLucky)).toEqual(["Alert"])
+    const rogue = planFor("Rogue", 4)!
+    const out = settleChoices(rogue, null, [marker(4)], { feat: "Lucky" }, {}, { ...lynkesStats, featureNames: featNamesOn(halflingLucky) })
+    if (!out.ok) throw new Error(out.error)
+    expect(out.features.find((f) => f.name === "Lucky" && /^Feat/.test(f.source))!.source).toBe("Feat · PHB 2024 — not in the SRD · level 4 · verify")
+    expect(out.columns).toBeNull()
+  })
+  it("Tough adds twice the level now (8 at level 4)", () => {
+    const out = settleChoices(planFor("Rogue", 4)!, null, [marker(4)], { feat: "Tough" }, {}, lynkesStats)
+    if (!out.ok) throw new Error(out.error)
+    expect(out.columns).toEqual({ hp_max: 35, hp_current: 35 })
+  })
+  it("Tough adds 2 more at every later level-up; no Tough, no extra", () => {
+    const sheet = { id: "x", name: "Fifi", class: "Rogue", level: 4, xp: 6500, hp_max: 35, con_score: 10, hit_dice_remaining: 4, sheet_hit_dice: "4d8", sheet_spellcasting: null }
+    const plain = levelUp(sheet, { method: "average" })
+    const tough = levelUp({ ...sheet, sheet_features: [{ name: "Tough", desc: "…", source: "Feat · PHB 2024 — not in the SRD · level 4 · verify" }] }, { method: "average" })
+    expect(plain.hp!.gained).toBe(5)
+    expect(tough.hp).toMatchObject({ gained: 7, feat: 2 })
+    expect(tough.write!.hp_max).toBe(42)
   })
 })

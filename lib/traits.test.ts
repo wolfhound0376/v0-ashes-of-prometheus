@@ -116,3 +116,28 @@ describe("Brave and Fey Ancestry", () => {
     expect(withEdge(0, false)).toBe(0)
   })
 })
+
+describe("the Lucky feat (PHB 2024, opened by Sam 2026-11-12)", async () => {
+  const { luckyOffense, luckyDefense } = await import("./traits.mjs")
+  const five = () => 15
+  it("spends a point only on a roll that would fail, and keeps the higher die", () => {
+    expect(luckyOffense(14, [14], 0, 12, 2, five)).toEqual({ result: 14, spent: false })
+    expect(luckyOffense(8, [8], 0, 12, 2, five)).toEqual({ result: 15, spent: true })
+    expect(luckyOffense(8, [8], 0, 12, 2, () => 3)).toEqual({ result: 8, spent: true })
+    expect(luckyOffense(8, [8], 0, 12, 0, five)).toMatchObject({ spent: false })
+    expect(luckyOffense(8, [8], 0, null, 2, five)).toMatchObject({ spent: false })
+    expect(luckyOffense(8, [8], 0, 22, 2, five)).toMatchObject({ spent: false })
+  })
+  it("does not stack on advantage; on disadvantage makes the roll straight (the first die)", () => {
+    expect(luckyOffense(8, [8, 17], 1, 12, 2, five)).toMatchObject({ spent: false })
+    expect(luckyOffense(5, [16, 5], -1, 12, 2, five)).toEqual({ result: 16, spent: true })
+    expect(luckyOffense(5, [5, 16], -1, 12, 2, five)).toMatchObject({ spent: false })
+  })
+  it("defends only against an attack that would hit, keeping the lower die", () => {
+    expect(luckyDefense(9, [9], 0, 14, 2, five)).toMatchObject({ spent: false })
+    expect(luckyDefense(17, [17], 0, 14, 2, () => 4)).toEqual({ result: 4, spent: true })
+    expect(luckyDefense(20, [20], 0, 14, 2, () => 4)).toEqual({ result: 4, spent: true })
+    expect(luckyDefense(17, [17, 3], -1, 14, 2, () => 4)).toMatchObject({ spent: false })
+    expect(luckyDefense(17, [6, 17], 1, 14, 2, () => 4)).toEqual({ result: 6, spent: true })
+  })
+})

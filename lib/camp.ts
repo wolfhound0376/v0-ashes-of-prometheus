@@ -45,6 +45,7 @@ import {
   type Skill,
 } from "./game-context"
 import { XP_THRESHOLDS } from "./game-data"
+import { FEATS, featNamesOn } from "./feats"
 
 // ============================================================================
 // §10 RATIONS DECIDE THE REST (Sam, 2026-09-26)
@@ -1314,6 +1315,8 @@ export interface LevelUpSheet {
   hit_dice_remaining: number | null
   sheet_hit_dice: string | null
   sheet_spellcasting: { slots?: Record<string, { max?: number; used?: number } | null> | null; [k: string]: unknown } | null
+  /** read for feats that change the level's hit points (Tough: +2 per level) — optional, older callers omit it */
+  sheet_features?: unknown
 }
 
 export interface LevelUpWrite {
@@ -1337,7 +1340,8 @@ export interface LevelUpOutcome {
   ok: boolean
   /** Columns to write on `characters`. Null on refusal. */
   write: LevelUpWrite | null
-  hp: { die: number; face: number | null; con: number; gained: number; method: "roll" | "average" } | null
+  /** `feat`: hit points a feat adds this level (Tough +2), already inside `gained` */
+  hp: { die: number; face: number | null; con: number; gained: number; method: "roll" | "average"; feat?: number } | null
   /** Choices the players make at the fire; the engine does not choose. */
   pendingChoices: PendingChoice[]
   flags: string[]
@@ -1377,7 +1381,9 @@ export function levelUp(sheet: LevelUpSheet, opts: { method: "roll" | "average";
   // SRD fixed value: half the die rounded up, plus one — 7 for d12, 6 for d10, 5 for d8, 4 for d6.
   const base = face ?? Math.ceil(die / 2) + 1
   const raw = base + con
-  const gained = Math.max(1, raw)
+  // a feat that adds hit points every level (Tough, PHB 2024 — opened by Sam 2026-11-12): on top of the die
+  const featHp = featNamesOn(sheet.sheet_features).reduce((a, n) => a + (FEATS.find((f) => f.name === n)?.hpPerLevel ?? 0), 0)
+  const gained = Math.max(1, raw) + featHp
   if (raw < 1) flags.push(`${sheet.name}: ${base}${con < 0 ? con : `+${con}`} would be ${raw} hp; minimum 1 per level applied (PHB wording, absent from SRD 5.1 — needs Sam's yes).`)
 
   const cls = (sheet.class ?? "").trim().toLowerCase()
@@ -1423,11 +1429,11 @@ export function levelUp(sheet: LevelUpSheet, opts: { method: "roll" | "average";
   return {
     ok: true,
     write,
-    hp: { die, face, con, gained, method: opts.method },
+    hp: { die, face, con, gained, method: opts.method, ...(featHp ? { feat: featHp } : {}) },
     pendingChoices,
     flags,
     note:
-      `${sheet.name} reaches level ${next}: +${gained} hp (${opts.method === "roll" ? `d${die}(${face})` : `fixed ${base}`}${con ? ` ${con > 0 ? "+" : ""}${con} CON` : ""}), ` +
+      `${sheet.name} reaches level ${next}: +${gained} hp (${opts.method === "roll" ? `d${die}(${face})` : `fixed ${base}`}${con ? ` ${con > 0 ? "+" : ""}${con} CON` : ""}${featHp ? ` +${featHp} Tough` : ""}), ` +
       `proficiency +${write.proficiency_bonus}, Hit Dice ${write.sheet_hit_dice}` +
       (pendingChoices.length ? ` — ${pendingChoices.length} choice${pendingChoices.length === 1 ? "" : "s"} still yours to make, on the sheet.` : "."),
   }
