@@ -3129,9 +3129,31 @@ function portrait(id, canvas, size){
 }
 // The inventory's hero (Emberforged): the idle figure at the largest WHOLE scale that keeps it inside its share of the
 // stage, the canvas cut to the figure and shown 1:1, so the pixels stay square (the doll used to CSS-scale a 256 canvas).
-function heroStage(id, canvas, stageH){
-  const img = SPR[id].img.idle, b = figureBox(id), c = canvas.getContext("2d");
-  const k = Math.max(1, Math.floor(stageH * .72 / b.h));
+// THE DOLL WEARS THE ARMOR (Sam, 2026-11-12: "For leather armor can we created a studded look on the pixel art rag
+// doll to resemble the armor added for characters"; he approved the second test picture: "test 2 is good"). The
+// inventory doll only: one still per hero per armor, shown while that armor sits in the torso slot. The map sprites are
+// not repainted (every facing of every animation, per armor). A hero or an armor with no picture here shows the
+// hero's own sprite, as before. To add one: put the 128x128 still in img/doll/ and name it in this table.
+const DOLL_WEAR = {freia: {"studded leather armor": "freia-studded-leather.png"}};
+const DOLL_WEAR_IMG = {};
+function dollWear(id, name){
+  const f = (DOLL_WEAR[id] || {})[String(name || "").toLowerCase()]; if (!f) return null;
+  let w = DOLL_WEAR_IMG[f];
+  if (!w){ w = DOLL_WEAR_IMG[f] = {img: new Image(), box: null};
+    w.img.onload = () => { const n = w.img.naturalWidth, m = w.img.naturalHeight, t = document.createElement("canvas"); t.width = n; t.height = m;
+      const tc = t.getContext("2d", {willReadFrequently: true}); tc.drawImage(w.img, 0, 0);
+      const d = tc.getImageData(0, 0, n, m).data; let x0 = n, y0 = m, x1 = -1, y1 = -1;
+      for (let y = 0; y < m; y++) for (let x = 0; x < n; x++) if (d[(y * n + x) * 4 + 3] > 16){ if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+      w.box = x1 < 0 ? {x: 0, y: 0, w: n, h: m} : {x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1};
+      try { if (bagOpen()) renderBag(); } catch (e) {}   // the picture arrived after the bag opened: draw it now
+    };
+    w.img.src = PLATE_DIR + "doll/" + f; }
+  return w.box ? w : null;
+}
+function heroStage(id, canvas, stageH, wear){
+  const w = wear ? dollWear(id, wear) : null;
+  const img = w ? w.img : SPR[id].img.idle, b = w ? w.box : figureBox(id), c = canvas.getContext("2d");
+  const k = Math.max(1, Math.floor(stageH * .72 / figureBox(id).h));   // the hero's own scale, so the armored figure stands the same size
   canvas.width = b.w * k; canvas.height = b.h * k; c.imageSmoothingEnabled = false;
   c.drawImage(img, b.x, b.y, b.w, b.h, 0, 0, b.w * k, b.h * k);
   canvas.style.width = canvas.width + "px"; canvas.style.height = canvas.height + "px";
@@ -17804,7 +17826,7 @@ function renderBag(){
   // the figure at a whole-number scale, shown 1:1 so every pixel stays square, feet on the pedestal — Sam's hero sprite,
   // never a reinterpretation. The stage's height is the CSS clamp (--ef-stage-h); hidden at first render, so the same sum.
   const stageH = doll.clientHeight || Math.min(670, Math.max(360, window.innerHeight - 430));
-  const pic = document.createElement("canvas"); heroStage(a.id, pic, stageH); doll.appendChild(pic);
+  const pic = document.createElement("canvas"); heroStage(a.id, pic, stageH, (wornIn(g, "torso") || {}).name); doll.appendChild(pic);
   for (const d of DOLL_SLOTS){
     const w = wornIn(g, d.id), it = w && g.carried.find(x => x.name === w.name);
     const b = document.createElement("button"); b.className = "slot" + (w ? "" : " empty"); b.style.left = d.at[0] + "%"; b.style.top = d.at[1] + "%";
