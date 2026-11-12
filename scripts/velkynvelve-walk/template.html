@@ -18628,6 +18628,15 @@ const coverNote = cv => cv.ac ? ` (${cv.label}: ${cv.why})` : "";
 // side, so it goes behind the body). Sitting, sleeping, casting, climbing and down: the weapon is put away.
 const HELD_ANIMS = new Set(["idle", "walk", "attack", "hurt", "dodge", "jump"]);
 const ROW_DIR = [[0, 1], [.71, .71], [1, 0], [.71, -.71], [0, -1], [-.71, -.71], [-1, 0], [-.71, .71]];   // sheet row -> facing (S, SE, E, NE, N, NW, W, SW)
+// WHICH WAY AN ICON'S BUSINESS END POINTS (Sam, 2026-11-12, on Lynkes holding the rusted iron bar level across his
+// hips: "why does it look like this on him?"). The hand turns an icon as if its tip were to the upper right, and about
+// half the weapon icons are drawn that way. These are not (measured from the files, then read by eye): the hafted ones
+// have the head to the upper LEFT, four blades point to the lower RIGHT, the staff stands upright. Turned by the same
+// rule they lay sideways in the hand. Degrees on the icon, 0 = right, -90 = up; anything not listed is -45.
+const ICON_TIP = {battleaxe: -135, greataxe: -135, handaxe: -135, "light-hammer": -135, mace: -135, morningstar: -135, "rusted-morningstar": -135,
+  "rusted-warhammer": -135, "totem-club": -135, "wand-of-smiles": -135, "wand-of-viscid-globs": -135, "obsidian-shard": -135,
+  "cursed-dagger": 45, "dark-justiciar-blade": 45, dawnbringer: 45, longsword: 45, "wizards-staff": -90};
+const iconTip = url => { const m = /([^\/]+)\.png/.exec(String(url || "")); const d = m && ICON_TIP[m[1]]; return (d == null ? -45 : d) * Math.PI / 180; };
 function heldWeapon(a){
   if (a.kind !== "pc" || !HELD_ANIMS.has(a.anim || "idle") || a.tollLantern) return null;
   const g = GEAR[a.id], it = g && g.main && g.carried.find(c => c.name === g.main);
@@ -18635,7 +18644,7 @@ function heldWeapon(a){
   const img = itemImg(url); if (!img) return null;
   const [fx, fy] = ROW_DIR[a.face] || ROW_DIR[0], rx = -fy, ry = fx;                       // the right hand's side of the body
   const shoot = SHOT_OF(it.name.toLowerCase());
-  return {img, fx, fy, rx, ry, behind: ry < -.3, shoot, bow: shoot === "arrow"};
+  return {img, fx, fy, rx, ry, behind: ry < -.3, shoot, bow: shoot === "arrow", tipAng: iconTip(url)};
 }
 const wrapAng = d => d > Math.PI ? d - 2 * Math.PI : d < -Math.PI ? d + 2 * Math.PI : d;
 function drawHeld(a, h, sc, py, cw, fy0){
@@ -18673,7 +18682,7 @@ function drawHeld(a, h, sc, py, cw, fy0){
     hx = a.x + (a.kx || 0) + h.rx * cw * sc * .15 * (1 - e) + h.fx * cw * sc * .22 * e;
     hy = a.y + fy0 + (a.ky || 0) - body * (.58 + .1 * (1 - e)) + h.fy * body * .05 * e;
   }
-  const theta = tip + Math.PI / 4, cx = hx + Math.cos(tip) * sq * .28, cy = hy + Math.sin(tip) * sq * .28;   // the grip in the hand, the blade beyond it
+  const theta = tip - (h.tipAng == null ? -Math.PI / 4 : h.tipAng), cx = hx + Math.cos(tip) * sq * .28, cy = hy + Math.sin(tip) * sq * .28;   // the grip in the hand, the blade beyond it
   ctx.save(); ctx.translate(cx, cy); ctx.rotate(theta); ctx.drawImage(h.img, -sq / 2, -sq / 2, sq, sq); ctx.restore();
 }
 // the DM's hand: Items in DM tools
