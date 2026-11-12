@@ -16,6 +16,7 @@
 // characters' rows.
 
 import type { createAdminClient } from "@/lib/supabase/admin"
+import { calculateAC } from "@/lib/armor-class"
 
 type Admin = ReturnType<typeof createAdminClient>
 
@@ -193,6 +194,8 @@ export async function confiscateOnImport(
   admin: Admin,
   characterId: string,
   inventoryRows: Record<string, unknown>[],
+  /** The new hero's class and modifiers, so the stored AC can be set to what they wear after stripping. */
+  sheet?: { class?: unknown; dex_modifier?: unknown; con_modifier?: unknown; wis_modifier?: unknown },
 ): Promise<ConfiscationResult | null> {
   const notes: string[] = []
 
@@ -251,14 +254,27 @@ export async function confiscateOnImport(
     notes.push("Rags catalog entry unavailable — character starts with nothing worn.")
   }
 
-  // Carried weight is now the rags alone, or zero.
+  // Carried weight is now the rags alone, or zero. And the stored AC is now what they WEAR, not what they arrived in
+  // (Sam, 2026-11-12, Lynkes in rags at AC 14: "When a character is created we need to streamline this"). The builder
+  // hands over the AC of the starting kit (Lynkes: leather, 11 + 3 = 14); the kit just went to the stash, so that
+  // number is wrong from the first second and the New Game baseline copies it forward. calculateAC is the same
+  // derivation the dashboards use: rags are clothing, so this is 10 + Dex (+ Unarmored Defense for Barbarian/Monk).
+  const strippedAc = calculateAC(
+    {
+      class: sheet?.class == null ? undefined : String(sheet.class),
+      dex_modifier: Number(sheet?.dex_modifier) || 0,
+      con_modifier: Number(sheet?.con_modifier) || 0,
+      wis_modifier: Number(sheet?.wis_modifier) || 0,
+    },
+    issuedRags && rags ? [{ slot: "torso", name: rags.name, stats_bonus: { ac: 0 } }] : [],
+  ).total
   const { error: weightError } = await admin
     .from("characters")
-    .update({ weight_current: issuedRags ? Number(rags?.weight ?? 0) : 0 })
+    .update({ weight_current: issuedRags ? Number(rags?.weight ?? 0) : 0, ac: strippedAc })
     .eq("id", characterId)
   if (weightError) {
     console.error("[v0] confiscation: weight reset failed:", weightError)
-    notes.push("Carried weight may be stale until the sheet next saves.")
+    notes.push("Carried weight and AC may be stale until the sheet next saves.")
   }
 
   return { confiscated, issuedRags, notes }

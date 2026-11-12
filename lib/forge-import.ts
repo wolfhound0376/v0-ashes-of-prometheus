@@ -170,7 +170,7 @@ export async function importCharacter(admin: SupabaseClient, body: any, opts: Im
   let confiscation: ConfiscationResult | null = null
   let warning: string | undefined
   if (CONFISCATION_ACTIVE) {
-    confiscation = await confiscateOnImport(admin, inserted.id, items)
+    confiscation = await confiscateOnImport(admin, inserted.id, items, row)
     if (!confiscation) console.error("[v0] forge/import: confiscation unavailable, importing inventory as-is")
   }
   if (!confiscation && items.length > 0) {
