@@ -18,6 +18,7 @@ import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 import type { VesselKind, VesselRow } from "@/lib/travel/vessels"
 import { FRESH_DAY, type DayState, type Guide, type MarchLogEntry, type Navigator, type Pace } from "@/lib/travel/march"
 import { LONG_REST_KEY } from "@/lib/travel/standing"
+import type { RoadBattle } from "@/lib/travel/battle"
 import { parseWalkHandoff, roadsOpenedBy, type RoadChoice, type WalkArrival } from "@/lib/travel/handoff"
 import { STINGER_GAIN, stingerUrl, type StingerCue } from "@/lib/travel/stingers"
 import { speakBlob } from "@/lib/speech-queue"
@@ -101,6 +102,10 @@ export type Halt = {
   foes?: Pick<Foe, "result" | "line">[]
   stances?: StanceOption[]
   stance?: StanceResult | null
+  /** If it comes to a fight: the plate and the foes the dice named (lib/travel/battle.ts). */
+  battle?: RoadBattle | null
+  /** Why no battle can be offered yet, when creatures were met but the data or the plate is missing. */
+  noBattle?: string | null
   kind: string
   title: string
   body: string | null
@@ -532,7 +537,7 @@ export function useTravel() {
         .catch(() => {})
     }
     if (out?.halt) {
-      setHalt({ kind: out.kind, title: out.title, body: out.body, rolls: out.rolls ?? [], source: out.source, meeting: out.meeting ? { first: out.meeting.first, chip: out.meeting.chip } : null, foes: Array.isArray(out.foes) ? out.foes : [], stances: Array.isArray(out.stances) ? out.stances : [], stance: null })
+      setHalt({ kind: out.kind, title: out.title, body: out.body, rolls: out.rolls ?? [], source: out.source, meeting: out.meeting ? { first: out.meeting.first, chip: out.meeting.chip } : null, foes: Array.isArray(out.foes) ? out.foes : [], stances: Array.isArray(out.stances) ? out.stances : [], stance: null, battle: out.battle ?? null, noBattle: out.noBattle ?? null })
       // Picked up again by the Continue button, from exactly this step.
       await new Promise<void>((resolve) => {
         resumeRef.current = () => {

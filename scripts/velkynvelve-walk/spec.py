@@ -362,20 +362,22 @@ NODES.update(GRACKLSTUGH)
 # list, and the road's fight hand-off will open them (enterNode's `spawn`). Each has "back to the road" ways out that only
 # say so until then. Floors, obstacles and zones traced by Claude by eye and walk-checked; NOT yet Sam's brush.
 # Rope bridge: deck only (Sam, 2026-10-14) -- the chasm, the ropes and the posts are not floor.
+# `arrive` is where the party stands when a road fight opens the plate (template.html roadFight): the near side, so the
+# foes come at them across the plate.
 ROAD_PLATES = {
- "road-rope-bridge": dict(slug="road-rope-bridge", name="Road: the rope bridge", scale=1.0, img="road-rope-bridge.jpg",
+ "road-rope-bridge": dict(slug="road-rope-bridge", arrive=[400, 700], name="Road: the rope bridge", scale=1.0, img="road-rope-bridge.jpg",
    floors=[dict(poly=P((0,615),(240,522),(450,492),(645,462),(693,502),(698,630),(712,638),(712,720),(698,735),(705,810),(645,840),(510,915),(375,960),(255,840),(90,780),(0,780))),   # the west ledge
            dict(poly=P((705,638),(975,670),(1200,686),(1425,670),(1695,630),(1695,717),(1425,750),(1200,765),(975,750),(705,720))),   # the plank deck, sagging in the middle
            dict(poly=P((1688,630),(1710,622),(1718,468),(1875,450),(2025,458),(2160,480),(2400,510),(2400,840),(2220,855),(2025,885),(1800,832),(1710,765),(1710,720),(1688,717)))],  # the east ledge
    obstacles=[dict(cx=90,cy=818,rx=60,ry=45),dict(cx=2205,cy=502,rx=68,ry=42)],   # the stalagmite foot, the crystal cluster
    zones=[dict(rect=[0, 615, 75, 780], to=[], kind="leave", label="Back to the road, west"),
           dict(rect=[2325, 510, 2400, 840], to=[], kind="leave", label="Back to the road, east")]),
- "road-boneyard": dict(slug="road-boneyard", name="Road: the boneyard", scale=1.0, img="road-boneyard.jpg",
+ "road-boneyard": dict(slug="road-boneyard", arrive=[1200, 1090], name="Road: the boneyard", scale=1.0, img="road-boneyard.jpg",
    # the open floor ringed by the great skeletons; loose single bones are walked over, the skull and the rib pile block
    floors=[dict(poly=P((1050,300),(1290,292),(1320,375),(1395,465),(1680,495),(1792,518),(1808,630),(1785,750),(1800,855),(1830,930),(1800,1110),(1350,1200),(1050,1185),(840,1140),(810,1020),(570,1020),(600,900),(720,795),(750,705),(690,630),(870,540),(1035,465)))],
    obstacles=[dict(cx=1598,cy=998,rx=48,ry=33),dict(cx=1748,cy=948,rx=72,ry=39)],
    zones=[dict(rect=[1065, 292, 1275, 375], to=[], kind="leave", label="Back to the road")]),
- "road-webs": dict(slug="road-webs", name="Road: the webs", scale=1.0, img="road-webs.jpg",
+ "road-webs": dict(slug="road-webs", arrive=[1180, 1250], name="Road: the webs", scale=1.0, img="road-webs.jpg",
    # the clearing under the arch, the gap in the web curtain, and the path below it; every web sheet and both posts are not floor
    floors=[dict(poly=P((1162,322),(1328,322),(1350,450),(1395,555),(1545,630),(1725,668),(1770,735),(1680,780),(1628,758),(1515,780),(1492,870),(1290,892),(1282,1050),(1455,1162),(1440,1340),(960,1340),(1020,1185),(1148,1050),(1148,885),(990,840),(960,810),(960,645),(1050,600),(1140,510),(1162,450)))],
    obstacles=[],
