@@ -865,6 +865,10 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
   border:2px solid var(--rc,#e8e2d0);border-radius:10px;box-shadow:0 0 0 1px #000,0 18px 48px rgba(0,0,0,.65),0 0 34px var(--rg,transparent);
   font-family:var(--face-body);font-size:.92rem;animation:fadein .14s ease}
 .icard[hidden]{display:none}
+.icard.chip{width:210px;padding:7px 10px;border:1.5px solid var(--rc);border-radius:8px;overflow:visible;background:#16131a}
+.icard.chip .ch-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}.icard.chip .ch-top b{font-size:.92rem;color:var(--rc)}.icard.chip .ch-top small{font-size:.68rem;color:#b4b2a9;white-space:nowrap}
+.icard.chip .ch-dmg{display:flex;align-items:baseline;gap:8px;margin-top:3px}.icard.chip .ch-dmg b{font-size:1.25rem}.icard.chip .ch-dmg small{font-size:.75rem;color:#b4b2a9}.icard.chip .ch-dmg span{margin-left:auto;font-size:.82rem}
+.icard.chip .ch-cmp{font-size:.76rem;margin-top:1px}.icard.chip .up{color:#97c459}.icard.chip .dn{color:#f09595}.icard.chip .eq{color:#b4b2a9}
 .icard .ic-band{display:flex;justify-content:space-between;gap:8px;padding:6px 14px;font-family:var(--face-mono);font-size:.68rem;letter-spacing:.14em;background:var(--rb,#1a1815);border-bottom:1px solid #3a3128;border-radius:8px 8px 0 0}
 .icard .ic-band .unid{color:#f1c27a}.icard .ic-band .ok{color:#7fdc8a}.icard .ic-band .war{color:#ff7a6e}
 .icard .ic-head{display:flex;gap:12px;padding:12px 14px 10px;border-bottom:1px solid #3a3128}
@@ -5136,9 +5140,11 @@ function icardItem(t){
 function icardMapTarget(w){
   for (const d of drops){
     if (!d.pickup || d.pickup.plate !== cur || d.fly || now - d.t0 < DROP_FLIGHT) continue;
-    if (Math.hypot(w.x - d.x1, w.y - (d.y1 - d.sq * .6)) < d.sq * .7) return {kind: "drop", drop: d, slug: d.pickup.row.slug, name: d.pickup.row.name, at: {x: d.x1, y: d.y1 - d.sq * .9}};
+    // ON THE PIXEL, NOT NEAR IT (Sam, 2026-11-12: "I should be hover directly OVER the pixel to trigger card"): the
+    // item's art in the middle of the disc, not the whole disc and the air round it (was d.sq * .7)
+    if (Math.hypot(w.x - d.x1, w.y - (d.y1 - d.sq * .6)) < d.sq * .32) return {kind: "drop", drop: d, slug: d.pickup.row.slug, name: d.pickup.row.name, at: {x: d.x1, y: d.y1 - d.sq * .9}};
   }
-  const p = pileAt(w);
+  const p = pilesHere().find(q => Math.hypot(w.x - q.x, w.y - (q.y - 6)) < pxPerFtAt(q.y) * 1.4) || null;   // the pile's art, not 3 ft round it (pileAt keeps its reach for picking up)
   return p ? {kind: "pile", pile: p, slug: p.slug, name: p.name, at: {x: p.x, y: p.y - 10}} : null;
 }
 const icardSame = (a, b) => !!a && !!b && a.kind === b.kind && (a.drop || a.pile || a.row || a.it) === (b.drop || b.pile || b.row || b.it);
@@ -5165,7 +5171,8 @@ async function icardShow(t, cx, cy, pin){
   if (t.anchor){ const box = (t.anchor.closest(".talk,.inv") || t.anchor).getBoundingClientRect(), row = t.anchor.getBoundingClientRect();
     x = box.right - sr.left + 12; if (x + W > sr.width - 8) x = box.left - sr.left - W - 12; y = row.top - sr.top - 20; }
   else { const oq = t.at ? ovActorPt(t.at, t.at.x, t.at.y) : null, [sx, sy] = t.at ? w2s(oq.x, oq.y) : [cx - sr.left, cy - sr.top];
-    x = sx + 30; if (x + W > sr.width - 8) x = sx - W - 30; y = sy - H * .45; }
+    if (el.classList.contains("chip")){ x = sx - W / 2; y = sy - H - 26; if (y < 8) y = sy + 26; }   // the chip: right above the item, pointing at it
+    else { x = sx + 30; if (x + W > sr.width - 8) x = sx - W - 30; y = sy - H * .45; } }
   el.style.left = Math.max(8, Math.min(sr.width - W - 8, x)) + "px"; el.style.top = Math.max(8, Math.min(sr.height - H - 8, y)) + "px";
 }
 const icardFmt = n => (n >= 0 ? "+" : "−") + Math.abs(n);
@@ -5179,6 +5186,26 @@ function icardRender(){
   const type = weaponish ? `Weapon${base ? ` (${base})` : ""}` : (it.item_type ? it.item_type.replace(/^./, c => c.toUpperCase()) : "Item");
   const pic = it.pixel_icon_url ? ITEM_PX + it.pixel_icon_url : it.icon_url || "";
   const rarName = rar === "very_rare" ? "Very Rare" : rar.replace(/^./, c => c.toUpperCase());
+  // THE COMBAT CHIP (Sam, 2026-11-12: "Inventory info make it hard to see in combat", then "stay while you hover"). In a
+  // fight a floor item gets a small chip over it: name, dice, and what it means for the hero against what they hold.
+  // Hold it (a finger) or right-click it for the whole card. Out of a fight, and anywhere else, the card is as it was.
+  el.classList.toggle("chip", fight && !ICARD.pinned && (t.kind === "drop" || t.kind === "pile"));
+  if (el.classList.contains("chip")){
+    const who = ICARD.who, wsh = who && SHEETS[who.id];
+    let c = `<div class="ch-top"><b>${esc(it.name || t.name)}</b>${weaponish ? `<small>free to draw</small>` : ""}</div>`;
+    if (weaponish && p.damage){
+      const bon = view.bonusKnown ? Number(p.damage_bonus ?? p.bonus ?? 0) : 0, die = String(p.damage).match(/^\s*(\d+d\d+|\d+)/);
+      let cmp = "";
+      if (wsh && !(GEAR[who.id] && GEAR[who.id].main === it.name)){
+        const seen = view.bonusKnown ? it : {...it, properties: {...p, bonus: 0, attack_bonus: 0, damage_bonus: 0}};
+        const nu = attackFromItem(wsh, seen), now0 = (wsh.attacks || [])[0];
+        if (now0){ const dh = nu.hit - now0.hit, dd = Math.round((loreAvg(nu.dmg) - loreAvg(now0.dmg)) * 10) / 10, k = n => n > 0 ? "up" : n < 0 ? "dn" : "eq";
+          cmp = `<span class="${k(dh)}">${icardFmt(dh)} hit</span></div><div class="ch-cmp ${k(dd)}">${dd > 0 ? "▲" : dd < 0 ? "▼" : "="} ${icardFmt(dd)} dmg vs ${esc(String(now0.name).toLowerCase())}`; }
+      }
+      c += `<div class="ch-dmg"><b>${esc(die ? die[1] : p.damage)}${bon ? ` + ${bon}` : ""}</b><small>${esc(p.damage_type || "")}</small>${cmp}</div>`;
+    } else c += `<div class="ch-cmp eq">${esc(type)}</div>`;
+    el.innerHTML = c; return;
+  }
   let h = `<div class="ic-band"><span class="${view.identified ? "ok" : "unid"}">${view.magic ? (view.identified ? "IDENTIFIED" : "UNIDENTIFIED") : "ITEM"}</span><span class="${fight ? "war" : "ok"}">${fight ? "IN COMBAT" : "OUT OF COMBAT"}</span></div>`;
   h += `<div class="ic-head"><div class="ic-pic">${pic ? `<img src="${esc(pic)}" alt="">` : ""}</div><div><div class="ic-name">${esc(it.name || t.name)}</div>`
     + `<div class="ic-sub">${esc(type)} · <b>${esc(rarName)}</b></div>${view.identified && it.attunement ? `<span class="ic-pill" title="${esc(ATTUNE_PRICE)}">REQUIRES ATTUNEMENT</span>` : ""}</div></div>`
@@ -18570,6 +18597,7 @@ stage.addEventListener("pointerleave", () => stripHover(false));
 stage.addEventListener("pointerdown", e => {
   if (cbt && e.pointerType === "touch" && e.clientY - stage.getBoundingClientRect().top < STRIP_ZONE) stripShow(3000);   // no hover on a touch screen: a tap along the top
   if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui,.checkcard,.icard")) return;
+  if (e.button === 2) return;   // a right-click opens an item's whole card (contextmenu, below): never a walk or a swing
   unlockAudio();
   if (ICARD.pinned) icardHide(true);
   ptr = {id: e.pointerId, x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false};
@@ -18578,6 +18606,9 @@ stage.addEventListener("pointerdown", e => {
   if (e.pointerType === "touch"){ const p0 = ptr; setTimeout(() => { if (ptr !== p0 || p0.moved) return;
     const it = icardMapTarget(s2w(p0.x, p0.y)); if (it){ p0.held = true; icardShow(it, p0.x, p0.y, true); } }, 450); }
 });
+// right-click a floor item: its whole card, held open (the combat chip's "more")
+stage.addEventListener("contextmenu", e => { const it = (mode === "explore" || mode === "combat") ? icardMapTarget(s2w(e.clientX, e.clientY)) : null;
+  if (!it) return; e.preventDefault(); icardShow(it, e.clientX, e.clientY, true); });
 stage.addEventListener("pointermove", e => {
   if (cbt && e.pointerType !== "touch") stripHover(e.clientY - stage.getBoundingClientRect().top < STRIP_ZONE);   // the strip, while the mouse is along the top
   if (ptr && e.pointerId === ptr.id){
