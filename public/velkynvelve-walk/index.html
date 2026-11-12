@@ -1860,7 +1860,15 @@ function ovWanted(){
   const there = x => ovPenStyle() ? outsidePen(x) : x.x != null && ovDomain(x.x, x.y);
   // the prisoners fighting beside the party count too: the close-up used to come up while they were still in the pen, and
   // their turns were then played off screen (HOW A FIGHT IS STAGED)
-  if (mode === "combat" && cbt){ const all = [...party, ...foes, ...(cbt.allies || [])].filter(x => actors.includes(x) && !x.down && !x.left); return all.length > 0 && all.every(there); }
+  // WHOSE TURN IT IS DECIDES (Sam, 2026-11-12: "why is Samson to the left of this plate but it hasn't panned to the larger
+  // plate"). It used to take EVERY fighter standing out on the balcony, so one prisoner still in the pen kept the whole
+  // fight on the pen painting, with the party a few inches high in its corner. Now the close-up comes up for a turn
+  // played out there and goes back for a turn played in the pen, so nobody's turn is off screen (the reason for the old
+  // rule). Between turns, or with no one up, the old rule stands. The 1200 ms hold in ovTick still stops flicker.
+  if (mode === "combat" && cbt){
+    const up = activeActor();
+    if (up && actors.includes(up) && !up.down && !up.left && up.x != null) return there(up);
+    const all = [...party, ...foes, ...(cbt.allies || [])].filter(x => actors.includes(x) && !x.down && !x.left); return all.length > 0 && all.every(there); }
   return !!(leader && actors.includes(leader) && there(leader) && leader.alpha > .05);
 }
 function ovTick(){
