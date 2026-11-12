@@ -3216,8 +3216,31 @@ function leaderOut(a, left, min, max){
 // the camera slides to the neighbouring plate, and they walk in from its matching edge.
 // `cut` (a work detail leaving the pen, Sam 2026-10-26): they walk out through the exit the same way, then ONE fade-cut
 // lands them on `to`, which need not be next door ({note} says how they got there). Every screen plays it alike.
+// A LIVE FIGHT HOLDS ITS PLATE (Sam, 2026-11-11, on the fight at the pen gate: "characters inadvertently went back
+// through the door causing it to pan to another screen"). Reproduced in scripts/one-world/fight-holds-plate-test.mjs:
+// the nearer guard stands on the foot of the rope bridge, which is the doorway to the Guard Tower, so a hero who closed
+// with her was standing in it when the fight ended, and the first walking tick took the party across, into the tower's
+// guards. Three rules, each kept in one place:
+//   1. while a fight is live on this screen nothing leaves the plate: travel() refuses (below), the doorway check in the
+//      tick loop does not run, a card closing over another card goes back to the fight (showDialog), and the party's
+//      move from another screen waits for the fight to end (OW_CAN_MOVE / owCheckPlate);
+//   2. when the fight ends, the doorway a hero is left standing in counts as already answered: step out and back in,
+//      or click it, to go through (fightLetsGo, called where endCombat and mirrorEnd hand the screen back to walking);
+//   3. a foe that retreats off the plate (leaveFight / fleeTo) never used travel() and is untouched.
+// Heroes have no "flee through the door" of their own; the one way a party leaves a fight is the surrender, which ends
+// the fight first and only then marches (surrenderBegins), so it passes rule 1 as it always did.
+const fightHoldsPlate = () => !!cbt || mode === "combat";
+let fightDoor = null;       // the doorway a fight's end left the leader standing in (rule 2): a click on it goes through
+function fightLetsGo(){
+  if (!leader) return;
+  // a step the fight's end cut short stops where it is; the walk back in through the pen gate (endCombat) goes on
+  for (const p of party) if (p.path && p.path.length && !p.walkIn && !owRemote(p)){ p.path = []; p.onArrive = null; }
+  const at = leader.path && leader.path.length ? leader.path[leader.path.length - 1] : leader;
+  ackZone = fightDoor = zoneAt(at.x, at.y);
+}
 async function travel(to, z, fromWorld, cut, solo){
   if (mode === "travel") return;
+  if (fightHoldsPlate()){ if (!fromWorld) toast("Not while the fight is on."); return; }   // A LIVE FIGHT HOLDS ITS PLATE, rule 1
   // SPLIT PARTY: a splinter (just the leader, or a group that is not on the world's plate) does not move the world's
   // plate; only the party's own move does, and every screen on this plate follows it.
   const splinter = !!solo || (OW.on && OW.plate != null && !owSame(cur, OW.plate));
@@ -3334,7 +3357,7 @@ function showDialog({title, body, src = "", buttons}){
   $("dlgTitle").textContent = title; $("dlgBody").textContent = body; $("dlgSrc").textContent = src; $("dlgSrc").hidden = !src;
   const bx = $("dlgBtns"); bx.innerHTML = "";
   buttons.forEach(b => { const e = document.createElement("button"); e.className = "btn" + (b.primary ? " primary" : "") + (b.danger ? " danger" : ""); e.textContent = b.label;
-    e.onclick = () => { $("dialog").hidden = true; if (mode === "dialog") mode = prev === "dialog" ? "explore" : prev; b.fn && b.fn(); }; bx.appendChild(e); });
+    e.onclick = () => { $("dialog").hidden = true; if (mode === "dialog") mode = prev === "dialog" ? (cbt ? "combat" : "explore") : prev; /* cbt: A LIVE FIGHT HOLDS ITS PLATE, rule 1 */ b.fn && b.fn(); }; bx.appendChild(e); });
   $("dialog").hidden = false; bx.firstChild && bx.firstChild.focus();
 }
 function dmWatch(pl, note){
@@ -12123,7 +12146,7 @@ function endCombat(won, opts = {}){
   shots.length = 0; icePatches = []; for (const a of actors) a.onIce = null;
   // anyone of ours still out on the balcony walks back in through the gate before it stops being floor
   if (gatePassable()) for (const h of [...party, ...(cbt ? cbt.allies : [])]) if (!h.down && outsidePen(h)){
-    const back = findPath(h, nearestWalkable(balcony().inside[0], balcony().inside[1] + 30)); if (back.length){ h.path = back; h.onArrive = null; }
+    const back = findPath(h, nearestWalkable(balcony().inside[0], balcony().inside[1] + 30)); if (back.length){ h.path = back; h.onArrive = null; h.walkIn = h.kind === "pc"; }   // walkIn: no doorway on the way takes them (step() clears it when they land)
   }
   mode = "travel"; if (won !== false) state.cleared[cur] = true;
   if (balcony()) buildGrid();
@@ -12173,7 +12196,7 @@ function endCombat(won, opts = {}){
     allies.forEach(n => { n.ally = false; n.path = []; if (n.down){ n.down = false; setAnim(n, "idle"); if (n.c) n.c.hp = 1; } n.home = {x: n.x, y: n.y}; n.post = {x: n.x, y: n.y}; });
     trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: leader.x, y: leader.y}]);
     party.forEach(p => { p.home = {x: p.x, y: p.y}; p.actUntil = now + 4000 + Math.random() * 6000; });
-    mode = "explore"; setTrack("explore"); log(opts.talk ? "Weapons down. They talk." : won ? "The fight is over. The DM core settles the wounds and the loot." : "The fight is over.");
+    mode = "explore"; fightLetsGo(); setTrack("explore"); log(opts.talk ? "Weapons down. They talk." : won ? "The fight is over. The DM core settles the wounds and the loot." : "The fight is over.");
     oneFightEnded(won);                // ONE FIGHT: every mirror lays the dead down and stands the rest down the same way
     cbtLog.active = false;   // the log stays, collapsed, with the fight's last line in its ticker; the next fight starts it over
   }, 700);
@@ -16030,6 +16053,8 @@ function click(w){
     if (n && n.body){ walkTo(nearNpc(n), () => openBody(n)); return; }
     if (n && POCKETED(n.id) && !n.hostile){ walkTo(nearNpc(n), () => openPockets(n)); return; }
     if (n){ if (wantsWord(n) || canTalkTo(n)) walkTo(nearNpc(n), () => approach(n)); else ambient(n); return; }
+    // a fight ended with you standing in this doorway (fightLetsGo): a click on it goes through
+    { const zx = zoneAt(w.x, w.y); if (zx && zx === fightDoor && zx === ackZone && zx === zoneAt(leader.x, leader.y) && canControl(leader) && !leader.path.length){ ackZone = fightDoor = null; return; } }
     const p = nearestWalkable(w.x, w.y); marker = {x: p.x, y: p.y, t: now}; walkTo(p);
   } else if (mode === "combat"){ if (dmPlace){ placeDmCloud(w); return; } combatClick(w); }
 }
@@ -18746,7 +18771,7 @@ function update(dt){
     // exits
     // only a hero this screen drives walks it through an exit: a hero another screen drives (seen walking off on its
     // own, SPLIT PARTY) must never carry this screen's party with it
-    const z = mode === "explore" && !leader.walkIn && !owRemote(leader) ? zoneAt(leader.x, leader.y) : null;
+    const z = mode === "explore" && !cbt && !leader.walkIn && !owRemote(leader) ? zoneAt(leader.x, leader.y) : null;   // (!cbt: A LIVE FIGHT HOLDS ITS PLATE, rule 1)
     if (z && z !== ackZone){ ackZone = z; triggerZone(z); }
     else if (!z && !leader.walkIn) ackZone = null;
     // ambush
@@ -19054,7 +19079,7 @@ function owEntered(force){
 }
 // The modes a screen can be pulled to another plate from: walking, a dialog or a conversation open. Not mid-fight,
 // not mid-crossing, not while loading — those finish first and the plate follows (OW.pendingPlate).
-const OW_CAN_MOVE = () => mode === "explore" || mode === "dialog" || mode === "talk";
+const OW_CAN_MOVE = () => !cbt && (mode === "explore" || mode === "dialog" || mode === "talk");   // !cbt: a card open mid-fight is still the fight
 async function owGoTo(plate, t){
   plate = owPlate(plate);
   OW.applyingPlate = true;
@@ -19138,6 +19163,8 @@ function owCheckPlate(){
   if (p == null || owSame(p, cur) || !SPEC[p] || OW.applyingPlate) return;
   if (Date.now() < OW.localTravelUntil && mode === "travel") return;
   if (!OW_CAN_MOVE()) return;                                         // after the fight / the crossing
+  // a move that waited and has gone stale is dropped: the party's plate is no longer that one and nobody else stands there
+  if (OW.pendingPlate != null && OW.plate != null && !owSame(p, OW.plate) && !PARTY.some(id => id !== mySlug && heroAt[id] && owSame(heroAt[id].plate, p))){ OW.pendingPlate = null; return; }
   OW.pendingPlate = null; owGoTo(p, null);
 }
 // --- the heartbeat: the failsafe ---
@@ -19541,6 +19568,7 @@ function mirrorEnd(b){
   $("bossBar").hidden = true; $("cbtFlee").hidden = true; turnCallHide(); $("combat").classList.remove("has-boss", "strip-on", "peek");
   $("combat").hidden = true; stage.classList.remove("fight"); $("vignette").classList.remove("on"); setTrack("explore"); cbtLog.active = false;
   party.forEach(p => { p.home = {x: p.x, y: p.y}; p.path = []; });
+  fightLetsGo();                     // A LIVE FIGHT HOLDS ITS PLATE, rule 2: the mirror's own hero may be standing in a doorway
   try { camTo(1, NAT_W / 2, NAT_H / 2, 800); } catch (e) {}
   renderParty(); hint("");
 }
