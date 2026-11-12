@@ -1539,6 +1539,7 @@ function jorlanJoinsWatch(n){
   n.relief = setTimeout(() => {
     n.relief = null;
     if (cur !== PEN || !n.offStage || jorlanDuty !== true || postsEmpty() || !actors.includes(n)) return;
+    mapFilm("watch-changes");
     castReturns(n, true); narrate(n, "A new face comes on with the relief: Jorlan takes the landing.");   // placeholder line, not book text
   }, 3800);
 }
@@ -5391,8 +5392,10 @@ async function stealFrom(n, who, row){
   const P = passiveOf(n) || 12, sl = heroMod(who, "sleightOfHand", "dex");
   const r = await rollOnDashboard(ACTION_KEY_PICKPOCKET(P), sl);
   if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3600); return; }
+  const keyGrab = /\bkeys?\b/i.test(row.name || "") && DROW_POST(n);   // the film is a guard's keys, nothing else
   if (r.success){
     if (await takeLoot(who, pocketId(n), row)){
+      if (keyGrab) mapFilm("key-steal-success");
       popText(who, "pocketed", "#9ad0ff", 1);
       log(`${esc(fname(who))} lifts the ${esc(row.name)} from ${esc(fname(n))} without being noticed.`);
       offerEquip();
@@ -5402,6 +5405,7 @@ async function stealFrom(n, who, row){
   // caught: the hand is seen, so the sneak is over for everyone moving with it
   n.path = []; n.face = faceOf(who.x - n.x, who.y - n.y); n.alert = true;
   if (n.lean){ n.leanHold = now + 20000; n.leanBlock = now + 600000; }   // the guard at the bars: turns on them, stays a moment, then goes back to his post
+  if (keyGrab) mapFilm("key-steal-fail");
   bank("ui/nat1", .5); popText(who, "caught!", "#ff6b5e", 1.2);
   log(`<b>${esc(fname(n))} catches ${esc(fname(who))}'s hand</b> at the ${esc(row.name)}.`);
   // CAUGHT IS A SCENE, NOT A VOLLEY (Sam, 2026-10-27: Kenta failed at the bars and the bridge guards shot him). The
@@ -8331,6 +8335,13 @@ function openGateLook(what){
     {label: "Look around", primary: true, fn: () => { gateLookFilm("look-around", lookCloser(`${what}, looking out over the outpost beyond it`)); }},
     {label: "Count the guards", primary: true, fn: () => { gateLookFilm("count-guards", lookCloser(`${what}, counting the guards and their rounds`)); }},
     {label: "Not now", fn: () => { exploreKey = ""; }}]});
+}
+// ACT 1 FILMS (Sam, 2026-11-12: "We'll use all of them and go ahead and wire them"). A moment the map stages itself
+// asks for its own film: the map knows it happened, Malachar may never narrate it. Same road as the fungi and the
+// sigil (lib/walk-film.ts): the server picks the clip and plays it once per character; a null answer stays silent.
+function mapFilm(cue){
+  if (!APP || window.parent === window || !filmsOn()) return;
+  try { window.parent.postMessage({type: "aop:walk-film", cue}, location.origin); } catch (e) {}
 }
 function gateLookFilm(cue, k){
   if (!APP || window.parent === window || !filmsOn()) return;
@@ -14824,6 +14835,7 @@ function jorlanAtBars(j, h, guards){
   setTimeout(() => { j.talkSituation = null; }, 60000);
   log(`<em>${esc(who)} comes up to the bars. Jorlan, on the landing beside the door, turns to them.</em>`);
   if (APP) handOff(`${who} came right up to the bars of the slave pen gate. Jorlan Duskryn is on the landing beside the door and speaks first; the guards on the bridge have crossbows ready and wait on his word. Play Jorlan by gravity, his relationship with ${who} and what is said: he may wave it off, bargain, threaten, or tell the guards to shoot.`);
+  mapFilm("jorlan-whisper");
   openTalk(j);
 }
 function gateWarning(guards, g, h = leader){
@@ -15040,6 +15052,7 @@ async function surgeonVolleyTick(){
   const j = await surgeonApi("volley", {guards: guards.length});
   if (j.failed){ toast(j.error || "The game did not answer."); S.stage = null; surgeon = null; return; }
   const bolts = j.volley.bolts;
+  mapFilm("guard-volley");
   bolts.forEach((b, i) => setTimeout(() => {
     const gd = guards[i % guards.length]; faceTo(gd, pc); bank("combat/crossbow_release", .75);
     fireShot(gd, pc, "bolt", b.hit, () => {
@@ -15174,6 +15187,7 @@ async function lianaTends(){
     bank("combat/heal", .8); burst(pc, "#9be37b", 14);
     popText(pc, `+${j.heal.amount}`, "#9be37b", 1.2);
     pc.down = false; pc.surgeonDown = false; setAnim(pc, "idle"); pc.once = null;
+    mapFilm("drow-surgeon");
     log(`Liana pulls the bolt and pours a <b>Potion of Healing</b> into ${esc(fname(pc))}: ${j.heal.rolls ? `2d4+2 [${j.heal.rolls.join(", ")}] = ` : ""}<b>${j.heal.amount}</b> HP.`);
     if (S.victimRec || S.victim){
       setTimeout(() => { if (S.victim) faceTo(a, S.victim); lianaSays("dead", 7000); }, 2600);
@@ -15488,6 +15502,7 @@ function surrenderOnEnter(n, from){
 async function surrenderAtTheGate(S){
   const B = balcony();
   if (cur !== PEN || !B){ surrenderLockOnly(S); return; }
+  mapFilm("surrender");
   laborSprites();
   mode = "dialog"; tip.hidden = true; $("obj").hidden = true; $("talk").hidden = true;
   setDoor(false);
@@ -18356,6 +18371,7 @@ async function playBuppidoRises(t){
   shake(5); bank("creature/death_beast", .3);
   for (let i = 0; i < 3; i++) setTimeout(() => { shake(4); addBlood({x: g.x + labRnd(-14, 14), y: g.y}, .5, false); }, i * 420);
   await wait(R.stirMs);
+  mapFilm("buppido-rises");
 
   // IT CLIMBS OUT, on the prebuilt sheet: 21 frames at 12 fps, with the `undead-breach` sting its sprite.json names.
   // ONE FIGHT (2026-11-10): the rise takes ~10 s, and a fight can open in the meantime. Then startCombat() below is a

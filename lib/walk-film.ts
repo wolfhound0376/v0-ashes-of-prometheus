@@ -54,6 +54,20 @@ export const WALK_FILMS = {
   // same roll — and the tiers are not a pass/fail line the way the gate's DC 10 is.
   // The film deliberately shows only the sigil, never the seam, so it cannot spoil what a 20 earns over a 12.
   "ward-sigil": { kind: "action", state: "ward-sigil", scope: "solo", location: PEN_LOCATION, dc: null },
+  // ACT 1, THE MOMENTS THE MAP STAGES ITSELF (Sam, 2026-11-12: "We'll use all of them and go ahead and wire them").
+  // Each of these happens on the map whether or not Malachar ever narrates it, so the map asks for the film at the
+  // beat it belongs to (mapFilm() in scripts/velkynvelve-walk/template.html). No dc: the map has already decided the
+  // moment happened. Being listed here is also what keeps them OFF Malachar's cue list (lib/cinematic-doors.ts).
+  // The scope matches the catalogue row; the film still plays on the screen that staged the moment, once per hero.
+  "watch-changes": { kind: "action", state: "watch-changes", scope: "party", location: PEN_LOCATION, dc: null },
+  "jorlan-whisper": { kind: "action", state: "jorlan-whisper", scope: "party", location: PEN_LOCATION, dc: null },
+  "guard-volley": { kind: "action", state: "guard-volley", scope: "party", location: PEN_LOCATION, dc: null },
+  "drow-surgeon": { kind: "action", state: "drow-surgeon", scope: "party", location: PEN_LOCATION, dc: null },
+  "surrender": { kind: "action", state: "surrender", scope: "party", location: PEN_LOCATION, dc: null },
+  "buppido-rises": { kind: "action", state: "buppido-rises", scope: "party", location: PEN_LOCATION, dc: null },
+  // A guard's keys through the bars: the Sleight of Hand roll is the map's, so the outcome arrives already judged.
+  "key-steal-success": { kind: "action", state: "key-steal-success", scope: "solo", location: PEN_LOCATION, dc: null },
+  "key-steal-fail": { kind: "action", state: "key-steal-fail", scope: "solo", location: PEN_LOCATION, dc: null },
 } as const satisfies Record<string, WalkFilm>
 
 export type WalkFilmCue = keyof typeof WALK_FILMS

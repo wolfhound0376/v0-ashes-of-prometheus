@@ -82,3 +82,21 @@ describe("the built map", () => {
     }
   })
 })
+
+describe("the Act 1 moments the map stages itself", () => {
+  const ACT1 = ["watch-changes", "jorlan-whisper", "guard-volley", "drow-surgeon", "surrender", "buppido-rises", "key-steal-success", "key-steal-fail"] as const
+  it("every one is a cue the map may send, with no roll attached", () => {
+    for (const cue of ACT1) {
+      expect(parseWalkFilm({ type: "aop:walk-film", cue })).toEqual({ cue, total: null })
+      expect(filmEarned(cue, null)).toBe(true)
+      expect(walkFilmParams(cue, null).get("state")).toBe(cue)
+      expect(walkFilmParams(cue, null).get("location")).toBe(PEN_LOCATION)
+    }
+  })
+  it("the map template asks for each of them, and for nothing the list does not know", () => {
+    const tpl = readFileSync("scripts/velkynvelve-walk/template.html", "utf8")
+    const asked = [...tpl.matchAll(/mapFilm\("([a-z-]+)"\)/g)].map((m) => m[1])
+    expect([...new Set(asked)].sort()).toEqual([...ACT1].sort())
+    for (const cue of asked) expect(Object.prototype.hasOwnProperty.call(WALK_FILMS, cue)).toBe(true)
+  })
+})
