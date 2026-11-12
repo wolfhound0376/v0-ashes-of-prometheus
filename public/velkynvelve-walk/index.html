@@ -19287,7 +19287,13 @@ function acOf(id, swap){
   let ac;
   if (body){ const d = body.cat === "heavy" ? 0 : body.cat === "medium" ? Math.min(dex, body.cap) : dex; ac = body.base + body.bonus + d;
     parts.push(`${body.base + body.bonus} ${body.name}`); if (body.cat !== "heavy") parts.push(`${d} Dex${body.cat === "medium" && dex > body.cap ? ` (max ${body.cap})` : ""}`); }
-  else { ac = Math.max(S.acBase || 0, 10 + dex); parts.push(ac === 10 + dex ? `10 + ${dex} Dex, no armor` : `${ac} unarmored`); }
+  // NO ARMOR = 10 + DEX, plus a class's own Unarmored Defense, and nothing else (Sam, 2026-11-12, Lynkes in rags at
+  // AC 14: "How is my armor class 14 when I'm wearing rags?"). This used to take the HIGHER of 10 + Dex and the sheet's
+  // stored AC, and the stored AC is a snapshot from creation, made while the hero still had the armor the drow took.
+  // So Lynkes (Dex +3, created in leather: 11 + 3) kept 14 in rags, and Kingasaur kept 13. A stored number never
+  // overrides the worn gear now. SRD 5.1: Barbarian adds Con, Monk adds Wis, while wearing no armor.
+  else { const cl = String(S.cls || "").toLowerCase(), m = S.mods || {}, udef = cl === "barbarian" ? (m.con || 0) : cl === "monk" ? (m.wis || 0) : 0;
+    ac = 10 + dex + udef; parts.push(udef ? `10 + ${dex} Dex + ${udef} Unarmored Defense` : `10 + ${dex} Dex, no armor`); }
   if (shield){ ac += shield.bonus; parts.push(`${shield.bonus} ${shield.name}`); }
   return {ac, body, shield, why: `${parts.join(" + ")} = ${ac}`, untrained: [body, shield].filter(x => x && !armorTrained(S.cls, x))};
 }
