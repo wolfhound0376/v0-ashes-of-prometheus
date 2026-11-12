@@ -13,7 +13,10 @@
 //     Choosing it stops the march AT THIS MARKER, opens the camp halt the nightfall rule already uses,
 //     and takes the table to the Camp Module (/camp), where the fire, the food and the foraging live.
 //     Breaking camp starts a new day.
-//   * CHANGE PACE. p.24's Travel Pace table: fast, normal, slow, each with the book's own price.
+//   * CHANGE PACE — REMOVED (Sam, 2026-11-12, on the pace and navigator sheet: "We don't need this. You can let
+//     us know how long we actually marched and why."). The march keeps the book's Normal pace; the day's ledger
+//     and the fatigue gauge say how long the party walked and why. paceOfKey stays so an old card's key is
+//     still understood, but no marker offers a pace any more.
 //
 // "Walk on" is the card's own button, not an option here. Foraging is deliberately NOT a road choice:
 // p.25 ties it to the day's pace and the camp already resolves it once a day; a second forage on the
@@ -29,7 +32,8 @@ export const STANDING_SOURCE = "Out of the Abyss - D&D Encounters, ch.2 pp.24-25
 export const STANDING_PREFIX = "standing:"
 export const LONG_REST_KEY = `${STANDING_PREFIX}long-rest`
 
-const PACE_DETAIL: Record<Pace, string> = {
+/** Kept for the record (the book's prices); no marker offers a pace any more. */
+export const PACE_DETAIL: Record<Pace, string> = {
   fast: "A third less time on the road. −5 to passive Perception, −5 to the navigator's check, and no foraging today (p.24-25).",
   normal: "The ordinary pace: no penalty, and the party may forage (p.24-25).",
   slow: "A third more time on the road. +5 to the navigator's check, and improved foraging or moving stealthily (p.24-25).",
@@ -70,10 +74,6 @@ export function standingOptions(node: { node_type?: string | null; metadata?: Re
       outcome: {},
     },
   ]
-  for (const p of ["slow", "normal", "fast"] as const) {
-    if (p === day.pace) continue
-    out.push({ key: `${STANDING_PREFIX}pace-${p}`, label: `Change pace: ${p}`, detail: PACE_DETAIL[p], cost: {}, requires: [], outcome: {} })
-  }
   return out
 }
 

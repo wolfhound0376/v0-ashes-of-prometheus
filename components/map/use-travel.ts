@@ -16,7 +16,8 @@ import { createClient } from "@/lib/supabase/client"
 import { useStage } from "@/components/stage/stage-provider"
 import { dmHeaders, getDmKey, onDmKeyChange } from "@/lib/dm-key"
 import type { VesselKind, VesselRow } from "@/lib/travel/vessels"
-import { FRESH_DAY, type DayState, type Guide, type Navigator, type Pace } from "@/lib/travel/march"
+import { FRESH_DAY, type DayState, type Guide, type MarchLogEntry, type Navigator, type Pace } from "@/lib/travel/march"
+import { LONG_REST_KEY } from "@/lib/travel/standing"
 import { parseWalkHandoff, roadsOpenedBy, type RoadChoice, type WalkArrival } from "@/lib/travel/handoff"
 import { STINGER_GAIN, stingerUrl, type StingerCue } from "@/lib/travel/stingers"
 import { speakBlob } from "@/lib/speech-queue"
@@ -87,7 +88,7 @@ export type LeadInfo = {
   /** The heroes seated this run (lib/seats.ts), earliest first, without anyone the DM stepped out. Who marches on the map. */
   seated?: string[]
   available: boolean
-  day: { pace: Pace; hours_today: number; day_miles: number }
+  day: { pace: Pace; hours_today: number; day_miles: number; today_log?: MarchLogEntry[] }
   /** A camp the march is stopped at right now (a long rest, or nightfall), so a page that comes back from the fire finds its card. */
   open_halt?: { kind: string; title: string; body: string | null; source: string } | null
 }
@@ -126,7 +127,8 @@ export function useTravel() {
   const hasBoat = vessels.length > 0
   // The day (lib/travel/march.ts): pace, hours on the road, who leads. Read
   // from /api/travel (DM) and refreshed from every arrival's reply.
-  const [march, setMarch] = useState<DayState & { day_miles: number; navigator: Navigator | null }>({ ...FRESH_DAY, day_miles: 7, navigator: null })
+  // today_log: the day's ledger (one line per leg) the fatigue gauge reads (Sam, 2026-11-12).
+  const [march, setMarch] = useState<DayState & { day_miles: number; navigator: Navigator | null; today_log: MarchLogEntry[] }>({ ...FRESH_DAY, day_miles: 7, navigator: null, today_log: [] })
   const [guides, setGuides] = useState<Guide[]>([])
   const [pcs, setPcs] = useState<{ id: string; name: string }[]>([])
   // The departure sheet's choices. "guide:<key>" | "pc:<id>" | "none".
@@ -289,15 +291,13 @@ export function useTravel() {
    * Enter key come through here so the two paths cannot drift apart.
    */
   async function setOut(dest: NodeRow) {
-    const navigator =
-      navSel.startsWith("guide:") ? { kind: "guide", key: navSel.slice(6) }
-      : navSel.startsWith("pc:") ? { kind: "pc", character_id: navSel.slice(3), familiar: pcFamiliar, has_map: pcHasMap }
-      : null
     try {
       const res = await fetch("/api/travel", {
         method: "POST",
         headers: travelHeaders(),
-        body: travelBody({ action: "depart", pace, navigator }),
+        // Sam, 2026-11-12: no pace and navigator sheet. The server keeps the book's Normal pace and the party's
+        // leader finds the way; the fatigue gauge's ledger says how long they walked and why.
+        body: travelBody({ action: "depart" }),
       })
       const out = res.ok ? await res.json() : null
       if (out?.day) setMarch((m) => ({ ...m, ...out.day, navigator: out.navigator ?? null }))
@@ -340,7 +340,7 @@ export function useTravel() {
           const oh = li.open_halt
           const mine = !!dmKey || (!!li.leader && !!meRef.current.characterId && li.leader === meRef.current.characterId)
           if (oh && mine) setHalt((h) => h ?? { kind: oh.kind, title: oh.title, body: oh.body, rolls: [], source: oh.source })
-          if (!dmKey && li.day) setMarch((m) => ({ ...m, pace: li.day.pace, hours_today: li.day.hours_today, day_miles: li.day.day_miles }))
+          if (!dmKey && li.day) setMarch((m) => ({ ...m, pace: li.day.pace, hours_today: li.day.hours_today, day_miles: li.day.day_miles, today_log: li.day.today_log ?? m.today_log }))
         }
       } catch {
         /* no leader info: the DM's road controls still work */
@@ -553,6 +553,17 @@ export function useTravel() {
     lastNodeKey.current = startKey
   }
 
+  /**
+   * THE REST BUTTON on the fatigue gauge (Sam, 2026-11-12: "we need a rest button that sends us the Camp"). The
+   * same long rest every road marker's card offers (lib/travel/standing.ts): the march stops at this marker, the
+   * camp halt opens, and the table goes to the Camp Module. Breaking camp there starts a new day.
+   */
+  function rest() {
+    const here = party ? nodes.find((n) => n.id === party.node_id) : null
+    if (!here) return
+    void chooseOption(here.node_key, LONG_REST_KEY)
+  }
+
   /** The halt card's buttons: walk on (or break camp), or push on into a forced march. */
   function continueMarch(force: boolean) {
     const go = resumeRef.current
@@ -567,7 +578,7 @@ export function useTravel() {
     // Breaking camp starts a new day on the server; mirror it here
     // so the HUD does not show yesterday's eight hours until the
     // next arrival answers.
-    if (wasCamp && !force) setMarch((m) => ({ ...m, hours_today: 0, navigation_due: true }))
+    if (wasCamp && !force) setMarch((m) => ({ ...m, hours_today: 0, navigation_due: true, today_log: [] }))
     if (go) go()
     else setHalt(null)
   }
@@ -581,7 +592,7 @@ export function useTravel() {
     me, lead, canLead, hoverNode, setHoverNode,
     beat, options, setOptions, chosen, setChosen, entrance, setEntrance, entering,
     arrival, roadChoice, setRoadChoice,
-    travelHeaders, travelBody, boatAction, dmAction, chooseOption, enterPlace, leadAction, setOut,
+    travelHeaders, travelBody, boatAction, dmAction, chooseOption, enterPlace, leadAction, setOut, rest,
     routeMiles, routeBetween, byId,
   }
 }
