@@ -1504,6 +1504,10 @@ let leader = null, trail = [];
 let mode = "load";            // explore | combat | talk | dialog | travel
 let ackZone = null;
 const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {}, props: {}, rolls: {},
+  // THE BREAKOUT HAS BEEN FOUGHT (Sam, 2026-11-12): {at, why} once the party has fought the drow with the pen gate open.
+  // From then on nobody in the pen is "behind bars": the gate watch's warning, volleys and Drow Surgeon are off, and a
+  // guard who comes back and sees them attacks (guardsReact). Cleared when the drow lock the party in again.
+  brokeOut: null,
   // THE PEN WARD (Sam, 2026-10-30). wardBroken: a hero re-cut an anchor stroke and the nullification is gone --
   // for EVERY caster, not just the one who cut it. wardStudy: what each hero's Arcana check read off the sigil,
   // by hero id (the tier, and whether they got the 20+ that unlocks Alter). wardTried: who has already tried,
@@ -7066,6 +7070,10 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   if (fightShared() && FIGHT.live && owSame(FIGHT.live.plate, cur) && FIGHT.live.auth_key !== OW.key){ talkGivesWay(); enterMirror(FIGHT.live); return; }
   talkGivesWay();                           // NPC MINDS, the other way round: a fight that starts ends the talk
   if (mode !== "explore") return;
+  // THE BREAKOUT HAS BEEN FOUGHT: a fight with the drow while the pen gate stands open is the breakout, however it started
+  // (the breakout card, attacking a guard, a guard spotting them on the landing). The watch never treats them as caged again.
+  if (cur === PEN && state.gateOpen && !state.brokeOut && foeIds.some(f => { const n = f && typeof f === "object" ? f : npcs.find(m => m.id === f); return !!n && isGuard(n); }))
+    state.brokeOut = {at: Date.now(), why: String(label || "a fight at the open gate")};
   pullToMap(label ? String(label) : "a fight has broken out");
   // A FIGHT ON A PLATE IS EVERYONE HOSTILE ON IT (Sam, 2026-10-28: "why is combat not attracting all the foes on the
   // plate; it should"). Each way into a fight named its own foes: attacking someone brought in only the drow on watch
@@ -7982,7 +7990,7 @@ const isGuard = n => /^drow-guard|^drow-elite|^drow-warrior|^drow-soldier|^drow-
 let guardsAlarm = null;                                       // {cur, until}: one reaction per plate at a time
 function guardsOnPlate(){ return npcs.filter(n => isGuard(n) && !n.offStage && !n.body && !n.down && !n.relieved && n.alpha > .5 && actors.includes(n)); }
 function specialOnPlate(){ return npcs.find(n => SPECIAL_WATCH.includes(n.id) && !n.offStage && !n.body && !n.down && n.alpha > .5 && actors.includes(n)) || null; }
-function behindBars(h){ return cur === PEN && !outsidePen(h) && !(h.x != null && inPoly((doorGate() || {interact: {poly: [[0,0]]}}).interact.poly, h.x, h.y) && state.gateOpen); }
+function behindBars(h){ return cur === PEN && !state.brokeOut && !outsidePen(h) && !(h.x != null && inPoly((doorGate() || {interact: {poly: [[0,0]]}}).interact.poly, h.x, h.y) && state.gateOpen); }
 // ONE GUARD ATTACKED IS EVERY GUARD IN THE ROOM (Sam, 2026-10-27: "why is only one guard fighting"). Attacking a guard
 // started a fight with that guard alone while the other two stood and watched. Now everyone on watch on the plate comes
 // in. From an unspotted Sneak it is a surprise attack: the guards are surprised and the attacker goes first.
@@ -13745,7 +13753,7 @@ function followGate(g){
     if (j && !first) openGate(); else unlockGate();
   } else if (g.state === "locked"){
     if (!state.gateOpen || state.gateBroken) return;
-    state.gateOpen = false; state.doorShut = false; setDoor(false); if (balcony()) buildGrid();
+    state.gateOpen = false; state.doorShut = false; state.brokeOut = null; setDoor(false); if (balcony()) buildGrid();
     if (!first){ sfx("door-close", .8); log("The pen gate is shut and locked again.", {say: true}); }
   }
 }
@@ -14752,6 +14760,21 @@ function tickGateWatch(){
   // a work detail in progress (laborLive): the escort has the gate, so the sentries do not warn anyone off it
   if (surgeon) return;                                  // the guards are already shooting (The Drow Surgeon)
   if (laborGateWatch()) return;                         // a detail being called: the door is open, and unescorted is shot
+  // AFTER THE BREAKOUT (Sam, 2026-11-12: "we killed the drow but going through the door caused another drow to appear and
+  // automatically fire"). The party won the fight at the open gate; the second guard had been off the bridge the whole
+  // fight, came back the moment it ended, and this watch treated the hero in the doorway as a prisoner loitering at the
+  // bars: a 10-second warning nobody saw, then the volley and the Drow Surgeon (Ront shot dead). Once the breakout has
+  // been fought there is no warning and no volley: a guard who sees them does what any guard does on seeing escaped
+  // prisoners (Sam, 2026-10-26) — the guards attack, in a real fight with initiative, everyone in it.
+  if (state.brokeOut){
+    gateWarn = null;
+    if (cur !== PEN || mode !== "explore" || !leader || timeStopped || laborLive()) return;
+    for (const w of gateGuards()) for (const h of gateHeroes()){
+      if (caughtHeld(h)) continue;
+      if (gateNotices(w, h) || Math.hypot(w.x - h.x, w.y - h.y) < 10 * ftPx(w)){ guardsReact(w, h, "out of the pen at the open gate"); return; }
+    }
+    return;
+  }
   // an OPEN gate is still watched while the posts are manned (Sam, 2026-10-26: a hero at an open door with the guards on
   // the bridge got nothing). Unattended posts (postsEmpty) are the escape: nobody there to warn anyone.
   if (cur !== PEN || mode !== "explore" || !leader || state.gateBroken || postsEmpty() || timeStopped || laborLive()){ if (!state.gateOpen && gateWarn && gateWarn.stage === "warned" && mode === "explore") gateWarn = null; return; }
@@ -14931,6 +14954,7 @@ function gateWarning(guards, g, h = leader){
 }
 function gateGuardsShoot(guards, h = leader){
   gateWarn = null; if (!guards.length || mode !== "explore") return;
+  if (cur === PEN && state.brokeOut) return;                   // after the breakout there are no volleys: tickGateWatch fights
   // Sam, 2026-10-25: "Remove formal fight. Volleys only." Defying the guards never opens combat: the first time is The
   // Drow Surgeon (below); every later time they simply shoot until the prisoner steps away or drops.
   if (!surgeonDone()) drowSurgeonBegins(guards, h); else surgeonAgain(guards, h);
@@ -15625,7 +15649,7 @@ async function surrenderLockIn(S, {ahead, behind, heroes}){
   await wait(500);
   setDoor(false); sfx("door-close", .9);
   await wait(650); sfx("lock-picked", .6);
-  state.gateOpen = false; state.doorShut = false; state.gateBroken = false;   // [CLAUDE] a gate torn off its hinges is re-hung: the drow do not keep slaves behind no door
+  state.gateOpen = false; state.doorShut = false; state.gateBroken = false; state.brokeOut = null;   // [CLAUDE] a gate torn off its hinges is re-hung: the drow do not keep slaves behind no door
   if (balcony()) buildGrid();
   log(`The gate clangs shut behind them, and the key turns.`);
   if (behind){ behind.performing = false; behind.face = faceOf(ix - behind.x, iy - behind.y); surrenderSays(behind, SURRENDER_LINES.lockIn, 4800); }
@@ -15637,7 +15661,7 @@ async function surrenderLockIn(S, {ahead, behind, heroes}){
   if (S.by === (OW.key || "local") && APP) handOff(`The party surrendered to the drow in ${plateLabel(S.area)} and has just been marched back into the slave pen; on the rope bridge a guard threw ${S.victim ? S.victim.name : "nobody — there was no prisoner left"} into the chasm as a warning. The gate is locked and the ward covers them. Narrate the lock-in in the guards' voices: short, contemptuous, no bargaining.`, true);
 }
 function surrenderLockOnly(S){
-  state.gateOpen = false; state.doorShut = false; state.gateBroken = false; if (balcony()) buildGrid(); setDoor(false);
+  state.gateOpen = false; state.doorShut = false; state.gateBroken = false; state.brokeOut = null; if (balcony()) buildGrid(); setDoor(false);
   if (S.victim){ (state.slain ||= []).includes(S.victim.id) || state.slain.push(S.victim.id); if (APP) surrenderApi("thrown", {seq: S.seq}); log(`<b>${esc(S.victim.name)}</b> was thrown into the chasm on the way back.`); }
   S.done = true; if (state.surrender && state.surrender.seq === S.seq) state.surrender = {...state.surrender, done: true};
   mode = "explore";
@@ -16569,7 +16593,7 @@ if (SANDBOX){ const b = $("dmRestartRehearsal"); b.hidden = false;
 $("dmGateShut").onclick = () => { toggleDm(false);
   if (state.gateBroken){ toast("The gate was torn off its hinges; it cannot be locked."); return; }
   if (!state.gateOpen){ toast("The pen gate is already shut and locked."); return; }
-  state.gateOpen = false; state.doorShut = false; if (cur === PEN){ setDoor(false); sfx("door-close", .8); }
+  state.gateOpen = false; state.doorShut = false; state.brokeOut = null; if (cur === PEN){ setDoor(false); sfx("door-close", .8); }
   if (balcony()) buildGrid(); saveWalk(); log("The pen gate is shut and locked again.", {say: true}); };
 // THE DM CASTS A POISON CLOUD (2026-10-25). No one on this map has a 3rd- or 5th-level slot yet and no Velkynvelve
 // stat block casts either spell, so the DM can put one in a fight on any combatant's behalf: it is that creature's
