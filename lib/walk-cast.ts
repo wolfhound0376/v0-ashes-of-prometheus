@@ -101,11 +101,11 @@ export function componentsOf(name: string): Components | null {
 }
 
 /**
- * MANACLED (Sam, 2026-10-27, on a work detail): only a spell that needs nothing but the voice can be cast — no
- * gesture (the hands are chained to the belt, OotA p.11) and no material (the drow took them). A spell the data does
- * not know is not castable in chains: we cannot show it needs no hands.
+ * MANACLED: a spell with a somatic component cannot be cast (the hands are chained). Sam, 2026-11-12: "Manacles should
+ * only darken out spells that have a somatic component" (was voice-only, 2026-10-27). A spell the data does not know
+ * is not castable in chains: we cannot show it needs no hands.
  */
-export const castableInChains = (c: Components | null): boolean => !!c && c.v && !c.s && !c.m
+export const castableInChains = (c: Components | null): boolean => !!c && !c.s
 
 /** Every spell on the sheet, with what the map needs to offer it. Pure. */
 export function castList(sc: Spellcasting | null | undefined) {

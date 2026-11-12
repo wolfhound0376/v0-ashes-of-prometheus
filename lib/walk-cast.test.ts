@@ -54,5 +54,7 @@ describe("casting in chains (Sam, 2026-10-27: spoken-word spells only on a detai
     expect(castableInChains(componentsOf("Toll the Dead"))).toBe(false)
     expect(castableInChains(componentsOf("Fire Bolt"))).toBe(false)
     expect(castableInChains(componentsOf("Not A Real Spell"))).toBe(false)
+    expect(castableInChains({ v: true, s: false, m: true })).toBe(true)   // a material is not a gesture (Sam, 2026-11-12)
+    expect(castableInChains({ v: true, s: true, m: false })).toBe(false)
   })
 })
