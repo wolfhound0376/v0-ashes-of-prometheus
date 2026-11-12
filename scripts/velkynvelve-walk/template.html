@@ -1852,7 +1852,9 @@ function ovActorPt(a, x, y){ if (!ovDrawn(a)) return {x, y}; const T = ovActorT(
 function ovWanted(){
   if (!OV.tris || !OV.cfg || mode === "load" || mode === "travel") return false;
   const there = x => ovPenStyle() ? outsidePen(x) : x.x != null && ovDomain(x.x, x.y);
-  if (mode === "combat" && cbt){ const all = [...party, ...foes].filter(x => actors.includes(x) && !x.down); return all.length > 0 && all.every(there); }
+  // the prisoners fighting beside the party count too: the close-up used to come up while they were still in the pen, and
+  // their turns were then played off screen (HOW A FIGHT IS STAGED)
+  if (mode === "combat" && cbt){ const all = [...party, ...foes, ...(cbt.allies || [])].filter(x => actors.includes(x) && !x.down && !x.left); return all.length > 0 && all.every(there); }
   return !!(leader && actors.includes(leader) && there(leader) && leader.alpha > .05);
 }
 function ovTick(){
@@ -2102,6 +2104,128 @@ function zoomAt(px, py, f){
   const s0 = base * view.z, s1 = base * nz, wx = (px - view.tx) / s0, wy = (py - view.ty) / s0;
   view.z = nz; view.tx = px - wx * s1; view.ty = py - wy * s1; camTween = null; userPanAt = now; yourCam(); applyView();
 }
+// ---------- HOW A FIGHT IS STAGED (Sam, 2026-11-11, on the fight at the pen gate: "it didn't look good ... I'm looking
+// for solutions that will make this and future fight scenes be engaging, dynamic, and good looking") ----------
+// Recorded and measured before anything was changed (the audit is in the PR): in the pen-gate fight at 1920x1080 a pile
+// of fighters stood on one another in 88% of frames (three allies on the very same spot), the fighter whose turn it was
+// was off the screen in 12% of frames (26% at 1366x768), one blow in six was struck with the attacker or the target
+// out of the picture, and the camera started a new move 70 times a minute. Two causes, both in how the fight is SHOWN:
+//   1. THE CAMERA aimed at a point (a fighter, or the middle of an attacker and a target) at a zoom fixed when the fight
+//      opened. Two fighters further apart than that zoom shows were both off screen; and after every blow it went back
+//      to a "home" worked out from where everyone stood at the START, then straight out again to the next fighter.
+//      Now it FRAMES (fightFrame): it is given the fighters who matter this moment and picks the closest zoom, up to a
+//      cap, that keeps all of them in the picture, clear of the turn strip and the log. A turn opens on the fighter and
+//      the opponents nearest them; a blow frames the attacker and the target; it does not go home between turns, and it
+//      does not move at all when the new framing is nearly the one it has. "Home" (Fit, the crit beat's way back) is
+//      worked out again each turn from where the fighters stand NOW.
+//   2. FIGHTERS ON ONE SPOT were drawn on one spot. The rules allow it (allies close on the same reach point), and no
+//      rule position is touched here: fanSolve() works out a small DRAWING offset for fighters whose feet overlap, eased
+//      in and out, never off the floor. The fighter acting, anyone lunging and the marked target are never moved, so a
+//      blow, its spark and its number land exactly where the rules have them; the others step aside around them.
+// Every number below is Claude's pick, gathered here so Sam can tune them. Presentation only: no dice, hit point,
+// distance, turn or rule position reads any of it. Each screen works both out for itself from the fight's shared state,
+// so a screen showing a fight run elsewhere (ONE FIGHT) stages it the same way.
+const FIGHT_LOOK = {
+  camSide: 120, camTop: 130, camBottom: 110,   // px of screen kept clear around the framed fighters (turn strip above, log below)
+  camHead: .9,                                 // of a figure's height kept in the frame above its feet
+  turnZoomMax: 2.2,                            // closest zoom as a turn opens (the fighter and the nearest opponents)
+  turnShows: 2,                                // how many of the nearest opponents a turn's opening frame keeps in view
+  pairZoomMax: 2.4,                            // closest zoom on an attacker and a target while the attack is chosen
+  blowZoomMax: 2.8,                            // closest zoom as the blow is struck (the small push-in; none with motion off)
+  turnMs: 450, pairMs: 380, blowMs: 300, backMs: 600,   // how long each glide takes
+  camDeadPx: 36, camDeadZoom: .05,             // a new framing this close to the old one does not move the camera
+  fanGapX: .38, fanGapY: .2,                   // feet closer than this (in figure widths, across and in depth) are fanned apart
+  fanMax: .85,                                 // the furthest a figure is ever drawn from where it really stands (figure widths)
+  fanFront: .3,                                // in a knot of figures, the one acting and the one aimed at are drawn in front (figure widths of depth)
+  fanEase: 9,                                  // how fast the fan opens and closes (per second)
+  keepEveryMs: 200, keepMargin: 90,            // a walking fighter this close (px) to the screen's edge pulls the camera along
+};
+const figW = a => SPR[a.id].json.cell[0] * actorScale(a), figH = a => SPR[a.id].json.pivot[1] * actorScale(a);
+function fightFrame(list, zMax, ms){
+  if (!cbt) return;
+  const L = (list || []).filter(a => a && a.x != null && SPR[a.id]); if (!L.length) return;
+  if (cbt.yourCam){ fightCam(0, 0, 0, ms, L); return; }                 // the player's own camera: slide only as far as it must
+  const K = FIGHT_LOOK, r = stage.getBoundingClientRect();
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  for (const a of L){ const k = ovDrawn(a) ? ovActorT(a).k : 1, q = ovActorPt(a, a.x, a.y), hw = figW(a) * k * .3, top = q.y - figH(a) * k * K.camHead;
+    x0 = Math.min(x0, q.x - hw); x1 = Math.max(x1, q.x + hw); y0 = Math.min(y0, top); y1 = Math.max(y1, q.y + 12); }
+  const menu = $("cbtMenu"), mr = menu && !menu.hidden ? menu.getBoundingClientRect() : null;   // the command list, while it is up, is not part of the picture
+  const bottom = Math.max(K.camBottom, mr && mr.height && mr.top > r.top + r.height * .5 ? r.bottom - mr.top + 16 : 0);
+  const availW = Math.max(200, r.width - 2 * K.camSide), availH = Math.max(160, r.height - K.camTop - bottom);
+  const z = Math.max(1, Math.min(zMax, 4, availW / ((x1 - x0) * base), availH / ((y1 - y0) * base))), s = base * z;
+  const to = {z, tx: r.width / 2 - (x0 + x1) / 2 * s, ty: K.camTop + availH / 2 - (y0 + y1) / 2 * s}; clampView(to);
+  const at = camTween && !camTween.slide ? camTween.to : view;
+  if (Math.abs(to.z - at.z) < K.camDeadZoom && Math.abs(to.tx - at.tx) < K.camDeadPx && Math.abs(to.ty - at.ty) < K.camDeadPx) return;
+  if (camTween && camTween.slide) sliding = false;
+  camTween = {from: {...view}, to, t0: now, ms};
+}
+// where the whole fight is, now: what "Fit" and the crit beat go back to (startCombat's was where it all STARTED)
+function fightHome(){
+  const L = cbt ? [...standing(heroes()), ...standing(foes)].filter(a => a.x != null && (a.alpha ?? 1) > .5) : []; if (!L.length) return cbt && cbt.home;
+  const r = stage.getBoundingClientRect(), xs = L.map(a => a.x), ys = L.map(a => a.y), tops = L.map(a => a.y - figH(a));
+  const x0 = Math.min(...xs) - 250, x1 = Math.max(...xs) + 250, y0 = Math.min(...tops) - 80, y1 = Math.max(...ys) + 130;
+  return {z: Math.max(1, Math.min(2.4, r.width / ((x1 - x0) * base), r.height / ((y1 - y0) * base))), cx: (x0 + x1) / 2, cy: (y0 + y1) / 2};
+}
+// a turn opens: the fighter, and the opponents nearest them (who they may go for, or who may come for them)
+function turnCam(a){
+  if (!cbt || !a) return;
+  cbt.home = fightHome() || cbt.home;
+  const opp = standing(hero(a) ? foes : heroes()).filter(o => o !== a && (o.alpha ?? 1) > .5).sort((p, q) => Math.hypot(p.x - a.x, p.y - a.y) - Math.hypot(q.x - a.x, q.y - a.y));
+  fightFrame([a, ...opp.slice(0, FIGHT_LOOK.turnShows)], FIGHT_LOOK.turnZoomMax, FIGHT_LOOK.turnMs);
+}
+// a long walk can carry the acting fighter out of the frame their turn opened on: bring the camera along (checked a
+// few times a second, only when the camera is at rest and still the fight's own)
+let camKeepAt = 0;
+function camKeep(){
+  if (!cbt || mode !== "combat" || camTween || cbt.yourCam || now - camKeepAt < FIGHT_LOOK.keepEveryMs) return; camKeepAt = now;
+  const a = activeActor(); if (!a || a.down || !(a.path && a.path.length) || !SPR[a.id]) return;
+  const r = stage.getBoundingClientRect(), q = ovActorPt(a, a.x, a.y - figH(a) * .5), [sx, sy] = w2s(q.x, q.y), m = FIGHT_LOOK.keepMargin;
+  if (sx < m || sx > r.width - m || sy < m || sy > r.height - m) turnCam(a);
+}
+// an attacker has picked a target: both in the picture before anything is swung
+function pairCam(a, b){ if (cbt) fightFrame([a, b], FIGHT_LOOK.pairZoomMax, FIGHT_LOOK.pairMs); }
+// FIGHTERS ON ONE SPOT, FANNED APART IN THE DRAWING ONLY.
+const fanPinned = a => a === activeActor() || a.lunging || a.leap || (cbt.marked && cbt.marked.t === a && cbt.marked.until > now);
+let fanAt = 0;
+function fanSolve(){
+  const dt = Math.min(.1, Math.max(0, (now - fanAt) / 1000)); fanAt = now;
+  if (!cbt || mode !== "combat"){ for (const a of actors) if (a.fan) a.fan = null; return; }
+  const K = FIGHT_LOOK;
+  const B = actors.filter(a => a.c && (a.kind === "pc" || a.kind === "foe" || a.ally) && !a.down && !a.body && !a.offStage && !a.fall && !a.climbing && !a.riding && !a.prop && (a.alpha ?? 1) > .5 && !(a.path && a.path.length))
+    .sort((a, b) => a.id < b.id ? -1 : a.id > b.id ? 1 : a.x - b.x || a.y - b.y);
+  const o = B.map(() => ({x: 0, y: 0})), pin = B.map(fanPinned), w = B.map(figW);
+  const knot = B.map(() => false);
+  for (let it = 0; it < 16; it++) for (let i = 0; i < B.length; i++) for (let j = i + 1; j < B.length; j++){
+    if (pin[i] && pin[j]) continue;
+    const gx = K.fanGapX * (w[i] + w[j]) / 2, gy = K.fanGapY * (w[i] + w[j]) / 2;
+    let u = (B[j].x + o[j].x - B[i].x - o[i].x) / gx, v = (B[j].y + o[j].y - B[i].y - o[i].y) / gy, d = Math.hypot(u, v);
+    if (d >= 1) continue;
+    knot[i] = knot[j] = true;
+    if (d < .02){ const g = i * 2.4 + j * 1.3; u = Math.cos(g); v = Math.sin(g) * .5; d = Math.hypot(u, v); u /= d; v /= d; d = 0; } else { u /= d; v /= d; }
+    const push = 1 - d, ki = pin[i] ? 0 : pin[j] ? 1 : .5, kj = pin[j] ? 0 : pin[i] ? 1 : .5;
+    o[i].x -= u * push * gx * ki; o[i].y -= v * push * gy * ki; o[j].x += u * push * gx * kj; o[j].y += v * push * gy * kj;
+  }
+  const seen = new Set(B);
+  B.forEach((a, i) => {
+    let t = pin[i] ? {x: 0, y: 0} : o[i]; const max = K.fanMax * w[i], len = Math.hypot(t.x, t.y);
+    if (len > max){ t = {x: t.x / len * max, y: t.y / len * max}; }
+    if (len > .5 && !walkable(a.x + t.x, a.y + t.y)){                 // never drawn off the floor: turn it along the floor, or shorten it
+      let ok = null;
+      for (const k of [1, .5]){ for (const g of [.7, -.7, 1.4, -1.4, 2.4, -2.4]){ const c = Math.cos(g), sn = Math.sin(g), q = {x: (t.x * c - t.y * sn) * k, y: (t.x * sn + t.y * c) * k}; if (walkable(a.x + q.x, a.y + q.y)){ ok = q; break; } } if (ok) break;
+        if (k === .5 && walkable(a.x + t.x * .5, a.y + t.y * .5)) ok = {x: t.x * .5, y: t.y * .5}; }
+      t = ok || {x: 0, y: 0};
+    }
+    const f = a.fan || (a.fan = {x: 0, y: 0, front: 0}), e = Math.min(1, dt * K.fanEase);
+    f.x += (t.x - f.x) * e; f.y += (t.y - f.y) * e; f.front = pin[i] && knot[i] ? K.fanFront * w[i] : 0;
+  });
+  for (const a of actors) if (a.fan && !seen.has(a)){ const e = Math.min(1, dt * K.fanEase * 1.5); a.fan.x -= a.fan.x * e; a.fan.y -= a.fan.y * e; if (Math.abs(a.fan.x) + Math.abs(a.fan.y) < .3) a.fan = null; }
+}
+// the offset a figure is drawn with right now (also where a click finds it: hitActor)
+function fanOf(a){ return a && a.fan && cbt && mode === "combat" && !a.leap && !a.climbing && !a.lunging ? a.fan : null; }
+// draw() and the overlay read everyone's place from a.x / a.y, in a hundred places: for the length of one frame's drawing
+// the fanned figures stand at their drawn place, and are put back before anything else runs
+function fanShow(){ const out = []; for (const a of actors){ const f = fanOf(a); if (f && (Math.abs(f.x) > .3 || Math.abs(f.y) > .3)){ a.x += f.x; a.y += f.y; out.push([a, f.x, f.y]); } } return out; }
+function fanHide(out){ for (const [a, x, y] of out){ a.x -= x; a.y -= y; } }
 // THE FIGHT CAMERA IS YOURS ONCE YOU TOUCH IT (Sam, 2026-10-28: "Should be able to zoom out a bit and move the camera a
 // bit to be able to see the fight better"). Until then the fight frames itself: the whole line-up at the start, a glide to
 // each fighter on their turn, a push on a blow and a settle after. The first wheel, zoom button or drag during the fight
@@ -2120,7 +2244,8 @@ function fightCam(z, cx, cy, ms, pts){
   const to = {z: view.z, tx: view.tx + dx, ty: view.ty + dy}; clampView(to); if (camTween && camTween.slide) sliding = false; camTween = {from: {...view}, to, t0: now, ms};
 }
 
-function draw(){
+function draw(){ fanSolve(); const fanned = fanShow(); try { drawFrame(); } finally { fanHide(fanned); } }
+function drawFrame(){
   dressHeroes();
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, cv.width, cv.height);
   const s = base * view.z * dpr;
@@ -2174,7 +2299,8 @@ function draw(){
   if (mode === "explore" && exploreJump && leader && actors.includes(leader)) drawExploreJumpSquares(leader);
   ovWrapGroup(drops, drawLootGround);   // the loot ceremony's floor light, under the figures
   drawCrimGhosts();                     // a rogue or ranger's afterimages, under the figures
-  const list = actors.concat(vermin, laborProps).filter(a => a.alpha > 0.01).sort((a, b) => a.y - b.y);   // laborProps: Hard Labor's station props
+  const depth = a => a.y + (a.fan && cbt ? a.fan.front || 0 : 0);   // in a knot of fighters the one acting and the one aimed at are in front (fanSolve)
+  const list = actors.concat(vermin, laborProps).filter(a => a.alpha > 0.01).sort((a, b) => depth(a) - depth(b));   // laborProps: Hard Labor's station props
   const cloudQ = mode === "combat" || clouds.length ? cloudPuffs() : [];   // the poison cloud, in depth order among the figures
   let barsAt = gateBarsY();                                       // the bars in front of a guard leaning at them, in depth order
   for (const a of list){
@@ -2562,7 +2688,8 @@ function updateSneakTags(){
     const m = SPR[f.id].json, top = f.y - m.pivot[1] * actorScale(f), oq = ovActorPt(f, f.x, top); const [sx, sy] = w2s(oq.x, oq.y); el.style.left = sx + "px"; el.style.top = sy + "px";
   }
 }
-function updateOverlay(){
+function updateOverlay(){ const fanned = fanShow(); try { updateOverlayFrame(); } finally { fanHide(fanned); } }
+function updateOverlayFrame(){
   updateSneakTags();
   for (let i = bubbles.length - 1; i >= 0; i--){
     const b = bubbles[i];
@@ -3216,8 +3343,31 @@ function leaderOut(a, left, min, max){
 // the camera slides to the neighbouring plate, and they walk in from its matching edge.
 // `cut` (a work detail leaving the pen, Sam 2026-10-26): they walk out through the exit the same way, then ONE fade-cut
 // lands them on `to`, which need not be next door ({note} says how they got there). Every screen plays it alike.
+// A LIVE FIGHT HOLDS ITS PLATE (Sam, 2026-11-11, on the fight at the pen gate: "characters inadvertently went back
+// through the door causing it to pan to another screen"). Reproduced in scripts/one-world/fight-holds-plate-test.mjs:
+// the nearer guard stands on the foot of the rope bridge, which is the doorway to the Guard Tower, so a hero who closed
+// with her was standing in it when the fight ended, and the first walking tick took the party across, into the tower's
+// guards. Three rules, each kept in one place:
+//   1. while a fight is live on this screen nothing leaves the plate: travel() refuses (below), the doorway check in the
+//      tick loop does not run, a card closing over another card goes back to the fight (showDialog), and the party's
+//      move from another screen waits for the fight to end (OW_CAN_MOVE / owCheckPlate);
+//   2. when the fight ends, the doorway a hero is left standing in counts as already answered: step out and back in,
+//      or click it, to go through (fightLetsGo, called where endCombat and mirrorEnd hand the screen back to walking);
+//   3. a foe that retreats off the plate (leaveFight / fleeTo) never used travel() and is untouched.
+// Heroes have no "flee through the door" of their own; the one way a party leaves a fight is the surrender, which ends
+// the fight first and only then marches (surrenderBegins), so it passes rule 1 as it always did.
+const fightHoldsPlate = () => !!cbt || mode === "combat";
+let fightDoor = null;       // the doorway a fight's end left the leader standing in (rule 2): a click on it goes through
+function fightLetsGo(){
+  if (!leader) return;
+  // a step the fight's end cut short stops where it is; the walk back in through the pen gate (endCombat) goes on
+  for (const p of party) if (p.path && p.path.length && !p.walkIn && !owRemote(p)){ p.path = []; p.onArrive = null; }
+  const at = leader.path && leader.path.length ? leader.path[leader.path.length - 1] : leader;
+  ackZone = fightDoor = zoneAt(at.x, at.y);
+}
 async function travel(to, z, fromWorld, cut, solo){
   if (mode === "travel") return;
+  if (fightHoldsPlate()){ if (!fromWorld) toast("Not while the fight is on."); return; }   // A LIVE FIGHT HOLDS ITS PLATE, rule 1
   // SPLIT PARTY: a splinter (just the leader, or a group that is not on the world's plate) does not move the world's
   // plate; only the party's own move does, and every screen on this plate follows it.
   const splinter = !!solo || (OW.on && OW.plate != null && !owSame(cur, OW.plate));
@@ -3329,11 +3479,12 @@ function toast(text, ms = 3200){
 
 // ---------- dialogs ----------
 function showDialog({title, body, src = "", buttons}){
+  if (FIGHT.auth && FIGHT.promptFor){ routeDialog({title, body, src, buttons}); return; }   // ONE FIGHT: the card goes to that hero's screen
   const prev = mode; mode = "dialog";
   $("dlgTitle").textContent = title; $("dlgBody").textContent = body; $("dlgSrc").textContent = src; $("dlgSrc").hidden = !src;
   const bx = $("dlgBtns"); bx.innerHTML = "";
   buttons.forEach(b => { const e = document.createElement("button"); e.className = "btn" + (b.primary ? " primary" : "") + (b.danger ? " danger" : ""); e.textContent = b.label;
-    e.onclick = () => { $("dialog").hidden = true; if (mode === "dialog") mode = prev === "dialog" ? "explore" : prev; b.fn && b.fn(); }; bx.appendChild(e); });
+    e.onclick = () => { $("dialog").hidden = true; if (mode === "dialog") mode = prev === "dialog" ? (cbt ? "combat" : "explore") : prev; /* cbt: A LIVE FIGHT HOLDS ITS PLATE, rule 1 */ b.fn && b.fn(); }; bx.appendChild(e); });
   $("dialog").hidden = false; bx.firstChild && bx.firstChild.focus();
 }
 function dmWatch(pl, note){
@@ -3733,7 +3884,7 @@ function loadSfx(name){
 // the elements sound like what they are (Sam, 2026-10-29: "Cold spells should sound like a blizzard / fire like an inferno /
 // acid like corrosion / necrotic like eldritch / thunder like thunder!!!"): recorded files in public/sfx/walk take over the pack's
 const ELEMENT_SND = {"magic/impact_thunder": "walk:thunder-clap", "magic/impact_cold": "walk:impact-cold", "magic/impact_fire": "walk:impact-fire", "magic/impact_acid": "walk:impact-acid", "magic/impact_necrotic": "walk:impact-necrotic"};
-const bank = (name, gain = .8) => { name = ELEMENT_SND[name] || name; return sfx(name.startsWith("walk:") ? name : "bank:" + name, gain); };
+const bank = (name, gain = .8) => { relaySound(name, gain); name = ELEMENT_SND[name] || name; return sfx(name.startsWith("walk:") ? name : "bank:" + name, gain); };
 // ---------- the clicks ----------
 // Sam, 2026-10-25: "We also need more audible clicks." The map's buttons were silent (only loot, dice and initiative
 // made a sound). Eight short ElevenLabs effects (flow "AoP Underwalk explore music + UI clicks"), cut and levelled,
@@ -5528,6 +5679,7 @@ function dmScreen(){ return !APP || (isDm() && !mySlug); }
 let mySlug = null;
 function canControl(a){
   if (!a) return false;
+  if (FIGHT.applying && FIGHT.applying === a) return true;            // ONE FIGHT: a press from that hero's own screen, played here
   if (!APP || isDm()) return true;
   if (dmRun.has(a.id)) return false;
   return !!mySlug && a.id === mySlug;
@@ -6747,6 +6899,8 @@ function fighterFor(a){
           hp, hpMax, ac: s ? s.ac : 10, conds: new Set(), slots: s && s.magic ? {...s.magic.slots} : {}, init: 0};
 }
 function startCombat(foeIds, label, opts = {}){ bardTuneStop();
+  if (FIGHT.mirror) return;                                    // ONE FIGHT: this screen is showing a fight run elsewhere
+  if (fightShared() && FIGHT.live && owSame(FIGHT.live.plate, cur) && FIGHT.live.auth_key !== OW.key){ talkGivesWay(); enterMirror(FIGHT.live); return; }
   talkGivesWay();                           // NPC MINDS, the other way round: a fight that starts ends the talk
   if (mode !== "explore") return;
   pullToMap(label ? String(label) : "a fight has broken out");
@@ -6845,6 +6999,7 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   setTimeout(() => foes.forEach((f, i) => setTimeout(() => { const b = FOE_BARK[f.id]; if (b && actors.includes(f) && f !== (cbt && cbt.boss)) bark(f, b[i % b.length], 2600); }, i * 500)), 700 + introMs);
   setTimeout(() => { if (cbt) nextTurn(true); }, 1400 + introMs);
   stripShow(1400 + introMs + 3200);   // the opening: the order in place, the entrance, the first turn call; then it fades
+  oneFightOpened();                   // ONE FIGHT: ask to run it for the whole table (or show the one already running)
 }
 const fname = a => a.kind === "pc" ? SHEETS[a.id].name : (a.creature && a.creature.name) || (a.c && a.c.sheet.name) || SHORT[a.id] || SPR[a.id].json.name;
 function standing(list){ return list.filter(a => !a.down && !a.left && actors.includes(a)); }   // `left`: fell back out of the fight (NPC MINDS)
@@ -7118,7 +7273,7 @@ function nextTurn(first){
   a.c.sanctuaryPassed = null; if (a.c.conds.has("sanctuary") && cbt.round >= (a.c.sanctuaryEnd || 0)) endSanctuary(a, "the minute is up");
   if (a.c.conds.has("mirrored") && cbt.round >= (a.c.mirrorEnd || 0)){ a.c.conds.delete("mirrored"); a.c.images = 0; popText(a, "the images fade", "#bfd0ff", .8); log(`${fname(a)}'s Mirror Image fades: the minute is up.`); }
   if (a.c.ready){ a.c.ready = null; a.c.conds.delete("readied"); }   // SRD: a readied action lasts until the start of your next turn
-  renderTurns(); renderParty(); turnCall(a);
+  renderTurns(); renderParty(); turnCall(a); turnCam(a);   // every turn opens framed, a foe's and an ally's too (HOW A FIGHT IS STAGED)
   if (a.c.conds.has("asleep") && a.c.drugged){ popText(a, "out cold", "#8fd48f"); log(`${fname(a)} lies senseless from the drow poison. Damage or a shake will wake them.`); setTimeout(nextTurn, 900); return; }
   if (a.c.conds.has("asleep")){
     const s = d20(0, a) + (a.c.sheet.saves.wis || 0);
@@ -7153,15 +7308,18 @@ function nextTurn(first){
   // Another player's hero on this screen: each browser runs its own fight (nothing is shared between screens yet), so
   // rather than freeze this one on a turn its player cannot take, that hero fights on its own the way the freed
   // prisoners do. The DM's screen drives every hero. (Sam, 2026-10-25: only the DM moves a hero who is not his.)
+  // ONE FIGHT: a hero someone else at the table drives — the fight waits for their player, who chooses on their own screen
+  if (a.kind === "pc" && oneFightWaitsFor(a)){ openMenu(a); turnCam(a); return; }
   if (a.kind === "pc" && !canControl(a)){ log(`${fname(a)} acts on their own instincts here — their player drives them on their own screen.`); allyTurn(a); return; }
   // no sound as the turn passes to a hero or an ally: the camera moving to them is the cue (Sam, 2026-10-22: "it shouldn't
   // say bard", then "Please remove the bell between players as the system move to the active player")
-  fightCam(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 60, 500, [a]);
-  openMenu(a);
+  openMenu(a); turnCam(a);   // framed again once the command list is up, clear of it
 }
 // the Octopath-style command list beside whoever is up
 function openMenu(a, sub){
   if (!a || a.down) return;                                    // the fallen get no commands; passWhenSettled moves the turn on
+  if (FIGHT.mirror) return;                                    // ONE FIGHT: a mirror shows the authority's list (mirrorMenu)
+  if (oneFightWaitsFor(a)) queueMicrotask(() => { if (activeActor() === a && !FIGHT.applying) $("cbtMenu").hidden = true; });   // built here, pressed there
   const m = $("cbtMenu"); m.hidden = false; m.innerHTML = ""; m.dataset.kind = "combat"; exploreKey = ""; castOpen = null; cbt.phase = "menu"; cbt.pend = null;
   m.onwheel = null; if (sub !== "orb"){ orbPick = null; orbDrop(); }
   const add = (label, hint, fn, cls) => { const b = document.createElement("button"); b.className = cls || ""; const ic = ACTION_ICON[label] || ACTION_ICON[label.replace(/:.*$/, "")] || ACTION_ICON[label.split(" ")[0]];
@@ -8756,6 +8914,7 @@ function cancelAim(){ if (cbt && cbt.phase === "target"){ const a = activeActor(
 function combatClick(w){
   if (!cbt || combatBusy) return;
   const a = activeActor(); if (!a || a.kind !== "pc" || !canControl(a)) return;
+  if (oneFightWaitsFor(a) && FIGHT.applying !== a) return;                // ONE FIGHT: that hero's player clicks, on their own screen
   if (cbt.phase === "move"){ moveActor(a, w, () => { if (cbt && activeActor() === a) openMenu(a); }); return; }
   if (cbt.phase === "jump"){
     const p = nearestWalkable(w.x, w.y), g = planLeap(a, p);
@@ -9290,7 +9449,7 @@ function readiedStrikeOn(att, cont){
     log(`${fname(h)}'s readied ${atk.name} lands as ${fname(att)} comes within reach (their reaction).`);
     attackWith(h, att, atk, () => { combatBusy = true; if (!cbt) return; if (att.down){ combatBusy = false; setTimeout(() => passTurn(att), 500); return; } cont(); }, false, true); };
   const hold = () => { h.c.ready = null; h.c.conds.delete("readied"); renderParty(); log(`${fname(h)} holds the ${atk.name}.`); cont(); };
-  if (h.kind !== "pc" || !canControl(h)){ fire(); return; }
+  if (h.kind !== "pc" || !askable(h)){ fire(); return; }
   showDialog({title: `${fname(h)}: readied ${atk.name}?`, body: `${fname(att)} comes within reach. ${fname(h)} readied a ${atk.name} for exactly this: strike now, with the reaction?`,
     src: "Ready · 1 reaction", buttons: [{label: `Strike with the ${atk.name}`, primary: true, fn: fire}, {label: "Hold", fn: hold}]});
 }
@@ -9981,7 +10140,7 @@ function offerRebuke(t, from){
     setTimeout(() => { rebukeFlames(from); bank("walk:impact-fire", .6); hitCtx = {spell: "Hellish Rebuke", by: t}; damage(from, n, "fire", false, t, true); hitCtx = null;
       log(`${fname(t)} casts <b>Hellish Rebuke</b> (reaction, level ${L} slot): ${fname(from)} DEX ${s} vs DC ${dc} — ${ok ? "half, " : ""}${n} fire.`);
       narrate(t, `${fname(t)} points at ${fname(from)}, and green hellfire wraps it.`); setTimeout(done, 450); }, 350); };
-  if (!canControl(t)){ fire(); return; }
+  if (!askable(t)){ fire(); return; }
   showDialog({title: `${fname(t)}: Hellish Rebuke?`, body: `${fname(from)} just hurt ${fname(t)}. Point and wreathe it in hellfire: a DEX save against DC ${dc}, ${dice} fire, half on a success. It uses the reaction and a level ${L} slot (${t.c.slots[L]} left).`,
     src: `Hellish Rebuke · 1 reaction · level ${L}`, buttons: [{label: "Rebuke", primary: true, fn: fire}, {label: "Let it go", fn: done}]}); }
 // the little cantrips: the action, the look, a line in the log
@@ -10288,7 +10447,7 @@ function approachThen(att, tgt, ft, then){
           if (att.down){ combatBusy = false; setTimeout(() => passTurn(att), 500); return; }
           approachThen(att, tgt, ft, then);
         }, false, true); };
-      if (p.kind === "pc" && canControl(p)){
+      if (p.kind === "pc" && askable(p)){
         const melee = (p.c.sheet.attacks || []).filter(k => (k.reach || 5) <= 10 && !k.ammo);
         const opts = melee.length ? melee : [meleeOf(p)];
         popText(p, "⚔ Opportunity!", "#ffd27a", 1.05);
@@ -10677,6 +10836,7 @@ async function helpArrives(){
 }
 // a wave or a runner's help walks in at `at` (a doorway): joins the fight here, or starts one
 async function reinforce(ids, at, why){
+  if (FIGHT.mirror) return true;                                        // ONE FIGHT: the fight's own screen brings them in; this one shows it
   await Promise.all([...new Set(ids)].map(id => loadSpriteManifest(id)));
   if (mode === "combat" && cbt){
     ids.forEach((id, i) => { const q = nearestWalkable(at.x + (i % 2 ? 1 : -1) * 50 * i * node.scale, at.y + 30 * i * node.scale); const f = foeJoins(id, q, {}); if (f) popText(f, "!", "#ff6a4a", 1); });
@@ -10884,7 +11044,7 @@ function oaGauntlet(f, goal, go){
   if (!p){ go(); return; }
   const next = () => { if (!cbt) return; if (f.down){ combatBusy = false; setTimeout(() => passTurn(f), 500); return; } oaGauntlet(f, goal, go); };
   const swing = atk => { p.c.reactionUsed = true; oaCue(p, f); narrate(p, `${fname(p)} lashes out as ${fname(f)} runs.`); attackWith(p, f, atk, () => { combatBusy = true; next(); }, false, true); };
-  if (p.kind === "pc" && canControl(p)){
+  if (p.kind === "pc" && askable(p)){
     const melee = (p.c.sheet.attacks || []).filter(k => (k.reach || 5) <= 10 && !k.ammo), opts = melee.length ? melee : [meleeOf(p)];
     popText(p, "⚔ Opportunity!", "#ffd27a", 1.05);
     showDialog({title: `Opportunity attack: ${fname(p)}`,
@@ -11006,7 +11166,7 @@ function foeTurn(f){
     const nearest = standing(heroes()).sort((a, b) => feetBetween(f, a) - feetBetween(f, b))[0];
     if (tgt.c.conds.has("hidden") || (nearest && nearest.c.conds.has("hidden") && !seen.some(p => feetBetween(f, p) <= 5))){ foeSearch(f, hidNow); return; }
   }
-  fightCam(Math.min(2.4, cbt.home.z * 1.08), (f.x + tgt.x) / 2, (f.y + tgt.y) / 2 - 50, 600, [f, tgt]);
+  pairCam(f, tgt);
   if (!(plan && plan.spoke) && Math.random() < .45 && now - (taunt.last || -1e9) > BANTER_GAP){ if (!taunt(f, null, tgt)){ const b = FOE_BARK[f.id]; if (b) bark(f, b[0], 1800); } }   // one voice at a time (THE BANTER)
   const s = f.c.sheet, swings = s.multi || 1, bow = s.attacks.find(k => k.ranged);
   // a drow with a hand crossbow shoots, unless a hero is already at its elbow (SRD: a ranged attack within 5 ft of a
@@ -11105,7 +11265,7 @@ function allyTurn(a){
   const tgt = (cbt.lastAllyTarget && cbt.lastAllyTarget.get(a) && seen.includes(cbt.lastAllyTarget.get(a))) ? cbt.lastAllyTarget.get(a) : seen.sort(near)[0];
   if (!tgt){ checkEnd() || end(); return; }
   (cbt.lastAllyTarget || (cbt.lastAllyTarget = new Map())).set(a, tgt);
-  fightCam(Math.min(2.4, cbt.home.z * 1.08), (a.x + tgt.x) / 2, (a.y + tgt.y) / 2 - 50, 600, [a, tgt]);
+  pairCam(a, tgt);
   const s = a.c.sheet, pick = allyAttackPick(a, tgt), atk = pick.atk;
   const swings = /crossbow/i.test(atk.itemName || atk.name) ? 1 : (s.multi || 1);   // SRD Loading: one bolt per action, however many attacks the block has
   if (pick.how !== "close") log(`${fname(a)} ${pick.how === "throw" ? "hefts" : "levels"} the ${esc(atk.itemName || atk.name)} at ${fname(tgt)}.`);
@@ -12097,7 +12257,7 @@ function setQuick(on, quiet){
   const b = $("quickBtn"); if (b){ b.textContent = on ? "Stop quick resolve" : "Quick resolve"; b.classList.toggle("primary", on); }
 }
 function endCombat(won, opts = {}){
-  if (mode !== "combat") return;
+  if (mode !== "combat" || FIGHT.mirror) return;
   if (cbt && cbt.fromFlag) fightFlagOver();   // the server's "a fight is on" comes down with the fight
   const victors = cbt ? [...(cbt.allies || [])] : [];   // THE TRIUMPH: who of ours is still up to strike a pose when it is won
   const fellNpcs = cbt ? (cbt.bystanders || []).filter(b => b.down) : [];   // the NPCs who died in this fight: buried below, once it is over (npcBury)
@@ -12112,7 +12272,7 @@ function endCombat(won, opts = {}){
   shots.length = 0; icePatches = []; for (const a of actors) a.onIce = null;
   // anyone of ours still out on the balcony walks back in through the gate before it stops being floor
   if (gatePassable()) for (const h of [...party, ...(cbt ? cbt.allies : [])]) if (!h.down && outsidePen(h)){
-    const back = findPath(h, nearestWalkable(balcony().inside[0], balcony().inside[1] + 30)); if (back.length){ h.path = back; h.onArrive = null; }
+    const back = findPath(h, nearestWalkable(balcony().inside[0], balcony().inside[1] + 30)); if (back.length){ h.path = back; h.onArrive = null; h.walkIn = h.kind === "pc"; }   // walkIn: no doorway on the way takes them (step() clears it when they land)
   }
   mode = "travel"; if (won !== false) state.cleared[cur] = true;
   if (balcony()) buildGrid();
@@ -12162,7 +12322,8 @@ function endCombat(won, opts = {}){
     allies.forEach(n => { n.ally = false; n.path = []; if (n.down){ n.down = false; setAnim(n, "idle"); if (n.c) n.c.hp = 1; } n.home = {x: n.x, y: n.y}; n.post = {x: n.x, y: n.y}; });
     trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: leader.x, y: leader.y}]);
     party.forEach(p => { p.home = {x: p.x, y: p.y}; p.actUntil = now + 4000 + Math.random() * 6000; });
-    mode = "explore"; setTrack("explore"); log(opts.talk ? "Weapons down. They talk." : won ? "The fight is over. The DM core settles the wounds and the loot." : "The fight is over.");
+    mode = "explore"; fightLetsGo(); setTrack("explore"); log(opts.talk ? "Weapons down. They talk." : won ? "The fight is over. The DM core settles the wounds and the loot." : "The fight is over.");
+    oneFightEnded(won);                // ONE FIGHT: every mirror lays the dead down and stands the rest down the same way
     cbtLog.active = false;   // the log stays, collapsed, with the fight's last line in its ticker; the next fight starts it over
   }, 700);
 }
@@ -12325,8 +12486,13 @@ function critBeat(t){
   }, CRIT_ZOOM_MS);
 }
 function shake(px){ shakeAmt = Math.max(shakeAmt, px); }
-function pushCam(a, b){ if (!cbt) return; if (cbt.yourCam){ fightCam(0, 0, 0, 420, [a, b]); return; } camPushed = true; camTo(Math.min(2.8, cbt.home.z * 1.25), (a.x + b.x) / 2, (a.y + b.y) / 2 - 50, 420); }
-function settleCam(){ if (!cbt || !camPushed) return; camPushed = null; if (!cbt.yourCam) camTo(cbt.home.z, cbt.home.cx, cbt.home.cy, 700); }
+// THE BLOW (HOW A FIGHT IS STAGED, by fightFrame): the attacker and the target are both in the picture, pushed in as far
+// as keeps them both there (no push-in with motion off). Afterwards the camera does NOT go home and out again: it stays
+// on the two of them until the next turn frames itself, except for a hero whose player is still choosing, who gets
+// their turn's framing back.
+function pushCam(a, b){ if (!cbt) return; if (cbt.yourCam){ fightCam(0, 0, 0, 420, [a, b]); return; } camPushed = true; fightFrame([a, b], motionOn ? FIGHT_LOOK.blowZoomMax : FIGHT_LOOK.pairZoomMax, FIGHT_LOOK.blowMs); }
+function settleCam(){ if (!cbt || !camPushed) return; camPushed = null; if (cbt.yourCam) return;
+  const a = activeActor(); if (a && a.kind === "pc" && !a.down && !cbt.quick && (canControl(a) || oneFightWaitsFor(a))){ const m = FIGHT_LOOK.turnMs; FIGHT_LOOK.turnMs = FIGHT_LOOK.backMs; try { turnCam(a); } finally { FIGHT_LOOK.turnMs = m; } } }
 // a bolt of light from the caster to the target, then the hit
 // The fighting-game swipe (Sam, 2026-10-13: "street fighter like swipes during melee attacks"): a thick
 // crescent that sweeps across the target in ~7 frames, a brighter core inside a coloured blade, with
@@ -15919,7 +16085,8 @@ function hitActor(list, w){
   for (const a of list){
     if (a.offStage || a.alpha < .05) continue;
     const m = SPR[a.id].json, T = w.art && ovDrawn(a) ? ovActorT(a) : null, sc = actorScale(a) * (T ? T.k : 1), hw = 34 * sc * (m.cell[0] / 128), hh = 105 * sc * (m.cell[1] / 128);
-    const ax = T ? T.q.x : a.x, ay = T ? T.q.y : a.y, W = T ? w.art : w;   // in the close-up: tested where it is drawn
+    const fo = fanOf(a) || {x: 0, y: 0};                                    // fanned apart in a fight (fanSolve): tested where it is drawn
+    const ax = (T ? T.q.x + fo.x * T.k : a.x + fo.x), ay = (T ? T.q.y + fo.y * T.k : a.y + fo.y), W = T ? w.art : w;   // in the close-up: tested where it is drawn
     if (W.x > ax - hw && W.x < ax + hw && W.y > ay - hh && W.y < ay + 10){ const d = Math.abs(W.y - (ay - hh / 2)); if (d < bd){ bd = d; best = a; } }
   }
   return best;
@@ -15949,6 +16116,7 @@ stage.addEventListener("pointermove", e => {
   const w = s2w(e.clientX, e.clientY), r = stage.getBoundingClientRect(); aimW = w;
   hoverZone = null;   // set again below when the pointer is over one; never left over from an earlier move
   hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? (hitActor(foes, w) || hitActor(heroes(), w)) : null;
+  if (FIGHT.mirror) oneFightHover(w);
   { const ai = aimTargetFor(hoverActor), key = ai ? ai.t.id : null; if (key !== aimTickKey){ aimTickKey = key; if (ai) aimTick(ai.boon, key); } }
   hoverObj = mode === "explore" && !hoverActor ? interactAt(w) : null;
   hoverProp = mode === "explore" && !hoverActor && !hoverObj ? propAt(w) : null;
@@ -15998,6 +16166,7 @@ function wheelScrolls(el){ for (; el && el !== stage; el = el.parentElement){ co
 stage.addEventListener("wheel", e => { if (e.target.closest(".checkcard,.icard,.inv,.dm") || wheelScrolls(e.target)) return; e.preventDefault(); if (mode === "talk" || mode === "dialog") return; const r = stage.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, {passive: false});
 function click(w){
   if (timeStopped) return;
+  if (FIGHT.mirror && mode === "combat"){ oneFightMirrorClick(w); return; }   // ONE FIGHT: aimed here, played there
   if (dmPlacing){ placePile(w); return; }
   if (handClick(w)) return;   // steering or aiming the Mage Hand
   if (mode === "explore"){
@@ -16016,6 +16185,8 @@ function click(w){
     if (n && n.body){ walkTo(nearNpc(n), () => openBody(n)); return; }
     if (n && POCKETED(n.id) && !n.hostile){ walkTo(nearNpc(n), () => openPockets(n)); return; }
     if (n){ if (wantsWord(n) || canTalkTo(n)) walkTo(nearNpc(n), () => approach(n)); else ambient(n); return; }
+    // a fight ended with you standing in this doorway (fightLetsGo): a click on it goes through
+    { const zx = zoneAt(w.x, w.y); if (zx && zx === fightDoor && zx === ackZone && zx === zoneAt(leader.x, leader.y) && canControl(leader) && !leader.path.length){ ackZone = fightDoor = null; return; } }
     const p = nearestWalkable(w.x, w.y); marker = {x: p.x, y: p.y, t: now}; walkTo(p);
   } else if (mode === "combat"){ if (dmPlace){ placeDmCloud(w); return; } combatClick(w); }
 }
@@ -16085,6 +16256,8 @@ $("zLight").onclick = () => { lightLevel = {off: "dim", dim: "dark", dark: "off"
 renderLightBtn();
 addEventListener("keydown", e => {
   if (e.target.closest && e.target.closest("input,select")) return;
+  if (mode === "combat" && FIGHT.mirror && oneFightKey(e)) return;                                   // ONE FIGHT: your turn, played there
+  if (mode === "combat" && FIGHT.auth && oneFightWaitsFor(activeActor()) && (e.code === "Enter" || MOVE_KEYS.has(e.code))) return;   // not this screen's hero to move
   if (e.key === "Escape" && dmPlacing){ dmPlacing = null; stage.classList.remove("placing"); hint(""); return; }
   if (e.code === "KeyI" && (mode === "explore" || mode === "combat")){ e.preventDefault(); toggleBag(); return; }
   if (e.key === "Escape" && bagOpen()){ toggleBag(false); return; }
@@ -16309,6 +16482,13 @@ async function followCombatFlag(flag){
     for (let i = picked.length - 1; i >= 0; i--) if (picked.indexOf(picked[i]) !== i) picked.splice(i, 1);   // two "Drow guard"s name the same two
     if (!picked.length){ log(`<em>${esc(flag.label || "Initiative!")}</em> Nobody he named is still standing on this plate.`); return; }
     for (const f of picked){ f.hp = f.hp ?? (flag.foes.find(x => x.slug === f.id) || {}).hp; }
+    // ONE FIGHT: every screen hears the flag at once; the DM's opens the fight, the others look a moment later for it
+    if (fightShared() && !FIGHT.auth){
+      if (!isDm()) await new Promise(r => setTimeout(r, 1200 + Math.random() * 600));
+      const lv = await fightLiveNow();
+      if (lv && owSame(lv.plate, cur) && lv.auth_key !== OW.key){ talkGivesWay(); if (mode === "explore") enterMirror(lv); return; }
+      if (mode !== "explore") return;
+    }
     startCombat.flagMood = flag.music || null;          // Malachar may name the mood; otherwise the odds decide
     startCombat(picked, flag.label || "Malachar calls for initiative.");
     if (cbt) cbt.fromFlag = true;
@@ -17399,7 +17579,8 @@ function openBagVisit(){
 }
 if (BAG_VISIT.on){ document.body.classList.add("bagOpen"); setTimeout(openBagVisit, APP ? 1800 : 300); }
 // what this hero may do with the bag right now: anything out of a fight, only on their own turn in one
-function bagCan(a){ return canControl(a) && (!inFightNow() || (a === activeActor() && !combatBusy && !a.down)); }
+function bagCan(a){ if (FIGHT.mirror) return canControl(a) && a === activeActor() && myTurnHere() && !a.down;   // ONE FIGHT: your bag, your turn, played there
+  return canControl(a) && (!inFightNow() || (a === activeActor() && !combatBusy && !a.down)); }
 function renderBag(){
   const a = bagHero(), g = GEAR[a.id] || (GEAR[a.id] = {carried: [], doll: [], main: null, off: null});
   const fight = inFightNow(), mine = bagCan(a), c = a.c;
@@ -18019,8 +18200,16 @@ async function playBuppidoRises(t){
   await wait(R.stirMs);
 
   // IT CLIMBS OUT, on the prebuilt sheet: 21 frames at 12 fps, with the `undead-breach` sting its sprite.json names.
-  const z = mkActor(R.foe, g.x, g.y, "foe", {hostile: true, face: faceOf((leader ? leader.x : g.x) - g.x, (leader ? leader.y : g.y) - g.y), home: {x: g.x, y: g.y}});
-  npcs.push(z); actors.push(z);
+  // ONE FIGHT (2026-11-10): the rise takes ~10 s, and a fight can open in the meantime. Then startCombat() below is a
+  // no-op and the zombie was left standing on this screen alone, outside the fight, unseen by every other screen. So:
+  // while this screen is only SHOWING someone else's fight it waits for that fight to end; while it RUNS a fight, the
+  // zombie joins that fight, which the fight sync then carries to every screen.
+  for (let i = 0; i < 600 && FIGHT.mirror; i++) await wait(500);
+  const joining = mode === "combat" && cbt && !FIGHT.mirror;
+  const z = joining ? foeJoins(R.foe, {x: g.x, y: g.y}) : mkActor(R.foe, g.x, g.y, "foe", {hostile: true, face: faceOf((leader ? leader.x : g.x) - g.x, (leader ? leader.y : g.y) - g.y), home: {x: g.x, y: g.y}});
+  if (!z) return;
+  z.hostile = true; z.home = {x: g.x, y: g.y};
+  npcs.push(z); if (!joining) actors.push(z);
   shake(9); bank("walk:undead-breach", 1);
   if (SPR[z.id] && SPR[z.id].img.emerge) playOnce(z, "emerge", () => setAnim(z, "idle")); else setAnim(z, "idle");
   await wait(R.emergeMs);
@@ -18041,6 +18230,7 @@ async function playBuppidoRises(t){
   //   NO ALLIES: a dwarf, an orc, a quaggoth and a drow will all swing at a guard. None of them swings at a corpse
   //     that just stood up — they run, like every other bystander in the pen (Sam's bystander ruling, 2026-10-28),
   //     and the gate is locked. That is the difference between nine attackers and the party on its own.
+  if (joining){ if (inFight(z)) log(`<b>Something has climbed out of Buppido's grave</b> and joins the fight.`); return; }
   startCombat([z], "something has climbed out of Buppido's grave",
               {noAllies: true, surprised: [...party, ...npcs.filter(n => actors.includes(n) && n !== z)]});
 }
@@ -18668,13 +18858,13 @@ function step(a, dt, speed){
   else { a.x += dx / d * sp; a.y += dy / d * sp; a.face = faceOf(dx, dy); setAnim(a, a.walkAs && hasSheet(a, a.walkAs) ? a.walkAs : "walk"); }   // walkAs: Hard Labor's carry
 }
 function update(dt){
-  if (cbt && poisonZones.length) tickPoisonZones();
-  if (cbt && guardianAuras.length) tickGuardians();
+  if (cbt && !cbt.mirror && poisonZones.length) tickPoisonZones();
+  if (cbt && !cbt.mirror && guardianAuras.length) tickGuardians();
   tickFootsteps();
   tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt);
   redSigilSeen();                       // a drow inside the pen reads the red scar: the fight starts once, however they got in
   tickFungus();
-  ovTick(); tickChasmWebs();
+  ovTick(); tickChasmWebs(); camKeep();
   if (camTween){
     const k = Math.min(1, (now - camTween.t0) / camTween.ms), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
     view.z = camTween.from.z + (camTween.to.z - camTween.from.z) * e;
@@ -18713,7 +18903,7 @@ function update(dt){
     // exits
     // only a hero this screen drives walks it through an exit: a hero another screen drives (seen walking off on its
     // own, SPLIT PARTY) must never carry this screen's party with it
-    const z = mode === "explore" && !leader.walkIn && !owRemote(leader) ? zoneAt(leader.x, leader.y) : null;
+    const z = mode === "explore" && !cbt && !leader.walkIn && !owRemote(leader) ? zoneAt(leader.x, leader.y) : null;   // (!cbt: A LIVE FIGHT HOLDS ITS PLATE, rule 1)
     if (z && z !== ackZone){ ackZone = z; triggerZone(z); }
     else if (!z && !leader.walkIn) ackZone = null;
     // ambush
@@ -18750,7 +18940,7 @@ function update(dt){
     }
   }
   // in a fight, bodies keep their distance
-  if (mode === "combat"){
+  if (mode === "combat" && !FIGHT.mirror){
     const bodies = actors.filter(a => a.kind !== "npc" && !a.fading);
     for (let i = 0; i < bodies.length; i++) for (let j = i + 1; j < bodies.length; j++){
       const a = bodies[i], b = bodies[j], dx = b.x - a.x, dy = b.y - a.y, d = Math.hypot(dx, dy);
@@ -18764,7 +18954,7 @@ function update(dt){
         if (!a.once && !aw && walkable(a.x - ux * push, a.y - uy * push)){ a.x -= ux * push; a.y -= uy * push; } }
     }
   }
-  if (mode === "combat" && !combatBusy && canControl(activeActor())) keyboardMove(activeActor(), dt);
+  if (mode === "combat" && !combatBusy && !FIGHT.mirror && canControl(activeActor()) && !oneFightWaitsFor(activeActor())) keyboardMove(activeActor(), dt);
   // idle life: whoever you're not moving potters about, like at camp
   if (mode === "explore") for (const a of [...party, ...npcs]) idleLife(a);
   if (now - (renderExploreBar.at || 0) > 250){ renderExploreBar.at = now; renderExploreBar(); }
@@ -18953,7 +19143,7 @@ function owApplyHero(slug, h){
   // SPLIT PARTY, FIGHTS: a hero who walks onto this plate while this screen's fight is on joins it — rolls initiative and
   // acts from the next round (5E: you enter an encounter when you arrive). They fight on their own instincts here, like
   // every hero another player drives (fights are not shared between screens yet).
-  if (mode === "combat" && cbt && !a && PARTY.includes(slug) && SPR[slug] && h.plate != null && owSame(h.plate, cur)){
+  if (mode === "combat" && cbt && !cbt.mirror && !a && PARTY.includes(slug) && SPR[slug] && h.plate != null && owSame(h.plate, cur)){
     joinFight(slug, h); return;
   }
   // SPLIT PARTY: a hero someone else drives walks off this plate, or onto it
@@ -19021,7 +19211,7 @@ function owEntered(force){
 }
 // The modes a screen can be pulled to another plate from: walking, a dialog or a conversation open. Not mid-fight,
 // not mid-crossing, not while loading — those finish first and the plate follows (OW.pendingPlate).
-const OW_CAN_MOVE = () => mode === "explore" || mode === "dialog" || mode === "talk";
+const OW_CAN_MOVE = () => !cbt && (mode === "explore" || mode === "dialog" || mode === "talk");   // !cbt: a card open mid-fight is still the fight
 async function owGoTo(plate, t){
   plate = owPlate(plate);
   OW.applyingPlate = true;
@@ -19105,6 +19295,8 @@ function owCheckPlate(){
   if (p == null || owSame(p, cur) || !SPEC[p] || OW.applyingPlate) return;
   if (Date.now() < OW.localTravelUntil && mode === "travel") return;
   if (!OW_CAN_MOVE()) return;                                         // after the fight / the crossing
+  // a move that waited and has gone stale is dropped: the party's plate is no longer that one and nobody else stands there
+  if (OW.pendingPlate != null && OW.plate != null && !owSame(p, OW.plate) && !PARTY.some(id => id !== mySlug && heroAt[id] && owSame(heroAt[id].plate, p))){ OW.pendingPlate = null; return; }
   OW.pendingPlate = null; owGoTo(p, null);
 }
 // --- the heartbeat: the failsafe ---
@@ -19142,6 +19334,389 @@ async function owResync(){
     if (w.plate != null && !owSame(w.plate, cur) && !ownView()){ OW.pendingPlate = owPlate(w.plate); owCheckPlate(); }
   } catch (e) {} finally { OW.resyncing = false; }
 }
+// ---------- ONE FIGHT (Sam, 2026-11-10: "fight MUST be synced and wait for other players actions, and have complete
+// parity. Make sure of this.") ----------
+// Before this, every screen at the table ran its own copy of a fight: its own dice, its own drow choices, and another
+// player's hero fighting "on its own instincts". Now one screen RUNS the fight (the AUTHORITY: the screen that opened
+// it, granted by /api/walk-fight so two screens never both do) and every other screen on that plate SHOWS it (a MIRROR):
+//   - STATE. Four times a second the authority sends what changed: every fighter's place, pose, hit points, conditions,
+//     slots and the rest of its fight sheet; the turn order, the round and whose turn it is; the standing zones (clouds,
+//     guardians, ice). A mirror runs no fight logic at all — it draws exactly that. Every 2.5 s it sends the whole of it.
+//   - WHAT HAPPENED. Every log line, damage number, bubble, sound, shake, flash, spell effect, bolt, arrow and spark the
+//     authority makes is recorded where it is made (RELAY_FNS, RELAY_ARRAYS) and played on every mirror in order. Nothing
+//     is rolled twice, so nothing can come out different.
+//   - YOUR TURN. The hero's driver (One World's: the player while their screen is connected, else the DM's map, else the
+//     lowest seat) gets the command list on THEIR screen — the authority's own list, as it builds it, rebuilt there — and
+//     what they press, click on the map, hover over to aim, or answer in a reaction card (an opportunity attack, a
+//     readied strike, Hellish Rebuke) is sent to the authority and played there as if pressed there. The fight WAITS for
+//     them: no hero fights on its own while its player is at the table.
+//   - THE END. The authority ends it once; the mirrors put the dead where they fell and stand the rest down as it did.
+// Without the tables (migration unapplied), with One World off, or on a test copy, nothing changes: each screen fights alone.
+const FIGHT = {id: null, auth: false, mirror: false, plate: null, live: null, since: 0, inSince: 0, out: [], sent: {}, fullAt: 0, menuSig: "", dlgSig: "",
+  serial: 0, dlgs: {}, dlgSeq: 0, promptFor: null, applying: null, polling: false, lastOk: 0, failed: false, hoverAt: 0, pendingActors: new Set(), endSent: false};
+const RELAY = {depth: 0, orig: {}, imgs: {}};
+const RELAY_FNS = ["log", "narrate", "popText", "bark", "shake", "hitstop", "redFlash", "critBeat", "toast", "victoryBanner", "triumph", "spawnFx", "slowmo",
+  "pairCam", "pushCam", "settleCam",    // the camera's cues (HOW A FIGHT IS STAGED): each screen frames the same two fighters for itself
+  "turnCall", "turnWhat"];              // whose turn, what they do and to whom (the banner and the target's ring): a screen showing the fight had neither
+const fightOn = () => !!(FIGHT.id && (FIGHT.auth || FIGHT.mirror));
+const relayOn = () => FIGHT.auth && FIGHT.id && !RELAY.depth;
+// --- who is who between screens: a hero by name; a plate's person by where the plate stands them; a newcomer by number
+function akey(a){
+  if (!a) return null;
+  if (a.fk) return a.fk;
+  if (a.kind === "pc") return a.fk = a.id;
+  if (a.post && !a.spawned) return a.fk = `${a.id}@${Math.round(a.post.x)},${Math.round(a.post.y)}`;
+  return a.fk = `${a.id}#${++FIGHT.serial}`;
+}
+function byKey(k){ return k == null ? null : (actors.find(a => akey(a) === k) || npcs.find(a => akey(a) === k) || party.find(a => akey(a) === k) || null); }
+const isActor = v => v && typeof v === "object" && typeof v.x === "number" && typeof v.id === "string" && typeof v.kind === "string" && "face" in v;
+const TIME_KEY = /^(t0|t|until|end|born|start|startAt|hitAt|dieAt|t1|ends|expires|at0)$/;
+// a value as data another screen can rebuild: actors by key, sets as lists, pictures by address, clocks as "this long from now"
+function enc(v, depth = 0, key = ""){
+  if (v == null || typeof v === "boolean" || typeof v === "string") return v;
+  if (typeof v === "number") return !isFinite(v) ? 0 : (TIME_KEY.test(key) && Math.abs(v - now) < 600000 ? {$t: Math.round(v - now)} : v);
+  if (typeof v === "function") return {$fn: 1};
+  if (depth > 5) return null;
+  if (isActor(v)) return {$a: akey(v)};
+  if (typeof HTMLImageElement !== "undefined" && v instanceof HTMLImageElement) return v.src ? {$img: v.src} : null;
+  if (v instanceof Set) return {$set: [...v].map(x => enc(x, depth + 1))};
+  if (Array.isArray(v)) return v.map(x => enc(x, depth + 1));
+  if (v instanceof Map || v instanceof Promise || (typeof Node !== "undefined" && v instanceof Node) || ArrayBuffer.isView(v) || v instanceof HTMLCanvasElement) return null;
+  const o = {}; for (const k of Object.keys(v)){ if (k === "sheet") continue; const e = enc(v[k], depth + 1, k); if (e !== undefined) o[k] = e; } return o;
+}
+function dec(v, miss){
+  if (v == null || typeof v !== "object") return v;
+  if (Array.isArray(v)) return v.map(x => dec(x, miss));
+  if ("$t" in v) return now + v.$t;
+  if (v.$fn) return () => {};
+  if ("$a" in v){ const a = byKey(v.$a); if (!a && miss) miss.n++; return a; }
+  if (v.$img){ let i = RELAY.imgs[v.$img]; if (!i){ i = RELAY.imgs[v.$img] = new Image(); i.src = v.$img; } return i; }
+  if (v.$set) return new Set(v.$set.map(x => dec(x, miss)));
+  const o = {}; for (const k of Object.keys(v)) o[k] = dec(v[k], miss); return o;
+}
+// --- WHAT HAPPENED: recorded on the authority where it is made, played on the mirrors
+function relayInstall(){
+  for (const n of RELAY_FNS){
+    const f = window[n]; if (typeof f !== "function" || RELAY.orig[n]) continue;
+    RELAY.orig[n] = f;
+    const w = function(...args){ if (relayOn()) FIGHT.out.push({f: n, a: args.map(x => enc(x))}); RELAY.depth++; try { return f.apply(this, args); } finally { RELAY.depth--; } };
+    Object.assign(w, f);                                                   // log.recent and friends ride along
+    try { eval(`${n} = w`); } catch (e) {}
+  }
+  for (const [n, arr] of Object.entries(relayArrays())){
+    if (arr.__relay) continue; arr.__relay = true;
+    arr.push = function(...items){ if (relayOn()) for (const it of items) FIGHT.out.push({p: n, v: enc(it)}); return Array.prototype.push.apply(this, items); };
+  }
+}
+function relayArrays(){ return {sparks, flights, shots, stuck, notes, deathBits, bloodMarks, lightFlashes, critBadges, crimPuffs, crimGhosts}; }
+function relaySound(name, gain){ if (relayOn()) FIGHT.out.push({f: "bank", a: [name, gain]}); }
+function relayPlay(ev){
+  RELAY.depth++;
+  try {
+    if (ev.f === "bank"){ bank(ev.a[0], ev.a[1]); return; }
+    if (ev.f){
+      const fn = RELAY.orig[ev.f] || window[ev.f]; if (typeof fn !== "function") return;
+      const miss = {n: 0}, args = ev.a.map(x => dec(x, miss)); if (miss.n) return;           // someone this screen does not have: skip it
+      if (ev.f === "spawnFx" && args[1] && !args[1].until && args[1].loop !== false) args[1].until = now + 2500;   // a loop the authority ends later ends here on its own
+      fn(...args); return;
+    }
+    if (ev.p){ const arr = relayArrays()[ev.p]; if (!arr) return; const miss = {n: 0}, it = dec(ev.v, miss); if (miss.n || !it) return;
+      if (ev.p === "shots" && typeof it.land !== "function") it.land = () => {};          // the authority hangs the landing on after the push
+      if (ev.p === "flights" && typeof it.then !== "function") it.then = () => {};
+      Array.prototype.push.call(arr, it); }
+  } catch (e) { console.warn("[one-fight] could not play", ev.f || ev.p, e); }
+  finally { RELAY.depth--; }
+}
+// --- the fight as data
+const ACTOR_KEYS = ["id", "kind", "x", "y", "face", "alpha", "down", "ko", "fading", "flash", "flashCol", "ally", "bystander", "left", "body", "hostile", "spawned", "parley", "offStage", "riding", "climbing"];
+function snapActor(a, noC){
+  const s = {k: akey(a)}; for (const k of ACTOR_KEYS) if (a[k] !== undefined) s[k] = typeof a[k] === "number" ? Math.round(a[k] * 10) / 10 : a[k];
+  s.anim = a.anim; s.age = Math.round(now - (a.t0 || now)); if (a.once) s.ol = Math.round(a.once.end - now);
+  if (a.c && !noC) s.c = enc(a.c);
+  return s;
+}
+function fightActors(){ return [...new Set([...party, ...foes, ...((cbt && cbt.allies) || []), ...((cbt && cbt.bystanders) || []), ...npcs.filter(n => n.body && actors.includes(n))])].filter(a => actors.includes(a) || foes.includes(a)); }
+const ZONE_NAMES = ["poisonZones", "daggerZones", "fireSpheres", "spiritWeapons", "guardianAuras", "icePatches", "aoeMarks"];
+function zonesNow(){ const z = {}; for (const n of ZONE_NAMES) try { z[n] = enc(eval(n)); } catch (e) {} return z; }
+function menuNow(){
+  const a = activeActor(); if (!a || a.kind !== "pc" || !cbt) return null;
+  const drv = owDriver(a); if (drv == null || drv === OW.key) return null;
+  const m = $("cbtMenu"), rows = [];
+  if (cbt.phase === "menu") for (const el of m.children){
+    if (el.tagName === "BUTTON"){ const img = el.querySelector("img"); rows.push({b: 1, label: (el.querySelector("span") || el).textContent, hint: (el.querySelector("small") || {}).textContent || "", cls: el.className, off: el.disabled, ico: img ? img.getAttribute("src") : null, glyph: img ? null : (el.querySelector(".glyph") || {}).textContent || "·", cat: el.dataset.cat || ""}); }
+    else if (el.classList.contains("sep")) rows.push({sep: 1});
+    else if (el.classList.contains("grp")) rows.push({grp: el.textContent});
+  }
+  return {for: akey(a), drv, phase: cbt.phase, rows, hint: $("cbtHint").hidden ? "" : $("cbtHint").textContent};
+}
+// --- THE AUTHORITY
+async function fightPost(op, extra){ const a = owAuth(); if (!a) throw new Error("no seat");
+  const r = await fetch("/api/walk-fight", {method: "POST", headers: {"Content-Type": "application/json", ...a.headers}, body: JSON.stringify({op, ...a.body, ...extra})});
+  const j = await r.json().catch(() => ({})); if (!r.ok) { const e = new Error(j.error || String(r.status)); e.status = r.status; e.ended = j.ended; throw e; } return j; }
+async function fightGet(q){ const r = await fetch("/api/walk-fight" + q, {cache: "no-store"}); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.error || r.status); return j; }
+const fightShared = () => OW.on && APP && !SANDBOX && !FIGHT.failed;
+// called as a fight opens on this screen: ask to run it; if another screen already does, show theirs instead
+async function oneFightOpened(){
+  if (!fightShared() || FIGHT.mirror) return;
+  const plate = String(cur);
+  try {
+    const j = await fightPost("open", {plate});
+    if (j.auth){ Object.assign(FIGHT, {id: j.fight.id, auth: true, mirror: false, plate, out: [], sent: {}, sentC: {}, fullAt: 0, inSince: 0, menuSig: "", dlgSig: "", dlgs: {}, endSent: false});
+      relayInstall(); fightTick(); return; }
+    if (j.fight && owSame(j.fight.plate, cur)){ abandonLocalFight(); enterMirror(j.fight); }
+  } catch (e) { if (e.status === 503) FIGHT.failed = true; }        // no tables yet: this screen fights alone, as before
+}
+function fightTick(){
+  if (!FIGHT.auth || !FIGHT.id) return;
+  try { fightTickBody(); } catch (e) { console.warn("[one-fight] tick", e && e.stack ? e.stack.slice(0, 300) : e); setTimeout(fightTick, 250); }
+}
+function fightTickBody(){
+  fightWaitBadge();
+  const full = now - FIGHT.fullAt > 2500, actorsOut = [], gone = [];
+  const list = fightActors(), keys = new Set(list.map(akey));
+  // the pose (place, frame) and the fight sheet are compared apart: a step does not resend hit points and slots
+  for (const a of list){
+    const s = snapActor(a, true), k = s.k, pj = JSON.stringify({...s, age: Math.round(s.age / 500)}), c = a.c ? enc(a.c) : null, cj = c ? JSON.stringify(c) : "";
+    FIGHT.sentC ||= {};
+    const poseNew = full || FIGHT.sent[k] !== pj, cNew = full || FIGHT.sentC[k] !== cj;
+    if (poseNew || cNew){ if (cNew && c) s.c = c; actorsOut.push(s); FIGHT.sent[k] = pj; FIGHT.sentC[k] = cj; }
+  }
+  for (const k of Object.keys(FIGHT.sent)) if (!keys.has(k)){ gone.push(k); delete FIGHT.sent[k]; if (FIGHT.sentC) delete FIGHT.sentC[k]; }
+  const body = {t: Date.now()};
+  if (actorsOut.length) body.actors = actorsOut;
+  if (gone.length) body.gone = gone;
+  if (full) FIGHT.fullAt = now;
+  if (cbt){ const c = {id: cbt.id, round: cbt.round, idx: cbt.idx, order: cbt.order.map(akey), phase: cbt.phase, pend: enc(cbt.pend), boss: akey(cbt.boss), quick: !!cbt.quick, allies: (cbt.allies || []).map(akey), bystanders: (cbt.bystanders || []).map(akey)};
+    const j = JSON.stringify(c); if (full || j !== FIGHT.cbtSig){ body.cbt = c; FIGHT.cbtSig = j; } }
+  { const z = zonesNow(), j = JSON.stringify(z); if (full || j !== FIGHT.zoneSig){ body.zones = z; FIGHT.zoneSig = j; } }
+  { const m = menuNow(), j = JSON.stringify(m); if (full || j !== FIGHT.menuSig){ body.menu = m; FIGHT.menuSig = j; } }
+  { const d = Object.values(FIGHT.dlgs).map(x => x.pub), j = JSON.stringify(d); if (full || j !== FIGHT.dlgSig){ body.dlgs = d; FIGHT.dlgSig = j; } }
+  if (FIGHT.out.length){ body.ev = FIGHT.out; FIGHT.out = []; }
+  const send = Object.keys(body).length > 1 ? fightPost("tick", {fight: FIGHT.id, body}).catch(e => { if (e.ended) fightLetGo(); }) : Promise.resolve();
+  send.finally(() => fightInputs().finally(() => { if (FIGHT.auth) setTimeout(fightTick, 250); }));
+}
+async function fightInputs(){
+  try {
+    const j = await fightGet(`?fight=${FIGHT.id}&kind=in&since=${FIGHT.inSince}`);
+    for (const m of j.msgs || []){ FIGHT.inSince = Math.max(FIGHT.inSince, m.id); fightInput(m.by_key, m.body || {}); }
+  } catch (e) {}
+}
+// a player's press, played here as if pressed here — only from the screen that drives the hero whose turn it is
+function fightInput(by, b){
+  if (!cbt) return;
+  if (b.t === "dlg"){ const d = FIGHT.dlgs[b.id]; if (!d || d.pub.drv !== by) return; const fn = d.fns[b.i]; delete FIGHT.dlgs[b.id]; if (fn){ FIGHT.applying = d.who; try { fn(); } finally { FIGHT.applying = null; } } return; }
+  const a = activeActor(); if (!a || a.kind !== "pc" || owDriver(a) !== by) return;
+  FIGHT.applying = a;
+  try {
+    if (b.t === "btn" && cbt.phase === "menu"){
+      const bs = [...$("cbtMenu").querySelectorAll("button")], el = bs[b.i];
+      if (el && !el.disabled && (el.querySelector("span") || el).textContent === b.label) el.click();
+    } else if (b.t === "click" && typeof b.x === "number"){
+      const on = b.on ? byKey(b.on) : null;
+      click(on && actors.includes(on) ? bodyPoint(on) : {x: b.x, y: b.y});
+    }
+    else if (b.t === "rpc" && BAG_RPC.includes(b.fn) && byKey(b.a) === a){
+      const fn = window[b.fn], rest = (b.rest || []).map(x => dec(x));
+      if (b.fn === "removeFrom"){ if (b.it === null && rest.length) fn(a, ...rest); }
+      else { const it = itemFrom(a, b.it); if (it) fn(a, it, ...rest); }
+    }
+    else if (b.t === "hover" && typeof b.x === "number"){ aimW = {x: b.x, y: b.y}; hoverActor = hitActor(foes, aimW) || hitActor(heroes(), aimW); }
+    else if (b.t === "key"){
+      if (b.k === "Escape") cancelAim();
+      else if (b.k === "Enter" && cbt.phase === "menu" && !combatBusy) nextTurn();
+      else if (b.k === "Enter" && cbt.phase === "target" && cbt.pend && cbt.pend.darts && cbt.pend.darts.length) fireDarts(a);
+    }
+  } finally { FIGHT.applying = null; }
+}
+// the authority's own screen while it waits: who it is waiting for; and if that player's screen has gone (One World hands
+// the hero to the DM's map or the lowest seat), the menu opens here instead
+function fightWaitBadge(){
+  const a = activeActor(); let el = $("fightWait");
+  const waiting = cbt && a && a.kind === "pc" && !a.down && oneFightWaitsFor(a);
+  if (cbt && FIGHT.waitingFor && a === FIGHT.waitingFor && !waiting && cbt.phase === "menu" && $("cbtMenu").hidden){ FIGHT.waitingFor = null; openMenu(a); }
+  if (waiting) FIGHT.waitingFor = a;
+  if (!el && waiting){ el = document.createElement("div"); el.id = "fightWait"; el.style.cssText = "position:absolute;left:50%;bottom:120px;transform:translateX(-50%);z-index:40;padding:6px 14px;border-radius:6px;background:rgba(20,16,30,.86);border:1px solid #9a8cff;color:#e6e0ff;font:600 13px/1.2 Georgia,serif;pointer-events:none"; stage.appendChild(el); }
+  if (el){ el.hidden = !waiting; if (waiting) el.textContent = `Waiting for ${fname(a)} — their player is choosing on their own screen.`; }
+}
+// whose turn the authority waits on: a hero someone else at the table drives
+function oneFightWaitsFor(a){ if (!FIGHT.auth || !a || a.kind !== "pc") return false; const d = owDriver(a); return d != null && d !== OW.key; }
+// a reaction card for a hero driven elsewhere goes to that screen; the authority keeps the answers
+function askable(p){ const ok = canControl(p) || oneFightWaitsFor(p); FIGHT.promptFor = ok && !canControl(p) ? p : null; return ok; }
+function routeDialog(o){
+  const p = FIGHT.promptFor; FIGHT.promptFor = null;
+  const id = `d${++FIGHT.dlgSeq}`;
+  FIGHT.dlgs[id] = {who: p, fns: o.buttons.map(b => b.fn), pub: {id, for: akey(p), drv: owDriver(p), title: o.title, body: o.body, src: o.src || "", labels: o.buttons.map(b => b.label)}};
+  hint(`Waiting for ${fname(p)}…`);
+}
+function oneFightEnded(won){
+  if (!FIGHT.auth || !FIGHT.id || FIGHT.endSent) return;
+  FIGHT.endSent = true;
+  const final = [...party, ...npcs].filter(a => actors.includes(a) || npcs.includes(a)).map(snapActor);
+  const body = {won, actors: final, ev: FIGHT.out}; FIGHT.out = [];
+  const id = FIGHT.id; FIGHT.auth = false; FIGHT.id = null;
+  fightPost("end", {fight: id, body}).catch(() => {});
+}
+function fightLetGo(){ FIGHT.auth = false; FIGHT.mirror = false; FIGHT.id = null; }
+// the loser of a race to open: this screen started the same fight a moment late; it goes quietly and shows theirs
+function abandonLocalFight(){
+  if (mode !== "combat" || !cbt) return;
+  for (const f of foes) if (npcs.includes(f) || f.wasHostile !== undefined){ f.kind = "npc"; f.hostile = !!f.wasHostile; if (!npcs.includes(f)) npcs.push(f); }
+  actors = actors.filter(a => a.kind !== "foe"); foes = [];
+  closeMenu(); cbt = null; combatBusy = false; mode = "explore";
+}
+// --- A MIRROR
+function enterMirror(f){
+  if (FIGHT.mirror && FIGHT.id === f.id) return;
+  Object.assign(FIGHT, {id: f.id, mirror: true, auth: false, plate: String(f.plate), since: 0, dlgShown: null});
+  mirrorBagInstall();
+  mode = "combat"; combatBusy = false;
+  cbt = {mirror: true, order: [], idx: -1, round: 0, phase: "idle", pend: null, allies: [], bystanders: [], home: {z: view.z, cx: NAT_W / 2, cy: NAT_H / 2}, id: f.id};
+  [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); });
+  cbtLogBegin(); $("combat").hidden = false; $("cbtMenu").hidden = true; stage.classList.add("fight"); $("vignette").classList.add("on"); setTrack("combat");
+  log(`<em>A fight — shown here as it is fought on ${f.auth_key === "dm" ? "the DM's" : "another"} screen.</em>`);
+  mirrorPoll();
+}
+async function mirrorPoll(){
+  if (!FIGHT.mirror || !FIGHT.id) return;
+  try {
+    const j = await fightGet(`?fight=${FIGHT.id}&kind=tick&since=${FIGHT.since}`);
+    for (const m of j.msgs || []){ FIGHT.since = Math.max(FIGHT.since, m.id); if (m.kind === "end"){ mirrorEnd(m.body || {}); return; } await mirrorApply(m.body || {}); }
+    if (j.fight && j.fight.ended_at && !(j.msgs || []).some(m => m.kind === "end")){ mirrorEnd({}); return; }
+    FIGHT.lastOk = now;
+  } catch (e) { console.warn("[one-fight] mirror", e && e.stack ? e.stack.slice(0, 300) : e); }
+  setTimeout(mirrorPoll, 250);
+}
+async function mirrorActor(s){
+  let a = byKey(s.k);
+  if (!a){
+    if (s.kind === "pc") return null;                                 // a hero who is not on this plate here: One World brings them
+    if (!SPR[s.id]){ if (!FIGHT.pendingActors.has(s.id)){ FIGHT.pendingActors.add(s.id); await loadSpriteManifest(s.id); FIGHT.pendingActors.delete(s.id); } if (!SPR[s.id]) return null; }
+    a = mkActor(s.id, s.x, s.y, s.kind || "foe", {alpha: s.alpha ?? 1}); a.fk = s.k; a.path = [];
+    if (a.kind === "foe") foes.push(a); actors.push(a);
+  }
+  for (const k of ACTOR_KEYS) if (k !== "x" && k !== "y" && s[k] !== undefined) a[k] = s[k];
+  const d = Math.hypot(s.x - a.x, s.y - a.y);
+  if (d > 400 * node.scale || a.down){ a.x = s.x; a.y = s.y; a.path = []; } else if (d > 3) a.path = [{x: s.x, y: s.y}];
+  if (s.anim && (s.anim !== a.anim || Math.abs((now - a.t0) - s.age) > 400)){ a.anim = s.anim; a.t0 = now - s.age; }
+  a.once = s.ol > 0 ? {end: now + s.ol, cb: null} : null;
+  if (s.c){ const sheet = a.c && a.c.sheet || (fighterFor(a) || {}).sheet; const c = dec(s.c); c.sheet = sheet; a.c = c; }
+  if (a.kind === "foe" && !foes.includes(a)){ foes.push(a); npcs = npcs.filter(n => n !== a); }
+  if (a.kind === "foe" && !actors.includes(a)) actors.push(a);
+  return a;
+}
+async function mirrorApply(b){
+  for (const s of b.actors || []) await mirrorActor(s);
+  for (const k of b.gone || []){ const a = byKey(k); if (a && a.kind !== "pc"){ actors = actors.filter(x => x !== a); foes = foes.filter(x => x !== a); } }
+  if (b.cbt){ const c = b.cbt, turnWas = activeActor();
+    Object.assign(cbt, {round: c.round, idx: c.idx, phase: c.phase, quick: c.quick, order: c.order.map(byKey).filter(Boolean), boss: byKey(c.boss),
+      allies: c.allies.map(byKey).filter(Boolean), bystanders: c.bystanders.map(byKey).filter(Boolean), pend: dec(c.pend)});
+    renderTurns(); renderParty();
+    const a = activeActor(); if (a && a !== turnWas){ try { turnCam(a); } catch (e) {} }
+  }
+  if (b.zones) for (const [n, v] of Object.entries(b.zones)) try { eval(`${n} = dec(v) || []`); } catch (e) {}
+  for (const ev of b.ev || []) relayPlay(ev);
+  if (b.actors) renderParty();
+  if ("menu" in b) mirrorMenu(b.menu);
+  if (b.dlgs) mirrorDialogs(b.dlgs);
+}
+// your hero's turn, here: the authority's command list rebuilt, and every press sent to it
+function mirrorMenu(mn){
+  FIGHT.menu = mn;
+  const m = $("cbtMenu");
+  const mine = mn && mn.drv === OW.key;
+  if (!mine){ m.hidden = true; const a = activeActor(); hint(a && a.kind === "pc" && mn ? `${fname(a)}'s turn: their player is choosing.` : ""); return; }
+  hint(mn.hint || "");
+  if (mn.phase !== "menu"){ m.hidden = true; return; }
+  m.innerHTML = ""; m.dataset.kind = "combat"; m.hidden = false; let i = -1;
+  for (const r of mn.rows){
+    if (r.sep){ const s = document.createElement("i"); s.className = "sep"; m.appendChild(s); continue; }
+    if (r.grp){ const g = document.createElement("b"); g.className = "grp"; g.textContent = r.grp; m.appendChild(g); continue; }
+    const idx = ++i, b = document.createElement("button"); b.className = String(r.cls || "").replace(/[^\w\s-]/g, "");
+    if (r.ico && /^[\w\/.:-]+$/.test(r.ico)){ const im = document.createElement("img"); im.className = "ico"; im.src = r.ico; im.alt = ""; b.appendChild(im); }
+    else { const g = document.createElement("i"); g.className = "ico glyph"; g.textContent = r.glyph || "·"; b.appendChild(g); }
+    const sp = document.createElement("span"); sp.textContent = r.label; b.appendChild(sp);
+    if (r.hint){ const sm = document.createElement("small"); sm.textContent = r.hint; b.appendChild(sm); }
+    if (r.cat) b.dataset.cat = r.cat;
+    b.disabled = !!r.off;
+    b.onclick = r.label === "Inventory" ? () => toggleBag(true, activeActor())                     // the bag opens HERE; what you do in it is sent (BAG_RPC)
+      : () => { fightSend({t: "btn", i: idx, label: r.label}); m.hidden = true; };
+    m.appendChild(b);
+  }
+}
+function mirrorDialogs(list){
+  const mine = list.find(d => d.drv === OW.key);
+  if (!mine || FIGHT.dlgShown === mine.id) return;
+  FIGHT.dlgShown = mine.id;
+  showDialog({title: mine.title, body: mine.body, src: mine.src, buttons: mine.labels.map((label, i) => ({label, primary: i === 0, fn: () => fightSend({t: "dlg", id: mine.id, i})}))});
+}
+function fightSend(b){ fightPost("in", {fight: FIGHT.id, body: b}).catch(() => {}); }
+// YOUR BAG IN YOUR TURN: drinking, eating, handing over, equipping and putting away — chosen in the bag on your own screen,
+// done on the fight's screen (its copy of your gear, the same rows), so the bonus action, the reach and the potion's dice
+// are the fight's
+const BAG_RPC = ["drinkItem", "eatItem", "giveItem", "equipTo", "removeFrom"];
+const itemRef = (a, it) => { const g = GEAR[a.id] || {}; const all = [...(g.carried || []), ...(g.doll || [])]; return it ? {k: it.item_key || null, n: it.name || null, i: all.indexOf(it)} : null; };
+function itemFrom(a, r){ if (!r) return null; const g = GEAR[a.id] || {}, all = [...(g.carried || []), ...(g.doll || [])];
+  return all.find(x => r.k && x.item_key === r.k) || all[r.i] && all[r.i].name === r.n && all[r.i] || all.find(x => x.name === r.n) || null; }
+function mirrorBagInstall(){
+  for (const n of BAG_RPC){
+    const f = window[n]; if (typeof f !== "function" || f.__rpc) continue;
+    const w = function(a, it, ...rest){
+      if (!FIGHT.mirror) return f.call(this, a, it, ...rest);
+      if (!myTurnHere() || a !== activeActor()){ toast("Only in your own turn."); return; }
+      if (n === "removeFrom") fightSend({t: "rpc", fn: n, a: akey(a), it: null, rest: [enc(it), ...rest.map(x => enc(x))]});   // (a, slot, how)
+      else fightSend({t: "rpc", fn: n, a: akey(a), it: itemRef(a, it), rest: rest.map(x => enc(x))});
+      toggleBag(false);
+    };
+    w.__rpc = true; Object.assign(w, f);
+    try { eval(`${n} = w`); } catch (e) {}
+  }
+}
+const myTurnHere = () => FIGHT.mirror && FIGHT.menu && FIGHT.menu.drv === OW.key;
+// a click on someone is sent as WHO, not only where: the authority aims at them where they stand there (the picture here
+// trails the fight by a quarter second, and a fighter may still be stepping)
+function oneFightMirrorClick(w){
+  if (!myTurnHere() || FIGHT.menu.phase === "menu") return;
+  const on = hitActor(foes, w) || hitActor(heroes(), w) || hitActor(npcs.filter(n => n.bystander), w);
+  fightSend({t: "click", x: Math.round(w.x), y: Math.round(w.y), on: on ? akey(on) : null});
+}
+function oneFightHover(w){ if (!myTurnHere() || FIGHT.menu.phase === "menu" || now - FIGHT.hoverAt < 150) return; FIGHT.hoverAt = now; fightSend({t: "hover", x: Math.round(w.x), y: Math.round(w.y)}); }
+function oneFightKey(e){
+  if (!FIGHT.mirror) return false;
+  if (e.key === "Escape" || e.code === "Enter"){ if (myTurnHere()) fightSend({t: "key", k: e.key === "Escape" ? "Escape" : "Enter"}); e.preventDefault(); return true; }
+  return MOVE_KEYS.has(e.code);                                            // arrows do not walk a mirrored hero
+}
+function mirrorEnd(b){
+  const fin = new Map((b.actors || []).map(s => [s.k, s]));
+  for (const ev of b.ev || []) relayPlay(ev);
+  for (const f of [...foes]){
+    const s = fin.get(akey(f));
+    if (s && (s.kind === "body" || s.kind === "npc")){ f.kind = s.kind; f.down = !!s.down; f.body = s.kind === "body"; f.once = null; f.path = []; f.hostile = !!s.hostile; if (f.body) f.lootKey = bodyKeyOf(f); if (!npcs.includes(f)) npcs.push(f); }
+    else f.fading = true;
+  }
+  for (const [k, s] of fin){ const a = byKey(k); if (!a || a.kind !== "pc") continue; a.down = !!s.down; a.ko = !!s.ko; if (s.c){ const sheet = a.c && a.c.sheet; a.c = dec(s.c); a.c.sheet = sheet; } }
+  const gone = foes.filter(f => f.fading);
+  setTimeout(() => { actors = actors.filter(a => !gone.includes(a)); }, 900);
+  foes = [];
+  closeMenu(); cbt = null; combatBusy = false; mode = "explore"; FIGHT.mirror = false; FIGHT.id = null; FIGHT.menu = null; FIGHT.dlgShown = null;
+  poisonZones = []; daggerZones = []; fireSpheres = []; spiritWeapons = []; guardianAuras = []; icePatches = []; aoeMarks = [];
+  $("bossBar").hidden = true; $("cbtFlee").hidden = true; turnCallHide(); $("combat").classList.remove("has-boss", "strip-on", "peek");
+  $("combat").hidden = true; stage.classList.remove("fight"); $("vignette").classList.remove("on"); setTrack("explore"); cbtLog.active = false;
+  party.forEach(p => { p.home = {x: p.x, y: p.y}; p.path = []; });
+  fightLetsGo();                     // A LIVE FIGHT HOLDS ITS PLATE, rule 2: the mirror's own hero may be standing in a doorway
+  try { camTo(1, NAT_W / 2, NAT_H / 2, 800); } catch (e) {}
+  renderParty(); hint("");
+}
+async function fightLiveNow(){ try { const j = await fightGet(""); FIGHT.live = j.fight || null; } catch (e) {} return FIGHT.live; }
+// THE WATCH: a screen that is not in a fight looks, every two seconds, for one being fought on its plate
+setInterval(async () => {
+  if (!fightShared() || FIGHT.auth || FIGHT.mirror || FIGHT.polling) return;
+  if (!(mode === "explore" || mode === "talk" || mode === "dialog")) return;
+  FIGHT.polling = true;
+  try { const j = await fightGet(""); FIGHT.live = j.fight || null;
+    if (j.fight && owSame(j.fight.plate, cur) && j.fight.auth_key !== OW.key && !FIGHT.mirror && !FIGHT.auth){ talkGivesWay(); if (mode === "explore") enterMirror(j.fight); }
+  } catch (e) { if (/does not exist|relation/.test(String(e.message))) FIGHT.failed = true; }
+  finally { FIGHT.polling = false; }
+}, 2000);
 // --- fights (not shared yet) ---
 // SPLIT PARTY, FIGHTS (Sam, 2026-10-27; part 2 of 4): one flag per plate (state["fight:<plate>"]) instead of one for the
 // table, so two plates can each have a fight, and the amber light shows only on the screens standing on a fighting
