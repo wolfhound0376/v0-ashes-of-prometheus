@@ -4,9 +4,9 @@ import { LONG_REST_KEY, isRoadMarker, isStandingKey, paceOfKey, standingOptions 
 const marker = { node_type: "waypoint", metadata: { map_x: 576, map_y: 209 } }
 
 describe("what every road marker offers", () => {
-  it("a long rest and the two other paces, and nothing invented", () => {
+  it("a long rest and nothing else: no pace choices (Sam, 2026-11-12: \"We don't need this\")", () => {
     const keys = standingOptions(marker, { pace: "normal" }, false).map((o) => o.key)
-    expect(keys).toEqual([LONG_REST_KEY, "standing:pace-slow", "standing:pace-fast"])
+    expect(keys).toEqual([LONG_REST_KEY])
   })
   it("never offers the pace the party is already keeping", () => {
     expect(standingOptions(marker, { pace: "slow" }, false).map((o) => o.key)).not.toContain("standing:pace-slow")

@@ -255,9 +255,86 @@ export function normaliseDay(raw: Partial<Record<keyof DayState, unknown>> | nul
 }
 
 /** Setting out (after a rest, or a new destination): the pace is chosen and a navigation check is owed. */
+/**
+ * Setting out for a new destination. It used to zero the day's hours too, so a party could walk eight hours,
+ * pick a new destination and walk eight more with no forced march (Sam, 2026-11-12, asking for a fatigue gauge:
+ * the gauge is only honest if setting out does not refill it). Only a camp starts a new day (newDay). The
+ * navigation check is owed when the day starts or after a rest (p.25), not because the destination changed.
+ */
 export function depart(day: DayState, pace: Pace): DayState {
-  return { ...day, pace, hours_today: 0, navigation_due: true }
+  return { ...day, pace }
 }
+
+// ---------------------------------------------------------------------------------------------------------
+// THE DAY'S LEDGER and THE FATIGUE GAUGE (Sam, 2026-11-12: "You can let us know how long we actually marched
+// and why. There should be some gauge like in Solasta 2 indicating fatigue and whether we perform a forced
+// march. Therefore we need a rest button that sends us the Camp.")
+// One line per leg walked today, kept on travel_march.today_log and cleared when camp starts a new day.
+// ---------------------------------------------------------------------------------------------------------
+
+export interface MarchLogEntry {
+  /** where the leg ended */
+  at: string
+  /** hours spent walking the road itself */
+  walk_h: number
+  /** hours lost wandering (p.25), 0 when the way held */
+  lost_h: number
+  /** hours on the water (no nightfall on a raft, p.12), 0 on foot */
+  sail_h: number
+  /** the navigator's line when the way was lost; null otherwise */
+  why: string | null
+  /** this leg ran past the eighth hour: a forced march (CON saves) */
+  forced: boolean
+}
+
+export const MAX_LOG_ENTRIES = 60
+export function normaliseLog(raw: unknown): MarchLogEntry[] {
+  if (!Array.isArray(raw)) return []
+  return raw
+    .filter((e) => e && typeof e === "object")
+    .map((e) => {
+      const r = e as Record<string, unknown>
+      const n = (v: unknown) => Math.max(0, Math.round((Number(v) || 0) * 100) / 100)
+      return { at: String(r.at ?? "?"), walk_h: n(r.walk_h), lost_h: n(r.lost_h), sail_h: n(r.sail_h), why: typeof r.why === "string" && r.why ? r.why : null, forced: !!r.forced }
+    })
+    .slice(-MAX_LOG_ENTRIES)
+}
+
+/** The ledger line for one leg: total minutes split into walking and wandering. */
+export function logLeg(at: string, minutes: number, opts: { lostHours?: number; sail?: boolean; why?: string | null; forced?: boolean }): MarchLogEntry {
+  const total = Math.max(0, minutes) / 60
+  const lost = opts.sail ? 0 : Math.min(total, Math.max(0, opts.lostHours ?? 0))
+  const r = (h: number) => Math.round(h * 100) / 100
+  return { at, walk_h: opts.sail ? 0 : r(total - lost), lost_h: r(lost), sail_h: opts.sail ? r(total) : 0, why: lost > 0 ? opts.why ?? null : null, forced: !!opts.forced }
+}
+
+export type FatigueBand = "fresh" | "weary" | "spent" | "forced"
+export interface Fatigue {
+  hours: number
+  /** 0..1 of the day's eight */
+  fill: number
+  band: FatigueBand
+  /** whole hours past eight already walked */
+  pastEight: number
+  /** the CON save DC the next hour past eight will ask (SRD 5.1 Forced March: 10 + 1 per hour past 8) */
+  nextDc: number
+  label: string
+}
+
+/** What the gauge shows for the hours on the road today. */
+export function fatigue(hoursToday: number): Fatigue {
+  const hours = Math.max(0, Number(hoursToday) || 0)
+  const pastEight = Math.max(0, Math.floor(hours + 1e-6 - MARCH_HOURS_PER_DAY))
+  const band: FatigueBand = hours > MARCH_HOURS_PER_DAY + 1e-6 ? "forced" : hours >= MARCH_HOURS_PER_DAY - 1e-6 ? "spent" : hours >= 6 ? "weary" : "fresh"
+  const h = Math.round(hours * 10) / 10
+  const label =
+    band === "forced" ? `Forced march: ${h} h on the road`
+    : band === "spent" ? "The day's eight hours are spent: make camp, or force the march"
+    : band === "weary" ? `Weary: ${Math.round((MARCH_HOURS_PER_DAY - hours) * 10) / 10} h of the day left`
+    : hours > 0 ? `${Math.round((MARCH_HOURS_PER_DAY - hours) * 10) / 10} h of the day left` : "Fresh: a full day ahead"
+  return { hours, fill: Math.min(1, hours / MARCH_HOURS_PER_DAY), band, pastEight, nextDc: FORCED_MARCH_BASE_DC_GAUGE + pastEight + 1, label }
+}
+const FORCED_MARCH_BASE_DC_GAUGE = 10
 
 export interface LegOutcome {
   day: DayState

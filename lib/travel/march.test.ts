@@ -141,6 +141,8 @@ describe("The day (PHB ch.8: eight hours of travel)", () => {
   it("departing sets the pace and owes a navigation check; walking rolls it once", () => {
     const day = depart(FRESH_DAY, "slow")
     expect(day).toMatchObject({ pace: "slow", hours_today: 0, navigation_due: true })
+    // setting out again mid-day keeps the day's hours (Sam, 2026-11-12: the fatigue gauge must not refill)
+    expect(depart({ ...FRESH_DAY, hours_today: 5.5, navigation_due: false }, "normal")).toMatchObject({ hours_today: 5.5, navigation_due: false })
     const leg = walkLeg(day, 1, 7, sarith, fixed(d20(15)))
     expect(leg.navigation?.lost).toBe(false)
     expect(leg.day.navigation_due).toBe(false)
@@ -234,5 +236,24 @@ describe("forced march past eight — the day is counted once", () => {
     expect(leg.nightfall).toBe(true)
     expect(leg.day.days_marched).toBe(1)
     expect(leg.day.navigation_due).toBe(false)
+  })
+})
+
+describe("the day's ledger and the fatigue gauge (Sam, 2026-11-12)", async () => {
+  const { logLeg, fatigue, normaliseLog } = await import("./march")
+  it("splits a leg into walking and wandering, and says why", () => {
+    expect(logLeg("Road Marker 3", 300, { lostHours: 4, why: "No one knows these tunnels." })).toEqual({ at: "Road Marker 3", walk_h: 1, lost_h: 4, sail_h: 0, why: "No one knows these tunnels.", forced: false })
+    expect(logLeg("Road Marker 4", 90, {})).toMatchObject({ walk_h: 1.5, lost_h: 0, why: null })
+    expect(logLeg("Sloobludop", 120, { sail: true, lostHours: 3 })).toMatchObject({ walk_h: 0, lost_h: 0, sail_h: 2 })
+  })
+  it("reads the gauge: fresh, weary, spent at eight, forced past it with the next DC", () => {
+    expect(fatigue(0).band).toBe("fresh")
+    expect(fatigue(6.5).band).toBe("weary")
+    expect(fatigue(8)).toMatchObject({ band: "spent", fill: 1, pastEight: 0, nextDc: 11 })
+    expect(fatigue(9.2)).toMatchObject({ band: "forced", pastEight: 1, nextDc: 12 })
+  })
+  it("keeps a stored ledger honest", () => {
+    expect(normaliseLog(null)).toEqual([])
+    expect(normaliseLog([{ at: "X", walk_h: "2", lost_h: -1 }])).toEqual([{ at: "X", walk_h: 2, lost_h: 0, sail_h: 0, why: null, forced: false }])
   })
 })

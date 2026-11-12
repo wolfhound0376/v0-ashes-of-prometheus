@@ -18,8 +18,7 @@ import {
   type ConSaver,
   type DayState,
   type ForcedMarchOutcome,
-  type Navigator,
-} from "@/lib/travel/march"
+  type Navigator, logLeg, normaliseLog, type MarchLogEntry } from "@/lib/travel/march"
 import { mayLead, tallyLeader, whoLeads } from "@/lib/travel/leader"
 import { noticeAt, noticeSpec, type Eyes } from "@/lib/travel/notice"
 import { meetingAt } from "@/lib/travel/meeting"
@@ -201,6 +200,7 @@ export async function GET(req: NextRequest) {
       ...normaliseDay(march),
       day_miles: Number(march?.day_miles) || 7,
       navigator: (march?.navigator as Navigator | null) ?? null,
+      today_log: normaliseLog(march?.today_log),
     },
     guides: GUIDES,
     // Who leads: the DM's override if set, else the host, else whoever the vote carried.
@@ -246,6 +246,17 @@ async function saveDay(db: ReturnType<typeof createAdminClient>, runId: string, 
     })
     .eq("campaign_run_id", runId)
   if (error) console.warn("[travel] day columns not saved (migration travel_march_day applied?):", error.message)
+  return !error
+}
+
+/**
+ * The day's ledger (lib/travel/march.ts logLeg; Sam, 2026-11-12: "let us know how long we actually marched and
+ * why"). On its own column, travel_march.today_log, written apart from saveDay so a database without the
+ * column (migration travel_march_today_log not yet applied) still walks: the gauge then shows hours only.
+ */
+async function saveLog(db: ReturnType<typeof createAdminClient>, runId: string, log: MarchLogEntry[]) {
+  const { error } = await db.from("travel_march").update({ today_log: log }).eq("campaign_run_id", runId)
+  if (error) console.warn("[travel] today_log not saved (migration travel_march_today_log applied?):", error.message)
   return !error
 }
 
@@ -468,9 +479,12 @@ export async function POST(req: NextRequest) {
     const dbd = createAdminClient()
     const runId = await activeRunId(dbd)
     if (!runId) return NextResponse.json({ error: "no active campaign run" }, { status: 409 })
-    const pace = body?.pace
+    // No pace sheet any more (Sam, 2026-11-12: "We don't need this"): a departure without a pace keeps the
+    // book's Normal, and without a navigator the party's leader finds the way (OotA-Enc p.25: a stranger to
+    // the region is automatically lost, and the day's ledger says so). The DM may still name a guide here.
+    const pace = body?.pace ?? "normal"
     if (!isPace(pace)) return NextResponse.json({ error: "pace must be fast | normal | slow" }, { status: 400 })
-    const nv = body?.navigator ?? null
+    const nv = body?.navigator ?? (leaderId ? { kind: "pc", character_id: leaderId } : null)
     let navigator: Navigator | null = null
     if (nv?.kind === "guide") {
       const g = guideByKey(typeof nv.key === "string" ? nv.key : null)
@@ -520,7 +534,10 @@ export async function POST(req: NextRequest) {
     if (kind === "camp" && !force) {
       const runId = await activeRunId(db0)
       const { data: m } = runId ? await db0.from("travel_march").select("*").eq("campaign_run_id", runId).maybeSingle() : { data: null }
-      if (runId && m) newDayStarted = await saveDay(db0, runId, newDay(normaliseDay(m as Record<string, unknown>)))
+      if (runId && m) {
+        newDayStarted = await saveDay(db0, runId, newDay(normaliseDay(m as Record<string, unknown>)))
+        await saveLog(db0, runId, [])
+      }
     }
     return NextResponse.json({ ok: true, action, resumed: open.id, new_day: newDayStarted, forced: kind === "camp" && force })
   }
@@ -879,6 +896,16 @@ export async function POST(req: NextRequest) {
           }),
         )
       }
+    }
+    // THE DAY'S LEDGER: one line per leg, walking and wandering apart, with the reason for the wandering.
+    if (minutes > 0) {
+      const entry = logLeg(full?.name ?? node.node_key, minutes, {
+        sail: !!leg.sail,
+        lostHours: navigation?.lost ? navigation.lostHours : 0,
+        why: navigation?.lost ? navigation.note : null,
+        forced: !!forced,
+      })
+      await saveLog(db, runId, [...normaliseLog((marchRes.data as Record<string, unknown> | null)?.today_log), entry])
     }
     if (minutes > 0) {
       await logTimeEvent(db, await clockSessionId(db), {

@@ -8,7 +8,8 @@
 
 import { StageLink } from "@/components/stage/stage-provider"
 import { VESSELS, seats } from "@/lib/travel/vessels"
-import { MARCH_HOURS_PER_DAY, PACES, legPreview, paceSummary } from "@/lib/travel/march"
+import { MARCH_HOURS_PER_DAY, PACES, fatigue, legPreview } from "@/lib/travel/march"
+import { isRoadMarker } from "@/lib/travel/standing"
 import type { NodeRow, useTravel } from "./use-travel"
 
 export type Travel = ReturnType<typeof useTravel>
@@ -33,7 +34,7 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
             <div className="rounded-lg border-2 border-[#f5c34d] bg-[#171024] px-6 py-5 w-full max-w-[52ch]">
               <div className="text-[#9a8fb0] text-xs tracking-widest">OUT OF {(arrival?.from ?? "the outpost").toUpperCase()}</div>
               <div className="text-[#f5c34d] text-base font-bold tracking-widest mt-2">{arrival?.name ?? "The cavern floor"}. Which way?</div>
-              <div className="text-[#9a8fb0] text-xs mt-1">The roads the map knows from here. Pick one and the departure sheet asks the pace and who leads.</div>
+              <div className="text-[#9a8fb0] text-xs mt-1">The roads the map knows from here. Pick one.</div>
               <div className="mt-4 grid gap-2">
                 {roadChoice.map((r) => (
                   <button
@@ -56,15 +57,13 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
         )}
 
         {confirmNode && (() => {
-          // The departure sheet. Pace and navigator are declared before the
-          // first step (OotA-Enc ch.2 p.24-25); the road's length at each pace
-          // comes from the route the party will actually walk.
+          // The departure sheet. Sam (2026-11-12) on the pace and navigator questions: "We don't need this. You can
+          // let us know how long we actually marched and why." So it only says how far and how long; the march
+          // keeps the book's Normal pace, the leader finds the way, and the fatigue gauge keeps the day's ledger.
           const routeIds = party ? routeBetween(party.node_id, confirmNode.id) : []
           const miles = routeMiles(routeIds)
-          const summary = paceSummary(miles, march.day_miles)
-          const chosenGuide = navSel.startsWith("guide:") ? guides.find((g) => g.key === navSel.slice(6)) ?? null : null
-          const navUnfamiliar =
-            navSel === "none" || (chosenGuide ? chosenGuide.familiarWith === "none" : navSel.startsWith("pc:") && !pcFamiliar && !pcHasMap)
+          const pv = routeIds.length >= 2 ? legPreview(march, miles, march.day_miles) : null
+          const hoursFmt = (h: number) => `${Math.round(h * 10) / 10} h`
           return (
           <div className="absolute inset-0 grid place-items-center bg-[#05030acc] p-3">
             <div className="rounded-lg border-2 border-[#f5c34d] bg-[#171024] px-6 py-5 w-full max-w-[52ch] max-h-full overflow-y-auto">
@@ -74,7 +73,7 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
               </div>
               <div className="text-[#9a8fb0] text-xs mt-1">
                 {routeIds.length >= 2
-                  ? `${Math.round(miles * 10) / 10} miles by road. They will walk every marker, stopping at each, and camp when the day's ${MARCH_HOURS_PER_DAY} hours are spent.`
+                  ? `${Math.round(miles * 10) / 10} miles by road. They will walk every marker, stopping at each.`
                   : "They will walk every marker on the road, stopping at each."}
               </div>
               {party && routeIds.length < 2 && (
@@ -84,74 +83,15 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
                     : "No road reaches it on foot, and the party has no boat. They will be placed there, not walked."}
                 </div>
               )}
-
-              {/* PACE — OotA-Enc ch.2 p.24 */}
-              <div className="mt-4 text-[10px] uppercase tracking-[.22em] text-[#9a8fb0]">Pace</div>
-              <div className="mt-1 grid gap-1">
-                {summary.map((s) => (
-                  <label
-                    key={s.pace}
-                    className={`flex cursor-pointer items-start gap-2 rounded border px-3 py-2 text-left text-xs ${
-                      pace === s.pace ? "border-[#f5c34d] bg-[#2a1f10] text-[#f5c34d]" : "border-[#3a2c56] bg-[#221936] text-[#c9bcd8] hover:border-[#7a5c2b]"
-                    }`}
-                  >
-                    <input type="radio" name="pace" className="mt-0.5 accent-[#f5c34d]" checked={pace === s.pace} onChange={() => setPace(s.pace)} />
-                    <span>
-                      <b className="tracking-widest">{s.pace.toUpperCase()}</b>
-                      {routeIds.length >= 2 && <span className="ml-2 text-[#e4d8bf]">{Math.round(s.days * 10) / 10} days</span>}
-                      <div className="mt-0.5 text-[11px] text-[#9a8fb0]">
-                        {s.pace === "fast" ? "−5 passive Perception, no foraging, −5 to hold the route" : s.pace === "slow" ? "Improved foraging or Stealth, +5 to hold the route" : "The book's default: forage, no modifiers"}
-                      </div>
-                    </span>
-                  </label>
-                ))}
-              </div>
-
-              {/* NAVIGATOR — p.22 (the guides), p.25 (becoming lost) */}
-              <div className="mt-4 text-[10px] uppercase tracking-[.22em] text-[#9a8fb0]">Who leads</div>
-              <select
-                value={navSel}
-                onChange={(e) => setNavSel(e.target.value)}
-                className="mt-1 w-full rounded border border-[#3a2c56] bg-[#221936] px-2 py-2 text-xs text-[#e4d8bf]"
-              >
-                <option value="none">No navigator</option>
-                <optgroup label="Guides (OotA-Enc p.22)">
-                  {guides.map((g) => (
-                    <option key={g.key} value={`guide:${g.key}`}>
-                      {g.name} — {g.familiarWith === "none" ? "can't navigate" : g.familiarWith === "any" ? "knows the whole map" : `knows ${g.familiarWith}`}
-                      {g.survivalBonus ? ` (+${g.survivalBonus} Survival)` : ""}
-                    </option>
-                  ))}
-                </optgroup>
-                {pcs.length > 0 && (
-                  <optgroup label="Player characters">
-                    {pcs.map((c) => (
-                      <option key={c.id} value={`pc:${c.id}`}>{c.name}</option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-              {navSel.startsWith("pc:") && (
-                <div className="mt-2 flex flex-wrap gap-4 text-[11px] text-[#c9bcd8]">
-                  <label className="flex items-center gap-1 cursor-pointer">
-                    <input type="checkbox" className="accent-[#f5c34d]" checked={pcFamiliar} onChange={(e) => setPcFamiliar(e.target.checked)} />
-                    knows this region (DM ruling)
-                  </label>
-                  <label className="flex items-center gap-1 cursor-pointer">
-                    <input type="checkbox" className="accent-[#f5c34d]" checked={pcHasMap} onChange={(e) => setPcHasMap(e.target.checked)} />
-                    has a map of this route
-                  </label>
-                </div>
-              )}
-              {chosenGuide && <div className="mt-2 text-[11px] italic text-[#9a8fb0]">{chosenGuide.note}</div>}
-              {navUnfamiliar && (
-                <div className="mt-2 rounded border border-[#7a2b2b] bg-[#2a1216] px-3 py-2 text-[11px] text-[#e08a8a]">
-                  No one who knows these tunnels is leading. Strangers to a region of the Underdark are automatically lost, wandering 4 hours at a time (OotA-Enc p.25).
-                </div>
-              )}
-              {!navUnfamiliar && (
-                <div className="mt-2 text-[11px] text-[#9a8fb0]">
-                  DC 10 Wisdom (Survival) to hold the route, each day and after every rest{pace === "slow" ? " (+5 at slow pace)" : pace === "fast" ? " (−5 at fast pace)" : ""}. A failure loses 1d6 hours.
+              {pv && (
+                <div className="mt-3 rounded border border-[#3a2c56] bg-[#221936] px-3 py-2 text-[11px] text-[#c9bcd8]">
+                  About {hoursFmt(pv.hours)} of walking.{" "}
+                  {pv.forced ? (
+                    <span className="text-[#e08a8a]">That runs {hoursFmt(pv.endsAt - MARCH_HOURS_PER_DAY)} past today's {MARCH_HOURS_PER_DAY} hours: make camp on the way, or force the march.</span>
+                  ) : (
+                    <span>{hoursFmt(pv.left)} of today's {MARCH_HOURS_PER_DAY} left.</span>
+                  )}
+                  <div className="mt-1 text-[#9a8fb0]">Hours lost finding the way show on the fatigue gauge as they happen.</div>
                 </div>
               )}
 
@@ -358,6 +298,8 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
           </div>
         )}
 
+        {loaded && party && !confirmNode && !halt && <MarchGauge t={t} />}
+
         {/* The march has stopped. Nothing resumes it but the DM. */}
         {halt && (
           <div className="absolute inset-0 grid place-items-center bg-[#0a0612cc] p-4">
@@ -432,6 +374,80 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
           </div>
         )}
     </>
+  )
+}
+
+/**
+ * THE FATIGUE GAUGE (Sam, 2026-11-12: "There should be some gauge like in Solasta 2 indicating fatigue and
+ * whether we perform a forced march. Therefore we need a rest button that sends us the Camp.").
+ * Eight segments for the day's eight hours (SRD / PHB ch.8 Travel Pace), red ones past them for a forced march,
+ * the day's ledger underneath (how long they walked and why: walking, wandering lost, water), and REST, which
+ * is the road marker's own long rest: it stops the march here and takes the table to the Camp Module.
+ * Everyone sees it; only the party's leader (or the DM) can rest, the same hands that move the party.
+ */
+function MarchGauge({ t }: { t: Travel }) {
+  const { march, party, nodes, canLead, rest } = t
+  const f = fatigue(march.hours_today)
+  const here = party ? nodes.find((n) => n.id === party.node_id) : null
+  const canRest = canLead && !!here && isRoadMarker(here) && march.hours_today > 0
+  const segs = Math.max(MARCH_HOURS_PER_DAY, Math.ceil(f.hours))
+  const log = march.today_log ?? []
+  const lost = log.reduce((a, e) => a + e.lost_h, 0)
+  const walked = log.reduce((a, e) => a + e.walk_h, 0)
+  const sailed = log.reduce((a, e) => a + e.sail_h, 0)
+  const h = (x: number) => `${Math.round(x * 10) / 10} h`
+  const tone = f.band === "forced" ? "#e05a5a" : f.band === "spent" ? "#e0a35c" : f.band === "weary" ? "#e8c46a" : "#9fd38a"
+  return (
+    <div className="absolute bottom-3 left-3 z-10 w-[min(34ch,calc(100%-1.5rem))] rounded-lg border-2 border-[#3a2c56] bg-[#120c1cee] px-3 py-2 text-[11px] text-[#c9bcd8] shadow-[0_0_24px_#000]">
+      <div className="flex items-center justify-between">
+        <span className="tracking-[.22em] text-[#f5c34d]">FATIGUE</span>
+        <span style={{ color: tone }}>{f.band === "forced" ? "FORCED MARCH" : f.band === "spent" ? "SPENT" : f.band === "weary" ? "WEARY" : "FRESH"}</span>
+      </div>
+      <div className="mt-1.5 flex gap-[3px]" aria-label={`${h(f.hours)} of ${MARCH_HOURS_PER_DAY} on the road today`}>
+        {Array.from({ length: segs }, (_, i) => {
+          const fill = Math.max(0, Math.min(1, f.hours - i))
+          const past = i >= MARCH_HOURS_PER_DAY
+          const col = past ? "#e05a5a" : i >= 6 ? "#e0a35c" : "#9fd38a"
+          return (
+            <span key={i} className={`relative h-2.5 flex-1 overflow-hidden rounded-[2px] ${past ? "bg-[#3a1418]" : "bg-[#2a2140]"}`}>
+              <span className="absolute inset-y-0 left-0" style={{ width: `${fill * 100}%`, background: col }} />
+            </span>
+          )
+        })}
+      </div>
+      <div className="mt-1" style={{ color: tone }}>{f.label}</div>
+      {f.band === "forced" && <div className="text-[#e08a8a]">Each hour past eight: CON save, DC {f.nextDc} next, or a level of exhaustion.</div>}
+      {log.length > 0 && (
+        <div className="mt-2 border-t border-[#3a2c56] pt-1.5">
+          <div className="text-[#9a8fb0]">
+            Today: {h(walked)} walking{lost > 0 ? `, ${h(lost)} lost` : ""}{sailed > 0 ? `, ${h(sailed)} on the water` : ""}
+          </div>
+          <ul className="mt-1 max-h-24 space-y-0.5 overflow-y-auto pr-1">
+            {log.slice(-6).map((e, k) => (
+              <li key={k} className="leading-snug">
+                <span className="text-[#e4d8bf]">{e.at}</span>
+                <span className="text-[#9a8fb0]">
+                  {" "}· {e.sail_h ? `${h(e.sail_h)} by boat` : `${h(e.walk_h)} walking`}
+                  {e.forced ? " · forced" : ""}
+                </span>
+                {e.lost_h > 0 && (
+                  <div className="text-[#e0a35c]">+{h(e.lost_h)} lost{e.why ? `: ${e.why}` : ""}</div>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {canRest && (
+        <button
+          onClick={rest}
+          className="mt-2 w-full whitespace-nowrap rounded border border-[#7a5c2b] bg-[#2a1f10] py-1.5 text-[11px] tracking-[.14em] text-[#f5c34d] hover:bg-[#3a2b16]"
+          title="Make camp here: a long rest at the Camp Module. Breaking camp starts a new day."
+        >
+          REST AT CAMP →
+        </button>
+      )}
+    </div>
   )
 }
 
