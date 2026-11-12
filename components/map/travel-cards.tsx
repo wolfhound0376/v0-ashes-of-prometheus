@@ -371,12 +371,12 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
                       type="button"
                       disabled={!s.available || !canLead || stanceBusy}
                       onClick={() => void takeStance(s.key)}
-                      className={`block w-full rounded border px-3 py-2 text-left ${s.available ? "border-[#7a5c2b] bg-[#221936] hover:border-[#f5c34d]" : "border-[#3a2c56] bg-[#17101f] opacity-70"} disabled:cursor-not-allowed`}
+                      className={`tk-btn tk-row block w-full px-6 py-2.5 text-left ${s.available ? "tk-violet" : "tk-stone"}`}
                     >
-                      <div className={`text-[13px] ${s.available ? "text-[#f5c34d]" : "text-[#8a7f9c]"}`}>{s.label}</div>
-                      <div className="text-[11px] leading-snug text-[#c9bcd8]">{s.detail}</div>
-                      {s.check && <div className="mt-0.5 text-[10px] tracking-wide text-[#9a8fb0]">{s.check}</div>}
-                      {s.blocked && <div className="mt-0.5 text-[10px] text-[#e0a35c]">{s.blocked}</div>}
+                      <div className={`text-[13px] ${s.available ? "text-[#ffd977]" : "text-[#cfc6dc]"}`}>{s.label}</div>
+                      <div className="text-[11px] leading-snug text-[#eee4f8]">{s.detail}</div>
+                      {s.check && <div className="mt-0.5 text-[10px] tracking-wide text-[#d9cdea]">{s.check}</div>}
+                      {s.blocked && <div className="mt-0.5 text-[10px] text-[#ffc98a]">{s.blocked}</div>}
                     </button>
                   ))}
                 </div>
@@ -438,7 +438,7 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
               {!(halt.stances ?? []).length && (
               <button
                 onClick={() => continueMarch(false)}
-                className="mt-4 w-full rounded border border-[#7a5c2b] bg-[#2a1f10] py-2 text-xs tracking-[.2em] text-[#f5c34d] hover:bg-[#3a2b16]"
+                className="tk-btn tk-gold mt-4 w-full py-2 text-xs font-bold tracking-[.2em]"
               >
                 {halt.kind === "camp" ? "BREAK CAMP — WALK ON" : halt.kind === "forced_march" || halt.stance ? "WALK ON" : "CONTINUE THE MARCH"}
               </button>
