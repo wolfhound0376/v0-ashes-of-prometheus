@@ -84,6 +84,8 @@ export type LeadInfo = {
   counts: Record<string, number>
   needed: number
   roster: { id: string; name: string }[]
+  /** The heroes seated this run (lib/seats.ts), earliest first, without anyone the DM stepped out. Who marches on the map. */
+  seated?: string[]
   available: boolean
   day: { pace: Pace; hours_today: number; day_miles: number }
   /** A camp the march is stopped at right now (a long rest, or nightfall), so a page that comes back from the fire finds its card. */
