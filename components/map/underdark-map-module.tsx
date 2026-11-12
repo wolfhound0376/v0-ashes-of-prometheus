@@ -217,7 +217,7 @@ export default function UnderdarkMapModule() {
     <div className="bg-[#0b0714] text-[#e8e0f0] p-3 font-mono">
       {/* the map and its cards: the cards are the shared march's own (travel-cards.tsx), laid over the page.
           The painted entrance is the page's (its cinematic, its plate, its Enter), so the card version stays shut. */}
-      <div className="relative rounded-lg overflow-hidden border-[3px] border-[#2b2040] bg-[#05030a]" style={{ height: dmKey ? "calc(100vh - 150px)" : "calc(100vh - 84px)", minHeight: 320 }}>
+      <div className="relative rounded-lg overflow-hidden border-[3px] border-[#2b2040] bg-[#05030a]" style={{ height: dmKey ? "calc(100vh - 90px)" : "calc(100vh - 24px)", minHeight: 320 }}>
         <iframe ref={frame} src={PAGE} title="The Underdark" className="absolute inset-0 h-full w-full border-0" allow="autoplay" />
         <TravelCards t={{ ...travel, entrance: null }} />
       </div>

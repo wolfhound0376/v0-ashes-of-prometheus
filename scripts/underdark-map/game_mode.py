@@ -124,7 +124,8 @@ function loomTick(t){ let up=false;
 function gameWhere(){ const n=N.get(party); document.getElementById("where").textContent = n&&n.t==="location"&&nameShown(n) ? n.n : "On the road"; }
 function applyState(s,first){
   GS=s; gameDM=!!s.dm; gameLead=!!s.lead; document.body.classList.toggle("gm",gameDM); document.body.classList.toggle("lead",gameLead);
-  if(!gameDM&&dm){ dm=false; tgP.setAttribute("aria-pressed","true"); tgD.setAttribute("aria-pressed","false"); }
+  // Sam 2026-11-12: no Player view / DM view switch in the game ("it'll be obvious"): DM mode is the DM view
+  if(dm!==gameDM){ dm=gameDM; tgP.setAttribute("aria-pressed",String(!dm)); tgD.setAttribute("aria-pressed",String(dm)); }
   const seen=new Set(); let moved=false;
   for(const n of s.nodes){ if(!placed(n)) continue; seen.add(n.k); const cur=N.get(n.k);
     if(!cur){ const o=gameNode(n); N.set(o.k,o); addStop(o); addBanner(o); }
@@ -159,7 +160,11 @@ if(GAME){
 GAME_CSS = r'''
 /* GAME MODE: the leader and the boat come from the game; a player who is not the DM sees the map, the place card, zoom and sound, nothing else */
 body.game #leadRow,body.game .boatpick,body.game .clock,body.game #cineBtn,body.game #trackName{display:none !important}
-body.game:not(.gm) .hud.toggles,body.game:not(.gm) .hud.keys,body.game:not(.gm) #legend,body.game:not(.gm) #atlasLink{display:none !important}
+/* Sam 2026-11-12: no Player/DM view switch and no directions box in the game, DM included; the DM gets a DM mode light instead */
+body.game .hud.toggles,body.game .hud.keys,body.game:not(.gm) #legend,body.game:not(.gm) #atlasLink{display:none !important}
+.dmlight{display:none}
+body.game.gm .dmlight{display:flex;align-items:center;gap:7px;right:18px;top:14px;font-family:var(--ui);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#f3e6ff;background:var(--panel);border:1px solid #b44df5;padding:7px 11px;box-shadow:0 0 14px #b44df555}
+body.game.gm .dmlight i{width:8px;height:8px;border-radius:50%;background:#d48bff;box-shadow:0 0 8px #d48bff,0 0 2px #fff}
 body.game:not(.lead) #entEnter{display:none !important}
 '''
 
@@ -198,7 +203,7 @@ PATCHES = [
     ("const fw=idleImg.naturalWidth/4, fh=idleImg.naturalHeight/8, f=Math.floor(t*5)%4, row=4;", "const fw=idleImg.naturalWidth/entIdleFrames, fh=idleImg.naturalHeight/8, f=Math.floor(t*5)%entIdleFrames, row=4;"),
     # ---- the card: no prototype rules, no instructions for someone who cannot move the party
     ("card.meta.innerHTML= walking? \"On the march.\" : \"You are here. Arrow keys or WASD walk to the next stop.\";",
-     "card.meta.innerHTML= walking? \"On the march.\" : (GAME&&!gameLead)? \"You are here.\" : \"You are here. Arrow keys or WASD walk to the next stop.\";"),
+     "card.meta.innerHTML= walking? \"On the march.\" : GAME? \"You are here.\" : \"You are here. Arrow keys or WASD walk to the next stop.\";"),
     ("if(!walking) poolCard(k); return; }", "if(!walking&&!GAME) poolCard(k); return; }"),
     ("  const days=p.miles/PACE;\n", "  if(GAME){ card.meta.innerHTML=`<b>${p.miles.toFixed(1)} mi</b> by the roads you know${mode===\"hover\"&&gameLead?\" · click to set out\":\"\"}`; return p; }\n  const days=p.miles/PACE;\n"),
     ("  if(k===hovered) return; hovered=k; preview.clear();", "  if(k===hovered) return; hovered=k; preview.clear(); post({type:\"aop:map-hover\",k:k||null});"),
@@ -218,6 +223,8 @@ PATCHES = [
     # ---- chrome
     ("guardTag.onclick=()=>showToll(); labelsEl.appendChild(guardTag);", "guardTag.onclick=()=>showToll(); guardTag.hidden=true; labelsEl.appendChild(guardTag);"),
     ("#loading{position:fixed;", GAME_CSS + "#loading{position:fixed;"),
+    # the DM mode light (Sam, 2026-11-12): shown only to the DM, where the Player/DM view switch used to be
+    ('<div class="hud keys">', '<div class="hud dmlight" title="You are in DM mode"><i></i>DM mode</div>\n<div class="hud keys">'),
     # ---- the marching line: the followers are moved in the page's own frame loop, right after the leader
     ("  frameSprite(dt);\n  const here=stops.get(party);", "  frameSprite(dt); if(GAME){ trailTick(dt,aboard); loomTick(t); }\n  const here=stops.get(party);"),
     ("tick();\nwindow.__wm={", GAME_TAIL + "tick();\nwindow.__wm={"),
