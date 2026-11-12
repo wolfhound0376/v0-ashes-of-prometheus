@@ -45,6 +45,12 @@ export function mapFollowerIds(leaderId: string | null | undefined, seated: read
   return out
 }
 
+/**
+ * Every hero who has a walking sprite of their own. The DM's "all heroes" line (a test switch on the map, this
+ * browser only) marches these, so the line can be looked at without seating a table first.
+ */
+export const MAP_SPRITE_HERO_IDS: readonly string[] = [...Object.keys(PREMADE), ...Object.keys(FORGED)]
+
 export type MapHero = {
   walk: { src: string; frames: number; fps: number }
   idle: { src: string; frames: number; fps: number }
