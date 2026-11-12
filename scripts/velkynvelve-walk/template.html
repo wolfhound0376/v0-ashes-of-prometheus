@@ -6888,7 +6888,7 @@ function d20(adv, who, vs, need){
 // has no Long Rest yet, so — as with Rage — a reload restores them. Halfling Luck is a different thing (luckOnFaces).
 let D20_LAST = null;
 const LUCK_USED = {};
-function luckLeft(a){ if (!a || a.kind !== "pc") return 0; const sh = SHEETS[a.id] || {}; if (!(sh.feats || []).includes("Lucky")) return 0; return Math.max(0, (sh.prof || 2) - (LUCK_USED[a.id] || 0)); }
+function luckLeft(a){ if (!a || a.kind !== "pc") return 0; const sh = SHEETS[a.id] || {}; if (!(sh.feats || []).includes("Lucky")) return 0; return Math.max(0, profOf(sh) - (LUCK_USED[a.id] || 0)); }
 function luckSpend(a, line){ LUCK_USED[a.id] = (LUCK_USED[a.id] || 0) + 1; traitPop(a, {name: "Lucky", line: `Lucky: ${line} (${luckLeft(a)} left).`}); }
 // An attack roll against a Lucky hero: a point gives the attacker Disadvantage, spent only on a roll that would hit.
 // `r` must be the attacker's d20 straight from d20() (D20_LAST still holds its dice); `hitsOn` the face that hits.
@@ -9374,7 +9374,12 @@ function afterAttackRoll(att){ if (att.c.rage) att.c.rage.attacked = true;   // 
   if (att.c.conds.has("hidden")){ att.c.conds.delete("hidden"); delete att.c.hideDc; att.alpha = 1; } att.c.conds.delete("helped"); }
 // SRD 2024: the DC to resist a Shove or Grapple is 8 + STR mod + proficiency.
 const sgn = (n) => (n >= 0 ? "+" : "−") + Math.abs(n);
-const shoveDc = (a) => 8 + abilMod(a.c.sheet, "str") + 2;   // SRD 5.2.1: 8 + Strength modifier + proficiency
+// PROFICIENCY BY LEVEL (SRD 5.2.1 Character Advancement: +2 at 1–4, +3 at 5–8, +4 at 9–12, +5 at 13–16, +6 at 17–20).
+// Until 2026-11-12 the map added a flat +2 to every weapon attack, shove DC and weapon-art DC, so a level-5 hero rolled
+// one short (Sam: "go", on the fix). The hero sheet carries the row's own number (lib/walk-sheet.ts `prof`); a sheet
+// without one works it out from its level; a creature with neither keeps the old +2.
+function profOf(sh){ if (!sh) return 2; if (Number.isFinite(+sh.prof) && +sh.prof > 0) return +sh.prof; const L = +sh.level; return L > 0 ? 2 + Math.floor((Math.min(20, L) - 1) / 4) : 2; }
+const shoveDc = (a) => 8 + abilMod(a.c.sheet, "str") + profOf(a.c.sheet);   // SRD 5.2.1: 8 + Strength modifier + proficiency
 function skillCheck(a, skill, dc){ const small = skill === "stealth" && isSmall(a), mod = (a.c.sheet.skills || {})[skill] ?? abilMod(a.c.sheet, skill === "perception" ? "wis" : skill === "athletics" ? "str" : "dex"), r = d20(withEdge(rageAdvantage(a.c.rage, skill === "athletics" ? "str" : skill), small), a, null, dc == null ? null : dc - mod); return {r, mod, total: r + mod, small}; }   // Small: Stealth with advantage (house rule, Sam 2026-10-26)
 function targetAc(t){ let ac = t.c.ac; if (t.c.conds.has("mageArmor")) ac = Math.max(ac, 13 + abilMod(t.c.sheet, "dex")); if (t.c.conds.has("barkskin")) ac = Math.max(ac, 17); return ac + (t.c.conds.has("shielded") ? 2 : 0) + (t.c.conds.has("shieldSpell") ? 5 : 0); }
 // the buffs that change numbers, as they land
@@ -9481,11 +9486,11 @@ function artWeapon(a, atk){
 /** the arts this attack line offers this hero, each with its DC and whether it is spent */
 function artsFor(a, atk){
   const w = artWeapon(a, atk); if (!w) return [];
-  return Object.entries(WEAPON_ARTS).filter(([, v]) => v.weapons.includes(w)).map(([key, v]) => ({key, ...v, dc: 8 + 2 + abilMod(a.c.sheet, v.ab), used: artsUsed(a.id).includes(key)}));
+  return Object.entries(WEAPON_ARTS).filter(([, v]) => v.weapons.includes(w)).map(([key, v]) => ({key, ...v, dc: 8 + profOf(a.c.sheet) + abilMod(a.c.sheet, v.ab), used: artsUsed(a.id).includes(key)}));
 }
 /** what the art adds to a hit; returns the words for the log */
 function artRider(att, tgt, atk, crit){
-  const v = WEAPON_ARTS[atk.art]; if (!v) return ""; const dc = 8 + 2 + abilMod(att.c.sheet, v.ab);
+  const v = WEAPON_ARTS[atk.art]; if (!v) return ""; const dc = 8 + profOf(att.c.sheet) + abilMod(att.c.sheet, v.ab);
   popText(att, v.name, "#ffd27a", 1);
   if (v.self){ addCond(att, v.self); popText(tgt, v.says, "#ffe08a", .85); return `${v.name}: ${fname(tgt)} is ${v.says}, ${v.blurb}`; }
   if (v.cleave){
@@ -16793,7 +16798,7 @@ function attackFromItem(sheet, it){
   // a "+1" weapon's catalogue row may carry one `bonus` for both (Lolth's Tooth does): it adds to the attack and the damage
   // UNATTUNED, IT IS AN ORDINARY WEAPON (SRD: "only its nonmagical benefits"): no bonus to hit or damage, not magical
   const live = !needsAttune(it) || magicWorksFor(sheetHero(sheet), it), bonusHit = live ? Number(p.attack_bonus ?? p.bonus ?? 0) : 0, bonusDmg = live ? Number(p.damage_bonus ?? p.bonus ?? 0) : 0;
-  const prof = trainedWith(sheet, it) ? 2 : 0, dm = mod + bonusDmg;       // proficiency +2 at levels 1-4
+  const prof = trainedWith(sheet, it) ? profOf(sheet) : 0, dm = mod + bonusDmg;       // the hero's proficiency bonus (profOf: by level)
   const a = {name: it.name, hit: mod + prof + bonusHit, dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
     reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, str: !ammo && (!finesse || str >= dex), ammo, item: true, itemName: it.name, pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null, magic: live && isMagicWeapon(it)};
   if (!live) a.unattuned = true;
