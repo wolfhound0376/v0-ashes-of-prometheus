@@ -8,12 +8,13 @@
 //
 //   WHICH PLATE. Only plates Sam has approved (claude/Battle_Plates_For_Road_Encounters_2026-11-12.md):
 //     - the terrain rolled with the creatures, when its plate is painted (Rope bridge, Boneyard, Webs);
-//     - else giant spiders fight on the Webs (his plate list: "Giant spiders: Webs").
+//     - else giant spiders fight on the Webs and gricks in the tunnels (his plate list: "Giant spiders: Webs",
+//       "Gricks and umber hulk: tunnels"). Orogs wait for the High ledge plate unless a painted terrain is rolled.
 //     Anything else has no painted plate yet, so there is no battle to offer and the card says so.
 //
 //   WHICH FOES. Only a creature row that carries both a `bestiary` name and a `count` in encounter_table_rows
 //     (today: the Ambushers table), and only a creature the walk page has a stat block and sprite for
-//     (WALK_FOES — today the giant spider). A dice count ("1d6") is rolled here with the caller's roller and
+//     (WALK_FOES: giant spider, orog, grick). A dice count ("1d6") is rolled here with the caller's roller and
 //     the roll is kept, so the number on the plate can be audited like every other die.
 //
 // Surprise is the meeting's verdict (lib/travel/meeting.ts), carried through untouched.
@@ -34,10 +35,10 @@ export const TERRAIN_PLATES: Readonly<Record<string, string>> = {
 }
 
 /** Creatures with a plate of their own in Sam's list, when no painted terrain was rolled. */
-export const CREATURE_PLATES: Readonly<Record<string, string>> = { "giant spider": "road-webs" }
+export const CREATURE_PLATES: Readonly<Record<string, string>> = { "giant spider": "road-webs", grick: "road-tunnels" }
 
 /** Bestiary name -> the walk page's foe id (a sprite AND a stat block there: template.html FOE_BLOCKS). */
-export const WALK_FOES: Readonly<Record<string, string>> = { "giant spider": "giant-spider" }
+export const WALK_FOES: Readonly<Record<string, string>> = { "giant spider": "giant-spider", orog: "orog", grick: "grick" }
 
 export interface RoadBattle {
   /** The walk plate the fight opens on. */

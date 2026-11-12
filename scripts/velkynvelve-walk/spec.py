@@ -383,6 +383,14 @@ ROAD_PLATES = {
    obstacles=[],
    zones=[dict(rect=[1170, 322, 1320, 405], to=[], kind="leave", label="Back to the road, through the arch"),
           dict(rect=[990, 1275, 1410, 1339], to=[], kind="leave", label="Back to the road, the way you came")]),
+ # Sam's plate list, 2026-11-12: "Gricks and umber hulk: tunnels". The same painting as the tunnels cavern, as a plate of
+ # its own so a road fight is not standing in Velkynvelve's back yard: its ways out are the road, not the outpost.
+ # It walks Sam's own brush for the tunnels (the mask is shared below, after masks.json is read); floors are the fallback.
+ "road-tunnels": dict(slug="road-tunnels", arrive=[1200, 1120], name="Road: the tunnels", scale=1.0, img="biome-tunnels.jpg",
+   floors=[dict(poly=P((240,800),(450,590),(500,420),(780,330),(1050,520),(1800,560),(1900,330),(2230,330),(2300,700),(2300,900),(2100,1150),(1750,1339),(420,1339),(200,1150),(120,1000)))],
+   obstacles=[],
+   zones=[dict(rect=[892, 1224, 1523, 1339], to=[], kind="leave", label="Back to the road, the way you came"),
+          dict(rect=[477, 146, 781, 517], to=[], kind="leave", label="Back to the road, on ahead")]),
 }
 NODES.update(ROAD_PLATES)
 
@@ -434,6 +442,7 @@ for _k, _rle in _M.get('doors', {}).items():
     _runs = [int(r) for r in _rle.split(',')]
     assert sum(_runs) == _M['w'] * _M['h'], ('door cells do not cover exactly one grid', _k, sum(_runs))
     _PLATES[_k]['doorMask'] = _rle
+_PLATES['road-tunnels']['mask'] = _PLATES['tunnels']['mask']   # the road's tunnels walk the tunnels' painted floor
 print(len(_M['masks']), 'plates walk Sam\'s painted floor; traced shapes still used by:', ', '.join(k for k in _PLATES if k not in _M['masks']))
 
 # ── height on a plate ─────────────────────────────────────────────────────────────────────────────────────────────────

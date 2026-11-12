@@ -6583,6 +6583,20 @@ const FOE_BLOCKS = {
   // about half its size (no art of its own yet).
   "giant-wolf-spider": {name: "Giant wolf spider", xp: 50, passive: 13, stealth: 7, hp: 11, ac: 13, speed: 40, init: 3, saves: {str: 1, dex: 3, con: 1, int: -4, wis: 1, cha: -3},
                    attacks: [{name: "Bite", hit: 3, dmg: "1d6+1", type: "piercing", reach: 5, rider: {save: "con", dc: 11, dmg: "2d6", type: "poison", half: true}}]},
+  // THE ROAD'S AMBUSHERS (Sam, 2026-11-12: "Ambushers are fine"), so a road fight can stage them (ROAD FIGHT;
+  // lib/travel/battle.ts WALK_FOES). Numbers are the `bestiary` rows, read 2026-11-12; saves are the ability modifiers.
+  // Orog (Monster Manual 2014, the row Sam's page was transcribed into): AC 18 plate, 42 hp (5d8+20), speed 30, passive
+  // 10, CR 2 (450 XP). Multiattack: two greataxe attacks (`multiMelee`: a thrown javelin is one attack, not two).
+  // Greataxe +6, 1d12+4 slashing. Javelin +6, 1d6+4 piercing, range 30/120. NOT modelled: Aggressive (a bonus-action
+  // move toward a foe it can see).
+  orog: {name: "Orog", xp: 450, passive: 10, hp: 42, ac: 18, speed: 30, init: 1, saves: {str: 4, dex: 1, con: 4, int: 1, wis: 0, cha: 1},
+         attacks: [{name: "Greataxe", hit: 6, dmg: "1d12+4", type: "slashing", reach: 5}, {name: "Javelin", hit: 6, dmg: "1d6+4", type: "piercing", reach: 30, long: 120, ranged: true}], multi: 2, multiMelee: true},
+  // Grick (SRD 5.1): AC 14, 27 hp (6d8), speed 30 (climb 30), passive 12, CR 2 (450 XP). Resists bludgeoning, piercing
+  // and slashing from nonmagical attacks. Multiattack: one tentacles attack; if it hits, one beak attack on the same
+  // target (`rotate` + `chain`: the beak comes only after the tentacles land). Tentacles +4, 2d6+2 slashing. Beak +4,
+  // 1d6+2 piercing. NOT modelled: Stone Camouflage (on the road, who saw whom is the marker's passive roll).
+  grick: {name: "Grick", xp: 450, passive: 12, hp: 27, ac: 14, speed: 30, init: 2, saves: {str: 2, dex: 2, con: 0, int: -4, wis: 2, cha: -3}, resistNonmagical: ["bludgeoning", "piercing", "slashing"],
+          attacks: [{name: "Tentacles", hit: 4, dmg: "2d6+2", type: "slashing", reach: 5}, {name: "Beak", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}], multi: 2, rotate: true, chain: true},
   quaggoth: {name: "Quaggoth", xp: 450, passive: 11, hp: 45, ac: 13, speed: 30, init: 1, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, immune: ["poison"], immuneCond: ["poisoned"],
              attacks: [{name: "Claw", hit: 5, dmg: "1d6+3", type: "slashing", reach: 5}], multi: 2, woundedFury: 10},
   // THE THING THAT COMES OUT OF BUPPIDO'S GRAVE (Sam, 2026-10-30). SRD 5.1 Zombie, unchanged: AC 8, 22 hp (3d8+9),
@@ -9691,6 +9705,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (att.artFx && !shot) artSwingFx(att, tgt, att.artFx);
       const bl = blessD4(att);
       let adv = advantageOn(att, tgt, ranged, atk), r = luckyGuard(att, tgt, d20(adv, att, null, cv.total ? null : acVs - atk.hit - bl), acVs - atk.hit - bl), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit + bl, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + bl + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
+      att.c.lastSwingHit = !!hit;   // for a block whose next attack needs this one to land (`chain`, the grick)
       if (hit && !crit && tgt.c.conds.has("paralyzed") && feetBetween(att, tgt) <= 5.5) crit = true;   // SRD: a hit on the paralyzed from within 5 ft is a critical
       if (hit && !crit && tgt.kind === "pc" && tgt.down && !ranged && feetBetween(att, tgt) <= 7.5) crit = true;   // SRD: unconscious — a hit from within 5 ft is a critical hit
       if (bl) popText(att, bl > 0 ? `bless +${bl}` : `bane ${bl}`, bl > 0 ? "#ffe9a8" : "#b07ad8", .8);
@@ -11386,7 +11401,7 @@ function foeTurn(f){
   // `rotate` (the bhut): Multiattack of two DIFFERENT attacks, one each — the nth swing is the nth attack in the block
   // a curse being spoken (the bhut) holds the turn until the words are out
   const after = ms => Math.max(ms, (f.cursingUntil || 0) - now + 150);
-  let n = 0; const go = () => { if (reactionWait){ reactionWait.then(() => setTimeout(go, 250)); return; } if (!cbt || tgt.down || f.down || n >= swings){ setTimeout(() => passTurn(f), after(500)); return; } const a2 = s.rotate && atk === s.attacks[0] ? s.attacks[n % s.attacks.length] : atk; n++; attackWith(f, tgt, a2, () => { const b = FOE_BARK[f.id]; if (b && Math.random() < .4 && !(f.cursingUntil > now)) bark(f, b[1] || b[0], 1600); setTimeout(go, after(250)); }); };
+  let n = 0; const go = () => { if (reactionWait){ reactionWait.then(() => setTimeout(go, 250)); return; } if (!cbt || tgt.down || f.down || n >= (atk.ranged && s.multiMelee ? 1 : swings) || (s.chain && n > 0 && !f.c.lastSwingHit)){ setTimeout(() => passTurn(f), after(500)); return; } const a2 = s.rotate && atk === s.attacks[0] ? s.attacks[n % s.attacks.length] : atk; n++; attackWith(f, tgt, a2, () => { const b = FOE_BARK[f.id]; if (b && Math.random() < .4 && !(f.cursingUntil > now)) bark(f, b[1] || b[0], 1600); setTimeout(go, after(250)); }); };
   setTimeout(go, 500);
 }
 // An ally's turn (Ront, Eldeth, Derendil, Sarith). Plain 5e, no new numbers: close on the nearest foe they can
