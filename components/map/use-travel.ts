@@ -93,6 +93,8 @@ export type LeadInfo = {
 }
 
 export type Halt = {
+  /** Who saw whom first, when creatures were met here (lib/travel/meeting.ts). */
+  meeting?: { first: "party" | "them"; chip: string } | null
   kind: string
   title: string
   body: string | null
@@ -525,7 +527,7 @@ export function useTravel() {
         .catch(() => {})
     }
     if (out?.halt) {
-      setHalt({ kind: out.kind, title: out.title, body: out.body, rolls: out.rolls ?? [], source: out.source })
+      setHalt({ kind: out.kind, title: out.title, body: out.body, rolls: out.rolls ?? [], source: out.source, meeting: out.meeting ? { first: out.meeting.first, chip: out.meeting.chip } : null })
       // Picked up again by the Continue button, from exactly this step.
       await new Promise<void>((resolve) => {
         resumeRef.current = () => {
