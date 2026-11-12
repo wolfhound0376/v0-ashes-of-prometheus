@@ -3872,7 +3872,33 @@ function tickChasmWebs(){
 // hand-over to the map happens at THAT plate's outward edge (a `leave` zone with no destination), and the cavern the
 // party is standing on is the one /map hears about.
 function goBeyond(z){ const t = z.to[0]; if (t != null && SPEC[t]) travel(t, z); else leaveVelkynvelve(z); }
+// ---------- ROAD FIGHT: a road encounter that came to blows ----------
+// Sam (the Pixel Heroes pass): "If a fight ensues then we fade into a battle map that resembles the area we are in. Like
+// the combat module." 2026-11-12: "go". The travel map's encounter card links here with the fight in the address
+// (lib/travel/battle.ts battleHref): road = the plate, foes = one walk foe id each, why = the encounter row's own
+// words, surprised = "party" when they saw the party first, "them" when the party chose to ambush. The plate and the foes were decided by the dice at the
+// marker; this only stages them. Runs once per address: the address is cleaned as soon as it is read, so a reload
+// does not start the fight again. Foes with no stat block here are refused, never stood in for.
+const isRoadPlate = n => typeof n === "string" && n.startsWith("road-") && !!SPEC[n];
+async function roadFight(){
+  let top, q; try { top = window.top !== window ? window.top : window; q = new URLSearchParams(top.location.search); } catch (e) { return; }
+  const plate = q.get("road"); if (!plate) return;
+  const foeIds = (q.get("foes") || "").split(",").filter(Boolean), why = q.get("why") || "Something on the road", surprised = ["party", "them"].includes(q.get("surprised")) ? q.get("surprised") : null;
+  try { ["road", "foes", "why", "surprised"].forEach(k => q.delete(k)); top.history.replaceState(null, "", top.location.pathname + (q.toString() ? "?" + q : "")); } catch (e) {}
+  if (!isRoadPlate(plate)){ toast("That battle map is not painted yet."); return; }
+  const unknown = foeIds.filter(id => !FOE_BLOCKS[id] || !SPR[id]);
+  if (!foeIds.length || unknown.length){ toast(unknown.length ? `No stat block here for: ${[...new Set(unknown)].join(", ")}.` : "No foes were named for this fight."); return; }
+  if (cbt || FIGHT.mirror) return;                                   // a fight is already on this screen
+  const at = SPEC[plate].arrive;
+  await enterNode(plate, at ? {spawn: {x: at[0], y: at[1]}, note: esc(why) + "."} : {note: esc(why) + "."});
+  await new Promise(r => setTimeout(r, 1700));                       // the plate fades in and the party settles before steel
+  if (cur !== plate || cbt) return;
+  mode = "explore";
+  startCombat(foeIds, why, {noAllies: false, roadSurprise: surprised});
+}
 function leaveVelkynvelve(z){
+  // A ROAD PLATE'S WAY OUT IS THE ROAD (ROAD FIGHT, below): back to the travel map, where the march stands halted.
+  if (isRoadPlate(cur)){ showDialog({title: "Back to the road", body: "The march is where you left it.", buttons: [{label: "Back to the map", primary: true, fn: () => { (window.top !== window ? window.top : window).location.href = "/map"; }}, {label: "Stay"}]}); return; }
   const away = PARTY.filter(heroElsewhere);
   if (away.length){ toast(`The party leaves Velkynvelve together. ${away.map(id => `${SHORT[id] || id} (${plateLabel(heroAt[id].plate)})`).join(", ")} ${away.length > 1 ? "are" : "is"} elsewhere.`, 5000); return; }
   // `via` (spec.py): a way out that is not a cavern plate names its own hand-off (plate 13's north passage). `roads`
@@ -7085,13 +7111,18 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   $("vignette").classList.add("on"); pickCombatTrack(moodFor(foes, startCombat.flagMood)); startCombat.flagMood = null; setTrack("combat");
   // initiative: d20 + the sheet's bonus, everyone, highest first (ties: higher bonus, then the party)
   const order = [...party, ...allies, ...foes].filter(a => !a.down);   // fighters only: bystanders run between the turns
-  for (const a of order){ a.c = a.c && (hero(a) || a.bystander) ? a.c : fighterFor(a); a.c.initRoll = d20(0, a); a.c.init = a.c.initRoll + (a.c.sheet.init || 0); }
+  for (const a of order){ a.c = a.c && (hero(a) || a.bystander) ? a.c : fighterFor(a); a.c.initRoll = d20((opts.roadSurprise === "party" && hero(a)) || (opts.roadSurprise === "them" && foes.includes(a)) ? -1 : 0, a); a.c.init = a.c.initRoll + (a.c.sheet.init || 0); }
   order.sort((a, b) => b.c.init - a.c.init || (b.c.sheet.init || 0) - (a.c.sheet.init || 0) || (a.kind === "pc" ? -1 : 1));
   // SURPRISE (SRD 5.1, Combat > Surprise; fightWith): a foe who never saw it coming is surprised — no move and no action
   // on its first turn, no reaction until that turn ends. And the one who struck from hiding goes first (Sam, 2026-10-27:
   // "If we sneak attack them we hit them first"): initiative is still rolled for the rest of the order.
   for (const f of opts.surprised || []) if (f.c){ f.c.surprised = true; f.c.reactionUsed = true; f.c.conds.add("surprised"); }
   if (opts.ambush) ambushSurprise(order.filter(a => hero(a)), foes);
+  // THE ROAD'S SURPRISE (lib/travel/meeting.ts; Sam, 2026-11-12). On the road the passive roll at the marker already said who
+  // saw whom first, so nothing is rolled again here; an ambush the party chose on the encounter box (lib/travel/stance.ts) surprises THEM the same way. "Surprised" there is SRD 5.2.1 (this campaign's canon): Disadvantage
+  // on the Initiative roll, applied above. It is NOT the lose-a-turn surprise of an ambush on a plate (ambushSurprise).
+  if (opts.roadSurprise === "party") log(`<b>Surprised.</b> They saw the party first: every hero rolled Initiative with Disadvantage.`);
+  if (opts.roadSurprise === "them") log(`<b>Ambush.</b> They never saw it coming: every one of them rolled Initiative with Disadvantage.`);
   if (opts.opener && order.includes(opts.opener)){ order.splice(order.indexOf(opts.opener), 1); order.unshift(opts.opener); }
   cbt = {order, allies, bystanders, idx: -1, round: 0, home: {z, cx, cy}, phase: "idle", pend: null, lastTarget: null,
     id: `${cur}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`};   // the fight's own name: /api/walk-xp pays it once
@@ -20068,6 +20099,7 @@ function owRenderSeats(){
   }
   booted = true;
   if (APP) owStart(W);
+  roadFight();
   // the heroes' own gear, now that they are on the plate. The first load (noteSeats) runs before the party is built,
   // so it reached only the allies: a hero's pack and hands stayed empty until something else asked, and an equipped
   // crossbow never became an attack.

@@ -7,6 +7,7 @@
 // Both read the one march in ./use-travel.ts, so the two views cannot drift.
 
 import { StageLink } from "@/components/stage/stage-provider"
+import { battleHref } from "@/lib/travel/battle"
 import { VESSELS, seats } from "@/lib/travel/vessels"
 import { MARCH_HOURS_PER_DAY, PACES, fatigue, legPreview } from "@/lib/travel/march"
 import { isRoadMarker } from "@/lib/travel/standing"
@@ -331,7 +332,7 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
                       ))}
                     </ul>
                   )}
-                  {halt.stance.outcome === "fight" && <div className="mt-2 text-[11px] text-[#c9bcd8]">Run the fight at the table, then walk on.</div>}
+                  {halt.stance.outcome === "fight" && <div className="mt-2 text-[11px] text-[#c9bcd8]">{halt.battle ? "Fight it on the battle map, then walk on." : "Run the fight at the table, then walk on."}</div>}
                   {halt.stance.outcome === "parley" && <div className="mt-2 text-[11px] text-[#c9bcd8]">Speak with them at the Parley, then walk on.</div>}
                 </div>
               )}
@@ -354,6 +355,22 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
                   ))}
                 </div>
               )}
+              {/* IF IT COMES TO A FIGHT (Sam: "If a fight ensues then we fade into a battle map that resembles the area we
+                  are in"; "go", 2026-11-12). Offered once the encounter box has come to a fight (or where no box was
+                  offered). The plate and the foes come from the dice (lib/travel/battle.ts); who is surprised is the
+                  box's verdict when a choice was made, else the meeting's. When the data or the paint is not there
+                  yet, the card says which, and the fight stays the table's to run. */}
+              {halt.kind === "encounter" && (halt.stance ? halt.stance.outcome === "fight" : !(halt.stances ?? []).length) && (halt.battle ? (
+                <StageLink
+                  href={battleHref(halt.battle, halt.stance ? halt.stance.surprised : halt.battle.surprised)}
+                  caption="Steel out. The road will still be there after."
+                  className="mt-3 block rounded border border-[#7a2b2b] bg-[#2a1218] px-3 py-2 text-center text-[11px] tracking-[.2em] text-[#e6a3a3] hover:border-[#e6a3a3]"
+                >
+                  TO BATTLE: {halt.battle.count} {halt.battle.creature.toUpperCase()}{halt.battle.count === 1 ? "" : "S"} →
+                </StageLink>
+              ) : halt.noBattle ? (
+                <div className="mt-3 text-center text-[11px] text-[#9a8fb0]">No battle map for this one yet. {halt.noBattle}</div>
+              ) : null)}
               {halt.kind === "camp" && (
                 <>
                   <StageLink

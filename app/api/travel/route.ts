@@ -23,6 +23,7 @@ import { mayLead, tallyLeader, whoLeads } from "@/lib/travel/leader"
 import { noticeAt, noticeSpec, type Eyes } from "@/lib/travel/notice"
 import { meetingAt } from "@/lib/travel/meeting"
 import { foesOf, resolveStance, stanceOptions, type Foe, type StanceResult } from "@/lib/travel/stance"
+import { battleFor, isBattle } from "@/lib/travel/battle"
 import { arrivalCue } from "@/lib/travel/stingers"
 import { malacharRoadLine, sayOnTheRoad, worthAWord } from "@/lib/travel/narrate"
 import { costLine, offerOptions, readOptions, resolveChoice, type NodeOption } from "@/lib/travel/options"
@@ -986,6 +987,12 @@ export async function POST(req: NextRequest) {
       foes = foesOf(outcome.rolls, Object.fromEntries(((beasts ?? []) as { name: string; senses: string | null }[]).map((b) => [b.name, b.senses])))
     }
     const stances = meeting && foes.length ? stanceOptions({ first: meeting.first, foes, pace: dayAfter.pace }) : []
+    // THE BATTLE (lib/travel/battle.ts; Sam, 2026-11-12: "go"). If it comes to a fight, which painted plate it is
+    // fought on and against what, from the dice already rolled. `battle` when there is one to offer; `noBattle`
+    // carries the reason when the data or the paint is not there yet, so the card can say so instead of guessing.
+    const fought = outcome.halt && outcome.kind === "encounter" ? battleFor(outcome.rolls, meeting, (die) => 1 + Math.floor(Math.random() * die)) : null
+    const battle = isBattle(fought) ? fought : null
+    const noBattle = fought && !isBattle(fought) ? fought.reason : null
 
     // A forced march that cost somebody a level of exhaustion stops the party
     // too - not to camp, but so the price is seen before they go on.
@@ -1030,6 +1037,7 @@ export async function POST(req: NextRequest) {
             ...(notice ? { notice: { dc: notice.dc, chip: notice.chip, noticed: notice.noticed, revealed: revealedName } } : {}),
             ...(meeting ? { meeting } : {}),
             ...(foes.length ? { foes } : {}),
+            ...(battle ? { battle } : {}),
           },
         })
         .select("id")
@@ -1115,6 +1123,8 @@ export async function POST(req: NextRequest) {
       meeting,
       foes,
       stances,
+      battle,
+      noBattle,
       ...outcome,
       // The day overrides what the encounter alone would have said.
       halt,
