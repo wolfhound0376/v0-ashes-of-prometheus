@@ -10,6 +10,13 @@
 //   already signed in as the DM on this device   → straight through, no question at all
 //   not signed in                                → the code once, then through
 //
+// THE MAP DOOR (Sam, 2026-11-12: "I can't get on the map. I need a way to do this administratively").
+// /rehearsal?to=map is the same lock with a different room behind it: the travel map (/map), opened as the DM.
+// A host who plays a hero is a player on that browser, so /map sends them to the table unless a game is live
+// and they are seated (lib/session-guard.ts). This door signs the browser in as the DM instead. It always asks
+// for the code unless this browser already holds the DM key, because the map's DM controls need the key itself,
+// not only the cookie. The travel map has no sandbox: moving the party there moves it in the real game.
+//
 // What it does NOT do: open a table, name a host, pick a save or reset anything. A rehearsal touches none of
 // that. The sandbox itself is unchanged (lib/dry-run.ts, /velkynvelve?sandbox=1): Malachar answers, nothing saves.
 //
@@ -20,7 +27,7 @@
 import { useEffect, useState, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { FlaskConical } from "lucide-react"
-import { setDmKey } from "@/lib/dm-key"
+import { hasDmKey, setDmKey } from "@/lib/dm-key"
 import { HomeButton } from "@/components/home-button"
 import { ENTERED_KEY, mapHref } from "@/lib/map-entry"
 
@@ -34,6 +41,8 @@ export default function RehearsalPage() {
   const [armed, setArmed] = useState(true)
   const [code, setCode] = useState("")
   const [status, setStatus] = useState<"idle" | "checking" | "no" | "limited" | "nogate">("idle")
+  const [toMap, setToMap] = useState(false)
+  const wantsMap = () => { try { return new URLSearchParams(window.location.search).get("to") === "map" } catch { return false } }
 
   // The same three marks the host screen's Rehearsal button leaves, then the sandbox map.
   const enter = () => {
@@ -43,13 +52,15 @@ export default function RehearsalPage() {
       window.sessionStorage.setItem("aop_intro_seen", "1")
       window.sessionStorage.setItem(ENTERED_KEY, "1")
     } catch { /* storage blocked */ }
-    router.push(mapHref(true))
+    router.push(wantsMap() ? "/map" : mapHref(true))
   }
 
   useEffect(() => {
     fetch("/api/dm/session", { cache: "no-store" }).then((r) => r.json()).then((j) => {
       setArmed(Boolean(j.gate))
-      if (j.dm) enter()
+      const map = wantsMap()
+      setToMap(map)
+      if (j.dm && (!map || hasDmKey())) enter()
       else setPhase("gate")
     }).catch(() => setPhase("gate"))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -82,12 +93,12 @@ export default function RehearsalPage() {
       <div className="relative mx-auto w-full max-w-5xl px-4 pb-20 pt-10 sm:px-6">
         <div className="mb-8 text-center">
           <div className="text-[10px] uppercase tracking-[0.5em] text-[#8a6a3a]">Ashes of Prometheus</div>
-          <h1 className="mt-2 font-serif text-3xl tracking-[0.14em] text-[#e8c56a]">Rehearsal</h1>
-          <p className="mt-2 text-sm text-stone-500">The sandbox. Malachar answers, and nothing is saved.</p>
+          <h1 className="mt-2 font-serif text-3xl tracking-[0.14em] text-[#e8c56a]">{toMap ? "The Travel Map" : "Rehearsal"}</h1>
+          <p className="mt-2 text-sm text-stone-500">{toMap ? "The DM's way onto the map. This is the real map: moving the party moves it in the game." : "The sandbox. Malachar answers, and nothing is saved."}</p>
         </div>
 
         {phase === "checking" && <div className="py-24 text-center text-[11px] uppercase tracking-[0.4em] text-stone-600">Checking the lock…</div>}
-        {phase === "entering" && <div className="py-24 text-center text-[11px] uppercase tracking-[0.4em] text-stone-500">Opening the sandbox…</div>}
+        {phase === "entering" && <div className="py-24 text-center text-[11px] uppercase tracking-[0.4em] text-stone-500">{toMap ? "Opening the map…" : "Opening the sandbox…"}</div>}
 
         {phase === "gate" && (
           <form onSubmit={submit} className="mx-auto max-w-sm text-center">
@@ -107,7 +118,7 @@ export default function RehearsalPage() {
             {status === "limited" && <p role="alert" className="mt-3 text-sm text-red-400/90">Too many tries. Wait a few minutes.</p>}
             {status === "nogate" && <p role="alert" className="mt-3 text-sm text-red-400/90">The server has no DM code configured.</p>}
             <button type="submit" disabled={!armed || !code.trim() || status === "checking"} className="mt-5 w-full rounded-sm border border-[#c9a868]/70 bg-gradient-to-b from-[#1d1710] to-[#120e0a] py-3 font-serif text-[13px] uppercase tracking-[0.3em] text-[#d9bd7e] hover:border-[#c9a868] hover:text-[#f0dba8] disabled:opacity-40">
-              {status === "checking" ? "…" : "Enter the sandbox"}
+              {status === "checking" ? "…" : toMap ? "Open the map" : "Enter the sandbox"}
             </button>
             <a href="/intro" className="mt-6 inline-block text-[11px] uppercase tracking-[0.25em] text-stone-600 hover:text-stone-400">← The title</a>
           </form>
