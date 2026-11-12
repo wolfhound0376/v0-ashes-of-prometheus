@@ -14,6 +14,32 @@ import type { NodeRow, useTravel } from "./use-travel"
 
 export type Travel = ReturnType<typeof useTravel>
 
+/**
+ * THE TRAVEL SKIN (Sam, 2026-11-12: "Use elevenlabs to make the boxes in a style similar to the buttons on our
+ * pixel map"). The Underwalk toolbar look (thick bronze-gold rim, glossy coloured fill, black inner line), painted
+ * in ElevenLabs (gpt-image-2.5-sunburst, flow YCWrhaRMd0fkP04LTy42; Sam let Claude pick the take) and cut into
+ * public/underdark-map/ui/. Each piece is a 9-slice border-image, so a card or button of any size keeps its
+ * corners and rivets and only the straight runs stretch. The words stay live text on top.
+ */
+const UI = "/underdark-map/ui"
+const plate = (name: string) => `border-image:url(${UI}/btn-${name}.webp) 28 fill / 14px 15px stretch`
+const TRAVEL_SKIN_CSS = `
+.tk-panel{border:0;border-image:url(${UI}/panel.webp) 32 fill / 18px stretch;filter:drop-shadow(0 6px 18px #000c)}
+.tk-panel.tk-sm{border-image-width:12px}
+.tk-gauge{border:0;border-image:url(${UI}/gauge.webp) 20 fill / 6px 9px stretch}
+.tk-btn{border:0;position:relative;color:#fff6e3;text-shadow:0 1px 0 #000,0 0 6px #000a;filter:drop-shadow(0 2px 0 #000);transition:transform .09s ease,filter .12s ease;cursor:pointer}
+.tk-btn:hover:not(:disabled){filter:drop-shadow(0 2px 0 #000) brightness(1.14)}
+.tk-btn:active:not(:disabled){transform:translateY(1px)}
+.tk-btn:disabled{filter:grayscale(.55) brightness(.75);cursor:not-allowed}
+.tk-row{border-image-width:16px 18px}
+.tk-violet{${plate("violet")}}
+.tk-teal{${plate("teal")}}
+.tk-amber{${plate("amber")}}
+.tk-blue{${plate("blue")}}
+.tk-stone{${plate("stone")};color:#e4d8bf}
+.tk-gold{${plate("gold")};color:#2a1606;text-shadow:0 1px 0 #ffe9a6}
+`
+
 export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boolean }) {
   const {
     nodes, edges, party, loaded, dmKey, setRefresh,
@@ -29,9 +55,10 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
   } = t
   return (
     <>
+        <style>{TRAVEL_SKIN_CSS}</style>
         {roadChoice && !confirmNode && (
           <div className="absolute inset-0 grid place-items-center bg-[#05030acc] p-3">
-            <div className="rounded-lg border-2 border-[#f5c34d] bg-[#171024] px-6 py-5 w-full max-w-[52ch]">
+            <div className="tk-panel px-7 py-6 w-full max-w-[52ch]">
               <div className="text-[#9a8fb0] text-xs tracking-widest">OUT OF {(arrival?.from ?? "the outpost").toUpperCase()}</div>
               <div className="text-[#f5c34d] text-base font-bold tracking-widest mt-2">{arrival?.name ?? "The cavern floor"}. Which way?</div>
               <div className="text-[#9a8fb0] text-xs mt-1">The roads the map knows from here. Pick one.</div>
@@ -40,15 +67,15 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
                   <button
                     key={r.node.id}
                     onClick={() => { setRoadChoice(null); setConfirmNode(r.node as NodeRow) }}
-                    className="rounded border-2 border-[#c99a49] bg-[#2a1f10] px-4 py-2 text-left text-xs font-bold uppercase tracking-widest text-[#f5c34d] hover:bg-[#3a2a14]"
+                    className="tk-btn tk-amber px-5 py-2 text-left text-xs font-bold uppercase tracking-widest"
                   >
                     The road {r.heading}
-                    <span className="block text-[10px] font-normal normal-case tracking-normal text-[#c9bcd8]">
+                    <span className="block text-[10px] font-normal normal-case tracking-normal text-[#fbe7c6]">
                       {(r.node as NodeRow).name && (dmKey || (r.node as NodeRow).name_known !== false) ? (r.node as NodeRow).name : "A road into the dark"}
                     </span>
                   </button>
                 ))}
-                <button onClick={() => setRoadChoice(null)} className="rounded border-2 border-[#3a2c56] bg-[#221936] px-4 py-2 text-xs uppercase tracking-widest text-[#9a8fb0]">
+                <button onClick={() => setRoadChoice(null)} className="tk-btn tk-stone px-5 py-2 text-xs uppercase tracking-widest">
                   Stay at the gates
                 </button>
               </div>
@@ -66,7 +93,7 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
           const hoursFmt = (h: number) => `${Math.round(h * 10) / 10} h`
           return (
           <div className="absolute inset-0 grid place-items-center bg-[#05030acc] p-3">
-            <div className="rounded-lg border-2 border-[#f5c34d] bg-[#171024] px-6 py-5 w-full max-w-[52ch] max-h-full overflow-y-auto">
+            <div className="tk-panel px-7 py-6 w-full max-w-[52ch] max-h-full overflow-y-auto">
               <div className="text-[#9a8fb0] text-xs tracking-widest">MALACHAR ASKS</div>
               <div className="text-[#f5c34d] text-base font-bold tracking-widest mt-2">
                 Set out for {confirmNode.name ?? "this place"}?
@@ -84,7 +111,7 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
                 </div>
               )}
               {pv && (
-                <div className="mt-3 rounded border border-[#3a2c56] bg-[#221936] px-3 py-2 text-[11px] text-[#c9bcd8]">
+                <div className="tk-panel tk-sm mt-3 px-4 py-3 text-[11px] text-[#c9bcd8]">
                   About {hoursFmt(pv.hours)} of walking.{" "}
                   {pv.forced ? (
                     <span className="text-[#e08a8a]">That runs {hoursFmt(pv.endsAt - MARCH_HOURS_PER_DAY)} past today's {MARCH_HOURS_PER_DAY} hours: make camp on the way, or force the march.</span>
@@ -98,13 +125,13 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
               <div className="flex gap-2 justify-center mt-4">
                 <button
                   onClick={() => void setOut(confirmNode)}
-                  className="text-xs px-4 py-2 rounded border-2 bg-[#f5c34d] border-[#f5c34d] text-[#120b1e] font-bold"
+                  className="tk-btn tk-gold text-xs px-6 py-2 font-bold"
                 >
                   SET OUT ⏎
                 </button>
                 <button
                   onClick={() => setConfirmNode(null)}
-                  className="text-xs px-4 py-2 rounded border-2 bg-[#221936] border-[#3a2c56] text-[#9a8fb0]"
+                  className="tk-btn tk-stone text-xs px-6 py-2"
                 >
                   NO — ESC
                 </button>
@@ -137,19 +164,19 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
                   <button
                     onClick={() => void enterPlace(entrance.node.node_key, entrance.info.scene, entrance.info.plate, entrance.info.name)}
                     disabled={entering}
-                    className="rounded border-2 border-[#f5c34d] bg-[#f5c34d] px-5 py-2 text-xs font-bold tracking-[.2em] text-[#120b1e] disabled:opacity-60"
+                    className="tk-btn tk-gold px-6 py-2 text-xs font-bold tracking-[.2em]"
                   >
                     {entering ? "ENTERING…" : "ENTER →"}
                   </button>
                 )}
                 {canLead && !entrance.info.scene && (
-                  <span className="rounded border border-[#3a2c56] bg-[#171024cc] px-4 py-2 text-[11px] text-[#9a8fb0]">
+                  <span className="tk-panel tk-sm px-5 py-2.5 text-[11px] text-[#9a8fb0]">
                     The gates stand open, but there is nothing built inside yet.
                   </span>
                 )}
                 <button
                   onClick={() => setEntrance(null)}
-                  className="rounded border-2 border-[#3a2c56] bg-[#221936] px-4 py-2 text-xs tracking-[.2em] text-[#c9bcd8]"
+                  className="tk-btn tk-stone px-6 py-2 text-xs tracking-[.2em]"
                 >
                   STAY ON THE MAP
                 </button>
@@ -164,7 +191,7 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
             a greyed one names what the party is missing. */}
         {options && !confirmNode && !halt && !entrance && (
           <div className="absolute inset-0 z-20 grid place-items-center bg-[#05030acc] p-3">
-            <div className="w-full max-w-[52ch] rounded-lg border-2 border-[#f5c34d] bg-[#171024] px-6 py-5">
+            <div className="tk-panel w-full max-w-[52ch] px-7 py-6">
               <div className="text-[10px] uppercase tracking-[.22em] text-[#9a8fb0]">At {options.node.name ?? "this place"}</div>
               <div className="mt-1 font-serif text-lg text-[#f5c34d]">What do they do?</div>
               <div className="mt-4 grid gap-2">
@@ -173,22 +200,20 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
                     key={o.key}
                     disabled={!o.available || !canLead}
                     onClick={() => void chooseOption(options.node.node_key, o.key)}
-                    className={`rounded border px-3 py-2 text-left text-xs ${
-                      o.available && canLead
-                        ? "border-[#3a2c56] bg-[#221936] text-[#e4d8bf] hover:border-[#f5c34d]"
-                        : "cursor-not-allowed border-[#2a2140] bg-[#1a1428] text-[#6f6486]"
+                    className={`tk-btn tk-row px-6 py-2.5 text-left text-xs ${
+                      o.available && canLead ? "tk-violet" : "tk-stone cursor-not-allowed"
                     }`}
                   >
                     <b className="tracking-wide">{o.label}</b>
-                    {o.detail && <div className="mt-0.5 text-[11px] text-[#9a8fb0]">{o.detail}</div>}
-                    <div className="mt-1 text-[11px] text-[#e0a35c]">{o.cost_line}</div>
-                    {!o.available && <div className="mt-0.5 text-[11px] text-[#c96a6a]">The party has no {o.blocked_by.join(", ")}.</div>}
+                    {o.detail && <div className="mt-0.5 text-[11px] text-[#d9cdea]">{o.detail}</div>}
+                    <div className="mt-1 text-[11px] text-[#ffc98a]">{o.cost_line}</div>
+                    {!o.available && <div className="mt-0.5 text-[11px] text-[#ffaaaa]">The party has no {o.blocked_by.join(", ")}.</div>}
                   </button>
                 ))}
               </div>
               <button
                 onClick={() => setOptions(null)}
-                className="mt-4 w-full rounded border border-[#3a2c56] bg-[#221936] py-2 text-xs tracking-[.2em] text-[#9a8fb0]"
+                className="tk-btn tk-stone mt-4 w-full py-2 text-xs tracking-[.2em]"
               >
                 WALK ON
               </button>
@@ -199,8 +224,8 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
         {/* What the choice came to. */}
         {chosen && (
           <div className="absolute inset-0 z-20 grid place-items-center bg-[#05030acc] p-3">
-            <div className={`w-full max-w-[52ch] rounded-lg border-2 ${chosen.success ? "border-[#5ec08a]" : "border-[#7a2b2b]"} bg-[#171024] px-6 py-5`}>
-              <div className="text-[10px] uppercase tracking-[.22em] text-[#9a8fb0]">{chosen.success ? "It works" : "It does not"}</div>
+            <div className="tk-panel w-full max-w-[52ch] px-7 py-6">
+              <div className={`text-[10px] uppercase tracking-[.22em] ${chosen.success ? "text-[#7fd6a0]" : "text-[#e08a8a]"}`}>{chosen.success ? "It works" : "It does not"}</div>
               <div className="mt-1 font-serif text-lg text-[#f5c34d]">{chosen.label}</div>
               {chosen.roll && (
                 <div className="mt-2 text-[11px] text-[#9a8fb0]">
@@ -217,7 +242,7 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
               )}
               <button
                 onClick={() => setChosen(null)}
-                className="mt-4 w-full rounded border border-[#7a5c2b] bg-[#2a1f10] py-2 text-xs tracking-[.2em] text-[#f5c34d]"
+                className="tk-btn tk-gold mt-4 w-full py-2 text-xs font-bold tracking-[.2em]"
               >
                 ON WE GO
               </button>
@@ -226,7 +251,7 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
         )}
 
         {arrivedAt && !confirmNode && !halt && (
-          <div className="absolute left-1/2 -translate-x-1/2 top-3 rounded border-2 border-[#3a2c56] bg-[#171024ee] px-4 py-2 text-xs text-[#f5c34d] tracking-widest">
+          <div className="tk-panel tk-sm absolute left-1/2 -translate-x-1/2 top-3 px-5 py-2.5 text-xs text-[#f5c34d] tracking-widest">
             ARRIVED: {(arrivedAt.name ?? "???").toUpperCase()}
           </div>
         )}
@@ -241,7 +266,7 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
               </div>
             )}
             {beat.line && (
-              <div className="mt-2 rounded border border-[#5c2b7a] bg-[#1a1024ee] px-4 py-2 text-center font-serif text-[14px] italic leading-snug text-[#e4d8bf]">
+              <div className="tk-panel tk-sm mt-2 px-5 py-3 text-center font-serif text-[14px] italic leading-snug text-[#e4d8bf]">
                 <span className="mr-2 not-italic text-[10px] tracking-[.2em] text-[#b44df5]">MALACHAR</span>
                 {beat.line}
               </div>
@@ -259,7 +284,7 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
           const pv = legPreview(march, miles, march.day_miles)
           const hoursFmt = (h: number) => `${Math.round(h * 10) / 10} h`
           return (
-            <div className="pointer-events-none absolute right-3 top-3 max-w-[30ch] rounded border-2 border-[#3a2c56] bg-[#171024ee] px-3 py-2 text-[11px] text-[#c9bcd8]">
+            <div className="tk-panel tk-sm pointer-events-none absolute right-3 top-3 max-w-[30ch] px-4 py-3 text-[11px] text-[#c9bcd8]">
               <div className="tracking-[.2em] text-[#f5c34d]">{(hoverNode.name ?? "???").toUpperCase()}</div>
               <div className="mt-1">
                 {Math.round(miles * 10) / 10} mi by road · {hoursFmt(pv.hours)} at {march.pace} pace
@@ -280,13 +305,13 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
         {/* The day, Malachar's eyes only: players never see the day number or
             the hours (same rule as /api/game-clock). */}
         {dmKey && loaded && (
-          <div className="absolute left-3 top-3 rounded border-2 border-[#3a2c56] bg-[#171024ee] px-3 py-2 text-[11px] text-[#c9bcd8]">
+          <div className="tk-panel tk-sm absolute left-3 top-3 px-4 py-3 text-[11px] text-[#c9bcd8]">
             <div className="tracking-[.2em] text-[#f5c34d]">
               DAY {march.days_marched + 1} · {march.pace.toUpperCase()} PACE
             </div>
             <div className="mt-1 flex items-center gap-2">
-              <span className="relative inline-block h-1.5 w-24 overflow-hidden rounded bg-[#2a2140]">
-                <span className="absolute inset-y-0 left-0 bg-[#f5c34d]" style={{ width: `${Math.min(100, (march.hours_today / MARCH_HOURS_PER_DAY) * 100)}%` }} />
+              <span className="tk-gauge relative inline-block h-3 w-24 overflow-hidden">
+                <span className="absolute inset-y-[3px] left-[4px] rounded-full bg-[#f5c34d]" style={{ width: `${Math.min(100, (march.hours_today / MARCH_HOURS_PER_DAY) * 100)}%` }} />
               </span>
               <span>{Math.round(march.hours_today * 10) / 10} / {MARCH_HOURS_PER_DAY} h on the road</span>
             </div>
@@ -298,12 +323,13 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
           </div>
         )}
 
-        {loaded && party && !confirmNode && !halt && <MarchGauge t={t} />}
+        {/* Not over the "which way?" card or a place's painted entrance: both fill the map and the gauge sat on top of them. */}
+        {loaded && party && !confirmNode && !halt && !roadChoice && !entrance && <MarchGauge t={t} />}
 
         {/* The march has stopped. Nothing resumes it but the DM. */}
         {halt && (
           <div className="absolute inset-0 grid place-items-center bg-[#0a0612cc] p-4">
-            <div className={`w-full max-w-md rounded-lg border-2 ${halt.kind === "camp" ? "border-[#7a5c2b]" : "border-[#7a2b2b]"} bg-[#1a1020] p-4 shadow-[0_0_40px_#000]`}>
+            <div className="tk-panel w-full max-w-md px-6 py-5">
               <div className={`text-[10px] uppercase tracking-[.22em] ${halt.kind === "camp" ? "text-[#e0a35c]" : "text-[#c96a6a]"}`}>
                 {halt.kind === "encounter" ? "Encounter" : halt.kind === "challenge" ? "Challenge" : halt.kind === "cinematic" ? "Cinematic" : halt.kind === "camp" ? (march.hours_today >= MARCH_HOURS_PER_DAY ? "Nightfall — make camp" : "Camp — long rest") : halt.kind === "forced_march" ? "Forced march — the price" : "The party stops"}
               </div>
@@ -319,7 +345,7 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
                   <StageLink
                     href="/camp"
                     caption="A fire, if you can call it one. Sit. Eat. Lie to each other about how brave you were."
-                    className="mt-3 block rounded border border-[#3a2c56] bg-[#221936] px-3 py-2 text-center text-[11px] tracking-[.2em] text-[#e0a35c] hover:border-[#e0a35c]"
+                    className="tk-btn tk-teal mt-3 block px-5 py-2 text-center text-[11px] tracking-[.2em]"
                   >
                     TO CAMP AT THE FIRE →
                   </StageLink>
@@ -364,7 +390,7 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
                 // DC 10 + hours past eight or gains a level of exhaustion.
                 <button
                   onClick={() => continueMarch(true)}
-                  className="mt-2 w-full rounded border border-[#7a2b2b] bg-[#2a1216] py-2 text-xs tracking-[.2em] text-[#e08a8a] hover:bg-[#3a1c1c]"
+                  className="tk-btn tk-amber mt-2 w-full py-2 text-xs tracking-[.2em]"
                   title="SRD 5.1 Travel Pace: Forced March — CON save DC 10 + 1 per hour past eight, or a level of exhaustion"
                 >
                   PUSH ON — FORCED MARCH (DC {10 + Math.max(1, Math.floor(march.hours_today + 1e-6 - MARCH_HOURS_PER_DAY) + 1)})
@@ -398,18 +424,18 @@ function MarchGauge({ t }: { t: Travel }) {
   const h = (x: number) => `${Math.round(x * 10) / 10} h`
   const tone = f.band === "forced" ? "#e05a5a" : f.band === "spent" ? "#e0a35c" : f.band === "weary" ? "#e8c46a" : "#9fd38a"
   return (
-    <div className="absolute bottom-3 left-3 z-10 w-[min(34ch,calc(100%-1.5rem))] rounded-lg border-2 border-[#3a2c56] bg-[#120c1cee] px-3 py-2 text-[11px] text-[#c9bcd8] shadow-[0_0_24px_#000]">
+    <div className="tk-panel tk-sm absolute bottom-3 left-3 z-10 w-[min(36ch,calc(100%-1.5rem))] px-4 py-3 text-[11px] text-[#c9bcd8]">
       <div className="flex items-center justify-between">
         <span className="tracking-[.22em] text-[#f5c34d]">FATIGUE</span>
         <span style={{ color: tone }}>{f.band === "forced" ? "FORCED MARCH" : f.band === "spent" ? "SPENT" : f.band === "weary" ? "WEARY" : "FRESH"}</span>
       </div>
-      <div className="mt-1.5 flex gap-[3px]" aria-label={`${h(f.hours)} of ${MARCH_HOURS_PER_DAY} on the road today`}>
+      <div className="tk-gauge mt-1.5 flex gap-[3px] px-[7px] py-[5px]" aria-label={`${h(f.hours)} of ${MARCH_HOURS_PER_DAY} on the road today`}>
         {Array.from({ length: segs }, (_, i) => {
           const fill = Math.max(0, Math.min(1, f.hours - i))
           const past = i >= MARCH_HOURS_PER_DAY
           const col = past ? "#e05a5a" : i >= 6 ? "#e0a35c" : "#9fd38a"
           return (
-            <span key={i} className={`relative h-2.5 flex-1 overflow-hidden rounded-[2px] ${past ? "bg-[#3a1418]" : "bg-[#2a2140]"}`}>
+            <span key={i} className={`relative h-2 flex-1 overflow-hidden rounded-[2px] ${past ? "bg-[#3a1418]" : "bg-[#2a2140]"}`}>
               <span className="absolute inset-y-0 left-0" style={{ width: `${fill * 100}%`, background: col }} />
             </span>
           )
@@ -441,7 +467,7 @@ function MarchGauge({ t }: { t: Travel }) {
       {canRest && (
         <button
           onClick={rest}
-          className="mt-2 w-full whitespace-nowrap rounded border border-[#7a5c2b] bg-[#2a1f10] py-1.5 text-[11px] tracking-[.14em] text-[#f5c34d] hover:bg-[#3a2b16]"
+          className="tk-btn tk-teal mt-2 w-full whitespace-nowrap py-1.5 text-[11px] tracking-[.14em]"
           title="Make camp here: a long rest at the Camp Module. Breaking camp starts a new day."
         >
           REST AT CAMP →
