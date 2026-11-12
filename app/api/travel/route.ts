@@ -22,6 +22,7 @@ import {
 import { mayLead, tallyLeader, whoLeads } from "@/lib/travel/leader"
 import { noticeAt, noticeSpec, type Eyes } from "@/lib/travel/notice"
 import { meetingAt } from "@/lib/travel/meeting"
+import { foesOf, resolveStance, stanceOptions, type Foe, type StanceResult } from "@/lib/travel/stance"
 import { arrivalCue } from "@/lib/travel/stingers"
 import { malacharRoadLine, sayOnTheRoad, worthAWord } from "@/lib/travel/narrate"
 import { costLine, offerOptions, readOptions, resolveChoice, type NodeOption } from "@/lib/travel/options"
@@ -416,8 +417,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const action = body?.action
   const nodeKey = typeof body?.node_key === "string" ? body.node_key : ""
-  const KNOWN = ["reveal", "reveal_name", "move", "arrive", "continue", "vessel", "depart", "vote", "leader", "choose", "enter", "leave"]
-  const NO_NODE = ["continue", "vessel", "depart", "vote", "leader"]
+  const KNOWN = ["reveal", "reveal_name", "move", "arrive", "continue", "vessel", "depart", "vote", "leader", "choose", "enter", "leave", "stance"]
+  const NO_NODE = ["continue", "vessel", "depart", "vote", "leader", "stance"]
   if (!KNOWN.includes(action) || (!nodeKey && !NO_NODE.includes(action))) {
     return NextResponse.json({ error: `expected { action: ${KNOWN.join("|")}, node_key }` }, { status: 400 })
   }
@@ -435,7 +436,7 @@ export async function POST(req: NextRequest) {
   const tally = tallyLeader(lead.votes, party.map((c) => c.id))
   const leaderId = whoLeads(lead.leader, lead.host, tally.leader).leader
   const leadOut = (w: ReturnType<typeof whoLeads>) => ({ leader: w.leader, by_vote: w.by_vote, by: w.by })
-  if (["depart", "move", "arrive", "continue", "choose", "enter", "leave"].includes(action) && !mayLead(who, leaderId)) {
+  if (["depart", "move", "arrive", "continue", "choose", "enter", "leave", "stance"].includes(action) && !mayLead(who, leaderId)) {
     return NextResponse.json({ error: "only the party's leader (or the DM) may move the party", leader: leaderId }, { status: 403 })
   }
   const force = body?.force === true
@@ -589,6 +590,40 @@ export async function POST(req: NextRequest) {
   }
 
   // ==========================================================================
+  // STANCE — the encounter box (lib/travel/stance.ts; Sam, 2026-11-12). The dice named creatures and the
+  // passive roll said who saw whom first; this is the party's answer: talk, slip past, ambush or fight.
+  // It only ever answers the OPEN encounter halt, and only once (a failed Slip past leaves one more choice).
+  // ==========================================================================
+  if (action === "stance") {
+    const dbs = createAdminClient()
+    const key = typeof body?.stance_key === "string" ? body.stance_key.trim() : ""
+    if (!key) return NextResponse.json({ error: "stance_key required" }, { status: 400 })
+    const { data: open } = await dbs.from("travel_arrivals").select("id,outcome").eq("halted", true).is("resolved_at", null).limit(1).maybeSingle()
+    const o = (open?.outcome ?? null) as ({ kind?: string; meeting?: { first: "party" | "them"; surprised: "party" | null }; foes?: Foe[]; stance?: StanceResult; stance_history?: StanceResult[] } & Record<string, unknown>) | null
+    if (!open || !o || o.kind !== "encounter" || !o.meeting || !Array.isArray(o.foes) || !o.foes.length) {
+      return NextResponse.json({ error: "no encounter is waiting on a choice" }, { status: 409 })
+    }
+    const prior = o.stance ?? null
+    if (prior && prior.outcome !== "spotted") return NextResponse.json({ error: "the party has already chosen", stance: prior }, { status: 409 })
+    const spotted = prior?.outcome === "spotted"
+    const ids = party.map((c) => c.id)
+    const [{ data: m }, { data: sheets }] = await Promise.all([
+      runIdA ? dbs.from("travel_march").select("*").eq("campaign_run_id", runIdA).maybeSingle() : Promise.resolve({ data: null }),
+      // The group that sneaks is the party on the march (the roster), not every hero ever made.
+      ids.length
+        ? dbs.from("characters").select("id,name,level,str_score,dex_score,con_score,int_score,wis_score,cha_score,proficiency_bonus,passive_perception,sheet_skill_proficiencies").in("id", ids)
+        : Promise.resolve({ data: [] }),
+    ])
+    const pace = normaliseDay(m as Record<string, unknown> | null).pace
+    const result = resolveStance(key, { meeting: o.meeting, foes: o.foes, pace, party: (sheets ?? []) as unknown as SheetSlice[], spotted }, Math.random)
+    if (!result) {
+      return NextResponse.json({ error: "that choice is not open here", offered: stanceOptions({ first: o.meeting.first, foes: o.foes, pace, spotted }) }, { status: 409 })
+    }
+    await dbs.from("travel_arrivals").update({ outcome: { ...o, stance: result, ...(prior ? { stance_history: [...(o.stance_history ?? []), prior] } : {}) } }).eq("id", open.id)
+    const stances = result.outcome === "spotted" ? stanceOptions({ first: o.meeting.first, foes: o.foes, pace, spotted: true }) : []
+    return NextResponse.json({ ok: true, action, stance: result, stances })
+  }
+
   // CHOOSE — the party picks one of the node's authored options.
   // ==========================================================================
   if (action === "choose") {
@@ -942,6 +977,15 @@ export async function POST(req: NextRequest) {
     // THE MEETING (lib/travel/meeting.ts; Sam, 2026-11-12). The dice said whether creatures are here; the
     // passive roll just made says who saw whom first. Only when the encounter itself is what stopped the march.
     const meeting = outcome.halt && outcome.kind === "encounter" ? meetingAt(notice, outcome.rolls) : null
+    // THE ENCOUNTER BOX (lib/travel/stance.ts). Who they are, in the book's words, with the passive Perception
+    // their stat block gives, and the choices the verdict leaves open at this pace.
+    let foes: Foe[] = []
+    if (meeting) {
+      const names = [...new Set(outcome.rolls.map((r) => (r.detail as Record<string, unknown> | null)?.bestiary).filter((x): x is string => typeof x === "string" && !!x))]
+      const { data: beasts } = names.length ? await db.from("bestiary").select("name,senses").in("name", names) : { data: [] }
+      foes = foesOf(outcome.rolls, Object.fromEntries(((beasts ?? []) as { name: string; senses: string | null }[]).map((b) => [b.name, b.senses])))
+    }
+    const stances = meeting && foes.length ? stanceOptions({ first: meeting.first, foes, pace: dayAfter.pace }) : []
 
     // A forced march that cost somebody a level of exhaustion stops the party
     // too - not to camp, but so the price is seen before they go on.
@@ -985,6 +1029,7 @@ export async function POST(req: NextRequest) {
             ...(forced ? { forced } : {}),
             ...(notice ? { notice: { dc: notice.dc, chip: notice.chip, noticed: notice.noticed, revealed: revealedName } } : {}),
             ...(meeting ? { meeting } : {}),
+            ...(foes.length ? { foes } : {}),
           },
         })
         .select("id")
@@ -1068,6 +1113,8 @@ export async function POST(req: NextRequest) {
       notice: notice ? { dc: notice.dc, chip: notice.chip, noticed: notice.noticed, best: notice.best, text: notice.text, revealed: revealedName, source: notice.source } : null,
       line,
       meeting,
+      foes,
+      stances,
       ...outcome,
       // The day overrides what the encounter alone would have said.
       halt,
