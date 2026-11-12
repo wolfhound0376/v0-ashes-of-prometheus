@@ -27,12 +27,36 @@ export function mapHeroSlug(characterId: string | null | undefined): string {
   return PREMADE[characterId] ?? FORGED[characterId] ?? MAP_HERO_FALLBACK
 }
 
+/** How many heroes walk behind the leader on the map. The table seats five; the page has a place in the line for each. */
+export const MAP_FOLLOWERS_MAX = 5
+
+/**
+ * THE MARCHING LINE (Sam, 2026-11-12: "the marching line with real walk cycles"). Who walks behind the leader:
+ * everyone seated this run except the leader, in the order they sat down. Nobody seated (the DM looking at the
+ * map alone) means nobody follows; the leader still walks.
+ */
+export function mapFollowerIds(leaderId: string | null | undefined, seated: readonly string[] | null | undefined): string[] {
+  const out: string[] = []
+  for (const id of seated ?? []) {
+    if (typeof id !== "string" || !id || id === leaderId || out.includes(id)) continue
+    out.push(id)
+    if (out.length >= MAP_FOLLOWERS_MAX) break
+  }
+  return out
+}
+
 export type MapHero = {
   walk: { src: string; frames: number; fps: number }
   idle: { src: string; frames: number; fps: number }
   cell: number
   /** How far up the cell the feet stand, 0..1 (the manifest's pivot). Not every sheet draws its figure down to the bottom edge. */
   foot: number
+  /**
+   * How large the page draws the figure, 1 = a 128px cell at 96 pixels per 5 ft (Kenta). From the manifest's `ppu`
+   * (AGENTS.md, sprite height rule), so heroes in the marching line stand at their real heights beside each
+   * other: a halfling is not as tall as a human because her sheet was drawn larger.
+   */
+  scale: number
 }
 
 /** Turn a sprite manifest (public/sprites/<slug>/sprite.json) into what the map page needs; null if it has no walk or idle. */
@@ -50,5 +74,7 @@ export function mapHeroFromManifest(slug: string, manifest: unknown): MapHero | 
   const cell = Array.isArray(m?.cell) && Number(m.cell[0]) > 0 ? Number(m.cell[0]) : 128
   const p = (m as { pivot?: unknown } | null)?.pivot
   const pivotY = Array.isArray(p) && Number(p[1]) > 0 && Number(p[1]) <= cell ? Number(p[1]) : cell
-  return { walk, idle, cell, foot: Math.max(0, 1 - pivotY / cell) }
+  const ppu = Number((m as { ppu?: unknown } | null)?.ppu)
+  const scale = (cell / 128) * (ppu > 0 ? 96 / ppu : 1)
+  return { walk, idle, cell, foot: Math.max(0, 1 - pivotY / cell), scale }
 }

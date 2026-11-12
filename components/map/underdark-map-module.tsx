@@ -10,6 +10,9 @@
 //   page -> here   aop:map-ready · aop:map-pick{k} · aop:map-hover{k} · aop:map-reached{k} · aop:map-enter{k}
 //   here -> page   aop:map-state{…} · aop:map-leg{a,b,last} · aop:map-place{k}
 //
+// THE MARCHING LINE (Sam, 2026-11-12): the state also carries `followers`, the sprites of every other seated
+// hero in the order they sat down. The page walks them in file behind the leader; they decide nothing.
+//
 // Sam's three rulings of 2026-11-10 live here and in the page's GAME MODE:
 //   * the leader's own pixel figure walks the map (lib/travel/map-hero.ts);
 //   * a player who is not the DM gets the map, the place card, zoom and sound, and nothing else: the
@@ -20,7 +23,7 @@ import { useEffect, useRef, useState } from "react"
 import { useTravel, type NodeRow } from "./use-travel"
 import { TravelCards, TravelPanels } from "./travel-cards"
 import { entranceFor, WALKABLE_SCENES } from "@/lib/travel/entrance"
-import { mapHeroFromManifest, mapHeroSlug, type MapHero } from "@/lib/travel/map-hero"
+import { mapFollowerIds, mapHeroFromManifest, mapHeroSlug, type MapHero } from "@/lib/travel/map-hero"
 
 const PAGE = "/underdark-map/index.html?game=1"
 
@@ -51,6 +54,24 @@ export default function UnderdarkMapModule() {
     return () => { alive = false }
   }, [leaderId])
 
+  // The line behind the leader: the other seated heroes, each on their own sprite. A sheet that fails to load
+  // leaves that hero out of the line; it never holds the map up.
+  const [followers, setFollowers] = useState<MapHero[]>([])
+  const followerKey = mapFollowerIds(leaderId, lead?.seated).join(",")
+  useEffect(() => {
+    let alive = true
+    const slugs = (followerKey ? followerKey.split(",") : []).map((id) => mapHeroSlug(id))
+    Promise.all(
+      slugs.map((slug) =>
+        fetch(`/sprites/${slug}/sprite.json`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((m) => mapHeroFromManifest(slug, m))
+          .catch(() => null),
+      ),
+    ).then((list) => { if (alive) setFollowers(list.filter((h): h is MapHero => !!h)) })
+    return () => { alive = false }
+  }, [followerKey])
+
   // Where the page's figure stands. It trails `party` while a walk is being shown.
   const shown = useRef<string | null>(null)
   const walk = useRef<{ keys: string[]; i: number; ids: string[] } | null>(null)
@@ -59,7 +80,7 @@ export default function UnderdarkMapModule() {
   const stateKey = JSON.stringify([
     nodes.map((n) => [n.node_key, n.name, n.metadata?.map_x, n.metadata?.map_y, !!n.discovered_at, n.name_known, (n as NodeRow & { name_known_at?: string | null }).name_known_at ?? null]),
     edges.map((e) => [e.id, e.metadata?.is_road, e.metadata?.mode]),
-    !!dmKey, canLead, hasBoat, hero?.walk.src ?? null,
+    !!dmKey, canLead, hasBoat, hero?.walk.src ?? null, followers.map((f) => f.walk.src),
   ])
   useEffect(() => {
     if (!ready || !loaded) return
@@ -88,6 +109,7 @@ export default function UnderdarkMapModule() {
       lead: canLead,
       boat: hasBoat,
       hero,
+      followers,
       enterable: Object.keys(WALKABLE_SCENES),
     })
     // eslint-disable-next-line react-hooks/exhaustive-deps
