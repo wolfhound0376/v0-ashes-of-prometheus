@@ -46,8 +46,13 @@ describe("the marching line behind the leader (Sam, 2026-11-12)", () => {
   it("draws each hero at their real height: the halflings stand the same, well below the humans", () => {
     const k = (slug: string) => { const h = mapHeroFromManifest(slug, manifest(slug))!; return h.scale }
     expect(k("kenta")).toBeCloseTo(1, 5)
-    // Lynkes's sheet is larger than Fifi's (176 px cells against 128), yet he is a halfling like her (Sam, 2026-11-10)
-    expect(Math.abs(k("lynkes") - k("freia"))).toBeLessThan(0.03)
+    // Lynkes is a halfling like Fifi and stands as tall as she does (Sam, 2026-11-10, 2026-11-12). What matters is the
+    // FIGURE, not the cell: his is about 118 px in a 176 px cell, hers about 116 px in a 128 px cell (measured from the
+    // idle sheets). Drawn height on the map = scale x figure / cell.
+    const lynkes = k("lynkes") * (118 / 176), fifi = k("freia") * (116 / 128), kenta = k("kenta") * (115 / 128)
+    expect(Math.abs(lynkes - fifi) / fifi).toBeLessThan(0.05)
+    expect(fifi / kenta).toBeGreaterThan(0.55)
+    expect(fifi / kenta).toBeLessThan(0.72)
     expect(k("freia")).toBeLessThan(0.75 * k("kenta"))
     // a manifest with no ppu keeps the old rule: the cell alone
     expect(mapHeroFromManifest("x", { cell: [160, 160], animations: { walk: { sheet: "w.png", frames: 6 }, idle: { sheet: "i.png", frames: 4 } } })!.scale).toBeCloseTo(1.25, 5)
