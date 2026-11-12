@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import { MAP_FOLLOWERS_MAX, MAP_HERO_FALLBACK, mapFollowerIds, mapHeroFromManifest, mapHeroSlug } from "./map-hero"
+import { MAP_FOLLOWERS_MAX, MAP_HERO_FALLBACK, MAP_SPRITE_HERO_IDS, mapFollowerIds, mapHeroFromManifest, mapHeroSlug } from "./map-hero"
 import { PREMADE_SPRITE_IDS } from "@/lib/table"
 
 const manifest = (slug: string) => JSON.parse(readFileSync(`public/sprites/${slug}/sprite.json`, "utf8"))
@@ -51,5 +51,14 @@ describe("the marching line behind the leader (Sam, 2026-11-12)", () => {
     expect(k("freia")).toBeLessThan(0.75 * k("kenta"))
     // a manifest with no ppu keeps the old rule: the cell alone
     expect(mapHeroFromManifest("x", { cell: [160, 160], animations: { walk: { sheet: "w.png", frames: 6 }, idle: { sheet: "i.png", frames: 4 } } })!.scale).toBeCloseTo(1.25, 5)
+  })
+  it("the DM's test line marches only heroes who really have sheets", () => {
+    expect(MAP_SPRITE_HERO_IDS.length).toBeGreaterThanOrEqual(5)
+    for (const id of MAP_SPRITE_HERO_IDS) {
+      const slug = mapHeroSlug(id)
+      const hero = mapHeroFromManifest(slug, manifest(slug))
+      expect(hero, slug).not.toBeNull()
+      expect(() => readFileSync(`public${hero!.walk.src}`)).not.toThrow()
+    }
   })
 })

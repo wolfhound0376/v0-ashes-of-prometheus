@@ -23,7 +23,7 @@ import { useEffect, useRef, useState } from "react"
 import { useTravel, type NodeRow } from "./use-travel"
 import { TravelCards, TravelPanels } from "./travel-cards"
 import { entranceFor, WALKABLE_SCENES } from "@/lib/travel/entrance"
-import { mapFollowerIds, mapHeroFromManifest, mapHeroSlug, type MapHero } from "@/lib/travel/map-hero"
+import { MAP_SPRITE_HERO_IDS, mapFollowerIds, mapHeroFromManifest, mapHeroSlug, type MapHero } from "@/lib/travel/map-hero"
 
 const PAGE = "/underdark-map/index.html?game=1"
 
@@ -57,7 +57,14 @@ export default function UnderdarkMapModule() {
   // The line behind the leader: the other seated heroes, each on their own sprite. A sheet that fails to load
   // leaves that hero out of the line; it never holds the map up.
   const [followers, setFollowers] = useState<MapHero[]>([])
-  const followerKey = mapFollowerIds(leaderId, lead?.seated).join(",")
+  // THE DM'S TEST LINE (Sam, 2026-11-12: "I need a way to do this administratively"). A switch only the DM has:
+  // march every hero who owns a sprite, whoever is seated. It changes this browser's picture and nothing else:
+  // nothing is written, no seat is taken, and a player's browser never reads it.
+  const [testLine, setTestLine] = useState(false)
+  useEffect(() => { try { setTestLine(localStorage.getItem("aop:map-line-test") === "1") } catch { /* storage blocked */ } }, [])
+  const flipTestLine = () => setTestLine((v) => { try { localStorage.setItem("aop:map-line-test", v ? "0" : "1") } catch { /* storage blocked */ } return !v })
+  const allHeroes = !!dmKey && testLine
+  const followerKey = mapFollowerIds(leaderId, allHeroes ? MAP_SPRITE_HERO_IDS : lead?.seated).join(",")
   useEffect(() => {
     let alive = true
     const slugs = (followerKey ? followerKey.split(",") : []).map((id) => mapHeroSlug(id))
@@ -198,6 +205,19 @@ export default function UnderdarkMapModule() {
         <iframe ref={frame} src={PAGE} title="The Underdark" className="absolute inset-0 h-full w-full border-0" allow="autoplay" />
         <TravelCards t={{ ...travel, entrance: null }} />
       </div>
+      {dmKey ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+          <button
+            type="button"
+            onClick={flipTestLine}
+            aria-pressed={allHeroes}
+            className={`px-3 py-2 rounded border-2 tracking-wider ${allHeroes ? "bg-[#f5c34d] text-[#120b1e] border-[#f5c34d]" : "bg-[#221936] text-[#9a8fb0] border-[#3a2c56] hover:border-[#f5c34d]"}`}
+          >
+            {allHeroes ? "LINE: ALL HEROES (TEST)" : "LINE: SEATED HEROES"}
+          </button>
+          <span className="text-[#9a8fb0]">DM only. The test line shows on this screen alone and changes nothing in the game.</span>
+        </div>
+      ) : null}
       {dmKey ? <TravelPanels t={travel} /> : null}
     </div>
   )
