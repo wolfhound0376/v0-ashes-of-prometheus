@@ -171,6 +171,33 @@ async function penFight(pg) {                       // the gate stands open and 
 }
 
 const SCENARIOS = {
+  10: ["the pen gate: walking out through it mid-fight, and being told when you cannot make it", async (port) => {
+    // Sam, 2026-11-12: "Can't walk through this door. Maybe we need to redesign how the door and walking through it works"
+    const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
+    try {
+      await penFight(A)
+      check("it comes to Fifi's turn", await itsTurn(A, "freia"))
+      await A.evaluate(() => { window.__toasts = []; const t0 = toast; toast = (m, ...x) => { __toasts.push(String(m)); return t0(m, ...x) } })
+      const inside = (ft) => A.evaluate((ft) => { const a = activeActor(), B = balcony(), q = nearestWalkable(B.inside[0], B.inside[1] + 30); a.x = q.x; a.y = q.y; a.path = []; a.c.move = ft; __toasts.length = 0; openMenu(a) }, ft)
+      const arm = () => A.evaluate(() => { [...$("cbtMenu").querySelectorAll("button")].find((b) => /^Move/.test((b.querySelector("span") || b).textContent.trim())).click() })
+      const go = async (pt) => { await arm(); await wait(400); await A.evaluate((pt) => click(pt === "gate" ? (() => { const P = doorGate().interact.poly; return { x: P.reduce((n, q) => n + q[0], 0) / P.length, y: P.reduce((n, q) => n + q[1], 0) / P.length } })() : (() => { const B = balcony(); return { x: B.landing[0], y: B.landing[1] } })()), pt); await until(A, () => !combatBusy && !activeActor().path.length, 15000); await wait(400) }
+      const now = () => A.evaluate(() => { const a = activeActor(); return { out: outsidePen(a), move: a.c.move, at: [Math.round(a.x), Math.round(a.y)], toasts: __toasts.slice(), ring: gateInReach(a) } })
+      await inside(5); const before = await now()
+      await wait(600); await shot(A, "10-ring-5ft")
+      check("with 5 ft left the range ring does not promise the landing", before.ring === false, before)
+      await go("landing"); const short = await now()
+      check("5 ft left, a click on the landing: she stays where she is", !short.out && short.move === 5 && short.at[0] === before.at[0] && short.at[1] === before.at[1], short)
+      check("and she is told why", short.toasts.some((t) => /Too far this turn/.test(t)), short.toasts)
+      await inside(30); const can = await now()
+      check("with 30 ft the ring shows the landing", can.ring === true, can)
+      await go("landing"); const through = await now()
+      check("30 ft, a click on the landing: she is through the gate", through.out, through)
+      check("the gate charged nothing extra: at least 15 ft of her 30 is left", through.move >= 15, through)
+      await inside(30); await go("gate"); const byGate = await now()
+      check("a click on the open gate walks her out through it", byGate.out, byGate)
+      await shot(A, "10-through-the-gate")
+    } finally { await W.close() }
+  }],
   1: ["the pen: a hero on the bridge foot when the fight is won", async (port) => {
     const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
     try {
