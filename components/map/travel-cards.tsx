@@ -18,7 +18,7 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
   const {
     nodes, edges, party, loaded, dmKey, setRefresh,
     confirmNode, setConfirmNode, arrivedAt, setArrivedAt,
-    halt, continueMarch,
+    halt, continueMarch, takeStance, stanceBusy,
     vessels, hasBoat, march, guides, pcs,
     pace, setPace, navSel, setNavSel, pcFamiliar, setPcFamiliar, pcHasMap, setPcHasMap,
     me, lead, canLead, hoverNode, setHoverNode,
@@ -314,6 +314,46 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
                 </div>
               )}
               {halt.body && <p className="mt-2 whitespace-pre-line text-[13px] leading-relaxed text-[#c9bcd8]">{halt.body}</p>}
+              {/* THE ENCOUNTER BOX (lib/travel/stance.ts; Sam, 2026-11-12): how the book says they behave, the
+                  choices the passive roll left open with their checks, then what the choice came to. */}
+              {(halt.foes ?? []).filter((f) => f.line).map((f, k) => (
+                <p key={k} className="mt-2 text-[12px] italic leading-relaxed text-[#b9acd6]">{f.line}</p>
+              ))}
+              {halt.stance && (
+                <div className={`mt-3 rounded border px-3 py-2 ${halt.stance.outcome === "fight" || halt.stance.outcome === "spotted" ? "border-[#7a2b2b] bg-[#241016]" : "border-[#4f6b3a] bg-[#142014]"}`}>
+                  <div className="text-[13px] leading-relaxed text-[#e4d8bf]">{halt.stance.text}</div>
+                  {halt.stance.checks.length > 0 && (
+                    <ul className="mt-2 space-y-0.5">
+                      {halt.stance.checks.map((c, k) => (
+                        <li key={k} className="text-[11px] text-[#9a8fb0]">
+                          <span className={c.success ? "text-[#9fd08a]" : "text-[#e08a8a]"}>{c.success ? "✓" : "✗"}</span> {c.name}: Stealth {c.arithmetic}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {halt.stance.outcome === "fight" && <div className="mt-2 text-[11px] text-[#c9bcd8]">Run the fight at the table, then walk on.</div>}
+                  {halt.stance.outcome === "parley" && <div className="mt-2 text-[11px] text-[#c9bcd8]">Speak with them at the Parley, then walk on.</div>}
+                </div>
+              )}
+              {(halt.stances ?? []).length > 0 && (
+                <div className="mt-3 space-y-2 border-t border-[#3a2c56] pt-3">
+                  <div className="text-[10px] uppercase tracking-[.22em] text-[#9a8fb0]">{canLead ? "What does the party do?" : "The leader is choosing"}</div>
+                  {(halt.stances ?? []).map((s) => (
+                    <button
+                      key={s.key}
+                      type="button"
+                      disabled={!s.available || !canLead || stanceBusy}
+                      onClick={() => void takeStance(s.key)}
+                      className={`block w-full rounded border px-3 py-2 text-left ${s.available ? "border-[#7a5c2b] bg-[#221936] hover:border-[#f5c34d]" : "border-[#3a2c56] bg-[#17101f] opacity-70"} disabled:cursor-not-allowed`}
+                    >
+                      <div className={`text-[13px] ${s.available ? "text-[#f5c34d]" : "text-[#8a7f9c]"}`}>{s.label}</div>
+                      <div className="text-[11px] leading-snug text-[#c9bcd8]">{s.detail}</div>
+                      {s.check && <div className="mt-0.5 text-[10px] tracking-wide text-[#9a8fb0]">{s.check}</div>}
+                      {s.blocked && <div className="mt-0.5 text-[10px] text-[#e0a35c]">{s.blocked}</div>}
+                    </button>
+                  ))}
+                </div>
+              )}
               {halt.kind === "camp" && (
                 <>
                   <StageLink
@@ -351,12 +391,15 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
                   by invented tables before; the page number rides along. */}
               <div className="mt-3 text-[10px] italic text-[#6f6486]">{halt.source}</div>
 
+              {/* An encounter with choices still open waits for the answer: no walking on past them unanswered. */}
+              {!(halt.stances ?? []).length && (
               <button
                 onClick={() => continueMarch(false)}
                 className="mt-4 w-full rounded border border-[#7a5c2b] bg-[#2a1f10] py-2 text-xs tracking-[.2em] text-[#f5c34d] hover:bg-[#3a2b16]"
               >
-                {halt.kind === "camp" ? "BREAK CAMP — WALK ON" : halt.kind === "forced_march" ? "WALK ON" : "CONTINUE THE MARCH"}
+                {halt.kind === "camp" ? "BREAK CAMP — WALK ON" : halt.kind === "forced_march" || halt.stance ? "WALK ON" : "CONTINUE THE MARCH"}
               </button>
+              )}
               {halt.kind === "camp" && march.hours_today >= MARCH_HOURS_PER_DAY && (
                 // Only at nightfall: a camp the party chose before the eight hours were up has nothing to force.
                 // FORCED MARCH (SRD 5.1, Travel Pace). The day goes on past
