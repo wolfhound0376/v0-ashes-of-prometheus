@@ -1271,6 +1271,12 @@ function applyForgedSheet(slug, sh){
   const m = walkMagicOf(sh.magic);
   SHEETS[slug] = Object.assign(SHEETS[slug] || {}, sh, {magic: m, magicAll: sh.magic || null, caster: !!sh.magic});
   followLevel(SHEETS[slug]);
+  // KEEP WHAT IS IN HAND (Sam, 2026-11-12: "lynkes is dual wielding but somehow is attacking with his hands?"). This
+  // runs on every /api/map-stage poll (5 s), and the row's sheet carries only the Unarmed Strike and the row's AC
+  // (lib/walk-sheet.ts). Assigned over the live sheet, it wiped the weapons refreshAttacks had put in front and the AC
+  // refreshAc had worked out from worn armor, for every Forge-made hero (Lynkes, Gandalf), a few seconds after each
+  // equip. The poll's sheet is now the BASE only: the hands and the armor are laid back over it at once.
+  try { if (GEAR[slug]){ const S = SHEETS[slug]; S.baseAttacks = (sh.attacks || []).slice(); S.acBase = null; refreshAttacks(slug); refreshAc(slug); } } catch (e) {}   // GEAR is declared further down: a call before it exists has no hands to keep
   PCS[slug] = {name: sh.name, race: sh.race || "", cls: String(sh.cls || "").toLowerCase()};
   if (SPR[slug].standIn){ const base = SPR[standInFor(sh.cls)]; SPR[slug] = {json: {...base.json, name: sh.name}, img: base.img, standIn: true}; }
 }
