@@ -1908,6 +1908,26 @@ function findPath(from, to){
 }
 // Trim a path to what `budget` pixels of movement buys. The hidden passage is all or nothing: it costs passFt, and a
 // walker who cannot afford it stops on the near side rather than vanishing behind the pillar half way.
+const gateShort = (a, path) => `Too far this turn: ${cutPath(a, path, 1e9).usedFt} ft to get there through the gate, ${Math.max(0, Math.floor(a.c.move || 0))} ft of movement left. Dash, or get closer first.`;
+// a walk that was meant to end on the other side of the pen wall, and what this turn's movement buys of it: did it get
+// through? (true for any walk that stays on one side)
+function gateMade(a, path, cut){
+  if (!balcony() || !path.length) return true;
+  const side = outsidePen(a); if (outsidePen(path[path.length - 1]) === side) return true;
+  return !!cut.length && outsidePen(cut[cut.length - 1]) !== side;
+}
+// can this walker get through the open gate to the other side this turn? (drawCombatGround: the range ring only shows the
+// far side when they can). Asked every frame, so it is remembered until they move or spend movement.
+let gateReach = {k: "", ok: true};
+function gateInReach(a){
+  const B = balcony(); if (!B || !gatePassable() || !a || !a.c) return !B || !balconyFloor() ? true : false;
+  const k = `${Math.round(a.x)},${Math.round(a.y)},${a.c.move},${state.gateOpen},${state.doorShut}`;
+  if (gateReach.k !== k){
+    const far = outsidePen(a) ? B.inside : B.landing, path = findPath(a, nearestWalkable(far[0], far[1]));
+    gateReach = {k, ok: !!path.length && gateMade(a, path, cutPath(a, path, a.c.move * ruleFt(a)).pts)};
+  }
+  return gateReach.ok;
+}
 function cutPath(a, path, budget){
   const px = ruleFt(a); let left = budget, prev = a, used = 0; const pts = [];
   // a leg on the painted floor is longer in feet than the same pixels in the pen: price it by the foot where it lies
@@ -1968,7 +1988,7 @@ function approachViaGate(att, tgt, ft, then){
   };
   const full = findPath(att, goal); if (!full.length){ stop("has no way through the gate."); return; }
   const c = cutPath(att, full, Math.max(0, (att.c.move || 0) * ruleFt(att)));
-  if (!c.pts.length){ stop(hero ? `Not enough movement to go round through the gate (${B.passFt} ft for the way behind the pillar).` : "cannot make it through the gate this turn."); return; }
+  if (!c.pts.length){ stop(hero ? `Not enough movement left to get through the gate this turn.` : "cannot make it through the gate this turn."); return; }
   att.c.move = Math.max(0, (att.c.move || 0) - c.usedFt);
   att.path = c.pts; att.onArrive = () => {
     att.onArrive = null; setAnim(att, "idle");
@@ -10156,10 +10176,16 @@ function provokedBy(a, end){
 // Named combatWalk, not walkTo: the explore click handler further down declares its own walkTo(p, cb) for the leader,
 // and in one script the later declaration wins. Under the shared name every combat Move called the explore one,
 // and nobody moved (6e1f3e8, 2026-10-15).
-function combatWalk(a, p, done){
-  let path = findPath(a, p); if (!path.length){ combatBusy = false; done && done(); return; }
+function combatWalk(a, p, done, asked){   // asked: a player clicked this Move (moveActor); an AI's walk keeps going as far as it can
+  let path = findPath(a, p); if (!path.length){ if (asked && a.kind === "pc") toast("There is no way to walk there from here."); combatBusy = false; done && done(); return; }
   const c = cutPath(a, path, a.c.move * ruleFt(a)), cut = c.pts;
-  if (!cut.length){ toast(`Not enough movement to go round through the gate (${balcony() ? balcony().passFt : 15} ft for the way behind the pillar).`); combatBusy = false; done && done(); return; }
+  // THE GATE IS A DOORWAY, AND IT SAYS SO (Sam, 2026-11-12: "Can't walk through this door. Maybe we need to redesign how
+  // the door and walking through it works"). Reproduced: a hero with 10 ft left who clicked the landing shuffled along
+  // the inside of the wall and stopped, with no word why (the walk through the open doorway is plain floor, priced by the
+  // foot like any other; nothing was charged for the gate itself). A hero whose click lies beyond the gate and who cannot get
+  // through it this turn now stays put and is told what it takes (gateShort). A foe's or an ally's walk is unchanged.
+  if (asked && a.kind === "pc" && !gateMade(a, path, cut)){ toast(gateShort(a, path)); combatBusy = false; done && done(); return; }
+  if (!cut.length){ toast(gateShort(a, path)); combatBusy = false; done && done(); return; }
   a.c.move = Math.max(0, a.c.move - c.usedFt); marker = {x: cut[cut.length - 1].x, y: cut[cut.length - 1].y, t: now};
   const threat = provokedBy(a, cut[cut.length - 1]);
   combatBusy = true; closeMenu(); a.path = cut;
@@ -10349,7 +10375,7 @@ function moveActor(a, w, done){
   if (dr && dr.ok && walkFtTo(a, p) > a.c.move){ leapMove(a, dr, p, done); return; }
   if (g && g.why && !findPath(a, p).length) toast(g.why);   // nothing to walk round it either: say why
   else if (dr && dr.why && !findPath(a, p).length) toast(dr.why);
-  combatWalk(a, p, done);
+  combatWalk(a, p, done, true);
 }
 // how far a walk to `p` really is, in feet, by the route a walker would take (Infinity: there is no route)
 function walkFtTo(a, p){
@@ -14520,7 +14546,11 @@ function drawCombatGround(){
   const a = activeActor(); if (!a) return;
   if (cbt.phase === "target" && aimW && a.kind === "pc"){ const sp = cbt.pend && cbt.pend.spell && SPELLS[cbt.pend.spell]; if (sp && sp.area) drawAoe(aimW.x, aimW.y, sp, sp.fx || "#e8a24a", .95, true); }
   if (a.kind === "pc" && (cbt.phase === "menu" || cbt.phase === "move") && a.c.move > 0){
-    const r = a.c.move * ftPx(a); ctx.save(); ctx.globalAlpha = .9; ctx.setLineDash([12, 10]); ctx.lineWidth = 2.5 / (base * view.z); ctx.strokeStyle = "rgba(232,162,74,.75)";
+    const r = a.c.move * ftPx(a); ctx.save(); ctx.globalAlpha = .9;
+    // the ring must not promise the far side of the pen wall to a hero who cannot get through the gate this turn (Sam's
+    // screenshot, 2026-11-12: it lay across the landing through solid stone): it is cut at the wall then
+    { const B = balcony(), dx = B && B.outside && B.outside.domainX; if (dx != null && balconyFloor() && !gateInReach(a)){ ctx.beginPath(); if (outsidePen(a)) ctx.rect(dx - 1e5, -1e5, 1e5, 2e5); else ctx.rect(dx, -1e5, 1e5, 2e5); ctx.clip(); } }
+    ctx.setLineDash([12, 10]); ctx.lineWidth = 2.5 / (base * view.z); ctx.strokeStyle = "rgba(232,162,74,.75)";
     ovEllipsePath(a.x, a.y, r, r * .55); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = "rgba(232,162,74,.07)"; ctx.fill(); ctx.restore();
   }
   if (a.kind === "pc" && cbt.phase === "jump") drawJumpSquares(a);
