@@ -2327,6 +2327,7 @@ function drawFrame(){
       // it or the pointer rests on it. Drawn last (drawExitSigns), over the figures and the dark.
       if (mode === "explore" && (z.to || []).length){ const R1 = 480 * node.scale, R0 = 340 * node.scale, a = hoverZone === z ? 1 : Math.max(0, Math.min(1, (R1 - near) / (R1 - R0)));
         if (a > 0) exitSigns.push({x: cx, y: cy - rad * .55, a, locked, text: z.to.map(nameOf).join(" / "), arrow: exitArrow(z, wc)}); }
+      if (!locked) continue;   // Sam, 2026-11-12: no yellow marker on a way out. The signpost still names it; a locked gate keeps its red.
       const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, rad);
       g.addColorStop(0, `rgba(${col},${.30 + .25 * pulse})`); g.addColorStop(1, `rgba(${col},0)`);
       ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(cx, cy, rad, rad * .55, 0, 0, Math.PI * 2); ctx.fill();
@@ -3596,6 +3597,12 @@ function chooseDestination(z){
   showDialog({title: z.label.split(":")[0], body: "Where does the party head?", buttons: [
     ...z.to.map(t => ({label: (z.routes && z.routes[t]) || `${t} · ${nameOf(t)}`, primary: true, fn: () => whoGoes(z, t)})),
     {label: "Stay here"}]});
+}
+function exitReached(z){
+  if (z.interact || z.rappel || z.kind === "gate" || z.kind === "water") return true;
+  if (!(leader.path && leader.path.length)) return true;                       // stopped inside it: this is where they meant to go
+  const c = zoneCenter(z), ox = c.x - centroid.x, oy = c.y - centroid.y;       // outward: from the plate's floor toward the way out
+  return (leader.x - c.x) * ox + (leader.y - c.y) * oy >= 0;
 }
 function triggerZone(z){
   // a hero walking AWAY from the bars after "Step back" may cross the gate's own zone on the way: that is not walking up
@@ -19076,7 +19083,12 @@ function update(dt){
     // only a hero this screen drives walks it through an exit: a hero another screen drives (seen walking off on its
     // own, SPLIT PARTY) must never carry this screen's party with it
     const z = mode === "explore" && !cbt && !leader.walkIn && !owRemote(leader) ? zoneAt(leader.x, leader.y) : null;   // (!cbt: A LIVE FIGHT HOLDS ITS PLATE, rule 1)
-    if (z && z !== ackZone){ ackZone = z; triggerZone(z); }
+    // WALK TO THE END OF THE WAY OUT (Sam, 2026-11-12: "I don't like the yellow exit markers. You should just go to the end
+    // of where the yellow marker WOULD be and then you move to the next plate smoothly."). A plain way out used to take
+    // the party the moment the hero's foot touched its edge; now the hero walks on to its far half (past its middle, on
+    // the side away from the plate's floor), or stops inside it, and then crosses. Doors, ropes, the gate and the falls
+    // bridge are things you use, not ways you walk off, and answer at once as before.
+    if (z && z !== ackZone && exitReached(z)){ ackZone = z; triggerZone(z); }
     else if (!z && !leader.walkIn) ackZone = null;
     // ambush
     const hz = node.hazard;
