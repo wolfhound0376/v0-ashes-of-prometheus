@@ -3653,7 +3653,7 @@ function stepCost(a, p, q){
 }
 function netEndTurn(a){
   if (!a || !a.c || a.down || webWalker(a) || !inNet(a) || a.c.conds.has("restrained")) return;
-  const sv = (a.c.sheet.saves && a.c.sheet.saves.dex) || 0, r = d20(rageAdvantage(a.c.rage, "dex"), a), total = r + sv, ok = total >= NET_DC;
+  const sv = (a.c.sheet.saves && a.c.sheet.saves.dex) || 0, r = d20(rageAdvantage(a.c.rage, "dex"), a, null, NET_DC - sv), total = r + sv, ok = total >= NET_DC;
   log(`${fname(a)} ends the turn in the web net: DEX ${r} + ${sv} = ${total} vs DC ${NET_DC} — ${ok ? "keeps clear of the silk" : "<b>the silk takes hold</b>, restrained (DC " + NET_DC + " STR to break free)"}.`);
   if (ok){ popText(a, "clear of the silk", "#e8e2c8", .8); return; }
   addCond(a, "restrained"); a.c.webDc = NET_DC; a.path = []; bank("movement/web_tear", .4);
@@ -4389,7 +4389,7 @@ const CHECK_SKILL = {medicine: "Medicine", nature: "Nature", survival: "Survival
 function checkLabel(c){ return `${CHECK_SKILL[c.skill] || c.skill} DC ${c.dc}`; }
 async function extractPart(a, row){
   a.c = a.c || fighterFor(a);                                                  // the same hp the potions and the fights use
-  const c = row.check, {r, mod, total} = mapCheck(a, c.skill, c.skill === "medicine" || c.skill === "survival" ? "wis" : "int"), ok = total >= c.dc;
+  const c = row.check, {r, mod, total} = mapCheck(a, c.skill, c.skill === "medicine" || c.skill === "survival" ? "wis" : "int", c.dc), ok = total >= c.dc;
   log(`${fname(a)} works the ${esc(row.name)} free: ${CHECK_SKILL[c.skill] || c.skill} ${r}${mod ? (mod > 0 ? " + " : " − ") + Math.abs(mod) : ""} = ${total} vs DC ${c.dc} — ${ok ? "it comes away clean" : "it bites back"}.`);
   if (ok){ popText(a, "extracted", "#c8e6a0", 1); return true; }
   if (c.fail){ const n = roll(c.fail.dice).total; damage(a, n, c.fail.type); log(`${fname(a)} takes ${n} ${c.fail.type} damage from the ${esc(row.name)}.`); }
@@ -5609,7 +5609,7 @@ function rollOnDashboard(action, localMod, opts = {}){
   // 5e: advantage and disadvantage cancel. lib/walk-roll.ts settles it again on the other side; this keeps the
   // preview's own die honest too.
   const edge = (opts.advantage ? 1 : 0) + (opts.disadvantage ? -1 : 0);
-  if (!APP || window.parent === window){ const r = d20(edge, opts.who || leader), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= (LOCAL_DC[action] ?? +((/^pickpocket:pp(\d+)$/.exec(action) || [])[1] || 20)), total, natural: r}); }
+  if (!APP || window.parent === window){ const dc = LOCAL_DC[action] ?? +((/^pickpocket:pp(\d+)$/.exec(action) || [])[1] || 20), r = d20(edge, opts.who || leader, null, dc - (localMod || 0)), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= dc, total, natural: r}); }
   const id = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   let characterId = null; try { characterId = myClaimId || characterIdOf(leader.id) || null; } catch (e) {}
   return new Promise(res => {
@@ -6104,7 +6104,7 @@ function placePoisonCloud(caster, at, name, dc, slot, byDm){
 function cloudSave(z, t, why){
   z.last.set(t, cbt.turnNo); const rule = z.rule;
   if (autoSucceeds(rule, t.c.sheet)){ popText(t, "unaffected", "#aaa"); log(`${fname(t)} ${why} ${z.name}: does not need to breathe or is immune to poison, and shrugs it off.`); return; }
-  const r = d20(rageAdvantage(t.c.rage, "con"), t), mod = (t.c.sheet.saves.con || 0) + blessD4(t), s = r + mod, ok = s >= z.dc;
+  const r = d20(rageAdvantage(t.c.rage, "con"), t, null, z.dc - (t.c.sheet.saves.con || 0)), mod = (t.c.sheet.saves.con || 0) + blessD4(t), s = r + mod, ok = s >= z.dc;
   const rolled = rule.dmg ? roll(cloudDamage(rule, z.slot)).total : 0, out = saveOutcome(rule, ok, rolled);
   let line = `${fname(t)} ${why} ${z.name}: CON ${r} ${mod >= 0 ? "+" : "−"} ${Math.abs(mod)} = ${s} vs DC ${z.dc}, ${ok ? "saves" : "fails"}`;
   // a failed Stinking Cloud: a hero sees "action used"; a foe or an ally is handed to retchTurn
@@ -6851,13 +6851,35 @@ function traitPop(a, firing){
 // The map's own d20. `who` is the creature rolling it — pass it on every attack roll, check and save so a trait
 // (Halfling Luck) can apply. Leave it off for anything that is not a D20 Test. `vs` is the condition a save is
 // against ("charmed", "frightened"): Brave and Fey Ancestry turn it into advantage (one of each cancels).
-function d20(adv, who, vs){
+// `need` (optional) is the face that succeeds — the target minus every modifier — so the Lucky FEAT can be spent
+// only when it changes the result (lib/traits.mjs luckyOffense). Leave it off and Lucky never fires on that roll.
+function d20(adv, who, vs, need){
   const roller = who ? rollerOf(who) : null;
   if (roller && vs){ const e = saveEdge(roller, vs); if (e.advantage){ adv = withEdge(adv, true); traitPop(who, e.firing); } }
   let faces = [1 + Math.floor(Math.random() * 20)];
   if (adv) faces.push(1 + Math.floor(Math.random() * 20));
   if (roller){ const luck = luckOnFaces(faces, () => 1 + Math.floor(Math.random() * 20), roller); if (luck.firing){ faces = luck.faces; traitPop(who, luck.firing); } }
-  return !adv ? faces[0] : adv > 0 ? Math.max(faces[0], faces[1]) : Math.min(faces[0], faces[1]);
+  let res = !adv ? faces[0] : adv > 0 ? Math.max(faces[0], faces[1]) : Math.min(faces[0], faces[1]);
+  D20_LAST = {who, faces: faces.slice(), adv: Math.sign(adv || 0)};
+  if (who && need != null){ const left = luckLeft(who);
+    if (left){ const was = res, o = luckyOffense(res, faces, Math.sign(adv || 0), Math.ceil(need), left, () => 1 + Math.floor(Math.random() * 20));
+      if (o.spent){ res = o.result; luckSpend(who, `${fname(who)} spends a luck point: ${was} → ${res}${res >= need ? ", and it turns" : ", still short"}`); } } }
+  return res;
+}
+// THE LUCKY FEAT (PHB 2024; Sam opened it 2026-11-12: "tough and lucky"). Points = the proficiency bonus, spent by
+// lib/traits.mjs's rule: only when a point can change the result (the way Bardic Inspiration is spent here). The map
+// has no Long Rest yet, so — as with Rage — a reload restores them. Halfling Luck is a different thing (luckOnFaces).
+let D20_LAST = null;
+const LUCK_USED = {};
+function luckLeft(a){ if (!a || a.kind !== "pc") return 0; const sh = SHEETS[a.id] || {}; if (!(sh.feats || []).includes("Lucky")) return 0; return Math.max(0, (sh.prof || 2) - (LUCK_USED[a.id] || 0)); }
+function luckSpend(a, line){ LUCK_USED[a.id] = (LUCK_USED[a.id] || 0) + 1; traitPop(a, {name: "Lucky", line: `Lucky: ${line} (${luckLeft(a)} left).`}); }
+// An attack roll against a Lucky hero: a point gives the attacker Disadvantage, spent only on a roll that would hit.
+// `r` must be the attacker's d20 straight from d20() (D20_LAST still holds its dice); `hitsOn` the face that hits.
+function luckyGuard(att, tgt, r, hitsOn){
+  const left = luckLeft(tgt); if (!left || att === tgt || !D20_LAST || D20_LAST.who !== att) return r;
+  const o = luckyDefense(r, D20_LAST.faces, D20_LAST.adv, Math.ceil(hitsOn), left, () => 1 + Math.floor(Math.random() * 20));
+  if (!o.spent) return r;
+  luckSpend(tgt, `${fname(tgt)} spends a luck point: ${fname(att)}'s ${r} becomes ${o.result}`); return o.result;
 }
 
 // one 5-ft square in plate pixels where this actor stands (the sprites are drawn at ppu px per square)
@@ -7705,10 +7727,10 @@ function isSmall(a){
 }
 function heroMod(a, skill, abil){ const sh = SHEETS[a.id] || {}; return (sh.skills || {})[skill] ?? abilMod(sh, abil); }
 /** A check the map rolls for the hero: d20 + skill, with advantage when a friend helped. */
-function mapCheck(a, skill, abil){
+function mapCheck(a, skill, abil, dc){   // dc (optional): lets the Lucky feat know what the roll must reach
   let adv = 0; if (helpNext && helpNext.by !== a.id && now < helpNext.until){ adv = 1; helpNext = null; }
   const small = skill === "stealth" && isSmall(a); if (small) adv = 1;              // house rule: Small sneaks with advantage
-  const mod = heroMod(a, skill, abil), r = d20(adv, a); return {r, mod, total: r + mod, adv, small};
+  const mod = heroMod(a, skill, abil), r = d20(adv, a, null, dc == null ? null : dc - mod); return {r, mod, total: r + mod, adv, small};
 }
 const SKILL_NAME = {stealth: "Dexterity (Stealth)", perception: "Wisdom (Perception)", investigation: "Intelligence (Investigation)", nature: "Intelligence (Nature)", medicine: "Wisdom (Medicine)",
   arcana: "Intelligence (Arcana)", dexterity: "Dexterity"};
@@ -7936,7 +7958,7 @@ setInterval(() => {
     if (!d){ sneak.dwell.set(id, {since: now}); continue; }
     if (now - d.since < STEALTH_HOLD) continue;
     d.since = now;
-    const k = mapCheck(p, "stealth", "dex"), ok = k.total + useInspiration(p, k.total, P) >= P;
+    const k = mapCheck(p, "stealth", "dex", P), ok = k.total + useInspiration(p, k.total, P) >= P;
     log(`${esc(fname(p))} stays in ${esc(fname(w))}'s sight: ${rollLine(k, "stealth")} vs passive Perception ${P} — ${ok ? "still unseen" : "<b>seen</b>"}.`);
     popText(p, `Stealth ${k.total}`, ok ? "#9ad0ff" : "#ff6b5a", 1);
     if (!ok){ sneakSpotted(w, p); return; }
@@ -9328,7 +9350,7 @@ function afterAttackRoll(att){ if (att.c.rage) att.c.rage.attacked = true;   // 
 // SRD 2024: the DC to resist a Shove or Grapple is 8 + STR mod + proficiency.
 const sgn = (n) => (n >= 0 ? "+" : "−") + Math.abs(n);
 const shoveDc = (a) => 8 + abilMod(a.c.sheet, "str") + 2;   // SRD 5.2.1: 8 + Strength modifier + proficiency
-function skillCheck(a, skill){ const small = skill === "stealth" && isSmall(a), r = d20(withEdge(rageAdvantage(a.c.rage, skill === "athletics" ? "str" : skill), small), a), mod = (a.c.sheet.skills || {})[skill] ?? abilMod(a.c.sheet, skill === "perception" ? "wis" : skill === "athletics" ? "str" : "dex"); return {r, mod, total: r + mod, small}; }   // Small: Stealth with advantage (house rule, Sam 2026-10-26)
+function skillCheck(a, skill, dc){ const small = skill === "stealth" && isSmall(a), mod = (a.c.sheet.skills || {})[skill] ?? abilMod(a.c.sheet, skill === "perception" ? "wis" : skill === "athletics" ? "str" : "dex"), r = d20(withEdge(rageAdvantage(a.c.rage, skill === "athletics" ? "str" : skill), small), a, null, dc == null ? null : dc - mod); return {r, mod, total: r + mod, small}; }   // Small: Stealth with advantage (house rule, Sam 2026-10-26)
 function targetAc(t){ let ac = t.c.ac; if (t.c.conds.has("mageArmor")) ac = Math.max(ac, 13 + abilMod(t.c.sheet, "dex")); if (t.c.conds.has("barkskin")) ac = Math.max(ac, 17); return ac + (t.c.conds.has("shielded") ? 2 : 0) + (t.c.conds.has("shieldSpell") ? 5 : 0); }
 // the buffs that change numbers, as they land
 function buffTakes(caster, t, name){ const mod = (caster.c.sheet.magic || {}).mod || 0;
@@ -9452,7 +9474,7 @@ function artRider(att, tgt, atk, crit){
   }
   if (tgt.down) return "";
   if (!v.save){ addCond(tgt, v.cond); popText(tgt, v.says, "#ffe08a", .85); return `${v.name}: ${fname(tgt)} is ${v.says}`; }
-  const s0 = d20(rageAdvantage(tgt.c.rage, v.save), tgt, v.cond) + (tgt.c.sheet.saves[v.save] || 0) + blessD4(tgt), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, dc) : 0), ok = sv >= dc;
+  const s0 = d20(rageAdvantage(tgt.c.rage, v.save), tgt, v.cond, dc - (tgt.c.sheet.saves[v.save] || 0)) + (tgt.c.sheet.saves[v.save] || 0) + blessD4(tgt), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, dc) : 0), ok = sv >= dc;
   if (!ok){ addCond(tgt, v.cond); if (v.cond === "numbed") tgt.c.reactionUsed = true; popText(tgt, v.says, "#ffe08a", .85); }
   return `${v.name}: ${v.save.toUpperCase()} save ${sv} vs DC ${dc}, ${ok ? "holds" : v.says}`;
 }
@@ -9522,7 +9544,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       let cv = coverOf(att, tgt), acVs = targetAc(tgt) + cv.ac;
       if (att.artFx && !shot) artSwingFx(att, tgt, att.artFx);
       const bl = blessD4(att);
-      let adv = advantageOn(att, tgt, ranged, atk), r = d20(adv, att), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit + bl, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + bl + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
+      let adv = advantageOn(att, tgt, ranged, atk), r = luckyGuard(att, tgt, d20(adv, att, null, cv.total ? null : acVs - atk.hit - bl), acVs - atk.hit - bl), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit + bl, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + bl + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
       if (hit && !crit && tgt.c.conds.has("paralyzed") && feetBetween(att, tgt) <= 5.5) crit = true;   // SRD: a hit on the paralyzed from within 5 ft is a critical
       if (hit && !crit && tgt.kind === "pc" && tgt.down && !ranged && feetBetween(att, tgt) <= 7.5) crit = true;   // SRD: unconscious — a hit from within 5 ft is a critical hit
       if (bl) popText(att, bl > 0 ? `bless +${bl}` : `bane ${bl}`, bl > 0 ? "#ffe9a8" : "#b07ad8", .8);
@@ -9597,11 +9619,11 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         for (const f of rd.flat){ dmg.total += f.amount; parts.push(`${f.label} +${f.amount}`); } }
       hitCtx = {weapon: atk.name || "", melee: !shot, by: att}; damage(tgt, dmg.total, atk.type, crit, att, !!atk.magic); hitCtx = null; hexRider(att, tgt, crit); markRider(att, tgt, crit, atk); if (atk.gfb) gfbLeap(att, tgt, crit);
       if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => bank(`magic/impact_${atk.extra.type}`, .55), 200); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att, true), 260); parts.push(`${e.total} ${atk.extra.type}`); }
-      if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20(rageAdvantage(tgt.c.rage, atk.rider.save), tgt, atk.rider.cond) + (tgt.c.sheet.saves[atk.rider.save] || 0) + blessD4(tgt), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
+      if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20(rageAdvantage(tgt.c.rage, atk.rider.save), tgt, atk.rider.cond, atk.rider.dc - (tgt.c.sheet.saves[atk.rider.save] || 0)) + (tgt.c.sheet.saves[atk.rider.save] || 0) + blessD4(tgt), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att, true); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
       if (atk.drowPoison && !tgt.down) parts.push(drowPoison(tgt, atk.drowPoison.dc));
       if (atk.tooth && !tgt.down){ const v = toothVenomHit(att, tgt); if (v) parts.push(v); }
-      if (atk.numb && !tgt.down){ const s0 = d20(0, tgt) + (tgt.c.sheet.saves[atk.numb.save] || 0) + blessD4(tgt), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.numb.dc) : 0), ok = sv >= atk.numb.dc;
+      if (atk.numb && !tgt.down){ const s0 = d20(0, tgt, null, atk.numb.dc - (tgt.c.sheet.saves[atk.numb.save] || 0)) + (tgt.c.sheet.saves[atk.numb.save] || 0) + blessD4(tgt), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.numb.dc) : 0), ok = sv >= atk.numb.dc;
         if (!ok){ addCond(tgt, "numbed"); tgt.c.reactionUsed = true; popText(tgt, "numbed", "#9fd8ff"); } parts.push(`${atk.numb.save.toUpperCase()} save ${sv} vs ${atk.numb.dc}: ${ok ? "shakes it off" : "numbed"}`); }
       if (atk.art){ const w = artRider(att, tgt, atk, crit); if (w) parts.push(w); }
       if (atk.curse && !tgt.down && hero(tgt)) setTimeout(() => curseBy(att, tgt), 420);
@@ -9701,7 +9723,7 @@ function castSpell(caster, tgt, name, done, darts){
         const fly = name === "Scorching Ray" ? (cb) => labFireBolt(caster, t, cb) : kit ? (cb) => kitDeliver(caster, t, kit, cb) : (cb) => spellBolt(caster, t, sp.fx, cb);
         fly(() => {
           // a ray (Scorching Ray) is its own ranged spell attack; a dart (Magic Missile) never misses
-          let crit = false, hitIt = true; if (sp.kind === "attack"){ const cv = coverOf(caster, t), r = d20(advantageOn(caster, t, true, {}), caster); crit = r === 20; hitIt = !cv.total && (crit || (r !== 1 && r + (c.sheet.magic.hit || 0) >= targetAc(t) + cv.ac)); }
+          let crit = false, hitIt = true; if (sp.kind === "attack"){ const cv = coverOf(caster, t), hitsOn = targetAc(t) + cv.ac - (c.sheet.magic.hit || 0), r = luckyGuard(caster, t, d20(advantageOn(caster, t, true, {}), caster, null, cv.total ? null : hitsOn), hitsOn); crit = r === 20; hitIt = !cv.total && (crit || (r !== 1 && r + (c.sheet.magic.hit || 0) >= targetAc(t) + cv.ac)); }
           if (!hitIt){ per.set(t, (per.get(t) || []).concat(0)); if (!t.down) miss(t); }
           else { const d = roll(sp.dmg, crit).total; per.set(t, (per.get(t) || []).concat(d));
           if (name === "Scorching Ray") labFireBoltHit(t);
@@ -9739,7 +9761,7 @@ function castSpell(caster, tgt, name, done, darts){
       const beams = sp.beams ? beamsOf(caster) : 1;
       const one = (bi) => { if (bi && (tgt.down || !cbt)) return; if (bi && lab && lab.again) lab.again(caster, tgt);
         const cv = coverOf(caster, tgt), acVs = targetAc(tgt) + cv.ac;
-        const adv = Math.sign(advantageOn(caster, tgt, true) + (caster.c.conds.has("sorcery") ? 1 : 0)), r = d20(adv, caster), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(caster, r + m.hit, acVs), hit = crit || (r !== 1 && r + m.hit + insp >= acVs); afterAttackRoll(caster);
+        const adv = Math.sign(advantageOn(caster, tgt, true) + (caster.c.conds.has("sorcery") ? 1 : 0)), r = luckyGuard(caster, tgt, d20(adv, caster, null, acVs - m.hit), acVs - m.hit), crit = r === 20, insp = r === 1 || crit ? 0 : useInspiration(caster, r + m.hit, acVs), hit = crit || (r !== 1 && r + m.hit + insp >= acVs); afterAttackRoll(caster);
         const why = `${fname(caster)} ${name}: ${r} + ${m.hit} vs AC ${acVs}${coverNote(cv)}`;
         if (r === 1) bank("ui/nat1", .7); if (crit) bank("ui/nat20", .7);
         if (!hit){ miss(tgt); land(tgt, false, sp.type); log(`${why} — miss.`); return; }
@@ -9806,7 +9828,7 @@ function castSpell(caster, tgt, name, done, darts){
           // Fey Ancestry (SRD 5.1 elf/half-elf 2315/2320, drow 1608): magic can't put them to sleep. Shown, not silent.
           if (name === "Sleep"){ const fp = sleepProof(rollerOf(t)); if (fp){ traitPop(t, fp); lines.push(`${fname(t)} is untouched (Fey Ancestry)`); if (i === targets.length - 1){ sigilEnd(t, false); log(`${fname(caster)} ${name}: ${lines.join("; ")}.`); } return; } }
           const cvS = sp.save === "dex" && name !== "Sacred Flame" ? coverOf(caster, t) : {ac: 0};            // SRD: cover adds to DEX saves too
-          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20(rageAdvantage(t.c.rage, sp.save), t, sp.cond) + (t.c.sheet.saves[sp.save] || 0) + cvS.ac + blessD4(t), ok = s >= dc;
+          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20(rageAdvantage(t.c.rage, sp.save), t, sp.cond, dc - (t.c.sheet.saves[sp.save] || 0) - cvS.ac) + (t.c.sheet.saves[sp.save] || 0) + cvS.ac + blessD4(t), ok = s >= dc;
           let line = `${fname(t)} ${sp.save.toUpperCase()} ${s}${cvS.ac ? ` (cover +${cvS.ac})` : ""} vs DC ${dc}: ${ok ? "saves" : "fails"}`;
           if (sp.area && !marks.length) markTarget(t);
           if (name === "Sleep"){ if (!ok){ bank("spells/control-slumber-fall", .5); t.sheepT0 = now; } else bank("magic/spell_fizzle", .4); if (i === targets.length - 1) sigilEnd(t, !ok); }

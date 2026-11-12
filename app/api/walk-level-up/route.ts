@@ -60,6 +60,8 @@ function preview(sheet: SheetRow) {
     // the SRD's fixed alternative to the roll: half the die rounded up, plus one
     average: die ? Math.ceil(die / 2) + 1 : null,
     con: dry.hp ? dry.hp.con : null,
+    // hit points a feat adds every level (Tough +2); the screen adds it to the die so the number it shows is the write
+    featHp: dry.hp?.feat ?? 0,
     gated,
     gateNote: gated ? `Level ${next} waits on the ${String(sheet.class ?? "").toLowerCase()}'s class trial (levels ${TRIAL_GATE_FROM_LEVEL} and up — Sam, 2026-10-27). The trial is not yet set, so this level cannot be taken from here yet.` : null,
     ok: dry.ok && !gated,

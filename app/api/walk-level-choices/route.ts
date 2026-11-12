@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { METAMAGIC, choicesOwed, classSpells, planFor, settleChoices, subclassesFor, type CastingSheet, type HeroStats, type Picks } from "@/lib/level-choices"
-import { ABILITIES, featOptions, type Ability } from "@/lib/feats"
+import { ABILITIES, featNamesOn, featOptions, type Ability } from "@/lib/feats"
 
 // /api/walk-level-choices — the choices a level leaves after the ceremony (lib/level-choices.ts).
 //
@@ -41,7 +41,7 @@ function heroStats(r: Row): HeroStats {
   const scores: Partial<Record<Ability, number | null>> = {}
   for (const a of ABILITIES) scores[a] = Number(r[`${a.toLowerCase()}_score`] ?? 10)
   const n = (k: string) => (r[k] == null ? null : Number(r[k]))
-  return { scores, hp_max: n("hp_max"), hp_current: n("hp_current"), initiative: n("initiative"), proficiency_bonus: n("proficiency_bonus"), featureNames: featureNames(r.sheet_features) }
+  return { scores, hp_max: n("hp_max"), hp_current: n("hp_current"), initiative: n("initiative"), proficiency_bonus: n("proficiency_bonus"), featureNames: featNamesOn(r.sheet_features), fightingStyle: featureNames(r.sheet_features).some((x) => /^fighting style/i.test(x)) }
 }
 
 export async function GET(req: NextRequest) {
@@ -64,7 +64,7 @@ export async function GET(req: NextRequest) {
     scores: { STR: row.str_score, DEX: row.dex_score, CON: row.con_score, INT: row.int_score, WIS: row.wis_score, CHA: row.cha_score },
     spells: plan && plan.caster ? classSpells(plan.cls, plan.maxSpellLevel) : [],
     metamagic: plan && plan.metamagic ? METAMAGIC : [], origins: subclassesFor(plan),
-    feats: plan && plan.improvement ? featOptions({ level: plan.level, scores: heroStats(row).scores, featureNames: featureNames(row.sheet_features), spellcasting: plan.caster, fightingStyle: featureNames(row.sheet_features).some((n) => /^fighting style/i.test(n)) }) : [],
+    feats: plan && plan.improvement ? featOptions({ level: plan.level, scores: heroStats(row).scores, featureNames: featNamesOn(row.sheet_features), spellcasting: plan.caster, fightingStyle: featureNames(row.sheet_features).some((n) => /^fighting style/i.test(n)) }) : [],
   })
 }
 
