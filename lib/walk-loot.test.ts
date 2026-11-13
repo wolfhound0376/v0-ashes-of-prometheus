@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { POCKETS, PRISONERS, pocketEntries, scavengedRoll } from "./walk-loot"
+import { BENT_WIRE_SLUG, POCKETS, PRISONERS, pocketEntries, scavengedRoll } from "./walk-loot"
 
 describe("what is in the pockets (OotA ch.1)", () => {
   it("gives the named characters what the book says they carry", () => {
@@ -8,6 +8,13 @@ describe("what is in the pockets (OotA ch.1)", () => {
     expect(pocketEntries("ilvara").map((e) => e.slug)).toEqual(["ilvara-chest-key"])
     expect(pocketEntries("shoor").map((e) => e.slug)).toEqual(["wand-of-viscid-globs"])
     expect(pocketEntries("asha")).toEqual([])
+  })
+
+  it("puts Jimjar's wire in his pockets on top of what he scavenged, and in nobody else's", () => {
+    expect(pocketEntries("jimjar").map((e) => e.slug)).toContain(BENT_WIRE_SLUG)
+    for (const p of PRISONERS) if (p !== "jimjar") expect(pocketEntries(p).map((e) => e.slug)).not.toContain(BENT_WIRE_SLUG)
+    const scav = scavengedRoll("jimjar").entry
+    expect(pocketEntries("jimjar")).toHaveLength(scav ? 2 : 1)
   })
 
   it("rolls each prisoner once on Scavenged Possessions, the same way every time", () => {

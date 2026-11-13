@@ -440,10 +440,19 @@ export function rollPockets(which: string, rng: () => number = Math.random): Loo
   return [...out.values()]
 }
 
-/** What the book puts in this character's pockets: the named pockets above, or a prisoner's scavenged find. */
+// JIMJAR'S WIRE (Sam, 2026-11-12: "Jimjar approaches Fifi and offers to help but for a price. He offers a small metal
+// wire he found which she can attempt once per short rest on her manacles."). HOMEBREW, not from the book: it is
+// carried on top of whatever he scavenged, so it is a real thing in his pockets from the start — handed over when the
+// deal is made (the map takes it from this pocket), and, like anything loose on a prisoner, liftable by a quick hand.
+export const BENT_WIRE_SLUG = "bent-wire"
+export const PRISONER_EXTRAS: Record<string, LootEntry[]> = {
+  jimjar: [{ slug: BENT_WIRE_SLUG, qty: 1, note: "a bent length of wire he found" }],
+}
+
+/** What this character has in their pockets: the named pockets above, or a prisoner's scavenged find (plus Jimjar's wire). */
 export function pocketEntries(slug: string): LootEntry[] {
   if (POCKETS[slug]) return POCKETS[slug]
-  if ((PRISONERS as readonly string[]).includes(slug)) { const e = scavengedRoll(slug).entry; return e ? [e] : [] }
+  if ((PRISONERS as readonly string[]).includes(slug)) { const e = scavengedRoll(slug).entry; return [...(e ? [e] : []), ...(PRISONER_EXTRAS[slug] ?? [])] }
   return []
 }
 // Its own catalogue row (migrations/walk_loot_catalog.sql): the catalogue's "Iron key" opens manacles, not the pen gate.

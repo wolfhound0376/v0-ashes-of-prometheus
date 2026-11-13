@@ -20,8 +20,11 @@ ok(/function carries\(a, name\)\{[\s\S]{0,260}?GEAR\[a\.id\]/.test(page),
    "carries() reads that hero's gear, not the party's");
 
 // 3. A spell needing hands is refused by the IRONS, not merely by being on a work detail.
-ok(/function handsBound\(\)\{ return inChains\(\) \|\| manacled\(\); \}/.test(page),
-   "handsBound() = on a detail OR in irons");
+// (per hero since Jimjar's wire, 2026-11-13: the irons asked about are THAT hero's)
+ok(/function handsBound\(a = leader\)\{ return inChains\(\) \|\| manacled\(a\); \}/.test(page),
+   "handsBound(hero) = on a detail OR that hero in irons");
+ok(/function manacled\(a = leader\)\{ return !!state\.manacled && !\(a && \(state\.unshackled \|\| \{\}\)\[a\.id\]\); \}/.test(page),
+   "manacled(hero): the party's irons, less the heroes who have got out of their own");
 ok(/if \(handsBound\(\) && !voiceOnly\(sp\.components\)\)/.test(page),
    "the components gate asks handsBound(), so the pen and a detail answer alike");
 ok(/laborCastSeen\(caster, target\)/.test(page) && /if \(inChains\(\)\) laborCastSeen/.test(page),
