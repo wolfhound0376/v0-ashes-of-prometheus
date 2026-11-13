@@ -1568,7 +1568,10 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
   // party's flag; `unshackled` names the heroes who have got out of their own. JIMJAR'S WIRE: wireAsk {at} once he has
   // come over with it, wireBet {heroId: watch number} the watch a hero last lost his bet, wireTried {heroId: true}
   // who has had their go at their manacles since the last rest.
-  unshackled: {}, wireAsk: null, wireBet: {}, wireTried: {}};
+  unshackled: {}, wireAsk: null, wireBet: {}, wireTried: {},
+  // LEND YOUR SPARK (Sam, 2026-11-12, "go"). {by, to, at}: a sorcerer at the wall has offered their spark to the friend
+  // who will cut the ward. It rides the One World sync, so the sorcerer's screen offers and the cutter's screen uses it.
+  spark: null};
 // The watch on the pen and the pen gate as the STORY has them (/api/map-stage `watch` and `gate`, written from
 // Malachar's [WATCH:] / [GATE:] tags and from his prose by the stage director). Declared up here because a plate is
 // populated before the poll below ever runs. See "the watch and the gate" further down.
@@ -9425,7 +9428,7 @@ function renderExploreBar(){
   const lvlNext = canControl(leader) && !inFightNow() ? levelReady(leader.id) : 0;
   const who = SHORT[leader.id] || (SHEETS[leader.id] && SHEETS[leader.id].name.split(" ")[0]) || SPR[leader.id].json.name;
   o.mark = pickpocketMark(leader);   // someone in reach of a hand while this hero is sneaking unseen
-  const key = [leader.id, o.talkNear && o.talkNear.id, o.talkList.length, lvlNext, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, o.mark && o.mark.id, party.length, whistleCan(leader) ? "w" : "", beseechCan(leader) ? "b" : "", wireCan(leader) ? "m" : ""].join("|");
+  const key = [leader.id, o.talkNear && o.talkNear.id, o.talkList.length, lvlNext, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, o.mark && o.mark.id, party.length, whistleCan(leader) ? "w" : "", beseechCan(leader) ? "b" : "", wireCan(leader) ? "m" : "", sparkTargets(leader).map(p => p.id).join("+")].join("|");
   if (key === exploreKey && !m.hidden) return;
   exploreKey = key; m.dataset.kind = "explore"; m.innerHTML = ""; m.hidden = false;
   const add = (label, glyph, icon, sub, fn, cls) => { const b = document.createElement("button"); if (cls) b.className = cls;
@@ -9614,6 +9617,9 @@ function exploreExtras(m, o, add, who){
       else x("Alter the ward sigil", "✧", ART("look-closer"), `Dexterity DC ${WARD_CUT_DC} · it will scar red, and the drow will read it`, () => openSigilCut());
     }
   }
+  // LEND YOUR SPARK (Sam, 2026-11-12): a sorcerer at the wall offers it to the friend who can make the cut
+  for (const p of sparkTargets(L)) x(sparkLentTo(L, p) ? `Spark lent to ${fname(p)}` : `Lend your spark to ${fname(p)}`, "✷", ART("help"),
+    sparkLentTo(L, p) ? "their cut has advantage · if it fails, you are both thrown" : "advantage on their cut · if it fails, the ward throws you both", sparkLentTo(L, p) ? null : () => lendSpark(L, p));
   // SHAKE THEM AWAKE (Sam, 2026-11-12): a friend the ward put on the floor comes round early if someone goes to them
   const wardFriend = party.find(p => p !== L && p.wardKo && p.x != null && Math.hypot(p.x - L.x, p.y - L.y) < WARD_SHAKE_REACH * sc);
   if (wardFriend) x(`Shake ${fname(wardFriend)} awake`, "✋", ART("help"), "out cold from the ward", () => wardShake(L, wardFriend));
@@ -10305,19 +10311,58 @@ function openSigilCut(){
     `${fname(h)} has the seam. Re-cutting the anchor stroke breaks the nullification for everyone in the pen — and the sigil `
     + `scars RED where it is cut. It stays red. Any drow who comes into the pen will read it on sight, and that is a fight, `
     + `not a warning.\n\nMiss the cut and the ward bites: ${fname(h)} blacks out and comes round with 1 hit point, and cannot try again before a rest.`
-    + `\n\nDexterity DC ${WARD_CUT_DC}${tool ? ` · cutting with ${tool.name}` : " · bare-handed: disadvantage"}.`,
+    + `\n\nDexterity DC ${WARD_CUT_DC}${tool ? ` · cutting with ${tool.name}` : " · bare-handed: disadvantage"}.`
+    + (sparkFor(h) ? `\n\n${fname(sparkFor(h))} stands at your shoulder, lending their spark: advantage. If the cut fails, the ward throws you both.` : ""),
     buttons: [
       {label: "Cut it", primary: true, fn: () => cutSigil()},
       {label: "Leave it alone", fn: () => { exploreKey = ""; }}]});
 }
 function cutSigil(){
   const h = leader; if (!h || state.wardBroken) return;
-  const tool = wardCutTool(h), adv = (tool ? 0 : -1) + (beseechSpend("ward", h) ? 1 : 0);   // BESEECH: shown the cut, it is made with advantage (5e: it cancels bare hands)
+  const spark = sparkFor(h); if (state.spark) state.spark = null;   // a spark is lent for one cut
+  // BESEECH: shown the cut, it is made with advantage (5e: it cancels bare hands). A SPARK lent is advantage too; two
+  // sources of advantage are still one advantage.
+  const tool = wardCutTool(h), beseeched = beseechSpend("ward", h), adv = Math.min(1, (tool ? 0 : -1) + (beseeched ? 1 : 0) + (spark ? 1 : 0) + (beseeched && spark ? -1 : 0));
   const mod = heroMod(h, "dexterity", "dex"), r = d20(adv, h), k = {r, mod, total: r + mod, adv};
   const by = k.total - WARD_CUT_DC;
-  log(`${fname(h)} re-cuts the anchor stroke: ${rollLine(k, "dexterity")} vs DC ${WARD_CUT_DC}.`);
+  log(`${fname(h)} re-cuts the anchor stroke${spark ? `, ${esc(fname(spark))}'s spark at their shoulder` : ""}: ${rollLine(k, "dexterity")} vs DC ${WARD_CUT_DC}.`);
   if (by >= 0) return breakWard(h, k);
-  wardShock(h, k);                                 // ANY failed cut (Sam, 2026-11-12: "Failed cut shocks"): the ward bites back
+  wardShock(h, k, {spark});                        // ANY failed cut (Sam, 2026-11-12: "Failed cut shocks"): the ward bites back — and the spark with it
+}
+// ---------- LEND YOUR SPARK (Sam, 2026-11-12) ----------
+// Put to Sam as a default and he said "go": "Standing beside whoever cuts the ward, the sorcerer gives them advantage;
+// on a failure both are shocked."
+//   WHO        A sorcerer, on their feet, within reach of the wall, not bitten by the ward since their last rest. Not a
+//              spell (the ward nullifies casting; this is what they are, not what they cast), so the ward and the irons
+//              do not stop it [CLAUDE].
+//   TO WHOM    A friend who has read the seam (a study of 20+) and may cut, also within reach of the wall and not
+//              bitten either. The sorcerer's own screen offers it ("Lend your spark to Gandalf"); it is held in
+//              state.spark, so the friend's screen picks it up for their cut. Lent for one cut, and only while the
+//              sorcerer is still at the wall; it lapses after SPARK_MS [CLAUDE: the number].
+//   THE CUT    Advantage (it cancels the disadvantage of bare hands; with a beseeched boon as well it is still one
+//              advantage, 5e). On a success, nothing more. On a failure the ward throws them BOTH: each out cold at 1
+//              hit point and each locked out until a rest. It counts as ONE shock to the ward, so a first failure does
+//              not bring the drow search that Sam set at the second (WARD_SEARCH_AT) [CLAUDE].
+const SPARK_MS = 120000;
+const isSorcerer = a => /sorcerer/i.test(String((a && SHEETS[a.id] || {}).cls || ""));
+function sparkReady(a){ return !!(a && isSorcerer(a) && !a.down && !a.ko && !incapacitated(a) && wardReach(a) && !wardCutLocked(a)); }
+/** The friends this sorcerer could lend the spark to, right now. Empty unless they are standing at the wall. */
+function sparkTargets(L){
+  if (!L || mode !== "explore" || state.wardBroken || cur !== PEN || !sparkReady(L) || !canControl(L)) return [];
+  return party.filter(p => p !== L && !p.down && !p.ko && wardReach(p) && wardMayCut(p) && !wardCutLocked(p) && ((state.wardStudy || {})[p.id] || {}).tier === "seam");
+}
+function sparkLentTo(L, p){ const s = state.spark; return !!(s && s.by === L.id && s.to === p.id && Date.now() - s.at < SPARK_MS); }
+function lendSpark(L, p){
+  state.spark = {by: L.id, to: p.id, at: Date.now()}; saveWalk();
+  faceTo(L, p); popText(L, "spark", "#c89cff", 1.1); bank("ui/initiative_start", .25);
+  log(`${esc(fname(L))} puts a hand on ${esc(fname(p))}'s shoulder. <i>Something in the blood answers the wall.</i>`);
+  toast(`${fname(p)}'s cut will have ${fname(L)}'s spark behind it. If it fails, the ward throws them both.`, 5200);
+  exploreKey = "";
+}
+/** The sorcerer lending their spark to this cutter, if one still is. */
+function sparkFor(h){
+  const s = state.spark; if (!s || !h || s.to !== h.id || Date.now() - s.at >= SPARK_MS) return null;
+  const by = party.find(p => p.id === s.by); return by && sparkReady(by) ? by : null;
 }
 // ---------- THE SIGIL, REVISED (Sam, 2026-11-12) ----------
 // Sam: "The sigil should have a passive perception check of 5 for magic users. If they detect it, the cinematic fires
@@ -10373,10 +10418,16 @@ function sigilNoticeTick(){
   if (mine && seen[mine.id] === true && !(state.sigilFilmed || {})[mine.id]) sigilFilm(mine);
 }
 /** The ward bites back: out cold, 1 hit point, no second try before a rest. The second bite brings the drow. */
-function wardShock(h, k){
-  state.wardShocks = (state.wardShocks || 0) + 1;
+function wardShock(h, k, opts = {}){
+  state.wardShocks = (state.wardShocks || 0) + 1;      // one failed cut is one shock to the ward, even when it throws two
   (state.wardCutLock || (state.wardCutLock = {}))[h.id] = true;
   (state.wardOut || (state.wardOut = {}))[h.id] = Date.now() + WARD_BLACKOUT_MS;
+  const sp = opts.spark && opts.spark !== h ? opts.spark : null;
+  if (sp){                                             // the sorcerer who lent the spark goes down beside them
+    state.wardCutLock[sp.id] = true; state.wardOut[sp.id] = Date.now() + WARD_BLACKOUT_MS;
+    popText(sp, "out cold", "#c89cff", 1.3); sp.flash = now + 400; sp.flashCol = "#c89cff"; wardShockHp(sp);
+    log(`<b>The ward runs up the spark into ${esc(fname(sp))} too.</b> Out cold, <b>1 hit point left</b>.`);
+  }
   const search = state.wardShocks >= WARD_SEARCH_AT;
   for (const m of MARKS[node.slug] || []){ if (m.el){ m.el.classList.add("flare"); setTimeout(() => m.el.classList.remove("flare"), 1400); } }
   bank("magic/spell_fizzle", .9); bank(voxFor(h, "hit") || "creature/player_hurt", .6);
@@ -10387,6 +10438,8 @@ function wardShock(h, k){
   askCheck(`${fname(h)} is thrown back by the ward sigil`, k, "dexterity",
     `${fname(h)} botched a re-cut of the drow ward sigil: Dexterity ${k.total} against DC ${WARD_CUT_DC}. THE WARD BIT BACK. `
     + `The map has ALREADY applied it: ${fname(h)} is unconscious for about half a minute (a friend can shake them awake sooner) and is at 1 hit point. `
+    + (sp ? `${fname(sp)}, a sorcerer lending their own spark to the cut, was thrown back with them and is ALSO out cold at 1 hit point, already applied. `
+      + `${fname(sp)} cannot lend a spark to the ward again until they have rested. ` : "")
     + `Do NOT apply any more damage or any condition; only narrate it. The ward HOLDS: it is not broken and it is not red. `
     + `${fname(h)} cannot try the cut again until they have rested. `
     + (search
@@ -10429,6 +10482,7 @@ function wardShake(by, t){
 /** A short rest has been taken: whoever the ward bit may try the cut again. */
 function wardRested(){
   if (state.wardCutLock && Object.keys(state.wardCutLock).length){ state.wardCutLock = {}; log("<i>Rested. The sigil can be tried again.</i>"); }
+  if (state.spark) state.spark = null;
 }
 /** The ward breaks. One flag, every casting path, every screen. */
 function breakWard(h, k){
