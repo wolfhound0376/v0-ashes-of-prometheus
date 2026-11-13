@@ -139,6 +139,18 @@ export const BOOK_CONTAINERS: Record<string, BookContainer> = {
     source: "OotA Expanded p.45, Lift Trouble: a pouch of vials of sleep poison. Read as drow poison; count (3) is Claude's.",
     entries: [{ slug: "drow-poison", qty: 3, note: "vials in a pouch" }],
   },
+  // OUTSIDE THE PEN (Sam, 2026-11-13: "Please add a loot box outside the pen. Inside it have one dagger, two thieves tools,
+  // and one vial of drow poison."). A chest on the rock landing by the gate, the balcony side (story.json 11 loot). Not book
+  // loot: the contents and counts are Sam's, word for word; the spot on the landing is Claude's.
+  "pen-landing-chest": {
+    node: "11", title: "A chest on the landing",
+    source: "Sam's ruling, 2026-11-13: a chest outside the pen holding one dagger, two sets of thieves' tools and one vial of drow poison.",
+    entries: [
+      { slug: "dagger", qty: 1 },
+      { slug: "thieves-tools", qty: 2 },
+      { slug: "drow-poison", qty: 1, note: "a single vial" },
+    ],
+  },
   // The kitchen (plate 3k): what is painted on Sam's plate. The book (OotA p.12) names the chores, not the kit.
   "kitchen-knives": {
     node: "3k", title: "Kitchen knives",

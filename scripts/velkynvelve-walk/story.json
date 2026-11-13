@@ -179,6 +179,15 @@
           "unknown": "Mushrooms. Pale, ordinary, and you have not eaten since they took you.",
           "_src": "Skill and DC are Claude's house numbers (2026-10-30). useful:false so a successful read fires no discovery film — the trap must not announce itself."
         }
+      },
+      {
+        "id": "pen-landing-chest",
+        "name": "A chest on the landing",
+        "_src": "Sam 2026-11-13: 'add a loot box outside the pen'. Contents in lib/walk-loot.ts BOOK_CONTAINERS. Placement on the rock landing, balcony side of the gate, is Claude's: anchor and approach cell checked walkable against masks.json plate 11; reachable only once the gate is open.",
+        "chest": "wooden",
+        "at": [405, 722],
+        "poly": [[370, 660], [440, 660], [440, 725], [370, 725]],
+        "text": "A small wooden chest sits on the rock by the gate, out of the drip from the bridge."
       }
     ],
     "npcs": [

@@ -5411,8 +5411,12 @@ function drawLootHighlight(){
     }
     if (l.chest){
       const im = chestImg(l.chest); if (!im.complete || !im.naturalWidth) continue;
-      const at = {x: l.at[0], y: l.at[1]}, side = CHEST_FT * ftPx(at) * 128 / 100;   // the chest fills ~100 of its 128 px
-      drawLootSprite(im, 0, 0, 128, 128, at.x - side / 2, at.y - side * 126 / 128, side, side, lit, pulse);
+      // A CHEST OUTSIDE THE PEN (Sam, 2026-11-13: the chest on the landing). Out on the balcony a thing is sized at the
+      // balcony's own foot (the guards' fixedScale) and drawn through the close-up's mesh when that view is up, like
+      // everyone standing there; anywhere else, as before.
+      const at = {x: l.at[0], y: l.at[1]}, B = balcony(), out = !!(B && inPoly(B.poly, at.x, at.y));
+      const foot = out ? 96 * BASE * (B.scale || 1.35) / 5 : ftPx(at), side = CHEST_FT * foot * 128 / 100;   // the chest fills ~100 of its 128 px
+      ovWrap(at.x, at.y, () => drawLootSprite(im, 0, 0, 128, 128, at.x - side / 2, at.y - side * 126 / 128, side, side, lit, pulse));
       continue;
     }
     if (!lit) continue;
