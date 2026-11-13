@@ -163,6 +163,15 @@ export function useTravel() {
   const initiatedRef = useRef(false)
   // Pushing on past eight: every arrive carries force:true until camp is made.
   const forcingRef = useRef(false)
+  // THE WALK STARTS ON THE CLICK (Sam, 2026-11-12: "There's a large delay before the party moves; fix it").
+  // The figure used to wait for depart, then move, then a full reload of the map before taking a step: four or
+  // five server round trips in a row. Now the leader's screen puts the party on the road at once and the server
+  // work runs behind it. `setOutPending` is that work: the first marker's arrival check waits for it, so the
+  // server always knows where the party is before it rolls anything. `optimisticTo` is where this screen already
+  // says the party is going: a poll that lands before the move is saved would otherwise put the party back and
+  // walk it home again.
+  const setOutPending = useRef<Promise<void> | null>(null)
+  const optimisticTo = useRef<string | null>(null)
   // The hover card: price a leg before anyone clicks.
   const [hoverNode, setHoverNode] = useState<NodeRow | null>(null)
   // The arrival beat: the passive-roll chip and Malachar's line, shown a while.
@@ -301,6 +310,21 @@ export function useTravel() {
    * Enter key come through here so the two paths cannot drift apart.
    */
   async function setOut(dest: NodeRow) {
+    setConfirmNode(null)
+    initiatedRef.current = true
+    forcingRef.current = false
+    optimisticTo.current = dest.id
+    setParty((p) => (p ? { ...p, node_id: dest.id } : p))   // the map's walk effect sees the new node and sets out now
+    const work = departAndMove(dest)
+    setOutPending.current = work
+    await work
+    if (setOutPending.current === work) setOutPending.current = null
+    optimisticTo.current = null
+    setRefresh((r) => r + 1)   // now the server agrees: read it back
+  }
+
+  /** The server half of setting out: the day's pace and navigator, then the move itself. */
+  async function departAndMove(dest: NodeRow) {
     try {
       const res = await fetch("/api/travel", {
         method: "POST",
@@ -314,10 +338,7 @@ export function useTravel() {
     } catch {
       /* the walk still happens; the day just will not count */
     }
-    setConfirmNode(null)
-    initiatedRef.current = true
-    forcingRef.current = false
-    await dmAction("move", dest.node_key)
+    await fetch("/api/travel", { method: "POST", headers: travelHeaders(), body: travelBody({ action: "move", node_key: dest.node_key }) }).catch(() => {})
   }
 
   /** Miles along a route of node ids, summed over the road edges that join them. */
@@ -363,7 +384,7 @@ export function useTravel() {
             if (!alive) return
             setNodes((g.nodes ?? []) as NodeRow[])
             setEdges((g.edges ?? []) as EdgeRow[])
-            setParty((g.party as PartyRow) ?? null)
+            setParty((prev) => keepWalk(prev, (g.party as PartyRow) ?? null))
             setVessels((g.vessels ?? []) as VesselRow[])
             if (g.march) {
               setMarch((m) => ({ ...m, ...g.march }))
@@ -398,7 +419,7 @@ export function useTravel() {
       if (v.data) setVessels(v.data as VesselRow[])
       if (n.data) setNodes(n.data as NodeRow[])
       if (e.data) setEdges(e.data as EdgeRow[])
-      if (p.data) setParty((p.data[0] as PartyRow) ?? null)
+      if (p.data) setParty((prev) => keepWalk(prev, (p.data[0] as PartyRow) ?? null))
       setLoaded(true)
     }
     load()
@@ -418,6 +439,13 @@ export function useTravel() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dmKey, refresh])
+
+  /** A read that lands while this screen's set-out is still being saved keeps the road it is already on. */
+  function keepWalk(prev: PartyRow | null, next: PartyRow | null): PartyRow | null {
+    const to = optimisticTo.current
+    if (to && next && next.node_id !== to) return prev
+    return next
+  }
 
   const byId = new Map(nodes.map((n) => [n.id, n]))
 
@@ -494,6 +522,8 @@ export function useTravel() {
     // walking asks (the DM's, or the leader's) — a player watching must
     // never be the one rolling the party's encounters.
     if (!initiatedRef.current || !canLeadRef.current) return
+    // The walk set out before the server heard of it (setOut): ask what waits here only once the move is saved.
+    if (setOutPending.current) await setOutPending.current
     let out: any = null
     try {
       const res = await fetch("/api/travel", {
