@@ -61,6 +61,7 @@ const SLEIGHT: WalkCheck = { kind: "skill", skill: "sleight_of_hand", label: "Sl
 const INVESTIGATION: WalkCheck = { kind: "skill", skill: "investigation", label: "Investigation" }
 const PERFORMANCE: WalkCheck = { kind: "skill", skill: "performance", label: "Performance" }
 const INSIGHT: WalkCheck = { kind: "skill", skill: "insight", label: "Insight" }
+const ANIMAL_HANDLING: WalkCheck = { kind: "skill", skill: "animal_handling", label: "Animal Handling" }
 const STRENGTH: WalkCheck = { kind: "ability", ability: "str", label: "Strength" }
 const COOKS: WalkCheck = { kind: "tool", tool: "Cook's Utensils", ability: "wis", label: "Cook's utensils" }
 
@@ -120,6 +121,10 @@ const BOOK_ACTIONS = {
   // wire being no thieves' tools; OotA's own manacle escape is DC 20 Dexterity, and a wire in the lock is worth 5.
   "jimjar:bet": { title: "Bet Jimjar for it", label: "Betting Jimjar which fist holds the pebble", check: INSIGHT, dc: 13, source: "house (Sam's mechanic, DC Claude's)", mapNarrates: true },
   "manacles:wire": { title: "Work the wire", label: "Working a bent wire into their own manacles", check: SLEIGHT, dc: 15, source: "house (Sam's mechanic; OotA manacles DC 20, the wire worth 5)", mapNarrates: true },
+  // THE DRUID'S WORD (Sam, 2026-11-12: "A druid can talk to one of the rats or a spider if they are successful to try to
+  // get a key or small weapon"). HOMEBREW. Wisdom (Animal Handling); the DC is a house number [CLAUDE]. The map says
+  // what the creature brought back, so the bridge sends nothing.
+  "druid:beast": { title: "Speak to the creature", label: "Asking a pen rat or spider to fetch something from a guard", check: ANIMAL_HANDLING, dc: 13, source: "house (Sam's mechanic, DC Claude's)", mapNarrates: true },
 } as const satisfies Record<string, WalkAction>
 
 // PICKPOCKETING WHILE UNSEEN (Sam, 2026-10-27: "pick pocket should be an option when sneaking and near a character.
