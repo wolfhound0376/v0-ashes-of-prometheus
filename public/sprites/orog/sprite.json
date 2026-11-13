@@ -16,6 +16,19 @@
       "frames": 1,
       "fps": 5,
       "loop": true
+    },
+    "walk": {
+      "sheet": "walk.png",
+      "frames": 8,
+      "fps": 10,
+      "loop": true
+    },
+    "attack": {
+      "sheet": "attack.png",
+      "frames": 8,
+      "fps": 12,
+      "loop": false,
+      "hit": 0.8
     }
   }
 }
