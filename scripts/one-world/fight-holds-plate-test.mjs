@@ -475,7 +475,38 @@ const SCENARIOS = {
       check("the next watch brings a new one", await A.evaluate(() => npcs.filter((n) => /^drow-guard/.test(n.id)).length > 0))
     } finally { await W.close() }
   }],
-  10: ["the pen gate: walking out through it mid-fight, and being told when you cannot make it", async (port) => {
+  // Sam, 2026-11-13, after the battle screen went in: "I was still able to get through the door and it should open into
+  // combat". The open gate is a decision, not floor: nobody walks the doorway, a click on it brings its card, and going
+  // through is the landing's own plate: the fight when the watch is there, the empty landing when it is not.
+  30: ["the open gate is not floor: no way through on foot, its card is the fight on the battle plate", async (port) => {
+    const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
+    try {
+      await openGate(A); await wait(1500)
+      const st = await A.evaluate(() => { const B = balcony(), g = gateCenter(); return { open: state.gateOpen && !state.doorShut, passable: gatePassable(), path: findPath(leader, { x: B.landing[0], y: B.landing[1] }).length, thru: !!throughGate(leader, g), guards: gateGuards().length } })
+      check("the gate stands open, the watch is out there, and there is no way through on foot", st.open && !st.passable && st.path === 0 && !st.thru && st.guards > 0, st)
+      // (walking up to an open gate under the watch's eyes is theirs to answer first, "Back from the gate": the card itself is asked for here)
+      await A.evaluate(() => { for (const n of npcs) n.talk = false; openInteract(doorGate()) })
+      check("the open gate's card is the choice of who goes through", await until(A, () => !$("obj").hidden && /The lock is off/.test($("objWho").textContent), 15000), await see(A))
+      const still = await A.evaluate(() => outsidePen(leader)); check("she has not gone anywhere", !still)
+      await pick(A, /^Go through — .* alone$/)
+      check("going through is the fight, on the battle plate", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0 && String(cur) === "battle-pen-gate", 20000), await fightNow(A))
+    } finally { await W.close() }
+  }],
+  31: ["the open gate with nobody on the landing: going through is a cut to the landing's plate, on foot from there", async (port) => {
+    const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
+    try {
+      await A.evaluate(async () => { state.gateWatchDown = { rot: storyRotations }; await enterNode(11); mode = "explore" }); await openGate(A); await wait(1500)
+      const st = await A.evaluate(() => { const B = balcony(); return { guards: gateGuards().length, path: findPath(leader, { x: B.landing[0], y: B.landing[1] }).length } })
+      check("no watch, and still no way through on foot", st.guards === 0 && st.path === 0, st)
+      await A.evaluate(() => { for (const n of npcs) n.talk = false; click(gateCenter()) })
+      check("the card says the landing is empty", await until(A, () => !$("obj").hidden && /nobody is on the landing/.test($("objText").textContent), 40000), await see(A))
+      await pick(A, /^Go through — out onto the landing$/)
+      check("she is on the landing's plate, free to walk", await until(A, () => String(cur) === "battle-pen-gate" && mode === "explore", 20000), await see(A))
+      const ways = await A.evaluate(() => node.zones.map((z) => z.to.join()))
+      check("the gate, the bridge and the cliff stairs are its ways on", ["11", "10", "12"].every((t) => ways.includes(t)), ways)
+    } finally { await W.close() }
+  }],
+  10: ["the pen gate mid-fight: nobody walks out through it, and she is told", async (port) => {
     // Sam, 2026-11-12: "Can't walk through this door. Maybe we need to redesign how the door and walking through it works"
     const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
     try {
@@ -491,14 +522,12 @@ const SCENARIOS = {
       check("with 5 ft left the range ring does not promise the landing", before.ring === false, before)
       await go("landing"); const short = await now()
       check("5 ft left, a click on the landing: she stays where she is", !short.out && short.move === 5 && short.at[0] === before.at[0] && short.at[1] === before.at[1], short)
-      check("and she is told why", short.toasts.some((t) => /Too far this turn/.test(t)), short.toasts)
+      check("and she is told there is no way", short.toasts.length > 0, short.toasts)
+      // (2026-11-13: nobody walks the doorway, with 5 ft or with 30. The fight with the watch is on the battle plate.)
       await inside(30); const can = await now()
-      check("with 30 ft the ring shows the landing", can.ring === true, can)
+      check("with 30 ft the ring still does not promise the landing", can.ring === false, can)
       await go("landing"); const through = await now()
-      check("30 ft, a click on the landing: she is through the gate", through.out, through)
-      check("the gate charged nothing extra: at least 15 ft of her 30 is left", through.move >= 15, through)
-      await inside(30); await go("gate"); const byGate = await now()
-      check("a click on the open gate walks her out through it", byGate.out, byGate)
+      check("30 ft, a click on the landing: she is still inside", !through.out, through)
       await shot(A, "10-through-the-gate")
     } finally { await W.close() }
   }],
@@ -513,9 +542,7 @@ const SCENARIOS = {
       await lastFoeDrops(A); await wait(7000)
       const after = await see(A); await shot(A, "1-after-the-fight")
       check("the fight is over and nobody crossed the bridge on their own", after.plate === "11" && !after.fightLive && after.mode === "explore" && !after.moves.length, after)
-      // the doorway is not dead: walking out to it afterwards crosses, as it always has
-      await A.evaluate(([x, y]) => { for (const n of npcs) n.talk = false; state.ambushOff = true; walkTo(nearestWalkable(x, y)) }, BRIDGE_FOOT)
-      check("walking out to the bridge afterwards crosses to the Guard Tower", await until(A, () => String(cur) === "10" && mode === "explore", 40000), await see(A))
+      // (2026-11-13: the pen's landing is not walked from inside any more; the bridge is reached from the landing's own plate, scenario 9)
     } finally { await W.close() }
   }],
   2: ["the Guard Tower: back into the doorway mid-fight", async (port) => {
@@ -585,8 +612,8 @@ const SCENARIOS = {
     try {
       await wait(3000); await openGate(A); await wait(2500)
       for (const pg of [A, B]) await pg.evaluate(() => { for (const n of npcs) n.talk = false; if (mode === "talk") closeTalk(false) })
-      await setDown(A, "freia", 430, 640)                                      // out on the landing; the watch sees her
-      for (let k = 0; k < 8 && !W.server.flag(); k++) { await A.evaluate(() => { if (mode === "talk") closeTalk(false); guardsAlarm = null; guardsReact(gateGuards()[0], leader, "out of the pen") }); await wait(1500) }
+      await setDown(A, "freia", 822, 930)                                      // at the open gate, just inside (2026-11-13: the landing is not walked from in here); the watch sees her
+      for (let k = 0; k < 8 && !W.server.flag(); k++) { await A.evaluate(() => { if (mode === "talk") closeTalk(false); if (!state.brokeOut) state.brokeOut = { at: Date.now(), why: "test: loose, in the watch's sight" }; guardsAlarm = null; guardsReact(gateGuards()[0], leader, "out of the pen") }); await wait(1500) }
       // THE BATTLE SCREEN: a fight with the watch out on the landing is cut to the landing's battle plate on both screens
       const both = (await until(A, () => mode === "combat" && cbt && cbt.fromFlag && String(cur) === "battle-pen-gate", 40000)) && (await until(B, () => mode === "combat" && cbt && String(cur) === "battle-pen-gate", 40000))
       check("each screen opens its own copy of the fight, on the battle plate", both && !(await A.evaluate(() => FIGHT.mirror)) && !(await B.evaluate(() => FIGHT.mirror)), { flag: !!W.server.flag(), a: await A.evaluate(() => [mode, String(cur)]), b: await B.evaluate(() => [mode, String(cur)]) })
@@ -616,7 +643,7 @@ const SCENARIOS = {
   }],
   7: ["the party's move arrives mid-fight with a card up: it waits, then is taken", (port) => partyMoves(port, false)],
   8: ["the party's move arrives mid-fight with a card up: dropped when they have come back", (port) => partyMoves(port, true)],
-  9: ["no fight: out of the open gate and over the bridge, Follow on and off", async (port) => {
+  9: ["no fight: out by the open gate's card to the landing plate, then over the bridge on foot, Follow on and off", async (port) => {
     for (const follow of [true, false]) {
       // both heroes are seated but only Fifi's player is at the table, so her screen walks Kenta too (One World's driverOf)
       const W = await world({ port: port + (follow ? 0 : 1), watchAway: true }), A = await W.screen(FIFI, "Fifi")
@@ -625,8 +652,13 @@ const SCENARIOS = {
         await A.evaluate((follow) => { state.wardBroken = true; unlockGate(); state.ambushOff = true; for (const n of npcs) n.talk = false; setFollow(follow) }, follow)
         await wait(1500)
         const n = await A.evaluate(() => party.length)
-        await A.evaluate(([x, y]) => walkTo(nearestWalkable(x, y)), BRIDGE_FOOT)   // out through the open gate, round the pillar, onto the bridge
-        const over = await until(A, () => String(cur) === "10" && mode === "explore", 40000); await wait(3000)
+        // (2026-11-13: the open gate is not floor any more. Its card cuts to the landing's own plate; the bridge is walked from there.)
+        const blocked = await A.evaluate(([x, y]) => findPath(leader, nearestWalkable(x, y)).length === 0 || !outsidePen(nearestWalkable(x, y)), BRIDGE_FOOT)
+        check("no walking out of the open gate to the bridge", blocked)
+        await A.evaluate(() => openInteract(doorGate())); await until(A, () => !$("obj").hidden, 10000); await pick(A, /^Go through — out onto the landing$/)
+        check("the card's way through is the landing's plate", await until(A, () => String(cur) === "battle-pen-gate" && mode === "explore", 20000))
+        await wait(1500); await A.evaluate(() => { __moves.length = 0; const z = node.zones.find((q) => q.to.includes(10)), c = zoneCenter(z); walkTo(nearestWalkable(c.x, c.y)) })
+        const over = await until(A, () => String(cur) === "10" && mode === "explore", 60000); await wait(3000)
         const s = await see(A)
         check(`Follow ${follow ? "ON: the whole party crosses" : "OFF: the leader crosses alone"}`, over && n === 2 && s.plate === "10" && s.party.length === (follow ? 2 : 1) && s.moves.length === 1 && !s.moves[0].fightLive, { over, n, ...s })
       } finally { await W.close() }
@@ -693,13 +725,7 @@ const SCENARIOS = {
       await openGate(A); await wait(1200)
       const planned = await A.evaluate(() => { const e = npcs.find((n) => n.id === "eldeth"), B = balcony(); stopActivity(e); e.actUntil = now + 60000
         e.path = findPath(e, { x: B.landing[0], y: B.landing[1] }); return { steps: e.path.length, out: outsidePen(e) } })
-      check("with the gate open she has a way out through it", planned.steps > 0 && !planned.out, planned)
-      await A.evaluate(() => { state.doorShut = true; setDoor(false); buildGrid() })           // the gate is shut while she is still walking to it
-      await until(A, () => { const e = npcs.find((n) => n.id === "eldeth"); return !e.path.length }, 30000); await wait(800)
-      const shut = await A.evaluate(() => { const e = npcs.find((n) => n.id === "eldeth"), B = balcony(); return { out: onBalcony(e) || Math.hypot(e.x - B.landing[0], e.y - B.landing[1]) < 40, alpha: +e.alpha.toFixed(2), at: [Math.round(e.x), Math.round(e.y)] } })
-      check("the gate shut on the way: she is still inside, in plain view", !shut.out && shut.alpha > .9, shut)
-      await A.evaluate(() => { state.doorShut = false; setDoor(true); buildGrid(); const e = npcs.find((n) => n.id === "eldeth"), B = balcony(); e.actUntil = now + 60000; e.path = findPath(e, { x: B.landing[0], y: B.landing[1] }) })
-      check("open again, she walks out through it as before", await until(A, () => { const e = npcs.find((n) => n.id === "eldeth"); return onBalcony(e) && !e.path.length }, 30000))
+      check("even with the gate open a prisoner has no way out through it on foot (2026-11-13: the doorway is not floor)", planned.steps === 0 && !planned.out, planned)
     } finally { await W.close() }
   }],
 }

@@ -1816,8 +1816,16 @@ function outsidePen(p){
   const cx = Math.floor(p.x / CELL), cy = Math.floor(p.y / CELL);
   return cx >= 0 && cy >= 0 && cx < GW && cy < GH && outsideCells[cy * GW + cx] === 1;
 }
-const balconyFloor = () => !!balcony() && (mode === "combat" || (state.gateOpen && !state.doorShut));
-const gatePassable = () => balconyFloor() && state.gateOpen && !state.doorShut;
+function gateIsWalked(){ try { return !battlePlateOf(cur) || laborLive(); } catch (e) { return true; } }   // (try: the grid is first built before the battle plates are read)
+// (out of a fight the landing is floor only while the doorway is: with a gate nobody walks, it is as far away as behind a locked one)
+const balconyFloor = () => !!balcony() && (mode === "combat" || (state.gateOpen && !state.doorShut && gateIsWalked()));
+// NOBODY WALKS THE PEN'S DOORWAY (Sam, 2026-11-12: "I thought we weren't going through the door directly any further";
+// 2026-11-13, after the battle screen went in: "I was still able to get through the door and it should open into
+// combat"). On a plate whose landing has its own battle plate (THE BATTLE SCREEN, below) the open gate is a DECISION, not
+// floor: clicking it opens its card, and going through is a cut to the landing's plate, into the fight if the watch is
+// there. So the doorway is stone to every walker, in a fight or out of one. The one exception is a work detail (Hard
+// Labor), whose escort marches the prisoners out through it on a scripted crossing.
+const gatePassable = () => balconyFloor() && state.gateOpen && !state.doorShut && gateIsWalked();
 // A CLICK ON THE OPEN DOORWAY WALKS THROUGH IT (Sam, 2026-10-28: "Door is open why am I not able to move across").
 // The doorway itself is not floor, so a click on its dark opening snapped to the nearest floor, which is the pen side,
 // and the walker stopped at the threshold (or the gate's card popped). With the gate open, a click anywhere on the gate
@@ -3723,7 +3731,8 @@ function triggerZone(z){
   leader.path = [];
   // Sam, 2026-10-25: the gate card opens "only if you choose to interact with the door, not automatically". Walking
   // up to the bars does nothing; clicking the gate (or its ✋ action) opens it.
-  if (z.interact){ if (z.kind === "gate") return; openInteract(z); return; }
+  // (a hero who CLICKED the gate is stopped here at its edge like anyone else: that click's card is owed, so it opens)
+  if (z.interact){ if (z.kind === "gate"){ if (leader.wantsZone === z && leader.onArrive){ leader.wantsZone = leader.onArrive = null; openInteract(z); } return; } openInteract(z); return; }
   if (z.rappel){ rappelCard(z); return; }                                                        // a rope on the cliff below the lift
   if (unseenWayOnly() && z.kind !== "gate" && !z.to.includes(QUAGGOTH_DEN)){                   // UNSEEN, ONE WAY OUT
     toast("Unseen, the only way is the cliff stairs down. The bridge runs under the watch's eyes.", 4200); log("<em>Not the bridge: the watch would see. The cliff stairs go down out of their sight.</em>"); return; }
@@ -5720,6 +5729,19 @@ function openInteract(z, opts = {}){
     $("objText").textContent = "The gate is shut, but no longer locked.";
     add("Open it", () => { close(); state.doorShut = false; setDoor(true); sfx("door-open"); if (balcony()) buildGrid(); setTimeout(() => openInteract(z), 1500); }, "primary", {icon: "key"});
     add("Step back", close, "", {icon: "back"});
+  } else if (isDoor && battlePlateOf(cur) && !laborLive()){
+    // THE OPEN GATE IS A DECISION (see gateIsWalked). The watch on the landing: going through is the fight, on the
+    // landing's battle plate, by the same card a prisoner's own hand on the lock brings up. Nobody out there: the party
+    // steps out onto the landing's plate, and the bridge and the cliff stairs are its ways on.
+    const guards = gateGuards();
+    if (guards.length){ $("obj").hidden = true; mode = "explore";
+      const g = gateCenter() || leader, w = guards.slice().sort((a, b) => Math.hypot(a.x - g.x, a.y - g.y) - Math.hypot(b.x - g.x, b.y - g.y))[0];
+      breakoutCard(w, guards, false, breakoutBy || "open"); return; }
+    $("objText").textContent = "The gate stands open, and nobody is on the landing.";
+    add("Go through — out onto the landing", () => { $("obj").hidden = true; mode = "explore"; gateToLanding(); }, "primary", {icon: "way"});
+    calls();
+    if (!state.gateBroken) add("Close the gate", () => { close(); state.doorShut = true; setDoor(false); if (balcony()) buildGrid(); setTimeout(() => sfx("door-close"), 650); }, "", {icon: "key"});
+    add("Stay inside", close, "", {icon: "back"});
   } else {
     for (const t of z.to) add(it.routes?.[t] || `To ${nameOf(t)}`, () => { $("obj").hidden = true; mode = "explore"; travel(t, z); }, "primary", {icon: "way"});
     calls();
@@ -6289,6 +6311,18 @@ function battleArriving(from, n){ const B = battleLive(); return B && owSame(n, 
 function battleOffs(B){ const dx = [0, -60, 55, -10, 80, -95], dy = [0, 40, 45, 85, -25, 10]; return B.heroes.filter(id => SPR[id]).map((id, i) => ({id, dx: dx[i] || 0, dy: dy[i] || 0})); }
 function battleAllies(B){ const comp = companyNow(), add = (B.allies || []).filter(id => SPR[id] && !comp.includes(id)); comp.push(...add); state.leftBehind = state.leftBehind.filter(id => !add.includes(id)); return add; }
 function gateWatchAway(){ const B = battleLive(), d = state.gateWatchDown; return !!((B && owSame(B.from, PEN)) || (d && (storyRotations || 0) <= d.rot)); }
+/** The gate stands open and nobody is on the landing: the party steps out onto the landing's own plate (a cut, not a walk). */
+async function gateToLanding(){
+  const plate = battlePlateOf(cur); if (!plate || battleBusy || mode !== "explore" || !leader) return;
+  battleBusy = true; const fade = $("fade"), from = cur;
+  try {
+    party.forEach(p => { p.path = []; }); if (sneak) endSneak();
+    if (cur === PEN && !state.brokeOut) state.brokeOut = {at: Date.now(), why: "walked out of the open gate"};
+    log(`${esc(fname(leader))} goes out through the gate, onto the landing.`);
+    mode = "dialog"; fade.classList.add("quick", "on"); await wait(320);
+    await enterNode(plate, {from, note: "Out through the gate, onto the landing."});
+  } finally { battleBusy = false; fade.classList.remove("on"); setTimeout(() => fade.classList.remove("quick"), 400); if (mode === "dialog" && $("obj").hidden) mode = "explore"; }
+}
 /** A fight this plate hands to its battle plate: every foe named is one of the watch, standing out on the landing. */
 function battleWanted(foeIds){
   if (cur !== PEN || !battlePlateOf(cur) || battleBusy || battleLive() || laborLive() || FIGHT.mirror) return false;
@@ -17987,7 +18021,7 @@ function click(w){
     const ls = !hitActor(npcs, w) ? lootSpotAt(w) : null; if (ls){ const lc = lootCenter(ls); walkTo(nearestWalkable(lc.x, lc.y), () => openLootSpot(ls)); return; }
     { const thru = throughGate(leader, w); if (thru){ walkTo(thru); return; } }
     const ob = interactAt(w) || (zoneAt(w.x, w.y)?.interact ? zoneAt(w.x, w.y) : null);
-    if (ob){ const zc = zoneCenter(ob); walkTo(nearestWalkable(zc.x, zc.y), () => openInteract(ob)); return; }
+    if (ob){ const zc = zoneCenter(ob); walkTo(nearestWalkable(zc.x, zc.y), () => openInteract(ob)); if (leader) leader.wantsZone = ob; return; }   // (wantsZone: triggerZone, which stops a walker at the gate's edge)
     { const mk = !hitActor(npcs, w) ? markAt(w) : null;                    // THE SIGIL IS A THING YOU USE: walk to the wall, and its card
       if (mk && mk.type === "ward" && !state.wardBroken){
         if (wardReach(leader) && ownLeader()){ leader.path = []; setTimeout(openSigilCard, 80); }   // already at the wall: no walk, the card (after this click has finished: the same press must not land on the card)
@@ -18053,7 +18087,7 @@ function drawExploreJumpSquares(L){
   }
   ctx.restore();
 }
-function walkTo(p, cb){ if (!ownLeader()){ if (leader) notYours(leader); return; } if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
+function walkTo(p, cb){ if (!ownLeader()){ if (leader) notYours(leader); return; } if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.wantsZone = null; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
 $("zIn").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.3); };
 $("zOut").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.3); };
 $("zFit").onclick = () => {
