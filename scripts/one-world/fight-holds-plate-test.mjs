@@ -498,6 +498,21 @@ const SCENARIOS = {
       check("two rolls, nobody dead, the gate open and the drow inside", r.asked === 2 && !r.dead && r.gateOpen && r.foes.length >= 2 && r.foes.every((f) => !f[1]), r)
     } finally { await W.close() }
   }],
+  // JORLAN'S WORD (Sam, 2026-11-12: "You hear it get unlocked. If persuaded he even leaves a dagger.")
+  21: ["Jorlan keeps his word: the stage says unlocked at the watch change, the pen hears it and is told whose hand it was", async (port) => {
+    const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
+    try {
+      await wait(2000)
+      const r = await A.evaluate(() => {
+        const at = new Date().toISOString(); window.__lines = []; const l0 = log; log = (t, ...x) => { __lines.push(String(t)); return l0(t, ...x) }
+        storyPledge = { by: "Kenta of Neverwinter", dagger: true, since: at, atRotation: 5, keptAt: at }
+        followGate({ state: "unlocked", since: at })
+        return { open: state.gateOpen, shut: state.doorShut, lines: __lines.slice() }
+      })
+      check("the gate is unlocked but shut", r.open && r.shut, r)
+      check("the table hears it, is told it was Jorlan, and about the dagger", r.lines.some((t) => /Jorlan kept his word/.test(t) && /dagger/.test(t)), r.lines)
+    } finally { await W.close() }
+  }],
   17: ["nobody comes through a shut gate: a prisoner on her way out when it closes stays in the pen", async (port) => {
     // Sam, 2026-11-12: "how did Eldeth jump through a closed door"
     const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")

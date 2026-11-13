@@ -59,6 +59,7 @@ const ACROBATICS: WalkCheck = { kind: "skill", skill: "acrobatics", label: "Acro
 const PERCEPTION: WalkCheck = { kind: "skill", skill: "perception", label: "Perception" }
 const SLEIGHT: WalkCheck = { kind: "skill", skill: "sleight_of_hand", label: "Sleight of Hand" }
 const INVESTIGATION: WalkCheck = { kind: "skill", skill: "investigation", label: "Investigation" }
+const PERFORMANCE: WalkCheck = { kind: "skill", skill: "performance", label: "Performance" }
 const STRENGTH: WalkCheck = { kind: "ability", ability: "str", label: "Strength" }
 const COOKS: WalkCheck = { kind: "tool", tool: "Cook's Utensils", ability: "wis", label: "Cook's utensils" }
 
@@ -108,6 +109,10 @@ const BOOK_ACTIONS = {
   // on the grab (his back is turned) and tells Malachar the outcome itself.
   "strangle:grab": { title: "Throw the rope", label: "Looping a rope round a guard's throat through the bars", check: ATHLETICS, dc: 12, source: "house: grapple vs drow Acrobatics +2 as passive 12", mapNarrates: true },
   "strangle:hold": { title: "Hold the rope", label: "Holding a strangling rope", check: ATHLETICS, dc: 12, source: "house: grapple vs drow Acrobatics +2 as passive 12", mapNarrates: true },
+  // THE WHISTLE (Sam, 2026-11-12: "The Bard can also whistle, annoying the guard enough to come in offering an opportunity
+  // for the rogues to steal a key"). The book has no such check: Charisma (Performance), and the DC is a house number
+  // [CLAUDE]. The map tells Malachar what came of it (which guard, the slap), so the bridge sends nothing.
+  "pen:whistle": { title: "Whistle at the guard", label: "Whistling at a gate guard until he comes in to stop it", check: PERFORMANCE, dc: 12, source: "house (Sam's mechanic, DC Claude's)", mapNarrates: true },
 } as const satisfies Record<string, WalkAction>
 
 // PICKPOCKETING WHILE UNSEEN (Sam, 2026-10-27: "pick pocket should be an option when sneaking and near a character.
