@@ -1569,6 +1569,8 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
   // come over with it, wireBet {heroId: watch number} the watch a hero last lost his bet, wireTried {heroId: true}
   // who has had their go at their manacles since the last rest.
   unshackled: {}, wireAsk: null, wireBet: {}, wireTried: {},
+  // THE DRUID'S WORD (2026-11-13). beastTry {heroId: watch number}: the watch a druid last asked a creature.
+  beastTry: {},
   // LEND YOUR SPARK (Sam, 2026-11-12, "go"). {by, to, at}: a sorcerer at the wall has offered their spark to the friend
   // who will cut the ward. It rides the One World sync, so the sorcerer's screen offers and the cutter's screen uses it.
   spark: null};
@@ -5776,7 +5778,7 @@ function openBody(b){
 // the dashboard's engine with the dashboard's modifier, and the page answers {ok, success, total, natural} — or
 // {cancelled} if they stepped back. "aop:roll-ack" says the panel is open; after it the map waits as long as the
 // player does. Opened as a plain file (no game around it), the map rolls locally against the same DC.
-const ROLLS = new Map(), LOCAL_DC = {"falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12, "jimjar:bet": 13, "manacles:wire": 15};
+const ROLLS = new Map(), LOCAL_DC = {"falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12, "jimjar:bet": 13, "manacles:wire": 15, "druid:beast": 13};
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
@@ -8217,7 +8219,7 @@ function renderExploreBar(){
   const lvlNext = canControl(leader) && !inFightNow() ? levelReady(leader.id) : 0;
   const who = SHORT[leader.id] || (SHEETS[leader.id] && SHEETS[leader.id].name.split(" ")[0]) || SPR[leader.id].json.name;
   o.mark = pickpocketMark(leader);   // someone in reach of a hand while this hero is sneaking unseen
-  const key = [leader.id, o.talkNear && o.talkNear.id, o.talkList.length, lvlNext, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, o.mark && o.mark.id, party.length, whistleCan(leader) ? "w" : "", beseechCan(leader) ? "b" : "", wireCan(leader) ? "m" : "", sparkTargets(leader).map(p => p.id).join("+")].join("|");
+  const key = [leader.id, o.talkNear && o.talkNear.id, o.talkList.length, lvlNext, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, o.mark && o.mark.id, party.length, whistleCan(leader) ? "w" : "", beseechCan(leader) ? "b" : "", wireCan(leader) ? "m" : "", sparkTargets(leader).map(p => p.id).join("+"), (druidVermin(leader) || {}).uid || ""].join("|");
   if (key === exploreKey && !m.hidden) return;
   exploreKey = key; m.dataset.kind = "explore"; m.innerHTML = ""; m.hidden = false;
   const add = (label, glyph, icon, sub, fn, cls) => { const b = document.createElement("button"); if (cls) b.className = cls;
@@ -8299,7 +8301,7 @@ let sneak = null, helpNext = null, followOn = true, moreOpen = false, exploreJum
 const EXPLORE_KEEP = 7;
 const BUTTON_PRI = [[/^Level Up/, .5], [/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
   [/^(Sneak|Stop sneaking)/, 4], [/^Pick .*pocket/, 4], [/^Cast/, 5], [/^Search$/, 6], [/^Inventory/, 7], [/^Tell Malachar/, 8], [/^Next hero/, 9],
-  [/^(Scout|Jump|Pray|Beseech|Inspire|Whistle|Work the wire|Quick drink)/, 10], [/^My company/, 11], [/^Short rest/, 12], [/^Help/, 13], [/^(Follow|Wait)/, 14], [/^Talk$/, 30]];
+  [/^(Scout|Jump|Pray|Beseech|Inspire|Whistle|Work the wire|Speak to the|Quick drink)/, 10], [/^My company/, 11], [/^Short rest/, 12], [/^Help/, 13], [/^(Follow|Wait)/, 14], [/^Talk$/, 30]];
 // THE COMBAT BAR (Sam, 2026-11-10: "Don't offer bubble boxes for actions that aren't available. Offer boxes in order of
 // priority and utility." — this replaces the 2026-10-27 canvas order for the fight). Only what the hero can do RIGHT NOW
 // gets a box (foldBar drops the rest), so the order is by usefulness, not by habit:
@@ -8374,6 +8376,7 @@ function exploreExtras(m, o, add, who){
     x("My company", "☰", ART("follow"), `${escortOf(L.id).length} with you · ${m === "follow" ? "following" : m === "wait" ? "waiting" : "with " + fname(party.find(p => p.id === m.slice(5)) || L)}`, canControl(L) ? () => openCompany() : null); }
   if (/cleric/.test(cls)) x("Pray", "✠", ART("pray"), "silently, or aloud", () => openPray());
   if (/warlock/.test(cls) && beseechCan(L)) x("Beseech your patron", "✠", ART("pray"), "a way out of the pen · once until you rest", () => openBeseech());
+  { const v = druidVermin(L); if (v) x(`Speak to the ${verminKind(v)}`, "❦", ART("talk"), `Animal Handling ${sgn(heroMod(L, "animalHandling", "wis"))} · send it for a guard's key or blade · once a watch`, () => speakToVermin(v)); }
   if (wireCan(L)) x("Work the wire into your manacles", "⚿", ART("pickpocket", "search"), `Sleight of Hand ${sgn(heroMod(L, "sleightOfHand", "dex"))} · one try until you rest`, () => wireManacles());
   if (whistleCan(L)) x("Whistle at the guard", "♪", ART("inspire"), `Performance ${sgn(heroMod(L, "performance", "cha"))} · he may come in to shut you up`, () => whistleAtGuard());
   if (sh.bardic) x("Inspire", "♪", ART("inspire"), `Bardic Inspiration · ${inspLeftOf(L)} of ${sh.bardic.uses} left`, inspLeftOf(L) > 0 && party.length > 1 ? () => openInspire() : null);
@@ -9854,6 +9857,82 @@ function openPray(){
   if (beseechCan(leader)) add(`Beseech ${god} for a way out of this pen`, () => { close(); beseech(leader); });
   add("Pray aloud", () => { close(); log(`${fname(leader)} prays aloud to ${god}.`); narrate(leader, `${fname(leader)} prays aloud.`); handOff(`${fname(leader)} prays ALOUD to ${god}, where anyone near can hear.`, true); });
   add("Not now", close);
+}
+// ---------- THE DRUID'S WORD (Sam, 2026-11-12) ----------
+// "A druid can talk to one of the rats or a spider if they are successful to try to get a key or small weapon." Then,
+// put to him and answered "go": a knack, not a spell, so it works under the ward and in irons.
+//   WHO, WHEN  A druid this screen plays, held in the pen, near one of the pen's own vermin (the rat or the small
+//              spider that already cross the floor: tickVermin) [CLAUDE: within DRUID_REACH]. Once per druid per watch
+//              [CLAUDE]: the creatures are always about, so without a limit the roll could simply be repeated.
+//   THE ROLL   Wisdom (Animal Handling), lib/walk-roll.ts "druid:beast" [CLAUDE: the DC].
+//   FAIL       It scurries off and that creature will not listen again (it is gone at the edge of the floor anyway).
+//   SUCCESS    It runs to the gate and slips through the bars to the guard there — the one leaning on the bars if one
+//              is, else any guard at the gate — and goes through his real pockets (the per-guard pocket the pickpocket
+//              uses). It brings back the pen key if he has it, else a dagger, else nothing [CLAUDE: the order]. What it
+//              brings moves into the druid's pack by the same take as a picked pocket, so a key it fetches starts the
+//              shakedown's count exactly as a lifted key does. The guard does not notice a rat [CLAUDE].
+//   ONE SCREEN The creatures are this screen's set dressing, so only the druid's own screen sees the errand run; the
+//              thing it brings is the table's, through the server.
+const DRUID_REACH = 260;
+const isDruid = a => /druid/i.test(String((a && SHEETS[a.id] || {}).cls || ""));
+const verminKind = v => /rat/.test(v.id) ? "rat" : "spider";
+let verminUid = 0, druidBusy = false;
+function druidVermin(L){
+  if (!L || druidBusy || mode !== "explore" || !isDruid(L) || L.down || L.ko || !canControl(L) || !penHeld()) return null;
+  if ((state.beastTry || {})[L.id] === (storyRotations || 0)) return null;
+  const reach = DRUID_REACH * (node.scale || 1);
+  const v = vermin.filter(x => !x.deaf && !x.hold && (x.alpha ?? 1) > .4 && Math.hypot(x.x - L.x, x.y - L.y) < reach)
+    .sort((a, b) => Math.hypot(a.x - L.x, a.y - L.y) - Math.hypot(b.x - L.x, b.y - L.y))[0] || null;
+  if (v && !v.uid) v.uid = "v" + (++verminUid);
+  return v;
+}
+function druidGuard(){ return npcs.find(n => n.lean && n.atBars && !n.down && isGuard(n)) || gateGuards()[0] || null; }
+async function speakToVermin(v){
+  const h = leader; if (!druidVermin(h) || druidBusy) return;
+  druidBusy = true; h.path = []; v.hold = true; v.path = []; v.alpha = 1; tip.hidden = true;
+  try {
+    faceTo(h, v); popText(h, "…", "#9fd8a0", 1);
+    state.beastTry = Object.assign({}, state.beastTry || {}, {[h.id]: storyRotations || 0}); saveWalk();
+    const r = await rollOnDashboard("druid:beast", heroMod(h, "animalHandling", "wis"), {who: h});
+    if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3600);
+      if (r && r.cancelled){ const t = Object.assign({}, state.beastTry); delete t[h.id]; state.beastTry = t; saveWalk(); }   // stepped back from the roll: not a try
+      v.hold = false; return; }
+    if (!r.success){
+      v.deaf = true; v.hold = false; v.path = []; popText(v, "!", "#c8c8c8", .8);
+      log(`${esc(fname(h))} murmurs to the ${verminKind(v)}. <em>It looks at them, and is gone.</em>`); return;
+    }
+    await verminErrand(v, h);
+  } finally { druidBusy = false; v.hold = false; exploreKey = ""; }
+}
+/** There and back: the creature goes through the bars to the guard's pockets and returns with what it could carry. */
+async function verminErrand(v, h){
+  const g = druidGuard(), gc = gateCenter(), kind = verminKind(v);
+  if (!g || !gc){ log(`${esc(fname(h))} murmurs to the ${kind}. <em>It listens — but there is nobody at the gate to rob.</em>`); return; }
+  log(`<b>${esc(fname(h))} murmurs to the ${kind}.</b> <i>It listens, then runs for the gate.</i>`);
+  const at = nearestWalkable(gc.x, gc.y), go = findPath(v, at);
+  v.path = go.length ? go : [{x: at.x, y: at.y}];
+  for (let t = 0; t < 12000 && v.path.length; t += 250) await wait(250);
+  for (let k = 10; k >= 0; k--){ v.alpha = k / 10; await wait(40); }           // through the bars
+  await wait(4200);
+  let got = null;
+  try {
+    const j = await fetchLoot(pocketId(g)), rows = (j.rows || []).filter(r => !r.missing && r.kind !== "preview-stash");
+    const row = rows.find(r => r.slug === "slave-pen-key" || r.name === PEN_KEY) || rows.find(r => r.slug === "dagger" && (!r.slot || r.loose));
+    if (row && await takeLoot(h, pocketId(g), {...row, qty: 1})) got = row.name;
+  } catch (e) {}
+  v.x = at.x; v.y = at.y; for (let k = 0; k <= 10; k++){ v.alpha = k / 10; await wait(40); }
+  const near = nearestWalkable(h.x + 30, h.y + 18), back = findPath(v, near);
+  v.path = back.length ? back : [{x: near.x, y: near.y}];
+  for (let t = 0; t < 12000 && v.path.length; t += 250) await wait(250);
+  if (got){
+    popText(h, got === PEN_KEY ? "the key" : got.toLowerCase(), "#9ad0ff", 1.1);
+    log(`<b>The ${kind} drops the ${esc(got)} at ${esc(fname(h))}'s feet.</b> <em>Nobody on the bridge has looked down.</em>`, {say: true});
+    offerEquip();
+    if (APP) handOff(`${fname(h)}, a druid, sent one of the pen's ${kind}s through the bars to ${fname(g)} and it came back with the ${got}, which is now in ${fname(h)}'s inventory. ${fname(g)} did not notice. Do not apply anything more; narrate only if asked.`, false);
+  } else {
+    log(`The ${kind} comes back to ${esc(fname(h))} with nothing in its jaws. <em>Nothing loose on that one.</em>`);
+  }
+  v.path = []; v.deaf = true;
 }
 // ---------- JIMJAR'S WIRE (Sam, 2026-11-12 and 13) ----------
 // "For the rogue. Jimjar approaches Fifi and offers to help but for a price. He offers a small metal wire he found which
@@ -14762,10 +14841,10 @@ function tickVermin(dt){
   if (!(mode === "explore" || mode === "dialog") || !motionOn || timeStopped){ return; }
   if (now > verminNext){ verminNext = now + 12000 + Math.random() * 28000; if (vermin.length < 2) spawnVermin(); }
   for (const v of vermin){
-    if (v.path.length){ step(v, dt, SPEED * v.v.speed); if (v.v.scurry) v.ky = Math.sin(now / 38) * 1.4; if (party.some(pc => Math.hypot(pc.x - v.x, pc.y - v.y) < 70)) v.path = []; }
-    else v.alpha = Math.max(0, v.alpha - dt * 2.5);
+    if (v.path.length){ step(v, dt, SPEED * v.v.speed); if (v.v.scurry) v.ky = Math.sin(now / 38) * 1.4; if (!v.hold && party.some(pc => Math.hypot(pc.x - v.x, pc.y - v.y) < 70)) v.path = []; }
+    else if (!v.hold) v.alpha = Math.max(0, v.alpha - dt * 2.5);
   }
-  vermin = vermin.filter(v => v.path.length || v.alpha > 0);
+  vermin = vermin.filter(v => v.hold || v.path.length || v.alpha > 0);
 }
 // A seated character who was not on the plate when it loaded joins the party where the leader stands.
 function partyJoins(id){

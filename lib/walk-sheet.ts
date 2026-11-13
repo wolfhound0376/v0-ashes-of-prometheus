@@ -49,7 +49,7 @@ export type WalkSheet = {
   /** the ability modifiers themselves — NOT the saves, which carry class save proficiency. Attacks, checks and DCs read these. */
   mods: { str: number; dex: number; con: number; int: number; wis: number; cha: number }
   saves: { str: number; dex: number; con: number; int: number; wis: number; cha: number }
-  skills: { sleightOfHand: number; medicine: number; stealth: number; athletics: number; perception: number; investigation: number; thievesTools: number }
+  skills: { sleightOfHand: number; medicine: number; stealth: number; athletics: number; perception: number; investigation: number; thievesTools: number; animalHandling: number }
   /** the knowledge skills the loot card's checks roll (lib/item-lore.mjs): the bonus and the row's proficiency word */
   lore: Record<LoreSkill, { mod: number; level: "" | "proficient" | "expertise" }>
   /** the tools the loot card's checks roll: Int + proficiency when the row lists the tool, null when it does not */
@@ -206,6 +206,7 @@ export function walkSheetFromRow(row: Row): WalkSheet {
       perception: skill(row, "Perception", m.wis, prof),
       investigation: skill(row, "Investigation", m.int, prof),
       thievesTools: thievesTools(row, m.dex, prof),
+      animalHandling: skill(row, "Animal Handling", m.wis, prof),   // the druid's word with the pen's vermin (2026-11-13)
     },
     lore: {
       investigation: skillEntry(row, "Investigation", m.int, prof),
