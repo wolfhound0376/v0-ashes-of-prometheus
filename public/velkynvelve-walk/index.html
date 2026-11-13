@@ -6031,7 +6031,7 @@ async function rollWithHelp(action, localMod, opts = {}){
 }
 function rollOnDashboard(action, localMod, opts = {}){
   // BESEECH: a way out a god or patron showed is tried with advantage, once (Sam, 2026-11-12)
-  { const bp = beseechRollPlan(action); if (bp && !opts.advantage && beseechSpend(bp, opts.who || leader)) opts = {...opts, advantage: true}; }
+  if (typeof beseechRollPlan === "function"){ const bp = beseechRollPlan(action); if (bp && !opts.advantage && beseechSpend(bp, opts.who || leader)) opts = {...opts, advantage: true}; }
   // 5e: advantage and disadvantage cancel. lib/walk-roll.ts settles it again on the other side; this keeps the
   // preview's own die honest too.
   const edge = (opts.advantage ? 1 : 0) + (opts.disadvantage ? -1 : 0);
