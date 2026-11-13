@@ -407,9 +407,10 @@ NODES.update(ROAD_PLATES)
 # arrival from here comes in by their door from THAT plate (template.html enterNode).
 # Floors, obstacles and exits traced by Claude by eye from the painting and walk-checked; NOT yet Sam's brush.
 # Rope bridge: deck only (Sam, 2026-10-14). The gate is painted shut: its exit is the foot of it, not a doorway to walk.
-# NOT WIRED YET: no fight opens this plate. The DM reaches it from DM tools > Jump to area.
+# WIRED 2026-11-13 (Sam: "go"): a fight with the gate watch on the landing is played here (template.html THE BATTLE SCREEN).
+# `foes_at`: where the watch stands when the fight opens -- the bridge's near end, the deck, then the far ledge.
 BATTLE_PLATES = {
- "battle-pen-gate": dict(slug="battle-pen-gate", stands_for=11, arrive=[2050, 760], name="The landing outside the pen gate", scale=1.0, img="battle-pen-gate.jpg",
+ "battle-pen-gate": dict(slug="battle-pen-gate", stands_for=11, arrive=[2050, 760], foes_at=[[1210,800],[900,768],[330,600],[180,580]], name="The landing outside the pen gate", scale=1.0, img="battle-pen-gate.jpg",
    floors=[dict(poly=P((0,470),(150,450),(380,440),(470,500),(505,595),(430,690),(300,715),(150,700),(0,640))),                       # the far ledge, across the bridge
            dict(poly=P((425,692),(520,600),(650,655),(800,700),(1000,705),(1105,698),(1048,802),(900,822),(740,815),(600,775))),     # the plank deck, sagging in the middle
            dict(poly=P((1040,800),(1100,700),(1190,690),(1250,640),(1360,610),(1500,540),(1700,520),(1850,505),(2040,560),(2110,600),  # the landing

@@ -166,7 +166,9 @@ const lastFoeDrops = (pg) => pg.evaluate(() => { for (const f of foes) { f.c.hp 
 const BRIDGE_FOOT = [34, 428]                       // inside the pen plate's "rope bridge -> Guard Tower" doorway (spec.json, plate 11, zone 1)
 async function penFight(pg) {                       // the gate stands open and the watch on the landing fights
   await openGate(pg); await wait(1500)
-  await pg.evaluate(() => startCombat(gateGuards(), "the breakout at the pen gate", { noAllies: true }))
+  // `battle: true`: this fight stays on the pen plate. These scenarios are about a fight HOLDING the plate it is on; a
+  // fight with the gate watch would otherwise be cut to the landing's battle plate (THE BATTLE SCREEN, scenarios 11-29).
+  await pg.evaluate(() => startCombat(gateGuards(), "the breakout at the pen gate", { noAllies: true, battle: true }))
   await until(pg, () => mode === "combat" && cbt && cbt.order.length > 0, 15000); await sturdy(pg)
 }
 
@@ -179,10 +181,13 @@ const prisonerOpens = async (pg, by) => {
 }
 const card = (pg) => pg.evaluate(() => ({ who: $("objWho").textContent, rows: [...$("objBtns").querySelectorAll("button")].map((b) => b.textContent.trim()) }))
 const pick = (pg, re) => pg.evaluate((src) => { const b = [...$("objBtns").querySelectorAll("button")].find((b) => new RegExp(src).test(b.textContent)); if (b) b.click(); return !!b }, re.source)
-const fightNow = (pg) => pg.evaluate(() => ({ plate: String(cur), mode, closeUp: OV.on, fade: $("fade").classList.contains("on"), moves: __moves.length,
-  heroesOut: party.filter((p) => actors.includes(p)).map((p) => outsidePen(p)), allies: ((cbt && cbt.allies) || []).map((a) => [a.id, outsidePen(a)]),
-  alliesInPen: npcs.filter((n) => ALLY_SHEETS[n.id] && actors.includes(n) && !n.offStage).map((n) => [n.id, outsidePen(n)]),
-  foes: foes.map((f) => [f.id, !!(f.c && (f.c.surprised || f.c.conds.has("surprised")))]), order: cbt ? cbt.order.length : 0 }))
+// THE BATTLE SCREEN (Sam, 2026-11-13): a fight with the gate watch is played on the landing's own battle plate, so "out
+// on the landing" is standing on that plate's floor, and nobody is left in a pen that is not on the screen.
+const BATTLE = "battle-pen-gate"
+const fightNow = (pg) => pg.evaluate(() => { const out = (p) => (String(cur) === "battle-pen-gate" ? walkable(p.x, p.y) : outsidePen(p)); return ({ plate: String(cur), mode, closeUp: OV.on, fade: $("fade").classList.contains("on"), moves: __moves.length,
+  heroesOut: party.filter((p) => actors.includes(p)).map((p) => out(p)), allies: ((cbt && cbt.allies) || []).map((a) => [a.id, out(a)]),
+  alliesInPen: npcs.filter((n) => ALLY_SHEETS[n.id] && actors.includes(n) && !n.offStage && !((cbt && cbt.allies) || []).includes(n)).map((n) => [n.id, out(n)]),
+  foes: foes.map((f) => [f.id, !!(f.c && (f.c.surprised || f.c.conds.has("surprised")))]), order: cbt ? cbt.order.length : 0 }) })
 
 // THE DOOR, SNEAKING (Sam, 2026-11-12: "leaving through door prompts you if you are sneaking: 1. Attack the guards (ambush)
 // 2. Sneak past them (to the Quaggoth den) 3. Change your mind 4. Grab dagger/key/etc (if left by someone) and close the
@@ -235,9 +240,9 @@ const SCENARIOS = {
       await pick(A, /^Go through — .* and the other hero/)
       check("the fight starts", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 20000))
       await wait(1200); const f = await fightNow(A); await shot(A, "11-on-the-landing")
-      check("on the pen plate, with nobody having walked off it", f.plate === "11" && f.moves === 0, f)
+      check("on the landing's battle plate", f.plate === BATTLE, f)
       check("every hero is out on the landing", f.heroesOut.length === 2 && f.heroesOut.every(Boolean), f)
-      check("the close-up is up and the fade is gone", f.closeUp === true && f.fade === false, f)
+      check("the fade is gone", f.fade === false, f)
       check("the drow are surprised", f.foes.length > 0 && f.foes.every((x) => x[1]), f)
       check("the prisoners who fight were not taken: none is in the fight, none is outside", f.allies.length === 0 && f.alliesInPen.every((x) => !x[1]), f)
     } finally { await W.close() }
@@ -252,7 +257,7 @@ const SCENARIOS = {
       check("the fight starts", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 20000))
       await wait(1200); const f = await fightNow(A); await shot(A, "12-everyone")
       check("the prisoners who fight are in it, and out on the landing", f.allies.length > 0 && f.allies.every((x) => x[1]), f)
-      check("the hero is out there too, close-up up, same plate", f.heroesOut.every(Boolean) && f.closeUp && f.plate === "11" && f.moves === 0, f)
+      check("the hero is out there too, on the battle plate", f.heroesOut.every(Boolean) && f.plate === BATTLE, f)
     } finally { await W.close() }
   }],
   13: ["the door card: left shut but unlocked, and the next watch finds it", async (port) => {
@@ -278,7 +283,7 @@ const SCENARIOS = {
       await pick(A, /^Go through — .* alone$/)
       check("the fight starts", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 20000))
       await wait(1200); const f = await fightNow(A)
-      check("out on the landing, and the drow are NOT surprised", f.heroesOut.every(Boolean) && f.closeUp && f.foes.length > 0 && f.foes.every((x) => !x[1]), f)
+      check("out on the landing, and the drow are NOT surprised", f.heroesOut.every(Boolean) && f.plate === BATTLE && f.foes.length > 0 && f.foes.every((x) => !x[1]), f)
     } finally { await W.close() }
   }],
   16: ["the door card on two screens: the other player's screen shows the same fight, with both heroes out on the landing", async (port) => {
@@ -290,10 +295,10 @@ const SCENARIOS = {
       check("the fight starts on Fifi's screen", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 20000))
       check("Kenta's screen shows it", await until(B, () => mode === "combat" && !!cbt, 30000))
       await wait(5000)
-      const where = (pg) => pg.evaluate(() => ({ plate: String(cur), mode, mirror: !!FIGHT.mirror, closeUp: OV.on, heroes: party.map((p) => [p.id, Math.round(p.x), Math.round(p.y), outsidePen(p)]) }))
+      const where = (pg) => pg.evaluate(() => ({ plate: String(cur), mode, mirror: !!FIGHT.mirror, closeUp: OV.on, heroes: party.map((p) => [p.id, Math.round(p.x), Math.round(p.y), String(cur) === "battle-pen-gate" && walkable(p.x, p.y)]) }))
       const a = await where(A), b = await where(B); await shot(A, "16-fifi"); await shot(B, "16-kenta")
       check("on Fifi's screen both heroes are out on the landing, apart from each other", a.heroes.length === 2 && a.heroes.every((h) => h[3]) && Math.hypot(a.heroes[0][1] - a.heroes[1][1], a.heroes[0][2] - a.heroes[1][2]) > 12, a)
-      check("on Kenta's screen too, on the pen plate", b.plate === "11" && b.heroes.length === 2 && b.heroes.every((h) => h[3]), b)
+      check("on Kenta's screen too, on the battle plate", a.plate === BATTLE && b.plate === BATTLE && b.heroes.length === 2 && b.heroes.every((h) => h[3]), b)
     } finally { await W.close() }
   }],
   15: ["unseen, one way out: the bridge is refused while the sneak holds, the cliff stairs are not", async (port) => {
@@ -329,7 +334,7 @@ const SCENARIOS = {
       await setDice(A, 20); await pick(A, /Leave them — just/)
       check("the fight starts", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 20000))
       await wait(1200); const f = await fightNow(A), first = await A.evaluate(() => cbt.order[0].id); await shot(A, "21-the-ambush")
-      check("out on the landing, close-up up, same plate", f.heroesOut.every(Boolean) && f.closeUp && f.plate === "11" && f.moves === 0, f)
+      check("out on the landing, on the battle plate", f.heroesOut.every(Boolean) && f.plate === BATTLE, f)
       check("the drow are surprised, and the one who led it goes first", f.foes.length > 0 && f.foes.every((x) => x[1]) && first === "freia", { f, first })
       check("the prisoners were left: none is in the fight", f.allies.length === 0, f)
     } finally { await W.close() }
@@ -366,7 +371,7 @@ const SCENARIOS = {
       await setDice(A, 1); await pick(A, /Leave them — just/)
       check("the fight starts", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 20000))
       await wait(1200); const f = await fightNow(A)
-      check("on the pen plate, on the landing, and no drow is surprised", f.plate === "11" && f.moves === 0 && f.heroesOut.every(Boolean) && f.foes.length > 0 && f.foes.every((x) => !x[1]), f)
+      check("on the battle plate, on the landing, and no drow is surprised", f.plate === BATTLE && f.heroesOut.every(Boolean) && f.foes.length > 0 && f.foes.every((x) => !x[1]), f)
     } finally { await W.close() }
   }],
   25: ["the door, sneaking: something left by the bars — grab it and close the door; the next time there are three rows", async (port) => {
@@ -416,8 +421,14 @@ const SCENARIOS = {
       await pick(B, /Stay in the pen/)
       check("the fight starts on Fifi's screen", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 30000))
       await wait(1200)
-      const f = await A.evaluate(() => ({ fifiOut: outsidePen(party.find((p) => p.id === "freia")), kentaOut: outsidePen(party.find((p) => p.id !== "freia")), goers: state.doorCall && state.doorCall.goers, surprised: foes.every((x) => x.c && x.c.conds.has("surprised")) }))
-      check("Fifi is out on the landing, Kenta is still in the pen, the drow are surprised", f.fifiOut && !f.kentaOut && f.goers.length === 1 && f.surprised, f)
+      const f = await A.evaluate(() => ({ plate: String(cur), party: party.map((p) => p.id), order: cbt.order.map((o) => o.id), goers: state.doorCall && state.doorCall.goers, surprised: foes.every((x) => x.c && x.c.conds.has("surprised")), split: state.battle && state.battle.split }))
+      check("Fifi is on the battle plate alone, Kenta is not in the fight, the drow are surprised", f.plate === BATTLE && f.party.length === 1 && !f.order.includes("kenta") && f.goers.length === 1 && f.surprised && f.split === true, f)
+      await wait(2500)
+      const k = await B.evaluate(() => ({ plate: String(cur), mode, fight: !!cbt, watch: gateGuards().length, join: battleJoinable(leader), mirror: !!FIGHT.mirror, live: FIGHT.live && FIGHT.live.plate, battle: state.battle && [state.battle.id, state.battle.heroes, state.battle.split], foes: foes.map((f) => f.id), log: [...document.querySelectorAll("#log div")].slice(-4).map((d) => d.textContent.slice(0, 90)) }))
+      check("Kenta's screen is still in the pen, not fighting, the watch gone from the landing, and he may join", k.plate === "11" && !k.fight && k.watch === 0 && k.join === true, k)
+      await B.evaluate(() => { battleJoin(leader) })
+      check("joining cuts Kenta's screen to the battle plate", await until(B, () => String(cur) === "battle-pen-gate", 20000))
+      check("and the fight takes him in, from the next round", await until(A, () => !!cbt && cbt.order.some((o) => o.id === "kenta" && o.c && o.c.joinRound > 0), 30000), await A.evaluate(() => cbt && cbt.order.map((o) => o.id)))
     } finally { await W.close() }
   }],
   28: ["pointing at things: the sigil and the gate light yellow under the pointer, and a click on the sigil opens its options", async (port) => {
@@ -442,6 +453,26 @@ const SCENARIOS = {
       check("a caster at the wall may study it; step back is there", c.near && c.rows.some((r) => /^Study the ward sigil — Arcana/.test(r[0]) && !r[1]) && c.rows.some((r) => /Step back/.test(r[0])), c)
       await pick(A, /Step back/); await wait(300)
       check("stepping back closes it and the game goes on", await A.evaluate(() => $("obj").hidden && mode === "explore"))
+    } finally { await W.close() }
+  }],
+  29: ["the battle screen: the fight is won there, the dead lie there, and the pen gate way out leads back inside with the watch gone", async (port) => {
+    const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
+    try {
+      check("the card comes up", await prisonerOpens(A, "key"))
+      await pick(A, /^Go through — .* alone$/)
+      check("the fight starts on the battle plate", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0 && String(cur) === "battle-pen-gate", 20000))
+      await wait(1500)
+      const st = await A.evaluate(() => ({ exits: fightHoldsPlate(), foesOnFloor: foes.every((f) => walkable(f.x, f.y)), penWatch: gateWatchAway() }))
+      check("the fight holds the plate, the watch stands on its floor", st.exits === true && st.foesOnFloor && st.penWatch, st)
+      await lastFoeDrops(A); await wait(3000)
+      const won = await A.evaluate(() => ({ mode, plate: String(cur), over: !!(state.battle && state.battle.over), won: state.battle && state.battle.won, bodies: npcs.filter((n) => n.body).length, down: !!state.gateWatchDown }))
+      check("won: still on the battle plate, the bodies lie there, the watch is marked gone", won.mode === "explore" && won.plate === BATTLE && won.over && won.won && won.bodies === 2 && won.down, won)
+      await A.evaluate(() => { const z = node.zones.find((q) => q.to.includes(11)); travel(11, z) })
+      check("the gate way out leads back into the pen", await until(A, () => String(cur) === "11" && mode === "explore", 30000))
+      const back = await A.evaluate(() => ({ watch: npcs.filter((n) => /^drow-guard/.test(n.id) && !n.offStage).length, near: Math.round(Math.hypot(leader.x - balcony().inside[0], leader.y - balcony().inside[1])), open: state.gateOpen && !state.doorShut }))
+      check("just inside the gate, the gate open, no watch on the landing", back.watch === 0 && back.near < 350 && back.open, back)
+      await A.evaluate(async () => { storyRotations += 1; await enterNode(11) }); await wait(500)
+      check("the next watch brings a new one", await A.evaluate(() => npcs.filter((n) => /^drow-guard/.test(n.id)).length > 0))
     } finally { await W.close() }
   }],
   10: ["the pen gate: walking out through it mid-fight, and being told when you cannot make it", async (port) => {
@@ -556,18 +587,17 @@ const SCENARIOS = {
       for (const pg of [A, B]) await pg.evaluate(() => { for (const n of npcs) n.talk = false; if (mode === "talk") closeTalk(false) })
       await setDown(A, "freia", 430, 640)                                      // out on the landing; the watch sees her
       for (let k = 0; k < 8 && !W.server.flag(); k++) { await A.evaluate(() => { if (mode === "talk") closeTalk(false); guardsAlarm = null; guardsReact(gateGuards()[0], leader, "out of the pen") }); await wait(1500) }
-      const both = (await until(A, () => mode === "combat" && cbt && cbt.fromFlag, 30000)) && (await until(B, () => mode === "combat" && cbt && cbt.fromFlag, 30000))
-      check("each screen opens its own copy of the fight from the flag", both && !(await A.evaluate(() => FIGHT.mirror)) && !(await B.evaluate(() => FIGHT.mirror)), { flag: !!W.server.flag(), a: await A.evaluate(() => mode), b: await B.evaluate(() => mode) })
+      // THE BATTLE SCREEN: a fight with the watch out on the landing is cut to the landing's battle plate on both screens
+      const both = (await until(A, () => mode === "combat" && cbt && cbt.fromFlag && String(cur) === "battle-pen-gate", 40000)) && (await until(B, () => mode === "combat" && cbt && String(cur) === "battle-pen-gate", 40000))
+      check("each screen opens its own copy of the fight, on the battle plate", both && !(await A.evaluate(() => FIGHT.mirror)) && !(await B.evaluate(() => FIGHT.mirror)), { flag: !!W.server.flag(), a: await A.evaluate(() => [mode, String(cur)]), b: await B.evaluate(() => [mode, String(cur)]) })
       await sturdy(A); await sturdy(B)
-      check("it comes to Fifi's turn on her own screen", await itsTurn(A, "freia", 240000))
-      await setDown(A, "freia", 200, 520); await moveTo(A, ...BRIDGE_FOOT)
       const mid = await see(A)
-      check("Fifi is on the bridge foot, mid-fight, drow still standing on her screen", mid.plate === "11" && mid.inDoorway === 1 && mid.fightLive && (await A.evaluate(() => standing(foes).length)) > 0, mid)
-      await lastFoeDrops(B)                                                    // Kenta's copy is won; his screen takes the flag down
+      check("Fifi is mid-fight on the battle plate, drow still standing on her screen", mid.plate === BATTLE && mid.fightLive && (await A.evaluate(() => standing(foes).length)) > 0, mid)
+      await A.evaluate(() => { for (const f of foes) { f.c.hp = 0; f.down = true } endCombat(true) })   // the copy that holds the flag is won; it takes the flag down
       await wait(12000)
-      const a = await see(A), b = await see(B); await shot(A, "5-fifi-after-the-other-copy-ended")
-      check("Fifi's screen is still the pen", a.plate === "11" && !a.moves.length, a)
-      check("Kenta's screen is still the pen", b.plate === "11" && !b.moves.length, b)
+      const a = await see(A), b = await see(B); await shot(B, "5-kenta-after-the-other-copy-ended")
+      check("the flag is down, and Fifi's screen stays on the battle plate", !W.server.flag() && a.plate === BATTLE && a.moves.length === 1, a)
+      check("Kenta's screen stays on the battle plate too", b.plate === BATTLE && b.moves.length === 1, b)
     } finally { await W.close() }
   }],
   6: ["one fight shared: the mirror's hero in the doorway when it ends", async (port) => {
