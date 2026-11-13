@@ -420,6 +420,30 @@ const SCENARIOS = {
       check("Fifi is out on the landing, Kenta is still in the pen, the drow are surprised", f.fifiOut && !f.kentaOut && f.goers.length === 1 && f.surprised, f)
     } finally { await W.close() }
   }],
+  28: ["pointing at things: the sigil and the gate light yellow under the pointer, and a click on the sigil opens its options", async (port) => {
+    const W = await world({ port, seats: [KENTA] }), A = await W.screen(KENTA, "Kenta")
+    try {
+      // the first time a caster nears the wall the game plays the noticing film and takes the moment (sigilNoticeTick): that is
+      // not what is under test, so here he has already seen it
+      await A.evaluate(() => { for (const n of npcs) n.talk = false; state.sigilFilmed = { ...(state.sigilFilmed || {}), [leader.id]: true } })
+      const at = (x, y) => A.evaluate(([x, y]) => { const r = stage.getBoundingClientRect(), s = base * view.z; return [r.left + view.tx + x * s, r.top + view.ty + y * s] }, [x, y])
+      const m = await A.evaluate(() => { const m = wardMark(); return [m.x, m.y] }), [mx, my] = await at(m[0], m[1])
+      await A.mouse.move(mx + 3, my + 3); await wait(300)
+      const h = await A.evaluate(() => ({ hot: !!(hotMark && hotMark.el.classList.contains("hot")), tip: tip.textContent, hand: stage.classList.contains("pointer") })); await shot(A, "28-sigil-lit")
+      check("the sigil lights yellow under the pointer and says it can be used", h.hot && /click to use/.test(h.tip) && h.hand, h)
+      const g = await A.evaluate(() => { const z = doorGate(), p = z.interact.poly; return [p.reduce((s, q) => s + q[0], 0) / p.length, p.reduce((s, q) => s + q[1], 0) / p.length] }), [gx, gy] = await at(g[0], g[1])
+      await A.mouse.move(gx, gy); await wait(300)
+      const d = await A.evaluate(() => ({ gate: hoverObj === doorGate(), sigilOff: !hotMark, tip: tip.textContent })); await shot(A, "28-gate-lit")
+      check("the gate takes the pointer (and the yellow), and the sigil lets go of it", d.gate && d.sigilOff && /click to use/.test(d.tip), d)
+      const [cx, cy] = await at(m[0], m[1])                                  // the camera has drifted since: where the sigil is NOW
+      await A.mouse.move(cx + 3, cy + 3); await wait(200); await A.mouse.click(cx + 3, cy + 3)
+      check("a click walks him to the wall and opens the sigil's card", await cardIs(A, /^The ward sigil$/))
+      const c = await A.evaluate(() => ({ rows: [...$("objBtns").querySelectorAll("button")].map((b) => [b.textContent.trim(), b.disabled]), near: !!wardReach(leader) })); await shot(A, "28-sigil-card")
+      check("a caster at the wall may study it; step back is there", c.near && c.rows.some((r) => /^Study the ward sigil — Arcana/.test(r[0]) && !r[1]) && c.rows.some((r) => /Step back/.test(r[0])), c)
+      await pick(A, /Step back/); await wait(300)
+      check("stepping back closes it and the game goes on", await A.evaluate(() => $("obj").hidden && mode === "explore"))
+    } finally { await W.close() }
+  }],
   10: ["the pen gate: walking out through it mid-fight, and being told when you cannot make it", async (port) => {
     // Sam, 2026-11-12: "Can't walk through this door. Maybe we need to redesign how the door and walking through it works"
     const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")

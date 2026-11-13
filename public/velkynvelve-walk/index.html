@@ -402,6 +402,7 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .btns.loot{flex-direction:column;align-items:stretch;max-height:46vh;overflow:auto}
 .btns.loot .btn{text-align:left;display:flex;align-items:center;gap:8px}
 .btns.loot .btn[disabled]{opacity:.55;cursor:default}
+#objBtns .btn[disabled]{opacity:.5;cursor:default;filter:saturate(.4)}   /* a row a rule refuses: shown, with its reason, not pressable */
 .lootPx{width:24px;height:24px;image-rendering:pixelated;flex:none}
 .lootRar{margin-left:auto;padding-left:10px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.9;flex:none}
 .lootDm{display:grid;gap:6px;font-size:12px}
@@ -836,6 +837,11 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 @keyframes rune{0%,70%,100%{opacity:.3}80%{opacity:1}}
 @keyframes wardcore{0%,100%{opacity:.45}50%{opacity:.95}}
 .ward.flicker .lines,.ward.flicker .glow{animation:none;opacity:.08}
+/* pointed at (Sam, 2026-11-13: "Hovering over the door or the sigil should cause them to highlight yellow"): a yellow ring
+   and a yellow wash over the violet, the same yellow the gate takes under the pointer */
+.ward.light.hot::after{content:"";position:absolute;inset:-8%;border-radius:50%;border:3px solid rgba(255,221,64,.95);box-shadow:0 0 26px rgba(255,221,64,.9),inset 0 0 22px rgba(255,221,64,.4)}
+.ward.light.hot .bloom{animation:none;opacity:1;background:radial-gradient(circle,rgba(255,221,64,.3) 0%,rgba(255,221,64,.12) 45%,transparent 72%)}
+.ward.light.hot .lines{stroke:#ffe98a}
 /* a magic user near the wall: the ward wakes — --near 0..1 drives the bloom and the lines up from their breathing */
 .ward.light{--near:0}
 .ward.light .bloom{opacity:calc(1 + var(--near)*2.2)}
@@ -2357,11 +2363,13 @@ function drawFrame(){
         const lit = hoverObj === z || hoverZone === z || (leader && Math.hypot(leader.x - cx, leader.y - cy) < 340 * node.scale);
         if (!lit) continue;
         if (OV.on && !(z === doorGate() && OV.cfg.door)) continue;   // the close-up: only the gate, on its own painting
-        const col = "240,190,90", pts = OV.on ? OV.cfg.door.map(([x, y]) => [x + OV.cfg.x0, y]) : z.interact.poly;   // gold, open or shut (Sam, 2026-10-27: "highlighted in gold as an option")
+        // under the pointer it turns YELLOW and brighter (Sam, 2026-11-13: "Hovering over the door or the sigil should cause
+        // them to highlight yellow, offering you the ability to interact"); in reach but not pointed at, the gold it had
+        const hot = hoverObj === z || hoverZone === z, col = hot ? "255,221,64" : "240,190,90", pts = OV.on ? OV.cfg.door.map(([x, y]) => [x + OV.cfg.x0, y]) : z.interact.poly;   // gold, open or shut (Sam, 2026-10-27: "highlighted in gold as an option")
         ctx.save(); ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
-        ctx.fillStyle = `rgba(${col},${.06 + .05 * pulse})`; ctx.fill();
-        ctx.shadowColor = `rgba(${col},.95)`; ctx.shadowBlur = 24; ctx.lineJoin = "round";
-        ctx.strokeStyle = `rgba(${col},${.55 + .35 * pulse})`; ctx.lineWidth = 5; ctx.stroke();
+        ctx.fillStyle = `rgba(${col},${(hot ? .16 : .06) + .05 * pulse})`; ctx.fill();
+        ctx.shadowColor = `rgba(${col},.95)`; ctx.shadowBlur = hot ? 34 : 24; ctx.lineJoin = "round";
+        ctx.strokeStyle = `rgba(${col},${(hot ? .8 : .55) + (hot ? .2 : .35) * pulse})`; ctx.lineWidth = hot ? 6 : 5; ctx.stroke();
         ctx.shadowBlur = 0; ctx.lineWidth = 1.5; ctx.strokeStyle = `rgba(255,240,210,${.5 + .3 * pulse})`; ctx.stroke(); ctx.restore();
         continue;
       }
@@ -2923,7 +2931,7 @@ const WARD_DEFS = `<defs>
   <radialGradient id="edgefade"><stop offset=".8" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity=".55"/></radialGradient>
 </defs>`;
 function buildMarks(slug){
-  const el = $("marks"); el.innerHTML = "";
+  const el = $("marks"); el.innerHTML = ""; hotMark = null;
   for (const m of MARKS[slug] || []){
     const pos = `left:${m.x}px;top:${m.y}px;width:${m.r * 2}px;height:${m.r * 2}px;--sx:${m.sx || 1};--sk:${m.sk || 0}deg;--rot:${m.rot || 0}deg`;
     const body = wardBody();
@@ -2949,6 +2957,8 @@ function paintWard(){
 // the ward stutters now and then: magic pushing against it
 setInterval(() => { if (!motionOn) return; for (const m of MARKS[node.slug] || []){ if (!m.el || Math.random() > .35) continue;
   m.el.classList.add("flicker"); setTimeout(() => m.el.classList.remove("flicker"), 90 + Math.random() * 120); } }, 4000);
+let hotMark = null;                                       // the sigil under the pointer: lit yellow, and a click opens its card
+function setHotMark(m){ if (hotMark === m) return; if (hotMark && hotMark.el) hotMark.el.classList.remove("hot"); hotMark = m || null; if (hotMark && hotMark.el) hotMark.el.classList.add("hot"); }
 const markAt = w => (MARKS[node.slug] || []).find(m => Math.hypot(w.x - m.x, (w.y - m.y) * 1.1) < m.r);
 // The ward feels a magic user coming (Sam, 2026-10-14, artifact comment: "should glow brighter when magic users
 // approach and may a hum when approached"). Nearness is the closest party caster's distance to the sigil,
@@ -10199,6 +10209,29 @@ function wardHelpers(h){
  * "I want better odds" — it is advantage, not a reroll — so it belongs HERE, in front of the one study this hero
  * gets, rather than as a button they would have to know to press first.
  */
+/**
+ * THE SIGIL'S OWN CARD (Sam, 2026-11-13: "Hovering over the door or the sigil should cause them to highlight yellow,
+ * offering you the ability to interact with them. This should open up a box of options."). The same two things the
+ * bar offers at the wall, Study and (once the seam is read) Alter, under the same rules and with the same reasons; a
+ * row a rule refuses is shown and says why (Sam, 2026-10-30: "why am I unable to examine it"). Nothing new can be done
+ * here that the bar could not do: it is a second way to the same options, found by pointing at the thing.
+ */
+function openSigilCard(){
+  const L = leader, m = wardMark(); if (!L || !m || mode !== "explore" || state.wardBroken) return;
+  const near = !!wardReach(L), seen = (state.wardStudy || {})[L.id];
+  const {add, close} = heroCard("The ward sigil", m.tip || "A sigil cut into the wall.");
+  const row = (label, why, fn, cls = "") => { const b = add(why ? `${label} — ${why}` : label, fn ? () => { close(); fn(); } : () => {}, cls); if (!fn){ b.disabled = true; b.setAttribute("aria-disabled", "true"); } return b; };
+  if (!near) row("Study the ward sigil", "too far from the wall to read it", null);
+  else if (!wardCaster(L)) row("Study the ward sigil", "no magic of your own to read it with", null);
+  else if (!wardNoticed(L)) row("Study the ward sigil", "nothing on this wall has caught your eye", null);
+  else if (wardAlreadyRead(L)) row("Study the ward sigil", "you have read what you can off it · more Arcana would show more", null);
+  else row("Study the ward sigil", `Arcana ${sgn(heroMod(L, "arcana", "int"))}${wardWizard(L) ? "" : " · disadvantage: not a wizard"}${wardHelpers(L).length ? " · a hand is close" : ""}`, () => studySigilAsk(), "primary");
+  if (near && seen && seen.tier === "seam" && wardMayCut(L)){
+    if (wardCutLocked(L)) row("Alter the ward sigil", "the ward bit you · rest before you try it again", null);
+    else row("Alter the ward sigil", `Dexterity DC ${WARD_CUT_DC} · it will scar red, and the drow will read it`, () => openSigilCut());
+  }
+  add("Step back", close);
+}
 function studySigilAsk(){
   const h = leader; if (!h || mode !== "explore") return;
   const helpers = (helpNext && now < helpNext.until) ? [] : wardHelpers(h);
@@ -19957,6 +19990,7 @@ stage.addEventListener("pointermove", e => {
   if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui,.checkcard")){ tip.hidden = true; return; }
   const w = s2w(e.clientX, e.clientY), r = stage.getBoundingClientRect(); aimW = w;
   hoverZone = null;   // set again below when the pointer is over one; never left over from an earlier move
+  setHotMark(null);   // likewise the sigil's yellow
   hoverActor = mode === "explore" ? (hitActor(party.filter(p => p !== leader), w) || hitActor(npcs, w)) : mode === "combat" ? (hitActor(foes, w) || hitActor(heroes(), w)) : null;
   if (FIGHT.mirror) oneFightHover(w);
   { const ai = aimTargetFor(hoverActor), key = ai ? ai.t.id : null; if (key !== aimTickKey){ aimTickKey = key; if (ai) aimTick(ai.boon, key); } }
@@ -19985,7 +20019,9 @@ stage.addEventListener("pointermove", e => {
     stage.classList.add("pointer"); return;
   }
   const mk = mode === "explore" && !hoverActor && !hoverZone ? markAt(w) : null;
-  if (mk){ tip.textContent = mk.type === "ward" && state.wardBroken ? WARD_TIP_BROKEN : mk.tip; tip.className = "tip"; tip.hidden = false; tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px"; return; }
+  if (mk){ const use = mk.type === "ward" && !state.wardBroken;       // a whole ward can be used: yellow, a hand, and a click opens its options
+    tip.textContent = mk.type === "ward" && state.wardBroken ? WARD_TIP_BROKEN : use ? "The ward sigil: click to use" : mk.tip; tip.className = "tip"; tip.hidden = false; tip.style.left = (e.clientX - r.left) + "px"; tip.style.top = (e.clientY - r.top) + "px";
+    if (use){ setHotMark(mk); stage.classList.add("pointer"); } return; }
   if (hoverZone){
     const locked = hoverZone.kind === "gate" && !state.gateOpen;
     tip.textContent = hoverZone.interact ? `${hoverZone.interact.name}${locked ? " (locked)" : ""}` : hoverZone.to.length ? `${hoverZone.label.split(":")[0]} → ${hoverZone.to.map(nameOf).join(" / ")}${locked ? " (locked)" : ""}` : hoverZone.label;
@@ -20023,6 +20059,11 @@ function click(w){
     { const thru = throughGate(leader, w); if (thru){ walkTo(thru); return; } }
     const ob = interactAt(w) || (zoneAt(w.x, w.y)?.interact ? zoneAt(w.x, w.y) : null);
     if (ob){ const zc = zoneCenter(ob); walkTo(nearestWalkable(zc.x, zc.y), () => openInteract(ob)); return; }
+    { const mk = !hitActor(npcs, w) ? markAt(w) : null;                    // THE SIGIL IS A THING YOU USE: walk to the wall, and its card
+      if (mk && mk.type === "ward" && !state.wardBroken){
+        if (wardReach(leader) && ownLeader()){ leader.path = []; setTimeout(openSigilCard, 80); }   // already at the wall: no walk, the card (after this click has finished: the same press must not land on the card)
+        else walkTo(nearestWalkable(mk.x, mk.y), () => openSigilCard());
+        return; } }
     const n = hitActor(npcs, w);
     if (n && n.body){ walkTo(nearNpc(n), () => openBody(n)); return; }
     if (n && POCKETED(n.id) && !n.hostile){ walkTo(nearNpc(n), () => openPockets(n)); return; }
