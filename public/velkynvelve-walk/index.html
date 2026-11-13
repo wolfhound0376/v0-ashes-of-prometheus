@@ -9544,7 +9544,7 @@ function mapCheck(a, skill, abil, dc){   // dc (optional): lets the Lucky feat k
   const mod = heroMod(a, skill, abil), r = d20(adv, a, null, dc == null ? null : dc - mod); return {r, mod, total: r + mod, adv, small};
 }
 const SKILL_NAME = {stealth: "Dexterity (Stealth)", perception: "Wisdom (Perception)", investigation: "Intelligence (Investigation)", nature: "Intelligence (Nature)", medicine: "Wisdom (Medicine)",
-  arcana: "Intelligence (Arcana)", dexterity: "Dexterity"};
+  arcana: "Intelligence (Arcana)", history: "Intelligence (History)", dexterity: "Dexterity"};
 function rollLine(k, skill){ return `${SKILL_NAME[skill]} ${k.r}${k.adv ? (k.small ? " (advantage: Small)" : " (advantage)") : ""} ${k.mod >= 0 ? "+" : "−"} ${Math.abs(k.mod)} = <b>${k.total}</b>`; }
 function nearestExit(L){ return node.zones.filter(z => !z.interact && (z.to || []).length).map(z => [z, Math.hypot(zoneCenter(z).x - L.x, zoneCenter(z).y - L.y)]).sort((x, y) => x[1] - y[1])[0]; }
 function exitName(z){ const t = SPEC[(z.to || [])[0]]; return z.label || (t && t.name) || (z.kind === "leave" ? "the way out" : "the way on"); }
@@ -9591,7 +9591,7 @@ function exploreExtras(m, o, add, who){
     else if (wardAlreadyRead(L))
       x("Study the ward sigil", "✦", ART("look-closer"), "you have read what you can off it · more Arcana would show more", null);
     else
-      x("Study the ward sigil", "✦", ART("look-closer"), `Arcana ${sgn(heroMod(L, "arcana", "int"))}${wardWizard(L) ? "" : " · disadvantage: not a wizard"}${wardHelpers(L).length ? " · a hand is close" : ""}`, () => studySigilAsk());
+      x("Study the ward sigil", "✦", ART("look-closer"), `${wardSkill(L) === "history" ? "History" : "Arcana"} ${sgn(heroMod(L, wardSkill(L), "int"))}${wardWizard(L) ? "" : " · disadvantage: not a wizard"}${wardHelpers(L).length ? " · a hand is close" : ""}`, () => studySigilAsk());
     if (seen && seen.tier === "seam" && wardMayCut(L)){
       if (wardCutLocked(L)) x("Alter the ward sigil", "✧", ART("look-closer"), "the ward bit you · rest before you try it again", null);
       else x("Alter the ward sigil", "✧", ART("look-closer"), `Dexterity DC ${WARD_CUT_DC} · it will scar red, and the drow will read it`, () => openSigilCut());
@@ -10139,7 +10139,14 @@ function wardReach(h){
 const wardCaster = h => { const sh = SHEETS[h.id] || {}; return !!(sh.magic || sh.caster); };
 const wardWizard = h => /wizard/i.test((SHEETS[h.id] || {}).cls || "");
 const wardArcane = h => "arcana" in ((SHEETS[h.id] || {}).skills || {});     // proficient, not merely able to roll
-const wardMayCut = h => wardWizard(h) || wardArcane(h);
+// A BARD WHO HAS SEEN ITS LIKE (Sam, 2026-11-12: "Bard can have it if he has Arcana or History recognizing this type of
+// symbol in his adventures"). A bard proficient in History reads the sigil with History when that is the better of
+// the two for them (or the only one), and may make the cut on a 20+ read exactly as an Arcana-proficient caster may.
+// Nothing else moves: still one look, still at disadvantage for not being a wizard, still the same tiers and the same
+// Dexterity cut. [CLAUDE: that the History reader ROLLS History rather than only qualifying by it.]
+const wardHistory = h => /bard/i.test((SHEETS[h.id] || {}).cls || "") && "history" in ((SHEETS[h.id] || {}).skills || {});
+const wardSkill = h => wardHistory(h) && (!wardArcane(h) || heroMod(h, "history", "int") > heroMod(h, "arcana", "int")) ? "history" : "arcana";
+const wardMayCut = h => wardWizard(h) || wardArcane(h) || wardHistory(h);
 /**
  * ONE STUDY PER HERO (Sam, 2026-10-30: "I agree long rest doesn't teach you arcane so unless you developed some
  * arcana expertise or a special skill - NO. One study per hero.").
@@ -10154,7 +10161,8 @@ const wardMayCut = h => wardWizard(h) || wardArcane(h);
  */
 function wardArcanaKey(h){
   const sh = SHEETS[h.id] || {}, lore = (sh.lore || {}).arcana || {};
-  return `${heroMod(h, "arcana", "int")}|${lore.level || ""}|${wardArcane(h) ? "p" : ""}${wardWizard(h) ? "w" : ""}`;
+  // (a bard's History standing is appended only when they have it, so everyone else's stamp is unchanged)
+  return `${heroMod(h, "arcana", "int")}|${lore.level || ""}|${wardArcane(h) ? "p" : ""}${wardWizard(h) ? "w" : ""}${wardHistory(h) ? "|h" + heroMod(h, "history", "int") : ""}`;
 }
 /** Has this hero already read it AT THEIR CURRENT STANDING? A legacy `true` is stamped with today's key, which
  *  keeps them blocked now and lets a future level-up reopen it. */
@@ -10212,14 +10220,15 @@ function studySigil(){
   let helped = null;
   if (helpNext && helpNext.by !== h.id && now < helpNext.until){ helped = helpNext.by; helpNext = null; }
   const adv = (helped ? 1 : 0) + (wardWizard(h) ? 0 : -1);
-  const mod = heroMod(h, "arcana", "int"), r = d20(adv, h), k = {r, mod, total: r + mod, adv};
+  const skill = wardSkill(h);                                          // Arcana, or a bard's History (Sam, 2026-11-12)
+  const mod = heroMod(h, skill, "int"), r = d20(adv, h), k = {r, mod, total: r + mod, adv};
   const tier = wardTierOf(k.total);
   state.wardTried[h.id] = wardArcanaKey(h);
   state.wardStudy[h.id] = {tier: tier.key, total: k.total};
-  log(`${fname(h)} studies the ward sigil${helped ? `, with ${esc(SHORT[helped] || helped)}'s help` : ""}: ${rollLine(k, "arcana")}. <i>${esc(tier.line)}</i>`);
+  log(`${fname(h)} studies the ward sigil${helped ? `, with ${esc(SHORT[helped] || helped)}'s help` : ""}: ${rollLine(k, skill)}. <i>${esc(tier.line)}</i>`);
   toast(tier.line, 6200);
-  askCheck(`${fname(h)} studies the ward sigil`, k, "arcana",
-    `${fname(h)} studies the drow ward sigil cut into the pen wall. Intelligence (Arcana) ${k.total}`
+  askCheck(`${fname(h)} studies the ward sigil`, k, skill,
+    `${fname(h)} studies the drow ward sigil cut into the pen wall${skill === "history" ? ", recognising the kind of mark from their travels" : ""}. ${SKILL_NAME[skill]} ${k.total}`
     + `${adv < 0 ? " (disadvantage: not a wizard)" : adv > 0 ? " (advantage: helped)" : helped ? " (helped, but not a wizard: the two cancel)" : ""}. `
     + `On this roll they learn exactly this and no more: ${tier.tell}. Narrate only that much — do not give them the next tier up.`);
   if (tier.key === "seam") toast(`${fname(h)} could cut it. It would scar red, and every drow who came in would read it.`, 7000);
