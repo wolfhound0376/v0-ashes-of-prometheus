@@ -1558,6 +1558,7 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
 // Malachar's [WATCH:] / [GATE:] tags and from his prose by the stage director). Declared up here because a plate is
 // populated before the poll below ever runs. See "the watch and the gate" further down.
 let storyWatch = null, storyGate = null, watchPlayed = null, gatePlayed = null;
+let storyPledge = null;   // JORLAN'S WORD (lib/stage-roster.ts JorlanPledge): set when he unlocked the gate for a prisoner
 // Sam, 2026-10-26: "Jorlan shouldn't be present in the beginning of the game. He should come after the 2nd or 3rd guard
 // rotation." The game rolls which (lib/stage-roster.ts, once per run) and /api/map-stage says whether he is on the watch
 // yet. Until it does he is not on the plate: hidden at his post, so the rotation that brings him can walk him in.
@@ -15866,6 +15867,7 @@ async function pollStage(){
       // talking to (comeToListener) is not dragged back to the spot the roster last named five seconds later
       if (!n.offStage){ if (here && here.where && here.where !== n.rosterWhere){ n.rosterWhere = here.where; castMovesTo(n, here.where); } castAsks(n, here ? here.wantsWord : null); }
     }
+    storyPledge = j.jorlanPledge || null;
     followWatch(storyWatch); followGate(j.gate || null);
     shakedownTick();                 // THE SHAKEDOWN: after the cast, so the pen is staged before the drow come in
     gateLeftUnlockedTick();          // LEFT SHUT, BUT UNLOCKED: the new watch tries the gate
@@ -16074,7 +16076,12 @@ function followGate(g){
   if (g.state === "unlocked"){
     if (state.gateOpen) return;
     state.gateOpen = true; state.doorShut = true; if (balcony()) buildGrid();
-    if (!first){ sfx("lock-picked", .6); log("A soft click from the pen gate. <em>The lock is off.</em> It is shut, but it will open.", {say: true}); }
+    // JORLAN KEPT HIS WORD (Sam, 2026-11-12: "You hear it get unlocked. If persuaded he even leaves a dagger."): the same
+    // click, but the table is told whose hand it was, and where the dagger is (the server put it on the floor).
+    const kept = storyPledge && storyPledge.keptAt === g.since;
+    if (!first){ sfx("lock-picked", kept ? .9 : .6);
+      log(kept ? `In the noise of the changing watch, a key turns in the pen gate. <em>Jorlan kept his word.</em> It is shut, but it will open.${storyPledge.dagger ? " Something glints on the floor just inside the bars: a dagger." : ""}`
+        : "A soft click from the pen gate. <em>The lock is off.</em> It is shut, but it will open.", {say: true}); }
   } else if (g.state === "open"){
     if (state.gateOpen && !state.doorShut) return;
     if (state.gateOpen){ state.doorShut = false; setDoor(true); if (!first) sfx("door-open", .85); if (balcony()) buildGrid(); return; }
