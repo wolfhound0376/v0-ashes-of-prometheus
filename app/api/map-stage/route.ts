@@ -137,6 +137,7 @@ export async function GET(req: NextRequest) {
       gate: stage.gate ?? null,
       rotations: stage.rotations ?? 0,
       jorlanOnDuty: jorlanOnDuty(stage),
+      jorlanPledge: stage.jorlanPledge ?? null,   // JORLAN'S WORD (lib/stage-roster): the map says whose hand turned the lock
       npcLanguages,
       updatedAt: stage.updatedAt,
       present: Object.values(stage.present),

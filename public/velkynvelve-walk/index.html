@@ -1553,11 +1553,15 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
   manacled: true,
   // BESEECH (Sam, 2026-11-12). {heroId: {plan, at, boon, used}}: who has asked their god or patron since the last rest,
   // which way out they were shown, and whether the advantage that came with it has been spent.
-  beseech: {}};
+  beseech: {},
+  // THE WHISTLE (Sam, 2026-11-12). whistle: {by, g, at} once a bard has whistled a gate guard into the pen (once per
+  // run: after it he ignores the tune). whistleFails: how many tries have fallen flat.
+  whistle: null, whistleFails: 0};
 // The watch on the pen and the pen gate as the STORY has them (/api/map-stage `watch` and `gate`, written from
 // Malachar's [WATCH:] / [GATE:] tags and from his prose by the stage director). Declared up here because a plate is
 // populated before the poll below ever runs. See "the watch and the gate" further down.
 let storyWatch = null, storyGate = null, watchPlayed = null, gatePlayed = null;
+let storyPledge = null;   // JORLAN'S WORD (lib/stage-roster.ts JorlanPledge): set when he unlocked the gate for a prisoner
 // Sam, 2026-10-26: "Jorlan shouldn't be present in the beginning of the game. He should come after the 2nd or 3rd guard
 // rotation." The game rolls which (lib/stage-roster.ts, once per run) and /api/map-stage says whether he is on the watch
 // yet. Until it does he is not on the plate: hidden at his post, so the rotation that brings him can walk him in.
@@ -5921,7 +5925,7 @@ function openBody(b){
 // the dashboard's engine with the dashboard's modifier, and the page answers {ok, success, total, natural} — or
 // {cancelled} if they stepped back. "aop:roll-ack" says the panel is open; after it the map waits as long as the
 // player does. Opened as a plain file (no game around it), the map rolls locally against the same DC.
-const ROLLS = new Map(), LOCAL_DC = {"falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14};
+const ROLLS = new Map(), LOCAL_DC = {"falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12};
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
@@ -9198,7 +9202,7 @@ function renderExploreBar(){
   const lvlNext = canControl(leader) && !inFightNow() ? levelReady(leader.id) : 0;
   const who = SHORT[leader.id] || (SHEETS[leader.id] && SHEETS[leader.id].name.split(" ")[0]) || SPR[leader.id].json.name;
   o.mark = pickpocketMark(leader);   // someone in reach of a hand while this hero is sneaking unseen
-  const key = [leader.id, o.talkNear && o.talkNear.id, o.talkList.length, lvlNext, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, o.mark && o.mark.id, party.length, beseechCan(leader) ? "b" : ""].join("|");
+  const key = [leader.id, o.talkNear && o.talkNear.id, o.talkList.length, lvlNext, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, o.mark && o.mark.id, party.length, whistleCan(leader) ? "w" : "", beseechCan(leader) ? "b" : ""].join("|");
   if (key === exploreKey && !m.hidden) return;
   exploreKey = key; m.dataset.kind = "explore"; m.innerHTML = ""; m.hidden = false;
   const add = (label, glyph, icon, sub, fn, cls) => { const b = document.createElement("button"); if (cls) b.className = cls;
@@ -9280,7 +9284,7 @@ let sneak = null, helpNext = null, followOn = true, moreOpen = false, exploreJum
 const EXPLORE_KEEP = 7;
 const BUTTON_PRI = [[/^Level Up/, .5], [/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
   [/^(Sneak|Stop sneaking)/, 4], [/^Pick .*pocket/, 4], [/^Cast/, 5], [/^Search$/, 6], [/^Inventory/, 7], [/^Tell Malachar/, 8], [/^Next hero/, 9],
-  [/^(Scout|Jump|Pray|Beseech|Inspire|Quick drink)/, 10], [/^My company/, 11], [/^Short rest/, 12], [/^Help/, 13], [/^(Follow|Wait)/, 14], [/^Talk$/, 30]];
+  [/^(Scout|Jump|Pray|Beseech|Inspire|Whistle|Quick drink)/, 10], [/^My company/, 11], [/^Short rest/, 12], [/^Help/, 13], [/^(Follow|Wait)/, 14], [/^Talk$/, 30]];
 // THE COMBAT BAR (Sam, 2026-11-10: "Don't offer bubble boxes for actions that aren't available. Offer boxes in order of
 // priority and utility." — this replaces the 2026-10-27 canvas order for the fight). Only what the hero can do RIGHT NOW
 // gets a box (foldBar drops the rest), so the order is by usefulness, not by habit:
@@ -9355,6 +9359,7 @@ function exploreExtras(m, o, add, who){
     x("My company", "☰", ART("follow"), `${escortOf(L.id).length} with you · ${m === "follow" ? "following" : m === "wait" ? "waiting" : "with " + fname(party.find(p => p.id === m.slice(5)) || L)}`, canControl(L) ? () => openCompany() : null); }
   if (/cleric/.test(cls)) x("Pray", "✠", ART("pray"), "silently, or aloud", () => openPray());
   if (/warlock/.test(cls) && beseechCan(L)) x("Beseech your patron", "✠", ART("pray"), "a way out of the pen · once until you rest", () => openBeseech());
+  if (whistleCan(L)) x("Whistle at the guard", "♪", ART("inspire"), `Performance ${sgn(heroMod(L, "performance", "cha"))} · he may come in to shut you up`, () => whistleAtGuard());
   if (sh.bardic) x("Inspire", "♪", ART("inspire"), `Bardic Inspiration · ${inspLeftOf(L)} of ${sh.bardic.uses} left`, inspLeftOf(L) > 0 && party.length > 1 ? () => openInspire() : null);
   // SCOUT ALONE (Sam, 2026-10-27: "This should be an option that populates when sneaking away from the group"): not a
   // standing rogue button any more. It appears only while the party is sneaking together, for whoever leads; taking it
@@ -15385,10 +15390,10 @@ const BARD_SONG_BASE = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/obje
 const BARD_SONGS = ["sun-is-a-rumour", "count-the-spiders", "rothe-and-rot", "haul-away-deep-water", "down-we-went", "ashes-the-bards-song"];
 const BARD_TWO_TAKES = new Set(["sun-is-a-rumour", "count-the-spiders", "rothe-and-rot", "haul-away-deep-water", "down-we-went"]);
 const bardSong = {a: null, kind: null, last: null, fade: 0};
-function bardTune(who, where){
+function bardTune(who, where, only){
   bardTuneStop();
   let src, kind;
-  if (Math.random() < 2 / 3){ kind = "whistle"; src = `${APP ? "/" : ""}audio/bard/whistle.ogg`; }
+  if (only === "whistle" || Math.random() < 2 / 3){ kind = "whistle"; src = `${APP ? "/" : ""}audio/bard/whistle.ogg`; }
   else {
     const pool = BARD_SONGS.filter(x => x !== bardSong.last), slug = pool[Math.floor(Math.random() * pool.length)];
     kind = "song"; bardSong.last = slug; src = BARD_SONG_BASE + slug + (BARD_TWO_TAKES.has(slug) && Math.random() < .5 ? "_2" : "") + ".ogg";
@@ -15918,6 +15923,7 @@ async function pollStage(){
       // talking to (comeToListener) is not dragged back to the spot the roster last named five seconds later
       if (!n.offStage){ if (here && here.where && here.where !== n.rosterWhere){ n.rosterWhere = here.where; castMovesTo(n, here.where); } castAsks(n, here ? here.wantsWord : null); }
     }
+    storyPledge = j.jorlanPledge || null;
     followWatch(storyWatch); followGate(j.gate || null);
     shakedownTick();                 // THE SHAKEDOWN: after the cast, so the pen is staged before the drow come in
     gateLeftUnlockedTick();          // LEFT SHUT, BUT UNLOCKED: the new watch tries the gate
@@ -16126,7 +16132,12 @@ function followGate(g){
   if (g.state === "unlocked"){
     if (state.gateOpen) return;
     state.gateOpen = true; state.doorShut = true; if (balcony()) buildGrid();
-    if (!first){ sfx("lock-picked", .6); log("A soft click from the pen gate. <em>The lock is off.</em> It is shut, but it will open.", {say: true}); }
+    // JORLAN KEPT HIS WORD (Sam, 2026-11-12: "You hear it get unlocked. If persuaded he even leaves a dagger."): the same
+    // click, but the table is told whose hand it was, and where the dagger is (the server put it on the floor).
+    const kept = storyPledge && storyPledge.keptAt === g.since;
+    if (!first){ sfx("lock-picked", kept ? .9 : .6);
+      log(kept ? `In the noise of the changing watch, a key turns in the pen gate. <em>Jorlan kept his word.</em> It is shut, but it will open.${storyPledge.dagger ? " Something glints on the floor just inside the bars: a dagger." : ""}`
+        : "A soft click from the pen gate. <em>The lock is off.</em> It is shut, but it will open.", {say: true}); }
   } else if (g.state === "open"){
     if (state.gateOpen && !state.doorShut) return;
     if (state.gateOpen){ state.doorShut = false; setDoor(true); if (!first) sfx("door-open", .85); if (balcony()) buildGrid(); return; }
@@ -17727,6 +17738,7 @@ function tickGuardLean(){
   // the candidates by name, not by gateGuards(): a guard fading out behind the pillar drops off that list, and the pick
   // must not jump to the other man half way there
   const gs = LEAN_GUARDS.map(id => npcs.find(n => n.id === id)).filter(n => n && actors.includes(n) && !n.offStage && !n.body && !n.down && !n.hostile && !n.relieved);
+  if (whistleScene) for (let i = gs.length - 1; i >= 0; i--) if (gs[i] === whistleScene.n) gs.splice(i, 1);   // he is inside the pen, being whistled at
   let pick = calm && t >= w.start && t < w.end && gs.length ? (gs.find(n => n.lean && n.lean.phase !== "back") || gs[w.pick % gs.length]) : null;
   if (pick && now < (pick.leanBlock || 0)) pick = null;
   for (const n of npcs){
@@ -17769,6 +17781,121 @@ function leanDone(n){
   if (!n.offStage && n.alpha < 1) n.fadeIn = true;
   if (k){ n.patrol = k.patrol; n.static = k.static; n.fixedScale = k.fixedScale; n.big = 1; }
   if (n.anim === "lean") setAnim(n, "idle");
+}
+// ---------- THE BARD'S WHISTLE (Sam, 2026-11-12) ----------
+// "The Bard can also whistle, annoying the guard enough to come in offering an opportunity for the rogues to steal a
+// key." / "The guard slaps the bard." / the guard can be lured in once per run (his "go" to that default).
+//   WHO, WHEN  A hero with Bardic Inspiration on their sheet, in the pen, while a guard stands his post at a shut gate
+//              (the same calm the leaning guard needs: no work detail, no warning up, no surgeon, posts manned). The
+//              button is only there when it can be done (Sam, 2026-11-10: no boxes for what is not available).
+//   THE ROLL   Charisma (Performance) on the dashboard's dice, lib/walk-roll.ts "pen:whistle". [CLAUDE: the DC]
+//   FLAT       The first time the guard does not turn round. The second the guard snaps at the bard, and after that
+//              has stopped listening: the whistle is spent for the run. [CLAUDE]
+//   HE COMES   He unlocks his own gate and comes in (state.gateOpen stays false: it is not a way out and the floor
+//              under the door stays shut to the party), walks to the bard, slaps him — one hit point, never dropping
+//              him, written by /api/walk-whistle [CLAUDE: the number] — and stands over him for WHISTLE.holdMs.
+//              While he does, anyone sneaking within a hand's reach of him has the ordinary pickpocket (Sam's rule of
+//              2026-10-27, unchanged): that is the opening. Then he goes back out and locks the gate.
+//   EVERY SCREEN  state.whistle rides the One World sync; each screen plays the same guard walking in from it.
+//   RED SIGIL  A drow inside the pen reads a red sigil and the fight starts (redSigilSeen, Sam 2026-10-30). The
+//              whistle does not excuse him: whistling a guard in after the ward is cut is a fight.
+const WHISTLE = {holdMs: 20000, fails: 2};
+const WHISTLE_LINES = {come: "Enough of that noise, rivvil.", slap: "Whistle again and I take your tongue.", snap: "Quiet!"};   // [HOUSE] placeholder lines for Sam to rewrite, not book text
+let whistleScene = null;             // {n, who, keep} while the guard is inside for it, on this screen
+let whistling = false, whistleShownAt = 0;
+function whistleGuard(){ return gateGuards().find(g => !g.lean && !g.alert && !g.strangled) || null; }
+function whistleCan(L){
+  const sh = (L && SHEETS[L.id]) || {};
+  return !!sh.bardic && !L.down && !whistling && !whistleScene && !state.whistle && (state.whistleFails || 0) < WHISTLE.fails
+    && mode === "explore" && leanCalm() && !!whistleGuard();
+}
+async function whistleAtGuard(){
+  const who = leader, n = whistleGuard(); if (!n || !whistleCan(who)) return;
+  whistling = true; who.path = []; tip.hidden = true;
+  try {
+    faceTo(who, n); bardTune(who, "combat", "whistle");            // a burst of it, not a concert
+    const r = await rollOnDashboard("pen:whistle", heroMod(who, "performance", "cha"), {who});
+    if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3600); return; }
+    if (!r.success){
+      state.whistleFails = (state.whistleFails || 0) + 1; saveWalk();
+      if (state.whistleFails < WHISTLE.fails){ log(`${esc(fname(who))} whistles at the gate. <em>${esc(fname(n))} does not so much as turn round.</em>`); narrate(n, `${fname(n)} does not so much as turn round.`); }
+      else {
+        faceTo(n, who); popText(n, "!", "#ff6b5e", 1.3);
+        if (viewerUnderstands()) bark(n, WHISTLE_LINES.snap, 3200, {talk: true, lang: "Elvish"}); else narrate(n, `(${fname(n)} snaps something in Elvish and turns away.)`);
+        log(`${esc(fname(who))} whistles again. <b>${esc(fname(n))} snaps at ${esc(fname(who))} and turns away.</b> <em>The guard has stopped listening.</em>`);
+      }
+      return;
+    }
+    whistleShownAt = Date.now(); state.whistle = {by: who.id, g: n.id, at: whistleShownAt}; saveWalk();
+    log(`<b>${esc(fname(who))} whistles the same four notes until ${esc(fname(n))} has had enough.</b> The key turns from outside.`, {say: true});
+    if (APP) handOff(`${fname(who)}, a bard, whistled at the pen gate until ${fname(n)} lost patience (Charisma (Performance) ${r.total}). ${fname(n)} has unlocked the gate and come into the pen alone to put a stop to it; the guard slaps ${fname(who)} (1 hit point, already applied, do not apply it again) and stands over ${fname(who)} for a short while before going back out and locking the gate. The gate is not a way out while the guard is inside. Anyone sneaking up behind the guard may try the guard's pockets.`, true);
+    whistleBrings(n, who, true);
+  } finally { whistling = false; exploreKey = ""; }
+}
+/** The guard comes in, slaps the bard, stands over him, and goes back out. `mine`: this screen rolled it, so it writes the slap. */
+async function whistleBrings(n, who, mine){
+  const B = balcony(); if (!B || whistleScene || !n || !who) return;
+  const room = y => 1 / (node.scale * depthAt(y)), fs = B.scale || 1.35, [lx, ly] = B.behind || [545, 702], [tx, ty] = B.threshold, [ix, iy] = B.inside;
+  const sc = whistleScene = {n, who, keep: {patrol: n.patrol, static: n.static, fixedScale: n.fixedScale}};
+  const live = () => whistleScene === sc && cur === PEN && !cbt && !n.down && !n.body && !n.hostile && !n.offStage && actors.includes(n);
+  const hold = ms => { n.actUntil = now + ms; n.scanAt = now + ms; };
+  try {
+    hold(60000); popText(n, "!", "#ff6b5e", 1.3);
+    if (viewerUnderstands()) bark(n, WHISTLE_LINES.come, 3600, {talk: true, lang: "Elvish"}); else narrate(n, `(${fname(n)} says something sharp in Elvish and leaves the bridge.)`);
+    n.patrol = null; n.static = false; stopActivity(n); n.onArrive = null; n.big = (n.fixedScale || fs) * room(n.y); n.fixedScale = 0;
+    setTimeout(() => { if (live()){ setDoor(true); sfx("door-open", .85); } }, 1400);
+    await escortWalk(n, [{x: lx, y: ly, s: fs * room(ly), out: true}, {x: tx, y: ty, s: .95, jump: true}, {x: ix + 30, y: iy + 40, s: 1}]);
+    if (!live()) return;
+    const near = nearestWalkable(who.x + (who.x < n.x ? 70 : -70), who.y + 10), path = findPath(n, near);
+    await escortWalk(n, path.length ? path : [near]);
+    if (!live()) return;
+    // the slap
+    faceTo(n, who); faceTo(who, n); who.path = [];
+    if (hasSheet(n, "attack")) setAnim(n, "attack");
+    await wait(260); if (!live()) return;
+    shake(3); bank("combat/punch_hit", .7); popText(who, "slap!", "#ff6b5e", 1.2);
+    if (hasSheet(who, "hurt")){ setAnim(who, "hurt"); setTimeout(() => { if (who.anim === "hurt") setAnim(who, "idle"); }, 520); }
+    if (viewerUnderstands()) bark(n, WHISTLE_LINES.slap, 3800, {talk: true, lang: "Elvish"}); else narrate(n, `(${fname(n)} hisses something in Elvish, an inch from ${fname(who)}'s face.)`);
+    log(`<b>${esc(fname(n))} slaps ${esc(fname(who))} across the mouth</b> and stands there, glaring. <em>The guard's back is to the rest of the pen.</em>`);
+    if (mine) whistleSlapHp(who);
+    setTimeout(() => { if (n.anim === "attack") setAnim(n, "idle"); }, 500);
+    // he stands over the bard: the opening
+    n.static = true; hold(WHISTLE.holdMs + 4000);
+    for (let t = 0; t < WHISTLE.holdMs; t += 500){ await wait(500); if (!live()) return; if (!n.alert) faceTo(n, who); }
+    // and back out
+    n.static = false; setAnim(n, "idle");
+    const inPath = findPath(n, nearestWalkable(ix + 30, iy + 40)), post = n.post || {x: lx, y: ly};
+    await escortWalk(n, [...(inPath.length ? inPath : [{x: ix + 30, y: iy + 40, s: 1}]), {x: tx, y: ty, s: .95, out: true}, {x: lx, y: ly, s: fs * room(ly), jump: true}, {x: post.x, y: post.y, s: fs * room(post.y)}]);
+  } finally { whistleEnds(sc); }
+}
+/** The scene is over, however it ended. A fight that broke out with him inside leaves his gate standing open behind him. */
+function whistleEnds(sc){
+  if (whistleScene !== sc) return; whistleScene = null;
+  const n = sc.n, k = sc.keep, fought = !!cbt || n.hostile || n.down || n.body;
+  if (fought){
+    if (cur === PEN && !state.gateOpen && !state.gateBroken){ state.gateOpen = true; state.doorShut = false; setDoor(true); reportSituation({event: "gate_open"}); if (balcony()) buildGrid(); saveWalk();
+      log("<em>The gate the guard came in by still stands open.</em>"); }
+    return;
+  }
+  if (cur === PEN && !state.gateOpen){ setDoor(false); sfx("door-close", .85); log(`${esc(fname(n))} goes back out. <em>The gate is locked again.</em>`); }
+  n.onArrive = null; n.patrol = k.patrol; n.static = k.static; n.fixedScale = k.fixedScale; n.big = 1; n.actUntil = 0;
+  if (!n.offStage && n.alpha < 1) n.fadeIn = true;
+  exploreKey = "";
+}
+/** The slap, on the sheet (the walk only reads hp). Best-effort: the log line has already said it. */
+function whistleSlapHp(h){
+  const cid = characterIdOf(h.id); if (!APP || !cid) return;
+  let claim = null; try { claim = localStorage.getItem("aop_claim_token"); } catch (e) {}
+  fetch("/api/walk-whistle", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()},
+    body: JSON.stringify({characterId: cid, claimToken: claim || undefined})})
+    .then(r => r.json()).then(j => { if (!j || !j.ok) console.warn("walk-whistle:", j && j.error); }).catch(e => console.warn("walk-whistle:", e));
+}
+/** Another screen's bard whistled him in: play the same guard walking in here. Never for a whistle older than a moment. */
+function tickWhistle(){
+  const w = state.whistle; if (!w || !w.at || w.at === whistleShownAt || whistleScene || cur !== PEN) return;
+  whistleShownAt = w.at; if (Math.abs(Date.now() - w.at) > 20000) return;
+  const n = npcs.find(x => x.id === w.g), who = party.find(p => p.id === w.by);
+  if (n && who && !n.lean && !n.down && actors.includes(n)) whistleBrings(n, who, false);
 }
 /** Where in the depth order the bars go: just in front of the guard leaning at them, or null. */
 function gateBarsY(){
@@ -23076,6 +23203,7 @@ function update(dt){
     tickCreatures();
     tickGateWatch();
     tickGuardLean();
+    tickWhistle();
     tickJorlanPrivacy();
     // the rest of the party stays where they were put; they only come along when the party leaves the plate
     // exits
