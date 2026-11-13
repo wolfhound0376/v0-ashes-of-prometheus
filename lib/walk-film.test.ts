@@ -65,9 +65,12 @@ describe("the built map", () => {
     for (const m of html.matchAll(/gateLookFilm\("([a-z-]+)"/g)) expect(Object.keys(WALK_FILMS)).toContain(m[1])
   })
 
-  // The ward sigil (Sam, 2026-10-30: "wire it to successful check").
-  it("fires the sigil film only on a Study that learned something", () => {
-    expect(html).toContain('if (tier.key !== "none") sigilFilm(h);')
+  // The ward sigil. First wired to a successful Study (Sam, 2026-10-30); moved to the moment a caster NOTICES it
+  // (Sam, 2026-11-12: "passive perception check of 5 for magic users. If they detect it, the cinematic fires (once)").
+  it("fires the sigil film when the screen's own caster notices the sigil, not on the Study", () => {
+    expect(html).toMatch(/function sigilNoticeTick\(\)\{[\s\S]*?if \(mine && seen\[mine\.id\] === true && !\(state\.sigilFilmed \|\| \{\}\)\[mine\.id\]\) sigilFilm\(mine\);/)
+    expect(html).not.toContain('if (tier.key !== "none") sigilFilm(h);')
+    expect(html).toContain("const WARD_NOTICE_DC = 5;")
   })
   it("asks for the ward-sigil cue, once per hero", () => {
     expect(html).toMatch(/function sigilFilm\(h\)\{[\s\S]*?state\.sigilFilmed\[h\.id\] = true;/)
