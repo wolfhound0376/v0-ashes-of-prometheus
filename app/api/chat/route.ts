@@ -6,7 +6,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { MALACHAR_MOOD_RULE, readMalacharMood, stripMalacharMood } from "@/lib/malachar-mood"
 import { MALACHAR_LAST_WORD, MALACHAR_PERSONA } from "@/lib/malachar-persona"
 import { findNpcRow, learnName, npcKnowsName, relationshipSummary, saysOwnName } from "@/lib/npc-acquaintance"
-import { applyStageEvents, jorlanOnDuty, readStage, watchAndGateTags, type StageEvent } from "@/lib/stage-roster"
+import { applyStageEvents, jorlanOnDuty, pledgeTag, readStage, watchAndGateTags, type StageEvent } from "@/lib/stage-roster"
 import { directorPrompt, namesTaggedIn, parseDirector, wantsDirector, type DirectorCast } from "@/lib/stage-director"
 import { readSeated } from "@/lib/seats"
 import { situationForChat } from "@/lib/situation"
@@ -1603,6 +1603,9 @@ ${combatantRows
         stageContext += ` JORLAN DUSKRYN IS NOT ON THE WATCH YET: he comes on duty with the relief at ${at} change of the watch this run (changes so far: ${stage.rotations ?? 0}). Until then he is nowhere near the pen and the map does not show him — he does not bring food, come to the bars, speak, approach, or make his offer, and no one at the pen mentions him as present; the guards on the bridge are the only drow watching the pen. The watch changes by itself every 4 hours on the game clock (02:00, 06:00, 10:00, 14:00, 18:00, 22:00) — you do not cause it; when the change that brings him comes, the stage notes will say he is on the watch, and you introduce him arriving with the relief.`
       }
       if (stage.gate) stageContext += ` THE PEN GATE: ${stage.gate.state}${stage.gate.state === "unlocked" ? " (shut, but the lock is off — anyone who tries it can walk out)" : ""}.`
+      const pl = stage.jorlanPledge
+      if (pl && !pl.keptAt) stageContext += ` JORLAN HAS GIVEN HIS WORD${pl.by ? ` to ${pl.by}` : ""}: the game will unlock the pen gate at the next change of the watch with him on duty${pl.dagger ? ", and leave a dagger just inside it" : ""}. That is settled — do not emit [GATE:] for it and do not have him break it; play the waiting.`
+      else if (pl?.keptAt) stageContext += ` JORLAN KEPT HIS WORD${pl.by ? ` to ${pl.by}` : ""}: at the change of the watch he unlocked the pen gate${pl.dagger ? " and left a dagger on the floor just inside it" : ""}. The prisoners heard the lock turn. He has said nothing since.`
     }
   } catch (e) { console.error("[stage] context skipped:", e) }
   // And the map's account of the room, after the roster so "on stage" above means what the note says it means.
@@ -2005,6 +2008,8 @@ WORLD FLAGS:
   - Example: [NPC_WANTS_WORD: Jorlan Duskryn | Fifi]
 - [WATCH: change | unattended | posted] — the outpost's watch on the pen. The ordinary changes of the watch now happen BY THEMSELVES every 4 hours on the game clock (02:00, 06:00, 10:00, 14:00, 18:00, 22:00) and are counted for you — do NOT emit [WATCH: change] for one (it would be counted twice); you may narrate a hand-over the clock has just made. [WATCH: change] is only for an extra, unscheduled relief the story itself causes. The map shows the guards exactly as this says: "change" walks the old pair off and the relief on; "unattended" takes EVERY guard and Jorlan off the bridge and the landing (nobody returns until you emit [WATCH: posted]); "posted" puts them back. Emit it the moment the narration has the watch change hands, the posts left empty, or the guards return. Never for a plan or an offer.
   - Example: [WATCH: unattended]
+- [JORLAN_PLEDGE: character] or [JORLAN_PLEDGE: character | dagger] — a prisoner has just said YES to Jorlan's offer of escape (his gambit). Emit it in the reply where the yes is given, once. The GAME then keeps his word: at the next change of the watch with him on duty it unlocks the pen gate by itself — so promise it for "the next watch change" and never emit [GATE:] for it. Add "| dagger" only if that prisoner has won him over with a successful Persuasion check in this conversation: he will leave a dagger just inside the gate as well.
+  - Example: [JORLAN_PLEDGE: Kenta of Neverwinter | dagger]
 - [GATE: unlocked | open | locked] — something is done to the pen gate from outside or by an NPC (Jorlan leaves it unlocked, a guard swings it open, it is locked again). "unlocked" means shut but no longer locked: the prisoners can simply open it. The map's door follows this tag with no DM button. [GATE: open] is a drow VISIT: the map swings the gate open and the drow lock it again about a minute later — the drow never leave their slaves' gate standing open. Do NOT use it for footsteps, a rattle, or a guard who only comes to look through the bars, and never as the consequence of a failed check or a backlash.
   - Example: [GATE: unlocked]
 - [FLAG: <key>] — when a permanent, table-wide fact becomes true
@@ -3588,6 +3593,7 @@ ${MALACHAR_LAST_WORD}`
     .replace(/\[NPC_WANTS_WORD:[^\]]*\]/gi, "")
     .replace(/\[WATCH:[^\]]*\]/gi, "")
     .replace(/\[GATE:[^\]]*\]/gi, "")
+    .replace(/\[JORLAN_PLEDGE:[^\]]*\]/gi, "")
     // BACKSTOP. Every line above is hand-written, so every new tag is one
     // somebody has to remember to add here — and forgetting means the tag is
     // printed to the table as raw text. This sweeps any [UPPERCASE_TAG: ...]
@@ -4139,6 +4145,8 @@ Rules:
 
   // The watch on the pen and the pen gate, from his own tags: [WATCH: change|unattended|posted], [GATE: unlocked|open|locked].
   const watchGateEvents = watchAndGateTags(rawText)
+  // JORLAN'S WORD: a prisoner's yes to his offer, held by the game and kept at the next watch change (lib/stage-roster).
+  { const pl = pledgeTag(rawText); if (pl) stageEvents.push(pl) }
   // His [GATE: open] is a drow VISIT (lib/stage-roster.ts Gate.visitUntil): the drow lock it again behind themselves.
   stageEvents.push(...watchGateEvents.map((e) => (e.kind === "gate" && e.state === "open" ? { ...e, visit: true } : e)))
   // THE STAGE DIRECTOR (lib/stage-director.ts). Sam, 2026-10-25: "The pixel NPCs (especially drow guards/jorlan) MUST

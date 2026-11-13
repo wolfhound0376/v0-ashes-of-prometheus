@@ -81,8 +81,31 @@ export type Stage = {
   rotations?: number
   /** Which rotation brings Jorlan on duty: 2 or 3, rolled once at the first change of the run. */
   jorlanAt?: number | null
+  /** Jorlan's word to a prisoner, held by the game until he keeps it (JorlanPledge). */
+  jorlanPledge?: JorlanPledge | null
   updatedAt: string
 }
+
+/**
+ * JORLAN'S WORD (Sam, 2026-11-12, after Jorlan said "The gate. Next watch change." to Kenta's "yes" and nothing
+ * happened: "Jorlan's yes is a real thing that the game holds. You hear it get unlocked. If persuaded he even leaves a
+ * dagger."). His offer is the book's (OotA ch.1, Jorlan's gambit); WHEN he keeps it is the game's, not Malachar's:
+ * a prisoner's yes is recorded by Malachar's [JORLAN_PLEDGE: <character>] (with "| dagger" when that prisoner won him
+ * over), and at the first change of the watch after it with Jorlan on duty the gate is unlocked — shut, the lock off —
+ * whatever else is happening. Jorlan dead, or the gate already open, and there is nothing left to keep.
+ */
+export type JorlanPledge = {
+  by: string | null          // the prisoner who said yes, as Malachar named them
+  dagger: boolean            // persuaded: he leaves a dagger by the gate too
+  since: string
+  atRotation: number         // the watch count when he gave it: he keeps it at a LATER change
+  keptAt?: string | null
+  daggerPlaced?: boolean
+}
+/** Is a kept pledge's dagger still owed to the floor? (the write that places it is the route's, not this file's) */
+export const pledgeDaggerDue = (s: Pick<Stage, "jorlanPledge">) => !!(s.jorlanPledge?.keptAt && s.jorlanPledge.dagger && !s.jorlanPledge.daggerPlaced)
+/** Where the dagger is left: on the pen floor just inside the gate (plate 11's own pixels, story.json gate.balcony.inside). */
+export const PLEDGE_DAGGER_SPOT = { node: "11", x: 796, y: 912 } as const
 
 /**
  * Jorlan is not at the pen when the game begins (Sam, 2026-10-26: "Jorlan shouldn't be present in the beginning of
@@ -112,8 +135,25 @@ export async function readStage(db: SupabaseClient): Promise<Stage> {
   return {
     area: s.area ?? null, present: s.present ?? {}, gone: s.gone ?? {}, watch: s.watch ?? null, gate: gateNow(s.gate),
     rotations: typeof s.rotations === "number" ? s.rotations : 0, jorlanAt: typeof s.jorlanAt === "number" ? s.jorlanAt : null,
+    jorlanPledge: s.jorlanPledge && typeof s.jorlanPledge === "object" ? s.jorlanPledge : null,
     updatedAt: s.updatedAt ?? new Date().toISOString(),
   }
+}
+
+/** Jorlan's dagger onto the Underwalk floor by the gate: a catalogue Dagger as a `walk-floor` pile (app/api/walk-items). */
+async function leaveDagger(db: SupabaseClient): Promise<boolean> {
+  try {
+    const { data: item } = await db.from("items").select("id,slug,name,pixel_icon_url").eq("slug", "dagger").maybeSingle()
+    if (!item) return false
+    const { data } = await db.from("world_flags").select("value").eq("campaign_id", CAMPAIGN).eq("key", "walk-floor").maybeSingle()
+    const piles = Array.isArray((data?.value as { piles?: unknown[] } | null)?.piles) ? (data!.value as { piles: unknown[] }).piles : []
+    const pile = { id: crypto.randomUUID(), ...PLEDGE_DAGGER_SPOT, itemId: item.id, slug: item.slug, name: item.name, pixel: item.pixel_icon_url ?? null, at: new Date().toISOString() }
+    const { error } = await db.from("world_flags").upsert(
+      { campaign_id: CAMPAIGN, key: "walk-floor", value: { piles: [...piles, pile] }, set_by: "walk", note: "Jorlan left a dagger by the pen gate" },
+      { onConflict: "campaign_id,key" },
+    )
+    return !error
+  } catch { return false }
 }
 
 async function writeStage(db: SupabaseClient, stage: Stage) {
@@ -134,6 +174,7 @@ export type StageEvent =
   | { kind: "heard"; name: string }
   | { kind: "watch"; state: WatchState }
   | { kind: "gate"; state: GateState; visit?: boolean }   // visit: opened by the story, so the drow lock it again (Gate)
+  | { kind: "pledge"; by: string | null; dagger: boolean }
 
 /** [WATCH: change | unattended | posted] — the words Malachar may use, to the one state the map knows. */
 export function watchStateOf(word: string): WatchState | null {
@@ -160,6 +201,14 @@ export function watchAndGateTags(text: string): StageEvent[] {
     out.push(m[1].toUpperCase() === "WATCH" ? { kind: "watch", state: st as WatchState } : { kind: "gate", state: st as GateState })
   }
   return out
+}
+
+/** [JORLAN_PLEDGE: <character>] or [JORLAN_PLEDGE: <character> | dagger] — the first in a reply, or null. */
+export function pledgeTag(text: string): StageEvent | null {
+  const m = /\[JORLAN_PLEDGE:\s*([^\]|]*?)\s*(?:\|\s*([^\]]*?)\s*)?\]/i.exec(text)
+  if (!m) return null
+  const by = m[1].trim()
+  return { kind: "pledge", by: by && !/^(anyone|someone|the party|party)$/i.test(by) ? by : null, dagger: /^(dagger|persuaded|yes|with dagger)$/i.test((m[2] || "").trim()) }
 }
 
 /**
@@ -207,12 +256,24 @@ export async function applyStageEvents(db: SupabaseClient | null, events: StageE
     const stage = await readStage(db)
     const before: Stage = JSON.parse(JSON.stringify(stage))
     applyEventsTo(stage, events, new Date().toISOString())
+    if (pledgeDaggerDue(stage) && await leaveDagger(db)) stage.jorlanPledge!.daggerPlaced = true
     await writeStage(db, stage)
     return { crossed: crossedInside(before, stage) }
   } catch (err) {
     console.error("[stage] apply failed:", err)
     return { crossed: [] }
   }
+}
+
+const jorlanDead = (stage: Stage) => Object.values(stage.gone).some((e) => e.dead && /jorlan/i.test(e.name))
+/** A change of the watch: is this the one where Jorlan keeps his word? A later rotation than the one he gave it at, him on duty. */
+export function keepPledge(stage: Stage, now: string): boolean {
+  const p = stage.jorlanPledge
+  if (!p || p.keptAt || jorlanDead(stage)) return false
+  if ((stage.rotations ?? 0) <= p.atRotation || !jorlanOnDuty(stage)) return false
+  p.keptAt = now
+  if (stage.gate?.state !== "open") stage.gate = { state: "unlocked", since: now }
+  return true
 }
 
 /** The pure half of applyStageEvents: the turn's events applied to a stage in memory, in order. */
@@ -230,7 +291,18 @@ export function applyEventsTo(stage: Stage, events: StageEvent[], now: string, r
       if (e.state === "changing") {
         stage.rotations = (stage.rotations ?? 0) + 1
         if (!stage.jorlanAt) stage.jorlanAt = rollJorlanAt(rand)
+        keepPledge(stage, now)
       }
+      continue
+    }
+    if (e.kind === "pledge") {
+      const p = stage.jorlanPledge
+      if (jorlanDead(stage) || (p && !p.keptAt)) {                 // dead men keep nothing; a second yes is the same word
+        if (p && !p.keptAt && e.dagger) p.dagger = true            // ... though he can still be won over to the dagger
+        continue
+      }
+      if (p?.keptAt) continue                                      // one gambit per run: he has already kept it
+      stage.jorlanPledge = { by: e.by, dagger: e.dagger, since: now, atRotation: stage.rotations ?? 0, keptAt: null }
       continue
     }
     if (e.kind === "gate") {
