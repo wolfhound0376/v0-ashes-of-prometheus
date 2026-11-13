@@ -196,6 +196,15 @@ header .tools input[type=range]{accent-color:#f2c55c}
 .ow-row{display:flex;align-items:center;gap:8px}.ow-row span{margin-left:auto;color:var(--ink-dim);font-size:11px}
 .ow-light[data-s=rehearsal]::before{background:#7aa7ff;box-shadow:0 0 6px #7aa7ff}
 .ow-seats i{width:8px;height:8px;border-radius:50%;background:#62e3a0;flex:none}
+#caravan{position:absolute;left:50%;top:50px;transform:translateX(-50%);z-index:6;display:grid;gap:2px;justify-items:center;padding:5px 14px;border:1px solid rgba(201,162,74,.55);border-radius:6px;background:rgba(12,8,16,.84);color:#e8dcc0;font:600 13px/1.25 Georgia,serif;letter-spacing:.03em;pointer-events:none;white-space:nowrap}
+#caravan[hidden]{display:none}
+#caravan.late{border-color:rgba(255,80,60,.8);color:#ffb3a6;box-shadow:0 0 14px rgba(255,60,40,.35)}
+#caravan i{font-style:italic;font-weight:400;font-size:12px;opacity:.85}
+#caravan i[hidden]{display:none}
+#watchFade{position:absolute;inset:0;z-index:27;display:grid;place-content:center;gap:8px;text-align:center;background:rgba(2,1,6,.94);color:#e8dcc0;font-family:Georgia,serif;pointer-events:none;animation:wardBlackIn .6s ease-out}
+#watchFade[hidden]{display:none}
+#watchFade b{font-size:24px;letter-spacing:.18em;text-transform:uppercase}
+#watchFade span{font-size:14px;opacity:.8}
 #wardBlack{position:absolute;inset:0;z-index:28;display:grid;place-content:center;gap:8px;text-align:center;background:radial-gradient(ellipse at center,rgba(20,8,34,.86),rgba(2,1,6,.97));color:#d9c8f5;font-family:Georgia,serif;pointer-events:none;animation:wardBlackIn .5s ease-out}
 #wardBlack[hidden]{display:none}
 #wardBlack b{font-size:26px;letter-spacing:.18em;text-transform:uppercase}
@@ -1061,6 +1070,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="acts" id="acts" aria-live="polite"></div>
     <div id="laborBar" hidden style="position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:30;display:flex;gap:10px;align-items:center;padding:6px 12px;border:1px solid rgba(201,162,74,.55);border-radius:6px;background:rgba(12,8,16,.82);color:#e8dcc0;font:600 13px/1.2 Georgia,serif;letter-spacing:.02em"><span id="laborWhat">Work detail</span><span id="laborShift" hidden title="The shift" style="--p:0;position:relative;width:110px;height:6px;border-radius:3px;background:rgba(201,162,74,.18);overflow:hidden"><i style="position:absolute;left:0;top:0;bottom:0;width:calc(var(--p) * 100%);background:linear-gradient(90deg,#8a6a2a,#e0b45a);transition:width 1s linear"></i></span><button class="btn" id="laborTalk" hidden>Talk</button><button class="btn" id="laborLook" hidden>Look around</button><button class="btn" id="laborPocket" hidden>Steal something</button><button class="btn" id="laborEnd" hidden>End the shift</button></div>
     <div class="frozen-badge" id="frozen" role="status" hidden>Time is stopped</div>
+    <div id="caravan" role="status" hidden><span id="caravanText"></span><i id="caravanPlan" hidden></i></div>
+    <div id="watchFade" role="status" hidden><b>The watch changes</b><span>Hours pass in the dark.</span></div>
     <div id="wardBlack" role="status" hidden><b>Out cold</b><span>The ward bit back. You will come round in a moment, or sooner if someone shakes you awake.</span></div>
     <div class="zoom">
       <button id="zOut" aria-label="Zoom out">−</button>
@@ -1529,6 +1540,11 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
   // picked the mark out of the wall. wardOut: hero id -> the wall-clock ms their blackout ends. wardCutLock: who the
   // ward has bitten and may not try the cut again until a rest. wardShocks: how many times it has bitten anyone.
   sigilNoticed: {}, wardOut: {}, wardCutLock: {}, wardShocks: 0,
+  // PEN PACING (Sam, 2026-11-12). waitVote: the open proposal to wait out the watch {id, by, at, done?} (each hero's
+  // yes is its own key, "waitYes:<hero>", so two screens agreeing at once cannot overwrite each other). drowArgue /
+  // sarithMutter: {at} once the beat has played. jorlanLead: the argument was understood. planAsked / plan: Eldeth's
+  // question and the table's answer. caravanCalled: the clock ran out and the moment went to Malachar.
+  waitVote: null, drowArgue: null, sarithMutter: null, jorlanLead: false, planAsked: null, plan: null, caravanCalled: false,
   // MANACLES (Sam, 2026-10-30, looking at the pen gate card: "This should show disadvantaged because of
   // [manacled]"). The party wakes in the pen in irons (OotA p.11: prisoners are manacled and stripped of their
   // gear), so this starts TRUE and stays true until the cuffs are struck off. It is one flag for the party, not
@@ -2515,7 +2531,7 @@ function drawFrame(){
     if (mode === "combat") drawConds(a);
     if (mode === "combat" && a.kind === "pc" && a.down && a.c && a.c.ds) drawDeathSaves(a);
     if (a.id === "stool" && !a.down && !a.body) drawStoolAura(a, dx, dy, dw, dh, "spores");   // the spores drift in front
-    if (wantsWord(a) && mode === "explore"){
+    if ((wantsWord(a) || planAsking(a)) && mode === "explore"){
       ctx.globalAlpha = 1; const bob = Math.sin(now / 260) * 6, top = dy + dh * .18 - 26 + bob;
       ctx.fillStyle = "#e8a24a"; ctx.strokeStyle = "#1a0f05"; ctx.lineWidth = 4;
       ctx.font = "bold 44px 'IM Fell English SC', Georgia, serif"; ctx.textAlign = "center";
@@ -7960,6 +7976,8 @@ function exploreExtras(m, o, add, who){
   // SHAKE THEM AWAKE (Sam, 2026-11-12): a friend the ward put on the floor comes round early if someone goes to them
   const wardFriend = party.find(p => p !== L && p.wardKo && p.x != null && Math.hypot(p.x - L.x, p.y - L.y) < WARD_SHAKE_REACH * sc);
   if (wardFriend) x(`Shake ${fname(wardFriend)} awake`, "✋", ART("help"), "out cold from the ward", () => wardShake(L, wardFriend));
+  // WAIT FOR THE NEXT WATCH (Sam, 2026-11-12): the table skips the lull, and pays a watch off the caravan clock for it
+  if (waitOffered()) x("Wait for the next watch", "⌛", ART("short-rest"), `everyone must agree · counts as a short rest · ${watchesWord(caravanLeft())} left`, () => waitPropose());
   const pot = beltPotion(L); if (pot) x(`Quick drink: ${pot.name}`, "⚗", ART("quick-drink"), "from the belt", () => drinkItem(L, pot, L));
   if (party.length > 1) x(followOn ? "Wait here" : "Follow me", followOn ? "⏸" : "➜", ART(followOn ? "wait" : "follow"), followOn ? "the others stop where they are" : "the others come along behind", () => setFollow(!followOn));
   // JUMP outside a fight: the same long-jump rule the fight uses (gapOnLine; STR score with a run-up, half standing), with
@@ -8776,6 +8794,245 @@ function redSigilSeen(){
   log("<b>The red sigil is seen.</b> <i>There is nothing to say to this one.</i>", {say: true});
   reportSituation({event: "ward_seen"});
   setTimeout(() => { if (mode === "explore") startCombat([d], "The ward is read — and there is nothing to say."); }, 1500);
+}
+
+// ---------- PEN PACING (Sam, 2026-11-12) ----------
+// Sam: "What do you think would make the pen scene more fun? Currently it's a little slow." From the ideas put to
+// him: "I like the doom clock. Wait for the next watch button option is good. Two drow argue on the platform also
+// good. Sarith mutter is good. Maybe after a while Eldeth asks what is the plan and gives some options." Then the
+// two calls: marched out in chains when the clock runs out ("Yes"), and "6 watches".
+//
+// HOMEBREW, AND SAYING SO. The book has Ilvara meaning to send the prisoners on to Menzoberranzan and Jorlan bitter
+// at being put aside for Shoor (OotA ch.1); it sets no clock and scripts none of these beats. The six watches are
+// Sam's; every other number and every line below is Claude's.
+//
+//   1. THE CARAVAN CLOCK   CARAVAN_WATCHES changes of the watch from the start of the run, counted on the stage
+//                          roster's `rotations` (the same counter that brings Jorlan on). A banner in the pen; red
+//                          for the last two. At zero the moment goes to Malachar: the march out in chains is its own
+//                          scene on its own plates and is NOT staged here.
+//   2. WAIT FOR THE WATCH  any hero proposes; every hero on their feet must agree; /api/walk-wait moves the clock
+//                          to the next change of the watch and the party takes a short rest in it.
+//   3. THE DROW ARGUE      once, early: two guards at their post, in Elvish, about Jorlan. Bubbles only. Understood
+//                          (a hero with Elvish, or Sarith or Derendil at hand to pass it on) it becomes a lead.
+//   4. SARITH MUTTERS      once: when a caster first notices the sigil, or as a nudge after a watch if none has.
+//   5. ELDETH ASKS         after two watches with nothing begun, a "!" over Eldeth; she offers only plans this party
+//                          can actually take (Sam's standing rule: options must be real options).
+const CARAVAN_WATCHES = 6;              // Sam's number
+const CARAVAN_LATE = 2;                 // the banner turns red for the last two
+const WAIT_VOTE_MS = 45000;             // a proposal nobody answers lapses
+const ARGUE_AFTER_MS = 75000;           // the guards start in on Jorlan a little after the party settles
+const PLAN_AFTER_WATCHES = 2;
+const caravanLeft = () => Math.max(0, CARAVAN_WATCHES - (storyRotations || 0));
+const watchesWord = n => `${n} watch${n === 1 ? "" : "es"}`;
+const CARAVAN_LINES = {
+  5: "Five watches. Menzoberranzan is patient. I am not.",
+  4: "Four. Somewhere above you, the chains for the march are being oiled.",
+  3: "Three watches. Half your time, spent sitting.",
+  2: "Two. They are counting you into lots.",
+  1: "One watch. Say your farewells to the dark you know.",
+  0: "The caravan is here."
+};
+/** Still prisoners in the pen: on the pen plate, and the breakout has not been fought. */
+function penHeld(){ return cur === PEN && !state.brokeOut && !SANDBOX; }
+function pacingFind(id){ return npcs.find(n => n.id === id && actors.includes(n) && !n.down && !n.body && !n.offStage && !n.slain && !n.hostile && (n.alpha ?? 1) > .5) || null; }
+let pacingAt = 0, pacingRot = null, pacingPenSince = 0, pacingArgued = 0, pacingMuttered = 0, pacingFaded = null, pacingAsked = null, pacingPlanBarked = 0;
+function pacingTick(){
+  if (now - pacingAt < 500) return; pacingAt = now;
+  caravanTick(); waitTick();
+  if (!penHeld()){ pacingPenSince = 0; return; }
+  if (!pacingPenSince) pacingPenSince = now;
+  if (mode !== "explore" || (typeof talkNpc !== "undefined" && talkNpc) || timeStopped) return;
+  argueTick(); mutterTick(); planTick();
+}
+// ----- 1. the caravan clock -----
+function caravanTick(){
+  const el = $("caravan"); if (!el) return;
+  const show = penHeld() && mode !== "load";
+  const left = caravanLeft();
+  if (el.hidden === show) el.hidden = !show;
+  if (show){
+    const t = left > 0 ? `The caravan to Menzoberranzan leaves in ${watchesWord(left)}` : "The caravan to Menzoberranzan is here";
+    if ($("caravanText").textContent !== t) $("caravanText").textContent = t;
+    el.classList.toggle("late", left <= CARAVAN_LATE);
+    const p = $("caravanPlan"), pl = state.plan && PLANS[state.plan.key];
+    if (p){ p.hidden = !pl; if (pl && p.textContent !== "The plan: " + pl.short) p.textContent = "The plan: " + pl.short; }
+  }
+  // the watch changed: Malachar counts it down, once per change, on every screen that is in the pen
+  if (pacingRot === null){ pacingRot = storyRotations || 0; return; }
+  if ((storyRotations || 0) === pacingRot) return;
+  const went = (storyRotations || 0) > pacingRot; pacingRot = storyRotations || 0;
+  if (!went || !penHeld()) return;
+  const line = CARAVAN_LINES[left];
+  if (line){ log(`<b>The watch changes.</b> ${left > 0 ? watchesWord(left) + " left. " : ""}<i>${esc(line)}</i>`); toast(left > 0 ? `The watch changes. ${watchesWord(left)} until the caravan.` : "The watch changes. The caravan is here.", 5200); }
+  if (left === 0 && !state.caravanCalled){
+    state.caravanCalled = true;
+    // Until the march is staged (its own PR, on plates Sam has yet to choose) the moment is Malachar's, the way the
+    // shakedown's is: it plays at the table rather than being lost. An event, so only one screen tells him.
+    handOff("The caravan to Menzoberranzan has come for the prisoners. The six watches are spent and the party is still in the slave pen. The drow come in force to chain them into the column and march them out of Velkynvelve onto the road. This is not the end of the game: the march is one last, harder chance to escape. Play the drow coming in for them.", false);
+  }
+}
+// ----- 2. wait for the next watch -----
+function waitVoters(){ return party.filter(p => !p.down && !p.ko && !dmRun.has(p.id)); }
+const waitYesKey = id => "waitYes:" + id;
+function waitOffered(){ return penHeld() && mode === "explore" && caravanLeft() > 0 && !(state.waitVote && !state.waitVote.done && Date.now() - state.waitVote.at < WAIT_VOTE_MS); }
+function waitPropose(){
+  const h = leader; if (!h || !waitOffered()) return;
+  const id = "w" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  for (const k of Object.keys(state)) if (k.startsWith("waitYes:")) delete state[k];
+  state.waitVote = {id, by: h.id, at: Date.now()};
+  for (const p of waitVoters()) if (canControl(p)) state[waitYesKey(p.id)] = id;
+  pacingAsked = id; waitProposed = id;
+  const rest = waitVoters().filter(p => state[waitYesKey(p.id)] !== id);
+  log(`${fname(h)} proposes waiting for the next watch.${rest.length ? ` Waiting on ${rest.map(fname).join(", ")}.` : ""}`);
+  exploreKey = "";
+}
+let waitRunning = false;
+function waitTick(){
+  const v = state.waitVote; if (!v) return;
+  // it is done: every screen fades through the hours and takes the rest's small local effects
+  if (v.done){
+    if (pacingFaded !== v.id){ pacingFaded = v.id;
+      const el = $("watchFade"); if (el){ el.hidden = false; setTimeout(() => { el.hidden = true; }, 2600); }
+      cdShortRest(); artsRest(); restAttune(); loreRestStudy(); wardRested();
+      exploreKey = "";
+    }
+    return;
+  }
+  if (Date.now() - v.at > WAIT_VOTE_MS){
+    if (pacingAsked === v.id && $("obj") && !$("obj").hidden && mode === "dialog" && waitCardOpen){ $("obj").hidden = true; mode = "explore"; waitCardOpen = false; }
+    if (canControl(party.find(p => p.id === v.by))){ state.waitVote = null; toast("Nobody answered. The party does not wait."); }
+    return;
+  }
+  if (v.no){ if (pacingFaded !== v.id){ pacingFaded = v.id; toast(`${v.no} would rather not wait.`); } if (canControl(party.find(p => p.id === v.by))) state.waitVote = null; return; }
+  // this seat's own hero has not answered yet: ask them, once
+  const mine = wardMine();
+  if (APP && mine && pacingAsked !== v.id && mode === "explore" && waitVoters().includes(mine) && state[waitYesKey(mine.id)] !== v.id){
+    pacingAsked = v.id; waitCardOpen = true;
+    const who = party.find(p => p.id === v.by);
+    const {add, close} = heroCard("Wait for the next watch?", `${who ? fname(who) : "Someone"} wants to wait out this watch. Hours pass, everyone takes a short rest, and the caravan is one watch closer (${watchesWord(caravanLeft())} left now). Everyone on their feet must agree.`);
+    add("Agree", () => { waitCardOpen = false; close(); state[waitYesKey(mine.id)] = v.id; }, "primary");
+    add("Not yet", () => { waitCardOpen = false; close(); if (state.waitVote && state.waitVote.id === v.id) state.waitVote = {...state.waitVote, no: fname(mine)}; });
+  }
+  // the proposer's screen runs it the moment everyone has agreed
+  if (!waitRunning && waitProposed === v.id && waitVoters().every(p => state[waitYesKey(p.id)] === v.id)) waitRun(v);   // (one screen only: the one that asked)
+}
+let waitCardOpen = false, waitProposed = null;
+async function waitRun(v){
+  waitRunning = true;
+  try {
+    if (mode === "explore"){ mode = "dialog"; party.forEach(p => { p.path = []; }); }
+    let lines = [];
+    if (APP){
+      let claim = null; try { claim = localStorage.getItem("aop_claim_token"); } catch (e) {}
+      const head = {"Content-Type": "application/json", ...dmHeaders()};
+      const res = await fetch("/api/walk-wait", {method: "POST", headers: head, body: JSON.stringify({claimToken: claim || undefined})}).catch(() => null);
+      const j = res ? await res.json().catch(() => ({})) : {};
+      if (!res || !j.ok){ toast(j.error || "The hours would not pass."); state.waitVote = null; if (mode === "dialog") mode = "explore"; return; }
+      // the short rest inside the wait: the pen's own odds do not apply (nobody "finds" prisoners in their pen)
+      const rr = await fetch("/api/walk-rest", {method: "POST", headers: head, body: JSON.stringify({plate: String(cur), area: node.name, spend: "max", claimToken: claim || undefined, risk: {chance: 0, label: ""}})}).catch(() => null);
+      const r = rr ? await rr.json().catch(() => ({})) : {};
+      lines = (r.characters || []).map(c => `${esc(c.name.split(" ")[0])}: ${c.healed > 0 ? `+${c.healed} hp (${c.hp}/${c.hpMax})` : `${c.hp}/${c.hpMax}`}`);
+    } else { storyRotations = (storyRotations || 0) + 1; fakeWatch("changing"); }   // the stand-alone preview: no game to tell
+    state.waitVote = {...v, done: Date.now()};
+    await wait(2000);
+    if (mode === "dialog") mode = "explore";
+    log(`<b>The party waits out the watch.</b> Hours pass, and they rest. ${lines.length ? lines.join("; ") + "." : ""}`);
+    if (APP) try { pollStage(); } catch (e) {}
+  } finally { waitRunning = false; }
+}
+// ----- 3. two drow argue on the platform -----
+const ARGUE_LINES = [
+  "Jorlan has the next watch. Again.",
+  "He takes every watch nobody wants. Since the mistress took Shoor to her bed, he has nothing else.",
+  "Careful. He still has ears.",
+  "And one good hand. A male that bitter does something stupid sooner or later."
+];
+function argueTick(){
+  if (!state.drowArgue){
+    if ((storyRotations || 0) > 1 || now - pacingPenSince < ARGUE_AFTER_MS || gateGuards().length < 2) return;
+    state.drowArgue = {at: Date.now()};
+    // a lead only if somebody could follow it: a hero with Elvish, or a prisoner who can pass it on (the surgeon's rule)
+    if (party.some(p => !p.down && slugSpeaksElvish(p.id)) || pacingFind("sarith") || pacingFind("derendil")) state.jorlanLead = true;
+  }
+  if (pacingArgued || Date.now() - state.drowArgue.at > 20000) return;      // played here already, or it was long ago on another screen
+  const g = gateGuards(); if (g.length < 2) return;
+  pacingArgued = now;
+  ARGUE_LINES.forEach((line, i) => setTimeout(() => {
+    const sp = g[i % 2], other = g[(i + 1) % 2];
+    if (!actors.includes(sp) || cur !== PEN || mode === "combat") return;
+    faceTo(sp, other);
+    bark(sp, heardText(line, "Elvish"), 4200, {talk: true, lang: "Elvish"});
+    interpret(sp, line, "Elvish");
+  }, i * 4400));
+  log("<i>Up on the platform, two of the guards are arguing in low voices.</i>");
+}
+// ----- 4. Sarith mutters at the sigil -----
+const MUTTER_LINE = "That mark on the wall is all that keeps your kind quiet.";
+function mutterTick(){
+  const sa = pacingFind("sarith"); if (!sa || state.wardBroken) return;
+  if (!state.sarithMutter){
+    const noticed = Object.values(state.sigilNoticed || {}).some(v => v === true);
+    const nudge = !noticed && (storyRotations || 0) >= 1 && party.some(p => wardCaster(p));
+    if (!noticed && !nudge) return;
+    state.sarithMutter = {at: Date.now()};
+  }
+  if (pacingMuttered || Date.now() - state.sarithMutter.at > 20000) return;
+  pacingMuttered = now;
+  setTimeout(() => {
+    if (!actors.includes(sa) || cur !== PEN || mode === "combat") return;
+    const m = wardMark(), at = party.find(p => wardCaster(p)) || leader, lang = tauntTongue(sa, at);
+    stopActivity(sa); if (m) faceTo(sa, m);
+    bark(sa, heardText(MUTTER_LINE, lang), 5200, {talk: true, lang});
+    if (lang) interpret(sa, MUTTER_LINE, lang);
+  }, 2200);
+}
+// ----- 5. Eldeth asks what the plan is -----
+// Only what this party can actually do, right now. Each `can` is a test of the real game, not a wish.
+const PLANS = {
+  key:   {short: "lift the pen key", label: "Lift the key off the guard who leans on the gate", say: "Then watch that lazy one. He will lean again.",
+          can: () => !hasPenKey(), tell: "steal the pen key from the guard who leans on the gate (Sleight of Hand while unseen)"},
+  force: {short: "force the gate", label: "Force the gate and fight our way out", say: "Aye. Loud, and bloody. I'll be at your shoulder.",
+          can: () => !state.gateOpen, tell: "force the pen gate (Athletics) and fight their way out"},
+  ward:  {short: "break the ward", label: "Break the ward on the wall, and get our magic back", say: "If your spellcaster can do it, do it. But they'll see it, mark me.",
+          can: () => !state.wardBroken && party.some(p => !p.down && wardCaster(p) && wardMayCut(p)), tell: "have a caster study and re-cut the ward sigil so magic works in the pen"},
+  friend:{short: "wait for Jorlan", label: "Wait. One of the drow has a grudge worth using", say: "A drow with a grudge. Hm. I'd not trust it, but I'd use it.",
+          can: () => !!state.jorlanLead, tell: "wait for Jorlan, the drow the guards say is bitter at being put aside for Shoor, and see what he wants"}
+};
+const planOpen = () => Object.keys(PLANS).filter(k => PLANS[k].can());
+function planAsking(n){ return !!(n && n.id === "eldeth" && state.planAsked && !state.plan && penHeld() && !n.down && !n.body && !n.offStage); }
+function planTick(){
+  if (state.plan) return;
+  const el = pacingFind("eldeth"); if (!el) return;
+  if (!state.planAsked){
+    if ((storyRotations || 0) < PLAN_AFTER_WATCHES || state.gateOpen || state.wardBroken || hasPenKey() || !planOpen().length) return;
+    state.planAsked = {at: Date.now()};
+  }
+  if (!pacingPlanBarked && Date.now() - state.planAsked.at < 20000){
+    pacingPlanBarked = now;
+    bark(el, "So. What's the plan?", 5200, {talk: true, voice: true});
+    narrate(el, "Eldeth wants to know what the plan is.");
+  }
+}
+function openPlanCard(n){
+  if (mode !== "explore" || !leader) return;
+  const open = planOpen();
+  mode = "dialog"; tip.hidden = true;
+  const c = $("objPic").getContext("2d"); c.clearRect(0, 0, 128, 128);
+  try { const m = SPR[n.id].json; c.imageSmoothingEnabled = false; c.drawImage(SPR[n.id].img.idle, 0, 0, m.cell[0], m.cell[1], 0, 0, 128, 128); } catch (e) {}
+  $("objWho").textContent = "Eldeth Feldrun";
+  $("objText").textContent = `“We'll not be here forever, one way or another. ${watchesWord(caravanLeft())}, then they march us to Menzoberranzan. So what's the plan?”`;
+  const box = $("objBtns"); box.innerHTML = ""; box.classList.remove("loot");
+  const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
+  open.forEach((k, i) => choiceRow(box, PLANS[k].label, () => { close(); planChosen(n, k); }, i ? "" : "primary"));
+  choiceRow(box, "Not yet", close);
+  showObjCard();
+}
+function planChosen(n, k){
+  const pl = PLANS[k]; if (!pl) return;
+  state.plan = {key: k, by: leader ? leader.id : null, at: Date.now()};
+  log(`<b>The plan:</b> ${esc(pl.short)}. <i>Eldeth nods once and passes it down the wall.</i>`);
+  bark(n, pl.say, 5200, {talk: true, voice: true});
+  handOff(`The prisoners in the slave pen have settled on a plan, at Eldeth's asking: ${pl.tell}. Eldeth and the other prisoners know it, and speak and act with it in mind from now on. Do not hand the party anything they have not earned, and do not narrate the plan succeeding.`, false);
 }
 
 function giveHelp(){ helpNext = {by: leader.id, until: now + 60000}; log(`${fname(leader)} lends a hand: the next friend's check has advantage.`); exploreKey = ""; }
@@ -16400,6 +16657,7 @@ function drawStoolAura(a, dx, dy, dw, dh, layer){
   ctx.restore();
 }
 function approach(n){
+  if (planAsking(n)) return openPlanCard(n);                 // ELDETH ASKS THE PLAN: a choice card, not a conversation
   if (wantsWord(n)) return openTalk(n);
   if (canTalkTo(n)) return openTalk(n, {quiet: true});
   ambient(n);
@@ -19326,6 +19584,7 @@ function update(dt){
   tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt);
   redSigilSeen();                       // a drow inside the pen reads the red scar: the fight starts once, however they got in
   sigilNoticeTick(); wardOutTick();     // a caster notices the sigil (and gets its film); the ones it bit lie where they fell
+  pacingTick();                         // the caravan clock, the wait vote, and the pen's three small beats
   tickFungus();
   ovTick(); tickChasmWebs(); camKeep();
   if (camTween){
