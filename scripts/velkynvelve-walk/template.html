@@ -7634,7 +7634,13 @@ function openMenu(a, sub){
     if (s.magic || s.innateSorcery) grp("magic");
     // In a warded area the Cast command stays OPEN (Sam, 2026-10-14: "Characters should be able to cast magic
     // but notice it fizzles when attempted because the sigil soaks it up") — the lesson is learned by trying.
+    // THE IRONS (Sam, 2026-11-12: "It was like there were no ability to cast magic"). Manacles darken every spell with a
+    // gesture, and the cast list drops what cannot be done, so a manacled Gandalf (all seven of his spells somatic) got a
+    // lit "Cast · slots L1 2/2" that opened onto nothing but Back. Cast now asks the same question the list does.
+    const ironsOnly = s.magic && handsBound() && [...s.magic.cantrips, ...s.magic.prepared].every(nm => needsHands(nm));
+    if (ironsOnly && !c.ironsSaid){ c.ironsSaid = true; log(`<b>${esc(fname(a))}</b> cannot cast: every spell they know needs their hands, and they are in irons.`); popText(a, "in irons", "#b39ddb", 1); }
     const castable = s.magic && !c.rage && [...s.magic.cantrips, ...s.magic.prepared].some(nm => { const sp = SPELLS[nm]; if (!sp) return false;
+      if (handsBound() && needsHands(nm)) return false;
       if (sp.lvl === 0) return c.action; if ((c.slots[sp.lvl] || 0) <= 0) return false; return sp.bonus ? c.bonus && !c.leveledSpell : c.action && !c.bonusSpell; });
     if (c.conc) add("End concentration", `${c.conc.spell} · free, no action · ${Math.max(0, c.conc.endRound - cbt.round)} rounds left`, () => { endConc(a, "let go"); openMenu(a); });
     if (s.magic) add("Cast", !castable ? (c.rage ? "raging: no spells and no concentration" : "nothing left to cast this turn") : `DC ${s.magic.dc} · +${s.magic.hit} · slots ${Object.entries(c.slots).map(([l, n]) => `L${l} ${n}/${s.magic.slots[l] || 0}`).join(" ")}`, castable ? () => openMenu(a, "cast") : null, "primary");
