@@ -6461,6 +6461,9 @@ function gateWatchAway(){ const B = battleLive(), d = state.gateWatchDown; retur
 /** A fight this plate hands to its battle plate: every foe named is one of the watch, standing out on the landing. */
 function battleWanted(foeIds){
   if (cur !== PEN || !battlePlateOf(cur) || battleBusy || battleLive() || laborLive() || FIGHT.mirror) return false;
+  // a fight another screen is already running on THIS plate is that fight (ONE FIGHT): this screen joins it, it does not open a battle of its own
+  { const on = state[fightKey(cur)]; if (on && on.by && on.by !== OW.key) return false;
+    if (FIGHT.live && owSame(FIGHT.live.plate, cur) && FIGHT.live.auth_key !== OW.key) return false; }
   const objs = foeIds.filter(f => f && typeof f === "object");
   return objs.length > 0 && objs.length === foeIds.length && objs.every(f => isGuard(f) && (onBalcony(f) || outsidePen(f)));
 }
@@ -24170,7 +24173,7 @@ function owEntered(force){
 }
 // The modes a screen can be pulled to another plate from: walking, a dialog or a conversation open. Not mid-fight,
 // not mid-crossing, not while loading — those finish first and the plate follows (OW.pendingPlate).
-const OW_CAN_MOVE = () => !cbt && (mode === "explore" || mode === "dialog" || mode === "talk");   // !cbt: a card open mid-fight is still the fight
+const OW_CAN_MOVE = () => !cbt && !battleBusy && (mode === "explore" || mode === "dialog" || mode === "talk");   // !battleBusy: this screen is mid-cut to a battle plate already   // !cbt: a card open mid-fight is still the fight
 async function owGoTo(plate, t){
   plate = owPlate(plate);
   OW.applyingPlate = true;
