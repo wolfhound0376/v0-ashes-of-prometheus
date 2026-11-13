@@ -1550,7 +1550,10 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
   // gear), so this starts TRUE and stays true until the cuffs are struck off. It is one flag for the party, not
   // a per-hero condition — his call. It rides the One World sync like every other key of `state`, so the whole
   // table agrees, and the DM drawer can strike them off.
-  manacled: true};
+  manacled: true,
+  // BESEECH (Sam, 2026-11-12). {heroId: {plan, at, boon, used}}: who has asked their god or patron since the last rest,
+  // which way out they were shown, and whether the advantage that came with it has been spent.
+  beseech: {}};
 // The watch on the pen and the pen gate as the STORY has them (/api/map-stage `watch` and `gate`, written from
 // Malachar's [WATCH:] / [GATE:] tags and from his prose by the stage director). Declared up here because a plate is
 // populated before the poll below ever runs. See "the watch and the gate" further down.
@@ -5852,6 +5855,8 @@ async function rollWithHelp(action, localMod, opts = {}){
   return rollOnDashboard(action, localMod, opts);
 }
 function rollOnDashboard(action, localMod, opts = {}){
+  // BESEECH: a way out a god or patron showed is tried with advantage, once (Sam, 2026-11-12)
+  { const bp = beseechRollPlan(action); if (bp && !opts.advantage && beseechSpend(bp, opts.who || leader)) opts = {...opts, advantage: true}; }
   // 5e: advantage and disadvantage cancel. lib/walk-roll.ts settles it again on the other side; this keeps the
   // preview's own die honest too.
   const edge = (opts.advantage ? 1 : 0) + (opts.disadvantage ? -1 : 0);
@@ -7979,7 +7984,7 @@ function renderExploreBar(){
   const lvlNext = canControl(leader) && !inFightNow() ? levelReady(leader.id) : 0;
   const who = SHORT[leader.id] || (SHEETS[leader.id] && SHEETS[leader.id].name.split(" ")[0]) || SPR[leader.id].json.name;
   o.mark = pickpocketMark(leader);   // someone in reach of a hand while this hero is sneaking unseen
-  const key = [leader.id, o.talkNear && o.talkNear.id, o.talkList.length, lvlNext, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, o.mark && o.mark.id, party.length].join("|");
+  const key = [leader.id, o.talkNear && o.talkNear.id, o.talkList.length, lvlNext, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, o.mark && o.mark.id, party.length, beseechCan(leader) ? "b" : ""].join("|");
   if (key === exploreKey && !m.hidden) return;
   exploreKey = key; m.dataset.kind = "explore"; m.innerHTML = ""; m.hidden = false;
   const add = (label, glyph, icon, sub, fn, cls) => { const b = document.createElement("button"); if (cls) b.className = cls;
@@ -8061,7 +8066,7 @@ let sneak = null, helpNext = null, followOn = true, moreOpen = false, exploreJum
 const EXPLORE_KEEP = 7;
 const BUTTON_PRI = [[/^Level Up/, .5], [/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
   [/^(Sneak|Stop sneaking)/, 4], [/^Pick .*pocket/, 4], [/^Cast/, 5], [/^Search$/, 6], [/^Inventory/, 7], [/^Tell Malachar/, 8], [/^Next hero/, 9],
-  [/^(Scout|Jump|Pray|Inspire|Quick drink)/, 10], [/^My company/, 11], [/^Short rest/, 12], [/^Help/, 13], [/^(Follow|Wait)/, 14], [/^Talk$/, 30]];
+  [/^(Scout|Jump|Pray|Beseech|Inspire|Quick drink)/, 10], [/^My company/, 11], [/^Short rest/, 12], [/^Help/, 13], [/^(Follow|Wait)/, 14], [/^Talk$/, 30]];
 // THE COMBAT BAR (Sam, 2026-11-10: "Don't offer bubble boxes for actions that aren't available. Offer boxes in order of
 // priority and utility." — this replaces the 2026-10-27 canvas order for the fight). Only what the hero can do RIGHT NOW
 // gets a box (foldBar drops the rest), so the order is by usefulness, not by habit:
@@ -8135,6 +8140,7 @@ function exploreExtras(m, o, add, who){
   if (escortOf(L.id).length || companyMode(L.id) !== "follow"){ const m = companyMode(L.id);
     x("My company", "☰", ART("follow"), `${escortOf(L.id).length} with you · ${m === "follow" ? "following" : m === "wait" ? "waiting" : "with " + fname(party.find(p => p.id === m.slice(5)) || L)}`, canControl(L) ? () => openCompany() : null); }
   if (/cleric/.test(cls)) x("Pray", "✠", ART("pray"), "silently, or aloud", () => openPray());
+  if (/warlock/.test(cls) && beseechCan(L)) x("Beseech your patron", "✠", ART("pray"), "a way out of the pen · once until you rest", () => openBeseech());
   if (sh.bardic) x("Inspire", "♪", ART("inspire"), `Bardic Inspiration · ${inspLeftOf(L)} of ${sh.bardic.uses} left`, inspLeftOf(L) > 0 && party.length > 1 ? () => openInspire() : null);
   // SCOUT ALONE (Sam, 2026-10-27: "This should be an option that populates when sneaking away from the group"): not a
   // standing rogue button any more. It appears only while the party is sneaking together, for whoever leads; taking it
@@ -8831,7 +8837,7 @@ function openSigilCut(){
 }
 function cutSigil(){
   const h = leader; if (!h || state.wardBroken) return;
-  const tool = wardCutTool(h), adv = tool ? 0 : -1;
+  const tool = wardCutTool(h), adv = (tool ? 0 : -1) + (beseechSpend("ward", h) ? 1 : 0);   // BESEECH: shown the cut, it is made with advantage (5e: it cancels bare hands)
   const mod = heroMod(h, "dexterity", "dex"), r = d20(adv, h), k = {r, mod, total: r + mod, adv};
   const by = k.total - WARD_CUT_DC;
   log(`${fname(h)} re-cuts the anchor stroke: ${rollLine(k, "dexterity")} vs DC ${WARD_CUT_DC}.`);
@@ -9191,6 +9197,7 @@ async function waitRun(v){
       lines = (r.characters || []).map(c => `${esc(c.name.split(" ")[0])}: ${c.healed > 0 ? `+${c.healed} hp (${c.hp}/${c.hpMax})` : `${c.hp}/${c.hpMax}`}`);
     } else { storyRotations = (storyRotations || 0) + 1; fakeWatch("changing"); }   // the stand-alone preview: no game to tell
     state.waitVote = {...v, done: Date.now()};
+    beseechRested();
     await wait(2000);
     if (mode === "dialog") mode = "explore";
     log(`<b>The party waits out the watch.</b> Hours pass, and they rest. ${lines.length ? lines.join("; ") + "." : ""}`);
@@ -9518,9 +9525,57 @@ function openPray(){
     const id = handOff(`${fname(leader)} prays silently to ${god}. This prayer is PRIVATE: answer only ${fname(leader)}, as only they would perceive it; nobody else notices anything.`, true, {private: true});
     if (APP && window.parent !== window) checkCard.id = id; else checkAnswer(null, "In the game, the answer comes here, to you alone.");
   }, "primary");
+  if (beseechCan(leader)) add(`Beseech ${god} for a way out of this pen`, () => { close(); beseech(leader); });
   add("Pray aloud", () => { close(); log(`${fname(leader)} prays aloud to ${god}.`); narrate(leader, `${fname(leader)} prays aloud.`); handOff(`${fname(leader)} prays ALOUD to ${god}, where anyone near can hear.`, true); });
   add("Not now", close);
 }
+// ---------- BESEECH (Sam, 2026-11-12) ----------
+// "The priest and Warlocks can beesech their patron and will be given a hint and advantage on the attempt."
+//   WHO, WHEN  A cleric or a warlock, held in the pen. Once each until the party next rests (a short rest, or waiting
+//              out a watch, which is one) [CLAUDE: Sam named no limit]. Not a spell: the ward and the irons do not stop it.
+//              A cleric finds it on the Pray card; a warlock has no Pray card, so it is a button of its own, shown only
+//              while it can be used.
+//   THE HINT   One of the ways out the party can ACTUALLY take right now: Eldeth's own list (PLANS, each with a `can`
+//              that tests the real game), leaving out the plan already settled on with her when there is another. The
+//              game picks it; Malachar is told and is not asked, so the hint can never be something that is not there.
+//              It comes to the asker's screen alone (Sam, 2026-10-01: a prayer is private unless spoken aloud).
+//   THE BOON   Advantage on the next attempt at that way out, by whoever in the party makes it [CLAUDE: the asker is
+//              often not the one with the hands for it]: the pickpocket for the key, the Athletics to force the gate,
+//              the cut of the ward. "Wait for Jorlan" has no roll, so it is a hint and nothing more.
+//   NOTHING    If no way out is open to show, only silence answers and nothing is spent.
+const BESEECH_ROLLS = {key: a => /^pickpocket:/.test(a), force: a => a === "pen-gate:force"};
+function beseecher(a){ const cls = String((a && SHEETS[a.id] || {}).cls || "").toLowerCase(); return /cleric/.test(cls) ? "god" : /warlock/.test(cls) ? "patron" : null; }
+function beseechName(a){ return beseecher(a) === "god" ? (/samson/.test(a.id) ? "Lathander" : "their god") : "their patron"; }
+function beseechCan(a){ return !!(a && beseecher(a) && penHeld() && mode === "explore" && !a.down && !(state.beseech || {})[a.id]); }
+function openBeseech(){
+  const a = leader; if (!beseechCan(a)) return;
+  const {add, close} = heroCard(`${fname(a)} beseeches ${beseechName(a)}`, "Ask for a way out of this pen. It is answered once, and not again until you have rested.");
+  add("Beseech", () => { close(); beseech(a); }, "primary");
+  add("Not now", close);
+}
+function beseech(a){
+  if (!beseechCan(a)) return;
+  const who = beseechName(a), settled = state.plan && state.plan.key, all = planOpen(), fresh = all.filter(k => k !== settled), pool = fresh.length ? fresh : all;
+  log(`${esc(fname(a))} goes still, lips moving. <em>Whatever is asked, and whatever answers, is theirs alone.</em>`);
+  if (!pool.length){ const c = heroCard(`${fname(a)} beseeches ${who}`, "Only silence answers. Nothing is spent: ask again when something has changed."); c.add("So be it", c.close, "primary"); return; }
+  const k = pool[Math.floor(Math.random() * pool.length)], boon = !!BESEECH_ROLLS[k] || k === "ward";
+  state.beseech = Object.assign({}, state.beseech || {}, {[a.id]: {plan: k, at: Date.now(), boon, used: !boon}}); saveWalk();
+  const c = heroCard(`${fname(a)} beseeches ${who}`, `A thought arrives that is not your own: ${PLANS[k].tell}.`
+    + (boon ? "\n\nWhoever tries it next does so with advantage." : "\n\nThere is nothing to roll for in that. Only patience."));
+  c.add("So be it", c.close, "primary");
+  handOff(`${fname(a)} privately beseeched ${who} for a way out of the slave pen and was shown one the party can really take: ${PLANS[k].tell}.${boon ? " The next attempt at it is rolled with advantage (the map applies it; do not apply it again)." : ""} This was private to ${fname(a)}: nobody else noticed more than a bowed head. Do not answer this and do not narrate the plan succeeding.`, false);
+}
+/** Is a beseeched boon waiting for this kind of attempt? Spends it. `plan`: "key" | "force" | "ward". */
+function beseechSpend(plan, by){
+  const b = state.beseech || {}, id = Object.keys(b).find(x => b[x] && b[x].boon && !b[x].used && b[x].plan === plan); if (!id || !penHeld()) return false;
+  state.beseech = Object.assign({}, b, {[id]: Object.assign({}, b[id], {used: true})}); saveWalk();
+  const asker = party.find(p => p.id === id);
+  log(`<em>What ${esc(asker ? fname(asker) : "someone")} was shown holds true:</em> ${esc(by ? fname(by) : "the attempt")} rolls with advantage.`);
+  return true;
+}
+function beseechRollPlan(action){ return Object.keys(BESEECH_ROLLS).find(k => BESEECH_ROLLS[k](action)) || null; }
+/** The party has rested: gods and patrons may be asked again. */
+function beseechRested(){ if (state.beseech && Object.keys(state.beseech).length){ state.beseech = {}; saveWalk(); exploreKey = ""; } }
 // Inspire (bard): Bardic Inspiration out of a fight; the die is spent by the map's own checks (useInspiration)
 function inspLeftOf(a){ a.c = a.c || fighterFor(a); return a.c.inspLeft ?? ((SHEETS[a.id] || {}).bardic || {}).uses ?? 0; }
 function openInspire(){
@@ -9577,6 +9632,7 @@ async function doRest(spend){
     j = {ok: true, interrupted: Math.random() < (r.chance || 0), minutes: 60, characters: []};
   }
   await wait(1400);
+  beseechRested();
   for (const p of party) setAnim(p, "idle");
   mode = "explore";
   if (j.interrupted){
