@@ -16,7 +16,7 @@
 
 import { listenerCharacterId } from "@/lib/rapport"
 import { useCallback, useEffect, useRef, useState } from "react"
-import { takeVoicedElsewhere } from "@/lib/voiced-elsewhere"
+import { takeOwedAloud, takeVoicedElsewhere } from "@/lib/voiced-elsewhere"
 import { Loader2, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { sanitizeForTTS, canSpeak, setDmVoiceEnabled, setNpcVoiceEnabled, setPlayerVoiceEnabled, setKnownPlayerNames } from "@/lib/tts"
@@ -418,13 +418,18 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
     }
 
     // A line the dashboard already said itself (a map opener) is not said again.
-    const unheard = voicedLines.filter((line) => fresh.has(line) && !takeVoicedElsewhere(line.speaker, line.text))
+    let unheard = voicedLines.filter((line) => fresh.has(line) && !takeVoicedElsewhere(line.speaker, line.text))
 
     if (!primedRef.current) {
       // Don't burn the priming pass on an empty first paint.
       if (seen.size === 0) return
       primedRef.current = true
-      return
+      // The first look is history and stays silent — except a line the dashboard
+      // says it OWES the room (lib/voiced-elsewhere.ts): what an NPC who called the
+      // player over says next, written a moment after the page opened (Sam,
+      // 2026-11-13: "There shouldn't really be a pause"). Only that line is spoken.
+      unheard = unheard.filter((line) => takeOwedAloud(line.speaker, line.text))
+      if (!unheard.length) return
     }
     if (!unheard.length) return
     // A Malachar turn is no longer one row. `app/api/chat/route.ts` splits it

@@ -19893,7 +19893,7 @@ async function npcOpening(npc){
       const res = await fetch("/api/npc-opener", {method: "POST", headers: {"Content-Type": "application/json"},
         body: JSON.stringify({npcName: nm, brief: BRIEF[npc.id] || nm, area: node.name, situation: npc.talkSituation || undefined, pc: {...pc, name: PLAYS_AS[leader.id] || pc.name}})});
       const r = await res.json();
-      if (r && typeof r.line === "string" && r.line.trim()) return {narration: String(r.narration || fallback.narration), line: r.line.trim(), lang: r.lang || null};
+      if (r && typeof r.line === "string" && r.line.trim()) return {narration: String(r.narration || fallback.narration), line: r.line.trim(), lang: r.lang || null, next: typeof r.next === "string" ? r.next.trim() : ""};
     } catch (e) {}
     return fallback;
   }
@@ -20142,6 +20142,7 @@ let talkQuiet = false;
 async function openTalk(npc, opts = {}){
   if (!npc || mode === "talk") return;
   talkQuiet = !!opts.quiet; $("talkNo").querySelector(".lbl").textContent = talkQuiet ? "Leave" : "Decline";
+  talkNext = null;
   mode = "talk"; party.forEach(p => { p.path = []; setAnim(p, "idle"); });
   stopActivity(npc); npc.path = []; npc.face = faceOf(leader.x - npc.x, leader.y - npc.y);
   const nm = SPR[npc.id].json.name;
@@ -20156,15 +20157,24 @@ async function openTalk(npc, opts = {}){
     $("talkLine").innerHTML = `<p class="narr">${esc(look.replace(/^\(|\)$/g, ""))}</p>`;
     return;
   }
-  const {narration, line, lang} = await npcOpening(npc);
+  const {narration, line, lang, next} = await npcOpening(npc);
   if (talkNpc !== npc || $("talk").hidden) return;
+  // NO PAUSE AFTER "A WORD" (Sam, 2026-11-13: an NPC who prompted the talk "should immediately followup with a question
+  // or statement after the bubble dialogue. There shouldn't really be a pause."). The opener route now writes what they
+  // say NEXT in the same breath; it rides to the dashboard as ?next= and is said the moment the page opens, instead of
+  // a fresh Malachar turn (measured 2026-11-13: 18 s from Talk to her next line). Its voice is rendered now, while the
+  // player reads the balloon, so the dashboard finds it already made (the audio cache). Someone YOU walked up to
+  // (quiet, above) still waits for you to speak first.
+  talkNext = next || null;
+  if (APP && voicesOn && talkNext && (!lang || lang === "Common") && !isRapport(npc.id))
+    fetch("/api/npc-tts", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text: talkNext, npcName: nm})}).catch(() => {});
   const heard = heardText(line, lang);                // what this seat hears; the real words still travel on to the dashboard
   $("talkLine").innerHTML = `<p class="narr">${esc(narration)}</p><p class="said">“${esc(heard)}”</p>${lang && lang !== "Common" ? `<p class="narr">— in ${esc(lang)}</p>` : ""}`;
   talkLang = lang || null;
   $("talkGo").href = talkUrl(npc, line);
   bark(npc, heard, 7000, {talk: true}); speak(npc.id, heard);
 }
-let talkNpc = null, talkLang = null;
+let talkNpc = null, talkLang = null, talkNext = null;
 // The game character each walker is (the dashboard plays as whoever is moving when the talk starts).
 // The canon heroes' names on their characters rows (Sam, 2026-10-25; lib/canon-heroes.ts). Matched exactly
 // against the seats, so this must change in the same breath as the rows do.
@@ -20187,6 +20197,7 @@ function talkUrl(npc, said){
   const q = new URLSearchParams({view: "full", from: "map", talk: SPR[npc.id].json.name, return: SANDBOX ? "/velkynvelve?sandbox=1" : "/velkynvelve", scene: SPEC[cur].img ? location.origin + PLATE_DIR + SPEC[cur].img : `${PLATES}img/${node.slug}.jpg`, area: node.name, as: PLAYS_AS[leader?.id] || ""});
   if (said) q.set("line", said.slice(0, 280));
   if (said && talkLang) q.set("lang", talkLang);     // the tongue it was said in; the dashboard renders it per seat
+  if (said && talkNext) q.set("next", talkNext.slice(0, 280));   // what they say next, already written: no wait on the far side
   if (SANDBOX) q.set("sandbox", "1");                 // a rehearsal stays a rehearsal on the far side
   return (APP ? "/?" : "https://ashes.playacartagena.com/?") + q.toString();
 }

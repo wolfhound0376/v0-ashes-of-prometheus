@@ -22,7 +22,7 @@ import { DmNarration } from "./dm-narration"
 import { speakBlob } from "@/lib/speech-queue"
 import { useSpeechFloor } from "@/lib/hooks/use-speech-floor"
 import { unlockSpeechAudio } from "@/lib/speech-playback"
-import { markVoicedElsewhere } from "@/lib/voiced-elsewhere"
+import { markOwedAloud, markVoicedElsewhere } from "@/lib/voiced-elsewhere"
 import { TimeStoppedBanner } from "./time-stop"
 import { canSpeak } from "@/lib/tts"
 import { PartyChat } from "./party-chat"
@@ -336,6 +336,8 @@ interface V4DashboardProps {
   talkOpening?: string | null
   /** Language the map opener was spoken in (?lang= from the walk map). */
   talkOpeningLang?: string | null
+  /** What that NPC says next, written with the opener (?next=). Said the moment the talk opens, no wait. */
+  talkOpeningNext?: string | null
   /** The DM has stopped time: the input is closed and a banner says so (components/dashboard/time-stop.tsx). */
   timeStopped?: boolean
   /** Who the NPC window is showing, as it changes: the one an unaddressed question is put to. */
@@ -672,7 +674,24 @@ export function V4Dashboard(props: V4DashboardProps) {
       ...(lang ? { speech_segments: [{ speaker: npc.name, line, npc_id: npc.id ?? null, voice_id: null, lang }] } : {}),
     })
       .then((res: { error: { message: string } | null }) => { if (res.error) console.error("[map talk] opener not logged:", res.error.message) })
-      .then(() => onOpenerAccepted?.(npc.name, line))
+      .then(async () => {
+        // NO PAUSE (Sam, 2026-11-13: an NPC who prompted the talk "should immediately followup with a question or
+        // statement after the bubble dialogue. There shouldn't really be a pause."). The follow-up used to be a
+        // fresh Malachar turn asked for here: 18 s on the live site before she said another word. It now arrives
+        // with the page (written alongside the opener by /api/npc-opener), so it goes straight into the shared log
+        // as her line and DM Narration says it at once, in her voice (marked owed, so the first look at the log
+        // does not swallow it). Malachar reads it in the log when the player answers. Without one (an older map
+        // page, a failed call) the Malachar turn is still asked for, as before.
+        const next = props.talkOpeningNext?.trim()
+        if (!next || next.toLowerCase() === line.toLowerCase()) return onOpenerAccepted?.(npc.name, line)
+        markOwedAloud(npc.name, next)
+        if (lang) markOwedAloud(npc.name, renderSpeechFor(next, lang, hearer).text)
+        const res: { error: { message: string } | null } = await createClient().from("dialogue").insert({
+          speaker: npc.name, speaker_type: "npc", channel: "dm", text: next,
+          ...(lang ? { speech_segments: [{ speaker: npc.name, line: next, npc_id: npc.id ?? null, voice_id: null, lang }] } : {}),
+        })
+        if (res.error) { console.error("[map talk] follow-up not logged:", res.error.message); onOpenerAccepted?.(npc.name, line) }
+      })
   }, [talkMode, props.talkOpening, talkPartner, onOpenerAccepted])
   const characterPortrait = selected?.portrait_image_url || selected?.avatar_image_url
   // Layer 2 — the POV character's own animated idle. Prefer the loop; fall back
