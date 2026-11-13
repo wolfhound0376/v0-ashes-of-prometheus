@@ -5611,6 +5611,97 @@ function caught(n, who, row){
 const PICKPOCKET_FT = 8;
 const CAUGHT_HOLD = 60000;   // ms the automatic guard reactions leave a caught thief to Malachar (house number: ten rounds)
 const caughtHeld = h => !!h && now < (h.caughtUntil || 0);
+// ---------- THE ROPE THROUGH THE BARS ----------
+// Sam, 2026-11-12: "Rope should be an option to strangle a nearby leaning guard." / "Successful strangling allows you to
+// also get the key but may alarm the other drow guards. If this happens the gate open and a combat module occurs in the
+// pen." / "rope comes from items you find in the beginning (silk rope). Guard end up dead lying near the gate."
+//   WHO, WHEN  A hero who is sneaking unseen, within a hand's reach of the guard leaning at the bars (the pickpocket's
+//              own mark), and CARRYING Silk rope (the five-foot strand some prisoners start with: lib/walk-loot SCAVENGE).
+//              No rope in hand, no row: the option is only offered when it can be done.
+//   THE HOLDS  5E has no strangling rule, so it is played as the grapple it is, three times over [HOUSE, proposed to Sam
+//              2026-11-12 and built on his go]: Strength (Athletics) against the drow's Acrobatics +2 taken as a passive
+//              12 (lib/walk-roll.ts "strangle:grab" / "strangle:hold"). The first is at advantage — his back is to the
+//              pen and he does not know. Three holds and he is dead; a failed one and he tears free and shouts.
+//   THE WATCH  After each hold every other guard on the gate rolls Perception (d20 + their passive - 10) against the
+//              strangler's own Stealth roll, the one the sneak is already standing on. One success and they have seen.
+//   SEEN       Sam's line and his outcome: the drow open the gate, come in, and the fight is in the pen.
+//   UNSEEN     He lies dead at the foot of the bars; the pen key on him is in the strangler's hand (the real row, by the
+//              same road as a picked pocket, so the shakedown's count starts as it would for a lifted key).
+function strangleMark(L, n){
+  return !!(L && n && cur === PEN && mode === "explore" && sneak && n.lean && n.lean.phase === "leaning" && n.atBars && !n.down && isGuard(n)
+    && !state.gateOpen && carries(L, SILK_ROPE));
+}
+const SILK_ROPE = "Silk rope", STRANGLE_HOLDS = 3;
+let strangling = false;
+async function strangleGuard(n){
+  const who = leader; if (strangling || !strangleMark(who, n)) return;
+  strangling = true; party.forEach(p => { p.path = []; }); tip.hidden = true;
+  const others = () => gateGuards().filter(g => g !== n && !g.lean), mod = heroMod(who, "athletics", "str");
+  const stealth = (() => { const x = sneak && sneak.rolls.find(r => r.p === who); return x && x.k ? +x.k.total || 10 : 10; })();
+  n.leanHold = now + 120000;                                        // he is not going back to his post on his own clock
+  try {
+    for (let hold = 1; hold <= STRANGLE_HOLDS; hold++){
+      const r = await rollOnDashboard(hold === 1 ? "strangle:grab" : "strangle:hold", mod, {advantage: hold === 1, who});
+      if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3600);
+        if (hold === 1){ n.leanHold = 0; return; }                  // never laid a hand on him: nothing happened
+        strangleBreaks(n, who, "lets go"); return; }                // let go mid-hold: he is free and has a voice
+      if (!r.success){ strangleBreaks(n, who, hold === 1 ? "misses" : "loses"); return; }
+      faceTo(who, n); popText(n, hold === 1 ? "the rope" : hold < STRANGLE_HOLDS ? "choking" : "still", "#ffb38a", 1); shake(2); bank("ui/nat1", .18);
+      log(hold === 1 ? `<b>${esc(fname(who))} loops the silk rope round ${esc(fname(n))}'s throat through the bars</b> and hauls back.`
+        : hold < STRANGLE_HOLDS ? `${esc(fname(n))} claws at the rope. ${esc(fname(who))} holds.` : `${esc(fname(n))} stops moving.`);
+      // the watch
+      const saw = others().find(g => d20(0, null) + (passiveOf(g) - 10) >= stealth);
+      if (saw){ if (hold === STRANGLE_HOLDS) strangleKills(n, who, false); strangleSeen(n, who, saw, hold === STRANGLE_HOLDS); return; }
+      await wait(900);
+      if (cur !== PEN || mode !== "explore" || !sneak){ return; }   // something else took the scene (a fight, a card, the labor call)
+    }
+    strangleKills(n, who, true);
+  } finally { strangling = false; exploreKey = ""; }
+}
+/** He is dead at the foot of the bars. `quiet`: nobody saw, and the key comes away in the strangler's hand. */
+async function strangleKills(n, who, quiet){
+  const k = n.lean && n.lean.keep; n.lean = null; n.strangled = true; n.atBars = true; n.static = true; n.patrol = null; n.path = []; n.hostile = false; n.alert = false;
+  if (k) n.fixedScale = k.fixedScale;
+  if (!n.c) n.c = fighterFor(n); n.c.hp = 0; n.killType = "strangled"; n.deathFx = {noPool: true}; fall(n);
+  state.strangled = {id: n.id, by: who.id, at: Date.now()}; saveWalk();
+  log(`<b>${esc(fname(n))} slides down the bars and lies still by the gate.</b>`, {say: true});
+  if (!quiet) return;
+  // the key: the real row from his pockets, taken the way a picked pocket is
+  let got = false;
+  try { const j = await fetchLoot(pocketId(n)), row = (j.rows || []).find(x => x.name === PEN_KEY && !x.missing); if (row) got = await takeLoot(who, pocketId(n), row); } catch (e) {}
+  if (got){ popText(who, "the key", "#9ad0ff", 1); log(`${esc(fname(who))} drags the pen key off the body through the bars. <em>Nobody on the bridge has turned.</em>`); offerEquip(); }
+  else log(`${esc(fname(who))} goes through what can be reached through the bars. <em>No key on this one.</em>`);
+  if (APP) handOff(`${fname(who)}, unseen, has strangled ${fname(n)} through the bars of the slave pen with a strand of silk rope. He lies dead at the foot of the gate, outside it${got ? `, and ${fname(who)} has taken the pen key off him` : ""}. No other drow has noticed yet. The body is in plain view of anyone who looks at the gate.`, true);
+}
+/** A hold failed: he tears free with his voice back. The sneak is over; the drow come in. */
+function strangleBreaks(n, who, how){
+  bank("ui/nat1", .5); popText(who, how === "misses" ? "missed!" : "he's loose!", "#ff6b5e", 1.2);
+  log(how === "misses" ? `<b>The rope slides off ${esc(fname(n))}'s shoulder.</b> He spins round.` : `<b>${esc(fname(n))} tears free of the rope</b>, gasping.`);
+  strangleSeen(n, who, n, false);
+}
+/** SEEN (Sam): "the gate open and a combat module occurs in the pen." The cry, the gate, the drow inside, the fight. */
+async function strangleSeen(n, who, saw, dead){
+  endSneak(); if (gateWarn) gateWarn = null; who.caughtUntil = 0;
+  const B = balcony(), guards = gateGuards().concat(dead || n.down ? [] : [n]).filter((g, i, a) => a.indexOf(g) === i);
+  if (n.lean && !n.down){ const k = n.lean.keep; n.lean = null; n.atBars = false; n.static = false; if (k){ n.patrol = k.patrol; n.fixedScale = k.fixedScale; } setAnim(n, "idle"); }
+  popText(saw, "!", "#ff6b5a", 1.4);
+  const line = dead ? "He is dead! The slaves have killed him! Open it — kill them!" : "The slave has a rope! Open it — kill them!";   // [HOUSE] placeholder lines, not book text
+  if (viewerUnderstands()) bark(saw, line, 4200, {talk: true, lang: "Elvish"}); else narrate(saw, `(${fname(saw)} shouts in Elvish. The others run for the gate.)`);
+  if (APP) handOff(`${fname(who)} tried to strangle ${fname(n)} through the bars of the slave pen with a strand of silk rope${dead ? " and killed him" : ", and he got free"}. ${fname(saw)} saw it. The drow are opening the gate and coming into the pen to kill.`, true);
+  mode = "dialog"; await wait(1100);
+  // the drow open their own gate (not a prisoner's hand: no breakout card) and come in
+  if (!state.gateOpen){ state.gateOpen = true; state.doorShut = false; reportSituation({event: "gate_open"}); }
+  state.doorShut = false; setDoor(true); sfx("door-open", .9); if (balcony()) buildGrid();
+  log("<b>The key turns from outside and the gate crashes open.</b>", {say: true});
+  await wait(700);
+  if (B){ const placed = party.map(p => ({x: p.x, y: p.y}));
+    guards.forEach((g, i) => { if (g.down) return; const q = nearestWalkable(B.inside[0] + (i % 2 ? 46 : -34), B.inside[1] + 26 + 22 * Math.floor(i / 2), placed); placed.push(q);
+      g.path = []; g.static = false; g.patrol = null; g.fixedScale = 0; g.big = 1; g.x = q.x; g.y = q.y; g.alpha = 0; g.fading = false; g.fadeIn = true; g.atBars = false; g.hostile = true; faceTo(g, who); }); }
+  await wait(500);
+  mode = "explore";
+  const live = guards.filter(g => !g.down && actors.includes(g));
+  if (live.length) startCombat(live, dead ? "the drow come in over their dead" : "the drow come in for the strangler");
+}
 function pickpocketMark(L){
   if (!L || !sneak || mode !== "explore" || !sneak.rolls.some(x => x.p === L)) return null;
   const reach = PICKPOCKET_FT * ruleFt(L);
@@ -5937,7 +6028,7 @@ function rollOnDashboard(action, localMod, opts = {}){
   // 5e: advantage and disadvantage cancel. lib/walk-roll.ts settles it again on the other side; this keeps the
   // preview's own die honest too.
   const edge = (opts.advantage ? 1 : 0) + (opts.disadvantage ? -1 : 0);
-  if (!APP || window.parent === window){ const dc = LOCAL_DC[action] ?? +((/^pickpocket:pp(\d+)$/.exec(action) || [])[1] || 20), r = d20(edge, opts.who || leader, null, dc - (localMod || 0)), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= dc, total, natural: r}); }
+  if (!APP || window.parent === window){ const dc = LOCAL_DC[action] ?? +((/^pickpocket:pp(\d+)$/.exec(action) || [])[1] || (/^strangle:/.test(action) ? 12 : 20)), r = d20(edge, opts.who || leader, null, dc - (localMod || 0)), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= dc, total, natural: r}); }
   const id = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   let characterId = null; try { characterId = myClaimId || characterIdOf(leader.id) || null; } catch (e) {}
   return new Promise(res => {
@@ -6291,7 +6382,10 @@ function gateLeftUnlockedTick(){
 // landing while still hidden, the rope bridge runs straight to the Guard Tower under the watch's eyes; the cliff stairs
 // go down out of their sight. So while the sneak holds, the bridge is refused (and says why) and the stairs are the way.
 const QUAGGOTH_DEN = 12;
-function unseenWayOnly(){ return cur === PEN && !!sneak && !(sneak.seenBy && sneak.seenBy.size) && gateGuards().length > 0; }
+// (`sneak.seenBy` is not "who has seen them": a watcher is added on its first LOOK, beaten or not, and a hero who is
+// actually spotted has no sneak left at all — sneakSpotted ends it. So a live sneak is the whole test. The first cut,
+// PR #1316, read seenBy as "spotted" and gave the bridge back as soon as any guard had glanced their way.)
+function unseenWayOnly(){ return cur === PEN && !!sneak && gateGuards().length > 0; }
 function openGate(){
   if (state.gateOpen) return;
   const j = cur === 11 && mode === "explore" ? npcs.find(n => n.id === "jorlan" && !n.offStage) : null;
@@ -9244,6 +9338,7 @@ function exploreExtras(m, o, add, who){
   const x = (label, glyph, icon, sub, fn, cls2) => { const b = add(label, glyph, icon, sub, fn, cls2); return b; };
   if (sneak) x(sneak.scout ? "Stop scouting" : "Stop sneaking", "◐", ART("sneak", "hide"), `Stealth ${sneak.line} · walk out of their sight`, () => endSneak("You stop moving quietly."), "on");
   else x("Sneak", "◐", ART("sneak", "hide"), `Stealth ${sgn(heroMod(L, "stealth", "dex"))} vs their passive Perception`, () => startSneak(false));
+  if (o.mark && strangleMark(L, o.mark)) x(`Strangle ${fname(o.mark)} with the silk rope`, "➰", ART("grapple", "attack"), `Athletics ${sgn(heroMod(L, "athletics", "str"))} · through the bars, three holds`, () => strangleGuard(o.mark), "danger");
   if (o.mark) x(`Pick ${fname(o.mark)}'s pocket`, "✋", ART("pickpocket", "search"), `Sleight of Hand ${sgn(heroMod(L, "sleightOfHand", "dex"))} vs their passive Perception`, () => openPickpocket(o.mark));
   x("Search", "⌕", ART("search-here", "search"), `Perception ${sgn(heroMod(L, "perception", "wis"))} · the DM says what turns up`, () => searchHere());
   if (exNear) x(`Listen at ${exitName(exNear)}`, "◖", ART("listen"), `Perception ${sgn(heroMod(L, "perception", "wis"))} · what is beyond`, () => listenAt(exNear));
@@ -17434,7 +17529,7 @@ function leanDone(n){
 /** Where in the depth order the bars go: just in front of the guard leaning at them, or null. */
 function gateBarsY(){
   if (!GATE_BARS.want || !GATE_BARS.img || !GATE_BARS.img.complete || !GATE_BARS.img.naturalWidth || door.k > 0) return null;
-  const n = npcs.find(m => m.lean && m.atBars); return n ? n.y + .5 : null;
+  const n = npcs.find(m => (m.lean || m.strangled) && m.atBars); return n ? n.y + .5 : null;
 }
 function drawGateBars(){
   const [x, y, w, h] = GATE_BARS.box;

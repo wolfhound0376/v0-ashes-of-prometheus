@@ -184,6 +184,31 @@ const fightNow = (pg) => pg.evaluate(() => ({ plate: String(cur), mode, closeUp:
   alliesInPen: npcs.filter((n) => ALLY_SHEETS[n.id] && actors.includes(n) && !n.offStage).map((n) => [n.id, outsidePen(n)]),
   foes: foes.map((f) => [f.id, !!(f.c && (f.c.surprised || f.c.conds.has("surprised")))]), order: cbt ? cbt.order.length : 0 }))
 
+// a guard leaning at the bars, the hero beside him and hidden, first empty-handed (`without`), then with the rope. The dice answer as
+// told: the hero's holds from `rolls`, every die the watch throws shows `watch`. The strangle starts in the same breath, so
+// the game's own clocks (the lean's, the world's beat) cannot move the pieces between the set-up and the act.
+const ropeScene = (pg, o) => pg.evaluate((o) => {
+  state.wardBroken = true; for (const n of npcs) n.talk = false
+  window.__asked = []; window.__handoffs = []; let i = 0
+  rollOnDashboard = (action, mod, q = {}) => { __asked.push([action, !!q.advantage]); const ok = o.rolls[i++]; return Promise.resolve({ ok: true, success: !!ok, total: ok ? 25 : 2 }) }
+  d20 = () => o.watch
+  handOff = (t) => { __handoffs.push(String(t)) }
+  fetchLoot = async () => ({ rows: [{ name: PEN_KEY }] }); takeLoot = async (a, id, row) => { if (row.name === PEN_KEY) state.penKey = true; return true }; offerEquip = () => {}
+  const B = balcony(), S = LEAN.spot
+  let g = npcs.find((m) => m.lean)
+  if (!g) { g = gateGuards()[0]; leanStart(g) }
+  if (g.lean.phase !== "leaning") { g.path = []; g.x = S.x; g.y = S.y; g.big = S.s; g.alpha = 1; g.fading = false; const cb = g.onArrive; g.onArrive = null; cb && cb() }
+  const L = leader, q = nearestWalkable(B.inside[0], B.inside[1]); L.x = q.x; L.y = q.y; L.path = []
+  sneak = { scout: false, cur, rolls: [{ p: L, k: { total: o.stealth } }], seenBy: new Set(), line: String(o.stealth) }
+  gateWarn = null; exploreKey = ""
+  const G = GEAR[L.id] || (GEAR[L.id] = { carried: [] }); G.carried = (G.carried || []).filter((c) => c.name !== "Silk rope")
+  const bare = pickpocketMark(L), without = !!(bare && strangleMark(L, bare))                    // empty-handed first
+  G.carried.push({ name: "Silk rope", qty: 1 })
+  const mark = pickpocketMark(L), offered = !!(mark && strangleMark(L, mark))
+  if (offered) strangleGuard(mark)
+  return { offered, without, mark: mark && mark.id, lean: g.lean && g.lean.phase, d: Math.round(Math.hypot(g.x - L.x, g.y - L.y)), rope: carries(L, "Silk rope") }
+}, o)
+
 const SCENARIOS = {
   11: ["the door card: a quiet opening, the heroes go through, the fight opens on the landing with the drow surprised", async (port) => {
     const W = await world({ port, seats: [FIFI, KENTA] }), A = await W.screen(FIFI, "Fifi")
@@ -265,13 +290,15 @@ const SCENARIOS = {
         const bridge = node.zones.find((z) => z.landing && z.to.includes(10)), stairs = node.zones.find((z) => z.landing && z.to.includes(12))
         sneak = { scout: leader, cur, rolls: [], seenBy: new Set(), line: "15" }
         const only = unseenWayOnly(); triggerZone(bridge); const afterBridge = went.slice(); triggerZone(stairs); const afterStairs = went.slice()
-        sneak.seenBy.add(gateGuards()[0]); const seen = unseenWayOnly(); triggerZone(bridge); const afterSeen = went.slice()
-        sneak = null; whoGoes = w0
-        return { only, afterBridge, afterStairs, seen, afterSeen, toasts: __toasts }
+        sneak.seenBy.add(gateGuards()[0]); const looked = unseenWayOnly(); triggerZone(bridge); const afterLook = went.slice()   // a guard looked their way and did not spot them
+        sneak = null; const seen = unseenWayOnly(); triggerZone(bridge); const afterSeen = went.slice()                              // spotted: the sneak is over
+        whoGoes = w0
+        return { only, afterBridge, afterStairs, looked, afterLook, seen, afterSeen, toasts: __toasts }
       })
       check("unseen: the bridge is refused and says why", r.only === true && r.afterBridge.length === 0 && r.toasts.some((t) => /cliff stairs/.test(t)), r)
       check("unseen: the cliff stairs take the party down", r.afterStairs.length === 1 && r.afterStairs[0] === 12, r)
-      check("once a guard has seen them the bridge is a way again", r.seen === false && r.afterSeen.length === 2 && r.afterSeen[1] === 10, r)
+      check("a guard who only looked their way changes nothing: still the stairs only", r.looked === true && r.afterLook.length === 1, r)
+      check("once they are spotted (the sneak is over) the bridge is a way again", r.seen === false && r.afterSeen.length === 2 && r.afterSeen[1] === 10, r)
     } finally { await W.close() }
   }],
   10: ["the pen gate: walking out through it mid-fight, and being told when you cannot make it", async (port) => {
@@ -431,6 +458,45 @@ const SCENARIOS = {
         check(`Follow ${follow ? "ON: the whole party crosses" : "OFF: the leader crosses alone"}`, over && n === 2 && s.plate === "10" && s.party.length === (follow ? 2 : 1) && s.moves.length === 1 && !s.moves[0].fightLive, { over, n, ...s })
       } finally { await W.close() }
     }
+  }],
+  // THE ROPE THROUGH THE BARS (Sam, 2026-11-12: "Rope should be an option to strangle a nearby leaning guard")
+  18: ["the rope: unseen, three holds, the guard lies dead by the gate and the key comes away", async (port) => {
+    const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
+    try {
+      await wait(2500)
+      const s = await ropeScene(A, { stealth: 40, rolls: [true, true, true], watch: 1 })
+      check("without silk rope in hand the row is not offered", s.without === false && s.lean === "leaning", s)
+      check("with the rope, sneaking, beside the leaning guard: the row is offered", s.offered === true, s)
+      await until(A, () => !strangling && npcs.some((m) => m.strangled), 20000); await wait(1500)
+      const r = await A.evaluate(() => { const n = npcs.find((m) => m.strangled); return { dead: !!(n && n.down), atBars: !!(n && n.atBars), mode, fight: !!cbt, gateOpen: !!state.gateOpen, key: !!state.penKey, sneaking: !!sneak, asked: __asked.slice(), told: __handoffs.length, stillGuard: gateGuards().some((g) => g === n) } })
+      await shot(A, "18-dead-by-the-gate")
+      check("three holds were rolled: the grab at advantage, then two plain", r.asked.length === 3 && r.asked[0][0] === "strangle:grab" && r.asked[0][1] === true && r.asked[1][0] === "strangle:hold" && r.asked[1][1] === false, r.asked)
+      check("he is dead at the bars and no longer counts as a guard on the gate", r.dead && r.atBars && !r.stillGuard, r)
+      check("nobody saw: no fight, the gate still shut, the hero still hidden", r.mode === "explore" && !r.fight && !r.gateOpen && r.sneaking, r)
+      check("the key is in the strangler's hand, and Malachar is told once", r.key && r.told === 1, r)
+    } finally { await W.close() }
+  }],
+  19: ["the rope: the watch sees it — the gate opens, the drow come in, the fight is in the pen", async (port) => {
+    const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
+    try {
+      await wait(2500)
+      const s = await ropeScene(A, { stealth: 15, rolls: [true, true, true], watch: 20 })
+      check("the fight starts", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 20000), s)
+      const r = await A.evaluate(() => ({ plate: String(cur), gateOpen: !!state.gateOpen && !state.doorShut, asked: __asked.length, foes: foes.map((f) => [f.id, outsidePen(f), !!f.down]), heroIn: party.every((p) => !outsidePen(p)), sneaking: !!sneak }))
+      await shot(A, "19-the-drow-come-in")
+      check("seen on the first hold: one roll, the gate open, the sneak over", r.asked === 1 && r.gateOpen && !r.sneaking, r)
+      check("every drow in the fight is inside the pen, the leaning guard alive among them, the hero too", r.plate === "11" && r.foes.length >= 2 && r.foes.every((f) => !f[1] && !f[2]) && r.heroIn, r)
+    } finally { await W.close() }
+  }],
+  20: ["the rope: a failed hold — he tears free and it is the same fight", async (port) => {
+    const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
+    try {
+      await wait(2500)
+      const s = await ropeScene(A, { stealth: 40, rolls: [true, false], watch: 1 })
+      check("the fight starts", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 20000), s)
+      const r = await A.evaluate(() => ({ asked: __asked.length, dead: npcs.some((m) => m.strangled), foes: foes.map((f) => [f.id, outsidePen(f)]), gateOpen: !!state.gateOpen }))
+      check("two rolls, nobody dead, the gate open and the drow inside", r.asked === 2 && !r.dead && r.gateOpen && r.foes.length >= 2 && r.foes.every((f) => !f[1]), r)
+    } finally { await W.close() }
   }],
   17: ["nobody comes through a shut gate: a prisoner on her way out when it closes stays in the pen", async (port) => {
     // Sam, 2026-11-12: "how did Eldeth jump through a closed door"

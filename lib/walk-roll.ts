@@ -102,6 +102,12 @@ const BOOK_ACTIONS = {
   "ilvara-chest:disarm": { title: "Disarm the needle", label: "Disarming the poison needle in Ilvara's chest", check: THIEVES_TOOLS, dc: 15, source: "OotA ch.1 area 7" },
   "ilvara-chest:pick": { title: "Pick the lock", label: "Picking the lock of Ilvara's chest", check: THIEVES_TOOLS, dc: 15, source: "OotA ch.1 area 7" },
   "lift:spool": { title: "Turn the spool", label: "Turning the lift's spool", check: STRENGTH, dc: 18, source: "OotA ch.1 area 5" },
+  // THE ROPE THROUGH THE BARS (Sam, 2026-11-12: "Rope should be an option to strangle a nearby leaning guard"). 5E has no
+  // strangling rule, so each hold is the grapple it is: Strength (Athletics) against the drow's Dexterity (Acrobatics) +2
+  // (SRD drow, Dex 14), taken as a passive 12 because the map rolls one die, the hero's. [HOUSE] The map grants advantage
+  // on the grab (his back is turned) and tells Malachar the outcome itself.
+  "strangle:grab": { title: "Throw the rope", label: "Looping a rope round a guard's throat through the bars", check: ATHLETICS, dc: 12, source: "house: grapple vs drow Acrobatics +2 as passive 12", mapNarrates: true },
+  "strangle:hold": { title: "Hold the rope", label: "Holding a strangling rope", check: ATHLETICS, dc: 12, source: "house: grapple vs drow Acrobatics +2 as passive 12", mapNarrates: true },
 } as const satisfies Record<string, WalkAction>
 
 // PICKPOCKETING WHILE UNSEEN (Sam, 2026-10-27: "pick pocket should be an option when sneaking and near a character.
