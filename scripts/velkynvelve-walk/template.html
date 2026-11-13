@@ -2632,6 +2632,12 @@ const LIGHT_LEVELS = {off: 0, dim: .38, dark: .62};
 let lightLevel = "dim"; try { const v = localStorage.getItem("aop_walk_light"); if (v && v in LIGHT_LEVELS) lightLevel = v; } catch (e) {}
 const lightFlashes = [];                                    // {x, y, r, col:[r,g,b], t0, ms}
 const LC = document.createElement("canvas"), lcx = LC.getContext("2d");
+// THE GLOW DOES NOT STACK (Sam, 2026-11-13: "The main hall is too bright"). Each lamp's colour used to be ADDED straight
+// onto the scene, figures included, so a plate with many big lamps close together (the Main Hall: 40, every torch and
+// every table brazier) summed to +0.57 orange on average and past 1.0 in places: the floor burned out and the drow and
+// quaggoths went white. The glows are now gathered on their own layer where overlapping light takes the BRIGHTER of
+// the two (how light pools read in a painting), then added once. A lone lamp looks exactly as before.
+const GC = document.createElement("canvas"), gcx = GC.getContext("2d");
 function hexRgb(h){ h = String(h || "#ffffff").replace("#", ""); if (h.length === 3) h = h.split("").map(c => c + c).join(""); const n = parseInt(h, 16); return isFinite(n) ? [(n >> 16) & 255, (n >> 8) & 255, n & 255] : [255, 255, 255]; }
 function lightFlash(x, y, col, r = 300, ms = 520){ if (lightLevel === "off") return; lightFlashes.push({x, y, r, col: Array.isArray(col) ? col : hexRgb(col), t0: now, ms}); if (lightFlashes.length > 24) lightFlashes.shift(); }
 function plateLights(){
@@ -2654,9 +2660,15 @@ function drawLight(){
   lcx.setTransform(m.a / 2, m.b / 2, m.c / 2, m.d / 2, m.e / 2, m.f / 2); lcx.globalCompositeOperation = "destination-out";
   for (const l of lights){ const g = lcx.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.r); g.addColorStop(0, `rgba(0,0,0,${l.a})`); g.addColorStop(.35, `rgba(0,0,0,${l.a * .8})`); g.addColorStop(.7, `rgba(0,0,0,${l.a * .3})`); g.addColorStop(1, "rgba(0,0,0,0)"); lcx.fillStyle = g; lcx.fillRect(l.x - l.r, l.y - l.r, l.r * 2, l.r * 2); }
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = true; ctx.drawImage(LC, 0, 0, cv.width, cv.height); ctx.restore();
-  ctx.save(); ctx.globalCompositeOperation = "lighter";      // the colour of each light, laid on top in plate space
-  for (const l of lights){ if (!l.glow) continue; const g = ctx.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.r * .8); g.addColorStop(0, `rgba(${l.col[0]},${l.col[1]},${l.col[2]},${l.glow * l.a})`); g.addColorStop(1, `rgba(${l.col[0]},${l.col[1]},${l.col[2]},0)`); ctx.fillStyle = g; ctx.fillRect(l.x - l.r, l.y - l.r, l.r * 2, l.r * 2); }
-  ctx.restore(); ctx.imageSmoothingEnabled = false;
+  // the colour of each light: gathered on GC (black, "lighten" = the brighter wins), then added on top once
+  if (GC.width !== W || GC.height !== H){ GC.width = W; GC.height = H; }
+  gcx.setTransform(1, 0, 0, 1, 0, 0); gcx.globalCompositeOperation = "source-over"; gcx.fillStyle = "#000"; gcx.fillRect(0, 0, W, H);
+  gcx.setTransform(m.a / 2, m.b / 2, m.c / 2, m.d / 2, m.e / 2, m.f / 2); gcx.globalCompositeOperation = "lighten";
+  let anyGlow = false;
+  for (const l of lights){ if (!l.glow) continue; anyGlow = true; const k = l.glow * l.a, g = gcx.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.r * .8);
+    g.addColorStop(0, `rgb(${Math.round(l.col[0] * k)},${Math.round(l.col[1] * k)},${Math.round(l.col[2] * k)})`); g.addColorStop(1, "#000"); gcx.fillStyle = g; gcx.fillRect(l.x - l.r, l.y - l.r, l.r * 2, l.r * 2); }
+  if (anyGlow){ ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = "lighter"; ctx.imageSmoothingEnabled = true; ctx.drawImage(GC, 0, 0, cv.width, cv.height); ctx.restore(); }
+  ctx.imageSmoothingEnabled = false;
 }
 // human-scale iron chains and manacles, drawn on the floor under everyone (a link is ~5 px; a cuff ~14 px across, wrist size)
 function drawChain(c){
