@@ -94,6 +94,24 @@ const SLOT_ALIASES: Record<string, string> = {
   gauntlets: "hands",
   feet: "legs",
   boots: "legs",
+  // Spellings found on real inventory rows (2026-11-13: 11 rows "mainhand", 2 Leather Armor rows "armor"). Mirrored in
+  // scripts/velkynvelve-walk/template.html SLOT_ALIAS.
+  mainhand: "main_hand",
+  "main hand": "main_hand",
+  "main-hand": "main_hand",
+  weapon: "main_hand",
+  offhand: "off_hand",
+  "off hand": "off_hand",
+  "off-hand": "off_hand",
+  shield: "off_hand",
+  armor: "torso",
+  armour: "torso",
+  body: "torso",
+  chest: "torso",
+  helmet: "head",
+  helm: "head",
+  amulet: "neck",
+  necklace: "neck",
 }
 
 export function normalizeSlot(slot: string | null | undefined): string {
@@ -170,7 +188,9 @@ export function canEquip(opts: {
   slot: string
   doll: EquippedRow[]
 }): EquipVerdict {
-  const allowed = normalizeSlot(opts.item.equippable_slot ?? opts.item.items?.equippable_slot)
+  // The catalogue is canon and wins; the inventory row's own copy is a fallback (Sam, 2026-11-13: Leather Armor rows
+  // written as "armor" could not be worn because the row was read first).
+  const allowed = normalizeSlot(opts.item.items?.equippable_slot || opts.item.equippable_slot)
   if (!allowed) return { ok: false, reason: `${opts.item.name} is not something you can wear or hold.` }
   const offHand = normalizeSlot(opts.slot) === "off_hand" && allowed === "main_hand" && offHandWeapon(opts.item)
   if (!offHand && !slotAccepts(allowed, opts.slot)) {

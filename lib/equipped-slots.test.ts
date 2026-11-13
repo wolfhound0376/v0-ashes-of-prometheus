@@ -104,3 +104,26 @@ describe("a one-handed weapon in the off hand (two-weapon fighting)", () => {
     expect(canEquip({ item: { name: "Wand", equippable_slot: "main_hand", items: { item_type: "focus" } }, slot: "off_hand", doll: [] }).ok).toBe(false)
   })
 })
+
+// Sam, 2026-11-13: "not able to put on leather armor in inventory and some other items". Live rows carried stale slot
+// spellings ("armor" on two Leather Armor rows, "mainhand" on eleven weapons); the catalogue is canon and wins.
+describe("stale row slots (2026-11-13)", () => {
+  it("normalises the spellings found on real rows", () => {
+    expect(normalizeSlot("armor")).toBe("torso")
+    expect(normalizeSlot("mainhand")).toBe("main_hand")
+    expect(normalizeSlot("Off Hand")).toBe("off_hand")
+    expect(normalizeSlot("shield")).toBe("off_hand")
+  })
+  it("wears Leather Armor whose row says armor and whose catalogue says torso", () => {
+    const item = { name: "Leather Armor", equippable_slot: "armor", item_type: "armor", items: { equippable_slot: "torso", item_type: "armor" } }
+    expect(canEquip({ item, slot: "torso", doll: [] })).toEqual({ ok: true, slot: "torso", replacing: null })
+  })
+  it("lets the catalogue win over a wrong row slot", () => {
+    const item = { name: "Leather Armor", equippable_slot: "head", items: { equippable_slot: "torso" } }
+    expect(canEquip({ item, slot: "torso", doll: [] }).ok).toBe(true)
+  })
+  it("holds a sword whose row says mainhand", () => {
+    const item = { name: "Shortsword", equippable_slot: "mainhand", item_type: "weapon", items: { equippable_slot: "main_hand", item_type: "weapon" } }
+    expect(canEquip({ item, slot: "main_hand", doll: [] }).ok).toBe(true)
+  })
+})
