@@ -1550,6 +1550,9 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
   // yes is its own key, "waitYes:<hero>", so two screens agreeing at once cannot overwrite each other). drowArgue /
   // sarithMutter: {at} once the beat has played. jorlanLead: the argument was understood. planAsked / plan: Eldeth's
   // question and the table's answer. caravanCalled: the clock ran out and the moment went to Malachar.
+  // THE BATTLE SCREEN: the fight being played on a battle plate {id, from, plate, by, at, heroes, allies, foes, surprised,
+  // opener, label, split, over?, won?}. gateWatchDown: the pen's gate watch died on it {rot}: gone until the watch changes.
+  battle: null, gateWatchDown: null,
   doorCall: null,   // THE DOOR, SNEAKING: a hero's open call to the other heroes {id, by, kind, at, done?, out?, goers?}; answers are "doorAns:<hero>"
   waitVote: null, drowArgue: null, sarithMutter: null, jorlanLead: false, planAsked: null, plan: null, caravanCalled: false, chainMarch: null,
   // MANACLES (Sam, 2026-10-30, looking at the pen gate card: "This should show disadvantaged because of
@@ -3309,6 +3312,10 @@ function watchPost(n){
 }
 async function enterNode(n, opts = {}){
   const from = cur, fromScale = node.scale;
+  // THE BATTLE SCREEN: however this screen got sent to the battle plate (its own cut, or following the party's plate), it
+  // arrives as the fight has it: the fighters only, at the plate's arrival spot
+  const BJ = battleArriving(from, n);
+  if (BJ){ const at = SPEC[n].arrive; opts = {...opts, battle: BJ, ...(opts.spawn || !at ? {} : {spawn: {x: at[0], y: at[1]}}), ...(opts.offs ? {} : {offs: battleOffs(BJ)})}; }
   // a splinter's arrival (SPLIT PARTY), or any arrival by a group that is not on the world's plate, leaves the world's plate alone
   soloEntry = !!opts.solo || (OW.on && booted && OW.plate != null && !owSame(from, OW.plate) && !owSame(n, OW.plate));
   // the freed prisoners come out of the pen with the party, and a companion who fell stays where they fell
@@ -3320,7 +3327,8 @@ async function enterNode(n, opts = {}){
     // asked who: the prisoners. A party that slips out under Sneak leaves them in the pen (a dozen captives in tow is no
     // sneak); they stay there, still freed, and come along the next time the party leaves the pen openly.
     if (from === PEN && n !== PEN){
-      if (laborLive()) joined = laborJoins();
+      if (opts.battle) joined = battleAllies(opts.battle);   // THE BATTLE SCREEN: only the prisoners who were taken to the fight
+      else if (laborLive()) joined = laborJoins();
       else if (doorTakesPrisoners) joined = prisonersJoin();   // THE DOOR, SNEAKING: "take everyone" was the hero's own answer
       else if (sneak){ const left = PEN_NPCS.filter(d => npcs.some(x => x.id === d.id && !x.down && !x.body && !x.offStage && !companyNow().includes(d.id))).length;
         if (left) log(`The other prisoners stay in the pen. ${left > 1 ? "They" : "Whoever is left"} would never keep quiet behind you.`); }
@@ -3349,6 +3357,8 @@ async function enterNode(n, opts = {}){
     spawn = nearestWalkable(zc.x + entryDir.x * 210 * node.scale, zc.y + entryDir.y * 210 * node.scale);
     if (zoneAt(spawn.x, spawn.y)) spawn = nearestWalkable(zc.x + entryDir.x * 300, zc.y + entryDir.y * 300);
   } else if (opts.spawn){ spawn = nearestWalkable(opts.spawn.x, opts.spawn.y); }
+  // back from a battle plate onto the plate it stands for: at the pen, just inside the gate they went out by
+  else if (opts.from != null && SPEC[opts.from] && String(SPEC[opts.from].stands_for) === String(n) && balcony()){ const B = balcony(); spawn = nearestWalkable(B.inside[0], B.inside[1] + 30); }
   else spawn = nearestWalkable(centroid.x, centroid.y);
   // formation: keep how the party stood when they left, turned to face the new way in
   // a hero split off on a third plate is not swept along by a jump or an arrival (SPLIT PARTY)
@@ -3394,6 +3404,7 @@ async function enterNode(n, opts = {}){
     { const fk = MIND_RANK[np.id] ? np.id : np.hostile ? `${n}-post-${Math.round(np.x)}-${Math.round(np.y)}` : null;
       if (fk && state.fledFrom && state.fledFrom[fk]) continue; }   // ran from a fight: not at the old spot any more (refugeesHere)
     if (np.hostile && state.cleared[n]) continue;
+    if (n === PEN && /^drow-guard/.test(np.id) && gateWatchAway()) continue;   // THE BATTLE SCREEN: the gate watch is out on the battle plate, or dead on it until the next watch
     if (compAll.includes(np.id)) continue;              // a companion walks with the party, not at their old spot
     if (np.id === surgeonDeadId()) continue;            // shot dead at the gate (The Drow Surgeon) and thrown over the falls
     if (!SPR[np.id]) continue;                          // no sprite baked for them yet: the record stays, the plate shows nobody
@@ -3448,7 +3459,8 @@ async function enterNode(n, opts = {}){
   $("areaNo").textContent = n; $("areaName").textContent = node.name; $("jump").value = n;
   renderParty();
   $("fade").classList.remove("on");
-  $("tcNo").textContent = `Area ${n}`; $("tcName").textContent = node.name;
+  $("tcNo").textContent = `Area ${SPEC[n].stands_for != null ? SPEC[n].stands_for : n}`;   // a battle plate is the area it is a bigger picture of
+  $("tcName").textContent = node.name;
   $("titlecard").classList.add("on"); clearTimeout(enterNode.t); enterNode.t = setTimeout(() => $("titlecard").classList.remove("on"), 1900);
   mode = "explore"; exploreForPlate(); setTrack("explore");
   if (opts.note) log(opts.note);
@@ -6215,6 +6227,11 @@ async function goThroughGate(w, guards, o = {}){
     // 3. dark, and out on the landing
     $("fade").classList.add("quick", "on"); await wait(320);
     if (cur !== PEN){ return; }
+    // THE BATTLE SCREEN (Sam, 2026-11-13): the fight is not on this plate any more. The ones who go are set down on the
+    // landing's own battle plate; the pen, its doorway and whoever stayed are left behind.
+    if (live.length && battlePlateOf(cur)){ if (sneak) endSneak(); mode = "explore";
+      await battleBegin(live, o.label || "the breakout at the pen gate", {heroes, noAllies: !o.everyone, surprised: o.surprised ? live.slice() : null, opener: o.opener || null});
+      return; }
     const fc = live.length ? live.reduce((s, d) => ({x: s.x + d.x / live.length, y: s.y + d.y / live.length}), {x: 0, y: 0}) : {x: B.landing[0] - 100, y: B.landing[1] - 60};
     const sc = node.scale || 1, placed = live.map(d => ({x: d.x, y: d.y}));
     goers.forEach((a, i) => {
@@ -6232,6 +6249,139 @@ async function goThroughGate(w, guards, o = {}){
     gateGoing = false; if (mode === "dialog" && $("obj").hidden) mode = "explore";
     $("fade").classList.remove("on"); setTimeout(() => $("fade").classList.remove("quick"), 400);
   }
+}
+// ---------- THE BATTLE SCREEN ----------
+// Sam, 2026-11-13, on a pen fight where an ally had walked out through the open gate in his turn: "I thought we weren't
+// going through the door directly any further." -> "This is why we need to have a separate battle screen for now. This
+// is a bit complicated, so lets simplify it." -> a new larger plate for the pen gate ("C is good"), every Velkynvelve
+// fight in time, "loot on the battle screen first" -> "go" on: a hero who stays is not in the fight and may join later;
+// the gate watch that dies there is gone from the pen until the next watch; reinforcements come in from the far ledge.
+//   WHICH FIGHTS  A plate may have a battle plate (spec.py BATTLE_PLATES, `stands_for`). Today only the pen has one, and
+//                 the fights that go to it are the ones with the gate watch OUT ON THE LANDING: the door card, the
+//                 ambush, caught slipping past, attacking a guard, a guard spotting someone outside. A fight INSIDE the
+//                 pen (the drow coming in, the thing out of Buppido's grave) stays in the pen. A plate with no battle
+//                 plate fights where it stands, as before.
+//   THE CUT       fade; the ones who fight are set down on the battle plate (enterNode); the watch stands at the
+//                 plate's `foes_at`; initiative. Nobody walks a doorway. The shared `state.battle` tells every screen:
+//                 a hero who goes is cut there by their own screen, a hero who stays is left where they stand.
+//   WHO           the heroes who chose to go (the door card's answer; otherwise every hero on the plate) and the
+//                 prisoners who were taken. Everyone going: it is the party's move. Someone staying: the fighters are a
+//                 split-off group (SPLIT PARTY) and the party's plate stays the pen.
+//   JOIN LATER    a hero who stayed has "Join the fight on the landing" on the bar while it lasts: their screen cuts
+//                 them there and the fight takes them in from the next round (joinFight, the late hero's rule).
+//   NO DOORS      a live fight holds its plate (fightHoldsPlate), so the battle plate's ways out are for afterwards, and
+//                 for Flee.
+//   HOW IT ENDS   on the battle plate. The dead lie there to be searched (Sam: "loot on the battle screen first"); the
+//                 party leaves by a way out. Won: the pen's gate watch is gone until the watch next changes.
+// NOT HERE YET: the alarm waves themselves (they are not built anywhere), a hidden watch coming back to its posts on a
+// staying screen when a fight is lost, the other outpost plates.
+const BATTLE_OF = {};
+for (const k of Object.keys(SPEC)){ const v = SPEC[k]; if (v && typeof v === "object" && v.stands_for != null && v.floors) BATTLE_OF[String(v.stands_for)] = k; }
+const battlePlateOf = n => { const k = BATTLE_OF[String(n)]; return k && SPEC[k] ? k : null; };
+const BATTLE_STALE_MS = 15 * 60000;
+let battleEntered = null, battleHid = null, battleBusy = false;
+const battleLive = () => { const B = state.battle; return B && !B.over && Date.now() - (B.at || 0) < BATTLE_STALE_MS ? B : null; };
+function battleArriving(from, n){ const B = battleLive(); return B && owSame(n, B.plate) && owSame(from, B.from) ? B : null; }
+function battleOffs(B){ const dx = [0, -60, 55, -10, 80, -95], dy = [0, 40, 45, 85, -25, 10]; return B.heroes.filter(id => SPR[id]).map((id, i) => ({id, dx: dx[i] || 0, dy: dy[i] || 0})); }
+function battleAllies(B){ const comp = companyNow(), add = (B.allies || []).filter(id => SPR[id] && !comp.includes(id)); comp.push(...add); state.leftBehind = state.leftBehind.filter(id => !add.includes(id)); return add; }
+function gateWatchAway(){ const B = battleLive(), d = state.gateWatchDown; return !!((B && owSame(B.from, PEN)) || (d && (storyRotations || 0) <= d.rot)); }
+/** A fight this plate hands to its battle plate: every foe named is one of the watch, standing out on the landing. */
+function battleWanted(foeIds){
+  if (cur !== PEN || !battlePlateOf(cur) || battleBusy || battleLive() || laborLive() || FIGHT.mirror) return false;
+  // a fight another screen is already running on THIS plate is that fight (ONE FIGHT): this screen joins it, it does not open a battle of its own
+  { const on = state[fightKey(cur)]; if (on && on.by && on.by !== OW.key) return false;
+    if (FIGHT.live && owSame(FIGHT.live.plate, cur) && FIGHT.live.auth_key !== OW.key) return false; }
+  const objs = foeIds.filter(f => f && typeof f === "object");
+  return objs.length > 0 && objs.length === foeIds.length && objs.every(f => isGuard(f) && (onBalcony(f) || outsidePen(f)));
+}
+/** Open it: write it down for every screen, cut this one to the battle plate, and start the fight there. */
+async function battleBegin(foeObjs, label, o = {}){
+  const plate = battlePlateOf(cur); if (!plate || battleBusy) return;
+  battleBusy = true;
+  const fade = $("fade"), mine = !fade.classList.contains("on");
+  try {
+    const here = party.filter(p => actors.includes(p)), heroes = (o.heroes || here).filter(p => here.includes(p) && heroUp(p));
+    if (!heroes.includes(leader)) heroes.unshift(leader);
+    const allies = o.noAllies ? [] : alliesHere().map(n => n.id);
+    const B = {id: "b" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), from: String(cur), plate, by: OW.key || "local", at: Date.now(),
+      heroes: heroes.map(p => p.id), allies, foes: foeObjs.map(f => f.id), surprised: !!(o.surprised && o.surprised.length), opener: o.opener ? o.opener.id : null,
+      label: String(label || "a fight on the landing"), split: !here.every(p => heroes.includes(p)), ...(o.fromFlag ? {fromFlag: true} : {})};
+    state.battle = B; state.gateWatchDown = null;
+    if (cur === PEN){ if (!state.gateOpen){ state.gateOpen = true; reportSituation({event: "gate_open"}); } state.doorShut = false;
+      if (!state.brokeOut) state.brokeOut = {at: Date.now(), why: B.label}; state.gateLeftUnlocked = null; }
+    saveWalk();
+    if (sneak) endSneak();
+    party.forEach(p => { p.path = []; }); mode = "dialog"; tip.hidden = true;
+    if (mine){ fade.classList.add("quick", "on"); await wait(320); }
+    // every other screen must hear of the fight before it hears the plate has changed
+    // (and another screen's first word about `battle` can land on top of ours before ours has gone out: say it again)
+    if (OW.on){ const t0 = Date.now(); while (Date.now() - t0 < 2500){ if (!state.battle || state.battle.id !== B.id) state.battle = B; if (!owDirty()) break; await wait(100); } }
+    await battleCut(B);
+    if (mine){ fade.classList.remove("on"); setTimeout(() => fade.classList.remove("quick"), 400); }
+    await wait(900);                                                 // the plate comes up and everyone is standing before steel
+    battleOpen(B);
+  } finally { battleBusy = false; if (mine) fade.classList.remove("on"); if (mode === "dialog" && $("obj").hidden) mode = "explore"; }
+}
+/** Initiative, on the battle plate: the watch at the plate's posts, surprised or not, the one who led it first. */
+function battleOpen(B){
+  if (String(cur) !== String(B.plate) || cbt || FIGHT.mirror) return;
+  mode = "explore";
+  const first = B.opener ? party.find(p => p.id === B.opener) : null;
+  startCombat(B.foes.slice(), B.label, {battle: true, noAllies: false, ...(first ? {opener: first} : {})});
+  if (!cbt || mode !== "combat") return;
+  if (B.fromFlag) cbt.fromFlag = true;                                // the server's "a fight is on" comes down with this fight
+  // the watch stands where the plate says (the bridge's near end first), each on free floor of their own
+  const posts = SPEC[B.plate].foes_at || [], taken = [...party, ...npcs.filter(n => actors.includes(n) && !n.offStage)].map(a => ({x: a.x, y: a.y}));
+  foes.forEach((f, i) => { const at = posts[i % Math.max(1, posts.length)]; if (!at) return;
+    const q = nearestWalkable(at[0], at[1], taken); f.x = q.x; f.y = q.y; f.home = {x: q.x, y: q.y}; f.stop = null; f.path = []; f.alpha = 1; taken.push({x: q.x, y: q.y}); faceTo(f, leader); });
+  if (B.surprised) for (const f of foes) if (f.c){ f.c.surprised = true; f.c.reactionUsed = true; f.c.conds.add("surprised"); }
+  party.forEach(p => { const f = foes[0]; if (f) faceTo(p, f); });
+}
+/** This screen goes to the battle plate (enterNode reads the rest off `state.battle`: who, where, which prisoners). */
+async function battleCut(B){
+  battleEntered = B.id;
+  const mine = B.heroes.map(id => party.find(p => p.id === id)).find(p => p && canControl(p) && !owRemote(p));
+  if (mine && leader !== mine && !B.heroes.includes(leader.id)) leader = mine;   // the hero this screen sends is the one it walks there
+  await enterNode(B.plate, {solo: !!B.split, note: esc(B.label.charAt(0).toUpperCase() + B.label.slice(1)) + "."});
+}
+/** Every screen, twice a second: a hero of this screen's who is in the fight is cut to it; the pen's watch is not left standing. */
+function battleTick(){
+  const B = battleLive();
+  if (!B){ battleHid = null; return; }
+  // a screen still on the plate the fight left: the watch that went to it is not standing on the landing here (every drow-guard on the pen plate is the gate watch)
+  if (owSame(cur, B.from) && cur === PEN && mode !== "combat"){ battleHid = B.id;   // every tick: the lean, the patrol and the posts all put a guard back
+    for (const g of npcs) if (/^drow-guard/.test(g.id) && !g.body && !g.down){ g.offStage = true; g.alpha = 0; g.talk = false; g.path = []; } }
+  if (!APP || !booted || battleBusy || battleEntered === B.id || mode !== "explore" || !owSame(cur, B.from) || B.by === (OW.key || "local")) return;
+  const me = wardMine();
+  if (!me || leader !== me || !B.heroes.includes(me.id) || !canControl(me)) return;
+  battleBusy = true;
+  (async () => { const fade = $("fade"); try { toast(`${B.label.charAt(0).toUpperCase() + B.label.slice(1)}.`, 3600); mode = "dialog"; fade.classList.add("quick", "on"); await wait(320); await battleCut(B);
+      // fights not shared (no fight lane): this screen plays its own copy, as it always did when it fought alone
+      if (!fightShared()){ fade.classList.remove("on"); await wait(900); battleOpen(B); } }
+    finally { battleBusy = false; fade.classList.remove("on"); setTimeout(() => fade.classList.remove("quick"), 400); if (mode === "dialog" && $("obj").hidden) mode = "explore"; } })();
+}
+function battleJoinable(h){ const B = battleLive(); return !!(B && h && cur === PEN && owSame(cur, B.from) && mode === "explore" && !battleBusy && heroUp(h) && canControl(h) && !owRemote(h) && !B.heroes.includes(h.id)); }
+/** "Stayers can join later": this hero is in it now. Their own screen cuts them there; the fight takes them in from the next round. */
+async function battleJoin(h){
+  const B = battleLive(); if (!B || !battleJoinable(h)) return;
+  battleBusy = true; const fade = $("fade");
+  try {
+    state.battle = {...B, heroes: [...B.heroes, h.id], split: true}; saveWalk();
+    log(`${esc(fname(h))} goes out through the gate to the fight.`);
+    if (leader !== h) leader = h;
+    mode = "dialog"; fade.classList.add("quick", "on"); await wait(320);
+    battleEntered = B.id;
+    // one hero, to where the others already stand: not the fight's opening line-up
+    await enterNode(B.plate, {solo: true, offs: [{id: h.id, dx: 0, dy: 0}], note: `${esc(fname(h))} comes out onto the landing.`});
+  } finally { battleBusy = false; fade.classList.remove("on"); setTimeout(() => fade.classList.remove("quick"), 400); if (mode === "dialog" && $("obj").hidden) mode = "explore"; }
+}
+/** endCombat, on the screen that ran it: the fight on the battle plate is over. */
+function battleSettle(won){
+  const B = state.battle; if (!B || B.over || !owSame(cur, B.plate)) return;
+  state.battle = {...B, over: Date.now(), won: won !== false};
+  if (won !== false && owSame(B.from, PEN)) state.gateWatchDown = {rot: storyRotations || 0, at: Date.now()};
+  saveWalk();
+  if (won !== false) log("<em>The landing is theirs. The dead lie where they fell; the gate, the bridge and the cliff stairs are all open ways from here.</em>");
 }
 /** The close-up comes up at once (behind a fade), with no slide: the view the fight is about to be played in. */
 function ovSnap(){
@@ -6348,7 +6498,8 @@ async function doorAskOthers(kind){
   if (!APP || !rem.length) return [];
   const id = "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   for (const k of Object.keys(state)) if (k.startsWith("doorAns:")) delete state[k];
-  state.doorCall = {id, by: h.id, kind, at: Date.now()}; doorAsked = id;
+  const call = {id, by: h.id, kind, at: Date.now()};
+  state.doorCall = call; doorAsked = id;
   let goNow = false, off = false;
   const ans = p => { const a = state["doorAns:" + p.id]; return a && a.id === id ? a : null; };
   const {add, close} = heroCard("Who is coming?", "");
@@ -6356,7 +6507,9 @@ async function doorAskOthers(kind){
   add("Call it off", () => { off = true; });
   cardClose(() => { off = true; });
   while (!goNow && !off){
-    const waiting = rem.filter(p => !ans(p)), ms = DOOR_CALL_MS - (Date.now() - state.doorCall.at);
+    // (another screen's first word about this key can land on top of ours before ours has gone out: say it again)
+    if (!state.doorCall || state.doorCall.id !== id) state.doorCall = call;
+    const waiting = rem.filter(p => !ans(p)), ms = DOOR_CALL_MS - (Date.now() - call.at);
     if (!waiting.length || ms <= 0) break;
     if ($("obj").hidden || mode !== "dialog" || cur !== PEN){ off = true; break; }
     $("objText").textContent = `Waiting on ${doorList(waiting.map(fname))} (${Math.ceil(ms / 1000)} s). Whoever does not answer stays in the pen.`;
@@ -7544,6 +7697,9 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   if (fightShared() && FIGHT.live && owSame(FIGHT.live.plate, cur) && FIGHT.live.auth_key !== OW.key){ talkGivesWay(); enterMirror(FIGHT.live); return; }
   talkGivesWay();                           // NPC MINDS, the other way round: a fight that starts ends the talk
   if (mode !== "explore") return;
+  if (!opts.battle && battleWanted(foeIds)){ battleBegin(foeIds, label, opts); return; }   // THE BATTLE SCREEN (below)
+  // ... and while that fight is being played there, the pen's own copy of the watch fights nobody here
+  if (!opts.battle && cur === PEN && battleLive() && foeIds.length && foeIds.every(f => f && typeof f === "object" && /^drow-guard/.test(f.id))) return;
   // THE BREAKOUT HAS BEEN FOUGHT: a fight with the drow while the pen gate stands open is the breakout, however it started
   // (the breakout card, attacking a guard, a guard spotting them on the landing). The watch never treats them as caged again.
   if (cur === PEN && state.gateOpen && !state.brokeOut && foeIds.some(f => { const n = f && typeof f === "object" ? f : npcs.find(m => m.id === f); return !!n && isGuard(n); }))
@@ -8415,6 +8571,8 @@ function exploreExtras(m, o, add, who){
   // SHAKE THEM AWAKE (Sam, 2026-11-12): a friend the ward put on the floor comes round early if someone goes to them
   const wardFriend = party.find(p => p !== L && p.wardKo && p.x != null && Math.hypot(p.x - L.x, p.y - L.y) < WARD_SHAKE_REACH * sc);
   if (wardFriend) x(`Shake ${fname(wardFriend)} awake`, "✋", ART("help"), "out cold from the ward", () => wardShake(L, wardFriend));
+  // THE BATTLE SCREEN: a hero who stayed behind may still go to the fight
+  if (battleJoinable(L)) x("Join the fight on the landing", "⚔", ART("attack"), "out through the gate · you act from the next round", () => battleJoin(L), "danger");
   // WAIT FOR THE NEXT WATCH (Sam, 2026-11-12): the table skips the lull, and pays a watch off the caravan clock for it
   if (waitOffered()) x("Wait for the next watch", "⌛", ART("short-rest"), `everyone must agree · counts as a short rest · ${watchesWord(caravanLeft())} left`, () => waitPropose());
   const pot = beltPotion(L); if (pot) x(`Quick drink: ${pot.name}`, "⚗", ART("quick-drink"), "from the belt", () => drinkItem(L, pot, L));
@@ -8529,6 +8687,7 @@ function confront(w){
 function guardsReact(w, h, why){
   if (!h || mode !== "explore" || laborLive() || surgeon || timeStopped) return false;
   if (cur === PEN && behindBars(h)) return false;              // the pen's own rule: warning, then volleys
+  if (cur === PEN && gateWatchAway()) return false;            // THE BATTLE SCREEN: the watch is out on the battle plate (or dead on it); nobody is on the landing to see
   if (guardsAlarm && guardsAlarm.cur === cur && now < guardsAlarm.until) return false;
   guardsAlarm = {cur, until: now + 30000};
   if (sneak) endSneak();
@@ -9365,7 +9524,7 @@ function pacingFind(id){ return npcs.find(n => n.id === id && actors.includes(n)
 let pacingAt = 0, pacingRot = null, pacingPenSince = 0, pacingArgued = 0, pacingMuttered = 0, pacingFaded = null, pacingAsked = null, pacingPlanBarked = 0;
 function pacingTick(){
   if (now - pacingAt < 500) return; pacingAt = now;
-  caravanTick(); waitTick(); chainMarchTick(); doorCallTick();
+  caravanTick(); waitTick(); chainMarchTick(); doorCallTick(); battleTick();
   if (!penHeld()){ pacingPenSince = 0; return; }
   if (!pacingPenSince) pacingPenSince = now;
   if (mode !== "explore" || (typeof talkNpc !== "undefined" && talkNpc) || timeStopped) return;
@@ -13789,6 +13948,7 @@ function endCombat(won, opts = {}){
     mode = "explore"; fightLetsGo(); setTrack("explore"); log(opts.talk ? "Weapons down. They talk." : won ? "The fight is over. The DM core settles the wounds and the loot." : "The fight is over.");
     oneFightEnded(won);                // ONE FIGHT: every mirror lays the dead down and stands the rest down the same way
     if (marchOut !== undefined) chainMarchSettle(marchOut);   // THE MARCH OUT IN CHAINS: out, or Menzoberranzan
+    battleSettle(won);                 // THE BATTLE SCREEN: how it came out, for every screen and for the plate it came from
     cbtLog.active = false;   // the log stays, collapsed, with the fight's last line in its ticker; the next fight starts it over
   }, 700);
 }
@@ -15974,7 +16134,8 @@ function gateNotices(w, h){
   return !(sneak && sneak.rolls.some(x => x.p === h));
 }
 function gateCenter(){ const z = doorGate(); if (!z) return null; const p = z.interact.poly; return {x: (p[0][0] + p[2][0]) / 2, y: (p[0][1] + p[2][1]) / 2}; }
-function gateGuards(){ return npcs.filter(n => /^drow-guard/.test(n.id) && !n.relieved && !n.offStage && !n.body && !n.down && !n.hostile && n.alpha > .5 && actors.includes(n)); }
+function gateGuards(){ if (cur === PEN && gateWatchAway()) return [];   // THE BATTLE SCREEN: the watch is on the battle plate, or dead on it
+  return npcs.filter(n => /^drow-guard/.test(n.id) && !n.relieved && !n.offStage && !n.body && !n.down && !n.hostile && n.alpha > .5 && actors.includes(n)); }
 /** The heroes this browser answers for who could be standing at the bars (see the note above). */
 function gateHeroes(){ return party.filter(a => actors.includes(a) && canControl(a) && !a.down && !a.ko && !a.surgeonDown && !a.fading && (a.alpha === undefined || a.alpha > .5)); }
 /** The nearest of them to the gate, with its distance. */
@@ -18137,7 +18298,7 @@ async function followCombatFlag(flag){
       if (mode !== "explore") return;
     }
     startCombat.flagMood = flag.music || null;          // Malachar may name the mood; otherwise the odds decide
-    startCombat(picked, flag.label || "Malachar calls for initiative.");
+    startCombat(picked, flag.label || "Malachar calls for initiative.", {fromFlag: true});   // fromFlag rides along when the fight is cut to a battle plate
     if (cbt) cbt.fromFlag = true;
   } else if (!flag && mode === "combat" && cbt && cbt.fromFlag){
     endCombat(!surrenderFresh());                       // the flag dropped because the party surrendered: no victory, the plate is not cleared
@@ -20997,7 +21158,7 @@ function owEntered(force){
 }
 // The modes a screen can be pulled to another plate from: walking, a dialog or a conversation open. Not mid-fight,
 // not mid-crossing, not while loading — those finish first and the plate follows (OW.pendingPlate).
-const OW_CAN_MOVE = () => !cbt && (mode === "explore" || mode === "dialog" || mode === "talk");   // !cbt: a card open mid-fight is still the fight
+const OW_CAN_MOVE = () => !cbt && !battleBusy && (mode === "explore" || mode === "dialog" || mode === "talk");   // !battleBusy: this screen is mid-cut to a battle plate already   // !cbt: a card open mid-fight is still the fight
 async function owGoTo(plate, t){
   plate = owPlate(plate);
   OW.applyingPlate = true;
@@ -21037,6 +21198,7 @@ function owApplyState(remote, all){
     if (typeof door !== "undefined" && door.leaf) setDoor(!!state.gateOpen && !state.doorShut);
     if (balcony()) buildGrid();
   }
+  if (changed.includes("battle")){ try { battleTick(); } catch (e) {} }   // THE BATTLE SCREEN: the watch leaves this screen's landing the moment it hears
   // the ward broke on someone else's screen: this one scars red too, and its Cast buttons open with it
   if (changed.includes("wardBroken")){ try { paintWard(); } catch (e) {} exploreKey = ""; }
 }
