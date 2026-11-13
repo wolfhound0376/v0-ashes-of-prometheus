@@ -25,6 +25,10 @@ export function SaveShelf({ me, onLoaded }: { me: Me; onLoaded?: () => void }) {
   const [i, setI] = useState(0)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
+  // Deleting (Sam, 2026-11-13: "I should be able to delete saved games"). The button is always on the shelf; a
+  // host without the DM door's cookie types the code here, once, and it is not left behind on this browser.
+  const [askDelete, setAskDelete] = useState<string | null>(null)
+  const [code, setCode] = useState("")
 
   const headers = useCallback((): Record<string, string> => ({ "Content-Type": "application/json", ...dmHeaders(), ...(me ? { "x-claim-token": me.token } : {}) }), [me])
 
@@ -49,7 +53,7 @@ export function SaveShelf({ me, onLoaded }: { me: Me; onLoaded?: () => void }) {
       if (!r.ok) { setMsg(j.error ?? "That did not work."); return }
       if (Array.isArray(j.saves)) setSaves(j.saves)
       if (action === "load") { setMsg(`Loaded: ${j.loaded}.`); onLoaded?.() }
-      if (action === "delete") setI(0)
+      if (action === "delete") { setI(0); setMsg("Deleted.") }
     } catch { setMsg("Could not reach the shelf.") } finally { setBusy(false) }
   }
 
@@ -99,13 +103,46 @@ export function SaveShelf({ me, onLoaded }: { me: Me; onLoaded?: () => void }) {
           className="flex items-center gap-1.5 rounded-sm border border-[#3d3428] px-3 py-2 text-[11px] uppercase tracking-[0.2em] text-stone-400 hover:text-stone-200 disabled:opacity-40">
           <Pencil className="h-3.5 w-3.5" /> Rename
         </button>
-        {canDelete && !s.is_loaded && (
-          <button type="button" disabled={busy} onClick={() => { if (window.confirm(`Delete "${s.name}" for good? This cannot be undone.`)) send("delete", s.id) }}
-            className="flex items-center gap-1.5 rounded-sm border border-red-900/70 px-3 py-2 text-[11px] uppercase tracking-[0.2em] text-red-300/80 hover:text-red-200 disabled:opacity-40">
-            <Trash2 className="h-3.5 w-3.5" /> Delete
-          </button>
-        )}
+        <button type="button" disabled={busy || s.is_loaded}
+          title={s.is_loaded ? "This is the world set up on the table. Load another save first, then delete this one." : undefined}
+          onClick={() => { setMsg(null); setCode(""); setAskDelete(askDelete === s.id ? null : s.id) }}
+          className="flex items-center gap-1.5 rounded-sm border border-red-900/70 px-3 py-2 text-[11px] uppercase tracking-[0.2em] text-red-300/80 hover:text-red-200 disabled:opacity-40">
+          <Trash2 className="h-3.5 w-3.5" /> Delete
+        </button>
       </div>
+      {s.is_loaded && saves.length > 1 && <p className="mt-2 text-center text-[12px] text-stone-500">To delete this one, load another save first.</p>}
+      {askDelete === s.id && !s.is_loaded && (
+        <form className="mt-3 rounded-sm border border-red-900/60 bg-red-950/20 p-3 text-center"
+          onSubmit={async (e) => {
+            e.preventDefault()
+            if (!canDelete) {
+              setBusy(true); setMsg(null)
+              try {
+                const l = await fetch("/api/dm/login", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code }) })
+                const lj = await l.json().catch(() => ({}))
+                if (!l.ok || !lj.ok) { setMsg(l.status === 429 ? "Too many tries. Wait a few minutes." : "That is not the DM code. Nothing was deleted."); return }
+              } catch { setMsg("Could not reach the shelf."); return } finally { setBusy(false) }
+            }
+            await send("delete", s.id)
+            if (!canDelete && me) await fetch("/api/dm/logout", { method: "POST" }).catch(() => {})
+            setAskDelete(null); setCode("")
+            load()
+          }}>
+          <p className="text-[13px] text-red-200/90">Delete &ldquo;{s.name}&rdquo; for good? This cannot be undone.</p>
+          {!canDelete && (
+            <input type="password" autoFocus value={code} onChange={(e) => setCode(e.target.value)} placeholder="DM code"
+              className="mt-2 w-48 rounded-sm border border-[#3d3428] bg-black/70 px-3 py-2 text-center text-sm text-stone-200 outline-none focus:border-[#8a6a3a]" />
+          )}
+          <div className="mt-2 flex justify-center gap-2">
+            <button type="submit" disabled={busy || (!canDelete && !code.trim())}
+              className="rounded-sm border-2 border-red-800 bg-red-950/60 px-4 py-2 text-[11px] uppercase tracking-[0.2em] text-red-100 hover:border-red-600 disabled:opacity-40">
+              {busy ? "Deleting…" : "Delete for good"}
+            </button>
+            <button type="button" onClick={() => { setAskDelete(null); setCode("") }}
+              className="rounded-sm border border-[#3d3428] px-4 py-2 text-[11px] uppercase tracking-[0.2em] text-stone-400 hover:text-stone-200">Keep it</button>
+          </div>
+        </form>
+      )}
       {/* Sam, 2026-11-10: "Still not able to force close this active game" — with the table dark nothing is being
           played; the green badge only marks which world is set up on the table, so say so. */}
       {dark && s.is_loaded && <p className="mt-2 text-center text-[12px] text-stone-500">The table is closed — nobody is playing. This is the world that is set up for next time.</p>}
