@@ -9,8 +9,10 @@
 //   WHICH PLATE. Only plates Sam has approved (claude/Battle_Plates_For_Road_Encounters_2026-11-12.md):
 //     - the terrain rolled with the creatures, when its plate is painted (Rope bridge, Boneyard, Webs);
 //     - else giant spiders fight on the Webs and gricks in the tunnels (his plate list: "Giant spiders: Webs",
-//       "Gricks and umber hulk: tunnels"). Orogs wait for the High ledge plate unless a painted terrain is rolled.
-//     Anything else has no painted plate yet, so there is no battle to offer and the card says so.
+//       "Gricks and umber hulk: tunnels");
+//     - else the tunnels biome plate (his rulings 1 and 3, 2026-11-12, claude/Road_Fight_Plate_Rulings_2026-11-12.md:
+//       a fight with no special terrain "fades into the tunnels biome plate", and ambushers whose own plate is not
+//       painted yet, orogs waiting on the High ledge among them, fight on the "tunnels plate for now").
 //
 //   WHICH FOES. Only a creature row that carries both a `bestiary` name and a `count` in encounter_table_rows
 //     (today: the Ambushers table), and only a creature the walk page has a stat block and sprite for
@@ -25,7 +27,7 @@ import type { RolledStep, Roll } from "./arrival"
 import type { Meeting } from "./meeting"
 
 export const BATTLE_SOURCE =
-  "Plates: Sam's approved list, 2026-11-12 (terrain plate when painted; giant spiders on the Webs). Foes and counts: encounter_table_rows (OotA ch.2, Ambushers). Surprise: lib/travel/meeting.ts."
+  "Plates: Sam's approved list, 2026-11-12 (terrain plate when painted; giant spiders on the Webs; else the tunnels). Foes and counts: encounter_table_rows (OotA ch.2, Ambushers). Surprise: lib/travel/meeting.ts."
 
 /** Terrain results (underdark_terrain.result) whose battle plate is painted: the walk's plate key. */
 export const TERRAIN_PLATES: Readonly<Record<string, string>> = {
@@ -36,6 +38,9 @@ export const TERRAIN_PLATES: Readonly<Record<string, string>> = {
 
 /** Creatures with a plate of their own in Sam's list, when no painted terrain was rolled. */
 export const CREATURE_PLATES: Readonly<Record<string, string>> = { "giant spider": "road-webs", grick: "road-tunnels" }
+
+/** Where every other road fight is staged until its own plate is painted (Sam's rulings 1 and 3, 2026-11-12). */
+export const FALLBACK_PLATE = "road-tunnels"
 
 /** Bestiary name -> the walk page's foe id (a sprite AND a stat block there: template.html FOE_BLOCKS). */
 export const WALK_FOES: Readonly<Record<string, string>> = { "giant spider": "giant-spider", orog: "orog", grick: "grick" }
@@ -92,8 +97,7 @@ export function battleFor(
   const counted = rollCount(row.detail.count, roll)
   if (!counted) return { reason: `The encounter table gives no count for ${creature} yet.` }
   const terrain = steps.find((r) => r.table_key.endsWith("_terrain"))
-  const plate = (terrain && TERRAIN_PLATES[terrain.result.toLowerCase()]) || CREATURE_PLATES[key]
-  if (!plate) return { reason: `No battle plate is painted for ${creature} here yet.` }
+  const plate = (terrain && TERRAIN_PLATES[terrain.result.toLowerCase()]) || CREATURE_PLATES[key] || FALLBACK_PLATE
   return {
     plate,
     foes: Array.from({ length: counted.n }, () => foe),
