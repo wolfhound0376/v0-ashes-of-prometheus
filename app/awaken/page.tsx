@@ -16,9 +16,8 @@
 //   5. THE ROLL      back into the dark; the music returns. "Let's see what you kept." Then the real
 //                    fortune roll on the shared dice (components/dashboard/fortune-roll.tsx): 1d20 +
 //                    days held (1d10), the book's table, a catalog item in the bag.
-//   6. WHAT YOU HAVE Malachar narrates the actual result (handed to him as a direction, spoken through
-//                    /api/tts in his own voice, shown as the same crawl) — then the lich cinematic
-//                    surfaces out of the black and he laughs.
+//   6. WHAT YOU HAVE Malachar writes his line on the actual result into the shared log (not voiced, not
+//                    waited on — 2026-11-13), and the lich cinematic surfaces out of the black and laughs.
 //   7. THE GATE      the music fades to black and they wait for the rest of the party (and the DM), then
 //                    everyone steps into /velkynvelve, Area 11, at the same moment (lib/entry.ts — Sam,
 //                    2026-10-29: "The DM should NOT enter the map after them but we all enter the same time").
@@ -31,7 +30,7 @@
 //
 // Everything pre-recorded lives in public/awaken/ (voices rendered from the characters' and NPCs' saved
 // ElevenLabs voices; the lich cinematic is Sam's). The only live pieces are the dice, Malachar's
-// narration of the result, and the voice for it. Already rolled this run: straight to the pen.
+// line about the result (written to the log, not voiced). Already rolled this run: straight to the pen.
 //
 // Invented vs sourced: the situation is the book's; the hook lines, the wakers' lines and Malachar's
 // "let's see what you kept" are written lines Sam approved in the storyboard.
@@ -41,6 +40,10 @@
 // stops buffering, Malachar's narration, the laugh. A beat whose media fails is passed over, never waited
 // on. The fortune roll rolls itself after AUTO_ROLL_MS and its result card closes itself after
 // AUTO_DISMISS_MS, so a player who walked away from the screen never holds the table up.
+//
+// THE FASTER AWAKEN (Sam, 2026-11-13: "awakenings takes way too long"; "go" to the cut). A hero whose own
+// film played skips "where am I" and the dream (the film already ends on the capture); the title holds
+// 2.5 s; the roll rolls itself after 10 s; no black wait and no voiced recap after the roll.
 //
 // SKIPPABLE (Sam, 2026-10-11: sitting through it every time is annoying; 2026-10-24: "an option to
 // not have cinematics or intro scores"). A Skip button is up for the whole of the show; with
@@ -57,7 +60,6 @@ import { MusicToggle } from "@/components/music-toggle"
 import { fadeOutThemeAudio } from "@/components/theme-audio"
 import { isMusicOff, onMusicPrefChange } from "@/lib/audio-prefs"
 import { cinematicsOn, introMusicOn, onSettingsChange } from "@/lib/settings"
-import { sanitizeForTTS } from "@/lib/tts"
 import { EntryGate } from "@/components/entry-gate"
 
 const PEN_ROUTE = "/velkynvelve"
@@ -102,11 +104,9 @@ const CEILING = {
   where: 10000,     // "Where am I?"
   clip: 60000,      // one voice clip (the dream is the longest, ~40 s)
   film: 150000,     // a hero film whose length the browser can't read
-  narration: 15000, // Malachar writing his line about the roll
-  meta: 4000,       // learning how long his voice runs
   laugh: 15000,
 } as const
-const AUTO_ROLL_MS = 20000
+const AUTO_ROLL_MS = 10000 // was 20 s (Sam, 2026-11-13: the faster awaken)
 const AUTO_DISMISS_MS = 7000
 /** The roll beat's own ceiling: the card's two clocks, the dice, and slack. Past it the show goes on without a roll. */
 const ROLL_BEAT_MS = AUTO_ROLL_MS + AUTO_DISMISS_MS + 45000
@@ -157,8 +157,6 @@ export default function AwakenPage() {
   const talkVid = useRef<HTMLVideoElement>(null)
   const laughVid = useRef<HTMLVideoElement>(null)
   const filmVid = useRef<HTMLVideoElement>(null)
-  // Malachar's narration of the roll: text + his voice, fetched while the result card is still up.
-  const narration = useRef<Promise<{ text: string; audio: string | null }> | null>(null)
   const rollDone = useRef<(rolled: boolean) => void>(() => {})
 
   useEffect(() => () => { dead.current = true }, [])
@@ -263,26 +261,9 @@ export default function AwakenPage() {
   // same route the dashboard uses for him); the text is what he wrote.
   const narrate = useCallback((direction: string) => {
     if (!seat) return
-    narration.current = (async () => {
-      let text = ""
-      try {
-        const res = await sendMessage(direction, seat.id, seat.token, { director: true })
-        text = (res?.text ?? "").trim()
-      } catch (e) {
-        console.error("[awaken] narration failed:", e)
-      }
-      const spoken = sanitizeForTTS(text)
-      let audio: string | null = null
-      if (spoken) {
-        try {
-          const r = await fetch("/api/tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: spoken, voice: "onyx" }) })
-          if (r.ok) audio = URL.createObjectURL(await r.blob())
-        } catch (e) {
-          console.error("[awaken] his voice failed:", e)
-        }
-      }
-      return { text: spoken, audio }
-    })()
+    // Fire and forget: /api/chat writes his line into the shared log. Not voiced and not waited on (the faster
+    // awaken, 2026-11-13) — the laugh plays straight after the roll.
+    void sendMessage(direction, seat.id, seat.token, { director: true }).catch((e: unknown) => console.error("[awaken] narration failed:", e))
   }, [seat, sendMessage])
 
   // The show is over: to the gate, where everyone steps onto the map together (components/entry-gate.tsx,
@@ -307,6 +288,11 @@ export default function AwakenPage() {
     const guard = () => { if (dead.current) throw new Error("left") }
 
     const show = cinematicsOn()
+    // FASTER AWAKEN (Sam, 2026-11-13: "awakenings takes way too long" — Lynkes measured ~2:20 door to gate).
+    // A hero whose own film actually played has already watched their capture; the "where am I" and the
+    // dream retold it (~27 s). Set true once the film starts (or is skipped mid-play); a film that never
+    // started leaves it false, so that hero still gets the dream.
+    let filmTold = false
 
     const run = async () => {
       // 0 — the hero's own film, when they have one and have not seen it this run (lib/hero-film.ts). It
@@ -335,6 +321,7 @@ export default function AwakenPage() {
             if (tapped !== true) fv.muted = true
             if (!skipped.current) await within(fv.play(), CEILING.tap).catch(() => { ok = false })
           }
+          if (ok) filmTold = true
           if (ok && !skipped.current) {
             setFilmOn(true)
             const runs = isFinite(fv.duration) && fv.duration > 0 ? (fv.duration - fv.currentTime) * 1000 + 5000 : CEILING.film
@@ -352,14 +339,14 @@ export default function AwakenPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ characterId: seat.id, claimToken: seat.token }),
           }).catch(() => { /* worst case the gate plays it once more */ })
-          // Skip on the film skips the film only: the dream and the waker still play.
+          // Skip on the film skips the film only: the title and the roll still play.
           if (skipped.current) rearmSkip()
           setSkipShown(show)
-          await wait(900); guard()
+          await wait(filmTold ? 300 : 900); guard()
         }
       }
 
-      if (show) {
+      if (show && !filmTold) {
         setSkipShown(true)
 
         // 1 — black. The character's voice. (A page loaded cold has no gesture yet: if the browser
@@ -397,15 +384,17 @@ export default function AwakenPage() {
           if (pcKey) { await wait(500); await playClip(`${MEDIA}/hook-${pcKey}.mp3`); guard() }
           await wait(600); setCrawl(null)
         }
+      }
 
-        // 3 — the title. The music swells, then cuts on the last frame.
+      if (show) {
+        setSkipShown(true)
+        // 3 — the title. The music swells, then cuts on the last frame. (2.5 s, was 4.2 — the faster awaken.)
         if (!skipped.current) {
-          setStep("title"); musicTo(0.6, 1500)
-          await wait(4200); guard()
+          setStep("title"); musicTo(0.6, 1200)
+          await wait(2500); guard()
           music.current?.pause()
-          await wait(700); guard()
+          await wait(400); guard()
         }
-
       }
 
       // 5 — back into the dark: the music returns, "let's see what you kept", then the real roll.
@@ -443,42 +432,13 @@ export default function AwakenPage() {
       guard()
       if (!rolled) { goToPen(); return }
 
-      // 6 — what you have: his narration of the actual result, in his voice, then the laugh.
+      // 6 — what you have: the laugh (his line on the result goes to the log).
       //     Skip here means straight to the pen; the roll already happened and the bag is written.
       setStep("result")
       setSkipShown(true)
-      // His narration is a live model call plus a voice: if it hasn't come back in time, he says nothing.
-      const said = narration.current ? await race(within(narration.current, CEILING.narration)) : { text: "", audio: null }
-      guard()
-      if (said && said.text && !skipped.current) {
-        if (said.audio) {
-          // His voice: learn how long it runs so the crawl keeps pace with him.
-          const a = clip.current!
-          a.src = said.audio
-          await race(within(new Promise<void>((res) => {
-            a.addEventListener("loadedmetadata", () => res(), { once: true })
-            a.addEventListener("error", () => res(), { once: true })
-            a.load()
-          }), CEILING.meta))
-          const seconds = isFinite(a.duration) && a.duration > 0 ? a.duration : 20
-          if (show) setCrawl({ text: said.text, seconds: seconds + 5, key: 3 })
-          else setCaption(said.text)
-          await race(within(new Promise<void>((res) => {
-            a.addEventListener("ended", () => res(), { once: true })
-            a.addEventListener("error", () => res(), { once: true })
-            a.play().catch(() => res())
-          }), seconds * 1000 + 4000))
-          if (skipped.current || !a.ended) a.pause()
-          URL.revokeObjectURL(said.audio)
-        } else {
-          const seconds = Math.max(8, said.text.length / 14)
-          if (show) setCrawl({ text: said.text, seconds: seconds + 5, key: 3 })
-          else setCaption(said.text)
-          await wait(seconds * 1000)
-        }
-        guard()
-        await wait(800); setCrawl(null); setCaption(null); await wait(300)
-      }
+      // No waiting on his narration here any more (Sam, 2026-11-13: the faster awaken). It used to hold a black
+      // screen ~7 s for the model, then read a ~13 s recap of a result the dice card had already shown. His line
+      // is still written — narrate() fires it into the shared log — it is just not read aloud over the black.
       if (show && !showWasSkipped && !skipped.current) {
         setStep("laugh")
         const lv = laughVid.current
