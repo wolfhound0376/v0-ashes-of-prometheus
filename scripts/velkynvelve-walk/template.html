@@ -1550,6 +1550,7 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
   // yes is its own key, "waitYes:<hero>", so two screens agreeing at once cannot overwrite each other). drowArgue /
   // sarithMutter: {at} once the beat has played. jorlanLead: the argument was understood. planAsked / plan: Eldeth's
   // question and the table's answer. caravanCalled: the clock ran out and the moment went to Malachar.
+  doorCall: null,   // THE DOOR, SNEAKING: a hero's open call to the other heroes {id, by, kind, at, done?, out?, goers?}; answers are "doorAns:<hero>"
   waitVote: null, drowArgue: null, sarithMutter: null, jorlanLead: false, planAsked: null, plan: null, caravanCalled: false, chainMarch: null,
   // MANACLES (Sam, 2026-10-30, looking at the pen gate card: "This should show disadvantaged because of
   // [manacled]"). The party wakes in the pen in irons (OotA p.11: prisoners are manacled and stripped of their
@@ -3310,6 +3311,7 @@ async function enterNode(n, opts = {}){
     // sneak); they stay there, still freed, and come along the next time the party leaves the pen openly.
     if (from === PEN && n !== PEN){
       if (laborLive()) joined = laborJoins();
+      else if (doorTakesPrisoners) joined = prisonersJoin();   // THE DOOR, SNEAKING: "take everyone" was the hero's own answer
       else if (sneak){ const left = PEN_NPCS.filter(d => npcs.some(x => x.id === d.id && !x.down && !x.body && !x.offStage && !companyNow().includes(d.id))).length;
         if (left) log(`The other prisoners stay in the pen. ${left > 1 ? "They" : "Whoever is left"} would never keep quiet behind you.`); }
       else if (!opts.solo) joined = prisonersJoin();          // just one hero slipping out leaves the pen's prisoners where they are
@@ -5635,6 +5637,7 @@ let hoverObj = null;
 function interactAt(w){ return node.zones.find(z => z.interact && inPoly(z.interact.poly, w.x, w.y)) || null; }
 function openInteract(z, opts = {}){
   const it = z.interact; if (!it || mode !== "explore") return;
+  if (it.leaf && state.gateOpen && sneakDoorCard({z})) return;     // THE DOOR, SNEAKING: unlocked, the watch posted, a hero keeping low
   mode = "dialog"; leader.path = []; tip.hidden = true;
   // picture: the object itself, cut from the painting
   const c = $("objPic"), g = c.getContext("2d"), xs = it.poly.map(p => p[0]), ys = it.poly.map(p => p[1]);
@@ -6149,6 +6152,7 @@ function breakoutCry(w, guards, by){
 }
 function breakoutCard(w, guards, seen, by){
   if (cur !== PEN || mode !== "explore" || !state.gateOpen) return;                          // a fight or another card got there first
+  if (!seen && sneak && sneakDoorCard({w, by, fresh: true})) return;                         // THE DOOR, SNEAKING: its own card (below)
   const h = leader, name = fname(w), many = guards.length > 1;
   party.forEach(p => { p.path = []; }); mode = "dialog"; tip.hidden = true;
   try { portrait(w.id, $("objPic"), 128); } catch (e) {}
@@ -6183,7 +6187,7 @@ async function goThroughGate(w, guards, o = {}){
   const B = balcony(); if (!B){ startCombat(guards, "the breakout at the pen gate", o.surprised ? {surprised: guards.slice()} : {}); return; }
   gateGoing = true; mode = "dialog"; tip.hidden = true; state.gateLeftUnlocked = null;
   try {
-    const heroes = party.filter(p => actors.includes(p)), allies = o.everyone ? alliesHere() : [], goers = [...heroes, ...allies];
+    const heroes = (o.heroes || party).filter(p => actors.includes(p)), allies = o.everyone ? alliesHere() : [], goers = [...heroes, ...allies];
     state.doorShut = false; setDoor(true); if (balcony()) buildGrid();
     // 1. to the doorway
     const sill = {x: B.inside[0], y: B.inside[1]};
@@ -6192,7 +6196,7 @@ async function goThroughGate(w, guards, o = {}){
     await wait(1100);
     // 2. the drow
     const live = guards.filter(d => actors.includes(d) && !d.down && !d.body && !d.offStage);
-    if (live.length && o.surprised) breakoutCry(live.includes(w) ? w : live[0], live, o.by);     // a loud opening has had its cry already
+    if (live.length && (o.surprised || o.cry)) breakoutCry(live.includes(w) ? w : live[0], live, o.by);     // a loud opening has had its cry already
     await wait(live.length ? 1300 : 300);
     // 3. dark, and out on the landing
     $("fade").classList.add("quick", "on"); await wait(320);
@@ -6207,7 +6211,7 @@ async function goThroughGate(w, guards, o = {}){
     });
     if (sneak) endSneak();
     mode = "explore";
-    startCombat(live, "the breakout at the pen gate", {noAllies: !o.everyone, ...(o.surprised && live.length ? {surprised: live.slice()} : {})});
+    startCombat(live, o.label || "the breakout at the pen gate", {noAllies: !o.everyone, ...(o.surprised && live.length ? {surprised: live.slice()} : {}), ...(o.opener ? {opener: o.opener} : {})});
     ovSnap();
     await wait(260);
   } finally {
@@ -6251,6 +6255,190 @@ const QUAGGOTH_DEN = 12;
 // actually spotted has no sneak left at all — sneakSpotted ends it. So a live sneak is the whole test. The first cut,
 // PR #1316, read seenBy as "spotted" and gave the bridge back as soon as any guard had glanced their way.)
 function unseenWayOnly(){ return cur === PEN && !!sneak && gateGuards().length > 0; }
+
+// ---------- THE DOOR, SNEAKING ----------
+// Sam, 2026-11-12: "leaving through door prompts you if you are sneaking: 1. Attack the guards (ambush) - roll for
+// stealth 2. Sneak past them (to the Quaggoth den) - roll for stealth 3. Change your mind (leave door closed but
+// unlocked) 4. Grab dagger/key/etc (if left by someone) and close the door. Retry this and you only get options 1-3,
+// not four. --- If you go do 1 or 2 you will be asked if you take everyone (NPCs). Characters get a choice to come. If
+// you attack then all characters involved in fight begin the combat scene."
+//   WHEN     the pen gate is unlocked (the party's key or picks, Jorlan's kept word, a gate left shut but unlocked, or
+//            standing open), the watch is posted, and the hero at it is SNEAKING. Not sneaking: the cards above, as before.
+//   THE ROLL Dexterity (Stealth), everyone who goes, as ONE group check against the sharpest passive Perception on the
+//            gate (SRD group check: at least half must make it; the Sneak's own rule, the tick above). Small: advantage.
+//            A prisoner rolls on their sheet's Dexterity, or flat when they have none (the Commoner they already fight as).
+//   AMBUSH   made: the drow are surprised and the hero who led it goes first (fightWith's rule). Missed: they heard the
+//            gate, they cry out, nobody is surprised. Either way the fight opens out on the landing (goThroughGate).
+//   PAST     made: out and down the cliff stairs to the Quaggoth Den, the one way an unseen prisoner has (unseenWayOnly).
+//            Missed: caught in the doorway, and it is the same fight, with nobody surprised.
+//   WHO      the hero is asked whether the prisoners come (the ones who fight, for an ambush; all of them, to slip
+//            away). Every OTHER player's hero is asked on their own screen and rolls their own Stealth if they come;
+//            no answer in DOOR_CALL_MS is staying. Heroes this screen drives come when Follow is on (whoGoes' rule).
+//   LEFT BY SOMEONE  anything lying on the pen floor within DOOR_GRAB_FT of the gate (Jorlan's dagger is put there by
+//            lib/stage-roster.ts). Taking it takes it: the row is gone the next time, which is Sam's "only 1-3".
+// [HOUSE] DOOR_CALL_MS and DOOR_GRAB_FT are this file's numbers, not a rule from a book.
+const DOOR_CALL_MS = 20000, DOOR_GRAB_FT = 15;
+let doorTakesPrisoners = false, doorCallBusy = false, doorAsked = null, doorCardOpen = false, doorFollowed = null;
+const doorList = a => a.length > 1 ? a.slice(0, -1).join(", ") + " and " + a[a.length - 1] : (a[0] || "");
+function sneakDoorOffered(){
+  return cur === PEN && mode === "explore" && !!sneak && !!leader && !!state.gateOpen && !cbt && !laborLive() && !surgeon && !timeStopped
+    && canControl(leader) && !outsidePen(leader) && gateGuards().length > 0;
+}
+function doorLocalHeroes(){ return party.filter(p => heroUp(p) && actors.includes(p) && !owRemote(p) && !outsidePen(p) && (p === leader || (followOn && !(sneak && sneak.scout)))); }
+function doorRemoteHeroes(){ return party.filter(p => p !== leader && heroUp(p) && actors.includes(p) && owRemote(p) && !outsidePen(p)); }
+function doorPrisoners(){ companyNow(); return npcs.filter(n => PEN_NPCS.some(d => d.id === n.id) && !n.down && !n.body && !n.offStage && !n.hostile && n.alpha > .2 && !state.leftBehind.includes(n.id)); }
+function doorLeftPiles(){
+  const B = balcony(), g = B ? {x: B.inside[0], y: B.inside[1]} : gateCenter(); if (!g) return [];
+  return pilesHere().filter(p => !outsidePen(p) && Math.hypot(p.x - g.x, p.y - g.y) / pxPerFtAt(p.y) <= DOOR_GRAB_FT);
+}
+function doorNpcStealth(n){ const mod = abilMod(ALLY_SHEETS[n.id], "dex"), r = d20(0, null); return {r, mod, total: r + mod, adv: 0}; }
+/** The card. Returns true when it came up (the caller then shows nothing of its own). */
+function sneakDoorCard(o = {}){
+  if (!sneakDoorOffered()) return false;
+  const h = leader, guards = gateGuards(), g = gateCenter() || {x: h.x, y: h.y};
+  const w = o.w && guards.includes(o.w) ? o.w : guards.slice().sort((a, b) => Math.hypot(a.x - g.x, a.y - g.y) - Math.hypot(b.x - g.x, b.y - g.y))[0];
+  party.forEach(p => { p.path = []; }); mode = "dialog"; tip.hidden = true;
+  try { portrait(w.id, $("objPic"), 128); } catch (e) {}
+  const left = doorLeftPiles(), things = doorList(left.map(p => p.name.toLowerCase()));
+  $("objWho").textContent = "The pen gate, unseen";
+  $("objText").textContent = `The lock is off, and ${guards.length > 1 ? "the guards have" : fname(w) + " has"} not turned round. ${fname(h)} is at the gate, keeping low.`
+    + (left.length ? ` Something has been left on the floor by the bars: ${things}.` : "");
+  const box = $("objBtns"); box.innerHTML = ""; box.classList.remove("loot");
+  const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
+  const add = (label, fn, cls = "", meta = {}) => choiceRow(box, label, () => { close(); fn(); }, cls, meta);
+  add("Attack the guards — an ambush", () => doorWhoComes("ambush", o), "primary", {icon: "force", check: "Stealth", ability: "dex"});
+  add("Sneak past them — to the Quaggoth Den", () => doorWhoComes("sneak", o), "primary", {icon: "way", check: "Stealth", ability: "dex"});
+  add(state.gateBroken ? "Change your mind — stay inside" : "Change your mind — leave it shut, but unlocked", () => doorLeaveShut(o), "", {icon: "back"});
+  if (left.length) add(`Grab the ${things} and close the door`, () => doorGrab(left, o), "", {icon: "key"});
+  showObjCard(); cardFace("use-object"); cardClose(close); firstChoice(box)?.focus();
+  return true;
+}
+/** "If you go do 1 or 2 you will be asked if you take everyone (NPCs)." */
+function doorWhoComes(kind, o = {}){
+  if (!sneakDoorOffered()) return;
+  const h = leader, mine = doorLocalHeroes().filter(p => p !== h), remote = doorRemoteHeroes();
+  const who = kind === "ambush" ? alliesHere() : doorPrisoners(), names = who.map(n => SHORT[n.id] || fname(n));
+  const {add, close} = heroCard(kind === "ambush" ? "The ambush: who comes?" : "Past the watch: who comes?",
+    (who.length ? `${kind === "ambush" ? `${doorList(names)} would fight beside ${fname(h)}.` : `${who.length > 1 ? `The ${who.length} other prisoners` : names[0]} would follow ${fname(h)} out.`} ` : "The other prisoners will not come. ")
+    + "Everyone who goes rolls Stealth, and at least half must stay unheard."
+    + (remote.length ? ` ${doorList(remote.map(fname))} ${remote.length > 1 ? "are" : "is"} asked next, and may come or stay.` : ""));
+  const lbl = mine.length ? `${fname(h)} and ${doorList(mine.map(fname))}` : fname(h);
+  if (who.length) add(kind === "ambush" ? "Take everyone who will fight" : "Take everyone", () => { close(); doorGo(kind, true, o); }, "primary");
+  add(who.length ? `Leave them — just ${lbl}` : `Go — ${lbl}`, () => { close(); doorGo(kind, false, o); }, who.length ? "" : "primary");
+  add("Step back", () => { close(); sneakDoorCard(o); });
+  cardClose(() => { close(); sneakDoorCard(o); });
+}
+/** "Characters get a choice to come": every other player's hero is asked on their own screen. null = called off. */
+async function doorAskOthers(kind){
+  const h = leader, rem = doorRemoteHeroes();
+  if (!APP || !rem.length) return [];
+  const id = "d" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  for (const k of Object.keys(state)) if (k.startsWith("doorAns:")) delete state[k];
+  state.doorCall = {id, by: h.id, kind, at: Date.now()}; doorAsked = id;
+  let goNow = false, off = false;
+  const ans = p => { const a = state["doorAns:" + p.id]; return a && a.id === id ? a : null; };
+  const {add, close} = heroCard("Who is coming?", "");
+  add("Go now — with whoever has answered", () => { goNow = true; }, "primary");
+  add("Call it off", () => { off = true; });
+  cardClose(() => { off = true; });
+  while (!goNow && !off){
+    const waiting = rem.filter(p => !ans(p)), ms = DOOR_CALL_MS - (Date.now() - state.doorCall.at);
+    if (!waiting.length || ms <= 0) break;
+    if ($("obj").hidden || mode !== "dialog" || cur !== PEN){ off = true; break; }
+    $("objText").textContent = `Waiting on ${doorList(waiting.map(fname))} (${Math.ceil(ms / 1000)} s). Whoever does not answer stays in the pen.`;
+    await wait(250);
+  }
+  if (!$("obj").hidden && mode === "dialog") close();
+  if (off || cur !== PEN || mode !== "explore"){ doorCallDone(id, "off", []); return null; }
+  return rem.map(p => { const a = ans(p), yes = !!(a && a.yes); return {p, yes, k: yes ? {r: a.r, mod: a.mod, total: a.total, adv: a.adv || 0, small: !!a.small} : null}; });
+}
+function doorCallDone(id, out, heroes){ const c = state.doorCall; if (c && !c.done && (!id || c.id === id)) state.doorCall = {...c, done: Date.now(), out, goers: heroes.map(p => p.id)}; }
+/** The answer is in: roll it, and it is the ambush, the stairs, or caught in the doorway. */
+async function doorGo(kind, everyone, o = {}){
+  if (doorCallBusy || !sneakDoorOffered()) return;
+  doorCallBusy = true;
+  try {
+    const h = leader, answers = await doorAskOthers(kind);
+    if (!answers){ sneakDoorCard(o); return; }
+    if (!sneakDoorOffered()){ doorCallDone(null, "off", []); return; }              // the watch turned, a fight began, the hour changed: the moment has gone
+    const guards = gateGuards(), g = gateCenter() || {x: h.x, y: h.y};
+    const w = o.w && guards.includes(o.w) ? o.w : guards.slice().sort((a, b) => Math.hypot(a.x - g.x, a.y - g.y) - Math.hypot(b.x - g.x, b.y - g.y))[0];
+    const local = doorLocalHeroes(), heroes = [...local, ...answers.filter(a => a.yes).map(a => a.p)];
+    const withThem = everyone ? (kind === "ambush" ? alliesHere() : doorPrisoners()) : [];
+    const P = Math.max(...guards.map(d => passiveOf(d) || 12));
+    const rolls = [...local.map(p => ({p, k: mapCheck(p, "stealth", "dex", P)})), ...answers.filter(a => a.yes).map(a => ({p: a.p, k: a.k})), ...withThem.map(n => ({p: n, k: doorNpcStealth(n)}))];
+    const beat = rolls.filter(({p, k}) => k.total + useInspiration(p, k.total, P) >= P).length, ok = beat * 2 >= rolls.length;
+    const mineRoll = rolls.find(x => x.p === h) || rolls[0];
+    log(`<b>${kind === "ambush" ? "The ambush" : "Past the watch"}.</b> ${rolls.length === 1 ? `${esc(fname(h))}: ${rollLine(mineRoll.k, "stealth")}` : "Stealth — " + rolls.map(({p, k}) => `${esc(SHORT[p.id] || fname(p))} ${k.total}`).join(" · ")} against the watch's passive Perception ${P}: ${ok ? "<b>unheard</b>" : "<b>heard</b>"}${rolls.length > 1 ? ` (${beat} of ${rolls.length} made it)` : ""}.`);
+    popText(h, `Stealth ${mineRoll.k.total}`, ok ? "#9ad0ff" : "#ff6b5a", 1);
+    if (kind === "ambush" || !ok){
+      doorCallDone(null, kind === "ambush" ? "ambush" : "seen", heroes);
+      if (!ok) log(kind === "ambush" ? `<em>The gate scrapes on its hinge, and ${esc(fname(w))} turns.</em>` : `<em>${esc(fname(w))} turns round at the wrong moment.</em>`);
+      if (APP) handOff(kind === "ambush"
+        ? `${fname(h)}, sneaking, went through the unlocked slave pen gate to ambush the drow on watch${ok ? ", and took them by surprise" : ", but the drow heard the gate and were not surprised"}. Combat has begun on the landing outside the pen.`
+        : `${fname(h)} tried to slip out of the slave pen past the drow on watch and was caught in the doorway. Combat has begun on the landing outside the pen.`);
+      await goThroughGate(w, guards, {everyone, heroes, surprised: ok, cry: true, by: "sneak", ...(ok ? {opener: h} : {}),
+        label: kind === "ambush" ? (ok ? "the ambush at the pen gate — out of the dark, before they know it." : "the ambush at the pen gate — they heard it coming.") : "caught slipping past the watch at the pen gate"});
+      return;
+    }
+    // unheard, and past them: the cliff stairs, down to the Quaggoth Den
+    doorCallDone(null, "den", heroes);
+    const z = doorGate(); if (!z){ return; }
+    state.doorShut = false; setDoor(true); if (balcony()) buildGrid(); sfx("door-open", .3);
+    log(`${esc(doorList(heroes.map(fname)))} ${heroes.length > 1 ? "slip" : "slips"} through the gate behind the watch's backs${withThem.length ? ", the prisoners after them," : ""} and down the cliff stairs.`);
+    if (APP) handOff(`${doorList(heroes.map(fname))} slipped out of the slave pen through the unlocked gate, unseen by the drow on watch, and went down the cliff stairs toward the Quaggoth Den. ${withThem.length ? "The other prisoners went with them." : "The other prisoners are still in the pen."} The drow have not noticed yet.`);
+    const solo = party.some(p => p !== h && heroUp(p) && actors.includes(p) && !local.includes(p));   // someone stays, or walks themselves: this hero's own crossing
+    doorTakesPrisoners = withThem.length > 0;
+    await wait(500);
+    if (cur === PEN && mode === "explore") await travel(QUAGGOTH_DEN, z, false, null, solo);
+  } finally { doorCallBusy = false; doorTakesPrisoners = false; exploreKey = ""; }
+}
+/** 3. "Change your mind (leave door closed but unlocked)." A gate the party itself just unlocked is the one the next watch finds (gateLeftUnlockedTick). */
+function doorLeaveShut(o = {}, quiet){
+  const h = leader;
+  if (state.gateBroken){ if (!quiet) log(`${esc(fname(h))} stays inside. The gate hangs open on its torn bolt.`); return; }
+  const was = !!state.doorShut;
+  if (!was){ state.doorShut = true; setDoor(false); if (balcony()) buildGrid(); setTimeout(() => sfx("door-close", .5), 650); }
+  if (o.fresh && !state.gateLeftUnlocked) state.gateLeftUnlocked = {rot: storyRotations, at: Date.now()};
+  saveWalk();
+  if (!quiet) log(was ? `${esc(fname(h))} lets go of the bars. <em>The gate stays shut, and unlocked.</em>`
+    : `${esc(fname(h))} eases the gate shut again. Nobody saw. <em>It is shut, but it will open${state.gateLeftUnlocked ? " — until the next watch tries it" : ""}.</em>`);
+}
+/** 4. "Grab dagger/key/etc (if left by someone) and close the door." */
+async function doorGrab(left, o = {}){
+  const h = leader, got = [];
+  for (const p of left){ if (!floor.includes(p)) continue; await pickUp(h, p); if (!floor.includes(p)) got.push(p.name.toLowerCase()); }
+  doorLeaveShut(o, true);
+  log(got.length ? `${esc(fname(h))} has the ${esc(doorList(got))}, and the gate is shut again. <em>Still unlocked.</em>` : `<em>The gate is shut again, still unlocked.</em>`);
+}
+/** Every screen, twice a second (pacingTick): another player's hero is asked, and follows the one who called. */
+function doorCallTick(){
+  const c = state.doorCall; if (!c) return;
+  const by = party.find(p => p.id === c.by), mine = wardMine(), theirs = !!(APP && mine && by && mine !== by && !canControl(by) && canControl(mine));
+  const shutCard = () => { if (!doorCardOpen) return; doorCardOpen = false; if (!$("obj").hidden && mode === "dialog"){ $("obj").hidden = true; mode = "explore"; exploreKey = ""; } };
+  if (c.done){
+    shutCard();
+    if (theirs && doorFollowed !== c.id){ doorFollowed = c.id;
+      if (c.out === "den" && (c.goers || []).includes(mine.id) && cur === PEN && !outsidePen(mine)){
+        toast(`${fname(by)} is through, unseen. ${fname(mine)} follows, down the cliff stairs.`, 4200);
+        const z = doorGate();
+        if (z) setTimeout(() => { if (cur === PEN && mode === "explore" && leader === mine && !cbt) travel(QUAGGOTH_DEN, z, false, null, true); }, 900);
+      } else if (c.out === "off" && doorAsked === c.id) toast(`${fname(by)} thought better of it.`);
+    }
+    if (Date.now() - c.done > 90000 && by && canControl(by)) state.doorCall = null;
+    return;
+  }
+  if (Date.now() - c.at > DOOR_CALL_MS + 6000){ shutCard(); if (by && canControl(by) && !doorCallBusy) state.doorCall = null; return; }
+  if (!theirs || doorAsked === c.id || cur !== PEN || mode !== "explore" || !heroUp(mine) || outsidePen(mine) || leader !== mine) return;
+  doorAsked = c.id; doorCardOpen = true;
+  const {add, close} = heroCard(c.kind === "ambush" ? `${fname(by)} means to ambush the guards` : `${fname(by)} means to slip past the watch`,
+    c.kind === "ambush" ? `The pen gate is unlocked and the watch has not turned round. ${fname(by)} is going through it to strike first. Does ${fname(mine)} go too? Whoever goes rolls Stealth.`
+      : `The pen gate is unlocked and the watch has not turned round. ${fname(by)} is going out behind their backs, down the cliff stairs to the Quaggoth Den. Does ${fname(mine)} go too? Whoever goes rolls Stealth.`);
+  add(`Go with ${fname(by)}`, () => { doorCardOpen = false; close(); const k = mapCheck(mine, "stealth", "dex");
+    state["doorAns:" + mine.id] = {id: c.id, yes: true, r: k.r, mod: k.mod, total: k.total, adv: k.adv, small: !!k.small};
+    log(`${esc(fname(mine))} goes with ${esc(fname(by))}: ${rollLine(k, "stealth")}.`); }, "primary");
+  add("Stay in the pen", () => { doorCardOpen = false; close(); state["doorAns:" + mine.id] = {id: c.id, yes: false}; });
+}
 function openGate(){
   if (state.gateOpen) return;
   const j = cur === 11 && mode === "explore" ? npcs.find(n => n.id === "jorlan" && !n.offStage) : null;
@@ -8152,7 +8340,7 @@ function mapCheck(a, skill, abil, dc){   // dc (optional): lets the Lucky feat k
   const mod = heroMod(a, skill, abil), r = d20(adv, a, null, dc == null ? null : dc - mod); return {r, mod, total: r + mod, adv, small};
 }
 const SKILL_NAME = {stealth: "Dexterity (Stealth)", perception: "Wisdom (Perception)", investigation: "Intelligence (Investigation)", nature: "Intelligence (Nature)", medicine: "Wisdom (Medicine)",
-  arcana: "Intelligence (Arcana)", dexterity: "Dexterity"};
+  arcana: "Intelligence (Arcana)", history: "Intelligence (History)", dexterity: "Dexterity"};
 function rollLine(k, skill){ return `${SKILL_NAME[skill]} ${k.r}${k.adv ? (k.small ? " (advantage: Small)" : " (advantage)") : ""} ${k.mod >= 0 ? "+" : "−"} ${Math.abs(k.mod)} = <b>${k.total}</b>`; }
 function nearestExit(L){ return node.zones.filter(z => !z.interact && (z.to || []).length).map(z => [z, Math.hypot(zoneCenter(z).x - L.x, zoneCenter(z).y - L.y)]).sort((x, y) => x[1] - y[1])[0]; }
 function exitName(z){ const t = SPEC[(z.to || [])[0]]; return z.label || (t && t.name) || (z.kind === "leave" ? "the way out" : "the way on"); }
@@ -8199,7 +8387,7 @@ function exploreExtras(m, o, add, who){
     else if (wardAlreadyRead(L))
       x("Study the ward sigil", "✦", ART("look-closer"), "you have read what you can off it · more Arcana would show more", null);
     else
-      x("Study the ward sigil", "✦", ART("look-closer"), `Arcana ${sgn(heroMod(L, "arcana", "int"))}${wardWizard(L) ? "" : " · disadvantage: not a wizard"}${wardHelpers(L).length ? " · a hand is close" : ""}`, () => studySigilAsk());
+      x("Study the ward sigil", "✦", ART("look-closer"), `${wardSkill(L) === "history" ? "History" : "Arcana"} ${sgn(heroMod(L, wardSkill(L), "int"))}${wardWizard(L) ? "" : " · disadvantage: not a wizard"}${wardHelpers(L).length ? " · a hand is close" : ""}`, () => studySigilAsk());
     if (seen && seen.tier === "seam" && wardMayCut(L)){
       if (wardCutLocked(L)) x("Alter the ward sigil", "✧", ART("look-closer"), "the ward bit you · rest before you try it again", null);
       else x("Alter the ward sigil", "✧", ART("look-closer"), `Dexterity DC ${WARD_CUT_DC} · it will scar red, and the drow will read it`, () => openSigilCut());
@@ -8747,7 +8935,14 @@ function wardReach(h){
 const wardCaster = h => { const sh = SHEETS[h.id] || {}; return !!(sh.magic || sh.caster); };
 const wardWizard = h => /wizard/i.test((SHEETS[h.id] || {}).cls || "");
 const wardArcane = h => "arcana" in ((SHEETS[h.id] || {}).skills || {});     // proficient, not merely able to roll
-const wardMayCut = h => wardWizard(h) || wardArcane(h);
+// A BARD WHO HAS SEEN ITS LIKE (Sam, 2026-11-12: "Bard can have it if he has Arcana or History recognizing this type of
+// symbol in his adventures"). A bard proficient in History reads the sigil with History when that is the better of
+// the two for them (or the only one), and may make the cut on a 20+ read exactly as an Arcana-proficient caster may.
+// Nothing else moves: still one look, still at disadvantage for not being a wizard, still the same tiers and the same
+// Dexterity cut. [CLAUDE: that the History reader ROLLS History rather than only qualifying by it.]
+const wardHistory = h => /bard/i.test((SHEETS[h.id] || {}).cls || "") && "history" in ((SHEETS[h.id] || {}).skills || {});
+const wardSkill = h => wardHistory(h) && (!wardArcane(h) || heroMod(h, "history", "int") > heroMod(h, "arcana", "int")) ? "history" : "arcana";
+const wardMayCut = h => wardWizard(h) || wardArcane(h) || wardHistory(h);
 /**
  * ONE STUDY PER HERO (Sam, 2026-10-30: "I agree long rest doesn't teach you arcane so unless you developed some
  * arcana expertise or a special skill - NO. One study per hero.").
@@ -8762,7 +8957,8 @@ const wardMayCut = h => wardWizard(h) || wardArcane(h);
  */
 function wardArcanaKey(h){
   const sh = SHEETS[h.id] || {}, lore = (sh.lore || {}).arcana || {};
-  return `${heroMod(h, "arcana", "int")}|${lore.level || ""}|${wardArcane(h) ? "p" : ""}${wardWizard(h) ? "w" : ""}`;
+  // (a bard's History standing is appended only when they have it, so everyone else's stamp is unchanged)
+  return `${heroMod(h, "arcana", "int")}|${lore.level || ""}|${wardArcane(h) ? "p" : ""}${wardWizard(h) ? "w" : ""}${wardHistory(h) ? "|h" + heroMod(h, "history", "int") : ""}`;
 }
 /** Has this hero already read it AT THEIR CURRENT STANDING? A legacy `true` is stamped with today's key, which
  *  keeps them blocked now and lets a future level-up reopen it. */
@@ -8843,14 +9039,15 @@ function studySigil(){
   let helped = null;
   if (helpNext && helpNext.by !== h.id && now < helpNext.until){ helped = helpNext.by; helpNext = null; }
   const adv = (helped ? 1 : 0) + (wardWizard(h) ? 0 : -1);
-  const mod = heroMod(h, "arcana", "int"), r = d20(adv, h), k = {r, mod, total: r + mod, adv};
+  const skill = wardSkill(h);                                          // Arcana, or a bard's History (Sam, 2026-11-12)
+  const mod = heroMod(h, skill, "int"), r = d20(adv, h), k = {r, mod, total: r + mod, adv};
   const tier = wardTierOf(k.total);
   state.wardTried[h.id] = wardArcanaKey(h);
   state.wardStudy[h.id] = {tier: tier.key, total: k.total};
-  log(`${fname(h)} studies the ward sigil${helped ? `, with ${esc(SHORT[helped] || helped)}'s help` : ""}: ${rollLine(k, "arcana")}. <i>${esc(tier.line)}</i>`);
+  log(`${fname(h)} studies the ward sigil${helped ? `, with ${esc(SHORT[helped] || helped)}'s help` : ""}: ${rollLine(k, skill)}. <i>${esc(tier.line)}</i>`);
   toast(tier.line, 6200);
-  askCheck(`${fname(h)} studies the ward sigil`, k, "arcana",
-    `${fname(h)} studies the drow ward sigil cut into the pen wall. Intelligence (Arcana) ${k.total}`
+  askCheck(`${fname(h)} studies the ward sigil`, k, skill,
+    `${fname(h)} studies the drow ward sigil cut into the pen wall${skill === "history" ? ", recognising the kind of mark from their travels" : ""}. ${SKILL_NAME[skill]} ${k.total}`
     + `${adv < 0 ? " (disadvantage: not a wizard)" : adv > 0 ? " (advantage: helped)" : helped ? " (helped, but not a wizard: the two cancel)" : ""}. `
     + `On this roll they learn exactly this and no more: ${tier.tell}. Narrate only that much — do not give them the next tier up.`);
   if (tier.key === "seam") toast(`${fname(h)} could cut it. It would scar red, and every drow who came in would read it.`, 7000);
@@ -9093,7 +9290,7 @@ function pacingFind(id){ return npcs.find(n => n.id === id && actors.includes(n)
 let pacingAt = 0, pacingRot = null, pacingPenSince = 0, pacingArgued = 0, pacingMuttered = 0, pacingFaded = null, pacingAsked = null, pacingPlanBarked = 0;
 function pacingTick(){
   if (now - pacingAt < 500) return; pacingAt = now;
-  caravanTick(); waitTick(); chainMarchTick();
+  caravanTick(); waitTick(); chainMarchTick(); doorCallTick();
   if (!penHeld()){ pacingPenSince = 0; return; }
   if (!pacingPenSince) pacingPenSince = now;
   if (mode !== "explore" || (typeof talkNpc !== "undefined" && talkNpc) || timeStopped) return;

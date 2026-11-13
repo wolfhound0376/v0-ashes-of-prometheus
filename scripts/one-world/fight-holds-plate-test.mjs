@@ -184,6 +184,20 @@ const fightNow = (pg) => pg.evaluate(() => ({ plate: String(cur), mode, closeUp:
   alliesInPen: npcs.filter((n) => ALLY_SHEETS[n.id] && actors.includes(n) && !n.offStage).map((n) => [n.id, outsidePen(n)]),
   foes: foes.map((f) => [f.id, !!(f.c && (f.c.surprised || f.c.conds.has("surprised")))]), order: cbt ? cbt.order.length : 0 }))
 
+// THE DOOR, SNEAKING (Sam, 2026-11-12: "leaving through door prompts you if you are sneaking: 1. Attack the guards (ambush)
+// 2. Sneak past them (to the Quaggoth den) 3. Change your mind 4. Grab dagger/key/etc (if left by someone) and close the
+// door"). The hero is hidden first (as ropeScene hides her), then a prisoner's hand opens the gate. `left`: a dagger lies
+// on the floor just inside the bars, where lib/stage-roster.ts puts Jorlan's. The dice answer as told (setDice).
+const sneakOpens = async (pg, by, o = {}) => {
+  await pg.evaluate(([by, o]) => { state.wardBroken = true; window.__handoffs = []; handOff = (t) => { __handoffs.push(String(t)); return "x" }
+    for (const n of npcs) n.talk = false
+    sneak = { scout: false, cur, rolls: [{ p: leader, k: { total: 25 } }], seenBy: new Set(), line: "25" }
+    if (o.left) { loadGear = async () => {}     // the stand-in server keeps no inventories: the pickup stays as the page made it
+      const B = balcony(); floor.push({ id: "local-dagger", node: cur, x: B.inside[0], y: B.inside[1], name: "Dagger", pixel: null }) }
+    breakoutBy = by; unlockGate() }, [by, o])
+  return until(pg, () => !$("obj").hidden && $("objWho").textContent === "The pen gate, unseen", 15000)
+}
+const setDice = (pg, face) => pg.evaluate((face) => { d20 = () => face }, face)
 const cardIs = (pg, re) => until(pg, (src) => !$("obj").hidden && new RegExp(src).test($("objWho").textContent), 15000, re.source)
 
 // a guard leaning at the bars, the hero beside him and hidden, first empty-handed (`without`), then with the rope. The dice answer as
@@ -301,6 +315,109 @@ const SCENARIOS = {
       check("unseen: the cliff stairs take the party down", r.afterStairs.length === 1 && r.afterStairs[0] === 12, r)
       check("a guard who only looked their way changes nothing: still the stairs only", r.looked === true && r.afterLook.length === 1, r)
       check("once they are spotted (the sneak is over) the bridge is a way again", r.seen === false && r.afterSeen.length === 2 && r.afterSeen[1] === 10, r)
+    } finally { await W.close() }
+  }],
+  21: ["the door, sneaking: the four rows; an ambush that is not heard surprises the drow and its leader strikes first", async (port) => {
+    const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
+    try {
+      check("the sneaking card comes up, not the plain one", await sneakOpens(A, "key"))
+      const c = await card(A); await shot(A, "21-the-sneak-card")
+      check("ambush, sneak past, change your mind — and nothing to grab when nothing was left", c.rows.length === 3 && /Attack the guards/.test(c.rows[0]) && /Sneak past them — to the Quaggoth Den/.test(c.rows[1]) && /Change your mind — leave it shut, but unlocked/.test(c.rows[2]), c)
+      await pick(A, /Attack the guards/)
+      check("she is asked who comes", await cardIs(A, /The ambush: who comes\?/))
+      const w = await card(A); check("take everyone who will fight, or leave them, or step back", /Take everyone who will fight/.test(w.rows[0]) && /Leave them — just Fifi/.test(w.rows[1]) && /Step back/.test(w.rows[2]), w)
+      await setDice(A, 20); await pick(A, /Leave them — just/)
+      check("the fight starts", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 20000))
+      await wait(1200); const f = await fightNow(A), first = await A.evaluate(() => cbt.order[0].id); await shot(A, "21-the-ambush")
+      check("out on the landing, close-up up, same plate", f.heroesOut.every(Boolean) && f.closeUp && f.plate === "11" && f.moves === 0, f)
+      check("the drow are surprised, and the one who led it goes first", f.foes.length > 0 && f.foes.every((x) => x[1]) && first === "freia", { f, first })
+      check("the prisoners were left: none is in the fight", f.allies.length === 0, f)
+    } finally { await W.close() }
+  }],
+  22: ["the door, sneaking: an ambush that is heard — everyone who fights comes, nobody is surprised", async (port) => {
+    const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
+    try {
+      check("the card comes up", await sneakOpens(A, "pick"))
+      await pick(A, /Attack the guards/); await cardIs(A, /who comes/)
+      await setDice(A, 1); await pick(A, /Take everyone who will fight/)
+      check("the fight starts", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 20000))
+      await wait(1200); const f = await fightNow(A)
+      check("no drow is surprised", f.foes.length > 0 && f.foes.every((x) => !x[1]), f)
+      check("the prisoners who fight are in it, out on the landing", f.allies.length > 0 && f.allies.every((x) => x[1]) && f.heroesOut.every(Boolean), f)
+    } finally { await W.close() }
+  }],
+  23: ["the door, sneaking: past the watch unheard — down the cliff stairs to the Quaggoth Den, the prisoners with her", async (port) => {
+    const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
+    try {
+      check("the card comes up", await sneakOpens(A, "key"))
+      await pick(A, /Sneak past them/)
+      check("she is asked who comes", await cardIs(A, /Past the watch: who comes\?/))
+      await setDice(A, 20); await pick(A, /^Take everyone$/)
+      check("she arrives in the Quaggoth Den", await until(A, () => String(cur) === "12" && mode === "explore", 30000))
+      const s = await A.evaluate(() => ({ plate: String(cur), fight: !!cbt, company: (state.company || []).length, told: __handoffs.filter((t) => /unseen by the drow on watch/.test(t)).length }))
+      check("no fight, the prisoners came, and Malachar is told once", !s.fight && s.company > 0 && s.told === 1, s)
+    } finally { await W.close() }
+  }],
+  24: ["the door, sneaking: caught slipping past — the fight on the landing, nobody surprised, nobody leaves the plate", async (port) => {
+    const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
+    try {
+      check("the card comes up", await sneakOpens(A, "key"))
+      await pick(A, /Sneak past them/); await cardIs(A, /who comes/)
+      await setDice(A, 1); await pick(A, /Leave them — just/)
+      check("the fight starts", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 20000))
+      await wait(1200); const f = await fightNow(A)
+      check("on the pen plate, on the landing, and no drow is surprised", f.plate === "11" && f.moves === 0 && f.heroesOut.every(Boolean) && f.foes.length > 0 && f.foes.every((x) => !x[1]), f)
+    } finally { await W.close() }
+  }],
+  25: ["the door, sneaking: something left by the bars — grab it and close the door; the next time there are three rows", async (port) => {
+    const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
+    try {
+      check("the card comes up", await sneakOpens(A, "key", { left: true }))
+      const c = await card(A); await shot(A, "25-left-by-someone")
+      check("a fourth row: grab the dagger and close the door", c.rows.length === 4 && /Grab the dagger and close the door/.test(c.rows[3]), c)
+      await pick(A, /Grab the dagger/); await wait(1800)
+      const g = await A.evaluate(() => ({ has: carries(leader, "Dagger"), onFloor: floor.some((p) => p.name === "Dagger"), open: state.gateOpen, shut: state.doorShut, marked: !!state.gateLeftUnlocked, fight: !!cbt }))
+      check("she has the dagger, the gate is shut and still unlocked, nobody fights", g.has && !g.onFloor && g.open && g.shut && g.marked && !g.fight, g)
+      await A.evaluate(() => { $("dialog").hidden = true; $("obj").hidden = true; mode = "explore"; openInteract(doorGate()) })
+      check("trying the gate again brings the sneaking card", await cardIs(A, /The pen gate, unseen/))
+      const d = await card(A)
+      check("only the first three rows now", d.rows.length === 3 && !d.rows.some((r) => /Grab/.test(r)), d)
+      await pick(A, /Change your mind/); await wait(600)
+      const l = await A.evaluate(() => ({ mode, open: state.gateOpen, shut: state.doorShut }))
+      check("changing her mind leaves it shut, unlocked, and the game goes on", l.mode === "explore" && l.open && l.shut, l)
+    } finally { await W.close() }
+  }],
+  26: ["the door, sneaking, two screens: the other player's hero is asked, comes, and both reach the Quaggoth Den", async (port) => {
+    const W = await world({ port }), A = await W.screen(FIFI, "Fifi"), B = await W.screen(KENTA, "Kenta")
+    try {
+      await wait(2500)
+      check("the card comes up", await sneakOpens(A, "key"))
+      await setDice(A, 20); await setDice(B, 20)
+      await pick(A, /Sneak past them/); await cardIs(A, /who comes/)
+      const w = await A.evaluate(() => $("objText").textContent); check("the card says the other hero is asked", /Kenta is asked next/.test(w), w)
+      await pick(A, /Leave them — just Fifi$/)
+      check("Fifi's screen waits on Kenta", await cardIs(A, /Who is coming\?/))
+      check("Kenta's screen asks him", await cardIs(B, /Fifi means to slip past the watch/))
+      await shot(B, "26-kenta-is-asked"); await pick(B, /Go with Fifi/)
+      check("Fifi reaches the Quaggoth Den", await until(A, () => String(cur) === "12" && mode === "explore", 40000))
+      check("Kenta follows her there on his own screen", await until(B, () => String(cur) === "12" && mode === "explore", 40000))
+      const s = await A.evaluate(() => ({ out: state.doorCall && state.doorCall.out, goers: state.doorCall && state.doorCall.goers, fight: !!cbt }))
+      check("the call is settled: the den, both heroes, no fight", s.out === "den" && s.goers.length === 2 && !s.fight, s)
+    } finally { await W.close() }
+  }],
+  27: ["the door, sneaking, two screens: the other hero stays — the ambush goes without him", async (port) => {
+    const W = await world({ port }), A = await W.screen(FIFI, "Fifi"), B = await W.screen(KENTA, "Kenta")
+    try {
+      await wait(2500)
+      check("the card comes up", await sneakOpens(A, "key"))
+      await setDice(A, 20)
+      await pick(A, /Attack the guards/); await cardIs(A, /who comes/); await pick(A, /Leave them — just Fifi$/)
+      check("Kenta's screen asks him", await cardIs(B, /Fifi means to ambush the guards/))
+      await pick(B, /Stay in the pen/)
+      check("the fight starts on Fifi's screen", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 30000))
+      await wait(1200)
+      const f = await A.evaluate(() => ({ fifiOut: outsidePen(party.find((p) => p.id === "freia")), kentaOut: outsidePen(party.find((p) => p.id !== "freia")), goers: state.doorCall && state.doorCall.goers, surprised: foes.every((x) => x.c && x.c.conds.has("surprised")) }))
+      check("Fifi is out on the landing, Kenta is still in the pen, the drow are surprised", f.fifiOut && !f.kentaOut && f.goers.length === 1 && f.surprised, f)
     } finally { await W.close() }
   }],
   28: ["pointing at things: the sigil and the gate light yellow under the pointer, and a click on the sigil opens its options", async (port) => {
