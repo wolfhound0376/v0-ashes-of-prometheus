@@ -22709,6 +22709,15 @@ function akey(a){
   if (!a) return null;
   if (a.fk) return a.fk;
   if (a.kind === "pc") return a.fk = a.id;
+  // TWO ELDETHS AND A GUARD WHO WOULD NOT DIE (Sam, 2026-11-12: "Two eldiths, people frozen, no casting"). The key used
+  // to be `post`, but `post` is rewritten to wherever a person stands (after a fight, on the walk back, at a change of
+  // watch), and each screen does that at its own moment: Eldeth was eldeth@690,750 on Lynkes's screen and
+  // eldeth@730,790 on Gandalf's, so the mirror drew a second Eldeth; the female guard was @120,465 on one and @300,555
+  // on the other, so killing her on one screen left her alive at her post on the other, and she started a new fight.
+  // The key is now what every screen agrees on: a companion is one person in the party (by name); a plate's person is
+  // the spot the plate itself stands them on (pocketKey, written once at spawn from the plate's own numbers).
+  if (a.company && !a.spawned) return a.fk = `${a.id}@party`;
+  if (a.pocketKey && !a.spawned) return a.fk = `${a.id}@${a.pocketKey}`;
   if (a.post && !a.spawned) return a.fk = `${a.id}@${Math.round(a.post.x)},${Math.round(a.post.y)}`;
   return a.fk = `${a.id}#${++FIGHT.serial}`;
 }
