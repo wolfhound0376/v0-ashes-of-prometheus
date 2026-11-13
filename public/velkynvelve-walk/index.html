@@ -4601,7 +4601,7 @@ async function takeLoot(a, id, row){
     const g = GEAR[a.id] || (GEAR[a.id] = {carried: [], main: null}), cat = (row.slug ? (catalog || []).find(i => i.slug === row.slug) : catalogItem(row.name)) || {};
     const have = g.carried.find(c => c.name === row.name && !isWeapon(c));
     if (have) have.qty = (have.qty || 1) + row.qty;
-    else g.carried.push({name: row.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: cat.pixel_icon_url || null, qty: row.qty, icon: cat.icon_url || null, desc: cat.description || ""});
+    else g.carried.push({name: row.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: cat.pixel_icon_url || null, qty: row.qty, icon: cat.icon_url || null, desc: cat.description || "", eslot: normSlot(cat.equippable_slot || ""), wt: Number(cat.weight) || 0});
   }
   if (row.name === PEN_KEY){ state.penKey = true; shakeKeyTaken(); }   // THE SHAKEDOWN: the drow start counting rotations
   if (bagOpen()) renderBag();
@@ -21385,7 +21385,7 @@ async function loadGear(only){
     try {
       const j = await (await fetch(`/api/equipment?character_id=${encodeURIComponent(cid)}`, {cache: "no-store"})).json();
       const carried = (j.carried || []).map(r => { const cat = catalogItem(r.name); return {name: r.name, item_key: r.item_key, item_type: r.items?.item_type || r.item_type || cat?.item_type, properties: r.items?.properties || cat?.properties || {}, pixel: cat?.pixel_icon_url || null,
-        eslot: normSlot(r.equippable_slot || r.items?.equippable_slot || cat?.equippable_slot || ""),
+        eslot: normSlot(r.items?.equippable_slot || cat?.equippable_slot || r.equippable_slot || ""),   // the catalogue first (slotOfItem)
         wt: Number(r.weight ?? r.items?.weight ?? cat?.weight ?? 0) || 0,
         qty: r.quantity || 1, icon: r.icon_url || cat?.icon_url || null, desc: r.description || cat?.description || "", origin: r.origin || ""}; });
       const doll = (j.equipped || []).filter(e => e.equipped !== false).map(e => ({slot: normSlot(e.slot), name: e.name, item_key: e.item_key || null}));
@@ -21439,7 +21439,7 @@ async function pickUp(a, p){
   const g = GEAR[a.id] || (GEAR[a.id] = {carried: [], main: null});
   const have = g.carried.find(c => c.name === p.name && !isWeapon(c));
   if (have) have.qty = (have.qty || 1) + 1;
-  else g.carried.push({name: p.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: p.pixel, qty: 1, wt: Number(cat.weight) || 0, icon: cat.icon_url || null, desc: cat.description || ""});
+  else g.carried.push({name: p.name, item_type: cat.item_type, properties: cat.properties || {}, pixel: p.pixel, qty: 1, wt: Number(cat.weight) || 0, icon: cat.icon_url || null, desc: cat.description || "", eslot: normSlot(cat.equippable_slot || "")});
   if (bagOpen()) renderBag();
   noteLoad(a, wasEnc);
   popText(a, `+ ${p.name}`, "#e8d9a8"); log(`${fname(a)} picks up the <b>${esc(p.name)}</b>${inFight ? ` (${PICKUP_FT} ft of movement)` : ""}.`);
@@ -21492,13 +21492,29 @@ const SLOT_ICON_BASE = APP ? "/icons/equipment/" : "https://ashes.playacartagena
 // icons/hero/: a ghost-outline tile per empty slot, and painted marks for HP, AC, Speed, Level Up, the name crest and XP.
 // A worn item still shows its own picture; the dashboard's equipment icons stay for the drag ghost.
 const HERO_ICON_BASE = ICON_BASE + "hero/";
-const SLOT_ALIAS = {ring_1: "ring1", ring_2: "ring2", cloak: "back", gloves: "hands", gauntlets: "hands", feet: "legs", boots: "legs"};
+// Spellings found on real inventory rows (2026-11-13: 11 rows "mainhand", 2 Leather Armor rows "armor") as well as the
+// catalogue's own. Mirrored in lib/equipped.ts SLOT_ALIASES.
+const SLOT_ALIAS = {ring_1: "ring1", ring_2: "ring2", cloak: "back", gloves: "hands", gauntlets: "hands", feet: "legs", boots: "legs",
+  mainhand: "main_hand", "main hand": "main_hand", "main-hand": "main_hand", weapon: "main_hand", offhand: "off_hand", "off hand": "off_hand", "off-hand": "off_hand", shield: "off_hand",
+  armor: "torso", armour: "torso", body: "torso", chest: "torso", helmet: "head", helm: "head", amulet: "neck", necklace: "neck"};
 function normSlot(sl){ const k = String(sl || "").trim().toLowerCase(); return SLOT_ALIAS[k] || k; }
+// WHERE A THING IS WORN (Sam, 2026-11-13: "not able to put on leather armor in inventory and some other items"). The
+// catalogue is canon and wins; the row's own slot is only a fallback, then what the thing plainly is (armour on the
+// torso, a shield in the off hand, a weapon in the hand). Before this, a pack row with no slot (anything taken in a
+// rehearsal or by a hero with no seat) or a stale one ("armor", "mainhand") had nowhere to go and Wear did nothing.
+function slotOfItem(it){
+  if (!it) return "";
+  const cat = catalogItem(it.name);
+  const s = normSlot((cat && cat.equippable_slot) || it.eslot || "");
+  if (s) return s;
+  const ar = armorOf(it); if (ar) return ar.kind === "shield" ? "off_hand" : "torso";
+  return isWeapon(it) ? "main_hand" : "";
+}
 const HAND = sl => sl === "main_hand" || sl === "off_hand";
 const slotLabel = sl => (DOLL_SLOTS.find(d => d.id === sl) || {label: sl}).label;
 function twoHanded(it){ return ((it.properties || {}).weapon_properties || []).map(x => String(x).toLowerCase()).includes("two-handed"); }
 function fitsSlot(it, sl){
-  const want = it.eslot || (isWeapon(it) ? "main_hand" : ""); if (!want) return false;
+  const want = slotOfItem(it); if (!want) return false;
   if (want === sl) return true;
   if ((want === "ring" || want === "ring1" || want === "ring2") && (sl === "ring1" || sl === "ring2")) return true;
   return sl === "off_hand" && want === "main_hand" && isWeapon(it) && !twoHanded(it);
@@ -21510,7 +21526,7 @@ const wornIn = (g, sl) => (g.doll || []).find(d => d.slot === sl) || null;
 const copiesOf = (g, name) => ((g && g.carried) || []).filter(c => c.name === name).reduce((n, c) => n + (c.qty || 1), 0);
 const wornSlotsOf = (g, it) => (g.doll || []).filter(d => d.item_key && it.item_key ? d.item_key === it.item_key : d.name === it.name).map(d => d.slot);
 function homeSlot(g, it){   // where "Wear" puts it: its own slot, a ring on the first free finger
-  const want = it.eslot || (isWeapon(it) ? "main_hand" : ""); if (!want) return null;
+  const want = slotOfItem(it); if (!want) return null;
   if (want === "ring" || want === "ring1" || want === "ring2") return !wornIn(g, "ring1") ? "ring1" : !wornIn(g, "ring2") ? "ring2" : "ring1";
   return DOLL_SLOTS.some(d => d.id === want) ? want : null;
 }
@@ -22071,6 +22087,13 @@ function renderBag(){
       bagHoverT = setTimeout(() => { if (bagOpen() && !document.querySelector(".invGhost")) openCard(); }, BAG_HOVER_MS); });
     row.addEventListener("pointerleave", () => clearTimeout(bagHoverT));
     row.addEventListener("pointerdown", () => clearTimeout(bagHoverT));
+    // QUICK EQUIP (Sam, 2026-11-13: "look into how popular games do inventory management"). Baldur's Gate 3, Diablo and
+    // Pathfinder all let one gesture on a pack item put it on its own slot, and the same gesture on a worn item take it
+    // off. Double-click here; the same rules as the buttons (equipTo / removeFrom: cost mid-fight, no armour mid-fight).
+    row.addEventListener("dblclick", e => { if (e.target.closest && e.target.closest("button")) return; clearTimeout(bagHoverT);
+      if (worn.length){ const sl = worn[0]; if (mine && (!fight || (HAND(sl) && gearCost(a, 1).ok))) removeFrom(a, sl); else toast(fight && !HAND(sl) ? "Not in the middle of a fight: getting out of that takes longer than a turn." : bagWhyNot(a)); return; }
+      const home = homeSlot(g, it); if (!home){ toast(`${it.name} is not something to wear or hold.`); return; }
+      equipTo(a, it, home); });
     if (picked) renderItemCard(a, g, it, u, worn, pic, what, fight, mine);
     const img = row.querySelector("img"); if (img && it.icon && it.pixel) img.onerror = () => { img.onerror = null; img.src = ITEM_PX + it.pixel; };
     // No floating zoom card on the backpack rows (Sam, 2026-10-28: "The item zoom on hover is not necessary because we
@@ -22285,8 +22308,8 @@ async function takeLevel(a, cid, p, choice){
 function renderItemCard(a, g, it, u, worn, pic, what, fight, mine){
   const d = $("invDetail"); if (!d) return; d.hidden = false;
   const rar = rarityOf({name: it.name, item: it});
-  const kind = u.kind === "weapon" ? "Weapon" : isArmorish(it) ? "Armor" : u.kind === "heal" || u.kind === "drink" ? "Potion" : u.kind === "food" ? "Provisions" : u.kind === "throw" ? "Thrown" : it.eslot ? "Wearable" : (it.item_type ? String(it.item_type).replace(/\b\w/g, c => c.toUpperCase()) : "Gear");
-  const where = worn.length ? `${worn.some(HAND) ? "held" : "worn"} · ${worn.map(slotLabel).join(" and ").toLowerCase()}` : it.eslot && HAND(it.eslot) ? `held in the ${slotLabel(it.eslot).toLowerCase()}` : it.eslot ? `goes on the ${slotLabel(it.eslot).toLowerCase()}` : isWeapon(it) ? "held in a hand" : "carried";
+  const kind = u.kind === "weapon" ? "Weapon" : isArmorish(it) ? "Armor" : u.kind === "heal" || u.kind === "drink" ? "Potion" : u.kind === "food" ? "Provisions" : u.kind === "throw" ? "Thrown" : slotOfItem(it) ? "Wearable" : (it.item_type ? String(it.item_type).replace(/\b\w/g, c => c.toUpperCase()) : "Gear");
+  const where = worn.length ? `${worn.some(HAND) ? "held" : "worn"} · ${worn.map(slotLabel).join(" and ").toLowerCase()}` : slotOfItem(it) && HAND(slotOfItem(it)) ? `held in the ${slotLabel(slotOfItem(it)).toLowerCase()}` : slotOfItem(it) ? `goes on the ${slotLabel(slotOfItem(it)).toLowerCase()}` : isWeapon(it) ? "held in a hand" : "carried";
   const atk = isWeapon(it) && SHEETS[a.id] ? attackFromItem(SHEETS[a.id], it) : null;
   const lbEach = itemLb(it);
   const meta = [kind, where, (it.qty || 1) > 1 ? `×${it.qty}` : "", lbEach > 0 ? `${Math.round(lbEach * (it.qty || 1) * 10) / 10} lb${(it.qty || 1) > 1 ? ` (${lbEach} each)` : ""}` : "", RARITY_RANK[rar] > 0 ? `<b style="color:${RARITY_COL[rar]}">${RARITY_LABEL[rar]}</b>` : ""].filter(Boolean).join(" · ")
@@ -22301,7 +22324,7 @@ function renderItemCard(a, g, it, u, worn, pic, what, fight, mine){
   const to = inv.slot && fitsSlot(it, inv.slot) && !worn.includes(inv.slot) ? inv.slot : (!inv.slot ? homeSlot(g, it) : null);
   if (to && !worn.includes(to)) btn(isWeapon(it) && HAND(to) ? `Equip · ${slotLabel(to).toLowerCase()}` : `Wear · ${slotLabel(to).toLowerCase()}`, can(to), cost(to), () => equipTo(a, it, to), true);
   for (const sl of worn) btn(HAND(sl) ? `Put away (${slotLabel(sl).toLowerCase()})` : "Take off", mine && (!fight || (HAND(sl) && gearCost(a, 1).ok)), fight ? (HAND(sl) ? gearHint(a, 1) : "not mid-fight") : "", () => removeFrom(a, sl));
-  if (!acts.children.length) acts.innerHTML = `<span class="efHint">${worn.length ? "" : it.eslot || isWeapon(it) ? "pick a slot it fits, or drag it onto the body" : "nothing to wear here — use it from the row"}</span>`;
+  if (!acts.children.length) acts.innerHTML = `<span class="efHint">${worn.length ? "" : slotOfItem(it) || isWeapon(it) ? "pick a slot it fits, or drag it onto the body" : "nothing to wear here — use it from the row"}</span>`;
   // give it to someone: the list of who walks with you. Refusals are shown with their reason, not hidden.
   { const who = giveTargets(a);
     if (who.length){ const box = document.createElement("span"); box.className = "efGive"; box.style.cssText = "display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap";
@@ -22318,7 +22341,7 @@ function renderItemCard(a, g, it, u, worn, pic, what, fight, mine){
     b.onclick = () => { const r = b.getBoundingClientRect(); const t = {kind: "bag", it, slug: (catalogItem(it.name) || {}).slug, name: it.name, item_type: it.item_type, properties: it.properties, pixel: it.pixel, desc: it.desc, hero: a, anchor: b}; icardShow(t, r.left + r.width / 2, r.top, true); };
     acts.appendChild(b); }
 }
-const isArmorish = it => { const t = String(it.item_type || "").toLowerCase(), sl = String(it.eslot || ""); return t === "armor" || t === "armour" || (!isWeapon(it) && ["torso", "head", "legs", "back"].includes(sl)); };
+const isArmorish = it => { const t = String(it.item_type || "").toLowerCase(), sl = String(slotOfItem(it) || ""); return t === "armor" || t === "armour" || (!isWeapon(it) && ["torso", "head", "legs", "back"].includes(sl)); };
 // one off the stack, here and in the character's real inventory
 function spendItem(a, it, verb, target){
   const g = GEAR[a.id]; it.qty = (it.qty || 1) - 1; if (it.qty <= 0) g.carried = g.carried.filter(x => x !== it);
