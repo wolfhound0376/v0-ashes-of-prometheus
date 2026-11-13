@@ -382,18 +382,20 @@ export default function AwakenPage() {
         } else if (!skipped.current) {
           setCaption("…where am I?"); await wait(2200); setCaption(null)
         }
-        await wait(1400); guard()
+        await wait(600); guard()
 
         // 2 — the dream. Dark and Stormy in under him; his words as the crawl.
         if (!skipped.current) {
           setStep("dream")
           musicIn(0, 0.45, 4000)
           const hook = pcKey ? PCS[pcKey].hook : null
-          const dreamSeconds = 22 + (hook ? 9 : 0) + 6
+          // Sam, 2026-11-12 ("why does it stall in this part?"): the crawl used to start below the screen, so the
+          // first ~8 s of the dream were pure black and read as a freeze. It now opens with its first lines showing.
+          const dreamSeconds = 19 + (hook ? 8 : 0) + 4
           setCrawl({ text: DREAM_TEXT + (hook ? `\n\n${hook}` : ""), seconds: dreamSeconds, key: 1 })
           await playClip(`${MEDIA}/lich-dream.mp3`); guard()
           if (pcKey) { await wait(500); await playClip(`${MEDIA}/hook-${pcKey}.mp3`); guard() }
-          await wait(1200); setCrawl(null)
+          await wait(600); setCrawl(null)
         }
 
         // 3 — the title. The music swells, then cuts on the last frame.
@@ -507,10 +509,10 @@ export default function AwakenPage() {
   return (
     <div className="relative min-h-screen overflow-hidden bg-black text-stone-200">
       <style>{`
-        @keyframes awk-crawl { from { transform: translateX(-50%) rotateX(24deg) translateY(100%) } to { transform: translateX(-50%) rotateX(24deg) translateY(-130%) } }
+        @keyframes awk-crawl { from { transform: translateX(-50%) rotateX(24deg) translateY(55%) } to { transform: translateX(-50%) rotateX(24deg) translateY(-130%) } }
         .awk-crawlbox { position: absolute; inset: 0; overflow: hidden; perspective: 420px; perspective-origin: 50% 30%; pointer-events: none;
           -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 92%, transparent 100%); mask-image: linear-gradient(to bottom, transparent 0%, #000 18%, #000 92%, transparent 100%); }
-        .awk-crawl { position: absolute; left: 50%; bottom: 0; width: min(78%, 720px); transform-origin: 50% 100%; transform: translateX(-50%) rotateX(24deg) translateY(100%);
+        .awk-crawl { position: absolute; left: 50%; bottom: 0; width: min(78%, 720px); transform-origin: 50% 100%; transform: translateX(-50%) rotateX(24deg) translateY(55%);
           font-family: var(--font-serif), serif; font-weight: 600; font-size: clamp(19px, 2.8vw, 32px); line-height: 1.5; letter-spacing: .04em; color: #b98cf0;
           text-shadow: 0 0 18px rgba(123,47,214,.55); text-align: center; text-wrap: balance; white-space: pre-line; animation: awk-crawl linear forwards; animation-duration: var(--dur, 40s); }
         .awk-face { position: absolute; inset: 0; opacity: 0; clip-path: ellipse(70% 0% at 50% 50%); transition: opacity .4s ease, clip-path 2.6s cubic-bezier(.3,0,.2,1); background: #000; }
