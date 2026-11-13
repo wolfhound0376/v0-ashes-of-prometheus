@@ -34,12 +34,15 @@ describe("where a road encounter is fought (Sam, 2026-11-12)", () => {
     expect(battleFor([noCount], null, four)).toEqual({ reason: "The encounter table gives no count for Giant Spider yet." })
     expect(battleFor([random, terrain("Webs")], null, four)).toBeNull()
   })
-  it("gricks fight in the tunnels; orogs only where a painted terrain was rolled (Sam, 2026-11-12)", () => {
+  it("gricks fight in the tunnels; orogs on a painted terrain when rolled, else the tunnels too (Sam, 2026-11-12)", () => {
     const gricks = { table_key: "underdark_ambush", result: "1d4 gricks hiding in a crevice", detail: { count: "1d4", bestiary: "Grick" } }
     const orogs = { table_key: "underdark_ambush", result: "1d4 orogs perching on ledges", detail: { count: "1d4", bestiary: "Orog" } }
     const g = battleFor([random, ambushers, gricks], null, () => 3)
     expect(isBattle(g) && [g.plate, g.foes.join()]).toEqual(["road-tunnels", "grick,grick,grick"])
-    expect(battleFor([random, ambushers, orogs], null, () => 2)).toEqual({ reason: "No battle plate is painted for Orog here yet." })
+    const t = battleFor([random, ambushers, orogs], null, () => 2)
+    expect(isBattle(t) && [t.plate, t.foes.join()]).toEqual(["road-tunnels", "orog,orog"])
+    const u = battleFor([random, terrain("Lava swell"), ambushers, orogs], null, () => 2)
+    expect(isBattle(u) && u.plate).toBe("road-tunnels")
     const o = battleFor([random, terrain("Boneyard"), ambushers, orogs], null, () => 2)
     expect(isBattle(o) && [o.plate, o.foes.join()]).toEqual(["road-boneyard", "orog,orog"])
   })
