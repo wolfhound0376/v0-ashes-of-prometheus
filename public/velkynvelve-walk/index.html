@@ -1544,7 +1544,7 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
   // yes is its own key, "waitYes:<hero>", so two screens agreeing at once cannot overwrite each other). drowArgue /
   // sarithMutter: {at} once the beat has played. jorlanLead: the argument was understood. planAsked / plan: Eldeth's
   // question and the table's answer. caravanCalled: the clock ran out and the moment went to Malachar.
-  waitVote: null, drowArgue: null, sarithMutter: null, jorlanLead: false, planAsked: null, plan: null, caravanCalled: false,
+  waitVote: null, drowArgue: null, sarithMutter: null, jorlanLead: false, planAsked: null, plan: null, caravanCalled: false, chainMarch: null,
   // MANACLES (Sam, 2026-10-30, looking at the pen gate card: "This should show disadvantaged because of
   // [manacled]"). The party wakes in the pen in irons (OotA p.11: prisoners are manacled and stripped of their
   // gear), so this starts TRUE and stays true until the cuffs are struck off. It is one flag for the party, not
@@ -3956,6 +3956,8 @@ async function roadFight(){
 }
 function leaveVelkynvelve(z){
   // A ROAD PLATE'S WAY OUT IS THE ROAD (ROAD FIGHT, below): back to the travel map, where the march stands halted.
+  // OUT OF THE CHAINS: the party never walked out of the outpost, so the map is told which way the column took them
+  if (isRoadPlate(cur) && state.chainMarch && state.chainMarch.out === "escaped" && String(cur) === CHAIN_MARCH.plate){ showDialog({title: "The north passage", body: "Velkynvelve is behind you. Past here the party is on the Underdark map, on the road the caravan was taking.", buttons: [{label: "Take the road", primary: true, fn: () => { (window.top !== window ? window.top : window).location.href = chainMarchMapHref(); }}, {label: "Stay"}]}); return; }
   if (isRoadPlate(cur)){ showDialog({title: "Back to the road", body: "The march is where you left it.", buttons: [{label: "Back to the map", primary: true, fn: () => { (window.top !== window ? window.top : window).location.href = "/map"; }}, {label: "Stay"}]}); return; }
   const away = PARTY.filter(heroElsewhere);
   if (away.length){ toast(`The party leaves Velkynvelve together. ${away.map(id => `${SHORT[id] || id} (${plateLabel(heroAt[id].plate)})`).join(", ")} ${away.length > 1 ? "are" : "is"} elsewhere.`, 5000); return; }
@@ -10212,8 +10214,8 @@ function redSigilSeen(){
 //
 //   1. THE CARAVAN CLOCK   CARAVAN_WATCHES changes of the watch from the start of the run, counted on the stage
 //                          roster's `rotations` (the same counter that brings Jorlan on). A banner in the pen; red
-//                          for the last two. At zero the moment goes to Malachar: the march out in chains is its own
-//                          scene on its own plates and is NOT staged here.
+//                          for the last two. At zero the drow chain the party and march them out to the rope
+//                          bridge for one last, harder escape (THE MARCH OUT IN CHAINS, below).
 //   2. WAIT FOR THE WATCH  any hero proposes; every hero on their feet must agree; /api/walk-wait moves the clock
 //                          to the next change of the watch and the party takes a short rest in it.
 //   3. THE DROW ARGUE      once, early: two guards at their post, in Elvish, about Jorlan. Bubbles only. Understood
@@ -10242,7 +10244,7 @@ function pacingFind(id){ return npcs.find(n => n.id === id && actors.includes(n)
 let pacingAt = 0, pacingRot = null, pacingPenSince = 0, pacingArgued = 0, pacingMuttered = 0, pacingFaded = null, pacingAsked = null, pacingPlanBarked = 0;
 function pacingTick(){
   if (now - pacingAt < 500) return; pacingAt = now;
-  caravanTick(); waitTick();
+  caravanTick(); waitTick(); chainMarchTick();
   if (!penHeld()){ pacingPenSince = 0; return; }
   if (!pacingPenSince) pacingPenSince = now;
   if (mode !== "explore" || (typeof talkNpc !== "undefined" && talkNpc) || timeStopped) return;
@@ -10268,12 +10270,195 @@ function caravanTick(){
   if (!went || !penHeld()) return;
   const line = CARAVAN_LINES[left];
   if (line){ log(`<b>The watch changes.</b> ${left > 0 ? watchesWord(left) + " left. " : ""}<i>${esc(line)}</i>`); toast(left > 0 ? `The watch changes. ${watchesWord(left)} until the caravan.` : "The watch changes. The caravan is here.", 5200); }
-  if (left === 0 && !state.caravanCalled){
-    state.caravanCalled = true;
-    // Until the march is staged (its own PR, on plates Sam has yet to choose) the moment is Malachar's, the way the
-    // shakedown's is: it plays at the table rather than being lost. An event, so only one screen tells him.
-    handOff("The caravan to Menzoberranzan has come for the prisoners. The six watches are spent and the party is still in the slave pen. The drow come in force to chain them into the column and march them out of Velkynvelve onto the road. This is not the end of the game: the march is one last, harder chance to escape. Play the drow coming in for them.", false);
+  // At zero the march begins (chainMarchTick, below): it is staged, not handed to Malachar as prose.
+}
+// ----- 1b. THE MARCH OUT IN CHAINS -----
+// Sam, 2026-11-12: "Yes" to the party being marched out in chains for one last, harder escape on the road when the
+// clock hits zero (not a flat game over); the rope bridge for the plate; GAME OVER if that last escape fails.
+// The rules, the escort and the lines are lib/chain-march.mjs, pasted here whole; what is Sam's and what is Claude's
+// is marked there. The shape on the map:
+//   1. IN THE PEN     the clock is spent and the party is still held. ONE screen runs it (the one driving the first
+//                     hero on their feet); the shared `state.chainMarch` ({seq, at, by, stage, out}) tells the rest.
+//                     The irons go back on. Malachar is told, as an event, so he can play the drow coming in.
+//   2. THE CUT        the party and the prisoners are taken to the rope bridge plate; every screen follows.
+//   3. THE BRIDGE     the column halts mid-bridge, drow ahead and behind, and the fight opens against the escort. It is an ordinary fight: allies fight,
+//                     the bridge's drop is real, and Flee is on the bar.
+//   4. HOW IT ENDS    escort beaten, or a hero off the plate: they are out, on the north passage (the way to the map
+//                     is either end of the bridge). Any other end: Menzoberranzan, GAME OVER on every screen. The
+//                     DM's own End combat decides nothing.
+// THE MARCH OUT IN CHAINS — the rules, pure, in one copy.
+//
+// Design of record: project doc claude/Pen_Pacing_And_Sigil_Revision_2026-11-12.md (the caravan clock, PR #1318).
+// [SAM] his words; [BOOK] Out of the Abyss; [CLAUDE] Claude's numbers and lines, his to keep, cut or rewrite.
+//
+//   [SAM 2026-11-12] the clock "runs 6 watches"; "Yes" to the party being marched out in chains for one last,
+//             harder escape on the road when it hits zero (not a flat game over).
+//   [SAM 2026-11-12] the plate: the rope bridge ("Road: the rope bridge", his pick from four).
+//   [SAM 2026-11-12] if they fail that last escape: GAME OVER. They are delivered to Menzoberranzan, Malachar
+//             speaks, and the DM gets the usual restart prompt.
+//   [BOOK]    Ilvara means to send the prisoners on to Menzoberranzan (OotA ch.1). The north passage "leads toward
+//             Menzoberranzan and Blingdenstone" (OotA p.20), so that is the road the column takes and the road a
+//             party that gets away is standing on. The book stages no caravan, no bridge and no escort.
+//   [CLAUDE]  What makes it HARDER than the pen: the irons are on every wrist again, whatever the party had done
+//             about them; the escort is larger than the gate watch (one more drow than there are heroes, never
+//             fewer than three, never more than five); and it is fought on a rope bridge over a drop.
+//   [CLAUDE]  The column is halted in the MIDDLE of the bridge with the escort split ahead of it and behind it, so
+//             neither end is a free run: getting off the plate means getting past drow first.
+//   [CLAUDE]  The escort is plain drow guards (the pen's own stat block). No elite warrior, no priestess: at the
+//             level a party is when it is still in the pen, a CR 5 on a bridge is an execution, not a chance.
+//   [CLAUDE]  What counts as getting away: the escort is beaten, OR at least one hero runs off the plate (the
+//             fight's own Flee). What counts as failing: the fight ends any other way. The DM ending the fight by
+//             hand is neither: it is his table and his call, and the map leaves it to him.
+//   [CLAUDE]  The party's confiscated gear is NOT on the caravan. The book keeps it in Velkynvelve; nothing here
+//             moves it. A party that escapes from the bridge escapes with what it had in the pen.
+//
+// Plain JavaScript for the same reason as lib/game-over.mjs and lib/shakedown.mjs: build_walk.py pastes this file
+// into the painted map at its CHAIN_MARCH placeholder, minus `export`. Every name starts with CHAIN_MARCH
+// or chainMarch so the paste cannot collide with the page's names.
+//
+// Pure: no DOM, no fetch, no Supabase.
+
+const CHAIN_MARCH = {
+  plate: "road-rope-bridge",   // [SAM] the battle plate
+  via: "north",                // [BOOK] the way out the column takes (lib/travel/handoff.ts "north")
+  biome: "tunnels",            // the camp plate that stands in for the north passage on the travel map
+  halt: [1200, 700],           // [CLAUDE] where the column stops: the middle of the bridge, a long run from either end
+  flank: 300,                  // [CLAUDE] px from the column to the nearest guard ahead and behind
+  rank: 90,                    // [CLAUDE] px between one guard and the next on the same side
+  guardsMin: 3,                // [CLAUDE]
+  guardsMax: 5,                // [CLAUDE]
+  takeMs: 5200,                // [CLAUDE] the drow come into the pen: Malachar's line is read before the cut
+  bridgeMs: 4200,              // [CLAUDE] the column halts on the bridge before steel
+}
+
+/** The two drow guard sprites the walk has stat blocks for. Alternated so the escort is not five of one figure. */
+const CHAIN_MARCH_GUARDS = ["drow-guard-male", "drow-guard-female"]
+
+// Claude's lines (flagged above).
+const CHAIN_MARCH_LINES = {
+  taken: "The caravan is here. Up. Wrists out. You had six watches, and you spent them all.",
+  note: "The drow chain the prisoners into a column and march them out of Velkynvelve by the north passage.",
+  bridge: "The column halts on the rope bridge. A drow bends to free a snagged chain. This is the last chance there will be.",
+  escaped: "The chains are behind you, and so is Velkynvelve. The road is yours. For now.",
+  lost: [
+    "Menzoberranzan, then. They'll find a use for you. They always do. It is never a good one.",
+    "Delivered, counted, sold. You had six watches and a bridge. I gave you every chance to amuse me.",
+    "And so to the City of Spiders. Don't worry. You won't be bored. You won't be anything, soon.",
+  ],
+}
+
+/**
+ * Is it time? The clock is spent, the party is still held in the pen, and the march has not already begun.
+ * `left` is the caravan clock's watches left; `held` is the page's penHeld(); `march` is state.chainMarch.
+ */
+function chainMarchDue(left, held, march) {
+  if (!held || march) return false
+  return Number.isFinite(left) && left <= 0
+}
+
+/** The escort for this many heroes: one more guard than heroes, between guardsMin and guardsMax. Foe ids. */
+function chainMarchEscort(heroes) {
+  const h = Math.max(0, Math.floor(Number(heroes) || 0))
+  const n = Math.max(CHAIN_MARCH.guardsMin, Math.min(CHAIN_MARCH.guardsMax, h + 1))
+  return Array.from({ length: n }, (_, i) => CHAIN_MARCH_GUARDS[i % CHAIN_MARCH_GUARDS.length])
+}
+
+/**
+ * Where each guard stands when the column halts: split ahead of it (east, +x) and behind it (west, -x), the odd one
+ * ahead. Returns one {x, y} per guard, in the escort's order; the page sets each on the nearest free floor.
+ */
+function chainMarchPosts(count, halt = CHAIN_MARCH.halt) {
+  const n = Math.max(0, Math.floor(Number(count) || 0))
+  const out = []
+  let ahead = 0, behind = 0
+  for (let i = 0; i < n; i++) {
+    const front = i % 2 === 0
+    const k = front ? ahead++ : behind++
+    out.push({ x: halt[0] + (front ? 1 : -1) * (CHAIN_MARCH.flank + k * CHAIN_MARCH.rank), y: halt[1] })
   }
+  return out
+}
+
+/**
+ * How the fight on the bridge came out.
+ *   "escaped"  the escort is beaten, or at least one hero got off the plate
+ *   "lost"     it ended any other way: Menzoberranzan
+ *   null       the DM ended the fight by hand: his call, the map decides nothing
+ */
+function chainMarchOutcome({ won = false, gotAway = 0, byDm = false } = {}) {
+  if (won === true) return "escaped"
+  if (Number(gotAway) > 0) return "escaped"
+  if (byDm) return null
+  return "lost"
+}
+
+/** Malachar's last word when the march is lost: the same line on every screen, from the shared record's seq. */
+function chainMarchLostLine(seed) {
+  const s = String(seed ?? "")
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+  return CHAIN_MARCH_LINES.lost[h % CHAIN_MARCH_LINES.lost.length]
+}
+
+/** Where a party that got away goes: the travel map, out of Velkynvelve by the north passage. */
+function chainMarchMapHref() {
+  return `/map?from=velkynvelve&via=${encodeURIComponent(CHAIN_MARCH.via)}&plate=${encodeURIComponent(CHAIN_MARCH.biome)}`
+}
+
+let chainMarchBusy = false, chainMarchSaid = null, chainMarchOutSaid = null;
+/** The fight on the bridge is this march's, and it has not been settled. */
+function chainMarchLive(){ const M = state.chainMarch; return !!(M && !M.out && String(cur) === CHAIN_MARCH.plate); }
+function chainMarchTick(){
+  const M = state.chainMarch;
+  // every screen says it once: the taking, and later how it came out
+  if (M && M.seq && !M.out && chainMarchSaid !== M.seq){ chainMarchSaid = M.seq;
+    log(`<b>The drow come for the prisoners.</b> <i>${esc(CHAIN_MARCH_LINES.taken)}</i>`); toast("The caravan is here. The drow chain you into the column.", 5200); }
+  if (M && M.out && chainMarchOutSaid !== M.seq + M.out){ chainMarchOutSaid = M.seq + M.out;
+    if (M.out === "escaped"){ log(`<b>They are out.</b> <i>${esc(CHAIN_MARCH_LINES.escaped)}</i>`); toast("You are out of Velkynvelve. Either end of the bridge leads to the road.", 7000); }
+    else if (M.out === "lost") log("<b>The column moves on, and the party with it.</b>");
+    else log("<i>The DM ended the fight on the bridge. What becomes of the column is his call.</i>"); }
+  if (chainMarchBusy || !booted || mode !== "explore" || !APP) return;
+  // due now, or begun on a screen that went away before the cut (the party is still standing in the pen half a minute on)
+  const stalled = !!(M && !M.out && penHeld() && Date.now() - (M.at || 0) > 30000);
+  if (!chainMarchDue(caravanLeft(), penHeld(), state.chainMarch) && !stalled) return;
+  const first = party.find(p => actors.includes(p) && !p.down && !p.ko) || party[0];
+  if (!first || !owDrives(first)) return;                       // one screen runs it
+  chainMarchRun(!stalled);
+}
+async function chainMarchRun(fresh){
+  chainMarchBusy = true;
+  try {
+    const plate = CHAIN_MARCH.plate, seq = (state.chainMarch && state.chainMarch.seq) || "c" + Date.now().toString(36);
+    if (!SPEC[plate]){ toast("The bridge is not painted."); return; }
+    state.chainMarch = {seq, at: Date.now(), by: OW.key || "local", stage: "taken"};
+    state.caravanCalled = true;
+    if (!state.manacled){ state.manacled = true; log("<i>The irons go back on.</i>"); }
+    saveWalk();
+    if (fresh) handOff("The caravan to Menzoberranzan has come for the prisoners. The six watches are spent and the party is still in the slave pen. The drow come in force, put every prisoner back in irons, chain them into a column and march them out of Velkynvelve by the north passage. The map stages the march and the fight that follows on the rope bridge: play only the drow coming in for them, briefly. This is not the end of the game: the bridge is one last, harder chance to escape.", false);
+    await wait(CHAIN_MARCH.takeMs);
+    if (mode !== "explore" || !penHeld()) return;               // something else has the scene; the stalled check brings it back
+    const at = CHAIN_MARCH.halt;                                // the middle of the bridge: neither end is a free run
+    await enterNode(plate, {spawn: {x: at[0], y: at[1]}, note: esc(CHAIN_MARCH_LINES.note)});
+    await wait(1700);                                           // the plate fades in and the column settles
+    if (String(cur) !== plate || cbt) return;
+    log(`<i>${esc(CHAIN_MARCH_LINES.bridge)}</i>`, {say: true}); toast("The column halts on the bridge. Now or never.", CHAIN_MARCH.bridgeMs);
+    await wait(CHAIN_MARCH.bridgeMs);
+    if (String(cur) !== plate || cbt || FIGHT.mirror) return;
+    state.chainMarch = Object.assign({}, state.chainMarch, {stage: "bridge"}); saveWalk();
+    mode = "explore";
+    startCombat(chainMarchEscort(PARTY.length), "The march out in chains", {noAllies: false});
+    // the escort stands ahead of the column and behind it, each drow on free floor of their own
+    if (cbt && mode === "combat"){ const posts = chainMarchPosts(foes.length), taken = [...party, ...npcs.filter(n => actors.includes(n) && !n.offStage)].map(a => ({x: a.x, y: a.y}));
+      foes.forEach((f, i) => { const q = nearestWalkable(posts[i].x, posts[i].y, taken); f.x = q.x; f.y = q.y; f.home = {x: q.x, y: q.y}; f.path = []; taken.push({x: q.x, y: q.y}); faceTo(f, leader); }); }
+  } finally { chainMarchBusy = false; }
+}
+/** The fight on the bridge is over (endCombat, on the screen that ran it): write down how it came out. */
+function chainMarchSettle(out){
+  const M = state.chainMarch; if (!M || M.out) return;
+  state.chainMarch = Object.assign({}, M, {out: out || "dm", outAt: Date.now()});
+  if (out === "escaped" && !state.brokeOut) state.brokeOut = {at: Date.now(), why: "the march out in chains"};
+  if (out === "lost" && !state.gameOver) state.gameOver = {seq: "g" + Date.now().toString(36), at: Date.now(), by: OW.key || "local", why: "menzoberranzan", line: chainMarchLostLine(M.seq)};
+  saveWalk();
 }
 // ----- 2. wait for the next watch -----
 function waitVoters(){ return party.filter(p => !p.down && !p.ko && !dmRun.has(p.id)); }
@@ -14290,6 +14475,8 @@ function setQuick(on, quiet){
 }
 function endCombat(won, opts = {}){
   if (mode !== "combat" || FIGHT.mirror) return;
+  // THE MARCH OUT IN CHAINS: how the bridge came out, read now while the fight still knows who ran
+  const marchOut = chainMarchLive() && !state.gameOver ? chainMarchOutcome({won: won === true, gotAway: party.filter(p => p.left && !(p.c && p.c.ds && p.c.ds.dead)).length, byDm: !!(opts.byDm || opts.talk)}) : undefined;
   if (cbt && cbt.fromFlag) fightFlagOver();   // the server's "a fight is on" comes down with the fight
   const victors = cbt ? [...(cbt.allies || [])] : [];   // THE TRIUMPH: who of ours is still up to strike a pose when it is won
   const fellNpcs = cbt ? (cbt.bystanders || []).filter(b => b.down) : [];   // the NPCs who died in this fight: buried below, once it is over (npcBury)
@@ -14356,10 +14543,11 @@ function endCombat(won, opts = {}){
     party.forEach(p => { p.home = {x: p.x, y: p.y}; p.actUntil = now + 4000 + Math.random() * 6000; });
     mode = "explore"; fightLetsGo(); setTrack("explore"); log(opts.talk ? "Weapons down. They talk." : won ? "The fight is over. The DM core settles the wounds and the loot." : "The fight is over.");
     oneFightEnded(won);                // ONE FIGHT: every mirror lays the dead down and stands the rest down the same way
+    if (marchOut !== undefined) chainMarchSettle(marchOut);   // THE MARCH OUT IN CHAINS: out, or Menzoberranzan
     cbtLog.active = false;   // the log stays, collapsed, with the fight's last line in its ticker; the next fight starts it over
   }, 700);
 }
-$("endCombat").onclick = () => endCombat(false);
+$("endCombat").onclick = () => endCombat(false, {byDm: true});
 $("quickBtn").onclick = () => setQuick(!(cbt && cbt.quick));
 
 // XP ONTO THE SHEETS (Sam, 2026-10-24: "I just went up 300XP and didn't go up a level"). The banner above used to
@@ -22216,10 +22404,10 @@ async function gameOverGraveBeat(){
 async function playGameOver(G){
   gameOverPlayed = G.seq;
   const replay = gameOverIsReplay(G.at, Date.now() + (OW.offset || 0));
-  const after = gameOverAfter({sandbox: SANDBOX, app: APP, dm: isDm()}), line = gameOverLine(G.seq);
+  const after = gameOverAfter({sandbox: SANDBOX, app: APP, dm: isDm()}), line = G.line || gameOverLine(G.seq);   // G.line: a game over that is not a death (THE MARCH OUT IN CHAINS, lost)
   if (!replay){
     await wait(GAME_OVER_RULES.holdMs);                       // the last body falls and the "dead" mark shows first
-    await gameOverGraveBeat();                                // then the stone goes up where they fell (Sam, 2026-10-30)
+    if (!G.why) await gameOverGraveBeat();                                // then the stone goes up where they fell (Sam, 2026-10-30)
   }
   if (mode === "combat") endCombat(false);
   if (sneak) endSneak();
