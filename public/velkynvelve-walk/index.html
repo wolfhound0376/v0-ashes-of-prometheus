@@ -1508,6 +1508,9 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
   // From then on nobody in the pen is "behind bars": the gate watch's warning, volleys and Drow Surgeon are off, and a
   // guard who comes back and sees them attacks (guardsReact). Cleared when the drow lock the party in again.
   brokeOut: null,
+  // FLED (Sam, 2026-11-12): hero id -> {from, to, at}. A hero who ran out of a fight; their own screen walks them on
+  // to `to` once the fight on `from` is over (heroFlee / tickFled).
+  fled: {},
   // THE PEN WARD (Sam, 2026-10-30). wardBroken: a hero re-cut an anchor stroke and the nullification is gone --
   // for EVERY caster, not just the one who cut it. wardStudy: what each hero's Arcana check read off the sigil,
   // by hero id (the tier, and whether they got the 20+ that unlocks Alter). wardTried: who has already tried,
@@ -8837,6 +8840,11 @@ function openMenu(a, sub){
     grp("action");
     add("Dash", `+${turnSpeed(a)} ft of movement`, c.action ? () => { c.action = false; c.move += turnSpeed(a); popText(a, "dash", "#cfe8ff"); log(`${fname(a)} dashes.`); openMenu(a); } : null);
     add("Disengage", "leave reach without a free swing", c.action ? () => { c.action = false; addCond(a, "disengaged"); log(`${fname(a)} disengages.`); openMenu(a); } : null);
+    // FLEE (Sam, 2026-11-12: "I am unable to run away from a plate" — "go"). Offered only when a way out is within this
+    // turn's reach: the movement left, plus a Dash if the action is still free. Leaving reach on the way draws the usual
+    // free swings (Disengage first to avoid them). Out of the exit, the hero is out of the fight (heroFlee).
+    if (a.kind === "pc"){ const ex = exitFor(a), ft = ex ? walkFtTo(a, ex) : Infinity, dashFt = c.action ? turnSpeed(a) : 0;
+      if (ex && SPEC[ex.to] && ft <= c.move + dashFt) add("Flee", `run for ${SPEC[ex.to].name || "the way out"} · ${Math.round(ft)} ft${ft > c.move ? " · uses your action to Dash" : ""}${a.c.conds.has("disengaged") ? "" : " · free swings as you leave reach"}`, () => heroFlee(a, ex, ft > c.move)); }
     add("Help", "an ally's next attack has advantage", c.action ? () => { closeMenu(); cbt.phase = "target"; cbt.pend = {help: true}; hint("Help: click a friend within 5 ft."); } : null);
     add("Search", `Perception ${sgn((s.skills || {}).perception ?? abilMod(s, "wis"))}`, c.action ? () => doSearch(a) : null);
     gateOptions(a, add);
@@ -12496,6 +12504,36 @@ function oaGauntlet(f, goal, go){
 // WHO A FLEEING DROW IS, FOR THE WORLD: a named one by name; a guard the story posts by its post (the plate and spot it
 // was put on, the same key its loot uses); a drow who arrived in a wave has no home to be missing from.
 function fleeKey(f){ return MIND_RANK[f.id] ? f.id : f.lootPost || f.fleeKey || null; }
+function heroFlee(a, ex, dash){
+  if (!cbt) return;
+  if (dash){ a.c.action = false; a.c.move += turnSpeed(a); }
+  closeMenu(); combatBusy = true; cbt.phase = "busy";
+  popText(a, "flee!", "#e8e2c8", 1); log(`<b>${esc(fname(a))}</b> runs for ${esc(SPEC[ex.to].name || "the way out")}!`, {say: true});
+  combatWalk(a, ex, () => {
+    combatBusy = false; if (!cbt) return;
+    const out = !a.down && Math.hypot(a.x - ex.x, a.y - ex.y) <= 40 * (node.scale || 1);
+    if (out){ heroGotOut(a, ex); return; }
+    if (activeActor() === a){ if (a.down) setTimeout(() => passTurn(a), 300); else openMenu(a); }   // cut down on the way, or not quite there
+  });
+}
+function heroGotOut(a, ex){
+  a.left = true; a.path = []; a.fading = true;
+  (state.fled ||= {})[a.id] = {from: String(cur), to: ex.to, at: Date.now()};
+  narrate(a, `${fname(a)} is out of the fight, toward ${SPEC[ex.to].name || "the next room"}.`);
+  setTimeout(() => { actors = actors.filter(x => x !== a); if (cbt && activeActor() === a && !checkEnd()) nextTurn(); else if (cbt) checkEnd(); }, 900);
+}
+// THE FLED WALK ON. Their own screen takes them through the way they ran for, once the fight there is over (a plate a
+// fight holds cannot be left: fightHoldsPlate). Solo, like any splinter (SPLIT PARTY).
+setInterval(() => {
+  if (mode !== "explore" || !state.fled || !Object.keys(state.fled).length) return;
+  const h = party.find(p => state.fled[p.id] && String(state.fled[p.id].from) === String(cur) && canControl(p) && !owRemote(p));   // each screen walks its own
+  if (!h) return;
+  const f = state.fled[h.id], z = (node.zones || []).find(q => q.to && String(q.to[0]) === String(f.to));
+  delete state.fled[h.id];
+  h.left = false; h.fading = false; h.alpha = 1; if (!actors.includes(h)) actors.push(h);
+  if (leader !== h) setLeader(h);
+  if (z) travel(f.to, z, false, null, true);
+}, 700);
 function leaveFight(f, to){
   if (f.left) return;
   f.left = true; f.retreating = false; f.path = []; f.onArrive = null;
@@ -13656,6 +13694,9 @@ function ambushSurprise(heroesIn, ambushers){
 function checkEnd(){
   if (!cbt) return true;
   if (!standing(foes).length){ setTimeout(() => endCombat(true), 600); return true; }
+  // EVERYONE STILL IN IT RAN (heroFlee): the fight is over and nobody fell; the drow keep the plate
+  if (party.some(p => p.left) && !party.some(p => !p.left && actors.includes(p) && (!p.down || dyingNow(p)))){
+    log("<b>They got away.</b> The drow keep the field.", {say: true}); setTimeout(() => endCombat(false), 600); return true; }
   if (!standing(party).length){
     if (gameOverActive(PARTY, state.fallen)){ setTimeout(() => endCombat(false), 300); return true; }   // every seated hero is dead: GAME OVER takes it from here
     // THE DYING KEEP ROLLING (Sam, 2026-10-29, "Go ahead" to: a downed party keeps rolling death saves until they die).
