@@ -3,9 +3,12 @@ import { shiftChangesBetween, tickDue, GAME_MINUTES_PER_REAL_MINUTE, TICK_EVERY_
 
 const at = (day: number, hh: number, mm = 0) => ({ day, minutesOfDay: hh * 60 + mm })
 
-describe("shiftChangesBetween (Sam, 2026-11-10: 'tie the guard to the shifts')", () => {
-  it("counts nothing inside one shift", () => {
-    expect(shiftChangesBetween(at(1, 1, 10), at(1, 5, 59))).toBe(0)
+describe("shiftChangesBetween (Sam, 2026-11-13: 'every shift occurs 4 game hours')", () => {
+  it("counts nothing inside one watch", () => {
+    expect(shiftChangesBetween(at(1, 2, 10), at(1, 5, 59))).toBe(0)
+  })
+  it("counts the first change of a run, 00:00 → 02:00", () => {
+    expect(shiftChangesBetween(at(1, 0, 0), at(1, 2, 0))).toBe(1)
   })
   it("counts the 06:00 change when the clock reaches it", () => {
     expect(shiftChangesBetween(at(1, 5, 55), at(1, 6, 0))).toBe(1)
@@ -13,16 +16,19 @@ describe("shiftChangesBetween (Sam, 2026-11-10: 'tie the guard to the shifts')",
   it("does not count a change the clock was already standing on", () => {
     expect(shiftChangesBetween(at(1, 6, 0), at(1, 7, 0))).toBe(0)
   })
-  it("counts every change a long jump crosses (a long rest from 01:10 → 09:10 crosses 06:00)", () => {
-    expect(shiftChangesBetween(at(1, 1, 10), at(1, 9, 10))).toBe(1)
-    expect(shiftChangesBetween(at(1, 1, 10), at(2, 1, 10))).toBe(3)
+  it("counts every change a long jump crosses (a long rest from 01:10 → 09:10 crosses 02:00 and 06:00)", () => {
+    expect(shiftChangesBetween(at(1, 1, 10), at(1, 9, 10))).toBe(2)
+    expect(shiftChangesBetween(at(1, 1, 10), at(2, 1, 10))).toBe(6)
   })
   it("crosses midnight", () => {
-    expect(shiftChangesBetween(at(1, 21, 0), at(2, 7, 0))).toBe(2)   // 22:00 and 06:00
+    expect(shiftChangesBetween(at(1, 21, 0), at(2, 7, 0))).toBe(3)   // 22:00, 02:00 and 06:00
   })
   it("never counts backwards or missing clocks", () => {
     expect(shiftChangesBetween(at(2, 1, 0), at(1, 23, 0))).toBe(0)
     expect(shiftChangesBetween(null, at(1, 7, 0))).toBe(0)
+  })
+  it("a 4-hour watch is 5 real minutes (Sam: 'shift changes occur every five minutes')", () => {
+    expect((4 * 60) / GAME_MINUTES_PER_REAL_MINUTE).toBe(5)
   })
 })
 
