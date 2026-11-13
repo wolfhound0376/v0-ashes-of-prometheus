@@ -45,6 +45,7 @@ import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
 import type { Character, InventoryItem, EquipmentItem, Environment } from "@/lib/types/database"
 import type { Campaign } from "@/lib/world-ai/campaigns"
 import { rollMatchesRequest, type RollRequestSpec } from "@/lib/roll-requests"
+import { isRehearsalRoll, rehearsalLinesFor } from "@/lib/rehearsal-history"
 import { parseAddress, resolveAddressee, storedText } from "@/lib/address"
 import { addressOptions } from "@/lib/address-options"
 import { ENTERED_KEY, mapHref, shouldEnterOnMap } from "@/lib/map-entry"
@@ -274,6 +275,9 @@ export default function DashboardPage() {
   const [selectedAction, setSelectedAction] = useState<string | null>(null)
   const [dialogueInput, setDialogueInput] = useState("")
   const [dialogue, setDialogue] = useState<DialogueMessage[]>([])
+  // Read at send time by a rehearsal (sandbox) turn: the lines on this screen are Malachar's only memory there.
+  const dialogueRef = useRef<DialogueMessage[]>([])
+  dialogueRef.current = dialogue
   // Server-issued handoff for Malachar's current roll request. The ref is read
   // at click time; state renders the lifecycle without making the browser the
   // authority over whether a result was accepted.
@@ -517,7 +521,12 @@ export default function DashboardPage() {
   const [sandbox, setSandbox] = useState(false)
   useEffect(() => { setSandbox(isSandbox()) }, [])
   const sendToLich = useCallback<typeof sendToLichLive>(
-    (message, characterId, claimToken, opts) => sendToLichLive(message, characterId, claimToken, { ...(opts ?? {}), sandbox: isSandbox() }),
+    // A REHEARSAL REMEMBERS ITSELF (Sam, 2026-11-13: "he ask me to roll, its as if he doesn't record the roll"):
+    // a sandbox turn writes nothing, so the lines that exist only on this screen ride along as his memory of it.
+    (message, characterId, claimToken, opts) => {
+      const rehearsing = isSandbox()
+      return sendToLichLive(message, characterId, claimToken, { ...(opts ?? {}), sandbox: rehearsing, ...(rehearsing ? { rehearsal: rehearsalLinesFor(dialogueRef.current, String(message ?? "")) } : {}) })
+    },
     [sendToLichLive],
   )
   // The player accepted an NPC's "a word" on the map and came over: ask Malachar for what the NPC
@@ -1626,7 +1635,20 @@ if (error) {
       }
 
       let dmMessage: string | null = null
-      if (request && opts.result) {
+      if (request && opts.result && isRehearsalRoll(request.id)) {
+        // A REHEARSED ROLL: the request came from a sandbox turn and is in no ledger, so it is settled here. Same
+        // guard and the same report Malachar gets from the ledger, without its receipt.
+        const rolled = forLedger(opts.result)
+        if (!rollMatchesRequest(request, rolled)) {
+          setRollLifecycle("retry")
+          setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "System", text: `Malachar is waiting for ${request.expression}; that roll did not match.` }))
+          return
+        }
+        pendingRollRef.current = null
+        setPendingRoll(null)
+        setRollLifecycle("committed")
+        dmMessage = `[Dice Roll] ${rolled.label || "Roll"}: ${rolled.total} (${rolled.die} → [${rolled.rolls.join(", ")}]${rolled.modifier >= 0 ? ` +${rolled.modifier}` : ` ${rolled.modifier}`}). Rule on this committed result and narrate only what happens - never say the roll, the total, the DC or the AC; do not re-roll.`
+      } else if (request && opts.result) {
         setRollLifecycle("resolving")
         const { characterId, claimToken } = claimRef.current
         // A trait's advantage goes to the ledger as the die that counted (forLedger names both dice).
