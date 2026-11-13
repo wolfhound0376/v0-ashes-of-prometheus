@@ -20,6 +20,15 @@ const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
  * facts: the prompt forbids it, and the line is flavour, not canon state — it is not written to the
  * dialogue log. The dashboard receives it as ?line= and voices it through /api/npc-tts.
  *
+ * WHAT THEY SAY NEXT (Sam, 2026-11-13: an NPC who prompted the talk "should immediately followup with a
+ * question or statement after the bubble dialogue. There shouldn't really be a pause."). Until now the
+ * follow-up was a fresh Malachar turn asked for only after the player accepted and the dashboard had
+ * loaded: measured on the live site that night, 18 seconds from Talk to her next line (context 3.6 s,
+ * the narration model 10.5 s, the passes after it 4 s), before any voice. So the follow-up is written
+ * HERE, in the same call as the opener, while the balloon is still on screen: `next` is the matter
+ * itself, one question or one statement. The map carries it to the dashboard as ?next=, which logs and
+ * voices it on arrival. A missing `next` (old map, failed call) falls back to the Malachar turn.
+ *
  * Failure is always HTTP 200 with nulls; the map falls back to a plain line.
  */
 export async function POST(req: NextRequest) {
@@ -27,7 +36,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json()
     const clip = (v: unknown, n: number) => (typeof v === "string" ? v.trim().slice(0, n) : "")
     const npcName = clip(body?.npcName, 60)
-    if (!npcName) return NextResponse.json({ narration: null, line: null })
+    if (!npcName) return NextResponse.json({ narration: null, line: null, next: null })
     const brief = clip(body?.brief, 200) || npcName
     const area = clip(body?.area, 60) || "Velkynvelve"
     // what just happened, when the NPC is opening because of it (the map: guards and Ilvara caught a hero sneaking)
@@ -74,7 +83,8 @@ ${knowsName ? `The NPC knows ${pcName}'s name and may use it.` : `The NPC does N
 ${standing ? `How the NPC feels about them (trust, fear, respect, affection, debt, resentment): ${standing}. Let that set how warm, wary or cold the line is.` : "They have no history together yet: a fellow prisoner the NPC has noticed but does not know."}
 The line is spoken in the NPC's own voice and manner, under 25 words.${lang && lang !== "Common" ? ` The NPC speaks it in ${lang}; write the words as they mean them (the game renders the foreign sound). The narration may say they speak in ${lang} but must not translate it.` : ""} Do not invent facts about the campaign.
 The narration is one short sentence, present tense, describing how the NPC approaches (no dialogue in it).
-Reply with only JSON: {"narration": "...", "line": "..."}`
+Then write "next": what the NPC says the moment ${pcName} steps over to listen. It is the matter itself, not a greeting: ONE question put to ${pcName}, or ONE statement the NPC needs them to hear, in the same voice${lang && lang !== "Common" ? " and the same tongue" : ""}, under 30 words. It follows on from the line without repeating it, obeys the same rule about ${pcName}'s name, and leaves ${pcName} something to answer. It comes from who this NPC is and how they feel about ${pcName}${situation ? ", and from what just happened" : ""}; it invents no facts about the campaign (no names, places, plans, items or events that are not given above).
+Reply with only JSON: {"narration": "...", "line": "...", "next": "..."}`
 
     const result = await generateText({
       model: anthropic("claude-haiku-4-5-20251001"),
@@ -84,9 +94,12 @@ Reply with only JSON: {"narration": "...", "line": "..."}`
     const parsed = m ? JSON.parse(m[0]) : null
     const line = typeof parsed?.line === "string" ? parsed.line.trim().replace(/^["“]|["”]$/g, "").slice(0, 280) : null
     const narration = typeof parsed?.narration === "string" ? parsed.narration.trim().slice(0, 240) : null
-    return NextResponse.json({ narration, line, lang })
+    const said = typeof parsed?.next === "string" ? parsed.next.trim().replace(/^["“]|["”]$/g, "").slice(0, 280) : ""
+    // Only ever alongside a real opener, and never the opener over again.
+    const next = line && said && said.toLowerCase() !== line.toLowerCase() ? said : null
+    return NextResponse.json({ narration, line, lang, next })
   } catch (error) {
     console.error("[npc-opener] failed:", error)
-    return NextResponse.json({ narration: null, line: null })
+    return NextResponse.json({ narration: null, line: null, next: null })
   }
 }
