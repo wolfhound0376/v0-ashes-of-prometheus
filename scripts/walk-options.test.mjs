@@ -33,7 +33,8 @@ ok(/laborCastSeen\(caster, target\)/.test(page) && /if \(inChains\(\)\) laborCas
 // 4. The pen gate still only offers what a prisoner can take.
 ok(/if \(hasThievesTools\(leader\)\) add\("Pick the lock"/.test(page), "the pen gate's lock pick needs tools");
 ok(/if \(hasPenKey\(\)\) add\("Unlock it with the pen key"/.test(page), "the pen key option needs the key");
-ok(/if \(dmScreen\(\)\) add\("DM: Jorlan opens it"/.test(page), "the DM option is still the DM's alone");
+ok(!/add\("DM: Jorlan opens it"/.test(page), "the pen card offers no DM row — Jorlan's gate lives in DM tools (Sam, 2026-11-13)");
+ok(/\$\("dmGate"\)\.onclick = \(\) => \{ toggleDm\(false\); openGate\(\); \}/.test(page), "the DM drawer still opens the gate");
 // 5. An option a rule refuses SAYS SO rather than vanishing (Sam, 2026-10-30: "why am I unable to examine it",
 //    then "I like tried and caster"). The menu disables a row whose handler is null and shows its sub-line.
 ok(/if \(fn\) b\.onclick = [\s\S]{0,80}?else b\.disabled = true;/.test(page),

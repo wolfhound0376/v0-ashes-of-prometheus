@@ -5698,7 +5698,7 @@ function openInteract(z, opts = {}){
       log("The bolt tears from the stone.", {say: true}); breakoutBy = "force"; unlockGate(1);
     }, () => { sfx("door-locked", .9); toast("The bars shudder in their bolts, and hold.", 3200); }), "", {icon: "force", check: "Athletics", ability: "str", note: manacled() && !muscle ? MANACLE_NOTE : null});
     calls();
-    if (dmScreen()) add("DM: Jorlan opens it", () => { close(); openGate(); }, "", {icon: "dm"});
+    // No "DM: Jorlan opens it" here — it lives in the DM drawer ("Open the pen gate", #dmGate) only (Sam, 2026-11-13).
     add("Step back", close, "", {icon: "back"});
   } else if (state.doorShut){
     $("objText").textContent = "The gate is shut, but no longer locked.";
@@ -5983,7 +5983,7 @@ function isDm(){ try { return localStorage.getItem("aop_access_role") === "dm"; 
 // WHAT THE DM'S SCREEN SEES, AND NOBODY ELSE (Sam, 2026-10-30: "the options that are DM only do not populate for
 // normal character"). `isDm()` alone is not that question. It reads one localStorage key, and a browser that was
 // once the DM's keeps aop_access_role="dm" for good; when that same browser later takes a hero's seat the key is
-// stale and the DM's own choices — "DM: Jorlan opens it", Malachar's hidden d4, the drow surgeon in both tongues —
+// stale and the DM's own choices — Malachar's hidden d4, the drow surgeon in both tongues —
 // came up on a player's card. A VERIFIED seat settles it: `mySlug` is set at boot only after /api/verify-claim
 // accepts this browser's claim (see the boot block), and the DM's screen holds no claim. So: the DM's screen, or
 // the stand-alone preview with no game around it, and never a seated hero.
