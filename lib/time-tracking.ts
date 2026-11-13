@@ -162,9 +162,9 @@ export async function logTimeEvent(admin: any, sessionId: string | null, event: 
     // comes through here, so nothing that keeps time can be skipped by one.
     const clock = await readGameClock(admin, sessionId)
     if (clock) await advanceGasSporeInfections(admin, { day: clock.day, minutesOfDay: clock.minutesOfDay })
-    // EVERY SHIFT CHANGE IS A CHANGE OF THE WATCH (Sam, 2026-11-10: "tie the guard to the shifts"). The guards hand
-    // over when the work shifts do, so each one the clock just crossed is counted on the stage — which is what brings
-    // Jorlan on with the 2nd or 3rd relief. lib/world-time.
+    // THE WATCH CHANGES ON THE CLOCK (Sam, 2026-11-10: "tie the guard to the shifts"; 2026-11-13: "every shift
+    // occurs 4 game hours"). The guards hand over every 4 game hours, so each change the clock just crossed is counted
+    // on the stage — which is what brings Jorlan on with the 2nd or 3rd relief. lib/world-time WATCH_STARTS.
     const changes = shiftChangesBetween(before, clock)
     if (changes > 0) {
       const events: StageEvent[] = Array.from({ length: changes }, () => ({ kind: "watch", state: "changing" }))
