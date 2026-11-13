@@ -432,6 +432,22 @@ const SCENARIOS = {
       } finally { await W.close() }
     }
   }],
+  17: ["nobody comes through a shut gate: a prisoner on her way out when it closes stays in the pen", async (port) => {
+    // Sam, 2026-11-12: "how did Eldeth jump through a closed door"
+    const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
+    try {
+      await openGate(A); await wait(1200)
+      const planned = await A.evaluate(() => { const e = npcs.find((n) => n.id === "eldeth"), B = balcony(); stopActivity(e); e.actUntil = now + 60000
+        e.path = findPath(e, { x: B.landing[0], y: B.landing[1] }); return { steps: e.path.length, out: outsidePen(e) } })
+      check("with the gate open she has a way out through it", planned.steps > 0 && !planned.out, planned)
+      await A.evaluate(() => { state.doorShut = true; setDoor(false); buildGrid() })           // the gate is shut while she is still walking to it
+      await until(A, () => { const e = npcs.find((n) => n.id === "eldeth"); return !e.path.length }, 30000); await wait(800)
+      const shut = await A.evaluate(() => { const e = npcs.find((n) => n.id === "eldeth"), B = balcony(); return { out: onBalcony(e) || Math.hypot(e.x - B.landing[0], e.y - B.landing[1]) < 40, alpha: +e.alpha.toFixed(2), at: [Math.round(e.x), Math.round(e.y)] } })
+      check("the gate shut on the way: she is still inside, in plain view", !shut.out && shut.alpha > .9, shut)
+      await A.evaluate(() => { state.doorShut = false; setDoor(true); buildGrid(); const e = npcs.find((n) => n.id === "eldeth"), B = balcony(); e.actUntil = now + 60000; e.path = findPath(e, { x: B.landing[0], y: B.landing[1] }) })
+      check("open again, she walks out through it as before", await until(A, () => { const e = npcs.find((n) => n.id === "eldeth"); return onBalcony(e) && !e.path.length }, 30000))
+    } finally { await W.close() }
+  }],
 }
 // 7 and 8: one screen, mid-fight, a reaction-style card open on it; ANOTHER screen's whole party move (pen -> Guard
 // Tower by the bridge) reaches it through the shared world. It must wait for the fight. Then either the party is still
