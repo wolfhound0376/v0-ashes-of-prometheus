@@ -99,6 +99,10 @@
   "slug": "road-tunnels",
   "name": "Road: the tunnels"
  },
+ "battle-pen-gate": {
+  "slug": "battle-pen-gate",
+  "name": "The landing outside the pen gate"
+ },
  "tunnels": {
   "slug": "biome-tunnels",
   "name": "The tunnels"

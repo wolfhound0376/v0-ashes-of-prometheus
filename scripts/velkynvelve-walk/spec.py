@@ -394,6 +394,38 @@ ROAD_PLATES = {
 }
 NODES.update(ROAD_PLATES)
 
+# ── battle plates for fights inside the outpost ─────────────────────────────────────────────────────────────────────
+# Sam, 2026-11-13, on a pen fight where an ally walked through the open gate mid-fight: "This is why we need to have a
+# separate battle screen for now. This is a bit complicated, so lets simplify it." -> a NEW, LARGER dedicated painting for
+# the pen gate (not the landing close-up, not the rope bridge plate), and every Velkynvelve fight to move to a battle
+# screen in time. -> "C is good" (candidate C of four; Runway task 2f7629a9, painted from the landing close-up
+# pen-outside.jpg, 2752x1536 Lanczos -> 2400x1339). -> "loot on the battle screen first": the fight ends here, the dead
+# lie here to be searched, and the party leaves by one of the plate's own ways out. Doc: claude/Separate_Battle_Screen_2026-11-13.md.
+# The landing outside the pen gate, drawn about one and a half times the close-up's floor, with a second ledge across the
+# bridge. Figures stand at scale 1.0 here (the pen draws them at 1.25), so the same floor holds more squares.
+# `stands_for`: the plate this one is a bigger picture of. Its neighbours have no way in "from the battle plate", so an
+# arrival from here comes in by their door from THAT plate (template.html enterNode).
+# Floors, obstacles and exits traced by Claude by eye from the painting and walk-checked; NOT yet Sam's brush.
+# Rope bridge: deck only (Sam, 2026-10-14). The gate is painted shut: its exit is the foot of it, not a doorway to walk.
+# NOT WIRED YET: no fight opens this plate. The DM reaches it from DM tools > Jump to area.
+BATTLE_PLATES = {
+ "battle-pen-gate": dict(slug="battle-pen-gate", stands_for=11, arrive=[2050, 760], name="The landing outside the pen gate", scale=1.0, img="battle-pen-gate.jpg",
+   floors=[dict(poly=P((0,470),(150,450),(380,440),(470,500),(505,595),(430,690),(300,715),(150,700),(0,640))),                       # the far ledge, across the bridge
+           dict(poly=P((425,692),(520,600),(650,655),(800,700),(1000,705),(1105,698),(1048,802),(900,822),(740,815),(600,775))),     # the plank deck, sagging in the middle
+           dict(poly=P((1040,800),(1100,700),(1190,690),(1250,640),(1360,610),(1500,540),(1700,520),(1850,505),(2040,560),(2110,600),  # the landing
+                       (2200,650),(2330,715),(2390,770),(2390,900),(2290,930),(2230,1000),(2150,1090),(2080,1160),(2050,1339),(1800,1339),
+                       (1790,1200),(1620,1180),(1560,1110),(1450,1040),(1300,1015),(1160,985),(1060,880)))],
+   # the crate by the lamp, the fallen pillar and the crate beside it, the standing pillar, the stool, the two runs of
+   # low rubble wall, the stalagmites at the stairhead, the small chest, the crystals on the lip
+   obstacles=[dict(cx=1380,cy=578,rx=64,ry=48),dict(cx=1660,cy=650,rx=108,ry=46),dict(cx=1795,cy=655,rx=62,ry=50),dict(cx=1700,cy=490,rx=56,ry=28),
+              dict(cx=1945,cy=515,rx=36,ry=26),dict(cx=2030,cy=935,rx=78,ry=40),dict(cx=2160,cy=835,rx=62,ry=56),dict(cx=1680,cy=1040,rx=135,ry=62),
+              dict(cx=1520,cy=990,rx=95,ry=82),dict(cx=1872,cy=1072,rx=36,ry=26),dict(cx=1215,cy=965,rx=80,ry=58)],
+   zones=[dict(rect=[2190, 650, 2340, 740], to=[11], label="The pen gate: back into the slave pen"),
+          dict(rect=[0, 470, 70, 640], to=[10], label="The far ledge: on to the Guard Tower"),
+          dict(rect=[1290, 1000, 1450, 1040], to=[12], label="The cliff stairs: down to the Quaggoth Den")]),
+}
+NODES.update(BATTLE_PLATES)
+
 # Sam's editor layout (export 2026-10-25): where each plate sits on the overview board (editor pixels). Data for the editor, not for the page.
 LAYOUT = {
   "1": [80, 1180],
@@ -460,6 +492,8 @@ for _k, _n in _PLATES.items():
 # that do not are listed here so they are a known gap and not a surprise (Sam's export, 2026-10-24: one_way_links_to_fix).
 # A new one-way link fails the build until it gets its return zone or is added here on purpose.
 KNOWN_ONE_WAY = {("4", "1"), ("5", "2"), ("5", "wastes"), ("6", "10"), ("9", "14"), ("12", "10"),
+                 # 2026-11-13: a battle plate is entered by a fight, never by a door, so its ways out are one-way by design
+                 ("battle-pen-gate", "10"), ("battle-pen-gate", "11"), ("battle-pen-gate", "12"),
                  ("lair", "tunnels")}   # 2026-11-10: the tunnels' "deeper in" is the way off the outpost now; the lair waits for its road marker
 ALL = {str(k): v for k, v in NODES.items()}; ALL.update(CAVERNS)
 links = {(a, str(t)) for a, node in ALL.items() for z in node["zones"] for t in z["to"]}
