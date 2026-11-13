@@ -5838,9 +5838,10 @@ function openInteract(z, opts = {}){
       sfx("lock-picked", .9); log("The lock gives with a soft click.", {say: true});
       breakoutBy = "pick"; setTimeout(() => unlockGate(), 650);
     }, () => { sfx("lock-pick-fail", .8); toast("The pick slips in the wards. The lock holds.", 3200); }), "primary", {icon: "pick", check: "Thieves' tools", ability: "dex", note: manacled() ? MANACLE_NOTE : null});
-    add("Force it", attempt("pen-gate:force", heroMod(leader, "athletics", "str"), () => {
+    const muscle = gateMuscle(leader);   // a barbarian with Ront or Derendil beside them: advantage, which cancels the irons
+    add(muscle ? `Force it, with ${SHORT[muscle.id] || SPR[muscle.id].json.name} at your shoulder` : "Force it", attempt("pen-gate:force", heroMod(leader, "athletics", "str"), () => {
       log("The bolt tears from the stone.", {say: true}); breakoutBy = "force"; unlockGate(1);
-    }, () => { sfx("door-locked", .9); toast("The bars shudder in their bolts, and hold.", 3200); }), "", {icon: "force", check: "Athletics", ability: "str", note: manacled() ? MANACLE_NOTE : null});
+    }, () => { sfx("door-locked", .9); toast("The bars shudder in their bolts, and hold.", 3200); }), "", {icon: "force", check: "Athletics", ability: "str", note: manacled() && !muscle ? MANACLE_NOTE : null});
     calls();
     if (dmScreen()) add("DM: Jorlan opens it", () => { close(); openGate(); }, "", {icon: "dm"});
     add("Step back", close, "", {icon: "back"});
@@ -6024,8 +6025,26 @@ async function helpWith(action, who){
   log(`<b>${SHORT[n.id] || SPR[n.id].json.name} lends a hand</b> (Help: ${fname(h)} rolls with advantage).`);
   return {by: n, line: help.line};
 }
+// A SHOULDER AT THE GATE (Sam, 2026-11-12: "A barbarian can with the help of ront or derendil get advantage when trying
+// to break the gate open"). A barbarian who forces the pen gate while Ront or Derendil is on his feet in the pen is
+// joined at the bars, and the Athletics check is rolled with advantage: the SRD's Help ("Working Together"). In irons
+// that cancels the manacles' disadvantage (5e: the two cancel) and the roll is straight. No gravity test: Sam's line
+// names none. The two lines are [HOUSE] placeholders for him to rewrite.
+const GATE_MUSCLE = {ront: "Move over. Ront breaks it.", derendil: "Allow me, friend. Together, now."};
+function gateMuscle(a){
+  if (!a || !/barbarian/i.test(String((SHEETS[a.id] || {}).cls || ""))) return null;
+  return npcs.find(n => GATE_MUSCLE[n.id] && !n.down && !n.body && !n.hostile && !n.buried && !n.offStage && actors.includes(n)) || null;
+}
+function gateMuscleJoins(n, a){
+  stopActivity(n); const at = nearestWalkable(a.x + (n.x < a.x ? -46 : 46), a.y + 6), path = findPath(n, at);
+  n.path = path.length ? path : []; n.onArrive = () => { faceGate(n); };
+  bark(n, GATE_MUSCLE[n.id], 3600); speak(n.id, GATE_MUSCLE[n.id]);
+  log(`<b>${esc(SHORT[n.id] || SPR[n.id].json.name)} puts a shoulder to the bars beside ${esc(fname(a))}</b> (Help: ${esc(fname(a))} rolls with advantage).`);
+}
 /** The checks someone may lend a hand with go through here; everything else calls rollOnDashboard as before. */
 async function rollWithHelp(action, localMod, opts = {}){
+  const muscle = action === "pen-gate:force" ? gateMuscle(opts.who || leader) : null;
+  if (muscle){ gateMuscleJoins(muscle, opts.who || leader); opts = {...opts, advantage: true}; await new Promise(r => setTimeout(r, 900)); }
   const hp = HELP_KIND[action] ? await helpWith(action, opts.who) : null;
   if (hp){ opts = {...opts, advantage: true}; await new Promise(r => setTimeout(r, 900)); }   // a beat for his line before the dice
   return rollOnDashboard(action, localMod, opts);
@@ -6181,7 +6200,7 @@ function gateOptions(a, add){
     if (hasThievesTools(a)) add("Pick the gate's lock", `action · thieves' tools ${sgn(heroMod(a, "thievesTools", "dex"))}${manacled() ? " · disadvantage: manacled" : ""}`, c.action ? () => gateTry(a, "pen-gate:pick", heroMod(a, "thievesTools", "dex"), () => {
       sfx("lock-picked", .9); log(`${fname(a)} works the pen gate's lock in the middle of the fight. It gives with a soft click.`); setTimeout(() => unlockGate(), 650);
     }, () => { sfx("lock-pick-fail", .8); log(`${fname(a)}'s pick slips in the wards. The lock holds.`); }) : null);
-    add("Force the gate", `action · Athletics ${sgn(heroMod(a, "athletics", "str"))}`, c.action ? () => gateTry(a, "pen-gate:force", heroMod(a, "athletics", "str"), () => {
+    add("Force the gate", `action · Athletics ${sgn(heroMod(a, "athletics", "str"))}${gateMuscle(a) ? ` · ${SHORT[gateMuscle(a).id] || "a friend"} helps: advantage` : ""}`, c.action ? () => gateTry(a, "pen-gate:force", heroMod(a, "athletics", "str"), () => {
       log(`${fname(a)} throws their weight on the bars. The bolt tears from the stone.`); unlockGate(1);
     }, () => { sfx("door-locked", .9); log(`${fname(a)} heaves at the bars. They shudder in their bolts, and hold.`); }) : null);
   } else if (state.doorShut && !state.gateBroken){
@@ -6195,7 +6214,7 @@ function faceGate(a){ const g = gateCenter(); if (g) a.face = faceOf(g.x - a.x, 
 // that never answer, give it back.
 function gateTry(a, action, mod, onWin, onLose){
   const c = a.c; c.action = false; closeMenu(); combatBusy = true; faceGate(a);
-  rollOnDashboard(action, mod, {who: a}).then(k => {
+  rollWithHelp(action, mod, {who: a}).then(k => {       // (a barbarian forcing it with Ront or Derendil: advantage)
     combatBusy = false;
     if (!cbt || activeActor() !== a) return;
     if (!k || k.cancelled || !k.ok){ c.action = true; if (k && k.error) toast(k.error, 3200); openMenu(a); return; }
