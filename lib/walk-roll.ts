@@ -60,6 +60,7 @@ const PERCEPTION: WalkCheck = { kind: "skill", skill: "perception", label: "Perc
 const SLEIGHT: WalkCheck = { kind: "skill", skill: "sleight_of_hand", label: "Sleight of Hand" }
 const INVESTIGATION: WalkCheck = { kind: "skill", skill: "investigation", label: "Investigation" }
 const PERFORMANCE: WalkCheck = { kind: "skill", skill: "performance", label: "Performance" }
+const INSIGHT: WalkCheck = { kind: "skill", skill: "insight", label: "Insight" }
 const STRENGTH: WalkCheck = { kind: "ability", ability: "str", label: "Strength" }
 const COOKS: WalkCheck = { kind: "tool", tool: "Cook's Utensils", ability: "wis", label: "Cook's utensils" }
 
@@ -113,6 +114,12 @@ const BOOK_ACTIONS = {
   // for the rogues to steal a key"). The book has no such check: Charisma (Performance), and the DC is a house number
   // [CLAUDE]. The map tells Malachar what came of it (which guard, the slap), so the bridge sends nothing.
   "pen:whistle": { title: "Whistle at the guard", label: "Whistling at a gate guard until he comes in to stop it", check: PERFORMANCE, dc: 12, source: "house (Sam's mechanic, DC Claude's)", mapNarrates: true },
+  // JIMJAR'S WIRE (Sam, 2026-11-12/13: Jimjar gives up the wire for "something valuable (gem, gold, or wins a bet with
+  // him)"; the rogue "can attempt once per short rest on her manacles"). Both are HOMEBREW with house DCs [CLAUDE].
+  // The bet is read as Wisdom (Insight): which fist holds the pebble. The manacles: Dexterity (Sleight of Hand), the
+  // wire being no thieves' tools; OotA's own manacle escape is DC 20 Dexterity, and a wire in the lock is worth 5.
+  "jimjar:bet": { title: "Bet Jimjar for it", label: "Betting Jimjar which fist holds the pebble", check: INSIGHT, dc: 13, source: "house (Sam's mechanic, DC Claude's)", mapNarrates: true },
+  "manacles:wire": { title: "Work the wire", label: "Working a bent wire into their own manacles", check: SLEIGHT, dc: 15, source: "house (Sam's mechanic; OotA manacles DC 20, the wire worth 5)", mapNarrates: true },
 } as const satisfies Record<string, WalkAction>
 
 // PICKPOCKETING WHILE UNSEEN (Sam, 2026-10-27: "pick pocket should be an option when sneaking and near a character.

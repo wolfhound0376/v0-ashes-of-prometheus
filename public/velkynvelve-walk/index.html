@@ -1556,7 +1556,12 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
   beseech: {},
   // THE WHISTLE (Sam, 2026-11-12). whistle: {by, g, at} once a bard has whistled a gate guard into the pen (once per
   // run: after it he ignores the tune). whistleFails: how many tries have fallen flat.
-  whistle: null, whistleFails: 0};
+  whistle: null, whistleFails: 0,
+  // PER-HERO IRONS (Sam, 2026-11-12, "go" to: the wire frees only the rogue who used it). `manacled` above stays the
+  // party's flag; `unshackled` names the heroes who have got out of their own. JIMJAR'S WIRE: wireAsk {at} once he has
+  // come over with it, wireBet {heroId: watch number} the watch a hero last lost his bet, wireTried {heroId: true}
+  // who has had their go at their manacles since the last rest.
+  unshackled: {}, wireAsk: null, wireBet: {}, wireTried: {}};
 // The watch on the pen and the pen gate as the STORY has them (/api/map-stage `watch` and `gate`, written from
 // Malachar's [WATCH:] / [GATE:] tags and from his prose by the stage director). Declared up here because a plate is
 // populated before the poll below ever runs. See "the watch and the gate" further down.
@@ -2538,7 +2543,7 @@ function drawFrame(){
     if (mode === "combat") drawConds(a);
     if (mode === "combat" && a.kind === "pc" && a.down && a.c && a.c.ds) drawDeathSaves(a);
     if (a.id === "stool" && !a.down && !a.body) drawStoolAura(a, dx, dy, dw, dh, "spores");   // the spores drift in front
-    if ((wantsWord(a) || planAsking(a)) && mode === "explore"){
+    if ((wantsWord(a) || planAsking(a) || wireAsking(a)) && mode === "explore"){
       ctx.globalAlpha = 1; const bob = Math.sin(now / 260) * 6, top = dy + dh * .18 - 26 + bob;
       ctx.fillStyle = "#e8a24a"; ctx.strokeStyle = "#1a0f05"; ctx.lineWidth = 4;
       ctx.font = "bold 44px 'IM Fell English SC', Georgia, serif"; ctx.textAlign = "center";
@@ -4463,6 +4468,7 @@ const LOOT_BOOK = {
   "body:hook-horror": [["hook-horror-claw", 2, "the two great hooks"]],
   // Buppido's grave gives up one thing (Sam, 2026-10-30) — same list as lib/walk-loot.ts BODY_KIT
   "body:zombie-rotting": [["scarab-of-protection", 1, "still closed in its fist"]],
+  "pocket:jimjar": [["bent-wire", 1, "a bent length of wire he found"]],   // lib/walk-loot.ts PRISONER_EXTRAS (the preview has no scavenged finds)
   "pocket:drow-guard-male": [], "pocket:drow-guard-female": [],   // marks who has pockets; each guard's own are rolled (POCKET_TABLE)
   // Hard Labor plates (2026-10-26): same lists as lib/walk-loot.ts
   "cliff-top-sack": [["fresh-fruit", 1, "a container of it"]], "cliff-crate": [["dart", 5, "on a weapon belt"]], "cliff-low-sack": [["drow-poison", 3, "vials in a pouch"]],
@@ -5926,7 +5932,7 @@ function openBody(b){
 // the dashboard's engine with the dashboard's modifier, and the page answers {ok, success, total, natural} — or
 // {cancelled} if they stepped back. "aop:roll-ack" says the panel is open; after it the map waits as long as the
 // player does. Opened as a plain file (no game around it), the map rolls locally against the same DC.
-const ROLLS = new Map(), LOCAL_DC = {"falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12};
+const ROLLS = new Map(), LOCAL_DC = {"falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12, "jimjar:bet": 13, "manacles:wire": 15};
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
@@ -6179,7 +6185,7 @@ function carries(a, name){
 const THIEVES_TOOLS = "Thieves' Tools";
 function hasThievesTools(a){ return !APP || carries(a, THIEVES_TOOLS); }
 /** In irons: every check that wants hands or shoulders is at disadvantage, and the card says why. */
-function manacled(){ return !!state.manacled; }
+function manacled(a = leader){ return !!state.manacled && !(a && (state.unshackled || {})[a.id]); }   // (per hero since 2026-11-13: Jimjar's wire)
 const MANACLE_NOTE = "manacled";
 // THE PEN GATE IN A FIGHT (Sam, 2026-10-29, asked whether the party should be able to pick or force the gate during a
 // fight: "Yes, add it"). The gate card (openInteract) only opens outside a fight, so once steel was out the only way
@@ -6202,7 +6208,7 @@ function gateOptions(a, add){
     if (hasPenKey()) add("Unlock the gate", free ? "the pen key · your free object interaction" : "your free object interaction is spent", free ? () => {
       c.objFree = false; faceGate(a); sfx("lock-picked", .9); log(`${fname(a)} turns the stolen key in the pen gate's lock.`); unlockGate(); done();
     } : null);
-    if (hasThievesTools(a)) add("Pick the gate's lock", `action · thieves' tools ${sgn(heroMod(a, "thievesTools", "dex"))}${manacled() ? " · disadvantage: manacled" : ""}`, c.action ? () => gateTry(a, "pen-gate:pick", heroMod(a, "thievesTools", "dex"), () => {
+    if (hasThievesTools(a)) add("Pick the gate's lock", `action · thieves' tools ${sgn(heroMod(a, "thievesTools", "dex"))}${manacled(a) ? " · disadvantage: manacled" : ""}`, c.action ? () => gateTry(a, "pen-gate:pick", heroMod(a, "thievesTools", "dex"), () => {
       sfx("lock-picked", .9); log(`${fname(a)} works the pen gate's lock in the middle of the fight. It gives with a soft click.`); setTimeout(() => unlockGate(), 650);
     }, () => { sfx("lock-pick-fail", .8); log(`${fname(a)}'s pick slips in the wards. The lock holds.`); }) : null);
     add("Force the gate", `action · Athletics ${sgn(heroMod(a, "athletics", "str"))}${gateMuscle(a) ? ` · ${SHORT[gateMuscle(a).id] || "a friend"} helps: advantage` : ""}`, c.action ? () => gateTry(a, "pen-gate:force", heroMod(a, "athletics", "str"), () => {
@@ -9027,17 +9033,17 @@ function openMenu(a, sub){
     // bonus-action spell is left" would be a lie.
     if (!c.action) add("— action already used —", c.leveledSpell ? "you cast a leveled spell with it: no other spell this turn but a cantrip, and your action is spent" : c.bonus ? "only a bonus-action spell is left" : "and the bonus action too", null);
     for (const nm of [...s.magic.cantrips, ...s.magic.prepared]) ACTION_ICON[nm] = "cast-spell";
-    for (const nm of s.magic.cantrips){ const sp = SPELLS[nm]; if (sp && handsBound() && needsHands(nm)){ add(nm, `cantrip · ${IRONS_WHY}`, null); continue; } if (sp) add(nm, `cantrip · action · ${sp.dmg ? sp.dmg + " " + sp.type : ""}${sp.kind === "save" ? " · " + sp.save.toUpperCase() + " save" : ""}`, c.action ? () => aim(a, {spell: nm}) : null); }
+    for (const nm of s.magic.cantrips){ const sp = SPELLS[nm]; if (sp && handsBound(a) && needsHands(nm)){ add(nm, `cantrip · ${IRONS_WHY}`, null); continue; } if (sp) add(nm, `cantrip · action · ${sp.dmg ? sp.dmg + " " + sp.type : ""}${sp.kind === "save" ? " · " + sp.save.toUpperCase() + " save" : ""}`, c.action ? () => aim(a, {spell: nm}) : null); }
     for (const base of s.magic.prepared){
       // CHROMATIC ORB IS ONE CHOICE, THEN AN ELEMENT (Sam, 2026-10-25): picked with a dull click, it opens the element
       // picker, and the orb forms in the caster's hand in the element's colour, with its own sound, as they cycle.
-      if (base === "Chromatic Orb" && handsBound() && needsHands(base)){ add(base, `level 1 · ${IRONS_WHY}`, null); continue; }
+      if (base === "Chromatic Orb" && handsBound(a) && needsHands(base)){ add(base, `level 1 · ${IRONS_WHY}`, null); continue; }
       if (base === "Chromatic Orb"){ const sp = SPELLS["Chromatic Orb (fire)"], left = c.slots[1] || 0; ACTION_ICON[base] = "cast-spell";
         const why = left <= 0 ? "no slot left" : !c.action ? "action used" : c.bonusSpell ? "a bonus-action spell was cast: only cantrips now" : "";
         add(base, why || `level 1 slot · ${left} of ${s.magic.slots[1] || 0} left · action · 3d8 of an element you choose · ${sp.range} ft`, why ? null : () => { bank("walk:orb-select", .45); openMenu(a, "orb"); });
         continue; }
       for (const nm of (SPELL_VARIANTS[base] || [base])){ const sp = SPELLS[nm]; if (!sp) continue; ACTION_ICON[nm] = "cast-spell";
-      if (handsBound() && needsHands(nm)){ add(nm, `level ${sp.lvl} · ${IRONS_WHY}`, null); continue; }   // MANACLES (Sam, 2026-11-12): only somatic spells go dark
+      if (handsBound(a) && needsHands(nm)){ add(nm, `level ${sp.lvl} · ${IRONS_WHY}`, null); continue; }   // MANACLES (Sam, 2026-11-12): only somatic spells go dark
       if (sp.kind === "reaction"){ add(nm, `level ${sp.lvl} slot · your reaction · ${sp.trigger || "offered when an attack would hit you"}`, null); continue; }
       const left = c.slots[sp.lvl] || 0;
       const why = left <= 0 ? "no slot left" : sp.faith && !hasFaithItem(a) ? "needs his items of faith (the Book of Prayers or a holy symbol)" : sp.bonus ? (!c.bonus ? "bonus action used" : c.leveledSpell ? "you already cast a leveled spell with your action" : "") : (!c.action ? "action used" : c.bonusSpell ? "a bonus-action spell was cast: only cantrips now" : "");
@@ -9104,10 +9110,10 @@ function openMenu(a, sub){
     // THE IRONS (Sam, 2026-11-12: "It was like there were no ability to cast magic"). Manacles darken every spell with a
     // gesture, and the cast list drops what cannot be done, so a manacled Gandalf (all seven of his spells somatic) got a
     // lit "Cast · slots L1 2/2" that opened onto nothing but Back. Cast now asks the same question the list does.
-    const ironsOnly = s.magic && handsBound() && [...s.magic.cantrips, ...s.magic.prepared].every(nm => needsHands(nm));
+    const ironsOnly = s.magic && handsBound(a) && [...s.magic.cantrips, ...s.magic.prepared].every(nm => needsHands(nm));
     if (ironsOnly && !c.ironsSaid){ c.ironsSaid = true; log(`<b>${esc(fname(a))}</b> cannot cast: every spell they know needs their hands, and they are in irons.`); popText(a, "in irons", "#b39ddb", 1); }
     const castable = s.magic && !c.rage && [...s.magic.cantrips, ...s.magic.prepared].some(nm => { const sp = SPELLS[nm]; if (!sp) return false;
-      if (handsBound() && needsHands(nm)) return false;
+      if (handsBound(a) && needsHands(nm)) return false;
       if (sp.lvl === 0) return c.action; if ((c.slots[sp.lvl] || 0) <= 0) return false; return sp.bonus ? c.bonus && !c.leveledSpell : c.action && !c.bonusSpell; });
     if (c.conc) add("End concentration", `${c.conc.spell} · free, no action · ${Math.max(0, c.conc.endRound - cbt.round)} rounds left`, () => { endConc(a, "let go"); openMenu(a); });
     if (s.magic) add("Cast", !castable ? (c.rage ? "raging: no spells and no concentration" : "nothing left to cast this turn") : `DC ${s.magic.dc} · +${s.magic.hit} · slots ${Object.entries(c.slots).map(([l, n]) => `L${l} ${n}/${s.magic.slots[l] || 0}`).join(" ")}`, castable ? () => openMenu(a, "cast") : null, "primary");
@@ -9221,7 +9227,7 @@ function renderExploreBar(){
   const lvlNext = canControl(leader) && !inFightNow() ? levelReady(leader.id) : 0;
   const who = SHORT[leader.id] || (SHEETS[leader.id] && SHEETS[leader.id].name.split(" ")[0]) || SPR[leader.id].json.name;
   o.mark = pickpocketMark(leader);   // someone in reach of a hand while this hero is sneaking unseen
-  const key = [leader.id, o.talkNear && o.talkNear.id, o.talkList.length, lvlNext, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, o.mark && o.mark.id, party.length, whistleCan(leader) ? "w" : "", beseechCan(leader) ? "b" : ""].join("|");
+  const key = [leader.id, o.talkNear && o.talkNear.id, o.talkList.length, lvlNext, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, o.mark && o.mark.id, party.length, whistleCan(leader) ? "w" : "", beseechCan(leader) ? "b" : "", wireCan(leader) ? "m" : ""].join("|");
   if (key === exploreKey && !m.hidden) return;
   exploreKey = key; m.dataset.kind = "explore"; m.innerHTML = ""; m.hidden = false;
   const add = (label, glyph, icon, sub, fn, cls) => { const b = document.createElement("button"); if (cls) b.className = cls;
@@ -9303,7 +9309,7 @@ let sneak = null, helpNext = null, followOn = true, moreOpen = false, exploreJum
 const EXPLORE_KEEP = 7;
 const BUTTON_PRI = [[/^Level Up/, .5], [/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
   [/^(Sneak|Stop sneaking)/, 4], [/^Pick .*pocket/, 4], [/^Cast/, 5], [/^Search$/, 6], [/^Inventory/, 7], [/^Tell Malachar/, 8], [/^Next hero/, 9],
-  [/^(Scout|Jump|Pray|Beseech|Inspire|Whistle|Quick drink)/, 10], [/^My company/, 11], [/^Short rest/, 12], [/^Help/, 13], [/^(Follow|Wait)/, 14], [/^Talk$/, 30]];
+  [/^(Scout|Jump|Pray|Beseech|Inspire|Whistle|Work the wire|Quick drink)/, 10], [/^My company/, 11], [/^Short rest/, 12], [/^Help/, 13], [/^(Follow|Wait)/, 14], [/^Talk$/, 30]];
 // THE COMBAT BAR (Sam, 2026-11-10: "Don't offer bubble boxes for actions that aren't available. Offer boxes in order of
 // priority and utility." — this replaces the 2026-10-27 canvas order for the fight). Only what the hero can do RIGHT NOW
 // gets a box (foldBar drops the rest), so the order is by usefulness, not by habit:
@@ -9378,6 +9384,7 @@ function exploreExtras(m, o, add, who){
     x("My company", "☰", ART("follow"), `${escortOf(L.id).length} with you · ${m === "follow" ? "following" : m === "wait" ? "waiting" : "with " + fname(party.find(p => p.id === m.slice(5)) || L)}`, canControl(L) ? () => openCompany() : null); }
   if (/cleric/.test(cls)) x("Pray", "✠", ART("pray"), "silently, or aloud", () => openPray());
   if (/warlock/.test(cls) && beseechCan(L)) x("Beseech your patron", "✠", ART("pray"), "a way out of the pen · once until you rest", () => openBeseech());
+  if (wireCan(L)) x("Work the wire into your manacles", "⚿", ART("pickpocket", "search"), `Sleight of Hand ${sgn(heroMod(L, "sleightOfHand", "dex"))} · one try until you rest`, () => wireManacles());
   if (whistleCan(L)) x("Whistle at the guard", "♪", ART("inspire"), `Performance ${sgn(heroMod(L, "performance", "cha"))} · he may come in to shut you up`, () => whistleAtGuard());
   if (sh.bardic) x("Inspire", "♪", ART("inspire"), `Bardic Inspiration · ${inspLeftOf(L)} of ${sh.bardic.uses} left`, inspLeftOf(L) > 0 && party.length > 1 ? () => openInspire() : null);
   // SCOUT ALONE (Sam, 2026-10-27: "This should be an option that populates when sneaking away from the group"): not a
@@ -10278,7 +10285,7 @@ function pacingTick(){
   if (!penHeld()){ pacingPenSince = 0; return; }
   if (!pacingPenSince) pacingPenSince = now;
   if (mode !== "explore" || (typeof talkNpc !== "undefined" && talkNpc) || timeStopped) return;
-  argueTick(); mutterTick(); planTick();
+  argueTick(); mutterTick(); planTick(); wireTick();
 }
 // ----- 1. the caravan clock -----
 function caravanTick(){
@@ -10462,7 +10469,7 @@ async function chainMarchRun(fresh){
     if (!SPEC[plate]){ toast("The bridge is not painted."); return; }
     state.chainMarch = {seq, at: Date.now(), by: OW.key || "local", stage: "taken"};
     state.caravanCalled = true;
-    if (!state.manacled){ state.manacled = true; log("<i>The irons go back on.</i>"); }
+    if (!state.manacled || Object.keys(state.unshackled || {}).length){ state.manacled = true; state.unshackled = {}; log("<i>The irons go back on.</i>"); }
     saveWalk();
     if (fresh) handOff("The caravan to Menzoberranzan has come for the prisoners. The six watches are spent and the party is still in the slave pen. The drow come in force, put every prisoner back in irons, chain them into a column and march them out of Velkynvelve by the north passage. The map stages the march and the fight that follows on the rope bridge: play only the drow coming in for them, briefly. This is not the end of the game: the bridge is one last, harder chance to escape.", false);
     await wait(CHAIN_MARCH.takeMs);
@@ -10553,7 +10560,7 @@ async function waitRun(v){
       lines = (r.characters || []).map(c => `${esc(c.name.split(" ")[0])}: ${c.healed > 0 ? `+${c.healed} hp (${c.hp}/${c.hpMax})` : `${c.hp}/${c.hpMax}`}`);
     } else { storyRotations = (storyRotations || 0) + 1; fakeWatch("changing"); }   // the stand-alone preview: no game to tell
     state.waitVote = {...v, done: Date.now()};
-    beseechRested();
+    beseechRested(); wireRested();
     await wait(2000);
     if (mode === "dialog") mode = "explore";
     log(`<b>The party waits out the watch.</b> Hours pass, and they rest. ${lines.length ? lines.join("; ") + "." : ""}`);
@@ -10885,6 +10892,122 @@ function openPray(){
   add("Pray aloud", () => { close(); log(`${fname(leader)} prays aloud to ${god}.`); narrate(leader, `${fname(leader)} prays aloud.`); handOff(`${fname(leader)} prays ALOUD to ${god}, where anyone near can hear.`, true); });
   add("Not now", close);
 }
+// ---------- JIMJAR'S WIRE (Sam, 2026-11-12 and 13) ----------
+// "For the rogue. Jimjar approaches Fifi and offers to help but for a price. He offers a small metal wire he found which
+// she can attempt once per short rest on her manacles." / "Jimjar only offers if you have something valuable (gem,
+// gold, or wins a bet with him)." His "go" to: any rogue, not only Fifi; the wire frees only the one who uses it;
+// manacles only, never the gate's lock.
+//   WHO, WHEN  A rogue this screen plays, still in irons, held in the pen, with Jimjar on his feet — after the first
+//              change of the watch [CLAUDE: when]. He walks over once and his "!" goes up; walking to him opens the
+//              deal. The "!" stays while there is still a deal to be had.
+//   THE PRICE  Sam's three: a gem, gold, or a won bet. A gem is one catalogue row marked as a gem; gold is up to
+//              WIRE_GOLD coins of what she carries [CLAUDE: the number]. Paid for real: the thing moves into Jimjar's
+//              own inventory by the same road a gift does (giveItem). The bet is Wisdom (Insight), which fist holds the
+//              pebble (lib/walk-roll.ts "jimjar:bet") [CLAUDE: the game and the DC]; lose and he will not bet again
+//              until the watch changes [CLAUDE]. Only what she can do is offered: no gem, no gem row.
+//   THE WIRE   A real thing: catalogue row `bent-wire`, in Jimjar's pocket from the start (lib/walk-loot.ts
+//              PRISONER_EXTRAS), moved to her by the same take as any picked pocket. So it can also simply be stolen
+//              from him by a hero sneaking — the standing pickpocket rule, not a new one.
+//   THE IRONS  Carrying it, a rogue in irons may work it into their own manacles: Dexterity (Sleight of Hand),
+//              "manacles:wire", once until the party next rests (Sam). No disadvantage from the irons themselves
+//              (Sam, 2026-10-30: manacles do not hinder slipping the manacles). A success frees THAT hero only.
+//   NOT BUILT  Sam's 2026-10-30 advantage for small female rogues and human women slipping manacles is not applied
+//              here: nothing in the game reads a hero's sex yet. Guards do not yet react to a prisoner out of irons.
+const WIRE = "Bent wire", WIRE_SLUG = "bent-wire", WIRE_GOLD = 5, WIRE_AFTER_WATCHES = 1;
+const WIRE_LINES = {come: "Psst. You, with the quick hands. Want out of those?", show: "Found it in the muck. It'll turn a manacle, I'd bet my teeth on it. Not free, mind.",
+  paid: "Pleasure. Don't say where you got it.", won: "Ha! Fair's fair. Take it.", lost: "Wrong fist! Come back when the watch changes, I'll have forgotten your face.",
+  gone: "It was right here. Somebody's got light fingers."};   // [HOUSE] placeholder lines for Sam to rewrite
+let wireBarked = 0, wireBusy = false;
+function wireHero(){ const h = askHero(); return h && isRogueSheet(SHEETS[h.id]) ? h : null; }
+function wireJimjar(){ return pacingFind("jimjar"); }
+/** Is there still a deal to be had between this screen's rogue and Jimjar? */
+function wireOpen(h){ return !!(h && penHeld() && manacled(h) && !carries(h, WIRE) && wireJimjar() && (storyRotations || 0) >= WIRE_AFTER_WATCHES); }
+function wireAsking(n){ return !!(n && n.id === "jimjar" && state.wireAsk && !state.wireAsk.done && wireOpen(wireHero())); }
+function wireTick(){
+  const h = wireHero(), n = wireJimjar(); if (!h || !n || !wireOpen(h) || (state.wireAsk && state.wireAsk.done)) return;
+  if (!state.wireAsk){ state.wireAsk = {at: Date.now()}; saveWalk(); }
+  if (wireBarked || Date.now() - state.wireAsk.at > 20000) return;     // he comes over once, when it is new
+  wireBarked = now;
+  stopActivity(n); const at = nearestWalkable(h.x + (n.x < h.x ? -70 : 70), h.y + 8), path = findPath(n, at);
+  n.path = path.length ? path : []; n.onArrive = () => { faceTo(n, h); };
+  bark(n, WIRE_LINES.come, 5200, {talk: true, voice: true});
+  narrate(n, `${SHORT[n.id] || "Jimjar"} sidles over to ${fname(h)}.`);
+}
+/** What she carries that he would take: gems one at a time, gold up to WIRE_GOLD coins. */
+function wireValuables(h){
+  const out = [];
+  for (const it of (GEAR[h.id] || {carried: []}).carried){
+    const cat = catalogItem(it.name) || {};
+    if ((isCoinRow(cat) || (it.item_type || cat.item_type) === "currency") && /gold/i.test(it.name)) out.push({it, n: Math.min(it.qty || 1, WIRE_GOLD), label: `Pay him ${Math.min(it.qty || 1, WIRE_GOLD)} gold`});
+    else if ((cat.properties || {}).icon_hint === "gem" || /\bgem\b/i.test(it.name)) out.push({it, n: 1, label: `Pay him the ${it.name}`});
+  }
+  return out;
+}
+async function openWireCard(n){
+  const h = wireHero(); if (mode !== "explore" || !h || !wireOpen(h)) return;
+  await ensureCatalog();
+  mode = "dialog"; tip.hidden = true; party.forEach(p => { p.path = []; });
+  const c = $("objPic").getContext("2d"); c.clearRect(0, 0, 128, 128);
+  try { const m = SPR[n.id].json; c.imageSmoothingEnabled = false; c.drawImage(SPR[n.id].img.idle, 0, 0, m.cell[0], m.cell[1], 0, 0, 128, 128); } catch (e) {}
+  $("objWho").textContent = SHORT[n.id] || "Jimjar";
+  const lostAt = (state.wireBet || {})[h.id], canBet = lostAt == null || (storyRotations || 0) > lostAt, pays = wireValuables(h);
+  $("objText").textContent = `“${WIRE_LINES.show}” He turns a bent length of wire between two fingers.`
+    + (pays.length ? "" : canBet ? " You have nothing he wants. But Jimjar will bet on anything." : " You have nothing he wants, and he will not bet again until the watch changes.");
+  const box = $("objBtns"); box.innerHTML = ""; box.classList.remove("loot");
+  const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
+  pays.forEach((p, i) => choiceRow(box, p.label, () => { close(); wirePay(n, h, p); }, i ? "" : "primary", {icon: "key"}));
+  if (canBet) choiceRow(box, "Bet him for it: which fist holds the pebble", () => { close(); wireBetHim(n, h); }, pays.length ? "" : "primary", {check: "Insight", ability: "wis"});
+  choiceRow(box, "Not now", close, "", {icon: "back"});
+  showObjCard(); bark(n, WIRE_LINES.show, 5200, {talk: true, voice: true});
+}
+function wirePay(n, h, p){
+  const it = (GEAR[h.id] || {carried: []}).carried.find(c => c === p.it || c.name === p.it.name);
+  if (!it){ toast(`${fname(h)} no longer has it.`); return; }
+  giveItem(h, it, n, p.n, {toId: askRowOf(n.id)});
+  wireHandOver(n, h, "paid", `paid Jimjar ${p.n > 1 ? `${p.n} gold coins` : `the ${it.name}`} for it`);
+}
+async function wireBetHim(n, h){
+  if (wireBusy) return; wireBusy = true;
+  try {
+    const r = await rollOnDashboard("jimjar:bet", heroMod(h, "insight", "wis"), {who: h});
+    if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3600); return; }
+    if (r.success){ await wireHandOver(n, h, "won", `won it from Jimjar on a bet (Wisdom (Insight) ${r.total})`); return; }
+    state.wireBet = Object.assign({}, state.wireBet || {}, {[h.id]: storyRotations || 0}); saveWalk();
+    bark(n, WIRE_LINES.lost, 5200, {talk: true, voice: true}); bank("ui/nat1", .3);
+    log(`${esc(fname(h))} picks a fist. <b>Empty.</b> Jimjar keeps his wire, and his grin.`);
+  } finally { wireBusy = false; exploreKey = ""; }
+}
+/** The wire leaves his pocket for hers: the real row, by the same take as a picked pocket. */
+async function wireHandOver(n, h, how, told){
+  let got = false;
+  try { const j = await fetchLoot(pocketId(n)), row = (j.rows || []).find(x => x.slug === WIRE_SLUG || x.name === WIRE); if (row && !row.missing) got = await takeLoot(h, pocketId(n), row); else if (row && row.missing) toast("The wire is not in the item catalogue yet, so it cannot change hands.", 4200); } catch (e) {}
+  if (!got){ bark(n, WIRE_LINES.gone, 4200, {talk: true}); log(`Jimjar pats down his rags. <em>The wire is not there.</em>`); }
+  else { bark(n, WIRE_LINES[how], 4200, {talk: true, voice: true}); popText(h, "the wire", "#9ad0ff", 1);
+    log(`<b>Jimjar presses the bent wire into ${esc(fname(h))}'s palm.</b>`);
+    if (APP) handOff(`${fname(h)} ${told}: a short bent length of metal wire, good for trying the lock of their own manacles and nothing else (it is not thieves' tools and will not open the pen gate). It is in ${fname(h)}'s inventory now. No guard saw it change hands.`, false); }
+  state.wireAsk = Object.assign({}, state.wireAsk || {at: Date.now()}, {done: true}); saveWalk(); exploreKey = "";
+}
+/** Carrying the wire, in irons, a rogue, in the pen or out of it, and not yet tried since the last rest. */
+function wireCan(L){ return !!(L && mode === "explore" && !L.down && isRogueSheet(SHEETS[L.id]) && manacled(L) && carries(L, WIRE) && !(state.wireTried || {})[L.id] && !wireBusy); }
+async function wireManacles(){
+  const h = leader; if (!wireCan(h)) return; wireBusy = true; h.path = [];
+  try {
+    const r = await rollOnDashboard("manacles:wire", heroMod(h, "sleightOfHand", "dex"), {who: h});
+    if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3600); return; }
+    state.wireTried = Object.assign({}, state.wireTried || {}, {[h.id]: true});
+    if (r.success){
+      state.unshackled = Object.assign({}, state.unshackled || {}, {[h.id]: true}); saveWalk();
+      sfx("lock-picked", .8); popText(h, "free", "#9ad0ff", 1.1);
+      log(`<b>The lock of ${esc(fname(h))}'s manacle turns over.</b> <em>The irons come off, quietly. Only theirs.</em>`, {say: true});
+      if (APP) handOff(`${fname(h)} has picked the lock of their own manacles with a bent wire (Dexterity (Sleight of Hand) ${r.total}) and is out of irons. Only ${fname(h)}: every other prisoner is still manacled. No guard has noticed. ${fname(h)} no longer has the manacles' disadvantage and can use their hands freely.`, false);
+    } else {
+      saveWalk(); sfx("lock-pick-fail", .7);
+      log(`${esc(fname(h))} works the wire in the manacle's lock. <em>It will not catch. Not until they have rested their hands.</em>`);
+    }
+  } finally { wireBusy = false; exploreKey = ""; }
+}
+/** The party has rested: a rogue may try the wire again. */
+function wireRested(){ if (state.wireTried && Object.keys(state.wireTried).length){ state.wireTried = {}; saveWalk(); exploreKey = ""; } }
 // ---------- BESEECH (Sam, 2026-11-12) ----------
 // "The priest and Warlocks can beesech their patron and will be given a hint and advantage on the attempt."
 //   WHO, WHEN  A cleric or a warlock, held in the pen. Once each until the party next rests (a short rest, or waiting
@@ -10988,7 +11111,7 @@ async function doRest(spend){
     j = {ok: true, interrupted: Math.random() < (r.chance || 0), minutes: 60, characters: []};
   }
   await wait(1400);
-  beseechRested();
+  beseechRested(); wireRested();
   for (const p of party) setAnim(p, "idle");
   mode = "explore";
   if (j.interrupted){
@@ -11087,7 +11210,7 @@ function inChains(){ return laborLive() && labor.status !== "called" && cur !== 
  * same hero, the same cuffs, two answers. Sam, 2026-10-30: "make sure options are actual options that should be
  * available to you." The components gate asks THIS; being seen by the escort still asks inChains().
  */
-function handsBound(){ return inChains() || manacled(); }
+function handsBound(a = leader){ return inChains() || manacled(a); }
 const SOMATIC = {"abi-dalzim's horrid wilting":true,"absorb elements":true,"acid splash":true,"acid stream (ua)":true,"aganazzar's scorcher":true,"aid":true,"alarm":true,"alter self":true,"animal friendship":true,"animal messenger":true,"animal shapes":true,"animate dead":true,"animate objects":true,"antilife shell":true,"antimagic field":true,"antipathy/sympathy":true,"arcane eye":true,"arcane gate":true,"arcane hacking (ua)":true,"arcane lock":true,"arcane weapon (ua)":true,"armor of agathys":true,"arms of hadar":true,"astral projection":true,"augury":true,"aura of life":false,"aura of purity":false,"aura of vitality":false,"awaken":true,"bane":true,"banishing smite":false,"banishment":true,"barkskin":true,"beacon of hope":true,"beast bond":true,"beast sense":true,"bestow curse":true,"bigby's hand":true,"blade barrier":true,"blade of disaster":true,"blade ward":true,"bless":true,"blight":true,"blinding smite":false,"blindness/deafness":false,"blink":true,"blur":false,"bones of the earth":true,"booming blade":true,"branding smite":false,"burning hands":true,"call lightning":true,"calm emotions":true,"catapult":true,"catnap":true,"cause fear":true,"ceremony":true,"chain lightning":true,"chaos bolt":true,"charm monster":true,"charm person":true,"chill touch":true,"chromatic orb":true,"circle of death":true,"circle of power":false,"clairvoyance":true,"clone":true,"cloud of daggers":true,"cloudkill":true,"color spray":true,"command":false,"commune":true,"commune with city (ua)":true,"commune with nature":true,"compelled duel":false,"comprehend languages":true,"compulsion":true,"cone of cold":true,"confusion":true,"conjure animals":true,"conjure barlgura (ua)":true,"conjure barrage":true,"conjure celestial":true,"conjure elemental":true,"conjure fey":true,"conjure hezrou (ua)":true,"conjure knowbot (ua)":true,"conjure lesser demon (ua)":true,"conjure minor elementals":true,"conjure shadow demon (ua)":true,"conjure volley":true,"conjure vrock (ua)":true,"conjure woodland beings":true,"contact other plane":false,"contagion":true,"contingency":true,"continual flame":true,"control flames":true,"control water":true,"control weather":true,"control winds":true,"cordon of arrows":true,"counterspell":true,"create bonfire":true,"create food and water":true,"create homunculus":true,"create magen":true,"create or destroy water":true,"create undead":true,"creation":true,"crown of madness":true,"crown of stars":true,"crusader's mantle":false,"cure wounds":true,"dancing lights":true,"danse macabre":true,"dark star":true,"darkness":false,"darkvision":true,"dawn":true,"daylight":true,"death ward":true,"decompose (hb)":true,"delayed blast fireball":true,"demiplane":true,"destructive wave":false,"detect evil and good":true,"detect magic":true,"detect poison and disease":true,"detect thoughts":true,"digital phantom (ua)":true,"dimension door":false,"disguise self":true,"disintegrate":true,"dispel evil and good":true,"dispel magic":true,"dissonant whispers":false,"distort value":false,"divination":true,"divine favor":true,"divine word":false,"dominate beast":true,"dominate monster":true,"dominate person":true,"draconic transformation (ua)":true,"dragon's breath":true,"drawmij's instant summons":true,"dream":true,"dream of the blue veil":true,"druid grove":true,"druidcraft":true,"dust devil":true,"earth tremor":true,"earthbind":false,"earthquake":true,"ego whip (ua)":false,"eldritch blast":true,"elemental bane":true,"elemental weapon":true,"encode thoughts":true,"enemies abound":true,"enervation":true,"enhance ability":true,"enlarge/reduce":true,"ensnaring strike":false,"entangle":true,"enthrall":true,"erupting earth":true,"etherealness":true,"evard's black tentacles":true,"expeditious retreat":true,"eyebite":true,"fabricate":true,"faerie fire":false,"false life":true,"far step":false,"fast friends":false,"fear":true,"feather fall":false,"feeblemind":true,"feign death":true,"find familiar":true,"find greater steed":true,"find steed":true,"find the path":true,"find traps":true,"find vehicle (ua)":true,"finger of death":true,"fire bolt":true,"fire shield":true,"fire storm":true,"fireball":true,"fizban's platinum shield (ua)":true,"flame arrows":true,"flame blade":true,"flame stride (ua)":true,"flame strike":true,"flaming sphere":true,"flesh to stone":true,"flock of familiars":true,"fly":true,"fog cloud":true,"forbiddance":true,"forcecage":true,"foresight":true,"fortune's favor":true,"freedom of movement":true,"friends":true,"frost fingers":true,"frostbite":true,"galder's speedy courier":true,"galder's tower":true,"gaseous form":true,"gate":true,"geas":false,"gentle repose":true,"giant insect":true,"gift of alacrity":true,"gift of gab":true,"glibness":false,"globe of invulnerability":true,"glyph of warding":true,"goodberry":true,"grasping vine":true,"gravity fissure":true,"gravity sinkhole":true,"grease":true,"greater invisibility":true,"greater restoration":true,"green-flame blade":true,"guardian of faith":false,"guardian of nature":false,"guards and wards":true,"guidance":true,"guiding bolt":true,"guiding hand (ua)":true,"gust":true,"gust of wind":true,"hail of thorns":false,"hallow":true,"hallucinatory terrain":true,"hand of radiance (ua)":true,"harm":true,"haste":true,"haywire (ua)":true,"heal":true,"healing elixir (ua)":true,"healing spirit":true,"healing word":false,"heat metal":true,"hellish rebuke":true,"heroes' feast":true,"heroism":true,"hex":true,"hold monster":true,"hold person":true,"holy aura":true,"holy weapon":true,"hunger of hadar":true,"hunter's mark":false,"hypnotic pattern":true,"ice knife":true,"ice storm":true,"icingdeath's frost (ua)":true,"id insinuation (ua)":true,"identify":true,"illusory dragon":true,"illusory script":true,"immolation":false,"immovable object":true,"imprisonment":true,"incendiary cloud":true,"incite greed":true,"infallible relay (ua)":true,"infernal calling":true,"infestation":true,"inflict wounds":true,"insect plague":true,"intellect fortress":false,"investiture of flame":true,"investiture of ice":true,"investiture of stone":true,"investiture of wind":true,"invisibility":true,"invisibility to cameras (ua)":true,"invulnerability":true,"jim's glowing coin":true,"jim's magic missile":true,"jump":true,"knock":false,"legend lore":true,"leomund's secret chest":true,"leomund's tiny hut":true,"lesser restoration":true,"levitate":true,"life transference":true,"light":false,"lightning arrow":true,"lightning bolt":true,"lightning lure":false,"locate animals or plants":true,"locate creature":true,"locate object":true,"longstrider":true,"maddening darkness":false,"maelstrom":true,"mage armor":true,"mage hand":true,"magic circle":true,"magic jar":true,"magic missile":true,"magic mouth":true,"magic stone":true,"magic weapon":true,"magnify gravity":true,"major image":true,"mass cure wounds":true,"mass heal":true,"mass healing word":false,"mass polymorph":true,"mass suggestion":false,"maximilian's earthen grasp":true,"maximillian's earthen grasp":true,"maze":true,"meld into stone":true,"melf's acid arrow":true,"melf's minute meteors":true,"mending":true,"mental barrier (ua)":false,"mental prison":true,"message":true,"meteor swarm":true,"mighty fortress":true,"mind blank":true,"mind sliver":false,"mind spike":true,"mind thrust (ua)":true,"minor illusion":true,"mirage arcane":true,"mirror image":true,"mislead":true,"misty step":false,"modify memory":true,"mold earth":true,"moonbeam":true,"mordenkainen's faithful hound":true,"mordenkainen's magnificent mansion":true,"mordenkainen's private sanctum":true,"mordenkainen's sword":true,"motivational speech":false,"move earth":true,"nathair's mischief (ua)":true,"negative energy flood":false,"nondetection":true,"nystul's magic aura":true,"on/off (ua)":true,"otherworldly form (ua)":true,"otiluke's freezing sphere":true,"otiluke's resilient sphere":true,"otto's irresistible dance":false,"pass without trace":true,"passwall":true,"phantasmal force":true,"phantasmal killer":true,"phantom steed":true,"planar ally":true,"planar binding":true,"plane shift":true,"plant growth":true,"poison spray":true,"polymorph":true,"power word: heal":true,"power word: kill":false,"power word: pain":false,"power word: stun":true,"prayer of healing":false,"prestidigitation":true,"primal savagery":true,"primordial ward":true,"prismatic spray":true,"prismatic wall":true,"produce flame":true,"programmed illusion":true,"project image":true,"protection from ballistics (ua)":true,"protection from energy":true,"protection from evil and good":true,"protection from poison":true,"psionic blast (ua)":false,"psychic crush (ua)":true,"psychic scream":true,"pulse wave":true,"puppet (ua)":false,"purify food and drink":true,"pyrotechnics":true,"raise dead":true,"rary's telepathic bond":true,"raulothim's psychic lance (ua)":false,"ravenous void":true,"ray of enfeeblement":true,"ray of frost":true,"ray of sickness":true,"reality break":true,"regenerate":true,"reincarnate":true,"remote access (ua)":true,"remove curse":true,"resistance":true,"resurrection":true,"reverse gravity":true,"revivify":true,"rope trick":true,"sacred flame":true,"sanctuary":true,"sapping sting":true,"scatter":false,"scorching ray":true,"scrying":true,"searing smite":false,"see invisibility":true,"seeming":true,"sending":true,"sense emotion (ua)":true,"sequester":true,"shadow blade":true,"shadow of moil":true,"shape water":true,"shapechange":true,"shatter":true,"shield":true,"shield of faith":true,"shillelagh":true,"shocking grasp":true,"shutdown (ua)":true,"sickening radiance":true,"silence":true,"silent image":true,"simulacrum":true,"skill empowerment":true,"skywrite":true,"sleep":true,"sleet storm":true,"slow":true,"snare":true,"snilloc's snowball storm":true,"snilloc's snowball swarm":true,"soul cage":true,"spare the dying":true,"speak with animals":true,"speak with dead":true,"speak with plants":true,"spider climb":true,"spike growth":true,"spirit guardians":true,"spirit shroud":true,"spiritual weapon":true,"staggering smite":false,"steel wind strike":true,"stinking cloud":true,"stone shape":true,"stoneskin":true,"storm of vengeance":true,"storm sphere":true,"sudden awakening (ua)":false,"suggestion":false,"summon aberration":true,"summon beast":true,"summon celestial":true,"summon construct":true,"summon draconic spirit (ua)":true,"summon elemental":true,"summon fey":true,"summon fiend":true,"summon greater demon":true,"summon lesser demons":true,"summon shadowspawn":true,"summon undead":true,"sunbeam":true,"sunburst":true,"swift quiver":true,"sword burst":false,"symbol":true,"synaptic static":true,"synchronicity (ua)":true,"system backdoor (ua)":true,"tasha's caustic brew":true,"tasha's hideous laughter":true,"tasha's mind whip":false,"tasha's otherworldly guise":true,"telekinesis":true,"telepathy":true,"teleport":false,"teleportation circle":false,"temple of the gods":true,"temporal shunt":true,"tenser's floating disk":true,"tenser's transformation":true,"tether essence":true,"thaumaturgy":false,"thorn whip":true,"thought shield (ua)":true,"thunder step":false,"thunderclap":true,"thunderous smite":false,"thunderwave":true,"tidal wave":true,"time ravage":true,"time stop":false,"tiny servant":true,"toll the dead":true,"tongues":false,"transmute rock":true,"transport via plants":true,"tree stride":true,"true polymorph":true,"true resurrection":true,"true seeing":true,"true strike":true,"tsunami":true,"unearthly chorus (ua)":false,"unseen servant":true,"vampiric touch":true,"vicious mockery":false,"virtue (ua)":true,"vitriolic sphere":true,"wall of fire":true,"wall of force":true,"wall of ice":true,"wall of light":true,"wall of sand":true,"wall of stone":true,"wall of thorns":true,"wall of water":true,"warding bond":true,"warding wind":false,"water breathing":true,"water walk":true,"watery sphere":true,"web":true,"weird":true,"whirlwind":false,"widogast's transmogrification (hb)":true,"widogast's vault of amber (hb)":true,"widogast's web of fire (hb)":true,"wild cunning (ua)":true,"wind walk":true,"wind wall":true,"wish":false,"witch bolt":true,"word of radiance":false,"word of recall":false,"wrath of nature":true,"wrathful smite":false,"wristpocket":true,"zephyr strike":false,"zone of truth":true};
 // a spell the fight casts needs a gesture? "Chromatic Orb (fire)" is the Chromatic Orb. Unknown to the data: yes (stays dark).
 const needsHands = nm => { const k = String(nm || "").replace(/\s*\(.*\)\s*$/, "").toLowerCase(); return SOMATIC[k] !== false; };
@@ -19636,6 +19759,7 @@ function drawStoolAura(a, dx, dy, dw, dh, layer){
 }
 function approach(n){
   if (planAsking(n)) return openPlanCard(n);                 // ELDETH ASKS THE PLAN: a choice card, not a conversation
+  if (wireAsking(n)) return openWireCard(n);                 // JIMJAR HAS A WIRE: a deal, not a conversation
   if (wantsWord(n)) return openTalk(n);
   if (canTalkTo(n)) return openTalk(n, {quiet: true});
   ambient(n);
@@ -19959,7 +20083,7 @@ if (APP && !isDm()) $("quickBtn").hidden = true;   // quick resolve is the DM's 
 $("objLog").onclick = () => { const l = $("log"); if (l) l.hidden = !l.hidden; };
 // THE IRONS (Sam, 2026-10-30): one flag for the party, the DM's to clear when the cuffs come off.
 $("dmManacles").onclick = () => {
-  state.manacled = !state.manacled;
+  state.manacled = !state.manacled; state.unshackled = {};      // the DM's hand is the whole party's irons, on or off
   $("dmManacles").textContent = state.manacled ? "Manacles: on (strike them off)" : "Manacles: off (put them back on)";
   $("dmManacles").setAttribute("aria-pressed", String(state.manacled));
   log(state.manacled ? "<i>The irons go back on.</i>" : "<i>The manacles are struck off.</i>");
