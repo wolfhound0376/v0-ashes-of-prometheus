@@ -19,6 +19,7 @@ import { hasPlayableStats } from "@/lib/bestiary-stats"
 import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
 import { parseRollRequest, stripRollRequestExtras, type RollRequestSpec } from "@/lib/roll-requests"
 import { withoutNarration } from "@/lib/talk-narration"
+import { cleanRehearsal, REHEARSAL_ROLL_PREFIX } from "@/lib/rehearsal-history"
 import { isRollLine } from "@/lib/speech-notation"
 import { evaluate as evaluateSkillProgress, recordTraining, skillTitle, TEACHING_STAKE_PREFIX, type LedgerRow as SkillLedgerRow } from "@/lib/skill-progress"
 import { loadLedger as loadSkillLedger, loadRules as loadSkillProgressRules } from "@/lib/skill-progress-apply"
@@ -504,7 +505,7 @@ const isPlayerCharacterRow = (
 ): boolean => !!row && (row.is_player === true || row.character_type === "player")
 
 export async function POST(req: Request) {
-  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null, talkWhere: talkWhereRaw = null, facing: facingRaw = null, sandbox: sandboxRaw = false, addressTo: addressToRaw = null, privateReply: privateReplyRaw = false } = await req.json()
+  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null, talkWhere: talkWhereRaw = null, facing: facingRaw = null, sandbox: sandboxRaw = false, addressTo: addressToRaw = null, privateReply: privateReplyRaw = false, rehearsal: rehearsalRaw = null } = await req.json()
   // A PRIVATE REPLY (Sam, 2026-10-01: "a prayer is private unless spoken aloud"; wired 2026-10-27). The answer goes back
   // to the one browser that asked and is NOT written to the shared log, so no other screen at the table sees or hears it.
   // Only honoured on a director turn: a player's own line is never hidden from the table this way.
@@ -1474,6 +1475,15 @@ ${combatantRows
       role: d.speaker === "Malachar" ? "assistant" as const : "user" as const,
       content: `${d.speaker}: ${d.text}`
     }))
+  // A REHEARSAL REMEMBERS ITSELF (Sam, 2026-11-13: "he ask me to roll, its as if he doesn't record the roll"). A
+  // sandbox turn writes nothing, and the rows above are his only memory, so in a rehearsal he forgot every turn the
+  // moment it ended — including that he had just asked for a roll. The browser sends the rehearsal's own lines and
+  // they join his history here. Sandbox only: a live turn ignores them, so nobody can hand him invented history.
+  if (sandbox) {
+    const rehearsed = cleanRehearsal(rehearsalRaw)
+    for (const line of rehearsed) conversationHistory.push({ role: line.speaker === "Malachar" ? "assistant" : "user", content: `${line.speaker}: ${line.text}` })
+    if (rehearsed.length) console.log(`[sandbox] rehearsal history: ${rehearsed.length} line(s) from this screen`)
+  }
 
   // Persist the player's message to the dialogue table (once). A DIRECTION IS
   // NOT PERSISTED: nobody said it, so nobody's name goes on it, and it must
@@ -5278,6 +5288,18 @@ Answer with exactly one cue name from the list, or the single word NONE. No othe
       // Keep narration available during a staggered deploy, but never fabricate
       // a client-side request when the authoritative ledger was unavailable.
       console.error("[rolls] failed to persist roll handoff:", error)
+    }
+  } else if (playerCharacter && sandbox) {
+    // A REHEARSED ROLL (Sam, 2026-11-13). With no request at all the dashboard had nothing to roll FOR: the player
+    // threw a bare d20 from the tray, no modifier, no check named. A rehearsal still touches no ledger; it gets a
+    // request that lives only in the reply, marked so the browser settles it itself and never asks the ledger.
+    const rehearsedRequest = parseRollRequest(rawText)
+    if (rehearsedRequest) {
+      const id = `${REHEARSAL_ROLL_PREFIX}${crypto.randomUUID()}`
+      rollRequest = {
+        id, correlationId: id, expression: rehearsedRequest.expression, die: rehearsedRequest.die, diceCount: rehearsedRequest.diceCount,
+        modifier: rehearsedRequest.modifier, purpose: null, skill: rehearsedRequest.skill, against: rehearsedRequest.against, status: "pending",
+      }
     }
   }
 
