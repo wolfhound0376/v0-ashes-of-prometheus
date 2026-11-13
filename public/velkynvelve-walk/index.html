@@ -3637,7 +3637,7 @@ function whoGoes(z, to){
 function chooseDestination(z){
   if (z.to.length === 1){ whoGoes(z, z.to[0]); return; }
   showDialog({title: z.label.split(":")[0], body: "Where does the party head?", buttons: [
-    ...z.to.map(t => ({label: (z.routes && z.routes[t]) || `${t} · ${nameOf(t)}`, primary: true, fn: () => whoGoes(z, t)})),
+    ...z.to.filter(t => !unseenWayOnly() || t === QUAGGOTH_DEN).map(t => ({label: (z.routes && z.routes[t]) || `${t} · ${nameOf(t)}`, primary: true, fn: () => whoGoes(z, t)})),
     {label: "Stay here"}]});
 }
 function exitReached(z){
@@ -3655,6 +3655,8 @@ function triggerZone(z){
   // up to the bars does nothing; clicking the gate (or its ✋ action) opens it.
   if (z.interact){ if (z.kind === "gate") return; openInteract(z); return; }
   if (z.rappel){ rappelCard(z); return; }                                                        // a rope on the cliff below the lift
+  if (unseenWayOnly() && z.kind !== "gate" && !z.to.includes(QUAGGOTH_DEN)){                   // UNSEEN, ONE WAY OUT
+    toast("Unseen, the only way is the cliff stairs down. The bridge runs under the watch's eyes.", 4200); log("<em>Not the bridge: the watch would see. The cliff stairs go down out of their sight.</em>"); return; }
   if (z.to.length > 1){ chooseDestination(z); return; }                                        // the landing: stairs or bridge
   // Sam, 2026-10-22: "why does the party always fall when crossing the bridge?" The bridge across the falls (area 9)
   // runs right over the spot where you can drop into the pool, so walking from one side to the other used to drop
@@ -6111,9 +6113,24 @@ function unlockGate(forced){
 let breakoutBy = null;
 const BREAKOUT_SHOUT = "The key! They had it all along and they are escaping! Set the alarm and kill them all!";   // Sam's line, 2026-10-30
 const BREAKOUT_SHOUT_FORCED = "They are escaping! Set the alarm and kill them all!";                                // the same line without the key
+// THE DOOR IS A DECISION, NOT A TILE (Sam, 2026-11-12: "instead of panning into the subplate of the pen when we go
+// through the pen door after breaking it open, an option box pops up and asks if you and the other character go
+// through together, take the group, or leave the door closed (but unlocked). If we go through the door it shows us
+// going through, the guards say something in surprise, and it fades into the combat module using the subplate with the
+// guards on the bridge and whomever joins us on the other side."). So:
+//   - a QUIET opening (the key, the picks) is not seen: the lock is off, the watch has not turned round, and the card
+//     asks who goes. Going through is played here (the walk to the doorway, the guards' cry, a fade) and the fight
+//     opens out on the landing, on its close-up, with the drow SURPRISED (SRD: they did not notice the threat);
+//   - a LOUD one (the bolt torn from the stone) is heard: the drow have turned and shouted before the card comes up, and
+//     nobody is surprised. A torn gate cannot be shut again, so that row is not offered;
+//   - LEAVE IT SHUT, BUT UNLOCKED has a price (Sam, 2026-11-12: "Yes (shakedown)"): the next watch tries the gate, finds
+//     it, and the drow come in (gateLeftUnlockedTick);
+//   - a hero who is SNEAKING may slip out instead, and unseen there is one way to go (Sam, 2026-11-12: "Sneaking slips
+//     you out but if you have no detection, you can only go the Quaggoth way"): the cliff stairs (unseenWayOnly).
+// The rest of the breakout stands: the prisoners who fight come up beside the hero, the others back away.
 function breakout(by){
   if (cur !== PEN || mode !== "explore" || laborLive() || surgeon || timeStopped || !leader) return;
-  const h = leader, guards = gateGuards(), g = gateCenter() || {x: h.x, y: h.y}, sc = node.scale || 1, seen = !sneak;
+  const h = leader, guards = gateGuards(), g = gateCenter() || {x: h.x, y: h.y}, sc = node.scale || 1, loud = by === "force";
   hitstop(140); shake(4); try { camTo(Math.max(view.z, 1.35), g.x, g.y, 450); } catch (e) {}
   // the prisoners
   const fighters = alliesHere(), others = npcs.filter(n => !fighters.includes(n) && isBystander(n) && PEN_NPCS.some(d => d.id === n.id));
@@ -6137,40 +6154,118 @@ function breakout(by){
   // the guards
   if (!guards.length){ log("<em>Nobody is at the post.</em> The landing outside the gate is empty — for now.", {say: true}); return; }
   const w = guards.slice().sort((a, b) => Math.hypot(a.x - g.x, a.y - g.y) - Math.hypot(b.x - g.x, b.y - g.y))[0];
-  if (!seen){ log(`<em>The gate is open and the watch has not turned round.</em>`); setTimeout(() => breakoutCard(w, guards, false, by), 900); return; }
-  for (const d of guards){ d.path = []; d.actUntil = now + 60000; d.scanAt = now + 60000; faceTo(d, h); }
+  if (!loud){ log(`<em>The lock is off, and the watch has not turned round.</em>`); setTimeout(() => breakoutCard(w, guards, false, by), 900); return; }
+  breakoutCry(w, guards, by);
+  setTimeout(() => breakoutCard(w, guards, true, by), 1500);
+}
+/** The drow see it: every guard turns, the nearest cries out (Sam's line; heard as Elvish by a hero who has it). */
+function breakoutCry(w, guards, by){
+  for (const d of guards){ d.path = []; d.actUntil = now + 60000; d.scanAt = now + 60000; if (leader) faceTo(d, leader); }
   popText(w, "!", "#ff6b5a", 1.4); bank("ui/nat1", .4);
   const line = by === "key" ? BREAKOUT_SHOUT : BREAKOUT_SHOUT_FORCED;
   if (viewerUnderstands()) bark(w, line, 5200, {talk: true, lang: "Elvish"}); else narrate(w, `(${fname(w)} shouts something in Elvish, and the others answer.)`);
-  setTimeout(() => breakoutCard(w, guards, true, by), 1500);
 }
 function breakoutCard(w, guards, seen, by){
   if (cur !== PEN || mode !== "explore" || !state.gateOpen) return;                          // a fight or another card got there first
   const h = leader, name = fname(w), many = guards.length > 1;
   party.forEach(p => { p.path = []; }); mode = "dialog"; tip.hidden = true;
   try { portrait(w.id, $("objPic"), 128); } catch (e) {}
-  $("objWho").textContent = seen ? "The gate is open" : "The gate is open — unseen";
+  $("objWho").textContent = seen ? "The gate is torn open" : "The lock is off";
   $("objText").textContent = seen
     ? `${name} has seen it${many ? `, and ${guards.length - 1 === 1 ? "the other guard is" : "the others are"} raising crossbows` : ""}. Whatever ${fname(h)} does next, it happens now.`
-    : `${many ? "The guards have" : name + " has"} not noticed. ${fname(h)} is still out of sight.`;
+    : `${many ? "The guards have" : name + " has"} not noticed. Who goes through?`;
   const box = $("objBtns"); box.innerHTML = "";
   const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
   const add = (label, fn, cls = "") => choiceRow(box, label, () => { close(); fn(); }, cls);
-  const shut = quiet => { if (state.gateBroken) return;
+  const shut = () => { if (state.gateBroken) return;
     state.doorShut = true; setDoor(false); if (balcony()) buildGrid(); setTimeout(() => sfx("door-close"), 650);
-    log(quiet ? `${esc(fname(h))} eases the gate shut again. Nobody saw.` : `${esc(fname(h))} drags the gate shut in their faces.`);
-    if (!quiet && APP) handOff(`${fname(h)} opened the slave pen gate ${by === "key" ? "with a stolen key" : by === "pick" ? "by picking the lock" : "by force"}, was seen by the drow guards, and has pulled it shut again and backed away. The gate is unlocked but closed. Play the guards: they saw it open.`); };
-  if (seen){
-    add("Fight at the gate", () => startCombat(guards, "the breakout at the pen gate"), "primary");
-    if (!state.gateBroken) add("Shut the gate and back away", () => shut(false));
-    add("Surrender", () => surrenderBegins(w));
-  } else {
-    add("Strike first — they are surprised", () => { endSneak(); startCombat(guards, "the breakout at the pen gate", {surprised: guards.slice()}); }, "primary");
-    add("Slip out quietly", () => { log(`${esc(fname(h))} stays low. The way out is open.`); });
-    if (!state.gateBroken) add("Shut it again", () => shut(true));
-  }
+    state.gateLeftUnlocked = {rot: storyRotations, at: Date.now()}; saveWalk();
+    log(`${esc(fname(h))} eases the gate shut again. Nobody saw. <em>It is shut, but it will open — until the next watch tries it.</em>`); };
+  const heroes = party.filter(p => actors.includes(p) && !p.down), allies = alliesHere();
+  const go = everyone => goThroughGate(w, guards, {everyone, surprised: !seen, by});
+  // every row is something the hero can do right now: "the others" only when there are others, the gate shut only when it still hangs
+  add(heroes.length > 1 ? `Go through — ${fname(h)} and the other hero${heroes.length > 2 ? "es" : ""}` : `Go through — ${fname(h)} alone`, () => go(false), "primary");
+  if (allies.length) add(`Go through — take everyone who will fight`, () => go(true), "primary");
+  if (!seen && sneak) add("Slip out unseen — the cliff stairs only", () => { log(`${esc(fname(h))} stays low. The way out is open; unseen, the only way is down the cliff stairs.`); });
+  if (!seen && !state.gateBroken) add("Leave it shut, but unlocked", () => shut());
+  if (seen) add("Surrender", () => surrenderBegins(w));
   showObjCard(); cardClose(close); box.querySelector("button")?.focus();
 }
+// GOING THROUGH. Nobody walks the doorway into the fight (that was the pan Sam did not want, and the door a hero could
+// not get through mid-fight): the ones who go walk up to it, the drow cry out, the screen goes dark, and they are set
+// down on the landing outside with the close-up already up. The fight opens there. Whoever was not taken stays in the
+// pen (the prisoners left behind are bystanders: they back away, as in any fight).
+let gateGoing = false;
+async function goThroughGate(w, guards, o = {}){
+  if (gateGoing || cur !== PEN || mode !== "explore" || !leader) return;
+  const B = balcony(); if (!B){ startCombat(guards, "the breakout at the pen gate", o.surprised ? {surprised: guards.slice()} : {}); return; }
+  gateGoing = true; mode = "dialog"; tip.hidden = true; state.gateLeftUnlocked = null;
+  try {
+    const heroes = party.filter(p => actors.includes(p)), allies = o.everyone ? alliesHere() : [], goers = [...heroes, ...allies];
+    state.doorShut = false; setDoor(true); if (balcony()) buildGrid();
+    // 1. to the doorway
+    const sill = {x: B.inside[0], y: B.inside[1]};
+    goers.forEach(a => { stopActivity(a); a.slow = false; a.onArrive = null; a.path = findPath(a, sill); if (!a.path.length) a.path = [sill]; });
+    log(o.everyone && allies.length ? `${esc(fname(leader))} goes through the gate, and everyone who will fight goes too.` : heroes.length > 1 ? `${esc(fname(leader))} and the others go through the gate.` : `${esc(fname(leader))} goes through the gate.`);
+    await wait(1100);
+    // 2. the drow
+    const live = guards.filter(d => actors.includes(d) && !d.down && !d.body && !d.offStage);
+    if (live.length && o.surprised) breakoutCry(live.includes(w) ? w : live[0], live, o.by);     // a loud opening has had its cry already
+    await wait(live.length ? 1300 : 300);
+    // 3. dark, and out on the landing
+    $("fade").classList.add("quick", "on"); await wait(320);
+    if (cur !== PEN){ return; }
+    const fc = live.length ? live.reduce((s, d) => ({x: s.x + d.x / live.length, y: s.y + d.y / live.length}), {x: 0, y: 0}) : {x: B.landing[0] - 100, y: B.landing[1] - 60};
+    const sc = node.scale || 1, placed = live.map(d => ({x: d.x, y: d.y}));
+    goers.forEach((a, i) => {
+      const row = Math.floor(i / 2), side = i % 2 ? 1 : -1;
+      let q = nearestWalkable(B.landing[0] + side * 26 * sc * (i ? 1 : 0) + row * 22 * sc, B.landing[1] + row * 14 * sc + (i ? 10 * sc : 0), placed);
+      if (!q || !outsidePen(q)) q = {x: B.landing[0], y: B.landing[1]};
+      placed.push(q); a.path = []; a.x = q.x; a.y = q.y; a.alpha = 1; a.fading = false; a.walkIn = false; faceTo(a, fc); setAnim(a, "idle");
+    });
+    if (sneak) endSneak();
+    mode = "explore";
+    startCombat(live, "the breakout at the pen gate", {noAllies: !o.everyone, ...(o.surprised && live.length ? {surprised: live.slice()} : {})});
+    ovSnap();
+    await wait(260);
+  } finally {
+    gateGoing = false; if (mode === "dialog" && $("obj").hidden) mode = "explore";
+    $("fade").classList.remove("on"); setTimeout(() => $("fade").classList.remove("quick"), 400);
+  }
+}
+/** The close-up comes up at once (behind a fade), with no slide: the view the fight is about to be played in. */
+function ovSnap(){
+  if (!OV.tris || !OV.cfg) return;
+  const want = ovWanted() || (mode === "combat" && !!leader && outsidePen(leader));
+  OV.want = OV.on = want; OV.since = now;
+  const r = stage.getBoundingClientRect(), z = view.z, s = base * z, f = leader ? (OV.on ? ovActorPt(leader, leader.x, leader.y - 60) : {x: leader.x, y: leader.y - 60}) : {x: NAT_W / 2, y: NAT_H / 2};
+  const to = {z, tx: r.width / 2 - f.x * s, ty: r.height / 2 - f.y * s}; clampView(to);
+  camTween = null; sliding = false; view.z = to.z; view.tx = to.tx; view.ty = to.ty; applyView(); userPanAt = 0;
+}
+// LEFT SHUT, BUT UNLOCKED (Sam, 2026-11-12, to "a guard tries the gate at the next watch change, finds it open, and
+// either relocks it or triggers the shakedown": "Yes (shakedown)"). The count is the watch actually changing (the stage
+// roster's `rotations`, as the shakedown's own clock is), not wall time. The new watch finds the lock off: the gate is
+// locked again, and the drow come in to find out how (the shakedown, once per run as lib/shakedown.mjs has it; the scene
+// itself is still Malachar's until it is staged). A gate the party then opened, or the drow locked, clears it.
+function gateLeftUnlockedTick(){
+  const u = state.gateLeftUnlocked; if (!u) return;
+  if (!state.gateOpen || !state.doorShut || state.gateBroken){ state.gateLeftUnlocked = null; return; }
+  if (!APP || cur !== PEN || mode !== "explore" || storyRotations <= u.rot) return;
+  state.gateLeftUnlocked = null;
+  state.gateOpen = false; state.doorShut = false; setDoor(false); if (balcony()) buildGrid(); sfx("door-close", .8);
+  log(`<b>The new watch tries the pen gate, and it moves.</b> A shout in Elvish; the key turns in the lock again.`, {say: true});
+  const kw = shakeWatch();
+  if (kw.done){ saveWalk(); handOff(`The new watch found the slave pen gate shut but UNLOCKED and has locked it again. The drow have already searched the pen once this run; play their anger, but there is no second search.`, true); return; }
+  state.keyWatch = shakedownHappened(kw); saveWalk();
+  const enf = rollEnforcers();
+  log(`<b>The drow come in to find out how.</b> ${esc(enf.label)} cross the bridge and the gate swings wide.`);
+  handOff(`The new watch found the slave pen gate shut but UNLOCKED. ${enf.label} enter the pen to search every prisoner for the key or the tools that opened it.`, true);
+}
+// UNSEEN, ONE WAY OUT (Sam, 2026-11-12: "if you have no detection, you can only go the Quaggoth way"). Out on the
+// landing while still hidden, the rope bridge runs straight to the Guard Tower under the watch's eyes; the cliff stairs
+// go down out of their sight. So while the sneak holds, the bridge is refused (and says why) and the stairs are the way.
+const QUAGGOTH_DEN = 12;
+function unseenWayOnly(){ return cur === PEN && !!sneak && !(sneak.seenBy && sneak.seenBy.size) && gateGuards().length > 0; }
 function openGate(){
   if (state.gateOpen) return;
   const j = cur === 11 && mode === "explore" ? npcs.find(n => n.id === "jorlan" && !n.offStage) : null;
@@ -15122,6 +15217,7 @@ async function pollStage(){
     }
     followWatch(storyWatch); followGate(j.gate || null);
     shakedownTick();                 // THE SHAKEDOWN: after the cast, so the pen is staged before the drow come in
+    gateLeftUnlockedTick();          // LEFT SHUT, BUT UNLOCKED: the new watch tries the gate
     stageSeen = {present, gone};
   } catch (e) {}
 }
