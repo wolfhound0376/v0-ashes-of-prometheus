@@ -18,6 +18,7 @@ import { startCombatFlag, endCombatFlag } from "@/lib/combat-flag"
 import { hasPlayableStats } from "@/lib/bestiary-stats"
 import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
 import { parseRollRequest, stripRollRequestExtras, type RollRequestSpec } from "@/lib/roll-requests"
+import { withoutNarration } from "@/lib/talk-narration"
 import { isRollLine } from "@/lib/speech-notation"
 import { evaluate as evaluateSkillProgress, recordTraining, skillTitle, TEACHING_STAKE_PREFIX, type LedgerRow as SkillLedgerRow } from "@/lib/skill-progress"
 import { loadLedger as loadSkillLedger, loadRules as loadSkillProgressRules } from "@/lib/skill-progress-apply"
@@ -1580,9 +1581,9 @@ ${combatantRows
   }
   if (talkWith && talkWhere) {
     // From the painted map: not at camp, so none of the fire. Still one conversation, one voice.
-    stageContext += ` The player is talking with ${talkWith} in ${talkWhere}, not at camp. Answer AS ${talkWith}: every spoken line is ${talkWith}'s own, quoted and attributed to ${talkWith} by name. No other NPC speaks unless ${talkWith} calls them over. Stay in the conversation; keep narration short. If the recent log is a conversation with someone else, that one is over: the player has turned to ${talkWith} now, and only ${talkWith} answers.`
+    stageContext += ` The player is talking with ${talkWith} in ${talkWhere}, not at camp. Answer AS ${talkWith}: every spoken line is ${talkWith}'s own, quoted and attributed to ${talkWith} by name. No other NPC speaks unless ${talkWith} calls them over. Stay in the conversation. ONLY THEIR WORDS (Sam, 2026-11-13): in a conversation the player hears the one they are talking to, not the narrator. Write just what ${talkWith} SAYS, in quotes, attributed by name: no scene-setting, no description of how they look, move or sound, no commentary of your own. The two exceptions: when the player attempts something that needs a check, call for the roll and narrate its result as you always do; and when something actually happens (a wound, an item changing hands, someone leaving), say so in one plain sentence. If the recent log is a conversation with someone else, that one is over: the player has turned to ${talkWith} now, and only ${talkWith} answers.`
   } else if (talkWith) {
-    stageContext += ` The player is sitting by the fire with ${talkWith}. Answer AS ${talkWith}: every spoken line is ${talkWith}'s own, quoted and attributed to ${talkWith} by name. No other NPC speaks unless ${talkWith} calls them over. Stay in the conversation; keep narration short.`
+    stageContext += ` The player is sitting by the fire with ${talkWith}. Answer AS ${talkWith}: every spoken line is ${talkWith}'s own, quoted and attributed to ${talkWith} by name. No other NPC speaks unless ${talkWith} calls them over. Stay in the conversation. ONLY THEIR WORDS (Sam, 2026-11-13): in a conversation the player hears the one they are talking to, not the narrator. Write just what ${talkWith} SAYS, in quotes, attributed by name: no scene-setting, no description of how they look, move or sound, no commentary of your own. The two exceptions: when the player attempts something that needs a check, call for the roll and narrate its result as you always do; and when something actually happens (a wound, an item changing hands, someone leaving), say so in one plain sentence.`
   }
   stageContext += acquaintance
   // The stage list (lib/stage-roster.ts): who is in the area and where Malachar last put them. Positions
@@ -3851,6 +3852,17 @@ Rules:
       text: responseText,
       speech_segments: speechSegments,
     })
+  }
+  // IN A CONVERSATION, ONLY THE ONE YOU ARE TALKING TO SPEAKS (Sam, 2026-11-13: "we probably don't need the lich's
+  // narration when talking unless we are talking to the DM or performing some check and need a result"). The prompt
+  // asks for it; this makes it so: a talk turn keeps only the NPC's lines, unless it is a check, something happened,
+  // or there is no NPC line to keep (lib/talk-narration.ts). A line to the DM has no talkWith and is untouched.
+  {
+    const kept = withoutNarration(dialogueEntries, { talkWith, message: String(message ?? ""), rawReply: rawText, asksForRoll: Boolean(parseRollRequest(rawText)) })
+    if (kept.length !== dialogueEntries.length) {
+      console.log(`[talk] narration dropped: ${dialogueEntries.length - kept.length} of ${dialogueEntries.length} rows, talking with ${talkWith}`)
+      dialogueEntries.splice(0, dialogueEntries.length, ...kept)
+    }
   }
 
   // Persist the ordered turn as separate DM/NPC records — unless it is a private reply (a silent prayer): that answer
