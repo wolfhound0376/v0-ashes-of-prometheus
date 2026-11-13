@@ -3336,6 +3336,9 @@ async function enterNode(n, opts = {}){
   // spawn: the arrival zone in this plate that links back to where we came from
   let spawn, entryDir = {x: 0, y: 1}, arrival = null;
   if (opts.from != null) arrival = node.zones.find(z => z.to.includes(opts.from)) || null;
+  // A BATTLE PLATE STANDS FOR ANOTHER PLATE (spec.py `stands_for`): its neighbours have no door "from the battle plate",
+  // so an arrival from one comes in by their door from the plate it is a bigger picture of.
+  if (opts.from != null && !arrival){ const sf = SPEC[opts.from] && SPEC[opts.from].stands_for; if (sf != null) arrival = node.zones.find(z => z.to.includes(sf)) || null; }
   if (arrival){
     const zc = zoneCenter(arrival); entryDir = norm({x: centroid.x - zc.x, y: centroid.y - zc.y});
     spawn = nearestWalkable(zc.x + entryDir.x * 210 * node.scale, zc.y + entryDir.y * 210 * node.scale);
