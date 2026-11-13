@@ -55,7 +55,22 @@ export type Watch = { state: WatchState; since: string } | null
  * answers the story with no DM button (Sam, 2026-10-25: "I shouldn't have to as the DM prompt the door to escape").
  */
 export type GateState = "locked" | "unlocked" | "open"
-export type Gate = { state: GateState; since: string } | null
+/**
+ * `visitUntil` (Sam, 2026-11-12: "The door open without anyone actually unlocking it"): a gate the STORY opened —
+ * Malachar's [GATE: open], or the stage director reading "the gate opens" in his prose — is a drow VISIT. A guard
+ * opens it from the bridge, looks, and the drow lock up behind themselves; the drow never leave their slaves' gate
+ * standing open. Past `visitUntil` the gate reads as locked again (gateNow). The DM's own button and
+ * [FLAG: pen-door-open] carry no visitUntil: those stand open until changed.
+ */
+export type Gate = { state: GateState; since: string; visitUntil?: string } | null
+/** How long a story-opened gate stands open before the drow lock it again. House number. */
+export const GATE_VISIT_MS = 60_000
+/** The gate as it stands at `nowMs`: a visit that has run out is locked again, from the moment it ran out. Pure. */
+export function gateNow(gate: Gate | undefined, nowMs: number = Date.now()): Gate {
+  if (!gate) return null
+  if (gate.state === "open" && gate.visitUntil && nowMs >= Date.parse(gate.visitUntil)) return { state: "locked", since: gate.visitUntil }
+  return gate
+}
 export type Stage = {
   area: string | null
   present: Record<string, StageEntry>   // by slug
@@ -95,7 +110,7 @@ export async function readStage(db: SupabaseClient): Promise<Stage> {
   if (!v || typeof v !== "object" || Array.isArray(v)) return empty()
   const s = v as Partial<Stage>
   return {
-    area: s.area ?? null, present: s.present ?? {}, gone: s.gone ?? {}, watch: s.watch ?? null, gate: s.gate ?? null,
+    area: s.area ?? null, present: s.present ?? {}, gone: s.gone ?? {}, watch: s.watch ?? null, gate: gateNow(s.gate),
     rotations: typeof s.rotations === "number" ? s.rotations : 0, jorlanAt: typeof s.jorlanAt === "number" ? s.jorlanAt : null,
     updatedAt: s.updatedAt ?? new Date().toISOString(),
   }
@@ -118,7 +133,7 @@ export type StageEvent =
   | { kind: "wantsWord"; name: string; who: string | null }
   | { kind: "heard"; name: string }
   | { kind: "watch"; state: WatchState }
-  | { kind: "gate"; state: GateState }
+  | { kind: "gate"; state: GateState; visit?: boolean }   // visit: opened by the story, so the drow lock it again (Gate)
 
 /** [WATCH: change | unattended | posted] — the words Malachar may use, to the one state the map knows. */
 export function watchStateOf(word: string): WatchState | null {
@@ -220,7 +235,9 @@ export function applyEventsTo(stage: Stage, events: StageEvent[], now: string, r
     }
     if (e.kind === "gate") {
       // a gate already open is not "unlocked" again by a later line that only remembers it was left unlocked
-      if (!(e.state === "unlocked" && stage.gate?.state === "open") && stage.gate?.state !== e.state) stage.gate = { state: e.state, since: now }
+      if (!(e.state === "unlocked" && stage.gate?.state === "open") && stage.gate?.state !== e.state) {
+        stage.gate = e.state === "open" && e.visit ? { state: e.state, since: now, visitUntil: new Date(Date.parse(now) + GATE_VISIT_MS).toISOString() } : { state: e.state, since: now }
+      }
       continue
     }
     const slug = slugOf(e.name)

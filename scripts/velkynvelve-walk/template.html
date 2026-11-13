@@ -13741,6 +13741,14 @@ function changeOfWatch(guards){
 function followGate(g){
   storyGate = g;
   if (!g || gatePlayed === g.since || cur !== PEN || mode !== "explore") return;
+  // THE DROW LOCK UP BEHIND THEMSELVES (Sam, 2026-11-12: "The door open without anyone actually unlocking it"): a gate
+  // the story opened is a visit and comes back "locked" a minute later (lib/stage-roster.ts gateNow). Not on a gate the
+  // party has fought their way through (state.brokeOut), and not on top of a hero standing in the doorway: that waits.
+  if (g.state === "locked" && state.gateOpen && !state.gateBroken){
+    if (state.brokeOut){ gatePlayed = g.since; return; }
+    const z = doorGate();
+    if (z && party.some(a => actors.includes(a) && inPoly(z.interact.poly, a.x, a.y))) return;   // next poll
+  }
   const first = !freshStory(g.since); gatePlayed = g.since;
   if (g.state === "unlocked"){
     if (state.gateOpen) return;
@@ -13750,11 +13758,12 @@ function followGate(g){
     if (state.gateOpen && !state.doorShut) return;
     if (state.gateOpen){ state.doorShut = false; setDoor(true); if (!first) sfx("door-open", .85); if (balcony()) buildGrid(); return; }
     const j = npcs.find(n => n.id === "jorlan" && !n.offStage && actors.includes(n));
+    if (!first && !j) log("<em>A drow on the bridge turns the key and swings the gate open.</em>", {say: true});   // somebody's hand, seen
     if (j && !first) openGate(); else unlockGate();
   } else if (g.state === "locked"){
     if (!state.gateOpen || state.gateBroken) return;
     state.gateOpen = false; state.doorShut = false; state.brokeOut = null; setDoor(false); if (balcony()) buildGrid();
-    if (!first){ sfx("door-close", .8); log("The pen gate is shut and locked again.", {say: true}); }
+    if (!first){ sfx("door-close", .8); log("The drow pull the pen gate shut again, and the key turns.", {say: true}); }
   }
 }
 

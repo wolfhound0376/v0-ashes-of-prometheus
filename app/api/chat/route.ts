@@ -2005,7 +2005,7 @@ WORLD FLAGS:
   - Example: [NPC_WANTS_WORD: Jorlan Duskryn | Fifi]
 - [WATCH: change | unattended | posted] — the outpost's watch on the pen. The ordinary changes of the watch now happen BY THEMSELVES with the work shifts on the game clock (06:00, 14:00, 22:00) and are counted for you — do NOT emit [WATCH: change] for one (it would be counted twice); you may narrate a hand-over the clock has just made. [WATCH: change] is only for an extra, unscheduled relief the story itself causes. The map shows the guards exactly as this says: "change" walks the old pair off and the relief on; "unattended" takes EVERY guard and Jorlan off the bridge and the landing (nobody returns until you emit [WATCH: posted]); "posted" puts them back. Emit it the moment the narration has the watch change hands, the posts left empty, or the guards return. Never for a plan or an offer.
   - Example: [WATCH: unattended]
-- [GATE: unlocked | open | locked] — something is done to the pen gate from outside or by an NPC (Jorlan leaves it unlocked, a guard swings it open, it is locked again). "unlocked" means shut but no longer locked: the prisoners can simply open it. The map's door follows this tag with no DM button.
+- [GATE: unlocked | open | locked] — something is done to the pen gate from outside or by an NPC (Jorlan leaves it unlocked, a guard swings it open, it is locked again). "unlocked" means shut but no longer locked: the prisoners can simply open it. The map's door follows this tag with no DM button. [GATE: open] is a drow VISIT: the map swings the gate open and the drow lock it again about a minute later — the drow never leave their slaves' gate standing open. Do NOT use it for footsteps, a rattle, or a guard who only comes to look through the bars, and never as the consequence of a failed check or a backlash.
   - Example: [GATE: unlocked]
 - [FLAG: <key>] — when a permanent, table-wide fact becomes true
   - pen-door-open — the slave pen's door is open: unlocked, picked, forced, or opened by someone else
@@ -4139,7 +4139,8 @@ Rules:
 
   // The watch on the pen and the pen gate, from his own tags: [WATCH: change|unattended|posted], [GATE: unlocked|open|locked].
   const watchGateEvents = watchAndGateTags(rawText)
-  stageEvents.push(...watchGateEvents)
+  // His [GATE: open] is a drow VISIT (lib/stage-roster.ts Gate.visitUntil): the drow lock it again behind themselves.
+  stageEvents.push(...watchGateEvents.map((e) => (e.kind === "gate" && e.state === "open" ? { ...e, visit: true } : e)))
   // THE STAGE DIRECTOR (lib/stage-director.ts). Sam, 2026-10-25: "The pixel NPCs (especially drow guards/jorlan) MUST
   // match the story." The tags above are the contract; when the prose moved someone, changed the watch or opened the
   // gate WITHOUT a tag, one cheap Haiku pass reads the narration against the roster and fills only that gap. Anything
@@ -4170,7 +4171,7 @@ Rules:
         ])
         const directed = res ? parseDirector(res.text, input, tagged) : []
         if (directed.length) console.log("[stage-director] from the prose:", JSON.stringify(directed))
-        stageEvents.push(...directed)
+        stageEvents.push(...directed.map((e) => (e.kind === "gate" && e.state === "open" ? { ...e, visit: true } : e)))   // a visit, as above
       }
     }
   } catch (e) { console.error("[stage-director] skipped:", e) }
