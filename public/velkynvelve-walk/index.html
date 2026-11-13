@@ -22183,6 +22183,17 @@ function step(a, dt, speed){
   // "Not able to leave this plate", the Guard Tower after its fight). Standing still ends the walk-in, however it ended.
   if (!a.path.length){ a.walkIn = false; if ((a.anim === "walk" || a.anim === "carry") && !a.kbd) setAnim(a, "idle"); return; }
   if (a.path[0].jump){                  // through a doorway: reappear on the far side
+    // NOBODY COMES THROUGH A SHUT GATE (Sam, 2026-11-12: "how did Eldeth jump through a closed door"). The way through
+    // the pen gate is planned when the walk starts (findPath: fade out on this side, reappear on the other), and nothing
+    // looked again when the walker got there: a gate shut, locked or closed by the fight ending in the meantime was
+    // hopped anyway. Now the hop is taken only while the gate is still passable; otherwise the walker stops on the side
+    // they came from, in plain view. Only findPath's own crossing carries `passFt`, so the drow who open the gate
+    // themselves (Jorlan, the escort, the body bearers) are not touched.
+    if (a.path[0].passFt != null && balcony() && !gatePassable()){
+      const B = balcony(), from = Math.hypot(a.x - B.behind[0], a.y - B.behind[1]) < Math.hypot(a.x - B.inside[0], a.y - B.inside[1]) ? B.landing : B.inside;
+      a.path = []; a.x = from[0]; a.y = from[1]; a.fading = false; a.fadeIn = true; a.walkIn = false; setAnim(a, "idle");
+      const cb = a.onArrive; a.onArrive = null; cb && cb(); return;
+    }
     const q = a.path.shift(); a.x = q.x; a.y = q.y; if (q.s != null) a.big = q.s; a.fadeIn = true;
     if (!a.path.length){ setAnim(a, "idle"); const cb = a.onArrive; a.onArrive = null; cb && cb(); }
     return;
@@ -22199,7 +22210,30 @@ function step(a, dt, speed){
     if (!a.path.length){ setAnim(a, "idle"); const cb = a.onArrive; a.onArrive = null; cb && cb(); } }
   else { a.x += dx / d * sp; a.y += dy / d * sp; a.face = faceOf(dx, dy); setAnim(a, a.walkAs && hasSheet(a, a.walkAs) ? a.walkAs : "walk"); }   // walkAs: Hard Labor's carry
 }
+// NOBODY COMES THROUGH A SHUT GATE (Sam, 2026-11-12: "how did Eldeth jump through a closed door"). A walk is a list of
+// points planned when it starts, and with the gate open the doorway is floor (THE OPEN DOORWAY IS FLOOR), so a walk out
+// of the pen runs straight through it. When the gate then shut (the card's "shut it", the drow locking up, a relock), the
+// doorway went back to stone in the grid, but a walk already planned kept its points and the walker carried on through
+// the shut leaf. Measured headless on main: Eldeth, sent out through the open gate and the gate shut while she was still
+// crossing the pen, finished on the landing outside. Now, the moment the gate stops being passable, every walk that
+// would still cross it is cut short where the walker stands, and anyone caught in the doorway steps back to the floor.
+// The drow who work the gate themselves walk scripted routes (a size `s`, or a fade/hop that is not findPath's) and
+// are left alone: Jorlan, the escort, the body bearers and the surgeon open it for themselves.
+let gateWasPassable = false;
+function gateShutSweep(){
+  const B = balcony(); if (!B) return;
+  const scripted = a => (a.path || []).some(q => q.s != null || ((q.out || q.jump) && q.passFt == null && !(a.path.some(r => r.passFt != null))));
+  for (const a of actors){
+    if (!a || a.x == null || a.offStage || a.backdrop || !a.path || !a.path.length || scripted(a)) continue;
+    const end = a.path[a.path.length - 1], here = onBalcony(a), there = onBalcony(end);
+    if (here === there && !a.path.some(q => q.jump || q.out)) continue;                       // not a walk through the gate
+    a.path = []; a.fading = false; if (a.alpha < 1) a.fadeIn = true; a.walkIn = false; setAnim(a, "idle");
+    if (!here && !walkable(a.x, a.y)){ const q = nearestWalkable(B.inside[0], B.inside[1]); a.x = q.x; a.y = q.y; }   // caught in the doorway
+    const cb = a.onArrive; a.onArrive = null; if (cb) try { cb(); } catch (e) {}
+  }
+}
 function update(dt){
+  { const gp = !!balcony() && gatePassable(); if (gateWasPassable && !gp) gateShutSweep(); gateWasPassable = gp; }
   if (cbt && !cbt.mirror && poisonZones.length) tickPoisonZones();
   if (cbt && !cbt.mirror && guardianAuras.length) tickGuardians();
   tickFootsteps();
