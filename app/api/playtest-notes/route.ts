@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { isDmRequest } from "@/lib/dm-session"
+import { proveHost } from "@/lib/table-store"
 
 // /api/playtest-notes — the DM's notes to Claude, written while playing.
 //
@@ -14,7 +15,8 @@ import { isDmRequest } from "@/lib/dm-session"
 //   GET   ?status=open|done|all               list notes, newest first (no state, to keep it light; ?id= for one in full)
 //   PATCH {id, status, resolution}            mark a note done (or open again), with what fixed it
 //
-// DM only, every method. The table (playtest_notes) has RLS on and no policies: only this route's service role reads it.
+// Saving a note (POST) is for the DM or the campaign's host, who proves it with their hero's claim (Sam hosts with his
+// hero; lib/host.ts). Reading and closing notes stay DM only. The table (playtest_notes) has RLS on and no policies: only this route's service role reads it.
 
 export const dynamic = "force-dynamic"
 
@@ -22,11 +24,18 @@ const BUCKET = "vtt-assets"
 const MAX_SHOT = 3_000_000 // characters of base64: a 1280-wide JPEG is far below this
 const clip = (v: unknown, n: number) => String(v ?? "").trim().slice(0, n)
 const dm = (req: NextRequest) => isDmRequest(req, normalizeCode, safeEquals)
+async function dmOrHost(req: NextRequest): Promise<boolean> {
+  if (dm(req)) return true
+  const id = req.headers.get("x-character-id") ?? ""
+  const token = req.headers.get("x-claim-token") ?? ""
+  if (!id || !token) return false
+  try { return await proveHost(createAdminClient(), id, token) } catch { return false }
+}
 const shotUrl = (path: string | null) =>
   path ? `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${path}` : null
 
 export async function POST(req: NextRequest) {
-  if (!dm(req)) return NextResponse.json({ error: "DM only" }, { status: 403 })
+  if (!(await dmOrHost(req))) return NextResponse.json({ error: "Only the host or the DM can leave notes" }, { status: 403 })
   const body = await req.json().catch(() => ({}))
   const note = clip(body.note, 600)
   if (!note) return NextResponse.json({ error: "note is required" }, { status: 400 })

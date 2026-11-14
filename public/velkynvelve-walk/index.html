@@ -20975,8 +20975,22 @@ function ptBox(l){ const xs = l.map(p => p.x), ys = l.map(p => p.y); return [Mat
     $("ptNoteHow").textContent = `${ptInk.loops.length} rope${ptInk.loops.length === 1 ? "" : "s"} · ⌫ undo`; setTimeout(() => $("ptNoteText").focus(), 0); };
   c.addEventListener("pointerup", end); c.addEventListener("pointercancel", end);
   c.addEventListener("wheel", e => { e.preventDefault(); }, {passive: false}); }
+// THE HOST LEAVES NOTES TOO (Sam, 2026-11-13: "My f9 is not working" — he hosts with his hero, and F9 was DM-only and
+// refused him without a word). The host's browser holds only the hero's claim (lib/host.ts), so the page asks the table
+// once whether that hero is the host, and the note is saved with the claim. Anyone else is told why nothing opened.
+function ptClaim(){ try { const id = localStorage.getItem("aop_character_id"), token = localStorage.getItem("aop_claim_token"); return id && token ? {id, token} : null; } catch (e) { return null; } }
+const PT_HOST = {ok: false, asked: null};
+function ptAskHost(){
+  const me = ptClaim(); if (!APP || !me) return Promise.resolve(false);
+  return PT_HOST.asked || (PT_HOST.asked = fetch("/api/table?characterId=" + encodeURIComponent(me.id), {cache: "no-store", headers: {"x-claim-token": me.token}})
+    .then(r => r.json()).then(j => (PT_HOST.ok = !!(j && j.isHost))).catch(() => { PT_HOST.asked = null; return false; }));
+}
+if (APP) setTimeout(ptAskHost, 1500);
 function ptOpen(){
-  if (APP && !isDm()) return;
+  if (APP && !isDm() && !PT_HOST.ok){
+    ptAskHost().then(ok => { if (ok) ptOpen(); else toast("Notes for Claude are for the host or the DM.", 3200); });
+    return;
+  }
   const f = $("ptNote"); if (!f.hidden){ $("ptNoteText").focus(); return; }
   const snap = ptPending = {shot: ptShot(), st: ptState()};   // the moment is taken when the key is pressed, not when the note is typed
   f.hidden = false; $("ptNoteText").value = ""; $("ptNoteHow").textContent = "taking the picture…";
@@ -21000,7 +21014,7 @@ async function ptSave(){
   const shot = (ropedShot && await ropedShot) || await snap.shot;
   if (!APP){ console.log("[playtest note]", text, snap.st, shot ? shot.length : 0); toast("Note kept in the console (preview)."); return; }
   try {
-    const r = await fetch("/api/playtest-notes", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify({note: text, plate: String(snap.st.plate), area: snap.st.area, state: snap.st, shot})});
+    const r = await fetch("/api/playtest-notes", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders(), ...(me => me ? {"x-character-id": me.id, "x-claim-token": me.token} : {})(ptClaim())}, body: JSON.stringify({note: text, plate: String(snap.st.plate), area: snap.st.area, state: snap.st, shot})});
     const j = await r.json().catch(() => ({}));
     if (!r.ok) throw new Error(j.error || r.status);
     toast(`📝 Note ${j.count ? "#" + j.count + " " : ""}saved for Claude.`, 2200);
