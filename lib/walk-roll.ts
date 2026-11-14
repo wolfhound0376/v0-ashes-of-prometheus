@@ -62,6 +62,8 @@ const INVESTIGATION: WalkCheck = { kind: "skill", skill: "investigation", label:
 const PERFORMANCE: WalkCheck = { kind: "skill", skill: "performance", label: "Performance" }
 const INSIGHT: WalkCheck = { kind: "skill", skill: "insight", label: "Insight" }
 const ANIMAL_HANDLING: WalkCheck = { kind: "skill", skill: "animal_handling", label: "Animal Handling" }
+const PERSUASION: WalkCheck = { kind: "skill", skill: "persuasion", label: "Persuasion" }
+const INTIMIDATION: WalkCheck = { kind: "skill", skill: "intimidation", label: "Intimidation" }
 const STRENGTH: WalkCheck = { kind: "ability", ability: "str", label: "Strength" }
 const COOKS: WalkCheck = { kind: "tool", tool: "Cook's Utensils", ability: "wis", label: "Cook's utensils" }
 
@@ -125,6 +127,18 @@ const BOOK_ACTIONS = {
   // get a key or small weapon"). HOMEBREW. Wisdom (Animal Handling); the DC is a house number [CLAUDE]. The map says
   // what the creature brought back, so the bridge sends nothing.
   "druid:beast": { title: "Speak to the creature", label: "Asking a pen rat or spider to fetch something from a guard", check: ANIMAL_HANDLING, dc: 13, source: "house (Sam's mechanic, DC Claude's)", mapNarrates: true },
+  // LIFT ONLY WHAT YOU KNOW ABOUT, AND CAUGHT MEANS A FIGHT (Sam, 2026-11-13: lifting an item "shouldn't be an option
+  // unless you know he has these"; "failing any check leads to combat (1:1) unless you pass a persuasion (the offended
+  // lets it pass this time only) / intimidation check successfully (gives it to you but at the cost of gravity)").
+  // The book has none of these checks, so every DC here is a HOUSE number [CLAUDE] for Sam to set:
+  //   size-up   Wisdom (Perception) to see what is loose on someone. DC 10, the DC Sam approved for the pen gate's looks
+  //             (2026-10-30: "DC 10 is fine").
+  //   persuade / intimidate   Charisma against someone who has just caught your hand in their pocket. DC 15, "Medium"
+  //             on the SRD's Typical Difficulty Classes table.
+  // The map tells Malachar what came of each (who, which item, whether it is a fight), so the bridge sends nothing.
+  "pocket:size-up": { title: "Size them up", label: "Looking over what someone has loose on them", check: PERCEPTION, dc: 10, source: "house (Sam's rule, DC Claude's; matches the pen gate looks)", mapNarrates: true },
+  "caught:persuade": { title: "Talk them down", label: "Talking down someone who caught their hand in a pocket", check: PERSUASION, dc: 15, source: "house (Sam's rule, DC Claude's; SRD Medium)", mapNarrates: true },
+  "caught:intimidate": { title: "Make them hand it over", label: "Cowing someone who caught their hand in a pocket", check: INTIMIDATION, dc: 15, source: "house (Sam's rule, DC Claude's; SRD Medium)", mapNarrates: true },
 } as const satisfies Record<string, WalkAction>
 
 // PICKPOCKETING WHILE UNSEEN (Sam, 2026-10-27: "pick pocket should be an option when sneaking and near a character.
