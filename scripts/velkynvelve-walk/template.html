@@ -868,6 +868,13 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 .split-strip button.go{cursor:pointer}
 .split-strip button.go:hover{border-color:var(--ember)}
 .split-strip button .fight{color:#ff7a5c;margin-left:4px}
+/* PLAYTEST NOTES: the DM's one-line note to Claude (F9) */
+.ptnote{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:90;display:flex;gap:8px;align-items:center;width:min(640px,calc(100% - 32px));background:rgba(12,10,14,.94);border:1px solid #c9a24a;border-radius:8px;padding:8px 10px;box-shadow:0 6px 24px rgba(0,0,0,.6)}
+.ptnote[hidden]{display:none}
+.ptnote b{color:#e8c66a;font:600 12px/1 "Cinzel",Georgia,serif;letter-spacing:.06em;white-space:nowrap}
+.ptnote input{flex:1;min-width:0;background:#1b1720;border:1px solid #4a3d55;border-radius:5px;color:#f1e8d6;font:15px/1.3 Georgia,serif;padding:7px 9px;outline:none}
+.ptnote input:focus{border-color:#c9a24a}
+.ptnote small{color:#9a8fa6;font-size:11px;white-space:nowrap}
 .toast{position:absolute;left:50%;top:14px;transform:translateX(-50%);max-width:min(560px,calc(100% - 32px));background:var(--panel);border:1px solid var(--ember);color:var(--ink);border-radius:6px;padding:8px 14px;line-height:1.4;text-align:center;pointer-events:none;animation:fadein .2s ease}
 .toast[hidden]{display:none}
 /* THE CHECK CARD (Sam, 2026-10-27: "consolidate this cleanly at the top. The roll, the result ... Large enough to read
@@ -1069,6 +1076,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="fade" id="fade"></div>
     <div class="iris" id="iris" hidden></div>
     <div class="toast" id="toast" hidden></div>
+    <form class="ptnote" id="ptNote" hidden autocomplete="off"><b>📝 Note for Claude</b><input id="ptNoteText" maxlength="600" placeholder="What's wrong here? (Enter saves · Esc cancels)"><small id="ptNoteHow">F9</small></form>
     <div class="checkcard" id="checkCard" role="status" aria-live="polite" hidden><button class="cc-x" id="ccX" aria-label="Close">×</button><p class="cc-what" id="ccWhat"></p><div class="cc-roll" id="ccRoll"></div><div class="cc-say" id="ccSay"></div></div>
     <div class="icard" id="icard" role="dialog" aria-label="Item" hidden></div>
     <div class="titlecard" id="titlecard"><div class="no" id="tcNo"></div><h2 id="tcName"></h2></div>
@@ -1139,6 +1147,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <select id="jump" aria-label="Jump to area"></select>
       </details>
       <details open><summary>World</summary>
+      <button class="btn" id="dmNote">📝 Note for Claude (F9)</button>
       <button class="btn" id="dmTime">Stop time</button>
       <button class="btn" id="dmOoze">Gray ooze: to the bridge → up from the chasm → away (preview)</button>
       <button class="btn" id="dmGuards">Guards out of sight / back (preview)</button>
@@ -1237,6 +1246,14 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 // APP: true when served inside the game at /velkynvelve (assets from Supabase storage, sprites from /sprites,
 // the NPC opener from /api/npc-opener, voices from /api/npc-tts). false for the stand-alone preview.
 const APP = /*__APP__*/false;
+// PLAYTEST NOTES: the page's own errors, kept from the first line so a note can carry what went wrong before it was written
+const PT_ERRS = [];
+(() => { const keep = m => { PT_ERRS.push({t: new Date().toISOString(), m: String(m).slice(0, 400)}); if (PT_ERRS.length > 25) PT_ERRS.shift(); };
+  addEventListener("error", e => keep(`${e.message} @ ${(e.filename || "").split("/").pop()}:${e.lineno}`));
+  addEventListener("unhandledrejection", e => keep("unhandled: " + (e.reason && (e.reason.stack || e.reason.message) || e.reason)));
+  const ce = console.error.bind(console), cw = console.warn.bind(console);
+  console.error = (...a) => { keep("error: " + a.map(String).join(" ")); ce(...a); };
+  console.warn = (...a) => { keep("warn: " + a.map(String).join(" ")); cw(...a); }; })();
 // SANDBOX — the dashboard's rehearsal flag (/?sandbox=1, PR #828), carried here as /velkynvelve?sandbox=1 by the
 // dashboard's own link to the map. The walk itself still plays as normal; what changes is the way back: Talk hands
 // the conversation to the dashboard WITH the flag, and the return link keeps it, so a rehearsal that started in the
@@ -2852,7 +2869,8 @@ const nameTag = document.createElement("div"); nameTag.className = "nametag"; na
 function log(html, opts){
   const plain = String(html).replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim().slice(0, 240);
   log.last = plain || log.last;
-  if (plain){ (log.recent ||= []).push(plain); if (log.recent.length > 8) log.recent.shift(); }   // NPC MINDS: what a named NPC "remembers" of the fight
+  if (plain){ (log.recent ||= []).push(plain); if (log.recent.length > 8) log.recent.shift();
+    (log.history ||= []).push(plain); if (log.history.length > 20) log.history.shift(); }   // PLAYTEST NOTES carry the last 20   // NPC MINDS: what a named NPC "remembers" of the fight
   if (opts && opts.say) narrateAloud(plain);
   if (cbtLog.active){ cbtLogLine(html, false); return; }
   const el = $("log"); const p = document.createElement("p"); p.innerHTML = html; el.appendChild(p);
@@ -18354,6 +18372,78 @@ if (window.ResizeObserver) new ResizeObserver(() => resize()).observe(stage);
 if (window.MutationObserver) new MutationObserver(() => resize()).observe($("cbtMenu"), {attributes: true, attributeFilter: ["hidden"]});
 
 // ---------- DM drawer ----------
+// ---------- PLAYTEST NOTES ----------
+// Sam, 2026-11-13: "Is there a way for me to play test the game and give you cues on what to fix as I do it?" -> "go".
+// The DM presses F9 (or "Note for Claude" in DM tools), types one line, presses Enter, and plays on: nothing pauses. The
+// note is saved with a picture of the stage (the painting and everything drawn on it; the HTML cards and bubbles are not
+// in the picture, so their words go in the state) and the game's state at that moment, to playtest_notes
+// (/api/playtest-notes). Claude reads them later ("check my notes"), fixes them, and marks each one done. DM only.
+// The painting comes from storage on another origin, so the <img> on the page taints any canvas it is drawn into; a
+// second copy loaded with crossOrigin (storage answers CORS) can be drawn and exported. The drawn layer (sprites,
+// rings, effects) is copied the instant F9 is pressed; the painting under it does not move.
+const PT_IMGS = {};
+function ptPlateImg(src){
+  return PT_IMGS[src] || (PT_IMGS[src] = new Promise(res => { const im = new Image(); im.crossOrigin = "anonymous";
+    im.onload = () => res(im); im.onerror = () => { delete PT_IMGS[src]; res(null); };
+    im.src = src + (src.includes("?") ? "&" : "?") + "cors=1"; }));   // its own URL: the page's copy sits in the cache without CORS headers
+}
+async function ptShot(){
+  try {
+    const r = stage.getBoundingClientRect(), W = Math.round(r.width), H = Math.round(r.height), k = Math.min(1, 1280 / W);
+    const top = document.createElement("canvas"); top.width = cv.width; top.height = cv.height; top.getContext("2d").drawImage(cv, 0, 0);
+    const v = {...view}, b = base;
+    const plates = await Promise.all(["plate", "plate2"].map(id => $(id)).filter(im => im && !im.hidden && im.src).map(im => ptPlateImg(im.src)));
+    const c = document.createElement("canvas"); c.width = Math.round(W * k); c.height = Math.round(H * k);
+    const g = c.getContext("2d"); g.fillStyle = "#000"; g.fillRect(0, 0, c.width, c.height); g.scale(k, k);
+    g.save(); g.translate(v.tx, v.ty); g.scale(b * v.z, b * v.z);
+    for (const im of plates) if (im) g.drawImage(im, 0, 0, NAT_W, NAT_H);
+    g.restore();
+    g.drawImage(top, 0, 0, top.width, top.height, 0, 0, W, H);
+    return c.toDataURL("image/jpeg", .72);
+  } catch (e) { return null; }                       // a picture that cannot be taken: the note goes without it
+}
+function ptState(){
+  const who = a => a && {id: a.id, name: fname(a), x: Math.round(a.x), y: Math.round(a.y), hp: a.c ? a.c.hp : undefined, down: !!a.down, anim: a.anim, path: (a.path || []).length};
+  const shown = id => { const el = $(id); return el && !el.hidden ? el.textContent.replace(/\s+/g, " ").trim().slice(0, 600) : null; };
+  let st = null; try { const j = JSON.stringify(state); st = j.length > 60000 ? {_truncated: j.length, keys: Object.keys(state)} : state; } catch (e) {}
+  return {
+    at: new Date().toISOString(), url: location.href, viewport: [innerWidth, innerHeight],
+    plate: cur, area: node && node.name, mode, leader: leader && leader.id, mySlug, dm: isDm(),
+    party: party.map(who), npcsNear: npcs.filter(n => actors.includes(n) && !n.offStage).slice(0, 30).map(who), foes: foes.map(who),
+    fight: cbt ? {round: cbt.round, idx: cbt.idx, phase: cbt.phase, turn: cbt.order[cbt.idx] && fname(cbt.order[cbt.idx]), order: cbt.order.map(fname)} : null,
+    oneFight: {id: FIGHT.id, auth: FIGHT.auth, mirror: FIGHT.mirror, live: FIGHT.live && {plate: FIGHT.live.plate, auth_key: FIGHT.live.auth_key}},
+    oneWorld: {on: OW.on, key: OW.key, plate: OW.plate, status: OW.status},
+    bubbles: bubbles.filter(b => b.until > now).map(b => b.el.textContent.slice(0, 200)),
+    onScreen: {dialog: shown("dialog"), talk: shown("talk"), card: shown("obj"), check: shown("checkCard"), toast: shown("toast"), banner: ($("beat") || {}).textContent || null},
+    log: log.history || [], errors: PT_ERRS.slice(), state: st,
+  };
+}
+let ptPending = null;
+function ptOpen(){
+  if (APP && !isDm()) return;
+  const f = $("ptNote"); if (!f.hidden){ $("ptNoteText").focus(); return; }
+  const snap = ptPending = {shot: ptShot(), st: ptState()};   // the moment is taken when the key is pressed, not when the note is typed
+  f.hidden = false; $("ptNoteText").value = ""; $("ptNoteHow").textContent = "taking the picture…";
+  snap.shot.then(u => { if (ptPending === snap) $("ptNoteHow").textContent = u ? "picture taken" : "no picture"; });
+  setTimeout(() => $("ptNoteText").focus(), 0);
+}
+function ptClose(){ $("ptNote").hidden = true; ptPending = null; const t = $("ptNoteText"); if (t) t.blur(); }
+async function ptSave(){
+  const text = $("ptNoteText").value.trim(), snap = ptPending; ptClose();
+  if (!text || !snap) return;
+  const shot = await snap.shot;
+  if (!APP){ console.log("[playtest note]", text, snap.st, shot ? shot.length : 0); toast("Note kept in the console (preview)."); return; }
+  try {
+    const r = await fetch("/api/playtest-notes", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify({note: text, plate: String(snap.st.plate), area: snap.st.area, state: snap.st, shot})});
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || r.status);
+    toast(`📝 Note ${j.count ? "#" + j.count + " " : ""}saved for Claude.`, 2200);
+  } catch (e) { toast("The note did not save: " + (e.message || e), 4200); }
+}
+$("ptNote").addEventListener("submit", e => { e.preventDefault(); ptSave(); });
+$("ptNoteText").addEventListener("keydown", e => { if (e.key === "Escape"){ e.preventDefault(); e.stopPropagation(); ptClose(); } });
+addEventListener("keydown", e => { if (e.key === "F9"){ e.preventDefault(); e.stopPropagation(); ptOpen(); } }, true);
+$("dmNote").onclick = () => { toggleDm(false); ptOpen(); };
 function toggleDm(on){ if (on && APP && !isDm()) return; $("dm").hidden = !on; document.body.classList.toggle("dm-open", !!on); $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ dmGrudgeLists(); renderSeats(); renderCompany(); renderDmItems(); renderDmLoot(); loadRoster().then(() => { renderSeats(); }); } }
 $("cbtMini").onclick = () => toggleDm(false);
 $("dmBtn").onclick = () => toggleDm($("dm").hidden);
