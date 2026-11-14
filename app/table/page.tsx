@@ -23,7 +23,8 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { DoorOpen, LogOut, Play, RotateCcw, Square, UserMinus, UserPlus, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { dmHeaders } from "@/lib/dm-key"
+import { clearDmKey, dmHeaders } from "@/lib/dm-key"
+import { leaveDmDoor } from "@/lib/dm-door"
 import { EntryGate } from "@/components/entry-gate"
 import { assignFigures, type Light, type TableState } from "@/lib/table"
 import type { SeatView } from "@/lib/table-store"
@@ -567,10 +568,30 @@ function EndButton({ busy, send, label = "End the session", prominent = false }:
 // "Restart the campaign" here — that did nearly the same thing. This is the one: /api/table `new`, which puts the
 // game in play on the saved-games shelf first, resets the campaign, opens the table and starts a new save. It
 // needs the DM code (lib/host.ts KEY_ONLY_ACTIONS); a host types it here and keeps hosting afterwards.
+//
+// WHO ARE YOU PLAYING (Sam, 2026-11-13: "Tried a new game with gandalf" — and woke in the pen as Lynkes). New Game
+// used to host as whichever hero this browser already held and never asked. Now it asks, with the same portrait
+// cards as the host door (/dm): the hero picked hosts the new campaign and this browser sits down as them. It
+// starts on the hero the browser holds, so pressing straight through is the old behaviour. The DM (no hero on
+// this browser) may still run it as Dungeon Master only.
+type NewGameHero = { id: string; name: string; cls: string; img: string | null }
 function NewGame({ me, onDone }: { me: { id: string; token: string } | null; onDone: () => void }) {
   const [step, setStep] = useState<"idle" | "ask" | "working">("idle")
   const [code, setCode] = useState("")
   const [note, setNote] = useState<string | null>(null)
+  const [heroes, setHeroes] = useState<NewGameHero[] | null>(null)
+  // The host this new game will have: a hero's id, or "" for the DM alone (only offered to the DM).
+  const [pick, setPick] = useState<string>(me?.id ?? "")
+  useEffect(() => { setPick(me?.id ?? "") }, [me?.id])
+  useEffect(() => {
+    if (step !== "ask" || heroes) return
+    let live = true
+    fetch("/api/seat", { cache: "no-store" }).then((r) => r.json())
+      .then((j) => { if (live) setHeroes(Array.isArray(j?.roster) ? (j.roster as NewGameHero[]) : []) })
+      .catch(() => { if (live) setHeroes([]) })   // the cards could not load: the hero this browser holds still hosts
+    return () => { live = false }
+  }, [step, heroes])
+  const pickedName = heroes?.find((h) => h.id === pick)?.name ?? null
   const go = async () => {
     setStep("working"); setNote(null)
     try {
@@ -579,18 +600,29 @@ function NewGame({ me, onDone }: { me: { id: string; token: string } | null; onD
         const lj = await l.json().catch(() => ({}))
         if (!l.ok || !lj.ok) { setNote(l.status === 429 ? "Too many tries. Wait a few minutes." : "That is not the DM code. Nothing was reset."); return }
       }
-      const r = await fetch("/api/table", { method: "POST", headers: { "Content-Type": "application/json", ...dmHeaders() }, body: JSON.stringify(me ? { action: "new", hostId: me.id } : { action: "new" }) })
+      const r = await fetch("/api/table", { method: "POST", headers: { "Content-Type": "application/json", ...dmHeaders() }, body: JSON.stringify(pick ? { action: "new", hostId: pick } : { action: "new" }) })
       const j = await r.json().catch(() => ({}))
-      if (me) {
-        // The host keeps hosting with their hero's claim; the code is not left behind on this browser.
-        const claim = j?.hostClaim as { characterId?: string; claimToken?: string } | null | undefined
-        if (claim?.characterId && claim.claimToken) { try { localStorage.setItem(CHARACTER_LS_KEY, claim.characterId); localStorage.setItem(TOKEN_LS_KEY, claim.claimToken) } catch { /* storage blocked */ } }
-        await fetch("/api/dm/logout", { method: "POST" }).catch(() => {})
+      // The hero picked hosts, and this browser sits down as them: their claim in, the DM code out (the same
+      // hand-over as the host door, app/dm/page.tsx). A hero with no door words yet cannot be sat as from here.
+      const claim = j?.hostClaim as { characterId?: string; claimToken?: string } | null | undefined
+      const sat = Boolean(r.ok && pick && claim?.characterId && claim.claimToken)
+      if (sat && claim) {
+        try {
+          localStorage.setItem(ROLE_LS_KEY, "player")
+          localStorage.setItem(CHARACTER_LS_KEY, claim.characterId as string)
+          localStorage.setItem(TOKEN_LS_KEY, claim.claimToken as string)
+        } catch { /* storage blocked */ }
+        if (!me) { clearDmKey(); leaveDmDoor() }
       }
+      if (me || sat) await fetch("/api/dm/logout", { method: "POST" }).catch(() => {})
       if (!r.ok) { setNote(j?.error ?? "The new game did not start. Nothing was reset."); return }
       fetch("/api/stage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ mode: "table", by: "dm", at: new Date().toISOString(), caption: "A new game begins." }) }).catch(() => {})
       setNote(j?.note ?? "A new game begins. The old one is on the shelf, and the table is open.")
       setCode("")
+      if (r.ok && pick && !sat) setNote(`A new game begins with ${pickedName ?? "that hero"} hosting, but they have no door words yet, so this browser could not sit down as them.`)
+      // This browser is now someone else (a different hero, or a hero where it was the DM): the page read who it
+      // was when it opened, so it is loaded again rather than left running the table as the old one.
+      if (sat && claim?.characterId !== me?.id) { window.location.reload(); return }
       onDone()
     } catch {
       setNote("Could not reach the server. Nothing was changed.")
@@ -611,8 +643,43 @@ function NewGame({ me, onDone }: { me: { id: string; token: string } | null; onD
           <p className="mt-2 text-sm leading-relaxed text-stone-400">
             The game in play goes on the saved-games shelf first, so you can load it again. Then the campaign starts over:
             the heroes keep their art and voices and start at level 1, and the party wakes in the slave pen of Velkynvelve.
-            The table opens{me ? " with you hosting" : ""}.
+            The table opens{pick ? ` with you hosting as ${pickedName ?? "your hero"}` : ""}.
           </p>
+          <div className="mt-4 text-center text-[10px] uppercase tracking-[0.35em] text-[#8a6a3a]">Who are you playing?</div>
+          {heroes === null ? (
+            <p className="mt-2 text-center text-[12px] text-stone-600">Unlocking the cells…</p>
+          ) : (
+            <ul className="mt-2 grid grid-cols-3 gap-2 sm:grid-cols-4">
+              {heroes.map((h) => {
+                const on = pick === h.id
+                return (
+                  <li key={h.id}>
+                    <button type="button" disabled={step === "working"} aria-pressed={on} onClick={() => setPick(h.id)}
+                      className={cn("group relative w-full overflow-hidden rounded-sm border bg-black/60 text-left transition-all disabled:opacity-40", on ? "border-[#e8c56a] shadow-[0_0_22px_rgba(232,197,106,0.4)]" : "border-[#3d3428] hover:border-[#8a6a3a]")}>
+                      {h.img ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={h.img} alt="" className={cn("aspect-[3/4] w-full object-cover object-top transition-opacity", on ? "opacity-100" : "opacity-60 group-hover:opacity-90")} />
+                      ) : (
+                        <div className="grid aspect-[3/4] w-full place-items-center font-serif text-3xl text-[#8a6a3a]">{h.name.charAt(0)}</div>
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/80 to-transparent px-1.5 pb-1.5 pt-5">
+                        <div className="truncate font-serif text-[12px] text-[#e8d9ae]">{h.name}</div>
+                        <div className="truncate text-[9px] uppercase tracking-[0.18em] text-stone-500">{h.cls}</div>
+                      </div>
+                      {on && <div className="absolute right-1 top-1 rounded-full border border-[#e8c56a] bg-black/70 px-1.5 py-0.5 text-[8px] uppercase tracking-[0.2em] text-[#e8c56a]">Host</div>}
+                    </button>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          {!me && (
+            <div className="mt-2 text-center">
+              <button type="button" disabled={step === "working"} onClick={() => setPick("")} className={cn("text-[11px] uppercase tracking-[0.25em]", pick === "" ? "text-[#e8c56a]" : "text-stone-600 hover:text-stone-400")}>
+                {pick === "" ? "✓ " : ""}Nobody — I run it as Dungeon Master only
+              </button>
+            </div>
+          )}
           {me && (
             <input value={code} onChange={(e) => setCode(e.target.value)} type="password" autoComplete="off" placeholder="the DM code"
               className="mt-3 w-full rounded-sm border border-[#7a5f33]/70 bg-black/70 px-3 py-2 text-center font-mono text-[15px] tracking-widest text-stone-100 placeholder:text-stone-700 focus:border-[#c9a868] focus:outline-none" />

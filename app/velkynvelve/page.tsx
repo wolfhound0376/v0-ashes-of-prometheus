@@ -26,7 +26,7 @@ import { useRouter } from "next/navigation"
 import { StageLink } from "@/components/stage/stage-provider"
 import { ArrowLeft, Crown, Clapperboard } from "lucide-react"
 import { dmHeaders } from "@/lib/dm-key"
-import { AFTER_RESET_PATH, wasReset } from "@/lib/session-guard"
+import { AFTER_RESET_PATH, AWAKEN_PATH, needsWaking, wasReset } from "@/lib/session-guard"
 import { EndGameButton } from "@/components/end-game-button"
 import { DiceProvider } from "@/components/dice/dice-provider"
 import { WalkRollBridge } from "@/components/walk/walk-roll-bridge"
@@ -94,6 +94,9 @@ export default function VelkynvelvePage() {
         // tools, so the frame and the tools can never disagree (Sam, 2026-10-25: Lynkes got the frame, the
         // DM's own map lost its tools).
         if (j.isDm && role === "dm") { setGate("dm"); return }
+        // NOBODY REACHES THE MAP BEFORE THEY HAVE WOKEN (Sam, 2026-11-13; lib/session-guard.ts needsWaking). Only
+        // asked on arrival: a hero already on the map is never pulled off it.
+        if (first && !isSandbox && needsWaking(j, role)) { router.replace(AWAKEN_PATH); return }
         if (st === "live" && j.mine && !j.mine.away) { setGate("player"); return }
         router.replace("/table")
       } catch {

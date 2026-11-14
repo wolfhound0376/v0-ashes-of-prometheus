@@ -21,7 +21,12 @@ export type TableReply = {
   run?: string | null
   isDm?: boolean
   state?: { status?: string } | null
-  mine?: { away?: boolean; id?: string } | null
+  mine?: { away?: boolean; id?: string; dm?: boolean } | null
+  /**
+   * Has this hero come through the awakening this session (reached the gate at the end of /awaken)? Only sent
+   * for a seated player at a live table. Absent means "could not tell", which never sends anyone anywhere.
+   */
+  woke?: boolean
 } | null
 
 /**
@@ -55,3 +60,25 @@ export function wasReset(seen: string | null | undefined, reply: TableReply): bo
  * back to the table, which after a reset is the clean lobby.
  */
 export const AFTER_RESET_PATH = "/table"
+
+/**
+ * NOBODY REACHES THE MAP BEFORE THEY HAVE WOKEN (Sam, 2026-11-13: "Tried a new game ... Went straight here").
+ * The awakening (/awaken: the hero's film, the fortune roll, the gate everyone steps through together) was only
+ * on the road from the table going live. Every other door onto the map skipped it: "Return to the Game" on the
+ * title and on the table, a second tab, a bookmark. That night a second tab was on the pen 13 seconds after
+ * Start while the first was still on the hero's film, and the fortune roll landed two minutes later.
+ *
+ * So the in-game pages ask: is this a seated player, at a live table, who has NOT reached the gate this session?
+ * Then they go to /awaken first. A hero who has (a refresh, coming back from the dashboard) is never sent again.
+ * The DM, a DM-run companion and a stepped-out player are not sent. An answer that could not be read, or one
+ * that does not say either way, sends nobody: a network blip must never loop the family through the film.
+ */
+export const AWAKEN_PATH = "/awaken"
+
+export function needsWaking(reply: TableReply, role: string | null | undefined): boolean {
+  if (!reply || reply.error) return false
+  if (reply.isDm && role === "dm") return false
+  if (reply.state?.status !== "live") return false
+  if (!reply.mine || reply.mine.away || reply.mine.dm) return false
+  return reply.woke === false
+}
