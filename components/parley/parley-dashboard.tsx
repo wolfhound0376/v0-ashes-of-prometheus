@@ -601,11 +601,27 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
     const pc = props.characters.find((c) => c.name.toLowerCase() === want) ?? props.characters.find((c) => hit([c.name.toLowerCase()]))
     return pc ? { kind: "player" as const, player: pc as Character & { idle_url?: string | null; talking_url?: string | null } } : null
   }, [props.talkWith, npcPool, props.characters, props.claimLocked])
+  // THE LAST NPC TO SPEAK HOLDS THE WINDOW AT REST (Sam, 2026-11-13: "Why is the drow guard face showing when we
+  // are talking to eldeth?"). Measured: Eldeth spoke the last two lines in the feed, but the only npc_encounters row
+  // with is_active was the Drow Guard, so the window rested on him once her voice stopped (or never started), and
+  // the "Talking to" picker, which follows the face, aimed the player's reply at him. The resting face is now the
+  // NPC who spoke last in the feed, matched on name against the roster, the DM (Malachar) aside; is_active is the
+  // fallback for a feed with no NPC line yet.
+  const lastSpokeNpc = useMemo(() => {
+    for (let i = dialogue.length - 1; i >= 0; i--) {
+      const who = (dialogue[i]?.speaker ?? "").trim().toLowerCase()
+      if (!who || who === "malachar" || who === "system" || who === "dm") continue
+      const row = npcPool.find((n) => n.name.toLowerCase() === who)
+      if (row) return row
+      // A player's line does not end the search: the NPC they are answering is still the one in view.
+    }
+    return undefined
+  }, [dialogue, npcPool])
   const activeNpc = talkPartner?.kind === "npc"
     ? talkPartner.npc
     : talkMode && talkPartner?.kind === "player"
       ? undefined
-      : props.npcEncounters.find((npc) => npc.is_active) ?? props.npcEncounters[0]
+      : lastSpokeNpc ?? props.npcEncounters.find((npc) => npc.is_active) ?? props.npcEncounters[0]
   const speakingRowAny = speakingNpc ? npcPool.find((npc) => npc.id === speakingNpc.id) : undefined
   // While talking by the fire, only the partner may take the window; anyone
   // else Malachar voices is heard but does not replace the face.
@@ -1309,7 +1325,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
         </div> : null}
         <div className="p-narr">
           {talkMode ? <button type="button" onClick={props.onEndTalk} className="p-slab dark sm"><X className="h-3 w-3" />{props.talkFrom === "map" ? (one ? "Leave it there — back to the map" : "Back to the map") : "Back to camp"}</button> : null}
-          <DmNarration showControls={isDmView} dialogue={heardDialogue} audience={narrationAudience} npcs={talkVoices.npcs} players={talkVoices.players.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />
+          <DmNarration showControls={false} dialogue={heardDialogue} audience={narrationAudience} npcs={talkVoices.npcs} players={talkVoices.players.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />
         </div>
         {one ? <div className="p-talk">
           <div className={cn("p-linebox", stageLineDm && "dm")}>
