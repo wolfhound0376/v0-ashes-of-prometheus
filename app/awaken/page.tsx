@@ -50,6 +50,12 @@
 // Cinematics OFF in the settings (lib/settings.ts) the show is replaced by one still line and the
 // page goes straight to the roll. The ROLL itself is never skipped — it is gameplay, and the bag
 // depends on it. Intro music OFF keeps "Dark and Stormy" silent; the voices still speak.
+//
+// SKIP MEANS SKIP (Sam, 2026-11-13: after Skip "the pause occurs because I think I'm expected to click on the
+// screen. Why isn't that automatic?"). Skip pressed ANYWHERE in the show (the film included) now also hurries the
+// roll: no black beat and no Malachar pre-roll line before it, the dice throw themselves after QUICK_ROLL_MS instead
+// of a 10 s countdown, the result card closes after QUICK_DISMISS_MS, and no laugh — straight to the pen. The roll
+// still happens (the bag depends on it) and the Act I title still shows. Without Skip, nothing changes.
 
 import React, { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
@@ -108,6 +114,9 @@ const CEILING = {
 } as const
 const AUTO_ROLL_MS = 10000 // was 20 s (Sam, 2026-11-13: the faster awaken)
 const AUTO_DISMISS_MS = 7000
+/** After Skip: long enough to see the card and the dice, short enough that nobody reaches for the mouse. */
+const QUICK_ROLL_MS = 1500
+const QUICK_DISMISS_MS = 3000
 /** The roll beat's own ceiling: the card's two clocks, the dice, and slack. Past it the show goes on without a roll. */
 const ROLL_BEAT_MS = AUTO_ROLL_MS + AUTO_DISMISS_MS + 45000
 
@@ -142,6 +151,7 @@ export default function AwakenPage() {
   const [laughOn, setLaughOn] = useState(false)
   const [skipShown, setSkipShown] = useState(false)
   const [filmOn, setFilmOn] = useState(false)
+  const [quickRoll, setQuickRoll] = useState(false)
   const { sendMessage } = useLich("abyss")
 
   const started = useRef(false)
@@ -151,6 +161,8 @@ export default function AwakenPage() {
   const skipped = useRef(false)
   const skipResolve = useRef<() => void>(() => {})
   const skipP = useRef<Promise<void>>(new Promise<void>((r) => { skipResolve.current = r }))
+  // Unlike `skipped`, never re-armed: did the player press Skip at any point in this run? (Skip means skip.)
+  const everSkipped = useRef(false)
   const music = useRef<HTMLAudioElement>(null)
   const clip = useRef<HTMLAudioElement>(null)
   const idleVid = useRef<HTMLVideoElement>(null)
@@ -212,6 +224,7 @@ export default function AwakenPage() {
   const skip = useCallback(() => {
     if (skipped.current) return
     skipped.current = true
+    everSkipped.current = true
     setSkipShown(false)
     skipResolve.current()
     try { clip.current?.pause() } catch { /* nothing playing */ }
@@ -411,11 +424,16 @@ export default function AwakenPage() {
       // waited for ever on a black screen. Now the answer is listened for before the card exists, and the beat has
       // a ceiling like every other: past it the show goes on to the gate without a roll.
       const answered = new Promise<boolean>((res) => { rollDone.current = res })
+      const hurry = everSkipped.current
+      setQuickRoll(hurry)
       setStep("roll")
       music.current?.pause()
       const showWasSkipped = skipped.current
       rearmSkip()
-      if (show && !showWasSkipped) {
+      if (hurry) {
+        // Skip means skip: the bed under the roll, and the card straight away.
+        musicIn(30, 0.35, 1200)
+      } else if (show && !showWasSkipped) {
         musicIn(30, 0.45, 2500)
         await wait(600); guard()
         setCrawl({ text: PREROLL_TEXT, seconds: 6 + 5, key: 2 })
@@ -439,7 +457,7 @@ export default function AwakenPage() {
       // No waiting on his narration here any more (Sam, 2026-11-13: the faster awaken). It used to hold a black
       // screen ~7 s for the model, then read a ~13 s recap of a result the dice card had already shown. His line
       // is still written — narrate() fires it into the shared log — it is just not read aloud over the black.
-      if (show && !showWasSkipped && !skipped.current) {
+      if (show && !showWasSkipped && !hurry && !skipped.current) {
         setStep("laugh")
         const lv = laughVid.current
         if (lv) {
@@ -455,8 +473,9 @@ export default function AwakenPage() {
         }
       }
       setSkipShown(false)
-      musicTo(0, skipped.current ? 400 : 1800)
-      await sleep(skipped.current ? 300 : 1600); guard()
+      const fast = hurry || skipped.current
+      musicTo(0, fast ? 400 : 1800)
+      await sleep(fast ? 300 : 1600); guard()
 
       // 7 — the pen.
       goToPen()
@@ -523,8 +542,8 @@ export default function AwakenPage() {
             characterName={seat.name}
             onNarrate={narrate}
             onDismiss={(rolled) => rollDone.current(rolled)}
-            autoRollMs={AUTO_ROLL_MS}
-            autoDismissMs={AUTO_DISMISS_MS}
+            autoRollMs={quickRoll ? QUICK_ROLL_MS : AUTO_ROLL_MS}
+            autoDismissMs={quickRoll ? QUICK_DISMISS_MS : AUTO_DISMISS_MS}
           />
         )}
       </DiceProvider>

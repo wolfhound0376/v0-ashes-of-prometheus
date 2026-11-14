@@ -224,6 +224,26 @@ export function askOutcome(kind: AskKind, outcome: Outcome): { gravity: number; 
   return { gravity: raw.gravity, deltas }
 }
 
+// ---------------------------------------------------------------------------
+// CAUGHT WITH A HAND IN THEIR POCKET (Sam, 2026-11-13). A failed lift from a fellow prisoner ends one of three ways,
+// and each one costs: talked down ("the offended lets it pass this time only"), cowed into handing it over ("gives it
+// to you but at the cost of gravity"), or a fight. Every number is a HOUSE number [CLAUDE] on the same scale as the
+// asks above; nothing here is good news, so nothing is palliated.
+export type TheftOutcome = "forgave" | "cowed" | "fought"
+export const THEFT_OUTCOMES: readonly TheftOutcome[] = ["forgave", "cowed", "fought"]
+const THEFT: Record<TheftOutcome, { gravity: number; deltas: Deltas }> = {
+  forgave: { gravity: 10, deltas: { trust: -3, resentment: 2 } },
+  cowed:   { gravity: 25, deltas: { fear: 8, resentment: 8, trust: -6, affection: -4 } },
+  fought:  { gravity: 30, deltas: { resentment: 10, trust: -8, affection: -4 } },
+}
+export const theftOutcome = (o: TheftOutcome): { gravity: number; deltas: Deltas } => ({ gravity: THEFT[o].gravity, deltas: { ...THEFT[o].deltas } })
+export function theftNote(npc: string, hero: string, outcome: TheftOutcome, itemName: string): string {
+  const thing = `the ${itemName.toLowerCase()}`
+  if (outcome === "forgave") return `${npc} caught ${hero}'s hand at ${thing} and let it pass, this once.`
+  if (outcome === "cowed") return `${npc} caught ${hero}'s hand at ${thing}; ${hero} frightened them into handing it over.`
+  return `${npc} caught ${hero}'s hand at ${thing}, and it came to blows.`
+}
+
 /** Fighting beside the party: the NPC feels the party owes them. This is what makes a gold ask possible. */
 export const FOUGHT_BESIDE = { gravity: 20, deltas: { debt: 6, respect: 1 } as Deltas }
 

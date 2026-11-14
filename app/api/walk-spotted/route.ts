@@ -88,6 +88,7 @@ export async function POST(req: NextRequest) {
     area: clip(body.area, 80) || null,
     startedBy: clip(body.seenHero, 60) || null,
     label: clip(body.label, 160) || "The guards have seen you.",
+    opener: clip(body.opener, 80) || null,   // THE SPOTTED BEAT: the screen that saw it opens the fight at once
   })
   const { data: now } = await db.from("world_flags").select("value").eq("campaign_id", CAMPAIGN).eq("key", COMBAT_FLAG).maybeSingle()
   return NextResponse.json({ ok: !!now?.value, flag: now?.value ?? null })

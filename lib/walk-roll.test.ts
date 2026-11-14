@@ -273,3 +273,14 @@ describe("the retired self-reported rolls (Sam, 2026-10-25 / 2026-10-27)", () =>
     expect(m).toMatchObject({ modifier: 3, proficient: false })
   })
 })
+
+describe("lift only what you know about, and caught means a fight (Sam, 2026-11-13)", () => {
+  it("has the three checks, on the right skills, and the map narrates each", () => {
+    expect(WALK_ACTIONS["pocket:size-up"]).toMatchObject({ check: { kind: "skill", skill: "perception" }, dc: 10, mapNarrates: true })
+    expect(WALK_ACTIONS["caught:persuade"]).toMatchObject({ check: { kind: "skill", skill: "persuasion" }, dc: 15, mapNarrates: true })
+    expect(WALK_ACTIONS["caught:intimidate"]).toMatchObject({ check: { kind: "skill", skill: "intimidation" }, dc: 15, mapNarrates: true })
+  })
+  it("says every DC is a house number", () => {
+    for (const k of ["pocket:size-up", "caught:persuade", "caught:intimidate"] as const) expect(WALK_ACTIONS[k].source).toMatch(/house/)
+  })
+})

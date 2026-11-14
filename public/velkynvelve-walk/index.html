@@ -968,6 +968,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 /* THE DEATH BEAT banner (the pop lanes, 2026-10-28): "Drow guard slain", "Fifi is down" — a moment at the top of the stage */
 .beat{position:absolute;left:50%;top:24%;transform:translate(-50%,-50%);font-family:"Cinzel",Georgia,serif;font-size:26px;font-weight:700;color:#f3d68a;letter-spacing:.1em;text-shadow:0 0 14px rgba(255,120,80,.5),0 2px 0 #2a0a08,0 4px 12px rgba(0,0,0,.85);opacity:0;pointer-events:none;white-space:nowrap;z-index:40}
 .beat.show{animation:beat 1.3s ease-out forwards}
+.beat.spotted{color:#ff6b5a;font-size:38px;letter-spacing:.18em;text-shadow:0 0 18px rgba(255,60,40,.7),0 2px 0 #2a0a08,0 4px 14px rgba(0,0,0,.9)}   /* THE SPOTTED BEAT */
 @keyframes beat{0%{opacity:0;transform:translate(-50%,-40%) scale(.9)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.02)}25%{transform:translate(-50%,-50%) scale(1)}75%{opacity:1}100%{opacity:0;transform:translate(-50%,-60%)}}
 .victory{position:absolute;left:50%;top:34%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;z-index:40;opacity:0}
 .victory.show{animation:victory 4.2s ease-out forwards}
@@ -1572,6 +1573,10 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
   // come over with it, wireBet {heroId: watch number} the watch a hero last lost his bet, wireTried {heroId: true}
   // who has had their go at their manacles since the last rest.
   unshackled: {}, wireAsk: null, wireBet: {}, wireTried: {},
+  // LIFT ONLY WHAT YOU KNOW ABOUT (2026-11-13). pocketSeen {pocketId: true}: someone sized them up and saw what is loose
+  // on them. pocketLooked {pocketId: {heroId: true}}: who has had their one look. theftForgiven {npcId: true}: who has
+  // already let a caught hand pass once.
+  pocketSeen: {}, pocketLooked: {}, theftForgiven: {},
   // THE DRUID'S WORD (2026-11-13). beastTry {heroId: watch number}: the watch a druid last asked a creature.
   beastTry: {},
   // LEND YOUR SPARK (Sam, 2026-11-12, "go"). {by, to, at}: a sorcerer at the wall has offered their spark to the friend
@@ -5642,7 +5647,8 @@ async function openPockets(n){
   const close = () => { $("obj").hidden = true; mode = "explore"; };
   $("objText").textContent = `${name} is close enough to touch.`; showObjCard();
   const id = pocketId(n), j = await fetchLoot(id); if ($("obj").hidden) return;
-  const rows = (j.rows || []).filter(r => r.kind !== "preview-stash");
+  const loose = (j.rows || []).filter(r => r.kind !== "preview-stash");
+  const rows = loose.filter(r => pocketKnown(n, r));          // LIFT ONLY WHAT YOU KNOW ABOUT (below)
   // Sleight of Hand on the dashboard's dice against the guard's passive Perception (lib/walk-roll.ts pickpocket:ppN, the
   // same rows as pickpocketing while sneaking); the map never asks what was rolled (Sam, 2026-10-25). Caught follows the
   // book: commanded to give it up, on pain of death (caught → Malachar).
@@ -5652,9 +5658,11 @@ async function openPockets(n){
     const r = await rollOnDashboard(ACTION_KEY_PICKPOCKET(dc), sl);
     if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3200); return; }
     if (r.success){ if (await takeLoot(who, id, row)){ log(`${fname(who)} lifts the ${esc(row.name)} from ${esc(name)} without being noticed.`); offerEquip(); } }
+    else if (theftFights(n)) theftCaught(n, who, row, r);
     else caught(n, who, row);
   }, "primary");
-  if (!rows.length) $("objText").textContent = `${name} is close enough to touch, but nothing on them is within reach.`;
+  if (!rows.length) $("objText").textContent = pocketSeenAll(n) ? `${name} is close enough to touch, but nothing on them is within reach.` : `${name} is close enough to touch. You do not know what they carry.`;
+  if (canSizeUp(n, who)) add("Size them up", () => { close(); sizeUp(n, who, () => openPockets(n)); });
   if (wantsWord(n) || canTalkTo(n)) add(`Talk to ${name}`, () => { close(); approach(n); });   // by name, not "them" (Sam, 2026-11-13)
   add("Leave them be", close);
   box.querySelector("button")?.focus();
@@ -5795,9 +5803,11 @@ async function openPickpocket(n){
   const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
   $("objText").textContent = `${fname(who)} slips a hand toward ${name}…`; showObjCard();
   const j = await fetchLoot(id); if ($("obj").hidden) return;
-  const rows = (j.rows || []).filter(r => r.kind !== "preview-stash" && (!r.slot || r.loose));   // a spare blade in a boot is loose; a worn or wielded one is not
+  // LIFT ONLY WHAT YOU KNOW ABOUT (Sam, 2026-11-13, superseding his 2026-10-27 "they may see what that character has"):
+  // being unseen gets the hand close; it does not show what is in the pocket.
+  const rows = (j.rows || []).filter(r => r.kind !== "preview-stash" && (!r.slot || r.loose) && pocketKnown(n, r));   // a spare blade in a boot is loose; a worn or wielded one is not
   $("objText").textContent = j.error ? `The game did not answer (${j.error}).`
-    : rows.length ? `${name} has not noticed ${fname(who)}. Loose on them, not worn or wielded:` : `${name} has nothing loose to take — only what they wear and wield.`;
+    : rows.length ? `${name} has not noticed ${fname(who)}. What you know is on them:` : pocketSeenAll(n) ? `${name} has nothing loose to take — only what they wear and wield.` : `${name} has not noticed ${fname(who)}. You do not know what they carry.`;
   for (const row of rows){
     const b = add(`Steal: ${lootLabel(row)}${row.missing ? " · not in the catalogue yet" : ""}`, async () => {
       if (row.missing){ toast(`${row.name} is not in the item catalogue yet, so it cannot be taken.`, 3600); return; }
@@ -5806,6 +5816,7 @@ async function openPickpocket(n){
     if (row.missing) b.disabled = true;
     if (row.pixel){ const im = document.createElement("img"); im.src = ITEM_PX + row.pixel; im.alt = ""; im.className = "lootPx"; b.prepend(im); }
   }
+  if (!j.error && canSizeUp(n, who)) add("Size them up", () => { close(); sizeUp(n, who, () => { if (sneak && pickpocketMark(leader) === n) openPickpocket(n); }); });
   add("Leave them be", close);
   box.querySelector("button:not([disabled])")?.focus();
 }
@@ -5837,8 +5848,112 @@ async function stealFrom(n, who, row){
   who.caughtUntil = now + CAUGHT_HOLD;
   if (gateWarn && gateWarn.who === who.id) gateWarn = null;
   endSneak();
+  if (theftFights(n)){ theftCaught(n, who, row, r); return; }   // a fellow prisoner: talk them down, cow them, or fight (below)
   const near = npcs.filter(m => m !== n && !m.down && !m.body && !m.offStage && actors.includes(m) && (m.alpha ?? 1) > .5 && Math.hypot(m.x - who.x, m.y - who.y) < 60 * ftPx(who)).map(fname);
   handOff(`${fname(who)} was sneaking and tried to pick ${fname(n)}'s pocket for the ${row.name} (Dexterity (Sleight of Hand) ${r.total} against ${fname(n)}'s passive Perception ${P}) and was CAUGHT: ${fname(n)} felt the hand. ${near.length ? `Also close by: ${near.join(", ")}.` : "Nobody else is close."} ${fname(who)} does not get the item. Play what happens, by gravity, ${fname(n)}'s nature and who is there: ${fname(n)} may simply like ${fname(who)} less and say something; someone else may attack ${fname(who)} or call the guards. If ${fname(n)} is a drow and ${fname(who)} a prisoner, the book (OotA ch.1, Acquisitions): a prisoner caught stealing is commanded to relinquish the item, on pain of death — a threat first. The map's guards hold their fire for this; only if ${fname(who)} refuses, resists or attacks, emit [COMBAT_START: ...].`, true);
+}
+// ---------- LIFT ONLY WHAT YOU KNOW ABOUT, AND CAUGHT MEANS A FIGHT ----------
+// Sam, 2026-11-13, looking at Jimjar's card listing "Lift: Rusted iron bar" and "Lift: Bent wire": "lifting iron bar and
+// wire shouldn't be an option unless you know he has these. Additionally, failing any check leads to combat (1:1) unless
+// you pass a persuasion (the offended lets it pass this time only)/ intimidation check successfully (gives it to you but
+// at the cost of gravity). The outcome of failure is combat."
+//
+//   KNOWING   A pocket's rows are offered only when the party knows of them:
+//               * someone SIZED THEM UP and saw (state.pocketSeen) — Wisdom (Perception), `pocket:size-up`, one look per
+//                 hero per mark; a miss costs nothing but the look [CLAUDE: the check is my addition, Sam's call];
+//               * Jimjar's bent wire once he has come over to sell it (state.wireAsk) — he showed it;
+//               * the pen key on a drow guard — it hangs on the belt (the leaning guard's lift, the films).
+//             Both cards obey it: the hand on someone standing close (openPockets) and the unseen thief's (openPickpocket).
+//   CAUGHT    by a fellow PRISONER (theftFights): a card with no way out of it but three —
+//               Talk them down   Charisma (Persuasion), `caught:persuade`. Passed: they let it pass, THIS ONCE
+//                                (state.theftForgiven) — caught by them again and there is no talking.
+//               Make them hand it over   Charisma (Intimidation), `caught:intimidate`. Passed: the item is yours, and it
+//                                costs how they feel about you (the ledger, /api/npc-ask `theft`).
+//               Fight            or either check failed: ONE ON ONE (theftDuel).
+//             The drow keep their own rules (the book's "on pain of death", the leaning guard's warning bolt): caught().
+//   THE FIGHT The DM's grudge fight (cbt.grudge), which already is one: the mark goes only for the thief, everyone else
+//             stands aside, the blow that drops the thief is a knockout, and then the mark stands down. With opts.duel
+//             the other heroes are out of the order too. A mark with no block fights as the SRD Commoner stand-in.
+//             The thief's own blows are real: a prisoner dropped in it is dead, as a bystander is.
+const pocketSeenAll = n => !!(state.pocketSeen || {})[pocketId(n)];
+function pocketKnown(n, row){
+  if (pocketSeenAll(n)) return true;
+  if (isGuard(n) && row.name === PEN_KEY) return true;
+  if (n.id === "jimjar" && state.wireAsk && (row.slug === WIRE_SLUG || row.name === WIRE)) return true;
+  return false;
+}
+const canSizeUp = (n, who) => !pocketSeenAll(n) && !((state.pocketLooked || {})[pocketId(n)] || {})[who.id];
+async function sizeUp(n, who, then){
+  const pid = pocketId(n), name = fname(n);
+  const r = await rollOnDashboard("pocket:size-up", heroMod(who, "perception", "wis"), {who});
+  if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3200); return; }
+  state.pocketLooked = state.pocketLooked || {}; (state.pocketLooked[pid] = state.pocketLooked[pid] || {})[who.id] = true;
+  if (r.success){
+    state.pocketSeen = state.pocketSeen || {}; state.pocketSeen[pid] = true;
+    log(`${esc(fname(who))} looks ${esc(name)} over and sees what is loose on them.`);
+  } else log(`${esc(fname(who))} looks ${esc(name)} over and cannot tell what they carry.`);
+  saveWalk(); exploreKey = "";
+  if (then) setTimeout(then, 300);
+}
+/** Whose catch is the new scene: a living prisoner on the plate, never the drow. */
+const theftFights = n => !!n && !isGuard(n) && !DROW_POST(n) && !SPECIAL_WATCH.includes(n.id) && !n.hostile && !!SPR[n.id];
+function theftLedger(n, who, outcome, row){
+  if (!APP || SANDBOX) return;
+  let cid = null; try { cid = characterIdOf(who.id); } catch (e) {}
+  if (cid) fetch("/api/npc-ask", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({action: "theft", npcName: SPR[n.id].json.name, characterId: cid, outcome, itemName: row.name})}).catch(() => {});
+}
+function theftCaught(n, who, row, lift, again){   // again: the card coming back after a roll that never landed
+  const name = fname(n), thief = fname(who);
+  n.path = []; stopActivity(n); n.face = faceOf(who.x - n.x, who.y - n.y); who.path = [];
+  if (!again){ bank("ui/nat1", .5); popText(who, "caught!", "#ff6b5e", 1.2);
+    log(`<b>${esc(name)} catches ${esc(thief)}'s hand</b> at the ${esc(row.name)}.`); }
+  if (!again && state.theftForgiven && state.theftForgiven[n.id]){              // they let it pass once already
+    log(`${esc(name)} let it pass once. Not twice.`);
+    theftLedger(n, who, "fought", row); theftDuel(n, who, row); return;
+  }
+  mode = "dialog"; party.forEach(p => { p.path = []; }); tip.hidden = true;
+  try { portrait(n.id, $("objPic"), 128); } catch (e) {}
+  $("objWho").textContent = name;
+  $("objText").textContent = `${name} has ${thief} by the wrist.`;
+  const box = $("objBtns"); box.innerHTML = "";
+  const add = (label, fn, cls = "") => choiceRow(box, label, fn, cls);
+  const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
+  const fight = why => { close(); if (why) log(why); theftLedger(n, who, "fought", row); theftDuel(n, who, row); };
+  add("Talk them down", async () => {
+    close();
+    const r = await rollOnDashboard("caught:persuade", heroMod(who, "persuasion", "cha"), {who});
+    if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3200); theftCaught.reopen(n, who, row); return; }
+    if (!r.success){ fight(`${esc(name)} is not having it.`); return; }
+    state.theftForgiven = state.theftForgiven || {}; state.theftForgiven[n.id] = true; saveWalk();
+    log(`${esc(name)} lets go of ${esc(thief)}'s wrist. This once.`);
+    theftLedger(n, who, "forgave", row);
+    if (APP) handOff(`${thief} tried to lift the ${row.name} from ${name} and was caught, then talked ${name} down (Charisma (Persuasion) ${r.total}). ${name} lets it pass THIS ONCE and keeps the ${row.name}; a second time there will be no talking. It is settled: do not start a fight. Give ${name} one short line.`);
+  }, "primary");
+  add("Make them hand it over", async () => {
+    close();
+    const r = await rollOnDashboard("caught:intimidate", heroMod(who, "intimidation", "cha"), {who});
+    if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3200); theftCaught.reopen(n, who, row); return; }
+    if (!r.success){ fight(`${esc(name)} does not scare.`); return; }
+    const got = await takeLoot(who, pocketId(n), row);
+    log(got ? `${esc(name)} hands the ${esc(row.name)} over and backs away from ${esc(thief)}.` : `${esc(name)} backs away from ${esc(thief)}.`);
+    theftLedger(n, who, "cowed", row);
+    if (got) offerEquip();
+    if (APP) handOff(`${thief} tried to lift the ${row.name} from ${name} and was caught, then frightened ${name} into handing it over (Charisma (Intimidation) ${r.total}). ${thief} ${got ? `has the ${row.name}` : "got nothing"}; ${name} fears and resents them for it. It is settled: do not start a fight. Give ${name} one short line.`);
+  }, "primary");
+  add("Fight", () => fight(""));
+  showObjCard(); box.querySelector("button")?.focus();
+}
+// a roll that never came back (cancelled, the dice did not answer) is not a way out of the card: it comes back
+theftCaught.reopen = (n, who, row) => setTimeout(() => { if (mode === "explore" && !n.down && actors.includes(n)) theftCaught(n, who, row, null, true); }, 200);
+function theftDuel(n, who, row){
+  if (mode !== "explore") return;
+  const name = SHORT[n.id] || fname(n);
+  n.hostile = true; n.talking = false; n.commoner = !ALLY_SHEETS[n.id] && !FOE_BLOCKS[n.id];
+  startCombat([n], `${name} goes for ${fname(who)}.`, {noAllies: true, duel: who});
+  if (!cbt){ n.hostile = false; return; }
+  cbt.grudge = {att: n, tgt: who, line: ""};
+  narrate(n, `${name} goes for ${fname(who)}.`);
 }
 const ACTION_KEY_PICKPOCKET = pp => `pickpocket:pp${Math.min(30, Math.max(5, Math.round(+pp || 12)))}`;   // lib/walk-roll.ts pickpocketKey: keep in step
 // the DM's hand: confiscated gear given to a drow, so it turns up on their body, or in their pockets for a thief
@@ -6003,7 +6118,7 @@ function openBody(b){
 // the dashboard's engine with the dashboard's modifier, and the page answers {ok, success, total, natural} — or
 // {cancelled} if they stepped back. "aop:roll-ack" says the panel is open; after it the map waits as long as the
 // player does. Opened as a plain file (no game around it), the map rolls locally against the same DC.
-const ROLLS = new Map(), LOCAL_DC = {"falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12, "jimjar:bet": 13, "manacles:wire": 15, "druid:beast": 13};
+const ROLLS = new Map(), LOCAL_DC = {"pocket:size-up": 10, "caught:persuade": 15, "caught:intimidate": 15, "falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12, "jimjar:bet": 13, "manacles:wire": 15, "druid:beast": 13};
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
@@ -6497,7 +6612,16 @@ const battleLive = () => { const B = state.battle; return B && !B.over && Date.n
 function battleArriving(from, n){ const B = battleLive(); return B && owSame(n, B.plate) && owSame(from, B.from) ? B : null; }
 function battleOffs(B){ const dx = [0, -60, 55, -10, 80, -95], dy = [0, 40, 45, 85, -25, 10]; return B.heroes.filter(id => SPR[id]).map((id, i) => ({id, dx: dx[i] || 0, dy: dy[i] || 0})); }
 function battleAllies(B){ const comp = companyNow(), add = (B.allies || []).filter(id => SPR[id] && !comp.includes(id)); comp.push(...add); state.leftBehind = state.leftBehind.filter(id => !add.includes(id)); return add; }
-function gateWatchAway(){ const B = battleLive(), d = state.gateWatchDown; return !!((B && owSame(B.from, PEN)) || (d && (storyRotations || 0) <= d.rot)); }
+// THE WATCH STAYS DOWN FOR THE BREAKOUT (Sam, 2026-11-13: "Why is there a guard now after I go back in the pen to collect
+// everyone? ... It should be smooth."). Measured on the live game: the landing was won at rotation 4 (gateWatchDown
+// {rot: 4}); the watch "changed" three and a half minutes later (rotations 5), which put a fresh pair on the posts
+// while the party was still fetching the prisoners, and tickGateWatch fights anyone it sees after a breakout. The
+// watch changes far too often for "until the next change" to mean anything (five changes in the first twenty minutes
+// of that session). So a watch killed in the breakout now stays gone for as long as that breakout stands: until the
+// gate is shut on the party again (every recapture sets brokeOut back to null), when the old rotation rule applies
+// as before. The relief finding its dead is the alarm, and the alarm waves are not built yet (see above). [CLAUDE]
+function gateWatchAway(){ const B = battleLive(), d = state.gateWatchDown, out = state.brokeOut;
+  return !!((B && owSame(B.from, PEN)) || (d && ((storyRotations || 0) <= d.rot || (out && (d.at || 0) >= (out.at || 0))))); }
 /** The gate stands open and nobody is on the landing: the party steps out onto the landing's own plate (a cut, not a walk). */
 async function gateToLanding(){
   const plate = battlePlateOf(cur); if (!plate || battleBusy || mode !== "explore" || !leader) return;
@@ -6766,9 +6890,14 @@ async function doorGo(kind, everyone, o = {}){
     if (kind === "ambush" || !ok){
       doorCallDone(null, kind === "ambush" ? "ambush" : "seen", heroes);
       if (!ok) log(kind === "ambush" ? `<em>The gate scrapes on its hinge, and ${esc(fname(w))} turns.</em>` : `<em>${esc(fname(w))} turns round at the wrong moment.</em>`);
+      // WHO IS IN IT, BY COUNT (Sam, 2026-11-13: "there was more than one guard in the fight"). One guard stood the watch,
+      // one guard fought and one paid XP, and Malachar narrated "two shapes on the bridge": he was told only "the drow
+      // on watch". He is now told how many and to narrate no others.
+      const watchIs = `${guards.length === 1 ? "the one drow guard" : `the ${guards.length} drow guards`} on watch`;
+      const noOthers = ` The fight is against exactly ${guards.length === 1 ? "that one guard" : `those ${guards.length} guards`}: narrate no other enemy on the landing or the bridge.`;
       if (APP) handOff(kind === "ambush"
-        ? `${fname(h)}, sneaking, went through the unlocked slave pen gate to ambush the drow on watch${ok ? ", and took them by surprise" : ", but the drow heard the gate and were not surprised"}. Combat has begun on the landing outside the pen.`
-        : `${fname(h)} tried to slip out of the slave pen past the drow on watch and was caught in the doorway. Combat has begun on the landing outside the pen.`);
+        ? `${fname(h)}, sneaking, went through the unlocked slave pen gate to ambush ${watchIs}${ok ? ", and took them by surprise" : ", but the drow heard the gate and were not surprised"}. Combat has begun on the landing outside the pen.${noOthers}`
+        : `${fname(h)} tried to slip out of the slave pen past ${watchIs} and was caught in the doorway. Combat has begun on the landing outside the pen.${noOthers}`);
       await goThroughGate(w, guards, {everyone, heroes, surprised: ok, cry: true, by: "sneak", ...(ok ? {opener: h} : {}),
         label: kind === "ambush" ? (ok ? "the ambush at the pen gate — out of the dark, before they know it." : "the ambush at the pen gate — they heard it coming.") : "caught slipping past the watch at the pen gate"});
       return;
@@ -8942,7 +9071,9 @@ let combatBusy = false;
 function fighterFor(a){
   // an ally who turns on the party (DM tools → Turn on them) still fights with his own block, not a stand-in's
   const turned = a.kind !== "pc" && !a.ally && !FOE_BLOCKS[a.id] && !!ALLY_SHEETS[a.id];
-  const s = a.kind === "pc" ? SHEETS[a.id] : a.ally || turned ? ALLY_SHEETS[a.id] : FOE_BLOCKS[a.id];
+  // A prisoner with no block of their own who fights (a caught thief's mark, theftDuel) fights as the bystanders bleed:
+  // the SRD Commoner stand-in (COMMONER, below), not the 1-HP placeholder.
+  const s = a.kind === "pc" ? SHEETS[a.id] : a.ally || turned ? ALLY_SHEETS[a.id] : FOE_BLOCKS[a.id] || (a.commoner ? {...COMMONER, name: SHORT[a.id] || SPR[a.id].json.name} : undefined);
   // A hero with no sheet must never take the map down with it. Sam's rehearsal, 2026-10-26: Gandalf was claimed in
   // the DM's browser but seated nowhere, so no sheet ever reached the page; the party panel asked for his hit points
   // inside enterNode, the throw skipped the line that lifts the fade, and the whole Underwalk stayed black. The claim
@@ -9038,7 +9169,10 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   camTo(z, cx, cy, 900);
   $("vignette").classList.add("on"); pickCombatTrack(moodFor(foes, startCombat.flagMood)); startCombat.flagMood = null; setTrack("combat");
   // initiative: d20 + the sheet's bonus, everyone, highest first (ties: higher bonus, then the party)
-  const order = [...party, ...allies, ...foes].filter(a => !a.down);   // fighters only: bystanders run between the turns
+  // ONE ON ONE (Sam, 2026-11-13: a caught thief's fight is "combat (1:1)"): opts.duel is the one hero in it. The rest
+  // of the party is on the plate and out of the order, like the allies a grudge fight leaves standing.
+  const order = [...(opts.duel ? [opts.duel] : party), ...allies, ...foes].filter(a => !a.down);   // fighters only: bystanders run between the turns
+  if (opts.duel) for (const p of party) if (p !== opts.duel && !p.down && !p.c) p.c = fighterFor(p);   // out of the order, still on the plate: the panel, a pot shot and a heal all read their numbers
   for (const a of order){ a.c = a.c && (hero(a) || a.bystander) ? a.c : fighterFor(a); a.c.initRoll = d20((opts.roadSurprise === "party" && hero(a)) || (opts.roadSurprise === "them" && foes.includes(a)) ? -1 : 0, a); a.c.init = a.c.initRoll + (a.c.sheet.init || 0); }
   order.sort((a, b) => b.c.init - a.c.init || (b.c.sheet.init || 0) - (a.c.sheet.init || 0) || (a.kind === "pc" ? -1 : 1));
   // SURPRISE (SRD 5.1, Combat > Surprise; fightWith): a foe who never saw it coming is surprised — no move and no action
@@ -9974,18 +10108,43 @@ function guardsReact(w, h, why){
   if (!foes.length) return false;
   const label = `${fname(w || foes[0])} sees ${who}${why ? ` ${why}` : ""} — the guards attack!`;
   log(`<em>${esc(label)}</em>`);
-  if (!APP){ foes.forEach(f => { f.hostile = true; }); startCombat(foes, label); return true; }
-  const body = {area: where, label, seenHero: who, foes: foes.map(f => ({name: (FOE_BLOCKS[f.id] || {}).name || SPR[f.id].json.name, aliases: [f.id], hp: (FOE_BLOCKS[f.id] || {}).hp ?? null, hpMax: (FOE_BLOCKS[f.id] || {}).hp ?? null}))};
+  spottedBeat(w || foes[0], foes, h);                          // THE SPOTTED BEAT: this screen reacts NOW, while the table is told
+  if (!APP){ foes.forEach(f => { f.hostile = true; }); setTimeout(() => startCombat(foes, label), SPOTTED_MS); return true; }
+  const body = {area: where, label, seenHero: who, opener: OW.key || undefined, foes: foes.map(f => ({name: (FOE_BLOCKS[f.id] || {}).name || SPR[f.id].json.name, aliases: [f.id], hp: (FOE_BLOCKS[f.id] || {}).hp ?? null, hpMax: (FOE_BLOCKS[f.id] || {}).hp ?? null}))};
   try { body.claimId = localStorage.getItem("aop_character_id") || undefined; body.claimToken = localStorage.getItem("aop_claim_token") || undefined; } catch (e) {}
   fetch("/api/walk-spotted", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)})
     .then(r => r.json().then(j => ({r, j}))).then(({r, j}) => {
       if (!r.ok || !j.flag){ toast(j.error || "The game did not answer.", 3200); guardsAlarm = null; return; }
       foes.forEach(f => { f.hostile = true; });
-      followCombatFlag(j.flag);                                // this seat opens it now; the others on their next poll
+      // this seat opens it — once the beat has had its moment, and not a jitter later (followCombatFlag skips the
+      // wait for the screen that asked: flag.opener); the others on their next poll
+      const wait = Math.max(0, spottedBeat.at + SPOTTED_MS - Date.now());
+      setTimeout(() => followCombatFlag(j.flag), wait);
       if (APP) handOff(`${label} (${where}). Combat has begun.`);
     }).catch(() => { toast("The game did not answer.", 3200); guardsAlarm = null; });
   return true;
 }
+// THE SPOTTED BEAT (Sam, 2026-11-13: Lynkes crossed to the Guard Tower alone, "it says the drow see him and attack but
+// there is this uncomfortable pause. It's clunky." He said "go" to a Baldur's Gate 3-style beat; the Guard Tower fight
+// stays on its own plate). What the pause WAS, read off this code: the log line, then nothing on screen while
+// /api/walk-spotted wrote the flag (a server round trip), then followCombatFlag held a non-DM screen a deliberate
+// 1.2-1.8 s so the DM's screen could open the fight first, then asked /api/walk-fight who runs it (a second round trip)
+// — all with the guards frozen where they stood. Now the screen that saw it plays this at once: the "!" over every
+// guard, the caught sting, the camera snaps to the guard who saw, SPOTTED! across the stage, the guard snarls a line.
+// Nothing here waits on the server, and the fight opens the moment the beat ends (or the moment the server answers,
+// if that is later). 5e: no surprise either way — the guard saw the hero, and the hero knew the guards were there.
+const SPOTTED_MS = 1100;
+function spottedBeat(w, guards, h){
+  spottedBeat.at = Date.now();
+  bank("ui/nat1", .55); redFlash(); shake(4); hitstop(90);
+  (guards || []).forEach((g, i) => { if (g !== w) setTimeout(() => { if (actors.includes(g)) popText(g, "!", "#ff6b5a", 1.2); }, 90 + i * 70); });
+  if (w){ camTo(Math.max(view.z, 1.6), (w.x + (h ? h.x : w.x)) / 2, (w.y + (h ? h.y : w.y)) / 2 - 30, 380); userPanAt = 0; }
+  const el = $("beat"); if (el) el.classList.add("spotted");
+  beatBanner("SPOTTED!");
+  setTimeout(() => { if (el && el.textContent === "SPOTTED!") el.classList.remove("spotted"); }, 1400);
+  if (w && actors.includes(w)) setTimeout(() => { if (mode === "explore" || mode === "combat") taunt(w); }, 260);
+}
+spottedBeat.at = 0;
 setInterval(() => {
   if (!sneak && mode === "explore" && leader && !state.cleared[cur] && !state.ambushOff && !laborLive()){
     const ws = sneakWatchers().filter(isGuard);
@@ -15263,7 +15422,7 @@ function endCombat(won, opts = {}){
   if (mode !== "combat" || FIGHT.mirror) return;
   // THE MARCH OUT IN CHAINS: how the bridge came out, read now while the fight still knows who ran
   const marchOut = chainMarchLive() && !state.gameOver ? chainMarchOutcome({won: won === true, gotAway: party.filter(p => p.left && !(p.c && p.c.ds && p.c.ds.dead)).length, byDm: !!(opts.byDm || opts.talk)}) : undefined;
-  if (cbt && cbt.fromFlag) fightFlagOver();   // the server's "a fight is on" comes down with the fight
+  if (cbt && (cbt.fromFlag || cbt.flagToo)) fightFlagOver();   // the server's "a fight is on" comes down with the fight (flagToo: Malachar called the map's own fight a moment after it began)
   const victors = cbt ? [...(cbt.allies || [])] : [];   // THE TRIUMPH: who of ours is still up to strike a pose when it is won
   const fellNpcs = cbt ? (cbt.bystanders || []).filter(b => b.down) : [];   // the NPCs who died in this fight: buried below, once it is over (npcBury)
   if (won !== false && cbt) askEarned((cbt.allies || []).filter(n => askRowOf(n.id) && !n.down));   // they fought beside you and know it (NPC ASKS)
@@ -15442,7 +15601,7 @@ function drawCritBadges(){
 }
 // THE DEATH BEAT (the research doc: a death is a screen-level event, never another word in the pile): the body already
 // flashes and falls; the words go to a banner at the top of the stage for a moment, and to the log.
-function beatBanner(text){ const el = $("beat"); if (!el) return; el.textContent = text; el.classList.remove("show"); void el.offsetWidth; el.classList.add("show"); }
+function beatBanner(text){ const el = $("beat"); if (!el) return; if (text !== "SPOTTED!") el.classList.remove("spotted"); el.textContent = text; el.classList.remove("show"); void el.offsetWidth; el.classList.add("show"); }
 // THE TURN CALL: whose turn it is; then what they do, and to whom, with the target ringed
 function turnCall(a){
   const el = $("turnCall"); if (!el || !a || a.down) return;
@@ -20834,6 +20993,16 @@ async function followCombatFlag(flag){
   if (flag && flag.status === "active"){
     if (flag.startedAt === combatFlagSeen) return;
     if (flag.startedAt === flagDone()){ combatFlagSeen = flag.startedAt; return; }   // already fought to its end on this screen
+    // THE SAME FIGHT, CALLED TWICE (found live 2026-11-13). The map opened the ambush at the pen gate itself (18:26:34);
+    // Malachar, told of it, raised his own flag for the same drow guard three seconds later. The map was already
+    // fighting, so it never took the flag as its own, never took it down, and the flag stood "active" after the win:
+    // the next reload with a living drow guard on the plate would have opened "Malachar calls for initiative" again.
+    // A flag that names only creatures this screen is ALREADY fighting is this fight: it comes down with it.
+    if (mode === "combat" && cbt && !cbt.mirror && !FIGHT.mirror && !cbt.fromFlag && !cbt.flagToo){
+      const mine = (cbt.order || []).filter(a => a && !party.includes(a) && !(cbt.allies || []).includes(a));
+      const named = flag.foes || [];
+      if (mine.length && named.length && named.every(f => mine.some(a => stageMatch(f, a.id)))){ combatFlagSeen = flag.startedAt; cbt.flagToo = true; return; }   // flagToo, not fromFlag: Malachar dropping his flag does not end the map's own fight
+    }
     talkGivesWay();                                     // the talk ended in steel: the card closes, the fight opens (NPC MINDS)
     if (mode !== "explore") return;                     // once we are free, the next poll opens it
     combatFlagSeen = flag.startedAt;
@@ -20853,11 +21022,18 @@ async function followCombatFlag(flag){
       else log(`<em>${esc(foe.name)}</em> joins the fight but has no sprite yet; the DM core still counts it.`);
     }
     for (let i = picked.length - 1; i >= 0; i--) if (picked.indexOf(picked[i]) !== i) picked.splice(i, 1);   // two "Drow guard"s name the same two
-    if (!picked.length){ log(`<em>${esc(flag.label || "Initiative!")}</em> Nobody he named is still standing on this plate.`); return; }
+    if (!picked.length){
+      // a fight somewhere else: say so where the table will see it, not only in the log (THE SPOTTED BEAT)
+      if (flag.startedBy && flag.area && flag.area !== node.name) beatBanner(`${flag.startedBy} is fighting · ${flag.area}`);
+      log(`<em>${esc(flag.label || "Initiative!")}</em> Nobody he named is still standing on this plate.`); return; }
     for (const f of picked){ f.hp = f.hp ?? (flag.foes.find(x => x.slug === f.id) || {}).hp; }
-    // ONE FIGHT: every screen hears the flag at once; the DM's opens the fight, the others look a moment later for it
-    if (fightShared() && !FIGHT.auth){
-      if (!isDm()) await new Promise(r => setTimeout(r, 1200 + Math.random() * 600));
+    // ONE FIGHT: every screen hears the flag at once; the DM's opens the fight, the others look a moment later for it.
+    // A guard spotting a hero is the exception (THE SPOTTED BEAT): the screen that saw it opens it with no wait — it
+    // asked for the flag (flag.opener) and its beat has already played — and every OTHER screen, the DM's included,
+    // waits its moment and then shows the fight that screen is running. /api/walk-fight still grants one authority.
+    const mine = !!(flag.opener && OW.key && flag.opener === OW.key), theirs = !!(flag.opener && !mine);
+    if (fightShared() && !FIGHT.auth && !mine){
+      if (!isDm() || theirs) await new Promise(r => setTimeout(r, 1200 + Math.random() * 600));
       const lv = await fightLiveNow();
       if (lv && owSame(lv.plate, cur) && lv.auth_key !== OW.key){ talkGivesWay(); if (mode === "explore") enterMirror(lv); return; }
       if (mode !== "explore") return;

@@ -763,13 +763,26 @@ When emitting [NPC_ENCOUNTER:], [NPC_DAMAGE:], [NPC_LEAVE:], [CONDITION_ADD:] or
   const { data: currentInventory } = playerCharacter?.id
     ? await supabase
         .from("inventory_items")
-        .select("name, quantity, item_type")
+        .select("name, quantity, item_type, equippable_slot")
         .eq("character_id", playerCharacter.id)
         .order("created_at", { ascending: true })
     : { data: null }
 
-  const inventoryLines = (currentInventory || []).map((i: { name: string; quantity: number }) =>
-    i.quantity > 1 ? `- ${i.name} x${i.quantity}` : `- ${i.name}`
+  // WHAT THE DASHBOARD WILL LET THEM DO WITH IT (Sam, 2026-11-13: "Improve Malachar so when I ask him things like
+  // that he is helpful"). Asked "(why can I not equip the sharpened flint)", Malachar answered "it is typed as a
+  // weapon, so it should sit in your hand slot. If the button is greyed out, the dashboard may need a refresh."
+  // The row said item_type 'misc', equippable_slot null: there was no Equip button to grey out. He was guessing,
+  // because this list gave him names and counts only. Each line now carries what the row says (its type, the slot
+  // it equips to or that it cannot be equipped) and what is worn, so an answer about the sheet can be read off it.
+  const { data: wornNow } = playerCharacter?.id
+    ? await supabase.from("equipment_items").select("slot, name, equipped").eq("character_id", playerCharacter.id)
+    : { data: null }
+  const wornLines = ((wornNow || []) as { slot: string | null; name: string | null; equipped: boolean | null }[])
+    .filter((e) => e.equipped && e.name)
+    .map((e) => `- ${e.slot || "slot"}: ${e.name}`)
+
+  const inventoryLines = (currentInventory || []).map((i: { name: string; quantity: number; item_type?: string | null; equippable_slot?: string | null }) =>
+    `${i.quantity > 1 ? `- ${i.name} x${i.quantity}` : `- ${i.name}`} [${i.item_type || "misc"}; ${i.equippable_slot ? `equips to ${i.equippable_slot}` : "cannot be equipped"}]`
   )
 
   // Authoritative inventory block: the character possesses ONLY these items, and
@@ -777,6 +790,9 @@ When emitting [NPC_ENCOUNTER:], [NPC_DAMAGE:], [NPC_LEAVE:], [CONDITION_ADD:] or
   const inventoryBlock = `=== ${playerName.toUpperCase()}'S CURRENT INVENTORY — AUTHORITATIVE (live from database) ===
 ${playerName} currently possesses ONLY the following items. This list is the single source of truth for what the character is carrying right now:
 ${inventoryLines.length > 0 ? inventoryLines.join("\n") : "- (empty — the character is currently carrying nothing)"}
+The square brackets are what the game's own record says about each item: its type, and whether the dashboard can equip it and where. They are for you; do not read them aloud in narration.
+EQUIPPED RIGHT NOW:
+${wornLines.length > 0 ? wornLines.join("\n") : "- (nothing equipped)"}
 
 INVENTORY RULES — ENFORCE STRICTLY:
 - The character possesses ONLY the items listed above. Do NOT invent, assume, reference, or let the player use any item that is not on this list (aside from an item you award this turn).
@@ -1633,6 +1649,9 @@ ${combatantRows
     // Out of character, across the table. Mirrors how a stage direction stays out of the fiction, from the
     // other side: the player speaks to the DM, and nobody in the scene heard a word.
     stageContext += ` OUT OF CHARACTER — this line is from the player to YOU, the DM, across the table. Nobody in the scene heard it. Answer as Malachar in your own voice: narration of what they can see or know, a ruling, or a plain answer. No NPC reacts to it, quotes it or answers it, and the scene does not move on unless the question asks you to move it. Do not write it into anyone's mouth.`
+    // TABLE HELP (Sam, 2026-11-13). The same turn as the flint above: an out-of-character "why can't I…" or "how do
+    // I…" is a player stuck on the game, and the useful answer is the true one. Read it off the record, never guess.
+    stageContext += ` IF THE LINE ASKS HOW TO DO SOMETHING IN THE GAME, OR WHY SOMETHING WILL NOT WORK (equip, use, find, sharpen, craft, a button, a roll): be plainly helpful, in two or three short sentences, and drop the theatre. (1) Answer ONLY from the records you were given this turn: the AUTHORITATIVE inventory with its square brackets, EQUIPPED RIGHT NOW, the character's sheet, the scene. Say what the record actually shows ("the Flint shard is recorded as misc and cannot be equipped, so there is no Equip button for it"). (2) NEVER claim a record says something it does not, never invent a button, menu or setting, and never suggest a refresh or a retry as a guess. (3) If the record is what blocks them, say so and say that it is the game's record that needs changing, which is the DM's (Sam's) to do, not the player's mistake. (4) If they ask to change an item (sharpen it, repair it, make it into something) and nothing in this turn's instructions lets you do that, do not say it is done or that it already is what they want: say what it is on the record now and what would have to change. (5) If you do not know, say you do not know.`
   }
   if (facing) {
     stageContext += ` The player is facing ${facing}, who is in front of them. Any question or remark that does not name someone else ("who are you?", "what do you want?", "are you all right?") is addressed to ${facing}, and ${facing} answers it in their own voice, quoted and attributed to ${facing} by name. Do not have anyone else answer for them — even if the recent conversation was with someone else, the player has turned to ${facing} now.`
