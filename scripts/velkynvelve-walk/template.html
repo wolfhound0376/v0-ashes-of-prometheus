@@ -871,6 +871,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 /* PLAYTEST NOTES: the DM's one-line note to Claude (F9) */
 .ptnote{position:absolute;left:50%;bottom:18px;transform:translateX(-50%);z-index:90;display:flex;gap:8px;align-items:center;width:min(640px,calc(100% - 32px));background:rgba(12,10,14,.94);border:1px solid #c9a24a;border-radius:8px;padding:8px 10px;box-shadow:0 6px 24px rgba(0,0,0,.6)}
 .ptnote[hidden]{display:none}
+.ptink{position:absolute;inset:0;z-index:85;pointer-events:none}
+.ptink.on{pointer-events:auto;cursor:crosshair}
 .ptnote b{color:#e8c66a;font:600 12px/1 "Cinzel",Georgia,serif;letter-spacing:.06em;white-space:nowrap}
 .ptnote input{flex:1;min-width:0;background:#1b1720;border:1px solid #4a3d55;border-radius:5px;color:#f1e8d6;font:15px/1.3 Georgia,serif;padding:7px 9px;outline:none}
 .ptnote input:focus{border-color:#c9a24a}
@@ -1076,7 +1078,8 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="fade" id="fade"></div>
     <div class="iris" id="iris" hidden></div>
     <div class="toast" id="toast" hidden></div>
-    <form class="ptnote" id="ptNote" hidden autocomplete="off"><b>📝 Note for Claude</b><input id="ptNoteText" maxlength="600" placeholder="What's wrong here? (Enter saves · Esc cancels)"><small id="ptNoteHow">F9</small></form>
+    <canvas class="ptink" id="ptInk"></canvas>
+    <form class="ptnote" id="ptNote" hidden autocomplete="off"><b>📝 Note for Claude</b><input id="ptNoteText" maxlength="600" placeholder="What's wrong here? Drag on the map to rope it. (Enter saves · Esc cancels)"><small id="ptNoteHow">F9</small></form>
     <div class="checkcard" id="checkCard" role="status" aria-live="polite" hidden><button class="cc-x" id="ccX" aria-label="Close">×</button><p class="cc-what" id="ccWhat"></p><div class="cc-roll" id="ccRoll"></div><div class="cc-say" id="ccSay"></div></div>
     <div class="icard" id="icard" role="dialog" aria-label="Item" hidden></div>
     <div class="titlecard" id="titlecard"><div class="no" id="tcNo"></div><h2 id="tcName"></h2></div>
@@ -18387,7 +18390,7 @@ function ptPlateImg(src){
     im.onload = () => res(im); im.onerror = () => { delete PT_IMGS[src]; res(null); };
     im.src = src + (src.includes("?") ? "&" : "?") + "cors=1"; }));   // its own URL: the page's copy sits in the cache without CORS headers
 }
-async function ptShot(){
+async function ptShot(ropes){
   try {
     const r = stage.getBoundingClientRect(), W = Math.round(r.width), H = Math.round(r.height), k = Math.min(1, 1280 / W);
     const top = document.createElement("canvas"); top.width = cv.width; top.height = cv.height; top.getContext("2d").drawImage(cv, 0, 0);
@@ -18399,6 +18402,7 @@ async function ptShot(){
     for (const im of plates) if (im) g.drawImage(im, 0, 0, NAT_W, NAT_H);
     g.restore();
     g.drawImage(top, 0, 0, top.width, top.height, 0, 0, W, H);
+    if (ropes) ptRopes(g, ropes, v, b);
     return c.toDataURL("image/jpeg", .72);
   } catch (e) { return null; }                       // a picture that cannot be taken: the note goes without it
 }
@@ -18419,19 +18423,66 @@ function ptState(){
   };
 }
 let ptPending = null;
+// ROPES (Sam, 2026-11-13: "I'd also like the ability with the f9 to rope areas that need focus in that moment so I can keep
+// playing"). While the note box is open the stage takes the mouse: drag to draw a loop around what matters; draw as many as
+// needed; Backspace in an empty box takes the last one back. The loops are kept in MAP coordinates, so they stay on the
+// painting if the camera moves, and they go into the picture and into the note (with who stands inside each one).
+const ptInk = {loops: [], cur: null, raf: 0};
+const ptToMap = (px, py) => ({x: (px - view.tx) / (base * view.z), y: (py - view.ty) / (base * view.z)});
+function ptRopes(g, loops, v, b){
+  g.save(); g.translate(v.tx, v.ty); g.scale(b * v.z, b * v.z); const w = 1 / (b * v.z);
+  loops.forEach((l, i) => { if (l.length < 2) return;
+    g.beginPath(); l.forEach((p, k) => k ? g.lineTo(p.x, p.y) : g.moveTo(p.x, p.y)); if (l.closed !== false) g.closePath();
+    g.lineJoin = "round"; g.lineCap = "round";
+    g.strokeStyle = "rgba(20,0,0,.85)"; g.lineWidth = 9 * w; g.stroke();
+    g.strokeStyle = "#ff3b30"; g.lineWidth = 4.5 * w; g.setLineDash([14 * w, 7 * w]); g.stroke(); g.setLineDash([]);
+    const top = l.reduce((a, p) => p.y < a.y ? p : a, l[0]);
+    g.font = `bold ${22 * w}px Georgia, serif`; g.fillStyle = "#ff3b30"; g.strokeStyle = "rgba(0,0,0,.9)"; g.lineWidth = 5 * w;
+    g.strokeText(String(i + 1), top.x + 8 * w, top.y - 8 * w); g.fillText(String(i + 1), top.x + 8 * w, top.y - 8 * w); });
+  g.restore();
+}
+function ptInkDraw(){
+  const c = $("ptInk"), r = stage.getBoundingClientRect(), d = devicePixelRatio || 1;
+  if (c.width !== Math.round(r.width * d) || c.height !== Math.round(r.height * d)){ c.width = Math.round(r.width * d); c.height = Math.round(r.height * d); }
+  const g = c.getContext("2d"); g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, c.width, c.height); g.scale(d, d);
+  const all = [...ptInk.loops]; if (ptInk.cur) all.push(Object.assign(ptInk.cur.slice(), {closed: false}));
+  ptRopes(g, all, view, base);
+}
+function ptInkLoop(){ cancelAnimationFrame(ptInk.raf); const step = () => { ptInkDraw(); if (!$("ptNote").hidden) ptInk.raf = requestAnimationFrame(step); }; step(); }
+function ptInside(l, x, y){ let inn = false; for (let i = 0, j = l.length - 1; i < l.length; j = i++){ const a = l[i], b = l[j];
+  if ((a.y > y) !== (b.y > y) && x < (b.x - a.x) * (y - a.y) / (b.y - a.y) + a.x) inn = !inn; } return inn; }
+function ptBox(l){ const xs = l.map(p => p.x), ys = l.map(p => p.y); return [Math.round(Math.min(...xs)), Math.round(Math.min(...ys)), Math.round(Math.max(...xs)), Math.round(Math.max(...ys))]; }
+{ const c = $("ptInk");
+  const at = e => { const r = c.getBoundingClientRect(); return ptToMap(e.clientX - r.left, e.clientY - r.top); };
+  c.addEventListener("pointerdown", e => { if (!c.classList.contains("on") || e.button) return; e.preventDefault(); e.stopPropagation(); c.setPointerCapture(e.pointerId); ptInk.cur = [at(e)]; });
+  c.addEventListener("pointermove", e => { if (!ptInk.cur) return; const p = at(e), q = ptInk.cur[ptInk.cur.length - 1]; if (Math.hypot(p.x - q.x, p.y - q.y) * base * view.z >= 3) ptInk.cur.push(p); });
+  const end = e => { if (!ptInk.cur) return; const l = ptInk.cur; ptInk.cur = null; if (l.length > 4) ptInk.loops.push(l);
+    $("ptNoteHow").textContent = `${ptInk.loops.length} rope${ptInk.loops.length === 1 ? "" : "s"} · ⌫ undo`; setTimeout(() => $("ptNoteText").focus(), 0); };
+  c.addEventListener("pointerup", end); c.addEventListener("pointercancel", end);
+  c.addEventListener("wheel", e => { e.preventDefault(); }, {passive: false}); }
 function ptOpen(){
   if (APP && !isDm()) return;
   const f = $("ptNote"); if (!f.hidden){ $("ptNoteText").focus(); return; }
   const snap = ptPending = {shot: ptShot(), st: ptState()};   // the moment is taken when the key is pressed, not when the note is typed
   f.hidden = false; $("ptNoteText").value = ""; $("ptNoteHow").textContent = "taking the picture…";
-  snap.shot.then(u => { if (ptPending === snap) $("ptNoteHow").textContent = u ? "picture taken" : "no picture"; });
+  ptInk.loops = []; ptInk.cur = null; $("ptInk").classList.add("on"); ptInkLoop();
+  snap.shot.then(u => { if (ptPending === snap) $("ptNoteHow").textContent = u ? "picture taken · drag to rope" : "no picture · drag to rope"; });
   setTimeout(() => $("ptNoteText").focus(), 0);
 }
-function ptClose(){ $("ptNote").hidden = true; ptPending = null; const t = $("ptNoteText"); if (t) t.blur(); }
+function ptClose(){ $("ptNote").hidden = true; ptPending = null; const t = $("ptNoteText"); if (t) t.blur();
+  $("ptInk").classList.remove("on"); ptInk.cur = null; ptInkDraw(); }
 async function ptSave(){
-  const text = $("ptNoteText").value.trim(), snap = ptPending; ptClose();
+  const text = $("ptNoteText").value.trim(), snap = ptPending, loops = (ptInk.loops || []).filter(l => l.length > 2);
+  if (!text && loops.length && snap){ $("ptNoteHow").textContent = "say what is wrong, then Enter"; return; }   // a rope needs a word
+  // ROPES: the picture is taken again NOW so the painting sits under the rope exactly as it was drawn (the camera may have
+  // moved since F9); the state stays the F9 moment. Each rope is kept in map coordinates, with who stands inside it.
+  const ropedShot = loops.length ? ptShot(loops) : null;
+  ptClose(); ptInk.loops = []; ptInkDraw();
   if (!text || !snap) return;
-  const shot = await snap.shot;
+  if (loops.length) snap.st.ropes = loops.map((l, i) => ({n: i + 1, pts: l.filter((_, k) => k % 3 === 0).map(p => [Math.round(p.x), Math.round(p.y)]),
+    inside: actors.filter(a => !a.offStage && ptInside(l, a.x, a.y)).map(a => ({id: a.id, name: fname(a), x: Math.round(a.x), y: Math.round(a.y)})),
+    box: ptBox(l)}));
+  const shot = (ropedShot && await ropedShot) || await snap.shot;
   if (!APP){ console.log("[playtest note]", text, snap.st, shot ? shot.length : 0); toast("Note kept in the console (preview)."); return; }
   try {
     const r = await fetch("/api/playtest-notes", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify({note: text, plate: String(snap.st.plate), area: snap.st.area, state: snap.st, shot})});
@@ -18441,7 +18492,10 @@ async function ptSave(){
   } catch (e) { toast("The note did not save: " + (e.message || e), 4200); }
 }
 $("ptNote").addEventListener("submit", e => { e.preventDefault(); ptSave(); });
-$("ptNoteText").addEventListener("keydown", e => { if (e.key === "Escape"){ e.preventDefault(); e.stopPropagation(); ptClose(); } });
+$("ptNoteText").addEventListener("keydown", e => {
+  if (e.key === "Escape"){ e.preventDefault(); e.stopPropagation(); ptClose(); ptInk.loops = []; ptInkDraw(); }
+  if (e.key === "Backspace" && !e.target.value && ptInk.loops.length){ e.preventDefault(); ptInk.loops.pop(); $("ptNoteHow").textContent = ptInk.loops.length ? `${ptInk.loops.length} rope${ptInk.loops.length === 1 ? "" : "s"} · ⌫ undo` : "drag to rope"; }
+});
 addEventListener("keydown", e => { if (e.key === "F9"){ e.preventDefault(); e.stopPropagation(); ptOpen(); } }, true);
 $("dmNote").onclick = () => { toggleDm(false); ptOpen(); };
 function toggleDm(on){ if (on && APP && !isDm()) return; $("dm").hidden = !on; document.body.classList.toggle("dm-open", !!on); $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ dmGrudgeLists(); renderSeats(); renderCompany(); renderDmItems(); renderDmLoot(); loadRoster().then(() => { renderSeats(); }); } }
