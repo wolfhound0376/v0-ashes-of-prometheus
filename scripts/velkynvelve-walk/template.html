@@ -5480,7 +5480,7 @@ async function openPockets(n){
     else caught(n, who, row);
   }, "primary");
   if (!rows.length) $("objText").textContent = `${name} is close enough to touch, but nothing on them is within reach.`;
-  if (wantsWord(n) || canTalkTo(n)) add("Talk to them", () => { close(); approach(n); });
+  if (wantsWord(n) || canTalkTo(n)) add(`Talk to ${name}`, () => { close(); approach(n); });   // by name, not "them" (Sam, 2026-11-13)
   add("Leave them be", close);
   box.querySelector("button")?.focus();
 }
