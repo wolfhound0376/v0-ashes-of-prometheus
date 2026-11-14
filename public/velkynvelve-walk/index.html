@@ -5663,7 +5663,7 @@ async function openPockets(n){
   }, "primary");
   if (!rows.length) $("objText").textContent = pocketSeenAll(n) ? `${name} is close enough to touch, but nothing on them is within reach.` : `${name} is close enough to touch. You do not know what they carry.`;
   if (canSizeUp(n, who)) add("Size them up", () => { close(); sizeUp(n, who, () => openPockets(n)); });
-  if (wantsWord(n) || canTalkTo(n)) add("Talk to them", () => { close(); approach(n); });
+  if (wantsWord(n) || canTalkTo(n)) add(`Talk to ${name}`, () => { close(); approach(n); });   // by name, not "them" (Sam, 2026-11-13)
   add("Leave them be", close);
   box.querySelector("button")?.focus();
 }

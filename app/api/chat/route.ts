@@ -1641,6 +1641,10 @@ ${combatantRows
   // "what do you want?") is said to them, and they answer it (Sam, 2026-10-12: "it should be implied I am
   // speaking to Buppido. The NPC needs to act smarter").
   const facing = !talkWith && !toDm && typeof facingRaw === "string" ? facingRaw.replace(/[^\p{L}\s'’-]/gu, "").trim().slice(0, 60) || null : null
+  // WHO THIS TURN WAS SENT TO, on every turn (2026-11-13). Sam talked to Jimjar and Eldeth answered; the route
+  // answers Jimjar when it is told Jimjar (checked twice in sandbox), so the question is what the dashboard sent,
+  // and nothing recorded it. One line per turn so the next report can be read instead of guessed.
+  console.log(`[talk] addressee: talkWith=${talkWith ?? "-"} (raw ${typeof talkWithRaw === "string" ? talkWithRaw : "-"}) addressTo=${addressTo ?? "-"} facing=${facing ?? "-"} where=${talkWhere ?? "-"} director=${directorRaw === true}`)
   if (toDm) {
     // Out of character, across the table. Mirrors how a stage direction stays out of the fiction, from the
     // other side: the player speaks to the DM, and nobody in the scene heard a word.
