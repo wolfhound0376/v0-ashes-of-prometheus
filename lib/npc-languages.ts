@@ -16,7 +16,7 @@
 //
 // Pure functions first, then the Supabase loaders the chat route calls.
 
-import { chooseLineLanguage, parseLanguages, type LangSource } from "./languages"
+import { chooseLineLanguage, parseLanguages, understoodLanguages, type LangSource } from "./languages"
 
 // The decision itself lives in lib/languages.ts, so the static pages get it too
 // (public/js/aop-languages.js): the painted walk map has to pick a tongue for the
@@ -25,6 +25,49 @@ import { chooseLineLanguage, parseLanguages, type LangSource } from "./languages
 export { chooseLineLanguage, type LangSource }
 
 export type NamedLanguages = { name: string; languages: LangSource }
+
+export type TongueGap = { npc: string; hero: string; interpreters: string[] }
+
+/**
+ * NO SHARED TONGUE (Sam, 2026-11-13: "Derendil doesn't seem to speak Common"). Derendil has Elvish and Undercommon,
+ * Lynkes has Common, Halfling and Thieves' Cant: nothing in common, so his lines were scrambled, correctly. What was
+ * wrong is what happened next: told "I don't understand elvish", he said "I said — I am ready", as if he had
+ * followed her Common and the only trouble was volume. Nothing told Malachar that the two cannot talk at all, or
+ * that someone else standing there could carry the words.
+ *
+ * Every (NPC, hero) pair with no tongue the NPC speaks that the hero understands, and who in the scene could
+ * interpret: an NPC who understands something the first one speaks AND speaks something the hero understands.
+ * Pure. NPCs with no language data are left out, as everywhere else in this file: the system only acts on what
+ * it has been told.
+ */
+export function tongueGaps(npcs: NamedLanguages[], party: NamedLanguages[]): TongueGap[] {
+  const prof = (r: NamedLanguages) => { const p = parseLanguages(r.languages); return { name: r.name, speaks: p.speaks, hears: understoodLanguages(p) } }
+  const cast = npcs.map(prof).filter((n) => n.speaks.length)
+  const out: TongueGap[] = []
+  for (const h of party.map(prof)) {
+    if (!h.hears.length) continue
+    for (const n of cast) {
+      if (n.speaks.some((l) => h.hears.includes(l))) continue
+      const interpreters = cast
+        .filter((m) => m.name !== n.name && m.hears.some((l) => n.speaks.includes(l)) && m.speaks.some((l) => h.hears.includes(l)))
+        .map((m) => m.name)
+      out.push({ npc: n.name, hero: h.name, interpreters })
+    }
+  }
+  return out
+}
+
+/** The lines Malachar reads about those gaps. Empty when everyone can talk to everyone. */
+export function tongueGapLines(gaps: TongueGap[], max = 6): string {
+  if (!gaps.length) return ""
+  const rows = gaps.slice(0, max).map((g) =>
+    `- ${g.npc} and ${g.hero}: no shared tongue. ${g.interpreters.length ? `Could interpret: ${g.interpreters.join(", ")}.` : "Nobody here can interpret."}`)
+  return `NO SHARED TONGUE — these pairs cannot talk to each other at all, in EITHER direction:
+${rows.join("\n")}
+- The NPC did not understand the hero's words either. It never answers their meaning, and never "repeats itself" as if it had been understood: it reacts to tone and gesture only, in its own tongue.
+- When the hero speaks to such an NPC, or says they cannot follow it, and an interpreter is listed: ONE interpreter offers, in a tongue the hero knows and in their own voice and character, to carry the words across (for a price, a favour or nothing, as that NPC would). If the hero accepts, the interpreter gives the meaning as their OWN line, which may be coloured or wrong as that NPC would colour it. You still never translate in narration.
+- With nobody to interpret, say plainly in narration that neither understands the other, so the player knows it is the language and not the game.`
+}
 
 /**
  * The block Malachar reads: who speaks what, and the tag syntax. Kept short —
@@ -38,12 +81,13 @@ export function languagePromptBlock(npcs: NamedLanguages[], party: NamedLanguage
   }
   const known = npcs.filter((n) => parseLanguages(n.languages).speaks.length || parseLanguages(n.languages).understandsOnly.length)
   if (!known.length && !party.length) return ""
+  const gapLines = tongueGapLines(tongueGaps(known, party))
   return `LANGUAGES — 5E, ENFORCED BY THE GAME:
 - Every NPC line is spoken in ONE language. To choose it, write [NPC_SPEECH: Exact Canonical Name | Language]"words"[/NPC_SPEECH]. Leave the language out and the game picks the tongue the NPC shares with whoever it is answering, or its own first language if they share none.
 - A listener who does not know that language sees and hears gibberish. So in your narration NEVER translate, summarise or hint at what was said in a tongue the listener lacks — say only that it was said, how it sounded, and in what language ("she hisses something in Elvish, low and sharp"). Do not have the NPC repeat itself in Common unless it actually speaks Common and would bother.
 - Drow speak Elvish among themselves to keep slaves in the dark; they give orders in Undercommon. Use that.
 PARTY: ${party.map(fmt).join("; ") || "unknown"}
-NPCS IN PLAY: ${known.map(fmt).join("; ") || "none recorded"}`
+NPCS IN PLAY: ${known.map(fmt).join("; ") || "none recorded"}${gapLines ? "\n" + gapLines : ""}`
 }
 
 // ---------------------------------------------------------------------------

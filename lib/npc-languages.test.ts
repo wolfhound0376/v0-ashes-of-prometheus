@@ -33,6 +33,37 @@ describe("languagePromptBlock", () => {
   })
 })
 
+import { tongueGaps } from "./npc-languages"
+
+describe("no shared tongue (Derendil and Lynkes, 2026-11-13)", () => {
+  const lynkes = { name: "Lynkes", languages: "Common, Halfling, Thieves' Cant" }
+  const derendil = { name: "Prince Derendil", languages: "Elvish, Undercommon" }
+  const sarith = { name: "Sarith Kzekarit", languages: "Elvish, Undercommon" }
+  const jimjar = { name: "Jimjar", languages: "Gnomish, Undercommon, Common" }
+  const eldeth = { name: "Eldeth Feldrun", languages: "Common, Dwarvish" }
+
+  it("finds the pair and names who could interpret", () => {
+    const gaps = tongueGaps([derendil, sarith, jimjar, eldeth], [lynkes])
+    const d = gaps.find((g) => g.npc === "Prince Derendil")
+    expect(d).toEqual({ npc: "Prince Derendil", hero: "Lynkes", interpreters: ["Jimjar"] })
+    // Sarith shares nothing with her either, and is nobody's interpreter; Eldeth has Common and is no gap
+    expect(gaps.map((g) => g.npc).sort()).toEqual(["Prince Derendil", "Sarith Kzekarit"])
+  })
+  it("says so when nobody can interpret", () => {
+    expect(tongueGaps([derendil, eldeth], [lynkes])).toEqual([{ npc: "Prince Derendil", hero: "Lynkes", interpreters: [] }])
+    expect(languagePromptBlock([derendil, eldeth], [lynkes])).toContain("Prince Derendil and Lynkes: no shared tongue. Nobody here can interpret.")
+  })
+  it("tells Malachar the NPC did not understand either, and to offer the interpreter", () => {
+    const b = languagePromptBlock([derendil, jimjar], [lynkes])
+    expect(b).toContain("Could interpret: Jimjar.")
+    expect(b).toContain('never "repeats itself"')
+  })
+  it("is silent when everyone can talk, and for NPCs with no language data", () => {
+    expect(languagePromptBlock([eldeth], [lynkes])).not.toContain("NO SHARED TONGUE")
+    expect(tongueGaps([{ name: "Mystery", languages: null }], [lynkes])).toEqual([])
+  })
+})
+
 import { loadNpcLanguages } from "./npc-languages"
 
 function fakeDb(tables: Record<string, any[]>) {
