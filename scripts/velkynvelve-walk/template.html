@@ -884,17 +884,23 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 /* Sam, 2026-10-27: "needs to be 20% smaller" -- every size below is the first cut x0.8 (720->576 wide, type and padding
    with it). The card lives inside #stage, so the stage's pointerdown/pointermove/wheel handlers skip .checkcard:
    before that the stage's setPointerCapture swallowed the click and the x never closed it. */
-.checkcard{position:absolute;left:50%;top:46px;transform:translateX(-50%);z-index:25;width:min(576px,calc(100% - 32px));max-height:calc(100% - 200px);overflow:auto;
-  background:rgba(13,11,20,.94);border:1px solid var(--ember);border-radius:6px;box-shadow:0 8px 32px rgba(0,0,0,.6);padding:13px 18px 14px;animation:fadein .2s ease}
+.checkcard{position:absolute;left:50%;top:46px;transform:translateX(-50%);z-index:25;width:min(640px,calc(100% - 32px));max-height:calc(100% - 200px);overflow:auto;
+  display:flex;align-items:flex-start;gap:16px;box-sizing:border-box;
+  background:linear-gradient(180deg,#2a2033,#19121f);border:2px solid #f2c55c;border-radius:16px;box-shadow:0 0 28px rgba(242,197,92,.22),0 6px 0 #000,0 10px 32px rgba(0,0,0,.6);padding:14px 18px 16px 14px;animation:fadein .2s ease}
+/* MATCHES THE PARLEY'S CHECK CARD (Sam, 2026-11-13: "match the map"): the same d20, gold rim and Cinzel title, so a
+   check looks the same on the map as in a conversation. Kept compact (Sam, 2026-10-27: "20% smaller"). */
 .checkcard[hidden]{display:none}
-.checkcard .cc-what{font-family:var(--face-display);font-size:calc(var(--s2) * .8);line-height:1.25;color:var(--ink);margin:0 24px 5px 0}
-.checkcard .cc-roll{font-family:var(--face-mono);font-size:calc(var(--s1) * .8);color:var(--ink-dim);letter-spacing:.02em}
-.checkcard .cc-roll b{font-size:1.5em;color:var(--ember);font-weight:500;vertical-align:-.08em}
-.checkcard .cc-say{margin-top:10px;padding-top:10px;border-top:1px solid var(--rule);font-size:clamp(.84rem,1.28vw,1.04rem);line-height:1.5;color:var(--ink)}
-.checkcard .cc-say.wait{color:var(--ink-dim);font-style:italic;animation:ccpulse 1.6s ease-in-out infinite}
+.checkcard .cc-die{width:84px;height:94px;object-fit:contain;flex:none;margin-top:2px;filter:drop-shadow(0 6px 8px rgba(0,0,0,.7))}
+.checkcard .cc-body{flex:1;min-width:0}
+.checkcard .cc-what{font-family:var(--face-title);font-weight:700;font-size:calc(var(--s2) * .8);letter-spacing:.04em;line-height:1.25;color:#ffe9a6;margin:2px 26px 8px 0;text-shadow:0 2px 0 #000}
+.checkcard .cc-roll{display:inline-block;font-family:var(--face-mono);font-size:calc(var(--s1) * .8);color:#dcebff;letter-spacing:.02em;padding:4px 12px;border-radius:8px;background:#17406a;border:1px solid #6fa8e6}
+.checkcard .cc-roll b{font-size:1.6em;color:#ffd36b;font-weight:600;vertical-align:-.1em;text-shadow:0 1px 0 #000}
+.checkcard .cc-say{margin-top:12px;padding-top:10px;border-top:1px solid rgba(242,197,92,.28);font-family:"Crimson Text",Georgia,serif;font-size:clamp(.95rem,1.4vw,1.15rem);line-height:1.45;color:#f6ecd6}
+.checkcard .cc-say.wait{color:#cfc3e6;font-style:italic;animation:ccpulse 1.6s ease-in-out infinite}
 .checkcard .cc-say.err{color:var(--blood)}
-.checkcard .cc-x{position:absolute;top:6px;right:8px;background:none;border:0;color:var(--ink-dim);font-size:20px;line-height:1;cursor:pointer;padding:6px 9px}
-.checkcard .cc-x:hover{color:var(--ink)}
+.checkcard .cc-x{position:absolute;top:6px;right:8px;background:none;border:0;color:#cfc3e6;font-size:20px;line-height:1;cursor:pointer;padding:6px 9px}
+.checkcard .cc-x:hover{color:#ffe9a6}
+@media (max-width:560px){.checkcard .cc-die{width:56px;height:62px}.checkcard{gap:10px}}
 @keyframes ccpulse{0%,100%{opacity:.55}50%{opacity:1}}
 @media (prefers-reduced-motion: reduce){.checkcard .cc-say.wait{animation:none}}
 
@@ -1080,7 +1086,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="toast" id="toast" hidden></div>
     <canvas class="ptink" id="ptInk"></canvas>
     <form class="ptnote" id="ptNote" hidden autocomplete="off"><b>📝 Note for Claude</b><input id="ptNoteText" maxlength="600" placeholder="What's wrong here? Drag on the map to rope it. (Enter saves · Esc cancels)"><small id="ptNoteHow">F9</small></form>
-    <div class="checkcard" id="checkCard" role="status" aria-live="polite" hidden><button class="cc-x" id="ccX" aria-label="Close">×</button><p class="cc-what" id="ccWhat"></p><div class="cc-roll" id="ccRoll"></div><div class="cc-say" id="ccSay"></div></div>
+    <div class="checkcard" id="checkCard" role="status" aria-live="polite" hidden><button class="cc-x" id="ccX" aria-label="Close">×</button><img class="cc-die" src="icons/check-d20.webp" alt="" aria-hidden="true"><div class="cc-body"><p class="cc-what" id="ccWhat"></p><div class="cc-roll" id="ccRoll"></div><div class="cc-say" id="ccSay"></div></div></div>
     <div class="icard" id="icard" role="dialog" aria-label="Item" hidden></div>
     <div class="titlecard" id="titlecard"><div class="no" id="tcNo"></div><h2 id="tcName"></h2></div>
     <div class="log" id="log" aria-live="polite"></div>
