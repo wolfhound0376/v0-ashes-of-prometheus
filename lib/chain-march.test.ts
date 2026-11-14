@@ -132,11 +132,11 @@ describe("it stands on things that exist", () => {
     const blocks = page.slice(at, at + 60000)
     for (const id of CHAIN_MARCH_GUARDS) expect(blocks).toContain(`"${id}"`)
   })
-  it("the road a party escapes onto is a hand-off the travel map knows, and it leads to Menzoberranzan", () => {
+  it("the road a party escapes onto is a hand-off the travel map knows, and it opens a painted road (road-15, toward Menzoberranzan)", () => {
     const h = WALK_HANDOFFS[CHAIN_MARCH.via as keyof typeof WALK_HANDOFFS]
     expect(h).toBeTruthy()
     expect(h.biome).toBe(CHAIN_MARCH.biome)
-    expect(h.roads).toContain("menzoberranzan")
+    expect(h.roads).toEqual(["road-15"])
     expect(chainMarchMapHref()).toBe("/map?from=velkynvelve&via=north&plate=tunnels")
   })
 })

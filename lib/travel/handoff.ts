@@ -57,11 +57,15 @@ export const WALK_HANDOFFS: Readonly<Record<WalkHandoffKey, WalkHandoff>> = {
   grove: { name: "The grove", biome: "fungal", proposed: false, roads: ["road-09"] },
   crystal: { name: "The crystal passage", biome: "tunnels", proposed: false, roads: [] },
   // THE NORTH PASSAGE (Sam, 2026-11-10: "We can use your recommendation via the North Passage. Two long routes.").
-  // Not a cavern plate: the Northern Watch Post's own way out (spec.py plate 13, `via: "north"`). OotA p.20: it "leads
-  // toward Menzoberranzan and Blingdenstone". Both are joined to Velkynvelve by the book-distance edges already in
-  // `travel_edges` (156 and 180 miles); neither is a painted road. A city the party's map does not know yet is not
-  // offered (roadsOpenedBy keeps only nodes the map has loaded), so the DM reveals it first or the banner alone shows.
-  north: { name: "The north passage", biome: "tunnels", proposed: false, roads: ["menzoberranzan", "blingdenstone"] },
+  // Not a cavern plate: the Northern Watch Post's own way out (spec.py plate 13, `via: "north"`), and the road a party
+  // that wins on the rope bridge (lib/chain-march.mjs) is standing on. OotA p.20: it "leads toward Menzoberranzan and
+  // Blingdenstone". Those two long routes are WALKED on the painted roads, leg by leg, like every other journey: the
+  // book-distance edges Velkynvelve-Menzoberranzan (156 mi) and -Blingdenstone (180 mi) are route summaries the map
+  // never walks (use-travel.ts routeBetween, is_road only). On the painted roads both cities start the same way, at
+  // road-15: Velkynvelve > 15 > 17 > 21 > 22 > 18 > 20 > 23 > Blingdenstone, and on from 23 > 25 > 29 > Menzoberranzan.
+  // Sam, 2026-11-13 ("go"): the north passage opens road-15. It used to list the two cities, which no player map had
+  // discovered, so a party that got off the bridge reached the map with no road offered and could go nowhere.
+  north: { name: "The north passage", biome: "tunnels", proposed: false, roads: ["road-15"] },
 }
 
 export interface WalkArrival {

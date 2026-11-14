@@ -79,15 +79,14 @@ describe("the nodal side — which roads a way out opens on the travel map (Sam'
     expect(parseWalkHandoff("?via=wastes&roads=road-21")!.roads).toEqual([])
     expect(parseWalkHandoff("?via=wastes&roads=")!.roads).toEqual(["road-10"])
   })
-  it("the north passage opens the two long routes, and only the cities the map already knows (Sam, 2026-11-10)", () => {
-    const MENZO = { id: "mz", node_key: "menzoberranzan", metadata: { map_x: 1435, map_y: 685 } }
-    const BLING = { id: "bl", node_key: "blingdenstone", metadata: { map_x: 955, map_y: 585 } }
-    const book = [...withCaverns, { from_node_id: "v", to_node_id: "mz" }, { from_node_id: "v", to_node_id: "bl" }]
+  it("the north passage opens road-15, the painted road both long routes start on (Sam, 2026-11-13)", () => {
     const north = parseWalkHandoff("?from=velkynvelve&via=north&plate=tunnels")!
-    expect(north).toMatchObject({ via: "north", name: "The north passage", biome: "tunnels" })
-    expect(roadsOpenedBy(north, V, [...nodes, MENZO, BLING], book).map((r) => r.node.node_key)).toEqual(["menzoberranzan", "blingdenstone"])
-    expect(roadsOpenedBy(north, V, [...nodes, BLING], book).map((r) => r.node.node_key)).toEqual(["blingdenstone"])
-    expect(roadsOpenedBy(north, V, nodes, book)).toEqual([])
+    expect(north).toMatchObject({ via: "north", name: "The north passage", biome: "tunnels", roads: ["road-15"] })
+    expect(roadsOpenedBy(north, V, nodes, withCaverns).map((r) => r.node.node_key)).toEqual(["road-15"])
+    // never the cities themselves: their Velkynvelve edges are book-distance summaries the march does not walk
+    const MENZO = { id: "mz", node_key: "menzoberranzan", metadata: { map_x: 1435, map_y: 685 } }
+    const book = [...withCaverns, { from_node_id: "v", to_node_id: "mz" }]
+    expect(roadsOpenedBy(north, V, [...nodes, MENZO], book).map((r) => r.node.node_key)).toEqual(["road-15"])
   })
   it("each road is named by where it lies from the outpost, not by an invented place-name", () => {
     expect(roadsOpenedBy(arrival("tunnels"), V, nodes, withCaverns).map((r) => r.heading)).toEqual(["south-west", "south-west", "south-east"])
