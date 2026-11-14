@@ -404,6 +404,19 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .btns.loot .btn[disabled]{opacity:.55;cursor:default}
 #objBtns .btn[disabled]{opacity:.5;cursor:default;filter:saturate(.4)}   /* a row a rule refuses: shown, with its reason, not pressable */
 .lootPx{width:24px;height:24px;image-rendering:pixelated;flex:none}
+/* one card for a find: what the item is, above its take (lootInfo) */
+.lootInfo{display:grid;gap:6px;margin-top:4px;padding:10px 12px;border:1px solid var(--rule);border-left:3px solid var(--ink-dim);border-radius:6px;background:rgba(0,0,0,.28);font-size:13px;line-height:1.4;text-align:left}
+.lootInfo.r-uncommon{border-left-color:#5fd068}.lootInfo.r-rare{border-left-color:#4fa3ff}.lootInfo.r-very_rare{border-left-color:#b46cff}.lootInfo.r-legendary,.lootInfo.r-artifact{border-left-color:#ff9a2e}
+.lootInfo .li-head{display:flex;align-items:center;gap:10px}
+.lootInfo .li-head img{width:32px;height:32px;image-rendering:pixelated;flex:none}
+.lootInfo .li-head b{display:block;font-family:var(--face-display);font-size:16px;font-weight:600}
+.lootInfo .li-head small{display:block;color:var(--ink-dim);font-size:12px}
+.lootInfo .li-dmg b{font-size:15px}
+.lootInfo .li-fact{display:flex;gap:6px;align-items:flex-start}.lootInfo .li-fact i{font-style:normal;opacity:.6;flex:none}.lootInfo .li-fact.dim{opacity:.7;font-style:italic}
+.lootInfo .li-chk{font:inherit;display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:auto auto;column-gap:8px;align-items:center;text-align:left;background:transparent;color:var(--ink);border:1px solid #2f5f8f;border-left:3px solid #4fa3ff;border-radius:5px;padding:6px 10px;cursor:pointer}
+.lootInfo .li-chk .ab{grid-row:1/3;font-size:10px;font-weight:700;letter-spacing:.06em;color:#4fa3ff;border:1px solid #4fa3ff;border-radius:3px;padding:1px 4px}
+.lootInfo .li-chk small{grid-column:2;color:var(--ink-dim);font-size:11px}.lootInfo .li-chk em{grid-row:1/3;grid-column:3;font-style:normal;font-weight:700}
+.lootInfo .li-res{font-size:12px;padding:4px 8px;border-radius:4px}.lootInfo .li-res.ok{color:#7fdc8a;background:rgba(80,180,90,.12)}.lootInfo .li-res.no{color:#e88;background:rgba(200,80,80,.12)}
 .lootRar{margin-left:auto;padding-left:10px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.9;flex:none}
 .lootDm{display:grid;gap:6px;font-size:12px}
 .lootRow{display:grid;gap:3px}
@@ -5119,13 +5132,14 @@ async function openLoot(id, title, opts = {}){
       if (row.pixel){ const im = document.createElement("img"); im.src = ITEM_PX + row.pixel; im.alt = ""; im.className = "lootPx"; b.prepend(im); }
       continue;
     }
+    const info = !row.missing && row.kind !== "preview-stash" ? lootInfo(box, row, who) : null;   // what it is, above the take (below)
     const b = add(row.missing ? `${lootLabel(row)} · not in the catalogue yet` : row.kind === "preview-stash" ? row.name : `Take: ${lootLabel(row)}`,
       async () => { b.disabled = true; if (await takeLoot(who, id, row)){ close(); offerEquip(() => openLoot(id, title, opts)); } else b.disabled = false; }, "", !!row.missing);
     if (row.pixel){ const im = document.createElement("img"); im.src = ITEM_PX + row.pixel; im.alt = ""; im.className = "lootPx"; b.prepend(im); }
     const rar = row.missing || row.kind === "preview-stash" ? "common" : rarityOf(row);
     if (RARITY_RANK[rar] >= 1){ const col = RARITY_COL[rar]; b.style.color = col; b.style.borderColor = col; b.style.boxShadow = `inset 3px 0 0 ${col}`;
       const tag = document.createElement("span"); tag.className = "lootRar"; tag.textContent = RARITY_LABEL[rar]; b.appendChild(tag); }
-    if (!row.missing && row.kind !== "preview-stash") icardBind(b, () => ({kind: "loot", row, slug: row.slug, name: row.name, onTake: () => b.click()}));   // the item card
+    if (info) info.classList.add("r-" + rar);
   }
   if (can.length > 1) add("Take all", async () => {
     for (const b of box.querySelectorAll("button")) b.disabled = true;
@@ -5135,6 +5149,52 @@ async function openLoot(id, title, opts = {}){
   if (opts.extra) for (const [label, fn] of opts.extra) add(label, () => { close(); fn(); });
   add("Leave it", close);
   box.querySelector("button:not([disabled])")?.focus();
+}
+// ----- ONE CARD FOR A FIND (Sam, 2026-11-13: "This is redundant; suggest something better" … "Go and build the merged
+// card. We don't need the side card but we do want to incorporate it maybe when examining it in the inventory.") -----
+// A loot card used to list the take buttons and float the item card beside it on hover, so a find was read twice and
+// had two Take buttons. What the side card told you now sits in the loot card itself, above each take: the item, its
+// type and rarity, weight and value, the damage of a weapon, WHAT YOU KNOW, and the out-of-combat checks, rolled here
+// by the leader with their own bonus (the same once-per-hero rolls as the item card: icardRoll). The side card stays
+// for the inventory (and for loot on the floor). Read off the same catalogue row and the same lore rules as the card.
+function lootInfo(box, row, who){
+  const el = document.createElement("div"); el.className = "lootInfo"; box.appendChild(el);
+  const draw = () => {
+    const it = icardItem({slug: row.slug, name: row.name, pixel: row.pixel}), p = it.properties || {}, slug = it.slug || row.slug || null;
+    const known = icardKnown(slug), view = loreView(it, known), rar = loreRarity(it);
+    const weaponish = isWeapon(it) || !!p.damage, base = baseWeapon(it);
+    const type = weaponish ? `Weapon${base ? ` (${base})` : ""}` : (it.item_type ? it.item_type.replace(/^./, c => c.toUpperCase()) : "Item");
+    const rarName = rar === "very_rare" ? "Very Rare" : rar.replace(/^./, c => c.toUpperCase());
+    const pic = it.pixel_icon_url ? ITEM_PX + it.pixel_icon_url : row.pixel ? ITEM_PX + row.pixel : it.icon_url || "";
+    const sub = [type, rarName, Number(it.weight) > 0 ? `${+it.weight} lb` : "", Number(it.value) > 0 ? `${it.value} gp` : ""].filter(Boolean);
+    let h = `<div class="li-head">${pic ? `<img src="${esc(pic)}" alt="">` : ""}<div><b>${esc(it.name || row.name)}</b>`
+      + `<small>${esc(sub.join(" · "))}${view.magic ? ` · ${view.identified ? "identified" : "unidentified"}` : ""}</small></div></div>`;
+    if (weaponish && p.damage){ const bon = view.bonusKnown ? Number(p.damage_bonus ?? p.bonus ?? 0) : 0, die = String(p.damage).match(/^\s*(\d+d\d+|\d+)/);
+      h += `<div class="li-dmg"><b>${esc(die ? die[1] : p.damage)}${bon ? ` + ${bon}` : ""}</b> ${esc(p.damage_type || "")}${(p.weapon_properties || []).length ? ` · ${esc(p.weapon_properties.join(", "))}` : ""}</div>`; }
+    const lines = [...(view.description ? [view.description] : []), ...view.facts];
+    for (const l of lines) h += `<div class="li-fact"><i aria-hidden="true">◆</i><span>${esc(l)}</span></div>`;
+    if (view.magic && !view.identified) h += `<div class="li-fact dim"><i aria-hidden="true">◆</i><span>Carry it and study it through a short rest to learn what it is.</span></div>`;
+    // the checks: out of a fight, rolled by the hero at the card (the leader, or the first hero this screen controls)
+    const rollers = icardRollers(), a = rollers.includes(who) ? who : rollers[0], sh = a && SHEETS[a.id];
+    const checks = !inFightNow() && slug && sh ? loreChecks(it, known) : [];
+    for (const c of checks){
+      const m = loreMod(sh, c); if (!m) continue;
+      const tool = c.tools && m.level === "Tool" ? c.tools.find(x => typeof (sh.tools || {})[x] === "number") : null;
+      const what = tool ? LORE_TOOLS[tool] : (c.skill || "").replace(/^./, x => x.toUpperCase());
+      const rec = (known.r || {})[`${c.key}:${a.id}`];
+      if (rec){ const [d, tot, ok] = rec; h += `<div class="li-res ${ok ? "ok" : "no"}">${esc(fname(a))}, ${esc(c.label.toLowerCase())}: d20 ${d} ${icardFmt(m.mod)} = ${tot} vs DC ${c.dc}, ${ok ? "success" : "fail"}.${ok ? "" : " Nothing you can make out."}</div>`; continue; }
+      h += `<button type="button" class="li-chk" data-check="${esc(c.key)}"><span class="ab">${tool ? "TOOL" : "INT"}</span><b>${esc(c.label)}</b><small>${esc(fname(a))} · ${esc(what)} · DC ${c.dc}</small><em>${icardFmt(m.mod)}</em></button>`;
+    }
+    el.innerHTML = h;
+    el.querySelectorAll("[data-check]").forEach(btn => btn.onclick = () => {
+      // icardRoll rolls for ICARD.who and repaints the item card: aim it at this hero, keep the side card out of it
+      const keep = ICARD.target; ICARD.who = a; ICARD.target = null;
+      icardRoll(it, checks.find(c => c.key === btn.dataset.check));
+      ICARD.target = keep; draw();
+    });
+  };
+  draw();
+  return el;
 }
 // ----- THE ITEM CARD -----
 // Sam, 2026-10-27: "Hovering over loot should create an effect like this" (a Diablo item card), then, from the canvas
