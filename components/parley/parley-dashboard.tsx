@@ -59,6 +59,7 @@ import { useCampVerdict } from "@/lib/hooks/use-camp-verdict"
 import { characterStageStyle, npcWindowStyle, type StageFramingRow } from "@/lib/stage-framing"
 import type { Character, EquipmentItem, InventoryItem } from "@/lib/types/database"
 import { EndGameButton } from "@/components/end-game-button"
+import type { RollRequestSpec } from "@/lib/roll-requests"
 
 /** The maps the DM can jump to from the Maps button (Sam, 2026-10-28: "DM button activated should allow me
  *  to open the MAP button and see the maps available"). Velkynvelve takes the walk's own href so a sandbox
@@ -291,6 +292,9 @@ type NpcEncounter = {
 // True when a media URL is a video loop (idle/talking uploads are MP4/WebM).
 
 interface ParleyDashboardProps {
+  /** The roll Malachar is waiting on, and where it stands (app/page.tsx). Draws the check card on the one-stage screen. */
+  rollRequest?: RollRequestSpec | null
+  rollLifecycle?: "idle" | "pending" | "resolving" | "committed" | "retry"
   environment: {
     name: string
     region: string
@@ -460,6 +464,17 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
   // the camp UI; we need to go to the dashboard UI"): the full dashboard, with the partner holding the
   // NPC window and a way back to the map in its header.
   const narrowTalk = talkMode && props.talkFrom !== "map"
+  // ONE STAGE (Sam, 2026-11-13, his "Looks Good" on the revamp boards): one
+  // speaker fills the stage, their line and your replies sit beside the
+  // portrait, and everything else folds away. The Malachar audience and the
+  // narrow camp talk keep their own layouts. NEXT_PUBLIC_PARLEY=classic
+  // restores the three-column screen.
+  const one = !props.audience && !narrowTalk && process.env.NEXT_PUBLIC_PARLEY !== "classic"
+  const [foldOpen, setFoldOpen] = useState(false)
+  const oneRef = useRef(one)
+  oneRef.current = one
+  // Leaving for the map says why first (board 5): a banner, then the screen changes.
+  const [pullBanner, setPullBanner] = useState<string | null>(null)
   // Read from the realtime listener and the cue handler, which are bound once.
   const talkModeRef = useRef(talkMode)
   talkModeRef.current = talkMode
@@ -1031,7 +1046,10 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
         const pull = (j.world?.state as { pull?: Parameters<typeof shouldFollowPull>[0] } | undefined)?.pull ?? null
         if (shouldFollowPull(pull, { seen: pullSeenRef.current, dm: whoAmIRef.current.dm, hero: whoAmIRef.current.hero, now })) {
           pullSeenRef.current = (pull as { seq?: string } | null)?.seq ?? null
-          window.location.href = "/velkynvelve"
+          if (oneRef.current) {
+            setPullBanner(((pull as { why?: string } | null)?.why || "Something is happening").trim())
+            window.setTimeout(() => { window.location.href = "/velkynvelve" }, 1400)
+          } else window.location.href = "/velkynvelve"
           return
         }
         const seats = Object.values(j.world?.seats ?? {}).filter((s) => isOnline(s, now))
@@ -1124,7 +1142,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
   const portraitSrc = selected?.portrait_image_url || selected?.avatar_image_url || null
 
   // TALK TO MALACHAR: the thread is the hero and the DM, nobody else's lines, and it is always open.
-  const logMini = interactiveLogMinimized && !props.audience
+  const logMini = interactiveLogMinimized && !props.audience && !one
   const shownLines = props.audience ? displayedDialogue.filter((entry) => classifySpeaker(entry.speaker) === "dm" || (!!selected?.name && entry.speaker.toLowerCase() === selected.name.toLowerCase())) : displayedDialogue
   const sayBox = (
       <div className="p-panel p-say">
@@ -1134,8 +1152,66 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
       </div>
   )
 
-  return <main style={talkPlate && narrowTalk ? { backgroundImage: `linear-gradient(#050403b3, #050403e6), url(${talkPlate})`, backgroundSize: "cover", backgroundPosition: "51% 64%" } : undefined} className={cn("parley aop-lich-dashboard min-h-0 flex-1 overflow-y-auto", narrowTalk && "narrow", props.audience && "audience")}>
+  // ---- pieces shared by the classic strip and the one-stage screen ----
+  const campControl = (campVerdict?.allowed ?? true) ? (
+          <div className="p-tags bl"><StageLink href="/camp" caption="Camp at the Fire" title={campVerdict?.reason ?? "Make camp."} className="p-slab sm" style={{ ["--c1" as string]: "#b8752a", ["--c2" as string]: "#5a3210" } as CSSProperties}>🔥 Camp</StageLink></div>
+        ) : (
+          <div className="p-tags bl"><button type="button" aria-disabled="true" title={campVerdict?.reason} onClick={() => setCampNote((note) => (note ? null : campVerdict?.reason ?? null))} className="p-slab dark sm" style={{ opacity: .6 }}>🔥 Camp</button>{campNote ? <span role="status" className="p-slab dark sm" style={{ whiteSpace: "normal", maxWidth: 260, fontWeight: 500 }}>{campNote}</span> : null}</div>
+        )
+  const toggles = <>
+        {props.onToggleVoices ? <button type="button" className={cn("p-slab p-tog", props.voicesOn && "on")} data-tog="voices" onClick={props.onToggleVoices} aria-pressed={!!props.voicesOn} title={props.voicesOn ? "Voices on — click to mute Malachar and the NPCs" : "Voices off"}><i />Voices</button> : null}
+        <button type="button" className={cn("p-slab p-tog", musicOn && "on")} data-tog="music" onClick={() => setMusicOff(musicOn)} aria-pressed={musicOn} title={musicOn ? "Music on — click to mute" : "Music off"}><i />Music</button>
+        <button type="button" className={cn("p-slab p-tog", cinematicsOn && "on")} data-tog="cinematics" onClick={toggleCinematics} aria-pressed={cinematicsOn} title={cinematicsOn ? "Cinematics play when you look around" : "Cinematics off"}><i />Cinematics</button>
+  </>
+  const rollButtons = <>
+        <button type="button" className="p-slab green p-roll" onClick={() => setDiceOpen(true)} title="Open the dice tray"><img className="p-roll-die" src="/parley/roll-d20.webp" alt="" aria-hidden="true" /><span>Roll</span></button>
+        {props.dmMode ? <button type="button" disabled={diceBusy} onClick={() => void rollInitiative()} className="p-slab dark sm" title="Roll initiative with physics and report the result">{diceBusy ? "Rolling…" : `Initiative ${signed(displayedInitiative)}`}</button> : null}
+  </>
+  const addressCycler = !props.audience && props.onAddressPick ? <span className={cn("p-slab p-cycler", addressCurrent?.dm && "dm")} title="Who hears what you type">
+          <button type="button" className="p-slab p-arrow" onClick={() => cycleAddress(-1)} aria-label="Previous">◀</button>
+          <span className="p-mid"><small>Talking to</small><b>{addressCurrent?.label}</b><em>{addressCurrent?.sub}</em></span>
+          <button type="button" className="p-slab p-arrow" onClick={() => cycleAddress(1)} aria-label="Next">▶</button>
+        </span> : null
+  const sayChips = (
+        <span className="p-chips" hidden={!!props.audience}>
+          <small className="p-saylbl">SAY</small>
+          <SuggestionChips
+            variant="parley"
+            character={livePlayers.length && selected?.is_player ? selected : undefined}
+            dialogue={dialogue}
+            inventory={props.inventory}
+            location={props.environment.name}
+            talkWith={talkPartner?.kind === "npc" ? talkPartner.npc.name : talkPartner?.kind === "player" ? talkPartner.player.name : null}
+            onStage={shownNpc?.name ?? null}
+            fallback={quickReplies}
+            disabled={!!props.isThinking}
+            onPick={(text, isObserve) => {
+              // The action always reaches Malachar. The cinematic rides along on
+              // top of it the first time, so a look that has no film left still
+              // reads as a normal look rather than a dead button.
+              props.onQuickReply?.(text)
+              if (isObserve && cinematicsOn) void playSceneCinematic()
+            }}
+          />
+        </span>
+  )
+  // The line on the stage: the last thing anyone but a hero said. In a talk
+  // that is the NPC (or Malachar giving a check its result); otherwise it is
+  // the narration.
+  const stageLine = one ? ([...displayedDialogue].reverse().find((entry) => entry.speaker !== "System" && entry.speaker !== "Combat" && classifySpeaker(entry.speaker) !== "player") ?? null) : null
+  const stageLineDm = stageLine ? classifySpeaker(stageLine.speaker) === "dm" : false
+  // THE LICH IS ANIMATED HERE TOO (Sam, 2026-11-13: "the lich should also is animated"): when Malachar holds
+  // the stage — he is speaking, or his narration is the line showing and nobody else has taken the floor — the
+  // frame plays the same cartoon lich and mood loops as the Talk to Malachar screen, on every seat.
+  const stageLich = one && (lichShown || (stageLineDm && !talkMode && !speakingNpc && !speakingPlayer))
+  // A CHECK IS CALLED (board 2): the reply rows give way to the check card until the roll is in.
+  const checkCall = one && props.rollRequest && props.rollLifecycle && props.rollLifecycle !== "idle" ? props.rollRequest : null
+  const checkTitle = checkCall ? (checkCall.skill ? `${checkCall.skill.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())} check` : "Malachar calls for a roll") : ""
+  const checkStatus = props.rollLifecycle === "resolving" ? "Reading the dice…" : props.rollLifecycle === "committed" ? "The roll is in. Malachar answers…" : props.rollLifecycle === "retry" ? `That was not the roll he asked for. Roll ${checkCall?.expression ?? ""}.` : null
+
+  return <main style={talkPlate && narrowTalk ? { backgroundImage: `linear-gradient(#050403b3, #050403e6), url(${talkPlate})`, backgroundSize: "cover", backgroundPosition: "51% 64%" } : undefined} className={cn("parley aop-lich-dashboard min-h-0 flex-1 overflow-y-auto", narrowTalk && "narrow", props.audience && "audience", one && "one")}>
     <TimeStoppedBanner stopped={Boolean(props.timeStopped)} isDm={Boolean(props.dmMode)} />
+    {pullBanner ? <div className="p-pull" role="status"><b>{pullBanner}</b><span>Back to the map</span></div> : null}
 
     {/* ---------- top bar ---------- */}
     <div className="p-raised p-top">
@@ -1145,10 +1221,13 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
         <div className="p-where truncate">{props.environment.region} · {props.environment.timeOfDay}{talkMode ? (props.talkFrom === "map" ? " · talking in Velkynvelve" : " · talking by the fire") : ""}{inCombat ? " · steel is out" : ""}</div>
       </div>
       <div className="p-sp" />
+      {one ? <button type="button" className="p-slab dark p-foldbtn" aria-haspopup="menu" onClick={() => setFoldOpen((v) => !v)} aria-expanded={foldOpen} title="Sound, the journal, camp and the rest">Settings</button> : null}
+      <div className={cn("p-fold", one && "p-panel", foldOpen && "open")}>
+      {one ? <>{toggles}{campControl}</> : null}
       {props.dmScreen ? props.dmControls : null}
       <span className="p-slab green" title={inCombat ? "A fight is live on the map" : "The hour, as the DM keeps it"}><img className="p-ico" src="/images/parley/time.png" alt="" />{props.environment.timeOfDay} · {inCombat ? "round live" : "round —"}</span>
       <span style={{ position: "relative" }}>
-        <button type="button" className="p-slab blue" onClick={() => setMusicPop((v) => !v)} aria-expanded={musicPop} title="Music and voice controls"><img className="p-ico" src="/images/parley/music.png" alt="" />Music</button>
+        <button type="button" className="p-slab blue" onClick={() => setMusicPop((v) => !v)} aria-expanded={musicPop} title="Music and voice controls"><img className="p-ico" src="/images/parley/music.png" alt="" />{one ? "Sound controls" : "Music"}</button>
         {musicPop && props.audioSlot ? <div className="p-panel p-music-pop">{props.audioSlot}</div> : null}
       </span>
       {props.onJournal ? <button type="button" className="p-slab teal" onClick={props.onJournal} title="The campaign book"><img className="p-ico" src="/images/parley/journal.png" alt="" />Journal</button> : null}
@@ -1163,6 +1242,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
       {isDmView ? <EndGameButton /> : <EndGameButton asHost />}
       {props.dmScreen && props.onNpcs ? <button type="button" className="p-slab dark sm" onClick={props.onNpcs} title="NPC canon: faces, loops, voices">NPCs</button> : null}
       {props.onCompact ? <button type="button" className="p-slab dark sm" onClick={props.onCompact} title="The phone / camp layout">Phone</button> : null}
+      </div>
       <button type="button" className="p-slab gold" onClick={goBack} title={talkMode ? (props.talkFrom === "map" ? "Back to the map" : "Back to camp") : "Back to the Underwalk map"}><img className="p-ico" src="/velkynvelve-walk/icons/bar/jump.png" alt="" />Return<span className="p-key">M</span></button>
     </div>
 
@@ -1176,15 +1256,11 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
           <span className="p-slab blue sm" title="Time of day in the room">◐ {roomTag}</span>
           {inCombat ? <span className="p-slab red sm" title="A hostile is in the room">⚔ Hostile territory</span> : props.timeStopped ? <span className="p-slab violet sm">⌛ Time stopped</span> : <span className="p-slab dark sm">Quiet</span>}
         </div>
-        {(campVerdict?.allowed ?? true) ? (
-          <div className="p-tags bl"><StageLink href="/camp" caption="Camp at the Fire" title={campVerdict?.reason ?? "Make camp."} className="p-slab sm" style={{ ["--c1" as string]: "#b8752a", ["--c2" as string]: "#5a3210" } as CSSProperties}>🔥 Camp</StageLink></div>
-        ) : (
-          <div className="p-tags bl"><button type="button" aria-disabled="true" title={campVerdict?.reason} onClick={() => setCampNote((note) => (note ? null : campVerdict?.reason ?? null))} className="p-slab dark sm" style={{ opacity: .6 }}>🔥 Camp</button>{campNote ? <span role="status" className="p-slab dark sm" style={{ whiteSpace: "normal", maxWidth: 260, fontWeight: 500 }}>{campNote}</span> : null}</div>
-        )}
+        {one ? null : campControl}
       </div>
 
       <div className={cn("p-log", logMini ? "p-raised mini" : "p-panel")} onClick={logMini ? () => setInteractiveLogMinimized(false) : undefined} role={logMini ? "button" : undefined} title={logMini ? "Open the full log" : undefined}>
-        <div className="p-loghead"><span className="p-lbl">{props.audience ? "You and Malachar" : "Interactive Log"}</span><button type="button" className="p-slab sm" style={{ ["--c1" as string]: "#b8252a", ["--c2" as string]: "#5a0e12" } as CSSProperties} onClick={(e) => { e.stopPropagation(); setInteractiveLogMinimized((v) => !v) }} aria-expanded={!logMini}>{logMini ? "⤢ Show all" : "⤡ Latest only"}</button></div>
+        <div className="p-loghead"><span className="p-lbl">{props.audience ? "You and Malachar" : one ? (talkMode ? "The talk so far" : "The story so far") : "Interactive Log"}</span><button type="button" className="p-slab sm" style={{ ["--c1" as string]: "#b8252a", ["--c2" as string]: "#5a0e12" } as CSSProperties} onClick={(e) => { e.stopPropagation(); setInteractiveLogMinimized((v) => !v) }} aria-expanded={!logMini}>{logMini ? "⤢ Show all" : "⤡ Latest only"}</button></div>
         <div className="p-filters">{["All", "Narration", "Dialogue", "Combat", "System"].map((filter) => <button key={filter} type="button" onClick={() => setLogFilter(filter)} className={cn("p-slab sm", logFilter === filter ? "gold" : "dark")}>{filter}</button>)}</div>
         <div className="p-lines">
           {shownLines.length === 0 ? <p className="p-thinking" style={{ animation: "none", color: "#6f6380" }}>{props.audience ? "He is listening. Say something." : "The log is empty. Malachar is waiting."}</p> : null}
@@ -1203,7 +1279,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
         </div>
       </div>
 
-      {props.audience ? null : sayBox}
+      {props.audience || one ? null : sayBox}
     </div>
 
     {/* ---------- centre: the one you're speaking to, then you ---------- */}
@@ -1211,27 +1287,56 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
       <div className="p-scene" data-npc-window>
         {props.audience ? <MalacharAudience speaking={floor?.rank === "dm"} /> : null}
         {stageBackdrop ? (<><img className="p-plate" src={stageBackdrop} alt="" aria-hidden style={talkPlate ? { objectPosition: "51% 64%" } : undefined} /><div className="p-vignette" /></>) : null}
+        <div className={cn("p-frame", stageLich && "lich")}>
         {npcPortrait ? (isVideoUrl(npcPortrait)
           ? <video key={npcPortrait} src={npcPortrait} autoPlay loop muted playsInline style={npcFrame} className={cn("absolute inset-0 h-full w-full object-contain object-top transition-opacity duration-500", lichShown && "opacity-0")} />
           : <img src={npcPortrait} alt={npcName} style={npcFrame} className={cn("aop-npc-still absolute inset-0 h-full w-full object-contain object-top transition-opacity duration-500", lichShown && "opacity-0")} />)
           : <div className={cn("p-note", lichShown && "opacity-0")}>{onStage ? "Portrait loads from NPC canon" : "The stage is empty"}</div>}
-        {props.dmScreen ? <video src={LICH_TALKING_LOOP} autoPlay loop muted playsInline preload="auto" aria-hidden className={cn("pointer-events-none absolute inset-0 h-full w-full object-contain object-bottom transition-opacity duration-500", lichShown ? "opacity-100" : "opacity-0")} /> : null}
+        {stageLich ? <MalacharAudience speaking={floor?.rank === "dm"} /> : null}
+        {props.dmScreen && !one ? <video src={LICH_TALKING_LOOP} autoPlay loop muted playsInline preload="auto" aria-hidden className={cn("pointer-events-none absolute inset-0 h-full w-full object-contain object-bottom transition-opacity duration-500", lichShown ? "opacity-100" : "opacity-0")} /> : null}
+        </div>
         <div className="p-card">
           <div className="p-face">{lichShown ? "M" : (shownNpc?.face_url && !speakingPlayer) ? <img src={shownNpc.face_url} alt="" /> : (npcName.trim()[0] ?? "?").toUpperCase()}</div>
-          <div className="min-w-0"><b>{lichShown ? "Malachar" : npcName}</b><small>{lichShown ? "The Lich" : speakingPlayer ? `Level ${speakingPlayer.level} ${speakingPlayer.class}` : onStage ? (lastNpcLine ? `“${lastNpcLine}”` : shownNpc?.description || "Present in the scene") : "No one has stepped forward yet"}</small></div>
+          <div className="min-w-0"><b>{lichShown || stageLich ? "Malachar" : npcName}</b><small>{lichShown ? "The Lich" : speakingPlayer ? `Level ${speakingPlayer.level} ${speakingPlayer.class}` : onStage ? (lastNpcLine ? `“${lastNpcLine}”` : shownNpc?.description || "Present in the scene") : "No one has stepped forward yet"}</small></div>
         </div>
         <div className="p-tags tr">
-          <span className={cn("p-slab sm", speakingNpc || lichShown ? "gold" : "dark")}>{lichShown ? <span className="p-speak">Malachar speaks <span className="p-eq">▮▮▯▯</span></span> : speakingNpc ? <span className="p-speak">Speaking <span className="p-eq">▮▮▯▯</span></span> : onStage ? "Silent" : "Awaiting an entrance"}</span>
+          <span className={cn("p-slab sm", speakingNpc || lichShown ? "gold" : "dark")}>{lichShown ? <span className="p-speak">Malachar speaks <span className="p-eq">▮▮▯▯</span></span> : speakingNpc ? <span className="p-speak">Speaking <span className="p-eq">▮▮▯▯</span></span> : stageLich ? "The Dungeon Master" : onStage ? "Silent" : "Awaiting an entrance"}</span>
         </div>
-        {onStage && !lichShown ? <div className="p-tags br">
+        {onStage && !lichShown && !stageLich ? <div className="p-tags br">
           {props.claimLocked ? null : activeNpc?.disposition ? <span className="p-slab dark sm" title="Disposition">{activeNpc.disposition}</span> : null}
           {activeNpc?.challenge_rating ? <span className="p-slab red sm" title="Challenge rating">CR {activeNpc.challenge_rating}</span> : null}
           {typeof activeNpc?.hp_current === "number" && typeof activeNpc?.hp_max === "number" && activeNpc.hp_max > 0 && !props.claimLocked ? <span className="p-slab dark sm" title="Health · DM only">♥ {activeNpc.hp_current} / {activeNpc.hp_max}</span> : null}
         </div> : null}
         <div className="p-narr">
-          {talkMode ? <button type="button" onClick={props.onEndTalk} className="p-slab dark sm"><X className="h-3 w-3" />{props.talkFrom === "map" ? "Back to the map" : "Back to camp"}</button> : null}
+          {talkMode ? <button type="button" onClick={props.onEndTalk} className="p-slab dark sm"><X className="h-3 w-3" />{props.talkFrom === "map" ? (one ? "Leave it there — back to the map" : "Back to the map") : "Back to camp"}</button> : null}
           <DmNarration showControls={isDmView} dialogue={heardDialogue} audience={narrationAudience} npcs={talkVoices.npcs} players={talkVoices.players.map((c) => ({ id: c.id, name: c.name, voice_id: c.voice_id ?? null, voice_description: c.voice_description ?? null }))} onSpeakingChange={(npc) => setSpeakingNpc(npc ? { id: npc.id, name: npc.name } : null)} />
         </div>
+        {one ? <div className="p-talk">
+          <div className={cn("p-linebox", stageLineDm && "dm")}>
+            <small>{stageLine ? stageLine.speaker : lichShown ? "Malachar" : onStage ? npcName : props.environment.name}</small>
+            {stageLine
+              ? <p className={followsLang(stageLine.lang) ? undefined : "foreign"}>{stageLine.text}</p>
+              : <p className="quiet">{lastNpcLine ? `“${lastNpcLine}”` : onStage ? "They are waiting for you to speak." : "Nobody has spoken yet."}</p>}
+            {props.isThinking ? <p className="p-thinking">Malachar is considering your suffering…</p> : null}
+          </div>
+          <div className="p-reply">
+            {checkCall ? <div className="p-check" role="group" aria-label={checkTitle}>
+              <img src="/parley/roll-d20.webp" alt="" aria-hidden="true" />
+              <div className="p-checkbody">
+                <b>{checkTitle}</b>
+                <div className="p-checktags"><span>{checkCall.expression}</span><span>{selected?.name ?? "You"} rolls</span></div>
+                {checkCall.purpose ? <p>{checkCall.purpose}</p> : null}
+                <button type="button" data-tick="window" className="p-slab green p-checkroll" disabled={props.rollLifecycle === "resolving" || props.rollLifecycle === "committed"} onClick={() => setDiceOpen(true)}>Roll</button>
+                {checkStatus ? <small role="status">{checkStatus}</small> : null}
+              </div>
+            </div> : <>
+              <small className="p-replylbl">{talkMode ? "Your reply" : "You might say"}</small>
+              {sayChips}
+              <div className="p-replyrow">{talkMode ? null : addressCycler}{sayBox}</div>
+            </>}
+            <div className="p-replyfoot">{checkCall ? null : rollButtons}</div>
+          </div>
+        </div> : null}
       </div>
 
       <div className="p-scene" data-stage-window>
@@ -1285,44 +1390,17 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
     </div>
 
     {/* ---------- the strip: who you're talking to, what you might say, the dice ---------- */}
-    <div className={cn("p-panel p-hot", narrowTalk && "hidden")}>
+    {one ? null : <div className={cn("p-panel p-hot", narrowTalk && "hidden")}>
       <div className="p-groups">
         {props.audience ? <><span className="p-slab p-cycler dm" title="Every line here goes to the Dungeon Master"><span className="p-mid"><small>Talking to</small><b>Malachar</b><em>The Dungeon Master</em></span></span>{sayBox}</> : null}
-        {!props.audience && props.onAddressPick ? <span className={cn("p-slab p-cycler", addressCurrent?.dm && "dm")} title="Who hears what you type">
-          <button type="button" className="p-slab p-arrow" onClick={() => cycleAddress(-1)} aria-label="Previous">◀</button>
-          <span className="p-mid"><small>Talking to</small><b>{addressCurrent?.label}</b><em>{addressCurrent?.sub}</em></span>
-          <button type="button" className="p-slab p-arrow" onClick={() => cycleAddress(1)} aria-label="Next">▶</button>
-        </span> : null}
-        <span className="p-chips" hidden={!!props.audience}>
-          <small className="p-saylbl">SAY</small>
-          <SuggestionChips
-            variant="parley"
-            character={livePlayers.length && selected?.is_player ? selected : undefined}
-            dialogue={dialogue}
-            inventory={props.inventory}
-            location={props.environment.name}
-            talkWith={talkPartner?.kind === "npc" ? talkPartner.npc.name : talkPartner?.kind === "player" ? talkPartner.player.name : null}
-            onStage={shownNpc?.name ?? null}
-            fallback={quickReplies}
-            disabled={!!props.isThinking}
-            onPick={(text, isObserve) => {
-              // The action always reaches Malachar. The cinematic rides along on
-              // top of it the first time, so a look that has no film left still
-              // reads as a normal look rather than a dead button.
-              props.onQuickReply?.(text)
-              if (isObserve && cinematicsOn) void playSceneCinematic()
-            }}
-          />
-        </span>
+        {addressCycler}
+        {sayChips}
       </div>
       <div className="p-tail">
-        {props.onToggleVoices ? <button type="button" className={cn("p-slab p-tog", props.voicesOn && "on")} data-tog="voices" onClick={props.onToggleVoices} aria-pressed={!!props.voicesOn} title={props.voicesOn ? "Voices on — click to mute Malachar and the NPCs" : "Voices off"}><i />Voices</button> : null}
-        <button type="button" className={cn("p-slab p-tog", musicOn && "on")} data-tog="music" onClick={() => setMusicOff(musicOn)} aria-pressed={musicOn} title={musicOn ? "Music on — click to mute" : "Music off"}><i />Music</button>
-        <button type="button" className={cn("p-slab p-tog", cinematicsOn && "on")} data-tog="cinematics" onClick={toggleCinematics} aria-pressed={cinematicsOn} title={cinematicsOn ? "Cinematics play when you look around" : "Cinematics off"}><i />Cinematics</button>
-        <button type="button" className="p-slab green p-roll" onClick={() => setDiceOpen(true)} title="Open the dice tray"><img className="p-roll-die" src="/parley/roll-d20.webp" alt="" aria-hidden="true" /><span>Roll</span></button>
-        {props.dmMode ? <button type="button" disabled={diceBusy} onClick={() => void rollInitiative()} className="p-slab dark sm" title="Roll initiative with physics and report the result">{diceBusy ? "Rolling…" : `Initiative ${signed(displayedInitiative)}`}</button> : null}
+        {toggles}
+        {rollButtons}
       </div>
-    </div>
+    </div>}
 
     {/* The music and voice players stay mounted (they hold the audio); the top-bar Music button shows them. */}
     {!musicPop && props.audioSlot ? <div className="p-audio-hidden" aria-hidden>{props.audioSlot}</div> : null}
