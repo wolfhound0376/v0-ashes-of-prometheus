@@ -112,6 +112,10 @@ const CEILING = {
   film: 150000,     // a hero film whose length the browser can't read
   laugh: 15000,
 } as const
+/** A voice clip that pauses on its own is given this long to resume before its beat moves on (ms). */
+const CLIP_PAUSE_GRACE_MS = 1500
+/** Slack past a voice clip's own length before its beat moves on without it (ms). */
+const CLIP_SLACK_MS = 3000
 const AUTO_ROLL_MS = 10000 // was 20 s (Sam, 2026-11-13: the faster awaken)
 const AUTO_DISMISS_MS = 7000
 /** After Skip: long enough to see the card and the dice, short enough that nobody reaches for the mouse. */
@@ -207,17 +211,47 @@ export default function AwakenPage() {
   const race = useCallback(<T,>(p: Promise<T>): Promise<T | void> => Promise.race([p, skipP.current]), [])
   const wait = useCallback((ms: number) => race(sleep(ms)), [race])
 
+  // A CLIP THAT STOPS ENDS ITS BEAT (Sam, 2026-11-13: "Still a long lull, why?"). Measured on his run: the dream
+  // voice-over stood paused at 4.9 s of 22 with the music still under it and no later clip loaded. Something outside
+  // the show paused it (not Skip: Skip would have rushed the roll), so "ended" never came and the beat sat out the
+  // flat 60 s ceiling on black once the crawl had scrolled away. Now an unasked-for pause ends the beat after a
+  // moment's grace (a stall that resumes carries on), and each clip's ceiling is its own length plus slack once the
+  // browser knows it, with the flat ceiling only for a clip whose length it can't read.
   const playClip = useCallback(async (src: string): Promise<void> => {
     const a = clip.current
     if (!a || dead.current || skipped.current) return
     a.src = src
     a.currentTime = 0
-    await race(within(new Promise<void>((res) => {
-      const done = () => { a.removeEventListener("ended", done); a.removeEventListener("error", done); res() }
-      a.addEventListener("ended", done)
-      a.addEventListener("error", done)
-      a.play().catch(done)
-    }), CEILING.clip))
+    let hold: number = CEILING.clip
+    let fire: (() => void) | null = null
+    const ends = new Promise<void>((res) => { fire = res })
+    let grace: number | null = null
+    const done = () => fire?.()
+    const paused = () => {
+      if (a.ended) return done()
+      if (grace) window.clearTimeout(grace)
+      grace = window.setTimeout(() => { if (a.paused) done() }, CLIP_PAUSE_GRACE_MS)
+    }
+    const sized = () => {
+      if (isFinite(a.duration) && a.duration > 0) {
+        hold = Math.min(CEILING.clip, (a.duration - a.currentTime) * 1000 + CLIP_SLACK_MS)
+        if (ceil) window.clearTimeout(ceil)
+        ceil = window.setTimeout(done, hold)
+      }
+    }
+    let ceil: number | null = window.setTimeout(done, hold)
+    a.addEventListener("ended", done)
+    a.addEventListener("error", done)
+    a.addEventListener("pause", paused)
+    a.addEventListener("loadedmetadata", sized)
+    if (a.readyState >= 1) sized()
+    a.play().catch(done)
+    try { await race(ends) } finally {
+      a.removeEventListener("ended", done); a.removeEventListener("error", done)
+      a.removeEventListener("pause", paused); a.removeEventListener("loadedmetadata", sized)
+      if (grace) window.clearTimeout(grace)
+      if (ceil) window.clearTimeout(ceil)
+    }
     if (skipped.current || !a.ended) { a.pause() }
   }, [race])
 
