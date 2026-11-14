@@ -3,7 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { npcCharacterId, npcKnowsName } from "@/lib/npc-acquaintance"
 import {
   FOUGHT_BESIDE, NO_STANDING, addressFor, applyDeltas, askLine, askNote, askOutcome, askerFor, chooseAsk,
-  importantSituation, isImportant, replyLine, type AskKind, type Offer, type Outcome, type Standing,
+  importantSituation, isImportant, replyLine, theftNote, theftOutcome, THEFT_OUTCOMES, type AskKind, type Offer, type Outcome, type Standing, type TheftOutcome,
 } from "@/lib/npc-asks"
 
 // /api/npc-ask — a prisoner asks a hero for something they carry (lib/npc-asks.ts has the rules and Sam's words).
@@ -119,6 +119,16 @@ export async function POST(req: NextRequest) {
         replies: { gave: replyLine(asker.temper, "gave"), refused: replyLine(asker.temper, "refused"), ignored: replyLine(asker.temper, "ignored") },
       },
     })
+  }
+
+  // CAUGHT WITH A HAND IN THEIR POCKET (Sam, 2026-11-13; lib/npc-asks.ts THEFT): what the catch did to how they feel.
+  if (action === "theft") {
+    const outcome = String(body?.outcome ?? "") as TheftOutcome
+    const itemName = clip(body?.itemName, 80)
+    if (!THEFT_OUTCOMES.includes(outcome) || !itemName) return NextResponse.json({ ok: false, error: "outcome and itemName required" }, { status: 400 })
+    const o = theftOutcome(outcome)
+    const r = await record(db, subject, hero.id, `theft-${outcome}`, o.gravity, o.deltas, theftNote(npcName, hero.name, outcome, itemName))
+    return NextResponse.json(r, { status: r.ok ? 200 : 500 })
   }
 
   if (action === "resolve") {

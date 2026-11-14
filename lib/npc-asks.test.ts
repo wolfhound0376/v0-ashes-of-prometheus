@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   ASKERS, GOLD_DEBT, NO_STANDING, PALLIATION, addressFor, applyDeltas, askLine, askOutcome, askerFor, chooseAsk,
-  isImportant, replyLine, type Standing,
+  isImportant, replyLine, theftNote, theftOutcome, THEFT_OUTCOMES, type Standing,
 } from "./npc-asks"
 
 const st = (p: Partial<Standing>): Standing => ({ ...NO_STANDING, ...p })
@@ -99,5 +99,32 @@ describe("what it does", () => {
   it("stays inside the table's -100..100", () => {
     expect(applyDeltas(st({ resentment: 99 }), { resentment: 5 }).resentment).toBe(100)
     expect(applyDeltas(st({ debt: -99 }), { debt: -8 }).debt).toBe(-100)
+  })
+})
+
+describe("caught with a hand in their pocket (Sam, 2026-11-13)", () => {
+  it("every way it ends costs something, and none of it is good news", () => {
+    for (const o of THEFT_OUTCOMES) {
+      const { gravity, deltas } = theftOutcome(o)
+      expect(gravity, o).toBeGreaterThan(0)
+      expect(deltas.trust!, o).toBeLessThan(0)
+      expect(deltas.resentment!, o).toBeGreaterThan(0)
+    }
+  })
+  it("being let off is the cheapest; cowing them buys fear; a fight is the heaviest", () => {
+    const f = theftOutcome("forgave"), c = theftOutcome("cowed"), x = theftOutcome("fought")
+    expect(f.gravity).toBeLessThan(c.gravity)
+    expect(c.gravity).toBeLessThan(x.gravity)
+    expect(c.deltas.fear).toBeGreaterThan(0)
+    expect(f.deltas.fear).toBeUndefined()
+  })
+  it("hands out a copy, so one catch cannot change the table for the next", () => {
+    theftOutcome("cowed").deltas.fear = 99
+    expect(theftOutcome("cowed").deltas.fear).toBe(8)
+  })
+  it("writes the ledger line in the fiction's words", () => {
+    expect(theftNote("Jimjar", "Lynkes", "forgave", "Bent wire")).toBe("Jimjar caught Lynkes's hand at the bent wire and let it pass, this once.")
+    expect(theftNote("Jimjar", "Lynkes", "cowed", "Bent wire")).toMatch(/handing it over/)
+    expect(theftNote("Jimjar", "Lynkes", "fought", "Bent wire")).toMatch(/came to blows/)
   })
 })
