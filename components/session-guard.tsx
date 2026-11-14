@@ -7,7 +7,7 @@
 import { useEffect } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { dmHeaders } from "@/lib/dm-key"
-import { AFTER_RESET_PATH, guardVerdict, isGuardedPath, wasReset } from "@/lib/session-guard"
+import { AFTER_RESET_PATH, AWAKEN_PATH, guardVerdict, isGuardedPath, needsWaking, wasReset } from "@/lib/session-guard"
 
 const RECHECK_MS = 6000
 
@@ -35,7 +35,10 @@ export function SessionGuard() {
           return
         }
         if (!seenRun && typeof j?.run === "string") seenRun = j.run
-        if (guardVerdict(j, role) === "leave") router.replace("/table")
+        if (guardVerdict(j, role) === "leave") { router.replace("/table"); return }
+        // Seated and live, but not yet through the awakening this session: that comes first (lib/session-guard.ts
+        // needsWaking). /awaken is itself a guarded page, so it is skipped here or it would send to itself.
+        if (pathname !== AWAKEN_PATH && needsWaking(j, role)) router.replace(AWAKEN_PATH)
       } catch { /* offline: stay */ }
     }
     check()

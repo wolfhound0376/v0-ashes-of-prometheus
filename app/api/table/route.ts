@@ -11,6 +11,7 @@ import {
   type TableView,
 } from "@/lib/table-store"
 import { actorFor, type Actor, type Host } from "@/lib/host"
+import { entryKey } from "@/lib/entry"
 import { cleanSaveName, newSaveName } from "@/lib/saves"
 import { shelveWorldInPlay, startNewSave, usualParty } from "@/lib/save-store"
 
@@ -67,6 +68,8 @@ async function claimOk(db: ReturnType<typeof createAdminClient>, characterId: st
 }
 
 type Db = ReturnType<typeof createAdminClient>
+/** world_flags keeps the table, the seats and the gate under this campaign id (lib/table-store.ts, app/api/table/entry). */
+const WORLD_FLAGS_CAMPAIGN = "ashes-of-prometheus"
 
 /**
  * What the room answers. `dm` sees everything plus the roster with each hero's invitation and seat; anyone else
@@ -88,8 +91,16 @@ async function reply(db: Db, view: TableView, characterId?: string | null, extra
   }
   // Which run of the campaign this is. Every New Game ends the run and opens the next, so a screen that loaded
   // under another run knows the world was reset under it and closes (lib/session-guard.ts wasReset).
+  // HAS THIS HERO WOKEN? (Sam, 2026-11-13; lib/session-guard.ts needsWaking.) The awakening ends at the gate, and
+  // reaching it writes `entry:<session>:<id>` (app/api/table/entry). Asked only for a seated player at a live
+  // table. A read that fails leaves `woke` out, and an answer that does not say sends nobody anywhere.
+  let woke: boolean | undefined
+  if (mine && !mine.dm && view.state.status === "live") {
+    const { data: entry, error: entryErr } = await db.from("world_flags").select("key").eq("campaign_id", WORLD_FLAGS_CAMPAIGN).eq("key", entryKey(view.state.session, mine.id)).maybeSingle()
+    if (!entryErr) woke = Boolean(entry)
+  }
   const { data: liveRun } = await db.from("campaign_runs").select("id").eq("campaign_id", CAMPAIGN_ID).neq("status", "ended").order("run_number", { ascending: false }).limit(1).maybeSingle()
-  return NextResponse.json({ ...view, seats: open ? view.seats : [], mine, invited, host: host ? { id: host.id, name: host.name } : null, run: liveRun?.id ?? null, ...(roster ? { roster } : {}), ...extra })
+  return NextResponse.json({ ...view, seats: open ? view.seats : [], mine, invited, host: host ? { id: host.id, name: host.name } : null, run: liveRun?.id ?? null, ...(woke === undefined ? {} : { woke }), ...(roster ? { roster } : {}), ...extra })
 }
 
 /** Is this the campaign's host, proved by the host hero's own claim? */
