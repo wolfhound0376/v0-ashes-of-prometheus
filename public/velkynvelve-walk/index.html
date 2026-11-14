@@ -6497,7 +6497,16 @@ const battleLive = () => { const B = state.battle; return B && !B.over && Date.n
 function battleArriving(from, n){ const B = battleLive(); return B && owSame(n, B.plate) && owSame(from, B.from) ? B : null; }
 function battleOffs(B){ const dx = [0, -60, 55, -10, 80, -95], dy = [0, 40, 45, 85, -25, 10]; return B.heroes.filter(id => SPR[id]).map((id, i) => ({id, dx: dx[i] || 0, dy: dy[i] || 0})); }
 function battleAllies(B){ const comp = companyNow(), add = (B.allies || []).filter(id => SPR[id] && !comp.includes(id)); comp.push(...add); state.leftBehind = state.leftBehind.filter(id => !add.includes(id)); return add; }
-function gateWatchAway(){ const B = battleLive(), d = state.gateWatchDown; return !!((B && owSame(B.from, PEN)) || (d && (storyRotations || 0) <= d.rot)); }
+// THE WATCH STAYS DOWN FOR THE BREAKOUT (Sam, 2026-11-13: "Why is there a guard now after I go back in the pen to collect
+// everyone? ... It should be smooth."). Measured on the live game: the landing was won at rotation 4 (gateWatchDown
+// {rot: 4}); the watch "changed" three and a half minutes later (rotations 5), which put a fresh pair on the posts
+// while the party was still fetching the prisoners, and tickGateWatch fights anyone it sees after a breakout. The
+// watch changes far too often for "until the next change" to mean anything (five changes in the first twenty minutes
+// of that session). So a watch killed in the breakout now stays gone for as long as that breakout stands: until the
+// gate is shut on the party again (every recapture sets brokeOut back to null), when the old rotation rule applies
+// as before. The relief finding its dead is the alarm, and the alarm waves are not built yet (see above). [CLAUDE]
+function gateWatchAway(){ const B = battleLive(), d = state.gateWatchDown, out = state.brokeOut;
+  return !!((B && owSame(B.from, PEN)) || (d && ((storyRotations || 0) <= d.rot || (out && (d.at || 0) >= (out.at || 0))))); }
 /** The gate stands open and nobody is on the landing: the party steps out onto the landing's own plate (a cut, not a walk). */
 async function gateToLanding(){
   const plate = battlePlateOf(cur); if (!plate || battleBusy || mode !== "explore" || !leader) return;
@@ -6766,9 +6775,14 @@ async function doorGo(kind, everyone, o = {}){
     if (kind === "ambush" || !ok){
       doorCallDone(null, kind === "ambush" ? "ambush" : "seen", heroes);
       if (!ok) log(kind === "ambush" ? `<em>The gate scrapes on its hinge, and ${esc(fname(w))} turns.</em>` : `<em>${esc(fname(w))} turns round at the wrong moment.</em>`);
+      // WHO IS IN IT, BY COUNT (Sam, 2026-11-13: "there was more than one guard in the fight"). One guard stood the watch,
+      // one guard fought and one paid XP, and Malachar narrated "two shapes on the bridge": he was told only "the drow
+      // on watch". He is now told how many and to narrate no others.
+      const watchIs = `${guards.length === 1 ? "the one drow guard" : `the ${guards.length} drow guards`} on watch`;
+      const noOthers = ` The fight is against exactly ${guards.length === 1 ? "that one guard" : `those ${guards.length} guards`}: narrate no other enemy on the landing or the bridge.`;
       if (APP) handOff(kind === "ambush"
-        ? `${fname(h)}, sneaking, went through the unlocked slave pen gate to ambush the drow on watch${ok ? ", and took them by surprise" : ", but the drow heard the gate and were not surprised"}. Combat has begun on the landing outside the pen.`
-        : `${fname(h)} tried to slip out of the slave pen past the drow on watch and was caught in the doorway. Combat has begun on the landing outside the pen.`);
+        ? `${fname(h)}, sneaking, went through the unlocked slave pen gate to ambush ${watchIs}${ok ? ", and took them by surprise" : ", but the drow heard the gate and were not surprised"}. Combat has begun on the landing outside the pen.${noOthers}`
+        : `${fname(h)} tried to slip out of the slave pen past ${watchIs} and was caught in the doorway. Combat has begun on the landing outside the pen.${noOthers}`);
       await goThroughGate(w, guards, {everyone, heroes, surprised: ok, cry: true, by: "sneak", ...(ok ? {opener: h} : {}),
         label: kind === "ambush" ? (ok ? "the ambush at the pen gate — out of the dark, before they know it." : "the ambush at the pen gate — they heard it coming.") : "caught slipping past the watch at the pen gate"});
       return;
@@ -15263,7 +15277,7 @@ function endCombat(won, opts = {}){
   if (mode !== "combat" || FIGHT.mirror) return;
   // THE MARCH OUT IN CHAINS: how the bridge came out, read now while the fight still knows who ran
   const marchOut = chainMarchLive() && !state.gameOver ? chainMarchOutcome({won: won === true, gotAway: party.filter(p => p.left && !(p.c && p.c.ds && p.c.ds.dead)).length, byDm: !!(opts.byDm || opts.talk)}) : undefined;
-  if (cbt && cbt.fromFlag) fightFlagOver();   // the server's "a fight is on" comes down with the fight
+  if (cbt && (cbt.fromFlag || cbt.flagToo)) fightFlagOver();   // the server's "a fight is on" comes down with the fight (flagToo: Malachar called the map's own fight a moment after it began)
   const victors = cbt ? [...(cbt.allies || [])] : [];   // THE TRIUMPH: who of ours is still up to strike a pose when it is won
   const fellNpcs = cbt ? (cbt.bystanders || []).filter(b => b.down) : [];   // the NPCs who died in this fight: buried below, once it is over (npcBury)
   if (won !== false && cbt) askEarned((cbt.allies || []).filter(n => askRowOf(n.id) && !n.down));   // they fought beside you and know it (NPC ASKS)
@@ -20834,6 +20848,16 @@ async function followCombatFlag(flag){
   if (flag && flag.status === "active"){
     if (flag.startedAt === combatFlagSeen) return;
     if (flag.startedAt === flagDone()){ combatFlagSeen = flag.startedAt; return; }   // already fought to its end on this screen
+    // THE SAME FIGHT, CALLED TWICE (found live 2026-11-13). The map opened the ambush at the pen gate itself (18:26:34);
+    // Malachar, told of it, raised his own flag for the same drow guard three seconds later. The map was already
+    // fighting, so it never took the flag as its own, never took it down, and the flag stood "active" after the win:
+    // the next reload with a living drow guard on the plate would have opened "Malachar calls for initiative" again.
+    // A flag that names only creatures this screen is ALREADY fighting is this fight: it comes down with it.
+    if (mode === "combat" && cbt && !cbt.mirror && !FIGHT.mirror && !cbt.fromFlag && !cbt.flagToo){
+      const mine = (cbt.order || []).filter(a => a && !party.includes(a) && !(cbt.allies || []).includes(a));
+      const named = flag.foes || [];
+      if (mine.length && named.length && named.every(f => mine.some(a => stageMatch(f, a.id)))){ combatFlagSeen = flag.startedAt; cbt.flagToo = true; return; }   // flagToo, not fromFlag: Malachar dropping his flag does not end the map's own fight
+    }
     talkGivesWay();                                     // the talk ended in steel: the card closes, the fight opens (NPC MINDS)
     if (mode !== "explore") return;                     // once we are free, the next poll opens it
     combatFlagSeen = flag.startedAt;
