@@ -6549,6 +6549,38 @@ async function battleJoin(h){
     await enterNode(B.plate, {solo: true, offs: [{id: h.id, dx: 0, dy: 0}], note: `${esc(fname(h))} comes out onto the landing.`});
   } finally { battleBusy = false; fade.classList.remove("on"); setTimeout(() => fade.classList.remove("quick"), 400); if (mode === "dialog" && $("obj").hidden) mode = "explore"; }
 }
+// JOIN THE FIGHT (Sam, 2026-11-13: "go", on the BG3-style answer to a hero caught alone: the others hear the fight and
+// may run to it). A fight on another outpost plate, run by another screen (One Fight's FIGHT.live, which every idle
+// screen polls every two seconds), puts "Join the fight · <place>" on this hero's bar while it lasts; not joining is the
+// "hold" — nothing to press. Joining is battleJoin's cut for any plate: a quick fade, this one hero set down on that
+// plate (at the door from here when it is next door), and from there the rules already in place take over: the screen
+// running the fight sees the hero arrive on its plate and takes them in (owApplyHero -> joinFight: initiative, acts from
+// the next round — 5E, you enter an encounter when you arrive), and this screen finds the fight on its plate and shows it
+// (THE WATCH -> enterMirror). Not from the road, not to a battle plate (battleJoin has those), not mid-fight, not twice.
+let fightJoinBusy = false;
+function fightElsewhere(){
+  if (!fightShared() || FIGHT.auth || FIGHT.mirror) return null;
+  const f = FIGHT.live; if (!f || f.plate == null || owSame(f.plate, cur)) return null;
+  const pl = owPlate(f.plate), S = SPEC[pl];
+  if (!S || S.stands_for != null || /^road-/.test(String(pl)) || /^road-/.test(String(cur))) return null;
+  const fl = fightElsewhere.flag, who = fl && fl.startedBy && fl.area === S.name ? fl.startedBy : "";
+  return {plate: pl, area: S.name, who};
+}
+fightElsewhere.flag = null;
+function fightJoinable(h){
+  const F = fightElsewhere();
+  return F && h && mode === "explore" && !battleBusy && !fightJoinBusy && heroUp(h) && canControl(h) && !owRemote(h) && !fightHoldsPlate() ? F : null;
+}
+async function fightJoin(h){
+  const F = fightJoinable(h); if (!F) return;
+  fightJoinBusy = true; const fade = $("fade"), from = cur;
+  try {
+    log(`${esc(fname(h))} runs to the fight at <em>${esc(F.area)}</em>.`);
+    if (leader !== h) leader = h;
+    mode = "dialog"; fade.classList.add("quick", "on"); await wait(320);
+    await enterNode(F.plate, {solo: true, from, offs: [{id: h.id, dx: 0, dy: 0}], note: `${esc(fname(h))} arrives in the middle of the fight.`});
+  } finally { fightJoinBusy = false; fade.classList.remove("on"); setTimeout(() => fade.classList.remove("quick"), 400); if (mode === "dialog" && $("obj").hidden) mode = "explore"; }
+}
 /** endCombat, on the screen that ran it: the fight on the battle plate is over. */
 function battleSettle(won){
   const B = state.battle; if (!B || B.over || !owSame(cur, B.plate)) return;
@@ -8757,6 +8789,8 @@ function exploreExtras(m, o, add, who){
   if (wardFriend) x(`Shake ${fname(wardFriend)} awake`, "✋", ART("help"), "out cold from the ward", () => wardShake(L, wardFriend));
   // THE BATTLE SCREEN: a hero who stayed behind may still go to the fight
   if (battleJoinable(L)) x("Join the fight on the landing", "⚔", ART("attack"), "out through the gate · you act from the next round", () => battleJoin(L), "danger");
+  // JOIN THE FIGHT: a fight going on somewhere else in the outpost; this hero may run to it
+  { const F = fightJoinable(L); if (F) x(`Join the fight · ${F.area}`, "⚔", ART("attack"), `${F.who ? F.who + " is fighting there" : "a fight is on there"} · you act from the next round`, () => fightJoin(L), "danger"); }
   // WAIT FOR THE NEXT WATCH (Sam, 2026-11-12): the table skips the lull, and pays a watch off the caravan clock for it
   if (waitOffered()) x("Wait for the next watch", "⌛", ART("short-rest"), `everyone must agree · counts as a short rest · ${watchesWord(caravanLeft())} left`, () => waitPropose());
   const pot = beltPotion(L); if (pot) x(`Quick drink: ${pot.name}`, "⚗", ART("quick-drink"), "from the belt", () => drinkItem(L, pot, L));
@@ -18492,7 +18526,10 @@ async function followCombatFlag(flag){
     if (mode !== "explore") return;                     // once we are free, the next poll opens it
     combatFlagSeen = flag.startedAt;
     const picked = [];
-    for (const foe of flag.foes || []){
+    // a guard's spotting names the plate it happened on (flag.opener: THE SPOTTED BEAT); drow guards stand on many plates,
+    // and the ones HERE did not see anybody — this screen hears of the fight, it does not open one of its own
+    const elsewhere = !!(flag.opener && flag.area && flag.area !== node.name);
+    if (!elsewhere) for (const foe of flag.foes || []){
       // THE DEAD STAY DEAD (Sam, 2026-10-27: "why did the drow respawn after we defeated them?"). A later call naming
       // "drow guard" picked the two guards' bodies off the Barracks floor and put them back in a fight. Only someone
       // still standing can be named into one; a name that matches only the dead is skipped.
@@ -18509,7 +18546,8 @@ async function followCombatFlag(flag){
     for (let i = picked.length - 1; i >= 0; i--) if (picked.indexOf(picked[i]) !== i) picked.splice(i, 1);   // two "Drow guard"s name the same two
     if (!picked.length){
       // a fight somewhere else: say so where the table will see it, not only in the log (THE SPOTTED BEAT)
-      if (flag.startedBy && flag.area && flag.area !== node.name) beatBanner(`${flag.startedBy} is fighting · ${flag.area}`);
+      if (flag.startedBy && flag.area && flag.area !== node.name){ fightElsewhere.flag = flag; beatBanner(`${flag.startedBy} is fighting · ${flag.area}`);
+        if (APP) toast(`${flag.startedBy} is in a fight at ${flag.area}. "Join the fight" is on your bar.`, 5200); }
       log(`<em>${esc(flag.label || "Initiative!")}</em> Nobody he named is still standing on this plate.`); return; }
     for (const f of picked){ f.hp = f.hp ?? (flag.foes.find(x => x.slug === f.id) || {}).hp; }
     // ONE FIGHT: every screen hears the flag at once; the DM's opens the fight, the others look a moment later for it.
