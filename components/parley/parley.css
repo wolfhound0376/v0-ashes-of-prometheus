@@ -422,7 +422,10 @@
 .parley.one .p-third { padding: 8px 10px; }
 .parley.one .p-third > .p-vighead, .parley.one .p-third > .p-slots, .parley.one .p-third > .p-fxkey { display: none; }
 .parley.one .p-log { grid-template-rows: auto minmax(0, 1fr); height: 100%; }
-.parley.one .p-log .p-filters, .parley.one .p-loghead > button { display: none; }
+/* The thread minimizes (Sam, 2026-11-13: "The Talk so far can probably be minimized"): it starts as its newest line,
+ * sits at the top of the rail, and opens on a click. */
+.parley.one .p-log.mini { height: auto; align-self: start; grid-template-rows: auto auto; }
+.parley.one .p-log .p-filters { display: none; }
 .parley.one .p-lines { align-content: start; }
 
 @media (max-width: 1024px) {
@@ -469,3 +472,10 @@
   .parley.one .p-reply .p-chips > .p-chips > .p-sug { min-height: 44px; font-size: 18px; padding: 6px 14px; }
   .parley.one .p-reply .p-chips > .p-chips { gap: 8px; }
 }
+
+/* The rail's two buttons are proper buttons (Sam, 2026-11-13: "View full character sheet needs to look like a nice
+ * button as does inventory"): full slabs with an icon, in colour, side by side. */
+.parley.one .p-charcard > .p-slab.wide.p-railbtn { min-height: 52px; padding: 8px 10px; gap: 8px; justify-content: center; align-items: center; font-family: var(--p-font-head); font-size: 13px; letter-spacing: .05em; line-height: 1.15; text-align: left; color: #fff; text-shadow: 0 1px 0 #000; }
+.parley.one .p-charcard > .p-slab.wide.p-railbtn .p-ico { width: 30px; height: 30px; border-radius: 6px; flex: none; }
+.parley.one .p-charcard > .p-slab.wide.p-railbtn svg { flex: none; }
+.parley.one .p-charcard > .p-slab.violet.wide { min-height: 44px; gap: 8px; font-size: 13px; color: #fff; text-shadow: 0 1px 0 #000; }

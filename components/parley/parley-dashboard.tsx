@@ -1142,7 +1142,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
   const portraitSrc = selected?.portrait_image_url || selected?.avatar_image_url || null
 
   // TALK TO MALACHAR: the thread is the hero and the DM, nobody else's lines, and it is always open.
-  const logMini = interactiveLogMinimized && !props.audience && !one
+  const logMini = interactiveLogMinimized && !props.audience
   const shownLines = props.audience ? displayedDialogue.filter((entry) => classifySpeaker(entry.speaker) === "dm" || (!!selected?.name && entry.speaker.toLowerCase() === selected.name.toLowerCase())) : displayedDialogue
   const sayBox = (
       <div className="p-panel p-say">
@@ -1369,8 +1369,8 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
           <button type="button" className="p-emb" onClick={() => setStatDetail("ac")} title={acResult.text}><span className="p-shield" style={{ backgroundPosition: "0% 40%" }} /><span className="p-val">{displayedAc}</span><small>AC</small></button>
           <button type="button" className="p-emb" onClick={() => setStatDetail("speed")} title="Speed"><span className="p-shield" style={{ backgroundPosition: "33.333% 40%" }} /><span className="p-val">{speedMatch ? <>{speedMatch[1]}<i>ft</i></> : speedText}</span><small>Speed</small></button>
         </div>
-        <button type="button" data-tick="window" onClick={() => setCharacterSheetOpen(true)} className="p-slab dark wide">✧ View Full Character Sheet</button>
-        <button type="button" data-tick="window" onClick={openPixelInventory} className="p-slab dark wide" style={{ justifyContent: "flex-start" }}><img className="p-ico" src="/velkynvelve-walk/icons/bar/inv.png" alt="" />Inventory &amp; Equipment<small style={{ marginLeft: "auto", textAlign: "right" }}>{carried.toFixed(1)} / {selected?.weight_max ?? 105} lb · {props.equipment.length} equipped</small><span className="p-key">I</span></button>
+        <button type="button" data-tick="window" onClick={() => setCharacterSheetOpen(true)} className={cn("p-slab wide", one ? "blue p-railbtn" : "dark")}>{one ? <><Feather className="h-5 w-5" aria-hidden="true" /><span>Character sheet</span></> : "✧ View Full Character Sheet"}</button>
+        <button type="button" data-tick="window" onClick={openPixelInventory} className={cn("p-slab wide", one ? "teal p-railbtn" : "dark")} style={one ? undefined : { justifyContent: "flex-start" }}><img className="p-ico" src="/velkynvelve-walk/icons/bar/inv.png" alt="" />{one ? <span>Inventory</span> : <>Inventory &amp; Equipment</>}<small style={{ marginLeft: "auto", textAlign: "right" }}>{carried.toFixed(1)} / {selected?.weight_max ?? 105} lb · {props.equipment.length} equipped</small><span className="p-key">I</span></button>
         {isMagicUser ? <button type="button" data-tick="window" onClick={() => setSpellbookOpen(true)} className="p-slab violet wide" style={{ justifyContent: "flex-start" }}>{selected.class === "Cleric" || selected.class === "Monk" ? <img className="p-ico" src={BOOK_OF_PRAYERS_MEDIA.poster} alt="" /> : <BookOpen className="h-5 w-5" />}{selected.class === "Cleric" || selected.class === "Monk" ? "Book of Prayers" : "Book of Spells"}<small style={{ marginLeft: "auto" }}>{characterExtra.subclass || ""}</small></button> : null}
       </div>
 
