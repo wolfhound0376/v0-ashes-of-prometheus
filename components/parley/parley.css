@@ -346,3 +346,126 @@
 .parley .p-mal-lich.off { opacity: 0; }
 .parley .p-malachar[data-mood="angry"] .p-mal-shade { background: linear-gradient(180deg, rgba(60,4,6,.22), rgba(40,2,4,.5)); }
 .parley .p-malachar[data-mood="angry"] .p-mal-lich:not(.off) { filter: drop-shadow(0 0 26px rgba(255,40,30,.55)) drop-shadow(0 14px 22px rgba(0,0,0,.75)); }
+
+/* ---------- ONE STAGE (Sam, 2026-11-13 — "Looks Good" on the revamp boards) ----------
+ * One speaker fills the stage: their framed loop on the left, their line and
+ * your replies beside it, the thread and a hero chip in a narrow rail. The
+ * second stage window, the sprite box, the log filters and the bottom strip
+ * are gone; the top bar's extras fold into Settings. Everything here is
+ * scoped under .parley.one, so the Malachar audience, the narrow camp talk and
+ * NEXT_PUBLIC_PARLEY=classic are untouched. */
+.parley .p-fold { display: contents; }
+.parley.one { grid-template-columns: minmax(0, 1fr) 340px; grid-template-rows: auto auto minmax(300px, 1fr); }
+
+/* top bar: place, Settings, Return */
+.parley.one .p-fold { display: none; position: absolute; right: 14px; top: calc(100% + 8px); z-index: 40; padding: 10px; flex-direction: column; align-items: stretch; gap: 8px; min-width: 230px; max-height: 70vh; overflow-y: auto; }
+.parley.one .p-fold.open { display: flex; }
+.parley.one .p-fold > .p-slab, .parley.one .p-fold > span > .p-slab, .parley.one .p-fold > a { box-sizing: border-box; width: 100%; justify-content: flex-start; }
+.parley.one .p-fold .p-tags { position: static; max-width: none; }
+.parley.one .p-fold .p-tags .p-slab { width: 100%; justify-content: flex-start; }
+.parley.one .p-fold .p-music-pop { right: 0; top: calc(100% + 6px); }
+
+/* the stage takes the left, the rail the right */
+.parley.one .p-center { grid-column: 1; grid-row: 2 / 4; grid-template-rows: minmax(0, 1fr); }
+.parley.one [data-stage-window] { display: none; }
+.parley.one .p-sheet { grid-column: 2; grid-row: 2; grid-template-rows: auto; }
+.parley.one .p-left { grid-column: 2; grid-row: 3; grid-template-rows: minmax(0, 1fr); }
+.parley.one .p-left > .p-scene { display: none; }
+
+/* the stage: portrait frame | line and replies */
+.parley.one [data-npc-window] { box-sizing: border-box; display: grid; grid-template-columns: minmax(200px, 330px) minmax(0, 1fr); grid-template-rows: auto auto auto minmax(0, 1fr); column-gap: 32px; row-gap: 12px; padding: 28px; align-content: start; }
+.parley.one [data-npc-window] > .p-vignette { background: linear-gradient(90deg, rgba(8,5,12,.30) 0%, rgba(8,5,12,.80) 40%, rgba(8,5,12,.95) 100%); }
+.parley .p-frame { display: contents; }
+.parley.one .p-frame { display: block; grid-column: 1; grid-row: 1; position: relative; z-index: 2; width: 100%; aspect-ratio: 33 / 50; min-height: 200px; max-height: calc(100vh - 360px); overflow: hidden; border: 3px solid var(--p-gold); border-radius: 50% 50% 18px 18px / 33% 33% 18px 18px; background: radial-gradient(circle at 50% 30%, #3a2b44, #120d17 75%); box-shadow: 0 0 0 3px #000, 0 14px 30px rgba(0,0,0,.7); }
+.parley.one .p-frame > video, .parley.one .p-frame > img { object-fit: cover; object-position: 50% 15%; }
+.parley.one [data-npc-window] > .p-card { grid-column: 1; grid-row: 2; position: static; justify-content: center; max-width: none; padding: 0; border: 0; background: none; box-shadow: none; text-align: center; }
+.parley.one [data-npc-window] > .p-card .p-face, .parley.one [data-npc-window] > .p-card small { display: none; }
+.parley.one [data-npc-window] > .p-card b { font-size: 25px; letter-spacing: .05em; white-space: normal; text-shadow: 0 2px 0 #000; }
+.parley.one [data-npc-window] > .p-tags { position: static; grid-column: 1; justify-content: center; max-width: none; }
+.parley.one [data-npc-window] > .p-tags.tr { grid-row: 3; }
+.parley.one [data-npc-window] > .p-tags.br { grid-row: 4; align-self: start; }
+.parley.one [data-npc-window] > .p-narr { left: auto; right: 28px; bottom: 22px; max-width: 46%; justify-content: flex-end; }
+
+.parley.one .p-talk { grid-column: 2; grid-row: 1 / -1; position: relative; z-index: 2; display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; }
+.parley.one .p-linebox { padding: 18px 24px; border: 2px solid var(--p-rim); border-radius: 14px; background: rgba(18,13,23,.88); max-height: 44%; overflow-y: auto; flex: none; }
+.parley.one .p-linebox.dm { border-color: var(--p-violet); }
+.parley.one .p-linebox small { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: var(--p-gold); }
+.parley.one .p-linebox.dm small { color: #b9a6ff; }
+.parley.one .p-linebox p { margin: 0; font-family: var(--p-font-body); font-size: 27px; line-height: 1.32; color: #f6ecd6; }
+.parley.one .p-linebox p.foreign { font-style: italic; color: #a99c82; }
+.parley.one .p-linebox p.quiet { font-size: 20px; font-style: italic; color: var(--p-mute); }
+.parley.one .p-linebox p.p-thinking { margin-top: 8px; font-size: 16px; color: #a879e1; }
+
+.parley.one .p-reply { display: flex; flex-direction: column; gap: 10px; min-height: 0; flex: 1; }
+.parley.one .p-replylbl { font-size: 12px; font-weight: 600; letter-spacing: .16em; text-transform: uppercase; color: var(--p-mute); }
+.parley.one .p-reply .p-saylbl { display: none; }
+.parley.one .p-reply > .p-chips { display: block; flex: 0 1 auto; min-height: 0; overflow-y: auto; }
+.parley.one .p-reply .p-chips > .p-chips { display: flex; flex-direction: column; gap: 10px; max-height: none; padding: 2px 2px 6px; overflow: visible; }
+.parley.one .p-reply .p-chips > .p-chips > .p-sug { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 8px 16px; border-radius: 12px; font-family: var(--p-font-body); font-weight: 400; font-size: 20px; line-height: 1.25; white-space: normal; text-align: left; overflow: visible; }
+.parley.one .p-reply .p-sug i { margin-left: auto; flex: none; padding: 3px 9px; border-radius: 7px; background: var(--p-blue2); border: 1px solid #6fa8e6; color: #dcebff; font-family: var(--p-font-ui); font-size: 11px; font-weight: 600; opacity: 1; }
+.parley.one .p-reply .p-sug.ghost { height: 52px; width: 100%; }
+.parley.one .p-replyrow { display: flex; align-items: center; gap: 10px; flex: none; }
+.parley.one .p-replyrow > .p-say { flex: 1; min-width: 0; }
+.parley.one .p-replyrow > .p-cycler { flex: none; }
+.parley.one .p-replyfoot { display: flex; align-items: center; gap: 8px; flex: none; padding-right: 48%; }
+
+/* the rail: a hero chip, then the thread */
+.parley.one .p-sheet > .p-vig { display: none; }
+.parley.one .p-charcard { grid-template-columns: 1fr 1fr; gap: 8px; }
+.parley.one .p-charcard > .p-id, .parley.one .p-charcard > .p-hpwrap, .parley.one .p-charcard > .p-slab.violet { grid-column: 1 / -1; }
+.parley.one .p-charcard > .p-xprow, .parley.one .p-charcard > .p-bar.xp, .parley.one .p-charcard > .p-emblems, .parley.one .p-id > .p-lvl, .parley.one .p-who-is > span { display: none; }
+.parley.one .p-id { grid-template-columns: 60px 1fr; }
+.parley.one .p-port { width: 60px; height: 60px; font-size: 24px; }
+.parley.one .p-charcard > .p-slab.wide { padding: 7px 8px; font-size: 11px; justify-content: center; text-align: center; }
+.parley.one .p-charcard > .p-slab.wide small, .parley.one .p-charcard > .p-slab.wide .p-key { display: none; }
+.parley.one .p-charcard > .p-slab.wide .p-ico { width: 22px; height: 22px; }
+.parley.one .p-third { padding: 8px 10px; }
+.parley.one .p-third > .p-vighead, .parley.one .p-third > .p-slots, .parley.one .p-third > .p-fxkey { display: none; }
+.parley.one .p-log { grid-template-rows: auto minmax(0, 1fr); height: 100%; }
+.parley.one .p-log .p-filters, .parley.one .p-loghead > button { display: none; }
+.parley.one .p-lines { align-content: start; }
+
+@media (max-width: 1024px) {
+  .parley.one { grid-template-columns: 1fr; grid-template-rows: auto; }
+  .parley.one .p-center, .parley.one .p-sheet, .parley.one .p-left { grid-column: 1; grid-row: auto; }
+  .parley.one .p-center { order: -1; }
+  .parley.one .p-top { order: -2; }
+  .parley.one [data-npc-window] { grid-template-columns: 1fr; padding: 16px; }
+  .parley.one .p-frame { max-width: 240px; justify-self: center; }
+  .parley.one [data-npc-window] > .p-card, .parley.one [data-npc-window] > .p-tags, .parley.one .p-talk { grid-column: 1; grid-row: auto; }
+  .parley.one [data-npc-window] > .p-narr { position: static; max-width: none; }
+  .parley.one .p-replyfoot { padding-right: 0; }
+  .parley.one .p-log { min-height: 260px; }
+}
+
+/* the lich on the stage (Sam, 2026-11-13): the animated cartoon lich takes the frame when Malachar holds it */
+.parley.one .p-frame.lich { border-color: var(--p-violet); }
+.parley.one .p-frame .p-malachar > .p-tags { display: none; }
+.parley.one .p-frame .p-mal-lich { height: 92%; max-width: 130%; }
+
+/* a check is called: the card that replaces the reply rows */
+.parley.one .p-check { display: flex; align-items: center; gap: 24px; padding: 20px; border: 2px solid var(--p-gold); border-radius: 16px; background: linear-gradient(180deg, #2a2033, #19121f); box-shadow: 0 0 28px rgba(242,197,92,.22), 0 6px 0 #000; }
+.parley.one .p-check > img { width: 150px; height: 168px; object-fit: contain; flex: none; filter: drop-shadow(0 8px 10px rgba(0,0,0,.7)); }
+.parley.one .p-checkbody { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
+.parley.one .p-checkbody b { font-family: var(--p-font-head); font-size: 26px; letter-spacing: .05em; color: var(--p-gold-hi); }
+.parley.one .p-checktags { display: flex; flex-wrap: wrap; gap: 8px; }
+.parley.one .p-checktags span { padding: 5px 12px; border-radius: 8px; background: var(--p-blue2); border: 1px solid #6fa8e6; color: #dcebff; font-size: 13px; font-weight: 600; }
+.parley.one .p-checkbody p { margin: 0; font-family: var(--p-font-body); font-size: 18px; color: #cfc3e6; }
+.parley.one .p-checkroll { min-width: 150px; height: 54px; justify-content: center; font-size: 19px; }
+.parley.one .p-checkbody small { font-size: 13px; color: var(--p-mute); }
+@media (max-width: 640px) { .parley.one .p-check { flex-direction: column; text-align: center; } .parley.one .p-checkbody { align-items: center; } }
+
+/* leaving for the map says why first */
+.parley .p-pull { position: fixed; left: 0; right: 0; top: 38%; z-index: 500; display: flex; align-items: center; justify-content: center; gap: 14px; padding: 16px 20px; background: rgba(122,31,20,.94); border-top: 2px solid #f08a78; border-bottom: 2px solid #f08a78; box-shadow: 0 0 40px rgba(0,0,0,.7); animation: p-pull-in .25s ease-out; }
+.parley .p-pull b { font-family: var(--p-font-head); font-size: 22px; letter-spacing: .08em; text-transform: uppercase; color: #fff0e8; }
+.parley .p-pull span { font-size: 14px; color: #ffe0da; }
+@keyframes p-pull-in { from { opacity: 0; transform: scaleY(.6); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .parley .p-pull { animation: none; } }
+
+/* short or narrow desktop windows: the line and the rows tighten before anything scrolls */
+@media (max-width: 1280px) { .parley.one { grid-template-columns: minmax(0, 1fr) 300px; } .parley.one [data-npc-window] { column-gap: 22px; padding: 20px; } }
+@media (max-height: 800px) {
+  .parley.one .p-linebox p { font-size: 22px; }
+  .parley.one .p-reply .p-chips > .p-chips > .p-sug { min-height: 44px; font-size: 18px; padding: 6px 14px; }
+  .parley.one .p-reply .p-chips > .p-chips { gap: 8px; }
+}

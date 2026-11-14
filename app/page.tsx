@@ -2073,6 +2073,8 @@ if (error) {
   ) : USE_PARLEY ? (
   <ParleyDashboard
   audience={dmAudience}
+  rollRequest={pendingRoll}
+  rollLifecycle={rollLifecycle}
   voicesOn={!isTTSMuted}
   onToggleVoices={toggleTTSMute}
   onJournal={() => openSection("journal")}
