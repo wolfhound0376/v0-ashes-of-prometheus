@@ -14,9 +14,9 @@ export const COMBAT_FLAG = "combat"
 const CAMPAIGN = "ashes-of-prometheus"
 
 export type CombatFoe = { name: string; slug: string; aliases: string[]; hp: number | null; hpMax: number | null }
-export type CombatFlag = { status: "active"; foes: CombatFoe[]; area: string | null; startedAt: string; startedBy: string | null; label: string }
+export type CombatFlag = { status: "active"; foes: CombatFoe[]; area: string | null; startedAt: string; startedBy: string | null; label: string; opener?: string | null }
 
-export async function startCombatFlag(db: SupabaseClient | null, args: { foes: Omit<CombatFoe, "slug">[]; area: string | null; startedBy: string | null; label?: string }) {
+export async function startCombatFlag(db: SupabaseClient | null, args: { foes: Omit<CombatFoe, "slug">[]; area: string | null; startedBy: string | null; label?: string; opener?: string | null }) {
   if (!db || !args.foes.length) return
   try {
     const value: CombatFlag = {
@@ -26,6 +26,8 @@ export async function startCombatFlag(db: SupabaseClient | null, args: { foes: O
       startedAt: new Date().toISOString(),
       startedBy: args.startedBy,
       label: args.label ?? "Malachar calls for initiative.",
+      // the screen that asked for the fight (a guard spotting its hero): it opens the fight with no wait; the rest show it
+      ...(args.opener ? { opener: args.opener } : {}),
     }
     const { error } = await db.from("world_flags").upsert(
       { campaign_id: CAMPAIGN, key: COMBAT_FLAG, value, set_by: "malachar", note: `fight: ${value.foes.map((f) => f.name).join(", ")}` },

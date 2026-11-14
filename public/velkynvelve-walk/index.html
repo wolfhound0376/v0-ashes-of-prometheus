@@ -968,6 +968,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 /* THE DEATH BEAT banner (the pop lanes, 2026-10-28): "Drow guard slain", "Fifi is down" — a moment at the top of the stage */
 .beat{position:absolute;left:50%;top:24%;transform:translate(-50%,-50%);font-family:"Cinzel",Georgia,serif;font-size:26px;font-weight:700;color:#f3d68a;letter-spacing:.1em;text-shadow:0 0 14px rgba(255,120,80,.5),0 2px 0 #2a0a08,0 4px 12px rgba(0,0,0,.85);opacity:0;pointer-events:none;white-space:nowrap;z-index:40}
 .beat.show{animation:beat 1.3s ease-out forwards}
+.beat.spotted{color:#ff6b5a;font-size:38px;letter-spacing:.18em;text-shadow:0 0 18px rgba(255,60,40,.7),0 2px 0 #2a0a08,0 4px 14px rgba(0,0,0,.9)}   /* THE SPOTTED BEAT */
 @keyframes beat{0%{opacity:0;transform:translate(-50%,-40%) scale(.9)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.02)}25%{transform:translate(-50%,-50%) scale(1)}75%{opacity:1}100%{opacity:0;transform:translate(-50%,-60%)}}
 .victory{position:absolute;left:50%;top:34%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;z-index:40;opacity:0}
 .victory.show{animation:victory 4.2s ease-out forwards}
@@ -9974,18 +9975,43 @@ function guardsReact(w, h, why){
   if (!foes.length) return false;
   const label = `${fname(w || foes[0])} sees ${who}${why ? ` ${why}` : ""} — the guards attack!`;
   log(`<em>${esc(label)}</em>`);
-  if (!APP){ foes.forEach(f => { f.hostile = true; }); startCombat(foes, label); return true; }
-  const body = {area: where, label, seenHero: who, foes: foes.map(f => ({name: (FOE_BLOCKS[f.id] || {}).name || SPR[f.id].json.name, aliases: [f.id], hp: (FOE_BLOCKS[f.id] || {}).hp ?? null, hpMax: (FOE_BLOCKS[f.id] || {}).hp ?? null}))};
+  spottedBeat(w || foes[0], foes, h);                          // THE SPOTTED BEAT: this screen reacts NOW, while the table is told
+  if (!APP){ foes.forEach(f => { f.hostile = true; }); setTimeout(() => startCombat(foes, label), SPOTTED_MS); return true; }
+  const body = {area: where, label, seenHero: who, opener: OW.key || undefined, foes: foes.map(f => ({name: (FOE_BLOCKS[f.id] || {}).name || SPR[f.id].json.name, aliases: [f.id], hp: (FOE_BLOCKS[f.id] || {}).hp ?? null, hpMax: (FOE_BLOCKS[f.id] || {}).hp ?? null}))};
   try { body.claimId = localStorage.getItem("aop_character_id") || undefined; body.claimToken = localStorage.getItem("aop_claim_token") || undefined; } catch (e) {}
   fetch("/api/walk-spotted", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)})
     .then(r => r.json().then(j => ({r, j}))).then(({r, j}) => {
       if (!r.ok || !j.flag){ toast(j.error || "The game did not answer.", 3200); guardsAlarm = null; return; }
       foes.forEach(f => { f.hostile = true; });
-      followCombatFlag(j.flag);                                // this seat opens it now; the others on their next poll
+      // this seat opens it — once the beat has had its moment, and not a jitter later (followCombatFlag skips the
+      // wait for the screen that asked: flag.opener); the others on their next poll
+      const wait = Math.max(0, spottedBeat.at + SPOTTED_MS - Date.now());
+      setTimeout(() => followCombatFlag(j.flag), wait);
       if (APP) handOff(`${label} (${where}). Combat has begun.`);
     }).catch(() => { toast("The game did not answer.", 3200); guardsAlarm = null; });
   return true;
 }
+// THE SPOTTED BEAT (Sam, 2026-11-13: Lynkes crossed to the Guard Tower alone, "it says the drow see him and attack but
+// there is this uncomfortable pause. It's clunky." He said "go" to a Baldur's Gate 3-style beat; the Guard Tower fight
+// stays on its own plate). What the pause WAS, read off this code: the log line, then nothing on screen while
+// /api/walk-spotted wrote the flag (a server round trip), then followCombatFlag held a non-DM screen a deliberate
+// 1.2-1.8 s so the DM's screen could open the fight first, then asked /api/walk-fight who runs it (a second round trip)
+// — all with the guards frozen where they stood. Now the screen that saw it plays this at once: the "!" over every
+// guard, the caught sting, the camera snaps to the guard who saw, SPOTTED! across the stage, the guard snarls a line.
+// Nothing here waits on the server, and the fight opens the moment the beat ends (or the moment the server answers,
+// if that is later). 5e: no surprise either way — the guard saw the hero, and the hero knew the guards were there.
+const SPOTTED_MS = 1100;
+function spottedBeat(w, guards, h){
+  spottedBeat.at = Date.now();
+  bank("ui/nat1", .55); redFlash(); shake(4); hitstop(90);
+  (guards || []).forEach((g, i) => { if (g !== w) setTimeout(() => { if (actors.includes(g)) popText(g, "!", "#ff6b5a", 1.2); }, 90 + i * 70); });
+  if (w){ camTo(Math.max(view.z, 1.6), (w.x + (h ? h.x : w.x)) / 2, (w.y + (h ? h.y : w.y)) / 2 - 30, 380); userPanAt = 0; }
+  const el = $("beat"); if (el) el.classList.add("spotted");
+  beatBanner("SPOTTED!");
+  setTimeout(() => { if (el && el.textContent === "SPOTTED!") el.classList.remove("spotted"); }, 1400);
+  if (w && actors.includes(w)) setTimeout(() => { if (mode === "explore" || mode === "combat") taunt(w); }, 260);
+}
+spottedBeat.at = 0;
 setInterval(() => {
   if (!sneak && mode === "explore" && leader && !state.cleared[cur] && !state.ambushOff && !laborLive()){
     const ws = sneakWatchers().filter(isGuard);
@@ -15442,7 +15468,7 @@ function drawCritBadges(){
 }
 // THE DEATH BEAT (the research doc: a death is a screen-level event, never another word in the pile): the body already
 // flashes and falls; the words go to a banner at the top of the stage for a moment, and to the log.
-function beatBanner(text){ const el = $("beat"); if (!el) return; el.textContent = text; el.classList.remove("show"); void el.offsetWidth; el.classList.add("show"); }
+function beatBanner(text){ const el = $("beat"); if (!el) return; if (text !== "SPOTTED!") el.classList.remove("spotted"); el.textContent = text; el.classList.remove("show"); void el.offsetWidth; el.classList.add("show"); }
 // THE TURN CALL: whose turn it is; then what they do, and to whom, with the target ringed
 function turnCall(a){
   const el = $("turnCall"); if (!el || !a || a.down) return;
@@ -20853,11 +20879,18 @@ async function followCombatFlag(flag){
       else log(`<em>${esc(foe.name)}</em> joins the fight but has no sprite yet; the DM core still counts it.`);
     }
     for (let i = picked.length - 1; i >= 0; i--) if (picked.indexOf(picked[i]) !== i) picked.splice(i, 1);   // two "Drow guard"s name the same two
-    if (!picked.length){ log(`<em>${esc(flag.label || "Initiative!")}</em> Nobody he named is still standing on this plate.`); return; }
+    if (!picked.length){
+      // a fight somewhere else: say so where the table will see it, not only in the log (THE SPOTTED BEAT)
+      if (flag.startedBy && flag.area && flag.area !== node.name) beatBanner(`${flag.startedBy} is fighting · ${flag.area}`);
+      log(`<em>${esc(flag.label || "Initiative!")}</em> Nobody he named is still standing on this plate.`); return; }
     for (const f of picked){ f.hp = f.hp ?? (flag.foes.find(x => x.slug === f.id) || {}).hp; }
-    // ONE FIGHT: every screen hears the flag at once; the DM's opens the fight, the others look a moment later for it
-    if (fightShared() && !FIGHT.auth){
-      if (!isDm()) await new Promise(r => setTimeout(r, 1200 + Math.random() * 600));
+    // ONE FIGHT: every screen hears the flag at once; the DM's opens the fight, the others look a moment later for it.
+    // A guard spotting a hero is the exception (THE SPOTTED BEAT): the screen that saw it opens it with no wait — it
+    // asked for the flag (flag.opener) and its beat has already played — and every OTHER screen, the DM's included,
+    // waits its moment and then shows the fight that screen is running. /api/walk-fight still grants one authority.
+    const mine = !!(flag.opener && OW.key && flag.opener === OW.key), theirs = !!(flag.opener && !mine);
+    if (fightShared() && !FIGHT.auth && !mine){
+      if (!isDm() || theirs) await new Promise(r => setTimeout(r, 1200 + Math.random() * 600));
       const lv = await fightLiveNow();
       if (lv && owSame(lv.plate, cur) && lv.auth_key !== OW.key){ talkGivesWay(); if (mode === "explore") enterMirror(lv); return; }
       if (mode !== "explore") return;
