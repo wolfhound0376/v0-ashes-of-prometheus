@@ -24597,6 +24597,8 @@ function owStart(W){
   owSetStatus("catching-up");
   if (w.plate == null || (!owSame(w.plate, cur) && !OW.bootSplit)) owEntered(true);      // a fresh world: this screen places the party (not a screen whose hero is split off)
   setInterval(owHeroTick, 150); setInterval(owStateTick, 400); setInterval(owBeat, 2500);
+  // back in this window: say so at once, so another screen carrying this hero lets go now, not at the next beat (YOUR HERO IS ALWAYS YOURS)
+  addEventListener("focus", () => { owBeat(); }); document.addEventListener("visibilitychange", () => { if (!document.hidden) owBeat(); });
   setTimeout(owBeat, 300);
   if (W.realtime && W.realtime.url && W.realtime.key) owRealtime(W.realtime);
 }
@@ -24638,8 +24640,17 @@ function packChanged(id){
 }
 // --- who drives whom ---
 function owDriver(a){ return AopOneWorld.driverOf(characterIdOf(a.id), OW.seats, owNow()); }
+// YOUR HERO IS ALWAYS YOURS (Sam, 2026-11-15: "Scott's character can't move with the keyboard or well"). Measured on the
+// live game: Scott's screen had written SAMSON's position (walk_world heroes.samson.by = Scott's key) — one window sat in
+// the background, its heartbeat lapsed past ONLINE_MS, and the other screen took its hero over (driverOf). Back in that
+// window, the player's own hero counted as someone else's for up to a beat: the keys did nothing (canControl), and every
+// position the other screen sent for them cancelled the step and walked them back (owApplyHero). Now the screen a hero
+// is claimed on always drives that hero, and ignores where any other player's screen says they are; the DM still can.
+// Another screen may still carry an absent player's hero (it is driverOf's fallback); it lets go at the next beat.
+const ownHero = a => !!(a && mySlug && a.id === mySlug && !isDm());
 function owDrives(a){
   if (!OW.on || !a || a.kind !== "pc") return true;
+  if (ownHero(a)) return true;
   const d = owDriver(a);
   if (d == null) return a.id === mySlug || (isDm() && !mySlug);    // before the first heartbeat lands: your own hero only
   return d === OW.key;
@@ -24686,6 +24697,7 @@ function owHeroTick(){
 }
 function owApplyHero(slug, h){
   let a = party.find(p => p.id === slug);
+  if (ownHero(a) && h.by && h.by !== OW.key && h.by !== "dm" && owSame(h.plate, cur)) return;   // YOUR HERO IS ALWAYS YOURS: another player's screen does not walk them
   // SPLIT PARTY, FIGHTS: a hero who walks onto this plate while this screen's fight is on joins it — rolls initiative and
   // acts from the next round (5E: you enter an encounter when you arrive). They fight on their own instincts here, like
   // every hero another player drives (fights are not shared between screens yet).
