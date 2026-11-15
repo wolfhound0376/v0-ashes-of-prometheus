@@ -3325,6 +3325,10 @@ function followOrder(){ return followers().sort((a, b) => Math.hypot(a.x - leade
 const zoneCenter = z => ({x: (z.rect[0] + z.rect[2]) / 2, y: (z.rect[1] + z.rect[3]) / 2});
 function norm(v){ const d = Math.hypot(v.x, v.y) || 1; return {x: v.x / d, y: v.y / d}; }
 function zoneAt(x, y){ return node.zones.find(z => inRect(z.rect, x, y)) || null; }
+// WHERE A WAY OUT TAKES YOU (Sam, 2026-11-15: "Can't get to the armory easily"). A zone's `rect` is what you hover and
+// click; its optional `trigger` (spec.py) is the smaller part a hero must actually walk into for it to take them. The
+// Guard Tower's hatch needs it: its box covered the floor all round the hole, right across the way to the armory ladder.
+function stepZoneAt(x, y){ return node.zones.find(z => inRect(z.trigger || z.rect, x, y)) || null; }
 
 // WHO IS ON A PLATE WHEN THE PARTY WALKS IN (Sam's playtest, 2026-10-24: "walking into a plate didn't populate the plate
 // with the campaign specific characters and items (some require a roll)"). The book gives most rooms a chance, not a
@@ -18325,6 +18329,7 @@ function click(w){
     if (n){ if (wantsWord(n) || canTalkTo(n)) walkTo(nearNpc(n), () => approach(n)); else ambient(n); return; }
     // a fight ended with you standing in this doorway (fightLetsGo): a click on it goes through
     { const zx = zoneAt(w.x, w.y); if (zx && zx === fightDoor && zx === ackZone && zx === zoneAt(leader.x, leader.y) && canControl(leader) && !leader.path.length){ ackZone = fightDoor = null; return; } }
+    { const zt = zoneAt(w.x, w.y); if (zt && zt.trigger){ const t = zt.trigger, p = nearestWalkable((t[0] + t[2]) / 2, (t[1] + t[3]) / 2); marker = {x: p.x, y: p.y, t: now}; walkTo(p); return; } }   // a click on the hatch walks onto its lip
     const p = nearestWalkable(w.x, w.y); marker = {x: p.x, y: p.y, t: now}; walkTo(p);
   } else if (mode === "combat"){ if (dmPlace){ placeDmCloud(w); return; } combatClick(w); }
 }
@@ -21312,7 +21317,7 @@ function update(dt){
     // exits
     // only a hero this screen drives walks it through an exit: a hero another screen drives (seen walking off on its
     // own, SPLIT PARTY) must never carry this screen's party with it
-    const z = mode === "explore" && !cbt && !leader.walkIn && !owRemote(leader) ? zoneAt(leader.x, leader.y) : null;   // (!cbt: A LIVE FIGHT HOLDS ITS PLATE, rule 1)
+    const z = mode === "explore" && !cbt && !leader.walkIn && !owRemote(leader) ? stepZoneAt(leader.x, leader.y) : null;   // (!cbt: A LIVE FIGHT HOLDS ITS PLATE, rule 1)
     // WALK TO THE END OF THE WAY OUT (Sam, 2026-11-12: "I don't like the yellow exit markers. You should just go to the end
     // of where the yellow marker WOULD be and then you move to the next plate smoothly."). A plain way out used to take
     // the party the moment the hero's foot touched its edge; now the hero walks on to its far half (past its middle, on
