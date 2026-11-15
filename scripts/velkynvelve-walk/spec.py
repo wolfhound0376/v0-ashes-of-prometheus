@@ -125,7 +125,10 @@ NODES = {
           # appear to climb." Neither ladder had climb data, so the party walked off the plate's edge. On the painting the
           # hatch in the floor (its ladder going DOWN) is the way to the lower chamber, and the rope ladder on the back wall
           # is the way UP to the armory; until now the zone on the hatch led up and the lower chamber's sat off the floor.
-          dict(rect=[1719, 822, 1840, 909], to=["10b"], label="The hatch: ladder down to the lower chamber", climb=dict(foot=[1780, 945], ladder=[1778, 872], dir="down")),
+          # `trigger` (Sam, 2026-11-15: "Can't get to the armory easily"): the hatch's box covered the floor all round the hole,
+          # the way from the bridge to the armory's rope ladder ran across it, and the party went down the hatch instead. The
+          # whole box is still the hatch to hover and click; only its south lip, where the ladder's foot is, takes you down.
+          dict(rect=[1719, 822, 1840, 909], trigger=[1738, 900, 1822, 962], to=["10b"], label="The hatch: ladder down to the lower chamber", climb=dict(foot=[1780, 945], ladder=[1778, 872], dir="down")),
           dict(rect=[1715, 690, 1815, 770], to=["10c"], label="Rope ladder up to the armory", climb=dict(foot=[1768, 740], ladder=[1768, 690], dir="up"))]),
  "10b": dict(slug="node-10b-guard-tower-lower", name="Guard Tower, lower chamber", scale=3.2, depth=[0.8, 1.6], img="node-10b-guard-tower-lower.jpg",
    # scale 3.2 and depth 0.8→1.6, not 0.95 and the default 0.8→1.12 (Sam, 2026-10-24: "fix both guard room and armory").
