@@ -3462,7 +3462,7 @@ async function enterNode(n, opts = {}){
   const compAll = companyNow().filter(id => SPR[id]);
   // the company on THIS plate (SPLIT PARTY): a prisoner whose place is recorded elsewhere stays there; one never split walks with the party
   const compAt = state.companyAt || {};
-  const comp = compAll.filter(id => compAt[id] == null || owSame(compAt[id], n));
+  const comp = compAll.filter(id => compAt[id] == null || owSame(compAt[id], n) || strandedFor(id, n, opts));   // COMPANY LEFT BEHIND
   for (const id of comp) if (state.companyAt) state.companyAt[id] = String(n);
   for (const np of whoIsHere(n)){
     if ((state.slain || []).includes(np.id)) continue;   // BYSTANDERS: killed in a fight, gone for good
@@ -3601,7 +3601,7 @@ async function travel(to, z, fromWorld, cut, solo){
   const movers = solo ? [leader] : party.slice();
   if (solo) for (const p of party) if (p !== leader) noteHeroAt(p.id, cur, p.x, p.y);
   const compAt = state.companyAt || (state.companyAt = {});
-  for (const n of npcs) if (n.company){
+  for (const n of npcs) if (n.company || (companyNow().includes(n.id) && !n.down && !n.body)){   // joined on another screen: still company (COMPANY LEFT BEHIND)
     const goes = !solo || (escortTarget(n.id).hero === leader && !laborLive());
     compAt[n.id] = String(goes ? to : cur);
   }
@@ -10251,7 +10251,10 @@ function syncAlone(){
     if (!drivesHere(h)) continue;
     const alone = !!(sneak && sneak.cur === cur && sneak.rolls.some(r => r.p === h));
     if (alone && !heroAlone(h.id)){ state["alone:" + h.id] = true; state["leftAt:" + h.id] = {x: Math.round(h.x), y: Math.round(h.y), plate: cur}; }
-    else if (!alone && heroAlone(h.id)) delete state["alone:" + h.id];
+    else if (!alone && heroAlone(h.id)) state["alone:" + h.id] = null;   // null, not delete: a deleted key is never sent (COMPANY LEFT BEHIND)
+    // the sneak is over and the hero has gone on to another plate: the spot they slipped away from no longer holds anyone
+    const lf = state["leftAt:" + h.id];
+    if (!alone && lf && !owSame(lf.plate, cur) && companyMode(h.id) !== "wait") state["leftAt:" + h.id] = null;
   }
 }
 // who (or where) a prisoner is walking with right now
@@ -10261,6 +10264,28 @@ function nearestStayer(from, not){
     if (!heroUp(h) || id === not || heroAlone(id)) continue;
     const d = Math.hypot(h.x - from.x, h.y - from.y); if (d < bd){ bd = d; best = h; } }
   return best;
+}
+// COMPANY LEFT BEHIND (Sam, 2026-11-15: "For some reason my company didn't join us when we were leaving. fix that.")
+// Measured on the live game (run f4bc0bcc, walk_world v539): Eldeth, Derendil and Sarith were all recorded on the pen
+// plate (companyAt 11) while Samson stood in the Guard Tower's lower chamber and Scott in the Guard Tower. Two causes:
+//   1. `alone:samson` was still true on the server long after his sneak ended (it became the ambush at the gate). The
+//      flag was cleared with `delete`, and a deleted key is never sent (owStateTick walks Object.keys), so every other
+//      screen kept him "off alone" and lent or held his prisoners at the spot he slipped away from. Fixed above: null.
+//   2. Two players each driving their own hero go through doors as splinters, and a splinter takes only the prisoners
+//      its screen has standing with it as company. A screen that stayed on the plate while the prisoners joined on
+//      another screen (the battle at the gate) has them as pen people, not company, so nobody ever walked them out.
+// The rule: a companion left on a plate where no hero now stands comes to their own hero the next time that hero
+// arrives anywhere (or to whoever arrives, if their hero is not on the board). "Wait here" and a work detail still
+// hold them where they are. [CLAUDE: the rule; the bug report is Sam's]
+function strandedFor(id, n, opts){
+  if (!booted || (opts && opts.view) || laborLive()) return false;
+  const at = (state.companyAt || {})[id];
+  if (at == null || owSame(at, n)) return false;
+  if (PARTY.some(h => heroAt[h] && owSame(heroAt[h].plate, at))) return false;   // a hero is still there with them
+  const hid = (state.escort || {})[id];
+  if (hid && companyMode(hid) === "wait") return false;                          // told to wait: they wait
+  if (!hid || party.some(p => p.id === hid)) return true;
+  return !(heroAt[hid] && heroAt[hid].plate != null);                            // their hero is somewhere else: they go there, not here
 }
 function escortTarget(npcId){
   const hid = (state.escort || {})[npcId], h = party.find(p => p.id === hid);
@@ -10274,7 +10299,7 @@ function escortTarget(npcId){
   if (left && left.plate === cur){
     const lend = nearestStayer(left, hid), at = lend || left;
     if (Math.hypot(h.x - at.x, h.y - at.y) > 450 * node.scale) return lend ? {hero: lend} : {spot: left};
-    if (drivesHere(h)) delete state["leftAt:" + hid];
+    if (drivesHere(h)) state["leftAt:" + hid] = null;
   }
   return {hero: h};
 }
@@ -10307,9 +10332,9 @@ function escortOf(id){ const e = state.escort || {}; return npcs.filter(n => n.c
 function openCompany(){
   const L = leader, nm = SHORT[L.id] || fname(L), mine = escortOf(L.id), m = companyMode(L.id);
   const who = mine.length ? mine.map(n => SHORT[n.id] || (SPR[n.id] && SPR[n.id].json.name) || n.id).join(", ") : "No one is with you right now.";
-  const set = v => { if (v === "follow") delete state["companyMode:" + L.id]; else state["companyMode:" + L.id] = v;
+  const set = v => { if (v === "follow") state["companyMode:" + L.id] = null; else state["companyMode:" + L.id] = v;
     if (v === "wait") state["leftAt:" + L.id] = {x: Math.round(L.x), y: Math.round(L.y), plate: cur};
-    else if (!heroAlone(L.id)) delete state["leftAt:" + L.id];
+    else if (!heroAlone(L.id)) state["leftAt:" + L.id] = null;
     log(v === "follow" ? `${esc(nm)}'s company falls in behind ${esc(nm)}.` : v === "wait" ? `${esc(nm)}'s company waits here.` : `${esc(nm)}'s company goes with ${esc(fname(party.find(p => p.id === v.slice(5))))}.`);
     exploreKey = ""; };
   const others = party.filter(p => p !== L && heroUp(p));
