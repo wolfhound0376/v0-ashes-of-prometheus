@@ -12141,12 +12141,16 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         for (const d of rd.dice){ const s = roll(d.dice, crit); dmg.total += s.total; parts.push(`${d.label} ${s.total}`); }
         for (const f of rd.flat){ dmg.total += f.amount; parts.push(`${f.label} +${f.amount}`); } }
       hitCtx = {weapon: atk.name || "", melee: !shot, by: att}; damage(tgt, dmg.total, atk.type, crit, att, !!atk.magic); hitCtx = null; hexRider(att, tgt, crit); markRider(att, tgt, crit, atk); if (atk.gfb) gfbLeap(att, tgt, crit);
-      if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => bank(`magic/impact_${atk.extra.type}`, .55), 200); setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att, true), 260); parts.push(`${e.total} ${atk.extra.type}`); }
+      if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => bank(`magic/impact_${atk.extra.type}`, .55), 200);
+        // the rider is SEEN, not just heard (Sam, 2026-11-15: "make sure their special abilities are animated"): the ochre jelly's acid splashes
+        if (IMPACT_OF[atk.extra.type] && atk.extra.type !== "thunder") setTimeout(() => spawnFx(IMPACT_OF[atk.extra.type], {at: tgt, sq: 1.3, anchor: "mid"}), 220);
+        else if (att.id === "orc-eye-of-gruumsh"){   // and the Eye's Gruumsh's Fury: a red flare on the hit
+          setTimeout(() => { tgt.flash = now + 220; tgt.flashCol = "#ff3a1a"; popText(tgt, "Gruumsh's Fury", "#ff6a3a"); }, 240); } setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att, true), 260); parts.push(`${e.total} ${atk.extra.type}`); }
       if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20(rageAdvantage(tgt.c.rage, atk.rider.save), tgt, atk.rider.cond, atk.rider.dc - (tgt.c.sheet.saves[atk.rider.save] || 0)) + (tgt.c.sheet.saves[atk.rider.save] || 0) + blessD4(tgt), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att, true); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
       // A HOLD (the carrion crawler's and the grell's tentacles): save or poisoned and paralyzed, the save again each turn
       if (atk.hold && !tgt.down && !tgt.c.conds.has(atk.hold.cond)){ const hs = d20(0, tgt) + (tgt.c.sheet.saves[atk.hold.save] || 0) + blessD4(tgt), hok = hs >= atk.hold.dc;
-        if (!hok && !(tgt.c.sheet.immuneCond || []).includes("poisoned")){ addCond(tgt, "poisoned"); addCond(tgt, atk.hold.cond); tgt.c.holdSave = {...atk.hold, by: fname(att)}; tgt.path = []; popText(tgt, atk.hold.cond, "#d8b8ff"); }
+        if (!hok && !(tgt.c.sheet.immuneCond || []).includes("poisoned")){ addCond(tgt, "poisoned"); addCond(tgt, atk.hold.cond); tgt.c.holdSave = {...atk.hold, by: fname(att)}; tgt.path = []; popText(tgt, atk.hold.cond, "#b8ff9a"); labHoldHit(tgt, "venom"); }
         parts.push(`${atk.hold.save.toUpperCase()} save ${hs} vs ${atk.hold.dc}: ${hok ? "resists" : atk.hold.cond}`); }
       if (atk.drowPoison && !tgt.down) parts.push(drowPoison(tgt, atk.drowPoison.dc));
       if (atk.tooth && !tgt.down){ const v = toothVenomHit(att, tgt); if (v) parts.push(v); }
@@ -14691,12 +14695,13 @@ function labMarkDeliver(c, at, then){ const h = labHand(c, at), to = bodyPoint(a
 function labMarkHit(t){ labRef("rgMark", {at: t, w: labR(t) * 4, life: 3600000, grow: [.3, 1], fade: [120, 500], pulse: true, dy: -labR(t) * 1.6, alpha: .9, whileCond: "marked"}); labRef("rgMark", {at: t, w: labR(t) * 5, life: 360, grow: [.6, 1.6], fade: [10, 300], dy: -labR(t) * 1.6}); lightFlash(t.x, labMid(t), "#ff2a3a", 200, 500); }
 function labMarkPulse(t){ labRef("rgMark", {at: t, w: labR(t) * 3, life: 300, grow: [.8, 1.4], fade: [10, 260], dy: -labR(t) * 1.6}); }
 // HOLD PERSON: violet bands of force snap round the body at four heights and lock
-function labHoldHit(t){ sparks.push({labHold: true, a: t, t0: now, life: 3600000}); t.flash = now + 200; t.flashCol = "#c890ff"; }
+// kind "venom": the carrion crawler's and the grell's paralysing poison - the same binding rings as Hold Person, sickly green
+function labHoldHit(t, kind){ sparks.push({labHold: true, venom: kind === "venom", a: t, t0: now, life: 3600000}); t.flash = now + 200; t.flashCol = kind === "venom" ? "#7dff5a" : "#c890ff"; }
 function drawLabHold(s){ const t = s.a; if (t.down || !t.c || !t.c.conds.has("paralyzed")){ if (!s.t1){ s.t1 = now; for (let i = 0; i < 20; i++) sparks.push({x: t.x + labRnd(-20, 20), y: t.y - labRnd(0, 90), vx: labRnd(-120, 120), vy: labRnd(-80, 20), col: "#e6ccff", t0: now, life: labRnd(300, 600)}); } s.life = 0; return; }
   const H = labH(t), R = labR(t) * 1.25, x = t.x + (t.kx || 0), al = Math.min(1, (now - s.t0) / 300);
-  ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = al; ctx.lineWidth = 3; ctx.shadowColor = "#d8a8ff"; ctx.shadowBlur = 12;
-  for (let i = 0; i < 4; i++){ const y = t.y - H * (.18 + i * .2), ph = now / 500 + i * 1.3; ctx.strokeStyle = i % 2 ? "rgba(230,200,255,.9)" : "rgba(190,130,255,.9)"; ctx.beginPath(); ctx.ellipse(x, y, R, R * .32, 0, 0, Math.PI * 2); ctx.stroke();
-    for (let j = 0; j < 4; j++){ const a = ph * 2 + j * Math.PI / 2; ctx.fillStyle = "#f4e6ff"; ctx.fillRect(x + Math.cos(a) * R - 2, y + Math.sin(a) * R * .32 - 2, 4, 4); } }
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = al; ctx.lineWidth = 3; ctx.shadowColor = s.venom ? "#8cff6a" : "#d8a8ff"; ctx.shadowBlur = 12;
+  for (let i = 0; i < 4; i++){ const y = t.y - H * (.18 + i * .2), ph = now / 500 + i * 1.3; ctx.strokeStyle = s.venom ? (i % 2 ? "rgba(200,255,170,.85)" : "rgba(110,210,80,.85)") : (i % 2 ? "rgba(230,200,255,.9)" : "rgba(190,130,255,.9)"); ctx.beginPath(); ctx.ellipse(x, y, R, R * .32, 0, 0, Math.PI * 2); ctx.stroke();
+    for (let j = 0; j < 4; j++){ const a = ph * 2 + j * Math.PI / 2; ctx.fillStyle = s.venom ? "#e6ffd8" : "#f4e6ff"; ctx.fillRect(x + Math.cos(a) * R - 2, y + Math.sin(a) * R * .32 - 2, 4, 4); } }
   ctx.restore(); }
 // CLOUD OF DAGGERS: spinning steel daggers in a 5-ft cube
 function drawLabDaggers(s){ const z = s.z; if (!daggerZones.includes(z)){ s.life = 0; return; } const im = labImg("dagger"); if (!im.complete || !im.naturalWidth) return; const R = ftPx(z) * 3.2;

@@ -367,6 +367,9 @@ for i in P + list(GARB.values()) + N + F + V + LP:
     # page). A slug whose sprite has no jump.png is filtered out on the next line and falls
     # back to the walk sheet in the air, so asking for it early costs nothing.
     sh = ['idle', 'walk'] + (['attack', 'sit', 'eat', 'sleep', 'hurt', 'dead', 'cast', 'jump', 'shoot'] if i in PG else []) + (['attack', 'dodge', 'hurt', 'dead', 'jump', 'rage', 'curse'] if i in F else [])
+    # the director's archers and crossbowmen draw their own shots (Sam, 2026-11-15: "make sure their special abilities are animated")
+    if i in ['bandit']: sh.append('shoot')
+    if i in ['goblin', 'goblin-boss', 'skeleton-swordsman']: sh.append('shoot-bow')
     if i == 'zombie-rotting': sh = sh + ['emerge']   # the climb out of the mound (Sam, 2026-10-30); already drawn, 21 frames at 12 fps
     # the four allies fight beside the party (Sam, 2026-10-15), so they need their combat sheets too:
     # without 'attack' a swing has no hit frame and the roll never happens
