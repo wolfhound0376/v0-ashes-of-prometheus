@@ -4169,7 +4169,7 @@ function stepCost(a, p, q){
 }
 function netEndTurn(a){
   if (!a || !a.c || a.down || webWalker(a) || !inNet(a) || a.c.conds.has("restrained")) return;
-  const sv = (a.c.sheet.saves && a.c.sheet.saves.dex) || 0, r = d20(rageAdvantage(a.c.rage, "dex"), a, null, NET_DC - sv), total = r + sv, ok = total >= NET_DC;
+  const sv = (a.c.sheet.saves && a.c.sheet.saves.dex) || 0, r = d20(saveAdv(a, "dex"), a, null, NET_DC - sv), total = r + sv, ok = total >= NET_DC;
   log(`${fname(a)} ends the turn in the web net: DEX ${r} + ${sv} = ${total} vs DC ${NET_DC} — ${ok ? "keeps clear of the silk" : "<b>the silk takes hold</b>, restrained (DC " + NET_DC + " STR to break free)"}.`);
   if (ok){ popText(a, "clear of the silk", "#e8e2c8", .8); return; }
   addCond(a, "restrained"); a.c.webDc = NET_DC; a.path = []; bank("movement/web_tear", .4);
@@ -4310,7 +4310,7 @@ function chasmFall(t, at, by, kind){
   t.path = []; stopActivity(t); t.onArrive = null;
   const who = fname(t);
   if (by && t.c && t.c.sheet){
-    const sv = (t.c.sheet.saves && t.c.sheet.saves.dex) || 0, r = d20(rageAdvantage(t.c.rage, "dex"), t, null, LEDGE_SAVE_DC - sv), total = r + sv;
+    const sv = (t.c.sheet.saves && t.c.sheet.saves.dex) || 0, r = d20(saveAdv(t, "dex"), t, null, LEDGE_SAVE_DC - sv), total = r + sv;
     if (total >= LEDGE_SAVE_DC){
       const q = nearestWalkable(t.x, t.y); t.x = q.x; t.y = q.y; addCond(t, "prone");
       popText(t, "catches the edge", "#ffd27a", 1.1); bank("movement/web_tear", .3);
@@ -11608,6 +11608,16 @@ function leaperPlan(a, goal){
 }
 
 // ----- resolving -----
+// DODGE, THE WHOLE OF IT (Sam, 2026-11-15: "not sure dodge was working"). SRD 5.1 Dodge: until the start of your next
+// turn, any attack roll made against you has disadvantage if you can see the attacker, AND you make Dexterity saving
+// throws with advantage; you lose the benefit if you are incapacitated or your speed drops to 0. The attack half was
+// here; the save half was missing everywhere. saveAdv is the one place a save's advantage is decided: Rage as before,
+// plus Dodge on a Dexterity save. (One advantage is all 5e gives: several still make one, and disadvantage cancels it.)
+function dodges(t){ return !!(t && t.c && t.c.conds.has("dodging") && !incapacitated(t)); }
+function saveAdv(who, ab){
+  const r = rageAdvantage(who && who.c ? who.c.rage : null, ab), d = ab === "dex" && dodges(who) ? 1 : 0;
+  return Math.max(-1, Math.min(1, r + d));
+}
 function advantageOn(att, tgt, ranged, atk){
   let adv = 0;
   if (att.c.conds.has("poisoned")) adv--;                                     // SRD: poisoned — disadvantage on attack rolls
@@ -11619,7 +11629,7 @@ function advantageOn(att, tgt, ranged, atk){
   }
   if (tgt.c.conds.has("lit") || tgt.c.conds.has("asleep") || tgt.c.conds.has("paralyzed")) adv++;
   if (tgt.kind === "pc" && tgt.down) adv++;                                   // SRD: unconscious — attack rolls against it have advantage
-  if (tgt.c.conds.has("dodging") || att.c.conds.has("mocked")) adv--;
+  if (dodges(tgt) || att.c.conds.has("mocked")) adv--;
   if (att.c.conds.has("hidden") || att.c.conds.has("helped")) adv++;          // unseen attacker; an ally's Help
   if (tgt.c.conds.has("hidden")) adv--;                                       // swinging at where you think it is
   if (tgt.c.conds.has("prone")) adv += ranged ? -1 : 1;                      // SRD: prone — melee advantage, ranged disadvantage
@@ -11862,7 +11872,8 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       function rest(){
       // MIRROR IMAGE (SRD 5.2.1): a hit rolls a d6 per duplicate left; any 3+ and a duplicate takes it and is destroyed
       const mi = hit && !cv.total ? mirrorDiverts(att, tgt) : null; if (mi && mi.ok){ hit = false; crit = false; }
-      const why = cv.total ? `${fname(att)} ${atk.name}: no clear ${ranged ? "shot" : "reach"}, ${cv.why} is in the way` : `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : " (dis)") : ""} + ${atk.hit} vs AC ${acVs}${coverNote(cv)}`;
+      const why = cv.total ? `${fname(att)} ${atk.name}: no clear ${ranged ? "shot" : "reach"}, ${cv.why} is in the way` : `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : dodges(tgt) ? " (dis: dodging)" : " (dis)") : ""} + ${atk.hit} vs AC ${acVs}${coverNote(cv)}`;
+      if (!cv.total && dodges(tgt)) popText(tgt, hit ? "dodging: still hit" : "dodged!", "#cfe8ff", .9);   // the Dodge is seen working, swing by swing
       if (r === 1) bank("ui/nat1", .7);
       if (shot){ bank(ws.swing, .75); att.aimHold = now;
         flying = new Promise(res => fireShot(att, tgt, shot, hit, to => { landed = to; lands(); res(); }, atk)); }
@@ -12134,7 +12145,7 @@ function castSpell(caster, tgt, name, done, darts){
           // Fey Ancestry (SRD 5.1 elf/half-elf 2315/2320, drow 1608): magic can't put them to sleep. Shown, not silent.
           if (name === "Sleep"){ const fp = sleepProof(rollerOf(t)); if (fp){ traitPop(t, fp); lines.push(`${fname(t)} is untouched (Fey Ancestry)`); if (i === targets.length - 1){ sigilEnd(t, false); log(`${fname(caster)} ${name}: ${lines.join("; ")}.`); } return; } }
           const cvS = sp.save === "dex" && name !== "Sacred Flame" ? coverOf(caster, t) : {ac: 0};            // SRD: cover adds to DEX saves too
-          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20(rageAdvantage(t.c.rage, sp.save), t, sp.cond, dc - (t.c.sheet.saves[sp.save] || 0) - cvS.ac) + (t.c.sheet.saves[sp.save] || 0) + cvS.ac + blessD4(t), ok = s >= dc;
+          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20(saveAdv(t, sp.save), t, sp.cond, dc - (t.c.sheet.saves[sp.save] || 0) - cvS.ac) + (t.c.sheet.saves[sp.save] || 0) + cvS.ac + blessD4(t), ok = s >= dc;
           let line = `${fname(t)} ${sp.save.toUpperCase()} ${s}${cvS.ac ? ` (cover +${cvS.ac})` : ""} vs DC ${dc}: ${ok ? "saves" : "fails"}`;
           if (sp.area && !marks.length) markTarget(t);
           if (name === "Sleep"){ if (!ok){ bank("spells/control-slumber-fall", .5); t.sheepT0 = now; } else bank("magic/spell_fizzle", .4); if (i === targets.length - 1) sigilEnd(t, !ok); }
@@ -12265,7 +12276,7 @@ function doShove(a, t, what){
     // too far is, attackWith)
     if (feetBetween(a, t) > 5 + 2.5 && !gateWayTo(a, t)){ toast(`Too far to ${verb}: ${Math.round(feetBetween(a, t))} ft, and ${fname(a)} is out of movement.`); c.action = true; combatBusy = false; if (cbt){ cbt.phase = "idle"; openMenu(a); } return; }
     strike(a, t, () => {
-      const sv = Math.max(t.c.sheet.saves.str || 0, t.c.sheet.saves.dex || 0), r = d20(rageAdvantage(t.c.rage, (t.c.sheet.saves.str || 0) >= (t.c.sheet.saves.dex || 0) ? "str" : "dex"), t), total = r + sv, dc = shoveDc(a), ok = total >= dc;
+      const sv = Math.max(t.c.sheet.saves.str || 0, t.c.sheet.saves.dex || 0), r = d20(saveAdv(t, (t.c.sheet.saves.str || 0) >= (t.c.sheet.saves.dex || 0) ? "str" : "dex"), t), total = r + sv, dc = shoveDc(a), ok = total >= dc;
       lunge(a, t, 12 * actorScale(a)); afterAttackRoll(a);
       // THE SAVE HOLDS: say so loudly. "holds" in grey over the foe read as nothing happening — the player saw the
       // hero step in and the foe stand there (Sam, 2026-10-28). The shove is a contest that was lost, not a dead click.
@@ -12329,7 +12340,7 @@ function newSpellsTurnStart(a){
     else { popText(a, "held", "#d8b8ff"); log(`${fname(a)} is held fast (WIS ${s} vs DC ${a.c.heldDc}).`); setTimeout(nextTurn, 900); return true; } }
   for (const z of daggerZones) if (!a.down && Math.hypot(a.x - z.x, a.y - z.y) <= ruleFt(a) * 4){ const d = roll(z.dmg).total; bank("combat/blade_whoosh", .6); damage(a, d, z.type, false, z.caster, true); log(`${fname(a)} starts the turn in the Cloud of Daggers: ${d} ${z.type}.`); if (a.down) return true; }
   for (const z of fireSpheres) if (z.caster === a){ const v = standing(hero(a) ? foes : heroes()).filter(f => Math.hypot(f.x - z.x, f.y - z.y) <= ruleFt(f) * 30).sort((p, q) => Math.hypot(p.x - z.x, p.y - z.y) - Math.hypot(q.x - z.x, q.y - z.y))[0]; if (!v) continue;
-    const dc = a.c.sheet.magic.dc, s = d20(0, v) + (v.c.sheet.saves.dex || 0), d = roll("2d6").total, n = s >= dc ? Math.floor(d / 2) : d; z.move = {x0: z.x, y0: z.y, x1: v.x + (Math.sign(z.x - v.x) || 1) * ftPx(v) * 2.5, y1: v.y, t0: now, ms: 420};
+    const dc = a.c.sheet.magic.dc, s = d20(saveAdv(v, "dex"), v) + (v.c.sheet.saves.dex || 0), d = roll("2d6").total, n = s >= dc ? Math.floor(d / 2) : d; z.move = {x0: z.x, y0: z.y, x1: v.x + (Math.sign(z.x - v.x) || 1) * ftPx(v) * 2.5, y1: v.y, t0: now, ms: 420};
     setTimeout(() => { labFireHit(v); bank("walk:impact-fire", .6); damage(v, n, "fire", false, a, true); log(`The Flaming Sphere rams ${fname(v)}: DEX ${s} vs DC ${dc} — ${n} fire.`); }, 420); }
   return false;
 }
@@ -15474,7 +15485,7 @@ const onIce = (a, p) => Math.hypot(a.x - p.x, a.y - p.y) <= p.r + 4;
 function iceSave(a, p, why){
   if (p.tested.has(a) || a.down || !a.c) return; p.tested.add(a);
   if (a.c.conds.has("prone")) return;
-  const sv = a.c.sheet.saves.dex || 0, r = d20(rageAdvantage(a.c.rage, "dex"), a), total = r + sv, ok = total >= p.dc;
+  const sv = a.c.sheet.saves.dex || 0, r = d20(saveAdv(a, "dex"), a), total = r + sv, ok = total >= p.dc;
   log(`${fname(a)} on the ice (${why}): DEX ${r} + ${sv} = ${total} vs DC ${p.dc} — ${ok ? "keeps their feet" : "<b>slips and falls</b>"}.`);
   if (ok){ popText(a, "steady", "#bfe9ff", .8); return; }
   addCond(a, "prone"); a.path = []; if (SPR[a.id].img.hurt) playOnce(a, "hurt", () => setAnim(a, "idle")); knock(a, p, 6 * actorScale(a));
