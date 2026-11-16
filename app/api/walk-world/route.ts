@@ -96,7 +96,7 @@ export async function GET() {
   }
 }
 
-const STATUSES: SyncStatus[] = ["in-step", "catching-up", "out-of-touch", "fight-unshared"]
+const STATUSES: SyncStatus[] = ["in-step", "catching-up", "out-of-touch", "fight-unshared", "away"]   // "away": the page's last word as it goes (HOLD_MS)
 
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>

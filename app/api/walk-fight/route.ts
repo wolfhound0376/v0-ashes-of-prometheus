@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { isDmRequest } from "@/lib/dm-session"
-import { MAX_READ, cleanBody, isHeld, mayDrive, openDecision, type LiveFight } from "@/lib/walk-fight"
+import { CLAIM_QUIET_MS, MAX_READ, cleanBody, isHeld, mayClaim, mayDrive, openDecision, type LiveFight } from "@/lib/walk-fight"
 
 // /api/walk-fight — ONE FIGHT for the Underwalk (lib/walk-fight.ts, tables walk_fights + walk_fight_msgs).
 //
@@ -14,6 +14,9 @@ import { MAX_READ, cleanBody, isHeld, mayDrive, openDecision, type LiveFight } f
 //   POST {op:"tick", fight, body}                 the authority's quarter-second: what changed and what happened.
 //   POST {op:"in", fight, body}                   a seated player's input for the authority (a menu row, a click…).
 //   POST {op:"end", fight, body}                  the authority's last word.
+//   POST {op:"claim", fight}                      a screen showing the fight takes it over: {auth:true, fight, lastIn} once its
+//                                                 authority has been quiet CLAIM_QUIET_MS (a refresh there), else {auth:false}.
+//   POST {op:"release", fight}                    the authority lets the fight be claimed now (it reloaded and lost it).
 //
 // Callers are known the same way as /api/walk-world: the DM door ("dm") or a seated player's own claim (their
 // character id). When the tables are not there (migration unapplied) every call answers 503 and the map runs each
@@ -48,6 +51,12 @@ async function liveFight(db: Db, runId: string): Promise<LiveFight | null> {
   const { data, error } = await db.from("walk_fights").select("*").eq("campaign_run_id", runId).is("ended_at", null).maybeSingle()
   if (error) throw new Error(error.message)
   return (data as LiveFight | null) ?? null
+}
+
+/** The newest input already sent to this fight: a screen taking it over starts after it (those went to the old authority). */
+async function lastInput(db: Db, id: string): Promise<number> {
+  const { data } = await db.from("walk_fight_msgs").select("id").eq("fight_id", id).eq("kind", "in").order("id", { ascending: false }).limit(1).maybeSingle()
+  return Number(data?.id) || 0
 }
 
 async function fightById(db: Db, id: string): Promise<LiveFight | null> {
@@ -106,6 +115,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ auth: true, fight: data, now })
     }
 
+    // A FIGHT OUTLIVES A REFRESH (lib/walk-fight.ts CLAIM_QUIET_MS). CLAIM: a screen showing the fight takes it over once
+    // its authority has been quiet long enough; the update is conditional, so of two screens claiming at once one wins.
+    // RELEASE: the authority itself (a page that reloaded and lost the fight, or one going away) lets it be claimed now.
+    if (body.op === "claim" || body.op === "release") {
+      const id = typeof body.fight === "string" ? body.fight : ""
+      const f = id ? await fightById(db, id) : null
+      if (!f || f.ended_at) return NextResponse.json({ error: "no such live fight", ended: true }, { status: 409 })
+      const now = Date.now()
+      if (body.op === "release") {
+        if (f.auth_key !== who) return NextResponse.json({ ok: true, released: false })
+        await db.from("walk_fights").update({ auth_seen: new Date(now - CLAIM_QUIET_MS - 1000).toISOString() }).eq("id", id).eq("auth_key", who)
+        return NextResponse.json({ ok: true, released: true })
+      }
+      if (f.auth_key === who) return NextResponse.json({ auth: true, fight: f, lastIn: await lastInput(db, id), now })
+      if (!mayClaim(f, now)) return NextResponse.json({ auth: false, fight: f, now })
+      const { data, error } = await db.from("walk_fights").update({ auth_key: who, auth_seen: new Date(now).toISOString() })
+        .eq("id", id).is("ended_at", null).lt("auth_seen", new Date(now - CLAIM_QUIET_MS).toISOString()).select("*")
+      if (error) throw new Error(error.message)
+      const won = (data ?? [])[0]
+      if (!won) return NextResponse.json({ auth: false, fight: await fightById(db, id), now })
+      return NextResponse.json({ auth: true, fight: won, lastIn: await lastInput(db, id), now })
+    }
+
     if (body.op === "tick" || body.op === "in" || body.op === "end") {
       const id = typeof body.fight === "string" ? body.fight : ""
       const f = id ? await fightById(db, id) : null
@@ -120,7 +152,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true, id: data?.id, now: Date.now() })
     }
 
-    return NextResponse.json({ error: "op must be open, tick, in or end" }, { status: 400 })
+    return NextResponse.json({ error: "op must be open, tick, in, end, claim or release" }, { status: 400 })
   } catch (e) {
     return NextResponse.json({ error: String(e instanceof Error ? e.message : e) }, { status: 503 })
   }

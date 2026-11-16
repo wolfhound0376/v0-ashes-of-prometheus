@@ -23,6 +23,7 @@ var AopOneWorld = (() => {
   var walk_world_exports = {};
   __export(walk_world_exports, {
     HERO_POSES: () => HERO_POSES,
+    HOLD_MS: () => HOLD_MS,
     LIMITS: () => LIMITS,
     MISSES_BEFORE_RESYNC: () => MISSES_BEFORE_RESYNC,
     ONLINE_MS: () => ONLINE_MS,
@@ -32,6 +33,7 @@ var AopOneWorld = (() => {
     emptyWorld: () => emptyWorld,
     fingerprint: () => fingerprint,
     heartbeatVerdict: () => heartbeatVerdict,
+    heldAway: () => heldAway,
     isOnline: () => isOnline,
     mayWriteHero: () => mayWriteHero,
     plateId: () => plateId,
@@ -41,6 +43,7 @@ var AopOneWorld = (() => {
     worldDigest: () => worldDigest
   });
   var ONLINE_MS = 12e3;
+  var HOLD_MS = 6e4;
   var MISSES_BEFORE_RESYNC = 2;
   var LIMITS = { stateBytes: 64e3, heroesPerPatch: 12, coord: 4e3 };
   var HERO_POSES = ["carry", "scrub", "sneak"];
@@ -107,14 +110,20 @@ var AopOneWorld = (() => {
   function isOnline(seat, now) {
     return !!seat && typeof seat.at === "number" && now - seat.at <= ONLINE_MS;
   }
+  function heldAway(seat, now) {
+    return !!seat && seat.status === "away" && typeof seat.at === "number" && now - seat.at <= HOLD_MS;
+  }
+  function canDrive(seat, now) {
+    return isOnline(seat, now) && seat.status !== "away";
+  }
   function driverOf(ownerCid, seats, now) {
     const s = seats || {};
-    if (ownerCid && isOnline(s[ownerCid], now)) return ownerCid;
-    if (isOnline(s.dm, now)) return "dm";
+    if (ownerCid && (isOnline(s[ownerCid], now) || heldAway(s[ownerCid], now))) return ownerCid;
+    if (canDrive(s.dm, now)) return "dm";
     let best = null;
     let bestSeat = Infinity;
     for (const k of Object.keys(s).sort()) {
-      if (k === "dm" || !isOnline(s[k], now)) continue;
+      if (k === "dm" || !canDrive(s[k], now)) continue;
       const n = typeof s[k].seat === "number" ? s[k].seat : 99;
       if (n < bestSeat) {
         bestSeat = n;

@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { runInNewContext } from "node:vm"
 import { describe, expect, it } from "vitest"
 import {
-  MISSES_BEFORE_RESYNC, ONLINE_MS, canon, cleanPatch, driverOf, fingerprint, heartbeatVerdict, mayWriteHero,
+  HOLD_MS, MISSES_BEFORE_RESYNC, ONLINE_MS, canon, cleanPatch, driverOf, fingerprint, heartbeatVerdict, heldAway, mayWriteHero,
   plateId, samePlate, seededRandom, seededRoll, worldDigest, type Seat,
 } from "./walk-world"
 
@@ -77,6 +77,30 @@ describe("driverOf — exactly one driver per hero", () => {
     expect(mayWriteHero({ cid: "fifi" }, "gandalf", false, seats, now)).toBe(false)
     expect(mayWriteHero({ cid: "fifi" }, "fifi", false, seats, now)).toBe(true)
     expect(mayWriteHero({ cid: "fifi" }, "dm", true, seats, now)).toBe(true)
+  })
+})
+
+describe("a seat held while its player is away (a refresh)", () => {
+  const now = 1_000_000
+  it("holds the hero for its owner for HOLD_MS after the page said it was going away", () => {
+    const seats = { fifi: seat({ at: now - 30000, seat: 1, status: "away" }), dm: seat({ at: now - 1000, dm: true }) }
+    expect(heldAway(seats.fifi, now)).toBe(true)
+    expect(driverOf("fifi", seats, now)).toBe("fifi")          // nobody else walks Fifi about while she reloads
+    expect(mayWriteHero({ cid: "fifi" }, "dm", false, seats, now)).toBe(false)
+  })
+  it("lets go once HOLD_MS has passed", () => {
+    const seats = { fifi: seat({ at: now - HOLD_MS - 1, seat: 1, status: "away" }), dm: seat({ at: now - 1000, dm: true }) }
+    expect(driverOf("fifi", seats, now)).toBe("dm")
+  })
+  it("never lets an away page drive anyone else's hero", () => {
+    const seats = { gandalf: seat({ at: now - 2000, seat: 1, status: "away" }), scott: seat({ at: now - 1000, seat: 3 }) }
+    expect(driverOf("kenta", seats, now)).toBe("scott")
+    const dmAway = { dm: seat({ at: now - 2000, dm: true, status: "away" }), scott: seat({ at: now - 1000, seat: 3 }) }
+    expect(driverOf("kenta", dmAway, now)).toBe("scott")
+  })
+  it("a page that died without a word still lets go after ONLINE_MS", () => {
+    const seats = { fifi: seat({ at: now - ONLINE_MS - 1, seat: 1, status: "in-step" }), scott: seat({ at: now - 1000, seat: 3 }) }
+    expect(driverOf("fifi", seats, now)).toBe("scott")
   })
 })
 

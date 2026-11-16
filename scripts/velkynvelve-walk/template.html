@@ -8638,7 +8638,7 @@ function nextTurn(first){
   if (!first){ const was = cbt.order[cbt.idx]; if (was && was.c){ laughSave(was, false); blindSave(was); fearSave(was); guardianEndTurn(was); } }   // the saves at the end of its turn (Hideous Laughter, Blindness)
   if (!first){ const was = cbt.order[cbt.idx]; if (was && was.c && was.c.rage){ const r = rageAfterTurn(was.c.rage, cbt.round); if (r.ended) endRage(was, r.ended); else was.c.rage = r.rage; } }
   for (let k = 0; k < cbt.order.length; k++){
-    cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0){ cbt.round++; if (cbt.round > 1) bystandersFlee(); arrowsWorkLoose(false); helpArrives(); }   // the bystanders run as each round opens
+    cbt.idx = (cbt.idx + 1) % cbt.order.length; if (cbt.idx === 0){ cbt.round++; if (cbt.resuming) cbt.resuming = false; else { if (cbt.round > 1) bystandersFlee(); arrowsWorkLoose(false); helpArrives(); } }   // (a fight taken over mid-round, A FIGHT OUTLIVES A REFRESH, does not open its round twice)   // the bystanders run as each round opens
     const a = cbt.order[cbt.idx]; if ((!a.down || dyingNow(a)) && actors.includes(a) && !(a.c && a.c.joinRound > cbt.round)) break;   // a late arrival waits for the next round
   }
   const a = activeActor(); if (!a) return;
@@ -22588,7 +22588,7 @@ function abandonLocalFight(){
 // --- A MIRROR
 function enterMirror(f){
   if (FIGHT.mirror && FIGHT.id === f.id) return;
-  Object.assign(FIGHT, {id: f.id, mirror: true, auth: false, plate: String(f.plate), since: 0, dlgShown: null});
+  Object.assign(FIGHT, {id: f.id, mirror: true, auth: false, plate: String(f.plate), since: 0, dlgShown: null, tickAt: Date.now(), claimTry: 0, gotCbt: false});
   mirrorBagInstall();
   mode = "combat"; combatBusy = false;
   cbt = {mirror: true, order: [], idx: -1, round: 0, phase: "idle", pend: null, allies: [], bystanders: [], home: {z: view.z, cx: NAT_W / 2, cy: NAT_H / 2}, id: f.id};
@@ -22597,6 +22597,29 @@ function enterMirror(f){
   log(`<em>A fight — shown here as it is fought on ${f.auth_key === "dm" ? "the DM's" : "another"} screen.</em>`);
   mirrorPoll();
 }
+// A FIGHT OUTLIVES A REFRESH (Sam, 2026-11-15: "Something must protect syncs between cooperative play when one person
+// refreshes his browser"). The screen that runs a fight keeps it only in its page. When it has sent nothing for
+// CLAIM_QUIET_MS (lib/walk-fight.ts) a screen showing the fight asks to carry it on; the server lets one of them. That
+// screen already holds every fighter, sheet, zone, the order, the round and whose turn it is (the mirror's copy), so it
+// becomes the authority from there: the turn that was running starts again from its top, and the fight goes on.
+const CLAIM_QUIET_MS = 8000;
+async function fightClaim(){
+  FIGHT.claimTry = Date.now();
+  try {
+    const j = await fightPost("claim", {fight: FIGHT.id});
+    if (!j.auth || !FIGHT.mirror || !cbt) return false;
+    const a = activeActor();
+    Object.assign(FIGHT, {auth: true, mirror: false, out: [], sent: {}, sentC: {}, fullAt: 0, inSince: j.lastIn || 0, menuSig: "", dlgSig: "", dlgs: {}, dlgShown: null, endSent: false});
+    cbt.mirror = false; combatBusy = false; $("cbtMenu").hidden = true; FIGHT.menu = null;
+    // the turn that was running starts again from its top (nextTurn(true) moves on one, so step back one first)
+    if (cbt.idx <= 0){ cbt.idx = cbt.order.length - 1; cbt.round = Math.max(0, (cbt.round || 1) - 1); cbt.resuming = true; } else cbt.idx -= 1;
+    relayInstall();
+    log(`<em>The screen running this fight went quiet. This one carries it on${a ? ` from ${esc(fname(a))}'s turn` : ""}.</em>`);
+    reviewLog("sync", `Took the fight over (its screen went quiet)${a ? `, at ${fname(a)}'s turn, round ${cbt.round + (cbt.resuming ? 1 : 0)}` : ""}.`);
+    nextTurn(true); fightTick();
+    return true;
+  } catch (e) { return false; }
+}
 async function mirrorPoll(){
   if (!FIGHT.mirror || !FIGHT.id) return;
   try {
@@ -22604,6 +22627,9 @@ async function mirrorPoll(){
     for (const m of j.msgs || []){ FIGHT.since = Math.max(FIGHT.since, m.id); if (m.kind === "end"){ mirrorEnd(m.body || {}); return; } await mirrorApply(m.body || {}); }
     if (j.fight && j.fight.ended_at && !(j.msgs || []).some(m => m.kind === "end")){ mirrorEnd({}); return; }
     FIGHT.lastOk = now;
+    if ((j.msgs || []).length) FIGHT.tickAt = Date.now();
+    // THE AUTHORITY WENT QUIET (a refresh there): once this screen holds the whole fight, it asks to carry it on
+    if (FIGHT.gotCbt && Date.now() - FIGHT.tickAt > CLAIM_QUIET_MS + 500 && Date.now() - FIGHT.claimTry > 3000){ if (await fightClaim()) return; }
   } catch (e) { console.warn("[one-fight] mirror", e && e.stack ? e.stack.slice(0, 300) : e); }
   setTimeout(mirrorPoll, 250);
 }
@@ -22636,7 +22662,7 @@ async function mirrorActor(s){
 async function mirrorApply(b){
   for (const s of b.actors || []) await mirrorActor(s);
   for (const k of b.gone || []){ const a = byKey(k); if (a && a.kind !== "pc"){ actors = actors.filter(x => x !== a); foes = foes.filter(x => x !== a); } }
-  if (b.cbt){ const c = b.cbt, turnWas = activeActor();
+  if (b.cbt){ const c = b.cbt, turnWas = activeActor(); FIGHT.gotCbt = true;
     Object.assign(cbt, {round: c.round, idx: c.idx, phase: c.phase, quick: c.quick, order: c.order.map(byKey).filter(Boolean), boss: byKey(c.boss),
       allies: c.allies.map(byKey).filter(Boolean), bystanders: c.bystanders.map(byKey).filter(Boolean), pend: dec(c.pend)});
     renderTurns(); renderParty();
@@ -22743,6 +22769,13 @@ setInterval(async () => {
   FIGHT.polling = true;
   try { const j = await fightGet(""); FIGHT.live = j.fight || null;
     if (j.fight && owSame(j.fight.plate, cur) && j.fight.auth_key !== OW.key && !FIGHT.mirror && !FIGHT.auth){ talkGivesWay(); if (mode === "explore") enterMirror(j.fight); }
+    // A FIGHT OUTLIVES A REFRESH (Sam, 2026-11-15): the fight on this plate is held by THIS screen's key, but this page has
+    // no fight running: it reloaded mid-fight and lost it. Hand it back at once (release) and show it like any other
+    // screen; whoever claims it first (this one too, from the stream) carries it on.
+    else if (j.fight && owSame(j.fight.plate, cur) && j.fight.auth_key === OW.key && !FIGHT.mirror && !FIGHT.auth && mode === "explore"){
+      reviewLog("sync", "This screen ran the fight before it reloaded: handing it back and rejoining it.");
+      await fightPost("release", {fight: j.fight.id}).catch(() => {}); talkGivesWay(); enterMirror(j.fight);
+    }
   } catch (e) { if (/does not exist|relation/.test(String(e.message))) FIGHT.failed = true; }
   finally { FIGHT.polling = false; }
 }, 2000);
@@ -22760,7 +22793,7 @@ function owFightEnds(){
   if (state.fightOn && owSame(state.fightOn.plate, cur)) state.fightOn = null;
 }
 // --- the light ---
-const OW_LABEL = {"in-step": "In step", "catching-up": "Catching up…", "out-of-touch": "Out of touch", "fight-unshared": "Fight not shared", "off": "Not shared", "rehearsal": "Rehearsal · own world"};
+const OW_LABEL = {"away": "Away (reloading?)", "in-step": "In step", "catching-up": "Catching up…", "out-of-touch": "Out of touch", "fight-unshared": "Fight not shared", "off": "Not shared", "rehearsal": "Rehearsal · own world"};
 function owSetStatus(s){
   if (s !== OW.status) reviewLog("sync", `Sync: ${OW_LABEL[s] || s}${OW.status && OW.status !== "off" ? ` (was ${OW_LABEL[OW.status] || OW.status})` : ""}`);
   OW.status = s;
@@ -22823,7 +22856,7 @@ function gatherWaitingFor(){
   for (const [k, s] of Object.entries(OW.seats || {})){
     if (!s || k === OW.key || typeof s.at !== "number" || t - s.at > GATHER_SEAT_MS) continue;
     const live = AopOneWorld.isOnline(s, t);
-    if (live && !lagging(k, !(s.status === "in-step" || s.status === "fight-unshared"), t)) continue;
+    if (live && s.status !== "away" && !lagging(k, !(s.status === "in-step" || s.status === "fight-unshared"), t)) continue;   // a page that said it is going away is waited for at once
     out.push({key: k, name: seatNameOf(s), st: live ? s.status : "away", why: live ? (OW_LABEL[s.status] || s.status) : "away"});
   }
   return out;
@@ -22903,6 +22936,16 @@ function voyageDraw(ts){
   });
   VOY.raf = requestAnimationFrame(voyageDraw);
 }
+// THE PAGE'S LAST WORD (Sam, 2026-11-15: "Something must protect syncs between cooperative play when one person refreshes
+// his browser"). As this page goes (a refresh, the tab closed, off to the Parley) it tells the table at once: a last
+// heartbeat marked "away", so its hero is held for it (lib/walk-world.ts HOLD_MS) and the party gathers for it rather
+// than finding out twelve seconds later; and, if it was running a fight, it lets the fight be claimed now.
+addEventListener("pagehide", () => {
+  if (!OW.on) return; const a = owAuth(); if (!a) return;
+  const send = (url, body) => { try { fetch(url, {method: "POST", keepalive: true, headers: {"Content-Type": "application/json", ...a.headers}, body: JSON.stringify({...a.body, ...body})}); } catch (e) {} };
+  send("/api/walk-world", {op: "beat", digest: "", version: OW.version, slug: mySlug, status: "away"});
+  if (FIGHT.auth && FIGHT.id) send("/api/walk-fight", {op: "release", fight: FIGHT.id});
+});
 // THE TABLE DOTS: every other screen at the table as a dot beside this screen's word (green, amber, red)
 function owPaintDots(){
   const el = $("owLight"); if (!el || !OW.on || !window.AopOneWorld) return;
