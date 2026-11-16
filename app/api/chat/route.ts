@@ -58,7 +58,7 @@ import {
   shortRest, hitDieFor, type ShortRester, type ShortRestOutcome, type SongOfRest,
   // PR 3 — the camp itself: whether the party is camping, what the rations
   // buy, the passive roll at the end of the rest, and Malachar's CAMP block.
-  isCamping, campRest, makeCampBudget, affordableRest, passiveCampEncounter, storedVisitor,
+  isCamping, campRest, campRestFromFire, type FireMeal, makeCampBudget, affordableRest, passiveCampEncounter, storedVisitor,
   rationsOnHand, spendRations, type PackRation, dawnRecharges,
   formatCampBlock, type CampRestDecision, type StoredVisitor, type WatchNode,
   // PR 5 — spending camp actions, and the three the dice settle.
@@ -4805,11 +4805,34 @@ Rules:
       // charging here too fed the party twice. `campRest` still decides what
       // the night would cost, for the note. Outside a camp nothing changes.
       const priced: CampRestDecision | null = campingAtRest ? campRest("full", before, partySize) : null
-      // The decision the rest of this block reads: at camp the night is always
-      // allowed here (the fire already settled it) and costs nothing here.
-      const camp: CampRestDecision | null = priced ? { ...priced, allowed: true, cost: 0 } : null
+      // WHAT THE FIRE BOUGHT (Sam, 2026-11-16: "fix gap"). The fire's SLEEP
+      // keeps its verdict on party_supplies.last_camp_rest ('full' | 'partial' |
+      // 'none'). It counts only if it was written after this camp was made, and
+      // it is cleared below once this rest has used it. No verdict (the fire did
+      // not sleep tonight): the night is allowed and free here, as before.
+      let fireMeal: FireMeal | null = null
+      let firePoolId: string | null = null
+      if (priced) {
+        try {
+          const [{ data: pool }, { data: made }] = await Promise.all([
+            timeAdmin.from("party_supplies").select("id,last_camp_rest,last_camp_rest_at").limit(1).maybeSingle(),
+            timeAdmin.from("time_log").select("created_at").eq("session_id", activeSessionId).eq("event_type", "make_camp")
+              .order("created_at", { ascending: false }).limit(1).maybeSingle(),
+          ])
+          const row = pool as { id?: string; last_camp_rest?: string | null; last_camp_rest_at?: string | null } | null
+          const meal = row?.last_camp_rest
+          const fresh = !!row?.last_camp_rest_at && (!made?.created_at || Date.parse(row.last_camp_rest_at) >= Date.parse(made.created_at as string))
+          if (fresh && (meal === "full" || meal === "partial" || meal === "none")) { fireMeal = meal; firePoolId = row?.id ?? null }
+        } catch (e) {
+          console.warn("[rest] fire verdict lookup failed:", e)
+        }
+      }
+      const fromFire = priced ? campRestFromFire(fireMeal, priced) : null
+      // The decision the rest of this block reads: at camp it costs nothing here
+      // (the fire charged it), and it is allowed only if the fire bought a full rest.
+      const camp: CampRestDecision | null = fromFire ? fromFire.camp : null
       const cost = camp ? 0 : suppliesForParty(partySize)
-      const fed = camp ? true : before >= cost && cost > 0
+      const fed = fromFire ? fromFire.fed : before >= cost && cost > 0
       let after = before
       const refusedAtCamp = (name: string, hp: number | null, dice: number | null): RestOutcome => ({
         benefited: false, hp: Math.max(0, hp ?? 0), hitDiceRemaining: dice, slots: null,
@@ -4826,7 +4849,15 @@ Rules:
             ? `The party eats: ${cost} supplies spent, ${after} left.`
             : `NOBODY EATS — ${before} supplies for ${partySize} mouths.`,
       )
-      if (priced) notes.push(`Camp (for the DM): the fire prices this night at ${priced.cost} rations — ${priced.note}`, ...priced.flags)
+      if (priced) {
+        if (fireMeal && camp) notes.push(`Camp at the Fire: ${camp.note}`)
+        else notes.push(`Camp (for the DM): the fire prices this night at ${priced.cost} rations — ${priced.note}`, ...priced.flags)
+      }
+      // Used once: the next camp's night needs the fire's next verdict.
+      if (firePoolId) {
+        const { error } = await timeAdmin.from("party_supplies").update({ last_camp_rest: null, last_camp_rest_at: null }).eq("id", firePoolId)
+        if (error) console.warn("[rest] could not clear the fire's verdict:", error.message)
+      }
       // Sam, 2026-09-27: "Dawn items charge at long rest" — no dawn down here.
       if (!camp || camp.allowed) {
         try {

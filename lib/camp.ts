@@ -1541,6 +1541,36 @@ export function campRest(requested: RestKind, supplies: number | null | undefine
   )
 }
 
+/** What Camp at the Fire's SLEEP bought, kept on `party_supplies.last_camp_rest` (/api/camp/hunger op "night"). */
+export type FireMeal = "full" | "partial" | "none"
+
+/**
+ * Sam, 2026-11-16 ("fix gap"): the chat route's [TIME:long_rest] at camp obeys what the fire actually bought.
+ * Camp at the Fire's SLEEP charges the rations (Sam, 2026-10-10: "Retire chat charge"), so the chat route charges
+ * nothing at camp; before this it also GAVE a full rest whatever the fire had priced. Now:
+ *
+ *   full     → the long rest is real (all hit points, half the Hit Dice, every slot), and the party ate.
+ *   partial  → the night counts as a short rest only (campRest's own wording): the long rest gives nothing, and
+ *              nothing about hunger moves (they did eat, half rations). No exhaustion comes off: that needs a
+ *              finished long rest (SRD).
+ *   none     → a hungry night: the long rest gives nothing and hunger ticks (lib/exhaustion resolveHunger, fed false).
+ *   null     → the fire has not slept tonight: unchanged from before, the night is allowed and costs nothing here.
+ */
+export function campRestFromFire(meal: FireMeal | null, priced: CampRestDecision): { camp: CampRestDecision; fed: boolean } {
+  const free = { ...priced, cost: 0, suppliesAfter: priced.suppliesBefore }
+  if (meal === "full") return { camp: { ...free, allowed: true, hungerTicks: false, note: "The fire bought a full rest tonight." }, fed: true }
+  if (meal === "partial") {
+    return {
+      camp: { ...free, allowed: false, hungerTicks: false, note: "The fire bought only a partial rest tonight: the long rest gives nothing. End the camp with a short rest (Hit Dice may be spent)." },
+      fed: false,
+    }
+  }
+  if (meal === "none") {
+    return { camp: { ...free, allowed: false, hungerTicks: true, note: "The fire had no food tonight: a hungry night, and the long rest gives nothing." }, fed: false }
+  }
+  return { camp: { ...free, allowed: true }, fed: true }
+}
+
 /** What is stored on `rest_events.detail.visitor` and read back next turn. */
 export interface StoredVisitor {
   visitor: CampVisitor | null
