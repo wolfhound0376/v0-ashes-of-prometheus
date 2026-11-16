@@ -3736,8 +3736,8 @@ async function enterNode(n, opts = {}){
       const fx = p.x, fy = p.y;
       if (opts.drop){ p.fallIn = now + i * 220; p.waitUntil = 0; }
       else if (arrival && arrival.climb){ const C = arrival.climb; p.x = C.ladder[0]; p.y = C.ladder[1]; p.face = faceOf(0, -1);   // hidden by the climb until their turn (alpha stays 1 so the draw loop reaches them)
-        p.climbing = {t0: now + i * 650, dir: C.dir === "up" ? "down" : "up", from: {x: C.ladder[0], y: C.ladder[1]}, to: {x: C.foot[0], y: C.foot[1]}, out: false};
-        p.waitUntil = now + i * 650 + 1100; p.path = [{x: C.foot[0], y: C.foot[1]}, {x: fx, y: fy}]; }
+        p.climbing = {t0: now + i * CLIMB_GAP, dir: C.dir === "up" ? "down" : "up", from: {x: C.ladder[0], y: C.ladder[1]}, to: {x: C.foot[0], y: C.foot[1]}, out: false};
+        p.waitUntil = now + i * CLIMB_GAP + 1100; p.path = [{x: C.foot[0], y: C.foot[1]}, {x: fx, y: fy}]; }
       else { const back = 320 + i * 60; p.x = fx - entryDir.x * back; p.y = fy - entryDir.y * back; p.path = [{x: fx, y: fy}]; p.waitUntil = now + i * 180; p.walkIn = true; p.onArrive = () => { p.walkIn = false; }; }   // from the threshold (was 520 back, 260 ms apart): exits stay locked until the leader lands, so a long walk-in is a long wait (DOORS DON'T WAIT)
     });
     // THE PRISONERS COME IN BEHIND YOU (Sam, 2026-10-27: "Why are NPCs ahead of us. We should arrive first and they
@@ -3789,6 +3789,19 @@ function warmPlates(n){
   for (const k of next){ if (PLATE_WARM[k]) continue; const im = new Image(); im.decoding = "async"; im.src = plateUrl(k); PLATE_WARM[k] = im; if (im.decode) im.decode().catch(() => {}); }
 }
 // the leader has gone into the way out: `left` waypoints or fewer still ahead of them (never sooner than `min`, never later than `max`)
+// LADDERS DON'T WAIT ON A CLOCK (Sam's playtest, 2026-11-15, point 7: "going up and down ... is still very difficult and
+// not smooth"). A ladder held the screen for a fixed 1.6 s + 0.65 s a hero before fading, whether the party had climbed
+// or not, and on the far side let them off the ladder 0.65 s apart: with five heroes about 9 s a ladder, 18 s from the
+// guard room to the armory. Now the climbers go up 0.35 s apart, each walks round the furniture to the ladder's foot
+// (it was a straight line, through the table), and the screen fades once the last of them is on the ladder. The old
+// timer stays as the ceiling, for anyone who cannot get to the foot.
+const CLIMB_GAP = 350;
+function climbersGone(list, max){
+  const t0 = performance.now();
+  return new Promise(res => { const tick = () => { const el = performance.now() - t0;
+    const up = list.every(a => !a || (a.climbing && a.climbing.out && now - a.climbing.t0 >= 700) || (a.alpha === 0 && !a.path.length));
+    if (el >= max || (el >= 300 && up)) res(); else setTimeout(tick, 40); }; tick(); });
+}
 function leaderOut(a, left, min, max){
   const t0 = performance.now();
   return new Promise(res => { const tick = () => { const el = performance.now() - t0;
@@ -3858,7 +3871,7 @@ async function travel(to, z, fromWorld, cut, solo){
   order.forEach((a, i) => {
     stopActivity(a); a.kbd = false; a.onArrive = null; a.waitUntil = now + i * 300;
     if (drop){ a.path = [{x: zc.x + (i - 1.5) * 40, y: zc.y}]; a.onArrive = () => { a.fall = now; }; }
-    else if (climb){ a.waitUntil = now + i * 650; a.path = [{x: climb.foot[0], y: climb.foot[1]}]; a.onArrive = () => { a.climbing = {t0: now, dir: climb.dir, from: {x: a.x, y: a.y}, to: {x: climb.ladder[0], y: climb.ladder[1]}, out: true}; a.face = faceOf(0, -1); bank("movement/jump_land", .25); }; }
+    else if (climb){ a.waitUntil = now + i * CLIMB_GAP; const foot = {x: climb.foot[0], y: climb.foot[1]}, way = gridPath(a, foot); a.path = way.length ? way : [foot]; a.onArrive = () => { a.climbing = {t0: now, dir: climb.dir, from: {x: a.x, y: a.y}, to: {x: climb.ladder[0], y: climb.ladder[1]}, out: true}; a.face = faceOf(0, -1); bank("movement/jump_land", .25); }; }
     else { const j = route.findIndex(p => p.jump); let r = j >= 0 && outsidePen(a) ? route.slice(j + 1) : route;
       // already out on the balcony (the bridge or the stairhead are exits of their own now): pick the walk up at the
       // point nearest them and go on from there, never back toward the gate first
@@ -3868,7 +3881,7 @@ async function travel(to, z, fromWorld, cut, solo){
   const dir = drop ? {x: 0, y: 1} : Math.abs(exitDir.x) >= Math.abs(exitDir.y) ? {x: Math.sign(exitDir.x) || 1, y: 0} : {x: 0, y: Math.sign(exitDir.y) || 1};
   // a plain door fades as the leader steps into it (one waypoint, the few steps on, still ahead); a traced crossing
   // (the bridge, a stair) fades when the leader has walked it. The old fixed waits are the ceiling, never the rule.
-  if (drop) await wait(1900); else if (climb) await wait(1600 + order.length * 650);
+  if (drop) await wait(1900); else if (climb) await climbersGone(order, 1600 + order.length * 650);
   else if (cr) await leaderOut(order[0], 0, 500, 2600); else await leaderOut(order[0], 1, 320, 1500);
   if (cut){
     // the cut goes through black (Sam, 2026-10-27: the shift ends — "exits the plate, darkens, and shows them being
