@@ -21567,6 +21567,18 @@ async function playGameOver(G){
   log(`<b>Malachar:</b> “${esc(line)}”`);
   if (!replay) gameOverVoice(line);
   await gameOverType(say, line, replay);
+  // ----- THE GAME DIES WITH THE PARTY (Sam, 2026-11-15: "If everyone dies, then the game is deleted after game over.
+  // It's also a hard reset.") A wiped table is not asked whether to restart: every screen tells the server, which
+  // checks the deaths itself, deletes the save in play, hard-resets the campaign and closes the table, so each screen
+  // goes back to the door (app/api/game-over). A rehearsal, or a game over that is not a death, goes on below.
+  if (gameOverWipes({app: APP, sandbox: SANDBOX, why: G.why || null})){
+    const note = document.createElement("div"); note.className = "go-count"; note.textContent = GAME_OVER_WIPE_TEXT.asking; btns.appendChild(note);
+    const go = document.createElement("button"); go.className = "go-btn"; go.textContent = "Return to the title";
+    go.onclick = () => gameOverLeave("title"); btns.appendChild(go);
+    btns.classList.add("on"); try { go.focus(); } catch (e) {}
+    gameOverWipeNow(G, note);
+    return;
+  }
   // ----- the way out, and the way BACK (Sam, 2026-10-30: "Death and restart — prompt the DM to allow a restart") -----
   // Only the DM may start the campaign over, so a player's card asks him and then waits. It no longer marches the
   // table off to the title on a countdown while he is deciding. His yes runs the campaign restart that already
@@ -21666,6 +21678,26 @@ async function gameOverRestartNow(btn){
   walkResetting = true;
   try { sessionStorage.removeItem("aop_walk_state"); } catch (e) {}
   setTimeout(() => { try { location.reload(); } catch (e) {} }, 400);
+}
+// Ask the server to end the game (once per game over). It answers "already" when another screen got there first.
+let gameOverWipeSent = null;
+async function gameOverWipeNow(G, note){
+  if (gameOverWipeSent === G.seq) return; gameOverWipeSent = G.seq;
+  const a = owAuth();
+  if (!a){ note.textContent = GAME_OVER_WIPE_TEXT.failed + "this screen has no seat at the table."; return; }
+  try {
+    const r = await fetch("/api/game-over", {method: "POST", headers: Object.assign({"Content-Type": "application/json"}, a.headers), body: JSON.stringify(Object.assign({run: runSeen}, a.body))});
+    const j = await r.json().catch(() => null);
+    if (!r.ok || !j || !j.ok) throw new Error((j && j.error) || ("HTTP " + r.status));
+    note.textContent = GAME_OVER_WIPE_TEXT.done;
+    log(`<em>${esc(GAME_OVER_WIPE_TEXT.done)}</em>`);
+    walkResetting = true;
+    try { sessionStorage.removeItem("aop_walk_state"); } catch (e) {}
+    clearTimeout(gameOverWipeNow.t); gameOverWipeNow.t = setTimeout(() => gameOverLeave("title"), GAME_OVER_RULES.leaveMs);
+  } catch (e) {
+    gameOverWipeSent = null;
+    note.textContent = GAME_OVER_WIPE_TEXT.failed + (e && e.message ? e.message : "no answer");
+  }
 }
 function gameOverLeave(kind){
   clearInterval(gameOverLeaveT); gameOverLeaveT = null;
