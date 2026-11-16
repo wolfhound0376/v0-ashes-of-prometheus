@@ -17011,11 +17011,40 @@ async function laborFinish(opts = {}){
     }
   }
   await wait(1200);
-  await laborWalk(detailRoute(SPEC, labor.task).back, {cut: true});
+  await laborHomeCut();
   if (labor && labor.status === "returning" && cur === PEN) await laborPost("done");
   laborEnds(false);
 }
+// HOME IN ONE CUT (Sam, 2026-11-16: "When it is over, the screen darkens and we all re-appear at the pen."). No walk
+// out of the work plate's door and no march along the landing: the screen goes dark where they stand, and the pen
+// fades up with the whole detail back inside it, the gate shut and the escort gone. (Was: the walk-out cut, then the
+// party staged on the landing and walked in through the gate, laborStageAtGate / laborLockIn, Sam 2026-10-27.)
+let laborHomeDirect = false;
+async function laborHomeCut(){
+  for (let t = 0; mode !== "explore" && t < 120; t++) await wait(250);
+  laborHomeDirect = true; laborStaged = null;
+  $("fade").classList.add("on"); await wait(1100);
+  if (String(cur) !== String(PEN)) await enterNode(PEN, {from: owPlate(10), note: "The escort marches the detail back to the pen. The gate is locked behind you."});
+  laborBackInside();
+  await wait(500);
+  $("fade").classList.remove("on");
+}
+// everyone this screen drives, back on the pen floor near the middle (not on the landing outside the bars)
+function laborBackInside(){
+  if (cur !== PEN) return;
+  const B = balcony(), [ix, iy] = (B && B.inside) || [1300, 950], placed = [];
+  party.filter(p => !p.ko && actors.includes(p) && !owRemote(p)).forEach((h, i) => {
+    const q = nearestWalkable(ix + ((i % 3) - 1) * 90, iy + 110 + Math.floor(i / 3) * 70, placed); placed.push(q);
+    stopActivity(h); h.x = q.x; h.y = q.y; h.path = []; h.onArrive = null; h.performing = false; h.static = false; h.walkIn = false;
+    h.fixedScale = 0; h.big = 1; h.alpha = 1; h.face = faceOf(0, 1);
+  });
+  for (const a of npcs) if (a.escort){ a.alpha = 0; a.offStage = true; }
+  if (!state.gateOpen){ state.doorShut = true; setDoor(false); }
+}
 function laborEnds(aborted){
+  if (!aborted && cur !== PEN && labor && !laborHomeDirect && (party.some(crewHasHero) || atPlate(labor))){ laborHomeCut().then(() => laborEnds(false)); return; }   // a screen that did not drive them: home in the same cut
+  if (!aborted && (laborHomeDirect || cur === PEN)){ laborHomeDirect = false; laborPropsClear(); if (labor) laborPlayed[`${labor.id}:end`] = true; laborDriving = false;
+    laborBackInside(); log(`The work detail is back in the pen. The gate is locked.`); setTimeout(() => { labor = null; renderLaborBar(); }, 1200); return; }
   laborPropsClear();
   if (labor) laborPlayed[`${labor.id}:end`] = true;          // once per detail, in the browser that walked them too
   laborDriving = false;
@@ -17073,11 +17102,11 @@ function laborOnEnter(n, from){
   if (n === PEN && from !== PEN) laborPenArrival();          // PR 4: the downed hero, the surgeon, the talk
   laborPropsClear();
   if (!laborLive()) return;
-  if (n === PEN && from !== PEN && labor.status === "returning") setTimeout(laborStageAtGate, 0);   // after the escort is spawned below
+  // HOME IN ONE CUT (Sam, 2026-11-16): the detail no longer stages on the landing or walks in through the gate (laborHomeCut)
   // Sam, 2026-10-26: "just the escort" — while a detail is on a plate, the guards who stand there (#923: two on each
   // labor plate, the lizard rider on the cliff) step off; they are back at their posts when no detail is there
   if (n !== PEN) for (const a of npcs) if (!a.escort && a.hostile && /^drow-guard|^drow-lizard-rider|^drow-elite/.test(a.id) && !a.offStage) hideOffStage(a);
-  if (n !== PEN || labor.status === "returning") spawnEscort(leader, false);   // back in the pen: they lock the gate behind you
+  if (n !== PEN) spawnEscort(leader, false);   // out of the pen only: home is one cut, with the escort already gone
   if (String(n) === String(detailRoute(SPEC, labor.task).plate) && (labor.status === "escorting" || labor.status === "working")) laborAtWork();
   if (atWorkPlate()) laborPropsSet();
   renderLaborBar();

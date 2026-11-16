@@ -122,10 +122,46 @@ function shiftUnderway(d: { day: number; shift: number }, clock: { day: number; 
 
 const hash = (s: string) => { let h = 2166136261; for (const c of s) h = Math.imul(h ^ c.charCodeAt(0), 16777619); return h >>> 0 }
 
+/**
+ * AT LEAST THREE GO (Sam, 2026-11-16: "Make sure that at least three (if available) of the playing characters are
+ * sent to do labor during labor rotations at the pen"). The detail takes everyone seated at the table; when that is
+ * fewer than three, it is filled up to three from the other living player characters, the starting party first
+ * (Kenta, Samson, Scott, Fifi: the heroes the map always has in the pen), then the rest. Fewer than three only when
+ * fewer than three are alive.
+ */
+const LABOR_MIN_HEROES = 3
+const PARTY_FIRST = ["Kenta of Neverwinter", "Samson Stillwater", "Scott Reedwind of Luskan", "Fifi of Waterdeep"]
+async function atLeastThree(db: Db, pcs: CrewMember[]): Promise<CrewMember[]> {
+  if (pcs.length >= LABOR_MIN_HEROES) return pcs
+  const { data } = await db.from("characters").select("id, name, hp_current").eq("is_player", true).is("archived_at", null)
+  const have = new Set(pcs.map((p) => p.id))
+  const rank = (n: string) => { const i = PARTY_FIRST.indexOf(n); return i < 0 ? 99 : i }
+  const more = (data ?? []).filter((r) => !have.has(r.id as string) && (r.hp_current == null || Number(r.hp_current) > 0))
+    .sort((a, b) => rank(a.name as string) - rank(b.name as string))
+    .map((r) => ({ kind: "pc" as const, id: r.id as string, name: r.name as string }))
+  return [...pcs, ...more.slice(0, LABOR_MIN_HEROES - pcs.length)]
+}
+
 /** Plans the day if it has no rows yet. Returns the day's rows. */
 async function ensureDay(db: Db, runId: string, day: number, minutes: number) {
   const { data: rows } = await db.from("work_details").select("*").eq("campaign_run_id", runId).eq("day", day).order("shift")
-  if (rows && rows.length) return rows
+  if (rows && rows.length) {
+    // a party detail planned before the three-hero rule (or with only one or two at the table) is topped up while it
+    // has not been called yet
+    const p = rows.find((r) => r.party && r.status === "scheduled")
+    if (p) {
+      const crew = (p.crew as CrewMember[]) ?? [], pcs = crew.filter((c) => c.kind === "pc")
+      if (pcs.length < LABOR_MIN_HEROES) {
+        const full = await atLeastThree(db, pcs)
+        if (full.length > pcs.length) {
+          const next = [...full, ...crew.filter((c) => c.kind !== "pc")]
+          await db.from("work_details").update({ crew: next, updated_at: new Date().toISOString() }).eq("id", p.id).eq("status", "scheduled")
+          p.crew = next
+        }
+      }
+    }
+    return rows
+  }
 
   // a party detail from an earlier day that never ran is called off: the day ended without it
   await db.from("work_details").update({ status: "aborted", updated_at: new Date().toISOString() })
@@ -138,8 +174,9 @@ async function ensureDay(db: Db, runId: string, day: number, minutes: number) {
     db.from("work_details").select("area_no, crew").eq("campaign_run_id", runId).eq("party", true),
     runStartClock(db, runId),
   ])
-  const pcs: CrewMember[] = seated.filter((s) => !s.away).map((s) => ({ kind: "pc", id: s.id, name: s.name }))
-  if (!pcs.length) return []                                // nobody at the table yet: plan the day when someone sits down
+  const seatedPcs: CrewMember[] = seated.filter((s) => !s.away).map((s) => ({ kind: "pc", id: s.id, name: s.name }))
+  if (!seatedPcs.length) return []                          // nobody at the table yet: plan the day when someone sits down
+  const pcs = await atLeastThree(db, seatedPcs)
   const npcs: CrewMember[] = (npcRes.data ?? []).filter((r) => r.hp_current == null || Number(r.hp_current) > 0)
     .map((r) => ({ kind: "npc", id: prisonerSlug(r.name), name: r.name as string }))
   const timesWithParty: Record<string, number> = {}

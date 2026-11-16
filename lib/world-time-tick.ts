@@ -32,6 +32,21 @@ async function fightOn(db: SupabaseClient): Promise<boolean> {
   return Object.entries(state).some(([k, v]) => (k === "fightOn" || k.startsWith("fight:")) && v != null)
 }
 
+/**
+ * THE CLOCK STOPS AT THE WORK CAMP (Sam, 2026-11-16: "The clock is adjusted (time at the labor camps temporarily stops
+ * time)"). While the party's work detail is out of the pen (marched off, working, or on the way back), the minutes are
+ * spent like a fight's: the tick is taken so nothing piles up, but no game time is logged. Back in the pen, the clock
+ * runs on from where it stopped.
+ */
+async function partyAtLabor(db: SupabaseClient): Promise<boolean> {
+  const { data: run } = await db.from("campaign_runs").select("id").eq("campaign_id", "abyss").eq("status", "active")
+    .order("run_number", { ascending: false }).limit(1).maybeSingle()
+  if (!run?.id) return false
+  const { data } = await db.from("work_details").select("id").eq("campaign_run_id", run.id).eq("party", true)
+    .in("status", ["escorting", "working", "returning"]).limit(1)
+  return !!(data && data.length)
+}
+
 /** Write the tick if one is due. Returns the game minutes it added (0 when none). */
 export async function tickWorldTime(db: SupabaseClient, now = Date.now()): Promise<number> {
   try {
@@ -54,6 +69,7 @@ export async function tickWorldTime(db: SupabaseClient, now = Date.now()): Promi
       .eq("campaign_id", CAMPAIGN).eq("key", TICK_FLAG).eq("value->>at", lastIso as string).select("key")
     if (!won || !won.length || minutes <= 0) return 0
     if (await fightOn(db)) return 0          // the minute is spent, but a fight keeps its own time (6-second rounds)
+    if (await partyAtLabor(db)) return 0     // the minute is spent, and the work camp stops the clock (Sam, 2026-11-16)
     await logTimeEvent(db, await clockSessionId(db), { eventType: "time_passes", minutesAdvanced: minutes })
     return minutes
   } catch (e) {
