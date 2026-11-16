@@ -213,6 +213,16 @@ def labor_rules(root):
     return re.sub(r'^export ', '', src, flags=re.M)
 
 
+def quota_rules(root):
+    """lib/quota.mjs (The Quota: the work-detail minigame), pasted inside a namespace so its names (advance, current,
+    odds...) do not collide with the page's own: QUOTA.newShift, QUOTA.odds, ... The map, app/api/labor and
+    lib/quota.test.ts read the SAME rules."""
+    src = open(os.path.join(root, 'lib', 'quota.mjs'), encoding='utf-8').read()
+    names = re.findall(r'^export (?:const|function|let) (\w+)', src, flags=re.M)
+    body = re.sub(r'^export ', '', src, flags=re.M)
+    return 'const QUOTA = (() => {\n' + body + '\nreturn {' + ', '.join(names) + '};\n})();'
+
+
 def surgeon_rules(root):
     """lib/drow-surgeon.mjs (The Drow Surgeon, Sam's homebrew for the pen gate), pasted whole minus `export`, like
     rage_rules. The map, app/api/drow-surgeon and lib/drow-surgeon.test.ts read the SAME table, bolt, potion and lines."""
@@ -489,7 +499,7 @@ def somatic_table(root):
 
 t = t.replace('/*__SOMATIC__*/', somatic_table(ROOT))
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__TRAITS__*/', traits_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
-      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__SURRENDER__*/', surrender_rules(ROOT)).replace('/*__GAME_OVER__*/', game_over_rules(ROOT)).replace('/*__BUPPIDO_RISES__*/', buppido_rises_rules(ROOT)).replace('/*__BODY_REMOVAL__*/', body_removal_rules(ROOT)).replace('/*__SHAKEDOWN__*/', shakedown_rules(ROOT)).replace('/*__PEN_ESCAPE__*/', pen_escape_rules(ROOT)).replace('/*__DIRECTOR__*/', director_rules(ROOT)).replace('/*__CHAIN_MARCH__*/', chain_march_rules(ROOT)).replace('/*__WATCH_THE_MAP__*/', watch_the_map_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
+      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__SURRENDER__*/', surrender_rules(ROOT)).replace('/*__GAME_OVER__*/', game_over_rules(ROOT)).replace('/*__BUPPIDO_RISES__*/', buppido_rises_rules(ROOT)).replace('/*__BODY_REMOVAL__*/', body_removal_rules(ROOT)).replace('/*__SHAKEDOWN__*/', shakedown_rules(ROOT)).replace('/*__PEN_ESCAPE__*/', pen_escape_rules(ROOT)).replace('/*__DIRECTOR__*/', director_rules(ROOT)).replace('/*__CHAIN_MARCH__*/', chain_march_rules(ROOT)).replace('/*__WATCH_THE_MAP__*/', watch_the_map_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__QUOTA__*/', quota_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))

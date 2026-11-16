@@ -1213,6 +1213,59 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 @keyframes goBlink{50%{opacity:0}}
 @media (prefers-reduced-motion:reduce){.gameover .go-big,.gameover .go-count{animation:none}}
 .sneakTag{position:absolute;transform:translate(-50%,-140%);pointer-events:none;font:700 11px/1 ui-monospace,monospace;letter-spacing:.08em;color:#1a1208;background:#ffd166;border-radius:4px;padding:3px 6px;box-shadow:0 0 10px rgba(255,209,102,.7);white-space:nowrap}
+
+/* THE QUOTA (Sam, 2026-11-16): the work-detail minigame's HUD, dialogue box, reveal and end card — the prototype's look,
+   with the game's candy buttons and LED bars */
+#quota{position:absolute;inset:0;pointer-events:none;z-index:31;font-family:var(--face-display)}
+#quota[hidden]{display:none}
+#quota .qhud{position:absolute;top:54px;left:50%;transform:translateX(-50%);display:flex;gap:8px;pointer-events:auto}
+#quota .qbox{background:linear-gradient(180deg,rgba(28,18,12,.92),rgba(16,10,8,.9));border:2px solid #9a6a1c;border-radius:10px;padding:4px 10px 6px;min-width:150px;color:#f2e6c8;box-shadow:0 3px 0 #000}
+#quota .qbox.qsmall{min-width:90px} #quota .qbox b{display:block;font-size:12px;color:#e0b45a;letter-spacing:.05em} #quota .qbox span{font-size:15px}
+#quota .qleds{display:flex;gap:3px;margin-top:3px} #quota .qleds i{flex:1;height:9px;border:1px solid #3a3022;border-radius:3px;background:#100e0b}
+#quota .qleds i.on.g{background:radial-gradient(ellipse at 50% 35%,#d8ffd0,#5dff6e 35%,#1fc23a);border-color:#8dff98;box-shadow:0 0 6px #4dff6a,0 0 12px rgba(77,255,106,.6)}
+#quota .qleds i.on.r{background:radial-gradient(ellipse at 50% 35%,#ffd8cf,#ff4a36 35%,#d4140a);border-color:#ff8a7a;box-shadow:0 0 6px #ff3b2f,0 0 12px rgba(255,59,47,.7)}
+#quota .qintent{position:absolute;top:118px;left:50%;transform:translateX(-50%);display:flex;gap:9px;align-items:center;background:rgba(11,10,9,.82);border:1px solid #6e4f1a;border-radius:8px;padding:5px 12px;color:#e7c983;font-size:14px;max-width:min(560px,90vw)}
+#quota .qintent small{display:block;color:#bdb3a0;font-family:Georgia,serif;font-size:12px} #quota .qintent img{width:28px;height:28px;image-rendering:pixelated}
+#quota .qintent.alarm{animation:qAlarm 1.1s ease-in-out infinite;color:#ffb3a3}
+@keyframes qAlarm{0%,100%{border-color:#7a2418;box-shadow:none}50%{border-color:#ff3b2f;box-shadow:0 0 16px rgba(255,59,47,.7)}}
+body.qdanger #stage::after,body.qdanger .stage::after{content:"";position:absolute;inset:0;pointer-events:none;z-index:29;box-shadow:inset 0 0 0 3px rgba(255,59,47,.9),inset 0 0 70px rgba(255,40,30,.5);animation:qPulse 1.1s ease-in-out infinite}
+@keyframes qPulse{0%,100%{opacity:.15}50%{opacity:.85}}
+@media (prefers-reduced-motion:reduce){#quota .qintent.alarm,body.qdanger .stage::after{animation:none}}
+#quota .qcall{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);font-size:30px;color:#e7c983;text-shadow:0 2px 0 #000,0 0 14px #000;background:rgba(11,10,9,.6);border:1px solid #6e4f1a;border-radius:12px;padding:6px 20px;white-space:nowrap}
+#quota .qcall.mine{color:#fff3c8;border-color:#e0b45a}
+#quota .qpanel,#quota .qend{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);pointer-events:auto;text-align:center;background:linear-gradient(180deg,#221b12f2,#130f0af2);border:3px solid #9a6a1c;border-radius:16px;padding:14px 22px;color:#efe6d2;box-shadow:0 6px 0 #000,0 10px 24px rgba(0,0,0,.6);max-width:min(460px,92vw)}
+#quota .qpanel img{width:112px;height:112px;image-rendering:pixelated;display:block;margin:6px auto}
+#quota .qpanel h3{margin:4px 0;color:#f2c55c;font-size:22px} #quota .qpanel p{font-family:Georgia,serif;font-size:14px;margin:6px 0} #quota .qpanel small{color:#bdb3a0;font-family:Georgia,serif}
+#quota .qtier{font-size:12px;padding:1px 8px;border-radius:9px;background:#18301a;color:#bfe6a8} #quota .qtier.later{background:#2a2148;color:#d8ccff} #quota .qtier.worthless{background:#2c2a26;color:#bdb6a8}
+#quota .qgo{all:unset;cursor:pointer;display:inline-block;margin-top:10px;padding:6px 26px;border:3px solid #9a6a1c;border-radius:14px;color:#fff;font-family:var(--face-display);font-size:17px;text-shadow:0 2px 0 rgba(0,0,0,.65);background:linear-gradient(180deg,#c9962a,#7a5312);box-shadow:inset 0 2px 0 3px rgba(255,255,255,.2),0 4px 0 #000}
+#quota .qgo.big{background:linear-gradient(180deg,#4a9a3a,#2a5e20);font-size:21px;padding:8px 34px}
+#quota .qdlg{position:absolute;left:12px;right:12px;bottom:96px;display:flex;gap:12px;align-items:flex-start;pointer-events:auto;background:linear-gradient(#1c1710f5,#0f0c09f5);border:2px solid #c9a24a;border-radius:12px;padding:10px 12px;color:#efe6d2;box-shadow:0 6px 24px #000c;max-width:820px;margin:0 auto}
+#quota .qdlg[hidden],#quota .qpanel[hidden],#quota .qend[hidden],#quota .qcall[hidden],#quota .qintent[hidden]{display:none}
+body.quota-on #cbtMenu[data-kind=explore]{display:none!important}
+#quota .qteam{position:absolute;left:12px;right:12px;bottom:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap;pointer-events:auto}
+#quota .qhero{all:unset;cursor:pointer;display:grid;grid-template-columns:34px auto;grid-template-rows:auto auto auto;column-gap:7px;align-items:center;min-width:128px;padding:4px 10px 6px 4px;border:3px solid #9a6a1c;border-radius:12px;color:#fff;background:linear-gradient(180deg,#3a4250,#22272f);box-shadow:inset 0 2px 0 2px rgba(255,255,255,.12),0 3px 0 #000;font-family:var(--face-display)}
+#quota .qhero canvas{grid-row:1/4;width:34px;height:34px;border-radius:8px;border:2px solid rgba(0,0,0,.6);background:#0a0710;image-rendering:pixelated}
+#quota .qhero .qn{font-size:14px;line-height:1.1} #quota .qhero .qs{font-family:Georgia,serif;font-size:11.5px;color:#e8dcc4}
+#quota .qhero .qhp{display:block;height:5px;margin-top:3px;background:#120c0a;border:1px solid #000;border-radius:3px;overflow:hidden} #quota .qhero .qhp i{display:block;height:100%}
+#quota .qhero.me{border-color:#e0b45a} #quota .qhero.now{box-shadow:0 0 0 2px #f2c55c,0 0 14px rgba(242,197,92,.6),0 3px 0 #000} #quota .qhero.on{background:linear-gradient(180deg,#4a5260,#2a3038)}
+#quota .qdlg{bottom:84px}   /* the shift asks its own questions: no Talk / Sneak / Cast under it */
+#quota .qpt canvas{width:72px;height:72px;border:1px solid #c9a24a;border-radius:10px;background:#241c10;image-rendering:pixelated}
+#quota .qbody{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px} #quota .qsay{font-family:Georgia,serif;font-size:15px} #quota .qsay b:first-child{font-family:var(--face-display);color:#f2c55c;font-size:17px;display:block}
+#quota .qop{all:unset;cursor:pointer;display:flex;align-items:center;gap:10px;padding:5px 10px;border:2px solid #4a3c22;border-radius:10px;background:#1f1a13}
+#quota .qop:hover:not([disabled]){border-color:#f2c55c;transform:translateX(3px)} #quota .qop[disabled]{opacity:.45;cursor:default}
+#quota .qop.risk{border-color:#4a3c7a} #quota .qop.yes{border-color:#b39cf0;background:#221b38}
+#quota .qop img{width:42px;height:42px;image-rendering:pixelated} #quota .qop span{flex:1;font-size:15px} #quota .qop small{display:block;font-family:Georgia,serif;font-size:12.5px;color:#bdb3a0}
+#quota .qop em{font-style:normal;font-size:20px;color:#f2c55c} #quota .qop kbd{font-size:11px;color:#a59a86;border:1px solid #4a3c22;border-radius:4px;padding:0 5px}
+#quota .qcf{display:flex;gap:12px;align-items:center} #quota .qcf span{font-size:23px;color:#f2c55c;text-shadow:0 2px 0 #000}
+#quota .qcf em{font-style:normal;font-size:14px;color:#1a0f0a;background:linear-gradient(180deg,#ffe08a,#c9962a);border:2px solid #000;border-radius:10px;padding:1px 12px}
+#quota .qcards{display:grid;grid-template-columns:1fr 1fr;gap:8px} #quota .qcards div{border:2px solid;border-radius:10px;padding:6px 10px;font-family:Georgia,serif;font-size:14px}
+#quota .qcards b{display:block;font-family:var(--face-display);font-size:14px} #quota .qcards .win{background:#132613;border-color:#4a9a3a} #quota .qcards .win b{color:#9dffa8}
+#quota .qcards .lose{background:#2a0f0b;border-color:#c8402e} #quota .qcards .lose b{color:#ff9a84}
+#quota .qend h2{margin:0;font-size:40px;text-shadow:0 3px 0 #000} #quota .qend h2.ok{color:#9dffa8} #quota .qend h2.bad{color:#ff8a6e}
+#quota .qend .qq{font-style:italic;color:#b39cf0;font-size:19px;margin:4px 0 10px} #quota .qend .ql p{margin:3px 0;font-family:Georgia,serif;font-size:15.5px}
+#quota .qend .qk{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:10px} #quota .qend .qk span{display:inline-flex;align-items:center;gap:6px;border:2px solid #6e4f1a;border-radius:10px;padding:3px 10px 3px 3px;background:#1d1812;font-family:Georgia,serif}
+#quota .qend .qk img{width:30px;height:30px;image-rendering:pixelated} #quota .qend .qk small{color:#bdb3a0}
+@media (max-width:640px){#quota .qcards{grid-template-columns:1fr} #quota .qpt{display:none} #quota .qhud{top:46px} #quota .qbox{min-width:96px} #quota .qcall{font-size:20px}}
 </style>
 </head>
 <body>
@@ -18592,6 +18645,10 @@ function shiftOver(detail, clock, nowMs, arrived = arrivalStep(detail && detail.
   const a = gameMinute(arrived), n = gameMinute(clock)
   if (a !== null && n !== null && n - a > SHIFT_GAME_MINUTES) return "game-hour"
   const step = arrivalStep(detail.events), t0 = step ? Date.parse(step.at) : NaN
+  // THE QUOTA is played turn by turn (lib/quota.mjs): while its shift is still going and someone moved it in the last
+  // five minutes, the 15-minute backstop waits for it
+  const q = [...(detail.events || [])].reverse().find((e) => e && e.kind === "quota")
+  if (q && q.state && !q.state.done && nowMs - Date.parse(q.at) < 5 * 60 * 1000) return null
   if (Number.isFinite(t0) && nowMs - t0 > SHIFT_REAL_MS) return "real-time"
   return null
 }
@@ -19435,9 +19492,9 @@ function renderLaborBar(){
   bar.hidden = false;
   $("laborWhat").textContent = labor.status === "working" && at ? `Work detail: ${TASKS_LABEL[labor.task] || labor.task}` : labor.status === "returning" ? "Work detail: back to the pen" : "Work detail: under escort";
   $("laborEnd").hidden = !(labor.status === "working" && at && isDm());          // the DM can cut a shift short; nobody else needs to
-  const work = labor.status === "working" && at && !!laborHero();
+  const q = quotaOn(), work = labor.status === "working" && at && !!laborHero() && !q;   // THE QUOTA has its own choices
   for (const id of ["laborTalk", "laborLook", "laborPocket"]) $(id).hidden = !work;
-  $("laborShift").hidden = !(labor.status === "working" && at);
+  $("laborShift").hidden = !(labor.status === "working" && at) || q;
 }
 
 // ---------- HARD LABOR: the stations (PR 3) ----------
@@ -19463,7 +19520,7 @@ function escortTurnsTo(h){ for (const a of laborEscort()) a.face = faceOf(h.x - 
 // the beats it missed.
 const laborBeatAt = {};              // detail id -> how far through the shift this screen has played the beats
 function laborShiftTick(){
-  if (!atWorkPlate()) return;
+  if (!atWorkPlate() || quotaOn()) return;     // THE QUOTA plays the shift now (below); the watch is the fallback for a detail it never started on
   const p = shiftProgress(labor, owNow()), from = laborBeatAt[labor.id];
   $("laborShift").style.setProperty("--p", p.toFixed(3));
   if (from === undefined){ laborBeatAt[labor.id] = p > .05 ? p : 0; return; }
@@ -19587,8 +19644,10 @@ music.labor = new Audio(`${APP ? "/" : ""}audio/labor/${WORK_SONG}.mp3`); music.
 LEVEL.labor = .5;
 function laborMusic(){
   const out = laborLive() && labor.status !== "called" && mode === "explore";
-  if (out && track === "explore") setTrack("labor");
-  else if (!out && track === "labor") setTrack("explore");
+  const yard = out && typeof quotaOn === "function" && quotaOn();     // THE QUOTA plays to its own theme (ElevenLabs take 2, Sam)
+  if (yard && track !== "quota") setTrack("quota");
+  else if (out && !yard && (track === "explore" || track === "quota")) setTrack("labor");
+  else if (!out && (track === "labor" || track === "quota")) setTrack("explore");
 }
 async function laborDoLook(){
   const h = laborHero(); if (!h || !atWorkPlate()) return;
@@ -19698,6 +19757,618 @@ setInterval(() => {
 function drawLaborCones(){
   if (!atWorkPlate() || (mode !== "explore" && mode !== "dialog")) return;
   for (const w of laborEscort()) drawSightFan(w, "255,179,90", .8, false);
+}
+
+const QUOTA = (() => {
+// lib/quota.mjs — THE QUOTA: the work-detail minigame (Sam, 2026-11-15/16). Pure; no DOM, no fetch. Pasted whole
+// (minus `export`) into the walk page by build_walk.py at /*__QUOTA__*/, and read by app/api/labor (the server rolls
+// every die, so every screen sees the same shift) and lib/quota.test.ts — one copy of the rules.
+//
+// Prototype Sam played and ruled on: https://claude.ai/artifact/2LeCYK257hwrWZVmTD2qu5
+// Design of record: project docs claude/Work_Detail_Rework_2026-11-15.md §8-9, claude/Quota_Followup_2026-11-16.md.
+// Slay the Spire's shown *intent* + The Escapists' countable *quota*, on real 5E checks.
+//
+// Tags: [BOOK] OotA ch.1 · [SRD] SRD 5.2.1 · [SAM] Sam's ruling · [HOUSE] Claude's numbers, Sam's call.
+//
+// A shift: three inspections. Each opens with the drow's intent (who he watches, or what he is doing). Then each hero,
+// in turn, keeps working or takes their one risky move (by class). When all have chosen, everything is revealed and
+// rolled together. Fill the crew's quota or pull a double shift; get caught and Suspicion rises (out of 4).
+
+const QUOTA_ROUNDS = 3
+const SUSP_MAX = 4                 // [SAM] 2026-11-16: "Suspicion is only allowed to go to 4 not 8"
+const QUAG_PASSIVE = 11            // the quaggoth's passive Perception [BOOK stat block]
+const DROW_PERCEPTION = 2          // the drow's Perception bonus, rolled when he is watching [BOOK stat block]
+const DROW_INSIGHT = 0             // [HOUSE] the drow stat block lists no Insight: WIS +0
+const TURN_MS = 45000              // [HOUSE] a seated player who does not choose in 45 s keeps working
+const STEP_MS = 2000               // [SAM] "Slow reveal about 2 seconds per roll"
+
+// ─── The yard's d100 (Sam, 2026-11-16: his list of 28 items, scattered over 1-100, seed 20261116) ────────────
+// Every other number is nothing, and the looking costs the thief the round. Each numbered item can be taken once per
+// run; roll a taken number again and it is simply nothing [SAM]. Catalogue slugs; tier, difficulty (`mod`) and the
+// "why" lines are [HOUSE]. The rope is the 5-ft scavenged strand (`silk-rope-strand`, PR #1420).
+const LOOT = {
+  rope: { slug: "silk-rope-strand", name: "A 5-ft strand of silk rope", tier: "useful", mod: 2, why: "Five feet of drow silk. Loop it through the bars round a guard's throat, or knot strands together." },
+  wire: { slug: "bent-wire", name: "A bent metal wire", tier: "useful", mod: 1, why: "Pick the manacles with it." },
+  cards: { slug: "gaming-set-cards", name: "A box of playing cards", tier: "later", mod: 1, why: "Jimjar will bet on anything. So will a bored drow." },
+  spider: { slug: "small-spider", name: "A living spider", tier: "later", mod: 0, why: "Tarantula-sized. Set it down and it fights beside you." },
+  oil: { slug: "lamp-oil", name: "A small flask of oil", tier: "useful", mod: 1, why: "Splash it and set it alight, or grease a lock." },
+  key: { slug: "slave-pen-key", name: "A slave pen key", tier: "useful", mod: 8, key: true, why: "Opens the pen gate and the manacles. It hangs on a drow's belt." },
+  bolt: { slug: "hand-crossbow-bolt-drow-poison", name: "A poisoned bolt", tier: "useful", mod: 1, why: "A hand crossbow bolt coated in drow poison." },
+  gold: { slug: "gold-coin", name: "A gold coin", tier: "worthless", mod: 0, why: "One gold coin. Down here, worth nothing to a prisoner." },
+  copper: { slug: "copper-coin", name: "A copper coin", tier: "worthless", mod: 0, why: "One copper. Worth even less." },
+  caltrops: { slug: "bag-of-caltrops", name: "A bag of caltrops", tier: "useful", mod: 3, why: "Scatter them behind you and the pursuit slows down." },
+  brandy: { slug: "almond-brandy", name: "A small bottle of brandy", tier: "later", mod: 1, why: "A bribe, a painkiller, or something that burns." },
+  mush: { slug: "edible-mushrooms", name: "Edible mushrooms", tier: "later", mod: 0, why: "A day's food." },
+  tools: { slug: "thieves-tools", name: "A set of thieves' tools", tier: "useful", mod: 4, why: "Pick the pen gate or the manacles." },
+}
+const D100 = ["copper","mush",null,null,"cards",null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,null,"oil",null,"spider","bolt",null,null,null,"wire","caltrops",null,null,null,null,null,null,null,null,"spider",null,"mush",null,"key","tools",null,null,null,null,"rope",null,null,null,"brandy",null,null,null,null,null,null,null,null,"wire",null,"caltrops",null,null,null,null,"bolt","mush","oil",null,null,"key",null,null,null,"gold","mush","mush",null,null,"wire","wire",null,null,"brandy",null,"rope",null,null,"rope",null,null,null,null,null]
+const TIER_TEXT = { worthless: "Nearly worthless", later: "Maybe helpful later", useful: "Helpful" }
+const difficultyOf = (it) => it.mod >= 8 ? "very hard to take" : it.mod >= 5 ? "hard to take" : it.mod >= 2 ? "tricky to take" : "easy to take"
+
+// What a boasting drow lets slip [BOOK p.12, the facts the drow know].
+const FACTS = [
+  "\"Menzoberranzan is a month's walk. You'll walk every step of it.\"",
+  "\"The Darklake? Close enough to smell. Go swim in it.\"",
+  "\"The patrol from the city is late again. More work for us.\"",
+]
+
+// ─── Each hero's one risky move, by class [HOUSE; the prototype's four heroes, generalised] ───────────────────
+const RISKS = {
+  scheme: { label: "Pocket it", icon: "risk-pocket", roll: "Sleight of Hand vs the quaggoth's eyes, and the drow's if he's watching" },
+  distract: { label: "Put on a show", icon: "risk-show", roll: "Performance vs the drow's Insight" },
+  help: { label: "Cover for a friend", icon: "risk-cover", roll: "no roll: the Help action [SRD]" },
+  charm: { label: "Sweet-talk the drow", icon: "risk-charm", roll: "Persuasion vs the drow's Insight" },
+}
+function riskFor(cls) {
+  const c = String(cls || "").toLowerCase()
+  if (/rogue/.test(c)) return "scheme"
+  if (/bard/.test(c)) return "distract"
+  if (/cleric|paladin|druid|ranger|monk/.test(c)) return "help"
+  return "charm"
+}
+
+// The work check by task: lib/labor.ts TASKS where it has one [BOOK]; the others [HOUSE]: hauling chores Athletics
+// DC 10, kneeling chores Dexterity DC 10 (the same split as WORK_POSE's carry/scrub).
+const TASK_CHECK = { water: ["Athletics", 10], lift: ["Athletics", 12], "lift-trouble": ["Athletics", 12], pots: ["Dexterity", 10], kitchen: ["Survival", 12] }
+const HAULED = ["rocks", "rope", "supplies", "lift"]
+function workCheck(task) {
+  const t = TASK_CHECK[task]
+  if (t) return { skill: t[0], dc: t[1] }
+  return HAULED.includes(task) ? { skill: "Athletics", dc: 10 } : { skill: "Dexterity", dc: 10 }
+}
+const UNITS = { water: "barrels", kitchen: "dishes", dishes: "dishes", rocks: "stacks", rope: "coils", supplies: "crates", laundry: "loads", pots: "pots", clean: "bunks", lift: "loads", "lift-trouble": "sacks", "quaggoth-hair": "braids" }
+const unitOf = (task) => UNITS[task] || "loads"
+// the pointless tasks, where the drow may kick it all over [BOOK p.12: "stack rocks, coil rope... only to undo it"]
+const CRUEL = ["rocks", "rope", "supplies", "quaggoth-hair"]
+
+/** Quota for a crew [HOUSE]: the prototype's 7 for four heroes, about 1.75 a head. */
+const quotaFor = (n) => Math.max(3, Math.round(n * 1.75))
+
+// ─── dice and odds ──────────────────────────────────────────────────────────────────────────────────────────
+const d = (rng, n) => 1 + Math.floor(rng() * n)
+function pRoll(mod, target, adv, dis) {
+  let p = 0
+  for (let r = 1; r <= 20; r++) if (r + mod >= target) p++
+  p /= 20
+  if (adv && !dis) return 1 - (1 - p) ** 2
+  if (dis && !adv) return p * p
+  return p
+}
+function pContest(mod, opp, adv, dis) {
+  let w = 0, n = 0
+  for (let a = 1; a <= 20; a++) for (let b = 1; b <= 20; b++) {
+    const r = adv && !dis ? Math.max(a, b) : dis && !adv ? Math.min(a, b) : a
+    for (let o = 1; o <= 20; o++) { n++; if (r + mod > o + opp) w++ }
+  }
+  return w / n
+}
+
+// ─── state ──────────────────────────────────────────────────────────────────────────────────────────────────
+/**
+ * A new shift. `heroes`: [{id, name, cls, mods: {work, soh, perf, pers, con}, hp, hpMax, exh}] in turn order.
+ * `carry`: what the run carried out of the last shift ({shift, susp, quotaUp, taken, facts, lockdown}).
+ * `bots`: hero ids nobody at the table plays; they choose by themselves.
+ */
+/** @param {{task: string, heroes: any[], carry?: any, bots?: string[]}} o @param {() => number} rng @param {number} [nowMs] @returns {any} */
+function newShift(o, rng, nowMs = 0) {
+  const { task, heroes, carry = {}, bots = [] } = o
+  const hs = {}
+  for (const h of heroes) hs[h.id] = { id: h.id, name: h.name, short: String(h.name || "Hero").split(/\s+/)[0], cls: h.cls, risk: riskFor(h.cls), mods: { ...h.mods }, hp: Math.max(0, h.hp ?? h.hpMax ?? 1), hpMax: Math.max(1, h.hpMax ?? h.hp ?? 1), exh: h.exh || 0 }
+  const st = {
+    v: 1, task, check: workCheck(task), unit: unitOf(task), shift: (carry.shift || 0) + 1,
+    order: heroes.map((h) => h.id), heroes: hs, bots: [...bots],
+    quota: quotaFor(heroes.length) + (carry.quotaUp ? 1 : 0), filled: 0, round: 1, turn: 0, turnAt: nowMs,
+    susp: Math.min(SUSP_MAX, carry.susp || 0), lockdown: !!carry.lockdown, taken: { ...(carry.taken || {}) }, facts: [...(carry.facts || [])],
+    charmed: false, intent: null, picks: {}, offers: {}, marked: {}, prone: {}, out: {}, caught: {}, best: {}, noRation: {},
+    stolen: [], results: [], seq: 0, done: false, end: null,
+  }
+  for (const id of st.order) if (hs[id].hp <= 0) st.out[id] = true
+  rollIntent(st, rng)
+  advance(st, rng, nowMs)
+  return st
+}
+const heroOf = (st, id) => st.heroes[id]
+const live = (st) => st.order.filter((id) => !st.out[id])
+const exhPen = (st, id) => -2 * (st.heroes[id].exh || 0)
+function rollIntent(st, rng) {
+  const r = rng(), cruel = CRUEL.includes(st.task), who = live(st)
+  if (r < 0.38 && who.length) st.intent = { kind: "watch", target: who[Math.floor(rng() * who.length) % who.length] }
+  else if (r < 0.58 || (r < 0.72 && !cruel)) st.intent = { kind: "inspect" }
+  else if (r < 0.72) st.intent = { kind: "kick" }
+  else if (r < 0.86) st.intent = { kind: "boast" }
+  else st.intent = { kind: "bored" }
+}
+/** Whose eyes are on a hero this round: marked thieves always; one watched hero; the whole crew while he inspects. */
+function watched(st, id) {
+  if (st.marked[id]) return true
+  const k = st.intent && st.intent.kind
+  if (k === "watch") return st.intent.target === id
+  return k === "inspect" || k === "kick"
+}
+const RISKY = ["scheme", "distract", "charm"]
+/** Who a "Cover for a friend" covers: the first crewmate taking a risk, else the first crewmate. */
+function helpTarget(st, helper) {
+  const others = live(st).filter((id) => id !== helper)
+  return others.find((id) => RISKY.includes(st.picks[id])) || others[0] || null
+}
+const helped = (st, id) => live(st).some((h) => h !== id && st.picks[h] === "help" && helpTarget(st, h) === id)
+function current(st) { return st.done || st.turn >= st.order.length ? null : st.order[st.turn] }
+const offerOf = (st, id) => { const o = st.offers[id]; return o && o.round === st.round && o.item ? LOOT[o.item] : null }
+
+function odds(st, id) {
+  const h = st.heroes[id], ex = exhPen(st, id), adv = helped(st, id)
+  const work = pRoll(h.mods.work + ex, st.check.dc, adv, false)
+  let risk = null, note = ""
+  if (h.risk === "scheme") {
+    const it = offerOf(st, id)
+    if (st.lockdown) note = "Lockdown: no stealing this shift."
+    else if (it) {
+      risk = pRoll(h.mods.soh + ex, QUAG_PASSIVE + it.mod, adv, false)
+      if (watched(st, id) || it.key) risk *= pContest(h.mods.soh + ex, DROW_PERCEPTION + it.mod, adv, false)
+      note = `${difficultyOf(it)[0].toUpperCase()}${difficultyOf(it).slice(1)}.${watched(st, id) ? " He's watching you." : ""}${adv ? " A friend covers you." : ""}`
+    }
+  } else if (h.risk === "distract") {
+    risk = pContest(h.mods.perf + ex, DROW_INSIGHT, adv, false)
+    note = st.intent.kind === "boast" ? "He's boasting: a good show flatters a fact out of him." : "Every eye turns to you."
+  } else if (h.risk === "help") {
+    const t = helpTarget(st, id)
+    risk = t ? 1 : null
+    note = t ? `${st.heroes[t].short} rolls with advantage, whatever they do.` : "Nobody to cover."
+  } else {
+    if (st.charmed && st.intent.kind !== "boast") note = "You already charmed him this shift."
+    else risk = pContest(h.mods.pers + ex, DROW_INSIGHT, adv, false)
+    if (risk != null) note = st.intent.kind === "boast" ? "He's in a talking mood: charm a fact out of him." : "Talk him into letting one load slide (quota −1)."
+  }
+  return { work, risk, note }
+}
+/** What a bot (a hero nobody at the table plays) chooses [HOUSE, the prototype's bots]. */
+function botChoice(st, id, rng) {
+  const h = st.heroes[id], o = odds(st, id)
+  if (o.risk == null) return "work"
+  const someoneSchemes = live(st).some((x) => st.picks[x] === "scheme")
+  if (h.risk === "scheme") { const it = offerOf(st, id), want = it.tier === "useful" ? 0.55 : it.tier === "later" ? 0.7 : 0.95; return o.risk >= want && rng() < 0.75 ? "scheme" : "work" }
+  if (h.risk === "distract") return (st.intent.kind === "boast" || someoneSchemes) && rng() < 0.75 ? "distract" : "work"
+  if (h.risk === "help") return (someoneSchemes && rng() < 0.6) || rng() < 0.1 ? "help" : "work"
+  return (st.intent.kind === "boast" && rng() < 0.6) || (!st.charmed && rng() < 0.15) ? "charm" : "work"
+}
+
+/**
+ * Move the turn on: skip the heroes who are out or knocked down, roll the thief's d100 when their turn comes (nothing
+ * in reach costs them the round [SAM]), let the bots choose, and resolve the round once everyone has.
+ */
+function advance(st, rng, nowMs = 0) {
+  while (!st.done && st.turn < st.order.length) {
+    const id = st.order[st.turn], h = st.heroes[id]
+    if (st.out[id]) { st.picks[id] = "none"; st.turn++; continue }
+    if (st.prone[id]) { st.picks[id] = "prone"; st.prone[id] = false; st.turn++; continue }
+    if (h.risk === "scheme" && !st.lockdown && !(st.offers[id] && st.offers[id].round === st.round)) {
+      const roll = d(rng, 100), key = D100[roll - 1], item = key && !st.taken[roll] ? key : null
+      st.offers[id] = { round: st.round, roll, item }
+      if (!item) { st.picks[id] = "nothing"; st.turn++; continue }
+    }
+    if (st.bots.includes(id)) { st.picks[id] = botChoice(st, id, rng); st.turn++; continue }
+    st.turnAt = nowMs
+    return st
+  }
+  if (!st.done) resolveRound(st, rng)
+  return st
+}
+/** A hero's choice. Returns an error string, or null. */
+function choose(st, id, choice, rng, nowMs = 0) {
+  if (current(st) !== id) return "not your turn"
+  const h = st.heroes[id]
+  if (choice !== "work" && choice !== h.risk) return "not a move this hero has"
+  if (choice !== "work" && odds(st, id).risk == null) return "not possible now"
+  st.picks[id] = choice; st.turn++
+  advance(st, rng, nowMs)
+  return null
+}
+/** A seated player who has not chosen in TURN_MS keeps working. */
+function nudge(st, rng, nowMs) {
+  const id = current(st)
+  if (!id || nowMs - (st.turnAt || 0) < TURN_MS) return false
+  st.picks[id] = "work"; st.turn++
+  advance(st, rng, nowMs)
+  return true
+}
+
+// ─── the reveal: everything rolled at once ─────────────────────────────────────────────────────────────────
+function roll(rng, adv, dis) { const a = d(rng, 20), b = d(rng, 20); return adv && !dis ? Math.max(a, b) : dis && !adv ? Math.min(a, b) : a }
+const bump = (st, n) => { st.susp = Math.min(SUSP_MAX, st.susp + n) }
+const unseen = (st) => FACTS.find((f) => !st.facts.includes(f)) || null
+function resolveRound(st, rng) {
+  const R = [], it = st.intent, order = live(st)
+  let gaze = null, distracted = false
+  for (const id of st.order) if (st.picks[id] === "nothing") R.push({ who: id, kind: "nothing", roll: st.offers[id] && st.offers[id].roll })
+  for (const id of st.order) if (st.picks[id] === "prone") R.push({ who: id, kind: "prone" })
+  for (const id of order) if (st.picks[id] === "help") { const t = helpTarget(st, id); if (t) R.push({ who: id, kind: "help", target: t }) }
+  for (const id of order) {
+    if (st.picks[id] !== "distract") continue
+    const h = st.heroes[id], n = roll(rng, helped(st, id), false), total = n + h.mods.perf + exhPen(st, id), opp = d(rng, 20) + DROW_INSIGHT
+    if (total > opp) {
+      distracted = true; if (it.kind !== "boast" && it.kind !== "bored") gaze = id
+      let fact = null; if (it.kind === "boast") { fact = unseen(st); if (fact) st.facts.push(fact) }
+      R.push({ who: id, kind: "distract", ok: true, n, total, vs: opp, fact })
+    } else { bump(st, 1); R.push({ who: id, kind: "distract", ok: false, n, total, vs: opp, susp: 1 }) }
+  }
+  for (const id of order) {
+    if (st.picks[id] !== "charm") continue
+    const h = st.heroes[id], n = roll(rng, helped(st, id), false), total = n + h.mods.pers + exhPen(st, id), opp = d(rng, 20) + DROW_INSIGHT
+    if (total > opp) {
+      let fact = null, quotaDown = false
+      if (it.kind === "boast") { fact = unseen(st); if (fact) st.facts.push(fact) }
+      else if (!st.charmed) { st.charmed = true; st.quota = Math.max(1, st.quota - 1); quotaDown = true }
+      R.push({ who: id, kind: "charm", ok: true, n, total, vs: opp, fact, quotaDown })
+    } else { bump(st, 1); R.push({ who: id, kind: "charm", ok: false, n, total, vs: opp, susp: 1 }) }
+  }
+  const isWatched = (id) => gaze !== null ? gaze === id : watched(st, id)
+  for (const id of order) {
+    if (st.picks[id] !== "work") continue
+    const h = st.heroes[id], adv = helped(st, id), n = roll(rng, adv, false), total = n + h.mods.work + exhPen(st, id), dc = st.check.dc
+    let gain = n === 20 || total >= dc + 5 ? 2 : total >= dc ? 1 : 0, susp = 0, why = null
+    if (st.task === "water" && total <= dc - 5) { gain = -1; why = "spill" }      // the barrel skids off the plank into the chasm
+    if (n === 1) { susp = 1; why = why || "crash" }
+    else if (gain <= 0 && it.kind === "inspect") { susp = 1; why = why || "seen" }
+    if (it.kind === "kick" && gain > 0) { gain = 0; why = "kicked" }
+    bump(st, susp)
+    st.best[id] = Math.max(st.best[id] ?? -99, total - dc); st.filled = Math.max(0, st.filled + gain)
+    R.push({ who: id, kind: "work", n, total, dc, adv, gain, susp, why })
+  }
+  for (const id of order) {
+    if (st.picks[id] !== "scheme") continue
+    const h = st.heroes[id], key = st.offers[id].item, item = LOOT[key], adv = helped(st, id)
+    const n = roll(rng, adv, false), total = n + h.mods.soh + exhPen(st, id)
+    const qp = (distracted && gaze !== id ? QUAG_PASSIVE - 5 : QUAG_PASSIVE) + item.mod
+    let ok = total >= qp, drow = null
+    if (ok && (isWatched(id) || item.key)) { drow = d(rng, 20) + DROW_PERCEPTION + item.mod; ok = total > drow }
+    if (ok) {
+      st.taken[st.offers[id].roll] = true; st.stolen.push({ who: id, item: key, slug: item.slug, round: st.round })
+      R.push({ who: id, kind: "steal", ok: true, n, total, vs: qp, drow, item: key })
+    } else R.push(caught(st, id, key, n, total, qp, drow, rng))
+  }
+  st.results = R; st.seq++
+  st.round++; st.picks = {}; st.turn = 0
+  if (st.round > QUOTA_ROUNDS) endShift(st, rng)
+  else { rollIntent(st, rng); advance(st, rng, st.turnAt) }
+  return st
+}
+// Caught (Sam: "serious ones"; numbers [HOUSE], scaled to Suspicion out of 4): the item is taken, the quaggoth grabs
+// and throws the thief (1d6), +1 Suspicion, and the drow marks them for the rest of the shift. Caught again, or going
+// for the key: 2d6, knocked down (they lose their next turn), no ration tonight (a level of exhaustion), +2 Suspicion,
+// and the crew's quota goes up by 1. At 0 HP: dragged back to the pen, stable [SAM pen ruling], out for the shift.
+function caught(st, id, key, n, total, qp, drow, rng) {
+  const h = st.heroes[id], harsh = (st.caught[id] || 0) >= 1 || !!LOOT[key].key
+  st.caught[id] = (st.caught[id] || 0) + 1; st.marked[id] = true
+  let dmg
+  if (!harsh) { dmg = d(rng, 6); bump(st, 1) }
+  else { dmg = d(rng, 6) + d(rng, 6); bump(st, 2); st.prone[id] = true; st.quota += 1; st.noRation[id] = true }
+  h.hp = Math.max(0, h.hp - dmg)
+  const down = h.hp <= 0; if (down) st.out[id] = true
+  return { who: id, kind: "caught", ok: false, n, total, vs: qp, drow, item: key, harsh, dmg, hp: h.hp, down, susp: harsh ? 2 : 1 }
+}
+
+// ─── the end of the shift ───────────────────────────────────────────────────────────────────────────────────
+// Met: "That will do." Beat it by 2+: he boasts a fact, and tomorrow's quota is 1 higher. A hero who beat the DC by 10
+// or more: Heroic Inspiration [SRD]. Missed: double shift, CON DC 10 or a level of exhaustion [SRD 5.2.1]. Suspicion:
+// 2 searched at the gate (one smuggled item found), 3 beaten on the way back (one found), 4 lockdown (everything found,
+// no stealing next shift). It cools by 1 a shift.
+function endShift(st, rng) {
+  const met = st.filled >= st.quota, exhGain = {}, saves = {}, notes = []
+  let fact = null
+  if (met && st.filled - st.quota >= 2) { fact = unseen(st); if (fact) st.facts.push(fact) }
+  if (!met) for (const id of st.order) { const t = d(rng, 20) + (st.heroes[id].mods.con || 0) + exhPen(st, id); saves[id] = t; if (t < 10) exhGain[id] = (exhGain[id] || 0) + 1 }
+  for (const id of Object.keys(st.noRation)) exhGain[id] = (exhGain[id] || 0) + 1
+  const inspired = met ? st.order.filter((id) => (st.best[id] ?? -99) >= 10) : []
+  let found = []
+  if (st.susp >= 4) found = st.stolen.slice()
+  else if (st.susp >= 2 && st.stolen.length) found = [st.stolen[st.stolen.length - 1]]
+  for (const f of found) f.found = true
+  st.done = true; st.turn = st.order.length
+  st.end = {
+    met, saves, exhGain, inspired, fact, search: st.susp >= 4 ? "lockdown" : st.susp >= 3 ? "beaten" : st.susp >= 2 ? "searched" : null,
+    found: found.map((f) => ({ who: f.who, slug: f.slug, item: f.item })),
+    kept: st.stolen.filter((f) => !f.found).map((f) => ({ who: f.who, slug: f.slug, item: f.item })),
+    carry: { shift: st.shift, susp: Math.max(0, st.susp - 1), quotaUp: met && st.filled - st.quota >= 2, taken: st.taken, facts: st.facts, lockdown: st.susp >= 4 },
+  }
+  return st
+}
+
+// ─── words: what the log and the table see (the map and the server both read these) ─────────────────────────
+const W = (st, id) => st.heroes[id].short
+const ITEM_LC = (k) => LOOT[k].name.toLowerCase()
+function resultLine(st, r) {
+  const n = W(st, r.who)
+  switch (r.kind) {
+    case "nothing": return `${n} looks for something to take: nothing within reach. The looking costs ${n} the round.`
+    case "prone": return `${n} is still on the ground and loses the turn.`
+    case "help": return `${n} covers for ${W(st, r.target)}: ${W(st, r.target)} rolls with advantage.`
+    case "distract": return r.ok
+      ? `${n} puts on a show (Performance ${r.total} vs his Insight ${r.vs}). Every eye in the room turns to ${n}.${r.fact ? ` Flattered, he lets it slip: ${r.fact}` : ""}`
+      : `${n} tries to put on a show (Performance ${r.total} vs ${r.vs}). A cup bounces off ${n}'s head. +1 Suspicion.`
+    case "charm": return r.ok
+      ? `${n} sweet-talks him (Persuasion ${r.total} vs ${r.vs}). ${r.fact ? `Pleased, he lets it slip: ${r.fact}` : r.quotaDown ? "\"Fine. One less. Don't make me regret it.\" Quota −1." : "He smirks."}`
+      : `${n} tries to sweet-talk him (Persuasion ${r.total} vs ${r.vs}). "Was that meant to be charming?" +1 Suspicion.`
+    case "work": {
+      const what = `${n} works (${st.check.skill} ${r.total} vs DC ${r.dc}${r.adv ? ", with help" : ""})`
+      const gain = r.gain > 0 ? `+${r.gain} ${st.unit}` : r.gain < 0 ? "−1" : "nothing gained"
+      const why = r.why === "spill" ? " The barrel skids off the plank into the chasm." : r.why === "crash" ? " A crash. +1 Suspicion." : r.why === "seen" ? " The drow saw that. +1 Suspicion." : r.why === "kicked" ? " Then his boot sends it flying. It counts for nothing." : ""
+      return `${what}: ${gain}.${why}`
+    }
+    case "steal": return `${n} palms ${ITEM_LC(r.item)} (Sleight of Hand ${r.total} vs ${r.vs}${r.drow != null ? `, the drow's eyes ${r.drow}` : ""}). Nobody saw a thing.`
+    case "caught": return r.harsh
+      ? `${n} reaches for ${ITEM_LC(r.item)} and is caught. Made an example of: thrown and kicked where ${n} lands, ${r.dmg} bludgeoning, knocked down, no ration tonight, +2 Suspicion, and the crew's quota goes up by 1.${r.down ? ` ${n} drops to 0 HP and is dragged back to the pen.` : ""}`
+      : `${n} reaches for ${ITEM_LC(r.item)} and is caught. The quaggoth throws ${n} across the room: ${r.dmg} bludgeoning, +1 Suspicion, and the drow marks ${n} for the rest of the shift.${r.down ? ` ${n} drops to 0 HP and is dragged back to the pen.` : ""}`
+  }
+  return ""
+}
+/** The end of the shift, in short lines with no numbers [SAM 2026-11-16: "Just attractive font summaries"]. */
+function endLines(st) {
+  const e = st.end; if (!e) return []
+  const out = []
+  if (!e.met) { out.push("Double shift. Every back is tested."); for (const id of st.order) out.push(e.exhGain[id] && !st.noRation[id] ? `${W(st, id)} is worn down: exhaustion.` : `${W(st, id)} holds up.`) }
+  else if (e.fact) out.push(`Pleased with himself, the drow boasts: ${e.fact}`)
+  if (e.carry.quotaUp) out.push("The crew worked too well. Tomorrow they'll expect more.")
+  if (e.inspired.length) out.push(`${e.inspired.map((id) => W(st, id)).join(" and ")} ${e.inspired.length > 1 ? "shine" : "shines"}: Heroic Inspiration.`)
+  for (const id of Object.keys(st.noRation)) out.push(`No ration for ${W(st, id)} tonight: exhaustion.`)
+  if (e.search === "lockdown") out.push("Lockdown. They search everyone and find everything. No stealing next shift.")
+  else if (e.search === "beaten" && e.found.length) out.push("Beaten. The escort works the crew over on the way back and finds one item.")
+  else if (e.search === "searched" && e.found.length) out.push("Searched at the gate. One smuggled item is found.")
+  return out
+}
+const INTENT_TEXT = {
+  watch: (st) => [`Watching ${W(st, st.intent.target)}`, "A risk by that hero is rolled against his Perception."],
+  inspect: () => ["Inspecting the work", "Every risk is watched, and failed work is noticed."],
+  kick: () => ["Finding fault with it all", "He'll kick it over: work this round fills nothing."],
+  boast: () => ["Lingering to boast", "He watches nobody. Flatter him and a fact slips out."],
+  bored: () => ["Bored, turned away", "Only the quaggoth is watching."],
+}
+const INTENT_LINE = {
+  watch: "You. I see your hands. Keep them busy.", inspect: "Let's see what passes for work here.",
+  kick: "Crooked. I can see it from here.", boast: "Do you know who I am? Of course not. Let me tell you.", bored: null,
+}
+
+return {QUOTA_ROUNDS, SUSP_MAX, QUAG_PASSIVE, DROW_PERCEPTION, DROW_INSIGHT, TURN_MS, STEP_MS, LOOT, D100, TIER_TEXT, difficultyOf, FACTS, RISKS, riskFor, workCheck, unitOf, CRUEL, quotaFor, pRoll, pContest, newShift, heroOf, exhPen, rollIntent, watched, helpTarget, helped, current, offerOf, odds, botChoice, advance, choose, nudge, resolveRound, endShift, resultLine, endLines, INTENT_TEXT, INTENT_LINE};
+})();
+
+// ---------- THE QUOTA: the shift on the work plate (Sam, 2026-11-16: "Ok incorporate this into the game") ----------
+// The prototype Sam played (https://claude.ai/artifact/2LeCYK257hwrWZVmTD2qu5), on the real crew, plate and escort.
+// It replaces the 3-minute watch (laborShiftTick, laborBeat) and the Talk / Look / Steal bar while it runs. The server
+// holds the shift and rolls every die (/api/labor quota, lib/quota.mjs pasted at the top of this block), so every screen
+// plays the same game: each seated player chooses for their own hero, on their own screen, when "you're up"; heroes
+// nobody plays choose for themselves. All choices are revealed together, about 2 s a roll [SAM]. At the end, the card,
+// then the screen goes dark and everyone is back in the pen (laborFinish → laborHomeCut), and the clock jumps one change
+// of the watch (/api/labor done) and runs again [SAM].
+const QUOTA_ASSET = `${APP ? "/" : ""}labor/quota/`;
+const quotaView = {seq: -1, key: "", playing: false, endShown: false, offerShown: "", confirm: false, finishAt: 0, shown: null};
+const quotaState = () => { if (!labor || !Array.isArray(labor.events)) return null; for (let i = labor.events.length - 1; i >= 0; i--){ const e = labor.events[i]; if (e && e.kind === "quota" && e.state) return e.state; } return null; };
+const quotaOn = () => atWorkPlate() && !!quotaState();
+const quotaMine = () => { const h = laborHero(); return h ? characterIdOf(h.id) : null; };
+const quotaActor = cid => party.find(p => characterIdOf(p.id) === cid) || null;
+const quotaIcon = n => `${QUOTA_ASSET}${n}.png`;
+const QUOTA_WORK_ICON = {water: "work-water", kitchen: "work-kitchen", dishes: "work-kitchen", laundry: "work-kitchen", pots: "work-kitchen", clean: "work-kitchen"};
+const quotaWorkIcon = task => quotaIcon(QUOTA_WORK_ICON[task] || "work-rocks");
+const qpct = p => p == null ? "—" : p >= 1 ? "sure" : Math.round(p * 100) + "%";
+music.quota = new Audio(`${QUOTA_ASSET}yard-theme.mp3`); music.quota.loop = true; music.quota.preload = "none";   // ElevenLabs Music, take 2 [SAM]
+LEVEL.quota = .5;
+async function quotaPost(op, extra = {}){ return laborPost("quota", Object.assign({op}, extra)); }
+let quotaPolling = false;
+async function quotaPoll(){
+  if (!atWorkPlate() || quotaPolling) return; quotaPolling = true;
+  try { const j = await fetch("/api/labor", {cache: "no-store"}).then(r => r.json()); if (j.detail && labor && j.detail.id === labor.id) labor = j.detail; } catch (e) {}
+  finally { quotaPolling = false; }
+}
+async function quotaTick(){
+  if (!APP || !atWorkPlate()){ quotaHide(); return; }
+  await quotaPoll();
+  let st = quotaState();
+  if (!st){ if (laborBody({}) && (isDm() || laborDriving || laborHero())) { const j = await quotaPost("start"); st = quotaState(); if (!j) return; } else return; }
+  if (!st) return;
+  renderLaborBar();
+  // a seated player who has not chosen in 45 s keeps working (the server checks the time; anyone may ask)
+  const cur = QUOTA.current(st);
+  if (cur && !st.bots.includes(cur) && owNow() - (st.turnAt || 0) > QUOTA.TURN_MS + 1500 && cur !== quotaMine()) quotaPost("nudge");
+  quotaRender(st);
+}
+setInterval(quotaTick, 1500);
+
+function quotaEl(){
+  let el = $("quota"); if (el) return el;
+  el = document.createElement("div"); el.id = "quota";
+  el.innerHTML = `<div class="qhud"><div class="qbox"><b>Crew quota</b><span id="qFill"></span><div class="qleds" id="qLeds"></div></div>
+    <div class="qbox"><b>Suspicion</b><span id="qSuspN"></span><div class="qleds" id="qSusp"></div></div>
+    <div class="qbox qsmall"><b>Inspection</b><span id="qRound"></span></div></div>
+    <div class="qteam" id="qTeam"></div>
+    <div class="qintent" id="qIntent"><img id="qEye" alt=""><div><div id="qIntentT"></div><small id="qIntentR"></small></div></div>
+    <div class="qcall" id="qCall" hidden></div><div class="qpanel" id="qPanel" hidden></div><div class="qdlg" id="qDlg" hidden></div><div class="qend" id="qEnd" hidden></div>`;
+  ($("laborBar") && $("laborBar").parentNode || document.body).appendChild(el);
+  return el;
+}
+function quotaHide(){ const el = $("quota"); if (el) el.hidden = true; document.body.classList.remove("qdanger", "quota-on"); }
+function quotaRender(st){
+  const el = quotaEl(); el.hidden = false; document.body.classList.add("quota-on");
+  const me = quotaMine(), dmView = !me || !st.heroes[me];
+  $("qFill").textContent = `${st.filled} / ${st.quota}`;
+  $("qLeds").innerHTML = Array.from({length: Math.max(st.quota, st.filled)}, (_, i) => `<i class="${i < st.filled ? "on g" : ""}"></i>`).join("");
+  $("qSuspN").textContent = `${st.susp} / ${QUOTA.SUSP_MAX}`;
+  $("qSusp").innerHTML = Array.from({length: QUOTA.SUSP_MAX}, (_, i) => `<i class="${i < st.susp ? "on r" : ""}"></i>`).join("");
+  $("qRound").textContent = st.done ? "done" : `${Math.min(st.round, QUOTA.QUOTA_ROUNDS)} of ${QUOTA.QUOTA_ROUNDS}`;
+  quotaTeam(st, me);
+  // the drow's intent, said to MY hero when it is about me (the red pulse: Sam, "when you are in danger, make sure the red flashes a bit")
+  const k = st.intent && st.intent.kind, [t, r] = k ? QUOTA.INTENT_TEXT[k](st) : ["", ""];
+  const aboutMe = !dmView && !st.done && k && (k === "watch" ? st.intent.target === me : k === "inspect" || k === "kick") && !st.out[me];
+  $("qIntentT").textContent = aboutMe ? (k === "watch" ? "He's watching YOU." : k === "kick" ? "He's about to kick over your work." : "He's inspecting your work.") : t;
+  $("qIntentR").textContent = aboutMe ? (k === "watch" ? "Anything risky you try is rolled against his eyes." : r) : r;
+  $("qEye").src = quotaIcon("drow-eye"); $("qEye").style.visibility = k === "watch" || k === "inspect" || k === "kick" ? "visible" : "hidden";
+  $("qIntent").classList.toggle("alarm", !!aboutMe); document.body.classList.toggle("qdanger", !!aboutMe && !quotaView.playing);
+  $("qIntent").hidden = st.done;
+  // escort's eyes follow the intent
+  const d = escortDrow(); if (d && k === "watch"){ const a = quotaActor(st.intent.target); if (a) d.face = faceOf(a.x - d.x, a.y - d.y); }
+  // a new reveal to play
+  if (st.seq !== quotaView.seq && !quotaView.playing){
+    const first = quotaView.seq === -1; quotaView.seq = st.seq;
+    if (!first && st.results && st.results.length){ quotaPlay(st); return; }
+  }
+  if (quotaView.playing) return;
+  if (st.done){ quotaEndCard(st); return; }
+  quotaTurn(st, me, dmView);
+}
+function quotaTurn(st, me, dmView){
+  const cur = QUOTA.current(st), mine = !dmView && cur === me;
+  // the thief's own reveal of what is in reach (or nothing), held until Continue [SAM]
+  const off = me && st.offers[me], key = off ? `${off.round}:${off.roll}:${st.shift}` : "";
+  if (off && off.round === st.round && quotaView.offerShown !== key && (mine || !off.item)){
+    quotaView.offerShown = key;
+    const it = off.item && QUOTA.LOOT[off.item];
+    quotaPanel(it ? `<small>Within ${esc(st.heroes[me].short)}'s reach</small><img src="/item-pixels/${it.slug}.png" alt=""><h3>${esc(it.name)}</h3><div><span class="qtier ${it.tier}">${QUOTA.TIER_TEXT[it.tier]}</span> <small>${QUOTA.difficultyOf(it)}</small></div><p>${esc(it.why)}</p>`
+      : `<small>Within ${esc(st.heroes[me].short)}'s reach</small><h3>Nothing</h3><p>The drow keep nothing worth taking here. The looking costs the round.</p>`, true);
+    if (it) bank("ui/item_pickup", .5);
+    return;
+  }
+  if (!$("qPanel").hidden) return;
+  // THE DM'S BUTTONS (Sam, 2026-11-16: "In the real game there should be buttons for each players screen"): the DM
+  // can open any hero's turn from the team row and choose for them (a seated player who is away, say)
+  if (!mine && isDm() && cur && quotaView.view === cur){ quotaDialog(st, cur); return; }
+  const call = cur ? `${st.heroes[cur].short}${mine ? ", you're up." : " is deciding…"}` : "";
+  const c = $("qCall"); c.hidden = !cur || mine; c.textContent = call;   // my own turn: the box says it
+  if (!mine){ $("qDlg").hidden = true; quotaView.confirm = false; return; }
+  quotaDialog(st, me);
+}
+function quotaDialog(st, me){
+  const h = st.heroes[me], o = QUOTA.odds(st, me), risk = QUOTA.RISKS[h.risk], it = QUOTA.offerOf(st, me), left = Math.max(0, st.quota - st.filled);
+  const key = [me, st.round, st.turn, quotaView.confirm, o.risk != null, quotaView.view].join("|"); const box = $("qDlg");
+  if (quotaView.key === key && !box.hidden) return; quotaView.key = key; box.hidden = false;
+  const a = quotaActor(me);
+  const pic = a ? (() => { const cv = document.createElement("canvas"); portrait(a.id, cv, 72); return cv; })() : null;
+  const want = it ? `Within reach: <b>${esc(it.name)}</b>. ` : "";
+  let html;
+  const rimg = quotaIcon(risk.icon), wimg = quotaWorkIcon(st.task);
+  if (!quotaView.confirm){
+    html = `<div class="qsay"><b>${esc(h.short)}, you're up.</b> ${want}The crew needs <b>${left}</b> more.</div>
+      <button class="qop" data-k="work"><kbd>1</kbd><img src="${wimg}" alt=""><span>Keep working<small>${esc(st.check.skill)} vs DC ${st.check.dc} · +1 to the quota</small></span><em>${qpct(o.work)}</em></button>
+      <button class="qop risk" data-k="risk" ${o.risk == null ? "disabled" : ""}><kbd>2</kbd><img src="${rimg}" alt=""><span>${esc(risk.label)}<small>${esc(o.note)}</small></span><em>${qpct(o.risk)}</em></button>`;
+  } else {
+    const win = h.risk === "scheme" ? `${esc(it ? it.name : "It")} is yours, hidden in your rags.` : h.risk === "distract" ? "Every eye turns to you. A thief nearby gets much safer, and if he's boasting, a secret slips."
+      : h.risk === "help" ? esc(o.note) : st.intent.kind === "boast" ? "A secret slips out." : "The quota drops by 1 (once a shift).";
+    const lose = h.risk === "scheme" ? ((st.caught[me] || 0) >= 1 || (it && it.key) ? "Made an example of: 2d6, knocked down, no ration tonight, Suspicion +2, and the crew's quota goes up by 1." : "The item is taken, the quaggoth throws you (1d6), Suspicion +1, and the drow marks you for the rest of the shift.")
+      : h.risk === "help" ? "Nothing goes wrong, but you add nothing to the quota." : "Suspicion +1.";
+    html = `<div class="qcf"><span>${esc(risk.label)}?</span><em>${o.risk >= 1 ? "Sure thing" : qpct(o.risk) + " chance"}</em></div>
+      <div class="qcards"><div class="win"><b>If it works</b>${win}</div><div class="lose"><b>If it goes wrong</b>${lose}</div></div>
+      <button class="qop yes" data-k="yes"><kbd>1</kbd><img src="${rimg}" alt=""><span>Yes, do it</span><em>${qpct(o.risk)}</em></button>
+      <button class="qop" data-k="no"><kbd>2</kbd><img src="${wimg}" alt=""><span>No, keep my head down<small>work instead</small></span><em>${qpct(o.work)}</em></button>`;
+  }
+  box.innerHTML = `<div class="qpt"></div><div class="qbody">${html}</div>`;
+  if (pic) box.querySelector(".qpt").appendChild(pic);
+  box.querySelectorAll(".qop").forEach(b => b.onclick = () => quotaChoose(b.dataset.k, st, me));
+}
+async function quotaChoose(k, st, me){
+  const h = st.heroes[me];
+  if (k === "risk"){ quotaView.confirm = true; quotaView.key = ""; bank("ui/press", .4); quotaDialog(st, me); return; }
+  const choice = k === "yes" ? h.risk : "work";
+  quotaView.confirm = false; $("qDlg").hidden = true; bank("ui/press", .5);
+  const j = await quotaPost("pick", {choice, who: me});
+  if (!j) toast("The choice didn't go through. Try again.", 2600);
+  quotaView.key = ""; const s2 = quotaState(); if (s2) quotaRender(s2);
+}
+addEventListener("keydown", e => {
+  const box = $("qDlg"); if (!box || box.hidden || mode === "talk") return;
+  if (e.key === "1" || e.key === "2"){ const b = box.querySelectorAll(".qop")[+e.key - 1]; if (b && !b.disabled){ e.preventDefault(); e.stopImmediatePropagation(); b.click(); } }
+}, true);
+// THE TEAM ROW: a button for each hero on the detail, game-style, with where they stand this round and a clean HP
+// gauge. Yours opens your box on your turn; the DM's open any hero's (above).
+function quotaTeam(st, me){
+  const row = $("qTeam"), cur = QUOTA.current(st);
+  const key = JSON.stringify([st.round, st.turn, st.done, st.picks, Object.values(st.heroes).map(h => h.hp), st.out, quotaView.view, cur]);
+  if (row._k === key) return; row._k = key; row.innerHTML = "";
+  for (const id of st.order){
+    const h = st.heroes[id], a = quotaActor(id), b = document.createElement("button");
+    const status = st.out[id] ? "back in the pen" : st.done ? "done" : id === cur ? (id === me ? "your turn" : "deciding…") : st.picks[id] ? "chosen" : "waiting";
+    const hp = Math.max(0, h.hp) / Math.max(1, h.hpMax), col = hp > .6 ? "#5fe07a" : hp > .3 ? "#f2c55c" : "#ff4a3a";
+    b.className = "qhero" + (id === me ? " me" : "") + (id === cur && !st.done ? " now" : "") + (quotaView.view === id ? " on" : "");
+    b.innerHTML = `<span class="qn">${esc(h.short)}</span><span class="qs">${status}</span><i class="qhp"><i style="width:${hp * 100}%;background:${col}"></i></i>`;
+    if (a){ const cv = document.createElement("canvas"); portrait(a.id, cv, 34); b.prepend(cv); }
+    b.onclick = () => { quotaView.view = quotaView.view === id ? null : id; quotaView.key = ""; bank("ui/press", .4); quotaRender(st); };
+    row.appendChild(b);
+  }
+}
+function quotaPanel(html, hold){
+  const p = $("qPanel"); p.innerHTML = html + (hold ? `<button class="qgo">Continue</button>` : ""); p.hidden = false; $("qDlg").hidden = true; $("qCall").hidden = true;
+  return new Promise(res => {
+    const done = () => { p.hidden = true; removeEventListener("keydown", kd); res(); const s = quotaState(); if (s) quotaRender(s); };
+    const kd = e => { if (e.key === "Enter" || e.key === " "){ e.preventDefault(); done(); } };
+    if (hold){ p.querySelector(".qgo").onclick = done; addEventListener("keydown", kd); } else setTimeout(done, 2400);
+  });
+}
+// the reveal: one roll about every 2 s, on the plate, with the heroes' own sprites [SAM]
+async function quotaPlay(st){
+  quotaView.playing = true; $("qDlg").hidden = true; $("qCall").hidden = true; document.body.classList.remove("qdanger");
+  const c = $("qCall"); c.hidden = false; c.classList.remove("mine"); c.textContent = "Everyone's chosen. The drow looks up…";
+  await wait(1400); c.hidden = true;
+  try {
+    for (const r of st.results){
+      const a = quotaActor(r.who), line = QUOTA.resultLine(st, r);
+      log(`<b>Quota:</b> ${esc(line)}`);
+      if (a){
+        if (r.kind === "work"){ if (!owRemote(a) && !a.performing) laborPerform(a, true); popText(a, r.gain > 0 ? `+${r.gain}` : r.gain < 0 ? "−1" : "…", r.gain > 0 ? "#9fd36f" : "#e07a5f", 1.1); if (r.why === "kicked") { escortSays(escortDrow(), "Crooked. All of it. Again.", 3000); shake(3); } }
+        else if (r.kind === "distract"){ if (hasSheet(a, "perform") && !owRemote(a)) { setAnim(a, "perform"); setTimeout(() => { if (a.anim === "perform") setAnim(a, "idle"); }, 4000); } bardTune(a, "combat", "whistle"); popText(a, r.ok ? "Every eye on me!" : "+1 suspicion", r.ok ? "#b39cf0" : "#e07a5f", 1); if (r.ok) escortSays(escortDrow(), "...Ha. Do that again, surfacer.", 3000); }
+        else if (r.kind === "charm"){ popText(a, r.ok ? "Charmed!" : "+1 suspicion", r.ok ? "#b39cf0" : "#e07a5f", 1); escortSays(escortDrow(), r.ok ? (r.fact ? r.fact.replace(/"/g, "") : "Fine. One less. Don't make me regret it.") : "Was that meant to be charming?", 3500); }
+        else if (r.kind === "help") popText(a, "Covering", "#9fd36f", 1);
+        else if (r.kind === "steal"){ popText(a, "✓ pocketed", "#e7c983", 1.1); bank("ui/item_pickup", .8); if (r.who === quotaMine()){ try { loadGear(a.id).then(() => { if (bagOpen()) renderBag(); }); } catch (e) {} } if (r.who === quotaMine()) await quotaPanel(`<small>Smuggled</small><img src="/item-pixels/${QUOTA.LOOT[r.item].slug}.png" alt=""><h3>${esc(QUOTA.LOOT[r.item].name)}</h3>`, false); }
+        else if (r.kind === "caught") await quotaThrown(a, r);
+        else if (r.kind === "nothing") popText(a, "nothing", "#a59a86", .9);
+      }
+      const s = quotaState() || st; $("qFill").textContent = `${s.filled} / ${s.quota}`;
+      await wait(QUOTA.STEP_MS);
+    }
+  } finally {
+    quotaView.playing = false;
+    const s = quotaState(); if (s){ if (!s.done) log(`<small>Next inspection: the drow's intent changes.</small>`); const k = s.intent && s.intent.kind, l = k && QUOTA.INTENT_LINE[k]; if (l && !s.done) escortSays(escortDrow(), l, 4000); quotaRender(s); }
+  }
+}
+// caught: the escort's quaggoth grabs the thief and throws them (PR #1422's throw sheet); a hero this screen drives flies
+async function quotaThrown(a, r){
+  const q = escortBeast(); bank("ui/nat1", .5); popText(a, "Caught!", "#ff6b5e", 1.2);
+  escortSays(escortDrow(), r.harsh ? "Watch closely, all of you. This is what thieves earn." : CAUGHT_LINE, 4500);
+  if (q){ q.face = faceOf(a.x - q.x, a.y - q.y); const an = SPR[q.id] && SPR[q.id].img.throw; playOnce(q, an ? "throw" : "attack", () => setAnim(q, "idle")); quaggothSays("Mine. Fly, meat."); }
+  await wait(450);
+  if (!owRemote(a)){ const dir = q ? norm({x: a.x - q.x, y: a.y - q.y}) : {x: 1, y: 0}; const to = nearestWalkable(a.x + dir.x * 110 * node.scale, a.y + dir.y * 60 * node.scale); await new Promise(res => arcTo(a, to, res)); }
+  shake(6); bank("combat/punch_hit", .9); popText(a, `−${r.dmg} HP`, "#e07a5f", 1.1);
+  const s = SHEETS[a.id]; if (s && typeof r.hp === "number") s.hpNow = r.hp;
+  if (r.down) log(`<b>${esc(fname(a))}</b> is out cold, dragged back to the pen.`);
+  renderParty && renderParty();
+}
+function quotaEndCard(st){
+  if (quotaView.endShown) return; quotaView.endShown = true;
+  const e = st.end, box = $("qEnd"); $("qDlg").hidden = true; $("qCall").hidden = true; $("qPanel").hidden = true;
+  bank(e.met ? "ui/level_up" : "magic/spell_fizzle", .7);
+  const kept = e.kept.map(k => `<span><img src="/item-pixels/${k.slug}.png" alt=""><b>${esc(QUOTA.LOOT[k.item].name)}</b><small>${esc(st.heroes[k.who].short)}</small></span>`).join("");
+  box.innerHTML = `<h2 class="${e.met ? "ok" : "bad"}">${e.met ? "Quota met" : "Quota missed"}</h2><p class="qq">${e.met ? "\"That will do. Barely.\"" : "\"Again. All of it. You will work until it is right.\""}</p>
+    <div class="ql">${QUOTA.endLines(st).map(l => `<p>${esc(l)}</p>`).join("")}</div>${kept ? `<div class="qk">${kept}</div>` : ""}
+    <button class="qgo big" id="qHome">Back to the pen</button>`;
+  box.hidden = false;
+  const drives = isDm() || laborDriving;
+  const go = () => { box.hidden = true; quotaHide(); if (labor && labor.status === "working"){ escortSays(escortDrow(), "Enough. Back.", 3000); laborFinish({urgent: true}); } };
+  $("qHome").onclick = go;
+  setTimeout(() => { if (!box.hidden && (drives || (labor && labor.status === "working"))) go(); }, drives ? 14000 : 30000);   // someone always walks them home
 }
 
 // ---------- HARD LABOR: caught, searched, defying (PR 4) ----------
@@ -21945,7 +22616,12 @@ function drawStoolAura(a, dx, dy, dw, dh, layer){
   }
   ctx.restore();
 }
+// NOBODY TALKS DURING THE QUOTA (Sam, 2026-11-16: "Drow guards shouldn't be trying to talk during this. That's just
+// going to make the game mess up"). While the shift is being played, no talk card opens: not a click on someone, not the
+// Talk key, not an NPC who wants a word. The escort still speaks in bubbles; the conversations wait until it is over.
+const talkBlocked = () => { try { return quotaOn(); } catch (e) { return false; } };
 function approach(n){
+  if (talkBlocked()){ toast("Not now: the work detail is on.", 2200); return; }
   if (planAsking(n)) return openPlanCard(n);                 // ELDETH ASKS THE PLAN: a choice card, not a conversation
   if (wireAsking(n)) return openWireCard(n);                 // JIMJAR HAS A WIRE: a deal, not a conversation
   if (wantsWord(n)) return openTalk(n);
@@ -21954,7 +22630,7 @@ function approach(n){
 }
 let talkQuiet = false;
 async function openTalk(npc, opts = {}){
-  if (!npc || mode === "talk") return;
+  if (!npc || mode === "talk" || talkBlocked()) return;
   talkQuiet = !!opts.quiet; $("talkNo").querySelector(".lbl").textContent = talkQuiet ? "Leave" : "Decline";
   talkNext = null;
   mode = "talk"; party.forEach(p => { p.path = []; setAnim(p, "idle"); });
@@ -22165,7 +22841,7 @@ function hitActor(list, w){
 stage.addEventListener("pointerleave", () => stripHover(false));
 stage.addEventListener("pointerdown", e => {
   if (cbt && e.pointerType === "touch" && e.clientY - stage.getBoundingClientRect().top < STRIP_ZONE) stripShow(3000);   // no hover on a touch screen: a tap along the top
-  if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui,.checkcard,.icard,.pel-top,.rlog,.voyage")) return;   // (a press the stage captured never reached the voyage card's button)   // the top's buttons and panels are never a walk
+  if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui,.checkcard,.icard,.pel-top,.rlog,.voyage,#quota .qdlg,#quota .qpanel,#quota .qend,#quota .qteam")) return;   // (a press the stage captured never reached the voyage card's button)   // the top's buttons and panels are never a walk
   if (e.button === 2) return;   // a right-click opens an item's whole card (contextmenu, below): never a walk or a swing
   unlockAudio();
   if (ICARD.pinned) icardHide(true);
