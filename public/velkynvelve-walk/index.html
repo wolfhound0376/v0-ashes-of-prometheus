@@ -8730,6 +8730,16 @@ const FOE_BLOCKS = {
   shoor:                {name: "Shoor Vandree", race: "drow", xp: 1800, passive: 15, hp: 71, ac: 18, speed: 30, init: 4, saves: {str: 1, dex: 4, con: 2, int: 0, wis: 1, cha: 1}, multi: 2, boss: true, epithet: "Drow elite warrior",
                          attacks: [{name: "Shortsword", hit: 7, dmg: "1d6+4", type: "piercing", reach: 5, extra: {dmg: "3d6", type: "poison"}},
                                    {name: "Hand Crossbow", hit: 7, dmg: "1d6+4", type: "piercing", reach: 30, long: 120, ranged: true, drowPoison: {dc: 13}}]},
+  // Jorlan Duskryn (Sam, 2026-11-16: "Jorlan elite warrior stats with the ability to cast healing word on himself at least
+  // twice and chilling touch at least once per fight"). The drow elite warrior block above (OotA's officers are elite
+  // warriors), plus Sam's house magic: Healing Word twice per fight, on himself only, when he is hurt (selfHeal), and Chill
+  // Touch once per fight (the page's SRD 5.2.1 Chill Touch: touch, 1d10 necrotic, no healing). Innate uses are per fight:
+  // the counts live on the fighter, made fresh each fight. [HOUSE] spell attack +4 / DC 12 (proficiency +3 for CR 5, plus
+  // the elite's Charisma +1, the drow's innate-casting ability): no book gives Jorlan a spellcasting line.
+  jorlan:               {name: "Jorlan Duskryn", race: "drow", xp: 1800, passive: 15, hp: 71, ac: 18, speed: 30, init: 4, saves: {str: 1, dex: 4, con: 2, int: 0, wis: 1, cha: 1}, multi: 2, epithet: "Drow elite warrior",
+                         attacks: [{name: "Shortsword", hit: 7, dmg: "1d6+4", type: "piercing", reach: 5, extra: {dmg: "3d6", type: "poison"}},
+                                   {name: "Hand Crossbow", hit: 7, dmg: "1d6+4", type: "piercing", reach: 30, long: 120, ranged: true, drowPoison: {dc: 13}}],
+                         magic: {dc: 12, hit: 4, mod: 1, selfHeal: true, slots: {}, cantrips: [], prepared: [], innate: {"Healing Word": 2, "Chill Touch": 1}}},
   // Ilvara Mizzrym, drow priestess of Lolth (CR 8): two scourge lashes, or Ray of Sickness at range (its poisoned rider lasts a round; `rider` here is the damage-on-save shape the page has).
   ilvara:               {name: "Ilvara Mizzrym", race: "drow", xp: 3900, passive: 13, hp: 71, ac: 16, speed: 30, init: 2, saves: {str: 0, dex: 2, con: 1, int: 1, wis: 3, cha: 4}, multi: 2, boss: true, epithet: "Priestess of Lolth",
                          attacks: [{name: "Scourge", hit: 5, dmg: "1d6+2", type: "piercing", reach: 5, extra: {dmg: "5d6", type: "poison"}},
@@ -10789,7 +10799,7 @@ function guardsReact(w, h, why){
   const jStance = sp && sp.id === "jorlan" ? PEN_ESCAPE.jorlanStance(escapeNow(), {pledged: !!(storyPledge && storyPledge.keptAt)}) : null;
   if (jStance === "hunt" || jStance === "aside"){
     stopActivity(sp); sp.path = []; faceTo(sp, h);
-    if (jStance === "hunt"){ bark(sp, "There. Take them.", 3200); log(`<em>Jorlan sees ${esc(who)} and does not bother with words.</em> The guards come on.`); }
+    if (jStance === "hunt"){ bark(sp, "There. Take them.", 3200); log(`<em>Jorlan sees ${esc(who)} and does not bother with words.</em> He draws, and the guards come on with him.`); if (FOE_BLOCKS.jorlan && !guards.includes(sp)) guards.push(sp); }   // he leads the hunt, blade out (Sam, 2026-11-16: elite warrior stats)
     else log(`<em>Jorlan sees ${esc(who)}, and looks away.</em> The guards do not wait for him.`);
     sp = null;
   }
@@ -15220,7 +15230,8 @@ function castableNow(f, seen){
   const out = [], hurt = sideOf(f).some(x => x.c.hp < x.c.hpMax);
   const add = name => {
     const sp = SPELLS[name]; if (!sp) return;
-    const on = ON_OF[sp.kind] || "hero";
+    let on = ON_OF[sp.kind] || "hero";
+    if (on === "ally" && m.selfHeal){ if (f.c.hp >= f.c.hpMax) return; on = "self"; }   // Jorlan's Healing Word: on himself (Sam, 2026-11-16)
     if (on === "hero" && !seen.length) return;
     if (on === "ally" && !hurt) return;
     if (sp.kind === "conjure" && (f.summons || []).some(x => inFight(x))) return;
@@ -15247,6 +15258,7 @@ function foeCast(f, name, t){
   const m = c.sheet.magic, innate = !!(c.innate && c.innate[name] > 0) && !(m.cantrips || []).includes(name) && !(m.prepared || []).includes(name);   // not in the book's slots: the daily use
   const go = () => {
     if (!cbt || activeActor() !== f || !inFight(f)) return;
+    if (!sp.lvl && innate) c.innate[name]--;   // a counted innate cantrip (Jorlan's Chill Touch, once per fight) spends its use
     if (sp.lvl){
       if (innate){ c.innate[name]--; c.slots[sp.lvl] = (c.slots[sp.lvl] || 0) + 1; }   // castSpell takes a slot; an innate use puts it back
       else { const l = slotFor(c, sp.lvl); if (l !== sp.lvl){ c.slots[l]--; c.slots[sp.lvl] = (c.slots[sp.lvl] || 0) + 1; } }   // cast with the higher slot
