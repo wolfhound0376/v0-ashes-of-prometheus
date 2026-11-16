@@ -7,6 +7,12 @@ import { SHIFT_STARTS, disobey, firstWorkShift, planDay, seeded, shiftAt, suspic
 import { CONFISCATION_STASH_NAME } from "@/lib/confiscation"
 // plain .mjs, shared with the walk page (build_walk.py /*__LABOR__*/)
 import { PRISONERS, advance, arrivalStep, choiceEffect, prisonerSlug, shiftOver, shiftTimeout, tooBigToHide } from "@/lib/labor-walk.mjs"
+// The Quota (Sam, 2026-11-16: "Ok incorporate this into the game"): the work-detail minigame, rolled here
+import * as QUOTA from "@/lib/quota.mjs"
+import { skill as sheetSkill } from "@/lib/walk-sheet"
+import { catalogRow, giveOne } from "@/lib/alchemy-pack-ops"
+import { logTimeEvent } from "@/lib/time-tracking"
+import { WATCH_STARTS } from "@/lib/world-time"
 
 // /api/labor — Hard Labor: the work details that take the party out of the Velkynvelve slave pen.
 // Design of record: project doc claude/Hard_Labor_Module_2026-10-26.md. Rules: lib/labor.ts, lib/labor-walk.mjs.
@@ -279,6 +285,12 @@ export async function POST(req: NextRequest) {
   const onCrew = () => dm || (row.crew as CrewMember[]).some((c) => c.kind === "pc" && c.id === playerId)
   const heroSlug = typeof body.slug === "string" ? body.slug.slice(0, 40) : ""
 
+  // ---------- THE QUOTA: the shift itself (lib/quota.mjs) ----------
+  if (action === "quota") {
+    if (!onCrew()) return NextResponse.json({ error: "your hero is not on this detail" }, { status: 403 })
+    return quotaAction(db, row as DetailRow, body, dm, playerId)
+  }
+
   // ---------- disobedience (PR 4) ----------
   // Sam, 2026-10-26: the first time is the warning; after that Malachar rolls — a fellow prisoner on the detail defuses
   // it (takes the thing and offers it to the guard), or the escort shoots until the hero drops. The d20 is rolled here.
@@ -358,5 +370,141 @@ export async function POST(req: NextRequest) {
   const { data, error } = await db.from("work_details").update({ status: next, events, updated_at: now }).eq("id", id).eq("status", row.status).select("*").maybeSingle()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!data) return NextResponse.json({ error: "someone else moved it first" }, { status: 409 })
+  if (next === "done" && row.party) await laborHomeClock(db)
   return NextResponse.json({ detail: data })
+}
+
+
+// ============================================================================
+// THE QUOTA (Sam, 2026-11-15/16): the work-detail minigame on the work plate, in place of the 3-minute watch.
+// The server holds the shift and rolls every die (lib/quota.mjs), so every screen sees one game. The state rides on
+// the detail as its latest `quota` event. ops: start (idempotent) · pick {choice} (your own hero, on your turn) ·
+// nudge (anyone: a seated player who has not chosen in 45 s keeps working). What it changes in the world: stolen items
+// into the thief's pack, HP from a beating, exhaustion and Heroic Inspiration at the end, the search on Suspicion
+// (items back to the drow's stash), and the run's carry-over (Suspicion, taken numbers, facts, lockdown) in world_flags.
+// ============================================================================
+const QUOTA_FLAG = (runId: string) => `quota:${runId}`
+const FLAG_CAMPAIGN = "ashes-of-prometheus"   // world_flags' campaign key (lib/world-time-tick, lib/seats)
+const QUOTA_COLUMNS = "id, name, class, hp_current, hp_max, exhaustion, proficiency_bonus, str_modifier, dex_modifier, con_modifier, int_modifier, wis_modifier, cha_modifier, sheet_skill_proficiencies"
+type QState = Record<string, any>   // lib/quota.mjs's shift state (plain .mjs, untyped)
+
+function quotaOf(events: unknown[]): QState | null {
+  for (let i = events.length - 1; i >= 0; i--) { const e = events[i] as { kind?: string; state?: QState }; if (e && e.kind === "quota" && e.state) return e.state }
+  return null
+}
+
+async function quotaHeroes(db: Db, crew: CrewMember[], task: string) {
+  const ids = crew.filter((c) => c.kind === "pc").map((c) => c.id)
+  const { data } = await db.from("characters").select(QUOTA_COLUMNS).in("id", ids)
+  const rows = new Map((data ?? []).map((r) => [r.id as string, r as Record<string, unknown>]))
+  const check = QUOTA.workCheck(task)
+  return ids.map((id) => {
+    const r = rows.get(id) ?? {}, n = (k: string) => Number(r[k]) || 0, prof = Number(r.proficiency_bonus) || 2
+    const work = check.skill === "Athletics" ? sheetSkill(r, "Athletics", n("str_modifier"), prof)
+      : check.skill === "Survival" ? sheetSkill(r, "Survival", n("wis_modifier"), prof) : n("dex_modifier")
+    return {
+      id, name: (r.name as string) || crew.find((c) => c.id === id)?.name || "Hero", cls: (r.class as string) || "",
+      mods: { work, soh: sheetSkill(r, "Sleight of Hand", n("dex_modifier"), prof), perf: sheetSkill(r, "Performance", n("cha_modifier"), prof),
+        pers: sheetSkill(r, "Persuasion", n("cha_modifier"), prof), con: n("con_modifier") },
+      hp: r.hp_current == null ? Number(r.hp_max) || 1 : Number(r.hp_current), hpMax: Number(r.hp_max) || 1, exh: Number(r.exhaustion) || 0,
+    }
+  })
+}
+
+async function quotaAction(db: Db, row0: DetailRow, body: Record<string, unknown>, dm: boolean, playerId: string | null) {
+  const op = typeof body.op === "string" ? body.op : ""
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const { data: row } = attempt ? await db.from("work_details").select("*").eq("id", row0.id).maybeSingle() : { data: row0 }
+    if (!row) return NextResponse.json({ error: "no such detail" }, { status: 404 })
+    if (row.status !== "working") return NextResponse.json({ error: "the detail is not at work", detail: row }, { status: 409 })
+    const events = Array.isArray(row.events) ? [...row.events] : []
+    let st = quotaOf(events)
+    const before = st ? JSON.stringify({ hp: Object.fromEntries(Object.values(st.heroes as Record<string, any>).map((h) => [h.id, h.hp])), stolen: st.stolen.length, done: st.done }) : ""
+    const nowMs = Date.now()
+    if (op === "start") {
+      if (st) return NextResponse.json({ detail: row })
+      const { data: flag } = await db.from("world_flags").select("value").eq("campaign_id", FLAG_CAMPAIGN).eq("key", QUOTA_FLAG(row.campaign_run_id as string)).maybeSingle()
+      const seated = new Set((await readSeated(db)).map((s) => s.id))
+      const heroes = (await quotaHeroes(db, row.crew as CrewMember[], row.task as string)).filter((h) => h.hp > 0)
+      if (!heroes.length) return NextResponse.json({ error: "nobody able to work" }, { status: 409 })
+      st = QUOTA.newShift({ task: row.task, heroes, carry: (flag?.value as Record<string, unknown>) ?? {}, bots: heroes.filter((h) => !seated.has(h.id)).map((h) => h.id) }, Math.random, nowMs)
+    } else if (!st) return NextResponse.json({ error: "the shift has not started" }, { status: 409 })
+    else if (op === "pick") {
+      const who = dm ? (typeof body.who === "string" ? body.who : QUOTA.current(st)) : playerId
+      const err = QUOTA.choose(st, who, typeof body.choice === "string" ? body.choice : "work", Math.random, nowMs)
+      if (err) return NextResponse.json({ error: err, detail: row }, { status: 409 })
+    } else if (op === "nudge") {
+      if (!QUOTA.nudge(st, Math.random, nowMs)) return NextResponse.json({ detail: row })
+    } else return NextResponse.json({ error: "unknown op" }, { status: 400 })
+    if (!st) return NextResponse.json({ error: "the shift has not started" }, { status: 409 })
+    const now = new Date().toISOString()
+    const kept = events.filter((e) => !(e && (e as { kind?: string }).kind === "quota"))
+    kept.push({ at: now, kind: "quota", state: st })
+    const { data: saved } = await db.from("work_details").update({ events: kept.slice(-200), updated_at: now })
+      .eq("id", row.id).eq("updated_at", row.updated_at).select("*").maybeSingle()
+    if (!saved) continue                       // another screen wrote first: read again and re-apply
+    const after = JSON.stringify({ hp: Object.fromEntries(Object.values(st.heroes as Record<string, any>).map((h) => [h.id, h.hp])), stolen: st.stolen.length, done: st.done })
+    if (op !== "start" && after !== before) await quotaConsequences(db, row as DetailRow, st, before ? JSON.parse(before) : null)
+    return NextResponse.json({ detail: saved })
+  }
+  return NextResponse.json({ error: "busy, try again" }, { status: 409 })
+}
+
+/** What the round (or the end) changes in the world. Best-effort: a failure here never loses the shift. */
+async function quotaConsequences(db: Db, row: DetailRow, st: QState, was: { hp: Record<string, number>; stolen: number; done: boolean } | null) {
+  try {
+    for (const h of Object.values(st.heroes as Record<string, any>)) {
+      if (was && was.hp[h.id] !== h.hp) await db.from("characters").update({ hp_current: h.hp }).eq("id", h.id)
+    }
+    for (const s of (st.stolen as { who: string; slug: string }[]).slice(was ? was.stolen : 0)) {
+      const item = await catalogRow(db, s.slug)
+      if (item) await giveOne(db, s.who, item)
+    }
+    if (!st.done || (was && was.done)) return
+    const e = st.end
+    for (const [id, n] of Object.entries(e.exhGain as Record<string, number>)) {
+      const h = st.heroes[id]; await db.from("characters").update({ exhaustion: Math.min(6, (h.exh || 0) + n) }).eq("id", id)
+    }
+    for (const id of e.inspired as string[]) await db.from("characters").update({ sheet_heroic_inspiration: true }).eq("id", id)
+    // the search on Suspicion: what is found goes back to the drow's stores, like everything they took
+    const { data: stash } = await db.from("characters").select("id").eq("name", CONFISCATION_STASH_NAME).order("created_at", { ascending: true }).limit(1).maybeSingle()
+    for (const f of e.found as { who: string; slug: string }[]) {
+      const { data: it } = await db.from("items").select("id").eq("slug", f.slug).maybeSingle()
+      if (!it || !stash?.id) continue
+      const { data: inv } = await db.from("inventory_items").select("*").eq("character_id", f.who).eq("item_id", it.id).is("confiscated_from", null).limit(1).maybeSingle()
+      if (!inv) continue
+      if ((inv.quantity ?? 1) > 1) {
+        await db.from("inventory_items").update({ quantity: (inv.quantity ?? 1) - 1 }).eq("id", inv.id)
+        const { id: _i, created_at: _c, updated_at: _u, ...rest } = inv as Record<string, unknown>
+        await db.from("inventory_items").insert({ ...rest, quantity: 1, character_id: stash.id, confiscated_from: f.who })
+      } else await db.from("inventory_items").update({ character_id: stash.id, confiscated_from: f.who }).eq("id", inv.id)
+    }
+    await db.from("world_flags").upsert({ campaign_id: FLAG_CAMPAIGN, key: QUOTA_FLAG(row.campaign_run_id as string), value: e.carry, set_by: "labor", note: "The Quota: what carries to the next shift (lib/quota.mjs)" }, { onConflict: "campaign_id,key" })
+    const names = (ids: string[]) => ids.map((id) => st.heroes[id]?.short).filter(Boolean).join(", ")
+    const kept = (e.kept as { who: string; slug: string }[]).map((k) => `${st.heroes[k.who]?.short}: ${k.slug}`)
+    await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text:
+      `The work detail's quota was ${e.met ? "met" : "missed"} (${st.filled} of ${st.quota}). Suspicion ${st.susp}/4${e.search ? ` (${e.search})` : ""}.` +
+      (kept.length ? ` Smuggled back: ${kept.join("; ")}.` : "") + (e.found.length ? ` Found and taken by the escort: ${e.found.length}.` : "") +
+      (Object.keys(e.exhGain).length ? ` Exhaustion: ${names(Object.keys(e.exhGain))}.` : "") +
+      (st.facts.length ? ` What the drow have let slip: ${st.facts.join(" ")}` : "") })
+  } catch (err) { console.error("[labor] quota consequences:", err) }
+}
+
+/**
+ * HOME, AND ONE CHANGE OF THE WATCH (Sam, 2026-11-16: "When the game is won the game fades and everyone is back in
+ * the pen. The timer is updated just one exchange and the timer starts again."). The clock stood still while the
+ * detail was out (lib/world-time-tick partyAtLabor); when the party is back it jumps to the next change of the watch
+ * (lib/world-time WATCH_STARTS, every 4 game hours) and runs on from there.
+ */
+async function laborHomeClock(db: Db) {
+  try {
+    const { data: ses } = await db.from("sessions").select("id,status,started_at").order("started_at", { ascending: false })
+    const rows = (ses ?? []) as { id: string; status: string | null }[]
+    const sessionId = (rows.find((s) => s.status === "active") ?? rows[0])?.id ?? null
+    if (!sessionId) return
+    const { data: clk } = await db.from("game_clock").select("minutes_of_day").eq("session_id", sessionId).maybeSingle()
+    const m = Number(clk?.minutes_of_day) || 0
+    const next = WATCH_STARTS.find((w) => w > m) ?? WATCH_STARTS[0] + 1440
+    await logTimeEvent(db, sessionId, { eventType: "labor_shift", minutesAdvanced: next - m })
+  } catch (e) { console.error("[labor] home clock:", e) }
 }
