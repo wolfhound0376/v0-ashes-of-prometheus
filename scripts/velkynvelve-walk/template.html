@@ -3724,6 +3724,7 @@ async function enterNode(n, opts = {}){
   // tell the server where the party now stands and who is here; the first step out of the pen is the moment the ward lets go
   // a work detail leaves the pen as prisoners, not escapees: labor_out / labor_back (lib/situation.ts)
   if (!opts.view) reportSituation({sub_location: node.slug, sub_label: node.name, party_present: partyPresent(), event: from === PEN && n !== PEN ? (laborLive() ? "labor_out" : "step_outside") : n === PEN && from !== PEN && laborLive() ? "labor_back" : undefined});
+  if (!opts.view && !opts.battle) setTimeout(() => directorOnEnter(n), 2200);   // THE PLATE DIRECTOR: a cavern plate's first visit this run
   const compAll = companyNow().filter(id => SPR[id]);
   // the company on THIS plate (SPLIT PARTY): a prisoner whose place is recorded elsewhere stays there; one never split walks with the party
   const compAt = state.companyAt || {};
@@ -11024,8 +11025,133 @@ function openLongRest(){
     {label: "Make camp", primary: true, fn: () => { reportSituation({sub_location: node.slug, sub_label: node.name, party_present: partyPresent()}); setTimeout(() => { top.location.href = "/camp"; }, 350); }},
     {label: "Not now"}]});
 }
+// ---------- THE PLATE DIRECTOR (Sam, 2026-11-15: "build the director") ----------
+// The book's tables live in lib/plate-director.mjs (pasted in below); this is the map's half: the first time the party
+// walks onto a cavern plate this run, the director rolls the book's Random Encounters d20 and plays whatever comes up as
+// a card. Every screen rolls the same seeded dice (dirRand), so the table sees one card, one set of saves, one fight.
+// Damage lands on the sheets once (/api/walk-hazard), and Malachar hears it once (handOff's event claim). What the map
+// cannot run (a gorge, a lava swell, a creature with no stat block here) goes to Malachar to run from the book.
+/*__DIRECTOR__*/
+let dirPendingLair = null;
+const dirState = () => (state.director = state.director || {seen: {}, pursuit: null, shelter: {}});
+function dirRand(key){ const r = runSeen != null && window.AopOneWorld ? AopOneWorld.seededRandom(`${runSeen}:director:${key}`) : Math.random; return r; }
+function dirHeroes(){ return party.filter(p => p.kind === "pc" && !p.down && SHEETS[p.id]); }
+function dirSave(a, ab){ const sh = SHEETS[a.id] || {}; return (sh.saves || {})[ab] ?? (sh.mods || {})[ab] ?? 0; }
+function dirPassive(a){ const sh = SHEETS[a.id] || {}; return Number.isFinite(sh.passive) ? sh.passive : 10 + ((sh.skills || {}).perception ?? (sh.mods || {}).wis ?? 0); }
+function dirCanField(id){ return !!(FOE_BLOCKS[id] && SPR[id]); }
+function dirPursuitPill(){
+  let e = $("dirPursuit"); const lv = (state.director || {}).pursuit;
+  if (lv == null){ if (e) e.hidden = true; return; }
+  if (!e){ e = document.createElement("div"); e.id = "dirPursuit"; e.style.cssText = "position:absolute;left:50%;top:14px;transform:translateX(-50%);z-index:30;padding:5px 14px;border:1px solid #7a2a24;border-radius:14px;background:#140808d9;color:#ffb3a8;font:13px Cinzel,serif;letter-spacing:.08em;pointer-events:none"; (stage || document.body).appendChild(e); }
+  e.hidden = false; e.textContent = `DROW PURSUIT ${"●".repeat(lv)}${"○".repeat(PURSUIT_CAUGHT - lv)} · ${pursuitWord(lv)}`;
+}
+function dirPursuit(by, why){
+  const D = dirState(), before = D.pursuit ?? PURSUIT_START, after = pursuitAfter(before, by); D.pursuit = after; dirPursuitPill();
+  if (after === before) return;
+  log(`<i>Drow pursuit ${by > 0 ? "rises" : "falls"} to ${after}${why ? ` (${esc(why)})` : ""}. ${esc(pursuitWord(after))}</i>`);
+  if (APP) handOff(`The drow pursuit level is now ${after} (${by > 0 ? "+" : ""}${by}${why ? ", " + why : ""}). OotA D&D Encounters p.29: at 5 the drow forward scouts catch up, and Ilvara, Asha, Jorlan and Shoor follow 1d6 + 4 rounds later; at 0 the drow lose the trail.`);
+  if (after >= PURSUIT_CAUGHT) setTimeout(() => showDialog({title: "The drow catch up", body: "Drow forward scouts have found the party. Their leaders are not far behind them (OotA p.29). Malachar has been told.", buttons: [{label: "So be it", primary: true}]}), 900);
+}
+function dirCard(title, body, buttons){ return new Promise(res => { $("dlgBody").style.whiteSpace = "pre-line";
+  showDialog({title, body, src: "Out of the Abyss — D&D Encounters, ch.2", buttons: (buttons || [{label: "Go on", primary: true}]).map(b => ({...b, fn: () => { $("dlgBody").style.whiteSpace = ""; res(b.value ?? true); }}))}); }); }
+async function dirHits(hits, plate, why){
+  if (!hits.length || !APP || SANDBOX) return;
+  const body = {sig: eventSig(`hazard:${plate}:${why}`), plate, hits};
+  try { body.claimId = localStorage.getItem("aop_character_id") || undefined; body.claimToken = localStorage.getItem("aop_claim_token") || undefined; } catch (e) {}
+  fetch("/api/walk-hazard", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)}).catch(() => {});
+}
+async function dirSteps(steps, ctx){
+  for (const st of steps || []){
+    if (cur !== ctx.plate || cbt) return false;
+    const R = dirRand(`${ctx.plate}:${ctx.id}:${ctx.n++}`);
+    if (st.t === "notice"){
+      const best = dirHeroes().sort((a, b) => dirPassive(b) - dirPassive(a))[0];
+      if (best && dirPassive(best) >= st.passive){ if (st.avoided){ await dirCard(ctx.title, `${fname(best)} notices it in time (passive Perception ${dirPassive(best)}). ${st.avoided}`); return false; } }
+      else if (st.missed){ log(`<i>${esc(st.missed)}</i>`); return false; }
+    } else if (st.t === "save"){
+      const who = st.who === "one" ? (a => a.length ? [a[Math.floor(R() * a.length)]] : [])(dirHeroes()) : dirHeroes();
+      const lines = [], hits = [];
+      for (const a of who){
+        let dmg = 0, fails = 0; const tot = [];
+        for (let i = 0; i < (st.times || 1); i++){
+          const sv = savingThrow(dirSave(a, st.ability), st.dc, R); if (!sv.ok) fails++; tot.push(sv.total);
+          let x = hazardDamage(st, sv.ok, R); if (st.fall && !sv.ok) x += fallDamage(rollDice(st.fall, R), R);
+          dmg += x;
+        }
+        const n = st.times || 1;
+        lines.push(`${fname(a)} — ${st.ability.toUpperCase()} save${n > 1 ? "s" : ""} ${tot.join(", ")} vs DC ${st.dc}: ${fails ? (n > 1 ? `${fails} failed` : "failed") : "saved"}${dmg ? `, ${dmg} ${st.type || (st.fall ? "falling" : "bludgeoning")} damage` : ""}`);
+        if (dmg){ hits.push({characterId: characterIdOf(a.id), amount: dmg, type: st.type || "bludgeoning"}); popText(a, `-${dmg}`, "#ff7a6a", 1); }
+        if (fails && st.onFail) lines.push(`${fname(a)} ${st.onFail}`);
+      }
+      if (hits.length) shake(4);
+      await dirCard(ctx.title, lines.join("\n"));
+      log(`<b>${esc(ctx.title)}.</b> ${lines.map(esc).join("; ")}.`);
+      ctx.told.push(`${ctx.title}: ${lines.join("; ")}.`);
+      dirHits(hits.filter(h => h.characterId), ctx.plate, `${ctx.id}:${ctx.n}`);
+    } else if (st.t === "madness"){
+      const who = st.one ? dirHeroes().slice(0, 1) : dirHeroes(), lines = [], D = dirState(); D.madness = D.madness || {};
+      for (const a of who){ const sv = savingThrow(dirSave(a, st.ability), st.dc, R);
+        if (!sv.ok) D.madness[a.id] = (D.madness[a.id] || 0) + 1;
+        lines.push(`${fname(a)}: WIS save ${sv.total} vs DC ${st.dc} — ${sv.ok ? "holds" : "madness level rises to " + D.madness[a.id]}`); }
+      await dirCard(ctx.title, lines.join("\n")); ctx.told.push(`${ctx.title}: ${lines.join("; ")}. (OotA madness level.)`);
+    } else if (st.t === "pursuit"){ dirPursuit(st.by, ctx.title);
+    } else if (st.t === "shelter"){ dirState().shelter[ctx.plate] = true;
+    } else if (st.t === "say"){ await dirCard(ctx.title, st.text); ctx.told.push(st.text);
+    } else if (st.t === "check"){
+      const best = dirHeroes().sort((a, b) => heroMod(b, st.skill, st.ability) - heroMod(a, st.skill, st.ability))[0]; if (!best) continue;
+      const sv = savingThrow(heroMod(best, st.skill, st.ability), st.dc, R);
+      await dirCard(ctx.title, `${fname(best)} tries to ${st.text}: ${sv.die}${sgn(sv.total - sv.die)} = ${sv.total} vs DC ${st.dc} — ${sv.ok ? "done." : "no good."}`);
+      ctx.told.push(`${fname(best)} tried to ${st.text} (DC ${st.dc}): ${sv.ok ? "success" : "failure"}.`);
+      if (await dirSteps(sv.ok ? st.pass : st.fail, ctx) === false) return false;
+    } else if (st.t === "choice"){
+      const pick = await dirCard(ctx.title, ctx.hook || "", st.options.map((o, i) => ({label: o.label, primary: i === 0, value: i})));
+      const o = st.options[pick] || st.options[st.options.length - 1]; ctx.told.push(`The party chose: ${o.label}.`);
+      if (await dirSteps(o.steps, ctx) === false) return false;
+    } else if (st.t === "table"){
+      const r = rollTable(st.key, R); if (!r) continue;
+      if (r.pursuit) dirPursuit(r.pursuit, ctx.title);
+      ctx.told.push(`${r.say}${r.tell ? " " + r.tell : ""}`);
+      if (r.fight){ await dirFight(r.fight, r.say, ctx, R); return false; }
+      await dirCard(ctx.title, r.say + (r.tell ? `\n${r.tell}` : ""));
+    }
+  }
+  return true;
+}
+async function dirFight(fight, why, ctx, R){
+  const {ids, missing} = fieldFoes(fight, R, dirCanField);
+  if (!ids.length){ await dirCard(ctx.title, `${why}\nMalachar will run this one: the map has no stat block for ${missing.join(", ")} yet.`); ctx.told.push(`No stat block on the map for ${missing.join(", ")}: run it from the book.`); return; }
+  await dirCard(ctx.title, why, [{label: "Fight", primary: true}]);
+  if (cur !== ctx.plate || cbt) return;
+  dirPursuit(1, "a creature encounter");                                 // p.29: +1 for a creature encounter not avoided
+  dirPendingLair = ctx.lair ? String(cur) : null;
+  mode = "explore"; startCombat(ids, why);
+  if (missing.length) ctx.told.push(`Not fielded on the map (no stat block yet): ${missing.join(", ")}.`);
+}
+async function directorLair(){ const R = dirRand(`${cur}:lair`), r = rollTable("lair", R); if (!r) return;
+  await dirCard("Searching the lair", `d20 = ${r.roll}: ${r.say}${r.tell ? "\n" + r.tell : ""}`);
+  if (APP) handOff(`The party searched the ambushers' lair on ${node.name}: Ambush Lair Discovery d20 = ${r.roll}: ${r.say}${r.tell ? " " + r.tell : ""} Award only from the catalog.`); }
+async function directorOnEnter(plate){
+  if (!directorPlate((SPEC[plate] || {}).slug) || cbt || mode !== "explore" || FIGHT.mirror) return;
+  const D = dirState(); if (D.pursuit == null && !state.chainMarch) D.pursuit = PURSUIT_START;   // p.29: out of Velkynvelve, the pursuit begins at 4
+  dirPursuitPill();
+  if (D.seen[plate]) return; D.seen[plate] = true;
+  const draw = drawFor(dirRand(`${plate}:draw`));
+  if (!draw){ log(`<i>All is quiet in ${esc(node.name.replace(/^The /, "the "))}. For now.</i>`); return; }
+  const told = [`Random encounter on ${node.name}: d20 = ${draw.roll} (${draw.kind}).`];
+  for (const part of [draw.terrain, draw.creature].filter(Boolean)){
+    if (cur !== plate || cbt) break;
+    const ctx = {plate: String(plate), id: part.id, title: part.title, hook: part.hook || "", n: 0, told, lair: part.id === "ambushers"};
+    bank("magic/necrotic_windup", .45);
+    await dirCard(part.title, part.hook || part.title);
+    if (part.fight){ await dirFight(part.fight, part.hook || part.title, ctx, dirRand(`${plate}:${part.id}:fight`)); continue; }
+    if (part.steps) await dirSteps(part.steps, ctx);
+    if (part.talk) told.push(`${part.title}: Malachar plays them (they may talk, trade or flee).`);
+    if (part.tell) told.push(part.tell);
+  }
+  if (APP) handOff(told.join(" ") + " (OotA D&D Encounters ch.2 pp.29–35.)");
+}
 const REST_DEFAULT = {chance: 0, foes: [], label: ""};
-function restRisk(){ return (node && node.rest) || REST_DEFAULT; }
+function restRisk(){ if (state.director && state.director.shelter && state.director.shelter[String(cur)]) return REST_DEFAULT; return (node && node.rest) || REST_DEFAULT; }   // a SHELTER (the director) is safe to rest in
 function openRest(){
   if (mode !== "explore" || !leader) return;
   if (!party.some(p => characterIdOf(p.id))){ toast("Nobody here has a sheet to rest on."); return; }
@@ -14687,6 +14813,7 @@ function endCombat(won, opts = {}){
     const back = findPath(h, nearestWalkable(balcony().inside[0], balcony().inside[1] + 30)); if (back.length){ h.path = back; h.onArrive = null; h.walkIn = h.kind === "pc"; }   // walkIn: no doorway on the way takes them (step() clears it when they land)
   }
   mode = "travel"; if (won !== false) state.cleared[cur] = true;
+  if (won !== false && dirPendingLair === String(cur)) setTimeout(directorLair, 1600); dirPendingLair = null;   // THE PLATE DIRECTOR: an ambushers' lair
   if (balcony()) buildGrid();
   // the walk keeps no clock between fights, so a spell held through the fight is let go at its end
   for (const a of [...heroes(), ...foes]) if (a.c && a.c.conc) endConc(a, "the fight is over");
