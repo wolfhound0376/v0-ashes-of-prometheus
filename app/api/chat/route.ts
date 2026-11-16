@@ -505,7 +505,7 @@ const isPlayerCharacterRow = (
 ): boolean => !!row && (row.is_player === true || row.character_type === "player")
 
 export async function POST(req: Request) {
-  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null, talkWhere: talkWhereRaw = null, facing: facingRaw = null, sandbox: sandboxRaw = false, addressTo: addressToRaw = null, privateReply: privateReplyRaw = false, mapEvent: mapEventRaw = false, rehearsal: rehearsalRaw = null } = await req.json()
+  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null, talkWhere: talkWhereRaw = null, facing: facingRaw = null, sandbox: sandboxRaw = false, addressTo: addressToRaw = null, privateReply: privateReplyRaw = false, noLoot: noLootRaw = false, mapEvent: mapEventRaw = false, rehearsal: rehearsalRaw = null } = await req.json()
   // A PRIVATE REPLY (Sam, 2026-10-01: "a prayer is private unless spoken aloud"; wired 2026-10-27). The answer goes back
   // to the one browser that asked and is NOT written to the shared log, so no other screen at the table sees or hears it.
   // Only honoured on a director turn: a player's own line is never hidden from the table this way.
@@ -560,6 +560,11 @@ export async function POST(req: Request) {
    * so no malformed body can silence a genuine player line.
    */
   const director = directorRaw === true
+  /** A map CHECK hand-off (Search / Listen / Look closer / the ward sigil; lib/walk-action.ts). The plate's loot is
+   *  already real rows on the map, so this turn may describe what is noticed but awards nothing: its [ITEM_ADD] /
+   *  [ITEM_AWARD] tags are dropped below. Sam's playtest 2026-11-15: a Search in the guard tower armory minted an
+   *  iron key, a shortbow and 11 arrows (no item_events "acquire" row, no table behind them). Director turns only. */
+  const noLootTurn = director && noLootRaw === true
   /** An AUTOMATIC map event ("Drow guard sees Samson… Combat has begun", the alarm horn; lib/walk-action.ts). The map
    *  already runs the fight and rolls every die, so this turn narrates only: no [[dice]] cue, no roll_requests row.
    *  Playtest 2026-11-15, 17:18: the Guard Tower fight started on the map AND Malachar opened his own in chat —
@@ -2281,7 +2286,7 @@ ${MALACHAR_LAST_WORD}`
         {
           role: "user",
           content: director
-            ? `[STAGE DIRECTION — from the director, not from the table. Nobody spoke. Do exactly what it asks, in the fiction, addressed to the party. Never quote it, never mention it, never reply to it as though a player had said it.]${mapEventTurn ? "\n[THE MAP IS ALREADY PLAYING THIS. Any fight, its initiative, every attack, save and damage roll is made by the game on the map, not by you and not by the players. Narrate the moment in one or two short lines. Ask nobody to roll and write no [[dice]].]" : ""}\n${message}`
+            ? `[STAGE DIRECTION — from the director, not from the table. Nobody spoke. Do exactly what it asks, in the fiction, addressed to the party. Never quote it, never mention it, never reply to it as though a player had said it.]${noLootTurn ? "\n[THIS IS A CHECK, NOT A LOOT ROLL. Everything that can be picked up here is already on the map as its own chest, rack, shelf or body, and the players open those themselves. Describe only what the roll notices: layout, sounds, tracks, danger, a clue, a way through. Do not name, place or award any item, key, weapon, coin or ammunition, and emit no ITEM tag. If the roll is low, little or nothing is noticed.]" : ""}${mapEventTurn ? "\n[THE MAP IS ALREADY PLAYING THIS. Any fight, its initiative, every attack, save and damage roll is made by the game on the map, not by you and not by the players. Narrate the moment in one or two short lines. Ask nobody to roll and write no [[dice]].]" : ""}\n${message}`
             : toDm ? `${playerName} (to the DM, out of character): ${message}` : `${playerName}: ${message}`,
         }
       ],
@@ -2764,6 +2769,8 @@ ${MALACHAR_LAST_WORD}`
     // longest remaining field; the icon hint is a leftover short word.
     const itemMatches = rawText.matchAll(/\[ITEM_(ADD|AWARD):\s*([^\]]+)\]/gi)
     for (const match of itemMatches) {
+      // A map check awards nothing (noLootTurn above). The tag is still stripped from the prose further down.
+      if (noLootTurn) { console.warn(`[loot] dropped ${match[1]} on a map check: "${match[2].slice(0, 60)}"`); continue }
       const fields = match[2].split("|").map((f) => f.trim()).filter((f) => f.length > 0)
       if (fields.length === 0) continue
       const itemName = fields[0]

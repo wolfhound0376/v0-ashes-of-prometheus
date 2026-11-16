@@ -5,7 +5,7 @@ const ok = { type: "aop:action", id: "a1", text: "Fifi stops at the gate and lis
 
 describe("parseWalkActionRequest", () => {
   it("accepts a clicked hand-off", () => {
-    expect(parseWalkActionRequest(ok)).toEqual({ type: "aop:action", id: "a1", text: ok.text, characterId: "c1", event: false, sig: null, private: false })
+    expect(parseWalkActionRequest(ok)).toEqual({ type: "aop:action", id: "a1", text: ok.text, characterId: "c1", event: false, sig: null, private: false, noLoot: false })
   })
   it("ignores a hand-off with neither flag", () => {
     expect(parseWalkActionRequest({ ...ok, ask: undefined })).toBeNull()
@@ -48,5 +48,17 @@ describe("private turns (Sam, 2026-10-01: a prayer is private unless spoken alou
   })
   it("never makes an automatic event private", () => {
     expect(parseWalkActionRequest({ type: "aop:action", id: "a3", text: "x", event: true, sig: "ev-abcd1", private: true })?.private).toBe(false)
+  })
+})
+
+describe("no loot from a map check (Sam's playtest, 2026-11-15)", () => {
+  it("carries noLoot on a clicked check", () => {
+    expect(parseWalkActionRequest({ ...ok, noLoot: true })?.noLoot).toBe(true)
+  })
+  it("defaults to false when the map does not say", () => {
+    expect(parseWalkActionRequest(ok)?.noLoot).toBe(false)
+  })
+  it("never sets it on an automatic event", () => {
+    expect(parseWalkActionRequest({ type: "aop:action", id: "a4", text: "x", event: true, sig: "ev-abcd1", noLoot: true })?.noLoot).toBe(false)
   })
 })
