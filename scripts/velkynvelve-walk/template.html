@@ -15135,7 +15135,8 @@ function endCombat(won, opts = {}){
   // The DM's own End combat leaves the phase where it is: the DM decides what that fight meant.
   if (escapeNow().phase === PEN_ESCAPE.PHASE.FIGHT && !opts.byDm){
     const E = PEN_ESCAPE.EVENT, fell = !!cbt && !standing(party).length;
-    escapeTo(won === true ? E.WON : fell ? E.LOST : E.FOE_ESCAPED, won === true ? "the fight with the drow was won" : fell ? "the party fell" : "the drow are alive, and know");
+    const horn = won === true && escapeAlarmed(escapeNow());   // won, but a drow blew the horn during it: the outpost knows
+    escapeTo(won === true && !horn ? E.WON : fell ? E.LOST : E.FOE_ESCAPED, won === true ? (horn ? "won, but the horn was blown" : "the fight with the drow was won") : fell ? "the party fell" : "the drow are alive, and know");
   }
   // THE MARCH OUT IN CHAINS: how the bridge came out, read now while the fight still knows who ran
   const marchOut = chainMarchLive() && !state.gameOver ? chainMarchOutcome({won: won === true, gotAway: party.filter(p => p.left && !(p.c && p.c.ds && p.c.ds.dead)).length, byDm: !!(opts.byDm || opts.talk)}) : undefined;
@@ -21618,7 +21619,10 @@ function escapeTo(event, why){
     if (SANDBOX) return false;
     const was = escapeNow(), next = PEN_ESCAPE.escapeStep(was, event, {now: Date.now(), rotation: storyRotations || 0, why: why || event});
     if (next.refused){ console.info("[escape]", next.refused, "(" + (why || event) + ")"); return false; }
-    state.escape = next; saveWalk();
+    state.escape = next;
+    if (next.phase === PEN_ESCAPE.PHASE.HUNTED) escapeHorn(next.why);                       // step 6: hunted IS the horn and the waves
+    if (event === PEN_ESCAPE.EVENT.RETURNED && state.alarm) state.alarm = null;              // marched back in: that alarm is over
+    saveWalk();
     console.info("[escape]", was.phase, "->", next.phase, "(" + next.why + ")");
     return true;
   } catch (e){ console.warn("[escape]", e); return false; }
@@ -21636,6 +21640,7 @@ function escapeDead(){ const B = state.battle; return B && B.won && Array.isArra
 function escapeDiscoveryTick(){
   if (SANDBOX || mode === "load") return;
   const e = escapeNow(); if (e.phase !== PEN_ESCAPE.PHASE.OUT_QUIET) return;
+  if (escapeAlarmed(e)){ escapeTo(PEN_ESCAPE.EVENT.DISCOVERED, "the horn was blown"); return; }   // a drow reached the horn: they know
   if (!PEN_ESCAPE.discoveryDue(e, Date.now(), storyRotations || 0)) return;
   const byWatch = (storyRotations || 0) > (e.atRotation || 0), dead = escapeDead().length > 0;
   const what = dead ? (byWatch ? "The relief comes onto the bridge and finds the watch dead on the landing." : "Somebody has found the body on the landing.")
@@ -21644,6 +21649,20 @@ function escapeDiscoveryTick(){
   log(`<b>The alarm is up.</b> ${what} <em>The drow know.</em>`, {say: true});
   toast("The drow know. They are hunting you now.", 6000);
   if (APP) handOff(`The drow have discovered the escape from the slave pen: ${what} The alarm is up and the drow are hunting the escaped prisoners${storyPledge && storyPledge.keptAt ? "" : "; Jorlan leads the hunt"}. Narrate the moment the alarm goes up, in a line or two.`);
+}
+// THE HORN (step 6; Sam, 2026-10-30, approved for the breakout: "TWO-MINUTE waves, three waves, with a countdown banner").
+// The waves themselves are the map's alarm (THE ALARM AND REINFORCEMENTS: state.alarm, ALARM_WAVES, the banner). Until
+// now only a drow who reached the horn in a fight could start them. Now the escape does too: the moment it is hunted, the
+// horn sounds from the pen's side of the outpost, and every two minutes a wave comes onto whatever outpost plate the party
+// is on. And the other way: a horn blown during the escape means the escape is hunted (escapeDiscoveryTick, endCombat).
+const escapeAlarmed = e => !!(state.alarm && state.alarm.at && e && state.alarm.at >= (e.since || 0) - 1000);
+function escapeHorn(why){
+  if (SANDBOX || (alarmUp() && owNow() - state.alarm.at < ALARM_WAVES.length * ALARM_WAVE_MS + 60000)) return;   // already blowing: its waves are still coming
+  state.alarm = {plate: String(PEN), at: owNow(), by: "the outpost", name: "warning horn"};
+  try { bank("creature/drow_alarm_gong", .95); shake(4); } catch (e) {}
+  log(`<b>A warning horn sounds across Velkynvelve.</b> The garrison is coming: a wave every two minutes, three waves.`, {say: true});
+  toast("The warning horn! A wave of the garrison every two minutes.", 4800);
+  try { alarmTick(); } catch (e) {}
 }
 /** The countdown while they are out quietly (null otherwise): the caravan banner's place, the same look. */
 function escapeBanner(){
