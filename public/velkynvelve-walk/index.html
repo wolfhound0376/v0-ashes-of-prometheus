@@ -1169,7 +1169,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <select id="jump" aria-label="Jump to area"></select>
       </details>
       <details open><summary>World</summary>
-      <button class="btn" id="dmNote">📝 Note for Claude (F9)</button>
+      <button class="btn" id="dmNote">📝 Note for Claude (F9 or N)</button>
       <button class="btn" id="dmTime">Stop time</button>
       <button class="btn" id="dmOoze">Gray ooze: to the bridge → up from the chasm → away (preview)</button>
       <button class="btn" id="dmGuards">Guards out of sight / back (preview)</button>
@@ -21177,7 +21177,12 @@ $("ptNoteText").addEventListener("keydown", e => {
   if (e.key === "Escape"){ e.preventDefault(); e.stopPropagation(); ptClose(); ptInk.loops = []; ptInkDraw(); }
   if (e.key === "Backspace" && !e.target.value && ptInk.loops.length){ e.preventDefault(); ptInk.loops.pop(); $("ptNoteHow").textContent = ptInk.loops.length ? `${ptInk.loops.length} rope${ptInk.loops.length === 1 ? "" : "s"} · ⌫ undo` : "drag to rope"; }
 });
-addEventListener("keydown", e => { if (e.key === "F9"){ e.preventDefault(); e.stopPropagation(); ptOpen(); } }, true);
+// N OPENS IT TOO (Sam, 2026-11-15: a laptop, where F9 needs the Fn key held). N is free on the map; it answers only for
+// the DM or the proven host, so a player's N does nothing, and never while typing in a box.
+addEventListener("keydown", e => {
+  if (e.key === "F9"){ e.preventDefault(); e.stopPropagation(); ptOpen(); return; }
+  if (e.code === "KeyN" && !e.ctrlKey && !e.metaKey && !e.altKey && !(e.target.closest && e.target.closest("input,textarea,select,[contenteditable]")) && $("ptNote").hidden && (!APP || isDm() || PT_HOST.ok)){ e.preventDefault(); e.stopPropagation(); ptOpen(); }
+}, true);
 $("dmNote").onclick = () => { toggleDm(false); ptOpen(); };
 function toggleDm(on){ if (on && APP && !isDm()) return; $("dm").hidden = !on; document.body.classList.toggle("dm-open", !!on); $("dmBtn").setAttribute("aria-expanded", String(on)); if (on){ dmGrudgeLists(); renderSeats(); renderCompany(); renderDmItems(); renderDmLoot(); loadRoster().then(() => { renderSeats(); }); } }
 $("cbtMini").onclick = () => toggleDm(false);
