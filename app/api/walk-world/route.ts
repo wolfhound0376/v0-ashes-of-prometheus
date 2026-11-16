@@ -140,10 +140,35 @@ export async function POST(req: NextRequest) {
       }
       if (!Object.keys(patch).length) return NextResponse.json({ error: "not yours to move", refused }, { status: 403 })
       const w = await apply(db, runId, patch, who.key)
+      // THE CROSSING IS RECORDED (walk_crossings, Sam 2026-11-15: plate moves felt rough and nothing of the night's moves
+      // was left to read). A party move writes where every hero stood as it left; best-effort, never fails the move.
+      const t = (patch as { travel?: { seq?: unknown; from?: unknown; to?: unknown; splinter?: unknown } }).travel
+      if (t && typeof t === "object") {
+        const heroes = Object.fromEntries(Object.entries(w.heroes || {}).map(([s, h]) => [s, { plate: h.plate, by: (h as { by?: string }).by ?? null }]))
+        await db.from("walk_crossings").insert({
+          campaign_run_id: runId, kind: "leave", by_key: who.key, from_plate: String(t.from ?? ""), to_plate: String(t.to ?? ""),
+          seq: typeof t.seq === "number" ? t.seq : null, how: t.splinter ? "splinter" : "party", heroes,
+        }).then(({ error }) => { if (error) console.error("[walk-world] crossing not recorded:", error.message) })
+      }
       return answer(w, refused.length ? { refused } : {})
     }
 
-    return NextResponse.json({ error: "op must be patch or beat" }, { status: 400 })
+    // A SCREEN SAYS WHERE IT LANDED, OR WHY IT IS HELD BACK (walk_crossings): {op:"crossed", kind:"arrive"|"waiting",
+    // slug, from, to, seq, lagMs, how, note}. Only ever written, never read by the map: it is for reviewing a night.
+    if (body.op === "crossed") {
+      const kind = body.kind === "waiting" ? "waiting" : "arrive"
+      const s = (v: unknown, n = 48) => (typeof v === "string" || typeof v === "number" ? String(v).slice(0, n) : null)
+      const { error } = await db.from("walk_crossings").insert({
+        campaign_run_id: runId, kind, by_key: who.key, slug: s(body.slug), from_plate: s(body.from), to_plate: s(body.to),
+        seq: typeof body.seq === "number" ? Math.round(body.seq) : null,
+        lag_ms: typeof body.lagMs === "number" ? Math.max(-1e9, Math.min(1e9, Math.round(body.lagMs))) : null,
+        how: s(body.how, 32), note: s(body.note, 200),
+      })
+      if (error) return NextResponse.json({ error: error.message }, { status: 503 })
+      return NextResponse.json({ ok: true })
+    }
+
+    return NextResponse.json({ error: "op must be patch, beat or crossed" }, { status: 400 })
   } catch (e) {
     return NextResponse.json({ error: String(e instanceof Error ? e.message : e) }, { status: 503 })
   }

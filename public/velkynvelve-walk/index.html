@@ -25815,9 +25815,20 @@ setInterval(() => {
   }
 }, 400);
 // --- plates ---
+// THE CROSSING IS RECORDED (Sam, 2026-11-15: "party left behind, hard to find the exit, slow or jumpy change, screens out
+// of step" — and nothing of the night's moves was left to read). Each screen tells /api/walk-world (op "crossed", table
+// walk_crossings) where it landed and how late after the party left, or why it was held back from following. Written
+// only, never read by the map; best-effort, a failure changes nothing in play.
+function owCrossed(kind, x){
+  if (!OW.on) return;
+  if (kind === "waiting"){ const k = `${x.seq}|${x.note}`; if (owCrossed.held === k) return; owCrossed.held = k; }
+  owPost("crossed", {kind, slug: mySlug || null, ...x}).catch(() => {});
+}
+const owHeldWhy = () => cbt ? "in a fight" : battleBusy ? "cutting to a battle plate" : `screen busy (${mode})`;
 function owLeavesPlate(to, z, cut, splinter){
   if (!OW.on) return;
   const seq = Math.max(owNow(), OW.travelSeq + 1); OW.travelSeq = seq; OW.localTravelUntil = Date.now() + 12000;
+  OW.leftAt = {seq, from: cur, to};
   OW.sent = {};                                                    // on the new plate every driven hero is re-sent
   const t = {seq, from: cur, to, zone: node.zones.indexOf(z)}; if (cut) t.cut = true;
   if (splinter){ t.splinter = true; owPost("patch", {patch: {travel: t}}).then(owBumpVersion).catch(() => {}); return; }   // SPLIT PARTY: the party's plate stays put
@@ -25826,6 +25837,8 @@ function owLeavesPlate(to, z, cut, splinter){
 }
 function owEntered(force){
   if (!OW.on || OW.applyingPlate) return;
+  { const L = OW.leftAt; if (L && owSame(L.to, cur)){ owCrossed("arrive", {from: L.from, to: cur, seq: L.seq, lagMs: owNow() - L.seq, how: "led the crossing"}); OW.leftAt = null; }
+    else if (!soloEntry || force) owCrossed("arrive", {to: cur, how: soloEntry ? "entered alone" : "entered"}); }
   OW.sent = {};
   if (soloEntry && !force) return;                                   // SPLIT PARTY: only the party's own moves set the world's plate
   if (!force && owSame(cur, OW.plate)) return;
@@ -25838,12 +25851,15 @@ const OW_CAN_MOVE = () => !cbt && !battleBusy && (mode === "explore" || mode ===
 async function owGoTo(plate, t){
   plate = owPlate(plate);
   OW.applyingPlate = true;
+  const fromPlate = cur; let how = "pulled to the party's plate";
   try {
     const z = t && owSame(t.from, cur) && owSame(t.to, plate) ? node.zones[t.zone] : null;
+    if (z && OW_CAN_MOVE()) how = "walked over with the party"; else if (t) how = "jumped after the party (not on the plate it left)";
     $("obj").hidden = true; $("talk").hidden = true; $("dialog").hidden = true; talkNpc = null;   // nothing declined: the party just left
     if (z && OW_CAN_MOVE()){ mode = "explore"; await travel(plate, z, true, t.cut ? {} : null); }
     else await enterNode(plate, {note: "The party has moved on — you are with them."});
-  } finally { OW.applyingPlate = false; if (!(t && t.splinter)) OW.plate = cur; OW.sent = {}; }   // a splinter's crossing leaves the party's plate where it is
+  } finally { OW.applyingPlate = false; if (!(t && t.splinter)) OW.plate = cur; OW.sent = {};   // a splinter's crossing leaves the party's plate where it is
+    owCrossed("arrive", {from: fromPlate, to: cur, seq: t ? t.seq : null, lagMs: t ? owNow() - t.seq : null, how}); }
 }
 // --- state ---
 function owStateTick(){
@@ -25902,7 +25918,8 @@ function owReceive(w){
     // SPLIT PARTY: the party's move takes the screens that were with it (on the plate it left), and the DM's; a
     // player whose hero is split off on another plate stays where they are
     const withIt = owSame(t.from, cur) || (!ownView() && !t.splinter);
-    if (t.by !== OW.key && !owSame(t.to, cur) && withIt){ if (OW_CAN_MOVE()) owGoTo(t.to, t); else OW.pendingPlate = owPlate(t.to); return; }
+    if (t.by !== OW.key && !owSame(t.to, cur) && withIt){ if (OW_CAN_MOVE()) owGoTo(t.to, t); else { OW.pendingPlate = owPlate(t.to); owCrossed("waiting", {from: cur, to: t.to, seq: t.seq, lagMs: owNow() - t.seq, note: owHeldWhy()}); } return; }
+    if (t.by !== OW.key && !owSame(t.to, cur) && !withIt) owCrossed("waiting", {from: cur, to: t.to, seq: t.seq, lagMs: owNow() - t.seq, note: ownView() ? "stayed: my hero is not on the plate the party left" : "stayed: split off"});
   }
   if (w.plate != null){
     const np = owPlate(w.plate);
