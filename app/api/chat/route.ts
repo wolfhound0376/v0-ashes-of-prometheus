@@ -88,6 +88,7 @@ import { vitalityOf, conditionsFor } from "@/lib/death-saves"
 import {
   resolveHunger, suppliesForParty, normaliseExhaustion, isDeadOfExhaustion,
 } from "@/lib/exhaustion"
+import { companionsWalking } from "@/lib/camp-roster"
 import {
   readGameClock,
   logTimeEvent,
@@ -4788,7 +4789,10 @@ Rules:
       // instead of a threat.
       // The pool plus every bead of nourishment a player carries (§10).
       const rations = await readPartyRations(timeAdmin)
-      const partySize = (party ?? []).length
+      // EVERY MOUTH EATS (Sam, 2026-11-15: "More NPCs and characters the quicker rations disappear"): the prisoners
+      // walking with the party (walk_world state.company) eat with the heroes. lib/camp-roster.ts.
+      const companionMouths = (await companionsWalking(timeAdmin)).length
+      const partySize = (party ?? []).length + companionMouths
       const before = rations.total
       // AT CAMP, Sam's ration table (20 / 30 / 40) replaces the SRD's one
       // supply per mouth — never both — and decides whether the long rest
