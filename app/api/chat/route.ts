@@ -17,13 +17,14 @@ import { dryRun, newDryRunLog } from "@/lib/dry-run"
 import { startCombatFlag, endCombatFlag } from "@/lib/combat-flag"
 import { hasPlayableStats } from "@/lib/bestiary-stats"
 import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
-import { parseRollRequest, stripRollRequestExtras, type RollRequestSpec } from "@/lib/roll-requests"
+import { parseRollRequest, stripRollRequestExtras, type RollRequestSpec, type SrdSkill } from "@/lib/roll-requests"
+import { parseTalkPurpose, parseTalkSkill, settleTalkCheck, talkCallNote, talkDc, talkPurpose, talkResultNote } from "@/lib/talk-check"
 import { withoutNarration } from "@/lib/talk-narration"
 import { cleanRehearsal, REHEARSAL_ROLL_PREFIX } from "@/lib/rehearsal-history"
 import { isRollLine } from "@/lib/speech-notation"
 import { evaluate as evaluateSkillProgress, recordTraining, skillTitle, TEACHING_STAKE_PREFIX, type LedgerRow as SkillLedgerRow } from "@/lib/skill-progress"
 import { loadLedger as loadSkillLedger, loadRules as loadSkillProgressRules } from "@/lib/skill-progress-apply"
-import { normaliseSkill, skillProficiency, type SheetSlice } from "@/lib/game-context"
+import { normaliseSkill, skillBonus, skillProficiency, type SheetSlice } from "@/lib/game-context"
 
 // Custom Anthropic provider — forces direct calls to api.anthropic.com using
 // ANTHROPIC_API_KEY, bypassing the Vercel AI Gateway (which blocks Anthropic
@@ -2267,6 +2268,49 @@ ${MALACHAR_LAST_WORD}`
   // showed nothing, the client retried, and each retry persisted the player's
   // line again — one message became three in the log. Name the failure instead,
   // and mark it non-retryable so the client stops rather than spamming.
+  // A SKILL ON A TALK LINE IS A REAL CHECK (lib/talk-check.ts; Sam's playtest 2026-11-15, point 2). The line that
+  // names a skill gets the game's roll request (the DC from the NPC's attitude, never Malachar's); the roll that comes
+  // back is read against it here and the NPC is told the outcome before it answers.
+  let talkCheck: { skill: SrdSkill; npc: string; dc: number; mod: number } | null = null
+  let talkNote = ""
+  if (!director && !sandbox && playerCharacter) {
+    try {
+      const admin = adminClient()
+      const rolledId = /\[ROLL_RESULT:([0-9a-f-]{36})\]/i.exec(String(message ?? ""))?.[1]
+      if (rolledId) {
+        const { data: req } = await admin.from("roll_requests").select("id, purpose, status, result, dc")
+          .eq("id", rolledId).eq("character_id", playerCharacter.id).maybeSingle()
+        const linked = parseTalkPurpose(req?.purpose as string | null)
+        const res = (req?.result ?? null) as { total?: unknown; rolls?: unknown } | null
+        const total = Number(res?.total)
+        if (req && linked && !linked.settled && req.status === "resolved" && Number.isFinite(total) && req.dc != null) {
+          const { data: claimed } = await admin.from("roll_requests").update({ purpose: `${req.purpose}:done`, updated_at: new Date().toISOString() })
+            .eq("id", req.id).eq("purpose", req.purpose).select("id")
+          if (claimed && claimed.length) {
+            const face = Array.isArray(res?.rolls) ? Number((res!.rolls as unknown[])[0]) : null
+            const ok = settleTalkCheck(total, face, Number(req.dc))
+            talkNote = talkResultNote(playerName, linked.skill, linked.npc, ok)
+            console.log(`[talk-check] ${playerName} ${linked.skill} vs ${linked.npc}: ${total} vs DC ${req.dc} -> ${ok ? "success" : "failure"}`)
+          }
+        }
+      } else if (talkWith) {
+        const said = parseTalkSkill(String(message ?? ""))
+        if (said) {
+          const [{ data: npcRow }, { data: sheet }] = await Promise.all([
+            admin.from("npc_encounters").select("disposition").ilike("name", talkWith).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+            admin.from("characters").select("level, str_score, dex_score, con_score, int_score, wis_score, cha_score, proficiency_bonus, sheet_skill_proficiencies").eq("id", playerCharacter.id).maybeSingle(),
+          ])
+          if (sheet) {
+            const b = skillBonus(sheet as unknown as Parameters<typeof skillBonus>[0], said.skill)
+            talkCheck = { skill: said.skill, npc: talkWith, dc: talkDc((npcRow as { disposition?: string | null } | null)?.disposition), mod: b.mod + b.prof }
+            talkNote = talkCallNote(said.skill, talkWith)
+            console.log(`[talk-check] ${playerName} calls ${said.skill} on ${talkWith}: 1d20${talkCheck.mod >= 0 ? "+" : ""}${talkCheck.mod} vs DC ${talkCheck.dc}`)
+          }
+        }
+      }
+    } catch (e) { console.error("[talk-check] skipped:", e) }
+  }
+
   let result: Awaited<ReturnType<typeof generateText>>
   try {
     result = await generateText({
@@ -2287,7 +2331,7 @@ ${MALACHAR_LAST_WORD}`
           role: "user",
           content: director
             ? `[STAGE DIRECTION — from the director, not from the table. Nobody spoke. Do exactly what it asks, in the fiction, addressed to the party. Never quote it, never mention it, never reply to it as though a player had said it.]${noLootTurn ? "\n[THIS IS A CHECK, NOT A LOOT ROLL. Everything that can be picked up here is already on the map as its own chest, rack, shelf or body, and the players open those themselves. Describe only what the roll notices: layout, sounds, tracks, danger, a clue, a way through. Do not name, place or award any item, key, weapon, coin or ammunition, and emit no ITEM tag. If the roll is low, little or nothing is noticed.]" : ""}${mapEventTurn ? "\n[THE MAP IS ALREADY PLAYING THIS. Any fight, its initiative, every attack, save and damage roll is made by the game on the map, not by you and not by the players. Narrate the moment in one or two short lines. Ask nobody to roll and write no [[dice]].]" : ""}\n${message}`
-            : toDm ? `${playerName} (to the DM, out of character): ${message}` : `${playerName}: ${message}`,
+            : toDm ? `${playerName} (to the DM, out of character): ${message}` : `${playerName}: ${message}${talkNote ? `\n${talkNote}` : ""}`,
         }
       ],
     })
@@ -3903,7 +3947,7 @@ Rules:
   // asks for it; this makes it so: a talk turn keeps only the NPC's lines, unless it is a check, something happened,
   // or there is no NPC line to keep (lib/talk-narration.ts). A line to the DM has no talkWith and is untouched.
   {
-    const kept = withoutNarration(dialogueEntries, { talkWith, message: String(message ?? ""), rawReply: rawText, asksForRoll: Boolean(parseRollRequest(rawText)) })
+    const kept = withoutNarration(dialogueEntries, { talkWith, message: String(message ?? ""), rawReply: rawText, asksForRoll: Boolean(parseRollRequest(rawText)) || !!talkCheck })
     if (kept.length !== dialogueEntries.length) {
       console.log(`[talk] narration dropped: ${dialogueEntries.length - kept.length} of ${dialogueEntries.length} rows, talking with ${talkWith}`)
       dialogueEntries.splice(0, dialogueEntries.length, ...kept)
@@ -5261,7 +5305,10 @@ Answer with exactly one cue name from the list, or the single word NONE. No othe
       }
 
       // A map event owes no roll (mapEventTurn above): the map rolled it.
-      const parsedRequest = mapEventTurn ? null : parseRollRequest(rawText)
+      // A talk check (talkCheck above) is the game's roll: its expression, skill and DC, whatever the prose said.
+      const parsedRequest = talkCheck
+        ? { expression: `1d20${talkCheck.mod > 0 ? `+${talkCheck.mod}` : talkCheck.mod < 0 ? talkCheck.mod : ""}`, die: "d20", diceCount: 1, modifier: talkCheck.mod, skill: talkCheck.skill, dc: talkCheck.dc, against: undefined }
+        : mapEventTurn ? null : parseRollRequest(rawText)
       if (parsedRequest) {
         // A later DM turn supersedes an unanswered request for this character.
         await admin
@@ -5272,7 +5319,7 @@ Answer with exactly one cue name from the list, or the single word NONE. No othe
 
         // A camp check spent this turn (§14) links itself to the roll it needs,
         // so the result can be settled from the table's dice next turn.
-        const purpose: string | null =
+        const purpose: string | null = talkCheck ? talkPurpose(talkCheck.skill, talkCheck.npc) :
           campCheckPurpose && (parsedRequest.skill == null || parsedRequest.skill === campCheckPurpose.skill)
             ? campCheckPurpose.purpose
             : null
