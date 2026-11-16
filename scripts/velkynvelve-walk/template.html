@@ -1587,6 +1587,47 @@ function prisonersJoin(){
   comp.push(...joined);
   return joined;
 }
+// CALL THE OTHERS OUT (Sam, 2026-11-15, playtest point 3: "When the door was left open and we went out there was disconnect
+// with NPCs joining. Only me and the bard went out." -> "Just build it and make sure it is clean"; step 4 of the approved
+// pen-escape design, claude/Pen_Escape_Phases_2026-11-13.md). prisonersJoin() above only takes the prisoners who are on
+// screen when the party walks off the pen plate; a breakout onto the battle plate, or a hero who slipped out first, left
+// everyone else in the pen. Now a hero outside the open pen (the landing, or the battle plate that stands for it) can
+// call them out. They come: Out of the Abyss's escape is the prisoners' escape, and every one of them wants out. Not
+// the dead, not anyone the DM has left behind (DM tools), not anyone out on a work crew. It is the same company list as
+// the DM's "Bring along", so every screen sees the same people with the party.
+function penOpenToCall(){ return !!(state.gateOpen || state.gateBroken || state.brokeOut); }
+function penLeftovers(){
+  const comp = companyNow(), away = (crewsAway && crewsAway.ids) || new Set(), slain = state.slain || [];
+  return PEN_NPCS.map(d => d.id).filter(id => SPR[id] && !comp.includes(id) && !state.leftBehind.includes(id) && !slain.includes(id) && !away.has(id));
+}
+function callOutCan(L){
+  if (!L || mode !== "explore" || L.down || SANDBOX || laborLive() || !penOpenToCall()) return false;
+  const here = cur === PEN ? outsidePen(L) : String((node && node.stands_for) ?? "") === String(PEN);
+  return here && penLeftovers().length > 0;
+}
+function callOthersOut(){
+  const L = leader; if (!callOutCan(L)) return;
+  const ids = penLeftovers(), comp = companyNow(), placed = party.map(q => ({x: q.x, y: q.y})), names = [];
+  ids.forEach((id, i) => {
+    comp.push(id); const nm = SHORT[id] || SPR[id].json.name; names.push(nm);
+    const target = nearestWalkable(L.x - 90 + (i % 4) * 60, L.y + 60 + Math.floor(i / 4) * 40, placed); placed.push(target);
+    const here = npcs.find(n => n.id === id && !n.company);
+    if (here){                                                   // on the pen plate: they walk out through the open gate
+      here.company = true; here.talk = false; here.home = {x: target.x, y: target.y};
+      const path = findPath(here, target);
+      if (path && path.length){ here.path = path; return; }
+      here.fading = true; setTimeout(() => { npcs = npcs.filter(n => n !== here); actors = actors.filter(n => n !== here); }, 1100);
+    }
+    if (npcs.some(n => n.id === id && n.company)) return;
+    setTimeout(() => {                                             // elsewhere: they come in from the pen's side, a step apart
+      if (npcs.some(n => n.id === id && n.company) || !companyNow().includes(id)) return;
+      const a = spawnCompanion(id, target, null, L.face); a.alpha = 0; a.fadeIn = true; npcs.push(a); actors = [...party, ...npcs, ...foes];
+    }, 300 + i * 450);
+  });
+  saveWalk(); renderCompany(); exploreKey = "";
+  log(`<b>${esc(fname(L))} calls into the pen.</b> ${esc(names.join(", "))} ${names.length > 1 ? "come" : "comes"} out to join the party.`, {say: true});
+  narrate(L, `${fname(L)} calls the others out of the pen.`);
+}
 function spawnCompanion(id, near, placed, face){
   const def = PEN_NPCS.find(d => d.id === id) || {};
   const p = nearestWalkable(near.x, near.y, placed); if (placed) placed.push(p);
@@ -9014,6 +9055,7 @@ function exploreExtras(m, o, add, who){
   if (ironsCan(L, "key")) x("Unlock everyone's manacles", "⚿", ART("pickpocket", "search"), `${fname(ironsKeyHolder())} carries a key that fits them · no roll`, () => ironsUnlockAll());
   if (ironsCan(L, "pick")) x("Pick your manacles", "⚿", ART("pickpocket", "search"), `Thieves' tools ${sgn(heroMod(L, "thievesTools", "dex"))} · one try until a long rest`, () => ironsTry("pick"));
   if (ironsCan(L, "break")) x("Break your manacles", "⚿", ART("force", "search"), `Strength ${sgn(abilMod(SHEETS[L.id] || {}, "str"))} · hard · one try until a long rest`, () => ironsTry("break"));
+  if (callOutCan(L)){ const left = penLeftovers(); x("Call the others out", "☰", ART("follow"), `${left.length} still in the pen · they come with you`, () => callOthersOut()); }
   if (wireCan(L)) x("Work the wire into your manacles", "⚿", ART("pickpocket", "search"), `Sleight of Hand ${sgn(heroMod(L, "sleightOfHand", "dex"))} · one try until you rest`, () => wireManacles());
   if (whistleCan(L)) x("Whistle at the guard", "♪", ART("inspire"), `Performance ${sgn(heroMod(L, "performance", "cha"))} · he may come in to shut you up`, () => whistleAtGuard());
   if (sh.bardic) x("Inspire", "♪", ART("inspire"), `Bardic Inspiration · ${inspLeftOf(L)} of ${sh.bardic.uses} left`, inspLeftOf(L) > 0 && party.length > 1 ? () => openInspire() : null);
