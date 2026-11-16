@@ -24533,10 +24533,73 @@ const BUPPIDO_RISES_LINES = [
   "Oh, he's back. He's just not bringing the personality this time.",
 ]
 
-/** Does the rise fire? Buppido, dead, in the pen, and only once per campaign. */
+/**
+ * Does the rise fire? Buppido, dead, anywhere, and only once per campaign.
+ * Sam, 2026-11-15 ("when he dies he becomes a zombie"): no longer the pen alone. In the pen it is the stone and the
+ * mound and the watching guards (buppidoRisesInPen); anywhere else he gets up where he fell.
+ * @param {{ deadId?: string, plate?: string | number, fired?: boolean }} [o]
+ */
 function buppidoRisesActive({ deadId, plate, fired = false } = {}) {
   if (fired) return false
-  return String(deadId || "") === BUPPIDO_RISES_RULES.npc && Number(plate) === BUPPIDO_RISES_RULES.plate
+  return String(deadId || "") === BUPPIDO_RISES_RULES.npc
+}
+
+/** The pen's own version of the rise (the stone, the mound, the drow audience, the film). */
+function buppidoRisesInPen(plate) {
+  return Number(plate) === BUPPIDO_RISES_RULES.plate
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// THE LEDGE (Sam, 2026-11-15: "Build buppido ledge shove").
+//   [SOURCED] our OotA guide, Chapter 2, p.10, "Assassination Attempt": "The group travels on a ledge. On one side, it
+//             drops off into a void. Buppido becomes sweaty. If he can get a PC away from the group, he will try to
+//             shove them over the side and claim it was an accident." And p.5: after the group escapes, he wants to
+//             kill the heroes one by one.
+//   [SOURCED] Buppido's block (bestiary `buppido`, a derro): STR 9 (-1), Stealth +4.
+//   [SOURCED] SRD 5.1 Shoving a Creature: the shover's Strength (Athletics) against the target's Strength (Athletics)
+//             or Dexterity (Acrobatics), the target's choice; a tie changes nothing.
+//   [SAM 2026-11-15] the edge: pushed toward a drop, a DC 15 Dexterity save catches it (the map's LEDGE_SAVE_DC).
+//   [CLAUDE] what "a PC away from the group" means on the map (no one else within 30 ft); that he tries once per visit
+//             to a ledge; that his creeping up is his Stealth against the hero's passive Perception, and that a hero
+//             who did not see him coming is caught off guard (he shoves with advantage). His lines are drafts.
+const BUPPIDO_RISES_LEDGE = {
+  plates: ["road-rope-bridge", "5c"],   // the rope bridge over the chasm on the road, the cliff ledges below the lift
+  aloneFt: 30,
+  stealth: 4,
+  athletics: -1,
+  sweaty: ["Buppido wipes his brow and smiles at the drop. \"Long way down. Isn't it.\"",
+           "Buppido is sweating, though it is cold here. He keeps glancing at the edge."],
+  spotted: ["\"Careful, friend! Slippery here. I was only steadying you.\"", "\"Ah! You startled me. I was coming to help.\""],
+  failed: ["\"Whoops! I tripped! So clumsy. Forgive me, forgive me.\"", "\"Oh! My foot slipped. You are all right? Good. Good.\""],
+  shoved: ["\"Oh no! Oh no! The edge, it just… gave way! Terrible. Terrible.\"", "\"I tried to catch them! You all saw. I tried!\""],
+}
+
+/** Is this plate a ledge Buppido will try his luck on? */
+function buppidoRisesLedgePlate(plate) {
+  return BUPPIDO_RISES_LEDGE.plates.includes(String(plate))
+}
+
+/**
+ * The hero he goes for: on their feet, and with nobody else (hero or companion, Buppido aside) within `aloneFt`.
+ * The nearest such hero to him. `pxPerFt` converts the map's distance to feet.
+ * @param {{ heroes?: Array<{ id?: string, x: number, y: number, down?: boolean }>, others?: Array<{ x: number, y: number, down?: boolean }>, buppido?: { x: number, y: number }, pxPerFt?: number }} [o]
+ */
+function buppidoRisesLedgeTarget({ heroes = [], others = [], buppido, pxPerFt = 1 } = {}) {
+  if (!buppido) return null
+  const reach = BUPPIDO_RISES_LEDGE.aloneFt * pxPerFt
+  const alone = heroes.filter((h) => h && !h.down && !others.concat(heroes).some((o) => o !== h && !o.down && Math.hypot(o.x - h.x, o.y - h.y) <= reach))
+  alone.sort((a, b) => Math.hypot(a.x - buppido.x, a.y - buppido.y) - Math.hypot(b.x - buppido.x, b.y - buppido.y))
+  return alone[0] || null
+}
+
+/** He is seen coming when the hero's passive Perception meets his Stealth roll. */
+function buppidoRisesLedgeSpotted(passive, stealthTotal) {
+  return Number(passive) >= Number(stealthTotal)
+}
+
+/** SRD shove: his total must beat theirs; a tie changes nothing. */
+function buppidoRisesShoveWins(his, theirs) {
+  return Number(his) > Number(theirs)
 }
 
 /** Which line Malachar says: the same one on every screen at the table, from the shared record's seq. */
@@ -24578,6 +24641,7 @@ function buppidoRisesCheck(t){
 }
 async function playBuppidoRises(t){
   const R = BUPPIDO_RISES_RULES, line = buppidoRisesLine(state.buppidoRisen && state.buppidoRisen.seq);
+  if (!buppidoRisesInPen(cur)) return playBuppidoRisesWhereHeFell(t, line);
   // HIS BODY STAYS. Sam: "his body doesn't get dragged away like the rest." Nothing on this map drags bodies yet — the
   // guards' drag is in the unmerged Drow Surgeon work — so this flag is the instruction waiting for it, not a change to
   // behaviour that exists today. Whatever lands that drag reads `noDrag` and steps over him.
@@ -24634,6 +24698,38 @@ async function playBuppidoRises(t){
   startCombat([z], "something has climbed out of Buppido's grave",
               {noAllies: true, surprised: [...party, ...npcs.filter(n => actors.includes(n) && n !== z)]});
 }
+/**
+ * ANYWHERE ELSE (Sam, 2026-11-15: "when he dies he becomes a zombie"). No pen, no stone, no mound and no drow audience:
+ * he lies where he fell, the body twitches, and the same zombie gets up out of it on the prebuilt emerge sheet. The
+ * pen's film stays the pen's (it shows the mound and the guards). Mid-fight it joins that fight, as in the pen. Out of
+ * a fight it starts one; everyone is surprised (a dead man standing up), and the companions fight it as allies here:
+ * the pen's "they run" was about a locked pen full of bystanders, and out on the road they are the party's own.
+ */
+async function playBuppidoRisesWhereHeFell(t, line){
+  const R = BUPPIDO_RISES_RULES;
+  t.noDrag = true;
+  await wait(R.bodyMs);
+  buppidoRisesMusic();
+  log(`<b>Malachar:</b> "${esc(line)}"`);
+  buppidoRisesSay(line);
+  const g = {x: t.x, y: t.y};
+  shake(4); bank("creature/death_beast", .3);
+  for (let i = 0; i < 3; i++) setTimeout(() => { shake(4); addBlood({x: g.x + labRnd(-12, 12), y: g.y}, .4, false); }, i * 420);
+  await wait(R.stirMs);
+  for (let i = 0; i < 600 && FIGHT.mirror; i++) await wait(500);
+  const joining = mode === "combat" && cbt && !FIGHT.mirror;
+  const z = joining ? foeJoins(R.foe, {x: g.x, y: g.y}) : mkActor(R.foe, g.x, g.y, "foe", {hostile: true, face: faceOf((leader ? leader.x : g.x) - g.x, (leader ? leader.y : g.y) - g.y), home: {x: g.x, y: g.y}});
+  if (!z) return;
+  z.hostile = true; z.home = {x: g.x, y: g.y};
+  npcs.push(z); if (!joining) actors.push(z);
+  t.alpha = 0; t.fading = true; t.offStage = true;          // the body is what stands up: it is not left lying beside it
+  shake(9); bank("walk:undead-breach", 1);
+  if (SPR[z.id] && SPR[z.id].img.emerge) playOnce(z, "emerge", () => setAnim(z, "idle")); else setAnim(z, "idle");
+  await wait(R.emergeMs);
+  if (joining){ if (inFight(z)) log(`<b>Buppido gets back up</b> and joins the fight. He is not Buppido any more.`); return; }
+  await wait(R.surpriseMs);
+  startCombat([z], "Buppido gets back up", {surprised: [...party, ...npcs.filter(n => actors.includes(n) && n !== z)]});
+}
 /** The horror cue. The engine already scores anything undead as `scary`; this just starts it before initiative does. */
 function buppidoRisesMusic(){ try { pickCombatTrack("scary"); setTrack("combat"); } catch (e) {} }
 function buppidoRisesSay(line){ try { gameOverVoice(line); } catch (e) {} }   // Malachar's lich voice, the dashboard's
@@ -24646,6 +24742,61 @@ function buppidoRisesAudience(){
   }
   const watcher = npcs.filter(n => n.spectator)[0];
   if (watcher) bark(watcher, "…what is that?", 2200, {talk: true});
+}
+// ---------- BUPPIDO ON THE LEDGE (Sam, 2026-11-15: "Build buppido ledge shove") ----------
+// The book's assassination attempt (lib/buppido-rises.mjs BUPPIDO_RISES_LEDGE has the sources). On a ledge plate, with
+// Buppido walking in the company: first he sweats (a bark: the book's tell). Then, if a hero stands with nobody else
+// within 30 ft, he drifts over. His Stealth against the hero's passive Perception decides whether he is seen coming:
+// seen, he smiles and says he was steadying them; unseen, he shoves (SRD shove: his Athletics, with advantage on a hero
+// caught off guard, against their best of Athletics and Acrobatics). A shove that lands sends them toward the drop,
+// where Sam's DC 15 Dexterity save catches the edge (chasmFall). Either way he swears it was an accident. Once a visit.
+// Only the screen that drives the hero runs it, so the table sees one attempt; the fall itself is shared (noteFallen).
+const BUP_LEDGE = {tried: null, sweated: null, at: 0, going: false, plate: null, visit: 0};
+function buppidoLedgeTick(){
+  if (BUP_LEDGE.going){ buppidoLedgeStalk(); return; }
+  if (mode !== "explore" || now - BUP_LEDGE.at < 1000) return; BUP_LEDGE.at = now;
+  if (!buppidoRisesLedgePlate(cur)){ BUP_LEDGE.plate = cur; return; }
+  if (!companyNow().includes("buppido")) return;
+  const b = npcs.find(n => n.id === "buppido" && actors.includes(n) && !n.down && !n.body && !n.hostile && !n.offStage); if (!b) return;
+  if (BUP_LEDGE.plate !== cur){ BUP_LEDGE.plate = cur; BUP_LEDGE.visit = (BUP_LEDGE.visit || 0) + 1; }   // a new visit to a ledge: one more try
+  const visit = `${cur}:${BUP_LEDGE.visit}`;
+  if (BUP_LEDGE.sweated !== visit){ BUP_LEDGE.sweated = visit; const L = BUPPIDO_RISES_LEDGE.sweaty; setTimeout(() => { if (actors.includes(b) && !b.down) bark(b, L[Math.floor(Math.random() * L.length)].replace(/^Buppido /, "").replace(/^"|"$/g, ""), 4200); }, 2500); }
+  if (BUP_LEDGE.tried === visit) return;
+  const heroes = party.filter(p => actors.includes(p) && !p.down && !p.offStage && !owRemote(p));
+  const others = [...party.filter(p => actors.includes(p) && !p.down && !p.offStage), ...npcs.filter(n => n !== b && companyNow().includes(n.id) && actors.includes(n) && !n.down && !n.offStage)];
+  const h = buppidoRisesLedgeTarget({heroes, others, buppido: b, pxPerFt: ruleFt(b)}); if (!h) return;
+  BUP_LEDGE.tried = visit; BUP_LEDGE.going = true; BUP_LEDGE.b = b; BUP_LEDGE.h = h; BUP_LEDGE.since = now; BUP_LEDGE.repath = 0;
+  stopActivity(b); b.ledgeFollow = b.follow; b.follow = false;     // out of the company's formation while he stalks
+}
+/** He walks after the hero (they may be moving) and tries once he is at their shoulder; 15 s and he lets it go. */
+function buppidoLedgeStalk(){
+  const {b, h} = BUP_LEDGE, done = () => { BUP_LEDGE.going = false; if (b){ b.follow = b.ledgeFollow ?? true; delete b.ledgeFollow; } };
+  if (!b || !h || mode !== "explore" || b.down || !actors.includes(b) || h.down || !actors.includes(h) || now - BUP_LEDGE.since > 15000){ done(); return; }
+  if (Math.hypot(b.x - h.x, b.y - h.y) <= 8 * ruleFt(b)){ b.path = []; faceTo(b, h); done(); buppidoLedgeTry(b, h); return; }
+  if (now - BUP_LEDGE.repath > 700){ BUP_LEDGE.repath = now; const at = nearestWalkable(h.x + (b.x < h.x ? -30 : 30), h.y + 4), path = findPath(b, at); b.path = path.length ? path : []; }
+}
+function buppidoLedgeTry(b, h){
+  const L = BUPPIDO_RISES_LEDGE, pick = (a) => a[Math.floor(Math.random() * a.length)], d = () => 1 + Math.floor(Math.random() * 20);
+  if (mode !== "explore" || h.down || !actors.includes(h)) return;
+  const stealth = d() + L.stealth, passive = dirPassive(h);
+  if (buppidoRisesLedgeSpotted(passive, stealth)){
+    bark(b, pick(L.spotted).replace(/^"|"$/g, ""), 4200); popText(h, "Buppido, right behind you", "#ffd27a", 1.1);
+    log(`${fname(h)} turns and finds <b>Buppido</b> right at their back, at the edge (his Stealth ${stealth} vs passive Perception ${passive}). He smiles and steps away.`);
+    return;
+  }
+  const sh = SHEETS[h.id] || {}, sk = sh.skills || {}, mods = sh.mods || {};
+  const theirs = Math.max(sk.athletics ?? mods.str ?? 0, sk.acrobatics ?? mods.dex ?? 0);
+  const his = Math.max(d(), d()) + L.athletics, them = d() + theirs;    // caught off guard: he shoves with advantage
+  if (!buppidoRisesShoveWins(his, them)){
+    bark(b, pick(L.failed).replace(/^"|"$/g, ""), 4200); popText(h, "keeps their footing", "#e8e2c8", 1.05); shake(3);
+    log(`<b>Buppido</b> stumbles into ${fname(h)} at the edge: shove ${his} vs ${them}. ${fname(h)} keeps their footing. He swears it was an accident.`);
+    return;
+  }
+  log(`<b>Buppido</b> comes out of nowhere and shoves ${fname(h)} toward the drop: ${his} vs ${them}.`);
+  const made = !h.c; h.c = h.c || fighterFor(h);
+  chasmFall(h, h, b, "drop");
+  setTimeout(() => { if (made && !h.dead && !h.down && mode !== "combat") delete h.c; }, 1600);
+  setTimeout(() => { if (actors.includes(b) && !b.down) bark(b, pick(L.shoved).replace(/^"|"$/g, ""), 5000); }, 900);
 }
 // ---------- PULL THE DASHBOARD TO THE MAP ----------
 // Sam, 2026-10-30: "during dynamic action sequences like that or if someone is talking to you (interrupting) it
@@ -25599,7 +25750,7 @@ function update(dt){
   sigilNoticeTick(); wardOutTick();     // a caster notices the sigil (and gets its film); the ones it bit lie where they fell
   pacingTick();                         // the caravan clock, the wait vote, and the pen's three small beats
   tickFungus();
-  ovTick(); tickChasmWebs(); camKeep();
+  ovTick(); tickChasmWebs(); camKeep(); buppidoLedgeTick();
   if (camTween){
     const k = Math.min(1, (now - camTween.t0) / camTween.ms), e = k < .5 ? 2 * k * k : 1 - (-2 * k + 2) ** 2 / 2;
     view.z = camTween.from.z + (camTween.to.z - camTween.from.z) * e;
