@@ -28,6 +28,15 @@
 /** A heartbeat older than this means the seat is not connected. Heartbeats go every 2.5 s. */
 export const ONLINE_MS = 12000
 
+/**
+ * A SEAT HELD WHILE ITS PLAYER IS AWAY (Sam, 2026-11-15: "Something must protect syncs between cooperative play when
+ * one person refreshes his browser"). A page that is going away (a refresh, the tab closed, off to the Parley) says so
+ * with a last heartbeat marked "away". For this long after it, that player's hero is still theirs: no other screen
+ * drives it, so it stands where they left it instead of being walked about by someone else's screen, and the party
+ * gathers for them (the map's GATHER). A page that dies without a word still lets go after ONLINE_MS, as before.
+ */
+export const HOLD_MS = 60000
+
 /** How many heartbeats in a row may disagree with the server before the browser snaps to it. */
 export const MISSES_BEFORE_RESYNC = 2
 
@@ -86,7 +95,7 @@ export type Seat = {
   status: SyncStatus
 }
 
-export type SyncStatus = "in-step" | "catching-up" | "out-of-touch" | "fight-unshared"
+export type SyncStatus = "in-step" | "catching-up" | "out-of-touch" | "fight-unshared" | "away"
 
 export type WorldRow = {
   campaign_run_id: string
@@ -208,21 +217,31 @@ export function isOnline(seat: Seat | undefined | null, now: number): boolean {
   return !!seat && typeof seat.at === "number" && now - seat.at <= ONLINE_MS
 }
 
+/** A seat whose page said it was going away, within HOLD_MS of saying so: its hero is held for it. */
+export function heldAway(seat: Seat | undefined | null, now: number): boolean {
+  return !!seat && seat.status === "away" && typeof seat.at === "number" && now - seat.at <= HOLD_MS
+}
+
+/** A seat that can drive heroes right now: connected, and not a page that has said it is going away. */
+function canDrive(seat: Seat | undefined | null, now: number): boolean {
+  return isOnline(seat, now) && seat!.status !== "away"
+}
+
 /**
  * The one client that drives a hero right now (its key in `seats`), or null when nobody is connected:
- *   1. its owner, while their browser is connected;
+ *   1. its owner, while their browser is connected, or while their seat is held for them (heldAway: a refresh);
  *   2. else the DM's map, while it is open;
  *   3. else the connected player in the lowest seat (so an empty chair's hero does not wander differently
  *      on every screen).
  */
 export function driverOf(ownerCid: string | null | undefined, seats: Record<string, Seat> | null | undefined, now: number): string | null {
   const s = seats || {}
-  if (ownerCid && isOnline(s[ownerCid], now)) return ownerCid
-  if (isOnline(s.dm, now)) return "dm"
+  if (ownerCid && (isOnline(s[ownerCid], now) || heldAway(s[ownerCid], now))) return ownerCid
+  if (canDrive(s.dm, now)) return "dm"
   let best: string | null = null
   let bestSeat = Infinity
   for (const k of Object.keys(s).sort()) {
-    if (k === "dm" || !isOnline(s[k], now)) continue
+    if (k === "dm" || !canDrive(s[k], now)) continue
     const n = typeof s[k].seat === "number" ? (s[k].seat as number) : 99
     if (n < bestSeat) { bestSeat = n; best = k }
   }

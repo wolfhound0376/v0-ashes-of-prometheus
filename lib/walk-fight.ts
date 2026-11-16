@@ -9,6 +9,20 @@
  */
 
 export const FIGHT_STALE_MS = 60_000
+
+/**
+ * A FIGHT OUTLIVES A REFRESH (Sam, 2026-11-15: "Something must protect syncs between cooperative play when one person
+ * refreshes his browser"). The authority holds everything only in its page; a refresh there used to leave the fight
+ * held by nobody for a minute and then lost. Now a screen showing the fight may CLAIM it once the authority has sent
+ * nothing for this long, and carries it on from its own copy; and a page that knows it has lost its fight (it reloaded)
+ * RELEASES it at once so a mirror can.
+ */
+export const CLAIM_QUIET_MS = 8_000
+
+/** May a screen take over this fight now? Live, and its authority quiet for CLAIM_QUIET_MS. */
+export function mayClaim(f: LiveFight | null, now: number): boolean {
+  return !!f && !f.ended_at && now - Date.parse(f.auth_seen) >= CLAIM_QUIET_MS
+}
 export const MAX_BODY_BYTES = 256_000
 export const MAX_READ = 200
 

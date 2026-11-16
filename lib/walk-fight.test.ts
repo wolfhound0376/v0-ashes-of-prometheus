@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { FIGHT_STALE_MS, cleanBody, isHeld, mayDrive, openDecision, type LiveFight } from "./walk-fight"
+import { CLAIM_QUIET_MS, FIGHT_STALE_MS, cleanBody, isHeld, mayClaim, mayDrive, openDecision, type LiveFight } from "./walk-fight"
 
 const at = (ms: number) => new Date(ms).toISOString()
 const live = (seen: number, extra: Partial<LiveFight> = {}): LiveFight => ({ id: "f1", plate: "11", auth_key: "dm", auth_seen: at(seen), started_at: at(seen), ended_at: null, ...extra })
@@ -34,5 +34,15 @@ describe("bodies", () => {
     expect(cleanBody([1]).ok).toBe(false)
     expect(cleanBody(null).ok).toBe(false)
     expect(cleanBody({ s: "x".repeat(300_000) }).ok).toBe(false)
+  })
+})
+
+describe("a fight outlives a refresh (claim)", () => {
+  it("may be claimed only once its authority has been quiet CLAIM_QUIET_MS", () => {
+    const now = 1_000_000
+    expect(mayClaim(live(now - 1000), now)).toBe(false)
+    expect(mayClaim(live(now - CLAIM_QUIET_MS), now)).toBe(true)
+    expect(mayClaim(live(now - CLAIM_QUIET_MS, { ended_at: at(now) }), now)).toBe(false)
+    expect(mayClaim(null, now)).toBe(false)
   })
 })
