@@ -6192,7 +6192,7 @@ function handOff(text, ask, opts = {}){
   const id = "a" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   let characterId = null; try { characterId = myClaimId || characterIdOf(leader.id) || null; } catch (e) {}
   ACTION_REPLIES.add(id);
-  const msg = ask ? {type: "aop:action", id, text, characterId, ask: true, private: !!opts.private} : {type: "aop:action", id, text, characterId, event: true, sig: eventSig(text)};
+  const msg = ask ? {type: "aop:action", id, text, characterId, ask: true, private: !!opts.private, noLoot: !!opts.noLoot} : {type: "aop:action", id, text, characterId, event: true, sig: eventSig(text)};
   try { (window.parent !== window ? window.parent : window).postMessage(msg, APP ? location.origin : "*"); } catch (e) {}
   return id;
 }
@@ -9168,7 +9168,9 @@ function ovSightFan(w, col, k, rim){
 // Search here, Listen, Look closer: the roll on the map, the finding from the DM core
 function askCheck(what, k, skill, text){
   openCheck(what, rollLine(k, skill));
-  const id = handOff(text, true);
+  // NO LOOT FROM A CHECK (Sam's playtest, 2026-11-15). A plate's loot is real rows on the map (racks, chests, bodies);
+  // asking "what do they find?" let Malachar award catalog items on top of them. The server drops item tags on these.
+  const id = handOff(text, true, {noLoot: true});
   if (APP && window.parent !== window) checkCard.id = id;
   else checkAnswer(null, "In the game, Malachar answers here.");     // the stand-alone preview has nobody to ask
   exploreKey = "";

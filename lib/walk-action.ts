@@ -35,6 +35,10 @@ export interface WalkActionRequest {
   /** A private turn (a silent prayer): the answer comes back to this screen only and is not written to the shared log.
    *  Clicks only — an automatic event is the table's by nature. */
   private: boolean
+  /** A check hand-off (Search, Listen, Look closer, the ward sigil): the room's loot is already on the map as real
+   *  containers, so Malachar describes what is noticed and may not hand out items (Sam's playtest, 2026-11-15: a
+   *  Search in the guard tower minted an iron key, a shortbow and 11 arrows no table holds). Clicks only. */
+  noLoot: boolean
 }
 
 /** The server's window for one event (/api/walk-event): the same thing again after this is a new event. */
@@ -67,5 +71,5 @@ export function parseWalkActionRequest(d: unknown): WalkActionRequest | null {
   const text = m.text.trim()
   if (!text || text.length > WALK_ACTION_MAX) return null
   const characterId = typeof m.characterId === "string" && m.characterId ? m.characterId : null
-  return { type: "aop:action", id: m.id, text, characterId, event: m.ask !== true && event, sig: event ? (m.sig as string) : null, private: m.ask === true && m.private === true }
+  return { type: "aop:action", id: m.id, text, characterId, event: m.ask !== true && event, sig: event ? (m.sig as string) : null, private: m.ask === true && m.private === true, noLoot: m.ask === true && m.noLoot === true }
 }
