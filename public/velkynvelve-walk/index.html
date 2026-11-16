@@ -2211,7 +2211,30 @@ function ovEllipsePath(x, y, rx, ry){
 }
 // whether `a` can reach `b` only by going through the gate (one inside the pen, one out on the balcony)
 const gateWayTo = (a, b) => gatePassable() && outsidePen(a) !== outsidePen(b);
+// DON'T FALL DOWN A HATCH YOU WERE WALKING PAST (Sam's playtest, 2026-11-15, point 7: "going up and down and across the
+// plates is still very difficult and not smooth"). In the Guard Tower the game's own path from the pen bridge to the
+// ledge west, and back, hugged the hatch and stepped on its lip, so crossing the tower took the party down to the
+// guard room. Out of a fight, a walk now keeps off any ladder or hatch it is not going to (zones with `climb`), and only
+// goes over one when there is no other way. A fight is unchanged (exits do not fire in a fight, and movement is priced).
+function strayClimbCells(from, to){
+  const out = [];
+  for (const z of node.zones || []){
+    if (!z.climb) continue;
+    const r = z.trigger || z.rect;
+    if (inRect(z.rect, to.x, to.y) || inRect(r, to.x, to.y) || inRect(r, from.x, from.y)) continue;   // going to it, or already on it
+    const c0 = Math.max(0, Math.floor(r[0] / CELL)), c1 = Math.min(GW - 1, Math.floor(r[2] / CELL)), r0 = Math.max(0, Math.floor(r[1] / CELL)), r1 = Math.min(GH - 1, Math.floor(r[3] / CELL));
+    for (let cy = r0; cy <= r1; cy++) for (let cx = c0; cx <= c1; cx++){ const i = cy * GW + cx; if (grid[i]) out.push(i); }
+  }
+  return out;
+}
 function findPath(from, to){
+  const keepOff = mode === "explore" && !cbt ? strayClimbCells(from, to) : null;
+  if (!keepOff || !keepOff.length) return findPathOnFloor(from, to);
+  for (const i of keepOff) grid[i] = 0;
+  let p; try { p = findPathOnFloor(from, to); } finally { for (const i of keepOff) grid[i] = 1; }
+  return p.length ? p : findPathOnFloor(from, to);   // no way round: the hatch it is
+}
+function findPathOnFloor(from, to){
   const p = gridPath(from, to); if (p.length || !gatePassable()) return p;
   const fb = outsidePen(from); if (fb === outsidePen(to)) return p;
   const B = balcony(), P = q => ({x: q[0], y: q[1]});
