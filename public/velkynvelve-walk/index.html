@@ -368,6 +368,12 @@ body.gathering footer.party,body.gathering #cbtMenu{pointer-events:none;opacity:
 
 /* combat: the Octopath-style frame over the plate. Nothing here is a board; it is HUD over the painting. */
 .vignette.hit{opacity:1;background:radial-gradient(ellipse at center,transparent 35%,rgba(200,30,20,.45) 70%,rgba(120,0,0,.9) 100%);transition:none}
+/* THE DOOR OPENS INTO BATTLE (Sam, 2026-11-15: "All of them" — the music sting, the shake, the lighting change, like the
+   Combat Effects Lab). The Lab's banner, as the fight on the battle plate begins. */
+.battle-banner{position:absolute;left:50%;top:26%;transform:translate(-50%,-50%);pointer-events:none;z-index:40;font-family:var(--face-display);font-size:clamp(22px,3.4vw,42px);font-weight:700;color:#ffe9a6;letter-spacing:.1em;white-space:nowrap;text-shadow:0 0 .6em rgba(255,120,80,.5),0 2px 0 #2a0a08,0 4px .8em rgba(0,0,0,.85);opacity:0}
+.battle-banner.show{animation:battlebanner 1.9s ease-out forwards}
+@keyframes battlebanner{0%{opacity:0;transform:translate(-50%,-40%) scale(.9)}15%{opacity:1;transform:translate(-50%,-50%) scale(1.02)}25%{transform:translate(-50%,-50%) scale(1)}75%{opacity:1}100%{opacity:0;transform:translate(-50%,-60%)}}
+@media (prefers-reduced-motion:reduce){.battle-banner.show{animation-duration:.01s}}
 .combat{position:absolute;inset:0;pointer-events:none;font-family:var(--face-body)}
 .combat[hidden]{display:none}
 .combat .cbt-ui{pointer-events:auto}
@@ -1221,6 +1227,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     </div>
     <canvas id="cv"></canvas>
     <div class="vignette" id="vignette"></div>
+    <div class="battle-banner" id="battleBanner" aria-hidden="true"></div>
     <div class="over" id="over"></div>
     <div class="fade" id="fade"></div>
     <div class="iris" id="iris" hidden></div>
@@ -2921,7 +2928,8 @@ function plateLights(){
   return out;
 }
 function drawLight(){
-  const dark = LIGHT_LEVELS[lightLevel]; if (!dark || mode === "load") return;
+  const base = LIGHT_LEVELS[lightLevel]; if (!base || mode === "load") return;
+  const dark = Math.min(.85, base + battleGloom());   // the battle plate darkens while its fight lasts (THE DOOR OPENS INTO BATTLE)
   const W = Math.ceil(cv.width / 2), H = Math.ceil(cv.height / 2); if (LC.width !== W || LC.height !== H){ LC.width = W; LC.height = H; }
   const m = ctx.getTransform(), lights = plateLights();
   lcx.setTransform(1, 0, 0, 1, 0, 0); lcx.globalCompositeOperation = "source-over"; lcx.clearRect(0, 0, W, H);
@@ -7111,6 +7119,37 @@ async function battleCut(B){
   const mine = B.heroes.map(id => party.find(p => p.id === id)).find(p => p && canControl(p) && !owRemote(p));
   if (mine && leader !== mine && !B.heroes.includes(leader.id)) leader = mine;   // the hero this screen sends is the one it walks there
   await enterNode(B.plate, {solo: !!B.split, note: esc(B.label.charAt(0).toUpperCase() + B.label.slice(1)) + "."});
+  setTimeout(() => battleEntrance(B), 1000);                         // as the fade lifts and steel comes out (battleBegin waits 900 ms)
+}
+// THE DOOR OPENS INTO BATTLE (Sam, 2026-11-13: going through the pen door "should open into combat like the combat SFX
+// module artifact"; asked which parts, 2026-11-15: "All of them" — the music sting, the screen shake and the lighting
+// change). Every screen cut to the battle plate plays it once per fight, as the fight starts there:
+//   STING   the combat track slams in at full level instead of fading up, under steel being drawn (blade whoosh);
+//   SHAKE   one hard shake and the red vignette hit (the Lab's redhit), skipped with motion off;
+//   LIGHT   a red flash where the watch stands, and the plate goes a step darker (+0.14) for as long as the fight lasts,
+//           easing back afterwards. Never with the light layer off (Lit): the player turned it off;
+//   BANNER  the Lab's banner across the plate with the fight's own name.
+// Presentation only: no rule reads any of it. The numbers are Claude's, flagged. [CLAUDE]
+let battleEntranceId = null, battleGloomAt = 0, battleGloomK = 0;
+function battleGloom(){
+  const on = battleGloomAt && mode === "combat" && cbt && battleLive() && String(cur) === String((battleLive() || {}).plate);
+  const target = on ? .14 : 0, k = battleGloomK + (target - battleGloomK) * Math.min(1, 1 / 30 * (on ? 1.6 : 1));
+  battleGloomK = Math.abs(k - target) < .002 ? target : k; if (!on && !battleGloomK) battleGloomAt = 0;
+  return battleGloomK;
+}
+function battleEntrance(B){
+  if (!B || battleEntranceId === B.id || String(cur) !== String(B.plate)) return;
+  battleEntranceId = B.id; battleGloomAt = now;
+  // STING
+  bank("combat/blade_whoosh", .9);
+  if (musicOn && audioUnlocked){ setTrack("combat"); const a = music.combat; if (a){ if (a.paused) a.play().catch(() => {}); a.volume = Math.max(0, Math.min(1, vol * LEVEL.combat)); } }
+  // SHAKE
+  if (motionOn){ shake(10); redFlash(); }
+  // LIGHT
+  const fs = (foes && foes.length ? foes : []).filter(f => f && !f.down);
+  if (fs.length){ const c = fs.reduce((s, f) => ({x: s.x + f.x / fs.length, y: s.y + f.y / fs.length}), {x: 0, y: 0}), q = ovPt(c.x, c.y); lightFlash(q.x, q.y - 40, [255, 70, 50], 420, 900); }
+  // BANNER
+  const el = $("battleBanner"); if (el){ el.textContent = B.label.charAt(0).toUpperCase() + B.label.slice(1); el.classList.remove("show"); void el.offsetWidth; el.classList.add("show"); }
 }
 /** Every screen, twice a second: a hero of this screen's who is in the fight is cut to it; the pen's watch is not left standing. */
 function battleTick(){
