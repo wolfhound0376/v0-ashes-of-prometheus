@@ -426,7 +426,21 @@ BATTLE_PLATES = {
               dict(cx=1520,cy=990,rx=95,ry=82),dict(cx=1872,cy=1072,rx=36,ry=26),dict(cx=1215,cy=965,rx=80,ry=58)],
    zones=[dict(rect=[2190, 650, 2340, 740], to=[11], label="The pen gate: back into the slave pen"),
           dict(rect=[0, 470, 70, 640], to=[10], label="The far ledge: on to the Guard Tower"),
-          dict(rect=[1290, 1000, 1450, 1040], to=[12], label="The cliff stairs: down to the Quaggoth Den")]),
+          dict(rect=[1290, 1000, 1450, 1040], to=[12], label="The cliff stairs: down to the Quaggoth Den")],
+   # THE CHASM ON THE BATTLE PLATE (Sam's playtest, 2026-11-15: "Shove NEVER caused characters to fall into the chasm").
+   # Every pen-gate fight moved here on 2026-11-13 (PR #1340), but the chasm rule read only the pen's own balcony, so on
+   # this plate a shove off the bridge or the landing just slid the target to the nearest floor. Same rule as the pen's
+   # (story.json 11/interact/gate/balcony/chasm): a push that lands in `webs` is caught unhurt and restrained, one that
+   # lands in `drops` goes into the dark. Traced by Claude from the painting (2400x1339): webs hang under both ends of the
+   # bridge and on the far ledge's cliff; the open drop is the gap above and below the planks and the cliffs under the
+   # landing and the far ledge. Only these shapes count: a push into a crate or a wall is an ordinary push.
+   chasm=dict(
+     webs=[P((780,735),(1060,712),(1045,880),(900,945)), P((400,718),(520,700),(500,862),(410,935)),
+           P((120,828),(300,818),(262,952),(140,945))],
+     drops=[P((380,715),(1062,700),(1062,880),(1000,1339),(380,1339)),
+            P((1000,860),(1160,995),(1245,1035),(1245,1339),(1000,1339)),
+            P((0,650),(150,705),(300,722),(430,700),(380,1339),(0,1339)),
+            P((470,500),(560,420),(1220,420),(1250,638),(1100,698),(1000,703),(800,698),(650,653),(520,598))])),
 }
 NODES.update(BATTLE_PLATES)
 
