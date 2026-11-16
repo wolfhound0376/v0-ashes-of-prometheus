@@ -30,7 +30,7 @@ export const SCAVENGED_TABLE: readonly ScavengedRow[] = [
   { min: 2, max: 9, text: "nothing at all", slug: null },
   { min: 10, max: 12, text: "a single gold coin", slug: "gold-coin" },
   { min: 13, max: 15, text: "a living spider about the size of a tarantula", slug: "small-spider" },
-  { min: 16, max: 18, text: "a five-foot strand of silk rope", slug: "silk-rope" },
+  { min: 16, max: 18, text: "a five-foot strand of silk rope", slug: "silk-rope-strand" },   // its own 5-ft row (Sam, 2026-11-16); silk-rope is the 50-ft coil
   { min: 19, max: 21, text: "a flawed carnelian gemstone worth 10 gp", slug: "carnelian-gem" },
   { min: 22, max: 24, text: "a rusted iron bar, usable as a club", slug: "rusted-iron-bar" },
   { min: 25, max: 27, text: "a shard of flint, usable as a dagger", slug: "flint-shard" },

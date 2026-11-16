@@ -402,7 +402,7 @@ const SCAVENGE: { upTo: number; entry: LootEntry | null }[] = [
   { upTo: 9, entry: null },
   { upTo: 12, entry: { slug: "gold-coin", qty: 1, note: "scavenged" } },
   { upTo: 15, entry: { slug: "small-spider", qty: 1, note: "alive, about the size of a tarantula" } },
-  { upTo: 18, entry: { slug: "silk-rope", qty: 1, note: "a five-foot strand" } },
+  { upTo: 18, entry: { slug: "silk-rope-strand", qty: 1, note: "a five-foot strand" } },
   { upTo: 21, entry: { slug: "carnelian-gem", qty: 1, note: "flawed, 10 gp" } },
   { upTo: 24, entry: { slug: "rusted-iron-bar", qty: 1, note: "usable as a club" } },
   { upTo: 27, entry: { slug: "flint-shard", qty: 1, note: "usable as a dagger" } },
