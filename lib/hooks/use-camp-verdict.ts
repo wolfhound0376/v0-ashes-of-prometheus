@@ -23,10 +23,15 @@ export function useCampVerdict(): CampVerdict | null {
     const supabase = createClient()
     let alive = true
     async function load() {
-      const { data, error } = await supabase.rpc("party_location_label")
+      const [{ data, error }, sit] = await Promise.all([
+        supabase.rpc("party_location_label"),
+        // the walk plate the party stands on: a cavern or road plate is outside the outpost (lib/camp-where.ts)
+        supabase.from("party_situation").select("sub_location").limit(1).maybeSingle(),
+      ])
       if (!alive) return
       // A failed read proves nothing about where the party is; do not lock the fire over it.
-      setVerdict(campVerdict(error ? null : (data as PartyWhere | null)))
+      const plate = (sit.data as { sub_location?: string | null } | null)?.sub_location ?? null
+      setVerdict(campVerdict(error ? null : (data as PartyWhere | null), plate))
     }
     void load()
     const t = setInterval(load, POLL_MS)

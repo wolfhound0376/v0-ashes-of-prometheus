@@ -472,10 +472,12 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
  * Everyone sees it; only the party's leader (or the DM) can rest, the same hands that move the party.
  */
 function MarchGauge({ t }: { t: Travel }) {
-  const { march, party, nodes, canLead, rest } = t
+  const { march, party, nodes, canLead, rest, shortRest, shortRestLine, shortResting } = t
   const f = fatigue(march.hours_today)
   const here = party ? nodes.find((n) => n.id === party.node_id) : null
   const canRest = canLead && !!here && isRoadMarker(here) && march.hours_today > 0
+  // a short rest needs no tired legs: an hour at any road marker (Sam, 2026-11-15)
+  const canShortRest = canLead && !!here && isRoadMarker(here)
   const segs = Math.max(MARCH_HOURS_PER_DAY, Math.ceil(f.hours))
   const log = march.today_log ?? []
   const lost = log.reduce((a, e) => a + e.lost_h, 0)
@@ -523,6 +525,17 @@ function MarchGauge({ t }: { t: Travel }) {
             ))}
           </ul>
         </div>
+      )}
+      {shortRestLine && <div className="mt-2 text-[#e4d8bf]">{shortRestLine}</div>}
+      {canShortRest && (
+        <button
+          onClick={shortRest}
+          disabled={shortResting}
+          className="tk-btn mt-2 w-full whitespace-nowrap py-1.5 text-[11px] tracking-[.14em] disabled:opacity-50"
+          title="An hour here: spend Hit Dice to heal. One in six that something on the road comes by."
+        >
+          SHORT REST · 1 HOUR
+        </button>
       )}
       {canRest && (
         <button

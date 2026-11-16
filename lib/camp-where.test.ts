@@ -13,6 +13,14 @@ describe("campVerdict", () => {
     expect(campVerdict({ label: "Road Marker 14", location: "Road Marker 14", source: "travel_nodes" }).allowed).toBe(true)
   })
 
+  it("allows camp on a cavern or road plate outside the outpost (Sam, 2026-11-15)", () => {
+    const inside = { label: "Velkynvelve — The tunnels", location: "Velkynvelve", source: "subnodal" }
+    expect(campVerdict(inside, "biome-tunnels").allowed).toBe(true)
+    expect(campVerdict(inside, "road-webs").allowed).toBe(true)
+    expect(campVerdict(inside, "node-11-slave-pen").allowed).toBe(false)
+    expect(campVerdict(inside, null).allowed).toBe(false)
+  })
+
   it("does not lock the fire when the position is unknown", () => {
     expect(campVerdict(null).allowed).toBe(true)
     expect(campVerdict({ label: null, source: "none" }).allowed).toBe(true)

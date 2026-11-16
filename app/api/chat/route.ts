@@ -1403,7 +1403,9 @@ ${companions.length ? `RUN BY THE DM AS NPCs: ${companions.map((c) => c.name).jo
   if (timeAdmin) {
     try {
       const { data: where } = await timeAdmin.rpc("party_location_label")
-      campVerdictNow = campVerdict(where as PartyWhere | null)
+      // a cavern or road plate is out of the outpost: the fire is allowed there (lib/camp-where.ts, Sam 2026-11-15)
+      const { data: sit } = await timeAdmin.from("party_situation").select("sub_location").limit(1).maybeSingle()
+      campVerdictNow = campVerdict(where as PartyWhere | null, (sit as { sub_location?: string | null } | null)?.sub_location ?? null)
       const note = campPromptNote(campVerdictNow)
       if (note) campBlock = campBlock ? `${campBlock}\n\n${note}` : note
     } catch (e) {

@@ -9,7 +9,18 @@
 // party_location_label() reports source "subnodal", meaning it holds a
 // subnodal position on the node map of the place it is standing in.
 //
+// OUT OF THE OUTPOST (Sam, 2026-11-15: "we should be able to take both a short rest and/or a long rest once we
+// leave the drow encampment"). The cavern plates round Velkynvelve (biome-tunnels, biome-wastes, the shore, the
+// grove...) and the road fight plates are walked on the painted map, so the party still holds a subnodal position
+// at Velkynvelve while it stands on them; but they are the Underdark, not the outpost. When the walk reports one
+// of those plates (party_situation.sub_location), the fire is allowed there too.
+//
 // Pure, so the dashboard button and the /camp page reach the same answer.
+
+/** A walk plate outside any settlement: a cavern plate (biome-*) or a road plate (road-*). */
+export function isWildPlate(plate: string | null | undefined): boolean {
+  return typeof plate === "string" && /^(biome-|road-)/.test(plate)
+}
 
 /** What party_location_label() returns (the fields this needs). */
 export interface PartyWhere {
@@ -28,7 +39,11 @@ export interface CampVerdict {
   where: string | null
 }
 
-export function campVerdict(where: PartyWhere | null | undefined): CampVerdict {
+export function campVerdict(where: PartyWhere | null | undefined, plate?: string | null): CampVerdict {
+  if (isWildPlate(plate)) {
+    const name = plate!.replace(/^(biome|road)-/, "").replace(/-/g, " ")
+    return { allowed: true, where: `the ${name}`, reason: `Out of the outpost: make camp in the ${name}.` }
+  }
   if (where?.source === "subnodal") {
     const place = where.label || where.location || "this place"
     return {

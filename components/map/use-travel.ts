@@ -604,6 +604,44 @@ export function useTravel() {
     void chooseOption(here.node_key, LONG_REST_KEY)
   }
 
+  /**
+   * A SHORT REST ON THE ROAD (Sam, 2026-11-15: "we should be able to take both a short rest and/or a long rest once we
+   * leave the drow encampment"). An hour at this marker, run by the same route the painted map uses (/api/walk-rest:
+   * Hit Dice with CON, Song of Rest, pact slots, the clock moves an hour, Malachar is told). The hour has a price, as
+   * on the walk (Sam, 2026-10-24: short rests outside camp "risk an encounter with locals"): one in six that something
+   * on the road comes by — Claude's number, the same as the cavern plates, not the book's. A broken rest heals nothing.
+   */
+  const [shortRestLine, setShortRestLine] = useState<string | null>(null)
+  const [shortResting, setShortResting] = useState(false)
+  async function shortRest() {
+    const here = party ? nodes.find((n) => n.id === party.node_id) : null
+    if (!here || shortResting) return
+    setShortResting(true)
+    setShortRestLine("The party rests an hour…")
+    try {
+      const res = await fetch("/api/walk-rest", {
+        method: "POST",
+        headers: travelHeaders(),
+        body: JSON.stringify({
+          plate: here.node_key, area: here.name ?? here.node_key, spend: "max",
+          risk: { chance: 1 / 6, label: "Something on the road finds you." },
+          claimToken: dmKey ? undefined : me.claimToken,
+        }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || !j.ok) setShortRestLine(res.status === 403 ? "Only a seated player or the DM can rest the party." : j.error || "The rest would not take.")
+      else if (j.interrupted) setShortRestLine(`${j.label || "Something finds you."} The rest is broken after half an hour; Malachar has been told.`)
+      else {
+        const lines = ((j.characters ?? []) as { name: string; healed: number; hp: number; hpMax: number }[])
+          .map((c) => `${c.name.split(" ")[0]} ${c.healed > 0 ? `+${c.healed}` : ""} (${c.hp}/${c.hpMax})`)
+        setShortRestLine(`Short rest: an hour passes.${lines.length ? " " + lines.join(" · ") : ""}`)
+      }
+    } catch {
+      setShortRestLine("The rest would not take.")
+    }
+    setShortResting(false)
+  }
+
   /** The encounter box: the leader's answer (talk, slip past, ambush, fight). The server rolls and keeps it. */
   const [stanceBusy, setStanceBusy] = useState(false)
   async function takeStance(key: string) {
@@ -647,7 +685,7 @@ export function useTravel() {
     me, lead, canLead, hoverNode, setHoverNode,
     beat, options, setOptions, chosen, setChosen, entrance, setEntrance, entering,
     arrival, roadChoice, setRoadChoice,
-    travelHeaders, travelBody, boatAction, dmAction, chooseOption, enterPlace, leadAction, setOut, rest,
+    travelHeaders, travelBody, boatAction, dmAction, chooseOption, enterPlace, leadAction, setOut, rest, shortRest, shortRestLine, shortResting,
     routeMiles, routeBetween, byId,
   }
 }
