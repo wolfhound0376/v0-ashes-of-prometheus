@@ -294,6 +294,15 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
    pixel heroes walk across it over a scrolling cave floor; the place they are going is set in the gilded letters. */
 .voyage{position:absolute;inset:0;z-index:22;display:grid;place-items:center;background:radial-gradient(ellipse at 50% 45%,rgba(14,9,22,.86),rgba(3,2,6,.97));backdrop-filter:blur(4px);color:#ece2c8;animation:voyIn .45s ease-out}
 .voyage[hidden]{display:none}
+/* THE PARTY DECIDES (Sam, 2026-11-15): the approved choice card, shared. Under the name, "The party decides"; beside each
+   row, the names of whoever leans that way (the decider's name in gold); your own lean is marked. */
+#obj.council .tcard{box-shadow:0 0 0 2px rgba(214,176,98,.55),0 0 46px rgba(150,104,255,.28),0 24px 60px rgba(0,0,0,.7)}
+#obj.council #objSub{font-family:var(--face-mono);font-size:10px;letter-spacing:.32em;text-transform:uppercase;color:#d9b56a}
+#obj.council .btn{position:relative}
+#obj.council .btn.voted{outline:2px solid rgba(165,133,255,.75);outline-offset:2px}
+.pd-votes{display:inline-flex;gap:4px;margin-left:auto;padding-left:10px;flex-wrap:wrap;justify-content:flex-end}
+.pd-chip{font-family:var(--face-mono);font-size:10px;letter-spacing:.04em;padding:2px 7px;border-radius:9px;background:rgba(165,133,255,.25);border:1px solid rgba(165,133,255,.6);color:#efe8ff;white-space:nowrap}
+.pd-chip.dec{background:rgba(214,176,98,.3);border-color:#d9b56a;color:#fff6dc}
 body.gathering footer.party,body.gathering #cbtMenu{pointer-events:none;opacity:.45;transition:opacity .3s}   /* nothing to press while the party gathers */
 .voyage.leaving{animation:voyOut .5s ease-in forwards}
 @keyframes voyIn{from{opacity:0}to{opacity:1}}
@@ -6731,6 +6740,7 @@ function breakoutCard(w, guards, seen, by){
   if (!seen && !state.gateBroken) add("Leave it shut, but unlocked", () => shut());
   if (seen) add("Surrender", () => surrenderBegins(w));
   showObjCard(); cardClose(close); box.querySelector("button")?.focus();
+  partyCard({kind: "breakout", who: h && h.id});                         // THE PARTY DECIDES the breakout
 }
 // GOING THROUGH. Nobody walks the doorway into the fight (that was the pan Sam did not want, and the door a hero could
 // not get through mid-fight): the ones who go walk up to it, the drow cry out, the screen goes dark, and they are set
@@ -10408,6 +10418,7 @@ function openPlanCard(n){
   open.forEach((k, i) => choiceRow(box, PLANS[k].label, () => { close(); planChosen(n, k); }, i ? "" : "primary"));
   choiceRow(box, "Not yet", close);
   showObjCard();
+  partyCard({kind: "plan", face: n.id});                                 // THE PARTY DECIDES the plan (Eldeth asks the party, not one hero)
 }
 function planChosen(n, k){
   const pl = PLANS[k]; if (!pl) return;
@@ -15817,6 +15828,7 @@ function castAsks(n, ask){
   // Sam, 2026-10-30: being interrupted takes you to the map, where they are actually standing. A word meant for one
   // hero pulls that hero's screen (and the DM's); one aimed at nobody in particular pulls the table.
   pullToMap(`${SHORT[n.id] || SPR[n.id].json.name} wants a word`, ask.who ? (party.find(p => fname(p).toLowerCase() === String(ask.who).toLowerCase()) || {}).id : null);
+  npcAskCouncil(n, ask);                                                 // THE PARTY DECIDES whether to hear them out
 }
 // A cast member walks out of the picture by the nearest edge of the plate (a dead one falls where they
 // stand), and comes back in the same way to their post. Backdrop figures (the guards on the balcony)
@@ -15905,7 +15917,7 @@ function followWatch(w){
   }
   if (!w || watchPlayed === w.since) return;
   const first = !freshStory(w.since); watchPlayed = w.since;
-  if (w.state === "changing" && !first) changeOfWatch(posts.filter(n => /^drow-guard/.test(n.id) && !n.offStage));
+  if (w.state === "changing" && !first){ changeOfWatch(posts.filter(n => /^drow-guard/.test(n.id) && !n.offStage)); setTimeout(watchCouncil, 3500); }   // THE PARTY DECIDES at the change of the watch
   else if (w.state === "posted"){
     let back = 0; for (const n of posts) if (n.offStage && !n.stroll && !offDuty(n)){ castReturns(n, true); back++; }
     if (back && !first) narrate(null, "The guards are back at their posts.");
@@ -18953,6 +18965,7 @@ addEventListener("keydown", e => {
   if (mode === "combat" && FIGHT.mirror && oneFightKey(e)) return;                                   // ONE FIGHT: your turn, played there
   if (mode === "combat" && FIGHT.auth && oneFightWaitsFor(activeActor()) && (e.code === "Enter" || MOVE_KEYS.has(e.code))) return;   // not this screen's hero to move
   if (e.key === "Escape" && dmPlacing){ dmPlacing = null; stage.classList.remove("placing"); hint(""); return; }
+  if (e.key === "Escape" && PDEC.shownId) return;                    // THE PARTY DECIDES: no stepping back from the party's question
   if (e.key === "Escape" && topPanelOpen()){ closeTopPanels(); return; }
   if (e.key === "Escape" && !$("rlog").hidden){ toggleReviewLog(false); return; }
   if (e.code === "KeyC" && mode === "explore" && !e.ctrlKey && !e.metaKey && !e.altKey){ e.preventDefault(); toggleHeroCard(); return; }
@@ -19094,7 +19107,7 @@ const PT_HOST = {ok: false, asked: null};
 function ptAskHost(){
   const me = ptClaim(); if (!APP || !me) return Promise.resolve(false);
   return PT_HOST.asked || (PT_HOST.asked = fetch("/api/table?characterId=" + encodeURIComponent(me.id), {cache: "no-store", headers: {"x-claim-token": me.token}})
-    .then(r => r.json()).then(j => (PT_HOST.ok = !!(j && j.isHost))).catch(() => { PT_HOST.asked = null; return false; }));
+    .then(r => r.json()).then(j => { PT_HOST.hostId = (j && j.host && j.host.id) || null; return (PT_HOST.ok = !!(j && j.isHost)); }).catch(() => { PT_HOST.asked = null; return false; }));   // (hostId: THE PARTY DECIDES asks the host)
 }
 if (APP) setTimeout(ptAskHost, 1500);
 function ptOpen(){
@@ -22995,6 +23008,145 @@ function owPaintDots(){
   box.innerHTML = seats.map(([k, s]) => { const live = AopOneWorld.isOnline(s, t), st = live ? s.status : "away"; lagging(k, live && !(s.status === "in-step" || s.status === "fight-unshared"), t); return `<i data-s="${esc(st)}" title="${esc(seatNameOf(s))}: ${esc(live ? OW_LABEL[st] || st : "away")}"></i>`; }).join("");
 }
 setInterval(owPaintDots, 1000);
+
+// ---------- THE PARTY DECIDES (Sam, 2026-11-15) ----------
+// "Whenever shift change occurs, an important encounter with a speaking NPC (unless cinematic triggers first), or
+// important decision, a well designed dialogue box pulls everyone out of whatever they are doing and forces the party to
+// answer. Host or leader of the story decides what option is done but other players may vote the same way BG3 does it.
+// Answering this immediately triggers the consequence."
+// How it works. A card that matters is built as any choice card is, on the screen where it came up (the OPENER), and
+// then handed to the table (partyCard): its title, words, face and the labels of its rows go into the shared world
+// (state.pdec). Every screen at the table drops what it is doing and shows the same card, in the approved dialogue style,
+// with "The party decides" under the name. Anyone may press a row: that is their VOTE, shown beside the row as their
+// name (state["pdv:<screen>"], one key per screen, so two votes never overwrite each other). The DECIDER's press is the
+// answer (state.pdpick): the DM's screen when it is at the table, else the host's, else the hero the moment is about,
+// else the opener. The opener holds the rows' own actions, so the moment the answer lands it presses that row there:
+// whatever the row already did (a check, a fight, a walk) happens, once. Alone at the table, the card is just the card.
+const PDEC = {local: null, shownId: null, sig: "", openAt: 0};
+const pdecVoteKey = k => "pdv:" + k;
+function seatOn(k){ const s = (OW.seats || {})[k]; return k === OW.key || !!(s && window.AopOneWorld && AopOneWorld.isOnline(s, owNow()) && s.status !== "away"); }
+function othersAtTable(){ if (!OW.on || !window.AopOneWorld) return []; return Object.keys(OW.seats || {}).filter(k => k !== OW.key && seatOn(k)); }
+function seatNameKey(k){ if (k === "dm") return "the DM"; const s = (OW.seats || {})[k]; const nm = s ? seatNameOf(s) : k === OW.key ? (mySlug ? (SHORT[mySlug] || mySlug) : "you") : "someone"; return /^the DM$/.test(nm) ? nm : String(nm).split(" ")[0]; }   // first names on the card ("Samson", not "Samson Stillwater")
+/** Who answers for the party: the DM, else the host, else the hero the moment is about, else the screen that raised it. */
+function pdecDecider(whoSlug){
+  if (seatOn("dm")) return "dm";
+  if (PT_HOST.hostId && seatOn(PT_HOST.hostId)) return PT_HOST.hostId;
+  const cid = whoSlug ? characterIdOf(whoSlug) : null; if (cid && seatOn(cid)) return cid;
+  return OW.key;
+}
+/** The table lead raises a moment every screen sees at once (the watch, an NPC with no one hero named): one screen only. */
+function iLeadTheTable(){ if (!OW.on || !window.AopOneWorld) return true; return AopOneWorld.driverOf(null, OW.seats || {}, owNow()) === OW.key || !othersAtTable().length; }
+/** A film is playing on this page right now (the cinematic stage is the page around the map). */
+function filmPlayingNow(){ try { const d = window.parent !== window ? window.parent.document : document; return [...d.querySelectorAll("video")].some(v => !v.paused && !v.ended && v.offsetParent !== null && v.currentTime > 0); } catch (e) { return false; } }
+/** Hand the choice card that is up on this screen to the whole table. False when there is nobody to share it with. */
+function partyCard(opts = {}){
+  if (!OW.on || !othersAtTable().length || mode === "combat" || $("obj").hidden) return false;
+  if (state.pdec && state.pdec.id) return false;                                       // one decision at a time
+  const btns = [...$("objBtns").querySelectorAll("button.btn")]; if (btns.length < (opts.announce ? 1 : 2)) return false;   // a moment everyone must see (the watch) may have one answer
+  const id = "pd" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  const src = !$("objFace").hidden && $("objFace").getAttribute("src");
+  const icon = src && (src.match(/icons\/([\w-]+)\.png/) || [])[1];
+  const d = {id, title: $("objWho").textContent, body: $("objText").textContent, labels: btns.map(b => ((b.querySelector(".lbl") || b).textContent || "").trim()),
+    prim: btns.map(b => /\bprimary\b/.test(b.className)), face: icon ? {icon} : {actor: opts.face || (leader && leader.id) || null},
+    opener: OW.key, decider: pdecDecider(opts.who), who: opts.who || null, kind: opts.kind || "", at: Date.now()};
+  PDEC.local = {id, btns, ran: false};
+  state.pdec = d; state[pdecVoteKey(OW.key)] = null;
+  pullToMap(d.title);
+  reviewLog("sync", `The party decides: ${d.title} (${seatNameKey(d.decider)} has the call; raised on ${seatNameKey(OW.key)}'s screen).`);
+  PDEC.shownId = null; councilRender();
+  return true;
+}
+function councilChoose(i){
+  const d = state.pdec; if (!d) return;
+  state[pdecVoteKey(OW.key)] = {d: d.id, i};
+  if (OW.key === d.decider && !(state.pdpick && state.pdpick.d === d.id)){ state.pdpick = {d: d.id, i, by: OW.key}; reviewLog("sync", `${seatNameKey(OW.key)} answers for the party: ${d.labels[i]}.`); }
+  else reviewLog("sync", `${seatNameKey(OW.key)} leans: ${d.labels[i]}.`);
+  try { uiSfx("press"); } catch (e) {}
+  PDEC.sig = ""; councilRender();
+}
+function councilRender(){
+  const d = state.pdec; if (!d || !d.id) return;
+  const votes = {};
+  for (const [k, v] of Object.entries(state)) if (k.startsWith("pdv:") && v && v.d === d.id) (votes[v.i] ||= []).push({nm: seatNameKey(k.slice(4)), dec: k.slice(4) === d.decider});
+  const mine = OW.key === d.decider, myVote = (state[pdecVoteKey(OW.key)] || {}).d === d.id ? state[pdecVoteKey(OW.key)].i : null;
+  const sig = JSON.stringify([d.id, votes, mine, myVote, d.decider]);
+  if (PDEC.sig === sig && PDEC.shownId === d.id && !$("obj").hidden) return; PDEC.sig = sig;
+  if (PDEC.shownId !== d.id){
+    // PULLED OUT OF WHATEVER THEY ARE DOING: every other panel closes, the hero stops, the card takes the screen
+    PDEC.shownId = d.id; PDEC.openAt = Date.now();
+    try { if (bagOpen()) toggleBag(false); } catch (e) {} try { closeTopPanels(); } catch (e) {} try { toggleReviewLog(false); } catch (e) {}
+    $("dialog").hidden = true; $("talk").hidden = true; keys.clear(); if (leader) leader.path = [];
+    try { uiSfx("open"); } catch (e) {}
+  }
+  $("objWho").textContent = d.title; $("objText").textContent = d.body;
+  const sub = $("objSub"); sub.hidden = false; sub.textContent = "The party decides";
+  if (d.face && d.face.icon) cardFace(d.face.icon);
+  else { cardFace(null); const c = $("objPic"), g = c.getContext("2d"); g.clearRect(0, 0, 128, 128); const a = d.face && d.face.actor && (party.find(p => p.id === d.face.actor) || npcs.find(n => n.id === d.face.actor)); if (a) try { g.drawImage(faceCanvas(a, 128), 0, 0); } catch (e) {} }
+  const box = $("objBtns"); box.innerHTML = ""; box.classList.remove("loot");
+  d.labels.forEach((label, i) => {
+    const b = choiceRow(box, label, () => councilChoose(i), (d.prim[i] ? "primary" : "") + (myVote === i ? " voted" : ""));
+    const vs = votes[i] || []; if (vs.length) b.insertAdjacentHTML("beforeend", `<span class="pd-votes">${vs.map(v => `<span class="pd-chip${v.dec ? " dec" : ""}">${esc(v.nm)}</span>`).join("")}</span>`);
+  });
+  $("objX").style.display = "none";                                   // no stepping back: the party must answer
+  const say = $("obj").querySelector(".fsay"); if (say) say.textContent = mine ? "Your answer decides for the party" : `${seatNameKey(d.decider)} decides · your pick is a vote`;
+  $("obj").classList.add("council"); $("obj").hidden = false; mode = "dialog";
+}
+function councilClose(){
+  if (!PDEC.shownId) return;
+  PDEC.shownId = null; PDEC.sig = "";
+  $("obj").classList.remove("council"); $("objX").style.display = ""; $("objSub").hidden = true;
+  const say = $("obj").querySelector(".fsay"); if (say) say.textContent = "Choose your response";
+  $("obj").hidden = true; if (mode === "dialog") mode = "explore"; exploreKey = "";
+}
+function councilTick(){
+  if (!OW.on) return;
+  const d = state.pdec, pk = state.pdpick;
+  if (!d || !d.id){ if (PDEC.local && PDEC.local.ran) PDEC.local = null; councilClose(); return; }
+  if (pk && pk.d === d.id){
+    // THE ANSWER: the opener presses that row, once; everyone else just puts the card away
+    if (PDEC.local && PDEC.local.id === d.id && !PDEC.local.ran){
+      PDEC.local.ran = true; councilClose(); state.pdec = null;
+      reviewLog("sync", `The party's answer (${seatNameKey(pk.by)}): ${d.labels[pk.i]}.`);
+      const b = PDEC.local.btns[pk.i]; if (b) try { b.click(); } catch (e) { console.warn("[party decides]", e); }
+    } else councilClose();
+    return;
+  }
+  // the decider left the table: the opener hands the call on; the opener left: the decider puts it away
+  if (PDEC.local && PDEC.local.id === d.id && !seatOn(d.decider)){ const nd = pdecDecider(d.who); if (nd !== d.decider) state.pdec = {...d, decider: nd}; }
+  else if (OW.key === d.decider && !seatOn(d.opener) && Date.now() - (d.at || 0) > 15000){ reviewLog("sync", `The screen that raised "${d.title}" left the table: the question is dropped.`); state.pdec = null; councilClose(); return; }
+  if (mode !== "combat") councilRender();
+}
+setInterval(councilTick, 250);
+
+// THE WATCH CHANGES: the table lead raises it (one screen), the party answers. Lie low until the next watch (the
+// "Wait for the next watch" Sam picked, 2026-11-12, agreed for everyone by this answer) or carry on.
+function watchCouncil(){
+  if (cur !== PEN || mode !== "explore" || laborLive() || !leader || !iLeadTheTable()) return;
+  const left = typeof caravanLeft === "function" ? caravanLeft() : null;
+  const {add, close} = heroCard("The watch changes", `Fresh drow take the bridge and the landing.${jorlanDuty ? " Jorlan is on the gate." : ""}${left != null ? ` The caravan is ${watchesWord(left)} out.` : ""} What does the party do?`);
+  if (waitOffered()) add("Lie low and wait out this watch", () => { close(); waitPropose(); const v = state.waitVote; if (v) for (const p of waitVoters()) state[waitYesKey(p.id)] = v.id; }, "primary");
+  add("Carry on", () => { close(); }, waitOffered() ? "" : "primary");
+  if (!partyCard({kind: "watch", announce: true})) close();                           // alone at the table the watch needs no vote: the log says it
+}
+// SOMEONE WANTS A WORD: the screen of the hero they want (else the table lead) raises it, unless a film is playing (the
+// cinematic is the encounter, Sam: "unless cinematic triggers first"). Hear them out walks that screen's hero over.
+function npcAskCouncil(n, ask){
+  if (!OW.on || mode !== "explore" || !othersAtTable().length) return;
+  const whoHero = ask && ask.who ? party.find(p => fname(p).toLowerCase() === String(ask.who).toLowerCase()) : null;
+  const mineToRaise = whoHero ? (characterIdOf(whoHero.id) === OW.key || (!seatOn(characterIdOf(whoHero.id)) && iLeadTheTable())) : iLeadTheTable();
+  if (!mineToRaise) return;
+  setTimeout(() => {
+    if (filmPlayingNow() || mode !== "explore" || state.pdec || n.offStage || n.down) return;
+    const nm = SHORT[n.id] || SPR[n.id].json.name;
+    $("objWho").textContent = `${nm} wants a word`; $("objText").textContent = `${nm} is waiting for ${whoHero ? fname(whoHero) : "the party"}.`;
+    const c = $("objPic"), g = c.getContext("2d"); g.clearRect(0, 0, 128, 128); try { g.drawImage(faceCanvas(n, 128), 0, 0); } catch (e) {}
+    const box = $("objBtns"); box.innerHTML = ""; box.classList.remove("loot"); showObjCard(); mode = "dialog";
+    const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
+    choiceRow(box, "Hear them out", () => { close(); if (whoHero && canControl(whoHero) && leader !== whoHero) setLeader(whoHero); approach(n); }, "primary");
+    choiceRow(box, "Not now", () => { close(); });
+    if (!partyCard({kind: "npc", who: whoHero ? whoHero.id : null, face: n.id})) close();
+  }, 2500);
+}
 
 // ---------- boot ----------
 (async () => {
