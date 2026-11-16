@@ -22,6 +22,26 @@
       "frames": 25,
       "fps": 12,
       "loop": false
+    },
+    "walk": {
+      "sheet": "walk.png",
+      "frames": 8,
+      "fps": 9,
+      "loop": true
+    },
+    "attack": {
+      "sheet": "attack.png",
+      "frames": 8,
+      "fps": 12,
+      "loop": false,
+      "hit": 0.6
+    },
+    "shoot-bow": {
+      "sheet": "shoot-bow.png",
+      "frames": 8,
+      "fps": 12,
+      "loop": false,
+      "hit": 0.8
     }
   },
   "arrive": {
