@@ -122,6 +122,12 @@ const BOOK_ACTIONS = {
   // The bet is read as Wisdom (Insight): which fist holds the pebble. The manacles: Dexterity (Sleight of Hand), the
   // wire being no thieves' tools; OotA's own manacle escape is DC 20 Dexterity, and a wire in the lock is worth 5.
   "jimjar:bet": { title: "Bet Jimjar for it", label: "Betting Jimjar which fist holds the pebble", check: INSIGHT, dc: 13, source: "house (Sam's mechanic, DC Claude's)", mapNarrates: true },
+  // STRIKING OFF THE IRONS (Sam's playtest, 2026-11-15: "Samson, even with manacles off, never was able to cast other
+  // spells". Malachar narrated the irons falling; the game's manacle flag never moved, so somatic spells stayed dark).
+  // BOOK RULES, OotA ch.1 Escape: pick manacles with thieves' tools DC 15 Dexterity; break them DC 20 Strength; a failure
+  // can't be retried until after a long rest. Each frees only the hero who rolls. A key that fits needs no roll.
+  "manacles:pick": { title: "Pick your manacles", label: "Picking the lock of their own manacles with thieves' tools", check: THIEVES_TOOLS, dc: 15, source: "OotA ch.1 Escape: pick manacles, thieves' tools DC 15", mapNarrates: true },
+  "manacles:break": { title: "Break your manacles", label: "Wrenching their own manacles apart", check: STRENGTH, dc: 20, source: "OotA ch.1 Escape: break manacles, DC 20 Strength", mapNarrates: true },
   "manacles:wire": { title: "Work the wire", label: "Working a bent wire into their own manacles", check: SLEIGHT, dc: 15, source: "house (Sam's mechanic; OotA manacles DC 20, the wire worth 5)", mapNarrates: true },
   // THE DRUID'S WORD (Sam, 2026-11-12: "A druid can talk to one of the rats or a spider if they are successful to try to
   // get a key or small weapon"). HOMEBREW. Wisdom (Animal Handling); the DC is a house number [CLAUDE]. The map says
