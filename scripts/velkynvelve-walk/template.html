@@ -12754,7 +12754,18 @@ function approachThen(att, tgt, ft, then){
   if (onPaintedFloor(att) && onPaintedFloor(tgt)){ let lo = 0, hi = 1; for (let i = 0; i < 12; i++){ const m = (lo + hi) / 2, q = {x: att.x + (tgt.x - att.x) * m, y: att.y + (tgt.y - att.y) * m};
       if (pxBetween(q, tgt, tgt) > reach * .92) lo = m; else hi = m; } kSpot = lo; }
   const reachSpot = nearestWalkable(att.x + (tgt.x - att.x) * kSpot, att.y + (tgt.y - att.y) * kSpot);
-  const walk = cutPath(att, findPath(att, reachSpot), budget);
+  const route = findPath(att, reachSpot), walk = cutPath(att, route, budget);
+  // A HERO IS TOLD BEFORE WALKING, NOT AFTER (Sam's playtest, 2026-11-15: "During the fight, scott got stuck and couldn't
+  // move"). The fight's own ticks show it: Scott pressed Attack (Unarmed Strike, 5 ft) on a drow far across the plate, the
+  // game walked him his whole 30 ft toward her, said "Out of reach." and gave the action back with no movement left, so
+  // he stood mid-plate for the rest of the turn. Now a hero whose movement cannot get them into reach does not take a
+  // step: the attack is refused with the distance, and the action and every foot of movement stay theirs. (A foe or an
+  // ally still closes as far as it can, as before; a leaper may still jump the gap.)
+  if (att.kind === "pc" && route.length && !walk.reached && !(cbt && isLeaper(att) && !att.c.conds.has("disengaged"))){
+    const left = Math.max(0, Math.floor(att.c.move || 0)), far = Math.max(left + 5, cutPath(att, route, 1e9).usedFt);   // (rounded to 5 ft, the walk can price at what is left yet still fall short)
+    toast(`Out of reach: ${far} ft to get there, ${left} ft of movement left. Move closer first, or Dash.`, 3600);
+    combatBusy = false; cbt.phase = "idle"; att.c.action = true; settleCam(); openMenu(att); return;
+  }
   const goal = walk.pts.length ? walk.pts[walk.pts.length - 1] : {x: att.x, y: att.y};
   // OPPORTUNITY ATTACKS, THE OTHER WAY (Sam, 2026-10-14: "are there opportunity attacks?"). A foe that moves out of
   // a hero's reach gives that hero a swing with their reaction (SRD 5.1: "You can make an opportunity attack when a
