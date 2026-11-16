@@ -1708,7 +1708,7 @@ function spawnCompanion(id, near, placed, face){
   const def = PEN_NPCS.find(d => d.id === id) || {};
   const p = nearestWalkable(near.x, near.y, placed); if (placed) placed.push(p);
   // no "a word, if you've a moment" on every arrival: that opener belongs to the pen; out here they are talked to like anyone (Talk)
-  const a = mkActor(id, p.x, p.y, "npc", {face: face || 0, talk: false, barks: def.barks || [], home: {x: p.x, y: p.y}, company: true});
+  const a = mkActor(id, p.x, p.y, "npc", {face: face || 0, talk: false, barks: def.barks || [], home: {x: p.x, y: p.y}, company: true, ...(id === PET_SPIDER ? {big: PET_BIG, owner: state.petOwner} : {})});
   a.t0 = now - Math.random() * 1000; a.actUntil = now + 2000 + Math.random() * 7000;
   return a;
 }
@@ -1744,6 +1744,7 @@ function partyLeaves(slug){
   narrate(a, `${SHORT[slug] || SPR[slug].json.name} goes their own way.`);
 }
 const SHORT = {jorlan: "Jorlan", "drow-guard-male": "Drow guard", "drow-guard-female": "Drow guard", freia: "Fifi", derendil: "Derendil", eldeth: "Eldeth", sarith: "Sarith", ront: "Ront", buppido: "Buppido", shuushar: "Shuushar", "giant-spider": "Giant spider", "giant-wolf-spider": "Wolf spider", quaggoth: "Quaggoth"};
+const PET_SPIDER = "pet-spider", PET_BIG = .14;   // PET_BIG is the giant-spider sheet drawn at tarantula size (Claude's number)
 const FOE_BARK = {quaggoth: ["Hrrraagh!", "Grrrhh…"], "giant-spider": ["(chittering)", "(hiss)"], "giant-wolf-spider": ["(chittering)", "(a dry rasp)"], "ghost-male": ["(a rattle of wet chain)", "(a sound like water over bone)"]};   // sounds, not dialogue
 const BASE = 1.15, SPACING = 58, SPEED = 210;
 
@@ -3759,6 +3760,7 @@ async function enterNode(n, opts = {}){
   // a work detail leaves the pen as prisoners, not escapees: labor_out / labor_back (lib/situation.ts)
   if (!opts.view) reportSituation({sub_location: node.slug, sub_label: node.name, party_present: partyPresent(), event: from === PEN && n !== PEN ? (laborLive() ? "labor_out" : "step_outside") : n === PEN && from !== PEN && laborLive() ? "labor_back" : undefined});
   if (!opts.view && !opts.battle) setTimeout(() => directorOnEnter(n), 2200);   // THE PLATE DIRECTOR: a cavern plate's first visit this run
+  if (companyNow().includes(PET_SPIDER)) petSprite();   // THE SPIDER IN YOUR POCKET: its sheet is the giant spider's, drawn small
   const compAll = companyNow().filter(id => SPR[id]);
   // the company on THIS plate (SPLIT PARTY): a prisoner whose place is recorded elsewhere stays there; one never split walks with the party
   const compAt = state.companyAt || {};
@@ -9909,6 +9911,114 @@ function potShot(f){
 }
 // Who of the four stands with the party when steel comes out: on this plate, not turned hostile, not part of the backdrop.
 const alliesHere = () => npcs.filter(n => ALLY_SHEETS[n.id] && !n.hostile && !n.backdrop && !n.offStage && !n.down && actors.includes(n));
+// ---------- THE SPIDER IN YOUR POCKET ----------
+// Sam, 2026-11-15 ("Go"): "Spider can be dropped and is a 1/1 creature that can attacks, shoot webs, and if you can speak
+// to it (animal speech) then you can ask it to help you get a key or something."
+//   WHAT IT IS  OotA Scavenged Possessions 13-15: "a living spider the size of a tarantula" (catalogue: Small spider). Its
+//               block is the SRD 5.1 Spider: Tiny beast, AC 12, 1 hp, speed 20 ft (climb 20), Stealth +4, passive 10,
+//               Bite +4, 1 piercing and DC 9 Con or 1d4 poison. One hit point, one damage: Sam's "1/1".
+//   THE WEB     [HOUSE, Sam's ask] the SRD Spider has no Web action. Played as the giant spider's Web at its size:
+//               +4 to hit, 15 ft, the target restrained until a DC 10 Strength check or a cut (the same Break free and
+//               Cut free as any web), recharge 5-6 (ready the first time).
+//   SET DOWN    From the bag ("Set it down", or "Let it loose" mid-fight, which is the action and puts it in the order
+//               right after you). It then travels with the party as company and fights beside them like any ally.
+//   ASK IT      Only someone who can speak to it: Speak with Animals (on a sheet), or a forest gnome's Speak with Small
+//               Beasts. Nobody has it, the option shows dark with the reason. It fetches one small thing you know is on a
+//               drow near you: its Stealth +4 against their passive Perception [HOUSE: the pickpocket's rule, rolled for
+//               the spider]. Caught, the drow crushes it. Nothing it brings is invented: it is the real pocket row.
+// (PET_SPIDER and PET_BIG are declared up by SHORT: enterNode reads them before this point runs)
+ALLY_SHEETS[PET_SPIDER] = {name: "Spider", style: "melee", cls: "Spider (Tiny beast)", hp: 1, ac: 12, init: 2, speed: 20, strScore: 2, stealth: 4, passive: 10,
+  saves: {str: -4, dex: 2, con: -1, int: -5, wis: 0, cha: -4},
+  attacks: [{name: "Bite", hit: 4, dmg: "1", type: "piercing", reach: 5, rider: {save: "con", dc: 9, dmg: "1d4", type: "poison"}}], kit: {},
+  web: {name: "Web", hit: 4, range: 15, dc: 10, recharge: 5}};
+SHORT[PET_SPIDER] = "Spider";
+const isPetSpider = it => /^(small|living) spider$|tarantula/i.test(String(it && it.name || "").trim());
+function petSprite(){ if (!SPR[PET_SPIDER] && SPR["giant-spider"]) SPR[PET_SPIDER] = {...SPR["giant-spider"], json: {...SPR["giant-spider"].json, name: "Spider"}}; return !!SPR[PET_SPIDER]; }
+async function petReady(){ if (!SPR["giant-spider"]) { try { await loadSpriteManifest("giant-spider"); } catch (e) {} } if (CREATURE_SFX["giant-spider"] && !CREATURE_SFX[PET_SPIDER]) CREATURE_SFX[PET_SPIDER] = CREATURE_SFX["giant-spider"]; return petSprite(); }
+const petHere = () => npcs.find(n => n.id === PET_SPIDER && !n.down && !n.body && !n.offStage && actors.includes(n));
+function canSpeakAnimals(a){
+  const sh = (a && SHEETS[a.id]) || {}, m = sh.magicAll || sh.magic || {}, race = String(((typeof PCS !== "undefined" && PCS[a.id]) || {}).race || sh.race || "");
+  return [...(m.cantrips || []), ...(m.prepared || []), ...(m.known || [])].some(nm => /^speak with animals/i.test(nm)) || /forest gnome/i.test(race);
+}
+async function releaseSpider(a, it){
+  const fight = inFightNow(); if (!bagCan(a)) return;
+  if (fight && !a.c.action){ toast("Letting it loose takes your action."); return; }
+  if (petHere()){ toast("A spider is already loose with the party.", 3200); return; }
+  if (!(await petReady())){ toast("The spider's art did not load. Try again in a moment.", 3200); return; }
+  spendItem(a, it, "release");
+  const p = nearestWalkable(a.x + 46 * node.scale, a.y + 24 * node.scale, actors.map(q => ({x: q.x, y: q.y})));
+  const sp = mkActor(PET_SPIDER, p.x, p.y, "npc", {face: a.face | 0, talk: false, barks: [], home: {x: p.x, y: p.y}, company: true, big: PET_BIG, owner: a.id});
+  sp.t0 = now; sp.actUntil = now + 4000; npcs.push(sp); actors.push(sp);
+  const comp = companyNow(); if (!comp.includes(PET_SPIDER)) comp.push(PET_SPIDER);
+  state.leftBehind = state.leftBehind.filter(id => id !== PET_SPIDER); state.petOwner = a.id; saveWalk();
+  bank("creature/creature_spider_hiss", .3); popText(sp, "loose", "#e8e2c8", .9);
+  if (fight && cbt){
+    a.c.action = false; sp.ally = true; sp.c = fighterFor(sp); sp.c.webReady = true; sp.c.init = a.c.init; sp.summoner = a;
+    cbt.allies.push(sp); const i = cbt.order.indexOf(a); cbt.order.splice(i + 1, 0, sp); if (i + 1 <= cbt.idx) cbt.idx++;
+    log(`${esc(fname(a))} shakes the spider out of a sleeve (action). It acts right after ${esc(fname(a))}.`);
+    renderTurns(); renderParty(); toggleBag(false); afterAction(a); return;
+  }
+  log(`${esc(fname(a))} sets the spider down. It scuttles after the party.`); renderBag();
+}
+// the drow near enough to send it to (the pickpocket's marks, at 60 ft: a spider goes where a hand cannot)
+function petMarks(L){
+  const reach = 60 * ftPx(L);
+  return npcs.filter(n => !n.down && !n.body && !n.offStage && actors.includes(n) && (n.alpha ?? 1) > .5 && (isGuard(n) || DROW_POST(n)) && Math.hypot(n.x - L.x, n.y - L.y) <= reach)
+    .sort((x, y) => Math.hypot(x.x - L.x, x.y - L.y) - Math.hypot(y.x - L.x, y.y - L.y));
+}
+const PET_CARRIES = /\bkeys?\b|coin|gem|ring|vial|bolt|needle|pin|wire|pick|token|sigil|stone|shard|bead/i;   // what a Tiny thing can drag (Claude's list: small, light)
+async function openSpiderFetch(n){
+  if (mode !== "explore") return;
+  const who = leader, pet = petHere(); if (!pet) return;
+  mode = "dialog"; party.forEach(p => { p.path = []; }); tip.hidden = true;
+  try { portrait(n.id, $("objPic"), 128); } catch (e) {}
+  $("objWho").textContent = fname(n);
+  const box = $("objBtns"); box.innerHTML = "";
+  const add = (label, fn, cls = "") => choiceRow(box, label, fn, cls);
+  const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; };
+  $("objText").textContent = `${fname(who)} crouches and whispers to the spider…`; showObjCard();
+  const j = await fetchLoot(pocketId(n)); if ($("obj").hidden) return;
+  const rows = (j.rows || []).filter(r => r.kind !== "preview-stash" && (!r.slot || r.loose) && pocketKnown(n, r) && PET_CARRIES.test(r.name || ""));
+  $("objText").textContent = j.error ? `The game did not answer (${j.error}).`
+    : rows.length ? `What would you have it bring from ${fname(n)}? It is Stealth +4 against their passive Perception ${passiveOf(n) || 12}; if they see it, they crush it.`
+    : `Nothing you know of on ${fname(n)} is small enough for it to carry.`;
+  for (const row of rows){
+    const b = add(`Fetch: ${lootLabel(row)}${row.missing ? " · not in the catalogue yet" : ""}`, () => { close(); spiderFetch(pet, n, who, row); }, "primary");
+    if (row.missing) b.disabled = true;
+    if (row.pixel){ const im = document.createElement("img"); im.src = ITEM_PX + row.pixel; im.alt = ""; im.className = "lootPx"; b.prepend(im); }
+  }
+  add("Never mind", close);
+  box.querySelector("button:not([disabled])")?.focus();
+}
+async function scuttle(a, to, ms){
+  const fx = a.x, fy = a.y, t0 = performance.now(); a.path = []; a.waitUntil = now + ms + 400; a.face = faceOf(to.x - fx, to.y - fy);
+  setAnim(a, SPR[a.id].img.walk ? "walk" : "idle");
+  for (;;){ const k = Math.min(1, (performance.now() - t0) / ms); a.x = fx + (to.x - fx) * k; a.y = fy + (to.y - fy) * k; if (k >= 1) break; await wait(16); }
+  setAnim(a, "idle");
+}
+let petBusy = false;
+async function spiderFetch(pet, n, who, row){
+  if (petBusy) return; petBusy = true; exploreKey = "";
+  try {
+    const home = {x: pet.x, y: pet.y}, P = passiveOf(n) || 12, r = d20(0, null), tot = r + 4;
+    log(`${esc(fname(who))} sends the spider for ${esc(fname(n))}'s ${esc(row.name)}.`);
+    await scuttle(pet, {x: n.x + 10 * node.scale, y: n.y + 6 * node.scale}, 1400);
+    if (r !== 1 && (r === 20 || tot >= P)){
+      log(`The spider's Stealth: ${r} + 4 = ${tot} vs ${esc(fname(n))}'s passive Perception ${P} — <b>unseen</b>.`);
+      let got = false; try { got = await takeLoot(who, pocketId(n), row); } catch (e) {}
+      await scuttle(pet, home, 1400);
+      if (got){ popText(who, row.name, "#9ad0ff", 1); log(`The spider drops the <b>${esc(row.name)}</b> into ${esc(fname(who))}'s hand.`); offerEquip(); }
+      else log(`The spider comes back with nothing: the ${esc(row.name)} would not come loose.`);
+      return;
+    }
+    // seen: the drow crushes it (Sam: "serious" penalties are the guards' to play; the spider is what is lost here)
+    n.face = faceOf(pet.x - n.x, pet.y - n.y); popText(n, "!", "#ff6b5a", 1.2);
+    log(`The spider's Stealth: ${r} + 4 = ${tot} vs ${esc(fname(n))}'s passive Perception ${P} — <b>seen</b>. ${esc(fname(n))} brings a boot down on it.`, {say: true});
+    pet.c = pet.c || fighterFor(pet); pet.c.hp = 0; pet.killType = "crushed"; pet.deathFx = {noPool: true}; fall(pet);
+    state.company = companyNow().filter(id => id !== PET_SPIDER); saveWalk();
+    if (APP) handOff(`${fname(who)} sent a tame spider to steal the ${row.name} from ${fname(n)}. ${fname(n)} saw it and crushed it under a boot. ${fname(n)} does not yet know who sent it.`);
+  } finally { petBusy = false; exploreKey = ""; }
+}
 // SRD: an incapacitated creature can't take actions or reactions (asleep = unconscious, which includes it).
 // Sam, 2026-10-14: "how did the spider do an opportunity attack if it is sleeping?" — it no longer can.
 const INCAP = ["laughing", "asleep", "unconscious", "paralyzed", "stunned", "incapacitated", "petrified", "turned"];   // turned (Turn Undead): Frightened AND Incapacitated
@@ -10046,7 +10156,7 @@ function nextTurn(first){
   a.c.bonusSpell = false; a.c.leveledSpell = false;   // the bonus-action spell rule is per turn (it had slipped into the comment above, so one Guiding Bolt locked out Healing Word for the rest of the fight)
   if (a.c.conds.has("grappled")){ const g = a.c.grappledBy; if (!g || g.down || feetBetween(a, g) > 5) a.c.conds.delete("grappled"); else a.c.move = 0; }
   if (a.c.conds.has("restrained")) a.c.move = 0;
-  if (a.kind === "foe" && a.c.sheet.web && !a.c.webReady){ const r = d6(); if (r >= a.c.sheet.web.recharge){ a.c.webReady = true; popText(a, "web ready", "#e8e2c8", .9); } }
+  if ((a.kind === "foe" || a.id === PET_SPIDER) && a.c.sheet.web && !a.c.webReady){ const r = d6(); if (r >= a.c.sheet.web.recharge){ a.c.webReady = true; popText(a, "web ready", "#e8e2c8", .9); } }
   if (a.c.holyOpen && --a.c.holyOpen <= 0){ delete a.c.holyOpen; popText(a, "resistance returns", "#aaa", .8); }
   if (a.c.retching && a.kind !== "pc"){ a.c.retching = false; retchTurn(a); return; }   // Stinking Cloud: the action goes on retching
   if (a.c.conds.has("turned") && turnedTurn(a)) return;     // Turn Undead: it moves as far from the cleric as it can, and that is its turn
@@ -10468,6 +10578,8 @@ function exploreExtras(m, o, add, who){
   if (sneak) x(sneak.scout ? "Stop scouting" : "Stop sneaking", "◐", ART("sneak", "hide"), `Stealth ${sneak.line} · walk out of their sight`, () => endSneak("You stop moving quietly."), "on");
   else x("Sneak", "◐", ART("sneak", "hide"), `Stealth ${sgn(heroMod(L, "stealth", "dex"))} vs their passive Perception`, () => startSneak(false));
   if (o.mark && strangleMark(L, o.mark)) x(`Strangle ${fname(o.mark)} with the silk rope`, "➰", ART("grapple", "attack"), `Athletics ${sgn(heroMod(L, "athletics", "str"))} · through the bars, three holds`, () => strangleGuard(o.mark), "danger");
+  { const pet = !cbt && petHere(), t = pet && petMarks(L)[0];   // THE SPIDER IN YOUR POCKET: send it for something
+    if (t) x(`Send the spider to ${fname(t)}`, "✶", ART("pickpocket", "search"), canSpeakAnimals(L) ? `its Stealth +4 vs their passive Perception ${passiveOf(t) || 12}` : "you need Speak with Animals to ask it anything", canSpeakAnimals(L) && !petBusy ? () => openSpiderFetch(t) : null); }
   if (o.mark) x(`Pick ${fname(o.mark)}'s pocket`, "✋", ART("pickpocket", "search"), `Sleight of Hand ${sgn(heroMod(L, "sleightOfHand", "dex"))} vs their passive Perception`, () => openPickpocket(o.mark));
   x("Search", "⌕", ART("search-here", "search"), `Perception ${sgn(heroMod(L, "perception", "wis"))} · the DM says what turns up`, () => searchHere());
   if (exNear) x(`Listen at ${exitName(exNear)}`, "◖", ART("listen"), `Perception ${sgn(heroMod(L, "perception", "wis"))} · what is beyond`, () => listenAt(exNear));
@@ -15467,6 +15579,7 @@ function allyTurn(a){
   const tgt = (cbt.lastAllyTarget && cbt.lastAllyTarget.get(a) && seen.includes(cbt.lastAllyTarget.get(a))) ? cbt.lastAllyTarget.get(a) : seen.sort(near)[0];
   if (!tgt){ checkEnd() || end(); return; }
   (cbt.lastAllyTarget || (cbt.lastAllyTarget = new Map())).set(a, tgt);
+  if (a.c.sheet.web && a.c.webReady && !tgt.c.conds.has("restrained") && feetBetween(a, tgt) <= a.c.sheet.web.range){ a.c.action = false; shootWeb(a, tgt, end); return; }   // THE SPIDER IN YOUR POCKET
   pairCam(a, tgt);
   const s = a.c.sheet, pick = allyAttackPick(a, tgt), atk = pick.atk;
   const swings = /crossbow/i.test(atk.itemName || atk.name) ? 1 : (s.multi || 1);   // SRD Loading: one bolt per action, however many attacks the block has
@@ -23782,6 +23895,7 @@ function renderBag(){
     if (u.kind === "caltrops") btn("Scatter", mine && (!fight || c.action), fight ? "your action: a 5-ft square in front of you" : "a 5-ft square in front of you", () => scatterCaltrops(a, it));
     if (u.kind === "food") btn(u.verb === "drink" ? "Drink" : "Eat", mine && (!fight || c.action), fight ? "takes your action" : "", () => eatItem(a, it, u.verb));
     if (isTooth(it)) toothBagButtons(a, btn, mine, fight);
+    if (isPetSpider(it)) btn(fight ? "Let it loose" : "Set it down", mine && (!fight || c.action) && !petHere(), petHere() ? "one spider is already loose" : fight ? "your action: it fights beside you" : "it follows the party", () => releaseSpider(a, it));
     list.appendChild(row);
   }
 }
