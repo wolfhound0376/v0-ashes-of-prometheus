@@ -414,8 +414,8 @@
 .parley.one .p-charcard { grid-template-columns: 1fr 1fr; gap: 8px; }
 .parley.one .p-charcard > .p-id, .parley.one .p-charcard > .p-hpwrap, .parley.one .p-charcard > .p-slab.violet { grid-column: 1 / -1; }
 .parley.one .p-charcard > .p-xprow, .parley.one .p-charcard > .p-bar.xp, .parley.one .p-charcard > .p-emblems, .parley.one .p-id > .p-lvl, .parley.one .p-who-is > span { display: none; }
-.parley.one .p-id { grid-template-columns: 60px 1fr; }
-.parley.one .p-port { width: 60px; height: 60px; font-size: 24px; }
+.parley.one .p-id { grid-template-columns: 72px 1fr; }
+.parley.one .p-port { width: 72px; height: 72px; font-size: 26px; border-color: var(--p-gold); }
 .parley.one .p-charcard > .p-slab.wide { padding: 7px 8px; font-size: 11px; justify-content: center; text-align: center; }
 .parley.one .p-charcard > .p-slab.wide small, .parley.one .p-charcard > .p-slab.wide .p-key { display: none; }
 .parley.one .p-charcard > .p-slab.wide .p-ico { width: 22px; height: 22px; }
@@ -479,3 +479,6 @@
 .parley.one .p-charcard > .p-slab.wide.p-railbtn .p-ico { width: 30px; height: 30px; border-radius: 6px; flex: none; }
 .parley.one .p-charcard > .p-slab.wide.p-railbtn svg { flex: none; }
 .parley.one .p-charcard > .p-slab.violet.wide { min-height: 44px; gap: 8px; font-size: 13px; color: #fff; text-shadow: 0 1px 0 #000; }
+/* the chip's face fills its frame (the grid centring let the image keep its own height and spill past the frame) */
+.parley.one .p-port { display: block; position: relative; }
+.parley.one .p-port img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }

@@ -291,6 +291,14 @@ type NpcEncounter = {
 
 // True when a media URL is a video loop (idle/talking uploads are MP4/WebM).
 
+/** The face art that sits beside a hero's medallion or anime portrait, or null when the URL follows neither pattern. */
+function heroFaceUrl(url: string | null): string | null {
+  if (!url) return null
+  if (url.includes("/portraits/medallion-")) return url.replace("/portraits/medallion-", "/portraits/face-")
+  const anime = url.match(/^(.*\/portraits\/)([a-z0-9]+-anime\.webp)$/i)
+  return anime ? `${anime[1]}face-${anime[2]}` : null
+}
+
 interface ParleyDashboardProps {
   /** The roll Malachar is waiting on, and where it stands (app/page.tsx). Draws the check card on the one-stage screen. */
   rollRequest?: RollRequestSpec | null
@@ -1156,6 +1164,11 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
     void stage.go(walkHref, { caption: inCombat ? "Steel is already out. Try to keep up." : "The map, then. Mind where you stand." })
   }
   const portraitSrc = selected?.portrait_image_url || selected?.avatar_image_url || null
+  // THE HERO CHIP SHOWS A FACE (Sam, 2026-11-13: "We need a better Icon for Kenta-Kun"): at chip size the ornate
+  // medallion turns the face into a few pixels, so the one-stage rail uses the hero's face art, which sits beside
+  // every medallion (portraits/medallion-x -> portraits/face-x; x-anime.webp -> face-x-anime.webp). A hero with no
+  // face file falls back to the portrait (onError).
+  const chipSrc = one ? heroFaceUrl(selected?.portrait_image_url ?? null) : null
 
   // TALK TO MALACHAR: the thread is the hero and the DM, nobody else's lines, and it is always open.
   const logMini = interactiveLogMinimized && !props.audience
@@ -1373,7 +1386,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
     <div className={cn("p-sheet", narrowTalk && "hidden")}>
       <div ref={cardRef} className="p-panel p-charcard">
         <div className="p-id">
-          <div className={cn("p-port", canCyclePlayers && "cycles")} onClick={canCyclePlayers ? cyclePlayer : undefined} title={canCyclePlayers ? `Next: ${nextPlayer?.name}` : selected?.name}>{portraitSrc ? <img src={portraitSrc} alt={selected?.name ?? ""} style={{ objectPosition: selected?.portrait_image_url ? "center" : "center 14%" }} /> : (selected?.name?.[0] ?? "?")}</div>
+          <div className={cn("p-port", canCyclePlayers && "cycles")} onClick={canCyclePlayers ? cyclePlayer : undefined} title={canCyclePlayers ? `Next: ${nextPlayer?.name}` : selected?.name}>{portraitSrc ? <img key={chipSrc ?? portraitSrc} src={chipSrc ?? portraitSrc} alt={selected?.name ?? ""} onError={(event) => { if (chipSrc && event.currentTarget.src !== portraitSrc) event.currentTarget.src = portraitSrc }} style={{ objectPosition: chipSrc ? "center 30%" : selected?.portrait_image_url ? "center" : "center 14%" }} /> : (selected?.name?.[0] ?? "?")}</div>
           <div className="p-who-is"><b>{selected?.name ?? "—"}</b><span>{speciesLabel} {selected?.class ?? ""}</span><span>{backgroundLabel}</span></div>
           <span className="p-lvl" title={`Level ${selected?.level ?? 1}`}><small>Level</small><b>{selected?.level ?? 1}</b></span>
         </div>
@@ -1385,7 +1398,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
           <button type="button" className="p-emb" onClick={() => setStatDetail("ac")} title={acResult.text}><span className="p-shield" style={{ backgroundPosition: "0% 40%" }} /><span className="p-val">{displayedAc}</span><small>AC</small></button>
           <button type="button" className="p-emb" onClick={() => setStatDetail("speed")} title="Speed"><span className="p-shield" style={{ backgroundPosition: "33.333% 40%" }} /><span className="p-val">{speedMatch ? <>{speedMatch[1]}<i>ft</i></> : speedText}</span><small>Speed</small></button>
         </div>
-        <button type="button" data-tick="window" onClick={() => setCharacterSheetOpen(true)} className={cn("p-slab wide", one ? "blue p-railbtn" : "dark")}>{one ? <><Feather className="h-5 w-5" aria-hidden="true" /><span>Character sheet</span></> : "✧ View Full Character Sheet"}</button>
+        <button type="button" data-tick="window" onClick={() => setCharacterSheetOpen(true)} className={cn("p-slab wide", one ? "blue p-railbtn" : "dark")}>{one ? <><img className="p-ico" src="/velkynvelve-walk/icons/hero/crest.png" alt="" /><span>Character sheet</span></> : "✧ View Full Character Sheet"}</button>
         <button type="button" data-tick="window" onClick={openPixelInventory} className={cn("p-slab wide", one ? "teal p-railbtn" : "dark")} style={one ? undefined : { justifyContent: "flex-start" }}><img className="p-ico" src="/velkynvelve-walk/icons/bar/inv.png" alt="" />{one ? <span>Inventory</span> : <>Inventory &amp; Equipment</>}<small style={{ marginLeft: "auto", textAlign: "right" }}>{carried.toFixed(1)} / {selected?.weight_max ?? 105} lb · {props.equipment.length} equipped</small><span className="p-key">I</span></button>
         {isMagicUser ? <button type="button" data-tick="window" onClick={() => setSpellbookOpen(true)} className="p-slab violet wide" style={{ justifyContent: "flex-start" }}>{selected.class === "Cleric" || selected.class === "Monk" ? <img className="p-ico" src={BOOK_OF_PRAYERS_MEDIA.poster} alt="" /> : <BookOpen className="h-5 w-5" />}{selected.class === "Cleric" || selected.class === "Monk" ? "Book of Prayers" : "Book of Spells"}<small style={{ marginLeft: "auto" }}>{characterExtra.subclass || ""}</small></button> : null}
       </div>
