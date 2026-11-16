@@ -98,6 +98,7 @@ export async function POST(req: NextRequest) {
       if (W?.runId) await db.rpc("walk_world_apply", { p_run: W.runId, p_patch: { state: { company, leftBehind: left } }, p_by: "camp" })
       return NextResponse.json({ nights, event, gone, text: `In the morning ${gone.length > 1 ? "Topsy and Turvy are" : `${campName(gone[0], null)} is`} gone, and so is whatever food was left in the packs. Nobody heard a thing.` })
     }
+    if (event.kind !== "brawl" && event.kind !== "rage") return NextResponse.json({ nights, event, text: "" })
     // a brawl or a rage: the party decides what happens (op "settle")
     const a = name(event.a, null), bName = name(event.b, null)
     const text = event.kind === "brawl" ? `${a} shoves ${bName}. Hunger has worn the last of the patience off them both, and the fists come up.` : `${a} roars. Something in him has snapped: he turns on ${bName}.`
