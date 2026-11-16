@@ -2407,5 +2407,18 @@
       "passive": 12,
       "label": "The guards in the kitchen look up."
     }
+  },
+  "battle-pen-gate": {
+    "loot": [
+      {
+        "id": "pen-landing-chest",
+        "name": "A chest on the landing",
+        "_src": "Sam 2026-11-15: the pen-gate battle plate showed a painted crate and no loot box; 'this box art should be replaced with the pixel loot box'. Same container id as the chest on plate 11's landing (lib/walk-loot.ts BOOK_CONTAINERS), so both views open the one chest. The painted crate was patched out of battle-pen-gate.jpg; the spot is where it stood.",
+        "chest": "wooden",
+        "at": [1790, 705],
+        "poly": [[1735, 600], [1850, 600], [1850, 712], [1735, 712]],
+        "text": "A small wooden chest sits on the rock by the fallen pillar, out of the drip from the bridge."
+      }
+    ]
   }
 }
