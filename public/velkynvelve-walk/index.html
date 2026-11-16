@@ -4149,7 +4149,7 @@ function rappelCard(z){
                   : `${z.label}. The rope is tattered and frayed; below it the scree drops away, and far below that, the web.`;
   showDialog({title: up ? "Climb the rope" : "Rappel down", body, src: "OotA Expanded p.45", buttons: [
     {label: up ? `${who} climbs (Athletics)` : `${who} goes down the rope (Athletics)`, primary: true, fn: () => {
-      rollOnDashboard(up ? "cliff:climb" : "cliff:rappel", heroMod(leader, "athletics", "str")).then(k => {
+      rollWithHelp(up ? "cliff:climb" : "cliff:rappel", heroMod(leader, "athletics", "str")).then(k => {
         if (k && k.cancelled){ ackZone = null; return; }
         if (!k || !k.ok){ toast((k && k.error) || "The dice did not roll.", 3200); return; }
         if (k.success){ log(`${esc(who)} ${up ? "climbs the rope" : "rappels down"} and holds it for the others.`); if (APP) handOff(`${who} ${up ? "climbed" : "rappelled down"} a rope on the cliff below the lift (Athletics ${k.total}, made it). The party follows.`);
@@ -4264,7 +4264,7 @@ function fallsDialog(z){
   showDialog({title: "The falls", body: "The bridge passes right over the drop. Spray, noise, and the dark below — no telling what is down there.", buttons: [
     {label: `${fname(leader)} looks over the edge`, primary: true, fn: () => {
       // the dashboard's dice roll it (lib/walk-roll.ts "falls:look"); the map never asks what was rolled
-      rollOnDashboard("falls:look", heroMod(leader, "perception", "wis")).then(r => {
+      rollWithHelp("falls:look", heroMod(leader, "perception", "wis")).then(r => {
         if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3200); return; }
         if (r.success){ state.fallsNoticed = `${fname(leader)} made out the webs and the pool below`; log(`${fname(leader)} leans out over the falls. ${z.secret || ""}`); saveWalk(); setTimeout(() => fallsDialog(z), 300); }
         else { log(`${fname(leader)} leans out over the falls and sees only spray.`); toast("Nothing but spray and dark. You could still jump blind, from DM tools.", 3600); }
@@ -4867,7 +4867,7 @@ function openLift(){
     // a Strength check on the dashboard's dice (lib/walk-roll.ts "lift:spool"), with advantage when a second hero helps
     close();
     const strMod = Math.floor((((SHEETS[spool.id] || {}).strScore) || 10) / 2) - 5;
-    rollOnDashboard("lift:spool", strMod, {advantage: help}).then(r => {
+    rollWithHelp("lift:spool", strMod, {advantage: help, who: spool}).then(r => {
       if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3200); openLift(); return; }
       if (r.success){ mode = "dialog"; lift.target = to; lift.moving = true; bank("movement/chains_rattle", .6);
         log(`${fname(spool)} turns the spool${help ? `, ${fname(onDeck.find(p => p !== spool))} helping` : ""}. The basket ${to > 0 ? "swings out and sinks into the dark" : "rises out of the dark"}.`); }
@@ -6358,7 +6358,7 @@ function theftCaught(n, who, row, lift, again){   // again: the card coming back
   const fight = why => { close(); if (why) log(why); theftLedger(n, who, "fought", row); theftDuel(n, who, row); };
   add("Talk them down", async () => {
     close();
-    const r = await rollOnDashboard("caught:persuade", heroMod(who, "persuasion", "cha"), {who});
+    const r = await rollWithHelp("caught:persuade", heroMod(who, "persuasion", "cha"), {who});
     if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3200); theftCaught.reopen(n, who, row); return; }
     if (!r.success){ fight(`${esc(name)} is not having it.`); return; }
     state.theftForgiven = state.theftForgiven || {}; state.theftForgiven[n.id] = true; saveWalk();
@@ -6638,18 +6638,26 @@ function firstChoice(box){ return box.querySelector(".btn"); }
 // with advantage: the SRD's Help ("Working Together"). The disarm needs thieves' tools in the party, which the card
 // already requires before it offers the choice. A rehearsal and the preview ask nobody and write nothing: a stranger's
 // one-in-four, with a plain line.
-const HELP_KIND = {"ilvara-chest:pick": "lock", "pen-gate:pick": "lock", "ilvara-chest:search": "trap-find", "ilvara-chest:disarm": "trap-disarm"};
-const HELPER_IDS = ["jimjar"];
+// THE WHOLE COMPANY HELPS (Sam, 2026-11-15, "go" on the camp draft): each companion with what the campaign notes say
+// they are good at (lib/npc-help.ts has the table and the sources): eyes (Perception) Eldeth, Sarith, the twins and
+// Shuushar; might (Athletics, Strength) Ront and Derendil; words (Persuasion across a language) Stool. The nearest one
+// on their feet here is asked; their standing with the hero decides, as Jimjar's always has.
+const HELP_KIND = {"ilvara-chest:pick": "lock", "pen-gate:pick": "lock", "ilvara-chest:search": "trap-find", "ilvara-chest:disarm": "trap-disarm",
+                   "falls:look": "eyes", "labor:look": "eyes", "cliff:climb": "might", "cliff:rappel": "might", "lift:spool": "might", "caught:persuade": "words"};
+const KIND_HELPERS = {lock: ["jimjar"], "trap-find": ["jimjar"], "trap-disarm": ["jimjar"], eyes: ["eldeth", "sarith", "shuushar", "topsy", "turvy"], might: ["ront", "derendil"], words: ["stool"]};
+const HELP_PLAIN = {lock: "Budge up. Two picks beat one.", "trap-find": "Wait. Let me look first.", "trap-disarm": "Steady hands. I'll hold the spring.", eyes: "Wait. Look there.", might: "Out of the way. Let me.", words: "(A soft haze of spores: Stool's meaning arrives before the words.)"};
 async function helpWith(action, who){
   const kind = HELP_KIND[action], h = who || leader; if (!kind || !h) return null;
-  const n = npcs.find(x => HELPER_IDS.includes(x.id) && !x.down && !x.hostile && !x.buried && actors.includes(x)); if (!n) return null;
+  const ids = KIND_HELPERS[kind] || [];
+  const n = npcs.filter(x => ids.includes(x.id) && !x.down && !x.body && !x.hostile && !x.buried && !x.offStage && actors.includes(x))
+    .sort((a, b) => Math.hypot(a.x - h.x, a.y - h.y) - Math.hypot(b.x - h.x, b.y - h.y))[0]; if (!n) return null;
   let help = null;
   try {
     if (APP && !SANDBOX){
       const cid = characterIdOf(h.id);
       const j = cid ? await Promise.race([fetch("/api/npc-help", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({npcName: SPR[n.id].json.name, characterId: cid, kind})}).then(r => r.json()), new Promise(r => setTimeout(() => r(null), 2500))]) : null;
       help = j && j.help;
-    } else if (Math.random() < .25) help = {kind, address: (PCS[h.id] || {}).race || "you", line: "Budge up. Two picks beat one."};
+    } else if (Math.random() < .25) help = {kind, address: (PCS[h.id] || {}).race || "you", line: HELP_PLAIN[kind] || HELP_PLAIN.lock};
   } catch (e) {}
   if (!help) return null;
   stopActivity(n); n.path = []; faceTo(n, h); bark(n, help.line, 4200); speak(n.id, help.line);
@@ -6676,7 +6684,7 @@ function gateMuscleJoins(n, a){
 async function rollWithHelp(action, localMod, opts = {}){
   const muscle = action === "pen-gate:force" ? gateMuscle(opts.who || leader) : null;
   if (muscle){ gateMuscleJoins(muscle, opts.who || leader); opts = {...opts, advantage: true}; await new Promise(r => setTimeout(r, 900)); }
-  const hp = HELP_KIND[action] ? await helpWith(action, opts.who) : null;
+  const hp = HELP_KIND[action] && !opts.advantage ? await helpWith(action, opts.who) : null;   // already rolled with advantage: a hand adds nothing
   if (hp){ opts = {...opts, advantage: true}; await new Promise(r => setTimeout(r, 900)); }   // a beat for his line before the dice
   return rollOnDashboard(action, localMod, opts);
 }
@@ -19447,7 +19455,7 @@ async function laborDoLook(){
   const h = laborHero(); if (!h || !atWorkPlate()) return;
   const k = `${labor.id}:${cur}:${h.id}`; if (laborLooked[k]){ toast(`${fname(h)} has already taken in what there is to see here.`); return; }
   const seed = LOOK_SEEDS[String(cur)];
-  const r = await rollOnDashboard("labor:look", 0);
+  const r = await rollWithHelp("labor:look", 0);
   if (!r || !r.ok){ if (r && r.error) toast(r.error); return; }
   if (r.cancelled) return;
   laborLooked[k] = true;
