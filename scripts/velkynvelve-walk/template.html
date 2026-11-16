@@ -21494,11 +21494,27 @@ function update(dt){
       if (a.lunging || b.lunging) continue;   // a lunge closes to contact on purpose: nobody is shoved off their spot by it
       // (on the painted floor the gap is taken as painted: 70 plate px out there is 5-12 painted feet, which held two bodies out of each other's reach)
       const min = (a.kind === "foe" || b.kind === "foe" ? 70 : 45) * node.scale, gap = onPaintedFloor(a) && onPaintedFloor(b) ? feetSeg(a, b, 1) * ftPx(a) : d;
-      // Sam, 2026-10-14: a character that walked into someone kept walking against the push and stalled.
-      // The one who is walking holds its line; only a standing body gives way (and never a leaping one).
-      if (d > 0 && gap < min){ const push = Math.min(4, (min - gap) / 2), ux = dx / d, uy = dy / d, aw = a.path.length > 0 || a.leap, bw = b.path.length > 0 || b.leap;
-        if (!b.once && !bw && walkable(b.x + ux * push, b.y + uy * push)){ b.x += ux * push; b.y += uy * push; }
-        if (!a.once && !aw && walkable(a.x - ux * push, a.y - uy * push)){ a.x -= ux * push; a.y -= uy * push; } }
+      // NOBODY IS SHOVED BY BEING WALKED INTO (Sam's playtest, 2026-11-15: "Shouldn't be able to ... actively move other
+      // characters by just moving against them"). This used to let the WALKER hold its line and push the standing body
+      // aside (2026-10-14's fix for a stalled walker), so a hero could herd friend or foe across the floor. Now, by 5E
+      // (SRD, Movement and Position: you may move through a nonhostile creature's space, not a hostile one's, and you
+      // can't willingly end your move in another creature's space):
+      //   walker vs ALLY standing   nobody moves: the walker passes through
+      //   walker vs FOE standing    the foe holds; the walker is held back, so the walk stalls and ends (step())
+      //   both standing             only the one who moved last steps off (ends a move clear of the other's space)
+      //   both walking              nobody moves, as before
+      const aw = a.path.length > 0 || a.leap || a.kbd, bw = b.path.length > 0 || b.leap || b.kbd;
+      if (aw) a.movedAt = now; if (bw) b.movedAt = now;
+      if (d > 0 && gap < min && !(aw && bw)){
+        const ux = dx / d, uy = dy / d, hostile = (a.kind === "foe") !== (b.kind === "foe");
+        let mover = null;
+        if (aw || bw){ if (hostile) mover = aw ? a : b; }                        // only a foe in the way blocks the walker
+        else mover = (a.movedAt || 0) >= (b.movedAt || 0) ? a : b;             // both still: the later arrival steps off
+        if (mover && !mover.once){
+          const s = mover === a ? -1 : 1, push = hostile && (aw || bw) ? (min - gap) : Math.min(4, (min - gap) / 2);
+          if (walkable(mover.x + s * ux * push, mover.y + s * uy * push)){ mover.x += s * ux * push; mover.y += s * uy * push; }
+        }
+      }
     }
   }
   if (mode === "combat" && !combatBusy && !FIGHT.mirror && canControl(activeActor()) && !oneFightWaitsFor(activeActor())) keyboardMove(activeActor(), dt);
