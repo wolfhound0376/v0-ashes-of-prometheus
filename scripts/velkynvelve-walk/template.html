@@ -8976,6 +8976,7 @@ function renderExploreBar(){
   if (o.foe) add(`Attack ${nm(o.foe)}`, "⚔", ART("attack", "attack"), "starts a fight · roll initiative", () => fightWith(o.foe, `${who} attacks!`), "end");
   if (party.filter(canControl).length > 1) add("Next hero", "⇆", null, `Tab · now ${who}`, () => { const mine = party.filter(canControl); const i = mine.indexOf(leader); setLeader(mine[(i + 1) % mine.length]); });
   if (!o.foe) add("Short rest", "⌛", "dodge", restRisk().chance ? `an hour here · ${Math.round(restRisk().chance * 100)}% the locals find you` : "an hour here", () => openRest());
+  if (!o.foe && wildPlate()) add("Long rest", "☾", "dodge", isRoadPlate(cur) ? "make camp · back on the road" : "make camp here · the fire", () => openLongRest());
   add("Tell Malachar", "✎", null, "search, hide, anything else", () => openParley(true));
   exploreExtras(m, o, add, who);
 }
@@ -9030,7 +9031,7 @@ let sneak = null, helpNext = null, followOn = true, moreOpen = false, exploreJum
 const EXPLORE_KEEP = 7;
 const BUTTON_PRI = [[/^Level Up/, .5], [/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
   [/^(Sneak|Stop sneaking)/, 4], [/^Pick .*pocket/, 4], [/^Cast/, 5], [/^Search$/, 6], [/^Inventory/, 7], [/^Tell Malachar/, 8], [/^Next hero/, 9],
-  [/^(Scout|Jump|Pray|Beseech|Inspire|Whistle|Work the wire|Speak to the|Quick drink)/, 10], [/^My company/, 11], [/^Short rest/, 12], [/^Help/, 13], [/^(Follow|Wait)/, 14], [/^Talk$/, 30]];
+  [/^(Scout|Jump|Pray|Beseech|Inspire|Whistle|Work the wire|Speak to the|Quick drink)/, 10], [/^My company/, 11], [/^Short rest/, 12], [/^Long rest/, 12.5], [/^Help/, 13], [/^(Follow|Wait)/, 14], [/^Talk$/, 30]];
 // THE COMBAT BAR (Sam, 2026-11-10: "Don't offer bubble boxes for actions that aren't available. Offer boxes in order of
 // priority and utility." — this replaces the 2026-10-27 canvas order for the fight). Only what the hero can do RIGHT NOW
 // gets a box (foldBar drops the rest), so the order is by usefulness, not by habit:
@@ -10959,6 +10960,23 @@ function exploreInspire(a, t){
 // nobody goes). A rest the locals break heals nothing and half an hour is gone; the fight starts on the spot.
 // What the map itself does NOT carry is current hit points between fights (every fight starts a hero at full), so
 // the healing lands on the sheet, which is where the dashboard, the camp and Malachar read it.
+// A LONG REST OUT OF THE OUTPOST (Sam, 2026-11-15: "we should be able to take both a short rest and/or a long rest once
+// we leave the drow encampment"). Inside Velkynvelve a short rest is all there is (lib/camp-where.ts, 2026-10-14). On
+// a cavern plate (biome-*) the party makes camp where it stands: the Camp Module takes the long rest, rolls the night's
+// watch and spends the rations, as it does on the travel map — /camp allows it because the walk has reported this
+// plate (party_situation.sub_location). On a road plate the march is the travel map's, so the camp is made there:
+// the map's REST AT CAMP, which also starts the new day.
+function wildPlate(){ return !!(node && /^(biome-|road-)/.test(node.slug || "")); }
+function openLongRest(){
+  if (mode !== "explore" || !leader) return;
+  const top = window.top !== window ? window.top : window;
+  if (isRoadPlate(cur)){ showDialog({title: "Long rest", body: "A long rest on the road is a camp on the march: back to the map, where REST AT CAMP stops the day and lights the fire.", buttons: [{label: "Back to the map", primary: true, fn: () => { top.location.href = "/map"; }}, {label: "Not now"}]}); return; }
+  const away = PARTY.filter(heroElsewhere);
+  if (away.length){ toast(`Camp is made together. ${away.map(id => `${SHORT[id] || id} (${plateLabel(heroAt[id].plate)})`).join(", ")} ${away.length > 1 ? "are" : "is"} elsewhere.`, 5000); return; }
+  showDialog({title: "Make camp", body: `Make camp in ${node.name} for a long rest? Eight hours: a fire if you dare, food, a watch, and sleep. The night may bring visitors.`, buttons: [
+    {label: "Make camp", primary: true, fn: () => { reportSituation({sub_location: node.slug, sub_label: node.name, party_present: partyPresent()}); setTimeout(() => { top.location.href = "/camp"; }, 350); }},
+    {label: "Not now"}]});
+}
 const REST_DEFAULT = {chance: 0, foes: [], label: ""};
 function restRisk(){ return (node && node.rest) || REST_DEFAULT; }
 function openRest(){
