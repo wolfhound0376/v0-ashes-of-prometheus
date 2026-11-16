@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest"
-// @ts-expect-error plain JS module shared with the painted map
 import { buppidoRisesActive, buppidoRisesInPen, buppidoRisesLedgePlate, buppidoRisesLedgeTarget, buppidoRisesLedgeSpotted, buppidoRisesShoveWins } from "./buppido-rises.mjs"
 
 describe("Buppido rises anywhere (Sam, 2026-11-15)", () => {

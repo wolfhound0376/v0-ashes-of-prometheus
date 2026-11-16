@@ -24446,6 +24446,7 @@ const BUPPIDO_RISES_LINES = [
  * Does the rise fire? Buppido, dead, anywhere, and only once per campaign.
  * Sam, 2026-11-15 ("when he dies he becomes a zombie"): no longer the pen alone. In the pen it is the stone and the
  * mound and the watching guards (buppidoRisesInPen); anywhere else he gets up where he fell.
+ * @param {{ deadId?: string, plate?: string | number, fired?: boolean }} [o]
  */
 function buppidoRisesActive({ deadId, plate, fired = false } = {}) {
   if (fired) return false
@@ -24490,6 +24491,7 @@ function buppidoRisesLedgePlate(plate) {
 /**
  * The hero he goes for: on their feet, and with nobody else (hero or companion, Buppido aside) within `aloneFt`.
  * The nearest such hero to him. `pxPerFt` converts the map's distance to feet.
+ * @param {{ heroes?: Array<{ id?: string, x: number, y: number, down?: boolean }>, others?: Array<{ x: number, y: number, down?: boolean }>, buppido?: { x: number, y: number }, pxPerFt?: number }} [o]
  */
 function buppidoRisesLedgeTarget({ heroes = [], others = [], buppido, pxPerFt = 1 } = {}) {
   if (!buppido) return null
