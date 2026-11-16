@@ -218,6 +218,23 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .log p{margin:0;background:var(--panel);border:1px solid var(--rule);border-radius:5px;padding:6px 10px;line-height:1.35;transition:opacity 1s ease}
 .log p.old{opacity:.55}
 .log p em{color:var(--ember);font-style:normal}
+/* THE REVIEW LOG (Sam, 2026-11-15): minimized behind Log (or L). Smoked glass like the top's panels; one row per line,
+   tagged Story / Review / Sync, newest at the bottom. */
+.rlog{position:absolute;left:12px;bottom:12px;z-index:9;width:min(560px,calc(100% - 24px));height:min(46%,440px);display:grid;grid-template-rows:auto 1fr;background:rgba(11,8,16,.92);border:1px solid rgba(214,176,98,.5);border-radius:10px;backdrop-filter:blur(10px);box-shadow:0 18px 44px rgba(0,0,0,.62);color:#ece2c8}
+.rlog[hidden]{display:none}
+.rlog header{display:flex;align-items:center;gap:6px;padding:9px 10px 8px 14px;border-bottom:1px solid rgba(214,176,98,.18)}
+.rlog header h3{margin:0 auto 0 0;font-family:var(--face-title);font-weight:600;font-size:11px;letter-spacing:.32em;color:#d9b56a}
+.rlog header button{all:unset;cursor:pointer;font-family:var(--face-mono);font-size:10px;letter-spacing:.1em;color:#b9ad92;border:1px solid rgba(214,176,98,.25);border-radius:9px;padding:2px 8px}
+.rlog header button[aria-pressed="true"]{color:#fff;border-color:#d9b56a;background:rgba(214,176,98,.14)}
+.rlog header #rlogX{border:0;font-size:14px;padding:0 4px;color:#ece2c8}
+.rlog .body{overflow-y:auto;overscroll-behavior:contain;padding:6px 12px 10px;font-size:.86rem;line-height:1.4}
+.rl-ln{display:grid;grid-template-columns:auto auto 1fr;gap:8px;padding:3px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.rl-ln time{font-family:var(--face-mono);font-size:10px;color:#7d7590;padding-top:2px}
+.rl-ln b{font-family:var(--face-mono);font-weight:500;font-size:9px;letter-spacing:.12em;text-transform:uppercase;padding-top:3px;width:46px;color:#d9b56a}
+.rl-ln[data-k="review"] b{color:#a585ff}.rl-ln[data-k="review"] span{color:#c9c0dc}
+.rl-ln[data-k="sync"] b{color:#62e3c6}.rl-ln[data-k="sync"] span{color:#a8e6d8}
+.zoom #zLog{width:auto;padding:0 10px;font-family:var(--face-mono);font-size:var(--s-1)}
+.zoom #zLog[aria-expanded="true"]{color:#f2c55c}
 /* THE COMBAT LOG (Sam, 2026-10-28: "The more detailed explanation is a combat log that can be checked if desired. The
    dialogue on the center bottom in this case is redundant."). While a fight is on, every log line and every narrated
    action goes here instead of the three fading lines and the centre strip: collapsed to a one-line ticker with a Log
@@ -248,12 +265,12 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .acts p.gone{opacity:0}
 .stage.frozen *{animation-play-state:paused!important}
 /* bottom-right corner, beside the zoom (Sam, 2026-10-28: "the rehearsal box is in the way. Relocate it to the bottom right"): it sat on the party cards */
-.ow-light{position:absolute;right:206px;bottom:16px;z-index:6;display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--rule);color:var(--ink-dim);border-radius:999px;padding:4px 11px 4px 9px;font:500 11px/1.2 'Alegreya Sans',sans-serif;letter-spacing:.06em;cursor:pointer}
+.ow-light{position:absolute;right:256px;bottom:16px;z-index:6;display:flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--rule);color:var(--ink-dim);border-radius:999px;padding:4px 11px 4px 9px;font:500 11px/1.2 'Alegreya Sans',sans-serif;letter-spacing:.06em;cursor:pointer}
 .ow-light::before{content:'';width:8px;height:8px;border-radius:50%;background:#62e3a0;box-shadow:0 0 6px #62e3a0}
 .ow-light[data-s=catching-up]::before,.ow-light[data-s=fight-unshared]::before,.ow-seats i[data-s=catching-up],.ow-seats i[data-s=fight-unshared]{background:#e8c04a;box-shadow:0 0 6px #e8c04a}
 .ow-light[data-s=out-of-touch]::before,.ow-light[data-s=off]::before,.ow-seats i[data-s=out-of-touch]{background:#d0453a;box-shadow:0 0 6px #d0453a}
 .ow-light[data-s=fight-unshared],.ow-light[data-s=off],.ow-light[data-s=out-of-touch]{color:var(--ink);border-color:var(--ember)}
-.ow-seats{position:absolute;right:206px;bottom:50px;z-index:6;min-width:190px;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:6px 10px;font:13px/1.5 'Alegreya Sans',sans-serif;color:var(--ink)}
+.ow-seats{position:absolute;right:256px;bottom:50px;z-index:6;min-width:190px;background:var(--panel);border:1px solid var(--rule);border-radius:6px;padding:6px 10px;font:13px/1.5 'Alegreya Sans',sans-serif;color:var(--ink)}
 .ow-row{display:flex;align-items:center;gap:8px}.ow-row span{margin-left:auto;color:var(--ink-dim);font-size:11px}
 .ow-light[data-s=rehearsal]::before{background:#7aa7ff;box-shadow:0 0 6px #7aa7ff}
 .ow-seats i{width:8px;height:8px;border-radius:50%;background:#62e3a0;flex:none}
@@ -1173,6 +1190,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="icard" id="icard" role="dialog" aria-label="Item" hidden></div>
     <div class="titlecard" id="titlecard"><div class="no" id="tcNo"></div><h2 id="tcName"></h2></div>
     <div class="log" id="log" aria-live="polite"></div>
+    <section class="rlog" id="rlog" hidden aria-label="Log"><header><h3>LOG</h3><button data-f="all" aria-pressed="true">All</button><button data-f="story">Story</button><button data-f="review">Review</button><button data-f="sync">Sync</button><button id="rlogX" aria-label="Close the log">×</button></header><div class="body" id="rlogBody"></div></section>
     <div class="cbtlog" id="cbtLog" hidden><div class="panel" id="cbtLogPanel"></div><div class="ticker"><span class="line" id="cbtLogLine" aria-live="polite"></span><button type="button" id="cbtLogBtn" aria-expanded="false" title="The whole fight, round by round">Log</button></div></div>
     <div class="acts" id="acts" aria-live="polite"></div>
     <div id="laborBar" hidden style="position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:30;display:flex;gap:10px;align-items:center;padding:6px 12px;border:1px solid rgba(201,162,74,.55);border-radius:6px;background:rgba(12,8,16,.82);color:#e8dcc0;font:600 13px/1.2 Georgia,serif;letter-spacing:.02em"><span id="laborWhat">Work detail</span><span id="laborShift" hidden title="The shift" style="--p:0;position:relative;width:110px;height:6px;border-radius:3px;background:rgba(201,162,74,.18);overflow:hidden"><i style="position:absolute;left:0;top:0;bottom:0;width:calc(var(--p) * 100%);background:linear-gradient(90deg,#8a6a2a,#e0b45a);transition:width 1s linear"></i></span><button class="btn" id="laborTalk" hidden>Talk</button><button class="btn" id="laborLook" hidden>Look around</button><button class="btn" id="laborPocket" hidden>Steal something</button><button class="btn" id="laborEnd" hidden>End the shift</button></div>
@@ -1185,6 +1203,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
       <button class="fit" id="zFit">Fit</button>
       <button id="zIn" aria-label="Zoom in">+</button>
       <button class="fit" id="zLight" title="Lighting: how dark the cave is">Dim</button>
+      <button id="zLog" aria-expanded="false" title="The whole log, review lines too (L)">Log</button>
     </div>
     <div class="combat" id="combat" hidden>
       <div class="cbt-top cbt-ui"><span class="lbl">Combat<span class="round" id="cbtRound"></span></span><div class="turns" id="turns"></div></div>
@@ -1682,6 +1701,7 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
   // From then on nobody in the pen is "behind bars": the gate watch's warning, volleys and Drow Surgeon are off, and a
   // guard who comes back and sees them attacks (guardsReact). Cleared when the drow lock the party in again.
   brokeOut: null,
+  crewsHaltKey: null,   // the shift that was out when the pen was broken open: no crews after it (crewsHalted)
   // FLED (Sam, 2026-11-12): hero id -> {from, to, at}. A hero who ran out of a fight; their own screen walks them on
   // to `to` once the fight on `from` is over (heroFlee / tickFled).
   fled: {},
@@ -2859,8 +2879,12 @@ function drawChain(c){
 // the narration strip under the painting; a balloon is only for words actually said (or shouted).
 // An important line is spoken aloud in their voice the first time it comes up.
 const bubbles = []; let lastAnyBark = -1e9;
-function narrate(a, text){
+function narrate(a, text, opts){
   if (!text) return;
+  // a REVIEW line is the stage director's bookkeeping (who moved where, who went out of sight): kept in the log, not on
+  // the glass (Sam, 2026-11-15: "Some of these comments we don't need for the player but the info is important for review")
+  if (opts && opts.review){ reviewLog("review", text.replace(/^\(|\)$/g, "")); return; }
+  reviewLog("story", text.replace(/^\(|\)$/g, ""));
   if (cbtLog.active){ cbtLogLine(esc(text.replace(/^\(|\)$/g, "")), true); if (a){ a.lastBark = now; lastAnyBark = now; } return; }   // in a fight the strip is redundant (Sam, 2026-10-28): the log keeps it
   const el = $("acts"), p = document.createElement("p"); p.textContent = text.replace(/^\(|\)$/g, ""); el.appendChild(p);
   [...el.children].forEach((c, i, all) => c.classList.toggle("old", i < all.length - 1));
@@ -3009,6 +3033,7 @@ function log(html, opts){
   log.last = plain || log.last;
   if (plain){ (log.recent ||= []).push(plain); if (log.recent.length > 8) log.recent.shift();
     (log.history ||= []).push(plain); if (log.history.length > 20) log.history.shift(); }   // PLAYTEST NOTES carry the last 20   // NPC MINDS: what a named NPC "remembers" of the fight
+  if (plain) reviewLog("story", plain);
   if (opts && opts.say) narrateAloud(plain);
   if (cbtLog.active){ cbtLogLine(html, false); return; }
   const el = $("log"); const p = document.createElement("p"); p.innerHTML = html; el.appendChild(p);
@@ -3040,6 +3065,52 @@ function cbtLogLine(html, narr){
   panel.addEventListener("mouseleave", () => { cbtLog.paused = false; box.classList.remove("paused"); panel.scrollTop = panel.scrollHeight; });
   panel.addEventListener("scroll", () => { const atEnd = panel.scrollTop + panel.clientHeight >= panel.scrollHeight - 8; if (atEnd && !panel.matches(":hover")){ cbtLog.paused = false; box.classList.remove("paused"); } });
 }
+
+// ---------- THE REVIEW LOG (Sam, 2026-11-15) ----------
+// "Some of these comments we don't need for the player but the info is important for review. Some of it should be in a
+// log you can access but is minimized." Every line this screen shows (story) or keeps back (review: the stage director's
+// bookkeeping, who moved where, who went out of sight) and every change of the sync light (sync) is kept here, newest
+// last, and opens minimized behind the Log button (or L). The same lines go to /api/walk-log in small batches, tagged
+// with this screen, so a playtest can be read afterwards and two screens' accounts set side by side. A test copy of the
+// page keeps its log to itself (it plays its own world and must not write into the real game's record).
+const RLOG = {lines: [], out: [], filter: "all"};
+const RLOG_TAG = {story: "Story", review: "Review", sync: "Sync", system: "System"};
+const rlogWrites = () => APP && !(typeof OW_TEST_HOST !== "undefined" && OW_TEST_HOST && !owTestJoined());
+function reviewLog(kind, text){
+  const t = String(text || "").replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim().slice(0, 600); if (!t) return;
+  let pl = null, md = ""; try { pl = cur == null ? null : String(cur); md = mode || ""; } catch (e) {}      // a line logged during boot, before the plate is known
+  const line = {at: Date.now() + ((typeof OW !== "undefined" && OW.offset) || 0), kind, text: t, plate: pl, mode: (SANDBOX ? "rehearsal " : "") + md};
+  RLOG.lines.push(line); if (RLOG.lines.length > 400) RLOG.lines.shift();
+  if (rlogWrites()){ RLOG.out.push(line); if (RLOG.out.length > 600) RLOG.out.splice(0, RLOG.out.length - 600); }
+  const panel = $("rlog"); if (panel && !panel.hidden && (RLOG.filter === "all" || RLOG.filter === kind)) rlogRow(line, true);
+}
+function rlogRow(l, live){
+  const body = $("rlogBody"), d = document.createElement("div"), tm = new Date(l.at);
+  d.className = "rl-ln"; d.dataset.k = l.kind;
+  d.innerHTML = `<time>${String(tm.getHours()).padStart(2, "0")}:${String(tm.getMinutes()).padStart(2, "0")}:${String(tm.getSeconds()).padStart(2, "0")}</time><b>${RLOG_TAG[l.kind] || l.kind}</b><span>${esc(l.text)}</span>`;
+  const atEnd = body.scrollTop + body.clientHeight >= body.scrollHeight - 12;
+  body.appendChild(d); while (body.children.length > 400) body.firstChild.remove();
+  if (!live || atEnd) body.scrollTop = body.scrollHeight;
+}
+function rlogRender(){ const body = $("rlogBody"); body.innerHTML = ""; for (const l of RLOG.lines) if (RLOG.filter === "all" || RLOG.filter === l.kind) rlogRow(l, false);
+  for (const b of document.querySelectorAll("#rlog [data-f]")) b.setAttribute("aria-pressed", String(b.dataset.f === RLOG.filter)); }
+function toggleReviewLog(on){ const p = $("rlog"); if (on === undefined) on = p.hidden; p.hidden = !on; $("zLog").setAttribute("aria-expanded", String(on)); if (on) rlogRender(); }
+$("zLog").onclick = () => toggleReviewLog();
+$("rlogX").onclick = () => toggleReviewLog(false);
+for (const b of document.querySelectorAll("#rlog [data-f]")) b.onclick = () => { RLOG.filter = b.dataset.f; rlogRender(); };
+async function flushReviewLog(leaving){
+  if (!RLOG.out.length || flushReviewLog.busy || !rlogWrites()) return;
+  let auth = {}, head = {}; if (isDm()) head = dmHeaders(); else { try { auth = {characterId: localStorage.getItem("aop_character_id") || undefined, claimToken: localStorage.getItem("aop_claim_token") || undefined}; } catch (e) {} if (!auth.characterId || !auth.claimToken) return; }
+  const lines = RLOG.out.splice(0, 100); flushReviewLog.busy = !leaving;
+  const run = (typeof OW !== "undefined" && OW.run) || (typeof runSeen === "string" ? runSeen : null);
+  try {
+    const r = await fetch("/api/walk-log", {method: "POST", keepalive: !!leaving, headers: {"Content-Type": "application/json", ...head}, body: JSON.stringify({lines, run, hero: (leader && leader.id) || null, ...auth})});
+    if (!r.ok && r.status >= 500 && !leaving) RLOG.out.unshift(...lines);      // the server stumbled: try again next time (a refusal is not retried)
+  } catch (e) { if (!leaving) RLOG.out.unshift(...lines); }
+  flushReviewLog.busy = false;
+}
+setInterval(() => flushReviewLog(false), 6000);
+addEventListener("pagehide", () => flushReviewLog(true));
 
 // ---------- FX (from the plate viewer) ----------
 const STREAKS = (() => {
@@ -15636,7 +15707,7 @@ function castMovesTo(n, where){
   const onFloor = walkable(n.x, n.y), goal = onFloor && !walkable(s.x, s.y) ? nearestWalkable(s.x, s.y) : s;
   n.path = onFloor ? findPath(n, goal) : [{x: s.x, y: s.y}]; if (!n.path.length) n.path = [{x: goal.x, y: goal.y}]; n.slow = true;
   n.onArrive = () => { n.home = {x: n.x, y: n.y}; n.post = {x: n.x, y: n.y}; setAnim(n, "idle"); n.face = faceOf(leader.x - n.x, leader.y - n.y); };
-  narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} moves ${where}.`);
+  narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} moves ${where}.`, {review: true});
 }
 // [NPC_WANTS_WORD: name | character]: the "!" goes up and the approach plays when a player comes over. The
 // story layer's own `talk` flag is kept underneath so the roster clearing the ask puts things back as they were.
@@ -15668,7 +15739,7 @@ function castLeaves(n, dead, quiet, cause){
   if (gate){ const g = nearestWalkable(822, 880); n.path = [...findPath(n, g), {x: 812, y: 812, out: true}]; n.slow = false; }
   else { const e = plateEdge(n); n.path = [{x: e.x, y: e.y, out: true}]; n.slow = false; }
   n.onArrive = () => { n.alpha = 0; };
-  if (!quiet) narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} goes out of sight.`);
+  if (!quiet) narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} goes out of sight.`, {review: true});
 }
 function castReturns(n, quiet){
   n.offStage = false; n.down = false; n.fading = false;
@@ -15678,7 +15749,7 @@ function castReturns(n, quiet){
   else n.path = [{x: n.post.x, y: n.post.y}];
   n.slow = true;
   n.onArrive = () => { if (n.keep){ n.patrol = n.keep.patrol; n.static = n.keep.static; } n.home = {x: n.x, y: n.y}; };
-  if (!quiet) narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} comes back into view.`);
+  if (!quiet) narrate(n, `${SHORT[n.id] || SPR[n.id].json.name} comes back into view.`, {review: true});
 }
 // Sam, 2026-10-22 (a comment on the pen): "Sometimes these guards should be able to step off the map." A drow guard
 // walking a beat now and then carries on past the end of it, off the plate by the nearest edge, is gone a while, and
@@ -15858,22 +15929,35 @@ async function pollLabor(){
 // The rota and the game clock decide it (/api/labor crewsNow), so every seat sees the same prisoners gone. A page that
 // loads mid-shift simply finds them away. While they are out they are not in the pen: an escape now takes only who is there.
 let crewsAway = null, crewMoving = false;
+// NO WORK CREWS ONCE THE PEN IS BROKEN (Sam's playtest, 2026-11-15: "do NPCs taken out during work shifts come back?").
+// The rota kept running after the breakout: every shift change took two or three more prisoners "out on a crew", and a
+// screen that came back into the pen hid that shift's crew even though nobody had marched them out. So the pen was half
+// empty when the heroes went back for the others. The drow are not taking slaves to the kitchen while the pen gate
+// stands open. Once the gate is open, broken or fought through (outside the party's own work detail), no new crew is
+// taken; whoever was already out comes back at the end of their shift as before, and after that shift nobody is hidden.
+// (The pen-escape design, claude/Pen_Escape_Phases_2026-11-13.md, pauses labor in OUT_QUIET/HUNTED; this is that rule
+// for the crews, read from today's flags until the phase lands.) A recapture shuts the gate and the rota resumes.
+function crewsHalted(){ return !SANDBOX && !laborLive() && !!(state.brokeOut || state.gateOpen || state.gateBroken); }
 const penNpc = id => npcs.find(n => n.id === id && PEN_NPCS.some(d => d.id === id) && !n.company);
 function followCrews(list, day, shift){
   if (!Array.isArray(list) || day == null || shift == null) return;
-  const key = `${day}:${shift}`; if (crewsAway && crewsAway.key === key) return;
-  const prev = crewsAway, ids = new Set(list.flatMap(c => c.npcs || []));
+  const key = `${day}:${shift}`;
+  if (crewsHalted()){ if (!state.crewsHaltKey){ state.crewsHaltKey = crewsAway ? crewsAway.key : key; saveWalk(); } }
+  else if (state.crewsHaltKey){ state.crewsHaltKey = null; saveWalk(); }   // null, not delete: a deleted key is never sent
+  if (crewsAway && crewsAway.key === key) return;
+  const halted = !!state.crewsHaltKey && state.crewsHaltKey !== key;   // past the shift that was out when the gate opened
+  const prev = crewsAway, ids = halted ? new Set() : new Set(list.flatMap(c => c.npcs || []));
   crewsAway = {key, ids, list};
   if (cur !== PEN) return;
   const back = prev ? [...prev.ids].filter(id => !ids.has(id)).map(penNpc).filter(n => n && n.onDetail) : [];
   back.forEach(n => { n.onDetail = false; castReturns(n, true); });
   if (back.length) narrate(null, `The other work crew is marched back into the pen: ${back.map(n => SHORT[n.id] || SPR[n.id].json.name).join(", ")}.`);
-  const going = [...ids].map(penNpc).filter(n => n && !n.offStage && !n.down && !n.body && !companyNow().includes(n.id));
+  const going = crewsHalted() ? [] : [...ids].map(penNpc).filter(n => n && !n.offStage && !n.down && !n.body && !companyNow().includes(n.id));
   if (!going.length) return;
   if (!prev || mode !== "explore" || laborLive() || state.gateOpen || surgeon){ going.forEach(n => { n.onDetail = true; hideOffStage(n); }); return; }
   crewTakenOut(going, list);
 }
-function crewsOnEnter(){ if (cur !== PEN || !crewsAway) return; for (const id of crewsAway.ids){ const n = penNpc(id); if (n){ n.onDetail = true; hideOffStage(n); } } }
+function crewsOnEnter(){ if (cur !== PEN || !crewsAway) return; if (state.crewsHaltKey && state.crewsHaltKey !== crewsAway.key) return; for (const id of crewsAway.ids){ const n = penNpc(id); if (n){ n.onDetail = true; hideOffStage(n); } } }
 async function crewTakenOut(going, list){
   if (crewMoving) return; crewMoving = true;
   const live = () => cur === PEN && !laborLive();
@@ -18596,7 +18680,7 @@ function hitActor(list, w){
 stage.addEventListener("pointerleave", () => stripHover(false));
 stage.addEventListener("pointerdown", e => {
   if (cbt && e.pointerType === "touch" && e.clientY - stage.getBoundingClientRect().top < STRIP_ZONE) stripShow(3000);   // no hover on a touch screen: a tap along the top
-  if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui,.checkcard,.icard,.pel-top")) return;   // the top's buttons and panels are never a walk
+  if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui,.checkcard,.icard,.pel-top,.rlog")) return;   // the top's buttons and panels are never a walk
   if (e.button === 2) return;   // a right-click opens an item's whole card (contextmenu, below): never a walk or a swing
   unlockAudio();
   if (ICARD.pinned) icardHide(true);
@@ -18672,7 +18756,7 @@ stage.addEventListener("pointerup", endPtr); stage.addEventListener("pointercanc
 // the two-finger swipe zoomed the map behind it). The inventory, the DM tools and anything else that scrolls get the wheel;
 // only the open map zooms.
 function wheelScrolls(el){ for (; el && el !== stage; el = el.parentElement){ const o = getComputedStyle(el).overflowY; if ((o === "auto" || o === "scroll") && el.scrollHeight > el.clientHeight + 1) return true; } return false; }
-stage.addEventListener("wheel", e => { if (e.target.closest(".checkcard,.icard,.inv,.dm,.pel-tray,.pel-card") || wheelScrolls(e.target)) return; e.preventDefault(); if (mode === "talk" || mode === "dialog") return; const r = stage.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, {passive: false});
+stage.addEventListener("wheel", e => { if (e.target.closest(".checkcard,.icard,.inv,.dm,.pel-tray,.pel-card,.rlog") || wheelScrolls(e.target)) return; e.preventDefault(); if (mode === "talk" || mode === "dialog") return; const r = stage.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, {passive: false});
 function click(w){
   if (timeStopped) return;
   if (FIGHT.mirror && mode === "combat"){ oneFightMirrorClick(w); return; }   // ONE FIGHT: aimed here, played there
@@ -18775,6 +18859,7 @@ addEventListener("keydown", e => {
   if (mode === "combat" && FIGHT.auth && oneFightWaitsFor(activeActor()) && (e.code === "Enter" || MOVE_KEYS.has(e.code))) return;   // not this screen's hero to move
   if (e.key === "Escape" && dmPlacing){ dmPlacing = null; stage.classList.remove("placing"); hint(""); return; }
   if (e.key === "Escape" && topPanelOpen()){ closeTopPanels(); return; }
+  if (e.key === "Escape" && !$("rlog").hidden){ toggleReviewLog(false); return; }
   if (e.code === "KeyC" && mode === "explore" && !e.ctrlKey && !e.metaKey && !e.altKey){ e.preventDefault(); toggleHeroCard(); return; }
   if (e.code === "KeyI" && (mode === "explore" || mode === "combat")){ e.preventDefault(); toggleBag(); return; }
   if (e.key === "Escape" && bagOpen()){ toggleBag(false); return; }
@@ -18784,6 +18869,7 @@ addEventListener("keydown", e => {
   if (e.key === "Escape" && exploreJump){ exploreJump = false; hint(""); return; }
   if (e.key === "Escape"){ if (!$("obj").hidden){ $("obj").hidden = true; mode = "explore"; } else if (!$("talk").hidden) $("talkNo").click(); else if (!$("dm").hidden) toggleDm(false); }
   if (e.key === "m" || e.key === "M") $("musicBtn").click();
+  if (e.code === "KeyL" && !e.ctrlKey && !e.metaKey && !e.altKey && !bagOpen()){ e.preventDefault(); toggleReviewLog(); return; }
   if (orbPick && mode === "combat" && cbt && cbt.phase === "menu"){
     if (/^Arrow(Up|Left)$/.test(e.code)){ e.preventDefault(); orbSet(orbPick.a, orbPick.i - 1); return; }
     if (/^Arrow(Down|Right)$/.test(e.code)){ e.preventDefault(); orbSet(orbPick.a, orbPick.i + 1); return; }
@@ -22621,6 +22707,7 @@ function owFightEnds(){
 // --- the light ---
 const OW_LABEL = {"in-step": "In step", "catching-up": "Catching up…", "out-of-touch": "Out of touch", "fight-unshared": "Fight not shared", "off": "Not shared", "rehearsal": "Rehearsal · own world"};
 function owSetStatus(s){
+  if (s !== OW.status) reviewLog("sync", `Sync: ${OW_LABEL[s] || s}${OW.status && OW.status !== "off" ? ` (was ${OW_LABEL[OW.status] || OW.status})` : ""}`);
   OW.status = s;
   let el = $("owLight");
   if (!el){
