@@ -374,7 +374,7 @@ export async function restartCampaign(admin: SupabaseClient): Promise<RestartRes
       note("character_faith", error)
     }
     {
-      const { error } = await admin.from("party_supplies").update({ supplies: 0, hungry_nights: 0, updated_at: new Date().toISOString() }).neq("id", "00000000-0000-0000-0000-000000000000")
+      const { error } = await admin.from("party_supplies").update({ supplies: 0, hungry_nights: 0, last_camp_rest: null, last_camp_rest_at: null, updated_at: new Date().toISOString() }).neq("id", "00000000-0000-0000-0000-000000000000")
       note("party_supplies", error)
     }
     report.runStateCleared = cleared

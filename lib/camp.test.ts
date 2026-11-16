@@ -13,6 +13,7 @@ import {
   attune,
   bardUpgrade,
   campRest,
+  campRestFromFire,
   campPurpose,
   craftProgress,
   craftMenu,
@@ -1231,5 +1232,34 @@ describe("a recipe cheaper than a gold piece (lamp oil, 1 sp)", () => {
     })
     expect(menu.alchemy[0]).toMatchObject({ materialsGp: 0.05, available: true, missing: [] })
     expect(payFromPurse({ sp: 1 }, 0.05)).toEqual({ cp: 5, sp: 0, ep: 0, gp: 0, pp: 0 })
+  })
+})
+
+// Sam, 2026-11-16 ("fix gap"): the chat route's long rest at camp obeys what Camp at the Fire's SLEEP bought.
+describe("campRestFromFire", () => {
+  const priced = campRest("full", 30, 4)
+  it("a full rest from the fire is a real long rest, fed, and free here", () => {
+    const r = campRestFromFire("full", priced)
+    expect(r.camp.allowed).toBe(true)
+    expect(r.camp.cost).toBe(0)
+    expect(r.fed).toBe(true)
+  })
+  it("a partial rest gives no long rest and moves no hunger", () => {
+    const r = campRestFromFire("partial", priced)
+    expect(r.camp.allowed).toBe(false)
+    expect(r.camp.hungerTicks).toBe(false)
+    expect(r.fed).toBe(false)
+  })
+  it("a hungry night gives no long rest and ticks hunger", () => {
+    const r = campRestFromFire("none", priced)
+    expect(r.camp.allowed).toBe(false)
+    expect(r.camp.hungerTicks).toBe(true)
+    expect(r.fed).toBe(false)
+  })
+  it("no verdict from the fire keeps the old behaviour: allowed and free", () => {
+    const r = campRestFromFire(null, campRest("full", 0, 4))
+    expect(r.camp.allowed).toBe(true)
+    expect(r.camp.cost).toBe(0)
+    expect(r.fed).toBe(true)
   })
 })

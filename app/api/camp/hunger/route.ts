@@ -7,8 +7,10 @@ import { skillBonus, type SheetSlice } from "@/lib/game-context"
 
 // /api/camp/hunger — what a hungry night does to the company (lib/camp-hunger.ts has Sam's rule and the sources).
 //
-//   POST {op: "night", fed}            Camp at the Fire's SLEEP, after the food is counted. Fed: the hungry streak
+//   POST {op: "night", fed, meal?}     Camp at the Fire's SLEEP, after the food is counted. Fed: the hungry streak
 //        → {nights, event, text}       resets. Hungry: one more night in a row, and the rule decides what it brings.
+//                                       `meal` ("full" | "partial" | "none") is what the night bought; it is kept on
+//                                       party_supplies.last_camp_rest so the chat route's long rest obeys the fire.
 //                                       Buppido's blow and the twins leaving are settled here and now; a brawl or a
 //                                       rage waits for the party (op "settle").
 //   POST {op: "settle", event, hero?, how?}   A brawl or rage: the hero steps in (Persuasion or Intimidation against
@@ -74,7 +76,10 @@ export async function POST(req: NextRequest) {
     const { data: pool } = await db.from("party_supplies").select("id,hungry_nights").limit(1).maybeSingle()
     const before = Number((pool as { hungry_nights?: number } | null)?.hungry_nights) || 0
     const nights = body.fed ? 0 : before + 1
-    if (pool?.id) await db.from("party_supplies").update({ hungry_nights: nights, updated_at: new Date().toISOString() }).eq("id", pool.id)
+    // What the fire bought tonight (Sam, 2026-11-16: "fix gap"): the chat route's long rest at camp reads this.
+    const meal = body.meal === "full" || body.meal === "partial" || body.meal === "none" ? body.meal : body.fed ? null : "none"
+    const now = new Date().toISOString()
+    if (pool?.id) await db.from("party_supplies").update({ hungry_nights: nights, updated_at: now, ...(meal ? { last_camp_rest: meal, last_camp_rest_at: now } : {}) }).eq("id", pool.id)
     if (!roster) return NextResponse.json({ nights, event: { kind: nights ? "grumble" : "none" }, text: nights ? "Stomachs growl in the dark." : "" })
     const heroes = roster.heroes.map((h) => h.slug)
     const event: HungerEvent = hungerEvent(nights, roster.companions, heroes, r)
