@@ -505,7 +505,7 @@ const isPlayerCharacterRow = (
 ): boolean => !!row && (row.is_player === true || row.character_type === "player")
 
 export async function POST(req: Request) {
-  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null, talkWhere: talkWhereRaw = null, facing: facingRaw = null, sandbox: sandboxRaw = false, addressTo: addressToRaw = null, privateReply: privateReplyRaw = false, rehearsal: rehearsalRaw = null } = await req.json()
+  const { message, campaignId = "abyss", characterId = null, claimToken = null, director: directorRaw = false, talkWith: talkWithRaw = null, talkWhere: talkWhereRaw = null, facing: facingRaw = null, sandbox: sandboxRaw = false, addressTo: addressToRaw = null, privateReply: privateReplyRaw = false, mapEvent: mapEventRaw = false, rehearsal: rehearsalRaw = null } = await req.json()
   // A PRIVATE REPLY (Sam, 2026-10-01: "a prayer is private unless spoken aloud"; wired 2026-10-27). The answer goes back
   // to the one browser that asked and is NOT written to the shared log, so no other screen at the table sees or hears it.
   // Only honoured on a director turn: a player's own line is never hidden from the table this way.
@@ -560,6 +560,11 @@ export async function POST(req: Request) {
    * so no malformed body can silence a genuine player line.
    */
   const director = directorRaw === true
+  /** An AUTOMATIC map event ("Drow guard sees Samson… Combat has begun", the alarm horn; lib/walk-action.ts). The map
+   *  already runs the fight and rolls every die, so this turn narrates only: no [[dice]] cue, no roll_requests row.
+   *  Playtest 2026-11-15, 17:18: the Guard Tower fight started on the map AND Malachar opened his own in chat —
+   *  initiative for Samson and "roll to hit" for the DROW's crossbow handed to Scott; both rows still pending. */
+  const mapEventTurn = director && mapEventRaw === true
   /** The player's own words, or "" for a direction nobody spoke. */
   const spokenMessage = director ? "" : message
 
@@ -2276,7 +2281,7 @@ ${MALACHAR_LAST_WORD}`
         {
           role: "user",
           content: director
-            ? `[STAGE DIRECTION — from the director, not from the table. Nobody spoke. Do exactly what it asks, in the fiction, addressed to the party. Never quote it, never mention it, never reply to it as though a player had said it.]\n${message}`
+            ? `[STAGE DIRECTION — from the director, not from the table. Nobody spoke. Do exactly what it asks, in the fiction, addressed to the party. Never quote it, never mention it, never reply to it as though a player had said it.]${mapEventTurn ? "\n[THE MAP IS ALREADY PLAYING THIS. Any fight, its initiative, every attack, save and damage roll is made by the game on the map, not by you and not by the players. Narrate the moment in one or two short lines. Ask nobody to roll and write no [[dice]].]" : ""}\n${message}`
             : toDm ? `${playerName} (to the DM, out of character): ${message}` : `${playerName}: ${message}`,
         }
       ],
@@ -3596,7 +3601,7 @@ ${MALACHAR_LAST_WORD}`
   // Strip control tags from the displayed text, preserving their visible speech.
   // The roll tag is cut back to its bare dice FIRST: the skill and the DC that
   // ride inside [[1d20+3 | stealth | DC 15]] are for the ledger, never the table.
-  const responseText = stripRollRequestExtras(rawText)
+  const responseText = (mapEventTurn ? rawText.replace(/\[\[[^\]]*\]\]/g, "") : stripRollRequestExtras(rawText))
     .replace(/\[NPC_SPEECH:\s*[^\]]+\]/gi, "")
     .replace(/\[\/NPC_SPEECH\]/gi, "")
     .replace(/\[ITEM_ADD:[^\]]+\]/gi, "")
@@ -5248,7 +5253,8 @@ Answer with exactly one cue name from the list, or the single word NONE. No othe
           .eq("status", "resolved")
       }
 
-      const parsedRequest = parseRollRequest(rawText)
+      // A map event owes no roll (mapEventTurn above): the map rolled it.
+      const parsedRequest = mapEventTurn ? null : parseRollRequest(rawText)
       if (parsedRequest) {
         // A later DM turn supersedes an unanswered request for this character.
         await admin
