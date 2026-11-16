@@ -103,8 +103,12 @@ export async function POST(req: NextRequest) {
       const d = openDecision(await liveFight(db, runId), now)
       if (d.kind === "join") return NextResponse.json({ auth: d.fight.auth_key === who, fight: d.fight, now })
       if (d.endStale) await db.from("walk_fights").update({ ended_at: new Date().toISOString() }).eq("id", d.endStale)
-      // the old fights' streams are not kept: ten minutes after an end, they go
-      await db.from("walk_fights").delete().eq("campaign_run_id", runId).lt("ended_at", new Date(now - 10 * 60 * 1000).toISOString())
+      // Ten minutes after a fight ends its quarter-second TICKS go (they are the bulk: ~800 a fight). The fight row, every
+      // player INPUT and the authority's END stay, so a game night can be reviewed afterwards (Sam, 2026-11-15: the night's
+      // fights had been wiped by the next fight that opened, and nothing was left to read).
+      const { data: old } = await db.from("walk_fights").select("id").eq("campaign_run_id", runId).lt("ended_at", new Date(now - 10 * 60 * 1000).toISOString())
+      const oldIds = (old ?? []).map(r => r.id as string)
+      if (oldIds.length) await db.from("walk_fight_msgs").delete().in("fight_id", oldIds).eq("kind", "tick")
       const { data, error } = await db.from("walk_fights").insert({ campaign_run_id: runId, plate, auth_key: who }).select("*").single()
       if (error) {
         // two screens opened at once: the unique index let one in. Show that one.
