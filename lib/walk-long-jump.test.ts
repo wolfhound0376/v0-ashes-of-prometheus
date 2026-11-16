@@ -67,10 +67,30 @@ const depthAt = (y: number) => 0.8 + 0.32 * Math.min(1, Math.max(0, (y - depthMi
 const ftPx = (a: any) => (96 * BASE * node.scale * depthAt(a.y) * (a.big || 1)) / 5
 const fname = (a: any) => a.id
 
+// planLeap measures in RULE feet, not plate pixels: the painted-floor plates carry a
+// perspective mesh, so ruleFt() walks a point through it instead of using ftPx directly.
+// The real ruleFt is pulled from the page rather than stubbed, so this still tests what
+// ships. It short-circuits to ftPx when the actor is not on a painted floor, and the two
+// nodes below are classic spec.json rooms with no overlay mesh at all — onPaintedFloor is
+// genuinely false for them, so the stub states a fact rather than papering over one.
+//
+// `actors` is the landing-square occupancy check — you may not land on top of someone.
+// `leapBlocked` is the same idea mid-arc: you may not sail over a standing enemy. Both are
+// taken as they ship, with empty rosters, because these cases put one hero alone on an
+// empty map — that is what the world actually holds here, not a convenient stub. A case
+// about landing on someone, or clearing a guard, would pass its own actors and foes in.
 const [, planLeap] = new Function(
-  "walkable", "ftPx", "fname", "MIN_LEAP_FT", "balconyFloor", "outsidePen",
-  `${grab("gapOnLine")}\n${grab("planLeap")}\nreturn [gapOnLine, planLeap];`,
-)(walkable, ftPx, fname, MIN_LEAP_FT, () => false, () => false)   // no pen gate on these plates: the leap rule alone as [unknown, (a: any, to: Pt) => any]
+  "walkable", "ftPx", "fname", "MIN_LEAP_FT", "balconyFloor", "outsidePen", "onPaintedFloor", "ruleFt", "actors", "leapBlocked", "hero", "standing", "foes", "heroes",
+  `${grab("ruleFt")}\n${grab("leapBlocked")}\n${grab("gapOnLine")}\n${grab("planLeap")}\nreturn [gapOnLine, planLeap];`,
+)(
+  walkable, ftPx, fname, MIN_LEAP_FT,
+  () => false, () => false, () => false,
+  undefined, [], undefined,
+  () => false, (xs: any[]) => xs, [], () => [],
+) as [
+  unknown,
+  (a: any, to: Pt) => any,
+]
 
 // str_score off the characters table, the same numbers the sheets carry.
 const STR: Record<string, number> = { kenta: 12, samson: 11, scott: 12, freia: 8 }
