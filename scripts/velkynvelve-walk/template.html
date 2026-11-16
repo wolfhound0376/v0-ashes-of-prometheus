@@ -1611,7 +1611,7 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
   // party's flag; `unshackled` names the heroes who have got out of their own. JIMJAR'S WIRE: wireAsk {at} once he has
   // come over with it, wireBet {heroId: watch number} the watch a hero last lost his bet, wireTried {heroId: true}
   // who has had their go at their manacles since the last rest.
-  unshackled: {}, wireAsk: null, wireBet: {}, wireTried: {},
+  unshackled: {}, ironsTried: {}, wireAsk: null, wireBet: {}, wireTried: {},
   // LIFT ONLY WHAT YOU KNOW ABOUT (2026-11-13). pocketSeen {pocketId: true}: someone sized them up and saw what is loose
   // on them. pocketLooked {pocketId: {heroId: true}}: who has had their one look. theftForgiven {npcId: true}: who has
   // already let a caught hand pass once.
@@ -8845,6 +8845,9 @@ function exploreExtras(m, o, add, who){
   if (/cleric/.test(cls)) x("Pray", "✠", ART("pray"), "silently, or aloud", () => openPray());
   if (/warlock/.test(cls) && beseechCan(L)) x("Beseech your patron", "✠", ART("pray"), "a way out of the pen · once until you rest", () => openBeseech());
   { const v = druidVermin(L); if (v) x(`Speak to the ${verminKind(v)}`, "❦", ART("talk"), `Animal Handling ${sgn(heroMod(L, "animalHandling", "wis"))} · send it for a guard's key or blade · once a watch`, () => speakToVermin(v)); }
+  if (ironsCan(L, "key")) x("Unlock everyone's manacles", "⚿", ART("pickpocket", "search"), `${fname(ironsKeyHolder())} carries a key that fits them · no roll`, () => ironsUnlockAll());
+  if (ironsCan(L, "pick")) x("Pick your manacles", "⚿", ART("pickpocket", "search"), `Thieves' tools ${sgn(heroMod(L, "thievesTools", "dex"))} · one try until a long rest`, () => ironsTry("pick"));
+  if (ironsCan(L, "break")) x("Break your manacles", "⚿", ART("force", "search"), `Strength ${sgn(abilMod(SHEETS[L.id] || {}, "str"))} · hard · one try until a long rest`, () => ironsTry("break"));
   if (wireCan(L)) x("Work the wire into your manacles", "⚿", ART("pickpocket", "search"), `Sleight of Hand ${sgn(heroMod(L, "sleightOfHand", "dex"))} · one try until you rest`, () => wireManacles());
   if (whistleCan(L)) x("Whistle at the guard", "♪", ART("inspire"), `Performance ${sgn(heroMod(L, "performance", "cha"))} · he may come in to shut you up`, () => whistleAtGuard());
   if (sh.bardic) x("Inspire", "♪", ART("inspire"), `Bardic Inspiration · ${inspLeftOf(L)} of ${sh.bardic.uses} left`, inspLeftOf(L) > 0 && party.length > 1 ? () => openInspire() : null);
@@ -10572,6 +10575,50 @@ async function wireManacles(){
       log(`${esc(fname(h))} works the wire in the manacle's lock. <em>It will not catch. Not until they have rested their hands.</em>`);
     }
   } finally { wireBusy = false; exploreKey = ""; }
+}
+// ---------- STRIKING OFF THE IRONS (Sam's playtest, 2026-11-15) ----------
+// Samson used a key at the guard tower and Malachar said "one by one, the irons fall", but `state.manacled` never moved
+// (walk_world at 17:48: manacled true, unshackled {}), so the cast list kept every somatic spell dark and he had only
+// Healing Word and Thaumaturgy. The irons now come off in the game, not just in the prose:
+//   KEY    Someone in the party carries a key that fits manacles (the catalogue's "Iron key": walk-loot.ts) -> everyone's
+//          irons come off, no roll. Same party-wide switch as the DM drawer.
+//   PICK   The acting hero carries thieves' tools: OotA's DC 15 Dexterity, frees that hero.
+//   BREAK  OotA's DC 20 Strength, frees that hero.
+//   A failed pick or break is not retried until a long rest (OotA). The map has no long rest yet, so it holds for the
+//   run; the DM drawer still strikes the irons off for everyone.
+const MANACLE_KEYS = ["Iron key"];
+let ironsBusy = false;
+function ironsKeyHolder(){ return party.find(p => MANACLE_KEYS.some(k => carries(p, k))) || null; }
+function ironsTried(L, how){ return !!((state.ironsTried || {})[L.id + ":" + how]); }
+function ironsCan(L, how){
+  if (!(L && mode === "explore" && !L.down && manacled(L) && !ironsBusy)) return false;
+  if (how === "key") return !!ironsKeyHolder();
+  if (how === "pick") return carries(L, THIEVES_TOOLS) && !ironsTried(L, "pick");
+  return !ironsTried(L, "break");
+}
+function ironsUnlockAll(){
+  const k = ironsKeyHolder(); if (!k || ironsBusy) return;
+  state.manacled = false; state.unshackled = {}; saveWalk(); exploreKey = "";
+  sfx("lock-picked", .8); for (const p of party) popText(p, "free", "#9ad0ff", 1.1);
+  log(`<b>${esc(fname(k))} turns the key in every lock.</b> <em>The irons come off, one by one.</em>`, {say: true});
+  if (APP) handOff(`${fname(k)} has unlocked every prisoner's manacles with a key that fits them. The whole party is out of irons now and can use both hands and cast spells with gestures. Narrate it in a line; award nothing.`, true, {noLoot: true});
+}
+async function ironsTry(how){
+  const h = leader; if (!ironsCan(h, how)) return; ironsBusy = true; h.path = [];
+  try {
+    const r = await rollOnDashboard(how === "pick" ? "manacles:pick" : "manacles:break", how === "pick" ? heroMod(h, "thievesTools", "dex") : abilMod(SHEETS[h.id] || {}, "str"), {who: h});
+    if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3600); return; }
+    state.ironsTried = Object.assign({}, state.ironsTried || {}, {[h.id + ":" + how]: true});
+    if (r.success){
+      state.unshackled = Object.assign({}, state.unshackled || {}, {[h.id]: true}); saveWalk();
+      sfx(how === "pick" ? "lock-picked" : "door-locked", .8); popText(h, "free", "#9ad0ff", 1.1);
+      log(`<b>${esc(fname(h))}'s manacles ${how === "pick" ? "click open" : "give way"}.</b> <em>Only theirs.</em>`, {say: true});
+      if (APP) handOff(`${fname(h)} has ${how === "pick" ? "picked the lock of" : "broken"} their own manacles (${how === "pick" ? "thieves' tools" : "Strength"} ${r.total}) and is out of irons; the others are still manacled. Narrate it in a line; award nothing.`, true, {noLoot: true});
+    } else {
+      saveWalk(); sfx("lock-pick-fail", .7);
+      log(`${esc(fname(h))} ${how === "pick" ? "works the lock of their manacles" : "strains against the irons"}. <em>They hold. Not again until a long rest.</em>`);
+    }
+  } finally { ironsBusy = false; exploreKey = ""; }
 }
 /** The party has rested: a rogue may try the wire again. */
 function wireRested(){ if (state.wireTried && Object.keys(state.wireTried).length){ state.wireTried = {}; saveWalk(); exploreKey = ""; } }
