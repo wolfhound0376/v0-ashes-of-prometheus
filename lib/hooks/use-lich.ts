@@ -58,7 +58,7 @@ export function useLich(campaignId: string = "abyss") {
     message: string,
     characterId?: string | null,
     claimToken?: string | null,
-    opts?: { director?: boolean; talkWith?: string | null; talkWhere?: string | null; facing?: string | null; sandbox?: boolean; addressTo?: string | null; privateReply?: boolean; noLoot?: boolean; rehearsal?: Array<{ speaker: string; text: string }> },
+    opts?: { director?: boolean; talkWith?: string | null; talkWhere?: string | null; facing?: string | null; sandbox?: boolean; addressTo?: string | null; privateReply?: boolean; noLoot?: boolean; mapEvent?: boolean; rehearsal?: Array<{ speaker: string; text: string }> },
   ): Promise<LichResponse> => {
     setIsLoading(true)
 
@@ -82,7 +82,7 @@ export function useLich(campaignId: string = "abyss") {
           response = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message, campaignId, characterId, claimToken, director: opts?.director === true, talkWith: opts?.talkWith ?? null, talkWhere: opts?.talkWhere ?? null, facing: opts?.facing ?? null, sandbox: opts?.sandbox === true, addressTo: opts?.addressTo ?? null , privateReply: opts?.privateReply === true, noLoot: opts?.noLoot === true, ...(opts?.sandbox === true && opts.rehearsal?.length ? { rehearsal: opts.rehearsal } : {}) }),
+            body: JSON.stringify({ message, campaignId, characterId, claimToken, director: opts?.director === true, talkWith: opts?.talkWith ?? null, talkWhere: opts?.talkWhere ?? null, facing: opts?.facing ?? null, sandbox: opts?.sandbox === true, addressTo: opts?.addressTo ?? null , privateReply: opts?.privateReply === true, noLoot: opts?.noLoot === true, mapEvent: opts?.mapEvent === true, ...(opts?.sandbox === true && opts.rehearsal?.length ? { rehearsal: opts.rehearsal } : {}) }),
           })
           // The server answered — success or failure, that is the answer.
           break
