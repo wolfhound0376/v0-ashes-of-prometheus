@@ -1671,7 +1671,7 @@ function prisonersJoin(){
 // call them out. They come: Out of the Abyss's escape is the prisoners' escape, and every one of them wants out. Not
 // the dead, not anyone the DM has left behind (DM tools), not anyone out on a work crew. It is the same company list as
 // the DM's "Bring along", so every screen sees the same people with the party.
-function penOpenToCall(){ return !!(state.gateOpen || state.gateBroken || state.brokeOut); }
+function penOpenToCall(){ return !!(state.gateOpen || state.gateBroken || state.brokeOut || escapeOut()); }
 function penLeftovers(){
   const comp = companyNow(), away = (crewsAway && crewsAway.ids) || new Set(), slain = state.slain || [];
   return PEN_NPCS.map(d => d.id).filter(id => SPR[id] && !comp.includes(id) && !state.leftBehind.includes(id) && !slain.includes(id) && !away.has(id));
@@ -9259,7 +9259,7 @@ function renderExploreBar(){
   if (sh && (sh.magic || sh.caster)) add("Cast", "✦", ART("cast", "cast-spell"), wardsHere(leader) ? "the ward on the wall drinks it here" : "a spell you have memorized", wardsHere(leader) ? null : () => openCastMenu(o));
   if (o.foe) add(`Attack ${nm(o.foe)}`, "⚔", ART("attack", "attack"), "starts a fight · roll initiative", () => fightWith(o.foe, `${who} attacks!`), "end");
   if (party.filter(canControl).length > 1) add("Next hero", "⇆", null, `Tab · now ${who}`, () => { const mine = party.filter(canControl); const i = mine.indexOf(leader); setLeader(mine[(i + 1) % mine.length]); });
-  if (!o.foe) add("Short rest", "⌛", "dodge", restRisk().chance ? `an hour here · ${Math.round(restRisk().chance * 100)}% the locals find you` : "an hour here", () => openRest());
+  if (!o.foe && escapePolicy().shortRest.ok) add("Short rest", "⌛", "dodge", restRisk().chance ? `an hour here · ${Math.round(restRisk().chance * 100)}% the locals find you` : "an hour here", () => openRest());
   if (!o.foe && wildPlate()) add("Long rest", "☾", "dodge", isRoadPlate(cur) ? "make camp · back on the road" : "make camp here · the fire", () => openLongRest());
   add("Tell Malachar", "✎", null, "search, hide, anything else", () => openParley(true));
   exploreExtras(m, o, add, who);
@@ -9557,18 +9557,31 @@ function guardsReact(w, h, why){
   if (guardsAlarm && guardsAlarm.cur === cur && now < guardsAlarm.until) return false;
   guardsAlarm = {cur, until: now + 30000};
   if (sneak) endSneak();
-  const guards = guardsOnPlate(), sp = specialOnPlate();
+  const guards = guardsOnPlate();
+  let sp = specialOnPlate();
   for (const g of guards){ g.path = []; g.actUntil = now + 60000; g.scanAt = now + 60000; faceTo(g, h); }
   if (w) popText(w, "!", "#ff6b5a", 1.4);
   h.path = [];
   const who = fname(h), where = node.name;
+  // THE ESCAPE PHASE (Sam, 2026-11-13: Jorlan said "Back inside." over a dead, looted guard; once the alarm is up, "Lead
+  // the hunt."). Jorlan's stance comes from the phase: while they are hunted he does not talk, he gives the order and the
+  // guards attack (he has no stat block on the map, so he gives it from where he stands); if he gave his word to a
+  // prisoner he stands aside and says nothing. Out quietly, he still speaks first, and he knows exactly what happened.
+  const jStance = sp && sp.id === "jorlan" ? PEN_ESCAPE.jorlanStance(escapeNow(), {pledged: !!(storyPledge && storyPledge.keptAt)}) : null;
+  if (jStance === "hunt" || jStance === "aside"){
+    stopActivity(sp); sp.path = []; faceTo(sp, h);
+    if (jStance === "hunt"){ bark(sp, "There. Take them.", 3200); log(`<em>Jorlan sees ${esc(who)} and does not bother with words.</em> The guards come on.`); }
+    else log(`<em>Jorlan sees ${esc(who)}, and looks away.</em> The guards do not wait for him.`);
+    sp = null;
+  }
+  const knows = jStance === "talk_knows" ? ` ${PEN_ESCAPE.malacharLine(escapeNow(), {dead: escapeDead()})}` : "";
   if (sp){
     const spName = SHORT[sp.id] || SPR[sp.id].json.name;
     stopActivity(sp); sp.path = []; faceTo(sp, h);
     sp.talk = true; delete state.talked[sp.id]; delete state.declined[sp.id]; setTimeout(() => { sp.talkSituation = null; }, 60000);
-    sp.talkSituation = `${who}, a prisoner, was just caught ${why} in ${where} by the guards; ${spName} is there with them. The guards have crossbows on ${who} and wait for ${spName}'s word.`;
+    sp.talkSituation = `${who}, a prisoner, was just caught ${why} in ${where} by the guards; ${spName} is there with them. The guards have crossbows on ${who} and wait for ${spName}'s word.${knows}`;
     log(`<em>${esc(fname(w || guards[0] || sp))} has ${esc(who)} — and ${esc(spName)} is here.</em> ${esc(spName)} speaks first.`);
-    if (APP) handOff(`${who} was caught ${why} in ${where}. The drow guards have them covered, but ${spName} is present and speaks first. Play ${spName}: by gravity, ${spName}'s relationship with ${who} and what is said, ${spName} decides whether the guards attack. If anyone attacks, emit [COMBAT_START: ...] naming every hostile creature here.`);
+    if (APP) handOff(`${who} was caught ${why} in ${where}.${knows} The drow guards have them covered, but ${spName} is present and speaks first. Play ${spName}: by gravity, ${spName}'s relationship with ${who} and what is said, ${spName} decides whether the guards attack. If anyone attacks, emit [COMBAT_START: ...] naming every hostile creature here.`);
     openTalk(sp);
     return true;
   }
@@ -10412,7 +10425,7 @@ const CARAVAN_LINES = {
   0: "The caravan is here."
 };
 /** Still prisoners in the pen: on the pen plate, and the breakout has not been fought. */
-function penHeld(){ return cur === PEN && !state.brokeOut && !SANDBOX; }
+function penHeld(){ return cur === PEN && !state.brokeOut && !SANDBOX && escapePolicy().doomClock; }   // THE ESCAPE PHASE: the caravan clock and the pen's beats stop once they are out
 function pacingFind(id){ return npcs.find(n => n.id === id && actors.includes(n) && !n.down && !n.body && !n.offStage && !n.slain && !n.hostile && (n.alpha ?? 1) > .5) || null; }
 let pacingAt = 0, pacingRot = null, pacingPenSince = 0, pacingArgued = 0, pacingMuttered = 0, pacingFaded = null, pacingAsked = null, pacingPlanBarked = 0;
 function pacingTick(){
@@ -11394,6 +11407,7 @@ const REST_DEFAULT = {chance: 0, foes: [], label: ""};
 function restRisk(){ if (state.director && state.director.shelter && state.director.shelter[String(cur)]) return REST_DEFAULT; return (node && node.rest) || REST_DEFAULT; }   // a SHELTER (the director) is safe to rest in
 function openRest(){
   if (mode !== "explore" || !leader) return;
+  { const r = escapePolicy().shortRest; if (!r.ok){ toast(r.why, 4200); return; } }   // THE ESCAPE PHASE (Sam's run, 2026-11-13: an hour's rest beside the body)
   if (!party.some(p => characterIdOf(p.id))){ toast("Nobody here has a sheet to rest on."); return; }
   const r = restRisk(), odds = r.chance ? `There is a ${Math.round(r.chance * 100)}% chance ${r.who || "the locals"} come by in that hour.` : "Nobody comes this way.";
   showDialog({title: "Short rest", body: `Rest an hour in ${node.name}? Each of you spends Hit Dice to heal (the game rolls them). ${odds}`, buttons: [
@@ -16537,7 +16551,7 @@ async function pollLabor(){
   followCrews(j.crewsNow, j.day, j.shift);
   noteTalkClock(j.day, j.shift);
   // the shift has come round: anyone at the table may call it (the server takes the first and refuses the rest)
-  if (labor && j.due && labor.status === "scheduled" && cur === PEN && mode === "explore" && !surgeon && !state.gateOpen) await laborPost("call");
+  if (labor && j.due && labor.status === "scheduled" && cur === PEN && mode === "explore" && !surgeon && !state.gateOpen && escapePolicy().labor) await laborPost("call");
   laborFollow(was);
   renderLaborBar();
 }
@@ -16556,7 +16570,7 @@ let crewsAway = null, crewMoving = false;
 // taken; whoever was already out comes back at the end of their shift as before, and after that shift nobody is hidden.
 // (The pen-escape design, claude/Pen_Escape_Phases_2026-11-13.md, pauses labor in OUT_QUIET/HUNTED; this is that rule
 // for the crews, read from today's flags until the phase lands.) A recapture shuts the gate and the rota resumes.
-function crewsHalted(){ return !SANDBOX && !laborLive() && !!(state.brokeOut || state.gateOpen || state.gateBroken); }
+function crewsHalted(){ return !SANDBOX && !laborLive() && !!(state.brokeOut || state.gateOpen || state.gateBroken || !escapePolicy().labor); }
 const penNpc = id => npcs.find(n => n.id === id && PEN_NPCS.some(d => d.id === id) && !n.company);
 function followCrews(list, day, shift){
   if (!Array.isArray(list) || day == null || shift == null) return;
@@ -17483,6 +17497,7 @@ function drowClose(j, pc){
 function tickJorlanPrivacy(){
   const j = npcs.find(n => n.id === "jorlan" && actors.includes(n));
   if (!j || j.offStage || j.body || j.down || j.hostile || j.barsTalk) return;
+  if (!escapePolicy().jorlanVisits){ if (j.talk && j.jorlanAsk){ j.talk = false; } return; }   // THE ESCAPE PHASE: no quiet word with a prisoner who is out
   const askFor = j.jorlanAsk && !state.talked[j.id] ? (pcNamedIn(j.jorlanAsk.who) || leader) : null;
   const target = j.jorlanBeside || askFor;
   if (!target) return;
@@ -17508,7 +17523,7 @@ function tickGateWatch(){
   // bars: a 10-second warning nobody saw, then the volley and the Drow Surgeon (Ront shot dead). Once the breakout has
   // been fought there is no warning and no volley: a guard who sees them does what any guard does on seeing escaped
   // prisoners (Sam, 2026-10-26) — the guards attack, in a real fight with initiative, everyone in it.
-  if (state.brokeOut){
+  if (state.brokeOut || escapeOut()){   // THE ESCAPE PHASE: out, hunted or fighting
     gateWarn = null;
     if (cur !== PEN || mode !== "explore" || !leader || timeStopped || laborLive()) return;
     for (const w of gateGuards()) for (const h of gateHeroes()){
@@ -17570,7 +17585,7 @@ function leanWindow(t){
   return {start, end: start + dur, pick: r >>> 17};
 }
 function leanCalm(){
-  return cur === PEN && (mode === "explore" || mode === "dialog") && !state.gateOpen && !state.gateBroken && !laborLive() && !surgeon && !timeStopped
+  return escapePolicy().leaningGuard && cur === PEN && (mode === "explore" || mode === "dialog") && !state.gateOpen && !state.gateBroken && !laborLive() && !surgeon && !timeStopped
     && !postsEmpty() && !gateWarn && !(guardsAlarm && guardsAlarm.cur === cur && now < guardsAlarm.until) && !!balcony();
 }
 function leanAway(){ const g = gateCenter(); return g ? faceOf(g.x - centroid.x, g.y - centroid.y) : 5; }   // from the pen out: his back to it
@@ -18360,6 +18375,7 @@ async function surrenderBegins(w){
   const inPen = String(cur) === String(PEN);
   if (!inPen && !routeBetween(SPEC, cur, PEN_PLATE) && !routeBetween(SPEC, cur, PEN_PLATE, {reverse: true})){ toast("There is no way to march them back to the pen from here.", 4200); return; }
   surrenderBusy = true;
+  const escWas = escapeNow();   // put back if the surrender never happens (the game did not answer)
   escapeTo(PEN_ESCAPE.EVENT.SURRENDER, "the party surrendered");   // THE ESCAPE PHASE (before endCombat, which would call it a loss)
   if (mode === "combat"){ endCombat(false); for (let t = 0; mode !== "explore" && t < 60; t++) await wait(100); }
   if (sneak) endSneak();
@@ -18381,7 +18397,7 @@ async function surrenderBegins(w){
   const j = APP ? await surrenderApi("begin", {area: String(cur), areaName: node.name, heroes, company, by: mySlug ? (SHORT[mySlug] || PLAYS_AS[mySlug] || mySlug) : (isDm() ? "the DM" : undefined)}) : surrenderLocal(company, here);
   if (!j || j.failed){
     toast((j && j.error) || "The game did not answer.", 4200);
-    state.surrender = null; here.forEach(p => setAnim(p, "idle")); mode = "explore"; surrenderBusy = false; return;
+    state.surrender = null; state.escape = escWas; here.forEach(p => setAnim(p, "idle")); mode = "explore"; surrenderBusy = false; return;
   }
   state.surrender = {seq: j.seq, at: Date.now(), area: String(cur), by: OW.key || "local", victim: j.victim ? {id: j.victim.id, name: j.victim.name, from: j.victim.from} : null};
   if (j.victim){ const v = npcs.find(n => n.id === j.victim.id && !n.body); if (v) v.slain = true;   // the story has them marked: the stage poll must not drop them here
@@ -21551,6 +21567,12 @@ function escapeTo(event, why){
     return true;
   } catch (e){ console.warn("[escape]", e); return false; }
 }
+/** What every system does in the phase now (step 3: the systems ask this, not the gate flags). */
+const escapePolicy = () => PEN_ESCAPE.policyFor(escapeNow());
+/** Out of the pen as far as the watch is concerned: out quietly, hunted, or mid-fight. */
+const escapeOut = () => escapePolicy().guardsOnSight === "fight";
+/** The dead of the escape so far, for what NPCs and Malachar are told (the watch killed on the battle plate). */
+function escapeDead(){ const B = state.battle; return B && B.won && Array.isArray(B.foes) ? B.foes.map(id => (FOE_BLOCKS[id] && FOE_BLOCKS[id].name || "a drow").toLowerCase()) : []; }
 window.aopEscape = () => ({...escapeNow(), policy: PEN_ESCAPE.policyFor(escapeNow()), told: PEN_ESCAPE.malacharLine(escapeNow())});   // for the DM's console
 const shakeWatch = () => state.keyWatch || (state.keyWatch = noKeyWatch());
 /** A prisoner just lifted the pen key: the drow begin counting from this rotation. */
