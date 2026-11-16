@@ -7,7 +7,7 @@ import { HELP_KINDS, helpLine, helperFor, offersHelp, type HelpKind } from "@/li
 // /api/npc-help — does this NPC step in to help a hero with a check on the map? (lib/npc-help.ts has the rule and
 // Sam's words.)
 //
-//   POST {npcName, characterId, kind: lock|trap-find|trap-disarm}
+//   POST {npcName, characterId, kind: lock|trap-find|trap-disarm|eyes|might|words}
 //        → {help: null} or {help: {kind, line, address}}
 //
 // Reads character_relationships (how the NPC stands with this hero) and whether they know the hero's name. WRITES
@@ -37,5 +37,5 @@ export async function POST(req: NextRequest) {
   const knowsName = await npcKnowsName(db, npcName, hero.id)
   const temper = askerFor(npcName)?.temper ?? "wheedling"
   const address = addressFor({ temper, knowsName, standing, hero: { name: hero.name, species: hero.sheet_species, cls: hero.class } })
-  return NextResponse.json({ help: { kind, address, line: helpLine(kind, address, Math.random()) } })
+  return NextResponse.json({ help: { kind, address, line: helpLine(kind, address, Math.random(), npcName) } })
 }

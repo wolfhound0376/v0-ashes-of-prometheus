@@ -16,6 +16,7 @@ Inputs, all in this folder:
                  /*__BUPPIDO_RISES__*/ is lib/buppido-rises.mjs pasted in whole (see buppido_rises_rules): the thing out of Buppido's grave
                  /*__BODY_REMOVAL__*/ is lib/body-removal.mjs pasted in whole (see body_removal_rules): the drow carrying a body out of the pen
                  /*__SHAKEDOWN__*/ is lib/shakedown.mjs pasted in whole (see shakedown_rules): the drow coming in for their stolen pen key
+                 /*__PEN_ESCAPE__*/ is lib/pen-escape.mjs wrapped as PEN_ESCAPE (see pen_escape_rules): the escape's one phase
                  /*__CHAIN_MARCH__*/ is lib/chain-march.mjs pasted in whole (see chain_march_rules): the march out in chains when the caravan clock runs out
                  /*__WATCH_THE_MAP__*/ is lib/watch-the-map.mjs pasted in whole (see watch_the_map_rules): the cue that pulls a dashboard here
                  /*__ITEM_LORE__*/ is lib/item-lore.mjs pasted in whole (see item_lore_rules): the loot card's checks
@@ -256,6 +257,17 @@ def shakedown_rules(root):
     src = open(os.path.join(root, 'lib', 'shakedown.mjs'), encoding='utf-8').read()
     return re.sub(r'^export ', '', src, flags=re.M)
 
+
+def pen_escape_rules(root):
+    """lib/pen-escape.mjs (Sam, 2026-11-13: the pen escape is ONE phase, not a matrix of flags --
+    claude/Pen_Escape_Phases_2026-11-13.md), pasted minus `export` INSIDE a closure: its names (EVENT, ON, OFF...)
+    would otherwise collide with the map's own. The map reads it as PEN_ESCAPE.<name>; lib/pen-escape.test.ts holds
+    the same rules."""
+    src = open(os.path.join(root, 'lib', 'pen-escape.mjs'), encoding='utf-8').read()
+    names = re.findall(r'^export (?:const|function|let) (\w+)', src, flags=re.M)
+    body = re.sub(r'^export ', '', src, flags=re.M)
+    return 'const PEN_ESCAPE = (() => {\n' + body + '\nreturn {' + ', '.join(names) + '};\n})();'
+
 def chain_march_rules(root):
     """lib/chain-march.mjs (Sam, 2026-11-12: at zero on the caravan clock the party is marched out in chains for one
     last, harder escape on the rope bridge; GAME OVER if that fails), pasted whole minus `export`."""
@@ -367,6 +379,9 @@ for i in P + list(GARB.values()) + N + F + V + LP:
     # page). A slug whose sprite has no jump.png is filtered out on the next line and falls
     # back to the walk sheet in the air, so asking for it early costs nothing.
     sh = ['idle', 'walk'] + (['attack', 'sit', 'eat', 'sleep', 'hurt', 'dead', 'cast', 'jump', 'shoot'] if i in PG else []) + (['attack', 'dodge', 'hurt', 'dead', 'jump', 'rage', 'curse'] if i in F else [])
+    # the director's archers and crossbowmen draw their own shots (Sam, 2026-11-15: "make sure their special abilities are animated")
+    if i in ['bandit']: sh.append('shoot')
+    if i in ['goblin', 'goblin-boss', 'skeleton-swordsman']: sh.append('shoot-bow')
     if i == 'zombie-rotting': sh = sh + ['emerge']   # the climb out of the mound (Sam, 2026-10-30); already drawn, 21 frames at 12 fps
     # the four allies fight beside the party (Sam, 2026-10-15), so they need their combat sheets too:
     # without 'attack' a swing has no hit frame and the roll never happens
@@ -458,11 +473,21 @@ def somatic_table(root):
         c = r.get('components')
         if isinstance(r.get('name'), str) and isinstance(c, str) and c.strip():
             out[r['name'].lower()] = 'S' in [x.strip() for x in c.split('(')[0].upper().split(',')]
-    return 'const SOMATIC = ' + _j.dumps(out, sort_keys=True, separators=(',', ':')) + ';'
+    # MATERIAL (Sam, 2026-11-15 "Go": the stolen component pouch must matter). SRD 5.1 Spellcasting, Material (M): a
+    # component pouch or a spellcasting focus stands in for a material with no cost; a component with a cost (or one the
+    # spell consumes) must be had in hand. "free" = the pouch or a focus will do; "costly" = it needs the thing itself.
+    mat = {}
+    for r in rows:
+        c = r.get('components')
+        if isinstance(r.get('name'), str) and isinstance(c, str) and 'M' in [x.strip() for x in c.split('(')[0].upper().split(',')]:
+            m = c[c.find('('):].lower() if '(' in c else ''
+            mat[r['name'].lower()] = 'costly' if (' gp' in m or 'worth' in m or 'consume' in m) else 'free'
+    return ('const SOMATIC = ' + _j.dumps(out, sort_keys=True, separators=(',', ':')) + ';\n'
+            + 'const MATERIAL = ' + _j.dumps(mat, sort_keys=True, separators=(',', ':')) + ';')
 
 t = t.replace('/*__SOMATIC__*/', somatic_table(ROOT))
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__TRAITS__*/', traits_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
-      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__SURRENDER__*/', surrender_rules(ROOT)).replace('/*__GAME_OVER__*/', game_over_rules(ROOT)).replace('/*__BUPPIDO_RISES__*/', buppido_rises_rules(ROOT)).replace('/*__BODY_REMOVAL__*/', body_removal_rules(ROOT)).replace('/*__SHAKEDOWN__*/', shakedown_rules(ROOT)).replace('/*__DIRECTOR__*/', director_rules(ROOT)).replace('/*__CHAIN_MARCH__*/', chain_march_rules(ROOT)).replace('/*__WATCH_THE_MAP__*/', watch_the_map_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
+      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__SURRENDER__*/', surrender_rules(ROOT)).replace('/*__GAME_OVER__*/', game_over_rules(ROOT)).replace('/*__BUPPIDO_RISES__*/', buppido_rises_rules(ROOT)).replace('/*__BODY_REMOVAL__*/', body_removal_rules(ROOT)).replace('/*__SHAKEDOWN__*/', shakedown_rules(ROOT)).replace('/*__PEN_ESCAPE__*/', pen_escape_rules(ROOT)).replace('/*__DIRECTOR__*/', director_rules(ROOT)).replace('/*__CHAIN_MARCH__*/', chain_march_rules(ROOT)).replace('/*__WATCH_THE_MAP__*/', watch_the_map_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))
