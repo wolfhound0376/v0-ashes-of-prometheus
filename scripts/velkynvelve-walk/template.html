@@ -3990,9 +3990,16 @@ function pushOverFalls(t, to){ const z = cur === 9 ? node.zones.find(z => z.kind
 // hanging below the planks until they tear free or a friend cuts them out; then they climb back up. Anywhere else it is
 // the open chasm: a fall of hundreds of feet, 20d6 bludgeoning (the SRD 5.1 cap), and nobody comes back from it. That
 // depth is Claude's reading of the painting, not a number from the book.
-function chasmOf(){ const B = balcony(); return (B && B.chasm) || null; }
+function chasmOf(){ const B = balcony(); return (B && B.chasm) || (node && node.chasm) || null; }
 function chasmEdge(t, raw){
   const C = chasmOf(); if (!C || !t || !raw) return null;
+  // A PLATE'S OWN CHASM (the pen-gate battle plate, spec.py BATTLE_PLATES; Sam's playtest 2026-11-15). Only the traced
+  // shapes count there, so a push into a crate or the back wall is an ordinary push, never a fall.
+  if (!balcony() && node && C === node.chasm){
+    if (walkable(raw.x, raw.y)) return null;
+    if ((C.webs || []).some(w => inPoly(w, raw.x, raw.y))) return "web";
+    return (C.drops || []).some(w => inPoly(w, raw.x, raw.y)) ? "drop" : null;
+  }
   if (!(outsidePen(t) || onBalcony(t))) return null;                        // only from the landing and the bridge
   if (walkable(raw.x, raw.y) || inPoly(balcony().poly, raw.x, raw.y)) return null;   // still on the floor: an ordinary push
   return C.webs.some(w => inPoly(w, raw.x, raw.y)) ? "web" : "drop";
