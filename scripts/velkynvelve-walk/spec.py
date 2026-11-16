@@ -419,9 +419,9 @@ BATTLE_PLATES = {
            dict(poly=P((1040,800),(1100,700),(1190,690),(1250,640),(1360,610),(1500,540),(1700,520),(1850,505),(2040,560),(2110,600),  # the landing
                        (2200,650),(2330,715),(2390,770),(2390,900),(2290,930),(2230,1000),(2150,1090),(2080,1160),(2050,1339),(1800,1339),
                        (1790,1200),(1620,1180),(1560,1110),(1450,1040),(1300,1015),(1160,985),(1060,880)))],
-   # the crate by the lamp, the fallen pillar and the crate beside it, the standing pillar, the stool, the two runs of
+   # the crate by the lamp, the fallen pillar (the crate beside it was painted out for the loot chest, 2026-11-15), the standing pillar, the stool, the two runs of
    # low rubble wall, the stalagmites at the stairhead, the small chest, the crystals on the lip
-   obstacles=[dict(cx=1380,cy=578,rx=64,ry=48),dict(cx=1660,cy=650,rx=108,ry=46),dict(cx=1795,cy=655,rx=62,ry=50),dict(cx=1700,cy=490,rx=56,ry=28),
+   obstacles=[dict(cx=1380,cy=578,rx=64,ry=48),dict(cx=1660,cy=650,rx=108,ry=46),dict(cx=1700,cy=490,rx=56,ry=28),
               dict(cx=1945,cy=515,rx=36,ry=26),dict(cx=2030,cy=935,rx=78,ry=40),dict(cx=2160,cy=835,rx=62,ry=56),dict(cx=1680,cy=1040,rx=135,ry=62),
               dict(cx=1520,cy=990,rx=95,ry=82),dict(cx=1872,cy=1072,rx=36,ry=26),dict(cx=1215,cy=965,rx=80,ry=58)],
    zones=[dict(rect=[2190, 650, 2340, 740], to=[11], label="The pen gate: back into the slave pen"),
