@@ -458,7 +458,17 @@ def somatic_table(root):
         c = r.get('components')
         if isinstance(r.get('name'), str) and isinstance(c, str) and c.strip():
             out[r['name'].lower()] = 'S' in [x.strip() for x in c.split('(')[0].upper().split(',')]
-    return 'const SOMATIC = ' + _j.dumps(out, sort_keys=True, separators=(',', ':')) + ';'
+    # MATERIAL (Sam, 2026-11-15 "Go": the stolen component pouch must matter). SRD 5.1 Spellcasting, Material (M): a
+    # component pouch or a spellcasting focus stands in for a material with no cost; a component with a cost (or one the
+    # spell consumes) must be had in hand. "free" = the pouch or a focus will do; "costly" = it needs the thing itself.
+    mat = {}
+    for r in rows:
+        c = r.get('components')
+        if isinstance(r.get('name'), str) and isinstance(c, str) and 'M' in [x.strip() for x in c.split('(')[0].upper().split(',')]:
+            m = c[c.find('('):].lower() if '(' in c else ''
+            mat[r['name'].lower()] = 'costly' if (' gp' in m or 'worth' in m or 'consume' in m) else 'free'
+    return ('const SOMATIC = ' + _j.dumps(out, sort_keys=True, separators=(',', ':')) + ';\n'
+            + 'const MATERIAL = ' + _j.dumps(mat, sort_keys=True, separators=(',', ':')) + ';')
 
 t = t.replace('/*__SOMATIC__*/', somatic_table(ROOT))
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__TRAITS__*/', traits_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))

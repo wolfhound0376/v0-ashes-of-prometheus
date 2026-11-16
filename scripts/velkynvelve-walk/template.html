@@ -8901,7 +8901,7 @@ function openMenu(a, sub){
     // bonus-action spell is left" would be a lie.
     if (!c.action) add("— action already used —", c.leveledSpell ? "you cast a leveled spell with it: no other spell this turn but a cantrip, and your action is spent" : c.bonus ? "only a bonus-action spell is left" : "and the bonus action too", null);
     for (const nm of [...s.magic.cantrips, ...s.magic.prepared]) ACTION_ICON[nm] = "cast-spell";
-    for (const nm of s.magic.cantrips){ const sp = SPELLS[nm]; if (sp && handsBound(a) && needsHands(nm)){ add(nm, `cantrip · ${IRONS_WHY}`, null); continue; } if (sp) add(nm, `cantrip · action · ${sp.dmg ? sp.dmg + " " + sp.type : ""}${sp.kind === "save" ? " · " + sp.save.toUpperCase() + " save" : ""}`, c.action ? () => aim(a, {spell: nm}) : null); }
+    for (const nm of s.magic.cantrips){ const sp = SPELLS[nm]; if (sp && handsBound(a) && needsHands(nm)){ add(nm, `cantrip · ${IRONS_WHY}`, null); continue; } if (sp && needsPouch(nm) && !hasFocus(a)){ add(nm, `cantrip · ${POUCH_WHY}`, null); continue; } if (sp) add(nm, `cantrip · action · ${sp.dmg ? sp.dmg + " " + sp.type : ""}${sp.kind === "save" ? " · " + sp.save.toUpperCase() + " save" : ""}`, c.action ? () => aim(a, {spell: nm}) : null); }
     for (const base of s.magic.prepared){
       // CHROMATIC ORB IS ONE CHOICE, THEN AN ELEMENT (Sam, 2026-10-25): picked with a dull click, it opens the element
       // picker, and the orb forms in the caster's hand in the element's colour, with its own sound, as they cycle.
@@ -8912,6 +8912,7 @@ function openMenu(a, sub){
         continue; }
       for (const nm of (SPELL_VARIANTS[base] || [base])){ const sp = SPELLS[nm]; if (!sp) continue; ACTION_ICON[nm] = "cast-spell";
       if (handsBound(a) && needsHands(nm)){ add(nm, `level ${sp.lvl} · ${IRONS_WHY}`, null); continue; }   // MANACLES (Sam, 2026-11-12): only somatic spells go dark
+      if (needsPouch(nm) && !hasFocus(a)){ add(nm, `level ${sp.lvl} · ${POUCH_WHY}`, null); continue; }   // THE POUCH (Sam, 2026-11-15)
       if (sp.kind === "reaction"){ add(nm, `level ${sp.lvl} slot · your reaction · ${sp.trigger || "offered when an attack would hit you"}`, null); continue; }
       const left = c.slots[sp.lvl] || 0;
       const why = left <= 0 ? "no slot left" : sp.faith && !hasFaithItem(a) ? "needs his items of faith (the Book of Prayers or a holy symbol)" : sp.bonus ? (!c.bonus ? "bonus action used" : c.leveledSpell ? "you already cast a leveled spell with your action" : "") : (!c.action ? "action used" : c.bonusSpell ? "a bonus-action spell was cast: only cantrips now" : "");
@@ -11331,6 +11332,7 @@ function renderCastMenu(caster, cid, list, o, healing){
   for (const sp of list){
     const lvl = sp.level === 0 ? "cantrip" : `level ${sp.level} · ${sp.left} slot${sp.left === 1 ? "" : "s"} left`;
     if (handsBound() && !voiceOnly(sp.components)){ add(sp.name, "✦", null, `${lvl} · ${sp.components ? "needs your hands, and they are in irons" : "the irons may stop it: its components are unknown"}`, null); continue; }
+    if (needsPouch(sp.name) && !hasFocus(caster)){ add(sp.name, "✦", null, `${lvl} · ${POUCH_WHY}`, null); continue; }
     if (sp.left === 0){ add(sp.name, "✦", null, `${lvl} · a long rest brings them back`, null); continue; }
     if (sp.kind === "fight" && inChains()){         // on a detail a spell at a guard is not a fight: it is defiance, and they see it
       if (o.foe) add(`${sp.name} at ${SHORT[o.foe.id] || SPR[o.foe.id].json.name}`, "✦", null, `${lvl} · they will see it`, () => doCast(caster, cid, sp, o.foe, null), "end");
@@ -11382,6 +11384,16 @@ function handsBound(a = leader){ return inChains() || manacled(a); }
 // a spell the fight casts needs a gesture? "Chromatic Orb (fire)" is the Chromatic Orb. Unknown to the data: yes (stays dark).
 const needsHands = nm => { const k = String(nm || "").replace(/\s*\(.*\)\s*$/, "").toLowerCase(); return SOMATIC[k] !== false; };
 const IRONS_WHY = "needs your hands, and they are in irons";
+// THE POUCH (Sam, 2026-11-15 "Go"). SRD 5.1 Spellcasting, Material (M): "A character can use a component pouch or a
+// spellcasting focus in place of the components specified for a spell" (not one with a cost). OotA p.11: the prisoners are
+// stripped of components and focuses, so a spell with a plain material component needs a pouch or a focus in the pack:
+// the Spell Component Pouch (Ilvara's spare, or stolen on a work detail), an arcane focus, a holy symbol or the Book of
+// Prayers (Samson's items of faith), a druidic focus, or an instrument for a bard. A material WITH a cost (Chromatic
+// Orb's diamond) is not changed here: that is its own question for Sam.
+const FOCUS_ITEM = /component pouch|arcane focus|crystal|\borb\b|\brod\b|\bstaff\b|\bwand\b|holy symbol|amulet|emblem|reliquary|book of prayers|druidic|mistletoe|totem|lute|flute|drum|horn|lyre|bagpipes|dulcimer|shawm|viol/i;
+function hasFocus(a){ const g = typeof GEAR !== "undefined" && GEAR[a && a.id]; return !!(g && [...(g.carried || []), ...(g.doll || [])].some(x => FOCUS_ITEM.test(String(x && x.name || "")))); }
+const needsPouch = nm => { const k = String(nm || "").replace(/\s*\(.*\)\s*$/, "").toLowerCase(); return MATERIAL[k] === "free"; };
+const POUCH_WHY = "needs a component pouch or a spellcasting focus: the drow took yours";
 // MANACLES BLOCK GESTURES ONLY (Sam, 2026-11-12: "Manacles should only darken out spells that have a somatic
 // component"). Was voice-only (no S and no M). A spell the data does not know stays dark: we cannot show it needs no hands.
 const voiceOnly = c => !!c && !c.s;
