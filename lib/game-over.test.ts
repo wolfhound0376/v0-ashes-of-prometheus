@@ -125,3 +125,17 @@ describe("heroGameOver (Sam, 2026-11-10: Fifi dead at the gate, Samson alive —
     expect(heroGameOverLine("freia")).toBe(heroGameOverLine("freia"))
   })
 })
+
+describe("the game dies with the party (Sam, 2026-11-15)", async () => {
+  const { gameOverWipes } = await import("@/lib/game-over.mjs")
+  it("a wiped table in the real game deletes the save and resets", () => {
+    expect(gameOverWipes({ app: true, sandbox: false })).toBe(true)
+  })
+  it("a rehearsal resets itself instead, and the stand-alone preview has no save", () => {
+    expect(gameOverWipes({ app: true, sandbox: true })).toBe(false)
+    expect(gameOverWipes({ app: false })).toBe(false)
+  })
+  it("a game over that is not a death (the march lost) keeps the DM's restart", () => {
+    expect(gameOverWipes({ app: true, sandbox: false, why: "menzoberranzan" })).toBe(false)
+  })
+})
