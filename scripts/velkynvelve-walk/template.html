@@ -11233,8 +11233,14 @@ function combatClick(w){
   if (oneFightWaitsFor(a) && FIGHT.applying !== a) return;                // ONE FIGHT: that hero's player clicks, on their own screen
   if (cbt.phase === "move"){ moveActor(a, w, () => { if (cbt && activeActor() === a) openMenu(a); }); return; }
   if (cbt.phase === "jump"){
-    const p = nearestWalkable(w.x, w.y), g = planLeap(a, p);
-    if (!g){ toast("Can't jump there from here: no straight line of ground, or it is right under your feet."); return; }
+    // A CLICK ON A CIRCLE IS THAT CIRCLE (Sam, 2026-11-15: "jump didn't work"). The circles are drawn on their square's
+    // centre, but the click used the exact point: with 5 ft of movement left the only circles sit exactly 5 ft away, and
+    // a click inside one but a hair short of its centre measured under 5 ft and was refused as "right under your feet"
+    // (eight times in a row that night, from Lynkes's player). A click inside a lit square now jumps to its centre.
+    const cells = jumpSquares(a), h = jumpSq.cell * .5, hit = cells.find(q => Math.abs(w.x - q.x) <= h && Math.abs(w.y - q.y) <= h);
+    if (hit && hit.kind === "no"){ toast(hit.why || "Can't jump there."); return; }
+    const p = hit ? {x: hit.x, y: hit.y} : nearestWalkable(w.x, w.y), g = planLeap(a, p);
+    if (!g){ toast(cells.some(q => q.kind !== "no") ? "Click one of the green circles to jump there." : "Nowhere to jump to from here. Esc to go back."); return; }
     if (!g.ok){ toast(g.why); return; }
     leapMove(a, g, p, () => { if (cbt && activeActor() === a) openMenu(a); }); return;
   }
@@ -22799,6 +22805,14 @@ const myTurnHere = () => FIGHT.mirror && FIGHT.menu && FIGHT.menu.drv === OW.key
 function oneFightMirrorClick(w){
   if (!myTurnHere() || FIGHT.menu.phase === "menu") return;
   const on = hitActor(foes, w) || hitActor(heroes(), w) || hitActor(npcs.filter(n => n.bystander), w);
+  // THE CLICK ANSWERS AT ONCE (Sam, 2026-11-15: "clicks didn't respond"). Measured that night: a Move click on a
+  // player's own screen reached the screen running the fight and came back as a walk 1.4 s later, with nothing shown in
+  // between, so the player clicked again (three times, twice). The ring and a soft tick now land here the moment the
+  // click is made; the same order clicked again on the same spot while the first is still on its way is not resent.
+  const k = `${FIGHT.menu.phase}|${Math.round(w.x / 12)}|${Math.round(w.y / 12)}|${on ? akey(on) : ""}`;
+  if (oneFightMirrorClick.last === k && now - oneFightMirrorClick.at < 1500) return;
+  oneFightMirrorClick.last = k; oneFightMirrorClick.at = now;
+  marker = {x: w.x, y: w.y, t: now}; bank("ui/press", .35);
   fightSend({t: "click", x: Math.round(w.x), y: Math.round(w.y), on: on ? akey(on) : null});
 }
 function oneFightHover(w){ if (!myTurnHere() || FIGHT.menu.phase === "menu" || now - FIGHT.hoverAt < 150) return; FIGHT.hoverAt = now; fightSend({t: "hover", x: Math.round(w.x), y: Math.round(w.y)}); }
