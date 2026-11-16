@@ -37,8 +37,15 @@ const ftPx = () => PX_PER_FT
 const fname = (a: any) => a.id
 const isBarbarian = (cls: unknown) => /barbarian/i.test(String(cls || ""))
 
-const planDrop = new Function("walkable", "elevAt", "ftPx", "fname", "LEDGE_FT",
-  `${grab("planDrop")}\nreturn planDrop;`)(walkable, elevAt, ftPx, fname, LEDGE_FT) as (a: any, to: any) => any
+// planDrop measures in RULE feet: the painted-floor plates carry a perspective mesh, so
+// ruleFt() walks a point through it rather than using ftPx directly. The real ruleFt is
+// pulled from the page, not stubbed, so this still tests what ships — it short-circuits to
+// ftPx off a painted floor, and these cases run on classic spec.json rooms with no overlay
+// mesh, so onPaintedFloor is genuinely false for them.
+const planDrop = new Function(
+  "walkable", "elevAt", "ftPx", "fname", "LEDGE_FT", "onPaintedFloor", "ruleFt",
+  `${grab("ruleFt")}\n${grab("planDrop")}\nreturn planDrop;`,
+)(walkable, elevAt, ftPx, fname, LEDGE_FT, () => false, undefined) as (a: any, to: any) => any
 const isLeaper = new Function("isBarbarian", `return ${constant("isLeaper")};`)(isBarbarian) as (a: any) => boolean
 
 // landFall with the page's dice, damage and log replaced by recorders
