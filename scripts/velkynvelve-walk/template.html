@@ -2693,6 +2693,7 @@ function plateLights(){
     (d.violets || []).forEach(p => out.push({x: p.x, y: p.y, r: Math.max(120, p.r * 2.2), col: [190, 120, 255], a: .7, glow: .08}));
   }
   for (const a of actors) if (a.kind === "pc" && !a.down && a.alpha > .2){ const q = ovPt(a.x, a.y); out.push({x: q.x, y: q.y - 50 * sc, r: 230 * sc, col: [255, 214, 160], a: .75, glow: 0}); }
+  { const l = typeof ebcLight === "function" ? ebcLight() : null; if (l) out.push(l); }   // a warlock gathering Eldritch Blast (ELDRITCH BLAST, THE CHARGE)
   for (let i = lightFlashes.length - 1; i >= 0; i--){ const f = lightFlashes[i], k = (now - f.t0) / f.ms; if (k >= 1){ lightFlashes.splice(i, 1); continue; } out.push({x: f.x, y: f.y, r: f.r * (.7 + .3 * k), col: f.col, a: 1 - k * k, glow: .45 * (1 - k)}); }
   return out;
 }
@@ -13936,75 +13937,63 @@ function drawLabNoHeal(s){ const t = s.a; if (t.down || !t.c || !t.c.noHeal){ s.
 
 // ---- ELDRITCH BLAST (Kenta's Eldritch Blast sheet: void-orb at the palm, the void beam stretched hand-to-body with black
 // tendrils along it, the shatter impact with debris; a critical is the Empowered Blast — the big impact and a violet flash)
-function labEbDeliver(c, at, then){ const h = labHand(c, at), to = bodyPoint(at), flip = at.x < c.x;
+function labEbDeliver(c, at, then){ const ch = ebChargeOf(c), to = bodyPoint(at), flip = at.x < c.x;
+  if (ch){ ch.fired = true; const h = ebcOrb(c); lightFlash(h.x, h.y, "#ff3cc8", 260, 420);   // the charge pack: the blast leaves the orb over the head, at once
+    labRef("ebBeam", {follow: {x0: h.x, y0: h.y, x1: to.x, y1: to.y, ms: EB_FLIGHT_MS}, stretch: 30, hpx: 44, anchor: "right", boost: .4, add: false, then}); return; }
+  const h = labHand(c, at);
   labRef("ebOrb", {x: h.x, y: h.y, w: 46, life: 420, grow: [.2, 1], spin: 3, pulse: true, fade: [60, 120], flipX: flip}); lightFlash(h.x, h.y, "#a35bff", 160, 420); bank("walk:impact-necrotic", .3);
-  setTimeout(() => labRef("ebBeam", {follow: {x0: h.x, y0: h.y, x1: to.x, y1: to.y, ms: 300}, stretch: 30, hpx: 44, anchor: "right", boost: .4, add: false, then}), 300); }
-function labEbAgain(c, t){ const h = labHand(c, t), to = bodyPoint(t); labRef("ebBeam", {follow: {x0: h.x, y0: h.y, x1: to.x, y1: to.y, ms: 260}, stretch: 30, hpx: 40, anchor: "right", boost: .4, add: false}); }
-function labEbHit(c, t, crit){ const flip = t.x < c.x;
-  labRef(crit ? "ebImpact" : "ebImpStd", {x: t.x, y: t.y + 8, w: crit ? 240 : 120, life: crit ? 800 : 560, grow: [.5, 1.1], fade: [20, 360], anchorY: "bottom", add: false, flipX: flip});
+  setTimeout(() => labRef("ebBeam", {follow: {x0: h.x, y0: h.y, x1: to.x, y1: to.y, ms: EB_FLIGHT_MS}, stretch: 30, hpx: 44, anchor: "right", boost: .4, add: false, then}), 300); }
+function labEbAgain(c, t){ const h = ebChargeOf(c) || (ebCharge && ebCharge.a === c && ebCharge.fired) ? ebcOrb(c) : labHand(c, t), to = bodyPoint(t); labRef("ebBeam", {follow: {x0: h.x, y0: h.y, x1: to.x, y1: to.y, ms: EB_FLIGHT_MS}, stretch: 30, hpx: 40, anchor: "right", boost: .4, add: false}); }
+// Sam's Lab settings for it (2026-11-15, exported from the Lab's Eldritch Blast card): the charge pack, the void beam, the
+// EXPLOSION impact (ebImpExpl), a 250 ms flight, hit-stop 80 ms and shake 5 on every beam that lands, the crit zoom
+// (critBeat, already on every critical). His beams 2 / crit / repel / damage 6 were the card's test switches: here the
+// rules decide those (beams by level, the d20, the Repelling Blast invocation, the dice).
+const EB_FLIGHT_MS = 250;
+function labEbHit(c, t, crit){ const flip = t.x < c.x; hitstop(80); shake(5);
+  labRef(crit ? "ebImpact" : "ebImpExpl", {x: t.x, y: t.y + 8, w: Math.max(crit ? 240 : 120, labR(t) * (crit ? 9 : 5)) /* sized to the body: a close-up's figures are large */, life: crit ? 800 : 560, grow: [.5, 1.1], fade: [20, 360], anchorY: "bottom", add: false, flipX: flip});
   labRef("ebOrb", {at: t, w: crit ? 120 : 70, life: 260, grow: [.6, 1.6], fade: [10, 220]}); lightFlash(t.x, labMid(t), "#a35bff", crit ? 360 : 260, 420);
   if (crit){ shake(10); t.flash = now + 320; t.flashCol = "#a35bff"; } }
-// ---- ELDRITCH BLAST, THE CHARGE WHILE AIMING (Sam, 2026-11-15, three stills of a warlock gathering power: "Please create
-// this effect for eldritch blast for warlocks as a ramp up while targeting"). From the moment Eldritch Blast is picked
-// until the target is clicked (or Esc), the caster gathers it, building over about a second and holding there:
-//   floor  — a magenta pool under the feet, three broken rings turning against each other, lightning veins crawling
-//            out across the stone, re-struck about fourteen times a second (drawEbChargeGround, under the figures)
-//   body   — pink arcs climbing from the feet to the casting hand; the orb in that hand swelling, white-hot at the
-//            heart, spitting little forks (drawEbChargeOver, over the figures)
-//   air    — embers rising off the circle, and the magenta light it throws on the walls
-// The hand turns to the foe under the pointer. A click hands over to the blast itself (labEbDeliver: orb, beam, impact);
-// the charge falls away in a fifth of a second. Drawn only, nothing generated: code-drawn like the rest of the lab's looks.
+// ---- ELDRITCH BLAST, THE CHARGE WHILE AIMING (Sam, 2026-11-15: "create this effect for eldritch blast for warlocks as a
+// ramp up while targeting"; on the first, code-drawn try: "Don't like it. Look at the eldritch pack zip in the game sfx
+// module"). It is his charge pack from the Combat Effects Lab: vfx/lab/ebCharge.webp, 16 painted frames of 320 px (a
+// magenta vortex opening on the floor, a pink-white orb gathering over the head; the floor sits at 71% of the frame, the
+// orb at 32%), 160 ms a frame, the peak at frame 12; and its sound, sfx/walk/eb-charge.mp3 (2.6 s). The lab plays it
+// once and fires at the peak. Here it rides the aim: from the moment Eldritch Blast is picked the pack runs up to the
+// peak and then breathes there (12, 11, 10, 11) until a foe is clicked; the blast leaves the ORB (labEbDeliver), the
+// last three frames close it. Esc lets it sink away and fades the sound. Sized so the orb hangs at
+// the chest and the vortex about a body across, whatever the plate's scale.
+const EBC = {F: 320, FLOOR: .71, ORB: .32, MS: 160, PEAK: 12, LAST: 15};
 let ebCharge = null;
+function ebcSize(a){ return .45 * (labH(a) + 26 * actorScale(a)) / (EBC.FLOOR - EBC.ORB); }   // .45: the sprite cell runs well above the head, so the lab's sizing threw the vortex ~3 bodies wide; this puts the orb at the chest and the floor ring about a body across, as in Sam's stills
+function ebcOrb(a){ return {x: a.x + (a.kx || 0), y: a.y - ebcSize(a) * (EBC.FLOOR - EBC.ORB)}; }
+function ebcSound(c){ (async () => { try { const ctx = audioCtx(); if (ctx.state === "suspended") await ctx.resume(); const buf = await loadSfx("walk:eb-charge"); if (!buf || ebCharge !== c || c.out) return;
+  const src = ctx.createBufferSource(), g = ctx.createGain(); g.gain.value = .9; src.buffer = buf; src.connect(g); g.connect(ctx.destination); src.start(); c.snd = {src, g, ctx}; } catch (e) {} })(); }
+function ebcHush(c){ const s = c && c.snd; if (!s) return; try { s.g.gain.setTargetAtTime(0, s.ctx.currentTime, .08); s.src.stop(s.ctx.currentTime + .5); } catch (e) {} c.snd = null; }
 function ebChargeTick(){
   const a = mode === "combat" && cbt && cbt.phase === "target" && cbt.pend && cbt.pend.spell === "Eldritch Blast" ? activeActor() : null;
-  if (a && !a.down && actors.includes(a)){ if (!ebCharge || ebCharge.a !== a || ebCharge.out) ebCharge = {a, t0: now, out: 0, cracks: [], arcs: [], at: 0, aat: 0, lt: 0}; }
-  else if (ebCharge && !ebCharge.out) ebCharge.out = now;
-  if (ebCharge && ebCharge.out && now - ebCharge.out > 220) ebCharge = null;
+  if (a && !a.down && actors.includes(a)){ if (!ebCharge || ebCharge.a !== a || ebCharge.out){ ebcHush(ebCharge); ebCharge = {a, t0: now, out: 0, fOut: 0, lt: 0}; ebcSound(ebCharge); } }
+  else if (ebCharge && !ebCharge.out){ ebCharge.out = now; ebCharge.fOut = ebcFrame(ebCharge); if (!ebCharge.fired) ebcHush(ebCharge); }
+  if (ebCharge && ebCharge.out && now - ebCharge.out > (EBC.LAST - EBC.PEAK + 1) * EBC.MS) ebCharge = null;
   return ebCharge;
 }
-function ebLevel(c){ const up = Math.min(1, (now - c.t0) / 1100), e = 1 - Math.pow(1 - up, 3), fade = c.out ? Math.max(0, 1 - (now - c.out) / 220) : 1; return {e, fade, al: (.25 + .75 * e) * fade}; }
-const ebPath = P => { ctx.beginPath(); P.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke(); };
-function drawEbChargeGround(){
-  const c = ebChargeTick(); if (!c) return; const a = c.a, {e, al} = ebLevel(c); if (al <= 0) return;
-  ovWrapA(a, () => {
-    const x = a.x + (a.kx || 0), y = a.y, R = labR(a) * (1.6 + 1.4 * e), sq = .42, t = now / 1000;
-    ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.lineCap = "round";
-    ctx.save(); ctx.translate(x, y); ctx.scale(1, sq);
-    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 1.15); g.addColorStop(0, `rgba(255,60,170,${.8 * al})`); g.addColorStop(.4, `rgba(200,20,130,${.5 * al})`); g.addColorStop(.75, `rgba(150,10,120,${.22 * al})`); g.addColorStop(1, "rgba(120,0,90,0)");
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, R * 1.15, 0, Math.PI * 2); ctx.fill();
-    ctx.shadowColor = "#ff3cc8"; ctx.shadowBlur = 14;
-    for (const [rr, sp, w, col, n] of [[.95, .9, 2.4, "255,90,215", 5], [.68, -1.4, 1.6, "200,110,255", 4], [.42, 2.2, 1.2, "255,180,240", 3]]){
-      ctx.strokeStyle = `rgba(${col},${.9 * al})`; ctx.lineWidth = w / sq * .5;
-      for (let i = 0; i < n; i++){ const a0 = t * sp + i / n * Math.PI * 2; ctx.beginPath(); ctx.arc(0, 0, R * rr, a0, a0 + Math.PI * 2 / n * .62); ctx.stroke(); } }
-    ctx.restore();
-    if (now - c.at > 70){ c.at = now; c.cracks = []; const n = 3 + Math.round(4 * e);
-      for (let i = 0; i < n; i++){ const ang = labRnd(0, Math.PI * 2), L = R * labRnd(.55, 1.25); c.cracks.push(labZigzag(0, 0, Math.cos(ang) * L, Math.sin(ang) * L * sq, 5, 6)); } }
-    ctx.translate(x, y); ctx.shadowColor = "#ff4fd8"; ctx.shadowBlur = 10;
-    for (const P of c.cracks) for (const [w, col] of [[3, `rgba(255,60,190,${.55 * al})`], [1.2, `rgba(255,225,250,${.9 * al})`]]){ ctx.lineWidth = w; ctx.strokeStyle = col; ebPath(P); }
-    ctx.restore();
-  });
+function ebcFrame(c){
+  if (!c.out){ const k = Math.floor((now - c.t0) / EBC.MS); return k <= EBC.PEAK ? k : EBC.PEAK - [0, 1, 2, 1][(k - EBC.PEAK) % 4]; }
+  return c.fOut >= EBC.PEAK - 2 ? Math.min(EBC.LAST + 1, EBC.PEAK + 1 + Math.floor((now - c.out) / EBC.MS)) : c.fOut;   // released at the peak: the closing frames; early: it sinks where it was
 }
+/** the charge this caster is holding (or let go of a moment ago): where the blast leaves from */
+function ebChargeOf(c){ return ebCharge && ebCharge.a === c && (!ebCharge.out || now - ebCharge.out < 400) ? ebCharge : null; }
+function drawEbChargeGround(){ ebChargeTick(); }
 function drawEbChargeOver(){
-  const c = ebCharge; if (!c) return; const a = c.a, {e, fade, al} = ebLevel(c); if (al <= 0) return;
-  const tgt = hoverActor && hoverActor !== a && !hoverActor.down ? hoverActor : null;
-  ovWrapA(a, () => {
-    const h = labHand(a, tgt), x = a.x + (a.kx || 0), H = labH(a), Rb = labR(a);
-    ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.lineCap = "round"; ctx.shadowColor = "#ff3cc8"; ctx.shadowBlur = 12;
-    if (now - c.aat > 60){ c.aat = now; c.arcs = []; const n = 1 + Math.round(2 * e);
-      for (let i = 0; i < n; i++) c.arcs.push(labZigzag(x + labRnd(-Rb * 1.2, Rb * 1.2), a.y - labRnd(0, H * .15), h.x + labRnd(-4, 4), h.y + labRnd(-4, 4), 6, 6 + Rb * .25)); }
-    for (const P of c.arcs) for (const [w, col] of [[2.6, `rgba(255,70,200,${.5 * al})`], [1, `rgba(255,230,252,${.85 * al})`]]){ ctx.lineWidth = w; ctx.strokeStyle = col; ebPath(P); }
-    const fl = .88 + .12 * Math.sin(now / 37) * Math.sin(now / 53), r = Rb * (.12 + .2 * e) * fl;   // the orb sized to the body, not the plate (a close-up's figures are huge)
-    const g = ctx.createRadialGradient(h.x, h.y, 0, h.x, h.y, r * 2.4); g.addColorStop(0, `rgba(255,245,255,${.95 * al})`); g.addColorStop(.22, `rgba(255,120,230,${.85 * al})`); g.addColorStop(.5, `rgba(200,40,200,${.3 * al})`); g.addColorStop(1, "rgba(120,0,160,0)");
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(h.x, h.y, r * 2.4, 0, Math.PI * 2); ctx.fill();
-    ctx.lineWidth = 1; ctx.strokeStyle = `rgba(255,200,250,${.8 * al})`;
-    for (let i = 0; i < 2 + Math.round(3 * e); i++){ const ang = labRnd(0, Math.PI * 2), L = r * labRnd(1.6, 3); ebPath(labZigzag(h.x, h.y, h.x + Math.cos(ang) * L, h.y + Math.sin(ang) * L, 3, 3)); }
-    ctx.restore();
-  });
-  if (fade < 1) return;
-  if (Math.random() < .35 + .5 * e){ const R = labR(a) * (1.6 + 1.4 * e), ang = labRnd(0, Math.PI * 2), u = labRnd(.2, 1);
-    sparks.push({a, x: a.x + Math.cos(ang) * R * u, y: a.y + Math.sin(ang) * R * .42 * u, vx: labRnd(-10, 10), vy: labRnd(-70, -35), g: -30, col: Math.random() < .6 ? "#ff5ad8" : "#c48aff", t0: now, life: labRnd(500, 900)}); }
-  if (now - c.lt > 110){ c.lt = now; const q = ovPt(a.x, a.y); lightFlash(q.x, q.y - labH(a) * .4, "#ff3cc8", 170 + 130 * e, 300); }
+  const c = ebCharge; if (!c) return; const a = c.a, im = labImg("ebCharge"); if (!im.complete || !im.naturalWidth) return;
+  const f = ebcFrame(c); if (f > EBC.LAST) return;
+  const early = c.out && c.fOut < EBC.PEAK - 2, al = early ? Math.max(0, 1 - (now - c.out) / 300) : 1; if (al <= 0) return;
+  ovWrapA(a, () => { const S = ebcSize(a), x = a.x + (a.kx || 0) - S / 2, y = a.y - S * EBC.FLOOR;
+    ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.imageSmoothingEnabled = true; ctx.globalAlpha = al;
+    ctx.drawImage(im, f * EBC.F, 0, EBC.F, EBC.F, x, y, S, S); ctx.globalAlpha = .35 * al; ctx.drawImage(im, f * EBC.F, 0, EBC.F, EBC.F, x, y, S, S); ctx.restore(); });
 }
+/** the charge's own light, one steady lamp at the orb (plateLights) — a stream of short flashes darkened the plate */
+function ebcLight(){ const c = ebCharge; if (!c || c.out || !actors.includes(c.a)) return null; const o = ebcOrb(c.a), q = ovPt(o.x, o.y), e = Math.min(1, ebcFrame(c) / EBC.PEAK);
+  return {x: q.x, y: q.y, r: (160 + 140 * e) * (node.scale || 1), col: [230, 60, 200], a: .5 + .4 * e, glow: 0}; }
 // ---- HEX (the warlock sheet: the dark vortex opens at the palm, a black orb flies, the vortex settles flat under the cursed
 // one's feet and turns there while they are hexed; each extra d6 flashes a dark dart on them)
 function labHexDeliver(c, at, then){ const h = labHand(c, at), to = bodyPoint(at);
