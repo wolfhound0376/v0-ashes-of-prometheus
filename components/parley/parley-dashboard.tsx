@@ -35,6 +35,7 @@ import { unlockSpeechAudio } from "@/lib/speech-playback"
 import { markOwedAloud, markVoicedElsewhere } from "@/lib/voiced-elsewhere"
 import { TimeStoppedBanner } from "@/components/dashboard/time-stop"
 import { canSpeak, classifySpeaker } from "@/lib/tts"
+import { pacedStep } from "@/lib/paced-line"
 import { isMusicOff, onMusicPrefChange, setMusicOff } from "@/lib/audio-prefs"
 import { isOnline, type WorldRow } from "@/lib/walk-world"
 import { shouldFollowPull } from "@/lib/watch-the-map.mjs"
@@ -539,6 +540,20 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
     return text ? [{ ...entry, text }] : []
   })
   const followsLang = (lang: string | null | undefined) => !lang || isDmView || understands(hearer, lang)
+  // THE STAGE LINE HOLDS LONG ENOUGH TO READ (lib/paced-line.ts; Sam's playtest 2026-11-15, point 1). Lines that
+  // land in the same second are shown one after another, each for its reading time, instead of flicking past.
+  const stageCandidates = displayedDialogue.filter((entry) => entry.speaker !== "System" && entry.speaker !== "Combat" && classifySpeaker(entry.speaker) !== "player")
+  const stageKey = stageCandidates.map((entry) => entry.id ?? "").join("|")
+  const [paced, setPaced] = useState<{ id: string | null; at: number }>({ id: null, at: 0 })
+  useEffect(() => {
+    const lines = stageCandidates.map((entry, i) => ({ id: entry.id ?? `line-${i}`, text: entry.text }))
+    const step = pacedStep(lines, paced.id, paced.at, Date.now())
+    if (step.id !== paced.id) { setPaced({ id: step.id, at: Date.now() }); return }
+    if (!Number.isFinite(step.wait)) return
+    const t = window.setTimeout(() => setPaced((cur) => ({ ...cur })), step.wait + 20)
+    return () => window.clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stageKey, paced])
   // Dictation: browser speech-to-text lands in the input for review; Enter sends.
   // speechBaseRef preserves anything already typed when the mic starts.
   const speechBaseRef = useRef("")
@@ -1227,7 +1242,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
   // The line on the stage: the last thing anyone but a hero said. In a talk
   // that is the NPC (or Malachar giving a check its result); otherwise it is
   // the narration.
-  const stageLine = one ? ([...displayedDialogue].reverse().find((entry) => entry.speaker !== "System" && entry.speaker !== "Combat" && classifySpeaker(entry.speaker) !== "player") ?? null) : null
+  const stageLine = one ? (stageCandidates.find((entry, i) => (entry.id ?? `line-${i}`) === paced.id) ?? stageCandidates[stageCandidates.length - 1] ?? null) : null
   const stageLineDm = stageLine ? classifySpeaker(stageLine.speaker) === "dm" : false
   // THE LICH IS ANIMATED HERE TOO (Sam, 2026-11-13: "the lich should also is animated"): when Malachar holds
   // the stage — he is speaking, or his narration is the line showing and nobody else has taken the floor — the
