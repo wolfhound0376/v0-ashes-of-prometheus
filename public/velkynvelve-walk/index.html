@@ -292,7 +292,24 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
    GATHERING (a plate change or a fight waits until every screen at the table is in step: who is still coming, and after
    20 s "Go without them") and THE MARCH (a long cut through the dark: the escort, the caravan road). The party's own
    pixel heroes walk across it over a scrolling cave floor; the place they are going is set in the gilded letters. */
-.voyage{position:absolute;inset:0;z-index:22;display:grid;place-items:center;background:radial-gradient(ellipse at 50% 45%,rgba(14,9,22,.86),rgba(3,2,6,.97));backdrop-filter:blur(4px);color:#ece2c8;animation:voyIn .45s ease-out}
+.voyage{position:absolute;inset:0;z-index:22;display:grid;place-items:center;background:#030206;color:#ece2c8;animation:voyIn .45s ease-out;overflow:hidden}
+/* THE LOAD SCREEN'S ART (Sam, 2026-11-15: "cool background art and music with some DND lore on the bottom"; picks A, C, E
+   approved with "go"): one painting per kind of going: the outpost, the road through the deep, before a fight. Runway, in
+   public/velkynvelve-walk/voyage/. A shade over it keeps the gilded title and the walking party the brightest things. */
+.voy-bg{position:absolute;inset:-2%;background:center/cover no-repeat;opacity:0;transition:opacity .8s ease;animation:voyDrift 40s ease-in-out infinite alternate}
+.voy-bg.on{opacity:1}
+.voyage::before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:radial-gradient(ellipse at 50% 46%,rgba(5,3,9,.74),rgba(5,3,9,.28) 62%,rgba(5,3,9,.6)),linear-gradient(180deg,rgba(0,0,0,0) 68%,rgba(0,0,0,.8))}
+.voy-in,.voy-lore{position:relative;z-index:2}
+@keyframes voyDrift{from{transform:scale(1)}to{transform:scale(1.05) translateX(-1%)}}
+/* UNDERDARK LORE along the bottom (Sam, 2026-11-15: "use lore from DND books"): general Underdark lore from the Monster
+   Manual, Out of the Abyss and the Sword Coast Adventurer's Guide, in our own words; nothing from the campaign's plot. */
+.voy-lore{position:absolute;left:50%;bottom:30px;transform:translateX(-50%);width:min(900px,86%);text-align:center;display:grid;gap:7px}
+.voy-lore .t{font-family:var(--face-mono);font-size:10px;letter-spacing:.42em;color:#d9b56a;display:flex;align-items:center;gap:14px;justify-content:center}
+.voy-lore .t i{display:block;width:60px;height:1px;background:linear-gradient(90deg,transparent,#d9b56a)}
+.voy-lore .t i.r{background:linear-gradient(90deg,#d9b56a,transparent)}
+.voy-lore p{margin:0;font-family:var(--face-read);font-size:clamp(15px,1.5vw,20px);line-height:1.4;color:#ece2c8;text-shadow:0 2px 6px #000;min-height:2.8em;transition:opacity .6s ease}
+.voy-lore p.out{opacity:0}
+.voy-lore b{color:#f0cf86;font-weight:600}
 .voyage[hidden]{display:none}
 /* THE PARTY DECIDES (Sam, 2026-11-15): the approved choice card, shared. Under the name, "The party decides"; beside each
    row, the names of whoever leans that way (the decider's name in gold); your own lean is marked. */
@@ -307,12 +324,13 @@ body.gathering footer.party,body.gathering #cbtMenu{pointer-events:none;opacity:
 .voyage.leaving{animation:voyOut .5s ease-in forwards}
 @keyframes voyIn{from{opacity:0}to{opacity:1}}
 @keyframes voyOut{to{opacity:0}}
-.voy-in{display:grid;justify-items:center;gap:10px;text-align:center;padding:24px;max-width:min(760px,94%)}
+.voy-in{display:grid;justify-items:center;gap:10px;text-align:center;padding:24px;max-width:min(880px,96%)}
 .voy-kick{font-family:var(--face-mono);font-size:11px;letter-spacing:.42em;margin-right:-.42em;color:#b9ad92}
 .voy-title{margin:0;font-family:"Cinzel Decorative",var(--face-title);font-weight:900;font-size:clamp(26px,3.4vw,46px);line-height:1.1;letter-spacing:.04em;
   background:linear-gradient(180deg,#fff4d2 0%,#f0cf86 30%,#c8963c 52%,#7e5a22 74%,#d6a957 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
   filter:drop-shadow(0 0 16px rgba(150,104,255,.4)) drop-shadow(0 4px 7px rgba(0,0,0,.85))}
-.voy-walk{width:min(720px,92vw);height:auto;aspect-ratio:720/150;image-rendering:pixelated;-webkit-mask-image:linear-gradient(90deg,transparent,#000 14%,#000 86%,transparent);mask-image:linear-gradient(90deg,transparent,#000 14%,#000 86%,transparent)}
+/* the tunnel melts into the painting behind it on all four sides: no box around it */
+.voy-walk{width:min(820px,94vw);height:auto;aspect-ratio:720/200;image-rendering:pixelated;-webkit-mask-image:linear-gradient(90deg,transparent,#000 18%,#000 82%,transparent),linear-gradient(180deg,transparent,#000 24%,#000 80%,transparent);-webkit-mask-composite:source-in;mask-image:linear-gradient(90deg,transparent,#000 18%,#000 82%,transparent),linear-gradient(180deg,transparent,#000 24%,#000 80%,transparent);mask-composite:intersect}
 .voy-sub{font-family:var(--face-read);font-style:italic;font-size:17px;color:#cfc4aa;min-height:1.4em}
 .voy-wait{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
 .voy-wait:empty{display:none}
@@ -323,7 +341,7 @@ body.gathering footer.party,body.gathering #cbtMenu{pointer-events:none;opacity:
 .voy-go{all:unset;cursor:pointer;margin-top:6px;padding:9px 18px;border-radius:8px;border:1px solid #d9b56a;font-family:var(--face-title);font-weight:600;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:#fff;background:linear-gradient(180deg,rgba(214,176,98,.3),rgba(214,176,98,.1))}
 .voy-go[hidden]{display:none}
 .voy-go:hover,.voy-go:focus-visible{background:linear-gradient(180deg,rgba(214,176,98,.45),rgba(214,176,98,.18))}
-@media (prefers-reduced-motion:reduce){.voyage,.voyage.leaving{animation:none}.voy-wait i{animation:none}}
+@media (prefers-reduced-motion:reduce){.voyage,.voyage.leaving,.voy-bg{animation:none}.voy-wait i{animation:none}}
 #caravan{position:absolute;left:50%;top:50px;transform:translateX(-50%);z-index:6;display:grid;gap:2px;justify-items:center;padding:5px 14px;border:1px solid rgba(201,162,74,.55);border-radius:6px;background:rgba(12,8,16,.84);color:#e8dcc0;font:600 13px/1.25 Georgia,serif;letter-spacing:.03em;pointer-events:none;white-space:nowrap}
 #caravan[hidden]{display:none}
 #caravan.late{border-color:rgba(255,80,60,.8);color:#ffb3a6;box-shadow:0 0 14px rgba(255,60,40,.35)}
@@ -1241,7 +1259,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="titlecard" id="titlecard"><div class="no" id="tcNo"></div><h2 id="tcName"></h2></div>
     <div class="log" id="log" aria-live="polite"></div>
     <section class="rlog" id="rlog" hidden aria-label="Log"><header><h3>LOG</h3><button data-f="all" aria-pressed="true">All</button><button data-f="story">Story</button><button data-f="review">Review</button><button data-f="sync">Sync</button><button id="rlogX" aria-label="Close the log">×</button></header><div class="body" id="rlogBody"></div></section>
-    <div class="voyage" id="voyage" hidden role="status" aria-live="polite"><div class="voy-in"><div class="voy-kick" id="voyKick"></div><h2 class="voy-title" id="voyTitle"></h2><canvas class="voy-walk" id="voyWalk" width="720" height="150" aria-hidden="true"></canvas><div class="voy-sub" id="voySub"></div><div class="voy-wait" id="voyWait"></div><button class="voy-go" id="voyGo" hidden>Go without them</button></div></div>
+    <div class="voyage" id="voyage" hidden role="status" aria-live="polite"><div class="voy-bg" id="voyBg" aria-hidden="true"></div><div class="voy-in"><div class="voy-kick" id="voyKick"></div><h2 class="voy-title" id="voyTitle"></h2><canvas class="voy-walk" id="voyWalk" width="720" height="200" aria-hidden="true"></canvas><div class="voy-sub" id="voySub"></div><div class="voy-wait" id="voyWait"></div><button class="voy-go" id="voyGo" hidden>Go without them</button></div><div class="voy-lore" aria-hidden="true"><div class="t"><i></i>UNDERDARK LORE<i class="r"></i></div><p id="voyLore"></p></div></div>
     <div class="cbtlog" id="cbtLog" hidden><div class="panel" id="cbtLogPanel"></div><div class="ticker"><span class="line" id="cbtLogLine" aria-live="polite"></span><button type="button" id="cbtLogBtn" aria-expanded="false" title="The whole fight, round by round">Log</button></div></div>
     <div class="acts" id="acts" aria-live="polite"></div>
     <div id="laborBar" hidden style="position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:30;display:flex;gap:10px;align-items:center;padding:6px 12px;border:1px solid rgba(201,162,74,.55);border-radius:6px;background:rgba(12,8,16,.82);color:#e8dcc0;font:600 13px/1.2 Georgia,serif;letter-spacing:.02em"><span id="laborWhat">Work detail</span><span id="laborShift" hidden title="The shift" style="--p:0;position:relative;width:110px;height:6px;border-radius:3px;background:rgba(201,162,74,.18);overflow:hidden"><i style="position:absolute;left:0;top:0;bottom:0;width:calc(var(--p) * 100%);background:linear-gradient(90deg,#8a6a2a,#e0b45a);transition:width 1s linear"></i></span><button class="btn" id="laborTalk" hidden>Talk</button><button class="btn" id="laborLook" hidden>Look around</button><button class="btn" id="laborPocket" hidden>Steal something</button><button class="btn" id="laborEnd" hidden>End the shift</button></div>
@@ -3871,7 +3889,8 @@ async function travel(to, z, fromWorld, cut, solo){
   // GATHER THE PARTY (Sam, 2026-11-15): the party's own move waits until every screen at the table is in step. A screen
   // following the world's move, and a split-off hero or group (which leaves the world's plate where it is), never wait.
   if (!fromWorld && !solo && !GATHER.pass && OW.on && !(OW.plate != null && !owSame(cur, OW.plate))){
-    gatherThen("travel", `To ${SPEC[to] ? SPEC[to].name : "the next place"}`, () => { GATHER.pass = true; const p = travel(to, z, fromWorld, cut, solo); GATHER.pass = false; return p; });
+    gatherThen("travel", `To ${SPEC[to] ? SPEC[to].name : "the next place"}`, () => { GATHER.pass = true; const p = travel(to, z, fromWorld, cut, solo); GATHER.pass = false; return p; },
+      {place: voyPlaceOf(SPEC[to] && SPEC[to].slug), music: {kind: "explore", slug: SPEC[to] && SPEC[to].slug}});
     return;
   }
   // SPLIT PARTY: a splinter (just the leader, or a group that is not on the world's plate) does not move the world's
@@ -3920,7 +3939,7 @@ async function travel(to, z, fromWorld, cut, solo){
     // escorted back into the pen"): out of the door, a held beat of dark, then the next place fades up
     const via = arrivalFrom(SPEC, cur, to);
     // THE MARCH IS A LOAD SCREEN (Sam, 2026-11-15): the party walks across the voyage card toward where they are taken
-    voyageShow({kick: "ON THE MARCH", title: SPEC[to] ? SPEC[to].name : "", sub: "", min: 2400});
+    voyageShow({kick: "ON THE MARCH", title: SPEC[to] ? SPEC[to].name : "", sub: "", min: 2400, place: voyPlaceOf(SPEC[to] && SPEC[to].slug), music: {kind: "explore", slug: SPEC[to] && SPEC[to].slug}});
     $("fade").classList.add("on"); await wait(cut.dark || 900);
     await enterNode(to, {from: owPlate(via), offs, fromScale: node.scale, solo: splinter, note: cut.note || (surrenderFresh() && to === PEN ? SURRENDER_MARCH_NOTE : `The escort marches the detail through the outpost to <em>${esc(SPEC[to].name)}</em>.`)});
     $("fade").classList.remove("on"); voyageHide();
@@ -9526,7 +9545,8 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   // GATHER THE PARTY (Sam, 2026-11-15: "should not permit battles ... until all players are in sync"): the fight opens
   // when every screen at the table is in step; until then this screen stands still on the voyage card.
   // (the battle screen's own opening, opts.battle, is the same fight carried on: it was gathered for already)
-  if (OW.on && !opts.gathered && !opts.battle){ gatherThen("fight", label ? String(label) : "A fight", () => startCombat(foeIds, label, {...opts, gathered: true})); return; }
+  if (OW.on && !opts.gathered && !opts.battle){ gatherThen("fight", label ? String(label) : "A fight", () => startCombat(foeIds, label, {...opts, gathered: true}),
+    {place: "fight", music: {kind: "fight", foes: (foeIds || []).map(f => f && typeof f === "object" ? f : {id: f}), flagMood: startCombat.flagMood}}); return; }
   if (!opts.battle && battleWanted(foeIds)){ battleBegin(foeIds, label, opts); return; }   // THE BATTLE SCREEN (below)
   // ... and while that fight is being played there, the pen's own copy of the watch fights nobody here
   if (!opts.battle && cur === PEN && battleLive() && foeIds.length && foeIds.every(f => f && typeof f === "object" && /^drow-guard/.test(f.id))) return;
@@ -9602,7 +9622,7 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   const r = stage.getBoundingClientRect(), spanX = Math.max(...xs) - Math.min(...xs) + 500, spanY = Math.max(...ys) - Math.min(...ys) + 420;
   const z = Math.max(1, Math.min(2.4, Math.min(r.width / (spanX * base), r.height / (spanY * base))));   // floor 1 (was 1.4): a spread-out fight is framed whole
   camTo(z, cx, cy, 900);
-  $("vignette").classList.add("on"); pickCombatTrack(moodFor(foes, startCombat.flagMood)); startCombat.flagMood = null; setTrack("combat");
+  $("vignette").classList.add("on"); { const m = moodFor(foes, startCombat.flagMood); if (combatLead !== m) pickCombatTrack(m); combatLead = null; } startCombat.flagMood = null; setTrack("combat");
   // initiative: d20 + the sheet's bonus, everyone, highest first (ties: higher bonus, then the party)
   // ONE ON ONE (Sam, 2026-11-13: a caught thief's fight is "combat (1:1)"): opts.duel is the one hero in it. The rest
   // of the party is on the plate and out of the order, like the allies a grudge fight leaves standing.
@@ -26034,7 +26054,7 @@ function gatherWaitingFor(){
   return out;
 }
 /** Run now if the table is in step; otherwise hold this screen on the voyage card until it is. */
-function gatherThen(kind, label, run){
+function gatherThen(kind, label, run, card = {}){
   const wait = gatherWaitingFor();
   if (!wait.length){ run(); return; }
   if (GATHER.hold) return;                                  // already gathering: the first move or fight asked for wins
@@ -26042,7 +26062,7 @@ function gatherThen(kind, label, run){
   keys.clear(); if (leader) leader.path = []; document.body.classList.add("gathering");
   reviewLog("sync", `Holding ${kind === "fight" ? "a fight" : "the move"} (${label}) for ${wait.map(w => `${w.name}: ${w.why}`).join(", ")}.`);
   // the card comes up only if the wait lasts: a screen that is back in a moment never flashes it
-  clearTimeout(GATHER.cardT); GATHER.cardT = setTimeout(() => { if (GATHER.hold){ voyageShow({kick: kind === "fight" ? "BEFORE THE FIGHT" : "THE PARTY GATHERS", title: label, sub: ""}); gatherTick(); } }, GATHER_CARD_MS);
+  clearTimeout(GATHER.cardT); GATHER.cardT = setTimeout(() => { if (GATHER.hold){ voyageShow({kick: kind === "fight" ? "BEFORE THE FIGHT" : "THE PARTY GATHERS", title: label, sub: "", place: card.place, music: card.music}); gatherTick(); } }, GATHER_CARD_MS);
   gatherTick();
 }
 function gatherTick(){
@@ -26066,13 +26086,74 @@ function gatherRelease(why){
 $("voyGo").onclick = () => gatherRelease("without " + gatherWaitingFor().map(w => w.name).join(", "));
 
 // THE VOYAGE CARD itself: shown by the gather and by a long march; the party walks across it while it is up.
-const VOY = {on: false, raf: 0, t0: 0, minUntil: 0};
+// Since 2026-11-15 (Sam: "cool background art and music with some DND lore on the bottom") it is a real load screen: a
+// painting for where the party is going (o.place), the music of that place brought in under it (o.music, below), and a
+// line of Underdark lore along the bottom, turning every few seconds.
+const VOY = {on: false, raf: 0, t0: 0, minUntil: 0, loreT: 0, lore: -1};
+const VOY_BASE = APP ? "/velkynvelve-walk/voyage/" : "voyage/";
+const VOY_PLACES = new Set(["outpost", "road", "fight"]);
+// the one tunnel is painted teal like the road; at the outpost it is toned violet, before a fight ember red (one colour, like the painting behind it)
+const VOY_TINT = {outpost: "grayscale(1) sepia(.9) hue-rotate(225deg) saturate(1.5) brightness(.95)", fight: "grayscale(1) sepia(1) hue-rotate(-28deg) saturate(1.9) brightness(.85)"};
+const VOY_TUNNEL = new Image(); VOY_TUNNEL.src = VOY_BASE + "tunnel.webp";   // the painted tunnel the heroes walk through (Runway, looped)
+// The lore: the books' Underdark (Monster Manual, Out of the Abyss, Sword Coast Adventurer's Guide) in our own words, never
+// quoted and never the campaign's own plot (Sam, 2026-11-15: "use lore from DND books").
+const VOY_LORE = [
+  ["Faerzress", "A wild magic soaks parts of the Underdark. It glows faintly and throws off divination and teleportation spells."],
+  ["Drow", "have lived beneath the surface so long that bright sunlight blinds them and spoils their aim."],
+  ["Ropers", "look like stalagmites until they lash out with sticky tendrils."],
+  ["Piercers", "cling to cavern ceilings like stalactites and drop on whatever walks below."],
+  ["Lolth, the Spider Queen,", "rules drow society. Her priestesses hold the real power in every drow city."],
+  ["Kuo-toa", "worship so fiercely that their belief can give a made-up god real power."],
+  ["Myconids,", "the fungus folk, share thoughts by releasing spores to each other."],
+  ["Hook horrors", "hunt by sound and talk to each other by clacking their hooked claws against their shells."],
+  ["Svirfneblin,", "the deep gnomes, can blend into stone and vanish in plain sight."],
+  ["Rothé", "are the cattle of the Underdark: shaggy, horned, and bad-tempered."],
+  ["Gelatinous cubes", "are almost invisible. Adventurers usually notice one only when they're already inside it."],
+  ["Duergar,", "the gray dwarves, can grow to giant size or turn invisible for a short time."],
+];
+const VOY_LORE_MS = 7000;
+function voyLoreNext(first){
+  clearTimeout(VOY.loreT); if (!VOY.on && !first) return;
+  let i = Math.floor(Math.random() * VOY_LORE.length); if (i === VOY.lore) i = (i + 1) % VOY_LORE.length; VOY.lore = i;
+  const p = $("voyLore"), [b, rest] = VOY_LORE[i], put = () => { p.innerHTML = `<b>${esc(b)}</b> ${esc(rest)}`; p.classList.remove("out"); };
+  if (first) put(); else { p.classList.add("out"); setTimeout(put, 600); }
+  VOY.loreT = setTimeout(() => voyLoreNext(false), VOY_LORE_MS);
+}
+/** Where a plate is, for the load screen's painting: the outpost, or the road through the deep. */
+function voyPlaceOf(slug){ return regionOf(slug) === "outpost" ? "outpost" : "road"; }
+// THE LOAD SCREEN'S MUSIC (Sam, 2026-11-15, "go"): no music of its own. The card brings in the music of where the party is
+// going, so nothing jumps when it lifts: marching to a cavern starts a caverns track under the card and the plate keeps it;
+// gathering for a fight starts that fight's own mood track early (combatLead), and the fight opens already scored. The
+// Music switch and volume rule it as they rule everything; a short marching cue marks the card coming up.
+let combatLead = null, combatLeadT = 0;
+function voyageMusic(m){
+  if (!m) return;
+  try {
+    if (m.kind === "explore"){
+      const r = dmExplore !== "auto" && dmExplore !== "off" ? dmExplore : regionOf(m.slug);
+      exploreRestUntil = 0;                                    // no rest gap under a load screen: it is a seam already
+      if (r !== exploreRegion) pickExploreTrack(r); else setTrack("explore");
+    } else if (m.kind === "fight"){
+      pickCombatTrack(moodFor(m.foes || [], m.flagMood)); setTrack("combat"); combatLead = combatMood;
+      // a fight that never opens (it was called off while the party gathered) gives the music back
+      clearTimeout(combatLeadT); combatLeadT = setTimeout(() => { if (combatLead && mode === "explore"){ combatLead = null; setTrack("explore"); } }, 15000);
+    }
+  } catch (e) {}
+}
+function voyageCue(){
+  if (!audioUnlocked) return;
+  try { const a = new Audio(`${APP ? "/" : "../"}underdark-map/sfx/march.mp3`); a.volume = Math.min(1, .5 * (vol / .4)) * .6; a.play().catch(() => {}); } catch (e) {}
+}
 function voyageShow(o){
   $("voyKick").textContent = o.kick || ""; $("voyTitle").textContent = o.title || ""; $("voySub").textContent = o.sub || "";
   $("voyWait").innerHTML = ""; $("voyGo").hidden = true;
+  const bg = $("voyBg"), place = VOY_PLACES.has(o.place) ? o.place : "road", url = `${VOY_BASE}${place}.webp`;
+  if (bg.dataset.place !== place){ bg.classList.remove("on"); bg.dataset.place = place; const im = new Image(); im.onload = () => { if (bg.dataset.place === place){ bg.style.backgroundImage = `url("${url}")`; bg.classList.add("on"); } }; im.src = url; }
+  else bg.classList.add("on");
   const v = $("voyage"); v.classList.remove("leaving"); v.hidden = false;
   VOY.minUntil = Date.now() + (o.min || 0);
-  if (!VOY.on){ VOY.on = true; VOY.t0 = performance.now(); VOY.raf = requestAnimationFrame(voyageDraw); }
+  voyageMusic(o.music);
+  if (!VOY.on){ VOY.on = true; VOY.t0 = performance.now(); VOY.raf = requestAnimationFrame(voyageDraw); voyLoreNext(true); voyageCue(); }
 }
 async function voyageHide(){
   if (!VOY.on) return;
@@ -26080,31 +26161,35 @@ async function voyageHide(){
   if (GATHER.hold) return;                                  // a gather took the card over meanwhile
   const v = $("voyage"); v.classList.add("leaving");
   await wait(480); if (GATHER.hold) { v.classList.remove("leaving"); return; }
-  v.hidden = true; v.classList.remove("leaving"); VOY.on = false; cancelAnimationFrame(VOY.raf);
+  v.hidden = true; v.classList.remove("leaving"); VOY.on = false; cancelAnimationFrame(VOY.raf); clearTimeout(VOY.loreT);
 }
 function voyageDraw(ts){
   if (!VOY.on) return;
   const c = $("voyWalk"), g = c.getContext("2d"), W = c.width, H = c.height, t = (ts - VOY.t0) / 1000;
   g.imageSmoothingEnabled = false; g.clearRect(0, 0, W, H);
-  // the cave: far teeth, near rocks and the path, each scrolling at its own pace (the party walks; the world goes by)
-  const band = (speed, y, h, col, step, seed) => { g.fillStyle = col; const off = (t * speed) % step;
-    for (let x = -step - off; x < W + step; x += step){ const k = Math.floor((x + off + t * speed) / step) * 9301 + seed; const r = ((k * 49297) % 233280) / 233280; const w = step * (.45 + r * .5), hh = h * (.4 + r * .6);
-      g.beginPath(); if (y < H / 2){ g.moveTo(x, y); g.lineTo(x + w / 2, y + hh); g.lineTo(x + w, y); } else { g.moveTo(x, y); g.lineTo(x + w / 2, y - hh); g.lineTo(x + w, y); } g.fill(); } };
-  band(14, 0, 46, "rgba(70,52,96,.55)", 60, 3);
-  band(26, H - 18, 40, "rgba(40,30,58,.85)", 84, 7);
-  g.fillStyle = "rgba(214,176,98,.35)"; const doff = (t * 60) % 18; for (let x = -doff; x < W; x += 18) g.fillRect(Math.round(x), H - 22, 8, 2);   // the path
+  // the tunnel (Sam, 2026-11-15: "make that tunnel ... better quality so it doesn't stand out with the background art"): a
+  // painted Underdark passage in the load screens' own hand, looped seamlessly and scrolling past at the party's pace.
+  // Until it has loaded, a plain dark floor.
+  const FEET = H - 40;
+  if (VOY_TUNNEL.complete && VOY_TUNNEL.naturalWidth){
+    g.imageSmoothingEnabled = true;
+    g.filter = VOY_TINT[$("voyBg").dataset.place] || "none";   // the tunnel takes the colour of the painting behind it
+    const th = H, tw = VOY_TUNNEL.naturalWidth * th / VOY_TUNNEL.naturalHeight, off = (t * 34) % tw;
+    for (let x = -off; x < W; x += tw) g.drawImage(VOY_TUNNEL, Math.floor(x), 0, Math.ceil(tw) + 1, th);
+    g.filter = "none"; g.imageSmoothingEnabled = false;
+  } else { g.fillStyle = "rgba(20,16,30,.9)"; g.fillRect(0, FEET - 6, W, 40); }
   // spores drifting up through the lamplight
   for (let i = 0; i < 18; i++){ const sx = (i * 97 + t * (8 + i % 5)) % W, sy = H - ((t * (10 + i % 7) + i * 23) % (H - 10)); g.fillStyle = `rgba(165,133,255,${.18 + (i % 4) * .08})`; g.fillRect(Math.round(sx), Math.round(sy), 2, 2); }
   // the party, walking east in a line, the hero you play in front
   const walkers = (party.length ? [leader, ...party.filter(p => p !== leader)] : []).filter(a => a && SPR[a.id] && SPR[a.id].img.walk && SPR[a.id].json.animations.walk).slice(0, 6);
   const face = faceOf(1, 0), n = walkers.length;
-  const lamp = g.createRadialGradient(W / 2 + n * 30, H - 40, 4, W / 2 + n * 30, H - 40, 170); lamp.addColorStop(0, "rgba(255,190,110,.18)"); lamp.addColorStop(1, "rgba(255,190,110,0)"); g.fillStyle = lamp; g.fillRect(0, 0, W, H);
+  const lamp = g.createRadialGradient(W / 2 + n * 30, FEET - 20, 4, W / 2 + n * 30, FEET - 20, 190); lamp.addColorStop(0, "rgba(255,190,110,.18)"); lamp.addColorStop(1, "rgba(255,190,110,0)"); g.fillStyle = lamp; g.fillRect(0, 0, W, H);
   walkers.forEach((a, i) => {
     const sp = SPR[a.id], an = sp.json.animations.walk, [cw, ch] = sp.json.cell || [128, 128], img = sp.img.walk;
     if (!img.complete || !img.naturalWidth) return;
     const f = Math.floor((t + i * .13) * an.fps) % an.frames, s = 100 / ch, x = W / 2 + (n / 2 - i - 1) * 62, bob = 0;
-    g.fillStyle = "rgba(0,0,0,.35)"; g.beginPath(); g.ellipse(x + cw * s / 2, H - 22, 20, 4, 0, 0, Math.PI * 2); g.fill();
-    g.drawImage(img, f * cw, face * ch, cw, ch, Math.round(x), Math.round(H - 24 - ch * s + bob), Math.round(cw * s), Math.round(ch * s));
+    g.fillStyle = "rgba(0,0,0,.45)"; g.beginPath(); g.ellipse(x + cw * s / 2, FEET, 20, 4, 0, 0, Math.PI * 2); g.fill();
+    g.drawImage(img, f * cw, face * ch, cw, ch, Math.round(x), Math.round(FEET - 2 - ch * s + bob), Math.round(cw * s), Math.round(ch * s));
   });
   VOY.raf = requestAnimationFrame(voyageDraw);
 }
