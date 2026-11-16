@@ -5,10 +5,23 @@ import { helpChance, helpLine, helperFor, offersHelp } from "@/lib/npc-help"
 const st = (o: Partial<typeof NO_STANDING>) => ({ ...NO_STANDING, ...o })
 
 describe("NPC help on checks", () => {
-  it("only Jimjar is a helper, by first name", () => {
+  it("the helpers are found by any of their names, and Buppido is none of them", () => {
     expect(helperFor("Jimjar")).not.toBeNull()
     expect(helperFor("jimjar the gambler")).not.toBeNull()
-    expect(helperFor("Eldeth Feldrun")).toBeNull()
+    expect(helperFor("Eldeth Feldrun")?.kinds).toEqual(["eyes"])
+    expect(helperFor("Prince Derendil")?.kinds).toEqual(["might"])
+    expect(helperFor("Shuushar the Awakened")?.kinds).toEqual(["eyes"])
+    expect(helperFor("Buppido")).toBeNull()
+  })
+  it("each helps only with their own kind of task", () => {
+    expect(offersHelp(helperFor("Ront"), "might", NO_STANDING, 0)).toBe(true)
+    expect(offersHelp(helperFor("Ront"), "lock", NO_STANDING, 0)).toBe(false)
+    expect(offersHelp(helperFor("Eldeth"), "eyes", NO_STANDING, 0)).toBe(true)
+  })
+  it("a companion speaks in their own voice", () => {
+    expect(helpLine("might", "Kenta", 0, "Ront")).toContain("Ront")
+    expect(helpLine("eyes", "Fifi", 0, "Eldeth Feldrun")).toContain("Fifi")
+    expect(helpLine("lock", "shorty", 0, "Jimjar")).toContain("shorty")
   })
   it("the better he likes you, the likelier he is, and never once soured", () => {
     expect(helpChance(st({ resentment: 12 }))).toBe(0)
