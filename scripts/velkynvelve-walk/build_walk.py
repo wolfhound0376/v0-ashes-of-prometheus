@@ -406,6 +406,8 @@ for i in P + list(GARB.values()) + N + F + V + LP:
     # `shoot-bow` the bow; strike() picks by the weapon in hand, and a hero without the sheet stands and aims as before
     if i in PG: sh += ['shoot', 'shoot-bow']
     if i == 'scott': sh.append('perform')
+    # the quaggoth's grab and shove (Sam, 2026-11-16; PixelLab posed skeleton 'throw', scripts/sprites/add-shoot-pose.py --pose throw)
+    if i == 'quaggoth': sh.append('throw')
     if i in ['jorlan', 'drow-guard-male', 'drow-guard-female']: sh += ['attack', 'dodge', 'hurt', 'dead']
     # the hand crossbow (scripts/sprites/add-shoot-pose.py, Sam 2026-10-29 "go" on the drow audit): strike() plays
     # `shoot` for a bolt when the sheet exists; a drow without one still stands and takes aim in its idle

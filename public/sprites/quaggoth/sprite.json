@@ -42,6 +42,13 @@
       "fps": 10,
       "loop": false,
       "note": "Sam approved 2026-10-15: berserk rage (hunch, rear up, roar, settle). PixelLab character 010bae69: group 9e123a61 for S/SE/E/W/SW, group 81727767 (back kept turned) for N/NW; NE is NW mirrored."
+    },
+    "throw": {
+      "sheet": "throw.png",
+      "frames": 8,
+      "fps": 12,
+      "loop": false,
+      "hit": 0.45
     }
   }
 }

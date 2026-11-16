@@ -13988,6 +13988,7 @@ function foeTurn(f){
   if (holdsGateKey(f) && !volley){ goOpenGate(f); return; }
   if (blind && !gateWayTo(f, tgt)){ seekSight(f); return; }
   if (f.c.conds.has("burning") && Math.random() < .5){ putOutFire(f, () => setTimeout(() => passTurn(f), 500)); return; }
+  if (wantsGrabShove(f, tgt)){ grabAndShove(f, tgt, () => setTimeout(() => passTurn(f), 500)); return; }   // GRAB AND SHOVE (Sam, 2026-11-16)
   if (s.web && f.c.webReady && !tgt.c.conds.has("restrained") && feetBetween(f, tgt) <= s.web.range){ shootWeb(f, tgt, () => { setTimeout(() => passTurn(f), 500); }); return; }
   if (s.leap && feetBetween(f, tgt) > 10 && feetBetween(f, tgt) <= s.leap + 5){ leapTo(f, tgt, () => { let n2 = 0; const go2 = () => { if (!cbt || tgt.down || f.down || n2 >= swings){ setTimeout(() => passTurn(f), 500); return; } n2++; attackWith(f, tgt, atk, () => setTimeout(go2, 250)); }; go2(); }); return; }
   // NOTHING ELSE AT DISTANCE: A ROCK (Sam, 2026-10-28: "When at a distance NPCs can pick up rocks and throw them if there
@@ -14111,6 +14112,54 @@ function shootWeb(f, tgt, done){
 // One leap, one implementation. The spider's spring and a hero's long jump are the same arc:
 // face the landing, play the "jump" sheet when the sprite has one (the walk sheet otherwise),
 // and let the renderer lift the body on the way over.
+// ---------- GRAB AND SHOVE ----------
+// Sam, 2026-11-16: "Quaggoth throw in fights. Its a grab followed by a shove." A quaggoth (not Derendil, who is ours)
+// sometimes spends its turn on this instead of its two claws. SRD 5.2.1 Unarmed Strike: Grapple, then Shove, each a
+// Strength or Dexterity saving throw (the target's better) against DC 8 + Strength modifier + proficiency bonus =
+// 8 + 3 + 2 = 13 for the bestiary's quaggoth (Str 17, PB +2).
+//   1. GRAB   a failed save and the target is Grappled; a made save and the turn is spent.
+//   2. SHOVE  a failed second save and the target is hurled clear: thrown 10 ft (RAW is 5 ft or prone: [HOUSE] both,
+//             and 10 ft, Sam's "throw"), lands Prone, and takes 1d6 bludgeoning from the landing [HOUSE]. A throw that
+//             carries them over the chasm or the falls goes over, as any shove does. A made save: they twist loose.
+// How often: 30% of a quaggoth's turns when a hero is in reach and not already down or prone [HOUSE].
+// The art: PixelLab posed-skeleton "throw" on the quaggoth (public/sprites/quaggoth/throw.png, 8 facings).
+const GRAB_SHOVE = {dc: 13, chance: .3, ft: 10, dmg: "1d6"};
+function wantsGrabShove(f, t){
+  return !!(f && t && t.c && /^quaggoth/.test(f.id) && f.kind === "foe" && !f.c.berserk && !t.down && !t.c.conds.has("prone")
+    && !t.c.conds.has("grappled") && feetBetween(f, t) <= 7.5 && Math.random() < GRAB_SHOVE.chance);
+}
+function grabAndShove(f, t, done){
+  combatBusy = true; if (cbt) cbt.phase = "busy"; pushCam(f, t);
+  const sv = ab => { const x = t.c.sheet && t.c.sheet.saves && t.c.sheet.saves[ab]; return x != null ? x : (t.kind === "pc" ? dirSave(t, ab) : 0) || 0; };
+  const ab = sv("str") >= sv("dex") ? "str" : "dex", AB = ab.toUpperCase(), dc = GRAB_SHOVE.dc;
+  const end = () => { combatBusy = false; if (cbt) cbt.phase = "idle"; settleCam(); renderParty(); done && done(); };
+  f.face = faceOf(t.x - f.x, t.y - f.y);
+  const r1 = d20(0, t), s1 = r1 + sv(ab);
+  bark(f, "Hrrraagh!", 1400);
+  if (s1 >= dc){ playOnce(f, "attack", () => setAnim(f, "idle")); popText(t, "slips free", "#e8e2c8", .9);
+    log(`${fname(f)} grabs for ${fname(t)}: ${AB} save ${r1} + ${sv(ab)} = ${s1} vs DC ${dc} — <b>slips free</b>.`); setTimeout(end, 900); return; }
+  addCond(t, "grappled"); t.path = [];
+  log(`${fname(f)} grabs ${fname(t)}: ${AB} save ${r1} + ${sv(ab)} = ${s1} vs DC ${dc} — <b>grappled</b>.`);
+  const an = SPR[f.id].img.throw && SPR[f.id].json.animations.throw, hitMs = an ? (an.hit || .45) * an.frames / an.fps * 1000 : 350;
+  playOnce(f, an ? "throw" : "attack", () => setAnim(f, "idle"));
+  setTimeout(() => {
+    const r2 = d20(0, t), s2 = r2 + sv(ab);
+    if (s2 >= dc){ t.c.conds.delete("grappled"); popText(t, "twists loose", "#e8e2c8", .9);
+      log(`${fname(f)} heaves ${fname(t)} up to throw: ${AB} save ${r2} + ${sv(ab)} = ${s2} vs DC ${dc} — <b>twists loose</b> and lands on their feet.`); setTimeout(end, 700); return; }
+    t.c.conds.delete("grappled");
+    const d = norm({x: t.x - f.x, y: t.y - f.y}), raw = {x: t.x + d.x * ruleFt(t) * GRAB_SHOVE.ft, y: t.y + d.y * ruleFt(t) * GRAB_SHOVE.ft};
+    log(`${fname(f)} hurls ${fname(t)}: ${AB} save ${r2} + ${sv(ab)} = ${s2} vs DC ${dc} — <b>thrown ${GRAB_SHOVE.ft} ft</b>.`);
+    narrate(f, `${fname(f)} lifts ${fname(t)} over its head and throws.`);
+    const ce = chasmEdge(t, raw);
+    if (ce){ chasmFall(t, raw, f, ce); setTimeout(end, 1200); return; }
+    if (pushOverFalls(t, raw)){ overTheFalls(t, f); setTimeout(end, 1200); return; }
+    const to = nearestWalkable(raw.x, raw.y);
+    arcTo(t, to, () => { if (t.down) { end(); return; }
+      addCond(t, "prone"); const h = roll(GRAB_SHOVE.dmg, false); shake(7); bank("ui/nat1", .35);
+      damage(t, h.total, "bludgeoning", false, f, false); popText(t, "prone", "#e8e2c8", .9);
+      log(`${fname(t)} hits the stone: ${h.total} bludgeoning, and is <b>prone</b>.`); setTimeout(end, 600); });
+  }, hitMs);
+}
 function arcTo(a, land, then){
   const d = norm({x: land.x - a.x, y: land.y - a.y}), from = {x: a.x, y: a.y};
   // The arc lasts as long as the jump sheet does, so the figure is not still tucked in the air
