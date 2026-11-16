@@ -25696,10 +25696,11 @@ function fightTickBody(){
   { const m = menuNow(), j = JSON.stringify(m); if (full || j !== FIGHT.menuSig){ body.menu = m; FIGHT.menuSig = j; } }
   { const d = Object.values(FIGHT.dlgs).map(x => x.pub), j = JSON.stringify(d); if (full || j !== FIGHT.dlgSig){ body.dlgs = d; FIGHT.dlgSig = j; } }
   if (FIGHT.out.length){ body.ev = FIGHT.out; FIGHT.out = []; }
-  const send = Object.keys(body).length > 1 ? fightPost("tick", {fight: FIGHT.id, body}).catch(e => { if (e.ended) fightLetGo(); }) : Promise.resolve();
+  const send = Object.keys(body).length > 1 ? fightPost("tick", {fight: FIGHT.id, body}).catch(e => { if (e.ended) fightLetGo(); else if (e.status === 403) fightOvertaken(); }) : Promise.resolve();
   send.finally(() => fightInputs().finally(() => { if (FIGHT.auth) setTimeout(fightTick, 250); }));
 }
 async function fightInputs(){
+  if (!FIGHT.auth) return;                              // only the screen that runs the fight plays the presses (fightOvertaken)
   try {
     const j = await fightGet(`?fight=${FIGHT.id}&kind=in&since=${FIGHT.inSince}`);
     for (const m of j.msgs || []){ FIGHT.inSince = Math.max(FIGHT.inSince, m.id); fightInput(m.by_key, m.body || {}); }
@@ -25761,6 +25762,22 @@ function oneFightEnded(won){
   fightPost("end", {fight: id, body}).catch(() => {});
 }
 function fightLetGo(){ FIGHT.auth = false; FIGHT.mirror = false; FIGHT.id = null; }
+// THE SCREEN THAT CAME BACK STEPS DOWN (Sam's playtest, 2026-11-15: "We got out of sync a few times"). The fight on the
+// pen-gate battle plate went silent for four minutes (walk_fight_msgs: Samson's screen, which ran it, sent its last tick
+// at 22:58:06 and nothing until 23:02:22). Its ticks only go out while the page draws, and a hidden tab does not draw,
+// so a screen put in the background leaves everyone else frozen. Since that game a quiet fight is carried on by another
+// screen (A FIGHT OUTLIVES A REFRESH, below), but the screen that went quiet, once it was back, kept running its own
+// copy: the server turned its ticks away ("this screen does not run the fight", 403) and nothing listened, so the table
+// had two fights from then on. Now a turned-away tick means another screen holds the fight: this one drops its copy and
+// shows theirs, from the start of their ticks.
+function fightOvertaken(){
+  if (!FIGHT.auth || !FIGHT.id) return;
+  const f = {id: FIGHT.id, plate: FIGHT.plate || String(cur), auth_key: ""};
+  FIGHT.auth = false;                                   // no more ticks from here (fightTick checks it)
+  log(`<em>Another screen carried this fight on while this one was away. It is shown here from there.</em>`);
+  reviewLog("sync", "This screen had stopped running the fight (another screen took it over); now showing theirs.");
+  abandonLocalFight(); FIGHT.mirror = false; enterMirror(f);
+}
 // the loser of a race to open: this screen started the same fight a moment late; it goes quietly and shows theirs
 function abandonLocalFight(){
   if (mode !== "combat" || !cbt) return;
