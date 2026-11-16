@@ -2706,11 +2706,14 @@ function drawLight(){
   ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.imageSmoothingEnabled = true; ctx.drawImage(LC, 0, 0, cv.width, cv.height); ctx.restore();
   // the colour of each light: gathered on GC (black, "lighten" = the brighter wins), then added on top once
   if (GC.width !== W || GC.height !== H){ GC.width = W; GC.height = H; }
-  gcx.setTransform(1, 0, 0, 1, 0, 0); gcx.globalCompositeOperation = "source-over"; gcx.fillStyle = "#000"; gcx.fillRect(0, 0, W, H);
+  // GC starts CLEAR, not black (2026-11-15): the room's painting is an <img> under this canvas, so an opaque black GC added
+  // with "lighter" put solid black over every part of the room no lamp reached; any glowing light (a spell's flash too)
+  // blacked out the plate. Clear + "lighten" still keeps the brightest lamp where two meet, as intended (444b7387).
+  gcx.setTransform(1, 0, 0, 1, 0, 0); gcx.globalCompositeOperation = "source-over"; gcx.clearRect(0, 0, W, H);
   gcx.setTransform(m.a / 2, m.b / 2, m.c / 2, m.d / 2, m.e / 2, m.f / 2); gcx.globalCompositeOperation = "lighten";
   let anyGlow = false;
   for (const l of lights){ if (!l.glow) continue; anyGlow = true; const k = l.glow * l.a, g = gcx.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.r * .8);
-    g.addColorStop(0, `rgb(${Math.round(l.col[0] * k)},${Math.round(l.col[1] * k)},${Math.round(l.col[2] * k)})`); g.addColorStop(1, "#000"); gcx.fillStyle = g; gcx.fillRect(l.x - l.r, l.y - l.r, l.r * 2, l.r * 2); }
+    g.addColorStop(0, `rgb(${Math.round(l.col[0] * k)},${Math.round(l.col[1] * k)},${Math.round(l.col[2] * k)})`); g.addColorStop(1, "rgba(0,0,0,0)"); gcx.fillStyle = g; gcx.fillRect(l.x - l.r, l.y - l.r, l.r * 2, l.r * 2); }
   if (anyGlow){ ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = "lighter"; ctx.imageSmoothingEnabled = true; ctx.drawImage(GC, 0, 0, cv.width, cv.height); ctx.restore(); }
   ctx.imageSmoothingEnabled = false;
 }
