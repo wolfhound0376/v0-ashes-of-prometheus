@@ -2466,6 +2466,7 @@ function drawFrame(){
   if (mode === "explore" && exploreJump && leader && actors.includes(leader)) drawExploreJumpSquares(leader);
   ovWrapGroup(drops, drawLootGround);   // the loot ceremony's floor light, under the figures
   drawCrimGhosts();                     // a rogue or ranger's afterimages, under the figures
+  drawEbChargeGround();                 // a warlock gathering Eldritch Blast while aiming: the floor (ELDRITCH BLAST, THE CHARGE)
   const depth = a => a.y + (a.fan && cbt ? a.fan.front || 0 : 0);   // in a knot of fighters the one acting and the one aimed at are in front (fanSolve)
   const list = actors.concat(vermin, laborProps).filter(a => a.alpha > 0.01).sort((a, b) => depth(a) - depth(b));   // laborProps: Hard Labor's station props
   const cloudQ = mode === "combat" || clouds.length ? cloudPuffs() : [];   // the poison cloud, in depth order among the figures
@@ -2627,7 +2628,7 @@ function drawFrame(){
   drawLight();          // the dark, with the lamps, the heroes and landing spells cut out of it; everything after glows through
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
   drawTolls();
-  ovWrapGroup(drops, drawDrops); drawDeathBits(false); drawCombatFx(); drawMageHand(); drawCrimPuffs(); drawShots(); drawCritBadges(); drawToothGlow();
+  ovWrapGroup(drops, drawDrops); drawDeathBits(false); drawCombatFx(); drawEbChargeOver(); drawMageHand(); drawCrimPuffs(); drawShots(); drawCritBadges(); drawToothGlow();
   drawExitSigns();
   ctx.globalAlpha = 1;
 }
@@ -13943,6 +13944,67 @@ function labEbHit(c, t, crit){ const flip = t.x < c.x;
   labRef(crit ? "ebImpact" : "ebImpStd", {x: t.x, y: t.y + 8, w: crit ? 240 : 120, life: crit ? 800 : 560, grow: [.5, 1.1], fade: [20, 360], anchorY: "bottom", add: false, flipX: flip});
   labRef("ebOrb", {at: t, w: crit ? 120 : 70, life: 260, grow: [.6, 1.6], fade: [10, 220]}); lightFlash(t.x, labMid(t), "#a35bff", crit ? 360 : 260, 420);
   if (crit){ shake(10); t.flash = now + 320; t.flashCol = "#a35bff"; } }
+// ---- ELDRITCH BLAST, THE CHARGE WHILE AIMING (Sam, 2026-11-15, three stills of a warlock gathering power: "Please create
+// this effect for eldritch blast for warlocks as a ramp up while targeting"). From the moment Eldritch Blast is picked
+// until the target is clicked (or Esc), the caster gathers it, building over about a second and holding there:
+//   floor  — a magenta pool under the feet, three broken rings turning against each other, lightning veins crawling
+//            out across the stone, re-struck about fourteen times a second (drawEbChargeGround, under the figures)
+//   body   — pink arcs climbing from the feet to the casting hand; the orb in that hand swelling, white-hot at the
+//            heart, spitting little forks (drawEbChargeOver, over the figures)
+//   air    — embers rising off the circle, and the magenta light it throws on the walls
+// The hand turns to the foe under the pointer. A click hands over to the blast itself (labEbDeliver: orb, beam, impact);
+// the charge falls away in a fifth of a second. Drawn only, nothing generated: code-drawn like the rest of the lab's looks.
+let ebCharge = null;
+function ebChargeTick(){
+  const a = mode === "combat" && cbt && cbt.phase === "target" && cbt.pend && cbt.pend.spell === "Eldritch Blast" ? activeActor() : null;
+  if (a && !a.down && actors.includes(a)){ if (!ebCharge || ebCharge.a !== a || ebCharge.out) ebCharge = {a, t0: now, out: 0, cracks: [], arcs: [], at: 0, aat: 0, lt: 0}; }
+  else if (ebCharge && !ebCharge.out) ebCharge.out = now;
+  if (ebCharge && ebCharge.out && now - ebCharge.out > 220) ebCharge = null;
+  return ebCharge;
+}
+function ebLevel(c){ const up = Math.min(1, (now - c.t0) / 1100), e = 1 - Math.pow(1 - up, 3), fade = c.out ? Math.max(0, 1 - (now - c.out) / 220) : 1; return {e, fade, al: (.25 + .75 * e) * fade}; }
+const ebPath = P => { ctx.beginPath(); P.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.stroke(); };
+function drawEbChargeGround(){
+  const c = ebChargeTick(); if (!c) return; const a = c.a, {e, al} = ebLevel(c); if (al <= 0) return;
+  ovWrapA(a, () => {
+    const x = a.x + (a.kx || 0), y = a.y, R = labR(a) * (1.6 + 1.4 * e), sq = .42, t = now / 1000;
+    ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.lineCap = "round";
+    ctx.save(); ctx.translate(x, y); ctx.scale(1, sq);
+    const g = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 1.15); g.addColorStop(0, `rgba(255,60,170,${.8 * al})`); g.addColorStop(.4, `rgba(200,20,130,${.5 * al})`); g.addColorStop(.75, `rgba(150,10,120,${.22 * al})`); g.addColorStop(1, "rgba(120,0,90,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, R * 1.15, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowColor = "#ff3cc8"; ctx.shadowBlur = 14;
+    for (const [rr, sp, w, col, n] of [[.95, .9, 2.4, "255,90,215", 5], [.68, -1.4, 1.6, "200,110,255", 4], [.42, 2.2, 1.2, "255,180,240", 3]]){
+      ctx.strokeStyle = `rgba(${col},${.9 * al})`; ctx.lineWidth = w / sq * .5;
+      for (let i = 0; i < n; i++){ const a0 = t * sp + i / n * Math.PI * 2; ctx.beginPath(); ctx.arc(0, 0, R * rr, a0, a0 + Math.PI * 2 / n * .62); ctx.stroke(); } }
+    ctx.restore();
+    if (now - c.at > 70){ c.at = now; c.cracks = []; const n = 3 + Math.round(4 * e);
+      for (let i = 0; i < n; i++){ const ang = labRnd(0, Math.PI * 2), L = R * labRnd(.55, 1.25); c.cracks.push(labZigzag(0, 0, Math.cos(ang) * L, Math.sin(ang) * L * sq, 5, 6)); } }
+    ctx.translate(x, y); ctx.shadowColor = "#ff4fd8"; ctx.shadowBlur = 10;
+    for (const P of c.cracks) for (const [w, col] of [[3, `rgba(255,60,190,${.55 * al})`], [1.2, `rgba(255,225,250,${.9 * al})`]]){ ctx.lineWidth = w; ctx.strokeStyle = col; ebPath(P); }
+    ctx.restore();
+  });
+}
+function drawEbChargeOver(){
+  const c = ebCharge; if (!c) return; const a = c.a, {e, fade, al} = ebLevel(c); if (al <= 0) return;
+  const tgt = hoverActor && hoverActor !== a && !hoverActor.down ? hoverActor : null;
+  ovWrapA(a, () => {
+    const h = labHand(a, tgt), x = a.x + (a.kx || 0), H = labH(a), Rb = labR(a);
+    ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.lineCap = "round"; ctx.shadowColor = "#ff3cc8"; ctx.shadowBlur = 12;
+    if (now - c.aat > 60){ c.aat = now; c.arcs = []; const n = 1 + Math.round(2 * e);
+      for (let i = 0; i < n; i++) c.arcs.push(labZigzag(x + labRnd(-Rb * 1.2, Rb * 1.2), a.y - labRnd(0, H * .15), h.x + labRnd(-4, 4), h.y + labRnd(-4, 4), 6, 6 + Rb * .25)); }
+    for (const P of c.arcs) for (const [w, col] of [[2.6, `rgba(255,70,200,${.5 * al})`], [1, `rgba(255,230,252,${.85 * al})`]]){ ctx.lineWidth = w; ctx.strokeStyle = col; ebPath(P); }
+    const fl = .88 + .12 * Math.sin(now / 37) * Math.sin(now / 53), r = Rb * (.12 + .2 * e) * fl;   // the orb sized to the body, not the plate (a close-up's figures are huge)
+    const g = ctx.createRadialGradient(h.x, h.y, 0, h.x, h.y, r * 2.4); g.addColorStop(0, `rgba(255,245,255,${.95 * al})`); g.addColorStop(.22, `rgba(255,120,230,${.85 * al})`); g.addColorStop(.5, `rgba(200,40,200,${.3 * al})`); g.addColorStop(1, "rgba(120,0,160,0)");
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(h.x, h.y, r * 2.4, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = `rgba(255,200,250,${.8 * al})`;
+    for (let i = 0; i < 2 + Math.round(3 * e); i++){ const ang = labRnd(0, Math.PI * 2), L = r * labRnd(1.6, 3); ebPath(labZigzag(h.x, h.y, h.x + Math.cos(ang) * L, h.y + Math.sin(ang) * L, 3, 3)); }
+    ctx.restore();
+  });
+  if (fade < 1) return;
+  if (Math.random() < .35 + .5 * e){ const R = labR(a) * (1.6 + 1.4 * e), ang = labRnd(0, Math.PI * 2), u = labRnd(.2, 1);
+    sparks.push({a, x: a.x + Math.cos(ang) * R * u, y: a.y + Math.sin(ang) * R * .42 * u, vx: labRnd(-10, 10), vy: labRnd(-70, -35), g: -30, col: Math.random() < .6 ? "#ff5ad8" : "#c48aff", t0: now, life: labRnd(500, 900)}); }
+  if (now - c.lt > 110){ c.lt = now; const q = ovPt(a.x, a.y); lightFlash(q.x, q.y - labH(a) * .4, "#ff3cc8", 170 + 130 * e, 300); }
+}
 // ---- HEX (the warlock sheet: the dark vortex opens at the palm, a black orb flies, the vortex settles flat under the cursed
 // one's feet and turns there while they are hexed; each extra d6 flashes a dark dart on them)
 function labHexDeliver(c, at, then){ const h = labHand(c, at), to = bodyPoint(at);
