@@ -1629,6 +1629,47 @@ function prisonersJoin(){
   comp.push(...joined);
   return joined;
 }
+// CALL THE OTHERS OUT (Sam, 2026-11-15, playtest point 3: "When the door was left open and we went out there was disconnect
+// with NPCs joining. Only me and the bard went out." -> "Just build it and make sure it is clean"; step 4 of the approved
+// pen-escape design, claude/Pen_Escape_Phases_2026-11-13.md). prisonersJoin() above only takes the prisoners who are on
+// screen when the party walks off the pen plate; a breakout onto the battle plate, or a hero who slipped out first, left
+// everyone else in the pen. Now a hero outside the open pen (the landing, or the battle plate that stands for it) can
+// call them out. They come: Out of the Abyss's escape is the prisoners' escape, and every one of them wants out. Not
+// the dead, not anyone the DM has left behind (DM tools), not anyone out on a work crew. It is the same company list as
+// the DM's "Bring along", so every screen sees the same people with the party.
+function penOpenToCall(){ return !!(state.gateOpen || state.gateBroken || state.brokeOut); }
+function penLeftovers(){
+  const comp = companyNow(), away = (crewsAway && crewsAway.ids) || new Set(), slain = state.slain || [];
+  return PEN_NPCS.map(d => d.id).filter(id => SPR[id] && !comp.includes(id) && !state.leftBehind.includes(id) && !slain.includes(id) && !away.has(id));
+}
+function callOutCan(L){
+  if (!L || mode !== "explore" || L.down || SANDBOX || laborLive() || !penOpenToCall()) return false;
+  const here = cur === PEN ? outsidePen(L) : String((node && node.stands_for) ?? "") === String(PEN);
+  return here && penLeftovers().length > 0;
+}
+function callOthersOut(){
+  const L = leader; if (!callOutCan(L)) return;
+  const ids = penLeftovers(), comp = companyNow(), placed = party.map(q => ({x: q.x, y: q.y})), names = [];
+  ids.forEach((id, i) => {
+    comp.push(id); const nm = SHORT[id] || SPR[id].json.name; names.push(nm);
+    const target = nearestWalkable(L.x - 90 + (i % 4) * 60, L.y + 60 + Math.floor(i / 4) * 40, placed); placed.push(target);
+    const here = npcs.find(n => n.id === id && !n.company);
+    if (here){                                                   // on the pen plate: they walk out through the open gate
+      here.company = true; here.talk = false; here.home = {x: target.x, y: target.y};
+      const path = findPath(here, target);
+      if (path && path.length){ here.path = path; return; }
+      here.fading = true; setTimeout(() => { npcs = npcs.filter(n => n !== here); actors = actors.filter(n => n !== here); }, 1100);
+    }
+    if (npcs.some(n => n.id === id && n.company)) return;
+    setTimeout(() => {                                             // elsewhere: they come in from the pen's side, a step apart
+      if (npcs.some(n => n.id === id && n.company) || !companyNow().includes(id)) return;
+      const a = spawnCompanion(id, target, null, L.face); a.alpha = 0; a.fadeIn = true; npcs.push(a); actors = [...party, ...npcs, ...foes];
+    }, 300 + i * 450);
+  });
+  saveWalk(); renderCompany(); exploreKey = "";
+  log(`<b>${esc(fname(L))} calls into the pen.</b> ${esc(names.join(", "))} ${names.length > 1 ? "come" : "comes"} out to join the party.`, {say: true});
+  narrate(L, `${fname(L)} calls the others out of the pen.`);
+}
 function spawnCompanion(id, near, placed, face){
   const def = PEN_NPCS.find(d => d.id === id) || {};
   const p = nearestWalkable(near.x, near.y, placed); if (placed) placed.push(p);
@@ -1702,6 +1743,7 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
   // From then on nobody in the pen is "behind bars": the gate watch's warning, volleys and Drow Surgeon are off, and a
   // guard who comes back and sees them attacks (guardsReact). Cleared when the drow lock the party in again.
   brokeOut: null,
+  crewsHaltKey: null,   // the shift that was out when the pen was broken open: no crews after it (crewsHalted)
   // FLED (Sam, 2026-11-12): hero id -> {from, to, at}. A hero who ran out of a fight; their own screen walks them on
   // to `to` once the fight on `from` is over (heroFlee / tickFled).
   fled: {},
@@ -4180,16 +4222,41 @@ function pushOverFalls(t, to){ const z = cur === 9 ? node.zones.find(z => z.kind
 // hanging below the planks until they tear free or a friend cuts them out; then they climb back up. Anywhere else it is
 // the open chasm: a fall of hundreds of feet, 20d6 bludgeoning (the SRD 5.1 cap), and nobody comes back from it. That
 // depth is Claude's reading of the painting, not a number from the book.
-function chasmOf(){ const B = balcony(); return (B && B.chasm) || null; }
+function chasmOf(){ const B = balcony(); return (B && B.chasm) || (node && node.chasm) || null; }
 function chasmEdge(t, raw){
   const C = chasmOf(); if (!C || !t || !raw) return null;
+  // A PLATE'S OWN CHASM (the pen-gate battle plate, spec.py BATTLE_PLATES; Sam's playtest 2026-11-15). Only the traced
+  // shapes count there, so a push into a crate or the back wall is an ordinary push, never a fall.
+  if (!balcony() && node && C === node.chasm){
+    if (walkable(raw.x, raw.y)) return null;
+    if ((C.webs || []).some(w => inPoly(w, raw.x, raw.y))) return "web";
+    return (C.drops || []).some(w => inPoly(w, raw.x, raw.y)) ? "drop" : null;
+  }
   if (!(outsidePen(t) || onBalcony(t))) return null;                        // only from the landing and the bridge
   if (walkable(raw.x, raw.y) || inPoly(balcony().poly, raw.x, raw.y)) return null;   // still on the floor: an ordinary push
   return C.webs.some(w => inPoly(w, raw.x, raw.y)) ? "web" : "drop";
 }
+// CATCH THE EDGE (Sam, 2026-11-15: "Yes, add the DC15 Dexterity save"). OotA's own rule (D&D Encounters p.14: pushed off
+// the stairs, a bridge or a platform) is a DC 10 Dexterity saving throw to grab the edge; SAM SET IT AT 15, a house rule.
+// Only a creature that is pushed (`by`) gets it, and only one with a sheet to save with; a DM drop has no save. Made, they
+// catch the lip and haul back onto the nearest floor, prone. (The book hangs them there until a DC 10 Strength (Athletics)
+// climb; the map folds the hang and the climb into one prone landing — Claude's simplification, flagged in the PR.)
+const LEDGE_SAVE_DC = 15;
 function chasmFall(t, at, by, kind){
   t.path = []; stopActivity(t); t.onArrive = null;
   const who = fname(t);
+  if (by && t.c && t.c.sheet){
+    const sv = (t.c.sheet.saves && t.c.sheet.saves.dex) || 0, r = d20(rageAdvantage(t.c.rage, "dex"), t, null, LEDGE_SAVE_DC - sv), total = r + sv;
+    if (total >= LEDGE_SAVE_DC){
+      const q = nearestWalkable(t.x, t.y); t.x = q.x; t.y = q.y; addCond(t, "prone");
+      popText(t, "catches the edge", "#ffd27a", 1.1); bank("movement/web_tear", .3);
+      log(`${who} is shoved toward the drop: DEX save ${r} + ${sv} = ${total} vs DC ${LEDGE_SAVE_DC} — <b>catches the edge</b> and hauls back up, prone.`);
+      narrate(by, `${who} goes over, grabs the lip, and drags back onto the rock.`);
+      if (mode === "combat") renderParty && renderParty();
+      return;
+    }
+    log(`${who} is shoved toward the drop: DEX save ${r} + ${sv} = ${total} vs DC ${LEDGE_SAVE_DC} — fails to catch the edge.`);
+  }
   if (kind === "web"){
     dragAlong(t, [at], 420, null, () => {
       bank("movement/web_tear", .7); popText(t, "caught in the webs", "#e8e2c8", 1.05); t.inWeb = {t0: now};
@@ -9042,6 +9109,7 @@ function exploreExtras(m, o, add, who){
   if (ironsCan(L, "key")) x("Unlock everyone's manacles", "⚿", ART("pickpocket", "search"), `${fname(ironsKeyHolder())} carries a key that fits them · no roll`, () => ironsUnlockAll());
   if (ironsCan(L, "pick")) x("Pick your manacles", "⚿", ART("pickpocket", "search"), `Thieves' tools ${sgn(heroMod(L, "thievesTools", "dex"))} · one try until a long rest`, () => ironsTry("pick"));
   if (ironsCan(L, "break")) x("Break your manacles", "⚿", ART("force", "search"), `Strength ${sgn(abilMod(SHEETS[L.id] || {}, "str"))} · hard · one try until a long rest`, () => ironsTry("break"));
+  if (callOutCan(L)){ const left = penLeftovers(); x("Call the others out", "☰", ART("follow"), `${left.length} still in the pen · they come with you`, () => callOthersOut()); }
   if (wireCan(L)) x("Work the wire into your manacles", "⚿", ART("pickpocket", "search"), `Sleight of Hand ${sgn(heroMod(L, "sleightOfHand", "dex"))} · one try until you rest`, () => wireManacles());
   if (whistleCan(L)) x("Whistle at the guard", "♪", ART("inspire"), `Performance ${sgn(heroMod(L, "performance", "cha"))} · he may come in to shut you up`, () => whistleAtGuard());
   if (sh.bardic) x("Inspire", "♪", ART("inspire"), `Bardic Inspiration · ${inspLeftOf(L)} of ${sh.bardic.uses} left`, inspLeftOf(L) > 0 && party.length > 1 ? () => openInspire() : null);
@@ -15915,22 +15983,35 @@ async function pollLabor(){
 // The rota and the game clock decide it (/api/labor crewsNow), so every seat sees the same prisoners gone. A page that
 // loads mid-shift simply finds them away. While they are out they are not in the pen: an escape now takes only who is there.
 let crewsAway = null, crewMoving = false;
+// NO WORK CREWS ONCE THE PEN IS BROKEN (Sam's playtest, 2026-11-15: "do NPCs taken out during work shifts come back?").
+// The rota kept running after the breakout: every shift change took two or three more prisoners "out on a crew", and a
+// screen that came back into the pen hid that shift's crew even though nobody had marched them out. So the pen was half
+// empty when the heroes went back for the others. The drow are not taking slaves to the kitchen while the pen gate
+// stands open. Once the gate is open, broken or fought through (outside the party's own work detail), no new crew is
+// taken; whoever was already out comes back at the end of their shift as before, and after that shift nobody is hidden.
+// (The pen-escape design, claude/Pen_Escape_Phases_2026-11-13.md, pauses labor in OUT_QUIET/HUNTED; this is that rule
+// for the crews, read from today's flags until the phase lands.) A recapture shuts the gate and the rota resumes.
+function crewsHalted(){ return !SANDBOX && !laborLive() && !!(state.brokeOut || state.gateOpen || state.gateBroken); }
 const penNpc = id => npcs.find(n => n.id === id && PEN_NPCS.some(d => d.id === id) && !n.company);
 function followCrews(list, day, shift){
   if (!Array.isArray(list) || day == null || shift == null) return;
-  const key = `${day}:${shift}`; if (crewsAway && crewsAway.key === key) return;
-  const prev = crewsAway, ids = new Set(list.flatMap(c => c.npcs || []));
+  const key = `${day}:${shift}`;
+  if (crewsHalted()){ if (!state.crewsHaltKey){ state.crewsHaltKey = crewsAway ? crewsAway.key : key; saveWalk(); } }
+  else if (state.crewsHaltKey){ state.crewsHaltKey = null; saveWalk(); }   // null, not delete: a deleted key is never sent
+  if (crewsAway && crewsAway.key === key) return;
+  const halted = !!state.crewsHaltKey && state.crewsHaltKey !== key;   // past the shift that was out when the gate opened
+  const prev = crewsAway, ids = halted ? new Set() : new Set(list.flatMap(c => c.npcs || []));
   crewsAway = {key, ids, list};
   if (cur !== PEN) return;
   const back = prev ? [...prev.ids].filter(id => !ids.has(id)).map(penNpc).filter(n => n && n.onDetail) : [];
   back.forEach(n => { n.onDetail = false; castReturns(n, true); });
   if (back.length) narrate(null, `The other work crew is marched back into the pen: ${back.map(n => SHORT[n.id] || SPR[n.id].json.name).join(", ")}.`);
-  const going = [...ids].map(penNpc).filter(n => n && !n.offStage && !n.down && !n.body && !companyNow().includes(n.id));
+  const going = crewsHalted() ? [] : [...ids].map(penNpc).filter(n => n && !n.offStage && !n.down && !n.body && !companyNow().includes(n.id));
   if (!going.length) return;
   if (!prev || mode !== "explore" || laborLive() || state.gateOpen || surgeon){ going.forEach(n => { n.onDetail = true; hideOffStage(n); }); return; }
   crewTakenOut(going, list);
 }
-function crewsOnEnter(){ if (cur !== PEN || !crewsAway) return; for (const id of crewsAway.ids){ const n = penNpc(id); if (n){ n.onDetail = true; hideOffStage(n); } } }
+function crewsOnEnter(){ if (cur !== PEN || !crewsAway) return; if (state.crewsHaltKey && state.crewsHaltKey !== crewsAway.key) return; for (const id of crewsAway.ids){ const n = penNpc(id); if (n){ n.onDetail = true; hideOffStage(n); } } }
 async function crewTakenOut(going, list){
   if (crewMoving) return; crewMoving = true;
   const live = () => cur === PEN && !laborLive();
