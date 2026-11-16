@@ -32,7 +32,6 @@ import { segmentBySpeaker, setNpcTtsMuted } from "./center-column"
 const DM_SPEAKER = "Malachar"
 const DM_KEY = "dm-narration-enabled"
 const NPC_KEY = "npc-voices-enabled"
-const PLAYER_KEY = "player-voices-enabled"
 
 /** Enough of an `npc_encounters` row to attribute a quote and voice it. */
 export type VoiceNpc = {
@@ -168,8 +167,10 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
 }) {
   const [dmOn, setDmOn] = useState(false)
   const [npcOn, setNpcOn] = useState(false)
-  const [playersOn, setPlayersOn] = useState(false)
-  const enabled = dmOn || npcOn || playersOn
+  // No Player Voices toggle (Sam, 2026-11-16: "Player messages to NPCs silent but player to player messages
+  // heard"). A hero's typed line on the Parley is never read aloud; a Message to another player still is, by
+  // components/message-player-button.tsx and the map, which do not go through this component.
+  const enabled = dmOn || npcOn
   const [status, setStatus] = useState<"idle" | "loading" | "speaking" | "blocked">("idle")
 
   const audioRef = useRef<SpeechPlayback | null>(null)
@@ -332,7 +333,6 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
     const on = (key: string) => localStorage.getItem(key) !== "false"
     setDmOn(on(DM_KEY))
     setNpcOn(on(NPC_KEY))
-    setPlayersOn(on(PLAYER_KEY))
     hydratedRef.current = true
   }, [])
 
@@ -342,8 +342,7 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
     if (!hydratedRef.current) return
     localStorage.setItem(DM_KEY, String(dmOn))
     localStorage.setItem(NPC_KEY, String(npcOn))
-    localStorage.setItem(PLAYER_KEY, String(playersOn))
-  }, [dmOn, npcOn, playersOn])
+  }, [dmOn, npcOn])
 
   useEffect(() => {
     enabledRef.current = enabled
@@ -353,7 +352,7 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
     // through the same canSpeak() gate and can never drift out of sync.
     setDmVoiceEnabled(dmOn)
     setNpcVoiceEnabled(npcOn)
-    setPlayerVoiceEnabled(playersOn)
+    setPlayerVoiceEnabled(false)
     // While this control is on it is the ONLY thing speaking: it voices
     // Malachar and the NPCs from one queue, in narrative order. The legacy v3
     // auto-play would otherwise repeat every quoted line out of sequence.
@@ -368,7 +367,7 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
       setFloor(null)
       setStatus("idle")
     }
-  }, [enabled, dmOn, npcOn, playersOn, stopAudio])
+  }, [enabled, dmOn, npcOn, stopAudio])
 
   useEffect(() => stopAudio, [stopAudio])
 
@@ -475,11 +474,9 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
         console.log("[v0] narration: held back —", line.speaker, "is answering", line.recipient, "not", audienceRef.current?.name)
         return []
       }
-      // A player character's own typed line, in their chosen voice. Dice-roll
-      // announcements stay silent — the table already watched the dice land.
+      // A player character's own typed line (to an NPC or to Malachar) is seen, never heard (Sam, 2026-11-16).
       const pc = playersRef.current.find((entry) => entry.name.toLowerCase() === line.speaker.toLowerCase())
-      const isRollLine = line.text.trimStart().startsWith("🎲") || line.text.includes("[Dice Roll]")
-      if (pc && text && !isRollLine) return [{ kind: "player" as const, text, pc }]
+      if (pc) return []
       if (!npc && !pc && text) console.log("[v0] narration: no voice row for", line.speaker, "— line not spoken")
       return []
     })
@@ -530,8 +527,6 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
         title={dmOn ? "DM Voice on — Malachar narrates aloud" : "DM Voice off — click to hear Malachar narrate"} />
       <Switch on={npcOn} set={setNpcOn} label="NPC Voices"
         title={npcOn ? "NPC Voices on — each NPC speaks in their own voice" : "NPC Voices off — click to hear the NPCs speak"} />
-      <Switch on={playersOn} set={setPlayersOn} label="Player Voices"
-        title={playersOn ? "Player Voices on — typed player lines speak in each character's voice" : "Player Voices off — click to hear player lines aloud"} />
     </span>
   )
 }
