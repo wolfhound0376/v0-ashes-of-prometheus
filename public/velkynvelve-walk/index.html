@@ -6146,9 +6146,9 @@ const caughtHeld = h => !!h && now < (h.caughtUntil || 0);
 //              same road as a picked pocket, so the shakedown's count starts as it would for a lifted key).
 function strangleMark(L, n){
   return !!(L && n && cur === PEN && mode === "explore" && sneak && n.lean && n.lean.phase === "leaning" && n.atBars && !n.down && isGuard(n)
-    && !state.gateOpen && carries(L, SILK_ROPE));
+    && !state.gateOpen && (carries(L, SILK_STRAND) || carries(L, SILK_ROPE)));
 }
-const SILK_ROPE = "Silk rope", STRANGLE_HOLDS = 3;
+const SILK_ROPE = "Silk rope", SILK_STRAND = "Silk rope strand (5 ft)", STRANGLE_HOLDS = 3;   // the strand is its own catalogue row now (Sam, 2026-11-16); a 50-ft coil does it too
 let strangling = false;
 async function strangleGuard(n){
   const who = leader; if (strangling || !strangleMark(who, n)) return;
@@ -22812,6 +22812,7 @@ const ITEM_SNAPSHOT = [
 {"id":"19efbeeb-57dc-4520-862a-e64185a5fc83","slug":"gold-coin","name":"Gold coin","item_type":"currency","equippable_slot":null,"pixel_icon_url":"/item-pixels/gold-coin.png","properties":{"icon_hint":"coin"}},
 {"id":"420b8d88-f2af-453b-bd7d-452c7088a048","slug":"grappling-hook","name":"Grappling Hook","item_type":"gear","equippable_slot":null,"pixel_icon_url":"/item-pixels/grappling-hook.png","properties":{"srd":true,"icon_hint":"grappling-hook"}},
 {"id":"684411b1-fa4c-48bb-ae13-1c032ef84579","slug":"silk-rope","name":"Silk rope","item_type":"misc","equippable_slot":null,"pixel_icon_url":"/item-pixels/silk-rope.png","properties":{"icon_hint":"rope","length_ft":50}},
+{"id":"204bcd58-66e0-4a65-93f8-bd3a079cfa17","slug":"silk-rope-strand","name":"Silk rope strand (5 ft)","item_type":"misc","equippable_slot":null,"pixel_icon_url":"/item-pixels/silk-rope-strand.png","properties":{"icon_hint":"rope","length_ft":5}},
 {"id":"d43ec73a-0a89-4e58-acc9-19f8c47f31a8","slug":"spell-component-pouch","name":"Spell Component Pouch","item_type":"gear","equippable_slot":null,"pixel_icon_url":"/item-pixels/spell-component-pouch.png","properties":{"srd":true,"icon_hint":"swap-bag"}}
 ]
 ;               // the catalogue's weapons, for the preview (build_walk.py)

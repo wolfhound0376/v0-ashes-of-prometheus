@@ -30,7 +30,7 @@ describe("what is in the pockets (OotA ch.1)", () => {
   })
 
   it("only ever hands out the book's eight results, from the catalogue", () => {
-    const allowed = new Set(["gold-coin", "small-spider", "silk-rope", "carnelian-gem", "rusted-iron-bar", "flint-shard", "hand-crossbow-bolt-drow-poison"])
+    const allowed = new Set(["gold-coin", "small-spider", "silk-rope-strand", "carnelian-gem", "rusted-iron-bar", "flint-shard", "hand-crossbow-bolt-drow-poison"])
     for (let i = 0; i < 500; i++) {
       const e = scavengedRoll(`test-prisoner-${i}`).entry
       if (e) expect(allowed.has(e.slug)).toBe(true)
