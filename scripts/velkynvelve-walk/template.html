@@ -6,10 +6,10 @@
 <script src="/js/aop-languages.js"></script>
 <script src="/js/aop-one-world.js"></script>
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Velkynvelve Walk</title>
+<title>Velkynvelve · Pixel Environmental Layer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=Comic+Neue:wght@700&family=Bangers&family=Press+Start+2P&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IM+Fell+English+SC&family=Cinzel+Decorative:wght@700;900&family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400&family=IBM+Plex+Mono:wght@400;500&family=Comic+Neue:wght@700&family=Bangers&family=Press+Start+2P&display=swap">
 <style>
 /* A dark play room: one full-bleed stage for the painted plate, party roster beneath.
    Single dark theme by choice, same as the plate viewer: the paintings are dark and read best on near-black. */
@@ -29,38 +29,99 @@
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{background:var(--room);color:var(--ink);font-family:var(--face-body);font-size:var(--s0);overflow:hidden}
-.app{height:100%;display:grid;grid-template-rows:auto 1fr auto auto;padding:10px 16px;gap:10px}
-header{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;min-width:0}
-.brand{display:flex;align-items:baseline;gap:12px;min-width:0}
-.brand h1{font-family:var(--face-display);font-weight:400;font-size:var(--s2);margin:0;letter-spacing:.02em}
-.brand .sub{font-family:var(--face-mono);font-size:var(--s-1);color:var(--ink-dim);letter-spacing:.08em;text-transform:uppercase;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.brand .sub b{color:var(--ember);font-weight:500}
-.tools{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.app{height:100%;display:grid;grid-template-rows:1fr auto auto;padding:10px 16px;gap:10px}
 .tbtn{background:none;border:1px solid var(--rule);color:var(--ink-dim);border-radius:4px;font-family:var(--face-mono);font-size:var(--s-1);letter-spacing:.06em;padding:4px 10px;cursor:pointer}
 .tbtn:hover{color:var(--ink);border-color:var(--ink-dim)}
 .tbtn[aria-pressed="true"],.tbtn[aria-expanded="true"]{color:var(--fungus);border-color:var(--fungus)}
 input[type=range]{width:84px;accent-color:var(--fungus)}
-/* THE TOP BAR WEARS THE SKIN TOO (Sam, 2026-10-28: "Didn't we fix this so that it had nicer buttons and look?"). The
-   action bar (10-27) and the inventory (10-27) got the Top Heroes slabs; this header kept the old mono outline buttons.
-   Same slab as the Parley's top bar: gold rim, dark inner line, gloss, a lip, lift on hover, sink on press. A toggle
-   carries a lamp (green when on) and takes its colour only when on. Only header .tools is touched. */
-header .tools{gap:10px}
-header .tools .tbtn{--c1:#2a2330;--c2:#110e16;position:relative;display:inline-flex;align-items:center;gap:7px;height:34px;padding:0 14px;border:3px solid #9a6a1c;border-radius:11px;background:linear-gradient(180deg,var(--c1),var(--c2));box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.14),inset 0 -6px 0 rgba(0,0,0,.24),0 3px 0 #000,0 6px 12px rgba(0,0,0,.5);color:#cbbfdc;font-family:var(--face-display);font-size:.86rem;font-weight:700;letter-spacing:.05em;text-transform:none;text-shadow:0 2px 0 rgba(0,0,0,.6);transition:transform .09s ease,filter .12s ease,box-shadow .09s ease,border-color .12s ease;white-space:nowrap}
-header .tools .tbtn::before{content:"";position:absolute;inset:3px 3px 52% 3px;border-radius:7px 7px 3px 3px;background:linear-gradient(rgba(255,255,255,.15),rgba(255,255,255,.02));pointer-events:none}
-header .tools .tbtn:hover,header .tools .tbtn:focus-visible{transform:translateY(-2px);border-color:#f2c55c;filter:brightness(1.12);color:#fff;box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.22),inset 0 -6px 0 rgba(0,0,0,.24),0 5px 0 #000,0 0 18px rgba(242,197,92,.4),0 9px 16px rgba(0,0,0,.6);outline:none}
-header .tools .tbtn:active{transform:translateY(2px);box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 3px 6px rgba(0,0,0,.6),0 1px 0 #000}
-header .tools .tbtn[aria-pressed]::after{content:"";order:-1;width:11px;height:11px;border-radius:50%;border:2px solid #000;background:#3a3344;box-shadow:inset 0 1px 0 rgba(255,255,255,.15)}
-header .tools .tbtn[aria-pressed="true"]{color:#fff}
-header .tools .tbtn[aria-pressed="true"]::after{background:radial-gradient(circle at 40% 35%,#c8ff9a,#4bd36a 55%,#1f7a35);box-shadow:0 0 8px rgba(120,255,140,.8),inset 0 1px 0 rgba(255,255,255,.5)}
-header .tools #musicBtn[aria-pressed="true"]{--c1:#2e6ab8;--c2:#17406a}
-header .tools #motionBtn[aria-pressed="true"]{--c1:#1f8f86;--c2:#0f5b57}
-header .tools #voicesBtn[aria-pressed="true"]{--c1:#6b4fc1;--c2:#3d2b80}
-header .tools #narrBtn[aria-pressed="true"]{--c1:#9a5a22;--c2:#5a3010}
-header .tools #bagBtn{--c1:#1f8f86;--c2:#0f5b57;color:#fff}
-header .tools #dmBtn{--c1:#5e3a7a;--c2:#2e1a40;color:#fff}
-header .tools .tbtn[aria-expanded="true"]{border-color:#f2c55c;box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.14),inset 0 -6px 0 rgba(0,0,0,.24),0 3px 0 #000,0 0 14px rgba(242,197,92,.45)}
-header .tools #parleyBtn{--c1:#c9962a;--c2:#7a5312;color:#fff;font-size:.92rem;padding:0 16px}
-header .tools input[type=range]{accent-color:#f2c55c}
+/* THE TOP OF THE PIXEL ENVIRONMENTAL LAYER (Sam, 2026-11-15: "reorganize and clean up the top of the Pixel Environmental
+   Layer ... Velkynvelve needs to be in highly stylized letters with a ' - Slave Pen ' No area and remove most of the
+   buttons so we have more screen ... DM tools button only present when signed in and below title ... only Charactersheet
+   with a clean card of the character you have chosen to control/play"; he picked board option I, "gilded faerie-fire",
+   and the little character window top right). The header row is gone. The name floats over the painting's top left with
+   the place under it between two hairlines; the hero you are moving sits top right as a round portrait with their hit
+   points drawn as a ring; three glyphs (Parley, Full screen, Sound & screen) replace the eight buttons. The header lives
+   INSIDE the stage, after the map's own layers and before every card and dialog: the painting is under it, and every
+   panel the game opens comes up over it. */
+.pel-top{position:absolute;inset:0;pointer-events:none}
+.stage.fight .pel-top{display:none}   /* combat wears no top bar (Sam, 2026-10-28) */
+.pel-scrim{position:absolute;inset:0 0 auto 0;height:190px;background:radial-gradient(560px 180px at 250px 28px,rgba(5,3,9,.72),rgba(5,3,9,0) 72%),radial-gradient(420px 160px at calc(100% - 170px) 28px,rgba(5,3,9,.55),rgba(5,3,9,0) 72%)}
+.pel-mark{position:absolute;left:26px;top:18px}
+.pel-name{margin:0;font-family:"Cinzel Decorative",var(--face-title);font-weight:900;font-size:clamp(28px,3.1vw,50px);line-height:1.05;letter-spacing:.055em;white-space:nowrap;
+  background:linear-gradient(180deg,#fff4d2 0%,#f0cf86 30%,#c8963c 52%,#7e5a22 74%,#d6a957 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 1px 0 #241505) drop-shadow(0 0 16px rgba(150,104,255,.42)) drop-shadow(0 4px 7px rgba(0,0,0,.85))}
+.pel-place{display:flex;align-items:center;gap:14px;margin-top:9px;padding-left:4px}
+.pel-place i{display:block;height:1px;width:clamp(30px,3.6vw,58px);background:linear-gradient(90deg,rgba(214,176,98,0),#d9b56a)}
+.pel-place i.r{background:linear-gradient(90deg,#d9b56a,rgba(214,176,98,0))}
+.pel-place b{width:5px;height:5px;transform:rotate(45deg);background:#d9b56a;box-shadow:0 0 6px rgba(165,133,255,.8);flex:none}
+.pel-place #areaName{font-family:var(--face-title);font-weight:600;font-size:clamp(11px,.95vw,15px);letter-spacing:.44em;margin-right:-.44em;color:#ece2c8;text-shadow:0 1px 3px #000;text-transform:uppercase;white-space:nowrap}
+.pel-dm{pointer-events:auto;cursor:pointer;margin:14px 0 0 4px;display:flex;align-items:center;gap:9px;height:30px;padding:0 14px 0 11px;border-radius:15px;background:rgba(11,8,16,.62);border:1px solid rgba(214,176,98,.5);backdrop-filter:blur(6px);font-family:var(--face-title);font-weight:600;font-size:11px;letter-spacing:.26em;color:#ece2c8}
+.pel-dm[hidden]{display:none}
+.pel-dm svg{width:16px;height:16px;fill:none;stroke:#a585ff;stroke-width:1.6}
+.pel-dm:hover,.pel-dm:focus-visible,.pel-dm[aria-expanded="true"]{border-color:#d9b56a;outline:none;box-shadow:0 0 14px rgba(165,133,255,.35)}
+.pel-right{position:absolute;right:24px;top:16px;display:flex;align-items:flex-start;gap:12px;pointer-events:auto}
+.pel-rb{width:46px;height:46px;margin-top:17px;padding:0;border-radius:50%;display:grid;place-items:center;cursor:pointer;background:rgba(11,8,16,.62);border:1px solid rgba(214,176,98,.5);backdrop-filter:blur(6px);box-shadow:0 4px 14px rgba(0,0,0,.45);transition:transform .12s,border-color .12s,box-shadow .12s}
+.pel-rb[hidden]{display:none}
+.pel-rb svg{width:21px;height:21px;fill:none;stroke:#d9b56a;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.pel-rb:hover,.pel-rb:focus-visible{border-color:#d9b56a;transform:translateY(-1px);outline:none}
+.pel-rb[aria-pressed="true"],.pel-rb[aria-expanded="true"]{border-color:#d9b56a;box-shadow:0 0 0 3px rgba(214,176,98,.14),0 0 16px rgba(165,133,255,.35)}
+.pel-hero{all:unset;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;margin-left:4px;min-width:80px}
+.pel-hero[hidden]{display:none}
+.pel-med{position:relative;width:80px;height:80px;transition:filter .15s}
+.pel-med img,.pel-med canvas{position:absolute;left:8px;top:8px;width:64px;height:64px;border-radius:50%;object-fit:cover;object-position:center 30%;background:radial-gradient(circle at 50% 35%,#2a2036,#0d0a12)}
+.pel-med canvas{image-rendering:pixelated}
+.pel-med svg{position:absolute;inset:0;overflow:visible}
+.pel-hero:hover .pel-med,.pel-hero:focus-visible .pel-med,.pel-hero[aria-expanded="true"] .pel-med{filter:drop-shadow(0 0 10px rgba(214,176,98,.55))}
+.pel-nm{font-family:var(--face-title);font-weight:700;font-size:11px;letter-spacing:.3em;margin-right:-.3em;color:#ece2c8;text-shadow:0 1px 3px #000;text-transform:uppercase;white-space:nowrap}
+.pel-hp{font-family:var(--face-mono);font-size:10px;letter-spacing:.08em;color:#6fd07e;margin-top:-4px;text-shadow:0 1px 2px #000}
+.pel-hp.hurt{color:#e8c25a}.pel-hp.low{color:#ff7d6e}
+/* the two panels the top opens: smoked glass, one gilded hairline */
+.pel-tray,.pel-card{position:absolute;pointer-events:auto;background:rgba(11,8,16,.9);border:1px solid rgba(214,176,98,.5);backdrop-filter:blur(10px);box-shadow:0 18px 44px rgba(0,0,0,.62);color:#ece2c8}
+.pel-tray[hidden],.pel-card[hidden]{display:none}
+.pel-tray{right:122px;top:88px;width:300px;padding:16px 20px 12px;border-radius:10px}
+.pel-tray h3,.pel-card h3{margin:0 0 10px;font-family:var(--face-title);font-weight:600;font-size:11px;letter-spacing:.32em;color:#d9b56a}
+.pel-row{display:flex;align-items:center;justify-content:space-between;gap:10px;height:38px;border-top:1px solid rgba(214,176,98,.13);font-family:var(--face-read);font-size:16px}
+.pel-row:has(> .pel-sw[hidden]){display:none}
+.pel-row input[type=range]{width:110px;accent-color:#a585ff;margin-left:auto}
+.pel-sw{all:unset;cursor:pointer;flex:none;width:34px;height:18px;border-radius:9px;background:rgba(255,255,255,.12);position:relative}
+.pel-sw::after{content:"";position:absolute;left:2px;top:2px;width:14px;height:14px;border-radius:50%;background:#b9ad92;transition:left .15s}
+.pel-sw[aria-pressed="true"]{background:rgba(165,133,255,.6)}
+.pel-sw[aria-pressed="true"]::after{left:18px;background:#fff}
+.pel-sw:focus-visible{box-shadow:0 0 0 2px #d9b56a}
+.pel-card{right:24px;top:132px;width:min(372px,calc(100% - 48px));max-height:calc(100% - 150px);overflow-y:auto;overscroll-behavior:contain;padding:16px 18px 14px;border-radius:12px}
+.pel-card::before{content:"";position:absolute;inset:5px;border-radius:9px;border:1px solid rgba(214,176,98,.14);pointer-events:none}
+.pc-arch{position:relative;height:190px;border-radius:168px 168px 6px 6px;overflow:hidden;border:1px solid rgba(214,176,98,.55);background:radial-gradient(circle at 50% 40%,#2a2036,#0d0a12)}
+.pc-arch img{width:100%;height:100%;object-fit:cover;object-position:center 18%;display:block}
+.pc-arch canvas{position:absolute;left:50%;bottom:0;transform:translateX(-50%);height:100%;image-rendering:pixelated}
+.pc-arch::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 62%,rgba(11,8,16,.9));pointer-events:none}
+.pc-who{display:flex;align-items:baseline;justify-content:space-between;gap:10px;margin:12px 2px 0}
+.pc-who h2{margin:0;font-family:"Cinzel Decorative",var(--face-title);font-weight:700;font-size:28px;letter-spacing:.04em;color:#ece2c8;line-height:1.1}
+.pc-who span{font-family:var(--face-read);font-style:italic;font-size:16px;color:#b9ad92;text-align:right}
+.pc-hp{margin:10px 2px 0}
+.pc-hp .lb{display:flex;justify-content:space-between;font-family:var(--face-mono);font-size:10px;letter-spacing:.14em;color:#b9ad92}
+.pc-hp .lb b{color:#6fd07e;font-weight:500}
+.pc-hp .tr{height:6px;border-radius:3px;margin-top:5px;background:rgba(255,255,255,.08);overflow:hidden}
+.pc-hp .tr i{display:block;height:100%;background:linear-gradient(90deg,#3f9a4e,#7ad688)}
+.pc-hp.hurt .lb b{color:#e8c25a}.pc-hp.hurt .tr i{background:linear-gradient(90deg,#9a7a2a,#e8c25a)}
+.pc-hp.low .lb b{color:#ff7d6e}.pc-hp.low .tr i{background:linear-gradient(90deg,#8a2a22,#ff7d6e)}
+.pc-stats{display:grid;grid-template-columns:repeat(4,1fr);margin-top:14px;border-top:1px solid rgba(214,176,98,.18);border-bottom:1px solid rgba(214,176,98,.18)}
+.pc-stats div{text-align:center;padding:9px 0 8px}
+.pc-stats div+div{border-left:1px solid rgba(214,176,98,.12)}
+.pc-stats b{display:block;font-family:var(--face-title);font-weight:600;font-size:24px;color:#ece2c8;line-height:1.1}
+.pc-stats small,.pc-abil small{font-family:var(--face-mono);font-size:9px;letter-spacing:.16em;color:#b9ad92}
+.pc-abil{display:grid;grid-template-columns:repeat(6,1fr);margin-top:10px;text-align:center}
+.pc-abil b{display:block;font-family:var(--face-title);font-weight:600;font-size:16px;color:#d9b56a}
+.pc-lines{margin-top:12px;font-family:var(--face-read);font-size:15px;line-height:1.5}
+.pc-lines p{margin:0;display:flex;gap:10px}
+.pc-lines p em{font-style:normal;font-family:var(--face-mono);font-size:9px;letter-spacing:.16em;color:#b9ad92;width:62px;flex:none;padding-top:4px}
+.pc-chip{display:inline-flex;align-items:center;gap:6px;padding:0 9px;height:20px;border-radius:10px;border:1px solid rgba(220,120,90,.55);color:#f0b39e;font-family:var(--face-mono);font-size:10px;letter-spacing:.08em;margin:2px 6px 2px 0}
+.pc-foot{display:flex;gap:10px;margin-top:14px}
+.pc-foot button{all:unset;cursor:pointer;flex:1;height:36px;border-radius:7px;display:flex;align-items:center;justify-content:center;gap:8px;border:1px solid rgba(214,176,98,.5);font-family:var(--face-title);font-weight:600;font-size:11px;letter-spacing:.2em;color:#ece2c8;text-transform:uppercase}
+.pc-foot button:first-child{background:linear-gradient(180deg,rgba(214,176,98,.22),rgba(214,176,98,.08))}
+.pc-foot button:hover,.pc-foot button:focus-visible{border-color:#d9b56a;color:#fff}
+.pc-foot kbd{font-family:var(--face-mono);font-size:9px;color:#d9b56a;border:1px solid rgba(214,176,98,.5);border-radius:3px;padding:1px 4px}
+/* the DM drawer opens under the hero's portrait, not over it */
+.stage:not(.fight) .dm{top:152px;max-height:calc(100% - 164px)}
 
 .stage{position:relative;background:var(--stage);border:1px solid var(--rule);border-radius:6px;overflow:hidden;min-height:0;touch-action:none;user-select:none;-webkit-user-select:none;cursor:crosshair}
 .stage.pointer{cursor:pointer}
@@ -238,14 +299,10 @@ header .tools input[type=range]{accent-color:#f2c55c}
 .cbt-flee{position:absolute;top:8px;right:10px;font-family:var(--face-mono);font-size:.66rem;line-height:1.35;color:var(--ink-dim);background:rgba(14,8,10,.88);border:1px solid var(--rule);border-radius:8px;padding:6px 10px;max-width:220px;pointer-events:none}
 .cbt-flee[hidden]{display:none}
 /* COMBAT WEARS NO TOP BAR (Sam, 2026-10-28: "The top bar doesn't need to be on during combat. A small DM button can stay
-   at the top right. Not in initiative box not useful."). The header steps out for the whole fight and the stage grows
-   into its room (the ResizeObserver on the stage refits the plate); the DM keeps one small button in the corner, and
-   the "Not in initiative" chip is gone. */
-.app:has(.stage.fight) > header{display:none}
-/* With the header gone the grid has three children, not four: the stage must still be the 1fr row. Without this line the
-   stage drops into the header's auto row and the action cards take the 1fr — the whole screen became cards (Sam,
-   2026-10-28 03:18: "Whatever you did now we can't see anything"). */
-.app:has(.stage.fight){grid-template-rows:1fr auto auto}
+   at the top right. Not in initiative box not useful."). The top (.pel-top, inside the stage since 2026-11-15) steps out
+   for the whole fight; the DM keeps one small button in the corner, and the "Not in initiative" chip is gone. The grid
+   no longer gives the top a row at all, so the stage is the 1fr row in and out of a fight (2026-10-28 03:18, "Whatever
+   you did now we can't see anything", was the stage dropping into the old header's auto row). */
 .cbt-dm{position:absolute;top:8px;right:10px;z-index:3;font-family:var(--face-display);font-size:.78rem;font-weight:700;letter-spacing:.06em;color:#fff;height:30px;padding:0 11px;border:3px solid #9a6a1c;border-radius:10px;background:linear-gradient(180deg,#5e3a7a,#2e1a40);box-shadow:inset 0 0 0 2px rgba(0,0,0,.5),inset 0 2px 0 3px rgba(255,255,255,.14),0 3px 0 #000,0 6px 12px rgba(0,0,0,.5);cursor:pointer}
 .cbt-dm:hover{border-color:#f2c55c;filter:brightness(1.12)}
 .cbt-dm[hidden]{display:none}
@@ -1069,20 +1126,6 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 </head>
 <body>
 <div class="app">
-  <header>
-    <div class="brand"><h1>Velkynvelve</h1><span class="sub" id="areaSub">Area <b id="areaNo">11</b> · <span id="areaName">Slave Pen</span></span></div>
-    <div class="tools">
-      <button class="tbtn" id="musicBtn" aria-pressed="true" title="Music (M)">♪ Music on</button>
-      <input type="range" id="vol" min="0" max="100" value="40" aria-label="Music volume">
-      <button class="tbtn" id="motionBtn" aria-pressed="true">Motion on</button>
-      <button class="tbtn" id="voicesBtn" aria-pressed="true" title="Hear the story's lines on the map">Voices on</button>
-      <button class="tbtn" id="narrBtn" aria-pressed="true" title="Read the narration strip aloud">Narration on</button>
-      <button class="tbtn" id="bagBtn" aria-expanded="false" title="What the hero carries and wears (I)">Inventory (I)</button>
-      <button class="tbtn" id="dmBtn" aria-expanded="false">DM tools</button>
-      <button class="tbtn" id="parleyBtn" title="Open the Parley dashboard. The map waits here: Return (M) there brings you back to this spot.">❝ Parley</button>
-    </div>
-  </header>
-
   <div class="stage" id="stage">
     <div class="world" id="world">
       <img class="plate" id="plate" alt="">
@@ -1096,6 +1139,33 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="over" id="over"></div>
     <div class="fade" id="fade"></div>
     <div class="iris" id="iris" hidden></div>
+    <!-- THE TOP (Sam, 2026-11-15, board option I): the name, the place, DM tools for a signed-in DM, and top right Parley,
+         Full screen, Sound & screen and the hero you are moving. The CSS block "THE TOP OF THE PIXEL ENVIRONMENTAL LAYER". -->
+    <header class="pel-top" id="pelTop">
+      <div class="pel-scrim"></div>
+      <div class="pel-mark">
+        <h1 class="pel-name">Velkynvelve</h1>
+        <div class="pel-place" id="areaSub"><i></i><b></b><span id="areaName">Slave Pen</span><b></b><i class="r"></i><span id="areaNo" hidden>11</span></div>
+        <button class="pel-dm" id="dmBtn" aria-expanded="false" title="DM tools"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>DM TOOLS</button>
+      </div>
+      <div class="pel-right">
+        <button class="pel-rb" id="parleyBtn" title="Open the Parley. The map waits here: Return (M) there brings you back to this spot." aria-label="Open the Parley"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v10H9l-5 4z"/><path d="M8.5 9.2h7M8.5 11.8h4.5"/></svg></button>
+        <button class="pel-rb" id="fsBtn" aria-pressed="false" title="Full screen. Esc leaves it." aria-label="Full screen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button>
+        <button class="pel-rb" id="gearBtn" aria-expanded="false" title="Sound and screen" aria-label="Sound and screen"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.6M12 18.6v2.6M2.8 12h2.6M18.6 12h2.6M5.5 5.5l1.8 1.8M16.7 16.7l1.8 1.8M5.5 18.5l1.8-1.8M16.7 7.3l1.8-1.8"/></svg></button>
+        <button class="pel-hero" id="heroBtn" aria-expanded="false" title="Your character (C)" hidden><span class="pel-med" id="heroMed"></span><span class="pel-nm" id="heroNm"></span><span class="pel-hp" id="heroHp"></span></button>
+      </div>
+      <div class="pel-tray" id="gearTray" hidden role="dialog" aria-label="Sound and screen">
+        <h3>SOUND &amp; SCREEN</h3>
+        <div class="pel-row"><span>Music <small style="font-family:var(--face-mono);font-size:9px;color:#b9ad92">M</small></span><input type="range" id="vol" min="0" max="100" value="40" aria-label="Music volume"><button class="pel-sw" id="musicBtn" aria-pressed="true" aria-label="Music"></button></div>
+        <div class="pel-row"><span>Voices</span><button class="pel-sw" id="voicesBtn" aria-pressed="true" aria-label="Voices" title="Hear the story's lines on the map"></button></div>
+        <div class="pel-row"><span>Narration read aloud</span><button class="pel-sw" id="narrBtn" aria-pressed="true" aria-label="Narration read aloud" title="Read the narration strip aloud"></button></div>
+        <div class="pel-row"><span>Motion</span><button class="pel-sw" id="motionBtn" aria-pressed="true" aria-label="Motion"></button></div>
+      </div>
+      <div class="pel-card" id="heroCard" hidden role="dialog" aria-label="Your character">
+        <div id="pcBody"></div>
+        <div class="pc-foot"><button id="bagBtn" aria-expanded="false" title="What the hero carries and wears (I)">Backpack <kbd>I</kbd></button><button id="pcSheetBtn" title="The whole sheet, in the Parley">Full sheet</button></div>
+      </div>
+    </header>
     <div class="toast" id="toast" hidden></div>
     <canvas class="ptink" id="ptInk"></canvas>
     <form class="ptnote" id="ptNote" hidden autocomplete="off"><b>📝 Note for Claude</b><input id="ptNoteText" maxlength="600" placeholder="What's wrong here? Drag on the map to rope it. (Enter saves · Esc cancels)"><small id="ptNoteHow">F9</small></form>
@@ -3117,7 +3187,7 @@ function tickMusic(dt){
     if (target === 0 && a.volume < .01 && !a.paused) a.pause();
   }
 }
-function renderMusicBtn(){ $("musicBtn").setAttribute("aria-pressed", String(musicOn)); $("musicBtn").textContent = musicOn ? "♪ Music on" : "♪ Music off"; }
+function renderMusicBtn(){ $("musicBtn").setAttribute("aria-pressed", String(musicOn)); }   // a switch in the Sound & screen tray now: the row carries the label, the switch only its state
 $("musicBtn").onclick = () => { musicOn = !musicOn; try { localStorage.setItem("vk-music", musicOn ? "on" : "off"); } catch (e) {} renderMusicBtn(); audioUnlocked = true; if (musicOn) setTrack(track); };
 // ---------- explore music that rotates ----------
 // Sam, 2026-10-25: "alternate background music that rotates from occasion to avoid fatigue." Exploring used to play
@@ -3236,7 +3306,7 @@ $("vol").oninput = e => { vol = e.target.value / 100; try { localStorage.setItem
 renderMusicBtn();
 
 let motionOn = !matchMedia("(prefers-reduced-motion: reduce)").matches;
-function setMotion(on){ motionOn = on; fxEl.hidden = !on; $("marks").classList.toggle("still", !on); $("motionBtn").setAttribute("aria-pressed", String(on)); $("motionBtn").textContent = on ? "Motion on" : "Motion off"; }
+function setMotion(on){ motionOn = on; fxEl.hidden = !on; $("marks").classList.toggle("still", !on); $("motionBtn").setAttribute("aria-pressed", String(on)); }
 $("motionBtn").onclick = () => setMotion(!motionOn);
 
 // ---------- party roster ----------
@@ -17825,7 +17895,7 @@ $("dmLaborOff").onclick = async () => { toggleDm(false); if (!labor || !isLive(l
 // Lines are taken in order and voiced one at a time. "Voices off" keeps the bubbles and silences the walk, for a
 // table that has the dashboard open beside it and would otherwise hear every line twice.
 let voicesOn = (() => { try { return localStorage.getItem("vk-voices") !== "off"; } catch (e) { return true; } })();
-function renderVoicesBtn(){ const b = $("voicesBtn"); if (!b) return; b.setAttribute("aria-pressed", String(voicesOn)); b.textContent = voicesOn ? "Voices on" : "Voices off"; }
+function renderVoicesBtn(){ const b = $("voicesBtn"); if (!b) return; b.setAttribute("aria-pressed", String(voicesOn)); }
 if ($("voicesBtn")){ $("voicesBtn").onclick = () => { voicesOn = !voicesOn; try { localStorage.setItem("vk-voices", voicesOn ? "on" : "off"); } catch (e) {} renderVoicesBtn(); }; renderVoicesBtn(); }
 if (!APP && $("voicesBtn")) $("voicesBtn").hidden = true;
 
@@ -17853,7 +17923,7 @@ if (!APP && $("voicesBtn")) $("voicesBtn").hidden = true;
 // hurried on this voice; 1.15 is Claude's pick and the one number to turn if Sam still wants it quicker.
 const NARR_SPEED = 1.15;
 let narrOn = (() => { try { return localStorage.getItem("vk-narration") !== "off"; } catch (e) { return true; } })();
-function renderNarrBtn(){ const b = $("narrBtn"); if (!b) return; b.setAttribute("aria-pressed", String(narrOn)); b.textContent = narrOn ? "Narration on" : "Narration off"; }
+function renderNarrBtn(){ const b = $("narrBtn"); if (!b) return; b.setAttribute("aria-pressed", String(narrOn)); }
 if ($("narrBtn")){ $("narrBtn").onclick = () => { narrOn = !narrOn; try { localStorage.setItem("vk-narration", narrOn ? "on" : "off"); } catch (e) {} if (!narrOn) stopNarration(); renderNarrBtn(); wakeAudio(); }; renderNarrBtn(); }
 if (!APP && $("narrBtn")) $("narrBtn").hidden = true;   // the preview cannot reach ElevenLabs, and previews stay silent (Sam, 2026-10-22)
 
@@ -18301,6 +18371,113 @@ function parleyUrl(toDm){
 }
 function openParley(toDm){ saveWalk(); const url = parleyUrl(toDm === true); if (APP) window.top.location.href = url; else window.open(url, "_blank"); }
 if ($("parleyBtn")) $("parleyBtn").onclick = () => openParley();
+// ---------- THE TOP: full screen, Sound & screen, and your hero (Sam, 2026-11-15) ----------
+// FULL SCREEN (Sam: "True full screen. A button hides the broser tab. Esc leaves full."). The whole PAGE goes full screen,
+// not just this map: in the app the map is a frame on /velkynvelve, and the dice the dashboard throws for a check are
+// drawn by that page, so taking only the frame full screen would hide every roll. The page is the same origin and the
+// click's activation reaches it. Esc is the browser's own way out; nothing here holds the key.
+const FS_DOC = (() => { try { if (window.parent !== window && window.parent.document) return window.parent.document; } catch (e) {} return document; })();
+const fsNow = () => !!(FS_DOC.fullscreenElement || FS_DOC.webkitFullscreenElement);
+function renderFsBtn(){ const b = $("fsBtn"); if (!b) return; const on = fsNow(); b.setAttribute("aria-pressed", String(on)); b.title = on ? "Leave full screen (Esc)" : "Full screen. Esc leaves it."; }
+function toggleFullScreen(){
+  try {
+    if (fsNow()){ (FS_DOC.exitFullscreen || FS_DOC.webkitExitFullscreen).call(FS_DOC); return; }
+    const el = FS_DOC.documentElement, req = el.requestFullscreen || el.webkitRequestFullscreen;
+    const r = req.call(el, {navigationUI: "hide"});
+    if (r && r.catch) r.catch(() => toast("This browser would not go full screen."));
+  } catch (e) { toast("This browser would not go full screen."); }
+}
+if ($("fsBtn")){
+  if (!(FS_DOC.fullscreenEnabled || FS_DOC.webkitFullscreenEnabled)) $("fsBtn").hidden = true;   // a phone: no page full screen there
+  $("fsBtn").onclick = toggleFullScreen;
+  for (const ev of ["fullscreenchange", "webkitfullscreenchange"]) FS_DOC.addEventListener(ev, renderFsBtn);
+  renderFsBtn();
+}
+
+// SOUND & SCREEN: Music (and its volume), Voices, Narration and Motion, folded into one tray behind the gear. The
+// switches keep their old ids, so everything that already drove them (M for music, the saved choices) still does.
+function topPanelOpen(){ return !$("gearTray").hidden || !$("heroCard").hidden; }
+function closeTopPanels(){ toggleGear(false); toggleHeroCard(false); }
+function toggleGear(on){ const t = $("gearTray"); if (on === undefined) on = t.hidden; if (on) toggleHeroCard(false); t.hidden = !on; $("gearBtn").setAttribute("aria-expanded", String(on)); }
+$("gearBtn").onclick = () => toggleGear();
+// a press anywhere else closes what the top has open (the press still does its own thing: a walk stays a walk)
+document.addEventListener("pointerdown", e => { if (!topPanelOpen() || (e.target.closest && e.target.closest(".pel-tray,.pel-card,#gearBtn,#heroBtn"))) return; closeTopPanels(); }, true);
+
+// YOUR HERO, TOP RIGHT (Sam: "only Charactersheet with a clean card of the character you have chosen to control/play";
+// "I also like the little character window on the top right"). The hero you are moving, as a round portrait with their
+// hit points drawn as a ring; press it (or C) for one clean card. The numbers are the sheet's own, read the way the
+// backpack reads them (renderBagChips): hp_current when the row has it, the fight's live total mid-fight, else the max;
+// the AC worked out from what is worn. Painted portraits where we have them, the hero's own pixel figure otherwise.
+const HERO_ART = new Set(["kenta", "samson", "scott", "freia"]);   // cut from public/characters/<hero> into velkynvelve-walk/heroes
+const HERO_ART_BASE = APP ? "/velkynvelve-walk/heroes/" : "heroes/";
+const isHeroActor = a => !!(a && SPR[a.id] && (a.kind === "pc" || SHEETS[a.id]));
+function topHero(){ if (isHeroActor(leader)) return leader; const mine = mySlug && party.find(p => p.id === mySlug); return isHeroActor(mine) ? mine : null; }
+function heroHpOf(a){ const s = SHEETS[a.id] || {}, max = (a.c && a.c.hpMax) || s.hp || null; return {max, now: a.c && inFightNow() ? a.c.hp : (s.hpNow != null ? s.hpNow : max)}; }
+const heroNameOf = a => SHORT[a.id] || (PCS[a.id] && PCS[a.id].name) || SPR[a.id].json.name;
+const hpTone = (now, max) => { const f = max ? now / max : 1; return f <= .25 ? "low" : f < .75 ? "hurt" : ""; };
+let heroSig = "";
+function renderTopHero(){
+  const b = $("heroBtn"); if (!b) return;
+  const a = topHero(); if (!a){ b.hidden = true; heroSig = ""; if (!$("heroCard").hidden) toggleHeroCard(false); return; }
+  const {now, max} = heroHpOf(a), name = heroNameOf(a), idle = SPR[a.id].img && SPR[a.id].img.idle;
+  const look = a.id + "|" + (HERO_ART.has(a.id) || !!(idle && idle.complete && idle.naturalWidth));
+  const sig = [look, now, max, name].join("|"); if (sig === heroSig) return;
+  const newLook = !heroSig.startsWith(look + "|"); heroSig = sig; b.hidden = false;
+  const med = $("heroMed"), C = 2 * Math.PI * 36.5;
+  if (newLook){
+    med.innerHTML = "";
+    if (HERO_ART.has(a.id)){ const im = new Image(); im.src = `${HERO_ART_BASE}${a.id}-face.webp`; im.alt = ""; med.appendChild(im); }
+    else { const c = document.createElement("canvas"); portrait(a.id, c, 64); med.appendChild(c); }
+    med.insertAdjacentHTML("beforeend", `<svg viewBox="0 0 80 80" aria-hidden="true"><circle cx="40" cy="40" r="36.5" fill="none" stroke="rgba(214,176,98,.28)" stroke-width="3"/><circle class="arc" cx="40" cy="40" r="36.5" fill="none" stroke-width="3" stroke-linecap="round" stroke-dasharray="${C.toFixed(1)}" transform="rotate(-90 40 40)"/><circle cx="40" cy="40" r="32.5" fill="none" stroke="#d9b56a" stroke-width="1.2"/></svg>`);
+  }
+  const tone = hpTone(now, max), frac = max ? Math.max(0, Math.min(1, now / max)) : 1, arc = med.querySelector(".arc");
+  arc.setAttribute("stroke", {low: "#ff7d6e", hurt: "#e8c25a", "": "#6fd07e"}[tone]); arc.setAttribute("stroke-dashoffset", (C * (1 - frac)).toFixed(1));
+  $("heroNm").textContent = name;
+  const hp = $("heroHp"); hp.className = "pel-hp " + tone; hp.textContent = max ? `${now} / ${max} HP` : "";
+  b.title = `${name}: your character (C)`; b.setAttribute("aria-label", `${name}, ${max ? `${now} of ${max} hit points` : "hit points unknown"}. Open the character card.`);
+  if (!$("heroCard").hidden) renderHeroCard();
+}
+setInterval(renderTopHero, 400);
+
+function toggleHeroCard(on){
+  const c = $("heroCard"); if (on === undefined) on = c.hidden;
+  if (on && !topHero()) on = false;
+  if (on){ toggleGear(false); cardSig = ""; renderHeroCard(); }
+  c.hidden = !on; $("heroBtn").setAttribute("aria-expanded", String(on));
+}
+$("heroBtn").onclick = () => toggleHeroCard();
+$("pcSheetBtn").onclick = () => openParley();
+$("bagBtn").addEventListener("click", () => toggleHeroCard(false));   // the backpack opens over everything; the card steps aside
+const capWords = t => String(t || "").replace(/\b\w/g, ch => ch.toUpperCase());
+let cardSig = "";
+function renderHeroCard(){
+  const a = topHero(); if (!a) return;
+  if (GEAR[a.id]) refreshAc(a.id);
+  const s = SHEETS[a.id] || {}, pc = PCS[a.id] || {}, {now, max} = heroHpOf(a), name = heroNameOf(a), enc = encumbered(a);
+  const sub = [capWords(s.race || pc.race), capWords(s.cls || pc.cls)].filter(Boolean).join(" ") + (s.level ? ` · Level ${s.level}` : "");
+  const speed = s.speed != null ? (enc ? Math.max(5, s.speed - ENCUMBERED_SLOW_FT) : s.speed) : null;
+  const fourth = s.magic && s.magic.dc ? [s.magic.dc, "SPELL DC"] : [10 + ((s.skills && s.skills.perception != null) ? s.skills.perception : ((s.mods && s.mods.wis) || 0)), "PASSIVE"];
+  const state = [manacled(a) ? "⛓ Manacled" : "", a.down || a.ko ? "Down" : "", enc ? "Encumbered" : ""].filter(Boolean);
+  const ready = (s.attacks || []).slice(0, 2).map(t => `${t.name}, ${sgn(t.hit || 0)} · ${t.dmg}${t.type ? " " + t.type : ""}`);
+  const magic = s.magic ? [...(s.magic.cantrips || []), ...(s.magic.prepared || [])] : [];
+  const sig = JSON.stringify([a.id, name, sub, now, max, s.ac, speed, s.init, fourth, s.mods, state, ready, magic]);
+  if (sig === cardSig) return; cardSig = sig;
+  const tone = hpTone(now, max), frac = max ? Math.max(0, Math.min(1, now / max)) : 1;
+  const ab = s.mods ? ["str", "dex", "con", "int", "wis", "cha"].map(k => `<div><b>${s.mods[k] != null ? sgn(s.mods[k]) : "—"}</b><small>${k.toUpperCase()}</small></div>`).join("") : "";
+  $("pcBody").innerHTML = `<div class="pc-arch" id="pcArch"></div>`
+    + `<div class="pc-who"><h2>${esc(name)}</h2><span>${esc(sub)}</span></div>`
+    + (max ? `<div class="pc-hp ${tone}"><div class="lb"><span>HIT POINTS</span><b>${now} / ${max}</b></div><div class="tr"><i style="width:${Math.round(frac * 100)}%"></i></div></div>` : "")
+    + `<div class="pc-stats"><div><b>${s.ac != null ? s.ac : "—"}</b><small>AC</small></div><div><b>${speed != null ? speed : "—"}</b><small>SPEED</small></div><div><b>${s.init != null ? sgn(s.init) : "—"}</b><small>INIT</small></div><div><b>${fourth[0]}</b><small>${fourth[1]}</small></div></div>`
+    + (ab ? `<div class="pc-abil">${ab}</div>` : "")
+    + `<div class="pc-lines">`
+    + (state.length ? `<p><em>STATE</em><span>${state.map(t => `<span class="pc-chip">${esc(t)}</span>`).join("")}</span></p>` : "")
+    + (ready.length ? `<p><em>READY</em><span>${ready.map(esc).join("<br>")}</span></p>` : "")
+    + (magic.length ? `<p><em>MAGIC</em><span>${magic.map(esc).join(" · ")}</span></p>` : "")
+    + `</div>`;
+  const arch = $("pcArch");
+  if (HERO_ART.has(a.id)){ const im = new Image(); im.src = `${HERO_ART_BASE}${a.id}-bust.webp`; im.alt = ""; arch.appendChild(im); }
+  else { const c = document.createElement("canvas"); portrait(a.id, c, 190); arch.appendChild(c); }
+}
 function talkUrl(npc, said){
   const q = new URLSearchParams({view: "full", from: "map", talk: SPR[npc.id].json.name, return: SANDBOX ? "/velkynvelve?sandbox=1" : "/velkynvelve", scene: SPEC[cur].img ? location.origin + PLATE_DIR + SPEC[cur].img : `${PLATES}img/${node.slug}.jpg`, area: node.name, as: PLAYS_AS[leader?.id] || ""});
   if (said) q.set("line", said.slice(0, 280));
@@ -18352,7 +18529,7 @@ function hitActor(list, w){
 stage.addEventListener("pointerleave", () => stripHover(false));
 stage.addEventListener("pointerdown", e => {
   if (cbt && e.pointerType === "touch" && e.clientY - stage.getBoundingClientRect().top < STRIP_ZONE) stripShow(3000);   // no hover on a touch screen: a tap along the top
-  if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui,.checkcard,.icard")) return;
+  if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui,.checkcard,.icard,.pel-top")) return;   // the top's buttons and panels are never a walk
   if (e.button === 2) return;   // a right-click opens an item's whole card (contextmenu, below): never a walk or a swing
   unlockAudio();
   if (ICARD.pinned) icardHide(true);
@@ -18428,7 +18605,7 @@ stage.addEventListener("pointerup", endPtr); stage.addEventListener("pointercanc
 // the two-finger swipe zoomed the map behind it). The inventory, the DM tools and anything else that scrolls get the wheel;
 // only the open map zooms.
 function wheelScrolls(el){ for (; el && el !== stage; el = el.parentElement){ const o = getComputedStyle(el).overflowY; if ((o === "auto" || o === "scroll") && el.scrollHeight > el.clientHeight + 1) return true; } return false; }
-stage.addEventListener("wheel", e => { if (e.target.closest(".checkcard,.icard,.inv,.dm") || wheelScrolls(e.target)) return; e.preventDefault(); if (mode === "talk" || mode === "dialog") return; const r = stage.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, {passive: false});
+stage.addEventListener("wheel", e => { if (e.target.closest(".checkcard,.icard,.inv,.dm,.pel-tray,.pel-card") || wheelScrolls(e.target)) return; e.preventDefault(); if (mode === "talk" || mode === "dialog") return; const r = stage.getBoundingClientRect(); zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.15 : 1 / 1.15); }, {passive: false});
 function click(w){
   if (timeStopped) return;
   if (FIGHT.mirror && mode === "combat"){ oneFightMirrorClick(w); return; }   // ONE FIGHT: aimed here, played there
@@ -18530,6 +18707,8 @@ addEventListener("keydown", e => {
   if (mode === "combat" && FIGHT.mirror && oneFightKey(e)) return;                                   // ONE FIGHT: your turn, played there
   if (mode === "combat" && FIGHT.auth && oneFightWaitsFor(activeActor()) && (e.code === "Enter" || MOVE_KEYS.has(e.code))) return;   // not this screen's hero to move
   if (e.key === "Escape" && dmPlacing){ dmPlacing = null; stage.classList.remove("placing"); hint(""); return; }
+  if (e.key === "Escape" && topPanelOpen()){ closeTopPanels(); return; }
+  if (e.code === "KeyC" && mode === "explore" && !e.ctrlKey && !e.metaKey && !e.altKey){ e.preventDefault(); toggleHeroCard(); return; }
   if (e.code === "KeyI" && (mode === "explore" || mode === "combat")){ e.preventDefault(); toggleBag(); return; }
   if (e.key === "Escape" && bagOpen()){ toggleBag(false); return; }
   // With the bag open the arrows (and Page Up/Down, Home/End) move up and down the backpack instead of walking the hero.

@@ -62,6 +62,15 @@ export default function VelkynvelvePage() {
     window.addEventListener("message", onMsg)
     return () => window.removeEventListener("message", onMsg)
   }, [])
+  // TRUE FULL SCREEN (Sam, 2026-11-15: "A button hides the broser tab. Esc leaves full."). The map's full-screen button
+  // takes this whole page full screen (so the dice this page draws stay on the glass); while it is, this page's own
+  // header steps out too, the way it does for the inventory. Esc is the browser's way back.
+  const [full, setFull] = useState(false)
+  useEffect(() => {
+    const on = () => setFull(Boolean(document.fullscreenElement))
+    document.addEventListener("fullscreenchange", on)
+    return () => document.removeEventListener("fullscreenchange", on)
+  }, [])
   const frameRef = useRef<HTMLIFrameElement>(null)
 
   useEffect(() => {
@@ -124,7 +133,7 @@ export default function VelkynvelvePage() {
     <WalkRollBridge frameRef={frameRef} />
     <WalkCueBridge frameRef={frameRef} />
     <main className="flex h-dvh flex-col bg-[#07060b] text-stone-200">
-      <header className={bagOpen ? "hidden" : "flex items-center gap-3 border-b border-amber-900/40 px-4 py-2"}>
+      <header className={bagOpen || full ? "hidden" : "flex items-center gap-3 border-b border-amber-900/40 px-4 py-2"}>
         {dm ? (
           <a href="/table" className="inline-flex items-center gap-1.5 font-serif text-xs uppercase tracking-[0.18em] text-[#e8c56a] hover:text-[#fff3cf]">
             <Crown className="h-3.5 w-3.5" aria-hidden />
@@ -139,7 +148,6 @@ export default function VelkynvelvePage() {
             Dashboard
           </StageLink>
         )}
-        <span className="font-serif text-xs uppercase tracking-[0.22em] text-stone-400">Velkynvelve</span>
         {sandbox && (
           <span className="rounded-sm border border-sky-500/50 bg-sky-500/10 px-2 py-0.5 font-serif text-[10px] uppercase tracking-[0.2em] text-sky-300">
             Rehearsal · nothing saves
@@ -161,7 +169,7 @@ export default function VelkynvelvePage() {
         <iframe
           ref={frameRef}
           src="/velkynvelve-walk/index.html"
-          title="Velkynvelve"
+          title="Velkynvelve · Pixel Environmental Layer"
           className="h-full w-full border-0"
           allow="autoplay; fullscreen"
         />
