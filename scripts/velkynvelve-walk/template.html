@@ -1660,6 +1660,7 @@ const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {
   // From then on nobody in the pen is "behind bars": the gate watch's warning, volleys and Drow Surgeon are off, and a
   // guard who comes back and sees them attacks (guardsReact). Cleared when the drow lock the party in again.
   brokeOut: null,
+  crewsHaltKey: null,   // the shift that was out when the pen was broken open: no crews after it (crewsHalted)
   // FLED (Sam, 2026-11-12): hero id -> {from, to, at}. A hero who ran out of a fight; their own screen walks them on
   // to `to` once the fight on `from` is over (heroFlee / tickFled).
   fled: {},
@@ -15886,22 +15887,35 @@ async function pollLabor(){
 // The rota and the game clock decide it (/api/labor crewsNow), so every seat sees the same prisoners gone. A page that
 // loads mid-shift simply finds them away. While they are out they are not in the pen: an escape now takes only who is there.
 let crewsAway = null, crewMoving = false;
+// NO WORK CREWS ONCE THE PEN IS BROKEN (Sam's playtest, 2026-11-15: "do NPCs taken out during work shifts come back?").
+// The rota kept running after the breakout: every shift change took two or three more prisoners "out on a crew", and a
+// screen that came back into the pen hid that shift's crew even though nobody had marched them out. So the pen was half
+// empty when the heroes went back for the others. The drow are not taking slaves to the kitchen while the pen gate
+// stands open. Once the gate is open, broken or fought through (outside the party's own work detail), no new crew is
+// taken; whoever was already out comes back at the end of their shift as before, and after that shift nobody is hidden.
+// (The pen-escape design, claude/Pen_Escape_Phases_2026-11-13.md, pauses labor in OUT_QUIET/HUNTED; this is that rule
+// for the crews, read from today's flags until the phase lands.) A recapture shuts the gate and the rota resumes.
+function crewsHalted(){ return !SANDBOX && !laborLive() && !!(state.brokeOut || state.gateOpen || state.gateBroken); }
 const penNpc = id => npcs.find(n => n.id === id && PEN_NPCS.some(d => d.id === id) && !n.company);
 function followCrews(list, day, shift){
   if (!Array.isArray(list) || day == null || shift == null) return;
-  const key = `${day}:${shift}`; if (crewsAway && crewsAway.key === key) return;
-  const prev = crewsAway, ids = new Set(list.flatMap(c => c.npcs || []));
+  const key = `${day}:${shift}`;
+  if (crewsHalted()){ if (!state.crewsHaltKey){ state.crewsHaltKey = crewsAway ? crewsAway.key : key; saveWalk(); } }
+  else if (state.crewsHaltKey){ state.crewsHaltKey = null; saveWalk(); }   // null, not delete: a deleted key is never sent
+  if (crewsAway && crewsAway.key === key) return;
+  const halted = !!state.crewsHaltKey && state.crewsHaltKey !== key;   // past the shift that was out when the gate opened
+  const prev = crewsAway, ids = halted ? new Set() : new Set(list.flatMap(c => c.npcs || []));
   crewsAway = {key, ids, list};
   if (cur !== PEN) return;
   const back = prev ? [...prev.ids].filter(id => !ids.has(id)).map(penNpc).filter(n => n && n.onDetail) : [];
   back.forEach(n => { n.onDetail = false; castReturns(n, true); });
   if (back.length) narrate(null, `The other work crew is marched back into the pen: ${back.map(n => SHORT[n.id] || SPR[n.id].json.name).join(", ")}.`);
-  const going = [...ids].map(penNpc).filter(n => n && !n.offStage && !n.down && !n.body && !companyNow().includes(n.id));
+  const going = crewsHalted() ? [] : [...ids].map(penNpc).filter(n => n && !n.offStage && !n.down && !n.body && !companyNow().includes(n.id));
   if (!going.length) return;
   if (!prev || mode !== "explore" || laborLive() || state.gateOpen || surgeon){ going.forEach(n => { n.onDetail = true; hideOffStage(n); }); return; }
   crewTakenOut(going, list);
 }
-function crewsOnEnter(){ if (cur !== PEN || !crewsAway) return; for (const id of crewsAway.ids){ const n = penNpc(id); if (n){ n.onDetail = true; hideOffStage(n); } } }
+function crewsOnEnter(){ if (cur !== PEN || !crewsAway) return; if (state.crewsHaltKey && state.crewsHaltKey !== crewsAway.key) return; for (const id of crewsAway.ids){ const n = penNpc(id); if (n){ n.onDetail = true; hideOffStage(n); } } }
 async function crewTakenOut(going, list){
   if (crewMoving) return; crewMoving = true;
   const live = () => cur === PEN && !laborLive();
