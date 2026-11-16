@@ -274,6 +274,47 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .ow-row{display:flex;align-items:center;gap:8px}.ow-row span{margin-left:auto;color:var(--ink-dim);font-size:11px}
 .ow-light[data-s=rehearsal]::before{background:#7aa7ff;box-shadow:0 0 6px #7aa7ff}
 .ow-seats i{width:8px;height:8px;border-radius:50%;background:#62e3a0;flex:none}
+/* THE TABLE LIGHT UNDER YOUR PORTRAIT (Sam, 2026-11-15: "In sync needs to be put somewhere strategic"). Out of a fight
+   the sync light sits under the hero's portrait: this screen's dot and word, then one small dot for every other screen
+   at the table (green in step, amber catching up, red away); press it for who is who. In a fight it goes back to its
+   corner by the zoom, where the fight's own top bar leaves room. */
+.stage:not(.fight) .ow-light{top:146px;right:24px;bottom:auto;background:rgba(11,8,16,.62);border-color:rgba(214,176,98,.4);backdrop-filter:blur(6px);color:#ece2c8}
+.stage:not(.fight) .ow-seats{top:180px;right:24px;bottom:auto;background:rgba(11,8,16,.92);border-color:rgba(214,176,98,.4)}
+.ow-light .ow-dots{display:inline-flex;gap:4px;margin-left:2px}
+.ow-light .ow-dots:empty{display:none}
+.ow-light .ow-dots i{width:7px;height:7px;border-radius:50%;background:#62e3a0;box-shadow:0 0 5px #62e3a0}
+.ow-light .ow-dots i[data-s=catching-up]{background:#e8c04a;box-shadow:0 0 5px #e8c04a}
+.ow-light .ow-dots i[data-s=away],.ow-light .ow-dots i[data-s=out-of-touch]{background:#d0453a;box-shadow:0 0 5px #d0453a}
+.pel-card{top:182px}
+.stage:not(.fight) .dm{top:182px;max-height:calc(100% - 194px)}
+/* THE VOYAGE CARD — the load screen (Sam, 2026-11-15: "Maybe we can use load screens with cool animations or cinematics
+   while going somewhere"; "should not permit battles or movement of plates until all players are in sync"). Two uses:
+   GATHERING (a plate change or a fight waits until every screen at the table is in step: who is still coming, and after
+   20 s "Go without them") and THE MARCH (a long cut through the dark: the escort, the caravan road). The party's own
+   pixel heroes walk across it over a scrolling cave floor; the place they are going is set in the gilded letters. */
+.voyage{position:absolute;inset:0;z-index:22;display:grid;place-items:center;background:radial-gradient(ellipse at 50% 45%,rgba(14,9,22,.86),rgba(3,2,6,.97));backdrop-filter:blur(4px);color:#ece2c8;animation:voyIn .45s ease-out}
+.voyage[hidden]{display:none}
+body.gathering footer.party,body.gathering #cbtMenu{pointer-events:none;opacity:.45;transition:opacity .3s}   /* nothing to press while the party gathers */
+.voyage.leaving{animation:voyOut .5s ease-in forwards}
+@keyframes voyIn{from{opacity:0}to{opacity:1}}
+@keyframes voyOut{to{opacity:0}}
+.voy-in{display:grid;justify-items:center;gap:10px;text-align:center;padding:24px;max-width:min(760px,94%)}
+.voy-kick{font-family:var(--face-mono);font-size:11px;letter-spacing:.42em;margin-right:-.42em;color:#b9ad92}
+.voy-title{margin:0;font-family:"Cinzel Decorative",var(--face-title);font-weight:900;font-size:clamp(26px,3.4vw,46px);line-height:1.1;letter-spacing:.04em;
+  background:linear-gradient(180deg,#fff4d2 0%,#f0cf86 30%,#c8963c 52%,#7e5a22 74%,#d6a957 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 0 16px rgba(150,104,255,.4)) drop-shadow(0 4px 7px rgba(0,0,0,.85))}
+.voy-walk{width:min(720px,92vw);height:auto;aspect-ratio:720/150;image-rendering:pixelated;-webkit-mask-image:linear-gradient(90deg,transparent,#000 14%,#000 86%,transparent);mask-image:linear-gradient(90deg,transparent,#000 14%,#000 86%,transparent)}
+.voy-sub{font-family:var(--face-read);font-style:italic;font-size:17px;color:#cfc4aa;min-height:1.4em}
+.voy-wait{display:flex;flex-wrap:wrap;justify-content:center;gap:8px}
+.voy-wait:empty{display:none}
+.voy-wait span{display:inline-flex;align-items:center;gap:7px;padding:4px 11px;border-radius:12px;border:1px solid rgba(214,176,98,.35);font-family:var(--face-mono);font-size:11px;letter-spacing:.06em;color:#ece2c8;background:rgba(255,255,255,.03)}
+.voy-wait i{width:7px;height:7px;border-radius:50%;background:#e8c04a;box-shadow:0 0 6px #e8c04a;animation:voyPulse 1.2s ease-in-out infinite}
+.voy-wait i[data-s=away]{background:#d0453a;box-shadow:0 0 6px #d0453a}
+@keyframes voyPulse{50%{opacity:.35}}
+.voy-go{all:unset;cursor:pointer;margin-top:6px;padding:9px 18px;border-radius:8px;border:1px solid #d9b56a;font-family:var(--face-title);font-weight:600;font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:#fff;background:linear-gradient(180deg,rgba(214,176,98,.3),rgba(214,176,98,.1))}
+.voy-go[hidden]{display:none}
+.voy-go:hover,.voy-go:focus-visible{background:linear-gradient(180deg,rgba(214,176,98,.45),rgba(214,176,98,.18))}
+@media (prefers-reduced-motion:reduce){.voyage,.voyage.leaving{animation:none}.voy-wait i{animation:none}}
 #caravan{position:absolute;left:50%;top:50px;transform:translateX(-50%);z-index:6;display:grid;gap:2px;justify-items:center;padding:5px 14px;border:1px solid rgba(201,162,74,.55);border-radius:6px;background:rgba(12,8,16,.84);color:#e8dcc0;font:600 13px/1.25 Georgia,serif;letter-spacing:.03em;pointer-events:none;white-space:nowrap}
 #caravan[hidden]{display:none}
 #caravan.late{border-color:rgba(255,80,60,.8);color:#ffb3a6;box-shadow:0 0 14px rgba(255,60,40,.35)}
@@ -1191,6 +1232,7 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
     <div class="titlecard" id="titlecard"><div class="no" id="tcNo"></div><h2 id="tcName"></h2></div>
     <div class="log" id="log" aria-live="polite"></div>
     <section class="rlog" id="rlog" hidden aria-label="Log"><header><h3>LOG</h3><button data-f="all" aria-pressed="true">All</button><button data-f="story">Story</button><button data-f="review">Review</button><button data-f="sync">Sync</button><button id="rlogX" aria-label="Close the log">×</button></header><div class="body" id="rlogBody"></div></section>
+    <div class="voyage" id="voyage" hidden role="status" aria-live="polite"><div class="voy-in"><div class="voy-kick" id="voyKick"></div><h2 class="voy-title" id="voyTitle"></h2><canvas class="voy-walk" id="voyWalk" width="720" height="150" aria-hidden="true"></canvas><div class="voy-sub" id="voySub"></div><div class="voy-wait" id="voyWait"></div><button class="voy-go" id="voyGo" hidden>Go without them</button></div></div>
     <div class="cbtlog" id="cbtLog" hidden><div class="panel" id="cbtLogPanel"></div><div class="ticker"><span class="line" id="cbtLogLine" aria-live="polite"></span><button type="button" id="cbtLogBtn" aria-expanded="false" title="The whole fight, round by round">Log</button></div></div>
     <div class="acts" id="acts" aria-live="polite"></div>
     <div id="laborBar" hidden style="position:absolute;top:12px;left:50%;transform:translateX(-50%);z-index:30;display:flex;gap:10px;align-items:center;padding:6px 12px;border:1px solid rgba(201,162,74,.55);border-radius:6px;background:rgba(12,8,16,.82);color:#e8dcc0;font:600 13px/1.2 Georgia,serif;letter-spacing:.02em"><span id="laborWhat">Work detail</span><span id="laborShift" hidden title="The shift" style="--p:0;position:relative;width:110px;height:6px;border-radius:3px;background:rgba(201,162,74,.18);overflow:hidden"><i style="position:absolute;left:0;top:0;bottom:0;width:calc(var(--p) * 100%);background:linear-gradient(90deg,#8a6a2a,#e0b45a);transition:width 1s linear"></i></span><button class="btn" id="laborTalk" hidden>Talk</button><button class="btn" id="laborLook" hidden>Look around</button><button class="btn" id="laborPocket" hidden>Steal something</button><button class="btn" id="laborEnd" hidden>End the shift</button></div>
@@ -3739,6 +3781,12 @@ function fightLetsGo(){
 async function travel(to, z, fromWorld, cut, solo){
   if (mode === "travel") return;
   if (fightHoldsPlate()){ if (!fromWorld) toast("Not while the fight is on."); return; }   // A LIVE FIGHT HOLDS ITS PLATE, rule 1
+  // GATHER THE PARTY (Sam, 2026-11-15): the party's own move waits until every screen at the table is in step. A screen
+  // following the world's move, and a split-off hero or group (which leaves the world's plate where it is), never wait.
+  if (!fromWorld && !solo && !GATHER.pass && OW.on && !(OW.plate != null && !owSame(cur, OW.plate))){
+    gatherThen("travel", `To ${SPEC[to] ? SPEC[to].name : "the next place"}`, () => { GATHER.pass = true; const p = travel(to, z, fromWorld, cut, solo); GATHER.pass = false; return p; });
+    return;
+  }
   // SPLIT PARTY: a splinter (just the leader, or a group that is not on the world's plate) does not move the world's
   // plate; only the party's own move does, and every screen on this plate follows it.
   const splinter = !!solo || (OW.on && OW.plate != null && !owSame(cur, OW.plate));
@@ -3784,9 +3832,11 @@ async function travel(to, z, fromWorld, cut, solo){
     // the cut goes through black (Sam, 2026-10-27: the shift ends — "exits the plate, darkens, and shows them being
     // escorted back into the pen"): out of the door, a held beat of dark, then the next place fades up
     const via = arrivalFrom(SPEC, cur, to);
+    // THE MARCH IS A LOAD SCREEN (Sam, 2026-11-15): the party walks across the voyage card toward where they are taken
+    voyageShow({kick: "ON THE MARCH", title: SPEC[to] ? SPEC[to].name : "", sub: "", min: 2400});
     $("fade").classList.add("on"); await wait(cut.dark || 900);
     await enterNode(to, {from: owPlate(via), offs, fromScale: node.scale, solo: splinter, note: cut.note || (surrenderFresh() && to === PEN ? SURRENDER_MARCH_NOTE : `The escort marches the detail through the outpost to <em>${esc(SPEC[to].name)}</em>.`)});
-    $("fade").classList.remove("on");
+    $("fade").classList.remove("on"); voyageHide();
     return;
   }
   // FADE, DON'T SLIDE (Sam, 2026-10-27: "the characters just leave to the right of the screen then appear to climb up or
@@ -9360,6 +9410,10 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   if (fightShared() && FIGHT.live && owSame(FIGHT.live.plate, cur) && FIGHT.live.auth_key !== OW.key){ talkGivesWay(); enterMirror(FIGHT.live); return; }
   talkGivesWay();                           // NPC MINDS, the other way round: a fight that starts ends the talk
   if (mode !== "explore") return;
+  // GATHER THE PARTY (Sam, 2026-11-15: "should not permit battles ... until all players are in sync"): the fight opens
+  // when every screen at the table is in step; until then this screen stands still on the voyage card.
+  // (the battle screen's own opening, opts.battle, is the same fight carried on: it was gathered for already)
+  if (OW.on && !opts.gathered && !opts.battle){ gatherThen("fight", label ? String(label) : "A fight", () => startCombat(foeIds, label, {...opts, gathered: true})); return; }
   if (!opts.battle && battleWanted(foeIds)){ battleBegin(foeIds, label, opts); return; }   // THE BATTLE SCREEN (below)
   // ... and while that fight is being played there, the pen's own copy of the watch fights nobody here
   if (!opts.battle && cur === PEN && battleLive() && foeIds.length && foeIds.every(f => f && typeof f === "object" && /^drow-guard/.test(f.id))) return;
@@ -21114,7 +21168,7 @@ function hitActor(list, w){
 stage.addEventListener("pointerleave", () => stripHover(false));
 stage.addEventListener("pointerdown", e => {
   if (cbt && e.pointerType === "touch" && e.clientY - stage.getBoundingClientRect().top < STRIP_ZONE) stripShow(3000);   // no hover on a touch screen: a tap along the top
-  if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui,.checkcard,.icard,.pel-top,.rlog")) return;   // the top's buttons and panels are never a walk
+  if (e.target.closest(".dm,.inv,.dialog,.talk,.zoom,.cbt-ui,.checkcard,.icard,.pel-top,.rlog,.voyage")) return;   // (a press the stage captured never reached the voyage card's button)   // the top's buttons and panels are never a walk
   if (e.button === 2) return;   // a right-click opens an item's whole card (contextmenu, below): never a walk or a swing
   unlockAudio();
   if (ICARD.pinned) icardHide(true);
@@ -24891,7 +24945,8 @@ function frame(t){
   const raw = Math.min(50, t - lastT); lastT = t;
   gameOverTick();
   bodyRemovalTick();   // a murdered prisoner goes out two guard cycles later (Sam, 2026-10-30)
-  if (timeStopped && mode !== "load"){ pausedMs += raw; draw(); updateOverlay(); tickMusic(raw / 1000); requestAnimationFrame(frame); return; }
+  if ((timeStopped || GATHER.hold) && mode !== "load"){   // the DM stopped time, or this screen is gathering the party (GATHER)
+ pausedMs += raw; draw(); updateOverlay(); tickMusic(raw / 1000); requestAnimationFrame(frame); return; }
   if (!cbt && quickTimeout) setQuick(false, true);                                     // a fight that ended some other way never keeps the fast clock
   if (t < hitstopUntil && mode === "combat" && !(cbt && cbt.quick)){ pausedMs += raw; draw(); updateOverlay(); requestAnimationFrame(frame); return; }   // hit-stop: the world holds for a few frames on a blow
   let slow = 1; if (t < slowUntil && t >= hitstopUntil && mode === "combat" && !(cbt && cbt.quick)){ slow = slowK; pausedMs += raw * (1 - slow); }   // the crit beat: the world's clock runs slow
@@ -25748,7 +25803,7 @@ function owSetStatus(s){
     : s === "off" ? "This screen is not sharing its world with the others. Tell the DM."
     : s === "out-of-touch" ? "This screen cannot reach the game. It will catch up on its own when the connection comes back."
     : s === "catching-up" ? "This screen is bringing itself in line with the shared world." : "Every screen at the table sees the same world.";
-  owRenderSeats();
+  owRenderSeats(); if (typeof owPaintDots === "function") owPaintDots();
 }
 function owRenderSeats(){
   const p = $("owSeats"); if (!p || p.hidden) return;
@@ -25767,6 +25822,119 @@ function owRenderSeats(){
   }).join("") : `<div class="ow-row">No screen has checked in yet.</div>`;
   if (back){ p.insertAdjacentHTML("beforeend", back); $("owLeave").onclick = () => owTestSwitch(false); }
 }
+
+// ---------- GATHER THE PARTY, AND THE VOYAGE CARD (Sam, 2026-11-15) ----------
+// "In sync ... should not permit battles or movement of plates until all players are in sync." Before the party's plate
+// changes, or a fight opens, this screen looks at every other screen at the table (a seat that has beaten within the last
+// minute): any that is not in step (catching up, out of touch, away mid-refresh) holds it. The world on this screen
+// stands still, the voyage card says who it is waiting for, and the move or the fight goes the moment they are in step.
+// After 20 s the waiting screen may go without them. A screen alone at the table, a rehearsal and a test copy never wait.
+// The same card is the load screen for a long march through the dark (a cut: the escort, the caravan road): the party's
+// pixel heroes walk across it toward the place they are going ("load screens with cool animations ... while going somewhere").
+const GATHER = {hold: false, since: 0, kind: "", label: "", run: null, t: 0, cardT: 0, pass: false, lag: {}};
+const GATHER_SEAT_MS = 60000, GATHER_GO_MS = 20000;
+// A screen says "catching up" for a beat whenever its hero is mid-step or a change is on its way; that is not being out
+// of step. Only a screen that has stayed behind this long holds the party (measured: a single-beat flicker held a door).
+const GATHER_LAG_MS = 3000, GATHER_CARD_MS = 600;
+/** Is this seat behind long enough to wait for? Remembers when each seat (and this screen) first fell behind. */
+function lagging(k, behind, t){ if (!behind){ delete GATHER.lag[k]; return false; } if (!GATHER.lag[k]) GATHER.lag[k] = t; return t - GATHER.lag[k] >= GATHER_LAG_MS; }
+function seatNameOf(s){ return s.dm ? "the DM" : (s.slug && (SHORT[s.slug] || PLAYS_AS[s.slug] || (SPR[s.slug] && SPR[s.slug].json.name))) || ("Seat " + (s.seat || "?")); }
+/** The screens this one must wait for: every other seat that beat within the last minute and is not in step now. */
+function gatherWaitingFor(){
+  if (!OW.on || !window.AopOneWorld) return [];
+  const t = owNow(), out = [];
+  if (lagging("self", OW.status === "catching-up" || OW.status === "out-of-touch", t)) out.push({key: OW.key, name: "this screen", st: OW.status, why: OW_LABEL[OW.status]});
+  for (const [k, s] of Object.entries(OW.seats || {})){
+    if (!s || k === OW.key || typeof s.at !== "number" || t - s.at > GATHER_SEAT_MS) continue;
+    const live = AopOneWorld.isOnline(s, t);
+    if (live && !lagging(k, !(s.status === "in-step" || s.status === "fight-unshared"), t)) continue;
+    out.push({key: k, name: seatNameOf(s), st: live ? s.status : "away", why: live ? (OW_LABEL[s.status] || s.status) : "away"});
+  }
+  return out;
+}
+/** Run now if the table is in step; otherwise hold this screen on the voyage card until it is. */
+function gatherThen(kind, label, run){
+  const wait = gatherWaitingFor();
+  if (!wait.length){ run(); return; }
+  if (GATHER.hold) return;                                  // already gathering: the first move or fight asked for wins
+  Object.assign(GATHER, {hold: true, since: Date.now(), kind, label, run});
+  keys.clear(); if (leader) leader.path = []; document.body.classList.add("gathering");
+  reviewLog("sync", `Holding ${kind === "fight" ? "a fight" : "the move"} (${label}) for ${wait.map(w => `${w.name}: ${w.why}`).join(", ")}.`);
+  // the card comes up only if the wait lasts: a screen that is back in a moment never flashes it
+  clearTimeout(GATHER.cardT); GATHER.cardT = setTimeout(() => { if (GATHER.hold){ voyageShow({kick: kind === "fight" ? "BEFORE THE FIGHT" : "THE PARTY GATHERS", title: label, sub: ""}); gatherTick(); } }, GATHER_CARD_MS);
+  gatherTick();
+}
+function gatherTick(){
+  clearTimeout(GATHER.t); if (!GATHER.hold) return;
+  const wait = gatherWaitingFor();
+  if (!wait.length){ gatherRelease("everyone in step"); return; }
+  const names = wait.map(w => w.name);
+  if (!VOY.on){ GATHER.t = setTimeout(gatherTick, 300); return; }      // the card is not up yet
+  $("voySub").textContent = `Waiting for ${names.length > 1 ? names.slice(0, -1).join(", ") + " and " + names[names.length - 1] : names[0]}…`;
+  $("voyWait").innerHTML = wait.map(w => `<span><i data-s="${esc(w.st)}"></i>${esc(w.name)} · ${esc(w.why)}</span>`).join("");
+  $("voyGo").hidden = Date.now() - GATHER.since < GATHER_GO_MS;
+  GATHER.t = setTimeout(gatherTick, 400);
+}
+function gatherRelease(why){
+  clearTimeout(GATHER.t); if (!GATHER.hold) return;
+  clearTimeout(GATHER.cardT); const run = GATHER.run; GATHER.hold = false; GATHER.run = null; document.body.classList.remove("gathering");
+  reviewLog("sync", `${GATHER.kind === "fight" ? "The fight" : "The move"} goes (${why}), after ${Math.round((Date.now() - GATHER.since) / 1000)} s.`);
+  voyageHide();
+  if (run) run();
+}
+$("voyGo").onclick = () => gatherRelease("without " + gatherWaitingFor().map(w => w.name).join(", "));
+
+// THE VOYAGE CARD itself: shown by the gather and by a long march; the party walks across it while it is up.
+const VOY = {on: false, raf: 0, t0: 0, minUntil: 0};
+function voyageShow(o){
+  $("voyKick").textContent = o.kick || ""; $("voyTitle").textContent = o.title || ""; $("voySub").textContent = o.sub || "";
+  $("voyWait").innerHTML = ""; $("voyGo").hidden = true;
+  const v = $("voyage"); v.classList.remove("leaving"); v.hidden = false;
+  VOY.minUntil = Date.now() + (o.min || 0);
+  if (!VOY.on){ VOY.on = true; VOY.t0 = performance.now(); VOY.raf = requestAnimationFrame(voyageDraw); }
+}
+async function voyageHide(){
+  if (!VOY.on) return;
+  const left = VOY.minUntil - Date.now(); if (left > 0) await wait(left);
+  if (GATHER.hold) return;                                  // a gather took the card over meanwhile
+  const v = $("voyage"); v.classList.add("leaving");
+  await wait(480); if (GATHER.hold) { v.classList.remove("leaving"); return; }
+  v.hidden = true; v.classList.remove("leaving"); VOY.on = false; cancelAnimationFrame(VOY.raf);
+}
+function voyageDraw(ts){
+  if (!VOY.on) return;
+  const c = $("voyWalk"), g = c.getContext("2d"), W = c.width, H = c.height, t = (ts - VOY.t0) / 1000;
+  g.imageSmoothingEnabled = false; g.clearRect(0, 0, W, H);
+  // the cave: far teeth, near rocks and the path, each scrolling at its own pace (the party walks; the world goes by)
+  const band = (speed, y, h, col, step, seed) => { g.fillStyle = col; const off = (t * speed) % step;
+    for (let x = -step - off; x < W + step; x += step){ const k = Math.floor((x + off + t * speed) / step) * 9301 + seed; const r = ((k * 49297) % 233280) / 233280; const w = step * (.45 + r * .5), hh = h * (.4 + r * .6);
+      g.beginPath(); if (y < H / 2){ g.moveTo(x, y); g.lineTo(x + w / 2, y + hh); g.lineTo(x + w, y); } else { g.moveTo(x, y); g.lineTo(x + w / 2, y - hh); g.lineTo(x + w, y); } g.fill(); } };
+  band(14, 0, 46, "rgba(70,52,96,.55)", 60, 3);
+  band(26, H - 18, 40, "rgba(40,30,58,.85)", 84, 7);
+  g.fillStyle = "rgba(214,176,98,.35)"; const doff = (t * 60) % 18; for (let x = -doff; x < W; x += 18) g.fillRect(Math.round(x), H - 22, 8, 2);   // the path
+  // spores drifting up through the lamplight
+  for (let i = 0; i < 18; i++){ const sx = (i * 97 + t * (8 + i % 5)) % W, sy = H - ((t * (10 + i % 7) + i * 23) % (H - 10)); g.fillStyle = `rgba(165,133,255,${.18 + (i % 4) * .08})`; g.fillRect(Math.round(sx), Math.round(sy), 2, 2); }
+  // the party, walking east in a line, the hero you play in front
+  const walkers = (party.length ? [leader, ...party.filter(p => p !== leader)] : []).filter(a => a && SPR[a.id] && SPR[a.id].img.walk && SPR[a.id].json.animations.walk).slice(0, 6);
+  const face = faceOf(1, 0), n = walkers.length;
+  const lamp = g.createRadialGradient(W / 2 + n * 30, H - 40, 4, W / 2 + n * 30, H - 40, 170); lamp.addColorStop(0, "rgba(255,190,110,.18)"); lamp.addColorStop(1, "rgba(255,190,110,0)"); g.fillStyle = lamp; g.fillRect(0, 0, W, H);
+  walkers.forEach((a, i) => {
+    const sp = SPR[a.id], an = sp.json.animations.walk, [cw, ch] = sp.json.cell || [128, 128], img = sp.img.walk;
+    if (!img.complete || !img.naturalWidth) return;
+    const f = Math.floor((t + i * .13) * an.fps) % an.frames, s = 100 / ch, x = W / 2 + (n / 2 - i - 1) * 62, bob = 0;
+    g.fillStyle = "rgba(0,0,0,.35)"; g.beginPath(); g.ellipse(x + cw * s / 2, H - 22, 20, 4, 0, 0, Math.PI * 2); g.fill();
+    g.drawImage(img, f * cw, face * ch, cw, ch, Math.round(x), Math.round(H - 24 - ch * s + bob), Math.round(cw * s), Math.round(ch * s));
+  });
+  VOY.raf = requestAnimationFrame(voyageDraw);
+}
+// THE TABLE DOTS: every other screen at the table as a dot beside this screen's word (green, amber, red)
+function owPaintDots(){
+  const el = $("owLight"); if (!el || !OW.on || !window.AopOneWorld) return;
+  let box = el.querySelector(".ow-dots"); if (!box){ box = document.createElement("span"); box.className = "ow-dots"; el.appendChild(box); }
+  const t = owNow(), seats = Object.entries(OW.seats || {}).filter(([k, s]) => s && k !== OW.key && typeof s.at === "number" && t - s.at <= GATHER_SEAT_MS);
+  box.innerHTML = seats.map(([k, s]) => { const live = AopOneWorld.isOnline(s, t), st = live ? s.status : "away"; lagging(k, live && !(s.status === "in-step" || s.status === "fight-unshared"), t); return `<i data-s="${esc(st)}" title="${esc(seatNameOf(s))}: ${esc(live ? OW_LABEL[st] || st : "away")}"></i>`; }).join("");
+}
+setInterval(owPaintDots, 1000);
 
 // ---------- boot ----------
 (async () => {
