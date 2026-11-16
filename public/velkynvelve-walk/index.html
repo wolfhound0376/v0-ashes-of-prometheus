@@ -1773,7 +1773,7 @@ let actors = [], party = [], npcs = [], foes = [];
 let leader = null, trail = [];
 let mode = "load";            // explore | combat | talk | dialog | travel
 let ackZone = null;
-const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {}, props: {}, rolls: {},
+const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {}, props: {}, rolls: {}, escape: null,   // escape: the pen escape's ONE phase (see THE ESCAPE PHASE)
   // THE BREAKOUT HAS BEEN FOUGHT (Sam, 2026-11-12): {at, why} once the party has fought the drow with the pen gate open.
   // From then on nobody in the pen is "behind bars": the gate watch's warning, volleys and Drow Surgeon are off, and a
   // guard who comes back and sees them attacks (guardsReact). Cleared when the drow lock the party in again.
@@ -6868,6 +6868,7 @@ function hasPenKey(){ return !!state.penKey || Object.values(GEAR).some(g => (g.
 function unlockGate(forced){
   if (state.gateOpen) return;
   state.gateOpen = true; state.doorShut = false; if (forced) state.gateBroken = true;   // torn from its bolts: it will not shut again
+  escapeTo(PEN_ESCAPE.EVENT.UNLOCK, forced ? "the pen gate forced" : "the pen gate unlocked");   // THE ESCAPE PHASE
   reportSituation({event: forced ? "gate_broken" : "gate_open"});                        // the gate only; the stance waits for the step out
   if (cur === 11){ setDoor(true); sfx("door-open", forced ? 1 : .85); }
   if (balcony()) buildGrid();
@@ -7074,6 +7075,7 @@ async function gateToLanding(){
   try {
     party.forEach(p => { p.path = []; }); if (sneak) endSneak();
     if (cur === PEN && !state.brokeOut) state.brokeOut = {at: Date.now(), why: "walked out of the open gate"};
+    if (cur === PEN) escapeTo(PEN_ESCAPE.EVENT.SLIP_OUT, "walked out of the open gate");   // THE ESCAPE PHASE
     log(`${esc(fname(leader))} goes out through the gate, onto the landing.`);
     mode = "dialog"; fade.classList.add("quick", "on"); await wait(320);
     await enterNode(plate, {from, note: "Out through the gate, onto the landing."});
@@ -7103,6 +7105,7 @@ async function battleBegin(foeObjs, label, o = {}){
     state.battle = B; state.gateWatchDown = null;
     if (cur === PEN){ if (!state.gateOpen){ state.gateOpen = true; reportSituation({event: "gate_open"}); } state.doorShut = false;
       if (!state.brokeOut) state.brokeOut = {at: Date.now(), why: B.label}; state.gateLeftUnlocked = null; }
+    if (owSame(B.from, PEN)) escapeTo(PEN_ESCAPE.EVENT.FIGHT, B.label || "the fight at the pen gate");   // THE ESCAPE PHASE
     saveWalk();
     if (sneak) endSneak();
     party.forEach(p => { p.path = []; }); mode = "dialog"; tip.hidden = true;
@@ -7260,6 +7263,7 @@ function gateLeftUnlockedTick(){
   if (!APP || cur !== PEN || mode !== "explore" || storyRotations <= u.rot) return;
   state.gateLeftUnlocked = null;
   state.gateOpen = false; state.doorShut = false; setDoor(false); if (balcony()) buildGrid(); sfx("door-close", .8);
+  escapeTo(PEN_ESCAPE.EVENT.RELOCK, "the next watch found the gate unlocked");   // THE ESCAPE PHASE
   log(`<b>The new watch tries the pen gate, and it moves.</b> A shout in Elvish; the key turns in the lock again.`, {say: true});
   const kw = shakeWatch();
   if (kw.done){ saveWalk(); handOff(`The new watch found the slave pen gate shut but UNLOCKED and has locked it again. The drow have already searched the pen once this run; play their anger, but there is no second search.`, true); return; }
@@ -7412,6 +7416,7 @@ async function doorGo(kind, everyone, o = {}){
     }
     // unheard, and past them: the cliff stairs, down to the Quaggoth Den
     doorCallDone(null, "den", heroes);
+    escapeTo(PEN_ESCAPE.EVENT.SLIP_OUT, "slipped past the watch to the Quaggoth Den");   // THE ESCAPE PHASE
     const z = doorGate(); if (!z){ return; }
     state.doorShut = false; setDoor(true); if (balcony()) buildGrid(); sfx("door-open", .3);
     log(`${esc(doorList(heroes.map(fname)))} ${heroes.length > 1 ? "slip" : "slips"} through the gate behind the watch's backs${withThem.length ? ", the prisoners after them," : ""} and down the cliff stairs.`);
@@ -9653,6 +9658,10 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   // (the breakout card, attacking a guard, a guard spotting them on the landing). The watch never treats them as caged again.
   if (cur === PEN && state.gateOpen && !state.brokeOut && foeIds.some(f => { const n = f && typeof f === "object" ? f : npcs.find(m => m.id === f); return !!n && isGuard(n); }))
     state.brokeOut = {at: Date.now(), why: String(label || "a fight at the open gate")};
+  // THE ESCAPE PHASE: any fight with the drow on the outpost's own plates is the escape's fight (from inside the pen, at
+  // the gate, or once they are out). A road fight, or one with no drow in it, is not.
+  if (!isRoadPlate(cur) && foeIds.some(f => { const n = f && typeof f === "object" ? f : npcs.find(m => m.id === f); return !!n && isGuard(n); }))
+    escapeTo(PEN_ESCAPE.EVENT.FIGHT, String(label || "a fight with the drow"));
   pullToMap(label ? String(label) : "a fight has broken out");
   // A FIGHT ON A PLATE IS EVERYONE HOSTILE ON IT (Sam, 2026-10-28: "why is combat not attracting all the foes on the
   // plate; it should"). Each way into a fight named its own foes: attacking someone brought in only the drow on watch
@@ -11835,6 +11844,7 @@ function chainMarchSettle(out){
   const M = state.chainMarch; if (!M || M.out) return;
   state.chainMarch = Object.assign({}, M, {out: out || "dm", outAt: Date.now()});
   if (out === "escaped" && !state.brokeOut) state.brokeOut = {at: Date.now(), why: "the march out in chains"};
+  if (out === "escaped") escapeTo(PEN_ESCAPE.EVENT.LEFT_AREA, "escaped the march out in chains");   // THE ESCAPE PHASE
   if (out === "lost" && !state.gameOver) state.gameOver = {seq: "g" + Date.now().toString(36), at: Date.now(), by: OW.key || "local", why: "menzoberranzan", line: chainMarchLostLine(M.seq)};
   saveWalk();
 }
@@ -16638,6 +16648,14 @@ function setQuick(on, quiet){
 }
 function endCombat(won, opts = {}){
   if (mode !== "combat" || FIGHT.mirror) return;
+  // THE ESCAPE PHASE: how the escape's fight came out. endCombat(false) means several things (a truce, the party running,
+  // a guard standing down, the party falling), so the loss is read from the field, not from `won`. Won: every foe down.
+  // Fell: nobody of ours standing. Anything else leaves drow alive who saw them: they know (FOE_ESCAPED, hunted).
+  // The DM's own End combat leaves the phase where it is: the DM decides what that fight meant.
+  if (escapeNow().phase === PEN_ESCAPE.PHASE.FIGHT && !opts.byDm){
+    const E = PEN_ESCAPE.EVENT, fell = !!cbt && !standing(party).length;
+    escapeTo(won === true ? E.WON : fell ? E.LOST : E.FOE_ESCAPED, won === true ? "the fight with the drow was won" : fell ? "the party fell" : "the drow are alive, and know");
+  }
   // THE MARCH OUT IN CHAINS: how the bridge came out, read now while the fight still knows who ran
   const marchOut = chainMarchLive() && !state.gameOver ? chainMarchOutcome({won: won === true, gotAway: party.filter(p => p.left && !(p.c && p.c.ds && p.c.ds.dead)).length, byDm: !!(opts.byDm || opts.talk)}) : undefined;
   if (cbt && (cbt.fromFlag || cbt.flagToo)) fightFlagOver();   // the server's "a fight is on" comes down with the fight (flagToo: Malachar called the map's own fight a moment after it began)
@@ -18304,6 +18322,7 @@ function followGate(g){
   if (g.state === "unlocked"){
     if (state.gateOpen) return;
     state.gateOpen = true; state.doorShut = true; if (balcony()) buildGrid();
+    escapeTo(PEN_ESCAPE.EVENT.UNLOCK, "the lock turned from outside");   // THE ESCAPE PHASE
     // JORLAN KEPT HIS WORD (Sam, 2026-11-12: "You hear it get unlocked. If persuaded he even leaves a dagger."): the same
     // click, but the table is told whose hand it was, and where the dagger is (the server put it on the floor).
     const kept = storyPledge && storyPledge.keptAt === g.since;
@@ -18319,6 +18338,7 @@ function followGate(g){
   } else if (g.state === "locked"){
     if (!state.gateOpen || state.gateBroken) return;
     state.gateOpen = false; state.doorShut = false; state.brokeOut = null; setDoor(false); if (balcony()) buildGrid();
+    escapeTo(PEN_ESCAPE.EVENT.RELOCK, "the drow locked the gate again");   // THE ESCAPE PHASE
     if (!first){ sfx("door-close", .8); log("The drow pull the pen gate shut again, and the key turns.", {say: true}); }
   }
 }
@@ -21023,6 +21043,7 @@ async function surrenderBegins(w){
   const inPen = String(cur) === String(PEN);
   if (!inPen && !routeBetween(SPEC, cur, PEN_PLATE) && !routeBetween(SPEC, cur, PEN_PLATE, {reverse: true})){ toast("There is no way to march them back to the pen from here.", 4200); return; }
   surrenderBusy = true;
+  escapeTo(PEN_ESCAPE.EVENT.SURRENDER, "the party surrendered");   // THE ESCAPE PHASE (before endCombat, which would call it a loss)
   if (mode === "combat"){ endCombat(false); for (let t = 0; mode !== "explore" && t < 60; t++) await wait(100); }
   if (sneak) endSneak();
   mode = "dialog"; tip.hidden = true; $("obj").hidden = true;
@@ -21171,6 +21192,7 @@ async function surrenderLockIn(S, {ahead, behind, heroes}){
   setDoor(false); sfx("door-close", .9);
   await wait(650); sfx("lock-picked", .6);
   state.gateOpen = false; state.doorShut = false; state.gateBroken = false; state.brokeOut = null;   // [CLAUDE] a gate torn off its hinges is re-hung: the drow do not keep slaves behind no door
+  escapeTo(PEN_ESCAPE.EVENT.RETURNED, "marched back into the pen");   // THE ESCAPE PHASE
   if (balcony()) buildGrid();
   log(`The gate clangs shut behind them, and the key turns.`);
   if (behind){ behind.performing = false; behind.face = faceOf(ix - behind.x, iy - behind.y); surrenderSays(behind, SURRENDER_LINES.lockIn, 4800); }
@@ -21183,6 +21205,7 @@ async function surrenderLockIn(S, {ahead, behind, heroes}){
 }
 function surrenderLockOnly(S){
   state.gateOpen = false; state.doorShut = false; state.gateBroken = false; state.brokeOut = null; if (balcony()) buildGrid(); setDoor(false);
+  escapeTo(PEN_ESCAPE.EVENT.RETURNED, "back in the pen");   // THE ESCAPE PHASE
   if (S.victim){ (state.slain ||= []).includes(S.victim.id) || state.slain.push(S.victim.id); if (APP) surrenderApi("thrown", {seq: S.seq}); log(`<b>${esc(S.victim.name)}</b> was thrown into the chasm on the way back.`); }
   S.done = true; if (state.surrender && state.surrender.seq === S.seq) state.surrender = {...state.surrender, done: true};
   mode = "explore";
@@ -22450,6 +22473,7 @@ $("dmGateShut").onclick = () => { toggleDm(false);
   if (state.gateBroken){ toast("The gate was torn off its hinges; it cannot be locked."); return; }
   if (!state.gateOpen){ toast("The pen gate is already shut and locked."); return; }
   state.gateOpen = false; state.doorShut = false; state.brokeOut = null; if (cur === PEN){ setDoor(false); sfx("door-close", .8); }
+  escapeTo(PEN_ESCAPE.EVENT.RELOCK, "the DM locked the gate");   // THE ESCAPE PHASE
   if (balcony()) buildGrid(); saveWalk(); log("The pen gate is shut and locked again.", {say: true}); };
 // THE DM CASTS A POISON CLOUD (2026-10-25). No one on this map has a 3rd- or 5th-level slot yet and no Velkynvelve
 // stat block casts either spell, so the DM can put one in a fight on any combatant's behalf: it is that creature's
@@ -24534,6 +24558,316 @@ function wavesStopped(plate, platesLeft) {
 }
 
 let storyRotations = 0;                       // the stage roster's count, from the poll
+// ---------- THE ESCAPE PHASE (Sam, 2026-11-13) ----------
+// "We need to come up with a better way to handle this pen, escape matrix, problem. It's been a nightmare." The escape is
+// ONE phase (held, unlocked, fight, out_quiet, hunted, gone, recaptured), kept in state.escape and shared like the rest of
+// the walk, and it changes ONLY through escapeTo(). The rules are lib/pen-escape.mjs, pasted below as PEN_ESCAPE.
+// Design of record: claude/Pen_Escape_Phases_2026-11-13.md. This is step 2: the phase is stored and moved at the moments
+// the map already knows about. Nothing reads it yet to decide what happens; step 3 moves the gate watch, Jorlan, the
+// leaning guard, labor, pacing and rest onto PEN_ESCAPE.policyFor(). The old flags (gateOpen, brokeOut...) are still
+// written as before: the door's picture and the floor read them.
+const PEN_ESCAPE = (() => {
+// THE PEN ESCAPE: one phase instead of a matrix of flags.
+//
+// Design of record: project doc claude/Pen_Escape_Phases_2026-11-13.md.
+// [SAM] his words; [HOUSE] Claude's call inside them, open to overrule.
+//
+// Why this file exists (Sam, 2026-11-13): "We need to come up with a better way to handle this pen, escape matrix,
+// problem. It's been a nightmare." In that run Lynkes unlocked the gate, won the fight on the battle plate, rested an
+// hour beside the body, and walked back in for the others; the relief watch had taken the bridge as if nothing had
+// happened and Jorlan said "Back inside." over a dead, looted guard. Nothing owned the question "where is the escape
+// up to?": about 25 flags across walk_world.state, the stage roster and each browser (gateOpen alone is read in 58
+// places), and every system answered it its own way.
+//
+// So the escape has ONE phase, it changes only through escapeStep(), and every system asks policyFor(phase) instead
+// of reading gate flags to decide what to do. The old flags may still be written for the door's picture and the floor,
+// but they no longer decide behaviour.
+//
+// Plain JavaScript for the same reason as lib/shakedown.mjs: build_walk.py pastes it into the painted map minus
+// `export`, and lib/pen-escape.test.ts holds the map and the tests to the same rules.
+//
+// Pure: no DOM, no fetch, no Supabase. `now` (ms) and `rotation` (the stage roster's watch count) are passed in.
+
+/** The seven phases. */
+const PHASE = Object.freeze({
+  HELD: "held",               // locked in: bars, warnings, volleys, the leaning guard, Jorlan's visits, labor, the doom clock
+  UNLOCKED: "unlocked",       // the lock is off, nobody is out, the drow do not know
+  FIGHT: "fight",             // the breakout fight, on the battle plate
+  OUT_QUIET: "out_quiet",     // out, and nobody alive knows: a window, not a resting place
+  HUNTED: "hunted",           // the alarm is up: horn and waves
+  GONE: "gone",               // off the Velkynvelve plates, onto the road
+  RECAPTURED: "recaptured",   // surrendered or beaten: the surrender scene, then back to HELD
+})
+const PHASES = Object.values(PHASE)
+
+/**
+ * How long "out, quiet" lasts before someone finds the body. [SAM, 2026-11-13: "Your call."]
+ * [HOUSE] The next change of the watch, or 8 real minutes, whichever comes first. The watch change alone is not
+ * enough: the roster's count only moves when Malachar or the DM changes the watch, so a quiet table could sit in
+ * the window forever.
+ */
+const QUIET_WINDOW_MS = 8 * 60 * 1000
+
+/** A fresh escape: everyone in the pen. */
+function newEscape(now = 0, rotation = 0) {
+  return { phase: PHASE.HELD, since: now, atRotation: rotation, why: "in the pen", back: null, discoverBy: null }
+}
+
+// ─── Moves ──────────────────────────────────────────────────────────────────────────────────────────
+// Every event the escape answers to, and where it leads from each phase. Anything not listed is refused (the step
+// returns the escape unchanged with `refused` set), so a stray event can never knock the escape into a phase that
+// makes no sense — which is exactly what the flag matrix allowed.
+
+const EVENT = Object.freeze({
+  UNLOCK: "unlock",               // key, picked lock, cut ward, Jorlan keeping his word
+  RELOCK: "relock",               // the drow lock it again (the watch finds it, the shakedown played)
+  SLIP_OUT: "slip_out",           // out unseen (the sneak past to the Quaggoth way)
+  FIGHT: "fight",                 // a fight with the watch starts
+  WON: "won",                     // the fight is won and no foe got away
+  FOE_ESCAPED: "foe_escaped",     // the fight is over with drow alive who saw them (one ran, a truce, the party ran): they know
+  LOST: "lost",                   // the party went down in the fight
+  SURRENDER: "surrender",
+  DISCOVERED: "discovered",       // the body was found, a survivor raised the alarm, or the window ran out
+  LEFT_AREA: "left_area",         // off the Velkynvelve plates (the road, the chain march's escape)
+  RETURNED: "returned",           // the surrender scene is over: back in the pen
+})
+
+const MOVES = {
+  [PHASE.HELD]: {
+    [EVENT.UNLOCK]: PHASE.UNLOCKED,
+    [EVENT.FIGHT]: PHASE.FIGHT,             // the gate forced, the strangled guard's alarm, a breakout from the bars
+    [EVENT.SURRENDER]: PHASE.RECAPTURED,
+    [EVENT.LEFT_AREA]: PHASE.GONE,          // the march out in chains, escaped on the rope bridge
+  },
+  [PHASE.UNLOCKED]: {
+    [EVENT.RELOCK]: PHASE.HELD,
+    [EVENT.SLIP_OUT]: PHASE.OUT_QUIET,
+    [EVENT.FIGHT]: PHASE.FIGHT,
+    [EVENT.SURRENDER]: PHASE.RECAPTURED,
+  },
+  [PHASE.FIGHT]: {
+    [EVENT.WON]: null,                      // back to OUT_QUIET, or to HUNTED if the alarm was already up (see escapeStep)
+    [EVENT.FOE_ESCAPED]: PHASE.HUNTED,
+    [EVENT.LOST]: PHASE.RECAPTURED,
+    [EVENT.SURRENDER]: PHASE.RECAPTURED,
+    [EVENT.LEFT_AREA]: PHASE.GONE,          // fled the fight off the plate and out of the area
+  },
+  [PHASE.OUT_QUIET]: {
+    [EVENT.DISCOVERED]: PHASE.HUNTED,
+    [EVENT.FIGHT]: PHASE.FIGHT,
+    [EVENT.LEFT_AREA]: PHASE.GONE,
+    [EVENT.SURRENDER]: PHASE.RECAPTURED,
+  },
+  [PHASE.HUNTED]: {
+    [EVENT.FIGHT]: PHASE.FIGHT,
+    [EVENT.LEFT_AREA]: PHASE.GONE,
+    [EVENT.SURRENDER]: PHASE.RECAPTURED,
+    [EVENT.LOST]: PHASE.RECAPTURED,         // caught by a wave without a fight of their own
+  },
+  [PHASE.GONE]: {},                         // terminal for Velkynvelve; New Game resets it
+  [PHASE.RECAPTURED]: {
+    [EVENT.RETURNED]: PHASE.HELD,
+  },
+}
+
+/** Can `event` happen in this phase? */
+function canStep(escape, event) {
+  const m = MOVES[escape && escape.phase]
+  return !!m && Object.prototype.hasOwnProperty.call(m, event)
+}
+
+/**
+ * The one way the phase changes. Returns a NEW escape; a refused event returns the same phase with `refused`
+ * naming why, so the caller can log it instead of silently doing nothing.
+ * `ctx`: {now, rotation, why}.
+ */
+function escapeStep(escape, event, ctx = {}) {
+  const e = escape && PHASES.includes(escape.phase) ? escape : newEscape(ctx.now, ctx.rotation)
+  if (!canStep(e, event)) return { ...e, refused: `${event} cannot happen while ${e.phase}` }
+  const now = ctx.now ?? 0, rotation = ctx.rotation ?? 0
+  let to = MOVES[e.phase][event]
+  // a won fight goes back to where it came from: a fight won while hunted leaves them hunted [HOUSE]
+  if (event === EVENT.WON) to = e.back === PHASE.HUNTED ? PHASE.HUNTED : PHASE.OUT_QUIET
+  const next = { phase: to, since: now, atRotation: rotation, why: ctx.why || event, back: null, discoverBy: null }
+  if (to === PHASE.FIGHT) next.back = e.phase
+  if (to === PHASE.OUT_QUIET) next.discoverBy = now + QUIET_WINDOW_MS
+  return next
+}
+
+// ─── Discovery ──────────────────────────────────────────────────────────────────────────────────────
+
+/** Is "out, quiet" over? The watch has changed since they got out, or the window ran out. */
+function discoveryDue(escape, now, rotation) {
+  if (!escape || escape.phase !== PHASE.OUT_QUIET) return false
+  if ((rotation ?? 0) > (escape.atRotation ?? 0)) return true
+  return escape.discoverBy != null && now >= escape.discoverBy
+}
+
+/** Seconds left in the quiet window, for the countdown on the map (null when there is no window). */
+function quietSecondsLeft(escape, now) {
+  if (!escape || escape.phase !== PHASE.OUT_QUIET || escape.discoverBy == null) return null
+  return Math.max(0, Math.ceil((escape.discoverBy - now) / 1000))
+}
+
+/** The countdown banner's words, or null. "The watch changes" is honest: whichever comes first ends it. */
+function quietBanner(escape, now) {
+  const s = quietSecondsLeft(escape, now)
+  if (s == null) return null
+  const m = Math.floor(s / 60), r = String(s % 60).padStart(2, "0")
+  return `The watch changes in ${m}:${r} — the body will be found`
+}
+
+/** What a change of the watch means in each phase. */
+function watchChangeMeans(escape) {
+  switch (escape && escape.phase) {
+    case PHASE.HELD: return "relief"           // the relief takes the bridge, as today
+    case PHASE.UNLOCKED: return "tries_gate"   // the new watch tries the gate: relock + the shakedown (lib/shakedown.mjs)
+    case PHASE.OUT_QUIET: return "finds_body"  // → DISCOVERED → HUNTED. Never a calm fresh pair on the bridge.
+    case PHASE.HUNTED: return "wave"           // another wave comes
+    default: return "none"                     // a fight in progress, gone, or being marched back
+  }
+}
+
+// ─── Policy: what every system does in each phase ───────────────────────────────────────────────────
+// The matrix, written once. A system that wants to know whether to act asks this, never gateOpen/brokeOut.
+
+const OFF = false, ON = true
+
+const POLICY = {
+  [PHASE.HELD]: {
+    gateWarning: ON, volleys: ON, leaningGuard: ON, whistle: ON, pickpocket: ON,
+    jorlanVisits: ON, labor: ON, doomClock: ON, pacingBeats: ON,
+    guardsOnSight: "bars",      // the pen's own rule: warning, then volleys
+    jorlan: "talk",
+    shortRest: { ok: true, why: "" },
+    doorCard: "locked",
+  },
+  [PHASE.UNLOCKED]: {
+    gateWarning: ON, volleys: ON, leaningGuard: OFF, whistle: OFF, pickpocket: OFF,
+    jorlanVisits: ON, labor: ON, doomClock: ON, pacingBeats: ON,
+    guardsOnSight: "bars",
+    jorlan: "talk",
+    shortRest: { ok: true, why: "" },
+    doorCard: "unlocked",      // the sneaking door prompt (PR #1328) / who goes through
+  },
+  [PHASE.FIGHT]: {
+    gateWarning: OFF, volleys: OFF, leaningGuard: OFF, whistle: OFF, pickpocket: OFF,
+    jorlanVisits: OFF, labor: OFF, doomClock: OFF, pacingBeats: OFF,
+    guardsOnSight: "fight",
+    jorlan: "fight",
+    shortRest: { ok: false, why: "Not in the middle of a fight." },
+    doorCard: "none",
+  },
+  [PHASE.OUT_QUIET]: {
+    gateWarning: OFF, volleys: OFF, leaningGuard: OFF, whistle: OFF, pickpocket: OFF,
+    jorlanVisits: OFF, labor: OFF, doomClock: OFF, pacingBeats: OFF,
+    guardsOnSight: "fight",     // a drow who sees escaped prisoners attacks (Sam, 2026-10-26); one who runs raises the alarm
+    jorlan: "talk_knows",       // he still speaks first, and he knows a guard is dead
+    shortRest: { ok: false, why: "Not here. The next watch will find the body, and an hour is far longer than you have." },
+    doorCard: "open",           // in and out freely; "call the others out" is offered from the landing
+  },
+  [PHASE.HUNTED]: {
+    gateWarning: OFF, volleys: OFF, leaningGuard: OFF, whistle: OFF, pickpocket: OFF,
+    jorlanVisits: OFF, labor: OFF, doomClock: OFF, pacingBeats: OFF,
+    guardsOnSight: "fight",
+    jorlan: "hunt",             // [SAM, 2026-11-13] "Lead the hunt." — unless he pledged (see jorlanStance)
+    shortRest: { ok: false, why: "The alarm is up. Nobody rests with the horn still sounding." },
+    doorCard: "open",
+  },
+  [PHASE.GONE]: {
+    gateWarning: OFF, volleys: OFF, leaningGuard: OFF, whistle: OFF, pickpocket: OFF,
+    jorlanVisits: OFF, labor: OFF, doomClock: OFF, pacingBeats: OFF,
+    guardsOnSight: "fight",
+    jorlan: "absent",
+    shortRest: { ok: true, why: "" },
+    doorCard: "none",
+  },
+  [PHASE.RECAPTURED]: {
+    gateWarning: OFF, volleys: OFF, leaningGuard: OFF, whistle: OFF, pickpocket: OFF,
+    jorlanVisits: OFF, labor: OFF, doomClock: OFF, pacingBeats: OFF,
+    guardsOnSight: "escort",    // the surrender scene is driving them
+    jorlan: "absent",
+    shortRest: { ok: false, why: "You are being marched back to the pen." },
+    doorCard: "none",
+  },
+}
+
+/** What every system does in this phase. Unknown or missing → HELD, the safe default. */
+function policyFor(escape) {
+  const p = escape && POLICY[escape.phase]
+  return p || POLICY[PHASE.HELD]
+}
+
+/**
+ * Jorlan's stance. A pledge he gave (PR #1324, Malachar's [JORLAN_PLEDGE:]) holds through the hunt: he stands
+ * aside rather than leading the drow onto the prisoner he freed. [HOUSE]
+ */
+function jorlanStance(escape, { pledged = false } = {}) {
+  const s = policyFor(escape).jorlan
+  return s === "hunt" && pledged ? "aside" : s
+}
+
+// ─── What Malachar is told ──────────────────────────────────────────────────────────────────────────
+// Every hand-off carries this line, so no NPC answers a breakout as if it had not happened.
+
+const TOLD = {
+  [PHASE.HELD]: "The prisoners are locked in the pen. The drow believe it is secure.",
+  [PHASE.UNLOCKED]: "The pen gate's lock is off, but nobody has gone out and the drow do not know it yet.",
+  [PHASE.FIGHT]: "The prisoners are breaking out: a fight with the gate watch is under way.",
+  [PHASE.OUT_QUIET]: "The prisoners are OUT. They killed the gate watch and nobody alive knows yet; the next watch will find the body. Any drow who sees them knows exactly what happened.",
+  [PHASE.HUNTED]: "The prisoners have escaped and the alarm is up. The drow are hunting them; Jorlan leads the hunt.",
+  [PHASE.GONE]: "The prisoners have escaped Velkynvelve and are on the road.",
+  [PHASE.RECAPTURED]: "The escape failed. The prisoners are being beaten and marched back to the pen.",
+}
+
+/** One line for Malachar's prompt. `facts`: {dead: ["the male gate guard"], pledged}. */
+function malacharLine(escape, facts = {}) {
+  const e = escape && PHASES.includes(escape.phase) ? escape : newEscape()
+  let line = `ESCAPE: ${e.phase}. ${TOLD[e.phase]}`
+  if (e.phase === PHASE.HUNTED && facts.pledged) line = line.replace("Jorlan leads the hunt.", "Jorlan, who gave his word, stands aside.")
+  const dead = Array.isArray(facts.dead) ? facts.dead.filter(Boolean) : []
+  if (dead.length && e.phase !== PHASE.HELD && e.phase !== PHASE.UNLOCKED) line += ` Dead: ${dead.join(", ")}.`
+  return line
+}
+
+// ─── Reading an old save ────────────────────────────────────────────────────────────────────────────
+// A run saved before the phase existed has only the flags. Work out the phase from them once, then the phase is
+// the truth. `now`/`rotation` stamp it; an old OUT_QUIET gets a fresh window rather than an instant discovery.
+
+function escapeFromFlags(s = {}, now = 0, rotation = 0) {
+  const stamp = (phase, why, extra = {}) => ({ phase, since: now, atRotation: rotation, why, back: null, discoverBy: null, ...extra })
+  if (s.escape && PHASES.includes(s.escape.phase)) return s.escape
+  const B = s.battle
+  if (B && !B.over) return stamp(PHASE.FIGHT, "a fight was under way", { back: s.brokeOut ? PHASE.OUT_QUIET : PHASE.UNLOCKED })
+  if (s.brokeOut) {
+    if (s.alarm || s.hunted) return stamp(PHASE.HUNTED, "the alarm was up")
+    return stamp(PHASE.OUT_QUIET, s.brokeOut.why || "they broke out", { discoverBy: now + QUIET_WINDOW_MS })
+  }
+  if (s.gateOpen) return stamp(PHASE.UNLOCKED, s.doorShut ? "shut but unlocked" : "the gate stands open")
+  return stamp(PHASE.HELD, "in the pen")
+}
+
+return {PHASE, PHASES, QUIET_WINDOW_MS, newEscape, EVENT, canStep, escapeStep, discoveryDue, quietSecondsLeft, quietBanner, watchChangeMeans, policyFor, jorlanStance, malacharLine, escapeFromFlags};
+})();
+/** The phase now. A run saved before the phase existed has only the flags: read them once (escapeFromFlags). */
+function escapeNow(){
+  const P = PEN_ESCAPE, e = state.escape;
+  if (e && P.PHASES.includes(e.phase)) return e;
+  state.escape = P.escapeFromFlags(state, Date.now(), storyRotations || 0);
+  return state.escape;
+}
+/** The one way the phase moves. A move that makes no sense for the phase is refused and logged, never forced. */
+function escapeTo(event, why){
+  try {
+    if (SANDBOX) return false;
+    const was = escapeNow(), next = PEN_ESCAPE.escapeStep(was, event, {now: Date.now(), rotation: storyRotations || 0, why: why || event});
+    if (next.refused){ console.info("[escape]", next.refused, "(" + (why || event) + ")"); return false; }
+    state.escape = next; saveWalk();
+    console.info("[escape]", was.phase, "->", next.phase, "(" + next.why + ")");
+    return true;
+  } catch (e){ console.warn("[escape]", e); return false; }
+}
+window.aopEscape = () => ({...escapeNow(), policy: PEN_ESCAPE.policyFor(escapeNow()), told: PEN_ESCAPE.malacharLine(escapeNow())});   // for the DM's console
 const shakeWatch = () => state.keyWatch || (state.keyWatch = noKeyWatch());
 /** A prisoner just lifted the pen key: the drow begin counting from this rotation. */
 function shakeKeyTaken(){
