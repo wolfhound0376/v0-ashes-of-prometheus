@@ -311,7 +311,8 @@
     <div class="plate" id="plate" hidden></div>
     <div class="banner" id="banner" hidden></div>
     <div class="dock"><button class="obtn" id="open">Camp actions</button></div>
-    <div class="confirm" id="confirm" hidden><div class="orn box"><p>GO TO SLEEP?</p><small>Are you sure? Unspent tokens are forfeit. The night resolves once everyone has turned in.</small><div class="row"><button class="obtn" id="yes">Yes, sleep</button><button class="obtn" id="no">Not yet</button></div></div></div>
+    <div class="confirm" id="brawl" hidden><div class="orn box"><p>TROUBLE AT THE FIRE</p><small id="brawlS"></small><div class="row"><button class="obtn" id="brawlP">Talk them down</button><button class="obtn" id="brawlI">Make them stop</button><button class="obtn" id="brawlN">Let them fight</button></div></div></div>
+<div class="confirm" id="confirm" hidden><div class="orn box"><p>GO TO SLEEP?</p><small>Are you sure? Unspent tokens are forfeit. The night resolves once everyone has turned in.</small><div class="row"><button class="obtn" id="yes">Yes, sleep</button><button class="obtn" id="no">Not yet</button></div></div></div>
     <div class="confirm" id="dmgate" hidden><form class="orn box" id="dmform"><p>DM MODE</p><small>Enter your DM code.<br><i>Mock: any code opens it. The real game checks it on the server (/api/claim-code), never in the page.</i></small><input id="dmcode" type="password" autocomplete="off" aria-label="DM code" placeholder="DM code"><div class="row"><button class="obtn" id="dmok" type="submit">Enter</button><button class="obtn" id="dmcancel" type="button">Cancel</button></div><div class="err" id="dmerr" hidden>Enter a code.</div></form></div>
     <div class="orn picker talkpick" id="talkpick" hidden><h5>SIT WITH</h5><div id="talkrows"></div></div>
     <div class="orn picker" id="picker" hidden><h5>PLAY AS</h5><div id="pickrows"></div></div>
@@ -1539,7 +1540,7 @@ const placedLabels=[];
 function label(g,x,y,text){g.font="600 13px Cinzel";g.textAlign="center";const w=g.measureText(text).width+20;
   for(let n=0;n<5;n++){ const hit=placedLabels.find(r=>Math.abs(r.x-x)<(r.w+w)/2+4&&Math.abs(r.y-y)<24); if(!hit) break; y=hit.y-24; }
   placedLabels.push({x,y,w});g.fillStyle="rgba(6,5,10,.85)";g.fillRect((x-w/2)|0,(y-16)|0,w|0,20);g.strokeStyle="#9c7a3a";g.strokeRect((x-w/2)+.5,(y-16)+.5,w|0,20);g.fillStyle="#e3b95c";g.fillText(text,x|0,(y-1)|0);}
-function drawFigure(g,f){ if(!f.ready) return; const pa=animOf(f), posed=pa!==f.anim; const LS=LIVE_SPRITE[f.slug]; const im=f.img[pa],cell=LS&&im&&im.height?Math.round(im.height/8):128,row=posed?0:f.dir,col=f.frame%framesOf(f,pa);
+function drawFigure(g,f){ if(!f.ready||f.gone) return; const pa=animOf(f), posed=pa!==f.anim; const LS=LIVE_SPRITE[f.slug]; const im=f.img[pa],cell=LS&&im&&im.height?Math.round(im.height/8):128,row=posed?0:f.dir,col=f.frame%framesOf(f,pa);
   const sc=LS?LS.scale:1.0*(f.slug==="derendil"?1.25:f.slug==="eldeth"?.9:1); const dw=cell*sc,dh=cell*sc,dx=f.x-dw/2,dy=f.y-dh*(LS?LS.pivot:126/128);
   g.fillStyle="rgba(0,0,0,.4)";g.beginPath();g.ellipse(f.x,f.y+2,(pa==="sleep"?38:pa==="sit"||pa==="eat"?28:22)*sc,8*sc,0,0,Math.PI*2);g.fill();
   const d=Math.hypot(f.x-FIRE.x,f.y-FIRE.y); const dark=Math.min(.5,Math.max(0,(d-180)/600))+night*.45;
@@ -3084,8 +3085,22 @@ function checkAllDone(){
   if(done.has(ME)&&!othersTimer){ othersTimer=setInterval(()=>{ const n=PCI.find(i=>i!==ME&&!done.has(i)); if(n==null){ clearInterval(othersTimer); othersTimer=null; resolveNight(); return; } done.add(n); budget[n]=0; const f=figures[n]; leave(f); goTo(f,"bed",[BEDS[n][0],BEDS[n][1]+30],"south"); refresh(); },3200); }
   if(!done.has(ME)&&othersTimer){ clearInterval(othersTimer); othersTimer=null; }
 }
+// HUNGER AT THE FIRE (Sam, 2026-11-15: "Fights might break out if you guys are starving"; "go" on the numbers). The game
+// counts the hungry nights in a row and decides what tonight brings (/api/camp/hunger, lib/camp-hunger.ts): grumbling;
+// Ront going for Eldeth; Derendil raging; Buppido in the dark; the twins slipping away with the food. A brawl or a rage
+// waits for the player: step in (Persuasion or Intimidation; Shuushar helps when he is here) or let the fists decide.
+const HUNGER_API="/api/camp/hunger";
+function hungerPost(body){ return fetch(HUNGER_API,{method:"POST",headers:{"content-type":"application/json","x-dm-key":haulKey()},body:JSON.stringify(body)}).then(r=>r.ok?r.json():null).catch(()=>null); }
+function hungerNight(fed){ if(!HAUL_LIVE) return; hungerPost({op:"night",fed}).then(j=>{ if(!j||!j.event) return; const e=j.event; if(e.kind==="none") return;
+  if(j.text) speak(`<b>${e.kind==="grumble"?"HUNGER":"TROUBLE AT THE FIRE"}</b>\n${j.text}`);
+  if(e.kind==="twins"){ figures.forEach(f=>{ if((j.gone||[]).includes(f.slug)) f.gone=true; }); flash("THE TWINS ARE GONE",true); }
+  if(e.kind==="buppido") flash(j.damage?"SOMETHING IN THE DARK":"BUPPIDO IN THE DARK",true);
+  if(e.kind==="brawl"||e.kind==="rage"){ flash(e.kind==="rage"?"DERENDIL RAGES":"A FIGHT AT THE FIRE",true); brawlAsk(e,j.text||""); } }); }
+function brawlAsk(e,text){ const me0=PARTY[ME]; $("brawlS").textContent=`${text} ${me0.name} could step in (${e.dc>=25?"Very Hard":"Hard"}${e.calmer?"; Shuushar will try to calm them too":""}).`; $("brawl").hidden=false;
+  const go=(how)=>{ $("brawl").hidden=true; hungerPost({op:"settle",event:e,hero:how?me0.slug:null,how}).then(j=>{ if(!j||!j.text) return; speak(`<b>${j.calmed?"CALMED":"THE FIGHT"}</b>\n${j.text}`); if(!j.calmed){ const L=figures.find(f=>f.slug===j.loser); if(L){ L.hp=1; leave(L); goTo(L,"bed",[BEDS[L.i][0],BEDS[L.i][1]+30],"south"); } } }); };
+  $("brawlP").onclick=()=>go("persuasion"); $("brawlI").onclick=()=>go("intimidation"); $("brawlN").onclick=()=>go(null); }
 function resolveNight(){ resolved=true; refresh();
-  const pe=C.passiveCampEncounter({name:BIOMES[biome].name,metadata:{safe:false}},rng); const mouths=PARTY.length, meal=C.affordableRest(supplies,mouths), cost=meal.cost; supplies=Math.max(0,supplies-cost); $("sup").textContent=supplies; if(cost) postHaul("rest",-cost,[],`${meal.kind==="full"?"Full":"Partial"} rest at the fire for ${mouths}: ${cost} rations.`); merchant=!!pe.merchantPresent;
+  const pe=C.passiveCampEncounter({name:BIOMES[biome].name,metadata:{safe:false}},rng); const mouths=PARTY.length, meal=C.affordableRest(supplies,mouths), cost=meal.cost; supplies=Math.max(0,supplies-cost); $("sup").textContent=supplies; if(cost) postHaul("rest",-cost,[],`${meal.kind==="full"?"Full":"Partial"} rest at the fire for ${mouths}: ${cost} rations.`); setTimeout(()=>hungerNight(meal.kind!=null),1800); merchant=!!pe.merchantPresent;
   if(pe.hostile){ flash(`${(pe.visitor||"someone").toUpperCase()} IN THE DARK — ROLL INITIATIVE`,true); figures.forEach(leave); STATIONS.fire.spots.forEach((s,k)=>{const f=figures[k]; if(f){occupied.add("fire"+k);f.spot="fire"+k;goTo(f,"fire",s,DIRS[dirFrom(FIRE.x-s[0],FIRE.y-s[1])]);}}); speak(`<b>THE NIGHT</b>\n${pe.note}\nSurprise: each watcher's passive Perception against their Stealth, then initiative.`); }
   else { sleeping=true; figures.forEach(f=>{ if(f.seated) return; leave(f); chooseStation(f); }); flash(pe.visitor?`${(pe.who||pe.visitor).toUpperCase()} COMES TO THE FIRE`:"THE NIGHT PASSES"); speak(`<b>THE NIGHT</b>\n${pe.note}\n${meal.kind==="full"?`Full rest for ${mouths} at the fire: ${cost} rations spent, ${supplies} left. At dawn: all hit points, half the Hit Dice, every slot${PCI.map(i=>figures[i]).some(f=>(f.hp??1)<=0)?` — but not for ${PCI.map(i=>figures[i]).filter(f=>(f.hp??1)<=0).map(f=>f.name).join(" and ")}: a long rest needs at least 1 hit point (SRD)`:""}.`:meal.kind==="partial"?`Only a partial rest: ${cost} rations for ${mouths} mouths, ${supplies} left (a full rest for ${mouths} needs ${C.fullRestRations(mouths)}). The night counts as a short rest: Hit Dice may be spent, nothing else comes back.`:`No food for ${mouths} mouths: ${supplies} rations, and even a partial rest needs ${C.partialRestRations(mouths)}. A hungry night: nobody gains anything from it.`}`); }
 }
