@@ -4427,7 +4427,8 @@ function leaveVelkynvelve(z){
   if (!h){ toast(head + ". That way leaves Velkynvelve, and where it comes out is not drawn yet."); return; }
   const proposed = z.proposed || /PROPOSED/.test(z.label);
   showDialog({title: head, body: `${z.label}. Past here the party is out of the outpost and on the Underdark map.${proposed ? " This way out is a proposal from the guide, not yet reviewed by Sam." : ""}`,
-    buttons: [{label: `Leave Velkynvelve → ${h.name}`, primary: true, fn: () => {
+    buttons: [{label: `Leave Velkynvelve → ${h.name}`, primary: true, fn: async () => {
+        if (escapeTo(PEN_ESCAPE.EVENT.LEFT_AREA, `left Velkynvelve for ${h.name}`) && OW.on){ const t0 = Date.now(); while (owDirty() && Date.now() - t0 < 1500) await wait(100); }   // THE ESCAPE PHASE: gone, and every screen told before the page goes
         location.href = `/map?from=velkynvelve&via=${encodeURIComponent(key)}&plate=${encodeURIComponent(h.biome)}${Array.isArray(z.roads) && z.roads.length ? "&roads=" + encodeURIComponent(z.roads.join(",")) : ""}`; }},
       {label: "Stay"}]});
   adviceAtTheWayOut();
@@ -6543,9 +6544,13 @@ function eventSig(text){
 }
 function handOff(text, ask, opts = {}){
   const id = "a" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+  const sigText = text;   // the same event on every screen keeps one signature, phase line or not
+  // THE ESCAPE PHASE (step 5): while an escape is on, Malachar is told where it is up to, so no NPC answers a breakout as
+  // if it never happened (Sam's run, 2026-11-13: Jorlan's "Back inside." over a dead guard).
+  try { const e = escapeNow(); if (!SANDBOX && e.phase !== PEN_ESCAPE.PHASE.HELD && e.phase !== PEN_ESCAPE.PHASE.GONE && !/\bESCAPE: [a-z_]+\./.test(text)) text = `${text}\n\n(${PEN_ESCAPE.malacharLine(e, {dead: escapeDead(), pledged: !!(storyPledge && storyPledge.keptAt)})})`; } catch (e) {}
   let characterId = null; try { characterId = myClaimId || characterIdOf(leader.id) || null; } catch (e) {}
   ACTION_REPLIES.add(id);
-  const msg = ask ? {type: "aop:action", id, text, characterId, ask: true, private: !!opts.private, noLoot: !!opts.noLoot} : {type: "aop:action", id, text, characterId, event: true, sig: eventSig(text)};
+  const msg = ask ? {type: "aop:action", id, text, characterId, ask: true, private: !!opts.private, noLoot: !!opts.noLoot} : {type: "aop:action", id, text, characterId, event: true, sig: eventSig(sigText)};
   try { (window.parent !== window ? window.parent : window).postMessage(msg, APP ? location.origin : "*"); } catch (e) {}
   return id;
 }
@@ -10430,6 +10435,7 @@ function pacingFind(id){ return npcs.find(n => n.id === id && actors.includes(n)
 let pacingAt = 0, pacingRot = null, pacingPenSince = 0, pacingArgued = 0, pacingMuttered = 0, pacingFaded = null, pacingAsked = null, pacingPlanBarked = 0;
 function pacingTick(){
   if (now - pacingAt < 500) return; pacingAt = now;
+  escapeDiscoveryTick();
   caravanTick(); waitTick(); chainMarchTick(); doorCallTick(); battleTick();
   if (!penHeld()){ pacingPenSince = 0; return; }
   if (!pacingPenSince) pacingPenSince = now;
@@ -10439,10 +10445,15 @@ function pacingTick(){
 // ----- 1. the caravan clock -----
 function caravanTick(){
   const el = $("caravan"); if (!el) return;
-  const show = penHeld() && mode !== "load";
+  const qb = penHeld() ? null : escapeBanner();                    // THE ESCAPE PHASE: out quietly, the clock is the watch
+  const show = (penHeld() || !!qb) && mode !== "load";
   const left = caravanLeft();
   if (el.hidden === show) el.hidden = !show;
-  if (show){
+  if (show && qb){
+    if ($("caravanText").textContent !== qb.text) $("caravanText").textContent = qb.text;
+    el.classList.toggle("late", qb.late);
+    const p = $("caravanPlan"); if (p) p.hidden = true;
+  } else if (show){
     const t = left > 0 ? `The caravan to Menzoberranzan leaves in ${watchesWord(left)}` : "The caravan to Menzoberranzan is here";
     if ($("caravanText").textContent !== t) $("caravanText").textContent = t;
     el.classList.toggle("late", left <= CARAVAN_LATE);
@@ -21606,6 +21617,29 @@ const escapePolicy = () => PEN_ESCAPE.policyFor(escapeNow());
 const escapeOut = () => escapePolicy().guardsOnSight === "fight";
 /** The dead of the escape so far, for what NPCs and Malachar are told (the watch killed on the battle plate). */
 function escapeDead(){ const B = state.battle; return B && B.won && Array.isArray(B.foes) ? B.foes.map(id => (FOE_BLOCKS[id] && FOE_BLOCKS[id].name || "a drow").toLowerCase()) : []; }
+// THE RELIEF FINDS THE BODY (step 5; Sam's run, 2026-11-13: the watch changed after the fight and a fresh pair took the
+// bridge as if nothing had happened). Out quietly ends at the next change of the watch or after 8 real minutes, whichever
+// comes first (Sam: "Your call"): then the drow know, and the escape is hunted. Every screen checks; the first to move
+// the phase tells the table, and the others find it already moved (escapeTo refuses a second DISCOVERED).
+function escapeDiscoveryTick(){
+  if (SANDBOX || mode === "load") return;
+  const e = escapeNow(); if (e.phase !== PEN_ESCAPE.PHASE.OUT_QUIET) return;
+  if (!PEN_ESCAPE.discoveryDue(e, Date.now(), storyRotations || 0)) return;
+  const byWatch = (storyRotations || 0) > (e.atRotation || 0), dead = escapeDead().length > 0;
+  const what = dead ? (byWatch ? "The relief comes onto the bridge and finds the watch dead on the landing." : "Somebody has found the body on the landing.")
+                    : (byWatch ? "The relief counts the pen and comes up short." : "Somebody has noticed the pen is short of prisoners.");
+  if (!escapeTo(PEN_ESCAPE.EVENT.DISCOVERED, dead ? "the body was found" : "the pen was counted")) return;
+  log(`<b>The alarm is up.</b> ${what} <em>The drow know.</em>`, {say: true});
+  toast("The drow know. They are hunting you now.", 6000);
+  if (APP) handOff(`The drow have discovered the escape from the slave pen: ${what} The alarm is up and the drow are hunting the escaped prisoners${storyPledge && storyPledge.keptAt ? "" : "; Jorlan leads the hunt"}. Narrate the moment the alarm goes up, in a line or two.`);
+}
+/** The countdown while they are out quietly (null otherwise): the caravan banner's place, the same look. */
+function escapeBanner(){
+  if (mode === "load" || (typeof isRoadPlate === "function" && isRoadPlate(cur))) return null;
+  const e = escapeNow(), s = PEN_ESCAPE.quietSecondsLeft(e, Date.now()); if (s == null) return null;
+  const m = Math.floor(s / 60), r = String(s % 60).padStart(2, "0");
+  return {text: `The watch changes in ${m}:${r} — ${escapeDead().length ? "the body will be found" : "they will count the pen"}`, late: s <= 60};
+}
 window.aopEscape = () => ({...escapeNow(), policy: PEN_ESCAPE.policyFor(escapeNow()), told: PEN_ESCAPE.malacharLine(escapeNow())});   // for the DM's console
 const shakeWatch = () => state.keyWatch || (state.keyWatch = noKeyWatch());
 /** A prisoner just lifted the pen key: the drow begin counting from this rotation. */
