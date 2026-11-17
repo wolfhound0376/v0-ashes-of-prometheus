@@ -21,10 +21,12 @@ export async function POST(request: NextRequest) {
     }
 
     // ElevenLabs voice IDs
-    // For Malachar (onyx): Custom lich voice - cold, ancient, contemptuous
+    // For Malachar (onyx): the rotted lich voice Sam picked 2026-11-17 (ElevenLabs
+    // voice design, round 3, "voice one"): deep dry rattling rasp, theatrical
+    // sneering menace. Replaced NiQt0cwFeLsVf6cAmcCp, which "doesn't sound like" a lich.
     // For players (alloy): "Rachel" - clear, warm voice
     const voiceIds: Record<string, string> = {
-      onyx: "NiQt0cwFeLsVf6cAmcCp",  // Custom Malachar lich voice
+      onyx: "jiAbnwGVQmoRXbvVbi3g",  // Malachar (rotted lich, 2026-11)
       alloy: "21m00Tcm4TlvDq8ikWAM", // Rachel - clear female
     }
 
