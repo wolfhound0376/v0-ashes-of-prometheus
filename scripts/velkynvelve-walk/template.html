@@ -16685,6 +16685,7 @@ function laborBody(extra){
   return body;
 }
 async function laborPost(action, extra = {}){
+  if (labor && labor.local) return quotaLocalPost(action, extra);     // THE QUOTA, REHEARSED: this browser only, nothing saved
   if (!APP || !labor) return null;
   const body = laborBody(Object.assign({id: labor.id, action}, extra)); if (!body) return null;
   try {
@@ -16695,7 +16696,7 @@ async function laborPost(action, extra = {}){
   } catch (e) { return null; }
 }
 async function pollLabor(){
-  if (!APP || !booted) return;
+  if (!APP || !booted || (labor && labor.local)) return;
   let j; try { j = await fetch("/api/labor", {cache: "no-store"}).then(r => r.json()); } catch (e) { return; }
   const was = labor && labor.status; labor = j.detail || null;
   if (j.overdue) laborOverdue();
@@ -17478,8 +17479,51 @@ const QUOTA_ASSET = `${APP ? "/" : ""}labor/quota/`;
 const quotaView = {seq: -1, key: "", playing: false, endShown: false, offerShown: "", confirm: false, finishAt: 0, shown: null};
 const quotaState = () => { if (!labor || !Array.isArray(labor.events)) return null; for (let i = labor.events.length - 1; i >= 0; i--){ const e = labor.events[i]; if (e && e.kind === "quota" && e.state) return e.state; } return null; };
 const quotaOn = () => atWorkPlate() && !!quotaState();
-const quotaMine = () => { const h = laborHero(); return h ? characterIdOf(h.id) : null; };
-const quotaActor = cid => party.find(p => characterIdOf(p.id) === cid) || null;
+const quotaMine = () => { if (labor && labor.local) return labor.me; const h = laborHero(); return h ? characterIdOf(h.id) : null; };
+const quotaActor = cid => party.find(p => (labor && labor.local ? p.id : characterIdOf(p.id)) === cid) || null;
+
+// THE QUOTA, REHEARSED (Sam, 2026-11-17: "the links never actually take me to the detail or anywhere in the game. We
+// get stuck at the beginning table"). There was no way to try a work detail without hosting a table, seating heroes and
+// waiting for the shift. Now the rehearsal map (the sandbox, or the static copy) takes `?quota=<task>` and drops this
+// browser straight onto that detail's work plate with a shift of its own: the same rules (QUOTA), rolled here, for this
+// browser only. Nothing is saved, nothing reaches the table, and the real detail is never touched. You play your own
+// hero; the rest of the crew choose for themselves. Skill bonuses come from the page's own sheets (heroMod).
+const QUOTA_TRY = (() => { try { const top = window.top !== window ? window.top : window; const t = new URLSearchParams(top.location.search).get("quota"); return t && (SANDBOX || !APP) ? t : null; } catch (e) { return null; } })();
+let quotaTried = false;
+function quotaRehearse(){
+  if (!QUOTA_TRY || quotaTried || !booted || mode !== "explore") return;
+  quotaTried = true;
+  const task = ["water","kitchen","dishes","laundry","pots","clean","rocks","rope","supplies","lift","quaggoth-hair"].includes(QUOTA_TRY) ? QUOTA_TRY : "kitchen", route = detailRoute(SPEC, task);
+  const heroes = party.filter(p => p.kind === "pc" && !p.ko).slice(0, 4); if (!heroes.length || !route) return;
+  const me = (ownLeader() && heroes.includes(ownLeader()) ? ownLeader() : heroes[0]).id;
+  labor = {id: "rehearsal", local: true, me, campaign_run_id: "rehearsal-" + Date.now(), task, party: true, status: "working",
+    crew: heroes.map(h => ({kind: "pc", id: h.id, name: fname(h)})), escort: [{bestiary: "drow"}, {bestiary: "quaggoth"}],
+    events: [{kind: "step", to: "working", at: new Date().toISOString()}], updated_at: ""};
+  log("<em>Rehearsal: a work detail of your own. Nothing here is saved.</em>");
+  enterNode(isNaN(+route.plate) ? route.plate : +route.plate, {from: PEN});
+}
+setInterval(quotaRehearse, 800);
+async function quotaLocalPost(action, extra){
+  const D = labor; if (!D || !D.local) return null;
+  if (action === "quota"){
+    let st = quotaState();
+    const put = () => { D.events = D.events.filter(e => e.kind !== "quota"); D.events.push({kind: "quota", at: new Date().toISOString(), state: st}); };
+    if (extra.op === "start"){
+      if (!st){
+        const check = QUOTA.workCheck(D.task), abil = check.skill === "Athletics" ? "str" : check.skill === "Survival" ? "wis" : "dex";
+        const hs = D.crew.map(c => party.find(p => p.id === c.id)).filter(Boolean).map(a => { const sh = SHEETS[a.id] || {};
+          return {id: a.id, name: fname(a), cls: sh.cls || "", hp: sh.hpNow ?? sh.hp ?? 8, hpMax: sh.hp ?? 8,
+            mods: {work: heroMod(a, check.skill, abil), soh: heroMod(a, "Sleight of Hand", "dex"), perf: heroMod(a, "Performance", "cha"), pers: heroMod(a, "Persuasion", "cha"), con: abilMod(sh, "con")}}; });
+        st = QUOTA.newShift({task: D.task, heroes: hs, bots: hs.filter(h => h.id !== D.me).map(h => h.id)}, Math.random, owNow()); put();
+      }
+    } else if (!st) return null;
+    else if (extra.op === "pick"){ if (QUOTA.choose(st, extra.who || D.me, extra.choice, Math.random, owNow())) return null; put(); }
+    else if (extra.op === "nudge"){ if (QUOTA.nudge(st, Math.random, owNow())) put(); }
+  } else if (action === "return") D.status = "returning";
+  else if (action === "done"){ D.status = "done"; setTimeout(() => { if (labor === D){ labor = null; renderLaborBar(); log("<em>Rehearsal over. Add ?quota=water, rocks, rope or kitchen to the address to try another.</em>"); } }, 2500); }
+  else if (action === "search") return {detail: D, reasons: [], items: []};
+  return {detail: D};
+}
 const quotaIcon = n => `${QUOTA_ASSET}${n}.png`;
 // A BUST for the choice box and the team row: head and shoulders cut from the hero's own idle sprite, at a whole-pixel
 // scale so it stays crisp (the whole figure was a speck in a 72 px frame). [CLAUDE, review 2026-11-17]
@@ -17502,10 +17546,11 @@ async function quotaPoll(){
   finally { quotaPolling = false; }
 }
 async function quotaTick(){
-  if (!APP || !atWorkPlate()){ quotaHide(); return; }
-  await quotaPoll();
+  const local = !!(labor && labor.local);
+  if ((!APP && !local) || !atWorkPlate()){ quotaHide(); return; }
+  if (!local) await quotaPoll();
   let st = quotaState();
-  if (!st){ if (laborBody({}) && (isDm() || laborDriving || laborHero())) { const j = await quotaPost("start"); st = quotaState(); if (!j) return; } else return; }
+  if (!st){ if (local || (laborBody({}) && (isDm() || laborDriving || laborHero()))) { const j = await quotaPost("start"); st = quotaState(); if (!j) return; } else return; }
   if (!st) return;
   renderLaborBar();
   // a seated player who has not chosen in 45 s keeps working (the server checks the time; anyone may ask)
