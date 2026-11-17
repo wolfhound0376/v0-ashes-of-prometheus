@@ -5,7 +5,8 @@
 //   2. B presses a row: a vote; both screens show B's name beside it; nothing happens yet.
 //   3. A (the decider: no DM or host at this table, A raised it) answers: the row's own action runs once, on A, and the
 //      card goes from both screens.
-//   4. The watch changes: the table lead raises the question; the answer "Carry on" closes it everywhere.
+//   4. The watch changes: the table lead raises the question; it has one answer, so ANY screen's "Carry on" closes it.
+//   5. A real choice the decider never answers: a vote is acknowledged, and after 20 s the leading vote carries.
 //   npm i --no-save playwright@1.48.2 && npx playwright install chromium     (once)
 //   node scripts/one-world/party-decides-test.mjs   (first two heroes seated in the live run; STAGE_JSON=<file> offline)
 import http from "node:http"
@@ -117,10 +118,29 @@ await lead.evaluate(() => { if (cur !== PEN) return; watchCouncil() })
 await wait(5500)
 const w1 = await card(lead), w2 = await card(other)
 check(w1.open && w2.open && /watch/.test(w1.title) && w2.rows.includes("Carry on"), "the change of the watch asks the whole table", { lead: w1.rows, other: w2.rows })
-await lead.evaluate(() => { [...$("objBtns").querySelectorAll("button.btn")].find((b) => /Carry on/.test(b.textContent)).click() })
+// (Sam, 2026-11-17: his screen pressed Carry on 17 times and "nothing happened", the call sat with another window.
+//  A card with one answer is not a vote: the OTHER screen's press answers it.)
+check(/Anyone may answer/.test(w2.say), "a one-answer card tells every screen it may answer", w2.say)
+await other.evaluate(() => { [...$("objBtns").querySelectorAll("button.btn")].find((b) => /Carry on/.test(b.textContent)).click() })
 await wait(3000)
 await wait(2500)
-check(!(await card(lead)).open && !(await card(other)).open, "Carry on closes it everywhere")
+check(!(await card(lead)).open && !(await card(other)).open, "Carry on, pressed on the screen that does not have the call, closes it everywhere")
+check(await lead.evaluate(() => !state.pdec), "the watch question is cleared from the shared world")
+// 5. a real choice the decider never answers: B votes, is told it is waiting, and after the grace the vote carries
+await wait(1500)
+await A.evaluate(() => { window.__ran = null; const { add, close } = heroCard("A fork in the dark", "Left or right?"); add("Left", () => { close(); window.__ran = "left" }, "primary"); add("Right", () => { close(); window.__ran = "right" }); if (!partyCard({ kind: "test" })) close() })
+await wait(5500)
+const f1 = await card(B)
+check(f1.open && f1.rows.length === 2 && /decides/.test(f1.say), "a two-answer card still names who decides", f1.say)
+await B.evaluate(() => { [...$("objBtns").querySelectorAll("button.btn")][1].click() })
+await wait(1500)
+const f2 = await card(B)
+check(f2.open && /Your vote is in/.test(f2.say) && /waiting on/.test(f2.say), "a screen that has voted is told its vote is in and who it waits on", f2.say)
+check(await A.evaluate(() => window.__ran) === null, "nothing has happened yet: the decider still has the call")
+await wait(26000)   // the 20 s grace, then the heartbeats that carry the answer to A and the cleared question back
+const f3a = await card(A), f3b = await card(B)
+check(await A.evaluate(() => window.__ran) === "right", "the decider stayed silent: the vote carried, and the row ran once on the screen that raised it", await A.evaluate(() => window.__ran))
+check(!f3a.open && !f3b.open && await B.evaluate(() => !state.pdec), "the card goes from both screens and the question is cleared")
 const log = await A.evaluate(() => RLOG.lines.filter((l) => l.kind === "sync" && /party/i.test(l.text)).map((l) => l.text)); console.log("sync log:", JSON.stringify(log))
 await A.screenshot({ path: "/tmp/council-a.png" })
 await W.close(); await browser.close()
