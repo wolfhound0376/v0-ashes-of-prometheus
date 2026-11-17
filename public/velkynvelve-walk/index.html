@@ -20447,15 +20447,20 @@ function quotaPanel(html, hold, auto){
 // moment of work at each (the task's own pose where the hero has it), then on to the next. Looks only: no roll reads
 // it. Any order to a hero (a click, the keyboard, another screen) drops the round for a while, as with the chores.
 const QUOTA_ROUND = 4;                 // spots in one hero's round (the prototype's number, approved there)
+// WHERE THE WORK IS (Sam, 2026-11-17, painting the Waterfall in pink: "All the pink should be able to be walked for
+// work"): the west landing, the rope bridge and the east landing with its barrels, to the east edge. Not the long stairs
+// that leave the plate at the bottom corners. Read off his painting against the plate's floor: everything walkable
+// above y 880. A plate with no entry here is worked over all its reachable floor.
+const QUOTA_AREA = {"9": (x, y) => y <= 880};
 let quotaSpots = null;                 // {key, list} for this plate and crew
 function quotaSpotList(){
   const crew = party.filter(h => h.kind === "pc" && !h.ko && !h.down), key = `${cur}:${labor && labor.id}:${crew.length}`;
   if (quotaSpots && quotaSpots.key === key) return quotaSpots.list;
   const from = crew[0]; if (!from) return [];
   let seed = 9173 + String(cur).length * 131; const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
-  const cand = [];
-  for (let i = 0; i < 400 && cand.length < 70; i++){
-    const x = 60 + rnd() * (NAT_W - 120), y = 80 + rnd() * (NAT_H - 140); if (!walkable(x, y)) continue;
+  const cand = [], area = QUOTA_AREA[String(cur)];
+  for (let i = 0; i < 900 && cand.length < 70; i++){
+    const x = 60 + rnd() * (NAT_W - 120), y = 80 + rnd() * (NAT_H - 140); if (!walkable(x, y) || (area && !area(x, y))) continue;
     const path = findPath(from, {x, y}); if (!path || !path.length) continue;       // only floor the crew can actually reach
     cand.push({x, y});
   }
