@@ -3,7 +3,7 @@ import { guardVerdict, isGuardedPath, needsWaking, wasReset } from "./session-gu
 
 describe("isGuardedPath", () => {
   it("guards the in-game pages only", () => {
-    for (const p of ["/", "/camp", "/cave", "/map", "/awaken", "/bench", "/camp/"]) expect(isGuardedPath(p), p).toBe(true)
+    for (const p of ["/", "/camp", "/cave", "/map", "/awaken", "/pit", "/bench", "/camp/"]) expect(isGuardedPath(p), p).toBe(true)
     for (const p of ["/table", "/dm", "/forge", "/intro", "/join", "/velkynvelve", "/admin", "/choose"]) expect(isGuardedPath(p), p).toBe(false)
   })
 })
