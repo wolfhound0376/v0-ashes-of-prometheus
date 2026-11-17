@@ -383,8 +383,17 @@ export default function AwakenPage() {
     // face used to fill this screen for 16-20 s before the roll. The pick is still made here, and handed to the
     // Underwalk in sessionStorage: the same prisoner walks over on the pen plate and says the same recorded line
     // (scripts/velkynvelve-walk/template.html, wakeOnMap). The film now stops at the title.
+    //
+    // THE WAKER, FULL SCREEN AGAIN (Sam, 2026-11-17, after the first run with the Pit: "I just was present in the pen.
+    // What should have happened is I should have opened to either Eldeth or Derendill or Jimjar, full screen talking
+    // to me about what happened."). With the show on, their face fills the screen after the eyes open and they say
+    // one line: about the Pit if this hero just fought in it (public/awaken/pitwake-<who>.mp3), the original
+    // recorded wake-up otherwise (wake-<who>.mp3). They then do NOT walk over and repeat it on the map. The map
+    // version is kept for the two cases where this one does not play: Cinematics off, or Skip pressed before it.
     const w = pickWaker()
-    try { window.sessionStorage.setItem("aop_wake", w) } catch { /* no storage: nobody walks over, nothing breaks */ }
+    const wakeOnTheMap = () => { try { window.sessionStorage.setItem("aop_wake", w) } catch { /* no storage: nobody walks over, nothing breaks */ } }
+    let foughtInPit = false
+    try { foughtInPit = (window.localStorage.getItem(PIT_DONE_KEY) ?? "").endsWith(`:${seat.id}`) } catch { /* storage blocked: the original line */ }
     const guard = () => { if (dead.current) throw new Error("left") }
 
     const show = cinematicsOn()
@@ -483,6 +492,27 @@ export default function AwakenPage() {
         void said.then((l) => { if (l.url) window.setTimeout(() => URL.revokeObjectURL(l.url!), 30000) }).catch(() => {})
         setEyes((e) => (e ? "shut" : null)); await wait(650); guard()
         setEyes(null)
+      }
+
+      // 2b — the waker, full screen: a breath of their idle loop, then the talking loop under their own voice.
+      if (show && !skipped.current) {
+        setSkipShown(true)
+        setWaker(w); setTalking(false); setStep("waker")
+        await wait(120); guard()
+        setFaceOpen(true)
+        await wait(1500); guard()
+        if (!skipped.current) {
+          setTalking(true)
+          await playClip(`${MEDIA}/${foughtInPit ? "pitwake" : "wake"}-${w}.mp3`); guard()
+          setTalking(false)
+          await wait(500); guard()
+        }
+        const cutShort = skipped.current
+        setFaceOpen(false); await wait(450); guard()
+        setWaker(null)
+        if (cutShort) wakeOnTheMap()
+      } else {
+        wakeOnTheMap()
       }
 
       if (show) {
@@ -633,6 +663,14 @@ export default function AwakenPage() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* the waker, full screen: idle loop, then the talking loop while their line plays (no caption: face and voice) */}
+      {waker && (
+        <div className={`awk-face${faceOpen ? " open" : ""}`} aria-hidden>
+          <video ref={idleVid} className={talking ? undefined : "on"} muted loop playsInline autoPlay preload="auto" src={`${LOOPS}/${WAKERS.find((x) => x.key === waker)!.loop}_idle_v2.mp4`} />
+          <video ref={talkVid} className={talking ? "on" : undefined} muted loop playsInline autoPlay preload="auto" src={`${LOOPS}/${WAKERS.find((x) => x.key === waker)!.loop}_talking_v2.mp4`} />
         </div>
       )}
 
