@@ -19781,6 +19781,9 @@ function saveWalk(){
   try { sessionStorage.setItem("aop_walk_state", JSON.stringify({cur, run: runSeen, leader: leader && leader.id, party: party.map(p => ({id: p.id, x: Math.round(p.x), y: Math.round(p.y), face: p.face})), state})); } catch (e) {}
 }
 function loadWalk(){
+  // THE QUOTA DOOR STARTS CLEAN (Sam, 2026-11-17: "I can't see anything and it's some sort of attack"): a rehearsal tab
+  // remembers its last walk, fights included, and that old walk kept the work detail from ever starting.
+  if (QUOTA_TRY) return null;
   try { const s = JSON.parse(sessionStorage.getItem("aop_walk_state") || "null"); return s && SPEC[s.cur] && Array.isArray(s.party) && s.party.length ? s : null; } catch (e) { return null; }
 }
 addEventListener("pagehide", () => { if (mode !== "load") saveWalk(); });
