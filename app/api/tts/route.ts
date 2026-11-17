@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import { TTS_MODEL, TTS_FALLBACK_MODEL, settingsFor, shouldRetryOnFallback } from "@/lib/tts-model"
 import { supabaseAdmin } from "@/lib/supabase-admin"
 import { ttsCacheKey, isCacheable, readCachedAudio, writeCachedAudio } from "@/lib/tts-cache"
+import { spokenLine } from "@/lib/malachar-spoken"
 
 // Every utterance is paid for once: identical voice + settings + text is
 // fetched from storage instead of re-billed (lib/tts-cache.ts). A miss, or a
@@ -9,7 +10,12 @@ import { ttsCacheKey, isCacheable, readCachedAudio, writeCachedAudio } from "@/l
 
 export async function POST(request: NextRequest) {
   try {
-    const { text, voice = "onyx", speed } = await request.json()
+    const body = await request.json()
+    const { voice = "onyx", speed } = body
+    // Malachar's lines are read only up to ~25 words, whole sentences (Sam,
+    // 2026-11-17: "make sure that when Malachar speaks he's not talking too
+    // much"). The text on screen is untouched; see lib/malachar-spoken.ts.
+    const text = voice === "onyx" && typeof body.text === "string" ? spokenLine(body.text) : body.text
 
     if (!text) {
       return NextResponse.json({ error: "No text provided" }, { status: 400 })
@@ -21,10 +27,12 @@ export async function POST(request: NextRequest) {
     }
 
     // ElevenLabs voice IDs
-    // For Malachar (onyx): Custom lich voice - cold, ancient, contemptuous
+    // For Malachar (onyx): the rotted lich voice Sam picked 2026-11-17 (ElevenLabs
+    // voice design, round 3, "voice one"): deep dry rattling rasp, theatrical
+    // sneering menace. Replaced NiQt0cwFeLsVf6cAmcCp, which "doesn't sound like" a lich.
     // For players (alloy): "Rachel" - clear, warm voice
     const voiceIds: Record<string, string> = {
-      onyx: "NiQt0cwFeLsVf6cAmcCp",  // Custom Malachar lich voice
+      onyx: "jiAbnwGVQmoRXbvVbi3g",  // Malachar (rotted lich, 2026-11)
       alloy: "21m00Tcm4TlvDq8ikWAM", // Rachel - clear female
     }
 

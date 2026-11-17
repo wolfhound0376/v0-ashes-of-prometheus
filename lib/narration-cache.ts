@@ -19,7 +19,7 @@ export const NARRATION_BUCKET = "vtt-assets"
 export const NARRATION_PREFIX = "narration"
 
 /** The lich voice — the same id /api/tts calls "onyx". */
-export const MALACHAR_VOICE = "NiQt0cwFeLsVf6cAmcCp"
+export const MALACHAR_VOICE = "jiAbnwGVQmoRXbvVbi3g"  // Malachar (rotted lich, 2026-11); Sam's pick 2026-11-17
 
 /** Longer than this is a caller mistake, and synthesising it silently is the expensive kind. */
 export const MAX_NARRATION_CHARS = 400
