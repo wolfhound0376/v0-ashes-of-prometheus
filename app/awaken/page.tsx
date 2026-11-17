@@ -57,6 +57,16 @@
 // of a 10 s countdown, the result card closes after QUICK_DISMISS_MS, and no laugh — straight to the pen. The roll
 // still happens (the bag depends on it) and the Act I title still shows. Without Skip, nothing changes.
 
+//
+// KNOCKOUT TO WAKE (Sam, 2026-11-17: asked how to "make this look better and improve the intro sequence into the
+// pen after the fight"; "go" to cutting the crawl). Beats 1-2 above (the hero's "Where am I?" and Malachar's dream
+// crawl with the per-hero hook) are replaced by one wordless beat, "wake": black with a ringing head and a slow
+// heartbeat, the eyes opening twice on the pen painting, and ONE line — Ilvara's, from the book — in her saved
+// voice and her own tongue, in the pen's comic balloon. A seat that understands Undercommon or Elvish reads it in
+// English; a seat that does not reads her words (the one-language balloon rule, Sam 2026-10-28). The old recordings
+// stay in public/awaken/ (archive, never delete). Every wait has a ceiling and Skip cuts it, like every other beat.
+// NOT here: the blow itself — that belongs to the end of the Pit fight, which is not in the repo yet.
+
 import React, { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { DiceProvider } from "@/components/dice/dice-provider"
@@ -67,6 +77,8 @@ import { fadeOutThemeAudio } from "@/components/theme-audio"
 import { isMusicOff, onMusicPrefChange } from "@/lib/audio-prefs"
 import { cinematicsOn, introMusicOn, onSettingsChange } from "@/lib/settings"
 import { EntryGate } from "@/components/entry-gate"
+import { createClient } from "@/lib/supabase/client"
+import { gibberish, listenerFromCharacter, understands } from "@/lib/languages"
 
 const PEN_ROUTE = "/velkynvelve"
 /** How long the Act I card holds when it plays on its own (a saved game, or Cinematics off). */
@@ -75,23 +87,14 @@ const MEDIA = "/awaken"
 /** The NPC idle/talking loops the dashboard uses (public bucket). */
 const LOOPS = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/character-loops"
 
-/** Malachar's dream speech — shared by every character (book facts, his phrasing). */
-const DREAM_TEXT =
-  "Captured by the drow.\nYou wouldn't wish it on anyone — and yet, here you are.\n\n" +
-  "A dark cave. The cold weight of iron at your throat, at your wrists. And a priestess who calls herself " +
-  "Mistress Ilvara of House Mizzrym, telling you, scourge in hand, that your life belongs to her now.\n\n" +
-  "“Accept your fate. Learn to obey. And you may survive.”"
+/** The one line of the wake beat: Ilvara's words to her prisoners (Out of the Abyss, ch. 1). */
+const ILVARA_LINE = "Accept your fate. Learn to obey. And you may survive."
+const ILVARA_TONGUE = "Undercommon"
+/** The pen plate the Underwalk opens on (the same painting, so the eyes open on the room you then stand in). */
+const PEN_ART = "https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/scenes/velkynvelve/walk/img/node-11-slave-pen.jpg"
 const PREROLL_TEXT = "They stripped you to your underclothes.\nBut the drow count bolts, not pockets.\n\nLet's see what you kept."
 /** The still line that stands in for the whole show when Cinematics is off (his words, cut to one card). */
 const STILL_TEXT = "Captured by the drow. A collar at your throat, a priestess who says your life is hers now.\n\nLet's see what you kept."
-
-/** Per-character pieces, keyed by the character's first name (lower-case). Anyone else: the shared speech alone. */
-const PCS: Record<string, { hook: string }> = {
-  fifi: { hook: "Sleep, little thief. You came all this way for an orc. Wait until you see who's in the next cage." },
-  kenta: { hook: "A merchant's son, praying to the god of the dead. How practical. Kelemvor is not listening down here. I am." },
-  samson: { hook: "Your sun doesn't rise down here, priest. But do keep reading omens. I'll be writing them." },
-  scott: { hook: "Save your voice, bard. You'll want it for the screaming. Or the encore. We'll see which." },
-}
 
 const WAKERS = [
   { key: "jimjar", loop: "jimjar" },
@@ -100,15 +103,15 @@ const WAKERS = [
 ] as const
 type WakerKey = (typeof WAKERS)[number]["key"]
 
-type Step = "seat" | "tap" | "film" | "where" | "dream" | "title" | "waker" | "roll" | "result" | "laugh" | "act" | "gate"
+type Step = "seat" | "tap" | "film" | "wake" | "title" | "waker" | "roll" | "result" | "laugh" | "act" | "gate"
 
 const sleep = (ms: number) => new Promise<void>((r) => window.setTimeout(r, ms))
 
 /** The longest any one beat may hold the show (ms). A beat that runs past it is passed over. */
 const CEILING = {
   tap: 5000,        // the browser wants a gesture for sound: carry on silently after this
-  where: 10000,     // "Where am I?"
-  clip: 60000,      // one voice clip (the dream is the longest, ~40 s)
+  line: 6000,       // Ilvara's line being fetched: past this it is shown without her voice
+  clip: 60000,      // one voice clip
   film: 150000,     // a hero film whose length the browser can't read
   laugh: 15000,
 } as const
@@ -127,9 +130,47 @@ const ROLL_BEAT_MS = AUTO_ROLL_MS + AUTO_DISMISS_MS + 45000
 /** Resolves when p does, or after ms — whichever is first. */
 const within = <T,>(p: Promise<T>, ms: number): Promise<T | void> => Promise.race([p, sleep(ms)])
 
-function pcKeyFor(name: string | null): string | null {
-  const first = (name || "").trim().split(/\s+/)[0]?.toLowerCase()
-  return first && PCS[first] ? first : null
+type PenLine = { text: string; understood: boolean; url: string | null }
+
+/** Ilvara's line for this seat: her words in her tongue, voiced in her saved voice; English only for ears that know it. */
+async function fetchIlvaraLine(characterId: string): Promise<PenLine> {
+  const spoken = gibberish(ILVARA_LINE, ILVARA_TONGUE)
+  let understood = false
+  try {
+    const { data } = await createClient().from("characters").select("languages, conditions").eq("id", characterId).limit(1).maybeSingle()
+    const ears = listenerFromCharacter(data as { languages?: unknown; conditions?: unknown } | null)
+    understood = !!data && (understands(ears, "Undercommon") || understands(ears, "Elvish"))
+  } catch { /* unknown ears: her own words */ }
+  let url: string | null = null
+  try {
+    const r = await fetch("/api/npc-tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: spoken, npcName: "Ilvara Mizzrym" }) })
+    if (r.ok) url = URL.createObjectURL(await r.blob())
+  } catch { /* no voice: the balloon alone */ }
+  return { text: understood ? ILVARA_LINE : spoken, understood, url }
+}
+
+/** A ringing head and a slow heartbeat, made in the browser (no file). Silent if the browser will not allow sound. */
+function knockoutTone(seconds: number): () => void {
+  try {
+    const AC = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+    if (!AC) return () => {}
+    const ac = new AC(), t0 = ac.currentTime + 0.05, out = ac.createGain()
+    out.gain.value = 0.9; out.connect(ac.destination)
+    const ring = ac.createOscillator(), rg = ac.createGain()
+    ring.type = "sine"; ring.frequency.value = 3100
+    rg.gain.setValueAtTime(0.0001, t0); rg.gain.exponentialRampToValueAtTime(0.045, t0 + 0.08); rg.gain.exponentialRampToValueAtTime(0.0001, t0 + seconds)
+    ring.connect(rg).connect(out); ring.start(t0); ring.stop(t0 + seconds + 0.1)
+    for (let b = 0; b * 1.05 < seconds; b++) {
+      for (const [off, vol] of [[0, 0.5], [0.3, 0.32]] as const) {
+        const at = t0 + 0.4 + b * 1.05 + off, o = ac.createOscillator(), g = ac.createGain()
+        o.type = "sine"; o.frequency.setValueAtTime(62, at); o.frequency.exponentialRampToValueAtTime(38, at + 0.22)
+        g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, at + 0.26)
+        o.connect(g).connect(out); o.start(at); o.stop(at + 0.3)
+      }
+    }
+    const end = window.setTimeout(() => { void ac.close().catch(() => {}) }, (seconds + 1) * 1000)
+    return () => { window.clearTimeout(end); try { out.gain.setTargetAtTime(0, ac.currentTime, 0.08) } catch {} ; window.setTimeout(() => { void ac.close().catch(() => {}) }, 400) }
+  } catch { return () => {} }
 }
 
 function pickWaker(): WakerKey {
@@ -156,6 +197,10 @@ export default function AwakenPage() {
   const [skipShown, setSkipShown] = useState(false)
   const [filmOn, setFilmOn] = useState(false)
   const [quickRoll, setQuickRoll] = useState(false)
+  /** The wake beat: the eyelids over the pen painting, and Ilvara's balloon. */
+  const [eyes, setEyes] = useState<"shut" | "half" | "open" | null>(null)
+  const [penLine, setPenLine] = useState<PenLine | null>(null)
+  const hush = useRef<() => void>(() => {})
   const { sendMessage } = useLich("abyss")
 
   const started = useRef(false)
@@ -264,7 +309,9 @@ export default function AwakenPage() {
     try { clip.current?.pause() } catch { /* nothing playing */ }
     try { laughVid.current?.pause() } catch { /* nothing playing */ }
     try { filmVid.current?.pause() } catch { /* nothing playing */ }
+    try { hush.current() } catch { /* no tone playing */ }
     setCrawl(null); setCaption(null); setFaceOpen(false); setTalking(false); setLaughOn(false); setFilmOn(false)
+    setEyes(null); setPenLine(null)
   }, [])
 
   /** Skipping the show must not also skip what comes after the roll, so the button is re-armed between acts. */
@@ -325,7 +372,6 @@ export default function AwakenPage() {
   useEffect(() => {
     if (!seat || started.current) return
     started.current = true
-    const pcKey = pcKeyFor(seat.name)
     // THE WAKER HAS MOVED TO THE MAP (Sam, 2026-11-10: the start "is a bit slow" — "Go on the faster start"). Their
     // face used to fill this screen for 16-20 s before the roll. The pick is still made here, and handed to the
     // Underwalk in sessionStorage: the same prisoner walks over on the pen plate and says the same recorded line
@@ -396,41 +442,38 @@ export default function AwakenPage() {
       if (show && !filmTold) {
         setSkipShown(true)
 
-        // 1 — black. The character's voice. (A page loaded cold has no gesture yet: if the browser
-        //     refuses the first sound, ask for one tap and start again from the top.)
-        setStep("where")
-        await wait(1400); guard()
-        if (pcKey && !skipped.current) {
-          const a = clip.current!
-          a.src = `${MEDIA}/where-${pcKey}.mp3`
-          try { await within(a.play(), CEILING.tap) } catch {
-            setStep("tap")
-            await race(within(new Promise<void>((res) => window.addEventListener("pointerdown", () => res(), { once: true })), CEILING.tap))
-            guard(); setStep("where"); await wait(600)
-            // Still no sound allowed: show the line instead of saying it, and carry on.
-            if (!skipped.current) await within(a.play(), CEILING.tap).catch(() => setCaption("…where am I?"))
-          }
-          await race(within(new Promise<void>((res) => { if (a.ended || a.paused) return res(); a.addEventListener("ended", () => res(), { once: true }) }), CEILING.where))
-          if (skipped.current || !a.ended) a.pause()
-          setCaption(null)
-        } else if (!skipped.current) {
-          setCaption("…where am I?"); await wait(2200); setCaption(null)
-        }
-        await wait(600); guard()
+        // 1 — knocked out. Black, a ringing head, a slow heartbeat. Her line is fetched while nothing shows.
+        setStep("wake")
+        const said = fetchIlvaraLine(seat.id)
+        hush.current = knockoutTone(5.5)
+        await wait(2600); guard()
 
-        // 2 — the dream. Dark and Stormy in under him; his words as the crawl.
+        // 2 — the eyes open on the pen: a heavy half-blink, shut, then open and the room comes into focus.
         if (!skipped.current) {
-          setStep("dream")
-          musicIn(0, 0.45, 4000)
-          const hook = pcKey ? PCS[pcKey].hook : null
-          // Sam, 2026-11-12 ("why does it stall in this part?"): the crawl used to start below the screen, so the
-          // first ~8 s of the dream were pure black and read as a freeze. It now opens with its first lines showing.
-          const dreamSeconds = 19 + (hook ? 8 : 0) + 4
-          setCrawl({ text: DREAM_TEXT + (hook ? `\n\n${hook}` : ""), seconds: dreamSeconds, key: 1 })
-          await playClip(`${MEDIA}/lich-dream.mp3`); guard()
-          if (pcKey) { await wait(500); await playClip(`${MEDIA}/hook-${pcKey}.mp3`); guard() }
-          await wait(600); setCrawl(null)
+          musicIn(0, 0.3, 4000)
+          setEyes("half"); await wait(1300); guard()
+          setEyes("shut"); await wait(600); guard()
+          if (!skipped.current) { setEyes("open"); await wait(2400); guard() }
         }
+
+        // 3 — the one line. Her voice in her tongue; the balloon in whichever language this seat can read.
+        if (!skipped.current) {
+          const line = ((await race(within(said, CEILING.line))) as PenLine | void) || { text: gibberish(ILVARA_LINE, ILVARA_TONGUE), understood: false, url: null }
+          guard()
+          if (!skipped.current) {
+            setPenLine(line)
+            const t0 = performance.now()
+            if (line.url) await playClip(line.url)
+            // No voice (or the browser refused it): the balloon still holds long enough to read.
+            const held = performance.now() - t0
+            if (held < 4200) await wait(4200 - held)
+            guard()
+            await wait(700); setPenLine(null)
+          }
+        }
+        void said.then((l) => { if (l.url) window.setTimeout(() => URL.revokeObjectURL(l.url!), 30000) }).catch(() => {})
+        setEyes((e) => (e ? "shut" : null)); await wait(650); guard()
+        setEyes(null)
       }
 
       if (show) {
@@ -517,7 +560,7 @@ export default function AwakenPage() {
     run().catch((e) => { if (!dead.current) console.error("[awaken]", e) })
   }, [seat, playClip, musicIn, musicTo, goToPen, race, wait, rearmSkip])
 
-  const dark = step === "where" || step === "dream" || step === "tap" || step === "roll" || step === "result"
+  const dark = step === "wake" || step === "tap" || step === "roll" || step === "result"
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-black text-stone-200">
@@ -535,7 +578,23 @@ export default function AwakenPage() {
         .awk-lich { position: absolute; inset: 0; opacity: 0; transition: opacity .9s ease; background: #000; }
         .awk-lich.on { opacity: 1; }
         .awk-lich video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 20%; }
-        @media (prefers-reduced-motion: reduce) { .awk-crawl { animation: none; transform: translateX(-50%) translateY(-20%); } .awk-face { transition: opacity .4s ease; } }
+        .awk-wake { position: absolute; inset: 0; overflow: hidden; background: #000; pointer-events: none; clip-path: ellipse(80% 0% at 50% 50%); transition: clip-path .55s cubic-bezier(.4,0,.6,1); }
+        .awk-wake.half { clip-path: ellipse(80% 13% at 50% 50%); transition-duration: 1.1s; }
+        .awk-wake.open { clip-path: ellipse(130% 130% at 50% 50%); transition-duration: 1.7s; }
+        .awk-pen { position: absolute; left: 50%; top: 50%; width: max(100vw, calc(100vh * 1.7917)); aspect-ratio: 2752 / 1536; transform: translate(-50%, -50%) scale(1.06);
+          background: #05030a center / cover no-repeat; filter: blur(16px) brightness(.45); transition: filter 2.3s ease, transform 6s ease-out; }
+        .awk-wake.open .awk-pen { filter: blur(0) brightness(.92); transform: translate(-50%, -50%) scale(1); }
+        .awk-wake::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 22vh 6vh #000; }
+        .awk-say { position: absolute; left: 31%; top: 30%; transform: translate(-50%, -100%); max-width: min(300px, 60vw); background: #fffdf6; color: #14110f; border: 2.5px solid #14110f;
+          border-radius: 48% 52% 50% 50% / 46% 48% 52% 54%; padding: 14px 24px 15px; text-align: center; font-family: "Comic Neue", "Comic Sans MS", sans-serif; font-weight: 700;
+          font-size: clamp(15px, 1.5vw, 19px); line-height: 1.22; box-shadow: 4px 4px 0 rgba(0,0,0,.45); text-wrap: balance; animation: awk-pop .18s ease-out; }
+        .awk-say b { display: block; font-family: "Bangers", "Impact", sans-serif; font-weight: 400; font-size: .92em; letter-spacing: .06em; color: #8a1f12; margin-bottom: 2px; }
+        .awk-say .elv { font-style: italic; letter-spacing: .05em; color: #5a2a7a; }
+        .awk-say::before, .awk-say::after { content: ""; position: absolute; left: 50%; width: 0; height: 0; border-style: solid; transform: skewX(-8deg); transform-origin: top; }
+        .awk-say::before { bottom: -66px; margin-left: -11px; border-width: 66px 6px 0 9px; border-color: #14110f transparent transparent transparent; }
+        .awk-say::after { bottom: -58px; margin-left: -7px; border-width: 60px 3px 0 6px; border-color: #fffdf6 transparent transparent transparent; }
+        @keyframes awk-pop { from { transform: translate(-50%, -100%) scale(.7); opacity: 0 } to { transform: translate(-50%, -100%) scale(1); opacity: 1 } }
+        @media (prefers-reduced-motion: reduce) { .awk-wake, .awk-pen { transition: none; } .awk-crawl { animation: none; transform: translateX(-50%) translateY(-20%); } .awk-face { transition: opacity .4s ease; } }
       `}</style>
       <MusicToggle />
 
@@ -552,6 +611,21 @@ export default function AwakenPage() {
       <div className={`awk-lich${laughOn ? " on" : ""}`} aria-hidden={!laughOn}>
         <video ref={laughVid} playsInline preload="auto" src={`${MEDIA}/lich-laugh.mp4`} />
       </div>
+
+      {/* the wake beat: the pen through opening eyes, and Ilvara's one line in the pen's own balloon */}
+      {eyes && (
+        <div className={`awk-wake ${eyes}`} aria-hidden={!penLine}>
+          <link rel="stylesheet" precedence="default" href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@700&family=Bangers&display=swap" />
+          <div className="awk-pen" style={{ backgroundImage: `url(${PEN_ART})` }}>
+            {penLine && (
+              <div className="awk-say" aria-live="polite">
+                <b>{penLine.understood ? "Ilvara" : `Ilvara · in ${ILVARA_TONGUE}`}</b>
+                <span className={penLine.understood ? undefined : "elv"}>{penLine.text}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Malachar's words */}
       {crawl && (
