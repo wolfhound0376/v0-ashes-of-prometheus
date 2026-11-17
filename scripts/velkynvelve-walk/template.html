@@ -129,6 +129,7 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .world{position:absolute;left:0;top:0;width:2400px;height:1339px;transform-origin:0 0;will-change:transform;pointer-events:none}
 .world img.plate{position:absolute;inset:0;width:2400px;height:1339px;max-width:none}
 #cv{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;image-rendering:pixelated}
+#cvGlow{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;mix-blend-mode:screen;mix-blend-mode:plus-lighter}
 .over{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 
 /* FX layer, carried over from the plate viewer */
@@ -2996,7 +2997,15 @@ const LC = document.createElement("canvas"), lcx = LC.getContext("2d");
 // every table brazier) summed to +0.57 orange on average and past 1.0 in places: the floor burned out and the drow and
 // quaggoths went white. The glows are now gathered on their own layer where overlapping light takes the BRIGHTER of
 // the two (how light pools read in a painting), then added once. A lone lamp looks exactly as before.
+// THE GLOW IS LIGHT, NOT PAINT (Sam, 2026-11-17: "These lights are washing out everything"). The room's painting is an
+// <img> UNDER the drawing canvas, so the canvas is transparent wherever nothing is drawn. Adding the glow there with
+// "lighter" did not add light to the painting: on a transparent pixel it simply wrote the glow's own dull orange as
+// near-solid paint, over the painting, the torches and the crystals (measured on the Waterfall: 27 lamps, radii to
+// 828 px, the whole plate a brown haze; Light: Off showed the painting untouched). The glow layer is now its own
+// element above the canvas, blended by the browser (plus-lighter, or screen where that is missing), so it brightens
+// whatever is beneath it, painting and figures alike, and can never cover them.
 const GC = document.createElement("canvas"), gcx = GC.getContext("2d");
+GC.id = "cvGlow"; cv.insertAdjacentElement("afterend", GC);
 function hexRgb(h){ h = String(h || "#ffffff").replace("#", ""); if (h.length === 3) h = h.split("").map(c => c + c).join(""); const n = parseInt(h, 16); return isFinite(n) ? [(n >> 16) & 255, (n >> 8) & 255, n & 255] : [255, 255, 255]; }
 function lightFlash(x, y, col, r = 300, ms = 520){ if (lightLevel === "off") return; lightFlashes.push({x, y, r, col: Array.isArray(col) ? col : hexRgb(col), t0: now, ms}); if (lightFlashes.length > 24) lightFlashes.shift(); }
 function plateLights(){
@@ -3014,7 +3023,7 @@ function plateLights(){
   return out;
 }
 function drawLight(){
-  const base = LIGHT_LEVELS[lightLevel]; if (!base || mode === "load") return;
+  const base = LIGHT_LEVELS[lightLevel]; if (!base || mode === "load"){ if (GC.width) gcx.clearRect(0, 0, GC.width, GC.height); return; }
   const dark = Math.min(.85, base + battleGloom());   // the battle plate darkens while its fight lasts (THE DOOR OPENS INTO BATTLE)
   const W = Math.ceil(cv.width / 2), H = Math.ceil(cv.height / 2); if (LC.width !== W || LC.height !== H){ LC.width = W; LC.height = H; }
   const m = ctx.getTransform(), lights = plateLights();
@@ -3037,11 +3046,10 @@ function drawLight(){
     // THE GLOW IS LIGHT, NOT PAINT (Sam, 2026-11-17: the torches "look like blobs"; measured that night, the Main Hall read
     // 22 brightness with this layer on and 62 with it off). This canvas sits OVER the painting (an <img>), so a stop of
     // rgb(c*k) is OPAQUE dark orange: every lamp laid a brown disc over the plate, darker the dimmer its edge. The colour
-    // now goes in at full strength with its strength as ALPHA, so "lighter" adds light and the plate shows through.
+    // now goes in at full strength with its strength as ALPHA, and the cvGlow element above adds it as light.
     g.addColorStop(0, `rgba(${l.col[0]},${l.col[1]},${l.col[2]},${Math.min(1, k).toFixed(3)})`); g.addColorStop(.45, `rgba(${l.col[0]},${l.col[1]},${l.col[2]},${(Math.min(1, k) * .35).toFixed(3)})`); g.addColorStop(1, `rgba(${l.col[0]},${l.col[1]},${l.col[2]},0)`); gcx.fillStyle = g;
     if (l.flat){ gcx.save(); gcx.translate(l.x, l.y); gcx.scale(1, l.flat); gcx.translate(-l.x, -l.y); gcx.fillRect(l.x - l.r, l.y - l.r, l.r * 2, l.r * 2); gcx.restore(); }
     else gcx.fillRect(l.x - l.r, l.y - l.r, l.r * 2, l.r * 2); }
-  if (anyGlow){ ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = "lighter"; ctx.imageSmoothingEnabled = true; ctx.drawImage(GC, 0, 0, cv.width, cv.height); ctx.restore(); }
   ctx.imageSmoothingEnabled = false;
 }
 // human-scale iron chains and manacles, drawn on the floor under everyone (a link is ~5 px; a cuff ~14 px across, wrist size)
