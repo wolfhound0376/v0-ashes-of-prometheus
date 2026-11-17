@@ -51,6 +51,11 @@ export default function RehearsalPage() {
       window.localStorage.setItem(ROLE_LS_KEY, "dm")
       window.sessionStorage.setItem("aop_intro_seen", "1")
       window.sessionStorage.setItem(ENTERED_KEY, "1")
+      // EVERY REHEARSAL STARTS CLEAN (Sam, 2026-11-17: "why are old fights sticking around this is a design flaw").
+      // A rehearsal keeps its whole world in this tab (aop_walk_state) so a refresh or a trip to the dashboard comes
+      // back to the same moment. Coming in through this door means a new rehearsal, so the old one is dropped: no
+      // fight, open gate or hunt from an earlier test carries over. Refreshing the map itself still keeps it.
+      window.sessionStorage.removeItem("aop_walk_state")
     } catch { /* storage blocked */ }
     // THE QUOTA DOOR (Sam, 2026-11-17: "the links never actually take me to the detail"): /rehearsal?quota=water
     // opens the sandbox straight onto that work detail's plate with a shift of its own (nothing saved).
