@@ -7,7 +7,7 @@
 // Pure: the component does the fetching and the navigating.
 
 /** In-game pages a player may only be on while their seat is live. The Underwalk guards itself. */
-export const GUARDED_PATHS = ["/", "/awaken", "/camp", "/cave", "/map", "/bench"] as const
+export const GUARDED_PATHS = ["/", "/awaken", "/pit", "/camp", "/cave", "/map", "/bench"] as const
 
 export function isGuardedPath(pathname: string | null | undefined): boolean {
   if (!pathname) return false

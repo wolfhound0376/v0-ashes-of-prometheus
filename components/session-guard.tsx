@@ -7,6 +7,7 @@
 import { useEffect } from "react"
 import { usePathname, useRouter } from "next/navigation"
 import { dmHeaders } from "@/lib/dm-key"
+import { PIT_PATH } from "@/lib/pit"
 import { AFTER_RESET_PATH, AWAKEN_PATH, guardVerdict, isGuardedPath, needsWaking, wasReset } from "@/lib/session-guard"
 
 const RECHECK_MS = 6000
@@ -38,7 +39,8 @@ export function SessionGuard() {
         if (guardVerdict(j, role) === "leave") { router.replace("/table"); return }
         // Seated and live, but not yet through the awakening this session: that comes first (lib/session-guard.ts
         // needsWaking). /awaken is itself a guarded page, so it is skipped here or it would send to itself.
-        if (pathname !== AWAKEN_PATH && needsWaking(j, role)) router.replace(AWAKEN_PATH)
+        // The Pit (/pit) is the first half of the awakening for a new game, so it is skipped the same way.
+        if (pathname !== AWAKEN_PATH && pathname !== PIT_PATH && needsWaking(j, role)) router.replace(AWAKEN_PATH)
       } catch { /* offline: stay */ }
     }
     check()
