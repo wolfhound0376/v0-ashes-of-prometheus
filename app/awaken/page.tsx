@@ -201,6 +201,11 @@ export default function AwakenPage() {
   const [quickRoll, setQuickRoll] = useState(false)
   /** The wake beat: the eyelids over the pen painting, and Ilvara's balloon. */
   const [eyes, setEyes] = useState<"shut" | "half" | "open" | null>(null)
+  // THE EYES-OPEN FILM (Sam, 2026-11-17: "Maybe you should do runway for the eye opening effect", then "go"). A 5 s
+  // first-person shot of lids parting on the pen painting (public/awaken/eyes-open.mp4, made from that painting) plays
+  // over the wake beat and fades to the painting itself. If it will not play, the drawn blink below stands in.
+  const [eyeFilm, setEyeFilm] = useState(false)
+  const eyeVid = useRef<HTMLVideoElement>(null)
   const [penLine, setPenLine] = useState<PenLine | null>(null)
   const hush = useRef<() => void>(() => {})
   const { sendMessage } = useLich("abyss")
@@ -318,7 +323,7 @@ export default function AwakenPage() {
     try { filmVid.current?.pause() } catch { /* nothing playing */ }
     try { hush.current() } catch { /* no tone playing */ }
     setCrawl(null); setCaption(null); setFaceOpen(false); setTalking(false); setLaughOn(false); setFilmOn(false)
-    setEyes(null); setPenLine(null)
+    setEyes(null); setPenLine(null); setEyeFilm(false); try { eyeVid.current?.pause() } catch { /* nothing playing */ }
   }, [])
 
   /** Skipping the show must not also skip what comes after the roll, so the button is re-armed between acts. */
@@ -469,9 +474,22 @@ export default function AwakenPage() {
         // 2 — the eyes open on the pen: a heavy half-blink, shut, then open and the room comes into focus.
         if (!skipped.current) {
           musicIn(0, 0.3, 4000)
-          setEyes("half"); await wait(1300); guard()
-          setEyes("shut"); await wait(600); guard()
-          if (!skipped.current) { setEyes("open"); await wait(2400); guard() }
+          const ev = eyeVid.current
+          let filmed = false
+          if (ev) {
+            try { ev.currentTime = 0; await within(ev.play(), 1500); filmed = !ev.paused } catch { filmed = false }
+          }
+          if (filmed && ev) {
+            setEyeFilm(true); setEyes("open")          // the painting opens underneath, hidden by the film's own black
+            await race(within(new Promise<void>((res) => ev.addEventListener("ended", () => res(), { once: true })), 6500)); guard()
+            setEyeFilm(false)                           // the lids' last shadow fades off the painting
+            await wait(900); guard()
+            ev.pause()
+          } else {
+            setEyes("half"); await wait(1300); guard()
+            setEyes("shut"); await wait(600); guard()
+            if (!skipped.current) { setEyes("open"); await wait(2400); guard() }
+          }
         }
 
         // 3 — the one line. Her voice in her tongue; the balloon in whichever language this seat can read.
@@ -623,6 +641,8 @@ export default function AwakenPage() {
         .awk-pen { position: absolute; left: 50%; top: 50%; width: max(100vw, calc(100vh * 1.7917)); aspect-ratio: 2752 / 1536; transform: translate(-50%, -50%) scale(1.06);
           background: #05030a center / cover no-repeat; filter: blur(16px) brightness(.45); transition: filter 2.3s ease, transform 6s ease-out; }
         .awk-wake.open .awk-pen { filter: blur(0) brightness(.92); transform: translate(-50%, -50%) scale(1); }
+        .awk-eyefilm { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: #000; opacity: 0; transition: opacity .85s ease; pointer-events: none; }
+        .awk-eyefilm.on { opacity: 1; transition-duration: .05s; }
         .awk-wake::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 22vh 6vh #000; }
         .awk-say { position: absolute; left: 31%; top: 30%; transform: translate(-50%, -100%); max-width: min(300px, 60vw); background: #fffdf6; color: #14110f; border: 2.5px solid #14110f;
           border-radius: 48% 52% 50% 50% / 46% 48% 52% 54%; padding: 14px 24px 15px; text-align: center; font-family: "Comic Neue", "Comic Sans MS", sans-serif; font-weight: 700;
@@ -665,6 +685,9 @@ export default function AwakenPage() {
           </div>
         </div>
       )}
+
+      {/* the eyes-open film, drawn after the wake beat so it sits over it */}
+      <video ref={eyeVid} className={`awk-eyefilm${eyeFilm ? " on" : ""}`} muted playsInline preload="auto" src={`${MEDIA}/eyes-open.mp4`} aria-hidden />
 
       {/* the waker, full screen: idle loop, then the talking loop while their line plays (no caption: face and voice) */}
       {waker && (
