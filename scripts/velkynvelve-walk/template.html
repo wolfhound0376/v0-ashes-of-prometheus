@@ -1233,7 +1233,7 @@ body.qdanger #stage::after,body.qdanger .stage::after{content:"";position:absolu
 @media (prefers-reduced-motion:reduce){#quota .qintent.alarm,body.qdanger .stage::after{animation:none}}
 #quota .qcall{position:absolute;left:50%;top:40%;transform:translate(-50%,-50%);font-size:30px;color:#e7c983;text-shadow:0 2px 0 #000,0 0 14px #000;background:rgba(11,10,9,.6);border:1px solid #6e4f1a;border-radius:12px;padding:6px 20px;white-space:nowrap}
 #quota .qcall.mine{color:#fff3c8;border-color:#e0b45a}
-#quota .qpanel,#quota .qend{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);pointer-events:auto;text-align:center;background:linear-gradient(180deg,#221b12f2,#130f0af2);border:3px solid #9a6a1c;border-radius:16px;padding:14px 22px;color:#efe6d2;box-shadow:0 6px 0 #000,0 10px 24px rgba(0,0,0,.6);max-width:min(460px,92vw)}
+#quota .qpanel,#quota .qend{position:absolute;left:50%;top:46%;transform:translate(-50%,-50%);pointer-events:auto;text-align:center;background:linear-gradient(180deg,#221b12,#130f0a);border:3px solid #9a6a1c;border-radius:16px;padding:14px 22px;color:#efe6d2;box-shadow:0 6px 0 #000,0 10px 24px rgba(0,0,0,.6);max-width:min(460px,92vw)}
 #quota .qpanel img{width:112px;height:112px;image-rendering:pixelated;display:block;margin:6px auto}
 #quota .qpanel h3{margin:4px 0;color:#f2c55c;font-size:22px} #quota .qpanel p{font-family:Georgia,serif;font-size:14px;margin:6px 0} #quota .qpanel small{color:#bdb3a0;font-family:Georgia,serif}
 #quota .qtier{font-size:12px;padding:1px 8px;border-radius:9px;background:#18301a;color:#bfe6a8} #quota .qtier.later{background:#2a2148;color:#d8ccff} #quota .qtier.worthless{background:#2c2a26;color:#bdb6a8}
@@ -1266,6 +1266,22 @@ body.quota-on #cbtMenu[data-kind=explore]{display:none!important}
 #quota .qend .qk{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:10px} #quota .qend .qk span{display:inline-flex;align-items:center;gap:6px;border:2px solid #6e4f1a;border-radius:10px;padding:3px 10px 3px 3px;background:#1d1812;font-family:Georgia,serif}
 #quota .qend .qk img{width:30px;height:30px;image-rendering:pixelated} #quota .qend .qk small{color:#bdb3a0}
 @media (max-width:640px){#quota .qcards{grid-template-columns:1fr} #quota .qpt{display:none} #quota .qhud{top:46px} #quota .qbox{min-width:96px} #quota .qcall{font-size:20px}}
+
+/* THE QUOTA, review pass 2026-11-17: turn clock, brief, LED pop, phone layout */
+#quota .qdlg{position:absolute;overflow:hidden} #quota .qclock{position:absolute;left:0;bottom:0;height:4px;width:100%;background:linear-gradient(90deg,#ff4a36,#f2c55c 40%,#5dff6e);transform-origin:left;animation:qClock linear forwards}
+@keyframes qClock{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+#quota .qleds i.pop{animation:qPop .7s ease-out} @keyframes qPop{0%{transform:scale(2.2);filter:brightness(2.4)}100%{transform:scale(1);filter:none}}
+#quota .qrules{margin:0;align-self:center;font-size:13px;padding:4px 14px;border-width:2px;letter-spacing:.1em}
+#quota [hidden]{display:none!important}
+#quota .qbrief{text-align:left;margin-top:6px} #quota .qbrief p{display:flex;gap:10px;align-items:center;margin:7px 0;font-size:15px}
+#quota .qbrief img{width:38px;height:38px;margin:0;flex:none;display:block;image-rendering:pixelated} #quota .qbrief b{color:#f2c55c}
+#quota .qbrief .qled{flex:none;width:30px;height:11px;margin:0 4px;border-radius:3px;background:radial-gradient(ellipse at 50% 35%,#ffd8cf,#ff4a36 35%,#d4140a);box-shadow:0 0 8px #ff3b2f}
+@media (max-width:640px){
+  #quota .qhud{top:150px;gap:4px;width:calc(100% - 12px);justify-content:center} #quota .qbox{min-width:0;flex:1;padding:3px 6px 5px} #quota .qbox b{font-size:10px} #quota .qbox span{font-size:13px} #quota .qrules{padding:3px 8px;font-size:11px}
+  #quota .qintent{top:206px;width:calc(100% - 24px);box-sizing:border-box;font-size:13px}
+  #quota .qteam{gap:4px;flex-wrap:nowrap;left:6px;right:6px;bottom:6px} #quota .qhero{min-width:0;flex:1;grid-template-columns:auto;padding:3px 5px 5px} #quota .qhero canvas{display:none} #quota .qhero .qn{font-size:12px} #quota .qhero .qs{font-size:10px}
+  #quota .qdlg{left:6px;right:6px;bottom:62px;padding:8px} #quota .qop img{width:34px;height:34px} #quota .qpanel,#quota .qend{width:calc(100% - 28px);box-sizing:border-box}
+}
 </style>
 </head>
 <body>
@@ -2520,7 +2536,10 @@ function clampView(v){
 const FOLLOW_Z = 1.5;
 let wholePlate = false;
 try { wholePlate = localStorage.getItem("aop_walk_whole_plate") === "1"; } catch (e) {}
-function wantZ(){ return wholePlate || sneak || isDm() ? 1 : FOLLOW_Z; }
+// THE QUOTA frames the whole plate (review 2026-11-17: on the close rooms the follow camera filled the screen with the
+// escort's quaggoth and hid the crew)
+function quotaWide(){ try { return quotaOn(); } catch (e) { return false; } }
+function wantZ(){ return wholePlate || sneak || isDm() || quotaWide() ? 1 : FOLLOW_Z; }
 let sliding = false;
 function applyView(){ if (!sliding) clampView(view); world.style.transform = `translate(${view.tx}px,${view.ty}px) scale(${base * view.z})`; placeActs(); }
 // The narration strip sits in the black band under the painting when there is one; otherwise low over it.
@@ -2938,7 +2957,7 @@ function exitArrow(z, c){
 }
 const EXIT_FAINT = .62;   // the far-off sign's strength (Sam picked it on the mock, 2026-11-15)
 function drawExitSigns(){
-  if (!exitSigns.length) return;
+  if (!exitSigns.length || talkBlocked()) return;
   const k = 1 / (base * view.z);
   for (const g of exitSigns){
     const gold = g.locked ? "232,96,84" : "240,190,90", label = (g.locked ? "Locked \u00B7 " : "") + g.text, sc = g.faint ? .9 : 1, bob = g.faint ? 0 : Math.sin(now / 620) * 2;
@@ -4163,6 +4182,9 @@ function triggerZone(z){
   // to the door, so it must not stop them (measured 2026-10-27: it did, one step out, and the 10 s clock then shot them)
   if (z.kind === "gate" && leader.gateBackUntil > now) return;
   leader.path = [];
+  // THE QUOTA: nobody walks off the work plate, and no place card opens under the shift (review 2026-11-17: "The falls"
+  // card opened beneath the choice box on the water detail)
+  if (talkBlocked()) return;
   // Sam, 2026-10-25: the gate card opens "only if you choose to interact with the door, not automatically". Walking
   // up to the bars does nothing; clicking the gate (or its ✋ action) opens it.
   // (a hero who CLICKED the gate is stopped here at its edge like anyone else: that click's card is owed, so it opens)
@@ -17459,7 +17481,15 @@ const quotaOn = () => atWorkPlate() && !!quotaState();
 const quotaMine = () => { const h = laborHero(); return h ? characterIdOf(h.id) : null; };
 const quotaActor = cid => party.find(p => characterIdOf(p.id) === cid) || null;
 const quotaIcon = n => `${QUOTA_ASSET}${n}.png`;
-const QUOTA_WORK_ICON = {water: "work-water", kitchen: "work-kitchen", dishes: "work-kitchen", laundry: "work-kitchen", pots: "work-kitchen", clean: "work-kitchen"};
+// A BUST for the choice box and the team row: head and shoulders cut from the hero's own idle sprite, at a whole-pixel
+// scale so it stays crisp (the whole figure was a speck in a 72 px frame). [CLAUDE, review 2026-11-17]
+function quotaBust(id, canvas, size){
+  const img = SPR[id].img.idle, c = canvas.getContext("2d"), b = figureBox(id);
+  canvas.width = size; canvas.height = size; c.imageSmoothingEnabled = false; c.clearRect(0, 0, size, size);
+  const side = Math.max(8, Math.round(b.h * .46)), sx = Math.round(b.x + b.w / 2 - side / 2), k = Math.max(1, Math.floor(size / side)), d = side * k;
+  c.drawImage(img, sx, b.y, side, side, Math.round((size - d) / 2), size - d, d, d);
+}
+const QUOTA_WORK_ICON = {water: "work-water", kitchen: "work-kitchen", dishes: "work-kitchen", laundry: "work-laundry", pots: "work-pots", clean: "work-clean", rope: "work-rope", supplies: "work-supplies", lift: "work-lift", "lift-trouble": "work-lift", "quaggoth-hair": "work-hair"};
 const quotaWorkIcon = task => quotaIcon(QUOTA_WORK_ICON[task] || "work-rocks");
 const qpct = p => p == null ? "—" : p >= 1 ? "sure" : Math.round(p * 100) + "%";
 music.quota = new Audio(`${QUOTA_ASSET}yard-theme.mp3`); music.quota.loop = true; music.quota.preload = "none";   // ElevenLabs Music, take 2 [SAM]
@@ -17490,11 +17520,12 @@ function quotaEl(){
   el = document.createElement("div"); el.id = "quota";
   el.innerHTML = `<div class="qhud"><div class="qbox"><b>Crew quota</b><span id="qFill"></span><div class="qleds" id="qLeds"></div></div>
     <div class="qbox"><b>Suspicion</b><span id="qSuspN"></span><div class="qleds" id="qSusp"></div></div>
-    <div class="qbox qsmall"><b>Inspection</b><span id="qRound"></span></div></div>
+    <div class="qbox qsmall"><b>Inspection</b><span id="qRound"></span></div><button class="qgo qrules" id="qRules">RULES</button></div>
     <div class="qteam" id="qTeam"></div>
     <div class="qintent" id="qIntent"><img id="qEye" alt=""><div><div id="qIntentT"></div><small id="qIntentR"></small></div></div>
     <div class="qcall" id="qCall" hidden></div><div class="qpanel" id="qPanel" hidden></div><div class="qdlg" id="qDlg" hidden></div><div class="qend" id="qEnd" hidden></div>`;
   ($("laborBar") && $("laborBar").parentNode || document.body).appendChild(el);
+  $("qRules").onclick = () => quotaBrief(quotaState(), true);
   return el;
 }
 function quotaHide(){ const el = $("quota"); if (el) el.hidden = true; document.body.classList.remove("qdanger", "quota-on"); }
@@ -17502,9 +17533,10 @@ function quotaRender(st){
   const el = quotaEl(); el.hidden = false; document.body.classList.add("quota-on");
   const me = quotaMine(), dmView = !me || !st.heroes[me];
   $("qFill").textContent = `${st.filled} / ${st.quota}`;
-  $("qLeds").innerHTML = Array.from({length: Math.max(st.quota, st.filled)}, (_, i) => `<i class="${i < st.filled ? "on g" : ""}"></i>`).join("");
+  const was = quotaView.shown || {filled: st.filled, susp: st.susp}; quotaView.shown = {filled: st.filled, susp: st.susp};
+  $("qLeds").innerHTML = Array.from({length: Math.max(st.quota, st.filled)}, (_, i) => `<i class="${i < st.filled ? "on g" : ""}${i >= was.filled && i < st.filled ? " pop" : ""}"></i>`).join("");
   $("qSuspN").textContent = `${st.susp} / ${QUOTA.SUSP_MAX}`;
-  $("qSusp").innerHTML = Array.from({length: QUOTA.SUSP_MAX}, (_, i) => `<i class="${i < st.susp ? "on r" : ""}"></i>`).join("");
+  $("qSusp").innerHTML = Array.from({length: QUOTA.SUSP_MAX}, (_, i) => `<i class="${i < st.susp ? "on r" : ""}${i >= was.susp && i < st.susp ? " pop" : ""}"></i>`).join("");
   $("qRound").textContent = st.done ? "done" : `${Math.min(st.round, QUOTA.QUOTA_ROUNDS)} of ${QUOTA.QUOTA_ROUNDS}`;
   quotaTeam(st, me);
   // the drow's intent, said to MY hero when it is about me (the red pulse: Sam, "when you are in danger, make sure the red flashes a bit")
@@ -17512,7 +17544,7 @@ function quotaRender(st){
   const aboutMe = !dmView && !st.done && k && (k === "watch" ? st.intent.target === me : k === "inspect" || k === "kick") && !st.out[me];
   $("qIntentT").textContent = aboutMe ? (k === "watch" ? "He's watching YOU." : k === "kick" ? "He's about to kick over your work." : "He's inspecting your work.") : t;
   $("qIntentR").textContent = aboutMe ? (k === "watch" ? "Anything risky you try is rolled against his eyes." : r) : r;
-  $("qEye").src = quotaIcon("drow-eye"); $("qEye").style.visibility = k === "watch" || k === "inspect" || k === "kick" ? "visible" : "hidden";
+  $("qEye").src = quotaIcon("drow-eye"); $("qEye").hidden = !(k === "watch" || k === "inspect" || k === "kick");
   $("qIntent").classList.toggle("alarm", !!aboutMe); document.body.classList.toggle("qdanger", !!aboutMe && !quotaView.playing);
   $("qIntent").hidden = st.done;
   // escort's eyes follow the intent
@@ -17526,7 +17558,22 @@ function quotaRender(st){
   if (st.done){ quotaEndCard(st); return; }
   quotaTurn(st, me, dmView);
 }
+// THE BRIEF (Sam, on the prototype: "Brief instructions are displayed to everyone"): four lines over the plate the first
+// time a browser sees a shift of this run, and again from RULES. It never holds the game: it closes by itself.
+function quotaBrief(st, asked){
+  if (!st) return false;
+  const key = "aop_quota_brief:" + (labor && labor.campaign_run_id || "run");
+  if (!asked){ try { if (localStorage.getItem(key)) return false; localStorage.setItem(key, "1"); } catch (e) { if (quotaView.briefed) return false; } quotaView.briefed = true; }
+  const risk = quotaMine() && st.heroes[quotaMine()] ? QUOTA.RISKS[st.heroes[quotaMine()].risk].label : "your class's move";
+  quotaPanel(`<h3>The work detail</h3><div class="qbrief">
+    <p><img src="${quotaWorkIcon(st.task)}" alt=""><span>The crew owes <b>${st.quota} ${esc(st.unit)}</b> between all of you, in <b>${QUOTA.QUOTA_ROUNDS} inspections</b>.</span></p>
+    <p><img src="${quotaIcon("drow-eye")}" alt=""><span>Each inspection, the drow shows what he is watching. <b>Red means you.</b></span></p>
+    <p><img src="${quotaIcon(QUOTA.RISKS[(st.heroes[quotaMine()] || {risk: "scheme"}).risk].icon)}" alt=""><span>On your turn: <b>keep working</b>, or take a risk (<b>${esc(risk)}</b>). The odds are shown first.</span></p>
+    <p><i class="qled"></i><span>Getting caught raises <b>Suspicion</b>. At the end they search you.</span></p></div>`, true, asked ? 0 : 15000);
+  return true;
+}
 function quotaTurn(st, me, dmView){
+  if (quotaBrief(st, false) || !$("qPanel").hidden) return;      // one card at a time: the brief, then what is in reach
   const cur = QUOTA.current(st), mine = !dmView && cur === me;
   // the thief's own reveal of what is in reach (or nothing), held until Continue [SAM]
   const off = me && st.offers[me], key = off ? `${off.round}:${off.roll}:${st.shift}` : "";
@@ -17552,7 +17599,7 @@ function quotaDialog(st, me){
   const key = [me, st.round, st.turn, quotaView.confirm, o.risk != null, quotaView.view].join("|"); const box = $("qDlg");
   if (quotaView.key === key && !box.hidden) return; quotaView.key = key; box.hidden = false;
   const a = quotaActor(me);
-  const pic = a ? (() => { const cv = document.createElement("canvas"); portrait(a.id, cv, 72); return cv; })() : null;
+  const pic = a ? (() => { const cv = document.createElement("canvas"); quotaBust(a.id, cv, 72); return cv; })() : null;
   const want = it ? `Within reach: <b>${esc(it.name)}</b>. ` : "";
   let html;
   const rimg = quotaIcon(risk.icon), wimg = quotaWorkIcon(st.task);
@@ -17570,7 +17617,9 @@ function quotaDialog(st, me){
       <button class="qop yes" data-k="yes"><kbd>1</kbd><img src="${rimg}" alt=""><span>Yes, do it</span><em>${qpct(o.risk)}</em></button>
       <button class="qop" data-k="no"><kbd>2</kbd><img src="${wimg}" alt=""><span>No, keep my head down<small>work instead</small></span><em>${qpct(o.work)}</em></button>`;
   }
-  box.innerHTML = `<div class="qpt"></div><div class="qbody">${html}</div>`;
+  // THE TURN CLOCK: a thin bar that runs down the 45 s a seated player has before their hero just keeps working
+  const left0 = Math.max(0, QUOTA.TURN_MS - (owNow() - (st.turnAt || owNow())));
+  box.innerHTML = `<div class="qpt"></div><div class="qbody">${html}</div><i class="qclock" style="animation-duration:${left0}ms"></i>`;
   if (pic) box.querySelector(".qpt").appendChild(pic);
   box.querySelectorAll(".qop").forEach(b => b.onclick = () => quotaChoose(b.dataset.k, st, me));
 }
@@ -17599,15 +17648,17 @@ function quotaTeam(st, me){
     const hp = Math.max(0, h.hp) / Math.max(1, h.hpMax), col = hp > .6 ? "#5fe07a" : hp > .3 ? "#f2c55c" : "#ff4a3a";
     b.className = "qhero" + (id === me ? " me" : "") + (id === cur && !st.done ? " now" : "") + (quotaView.view === id ? " on" : "");
     b.innerHTML = `<span class="qn">${esc(h.short)}</span><span class="qs">${status}</span><i class="qhp"><i style="width:${hp * 100}%;background:${col}"></i></i>`;
-    if (a){ const cv = document.createElement("canvas"); portrait(a.id, cv, 34); b.prepend(cv); }
+    if (a){ const cv = document.createElement("canvas"); quotaBust(a.id, cv, 34); b.prepend(cv); }
     b.onclick = () => { quotaView.view = quotaView.view === id ? null : id; quotaView.key = ""; bank("ui/press", .4); quotaRender(st); };
     row.appendChild(b);
   }
 }
-function quotaPanel(html, hold){
+function quotaPanel(html, hold, auto){
   const p = $("qPanel"); p.innerHTML = html + (hold ? `<button class="qgo">Continue</button>` : ""); p.hidden = false; $("qDlg").hidden = true; $("qCall").hidden = true;
+  const mine = p._n = (p._n || 0) + 1;
   return new Promise(res => {
-    const done = () => { p.hidden = true; removeEventListener("keydown", kd); res(); const s = quotaState(); if (s) quotaRender(s); };
+    const done = () => { if (p._n !== mine) return res(); p.hidden = true; removeEventListener("keydown", kd); res(); const s = quotaState(); if (s) quotaRender(s); };
+    if (auto) setTimeout(done, auto);
     const kd = e => { if (e.key === "Enter" || e.key === " "){ e.preventDefault(); done(); } };
     if (hold){ p.querySelector(".qgo").onclick = done; addEventListener("keydown", kd); } else setTimeout(done, 2400);
   });
