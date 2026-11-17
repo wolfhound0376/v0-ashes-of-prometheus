@@ -200,7 +200,7 @@ export const NAMED_NPC_VOICES: NamedNpcVoice[] = [
   { name: "Old Thessaly", voiceId: "ouL9IsyrSnUkCmfnD02u", archetype: "cantankerous old deep-gnome fisherman, high raspy voice", aliases: ["thessaly", "the fisherman"] },
   { name: "Ront", voiceId: "HPNUUUFNQiMEJN5oqMLX", archetype: "brutish, short-tempered orc warrior", aliases: ["ront"] },
   { name: "Deep Gnome (Svirfneblin)", voiceId: "Eja1uLaoEhh7YwasRYmL", archetype: "wary, secretive Underdark gnome", aliases: ["svirfneblin", "deepgnome"] },
-  { name: "The Lich", voiceId: "NiQt0cwFeLsVf6cAmcCp", archetype: "ancient, quietly contemptuous undead sorcerer", aliases: ["lich", "malachar"] },
+  { name: "The Lich", voiceId: "jiAbnwGVQmoRXbvVbi3g", archetype: "rotted undead lich king, dry rattling rasp, sneering menace", aliases: ["lich", "malachar"] },
 ]
 
 /** Normalize a name to lowercase alphanumerics for alias matching. */
