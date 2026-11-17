@@ -4202,10 +4202,11 @@ function triggerZone(z){
   // a hero walking AWAY from the bars after "Step back" may cross the gate's own zone on the way: that is not walking up
   // to the door, so it must not stop them (measured 2026-10-27: it did, one step out, and the 10 s clock then shot them)
   if (z.kind === "gate" && leader.gateBackUntil > now) return;
-  leader.path = [];
   // THE QUOTA: nobody walks off the work plate, and no place card opens under the shift (review 2026-11-17: "The falls"
-  // card opened beneath the choice box on the water detail)
+  // card opened beneath the choice box on the water detail). The walk itself is NOT stopped: the crew's rounds cross the
+  // plate, and a way out in the middle of it (the falls, on the Waterfall's bridge) held the leader to one side.
   if (talkBlocked()) return;
+  leader.path = [];
   // Sam, 2026-10-25: the gate card opens "only if you choose to interact with the door, not automatically". Walking
   // up to the bars does nothing; clicking the gate (or its ✋ action) opens it.
   // (a hero who CLICKED the gate is stopped here at its edge like anyone else: that click's card is owed, so it opens)
@@ -17357,6 +17358,7 @@ async function laborPerform(h, ambient){
 }
 function laborAmbient(){
   if (!atWorkPlate() || mode !== "explore" || timeStopped || sneak) return;
+  if (typeof quotaOn === "function" && quotaOn()){ quotaRoam(); return; }   // THE QUOTA: the crew works the whole plate
   for (const h of party){
     if (h.ko || h.down || h.performing || h.once || h.kbd || h.path.length || h.climbing || h.walkIn || owRemote(h)) continue;
     if (h.nextWork == null || h.nextWorkDetail !== labor.id){ h.nextWorkDetail = labor.id; h.nextWork = now + 2500 + Math.random() * 3000; continue; }
@@ -17730,6 +17732,59 @@ function quotaPanel(html, hold, auto){
   });
 }
 // the reveal: one roll about every 2 s, on the plate, with the heroes' own sprites [SAM]
+// THE CREW WORKS THE WHOLE PLATE (Sam, 2026-11-17: "The characters need to move along the whole plate. This looks
+// strange."). During a Quota shift the heroes stood in a knot beside the escort, each going only to its one prop. Now
+// each hero walks a round of its own: spots chosen far apart over all the floor that can be reached on this plate, a
+// moment of work at each (the task's own pose where the hero has it), then on to the next. Looks only: no roll reads
+// it. Any order to a hero (a click, the keyboard, another screen) drops the round for a while, as with the chores.
+const QUOTA_ROUND = 4;                 // spots in one hero's round (the prototype's number, approved there)
+let quotaSpots = null;                 // {key, list} for this plate and crew
+function quotaSpotList(){
+  const crew = party.filter(h => h.kind === "pc" && !h.ko && !h.down), key = `${cur}:${labor && labor.id}:${crew.length}`;
+  if (quotaSpots && quotaSpots.key === key) return quotaSpots.list;
+  const from = crew[0]; if (!from) return [];
+  let seed = 9173 + String(cur).length * 131; const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+  const cand = [];
+  for (let i = 0; i < 400 && cand.length < 70; i++){
+    const x = 60 + rnd() * (NAT_W - 120), y = 80 + rnd() * (NAT_H - 140); if (!walkable(x, y)) continue;
+    const path = findPath(from, {x, y}); if (!path || !path.length) continue;       // only floor the crew can actually reach
+    cand.push({x, y});
+  }
+  // farthest-point order: each next spot is the one farthest from all chosen so far, so the rounds cover the plate
+  const list = []; const guards = laborEscort().map(g => ({x: g.x, y: g.y}));
+  const far = c => Math.min(...list.concat(guards).map(q => Math.hypot(q.x - c.x, (q.y - c.y) * 1.6)), 1e9);
+  while (cand.length && list.length < crew.length * QUOTA_ROUND){ let bi = 0, bd = -1; cand.forEach((c, i) => { const d = list.length || guards.length ? far(c) : -Math.hypot(c.x - from.x, c.y - from.y); if (d > bd){ bd = d; bi = i; } }); list.push(cand.splice(bi, 1)[0]); }
+  quotaSpots = {key, list}; return list;
+}
+async function quotaWorkPose(h){
+  if (h.performing) return; h.performing = true;
+  try {
+    const pose = WORK_POSE[labor && labor.task];
+    if (pose === "scrub" && hasSheet(h, "scrub")){ h.path = []; setAnim(h, "scrub"); const t0 = now; while (now - t0 < 2600 && h.anim === "scrub" && !h.path.length) await wait(150); if (h.anim === "scrub") setAnim(h, "idle"); }
+    else if (hasSheet(h, "heave")) await new Promise(r => playOnce(h, "heave", r));
+    else await wait(1200);
+  } finally { h.performing = false; }
+}
+function quotaRoam(){
+  const crew = party.filter(h => h.kind === "pc" && !h.ko && !h.down), list = quotaSpotList(); if (!list.length) return;
+  crew.forEach((h, i) => {
+    if (h.performing || h.once || h.kbd || h.path.length || h.climbing || h.walkIn || owRemote(h) || h.roaming) return;
+    if (h.nextWork != null && now < h.nextWork) return;
+    const n = crew.length, step = (h.roamStep = (h.roamStep || 0) + 1), spot = list[(i + ((step + i) % QUOTA_ROUND) * n) % list.length];   // each hero starts its round at a different spot, so they part ways
+    h.roaming = true;
+    (async () => {
+      let ok = true;
+      try {
+        if (WORK_POSE[labor && labor.task] === "carry" && hasSheet(h, "carry")) h.walkAs = "carry";
+        const to = nearestWalkable(spot.x, spot.y);
+        // laborGo gives a walk 9 s; a round crosses the whole plate, so a long walk is taken up again until the hero is there
+        for (let leg = 0; leg < 4 && ok && quotaOn(); leg++){ ok = await laborGo(h, to); if (Math.hypot(h.x - to.x, h.y - to.y) < 40 * node.scale + 20) break; }
+        h.walkAs = null;
+        if (ok && quotaOn()) await quotaWorkPose(h);
+      } finally { h.walkAs = null; h.roaming = false; h.nextWork = now + (ok ? 900 + Math.random() * 2200 : 8000); }
+    })();
+  });
+}
 async function quotaPlay(st){
   quotaView.playing = true; $("qDlg").hidden = true; $("qCall").hidden = true; document.body.classList.remove("qdanger");
   const c = $("qCall"); c.hidden = false; c.classList.remove("mine"); c.textContent = "Everyone's chosen. The drow looks up…";
@@ -17739,7 +17794,7 @@ async function quotaPlay(st){
       const a = quotaActor(r.who), line = QUOTA.resultLine(st, r);
       log(`<b>Quota:</b> ${esc(line)}`);
       if (a){
-        if (r.kind === "work"){ if (!owRemote(a) && !a.performing) laborPerform(a, true); popText(a, r.gain > 0 ? `+${r.gain}` : r.gain < 0 ? "−1" : "…", r.gain > 0 ? "#9fd36f" : "#e07a5f", 1.1); if (r.why === "kicked") { escortSays(escortDrow(), "Crooked. All of it. Again.", 3000); shake(3); } }
+        if (r.kind === "work"){ if (!owRemote(a) && !a.performing) quotaWorkPose(a); popText(a, r.gain > 0 ? `+${r.gain}` : r.gain < 0 ? "−1" : "…", r.gain > 0 ? "#9fd36f" : "#e07a5f", 1.1); if (r.why === "kicked") { escortSays(escortDrow(), "Crooked. All of it. Again.", 3000); shake(3); } }
         else if (r.kind === "distract"){ if (hasSheet(a, "perform") && !owRemote(a)) { setAnim(a, "perform"); setTimeout(() => { if (a.anim === "perform") setAnim(a, "idle"); }, 4000); } bardTune(a, "combat", "whistle"); popText(a, r.ok ? "Every eye on me!" : "+1 suspicion", r.ok ? "#b39cf0" : "#e07a5f", 1); if (r.ok) escortSays(escortDrow(), "...Ha. Do that again, surfacer.", 3000); }
         else if (r.kind === "charm"){ popText(a, r.ok ? "Charmed!" : "+1 suspicion", r.ok ? "#b39cf0" : "#e07a5f", 1); escortSays(escortDrow(), r.ok ? (r.fact ? r.fact.replace(/"/g, "") : "Fine. One less. Don't make me regret it.") : "Was that meant to be charming?", 3500); }
         else if (r.kind === "help") popText(a, "Covering", "#9fd36f", 1);
@@ -23219,7 +23274,10 @@ function update(dt){
       const aw = a.path.length > 0 || a.leap || a.kbd, bw = b.path.length > 0 || b.leap || b.kbd;
       if (aw) a.movedAt = now; if (bw) b.movedAt = now;
       if (d > 0 && gap < min && !(aw && bw)){
-        const ux = dx / d, uy = dy / d, hostile = (a.kind === "foe") !== (b.kind === "foe");
+        // THE QUOTA: a prisoner hauling a load walks past the escort (the guards stood on the Waterfall's bridge and no hero
+        // could cross it, so the crew kept to one side of the plate)
+        const pastEscort = typeof quotaOn === "function" && quotaOn() && (/^escort-/.test(a.id) || /^escort-/.test(b.id));
+        const ux = dx / d, uy = dy / d, hostile = !pastEscort && (a.kind === "foe") !== (b.kind === "foe");
         let mover = null;
         if (aw || bw){ if (hostile) mover = aw ? a : b; }                        // only a foe in the way blocks the walker
         else mover = (a.movedAt || 0) >= (b.movedAt || 0) ? a : b;             // both still: the later arrival steps off
