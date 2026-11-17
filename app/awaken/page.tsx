@@ -65,6 +65,7 @@
 // voice and her own tongue, in the pen's comic balloon. A seat that understands Undercommon or Elvish reads it in
 // English; a seat that does not reads her words (the one-language balloon rule, Sam 2026-10-28). The old recordings
 // stay in public/awaken/ (archive, never delete). Every wait has a ceiling and Skip cuts it, like every other beat.
+// A hero with their own intro film (Lynkes, Gandalf) gets this beat too, after the film (Sam, same day: "yes").
 // NOT here: the blow itself — that belongs to the end of the Pit fight, which is not in the repo yet.
 
 import React, { useCallback, useEffect, useRef, useState } from "react"
@@ -439,7 +440,9 @@ export default function AwakenPage() {
         }
       }
 
-      if (show && !filmTold) {
+      // EVERY HERO WAKES (Sam, 2026-11-17: "yes" to film heroes getting the wake beat after their film). Until then a
+      // hero whose own film played went straight to the title; the wake is ~12 s, not the ~27 s that cut removed.
+      if (show) {
         setSkipShown(true)
 
         // 1 — knocked out. Black, a ringing head, a slow heartbeat. Her line is fetched while nothing shows.
