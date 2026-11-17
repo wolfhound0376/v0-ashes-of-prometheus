@@ -28551,7 +28551,31 @@ setInterval(owPaintDots, 1000);
 // answer (state.pdpick): the DM's screen when it is at the table, else the host's, else the hero the moment is about,
 // else the opener. The opener holds the rows' own actions, so the moment the answer lands it presses that row there:
 // whatever the row already did (a check, a fight, a walk) happens, once. Alone at the table, the card is just the card.
+// NEVER HUNG ON ONE SILENT SCREEN (Sam, 2026-11-17: "I clicked and nothing happened" — his Fifi screen pressed Carry on
+// 17 times in ten minutes; each was a vote, and the DM screen that had the call sat unanswered in another window):
+//   - a card with ONE answer is not a vote: anyone's press answers it;
+//   - on a real choice the decider has PDEC_GRACE from the first vote; after that the leading vote carries (a tie goes
+//     to the row voted for first) [CLAUDE: the 20 seconds];
+//   - a screen that has voted is told so, and who it is waiting on, in the card's footer.
 const PDEC = {local: null, shownId: null, sig: "", openAt: 0};
+const PDEC_GRACE = 20000;
+/** Every vote on the question that is up: [{k: screen, i: row, t: when}]. */
+function pdecVotes(d){ const out = []; for (const [k, v] of Object.entries(state)) if (k.startsWith("pdv:") && v && v.d === d.id && v.i >= 0 && v.i < d.labels.length) out.push({k: k.slice(4), i: v.i, t: v.t || 0}); return out; }
+/** The row the votes carry: the most votes, a tie to the row voted for first. Null with no votes. */
+function pdecLeading(d){
+  const vs = pdecVotes(d); if (!vs.length) return null;
+  const n = {}, first = {}; for (const v of vs){ n[v.i] = (n[v.i] || 0) + 1; first[v.i] = Math.min(first[v.i] ?? Infinity, v.t); }
+  return {i: +Object.keys(n).sort((a, b) => n[b] - n[a] || first[a] - first[b] || a - b)[0], since: Math.min(...vs.map(v => v.t))};
+}
+/** The words under the rows: who decides, and, once this screen has voted, what it is waiting on. */
+function pdecFooter(d){
+  if (d.labels.length === 1) return "Anyone may answer";
+  if (OW.key === d.decider) return "Your answer decides for the party";
+  const who = seatNameKey(d.decider), mine = state[pdecVoteKey(OW.key)];
+  if (!(mine && mine.d === d.id)) return `${who} decides · your pick is a vote`;
+  const lead = pdecLeading(d), left = lead ? Math.ceil((PDEC_GRACE - (owNow() - lead.since)) / 1000) : null;
+  return left != null && left > 0 ? `Your vote is in · waiting on ${who} · the vote carries in ${left}s` : `Your vote is in · waiting on ${who}`;
+}
 const pdecVoteKey = k => "pdv:" + k;
 function seatOn(k){ const s = (OW.seats || {})[k]; return k === OW.key || !!(s && window.AopOneWorld && AopOneWorld.isOnline(s, owNow()) && s.status !== "away"); }
 function othersAtTable(){ if (!OW.on || !window.AopOneWorld) return []; return Object.keys(OW.seats || {}).filter(k => k !== OW.key && seatOn(k)); }
@@ -28587,9 +28611,11 @@ function partyCard(opts = {}){
 }
 function councilChoose(i){
   const d = state.pdec; if (!d) return;
-  state[pdecVoteKey(OW.key)] = {d: d.id, i};
-  if (OW.key === d.decider && !(state.pdpick && state.pdpick.d === d.id)){ state.pdpick = {d: d.id, i, by: OW.key}; reviewLog("sync", `${seatNameKey(OW.key)} answers for the party: ${d.labels[i]}.`); }
-  else reviewLog("sync", `${seatNameKey(OW.key)} leans: ${d.labels[i]}.`);
+  const had = state[pdecVoteKey(OW.key)], again = had && had.d === d.id && had.i === i;
+  if (!again) state[pdecVoteKey(OW.key)] = {d: d.id, i, t: owNow()};   // (the same row pressed again is the same vote: its time stands)
+  if (state.pdpick && state.pdpick.d === d.id){ PDEC.sig = ""; councilRender(); return; }   // already answered: the card is on its way out
+  if (OW.key === d.decider || d.labels.length === 1){ /* the decider's press, or the only answer there is */ state.pdpick = {d: d.id, i, by: OW.key}; reviewLog("sync", `${seatNameKey(OW.key)} answers for the party: ${d.labels[i]}.`); }
+  else if (!again) reviewLog("sync", `${seatNameKey(OW.key)} leans: ${d.labels[i]}.`);
   try { uiSfx("press"); } catch (e) {}
   PDEC.sig = ""; councilRender();
 }
@@ -28617,7 +28643,7 @@ function councilRender(){
     const vs = votes[i] || []; if (vs.length) b.insertAdjacentHTML("beforeend", `<span class="pd-votes">${vs.map(v => `<span class="pd-chip${v.dec ? " dec" : ""}">${esc(v.nm)}</span>`).join("")}</span>`);
   });
   $("objX").style.display = "none";                                   // no stepping back: the party must answer
-  const say = $("obj").querySelector(".fsay"); if (say) say.textContent = mine ? "Your answer decides for the party" : `${seatNameKey(d.decider)} decides · your pick is a vote`;
+  const say = $("obj").querySelector(".fsay"); if (say) say.textContent = pdecFooter(d);
   $("obj").classList.add("council"); $("obj").hidden = false; mode = "dialog";
 }
 function councilClose(){
@@ -28635,7 +28661,7 @@ function councilTick(){
     // THE ANSWER: the opener presses that row, once; everyone else just puts the card away
     if (PDEC.local && PDEC.local.id === d.id && !PDEC.local.ran){
       PDEC.local.ran = true; councilClose(); state.pdec = null;
-      reviewLog("sync", `The party's answer (${seatNameKey(pk.by)}): ${d.labels[pk.i]}.`);
+      reviewLog("sync", `The party's answer (${pk.by === "vote" ? "by vote" : seatNameKey(pk.by)}): ${d.labels[pk.i]}.`);
       const b = PDEC.local.btns[pk.i]; if (b) try { b.click(); } catch (e) { console.warn("[party decides]", e); }
     } else councilClose();
     return;
@@ -28643,7 +28669,15 @@ function councilTick(){
   // the decider left the table: the opener hands the call on; the opener left: the decider puts it away
   if (PDEC.local && PDEC.local.id === d.id && !seatOn(d.decider)){ const nd = pdecDecider(d.who); if (nd !== d.decider) state.pdec = {...d, decider: nd}; }
   else if (OW.key === d.decider && !seatOn(d.opener) && Date.now() - (d.at || 0) > 15000){ reviewLog("sync", `The screen that raised "${d.title}" left the table: the question is dropped.`); state.pdec = null; councilClose(); return; }
-  if (mode !== "combat") councilRender();
+  // the decider has not answered and the votes have waited long enough: the leading vote carries. Any screen that has
+  // voted may say so (they all read the same votes, so they all name the same row; the opener runs it once).
+  const lead = d.labels.length > 1 ? pdecLeading(d) : null, mine = state[pdecVoteKey(OW.key)];
+  if (lead && mine && mine.d === d.id && owNow() - lead.since >= PDEC_GRACE){
+    state.pdpick = {d: d.id, i: lead.i, by: "vote"};
+    reviewLog("sync", `${seatNameKey(d.decider)} did not answer: the vote carries (${d.labels[lead.i]}).`);
+    return;
+  }
+  if (mode !== "combat"){ councilRender(); if (PDEC.shownId === d.id){ const say = $("obj").querySelector(".fsay"), t = pdecFooter(d); if (say && say.textContent !== t) say.textContent = t; } }   // (the countdown ticks in the footer only: the rows are not rebuilt under a finger)
 }
 setInterval(councilTick, 250);
 
