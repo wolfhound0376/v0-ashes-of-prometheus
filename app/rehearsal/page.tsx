@@ -52,7 +52,12 @@ export default function RehearsalPage() {
       window.sessionStorage.setItem("aop_intro_seen", "1")
       window.sessionStorage.setItem(ENTERED_KEY, "1")
     } catch { /* storage blocked */ }
-    router.push(wantsMap() ? "/map" : mapHref(true))
+    // THE QUOTA DOOR (Sam, 2026-11-17: "the links never actually take me to the detail"): /rehearsal?quota=water
+    // opens the sandbox straight onto that work detail's plate with a shift of its own (nothing saved).
+    let quota = ""
+    try { quota = new URLSearchParams(window.location.search).get("quota") ?? "" } catch { /* no window */ }
+    const sandboxHref = mapHref(true)
+    router.push(wantsMap() ? "/map" : quota ? `${sandboxHref}${sandboxHref.includes("?") ? "&" : "?"}quota=${encodeURIComponent(quota)}` : sandboxHref)
   }
 
   useEffect(() => {
