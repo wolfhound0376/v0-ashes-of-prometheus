@@ -8344,7 +8344,7 @@ function tauntTongue(f, at){
 function taunt(f, pool, at){
   const ls = (pool || TAUNTS)[f.id]; if (!ls || !ls.length) return false;
   const line = ls[Math.floor(Math.random() * ls.length)]; taunt.last = now;
-  const lang = tauntTongue(f, at), heard = heardText(line, lang);
+  const lang = tauntTongue(f, at), heard = heardText(line, lang, f);
   bark(f, heard, 2600, {talk: true, lang});
   interpret(f, line, lang);
   const b = VOICE_BANK[f.id], i = b && b.taunts ? b.taunts.indexOf(line) : -1;
@@ -12094,7 +12094,7 @@ function mutterTick(){
     if (!actors.includes(sa) || cur !== PEN || mode === "combat") return;
     const m = wardMark(), at = party.find(p => wardCaster(p)) || leader, lang = tauntTongue(sa, at);
     stopActivity(sa); if (m) faceTo(sa, m);
-    bark(sa, heardText(MUTTER_LINE, lang), 5200, {talk: true, lang});
+    bark(sa, heardText(MUTTER_LINE, lang, sa), 5200, {talk: true, lang});
     if (lang) interpret(sa, MUTTER_LINE, lang);
   }, 2200);
 }
@@ -19151,7 +19151,7 @@ function escortTongue(a){
 }
 function escortSays(a, line, ms = 5200){
   if (!a) return;
-  const lang = escortTongue(a), said = heardText(line, lang);
+  const lang = escortTongue(a), said = heardText(line, lang, a);
   bark(a, said, ms, {talk: true, lang});
   interpret(a, line, lang);
   // the voice says what the bubble says: a hero without Elvish hears gibberish, not the English underneath
@@ -22453,7 +22453,7 @@ const CAPTORS = /^drow|^escort-|^jorlan$|^ilvara$|^shoor$|^asha$|^liana$|^quaggo
 const interpretedAt = {};
 function interpret(speaker, line, lang){
   if (!LANG || !LANG.understands || !lang || !line || !speaker || !actors.includes(speaker)) return;
-  const ears = myEars(); if (!ears || LANG.understands(ears, lang)) return;
+  const ears = myEars(); if (!ears || LANG.understands(ears, lang, speaker.id)) return;
   const key = speaker.id + "|" + lang; if (interpretedAt[key] && now - interpretedAt[key] < 2500) return; interpretedAt[key] = now;
   const R = 420 * (node.scale || 1), mine = party.filter(p => canControl(p) && actors.includes(p));
   const dist = a => Math.min(Math.hypot(a.x - speaker.x, a.y - speaker.y), ...mine.map(h => Math.hypot(a.x - h.x, a.y - h.y)));
@@ -22478,9 +22478,9 @@ function interpret(speaker, line, lang){
 }
 // the hero's own tongues, from their seat; a hero nobody is playing has none on record (the foe then uses its own)
 function languagesOfHero(h){ const id = characterIdOf(h.id), s = id && seatsSeen.find(x => x.id === id); return s ? s.languages : null; }
-function heardText(text, lang){
+function heardText(text, lang, by){                  // (by: the actor speaking; a hero with Elvish follows a drow, Sam 2026-11-20)
   const ears = myEars();
-  return LANG && lang && ears ? LANG.renderSpeechFor(text, lang, ears).text : text;
+  return LANG && lang && ears ? LANG.renderSpeechFor(text, lang, ears, by ? (by.id || fname(by)) : null).text : text;
 }
 function hearLine(row){
   const ears = myEars();
@@ -22838,7 +22838,7 @@ async function openTalk(npc, opts = {}){
   talkNext = next || null;
   if (APP && voicesOn && talkNext && (!lang || lang === "Common") && !isRapport(npc.id))
     fetch("/api/npc-tts", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({text: talkNext, npcName: nm})}).catch(() => {});
-  const heard = heardText(line, lang);                // what this seat hears; the real words still travel on to the dashboard
+  const heard = heardText(line, lang, npc);           // what this seat hears; the real words still travel on to the dashboard
   $("talkLine").innerHTML = `<p class="narr">${esc(narration)}</p><p class="said">“${esc(heard)}”</p>${lang && lang !== "Common" ? `<p class="narr">— in ${esc(lang)}</p>` : ""}`;
   talkLang = lang || null;
   $("talkGo").href = talkUrl(npc, line);

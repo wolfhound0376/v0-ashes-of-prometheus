@@ -539,7 +539,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
     const text = stripRollTalk(entry.text)
     return text ? [{ ...entry, text }] : []
   })
-  const followsLang = (lang: string | null | undefined) => !lang || isDmView || understands(hearer, lang)
+  const followsLang = (lang: string | null | undefined, by?: string | null) => !lang || isDmView || understands(hearer, lang, by)
   // THE STAGE LINE HOLDS LONG ENOUGH TO READ (lib/paced-line.ts; Sam's playtest 2026-11-15, point 1). Lines that
   // land in the same second are shown one after another, each for its reading time, instead of flicking past.
   const stageCandidates = displayedDialogue.filter((entry) => entry.speaker !== "System" && entry.speaker !== "Combat" && classifySpeaker(entry.speaker) !== "player")
@@ -708,7 +708,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
   // shots. A player borrowing the window keeps the untouched framing.
   const npcFrame = npcWindowStyle(speakingPlayer ? undefined : ((speakingRow ?? shownNpc) as StageFramingRow | undefined))
   // On the map the opener is the line that matters right now; otherwise their last line in the feed.
-  const lastNpcLine = (talkMode && talkPartner?.kind === "npc" && props.talkOpening ? (isDmView || !props.talkOpeningLang ? props.talkOpening : renderSpeechFor(props.talkOpening, props.talkOpeningLang, hearer).text).slice(0, 160) : null)
+  const lastNpcLine = (talkMode && talkPartner?.kind === "npc" && props.talkOpening ? (isDmView || !props.talkOpeningLang ? props.talkOpening : renderSpeechFor(props.talkOpening, props.talkOpeningLang, hearer, talkPartner.npc.name).text).slice(0, 160) : null)
     ?? ([...(isDmView ? dialogue : heardDialogue)].reverse().map((entry) => (entry.speaker === npcName ? stripRollTalk(entry.text) : "")).find(Boolean)?.slice(0, 160) || null)
   // Map talk (Sam, 2026-10-13: "When Eldeth says 'a word' and you accept, she should say something on
   // the UI. The UI should start with her in the idle loop and then transition to talking loop when she
@@ -727,7 +727,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
     openingSpoken.current = true
     markVoicedElsewhere(npc.name, line)
     const lang = props.talkOpeningLang ?? null
-    if (lang) markVoicedElsewhere(npc.name, renderSpeechFor(line, lang, hearer).text)
+    if (lang) markVoicedElsewhere(npc.name, renderSpeechFor(line, lang, hearer, npc.name).text)
     void createClient().from("dialogue").insert({
       speaker: npc.name, speaker_type: "npc", channel: "dm", text: line,
       ...(lang ? { speech_segments: [{ speaker: npc.name, line, npc_id: npc.id ?? null, voice_id: null, lang }] } : {}),
@@ -744,7 +744,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
         const next = props.talkOpeningNext?.trim()
         if (!next || next.toLowerCase() === line.toLowerCase()) return onOpenerAccepted?.(npc.name, line)
         markOwedAloud(npc.name, next)
-        if (lang) markOwedAloud(npc.name, renderSpeechFor(next, lang, hearer).text)
+        if (lang) markOwedAloud(npc.name, renderSpeechFor(next, lang, hearer, npc.name).text)
         const res: { error: { message: string } | null } = await createClient().from("dialogue").insert({
           speaker: npc.name, speaker_type: "npc", channel: "dm", text: next,
           ...(lang ? { speech_segments: [{ speaker: npc.name, line: next, npc_id: npc.id ?? null, voice_id: null, lang }] } : {}),
@@ -1316,7 +1316,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
             const face = player ? (player.avatar_image_url || player.portrait_image_url) : kind === "npc" ? npcPool.find((n) => n.name.toLowerCase() === entry.speaker.toLowerCase())?.face_url ?? null : null
             return <div key={entry.id ?? index} className={cn("p-line", cls)}>
               <span className="p-who" title={entry.speaker}>{face ? <img src={face} alt="" /> : entry.speaker.trim()[0]?.toUpperCase()}</span>
-              <div className="min-w-0"><b style={{ color: speakerColor(entry.speaker) }}>{entry.speaker}{entry.lang && entry.lang !== "Common" ? <span className="p-lang" title={followsLang(entry.lang) ? `Spoken in ${entry.lang}` : `Spoken in ${entry.lang}, which you do not know`}>{followsLang(entry.lang) ? entry.lang : `${entry.lang} ✕`}</span> : null}</b><p className={followsLang(entry.lang) ? undefined : "foreign"}>{entry.text}</p></div>
+              <div className="min-w-0"><b style={{ color: speakerColor(entry.speaker) }}>{entry.speaker}{entry.lang && entry.lang !== "Common" ? <span className="p-lang" title={followsLang(entry.lang, entry.speaker) ? `Spoken in ${entry.lang}` : `Spoken in ${entry.lang}, which you do not know`}>{followsLang(entry.lang, entry.speaker) ? entry.lang : `${entry.lang} ✕`}</span> : null}</b><p className={followsLang(entry.lang, entry.speaker) ? undefined : "foreign"}>{entry.text}</p></div>
             </div>
           })}
           {props.isThinking ? <p className="p-thinking">Malachar is considering your suffering…</p> : null}
@@ -1359,7 +1359,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
           <div className={cn("p-linebox", stageLineDm && "dm")}>
             <small>{stageLine ? stageLine.speaker : lichShown ? "Malachar" : onStage ? npcName : props.environment.name}</small>
             {stageLine
-              ? <p className={followsLang(stageLine.lang) ? undefined : "foreign"}>{stageLine.text}</p>
+              ? <p className={followsLang(stageLine.lang, stageLine.speaker) ? undefined : "foreign"}>{stageLine.text}</p>
               : <p className="quiet">{lastNpcLine ? `“${lastNpcLine}”` : onStage ? "They are waiting for you to speak." : "Nobody has spoken yet."}</p>}
             {props.isThinking ? <p className="p-thinking">Malachar is considering your suffering…</p> : null}
           </div>

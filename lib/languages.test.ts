@@ -198,3 +198,26 @@ describe("chooseLineLanguage, as the walk map's taunts use it", () => {
     expect(languages.renderSpeechFor(line, lang, { languages: "Common, Elvish" }).text).toBe(line)
   })
 })
+
+describe("drow speech is close enough to Elvish (Sam, 2026-11-20)", () => {
+  const kenta = { languages: "Common, Elvish" }
+  const lynkes = { languages: "Common, Halfling, Thieves' Cant" }
+  it("a hero with Elvish follows a drow speaking Undercommon", () => {
+    for (const by of ["Ilvara Mizzrym", "Jorlan Duskryn", "Drow Guard", "drow-guard-male", "escort-drow", "escort-jorlan", "Sarith Kzekarit", "Shoor Vandree", "Asha Vandree", "Liana"])
+      expect(understands(kenta, "Undercommon", by), by).toBe(true)
+    expect(renderSpeechFor("Back in the pen.", "Undercommon", kenta, "Drow Guard")).toMatchObject({ text: "Back in the pen.", understood: true })
+  })
+  it("not Undercommon from anyone else, or from nobody on record", () => {
+    for (const by of ["Shuushar the Awakened", "Buppido", "escort-quaggoth", "Derendil", "", null, undefined])
+      expect(understands(kenta, "Undercommon", by), String(by)).toBe(false)
+  })
+  it("a hero without Elvish still does not follow the drow", () => {
+    expect(understands(lynkes, "Undercommon", "Ilvara")).toBe(false)
+    expect(understands(lynkes, "Elvish", "Ilvara")).toBe(false)
+  })
+  it("a dialogue row uses its speaker", () => {
+    const row = { text: "Move.", speaker: "Drow Guard", speech_segments: [{ line: "Move.", lang: "Undercommon" }] }
+    expect(hearDialogueRow(row, kenta)).toBe(row)
+    expect(hearDialogueRow({ ...row, speaker: "Buppido" }, kenta).text).not.toBe("Move.")
+  })
+})

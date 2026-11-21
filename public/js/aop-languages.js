@@ -31,6 +31,7 @@ var AopLanguages = (() => {
     chooseLineLanguage: () => chooseLineLanguage,
     gibberish: () => gibberish,
     hearDialogueRow: () => hearDialogueRow,
+    isDrowSpeaker: () => isDrowSpeaker,
     languageGrant: () => languageGrant,
     languageInfo: () => languageInfo,
     listenerFromCharacter: () => listenerFromCharacter,
@@ -126,14 +127,20 @@ var AopLanguages = (() => {
   function understoodLanguages(p) {
     return [.../* @__PURE__ */ new Set([...p.speaks, ...p.understandsOnly])];
   }
-  function understands(listener, spoken) {
+  function understands(listener, spoken, by) {
     if (!spoken) return true;
     const lang = canonicalLanguage(spoken);
     if (!lang) return true;
     if (listener.comprehendAll) return true;
     const p = parseLanguages(listener.languages);
     if (p.telepathy) return true;
-    return understoodLanguages(p).includes(lang);
+    const hears = understoodLanguages(p);
+    if (hears.includes(lang)) return true;
+    return lang === "Undercommon" && hears.includes("Elvish") && isDrowSpeaker(by);
+  }
+  var DROW_SPEAKER = /\bdrow\b|^(ilvara|asha|shoor|jorlan|liana|sarith)\b|^escort-(?!quaggoth)/i;
+  function isDrowSpeaker(by) {
+    return !!by && DROW_SPEAKER.test(String(by).trim());
   }
   function sharedLanguages(a, b) {
     const sa = parseLanguages(a).speaks;
@@ -212,9 +219,9 @@ var AopLanguages = (() => {
     }
     return out.join("");
   }
-  function renderSpeechFor(text, spoken, listener) {
+  function renderSpeechFor(text, spoken, listener, by) {
     const language = spoken ? canonicalLanguage(spoken) : null;
-    if (understands(listener, spoken)) return { text, understood: true, language };
+    if (understands(listener, spoken, by)) return { text, understood: true, language };
     return { text: gibberish(text, language != null ? language : String(spoken)), understood: false, language };
   }
   function chooseLineLanguage(opts) {
@@ -320,11 +327,11 @@ var AopLanguages = (() => {
     return { languages: common };
   }
   function rowLanguages(row, listener) {
-    var _a;
+    var _a, _b;
     const out = [];
     for (const seg of (_a = row.speech_segments) != null ? _a : []) {
       const lang = seg.lang ? canonicalLanguage(seg.lang) : null;
-      if (lang && !out.some((o) => o.lang === lang)) out.push({ lang, understood: listener ? understands(listener, lang) : true });
+      if (lang && !out.some((o) => o.lang === lang)) out.push({ lang, understood: listener ? understands(listener, lang, (_b = seg.speaker) != null ? _b : row.speaker) : true });
     }
     return out;
   }
@@ -335,7 +342,8 @@ var AopLanguages = (() => {
     let changed = false;
     let cursor = 0;
     const nextSegs = segs.map((seg) => {
-      if (!seg.lang || understands(listener, seg.lang)) return seg;
+      var _a;
+      if (!seg.lang || understands(listener, seg.lang, (_a = seg.speaker) != null ? _a : row.speaker)) return seg;
       const heard = gibberish(seg.line, seg.lang);
       const at = text.indexOf(seg.line, cursor);
       if (at >= 0) {

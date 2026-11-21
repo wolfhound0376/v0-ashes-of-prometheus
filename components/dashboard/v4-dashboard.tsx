@@ -510,7 +510,7 @@ export function V4Dashboard(props: V4DashboardProps) {
     const text = stripRollTalk(entry.text)
     return text ? [{ ...entry, text }] : []
   })
-  const followsLang = (lang: string | null | undefined) => !lang || isDmView || understands(hearer, lang)
+  const followsLang = (lang: string | null | undefined, by?: string | null) => !lang || isDmView || understands(hearer, lang, by)
   // Dictation: browser speech-to-text lands in the input for review; Enter sends.
   // speechBaseRef preserves anything already typed when the mic starts.
   const speechBaseRef = useRef("")
@@ -649,7 +649,7 @@ export function V4Dashboard(props: V4DashboardProps) {
   // shots. A player borrowing the window keeps the untouched framing.
   const npcFrame = npcWindowStyle(speakingPlayer ? undefined : ((speakingRow ?? shownNpc) as StageFramingRow | undefined))
   // On the map the opener is the line that matters right now; otherwise their last line in the feed.
-  const lastNpcLine = (talkMode && talkPartner?.kind === "npc" && props.talkOpening ? (isDmView || !props.talkOpeningLang ? props.talkOpening : renderSpeechFor(props.talkOpening, props.talkOpeningLang, hearer).text).slice(0, 160) : null)
+  const lastNpcLine = (talkMode && talkPartner?.kind === "npc" && props.talkOpening ? (isDmView || !props.talkOpeningLang ? props.talkOpening : renderSpeechFor(props.talkOpening, props.talkOpeningLang, hearer, talkPartner.npc.name).text).slice(0, 160) : null)
     ?? ([...(isDmView ? dialogue : heardDialogue)].reverse().map((entry) => (entry.speaker === npcName ? stripRollTalk(entry.text) : "")).find(Boolean)?.slice(0, 160) || null)
   // Map talk (Sam, 2026-10-13: "When Eldeth says 'a word' and you accept, she should say something on
   // the UI. The UI should start with her in the idle loop and then transition to talking loop when she
@@ -668,7 +668,7 @@ export function V4Dashboard(props: V4DashboardProps) {
     openingSpoken.current = true
     markVoicedElsewhere(npc.name, line)
     const lang = props.talkOpeningLang ?? null
-    if (lang) markVoicedElsewhere(npc.name, renderSpeechFor(line, lang, hearer).text)
+    if (lang) markVoicedElsewhere(npc.name, renderSpeechFor(line, lang, hearer, npc.name).text)
     void createClient().from("dialogue").insert({
       speaker: npc.name, speaker_type: "npc", channel: "dm", text: line,
       ...(lang ? { speech_segments: [{ speaker: npc.name, line, npc_id: npc.id ?? null, voice_id: null, lang }] } : {}),
@@ -685,7 +685,7 @@ export function V4Dashboard(props: V4DashboardProps) {
         const next = props.talkOpeningNext?.trim()
         if (!next || next.toLowerCase() === line.toLowerCase()) return onOpenerAccepted?.(npc.name, line)
         markOwedAloud(npc.name, next)
-        if (lang) markOwedAloud(npc.name, renderSpeechFor(next, lang, hearer).text)
+        if (lang) markOwedAloud(npc.name, renderSpeechFor(next, lang, hearer, npc.name).text)
         const res: { error: { message: string } | null } = await createClient().from("dialogue").insert({
           speaker: npc.name, speaker_type: "npc", channel: "dm", text: next,
           ...(lang ? { speech_segments: [{ speaker: npc.name, line: next, npc_id: npc.id ?? null, voice_id: null, lang }] } : {}),
@@ -1004,7 +1004,7 @@ export function V4Dashboard(props: V4DashboardProps) {
       <Frame title="Interactive Log" hideDecorativeControls className={cn("relative flex flex-[2_1_0%] flex-col rounded-none transition-[height,min-height] duration-200", interactiveLogMinimized ? "h-9 min-h-9 flex-none" : "min-h-[240px] flex-[2_1_0%]")} action={<button type="button" onClick={() => setInteractiveLogMinimized((value) => !value)} aria-expanded={!interactiveLogMinimized} aria-label={interactiveLogMinimized ? "Expand interactive log" : "Minimize interactive log"} title={interactiveLogMinimized ? "Expand interactive log" : "Minimize interactive log"} className="rounded-sm p-1 text-[#cdb276] transition-colors hover:bg-[#2a2114] hover:text-[#f0cd7a]"><span className="sr-only">{interactiveLogMinimized ? "Expand" : "Minimize"} interactive log</span>{interactiveLogMinimized ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}</button>}>
         {!interactiveLogMinimized ? <>
           <div className="flex gap-1 px-2 pt-2">{["All", "Narration", "Dialogue", "Combat", "System"].map((filter) => <button key={filter} onClick={() => setLogFilter(filter)} className={cn("rounded px-2 py-0.5 text-[9px]", logFilter === filter ? "bg-[#a8272e] text-white" : "border border-[#4b3a19] text-[#8f8061]")}>{filter}</button>)}</div>
-          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 pb-16 text-[11px] leading-[1.45]">{displayedDialogue.length === 0 ? <p className="mt-6 text-center text-[10px] italic text-[#6d6450]">The log is empty. Malachar is waiting.</p> : null}{displayedDialogue.map((entry, index) => <p key={entry.id ?? index}><strong style={{ color: speakerColor(entry.speaker) }}>{entry.speaker}:</strong> <span className={followsLang(entry.lang) ? "text-[#ddd2bc]" : "italic text-[#a99c82]"}>{entry.text}</span>{entry.lang && entry.lang !== "Common" ? <span className="ml-1.5 rounded-sm border border-[#4b3a19] px-1 align-middle text-[8px] uppercase tracking-wider text-[#8f8061]" title={followsLang(entry.lang) ? `Spoken in ${entry.lang}` : `Spoken in ${entry.lang}, which you do not know`}>{followsLang(entry.lang) ? entry.lang : `${entry.lang} ✕`}</span> : null}</p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
+          <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5 pb-16 text-[11px] leading-[1.45]">{displayedDialogue.length === 0 ? <p className="mt-6 text-center text-[10px] italic text-[#6d6450]">The log is empty. Malachar is waiting.</p> : null}{displayedDialogue.map((entry, index) => <p key={entry.id ?? index}><strong style={{ color: speakerColor(entry.speaker) }}>{entry.speaker}:</strong> <span className={followsLang(entry.lang, entry.speaker) ? "text-[#ddd2bc]" : "italic text-[#a99c82]"}>{entry.text}</span>{entry.lang && entry.lang !== "Common" ? <span className="ml-1.5 rounded-sm border border-[#4b3a19] px-1 align-middle text-[8px] uppercase tracking-wider text-[#8f8061]" title={followsLang(entry.lang, entry.speaker) ? `Spoken in ${entry.lang}` : `Spoken in ${entry.lang}, which you do not know`}>{followsLang(entry.lang, entry.speaker) ? entry.lang : `${entry.lang} ✕`}</span> : null}</p>)}{props.isThinking && <p className="animate-pulse text-[#a879e1]">Malachar is considering your suffering…</p>}</div>
         </> : null}
       </Frame>
       {/* Player-to-player chat — the `party` channel. Plain inserts only; never
