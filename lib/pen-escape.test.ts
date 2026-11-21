@@ -57,6 +57,13 @@ describe("the phases", () => {
     }
   })
 
+  it("the march out in chains can be escaped while the lock stands turned (Sam's game, 2026-11-20)", () => {
+    const e = escapeStep(newEscape(), EVENT.UNLOCK, at(1, 5))
+    const out = escapeStep(e, EVENT.LEFT_AREA, at(2, 6))
+    expect(out.refused).toBeUndefined()
+    expect(out.phase).toBe(PHASE.GONE)
+  })
+
   it("gone is terminal", () => {
     const e = { ...newEscape(), phase: PHASE.GONE }
     for (const ev of Object.values(EVENT)) expect(canStep(e, ev)).toBe(false)

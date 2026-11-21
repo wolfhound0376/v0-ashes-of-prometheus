@@ -3,7 +3,7 @@ import fs from "node:fs"
 import path from "node:path"
 import {
   CHAIN_MARCH, CHAIN_MARCH_GUARDS, CHAIN_MARCH_LINES,
-  chainMarchDue, chainMarchEscort, chainMarchLostLine, chainMarchMapHref, chainMarchOutcome, chainMarchPosts,
+  chainMarchColumn, chainMarchDue, chainMarchEscort, chainMarchLostLine, chainMarchMapHref, chainMarchOutcome, chainMarchPosts,
 } from "./chain-march.mjs"
 import { WALK_HANDOFFS } from "./travel/handoff"
 
@@ -160,5 +160,32 @@ describe("the map carries the same rules", () => {
   })
   it("the DM's End combat button is told apart from a lost fight", () => {
     expect(page).toContain("endCombat(false, {byDm: true})")
+  })
+  // Sam, 2026-11-20, after playing it: alone on the bridge, no magic, straight to the map.
+  it("the escort stands on the bridge before the fight, and the fight takes those figures", () => {
+    expect(page).toContain("function chainMarchStage(")
+    expect(page).toContain("startCombat(guards.length ? guards : chainMarchEscort(PARTY.length)")
+    expect(page).toContain("escortSays(g[0], CHAIN_MARCH_LINES.halt")
+  })
+  it("a screen that only shows the fight drops its own copy of the escort", () => {
+    expect(page).toContain("npcs = npcs.filter(n => !n.marchEscort)")
+  })
+  it("the irons come off as the fight opens", () => {
+    const run = page.slice(page.indexOf("async function chainMarchRun("), page.indexOf("function chainMarchSettle("))
+    expect(run.indexOf("state.manacled = false")).toBeGreaterThan(run.indexOf("CHAIN_MARCH.snagMs"))
+    expect(run.indexOf("state.manacled = false")).toBeLessThan(run.indexOf("startCombat("))
+  })
+  it("the way out fades before the travel map", () => {
+    expect(page).toContain("}, CHAIN_MARCH.fadeMs)")
+  })
+})
+
+describe("who the caravan takes", () => {
+  it("takes everyone on the roll who is not dead or left behind, once each, in order", () => {
+    expect(chainMarchColumn(["ront", "jimjar", "topsy", "turvy", "jimjar"], ["topsy"])).toEqual(["ront", "jimjar", "turvy"])
+  })
+  it("takes nobody from an empty roll", () => {
+    expect(chainMarchColumn([], ["ront"])).toEqual([])
+    expect(chainMarchColumn(undefined, undefined)).toEqual([])
   })
 })
