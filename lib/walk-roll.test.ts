@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import {
   WALK_ACTIONS,
   difficultyWord,
+  isTiered,
   isWalkActionKey,
   parseWalkRollRequest,
   walkCheckModifier,
@@ -283,4 +284,47 @@ describe("lift only what you know about, and caught means a fight (Sam, 2026-11-
   it("says every DC is a house number", () => {
     for (const k of ["pocket:size-up", "caught:persuade", "caught:intimidate"] as const) expect(WALK_ACTIONS[k].source).toMatch(/house/)
   })
+})
+
+// Sam, 2026-11-20: "the ward sigil checks should be performed like the checks at the guard gate, with the roll."
+describe("the ward sigil rolls on the dashboard's dice", () => {
+  const wizard = { id: "w", name: "Kenta", level: 3, int_score: 16, dex_score: 14, sheet_skill_proficiencies: { arcana: "proficient" } }
+
+  it("the study is Arcana, or History for a bard, and is tiered: no pass or fail, the map reads the total", () => {
+    expect(WALK_ACTIONS["ward:study-arcana"]).toMatchObject({ check: { kind: "skill", skill: "arcana" }, tiered: true, mapNarrates: true })
+    expect(WALK_ACTIONS["ward:study-history"]).toMatchObject({ check: { kind: "skill", skill: "history" }, tiered: true, mapNarrates: true })
+    expect(isTiered(WALK_ACTIONS["ward:study-arcana"])).toBe(true)
+    expect(isTiered(WALK_ACTIONS["ward:cut"])).toBe(false)
+    expect(isTiered(WALK_ACTIONS["pen-gate:pick"])).toBe(false)
+  })
+  it("the study uses the sheet's own Arcana: Intelligence + proficiency", () => {
+    expect(walkCheckModifier(wizard, WALK_ACTIONS["ward:study-arcana"].check)).toMatchObject({ modifier: 5, proficient: true })
+    expect(walkCheckModifier(wizard, WALK_ACTIONS["ward:study-history"].check)).toMatchObject({ modifier: 3, proficient: false })
+  })
+  it("the cut is a plain Dexterity check against DC 15, and the throw-back has no die of its own", () => {
+    expect(WALK_ACTIONS["ward:cut"]).toMatchObject({ check: { kind: "ability", ability: "dex" }, dc: 15, mapNarrates: true })
+    expect(walkCheckModifier(wizard, WALK_ACTIONS["ward:cut"].check)).toMatchObject({ modifier: 2, proficient: false })
+    expect(walkVerdict(WALK_ACTIONS["ward:cut"], 15)).toBe(true)
+    expect(walkVerdict(WALK_ACTIONS["ward:cut"], 14)).toBe(false)
+    expect(Object.keys(WALK_ACTIONS).filter((k) => k.startsWith("ward:")).sort()).toEqual(["ward:cut", "ward:study-arcana", "ward:study-history"])
+  })
+  it("disadvantage (not a wizard) and a friend's Help cancel on the way through", () => {
+    const req = (extra: object) => parseWalkRollRequest({ type: "aop:roll", id: "r1", action: "ward:study-arcana", ...extra })
+    expect(req({ disadvantage: true, edgeReason: "not a wizard" })).toMatchObject({ disadvantage: true, advantage: false, edgeReason: "not a wizard" })
+    expect(req({ advantage: true })).toMatchObject({ advantage: true, disadvantage: false })
+    expect(req({ advantage: true, disadvantage: true, edgeReason: "not a wizard" })).toMatchObject({ advantage: false, disadvantage: false, edgeReason: undefined })
+  })
+  for (const file of ["scripts/velkynvelve-walk/template.html", "public/velkynvelve-walk/index.html"]) {
+    const page = readFileSync(file, "utf8")
+    it(`${file}: the map's own numbers match the table, and no sigil roll is thrown on the map's d20`, () => {
+      expect(Number(/const WARD_CUT_DC = (\d+)/.exec(page)?.[1])).toBe(WALK_ACTIONS["ward:cut"].dc)
+      expect(Number(/const WARD_STUDY_DC = (\d+)/.exec(page)?.[1])).toBe(WALK_ACTIONS["ward:study-arcana"].dc)
+      const body = (name: string) => /\{[\s\S]*?\n\}/.exec(page.slice(page.indexOf(`async function ${name}(`)))?.[0] ?? ""
+      for (const fn of ["studySigil", "cutSigil"]) {
+        expect(body(fn), fn).toContain("rollOnDashboard(")
+        expect(body(fn), fn).not.toMatch(/\bd20\(|mapCheck\(/)
+      }
+      for (const k of [...page.matchAll(/"(ward:[a-z-]+)"/g)].map((m) => m[1])) expect(isWalkActionKey(k), k).toBe(true)
+    })
+  }
 })
