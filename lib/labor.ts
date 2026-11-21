@@ -82,11 +82,28 @@ export function shiftAt(minutesOfDay: number): Shift {
 }
 
 /**
- * [SAM] 2026-10-27: "the work detail should not start for at least 3 cycles (shift changes)". The party is not put to
- * work until at least this many shift changes have passed since it reached the pen (the run's start on the game clock).
- * The other prisoners keep working their shifts meanwhile.
+ * [SAM] 2026-11-20: "Go" on ONE shift change. The party is not put to work until at least this many shift changes have
+ * passed since it reached the pen (the run's start on the game clock). The other prisoners keep working meanwhile.
+ *
+ * It was 3 (Sam, 2026-10-27: "not for at least 3 cycles"), set when a shift change was the only clock in the pen. Since
+ * then the watch became 4 game hours (PR #1314) and the caravan comes after 6 watches (CARAVAN_WATCHES, PR #1318):
+ * three shift changes of 8 hours IS six watches, so the party's first shift began on the very watch the caravan
+ * arrived and the chain march took them first. Run 76 (2026-11-20): the party's detail, day 1 shift 3, sat at
+ * "scheduled" with no events and was aborted at the day rollover ("Our characters never were taken to do slave labor").
+ * Keep this below CARAVAN_WATCHES / 2 or the detail cannot happen on a first stay in the pen.
  */
-export const SHIFTS_BEFORE_FIRST_DETAIL = 3
+export const SHIFTS_BEFORE_FIRST_DETAIL = 1
+
+/**
+ * The first shift still ahead when a day's rota is planned at `minutesOfDay`. Before 06:00 the clock reads "shift 3"
+ * (shiftAt), but that is the tail of YESTERDAY's night shift: all three of today's shifts are still to come. Passing
+ * shiftAt() straight in as `fromShift` put the party on the 22:00 shift of every day planned in the small hours,
+ * which is every day, since a day is planned as it begins.
+ */
+export function planFromShift(minutesOfDay: number): Shift {
+  const m = ((Math.floor(minutesOfDay) % 1440) + 1440) % 1440
+  return m < SHIFT_STARTS[0] ? 1 : shiftAt(m)
+}
 
 export interface ClockTime { day: number; minutes: number }
 
@@ -261,7 +278,10 @@ export function planDay(input: DayInput, rng: Rng): PlannedDetail[] {
   const nb = input.notBefore
   if (nb && input.day < nb.day) return planNpcsOnly(input, rng)        // too soon after reaching the pen: only the NPCs work
   const first = (nb && input.day === nb.day ? Math.max(input.fromShift ?? 1, nb.shift) : input.fromShift ?? 1) as Shift
-  const partyShift = (first + Math.floor(rng() * (4 - first))) as Shift
+  // On the first day the party may work it goes on the FIRST shift allowed, not a later one drawn at random: the
+  // caravan clock is short, and a late draw is how the detail came to never happen. After that day, any shift left.
+  const roll = Math.floor(rng() * (4 - first))                         // always drawn, so the rest of the rota is unchanged
+  const partyShift = (nb && input.day === nb.day ? first : first + roll) as Shift
   const companions = pickCompanions(input.npcs, npcCountFor(input.pcs.length, rng), rng, {
     seenFriends: input.seenFriends, timesWithParty: input.timesWithParty,
   })

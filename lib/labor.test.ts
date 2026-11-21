@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   OBSERVERS, TASKS, castableInManacles, crews, disobey, escortFor, npcCountFor, pickCompanions, pickTask,
-  firstWorkShift, planDay, resolvePocket, SHIFTS_BEFORE_FIRST_DETAIL, searchFinds, seeded, shiftAt, stanceDuringLabor, suspicionReasons, taskWeight,
+  firstWorkShift, planDay, planFromShift, resolvePocket, SHIFTS_BEFORE_FIRST_DETAIL, searchFinds, seeded, shiftAt, stanceDuringLabor, suspicionReasons, taskWeight,
   type CrewMember, type Observer,
 } from "./labor"
 
@@ -260,19 +260,49 @@ describe("the party's stance on a detail", () => {
   it("turns to escaping only when a PC breaks from the escort", () => expect(stanceDuringLabor(true)).toBe("escaping"))
 })
 
-describe("the first detail waits (Sam, 2026-10-27: not for at least 3 shift changes)", () => {
+describe("the first detail waits (Sam, 2026-11-20: one shift change; it was three)", () => {
   const H = (h: number, m = 0) => h * 60 + m
-  it("waits three shift changes from wherever the party reaches the pen", () => {
-    expect(SHIFTS_BEFORE_FIRST_DETAIL).toBe(3)
-    // in at 10:00 on day 1: 14:00, 22:00, then 06:00 on day 2
-    expect(firstWorkShift({ day: 1, minutes: H(10) })).toEqual({ day: 2, shift: 1 })
-    // in just before midnight: 06:00, 14:00, 22:00 on day 2
-    expect(firstWorkShift({ day: 1, minutes: H(23, 30) })).toEqual({ day: 2, shift: 3 })
-    // in at 03:00 (still the night shift): 06:00, 14:00, 22:00 the same day
-    expect(firstWorkShift({ day: 4, minutes: H(3) })).toEqual({ day: 4, shift: 3 })
+  it("waits one shift change from wherever the party reaches the pen", () => {
+    expect(SHIFTS_BEFORE_FIRST_DETAIL).toBe(1)
+    expect(firstWorkShift({ day: 1, minutes: H(10) })).toEqual({ day: 1, shift: 2 })        // in at 10:00: 14:00
+    expect(firstWorkShift({ day: 1, minutes: H(23, 30) })).toEqual({ day: 2, shift: 1 })    // just before midnight: 06:00
+    expect(firstWorkShift({ day: 4, minutes: H(3) })).toEqual({ day: 4, shift: 1 })         // the small hours: 06:00 that day
   })
   it("does not count a shift change the party arrives on", () => {
-    expect(firstWorkShift({ day: 1, minutes: H(6) })).toEqual({ day: 2, shift: 1 })   // 14:00, 22:00, 06:00
+    expect(firstWorkShift({ day: 1, minutes: H(6) })).toEqual({ day: 1, shift: 2 })
+  })
+  it("still counts any number of changes when asked", () => {
+    expect(firstWorkShift({ day: 1, minutes: H(10) }, 3)).toEqual({ day: 2, shift: 1 })     // 14:00, 22:00, 06:00
+    expect(firstWorkShift({ day: 4, minutes: H(3) }, 3)).toEqual({ day: 4, shift: 3 })
+  })
+  // Run 76, 2026-11-20: the caravan comes on the 6th watch (4 game hours each) = 24 game hours after the run starts.
+  // The party's first shift has to begin before that, wherever on the clock the run starts.
+  it("the first detail always begins before the caravan's sixth watch", () => {
+    for (let m = 0; m < 1440; m += 15) {
+      const f = firstWorkShift({ day: 1, minutes: m })
+      const at = (f.day - 1) * 1440 + [H(6), H(14), H(22)][f.shift - 1]
+      expect(at - m).toBeLessThanOrEqual(8 * 60)
+    }
+  })
+  it("a day planned in the small hours has all three shifts ahead of it", () => {
+    expect(planFromShift(H(0))).toBe(1)
+    expect(planFromShift(H(5, 59))).toBe(1)
+    expect(planFromShift(H(6))).toBe(1)
+    expect(planFromShift(H(14))).toBe(2)
+    expect(planFromShift(H(23))).toBe(3)
+  })
+  it("a run that starts in the small hours puts the party on the 06:00 shift, every seed", () => {
+    for (let s = 0; s < 60; s++) {
+      const start = { day: 1, minutes: H(0, 30) }
+      const plan = planDay({ day: 1, pcs: HEROES, npcs: PRISONERS, fromShift: planFromShift(start.minutes), notBefore: firstWorkShift(start) }, seeded(s))
+      expect(plan.find((d) => d.party)?.shift).toBe(1)
+    }
+  })
+  it("on the first day allowed the party takes the first shift allowed, not a later one", () => {
+    for (let s = 0; s < 60; s++) {
+      const plan = planDay({ day: 2, pcs: HEROES, npcs: PRISONERS, fromShift: 1, notBefore: { day: 2, shift: 2 } }, seeded(s))
+      expect(plan.find((d) => d.party)?.shift).toBe(2)
+    }
   })
   it("plans no party detail on a day before the first one allowed; the NPCs still work all three shifts", () => {
     for (let s = 0; s < 40; s++) {
