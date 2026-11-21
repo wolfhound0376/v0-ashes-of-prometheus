@@ -6655,7 +6655,7 @@ function openBody(b){
 // the dashboard's engine with the dashboard's modifier, and the page answers {ok, success, total, natural} — or
 // {cancelled} if they stepped back. "aop:roll-ack" says the panel is open; after it the map waits as long as the
 // player does. Opened as a plain file (no game around it), the map rolls locally against the same DC.
-const ROLLS = new Map(), LOCAL_DC = {"pocket:size-up": 10, "caught:persuade": 15, "caught:intimidate": 15, "falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12, "jimjar:bet": 13, "manacles:wire": 15, "druid:beast": 13};
+const ROLLS = new Map(), LOCAL_DC = {"pocket:size-up": 10, "caught:persuade": 15, "caught:intimidate": 15, "falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12, "jimjar:bet": 13, "manacles:wire": 15, "druid:beast": 13, "ward:study-arcana": 20, "ward:study-history": 20, "ward:cut": 15};
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
@@ -6795,7 +6795,8 @@ function rollOnDashboard(action, localMod, opts = {}){
   // 5e: advantage and disadvantage cancel. lib/walk-roll.ts settles it again on the other side; this keeps the
   // preview's own die honest too.
   const edge = (opts.advantage ? 1 : 0) + (opts.disadvantage ? -1 : 0);
-  if (!APP || window.parent === window){ const dc = LOCAL_DC[action] ?? +((/^pickpocket:pp(\d+)$/.exec(action) || [])[1] || (/^strangle:/.test(action) ? 12 : 20)), r = d20(edge, opts.who || leader, null, dc - (localMod || 0)), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= dc, total, natural: r}); }
+  if (!APP || window.parent === window){ const dc = LOCAL_DC[action] ?? +((/^pickpocket:pp(\d+)$/.exec(action) || [])[1] || (/^strangle:/.test(action) ? 12 : 20)), tiered = /^ward:study-/.test(action),   // read against the map's own ladder: no single target, so Lucky has nothing to aim at (as before)
+      r = d20(edge, opts.who || leader, null, tiered ? null : dc - (localMod || 0)), total = r + (localMod || 0); return Promise.resolve({ok: true, success: total >= dc, total, natural: r}); }
   const id = "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   let characterId = null; try { characterId = myClaimId || characterIdOf(leader.id) || null; } catch (e) {}
   return new Promise(res => {
@@ -10698,7 +10699,7 @@ function mapCheck(a, skill, abil, dc){   // dc (optional): lets the Lucky feat k
 }
 const SKILL_NAME = {stealth: "Dexterity (Stealth)", perception: "Wisdom (Perception)", investigation: "Intelligence (Investigation)", nature: "Intelligence (Nature)", medicine: "Wisdom (Medicine)",
   arcana: "Intelligence (Arcana)", history: "Intelligence (History)", dexterity: "Dexterity"};
-function rollLine(k, skill){ return `${SKILL_NAME[skill]} ${k.r}${k.adv ? (k.small ? " (advantage: Small)" : " (advantage)") : ""} ${k.mod >= 0 ? "+" : "−"} ${Math.abs(k.mod)} = <b>${k.total}</b>`; }
+function rollLine(k, skill){ return `${SKILL_NAME[skill]} ${k.r}${k.adv < 0 ? " (disadvantage)" : k.adv ? (k.small ? " (advantage: Small)" : " (advantage)") : ""} ${k.mod >= 0 ? "+" : "−"} ${Math.abs(k.mod)} = <b>${k.total}</b>`; }
 function nearestExit(L){ return node.zones.filter(z => !z.interact && (z.to || []).length).map(z => [z, Math.hypot(zoneCenter(z).x - L.x, zoneCenter(z).y - L.y)]).sort((x, y) => x[1] - y[1])[0]; }
 function exitName(z){ const t = SPEC[(z.to || [])[0]]; return z.label || (t && t.name) || (z.kind === "leave" ? "the way out" : "the way on"); }
 function lookTarget(o){ return o.obj ? o.obj.interact.name : o.pile ? o.pile.name : o.body ? fname(o.body) : null; }
@@ -11449,21 +11450,37 @@ function studySigilAsk(){
   add("Read it alone", () => { close(); studySigil(); });
   add("Not now", close);
 }
-function studySigil(){
-  const h = leader; if (!h || mode !== "explore") return;
+// ON THE DASHBOARD'S DICE (Sam, 2026-11-20: "the ward sigil checks should be performed like the checks at the guard
+// gate, with the roll"). Until then the study and the cut were thrown on the map's own d20 and only logged: Kenta's
+// study that evening (wardStudy.kenta, total 12) left no 🎲 line in the log and reached no ledger, while his
+// pickpocket four minutes later did both. Now both go through rollOnDashboard (lib/walk-roll.ts "ward:study-arcana",
+// "ward:study-history", "ward:cut"): the tapped die, the 🎲 line, the roll ledger. NO RULE MOVED. The map still
+// decides who may look and with what edge, still reads the TOTAL off WARD_TIERS, still keeps wardTried / wardStudy,
+// and still tells Malachar what came of it. Stepping back from the die rolls nothing and spends nothing: the one
+// look, a friend's Help, a lent spark and a beseeched boon are all still there.
+let wardRolling = false;                // one sigil roll at a time: the dice are a round trip now
+async function studySigil(){
+  const h = leader; if (!h || mode !== "explore" || wardRolling) return;
   if (state.wardBroken){ toast("It is already cut. The scar is red and it is not holding anything."); exploreKey = ""; return; }
   if (wardAlreadyRead(h)){ toast(`${fname(h)} has already read what they can off it.`); exploreKey = ""; return; }
   // A FRIEND'S HAND (Sam, 2026-10-30: "The help action as a dialogue box can pop up if they are close to offer to
   // help"). The map already had Help — it set `helpNext` and only mapCheck ever spent it, so the ward never saw
   // it. Now it does, and 5e settles the rest: advantage from the help against disadvantage for not being a wizard
   // cancel, so a helped non-wizard reads it at a straight roll.
-  let helped = null;
-  if (helpNext && helpNext.by !== h.id && now < helpNext.until){ helped = helpNext.by; helpNext = null; }
-  const adv = (helped ? 1 : 0) + (wardWizard(h) ? 0 : -1);
+  const helping = helpNext && helpNext.by !== h.id && now < helpNext.until ? helpNext : null;
+  const adv = (helping ? 1 : 0) + (wardWizard(h) ? 0 : -1);
   const skill = wardSkill(h);                                          // Arcana, or a bard's History (Sam, 2026-11-12)
-  const mod = wardLoreMod(h, skill), r = d20(adv, h), k = {r, mod, total: r + mod, adv};
+  const standing = wardArcanaKey(h);                                   // what they knew when the die was thrown
+  wardRolling = true; h.path = [];
+  let res;
+  try { res = await rollOnDashboard(skill === "history" ? "ward:study-history" : "ward:study-arcana", wardLoreMod(h, skill), {who: h, advantage: !!helping, disadvantage: !wardWizard(h), edgeReason: "not a wizard"}); }
+  finally { wardRolling = false; }
+  if (!res || !res.ok){ if (res && !res.cancelled) toast(res.error || "The dice did not answer.", 3600); exploreKey = ""; return; }
+  const helped = helping ? helping.by : null; if (helping && helpNext === helping) helpNext = null;   // the hand is spent on a roll, not on stepping back
+  // the dashboard's own modifier is in the total; the natural die and the total are what it rolled
+  const k = {r: res.natural, mod: res.total - res.natural, total: res.total, adv};
   const tier = wardTierOf(k.total);
-  state.wardTried[h.id] = wardArcanaKey(h);
+  state.wardTried[h.id] = standing;
   state.wardStudy[h.id] = {tier: tier.key, total: k.total};
   log(`${fname(h)} studies the ward sigil${helped ? `, with ${esc(SHORT[helped] || helped)}'s help` : ""}: ${rollLine(k, skill)}. <i>${esc(tier.line)}</i>`);
   toast(tier.line, 6200);
@@ -11511,13 +11528,21 @@ function openSigilCut(){
       {label: "Cut it", primary: true, fn: () => cutSigil()},
       {label: "Leave it alone", fn: () => { exploreKey = ""; }}]});
 }
-function cutSigil(){
-  const h = leader; if (!h || state.wardBroken) return;
-  const spark = sparkFor(h); if (state.spark) state.spark = null;   // a spark is lent for one cut
+async function cutSigil(){
+  const h = leader; if (!h || state.wardBroken || wardRolling) return;
+  const spark = sparkFor(h);
   // BESEECH: shown the cut, it is made with advantage (5e: it cancels bare hands). A SPARK lent is advantage too; two
   // sources of advantage are still one advantage.
-  const tool = wardCutTool(h), beseeched = beseechSpend("ward", h), adv = Math.min(1, (tool ? 0 : -1) + (beseeched ? 1 : 0) + (spark ? 1 : 0) + (beseeched && spark ? -1 : 0));
-  const mod = heroMod(h, "dexterity", "dex"), r = d20(adv, h), k = {r, mod, total: r + mod, adv};
+  const tool = wardCutTool(h), boon = beseechReady("ward"), adv = Math.min(1, (tool ? 0 : -1) + (boon || spark ? 1 : 0));
+  wardRolling = true; h.path = [];
+  let res;
+  try { res = await rollOnDashboard("ward:cut", heroMod(h, "dexterity", "dex"), {who: h, advantage: !!(boon || spark), disadvantage: !tool, edgeReason: "bare-handed"}); }
+  finally { wardRolling = false; }
+  if (!res || !res.ok){ if (res && !res.cancelled) toast(res.error || "The dice did not answer.", 3600); exploreKey = ""; return; }
+  if (state.spark) state.spark = null;   // a spark is lent for one cut
+  if (boon) beseechSpend("ward", h);     // and a boon shown is spent on one
+  if (state.wardBroken) return;          // someone else's cut landed while the die was in the air
+  const k = {r: res.natural, mod: res.total - res.natural, total: res.total, adv};
   const by = k.total - WARD_CUT_DC;
   log(`${fname(h)} re-cuts the anchor stroke${spark ? `, ${esc(fname(spark))}'s spark at their shoulder` : ""}: ${rollLine(k, "dexterity")} vs DC ${WARD_CUT_DC}.`);
   if (by >= 0) return breakWard(h, k);
@@ -12752,6 +12777,8 @@ function beseechSpend(plan, by){
   log(`<em>What ${esc(asker ? fname(asker) : "someone")} was shown holds true:</em> ${esc(by ? fname(by) : "the attempt")} rolls with advantage.`);
   return true;
 }
+/** Is a boon for this plan still waiting to be spent? (A look, not a spend: the sigil cut asks before the die is thrown.) */
+function beseechReady(plan){ const b = state.beseech || {}; return penHeld() && Object.keys(b).some(x => b[x] && b[x].boon && !b[x].used && b[x].plan === plan); }
 function beseechRollPlan(action){ return Object.keys(BESEECH_ROLLS).find(k => BESEECH_ROLLS[k](action)) || null; }
 /** The party has rested: gods and patrons may be asked again. */
 function beseechRested(){ if (state.beseech && Object.keys(state.beseech).length){ state.beseech = {}; saveWalk(); exploreKey = ""; } }

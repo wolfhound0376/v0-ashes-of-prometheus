@@ -51,6 +51,13 @@ export interface WalkAction {
    * Pickpocketing, the cliff rope, pocketing on a work detail.
    */
   mapNarrates?: true
+  /**
+   * NO SINGLE DC: the map reads the TOTAL against its own ladder (the ward sigil's four tiers). So the roll panel
+   * shows no difficulty word and stamps no SUCCESS / FAILURE, and nothing is offered a reroll for having "failed" —
+   * the map alone says what the total earned. `dc` is then the ladder's top rung, kept only so the earned-proficiency
+   * ledger (lib/walk-check-record.ts) has a number to count the roll against.
+   */
+  tiered?: true
 }
 
 const THIEVES_TOOLS: WalkCheck = { kind: "tool", tool: "Thieves' Tools", ability: "dex", label: "Thieves' tools" }
@@ -64,6 +71,9 @@ const INSIGHT: WalkCheck = { kind: "skill", skill: "insight", label: "Insight" }
 const ANIMAL_HANDLING: WalkCheck = { kind: "skill", skill: "animal_handling", label: "Animal Handling" }
 const PERSUASION: WalkCheck = { kind: "skill", skill: "persuasion", label: "Persuasion" }
 const INTIMIDATION: WalkCheck = { kind: "skill", skill: "intimidation", label: "Intimidation" }
+const ARCANA: WalkCheck = { kind: "skill", skill: "arcana", label: "Arcana" }
+const HISTORY: WalkCheck = { kind: "skill", skill: "history", label: "History" }
+const DEXTERITY: WalkCheck = { kind: "ability", ability: "dex", label: "Dexterity" }
 const STRENGTH: WalkCheck = { kind: "ability", ability: "str", label: "Strength" }
 const COOKS: WalkCheck = { kind: "tool", tool: "Cook's Utensils", ability: "wis", label: "Cook's utensils" }
 
@@ -144,6 +154,21 @@ const BOOK_ACTIONS = {
   // The map tells Malachar what came of each (who, which item, whether it is a fight), so the bridge sends nothing.
   "pocket:size-up": { title: "Size them up", label: "Looking over what someone has loose on them", check: PERCEPTION, dc: 10, source: "house (Sam's rule, DC Claude's; matches the pen gate looks)", mapNarrates: true },
   "caught:persuade": { title: "Talk them down", label: "Talking down someone who caught their hand in a pocket", check: PERSUASION, dc: 15, source: "house (Sam's rule, DC Claude's; SRD Medium)", mapNarrates: true },
+  // THE WARD SIGIL ON THE DASHBOARD'S DICE (Sam, 2026-11-20: "the ward sigil checks should be performed like the checks
+  // at the guard gate, with the roll"). Until then the map rolled these on its own d20 and only logged them: Kenta's
+  // study that evening left no 🎲 line and reached no ledger. HOMEBREW throughout (the template's WARD block has the
+  // rulings): OotA says only that the pen is "magically warded against casting".
+  //   study   Intelligence (Arcana), or (History) for a bard who has seen its like (Sam, 2026-11-12). TIERED on the
+  //           total: 10 / 15 / 20 each learn more, so there is no pass or fail and no difficulty word. 20 is the top
+  //           rung, the one that reads the seam and unlocks the cut. The map sends disadvantage for a reader who is
+  //           not a wizard and advantage for a friend's Help; the two cancel.
+  //   cut     Dexterity DC 15 to re-cut the anchor stroke. ONE roll with two endings, both the map's: it breaks the
+  //           ward, or the ward throws the cutter back (out cold, 1 hit point). The throw-back has no die of its own,
+  //           so it has no row of its own.
+  // The map tells Malachar what came of each (the tier's exact words; the break or the bite), so the bridge sends nothing.
+  "ward:study-arcana": { title: "Study the ward sigil", label: "Studying the drow ward sigil cut into the pen wall", check: ARCANA, dc: 20, source: "house (Sam's mechanic, tiers Claude's): tiered on the total, 20+ reads the seam", mapNarrates: true, tiered: true },
+  "ward:study-history": { title: "Study the ward sigil", label: "Studying the drow ward sigil, knowing its kind from their travels", check: HISTORY, dc: 20, source: "house (Sam's bard ruling 2026-11-12): tiered on the total, 20+ reads the seam", mapNarrates: true, tiered: true },
+  "ward:cut": { title: "Alter the ward sigil", label: "Re-cutting an anchor stroke of the drow ward sigil", check: DEXTERITY, dc: 15, source: "house (Sam's mechanic, DC Claude's)", mapNarrates: true },
   "caught:intimidate": { title: "Make them hand it over", label: "Cowing someone who caught their hand in a pocket", check: INTIMIDATION, dc: 15, source: "house (Sam's rule, DC Claude's; SRD Medium)", mapNarrates: true },
 } as const satisfies Record<string, WalkAction>
 
@@ -271,6 +296,11 @@ export function difficultyWord(dc: number): string {
   if (dc <= 20) return "Hard"
   if (dc <= 25) return "Very hard"
   return "Nearly impossible"
+}
+
+/** A tiered roll has no single DC to put a word to (WalkAction.tiered). */
+export function isTiered(action: WalkAction): boolean {
+  return action.tiered === true
 }
 
 /** What goes on the dice and in the log: "Pick the lock — Thieves' tools". */

@@ -39,6 +39,7 @@ import {
   WALK_ACTIONS,
   WALK_ROLL_COLUMNS,
   difficultyWord,
+  isTiered,
   parseWalkRollRequest,
   walkCheckModifier,
   walkRollMessage,
@@ -248,7 +249,8 @@ export function WalkRollBridge({ frameRef }: { frameRef: RefObject<HTMLIFrameEle
     const success = walkVerdict(action, r.total)
     const natural = r.keptRolls?.[0] ?? r.rolls[0]
     outcomeRef.current = { reply: { ok: true, success, total: r.total, natural }, text: describeRoll(r), success }
-    setResult({ natural, total: r.total, success })
+    // A tiered roll (the ward sigil) has no pass or fail: the panel stamps nothing and the map reads the total.
+    setResult({ natural, total: r.total, success: isTiered(action) ? null : success })
     setPhase("done")
   }, [roll])
 
@@ -365,7 +367,7 @@ export function WalkRollBridge({ frameRef }: { frameRef: RefObject<HTMLIFrameEle
       who={pending.who}
       title={action.title}
       checkLabel={action.check.label}
-      difficulty={difficultyWord(action.dc)}
+      difficulty={isTiered(action) ? "" : difficultyWord(action.dc)}
       parts={pending.parts}
       modifier={pending.modifier}
       phase={phase}
@@ -377,7 +379,8 @@ export function WalkRollBridge({ frameRef }: { frameRef: RefObject<HTMLIFrameEle
         ...reroll,
         offered: phase === "done" && !reroll.busy && offerReroll({
           hasInspiration: pending.inspired,
-          success: Boolean(result?.success),
+          // nothing "failed" on a tiered roll, so nothing is offered a reroll (no rule change: the map never offered one)
+          success: Boolean(result?.success) || isTiered(action),
           rerolled: reroll.firstNatural != null,
           canSpend: pending.canSpend,
         }),

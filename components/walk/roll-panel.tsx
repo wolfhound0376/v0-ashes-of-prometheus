@@ -29,7 +29,8 @@ export type RollPanelPhase = "ready" | "rolling" | "done"
 export interface RollPanelResult {
   natural: number
   total: number
-  success: boolean
+  /** null: a tiered roll (the ward sigil). The map says what the total earned, so no verdict is stamped here. */
+  success: boolean | null
 }
 
 /** The Heroic Inspiration reroll, as the panel sees it. */
@@ -48,6 +49,7 @@ export interface RollPanelProps {
   who: string
   title: string
   checkLabel: string
+  /** The DMG's word for the DC. Empty for a roll with no single DC (tiered): then no ribbon is drawn. */
   difficulty: string
   parts: WalkModifierPart[]
   modifier: number
@@ -118,7 +120,8 @@ export function RollPanel(p: RollPanelProps) {
   const rolling = p.phase === "rolling"
   const crit = done && p.result!.natural === 20
   const fumble = done && p.result!.natural === 1
-  const win = done && p.result!.success
+  const win = done && p.result!.success === true
+  const verdict = done && p.result!.success !== null
 
   return createPortal(
     <div
@@ -157,9 +160,11 @@ export function RollPanel(p: RollPanelProps) {
             <D20 face={done ? String(p.result!.natural) : ""} tone={crit ? "crit" : fumble ? "fumble" : "gold"} />
           </button>
 
-          <div className="aop-rp-ribbon -mt-3 px-5 py-1 font-serif text-[13px] uppercase tracking-[0.28em] text-[#f0dba8]">
-            {p.difficulty}
-          </div>
+          {p.difficulty && (
+            <div className="aop-rp-ribbon -mt-3 px-5 py-1 font-serif text-[13px] uppercase tracking-[0.28em] text-[#f0dba8]">
+              {p.difficulty}
+            </div>
+          )}
 
           <div aria-live="polite" className="mt-2 h-5 text-[13px] text-[#a08a63]">
             {p.phase === "ready" ? "Click the die to roll" : rolling ? (p.reroll?.firstNatural != null ? "Rerolling…" : "Rolling…") : crit ? "Natural 20" : fumble ? "Natural 1" : ""}
@@ -204,7 +209,7 @@ export function RollPanel(p: RollPanelProps) {
               Step back
             </button>
           )}
-          {stamped && (
+          {stamped && verdict && (
             <div className={`aop-rp-stamp pointer-events-none absolute font-serif text-[30px] font-bold uppercase tracking-[0.3em] ${win ? "aop-rp-win" : "aop-rp-lose"}`}>
               {win ? "Success" : "Failure"}
             </div>
