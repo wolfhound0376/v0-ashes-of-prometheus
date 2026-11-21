@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { CLAIM_QUIET_MS, FIGHT_STALE_MS, cleanBody, isHeld, mayClaim, mayDrive, openDecision, type LiveFight } from "./walk-fight"
+import { CLAIM_QUIET_MS, FIGHT_STALE_MS, cleanBody, isHeld, isScenePlate, mayClaim, mayDrive, openDecision, type LiveFight } from "./walk-fight"
 
 const at = (ms: number) => new Date(ms).toISOString()
 const live = (seen: number, extra: Partial<LiveFight> = {}): LiveFight => ({ id: "f1", plate: "11", auth_key: "dm", auth_seen: at(seen), started_at: at(seen), ended_at: null, ...extra })
@@ -13,6 +13,17 @@ describe("one fight per run", () => {
   })
   it("takes when there is none", () => {
     expect(openDecision(null, 5)).toEqual({ kind: "take", endStale: null })
+  })
+  it("a scene joins a held scene, and a held fight", () => {
+    const scene = live(1000, { plate: "scene:11" })
+    expect(openDecision(scene, 2000, "scene:11")).toEqual({ kind: "join", fight: scene })
+    expect(openDecision(live(1000), 2000, "scene:11")).toEqual({ kind: "join", fight: live(1000) })
+  })
+  it("a fight outranks a scene: it ends the scene and takes the row", () => {
+    expect(openDecision(live(1000, { plate: "scene:11" }), 2000, "11")).toEqual({ kind: "take", endStale: "f1" })
+    expect(openDecision(live(1000, { plate: "scene:11" }), 2000, "9")).toEqual({ kind: "take", endStale: "f1" })
+    expect(isScenePlate("scene:10b")).toBe(true)
+    expect(isScenePlate("11")).toBe(false)
   })
   it("an ended fight is not held", () => {
     expect(isHeld(live(1000, { ended_at: at(1500) }), 1600)).toBe(false)

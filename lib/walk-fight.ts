@@ -41,9 +41,26 @@ export function isHeld(f: LiveFight | null, now: number): boolean {
   return now - Date.parse(f.auth_seen) < FIGHT_STALE_MS
 }
 
-/** What "open a fight on this plate" comes to: join the one that is held, or take it (ending a stale one first). */
-export function openDecision(f: LiveFight | null, now: number): { kind: "join"; fight: LiveFight } | { kind: "take"; endStale: string | null } {
-  if (f && isHeld(f, now)) return { kind: "join", fight: f }
+/**
+ * A SCENE IS SHARED THE SAME WAY (Sam, 2026-11-20: "all events should be world events"). Outside a fight, the screen
+ * that triggers a scene (the pen gate's volley, the surgeon, a film) is its authority and every other screen on that
+ * plate shows it, over this same lane: the same row, the same ticks. A scene's row carries its plate as
+ * "scene:<plate>", so no new table or column is needed and a page from before this change (which compares the plate
+ * with its own) simply does not see it.
+ */
+export const SCENE_PREFIX = "scene:"
+export function isScenePlate(plate: unknown): boolean {
+  return typeof plate === "string" && plate.startsWith(SCENE_PREFIX)
+}
+
+/**
+ * What "open a fight (or a scene) on this plate" comes to: join the one that is held, or take it (ending a stale one
+ * first). A FIGHT OUTRANKS A SCENE: a fight that opens while a scene holds the run's one live row ends the scene and
+ * takes the row, so a scene can never leave a fight unshared. A scene that opens while a fight is held joins it (the
+ * caller sees it is not its scene and plays alone, as every scene did before).
+ */
+export function openDecision(f: LiveFight | null, now: number, plate = ""): { kind: "join"; fight: LiveFight } | { kind: "take"; endStale: string | null } {
+  if (f && isHeld(f, now) && !(isScenePlate(f.plate) && !isScenePlate(plate))) return { kind: "join", fight: f }
   return { kind: "take", endStale: f && !f.ended_at ? f.id : null }
 }
 
