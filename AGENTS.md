@@ -483,6 +483,19 @@ Other things that will bite you:
   and suspends Web Audio when a tab is hidden, and resumes them when it is shown; sound that
   tries to start while hidden waits. It also catches `autoPlay` media and page code setting
   `muted = false`, both of which the first version let through.
+- **A page nobody is using is silent, live site included** (Sam, 2026-11-20: "What happened to not
+  playing music if the active tab is not maximized and in use" — the live game was playing from the
+  Claude app's browser pane while he typed in the chat beside it; on screen, so the hidden rule never
+  fired). Rule 3 in the same script: a page that is visible but does not have the keyboard
+  (`document.hasFocus()` on the TOP page, so a framed map or Pit follows the page around it) is
+  **muted, not paused** — media elements get `muted = true`, every AudioContext's master gain goes to
+  0 — so the game keeps running in step with the table and is heard again on the next click into it.
+  Sam chose "everywhere" over "Claude pane only", knowing that with two game windows open only the
+  one last clicked is heard. Half a second of grace before it mutes; none when it un-mutes. On the
+  live site it only un-mutes what it muted itself, never a `muted` the page set (the Music-off
+  switch). Do not "fix" a silent unfocused window; that is the rule. The Pit
+  (`public/pit-arena/index.html`) had shipped without the script at all; `lib/sound-rules.test.ts`
+  now fails if any static page that makes sound forgets it.
 
 ---
 
