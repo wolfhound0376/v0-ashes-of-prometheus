@@ -1,4 +1,4 @@
-/* Two sound rules, one script, loaded FIRST on every page that can make a noise.
+/* Three sound rules, one script, loaded FIRST on every page that can make a noise.
  *
  * RULE 1: TEST COPIES ARE SILENT until Sam turns the sound on himself.
  * WHY (Sam, 2026-10-22): "test previews shouldn't have any sound unless I'm actively the one checking them
@@ -19,6 +19,22 @@
  * hidden (another tab in front, window minimised, app in the background) every film, song and voice it is
  * playing pauses, and its Web Audio is suspended. They pick up where they stopped when the page is shown
  * again. Sound that tries to start while the page is hidden waits until it is shown.
+ *
+ * RULE 3: A PAGE NOBODY IS USING IS SILENT, everywhere, the live site included.
+ * WHY (Sam, 2026-11-20): "What happened to not playing music if the active tab is not maximized and in use".
+ * He had the live game open in the Claude app's browser pane and was typing in the chat beside it. The pane
+ * was on screen, so rule 2 never fired, and the address was the live one, so rule 1 never did either.
+ * "In use" means the page has the keyboard: it is the window, and the tab, you last clicked or typed in.
+ * A page that is on screen but not in use (a window beside the one you are working in, a second monitor,
+ * the Claude pane while you type in the chat, another app in front) goes SILENT BUT KEEPS RUNNING: its
+ * songs, films and voices are muted, not paused, so a player who clicks over to another window stays in step
+ * with the table and simply hears nothing until they click back. (Rule 2 still pauses a page nobody can see.)
+ * Sam's ruling on scope: "everywhere", not just inside the Claude app, knowing it means that with two game
+ * windows open only the one last clicked is heard.
+ *   - A framed page (the map inside /velkynvelve, The Pit inside /pit) asks the TOP page whether it is in
+ *     use, so clicking the page around the frame does not silence the frame.
+ *   - Losing the keyboard for under half a second (a click on the address bar and straight back) is ignored.
+ *   - A page that loads without the keyboard starts silent.
  *
  * HISTORY. Until 2026-10-26 this file loaded only on the static pages (Underwalk, cave, camp). The React app
  * (/intro, /awaken, the dashboard) never loaded it, and the intro film's autoplay and its later
@@ -47,7 +63,10 @@
     try { on = !automated && sessionStorage.getItem(KEY) === "on"; } catch (e) {}
   }
 
-  var masters = [];   // rule 1: one gain per AudioContext (test copies only)
+  var masters = [];   // rules 1 and 3: one gain per AudioContext, in front of the speakers
+  var ours = [];      // rule 3, live site: media WE muted, so we never un-mute what the page muted itself
+  var quiet = false;  // rule 3: on screen but not in use
+  var quietTimer = null;
   var contexts = [];  // rule 2: every AudioContext, to suspend while hidden
   var media = [];     // every media element we have seen
   var heldMedia = []; // paused (or kept from starting) by rule 2
@@ -58,20 +77,62 @@
   function seen(el) { if (media.indexOf(el) < 0) media.push(el); }
   function hold(el) { if (heldMedia.indexOf(el) < 0) heldMedia.push(el); }
 
+  // Rule 3's question. A framed page asks the top page (same origin); if it cannot, it answers for itself.
+  function focused() {
+    try { if (window.top && window.top !== window) return window.top.document.hasFocus(); } catch (e) {}
+    try { return document.hasFocus(); } catch (e) { return true; }
+  }
+  function audible() { return on && !quiet; }
+  function muteOurs(el) {
+    if (el.muted) return;
+    try { el.muted = true; } catch (e) { return; }
+    if (!TEST && ours.indexOf(el) < 0) ours.push(el);
+  }
+
   function applyMute() {
-    for (var i = 0; i < masters.length; i++) {
-      try { masters[i].gain.value = on ? 1 : 0; } catch (e) {}
+    var a = audible(), i;
+    for (i = 0; i < masters.length; i++) {
+      try { masters[i].gain.value = a ? 1 : 0; } catch (e) {}
     }
     if (TEST) {
-      for (var j = 0; j < media.length; j++) {
-        try { media[j].muted = !on; } catch (e) {}
+      for (i = 0; i < media.length; i++) {
+        try { media[i].muted = !a; } catch (e) {}
       }
       if (!on && window.speechSynthesis) { try { speechSynthesis.cancel(); } catch (e) {} }
+    } else if (a) {
+      var back = ours; ours = [];
+      for (i = 0; i < back.length; i++) { try { back[i].muted = false; } catch (e) {} }
+    } else {
+      for (i = 0; i < media.length; i++) muteOurs(media[i]);
     }
     render();
   }
 
-  // ---- Web Audio: remember every context; on a test copy, put a master gain in front of the speakers ----
+  // ---- rule 3: in use, or not ----
+  function setQuiet(q) {
+    if (quiet === q) return;
+    quiet = q;
+    applyMute();
+    if (window.speechSynthesis) { try { q ? speechSynthesis.pause() : (hidden() || speechSynthesis.resume()); } catch (e) {} }
+  }
+  // `now` skips the half-second grace: used at load and when a hidden page is shown, so nothing blips.
+  function check(now) {
+    var want = !hidden() && !focused();
+    if (!want) {
+      if (quietTimer) { clearTimeout(quietTimer); quietTimer = null; }
+      setQuiet(false);
+      return;
+    }
+    if (quiet) return;
+    if (now === true) { setQuiet(true); return; }
+    if (!quietTimer) quietTimer = setTimeout(function () {
+      quietTimer = null;
+      if (!hidden() && !focused()) setQuiet(true);
+    }, 450);
+  }
+  quiet = !hidden() && !focused();
+
+  // ---- Web Audio: remember every context, and put a master gain in front of the speakers ----
   ["AudioContext", "webkitAudioContext"].forEach(function (name) {
     var Base = window[name];
     if (typeof Base !== "function") return;
@@ -82,9 +143,9 @@
       constructor() {
         super(...arguments);
         contexts.push(this);
-        if (TEST && real && real.get) {
+        if (real && real.get) {
           var m = Base.prototype.createGain.call(this);
-          m.gain.value = on ? 1 : 0;
+          m.gain.value = audible() ? 1 : 0;
           m.connect(real.get.call(this));
           masterOf.set(this, m);
           masters.push(m);
@@ -103,7 +164,8 @@
   var play = HTMLMediaElement.prototype.play;
   HTMLMediaElement.prototype.play = function () {
     seen(this);
-    if (TEST) { try { this.muted = !on; } catch (e) {} }
+    if (TEST) { try { this.muted = !audible(); } catch (e) {} }
+    else if (!audible()) muteOurs(this);
     if (hidden()) {
       // Rule 2: don't start now; start when the page is shown. Resolve, so callers that await play()
       // simply wait for the media's own 'ended' as they would have anyway.
@@ -119,7 +181,7 @@
     var el = e.target;
     if (!(el instanceof HTMLMediaElement)) return;
     seen(el);
-    if (TEST && !on && !el.muted) { try { el.muted = true; } catch (x) {} }
+    if (!audible()) muteOurs(el); // rule 1 (test copy, sound off) or rule 3 (not in use)
   }
   document.addEventListener("loadstart", muteIfTest, true);
   document.addEventListener("volumechange", muteIfTest, true);
@@ -155,6 +217,7 @@
       }
       if (window.speechSynthesis) { try { speechSynthesis.pause(); } catch (e) {} }
     } else {
+      check(true); // shown, but is it in use? decide before anything resumes
       var ms = heldMedia; heldMedia = [];
       for (i = 0; i < ms.length; i++) {
         try { var p = play.call(ms[i]); if (p && p.catch) p.catch(function () {}); } catch (e) {}
@@ -166,6 +229,18 @@
       if (window.speechSynthesis) { try { speechSynthesis.resume(); } catch (e) {} }
     }
   });
+
+  // ---- rule 3: watch the keyboard ----
+  // Events make it prompt; the slow tick catches what no event reports (focus moving between frames).
+  window.addEventListener("focus", check);
+  window.addEventListener("blur", check);
+  try {
+    if (window.top && window.top !== window) {
+      window.top.addEventListener("focus", check);
+      window.top.addEventListener("blur", check);
+    }
+  } catch (e) {}
+  setInterval(check, 500);
 
   // ---- Sam's switch (test copies only) ----
   function render() {
@@ -196,5 +271,5 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mount);
   else mount();
 
-  window.__aopTestSilence = { isOn: function () { return on; }, isTestCopy: TEST };
+  window.__aopTestSilence = { isOn: function () { return on; }, isTestCopy: TEST, isQuiet: function () { return quiet; } };
 })();
