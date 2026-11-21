@@ -10,6 +10,11 @@
 //   ONCE         once per campaign run, per hero. Winning writes PIT_DONE_KEY = "<run>:<characterId>" in this
 //                browser; /awaken reads it. A run the table could not name sends nobody to the Pit, so a
 //                network blip can never loop a player through it.
+//   TOGETHER     (Sam, 2026-11-20: "Fifi tried to play with me but was waiting and didn't enter the pit with us." Kenta
+//                was new to a campaign Fifi had already woken in, so he got the Pit and she stood at the gate.) When
+//                a session starts and ANY seated hero still owes the Pit, every seated hero with Pit art goes in,
+//                the ones who have already rolled their fortune too: once per session for them
+//                (pitSessionDoneValue). They roll nothing afterwards; /awaken shows them the Act card as before.
 //   WHO IS IN IT only the characters who enter (Sam, 2026-11-16): the seated heroes with Pit art, this
 //                browser's hero first. Each player fights on their own screen; the other heroes are played by
 //                the Pit itself. Nothing about the fight is written to the world.
@@ -32,14 +37,28 @@ export function pitHeroKey(name: string | null | undefined): PitHero | null {
 }
 
 export const pitDoneValue = (run: string, characterId: string) => `${run}:${characterId}`
+/** A hero who had already woken in this campaign and went in with the table: done for this SESSION only. */
+export const pitSessionDoneValue = (run: string, session: number, characterId: string) => `${run}:s${session}:${characterId}`
+/** What winning writes for this hero, and what sends them past the Pit next time. */
+export const pitDoneFor = (run: string, session: number | null | undefined, characterId: string, rolled: boolean) =>
+  rolled ? pitSessionDoneValue(run, typeof session === "number" ? session : 0, characterId) : pitDoneValue(run, characterId)
+
+/** Does anyone seated still owe the Pit? Seated, not DM-run, not excused, has Pit art, and has not rolled their fortune. */
+export function pitOwedBy(seats: readonly { id: string; name: string; dm?: boolean; away?: boolean }[], rolledIds: ReadonlySet<string>): string[] {
+  return seats.filter((s) => !s.dm && !s.away && pitHeroKey(s.name) !== null && !rolledIds.has(s.id)).map((s) => s.id)
+}
 
 export type PitFirstInput = {
   /** The campaign run the table reports (changes on every New Game). Unknown → never the Pit. */
   run: string | null | undefined
   characterId: string
   name: string | null | undefined
-  /** Has this hero already rolled their fortune this run? Then it is a saved game: no Pit. */
+  /** Has this hero already rolled their fortune this run? Then it is a saved game: no Pit, unless the table goes. */
   rolled: boolean
+  /** Does another seated hero still owe the Pit (the table's `pitDue`)? Then a hero who has rolled goes in with them. */
+  partyDue?: boolean
+  /** The table's session number: a hero who has rolled goes in once per session. */
+  session?: number | null
   /** What PIT_DONE_KEY holds in this browser. */
   done: string | null | undefined
 }
@@ -47,8 +66,8 @@ export type PitFirstInput = {
 /** Does this hero fight in the Pit before the awakening? */
 export function pitComesFirst(i: PitFirstInput): boolean {
   if (!i.run || !i.characterId) return false
-  if (i.rolled) return false
   if (!pitHeroKey(i.name)) return false
+  if (i.rolled) return i.partyDue === true && i.done !== pitDoneFor(i.run, i.session, i.characterId, true)
   return i.done !== pitDoneValue(i.run, i.characterId)
 }
 
