@@ -4516,7 +4516,7 @@ async function roadFight(){
 function leaveVelkynvelve(z){
   // A ROAD PLATE'S WAY OUT IS THE ROAD (ROAD FIGHT, below): back to the travel map, where the march stands halted.
   // OUT OF THE CHAINS: the party never walked out of the outpost, so the map is told which way the column took them
-  if (isRoadPlate(cur) && state.chainMarch && state.chainMarch.out === "escaped" && String(cur) === CHAIN_MARCH.plate){ showDialog({title: "The north passage", body: "Velkynvelve is behind you. Past here the party is on the Underdark map, on the road the caravan was taking.", buttons: [{label: "Take the road", primary: true, fn: () => { (window.top !== window ? window.top : window).location.href = chainMarchMapHref(); }}, {label: "Stay"}]}); return; }
+  if (isRoadPlate(cur) && state.chainMarch && state.chainMarch.out === "escaped" && String(cur) === CHAIN_MARCH.plate){ showDialog({title: "The north passage", body: "Velkynvelve is behind you, and the escort lies on the bridge. Anything left on the dead stays here. Past this point the party is on the Underdark map, on the north road the caravan was taking.", buttons: [{label: "Take the road", primary: true, fn: () => { $("fade").classList.add("on"); setTimeout(() => { (window.top !== window ? window.top : window).location.href = chainMarchMapHref(); }, CHAIN_MARCH.fadeMs); }}, {label: "Search the dead first"}]}); return; }
   if (isRoadPlate(cur)){ showDialog({title: "Back to the road", body: "The march is where you left it.", buttons: [{label: "Back to the map", primary: true, fn: () => { (window.top !== window ? window.top : window).location.href = "/map"; }}, {label: "Stay"}]}); return; }
   const away = PARTY.filter(heroElsewhere);
   if (away.length){ toast(`The party leaves Velkynvelve together. ${away.map(id => `${SHORT[id] || id} (${plateLabel(heroAt[id].plate)})`).join(", ")} ${away.length > 1 ? "are" : "is"} elsewhere.`, 5000); return; }
@@ -11804,6 +11804,11 @@ function caravanTick(){
 //   2. THE CUT        the party and the prisoners are taken to the rope bridge plate; every screen follows.
 //   3. THE BRIDGE     the column halts mid-bridge, drow ahead and behind, and the fight opens against the escort. It is an ordinary fight: allies fight,
 //                     the bridge's drop is real, and Flee is on the bar.
+//                     Sam, 2026-11-20, after playing it: "We just looked alone in the middle of the bridge, then there
+//                     was an attack. Very awkward. Then we couldn't use magic." The escort used to be made by the fight,
+//                     so for six seconds the column stood on an empty bridge. Now the drow are ON the bridge from the cut
+//                     (chainMarchStage, every screen), one calls the halt out loud, one bends to the snagged chain, and
+//                     that is the moment the irons come off everyone and steel comes out.
 //   4. HOW IT ENDS    escort beaten, or a hero off the plate: they are out, on the north passage (the way to the map
 //                     is either end of the bridge). Any other end: Menzoberranzan, GAME OVER on every screen. The
 //                     DM's own End combat decides nothing.
@@ -11820,9 +11825,15 @@ function caravanTick(){
 //   [BOOK]    Ilvara means to send the prisoners on to Menzoberranzan (OotA ch.1). The north passage "leads toward
 //             Menzoberranzan and Blingdenstone" (OotA p.20), so that is the road the column takes and the road a
 //             party that gets away is standing on. The book stages no caravan, no bridge and no escort.
-//   [CLAUDE]  What makes it HARDER than the pen: the irons are on every wrist again, whatever the party had done
-//             about them; the escort is larger than the gate watch (one more drow than there are heroes, never
-//             fewer than three, never more than five); and it is fought on a rope bridge over a drop.
+//   [CLAUDE]  What makes it HARDER than the pen: the escort is larger than the gate watch (one more drow than
+//             there are heroes, never fewer than three, never more than five), and it is fought on a rope bridge
+//             over a drop.
+//   [SAM 2026-11-20] after playing it ("We just looked alone in the middle of the bridge, then there was an attack.
+//             Very awkward. Then we couldn't use magic. Finally, at the end it just took us to the nodal map when we
+//             left. Very messy") he said "go" to: the escort is ON the bridge with the column from the cut, a drow
+//             calls the halt out loud, and a guard bending to the snagged chain is the moment steel comes out; the
+//             irons go on for the march and come OFF as the fight opens (the snagged chain is the opening), and stay
+//             off afterwards; the win ends with Malachar's line spoken and a fade before the travel map.
 //   [CLAUDE]  The column is halted in the MIDDLE of the bridge with the escort split ahead of it and behind it, so
 //             neither end is a free run: getting off the plate means getting past drow first.
 //   [CLAUDE]  The escort is plain drow guards (the pen's own stat block). No elite warrior, no priestess: at the
@@ -11849,7 +11860,9 @@ const CHAIN_MARCH = {
   guardsMin: 3,                // [CLAUDE]
   guardsMax: 5,                // [CLAUDE]
   takeMs: 5200,                // [CLAUDE] the drow come into the pen: Malachar's line is read before the cut
-  bridgeMs: 4200,              // [CLAUDE] the column halts on the bridge before steel
+  haltMs: 3400,                // [CLAUDE] the drow calls the halt; the column stands
+  snagMs: 3000,                // [CLAUDE] a guard bends to the snagged chain; then steel
+  fadeMs: 900,                 // [CLAUDE] the fade to black before the travel map
 }
 
 /** The two drow guard sprites the walk has stat blocks for. Alternated so the escort is not five of one figure. */
@@ -11860,6 +11873,11 @@ const CHAIN_MARCH_LINES = {
   taken: "The caravan is here. Up. Wrists out. You had six watches, and you spent them all.",
   note: "The drow chain the prisoners into a column and march them out of Velkynvelve by the north passage.",
   bridge: "The column halts on the rope bridge. A drow bends to free a snagged chain. This is the last chance there will be.",
+  // what the drow say on the bridge, in bubbles and in their own voices (heard as their tongue by anyone without it)
+  halt: "Halt. Nobody moves.",
+  snag: "The chain is caught. Hold them.",
+  alarm: "The chain! They're loose!",
+  loose: "The snagged chain parts, and the whole column's irons go slack. Hands are free.",
   escaped: "The chains are behind you, and so is Velkynvelve. The road is yours. For now.",
   lost: [
     "Menzoberranzan, then. They'll find a use for you. They always do. It is never a good one.",
@@ -11921,6 +11939,16 @@ function chainMarchLostLine(seed) {
   return CHAIN_MARCH_LINES.lost[h % CHAIN_MARCH_LINES.lost.length]
 }
 
+/**
+ * Who the caravan takes: every prisoner on the pen's roll who can still walk. Not the dead, not anyone the DM has
+ * left behind. A prisoner out on a work crew is taken too: the caravan empties the pen. [CLAUDE]
+ * `roll` is every prisoner id; `gone` is the dead and the left-behind. Order kept.
+ */
+function chainMarchColumn(roll, gone) {
+  const out = new Set((gone || []).map(String))
+  return [...new Set((roll || []).map(String))].filter(id => !out.has(id))
+}
+
 /** Where a party that got away goes: the travel map, out of Velkynvelve by the north passage. */
 function chainMarchMapHref() {
   return `/map?from=velkynvelve&via=${encodeURIComponent(CHAIN_MARCH.via)}&plate=${encodeURIComponent(CHAIN_MARCH.biome)}`
@@ -11935,9 +11963,10 @@ function chainMarchTick(){
   if (M && M.seq && !M.out && chainMarchSaid !== M.seq){ chainMarchSaid = M.seq;
     log(`<b>The drow come for the prisoners.</b> <i>${esc(CHAIN_MARCH_LINES.taken)}</i>`); toast("The caravan is here. The drow chain you into the column.", 5200); }
   if (M && M.out && chainMarchOutSaid !== M.seq + M.out){ chainMarchOutSaid = M.seq + M.out;
-    if (M.out === "escaped"){ log(`<b>They are out.</b> <i>${esc(CHAIN_MARCH_LINES.escaped)}</i>`); toast("You are out of Velkynvelve. Either end of the bridge leads to the road.", 7000); }
+    if (M.out === "escaped"){ log(`<b>They are out.</b> <i>${esc(CHAIN_MARCH_LINES.escaped)}</i>`, {say: true}); toast("You are out of Velkynvelve. Search the dead, then take either end of the bridge to the road.", 8000); }
     else if (M.out === "lost") log("<b>The column moves on, and the party with it.</b>");
     else log("<i>The DM ended the fight on the bridge. What becomes of the column is his call.</i>"); }
+  chainMarchStage();
   if (chainMarchBusy || !booted || mode !== "explore" || !APP) return;
   // due now, or begun on a screen that went away before the cut (the party is still standing in the pen half a minute on)
   const stalled = !!(M && !M.out && penHeld() && Date.now() - (M.at || 0) > 30000);
@@ -11945,6 +11974,31 @@ function chainMarchTick(){
   const first = party.find(p => actors.includes(p) && !p.down && !p.ko) || party[0];
   if (!first || !owDrives(first)) return;                       // one screen runs it
   chainMarchRun(!stalled);
+}
+/** The escort standing on the bridge with the column, before the fight takes them. */
+function chainMarchEscortHere(){ return npcs.filter(n => n.marchEscort && actors.includes(n) && !n.down && !n.body); }
+/**
+ * THE ESCORT IS ON THE BRIDGE (Sam, 2026-11-20). Every screen stands the drow at their posts, ahead of the column and
+ * behind it, while the march is unsettled and no fight is on. They are people on the plate, not foes yet: the fight
+ * takes these same figures where they stand (startCombat, "someone already on the plate turns hostile"). A screen that
+ * only SHOWS the fight drops its own copies as the mirror begins (enterMirror), so nobody is drawn twice.
+ */
+function chainMarchStage(){
+  const M = state.chainMarch;
+  if (!M || M.out || !booted || state.gameOver || String(cur) !== CHAIN_MARCH.plate || mode !== "explore" || cbt || FIGHT.mirror) return;
+  if (foes.length || npcs.some(n => n.marchEscort)) return;
+  const ids = chainMarchEscort(PARTY.length).filter(id => SPR[id] && FOE_BLOCKS[id]), posts = chainMarchPosts(ids.length);
+  const taken = [...party, ...npcs.filter(n => actors.includes(n) && !n.offStage)].map(a => ({x: a.x, y: a.y}));
+  ids.forEach((id, i) => { const q = nearestWalkable(posts[i].x, posts[i].y, taken); taken.push({x: q.x, y: q.y});
+    const a = mkActor(id, q.x, q.y, "npc", {marchEscort: true, static: true, talk: false, barks: [], home: {x: q.x, y: q.y}});
+    a.t0 = now - Math.random() * 1000; if (leader) faceTo(a, leader); npcs.push(a); });
+  actors = [...party, ...npcs, ...foes];
+}
+/** Who the caravan takes: everyone on the pen's roll who can still walk, a prisoner out on a work crew included. */
+function chainMarchTakesAll(){
+  const comp = companyNow(), dead = npcs.filter(n => n.down || n.body || n.kind === "body").map(n => n.id), shot = typeof surgeonDeadId === "function" ? surgeonDeadId() : null;
+  for (const id of chainMarchColumn(PEN_NPCS.map(d => d.id), [...(state.slain || []), ...state.leftBehind, ...dead, ...(shot ? [shot] : [])]))
+    if (SPR[id] && !comp.includes(id)) comp.push(id);
 }
 async function chainMarchRun(fresh){
   chainMarchBusy = true;
@@ -11959,17 +12013,32 @@ async function chainMarchRun(fresh){
     await wait(CHAIN_MARCH.takeMs);
     if (mode !== "explore" || !penHeld()) return;               // something else has the scene; the stalled check brings it back
     const at = CHAIN_MARCH.halt;                                // the middle of the bridge: neither end is a free run
+    chainMarchTakesAll();                                       // the caravan empties the pen (Jimjar, Topsy and Turvy were left off the bridge, 2026-11-20)
     await enterNode(plate, {spawn: {x: at[0], y: at[1]}, note: esc(CHAIN_MARCH_LINES.note)});
     await wait(1700);                                           // the plate fades in and the column settles
     if (String(cur) !== plate || cbt) return;
-    log(`<i>${esc(CHAIN_MARCH_LINES.bridge)}</i>`, {say: true}); toast("The column halts on the bridge. Now or never.", CHAIN_MARCH.bridgeMs);
-    await wait(CHAIN_MARCH.bridgeMs);
+    chainMarchStage();                                          // the escort is on the bridge with the column
+    // THE HALT: a drow calls it, in their own voice. The narrator's line is written, not read: two voices at once is noise.
+    { const g = chainMarchEscortHere(); log(`<i>${esc(CHAIN_MARCH_LINES.bridge)}</i>`);
+      if (g[0]) escortSays(g[0], CHAIN_MARCH_LINES.halt, CHAIN_MARCH.haltMs); toast("The column halts on the bridge.", CHAIN_MARCH.haltMs); }
+    await wait(CHAIN_MARCH.haltMs);
     if (String(cur) !== plate || cbt || FIGHT.mirror) return;
-    state.chainMarch = Object.assign({}, state.chainMarch, {stage: "bridge"}); saveWalk();
+    // THE SNAG: the guard behind the column bends to the chain. This is the opening.
+    { const g = chainMarchEscortHere(), bender = g[1] || g[0];
+      if (bender) escortSays(bender, CHAIN_MARCH_LINES.snag, CHAIN_MARCH.snagMs); toast("A drow bends to the snagged chain. Now or never.", CHAIN_MARCH.snagMs); }
+    await wait(CHAIN_MARCH.snagMs);
+    if (String(cur) !== plate || cbt || FIGHT.mirror) return;
+    state.chainMarch = Object.assign({}, state.chainMarch, {stage: "bridge"});
+    // THE IRONS COME OFF (Sam, 2026-11-20: "we couldn't use magic"): the snagged chain is the opening. Off every wrist, and they stay off.
+    state.manacled = false; state.unshackled = {}; exploreKey = "";
+    log(`<b>${esc(CHAIN_MARCH_LINES.loose)}</b>`); for (const p of party) if (!p.down) popText(p, "free", "#ffe9a8", 1);
+    saveWalk();
+    const guards = chainMarchEscortHere();
+    if (guards[0]) escortSays(guards[0], CHAIN_MARCH_LINES.alarm, 2600);
     mode = "explore";
-    startCombat(chainMarchEscort(PARTY.length), "The march out in chains", {noAllies: false});
-    // the escort stands ahead of the column and behind it, each drow on free floor of their own
-    if (cbt && mode === "combat"){ const posts = chainMarchPosts(foes.length), taken = [...party, ...npcs.filter(n => actors.includes(n) && !n.offStage)].map(a => ({x: a.x, y: a.y}));
+    // the fight takes the drow where they stand; with no figure to take (no sprite baked), it brings the escort in itself
+    startCombat(guards.length ? guards : chainMarchEscort(PARTY.length), "The march out in chains", {noAllies: false});
+    if (!guards.length && cbt && mode === "combat"){ const posts = chainMarchPosts(foes.length), taken = [...party, ...npcs.filter(n => actors.includes(n) && !n.offStage)].map(a => ({x: a.x, y: a.y}));
       foes.forEach((f, i) => { const q = nearestWalkable(posts[i].x, posts[i].y, taken); f.x = q.x; f.y = q.y; f.home = {x: q.x, y: q.y}; f.path = []; taken.push({x: q.x, y: q.y}); faceTo(f, leader); }); }
   } finally { chainMarchBusy = false; }
 }
@@ -25655,6 +25724,9 @@ const MOVES = {
     [EVENT.SLIP_OUT]: PHASE.OUT_QUIET,
     [EVENT.FIGHT]: PHASE.FIGHT,
     [EVENT.SURRENDER]: PHASE.RECAPTURED,
+    // The march out in chains can come while the lock is turned and nobody has walked out (Sam's game, 2026-11-20:
+    // unlocked three minutes before the caravan). Escaping on the bridge was refused here, so the run stayed "unlocked".
+    [EVENT.LEFT_AREA]: PHASE.GONE,
   },
   [PHASE.FIGHT]: {
     [EVENT.WON]: null,                      // back to OUT_QUIET, or to HUNTED if the alarm was already up (see escapeStep)
@@ -28100,6 +28172,7 @@ function enterMirror(f){
   if (FIGHT.mirror && FIGHT.id === f.id) return;
   Object.assign(FIGHT, {id: f.id, mirror: true, auth: false, plate: String(f.plate), since: 0, dlgShown: null, tickAt: Date.now(), claimTry: 0, gotCbt: false});
   mirrorBagInstall();
+  if (npcs.some(n => n.marchEscort)){ npcs = npcs.filter(n => !n.marchEscort); actors = actors.filter(n => !n.marchEscort); }   // THE MARCH OUT IN CHAINS: the fight brings its own escort
   mode = "combat"; combatBusy = false;
   cbt = {mirror: true, order: [], idx: -1, round: 0, phase: "idle", pend: null, allies: [], bystanders: [], home: {z: view.z, cx: NAT_W / 2, cy: NAT_H / 2}, id: f.id};
   [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); });
