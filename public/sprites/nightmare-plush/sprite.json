@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "name": "Nightmare Plush",
+  "cell": [
+    128,
+    128
+  ],
+  "pivot": [
+    64,
+    114
+  ],
+  "ppu": 178,
+  "animations": {
+    "walk": {
+      "sheet": "walk.png",
+      "frames": 8,
+      "fps": 10,
+      "loop": true
+    },
+    "idle": {
+      "sheet": "idle.png",
+      "frames": 4,
+      "fps": 5,
+      "loop": true
+    }
+  },
+  "source": {
+    "pixellab": "0f34b5a7-7aa4-40f1-a518-c69d1aae1c45",
+    "height_ft": 3.0,
+    "note": "Fear's phantasm (Sam 2026-11-20): gnome-sized; ppu = 107 px figure x 5 / 3 ft"
+  }
+}

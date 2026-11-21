@@ -14216,7 +14216,7 @@ function castSpell(caster, tgt, name, done, darts){
           else { if (name === "Toll the Dead" && ok) spawnFx("tollBell", {at: t, sq: 2, anchor: "base", lift: -.15, alpha: .8}); land(t, !ok, sp.type || "psychic"); }   // the bell tolls either way (SRD: "fills the air around it"); the damage is only on a failed save
           if (sp.dmg){ const expr = sp.dmgHurt && t.c.hp < t.c.hpMax ? sp.dmgHurt : sp.dmg, d = roll(expr); if (sp.addMod) d.total += Math.max(0, m.mod || 0); const n = ok ? (sp.lvl || sp.half ? Math.floor(d.total / 2) : 0) : d.total; if (n){ hitCtx = {spell: name, area: sp.area || 0, by: caster, at}; damage(t, n, sp.type, false, caster, true); hitCtx = null; } else miss(t); line += n ? `, ${n} ${sp.type}` : ""; }
           if (sp.cond && !ok){ addCond(t, sp.cond); concHolds(caster, t, sp.cond, name); if (sp.cond === "restrained") t.c.webDc = dc; if (sp.cond === "paralyzed"){ t.c.heldDc = dc; t.path = []; } if (sp.cond === "asleep"){ t.c.sleptDc = m.dc; t.sleepT0 = now; t.path = []; }
-            if (sp.cond === "laughing"){ t.c.laughDc = dc; t.path = []; addCond(t, "prone"); } if (sp.cond === "blinded" || sp.cond === "deafened") t.c.blindDc = dc; if (sp.cond === "frightened"){ t.c.fearBy = caster; t.c.fearDc = dc; t.path = []; } if (sp.cond === "deafened" && APP) handOff(`${fname(caster)} cast Blindness/Deafness on ${fname(t)}, who is now Deafened for a minute (CON save at the end of each of its turns): it hears nothing — no shouts, no spoken words, no footsteps.`); condFlourish(t, sp.cond); }
+            if (sp.cond === "laughing"){ t.c.laughDc = dc; t.path = []; addCond(t, "prone"); } if (sp.cond === "blinded" || sp.cond === "deafened") t.c.blindDc = dc; if (sp.cond === "frightened"){ t.c.fearBy = caster; t.c.fearDc = dc; t.path = []; if (t.c.conds.has("frightened")) fearPhantasm(caster, t); } if (sp.cond === "deafened" && APP) handOff(`${fname(caster)} cast Blindness/Deafness on ${fname(t)}, who is now Deafened for a minute (CON save at the end of each of its turns): it hears nothing — no shouts, no spoken words, no footsteps.`); condFlourish(t, sp.cond); }
           lines.push(line); if (i === targets.length - 1) log(`${fname(caster)} ${name}: ${lines.join("; ")}.`);
         }, i * 180));
       }
@@ -14520,7 +14520,7 @@ function fearFlee(a){ const src = a.c.fearBy;
   if (a.c.move <= 0 || a.c.conds.has("restrained") || a.c.conds.has("grappled") || incapacitated(a)) return false;   // nowhere to move: it acts, still Frightened
   const goal = fleeFloor(a, src, a.c.move * 2 * ruleFt(a)); if (!goal) return false;
   a.c.action = false; a.c.move *= 2;                                                // the Dash
-  popText(a, "flees in terror", "#b8a0d8"); log(`${fname(a)} is Frightened of ${fname(src)} and Dashes away (Fear).`); narrate(a, `${fname(a)} breaks and runs from ${fname(src)}.`);
+  popText(a, "flees in terror", "#b8a0d8"); fearPhantasm(src, a, 3200, true); log(`${fname(a)} is Frightened of ${fname(src)} and Dashes away (Fear).`); narrate(a, `${fname(a)} breaks and runs from ${fname(src)}.`);
   renderTurns(); renderParty(); if (a.kind === "pc") closeMenu();
   combatWalk(a, goal, () => setTimeout(() => passTurn(a), 500));
   return true; }
@@ -14530,6 +14530,39 @@ function fearSave(t){ if (!t.c || !t.c.conds.has("frightened") || t.down) return
   const s = d20(0, t, "frightened") + ((t.c.sheet.saves || {}).wis || 0) + blessD4(t);
   if (s >= (t.c.fearDc || 13)){ t.c.conds.delete("frightened"); popText(t, "steadies", "#d8c8f0", .85); log(`${fname(t)}, out of ${fname(src)}'s sight, shakes off the Fear (WIS ${s}).`); renderParty(); }
   else log(`${fname(t)} is still terrified (WIS ${s} vs DC ${t.c.fearDc}).`); }
+//
+// FEAR'S PHANTASM (Sam, 2026-11-20: "a pixel character that will be used as an illusion spell that scares vulnerable people
+// ... the size of a gnome"). SRD: Fear projects "a phantasmal image of a creature's worst fears". The image is the Nightmare
+// Plush (PixelLab "Nightmare Plush (Illusion)", public/sprites/nightmare-plush, ppu set for a 3-ft gnome): a haunted
+// teddy that steps out of the dark on the caster's side of each creature that FAILS the save, shambles up to it (its
+// scary-walk sheet), looms in its idle and fades. It comes back to chase the creature each time Fear makes it run. It is
+// an illusion, so it is translucent and violet-edged and has no body, no square and no turn: it is drawn, not an actor.
+// Its sheets load the first time Fear lands, not with the page.
+const PHANTASM = "nightmare-plush", PH = {};
+function loadPhantasm(){ if (PH.busy) return; PH.busy = true;
+  fetch(`${SPRITE_BASE}${PHANTASM}/sprite.json`).then(r => r.json()).then(j => { PH.json = j; return Promise.all(["idle", "walk"].map(n => loadImg(`${SPRITE_BASE}${PHANTASM}/${n}.png`).then(i => PH[n] = i))); }).catch(() => { PH.busy = false; }); }
+function fearPhantasm(src, t, ms = 4200, chase = false){ if (!t || t.down) return; loadPhantasm();
+  sparks.push({labPhantasm: true, a: t, side: Math.sign(src.x - t.x) || 1, chase, t0: now, life: ms});
+  if (!chase){ bank("magic/necrotic_windup", .35); lightFlash(t.x, t.y - 30, "#9a6ad8", 160, 700); } }
+function drawLabPhantasm(s, k){ const t = s.a; if (!PH.json || !PH.idle || !PH.walk || !actors.includes(t)){ return; }
+  const J = PH.json, cw = J.cell[0], ch = J.cell[1], age = now - s.t0, life = s.life;
+  // where it stands: from 12 ft out on the caster's side, it shambles in to 4 ft over the first 45% of its life (a chase
+  // keeps pace 6 ft behind instead), then looms
+  const walkK = s.chase ? 0 : Math.min(1, k / .45), ft = ftPx(t), off = s.chase ? 6 : 12 - 8 * (1 - Math.pow(1 - walkK, 2));
+  const x = t.x + s.side * ft * off, y = t.y + 6, face = faceOf(t.x - x, t.y - y);
+  const walking = s.chase || walkK < 1, an = J.animations[walking ? "walk" : "idle"], img = walking ? PH.walk : PH.idle;
+  const f = Math.floor(age / 1000 * an.fps) % an.frames, sc = BASE * paceAt(t) * (96 / J.ppu);
+  const al = Math.min(1, age / 260, (life - age) / 600) * (.78 + .1 * Math.sin(now / 70));
+  if (al <= 0) return;
+  const dw = cw * sc, dh = ch * sc, dx = x - J.pivot[0] * sc + Math.sin(now / 55) * .9, dy = y - J.pivot[1] * sc;
+  ctx.save();
+  const g = ctx.createRadialGradient(x, y - dh * .35, 0, x, y - dh * .35, dh * .7); g.addColorStop(0, "rgba(120,60,190,.28)"); g.addColorStop(1, "rgba(40,10,70,0)");
+  ctx.globalAlpha = al; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y - dh * .35, dh * .7, 0, Math.PI * 2); ctx.fill();   // the dark it steps out of
+  ctx.globalAlpha = al * .85; ctx.drawImage(img, f * cw, face * ch, cw, ch, dx, dy, dw, dh);
+  ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = al * (.28 + .12 * Math.sin(now / 120));                    // the illusion's violet edge
+  ctx.drawImage(tintedSheet(img, PHANTASM + (walking ? "w" : "i"), "#8a4be0"), f * cw, face * ch, cw, ch, dx - 1.5, dy, dw, dh);
+  ctx.restore();
+  if (now - (s.em || 0) > 90){ s.em = now; sparks.push({x: x + labRnd(-dw * .25, dw * .25), y: y - labRnd(dh * .1, dh * .6), vx: labRnd(-12, 12), vy: -labRnd(15, 45), g: -8, col: Math.random() < .5 ? "#a77ae8" : "#5b3a8a", t0: now, life: labRnd(500, 900)}); } }
 //
 // MIRROR IMAGE: the duplicates, counted on the target (c.images); attackWith asks mirrorDiverts on every hit
 function mirrorDiverts(att, t){ if (!t || !t.c || !(t.c.images > 0) || (att && att.c && att.c.conds.has("blinded"))) return null;
@@ -16761,6 +16794,7 @@ function drawLabSpark(s, k){
   if (s.labMote){ drawLabMote(s, k); return true; }
   if (s.labHeart){ drawLabHeart(s, k); return true; }
   if (s.labIllusion){ ovWrapS(s, () => drawLabIllusion(s, k)); return true; }
+  if (s.labPhantasm){ ovWrapS(s, () => drawLabPhantasm(s, k)); return true; }
   return false;
 }
 // The spider: spring to within reach of its target, then bite.
