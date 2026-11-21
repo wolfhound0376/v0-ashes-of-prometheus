@@ -11,6 +11,9 @@ import { CLAIM_QUIET_MS, MAX_READ, cleanBody, isHeld, mayClaim, mayDrive, openDe
 //   GET                                           the run's live fight, if any: {fight} (null when none or gone quiet).
 //   POST {op:"open", plate}                       open a fight here: {auth:true, fight} if this screen now runs it,
 //                                                 {auth:false, fight} if another screen already does (show theirs).
+//                                                 plate "scene:<plate>" opens a SCENE instead (Sam, 2026-11-20: "all events
+//                                                 should be world events"): the same lane outside a fight. A fight that
+//                                                 opens while a scene is held ends the scene and takes its place.
 //   POST {op:"tick", fight, body}                 the authority's quarter-second: what changed and what happened.
 //   POST {op:"in", fight, body}                   a seated player's input for the authority (a menu row, a click…).
 //   POST {op:"end", fight, body}                  the authority's last word.
@@ -100,7 +103,7 @@ export async function POST(req: NextRequest) {
       if (!runId) return NextResponse.json({ error: "no active run" }, { status: 404 })
       const plate = String(body.plate ?? "").slice(0, 24)
       const now = Date.now()
-      const d = openDecision(await liveFight(db, runId), now)
+      const d = openDecision(await liveFight(db, runId), now, plate)   // (a fight outranks a scene: lib/walk-fight.ts)
       if (d.kind === "join") return NextResponse.json({ auth: d.fight.auth_key === who, fight: d.fight, now })
       if (d.endStale) await db.from("walk_fights").update({ ended_at: new Date().toISOString() }).eq("id", d.endStale)
       // Ten minutes after a fight ends its quarter-second TICKS go (they are the bulk: ~800 a fight). The fight row, every

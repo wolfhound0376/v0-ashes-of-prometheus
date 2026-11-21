@@ -425,6 +425,20 @@ on Anthropic models on the free tier), bare model strings through the AI Gateway
   A new weapon icon that fills the canvas is a bug — the first pass drew darts as long as
   pikes. PixelLab canvases must be multiples of 4, and a style reference must be <= the
   target canvas (crop an existing icon, never downscale one).
+- **World events (Sam's ruling, 2026-11-20: "all events should be world events")**: a scene on the painted map
+  is played by ONE screen and shown on every other screen on that plate. Phase 1 (built): outside a fight, the
+  screen that triggers a scene is its authority and the rest watch it over One Fight's own lane (same tables, same
+  route, `RELAY_FNS` / `RELAY_ARRAYS` in `scripts/velkynvelve-walk/template.html`). A scene's `walk_fights` row
+  carries its plate as `scene:<plate>`, so there is no migration; a fight outranks a scene (`lib/walk-fight.ts`
+  `openDecision`). To share a new scene: `await sceneBegin("<name>", () => <still going>)` at its trigger and stop
+  if it resolves false (another screen's scene is being shown here instead); anything it does that is not on the
+  relay lists goes through `sceneDo()`. Only the authority rolls dice or calls the server. A watching screen is
+  flagged `FIGHT.watch` (never `FIGHT.mirror`, which means "showing a fight" and takes the bag and the menu away)
+  and is not put into dialog mode. `mapFilm` / `playFilm` cues reach every screen on the plate. The 2026-10-26 voice
+  ruling holds: pass `to: <hero>` on a voiced `bark` so only that hero's screen and the DM's hear it. Run
+  `node scripts/one-world/world-events-test.mjs` and `one-fight-test.mjs` before merging any change to either.
+  Covered so far: the pen gate (warning, volley, drop, drag, Liana), the escort's volleys on a work detail, the body
+  carried out of the pen, and every film cue. Phases 2 and 3 are separate PRs.
 - **Don't build empty pages.** A nav item with an honest "soon" badge beats a dead page.
 
 ---

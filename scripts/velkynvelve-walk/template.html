@@ -8543,6 +8543,7 @@ function fighterFor(a){
           hp, hpMax, ac: s ? s.ac : 10, conds: new Set(), slots: s && s.magic ? {...s.magic.slots} : {}, init: 0};
 }
 function startCombat(foeIds, label, opts = {}){ bardTuneStop();
+  if (FIGHT.watch) sceneMirrorEnd({});                          // WORLD EVENTS: a fight that starts here ends this screen's showing of a scene
   if (FIGHT.mirror) return;                                    // ONE FIGHT: this screen is showing a fight run elsewhere
   if (fightShared() && FIGHT.live && owSame(FIGHT.live.plate, cur) && FIGHT.live.auth_key !== OW.key){ talkGivesWay(); enterMirror(FIGHT.live); return; }
   talkGivesWay();                           // NPC MINDS, the other way round: a fight that starts ends the talk
@@ -10083,6 +10084,11 @@ function openGateLook(what){
 // asks for its own film: the map knows it happened, Malachar may never narrate it. Same road as the fungi and the
 // sigil (lib/walk-film.ts): the server picks the clip and plays it once per character; a null answer stays silent.
 function mapFilm(cue){
+  sceneCue("mapFilm", [cue]);                               // WORLD EVENTS: on every screen on the plate, not only the one that staged it
+  mapFilm.last = cue;
+  // (a moment every screen stages for itself reaches this screen twice, once from its own copy and once from the
+  // screen that carries it: asked for once)
+  const seen = mapFilm.at || (mapFilm.at = {}); if (Date.now() - (seen[cue] || 0) < 20000) return; seen[cue] = Date.now();
   if (!APP || window.parent === window || !filmsOn()) return;
   try { window.parent.postMessage({type: "aop:walk-film", cue}, location.origin); } catch (e) {}
 }
@@ -16932,6 +16938,7 @@ const FILM_DIR = `${APP ? "/" : "../"}videos/labor/`;
 const filmsSeen = new Set();
 function filmsOn(){ try { const v = JSON.parse(localStorage.getItem("aop_settings_v1") || "{}"); return v.cinematics !== false; } catch (e) { return true; } }
 function playFilm(name){
+  sceneCue("playFilm", [name]);                             // WORLD EVENTS: on every screen on the plate (once per browser there too)
   if (filmsSeen.has(name) || !filmsOn()) return Promise.resolve(false);
   filmsSeen.add(name);
   return new Promise(res => {
@@ -17885,6 +17892,7 @@ async function laborDisobey(h, cause){
 async function laborVolleys(h){
   const d = escortDrow(), cid = characterIdOf(h.id);
   surgeon = {pc: h, stage: "shooting", local: !APP || !cid, labor: true};
+  sceneBegin("gate", () => !!surgeon);                         // WORLD EVENTS: the escort's volleys are seen by everyone on the plate
   escortSays(d, "Enough.", 2500);
   let first = true;
   if (surgeon.local){ const sh = SHEETS[h.id] || {}; surgeonLocalState.hp = sh.hp || 8; surgeonLocalState.s = {stage: "shooting", victim: null, target: {id: h.id, name: fname(h)}, volleys: 0}; first = !surgeonLocalState.tended; }
@@ -17943,6 +17951,7 @@ function laborPenArrival(){
     if (pc){
       pc.down = true; pc.surgeonDown = true; pc.path = []; if (SPR[pc.id].img.dead) playOnce(pc, "dead", () => {});
       surgeon = {pc, stage: "down", local: !APP || !characterIdOf(pc.id), again: !D.surgeon, labor: true};
+      sceneBegin("gate", gateSceneBusy);                       // WORLD EVENTS: one screen plays what follows; the others show it
       log(`The quaggoth dumps ${esc(fname(pc))} on the floor of the pen.`);
       setTimeout(() => { if (surgeon && surgeon.pc === pc) (D.surgeon ? lianaArrives() : surgeonRecover()); }, 3500);
     }
@@ -18350,15 +18359,18 @@ function jorlanAtBars(j, h, guards){
   mapFilm("jorlan-whisper");
   openTalk(j);
 }
+// (still going while the guards warn or shoot, while the scene's own state stands, and until Liana is out of the pen)
+const gateSceneBusy = () => !!surgeon || !!(gateWarn && String(cur) === String(PEN)) || npcs.some(n => n.id === "liana" && actors.includes(n));
 function gateWarning(guards, g, h = leader){
   if (!gateWarn || gateWarn.who !== h.id) gateWarn = {stage: "warned", at: now, who: h.id};
+  sceneBegin("gate", gateSceneBusy);                           // WORLD EVENTS: the warning, and whatever comes of it, is seen by everyone in the pen
   const w = guards.sort((a, b) => Math.hypot(a.x - h.x, a.y - h.y) - Math.hypot(b.x - h.x, b.y - h.y))[0];
   guards.forEach(x => { x.path = []; x.actUntil = now + 6000; x.scanAt = now + 6000; faceTo(x, h); });
   h.path = [];
   popText(w, "!", "#ff6b5e", 1.4);
   const line = GATE_WARNINGS[Math.floor(Math.random() * GATE_WARNINGS.length)];
   delete state.voiced[w.id + ":" + line];                        // heard every time, not once
-  bark(w, line, 5200, {voice: true, talk: true});
+  bark(w, line, 5200, {voice: true, talk: true, to: h});         // (to: the hero warned and the DM hear him; the others read the bubble)
   mode = "dialog"; tip.hidden = true;
   const c = $("objPic").getContext("2d"); c.clearRect(0, 0, 128, 128);
   try { const m = SPR[w.id].json, an = m.animations.idle; c.imageSmoothingEnabled = false; c.drawImage(SPR[w.id].img.idle, 0, 0, m.cell[0], m.cell[1], 0, 0, 128, 128); } catch (e) {}
@@ -18511,9 +18523,12 @@ function dragAlong(a, pts, ms, each, done){
 // Sam, 2026-10-28: "The text bubbles for translations are unnecessary unless someone is there to translate. If so, you
 // hear her language but see it in English." The voice is always Elvish. A seat that understands her (or the DM) reads
 // the bubble in English only; a seat that does not reads her Elvish only. Never both stacked.
-function lianaSays(key, ms = 7000){
-  const a = surgeon && surgeon.liana, L = SURGEON_LINES[key]; if (!a || !L) return;
-  if (APP) speakCanon("liana", L.elv, "Liana").catch(() => {});
+// WORLD EVENTS (Sam, 2026-11-20): she is seen and read on every screen in the pen, each in its own seat's tongue. Her
+// voice keeps the 2026-10-26 rule: the hero she is tending and the DM hear her, everyone else sees the bubble.
+function lianaSays(key, ms = 7000, to = surgeon && surgeon.pc){
+  const a = (surgeon && surgeon.liana) || npcs.find(n => n.id === "liana" && actors.includes(n)), L = SURGEON_LINES[key]; if (!a || !L) return;
+  if (relayOn()) FIGHT.out.push({f: "lianaSays", a: [key, ms, enc(to)]});
+  if (APP && (!to || isDm() || canControl(to))) speakCanon("liana", L.elv, "Liana").catch(() => {});
   bubbles.filter(b => b.a === a).forEach(b => b.until = 0);
   const el = document.createElement("div"); el.className = "bubble said drowish";
   const who = document.createElement("b"); who.textContent = "Liana · in Elvish"; el.appendChild(who);
@@ -18522,9 +18537,22 @@ function lianaSays(key, ms = 7000){
   over.appendChild(el); bubbles.push({a, el, until: now + ms}); a.lastBark = now; lastAnyBark = now;
   log(knows ? `<b>Liana</b> <i>(Elvish)</i>: “${esc(L.en)}”` : `<b>Liana</b> says something in Elvish.`);
 }
+// WORLD EVENTS: another screen runs this scene for the pen. This screen's own copy (begun because it loaded in the
+// middle of it, or because two screens began at once) is put away: its Liana, its card, its hold on the gate. What
+// the hero and the prisoners then do is shown from that screen.
+function surgeonYield(){
+  if (gateWarn){ gateWarn = null; clearInterval(gateWarnTimer); gateWarnTimer = 0; if (mode === "dialog" && !$("obj").hidden){ $("obj").hidden = true; mode = "explore"; } }
+  const S = surgeon; if (!S) return;
+  const a = S.liana; if (a){ actors = actors.filter(x => x !== a); npcs = npcs.filter(x => x !== a); bubbles.filter(b => b.a === a).forEach(b => b.until = 0); }
+  if (S.draggers) S.draggers.forEach(d => { if (d.keep){ d.patrol = d.keep.patrol; d.static = d.keep.static; } });
+  if (mode === "dialog"){ $("obj").hidden = true; mode = "explore"; }
+  surgeon = null;
+}
 // ----- 1. the bolt that makes the point -----
 async function drowSurgeonBegins(guards, pc = leader){
-  surgeon = {pc, stage: "shooting", local: !APP || !characterIdOf(pc.id)};
+  const S0 = surgeon = {pc, stage: "shooting", local: !APP || !characterIdOf(pc.id)};
+  // WORLD EVENTS: this screen runs the scene for the pen; if another screen's scene already holds it, theirs is shown instead
+  if (!(await sceneBegin("gate", gateSceneBusy)) || surgeon !== S0){ if (surgeon === S0) surgeon = null; return; }
   pullToMap("the guards at the pen gate are shooting");
   pc.path = []; guards.forEach(g => { g.path = []; g.actUntil = now + 90000; faceTo(g, pc); });
   mode = "dialog";                                          // nobody walks while the first bolt flies
@@ -18587,12 +18615,14 @@ async function surgeonStepped(){
   const S = surgeon; if (!S) return; S.stage = "stepped";
   await surgeonApi("stepped");
   log("The guards lower their crossbows.", {say: true});
+  if (S.victim) sceneHold(9500);
   if (S.victim) setTimeout(() => surgeonRemoveBody(), 9000);   // nobody comes to stitch anyone; the body still goes over the falls
   surgeon = null;
 }
 // ----- a later defiance: no warning bolt, no surgeon — volleys only (Sam, 2026-10-25) -----
 async function surgeonAgain(guards, pc = leader){
-  surgeon = {pc, stage: "shooting", local: !APP || !characterIdOf(pc.id), again: true};
+  const S0 = surgeon = {pc, stage: "shooting", local: !APP || !characterIdOf(pc.id), again: true};
+  if (!(await sceneBegin("gate", gateSceneBusy)) || surgeon !== S0){ if (surgeon === S0) surgeon = null; return; }      // WORLD EVENTS (drowSurgeonBegins)
   pullToMap("the guards at the pen gate are shooting");
   pc.path = []; guards.forEach(g => { g.path = []; g.actUntil = now + 90000; faceTo(g, pc); });
   log(`<em>${esc(fname(pc))} does not step back.</em> No warning bolt this time: the guards raise their crossbows.`);
@@ -18674,7 +18704,7 @@ function lianaArrives(next = lianaTends){
   a.home = {x: a.x, y: a.y}; S.liana = a; npcs.push(a); actors.push(a);
   const beside = nearestWalkable(pc.x + 60 * sc, pc.y + 10 * sc);
   a.path = [{x: gIn.x, y: gIn.y}, ...findPath({...a, x: gIn.x, y: gIn.y}, beside)]; a.slow = true;
-  sfx("door-open", .5);
+  sceneDo("sfx", "door-open", .5);
   log("The pen gate opens a hand's width. A drow in a stained leather apron comes in with a satchel of vials, and the gate is locked behind her.", {say: true});
   a.onArrive = () => { faceTo(a, pc); setAnim(a, "idle"); lianaSays("arrive", 4200); setTimeout(next, 3600); };
 }
@@ -18692,7 +18722,8 @@ function surgeonCatchUp(st){
   lianaLeaves("gone");
 }
 async function lianaTends(){
-  const S = surgeon, pc = S.pc, a = S.liana;
+  const S = surgeon; if (!S) return;                        // (the scene was handed to another screen meanwhile: surgeonYield)
+  const pc = S.pc, a = S.liana;
   lianaSays("working", 6500);
   const j = await surgeonApi("tend");
   if (j.failed){ if (j.status !== 409) toast(j.error || "The game did not answer."); surgeonCatchUp(j.state || surgeonSeen); return; }
@@ -18713,6 +18744,7 @@ function surgeonRemoveBody(){
   const v = surgeon ? surgeon.victim : npcs.find(n => n.id === surgeonDeadId() && n.slain);
   if (!v || !actors.includes(v)) return;
   const gIn = nearestWalkable(822, 880), route = [...findPath(v, gIn), {x: gIn.x, y: gIn.y}, {x: 812, y: 812}];
+  sceneHold(9500);                                            // WORLD EVENTS: the carrying-out is still the scene, whatever else has finished
   log(`Two guards come in, take ${esc(fname(v))} by the ankles and drag the body out across the bridge.`);
   let lastMark = {x: v.x, y: v.y};
   dragAlong(v, route, 5200, k => { if (Math.hypot(v.x - lastMark.x, v.y - lastMark.y) > 26 * (node.scale || 1)){ lastMark = {x: v.x, y: v.y}; addBlood(v, .6); } if (k > .85) v.alpha = Math.max(0, (1 - k) / .15); },
@@ -18773,6 +18805,7 @@ async function lianaLeaves(why){
     a.path = [...findPath(a, gIn), {x: gIn.x, y: gIn.y}, {x: 812, y: 812, out: true}]; a.slow = false;
     a.onArrive = () => { a.alpha = 0; const i = actors.indexOf(a); if (i >= 0) actors.splice(i, 1); const k = npcs.indexOf(a); if (k >= 0) npcs.splice(k, 1); };
     log(why === "failed" ? "Liana goes out through the gate without looking back. You will not see her again." : "Liana goes out through the gate, and it is locked behind her.");
+    sceneHold(9000);                                           // she is seen all the way out
   }
   if (S && S.draggers) S.draggers.forEach(d => { if (d.keep){ d.patrol = d.keep.patrol; d.static = d.keep.static; } d.actUntil = now + 4000; });
   surgeon = null; mode = "explore";
@@ -18782,6 +18815,8 @@ function surgeonOnEnter(n){
   const s = surgeonSeen; if (!s) return;
   if (String(n) === "14" && s.victim) placeBodyInPool(s.victim);   // (the surrender's victims are placed by surrenderOnEnter)
   if (n !== PEN || surgeon) return;
+  if (sceneWatched()) return;                               // WORLD EVENTS: another screen is already playing it; it is shown here from there
+  if (s.stage === "shooting" || s.stage === "down" || s.stage === "tended") sceneBegin("gate", gateSceneBusy);   // the first screen back carries it; the others show that one (sceneYield)
   if (s.stage === "shooting"){ surgeon = {pc: leader, stage: "shooting", local: false}; surgeonStepped(); return; }
   if (s.stage === "down" && s.again){
     const pc = party.find(p => characterIdOf(p.id) === s.target.id) || leader;
@@ -20460,7 +20495,7 @@ async function followCombatFlag(flag){
     // asked for the flag (flag.opener) and its beat has already played — and every OTHER screen, the DM's included,
     // waits its moment and then shows the fight that screen is running. /api/walk-fight still grants one authority.
     const mine = !!(flag.opener && OW.key && flag.opener === OW.key), theirs = !!(flag.opener && !mine);
-    if (fightShared() && !FIGHT.auth && !mine){
+    if (fightShared() && !(FIGHT.auth && !FIGHT.scene) && !mine){      // (running a SCENE is not running the fight: WORLD EVENTS)
       if (!isDm() || theirs) await new Promise(r => setTimeout(r, 1200 + Math.random() * 600));
       const lv = await fightLiveNow();
       if (lv && owSame(lv.plate, cur) && lv.auth_key !== OW.key){ talkGivesWay(); if (mode === "explore") enterMirror(lv); return; }
@@ -22261,10 +22296,13 @@ function bodyRemovalTick(){
 }
 async function bodyRemovalRun(body, pair){
   bodyRemovalBusy = true;
+  // WORLD EVENTS: the screen whose clock came due carries the body out for the whole pen; a screen that finds another
+  // already playing a scene here shows that one and tries again on a later tick
+  if (!(await sceneBegin("body-removal", () => bodyRemovalBusy))){ bodyRemovalBusy = false; body.bodyTaken = false; return; }
   const R = BODY_REMOVAL_RULES, gate = gateCenter() || {x: body.x, y: body.y - 200};
   const home = pair.map(g => ({x: g.x, y: g.y, face: g.face}));
   log(`<b>Two drow come in for ${esc(fname(body))}.</b>`);
-  setDoor(true); sfx("door-open", .7);                      // the gate is open the whole time they are inside
+  sceneDo("setDoor", true); sceneDo("sfx", "door-open", .7);    // the gate is open the whole time they are inside
 
   // in, one to each end
   pair.forEach((g, i) => { g.static = false; g.path = [{x: body.x + (i ? 44 : -44) * (node.scale || 1), y: body.y + 10}]; });
@@ -22283,7 +22321,7 @@ async function bodyRemovalRun(body, pair){
   // the pair go back to their posts and the gate shuts behind them
   pair.forEach((g, i) => { g.path = [{x: home[i].x, y: home[i].y}]; g.onArrive = () => { g.face = home[i].face; g.static = true; }; });
   await wait(R.walkMs);
-  if (!state.gateOpen){ setDoor(false); sfx("door-close", .8); }
+  if (!state.gateOpen){ sceneDo("setDoor", false); sceneDo("sfx", "door-close", .8); }
   bodyRemovalBusy = false;
 }
 // ---------- BUPPIDO RISES ----------
@@ -23213,10 +23251,14 @@ function update(dt){
     if (!last || Math.hypot(leader.x - last.x, leader.y - last.y) > 6){ trail.push({x: leader.x, y: leader.y}); if (trail.length > 500) trail.shift(); }
     if (canControl(leader)) keyboardMove(leader, dt);
     tickCreatures();
+    // WORLD EVENTS: while this screen shows a scene another screen runs, the gate's watch and the plate's small beats
+    // are that screen's to play; they are not also played here
+    if (!sceneWatched()){
     tickGateWatch();
     tickGuardLean();
     tickWhistle();
     tickJorlanPrivacy();
+    }
     // the rest of the party stays where they were put; they only come along when the party leaves the plate
     // exits
     // only a hero this screen drives walks it through an exit: a hero another screen drives (seen walking off on its
@@ -23251,12 +23293,12 @@ function update(dt){
       const d = Math.hypot(n.x - leader.x, n.y - leader.y);
       if (wantsWord(n) && !n.waking && !state.declined[n.id] && d < 150 * node.scale && mode === "explore"){   // (a prisoner still saying their wake-up line finishes it first: THE WAKER, ON THE MAP)
         leader.path = []; openTalk(n);
-      } else if (!wantsWord(n) && d < 140 * node.scale && now - n.lastBark > 30000 && now - lastAnyBark > 4000 && (n.barks || []).length){
+      } else if (!wantsWord(n) && d < 140 * node.scale && now - n.lastBark > 30000 && now - lastAnyBark > 4000 && (n.barks || []).length && !sceneWatched()){
         ambient(n);                                       // the line decides which way they look
       }
     }
     tickAsks();                                           // someone asks for something you carry (NPC ASKS)
-    if (now > nextAmbient && npcs.length){
+    if (now > nextAmbient && npcs.length && !sceneWatched()){
       const pool = npcs.filter(n => (n.barks || []).length && now - n.lastBark > 15000 && !(openAsk && openAsk.n === n));   // creatures carry no barks; without the guard the ambient timer threw once one was on the plate
       if (pool.length) ambient(pool[Math.floor(Math.random() * pool.length)]);
       nextAmbient = now + 14000 + Math.random() * 10000;
@@ -23298,7 +23340,8 @@ function update(dt){
   }
   if (mode === "combat" && !combatBusy && !FIGHT.mirror && canControl(activeActor()) && !oneFightWaitsFor(activeActor())) keyboardMove(activeActor(), dt);
   // idle life: whoever you're not moving potters about, like at camp
-  if (mode === "explore") for (const a of [...party, ...npcs]) idleLife(a);
+  if (mode === "explore") for (const a of (sceneWatched() ? party : [...party, ...npcs])) idleLife(a);      // (a shown scene's bystanders stand where its screen has them)
+  if (FIGHT.watch) sceneSlide(dt);
   if (now - (renderExploreBar.at || 0) > 250){ renderExploreBar.at = now; renderExploreBar(); }
 }
 let lastT = performance.now();
@@ -23770,13 +23813,17 @@ async function owResync(){
 //   - THE END. The authority ends it once; the mirrors put the dead where they fell and stand the rest down as it did.
 // Without the tables (migration unapplied), with One World off, or on a test copy, nothing changes: each screen fights alone.
 const FIGHT = {id: null, auth: false, mirror: false, plate: null, live: null, since: 0, inSince: 0, out: [], sent: {}, fullAt: 0, menuSig: "", dlgSig: "",
-  serial: 0, dlgs: {}, dlgSeq: 0, promptFor: null, applying: null, polling: false, lastOk: 0, failed: false, hoverAt: 0, pendingActors: new Set(), endSent: false};
+  serial: 0, dlgs: {}, dlgSeq: 0, promptFor: null, applying: null, polling: false, lastOk: 0, failed: false, hoverAt: 0, pendingActors: new Set(), endSent: false,
+  scene: null, watch: false, opening: null, sceneBusy: null, sceneQuiet: 0, sceneHold: 0};      // WORLD EVENTS (below): the same lane, outside a fight.
+// (`watch`, not `mirror`, is a screen showing a SCENE: every `FIGHT.mirror` test on this page means "showing a fight" and
+// takes the hero's bag, menu and clicks away for it, which a screen watching a scene must keep.)
 const RELAY = {depth: 0, orig: {}, imgs: {}};
 const RELAY_FNS = ["log", "narrate", "popText", "bark", "shake", "hitstop", "redFlash", "critBeat", "toast", "victoryBanner", "triumph", "spawnFx", "slowmo",
   "pairCam", "pushCam", "settleCam",    // the camera's cues (HOW A FIGHT IS STAGED): each screen frames the same two fighters for itself
-  "turnCall", "turnWhat"];              // whose turn, what they do and to whom (the banner and the target's ring): a screen showing the fight had neither
-const fightOn = () => !!(FIGHT.id && (FIGHT.auth || FIGHT.mirror));
-const relayOn = () => FIGHT.auth && FIGHT.id && !RELAY.depth;
+  "turnCall", "turnWhat",               // whose turn, what they do and to whom (the banner and the target's ring): a screen showing the fight had neither
+  "mapFilm", "playFilm"];               // WORLD EVENTS: a film cue plays on every screen on the plate (each seat's own once-per-character rule still decides)
+const fightOn = () => !!(FIGHT.id && (FIGHT.auth || FIGHT.mirror || FIGHT.watch));
+const relayOn = () => ((FIGHT.auth && FIGHT.id) || FIGHT.opening) && !RELAY.depth;     // (opening: a scene asked for but not yet granted keeps what happens meanwhile)
 // --- who is who between screens: a hero by name; a plate's person by where the plate stands them; a newcomer by number
 function akey(a){
   if (!a) return null;
@@ -23844,6 +23891,12 @@ function relayPlay(ev){
       const fn = RELAY.orig[ev.f] || window[ev.f]; if (typeof fn !== "function") return;
       const miss = {n: 0}, args = ev.a.map(x => dec(x, miss)); if (miss.n) return;           // someone this screen does not have: skip it
       if (ev.f === "spawnFx" && args[1] && !args[1].until && args[1].loop !== false) args[1].until = now + 2500;   // a loop the authority ends later ends here on its own
+      // WHO HEARS AN NPC (Sam, 2026-10-26), in a shown scene: the hero spoken to and the DM hear the voice; everyone else sees the bubble
+      if (FIGHT.scene && ev.f === "bark" && args[0] && args[3] && args[3].voice){
+        if (args[3].to && !(isDm() || canControl(args[3].to))) args[3] = {...args[3], voice: false};
+        else delete state.voiced[args[0].id + ":" + args[1]];
+      }
+      if (ev.f === "lianaSays"){ lianaSays(args[0], args[1], args[2]); return; }
       fn(...args); return;
     }
     if (ev.p){ const arr = relayArrays()[ev.p]; if (!arr) return; const miss = {n: 0}, it = dec(ev.v, miss); if (miss.n || !it) return;
@@ -23855,8 +23908,9 @@ function relayPlay(ev){
 }
 // --- the fight as data
 const ACTOR_KEYS = ["id", "kind", "x", "y", "face", "alpha", "down", "ko", "fading", "flash", "flashCol", "ally", "bystander", "left", "body", "hostile", "spawned", "parley", "offStage", "riding", "climbing"];
+const SCENE_ACTOR_KEYS = [...ACTOR_KEYS, "slain", "surgeonDown", "slow", "fixedScale"];
 function snapActor(a, noC){
-  const s = {k: akey(a)}; for (const k of ACTOR_KEYS) if (a[k] !== undefined) s[k] = typeof a[k] === "number" ? Math.round(a[k] * 10) / 10 : a[k];
+  const s = {k: akey(a)}; for (const k of (FIGHT.scene ? SCENE_ACTOR_KEYS : ACTOR_KEYS)) if (a[k] !== undefined) s[k] = typeof a[k] === "number" ? Math.round(a[k] * 10) / 10 : a[k];
   s.anim = a.anim; s.age = Math.round(now - (a.t0 || now)); if (a.once) s.ol = Math.round(a.once.end - now);
   if (a.c && !noC) s.c = enc(a.c);
   return s;
@@ -23883,6 +23937,8 @@ async function fightGet(q){ const r = await fetch("/api/walk-fight" + q, {cache:
 const fightShared = () => OW.on && APP && !SANDBOX && !FIGHT.failed;
 // called as a fight opens on this screen: ask to run it; if another screen already does, show theirs instead
 async function oneFightOpened(){
+  if (FIGHT.opening) await FIGHT.opening.catch(() => {});
+  if (FIGHT.scene){ if (FIGHT.auth) await sceneEnd(); else sceneMirrorEnd({}); }      // WORLD EVENTS: a fight outranks a scene, here as on the server
   if (!fightShared() || FIGHT.mirror) return;
   const plate = String(cur);
   try {
@@ -23897,18 +23953,20 @@ function fightTick(){
   try { fightTickBody(); } catch (e) { console.warn("[one-fight] tick", e && e.stack ? e.stack.slice(0, 300) : e); setTimeout(fightTick, 250); }
 }
 function fightTickBody(){
+  if (FIGHT.scene && sceneOver()){ sceneEnd(); return; }             // WORLD EVENTS: a scene ends itself once it has played out
   fightWaitBadge();
   const full = now - FIGHT.fullAt > 2500, actorsOut = [], gone = [];
-  const list = fightActors(), keys = new Set(list.map(akey));
+  const list = FIGHT.scene ? sceneActors() : fightActors(), keys = new Set(list.map(akey));
   // the pose (place, frame) and the fight sheet are compared apart: a step does not resend hit points and slots
   for (const a of list){
-    const s = snapActor(a, true), k = s.k, pj = JSON.stringify({...s, age: Math.round(s.age / 500)}), c = a.c ? enc(a.c) : null, cj = c ? JSON.stringify(c) : "";
+    const s = snapActor(a, true), k = s.k, pj = JSON.stringify({...s, age: Math.round(s.age / 500)}), c = a.c && !FIGHT.scene ? enc(a.c) : null, cj = c ? JSON.stringify(c) : "";
     FIGHT.sentC ||= {};
     const poseNew = full || FIGHT.sent[k] !== pj, cNew = full || FIGHT.sentC[k] !== cj;
     if (poseNew || cNew){ if (cNew && c) s.c = c; actorsOut.push(s); FIGHT.sent[k] = pj; FIGHT.sentC[k] = cj; }
   }
   for (const k of Object.keys(FIGHT.sent)) if (!keys.has(k)){ gone.push(k); delete FIGHT.sent[k]; if (FIGHT.sentC) delete FIGHT.sentC[k]; }
   const body = {t: Date.now()};
+  if (FIGHT.scene && full) body.scene = FIGHT.scene;
   if (actorsOut.length) body.actors = actorsOut;
   if (gone.length) body.gone = gone;
   if (full) FIGHT.fullAt = now;
@@ -23918,8 +23976,8 @@ function fightTickBody(){
   { const m = menuNow(), j = JSON.stringify(m); if (full || j !== FIGHT.menuSig){ body.menu = m; FIGHT.menuSig = j; } }
   { const d = Object.values(FIGHT.dlgs).map(x => x.pub), j = JSON.stringify(d); if (full || j !== FIGHT.dlgSig){ body.dlgs = d; FIGHT.dlgSig = j; } }
   if (FIGHT.out.length){ body.ev = FIGHT.out; FIGHT.out = []; }
-  const send = Object.keys(body).length > 1 ? fightPost("tick", {fight: FIGHT.id, body}).catch(e => { if (e.ended) fightLetGo(); else if (e.status === 403) fightOvertaken(); }) : Promise.resolve();
-  send.finally(() => fightInputs().finally(() => { if (FIGHT.auth) setTimeout(fightTick, 250); }));
+  const send = Object.keys(body).length > 1 ? fightPost("tick", {fight: FIGHT.id, body}).catch(e => { if (e.ended) fightLetGo(); else if (e.status === 403) (FIGHT.scene ? fightLetGo() : fightOvertaken()); }) : Promise.resolve();
+  send.finally(() => (FIGHT.scene ? Promise.resolve() : fightInputs()).finally(() => { if (FIGHT.auth) setTimeout(fightTick, 250); }));
 }
 async function fightInputs(){
   if (!FIGHT.auth) return;                              // only the screen that runs the fight plays the presses (fightOvertaken)
@@ -23983,7 +24041,7 @@ function oneFightEnded(won){
   const id = FIGHT.id; FIGHT.auth = false; FIGHT.id = null;
   fightPost("end", {fight: id, body}).catch(() => {});
 }
-function fightLetGo(){ FIGHT.auth = false; FIGHT.mirror = false; FIGHT.id = null; }
+function fightLetGo(){ FIGHT.auth = false; FIGHT.mirror = false; FIGHT.watch = false; FIGHT.id = null; FIGHT.scene = null; FIGHT.sceneBusy = null; }
 // THE SCREEN THAT CAME BACK STEPS DOWN (Sam's playtest, 2026-11-15: "We got out of sync a few times"). The fight on the
 // pen-gate battle plate went silent for four minutes (walk_fight_msgs: Samson's screen, which ran it, sent its last tick
 // at 22:58:06 and nothing until 23:02:22). Its ticks only go out while the page draws, and a hidden tab does not draw,
@@ -24010,7 +24068,7 @@ function abandonLocalFight(){
 // --- A MIRROR
 function enterMirror(f){
   if (FIGHT.mirror && FIGHT.id === f.id) return;
-  Object.assign(FIGHT, {id: f.id, mirror: true, auth: false, plate: String(f.plate), since: 0, dlgShown: null, tickAt: Date.now(), claimTry: 0, gotCbt: false});
+  Object.assign(FIGHT, {id: f.id, mirror: true, auth: false, plate: String(f.plate), since: 0, dlgShown: null, tickAt: Date.now(), claimTry: 0, gotCbt: false, scene: null, watch: false, sceneBusy: null});
   mirrorBagInstall();
   mode = "combat"; combatBusy = false;
   cbt = {mirror: true, order: [], idx: -1, round: 0, phase: "idle", pend: null, allies: [], bystanders: [], home: {z: view.z, cx: NAT_W / 2, cy: NAT_H / 2}, id: f.id};
@@ -24043,13 +24101,22 @@ async function fightClaim(){
   } catch (e) { return false; }
 }
 async function mirrorPoll(){
-  if (!FIGHT.mirror || !FIGHT.id) return;
+  if (!(FIGHT.mirror || FIGHT.watch) || !FIGHT.id) return;
   try {
     const j = await fightGet(`?fight=${FIGHT.id}&kind=tick&since=${FIGHT.since}`);
-    for (const m of j.msgs || []){ FIGHT.since = Math.max(FIGHT.since, m.id); if (m.kind === "end"){ mirrorEnd(m.body || {}); return; } await mirrorApply(m.body || {}); }
-    if (j.fight && j.fight.ended_at && !(j.msgs || []).some(m => m.kind === "end")){ mirrorEnd({}); return; }
+    const id = FIGHT.id, endIt = b => FIGHT.watch ? sceneMirrorEnd(b) : mirrorEnd(b), showing = () => FIGHT.id === id && (FIGHT.mirror || FIGHT.watch);
+    for (const m of j.msgs || []){ if (!showing()) return; FIGHT.since = Math.max(FIGHT.since, m.id); if (m.kind === "end"){ endIt(m.body || {}); return; } await mirrorApply(m.body || {}); }
+    if (!showing()) return;                                          // (a scene's showing was ended from here meanwhile: a fight began, the plate changed)
+    if (j.fight && j.fight.ended_at && !(j.msgs || []).some(m => m.kind === "end")){ endIt({}); return; }
     FIGHT.lastOk = now;
     if ((j.msgs || []).length) FIGHT.tickAt = Date.now();
+    if (FIGHT.watch){
+      // a scene cannot be carried on from a copy (its script and its timers live on the screen that ran it): a screen that
+      // walks off the plate stops showing it, and a scene whose screen went quiet is let go, for everyone
+      if (!owSame(FIGHT.plate, cur) || mode === "combat" || mode === "travel" || mode === "load"){ sceneMirrorEnd({}); return; }
+      if (Date.now() - FIGHT.tickAt > CLAIM_QUIET_MS + 500){ sceneMirrorEnd({}); fightPost("claim", {fight: id}).then(c => { if (c && c.auth) return fightPost("end", {fight: id, body: {abandoned: true}}); }).catch(() => {}); return; }
+      setTimeout(mirrorPoll, 250); return;
+    }
     // THE AUTHORITY WENT QUIET (a refresh there): once this screen holds the whole fight, it asks to carry it on
     if (FIGHT.gotCbt && Date.now() - FIGHT.tickAt > CLAIM_QUIET_MS + 500 && Date.now() - FIGHT.claimTry > 3000){ if (await fightClaim()) return; }
   } catch (e) { console.warn("[one-fight] mirror", e && e.stack ? e.stack.slice(0, 300) : e); }
@@ -24082,9 +24149,10 @@ async function mirrorActor(s){
   return a;
 }
 async function mirrorApply(b){
+  if (FIGHT.watch){ await sceneMirrorApply(b); return; }
   for (const s of b.actors || []) await mirrorActor(s);
   for (const k of b.gone || []){ const a = byKey(k); if (a && a.kind !== "pc"){ actors = actors.filter(x => x !== a); foes = foes.filter(x => x !== a); } }
-  if (b.cbt){ const c = b.cbt, turnWas = activeActor(); FIGHT.gotCbt = true;
+  if (b.cbt && cbt){ const c = b.cbt, turnWas = activeActor(); FIGHT.gotCbt = true;
     Object.assign(cbt, {round: c.round, idx: c.idx, phase: c.phase, quick: c.quick, order: c.order.map(byKey).filter(Boolean), boss: byKey(c.boss),
       allies: c.allies.map(byKey).filter(Boolean), bystanders: c.bystanders.map(byKey).filter(Boolean), pend: dec(c.pend)});
     renderTurns(); renderParty();
@@ -24191,14 +24259,21 @@ function mirrorEnd(b){
   try { camTo(1, NAT_W / 2, NAT_H / 2, 800); } catch (e) {}
   renderParty(); hint("");
 }
-async function fightLiveNow(){ try { const j = await fightGet(""); FIGHT.live = j.fight || null; } catch (e) {} return FIGHT.live; }
+async function fightLiveNow(){ try { const j = await fightGet(""); FIGHT.live = scenePlateOf(j.fight) != null ? null : (j.fight || null); } catch (e) {} return FIGHT.live; }
 // THE WATCH: a screen that is not in a fight looks, every two seconds, for one being fought on its plate
 setInterval(async () => {
-  if (!fightShared() || FIGHT.auth || FIGHT.mirror || FIGHT.polling) return;
+  if (!fightShared() || FIGHT.auth || FIGHT.mirror || FIGHT.watch || FIGHT.polling) return;
   if (!(mode === "explore" || mode === "talk" || mode === "dialog")) return;
   FIGHT.polling = true;
-  try { const j = await fightGet(""); FIGHT.live = j.fight || null;
-    if (j.fight && owSame(j.fight.plate, cur) && j.fight.auth_key !== OW.key && !FIGHT.mirror && !FIGHT.auth){ talkGivesWay(); if (mode === "explore") enterMirror(j.fight); }
+  try { const j = await fightGet(""); const sc = scenePlateOf(j.fight); FIGHT.live = sc != null ? null : (j.fight || null);
+    // WORLD EVENTS: a scene playing on this plate on another screen is shown here (nobody is stopped for it); a scene
+    // this page ran before it reloaded is let go (its script did not survive the reload)
+    if (sc != null){
+      if (FIGHT.opening){}
+      else if (j.fight.auth_key !== OW.key){ if (owSame(sc, cur)) enterSceneMirror(j.fight); }
+      else if ((j.now || Date.now()) - Date.parse(j.fight.started_at) > 6000) fightPost("end", {fight: j.fight.id, body: {abandoned: true}}).catch(() => {});
+    }
+    else if (j.fight && owSame(j.fight.plate, cur) && j.fight.auth_key !== OW.key && !FIGHT.mirror && !FIGHT.auth){ talkGivesWay(); if (mode === "explore") enterMirror(j.fight); }
     // A FIGHT OUTLIVES A REFRESH (Sam, 2026-11-15): the fight on this plate is held by THIS screen's key, but this page has
     // no fight running: it reloaded mid-fight and lost it. Hand it back at once (release) and show it like any other
     // screen; whoever claims it first (this one too, from the stream) carries it on.
@@ -24209,6 +24284,158 @@ setInterval(async () => {
   } catch (e) { if (/does not exist|relation/.test(String(e.message))) FIGHT.failed = true; }
   finally { FIGHT.polling = false; }
 }, 2000);
+// ---------- WORLD EVENTS, phase 1 (Sam, 2026-11-20: "all events should be world events") ----------
+// Outside a fight every screen used to play its own copy of the map's scenes, or none: the volley at the pen gate, the
+// drop, the drag to the corner and Liana were seen only on the screen whose hero stood at the bars. Now a scene goes
+// down the SAME lane as a fight (the tables, the route, RELAY_FNS, RELAY_ARRAYS, the quarter-second tick), only without
+// a fight in it:
+//   - THE AUTHORITY is the screen that triggers the scene. It alone runs the script: it rolls, it asks the server.
+//   - EVERY OTHER SCREEN ON THE PLATE shows it: where the plate's people and the scene's hero are, their poses, and every
+//     log line, bubble, number, bolt, blood mark, sound, shake and film cue, in order. It runs none of the script.
+//   - NOBODY WATCHING IS STOPPED. A screen showing a scene stays in the mode it was in: its player walks, talks and
+//     opens their bag as before. Only that screen's own copy of the plate's bystanders stands still (the authority's is shown).
+//   - A FILM (mapFilm, playFilm) asked for outside any scene opens a short scene of its own, so it plays on every screen
+//     on the plate; each seat's once-per-character rule and its Cinematics setting still decide whether it is seen there.
+//   - A FIGHT OUTRANKS A SCENE: a fight opening anywhere ends the scene's hold on the lane (lib/walk-fight.ts).
+// A scene's row carries its plate as "scene:<plate>", so there is no new table and no migration, and a page from before
+// this change does not see it. With One World off, on a test copy, or while a fight elsewhere holds the lane, a scene
+// plays on its own screen alone, exactly as before.
+const SCENE_PRE = "scene:", SCENE_LINGER = 4000;
+const scenePlateOf = f => f && typeof f.plate === "string" && f.plate.startsWith(SCENE_PRE) ? f.plate.slice(SCENE_PRE.length) : null;
+/** This screen is showing a scene another screen runs (a bare film cue does not count: nothing on the plate is held for it). */
+const sceneWatched = () => !!(FIGHT.watch && FIGHT.scene !== "film");
+/** Ask to run a scene for the whole plate. Resolves true when this screen should play it (it is the authority, or the
+ *  scene is not shared), false when another screen's scene already holds this plate (theirs is shown here instead).
+ *  `busy` says whether the scene is still going; it ends itself SCENE_LINGER after that turns false (see sceneHold). */
+function sceneBegin(name, busy){
+  if (FIGHT.auth && FIGHT.scene){                              // one is already running here: this beat rides in it
+    if (name !== "film"){ FIGHT.scene = name; FIGHT.sceneBusy = busy || FIGHT.sceneBusy; FIGHT.fullAt = 0; }
+    FIGHT.sceneQuiet = 0; return Promise.resolve(true);
+  }
+  if (FIGHT.opening) return FIGHT.opening.then(ok => ok ? sceneBegin(name, busy) : (name === "film"));
+  if (FIGHT.watch) return Promise.resolve(name === "film" || !sceneWatched());
+  if (!fightShared() || fightOn() || !OW.key || mode === "combat" || mode === "load" || mode === "travel") return Promise.resolve(true);
+  const plate = String(cur);
+  relayInstall(); FIGHT.out = [];
+  const p = (async () => {
+    try {
+      const j = await fightPost("open", {plate: SCENE_PRE + plate});
+      const sc = scenePlateOf(j.fight);
+      if (j.auth && sc != null && owSame(plate, cur) && mode !== "combat"){
+        Object.assign(FIGHT, {id: j.fight.id, auth: true, mirror: false, plate, scene: name, sceneBusy: busy || null, sceneQuiet: 0, sceneHold: 0,
+          sent: {}, sentC: {}, fullAt: 0, inSince: 0, menuSig: "", dlgSig: "", cbtSig: "", zoneSig: "", dlgs: {}, endSent: false});
+        FIGHT.opening = null; fightTick(); return true;
+      }
+      FIGHT.out = [];
+      if (j.auth && sc != null){ fightPost("end", {fight: j.fight.id, body: {abandoned: true}}).catch(() => {}); return true; }   // granted, but this screen has moved on
+      if (sc != null && owSame(sc, cur) && j.fight.auth_key !== OW.key){ FIGHT.opening = null; enterSceneMirror(j.fight); return name === "film"; }
+      return true;                                             // a fight (or a scene on another plate) holds the lane: alone, as before
+    } catch (e) { if (e.status === 503) FIGHT.failed = true; FIGHT.out = []; return true; }
+    finally { if (FIGHT.opening === p) FIGHT.opening = null; }
+  })();
+  FIGHT.opening = p; return p;
+}
+/** Keep the scene open at least this much longer (a beat still to come that `busy` cannot see: a body carried out). */
+function sceneHold(ms){ if ((FIGHT.auth && FIGHT.scene) || FIGHT.opening) FIGHT.sceneHold = Math.max(FIGHT.sceneHold || 0, Date.now() + ms); }
+function sceneOver(){
+  if (!owSame(FIGHT.plate, cur) || mode === "combat") return true;
+  let busy = false; try { busy = !!(FIGHT.sceneBusy && FIGHT.sceneBusy()); } catch (e) {}
+  if (busy || Date.now() < (FIGHT.sceneHold || 0)){ FIGHT.sceneQuiet = 0; return false; }      // (not "while anything is still being sent": the plate's idle chatter never stops)
+  if (!FIGHT.sceneQuiet) FIGHT.sceneQuiet = Date.now();
+  return Date.now() - FIGHT.sceneQuiet > SCENE_LINGER;
+}
+function sceneEnd(){
+  if (!FIGHT.auth || !FIGHT.id || !FIGHT.scene) return Promise.resolve();
+  const id = FIGHT.id, body = {scene: FIGHT.scene, actors: sceneActors().map(a => snapActor(a, true)), ev: FIGHT.out};
+  FIGHT.out = []; FIGHT.sceneHold = 0; fightLetGo();
+  return fightPost("end", {fight: id, body}).catch(() => {});
+}
+// who a scene sends: the plate's people (not its vermin, which every screen moves for itself), and the heroes this
+// screen drives or the scene has put on the floor
+function sceneActors(){
+  if (FIGHT.scene === "film") return [];
+  return [...npcs.filter(n => actors.includes(n) && !n.creature), ...party.filter(p => actors.includes(p) && (owDrives(p) || p.down || p.surgeonDown))];
+}
+// --- showing a scene
+function enterSceneMirror(f){
+  if (fightOn() || mode === "combat" || mode === "load" || mode === "travel") return;
+  Object.assign(FIGHT, {id: f.id, watch: true, mirror: false, auth: false, plate: scenePlateOf(f), scene: "?", since: 0, tickAt: Date.now(), claimTry: 0, gotCbt: false, menu: null, dlgShown: null});
+  reviewLog("sync", "A scene on this plate is shown here as it plays on another screen.");
+  mirrorPoll();
+}
+// this screen's own copy of a scene that another screen runs is dropped (it loaded in the middle of one, or lost the race to open it)
+function sceneYield(name){ try { if (name === "gate") surgeonYield(); } catch (e) {} }
+function sceneSet(a, s, put){
+  if (a.kind === "pc" && owDrives(a) && !s.down && !a.down) return;      // YOUR HERO IS ALWAYS YOURS, unless the scene has them on the floor
+  // someone who has merely stepped off the plate on one screen and not the other (a guard's stroll is each screen's own
+  // dice) stays this screen's to bring back: only the fallen and the carried are taken off stage by a scene
+  if (!!s.offStage !== !!a.offStage && !s.down && !a.down && !a.sceneGuest) return;
+  if (s.slain){ a.talk = false; a.stroll = null; }
+  for (const k of SCENE_ACTOR_KEYS){ if (k === "x" || k === "y" || k === "kind" || k === "id" || s[k] === undefined) continue; a[k] = s[k]; }
+  {
+    const d = Math.hypot(s.x - a.x, s.y - a.y);
+    if (put || d > 400 * node.scale){ a.x = s.x; a.y = s.y; a.path = []; a.sceneTo = null; }
+    // the plate's people, and anyone dragged or carried, are slid to where the scene's screen has them (its pose and
+    // facing come with them); a hero on their feet walks there, as One World already walks them
+    else if (a.kind !== "pc" || a.down || a.offStage){ a.sceneTo = d > 1 ? {x: s.x, y: s.y} : null; a.path = []; }
+    else if (d > 3){ a.sceneTo = null; a.path = [{x: s.x, y: s.y}]; }
+    if (s.anim && (s.anim !== a.anim || Math.abs((now - a.t0) - s.age) > 400)){ a.anim = s.anim; a.t0 = now - s.age; }
+    a.once = s.ol > 0 ? {end: now + s.ol, cb: null} : null;
+  }
+}
+async function sceneMirrorActor(s){
+  let a = byKey(s.k);
+  if (!a){
+    // someone the scene brought in (Liana). Never a second copy of a person this screen already has.
+    if (s.kind !== "npc" || s.body || npcs.some(n => n.id === s.id)) return null;
+    if (s.id === "liana") lianaSprite();
+    if (!SPR[s.id]){ if (!FIGHT.pendingActors.has(s.id)){ FIGHT.pendingActors.add(s.id); await loadSpriteManifest(s.id).catch(() => {}); FIGHT.pendingActors.delete(s.id); } if (!SPR[s.id]) return null; }
+    if (byKey(s.k) || npcs.some(n => n.id === s.id)) return null;
+    a = mkActor(s.id, s.x, s.y, "npc", {alpha: s.alpha ?? 1, talk: false, barks: []}); a.fk = s.k; a.path = []; a.home = {x: s.x, y: s.y}; a.sceneGuest = true;
+    npcs.push(a); actors.push(a);
+  }
+  sceneSet(a, s, false);
+  return a;
+}
+function sceneDrop(a){ actors = actors.filter(x => x !== a); npcs = npcs.filter(x => x !== a); bubbles.filter(b => b.a === a).forEach(b => b.until = 0); }
+async function sceneMirrorApply(b){
+  if (b.scene){ if (b.scene !== FIGHT.scene && b.scene !== "film") sceneYield(b.scene); FIGHT.scene = b.scene; }   // its name comes with its first tick
+  for (const s of b.actors || []) await sceneMirrorActor(s);
+  for (const k of b.gone || []){ const a = byKey(k); if (a && a.kind !== "pc") sceneDrop(a); }
+  for (const ev of b.ev || []) relayPlay(ev);
+  if (b.actors && b.actors.some(s => s.kind === "pc")) renderParty();
+}
+function sceneMirrorEnd(b){
+  if (!FIGHT.watch) return;
+  for (const ev of b.ev || []) relayPlay(ev);
+  const fin = new Map((b.actors || []).map(s => [s.k, s]));
+  for (const [k, s] of fin){ const a = byKey(k); if (a) sceneSet(a, s, true); }
+  for (const n of [...npcs]){
+    if (n.sceneGuest){ sceneDrop(n); continue; }                                           // the scene's own guest leaves with it
+    n.sceneTo = null;
+    if (fin.has(akey(n)) && n.home && !n.patrol && Math.hypot(n.home.x - n.x, n.home.y - n.y) > 60) n.home = {x: n.x, y: n.y};   // where the scene left them is where they now stand
+  }
+  for (const p of party) p.sceneTo = null;
+  const was = FIGHT.scene;
+  FIGHT.watch = false; FIGHT.id = null; FIGHT.scene = null;
+  if (was === "gate") readSurgeon();                           // the game's record of it (who was shot, whether she came), read once it is over
+  renderParty();
+}
+// something a scene does that is on neither relay list (the gate swinging, a one-off sound): done here, and on every screen showing it
+function sceneDo(fn, ...args){ if (FIGHT.scene && relayOn()) FIGHT.out.push({f: fn, a: args.map(x => enc(x))}); return window[fn](...args); }
+// a film asked for with no scene or fight open: a short scene of its own carries the cue to the other screens
+function sceneCue(fn, args){
+  if (RELAY.depth > 1 || fightOn() || FIGHT.opening || !fightShared()) return;
+  sceneBegin("film").then(ok => { if (ok && FIGHT.auth && FIGHT.scene){ FIGHT.out.push({f: fn, a: args.map(x => enc(x))}); sceneHold(2500); } });
+}
+// a person a shown scene slides along the floor (the dragged, the carried) moves smoothly between the authority's ticks
+function sceneSlide(dt){
+  for (const a of actors){
+    const t = a.sceneTo; if (!t) continue;
+    const dx = t.x - a.x, dy = t.y - a.y, d = Math.hypot(dx, dy), st = Math.max(50, d * 5) * dt;
+    if (d <= st){ a.x = t.x; a.y = t.y; a.sceneTo = null; } else { a.x += dx / d * st; a.y += dy / d * st; }
+  }
+}
 // --- fights (not shared yet) ---
 // SPLIT PARTY, FIGHTS (Sam, 2026-10-27; part 2 of 4): one flag per plate (state["fight:<plate>"]) instead of one for the
 // table, so two plates can each have a fight, and the amber light shows only on the screens standing on a fighting
