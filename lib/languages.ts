@@ -161,14 +161,30 @@ export type ListenerState = {
  * (narration, or an NPC whose tongue was not tagged) is always understood —
  * the system only scrambles what it was told to scramble.
  */
-export function understands(listener: ListenerState, spoken: string | null | undefined): boolean {
+export function understands(listener: ListenerState, spoken: string | null | undefined, by?: string | null): boolean {
   if (!spoken) return true
   const lang = canonicalLanguage(spoken)
   if (!lang) return true // unknown/homebrew tongue: fail open, never eat a line silently
   if (listener.comprehendAll) return true
   const p = parseLanguages(listener.languages)
   if (p.telepathy) return true
-  return understoodLanguages(p).includes(lang)
+  const hears = understoodLanguages(p)
+  if (hears.includes(lang)) return true
+  return lang === "Undercommon" && hears.includes("Elvish") && isDrowSpeaker(by)
+}
+
+/**
+ * DROW SPEECH IS CLOSE ENOUGH TO ELVISH (Sam's ruling, 2026-11-20: "If kenta speaks Elvish it should be close enough
+ * to drow to understand"). A listener with Elvish follows anything a DROW says, the orders they give in Undercommon
+ * included. Undercommon from anyone else (kuo-toa, duergar, a quaggoth) is still Undercommon [CLAUDE: drow only].
+ * This is a table ruling, not the SRD, which lists Elvish and Undercommon as separate languages.
+ *
+ * A speaker is known to be drow by name or by the map's actor id: the named drow of Velkynvelve, anything called
+ * "drow", and the drow escorts. `by` unknown → not drow, so nothing changes for a line with no speaker on record.
+ */
+const DROW_SPEAKER = /\bdrow\b|^(ilvara|asha|shoor|jorlan|liana|sarith)\b|^escort-(?!quaggoth)/i
+export function isDrowSpeaker(by: string | null | undefined): boolean {
+  return !!by && DROW_SPEAKER.test(String(by).trim())
 }
 
 /** Languages two creatures share — what an NPC should pick to be understood. */
@@ -281,13 +297,13 @@ export function gibberish(text: string, language: string): string {
  * The one call display and TTS sites need: the text this listener sees/hears
  * for a line spoken in `spoken`.
  */
-export function renderSpeechFor(text: string, spoken: string | null | undefined, listener: ListenerState): {
+export function renderSpeechFor(text: string, spoken: string | null | undefined, listener: ListenerState, by?: string | null): {
   text: string
   understood: boolean
   language: string | null
 } {
   const language = spoken ? canonicalLanguage(spoken) : null
-  if (understands(listener, spoken)) return { text, understood: true, language }
+  if (understands(listener, spoken, by)) return { text, understood: true, language }
   return { text: gibberish(text, language ?? String(spoken)), understood: false, language }
 }
 
@@ -437,15 +453,15 @@ export function partyListener(rows: Array<{ languages?: unknown; conditions?: un
   return { languages: common }
 }
 
-type SegmentLike = { line: string; lang?: string | null }
-type RowLike = { text: string; speech_segments?: SegmentLike[] | null }
+type SegmentLike = { line: string; lang?: string | null; speaker?: string | null }
+type RowLike = { text: string; speaker?: string | null; speech_segments?: SegmentLike[] | null }
 
 /** The languages a dialogue row is spoken in, with whether this listener follows each. */
 export function rowLanguages(row: RowLike, listener?: ListenerState): Array<{ lang: string; understood: boolean }> {
   const out: Array<{ lang: string; understood: boolean }> = []
   for (const seg of row.speech_segments ?? []) {
     const lang = seg.lang ? canonicalLanguage(seg.lang) : null
-    if (lang && !out.some((o) => o.lang === lang)) out.push({ lang, understood: listener ? understands(listener, lang) : true })
+    if (lang && !out.some((o) => o.lang === lang)) out.push({ lang, understood: listener ? understands(listener, lang, seg.speaker ?? row.speaker) : true })
   }
   return out
 }
@@ -463,7 +479,7 @@ export function hearDialogueRow<T extends RowLike>(row: T, listener: ListenerSta
   let changed = false
   let cursor = 0
   const nextSegs = segs.map((seg) => {
-    if (!seg.lang || understands(listener, seg.lang)) return seg
+    if (!seg.lang || understands(listener, seg.lang, seg.speaker ?? row.speaker)) return seg
     const heard = gibberish(seg.line, seg.lang)
     const at = text.indexOf(seg.line, cursor)
     if (at >= 0) {
