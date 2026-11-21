@@ -28,7 +28,7 @@ import { useRouter } from "next/navigation"
 import { fadeOutThemeAudio } from "@/components/theme-audio"
 import { isMusicOff } from "@/lib/audio-prefs"
 import { cinematicsOn } from "@/lib/settings"
-import { PIT_DONE_KEY, pitDoneValue, pitParty, pitSrc, pitTryParty, type PitHero } from "@/lib/pit"
+import { PIT_DONE_KEY, pitDoneFor, pitParty, pitSrc, pitTryParty, type PitHero } from "@/lib/pit"
 
 const AWAKEN = "/awaken"
 /** How long the framed game has to say it loaded before the hero is sent on without it. */
@@ -86,11 +86,13 @@ export default function PitPage() {
         if (!claim?.valid) { router.replace("/join"); return }
         if (table && !table.error && !(table.state?.status === "live" && table.mine)) { router.replace("/table"); return }
         const run: string | null = typeof table?.run === "string" ? table.run : null
-        const done = run ? pitDoneValue(run, id) : null
+        const rolled = Boolean(fortune?.rolled)
+        const done = run ? pitDoneFor(run, typeof table?.state?.session === "number" ? table.state.session : null, id, rolled) : null
         const seats = Array.isArray(table?.seats) ? (table.seats as { id: string; name: string; away?: boolean }[]) : []
         const { me, party } = pitParty(id, claim?.character?.name, seats)
-        // A saved game, a hero the Pit cannot draw, or a run the table could not name: straight to the awakening.
-        if (fortune?.rolled || !me || !run) { leave({ src: "", done, after: AWAKEN }, false); return }
+        // A saved game with nobody at the table owing the Pit, a hero the Pit cannot draw, or a run the table could
+        // not name: straight to the awakening. A hero who has rolled goes in when the table goes (lib/pit.ts TOGETHER).
+        if ((rolled && table?.pitDue !== true) || !me || !run) { leave({ src: "", done: rolled ? null : done, after: AWAKEN }, false); return }
         setPlan({ src: pitSrc(me as PitHero, party, { film, sound: snd }), done, after: AWAKEN })
       })
       .catch(() => router.replace("/join"))

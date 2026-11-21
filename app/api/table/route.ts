@@ -13,6 +13,7 @@ import {
 import { actorFor, type Actor, type Host } from "@/lib/host"
 import { entryKey } from "@/lib/entry"
 import { cleanSaveName, newSaveName } from "@/lib/saves"
+import { pitOwedBy } from "@/lib/pit"
 import { shelveWorldInPlay, startNewSave, usualParty } from "@/lib/save-store"
 
 // /api/table — the staging table (lib/table.ts has the rules and Sam's words).
@@ -99,8 +100,15 @@ async function reply(db: Db, view: TableView, characterId?: string | null, extra
     const { data: entry, error: entryErr } = await db.from("world_flags").select("key").eq("campaign_id", WORLD_FLAGS_CAMPAIGN).eq("key", entryKey(view.state.session, mine.id)).maybeSingle()
     if (!entryErr) woke = Boolean(entry)
   }
+  // DOES ANYONE SEATED STILL OWE THE PIT? (lib/pit.ts TOGETHER.) Asked only for a seated player at a live table; a
+  // read that fails leaves it out, and an answer that does not say sends nobody to the Pit.
+  let pitDue: boolean | undefined
+  if (mine && !mine.dm && view.state.status === "live") {
+    const { data: rolls, error: rollsErr } = await db.from("world_flags").select("key").eq("campaign_id", WORLD_FLAGS_CAMPAIGN).like("key", "fortune:%")
+    if (!rollsErr) pitDue = pitOwedBy(view.seats, new Set((rolls ?? []).map((r) => String(r.key).slice("fortune:".length)))).some((id) => id !== mine.id)
+  }
   const { data: liveRun } = await db.from("campaign_runs").select("id").eq("campaign_id", CAMPAIGN_ID).neq("status", "ended").order("run_number", { ascending: false }).limit(1).maybeSingle()
-  return NextResponse.json({ ...view, seats: open ? view.seats : [], mine, invited, host: host ? { id: host.id, name: host.name } : null, run: liveRun?.id ?? null, ...(woke === undefined ? {} : { woke }), ...(roster ? { roster } : {}), ...extra })
+  return NextResponse.json({ ...view, seats: open ? view.seats : [], mine, invited, host: host ? { id: host.id, name: host.name } : null, run: liveRun?.id ?? null, ...(woke === undefined ? {} : { woke }), ...(pitDue === undefined ? {} : { pitDue }), ...(roster ? { roster } : {}), ...extra })
 }
 
 /** Is this the campaign's host, proved by the host hero's own claim? */

@@ -251,12 +251,15 @@ export default function AwakenPage() {
           // An unreadable table lets them through rather than locking the family out on a network blip.
           if (table && !table.error && !(table.state?.status === "live" && table.mine)) { router.replace("/table"); return }
           setDoor({ id, token })
-          if (fortune?.rolled) { setStep("act"); return }   // a saved game: the Act I card, then the gate
           // THE PIT COMES FIRST (Sam, 2026-11-16: the arena fight "begins BEFORE the heroes wake in the pen"). A new
           // game for a hero with Pit art goes to /pit, which sends them back here once they have won (lib/pit.ts).
           let pitDone: string | null = null, canStore = true
           try { pitDone = window.localStorage.getItem(PIT_DONE_KEY) } catch { canStore = false /* a win could not be remembered: no Pit, never a loop */ }
-          if (canStore && pitComesFirst({ run: typeof table?.run === "string" ? table.run : null, characterId: id, name: claim?.character?.name, rolled: false, done: pitDone })) { router.replace(PIT_PATH); return }
+          // The whole table goes (Sam, 2026-11-20): a hero who has already woken in this campaign goes in too when
+          // someone seated with them still owes the Pit (`pitDue`), once per session.
+          const rolled = Boolean(fortune?.rolled)
+          if (canStore && pitComesFirst({ run: typeof table?.run === "string" ? table.run : null, characterId: id, name: claim?.character?.name, rolled, done: pitDone, partyDue: table?.pitDue === true, session: typeof table?.state?.session === "number" ? table.state.session : null })) { router.replace(PIT_PATH); return }
+          if (rolled) { setStep("act"); return }   // a saved game: the Act I card, then the gate
           setSeat({ id, token, name: claim?.character?.name ?? null, film: typeof heroFilm?.film === "string" && heroFilm?.seen !== true ? heroFilm.film : null })
         })
         .catch(() => router.replace("/join"))

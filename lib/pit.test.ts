@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { pitComesFirst, pitDoneValue, pitHeroKey, pitParty, pitSrc, pitTryParty } from "./pit"
+import { pitComesFirst, pitDoneFor, pitDoneValue, pitOwedBy, pitSessionDoneValue, pitHeroKey, pitParty, pitSrc, pitTryParty } from "./pit"
 
 describe("pitHeroKey", () => {
   it("knows the four originals by first name, however cased", () => {
@@ -26,6 +26,30 @@ describe("pitComesFirst", () => {
     expect(pitComesFirst({ ...base, done: pitDoneValue("run-7", "c1") })).toBe(false)
     expect(pitComesFirst({ ...base, done: pitDoneValue("run-6", "c1") })).toBe(true)
     expect(pitComesFirst({ ...base, done: pitDoneValue("run-7", "c2") })).toBe(true)
+  })
+})
+
+describe("the whole table goes (Sam, 2026-11-20)", () => {
+  const back = { run: "run-7", characterId: "c1", name: "Fifi", rolled: true, done: null, session: 2 }
+  it("a hero who has already woken goes in when someone seated still owes the Pit", () => expect(pitComesFirst({ ...back, partyDue: true })).toBe(true))
+  it("and not when nobody does, or the table did not say", () => {
+    expect(pitComesFirst({ ...back, partyDue: false })).toBe(false)
+    expect(pitComesFirst(back)).toBe(false)
+  })
+  it("once per session for them", () => {
+    expect(pitComesFirst({ ...back, partyDue: true, done: pitSessionDoneValue("run-7", 2, "c1") })).toBe(false)
+    expect(pitComesFirst({ ...back, partyDue: true, done: pitSessionDoneValue("run-7", 1, "c1") })).toBe(true)
+    expect(pitComesFirst({ ...back, partyDue: true, done: pitDoneValue("run-7", "c1") })).toBe(true)
+  })
+  it("never without Pit art", () => expect(pitComesFirst({ ...back, name: "Lynkes", partyDue: true })).toBe(false))
+  it("what a win writes ends in the hero's id either way (the waker reads that)", () => {
+    expect(pitDoneFor("r", 2, "c1", true)).toBe("r:s2:c1")
+    expect(pitDoneFor("r", 2, "c1", false)).toBe("r:c1")
+  })
+  it("who owes it: seated, has Pit art, has not rolled; not DM-run, not excused", () => {
+    const seats = [{ id: "c1", name: "Fifi of Waterdeep" }, { id: "c2", name: "Kenta of Neverwinter" }, { id: "c3", name: "Lynkes" }, { id: "c4", name: "Samson", away: true }, { id: "c5", name: "Scott", dm: true }]
+    expect(pitOwedBy(seats, new Set(["c1"]))).toEqual(["c2"])
+    expect(pitOwedBy(seats, new Set(["c1", "c2"]))).toEqual([])
   })
 })
 
