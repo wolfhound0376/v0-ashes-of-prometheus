@@ -97,8 +97,9 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark bg-[#0a0908]">
       <body className={`${cinzel.variable} ${cinzelDecorative.variable} ${crimsonText.variable} ${unifraktur.variable} ${imFell.variable} font-sans antialiased`}>
-        {/* The two sound rules (public/test-copy-silence.js): test copies start silent until Sam turns them
-            on, and a hidden page is silent everywhere. beforeInteractive puts it ahead of every app script,
+        {/* The three sound rules (public/test-copy-silence.js): test copies start silent until Sam turns them
+            on, a hidden page is silent everywhere, and so is a page that is on screen but not the one in
+            use. beforeInteractive puts it ahead of every app script,
             so it is in place before the first AudioContext or film. Until 2026-10-26 only the static pages
             loaded it, which is how a preview of the intro played its score out loud. */}
         <Script src="/test-copy-silence.js" strategy="beforeInteractive" />
