@@ -161,6 +161,19 @@ describe("monsters' shots and spells on heroes (PR 4)", () => {
   })
 })
 
+describe("the drow crew's own blows (PR 5)", () => {
+  it("Ilvara, Asha, Shoor and Jorlan each have an attack pose, and Ilvara's Poison Spray has a scene", () => {
+    for (const d of ["ilvara", "asha", "shoor", "jorlan"]) {
+      const sc = strikeCamScene({ att: d, tgt: "kenta", weapon: "x", foe: true, crit: true, mode: "key" })
+      expect(sc?.key, d).toBe("attack")
+      expect(sc?.flip, d).toBe(true)
+    }
+    const spray = strikeCamScene({ att: "ilvara", tgt: "freia", spell: "Poison Spray", spellLevel: 0, against: true, crit: true, mode: "key" })
+    expect(spray?.fx?.impact[0]).toBe("orbPoisonHit.webp")
+    expect(strikeCamScene({ att: "ilvara", tgt: "freia", spell: "Poison Spray", spellLevel: 0, against: true, mode: "key" })).toBeNull()   // a plain cantrip
+  })
+})
+
 describe("full or short", () => {
   it("full the first time a move is used in a fight, short after", () => {
     const mem = {}
