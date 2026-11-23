@@ -92,6 +92,21 @@ walking more subtle", and "The ruins should look like the tile set (which looks 
   regenerated with crops of Sam's terrain board and of the forecourt floor as references, and the facade's stone was
   then shifted to the floor's own hue so the two meet without a seam of colour.
 
+## Resting on the road
+
+Sam, 2026-11-23: "when walking through this map there should be the option to short rest or make camp for a long rest.
+This triggers a pixel art for a flaming fire pit, then fades in/out into a pixel art loading screen for camp and enters
+into the camp module."
+
+- Two small buttons, bottom right, while the party is walking: **Short rest** and **Make camp**. Hidden while a plate is open.
+- Either fades to the fire pit (`public/pixel-road/rest/firepit.png`; the page adds the flicker, the sparks and
+  `/audio/camp-embers.mp3`). A short rest stays a few seconds and fades back to the road. Making camp goes on to the
+  camp loading picture (`rest/camp-load.png`) with a line of the voyage card's book lore, then opens `/camp`.
+- `?stay=1` plays the whole long-rest sequence without leaving the page (for tests and for looking at it).
+- This page has no hit points, hit dice or clock, so a short rest here changes nothing but the screen. That needs the
+  road hooked to the travel rules (step 2). Coming back from the camp to the road is also not wired yet.
+- Both pictures: PixelLab `create_image_pro`, 640x360, `no_background: false`, 25 generations each. Masters in `art/rest/`.
+
 ## Baking `road-01` (PixelLab map `1c47eece-3986-4b2c-9501-3ad0b47fe44e`, "Road 01 - Tunnel out of Velkynvelve (cavern)")
 
 `python3 scripts/pixel-road/bake.py road-01 <config.json>`, with a config like `road-01.config.json` here (its
