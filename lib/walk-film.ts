@@ -82,6 +82,11 @@ export const WALK_FILMS = {
   "hero-entrance-kenta": { kind: "action", state: "hero-entrance-kenta", scope: "party", location: PEN_LOCATION, dc: null },
   "hero-entrance-samson": { kind: "action", state: "hero-entrance-samson", scope: "party", location: PEN_LOCATION, dc: null },
   "hero-entrance-scott": { kind: "action", state: "hero-entrance-scott", scope: "party", location: PEN_LOCATION, dc: null },
+  // LOLTH'S TOOTH REVEALED (Sam, 2026-11-23: "maybe a cinematic when discovered"; "go" on the script). The first time a
+  // hero's Arcana check on the drow ritual dagger succeeds and its name comes out, a short silent film: the sigils
+  // burn violet, the venom beads, and in the blade Ilvara's eyes open (the beacon). Solo: it is that hero's reading,
+  // and the line over it is spoken in their own voice by the map. No dc: the map rolled the Arcana check itself.
+  "lolths-tooth-revealed": { kind: "action", state: "lolths-tooth-revealed", scope: "solo", location: PEN_LOCATION, dc: null },
 } as const satisfies Record<string, WalkFilm>
 
 export type WalkFilmCue = keyof typeof WALK_FILMS
