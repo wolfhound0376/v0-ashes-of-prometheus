@@ -15839,7 +15839,7 @@ const SC = {el: null, cv: null, ctx: null, run: null, raf: 0, img: {}, W: 1600, 
 function scImg(src){ if (!SC.img[src]){ const i = new Image(); i.src = src; SC.img[src] = i; } return SC.img[src]; }
 const scPoseSrc = (slug, p) => `/sprites/${slug}/${p.src}`;
 function scParts(o){   // the scene's pictures, rebuilt from what crossed the relay
-  const mine = STRIKE_CAM.poses[o.att], theirs = STRIKE_CAM.poses[o.tgt], pose = mine && mine[o.pose], hit = theirs && theirs.hit;
+  const mine = STRIKE_CAM.poses[o.att], theirs = STRIKE_CAM.poses[o.tgt], pose = mine && mine[o.pose], hit = theirs && ((o.hard && theirs.hitHard) || theirs.hit);
   if (!pose || !hit) return null;
   const fx = pose.kind === "spell" ? STRIKE_CAM.spellFx[o.spell] : null; if (pose.kind === "spell" && !fx) return null;
   const sheet = f => f ? [scImg(`/vfx/${f[0]}`), f[1], f[2], f[3]] : null;
@@ -15860,7 +15860,7 @@ function strikeCamFor(att, tgt, ev){
   const mode = strikeCamMode(state.strikeCam); if (mode === "off") return null;
   const sc = strikeCamScene({mode, att: att.id, tgt: tgt.id, art: ev.art, weapon: ev.weapon, spell: ev.spell, spellLevel: ev.spellLevel, crit: ev.crit, quick: !!cbt.quick});
   if (!sc) return null;
-  const o = {att: att.id, tgt: tgt.id, pose: sc.kind === "spell" ? "cast" : sc.key, spell: ev.spell || null, title: ev.title || "", who: `${fname(att)}  →  ${fname(tgt)}`};
+  const o = {att: att.id, tgt: tgt.id, pose: sc.kind === "spell" ? "cast" : sc.key, spell: ev.spell || null, hard: !!sc.hard, title: ev.title || "", who: `${fname(att)}  →  ${fname(tgt)}`};
   if (!scReady(scParts(o))){ strikeCamWarm(); return null; }
   o.cut = strikeCamCut(cbt.strikeMem = cbt.strikeMem || {}, att.id, sc.key, cbt.round || 1);
   return o;
