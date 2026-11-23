@@ -9,7 +9,7 @@ config.json:
     "grid": "grid.txt",                        the rows get_map prints for the same cells
     "export": "x/",                            the unzipped PixelLab export (objects/manifest.json + PNGs)
     "kinds": {"name prefix": "kind", ...},     PixelLab object name -> short kind used for the file name
-    "foreground": {"stalactites": "stalactites.png"},
+    "foreground": {"ceiling": "art/ceiling.webp", "shelf": "art/shelf.webp"},
     "entry": {...}, "exit": {...}, "landmarks": [...], "glow": {...} }
 
 What it writes:
@@ -36,6 +36,7 @@ def main():
     out = os.path.join("public", "pixel-road", rid)
     if os.path.isdir(os.path.join(out, "objects")): shutil.rmtree(os.path.join(out, "objects"))
     os.makedirs(os.path.join(out, "objects"), exist_ok=True)
+    if os.path.isdir(os.path.join(out, "fg")): shutil.rmtree(os.path.join(out, "fg"))
     os.makedirs(os.path.join(out, "fg"), exist_ok=True)
     rows, cols = cfg["rows"], cfg["cols"]
     W, H = cols * T, rows * T
@@ -73,9 +74,10 @@ def main():
             if at(cx, cy) not in FLOOR: continue
             y0, x0 = cy * T, cx * T
             if at(cx, cy - 1) in ROCK:   # the foot of a rock face: the deepest dark, reaching well out
-                a[y0:y0 + T, x0:x0 + T] = np.maximum(a[y0:y0 + T, x0:x0 + T], ramp(T, 150)[:, None])
-                if at(cx, cy + 1) in FLOOR:
-                    a[y0 + T:y0 + T + 12, x0:x0 + T] = np.maximum(a[y0 + T:y0 + T + 12, x0:x0 + T], 0)
+                # The face is painted half a cell lower than its cell (tiles sit on the grid's corners), so the
+                # dark starts half a cell down, where the face meets the floor, not on the face itself.
+                ya, yb = y0 + T // 2, min(H, y0 + T // 2 + T)
+                a[ya:yb, x0:x0 + T] = np.maximum(a[ya:yb, x0:x0 + T], ramp(T, 150)[:yb - ya, None])
             if at(cx - 1, cy) in ROCK: a[y0:y0 + T, x0:x0 + 16] = np.maximum(a[y0:y0 + T, x0:x0 + 16], ramp(16, 85)[None, :])
             if at(cx + 1, cy) in ROCK: a[y0:y0 + T, x0 + 16:x0 + T] = np.maximum(a[y0:y0 + T, x0 + 16:x0 + T], ramp(16, 85)[::-1][None, :])
             if at(cx, cy + 1) in ROCK: a[y0 + 20:y0 + T, x0:x0 + T] = np.maximum(a[y0 + 20:y0 + T, x0:x0 + T], ramp(12, 70)[::-1][:, None])
@@ -104,7 +106,8 @@ def main():
 
     fg = {}
     for k, f in (cfg.get("foreground") or {}).items():
-        shutil.copy(p(f), os.path.join(out, "fg", k + ".png")); fg[k] = "fg/" + k + ".png"
+        ext = os.path.splitext(f)[1] or ".png"
+        shutil.copy(p(f), os.path.join(out, "fg", k + ext)); fg[k] = "fg/" + k + ext
 
     road = {"_": "Baked by scripts/pixel-road/bake.py from the PixelLab map below; do not edit by hand. ground.png has the props painted in; objects/ holds the same props again so a figure can stand behind one.",
             "id": rid, "name": cfg["name"], "pixellabMapId": cfg["pixellabMapId"], "tile": T, "cols": cols, "rows": rows,

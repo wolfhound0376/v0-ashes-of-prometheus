@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest"
 // On the painted plates the walkable floor is a hand-made mask. On a pixel road it comes with the map, in
 // road.json, so it can be proved from the file alone: the way in reaches the way out on floor, with a figure's
 // footprint, round every prop. The footprint numbers and the rule below are the page's own
-// (public/pixel-road/index.html: FOOT_RX, FOOT_RY, solidAt, canStand); if those change, change them here.
+// (public/pixel-road/index.html: FOOT_RX, FOOT_RY, FACE_LIP, solidAt, canStand); if those change, change them here.
 type Road = {
   id: string; walkable?: string; tile: number; cols: number; rows: number; ground: string; grid: string[]
   objects: { kind: string; x: number; y: number; w: number; h: number; ground: [number, number, number, number] }[]
@@ -14,12 +14,14 @@ type Road = {
 }
 const ROOT = join("public", "pixel-road")
 const roads = readdirSync(ROOT).filter((d) => existsSync(join(ROOT, d, "road.json")))
-const FOOT_RX = 7, FOOT_RY = 3, STEP = 16
+const FOOT_RX = 7, FOOT_RY = 3, STEP = 16, FACE_LIP = 14
 
 function walker(road: Road) {
   const solid = (px: number, py: number) => {
     const c = Math.floor(px / road.tile), r = Math.floor(py / road.tile)
     if (r < 0 || c < 0 || r >= road.rows || c >= road.cols || !(road.walkable ?? "w").includes(road.grid[r][c])) return true
+    const up = Math.floor((py - FACE_LIP) / road.tile)
+    if (up >= 0 && road.grid[up][c] === "a") return true // the face hangs half a cell into the floor below it
     return road.objects.some(({ ground: g }) => px >= g[0] && px <= g[0] + g[2] && py >= g[1] && py <= g[1] + g[3])
   }
   const canStand = (x: number, y: number) => !solid(x - FOOT_RX, y) && !solid(x + FOOT_RX, y) && !solid(x, y - FOOT_RY) && !solid(x, y + FOOT_RY) && !solid(x, y)

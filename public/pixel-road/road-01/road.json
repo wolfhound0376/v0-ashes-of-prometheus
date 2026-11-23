@@ -9,7 +9,8 @@
  "ground": "ground.png",
  "shade": "shade.png",
  "foreground": {
-  "stalactites": "fg/stalactites.png"
+  "ceiling": "fg/ceiling.webp",
+  "shelf": "fg/shelf.webp"
  },
  "legend": {
   "w": "floor",

@@ -23,7 +23,7 @@
   Open it:  /pixel-road/index.html            (or the DM's door, /rehearsal?to=road)
             ?line=kenta,freia,scott           who walks, leader first (sprite slugs in /sprites)
             ?light=0                          the cave drawn fully lit, no darkness or glow
-            ?fg=0                             without the near rock (stalactites) in front
+            ?fg=0                             without the near rock (ceiling and shelf) in front
             ?road=road-01                     which stretch
 -->
 <style>
@@ -48,6 +48,7 @@ const rowFor = (dx, dy) => (2 - Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) +
 
 const SPEED = 92;        // world pixels a second (a 32px cell is 5 ft)
 const GAP = 17;          // how far behind the one in front each follower walks: tight, per Sam
+const FACE_LIP = 14;      // how far a rock face hangs down into the floor cell below it
 const FOOT_RX = 7, FOOT_RY = 3; // a figure's footprint on the ground, for bumping into things
 
 const cv = document.getElementById("c"), ctx = cv.getContext("2d");
@@ -63,6 +64,9 @@ function cellAt(px, py) {
 }
 function solidAt(px, py) {
   if (!WALK.includes(cellAt(px, py))) return true;
+  // A rock face is painted half a cell lower than its cell (the tiles sit on the corners of the grid), so the top
+  // of the floor cell under one is still wall to the eye. Nobody stands there.
+  if (cellAt(px, py - FACE_LIP) === "a") return true;
   for (const o of road.objects) { const g = o.ground; if (px >= g[0] && px <= g[0] + g[2] && py >= g[1] && py <= g[1] + g[3]) return true; }
   return false;
 }
@@ -199,23 +203,25 @@ function drawLight() {
     g.addColorStop(0, col + "30"); g.addColorStop(1, col + "00"); ctx.globalAlpha = pulse; ctx.fillStyle = g; ctx.fillRect(x - r, y - r, 2 * r, 2 * r); }
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
 }
-// THE NEAR ROCK. Stalactites hang across the top of the screen and a dark lip of rock rises along the bottom, both
-// closer to the eye than the party, so they slide past faster than the floor does. That difference in speed is
-// most of what makes the cave read as deep.
+// THE NEAR ROCK (art: Sam, 2026-11-22, a stalactite ceiling lip and a stalagmite shelf). The ceiling hangs across the
+// top of the screen and the shelf rises along the bottom, both closer to the eye than the party, so they slide past
+// faster than the floor does. That difference in speed is most of what makes the cave read as deep. Each painting is
+// one screen wide and is laid end to end with every other copy mirrored, so the joins meet themselves.
 function drawForeground() {
-  const im = fgImg.stalactites; if (!im || Q.get("fg") === "0") return;
-  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
-  // top: how much of the screen's height the band takes, how much faster than the floor it slides
-  const band = (k, par, flip, show) => {
-    const sc = Math.max(1, Math.round(cv.height * k / im.height)), w = im.width * sc, h = im.height * sc, off = h * (1 - show);
-    let x = -((cam.x * cam.z * par) % w); if (x > 0) x -= w;
-    for (; x < cv.width; x += w) {
-      if (!flip) ctx.drawImage(im, x, -off, w, h);
-      else { ctx.save(); ctx.translate(x, cv.height + off); ctx.scale(1, -1); ctx.drawImage(im, 0, 0, w, h); ctx.restore(); }
+  if (Q.get("fg") === "0") return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+  const band = (im, par, bottom) => {
+    if (!im) return;
+    const w = cv.width, h = Math.round(im.height * w / im.width), y = bottom ? cv.height - h : 0;
+    const slide = cam.x * cam.z * par, first = Math.floor(slide / w);
+    for (let i = first; i * w - slide < cv.width; i++) {
+      const x = Math.round(i * w - slide);
+      if (i % 2 === 0) ctx.drawImage(im, x, y, w, h);
+      else { ctx.save(); ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(im, 0, 0, w, h); ctx.restore(); }
     }
   };
-  band(0.36, 1.35, false, 0.72);
-  band(0.50, 1.7, true, 0.42);
+  band(fgImg.ceiling, 1.3, false);
+  band(fgImg.shelf, 1.6, true);
 }
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
@@ -248,13 +254,7 @@ function frame(now) {
   ground = await img(BASE + road.ground);
   WALK = road.walkable || "w";
   if (road.shade) shade = await img(BASE + road.shade);
-  for (const [k, f] of Object.entries(road.foreground || {})) {
-    // The near rock is seen against the light, so it is drawn as a plain dark shape, whatever colour the art is.
-    const im = await img(BASE + f); if (!im) continue;
-    const c = document.createElement("canvas"); c.width = im.width; c.height = im.height; const x = c.getContext("2d");
-    x.drawImage(im, 0, 0); x.globalCompositeOperation = "source-in"; x.fillStyle = "#05040b"; x.fillRect(0, 0, c.width, c.height);
-    fgImg[k] = c;
-  }
+  for (const [k, f] of Object.entries(road.foreground || {})) fgImg[k] = await img(BASE + f);
   for (const k of new Set(road.objects.map((o) => o.kind))) objImg[k] = await img(BASE + "objects/" + k + ".png");
   heroes = (await Promise.all(LINE.map(loadHero))).filter(Boolean);
   if (!ground || !heroes.length) { document.body.innerHTML = '<p style="color:#a99;font:14px Georgia;padding:2em">The road could not be drawn.</p>'; return; }
@@ -269,7 +269,7 @@ function frame(now) {
     path = findPath(heroes[0].x, heroes[0].y, wx, wy);
   });
   // For poking at it from the console and for a browser test. The walk check itself is lib/pixel-road.test.ts.
-  window.__road = { road, heroes, findPath, canStand, go: (x, y) => { path = findPath(heroes[0].x, heroes[0].y, x, y); return path.length; }, idle: () => !path.length };
+  window.__road = { road, heroes, objImg, findPath, canStand, go: (x, y) => { path = findPath(heroes[0].x, heroes[0].y, x, y); return path.length; }, idle: () => !path.length };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
 </script>

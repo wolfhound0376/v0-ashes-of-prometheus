@@ -11,7 +11,7 @@ Design of record: `claude/Pixel_Road_Hybrid_2026-11-22.md` (project doc). This f
 | `ground.png` | The whole stretch at 32px a cell, props painted in. |
 | `shade.png` | Depth as one see-through layer: the dark at the foot of every rock face, and the shadow each prop throws. |
 | `objects/<kind>.png` | The same props again, one file per kind, so a figure can stand behind one. |
-| `fg/stalactites.png` | The near rock the page hangs in front of everything (drawn as a dark shape, sliding faster than the floor). |
+| `fg/ceiling.webp`, `fg/shelf.webp` | The near rock the page hangs in front of everything: Sam's paintings of a stalactite ceiling lip and a stalagmite shelf (2026-11-22), kept in `scripts/pixel-road/art/`. They slide faster than the floor. |
 
 Everything in that folder is written by `bake.py`. Do not edit it by hand; change the map in PixelLab and bake again.
 
@@ -21,7 +21,7 @@ Everything in that folder is written by `bake.py`. Do not edit it by hand; chang
 2. **Things that stand over the figures**: spires, fangs and zurkhwood four to six cells tall. Figures walk behind them.
 3. **Shadow**: `shade.png`.
 4. **A close camera**: about eight and a half cells of height on screen.
-5. **Near rock**: stalactites across the top and a lip along the bottom that slide faster than the floor.
+5. **Near rock**: a painted ceiling of stalactites across the top and a shelf of stalagmites along the bottom that slide faster than the floor.
 
 ## Baking `road-01` (PixelLab map `1c47eece-3986-4b2c-9501-3ad0b47fe44e`, "Road 01 - Tunnel out of Velkynvelve (cavern)")
 
@@ -31,7 +31,7 @@ picture paths are placeholders: the pictures come from PixelLab each time and ar
 1. Crops: four `view_map` calls, 16 cells wide and the full height. A crop that size comes back at full size; the whole map comes back at half.
 2. Grid: the rows `get_map` prints for the same cells (`road-01.grid.txt`).
 3. Export: `get_map(export="pixellab")`, unzipped. Only `objects/` is used.
-4. Foreground: the object's own PNG from `/mcp/objects/<id>/download`.
+4. Foreground: `art/ceiling.webp` and `art/shelf.webp` (one screen wide each, see-through; any stretch can reuse them).
 
 The export ZIP's own picture of the ground is a blank 1x1 until the map has been saved once in Map Workshop, and
 its `map.json` has no cell grid, which is why steps 1 and 2 are done this way.

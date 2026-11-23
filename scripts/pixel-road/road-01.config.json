@@ -23,7 +23,8 @@
   "giant underground": "zurkhwood"
  },
  "foreground": {
-  "stalactites": "<PixelLab object 8cc13e22-bd5f-48fd-b7f3-83fc779f0133>.png"
+  "ceiling": "art/ceiling.webp",
+  "shelf": "art/shelf.webp"
  },
  "entry": {
   "x": 48,
