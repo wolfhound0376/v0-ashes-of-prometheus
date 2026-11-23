@@ -14491,8 +14491,8 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (tgt.c.sheet.holyVulnerable && !atk.flask && att.c.conds.has("blessed")) holyOpen(tgt, `${fname(att)}'s blessed blow`);
       { const art = atk.art && WEAPON_ARTS[atk.art], word = art && art.says && !art.cleave ? String(art.says).toUpperCase() : "";   // THE STRIKE CAM: the blow has landed
         if (att.strikeCamOpen){ att.strikeCamOpen = false; strikeCamLand({dmg: dmg.total, crit, word}); }
-        else if (!shot){ const sc = strikeCamFor(att, tgt, {art: atk.art, weapon: atk.itemName || atk.name, crit, title: art ? art.name : atk.name, melee: true, sneak, reaction: !!reaction,
-            signature: !!(atk.rider || atk.extra || atk.curse || atk.numb || atk.tooth)}); if (sc) strikeCam({...sc, dmg: dmg.total, crit, word}); } }
+        else if (!shot || !hero(att)){ const sc = strikeCamFor(att, tgt, {art: atk.art, weapon: atk.itemName || atk.name, crit, title: art ? art.name : atk.name, melee: !shot, shot: !!shot, sneak, reaction: !!reaction,   // a monster's shot opens as it lands
+            signature: !!(atk.rider || atk.extra || atk.curse || atk.numb || atk.tooth || atk.drowPoison)}); if (sc) strikeCam({...sc, dmg: dmg.total, crit, word}); } }
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
       blowNarration(att, tgt, atk, dmg.total, crit);
       }
@@ -17691,6 +17691,8 @@ function burst(a, col, n){ const m = SPR[a.id].json, sc = actorScale(a), y = a.y
 //
 // PR 2 (2026-11-23, Sam: "go") added the rest of the trigger list that has art: Sneak Attack (once a fight), the
 // killing blow, and a monster's blow on a hero (a signature ability once a fight, a crit, or the blow that drops them).
+// PR 4 added monsters' shots and spells on heroes (the drow guards' hand crossbows, Asha's Guiding Bolt, Ilvara's
+// Poison Spray), mirrored like their blows.
 // PR 3 added the reactions that change the outcome: an opportunity attack that lands, and Shield (strikeCamBlock).
 //
 // PR 1 OF 3 carried the engine, the DM's setting (off by default) and the three scenes Sam approved. The
@@ -17744,14 +17746,17 @@ const STRIKE_CAM = {
     // hitHard: a second, heavier way of taking a blow, shown for a critical hit (Sam, 2026-11-23: "another combat pose
     // for hits on drow (we also need one for females)")
     "drow-guard-male": { hit: { src: "closeup-hit.png", scale: 1.25 }, hitHard: { src: "closeup-hit-hard.png", scale: 1.25 },
-      attack: { kind: "melee", src: "closeup-attack.png", scale: 1.25, feetX: 640, hand: [0.99, 0.16] } },
+      attack: { kind: "melee", src: "closeup-attack.png", scale: 1.25, feetX: 640, hand: [0.99, 0.16] },
+      shot: { kind: "shot", src: "closeup-shot.png", scale: 1.25, feetX: 420, hand: [0.98, 0.17], mark: [0.5, 0.4] } },
     "drow-guard-female": { hit: { src: "closeup-hit.png", scale: 1.25 },
-      attack: { kind: "melee", src: "closeup-attack.png", scale: 1.25, feetX: 600, hand: [0.99, 0.2] } },
+      attack: { kind: "melee", src: "closeup-attack.png", scale: 1.25, feetX: 600, hand: [0.99, 0.2] },
+      shot: { kind: "shot", src: "closeup-shot.png", scale: 1.25, feetX: 420, hand: [0.98, 0.16], mark: [0.5, 0.4] } },
     quaggoth: { hit: { src: "closeup-hit.png", scale: 1.4 }, attack: { kind: "melee", src: "closeup-attack.png", scale: 1.4, feetX: 640, hand: [0.92, 0.63] } },
     "giant-spider": { hit: { src: "closeup-hit.png", scale: 1.2 }, attack: { kind: "melee", src: "closeup-attack.png", scale: 1.3, feetX: 740, hand: [0.75, 0.55] } },
     // the named drow of Velkynvelve (Sam, 2026-11-23: "Draw hit poses for Ilvara, Asha, Shoor, Jorlan, giant spider")
     ilvara: { hit: { src: "closeup-hit.png", scale: 1.25 } },
-    asha: { hit: { src: "closeup-hit.png", scale: 1.25 } },
+    asha: { hit: { src: "closeup-hit.png", scale: 1.25 },
+      cast: { kind: "spell", src: "closeup-cast.png", scale: 1.2, feetX: 420, hand: [0.98, 0.22], mark: [0.5, 0.36] } },
     shoor: { hit: { src: "closeup-hit.png", scale: 1.25 } },
     jorlan: { hit: { src: "closeup-hit.png", scale: 1.25 } },
   },
@@ -17770,6 +17775,9 @@ const STRIKE_CAM = {
       charge: ["frostRayCharge.webp", 4, 1, 3], travel: ["frostRayTravel.webp", 4, 1, 4], impact: ["frostRayImpact.webp", 3, 3, 8] },
     "Guiding Bolt": { tint: "#fff1b0", pop: "#fff1b0", blood: false,
       charge: ["guidingBoltCharge.webp", 4, 1, 3], travel: ["guidingBoltTravel.webp", 4, 1, 4], impact: ["guidingBoltImpact.webp", 3, 3, 8] },
+    // Ilvara's cantrip: the poison orb sheets the map already has
+    "Poison Spray": { tint: "#9be37a", pop: "#9be37a", blood: false,
+      charge: ["orbPoisonForm.webp", 3, 1, 3], travel: ["orbPoisonFly.webp", 4, 1, 4], impact: ["orbPoisonHit.webp", 9, 1, 9] },
   },
 };
 
@@ -17783,7 +17791,8 @@ function strikeCamMode(v) {
  *   ev: { mode, att, tgt (sprite slugs), art (a weapon art's key), weapon (the attack's name), spell, spellLevel,
  *         crit, quick (Quick resolve is on),
  *         sneak (this hit carried Sneak Attack), foe (a monster's melee blow on a hero), signature (that blow carries
- *         the monster's own rider: venom, a curse), reaction (an opportunity attack), drop (it dropped the hero to 0), kill (it killed a boss or a named
+ *         the monster's own rider: venom, a curse), shot (with foe: a monster's shot), against (a monster's spell
+ *         on a hero: the scene is mirrored), reaction (an opportunity attack), drop (it dropped the hero to 0), kill (it killed a boss or a named
  *         foe, or ended the fight) }
  * Returns null (it plays on the map) or { key, kind, att, tgt, pose, hit, hard, fx }. `hard` says the target has a
  * heavier hit pose and this blow (a critical hit) earns it.
@@ -17814,19 +17823,19 @@ function strikeCamScene(ev) {
     special = true;
     once = "sneak";
   } else if (ev.foe) {
-    pose = mine.attack || null;
-    key = "attack";
+    pose = (ev.shot ? mine.shot : mine.attack) || null;
+    key = ev.shot ? "shot" : "attack";
     special = !!ev.drop;
     if (!special && !ev.crit && ev.signature) { special = true; once = "signature"; }
   }
   if (!pose) return null;
   if (pose.weapon && !pose.weapon.test(String(ev.weapon || ""))) return null;   // the pose shows another weapon
   if (ev.reaction && !special) { special = true; once = "reaction"; }   // an opportunity attack that landed
-  if (ev.kill) special = true;
+  if (ev.kill || ev.drop) special = true;
   if (mode === "key" && !special && !ev.crit) return null;
   if (mode === "all" || ev.crit || ev.kill || ev.drop) once = null;   // a crit or a finishing blow is shown on its own account; "all" shows everything
   const hard = !!((ev.crit || ev.kill || ev.drop) && theirs.hitHard);
-  return { key, kind: pose.kind, att: ev.att, tgt: ev.tgt, pose, hit: hard ? theirs.hitHard : hit, hard, fx, once, flip: !!ev.foe };
+  return { key, kind: pose.kind, att: ev.att, tgt: ev.tgt, pose, hit: hard ? theirs.hitHard : hit, hard, fx, once, flip: !!(ev.foe || ev.against) };
 }
 
 /**
@@ -17914,7 +17923,7 @@ function strikeCamFor(att, tgt, ev){
   const foe = !hero(att) && hero(tgt), gone = !!tgt.c && tgt.c.hp <= 0;
   const kill = gone && !hero(tgt) && (cbt.boss === tgt || STRIKE_CAM.named.includes(tgt.id) || !foes.some(f => f !== tgt && !f.down && !f.left && f.c && f.c.hp > 0 && actors.includes(f)));
   const sc = strikeCamScene({mode, att: att.id, tgt: tgt.id, art: ev.art, weapon: ev.weapon, spell: ev.spell, spellLevel: ev.spellLevel, crit: ev.crit, quick: !!cbt.quick,
-    sneak: !!ev.sneak, foe: foe && !!ev.melee, signature: !!ev.signature, reaction: !!ev.reaction, drop: foe && gone, kill});
+    sneak: !!ev.sneak, foe: foe && (!!ev.melee || !!ev.shot), shot: !!ev.shot, against: foe, signature: !!ev.signature, reaction: !!ev.reaction, drop: foe && gone, kill});
   if (!sc) return null;
   const mem = cbt.strikeMem = cbt.strikeMem || {};
   const o = {att: att.id, tgt: tgt.id, pose: sc.kind === "spell" ? "cast" : sc.key, spell: ev.spell || null, hard: !!sc.hard, flip: !!sc.flip, title: (sc.key === "sneak" ? "Sneak Attack" : ev.reaction ? "Opportunity Attack" : ev.title) || "", who: `${fname(att)}  →  ${fname(tgt)}`};
