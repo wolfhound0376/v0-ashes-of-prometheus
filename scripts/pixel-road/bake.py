@@ -155,12 +155,21 @@ def main():
         ext = os.path.splitext(f)[1] or ".png"
         shutil.copy(p(f), os.path.join(out, "fg", k + ext)); fg[k] = "fg/" + k + ext
 
+    marks = []
+    for m in cfg.get("landmarks", []):            # a landmark may open a painted plate: {"plate": "art/plates/x.png"}
+        m = dict(m)
+        if m.get("plate"):
+            os.makedirs(os.path.join(out, "plates"), exist_ok=True)
+            name = m["kind"] + (os.path.splitext(m["plate"])[1] or ".png")
+            shutil.copy(p(m["plate"]), os.path.join(out, "plates", name)); m["plate"] = "plates/" + name
+        marks.append(m)
+
     road = {"_": "Baked by scripts/pixel-road/bake.py from the PixelLab map below; do not edit by hand. ground.png has the props painted in; objects/ holds the same props again so a figure can stand behind one.",
             "id": rid, "name": cfg["name"], "pixellabMapId": cfg["pixellabMapId"], "tile": T, "cols": cols, "rows": rows,
             "ground": "ground.png", "shade": "shade.png", "front": "front.png", "foreground": fg,
             "legend": {"w": "floor", "r": "damp floor", "d": "rock", "a": "rock face", "s": "stream"}, "walkable": "wr",
             "grid": grid, "objects": objs, "entry": cfg["entry"], "exit": cfg["exit"],
-            "landmarks": cfg.get("landmarks", []), "glow": cfg.get("glow", {}), "shine": cfg.get("shine", {})}
+            "landmarks": marks, "glow": cfg.get("glow", {}), "shine": cfg.get("shine", {})}
     json.dump(road, open(os.path.join(out, "road.json"), "w"), indent=1)
     print(rid, len(objs), "props,", sorted(seen), "->", out)
 

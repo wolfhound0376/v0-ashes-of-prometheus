@@ -402,7 +402,8 @@
    "kind": "ruins",
    "label": "Ruins",
    "x": 1264,
-   "y": 246
+   "y": 246,
+   "plate": "plates/ruins.png"
   }
  ],
  "glow": {

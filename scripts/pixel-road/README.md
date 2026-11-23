@@ -51,6 +51,13 @@ paintings. Every Underdark prop is made this way:
 4. **Into the map**: trim the picture to its art, `import_object` it (free) named `underdark-hq <kind>`, and place it. The chosen pictures are kept in `art/props/`.
 5. **Sam sees the candidates before they go in** (the art rule in AGENTS.md).
 
+## A stop opens a plate
+
+Sam, 2026-11-23, sent the picture "for the ruins". A landmark in the config may name a painted plate
+(`"plate": "art/plates/ruins.png"`). The bake copies it to `plates/<kind>.png`, and when the party comes to rest
+beside that landmark the road fades into the picture; a click or any key goes back to the road. It is look-only: no
+fight, trade or search happens inside the plate yet (that is step 2).
+
 ## Baking `road-01` (PixelLab map `1c47eece-3986-4b2c-9501-3ad0b47fe44e`, "Road 01 - Tunnel out of Velkynvelve (cavern)")
 
 `python3 scripts/pixel-road/bake.py road-01 <config.json>`, with a config like `road-01.config.json` here (its

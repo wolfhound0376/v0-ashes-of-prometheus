@@ -36,10 +36,16 @@
 <style>
   html,body{margin:0;height:100%;background:#07060b;overflow:hidden;touch-action:none}
   canvas{display:block;width:100vw;height:100vh;cursor:pointer}
+  #plate{position:fixed;inset:0;background:#07060b;opacity:0;pointer-events:none;transition:opacity .7s ease;cursor:pointer}
+  #plate.on{opacity:1;pointer-events:auto}
+  #plate img{width:100%;height:100%;object-fit:cover;image-rendering:pixelated;display:block}
+  #plate .cap{position:absolute;left:0;right:0;bottom:0;padding:3.2em 1em 1.4em;text-align:center;color:#e9dcc6;font:600 22px Georgia,serif;letter-spacing:.22em;text-transform:uppercase;text-shadow:0 2px 6px #000;background:linear-gradient(transparent,rgba(4,3,8,.82))}
+  #plate .cap small{display:block;margin-top:.7em;font:13px Georgia,serif;letter-spacing:.08em;text-transform:none;color:#a99c8c}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
+<div id="plate"><img alt=""><div class="cap"></div></div>
 <script>
 "use strict";
 const Q = new URLSearchParams(location.search);
@@ -266,9 +272,31 @@ function drawForeground() {
   band(fgImg.ceiling, 1.3, false);
   band(fgImg.shelf, 1.6, true);
 }
+// A STOP OPENS A PLATE (Sam, 2026-11-22: the party walks the pixel road until a stop, "then it moves into the painted
+// plates"; 2026-11-23: he sent the picture for the Ruins). When the party comes to rest beside a landmark that has a
+// plate, the road fades into that picture. A click or a key goes back to the road. It will not open again until the
+// party has walked away and come back. Look-only for now: nothing happens inside the plate yet.
+const plateEl = document.getElementById("plate"); let plateOpen = null; const plateSeen = new Set();
+function plateTick(moved) {
+  const L = heroes[0];
+  for (const m of road.landmarks || []) {
+    if (!m.plate) continue;
+    const d = Math.hypot(L.x - m.x, L.y - m.y);
+    if (d > 110) plateSeen.delete(m);
+    else if (d < 44 && !moved && !plateOpen && !plateSeen.has(m)) {
+      plateOpen = m; plateSeen.add(m);
+      plateEl.querySelector("img").src = BASE + m.plate;
+      plateEl.querySelector(".cap").innerHTML = ""; plateEl.querySelector(".cap").append(m.label, Object.assign(document.createElement("small"), { textContent: "Click or press any key to go back to the road" }));
+      plateEl.classList.add("on");
+    }
+  }
+}
+function plateClose() { if (!plateOpen) return false; plateOpen = null; plateEl.classList.remove("on"); path = []; keys = {}; return true; }
+plateEl.addEventListener("pointerdown", (e) => { e.stopPropagation(); plateClose(); });
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
-  const moved = stepLeader(dt); heroes[0].moving = moved; placeFollowers(dt, moved);
+  const moved = plateOpen ? false : stepLeader(dt); heroes[0].moving = moved; placeFollowers(dt, moved);
+  plateTick(moved);
   soundTick(moved);
   for (const h of heroes) h.t += dt;
   camera();
@@ -352,7 +380,7 @@ function toggleMusic() {
     if (n) waterAt = [sx / n, sy / n]; }
   for (let i = 0; i <= heroes.length * GAP + 4; i += 1.5) trail.push([road.entry.x - i, road.entry.y]);
   resize(); addEventListener("resize", resize);
-  addEventListener("keydown", (e) => { soundStart(); if (e.key === "m" || e.key === "M") toggleMusic(); keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = true; if (e.key.startsWith("Arrow")) e.preventDefault(); });
+  addEventListener("keydown", (e) => { soundStart(); if (plateClose()) { e.preventDefault(); return; } if (e.key === "m" || e.key === "M") toggleMusic(); keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = true; if (e.key.startsWith("Arrow")) e.preventDefault(); });
   addEventListener("keyup", (e) => { keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = false; });
   addEventListener("blur", () => { keys = {}; });
   cv.addEventListener("pointerdown", (e) => {
@@ -361,7 +389,7 @@ function toggleMusic() {
     path = findPath(heroes[0].x, heroes[0].y, wx, wy);
   });
   // For poking at it from the console and for a browser test. The walk check itself is lib/pixel-road.test.ts.
-  window.__road = { road, heroes, objImg, snd, findPath, canStand, go: (x, y) => { path = findPath(heroes[0].x, heroes[0].y, x, y); return path.length; }, idle: () => !path.length };
+  window.__road = { road, heroes, plate: () => plateOpen && plateOpen.label, objImg, snd, findPath, canStand, go: (x, y) => { path = findPath(heroes[0].x, heroes[0].y, x, y); return path.length; }, idle: () => !path.length };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
 </script>
