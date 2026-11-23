@@ -22074,6 +22074,16 @@ function tickGateWatch(){
     }
     return;
   }
+  // THE WARNINGS COME THROUGH THE DOOR (Sam, 2026-11-22, the pen door rules: "Staying close to the gate will still trigger
+  // warnings and you'll just get the cinematic and arrow will eventually just begin shooting through the door to
+  // whomever. We don't need to pan to the guards."). Two things, below:
+  //   - The warning plays the film of it: "guard-volley" in the catalogue is that very moment ("a drow guard looses a
+  //     warning bolt at a prisoner who comes too close to the bars; it sparks off the iron"). It used to play at the
+  //     volleys, after the warning; now it plays with the warning, and a warning bolt is loosed that misses.
+  //   - Every bolt, the warning's, the first one and the volleys', comes in THROUGH THE DOOR (gateMuzzle): from the
+  //     doorway, not from wherever the guard happens to be drawn on the bridge. No camera move anywhere in it.
+  // NOT HERE: the watch is still drawn on the pen painting's bridge (the whistle, the guard at the bars, the
+  // strangling, Jorlan at the bars and the pickpocketing all need someone there). Taking them off is Sam's call.
   // an OPEN gate is still watched while the posts are manned (Sam, 2026-10-26: a hero at an open door with the guards on
   // the bridge got nothing). Unattended posts (postsEmpty) are the escape: nobody there to warn anyone.
   if (cur !== PEN || mode !== "explore" || !leader || state.gateBroken || postsEmpty() || timeStopped || laborLive()){ if (!state.gateOpen && gateWarn && gateWarn.stage === "warned" && mode === "explore") gateWarn = null; return; }
@@ -22329,6 +22339,17 @@ function jorlanAtBars(j, h, guards){
   mapFilm("jorlan-whisper");
   openTalk(j);
 }
+/** Where the watch's bolts come from on the pen plate: the doorway, at chest height (THE WARNINGS COME THROUGH THE DOOR). */
+function gateMuzzle(){
+  const g = gateCenter(); if (!g) return null;
+  return {x: g.x, y: g.y - 46 * (node.scale || 1), t: now};
+}
+/** A guard looses a bolt through the door: the shot leaves from the doorway, whoever is drawn where. */
+function boltThroughDoor(gd, tgt, hit, land){
+  const m = gateMuzzle(); if (m) gd.muzzle = m;
+  bank("combat/crossbow_release", .75);
+  fireShot(gd, tgt, "bolt", hit, land, null);
+}
 // (still going while the guards warn or shoot, while the scene's own state stands, and until Liana is out of the pen)
 const gateSceneBusy = () => !!surgeon || !!(gateWarn && String(cur) === String(PEN)) || npcs.some(n => n.id === "liana" && actors.includes(n));
 function gateWarning(guards, g, h = leader){
@@ -22341,6 +22362,9 @@ function gateWarning(guards, g, h = leader){
   const line = GATE_WARNINGS[Math.floor(Math.random() * GATE_WARNINGS.length)];
   delete state.voiced[w.id + ":" + line];                        // heard every time, not once
   bark(w, line, 5200, {voice: true, talk: true, to: h});         // (to: the hero warned and the DM hear him; the others read the bubble)
+  // THE WARNINGS COME THROUGH THE DOOR: the film of the warning, and the warning bolt through the doorway at their feet
+  mapFilm("guard-volley");
+  if (gateWarn.stage === "warned" && !gateWarn.bolted){ gateWarn.bolted = true; setTimeout(() => { if (actors.includes(h) && SPR[h.id]) boltThroughDoor(w, h, false, () => {}); }, 450); }
   mode = "dialog"; tip.hidden = true;
   const c = $("objPic").getContext("2d"); c.clearRect(0, 0, 128, 128);
   try { const m = SPR[w.id].json, an = m.animations.idle; c.imageSmoothingEnabled = false; c.drawImage(SPR[w.id].img.idle, 0, 0, m.cell[0], m.cell[1], 0, 0, 128, 128); } catch (e) {}
@@ -22772,8 +22796,8 @@ async function drowSurgeonBegins(guards, pc = leader){
   if (st.victim) log(`Malachar rolls a d8: <b>${st.victim.roll}</b>.`);
   const shooter = guards[0];
   if (v){
-    faceTo(shooter, v); bank("combat/crossbow_release", .85);
-    fireShot(shooter, v, "bolt", true, () => surgeonKill(v), null);
+    faceTo(shooter, v);
+    boltThroughDoor(shooter, v, true, () => surgeonKill(v));   // THE WARNINGS COME THROUGH THE DOOR
   } else if (st.victim) log(`<b>${esc(st.victim.name)}</b> is shot dead.`);
   // a beat to back off before the first volley: walk away from the bars and they stop (Sam: "until the player moves away")
   setTimeout(() => { if (surgeon && surgeon.stage === "shooting"){ mode = "explore"; log("<em>They keep shooting until you get away from the gate.</em>", {say: true}); setTimeout(surgeonVolleyTick, 1600); } }, 2400);
@@ -22796,14 +22820,13 @@ async function surgeonVolleyTick(){
   const j = await surgeonApi("volley", {guards: guards.length});
   if (j.failed){ toast(j.error || "The game did not answer."); S.stage = null; surgeon = null; return; }
   const bolts = j.volley.bolts;
-  mapFilm("guard-volley");
-  bolts.forEach((b, i) => setTimeout(() => {
-    const gd = guards[i % guards.length]; faceTo(gd, pc); bank("combat/crossbow_release", .75);
-    fireShot(gd, pc, "bolt", b.hit, () => {
+  bolts.forEach((b, i) => setTimeout(() => {   // (the film of it played with the warning: THE WARNINGS COME THROUGH THE DOOR)
+    const gd = guards[i % guards.length]; faceTo(gd, pc);
+    boltThroughDoor(gd, pc, b.hit, () => {
       if (b.hit){ popText(pc, String(b.dmg), b.crit ? "#ffd166" : "#ff6b5e", b.crit ? 1.4 : 1); burst(pc, "#ff5040", 10); bank(voxFor(pc, "hit") || "creature/player_hurt", .5); pc.flash = now + 180; addBlood(pc, .7);
         if (b.poisoned) setTimeout(() => popText(pc, b.ko ? "poison · out cold" : "poisoned", "#7be36b", .95), 260); }
       else popText(pc, "miss", "#c9c4b8", .9);
-    }, null);
+    });
   }, i * 450));
   const after = 450 * bolts.length + 750;
   const hits = bolts.filter(b => b.hit);
