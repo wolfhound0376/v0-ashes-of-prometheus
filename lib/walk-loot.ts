@@ -59,6 +59,39 @@ export const BOOK_CONTAINERS: Record<string, BookContainer> = {
       { slug: "gold-coin", qty: 9, note: "quantity is Claude's" },
     ],
   },
+  // THE TUNNEL PLATES (walk plates "road-tunnels-*"; Sam, 2026-11-23: "Just add pixel objects that we can interact with").
+  // Road battle plates have no book contents. EVERYTHING BELOW IS CLAUDE'S PICK, open to Sam's Keep / Change / Cut: every
+  // slug is a common `items` row, mostly a traveller's leavings; the mushrooms and torchstalk are the book's Underdark fungi.
+  "tunnel-pack": {
+    node: "road-tunnels-junction", title: "The dead traveller's pack",
+    source: "CLAUDE'S PICK (Sam's ask 2026-11-23; a road plate, no book contents). In plain sight.",
+    entries: [{ slug: "rations-1-day", qty: 2, note: "quantity is Claude's" }, { slug: "waterskin", qty: 1, note: "quantity is Claude's" }, { slug: "silver-coin", qty: 6, note: "quantity is Claude's" }],
+  },
+  "tunnel-cairn": {
+    node: "road-tunnels-junction", title: "The trail cairn",
+    source: "CLAUDE'S PICK (Sam's ask 2026-11-23; a road plate, no book contents). In plain sight.",
+    entries: [{ slug: "copper-coin", qty: 12, note: "quantity is Claude's" }, { slug: "hempen-rope", qty: 1, note: "quantity is Claude's" }],
+  },
+  "tunnel-mushrooms": {
+    node: "road-tunnels-winding", title: "The pale mushrooms",
+    source: "CLAUDE'S PICK (Sam's ask 2026-11-23; a road plate, no book contents). In plain sight.",
+    entries: [{ slug: "edible-mushrooms", qty: 3, note: "quantity is Claude's" }],
+  },
+  "tunnel-sack": {
+    node: "road-tunnels-winding", title: "The snagged sack",
+    source: "CLAUDE'S PICK (Sam's ask 2026-11-23; a road plate, no book contents). In plain sight.",
+    entries: [{ slug: "lamp-oil", qty: 1, note: "quantity is Claude's" }, { slug: "silver-coin", qty: 4, note: "quantity is Claude's" }],
+  },
+  "tunnel-camp": {
+    node: "road-tunnels-ledge", title: "The cold camp",
+    source: "CLAUDE'S PICK (Sam's ask 2026-11-23; a road plate, no book contents). In plain sight.",
+    entries: [{ slug: "rations-1-day", qty: 1, note: "quantity is Claude's" }, { slug: "iron-spikes-bag", qty: 1, note: "quantity is Claude's" }, { slug: "torchstalk", qty: 2, note: "quantity is Claude's" }],
+  },
+  "tunnel-cart": {
+    node: "road-tunnels-ledge", title: "The wrecked mining cart",
+    source: "CLAUDE'S PICK (Sam's ask 2026-11-23; a road plate, no book contents). In plain sight.",
+    entries: [{ slug: "rusted-war-pick", qty: 1, note: "quantity is Claude's" }, { slug: "copper-coin", qty: 9, note: "quantity is Claude's" }],
+  },
   "ilvara-chest": {
     node: "7", title: "Ilvara's chest", stash: "valuables",
     source: "OotA ch.1 area 7: \"a silver chain headdress set with small onyx stones, worth 50 gp, and a drawstring bag containing two potions of healing. A small leather purse contains 24 gp, 30 sp, and a small moonstone worth 20 gp, while another purse is Ilvara's spare spell component pouch.\"",
