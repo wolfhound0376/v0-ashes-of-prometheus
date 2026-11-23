@@ -9194,6 +9194,7 @@ function nextTurn(first){
   if (a.c.conds.has("mirrored") && cbt.round >= (a.c.mirrorEnd || 0)){ a.c.conds.delete("mirrored"); a.c.images = 0; popText(a, "the images fade", "#bfd0ff", .8); log(`${fname(a)}'s Mirror Image fades: the minute is up.`); }
   if (a.c.ready){ a.c.ready = null; a.c.conds.delete("readied"); }   // SRD: a readied action lasts until the start of your next turn
   renderTurns(); renderParty(); turnCall(a); turnCam(a);   // every turn opens framed, a foe's and an ally's too (HOW A FIGHT IS STAGED)
+  heroEntrance(a);                                          // HERO ENTRANCES: a geared hero's first turn (below mapFilm)
   if (a.c.conds.has("asleep") && a.c.drugged){ popText(a, "out cold", "#8fd48f"); log(`${fname(a)} lies senseless from the drow poison. Damage or a shake will wake them.`); setTimeout(nextTurn, 900); return; }
   if (a.c.conds.has("asleep")){
     const s = d20(0, a) + (a.c.sheet.saves.wis || 0);
@@ -10237,6 +10238,25 @@ function mapFilm(cue){
   const seen = mapFilm.at || (mapFilm.at = {}); if (Date.now() - (seen[cue] || 0) < 20000) return; seen[cue] = Date.now();
   if (!APP || window.parent === window || !filmsOn()) return;
   try { window.parent.postMessage({type: "aop:walk-film", cue}, location.origin); } catch (e) {}
+}
+// ---------- HERO ENTRANCES (Sam, 2026-11-23) ----------
+// "A few epic hero entrance attacks with our canon characters": one film each for the original four, in full canon
+// gear. His cue: once per hero, on their first fight after they get their gear back. It plays as that hero's own
+// first turn opens (his "go" on that, the same day), so four films never stack at the top of one fight, and on every
+// screen on the plate (mapFilm is a world event), not only the hero's own.
+// GEARED is CLAUDE'S RULE, not Sam's: the hero carries at least one thing lifted back out of the drow's stores
+// (/api/equipment marks it from_stash, from the item's own history). The map cannot see "all of it".
+// Once: this set for the session, and the film catalogue's own seen-list beyond it. Spelled out one by one because
+// lib/walk-film.test.ts reads the cues the map may send straight from this file.
+const HERO_ENTRANCE = {
+  freia: () => mapFilm("hero-entrance-fifi"), kenta: () => mapFilm("hero-entrance-kenta"),
+  samson: () => mapFilm("hero-entrance-samson"), scott: () => mapFilm("hero-entrance-scott"),
+};
+const heroEntered = new Set();
+function heroEntrance(a){
+  if (!a || a.kind !== "pc" || a.down || !HERO_ENTRANCE[a.id] || heroEntered.has(a.id)) return;
+  const g = GEAR[a.id]; if (!g || !(g.carried || []).some(c => c.stash)) return;
+  heroEntered.add(a.id); HERO_ENTRANCE[a.id]();
 }
 function gateLookFilm(cue, k){
   if (!APP || window.parent === window || !filmsOn()) return;
@@ -21698,7 +21718,7 @@ async function loadGear(only){
       const carried = (j.carried || []).map(r => { const cat = catalogItem(r.name); return {name: r.name, item_key: r.item_key, item_type: r.items?.item_type || r.item_type || cat?.item_type, properties: r.items?.properties || cat?.properties || {}, pixel: cat?.pixel_icon_url || null,
         eslot: normSlot(r.items?.equippable_slot || cat?.equippable_slot || r.equippable_slot || ""),   // the catalogue first (slotOfItem)
         wt: Number(r.weight ?? r.items?.weight ?? cat?.weight ?? 0) || 0,
-        qty: r.quantity || 1, icon: r.icon_url || cat?.icon_url || null, desc: r.description || cat?.description || "", origin: r.origin || ""}; });
+        qty: r.quantity || 1, icon: r.icon_url || cat?.icon_url || null, desc: r.description || cat?.description || "", origin: r.origin || "", stash: !!r.from_stash}; });
       const doll = (j.equipped || []).filter(e => e.equipped !== false).map(e => ({slot: normSlot(e.slot), name: e.name, item_key: e.item_key || null}));
       const inHand = sl => (doll.find(d => d.slot === sl) || {}).name || null;
       GEAR[id] = {carried, doll, main: inHand("main_hand"), off: inHand("off_hand"), carryMax: j.carry ? j.carry.max : undefined}; refreshAttacks(id); refreshAc(id);

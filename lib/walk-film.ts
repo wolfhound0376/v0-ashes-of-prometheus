@@ -74,6 +74,14 @@ export const WALK_FILMS = {
   "pen-key-unlock": { kind: "action", state: "pen-key-unlock", scope: "solo", location: PEN_LOCATION, dc: null },
   "gate-force": { kind: "action", state: "gate-force", scope: "party", location: PEN_LOCATION, dc: null },
   "manacles-slip": { kind: "action", state: "manacles-slip", scope: "solo", location: PEN_LOCATION, dc: null },
+  // HERO ENTRANCES (Sam, 2026-11-23): one film per canon hero, asked for as that hero's first turn opens in their
+  // first fight with gear back from the drow's stores. A cue per hero, not one cue resolved by the seated character,
+  // so Fifi's entrance plays on every screen and not only her own. Filed under the pen's location like the rest of
+  // Act 1: the location here is the catalogue key the row is stored under, not where the fight happens to be.
+  "hero-entrance-fifi": { kind: "action", state: "hero-entrance-fifi", scope: "party", location: PEN_LOCATION, dc: null },
+  "hero-entrance-kenta": { kind: "action", state: "hero-entrance-kenta", scope: "party", location: PEN_LOCATION, dc: null },
+  "hero-entrance-samson": { kind: "action", state: "hero-entrance-samson", scope: "party", location: PEN_LOCATION, dc: null },
+  "hero-entrance-scott": { kind: "action", state: "hero-entrance-scott", scope: "party", location: PEN_LOCATION, dc: null },
 } as const satisfies Record<string, WalkFilm>
 
 export type WalkFilmCue = keyof typeof WALK_FILMS
