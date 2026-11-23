@@ -3524,6 +3524,7 @@ const EXPLORE_POOLS = {
   outpost: [null, "outpost-1", "outpost-2", "outpost-3", "outpost-4"],   // null: the original explore.mp3
   caverns: ["caverns-1", "caverns-2", "caverns-3", "caverns-4"],
   water:   ["water-1", "water-2"],
+  ruins:   ["ruins-1"],   // THE RUINS (Sam, 2026-11-23: "this module having it's own sinister music from elevenlabs"): one 3-minute track, ElevenLabs Music v2.5, flow l1J5MTwvFNRNDlBa6Ih5, levelled to -16 LUFS like the rest
 };
 const WATER_PLATES = new Set(["node-09-waterfall", "node-14-pool-river", "biome-shore"]);
 const ORIGINAL_EXPLORE = ASSET + "audio/explore.mp3";
@@ -3532,7 +3533,7 @@ const REST_EVERY = 2, REST_MS = [20000, 40000];
 let exploreRegion = null, lastExplore = null, exploreSince = 0, exploreRestUntil = 0, exploreSwap = null, dmExplore = "auto";
 try { dmExplore = localStorage.getItem("vk-explore-music") || "auto"; } catch (e) {}
 /** What kind of place a plate is, for the music. */
-function regionOf(slug){ return WATER_PLATES.has(slug) ? "water" : /^biome-/.test(slug || "") ? "caverns" : "outpost"; }
+function regionOf(slug){ return /^ruins-/.test(slug || "") ? "ruins" : WATER_PLATES.has(slug) ? "water" : /^biome-/.test(slug || "") ? "caverns" : "outpost"; }
 function wantedRegion(){ return dmExplore !== "auto" && dmExplore !== "off" ? dmExplore : regionOf(node && node.slug); }
 /** The gap between tracks (or the DM turned exploring music off): only the ambience is heard. */
 function exploreQuiet(){ return dmExplore === "off" || performance.now() < exploreRestUntil; }
@@ -4525,6 +4526,8 @@ async function roadFight(){
   startCombat(foeIds, why, {noAllies: false, roadSurprise: surprised});
 }
 function leaveVelkynvelve(z){
+  // THE RUINS' WAY OUT IS THE TUNNEL ROAD it was entered from (public/pixel-road); ?at=ruins stands the party at its door.
+  if (isRuinPlate(cur)){ showDialog({title: "Out of the ruins", body: "The tunnel road is where you left it.", buttons: [{label: "Back to the road", primary: true, fn: () => { (window.top !== window ? window.top : window).location.href = "/pixel-road/index.html?at=ruins"; }}, {label: "Stay"}]}); return; }
   // A ROAD PLATE'S WAY OUT IS THE ROAD (ROAD FIGHT, below): back to the travel map, where the march stands halted.
   // OUT OF THE CHAINS: the party never walked out of the outpost, so the map is told which way the column took them
   if (isRoadPlate(cur) && state.chainMarch && state.chainMarch.out === "escaped" && String(cur) === CHAIN_MARCH.plate){ showDialog({title: "The north passage", body: "Velkynvelve is behind you, and the escort lies on the bridge. Anything left on the dead stays here. Past this point the party is on the Underdark map, on the north road the caravan was taking.", buttons: [{label: "Take the road", primary: true, fn: () => { $("fade").classList.add("on"); setTimeout(() => { (window.top !== window ? window.top : window).location.href = chainMarchMapHref(); }, CHAIN_MARCH.fadeMs); }}, {label: "Search the dead first"}]}); return; }
@@ -5927,7 +5930,11 @@ function plateCrop(poly){
 }
 // chests and lockers you only open (story.json `loot`): Shoor's chest, the barracks footlockers
 let hoverLoot = null;
-function lootSpotAt(w){ return (node.loot || []).find(l => inPoly(l.poly, w.x, w.y)) || null; }
+// A HIDDEN THING (Sam, 2026-11-23: "Have some hidden item that are only available on a passive perception success"): a
+// loot spot marked `hidden` in story.json is not drawn and cannot be opened until the room's passive Perception check
+// finds it (ruinOnEnter, below, writes state.director.found).
+function lootShown(l){ return !l.hidden || !!((state.director || {}).found || {})[l.id]; }
+function lootSpotAt(w){ return (node.loot || []).find(l => lootShown(l) && inPoly(l.poly, w.x, w.y)) || null; }
 function lootCenter(l){ const xs = l.poly.map(p => p[0]), ys = l.poly.map(p => p[1]); return {x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) + 30}; }
 function openLootSpot(l){ if (atWorkPlate()) return laborDoPocket({id: l.id, name: l.name, poly: l.poly}); openLoot(l.id, l.name, {poly: l.poly, text: l.text, at: polyBase(l.poly)}); }   // at work: under the escort's eye (Hard Labor)
 // LOOT YOU CAN SEE, NOT BOXES ROUND IT (Sam, 2026-10-27: "replace painted lootboxes with size appropriate chests from
@@ -5981,6 +5988,7 @@ function drawLootHighlight(){
   if (mode !== "explore" && mode !== "dialog" && mode !== "combat") return;
   const pulse = .5 + .5 * Math.sin(now / 520);
   for (const l of node.loot || []){
+    if (!lootShown(l)) continue;
     const c = lootCenter(l), lit = mode !== "combat" && (hoverLoot === l || (leader && Math.hypot(leader.x - c.x, leader.y - c.y) < 300 * node.scale));
     if (l.prop){
       const im = lootImg(`${SPRITE_BASE}${l.prop}/idle.png`); if (!im.complete || !im.naturalWidth) continue;
@@ -11697,7 +11705,52 @@ async function dirFight(fight, why, ctx, R){
 async function directorLair(){ const R = dirRand(`${cur}:lair`), r = rollTable("lair", R); if (!r) return;
   await dirCard("Searching the lair", `d20 = ${r.roll}: ${r.say}${r.tell ? "\n" + r.tell : ""}`);
   if (APP) handOff(`The party searched the ambushers' lair on ${node.name}: Ambush Lair Discovery d20 = ${r.roll}: ${r.say}${r.tell ? " " + r.tell : ""} Award only from the catalog.`); }
+// ---------- THE RUINS: one roll per room (Sam, 2026-11-23) ----------
+// "each room passive rolls a dice for what you will find ... Have some hidden item that are only available on a passive
+// perception success." The rooms' rows are lib/plate-director.mjs RUIN_ROOMS (pasted in above). First visit this run: the
+// room's d20 is rolled by the map (seeded, so every screen sees the same face), then the best passive Perception in the
+// party is held against the room's hidden thing. A miss says nothing: the players are not told there was something.
+// The drow pursuit is not touched here (the party came in off the road, not out of the outpost's caverns).
+function isRuinPlate(n){ return ruinPlate((SPEC[n] || {}).slug); }
+async function ruinOnEnter(plate){
+  if (cbt || mode !== "explore" || FIGHT.mirror) return;
+  const D = dirState(); if (D.seen[plate]) return; D.seen[plate] = true; D.found = D.found || {};
+  const draw = ruinDraw(SPEC[plate].slug, dirRand(`${plate}:ruin`)); if (!draw) return;
+  const title = node.name.replace(/^The Ruins: /, "").replace(/^t/, "T"), told = [`${node.name}: d20 = ${draw.roll}. ${draw.say}${draw.tell ? " " + draw.tell : ""}`];
+  const ctx = {plate: String(plate), id: "ruin", title, hook: draw.hook, n: 0, told};
+  bank("magic/necrotic_windup", .45);
+  await dirCard(title, `${draw.hook}\n\nd20 = ${draw.roll}. ${draw.say}${draw.tell ? "\n" + draw.tell : ""}`, draw.fight && !draw.steps ? [{label: "Fight", primary: true}] : null);
+  log(`<b>${esc(title)}.</b> d20 = ${draw.roll}. ${esc(draw.say)}`);
+  if (cur === plate && !cbt){
+    const best = dirHeroes().sort((a, b) => dirPassive(b) - dirPassive(a))[0], h = draw.hidden;
+    if (h && !D.found[h.id] && best && ruinNotices(h, dirPassive(best))){
+      D.found[h.id] = true;
+      await dirCard(title, `${fname(best)} notices what the others walk past (passive Perception ${dirPassive(best)}).\n${h.found}`);
+      log(`<i>${esc(fname(best))} notices something hidden.</i>`); told.push(`${fname(best)} found the hidden cache (passive Perception ${dirPassive(best)} vs ${h.passive}).`);
+    }
+  }
+  let on = true;
+  if (draw.steps && cur === plate && !cbt) on = await dirSteps(draw.steps, ctx) !== false;
+  if (draw.fight && on && cur === plate && !cbt){
+    const {ids, missing} = fieldFoes(draw.fight, dirRand(`${plate}:ruin:fight`), dirCanField);
+    if (!ids.length) told.push(`No stat block on the map for ${missing.join(", ")}: run it from the book.`);
+    else { if (draw.steps) await dirCard(title, draw.say, [{label: "Fight", primary: true}]); if (cur === plate && !cbt){ mode = "explore"; startCombat(ids, draw.say); } }
+  }
+  if (APP) handOff(told.join(" ") + " (The Ruins: OotA D&D Encounters ch.2 p.31; the rooms and their odds are ours.)");
+}
+// THE WAY IN: the pixel road's Ruins (public/pixel-road, "Enter the ruins") opens this page with ?ruins=1. Read once
+// and cleaned from the address, like a road fight's, so a reload does not walk the party back in.
+async function ruinsDoor(){
+  let top, q; try { top = window.top !== window ? window.top : window; q = new URLSearchParams(top.location.search); } catch (e) { return; }
+  if (!q.get("ruins")) return;
+  try { q.delete("ruins"); top.history.replaceState(null, "", top.location.pathname + (q.toString() ? "?" + q : "")); } catch (e) {}
+  const plate = "ruins-threshold"; if (!SPEC[plate] || cbt || FIGHT.mirror) return;
+  const at = SPEC[plate].arrive;
+  await enterNode(plate, {spawn: {x: at[0], y: at[1]}, note: "The door stands open behind you, and the road's noise does not follow you in."});
+  mode = "explore";
+}
 async function directorOnEnter(plate){
+  if (isRuinPlate(plate)) return ruinOnEnter(plate);
   if (!directorPlate((SPEC[plate] || {}).slug) || cbt || mode !== "explore" || FIGHT.mirror) return;
   const D = dirState(); if (D.pursuit == null && !state.chainMarch) D.pursuit = PURSUIT_START;   // p.29: out of Velkynvelve, the pursuit begins at 4
   dirPursuitPill();
@@ -23611,6 +23664,7 @@ const AREA_SURFACE = {
   "node-12-quaggoth-den": "gravel", "node-13-northern-watch-post": "wood", "node-14-pool-river": "stone",
   "biome-tunnels": "gravel", "biome-crystal": "crystal", "biome-wastes": "gravel", "biome-lair": "gravel",
   "biome-shore": "water", "biome-grove": "moss",
+  "ruins-threshold": "stone", "ruins-ossuary": "stone", "ruins-great-hall": "stone", "ruins-flooded-crypt": "stone", "ruins-sanctum": "stone", "ruins-reliquary": "stone",
 };
 // Each surface's level against the others, so a stride sounds the same size whatever it lands on.
 const SURFACE_TRIM = {stone: 1, gravel: 1, wood: 1, bridge: 1.1, water: 1.25, moss: 1.35, crystal: .85};
@@ -25424,6 +25478,7 @@ function npcAskCouncil(n, ask){
   booted = true;
   if (APP) owStart(W);
   roadFight();
+  ruinsDoor();
   // the heroes' own gear, now that they are on the plate. The first load (noteSeats) runs before the party is built,
   // so it reached only the allies: a hero's pack and hands stayed empty until something else asked, and an equipped
   // crossbow never became an attack.

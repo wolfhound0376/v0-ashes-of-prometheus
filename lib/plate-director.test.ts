@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   CREATURES, TABLES, TERRAIN, directorPlate, drawFor, fieldFoes, onTable, pursuitAfter, PURSUIT_START, randomEncounter,
-  rollDice, rollTable, savingThrow, hazardDamage, fallDamage,
-} from "./plate-director.mjs"
+  rollDice, rollTable, savingThrow, hazardDamage, fallDamage, RUIN_ROOMS, ruinDraw, ruinNotices, ruinPlate } from "./plate-director.mjs"
 
 const seq = (...xs: number[]) => { let i = 0; return () => xs[i++ % xs.length] }
 const faceOf = (die: number, face: number) => (face - 0.5) / die   // the rand() value that rolls `face` on a d`die`
@@ -82,5 +81,50 @@ describe("where the director works", () => {
     expect(directorPlate("biome-tunnels")).toBe(true)
     expect(directorPlate("node-11-slave-pen")).toBe(false)
     expect(directorPlate("road-webs")).toBe(false)
+  })
+})
+
+describe("the Ruins: one roll per room", () => {
+  const ROOMS = RUIN_ROOMS as Record<string, { hook: string; rows: any[]; hidden?: { id: string; passive: number; found: string } }>
+  const rooms = Object.keys(ROOMS)
+  it("has six rooms, and every face of the d20 lands on exactly one row", () => {
+    expect(rooms).toHaveLength(6)
+    for (const slug of rooms) {
+      expect(ruinPlate(slug)).toBe(true)
+      for (let n = 1; n <= 20; n++) expect(ROOMS[slug].rows.filter((r: any) => n >= r.lo && n <= r.hi)).toHaveLength(1)
+    }
+    expect(ruinPlate("road-webs")).toBe(false)
+    expect(directorPlate("ruins-ossuary")).toBe(false)   // the cavern director does not also roll here
+  })
+  it("keeps the book's Ruins row whole in the reliquary: half the time, 1d4 trinkets", () => {
+    const book = TABLES.ruins.rows
+    expect(ruinDraw("ruins-reliquary", seq(faceOf(20, 10)))!.say).toBe(book[0].say)
+    const hit = ruinDraw("ruins-reliquary", seq(faceOf(20, 11)))!
+    expect(hit.say).toBe(book[1].say)
+    expect(hit.tell).toBe(book[1].tell)
+  })
+  it("brings the skeletons out of the ossuary, two to six of them", () => {
+    expect(ruinDraw("ruins-ossuary", seq(faceOf(20, 5)))!.fight).toBeUndefined()
+    const r = ruinDraw("ruins-ossuary", seq(faceOf(20, 6)))!
+    expect(r.fight[0].id).toBe("skeleton-swordsman")
+    expect(fieldFoes(r.fight, () => 0, () => true).ids).toHaveLength(2)
+    expect(fieldFoes(r.fight, () => 0.999, () => true).ids).toHaveLength(6)
+  })
+  it("puts the horror in the sanctum: a madness save, and on a high roll the grell", () => {
+    expect(ruinDraw("ruins-sanctum", seq(faceOf(20, 4)))!.steps).toBeUndefined()
+    expect(ruinDraw("ruins-sanctum", seq(faceOf(20, 5)))!.steps![0]).toMatchObject({ t: "madness", ability: "wis", dc: 11 })
+    expect(ruinDraw("ruins-sanctum", seq(faceOf(20, 15)))!.fight[0].id).toBe("grell")
+  })
+  it("hides three things, found only when the best passive Perception meets the score", () => {
+    const hidden = rooms.map((s) => ROOMS[s].hidden).filter(Boolean)
+    expect(hidden.map((h: any) => h.id).sort()).toEqual(["ruins-cache-crypt", "ruins-cache-reliquary", "ruins-cache-threshold"])
+    const h = ROOMS["ruins-reliquary"].hidden!
+    expect(ruinNotices(h, 14)).toBe(false)
+    expect(ruinNotices(h, 15)).toBe(true)
+    expect(ruinNotices(null, 30)).toBe(false)
+    expect(ruinNotices(h, NaN)).toBe(false)
+  })
+  it("is not a room anywhere else", () => {
+    expect(ruinDraw("biome-tunnels", () => 0)).toBeNull()
   })
 })
