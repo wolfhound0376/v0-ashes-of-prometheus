@@ -6684,7 +6684,7 @@ function openBody(b){
 // the dashboard's engine with the dashboard's modifier, and the page answers {ok, success, total, natural} — or
 // {cancelled} if they stepped back. "aop:roll-ack" says the panel is open; after it the map waits as long as the
 // player does. Opened as a plain file (no game around it), the map rolls locally against the same DC.
-const ROLLS = new Map(), LOCAL_DC = {"pocket:size-up": 10, "caught:persuade": 15, "caught:intimidate": 15, "falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12, "jimjar:bet": 13, "manacles:wire": 15, "druid:beast": 13, "ward:study-arcana": 20, "ward:study-history": 20, "ward:cut": 15};
+const ROLLS = new Map(), LOCAL_DC = {"manacles:pick": 15, "manacles:friend": 15, "manacles:break": 20, "pocket:size-up": 10, "caught:persuade": 15, "caught:intimidate": 15, "falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12, "jimjar:bet": 13, "manacles:wire": 15, "druid:beast": 13, "ward:study-arcana": 20, "ward:study-history": 20, "ward:cut": 15};
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
@@ -10932,6 +10932,7 @@ function exploreExtras(m, o, add, who){
   { const v = druidVermin(L); if (v) x(`Speak to the ${verminKind(v)}`, "❦", ART("talk"), `Animal Handling ${sgn(heroMod(L, "animalHandling", "wis"))} · send it for a guard's key or blade · once a watch`, () => speakToVermin(v)); }
   if (ironsCan(L, "key")) x("Unlock everyone's manacles", "⚿", ART("pickpocket", "search"), `${fname(ironsKeyHolder())} carries a key that fits them · no roll`, () => ironsUnlockAll());
   if (ironsCan(L, "pick")) x("Pick your manacles", "⚿", ART("pickpocket", "search"), `Thieves' tools ${sgn(heroMod(L, "thievesTools", "dex"))} · one try until a long rest`, () => ironsTry("pick"));
+  for (const t of friendsInIrons(L)) x(`Pick ${fname(t)}'s manacles`, "⚿", ART("pickpocket", "search"), `Thieves' tools ${sgn(heroMod(L, "thievesTools", "dex"))} · one try until a long rest`, () => ironsFreeFriend(t));   // A FRIEND'S IRONS
   if (ironsCan(L, "break")) x("Break your manacles", "⚿", ART("force", "search"), `Strength ${sgn(abilMod(SHEETS[L.id] || {}, "str"))} · hard · one try until a long rest`, () => ironsTry("break"));
   if (callOutCan(L)){ const left = penLeftovers(); x("Call the others out", "☰", ART("follow"), `${left.length} still in the pen · they come with you`, () => callOthersOut()); }
   if (wireCan(L)) x("Work the wire into your manacles", "⚿", ART("pickpocket", "search"), `Sleight of Hand ${sgn(heroMod(L, "sleightOfHand", "dex"))} · one try until you rest`, () => wireManacles());
@@ -12963,6 +12964,38 @@ async function ironsTry(how){
     } else {
       saveWalk(); sfx("lock-pick-fail", .7);
       log(`${esc(fname(h))} ${how === "pick" ? "works the lock of their manacles" : "strains against the irons"}. <em>They hold. Not again until a long rest.</em>`);
+    }
+  } finally { ironsBusy = false; exploreKey = ""; }
+}
+// ---------- A FRIEND'S IRONS (Sam's playtest, 2026-11-22: "Fifi got out of her manacles but there wasn't a good way to
+// get Kenta out") ----------
+// walk_world at the end of that session: manacled true, unshackled {freia: true}; Kenta stayed in irons all game and
+// could not cast ("every spell they know needs their hands"). The map only ever offered "Pick YOUR manacles", and only
+// to a hero still in irons with tools in their own pack: Fifi, free, held both sets of thieves' tools, so nobody had
+// a way. Now a hero who is out of irons and carries thieves' tools can pick the lock of a friend's manacles, standing
+// beside them. BOOK RULE, OotA ch.1 Escape: a set of manacles' lock is picked with thieves' tools, DC 15 Dexterity (the
+// lock is the same whoever works it). A failure is not retried on that lock by that hero until a long rest, as with
+// their own. One hero freed per success.
+const IRONS_REACH_FT = 10;                   // beside them (a step apart counts)
+function friendsInIrons(L){
+  if (!(L && mode === "explore" && !L.down && !manacled(L) && carries(L, THIEVES_TOOLS) && !ironsBusy)) return [];
+  return party.filter(p => p !== L && actors.includes(p) && !p.down && manacled(p) && feetBetween(L, p) <= IRONS_REACH_FT && !ironsTried(L, "friend:" + p.id));
+}
+async function ironsFreeFriend(t){
+  const h = leader; if (!friendsInIrons(h).includes(t)) return; ironsBusy = true; h.path = [];
+  try {
+    h.face = faceOf(t.x - h.x, t.y - h.y);
+    const r = await rollOnDashboard("manacles:friend", heroMod(h, "thievesTools", "dex"), {who: h});
+    if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3600); return; }
+    state.ironsTried = Object.assign({}, state.ironsTried || {}, {[h.id + ":friend:" + t.id]: true});
+    if (r.success){
+      state.unshackled = Object.assign({}, state.unshackled || {}, {[t.id]: true}); saveWalk();
+      sfx("lock-picked", .8); popText(t, "free", "#9ad0ff", 1.1);
+      log(`<b>${esc(fname(h))} picks the lock of ${esc(fname(t))}'s manacles.</b> <em>They click open. ${esc(fname(t))}'s hands are their own again.</em>`, {say: true});
+      if (APP) handOff(`${fname(h)} has picked the lock of ${fname(t)}'s manacles with thieves' tools (${r.total}). ${fname(t)} is out of irons now and can use both hands and cast spells with gestures. Narrate it in a line; award nothing.`, true, {noLoot: true});
+    } else {
+      saveWalk(); sfx("lock-pick-fail", .7);
+      log(`${esc(fname(h))} works the lock of ${esc(fname(t))}'s manacles. <em>It will not turn. Not again, by those hands, until a long rest.</em>`);
     }
   } finally { ironsBusy = false; exploreKey = ""; }
 }
