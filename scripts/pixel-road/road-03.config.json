@@ -1,0 +1,72 @@
+{
+ "name": "The violet hollow",
+ "pixellabMapId": "09b73b51-d370-4381-ac1d-8814520281a3",
+ "rows": 44,
+ "cols": 112,
+ "crops": [
+  [
+   "<view_map crop x=0 y=0, 16x22 cells>.png",
+   "<view_map crop x=16 y=0, 16x22 cells>.png",
+   "<view_map crop x=32 y=0, 16x22 cells>.png",
+   "<view_map crop x=48 y=0, 16x22 cells>.png",
+   "<view_map crop x=64 y=0, 16x22 cells>.png",
+   "<view_map crop x=80 y=0, 16x22 cells>.png",
+   "<view_map crop x=96 y=0, 16x22 cells>.png"
+  ],
+  [
+   "<view_map crop x=0 y=22, 16x22 cells>.png",
+   "<view_map crop x=16 y=22, 16x22 cells>.png",
+   "<view_map crop x=32 y=22, 16x22 cells>.png",
+   "<view_map crop x=48 y=22, 16x22 cells>.png",
+   "<view_map crop x=64 y=22, 16x22 cells>.png",
+   "<view_map crop x=80 y=22, 16x22 cells>.png",
+   "<view_map crop x=96 y=22, 16x22 cells>.png"
+  ]
+ ],
+ "grid": "road-03.grid.txt",
+ "export": "<unzipped PixelLab export>/",
+ "kinds": {
+  "tall weathered grey-violet": "spire2",
+  "tall gnarled Underdark": "fungustree",
+  "cluster of bioluminesce": "glowcap",
+  "underdark-hq crystals": "crystals",
+  "underdark-hq stalagmites": "stalagmites",
+  "underdark-hq boulders": "boulders",
+  "underdark-hq rubble": "rubble"
+ },
+ "foreground": {
+  "ceiling": "art/ceiling.webp",
+  "shelf": "art/shelf.webp"
+ },
+ "entry": {
+  "x": 48,
+  "y": 704,
+  "label": "The way back"
+ },
+ "exit": {
+  "x": 3536,
+  "y": 704,
+  "label": "The road on"
+ },
+ "landmarks": [],
+ "glow": {
+  "crystals": "#6fd8ff",
+  "glowcap": "#e06bff",
+  "fungustree": "#b45cff",
+  "boulders": "#39d6b8"
+ },
+ "shine": {
+  "crystals": 1.0,
+  "glowcap": 0.8,
+  "fungustree": 0.35,
+  "boulders": 0.28
+ },
+ "mood": {
+  "_": "Sam, 2026-11-23, painted Underdark look picks (A2 spire, C2 fungus tree, B1 glowing fungus): the violet hollow",
+  "grade": "#3c3470",
+  "gradeAlpha": 0.45,
+  "haze": "#b9a6ff",
+  "mist": 0.5
+ },
+ "waterDark": true
+}

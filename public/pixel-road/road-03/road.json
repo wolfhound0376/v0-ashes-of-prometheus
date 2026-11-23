@@ -1,0 +1,377 @@
+{
+ "_": "Baked by scripts/pixel-road/bake.py from the PixelLab map below; do not edit by hand. ground.png has the props painted in; objects/ holds the same props again so a figure can stand behind one.",
+ "id": "road-03",
+ "name": "The violet hollow",
+ "pixellabMapId": "09b73b51-d370-4381-ac1d-8814520281a3",
+ "tile": 32,
+ "cols": 112,
+ "rows": 44,
+ "ground": "ground.png",
+ "shade": "shade.png",
+ "front": "front.png",
+ "foreground": {
+  "ceiling": "fg/ceiling.webp",
+  "shelf": "fg/shelf.webp"
+ },
+ "legend": {
+  "w": "floor",
+  "r": "damp floor",
+  "d": "rock",
+  "a": "rock face",
+  "s": "stream"
+ },
+ "walkable": "wr",
+ "grid": [
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddaaaaaaaaaaaaaaaaaaaadddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddwwwwwwwwwwwwwwwwwwwwdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddwwwwwwwwwwwwwwwwwwwwdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddwwwwwwwwwwwwwwwwwwwwdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddwwwwwwwwwwwwwwwwwwwwddddddddddaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaadddddddddddddddddddddddddddddddddddd",
+  "ddddddddddwwwwwwwwwwwwwwwwwwwwddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwdddddddddddddddddddddddddddddddddddd",
+  "ddddddddddwwwwwwwwwwwwwwwwwwwwddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwdddddddddddddddddddddddddddddddddddd",
+  "ddddddddddwwwwwwwwwwwwwwwwwwwwddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwdddddddddddddddddddddddddddddddddddd",
+  "ddddddddddwwwwwwwwwwwwwwwwwwwwddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwdddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddddddwwwwwwwwddddddddddddddddwwwwwwwwwwsssssssssssssswwwwwwwwwwwwdddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddddddwwwwwwwwddddddddddddddddwwwwwwwwwwsssssssssssssswwwwwwwwwwwwdddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddddddwwwwwwwwddddddddddddddddwwwwwwwwwwsssssssssssssswwwwwwwwwwwwdddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddddddwwwwwwwwddddddddddddddddwwwwwwwwwwsssssssssssssswwwwwwwwwwwwdddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddddddwwwwwwwwddddddddddddddddwwwwwwsssssssssssssssssssssswwwwwwwwdddddddddddddddddddddddddddddddddddd",
+  "aaaaaaaaaaaaaaaawwwwwwwwddddddddddddddddwwwwwwsssssssssssssssssssssswwwwwwwwaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "wwwwwwwwwwwwwwwwwwwwwwwwddddddddddddddddwwwwwwsssssssssssssssssssssswwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwaaaaaaaaaaaaaaaawwwwwwsssssssssssssssssssssswwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwsssssssssssssssssssssswwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwsssssssssssssssssssssswwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwsssssssssssssssssssssswwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwsssssssssssssssssssssswwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwsssssssssssssssssssssswwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwsssssssssssssssssssssswwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "ddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwwwsssssssssswwwwwwwwwwddddddddddwwwwwwdddddddddddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwwwsssssssssswwwwwwwwwwddddddddddwwwwwwdddddddddddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddddddddwwwwwwdddddddddddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddaaaaaawwwwwwaaaaaaaadddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddwwwwwwwwwwwwwwwwwwwwdddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddwwwwwwwwwwwwwwwwwwwwdddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddwwwwwwwwwwwwwwwwwwwwdddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddwwwwwwwwwwwwwwwwwwwwdddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddwwwwwwwwwwwwwwwwwwwwdddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddwwwwwwwwwwwwwwwwwwwwdddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwddddddddddddddddddwwwwwwwwwwwwwwwwwwwwdddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwddddddddddddddddddwwwwwwwwwwwwwwwwwwwwdddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwddddddddddddddddddwwwwwwwwwwwwwwwwwwwwdddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwddddddddddddddddddwwwwwwwwwwwwwwwwwwwwdddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+ ],
+ "objects": [
+  {
+   "kind": "stalagmites",
+   "x": 118,
+   "y": 572,
+   "w": 52,
+   "h": 68,
+   "ground": [
+    119,
+    623,
+    50,
+    17
+   ]
+  },
+  {
+   "kind": "spire2",
+   "x": 416,
+   "y": 100,
+   "w": 96,
+   "h": 220,
+   "ground": [
+    425,
+    258,
+    78,
+    55
+   ]
+  },
+  {
+   "kind": "glowcap",
+   "x": 600,
+   "y": 688,
+   "w": 112,
+   "h": 112,
+   "ground": [
+    614,
+    748,
+    85,
+    28
+   ]
+  },
+  {
+   "kind": "fungustree",
+   "x": 760,
+   "y": 96,
+   "w": 112,
+   "h": 192,
+   "ground": [
+    781,
+    232,
+    67,
+    48
+   ]
+  },
+  {
+   "kind": "rubble",
+   "x": 872,
+   "y": 652,
+   "w": 80,
+   "h": 52,
+   "ground": [
+    872,
+    691,
+    78,
+    13
+   ]
+  },
+  {
+   "kind": "stalagmites",
+   "x": 1110,
+   "y": 764,
+   "w": 52,
+   "h": 68,
+   "ground": [
+    1111,
+    815,
+    50,
+    17
+   ]
+  },
+  {
+   "kind": "fungustree",
+   "x": 1336,
+   "y": 832,
+   "w": 112,
+   "h": 192,
+   "ground": [
+    1357,
+    968,
+    67,
+    48
+   ]
+  },
+  {
+   "kind": "glowcap",
+   "x": 1400,
+   "y": 304,
+   "w": 112,
+   "h": 112,
+   "ground": [
+    1414,
+    364,
+    85,
+    28
+   ]
+  },
+  {
+   "kind": "boulders",
+   "x": 1546,
+   "y": 936,
+   "w": 76,
+   "h": 56,
+   "ground": [
+    1547,
+    978,
+    74,
+    14
+   ]
+  },
+  {
+   "kind": "glowcap",
+   "x": 1656,
+   "y": 1072,
+   "w": 112,
+   "h": 112,
+   "ground": [
+    1670,
+    1132,
+    85,
+    28
+   ]
+  },
+  {
+   "kind": "fungustree",
+   "x": 1816,
+   "y": 1056,
+   "w": 112,
+   "h": 192,
+   "ground": [
+    1837,
+    1192,
+    67,
+    48
+   ]
+  },
+  {
+   "kind": "crystals",
+   "x": 1942,
+   "y": 292,
+   "w": 52,
+   "h": 60,
+   "ground": [
+    1945,
+    337,
+    47,
+    15
+   ]
+  },
+  {
+   "kind": "glowcap",
+   "x": 2104,
+   "y": 848,
+   "w": 112,
+   "h": 112,
+   "ground": [
+    2118,
+    908,
+    85,
+    28
+   ]
+  },
+  {
+   "kind": "spire2",
+   "x": 2272,
+   "y": 196,
+   "w": 96,
+   "h": 220,
+   "ground": [
+    2281,
+    354,
+    78,
+    55
+   ]
+  },
+  {
+   "kind": "stalagmites",
+   "x": 2550,
+   "y": 572,
+   "w": 52,
+   "h": 68,
+   "ground": [
+    2551,
+    623,
+    50,
+    17
+   ]
+  },
+  {
+   "kind": "fungustree",
+   "x": 2648,
+   "y": 960,
+   "w": 112,
+   "h": 192,
+   "ground": [
+    2669,
+    1096,
+    67,
+    48
+   ]
+  },
+  {
+   "kind": "rubble",
+   "x": 2792,
+   "y": 1196,
+   "w": 80,
+   "h": 52,
+   "ground": [
+    2792,
+    1235,
+    78,
+    13
+   ]
+  },
+  {
+   "kind": "glowcap",
+   "x": 2840,
+   "y": 528,
+   "w": 112,
+   "h": 112,
+   "ground": [
+    2854,
+    588,
+    85,
+    28
+   ]
+  },
+  {
+   "kind": "spire2",
+   "x": 3040,
+   "y": 964,
+   "w": 96,
+   "h": 220,
+   "ground": [
+    3049,
+    1122,
+    78,
+    55
+   ]
+  },
+  {
+   "kind": "boulders",
+   "x": 3178,
+   "y": 584,
+   "w": 76,
+   "h": 56,
+   "ground": [
+    3179,
+    626,
+    74,
+    14
+   ]
+  },
+  {
+   "kind": "crystals",
+   "x": 3350,
+   "y": 740,
+   "w": 52,
+   "h": 60,
+   "ground": [
+    3353,
+    785,
+    47,
+    15
+   ]
+  }
+ ],
+ "entry": {
+  "x": 48,
+  "y": 704,
+  "label": "The way back"
+ },
+ "exit": {
+  "x": 3536,
+  "y": 704,
+  "label": "The road on"
+ },
+ "landmarks": [],
+ "paving": [],
+ "glow": {
+  "crystals": "#6fd8ff",
+  "glowcap": "#e06bff",
+  "fungustree": "#b45cff",
+  "boulders": "#39d6b8"
+ },
+ "shine": {
+  "crystals": 1.0,
+  "glowcap": 0.8,
+  "fungustree": 0.35,
+  "boulders": 0.28
+ },
+ "water": "water.png",
+ "mood": {
+  "_": "Sam, 2026-11-23, painted Underdark look picks (A2 spire, C2 fungus tree, B1 glowing fungus): the violet hollow",
+  "grade": "#3c3470",
+  "gradeAlpha": 0.45,
+  "haze": "#b9a6ff",
+  "mist": 0.5
+ }
+}
