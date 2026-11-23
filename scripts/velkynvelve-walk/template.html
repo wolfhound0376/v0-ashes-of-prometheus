@@ -16219,7 +16219,7 @@ function strikeCam(o){
     : {inMs: 80, snap: 0, rel: spell ? 110 : 0, hit: (spell ? 240 : 110) + lead, stop: base.stop, hold: (spell ? 240 : 110) + lead + after, out: base.out};
   const rays = []; for (let i = 0; i < 13; i++) rays.push({a: Math.random() * 6.283, len: .55 + Math.random() * .6, w: Math.random()});
   const blood = o.block || (P.fx && P.fx.blood === false) ? 0 : Math.round((o.crit ? 70 : 44) * (melee ? 1 : .6)), drops = [];
-  for (let i = 0; i < blood; i++){ const a = -.35 + (Math.random() - .5) * 1.5, v = 260 + Math.random() * (o.crit ? 900 : 640); drops.push({vx: Math.cos(a) * v, vy: Math.sin(a) * v - 120, r: 3 + Math.random() * 9, col: ["#96121a", "#be1418", "#70060e"][i % 3]}); }
+  for (let i = 0; i < blood; i++){ const a = -.35 + (Math.random() - .5) * 1.5, v = 260 + Math.random() * (o.crit ? 900 : 640); drops.push({vx: Math.cos(a) * v, vy: Math.sin(a) * v - 120, r: 3 + Math.random() * 9, col: ((P.hit && P.hit.splash) || ["#96121a", "#be1418", "#70060e"])[i % 3]}); }   // an ooze splashes its own slime, not blood
   const me = SC.run = {t0: performance.now(), c, after, o: {...o}, waiting: !!o.wait};
   scSound(o);
   SC.el.style.display = "block"; cancelAnimationFrame(SC.raf);
