@@ -87,7 +87,7 @@ describe("the built map", () => {
 })
 
 describe("the Act 1 moments the map stages itself", () => {
-  const ACT1 = ["watch-changes", "jorlan-whisper", "guard-volley", "drow-surgeon", "surrender", "buppido-rises", "key-steal-success", "key-steal-fail"] as const
+  const ACT1 = ["watch-changes", "jorlan-whisper", "guard-volley", "drow-surgeon", "surrender", "buppido-rises", "key-steal-success", "key-steal-fail", "pen-key-unlock", "gate-force", "manacles-slip"] as const
   it("every one is a cue the map may send, with no roll attached", () => {
     for (const cue of ACT1) {
       expect(parseWalkFilm({ type: "aop:walk-film", cue })).toEqual({ cue, total: null })

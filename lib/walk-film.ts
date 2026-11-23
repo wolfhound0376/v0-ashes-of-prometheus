@@ -68,6 +68,12 @@ export const WALK_FILMS = {
   // A guard's keys through the bars: the Sleight of Hand roll is the map's, so the outcome arrives already judged.
   "key-steal-success": { kind: "action", state: "key-steal-success", scope: "solo", location: PEN_LOCATION, dc: null },
   "key-steal-fail": { kind: "action", state: "key-steal-fail", scope: "solo", location: PEN_LOCATION, dc: null },
+  // LOCKS AND IRONS (Sam, 2026-11-23: "The other films look good wire them"). Three more moments the map adjudicates
+  // itself: the stolen key turned in the pen lock, the gate forced on a passed Athletics check, and a manacle
+  // opened with the bent wire. No dc: each cue is sent only from the success branch of the map's own roll or choice.
+  "pen-key-unlock": { kind: "action", state: "pen-key-unlock", scope: "solo", location: PEN_LOCATION, dc: null },
+  "gate-force": { kind: "action", state: "gate-force", scope: "party", location: PEN_LOCATION, dc: null },
+  "manacles-slip": { kind: "action", state: "manacles-slip", scope: "solo", location: PEN_LOCATION, dc: null },
 } as const satisfies Record<string, WalkFilm>
 
 export type WalkFilmCue = keyof typeof WALK_FILMS
