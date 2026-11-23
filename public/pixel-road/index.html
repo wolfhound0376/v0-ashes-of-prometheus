@@ -652,6 +652,95 @@ function drawAlarm(now) {             // the "!" over the leader as they are see
   const y = L.y - L.piv[1] * L.s * 0.95 - 6 - 4 * k; ctx.globalAlpha = k; ctx.strokeText("!", L.x, y); ctx.fillText("!", L.x, y); ctx.restore();
 }
 
+/* ---------- bones and hidden traps (the real march) ---------- */
+// Sam, 2026-11-23: "There should be occasional skeletons, skulls, traps hidden that we might step on, pits, etc. Make
+// sure we are following DND rules regarding this." The bones are scenery, scattered fresh on every stretch. The traps
+// are the game's (lib/travel/road-traps.ts, SRD 5.1 Traps): the map rolls them, their dice and who in the party
+// notices each one in passing (best passive Perception against the trap's DC), and posts them here. This page only
+// lays them on the party's way and shows what the dice already said. A trap someone noticed is called out and
+// passed safely; one nobody noticed springs on the first hero to step on it.
+const BONE_SCALE = { skeleton: 0.8, skulls: 0.55, skull: 0.38 };   // a skull is about a head across, a skeleton about a body long
+const TRAP_ART = {}; let traps = [], bones = [], party = [], way = [], wayLen = 0, trapHold = 0;
+function wayAt(f) {                    // a point f (0..1) of the way along the party's road from one end to the other
+  let want = f * wayLen; for (let i = 1; i < way.length; i++) { const d = Math.hypot(way[i][0] - way[i - 1][0], way[i][1] - way[i - 1][1]); if (want <= d) { const u = want / (d || 1); return [way[i - 1][0] + (way[i][0] - way[i - 1][0]) * u, way[i - 1][1] + (way[i][1] - way[i - 1][1]) * u]; } want -= d; }
+  return way[way.length - 1] || [road.exit.x, road.exit.y];
+}
+function wayFind() { way = [[road.entry.x, road.entry.y]].concat(findPath(road.entry.x, road.entry.y, road.exit.x, road.exit.y)); wayLen = 0; for (let i = 1; i < way.length; i++) wayLen += Math.hypot(way[i][0] - way[i - 1][0], way[i][1] - way[i - 1][1]); }
+function bonesScatter() {              // scenery only: a skeleton or a few skulls by the road, never on it
+  const kinds = ["skeleton", "skulls", "skull", "skull", "skulls"], n = 5 + Math.floor(Math.random() * 5);
+  for (let i = 0; i < n * 6 && bones.length < n; i++) {
+    const p = wayAt(0.04 + Math.random() * 0.92), a = Math.random() * 6.283, r = 46 + Math.random() * 120, x = p[0] + Math.cos(a) * r, y = p[1] + Math.sin(a) * r;
+    if (!canStand(x, y) || bones.some((b) => Math.hypot(b.x - x, b.y - y) < 90)) continue;
+    bones.push({ x, y, k: kinds[Math.floor(Math.random() * kinds.length)], flip: Math.random() < 0.5 });
+  }
+}
+function trapsSet(m) {
+  party = (Array.isArray(m.party) ? m.party : []).slice(0, 12).map((q) => ({ slug: clean(q.slug, 30), name: clean(q.name, 30), strMod: +q.strMod || 0, strSave: +q.strSave || 0 }));
+  traps = (Array.isArray(m.traps) ? m.traps : []).slice(0, 4).map((t) => { const at = wayAt(Math.max(0.1, Math.min(0.92, +t.at || 0.5)));
+    return { kind: clean(t.kind, 16), title: clean(t.title, 30), spotDC: +t.spotDC || 10, fallRoll: t.fallRoll || null, spikesRoll: t.spikesRoll || null, d20s: Array.isArray(t.d20s) ? t.d20s.map(Number) : [],
+      seenBy: t.seenBy ? { slug: clean(t.seenBy.slug, 30), name: clean(t.seenBy.name, 30), passive: +t.seenBy.passive || 0 } : null, source: String(t.source || "").replace(/[<>]/g, "").slice(0, 80), x: at[0], y: at[1], sprung: false, warned: false, caught: [] }; });
+}
+const who = (h) => party.find((q) => q.slug === h.slug) || { slug: h.slug, name: h.slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()), strMod: 0, strSave: 0 };
+const faces = (r) => r && r.faces && r.faces.length > 1 ? r.faces.join(" + ") + " = " + r.total : String(r ? r.total : 0);
+function trapsTick(now) {
+  if (!traps.length || leaving) return;
+  const L = heroes[0];
+  for (const t of traps) {
+    if (t.sprung) continue;
+    if (t.seenBy) {                    // noticed in passing: whoever saw it says so as the party comes up to it
+      if (!t.warned && Math.hypot(L.x - t.x, L.y - t.y) < 170) {
+        t.warned = true; if (hailNow || sayNow) sayHide();
+        const line = t.kind === "net" ? "Hold up. There's a wire across the floor, and a net hung over it. Step high." : "Watch your feet. That stretch of floor is a pit cover. Go round the edge.";
+        sayShow({ who: t.seenBy.slug, name: t.seenBy.name, kind: "say", line, note: t.title + ": DC " + t.spotDC + " to spot. " + t.seenBy.name + "'s passive Perception is " + t.seenBy.passive + ". (" + t.source + ")" });
+      }
+      continue;
+    }
+    const h = heroes.find((x) => Math.abs(x.x - t.x) < 30 && Math.abs(x.y - t.y) < 26);
+    if (h) spring(t, h, now);
+  }
+}
+function spring(t, h, now) {
+  t.sprung = true; path = []; keys = {}; sayHide();
+  const W = who(h);
+  if (t.kind === "net") {
+    // SRD 5.1 Falling Net: everyone in the 10-foot square is restrained; a DC 10 Strength save or knocked prone too;
+    // a DC 10 Strength check (an action) frees one. The best arm in the party works at it until it is done.
+    let k = 0; const lines = [];
+    // the net comes down over the 10-foot square the wire is in, centred on the one who tripped it
+    t.x = h.x - Math.sign(h.x - (t.x0 ?? t.x)) * 8; t.y = h.y - 8; t.netUntil = now + 2600;
+    t.caught = heroes.filter((x) => Math.abs(x.x - t.x) <= 32 && Math.abs(x.y - 8 - t.y) <= 32);
+    for (const c of t.caught) { const w = who(c), d = t.d20s[k++] || 10, tot = d + w.strSave; lines.push(w.name + ": STR save " + d + (w.strSave ? (w.strSave > 0 ? "+" : "") + w.strSave : "") + " = " + tot + " vs DC 10, " + (tot >= 10 ? "stays standing" : "knocked prone")); }
+    const free = party.slice().sort((a, b) => b.strMod - a.strMod)[0] || W; let tries = 0, done = false;
+    while (!done && tries < 6 && k < t.d20s.length) { const d = t.d20s[k++]; tries++; done = d + free.strMod >= 10; lines.push(free.name + " heaves at the net: " + d + (free.strMod ? (free.strMod > 0 ? "+" : "") + free.strMod : "") + " = " + (d + free.strMod) + (done ? ", free" : ", not yet")); }
+    trapHold = now + 2200 + tries * 500;
+    sayShow({ who: W.slug, name: "A falling net", kind: "say", line: "A wire snaps. The net comes down on " + t.caught.map((c) => who(c).name).join(", ") + ".", note: lines.join(" · ") + " (" + t.source + ")" });
+    return;
+  }
+  // a pit: the one who stepped on it drops in. SRD 5.1: 1d6 bludgeoning per 10 feet fallen; spikes add 2d10 piercing.
+  h.fallT = now; t.victim = h; trapHold = now + 2600;
+  const hits = []; if (t.fallRoll) hits.push({ type: "bludgeoning", amount: +t.fallRoll.total || 0 }); if (t.spikesRoll) hits.push({ type: "piercing", amount: +t.spikesRoll.total || 0 });
+  const total = hits.reduce((a, x) => a + x.amount, 0);
+  sayShow({ who: W.slug, name: W.name, kind: "say", line: t.kind === "simple-pit" ? "The cloth gives under me. Ten feet straight down." : t.kind === "spiked-pit" ? "The floor swings open. Ten feet down, onto stakes." : "The floor swings open like a trapdoor. Ten feet down.",
+    note: t.title + ", 10 ft. Falling 1d6: " + faces(t.fallRoll) + " bludgeoning" + (t.spikesRoll ? ". Spikes 2d10: " + faces(t.spikesRoll) + " piercing" : "") + ". " + W.name + " takes " + total + ". (" + t.source + ")" });
+  tell({ type: "aop:road-hazard", slug: h.slug, title: t.title, hits });
+}
+function fallTick(now) {              // the one who fell climbs back out at the near edge
+  for (const h of heroes) if (h.fallT && now - h.fallT > 1900) { h.fallT = 0; const t = traps.find((x) => x.victim === h); if (t && h === heroes[0]) { const b = wayAt(Math.max(0, (Math.hypot(t.x - road.entry.x, t.y - road.entry.y) - 50) / (wayLen || 1))); if (canStand(b[0], b[1])) { h.x = b[0]; h.y = b[1]; } } }
+}
+function drawBones() {
+  ctx.imageSmoothingEnabled = false;
+  for (const b of bones) { const im = TRAP_ART[b.k]; if (!im) continue; ctx.save(); ctx.translate(b.x, b.y); if (b.flip) ctx.scale(-1, 1); const k = BONE_SCALE[b.k] || 0.6; ctx.globalAlpha = 0.9; ctx.drawImage(im, -im.width * k / 2, -im.height * k / 2, im.width * k, im.height * k); ctx.restore(); }
+  for (const t of traps) {
+    if (t.sprung) { if (t.netUntil && performance.now() < t.netUntil) continue; const im = TRAP_ART[t.kind === "net" ? "net" : t.kind === "spiked-pit" ? "spiked" : "pit"]; if (im) ctx.drawImage(im, t.x - im.width / 2, t.y - im.height / 2); continue; }
+    if (!t.seenBy || Math.hypot(heroes[0].x - t.x, heroes[0].y - t.y) > 360) continue;
+    // noticed: the seam of the cover, or the glint of the wire, picked out faintly
+    ctx.save(); ctx.globalAlpha = 0.55 + 0.25 * Math.sin(performance.now() / 300); ctx.strokeStyle = "#f5c34d"; ctx.lineWidth = 1;
+    if (t.kind === "net") { ctx.beginPath(); ctx.moveTo(t.x - 34, t.y + 4); ctx.lineTo(t.x + 34, t.y - 4); ctx.stroke(); }
+    else { ctx.setLineDash([3, 3]); ctx.strokeRect(t.x - 30, t.y - 26, 60, 52); }
+    ctx.restore();
+  }
+}
+
 /* ---------- where the party is on the nodal map ---------- */
 // Sam, 2026-11-23: "tracking on the general nodal map". The map posts the markers the party knows and which leg this
 // stretch is; the inset shows them, the leg in gold, and the party's dot moving along it as they walk.
@@ -689,14 +778,15 @@ if (EMBED) addEventListener("message", (ev) => {
   else if (m.type === "aop:road-meet") { if (!meet) meetStart(m); }
   else if (m.type === "aop:road-clear") { if (meet) meetClear(); }
   else if (m.type === "aop:road-map") miniSet(m);
+  else if (m.type === "aop:road-traps") trapsSet(m);
 });
 restBar.addEventListener("pointerdown", (e) => e.stopPropagation());
 restBar.addEventListener("click", (e) => { const b = e.target.closest("button[data-rest]"); if (b) { soundStart(); rest(b.dataset.rest); } });
 restEl.addEventListener("pointerdown", (e) => e.stopPropagation());
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
-  restBar.hidden = !!(plateOpen || resting || meet);
-  const moved = plateOpen || resting || leaving || meet ? false : stepLeader(dt); heroes[0].moving = moved; placeFollowers(dt, moved);
+  restBar.hidden = !!(plateOpen || resting || meet || now < trapHold);
+  const moved = plateOpen || resting || leaving || meet || now < trapHold ? false : stepLeader(dt); heroes[0].moving = moved; placeFollowers(dt, moved);
   plateTick();
   if (EMBED) {
     // far enough: the end of this stretch. The map takes it from here (the nodal map moves, then the next stretch).
@@ -704,6 +794,7 @@ function frame(now) {
     if (!near && !leaving && progress() >= NEAR_AT) { near = true; tell({ type: "aop:road-near" }); }
     if (!meet) sayTick(dt, moved);
     stepFoes(dt);
+    trapsTick(now); fallTick(now);
   }
   soundTick(moved);
   for (const h of heroes) h.t += dt;
@@ -717,11 +808,14 @@ function frame(now) {
   if (paveImg.length) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; for (const [im, q] of paveImg) ctx.drawImage(im, q.x, q.y, q.w, q.h); ctx.imageSmoothingEnabled = false; }
   drawWater(now); ctx.setTransform(cam.z, 0, 0, cam.z, -cam.x * cam.z, -cam.y * cam.z); ctx.imageSmoothingEnabled = false;
   if (shade) ctx.drawImage(shade, 0, 0);
+  drawBones();
   // Figures and props together, back to front, so a hero who walks behind a stalagmite is behind it. The props are
   // already in the ground picture; drawing the same pixels again on top of a figure is what puts it in front.
   const things = heroes.map((h) => ({ y: h.y, h })).concat(foes.map((h) => ({ y: h.y, h, f: 1 }))).concat(road.objects.map((o) => ({ y: o.ground[1] + o.ground[3], o })));
   things.sort((a, b) => a.y - b.y);
-  for (const t of things) { if (t.f) { ctx.globalAlpha = t.h.a; drawHero(t.h); ctx.globalAlpha = 1; } else if (t.h) drawHero(t.h); else if (objImg[t.o.kind]) { ctx.imageSmoothingEnabled = false; ctx.drawImage(objImg[t.o.kind], t.o.x, t.o.y); } }
+  for (const t of things) { if (t.f) { ctx.globalAlpha = t.h.a; drawHero(t.h); ctx.globalAlpha = 1; } else if (t.h && t.h.fallT) { const k = (now - t.h.fallT) / 1000; if (k < 0.45) { ctx.save(); ctx.globalAlpha = 1 - k / 0.45; ctx.translate(0, k * 50); drawHero(t.h); ctx.restore(); } } else if (t.h) drawHero(t.h); else if (objImg[t.o.kind]) { ctx.imageSmoothingEnabled = false; ctx.drawImage(objImg[t.o.kind], t.o.x, t.o.y); } }
+  // a net still over the ones it caught is drawn over them
+  for (const t of traps) if (t.netUntil && now < t.netUntil && TRAP_ART.net) { ctx.imageSmoothingEnabled = false; ctx.globalAlpha = 0.92; ctx.drawImage(TRAP_ART.net, t.x - 32, t.y - 44); ctx.globalAlpha = 1; }
   // The lip of the rock that stands between the party and us (bake.py): over the figures, so feet go behind it.
   if (front) { ctx.imageSmoothingEnabled = false; ctx.drawImage(front, 0, 0); }
   if (LIGHT) drawLight();
@@ -807,6 +901,7 @@ function toggleMusic() {
     const at = new URLSearchParams(location.search).get("at"), m = at && (road.landmarks || []).find((k) => k.kind === at);
     if (m) for (let dy = (m.near || 70) + 56; dy < 260; dy += 6) if (canStand(m.x, m.y + dy)) { startAt = [m.x, m.y + dy]; heroes.forEach((h) => { h.x = m.x; h.y = m.y + dy; }); break; } }
   for (let i = 0; i <= heroes.length * GAP + 4; i += 1.5) trail.push([startAt[0] - (startAt[0] === road.entry.x ? i : 0), startAt[1]]);
+  wayFind(); bonesScatter(); for (const k of ["skeleton", "skulls", "skull", "pit", "spiked", "net"]) TRAP_ART[k] = await img("/pixel-road/traps/" + k + ".png");
   resize(); addEventListener("resize", resize);
   addEventListener("keydown", (e) => { soundStart(); if (resting) { e.preventDefault(); return; } if (plateOpen) { if (e.key === "Escape") plateClose(); else if (e.key === "Enter" && !plateOpen.entered) plateEnter(); e.preventDefault(); return; } if (e.key === "m" || e.key === "M") toggleMusic(); keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = true; if (e.key.startsWith("Arrow")) e.preventDefault(); });
   addEventListener("keyup", (e) => { keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = false; });
@@ -817,7 +912,7 @@ function toggleMusic() {
     path = findPath(heroes[0].x, heroes[0].y, wx, wy);
   });
   // For poking at it from the console and for a browser test. The walk check itself is lib/pixel-road.test.ts.
-  window.__road = { road, heroes, foes: () => foes, meeting: () => meet, progress, meetStart, meetClear, miniSet, plate: () => plateOpen && plateOpen.label, plateEnter, plateClose, rest, resting: () => resting && resting.kind, objImg, snd, findPath, canStand, go: (x, y) => { path = findPath(heroes[0].x, heroes[0].y, x, y); return path.length; }, idle: () => !path.length };
+  window.__road = { road, heroes, traps: () => traps, bones: () => bones, trapsSet, foes: () => foes, meeting: () => meet, progress, meetStart, meetClear, miniSet, plate: () => plateOpen && plateOpen.label, plateEnter, plateClose, rest, resting: () => resting && resting.kind, objImg, snd, findPath, canStand, go: (x, y) => { path = findPath(heroes[0].x, heroes[0].y, x, y); return path.length; }, idle: () => !path.length };
   requestAnimationFrame((t) => { last = t; frame(t); });
   tell({ type: "aop:road-ready", road: ROAD_ID });
 })();
