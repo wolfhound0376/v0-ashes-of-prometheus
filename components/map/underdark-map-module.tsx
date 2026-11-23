@@ -116,8 +116,14 @@ export default function UnderdarkMapModule() {
     fetch("/api/camp/roster").then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive && Array.isArray(j?.members)) setCompany(j.members) }).catch(() => {})
     return () => { alive = false }
   }, [party?.node_id])
-  const roadLive = useRef({ leaderId: leaderId as string | null, pixelRoad, company, hours: 0, heroSlug: "", followerSlugs: [] as string[], edges, initiated: travel.initiated, shortRest: travel.shortRest, shortRestLine: travel.shortRestLine, chooseOption: travel.chooseOption })
-  roadLive.current = { leaderId, pixelRoad, company, hours: Number(travel.march?.hours_today) || 0, heroSlug: mapHeroSlug(leaderId), followerSlugs: (followerKey ? followerKey.split(",") : []).map((id) => mapHeroSlug(id)), edges, initiated: travel.initiated, shortRest: travel.shortRest, shortRestLine: travel.shortRestLine, chooseOption: travel.chooseOption }
+  const roadLive = useRef({ leaderId: leaderId as string | null, pixelRoad, company, hours: 0, heroSlug: "", followerSlugs: [] as string[], edges, dm: !!dmKey, initiated: travel.initiated, shortRest: travel.shortRest, shortRestLine: travel.shortRestLine, chooseOption: travel.chooseOption, reachNode })
+  roadLive.current = { leaderId, pixelRoad, company, hours: Number(travel.march?.hours_today) || 0, heroSlug: mapHeroSlug(leaderId), followerSlugs: (followerKey ? followerKey.split(",") : []).map((id) => mapHeroSlug(id)), edges, dm: !!dmKey, initiated: travel.initiated, shortRest: travel.shortRest, shortRestLine: travel.shortRestLine, chooseOption: travel.chooseOption, reachNode }
+  // WHAT WAITS AHEAD, MET ON THE ROAD (Sam, 2026-11-23: "make sure we are adding the encounters to this"). The leg this
+  // stretch walks, and the marker the road asked about early: a little past halfway the road says it is near, and
+  // the marker's dice are rolled then (the same reachNode the nodal map would call), so whatever waits there is met
+  // on the pixel road. legDone then finds the marker already reached and does not roll it twice.
+  const roadLeg = useRef<{ a: string; b: string } | null>(null)
+  const met = useRef<{ key: string; done: Promise<void> } | null>(null)
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
   const youName = () => { const R = roadLive.current; return (R.company.find((m) => m.pc && m.slug === R.heroSlug)?.name ?? "").split(/\s+/)[0] ?? "" }
   async function walkTheRoad(a: string, b: string): Promise<void> {
@@ -129,11 +135,13 @@ export default function UnderdarkMapModule() {
     const road = pixelRoadFor({ a, b, mode: (e?.metadata?.mode as string | undefined) ?? null })
     if (!road) return
     const npcs = R.company.filter((m) => !m.pc).map((m) => m.slug)
+    roadLeg.current = { a, b }
     setRoadSrc(pixelRoadHref({ road, line: [R.heroSlug, ...R.followerSlugs], npcs, from: na.name ?? "", to: nb.name ?? "" }))
     await sleep(60)
     setRoadOn(true)
     await new Promise<void>((res) => { roadDone.current = res })
     roadDone.current = null
+    roadLeg.current = null
     setRoadOn(false)          // fade back to the nodal map, which now shows the move
     await sleep(700)
     setRoadSrc(null)
@@ -147,12 +155,26 @@ export default function UnderdarkMapModule() {
       const post = (x: Record<string, unknown>) => { try { roadFrame.current?.contentWindow?.postMessage(x, window.location.origin) } catch { /* gone */ } }
       const R = roadLive.current
       if (m.type === "aop:road-ready") {
+        // the inset: the markers the party knows (players only ever hold discovered rows), the roads between, this leg
+        const L = live.current, leg = roadLeg.current
+        if (leg) {
+          const known = L.nodes.filter((n) => (R.dm ? !!n.discovered_at : true) && Number.isFinite(Number(n.metadata?.map_x)) && Number.isFinite(Number(n.metadata?.map_y)))
+          const keyOf = new Map(known.map((n) => [n.id, n.node_key]))
+          post({
+            type: "aop:road-map", a: leg.a, b: leg.b,
+            nodes: known.map((n) => ({ k: n.node_key, x: Number(n.metadata?.map_x), y: Number(n.metadata?.map_y) })),
+            edges: R.edges.filter((e) => keyOf.has(e.from_node_id) && keyOf.has(e.to_node_id)).map((e) => ({ a: keyOf.get(e.from_node_id), b: keyOf.get(e.to_node_id) })),
+          })
+        }
         // what each of them calls the leader ("Hey Kenta / hey elf / hey Sorcerer": /api/npc-address), then the deal
         const npcs = R.company.filter((c) => !c.pc)
         const deal = (call: Record<string, string>) => post({ type: "aop:road-remarks", listener: youName(), remarks: roadRemarks({ companions: npcs.map((c) => c.slug), hoursToday: R.hours, you: (slug) => call[npcs.find((c) => c.slug === slug)?.name ?? ""] || youName(), rand: Math.random }) })
         if (!R.leaderId || !npcs.length) deal({})
         else fetch("/api/npc-address", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ characterId: R.leaderId, npcNames: npcs.map((c) => c.name) }) })
           .then((r) => (r.ok ? r.json() : null)).then((j) => deal((j?.addresses as Record<string, string>) ?? {})).catch(() => deal({}))
+      } else if (m.type === "aop:road-near") {
+        const leg = roadLeg.current, n = leg ? live.current.nodes.find((x) => x.node_key === leg.b) : null
+        if (n && met.current?.key !== n.node_key) met.current = { key: n.node_key, done: R.reachNode(n) }
       } else if (m.type === "aop:road-done") {
         endRoad()
       } else if (m.type === "aop:road-rest" && m.kind === "short") {
@@ -169,6 +191,25 @@ export default function UnderdarkMapModule() {
     return () => window.removeEventListener("message", onRoad)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // A card the marker put up while the road is showing (an encounter, a challenge, a choice): the road halts the party
+  // and brings out the creatures the dice named, and a moment later the card comes up over the road.
+  const stopped = !!(travel.halt || travel.options || travel.chosen)
+  const [lift, setLift] = useState(false)
+  const meetSent = useRef(false)
+  useEffect(() => {
+    const post = (x: Record<string, unknown>) => { try { roadFrame.current?.contentWindow?.postMessage(x, window.location.origin) } catch { /* gone */ } }
+    if (stopped && roadOn && !meetSent.current) {
+      meetSent.current = true
+      const foes = travel.halt?.battle?.foes ?? []
+      post({ type: "aop:road-meet", kind: travel.halt?.kind ?? "stop", foes })
+      const t = setTimeout(() => setLift(true), foes.length ? 2600 : 500)
+      return () => clearTimeout(t)
+    }
+    if (!stopped && meetSent.current) { meetSent.current = false; setLift(false); post({ type: "aop:road-clear" }) }
+    if (!roadOn) { meetSent.current = false; setLift(false) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stopped, roadOn])
 
   // Where the page's figure stands. It trails `party` while a walk is being shown.
   const shown = useRef<string | null>(null)
@@ -271,6 +312,7 @@ export default function UnderdarkMapModule() {
       return
     }
     walkStarted(keys[0])
+    met.current = null
     const w = (walk.current = { keys, ids: route, i: 0 })
     // the leg is walked on the pixel road first (the leading browser only); then the nodal map shows it
     void walkTheRoad(keys[0], keys[1]).then(() => { if (walk.current === w) send({ type: "aop:map-leg", a: keys[0], b: keys[1], last: keys.length === 2 }) })
@@ -283,8 +325,11 @@ export default function UnderdarkMapModule() {
     w.i += 1
     shown.current = k
     const n: NodeRow | undefined = live.current.byId.get(w.ids[w.i])
-    // what waits at this marker is the shared march's to say; it resolves when the party may walk on
-    if (n) await reachNode(n)
+    // what waits at this marker is the shared march's to say; it resolves when the party may walk on. The pixel road
+    // may already have asked (the marker met on the road): then wait on that answer instead of rolling it again.
+    const early = met.current?.key === k ? met.current : null
+    if (early) { met.current = null; await early.done }
+    else if (n) await reachNode(n)
     if (walk.current !== w) return // a newer walk replaced this one while the card was up
     if (w.i + 1 >= w.keys.length) { walk.current = null; return }
     await walkTheRoad(w.keys[w.i], w.keys[w.i + 1])   // fade back into the pixel road for the next leg
@@ -298,7 +343,10 @@ export default function UnderdarkMapModule() {
           The painted entrance is the page's (its cinematic, its plate, its Enter), so the card version stays shut. */}
       <div className="relative rounded-lg overflow-hidden border-[3px] border-[#2b2040] bg-[#05030a]" style={{ height: dmKey ? "calc(100vh - 90px)" : "calc(100vh - 24px)", minHeight: 320 }}>
         <iframe ref={frame} src={PAGE} title="The Underdark" className="absolute inset-0 h-full w-full border-0" allow="autoplay" />
-        <TravelCards t={{ ...travel, entrance: null }} />
+        {/* Over the pixel road too, once the road has shown what the marker put in the way (`lift`). */}
+        <div className={`absolute inset-0 pointer-events-none [&>*]:pointer-events-auto ${lift ? "z-30" : ""}`}>
+          <TravelCards t={{ ...travel, entrance: null }} />
+        </div>
         {roadSrc ? (
           <div className="absolute inset-0 z-20 bg-[#05030a] transition-opacity duration-700" style={{ opacity: roadOn ? 1 : 0, pointerEvents: roadOn ? "auto" : "none" }}>
             <iframe ref={roadFrame} src={roadSrc} title="The road" className="absolute inset-0 h-full w-full border-0" allow="autoplay" />
