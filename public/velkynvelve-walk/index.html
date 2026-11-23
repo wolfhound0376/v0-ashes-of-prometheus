@@ -3793,7 +3793,7 @@ async function enterNode(n, opts = {}){
       else if (doorTakesPrisoners) joined = prisonersJoin();   // THE DOOR, SNEAKING: "take everyone" was the hero's own answer
       else if (sneak){ const left = PEN_NPCS.filter(d => npcs.some(x => x.id === d.id && !x.down && !x.body && !x.offStage && !companyNow().includes(d.id))).length;
         if (left) log(`The other prisoners stay in the pen. ${left > 1 ? "They" : "Whoever is left"} would never keep quiet behind you.`); }
-      else if (!opts.solo) joined = prisonersJoin();          // just one hero slipping out leaves the pen's prisoners where they are
+      else if (!opts.solo && !opts.noPrisoners && !gatePartyOnly()) joined = prisonersJoin();   // just one hero slipping out leaves the pen's prisoners where they are; so does "Flee, with the party" (THE PEN DOOR)
     }
     if (n === PEN && from !== PEN && laborLive()) state.company = companyNow().filter(id => !laborNpcs().includes(id));   // back to their places in the pen
     if (n === PEN && from !== PEN && surrenderFresh()) surrenderCompanyHome();   // marched back after a surrender: every prisoner is back at their own spot (THE SURRENDER)
@@ -3859,6 +3859,13 @@ async function enterNode(n, opts = {}){
   if (companyNow().includes(PET_SPIDER)) petSprite();   // THE SPIDER IN YOUR POCKET: its sheet is the giant spider's, drawn small
   const compAll = companyNow().filter(id => SPR[id]);
   // the company on THIS plate (SPLIT PARTY): a prisoner whose place is recorded elsewhere stays there; one never split walks with the party
+  // NPCs DO NOT GO BACK INTO THE PEN (Sam, 2026-11-22: "NPCs can will not go back through the door to the pen"). A
+  // prisoner who is out stays out: when the party goes back in, they wait on the plate it came from. (A work detail
+  // being marched home is the drow's doing, not theirs.)
+  if (n === PEN && from !== PEN && from != null && booted && !opts.view && !laborLive()){
+    const at = state.companyAt = Object.assign({}, state.companyAt || {});
+    for (const id of compAll) if (PEN_NPCS.some(d => d.id === id) && (at[id] == null || owSame(at[id], from))) at[id] = String(from);
+  }
   const compAt = state.companyAt || {};
   const comp = compAll.filter(id => compAt[id] == null || owSame(compAt[id], n) || strandedFor(id, n, opts));   // COMPANY LEFT BEHIND
   for (const id of comp) if (state.companyAt) state.companyAt[id] = String(n);
@@ -6516,7 +6523,7 @@ let hoverObj = null;
 function interactAt(w){ return node.zones.find(z => z.interact && inPoly(z.interact.poly, w.x, w.y)) || null; }
 function openInteract(z, opts = {}){
   const it = z.interact; if (!it || mode !== "explore") return;
-  if (it.leaf && state.gateOpen && sneakDoorCard({z})) return;     // THE DOOR, SNEAKING: unlocked, the watch posted, a hero keeping low
+  if (it.leaf && state.gateOpen && !state.doorShut && battlePlateOf(cur) && !laborLive()){ gateOpenCard(false); return; }   // THE PEN DOOR: an open gate has one card
   mode = "dialog"; leader.path = []; tip.hidden = true;
   // picture: the object itself, cut from the painting
   const c = $("objPic"), g = c.getContext("2d"), xs = it.poly.map(p => p[0]), ys = it.poly.map(p => p[1]);
@@ -6567,7 +6574,7 @@ function openInteract(z, opts = {}){
     add("Step back", close, "", {icon: "back"});
   } else if (state.doorShut){
     $("objText").textContent = "The gate is shut, but no longer locked.";
-    add("Open it", () => { close(); state.doorShut = false; setDoor(true); sfx("door-open"); if (balcony()) buildGrid(); setTimeout(() => openInteract(z), 1500); }, "primary", {icon: "key"});
+    add("Open it", () => { close(); gateOpened(); }, "primary", {icon: "key"});
     add("Step back", close, "", {icon: "back"});
   } else if (isDoor && battlePlateOf(cur) && !laborLive()){
     // THE OPEN GATE IS A DECISION (see gateIsWalked). The watch on the landing: going through is the fight, on the
@@ -6578,7 +6585,7 @@ function openInteract(z, opts = {}){
       const g = gateCenter() || leader, w = guards.slice().sort((a, b) => Math.hypot(a.x - g.x, a.y - g.y) - Math.hypot(b.x - g.x, b.y - g.y))[0];
       breakoutCard(w, guards, false, breakoutBy || "open"); return; }
     $("objText").textContent = "The gate stands open, and nobody is on the landing.";
-    add("Go through — out onto the landing", () => { $("obj").hidden = true; mode = "explore"; gateToLanding(); }, "primary", {icon: "way"});
+    add("Go through — out onto the landing", () => { $("obj").hidden = true; mode = "explore"; gateToLanding({everyone: true}); }, "primary", {icon: "way"});
     calls();
     if (!state.gateBroken) add("Close the gate", () => { close(); state.doorShut = true; setDoor(false); if (balcony()) buildGrid(); setTimeout(() => sfx("door-close"), 650); }, "", {icon: "key"});
     add("Stay inside", close, "", {icon: "back"});
@@ -6972,18 +6979,37 @@ function gateTry(a, action, mod, onWin, onLose){
 }
 function hasPenKey(){ return !!state.penKey || Object.values(GEAR).some(g => (g.carried || []).some(c => c.name === PEN_KEY)); }
 // the gate comes open: the lock is beaten, the leaf swings, the way out is lit
-function unlockGate(forced){
+// UNLOCKED IS NOT OPEN (Sam, 2026-11-22: "Unlocking the door, doesn't necessarily open it. Someone has to open it and
+// then it has a threshold."). A prisoner's key or picks turn the lock and leave the gate SHUT (gateOpen + doorShut);
+// it swings only when someone opens it (gateOpened), when it is torn off its bolts (`forced`), or when the drow open
+// their own gate (`swing`: the DM's "open", Jorlan's hand).
+function unlockGate(forced, swing){
   if (state.gateOpen) return;
-  state.gateOpen = true; state.doorShut = false; if (forced) state.gateBroken = true;   // torn from its bolts: it will not shut again
+  const opens = !!(forced || swing);
+  state.gateOpen = true; state.doorShut = !opens; if (forced) state.gateBroken = true;   // torn from its bolts: it will not shut again
   escapeTo(PEN_ESCAPE.EVENT.UNLOCK, forced ? "the pen gate forced" : "the pen gate unlocked");   // THE ESCAPE PHASE
   reportSituation({event: forced ? "gate_broken" : "gate_open"});                        // the gate only; the stance waits for the step out
-  if (cur === 11){ setDoor(true); sfx("door-open", forced ? 1 : .85); }
+  if (cur === 11 && opens){ setDoor(true); sfx("door-open", forced ? 1 : .85); }
   if (balcony()) buildGrid();
-  const opened = forced ? "The pen gate tears open and hangs from one hinge." : "The pen gate swings open.";
-  log(opened);
+  log(forced ? "The pen gate tears open and hangs from one hinge." : opens ? "The pen gate swings open." : "The lock gives. <em>The pen gate is unlocked, and still shut.</em>");
   shakeKeyResolved();    // THE SHAKEDOWN: the key has done its work (or the gate is moot) -- the drow stop counting
   const r = npcs.find(n => n.id === "ront"); if (r && cur === 11) setTimeout(() => bark(r, "Finally.", 3000), 900);
-  if (breakoutBy){ const by = breakoutBy; breakoutBy = null; if (cur === PEN) setTimeout(() => breakout(by), 500); }   // THE BREAKOUT: only when a prisoner's hand opened it
+  const by = breakoutBy; breakoutBy = null;
+  if (!opens){
+    // shut but unlocked has its price, as it always had (Sam, 2026-11-12: "Yes (shakedown)"): the next watch tries the gate
+    if (by) state.gateLeftUnlocked = {rot: storyRotations, at: Date.now()};
+    if (by && cur === PEN && mode === "explore"){ const z = doorGate(); if (z) setTimeout(() => { if (cur === PEN && mode === "explore" && state.gateOpen && state.doorShut) openInteract(z); }, 900); }   // the card comes back with "Open it"
+    saveWalk(); return;
+  }
+  if (by && cur === PEN) setTimeout(() => breakout(by), 500);   // THE BREAKOUT: only when a prisoner's hand opened it
+}
+// SOMEONE OPENS IT. The leaf swings (the door's own animation, tickDoor), and when it stands open the card comes up by
+// itself (gateOpenCard, below).
+function gateOpened(){
+  if (!state.gateOpen || !state.doorShut || cur !== PEN) return;
+  state.doorShut = false; setDoor(true); sfx("door-open", .85); if (balcony()) buildGrid(); saveWalk();
+  log(`${esc(fname(leader))} swings the pen gate open.`);
+  setTimeout(() => { if (cur === PEN && mode === "explore" && state.gateOpen && !state.doorShut) breakout("open"); }, 1500);
 }
 // ---------- THE BREAKOUT ----------
 // Sam, 2026-11-10: "I used the key to get out and the door opened. The guards just stood there and so did the
@@ -7022,7 +7048,7 @@ const BREAKOUT_SHOUT_FORCED = "They are escaping! Set the alarm and kill them al
 function breakout(by){
   if (cur !== PEN || mode !== "explore" || laborLive() || surgeon || timeStopped || !leader) return;
   const h = leader, guards = gateGuards(), g = gateCenter() || {x: h.x, y: h.y}, sc = node.scale || 1, loud = by === "force";
-  hitstop(140); shake(4); try { camTo(Math.max(view.z, 1.35), g.x, g.y, 450); } catch (e) {}
+  hitstop(140); shake(4);                      // (no pan to the gate or the guards: Sam, 2026-11-22, "no panning. That just makes it confusing")
   // the prisoners
   const fighters = alliesHere(), others = npcs.filter(n => !fighters.includes(n) && isBystander(n) && PEN_NPCS.some(d => d.id === n.id));
   const placed = [{x: h.x, y: h.y}];
@@ -7043,11 +7069,82 @@ function breakout(by){
   const list = a => a.length > 1 ? a.slice(0, -1).join(", ") + " and " + a[a.length - 1] : a[0];
   if (fighters.length) log(`${list(names(fighters))} ${fighters.length > 1 ? "come" : "comes"} up beside ${esc(fname(h))}.${others.some(n => n.id !== "shuushar") ? " The others back away from the open gate." : ""}`);
   // the guards
-  if (!guards.length){ log("<em>Nobody is at the post.</em> The landing outside the gate is empty — for now.", {say: true}); return; }
+  if (!guards.length){ log("<em>Nobody is at the post.</em> The landing outside the gate is empty — for now.", {say: true}); setTimeout(() => gateOpenCard(false), 900); return; }
   const w = guards.slice().sort((a, b) => Math.hypot(a.x - g.x, a.y - g.y) - Math.hypot(b.x - g.x, b.y - g.y))[0];
-  if (!loud){ log(`<em>The lock is off, and the watch has not turned round.</em>`); setTimeout(() => breakoutCard(w, guards, false, by), 900); return; }
+  if (!loud){ setTimeout(() => gateOpenCard(false), 900); return; }
   breakoutCry(w, guards, by);
-  setTimeout(() => breakoutCard(w, guards, true, by), 1500);
+  setTimeout(() => gateOpenCard(true), 1500);
+}
+// ---------- THE PEN DOOR (Sam, 2026-11-22; design of record: project doc claude/Pen_Door_Rules_2026-11-22.md) ----------
+// "Once the door of an unlocked gate opens, it automatically sends a dialogue box with three options. 1. Flee, with the
+// party. 2. Flee, with everyone. 3. Close the gate. 1 and 2 automatically move you and the party or everyone to the next
+// plate. It should be a fade out and fade in action." One card, whoever is or is not on the landing, sneaking or not; it
+// replaces the breakout's "who goes through" card and the sneaking card (breakoutCard and sneakDoorCard are still below,
+// no longer raised by the gate, in case Sam wants the ambush / slip-past rows back). [CLAUDE: that it replaces them]
+//   THE PARTY     the heroes. The prisoners stay in the pen (they can be called out from the landing, as before).
+//   EVERYONE      the heroes and every prisoner standing in the pen.
+//   THE WATCH     if the gate watch is out there, the plate they land on is the fight (goThroughGate -> battleBegin), the
+//                 drow surprised unless the gate was torn open in front of them. Nobody there: they just arrive.
+//   CLOSE         shut, still unlocked — until the next watch tries it. A gate torn off its bolts cannot be shut.
+// THE THRESHOLD: "When a main character walks through the door he disappears when he hits the open door threshold and
+// lands in the second adjacent plate". The doorway stays stone (nobody walks a doorway across two plates); the spot just
+// inside it is the threshold. A hero whose own player walks them onto it while the gate stands open goes: out of a
+// fight in the pen (heroGotOut, as any Flee), or with the party when no fight is on (thresholdTick).
+function gateOpenCard(seen){
+  if (cur !== PEN || mode !== "explore" || !state.gateOpen || state.doorShut || !leader || laborLive() || gateGoing || battleBusy) return;
+  const h = leader, guards = gateGuards(), z = doorGate(), g = gateCenter() || h;
+  const w = guards.slice().sort((a, b) => Math.hypot(a.x - g.x, a.y - g.y) - Math.hypot(b.x - g.x, b.y - g.y))[0] || null;
+  party.forEach(p => { p.path = []; }); mode = "dialog"; tip.hidden = true;
+  try { if (w) portrait(w.id, $("objPic"), 128); else if (z){ const it = z.interact, c = $("objPic"), cx = c.getContext("2d"), xs = it.poly.map(q => q[0]), ys = it.poly.map(q => q[1]),
+      x0 = Math.min(...xs), y0 = Math.min(...ys), sz = Math.max(Math.max(...xs) - x0, Math.max(...ys) - y0), k = plateImg.naturalWidth / NAT_W;
+      cx.clearRect(0, 0, 128, 128); cx.drawImage(plateImg, x0 * k, y0 * k, sz * k, sz * k, 0, 0, 128, 128); } } catch (e) {}
+  $("objWho").textContent = "The gate is open";
+  $("objText").textContent = seen ? `${w ? fname(w) + " has" : "The drow have"} seen it. Whatever ${fname(h)} does next, it happens now.`
+    : guards.length ? "The way out stands open. The watch is out on the landing." : "The way out stands open, and nobody is on the landing.";
+  const box = $("objBtns"); box.innerHTML = "";
+  const close = () => { $("obj").hidden = true; mode = "explore"; exploreKey = ""; party.forEach(p => { sillWas[p.id] = true; }); };   // (standing on the threshold when the card closes is not walking onto it)
+  const add = (label, fn, cls = "") => choiceRow(box, label, () => { close(); fn(); }, cls);
+  add("Flee, with the party", () => gateFlee(false, seen), "primary");
+  if (prisonersHere().length) add("Flee, with everyone", () => gateFlee(true, seen), "primary");
+  if (!state.gateBroken) add("Close the gate", () => {
+    state.doorShut = true; setDoor(false); if (balcony()) buildGrid(); setTimeout(() => sfx("door-close"), 650);
+    state.gateLeftUnlocked = {rot: storyRotations, at: Date.now()}; saveWalk();
+    log(`${esc(fname(h))} shuts the gate again. <em>It is shut, but it will open — until the next watch tries it.</em>`); });
+  showObjCard(); cardClose(close); box.querySelector("button")?.focus();
+  partyCard({kind: "breakout", who: h && h.id});                         // THE PARTY DECIDES
+}
+/** The party went out through the gate without the prisoners, a moment ago (said by the screen that chose it). */
+function gatePartyOnly(){ const t = state.gatePartyOnly; return !!t && Math.abs(owNow() - t) < 20000; }
+/** The prisoners standing in the pen, on their feet: who "everyone" is. */
+function prisonersHere(){ return npcs.filter(n => PEN_NPCS.some(d => d.id === n.id) && !n.down && !n.body && !n.offStage && !n.hostile && (n.alpha ?? 1) > .2 && actors.includes(n)); }
+/** Out through the open gate: into the watch if it is there, onto the empty landing if it is not. */
+function gateFlee(everyone, seen, o = {}){
+  if (cur !== PEN || !state.gateOpen || state.doorShut) return;
+  const guards = gateGuards(), g = gateCenter() || leader;
+  if (guards.length){ const w = guards.slice().sort((a, b) => Math.hypot(a.x - g.x, a.y - g.y) - Math.hypot(b.x - g.x, b.y - g.y))[0];
+    goThroughGate(w, guards, {everyone, surprised: !seen, by: "open", ...(o.heroes ? {heroes: o.heroes} : {})}); return; }
+  gateToLanding({everyone, solo: !!o.solo});
+}
+const SILL_FT = 4;                 // how close to the spot inside the doorway counts as on the threshold [CLAUDE]
+let sillWas = {};
+function doorOpenNow(){ return cur === PEN && !!state.gateOpen && !state.doorShut && !!battlePlateOf(cur) && !laborLive() && !!balcony(); }
+function atSill(a){ const B = balcony(); return !!(B && a && a.x != null) && Math.hypot(a.x - B.inside[0], a.y - B.inside[1]) <= SILL_FT * ruleFt(a); }
+/** Every frame: a hero who has just walked onto the open gate's threshold goes through it. */
+function thresholdTick(){
+  if (!booted || cur !== PEN){ if (Object.keys(sillWas).length) sillWas = {}; return; }
+  const open = doorOpenNow();
+  for (const p of party){
+    const on = atSill(p), was = !!sillWas[p.id]; sillWas[p.id] = on;
+    if (!open || !on || was || p.ko || p.down || p.left || !actors.includes(p)) continue;
+    if (mode === "combat" && cbt && !FIGHT.mirror){
+      if (activeActor() !== p || p.kind !== "pc") continue;               // on their own turn, by their own feet
+      p.path = []; p.onArrive = null; p.kbd = false; combatBusy = false; closeMenu();
+      popText(p, "out!", "#e8e2c8", 1); log(`<b>${esc(fname(p))}</b> is through the gate.`, {say: true});
+      heroGotOut(p, {x: p.x, y: p.y, to: battlePlateOf(cur)});
+    } else if (mode === "explore" && p === leader && canControl(p) && !owRemote(p) && !gateGoing && !battleBusy && (p.path.length || p.kbd) && !(p.wantsZone && p.wantsZone.interact && p.wantsZone.interact.leaf)){   // (a click on the gate itself is asking for its card, not walking through)
+      p.path = []; gateFlee(false, false);
+    }
+  }
 }
 /** The drow see it: every guard turns, the nearest cries out (Sam's line; heard as Elvish by a hero who has it). */
 function breakoutCry(w, guards, by){
@@ -7094,12 +7191,12 @@ async function goThroughGate(w, guards, o = {}){
   const B = balcony(); if (!B){ startCombat(guards, "the breakout at the pen gate", o.surprised ? {surprised: guards.slice()} : {}); return; }
   gateGoing = true; mode = "dialog"; tip.hidden = true; state.gateLeftUnlocked = null;
   try {
-    const heroes = (o.heroes || party).filter(p => actors.includes(p)), allies = o.everyone ? alliesHere() : [], goers = [...heroes, ...allies];
+    const heroes = (o.heroes || party).filter(p => actors.includes(p)), allies = o.everyone ? prisonersHere() : [], goers = [...heroes, ...allies];
     state.doorShut = false; setDoor(true); if (balcony()) buildGrid();
     // 1. to the doorway
     const sill = {x: B.inside[0], y: B.inside[1]};
     goers.forEach(a => { stopActivity(a); a.slow = false; a.onArrive = null; a.path = findPath(a, sill); if (!a.path.length) a.path = [sill]; });
-    log(o.everyone && allies.length ? `${esc(fname(leader))} goes through the gate, and everyone who will fight goes too.` : heroes.length > 1 ? `${esc(fname(leader))} and the others go through the gate.` : `${esc(fname(leader))} goes through the gate.`);
+    log(o.everyone && allies.length ? `${esc(fname(leader))} goes through the gate, and everyone goes too.` : heroes.length > 1 ? `${esc(fname(leader))} and the others go through the gate.` : `${esc(fname(leader))} goes through the gate.`);
     await wait(1100);
     // 2. the drow
     const live = guards.filter(d => actors.includes(d) && !d.down && !d.body && !d.offStage);
@@ -7111,7 +7208,7 @@ async function goThroughGate(w, guards, o = {}){
     // THE BATTLE SCREEN (Sam, 2026-11-13): the fight is not on this plate any more. The ones who go are set down on the
     // landing's own battle plate; the pen, its doorway and whoever stayed are left behind.
     if (live.length && battlePlateOf(cur)){ if (sneak) endSneak(); mode = "explore";
-      await battleBegin(live, o.label || "the breakout at the pen gate", {heroes, noAllies: !o.everyone, surprised: o.surprised ? live.slice() : null, opener: o.opener || null});
+      await battleBegin(live, o.label || "the breakout at the pen gate", {heroes, noAllies: !o.everyone, everyone: !!o.everyone, surprised: o.surprised ? live.slice() : null, opener: o.opener || null});
       return; }
     const fc = live.length ? live.reduce((s, d) => ({x: s.x + d.x / live.length, y: s.y + d.y / live.length}), {x: 0, y: 0}) : {x: B.landing[0] - 100, y: B.landing[1] - 60};
     const sc = node.scale || 1, placed = live.map(d => ({x: d.x, y: d.y}));
@@ -7176,7 +7273,7 @@ function battleAllies(B){ const comp = companyNow(), add = (B.allies || []).filt
 function gateWatchAway(){ const B = battleLive(), d = state.gateWatchDown, out = state.brokeOut;
   return !!((B && owSame(B.from, PEN)) || (d && ((storyRotations || 0) <= d.rot || (out && (d.at || 0) >= (out.at || 0))))); }
 /** The gate stands open and nobody is on the landing: the party steps out onto the landing's own plate (a cut, not a walk). */
-async function gateToLanding(){
+async function gateToLanding(o = {}){
   const plate = battlePlateOf(cur); if (!plate || battleBusy || mode !== "explore" || !leader) return;
   battleBusy = true; const fade = $("fade"), from = cur;
   try {
@@ -7185,7 +7282,11 @@ async function gateToLanding(){
     if (cur === PEN) escapeTo(PEN_ESCAPE.EVENT.SLIP_OUT, "walked out of the open gate");   // THE ESCAPE PHASE
     log(`${esc(fname(leader))} goes out through the gate, onto the landing.`);
     mode = "dialog"; fade.classList.add("quick", "on"); await wait(320);
-    await enterNode(plate, {from, note: "Out through the gate, onto the landing."});
+    // "Flee, with the party" is the table's answer, not this screen's: every screen that follows the party onto the
+    // landing must leave the prisoners where they are too, so it is said in the world's state before the plate changes
+    state.gatePartyOnly = o.everyone === false && !o.solo ? owNow() : null;
+    if (OW.on){ const t0 = Date.now(); while (Date.now() - t0 < 2500 && owDirty()) await wait(100); }
+    await enterNode(plate, {from, note: "Out through the gate, onto the landing.", ...(o.solo ? {solo: true} : {}), ...(o.everyone === false ? {noPrisoners: true} : {})});
   } finally { battleBusy = false; fade.classList.remove("on"); setTimeout(() => fade.classList.remove("quick"), 400); if (mode === "dialog" && $("obj").hidden) mode = "explore"; }
 }
 /** A fight this plate hands to its battle plate: every foe named is one of the watch, standing out on the landing. */
@@ -7205,7 +7306,7 @@ async function battleBegin(foeObjs, label, o = {}){
   try {
     const here = party.filter(p => actors.includes(p)), heroes = (o.heroes || here).filter(p => here.includes(p) && heroUp(p));
     if (!heroes.includes(leader)) heroes.unshift(leader);
-    const allies = o.noAllies ? [] : alliesHere().map(n => n.id);
+    const allies = o.noAllies ? [] : (o.everyone && cur === PEN ? prisonersHere() : alliesHere()).map(n => n.id);   // THE PEN DOOR: "Flee, with everyone" is every prisoner, not only the ones who fight
     const B = {id: "b" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), from: String(cur), plate, by: OW.key || "local", at: Date.now(),
       heroes: heroes.map(p => p.id), allies, foes: foeObjs.map(f => f.id), surprised: !!(o.surprised && o.surprised.length), opener: o.opener ? o.opener.id : null,
       label: String(label || "a fight on the landing"), split: !here.every(p => heroes.includes(p)), ...(o.fromFlag ? {fromFlag: true} : {})};
@@ -7583,7 +7684,7 @@ function doorCallTick(){
 function openGate(){
   if (state.gateOpen) return;
   const j = cur === 11 && mode === "explore" ? npcs.find(n => n.id === "jorlan" && !n.offStage) : null;
-  if (!j){ unlockGate(); return; }
+  if (!j){ unlockGate(0, true); return; }
   // Jorlan leaves his post on the landing, goes round behind the pillar, unlocks the door from outside and steps in.
   state.gateOpen = true; state.doorShut = false;                 // saved now; the door itself swings when he gets there
   reportSituation({event: "gate_open"});
@@ -12416,6 +12517,7 @@ function strandedFor(id, n, opts){
   if (!booted || (opts && opts.view) || laborLive()) return false;
   const at = (state.companyAt || {})[id];
   if (at == null || owSame(at, n)) return false;
+  if (n === PEN && PEN_NPCS.some(d => d.id === id)) return false;                 // NPCs DO NOT GO BACK INTO THE PEN
   if (PARTY.some(h => heroAt[h] && owSame(heroAt[h].plate, at))) return false;   // a hero is still there with them
   const hid = (state.escort || {})[id];
   if (hid && companyMode(hid) === "wait") return false;                          // told to wait: they wait
@@ -15314,6 +15416,9 @@ function exitFor(f){
     const c = zoneCenter(z), q = nearestWalkable(c.x, c.y), d = Math.hypot(q.x - f.x, q.y - f.y);
     if (d < bd){ bd = d; best = {x: q.x, y: q.y, to: z.to[0]}; }
   }
+  // THE PEN DOOR: the open gate's threshold is a way out of a fight in the pen, onto the landing's plate
+  if (f && f.kind === "pc" && doorOpenNow()){ const B = balcony(), d = Math.hypot(B.inside[0] - f.x, B.inside[1] - f.y);
+    if (d < bd) best = {x: B.inside[0], y: B.inside[1], to: battlePlateOf(cur)}; }
   return best;
 }
 // ---------- THE ALARM AND REINFORCEMENTS (Sam, 2026-11-10: "Shouting for help or setting alarm should bring in
@@ -15673,6 +15778,7 @@ setInterval(() => {
   h.left = false; h.fading = false; h.alpha = 1; if (!actors.includes(h)) actors.push(h);
   if (leader !== h) setLeader(h);
   if (z) travel(f.to, z, false, null, true);
+  else if (cur === PEN && String(f.to) === String(battlePlateOf(cur)) && state.gateOpen && !state.doorShut) gateFlee(false, true, {heroes: [h], solo: true});   // THE PEN DOOR: out through the gate they ran for
 }, 700);
 function leaveFight(f, to){
   if (f.left) return;
@@ -18752,7 +18858,7 @@ function followGate(g){
     if (state.gateOpen){ state.doorShut = false; setDoor(true); if (!first) sfx("door-open", .85); if (balcony()) buildGrid(); return; }
     const j = npcs.find(n => n.id === "jorlan" && !n.offStage && actors.includes(n));
     if (!first && !j) log("<em>A drow on the bridge turns the key and swings the gate open.</em>", {say: true});   // somebody's hand, seen
-    if (j && !first) openGate(); else unlockGate();
+    if (j && !first) openGate(); else unlockGate(0, true);
   } else if (g.state === "locked"){
     if (!state.gateOpen || state.gateBroken) return;
     state.gateOpen = false; state.doorShut = false; state.brokeOut = null; setDoor(false); if (balcony()) buildGrid();
@@ -27529,7 +27635,7 @@ function update(dt){
   tickFootsteps();
   tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt);
   redSigilSeen();                       // a drow inside the pen reads the red scar: the fight starts once, however they got in
-  sigilNoticeTick(); wardOutTick(); fellTick();     // a caster notices the sigil (and gets its film); the ones it bit lie where they fell
+  sigilNoticeTick(); wardOutTick(); fellTick(); thresholdTick();     // a caster notices the sigil (and gets its film); the ones it bit lie where they fell
   pacingTick();                         // the caravan clock, the wait vote, and the pen's three small beats
   tickFungus();
   ovTick(); tickChasmWebs(); camKeep(); buppidoLedgeTick();
