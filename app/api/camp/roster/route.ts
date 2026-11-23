@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { COMPANION_ROWS, campName, campRoster, mouthsAtCamp, type WorldLike } from "@/lib/camp-roster"
 import { hitDieFor } from "@/lib/camp"
-import { abilityMod, passivePerception, type SheetSlice } from "@/lib/game-context"
+import { abilityMod, passivePerception, skillBonus, type SheetSlice } from "@/lib/game-context"
 
 // /api/camp/roster — who sits at the fire tonight (Sam, 2026-11-15: "At camp the pixel characters of the available
 // NPCs still alive or with you should be there").
@@ -48,7 +48,8 @@ export async function GET() {
       const sheet = { ...r, level: Math.max(1, Number(r.level) || 1), str_score: Number(r.str_score) || 10, dex_score: Number(r.dex_score) || 10, con_score: Number(r.con_score) || 10, int_score: Number(r.int_score) || 10, wis_score: Number(r.wis_score) || 10, cha_score: Number(r.cha_score) || 10 } as SheetSlice
       const strMod = abilityMod(sheet.str_score), pb = Number(r.proficiency_bonus) || (2 + Math.floor((sheet.level - 1) / 4))
       const saves = Array.isArray(r.sheet_save_proficiencies) ? (r.sheet_save_proficiencies as unknown[]).map((x) => String(x).toLowerCase().slice(0, 3)) : []
-      return { pp: passivePerception(sheet), strMod, strSave: strMod + (saves.includes("str") ? pb : 0) }
+      const ath = skillBonus(sheet, "athletics")
+      return { pp: passivePerception(sheet), strMod, strSave: strMod + (saves.includes("str") ? pb : 0), ath: ath.mod + ath.prof }
     }
     const member = (slug: string, r: Row | undefined, pc: boolean) => {
       const level = Math.max(1, Number(r?.level) || 1)
@@ -61,7 +62,7 @@ export async function GET() {
         conditions: Array.isArray(r?.conditions) ? (r!.conditions as unknown[]).filter((c) => typeof c === "string") : [],
         // What the pixel road's traps read (SRD 5.1 Traps: passive Wisdom (Perception) against the trap's DC; the falling
         // net's Strength save and Strength check). The road adds the march pace's penalty itself.
-        id: r?.id ?? null, ...(r ? senses(r) : { pp: null, strMod: 0, strSave: 0 }),
+        id: r?.id ?? null, ...(r ? senses(r) : { pp: null, strMod: 0, strSave: 0, ath: 0 }),
       }
     }
     const members = roster.heroes.map((h) => member(h.slug, h.cid ? byId.get(h.cid) : undefined, true))
@@ -72,7 +73,7 @@ export async function GET() {
       const { data: b } = await db.from("bestiary").select("hp,hp_formula,con,wis").eq("slug", "myconid-sprout").maybeSingle()
       members.push({ slug: c, pc: false, name: campName(c, null), cls: "Myconid sprout", level: 1,
         hp: Number(b?.hp) || 7, hpMax: Number(b?.hp) || 7, con: Number(b?.con) || 10, wis: Number(b?.wis) || 11,
-        hd: (b?.hp_formula as string | null)?.match(/^\d+d\d+/)?.[0] ?? null, hdLeft: 2, conditions: [], id: null, pp: null, strMod: 0, strSave: 0 })
+        hd: (b?.hp_formula as string | null)?.match(/^\d+d\d+/)?.[0] ?? null, hdLeft: 2, conditions: [], id: null, pp: null, strMod: 0, strSave: 0, ath: 0 })
     }
     return NextResponse.json({ members, mouths: mouthsAtCamp(roster) }, { headers: { "cache-control": "no-store" } })
   } catch (e) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { ROAD_TRAP_RULES, noticedBy, pitDamage, rollRoadTraps, trapForD6 } from "./road-traps"
+import { CLIMB_DC, ROAD_TRAP_RULES, climbTry, noticedBy, pitDamage, rollRoadTraps, trapForD6 } from "./road-traps"
 
 // a roller that plays back fixed faces, clamped to the die
 const seq = (faces: number[]) => { let i = 0; return (s: number) => Math.min(s, Math.max(1, faces[i++ % faces.length])) }
@@ -29,5 +29,18 @@ describe("road traps follow SRD 5.1", () => {
     const spiked = ts[0]
     expect(spiked.kind).toBe("spiked-pit")
     expect(pitDamage(spiked).map((x) => x.type)).toEqual(["bludgeoning", "piercing"])
+  })
+})
+
+describe("climbing out of a pit", () => {
+  it("is DC 15 Strength (Athletics), the campaign book's pit", () => expect(CLIMB_DC).toBe(15))
+  it("takes the higher die with advantage (Help from the rim)", () => {
+    expect(climbTry([6, 14], 0, 2, false)).toMatchObject({ faces: [6], total: 8, ok: false })
+    expect(climbTry([6, 14], 0, 2, true)).toMatchObject({ faces: [6, 14], die: 14, total: 16, ok: true })
+  })
+  it("rolls climb dice for every pit", () => {
+    const [t] = rollRoadTraps([], 0, seq([2, 3, 50]))
+    expect(t.kind).toBe("hidden-pit")
+    expect(t.d20s.length).toBe(24)
   })
 })
