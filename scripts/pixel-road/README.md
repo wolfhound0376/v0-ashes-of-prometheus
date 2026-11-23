@@ -34,9 +34,22 @@ pool of its colour on the floor, a bloom over itself and a slow pulse; crystals 
 ## Props that belong
 
 Sam, 2026-11-22, on the first teal fungus rocks: "Those green boulders looks out of place ... they don't look random".
-What fixed it: make a prop from the same stone as the floor and let the odd colour be a small part of it (brown
-boulders with teal fungus in the cracks, not a teal rock), and stand it against a wall or in a corner, not alone in
-the middle of the floor.
+What fixed it: let the odd colour be a small part of the prop (stone boulders with teal fungus in the cracks, not a
+teal rock), and stand it against a wall or in a corner, not alone in the middle of the floor.
+
+## The art standard (Sam, 2026-11-23: "I want all the underdark pixel art to be high quality")
+
+He flagged the first spire (PixelLab's quick `create_map_object`) as not good enough, and picked the "blend" from a
+side-by-side: the crisp detail of PixelLab's best generator, in the cool grey-violet of his own ceiling and shelf
+paintings. Every Underdark prop is made this way:
+
+1. **Generator**: `create_image_pro` (10 generations a call; small canvases come back as several candidates, so pick the best). Not `create_map_object`.
+2. **Colour**: rock props take the 16-colour palette lifted from Sam's shelf painting:
+   `#120f18 #1d1924 #23202b #292430 #2f2a37 #37313e #3d3845 #443e4b #4e4955 #574d58 #605761 #69616a #776971 #877980 #a4959e #c4b6bd`
+   (`palette_name`: "Underdark limestone, cool grey-violet"). Things with a colour of their own (crystals, mushrooms) are described as growing from grey-violet rock, with no palette.
+3. **Words that work**: name the material and its surface ("weathered limestone with layered dripstone flows, sharp ridges, ledges"), where the light is ("pale highlights on the lit left side, deep violet shadows on the right"), the finish ("crisp, detailed 16-bit pixel art with clean dark outline and rich shading"), and what it is not ("no smooth blobs, no carving").
+4. **Into the map**: trim the picture to its art, `import_object` it (free) named `underdark-hq <kind>`, and place it. The chosen pictures are kept in `art/props/`.
+5. **Sam sees the candidates before they go in** (the art rule in AGENTS.md).
 
 ## Baking `road-01` (PixelLab map `1c47eece-3986-4b2c-9501-3ad0b47fe44e`, "Road 01 - Tunnel out of Velkynvelve (cavern)")
 

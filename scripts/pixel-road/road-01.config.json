@@ -12,15 +12,15 @@
  "grid": "road-01.grid.txt",
  "export": "<unzipped PixelLab export>/",
  "kinds": {
-  "ancient": "ruins",
-  "cluster of three": "stalagmites",
-  "pile of": "rubble",
-  "cluster of glowing": "crystals",
-  "small cluster": "mushrooms",
-  "huge natural": "spire",
-  "massive tall": "fang",
-  "giant underground": "zurkhwood",
-  "low cluster": "boulders"
+  "underdark-hq spire": "spire",
+  "underdark-hq fang": "fang",
+  "underdark-hq zurkhwood": "zurkhwood",
+  "underdark-hq ruins": "ruins",
+  "underdark-hq stalagmites": "stalagmites",
+  "underdark-hq rubble": "rubble",
+  "underdark-hq boulders": "boulders",
+  "underdark-hq crystals": "crystals",
+  "underdark-hq mushrooms": "mushrooms"
  },
  "foreground": {
   "ceiling": "art/ceiling.webp",
