@@ -682,6 +682,8 @@ export function useTravel() {
     nodes, edges, party, loaded, dmKey, setRefresh,
     confirmNode, setConfirmNode, arrivedAt, setArrivedAt,
     halt, setHalt, continueMarch, takeStance, stanceBusy, reachNode, walkStarted,
+    /** did THIS browser set the party walking (the one that rolls what waits at each marker)? */
+    initiated: () => initiatedRef.current,
     vessels, hasBoat, march, setMarch, guides, pcs,
     pace, setPace, navSel, setNavSel, pcFamiliar, setPcFamiliar, pcHasMap, setPcHasMap,
     me, lead, canLead, hoverNode, setHoverNode,

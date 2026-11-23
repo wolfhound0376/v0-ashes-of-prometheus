@@ -23,6 +23,9 @@ import { useEffect, useRef, useState } from "react"
 import { useTravel, type NodeRow } from "./use-travel"
 import { TravelCards, TravelPanels } from "./travel-cards"
 import { entranceFor, WALKABLE_SCENES } from "@/lib/travel/entrance"
+import { LONG_REST_KEY } from "@/lib/travel/standing"
+import { PIXEL_ROAD_SWITCH, pixelRoadFor, pixelRoadHref } from "@/lib/travel/pixel-road"
+import { roadRemarks } from "@/lib/travel/road-remarks"
 import { MAP_LAIRS, MAP_SPRITE_HERO_IDS, mapFollowerIds, mapHeroFromManifest, mapHeroSlug, type MapHero } from "@/lib/travel/map-hero"
 
 const PAGE = "/underdark-map/index.html?game=1"
@@ -92,6 +95,74 @@ export default function UnderdarkMapModule() {
       ),
     ).then((list) => { if (alive) setLairs(list.filter((l): l is { k: string; fig: MapHero } => !!l)) })
     return () => { alive = false }
+  }, [])
+
+  // ---------- THE PIXEL ROAD (Sam, 2026-11-23: "Pixel road part of the real march") ----------
+  // Before the nodal map moves the party along a leg, the browser that leads walks that leg on the pixel road, laid
+  // over the map. Reaching its far end fades back to the nodal map, which then shows the move and rolls what waits at
+  // the marker; the next leg fades back into the pixel road. Everyone else sees the nodal map as before. A DM switch
+  // under the map turns it off for this browser, and SKIP THE WALK is always on the overlay, so no march can stick.
+  const roadFrame = useRef<HTMLIFrameElement | null>(null)
+  const roadDone = useRef<(() => void) | null>(null)
+  const [roadSrc, setRoadSrc] = useState<string | null>(null)
+  const [roadOn, setRoadOn] = useState(false)
+  const [pixelRoad, setPixelRoad] = useState(true)
+  useEffect(() => { try { setPixelRoad(localStorage.getItem(PIXEL_ROAD_SWITCH) !== "0") } catch { /* storage blocked */ } }, [])
+  const flipPixelRoad = () => setPixelRoad((v) => { try { localStorage.setItem(PIXEL_ROAD_SWITCH, v ? "0" : "1") } catch { /* storage blocked */ } return !v })
+  // who walks beside the heroes: the company at camp is the company on the road (app/api/camp/roster)
+  const [company, setCompany] = useState<{ slug: string; pc: boolean; name: string }[]>([])
+  useEffect(() => {
+    let alive = true
+    fetch("/api/camp/roster").then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive && Array.isArray(j?.members)) setCompany(j.members) }).catch(() => {})
+    return () => { alive = false }
+  }, [party?.node_id])
+  const roadLive = useRef({ pixelRoad, company, hours: 0, heroSlug: "", followerSlugs: [] as string[], edges, initiated: travel.initiated, shortRest: travel.shortRest, shortRestLine: travel.shortRestLine, chooseOption: travel.chooseOption })
+  roadLive.current = { pixelRoad, company, hours: Number(travel.march?.hours_today) || 0, heroSlug: mapHeroSlug(leaderId), followerSlugs: (followerKey ? followerKey.split(",") : []).map((id) => mapHeroSlug(id)), edges, initiated: travel.initiated, shortRest: travel.shortRest, shortRestLine: travel.shortRestLine, chooseOption: travel.chooseOption }
+  const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+  const youName = () => { const R = roadLive.current; return (R.company.find((m) => m.pc && m.slug === R.heroSlug)?.name ?? "").split(/\s+/)[0] ?? "" }
+  async function walkTheRoad(a: string, b: string): Promise<void> {
+    const L = live.current, R = roadLive.current
+    if (!R.pixelRoad || !L.canLead || !R.initiated()) return
+    const na = L.nodes.find((n) => n.node_key === a), nb = L.nodes.find((n) => n.node_key === b)
+    if (!na || !nb) return
+    const e = R.edges.find((x) => (x.from_node_id === na.id && x.to_node_id === nb.id) || (x.from_node_id === nb.id && x.to_node_id === na.id))
+    const road = pixelRoadFor({ a, b, mode: (e?.metadata?.mode as string | undefined) ?? null })
+    if (!road) return
+    const npcs = R.company.filter((m) => !m.pc).map((m) => m.slug)
+    setRoadSrc(pixelRoadHref({ road, line: [R.heroSlug, ...R.followerSlugs], npcs, from: na.name ?? "", to: nb.name ?? "" }))
+    await sleep(60)
+    setRoadOn(true)
+    await new Promise<void>((res) => { roadDone.current = res })
+    roadDone.current = null
+    setRoadOn(false)          // fade back to the nodal map, which now shows the move
+    await sleep(700)
+    setRoadSrc(null)
+  }
+  const endRoad = () => roadDone.current?.()
+  useEffect(() => {
+    const onRoad = (ev: MessageEvent) => {
+      if (ev.origin !== window.location.origin || ev.source !== roadFrame.current?.contentWindow) return
+      const m = ev.data as { type?: string; kind?: string } | null
+      if (!m || typeof m.type !== "string") return
+      const post = (x: Record<string, unknown>) => { try { roadFrame.current?.contentWindow?.postMessage(x, window.location.origin) } catch { /* gone */ } }
+      const R = roadLive.current
+      if (m.type === "aop:road-ready") {
+        post({ type: "aop:road-remarks", remarks: roadRemarks({ companions: R.company.filter((c) => !c.pc).map((c) => c.slug), hoursToday: R.hours, you: youName(), rand: Math.random }) })
+      } else if (m.type === "aop:road-done") {
+        endRoad()
+      } else if (m.type === "aop:road-rest" && m.kind === "short") {
+        // the real hour: Hit Dice, the clock, the one-in-six risk (use-travel.ts shortRest); its line is read back to the road
+        void R.shortRest().then(async () => { await sleep(80); post({ type: "aop:road-say", name: "Short rest", line: roadLive.current.shortRestLine ?? "An hour passes." }) })
+      } else if (m.type === "aop:road-rest" && m.kind === "long") {
+        // the march stops at the marker last reached and the table goes to the Camp Module, as REST AT CAMP does
+        const w = walk.current
+        const at = w ? w.keys[w.i] : shown.current
+        void sleep(8600).then(() => { walk.current = null; endRoad(); if (at) void R.chooseOption(at, LONG_REST_KEY) })
+      }
+    }
+    window.addEventListener("message", onRoad)
+    return () => window.removeEventListener("message", onRoad)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Where the page's figure stands. It trails `party` while a walk is being shown.
@@ -195,8 +266,9 @@ export default function UnderdarkMapModule() {
       return
     }
     walkStarted(keys[0])
-    walk.current = { keys, ids: route, i: 0 }
-    send({ type: "aop:map-leg", a: keys[0], b: keys[1], last: keys.length === 2 })
+    const w = (walk.current = { keys, ids: route, i: 0 })
+    // the leg is walked on the pixel road first (the leading browser only); then the nodal map shows it
+    void walkTheRoad(keys[0], keys[1]).then(() => { if (walk.current === w) send({ type: "aop:map-leg", a: keys[0], b: keys[1], last: keys.length === 2 }) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, loaded, party?.node_id])
 
@@ -210,6 +282,8 @@ export default function UnderdarkMapModule() {
     if (n) await reachNode(n)
     if (walk.current !== w) return // a newer walk replaced this one while the card was up
     if (w.i + 1 >= w.keys.length) { walk.current = null; return }
+    await walkTheRoad(w.keys[w.i], w.keys[w.i + 1])   // fade back into the pixel road for the next leg
+    if (walk.current !== w) return
     send({ type: "aop:map-leg", a: w.keys[w.i], b: w.keys[w.i + 1], last: w.i + 2 === w.keys.length })
   }
 
@@ -220,6 +294,14 @@ export default function UnderdarkMapModule() {
       <div className="relative rounded-lg overflow-hidden border-[3px] border-[#2b2040] bg-[#05030a]" style={{ height: dmKey ? "calc(100vh - 90px)" : "calc(100vh - 24px)", minHeight: 320 }}>
         <iframe ref={frame} src={PAGE} title="The Underdark" className="absolute inset-0 h-full w-full border-0" allow="autoplay" />
         <TravelCards t={{ ...travel, entrance: null }} />
+        {roadSrc ? (
+          <div className="absolute inset-0 z-20 bg-[#05030a] transition-opacity duration-700" style={{ opacity: roadOn ? 1 : 0, pointerEvents: roadOn ? "auto" : "none" }}>
+            <iframe ref={roadFrame} src={roadSrc} title="The road" className="absolute inset-0 h-full w-full border-0" allow="autoplay" />
+            <button type="button" onClick={endRoad} className="absolute right-3 top-3 rounded border border-[#3a2c56] bg-[#120b1ecc] px-3 py-1.5 text-[10px] tracking-[.2em] text-[#9a8fb0] hover:border-[#f5c34d] hover:text-[#f5c34d]">
+              SKIP THE WALK
+            </button>
+          </div>
+        ) : null}
       </div>
       {dmKey ? (
         <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
@@ -230,6 +312,14 @@ export default function UnderdarkMapModule() {
             className={`px-3 py-2 rounded border-2 tracking-wider ${allHeroes ? "bg-[#f5c34d] text-[#120b1e] border-[#f5c34d]" : "bg-[#221936] text-[#9a8fb0] border-[#3a2c56] hover:border-[#f5c34d]"}`}
           >
             {allHeroes ? "LINE: ALL HEROES (TEST)" : "LINE: SEATED HEROES"}
+          </button>
+          <button
+            type="button"
+            onClick={flipPixelRoad}
+            aria-pressed={pixelRoad}
+            className={`px-3 py-2 rounded border-2 tracking-wider ${pixelRoad ? "bg-[#f5c34d] text-[#120b1e] border-[#f5c34d]" : "bg-[#221936] text-[#9a8fb0] border-[#3a2c56] hover:border-[#f5c34d]"}`}
+          >
+            {pixelRoad ? "PIXEL ROAD: ON" : "PIXEL ROAD: OFF"}
           </button>
           <span className="text-[#9a8fb0]">DM only. The test line shows on this screen alone and changes nothing in the game.</span>
         </div>

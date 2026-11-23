@@ -53,6 +53,19 @@
   #restbar{position:fixed;right:14px;bottom:14px;display:flex;gap:8px;z-index:5;opacity:.72;transition:opacity .3s}
   #restbar:hover,#restbar:focus-within{opacity:1}
   #restbar[hidden]{display:none}
+  /* A companion speaks (the real march only): their figure, their words, the rule behind them in small print. */
+  #say{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);z-index:6;display:flex;gap:12px;align-items:flex-start;max-width:min(620px,92vw);padding:10px 14px 11px 10px;
+    background:rgba(11,8,16,.92);border:1px solid rgba(214,176,98,.5);border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.6);color:#e9dcc6;animation:sayin .35s ease-out}
+  #say[hidden]{display:none}
+  #say canvas{width:64px;height:64px;flex:none;border-radius:6px;background:#17131f;image-rendering:pixelated}
+  #say .who{font:600 12px Cinzel,Georgia,serif;letter-spacing:.2em;text-transform:uppercase;color:#d9bd7c}
+  #say .line{font:17px/1.35 "Crimson Text",Georgia,serif;margin-top:2px}
+  #say .note{font:italic 13px "Crimson Text",Georgia,serif;color:#a99fc0;margin-top:3px}
+  #say .note:empty,#say .row:empty{display:none}
+  #say .row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+  #say .row button{padding:6px 11px;font:600 11px Cinzel,Georgia,serif;letter-spacing:.14em;text-transform:uppercase;color:#e9dcc6;cursor:pointer;background:#1c1628;border:1px solid #5a4a78;border-radius:5px}
+  #say .row button:hover,#say .row button:focus-visible{border-color:#d9bd7c;color:#fff;outline:none}
+  @keyframes sayin{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
   #restbar button{padding:8px 13px;font:600 12px Cinzel,Georgia,serif;letter-spacing:.14em;text-transform:uppercase;color:#e9dcc6;cursor:pointer;
     background:rgba(16,13,22,.82);border:1px solid #6b5a3a;border-radius:3px}
   #restbar button:hover,#restbar button:focus-visible{border-color:#d9bd7c;color:#fff;outline:none}
@@ -76,6 +89,7 @@
 <canvas id="c"></canvas>
 <div id="restbar" hidden><button type="button" data-rest="short" title="An hour by a small fire"><span class="lbl">Short rest</span></button><button type="button" data-rest="long" title="Make camp for a long rest"><span class="lbl">Make camp</span></button></div>
 <div id="rest" role="status" aria-live="polite"><img class="pit" alt=""><img class="load" alt=""><canvas></canvas><div class="txt"><div class="kick"></div><div class="title"></div><div class="lore"></div><div class="dots" hidden><i></i><i></i><i></i></div></div></div>
+<div id="say" hidden><canvas width="64" height="64"></canvas><div class="w"><div class="who"></div><div class="line"></div><div class="note"></div><div class="row"></div></div></div>
 <div id="plate"><img alt=""><div class="card"><div class="name"></div><div class="ask"></div><div class="row"></div></div></div>
 <script>
 "use strict";
@@ -85,6 +99,16 @@ const BASE = "/pixel-road/" + ROAD_ID + "/";
 const LIGHT = Q.get("light") !== "0";
 // Everyone who has a walking sprite of their own (lib/travel/map-hero.ts). Leader first.
 const LINE = (Q.get("line") || "kenta,freia,scott,samson,lynkes,gandalf,kingasaur").split(",").map(s => s.trim().replace(/[^a-z0-9-]/gi, "")).filter(Boolean).slice(0, 7);
+// THE REAL MARCH (Sam, 2026-11-23: "Pixel road part of the real march"). The travel map lays this page over itself
+// for each leg of a march (components/map/underdark-map-module.tsx) with ?embed=1: who walks comes from the game
+// (`line` heroes, `npcs` companions), the two ends are named for the markers (`from`, `to`), and reaching the far
+// end tells the map, which then moves the party on the nodal map and rolls what waits there. This page still
+// decides nothing: it shows, and it reports.
+const EMBED = Q.get("embed") === "1" && window.parent !== window;
+const clean = (v, n) => String(v || "").replace(/[^A-Za-z0-9' ,.\-]/g, "").trim().slice(0, n);
+const NPCS = EMBED ? (Q.get("npcs") || "").split(",").map(s => s.trim().replace(/[^a-z0-9-]/gi, "")).filter(Boolean).slice(0, 10) : [];
+const tell = (m) => { if (EMBED) try { window.parent.postMessage(m, location.origin); } catch (e) {} };
+let leaving = false;
 // Lynkes stands as tall as Fifi (Sam, 2026-11-12); his manifest's ppu is not his real height (lib/travel/map-hero.ts).
 const PPU_FIX = { lynkes: 155 };
 // The eight facings, in the row order of every sheet (lib/sprite-token.ts): S, SE, E, NE, N, NW, W, SW.
@@ -393,7 +417,8 @@ function restFire(now) {                      // the fire's breathing light and 
   requestAnimationFrame(restFire);
 }
 async function rest(kind) {
-  if (resting || plateOpen) return; resting = { kind, fire: true }; path = []; keys = {}; restBar.hidden = true;
+  if (resting || plateOpen || leaving) return; resting = { kind, fire: true }; path = []; keys = {}; restBar.hidden = true; sayHide();
+  tell({ type: "aop:road-rest", kind });   // the real march: the map runs the real rest (an hour and Hit Dice, or the Camp Module)
   const pit = restEl.querySelector(".pit"), load = restEl.querySelector(".load"), dots = restEl.querySelector(".dots");
   pit.src = REST_ART + "firepit.png"; load.src = REST_ART + "camp-load.png"; pit.classList.add("show"); load.classList.remove("show"); dots.hidden = true;
   restText(kind === "short" ? "Short rest" : "Long rest", kind === "short" ? "An hour by the fire" : "The party makes camp", null);
@@ -408,16 +433,50 @@ async function rest(kind) {
   restText("Making camp", "Camp at the Fire", REST_LORE[Math.floor(Math.random() * REST_LORE.length)]);
   await wait(4600);
   if (Q.get("stay") === "1") { restEl.classList.remove("on"); if (snd.fire) ramp(snd.fire, 0, 900); await wait(1100); load.classList.remove("show"); resting = null; restBar.hidden = false; return; }
+  if (EMBED) return;   // the map takes the table to the Camp Module itself; the loading picture stays up until it does
   location.href = "/camp";
 }
+/* ---------- a companion speaks (the real march) ---------- */
+// The map deals the remarks for this stretch (lib/travel/road-remarks.ts) and posts them here; this page only
+// spaces them out along the walk: the first after a few seconds on the move, the rest well apart, none while a
+// plate or a rest is up. A rest remark carries the two rest buttons.
+const sayEl = document.getElementById("say"); let sayQueue = [], sayWalked = 0, sayNext = 5 + Math.random() * 4, sayUntil = 0, sayNow = null;
+function sayHide() { sayEl.hidden = true; sayNow = null; }
+function sayShow(r) {
+  sayNow = r; sayEl.querySelector(".who").textContent = r.name || ""; sayEl.querySelector(".line").textContent = r.line || ""; sayEl.querySelector(".note").textContent = r.note || "";
+  const g = sayEl.querySelector("canvas").getContext("2d"), h = heroes.find((x) => x.slug === r.who); g.clearRect(0, 0, 64, 64);
+  sayEl.querySelector("canvas").style.display = h ? "" : "none";
+  if (h) { g.imageSmoothingEnabled = false; const c = h.cell; g.drawImage(h.idle.im, 0, 0, c, c, -c * 0.1, -c * 0.02, c * 0.62 * (64 / (c * 0.5)), c * 0.62 * (64 / (c * 0.5))); }
+  const row = sayEl.querySelector(".row"); row.innerHTML = "";
+  if (r.kind === "rest") for (const [label, fn] of [["Short rest", () => rest("short")], ["Make camp", () => rest("long")], ["Walk on", sayHide]]) { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.onclick = (e) => { e.stopPropagation(); soundStart(); fn(); }; row.appendChild(b); }
+  sayEl.hidden = false; sayUntil = performance.now() + (r.kind === "rest" ? 16000 : 9000);
+}
+function sayTick(dt, moved) {
+  if (sayNow && performance.now() > sayUntil) sayHide();
+  if (moved) sayWalked += dt;
+  if (sayNow || plateOpen || resting || leaving || !sayQueue.length || sayWalked < sayNext) return;
+  sayShow(sayQueue.shift()); sayNext = sayWalked + 20 + Math.random() * 14;
+}
+sayEl.addEventListener("pointerdown", (e) => e.stopPropagation());
+if (EMBED) addEventListener("message", (ev) => {
+  if (ev.origin !== location.origin || ev.source !== window.parent) return;
+  const m = ev.data || {};
+  if (m.type === "aop:road-remarks" && Array.isArray(m.remarks)) sayQueue = m.remarks.filter((r) => r && typeof r.line === "string").slice(0, 4).map((r) => ({ who: clean(r.who, 30), name: clean(r.name, 30), kind: r.kind === "rest" ? "rest" : "say", line: String(r.line).slice(0, 220), note: r.note ? String(r.note).slice(0, 200) : "" }));
+  else if (m.type === "aop:road-say" && typeof m.line === "string") sayShow({ who: "", name: clean(m.name, 30), kind: "say", line: String(m.line).slice(0, 260), note: "" });
+});
 restBar.addEventListener("pointerdown", (e) => e.stopPropagation());
 restBar.addEventListener("click", (e) => { const b = e.target.closest("button[data-rest]"); if (b) { soundStart(); rest(b.dataset.rest); } });
 restEl.addEventListener("pointerdown", (e) => e.stopPropagation());
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
   restBar.hidden = !!(plateOpen || resting);
-  const moved = plateOpen || resting ? false : stepLeader(dt); heroes[0].moving = moved; placeFollowers(dt, moved);
+  const moved = plateOpen || resting || leaving ? false : stepLeader(dt); heroes[0].moving = moved; placeFollowers(dt, moved);
   plateTick();
+  if (EMBED) {
+    // far enough: the end of this stretch. The map takes it from here (the nodal map moves, then the next stretch).
+    if (!leaving && !resting && !plateOpen && Math.hypot(heroes[0].x - road.exit.x, heroes[0].y - road.exit.y) < 46) { leaving = true; sayHide(); tell({ type: "aop:road-done" }); }
+    sayTick(dt, moved);
+  }
   soundTick(moved);
   for (const h of heroes) h.t += dt;
   camera();
@@ -500,7 +559,11 @@ function toggleMusic() {
   if (road.front) front = await img(BASE + road.front);
   for (const [k, f] of Object.entries(road.foreground || {})) fgImg[k] = await img(BASE + f);
   for (const k of new Set(road.objects.map((o) => o.kind))) objImg[k] = await img(BASE + "objects/" + k + ".png");
-  heroes = (await Promise.all(LINE.map(loadHero))).filter(Boolean);
+  heroes = (await Promise.all(LINE.concat(NPCS.filter((s) => !LINE.includes(s))).map(loadHero))).filter(Boolean);
+  if (EMBED) { const f = clean(Q.get("from"), 40), t = clean(Q.get("to"), 40); if (f) road.entry.label = f; if (t) road.exit.label = t; 
+    // On the march a landmark is scenery: stepping into its rooms from here would leave the march half walked. The
+    // Ruins are entered from the map's own card when the book's dice land on them (lib/travel/battle.ts).
+    road.landmarks = []; }
   if (!ground || !heroes.length) { document.body.innerHTML = '<p style="color:#a99;font:14px Georgia;padding:2em">The road could not be drawn.</p>'; return; }
   heroes.forEach((h, i) => { h.x = road.entry.x - i * GAP; h.y = road.entry.y; });
   { let sx = 0, sy = 0, n = 0;      // the middle of the stream, for the sound of it
@@ -523,6 +586,7 @@ function toggleMusic() {
   // For poking at it from the console and for a browser test. The walk check itself is lib/pixel-road.test.ts.
   window.__road = { road, heroes, plate: () => plateOpen && plateOpen.label, plateEnter, plateClose, rest, resting: () => resting && resting.kind, objImg, snd, findPath, canStand, go: (x, y) => { path = findPath(heroes[0].x, heroes[0].y, x, y); return path.length; }, idle: () => !path.length };
   requestAnimationFrame((t) => { last = t; frame(t); });
+  tell({ type: "aop:road-ready", road: ROAD_ID });
 })();
 </script>
 </body>

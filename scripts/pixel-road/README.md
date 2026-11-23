@@ -143,3 +143,20 @@ A landmark may carry `"href"`. "Enter" then leaves the road for that address ins
 (`?stay=1` keeps the old behaviour for testing). The Ruins use `/velkynvelve?ruins=1`: six painted walk plates
 (`scripts/velkynvelve-walk/spec.py` RUINS_PLATES). Their way out comes back here as `?at=ruins`, which stands the party
 at that landmark's door, just outside its reach, so the question does not open on arrival.
+
+## The real march (Sam, 2026-11-23: "Pixel road part of the real march")
+
+The travel map (`components/map/underdark-map-module.tsx`) lays this page over itself for each leg of a march, in
+the browser that leads: `?embed=1&road=<id>&line=<heroes>&npcs=<companions>&from=<marker>&to=<marker>`
+(`lib/travel/pixel-road.ts`). In that mode the page:
+
+- walks the heroes and the companions (the company at camp is the company on the road);
+- names its two ends for the markers of the leg;
+- posts `aop:road-done` when the leader reaches the far end. The map fades back, moves the party along that edge of
+  the nodal map, rolls what waits at the marker, and fades into the road again for the next leg;
+- shows the remarks the map deals it (`aop:road-remarks`, from `lib/travel/road-remarks.ts`): a companion asks to
+  rest when the fatigue gauge says so, gives a direction the book says they know, or offers a hand;
+- reports a rest (`aop:road-rest`) instead of running it: the map runs the real hour, or the Camp Module;
+- treats landmarks as scenery (no plate, no rooms), so a march is never left half walked.
+
+It still decides nothing. SKIP THE WALK on the overlay, and the DM's PIXEL ROAD switch under the map, are the ways out.
