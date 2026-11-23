@@ -28,7 +28,7 @@ import { leaveDmDoor } from "@/lib/dm-door"
 import { EntryGate } from "@/components/entry-gate"
 import { assignFigures, type Light, type TableState } from "@/lib/table"
 import type { SeatView } from "@/lib/table-store"
-import { ENTERED_KEY, mapHref } from "@/lib/map-entry"
+import { DOOR_NEXT_KEY, ENTERED_KEY, doorWaiting, mapHref } from "@/lib/map-entry"
 import { fadeOutThemeAudio } from "@/components/theme-audio"
 import { readSettings } from "@/lib/settings"
 import { SaveShelf } from "@/components/save-shelf"
@@ -179,6 +179,10 @@ export default function TablePage() {
   const [gate, setGate] = useState(false)
   const sat = useRef(false)
   const leaving = useRef(false)
+  // THE RUINS SURVIVE THE DOOR (lib/map-entry.ts): this tab was on its way into the Ruins when the map's gate sent it here.
+  // The table says so, so nobody is left wondering why "Enter" put them in a room with a lich.
+  const [ruinsWaiting, setRuinsWaiting] = useState(false)
+  useEffect(() => { try { setRuinsWaiting(doorWaiting(sessionStorage.getItem(DOOR_NEXT_KEY), Date.now())) } catch { /* storage blocked */ } }, [])
 
   // Who is this browser?
   useEffect(() => {
@@ -353,7 +357,13 @@ export default function TablePage() {
         {view && role === "player" && view.state.status === "lobby" && view.mine && <FigurePicker view={view} busy={busy} send={send} />}
         {view && role === "none" && (
           <div className="rounded-sm border border-[#3d3428] bg-black/60 p-4 text-sm text-stone-400">
-            Come in through the door first. <a href="/join" className="text-[#e8c56a] underline-offset-4 hover:underline">Your words, please →</a>
+            {ruinsWaiting ? "The Ruins are behind the door. Come in first and you will be taken on to them. " : "Come in through the door first. "}
+            <a href="/join" className="text-[#e8c56a] underline-offset-4 hover:underline">Your words, please →</a>
+          </div>
+        )}
+        {view && role === "player" && ruinsWaiting && (
+          <div className="mt-3 rounded-sm border border-[#3d3428] bg-black/60 p-4 text-sm text-stone-400">
+            You were on your way into the Ruins. They open once you are seated and the game is live; you will be taken on to them then.
           </div>
         )}
       </section>

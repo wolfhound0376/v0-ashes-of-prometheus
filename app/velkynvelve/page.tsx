@@ -27,6 +27,7 @@ import { StageLink } from "@/components/stage/stage-provider"
 import { ArrowLeft, Crown, Clapperboard } from "lucide-react"
 import { dmHeaders } from "@/lib/dm-key"
 import { AFTER_RESET_PATH, AWAKEN_PATH, needsWaking, wasReset } from "@/lib/session-guard"
+import { DOOR_NEXT_KEY, doorIntent, doorResume } from "@/lib/map-entry"
 import { EndGameButton } from "@/components/end-game-button"
 import { DiceProvider } from "@/components/dice/dice-provider"
 import { WalkRollBridge } from "@/components/walk/walk-roll-bridge"
@@ -82,6 +83,19 @@ export default function VelkynvelvePage() {
     let isSandbox = false
     try { isSandbox = new URLSearchParams(window.location.search).get("sandbox") === "1"; setSandbox(isSandbox) } catch { /* no window */ }
     let seenRun: string | null = null   // the run this map loaded under
+    // THE RUINS SURVIVE THE DOOR (lib/map-entry.ts): turned away on the way to the Ruins, this tab remembers where it was
+    // going; let in later, the address gets its `?ruins=1` back BEFORE the map frame is drawn, because the map reads the
+    // address once as it boots (template.html ruinsDoor).
+    const rememberDoor = () => {
+      try { const note = doorIntent(new URLSearchParams(window.location.search), Date.now()); if (note) sessionStorage.setItem(DOOR_NEXT_KEY, note) } catch { /* storage blocked */ }
+    }
+    const resumeDoor = () => {
+      try {
+        const q = doorResume(sessionStorage.getItem(DOOR_NEXT_KEY), new URLSearchParams(window.location.search), Date.now())
+        sessionStorage.removeItem(DOOR_NEXT_KEY)
+        if (q) window.history.replaceState(null, "", window.location.pathname + q)
+      } catch { /* storage blocked */ }
+    }
     const check = async (first: boolean) => {
       try {
         const q = id ? `?characterId=${encodeURIComponent(id)}` : ""
@@ -102,11 +116,12 @@ export default function VelkynvelvePage() {
         // The DM only where this browser signed in as the DM — the map inside reads the same flag for its DM
         // tools, so the frame and the tools can never disagree (Sam, 2026-10-25: Lynkes got the frame, the
         // DM's own map lost its tools).
-        if (j.isDm && role === "dm") { setGate("dm"); return }
+        if (j.isDm && role === "dm") { resumeDoor(); setGate("dm"); return }
         // NOBODY REACHES THE MAP BEFORE THEY HAVE WOKEN (Sam, 2026-11-13; lib/session-guard.ts needsWaking). Only
         // asked on arrival: a hero already on the map is never pulled off it.
-        if (first && !isSandbox && needsWaking(j, role)) { router.replace(AWAKEN_PATH); return }
-        if (st === "live" && j.mine && !j.mine.away) { setGate("player"); return }
+        if (first && !isSandbox && needsWaking(j, role)) { rememberDoor(); router.replace(AWAKEN_PATH); return }
+        if (st === "live" && j.mine && !j.mine.away) { resumeDoor(); setGate("player"); return }
+        rememberDoor()
         router.replace("/table")
       } catch {
         if (live && first) setGate("player")

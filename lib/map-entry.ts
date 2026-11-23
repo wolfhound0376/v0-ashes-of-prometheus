@@ -33,3 +33,38 @@ export function shouldEnterOnMap(params: URLSearchParams, enteredThisSession: bo
   for (const key of ["from", "talk", "bench", "view", "c", "k"]) if (params.get(key)) return false
   return true
 }
+
+// THE RUINS SURVIVE THE DOOR (Sam, 2026-11-23: "I entered the ruins and it took me here" — at The Table, being asked for
+// his words). The road's Enter (and the travel map's Ruins card) go to /velkynvelve?ruins=1; the map's gate sends a browser
+// that is not seated on to /table, and that bounce dropped the address, so after coming in through the door the player
+// stood in the ordinary game with no Ruins. The gate now remembers where the browser was going (this tab only), The
+// Table says so, and the first time the map lets that browser in it is put back on its way.
+
+/** Where this tab was going when the door stopped it: {q: "?ruins=1&from=map", at: ms}. sessionStorage, so one tab. */
+export const DOOR_NEXT_KEY = "aop_door_next"
+/** A remembered way in is good for this long; after that the player meant something else. */
+export const DOOR_NEXT_MS = 30 * 60 * 1000
+
+/** What to remember when the gate turns this arrival away: only the Ruins' way in is worth keeping. Null = nothing. */
+export function doorIntent(params: URLSearchParams, now: number): string | null {
+  if (params.get("ruins") !== "1") return null
+  const q = new URLSearchParams({ ruins: "1" })
+  if (params.get("from") === "map") q.set("from", "map")
+  return JSON.stringify({ q: `?${q}`, at: now })
+}
+
+/** The query to put back on the map's address once the gate lets the browser in. Null = nothing owed (or too old). */
+export function doorResume(stored: string | null, params: URLSearchParams, now: number): string | null {
+  if (!stored || params.get("ruins")) return null
+  try {
+    const v = JSON.parse(stored) as { q?: unknown; at?: unknown }
+    if (typeof v.q !== "string" || typeof v.at !== "number") return null
+    if (now - v.at > DOOR_NEXT_MS || now < v.at) return null
+    return /^\?ruins=1(&from=map)?$/.test(v.q) ? v.q : null
+  } catch { return null }
+}
+
+/** Is a way into the Ruins being held for this tab? (The Table reads this to say why the player is standing there.) */
+export function doorWaiting(stored: string | null, now: number): boolean {
+  return doorResume(stored, new URLSearchParams(), now) !== null
+}
