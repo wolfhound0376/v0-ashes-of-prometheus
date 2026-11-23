@@ -136,3 +136,10 @@ tile (`7962dd5e-...`), which is what lets them meet without a seam.
 `npx vitest run lib/pixel-road.test.ts` is the walk check for every stretch in `public/pixel-road/`: the way in
 reaches the way out on floor with a figure's footprint, no prop seals off any floor, every prop stands on floor,
 and every landmark can be walked up to.
+
+## A landmark with rooms behind it
+
+A landmark may carry `"href"`. "Enter" then leaves the road for that address instead of showing the `inside` line
+(`?stay=1` keeps the old behaviour for testing). The Ruins use `/velkynvelve?ruins=1`: six painted walk plates
+(`scripts/velkynvelve-walk/spec.py` RUINS_PLATES). Their way out comes back here as `?at=ruins`, which stands the party
+at that landmark's door, just outside its reach, so the question does not open on arrival.

@@ -124,3 +124,12 @@ export function battleHref(b: RoadBattle, surprised: "party" | "them" | null = b
   if (sandbox) q.set("sandbox", "1")
   return `/velkynvelve?${q.toString()}`
 }
+
+// THE RUINS (Sam, 2026-11-23: "Make sure all of this is wired into the game"). The book's Terrain Encounters table has a
+// "Ruins" row (OotA D&D Encounters ch.2 p.31; encounter_table_rows underdark_terrain 13). When the road's dice land on
+// it, the halt card offers the way in: six painted rooms on the walk page (scripts/velkynvelve-walk/spec.py
+// RUINS_PLATES; template.html ruinsDoor). `from=map` makes the rooms' way out come back to the march.
+export const RUINS_HREF = "/velkynvelve?ruins=1&from=map"
+export function ruinsRolled(rolls: readonly Pick<RolledStep, "table_key" | "result">[] | null | undefined): boolean {
+  return (rolls ?? []).some((r) => r.table_key.endsWith("_terrain") && String(r.result).trim().toLowerCase() === "ruins")
+}

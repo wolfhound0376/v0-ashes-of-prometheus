@@ -106,6 +106,8 @@ export type Halt = {
   battle?: RoadBattle | null
   /** Why no battle can be offered yet, when creatures were met but the data or the plate is missing. */
   noBattle?: string | null
+  /** The terrain dice landed on the book's Ruins: the card offers the six painted rooms (lib/travel/battle.ts RUINS_HREF). */
+  ruins?: boolean
   kind: string
   title: string
   body: string | null
@@ -567,7 +569,7 @@ export function useTravel() {
         .catch(() => {})
     }
     if (out?.halt) {
-      setHalt({ kind: out.kind, title: out.title, body: out.body, rolls: out.rolls ?? [], source: out.source, meeting: out.meeting ? { first: out.meeting.first, chip: out.meeting.chip } : null, foes: Array.isArray(out.foes) ? out.foes : [], stances: Array.isArray(out.stances) ? out.stances : [], stance: null, battle: out.battle ?? null, noBattle: out.noBattle ?? null })
+      setHalt({ kind: out.kind, title: out.title, body: out.body, rolls: out.rolls ?? [], source: out.source, meeting: out.meeting ? { first: out.meeting.first, chip: out.meeting.chip } : null, foes: Array.isArray(out.foes) ? out.foes : [], stances: Array.isArray(out.stances) ? out.stances : [], stance: null, battle: out.battle ?? null, noBattle: out.noBattle ?? null, ruins: !!out.ruins })
       // Picked up again by the Continue button, from exactly this step.
       await new Promise<void>((resolve) => {
         resumeRef.current = () => {

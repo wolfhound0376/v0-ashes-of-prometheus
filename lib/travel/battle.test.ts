@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { battleFor, battleHref, isBattle } from "./battle"
+import { battleFor, battleHref, isBattle, RUINS_HREF, ruinsRolled } from "./battle"
 
 const spiders = { table_key: "underdark_ambush", result: "1d6 giant spiders clinging to walls or ceiling", detail: { count: "1d6", bestiary: "Giant Spider" } }
 const ambushers = { table_key: "underdark_creature", result: "Ambushers", detail: { rolls: ["underdark_ambush"] } }
@@ -57,5 +57,18 @@ describe("where a road encounter is fought (Sam, 2026-11-12)", () => {
     expect(u.searchParams.get("sandbox")).toBe("1")
     expect(new URL(battleHref(b, "them"), "https://x").searchParams.get("surprised")).toBe("them")
     expect(new URL(battleHref(b, null), "https://x").searchParams.has("surprised")).toBe(false)
+  })
+})
+
+describe("the Ruins on the road", () => {
+  it("offers the way in only when the terrain dice land on Ruins", () => {
+    expect(ruinsRolled([{ table_key: "underdark_terrain", result: "Ruins" }])).toBe(true)
+    expect(ruinsRolled([{ table_key: "underdark_random", result: "Terrain" }, { table_key: "underdark_terrain", result: " ruins " }])).toBe(true)
+    expect(ruinsRolled([{ table_key: "underdark_terrain", result: "Boneyard" }])).toBe(false)
+    expect(ruinsRolled([{ table_key: "underdark_creature", result: "Ruins" }])).toBe(false)
+    expect(ruinsRolled(null)).toBe(false)
+  })
+  it("opens the walk page at the rooms and says it came from the map", () => {
+    expect(RUINS_HREF).toBe("/velkynvelve?ruins=1&from=map")
   })
 })
