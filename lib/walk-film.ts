@@ -65,6 +65,10 @@ export const WALK_FILMS = {
   "drow-surgeon": { kind: "action", state: "drow-surgeon", scope: "party", location: PEN_LOCATION, dc: null },
   "surrender": { kind: "action", state: "surrender", scope: "party", location: PEN_LOCATION, dc: null },
   "buppido-rises": { kind: "action", state: "buppido-rises", scope: "party", location: PEN_LOCATION, dc: null },
+  // BUPPIDO RISES WITH NO ONE WATCHING (Sam, 2026-11-23: "an almost identical cinematic but when there are no drow
+  // guards around"). The same film with the two drow taken out, for a death anywhere off the pen; the pen keeps its own.
+  // Filed under the pen's location like the rest of Act 1: the location is the catalogue key, not where he fell.
+  "buppido-rises-alone": { kind: "action", state: "buppido-rises-alone", scope: "party", location: PEN_LOCATION, dc: null },
   // A guard's keys through the bars: the Sleight of Hand roll is the map's, so the outcome arrives already judged.
   "key-steal-success": { kind: "action", state: "key-steal-success", scope: "solo", location: PEN_LOCATION, dc: null },
   "key-steal-fail": { kind: "action", state: "key-steal-fail", scope: "solo", location: PEN_LOCATION, dc: null },
