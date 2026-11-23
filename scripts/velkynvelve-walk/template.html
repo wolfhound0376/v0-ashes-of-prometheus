@@ -16001,7 +16001,10 @@ function burst(a, col, n){ const m = SPR[a.id].json, sc = actorScale(a), y = a.y
 //   - ONE SCENE ON EVERY SCREEN (world events): strikeCam and strikeCamLand are on RELAY_FNS, so the screen running the
 //     fight opens the close-up and every screen showing the fight plays the same one. Their arguments are plain data
 //     (sprite slugs, a pose key, numbers), so nothing has to be found on the other screen.
-//   - IT MAKES NO SOUND. The map already plays the swing, the hit and the cry; the close-up opens on the blow.
+//   - ITS OWN SOUNDS, ON TOP OF THE MAP'S (Sam, 2026-11-23: "Make sure we are using eleven labs for optimal high end
+//     game play sounds", then picked "1, 4, 4, Now_Take 4" on the comparison page): an ElevenLabs whoosh-and-boom as
+//     the band snaps in, a crystal ward on Shield, Fifi's flip-and-dive under her Sneak Attack. The map still plays the
+//     swing, the hit and the cry; these are layered over them. Flow "AoP strike cam stingers", public/sfx/walk/strikecam-*.
 //   - A shot opens at the release, before the bolt has crossed the plate, and waits: strikeCamLand() is the map telling
 //     it the bolt has landed, so the close-up's hit and the map's hit are the same moment.
 //   - No pose, no close-up: a pose file that has not loaded (a preview copy without the art) means nothing opens.
@@ -16137,6 +16140,7 @@ function strikeCam(o){
   const blood = o.block || (P.fx && P.fx.blood === false) ? 0 : Math.round((o.crit ? 70 : 44) * (melee ? 1 : .6)), drops = [];
   for (let i = 0; i < blood; i++){ const a = -.35 + (Math.random() - .5) * 1.5, v = 260 + Math.random() * (o.crit ? 900 : 640); drops.push({vx: Math.cos(a) * v, vy: Math.sin(a) * v - 120, r: 3 + Math.random() * 9, col: ["#96121a", "#be1418", "#70060e"][i % 3]}); }
   const me = SC.run = {t0: performance.now(), c, after, o: {...o}, waiting: !!o.wait};
+  scSound(o);
   SC.el.style.display = "block"; cancelAnimationFrame(SC.raf);
   const frame = t => {
     if (SC.run !== me) return;
@@ -16202,6 +16206,13 @@ function strikeCam(o){
     SC.raf = requestAnimationFrame(frame);
   };
   SC.raf = requestAnimationFrame(frame);
+}
+/** the close-up's own sounds (every screen plays them: strikeCam runs on each one through the relay) */
+function scSound(o){
+  const short = o.cut === "short";
+  sfx("walk:strikecam-open", short ? .38 : .6);                         // the band snapping in
+  if (o.block) sfx("walk:strikecam-shield", .9);                         // Shield: the ward takes the blow
+  else if (o.pose === "sneak") sfx("walk:strikecam-flip", .85);          // Fifi's flip and dive, over the map's own sneak attack
 }
 /** the map says the shot has landed: the close-up that was waiting takes its hit now. o: {dmg, crit, word} */
 function strikeCamLand(o){
