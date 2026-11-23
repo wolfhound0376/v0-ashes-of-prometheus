@@ -23353,10 +23353,11 @@ async function playBuppidoRises(t){
   shake(5); bank("creature/death_beast", .3);
   for (let i = 0; i < 3; i++) setTimeout(() => { shake(4); addBlood({x: g.x + labRnd(-14, 14), y: g.y}, .5, false); }, i * 420);
   await wait(R.stirMs);
-  // THE FILM is the pen's: it was shot in the pen, with the guards watching from the bridge. Played on the road it
-  // would show a pen and an audience that are not there (Sam's complaint, 2026-11-10: cinematics that do not match
-  // what is happening). Off the pen, the map's own rise is the scene until a film without the pen is made.
+  // THE FILM. The pen's was shot with the guards watching from the bridge; everywhere else plays the same film with
+  // the drow taken out (Sam, 2026-11-23: "an almost identical cinematic but when there are no drow guards around"), so
+  // nobody on the road sees an audience that is not there (Sam's complaint, 2026-11-10).
   if (pen) mapFilm("buppido-rises");
+  else mapFilm("buppido-rises-alone");
 
   // IT CLIMBS OUT, on the prebuilt sheet: 21 frames at 12 fps, with the `undead-breach` sting its sprite.json names.
   // ONE FIGHT (2026-11-10): the rise takes ~10 s, and a fight can open in the meantime. While this screen is only
