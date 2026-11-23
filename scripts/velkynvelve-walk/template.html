@@ -4282,6 +4282,13 @@ function rappelGo(z){
     a.path = R.path.map(([x, y], j) => ({x: x + (j === R.path.length - 1 ? k : 0), y})); });
   setTimeout(() => { mode = "explore"; ackZone = zoneAt(leader.x, leader.y); }, 1400 + order.length * 450);
 }
+// THE POOL'S DEEP WATER (Sam, 2026-11-23: "go water"; lib/water.mjs, pasted above). `deep` on a plate is the water a
+// creature swims in: each foot costs one more without a swimming speed (SRD 5.1), and a weapon attack made from it is an
+// underwater attack (advantageOn, attackWith). A swimming speed is the sheet's `swim` (no hero has one yet; a stat
+// block may).
+function deepAt(x, y){ return !!(node && node.deep && inPoly(node.deep.poly, x, y)); }
+const swimOf = a => Number((a && a.c && a.c.sheet && (a.c.sheet.swim || (a.c.sheet.speeds || {}).swim)) || 0);
+const wetSlows = a => !!(node && node.deep) && swimFactor(swimOf(a)) > 1;
 function netAt(x, y){ const net = cur === "5c" && node.floors && node.floors[node.floors.length - 1]; return !!net && inPoly(net.poly, x, y); }
 function inNet(a){ return netAt(a.x, a.y); }
 // THE NET IS DANGEROUS FOOTING (Sam, 2026-10-28, picking the second of two options Claude offered: "the web is dangerous
@@ -4295,9 +4302,9 @@ const webWalker = a => /spider/.test((a && a.id) || "");
 const netSlows = a => cur === "5c" && !webWalker(a);
 // the movement a step from p to q costs, in the same pixels as its length: double over the net for whoever it slows
 function stepCost(a, p, q){
-  const d = Math.hypot(q.x - p.x, q.y - p.y); if (!d || !netSlows(a)) return d;
+  const d = Math.hypot(q.x - p.x, q.y - p.y), net = netSlows(a), wet = wetSlows(a); if (!d || (!net && !wet)) return d;
   const n = Math.max(1, Math.ceil(d / 8)); let c = 0;
-  for (let i = 0; i < n; i++){ const t = (i + .5) / n; c += (netAt(p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t) ? 2 : 1) * d / n; }
+  for (let i = 0; i < n; i++){ const t = (i + .5) / n, x = p.x + (q.x - p.x) * t, y = p.y + (q.y - p.y) * t; c += ((net && netAt(x, y)) || (wet && deepAt(x, y)) ? 2 : 1) * d / n; }   // the net is difficult terrain; deep water is swimming (both: 1 extra foot per foot)
   return c;
 }
 function netEndTurn(a){
@@ -8875,6 +8882,23 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   setTimeout(() => { if (cbt) nextTurn(true); }, 1400 + introMs);
   stripShow(1400 + introMs + 3200);   // the opening: the order in place, the entrance, the first turn call; then it fades
   oneFightOpened();                   // ONE FIGHT: ask to run it for the whole table (or show the one already running)
+  huntClockStart();                   // THE HUNT: a fight at the pool while the escape is hunted (lib/water.mjs)
+}
+// THE HUNT REACHES THE POOL (Sam's go, 2026-11-23: the drow hunt reaches the waterfall in 4 rounds; lib/water.mjs). A
+// fight on a plate whose hazard carries `hunt`, started while the escape is HUNTED, puts the hunt on the help queue the
+// runners already use: it walks in at the start of round 5 from `hunt.at`, Jorlan leading two guards (or two guards,
+// if he gave his word and kept it). One warning when it is a round away. The fight's own screen brings them; a watching
+// screen sees them come (reinforce).
+function huntClockStart(){
+  try {
+    const H = node.hazard && node.hazard.hunt; if (!H || !cbt || FIGHT.mirror || SANDBOX) return;
+    if (escapeNow().phase !== PEN_ESCAPE.PHASE.HUNTED) return;
+    if (pendingHelp.some(h => h.hunt && owSame(h.plate, cur))) return;
+    const aside = !!(storyPledge && storyPledge.keptAt), ids = huntParty({jorlanStandsAside: aside});
+    pendingHelp.push({plate: String(cur), ids, at: {x: H.at[0], y: H.at[1]}, fightId: cbt.id, dueRound: huntDueRound(1), dueAt: now + HUNT_ROUNDS * 6000, hunt: true,
+      who: aside ? "The hunt" : "Jorlan", why: aside ? "The hunt reaches the pool" : "The hunt reaches the pool, Jorlan at its head"});
+    log(`<b>The hunt is coming.</b> Somewhere behind you the drow are on your trail: they reach the pool in ${HUNT_ROUNDS} rounds.`, {say: true});
+  } catch (e) { console.warn("hunt clock", e); }
 }
 const fname = a => a.kind === "pc" ? SHEETS[a.id].name : (a.creature && a.creature.name) || (a.c && a.c.sheet.name) || SHORT[a.id] || SPR[a.id].json.name;
 function standing(list){ return list.filter(a => !a.down && !a.left && actors.includes(a)); }   // `left`: fell back out of the fight (NPC MINDS)
@@ -12528,8 +12552,15 @@ function saveAdv(who, ab){
   const r = rageAdvantage(who && who.c ? who.c.rage : null, ab), d = ab === "dex" && dodges(who) ? 1 : 0;
   return Math.max(-1, Math.min(1, r + d));
 }
+/** The SRD's Underwater Combat rule for a WEAPON attack made from deep water (lib/water.mjs), or null on dry footing. */
+function underwaterOf(att, tgt, ranged, atk){
+  if (!atk || atk.spell || !att || !deepAt(att.x, att.y)) return null;
+  const thrown = !!(atk.thrown && ranged), far = ranged && !thrown && atk.long && feetBetween(att, tgt) > atk.reach;
+  return underwaterAttack({melee: !ranged, weapon: atk.itemName || atk.name, swimSpeed: swimOf(att), thrown, beyondNormal: !!far});
+}
 function advantageOn(att, tgt, ranged, atk){
   let adv = 0;
+  { const uw = underwaterOf(att, tgt, ranged, atk); if (uw) adv += uw.edge; }   // UNDERWATER COMBAT (SRD 5.1): from the pool's deep water
   if (att.c.conds.has("poisoned")) adv--;                                     // SRD: poisoned — disadvantage on attack rolls
   if (atk && atk.hit != null && att.c.sheet && (att.c.sheet.armorUntrained || []).length) adv--;   // SRD 5.1 Armor Proficiency: untrained armor, STR/DEX attack rolls
   if (ranged){                                                                // SRD: a ranged attack with a hostile within 5 ft,
@@ -12772,6 +12803,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       // cover is judged at the moment of the blow, from where they both stand now (SRD 5.1 Cover); a wall in the way
       // means there is no shot at all (a foe that walked as far as it could and still has stone between them)
       let cv = coverOf(att, tgt), acVs = targetAc(tgt) + cv.ac;
+      const uw = underwaterOf(att, tgt, ranged, atk); if (uw && uw.autoMiss) cv = {...cv, total: true, why: "the water (underwater, it falls short of its normal range)"};   // SRD 5.1: automatically misses
       if (att.artFx && !shot) artSwingFx(att, tgt, att.artFx);
       const bl = blessD4(att);
       let adv = advantageOn(att, tgt, ranged, atk), r = luckyGuard(att, tgt, d20(adv, att, null, cv.total ? null : acVs - atk.hit - bl), acVs - atk.hit - bl), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit + bl, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + bl + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att);
@@ -12787,7 +12819,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       function rest(){
       // MIRROR IMAGE (SRD 5.2.1): a hit rolls a d6 per duplicate left; any 3+ and a duplicate takes it and is destroyed
       const mi = hit && !cv.total ? mirrorDiverts(att, tgt) : null; if (mi && mi.ok){ hit = false; crit = false; }
-      const why = cv.total ? `${fname(att)} ${atk.name}: no clear ${ranged ? "shot" : "reach"}, ${cv.why} is in the way` : `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : dodges(tgt) ? " (dis: dodging)" : " (dis)") : ""} + ${atk.hit} vs AC ${acVs}${coverNote(cv)}`;
+      const why = cv.total ? `${fname(att)} ${atk.name}: no clear ${ranged ? "shot" : "reach"}, ${cv.why} is in the way` : `${fname(att)} ${atk.name}: ${r}${adv ? (adv > 0 ? " (adv)" : dodges(tgt) ? " (dis: dodging)" : uw && uw.edge < 0 ? ` (dis: ${uw.why})` : " (dis)") : ""} + ${atk.hit} vs AC ${acVs}${coverNote(cv)}`;
       if (!cv.total && dodges(tgt)) popText(tgt, hit ? "dodging: still hit" : "dodged!", "#cfe8ff", .9);   // the Dodge is seen working, swing by swing
       if (r === 1) bank("ui/nat1", .7);
       if (shot){ bank(ws.swing, .75); att.aimHold = now;
@@ -14192,10 +14224,11 @@ function runnerGotOut(f, ex){
 }
 // help comes back: into the fight still running here, or (the fight over) as a new one if the party is still here
 async function helpArrives(){
+  for (const h of pendingHelp) if (h.hunt && !h.warned && cbt && cbt.id === h.fightId && cbt.round === h.dueRound - 1){ h.warned = true; toast("The hunt is one round away.", 3800); log(`<b>Torchlight on the cavern floor.</b> The hunt is one round away.`); }   // THE HUNT: one warning
   const due = pendingHelp.filter(h => owSame(h.plate, cur) && ((cbt && cbt.id === h.fightId && cbt.round >= h.dueRound) || (!cbt && now >= h.dueAt)));
   if (!due.length) return;
   pendingHelp = pendingHelp.filter(h => !due.includes(h));
-  for (const h of due) await reinforce(h.ids, h.at, `${h.who} is back with help`);
+  for (const h of due) await reinforce(h.ids, h.at, h.why || `${h.who} is back with help`);
 }
 // a wave or a runner's help walks in at `at` (a doorway): joins the fight here, or starts one
 async function reinforce(ids, at, why){
@@ -19859,6 +19892,7 @@ if (APP) setTimeout(wakeOnMap, 2200);
 // pen half; `state.slain` keeps the thrown prisoner out of the pen for good (the same key the fights use).
 /*__SURRENDER__*/
 /*__CORRODE__*/
+/*__WATER__*/
 // CORRODE METAL ON THE MAP (Sam, 2026-11-23: "go corrode"; lib/corrode.mjs, pasted above, holds the SRD rule and its
 // tables). After a blow has dealt its damage: a hero's nonmagical metal weapon that hit the gray ooze takes a permanent
 // -1 to damage (destroyed at -5); metal ammunition that hit it is destroyed; the ooze's pseudopod on a hero in
@@ -24050,7 +24084,7 @@ function keyboardMove(a, dt){
         return;
       }
     }
-    a.c.kbdPx = (a.c.kbdPx || 0) + Math.hypot(nx - a.x, ny - a.y) * (netSlows(a) && netAt(nx, ny) ? 2 : 1);   // the web net is difficult terrain
+    a.c.kbdPx = (a.c.kbdPx || 0) + Math.hypot(nx - a.x, ny - a.y) * ((netSlows(a) && netAt(nx, ny)) || (wetSlows(a) && deepAt(nx, ny)) ? 2 : 1);   // the web net is difficult terrain; deep water is swimming
     while (a.c.kbdPx >= 5 * fp - .01 && a.c.move > 0){ a.c.move -= 5; a.c.kbdPx -= 5 * fp; }
     if (!a.kbdOut) hint(`Moving · ${a.c.move} ft left`);
   }

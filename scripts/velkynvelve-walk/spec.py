@@ -259,7 +259,16 @@ NODES = {
    landFrom={"9": [880, 540]},
    hazard=dict(poly=P((470,470),(820,430),(1100,440),(1360,500),(1540,600),(1500,760),(1300,820),(1240,880),(900,870),(600,860),(460,780)),
                kind="ambush", foes=["gray-ooze"], rise=[1050, 720], film="gray-ooze-surges",   # where it lay: it heaves up out of the shallows there (its emerge sheet)
-               label="The smooth stone in the shallows rears up out of the water, and a voice that is no voice fills every head at once: “Flesh for the Faceless Lord!”"),
+               label="The smooth stone in the shallows rears up out of the water, and a voice that is no voice fills every head at once: “Flesh for the Faceless Lord!”",
+               # THE HUNT (Sam's go, 2026-11-23: "4 rounds"; lib/water.mjs): a fight here while the escape is hunted brings the
+               # drow hunt in at the start of round 5. They come along the cavern floor from the lift (OotA p.17-18), so they
+               # walk in from the shore at the bottom of the plate, not down the falls. [CLAUDE] the doorway, by eye.
+               hunt=dict(at=[1150, 1280])),
+   # THE DEEP WATER (Sam, 2026-11-23: "go water"; lib/water.mjs): the open pool under the falls, where a creature swims
+   # (each foot costs 1 extra) and fights by the Underwater Combat rules. Below it the stepping stones and lily pads are
+   # the shallows, where the ooze lies (OotA: "lurks in the pool's shallows"): ordinary footing. [CLAUDE] traced by eye
+   # over the painting, inside Sam's floor mask. The river channel on the right is not drawn as deep water.
+   deep=dict(poly=P((592,562),(675,502),(840,438),(1102,442),(1342,502),(1350,548),(1430,640),(1420,680),(1300,690),(1100,690),(900,685),(700,680),(575,670))),
    floors=[dict(poly=P((300,840),(640,790),(940,820),(1120,880),(1400,860),(1520,940),(1640,1120),(1760,1280),(1760,1339),(400,1339),(300,1120))),dict(poly=P((1640,660),(1900,580),(2120,640),(2200,800),(2080,940),(1800,940),(1600,860))),dict(poly=P((1400,840),(1600,800),(1640,920),(1520,960)))],
    obstacles=[],
    zones=[dict(rect=[884, 1223, 1420, 1367], to=["shore"], kind="leave", label="The underground river runs on toward the Darklake — PROPOSED: the river runs west to the Darklake (OotA p.18, p.20)", proposed=True),
