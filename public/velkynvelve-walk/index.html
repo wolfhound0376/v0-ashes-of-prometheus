@@ -14240,7 +14240,11 @@ function meleeOf(h){ const a = h.c.sheet.attacks || []; return a.find(k => (k.re
 // build and a quick build get different tools from the same rack. Staggering Blow has no 5.2.1 twin: it is BG3's
 // Concussive Smash, built from this map's own "numbed" (half speed and no reactions on its next turn).
 // The conditions are the ones the map already had (prone, slowed, mocked, helped, numbed); nothing new was invented.
-const ART_CLASSES = ["barbarian", "fighter", "rogue", "monk"];
+// THE CASTERS TOO (Sam, 2026-11-23: "There can be some weapon art on what they are proficient in but most of the art is
+// from their magic at range", then "weapons arts for casters"): bards, clerics, druids, sorcerers, warlocks and wizards
+// get the same rack, and artWeapon below still offers an art only with a weapon the hero is trained with, so a
+// sorcerer's dagger can Jab but a longsword he picked up cannot Cleave. Paladins and rangers are unchanged (not asked).
+const ART_CLASSES = ["barbarian", "fighter", "rogue", "monk", "bard", "cleric", "druid", "sorcerer", "warlock", "wizard"];
 const WEAPON_ARTS = {
   topple:  {name: "Topple", ab: "str", save: "con", cond: "prone", says: "knocked prone", blurb: "CON save or knocked prone",
             weapons: ["quarterstaff", "greatclub", "maul", "warhammer", "club", "spear", "trident", "unarmed"]},
