@@ -93,6 +93,23 @@ def main():
     assert len(grid) == rows and all(len(r) == cols for r in grid)
     at = lambda cx, cy: grid[cy][cx] if 0 <= cy < rows and 0 <= cx < cols else "d"
 
+    # WATER (Sam, 2026-11-23: "that water needs to look foreboding and realistic"). The tile art's stream is bright
+    # blue; the page darkens it, deepens its middle and runs slow cold ripples over it. It needs to know exactly which
+    # pixels are water: the blue pixels of the ground picture that lie within a cell of a stream cell ('s'), so the
+    # grey-blue damp floor elsewhere is left alone. water.png is that mask, white on clear, at full size.
+    water = None
+    if any("s" in r for r in grid):
+        gpx = np.array(ground).astype(np.int16)
+        near = np.zeros((rows, cols), bool)
+        for cy in range(rows):
+            for cx in range(cols):
+                if any(at(cx + dx, cy + dy) == "s" for dx in (-1, 0, 1) for dy in (-1, 0, 1)): near[cy, cx] = True
+        near = np.kron(near, np.ones((T, T), bool))
+        blue = (gpx[..., 2] > gpx[..., 0] + 28) & (gpx[..., 2] >= gpx[..., 1] - 4) & near
+        m = Image.fromarray((blue * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(1.0))
+        Image.merge("RGBA", [Image.new("L", m.size, 255)] * 3 + [m]).save(os.path.join(out, "water.png"), optimize=True)
+        water = "water.png"
+
     man = json.load(open(os.path.join(p(cfg["export"]), "objects", "manifest.json")))["objects"]
     objs, seen = [], {}
     for o in man:
@@ -208,7 +225,8 @@ def main():
             "ground": "ground.png", "shade": "shade.png", "front": "front.png", "foreground": fg,
             "legend": {"w": "floor", "r": "damp floor", "d": "rock", "a": "rock face", "s": "stream"}, "walkable": "wr",
             "grid": grid, "objects": objs, "entry": cfg["entry"], "exit": cfg["exit"],
-            "landmarks": marks, "paving": paving, "glow": cfg.get("glow", {}), "shine": cfg.get("shine", {})}
+            "landmarks": marks, "paving": paving, "glow": cfg.get("glow", {}), "shine": cfg.get("shine", {}),
+            "water": water, "mood": cfg.get("mood")}
     json.dump(road, open(os.path.join(out, "road.json"), "w"), indent=1)
     print(rid, len(objs), "props,", sorted(seen), "->", out)
 

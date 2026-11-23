@@ -306,6 +306,91 @@ function drawLight() {
   for (const o of road.objects) if (road.glow[o.kind]) hole(o.x + o.w / 2, o.y + o.h * 0.6, Math.max(o.h > 100 ? 96 : 70, o.w * 0.78), o.w > 160 ? 0.8 : 0.6);   // a wide thing (the Ruins) is lit across its whole front
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(lightCv, 0, 0);
 }
+/* ---------- water and mood (Sam, 2026-11-23: "Remember some of the underdark should look like this and that water
+   needs to look foreboding and realistic", with two paintings: a violet cave lost in mist, black water) ---------- */
+// WATER. The tile art's stream is a bright, cheerful blue. Over it: black water that is deepest in the middle and
+// only shows its edges, and on top, slow cold ripples and the odd violet glint. water.png (bake.py) is exactly the
+// pixels that are water, so the damp floor is untouched.
+let waterMask = null, waterDeep = null, rippleTile = null, mistTile = null, fxBuf = null;
+function noiseCanvas(w, h, cell, seed, blur) {
+  const c = document.createElement("canvas"); c.width = w; c.height = h; const g = c.getContext("2d");
+  let s = seed; const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  const sm = document.createElement("canvas"); sm.width = Math.ceil(w / cell); sm.height = Math.ceil(h / cell);
+  const sg = sm.getContext("2d"), id = sg.createImageData(sm.width, sm.height);
+  for (let i = 0; i < id.data.length; i += 4) { const v = rnd() * 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = 255; id.data[i + 3] = v; }
+  sg.putImageData(id, 0, 0);
+  g.filter = "blur(" + blur + "px)"; g.imageSmoothingEnabled = true;
+  for (const dx of [-w, 0, w]) for (const dy of [-h, 0, h]) g.drawImage(sm, dx, dy, w, h);   // wrapped, so it tiles
+  g.filter = "none"; return c;
+}
+function prepWater() {
+  if (!waterMask) return;
+  const W = waterMask.width, H = waterMask.height;
+  // the deep: the mask, eaten in from its edge, so the middle is darkest and a lighter rim of the tile water shows
+  waterDeep = document.createElement("canvas"); waterDeep.width = W / 2; waterDeep.height = H / 2;
+  const d = waterDeep.getContext("2d");
+  d.filter = "blur(5px)"; d.drawImage(waterMask, 0, 0, W / 2, H / 2); d.drawImage(waterMask, 0, 0, W / 2, H / 2); d.filter = "none";
+  d.globalCompositeOperation = "destination-in"; d.drawImage(waterMask, 0, 0, W / 2, H / 2);
+  d.globalCompositeOperation = "source-in"; d.fillStyle = "#020409"; d.fillRect(0, 0, W / 2, H / 2);
+  // ripples: thin, crisp, slightly curved glints, as still black water catches the little light there is. Drawn
+  // wrapped so the tile repeats without a seam.
+  rippleTile = document.createElement("canvas"); rippleTile.width = 512; rippleTile.height = 256;
+  const r = rippleTile.getContext("2d"); let sd = 911; const rnd = () => ((sd = (sd * 16807) % 2147483647) / 2147483647);
+  r.lineCap = "round";
+  for (let i = 0; i < 170; i++) {
+    const x = rnd() * 512, y = rnd() * 256, L = 8 + rnd() * 34, bow = (rnd() - 0.5) * 3, a = 0.18 + rnd() * 0.55;
+    r.strokeStyle = rnd() < 0.12 ? "rgba(196,150,255," + a + ")" : "rgba(205,220,255," + a + ")"; r.lineWidth = rnd() < 0.2 ? 1.6 : 1;
+    for (const dx of [-512, 0]) for (const dy of [-256, 0]) {
+      if (x + dx + L < 0 || y + dy < -4) continue;
+      r.beginPath(); r.moveTo(x + dx, y + dy); r.quadraticCurveTo(x + dx + L / 2, y + dy + bow, x + dx + L, y + dy); r.stroke();
+    }
+  }
+}
+function drawWater(now) {
+  if (!waterDeep) return;
+  const t = now / 1000;
+  ctx.setTransform(cam.z, 0, 0, cam.z, -cam.x * cam.z, -cam.y * cam.z);
+  ctx.imageSmoothingEnabled = true; ctx.globalAlpha = 0.9; ctx.drawImage(waterDeep, 0, 0, waterMask.width, waterMask.height); ctx.globalAlpha = 1;
+  // the moving surface, on a screen-sized buffer cut to the water
+  if (!fxBuf) fxBuf = document.createElement("canvas");
+  if (fxBuf.width !== cv.width || fxBuf.height !== cv.height) { fxBuf.width = cv.width; fxBuf.height = cv.height; }
+  const b = fxBuf.getContext("2d"), z = cam.z;
+  b.setTransform(1, 0, 0, 1, 0, 0); b.globalCompositeOperation = "source-over"; b.clearRect(0, 0, fxBuf.width, fxBuf.height);
+  b.setTransform(z, 0, 0, z, -cam.x * z, -cam.y * z);
+  const pat = b.createPattern(rippleTile, "repeat");
+  for (const [vx, vy, a, ph] of [[7, 0.8, 0.55, 0], [-4.5, 0.5, 0.4, 2.1]]) {
+    b.save(); b.translate((t * vx) % 512, (t * vy) % 256); b.globalAlpha = a * (0.7 + 0.3 * Math.sin(t * 0.9 + ph)); b.fillStyle = pat;
+    b.fillRect(cam.x - 600, cam.y - 300, cv.width / z + 1200, cv.height / z + 600); b.restore();
+  }
+  b.globalAlpha = 1; b.globalCompositeOperation = "destination-in"; b.drawImage(waterMask, 0, 0);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = "screen"; ctx.drawImage(fxBuf, 0, 0); ctx.globalCompositeOperation = "source-over";
+}
+// MOOD (road.json `mood`, per stretch): a cold violet grade over the whole cave, and mist that drifts low and slow.
+function drawMood(now) {
+  const M = road.mood; if (!M) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  if (M.grade) { ctx.globalCompositeOperation = "multiply"; ctx.globalAlpha = M.gradeAlpha ?? 0.4; ctx.fillStyle = M.grade; ctx.fillRect(0, 0, cv.width, cv.height); }
+  ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+  if (M.mist) {
+    if (!mistTile) {
+      const n = noiseCanvas(1024, 512, 64, 13, 38);
+      mistTile = document.createElement("canvas"); mistTile.width = 1024; mistTile.height = 512;
+      const m = mistTile.getContext("2d"); m.drawImage(n, 0, 0); m.globalCompositeOperation = "source-in"; m.fillStyle = M.haze || "#b9a6ff"; m.fillRect(0, 0, 1024, 512);
+    }
+    const t = now / 1000, z = cam.z;
+    ctx.setTransform(z, 0, 0, z, -cam.x * z, -cam.y * z); ctx.globalCompositeOperation = "screen";
+    const pat = ctx.createPattern(mistTile, "repeat");
+    for (const [vx, a, sc] of [[7, 0.32, 1], [-4, 0.22, 1.7]]) {
+      ctx.save(); ctx.translate((t * vx) % (1024 * sc), 0); ctx.scale(sc, sc); ctx.globalAlpha = M.mist * a; ctx.fillStyle = pat;
+      ctx.fillRect((cam.x - 1200) / sc - (t * vx) / sc, (cam.y - 600) / sc, (cv.width / z + 2400) / sc, (cv.height / z + 1200) / sc); ctx.restore();
+    }
+    ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+    // the far haze: a pale breath of light from the top of the screen, as in the paintings
+    ctx.setTransform(1, 0, 0, 1, 0, 0); const g = ctx.createLinearGradient(0, 0, 0, cv.height * 0.6);
+    g.addColorStop(0, hexA(M.haze || "#b9a6ff", 0.16 * M.mist)); g.addColorStop(1, hexA(M.haze || "#b9a6ff", 0));
+    ctx.globalCompositeOperation = "screen"; ctx.fillStyle = g; ctx.fillRect(0, 0, cv.width, cv.height * 0.6); ctx.globalCompositeOperation = "source-over";
+  }
+}
 // WHAT GLOWS (Sam, 2026-11-22: "Crystals should glow"). road.json says which kinds of prop give off light, in what
 // colour and how strongly. Each one gets a pool of its colour on the floor, a bloom over itself, a slow pulse of its
 // own, and the strong ones (crystals) get glints. It is drawn after the darkness, so it reads as light, and it does
@@ -538,6 +623,7 @@ function frame(now) {
   // prop throws across the floor. It goes over the ground and under the figures and props.
   // Painted floor (a ruin's forecourt): finer than the ground, so it is drawn smoothed, over the ground and under the shadows.
   if (paveImg.length) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; for (const [im, q] of paveImg) ctx.drawImage(im, q.x, q.y, q.w, q.h); ctx.imageSmoothingEnabled = false; }
+  drawWater(now); ctx.setTransform(cam.z, 0, 0, cam.z, -cam.x * cam.z, -cam.y * cam.z); ctx.imageSmoothingEnabled = false;
   if (shade) ctx.drawImage(shade, 0, 0);
   // Figures and props together, back to front, so a hero who walks behind a stalagmite is behind it. The props are
   // already in the ground picture; drawing the same pixels again on top of a figure is what puts it in front.
@@ -547,6 +633,7 @@ function frame(now) {
   // The lip of the rock that stands between the party and us (bake.py): over the figures, so feet go behind it.
   if (front) { ctx.imageSmoothingEnabled = false; ctx.drawImage(front, 0, 0); }
   if (LIGHT) drawLight();
+  drawMood(now);
   drawGlow(now);
   drawForeground();
   ctx.setTransform(cam.z, 0, 0, cam.z, -cam.x * cam.z, -cam.y * cam.z);
@@ -608,6 +695,7 @@ function toggleMusic() {
   if (road.shade) shade = await img(BASE + road.shade);
   for (const q of road.paving || []) { const im = await img(BASE + q.src); if (im) paveImg.push([im, q]); }
   if (road.front) front = await img(BASE + road.front);
+  if (road.water) { waterMask = await img(BASE + road.water); prepWater(); }
   for (const [k, f] of Object.entries(road.foreground || {})) fgImg[k] = await img(BASE + f);
   for (const k of new Set(road.objects.map((o) => o.kind))) objImg[k] = await img(BASE + "objects/" + k + ".png");
   heroes = (await Promise.all(LINE.concat(NPCS.filter((s) => !LINE.includes(s))).map(loadHero))).filter(Boolean);

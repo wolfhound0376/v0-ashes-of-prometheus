@@ -480,5 +480,7 @@
   "zurkhwood": 0.45,
   "ruins": 0.14,
   "boulders": 0.28
- }
+ },
+ "water": "water.png",
+ "mood": null
 }

@@ -577,5 +577,13 @@
   "mushrooms": 0.5,
   "zurkhwood": 0.45,
   "boulders": 0.28
+ },
+ "water": "water.png",
+ "mood": {
+  "_": "Sam, 2026-11-23, with two paintings of a misty violet Underdark: some of the Underdark should look like this",
+  "grade": "#3c3470",
+  "gradeAlpha": 0.55,
+  "haze": "#b9a6ff",
+  "mist": 0.4
  }
 }
