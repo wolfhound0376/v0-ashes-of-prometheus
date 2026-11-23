@@ -16,6 +16,7 @@ describe("campVerdict", () => {
   it("allows camp on a cavern or road plate outside the outpost (Sam, 2026-11-15)", () => {
     const inside = { label: "Velkynvelve — The tunnels", location: "Velkynvelve", source: "subnodal" }
     expect(campVerdict(inside, "biome-tunnels").allowed).toBe(true)
+    expect(campVerdict(inside, "deep-fork").allowed).toBe(true)
     expect(campVerdict(inside, "road-webs").allowed).toBe(true)
     expect(campVerdict(inside, "node-11-slave-pen").allowed).toBe(false)
     expect(campVerdict(inside, null).allowed).toBe(false)

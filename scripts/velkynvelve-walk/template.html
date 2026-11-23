@@ -3527,14 +3527,14 @@ const EXPLORE_POOLS = {
   water:   ["water-1", "water-2"],
   ruins:   ["ruins-1"],   // THE RUINS (Sam, 2026-11-23: "this module having it's own sinister music from elevenlabs"): one 3-minute track, ElevenLabs Music v2.5, flow l1J5MTwvFNRNDlBa6Ih5, levelled to -16 LUFS like the rest
 };
-const WATER_PLATES = new Set(["node-09-waterfall", "node-14-pool-river", "biome-shore"]);
+const WATER_PLATES = new Set(["node-09-waterfall", "node-14-pool-river", "biome-shore", "deep-jetty", "deep-stone-teeth", "deep-islet"]);   // the three Darklake plates of the deep caverns play the water music
 const ORIGINAL_EXPLORE = ASSET + "audio/explore.mp3";
 const EXPLORE_BASE = `${APP ? "/" : ""}audio/explore/`;
 const REST_EVERY = 2, REST_MS = [20000, 40000];
 let exploreRegion = null, lastExplore = null, exploreSince = 0, exploreRestUntil = 0, exploreSwap = null, dmExplore = "auto";
 try { dmExplore = localStorage.getItem("vk-explore-music") || "auto"; } catch (e) {}
 /** What kind of place a plate is, for the music. */
-function regionOf(slug){ return /^ruins-/.test(slug || "") ? "ruins" : WATER_PLATES.has(slug) ? "water" : /^biome-/.test(slug || "") ? "caverns" : "outpost"; }
+function regionOf(slug){ return /^ruins-/.test(slug || "") ? "ruins" : WATER_PLATES.has(slug) ? "water" : /^(biome-|deep-)/.test(slug || "") ? "caverns" : "outpost"; }
 function wantedRegion(){ return dmExplore !== "auto" && dmExplore !== "off" ? dmExplore : regionOf(node && node.slug); }
 /** The gap between tracks (or the DM turned exploring music off): only the ambience is heard. */
 function exploreQuiet(){ return dmExplore === "off" || performance.now() < exploreRestUntil; }
@@ -11613,7 +11613,7 @@ function exploreInspire(a, t){
 // watch and spends the rations, as it does on the travel map — /camp allows it because the walk has reported this
 // plate (party_situation.sub_location). On a road plate the march is the travel map's, so the camp is made there:
 // the map's REST AT CAMP, which also starts the new day.
-function wildPlate(){ return !!(node && /^(biome-|road-)/.test(node.slug || "")); }
+function wildPlate(){ return !!(node && /^(biome-|deep-|road-)/.test(node.slug || "")); }
 function openLongRest(){
   if (mode !== "explore" || !leader) return;
   const top = window.top !== window ? window.top : window;
@@ -11837,6 +11837,9 @@ async function ruinsDoor(){
 async function directorOnEnter(plate){
   if (isRuinPlate(plate)) return ruinOnEnter(plate);
   if (!directorPlate((SPEC[plate] || {}).slug) || cbt || mode !== "explore" || FIGHT.mirror) return;
+  // A plate that already holds a waiting foe (the Sinkhole's grick, the Flooded Stair's ooze, the Clacking's hook horror)
+  // does not also roll: one ambush at a time. [HOUSE] Claude's call, 2026-11-23, open to overrule.
+  if (((SPEC[plate] || {}).npcs || []).some(n => n.hostile)) return;
   const D = dirState(); if (D.pursuit == null && !state.chainMarch) D.pursuit = PURSUIT_START;   // p.29: out of Velkynvelve, the pursuit begins at 4
   dirPursuitPill();
   if (D.seen[plate]) return; D.seen[plate] = true;
@@ -23758,6 +23761,10 @@ const AREA_SURFACE = {
   "node-12-quaggoth-den": "gravel", "node-13-northern-watch-post": "wood", "node-14-pool-river": "stone",
   "biome-tunnels": "gravel", "biome-crystal": "crystal", "biome-wastes": "gravel", "biome-lair": "gravel",
   "biome-shore": "water", "biome-grove": "moss",
+  // THE DEEP CAVERNS (2026-11-23). Read off each painting; the picks are Claude's.
+  "deep-fork": "gravel", "deep-faerzress": "crystal", "deep-sinkhole": "gravel", "deep-gorge": "bridge", "deep-steam-vents": "stone",
+  "deep-flooded-stair": "water", "deep-clacking": "gravel", "deep-nest": "gravel", "deep-gnoll-camp": "gravel", "deep-jetty": "wood",
+  "deep-stone-teeth": "water", "deep-islet": "gravel", "deep-zurkhwood": "moss", "deep-spore-hollow": "moss", "deep-stream-sump": "water",
   "ruins-threshold": "stone", "ruins-ossuary": "stone", "ruins-great-hall": "stone", "ruins-flooded-crypt": "stone", "ruins-sanctum": "stone", "ruins-reliquary": "stone",
 };
 // Each surface's level against the others, so a stride sounds the same size whatever it lands on.

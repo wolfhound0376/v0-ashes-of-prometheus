@@ -2504,21 +2504,10 @@
         "hostile": true,
         "static": true,
         "barks": [
-          "(two hooked shapes wait where the passage narrows)"
-        ],
-        "_src": "OotA Encounters p.37, Hook Horror Hunt: 'a mated pair of hook horrors' flee the gnolls and 'wait in ambush for any creatures that follow them'. Two, always. Placement is Claude's."
-      },
-      {
-        "id": "hook-horror",
-        "x": 1050,
-        "y": 900,
-        "face": 2,
-        "hostile": true,
-        "static": true,
-        "barks": [
+          "(a hooked shape waits where the passage narrows)",
           "(a hooked limb scrapes the rock)"
         ],
-        "_src": "The second of the mated pair (same source)."
+        "_src": "OotA Encounters p.37, Hook Horror Hunt: the book has 'a mated pair of hook horrors' that 'wait in ambush for any creatures that follow them'. ONE here by Sam's ruling, 2026-11-23 ('Clacking one hook horror'): two was deadly for the party. Placement is Claude's."
       }
     ]
   },
