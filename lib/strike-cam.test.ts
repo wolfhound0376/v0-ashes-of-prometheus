@@ -136,6 +136,31 @@ describe("reactions that change the outcome (PR 3)", () => {
   })
 })
 
+describe("monsters' shots and spells on heroes (PR 4)", () => {
+  const bolt = { att: "drow-guard-male", tgt: "scott", weapon: "Hand Crossbow", foe: true, shot: true }
+  it("a drow guard's hand crossbow: the shot pose, mirrored, on a crit, a drop, or its poison once a fight", () => {
+    expect(strikeCamScene({ ...bolt, mode: "key" })).toBeNull()
+    const sc = strikeCamScene({ ...bolt, crit: true, mode: "key" })
+    expect(sc?.key).toBe("shot")
+    expect(sc?.kind).toBe("shot")
+    expect(sc?.flip).toBe(true)
+    expect(strikeCamScene({ ...bolt, drop: true, mode: "key" })?.key).toBe("shot")
+    expect(strikeCamScene({ ...bolt, signature: true, mode: "key" })?.once).toBe("signature")
+    expect(strikeCamScene({ ...bolt, att: "quaggoth", crit: true, mode: "key" })).toBeNull()   // the quaggoth has no shot
+  })
+  it("Asha's Guiding Bolt on a hero is a key moment, mirrored", () => {
+    const sc = strikeCamScene({ att: "asha", tgt: "samson", spell: "Guiding Bolt", spellLevel: 1, against: true, mode: "key" })
+    expect(sc?.kind).toBe("spell")
+    expect(sc?.flip).toBe(true)
+  })
+  it("a hero's own spell is not mirrored", () => {
+    expect(strikeCamScene({ att: "samson", tgt: "asha", spell: "Guiding Bolt", spellLevel: 1, mode: "key" })?.flip).toBe(false)
+  })
+  it("Shield against a shot", () => {
+    expect(strikeCamBlock({ mode: "key", att: "drow-guard-female", tgt: "gandalf", shot: true })?.pose.src).toBe("closeup-shot.png")
+  })
+})
+
 describe("full or short", () => {
   it("full the first time a move is used in a fight, short after", () => {
     const mem = {}

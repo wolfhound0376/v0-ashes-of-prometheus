@@ -12784,8 +12784,8 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (tgt.c.sheet.holyVulnerable && !atk.flask && att.c.conds.has("blessed")) holyOpen(tgt, `${fname(att)}'s blessed blow`);
       { const art = atk.art && WEAPON_ARTS[atk.art], word = art && art.says && !art.cleave ? String(art.says).toUpperCase() : "";   // THE STRIKE CAM: the blow has landed
         if (att.strikeCamOpen){ att.strikeCamOpen = false; strikeCamLand({dmg: dmg.total, crit, word}); }
-        else if (!shot){ const sc = strikeCamFor(att, tgt, {art: atk.art, weapon: atk.itemName || atk.name, crit, title: art ? art.name : atk.name, melee: true, sneak, reaction: !!reaction,
-            signature: !!(atk.rider || atk.extra || atk.curse || atk.numb || atk.tooth)}); if (sc) strikeCam({...sc, dmg: dmg.total, crit, word}); } }
+        else if (!shot || !hero(att)){ const sc = strikeCamFor(att, tgt, {art: atk.art, weapon: atk.itemName || atk.name, crit, title: art ? art.name : atk.name, melee: !shot, shot: !!shot, sneak, reaction: !!reaction,   // a monster's shot opens as it lands
+            signature: !!(atk.rider || atk.extra || atk.curse || atk.numb || atk.tooth || atk.drowPoison)}); if (sc) strikeCam({...sc, dmg: dmg.total, crit, word}); } }
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
       blowNarration(att, tgt, atk, dmg.total, crit);
       }
@@ -16001,7 +16001,7 @@ function strikeCamFor(att, tgt, ev){
   const foe = !hero(att) && hero(tgt), gone = !!tgt.c && tgt.c.hp <= 0;
   const kill = gone && !hero(tgt) && (cbt.boss === tgt || STRIKE_CAM.named.includes(tgt.id) || !foes.some(f => f !== tgt && !f.down && !f.left && f.c && f.c.hp > 0 && actors.includes(f)));
   const sc = strikeCamScene({mode, att: att.id, tgt: tgt.id, art: ev.art, weapon: ev.weapon, spell: ev.spell, spellLevel: ev.spellLevel, crit: ev.crit, quick: !!cbt.quick,
-    sneak: !!ev.sneak, foe: foe && !!ev.melee, signature: !!ev.signature, reaction: !!ev.reaction, drop: foe && gone, kill});
+    sneak: !!ev.sneak, foe: foe && (!!ev.melee || !!ev.shot), shot: !!ev.shot, against: foe, signature: !!ev.signature, reaction: !!ev.reaction, drop: foe && gone, kill});
   if (!sc) return null;
   const mem = cbt.strikeMem = cbt.strikeMem || {};
   const o = {att: att.id, tgt: tgt.id, pose: sc.kind === "spell" ? "cast" : sc.key, spell: ev.spell || null, hard: !!sc.hard, flip: !!sc.flip, title: (sc.key === "sneak" ? "Sneak Attack" : ev.reaction ? "Opportunity Attack" : ev.title) || "", who: `${fname(att)}  →  ${fname(tgt)}`};
