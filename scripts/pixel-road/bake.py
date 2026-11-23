@@ -52,6 +52,34 @@ def main():
         assert im.size[1] == H, (c, im.size)
         ground.paste(im, (x, 0)); x += im.size[0]
     assert x == W, x
+    # PAVING (art: Sam, 2026-11-23, his 64px Underdark ruin ground tiles). A patch of his tiles laid into the floor,
+    # e.g. the forecourt of a ruin. "rows" are lists of tile names ("" leaves the cave floor; a trailing "h" mirrors
+    # the tile). The outer edge is eaten away in ragged 4px bites so the floor shows through and it reads as old
+    # paving breaking up, not a rug; "solid" names the sides that butt against something and stay straight.
+    for pv in cfg.get("paving", []):
+        rs = pv["rows"]; S = pv.get("size", 64); pw, ph = S * len(rs[0]), S * len(rs)
+        patch = Image.new("RGB", (pw, ph)); have = np.zeros((ph, pw), bool)
+        for r, row in enumerate(rs):
+            for c, n in enumerate(row):
+                if not n: continue
+                t = Image.open(p(os.path.join(pv["tiles"], n.rstrip("h") + ".png"))).convert("RGB")
+                if n.endswith("h"): t = t.transpose(Image.FLIP_LEFT_RIGHT)
+                patch.paste(t, (c * S, r * S)); have[r * S:(r + 1) * S, c * S:(c + 1) * S] = True
+        yy, xx = np.mgrid[0:ph, 0:pw]; solid = pv.get("solid", "")
+        d = np.full((ph, pw), 999.0)
+        if "l" not in solid: d = np.minimum(d, xx)
+        if "r" not in solid: d = np.minimum(d, pw - 1 - xx)
+        if "t" not in solid: d = np.minimum(d, yy)
+        if "b" not in solid: d = np.minimum(d, ph - 1 - yy)
+        rng = np.random.default_rng(pv.get("seed", 7))
+        bite = np.kron(rng.random((ph // 4 + 1, pw // 4 + 1)), np.ones((4, 4)))[:ph, :pw]
+        big = np.kron(rng.random((ph // 16 + 1, pw // 16 + 1)), np.ones((16, 16)))[:ph, :pw]
+        keep = have & (d > pv.get("ragged", 22) * (0.25 + 0.75 * big) * (0.4 + 0.6 * bite))
+        g = np.array(ground); x0, y0 = pv["x"], pv["y"]
+        sub = g[y0:y0 + ph, x0:x0 + pw]; pa = np.array(patch)
+        dark = keep & ~np.roll(keep, -1, axis=0)             # a thin dark lip under each broken edge
+        sub[keep] = pa[keep]; sub[dark] = (sub[dark] * 0.55).astype(np.uint8)
+        ground = Image.fromarray(g)
     ground.save(os.path.join(out, "ground.png"), optimize=True)
 
     grid = [l.strip() for l in open(p(cfg["grid"])) if l.strip()]

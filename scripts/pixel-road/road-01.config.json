@@ -20,7 +20,10 @@
   "underdark-hq rubble": "rubble",
   "underdark-hq boulders": "boulders",
   "underdark-hq crystals": "crystals",
-  "underdark-hq mushrooms": "mushrooms"
+  "underdark-hq mushrooms": "mushrooms",
+  "underdark-hq pillar-a": "pillar-a",
+  "underdark-hq pillar-b": "pillar-b",
+  "underdark-hq pillar-c": "pillar-c"
  },
  "foreground": {
   "ceiling": "art/ceiling.webp",
@@ -40,9 +43,15 @@
   {
    "kind": "ruins",
    "label": "Ruins",
-   "x": 1264,
-   "y": 246,
-   "plate": "art/plates/ruins.png"
+   "x": 1244,
+   "y": 250,
+   "plate": "art/plates/ruins.png",
+   "vista": {
+    "x": 1244,
+    "y": 196,
+    "h": 336,
+    "reach": 430
+   }
   }
  ],
  "glow": {
@@ -56,7 +65,40 @@
   "crystals": 1.0,
   "mushrooms": 0.5,
   "zurkhwood": 0.45,
-  "ruins": 0.4,
+  "ruins": 0.18,
   "boulders": 0.28
- }
+ },
+ "paving": [
+  {
+   "tiles": "art/tiles/ruin-ground",
+   "x": 1084,
+   "y": 180,
+   "rows": [
+    [
+     "3",
+     "0",
+     "11",
+     "0h",
+     "5"
+    ],
+    [
+     "4",
+     "1",
+     "2",
+     "0",
+     "4h"
+    ],
+    [
+     "",
+     "4h",
+     "1h",
+     "4",
+     ""
+    ]
+   ],
+   "solid": "t",
+   "ragged": 52,
+   "seed": 7
+  }
+ ]
 }

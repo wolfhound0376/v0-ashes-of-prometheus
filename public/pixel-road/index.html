@@ -194,13 +194,26 @@ function placeFollowers(dt, leaderMoved) {
 
 /* ---------- drawing ---------- */
 function resize() { const r = Math.min(window.devicePixelRatio || 1, 2); cv.width = Math.round(innerWidth * r); cv.height = Math.round(innerHeight * r); }
+let vista = 0;
 function camera() {
   // About eight and a half cells of height on screen, whatever the window: close, so the rock and the
   // tall things in the cave stand over the figures (Sam, 2026-11-22: "more depth").
   const m = road.tile / 2, ww = road.cols * road.tile - 2 * m, wh = road.rows * road.tile - 2 * m;
   cam.z = Math.max(cv.height / (8.5 * road.tile), cv.width / ww, cv.height / wh);
-  const vw = cv.width / cam.z, vh = cv.height / cam.z, L = heroes[0];
-  cam.x = Math.max(m, Math.min(m + ww - vw, L.x - vw / 2)); cam.y = Math.max(m, Math.min(m + wh - vh, L.y - vh / 2));
+  const L = heroes[0]; let cx = L.x, cy = L.y; vista = 0;
+  // A VISTA (Sam, 2026-11-23, on the Ruins: "a lot larger and be part of the background ... not like a token sitting
+  // in the middle of the cave"). A landmark may name a view: as the party nears it the camera eases back and up
+  // until the whole of it stands behind them, and the ceiling rock in front of the lens thins out so it is not
+  // hidden. It is a function of where the leader stands, so it eases in and out by itself as they walk.
+  for (const k of road.landmarks || []) {
+    const v = k.vista; if (!v) continue;
+    const t = Math.max(0, Math.min(1, (1 - Math.hypot(L.x - k.x, L.y - k.y) / v.reach) / 0.55)), f = t * t * (3 - 2 * t);
+    if (f <= vista) continue;
+    vista = f; cam.z = Math.max(cam.z + (cv.height / v.h - cam.z) * f, cv.width / ww, cv.height / wh);
+    cx = L.x + (v.x - L.x) * f * 0.75; cy = L.y + (v.y - L.y) * f;
+  }
+  const vw = cv.width / cam.z, vh = cv.height / cam.z;
+  cam.x = Math.max(m, Math.min(m + ww - vw, cx - vw / 2)); cam.y = Math.max(m, Math.min(m + wh - vh, cy - vh / 2));
 }
 function sign(text, x, y, near) {
   // A way out or a place of interest: a small faint name that brightens as the party nears it (Sam's pick "A"
@@ -269,8 +282,8 @@ function drawForeground() {
       else { ctx.save(); ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(im, 0, 0, w, h); ctx.restore(); }
     }
   };
-  band(fgImg.ceiling, 1.3, false);
-  band(fgImg.shelf, 1.6, true);
+  ctx.globalAlpha = 1 - 0.94 * vista; band(fgImg.ceiling, 1.3, false); ctx.globalAlpha = 1;
+  ctx.globalAlpha = 1 - 0.9 * vista; band(fgImg.shelf, 1.6, true); ctx.globalAlpha = 1;
 }
 // A STOP OPENS A PLATE (Sam, 2026-11-22: the party walks the pixel road until a stop, "then it moves into the painted
 // plates"; 2026-11-23: he sent the picture for the Ruins). When the party comes to rest beside a landmark that has a
