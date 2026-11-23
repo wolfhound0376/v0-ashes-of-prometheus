@@ -7,7 +7,7 @@
 // Both read the one march in ./use-travel.ts, so the two views cannot drift.
 
 import { StageLink } from "@/components/stage/stage-provider"
-import { battleHref } from "@/lib/travel/battle"
+import { battleHref, RUINS_HREF } from "@/lib/travel/battle"
 import { VESSELS, seats } from "@/lib/travel/vessels"
 import { MARCH_HOURS_PER_DAY, PACES, fatigue, legPreview } from "@/lib/travel/march"
 import { isRoadMarker } from "@/lib/travel/standing"
@@ -397,6 +397,17 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
               ) : halt.noBattle ? (
                 <div className="mt-3 text-center text-[11px] text-[#9a8fb0]">No battle map for this one yet. {halt.noBattle}</div>
               ) : null)}
+              {/* THE RUINS (Sam, 2026-11-23: "Make sure all of this is wired into the game"): the book's Ruins terrain row
+                  opens the six painted rooms; their way out comes back here. */}
+              {halt.ruins && (
+                <StageLink
+                  href={RUINS_HREF}
+                  caption="The door stands open. The road will still be there after."
+                  className="mt-3 block rounded border border-[#5a4a8a] bg-[#171228] px-3 py-2 text-center text-[11px] tracking-[.2em] text-[#cdbcf5] hover:border-[#cdbcf5]"
+                >
+                  ENTER THE RUINS →
+                </StageLink>
+              )}
               {halt.kind === "camp" && (
                 <>
                   <StageLink

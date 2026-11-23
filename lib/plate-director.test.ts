@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   CREATURES, TABLES, TERRAIN, directorPlate, drawFor, fieldFoes, onTable, pursuitAfter, PURSUIT_START, randomEncounter,
-  rollDice, rollTable, savingThrow, hazardDamage, fallDamage, RUIN_ROOMS, ruinDraw, ruinNotices, ruinPlate } from "./plate-director.mjs"
+  rollDice, rollTable, savingThrow, hazardDamage, fallDamage, RUIN_ROOMS, ruinDraw, ruinNotices, ruinPlate, MIMIC_NOTICE, MIMIC_SPOTS, mimicBite, mimicRoom, mimicSeen } from "./plate-director.mjs"
 
 const seq = (...xs: number[]) => { let i = 0; return () => xs[i++ % xs.length] }
 const faceOf = (die: number, face: number) => (face - 0.5) / die   // the rand() value that rolls `face` on a d`die`
@@ -126,5 +126,28 @@ describe("the Ruins: one roll per room", () => {
   })
   it("is not a room anywhere else", () => {
     expect(ruinDraw("biome-tunnels", () => 0)).toBeNull()
+  })
+})
+
+describe("the mimic in the Ruins", () => {
+  it("can wait in any of the six rooms, and only in a room", () => {
+    const rooms = Object.keys(RUIN_ROOMS)
+    expect(Object.keys(MIMIC_SPOTS).sort()).toEqual([...rooms].sort())
+    expect(new Set(rooms.map((_, i) => mimicRoom(() => (i + 0.5) / rooms.length))).size).toBe(6)
+    expect(rooms).toContain(mimicRoom(() => 0.999999))
+  })
+  it("is seen in time only by a passive Perception of 15 or more (10 + its Stealth +5)", () => {
+    expect(MIMIC_NOTICE).toBe(15)
+    expect(mimicSeen(14)).toBe(false)
+    expect(mimicSeen(15)).toBe(true)
+    expect(mimicSeen(NaN)).toBe(false)
+  })
+  it("bites with advantage at +5 for 1d8+3 piercing and 1d8 acid (SRD 5.1)", () => {
+    const hit = mimicBite(15, seq(faceOf(20, 3), faceOf(20, 12), faceOf(8, 8), faceOf(8, 1)))
+    expect(hit).toMatchObject({ die: 12, total: 17, hit: true, crit: false, piercing: 11, acid: 1 })
+    expect(mimicBite(18, seq(faceOf(20, 12), faceOf(20, 3)))).toMatchObject({ hit: false, piercing: 0, acid: 0 })
+    const crit = mimicBite(30, seq(faceOf(20, 20), faceOf(20, 2), faceOf(8, 4), faceOf(8, 4), faceOf(8, 2), faceOf(8, 2)))
+    expect(crit).toMatchObject({ hit: true, crit: true, piercing: 11, acid: 4 })
+    expect(mimicBite(5, seq(faceOf(20, 1), faceOf(20, 1))).hit).toBe(false)
   })
 })
