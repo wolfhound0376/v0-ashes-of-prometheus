@@ -167,9 +167,9 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
 }) {
   const [dmOn, setDmOn] = useState(false)
   const [npcOn, setNpcOn] = useState(false)
-  // No Player Voices toggle (Sam, 2026-11-16: "Player messages to NPCs silent but player to player messages
-  // heard"). A hero's typed line on the Parley is never read aloud; a Message to another player still is, by
-  // components/message-player-button.tsx and the map, which do not go through this component.
+  // No Player Voices toggle (Sam, 2026-11-16). A hero's typed line is heard only on that hero's own screen (Sam,
+  // 2026-11-23), under NPC Voices; a Message to another player is voiced by components/message-player-button.tsx
+  // and the map, which do not go through this component.
   const enabled = dmOn || npcOn
   const [status, setStatus] = useState<"idle" | "loading" | "speaking" | "blocked">("idle")
 
@@ -352,7 +352,8 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
     // through the same canSpeak() gate and can never drift out of sync.
     setDmVoiceEnabled(dmOn)
     setNpcVoiceEnabled(npcOn)
-    setPlayerVoiceEnabled(false)
+    // Your own line follows NPC Voices: the one switch that already means "voices in conversations" (no third toggle).
+    setPlayerVoiceEnabled(npcOn)
     // While this control is on it is the ONLY thing speaking: it voices
     // Malachar and the NPCs from one queue, in narrative order. The legacy v3
     // auto-play would otherwise repeat every quoted line out of sequence.
@@ -474,9 +475,18 @@ export function DmNarration({ dialogue, npcs = [], players = [], audience = null
         console.log("[v0] narration: held back —", line.speaker, "is answering", line.recipient, "not", audienceRef.current?.name)
         return []
       }
-      // A player character's own typed line (to an NPC or to Malachar) is seen, never heard (Sam, 2026-11-16).
+      // A player character's own typed line. Sam, 2026-11-16, silenced them all ("Player messages to NPCs silent");
+      // Sam, 2026-11-23 ("I'm not hearing my voice"), brought his own back: a hero's line plays in that hero's voice
+      // on THAT hero's own screen only. Every other seat still only sees it, so the table is no noisier than the
+      // 11-16 rule made it. Dice announcements stay silent, and the "(Persuasion)" tag a chip adds is not read out.
       const pc = playersRef.current.find((entry) => entry.name.toLowerCase() === line.speaker.toLowerCase())
-      if (pc) return []
+      if (pc) {
+        const me = audienceRef.current
+        const mine = !!me && !me.dm && !!me.name && me.name.trim().toLowerCase() === pc.name.toLowerCase()
+        const isRollLine = line.text.trimStart().startsWith("🎲") || line.text.includes("[Dice Roll]") || line.text.includes("[ROLL_RESULT:")
+        const said = text.replace(/\s*\([A-Za-z ]{3,20}\)\s*$/, "").trim()
+        return mine && said && !isRollLine ? [{ kind: "player" as const, text: said, pc }] : []
+      }
       if (!npc && !pc && text) console.log("[v0] narration: no voice row for", line.speaker, "— line not spoken")
       return []
     })
