@@ -27,6 +27,16 @@
 //   - The hero who steps on an unnoticed pit is whoever reaches it first (on the road, the leader).
 //   - Climbing out of a 10-foot pit takes no check.
 //
+// GETTING OUT OF A PIT (Sam, 2026-11-23: "the process based on DND 5E of getting them out"):
+//   - SRD 5.1 Falling: the creature "lands prone". Standing is part of the climb.
+//   - SRD 5.1 Movement, Climbing: "climbing a slippery vertical surface or one with few handholds requires a successful
+//     Strength (Athletics) check". The SRD gives no DC for a pit wall; this campaign's own book does for its pit: OotA
+//     Terrain Encounters, Sinkhole: "Climbing out takes a DC 15 Strength (Athletics) check." CLIMB_DC = 15.
+//   - SRD 5.1 Help action: an ally at the rim lending a hand gives advantage on the check.
+//   - A hero at 0 hit points cannot climb: the strongest ally goes down and hauls them up, the same DC 15 Strength
+//     (Athletics) check, with Help from the rim if anyone is left up there. [HOUSE: the haul uses the climb's DC.]
+//   - Each failed try is another try: nothing in the rules stops a retry here, it only costs time on the road.
+//
 // The game rolls every die here, before the stretch is walked; the road page only places the traps and shows the
 // result. Pure: a roller in, data out.
 
@@ -75,7 +85,8 @@ export interface RoadTrap extends RoadTrapRule {
   /** The dice the game rolled for it (shown with their faces when it springs). */
   fallRoll: { faces: number[]; total: number } | null
   spikesRoll: { faces: number[]; total: number } | null
-  /** Falling net: d20s for the Strength saves (one per hero caught, in order) and for the freeing checks. */
+  /** Falling net: d20s for the Strength saves (one per hero caught, in order) and for the freeing checks.
+   *  A pit: d20s for the climb out, two per try (the second is used only with advantage). */
   d20s: number[]
   /** Who in the party notices it in passing (best passive Perception at or over the DC), or null. */
   seenBy: { slug: string; name: string; passive: number } | null
@@ -115,7 +126,7 @@ export function rollRoadTraps(party: readonly Senser[], penalty: number, roll: R
       at: Math.round((lo + (hi - lo) * (0.2 + 0.6 * (roll(100) / 100))) * 1000) / 1000,
       fallRoll: rule.fall ? rollDice(rule.fall, roll) : null,
       spikesRoll: rule.spikes ? rollDice(rule.spikes, roll) : null,
-      d20s: rule.kind === "net" ? Array.from({ length: 12 }, () => roll(20)) : [],
+      d20s: Array.from({ length: rule.kind === "net" ? 12 : 24 }, () => roll(20)),
       seenBy: noticedBy(rule.spotDC, party, penalty),
       placed: { kindD6 },
     })
@@ -129,4 +140,23 @@ export function pitDamage(t: Pick<RoadTrap, "fallRoll" | "spikesRoll">): { type:
   if (t.fallRoll?.total) out.push({ type: "bludgeoning", amount: t.fallRoll.total })
   if (t.spikesRoll?.total) out.push({ type: "piercing", amount: t.spikesRoll.total })
   return out
+}
+
+/** Climbing out of a pit (see the head of this file): DC 15 Strength (Athletics), advantage with Help from the rim. */
+export const CLIMB_DC = 15
+
+export interface ClimbTry {
+  /** The faces rolled; two with advantage, the higher counts. */
+  faces: number[]
+  die: number
+  total: number
+  ok: boolean
+}
+
+/** One try at the climb (or the haul), from the game's own pre-rolled d20s. */
+export function climbTry(d20s: readonly number[], at: number, athletics: number, advantage: boolean): ClimbTry {
+  const a = d20s[at] ?? 10, b = d20s[at + 1] ?? 10
+  const faces = advantage ? [a, b] : [a]
+  const die = Math.max(...faces)
+  return { faces, die, total: die + athletics, ok: die + athletics >= CLIMB_DC }
 }

@@ -113,7 +113,7 @@ export default function UnderdarkMapModule() {
   useEffect(() => { try { setPixelRoad(localStorage.getItem(PIXEL_ROAD_SWITCH) !== "0") } catch { /* storage blocked */ } }, [])
   const flipPixelRoad = () => setPixelRoad((v) => { try { localStorage.setItem(PIXEL_ROAD_SWITCH, v ? "0" : "1") } catch { /* storage blocked */ } return !v })
   // who walks beside the heroes: the company at camp is the company on the road (app/api/camp/roster)
-  const [company, setCompany] = useState<{ slug: string; pc: boolean; name: string; id?: string | null; pp?: number | null; strMod?: number; strSave?: number }[]>([])
+  const [company, setCompany] = useState<{ slug: string; pc: boolean; name: string; id?: string | null; pp?: number | null; strMod?: number; strSave?: number; ath?: number; hp?: number; hpMax?: number }[]>([])
   useEffect(() => {
     let alive = true
     fetch("/api/camp/roster").then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive && Array.isArray(j?.members)) setCompany(j.members) }).catch(() => {})
@@ -163,7 +163,7 @@ export default function UnderdarkMapModule() {
         {
           const penalty = (PACES as Record<string, { perceptionPenalty: number }>)[R.pace]?.perceptionPenalty ?? 0
           const party = R.company.map((c) => ({ slug: c.slug, name: c.name, pp: c.pp ?? null }))
-          post({ type: "aop:road-traps", traps: rollRoadTraps(party, penalty, (n) => die(n)), party: R.company.map((c) => ({ slug: c.slug, name: c.name, strMod: c.strMod ?? 0, strSave: c.strSave ?? 0 })) })
+          post({ type: "aop:road-traps", traps: rollRoadTraps(party, penalty, (n) => die(n)), party: R.company.map((c) => ({ slug: c.slug, name: c.name, strMod: c.strMod ?? 0, strSave: c.strSave ?? 0, ath: c.ath ?? 0, hp: c.hp ?? null })) })
         }
         // the inset: the markers the party knows (players only ever hold discovered rows), the roads between, this leg
         const L = live.current, leg = roadLeg.current
