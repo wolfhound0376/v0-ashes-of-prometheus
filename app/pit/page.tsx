@@ -20,21 +20,28 @@
 //   - The host (signed in with the DM code) gets "Skip the Pit", and can try it without a seat at
 //     /pit?try=fifi,kenta (first name = the hero you play; back to the table afterwards).
 //
+//   - THE PIT, TOGETHER (Sam, 2026-11-20: "Fifi and Kenta playing together were not synced. We played different
+//     instances."): with two or more heroes this page joins the table's realtime channel (lib/pit.ts pitChannel) and
+//     relays the frame's messages over it. Presence decides which screen runs the fight (pitRoles); the frame does
+//     the rest (public/pit-arena: THE PIT, TOGETHER). Alone, or trying it as the host, nothing is shared.
+//
 // Not here yet: XP for the fight (the pilot showed a card; Sam has not ruled on the numbers), heroes without
-// Pit art (Lynkes, Gandalf, Kingasaur, forged heroes), and any shared state between players' screens.
+// Pit art (Lynkes, Gandalf, Kingasaur, forged heroes).
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { fadeOutThemeAudio } from "@/components/theme-audio"
 import { isMusicOff } from "@/lib/audio-prefs"
 import { cinematicsOn } from "@/lib/settings"
-import { PIT_DONE_KEY, pitDoneFor, pitParty, pitSrc, pitTryParty, type PitHero } from "@/lib/pit"
+import { PIT_DONE_KEY, pitChannel, pitDoneFor, pitParty, pitRoles, pitSrc, pitTryParty, type PitHero, type PitMember } from "@/lib/pit"
+import { createClient } from "@/lib/supabase/client"
 
 const AWAKEN = "/awaken"
 /** How long the framed game has to say it loaded before the hero is sent on without it. */
 const READY_CEILING_MS = 25000
 
-type Plan = { src: string; done: string | null; after: string }
+/** `net`: this screen shares one fight with the rest of the table over this channel. */
+type Plan = { src: string; done: string | null; after: string; net?: { channel: string; me: PitHero; party: PitHero[] } }
 
 export default function PitPage() {
   const router = useRouter()
@@ -93,7 +100,9 @@ export default function PitPage() {
         // A saved game with nobody at the table owing the Pit, a hero the Pit cannot draw, or a run the table could
         // not name: straight to the awakening. A hero who has rolled goes in when the table goes (lib/pit.ts TOGETHER).
         if ((rolled && table?.pitDue !== true) || !me || !run) { leave({ src: "", done: rolled ? null : done, after: AWAKEN }, false); return }
-        setPlan({ src: pitSrc(me as PitHero, party, { film, sound: snd }), done, after: AWAKEN })
+        const session = typeof table?.state?.session === "number" ? table.state.session : null
+        const net = party.length > 1 ? { channel: pitChannel(run, session), me: me as PitHero, party } : undefined
+        setPlan({ src: pitSrc(me as PitHero, party, { film, sound: snd, net: Boolean(net) }), done, after: AWAKEN, net })
       })
       .catch(() => router.replace("/join"))
     return () => { live = false }
@@ -115,6 +124,39 @@ export default function PitPage() {
     const t = window.setTimeout(() => { if (!ready) leave(plan, false) }, READY_CEILING_MS)
     return () => { window.removeEventListener("message", onMsg); window.clearTimeout(t) }
   }, [plan, leave])
+
+  // THE PIT, TOGETHER: one channel for the table's fight. This page only carries messages and says who runs it.
+  useEffect(() => {
+    const net = plan?.net
+    if (!net) return
+    const supabase = createClient()
+    const at = Date.now()
+    const tell = (m: unknown) => frame.current?.contentWindow?.postMessage(m, window.location.origin)
+    let last = ""
+    const channel = supabase.channel(net.channel, { config: { broadcast: { self: false, ack: false }, presence: { key: `${net.me}:${at}` } } })
+    const roles = () => {
+      const state = channel.presenceState() as Record<string, PitMember[]>
+      const r = pitRoles(Object.values(state).flat(), net.party, net.me)
+      if (!r.role) return
+      const sig = `${r.role}|${r.present.join(",")}`
+      if (sig !== last) console.info(`[pit] ${r.role}, here: ${r.present.join(", ")}`)
+      last = sig
+      tell({ aop: "pitnet", role: r.role, present: r.present })
+    }
+    channel
+      .on("broadcast", { event: "pit" }, ({ payload }: { payload: unknown }) => tell({ aop: "pitnet", msg: payload }))
+      .on("presence", { event: "sync" }, roles)
+      .subscribe((status: string) => { if (status === "SUBSCRIBED") void channel.track({ key: net.me, at }) })
+    const onMsg = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin || e.source !== frame.current?.contentWindow) return
+      const d = e.data as { aop?: string; send?: unknown; ready?: number } | null
+      if (d?.aop === "pitnet" && d.send) void channel.send({ type: "broadcast", event: "pit", payload: d.send })
+      if (d?.aop === "pit" && d.ready) roles()   // the frame has loaded: tell it again who runs the fight
+    }
+    window.addEventListener("message", onMsg)
+    const again = window.setInterval(roles, 5000)
+    return () => { window.removeEventListener("message", onMsg); window.clearInterval(again); void supabase.removeChannel(channel) }
+  }, [plan])
 
   const toggleSound = () => {
     const on = !sound
