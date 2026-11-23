@@ -258,7 +258,7 @@ NODES = {
  14: dict(slug="node-14-pool-river", name="Pool / Underground River", scale=0.9,
    landFrom={"9": [880, 540]},
    hazard=dict(poly=P((470,470),(820,430),(1100,440),(1360,500),(1540,600),(1500,760),(1300,820),(1240,880),(900,870),(600,860),(460,780)),
-               kind="ambush", foes=["gray-ooze"],
+               kind="ambush", foes=["gray-ooze"], rise=[1050, 720], film="gray-ooze-surges",   # where it lay: it heaves up out of the shallows there (its emerge sheet)
                label="The smooth stone in the shallows rears up out of the water, and a voice that is no voice fills every head at once: “Flesh for the Faceless Lord!”"),
    floors=[dict(poly=P((300,840),(640,790),(940,820),(1120,880),(1400,860),(1520,940),(1640,1120),(1760,1280),(1760,1339),(400,1339),(300,1120))),dict(poly=P((1640,660),(1900,580),(2120,640),(2200,800),(2080,940),(1800,940),(1600,860))),dict(poly=P((1400,840),(1600,800),(1640,920),(1520,960)))],
    obstacles=[],

@@ -35,6 +35,9 @@ def bottom(im, x, y, w, h):
 # point, about half the thickness of a figure lying down. Whichever asks for more wins, and the extra is eased in over
 # the fall so nothing jumps. A trailing hand or foot then lies a little past the ground point, on the shadow.
 HALF_BODY = 9
+# A death that is not a fall: the gray ooze melts into a puddle that is drawn on the floor already (its death sheet is its
+# emerge sheet played backwards, 2026-11-23). The weight rule above would sink a flat puddle under its own feet. Skipped.
+ALREADY_ON_FLOOR = {"gray-ooze"}
 
 
 def mass_row(im, x, y, w, h):
@@ -49,6 +52,7 @@ def main():
     for d in sorted((ROOT / "public" / "sprites").iterdir()):
         mf = d / "sprite.json"
         if not mf.exists() or (want and d.name not in want): continue
+        if d.name in ALREADY_ON_FLOOR: continue
         man = json.loads(mf.read_text()); an = man.get("animations", {}).get("dead")
         if not an or not (d / an.get("sheet", "dead.png")).exists(): continue
         cw, ch = man["cell"]; n = an["frames"]

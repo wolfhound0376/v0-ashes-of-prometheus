@@ -8766,6 +8766,16 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
       npcs = npcs.filter(n => n !== f); placed.push({x: f.x, y: f.y});
       return f;
     } else {
+      // A HAZARD THAT RISES WHERE IT LAY (spec.py hazard `rise`): the pool's gray ooze heaves up out of the shallows
+      // where it was hiding (OotA p.19), playing its `emerge` sheet in place, instead of walking in from off the plate.
+      const rise = node.hazard && node.hazard.rise && (node.hazard.foes || []).includes(id) && SPR[id] && SPR[id].img.emerge ? node.hazard.rise : null;
+      if (rise){
+        start = nearestWalkable(rise[0] + k * 140 * sc, rise[1], placed); placed.push(start);
+        f = mkActor(id, start.x, start.y, "foe", {alpha: 1}); f.face = faceOf(L.x - start.x, L.y - start.y); f.path = []; f.stop = start;
+        playOnce(f, "emerge", () => setAnim(f, "idle"));
+        if (node.hazard.film) mapFilm(node.hazard.film);   // its film (cinematic_clips, fired_by map), once a session per screen like every map film
+        return f;
+      }
       start = nearestWalkable(L.x + dir.x * 560 * sc + perp.x * k * 200 * sc, L.y + dir.y * 560 * sc + perp.y * k * 200 * sc, placed);
       f = mkActor(id, start.x, start.y, "foe", {alpha: 0});
     }
