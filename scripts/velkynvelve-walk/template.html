@@ -12954,10 +12954,10 @@ function castSpell(caster, tgt, name, done, darts){
         const why = `${fname(caster)} ${name}: ${r} + ${m.hit} vs AC ${acVs}${coverNote(cv)}`;
         if (r === 1) bank("ui/nat1", .7); if (crit) bank("ui/nat20", .7);
         if (!hit){ miss(tgt); land(tgt, false, sp.type); log(`${why} — miss.`); return; }
-        if (lab) lab.crit = crit; land(tgt, true, sp.type); knock(tgt, caster, 12 * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
+        if (lab) lab.crit = crit; land(tgt, true, sp.type); if (crit) bank("walk:spell-crit", .9); knock(tgt, caster, 12 * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
         narrate(caster, `${fname(caster)}'s ${name} ${sp.type === "cold" ? "frosts" : sp.type === "necrotic" ? "withers" : sp.type === "radiant" ? "sears" : "strikes"} ${fname(tgt)}.`);
         const d = roll(sp.dmg, crit); if (sp.beams && invoked(caster, "Agonizing Blast")) d.total += Math.max(0, abilMod(caster.c.sheet, "cha")); hitCtx = {spell: name, by: caster}; damage(tgt, d.total, sp.type, crit, caster, true); hitCtx = null; hexRider(caster, tgt, crit);
-        { const sc = strikeCamFor(caster, tgt, {spell: name, spellLevel: sp.lvl, crit, title: name}); if (sc) strikeCam({...sc, dmg: d.total, crit, word: name === "Ray of Frost" ? "SLOWED" : ""}); }   // THE STRIKE CAM: a spell attack that hit
+        { const sc = strikeCamFor(caster, tgt, {spell: name, spellLevel: sp.lvl, crit, title: name}); if (sc) strikeCam({...sc, dmg: d.total, crit, word: name === "Ray of Frost" ? "SLOWED" : ""}); }   // THE STRIKE CAM: a spell attack that hit (a spell crit also plays its own ElevenLabs stinger, Sam's pick S4, on every screen)
         if (name === "Vampiric Touch" && d.total > 0){ const h = Math.floor(d.total / 2); caster.c.hp = Math.min(caster.c.hpMax, caster.c.hp + h); popText(caster, `+${h}`, "#9ff2c8"); renderParty(); }   // SRD 5.1: regain half the necrotic damage dealt
         if (sp.beams && invoked(caster, "Repelling Blast") && !tgt.down) repel(caster, tgt, 10); if (sp.cond) addCond(tgt, sp.cond); if (name === "Ray of Frost") addCond(tgt, "slowed");
         if (sp.type === "cold" && sp.ice){ const patch = freezeGround(tgt.x, tgt.y, m.dc, caster); if (!tgt.down){ tgt.onIce = patch; iceSave(tgt, patch, "struck by the orb"); } }
@@ -13246,7 +13246,7 @@ function spiritStrike(c, z, t, done){
     setTimeout(() => {
       if (!hit){ miss(t); log(`${why} — miss.`); }
       else { const d = roll(`1d8${(m.mod || 0) >= 0 ? "+" : ""}${m.mod || 0}`, crit).total;
-        spawnFx(IMPACT_OF.force, {at: t, sq: 2, anchor: "mid"}); lightFlash(t.x, t.y - 40, "#ffe9a8", 240, 420); bank("magic/arcane_release", .5); knock(t, c, 8 * actorScale(t));
+        spawnFx(IMPACT_OF.force, {at: t, sq: 2, anchor: "mid"}); lightFlash(t.x, t.y - 40, "#ffe9a8", 240, 420); bank("magic/arcane_release", .5); if (crit) bank("walk:spell-crit", .9); knock(t, c, 8 * actorScale(t));
         hitCtx = {spell: "Spiritual Weapon", by: c}; damage(t, d, "force", crit, c, true); hitCtx = null;
         log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d} force.`); narrate(c, `${fname(c)}'s spectral mace comes down on ${fname(t)}.`); }
       setTimeout(() => done && done(), 450);
