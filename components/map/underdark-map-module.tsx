@@ -26,7 +26,7 @@ import { entranceFor, WALKABLE_SCENES } from "@/lib/travel/entrance"
 import { LONG_REST_KEY } from "@/lib/travel/standing"
 import { PIXEL_ROAD_SWITCH, pixelRoadFor, pixelRoadHref } from "@/lib/travel/pixel-road"
 import { roadRemarks } from "@/lib/travel/road-remarks"
-import { d as die, rollRoadTraps } from "@/lib/travel/road-traps"
+import { d as die, rollRoadTraps, seededRand, trapSeedKey, trapSig } from "@/lib/travel/road-traps"
 import { PACES } from "@/lib/travel/march"
 import { dmHeaders } from "@/lib/dm-key"
 import { MAP_LAIRS, MAP_SPRITE_HERO_IDS, mapFollowerIds, mapHeroFromManifest, mapHeroSlug, type MapHero } from "@/lib/travel/map-hero"
@@ -125,7 +125,7 @@ export default function UnderdarkMapModule() {
   // stretch walks, and the marker the road asked about early: a little past halfway the road says it is near, and
   // the marker's dice are rolled then (the same reachNode the nodal map would call), so whatever waits there is met
   // on the pixel road. legDone then finds the marker already reached and does not roll it twice.
-  const roadLeg = useRef<{ a: string; b: string } | null>(null)
+  const roadLeg = useRef<{ a: string; b: string; seed: string } | null>(null)
   const met = useRef<{ key: string; done: Promise<void> } | null>(null)
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
   const youName = () => { const R = roadLive.current; return (R.company.find((m) => m.pc && m.slug === R.heroSlug)?.name ?? "").split(/\s+/)[0] ?? "" }
@@ -138,7 +138,7 @@ export default function UnderdarkMapModule() {
     const road = pixelRoadFor({ a, b, mode: (e?.metadata?.mode as string | undefined) ?? null })
     if (!road) return
     const npcs = R.company.filter((m) => !m.pc).map((m) => m.slug)
-    roadLeg.current = { a, b }
+    roadLeg.current = { a, b, seed: trapSeedKey(a, b) }
     setRoadSrc(pixelRoadHref({ road, line: [R.heroSlug, ...R.followerSlugs], npcs, from: na.name ?? "", to: nb.name ?? "" }))
     await sleep(60)
     setRoadOn(true)
@@ -163,7 +163,8 @@ export default function UnderdarkMapModule() {
         {
           const penalty = (PACES as Record<string, { perceptionPenalty: number }>)[R.pace]?.perceptionPenalty ?? 0
           const party = R.company.map((c) => ({ slug: c.slug, name: c.name, pp: c.pp ?? null }))
-          post({ type: "aop:road-traps", traps: rollRoadTraps(party, penalty, (n) => die(n)), party: R.company.map((c) => ({ slug: c.slug, name: c.name, strMod: c.strMod ?? 0, strSave: c.strSave ?? 0, ath: c.ath ?? 0, hp: c.hp ?? null })) })
+          const leg0 = roadLeg.current, rnd = leg0 ? seededRand(leg0.seed) : Math.random   // the same dice on every leading screen
+          post({ type: "aop:road-traps", traps: rollRoadTraps(party, penalty, (n) => die(n, rnd)), party: R.company.map((c) => ({ slug: c.slug, name: c.name, strMod: c.strMod ?? 0, strSave: c.strSave ?? 0, ath: c.ath ?? 0, hp: c.hp ?? null })) })
         }
         // the inset: the markers the party knows (players only ever hold discovered rows), the roads between, this leg
         const L = live.current, leg = roadLeg.current
@@ -194,7 +195,7 @@ export default function UnderdarkMapModule() {
           void fetch("/api/walk-hazard", {
             method: "POST",
             headers: R.dm ? { ...dmHeaders(), "Content-Type": "application/json" } : { "Content-Type": "application/json" },
-            body: JSON.stringify({ sig: `ev-trap${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`, plate: "pixel-road", hits, claimId: R.me.characterId, claimToken: R.me.claimToken }),
+            body: JSON.stringify({ sig: roadLeg.current ? trapSig(roadLeg.current.seed, c.slug, String((m as { title?: string }).title ?? "")) : `ev-trap${Date.now().toString(36)}`, plate: "pixel-road", hits, claimId: R.me.characterId, claimToken: R.me.claimToken }),
           }).catch(() => {})
         }
       } else if (m.type === "aop:road-done") {

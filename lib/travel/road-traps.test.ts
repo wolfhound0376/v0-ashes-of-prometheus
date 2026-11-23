@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { CLIMB_DC, ROAD_TRAP_RULES, climbTry, noticedBy, pitDamage, rollRoadTraps, trapForD6 } from "./road-traps"
+import { CLIMB_DC, ROAD_TRAP_RULES, climbTry, d, noticedBy, pitDamage, rollRoadTraps, seededRand, trapForD6, trapSeedKey, trapSig } from "./road-traps"
 
 // a roller that plays back fixed faces, clamped to the die
 const seq = (faces: number[]) => { let i = 0; return (s: number) => Math.min(s, Math.max(1, faces[i++ % faces.length])) }
@@ -42,5 +42,18 @@ describe("climbing out of a pit", () => {
     const [t] = rollRoadTraps([], 0, seq([2, 3, 50]))
     expect(t.kind).toBe("hidden-pit")
     expect(t.d20s.length).toBe(24)
+  })
+})
+
+describe("one roll for the whole table", () => {
+  it("the same leg and quarter hour gives the same traps and the same damage fingerprint", () => {
+    const k1 = trapSeedKey("rm-1", "rm-2", 1_000_000), k2 = trapSeedKey("rm-2", "rm-1", 1_000_000 + 60_000)
+    expect(k1).toBe(k2)
+    const party = [{ slug: "kenta", name: "Kenta", pp: 12 }]
+    const r1 = seededRand(k1), r2 = seededRand(k2)
+    expect(rollRoadTraps(party, 0, (n) => d(n, r1))).toEqual(rollRoadTraps(party, 0, (n) => d(n, r2)))
+    expect(trapSig(k1, "kenta", "Spiked pit")).toBe(trapSig(k2, "kenta", "Spiked pit"))
+    expect(trapSig(k1, "kenta", "Spiked pit")).toMatch(/^ev-[a-z0-9]{4,40}$/)
+    expect(trapSig(k1, "freia", "Spiked pit")).not.toBe(trapSig(k1, "kenta", "Spiked pit"))
   })
 })
