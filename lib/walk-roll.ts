@@ -137,6 +137,9 @@ const BOOK_ACTIONS = {
   // BOOK RULES, OotA ch.1 Escape: pick manacles with thieves' tools DC 15 Dexterity; break them DC 20 Strength; a failure
   // can't be retried until after a long rest. Each frees only the hero who rolls. A key that fits needs no roll.
   "manacles:pick": { title: "Pick your manacles", label: "Picking the lock of their own manacles with thieves' tools", check: THIEVES_TOOLS, dc: 15, source: "OotA ch.1 Escape: pick manacles, thieves' tools DC 15", mapNarrates: true },
+  // A FRIEND'S IRONS (Sam's playtest, 2026-11-22: Fifi was free with the tools and Kenta stayed in irons): the same lock,
+  // worked by someone already out of theirs. OotA ch.1 Escape speaks of picking "the lock on a set of manacles"; DC 15.
+  "manacles:friend": { title: "Pick a friend's manacles", label: "Picking the lock of another prisoner's manacles with thieves' tools", check: THIEVES_TOOLS, dc: 15, source: "OotA ch.1 Escape: pick manacles, thieves' tools DC 15", mapNarrates: true },
   "manacles:break": { title: "Break your manacles", label: "Wrenching their own manacles apart", check: STRENGTH, dc: 20, source: "OotA ch.1 Escape: break manacles, DC 20 Strength", mapNarrates: true },
   "manacles:wire": { title: "Work the wire", label: "Working a bent wire into their own manacles", check: SLEIGHT, dc: 15, source: "house (Sam's mechanic; OotA manacles DC 20, the wire worth 5)", mapNarrates: true },
   // THE DRUID'S WORD (Sam, 2026-11-12: "A druid can talk to one of the rats or a spider if they are successful to try to
