@@ -12850,7 +12850,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       { const rd = attackRiders({hp: att.c.hp, woundedFury: att.c.sheet.woundedFury, raging: att.c.rage, level: att.c.sheet.level || 1}, atk, shot === "thrown");
         for (const d of rd.dice){ const s = roll(d.dice, crit); dmg.total += s.total; parts.push(`${d.label} ${s.total}`); }
         for (const f of rd.flat){ dmg.total += f.amount; parts.push(`${f.label} +${f.amount}`); } }
-      hitCtx = {weapon: atk.name || "", melee: !shot, by: att}; damage(tgt, dmg.total, atk.type, crit, att, !!atk.magic); hitCtx = null; hexRider(att, tgt, crit); markRider(att, tgt, crit, atk); if (atk.gfb) gfbLeap(att, tgt, crit);
+      hitCtx = {weapon: atk.name || "", melee: !shot, by: att}; damage(tgt, dmg.total, atk.type, crit, att, !!atk.magic); hitCtx = null; corrodeHit(att, tgt, atk, shot); hexRider(att, tgt, crit); markRider(att, tgt, crit, atk); if (atk.gfb) gfbLeap(att, tgt, crit);
       if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => bank(`magic/impact_${atk.extra.type}`, .55), 200);
         // the rider is SEEN, not just heard (Sam, 2026-11-15: "make sure their special abilities are animated"): the ochre jelly's acid splashes
         if (IMPACT_OF[atk.extra.type] && atk.extra.type !== "thunder") setTimeout(() => spawnFx(IMPACT_OF[atk.extra.type], {at: tgt, sq: 1.3, anchor: "mid"}), 220);
@@ -17540,7 +17540,7 @@ async function pollLabor(){
   followCrews(j.crewsNow, j.day, j.shift);
   noteTalkClock(j.day, j.shift);
   // the shift has come round: anyone at the table may call it (the server takes the first and refuses the rest)
-  if (labor && j.due && labor.status === "scheduled" && cur === PEN && mode === "explore" && !surgeon && !state.gateOpen && escapePolicy().labor) await laborPost("call");
+  if (labor && j.due && labor.status === "scheduled" && cur === PEN && mode === "explore" && !surgeon && (!state.gateOpen || state.doorShut) && !state.brokeOut && !state.gateBroken && escapePolicy().labor) await laborPost("call");   // an unlocked but shut gate does not stop the call: the escort locks it behind them
   laborFollow(was);
   renderLaborBar();
 }
@@ -17608,7 +17608,7 @@ async function crewTakenOut(going, list){
     escortLeadsOut();
     await wait(7000);
     for (const a of team){ npcs = npcs.filter(x => x !== a); actors = actors.filter(x => x !== a); }
-    if (cur === PEN && !state.gateOpen) setDoor(false);
+    if (cur === PEN) escortLocks({sound: true});   // THE ESCORT HOLDS THE PEN: shut and locked behind the crew
   } finally { crewMoving = false; }
 }
 function laborFollow(was){
@@ -17717,6 +17717,49 @@ function escortLeadsOut(){
   const room = y => 1 / (node.scale * depthAt(y)), fs = 1.35, [lx, ly] = B.behind || [545, 702], [tx, ty] = B.threshold;
   laborEscort().forEach((a, i) => { a.static = false; stopActivity(a); a.waitUntil = now + i * 500;
     a.path = [{x: tx, y: ty, s: .95, out: true}, {x: lx, y: ly, s: fs * room(ly), jump: true}, {x: -120, y: ly, s: fs * room(ly), out: true}]; });
+}
+// THE ESCORT HOLDS THE PEN (Sam, 2026-11-22, the pen door rules: "When guards or people are escorted out the door
+// automatically closes. When guards are coming in everyone is frozen and only people being escorted, automatically
+// disappear through the door or appear from the door."). Measured in his playtest of 2026-11-22 (walk_log): Fifi opened
+// the gate at 17:19:34, the work detail was called at 17:19:52, the party was marched to the kitchen and back, the log
+// said "The work detail is back in the pen. The gate is locked." at 17:22:16, and at 17:22:22 Fifi walked out of the
+// gate onto the landing. The escort only ever shut the door `if (!state.gateOpen)`: a gate a prisoner had opened (or,
+// since the door rework, unlocked) was left that way after the detail. Now:
+//   - THE HOLD. While an escort is in the pen (the detail being called, another crew being taken out, the detail being
+//     brought back) nobody walks: not the heroes this screen drives, not the prisoners. Only the escort and the people
+//     it takes or brings move. Cards still come up (the call's own card is how a hero answers it).
+//   - THE DOOR SHUTS AND LOCKS behind every escort, whatever state it was in (a prisoner's unlock included). A key a
+//     hero stole still opens it afterwards ([CLAUDE] a reading, flagged). A gate torn off its hinges stays broken.
+//   - BACK FROM WORK the detail appears in the doorway and walks in, and the door shuts behind them.
+let escortHomeUntil = 0;
+function escortHolds(){
+  if (String(cur) !== String(PEN) || mode === "combat" || mode === "load") return false;
+  if (labor && labor.status === "called" && laborEscort().length && !laborMarching) return true;   // the call: the escort is in, the detail not yet marched
+  return crewMoving || now < escortHomeUntil;                                                       // another crew being taken; the detail coming home
+}
+let escortHeldSaid = 0;
+function escortHoldTick(){
+  if (!escortHolds()) return;
+  let stopped = false;
+  for (const h of party){
+    if (h.escorted || !canControl(h) || owRemote(h)) continue;
+    if ((h.path && h.path.length) || h.kbd){ h.path = []; h.onArrive = null; h.wantsZone = null; h.kbd = false; stopped = true; }
+  }
+  for (const n of npcs){
+    if (n.escort || n.escorted || n.offStage || n.company || !PEN_NPCS.some(d => d.id === n.id)) continue;
+    if (n.path && n.path.length) n.path = [];
+    n.actUntil = Math.max(n.actUntil || 0, now + 1500);
+  }
+  if (stopped && now - escortHeldSaid > 4000){ escortHeldSaid = now; toast("The escort is in the pen. Nobody moves.", 2600); }
+}
+/** The gate shut and locked, in the world's state, for every screen. `open`: the door is left swung back for now (the detail walking in through it). */
+function escortLocks(o = {}){
+  if (state.gateBroken) return;
+  const was = !!(state.gateOpen || state.doorShut || state.gateLeftUnlocked);
+  state.gateOpen = false; state.doorShut = false; state.gateLeftUnlocked = null; saveWalk();
+  if (String(cur) !== String(PEN)) return;
+  if (balcony()) buildGrid();
+  if (!o.open){ setDoor(false); if (was || o.sound){ sfx("door-close", .8); setTimeout(() => sfx("lock-picked", .6), 600); } }
 }
 // anyone at the open door on their own while a detail is being called out gets shot (not the escort's march)
 function laborGateWatch(){
@@ -17845,6 +17888,7 @@ async function laborWaitThenMarch(){
   laborMarching = true; escortLeadsOut(); await wait(900);
   await laborWalk(detailRoute(SPEC, labor.task).out, {cut: true});
   laborMarching = false;
+  escortLocks();                         // THE ESCORT HOLDS THE PEN: the door shuts and locks behind the detail
   if (labor && labor.status === "escorting") await laborPost("arrive");
   laborAtWork();
   renderLaborBar();
@@ -17946,16 +17990,25 @@ async function laborHomeCut(){
   $("fade").classList.remove("on");
 }
 // everyone this screen drives, back on the pen floor near the middle (not on the landing outside the bars)
+let laborHomeSeen = null;
 function laborBackInside(){
   if (cur !== PEN) return;
-  const B = balcony(), [ix, iy] = (B && B.inside) || [1300, 950], placed = [];
-  party.filter(p => !p.ko && actors.includes(p) && !owRemote(p)).forEach((h, i) => {
+  const B = balcony(), [ix, iy] = (B && B.inside) || [1300, 950], [tx, ty] = (B && B.threshold) || [ix, iy], placed = [];
+  // THE ESCORT HOLDS THE PEN: the gate is locked in the world at once (so the doorway takes nobody back out), and the
+  // detail appears in the doorway, one after another, and walks in; the door swings shut behind the last of them
+  const home = labor ? labor.id : "x"; if (laborHomeSeen === home) return; laborHomeSeen = home;
+  escortLocks({open: true}); setDoor(true);
+  party.filter(p => !p.ko && actors.includes(p) && !owRemote(p)).forEach(h => {
+    const i = Math.max(0, PARTY.indexOf(h.id));   // each hero's own spot by the table's order: two screens no longer stand their heroes on one spot
     const q = nearestWalkable(ix + ((i % 3) - 1) * 90, iy + 110 + Math.floor(i / 3) * 70, placed); placed.push(q);
-    stopActivity(h); h.x = q.x; h.y = q.y; h.path = []; h.onArrive = null; h.performing = false; h.static = false; h.walkIn = false;
-    h.fixedScale = 0; h.big = 1; h.alpha = 1; h.face = faceOf(0, 1);
+    stopActivity(h); h.x = tx; h.y = ty; h.onArrive = () => { h.escorted = false; }; h.performing = false; h.static = false; h.walkIn = true; h.escorted = true;
+    h.fixedScale = 0; h.big = .95; h.alpha = 0; h.fadeIn = true; h.face = faceOf(0, 1); h.waitUntil = now + i * 650;
+    h.path = [{x: ix, y: iy, s: 1}, {x: q.x, y: q.y, s: 1}];
+    setTimeout(() => { if (h.escorted){ h.escorted = false; h.x = q.x; h.y = q.y; h.path = []; h.alpha = 1; h.big = 1; } }, 6000);   // never left in the doorway
   });
   for (const a of npcs) if (a.escort){ a.alpha = 0; a.offStage = true; }
-  if (!state.gateOpen){ state.doorShut = true; setDoor(false); }
+  escortHomeUntil = now + 2600;
+  setTimeout(() => { if (String(cur) === String(PEN)){ setDoor(false); sfx("door-close", .85); setTimeout(() => sfx("lock-picked", .6), 600); } }, 2400);
 }
 function laborEnds(aborted){
   if (!aborted && cur !== PEN && labor && !laborHomeDirect && (party.some(crewHasHero) || atPlate(labor))){ laborHomeCut().then(() => laborEnds(false)); return; }   // a screen that did not drive them: home in the same cut
@@ -17967,7 +18020,7 @@ function laborEnds(aborted){
   if (cur === PEN && !aborted && laborStaged){ laborLockIn(); setTimeout(() => { labor = null; renderLaborBar(); }, 2500); return; }
   if (cur === PEN){
     escortSays(escortDrow(), aborted ? "Not today. Sit." : LINES.back, 4200);
-    setTimeout(() => { if (!state.gateOpen) { setDoor(false); sfx("door-close", .8); } escortLeaves(); }, 1800);
+    setTimeout(() => { escortLocks({sound: true}); escortLeaves(); }, 1800);   // THE ESCORT HOLDS THE PEN: shut and locked behind them
   } else escortLeaves();
   if (aborted) narrate(null, "The work detail is called off.");
   setTimeout(() => { labor = null; renderLaborBar(); }, 2500);
@@ -18004,7 +18057,7 @@ async function laborLockIn(){
   for (const h of heroes){ h.performing = false; h.static = false; h.face = faceOf(gateCenter() ? gateCenter().x - h.x : 0, -1); }
   if (cur !== PEN) return;
   await wait(500);
-  setDoor(false); sfx("door-close", .9);
+  escortLocks({open: true}); setDoor(false); sfx("door-close", .9);
   await wait(650); sfx("lock-picked", .6);
   log(`The gate clangs shut behind the detail, and the key turns.`);
   if (d){ d.performing = false; d.face = faceOf(ix - d.x, iy - d.y); escortSays(d, LINES.back, 4200); }
@@ -19775,6 +19828,38 @@ if (APP) setTimeout(wakeOnMap, 2200);
 // combat flag ends. The shared `state.surrender` ({seq, victim, area, by, done}) tells the other screens to play the
 // pen half; `state.slain` keeps the thrown prisoner out of the pen for good (the same key the fights use).
 /*__SURRENDER__*/
+/*__CORRODE__*/
+// CORRODE METAL ON THE MAP (Sam, 2026-11-23: "go corrode"; lib/corrode.mjs, pasted above, holds the SRD rule and its
+// tables). After a blow has dealt its damage: a hero's nonmagical metal weapon that hit the gray ooze takes a permanent
+// -1 to damage (destroyed at -5); metal ammunition that hit it is destroyed; the ooze's pseudopod on a hero in
+// nonmagical metal armour takes 1 off the AC the armour gives (destroyed at AC 10). The change shows at once (the
+// weapon's line and the hero's AC are rebuilt) and is written once to the item (/api/walk-corrode), where the bag, the
+// sheet and the next fight read it. Ammunition is not counted on this map, so a bolt that dissolves is told, not taken.
+function corrodeHit(att, tgt, atk, shot){
+  try {
+    if (!att || !tgt || !atk) return;
+    const it = hero(att) && atk.item ? ((GEAR[att.id] || {}).carried || []).find(c => c.name === (atk.itemName || atk.name)) : null;
+    const ar = hero(tgt) ? (acOf(tgt.id) || {}).body : null;
+    const c = corrosionFor({attacker: {id: att.id, hero: hero(att)}, target: {id: tgt.id, hero: hero(tgt)},
+      attack: atk.item ? {item: true, magic: !!atk.magic || !!(it && isMagicWeapon(it)), ammo: !!atk.ammo, base: (it && baseWeapon(it)) || atk.itemName || atk.name, name: atk.name} : null,
+      armor: ar ? {name: ar.name, category: ar.cat, magic: !!(ar.item && (isMagicWeapon(ar.item) || Number((ar.item.properties || {}).ac_bonus || 0) > 0))} : null});
+    if (!c) return;
+    if (c.part === "ammo"){ const w = /bow/i.test(atk.name || "") ? "arrow" : /sling/i.test(atk.name || "") ? "bullet" : "bolt";
+      setTimeout(() => { popText(tgt, `the ${w} dissolves`, "#b8ff9a", .8); bank("magic/impact_acid", .4); }, 380);
+      log(`<em>The ${w} hisses away to nothing inside ${esc(fname(tgt))}.</em>`); return; }
+    const who = c.part === "armor" ? tgt : att, item = c.part === "armor" ? ar.item : it; if (!item) return;
+    const r = c.part === "armor" ? corrodeArmor(ar.baseOrig, item.corrode || 0) : corrodeWeapon(item.corrode || 0);
+    item.corrode = r.total; if (r.destroyed) item.condition = "destroyed";
+    refreshAttacks(who.id); refreshAc(who.id); if (who.c && SHEETS[who.id]) who.c.ac = SHEETS[who.id].ac;
+    setTimeout(() => { popText(who, r.destroyed ? `${item.name}: destroyed!` : c.part === "armor" ? `${item.name}: AC -1` : `${item.name}: corroded -1`, r.destroyed ? "#ff8a7a" : "#b8ff9a", 1); bank("magic/impact_acid", .55); }, 420);
+    log(`<b>Corrode Metal.</b> ${esc(item.name)} (${esc(fname(who))}) ${r.destroyed ? "is eaten away: <b>destroyed</b>" : c.part === "armor" ? `now gives AC ${r.ac} (−${r.total})` : `now deals −${r.total} damage`}.`);
+    if (!APP || SANDBOX || (typeof FIGHT !== "undefined" && FIGHT && FIGHT.watch)) return;   // the screen that rolled it writes it
+    const cid = characterIdOf(who.id); if (!cid) return;
+    const body = {sig: eventSig(`corrode:${who.id}:${item.item_key || item.name}:${r.total}`), plate: String(cur), hits: [{characterId: cid, itemKey: item.item_key || "", name: item.name, part: c.part === "armor" ? "armor" : "weapon"}]};
+    try { body.claimId = localStorage.getItem("aop_character_id") || undefined; body.claimToken = localStorage.getItem("aop_claim_token") || undefined; } catch (e) {}
+    fetch("/api/walk-corrode", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)}).catch(() => {});
+  } catch (e) { console.warn("corrode", e); }
+}
 const SURRENDER_MARCH_NOTE = "The drow march the party back through the outpost to the slave pen.";
 let surrenderSeen = null;              // the server's record (GET): who has been thrown, for the pool
 let surrenderPlayed = null;            // the seq whose pen half this screen has staged, so a replay of the record never replays the scene
@@ -20955,7 +21040,7 @@ function drawExploreJumpSquares(L){
   }
   ctx.restore();
 }
-function walkTo(p, cb){ if (!ownLeader()){ if (leader) notYours(leader); return; } if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else: a friend can get them up, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.wantsZone = null; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
+function walkTo(p, cb){ if (escortHolds()){ toast("The escort is in the pen. Nobody moves.", 2600); return; } if (!ownLeader()){ if (leader) notYours(leader); return; } if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else: a friend can get them up, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.wantsZone = null; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
 $("zIn").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.3); };
 $("zOut").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.3); };
 $("zFit").onclick = () => {
@@ -21597,7 +21682,8 @@ function attackFromItem(sheet, it){
   // a "+1" weapon's catalogue row may carry one `bonus` for both (Lolth's Tooth does): it adds to the attack and the damage
   // UNATTUNED, IT IS AN ORDINARY WEAPON (SRD: "only its nonmagical benefits"): no bonus to hit or damage, not magical
   const live = !needsAttune(it) || magicWorksFor(sheetHero(sheet), it), bonusHit = live ? Number(p.attack_bonus ?? p.bonus ?? 0) : 0, bonusDmg = live ? Number(p.damage_bonus ?? p.bonus ?? 0) : 0;
-  const prof = trainedWith(sheet, it) ? profOf(sheet) : 0, dm = mod + bonusDmg;       // the hero's proficiency bonus (profOf: by level)
+  // CORRODE METAL (lib/corrode.mjs, SRD Gray Ooze): an ooze-eaten blade's permanent -1 per bite comes off its damage rolls
+  const prof = trainedWith(sheet, it) ? profOf(sheet) : 0, corr = Number(it.corrode) || 0, dm = mod + bonusDmg - corr;       // the hero's proficiency bonus (profOf: by level)
   const a = {name: it.name, hit: mod + prof + bonusHit, dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
     reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, str: !ammo && (!finesse || str >= dex), ammo, item: true, itemName: it.name, pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null, magic: live && isMagicWeapon(it)};
   if (!live) a.unattuned = true;
@@ -21605,6 +21691,7 @@ function attackFromItem(sheet, it){
   if (light) a.light = true; if (thrown && rng[0]) a.thrown = rng[0];
   if (sheet.sneakDie && (finesse || ammo)) a.sneak = sheet.sneakDie;
   if (isTooth(it) && live) a.tooth = true;                                      // Lolth's Tooth: the venom in the hilt (below)
+  if (corr) a.corrode = corr;
   return a;
 }
 // a hero's attack lines: the equipped weapon first, then what the sheet always has (a fist)
@@ -21619,7 +21706,7 @@ function refreshAttacks(id){
     const s = ALLY_SHEETS[id]; if (!s.baseAttacks) s.baseAttacks = s.attacks.slice();
     const lines = [], seen = new Set();
     for (const it of ((GEAR[id] || {}).carried || [])){
-      const b = baseWeapon(it); if (!isWeapon(it) || seen.has(b || it.name)) continue; seen.add(b || it.name);
+      const b = baseWeapon(it); if (!isWeapon(it) || it.condition === "destroyed" || seen.has(b || it.name)) continue; seen.add(b || it.name);
       const kit = b && s.kit[b];
       lines.push(kit ? {...kit, itemName: it.name} : attackFromItem(s, it));
     }
@@ -21627,7 +21714,7 @@ function refreshAttacks(id){
     return;
   }
   const s = SHEETS[id]; if (!s) return; if (!s.baseAttacks) s.baseAttacks = s.attacks.slice();
-  const g = GEAR[id], held = g ? [g.main, g.off].map(n => n && g.carried.find(c => c.name === n)).filter(it => it && isWeapon(it)) : [];
+  const g = GEAR[id], held = g ? [g.main, g.off].map(n => n && g.carried.find(c => c.name === n)).filter(it => it && isWeapon(it) && it.condition !== "destroyed") : [];
   s.attacks = [...held.map(it => attackFromItem(s, it)), ...s.baseAttacks];
 }
 // ARMOUR CLASS FROM WHAT IS WORN (Sam, 2026-11-10, Fifi in a chain shirt still reading AC 13: "why is the armor not
@@ -21645,9 +21732,10 @@ const CLASS_ARMOR = {barbarian: ["light", "medium", "shield"], bard: ["light"], 
   fighter: ["light", "medium", "heavy", "shield"], paladin: ["light", "medium", "heavy", "shield"], ranger: ["light", "medium", "shield"],
   rogue: ["light"], warlock: ["light"], monk: [], sorcerer: [], wizard: []};
 function armorOf(it){
-  if (!it) return null; const p = it.properties || (catalogItem(it.name) || {}).properties || {}, cat = String(p.armor_category || "").toLowerCase();
+  if (!it || it.condition === "destroyed") return null;   // eaten through by an ooze (CORRODE METAL): it is no armour now
+  const p = it.properties || (catalogItem(it.name) || {}).properties || {}, cat = String(p.armor_category || "").toLowerCase();
   if (cat === "shield" || (/shield/i.test(it.name || "") && Number(p.ac_bonus) > 0)) return {kind: "shield", cat: "shield", bonus: Number(p.ac_bonus) || 2, name: it.name};
-  if (typeof p.base_ac === "number") return {kind: "body", cat: cat || "light", base: p.base_ac, cap: typeof p.dex_cap === "number" ? p.dex_cap : 2, bonus: Number(p.ac_bonus) || 0, stealth: p.stealth || "", name: it.name};
+  if (typeof p.base_ac === "number") return {kind: "body", cat: cat || "light", base: p.base_ac - (Number(it.corrode) || 0), baseOrig: p.base_ac, corrode: Number(it.corrode) || 0, item: it, cap: typeof p.dex_cap === "number" ? p.dex_cap : 2, bonus: Number(p.ac_bonus) || 0, stealth: p.stealth || "", name: it.name};
   return null;
 }
 const armorTrained = (cls, ar) => !ar || (CLASS_ARMOR[String(cls || "").toLowerCase()] || []).includes(ar.cat);
@@ -21895,7 +21983,8 @@ async function loadGear(only){
       const carried = (j.carried || []).map(r => { const cat = catalogItem(r.name); return {name: r.name, item_key: r.item_key, item_type: r.items?.item_type || r.item_type || cat?.item_type, properties: r.items?.properties || cat?.properties || {}, pixel: cat?.pixel_icon_url || null,
         eslot: normSlot(r.items?.equippable_slot || cat?.equippable_slot || r.equippable_slot || ""),   // the catalogue first (slotOfItem)
         wt: Number(r.weight ?? r.items?.weight ?? cat?.weight ?? 0) || 0,
-        qty: r.quantity || 1, icon: r.icon_url || cat?.icon_url || null, desc: r.description || cat?.description || "", origin: r.origin || "", stash: !!r.from_stash}; });
+        qty: r.quantity || 1, icon: r.icon_url || cat?.icon_url || null, desc: r.description || cat?.description || "", origin: r.origin || "", stash: !!r.from_stash,
+        corrode: Number(r.corrode) || 0, condition: r.condition || "pristine"}; });
       const doll = (j.equipped || []).filter(e => e.equipped !== false).map(e => ({slot: normSlot(e.slot), name: e.name, item_key: e.item_key || null}));
       const inHand = sl => (doll.find(d => d.slot === sl) || {}).name || null;
       GEAR[id] = {carried, doll, main: inHand("main_hand"), off: inHand("off_hand"), carryMax: j.carry ? j.carry.max : undefined}; refreshAttacks(id); refreshAc(id);
@@ -23843,7 +23932,7 @@ const NUMPAD_DIR = {Numpad1: [-1, 1], Numpad2: [0, 1], Numpad3: [1, 1], Numpad4:
 const MOVE_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", ...Object.keys(NUMPAD_DIR)]);
 const keys = new Set();
 function keyDir(){
-  if (timeStopped) return null;
+  if (timeStopped || escortHolds()) return null;
   let x = 0, y = 0;
   if (keys.has("ArrowLeft") || keys.has("KeyA")) x -= 1;
   if (keys.has("ArrowRight") || keys.has("KeyD")) x += 1;
@@ -24092,7 +24181,7 @@ function update(dt){
   tickFootsteps();
   tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt);
   redSigilSeen();                       // a drow inside the pen reads the red scar: the fight starts once, however they got in
-  sigilNoticeTick(); wardOutTick(); fellTick(); thresholdTick(); deadTick();     // a caster notices the sigil (and gets its film); the ones it bit lie where they fell
+  sigilNoticeTick(); wardOutTick(); fellTick(); thresholdTick(); deadTick(); escortHoldTick();     // a caster notices the sigil (and gets its film); the ones it bit lie where they fell
   pacingTick();                         // the caravan clock, the wait vote, and the pen's three small beats
   tickFungus();
   ovTick(); tickChasmWebs(); camKeep(); buppidoLedgeTick();
