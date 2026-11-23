@@ -14530,7 +14530,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       { const rd = attackRiders({hp: att.c.hp, woundedFury: att.c.sheet.woundedFury, raging: att.c.rage, level: att.c.sheet.level || 1}, atk, shot === "thrown");
         for (const d of rd.dice){ const s = roll(d.dice, crit); dmg.total += s.total; parts.push(`${d.label} ${s.total}`); }
         for (const f of rd.flat){ dmg.total += f.amount; parts.push(`${f.label} +${f.amount}`); } }
-      hitCtx = {weapon: atk.name || "", melee: !shot, by: att}; damage(tgt, dmg.total, atk.type, crit, att, !!atk.magic); hitCtx = null; hexRider(att, tgt, crit); markRider(att, tgt, crit, atk); if (atk.gfb) gfbLeap(att, tgt, crit);
+      hitCtx = {weapon: atk.name || "", melee: !shot, by: att}; damage(tgt, dmg.total, atk.type, crit, att, !!atk.magic); hitCtx = null; corrodeHit(att, tgt, atk, shot); hexRider(att, tgt, crit); markRider(att, tgt, crit, atk); if (atk.gfb) gfbLeap(att, tgt, crit);
       if (atk.extra){ const e = roll(atk.extra.dmg, crit); setTimeout(() => bank(`magic/impact_${atk.extra.type}`, .55), 200);
         // the rider is SEEN, not just heard (Sam, 2026-11-15: "make sure their special abilities are animated"): the ochre jelly's acid splashes
         if (IMPACT_OF[atk.extra.type] && atk.extra.type !== "thunder") setTimeout(() => spawnFx(IMPACT_OF[atk.extra.type], {at: tgt, sq: 1.3, anchor: "mid"}), 220);
@@ -23206,6 +23206,143 @@ function surrenderSummary(areaName, victim, beaten) {
   return `The party surrendered to the guards in ${areaName}. ${beat} They were marched back to the slave pen.${thrown} The gate is locked again and the ward sigil covers them: they are CAPTIVE. Malachar: play the return in the guards' voices — no bargaining, this was the bargain.`
 }
 
+// CORRODE METAL — the gray ooze eats metal (SRD 5.1, Monsters: Gray Ooze).
+//
+// Sam, 2026-11-23: "go corrode", on the ooze-in-the-pool plan (claude/Gray_Ooze_Pool_Module_2026-11-23.md), where he
+// took "Corrode Metal exactly as the SRD writes it". The two rules, as printed:
+//   Corrode Metal: "Any nonmagical weapon made of metal that hits the ooze corrodes. After dealing damage, the weapon takes
+//     a permanent and cumulative -1 penalty to damage rolls. If its penalty drops to -5, the weapon is destroyed.
+//     Nonmagical ammunition made of metal that hits the ooze is destroyed after dealing damage."
+//   Pseudopod: "... and if the target is wearing nonmagical metal armor, its armor is partly corroded and takes a permanent
+//     and cumulative -1 penalty to the AC it offers. The armor is destroyed if the penalty reduces its AC to 10."
+//
+// This file is pasted whole (minus `export`) into the painted map at its CORRODE placeholder
+// (scripts/velkynvelve-walk/build_walk.py corrode_rules), and imported by app/api/walk-corrode and lib/corrode.test.ts,
+// so all three read the same numbers.
+//
+// WHAT IS METAL is not in the catalogue (an `items` row carries no material: lib/repair.ts says the same of armour). The
+// lists below are Claude's reading of the SRD weapon and armour tables, by what the striking part is made of:
+//   not metal: club, greatclub, quarterstaff (wood); whip (leather); net (rope); obsidian, bone and wooden oddments; and
+//     the launchers (bows, crossbows, slings, blowguns), which never touch the ooze: their AMMUNITION does.
+//   metal: every other SRD weapon (blades, axes, maces, hammers, picks, and spears and javelins by their heads).
+//   metal armour: ring mail, chain shirt, chain mail, scale mail, breastplate, half plate, splint, plate.
+//   not metal: padded, leather, studded leather, hide, and a plain shield (wood) unless its name says steel or iron.
+
+const CORRODE_RULES = {
+  weaponDestroyedAt: 5,          // a -5 damage penalty destroys the weapon
+  armorDestroyedAtAc: 10,        // armour whose AC is corroded down to 10 is destroyed
+  source: "SRD 5.1, Monsters: Gray Ooze (Corrode Metal; Pseudopod)",
+}
+
+/** Creatures whose touch corrodes metal, by bestiary slug. */
+const CORRODERS = new Set(["gray-ooze"])
+
+const NOT_METAL_WEAPONS = new Set([
+  "club", "greatclub", "quarterstaff", "whip", "net", "unarmed", "unarmed-strike",
+  "shortbow", "longbow", "light-crossbow", "heavy-crossbow", "hand-crossbow", "sling", "blowgun",
+  "obsidian-shard", "totem-club",
+])
+const LAUNCHERS = new Set(["shortbow", "longbow", "light-crossbow", "heavy-crossbow", "hand-crossbow", "sling", "blowgun"])
+const METAL_ARMOR = /\b(ring-?mail|chain-?shirt|chain-?mail|scale-?mail|breastplate|half-?plate|splint|plate(-armou?r)?)\b/
+const NOT_METAL_ARMOR = /\b(padded|leather|studded|hide)\b/
+
+function slugOfName(name) {
+  return String(name || "").toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+}
+
+/** Is the part of this weapon that strikes made of metal? `base` is the SRD weapon it is (e.g. "dagger"), or its name. */
+function weaponIsMetal(base) {
+  const s = slugOfName(base)
+  if (!s) return false
+  if (NOT_METAL_WEAPONS.has(s)) return false
+  if (/(^|-)(wood|wooden|bone|stone|obsidian|club|staff|wand|rod|orb|totem|fist|punch|unarmed)(-|$)/.test(s)) return false
+  return true
+}
+
+/** A launcher never touches the ooze; its ammunition does. */
+function isLauncher(base) {
+  return LAUNCHERS.has(slugOfName(base))
+}
+
+/** Is this worn armour metal? `name` is the item's name, `category` its armor_category (light/medium/heavy/shield). */
+function armorIsMetal(name, category) {
+  const s = slugOfName(name)
+  if (String(category || "").toLowerCase() === "shield") return /\b(steel|iron|metal)\b/.test(s.replace(/-/g, " "))
+  if (NOT_METAL_ARMOR.test(s.replace(/-/g, " "))) return false
+  return METAL_ARMOR.test(s.replace(/-/g, "-"))
+}
+
+/** One more hit on a weapon: its new total penalty, and whether that destroys it. */
+function corrodeWeapon(total) {
+  const t = Math.max(0, Math.floor(Number(total) || 0)) + 1
+  return { total: t, destroyed: t >= CORRODE_RULES.weaponDestroyedAt }
+}
+
+/** One more pseudopod hit on armour that offers `baseAc`: its new penalty, the AC it now offers, and whether it is destroyed. */
+function corrodeArmor(baseAc, total) {
+  const t = Math.max(0, Math.floor(Number(total) || 0)) + 1
+  const ac = Number(baseAc) - t
+  return { total: t, ac, destroyed: ac <= CORRODE_RULES.armorDestroyedAtAc }
+}
+
+/** The line a sheet or the bag shows for a corroded thing. */
+function corrosionNote(part, total, destroyed) {
+  if (destroyed) return part === "armor" ? "Eaten through by an ooze's acid: destroyed." : "Eaten away by an ooze's acid: destroyed."
+  return part === "armor" ? `Corroded by an ooze's acid: ${-total} AC.` : `Corroded by an ooze's acid: ${-total} to damage.`
+}
+
+/**
+ * Does this blow corrode something, and what? Pure: it says what the rules call for; the caller applies it.
+ *   attacker / target: {id, hero}   attack: {item, magic, ammo, thrown, base}   armor: the target's worn body armour or null
+ * Returns null, or {part: "weapon"|"ammo"|"armor", ...}.
+ */
+/** @param {{attacker?: any, target?: any, attack?: any, armor?: any}} [blow] */
+function corrosionFor({ attacker, target, attack, armor } = {}) {
+  if (!attacker || !target) return null
+  // a hero's metal weapon (or its ammunition) hits the ooze
+  if (attacker.hero && CORRODERS.has(target.id) && attack && attack.item && !attack.magic) {
+    if (attack.ammo) return weaponIsMetal("bolt") ? { part: "ammo" } : null   // arrows, bolts and bullets carry metal heads or are metal
+    if (isLauncher(attack.base)) return null
+    return weaponIsMetal(attack.base || attack.name) ? { part: "weapon" } : null
+  }
+  // the ooze's pseudopod hits a hero in nonmagical metal armour
+  if (CORRODERS.has(attacker.id) && target.hero && armor && !armor.magic && armorIsMetal(armor.name, armor.category)) {
+    return { part: "armor" }
+  }
+  return null
+}
+
+// CORRODE METAL ON THE MAP (Sam, 2026-11-23: "go corrode"; lib/corrode.mjs, pasted above, holds the SRD rule and its
+// tables). After a blow has dealt its damage: a hero's nonmagical metal weapon that hit the gray ooze takes a permanent
+// -1 to damage (destroyed at -5); metal ammunition that hit it is destroyed; the ooze's pseudopod on a hero in
+// nonmagical metal armour takes 1 off the AC the armour gives (destroyed at AC 10). The change shows at once (the
+// weapon's line and the hero's AC are rebuilt) and is written once to the item (/api/walk-corrode), where the bag, the
+// sheet and the next fight read it. Ammunition is not counted on this map, so a bolt that dissolves is told, not taken.
+function corrodeHit(att, tgt, atk, shot){
+  try {
+    if (!att || !tgt || !atk) return;
+    const it = hero(att) && atk.item ? ((GEAR[att.id] || {}).carried || []).find(c => c.name === (atk.itemName || atk.name)) : null;
+    const ar = hero(tgt) ? (acOf(tgt.id) || {}).body : null;
+    const c = corrosionFor({attacker: {id: att.id, hero: hero(att)}, target: {id: tgt.id, hero: hero(tgt)},
+      attack: atk.item ? {item: true, magic: !!atk.magic || !!(it && isMagicWeapon(it)), ammo: !!atk.ammo, base: (it && baseWeapon(it)) || atk.itemName || atk.name, name: atk.name} : null,
+      armor: ar ? {name: ar.name, category: ar.cat, magic: !!(ar.item && (isMagicWeapon(ar.item) || Number((ar.item.properties || {}).ac_bonus || 0) > 0))} : null});
+    if (!c) return;
+    if (c.part === "ammo"){ const w = /bow/i.test(atk.name || "") ? "arrow" : /sling/i.test(atk.name || "") ? "bullet" : "bolt";
+      setTimeout(() => { popText(tgt, `the ${w} dissolves`, "#b8ff9a", .8); bank("magic/impact_acid", .4); }, 380);
+      log(`<em>The ${w} hisses away to nothing inside ${esc(fname(tgt))}.</em>`); return; }
+    const who = c.part === "armor" ? tgt : att, item = c.part === "armor" ? ar.item : it; if (!item) return;
+    const r = c.part === "armor" ? corrodeArmor(ar.baseOrig, item.corrode || 0) : corrodeWeapon(item.corrode || 0);
+    item.corrode = r.total; if (r.destroyed) item.condition = "destroyed";
+    refreshAttacks(who.id); refreshAc(who.id); if (who.c && SHEETS[who.id]) who.c.ac = SHEETS[who.id].ac;
+    setTimeout(() => { popText(who, r.destroyed ? `${item.name}: destroyed!` : c.part === "armor" ? `${item.name}: AC -1` : `${item.name}: corroded -1`, r.destroyed ? "#ff8a7a" : "#b8ff9a", 1); bank("magic/impact_acid", .55); }, 420);
+    log(`<b>Corrode Metal.</b> ${esc(item.name)} (${esc(fname(who))}) ${r.destroyed ? "is eaten away: <b>destroyed</b>" : c.part === "armor" ? `now gives AC ${r.ac} (−${r.total})` : `now deals −${r.total} damage`}.`);
+    if (!APP || SANDBOX || (typeof FIGHT !== "undefined" && FIGHT && FIGHT.watch)) return;   // the screen that rolled it writes it
+    const cid = characterIdOf(who.id); if (!cid) return;
+    const body = {sig: eventSig(`corrode:${who.id}:${item.item_key || item.name}:${r.total}`), plate: String(cur), hits: [{characterId: cid, itemKey: item.item_key || "", name: item.name, part: c.part === "armor" ? "armor" : "weapon"}]};
+    try { body.claimId = localStorage.getItem("aop_character_id") || undefined; body.claimToken = localStorage.getItem("aop_claim_token") || undefined; } catch (e) {}
+    fetch("/api/walk-corrode", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify(body)}).catch(() => {});
+  } catch (e) { console.warn("corrode", e); }
+}
 const SURRENDER_MARCH_NOTE = "The drow march the party back through the outpost to the slave pen.";
 let surrenderSeen = null;              // the server's record (GET): who has been thrown, for the pool
 let surrenderPlayed = null;            // the seq whose pen half this screen has staged, so a replay of the record never replays the scene
@@ -25135,7 +25272,8 @@ function attackFromItem(sheet, it){
   // a "+1" weapon's catalogue row may carry one `bonus` for both (Lolth's Tooth does): it adds to the attack and the damage
   // UNATTUNED, IT IS AN ORDINARY WEAPON (SRD: "only its nonmagical benefits"): no bonus to hit or damage, not magical
   const live = !needsAttune(it) || magicWorksFor(sheetHero(sheet), it), bonusHit = live ? Number(p.attack_bonus ?? p.bonus ?? 0) : 0, bonusDmg = live ? Number(p.damage_bonus ?? p.bonus ?? 0) : 0;
-  const prof = trainedWith(sheet, it) ? profOf(sheet) : 0, dm = mod + bonusDmg;       // the hero's proficiency bonus (profOf: by level)
+  // CORRODE METAL (lib/corrode.mjs, SRD Gray Ooze): an ooze-eaten blade's permanent -1 per bite comes off its damage rolls
+  const prof = trainedWith(sheet, it) ? profOf(sheet) : 0, corr = Number(it.corrode) || 0, dm = mod + bonusDmg - corr;       // the hero's proficiency bonus (profOf: by level)
   const a = {name: it.name, hit: mod + prof + bonusHit, dmg: dm ? `${die}${dm > 0 ? "+" : ""}${dm}` : die, type,
     reach: ammo && rng[0] ? rng[0] : wp.includes("reach") ? 10 : 5, str: !ammo && (!finesse || str >= dex), ammo, item: true, itemName: it.name, pixel: it.pixel || (catalogItem(it.name) || {}).pixel_icon_url || null, magic: live && isMagicWeapon(it)};
   if (!live) a.unattuned = true;
@@ -25143,6 +25281,7 @@ function attackFromItem(sheet, it){
   if (light) a.light = true; if (thrown && rng[0]) a.thrown = rng[0];
   if (sheet.sneakDie && (finesse || ammo)) a.sneak = sheet.sneakDie;
   if (isTooth(it) && live) a.tooth = true;                                      // Lolth's Tooth: the venom in the hilt (below)
+  if (corr) a.corrode = corr;
   return a;
 }
 // a hero's attack lines: the equipped weapon first, then what the sheet always has (a fist)
@@ -25157,7 +25296,7 @@ function refreshAttacks(id){
     const s = ALLY_SHEETS[id]; if (!s.baseAttacks) s.baseAttacks = s.attacks.slice();
     const lines = [], seen = new Set();
     for (const it of ((GEAR[id] || {}).carried || [])){
-      const b = baseWeapon(it); if (!isWeapon(it) || seen.has(b || it.name)) continue; seen.add(b || it.name);
+      const b = baseWeapon(it); if (!isWeapon(it) || it.condition === "destroyed" || seen.has(b || it.name)) continue; seen.add(b || it.name);
       const kit = b && s.kit[b];
       lines.push(kit ? {...kit, itemName: it.name} : attackFromItem(s, it));
     }
@@ -25165,7 +25304,7 @@ function refreshAttacks(id){
     return;
   }
   const s = SHEETS[id]; if (!s) return; if (!s.baseAttacks) s.baseAttacks = s.attacks.slice();
-  const g = GEAR[id], held = g ? [g.main, g.off].map(n => n && g.carried.find(c => c.name === n)).filter(it => it && isWeapon(it)) : [];
+  const g = GEAR[id], held = g ? [g.main, g.off].map(n => n && g.carried.find(c => c.name === n)).filter(it => it && isWeapon(it) && it.condition !== "destroyed") : [];
   s.attacks = [...held.map(it => attackFromItem(s, it)), ...s.baseAttacks];
 }
 // ARMOUR CLASS FROM WHAT IS WORN (Sam, 2026-11-10, Fifi in a chain shirt still reading AC 13: "why is the armor not
@@ -25183,9 +25322,10 @@ const CLASS_ARMOR = {barbarian: ["light", "medium", "shield"], bard: ["light"], 
   fighter: ["light", "medium", "heavy", "shield"], paladin: ["light", "medium", "heavy", "shield"], ranger: ["light", "medium", "shield"],
   rogue: ["light"], warlock: ["light"], monk: [], sorcerer: [], wizard: []};
 function armorOf(it){
-  if (!it) return null; const p = it.properties || (catalogItem(it.name) || {}).properties || {}, cat = String(p.armor_category || "").toLowerCase();
+  if (!it || it.condition === "destroyed") return null;   // eaten through by an ooze (CORRODE METAL): it is no armour now
+  const p = it.properties || (catalogItem(it.name) || {}).properties || {}, cat = String(p.armor_category || "").toLowerCase();
   if (cat === "shield" || (/shield/i.test(it.name || "") && Number(p.ac_bonus) > 0)) return {kind: "shield", cat: "shield", bonus: Number(p.ac_bonus) || 2, name: it.name};
-  if (typeof p.base_ac === "number") return {kind: "body", cat: cat || "light", base: p.base_ac, cap: typeof p.dex_cap === "number" ? p.dex_cap : 2, bonus: Number(p.ac_bonus) || 0, stealth: p.stealth || "", name: it.name};
+  if (typeof p.base_ac === "number") return {kind: "body", cat: cat || "light", base: p.base_ac - (Number(it.corrode) || 0), baseOrig: p.base_ac, corrode: Number(it.corrode) || 0, item: it, cap: typeof p.dex_cap === "number" ? p.dex_cap : 2, bonus: Number(p.ac_bonus) || 0, stealth: p.stealth || "", name: it.name};
   return null;
 }
 const armorTrained = (cls, ar) => !ar || (CLASS_ARMOR[String(cls || "").toLowerCase()] || []).includes(ar.cat);
@@ -25433,7 +25573,8 @@ async function loadGear(only){
       const carried = (j.carried || []).map(r => { const cat = catalogItem(r.name); return {name: r.name, item_key: r.item_key, item_type: r.items?.item_type || r.item_type || cat?.item_type, properties: r.items?.properties || cat?.properties || {}, pixel: cat?.pixel_icon_url || null,
         eslot: normSlot(r.items?.equippable_slot || cat?.equippable_slot || r.equippable_slot || ""),   // the catalogue first (slotOfItem)
         wt: Number(r.weight ?? r.items?.weight ?? cat?.weight ?? 0) || 0,
-        qty: r.quantity || 1, icon: r.icon_url || cat?.icon_url || null, desc: r.description || cat?.description || "", origin: r.origin || "", stash: !!r.from_stash}; });
+        qty: r.quantity || 1, icon: r.icon_url || cat?.icon_url || null, desc: r.description || cat?.description || "", origin: r.origin || "", stash: !!r.from_stash,
+        corrode: Number(r.corrode) || 0, condition: r.condition || "pristine"}; });
       const doll = (j.equipped || []).filter(e => e.equipped !== false).map(e => ({slot: normSlot(e.slot), name: e.name, item_key: e.item_key || null}));
       const inHand = sl => (doll.find(d => d.slot === sl) || {}).name || null;
       GEAR[id] = {carried, doll, main: inHand("main_hand"), off: inHand("off_hand"), carryMax: j.carry ? j.carry.max : undefined}; refreshAttacks(id); refreshAc(id);
