@@ -41,8 +41,8 @@ describe("key moments", () => {
 
 describe("poses are drawn on demand", () => {
   it("no pose for the attacker's move, or no hit pose for the target: it plays on the map", () => {
-    expect(strikeCamScene({ ...jab, att: "samson", mode: "all" })).toBeNull()
-    expect(strikeCamScene({ ...jab, tgt: "quaggoth", mode: "all" })).toBeNull()
+    expect(strikeCamScene({ ...jab, att: "lynkes", mode: "all" })).toBeNull()
+    expect(strikeCamScene({ ...jab, tgt: "giant-spider", mode: "all" })).toBeNull()
     expect(strikeCamScene({ ...jab, art: "vex", mode: "all" })).toBeNull()
     expect(strikeCamScene({ att: "kenta", tgt: "drow-guard-male", spell: "Fire Bolt", spellLevel: 0, mode: "all" })).toBeNull()
   })
@@ -55,8 +55,21 @@ describe("poses are drawn on demand", () => {
     const poses = STRIKE_CAM.poses as Record<string, Record<string, any>>
     for (const slug of Object.keys(poses)) for (const [k, p] of Object.entries(poses[slug])) {
       expect(p.src, `${slug} ${k}`).toMatch(/^closeup-[a-z-]+\.png$/)
-      if (k !== "hit") expect(p.hand, `${slug} ${k}`).toHaveLength(2)
+      if (!k.startsWith("hit")) expect(p.hand, `${slug} ${k}`).toHaveLength(2)
     }
+  })
+  it("a caster's pose serves each spell of theirs that has sheets: Samson's Guiding Bolt is a key moment", () => {
+    const sc = strikeCamScene({ att: "samson", tgt: "drow-guard-female", spell: "Guiding Bolt", spellLevel: 1, mode: "key" })
+    expect(sc?.kind).toBe("spell")
+    expect(sc?.key).toBe("spell:Guiding Bolt")
+    expect(strikeCamScene({ att: "scott", tgt: "drow-guard-male", spell: "Vicious Mockery", spellLevel: 0, crit: true, mode: "all" })).toBeNull()
+  })
+  it("a critical hit shows the target's heavier hit pose when it has one", () => {
+    expect(strikeCamScene({ ...jab, mode: "key" })?.hard).toBe(false)
+    const crit = strikeCamScene({ ...jab, crit: true, mode: "key" })
+    expect(crit?.hard).toBe(true)
+    expect(crit?.hit.src).toBe("closeup-hit-hard.png")
+    expect(strikeCamScene({ ...jab, tgt: "drow-guard-female", crit: true, mode: "key" })?.hard).toBe(false)
   })
 })
 
