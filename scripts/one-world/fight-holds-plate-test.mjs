@@ -152,7 +152,7 @@ const see = (pg) => pg.evaluate(() => ({ plate: String(cur), mode, fightLive: !!
 const shot = async (pg, name) => { if (SHOTS) await pg.screenshot({ path: join(SHOTS, name + ".png") }) }
 const until = async (pg, fn, ms = 30000, arg) => { try { await pg.waitForFunction(fn, arg, { timeout: ms }); return true } catch { return false } }
 // the watch does not stand talking, and the pen's ward does not matter here
-const openGate = (pg) => pg.evaluate(() => { state.wardBroken = true; unlockGate(); for (const n of npcs) n.talk = false })
+const openGate = (pg) => pg.evaluate(() => { state.wardBroken = true; unlockGate(0, true); for (const n of npcs) n.talk = false })   // (0, true): opened, not just unlocked (THE PEN DOOR, 2026-11-22)
 const sturdy = (pg) => pg.evaluate(() => { for (const p of party) if (p.c) { p.c.hp = p.c.hpMax = 99 } })
 const itsTurn = async (pg, id, ms = 90000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { const s = await pg.evaluate(() => ({ mode, who: cbt && activeActor() && activeActor().id, phase: cbt && cbt.phase, busy: combatBusy })); if (s.mode === "combat" && s.who === id && s.phase === "menu" && !s.busy) return true; if (!["combat", "dialog"].includes(s.mode)) return false; await wait(300) } return false }
 // her own Move command, then a click where she is to walk (the way a player does it)
@@ -177,8 +177,12 @@ async function penFight(pg) {                       // the gate stands open and 
 const prisonerOpens = async (pg, by) => {
   await pg.evaluate((by) => { state.wardBroken = true; window.__handoffs = []; const h0 = handOff; handOff = (t, ...x) => { __handoffs.push(String(t)); try { return h0(t, ...x) } catch (e) {} }
     for (const n of npcs) n.talk = false; breakoutBy = by; unlockGate(by === "force" ? 1 : undefined) }, by)
-  return until(pg, () => !$("obj").hidden && /lock is off|torn open/.test($("objWho").textContent), 15000)
+  // THE PEN DOOR (Sam, 2026-11-22): a key or the picks leave it shut; the card comes back with "Open it", and opened, the
+  // one three-row card comes up by itself. A gate torn off its bolts is open already.
+  if (by !== "force") { await until(pg, () => !$("obj").hidden && [...$("objBtns").querySelectorAll("button")].some((b) => /^Open it/.test(b.textContent.trim())), 15000); await pick(pg, /^Open it/) }
+  return until(pg, () => !$("obj").hidden && $("objWho").textContent === "The gate is open", 15000)
 }
+const PARTY_ROW = /^Flee, with the party/, ALL_ROW = /^Flee, with everyone/, SHUT_ROW = /^Close the gate/
 const card = (pg) => pg.evaluate(() => ({ who: $("objWho").textContent, rows: [...$("objBtns").querySelectorAll("button")].map((b) => b.textContent.trim()) }))
 const pick = (pg, re) => pg.evaluate((src) => { const b = [...$("objBtns").querySelectorAll("button")].find((b) => new RegExp(src).test(b.textContent)); if (b) b.click(); return !!b }, re.source)
 // THE BATTLE SCREEN (Sam, 2026-11-13): a fight with the gate watch is played on the landing's own battle plate, so "out
@@ -236,8 +240,8 @@ const SCENARIOS = {
     try {
       check("the card comes up", await prisonerOpens(A, "key"))
       const c = await card(A); await shot(A, "11-the-card")
-      check("it is the unseen card: who goes, or leave it shut; nobody to surrender to", c.who === "The lock is off" && c.rows.some((r) => /^Go through — .* and the other hero/.test(r)) && c.rows.some((r) => /Leave it shut, but unlocked/.test(r)) && !c.rows.some((r) => /Surrender|Slip out/.test(r)), c)
-      await pick(A, /^Go through — .* and the other hero/)
+      check("it is the one card: the party, everyone, or close the gate", c.who === "The gate is open" && c.rows.some((r) => PARTY_ROW.test(r)) && c.rows.some((r) => SHUT_ROW.test(r)) && !c.rows.some((r) => /Surrender|Slip out|Go through/.test(r)), c)
+      await pick(A, PARTY_ROW)
       check("the fight starts", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 20000))
       await wait(1200); const f = await fightNow(A); await shot(A, "11-on-the-landing")
       check("on the landing's battle plate", f.plate === BATTLE, f)
@@ -252,8 +256,8 @@ const SCENARIOS = {
     try {
       check("the card comes up", await prisonerOpens(A, "pick"))
       const c = await card(A)
-      check("alone, the first row says so; the group row is offered", c.rows.some((r) => /^Go through — .* alone$/.test(r)) && c.rows.some((r) => /take everyone who will fight/.test(r)), c)
-      await pick(A, /take everyone who will fight/)
+      check("the party row and the everyone row are offered", c.rows.some((r) => PARTY_ROW.test(r)) && c.rows.some((r) => ALL_ROW.test(r)), c)
+      await pick(A, ALL_ROW)
       check("the fight starts", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 20000))
       await wait(1200); const f = await fightNow(A); await shot(A, "12-everyone")
       check("the prisoners who fight are in it, and out on the landing", f.allies.length > 0 && f.allies.every((x) => x[1]), f)
@@ -264,7 +268,7 @@ const SCENARIOS = {
     const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
     try {
       check("the card comes up", await prisonerOpens(A, "key"))
-      await pick(A, /Leave it shut, but unlocked/); await wait(900)
+      await pick(A, SHUT_ROW); await wait(900)
       const left = await A.evaluate(() => ({ mode, open: state.gateOpen, shut: state.doorShut, marked: !!state.gateLeftUnlocked, fight: !!cbt }))
       check("the gate is shut but unlocked, nobody fights, and the game goes on", left.mode === "explore" && left.open && left.shut && left.marked && !left.fight, left)
       await A.evaluate(() => { gateLeftUnlockedTick() }); const same = await A.evaluate(() => state.gateOpen && !!state.gateLeftUnlocked)
@@ -279,8 +283,8 @@ const SCENARIOS = {
     try {
       check("the card comes up", await prisonerOpens(A, "force"))
       const c = await card(A); await shot(A, "14-torn-open")
-      check("it is the seen card: go through or surrender; a torn gate is not offered shut", c.who === "The gate is torn open" && c.rows.some((r) => /^Go through/.test(r)) && c.rows.some((r) => /Surrender/.test(r)) && !c.rows.some((r) => /Leave it shut/.test(r)), c)
-      await pick(A, /^Go through — .* alone$/)
+      check("it is the same card; a torn gate is not offered shut", c.who === "The gate is open" && c.rows.some((r) => PARTY_ROW.test(r)) && !c.rows.some((r) => SHUT_ROW.test(r)), c)
+      await pick(A, PARTY_ROW)
       check("the fight starts", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 20000))
       await wait(1200); const f = await fightNow(A)
       check("out on the landing, and the drow are NOT surprised", f.heroesOut.every(Boolean) && f.plate === BATTLE && f.foes.length > 0 && f.foes.every((x) => !x[1]), f)
@@ -291,7 +295,7 @@ const SCENARIOS = {
     try {
       await wait(2500)
       check("the card comes up on the screen that opened the gate", await prisonerOpens(A, "key"))
-      await pick(A, /^Go through — .* and the other hero/)
+      await pick(A, PARTY_ROW)
       check("the fight starts on Fifi's screen", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0, 20000))
       check("Kenta's screen shows it", await until(B, () => mode === "combat" && !!cbt, 30000))
       await wait(5000)
@@ -459,7 +463,7 @@ const SCENARIOS = {
     const W = await world({ port, seats: [FIFI] }), A = await W.screen(FIFI, "Fifi")
     try {
       check("the card comes up", await prisonerOpens(A, "key"))
-      await pick(A, /^Go through — .* alone$/)
+      await pick(A, PARTY_ROW)
       check("the fight starts on the battle plate", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0 && String(cur) === "battle-pen-gate", 20000))
       await wait(1500)
       const st = await A.evaluate(() => ({ exits: fightHoldsPlate(), foesOnFloor: foes.every((f) => walkable(f.x, f.y)), penWatch: gateWatchAway() }))
@@ -486,9 +490,9 @@ const SCENARIOS = {
       check("the gate stands open, the watch is out there, and there is no way through on foot", st.open && !st.passable && st.path === 0 && !st.thru && st.guards > 0, st)
       // (walking up to an open gate under the watch's eyes is theirs to answer first, "Back from the gate": the card itself is asked for here)
       await A.evaluate(() => { for (const n of npcs) n.talk = false; openInteract(doorGate()) })
-      check("the open gate's card is the choice of who goes through", await until(A, () => !$("obj").hidden && /The lock is off/.test($("objWho").textContent), 15000), await see(A))
+      check("the open gate's card is the choice of who goes through", await until(A, () => !$("obj").hidden && /The gate is open/.test($("objWho").textContent), 15000), await see(A))
       const still = await A.evaluate(() => outsidePen(leader)); check("she has not gone anywhere", !still)
-      await pick(A, /^Go through — .* alone$/)
+      await pick(A, PARTY_ROW)
       check("going through is the fight, on the battle plate", await until(A, () => mode === "combat" && cbt && cbt.order.length > 0 && String(cur) === "battle-pen-gate", 20000), await fightNow(A))
     } finally { await W.close() }
   }],
@@ -500,7 +504,7 @@ const SCENARIOS = {
       check("no watch, and still no way through on foot", st.guards === 0 && st.path === 0, st)
       await A.evaluate(() => { for (const n of npcs) n.talk = false; click(gateCenter()) })
       check("the card says the landing is empty", await until(A, () => !$("obj").hidden && /nobody is on the landing/.test($("objText").textContent), 40000), await see(A))
-      await pick(A, /^Go through — out onto the landing$/)
+      await pick(A, ALL_ROW)
       check("she is on the landing's plate, free to walk", await until(A, () => String(cur) === "battle-pen-gate" && mode === "explore", 20000), await see(A))
       const ways = await A.evaluate(() => node.zones.map((z) => z.to.join()))
       check("the gate, the bridge and the cliff stairs are its ways on", ["11", "10", "12"].every((t) => ways.includes(t)), ways)
@@ -550,7 +554,7 @@ const SCENARIOS = {
     try {
       // over the bridge from the pen, a few steps into the tower, and the watch there sees her (the game's own path:
       // /api/walk-spotted raises the flag, the screen opens the fight it finds on it)
-      await A.evaluate(() => { state.wardBroken = true; state.ambushOff = true; state.cleared[cur] = true; unlockGate(); for (const n of npcs) n.talk = false })
+      await A.evaluate(() => { state.wardBroken = true; state.ambushOff = true; state.cleared[cur] = true; unlockGate(0, true); for (const n of npcs) n.talk = false })
       await wait(1500); await A.evaluate(() => { travel(10, node.zones[1]) })   // the crossing itself, as the gate's "To Guard Tower" row makes it
       await until(A, () => String(cur) === "10" && mode === "explore" && !leader.walkIn && !leader.path.length, 40000)
       await A.evaluate(() => walkTo(nearestWalkable(2230, 850)))
@@ -649,13 +653,13 @@ const SCENARIOS = {
       const W = await world({ port: port + (follow ? 0 : 1), watchAway: true }), A = await W.screen(FIFI, "Fifi")
       try {
         await wait(4000)
-        await A.evaluate((follow) => { state.wardBroken = true; unlockGate(); state.ambushOff = true; for (const n of npcs) n.talk = false; setFollow(follow) }, follow)
+        await A.evaluate((follow) => { state.wardBroken = true; unlockGate(0, true); state.ambushOff = true; for (const n of npcs) n.talk = false; setFollow(follow) }, follow)
         await wait(1500)
         const n = await A.evaluate(() => party.length)
         // (2026-11-13: the open gate is not floor any more. Its card cuts to the landing's own plate; the bridge is walked from there.)
         const blocked = await A.evaluate(([x, y]) => findPath(leader, nearestWalkable(x, y)).length === 0 || !outsidePen(nearestWalkable(x, y)), BRIDGE_FOOT)
         check("no walking out of the open gate to the bridge", blocked)
-        await A.evaluate(() => openInteract(doorGate())); await until(A, () => !$("obj").hidden, 10000); await pick(A, /^Go through — out onto the landing$/)
+        await A.evaluate(() => openInteract(doorGate())); await until(A, () => !$("obj").hidden, 10000); await pick(A, ALL_ROW)
         check("the card's way through is the landing's plate", await until(A, () => String(cur) === "battle-pen-gate" && mode === "explore", 20000))
         await wait(1500); await A.evaluate(() => { __moves.length = 0; const z = node.zones.find((q) => q.to.includes(10)), c = zoneCenter(z); walkTo(nearestWalkable(c.x, c.y)) })
         const over = await until(A, () => String(cur) === "10" && mode === "explore", 60000); await wait(3000)
@@ -751,8 +755,15 @@ async function partyMoves(port, comesBack) {
 }
 
 let i = 0
+// RETIRED 2026-11-22 (Sam's pen door ruling, project doc claude/Pen_Door_Rules_2026-11-22.md): the open gate now raises ONE
+// card (Flee with the party / Flee with everyone / Close the gate) and a hero who walks onto its threshold mid-fight is
+// out. These scenarios assert the cards and the rule that ruling replaced: the sneaking card's four rows (22-27) and "nobody walks out through it mid-fight" (10). The new rules are in pen-door-test.mjs. Their code is
+// kept above so they can come back if the sneaking rows do.
+const RETIRED = new Set(["10", "22", "23", "24", "25", "26", "27"])
+const RETIRED_NAMES = [/^the door, sneaking/]
 for (const [n, [name, run]] of Object.entries(SCENARIOS)) {
   if (ONLY && !ONLY.includes(+n)) continue
+  if (RETIRED.has(String(n)) || RETIRED_NAMES.some((re) => re.test(name))) { console.log(`\n[${n}] ${name}\nRETIRED  superseded by the pen door ruling of 2026-11-22; see pen-door-test.mjs`); continue }
   scenario = n; console.log(`\n— ${n}. ${name}`)
   try { await run(PORT0 + 2 * i++) } catch (e) { check("the scenario ran to its end", false, String(e && e.stack || e).slice(0, 400)) }
 }
