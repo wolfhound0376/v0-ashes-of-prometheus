@@ -17417,7 +17417,10 @@ function burst(a, col, n){ const m = SPR[a.id].json, sc = actorScale(a), y = a.y
 //   - strikeCamCut()     full or short: the full cut the first time a move is used in a fight, and at most one full cut
 //                        a round.
 //
-// THIS IS PR 1 OF 3. It carries the engine, the DM's setting (off by default) and the three scenes Sam approved. The
+// The poses are added to as Sam approves them (the casters, the female drow, the quaggoth and the drow's heavier hit
+// came second, 2026-11-23); the hero hit poses and Fifi's flip wait for the triggers that would show them.
+//
+// PR 1 OF 3 carried the engine, the DM's setting (off by default) and the three scenes Sam approved. The
 // wider trigger list (killing blows, Sneak Attack, reactions, monster abilities on a hero) and weapon arts for the
 // casters are the next two PRs; the "key" setting below already says which of the blows it is shown count.
 //
@@ -17459,6 +17462,7 @@ const STRIKE_CAM = {
     // for hits on drow (we also need one for females)")
     "drow-guard-male": { hit: { src: "closeup-hit.png", scale: 1.25 }, hitHard: { src: "closeup-hit-hard.png", scale: 1.25 } },
     "drow-guard-female": { hit: { src: "closeup-hit.png", scale: 1.25 } },
+    quaggoth: { hit: { src: "closeup-hit.png", scale: 1.4 } },
   },
   // where the target stands, by the kind of scene
   targetFeetX: { melee: 1050, shot: 1130, spell: 1130 },
