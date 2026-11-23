@@ -2,12 +2,12 @@
   "version": 1,
   "name": "Gray Ooze",
   "cell": [
-    128,
-    128
+    160,
+    160
   ],
   "pivot": [
-    64,
-    108
+    80,
+    140
   ],
   "ppu": 115,
   "animations": {
