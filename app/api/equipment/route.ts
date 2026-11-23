@@ -44,7 +44,7 @@ export async function GET(req: NextRequest) {
   const [doll, pack, who] = await Promise.all([
     db.from("equipment_items").select("id,slot,item_key,name,icon_url,equipped").eq("character_id", characterId),
     db.from("inventory_items")
-      .select("id,name,item_key,item_type,equippable_slot,icon_url,quantity,description,weight,confiscated_from,items(item_type,properties,equippable_slot,weight)")
+      .select("id,name,item_key,item_type,equippable_slot,icon_url,quantity,description,weight,confiscated_from,condition,condition_note,items(item_type,properties,equippable_slot,weight)")
       .eq("character_id", characterId),
     db.from("characters").select("weight_max").eq("id", characterId).maybeSingle(),
   ])
@@ -58,7 +58,14 @@ export async function GET(req: NextRequest) {
   }
   // from_stash: this row was lifted back out of the drow's stores (lib/confiscation.ts STASH_MARK). The map reads it to
   // know a hero has gear back (HERO ENTRANCES in scripts/velkynvelve-walk/template.html).
-  const carried = rows.map((r) => ({ ...r, origin: provenanceLine(lines.get(r.id) ?? []), from_stash: (lines.get(r.id) ?? []).some((e) => e.detail?.[STASH_MARK] === true) }))
+  // corrode: the gray ooze's running penalty on this item (app/api/walk-corrode, lib/corrode.mjs: SRD Corrode Metal), the
+  // latest "corrode" event's total. The map takes it off the weapon's damage or the armour's AC.
+  const corroded = new Map<string, number>()
+  if (rows.length) {
+    const { data: cev } = await db.from("item_events").select("inventory_item_id,detail,occurred_at").in("inventory_item_id", rows.map((r) => r.id)).eq("kind", "corrode").order("occurred_at", { ascending: true })
+    for (const e of (cev ?? []) as { inventory_item_id: string; detail: { total?: number } | null }[]) corroded.set(e.inventory_item_id, Number(e.detail?.total) || 0)
+  }
+  const carried = rows.map((r) => ({ ...r, corrode: corroded.get(r.id) ?? 0, origin: provenanceLine(lines.get(r.id) ?? []), from_stash: (lines.get(r.id) ?? []).some((e) => e.detail?.[STASH_MARK] === true) }))
   const carry = { carried: packWeight(carried.filter((r) => !r.confiscated_from)), max: who.data?.weight_max != null && Number(who.data.weight_max) > 0 ? Number(who.data.weight_max) : null }
   return NextResponse.json({ equipped: doll.data ?? [], carried, carry })
 }
