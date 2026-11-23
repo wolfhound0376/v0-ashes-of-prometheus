@@ -4,6 +4,7 @@ import { canEquip, interactionsFor, type EquippedRow } from "@/lib/equipped"
 import { interactionCost, type InteractionEconomy } from "@/lib/ground-items"
 import { packWeight } from "@/lib/carry"
 import { MOVEMENT_KINDS, provenanceLine, type HistoryLine } from "@/lib/item-history"
+import { STASH_MARK } from "@/lib/confiscation"
 
 // ============================================================================
 // /api/equipment — putting something in your hand, and taking it out again.
@@ -55,7 +56,9 @@ export async function GET(req: NextRequest) {
     const { data: ev } = await db.from("item_events").select("inventory_item_id,kind,detail,occurred_at").in("inventory_item_id", rows.map((r) => r.id)).in("kind", [...MOVEMENT_KINDS])
     for (const e of (ev ?? []) as (HistoryLine & { inventory_item_id: string })[]) (lines.get(e.inventory_item_id) ?? lines.set(e.inventory_item_id, []).get(e.inventory_item_id)!).push(e)
   }
-  const carried = rows.map((r) => ({ ...r, origin: provenanceLine(lines.get(r.id) ?? []) }))
+  // from_stash: this row was lifted back out of the drow's stores (lib/confiscation.ts STASH_MARK). The map reads it to
+  // know a hero has gear back (HERO ENTRANCES in scripts/velkynvelve-walk/template.html).
+  const carried = rows.map((r) => ({ ...r, origin: provenanceLine(lines.get(r.id) ?? []), from_stash: (lines.get(r.id) ?? []).some((e) => e.detail?.[STASH_MARK] === true) }))
   const carry = { carried: packWeight(carried.filter((r) => !r.confiscated_from)), max: who.data?.weight_max != null && Number(who.data.weight_max) > 0 ? Number(who.data.weight_max) : null }
   return NextResponse.json({ equipped: doll.data ?? [], carried, carry })
 }
