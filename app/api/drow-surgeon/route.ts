@@ -4,7 +4,7 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { applyStageEvents, readStage, slugOf } from "@/lib/stage-roster"
 import { skill } from "@/lib/walk-sheet"
 import {
-  SURGEON_TOOTH, SURGEON_VICTIMS, surgeonVictim, surgeonD, surgeonSpeaksElvish, surgeonVolley, surgeonHeal, surgeonOnDown, surgeonPersuade, surgeonBoon,
+  SURGEON_TOOTH, SURGEON_VICTIMS, surgeonVictim, surgeonD, surgeonSpeaksElvish, surgeonVolley, surgeonHeal, surgeonOnDown, surgeonPersuade, surgeonBoon, SURGEON_SATCHEL,
 } from "@/lib/drow-surgeon.mjs"
 
 // /api/drow-surgeon — The Drow Surgeon (Sam's homebrew, 2026-10-25; doc claude/The_Drow_Surgeon_2026-10-25.md).
@@ -19,7 +19,9 @@ import {
 //   POST {action:"volley"}      one round of bolts at the prisoner at the gate (one per guard on post)
 //   POST {action:"stepped"}     they stepped away before they dropped: the shooting stops, no surgeon comes
 //   POST {action:"tend"}        Liana pours the potion
-//   POST {action:"persuade"}    the one try at talking her round; on a success the hidden d4 and the favour
+//   POST {action:"persuade"}    the one try at talking her round; on a success the hidden d6 and what she gives
+//                               (Sam, 2026-11-23). On a 6 she lets the asker choose: stage "choosing", then
+//   POST {action:"pick", pick}  the asker's pick from her satchel (1-5 on the same table)
 //   POST {action:"leave"}       she goes without being asked
 //   POST {action:"again"}       a LATER defiance at the gate (Sam, 2026-10-25: "Remove formal fight. Volleys only."): the
 //                               guards shoot again — no execution, no surgeon — volleys until they step away or drop
@@ -60,7 +62,7 @@ async function writeTooth(db: Db, t: Tooth, note: string) {
   )
 }
 
-type Stage = "shooting" | "stepped" | "down" | "tended" | "settled" | "killed"
+type Stage = "shooting" | "stepped" | "down" | "tended" | "choosing" | "settled" | "killed"
 type State = {
   stage: Stage
   again?: number                                   // 0/absent = the first time (the surgeon's scene); n = the n-th later defiance
@@ -74,7 +76,8 @@ type State = {
   killed?: { id: string; name: string; at: string } | null
   heal?: { amount: number; hp: number; hpMax: number } | null
   persuade?: { speaker: string; translator: string | null; rolls: number[]; total: number; dc: number; success: boolean } | null
-  boon?: { d4: number; kind: string; slug?: string; shown?: string; to?: string } | null
+  /** d6 since 2026-11-23; older records carry d4 from the retired table. */
+  boon?: { d6?: number; d4?: number; kind: string; slug?: string; shown?: string; qty?: number; picked?: number; to?: string } | null
 }
 
 function isDm(req: NextRequest): boolean {
@@ -101,6 +104,24 @@ async function say(db: Db, text: string) {
 const conditionsOf = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [])
 const withCond = (list: string[], c: string) => (list.some((x) => x.toLowerCase() === c) ? list : [...list, c])
 const withoutCond = (list: string[], c: string) => list.filter((x) => x.toLowerCase() !== c)
+
+type Boon = { kind: string; slug?: string; shown?: string; qty?: number; desc?: string }
+type Granted = { name: string; to: string; qty: number }
+const satchelList = () => SURGEON_SATCHEL.map((n) => { const b = surgeonBoon(n) as Boon; return { n, name: b.shown, qty: b.qty ?? 1 } })
+/** One of her things into someone's pack, as a catalog row (nothing invented); stacks onto a row they already carry. */
+async function grantBoon(db: Db, b: Boon, toId: string, toName: string): Promise<Granted | { error: string }> {
+  const { data: it } = await db.from("items").select("id, item_type, icon_url, equippable_slot, weight, value").eq("slug", b.slug ?? "").maybeSingle()
+  if (!it) return { error: `catalog row ${b.slug} is missing — nothing invented` }
+  const qty = b.qty ?? 1
+  const { data: have } = await db.from("inventory_items").select("id, quantity").eq("character_id", toId).eq("item_id", it.id).eq("name", b.shown ?? "")
+    .is("confiscated_from", null).limit(1).maybeSingle()
+  const { error } = have
+    ? await db.from("inventory_items").update({ quantity: (Number(have.quantity) || 1) + qty }).eq("id", have.id)
+    : await db.from("inventory_items").insert({ character_id: toId, name: b.shown, quantity: qty, description: b.desc, item_type: it.item_type, icon_url: it.icon_url,
+        item_id: it.id, equippable_slot: it.equippable_slot, weight: it.weight, value: it.value })
+  if (error) return { error: error.message }
+  return { name: b.shown ?? "", to: toName, qty }
+}
 
 export async function GET() {
   try {
@@ -205,11 +226,11 @@ export async function POST(req: NextRequest) {
   // record as a FIRST time (again absent), so after the drop `tend` brings her; if she has come, it is a later defiance
   // (again n), and after the drop `recover` applies. The walk hauls the downed hero back to the pen for either.
   if (action === "labor") {
-    if (state && state.stage !== "stepped" && state.stage !== "settled" && state.stage !== "tended" && state.stage !== "killed") return NextResponse.json({ error: "the guards are already busy", state }, { status: 409 })
+    if (state && state.stage !== "stepped" && state.stage !== "settled" && state.stage !== "tended" && state.stage !== "choosing" && state.stage !== "killed") return NextResponse.json({ error: "the guards are already busy", state }, { status: 409 })
     const targetId = typeof body.targetId === "string" ? body.targetId : ""
     const { data: target } = await db.from("characters").select("id, name").eq("id", targetId).maybeSingle()
     if (!target) return NextResponse.json({ error: "no such character on the detail" }, { status: 400 })
-    const first = !state || (!state.heal && !state.again && state.stage !== "tended" && state.stage !== "settled")
+    const first = !state || (!state.heal && !state.again && state.stage !== "tended" && state.stage !== "choosing" && state.stage !== "settled")
     const s: State = first
       ? { stage: "shooting", at: new Date().toISOString(), victim: state?.victim ?? null, target: { id: target.id, name: target.name }, volleys: 0 }
       : { ...state!, stage: "shooting", again: (state!.again ?? 0) + 1, target: { id: target.id, name: target.name }, volleys: 0 }
@@ -223,7 +244,7 @@ export async function POST(req: NextRequest) {
   // ---------- a later defiance: volleys only ----------
   if (action === "again") {
     // "killed" is a finished scene too: the guards are free again, and the next fool at the gate is a new target.
-    if (state.stage !== "stepped" && state.stage !== "settled" && state.stage !== "killed") return NextResponse.json({ error: "the guards are already busy", state }, { status: 409 })
+    if (state.stage !== "stepped" && state.stage !== "settled" && state.stage !== "choosing" && state.stage !== "killed") return NextResponse.json({ error: "the guards are already busy", state }, { status: 409 })
     const targetId = typeof body.targetId === "string" ? body.targetId : ""
     const { data: target } = await db.from("characters").select("id, name").eq("id", targetId).maybeSingle()
     if (!target) return NextResponse.json({ error: "no such character at the gate" }, { status: 400 })
@@ -340,37 +361,51 @@ export async function POST(req: NextRequest) {
     const bonus = skill(sp as Record<string, unknown>, "Persuasion", Number(sp.cha_modifier) || 0, Number(sp.proficiency_bonus) || 2)
     const r = surgeonPersuade(bonus, !own)
     state.persuade = { speaker: sp.name, translator: own ? null : translator, rolls: r.rolls, total: r.total, dc: r.dc, success: r.success }
-    let granted: { name: string; to: string } | null = null
+    let granted: Granted | null = null
     if (r.success) {
-      const d4 = surgeonD(4)
-      const b = surgeonBoon(d4) as { kind: string; slug?: string; shown?: string; to?: string; desc?: string }
-      state.boon = { d4, kind: b.kind, slug: b.slug, shown: b.shown, to: b.to }
-      if (b.kind === "item" && b.slug) {
-        const toId = b.to === "downed" ? state.target.id : sp.id
-        const toName = b.to === "downed" ? state.target.name : sp.name
-        const { data: it } = await db.from("items").select("id, item_type, icon_url, equippable_slot, weight, value").eq("slug", b.slug).maybeSingle()
-        if (!it) return NextResponse.json({ error: `catalog row ${b.slug} is missing — nothing invented` }, { status: 500 })
-        await db.from("inventory_items").insert({ character_id: toId, name: b.shown, quantity: 1, description: b.desc, item_type: it.item_type, icon_url: it.icon_url,
-          item_id: it.id, equippable_slot: it.equippable_slot, weight: it.weight, value: it.value })
-        granted = { name: b.shown!, to: toName }
-      } else if (b.kind === "jorlan") {
-        await db.from("npc_encounters").update({ disposition: "warm" }).eq("name", "Jorlan Duskryn")
+      const d6 = surgeonD(6)
+      const b = surgeonBoon(d6) as Boon
+      state.boon = { d6, kind: b.kind, slug: b.slug, shown: b.shown, qty: b.qty, to: sp.name }
+      if (b.kind === "item") {
+        const g = await grantBoon(db, b, sp.id, sp.name)
+        if ("error" in g) return NextResponse.json({ error: g.error }, { status: 500 })
+        granted = g
       }
     }
-    state.stage = "settled"
-    await writeState(db, state, r.success ? `persuaded (d4 ${state.boon?.d4})` : "not persuaded")
+    const choosing = r.success && state.boon?.kind === "choice"
+    state.stage = choosing ? "choosing" : "settled"
+    await writeState(db, state, r.success ? `persuaded (d6 ${state.boon?.d6})` : "not persuaded")
     await say(db, r.success
       ? `${sp.name}${own ? "" : ` (through ${translator})`} talked Liana round (Persuasion ${r.total} vs DC ${r.dc}). ${
-          granted ? `She gave ${granted.to} a ${granted.name}.` : "She will speak to Jorlan Duskryn, who resents Ilvara, about slaves who could embarrass her."} Then she left.`
+          granted ? `From her satchel she gave ${granted.to} ${granted.qty > 1 ? `${granted.qty} × ` : "a "}${granted.name} (Malachar's d6: ${state.boon?.d6}). Then she left.` : `She opened her satchel and let ${sp.name} choose one thing (Malachar's d6: 6).`}`
       : `${sp.name}${own ? "" : ` (through ${translator})`} tried to talk Liana round (Persuasion ${r.total} vs DC ${r.dc}) and failed. She left, and will not be seen again.`)
-    return NextResponse.json({ ok: true, persuade: r, boon: state.boon ?? null, granted, state })
+    return NextResponse.json({ ok: true, persuade: r, boon: state.boon ?? null, granted, choosing, satchel: choosing ? satchelList() : undefined, state })
+  }
+
+  // ---------- on a 6: the asker picks from her satchel ----------
+  if (action === "pick") {
+    if (state.stage !== "choosing") return NextResponse.json({ error: "she is not offering a choice now", state }, { status: 409 })
+    const pick = Math.floor(Number(body.pick))
+    if (!SURGEON_SATCHEL.includes(pick)) return NextResponse.json({ error: "pick one of the five" }, { status: 400 })
+    const b = surgeonBoon(pick) as Boon
+    const { data: sp } = await db.from("characters").select("id, name").eq("name", state.boon?.to ?? "").maybeSingle()
+    if (!sp) return NextResponse.json({ error: "the one who asked is gone" }, { status: 409 })
+    const g = await grantBoon(db, b, sp.id, sp.name)
+    if ("error" in g) return NextResponse.json({ error: g.error }, { status: 500 })
+    state.boon = { ...(state.boon ?? { kind: "choice" }), picked: pick, slug: b.slug, shown: b.shown, qty: b.qty }
+    state.stage = "settled"
+    await writeState(db, state, `${sp.name} chose ${b.shown}`)
+    await say(db, `${sp.name} chose ${g.qty > 1 ? `${g.qty} × ` : "a "}${g.name} from Liana's satchel. Then she left.`)
+    return NextResponse.json({ ok: true, boon: state.boon, granted: g, state })
   }
 
   // ---------- she goes ----------
   if (action === "leave") {
-    if (state.stage !== "tended") return NextResponse.json({ ok: true, state })
+    if (state.stage !== "tended" && state.stage !== "choosing") return NextResponse.json({ ok: true, state })
+    const unpicked = state.stage === "choosing"
     state.stage = "settled"
-    await writeState(db, state, "Liana left unasked")
+    await writeState(db, state, unpicked ? "Liana left before anything was chosen" : "Liana left unasked")
+    if (unpicked) { await say(db, `Nobody chose, so Liana closed her satchel and left the pen.`); return NextResponse.json({ ok: true, state }) }
     await say(db, `Liana left the pen without another word, and will not be seen again.`)
     return NextResponse.json({ ok: true, state })
   }

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest"
 import { readFileSync } from "node:fs"
 import {
   surgeonOnDown,
-  SURGEON_RULES, SURGEON_VICTIMS, SURGEON_BOONS, SURGEON_LINES,
+  SURGEON_RULES, SURGEON_VICTIMS, SURGEON_BOONS, SURGEON_LINES, SURGEON_SATCHEL,
   surgeonVictim, surgeonSpeaksElvish, surgeonRoll, surgeonBolt, surgeonVolley, surgeonHeal, surgeonPersuade, surgeonBoon,
 } from "./drow-surgeon.mjs"
 
@@ -96,13 +96,23 @@ describe("talking her round", () => {
   })
 })
 
-describe("the favours (Sam's d4)", () => {
-  it("names catalog slugs only, and the dagger hides its name", () => {
-    expect(surgeonBoon(1).slug).toBe("drow-lockpick")
-    expect(surgeonBoon(2)).toMatchObject({ slug: "diluted-drow-poison", to: "downed" })
-    expect(surgeonBoon(3).kind).toBe("jorlan")
-    expect(surgeonBoon(4)).toMatchObject({ slug: "lolths-tooth", shown: "Drow ritual dagger" })
-    expect(SURGEON_BOONS[4].shown).not.toMatch(/lolth/i)
+describe("her satchel (Sam's d6, 2026-11-23)", () => {
+  it("the five things Sam named, as catalog slugs, all to the asker; a couple of potions is two", () => {
+    expect(surgeonBoon(1)).toMatchObject({ kind: "item", slug: "drow-poison", qty: 1 })
+    expect(surgeonBoon(2)).toMatchObject({ kind: "item", slug: "thieves-tools" })
+    expect(surgeonBoon(3)).toMatchObject({ kind: "item", slug: "potion-of-healing", qty: 2 })
+    expect(surgeonBoon(4)).toMatchObject({ kind: "item", slug: "lolths-tooth", shown: "Drow ritual dagger" })
+    expect(`${surgeonBoon(4).shown} ${surgeonBoon(4).desc}`).not.toMatch(/lolth|ilvara|priestess|curse|venom|spider/i)
+    expect(surgeonBoon(5)).toMatchObject({ kind: "item", slug: "healers-kit" })
+    expect(surgeonBoon(6).kind).toBe("choice")
+    expect(SURGEON_SATCHEL).toEqual([1, 2, 3, 4, 5])
+  })
+  it("the retired d4 favours are gone from the table", () => {
+    const slugs = Object.values(SURGEON_BOONS).map((b) => (b as { slug?: string }).slug)
+    expect(slugs).not.toContain("drow-lockpick")
+  })
+  it("she has a line for every face", () => {
+    for (let n = 1; n <= 6; n++) expect(SURGEON_LINES[`offer${n}` as keyof typeof SURGEON_LINES]).toBeTruthy()
   })
   it("every line she says has both her tongue and the translation", () => {
     for (const l of Object.values(SURGEON_LINES)) { expect(l.en.length).toBeGreaterThan(0); expect(l.elv.length).toBeGreaterThan(0) }
