@@ -1,0 +1,581 @@
+{
+ "_": "Baked by scripts/pixel-road/bake.py from the PixelLab map below; do not edit by hand. ground.png has the props painted in; objects/ holds the same props again so a figure can stand behind one.",
+ "id": "road-02",
+ "name": "The long tunnel",
+ "pixellabMapId": "34e52ec9-c88f-4bb4-b9bd-212574b70a8b",
+ "tile": 32,
+ "cols": 112,
+ "rows": 48,
+ "ground": "ground.png",
+ "shade": "shade.png",
+ "front": "front.png",
+ "foreground": {
+  "ceiling": "fg/ceiling.webp",
+  "shelf": "fg/shelf.webp"
+ },
+ "legend": {
+  "w": "floor",
+  "r": "damp floor",
+  "d": "rock",
+  "a": "rock face",
+  "s": "stream"
+ },
+ "walkable": "wr",
+ "grid": [
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddddddddddddddddddddddddaaaaaaaaaaaaaaaadddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwwwdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddddddddddddddddddddaaaawwwwwwwwwwwwwwwwddddddddddddddddddddddddddddddddddddddaaaaaaaaaaaaaadddddddddd",
+  "ddddddddddddddddddddddddddddddwwwwwwwwwwwwwwwwwwwwddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwdddddddddd",
+  "ddddddddddddddddddddddddddddddwwwswwwwwwwwwwwwwwwwaaaaddddddddddddddddddddddddddddddaaaawwwwwwwwwwwwwwdddddddddd",
+  "ddddddddddddddddddddddddddddddwwssssswwwwwwwwwswwwwwwwddddddddddddddddddddddddddddddwwwwwwwwwwwwwwwwwwdddddddddd",
+  "ddddddddddddddddddddddddddddddwwwsssssssssssssssswwwwwddddddddddddddddddddddddddddddwwwwwwwwwwwwwwwwwwaaaadddddd",
+  "ddddddddddddddddddddddddddddddwwwwwwwsssssssssssssswwwddddddddddddddddddddddddddddddwwwwwwwwwwwssssswwwwwwdddddd",
+  "ddddddddddddddddddddddddddddddwwwwwwwwwwswwwwwwwsssswwddddddddddddddddddddddddddddddwwwwwwwwwwwssssswwwwwwdddddd",
+  "ddddddddddddddddddddddddddddddwwwwwwwwwwwwwwwwwwwwswwwddddddddddddddddddddddddddddddwwwwwwddddwssssswwwwwwdddddd",
+  "ddddddddddddddddddaaaaaaaaaaaawwwwwwwwwwwwwwwwwwwwwwwwddddddddddddddddddddddddddddddwwwwwwddddwssssswwwwwwdddddd",
+  "ddddddddddddddddddwwwwwwwwwwwwwwwwwwwwddddddwwwwwwwwddddddddddddddddddddddddddddddddwwwwwwddddwwwwwwwwwwwwdddddd",
+  "ddddddddddddddaaaawwwwwwwwwwwwwwwwwwwwaaaaddwwwwwwwwddddddaaaaaaaaaaaaaaaaaaddddddddwwwwwwaaaawwwwwwwwwwwwdddddd",
+  "ddddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddddddddddddddwwwwwwwwwwwwwwwwwwddddddddwwwwwwwwwwwwwwwwwwwwwwdddddd",
+  "ddddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddddddddddaaaawwwwwwwwwwwwwwwwwwaaaaaaddwwwwwwwwwwwwwwwwwwwwwwdddddd",
+  "ddddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwddwwwwwwwwwwwwwwwwwwwwwwdddddd",
+  "ddddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwddwwwwwwwwwwwwwwwwwwwwwwaadddd",
+  "ddddddddddddddwwddddwwwwwwwwwwwwwwwwwwwwwwddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddwwwwwwwwwwwwwwwwwwwwwwdddd",
+  "ddddaaaaaaaaaawwddddwwwwwwwwwwwwwwwwwwwwwwddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwaaaawwwwwwwwwwwwwwwwwwwwwwaaaa",
+  "ddddwwwwwwwwwwwwddddwwwwwwwwwwwwwwwwwwwwwwddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "aaaawwwwwwwwwwwwaaaawwwwwwwwwwwwwwwwwwwwwwaaaaaaaaaaaawwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwrwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwrrrrwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwrrrrrrwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "ddddddwwwwwwwwwwwwwwwrrrrrrwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddddddwwwwwwwwwwwwddddddddddddwwwwwwwwwwwwwwwwww",
+  "ddddddwwwwwwwwwwwwwwrrrrwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwaaaaaaaawwwwwwwwwwwwaaaaddddddddwwwwwwwwwwwwwwwwww",
+  "ddddddddddddddwwwwwwwrwwwwwwwwwwwwwwwwwwwwddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddddddddddwwwwwwwwwwdddd",
+  "ddddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwddddddwwwwwwwwwwwwwwwwwwwwwwwwwrwwwwwwwwwwwwddddddddddddwwwwwwwwwwdddd",
+  "ddddddddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwddddddwwwwwwwwwrwwwrrrrrrrrrrrrrrwwwwwwwwwwwdddddddddddddddddddddddddd",
+  "ddddddddddddddddddwwwwwwwwwwwwwwwwwwwwwwwwddddddwwwwwwwwwwwwrrrrrrrrrrrrrrwwwwwwwwwwwwdddddddddddddddddddddddddd",
+  "ddddddddddddddddddwwwwwwwwddddddwwwwwwwwwwddddddwwwwwwddddwwwrrrrrrwwwwwwwwwwwwwwwwwwwdddddddddddddddddddddddddd",
+  "ddddddddddddddddddwwwwwwwwddddddwwwwwwwwwwddddddwwwwwwddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwaaaaaaaaaaaaaadddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddddddddddwwwwwwddddwwwwwwwwwwwwwwwwwwwwddwwwwwwwwwwwwwwwwwwwwdddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddddaaaaaawwwwwwaaaawwwwwwwwwwwwwwwwwwwwddwwwwwwwwwwwwwwwwwwwwdddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwwwwwwwddddddddddddddddddwwwwrwwwwwwwwwwwwwwwdddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddddwwwwwwwrwwwwwrwwwwwwddddddddddddddddddwwwrrrrrrrrrrwwwwwwwdddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddddwwwwwwrrrrwwrrrwwwwwddddddddddddddddddwwwwrrrrrrrrrrwwwwwwdddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddddwwwwwwwrrrrrrrwwwwwwddddddddddddddddddwwwwwwwwwwwwrwwwwwwwdddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddddwwwwwwwwwrrrrwwwddddddddddddddddddddddwwwwwwwwwwwwwwwwdddddddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwrwwwwddddddddddddddddddddddwwwwwwwwwwwwwwwwdddddddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwdddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddddddddddddddddddddddddddddddddddddwwwwwwwwwwwwdddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+ ],
+ "objects": [
+  {
+   "kind": "rubble",
+   "x": 136,
+   "y": 844,
+   "w": 80,
+   "h": 52,
+   "ground": [
+    136,
+    883,
+    78,
+    13
+   ]
+  },
+  {
+   "kind": "fang",
+   "x": 264,
+   "y": 548,
+   "w": 80,
+   "h": 188,
+   "ground": [
+    264,
+    689,
+    80,
+    47
+   ]
+  },
+  {
+   "kind": "stalagmites",
+   "x": 374,
+   "y": 828,
+   "w": 52,
+   "h": 68,
+   "ground": [
+    375,
+    879,
+    50,
+    17
+   ]
+  },
+  {
+   "kind": "mushrooms",
+   "x": 628,
+   "y": 492,
+   "w": 56,
+   "h": 52,
+   "ground": [
+    628,
+    531,
+    55,
+    13
+   ]
+  },
+  {
+   "kind": "spire",
+   "x": 736,
+   "y": 288,
+   "w": 96,
+   "h": 192,
+   "ground": [
+    736,
+    432,
+    96,
+    48
+   ]
+  },
+  {
+   "kind": "crystals",
+   "x": 854,
+   "y": 996,
+   "w": 52,
+   "h": 60,
+   "ground": [
+    857,
+    1041,
+    47,
+    15
+   ]
+  },
+  {
+   "kind": "stalagmites",
+   "x": 918,
+   "y": 508,
+   "w": 52,
+   "h": 68,
+   "ground": [
+    919,
+    559,
+    50,
+    17
+   ]
+  },
+  {
+   "kind": "crystals",
+   "x": 1014,
+   "y": 100,
+   "w": 52,
+   "h": 60,
+   "ground": [
+    1017,
+    145,
+    47,
+    15
+   ]
+  },
+  {
+   "kind": "mushrooms",
+   "x": 1140,
+   "y": 972,
+   "w": 56,
+   "h": 52,
+   "ground": [
+    1140,
+    1011,
+    55,
+    13
+   ]
+  },
+  {
+   "kind": "boulders",
+   "x": 1194,
+   "y": 1032,
+   "w": 76,
+   "h": 56,
+   "ground": [
+    1195,
+    1074,
+    74,
+    14
+   ]
+  },
+  {
+   "kind": "rubble",
+   "x": 1256,
+   "y": 76,
+   "w": 80,
+   "h": 52,
+   "ground": [
+    1256,
+    115,
+    78,
+    13
+   ]
+  },
+  {
+   "kind": "stalagmites",
+   "x": 1366,
+   "y": 284,
+   "w": 52,
+   "h": 68,
+   "ground": [
+    1367,
+    335,
+    50,
+    17
+   ]
+  },
+  {
+   "kind": "zurkhwood",
+   "x": 1408,
+   "y": 1124,
+   "w": 96,
+   "h": 188,
+   "ground": [
+    1412,
+    1265,
+    87,
+    47
+   ]
+  },
+  {
+   "kind": "fang",
+   "x": 1448,
+   "y": -28,
+   "w": 80,
+   "h": 188,
+   "ground": [
+    1448,
+    113,
+    80,
+    47
+   ]
+  },
+  {
+   "kind": "mushrooms",
+   "x": 1556,
+   "y": 1388,
+   "w": 56,
+   "h": 52,
+   "ground": [
+    1556,
+    1427,
+    55,
+    13
+   ]
+  },
+  {
+   "kind": "rubble",
+   "x": 1640,
+   "y": 716,
+   "w": 80,
+   "h": 52,
+   "ground": [
+    1640,
+    755,
+    78,
+    13
+   ]
+  },
+  {
+   "kind": "mushrooms",
+   "x": 1716,
+   "y": 1196,
+   "w": 56,
+   "h": 52,
+   "ground": [
+    1716,
+    1235,
+    55,
+    13
+   ]
+  },
+  {
+   "kind": "zurkhwood",
+   "x": 1792,
+   "y": 1156,
+   "w": 96,
+   "h": 188,
+   "ground": [
+    1796,
+    1297,
+    87,
+    47
+   ]
+  },
+  {
+   "kind": "stalagmites",
+   "x": 1846,
+   "y": 636,
+   "w": 52,
+   "h": 68,
+   "ground": [
+    1847,
+    687,
+    50,
+    17
+   ]
+  },
+  {
+   "kind": "spire",
+   "x": 1888,
+   "y": 352,
+   "w": 96,
+   "h": 192,
+   "ground": [
+    1888,
+    496,
+    96,
+    48
+   ]
+  },
+  {
+   "kind": "crystals",
+   "x": 2134,
+   "y": 964,
+   "w": 52,
+   "h": 60,
+   "ground": [
+    2137,
+    1009,
+    47,
+    15
+   ]
+  },
+  {
+   "kind": "fang",
+   "x": 2248,
+   "y": 356,
+   "w": 80,
+   "h": 188,
+   "ground": [
+    2248,
+    497,
+    80,
+    47
+   ]
+  },
+  {
+   "kind": "stalagmites",
+   "x": 2390,
+   "y": 1084,
+   "w": 52,
+   "h": 68,
+   "ground": [
+    2391,
+    1135,
+    50,
+    17
+   ]
+  },
+  {
+   "kind": "boulders",
+   "x": 2442,
+   "y": 584,
+   "w": 76,
+   "h": 56,
+   "ground": [
+    2443,
+    626,
+    74,
+    14
+   ]
+  },
+  {
+   "kind": "zurkhwood",
+   "x": 2592,
+   "y": 1092,
+   "w": 96,
+   "h": 188,
+   "ground": [
+    2596,
+    1233,
+    87,
+    47
+   ]
+  },
+  {
+   "kind": "boulders",
+   "x": 2698,
+   "y": 648,
+   "w": 76,
+   "h": 56,
+   "ground": [
+    2699,
+    690,
+    74,
+    14
+   ]
+  },
+  {
+   "kind": "mushrooms",
+   "x": 2772,
+   "y": 1324,
+   "w": 56,
+   "h": 52,
+   "ground": [
+    2772,
+    1363,
+    55,
+    13
+   ]
+  },
+  {
+   "kind": "crystals",
+   "x": 2806,
+   "y": 484,
+   "w": 52,
+   "h": 60,
+   "ground": [
+    2809,
+    529,
+    47,
+    15
+   ]
+  },
+  {
+   "kind": "fang",
+   "x": 2824,
+   "y": 36,
+   "w": 80,
+   "h": 188,
+   "ground": [
+    2824,
+    177,
+    80,
+    47
+   ]
+  },
+  {
+   "kind": "rubble",
+   "x": 2920,
+   "y": 1324,
+   "w": 80,
+   "h": 52,
+   "ground": [
+    2920,
+    1363,
+    78,
+    13
+   ]
+  },
+  {
+   "kind": "boulders",
+   "x": 2954,
+   "y": 136,
+   "w": 76,
+   "h": 56,
+   "ground": [
+    2955,
+    178,
+    74,
+    14
+   ]
+  },
+  {
+   "kind": "stalagmites",
+   "x": 3062,
+   "y": 1180,
+   "w": 52,
+   "h": 68,
+   "ground": [
+    3063,
+    1231,
+    50,
+    17
+   ]
+  },
+  {
+   "kind": "spire",
+   "x": 3200,
+   "y": 480,
+   "w": 96,
+   "h": 192,
+   "ground": [
+    3200,
+    624,
+    96,
+    48
+   ]
+  },
+  {
+   "kind": "crystals",
+   "x": 3222,
+   "y": 388,
+   "w": 52,
+   "h": 60,
+   "ground": [
+    3225,
+    433,
+    47,
+    15
+   ]
+  },
+  {
+   "kind": "boulders",
+   "x": 3306,
+   "y": 520,
+   "w": 76,
+   "h": 56,
+   "ground": [
+    3307,
+    562,
+    74,
+    14
+   ]
+  },
+  {
+   "kind": "crystals",
+   "x": 3350,
+   "y": 868,
+   "w": 52,
+   "h": 60,
+   "ground": [
+    3353,
+    913,
+    47,
+    15
+   ]
+  },
+  {
+   "kind": "rubble",
+   "x": 3432,
+   "y": 908,
+   "w": 80,
+   "h": 52,
+   "ground": [
+    3432,
+    947,
+    78,
+    13
+   ]
+  }
+ ],
+ "entry": {
+  "x": 48,
+  "y": 784,
+  "label": "The way back"
+ },
+ "exit": {
+  "x": 3536,
+  "y": 784,
+  "label": "The road on"
+ },
+ "landmarks": [],
+ "paving": [],
+ "glow": {
+  "crystals": "#6fd8ff",
+  "boulders": "#39d6b8",
+  "mushrooms": "#d06bff",
+  "zurkhwood": "#c77bff"
+ },
+ "shine": {
+  "crystals": 1.0,
+  "mushrooms": 0.5,
+  "zurkhwood": 0.45,
+  "boulders": 0.28
+ }
+}

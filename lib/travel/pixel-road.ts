@@ -15,14 +15,19 @@ export interface RoadLeg {
   mode: string | null
 }
 
-/** The stretches that are painted. road-01 has the Ruins built into its wall. */
-export const PIXEL_ROADS = ["road-01"] as const
+/**
+ * The stretches that are painted. road-01 (64 x 24 cells) has the Ruins built into its wall and is the Rehearsal
+ * door's. road-02 (112 x 48 cells, about three and a half times the floor) is the one a march walks (Sam,
+ * 2026-11-23: "make sure that the pixel map we walk is large enough for us to explore when we are traveling"):
+ * a long tunnel with side caves off it, a stream grotto, a fungus cave, a pool chamber and an alcove.
+ */
+export const PIXEL_ROADS = ["road-01", "road-02"] as const
 export type PixelRoadId = (typeof PIXEL_ROADS)[number]
 
 /** Which stretch a leg is walked on, or null when the leg is not walked at all (water). */
 export function pixelRoadFor(leg: RoadLeg): PixelRoadId | null {
   if (leg.mode === "sail") return null
-  return "road-01"
+  return "road-02"
 }
 
 const slugs = (xs: readonly string[], max: number) => [...new Set(xs.map((s) => s.toLowerCase().replace(/[^a-z0-9-]/g, "")).filter(Boolean))].slice(0, max)

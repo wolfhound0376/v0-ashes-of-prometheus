@@ -46,12 +46,20 @@ def main():
     W, H = cols * T, rows * T
 
     ground = Image.new("RGB", (W, H))
-    x = 0
-    for c in cfg["crops"]:
-        im = Image.open(p(c)).convert("RGB")
-        assert im.size[1] == H, (c, im.size)
-        ground.paste(im, (x, 0)); x += im.size[0]
-    assert x == W, x
+    # "crops" is one row of view_map crops, left to right, each the full height; or, for a stretch taller than a
+    # full-size crop allows (road-02), a list of such rows, top to bottom.
+    crop_rows = cfg["crops"] if cfg["crops"] and isinstance(cfg["crops"][0], list) else [cfg["crops"]]
+    y = 0
+    for row in crop_rows:
+        x, rh = 0, None
+        for c in row:
+            im = Image.open(p(c)).convert("RGB")
+            rh = rh or im.size[1]
+            assert im.size[1] == rh, (c, im.size)
+            ground.paste(im, (x, y)); x += im.size[0]
+        assert x == W, x
+        y += rh
+    assert y == H, y
     # PAVING (Sam, 2026-11-23, on the first forecourt made of flat 64px tiles: "Those ground tiles look horrible for
     # the ruins. Make highquality, highdef ones that look like rubble, stone"). A patch of floor is ONE painted
     # picture, not tiles, so there are no seams, and it is kept at its own (finer) resolution and drawn by the page

@@ -3,8 +3,8 @@ import { pixelRoadFor, pixelRoadHref } from "./pixel-road"
 
 describe("the pixel road on the real march (Sam, 2026-11-23)", () => {
   it("walks a road leg and never a sail leg", () => {
-    expect(pixelRoadFor({ a: "velkynvelve", b: "rm-1", mode: null })).toBe("road-01")
-    expect(pixelRoadFor({ a: "rm-1", b: "rm-2", mode: "road" })).toBe("road-01")
+    expect(pixelRoadFor({ a: "velkynvelve", b: "rm-1", mode: null })).toBe("road-02")
+    expect(pixelRoadFor({ a: "rm-1", b: "rm-2", mode: "road" })).toBe("road-02")
     expect(pixelRoadFor({ a: "darklake-1", b: "darklake-2", mode: "sail" })).toBeNull()
   })
   it("builds the page's address: leader first, companions after, the two ends named", () => {
@@ -23,5 +23,10 @@ describe("the pixel road on the real march (Sam, 2026-11-23)", () => {
     expect(q.get("line")).toBe("kentascript")
     expect(q.has("npcs")).toBe(false)
     expect(q.has("from")).toBe(false)
+  })
+  it("walks the march on the big stretch, several times the floor of the first", () => {
+    const fs = require("node:fs") as typeof import("node:fs")
+    const floor = (id: string) => (JSON.parse(fs.readFileSync(`public/pixel-road/${id}/road.json`, "utf8")).grid as string[]).join("").replace(/[^wr]/g, "").length
+    expect(floor("road-02")).toBeGreaterThan(3 * floor("road-01"))
   })
 })

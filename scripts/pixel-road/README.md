@@ -160,3 +160,15 @@ the browser that leads: `?embed=1&road=<id>&line=<heroes>&npcs=<companions>&from
 - treats landmarks as scenery (no plate, no rooms), so a march is never left half walked.
 
 It still decides nothing. SKIP THE WALK on the overlay, and the DM's PIXEL ROAD switch under the map, are the ways out.
+
+## `road-02`: the stretch a march walks (Sam, 2026-11-23: "large enough for us to explore")
+
+PixelLab map `34e52ec9-c88f-4bb4-b9bd-212574b70a8b`, "Road 02 - The long tunnel (explorable)": 112 x 48 cells, the
+same tilesets and props as road-01, no landmark. A main tunnel west to east with side caves to wander into: the
+stream grotto (north), the fungus cave and the south-east alcove (dead ends), the pool chamber (north-east), and a
+rock island in the central cavern to walk round. Floor about three and a half times road-01's.
+
+Baked like road-01, but a crop the full 48 rows high comes back at half size, so it is fourteen `view_map` crops,
+16 x 24 cells each, in two rows: `crops` in `road-02.config.json` is a list of rows, top to bottom. The grid is two
+`get_map` halves (a crop is capped at 4096 cells). Every rectangle of the layout has even edges, which keeps every
+rock face two rows tall.
