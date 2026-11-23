@@ -189,6 +189,10 @@ def main():
             os.makedirs(os.path.join(out, "plates"), exist_ok=True)
             name = m["kind"] + (os.path.splitext(m["plate"])[1] or ".png")
             shutil.copy(p(m["plate"]), os.path.join(out, "plates", name)); m["plate"] = "plates/" + name
+        if m.get("music"):                        # and its own music: {"music": "art/music/x.mp3"}
+            os.makedirs(os.path.join(out, "music"), exist_ok=True)
+            name = m["kind"] + (os.path.splitext(m["music"])[1] or ".mp3")
+            shutil.copy(p(m["music"]), os.path.join(out, "music", name)); m["music"] = "music/" + name
         marks.append(m)
 
     road = {"_": "Baked by scripts/pixel-road/bake.py from the PixelLab map below; do not edit by hand. ground.png has the props painted in; objects/ holds the same props again so a figure can stand behind one.",

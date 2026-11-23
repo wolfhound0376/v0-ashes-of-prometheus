@@ -51,7 +51,13 @@
     "y": 196,
     "h": 336,
     "reach": 430
-   }
+   },
+   "music": "art/music/ruins-eerie.mp3",
+   "musicVol": 0.8,
+   "near": 74,
+   "ask": "The ruins stand open before you. Do you enter, or walk away?",
+   "enter": "Enter the ruins",
+   "leave": "Walk away"
   }
  ],
  "glow": {
@@ -59,13 +65,13 @@
   "boulders": "#39d6b8",
   "mushrooms": "#d06bff",
   "zurkhwood": "#c77bff",
-  "ruins": "#5fd6e8"
+  "ruins": "#58c8e8"
  },
  "shine": {
   "crystals": 1.0,
   "mushrooms": 0.5,
   "zurkhwood": 0.45,
-  "ruins": 0.18,
+  "ruins": 0.14,
   "boulders": 0.28
  },
  "paving": [
