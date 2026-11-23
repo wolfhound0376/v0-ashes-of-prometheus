@@ -32,7 +32,8 @@
   "underdark-hq crystals": "crystals",
   "underdark-hq stalagmites": "stalagmites",
   "underdark-hq boulders": "boulders",
-  "underdark-hq rubble": "rubble"
+  "underdark-hq rubble": "rubble",
+  "underdark-hq ruins": "ruins"
  },
  "foreground": {
   "ceiling": "art/ceiling.webp",
@@ -48,18 +49,42 @@
   "y": 704,
   "label": "The road on"
  },
- "landmarks": [],
+ "landmarks": [
+  {
+   "kind": "ruins",
+   "label": "Ruins",
+   "x": 667,
+   "y": 218,
+   "plate": "art/plates/ruins.png",
+   "vista": {
+    "x": 667,
+    "y": 164,
+    "h": 336,
+    "reach": 430
+   },
+   "music": "art/music/ruins-eerie.mp3",
+   "musicVol": 0.8,
+   "near": 74,
+   "href": "/velkynvelve?ruins=1",
+   "ask": "The ruins stand open before you. Do you enter, or walk away?",
+   "enter": "Enter the ruins",
+   "leave": "Walk away",
+   "_": "Sam, 2026-11-23: the Ruins added to the violet hollow's north cave; Enter goes to the six painted rooms (/velkynvelve?ruins=1)."
+  }
+ ],
  "glow": {
   "crystals": "#6fd8ff",
   "glowcap": "#e06bff",
   "fungustree": "#b45cff",
-  "boulders": "#39d6b8"
+  "boulders": "#39d6b8",
+  "ruins": "#58c8e8"
  },
  "shine": {
   "crystals": 1.0,
   "glowcap": 0.8,
   "fungustree": 0.35,
-  "boulders": 0.28
+  "boulders": 0.28,
+  "ruins": 0.14
  },
  "mood": {
   "_": "Sam, 2026-11-23, painted Underdark look picks (A2 spire, C2 fungus tree, B1 glowing fungus): the violet hollow",
@@ -68,5 +93,17 @@
   "haze": "#b9a6ff",
   "mist": 0.5
  },
- "waterDark": true
+ "waterDark": true,
+ "paving": [
+  {
+   "image": "art/paving/ruins-forecourt.png",
+   "x": 499,
+   "y": 144,
+   "w": 336,
+   "solid": "t",
+   "ragged": 70,
+   "bite": 10,
+   "seed": 7
+  }
+ ]
 }

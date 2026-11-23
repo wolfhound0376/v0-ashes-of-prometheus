@@ -95,6 +95,19 @@
    ]
   },
   {
+   "kind": "ruins",
+   "x": 540,
+   "y": 9,
+   "w": 255,
+   "h": 149,
+   "ground": [
+    540,
+    121,
+    255,
+    37
+   ]
+  },
+  {
    "kind": "glowcap",
    "x": 600,
    "y": 688,
@@ -109,13 +122,13 @@
   },
   {
    "kind": "fungustree",
-   "x": 760,
-   "y": 96,
+   "x": 824,
+   "y": 160,
    "w": 112,
    "h": 192,
    "ground": [
-    781,
-    232,
+    845,
+    296,
     67,
     48
    ]
@@ -352,19 +365,51 @@
   "y": 704,
   "label": "The road on"
  },
- "landmarks": [],
- "paving": [],
+ "landmarks": [
+  {
+   "kind": "ruins",
+   "label": "Ruins",
+   "x": 667,
+   "y": 218,
+   "plate": "plates/ruins.png",
+   "vista": {
+    "x": 667,
+    "y": 164,
+    "h": 336,
+    "reach": 430
+   },
+   "music": "music/ruins.mp3",
+   "musicVol": 0.8,
+   "near": 74,
+   "href": "/velkynvelve?ruins=1",
+   "ask": "The ruins stand open before you. Do you enter, or walk away?",
+   "enter": "Enter the ruins",
+   "leave": "Walk away",
+   "_": "Sam, 2026-11-23: the Ruins added to the violet hollow's north cave; Enter goes to the six painted rooms (/velkynvelve?ruins=1)."
+  }
+ ],
+ "paving": [
+  {
+   "src": "paving/0.png",
+   "x": 499,
+   "y": 144,
+   "w": 336,
+   "h": 202
+  }
+ ],
  "glow": {
   "crystals": "#6fd8ff",
   "glowcap": "#e06bff",
   "fungustree": "#b45cff",
-  "boulders": "#39d6b8"
+  "boulders": "#39d6b8",
+  "ruins": "#58c8e8"
  },
  "shine": {
   "crystals": 1.0,
   "glowcap": 0.8,
   "fungustree": 0.35,
-  "boulders": 0.28
+  "boulders": 0.28,
+  "ruins": 0.14
  },
  "water": "water.png",
  "mood": {

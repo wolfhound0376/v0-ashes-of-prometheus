@@ -24,6 +24,7 @@ import { useTravel, type NodeRow } from "./use-travel"
 import { TravelCards, TravelPanels } from "./travel-cards"
 import { entranceFor, WALKABLE_SCENES } from "@/lib/travel/entrance"
 import { LONG_REST_KEY } from "@/lib/travel/standing"
+import { RUINS_HREF } from "@/lib/travel/battle"
 import { PIXEL_ROAD_SWITCH, pixelRoadFor, pixelRoadHref } from "@/lib/travel/pixel-road"
 import { roadRemarks } from "@/lib/travel/road-remarks"
 import { d as die, rollRoadTraps, seededRand, trapSeedKey, trapSig } from "@/lib/travel/road-traps"
@@ -200,6 +201,12 @@ export default function UnderdarkMapModule() {
         }
       } else if (m.type === "aop:road-done") {
         endRoad()
+      } else if (m.type === "aop:road-ruins") {
+        // THE RUINS' DOOR ON THE ROAD (road-03's north cave): the march stops walking this leg and the tab goes into the
+        // six painted rooms, exactly as the map's own Ruins card sends it (RUINS_HREF); their way out comes back here.
+        walk.current = null
+        endRoad()
+        window.location.href = RUINS_HREF
       } else if (m.type === "aop:road-rest" && m.kind === "short") {
         // the real hour: Hit Dice, the clock, the one-in-six risk (use-travel.ts shortRest); its line is read back to the road
         void R.shortRest().then(async () => { await sleep(80); post({ type: "aop:road-say", name: "Short rest", line: roadLive.current.shortRestLine ?? "An hour passes." }) })
