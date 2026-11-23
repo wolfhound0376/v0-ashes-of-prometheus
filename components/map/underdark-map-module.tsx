@@ -26,6 +26,9 @@ import { entranceFor, WALKABLE_SCENES } from "@/lib/travel/entrance"
 import { LONG_REST_KEY } from "@/lib/travel/standing"
 import { PIXEL_ROAD_SWITCH, pixelRoadFor, pixelRoadHref } from "@/lib/travel/pixel-road"
 import { roadRemarks } from "@/lib/travel/road-remarks"
+import { d as die, rollRoadTraps } from "@/lib/travel/road-traps"
+import { PACES } from "@/lib/travel/march"
+import { dmHeaders } from "@/lib/dm-key"
 import { MAP_LAIRS, MAP_SPRITE_HERO_IDS, mapFollowerIds, mapHeroFromManifest, mapHeroSlug, type MapHero } from "@/lib/travel/map-hero"
 
 const PAGE = "/underdark-map/index.html?game=1"
@@ -110,14 +113,14 @@ export default function UnderdarkMapModule() {
   useEffect(() => { try { setPixelRoad(localStorage.getItem(PIXEL_ROAD_SWITCH) !== "0") } catch { /* storage blocked */ } }, [])
   const flipPixelRoad = () => setPixelRoad((v) => { try { localStorage.setItem(PIXEL_ROAD_SWITCH, v ? "0" : "1") } catch { /* storage blocked */ } return !v })
   // who walks beside the heroes: the company at camp is the company on the road (app/api/camp/roster)
-  const [company, setCompany] = useState<{ slug: string; pc: boolean; name: string }[]>([])
+  const [company, setCompany] = useState<{ slug: string; pc: boolean; name: string; id?: string | null; pp?: number | null; strMod?: number; strSave?: number; ath?: number; hp?: number; hpMax?: number }[]>([])
   useEffect(() => {
     let alive = true
     fetch("/api/camp/roster").then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive && Array.isArray(j?.members)) setCompany(j.members) }).catch(() => {})
     return () => { alive = false }
   }, [party?.node_id])
-  const roadLive = useRef({ leaderId: leaderId as string | null, pixelRoad, company, hours: 0, heroSlug: "", followerSlugs: [] as string[], edges, dm: !!dmKey, initiated: travel.initiated, shortRest: travel.shortRest, shortRestLine: travel.shortRestLine, chooseOption: travel.chooseOption, reachNode })
-  roadLive.current = { leaderId, pixelRoad, company, hours: Number(travel.march?.hours_today) || 0, heroSlug: mapHeroSlug(leaderId), followerSlugs: (followerKey ? followerKey.split(",") : []).map((id) => mapHeroSlug(id)), edges, dm: !!dmKey, initiated: travel.initiated, shortRest: travel.shortRest, shortRestLine: travel.shortRestLine, chooseOption: travel.chooseOption, reachNode }
+  const roadLive = useRef({ leaderId: leaderId as string | null, pixelRoad, company, hours: 0, heroSlug: "", followerSlugs: [] as string[], edges, dm: !!dmKey, initiated: travel.initiated, shortRest: travel.shortRest, shortRestLine: travel.shortRestLine, chooseOption: travel.chooseOption, reachNode, pace: "normal" as string, me: travel.me })
+  roadLive.current = { leaderId, pixelRoad, company, hours: Number(travel.march?.hours_today) || 0, heroSlug: mapHeroSlug(leaderId), followerSlugs: (followerKey ? followerKey.split(",") : []).map((id) => mapHeroSlug(id)), edges, dm: !!dmKey, initiated: travel.initiated, shortRest: travel.shortRest, shortRestLine: travel.shortRestLine, chooseOption: travel.chooseOption, reachNode, pace: String(travel.march?.pace ?? "normal"), me: travel.me }
   // WHAT WAITS AHEAD, MET ON THE ROAD (Sam, 2026-11-23: "make sure we are adding the encounters to this"). The leg this
   // stretch walks, and the marker the road asked about early: a little past halfway the road says it is near, and
   // the marker's dice are rolled then (the same reachNode the nodal map would call), so whatever waits there is met
@@ -155,6 +158,13 @@ export default function UnderdarkMapModule() {
       const post = (x: Record<string, unknown>) => { try { roadFrame.current?.contentWindow?.postMessage(x, window.location.origin) } catch { /* gone */ } }
       const R = roadLive.current
       if (m.type === "aop:road-ready") {
+        // THE HIDDEN TRAPS on this stretch (lib/travel/road-traps.ts, SRD 5.1 Traps): rolled here, with who in the
+        // company notices each in passing (passive Perception, the pace's penalty applied), and handed to the road.
+        {
+          const penalty = (PACES as Record<string, { perceptionPenalty: number }>)[R.pace]?.perceptionPenalty ?? 0
+          const party = R.company.map((c) => ({ slug: c.slug, name: c.name, pp: c.pp ?? null }))
+          post({ type: "aop:road-traps", traps: rollRoadTraps(party, penalty, (n) => die(n)), party: R.company.map((c) => ({ slug: c.slug, name: c.name, strMod: c.strMod ?? 0, strSave: c.strSave ?? 0, ath: c.ath ?? 0, hp: c.hp ?? null })) })
+        }
         // the inset: the markers the party knows (players only ever hold discovered rows), the roads between, this leg
         const L = live.current, leg = roadLeg.current
         if (leg) {
@@ -175,6 +185,18 @@ export default function UnderdarkMapModule() {
       } else if (m.type === "aop:road-near") {
         const leg = roadLeg.current, n = leg ? live.current.nodes.find((x) => x.node_key === leg.b) : null
         if (n && met.current?.key !== n.node_key) met.current = { key: n.node_key, done: R.reachNode(n) }
+      } else if (m.type === "aop:road-hazard") {
+        // a pit took someone: the damage goes on their sheet, once (/api/walk-hazard, the director's own route)
+        const x = m as unknown as { slug?: string; hits?: { type: string; amount: number }[] }
+        const c = R.company.find((q) => q.slug === x.slug)
+        const hits = (x.hits ?? []).filter((h) => h.amount > 0).map((h) => ({ characterId: c?.id, amount: Math.floor(h.amount), type: h.type }))
+        if (c?.id && hits.length) {
+          void fetch("/api/walk-hazard", {
+            method: "POST",
+            headers: R.dm ? { ...dmHeaders(), "Content-Type": "application/json" } : { "Content-Type": "application/json" },
+            body: JSON.stringify({ sig: `ev-trap${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`, plate: "pixel-road", hits, claimId: R.me.characterId, claimToken: R.me.claimToken }),
+          }).catch(() => {})
+        }
       } else if (m.type === "aop:road-done") {
         endRoad()
       } else if (m.type === "aop:road-rest" && m.kind === "short") {
