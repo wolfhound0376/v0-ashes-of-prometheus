@@ -7296,6 +7296,53 @@ function battleSettle(won){
   saveWalk();
   if (won !== false) log("<em>The landing is theirs. The dead lie where they fell; the gate, the bridge and the cliff stairs are all open ways from here.</em>");
 }
+// THE DEAD LIE WHERE THEY FELL, AFTER A REFRESH TOO (Sam, 2026-11-22, the pen door rules: "Crossing into the next
+// plate will auto populate the correct number of guards that should be there. Refreshing shouldn't change that. If you
+// kill everyone, refreshing doesn't create guards or cause them to disappear."). Measured on the rig before this:
+//   - crossing: the landing takes exactly the watch standing at the pen's posts (two posted, two on the landing; watch
+//     away, nobody) -- already right;
+//   - a refresh in the middle of the fight: the same guards, the same hit points, the fight carried on (A FIGHT OUTLIVES
+//     A REFRESH) -- already right;
+//   - the landing won: no new guard after a refresh (gateWatchDown) -- already right; but the two bodies were GONE.
+//     A body was only an actor in the page that ran or showed the fight; nothing wrote it down.
+// Now the foes killed on the pen and on its landing are written in the world's state (`state.dead`, by plate: who, and
+// where they fell), so a refreshed page, a screen that arrives later and a party that walks off and comes back all lay
+// the same bodies in the same places. Searching is unchanged: the body's loot key is where it fell (or its post), which
+// the record keeps, and what is left on it is the server's. The drow carry their dead off when the party is marched
+// back in (RETURNED clears it) -- that last rule is Claude's reading, flagged. [CLAUDE]
+// NOT HERE: the other plates (their bodies still go with the page; one line in deadKept widens it), prisoners and
+// other bystanders killed in a fight, and the pen plate's own painting of the landing, which shows no bodies.
+const DEAD_MAX = 12;
+const deadKept = n => n != null && (owSame(n, PEN) || !!(SPEC[n] && SPEC[n].stands_for != null && owSame(SPEC[n].stands_for, PEN)));
+const deadSame = (d, a) => a.id === d.id && Math.hypot(a.x - d.x, a.y - d.y) < 40;
+const deadLoading = new Set();
+/** endCombat, on the screen that ran the fight: these foes are bodies on this plate from now on, for every screen. */
+function deadNote(slain){
+  if (!deadKept(cur) || !slain || !slain.length) return;
+  const all = {...(state.dead || {})}, list = (all[String(cur)] || []).slice();
+  for (const f of slain){
+    f.deadKept = true;
+    if (list.some(d => deadSame(d, f))) continue;
+    list.push({k: f.lootKey || bodyKeyOf(f), id: f.id, x: Math.round(f.x), y: Math.round(f.y), face: f.face || 0});
+  }
+  all[String(cur)] = list.slice(-DEAD_MAX); state.dead = all; saveWalk();
+}
+/** Every frame: the bodies written for this plate lie on it (once each), and one whose record is gone is gone. */
+function deadTick(){
+  if (!booted || mode === "load" || mode === "combat" || !deadKept(cur)) return;
+  const list = (state.dead && state.dead[String(cur)]) || [];
+  for (const d of list){
+    const have = [...npcs, ...foes].find(a => (a.body || a.down) && deadSame(d, a));
+    if (have){ have.deadKept = true; if (d.k && have.lootKey !== d.k) have.lootKey = d.k; continue; }   // one loot key for every screen: a screen that only showed the fight had the body a pixel off, and so under another key
+    if (!SPR[d.id]){ if (!deadLoading.has(d.id)){ deadLoading.add(d.id); loadSpriteManifest(d.id).catch(() => {}).finally(() => deadLoading.delete(d.id)); } continue; }
+    const b = mkActor(d.id, d.x, d.y, "body", {down: true, body: true, deadT0: now - 60000, face: d.face || 0, deadKept: true, lootKey: d.k});
+    if (SPR[d.id].img.dead){ b.anim = "dead"; b.t0 = now - 60000; }
+    npcs.push(b); if (!actors.includes(b)) actors.push(b);
+  }
+  for (const a of npcs.filter(n => n.deadKept && n.body && !list.some(d => deadSame(d, n)))){
+    npcs = npcs.filter(n => n !== a); actors = actors.filter(n => n !== a);
+  }
+}
 /** The close-up comes up at once (behind a fade), with no slide: the view the fight is about to be played in. */
 function ovSnap(){
   if (!OV.tris || !OV.cfg) return;
@@ -12955,10 +13002,10 @@ function castSpell(caster, tgt, name, done, darts){
         const why = `${fname(caster)} ${name}: ${r} + ${m.hit} vs AC ${acVs}${coverNote(cv)}`;
         if (r === 1) bank("ui/nat1", .7); if (crit) bank("ui/nat20", .7);
         if (!hit){ miss(tgt); land(tgt, false, sp.type); log(`${why} — miss.`); return; }
-        if (lab) lab.crit = crit; land(tgt, true, sp.type); knock(tgt, caster, 12 * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
+        if (lab) lab.crit = crit; land(tgt, true, sp.type); if (crit) bank("walk:spell-crit", .9); knock(tgt, caster, 12 * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
         narrate(caster, `${fname(caster)}'s ${name} ${sp.type === "cold" ? "frosts" : sp.type === "necrotic" ? "withers" : sp.type === "radiant" ? "sears" : "strikes"} ${fname(tgt)}.`);
         const d = roll(sp.dmg, crit); if (sp.beams && invoked(caster, "Agonizing Blast")) d.total += Math.max(0, abilMod(caster.c.sheet, "cha")); hitCtx = {spell: name, by: caster}; damage(tgt, d.total, sp.type, crit, caster, true); hitCtx = null; hexRider(caster, tgt, crit);
-        { const sc = strikeCamFor(caster, tgt, {spell: name, spellLevel: sp.lvl, crit, title: name}); if (sc) strikeCam({...sc, dmg: d.total, crit, word: name === "Ray of Frost" ? "SLOWED" : ""}); }   // THE STRIKE CAM: a spell attack that hit
+        { const sc = strikeCamFor(caster, tgt, {spell: name, spellLevel: sp.lvl, crit, title: name}); if (sc) strikeCam({...sc, dmg: d.total, crit, word: name === "Ray of Frost" ? "SLOWED" : ""}); }   // THE STRIKE CAM: a spell attack that hit (a spell crit also plays its own ElevenLabs stinger, Sam's pick S4, on every screen)
         if (name === "Vampiric Touch" && d.total > 0){ const h = Math.floor(d.total / 2); caster.c.hp = Math.min(caster.c.hpMax, caster.c.hp + h); popText(caster, `+${h}`, "#9ff2c8"); renderParty(); }   // SRD 5.1: regain half the necrotic damage dealt
         if (sp.beams && invoked(caster, "Repelling Blast") && !tgt.down) repel(caster, tgt, 10); if (sp.cond) addCond(tgt, sp.cond); if (name === "Ray of Frost") addCond(tgt, "slowed");
         if (sp.type === "cold" && sp.ice){ const patch = freezeGround(tgt.x, tgt.y, m.dc, caster); if (!tgt.down){ tgt.onIce = patch; iceSave(tgt, patch, "struck by the orb"); } }
@@ -13247,7 +13294,7 @@ function spiritStrike(c, z, t, done){
     setTimeout(() => {
       if (!hit){ miss(t); log(`${why} — miss.`); }
       else { const d = roll(`1d8${(m.mod || 0) >= 0 ? "+" : ""}${m.mod || 0}`, crit).total;
-        spawnFx(IMPACT_OF.force, {at: t, sq: 2, anchor: "mid"}); lightFlash(t.x, t.y - 40, "#ffe9a8", 240, 420); bank("magic/arcane_release", .5); knock(t, c, 8 * actorScale(t));
+        spawnFx(IMPACT_OF.force, {at: t, sq: 2, anchor: "mid"}); lightFlash(t.x, t.y - 40, "#ffe9a8", 240, 420); bank("magic/arcane_release", .5); if (crit) bank("walk:spell-crit", .9); knock(t, c, 8 * actorScale(t));
         hitCtx = {spell: "Spiritual Weapon", by: c}; damage(t, d, "force", crit, c, true); hitCtx = null;
         log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d} force.`); narrate(c, `${fname(c)}'s spectral mace comes down on ${fname(t)}.`); }
       setTimeout(() => done && done(), 450);
@@ -14045,7 +14092,18 @@ const ALARM_WAVES = [["drow-guard-male", "drow-guard-female"], ["drow-guard-male
 const inOutpost = n => /^\d/.test(String(n));
 const alarmUp = () => !!(state.alarm && state.alarm.at);
 let pendingHelp = [];                       // runners who got out: {plate, ids, at: {x, y}, dueRound, fightId, dueAt}
-const alarmLocal = new Set();               // waves this screen has walked in (by alarm time + wave)
+const alarmLocal = new Set();               // waves this screen has walked in itself (by alarm time + wave): only until its own word of it has gone out
+// THE WAVES THAT CAME ARE WRITTEN IN THE WORLD (Sam, 2026-11-22, the pen door rules: "Refreshing shouldn't change that.
+// If you kill everyone, refreshing doesn't create guards"). Which waves had walked in was kept in the page (alarmLocal),
+// and how many were due was read off the wall clock. Measured on the rig: wave 1 beaten on the pen, the page refreshed,
+// and wave 1 walked in again as a new fight; and a game reopened after the clock had run found all three due and brought
+// 2 + 3 + 4 = 9 drow at once (the count in Sam's playtest of 2026-11-22). Now the alarm itself carries how many have come
+// (`waves`) and when the last one did (`last`), as One World state: a refresh, or the other screen, reads it and brings
+// nobody twice; and the next wave is two minutes after the LAST ONE ARRIVED, so they come one at a time whatever the
+// clock did while nobody was looking. Played straight through, that is the same two, four and six minutes as before.
+const alarmWavesIn = A => Math.max(0, Math.min(ALARM_WAVES.length, (A && A.waves) | 0));
+const alarmNextAt = A => ((A && (A.last || A.at)) || 0) + ALARM_WAVE_MS;
+let alarmBusy = false;
 function helpHow(f){
   if (node.alarm && !alarmUp() && inOutpost(cur)) return `sound the ${node.alarm.name.toLowerCase()} (${Math.round(feetBetween(f, node.alarm))} ft away): every two minutes a wave of the garrison arrives, three waves`;
   if (alarmUp()) return null;                                          // the horn is already blowing: nobody else to fetch
@@ -14141,25 +14199,35 @@ async function reinforce(ids, at, why){
 // the waves: one every two minutes after the blast, on the plate the party is on, if it is in the outpost
 async function alarmTick(){
   const A = state.alarm; renderAlarmBanner();
-  if (!A || !A.at || !leader) return;
-  const due = Math.min(ALARM_WAVES.length, Math.floor((owNow() - A.at) / ALARM_WAVE_MS));
-  for (let w = 1; w <= due; w++){
-    const key = `${A.at}:${w}`; if (alarmLocal.has(key)) continue;
-    if (!inOutpost(cur)){ alarmLocal.add(key); continue; }               // out of the outpost: the wave searches in vain
-    const zs = (node.zones || []).filter(z => z.rect && (z.to || []).length);
-    const z = zs.find(q => (q.to || []).some(t => String(t) === String(A.plate))) || zs[w % Math.max(1, zs.length)];
-    const c = z ? zoneCenter(z) : centroid, at = nearestWalkable(c.x, c.y);
-    if (await reinforce(ALARM_WAVES[w - 1], at, `The alarm: wave ${w} of ${ALARM_WAVES.length}`)) alarmLocal.add(key);
-  }
+  if (!A || !A.at || !leader || alarmBusy) return;
+  if (FIGHT.mirror) return;                                              // ONE FIGHT: the fight's own screen brings the wave in and writes it down; this one shows it
+  const w = alarmWavesIn(A) + 1;
+  if (w > ALARM_WAVES.length || owNow() < alarmNextAt(A)) return;
+  const key = `${A.at}:${w}`;
+  if (alarmLocal.has(key)){ state.alarm = {...A, waves: w, last: owNow()}; saveWalk(); return; }   // this screen brought it and its word was written over: said again, nobody comes twice
+  alarmBusy = true;
+  try {
+    let came = true;
+    if (inOutpost(cur)){                                                 // (out of the outpost: the wave searches in vain, and is counted as come)
+      const zs = (node.zones || []).filter(z => z.rect && (z.to || []).length);
+      const z = zs.find(q => (q.to || []).some(t => String(t) === String(A.plate))) || zs[w % Math.max(1, zs.length)];
+      const c = z ? zoneCenter(z) : centroid, at = nearestWalkable(c.x, c.y);
+      came = await reinforce(ALARM_WAVES[w - 1], at, `The alarm: wave ${w} of ${ALARM_WAVES.length}`);
+    }
+    if (came){
+      alarmLocal.add(key);
+      const N = state.alarm; if (N && N.at === A.at && alarmWavesIn(N) < w){ state.alarm = {...N, waves: w, last: owNow()}; saveWalk(); }
+    }
+  } finally { alarmBusy = false; }
 }
 function renderAlarmBanner(){
   let el = $("alarmBanner");
   const A = state.alarm;
   if (!A || !A.at){ if (el) el.hidden = true; return; }
   if (!el){ el = document.createElement("div"); el.id = "alarmBanner"; el.style.cssText = "position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:40;padding:6px 16px;border-radius:6px;background:rgba(90,10,6,.88);border:1px solid #ff6a4a;color:#ffd9c8;font:600 14px/1.2 Georgia,serif;letter-spacing:.04em;pointer-events:none;text-shadow:0 1px 2px #000"; (stage || document.body).appendChild(el); }
-  const t = owNow() - A.at, w = Math.floor(t / ALARM_WAVE_MS);
-  if (w >= ALARM_WAVES.length && t > ALARM_WAVES.length * ALARM_WAVE_MS + 20000){ el.hidden = true; return; }
-  const left = Math.max(0, ALARM_WAVE_MS - (t % ALARM_WAVE_MS)), mm = Math.floor(left / 60000), ss = String(Math.floor(left / 1000) % 60).padStart(2, "0");
+  const w = alarmWavesIn(A);                                             // the waves that have come (written in the world), not the wall clock
+  if (w >= ALARM_WAVES.length && owNow() - (A.last || A.at) > 20000){ el.hidden = true; return; }
+  const left = Math.max(0, alarmNextAt(A) - owNow()), mm = Math.floor(left / 60000), ss = String(Math.floor(left / 1000) % 60).padStart(2, "0");
   el.textContent = w >= ALARM_WAVES.length ? `⚠ ALARM — the whole garrison is out` : `⚠ ALARM (${A.name}) — wave ${w + 1} of ${ALARM_WAVES.length} in ${mm}:${ss}${inOutpost(cur) ? "" : " · out of earshot here"}`;
   el.hidden = false;
 }
@@ -15834,6 +15902,7 @@ function endCombat(won, opts = {}){
   setTimeout(() => {
     for (const f of slain){ f.kind = "body"; f.body = true; f.path = []; f.once = null; f.lootKey = bodyKeyOf(f); npcs.push(f);
       if (f.fleeKey && state.refuge && state.refuge[f.fleeKey]){ delete state.refuge[f.fleeKey]; } }
+    deadNote(slain);                   // THE DEAD LIE WHERE THEY FELL, AFTER A REFRESH TOO: written in the world's state
     // THE FIGHT ENDED IN TALK (NPC MINDS): the leader and everyone under them lower their weapons and stay on the plate,
     // people again, with the wounds they took; they are not hostile while the talk lasts (the truce, fightEndsInTalk)
     for (const f of foes) if (f.parley && !f.down && actors.includes(f)){
@@ -16002,7 +16071,10 @@ function burst(a, col, n){ const m = SPR[a.id].json, sc = actorScale(a), y = a.y
 //   - ONE SCENE ON EVERY SCREEN (world events): strikeCam and strikeCamLand are on RELAY_FNS, so the screen running the
 //     fight opens the close-up and every screen showing the fight plays the same one. Their arguments are plain data
 //     (sprite slugs, a pose key, numbers), so nothing has to be found on the other screen.
-//   - IT MAKES NO SOUND. The map already plays the swing, the hit and the cry; the close-up opens on the blow.
+//   - ITS OWN SOUNDS, ON TOP OF THE MAP'S (Sam, 2026-11-23: "Make sure we are using eleven labs for optimal high end
+//     game play sounds", then picked "1, 4, 4, Now_Take 4" on the comparison page): an ElevenLabs whoosh-and-boom as
+//     the band snaps in, a crystal ward on Shield, Fifi's flip-and-dive under her Sneak Attack. The map still plays the
+//     swing, the hit and the cry; these are layered over them. Flow "AoP strike cam stingers", public/sfx/walk/strikecam-*.
 //   - A shot opens at the release, before the bolt has crossed the plate, and waits: strikeCamLand() is the map telling
 //     it the bolt has landed, so the close-up's hit and the map's hit are the same moment.
 //   - No pose, no close-up: a pose file that has not loaded (a preview copy without the art) means nothing opens.
@@ -16138,6 +16210,7 @@ function strikeCam(o){
   const blood = o.block || (P.fx && P.fx.blood === false) ? 0 : Math.round((o.crit ? 70 : 44) * (melee ? 1 : .6)), drops = [];
   for (let i = 0; i < blood; i++){ const a = -.35 + (Math.random() - .5) * 1.5, v = 260 + Math.random() * (o.crit ? 900 : 640); drops.push({vx: Math.cos(a) * v, vy: Math.sin(a) * v - 120, r: 3 + Math.random() * 9, col: ["#96121a", "#be1418", "#70060e"][i % 3]}); }
   const me = SC.run = {t0: performance.now(), c, after, o: {...o}, waiting: !!o.wait};
+  scSound(o);
   SC.el.style.display = "block"; cancelAnimationFrame(SC.raf);
   const frame = t => {
     if (SC.run !== me) return;
@@ -16203,6 +16276,13 @@ function strikeCam(o){
     SC.raf = requestAnimationFrame(frame);
   };
   SC.raf = requestAnimationFrame(frame);
+}
+/** the close-up's own sounds (every screen plays them: strikeCam runs on each one through the relay) */
+function scSound(o){
+  const short = o.cut === "short";
+  sfx("walk:strikecam-open", short ? .38 : .6);                         // the band snapping in
+  if (o.block) sfx("walk:strikecam-shield", .9);                         // Shield: the ward takes the blow
+  else if (o.pose === "sneak") sfx("walk:strikecam-flip", .85);          // Fifi's flip and dive, over the map's own sneak attack
 }
 /** the map says the shot has landed: the close-up that was waiting takes its hit now. o: {dmg, crit, word} */
 function strikeCamLand(o){
@@ -22965,6 +23045,7 @@ function escapeTo(event, why){
     state.escape = next;
     if (next.phase === PEN_ESCAPE.PHASE.HUNTED) escapeHorn(next.why);                       // step 6: hunted IS the horn and the waves
     if (event === PEN_ESCAPE.EVENT.RETURNED && state.alarm) state.alarm = null;              // marched back in: that alarm is over
+    if (event === PEN_ESCAPE.EVENT.RETURNED && state.dead) state.dead = null;                // ...and the drow have carried their dead off ([CLAUDE] a reading, flagged)
     saveWalk();
     console.info("[escape]", was.phase, "->", next.phase, "(" + next.why + ")");
     return true;
@@ -23000,7 +23081,7 @@ function escapeDiscoveryTick(){
 // is on. And the other way: a horn blown during the escape means the escape is hunted (escapeDiscoveryTick, endCombat).
 const escapeAlarmed = e => !!(state.alarm && state.alarm.at && e && state.alarm.at >= (e.since || 0) - 1000);
 function escapeHorn(why){
-  if (SANDBOX || (alarmUp() && owNow() - state.alarm.at < ALARM_WAVES.length * ALARM_WAVE_MS + 60000)) return;   // already blowing: its waves are still coming
+  if (SANDBOX || (alarmUp() && (alarmWavesIn(state.alarm) < ALARM_WAVES.length || owNow() - (state.alarm.last || state.alarm.at) < 60000))) return;   // already blowing: its waves are still coming
   state.alarm = {plate: String(PEN), at: owNow(), by: "the outpost", name: "warning horn"};
   try { bank("creature/drow_alarm_gong", .95); shake(4); } catch (e) {}
   log(`<b>A warning horn sounds across Velkynvelve.</b> The garrison is coming: a wave every two minutes, three waves.`, {say: true});
@@ -23985,7 +24066,7 @@ function update(dt){
   tickFootsteps();
   tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt);
   redSigilSeen();                       // a drow inside the pen reads the red scar: the fight starts once, however they got in
-  sigilNoticeTick(); wardOutTick(); fellTick(); thresholdTick();     // a caster notices the sigil (and gets its film); the ones it bit lie where they fell
+  sigilNoticeTick(); wardOutTick(); fellTick(); thresholdTick(); deadTick();     // a caster notices the sigil (and gets its film); the ones it bit lie where they fell
   pacingTick();                         // the caravan clock, the wait vote, and the pen's three small beats
   tickFungus();
   ovTick(); tickChasmWebs(); camKeep(); buppidoLedgeTick();

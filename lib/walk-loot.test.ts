@@ -234,3 +234,19 @@ describe("no two guards carry quite the same (Sam, 2026-11-10)", () => {
     expect(base.map((e) => e.slug)).toEqual(["shortsword", "hand-crossbow", "bolts-20", "chain-shirt", "silk-rope", "grappling-hook"])
   })
 })
+
+describe("the tunnel plates' props (Sam, 2026-11-23: 'Just add pixel objects that we can interact with')", () => {
+  it("every prop on a tunnel plate opens a container that names that plate", async () => {
+    const story = (await import("../scripts/velkynvelve-walk/story.json")).default as Record<string, any>
+    const { BOOK_CONTAINERS } = await import("./walk-loot")
+    for (const plate of ["road-tunnels-junction", "road-tunnels-winding", "road-tunnels-ledge"]) {
+      const loot = story[plate]?.loot ?? []
+      expect(loot.length).toBe(2)
+      for (const l of loot) {
+        expect(BOOK_CONTAINERS[l.id]?.node).toBe(plate)
+        expect(BOOK_CONTAINERS[l.id].entries.length).toBeGreaterThan(0)
+        expect(l.prop).toBe(l.id)
+      }
+    }
+  })
+})
