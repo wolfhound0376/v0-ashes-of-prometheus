@@ -152,17 +152,29 @@ function pushTrail() {
 }
 // Each follower stands on the leader's own footsteps, GAP further back than the one ahead, so the line bends
 // round corners the way the leader went and nobody walks through rock.
+//
+// The distance back is measured from where the leader IS, not from the last footstep recorded. Footsteps are only
+// recorded every 1.5px, so measured from those a follower stood still on every frame that recorded none and then
+// jumped on the next, and each standstill flipped it from its walk to its idle and back. On a fast screen that was
+// most frames: the leader walked and everyone behind him shivered (Sam, 2026-11-23: "everyone is just vibrating
+// fast"). A follower now walks whenever the leader walks, and faces the way the path runs under its own feet.
 function placeFollowers(dt, leaderMoved) {
+  const L = heroes[0], pts = (!trail.length || trail[0][0] !== L.x || trail[0][1] !== L.y) ? [[L.x, L.y]].concat(trail) : trail;
   for (let i = 1; i < heroes.length; i++) {
-    const h = heroes[i], want = GAP * i; let acc = 0, at = trail[trail.length - 1];
-    for (let k = 1; k < trail.length; k++) {
-      const d = Math.hypot(trail[k][0] - trail[k - 1][0], trail[k][1] - trail[k - 1][1]);
-      if (acc + d >= want) { const u = (want - acc) / (d || 1); at = [trail[k - 1][0] + (trail[k][0] - trail[k - 1][0]) * u, trail[k - 1][1] + (trail[k][1] - trail[k - 1][1]) * u]; break; }
+    const h = heroes[i], want = GAP * i; let acc = 0, at = pts[pts.length - 1], dir = null;
+    for (let k = 1; k < pts.length; k++) {
+      const ax = pts[k - 1][0], ay = pts[k - 1][1], bx = pts[k][0], by = pts[k][1], d = Math.hypot(bx - ax, by - ay);
+      if (acc + d >= want) {
+        const u = (want - acc) / (d || 1); at = [ax + (bx - ax) * u, ay + (by - ay) * u];
+        // which way the path runs here, looked at over a few footsteps so a single kinked step cannot turn a head
+        const a = pts[Math.max(0, k - 4)], b = pts[Math.min(pts.length - 1, k + 3)];
+        if (Math.hypot(a[0] - b[0], a[1] - b[1]) > 2) dir = [a[0] - b[0], a[1] - b[1]];
+        break;
+      }
       acc += d;
     }
-    const dx = at[0] - h.x, dy = at[1] - h.y, d = Math.hypot(dx, dy);
-    h.moving = leaderMoved && d > 0.05;
-    if (d > 0.3) h.row = rowFor(dx, dy);
+    h.moving = leaderMoved;
+    if (leaderMoved && dir) h.row = rowFor(dir[0], dir[1]);
     h.x = at[0]; h.y = at[1];
   }
 }
