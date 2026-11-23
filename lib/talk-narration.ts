@@ -13,7 +13,10 @@
 // So in a talk turn the narration is dropped and only the NPC's spoken lines are kept, EXCEPT when the narration
 // is carrying something the table needs:
 //   - the line was put to the DM (that is not a talk turn at all: `talkWith` is null then, see the route);
-//   - a check: the player reported a roll, or Malachar is calling for one — the call and the result are his;
+//   - a check Malachar calls for in his own prose: the call and the result are his. NOT the game's talk check
+//     (lib/talk-check.ts, a skill named on the line): there the NPC reacts and answers the result in their own
+//     voice and the dice card is the only sign of the roll (Sam, 2026-11-23, "when I talk to an NPC it goes to
+//     Malachar"; he picked "NPC reacts, dice card only");
 //   - something happened: a tag that changes the world rode on the reply (a wound, an item changing hands, a
 //     condition, someone leaving, time passing, a film). That keep is Claude's reading of "need a result", not
 //     Sam's words: dropping "He presses the wire into your hand" while the wire appears in the bag would leave
@@ -40,12 +43,14 @@ export type TalkTurn = {
   rawReply: string
   /** True when the reply asks the player for a roll. */
   asksForRoll: boolean
+  /** True when this turn calls or settles the game's own talk check (lib/talk-check.ts). */
+  gameCheck?: boolean
 }
 
 /** True when this turn's narration should be dropped, leaving only what the NPC said. */
 export function dropsNarration(turn: TalkTurn): boolean {
   if (!turn.talkWith) return false
-  if (turn.asksForRoll || reportsRoll(turn.message)) return false
+  if (!turn.gameCheck && (turn.asksForRoll || reportsRoll(turn.message))) return false
   if (EVENT_TAG.test(turn.rawReply)) return false
   return true
 }

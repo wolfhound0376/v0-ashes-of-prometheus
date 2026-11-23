@@ -2280,6 +2280,8 @@ ${MALACHAR_LAST_WORD}`
   // back is read against it here and the NPC is told the outcome before it answers.
   let talkCheck: { skill: SrdSkill; npc: string; dc: number; mod: number } | null = null
   let talkNote = ""
+  // This turn calls or settles the game's talk check: the NPC speaks and the lich stays out (lib/talk-narration.ts).
+  let gameCheckTurn = false
   if (!director && !sandbox && playerCharacter) {
     try {
       const admin = adminClient()
@@ -2297,6 +2299,7 @@ ${MALACHAR_LAST_WORD}`
             const face = Array.isArray(res?.rolls) ? Number((res!.rolls as unknown[])[0]) : null
             const ok = settleTalkCheck(total, face, Number(req.dc))
             talkNote = talkResultNote(playerName, linked.skill, linked.npc, ok)
+            gameCheckTurn = true
             console.log(`[talk-check] ${playerName} ${linked.skill} vs ${linked.npc}: ${total} vs DC ${req.dc} -> ${ok ? "success" : "failure"}`)
           }
         }
@@ -2311,6 +2314,7 @@ ${MALACHAR_LAST_WORD}`
             const b = skillBonus(sheet as unknown as Parameters<typeof skillBonus>[0], said.skill)
             talkCheck = { skill: said.skill, npc: talkWith, dc: talkDc((npcRow as { disposition?: string | null } | null)?.disposition), mod: b.mod + b.prof }
             talkNote = talkCallNote(said.skill, talkWith)
+            gameCheckTurn = true
             console.log(`[talk-check] ${playerName} calls ${said.skill} on ${talkWith}: 1d20${talkCheck.mod >= 0 ? "+" : ""}${talkCheck.mod} vs DC ${talkCheck.dc}`)
           }
         }
@@ -3954,7 +3958,7 @@ Rules:
   // asks for it; this makes it so: a talk turn keeps only the NPC's lines, unless it is a check, something happened,
   // or there is no NPC line to keep (lib/talk-narration.ts). A line to the DM has no talkWith and is untouched.
   {
-    const kept = withoutNarration(dialogueEntries, { talkWith, message: String(message ?? ""), rawReply: rawText, asksForRoll: Boolean(parseRollRequest(rawText)) || !!talkCheck })
+    const kept = withoutNarration(dialogueEntries, { talkWith, message: String(message ?? ""), rawReply: rawText, asksForRoll: Boolean(parseRollRequest(rawText)) || !!talkCheck, gameCheck: gameCheckTurn })
     if (kept.length !== dialogueEntries.length) {
       console.log(`[talk] narration dropped: ${dialogueEntries.length - kept.length} of ${dialogueEntries.length} rows, talking with ${talkWith}`)
       dialogueEntries.splice(0, dialogueEntries.length, ...kept)

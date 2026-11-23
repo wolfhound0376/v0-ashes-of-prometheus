@@ -24,6 +24,14 @@ describe("narration in a conversation (Sam, 2026-11-13)", () => {
     expect(reportsRoll("I roll my eyes at her")).toBe(false)
     expect(withoutNarration(rows, { ...talk, message: "🎲 Persuasion: 17" })).toBe(rows)
   })
+  it("the game's talk check drops the lich: the NPC reacts and answers, the dice card does the rest (Sam, 2026-11-23)", () => {
+    expect(withoutNarration(rows, { ...talk, asksForRoll: true, gameCheck: true }).map((r) => r.speaker)).toEqual(["Eldeth Feldrun"])
+    expect(withoutNarration(rows, { ...talk, message: "🎲 Persuasion: 17", gameCheck: true }).map((r) => r.speaker)).toEqual(["Eldeth Feldrun"])
+  })
+  it("a game check with no NPC line still keeps the prose, never an empty turn", () => {
+    const prose = [{ speaker: "Malachar", speaker_type: "dm", text: "Roll Persuasion." }]
+    expect(withoutNarration(prose, { ...talk, asksForRoll: true, gameCheck: true })).toBe(prose)
+  })
   it("something happening keeps the narration", () => {
     expect(dropsNarration({ ...talk, rawReply: 'He presses the wire into your hand. [ITEM_ADD: Bent wire] "Don\'t lose it."' })).toBe(false)
     expect(dropsNarration({ ...talk, rawReply: '"Out." [NPC_LEAVE: Ront]' })).toBe(false)
