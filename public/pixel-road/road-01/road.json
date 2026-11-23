@@ -8,6 +8,7 @@
  "rows": 24,
  "ground": "ground.png",
  "shade": "shade.png",
+ "front": "front.png",
  "foreground": {
   "ceiling": "fg/ceiling.webp",
   "shelf": "fg/shelf.webp"

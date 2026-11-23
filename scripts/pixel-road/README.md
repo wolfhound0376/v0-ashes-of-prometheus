@@ -10,6 +10,7 @@ Design of record: `claude/Pixel_Road_Hybrid_2026-11-22.md` (project doc). This f
 | `road.json` | The map's own cell grid (`w` floor, `r` damp floor, `d` rock, `a` rock face, `s` stream), every prop's place and footprint, the way in, the way out, the landmarks. **This is where walking comes from; nothing is masked by hand.** |
 | `ground.png` | The whole stretch at 32px a cell, props painted in. |
 | `shade.png` | Depth as one see-through layer: the dark at the foot of every rock face, and the shadow each prop throws. |
+| `front.png` | The lip of the rock that stands south of the floor, drawn in front of the figures so their feet go behind it. |
 | `objects/<kind>.png` | The same props again, one file per kind, so a figure can stand behind one. |
 | `fg/ceiling.webp`, `fg/shelf.webp` | The near rock the page hangs in front of everything: Sam's paintings of a stalactite ceiling lip and a stalagmite shelf (2026-11-22), kept in `scripts/pixel-road/art/`. They slide faster than the floor. |
 
@@ -21,7 +22,8 @@ Everything in that folder is written by `bake.py`. Do not edit it by hand; chang
 2. **Things that stand over the figures**: spires, fangs and zurkhwood four to six cells tall. Figures walk behind them.
 3. **Shadow**: `shade.png`.
 4. **A close camera**: about eight and a half cells of height on screen.
-5. **Near rock**: a painted ceiling of stalactites across the top and a shelf of stalagmites along the bottom that slide faster than the floor.
+5. **Rock south of the floor** (Sam: "the inferior walls look 2d"): seen from above it has no face to show, so it gets a raised, lit lip in front of the figures (`front.png`) and sinks into black away from the floor (`shade.png`).
+6. **Near rock**: a painted ceiling of stalactites across the top and a shelf of stalagmites along the bottom that slide faster than the floor.
 
 ## Light
 

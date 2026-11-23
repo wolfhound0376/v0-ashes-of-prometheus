@@ -54,7 +54,7 @@ const FOOT_RX = 7, FOOT_RY = 3; // a figure's footprint on the ground, for bumpi
 const cv = document.getElementById("c"), ctx = cv.getContext("2d");
 const img = (src) => new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; });
 
-let road = null, ground = null, shade = null, fgImg = {}, WALK = "w", objImg = {}, heroes = [], trail = [], path = [], keys = {}, cam = { x: 0, y: 0, z: 3 }, last = 0, lightCv = null;
+let road = null, ground = null, shade = null, front = null, fgImg = {}, WALK = "w", objImg = {}, heroes = [], trail = [], path = [], keys = {}, cam = { x: 0, y: 0, z: 3 }, last = 0, lightCv = null;
 
 /* ---------- where the party can walk: the map's own cells, minus each prop's footprint ---------- */
 function cellAt(px, py) {
@@ -263,6 +263,8 @@ function frame(now) {
   const things = heroes.map((h) => ({ y: h.y, h })).concat(road.objects.map((o) => ({ y: o.ground[1] + o.ground[3], o })));
   things.sort((a, b) => a.y - b.y);
   for (const t of things) { if (t.h) drawHero(t.h); else if (objImg[t.o.kind]) { ctx.imageSmoothingEnabled = false; ctx.drawImage(objImg[t.o.kind], t.o.x, t.o.y); } }
+  // The lip of the rock that stands between the party and us (bake.py): over the figures, so feet go behind it.
+  if (front) { ctx.imageSmoothingEnabled = false; ctx.drawImage(front, 0, 0); }
   if (LIGHT) drawLight();
   drawGlow(now);
   drawForeground();
@@ -279,6 +281,7 @@ function frame(now) {
   ground = await img(BASE + road.ground);
   WALK = road.walkable || "w";
   if (road.shade) shade = await img(BASE + road.shade);
+  if (road.front) front = await img(BASE + road.front);
   for (const [k, f] of Object.entries(road.foreground || {})) fgImg[k] = await img(BASE + f);
   for (const k of new Set(road.objects.map((o) => o.kind))) objImg[k] = await img(BASE + "objects/" + k + ".png");
   heroes = (await Promise.all(LINE.map(loadHero))).filter(Boolean);

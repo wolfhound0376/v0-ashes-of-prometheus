@@ -16,8 +16,10 @@ config.json:
 
 What it writes:
   ground.png   the stitched picture, props painted in
-  shade.png    depth, as one see-through layer: the dark at the foot of every rock face, and the shadow each
-               prop throws across the floor. Drawn over the ground and under the figures.
+  shade.png    depth, as one see-through layer: the dark at the foot of every rock face, the shadow each prop
+               throws across the floor, and rock sinking into black away from the floor. Over the ground, under
+               the figures.
+  front.png    the lip of the rock that stands south of the floor, drawn in front of the figures
   objects/     one PNG per kind of prop
   fg/          foreground pieces the page hangs in front of everything
   road.json    the grid, the props, the way in and out
@@ -106,6 +108,48 @@ def main():
     shade = np.zeros((H, W, 4), np.uint8); shade[..., 0] = 6; shade[..., 1] = 4; shade[..., 2] = 14; shade[..., 3] = alpha
     Image.fromarray(shade, "RGBA").save(os.path.join(out, "shade.png"), optimize=True)
 
+    # ---- rock that reads as rock, not as a flat pattern (Sam, 2026-11-22: "the inferior walls look 2d") -------
+    # The tiles give a rock face only where rock stands NORTH of floor. Rock south of the floor is seen from above,
+    # so it comes out as a flat carpet of pattern. Two things fix that, both made here from the picture itself:
+    #   1. The rock sinks into darkness away from the floor (in shade.png): one cell in, it is still stone; three or
+    #      four cells in, it is the black of solid ground. A carpet has no depth; a mass that swallows light does.
+    #   2. A lip (front.png, drawn IN FRONT of the figures): the rock south of the floor is raised LIP pixels up over
+    #      the floor's edge, with a lit rim along its top. A figure walking that edge has its feet behind the lip,
+    #      which is what tells the eye the rock stands between it and us.
+    rockc = np.array([[at(cx, cy) == "d" for cx in range(cols)] for cy in range(rows)])
+    dist = np.where(rockc, 99, 0).astype(np.float32)
+    for _ in range(8):                                   # cells from the nearest ground that is not rock
+        pad = np.pad(dist, 1, constant_values=99)
+        near = np.minimum.reduce([pad[1 + dy:1 + dy + rows, 1 + dx:1 + dx + cols] + (1.0 if dx == 0 or dy == 0 else 1.4)
+                                  for dy in (-1, 0, 1) for dx in (-1, 0, 1) if dx or dy])
+        dist = np.where(rockc, np.minimum(dist, near), 0)
+    dpx = np.asarray(Image.fromarray(np.clip(dist * 40, 0, 255).astype(np.uint8)).resize((W, H), Image.BILINEAR).filter(ImageFilter.GaussianBlur(10)), np.float32) / 40
+    deep = np.clip((dpx - 0.75) / 2.6, 0, 1) ** 0.8 * 238
+    alpha = np.maximum(alpha, deep.astype(np.uint8))
+    shade[..., 3] = alpha
+    Image.fromarray(shade, "RGBA").save(os.path.join(out, "shade.png"), optimize=True)
+
+    LIP = 18
+    g = np.asarray(ground).astype(np.float32)
+    # Where the rock really is, to the pixel. The tiles are painted half a cell lower than the grid, so the grid
+    # alone puts the edge in the wrong place; inside the rock's own cells, stone is whatever is blue and not brown.
+    rockpx = np.kron(rockc, np.ones((T, T), bool)) & (g[..., 2] - g[..., 0] > 10)
+    up = np.zeros_like(rockpx); up[:-LIP] = rockpx[LIP:]              # the rock, moved up by LIP
+    lip = up & ~rockpx                                               # the strip of floor it now covers
+    lip &= ~np.kron(np.array([[at(cx, cy) == "a" for cx in range(cols)] for cy in range(rows)]), np.ones((T, T), bool))
+    for o in objs:                                                   # a prop standing at the edge stays whole:
+        al = np.asarray(seen[o["kind"]])[:, :, 3] > 0                 # no lip where the prop itself is drawn
+        y1, y2, x1, x2 = max(0, o["y"]), min(H, o["y"] + o["h"]), max(0, o["x"]), min(W, o["x"] + o["w"])
+        lip[y1:y2, x1:x2] &= ~al[y1 - o["y"]:y2 - o["y"], x1 - o["x"]:x2 - o["x"]]
+    front = np.zeros((H, W, 4), np.float32)
+    src = np.zeros_like(g); src[:-LIP] = g[LIP:]                      # the rock's own stone, from just below
+    front[..., :3] = src * 0.78; front[..., 3] = lip * 255
+    top = lip & ~np.roll(lip, 1, axis=0)                              # the lip's top edge: catches the light
+    for i, gain in enumerate((1.7, 1.4, 1.12)):
+        m = np.roll(top, i, axis=0) & lip
+        front[m, :3] = np.clip(src[m] * gain + (24 - 8 * i), 0, 255)
+    Image.fromarray(front.astype(np.uint8), "RGBA").save(os.path.join(out, "front.png"), optimize=True)
+
     fg = {}
     for k, f in (cfg.get("foreground") or {}).items():
         ext = os.path.splitext(f)[1] or ".png"
@@ -113,7 +157,7 @@ def main():
 
     road = {"_": "Baked by scripts/pixel-road/bake.py from the PixelLab map below; do not edit by hand. ground.png has the props painted in; objects/ holds the same props again so a figure can stand behind one.",
             "id": rid, "name": cfg["name"], "pixellabMapId": cfg["pixellabMapId"], "tile": T, "cols": cols, "rows": rows,
-            "ground": "ground.png", "shade": "shade.png", "foreground": fg,
+            "ground": "ground.png", "shade": "shade.png", "front": "front.png", "foreground": fg,
             "legend": {"w": "floor", "r": "damp floor", "d": "rock", "a": "rock face", "s": "stream"}, "walkable": "wr",
             "grid": grid, "objects": objs, "entry": cfg["entry"], "exit": cfg["exit"],
             "landmarks": cfg.get("landmarks", []), "glow": cfg.get("glow", {}), "shine": cfg.get("shine", {})}
