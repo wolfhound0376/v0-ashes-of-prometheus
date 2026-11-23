@@ -11,6 +11,7 @@ Inputs, all in this folder:
                  /*__MARTIAL__*/ is lib/martial-arts-rules.mjs pasted in whole (see martial_rules): which hit spark a strike plays
                  /*__LABOR__*/ is lib/labor-walk.mjs pasted in whole (see labor_rules): Hard Labor's routes, steps and lines
                  /*__GATE_WATCH__*/ is lib/gate-watch.mjs pasted in whole (see gate_rules): the pen gate warning's clock
+                 /*__STRIKE_CAM__*/ is lib/strike-cam.mjs pasted in whole (see strike_cam_rules): which blows get a close-up
                  /*__SURRENDER__*/ is lib/surrender.mjs pasted in whole (see surrender_rules): the surrender's victim, beating and lines
                  /*__GAME_OVER__*/ is lib/game-over.mjs pasted in whole (see game_over_rules): when the game is over and what follows
                  /*__BUPPIDO_RISES__*/ is lib/buppido-rises.mjs pasted in whole (see buppido_rises_rules): the thing out of Buppido's grave
@@ -299,6 +300,13 @@ def watch_the_map_rules(root):
     return re.sub(r'^export ', '', src, flags=re.M)
 
 
+def strike_cam_rules(root):
+    """lib/strike-cam.mjs (the strike cam: which blows get a close-up, which scene, full or short cut; Sam 2026-11-22/23),
+    pasted whole minus `export`, like gate_rules. The map and lib/strike-cam.test.ts read the SAME rules."""
+    src = open(os.path.join(root, 'lib', 'strike-cam.mjs'), encoding='utf-8').read()
+    return re.sub(r'^export ', '', src, flags=re.M)
+
+
 def gate_rules(root):
     """lib/gate-watch.mjs (the pen gate warning: 10 s to get away before the guards shoot, Sam 2026-10-27), pasted
     whole minus `export`, like rage_rules. The map and lib/gate-watch.test.ts read the SAME rule."""
@@ -499,7 +507,7 @@ def somatic_table(root):
 
 t = t.replace('/*__SOMATIC__*/', somatic_table(ROOT))
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__TRAITS__*/', traits_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
-      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__SURRENDER__*/', surrender_rules(ROOT)).replace('/*__GAME_OVER__*/', game_over_rules(ROOT)).replace('/*__BUPPIDO_RISES__*/', buppido_rises_rules(ROOT)).replace('/*__BODY_REMOVAL__*/', body_removal_rules(ROOT)).replace('/*__SHAKEDOWN__*/', shakedown_rules(ROOT)).replace('/*__PEN_ESCAPE__*/', pen_escape_rules(ROOT)).replace('/*__DIRECTOR__*/', director_rules(ROOT)).replace('/*__CHAIN_MARCH__*/', chain_march_rules(ROOT)).replace('/*__WATCH_THE_MAP__*/', watch_the_map_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__QUOTA__*/', quota_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
+      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__STRIKE_CAM__*/', strike_cam_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__SURRENDER__*/', surrender_rules(ROOT)).replace('/*__GAME_OVER__*/', game_over_rules(ROOT)).replace('/*__BUPPIDO_RISES__*/', buppido_rises_rules(ROOT)).replace('/*__BODY_REMOVAL__*/', body_removal_rules(ROOT)).replace('/*__SHAKEDOWN__*/', shakedown_rules(ROOT)).replace('/*__PEN_ESCAPE__*/', pen_escape_rules(ROOT)).replace('/*__DIRECTOR__*/', director_rules(ROOT)).replace('/*__CHAIN_MARCH__*/', chain_march_rules(ROOT)).replace('/*__WATCH_THE_MAP__*/', watch_the_map_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__QUOTA__*/', quota_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))

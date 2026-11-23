@@ -1393,6 +1393,9 @@ body.quota-on #cbtMenu[data-kind=explore]{display:none!important}
            they are the DM's here, first in the drawer behind the small DM button the fight keeps top right (#1055). -->
       <details open><summary>The fight</summary>
       <div class="dmCloudRow"><button class="btn" id="quickBtn" title="DM: let the heroes fight on their own at speed. Weapons only, no spells or items. Every roll is real.">Quick resolve</button><button class="btn danger" id="endCombat">End fight</button></div>
+      <!-- THE STRIKE CAM (Sam, 2026-11-22/23): close-ups on the blows that earn one. Off until the DM turns it on; the setting
+           travels with the world, so the screen running the fight reads the same one. -->
+      <div class="dmCloudRow"><label for="dmStrikeCam" style="align-self:center">Close-ups</label><select id="dmStrikeCam" title="DM: the strike cam. A close-up on a weapon art, a levelled spell or a critical hit, where the art for it exists. Off by default."><option value="off">Off</option><option value="key">Key moments</option><option value="all">Every hit that has one</option></select></div>
       <!-- THE SURRENDER (Sam, 2026-10-28): when the party gives up to the drow — said to Malachar, or a fight they cannot win —
            the DM makes the map match: a beating, the march back to the pen, one prisoner thrown into the chasm, the gate locked. -->
       <div class="dmCloudRow"><button class="btn danger" id="dmSurrender" title="DM: the party surrenders to the drow. They are beaten (1d4 each), marched back to the slave pen, and one of the prisoners with them is thrown into the chasm as a warning.">They surrender</button></div>
@@ -14082,6 +14085,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
   handWatch(att, tgt);
   const c = att.c; if (att.kind === "pc" && !reaction){ if (offhand) c.bonus = false; else { c.action = false; if (atk.light) c.lastLight = atk; } } closeMenu(); cbt.phase = "busy"; combatBusy = true;
   if (atk.art) artSpend(att, atk.art);   // a weapon art is spent on the swing, hit or miss
+  att.strikeCamOpen = false; if (strikeCamMode(state.strikeCam) !== "off") strikeCamWarm();   // the close-up's art is asked for before it is needed
   const reach = atk.thrown && feetBetween(att, tgt) > 5 ? atk.thrown : atk.reach;
   // A BOW OR CROSSBOW SHOOTS FROM WHERE YOU STAND (Sam, 2026-10-24: "be able to fire from a distance. Not sure why fifi
   // had to move closer"). approachThen walks into reach first, and for a target beyond the pen's bars it walks to the
@@ -14135,6 +14139,8 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (!cv.total && dodges(tgt)) popText(tgt, hit ? "dodging: still hit" : "dodged!", "#cfe8ff", .9);   // the Dodge is seen working, swing by swing
       if (r === 1) bank("ui/nat1", .7);
       if (shot){ bank(ws.swing, .75); att.aimHold = now;
+        if (hit && shot !== "flask"){ const sc = strikeCamFor(att, tgt, {art: atk.art, weapon: atk.itemName || atk.name, crit, title: atk.art && WEAPON_ARTS[atk.art] ? WEAPON_ARTS[atk.art].name : atk.name});   // a shot's close-up opens at the release and waits for the bolt
+          if (sc){ att.strikeCamOpen = true; strikeCam({...sc, wait: true}); } }
         flying = new Promise(res => fireShot(att, tgt, shot, hit, to => { landed = to; lands(); res(); }, atk)); }
       else if (hit && danceSneak(att, tgt, atk, adv)) flying = new Promise(res => fifiDance(att, tgt, () => { lunge(att, tgt, 20 * actorScale(att)); lands(); res(); }));   // Fifi dances it in (Sam, 2026-10-29)
       else { lunge(att, tgt, 20 * actorScale(att)); lands(); }   // a longer lunge into the blow (Sam, 2026-10-28: "dynamic")
@@ -14215,6 +14221,9 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (atk.art){ const w = artRider(att, tgt, atk, crit); if (w) parts.push(w); }
       if (atk.curse && !tgt.down && hero(tgt)) setTimeout(() => curseBy(att, tgt), 420);
       if (tgt.c.sheet.holyVulnerable && !atk.flask && att.c.conds.has("blessed")) holyOpen(tgt, `${fname(att)}'s blessed blow`);
+      { const art = atk.art && WEAPON_ARTS[atk.art], word = art && art.says && !art.cleave ? String(art.says).toUpperCase() : "";   // THE STRIKE CAM: the blow has landed
+        if (att.strikeCamOpen){ att.strikeCamOpen = false; strikeCamLand({dmg: dmg.total, crit, word}); }
+        else if (!shot){ const sc = strikeCamFor(att, tgt, {art: atk.art, weapon: atk.itemName || atk.name, crit, title: art ? art.name : atk.name}); if (sc) strikeCam({...sc, dmg: dmg.total, crit, word}); } }
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
       blowNarration(att, tgt, atk, dmg.total, crit);
       }
@@ -14355,6 +14364,7 @@ function castSpell(caster, tgt, name, done, darts){
         if (lab) lab.crit = crit; land(tgt, true, sp.type); knock(tgt, caster, 12 * actorScale(tgt)); if (tgt.kind === "pc") redFlash();
         narrate(caster, `${fname(caster)}'s ${name} ${sp.type === "cold" ? "frosts" : sp.type === "necrotic" ? "withers" : sp.type === "radiant" ? "sears" : "strikes"} ${fname(tgt)}.`);
         const d = roll(sp.dmg, crit); if (sp.beams && invoked(caster, "Agonizing Blast")) d.total += Math.max(0, abilMod(caster.c.sheet, "cha")); hitCtx = {spell: name, by: caster}; damage(tgt, d.total, sp.type, crit, caster, true); hitCtx = null; hexRider(caster, tgt, crit);
+        { const sc = strikeCamFor(caster, tgt, {spell: name, spellLevel: sp.lvl, crit, title: name}); if (sc) strikeCam({...sc, dmg: d.total, crit, word: name === "Ray of Frost" ? "SLOWED" : ""}); }   // THE STRIKE CAM: a spell attack that hit
         if (name === "Vampiric Touch" && d.total > 0){ const h = Math.floor(d.total / 2); caster.c.hp = Math.min(caster.c.hpMax, caster.c.hp + h); popText(caster, `+${h}`, "#9ff2c8"); renderParty(); }   // SRD 5.1: regain half the necrotic damage dealt
         if (sp.beams && invoked(caster, "Repelling Blast") && !tgt.down) repel(caster, tgt, 10); if (sp.cond) addCond(tgt, sp.cond); if (name === "Ray of Frost") addCond(tgt, "slowed");
         if (sp.type === "cold" && sp.ice){ const patch = freezeGround(tgt.x, tgt.y, m.dc, caster); if (!tgt.down){ tgt.onIce = patch; iceSave(tgt, patch, "struck by the orb"); } }
@@ -17256,7 +17266,6 @@ function endCombat(won, opts = {}){
 }
 $("endCombat").onclick = () => endCombat(false, {byDm: true});
 $("quickBtn").onclick = () => setQuick(!(cbt && cbt.quick));
-
 // XP ONTO THE SHEETS (Sam, 2026-10-24: "I just went up 300XP and didn't go up a level"). The banner above used to
 // be the whole of it: nothing was written, so every sheet stayed at 0. /api/walk-xp now pays the win: split evenly
 // across the party's player characters (NPC companions get no share — Sam, 2026-09-27), once per fight. Levelling
@@ -17386,6 +17395,328 @@ function initiativeReveal(order){
   return 200 + cards.length * 90 + 300;
 }
 function burst(a, col, n){ const m = SPR[a.id].json, sc = actorScale(a), y = a.y - m.pivot[1] * sc * .5; for (let i = 0; i < n; i++){ const ang = Math.random() * Math.PI * 2, sp = 60 + Math.random() * 160; sparks.push({x: a.x, y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp * .6 - 60, col, t0: now, life: 420 + Math.random() * 300}); } }
+// ---------- THE STRIKE CAM: a close-up on the blows that earn one ----------
+// Sam, 2026-11-22: "when using special attacks / spells there is a fade out/in into a screen like above where melee is
+// played out so attacks feel more special when they hit" (his Darkest Dungeon screenshots). Judged on the Combat Effects
+// Lab first; this is that scene, on the fight. WHEN it plays and WHICH scene is lib/strike-cam.mjs, pasted here whole:
+// THE STRIKE CAM — when a blow gets a close-up, and which one. The rules, pure, in one copy.
+//
+// Sam, 2026-11-22: "when using special attacks / spells there is a fade out/in into a screen like above where melee is
+// played out so attacks feel more special when they hit". He picked new, larger close-up poses over the map sprites
+// enlarged ("B go"), judged three scenes on the Combat Effects Lab ("Looks great", "Looks good"), and on 2026-11-23 took
+// the trigger and pacing list as proposed ("use your suggestions"). Design of record: the project doc
+// claude/Strike_Cam_Pilot_2026-11-22.md.
+//
+// What it is: an overlay on the fight, never a second screen. The plate dims and blurs behind a letterbox band, the
+// attacker and the target snap to one large held pose each, the blow lands, and the plate comes back.
+//
+// What this file decides, and nothing else:
+//   - STRIKE_CAM.poses   which close-up poses EXIST. Poses are drawn on demand (Sam's ruling); a blow with no pose for
+//                        the attacker's move, or no hit pose for the target, plays on the map as it always did.
+//   - strikeCamScene()   whether a landed blow gets a close-up under the DM's setting, and which scene.
+//   - strikeCamCut()     full or short: the full cut the first time a move is used in a fight, and at most one full cut
+//                        a round.
+//
+// THIS IS PR 1 OF 3. It carries the engine, the DM's setting (off by default) and the three scenes Sam approved. The
+// wider trigger list (killing blows, Sneak Attack, reactions, monster abilities on a hero) and weapon arts for the
+// casters are the next two PRs; the "key" setting below already says which of the blows it is shown count.
+//
+// Plain JavaScript for the same reason as lib/gate-watch.mjs: build_walk.py pastes this file into the painted map at
+// its STRIKE_CAM placeholder (minus `export`), so the map and lib/strike-cam.test.ts read the SAME rules. Every name
+// here starts with STRIKE_CAM or strikeCam so the paste cannot collide with the page's own names.
+
+const STRIKE_CAM = {
+  // the DM's setting. "off" is the default: nothing changes for a table until the DM turns it on.
+  modes: ["off", "key", "all"],
+  modeNames: { off: "Off", key: "Key moments", all: "Every hit that has one" },
+
+  // ms. `lead` is added between the poses snapping in and the hit: the flight of a bolt, the charge of a spell.
+  cuts: {
+    full: { inMs: 150, snap: 150, hit: 250, stop: 95, hold: 1050, out: 230 },
+    short: { inMs: 90, snap: 90, hit: 170, stop: 70, hold: 520, out: 140 },
+  },
+  lead: { melee: [0, 0], shot: [130, 90], spell: [330, 190] },
+
+  // THE POSES THAT EXIST, by sprite slug. A point on a pose is a fraction of its trimmed width and height.
+  //   strike poses: kind, the pose file, its scale, where the feet stand, `hand` (the pommel, the muzzle, the palm)
+  //   weapon:       the pose shows that weapon, so it is only for that weapon (the pose follows the weapon in hand)
+  //   wind:         an optional wind-up pose, shown only while a melee attacker lunges
+  //   hit:          the pose of someone taking a blow; `mark` is where a shot or a spell lands on it
+  poses: {
+    freia: {
+      "art:sap": { kind: "melee", src: "closeup-sap.png", scale: 2, feetX: 700, hand: [0.95, 0.6], weapon: /dagger/i,
+        wind: { src: "closeup-sap-windup.png", scale: 1, feetX: 668 } },
+      "art:hamstring": { kind: "shot", src: "closeup-crossbow.png", scale: 1.25, feetX: 420, hand: [0.99, 0.2], weapon: /hand crossbow/i, mark: [0.42, 0.74] },
+    },
+    kenta: {
+      cast: { kind: "spell", src: "closeup-cast.png", scale: 1, feetX: 420, hand: [0.97, 0.25], mark: [0.45, 0.34] },
+    },
+    "drow-guard-male": { hit: { src: "closeup-hit.png", scale: 1.25 } },
+  },
+  // where the target stands, by the kind of scene
+  targetFeetX: { melee: 1050, shot: 1130, spell: 1130 },
+
+  // the spell sheets a spell scene draws with, from public/vfx: [file, columns, rows, frames]. A spell with no entry
+  // here has no close-up yet.
+  spellFx: {
+    "Ray of Frost": { tint: "#bfe9ff", pop: "#bfe9ff", blood: false,
+      charge: ["frostRayCharge.webp", 4, 1, 3], travel: ["frostRayTravel.webp", 4, 1, 4], impact: ["frostRayImpact.webp", 3, 3, 8] },
+  },
+};
+
+/** the mode as stored, made safe: anything unknown is "off" */
+function strikeCamMode(v) {
+  return STRIKE_CAM.modes.includes(v) ? v : "off";
+}
+
+/**
+ * Does this landed blow get a close-up, and which?
+ *   ev: { mode, att, tgt (sprite slugs), art (a weapon art's key), weapon (the attack's name), spell, spellLevel,
+ *         crit, quick (Quick resolve is on) }
+ * Returns null (it plays on the map) or { key, kind, att, tgt, pose, hit, fx }.
+ *
+ * "key" is Sam's list as far as PR 1 can see it: a weapon art, a levelled spell aimed at one creature, or a critical
+ * hit. A cantrip or a plain attack is shown only when it crits. "all" shows every hit that has a scene, for looking at
+ * the scenes. Nothing is shown in Quick resolve, and nothing without a pose on BOTH sides.
+ */
+function strikeCamScene(ev) {
+  const mode = strikeCamMode(ev && ev.mode);
+  if (mode === "off" || !ev || ev.quick) return null;
+  const mine = STRIKE_CAM.poses[ev.att], theirs = STRIKE_CAM.poses[ev.tgt];
+  const hit = theirs && theirs.hit;
+  if (!mine || !hit) return null;
+  let key = null, pose = null, fx = null, special = false;
+  if (ev.spell) {
+    fx = STRIKE_CAM.spellFx[ev.spell] || null;
+    pose = fx ? mine.cast : null;
+    key = "spell:" + ev.spell;
+    special = (ev.spellLevel || 0) > 0;
+  } else if (ev.art) {
+    pose = mine["art:" + ev.art] || null;
+    key = "art:" + ev.art;
+    special = true;
+  }
+  if (!pose) return null;
+  if (pose.weapon && !pose.weapon.test(String(ev.weapon || ""))) return null;   // the pose shows another weapon
+  if (mode === "key" && !special && !ev.crit) return null;
+  return { key, kind: pose.kind, att: ev.att, tgt: ev.tgt, pose, hit, fx };
+}
+
+/**
+ * Full or short. `mem` is the fight's own memory ({} at the start of a fight) and is updated here:
+ * the full cut the first time a move is used in a fight, the short one after; and no more than one full cut a round.
+ */
+function strikeCamCut(mem, who, key, round) {
+  const id = who + "|" + key, seen = (mem.seen = mem.seen || {});
+  const first = !seen[id];
+  seen[id] = true;
+  if (first && mem.fullRound !== round) { mem.fullRound = round; return "full"; }
+  return "short";
+}
+
+/** the scene's own clock (ms) for a cut and a kind: when the poses snap in, the release, the hit, the hold, the out */
+function strikeCamClock(cut, kind) {
+  const short = cut === "short", c = STRIKE_CAM.cuts[short ? "short" : "full"], lead = (STRIKE_CAM.lead[kind] || [0, 0])[short ? 1 : 0];
+  const rel = c.snap + (kind === "shot" ? 70 : kind === "spell" ? lead - (short ? 90 : 130) : 0);
+  return { inMs: c.inMs, snap: c.snap, rel, hit: c.hit + lead, stop: c.stop, hold: c.hold + lead, out: c.out };
+}
+
+// What is here is only the drawing. It is an overlay on the stage, never a second screen: the plate dims and blurs
+// behind a letterbox band (a backdrop filter and a dark scrim, so the fight goes on underneath and is there when the band lifts), the
+// attacker and the target snap to one large held pose each, the blow lands, the pair drift for a beat, and it is gone.
+//   - OFF BY DEFAULT. state.strikeCam is the DM's setting (DM tools, "Close-ups"); it travels with the world like the
+//     rest of `state`, and the screen running the fight is the one that reads it.
+//   - ONE SCENE ON EVERY SCREEN (world events): strikeCam and strikeCamLand are on RELAY_FNS, so the screen running the
+//     fight opens the close-up and every screen showing the fight plays the same one. Their arguments are plain data
+//     (sprite slugs, a pose key, numbers), so nothing has to be found on the other screen.
+//   - IT MAKES NO SOUND. The map already plays the swing, the hit and the cry; the close-up opens on the blow.
+//   - A shot opens at the release, before the bolt has crossed the plate, and waits: strikeCamLand() is the map telling
+//     it the bolt has landed, so the close-up's hit and the map's hit are the same moment.
+//   - No pose, no close-up: a pose file that has not loaded (a preview copy without the art) means nothing opens.
+const SC = {el: null, cv: null, ctx: null, run: null, raf: 0, img: {}, W: 1600, H: 900, BAR: 96};
+function scImg(src){ if (!SC.img[src]){ const i = new Image(); i.src = src; SC.img[src] = i; } return SC.img[src]; }
+const scPoseSrc = (slug, p) => `/sprites/${slug}/${p.src}`;
+function scParts(o){   // the scene's pictures, rebuilt from what crossed the relay
+  const mine = STRIKE_CAM.poses[o.att], theirs = STRIKE_CAM.poses[o.tgt], pose = mine && mine[o.pose], hit = theirs && theirs.hit;
+  if (!pose || !hit) return null;
+  const fx = pose.kind === "spell" ? STRIKE_CAM.spellFx[o.spell] : null; if (pose.kind === "spell" && !fx) return null;
+  const sheet = f => f ? [scImg(`/vfx/${f[0]}`), f[1], f[2], f[3]] : null;
+  return {kind: pose.kind, pose, hit, fx,
+    att: {im: scImg(scPoseSrc(o.att, pose)), scale: pose.scale, feetX: pose.feetX},
+    wind: pose.wind ? {im: scImg(scPoseSrc(o.att, pose.wind)), scale: pose.wind.scale, feetX: pose.wind.feetX} : null,
+    tgt: {im: scImg(scPoseSrc(o.tgt, hit)), scale: hit.scale, feetX: STRIKE_CAM.targetFeetX[pose.kind]},
+    charge: fx && sheet(fx.charge), travel: fx && sheet(fx.travel), impact: fx && sheet(fx.impact)};
+}
+const scLoaded = im => !!(im && im.complete && im.naturalWidth);
+function scReady(p){ return !!p && scLoaded(p.att.im) && scLoaded(p.tgt.im) && (!p.fx || (scLoaded(p.travel[0]) && scLoaded(p.impact[0]))); }
+// the art is asked for when the fight opens, so the first close-up does not wait on it
+function strikeCamWarm(){ for (const slug in STRIKE_CAM.poses) for (const k in STRIKE_CAM.poses[slug]){ const p = STRIKE_CAM.poses[slug][k]; scImg(scPoseSrc(slug, p)); if (p.wind) scImg(scPoseSrc(slug, p.wind)); }
+  for (const s in STRIKE_CAM.spellFx) for (const k of ["charge", "travel", "impact"]) scImg(`/vfx/${STRIKE_CAM.spellFx[s][k][0]}`); }
+/** the screen running the fight asks: does this blow get a close-up? Returns the relay-safe scene, or null. */
+function strikeCamFor(att, tgt, ev){
+  if (!cbt || cbt.mirror || !att || !tgt) return null;
+  const mode = strikeCamMode(state.strikeCam); if (mode === "off") return null;
+  const sc = strikeCamScene({mode, att: att.id, tgt: tgt.id, art: ev.art, weapon: ev.weapon, spell: ev.spell, spellLevel: ev.spellLevel, crit: ev.crit, quick: !!cbt.quick});
+  if (!sc) return null;
+  const o = {att: att.id, tgt: tgt.id, pose: sc.kind === "spell" ? "cast" : sc.key, spell: ev.spell || null, title: ev.title || "", who: `${fname(att)}  →  ${fname(tgt)}`};
+  if (!scReady(scParts(o))){ strikeCamWarm(); return null; }
+  o.cut = strikeCamCut(cbt.strikeMem = cbt.strikeMem || {}, att.id, sc.key, cbt.round || 1);
+  return o;
+}
+function scBuild(){
+  if (SC.el) return true; const stage = $("cv") && $("cv").parentElement; if (!stage) return false;
+  const el = document.createElement("div"); el.id = "strikeCam";
+  el.style.cssText = "position:absolute;inset:0;z-index:6;display:none;pointer-events:none;-webkit-backdrop-filter:blur(7px) brightness(.7) saturate(.75);backdrop-filter:blur(7px) brightness(.7) saturate(.75);opacity:0";
+  const c = document.createElement("canvas"); c.style.cssText = "position:absolute;inset:0;width:100%;height:100%;display:block"; el.appendChild(c);
+  $("cv").insertAdjacentElement("afterend", el); SC.el = el; SC.cv = c; SC.ctx = c.getContext("2d"); return true;
+}
+const scEase = t => 1 - Math.pow(1 - t, 3), scClamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function scTrim(im){   // a pose's opaque bounds, measured once
+  if (im._box) return im._box;
+  const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight; const x = c.getContext("2d"); x.drawImage(im, 0, 0);
+  let d; try { d = x.getImageData(0, 0, c.width, c.height).data; } catch (e){ return (im._box = [0, 0, c.width, c.height]); }
+  let x0 = c.width, y0 = c.height, x1 = 0, y1 = 0;
+  for (let y = 0; y < c.height; y++) for (let xx = 0; xx < c.width; xx++) if (d[(y * c.width + xx) * 4 + 3] > 24){ if (xx < x0) x0 = xx; if (xx > x1) x1 = xx; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  return (im._box = x1 < x0 ? [0, 0, c.width, c.height] : [x0, y0, x1 - x0 + 1, y1 - y0 + 1]);
+}
+function scFlat(im, col){   // a flat-colour silhouette of a pose, for the hit flash
+  const key = "_flat" + col; if (im[key]) return im[key];
+  const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight; const x = c.getContext("2d");
+  x.drawImage(im, 0, 0); x.globalCompositeOperation = "source-in"; x.fillStyle = col; x.fillRect(0, 0, c.width, c.height); return (im[key] = c);
+}
+function scFigure(part, dx, alpha, flash, col){   // draws a pose standing on the band's floor; returns its rect
+  const ctx = SC.ctx, im = part.im, ground = SC.H - 158; if (!scLoaded(im)) return null;
+  const b = scTrim(im), w = Math.round(b[2] * part.scale), h = Math.round(b[3] * part.scale), x = Math.round(part.feetX - w / 2 + dx), y = ground - h;
+  ctx.save(); ctx.imageSmoothingEnabled = false;
+  ctx.globalAlpha = alpha * .5; ctx.fillStyle = "#000"; ctx.beginPath(); ctx.ellipse(x + w / 2, ground + 4, w * .4, 15, 0, 0, 7); ctx.fill();
+  ctx.globalAlpha = alpha; ctx.drawImage(im, b[0], b[1], b[2], b[3], x, y, w, h);
+  if (flash > 0){ ctx.globalAlpha = alpha * flash; ctx.drawImage(scFlat(im, col || "#fff4e6"), b[0], b[1], b[2], b[3], x, y, w, h); }
+  ctx.restore(); return {x, y, w, h};
+}
+function scCell(def, i, x, y, w, h, alpha){   // one frame of a spell sheet [image, cols, rows, frames], additive
+  const ctx = SC.ctx, im = def[0]; if (!scLoaded(im)) return; const cw = im.naturalWidth / def[1], ch = im.naturalHeight / def[2]; i = scClamp(Math.floor(i), 0, def[3] - 1);
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = alpha; ctx.imageSmoothingEnabled = true; ctx.drawImage(im, (i % def[1]) * cw, Math.floor(i / def[1]) * ch, cw, ch, x, y, w, h); ctx.restore();
+}
+function scCrescent(cx, cy, r, a0, a1, wide, k, col){   // the rogue strike look: a thick glowing crimson crescent, drawn in over k = 0..1
+  if (k <= 0) return; const ctx = SC.ctx, end = a0 + (a1 - a0) * scClamp(k * 1.6, 0, 1), fade = scClamp(1.25 - k, 0, 1);
+  ctx.save(); ctx.globalAlpha = fade; ctx.lineCap = "round"; ctx.shadowColor = col; ctx.shadowBlur = 34;
+  for (let i = 0; i < 2; i++){ ctx.strokeStyle = i ? "#ffe2d6" : col; ctx.lineWidth = i ? wide * .3 : wide; ctx.beginPath();
+    for (let s = 0; s <= 22; s++){ const t = s / 22, a = a0 + (end - a0) * t, rr = r * (1 - .1 * Math.sin(Math.PI * t) * (i ? 1 : 0)), px = cx + Math.cos(a) * rr, py = cy + Math.sin(a) * rr; s ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+    ctx.stroke(); }
+  ctx.restore();
+}
+function scBurst(x, y, k, size, rays){   // a red starburst at the contact point
+  if (k <= 0 || k >= 1) return; const ctx = SC.ctx, R = size * (.35 + .65 * scEase(k));
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 1 - k;
+  const g = ctx.createRadialGradient(x, y, 0, x, y, R * 1.1); g.addColorStop(0, "rgba(255,240,225,.95)"); g.addColorStop(.25, "rgba(255,80,60,.6)"); g.addColorStop(1, "rgba(0,0,0,0)"); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, R * 1.1, 0, 7); ctx.fill();
+  ctx.fillStyle = "#fff0e6"; for (const r of rays){ const L = R * r.len, wd = 5 + 9 * r.w; ctx.beginPath(); ctx.moveTo(x - Math.sin(r.a) * wd, y + Math.cos(r.a) * wd); ctx.lineTo(x + Math.sin(r.a) * wd, y - Math.cos(r.a) * wd); ctx.lineTo(x + Math.cos(r.a) * L, y + Math.sin(r.a) * L); ctx.fill(); }
+  ctx.restore();
+}
+function scBolt(x0, y0, x1, y1, alpha, stuck){   // plain arrows and bolts fly straight and streak neon yellow (Sam, 2026-10-29)
+  const ctx = SC.ctx, L = Math.hypot(x1 - x0, y1 - y0); ctx.save(); ctx.translate(x0, y0); ctx.rotate(Math.atan2(y1 - y0, x1 - x0));
+  if (!stuck){ ctx.globalCompositeOperation = "lighter"; ctx.lineCap = "round";
+    const g = ctx.createLinearGradient(0, 0, L, 0); g.addColorStop(0, "rgba(230,255,60,0)"); g.addColorStop(.7, `rgba(230,255,60,${.55 * alpha})`); g.addColorStop(1, `rgba(250,255,190,${alpha})`);
+    ctx.strokeStyle = g; ctx.shadowColor = "#e6ff3c"; ctx.shadowBlur = 22; ctx.lineWidth = 9; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(L, 0); ctx.stroke();
+    ctx.shadowBlur = 0; ctx.strokeStyle = `rgba(255,255,235,${alpha})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(Math.max(0, L - 150), 0); ctx.lineTo(L, 0); ctx.stroke(); ctx.globalCompositeOperation = "source-over"; }
+  ctx.globalAlpha = alpha; ctx.fillStyle = "#3a2f28"; ctx.fillRect(L - 60, -3, 60, 6); ctx.fillStyle = "#d9d2c0"; ctx.fillRect(L - 66, -6, 14, 12); ctx.restore();
+}
+function scNumber(x, y, k, text, word, crit, col){
+  if (k <= 0 || text == null) return; const ctx = SC.ctx, pop = k < .12 ? 1.5 - .5 * (k / .12) : 1, rise = 46 * scEase(scClamp(k, 0, 1)), a = scClamp((1 - k) * 4, 0, 1);
+  ctx.save(); ctx.globalAlpha = a; ctx.translate(x, y - rise); ctx.rotate(-.12); ctx.scale(pop, pop); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineJoin = "round";
+  ctx.font = `${crit ? 210 : 170}px Bangers, Impact, sans-serif`; ctx.lineWidth = 22; ctx.strokeStyle = "#2a0608"; ctx.strokeText(text, 0, 0); ctx.fillStyle = crit ? "#ff6b5e" : (col || "#ffe266"); ctx.fillText(text, 0, 0);
+  if (crit){ ctx.font = "64px Bangers, Impact, sans-serif"; ctx.lineWidth = 12; ctx.strokeText("CRIT!", 0, -130); ctx.fillStyle = "#ffe266"; ctx.fillText("CRIT!", 0, -130); }
+  if (word){ ctx.font = "700 34px Cinzel, Georgia, serif"; ctx.lineWidth = 9; ctx.strokeText(word, 6, 104); ctx.fillStyle = "#e9d7ff"; ctx.fillText(word, 6, 104); }
+  ctx.restore();
+}
+/**
+ * Open a close-up. o: {att, tgt (sprite slugs), pose (a key in STRIKE_CAM.poses[att]), spell, cut ("full" | "short"),
+ * title, who, dmg, crit, word, wait}. `wait`: hold before the hit until strikeCamLand() says the shot has landed.
+ * Opened on the blow (no `wait`), the wind-up is cut short so the close-up's hit follows the map's at once.
+ */
+function strikeCam(o){
+  const P = scParts(o || {}); if (!scReady(P) || !scBuild()) return;
+  const stage = SC.el.parentElement, r = stage.getBoundingClientRect(); if (r.width < 40 || r.height < 40) return;
+  const W = SC.W, H = SC.H = Math.round(scClamp(W * r.height / r.width, 620, 1300)); SC.cv.width = W; SC.cv.height = H;
+  const still = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches, melee = P.kind === "melee", spell = P.kind === "spell", shotK = P.kind === "shot";
+  const base = strikeCamClock(o.cut, P.kind), after = base.hold - base.hit;
+  // on the blow: the band is in at once and the hit follows in a tenth of a second (a spell: its charge and ray take a little longer)
+  const c = o.wait ? {inMs: base.inMs, snap: 60, rel: 90, hit: 1e9, stop: base.stop, hold: 1e9, out: base.out}
+    : {inMs: 80, snap: 0, rel: spell ? 110 : 0, hit: spell ? 240 : 110, stop: base.stop, hold: (spell ? 240 : 110) + after, out: base.out};
+  const rays = []; for (let i = 0; i < 13; i++) rays.push({a: Math.random() * 6.283, len: .55 + Math.random() * .6, w: Math.random()});
+  const blood = P.fx && P.fx.blood === false ? 0 : Math.round((o.crit ? 70 : 44) * (melee ? 1 : .6)), drops = [];
+  for (let i = 0; i < blood; i++){ const a = -.35 + (Math.random() - .5) * 1.5, v = 260 + Math.random() * (o.crit ? 900 : 640); drops.push({vx: Math.cos(a) * v, vy: Math.sin(a) * v - 120, r: 3 + Math.random() * 9, col: ["#96121a", "#be1418", "#70060e"][i % 3]}); }
+  const me = SC.run = {t0: performance.now(), c, after, o: {...o}, waiting: !!o.wait};
+  SC.el.style.display = "block"; cancelAnimationFrame(SC.raf);
+  const frame = t => {
+    if (SC.run !== me) return;
+    const ctx = SC.ctx, ms = t - me.t0, d = me.o, crit = !!d.crit;
+    if (me.waiting && ms > 2600){ me.waiting = false; c.hit = 1e9; c.hold = ms; }                   // the shot never landed (a miss after all): let it go
+    const total = c.hold + c.out;
+    if (ms >= total){ SC.el.style.display = "none"; SC.el.style.opacity = "0"; SC.run = null; return; }
+    const tm = ms <= c.hit ? ms : ms < c.hit + c.stop ? c.hit : ms - c.stop;                          // hitstop: the clock holds at the blow
+    const inK = scEase(scClamp(ms / c.inMs, 0, 1)), outK = ms > c.hold ? scClamp((ms - c.hold) / c.out, 0, 1) : 0, vis = inK * (1 - outK);
+    const since = ms - c.hit, shakeBy = still || since < 0 ? 0 : (crit ? 22 : melee ? 14 : 10) * Math.exp(-since / 130), ground = H - 158;
+    SC.el.style.opacity = String(vis);
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(8,6,14,.6)"; ctx.fillRect(0, 0, W, H);   // a dark scrim of its own: the fight underneath must not compete with the two poses, with or without the backdrop blur
+    ctx.save(); ctx.translate((Math.random() - .5) * shakeBy, (Math.random() - .5) * shakeBy);
+    if (ms >= c.snap){
+      const k = scClamp((tm - c.snap) / Math.max(1, Math.min(c.hit, 1e8) - c.snap), 0, 1), drift = Math.max(0, tm - c.hit) / 1000, sinceRel = tm - c.rel;
+      const adx = melee ? -150 * (1 - scEase(k)) + (still ? 0 : 16 * drift)
+        : -60 * (1 - scEase(scClamp((tm - c.snap) / 110, 0, 1))) - (still || sinceRel < 0 ? 0 : (spell ? 10 : 18) * Math.exp(-sinceRel / 140));
+      const tdx = (since >= 0 ? (melee ? 34 : 26) * scEase(scClamp(since / 160, 0, 1)) : 0) + (still ? 0 : 24 * drift);
+      const pose = melee && k < 1 && P.wind && !still ? P.wind : P.att;                               // the wind-up while she lunges, the blow from the hit on
+      if (melee && !still && k < 1) for (let g = 3; g >= 1; g--) scFigure(pose, adx - g * 46 * (1 - k), .16, 0);
+      const tr = scFigure(P.tgt, tdx, 1, since >= 0 ? scClamp(1 - since / (spell ? 420 : 150), 0, 1) * (spell ? .7 : .85) : 0, P.fx && P.fx.tint);
+      const ar = scFigure(pose, adx, 1, 0);
+      if (tr && ar){
+        const hand = P.pose.hand, mark = P.pose.mark || [.45, .4], px = ar.x + ar.w * hand[0], py = ar.y + ar.h * hand[1], ek = since / 420;
+        const hx = melee ? px + 26 : tr.x + tr.w * mark[0] - tdx * .6, hy = melee ? py + 4 : (spell ? py : tr.y + tr.h * mark[1]);
+        if (melee && since >= 0){   // two crescents chopping down around the swing and ending on the pommel, as the map draws Weakening Jab
+          const arc = (rr, a0, a1, wide, kk, col) => scCrescent(px - Math.cos(a1) * rr, py - Math.sin(a1) * rr, rr, a0, a1, wide, kk, col);
+          arc(250, -2.25, .5, crit ? 34 : 26, ek, "#e01f2c"); arc(330, -1.85, .32, crit ? 22 : 16, ek - .12, "#ff4a3d"); }
+        if (shotK){
+          const fl = since >= 0 ? 1 : Math.min(.82, scClamp(sinceRel / 150, 0, 1) * .82);                 // out of the muzzle; it arrives when the map says so
+          if (sinceRel >= 0 && since < 0) scBolt(px, py, px + (hx - px) * fl, py + (hy - py) * fl, 1, false);
+          if (sinceRel >= 0 && sinceRel < 90){ ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = 1 - sinceRel / 90; ctx.fillStyle = "#f4ffb0"; ctx.beginPath(); ctx.arc(px + 6, py, 26, 0, 7); ctx.fill(); ctx.restore(); }
+          if (since >= 0) scBolt(px, py, hx + 14, hy + 14 * (hy - py) / Math.max(1, hx - px), 1, true);
+        }
+        if (spell){
+          if (since < 0 && P.charge){ const grow = scClamp((tm - c.snap) / Math.max(1, c.rel - c.snap), 0, 1), s = 150 + 170 * grow; scCell(P.charge, grow * 2.99, px - s / 2 + 20, py - s / 2, s, s, 1); }
+          if (sinceRel >= 0 && since < 120){ const fl = scClamp(sinceRel / Math.max(1, c.hit - c.rel), 0, 1), x1 = px + (hx - px) * fl;
+            scCell(P.travel, since >= 0 ? 3 : (sinceRel / 55) % 3, px - 40, py - 115, Math.max(60, x1 - px + 70), 230, since >= 0 ? 1 - since / 120 : 1); }
+          if (since >= 0){ const s = crit ? 560 : 440; scCell(P.impact, since / 62, hx - s / 2, hy - s / 2, s, s, 1); }
+        }
+        if (since >= 0){
+          if (!spell) scBurst(hx, hy, scClamp(ek, 0, .999), (crit ? 250 : 180) * (melee ? 1 : .7), rays);
+          const bt = Math.max(0, tm - c.hit) / 1000;
+          for (const dr of drops){ const x = hx + dr.vx * bt, y = hy + dr.vy * bt + 900 * bt * bt; if (y > ground + 14) continue; ctx.globalAlpha = scClamp(1.4 - bt * 1.1, 0, 1); ctx.fillStyle = dr.col; ctx.beginPath(); ctx.ellipse(x, y, dr.r * 1.35, dr.r * .8, Math.atan2(dr.vy + 1800 * bt, dr.vx), 0, 7); ctx.fill(); }
+          ctx.globalAlpha = 1;
+          scNumber(Math.min(tr.x + tr.w * .5 + 250 - tdx * .4, W - 250), tr.y + 70, scClamp(since / (me.after + c.out), 0, 1), d.dmg == null ? null : String(d.dmg), d.word || "", crit, P.fx && P.fx.pop);
+        }
+      }
+    }
+    ctx.restore();
+    // the band: letterbox bars, gold hairlines, the move's name and who is doing it to whom
+    const bar = SC.BAR * inK; ctx.fillStyle = "#05040a"; ctx.fillRect(0, 0, W, bar); ctx.fillRect(0, H - bar, W, bar);
+    ctx.fillStyle = "#c9a24d"; ctx.fillRect(0, bar - 2, W, 2); ctx.fillRect(0, H - bar, W, 2);
+    ctx.textBaseline = "middle"; ctx.textAlign = "left"; ctx.fillStyle = "#e8cd8c"; ctx.font = "700 42px Cinzel, Georgia, serif"; ctx.fillText(String(d.title || "").toUpperCase(), 60, bar - SC.BAR / 2);
+    ctx.fillStyle = "#d2c8be"; ctx.font = "600 28px Cinzel, Georgia, serif"; ctx.fillText(d.who || "", 60, H - bar + 34);   // high in the bar: the map's own strip sits over the bottom edge of the stage
+    if (since >= 0 && since < 70 && !still){ ctx.fillStyle = `${spell ? "rgba(200,235,255," : "rgba(255,240,230,"}${.16 * (1 - since / 70)})`; ctx.fillRect(0, 0, W, H); }
+    SC.raf = requestAnimationFrame(frame);
+  };
+  SC.raf = requestAnimationFrame(frame);
+}
+/** the map says the shot has landed: the close-up that was waiting takes its hit now. o: {dmg, crit, word} */
+function strikeCamLand(o){
+  const me = SC.run; if (!me || !me.waiting) return;
+  const ms = performance.now() - me.t0, hit = Math.max(ms + 50, me.c.snap + 90);
+  me.waiting = false; me.c.hit = hit; me.c.hold = hit + me.after; Object.assign(me.o, o || {});
+}
+// the DM's close-up setting: kept on `state`, so it is saved with the walk and travels with the world
+{ const sel = $("dmStrikeCam"); if (sel){ const show = () => { sel.value = strikeCamMode(state.strikeCam); };
+    sel.onchange = () => { state.strikeCam = strikeCamMode(sel.value); if (state.strikeCam !== "off") strikeCamWarm(); saveWalk(); toast(`Close-ups: ${STRIKE_CAM.modeNames[state.strikeCam]}.`); };
+    sel.onpointerdown = show; sel.onfocus = show; show(); } }
 function hitstop(ms){ hitstopUntil = Math.max(hitstopUntil, performance.now() + ms); }
 // THE CRIT BEAT (Sam, 2026-11-10: "Build the zoom punch and slow-mo" — the Combat Effects Lab's "Hit feel" card: "The
 // crit zoom is a BG3-style punch-in with a short slow-motion beat"). The Lab fires it on a critical hit and on nothing
@@ -28240,7 +28571,8 @@ const RELAY = {depth: 0, orig: {}, imgs: {}};
 const RELAY_FNS = ["log", "narrate", "popText", "bark", "shake", "hitstop", "redFlash", "critBeat", "toast", "victoryBanner", "triumph", "spawnFx", "slowmo",
   "pairCam", "pushCam", "settleCam",    // the camera's cues (HOW A FIGHT IS STAGED): each screen frames the same two fighters for itself
   "turnCall", "turnWhat",               // whose turn, what they do and to whom (the banner and the target's ring): a screen showing the fight had neither
-  "mapFilm", "playFilm"];               // WORLD EVENTS: a film cue plays on every screen on the plate (each seat's own once-per-character rule still decides)
+  "mapFilm", "playFilm",
+  "strikeCam", "strikeCamLand"];               // WORLD EVENTS: a film cue plays on every screen on the plate (each seat's own once-per-character rule still decides)
 const fightOn = () => !!(FIGHT.id && (FIGHT.auth || FIGHT.mirror || FIGHT.watch));
 const relayOn = () => ((FIGHT.auth && FIGHT.id) || FIGHT.opening) && !RELAY.depth;     // (opening: a scene asked for but not yet granted keeps what happens meanwhile)
 // --- who is who between screens: a hero by name; a plate's person by where the plate stands them; a newcomer by number
