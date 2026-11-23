@@ -17480,10 +17480,17 @@ const STRIKE_CAM = {
     // right), so a foe's `hand` is measured on its pose turned to face right.
     // hitHard: a second, heavier way of taking a blow, shown for a critical hit (Sam, 2026-11-23: "another combat pose
     // for hits on drow (we also need one for females)")
-    "drow-guard-male": { hit: { src: "closeup-hit.png", scale: 1.25 }, hitHard: { src: "closeup-hit-hard.png", scale: 1.25 } },
-    "drow-guard-female": { hit: { src: "closeup-hit.png", scale: 1.25 } },
+    "drow-guard-male": { hit: { src: "closeup-hit.png", scale: 1.25 }, hitHard: { src: "closeup-hit-hard.png", scale: 1.25 },
+      attack: { kind: "melee", src: "closeup-attack.png", scale: 1.25, feetX: 640, hand: [0.99, 0.16] } },
+    "drow-guard-female": { hit: { src: "closeup-hit.png", scale: 1.25 },
+      attack: { kind: "melee", src: "closeup-attack.png", scale: 1.25, feetX: 600, hand: [0.99, 0.2] } },
     quaggoth: { hit: { src: "closeup-hit.png", scale: 1.4 }, attack: { kind: "melee", src: "closeup-attack.png", scale: 1.4, feetX: 640, hand: [0.92, 0.63] } },
-    // MORE_FOES
+    "giant-spider": { hit: { src: "closeup-hit.png", scale: 1.2 }, attack: { kind: "melee", src: "closeup-attack.png", scale: 1.3, feetX: 740, hand: [0.75, 0.55] } },
+    // the named drow of Velkynvelve (Sam, 2026-11-23: "Draw hit poses for Ilvara, Asha, Shoor, Jorlan, giant spider")
+    ilvara: { hit: { src: "closeup-hit.png", scale: 1.25 } },
+    asha: { hit: { src: "closeup-hit.png", scale: 1.25 } },
+    shoor: { hit: { src: "closeup-hit.png", scale: 1.25 } },
+    jorlan: { hit: { src: "closeup-hit.png", scale: 1.25 } },
   },
   // named foes: the blow that kills one of them is a key moment, like a boss's
   named: ["ilvara", "asha", "shoor", "jorlan"],

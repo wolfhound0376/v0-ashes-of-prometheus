@@ -42,7 +42,7 @@ describe("key moments", () => {
 describe("poses are drawn on demand", () => {
   it("no pose for the attacker's move, or no hit pose for the target: it plays on the map", () => {
     expect(strikeCamScene({ ...jab, att: "lynkes", mode: "all" })).toBeNull()
-    expect(strikeCamScene({ ...jab, tgt: "giant-spider", mode: "all" })).toBeNull()
+    expect(strikeCamScene({ ...jab, tgt: "buppido", mode: "all" })).toBeNull()
     expect(strikeCamScene({ ...jab, art: "vex", mode: "all" })).toBeNull()
     expect(strikeCamScene({ att: "kenta", tgt: "drow-guard-male", spell: "Fire Bolt", spellLevel: 0, mode: "all" })).toBeNull()
   })
