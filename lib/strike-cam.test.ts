@@ -1,7 +1,7 @@
 // The strike cam's rules (lib/strike-cam.mjs): which blows get a close-up, which scene, and full or short.
 // The painted map reads the SAME file (build_walk.py pastes it in), so what passes here is what the map does.
 import { describe, expect, it } from "vitest"
-import { STRIKE_CAM, strikeCamClock, strikeCamCut, strikeCamMode, strikeCamOnce, strikeCamScene } from "./strike-cam.mjs"
+import { STRIKE_CAM, strikeCamClock, strikeCamCut, strikeCamBlock, strikeCamMode, strikeCamOnce, strikeCamScene } from "./strike-cam.mjs"
 
 const jab = { att: "freia", tgt: "drow-guard-male", art: "sap", weapon: "Dagger" }
 const shot = { att: "freia", tgt: "drow-guard-male", art: "hamstring", weapon: "Hand Crossbow" }
@@ -111,6 +111,28 @@ describe("the rest of the trigger list (PR 2)", () => {
   })
   it("every hero has a hit pose", () => {
     for (const h of ["freia", "kenta", "samson", "scott", "gandalf", "lynkes"]) expect((STRIKE_CAM.poses as any)[h].hit.src).toBe("closeup-hit.png")
+  })
+})
+
+describe("reactions that change the outcome (PR 3)", () => {
+  const claw = { att: "quaggoth", tgt: "kenta", weapon: "Claw", foe: true }
+  it("an opportunity attack that lands is shown once a fight", () => {
+    expect(strikeCamScene({ ...claw, mode: "key" })).toBeNull()
+    const sc = strikeCamScene({ ...claw, reaction: true, mode: "key" })
+    expect(sc?.key).toBe("attack")
+    expect(sc?.once).toBe("reaction")
+    expect(strikeCamScene({ ...claw, reaction: true, crit: true, mode: "key" })?.once).toBeNull()   // a crit is shown on its own account
+  })
+  it("Shield: the foe's blow against the caster's casting pose, mirrored, no hit pose", () => {
+    const sc = strikeCamBlock({ mode: "key", att: "quaggoth", tgt: "kenta" })
+    expect(sc?.block).toBe(true)
+    expect(sc?.flip).toBe(true)
+    expect(sc?.hit.src).toBe("closeup-cast.png")
+    expect(sc?.once).toBe("reaction")
+    expect(strikeCamBlock({ mode: "off", att: "quaggoth", tgt: "kenta" })).toBeNull()
+    expect(strikeCamBlock({ mode: "key", att: "quaggoth", tgt: "kenta", quick: true })).toBeNull()
+    expect(strikeCamBlock({ mode: "key", att: "quaggoth", tgt: "lynkes" })).toBeNull()         // no casting pose
+    expect(strikeCamBlock({ mode: "key", att: "quaggoth", tgt: "kenta", shot: true })).toBeNull()   // no shot pose
   })
 })
 
