@@ -12646,7 +12646,8 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (tgt.c.sheet.holyVulnerable && !atk.flask && att.c.conds.has("blessed")) holyOpen(tgt, `${fname(att)}'s blessed blow`);
       { const art = atk.art && WEAPON_ARTS[atk.art], word = art && art.says && !art.cleave ? String(art.says).toUpperCase() : "";   // THE STRIKE CAM: the blow has landed
         if (att.strikeCamOpen){ att.strikeCamOpen = false; strikeCamLand({dmg: dmg.total, crit, word}); }
-        else if (!shot){ const sc = strikeCamFor(att, tgt, {art: atk.art, weapon: atk.itemName || atk.name, crit, title: art ? art.name : atk.name}); if (sc) strikeCam({...sc, dmg: dmg.total, crit, word}); } }
+        else if (!shot){ const sc = strikeCamFor(att, tgt, {art: atk.art, weapon: atk.itemName || atk.name, crit, title: art ? art.name : atk.name, melee: true, sneak,
+            signature: !!(atk.rider || atk.extra || atk.curse || atk.numb || atk.tooth)}); if (sc) strikeCam({...sc, dmg: dmg.total, crit, word}); } }
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
       blowNarration(att, tgt, atk, dmg.total, crit);
       }
@@ -15844,8 +15845,8 @@ function scParts(o){   // the scene's pictures, rebuilt from what crossed the re
   const fx = pose.kind === "spell" ? STRIKE_CAM.spellFx[o.spell] : null; if (pose.kind === "spell" && !fx) return null;
   const sheet = f => f ? [scImg(`/vfx/${f[0]}`), f[1], f[2], f[3]] : null;
   return {kind: pose.kind, pose, hit, fx,
-    att: {im: scImg(scPoseSrc(o.att, pose)), scale: pose.scale, feetX: pose.feetX},
-    wind: pose.wind ? {im: scImg(scPoseSrc(o.att, pose.wind)), scale: pose.wind.scale, feetX: pose.wind.feetX} : null,
+    att: {im: scImg(scPoseSrc(o.att, pose)), scale: pose.scale, feetX: pose.feetX, lift: pose.lift || 0},
+    wind: pose.wind ? {im: scImg(scPoseSrc(o.att, pose.wind)), scale: pose.wind.scale, feetX: pose.wind.feetX, lift: pose.wind.lift || 0} : null,
     tgt: {im: scImg(scPoseSrc(o.tgt, hit)), scale: hit.scale, feetX: STRIKE_CAM.targetFeetX[pose.kind]},
     charge: fx && sheet(fx.charge), travel: fx && sheet(fx.travel), impact: fx && sheet(fx.impact)};
 }
@@ -15858,11 +15859,17 @@ function strikeCamWarm(){ for (const slug in STRIKE_CAM.poses) for (const k in S
 function strikeCamFor(att, tgt, ev){
   if (!cbt || cbt.mirror || !att || !tgt) return null;
   const mode = strikeCamMode(state.strikeCam); if (mode === "off") return null;
-  const sc = strikeCamScene({mode, att: att.id, tgt: tgt.id, art: ev.art, weapon: ev.weapon, spell: ev.spell, spellLevel: ev.spellLevel, crit: ev.crit, quick: !!cbt.quick});
+  // what the blow did, read off the fight as it stands (the damage is already dealt when a melee blow asks)
+  const foe = !hero(att) && hero(tgt), gone = !!tgt.c && tgt.c.hp <= 0;
+  const kill = gone && !hero(tgt) && (cbt.boss === tgt || STRIKE_CAM.named.includes(tgt.id) || !foes.some(f => f !== tgt && !f.down && !f.left && f.c && f.c.hp > 0 && actors.includes(f)));
+  const sc = strikeCamScene({mode, att: att.id, tgt: tgt.id, art: ev.art, weapon: ev.weapon, spell: ev.spell, spellLevel: ev.spellLevel, crit: ev.crit, quick: !!cbt.quick,
+    sneak: !!ev.sneak, foe: foe && !!ev.melee, signature: !!ev.signature, drop: foe && gone, kill});
   if (!sc) return null;
-  const o = {att: att.id, tgt: tgt.id, pose: sc.kind === "spell" ? "cast" : sc.key, spell: ev.spell || null, hard: !!sc.hard, title: ev.title || "", who: `${fname(att)}  →  ${fname(tgt)}`};
+  const mem = cbt.strikeMem = cbt.strikeMem || {};
+  const o = {att: att.id, tgt: tgt.id, pose: sc.kind === "spell" ? "cast" : sc.key, spell: ev.spell || null, hard: !!sc.hard, flip: !!sc.flip, title: (sc.key === "sneak" ? "Sneak Attack" : ev.title) || "", who: `${fname(att)}  →  ${fname(tgt)}`};
   if (!scReady(scParts(o))){ strikeCamWarm(); return null; }
-  o.cut = strikeCamCut(cbt.strikeMem = cbt.strikeMem || {}, att.id, sc.key, cbt.round || 1);
+  if (!strikeCamOnce(mem, att.id, sc.once)) return null;   // once a fight, then it plays on the map
+  o.cut = strikeCamCut(mem, att.id, sc.key, cbt.round || 1);
   return o;
 }
 function scBuild(){
@@ -15888,9 +15895,10 @@ function scFlat(im, col){   // a flat-colour silhouette of a pose, for the hit f
 }
 function scFigure(part, dx, alpha, flash, col){   // draws a pose standing on the band's floor; returns its rect
   const ctx = SC.ctx, im = part.im, ground = SC.H - 158; if (!scLoaded(im)) return null;
-  const b = scTrim(im), w = Math.round(b[2] * part.scale), h = Math.round(b[3] * part.scale), x = Math.round(part.feetX - w / 2 + dx), y = ground - h;
+  const b = scTrim(im), w = Math.round(b[2] * part.scale), h = Math.round(b[3] * part.scale), x = Math.round(part.feetX - w / 2 + dx), y = ground - h - (part.lift || 0);
   ctx.save(); ctx.imageSmoothingEnabled = false;
   ctx.globalAlpha = alpha * .5; ctx.fillStyle = "#000"; ctx.beginPath(); ctx.ellipse(x + w / 2, ground + 4, w * .4, 15, 0, 0, 7); ctx.fill();
+  if (SC.flip){ ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.translate(-x, -y); }   // a mirrored scene: the art keeps the way it was drawn
   ctx.globalAlpha = alpha; ctx.drawImage(im, b[0], b[1], b[2], b[3], x, y, w, h);
   if (flash > 0){ ctx.globalAlpha = alpha * flash; ctx.drawImage(scFlat(im, col || "#fff4e6"), b[0], b[1], b[2], b[3], x, y, w, h); }
   ctx.restore(); return {x, y, w, h};
@@ -15924,7 +15932,7 @@ function scBolt(x0, y0, x1, y1, alpha, stuck){   // plain arrows and bolts fly s
 }
 function scNumber(x, y, k, text, word, crit, col){
   if (k <= 0 || text == null) return; const ctx = SC.ctx, pop = k < .12 ? 1.5 - .5 * (k / .12) : 1, rise = 46 * scEase(scClamp(k, 0, 1)), a = scClamp((1 - k) * 4, 0, 1);
-  ctx.save(); ctx.globalAlpha = a; ctx.translate(x, y - rise); ctx.rotate(-.12); ctx.scale(pop, pop); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineJoin = "round";
+  ctx.save(); ctx.globalAlpha = a; ctx.translate(x, y - rise); if (SC.flip) ctx.scale(-1, 1); ctx.rotate(-.12); ctx.scale(pop, pop); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.lineJoin = "round";
   ctx.font = `${crit ? 210 : 170}px Bangers, Impact, sans-serif`; ctx.lineWidth = 22; ctx.strokeStyle = "#2a0608"; ctx.strokeText(text, 0, 0); ctx.fillStyle = crit ? "#ff6b5e" : (col || "#ffe266"); ctx.fillText(text, 0, 0);
   if (crit){ ctx.font = "64px Bangers, Impact, sans-serif"; ctx.lineWidth = 12; ctx.strokeText("CRIT!", 0, -130); ctx.fillStyle = "#ffe266"; ctx.fillText("CRIT!", 0, -130); }
   if (word){ ctx.font = "700 34px Cinzel, Georgia, serif"; ctx.lineWidth = 9; ctx.strokeText(word, 6, 104); ctx.fillStyle = "#e9d7ff"; ctx.fillText(word, 6, 104); }
@@ -15940,10 +15948,10 @@ function strikeCam(o){
   const stage = SC.el.parentElement, r = stage.getBoundingClientRect(); if (r.width < 40 || r.height < 40) return;
   const W = SC.W, H = SC.H = Math.round(scClamp(W * r.height / r.width, 620, 1300)); SC.cv.width = W; SC.cv.height = H;
   const still = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches, melee = P.kind === "melee", spell = P.kind === "spell", shotK = P.kind === "shot";
-  const base = strikeCamClock(o.cut, P.kind), after = base.hold - base.hit;
+  const base = strikeCamClock(o.cut, P.kind), after = base.hold - base.hit, lead = still ? 0 : Math.round((P.pose.lead || 0) * (o.cut === "short" ? .6 : 1));   // `lead`: a wind-up worth seeing (Fifi's flip)
   // on the blow: the band is in at once and the hit follows in a tenth of a second (a spell: its charge and ray take a little longer)
   const c = o.wait ? {inMs: base.inMs, snap: 60, rel: 90, hit: 1e9, stop: base.stop, hold: 1e9, out: base.out}
-    : {inMs: 80, snap: 0, rel: spell ? 110 : 0, hit: spell ? 240 : 110, stop: base.stop, hold: (spell ? 240 : 110) + after, out: base.out};
+    : {inMs: 80, snap: 0, rel: spell ? 110 : 0, hit: (spell ? 240 : 110) + lead, stop: base.stop, hold: (spell ? 240 : 110) + lead + after, out: base.out};
   const rays = []; for (let i = 0; i < 13; i++) rays.push({a: Math.random() * 6.283, len: .55 + Math.random() * .6, w: Math.random()});
   const blood = P.fx && P.fx.blood === false ? 0 : Math.round((o.crit ? 70 : 44) * (melee ? 1 : .6)), drops = [];
   for (let i = 0; i < blood; i++){ const a = -.35 + (Math.random() - .5) * 1.5, v = 260 + Math.random() * (o.crit ? 900 : 640); drops.push({vx: Math.cos(a) * v, vy: Math.sin(a) * v - 120, r: 3 + Math.random() * 9, col: ["#96121a", "#be1418", "#70060e"][i % 3]}); }
@@ -15962,6 +15970,7 @@ function strikeCam(o){
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, W, H);
     ctx.fillStyle = "rgba(8,6,14,.6)"; ctx.fillRect(0, 0, W, H);   // a dark scrim of its own: the fight underneath must not compete with the two poses, with or without the backdrop blur
     ctx.save(); ctx.translate((Math.random() - .5) * shakeBy, (Math.random() - .5) * shakeBy);
+    SC.flip = !!d.flip; if (SC.flip){ ctx.translate(W, 0); ctx.scale(-1, 1); }   // a foe's blow on a hero: the same staging, mirrored, so the foe stands on the right
     if (ms >= c.snap){
       const k = scClamp((tm - c.snap) / Math.max(1, Math.min(c.hit, 1e8) - c.snap), 0, 1), drift = Math.max(0, tm - c.hit) / 1000, sinceRel = tm - c.rel;
       const adx = melee ? -150 * (1 - scEase(k)) + (still ? 0 : 16 * drift)
