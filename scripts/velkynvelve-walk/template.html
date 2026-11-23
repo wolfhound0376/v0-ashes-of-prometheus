@@ -5522,22 +5522,27 @@ function drawLootCoins(dt){
 // the loot card makes: the server first, then the pack). What was ruined puffs a grey line over the body instead.
 // The body stays, and searching it shows whatever is still there (nothing is lost if a pickup is never walked over).
 // A hero or a companion who falls drops nothing: only a body the party can loot.
-const MAGNET_FT = 7, MAGNET_MS = 300;
+// ONLY A SEARCH SPILLS IT (Sam, 2026-11-23: "Loot ceremonies only occur after actually searching a body or container.")
+// The kill no longer bursts anything. It still asks the server the moment the body falls, so the wear roll is made with
+// what killed it (fire burns cloth, acid eats metal); what was ruined is held here and told when someone searches the
+// body. The fountain plays from openLoot on the first search of the body (or the first open of a chest), never before.
+const MAGNET_FT = 7, MAGNET_MS = 300, bodyRuin = new Map();
 function dropLoot(t){
   if (!t || !t.c || t.kind === "pc" || t.ally || t.lootDropped) return;
   t.lootDropped = true;
   t.lootKey = t.lootKey || bodyKeyOf(t);   // the same key the body card uses
   const id = `body:${t.id}:${t.lootKey}`, plate = cur, kill = t.killType || "", at = {x: t.x, y: t.y};
   setTimeout(async () => {
-    const j = await fetchLoot(id, kill); await ensureCatalog();
+    const j = await fetchLoot(id, kill);                                         // locks the wear roll in with the kill type
     if (cur !== plate || j.error) return;
-    (j.ruined || []).forEach((r, i) => setTimeout(() => { const it = (catalog || []).find(c => c.slug === r.slug); popText(t, `${it ? it.name : r.slug.replace(/-/g, " ")} ruined`, "#9a948a", .85); }, 250 + i * 260));
-    const rows = (j.rows || []).filter(r => !r.missing && r.kind !== "preview-stash" && !r.check);
-    (j.rows || []).filter(r => r.check && !r.missing).forEach((r, i) => setTimeout(() => popText(t, `${r.name}: ${checkLabel(r.check)} to extract`, "#c8e6a0", .85), 900 + i * 300));
-    if (!rows.length) return;
-    fountained.add(lootKeyOf(id));                                              // the body card will not spill it again
-    lootFountain(at, rows, {id, plate});
+    if ((j.ruined || []).length) bodyRuin.set(lootKeyOf(id), j.ruined);           // told on the search, not on the kill
   }, 650);
+}
+// the first search of a body says what the fight wrecked, over the body, as the kill used to
+async function tellBodyRuin(b, id){
+  const ruined = bodyRuin.get(lootKeyOf(id)); if (!ruined) return;
+  bodyRuin.delete(lootKeyOf(id)); await ensureCatalog();
+  ruined.forEach((r, i) => setTimeout(() => { const it = (catalog || []).find(c => c.slug === r.slug); popText(b, `${it ? it.name : r.slug.replace(/-/g, " ")} ruined`, "#9a948a", .85); }, 250 + i * 260));
 }
 // one pickup's life after it lands: the magnet and the flight to the hero. Returns true when it has been drawn here.
 function drawPickup(d, i, t){
@@ -6478,7 +6483,7 @@ function openBody(b){
   b.lootKey = b.lootKey || bodyKeyOf(b);
   const known = !!LOOT_BOOK["body:" + b.id];
   add(b.searched ? "Look again" : "Search the body", () => { close(); const first = !b.searched; b.searched = true;
-    if (first){ bank("ui/item_pickup", .7); log(`${fname(leader)} searches ${name}'s body.`); }
+    if (first){ bank("ui/item_pickup", .7); log(`${fname(leader)} searches ${name}'s body.`); tellBodyRuin(b, `body:${b.id}:${b.lootKey}`); }
     if (!known && first && APP) handOff(`${fname(leader)} searches ${name}'s body.`, true);                 // not a kit the book lists: Malachar says
     openLoot(`body:${b.id}:${b.lootKey}`, b.buried ? `${name}'s grave` : `${name}'s body`, {at: {x: b.x, y: b.y}, text: b.buried ? `${name} lies under the stone. What they carried was left with them.` : `${name} lies where it fell.`, empty: known ? `Nothing is left on ${name}.` : APP ? `Nothing the map knows of. What ${name} carried is Malachar's to say.` : "What it carried is Malachar's to say — in the game this goes to him as your action."});
   }, "primary");
@@ -13466,7 +13471,7 @@ function fall(t){
   }
   if (t.bystander){ t.slain = true; if (PEN_NPCS.some(d => d.id === t.id)){ (state.slain ||= []).includes(t.id) || state.slain.push(t.id); }
     state.company = companyNow().filter(id => id !== t.id); narrate(t, `${fname(t)} is dead.`); }   // BYSTANDERS: no death saves
-  else if (t.kind !== "pc") dropLoot(t);                                  // LOOT ON THE KILL: what survived the fight bursts out
+  else if (t.kind !== "pc") dropLoot(t);                                  // asks the server what survived (locks the wear roll); nothing bursts until a search
   renderTurns();
   if (cbt && activeActor() === t) passWhenSettled(t);
 }
