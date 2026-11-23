@@ -281,7 +281,9 @@ CAVERNS = {
           # opens (lib/travel/handoff.ts; road-15 is Sam's own pick for the south passage, Exit Picker 2026-10-24). The
           # lair is the Hook Horror Hunt of ch.2 (p.33), days down that road, not a neighbour of the outpost: its plate is
           # reached from the DM's jump list until road markers open their own plates.
-          dict(rect=[1887, 289, 2232, 633], to=[], kind="leave", roads=["road-15"], label="Deeper in: the south passage runs on toward Gracklstugh (OotA p.20)")]),
+          dict(rect=[1887, 289, 2232, 633], to=[], kind="leave", roads=["road-15"], label="Deeper in: the south passage runs on toward Gracklstugh (OotA p.20)"),
+          # 2026-11-23, the deep caverns (DEEP, below): Claude's exit on Sam's painted floor, proposed
+          dict(rect=[1950, 1149, 2150, 1309], to=["fork"], label="PROPOSED: a side crack in the east wall, into the Fork", proposed=True)]),
  "crystal": dict(slug="biome-crystal", name="The crystal passage", biome="tunnels", scale=1.0, img="biome-crystal.jpg",
    # the pool of crystal-lit floor; the geodes and the big clusters block
    floors=[dict(poly=P((350,590),(800,490),(1500,450),(1700,330),(1820,330),(2060,590),(2230,900),(1950,1220),(1500,1339),(520,1339),(310,1050)))],
@@ -292,27 +294,39 @@ CAVERNS = {
    floors=[dict(poly=P((350,520),(1000,430),(1400,430),(1680,420),(1850,590),(1880,1050),(1680,1339),(200,1339),(140,870),(140,700)))],
    obstacles=[dict(cx=450,cy=560,rx=70,ry=45),dict(cx=700,cy=575,rx=80,ry=40),dict(cx=1950,cy=575,rx=60,ry=45),dict(cx=310,cy=1150,rx=60,ry=90),dict(cx=800,cy=820,rx=40,ry=30)],
    zones=[dict(rect=[38, 685, 178, 1025], to=["tunnels"], label="PROPOSED: back to the tunnels", proposed=True),
-          dict(rect=[969, 90, 1412, 433], to=[], kind="leave", label="Tunnel to the Oozing Temple")]),
+          # 2026-11-23: was the map hand-off itself (to=[], kind="leave"); it walks onto the Flooded Stair now, whose way down
+          # carries the same hand-off (via="wastes"). Sam's rect, Sam's label kept.
+          dict(rect=[969, 90, 1412, 433], to=["flooded-stair"], label="Tunnel to the Oozing Temple"),
+          # 2026-11-23, the deep caverns (DEEP, below): Claude's exit on Sam's painted floor, proposed
+          dict(rect=[1750, 669, 1950, 829], to=["gorge"], label="PROPOSED: along the chasm edge to the Gorge", proposed=True),
+          dict(rect=[670, 1169, 870, 1329], to=["steam-vents"], label="PROPOSED: up a side passage to the Steam Vents", proposed=True)]),
  "lair": dict(slug="biome-lair", name="The lair", biome="tunnels", scale=1.0, img="biome-lair.jpg",
    # the lair floor; the bone pile and the wheel block
    floors=[dict(poly=P((420,630),(900,490),(1450,420),(1730,470),(1950,520),(2230,770),(2230,1120),(1800,1339),(520,1339),(210,1050),(150,900),(150,750),(280,770)))],
    obstacles=[dict(cx=780,cy=540,rx=230,ry=90)],
-   zones=[dict(rect=[759, 1186, 1765, 1337], to=["tunnels"], label="PROPOSED: back to the tunnels", proposed=True),
-          dict(rect=[1448, 262, 1730, 564], to=[], kind="leave", label="Hook Horror Layer")]),
+   zones=[# 2026-11-23: was to=["tunnels"] (one-way, nothing led in). The Clacking Gallery is the lair's way in and out now.
+          dict(rect=[759, 1186, 1765, 1337], to=["clacking"], label="PROPOSED: back out through the Clacking Gallery", proposed=True),
+          dict(rect=[1448, 262, 1730, 564], to=[], kind="leave", label="Hook Horror Layer"),
+          # 2026-11-23, the deep caverns (DEEP, below): Claude's exit on Sam's painted floor, proposed
+          dict(rect=[610, 749, 810, 909], to=["nest"], label="PROPOSED: climb the west wall to the Nest", proposed=True)]),
  "shore": dict(slug="biome-shore", name="The Darklake shore", biome="shore", scale=1.0, img="biome-shore.jpg",
    # the cobbled shore below the water line; the crates, the chest, the keelboat and the crystals block
    floors=[dict(poly=P((150,825),(180,700),(400,620),(725,690),(1000,675),(1400,690),(1750,725),(2050,800),(2200,1000),(2050,1339),(450,1339),(250,1125)))],
    obstacles=[dict(cx=725,cy=725,rx=60,ry=35),dict(cx=1750,cy=825,rx=70,ry=40),dict(cx=1500,cy=790,rx=160,ry=60),dict(cx=350,cy=1175,rx=120,ry=80),dict(cx=2075,cy=1125,rx=70,ry=60),dict(cx=500,cy=1050,rx=40,ry=60)],
    zones=[dict(rect=[882, 1134, 1537, 1337], to=["tunnels"], label="Back along the river  into the tunnels"),
           dict(rect=[176, 568, 499, 803], to=[14], label="Back to towards the underground river"),
-          dict(rect=[1316, 512, 1653, 698], to=[], kind="leave", label="Traverse the Darklake")]),
+          dict(rect=[1316, 512, 1653, 698], to=[], kind="leave", label="Traverse the Darklake"),
+          # 2026-11-23, the deep caverns (DEEP, below): Claude's exit on Sam's painted floor, proposed
+          dict(rect=[1910, 849, 2110, 1009], to=["jetty"], label="PROPOSED: along the rocks to the Broken Jetty", proposed=True)]),
  "grove": dict(slug="biome-grove", name="The grove", biome="fungal", scale=1.0, img="biome-grove.jpg",
    # the dirt clearing under the giant caps; the roots and the mushroom clumps block
    floors=[dict(poly=P((375,825),(650,625),(950,550),(1300,550),(1625,600),(1900,750),(2230,750),(2230,900),(2000,1075),(1700,1250),(1400,1339),(750,1339),(425,1200),(250,1000),(140,900),(140,700)))],
    obstacles=[dict(cx=375,cy=625,rx=80,ry=40),dict(cx=1650,cy=525,rx=80,ry=40),dict(cx=1825,cy=950,rx=80,ry=50),dict(cx=1525,cy=1100,rx=100,ry=60)],
    # OotA p.19: the river runs from the pool to the Darklake; the grove is reached along it from plate 14, so back is the pool.
    zones=[dict(rect=[0, 560, 140, 900], to=[14], label="Back up the river to the pool"),
-          dict(rect=[2229, 665, 2400, 836], to=[], kind="leave", label="New exit")]),
+          dict(rect=[2229, 665, 2400, 836], to=[], kind="leave", label="New exit"),
+          # 2026-11-23, the deep caverns (DEEP, below): Claude's exit on Sam's painted floor, proposed
+          dict(rect=[1150, 529, 1350, 689], to=["zurkhwood"], label="PROPOSED: between the trunks to the Zurkhwood Stand", proposed=True)]),
 }
 
 # ── Gracklstugh, the first hub interiors ─────────────────────────────────────────────────────────────────────────────
@@ -444,6 +458,101 @@ BATTLE_PLATES = {
 }
 NODES.update(BATTLE_PLATES)
 
+# ── the deep caverns ─────────────────────────────────────────────────────────────────────────────────────────────────
+# Sam, 2026-11-23, on the wiring board: "create more plates that are unique and inspired by out of the abyss campaign to
+# connect everything well to give the caverns some depth ... I want to be able to get lost." -> fifteen plates, three
+# behind each of the tunnels, the wastes, the lair, the Darklake shore and the grove ("Keep all. Go ahead."; the Fork's
+# three passages redone to look nothing alike: "Fork is better. Wire it."). PixelLab create_image_pro 688x384, styled on
+# the cavern paintings, cut NEAREST x3.5 and centre-trimmed like the Gracklstugh rooms. The hooks are the D&D Encounters
+# edition's ch.2 terrain and set encounters (page numbers per plate, from campaign_chunks); what is homebrew says so.
+# They loop: tunnels -> fork -> faerzress -> steam vents -> wastes -> tunnels, and lair -> nest -> gnoll camp -> gorge ->
+# wastes. Four ways are ONE WAY by design (a drop, a slide, a current); every plate still has a walk back to the outpost.
+# THE LAIR IS NOW A WALK FROM THE OUTPOST (faerzress -> clacking -> lair). That reverses the 2026-11-10 note on the
+# tunnels' "deeper in" exit (the lair "days down that road, not a neighbour"); Sam approved the table that says so on
+# 2026-11-23, and it is flagged in the PR for him to confirm.
+# Exits: Claude's, on the painted openings, all `proposed`. Floors: masks.json carries a FIRST PASS drawn by Claude from
+# simple outlines (NOT Sam's brush yet); the `floors` poly here is the same outline as the fallback.
+DEEP = {
+ # Warning Sign terrain (OotA Encounters p.32): a drow sigil, 'Demons ahead!'
+ "fork": dict(slug="deep-fork", name="The Fork", scale=1.0, img="deep-fork.png",
+   floors=[dict(poly=P((101,820), (206,750), (661,715), (871,662), (941,575), (1151,540), (1326,558), (1396,610), (1571,698), (1816,610), (1991,558), (2236,575), (2096,698), (2166,872), (2404,942), (2404,1342), (241,1342), (66,1152), (-4,1048), (-4,872)))], obstacles=[],
+   zones=[dict(rect=[696, 1205, 1746, 1339], to=["tunnels"], label="Back to the tunnels", proposed=True),
+          dict(rect=[206, 330, 644, 750], to=["faerzress"], label="Left passage: a violet glow far down it", proposed=True),
+          dict(rect=[1098, 312, 1326, 610], to=["sinkhole"], label="Centre passage, past the warning sigil: the floor sounds hollow", proposed=True),
+          dict(rect=[1991, 242, 2254, 592], to=["tunnels"], label="Right passage: it bends round on itself and comes out where you started", proposed=True)]),
+ # HOMEBREW: a faerzress-lit gallery; the exit shuffle (DC 10 Survival, p.25 navigation) is NOT in this PR
+ "faerzress": dict(slug="deep-faerzress", name="The Faerzress Gallery", scale=1.0, img="deep-faerzress.png",
+   floors=[dict(poly=P((-4,662), (311,628), (451,645), (871,592), (1011,558), (1151,522), (1431,522), (1536,592), (1816,645), (2131,662), (2404,698), (2404,1048), (2271,1342), (136,1342), (-4,1048)))], obstacles=[],
+   zones=[dict(rect=[766, 1205, 1641, 1339], to=["fork"], label="Back toward the Fork", proposed=True),
+          dict(rect=[0, 312, 311, 698], to=["clacking"], label="West: a faint clacking echoes up this way", proposed=True),
+          dict(rect=[2131, 592, 2400, 942], to=["steam-vents"], label="East: warm, wet air", proposed=True),
+          dict(rect=[1116, 242, 1431, 575], to=["spore-hollow"], label="North: the air smells of rot and mushrooms", proposed=True)]),
+ # Sinkhole terrain (OotA Encounters p.30 table). One way down
+ "sinkhole": dict(slug="deep-sinkhole", name="The Sinkhole", scale=1.0, img="deep-sinkhole.png",
+   floors=[dict(poly=P((66,592), (346,522), (521,382), (871,382), (1046,348), (1361,348), (1501,400), (1956,488), (2404,628), (2404,1342), (136,1342), (-4,1048), (-4,698)))], obstacles=[],
+   zones=[dict(rect=[1011, 1048, 1536, 1230], to=["stone-teeth"], label="Down the hole: a drop into cold shallow water. No way back up", proposed=True)]),
+ # Rope Bridge terrain: a ravine spanned by an old rope bridge (p.31). Deck only (Sam, 2026-10-14)
+ "gorge": dict(slug="deep-gorge", name="The Gorge", scale=1.0, img="deep-gorge.png",
+   floors=[dict(poly=P((-4,330), (696,312), (836,382), (941,522), (958,838), (871,1048), (696,1152), (626,1342), (-4,1342)))], obstacles=[],
+   zones=[dict(rect=[0, 348, 171, 802], to=["wastes"], label="Back to the wastes", proposed=True),
+          dict(rect=[2236, 592, 2400, 1048], to=["gnoll-camp"], label="Across the rope bridge: smoke and hyena laughter beyond", proposed=True)]),
+ # Steam Vent / Gas Leak terrain (p.31)
+ "steam-vents": dict(slug="deep-steam-vents", name="The Steam Vents", scale=1.0, img="deep-steam-vents.png",
+   floors=[dict(poly=P((-4,698), (206,558), (486,522), (801,418), (836,522), (1046,575), (1291,592), (1396,662), (1326,750), (1501,872), (1956,872), (2096,768), (2404,802), (2404,1342), (-4,1342)))], obstacles=[],
+   zones=[dict(rect=[801, 1205, 1676, 1339], to=["wastes"], label="Down to the wastes", proposed=True),
+          dict(rect=[136, 242, 486, 610], to=["faerzress"], label="West: a violet glow", proposed=True)]),
+ # The approach to the Oozing Temple (p.39); its way down is the wastes' old map hand-off
+ "flooded-stair": dict(slug="deep-flooded-stair", name="The Flooded Stair", scale=1.0, img="deep-flooded-stair.png",
+   floors=[dict(poly=P((136,820), (451,750), (836,715), (976,750), (1536,750), (1676,698), (1886,785), (2166,872), (2306,1048), (2236,1342), (206,1342), (66,1048)))], obstacles=[],
+   zones=[dict(rect=[801, 1205, 1676, 1339], to=["wastes"], label="Back up to the wastes", proposed=True),
+          dict(rect=[1011, 452, 1501, 750], to=[], kind="leave", via="wastes", label="Down the stair: into the Oozing Temple", proposed=True)]),
+ # Hook Horror Lair features: narrow passages (p.37). The clacking is homebrew flavour
+ "clacking": dict(slug="deep-clacking", name="The Clacking Gallery", scale=1.0, img="deep-clacking.png",
+   floors=[dict(poly=P((1186,382), (1396,382), (1361,522), (1501,698), (1956,750), (2306,785), (2404,908), (2404,1342), (276,1342), (206,1048), (381,872), (871,820), (1011,662), (1186,522)))], obstacles=[],
+   zones=[dict(rect=[1991, 382, 2341, 802], to=["faerzress"], label="Back toward the violet glow", proposed=True),
+          dict(rect=[696, 1205, 1641, 1339], to=["lair"], label="Down into the lair", proposed=True)]),
+ # Hook horror eggs (rules for raising a hatchling, p.38)
+ "nest": dict(slug="deep-nest", name="The Nest", scale=1.0, img="deep-nest.png",
+   floors=[dict(poly=P((136,698), (381,575), (906,592), (1151,645), (1501,662), (1676,610), (1956,592), (1886,680), (1641,698), (1396,750), (1396,872), (1641,960), (1676,1006), (136,988), (66,802)))], obstacles=[],
+   zones=[dict(rect=[451, 838, 871, 1048], to=["lair"], label="Climb back down into the lair", proposed=True),
+          dict(rect=[1501, 750, 1956, 1118], to=["gnoll-camp"], label="Off the back of the ledge: a long slide down scree. No way back up", proposed=True)]),
+ # Hook Horror Hunt: the gnoll hunters' camp (p.37)
+ "gnoll-camp": dict(slug="deep-gnoll-camp", name="The Gnoll Camp", scale=1.0, img="deep-gnoll-camp.png",
+   floors=[dict(poly=P((-4,732), (416,680), (626,732), (836,750), (1151,662), (1326,575), (1536,558), (1676,662), (2096,750), (2271,908), (2404,978), (2404,1342), (-4,1342)))], obstacles=[],
+   zones=[dict(rect=[48, 382, 398, 750], to=["gorge"], label="West: the rope bridge over the gorge", proposed=True)]),
+ # A kuo-toa mooring (kuo-toa in a keelboat is a Darklake encounter, p.47)
+ "jetty": dict(slug="deep-jetty", name="The Broken Jetty", scale=1.0, img="deep-jetty.png",
+   floors=[dict(poly=P((486,558), (871,522), (976,575), (1326,592), (1536,662), (1746,750), (1816,820), (1571,925), (1501,1048), (1571,1152), (1396,1342), (-4,1342), (-4,820), (206,768), (381,698)))], obstacles=[],
+   zones=[dict(rect=[0, 820, 171, 1152], to=["shore"], label="Back along the shore", proposed=True),
+          dict(rect=[1886, 942, 2236, 1188], to=["stone-teeth"], label="Wade out between the stalagmites", proposed=True)]),
+ # Low clearance over the water (p.46). The name is homebrew
+ "stone-teeth": dict(slug="deep-stone-teeth", name="The Stone Teeth", scale=1.0, img="deep-stone-teeth.png",
+   floors=[dict(poly=P((836,558), (1046,575), (976,645), (871,715), (976,838), (1221,890), (1431,978), (1466,1048), (1326,1152), (1046,1222), (1046,1342), (276,1342), (381,1152), (661,1012), (556,872), (661,768), (731,662)))], obstacles=[],
+   zones=[dict(rect=[346, 1118, 1046, 1339], to=["jetty"], label="Wade back to the jetty", proposed=True),
+          dict(rect=[784, 488, 1081, 645], to=["islet"], label="Wade on to the islet", proposed=True)]),
+ # Island (p.46): a place for a long rest
+ "islet": dict(slug="deep-islet", name="The Islet", scale=1.0, img="deep-islet.png",
+   floors=[dict(poly=P((521,522), (696,382), (976,330), (1396,348), (1571,452), (1676,558), (1641,732), (1501,872), (1326,942), (871,942), (626,872), (486,732)))], obstacles=[],
+   zones=[dict(rect=[941, 1188, 1536, 1339], to=["stone-teeth"], label="Wade back through the stone teeth", proposed=True),
+          dict(rect=[1711, 802, 2096, 1118], to=["stream-sump"], label="Into the current: it pulls you under the rock. No way back", proposed=True)]),
+ # Fungi of the Underdark (ch.2): zurkhwood
+ "zurkhwood": dict(slug="deep-zurkhwood", name="The Zurkhwood Stand", scale=1.0, img="deep-zurkhwood.png",
+   floors=[dict(poly=P((1151,522), (1326,522), (1361,662), (1571,750), (1746,872), (1816,1012), (1676,1152), (1641,1342), (801,1342), (661,1152), (556,1012), (661,890), (871,785), (1046,698), (1116,610)))], obstacles=[],
+   zones=[dict(rect=[836, 1205, 1606, 1339], to=["grove"], label="Back to the grove", proposed=True),
+          dict(rect=[1081, 470, 1378, 645], to=["spore-hollow"], label="Deeper in: the caps close overhead", proposed=True)]),
+ # Timmask and tongue of madness (p.28). HOMEBREW exit shuffle NOT in this PR
+ "spore-hollow": dict(slug="deep-spore-hollow", name="The Spore Hollow", scale=1.0, img="deep-spore-hollow.png",
+   floors=[dict(poly=P((591,942), (871,802), (1151,715), (1571,732), (1886,838), (1991,1012), (1816,1152), (1571,1342), (871,1342), (626,1188), (521,1048)))], obstacles=[],
+   zones=[dict(rect=[871, 1205, 1571, 1339], to=["zurkhwood"], label="Back to the zurkhwood stand", proposed=True),
+          dict(rect=[1991, 452, 2288, 750], to=["stream-sump"], label="Follow the sound of water", proposed=True),
+          dict(rect=[171, 522, 434, 872], to=["faerzress"], label="A crack in the rock with violet light in it", proposed=True)]),
+ # Underground Stream terrain (p.32)
+ "stream-sump": dict(slug="deep-stream-sump", name="The Stream Sump", scale=1.0, img="deep-stream-sump.png",
+   floors=[dict(poly=P((-4,680), (311,592), (696,575), (1011,610), (1151,662), (1396,750), (1466,872), (1396,1012), (1151,1082), (871,1152), (521,1188), (206,1048), (-4,1012)))], obstacles=[],
+   zones=[dict(rect=[0, 628, 154, 1048], to=["spore-hollow"], label="Up the bank into the spore hollow", proposed=True)]),
+}
+NODES.update(DEEP)
+
 # Sam's editor layout (export 2026-10-25): where each plate sits on the overview board (editor pixels). Data for the editor, not for the page.
 LAYOUT = {
   "1": [80, 1180],
@@ -469,7 +578,22 @@ LAYOUT = {
   "10b": [1221, 339],
   "10c": [1217, 57],
   "5c": [460, 340],
-  "3k": [460, 1180]
+  "3k": [460, 1180],
+  "fork": [-360, 1640],
+  "faerzress": [-360, 1790],
+  "sinkhole": [-360, 1940],
+  "gorge": [80, 1640],
+  "steam-vents": [80, 1790],
+  "flooded-stair": [80, 1940],
+  "clacking": [520, 1640],
+  "nest": [520, 1790],
+  "gnoll-camp": [520, 1940],
+  "jetty": [1400, 1640],
+  "stone-teeth": [1400, 1790],
+  "islet": [1400, 1940],
+  "zurkhwood": [960, 1640],
+  "spore-hollow": [960, 1790],
+  "stream-sump": [960, 1940]
 }
 
 # ── the painted floor ───────────────────────────────────────────────────────────────────────────────────────────────
@@ -512,7 +636,9 @@ for _k, _n in _PLATES.items():
 KNOWN_ONE_WAY = {("4", "1"), ("5", "2"), ("5", "wastes"), ("6", "10"), ("9", "14"), ("12", "10"),
                  # 2026-11-13: a battle plate is entered by a fight, never by a door, so its ways out are one-way by design
                  ("battle-pen-gate", "10"), ("battle-pen-gate", "11"), ("battle-pen-gate", "12"),
-                 ("lair", "tunnels")}   # 2026-11-10: the tunnels' "deeper in" is the way off the outpost now; the lair waits for its road marker
+                 # 2026-11-23, the deep caverns: a drop, a hole, a scree slide and a current, one-way on purpose. ("lair", "tunnels")
+                 # is gone: the lair's way out is the Clacking Gallery, which leads back.
+                 ("fork", "sinkhole"), ("sinkhole", "stone-teeth"), ("nest", "gnoll-camp"), ("islet", "stream-sump")}
 ALL = {str(k): v for k, v in NODES.items()}; ALL.update(CAVERNS)
 links = {(a, str(t)) for a, node in ALL.items() for z in node["zones"] for t in z["to"]}
 for a, b in links:

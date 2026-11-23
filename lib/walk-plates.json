@@ -103,6 +103,66 @@
   "slug": "battle-pen-gate",
   "name": "The landing outside the pen gate"
  },
+ "fork": {
+  "slug": "deep-fork",
+  "name": "The Fork"
+ },
+ "faerzress": {
+  "slug": "deep-faerzress",
+  "name": "The Faerzress Gallery"
+ },
+ "sinkhole": {
+  "slug": "deep-sinkhole",
+  "name": "The Sinkhole"
+ },
+ "gorge": {
+  "slug": "deep-gorge",
+  "name": "The Gorge"
+ },
+ "steam-vents": {
+  "slug": "deep-steam-vents",
+  "name": "The Steam Vents"
+ },
+ "flooded-stair": {
+  "slug": "deep-flooded-stair",
+  "name": "The Flooded Stair"
+ },
+ "clacking": {
+  "slug": "deep-clacking",
+  "name": "The Clacking Gallery"
+ },
+ "nest": {
+  "slug": "deep-nest",
+  "name": "The Nest"
+ },
+ "gnoll-camp": {
+  "slug": "deep-gnoll-camp",
+  "name": "The Gnoll Camp"
+ },
+ "jetty": {
+  "slug": "deep-jetty",
+  "name": "The Broken Jetty"
+ },
+ "stone-teeth": {
+  "slug": "deep-stone-teeth",
+  "name": "The Stone Teeth"
+ },
+ "islet": {
+  "slug": "deep-islet",
+  "name": "The Islet"
+ },
+ "zurkhwood": {
+  "slug": "deep-zurkhwood",
+  "name": "The Zurkhwood Stand"
+ },
+ "spore-hollow": {
+  "slug": "deep-spore-hollow",
+  "name": "The Spore Hollow"
+ },
+ "stream-sump": {
+  "slug": "deep-stream-sump",
+  "name": "The Stream Sump"
+ },
  "tunnels": {
   "slug": "biome-tunnels",
   "name": "The tunnels"
