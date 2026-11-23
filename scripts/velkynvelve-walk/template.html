@@ -8263,6 +8263,10 @@ const FOE_BLOCKS = {
   "hook-horror": {name: "Hook horror", xp: 700, passive: 13, hp: 75, ac: 15, speed: 30, init: 0, saves: {str: 4, dex: 0, con: 2, int: -2, wis: 1, cha: -2},
                   attacks: [{name: "Hook", hit: 6, dmg: "2d6+4", type: "piercing", reach: 10}], multi: 2},
   // Kuo-toa (Out of the Abyss): AC 13, 18 hp (4d8), CR 1/4. Spear +3, 1d6+1 piercing; Bite +3, 1d4+1 piercing.
+  // Gnoll (SRD 5.1, the bestiary row): AC 15 (hide armor, shield), 22 hp (5d8), speed 30, passive 10, CR 1/2 (100 XP).
+  // Spear +4, 1d6+2 piercing; Bite +4, 1d4+2 piercing. NOT MODELLED, and said so: Rampage (the bonus move-and-bite
+  // after dropping a creature) and the longbow.
+  gnoll: {name: "Gnoll", xp: 100, passive: 10, hp: 22, ac: 15, speed: 30, init: 1, saves: {str: 2, dex: 1, con: 0, int: -2, wis: 0, cha: -2}, attacks: [{name: "Spear", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, {name: "Bite", hit: 4, dmg: "1d4+2", type: "piercing", reach: 5}]},
   "kuo-toa": {name: "Kuo-toa", xp: 50, passive: 14, hp: 18, ac: 13, speed: 30, init: 0, saves: {str: 1, dex: 0, con: 0, int: 0, wis: 0, cha: -1},
               attacks: [{name: "Spear", hit: 3, dmg: "1d6+1", type: "piercing", reach: 5}, {name: "Bite", hit: 3, dmg: "1d4+1", type: "piercing", reach: 5}]},
   // Green hag (SRD 5.1): AC 17, 82 hp (11d8+33), CR 3. Claws +6, 2d8+4 slashing.
