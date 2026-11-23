@@ -1,0 +1,274 @@
+{
+ "_": "Built by scripts/pixel-road/README.md from the PixelLab map below. ground.png has the props painted in; objects/ holds the same props again so a figure can stand behind one.",
+ "id": "road-01",
+ "name": "The tunnel out of Velkynvelve",
+ "pixellabMapId": "4c4f1c68-96b2-407b-a46b-a97cde7fe3b1",
+ "tile": 32,
+ "cols": 64,
+ "rows": 22,
+ "ground": "ground.png",
+ "legend": {
+  "w": "floor (walkable)",
+  "d": "rock",
+  "a": "cliff face",
+  "s": "stream"
+ },
+ "grid": [
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddaaaaaaaaaaaaaadddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddwwwwwwwwwwwwwwdddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddwwwwwwwwwwwwwwddddddaaaaaaaaaaaaaadddddddddddddddddd",
+  "ddddddddddddwwwsssssssswwwddddddwwwwwwwwwwwwwwdddddddddddddddddd",
+  "ddddddddddddwwwsssssssswwwddddddwwwwwwwwwwwwwwaaaaaaaaaaaaaaaaaa",
+  "aaaaaaaaaaaawwwwwwwwwwwwwwddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwaaaaaawwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwdddddddddddddddddd",
+  "ddddddddddddwwwwwwwwwwwwwwddddddwwwwwwwwwwwwwwdddddddddddddddddd",
+  "ddddddddddddwwwwwwwwwwwwwwddddddwwwwwwwwwwwwwwdddddddddddddddddd",
+  "ddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwdddddddddddddddddd",
+  "ddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwdddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+ ],
+ "objects": [
+  {
+   "kind": "rubble",
+   "x": 96,
+   "y": 256,
+   "w": 96,
+   "h": 64,
+   "ground": [
+    105,
+    299,
+    82,
+    16
+   ]
+  },
+  {
+   "kind": "fungus",
+   "x": 272,
+   "y": 384,
+   "w": 64,
+   "h": 64,
+   "ground": [
+    282,
+    428,
+    50,
+    16
+   ]
+  },
+  {
+   "kind": "mushrooms",
+   "x": 400,
+   "y": 96,
+   "w": 64,
+   "h": 64,
+   "ground": [
+    408,
+    139,
+    44,
+    16
+   ]
+  },
+  {
+   "kind": "stalagmites",
+   "x": 400,
+   "y": 416,
+   "w": 64,
+   "h": 96,
+   "ground": [
+    406,
+    485,
+    52,
+    24
+   ]
+  },
+  {
+   "kind": "fungus",
+   "x": 592,
+   "y": 448,
+   "w": 64,
+   "h": 64,
+   "ground": [
+    602,
+    492,
+    50,
+    16
+   ]
+  },
+  {
+   "kind": "stalagmites",
+   "x": 752,
+   "y": 96,
+   "w": 64,
+   "h": 96,
+   "ground": [
+    758,
+    165,
+    52,
+    24
+   ]
+  },
+  {
+   "kind": "crystals",
+   "x": 752,
+   "y": 448,
+   "w": 64,
+   "h": 64,
+   "ground": [
+    762,
+    490,
+    43,
+    16
+   ]
+  },
+  {
+   "kind": "mushrooms",
+   "x": 912,
+   "y": 384,
+   "w": 64,
+   "h": 64,
+   "ground": [
+    920,
+    427,
+    44,
+    16
+   ]
+  },
+  {
+   "kind": "stalagmites",
+   "x": 1040,
+   "y": 448,
+   "w": 64,
+   "h": 96,
+   "ground": [
+    1046,
+    517,
+    52,
+    24
+   ]
+  },
+  {
+   "kind": "ruins",
+   "x": 1200,
+   "y": 160,
+   "w": 128,
+   "h": 128,
+   "ground": [
+    1205,
+    250,
+    117,
+    32
+   ]
+  },
+  {
+   "kind": "crystals",
+   "x": 1200,
+   "y": 512,
+   "w": 64,
+   "h": 64,
+   "ground": [
+    1210,
+    554,
+    43,
+    16
+   ]
+  },
+  {
+   "kind": "fungus",
+   "x": 1392,
+   "y": 160,
+   "w": 64,
+   "h": 64,
+   "ground": [
+    1402,
+    204,
+    50,
+    16
+   ]
+  },
+  {
+   "kind": "stalagmites",
+   "x": 1392,
+   "y": 448,
+   "w": 64,
+   "h": 96,
+   "ground": [
+    1398,
+    517,
+    52,
+    24
+   ]
+  },
+  {
+   "kind": "mushrooms",
+   "x": 1520,
+   "y": 352,
+   "w": 64,
+   "h": 64,
+   "ground": [
+    1528,
+    395,
+    44,
+    16
+   ]
+  },
+  {
+   "kind": "rubble",
+   "x": 1664,
+   "y": 224,
+   "w": 96,
+   "h": 64,
+   "ground": [
+    1673,
+    267,
+    82,
+    16
+   ]
+  },
+  {
+   "kind": "crystals",
+   "x": 1904,
+   "y": 352,
+   "w": 64,
+   "h": 64,
+   "ground": [
+    1914,
+    394,
+    43,
+    16
+   ]
+  }
+ ],
+ "entry": {
+  "x": 48,
+  "y": 368,
+  "label": "Velkynvelve"
+ },
+ "exit": {
+  "x": 2000,
+  "y": 336,
+  "label": "The road on"
+ },
+ "landmarks": [
+  {
+   "kind": "ruins",
+   "label": "Ruins",
+   "x": 1264,
+   "y": 178
+  }
+ ],
+ "glow": {
+  "crystals": "#6fd8ff",
+  "fungus": "#39d6b8",
+  "mushrooms": "#d06bff",
+  "ruins": "#a66bff"
+ }
+}
