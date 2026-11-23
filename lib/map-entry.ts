@@ -50,6 +50,8 @@ export function doorIntent(params: URLSearchParams, now: number): string | null 
   if (params.get("ruins") !== "1") return null
   const q = new URLSearchParams({ ruins: "1" })
   if (params.get("from") === "map") q.set("from", "map")
+  const road = params.get("road") ?? ""
+  if (/^road-\d{2}$/.test(road)) q.set("road", road)   // which pixel road's door, so the way out goes back to it
   return JSON.stringify({ q: `?${q}`, at: now })
 }
 
@@ -60,7 +62,7 @@ export function doorResume(stored: string | null, params: URLSearchParams, now: 
     const v = JSON.parse(stored) as { q?: unknown; at?: unknown }
     if (typeof v.q !== "string" || typeof v.at !== "number") return null
     if (now - v.at > DOOR_NEXT_MS || now < v.at) return null
-    return /^\?ruins=1(&from=map)?$/.test(v.q) ? v.q : null
+    return /^\?ruins=1(&from=map)?(&road=road-\d{2})?$/.test(v.q) ? v.q : null
   } catch { return null }
 }
 

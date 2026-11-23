@@ -31,6 +31,9 @@ describe("the Ruins survive the door", () => {
   it("remembers the Ruins' way in, and which side it was entered from", () => {
     expect(JSON.parse(doorIntent(p("ruins=1"), T)!)).toEqual({ q: "?ruins=1", at: T })
     expect(JSON.parse(doorIntent(p("ruins=1&from=map&bag=1"), T)!)).toEqual({ q: "?ruins=1&from=map", at: T })
+    expect(JSON.parse(doorIntent(p("ruins=1&road=road-03"), T)!)).toEqual({ q: "?ruins=1&road=road-03", at: T })
+    expect(JSON.parse(doorIntent(p("ruins=1&road=evil"), T)!)).toEqual({ q: "?ruins=1", at: T })
+    expect(doorResume(doorIntent(p("ruins=1&road=road-03"), T), p(""), T + 1)).toBe("?ruins=1&road=road-03")
   })
   it("remembers nothing for an ordinary arrival", () => {
     expect(doorIntent(p(""), T)).toBeNull()

@@ -4530,7 +4530,7 @@ async function roadFight(){
 function leaveVelkynvelve(z){
   // THE RUINS' WAY OUT IS THE TUNNEL ROAD it was entered from (public/pixel-road); ?at=ruins stands the party at its door.
   if (isRuinPlate(cur)){ const map = state.ruinsFrom === "map";   // in by the travel map's Ruins card -> back to the march; in by the pixel road's door -> back to that door
-    showDialog({title: "Out of the ruins", body: map ? "The march is where you left it." : "The tunnel road is where you left it.", buttons: [{label: map ? "Back to the map" : "Back to the road", primary: true, fn: () => { (window.top !== window ? window.top : window).location.href = map ? "/map" : "/pixel-road/index.html?at=ruins"; }}, {label: "Stay"}]}); return; }
+    showDialog({title: "Out of the ruins", body: map ? "The march is where you left it." : "The tunnel road is where you left it.", buttons: [{label: map ? "Back to the map" : "Back to the road", primary: true, fn: () => { (window.top !== window ? window.top : window).location.href = map ? "/map" : "/pixel-road/index.html?" + (state.ruinsRoad ? "road=" + state.ruinsRoad + "&" : "") + "at=ruins"; }}, {label: "Stay"}]}); return; }
   // A ROAD PLATE'S WAY OUT IS THE ROAD (ROAD FIGHT, below): back to the travel map, where the march stands halted.
   // OUT OF THE CHAINS: the party never walked out of the outpost, so the map is told which way the column took them
   if (isRoadPlate(cur) && state.chainMarch && state.chainMarch.out === "escaped" && String(cur) === CHAIN_MARCH.plate){ showDialog({title: "The north passage", body: "Velkynvelve is behind you, and the escort lies on the bridge. Anything left on the dead stays here. Past this point the party is on the Underdark map, on the north road the caravan was taking.", buttons: [{label: "Take the road", primary: true, fn: () => { $("fade").classList.add("on"); setTimeout(() => { (window.top !== window ? window.top : window).location.href = chainMarchMapHref(); }, CHAIN_MARCH.fadeMs); }}, {label: "Search the dead first"}]}); return; }
@@ -13590,7 +13590,8 @@ async function ruinsDoor(){
   let top, q; try { top = window.top !== window ? window.top : window; q = new URLSearchParams(top.location.search); } catch (e) { return; }
   if (!q.get("ruins")) return;
   state.ruinsFrom = q.get("from") === "map" ? "map" : "road";   // the travel map's Ruins card, or the pixel road's door
-  try { q.delete("ruins"); q.delete("from"); top.history.replaceState(null, "", top.location.pathname + (q.toString() ? "?" + q : "")); } catch (e) {}
+  state.ruinsRoad = /^road-\d{2}$/.test(q.get("road") || "") ? q.get("road") : null;   // which pixel road's door (road-01, road-03)
+  try { q.delete("ruins"); q.delete("from"); q.delete("road"); top.history.replaceState(null, "", top.location.pathname + (q.toString() ? "?" + q : "")); } catch (e) {}
   const plate = "ruins-threshold"; if (!SPEC[plate] || cbt || FIGHT.mirror) return;
   const at = SPEC[plate].arrive;
   await enterNode(plate, {spawn: {x: at[0], y: at[1]}, note: "The door stands open behind you, and the road's noise does not follow you in."});

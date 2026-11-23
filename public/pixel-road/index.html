@@ -470,7 +470,13 @@ function plateAsk(m) { plateCard(m.label, m.ask || "Do you enter, or walk away?"
 function plateEnter() {
   if (!plateOpen) return; plateOpen.entered = true;
   // A landmark with rooms behind it (road.json `href`): the Ruins' six painted rooms are on the walk page.
-  if (plateOpen.href && !new URLSearchParams(location.search).has("stay")) { plateEl.style.transition = "opacity .5s"; plateEl.style.opacity = "0"; setTimeout(() => { location.href = plateOpen.href; }, 450); return; }
+  // On a real march (embedded in the travel map) the door is the travel map's own Ruins door (&from=map): the whole tab
+  // goes in, and the way out comes back to the march. On its own, the way out comes back to this road's door (&road=).
+  if (plateOpen.href && !new URLSearchParams(location.search).has("stay")) {
+    plateEl.style.transition = "opacity .5s"; plateEl.style.opacity = "0";
+    if (EMBED) { setTimeout(() => tell({ type: "aop:road-ruins" }), 450); return; }   // the march ends this leg and takes the tab in
+    const href = plateOpen.href + "&road=" + ROAD_ID;
+    setTimeout(() => { location.href = href; }, 450); return; }
   plateCard(plateOpen.label, plateOpen.inside || "You step through. What waits inside is not built yet.", [["Back to the road", () => plateClose()]]);
 }
 function plateTick() {
@@ -994,9 +1000,10 @@ function toggleMusic() {
   for (const k of new Set(road.objects.map((o) => o.kind))) objImg[k] = await img(BASE + "objects/" + k + ".png");
   heroes = (await Promise.all(LINE.concat(NPCS.filter((s) => !LINE.includes(s))).map(loadHero))).filter(Boolean);
   if (EMBED) { const f = clean(Q.get("from"), 40), t = clean(Q.get("to"), 40); if (f) road.entry.label = f; if (t) road.exit.label = t; 
-    // On the march a landmark is scenery: stepping into its rooms from here would leave the march half walked. The
-    // Ruins are entered from the map's own card when the book's dice land on them (lib/travel/battle.ts).
-    road.landmarks = []; }
+    // On the march a landmark with rooms behind it is a real door too (Sam, 2026-11-23: the Ruins in the violet hollow,
+    // "make sure the painted plates we made and wired are connected to the entrance"). Enter asks the march to stop
+    // this leg and take the tab in the way the map's own Ruins card does (aop:road-ruins, underdark-map-module.tsx).
+  }
   if (!ground || !heroes.length) { document.body.innerHTML = '<p style="color:#a99;font:14px Georgia;padding:2em">The road could not be drawn.</p>'; return; }
   heroes.forEach((h, i) => { h.x = road.entry.x - i * GAP; h.y = road.entry.y; });
   { let sx = 0, sy = 0, n = 0;      // the middle of the stream, for the sound of it
