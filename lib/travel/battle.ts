@@ -42,6 +42,19 @@ export const CREATURE_PLATES: Readonly<Record<string, string>> = { "giant spider
 /** Where every other road fight is staged until its own plate is painted (Sam's rulings 1 and 3, 2026-11-12). */
 export const FALLBACK_PLATE = "road-tunnels"
 
+/**
+ * THE TUNNEL PLATES (Sam, 2026-11-23: "create a few generic tunnel combat plates should we encounter something while
+ * walking"). A fight that falls to the tunnels is staged on one of these, rolled with the caller's die so the pick can
+ * be audited like every other roll. The original tunnels plate stays first: a d1..dN of 1 is the plate it always was.
+ */
+export const TUNNEL_PLATES: readonly string[] = [FALLBACK_PLATE, "road-tunnels-junction", "road-tunnels-winding", "road-tunnels-ledge"]
+
+/** One of the tunnel plates, by a die of TUNNEL_PLATES.length faces. */
+export function tunnelPlate(roll: Roll): string {
+  const n = TUNNEL_PLATES.length, f = Math.floor(Number(roll(n)))
+  return TUNNEL_PLATES[f >= 1 && f <= n ? f - 1 : 0]
+}
+
 /** Bestiary name -> the walk page's foe id (a sprite AND a stat block there: template.html FOE_BLOCKS). */
 export const WALK_FOES: Readonly<Record<string, string>> = { "giant spider": "giant-spider", orog: "orog", grick: "grick" }
 
@@ -97,7 +110,8 @@ export function battleFor(
   const counted = rollCount(row.detail.count, roll)
   if (!counted) return { reason: `The encounter table gives no count for ${creature} yet.` }
   const terrain = steps.find((r) => r.table_key.endsWith("_terrain"))
-  const plate = (terrain && TERRAIN_PLATES[terrain.result.toLowerCase()]) || CREATURE_PLATES[key] || FALLBACK_PLATE
+  const picked = (terrain && TERRAIN_PLATES[terrain.result.toLowerCase()]) || CREATURE_PLATES[key] || FALLBACK_PLATE
+  const plate = picked === FALLBACK_PLATE ? tunnelPlate(roll) : picked   // the tunnels: one of the generic tunnel plates
   return {
     plate,
     foes: Array.from({ length: counted.n }, () => foe),

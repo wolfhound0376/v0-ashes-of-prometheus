@@ -99,6 +99,18 @@
   "slug": "road-tunnels",
   "name": "Road: the tunnels"
  },
+ "road-tunnels-junction": {
+  "slug": "road-tunnels-junction",
+  "name": "Road: a tunnel junction"
+ },
+ "road-tunnels-winding": {
+  "slug": "road-tunnels-winding",
+  "name": "Road: a winding tunnel"
+ },
+ "road-tunnels-ledge": {
+  "slug": "road-tunnels-ledge",
+  "name": "Road: a split-level cavern"
+ },
  "ruins-threshold": {
   "slug": "ruins-threshold",
   "name": "The Ruins: the threshold"
