@@ -47,4 +47,14 @@ describe("what the company says on the pixel road (Sam, 2026-11-23)", () => {
   it("says the leader's name, or 'friend' when it has none", () => {
     expect(roadRemarks({ companions: ["ront"], hoursToday: 0, you: " ", rand: always })[0].line).toContain("friend")
   })
+  it("hails first, each in their own word for the leader", () => {
+    const call = (slug: string) => ({ ront: "elf", eldeth: "Sorcerer", jimjar: "Kenta" } as Record<string, string>)[slug]
+    const said = roadRemarks({ companions: ["ront", "eldeth", "jimjar"], hoursToday: 7, you: call, rand: always })
+    const by = Object.fromEntries(said.map((r) => [r.who, r]))
+    expect(by.eldeth.hail).toBe("Hey Sorcerer!")
+    expect(by.eldeth.line).toContain("Sorcerer")
+    expect(by.ront.hail).toBe("Hey elf!")
+    expect(by.jimjar.hail).toBe("Hey Kenta!")
+    expect(roadRemarks({ companions: ["stool"], hoursToday: 0, you: "Kenta", rand: always })[0].hail).toBe("(Kenta…)")
+  })
 })

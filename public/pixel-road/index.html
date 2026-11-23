@@ -33,7 +33,7 @@
             ?sound=0                          no sound at all
 -->
 <script src="/test-copy-silence.js"></script>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=IM+Fell+English+SC&family=Alegreya+Sans:ital,wght@0,400;0,500;0,700;1,400&family=Comic+Neue:wght@700&family=Bangers&display=swap">
 <style>
   html,body{margin:0;height:100%;background:#07060b;overflow:hidden;touch-action:none}
   canvas{display:block;width:100vw;height:100vh;cursor:pointer}
@@ -53,19 +53,34 @@
   #restbar{position:fixed;right:14px;bottom:14px;display:flex;gap:8px;z-index:5;opacity:.72;transition:opacity .3s}
   #restbar:hover,#restbar:focus-within{opacity:1}
   #restbar[hidden]{display:none}
-  /* A companion speaks (the real march only): their figure, their words, the rule behind them in small print. */
-  #say{position:fixed;left:50%;bottom:74px;transform:translateX(-50%);z-index:6;display:flex;gap:12px;align-items:flex-start;max-width:min(620px,92vw);padding:10px 14px 11px 10px;
-    background:rgba(11,8,16,.92);border:1px solid rgba(214,176,98,.5);border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.6);color:#e9dcc6;animation:sayin .35s ease-out}
+  /* A COMPANION SPEAKS (the real march). The same two steps as everywhere else in the game (Sam, 2026-11-23: "Use the
+     same font and mechanics as in the rest of the games"): first the comic bubble over their head ("Hey Kenta!"), in
+     the walk page's own .bubble; then the talk card, in its own .tcard: portrait left, name in the display face,
+     the words beside it. Values copied from scripts/velkynvelve-walk/template.html. */
+  #hail{position:fixed;left:0;top:0;z-index:6;transform:translate(-50%,calc(-100% - 46px));max-width:250px;background:#fffdf6;color:#14110f;
+    border:2.5px solid #14110f;border-radius:48% 52% 50% 50% / 46% 48% 52% 54%;padding:12px 20px 13px;text-align:center;white-space:nowrap;
+    font-family:"Comic Neue","Comic Sans MS","Alegreya Sans",sans-serif;font-weight:700;font-size:.95rem;line-height:1.22;box-shadow:4px 4px 0 rgba(0,0,0,.45);animation:pop .18s ease-out;pointer-events:none}
+  #hail[hidden]{display:none}
+  #hail::before,#hail::after{content:"";position:absolute;left:50%;width:0;height:0;border-style:solid}
+  #hail::before{bottom:-42px;margin-left:-11px;border-width:42px 6px 0 9px;border-color:#14110f transparent transparent transparent;transform:skewX(-8deg);transform-origin:top}
+  #hail::after{bottom:-35px;margin-left:-7px;border-width:37px 3px 0 6px;border-color:#fffdf6 transparent transparent transparent;transform:skewX(-8deg);transform-origin:top}
+  #hail b{display:block;font-family:"Bangers","Impact",serif;font-weight:400;font-size:.9rem;letter-spacing:.06em;color:#8a1f12;margin-bottom:1px}
+  @keyframes pop{from{opacity:0;scale:.85}to{opacity:1;scale:1}}
+  #say{position:fixed;left:50%;bottom:70px;transform:translateX(-50%);z-index:6;width:min(560px,94vw);background:#100e18;border:1px solid #e8a24a;border-radius:10px;
+    display:grid;grid-template-columns:120px 1fr;gap:14px;padding:14px;box-shadow:0 16px 50px rgba(0,0,0,.7);color:#ebe6f5;animation:slide .3s ease-out}
   #say[hidden]{display:none}
-  #say canvas{width:64px;height:64px;flex:none;border-radius:6px;background:#17131f;image-rendering:pixelated}
-  #say .who{font:600 12px Cinzel,Georgia,serif;letter-spacing:.2em;text-transform:uppercase;color:#d9bd7c}
-  #say .line{font:17px/1.35 "Crimson Text",Georgia,serif;margin-top:2px}
-  #say .note{font:italic 13px "Crimson Text",Georgia,serif;color:#a99fc0;margin-top:3px}
+  @keyframes slide{from{transform:translate(-50%,18px);opacity:0}to{transform:translate(-50%,0);opacity:1}}
+  #say .face{display:grid;gap:6px;justify-items:center;align-content:start}
+  #say canvas{width:112px;height:112px;image-rendering:pixelated;background:radial-gradient(circle at 50% 62%,#24203a,#0b0a10);border:1px solid #2c2740;border-radius:8px}
+  #say .who{font-family:"IM Fell English SC","Iowan Old Style","Palatino Linotype",Georgia,serif;font-size:1.05rem;text-align:center;line-height:1.05}
+  #say .w{display:grid;gap:8px;align-content:start;min-width:0}
+  #say .line{margin:0;font-family:"Alegreya Sans","Gill Sans","Segoe UI",system-ui,sans-serif;font-size:1.05rem;line-height:1.4}
+  #say .note{margin:0;font-family:"Alegreya Sans","Gill Sans",system-ui,sans-serif;font-style:italic;font-size:.9rem;line-height:1.4;color:#a9a2bd}
   #say .note:empty,#say .row:empty{display:none}
-  #say .row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
-  #say .row button{padding:6px 11px;font:600 11px Cinzel,Georgia,serif;letter-spacing:.14em;text-transform:uppercase;color:#e9dcc6;cursor:pointer;background:#1c1628;border:1px solid #5a4a78;border-radius:5px}
-  #say .row button:hover,#say .row button:focus-visible{border-color:#d9bd7c;color:#fff;outline:none}
-  @keyframes sayin{from{opacity:0;transform:translate(-50%,8px)}to{opacity:1;transform:translate(-50%,0)}}
+  #say .row{display:flex;gap:8px;flex-wrap:wrap}
+  #say .row button{padding:7px 12px;font:600 11px Cinzel,"Trajan Pro",Georgia,serif;letter-spacing:.14em;text-transform:uppercase;color:#ebe6f5;cursor:pointer;background:#1a1626;border:1px solid #2c2740;border-radius:6px}
+  #say .row button:first-child{border-color:#e8a24a;color:#ffd9a0}
+  #say .row button:hover,#say .row button:focus-visible{border-color:#e8a24a;color:#fff;outline:none}
   #restbar button{padding:8px 13px;font:600 12px Cinzel,Georgia,serif;letter-spacing:.14em;text-transform:uppercase;color:#e9dcc6;cursor:pointer;
     background:rgba(16,13,22,.82);border:1px solid #6b5a3a;border-radius:3px}
   #restbar button:hover,#restbar button:focus-visible{border-color:#d9bd7c;color:#fff;outline:none}
@@ -89,7 +104,8 @@
 <canvas id="c"></canvas>
 <div id="restbar" hidden><button type="button" data-rest="short" title="An hour by a small fire"><span class="lbl">Short rest</span></button><button type="button" data-rest="long" title="Make camp for a long rest"><span class="lbl">Make camp</span></button></div>
 <div id="rest" role="status" aria-live="polite"><img class="pit" alt=""><img class="load" alt=""><canvas></canvas><div class="txt"><div class="kick"></div><div class="title"></div><div class="lore"></div><div class="dots" hidden><i></i><i></i><i></i></div></div></div>
-<div id="say" hidden><canvas width="64" height="64"></canvas><div class="w"><div class="who"></div><div class="line"></div><div class="note"></div><div class="row"></div></div></div>
+<div id="hail" hidden></div>
+<div id="say" hidden><div class="face"><canvas width="112" height="112"></canvas><div class="who"></div></div><div class="w"><p class="line"></p><p class="note"></p><div class="row"></div></div></div>
 <div id="plate"><img alt=""><div class="card"><div class="name"></div><div class="ask"></div><div class="row"></div></div></div>
 <script>
 "use strict";
@@ -440,28 +456,63 @@ async function rest(kind) {
 // The map deals the remarks for this stretch (lib/travel/road-remarks.ts) and posts them here; this page only
 // spaces them out along the walk: the first after a few seconds on the move, the rest well apart, none while a
 // plate or a rest is up. A rest remark carries the two rest buttons.
-const sayEl = document.getElementById("say"); let sayQueue = [], sayWalked = 0, sayNext = 5 + Math.random() * 4, sayUntil = 0, sayNow = null;
-function sayHide() { sayEl.hidden = true; sayNow = null; }
+const sayEl = document.getElementById("say"), hailEl = document.getElementById("hail"); let sayQueue = [], sayWalked = 0, sayNext = 5 + Math.random() * 4, sayUntil = 0, sayNow = null, hailNow = null, listener = "";
+function sayHide() { sayEl.hidden = true; hailEl.hidden = true; sayNow = null; hailNow = null; }
+// THE VOICE: the hail is spoken in the NPC's own ElevenLabs voice by the game's route (/api/npc-tts finds the voice
+// saved on their row), as the walk page's speakCanon does. Sound must be on and woken by a click, as for everything here.
+async function hailVoice(r) {
+  if (!unlocked || !sfxOn || !r.name || r.who === "stool") return;
+  try {
+    const res = await fetch("/api/npc-tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: r.hail.replace(/[()…]/g, ""), npcName: r.name, listenerName: listener || undefined }) });
+    if (!res.ok || !/audio/i.test(res.headers.get("content-type") || "")) return;
+    const a = new Audio(URL.createObjectURL(await res.blob())); a.volume = 0.95; snd.hail = a; if (hailNow === r || sayNow === r) a.play().catch(() => {});
+  } catch (e) {}
+}
+// 1. THE BUBBLE, over their head: "Hey Kenta!"
+function hailShow(r) {
+  hailNow = r; r.t0 = performance.now(); hailEl.innerHTML = ""; const b = document.createElement("b"); b.textContent = r.name || ""; hailEl.appendChild(b); hailEl.appendChild(document.createTextNode(r.hail));
+  hailEl.hidden = false; hailPlace(); hailVoice(r);
+}
+function hailPlace() {
+  const r = hailNow, h = r && heroes.find((x) => x.slug === r.who); if (!h) { hailEl.style.left = "50%"; hailEl.style.top = "38%"; return; }
+  const k = cv.clientWidth / cv.width;   // canvas pixels -> CSS pixels
+  hailEl.style.left = ((h.x - cam.x) * cam.z * k) + "px"; hailEl.style.top = ((h.y - h.piv[1] * h.s * 0.92 - cam.y) * cam.z * k) + "px";
+}
+// The head and shoulders of a figure's south-facing idle frame: the top of what is actually drawn in the cell, found
+// once per figure (a quaggoth and a deep gnome fill their cells very differently).
+function faceOf(h) {
+  if (h.face) return h.face;
+  const c = h.cell, t = document.createElement("canvas"); t.width = t.height = c; const tg = t.getContext("2d"); tg.drawImage(h.idle.im, 0, 0, c, c, 0, 0, c, c);
+  let x0 = c, x1 = 0, y0 = c, y1 = 0;
+  try { const d = tg.getImageData(0, 0, c, c).data; for (let y = 0; y < c; y++) for (let x = 0; x < c; x++) if (d[(y * c + x) * 4 + 3] > 40) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } } catch (e) {}
+  if (x1 <= x0 || y1 <= y0) return (h.face = [c * 0.22, c * 0.1, c * 0.56]);
+  const side = Math.max(24, Math.min(c, (y1 - y0) * 0.52)), cx = (x0 + x1) / 2;
+  return (h.face = [Math.max(0, Math.min(c - side, cx - side / 2)), Math.max(0, y0 - side * 0.06), side]);
+}
+// 2. THE CARD: their figure, their name, the words, the rule behind them in small print
 function sayShow(r) {
+  hailEl.hidden = true; hailNow = null;
   sayNow = r; sayEl.querySelector(".who").textContent = r.name || ""; sayEl.querySelector(".line").textContent = r.line || ""; sayEl.querySelector(".note").textContent = r.note || "";
-  const g = sayEl.querySelector("canvas").getContext("2d"), h = heroes.find((x) => x.slug === r.who); g.clearRect(0, 0, 64, 64);
-  sayEl.querySelector("canvas").style.display = h ? "" : "none";
-  if (h) { g.imageSmoothingEnabled = false; const c = h.cell; g.drawImage(h.idle.im, 0, 0, c, c, -c * 0.1, -c * 0.02, c * 0.62 * (64 / (c * 0.5)), c * 0.62 * (64 / (c * 0.5))); }
+  const cvs = sayEl.querySelector("canvas"), g = cvs.getContext("2d"), h = heroes.find((x) => x.slug === r.who); g.clearRect(0, 0, 112, 112);
+  sayEl.querySelector(".face").style.display = h || r.name ? "" : "none"; sayEl.style.gridTemplateColumns = h ? "" : "1fr"; cvs.style.display = h ? "" : "none";
+  if (h) { g.imageSmoothingEnabled = false; const f = faceOf(h); g.drawImage(h.idle.im, f[0], f[1], f[2], f[2], 0, 0, 112, 112); }
   const row = sayEl.querySelector(".row"); row.innerHTML = "";
   if (r.kind === "rest") for (const [label, fn] of [["Short rest", () => rest("short")], ["Make camp", () => rest("long")], ["Walk on", sayHide]]) { const b = document.createElement("button"); b.type = "button"; b.textContent = label; b.onclick = (e) => { e.stopPropagation(); soundStart(); fn(); }; row.appendChild(b); }
   sayEl.hidden = false; sayUntil = performance.now() + (r.kind === "rest" ? 16000 : 9000);
 }
 function sayTick(dt, moved) {
-  if (sayNow && performance.now() > sayUntil) sayHide();
+  const t = performance.now();
+  if (hailNow) { hailPlace(); if (plateOpen || resting || leaving) sayHide(); else if (t - hailNow.t0 > 2100) sayShow(hailNow); return; }
+  if (sayNow && t > sayUntil) sayHide();
   if (moved) sayWalked += dt;
   if (sayNow || plateOpen || resting || leaving || !sayQueue.length || sayWalked < sayNext) return;
-  sayShow(sayQueue.shift()); sayNext = sayWalked + 20 + Math.random() * 14;
+  const r = sayQueue.shift(); if (r.hail) hailShow(r); else sayShow(r); sayNext = sayWalked + 20 + Math.random() * 14;
 }
 sayEl.addEventListener("pointerdown", (e) => e.stopPropagation());
 if (EMBED) addEventListener("message", (ev) => {
   if (ev.origin !== location.origin || ev.source !== window.parent) return;
   const m = ev.data || {};
-  if (m.type === "aop:road-remarks" && Array.isArray(m.remarks)) sayQueue = m.remarks.filter((r) => r && typeof r.line === "string").slice(0, 4).map((r) => ({ who: clean(r.who, 30), name: clean(r.name, 30), kind: r.kind === "rest" ? "rest" : "say", line: String(r.line).slice(0, 220), note: r.note ? String(r.note).slice(0, 200) : "" }));
+  if (m.type === "aop:road-remarks" && Array.isArray(m.remarks)) { listener = clean(m.listener, 30); sayQueue = m.remarks.filter((r) => r && typeof r.line === "string").slice(0, 4).map((r) => ({ who: clean(r.who, 30), name: clean(r.name, 30), kind: r.kind === "rest" ? "rest" : "say", line: String(r.line).slice(0, 220), note: r.note ? String(r.note).slice(0, 200) : "", hail: r.hail ? String(r.hail).replace(/[<>]/g, "").slice(0, 40) : "" })); }
   else if (m.type === "aop:road-say" && typeof m.line === "string") sayShow({ who: "", name: clean(m.name, 30), kind: "say", line: String(m.line).slice(0, 260), note: "" });
 });
 restBar.addEventListener("pointerdown", (e) => e.stopPropagation());

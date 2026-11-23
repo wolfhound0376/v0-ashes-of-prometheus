@@ -116,8 +116,8 @@ export default function UnderdarkMapModule() {
     fetch("/api/camp/roster").then((r) => (r.ok ? r.json() : null)).then((j) => { if (alive && Array.isArray(j?.members)) setCompany(j.members) }).catch(() => {})
     return () => { alive = false }
   }, [party?.node_id])
-  const roadLive = useRef({ pixelRoad, company, hours: 0, heroSlug: "", followerSlugs: [] as string[], edges, initiated: travel.initiated, shortRest: travel.shortRest, shortRestLine: travel.shortRestLine, chooseOption: travel.chooseOption })
-  roadLive.current = { pixelRoad, company, hours: Number(travel.march?.hours_today) || 0, heroSlug: mapHeroSlug(leaderId), followerSlugs: (followerKey ? followerKey.split(",") : []).map((id) => mapHeroSlug(id)), edges, initiated: travel.initiated, shortRest: travel.shortRest, shortRestLine: travel.shortRestLine, chooseOption: travel.chooseOption }
+  const roadLive = useRef({ leaderId: leaderId as string | null, pixelRoad, company, hours: 0, heroSlug: "", followerSlugs: [] as string[], edges, initiated: travel.initiated, shortRest: travel.shortRest, shortRestLine: travel.shortRestLine, chooseOption: travel.chooseOption })
+  roadLive.current = { leaderId, pixelRoad, company, hours: Number(travel.march?.hours_today) || 0, heroSlug: mapHeroSlug(leaderId), followerSlugs: (followerKey ? followerKey.split(",") : []).map((id) => mapHeroSlug(id)), edges, initiated: travel.initiated, shortRest: travel.shortRest, shortRestLine: travel.shortRestLine, chooseOption: travel.chooseOption }
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
   const youName = () => { const R = roadLive.current; return (R.company.find((m) => m.pc && m.slug === R.heroSlug)?.name ?? "").split(/\s+/)[0] ?? "" }
   async function walkTheRoad(a: string, b: string): Promise<void> {
@@ -147,7 +147,12 @@ export default function UnderdarkMapModule() {
       const post = (x: Record<string, unknown>) => { try { roadFrame.current?.contentWindow?.postMessage(x, window.location.origin) } catch { /* gone */ } }
       const R = roadLive.current
       if (m.type === "aop:road-ready") {
-        post({ type: "aop:road-remarks", remarks: roadRemarks({ companions: R.company.filter((c) => !c.pc).map((c) => c.slug), hoursToday: R.hours, you: youName(), rand: Math.random }) })
+        // what each of them calls the leader ("Hey Kenta / hey elf / hey Sorcerer": /api/npc-address), then the deal
+        const npcs = R.company.filter((c) => !c.pc)
+        const deal = (call: Record<string, string>) => post({ type: "aop:road-remarks", listener: youName(), remarks: roadRemarks({ companions: npcs.map((c) => c.slug), hoursToday: R.hours, you: (slug) => call[npcs.find((c) => c.slug === slug)?.name ?? ""] || youName(), rand: Math.random }) })
+        if (!R.leaderId || !npcs.length) deal({})
+        else fetch("/api/npc-address", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ characterId: R.leaderId, npcNames: npcs.map((c) => c.name) }) })
+          .then((r) => (r.ok ? r.json() : null)).then((j) => deal((j?.addresses as Record<string, string>) ?? {})).catch(() => deal({}))
       } else if (m.type === "aop:road-done") {
         endRoad()
       } else if (m.type === "aop:road-rest" && m.kind === "short") {

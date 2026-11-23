@@ -28,6 +28,8 @@ export interface RoadRemark {
   who: string
   name: string
   kind: RoadRemarkKind
+  /** the bubble that comes first: "Hey Kenta!", "Hey elf!", "Hey Sorcerer!" (lib/npc-asks.ts addressFor) */
+  hail: string
   line: string
   /** the rule behind the words, for the small print under them */
   note: string | null
@@ -64,10 +66,15 @@ const HELP_LINES: Readonly<Record<string, string>> = {
 const REST_ORDER = ["eldeth", "derendil", "jimjar", "sarith", "shuushar", "topsy", "ront", "turvy", "buppido", "stool"]
 
 const say = (line: string, you: string) => line.replace("{you}", you)
+/** What each speaker calls the leader: one word for all of them, or each one's own (the map asks /api/npc-address). */
+export type Address = string | ((slug: string) => string | null | undefined)
+const addressOf = (a: Address, slug: string) => ((typeof a === "function" ? a(slug) : a) || "").trim() || "friend"
+/** The hail. Stool has no mouth: its spores say it. */
+export const hailFor = (slug: string, you: string) => (slug === "stool" ? `(${you}…)` : `Hey ${you}!`)
 const nameOf = (slug: string) => COMPANION_NAMES[slug] ?? slug
 
 /** The rest remark the day's hours call for, or null while the party is fresh or walks alone. */
-export function restRemark(companions: readonly string[], hoursToday: number, you: string): RoadRemark | null {
+export function restRemark(companions: readonly string[], hoursToday: number, address: Address): RoadRemark | null {
   const f = fatigue(hoursToday)
   if (f.band === "fresh") return null
   const who = REST_ORDER.find((s) => companions.includes(s) && REST_LINES[s])
@@ -78,31 +85,32 @@ export function restRemark(companions: readonly string[], hoursToday: number, yo
     : f.band === "spent"
       ? `${h} hours on the road: the day's ${MARCH_HOURS_PER_DAY} are walked. Further is a forced march.`
       : `${h} of the day's ${MARCH_HOURS_PER_DAY} hours walked.`
-  return { who, name: nameOf(who), kind: "rest", line: say(REST_LINES[who], you), note }
+  const you = addressOf(address, who)
+  return { who, name: nameOf(who), kind: "rest", hail: hailFor(who, you), line: say(REST_LINES[who], you), note }
 }
 
 /**
  * The remarks for one stretch of road. A rest remark comes first when the hours call for one; then at most
  * MAX_ADVICE other voices, each companion speaking at most once.
  */
-export function roadRemarks(o: { companions: readonly string[]; hoursToday: number; you: string; rand: () => number }): RoadRemark[] {
-  const you = o.you.trim() || "friend"
+export function roadRemarks(o: { companions: readonly string[]; hoursToday: number; you: Address; rand: () => number }): RoadRemark[] {
   const out: RoadRemark[] = []
-  const rest = restRemark(o.companions, o.hoursToday, you)
+  const rest = restRemark(o.companions, o.hoursToday, o.you)
   if (rest) out.push(rest)
   const others: RoadRemark[] = []
   for (const slug of [...new Set(o.companions)]) {
     if (!(slug in COMPANION_NAMES) || slug === rest?.who) continue
+    const you = addressOf(o.you, slug)
     const adviser = ADVISERS.find((a) => a.key === slug) ?? null
     const guide = guideFor(slug)
     const knowsARoad = !!guide && guide.familiarWith !== "none"
     // a direction, from those the book says know one
     if (adviser && knowsARoad && o.rand() < Math.max(0, Math.min(0.95, ROAD_REMARK_CHANCE + adviser.lean))) {
-      others.push({ who: slug, name: nameOf(slug), kind: "advice", line: adviceLine(adviser, you, o.rand()), note: adviceNote(guide) })
+      others.push({ who: slug, name: nameOf(slug), kind: "advice", hail: hailFor(slug, you), line: adviceLine(adviser, you, o.rand()), note: adviceNote(guide) })
       continue
     }
     if (HELP_LINES[slug] && o.rand() < ROAD_REMARK_CHANCE) {
-      others.push({ who: slug, name: nameOf(slug), kind: "help", line: say(HELP_LINES[slug], you), note: slug === "eldeth" ? adviceNote(guide) : null })
+      others.push({ who: slug, name: nameOf(slug), kind: "help", hail: hailFor(slug, you), line: say(HELP_LINES[slug], you), note: slug === "eldeth" ? adviceNote(guide) : null })
     }
   }
   // which two are heard: drawn, not first-come
