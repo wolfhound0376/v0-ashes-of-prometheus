@@ -4001,6 +4001,7 @@ function fightLetsGo(){
 async function travel(to, z, fromWorld, cut, solo){
   if (mode === "travel") return;
   if (fightHoldsPlate()){ if (!fromWorld) toast("Not while the fight is on."); return; }   // A LIVE FIGHT HOLDS ITS PLATE, rule 1
+  if (!fromWorld && !solo){ const ff = fellHolds(); if (ff){ toast(`${fname(ff)} is still on the floor. Go to them and get them up first.`, 4200); return; } }   // DOWN STAYS DOWN
   // GATHER THE PARTY (Sam, 2026-11-15): the party's own move waits until every screen at the table is in step. A screen
   // following the world's move, and a split-off hero or group (which leaves the world's plate where it is), never wait.
   if (!fromWorld && !solo && !GATHER.pass && OW.on && !(OW.plate != null && !owSame(cur, OW.plate))){
@@ -10766,6 +10767,9 @@ function exploreExtras(m, o, add, who){
   // SHAKE THEM AWAKE (Sam, 2026-11-12): a friend the ward put on the floor comes round early if someone goes to them
   const wardFriend = party.find(p => p !== L && p.wardKo && p.x != null && Math.hypot(p.x - L.x, p.y - L.y) < WARD_SHAKE_REACH * sc);
   if (wardFriend) x(`Shake ${fname(wardFriend)} awake`, "✋", ART("help"), "out cold from the ward", () => wardShake(L, wardFriend));
+  // GET THEM UP (Sam, 2026-11-22): a friend left on the floor by the last fight (DOWN STAYS DOWN)
+  { const ff = fellFriend(L); if (ff){ const psn = ((state.fell || {})[ff.id] || {}).why === "poison";
+      x(psn ? `Shake ${fname(ff)} awake` : `Help ${fname(ff)} up`, "✋", ART("help"), psn ? "out cold from the drow poison" : "down from their wounds · up at 1 HP", () => fellHelp(L, ff)); } }
   // THE BATTLE SCREEN: a hero who stayed behind may still go to the fight
   if (battleJoinable(L)) x("Join the fight on the landing", "⚔", ART("attack"), "out through the gate · you act from the next round", () => battleJoin(L), "danger");
   // JOIN THE FIGHT: a fight going on somewhere else in the outpost; this hero may run to it
@@ -16928,6 +16932,87 @@ function ambushSurprise(heroesIn, ambushers){
   if (caught.length) narrate(null, `${caught.length === heroesIn.length ? "It is on you before anyone sees it." : `${caught.map(x => x.replace(/ \d+$/, "")).join(", ")} ${caught.length === 1 ? "is" : "are"} caught flat-footed.`}`);
   renderParty(); renderTurns();
 }
+// ---------- DOWN STAYS DOWN (Sam's playtest, 2026-11-22) ----------
+// "After the fight, fifi was down. There wasn't a good way to pick her up and so she joined us to the next plate where a
+// fight began and now she was up. Very odd." And: "When we both were downed, it should have just been game over unless we
+// were successful at savings throws and someone around us (NPCs) picked us up."
+// What the game did: when a fight ended, every hero at 0 HP was stood up at 1 HP by nobody, win or lose; and a hero put to
+// sleep by drow poison kept the sleep only on that fight's sheet, so outside the fight she lay there asleep on one screen
+// while her own screen walked her off the plate. Now:
+//   - A hero who ends a fight at 0 HP (stable) or asleep from poison STAYS on the floor: state.fell[slug], the world's,
+//     so every screen lays them down (fellTick) and they do not walk, follow, or fight until someone gets them up.
+//   - A friend who goes to them gets "Help <name> up" / "Shake <name> awake" on the bar (fellHelp): up, at 1 HP.
+//   - If no hero is on their feet when the fight ends but an ally who fought still is, the ally does it there and then.
+//   - Every hero down, none dying, and no fighting ally standing: GAME OVER (checkEnd above, fellGameOver).
+// [SOURCED] Drow poison: unconscious "until it takes damage or another creature takes an action to shake it awake" (SRD
+//   5.1, Drow, Hand Crossbow) — the shake is the book's. [HOUSE, Sam's "picked us up"] a stable hero at 0 HP gets up at
+//   1 HP when a friend helps them; the SRD has them come round by themselves after 1d4 hours (the DM's Wake button).
+// [CLAUDE] the party cannot walk off the plate and leave a downed friend lying there (travel); Malachar's two lines.
+const FELL_LINES = [
+  "Nobody left to carry you. The drow do not pick up what they can replace.",
+  "All of you on the floor, and not one friend still standing. That is what friends were for.",
+];
+const fellAsleep = p => !!(p.c && p.c.conds && p.c.conds.has("asleep"));
+/** The allies who fight and are still on their feet in this fight. */
+function fellHands(){ return ((cbt && cbt.allies) || []).filter(n => !n.down && !n.left && actors.includes(n) && !(n.c && n.c.hp <= 0)); }
+function fellGameOver(){
+  if (state.gameOver) return;
+  const seq = "g" + Date.now().toString(36);
+  state.gameOver = {seq, at: Date.now(), by: OW.key || "local", why: "fell", line: FELL_LINES[seq.charCodeAt(seq.length - 1) % FELL_LINES.length]};
+}
+function fellStand(p){
+  p.fellKo = false; p.ko = false; p.down = false;
+  if (p.c){ if (!(p.c.hp > 0)) p.c.hp = 1; p.c.ds = null; if (p.c.conds) p.c.conds.delete("asleep"); p.c.drugged = false; }
+  setAnim(p, "idle");
+}
+/** The fight is over (the screen that ran it): who is still on the floor, and whether anyone is there to get them up. */
+function fightLeavesDown(allies){
+  if (state.gameOver) return;
+  const dead = p => !!(p.dead || (p.c && p.c.ds && p.c.ds.dead));
+  const fell = party.filter(p => actors.includes(p) && !dead(p) && !p.wardKo && (p.down || fellAsleep(p)));
+  if (!fell.length) return;
+  const names = fell.map(p => esc(fname(p))).join(" and ");
+  const up = party.filter(p => actors.includes(p) && !dead(p) && !p.down && !p.ko && !fellAsleep(p));
+  const hands = (allies || []).filter(n => !n.down && !n.left && actors.includes(n) && !(n.c && n.c.hp <= 0));
+  if (!up.length && hands.length){
+    fell.forEach(fellStand);
+    log(`<b>${esc(SHORT[hands[0].id] || fname(hands[0]))}</b> hauls ${names} back to their feet. <em>1 hit point, and lucky to have it.</em>`, {say: true});
+    return;
+  }
+  const out = Object.assign({}, state.fell || {});
+  for (const p of fell){ out[p.id] = {why: fellAsleep(p) && !(p.c && p.c.hp <= 0) ? "poison" : "wounds", at: Date.now()}; p.down = true; }
+  state.fell = out;
+  log(`<b>${names}</b> ${fell.length > 1 ? "are" : "is"} still on the floor. <em>Someone has to go to them.</em>`, {say: true});
+}
+/** Every frame, on every screen: the fallen lie where they fell until the world says someone got them up. */
+function fellTick(){
+  const out = state.fell || {};
+  for (const p of party){
+    const f = out[p.id];
+    if (f && !p.dead){
+      if (!p.fellKo){ p.fellKo = true; p.ko = true; p.down = true; p.path = []; stopActivity(p); if (hasSheet(p, "dead")) playOnce(p, "dead", () => {}); if (typeof renderParty === "function") renderParty(); exploreKey = ""; }
+    } else if (p.fellKo){
+      fellStand(p); popText(p, "up", "#b0b8ff");
+      if (typeof renderParty === "function") renderParty();
+      exploreKey = "";
+    }
+  }
+}
+/** A downed friend within reach of this hero, who is on their own feet. */
+function fellFriend(L){
+  if (!L || L.ko || L.down || L.x == null || mode !== "explore") return null;
+  const sc = node.scale || 1;
+  return party.find(p => p !== L && p.fellKo && p.x != null && Math.hypot(p.x - L.x, p.y - L.y) < WARD_SHAKE_REACH * sc) || null;
+}
+function fellHelp(by, t){
+  const f = (state.fell || {})[t.id]; if (!f) return;
+  const out = Object.assign({}, state.fell); delete out[t.id]; state.fell = out; saveWalk();
+  faceTo(by, t);
+  log(f.why === "poison" ? `<b>${esc(fname(by))}</b> shakes ${esc(fname(t))} awake.` : `<b>${esc(fname(by))}</b> gets ${esc(fname(t))} back on their feet. <em>1 hit point.</em>`, {say: true});
+  exploreKey = "";
+}
+/** The party's own move off this plate waits for the friend on the floor. */
+function fellHolds(){ return party.find(p => p.fellKo && actors.includes(p) && p.x != null) || null; }
 function checkEnd(){
   if (!cbt) return true;
   if (!standing(foes).length){ setTimeout(() => endCombat(true), 600); return true; }
@@ -16941,7 +17026,14 @@ function checkEnd(){
     // turns go on, the dying make their saves, and the foes do what foes do (finishTarget). It stops once every hero is
     // dead (GAME OVER) or nobody is left dying — stable or dead — and then the old way: the DM core decides.
     if (party.some(p => dyingNow(p) && actors.includes(p))) return false;
-    log("<b>The party falls.</b> The DM core decides what the drow do with the bodies.", {say: true}); setTimeout(() => endCombat(false), 1200); return true; }
+    // NOBODY LEFT TO PICK THEM UP (Sam, 2026-11-22: "When we both were downed, it should have just been game over unless
+    // we were successful at savings throws and someone around us (NPCs) picked us up"). Every hero is down and none is
+    // dying. If an ally who fights (Ront, Derendil, Eldeth...) is still on their feet, the fight goes on over the
+    // bodies: they may yet win it and haul the heroes up (fightLeavesDown). If nobody of ours stands, it is GAME OVER.
+    if (fellHands().length){
+      if (!cbt.fellSaid){ cbt.fellSaid = true; log(`<b>Every hero is down.</b> ${esc(fellHands().map(n => SHORT[n.id] || fname(n)).join(", "))} ${fellHands().length > 1 ? "fight" : "fights"} on over them.`, {say: true}); }
+      return false; }
+    log("<b>The party falls,</b> and nobody is left standing to pick them up.", {say: true}); fellGameOver(); setTimeout(() => endCombat(false), 1200); return true; }
   return false;
 }
 // ----- QUICK RESOLVE -----
@@ -17043,7 +17135,7 @@ function endCombat(won, opts = {}){
     for (const [slug, f] of [...creatures]) if (f.down || !actors.includes(f)) creatures.delete(slug);
     camTo(1, NAT_W / 2, NAT_H / 2, 800);
     { const b = $("zFit"); if (b){ b.textContent = wholePlate ? "Follow" : "Fit"; b.title = wholePlate ? "Follow your hero" : "Show the whole plate"; } }   // the fight's "Fit" is over
-    party.forEach(p => { if (p.down && !p.ko && !(p.c && p.c.ds && p.c.ds.dead)){ p.down = false; setAnim(p, "idle"); if (p.c){ p.c.hp = 1; p.c.ds = null; } } });
+    fightLeavesDown(allies);           // DOWN STAYS DOWN: nobody gets up on their own when the fight ends (below)
     // the allies the same way as the party (knocked down, not killed — the DM core rules on wounds), then back to
     // being people on the plate, standing where the fight left them
     allies.forEach(n => { n.ally = false; n.path = []; if (n.down){ n.down = false; setAnim(n, "idle"); if (n.c) n.c.hp = 1; } n.home = {x: n.x, y: n.y}; n.post = {x: n.x, y: n.y}; });
@@ -23349,7 +23441,7 @@ function drawExploreJumpSquares(L){
   }
   ctx.restore();
 }
-function walkTo(p, cb){ if (!ownLeader()){ if (leader) notYours(leader); return; } if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.wantsZone = null; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
+function walkTo(p, cb){ if (!ownLeader()){ if (leader) notYours(leader); return; } if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else: a friend can get them up, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.wantsZone = null; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
 $("zIn").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.3); };
 $("zOut").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.3); };
 $("zFit").onclick = () => {
@@ -27437,7 +27529,7 @@ function update(dt){
   tickFootsteps();
   tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt);
   redSigilSeen();                       // a drow inside the pen reads the red scar: the fight starts once, however they got in
-  sigilNoticeTick(); wardOutTick();     // a caster notices the sigil (and gets its film); the ones it bit lie where they fell
+  sigilNoticeTick(); wardOutTick(); fellTick();     // a caster notices the sigil (and gets its film); the ones it bit lie where they fell
   pacingTick();                         // the caravan clock, the wait vote, and the pen's three small beats
   tickFungus();
   ovTick(); tickChasmWebs(); camKeep(); buppidoLedgeTick();
