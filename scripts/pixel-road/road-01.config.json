@@ -1,0 +1,53 @@
+{
+ "name": "The tunnel out of Velkynvelve",
+ "pixellabMapId": "1c47eece-3986-4b2c-9501-3ad0b47fe44e",
+ "rows": 24,
+ "cols": 64,
+ "crops": [
+  "<view_map crop, cells 0-15>.png",
+  "<cells 16-31>.png",
+  "<cells 32-47>.png",
+  "<cells 48-63>.png"
+ ],
+ "grid": "road-01.grid.txt",
+ "export": "<unzipped PixelLab export>/",
+ "kinds": {
+  "ancient": "ruins",
+  "cluster of three": "stalagmites",
+  "pile of": "rubble",
+  "cluster of glowing": "crystals",
+  "dark mossy": "fungus",
+  "small cluster": "mushrooms",
+  "huge natural": "spire",
+  "massive tall": "fang",
+  "giant underground": "zurkhwood"
+ },
+ "foreground": {
+  "stalactites": "<PixelLab object 8cc13e22-bd5f-48fd-b7f3-83fc779f0133>.png"
+ },
+ "entry": {
+  "x": 48,
+  "y": 400,
+  "label": "Velkynvelve"
+ },
+ "exit": {
+  "x": 2000,
+  "y": 432,
+  "label": "The road on"
+ },
+ "landmarks": [
+  {
+   "kind": "ruins",
+   "label": "Ruins",
+   "x": 1264,
+   "y": 246
+  }
+ ],
+ "glow": {
+  "crystals": "#6fd8ff",
+  "fungus": "#39d6b8",
+  "mushrooms": "#d06bff",
+  "zurkhwood": "#c77bff",
+  "ruins": "#a66bff"
+ }
+}

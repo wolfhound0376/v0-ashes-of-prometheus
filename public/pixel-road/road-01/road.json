@@ -1,38 +1,46 @@
 {
- "_": "Built by scripts/pixel-road/README.md from the PixelLab map below. ground.png has the props painted in; objects/ holds the same props again so a figure can stand behind one.",
+ "_": "Baked by scripts/pixel-road/bake.py from the PixelLab map below; do not edit by hand. ground.png has the props painted in; objects/ holds the same props again so a figure can stand behind one.",
  "id": "road-01",
  "name": "The tunnel out of Velkynvelve",
- "pixellabMapId": "4c4f1c68-96b2-407b-a46b-a97cde7fe3b1",
+ "pixellabMapId": "1c47eece-3986-4b2c-9501-3ad0b47fe44e",
  "tile": 32,
  "cols": 64,
- "rows": 22,
+ "rows": 24,
  "ground": "ground.png",
+ "shade": "shade.png",
+ "foreground": {
+  "stalactites": "fg/stalactites.png"
+ },
  "legend": {
-  "w": "floor (walkable)",
+  "w": "floor",
+  "r": "damp floor",
   "d": "rock",
-  "a": "cliff face",
+  "a": "rock face",
   "s": "stream"
  },
+ "walkable": "wr",
  "grid": [
   "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
   "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
-  "ddddddddddddaaaaaaaaaaaaaadddddddddddddddddddddddddddddddddddddd",
-  "ddddddddddddwwwwwwwwwwwwwwdddddddddddddddddddddddddddddddddddddd",
-  "ddddddddddddwwwwwwwwwwwwwwddddddaaaaaaaaaaaaaadddddddddddddddddd",
-  "ddddddddddddwwwsssssssswwwddddddwwwwwwwwwwwwwwdddddddddddddddddd",
-  "ddddddddddddwwwsssssssswwwddddddwwwwwwwwwwwwwwaaaaaaaaaaaaaaaaaa",
-  "aaaaaaaaaaaawwwwwwwwwwwwwwddddddwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
-  "wwwwwwwwwwwwwwwwwwwwwwwwwwaaaaaawwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
-  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
-  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
-  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwww",
-  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwdddddddddddddddddd",
-  "ddddddddddddwwwwwwwwwwwwwwddddddwwwwwwwwwwwwwwdddddddddddddddddd",
-  "ddddddddddddwwwwwwwwwwwwwwddddddwwwwwwwwwwwwwwdddddddddddddddddd",
-  "ddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwdddddddddddddddddd",
-  "ddddddddddddddddddddddddddddddddwwwwwwwwwwwwwwdddddddddddddddddd",
-  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddddaaaaaaaaaaaadddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddddwwwwwwwwwwwwdddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddaawwwwwwwwwwwwaaddddddaaaaaaaaaadddddddddddddddddddd",
+  "ddddddddddddwwwwwwwwwwwwwwwwddddddwwwwwwwwwwdddddddddddddddddddd",
+  "ddddddddddddwwwwwwswwwwwswwwddaaaawwwwwwwwwwaaaadddddddddddddddd",
+  "ddddddddddddwwwwwssssssssswwddwwwwwwwwwwwwwwwwwwdddddddddddddddd",
+  "ddddddddaaaawwwsssssssssswwwddwwwwrwwwwwwwwwwwwwaaaaaadddddddddd",
+  "ddddddddwwwwwwssswwwwswwwwwwaawwwrrrrwwwwwwwwwwwwwwwwwdddddddddd",
+  "aaaaaaaawwwwwwwswwwwwwwwwwwwwwwwrrrrrrwwwwwwwwwwwwwwwwaaaaaaaaaa",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwrrrwwrwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwrrwwwwwwwwwwrwwwwwwwrrwwrrwwrwwwwwwwwwwwrwwwwwwwwwwwwwwwwwww",
+  "wwwwwwrrwwwwwwwrrrrwwwwwwrrrwwwwwwwwwwwwwrrrrrwwwwwwwwwwrrwwrrww",
+  "wwwwwwwwwwwwwwrrrrrrwwwwwwwwwwwwwwwwwwwwrrrrrrwwddddwwwwwrrrwwww",
+  "ddddddddwwwwwrrrwwrrwwwwwwwwddwwwwwwwwwrrrwwrrrwddddwwwwwwwwwwww",
+  "ddddddddwwwwwwrwwrrrrwwwwwwwddwwwwwwwwrrrwwrrrwwdddddddddddddddd",
+  "ddddddddddddwwwwrrrrwwwwwwwwddwwwwwwwwwrwwrrrwwwdddddddddddddddd",
+  "ddddddddddddwwwwwrwwwwwwwwwwddwwwwwwwwwwwwwwwwwwdddddddddddddddd",
+  "dddddddddddddddwwwwwwwwwwddddddddwwwwwwwwwdddddddddddddddddddddd",
+  "dddddddddddddddwwwwwwwwwwddddddddwwwwwwwwwdddddddddddddddddddddd",
   "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
   "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
   "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
@@ -40,39 +48,52 @@
  "objects": [
   {
    "kind": "rubble",
-   "x": 96,
-   "y": 256,
+   "x": 32,
+   "y": 320,
    "w": 96,
    "h": 64,
    "ground": [
-    105,
-    299,
+    41,
+    363,
     82,
     16
    ]
   },
   {
    "kind": "fungus",
-   "x": 272,
-   "y": 384,
+   "x": 112,
+   "y": 416,
    "w": 64,
    "h": 64,
    "ground": [
-    282,
-    428,
+    122,
+    460,
     50,
     16
    ]
   },
   {
+   "kind": "fang",
+   "x": 288,
+   "y": 176,
+   "w": 96,
+   "h": 176,
+   "ground": [
+    299,
+    302,
+    76,
+    44
+   ]
+  },
+  {
    "kind": "mushrooms",
    "x": 400,
-   "y": 96,
+   "y": 480,
    "w": 64,
    "h": 64,
    "ground": [
     408,
-    139,
+    523,
     44,
     16
    ]
@@ -80,50 +101,258 @@
   {
    "kind": "stalagmites",
    "x": 400,
-   "y": 416,
+   "y": 512,
    "w": 64,
    "h": 96,
    "ground": [
     406,
-    485,
+    581,
     52,
     24
    ]
   },
   {
+   "kind": "zurkhwood",
+   "x": 408,
+   "y": 64,
+   "w": 112,
+   "h": 160,
+   "ground": [
+    416,
+    172,
+    98,
+    40
+   ]
+  },
+  {
    "kind": "fungus",
    "x": 592,
-   "y": 448,
+   "y": 608,
    "w": 64,
    "h": 64,
    "ground": [
     602,
-    492,
+    652,
     50,
     16
    ]
   },
   {
+   "kind": "spire",
+   "x": 672,
+   "y": 320,
+   "w": 96,
+   "h": 192,
+   "ground": [
+    674,
+    462,
+    90,
+    48
+   ]
+  },
+  {
    "kind": "stalagmites",
    "x": 752,
-   "y": 96,
+   "y": 64,
    "w": 64,
    "h": 96,
    "ground": [
     758,
-    165,
+    133,
     52,
     24
    ]
   },
   {
    "kind": "crystals",
-   "x": 752,
+   "x": 784,
+   "y": 544,
+   "w": 64,
+   "h": 64,
+   "ground": [
+    794,
+    586,
+    43,
+    16
+   ]
+  },
+  {
+   "kind": "fang",
+   "x": 800,
+   "y": 48,
+   "w": 96,
+   "h": 176,
+   "ground": [
+    811,
+    174,
+    76,
+    44
+   ]
+  },
+  {
+   "kind": "fungus",
+   "x": 848,
+   "y": 512,
+   "w": 64,
+   "h": 64,
+   "ground": [
+    858,
+    556,
+    50,
+    16
+   ]
+  },
+  {
+   "kind": "crystals",
+   "x": 976,
+   "y": 512,
+   "w": 64,
+   "h": 64,
+   "ground": [
+    986,
+    554,
+    43,
+    16
+   ]
+  },
+  {
+   "kind": "fang",
+   "x": 1120,
+   "y": 496,
+   "w": 96,
+   "h": 176,
+   "ground": [
+    1131,
+    622,
+    76,
+    44
+   ]
+  },
+  {
+   "kind": "spire",
+   "x": 1152,
+   "y": 320,
+   "w": 96,
+   "h": 192,
+   "ground": [
+    1154,
+    462,
+    90,
+    48
+   ]
+  },
+  {
+   "kind": "ruins",
+   "x": 1200,
+   "y": 96,
+   "w": 128,
+   "h": 128,
+   "ground": [
+    1205,
+    186,
+    117,
+    32
+   ]
+  },
+  {
+   "kind": "rubble",
+   "x": 1248,
+   "y": 608,
+   "w": 96,
+   "h": 64,
+   "ground": [
+    1257,
+    651,
+    82,
+    16
+   ]
+  },
+  {
+   "kind": "spire",
+   "x": 1376,
+   "y": 192,
+   "w": 96,
+   "h": 192,
+   "ground": [
+    1378,
+    334,
+    90,
+    48
+   ]
+  },
+  {
+   "kind": "zurkhwood",
+   "x": 1432,
+   "y": 128,
+   "w": 112,
+   "h": 160,
+   "ground": [
+    1440,
+    236,
+    98,
+    40
+   ]
+  },
+  {
+   "kind": "stalagmites",
+   "x": 1488,
+   "y": 512,
+   "w": 64,
+   "h": 96,
+   "ground": [
+    1494,
+    581,
+    52,
+    24
+   ]
+  },
+  {
+   "kind": "zurkhwood",
+   "x": 1560,
+   "y": 192,
+   "w": 112,
+   "h": 160,
+   "ground": [
+    1568,
+    300,
+    98,
+    40
+   ]
+  },
+  {
+   "kind": "mushrooms",
+   "x": 1680,
+   "y": 384,
+   "w": 64,
+   "h": 64,
+   "ground": [
+    1688,
+    427,
+    44,
+    16
+   ]
+  },
+  {
+   "kind": "rubble",
+   "x": 1728,
+   "y": 320,
+   "w": 96,
+   "h": 64,
+   "ground": [
+    1737,
+    363,
+    82,
+    16
+   ]
+  },
+  {
+   "kind": "crystals",
+   "x": 1840,
    "y": 448,
    "w": 64,
    "h": 64,
    "ground": [
-    762,
+    1850,
     490,
     43,
     16
@@ -131,130 +360,26 @@
   },
   {
    "kind": "mushrooms",
-   "x": 912,
-   "y": 384,
+   "x": 1968,
+   "y": 320,
    "w": 64,
    "h": 64,
    "ground": [
-    920,
-    427,
+    1976,
+    363,
     44,
-    16
-   ]
-  },
-  {
-   "kind": "stalagmites",
-   "x": 1040,
-   "y": 448,
-   "w": 64,
-   "h": 96,
-   "ground": [
-    1046,
-    517,
-    52,
-    24
-   ]
-  },
-  {
-   "kind": "ruins",
-   "x": 1200,
-   "y": 160,
-   "w": 128,
-   "h": 128,
-   "ground": [
-    1205,
-    250,
-    117,
-    32
-   ]
-  },
-  {
-   "kind": "crystals",
-   "x": 1200,
-   "y": 512,
-   "w": 64,
-   "h": 64,
-   "ground": [
-    1210,
-    554,
-    43,
-    16
-   ]
-  },
-  {
-   "kind": "fungus",
-   "x": 1392,
-   "y": 160,
-   "w": 64,
-   "h": 64,
-   "ground": [
-    1402,
-    204,
-    50,
-    16
-   ]
-  },
-  {
-   "kind": "stalagmites",
-   "x": 1392,
-   "y": 448,
-   "w": 64,
-   "h": 96,
-   "ground": [
-    1398,
-    517,
-    52,
-    24
-   ]
-  },
-  {
-   "kind": "mushrooms",
-   "x": 1520,
-   "y": 352,
-   "w": 64,
-   "h": 64,
-   "ground": [
-    1528,
-    395,
-    44,
-    16
-   ]
-  },
-  {
-   "kind": "rubble",
-   "x": 1664,
-   "y": 224,
-   "w": 96,
-   "h": 64,
-   "ground": [
-    1673,
-    267,
-    82,
-    16
-   ]
-  },
-  {
-   "kind": "crystals",
-   "x": 1904,
-   "y": 352,
-   "w": 64,
-   "h": 64,
-   "ground": [
-    1914,
-    394,
-    43,
     16
    ]
   }
  ],
  "entry": {
   "x": 48,
-  "y": 368,
+  "y": 400,
   "label": "Velkynvelve"
  },
  "exit": {
   "x": 2000,
-  "y": 336,
+  "y": 432,
   "label": "The road on"
  },
  "landmarks": [
@@ -262,13 +387,14 @@
    "kind": "ruins",
    "label": "Ruins",
    "x": 1264,
-   "y": 178
+   "y": 246
   }
  ],
  "glow": {
   "crystals": "#6fd8ff",
   "fungus": "#39d6b8",
   "mushrooms": "#d06bff",
+  "zurkhwood": "#c77bff",
   "ruins": "#a66bff"
  }
 }

@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest"
 // footprint, round every prop. The footprint numbers and the rule below are the page's own
 // (public/pixel-road/index.html: FOOT_RX, FOOT_RY, solidAt, canStand); if those change, change them here.
 type Road = {
-  id: string; tile: number; cols: number; rows: number; ground: string; grid: string[]
+  id: string; walkable?: string; tile: number; cols: number; rows: number; ground: string; grid: string[]
   objects: { kind: string; x: number; y: number; w: number; h: number; ground: [number, number, number, number] }[]
   entry: { x: number; y: number }; exit: { x: number; y: number }; landmarks?: { kind: string; x: number; y: number }[]
 }
@@ -19,7 +19,7 @@ const FOOT_RX = 7, FOOT_RY = 3, STEP = 16
 function walker(road: Road) {
   const solid = (px: number, py: number) => {
     const c = Math.floor(px / road.tile), r = Math.floor(py / road.tile)
-    if (r < 0 || c < 0 || r >= road.rows || c >= road.cols || road.grid[r][c] !== "w") return true
+    if (r < 0 || c < 0 || r >= road.rows || c >= road.cols || !(road.walkable ?? "w").includes(road.grid[r][c])) return true
     return road.objects.some(({ ground: g }) => px >= g[0] && px <= g[0] + g[2] && py >= g[1] && py <= g[1] + g[3])
   }
   const canStand = (x: number, y: number) => !solid(x - FOOT_RX, y) && !solid(x + FOOT_RX, y) && !solid(x, y - FOOT_RY) && !solid(x, y + FOOT_RY) && !solid(x, y)
@@ -78,7 +78,7 @@ describe("the pixel road", () => {
     it("keeps every prop's footprint on the floor, not in the rock", () => {
       for (const o of road.objects) {
         const cx = o.ground[0] + o.ground[2] / 2, cy = o.ground[1] + o.ground[3] / 2
-        expect(road.grid[Math.floor(cy / road.tile)][Math.floor(cx / road.tile)], `${o.kind} at ${o.x},${o.y}`).toBe("w")
+        expect(road.walkable ?? "w", `${o.kind} at ${o.x},${o.y}`).toContain(road.grid[Math.floor(cy / road.tile)][Math.floor(cx / road.tile)])
       }
     })
 

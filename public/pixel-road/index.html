@@ -23,6 +23,7 @@
   Open it:  /pixel-road/index.html            (or the DM's door, /rehearsal?to=road)
             ?line=kenta,freia,scott           who walks, leader first (sprite slugs in /sprites)
             ?light=0                          the cave drawn fully lit, no darkness or glow
+            ?fg=0                             without the near rock (stalactites) in front
             ?road=road-01                     which stretch
 -->
 <style>
@@ -52,7 +53,7 @@ const FOOT_RX = 7, FOOT_RY = 3; // a figure's footprint on the ground, for bumpi
 const cv = document.getElementById("c"), ctx = cv.getContext("2d");
 const img = (src) => new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; });
 
-let road = null, ground = null, objImg = {}, heroes = [], trail = [], path = [], keys = {}, cam = { x: 0, y: 0, z: 3 }, last = 0, lightCv = null;
+let road = null, ground = null, shade = null, fgImg = {}, WALK = "w", objImg = {}, heroes = [], trail = [], path = [], keys = {}, cam = { x: 0, y: 0, z: 3 }, last = 0, lightCv = null;
 
 /* ---------- where the party can walk: the map's own cells, minus each prop's footprint ---------- */
 function cellAt(px, py) {
@@ -61,7 +62,7 @@ function cellAt(px, py) {
   return road.grid[r][c];
 }
 function solidAt(px, py) {
-  if (cellAt(px, py) !== "w") return true;
+  if (!WALK.includes(cellAt(px, py))) return true;
   for (const o of road.objects) { const g = o.ground; if (px >= g[0] && px <= g[0] + g[2] && py >= g[1] && py <= g[1] + g[3]) return true; }
   return false;
 }
@@ -165,9 +166,10 @@ function placeFollowers(dt, leaderMoved) {
 /* ---------- drawing ---------- */
 function resize() { const r = Math.min(window.devicePixelRatio || 1, 2); cv.width = Math.round(innerWidth * r); cv.height = Math.round(innerHeight * r); }
 function camera() {
-  // About ten cells of height on screen, whatever the window: close enough to read the figures.
+  // About eight and a half cells of height on screen, whatever the window: close, so the rock and the
+  // tall things in the cave stand over the figures (Sam, 2026-11-22: "more depth").
   const m = road.tile / 2, ww = road.cols * road.tile - 2 * m, wh = road.rows * road.tile - 2 * m;
-  cam.z = Math.max(cv.height / (10 * road.tile), cv.width / ww, cv.height / wh);
+  cam.z = Math.max(cv.height / (8.5 * road.tile), cv.width / ww, cv.height / wh);
   const vw = cv.width / cam.z, vh = cv.height / cam.z, L = heroes[0];
   cam.x = Math.max(m, Math.min(m + ww - vw, L.x - vw / 2)); cam.y = Math.max(m, Math.min(m + wh - vh, L.y - vh / 2));
 }
@@ -187,15 +189,33 @@ function drawLight() {
   l.globalCompositeOperation = "destination-out";
   const hole = (x, y, r, k) => { const g = l.createRadialGradient(sx(x), sy(y), 0, sx(x), sy(y), r * z); g.addColorStop(0, "rgba(0,0,0," + k + ")"); g.addColorStop(0.35, "rgba(0,0,0," + k * 0.8 + ")"); g.addColorStop(0.7, "rgba(0,0,0," + k * 0.3 + ")"); g.addColorStop(1, "rgba(0,0,0,0)"); l.fillStyle = g; l.fillRect(sx(x) - r * z, sy(y) - r * z, 2 * r * z, 2 * r * z); };
   hole(heroes[0].x, heroes[0].y - 14, 260, 1);
-  for (const o of road.objects) if (road.glow[o.kind]) hole(o.x + o.w / 2, o.y + o.h * 0.6, o.kind === "ruins" ? 96 : 70, 0.6);
+  for (const o of road.objects) if (road.glow[o.kind]) hole(o.x + o.w / 2, o.y + o.h * 0.6, o.h > 100 ? 96 : 70, 0.6);
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(lightCv, 0, 0);
   // a little of each glowing thing's own colour on the ground around it
   ctx.globalCompositeOperation = "lighter";
   const pulse = 0.85 + 0.15 * Math.sin(performance.now() / 900);
   for (const o of road.objects) { const col = road.glow[o.kind]; if (!col) continue;
-    const x = sx(o.x + o.w / 2), y = sy(o.y + o.h * 0.7), r = (o.kind === "ruins" ? 48 : 30) * z, g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    const x = sx(o.x + o.w / 2), y = sy(o.y + o.h * 0.7), r = (o.h > 100 ? 52 : 30) * z, g = ctx.createRadialGradient(x, y, 0, x, y, r);
     g.addColorStop(0, col + "30"); g.addColorStop(1, col + "00"); ctx.globalAlpha = pulse; ctx.fillStyle = g; ctx.fillRect(x - r, y - r, 2 * r, 2 * r); }
   ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+}
+// THE NEAR ROCK. Stalactites hang across the top of the screen and a dark lip of rock rises along the bottom, both
+// closer to the eye than the party, so they slide past faster than the floor does. That difference in speed is
+// most of what makes the cave read as deep.
+function drawForeground() {
+  const im = fgImg.stalactites; if (!im || Q.get("fg") === "0") return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
+  // top: how much of the screen's height the band takes, how much faster than the floor it slides
+  const band = (k, par, flip, show) => {
+    const sc = Math.max(1, Math.round(cv.height * k / im.height)), w = im.width * sc, h = im.height * sc, off = h * (1 - show);
+    let x = -((cam.x * cam.z * par) % w); if (x > 0) x -= w;
+    for (; x < cv.width; x += w) {
+      if (!flip) ctx.drawImage(im, x, -off, w, h);
+      else { ctx.save(); ctx.translate(x, cv.height + off); ctx.scale(1, -1); ctx.drawImage(im, 0, 0, w, h); ctx.restore(); }
+    }
+  };
+  band(0.36, 1.35, false, 0.72);
+  band(0.50, 1.7, true, 0.42);
 }
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
@@ -205,12 +225,17 @@ function frame(now) {
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#07060b"; ctx.fillRect(0, 0, cv.width, cv.height);
   ctx.setTransform(cam.z, 0, 0, cam.z, -cam.x * cam.z, -cam.y * cam.z);
   ctx.imageSmoothingEnabled = false; ctx.drawImage(ground, 0, 0);
+  // Depth, baked once by scripts/pixel-road/bake.py: the dark at the foot of each rock face and the shadow every
+  // prop throws across the floor. It goes over the ground and under the figures and props.
+  if (shade) ctx.drawImage(shade, 0, 0);
   // Figures and props together, back to front, so a hero who walks behind a stalagmite is behind it. The props are
   // already in the ground picture; drawing the same pixels again on top of a figure is what puts it in front.
   const things = heroes.map((h) => ({ y: h.y, h })).concat(road.objects.map((o) => ({ y: o.ground[1] + o.ground[3], o })));
   things.sort((a, b) => a.y - b.y);
   for (const t of things) { if (t.h) drawHero(t.h); else if (objImg[t.o.kind]) { ctx.imageSmoothingEnabled = false; ctx.drawImage(objImg[t.o.kind], t.o.x, t.o.y); } }
-  if (LIGHT) { drawLight(); ctx.setTransform(cam.z, 0, 0, cam.z, -cam.x * cam.z, -cam.y * cam.z); }
+  if (LIGHT) drawLight();
+  drawForeground();
+  ctx.setTransform(cam.z, 0, 0, cam.z, -cam.x * cam.z, -cam.y * cam.z);
   sign("← " + road.entry.label, road.entry.x + 26, road.entry.y - 62, 220);
   sign(road.exit.label + " →", road.exit.x - 26, road.exit.y - 62, 220);
   for (const m of road.landmarks || []) sign(m.label, m.x, m.y, 200);
@@ -221,6 +246,15 @@ function frame(now) {
 (async function () {
   road = await (await fetch(BASE + "road.json")).json();
   ground = await img(BASE + road.ground);
+  WALK = road.walkable || "w";
+  if (road.shade) shade = await img(BASE + road.shade);
+  for (const [k, f] of Object.entries(road.foreground || {})) {
+    // The near rock is seen against the light, so it is drawn as a plain dark shape, whatever colour the art is.
+    const im = await img(BASE + f); if (!im) continue;
+    const c = document.createElement("canvas"); c.width = im.width; c.height = im.height; const x = c.getContext("2d");
+    x.drawImage(im, 0, 0); x.globalCompositeOperation = "source-in"; x.fillStyle = "#05040b"; x.fillRect(0, 0, c.width, c.height);
+    fgImg[k] = c;
+  }
   for (const k of new Set(road.objects.map((o) => o.kind))) objImg[k] = await img(BASE + "objects/" + k + ".png");
   heroes = (await Promise.all(LINE.map(loadHero))).filter(Boolean);
   if (!ground || !heroes.length) { document.body.innerHTML = '<p style="color:#a99;font:14px Georgia;padding:2em">The road could not be drawn.</p>'; return; }
