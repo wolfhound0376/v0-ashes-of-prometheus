@@ -22389,19 +22389,29 @@ function surgeonPersuade(bonus, viaTranslator, rng = Math.random) {
   return { rolls: b === null ? [a] : [a, b], d20, bonus, total, dc: SURGEON_RULES.persuadeDc, success: total >= SURGEON_RULES.persuadeDc }
 }
 
-// Malachar's hidden d4 on a success. `to`: who receives it — the one who talked her round, or the one she stitched
-// (the diluted poison is for the downed prisoner to drink). `shown`: the name the inventory row carries, so a cursed
-// blade reveals nothing until an Arcana check reads its sigils.
+// Malachar's hidden d6 on a success — what Liana takes out of her satchel (Sam, 2026-11-23: "a 1d6 should be rolled
+// if she's convinced (drow poison, thieves tools, a couple of minor healing potions, a drow dagger, or a healers kit)").
+// This REPLACES the 2026-10-25 d4 (lockpick / diluted poison / Jorlan / Lolth's Tooth). Every slug is an existing catalog
+// row; nothing is invented. `qty`: how many. `shown`: the name the inventory row carries (her dagger is the catalog
+// dagger, drow-made). Everything goes to the one who talked her round — they can hand it on (give item, PR #1182).
+//   [SAM]    the five things and the d6
+//   [CLAUDE] "a couple" = 2 potions · 6 = the asker picks any one of the five (Sam named five things for six faces)
 const SURGEON_BOONS = {
-  1: { kind: "item", slug: "drow-lockpick", to: "speaker", shown: "Drow lockpick",
-       desc: "A thin pick of black steel, filed for drow locks. Counts as thieves' tools for picking a lock; snaps on a natural 1." },
-  2: { kind: "item", slug: "diluted-drow-poison", to: "downed", shown: "Diluted drow poison",
-       desc: "A stoppered vial, watered down. Drunk, it brings a sleep so deep the pulse cannot be found, for up to an hour. Taking damage wakes the drinker." },
-  3: { kind: "jorlan" },
-  4: { kind: "item", slug: "lolths-tooth", to: "speaker", shown: "Drow ritual dagger",
-       desc: "A drow ritual dagger, its blade cut with spider sigils, a reservoir in the hilt. Liana says that if it is ever drawn, the priestess will know." },
+  1: { kind: "item", slug: "drow-poison", qty: 1, shown: "Drow poison",
+       desc: "A stoppered vial from the surgeon's satchel. Drow poison (DC 13 Constitution or poisoned for an hour; fail by 5 or more and unconscious too)." },
+  2: { kind: "item", slug: "thieves-tools", qty: 1, shown: "Thieves' Tools",
+       desc: "A roll of thin picks and a tension wire the surgeon keeps for stubborn manacles." },
+  3: { kind: "item", slug: "potion-of-healing", qty: 2, shown: "Potion of Healing",
+       desc: "Two of the surgeon's vials of red draught, taken from Ilvara's stores. Each heals 2d4 + 2." },
+  4: { kind: "item", slug: "dagger", qty: 1, shown: "Drow dagger",
+       desc: "A plain drow dagger, black steel and spider-silk wrapped grip. A dagger: 1d4 piercing, finesse, light, thrown 20/60." },
+  5: { kind: "item", slug: "healers-kit", qty: 1, shown: "Healer's Kit",
+       desc: "The surgeon's own kit: bandages, salves, splints. Ten uses; stabilise a creature at 0 HP without a Medicine check." },
+  6: { kind: "choice" },
 }
-function surgeonBoon(d4) { return SURGEON_BOONS[Math.min(4, Math.max(1, Math.floor(d4)))] }
+/** The five things she can give — what the asker picks from on a 6. */
+const SURGEON_SATCHEL = [1, 2, 3, 4, 5]
+function surgeonBoon(d6) { return SURGEON_BOONS[Math.min(6, Math.max(1, Math.floor(d6)))] }
 
 // LIANA'S LINES. She speaks only Elvish to slaves. `en` is shown to whoever understands it (and to the DM); the audio
 // is ALWAYS `elv`, spoken in her ElevenLabs voice, so the table hears a foreign tongue. The words are invented for
@@ -22413,10 +22423,12 @@ const SURGEON_LINES = {
   guards:   { en: "Take that one over the bridge. Into the falls. And scrub the stones before the Mistress sees what you did to her property.", elv: "Thesra ilsa vel'kauth. Orra shael'ven. Ul draethi ossan, ilvae Maethra shan dessa." },
   brushOff: { en: "I mend what she breaks. I don't listen to it.", elv: "Iss vaelun ka'vessar. Nae iss vethra." },
   refuse:   { en: "No. I was never here.", elv: "Nae. Iss zhessa nae'thal." },
-  offer1:   { en: "Here. Black steel, filed thin. It knows our locks. Break it and you are on your own.", elv: "Vaen. Durrath ossk, shiv'ri. Ka draethel nae'sorr. Vessa, ul eth valun." },
-  offer2:   { en: "Drink this when you're ready to die. You won't. Not quite. They'll throw you over the falls, and the webs will catch you.", elv: "Shael ilsa, dossa'reth. Nae. Nae vaen. Ka thesra vel'shael, ul ressath ka vurren." },
-  offer3:   { en: "Jorlan hates her more than you do. I will tell him there are slaves who could embarrass her.", elv: "Jorlan khaal Maethra osse ul'ka. Iss vethrel ka draeth sorrun Maethra'ss." },
-  offer4:   { en: "Ilvara's. Don't draw it. If you ever do, she will know where you are.", elv: "Ilvara'ss. Nae shuvren. Ka'ul vessa, Maethra shan ul'vel." },
+  offer1:   { en: "Here. On a blade it sleeps them. In you it sleeps you. Learn the difference.", elv: "Vaen. Shiv'ri ka thal'ven. Ul'ka, ul thal'ven. Draeth ilsa." },
+  offer2:   { en: "Picks. For manacles that will not come off for a surgeon either. Do not tell me what you open.", elv: "Durrath ossk. Ka sorrun nae'vaeth. Nae vethra iss." },
+  offer3:   { en: "Two. Not three, I count them. Drink one when the next bolt finds you.", elv: "Dossa. Nae thessa, iss khaal. Shael ilsa ressa illun." },
+  offer4:   { en: "Black steel. If they find it on you, you took it from a dead guard. Not from me.", elv: "Durrath ossk. Ka'ul vessa, ul thesra'nae. Nae iss." },
+  offer5:   { en: "My kit. I have another. Stop the bleeding before you stop to pray.", elv: "Iss vaelun. Iss ka'dossa. Thal'veri ressa, nae Maethra." },
+  offer6:   { en: "Quickly. One thing. Point.", elv: "Vaeth. Ilsa. Shan'ri." },
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -22502,8 +22514,15 @@ function surgeonLocal(action, x){
   if (action === "persuade"){
     const sp = SHEETS[x.speakerSlug] || {}, r = surgeonPersuade((sp.saves || {}).cha || 0, !!x.translator);   // the preview has no Persuasion skill on its sheets: CHA alone
     let boon = null, granted = null;
-    if (r.success){ const d4 = 1 + Math.floor(Math.random() * 4); boon = {d4, ...surgeonBoon(d4)}; if (boon.kind === "item") granted = {name: boon.shown, to: boon.to === "downed" ? fname(surgeon.pc) : x.speakerName}; }
-    L.s.stage = "settled"; return {ok: true, persuade: r, boon, granted, state: L.s};
+    if (r.success){ const d6 = 1 + Math.floor(Math.random() * 6); boon = {d6, ...surgeonBoon(d6)}; if (boon.kind === "item") granted = {name: boon.shown, to: x.speakerName, qty: boon.qty || 1}; }
+    const choosing = !!boon && boon.kind === "choice";
+    L.s.stage = choosing ? "choosing" : "settled"; L.s.boon = boon ? {...boon, to: x.speakerName} : null;
+    return {ok: true, persuade: r, boon, granted, choosing, satchel: choosing ? SURGEON_SATCHEL.map(n => ({n, name: surgeonBoon(n).shown, qty: surgeonBoon(n).qty || 1})) : undefined, state: L.s};
+  }
+  if (action === "pick"){
+    if (L.s.stage !== "choosing") return {failed: true, status: 409};
+    const b = surgeonBoon(x.pick); L.s.stage = "settled";
+    return {ok: true, granted: {name: b.shown, to: x.speakerName, qty: b.qty || 1}, state: L.s};
   }
   if (action === "leave"){ L.s.stage = "settled"; return {ok: true, state: L.s}; }
   if (action === "again"){
@@ -22783,9 +22802,20 @@ function openLianaCard(){
   const c = $("objPic").getContext("2d"); c.clearRect(0, 0, 128, 128);
   try { const m = SPR.liana.json; c.imageSmoothingEnabled = false; c.drawImage(SPR.liana.img.idle, 0, 0, m.cell[0], m.cell[1], 0, 0, 128, 128); } catch (e) {}
   $("objWho").textContent = "Liana, the drow surgeon";
-  $("objText").textContent = viewerUnderstands()
-    ? `She wipes her needle and packs the satchel. “${SURGEON_LINES.brushOff.en}” One chance to ask her for something, and it has to be in Elvish.`
-    : "She wipes her needle and packs the satchel, muttering in Elvish. One chance to ask her for something, if anyone can put it into her tongue.";
+  // Sam, 2026-11-23: "when the healer comes into the pen why she doesn't seem to have the ability to help us out". On
+  // 2026-11-22 she healed Fifi at 23:20 and was let go at 23:26 without anyone asking — her one card was opened in the
+  // middle of the gate swinging, the work detail coming back and Jorlan, and it never said what she could give. So the
+  // card now says what is in the satchel, and she WAITS: while she stands in the pen her card comes back whenever
+  // nothing else is on screen, until someone asks her or lets her go.
+  $("objText").textContent = (viewerUnderstands()
+    ? `She wipes her needle and packs the satchel. “${SURGEON_LINES.brushOff.en}”`
+    : "She wipes her needle and packs the satchel, muttering in Elvish.")
+    + " In the satchel: vials of poison, a roll of picks, red draughts, a black dagger, a healer's kit. Talk her round in Elvish (Persuasion, DC 15) and something in it may be yours. One chance.";
+  S.waiting = true;
+  if (!S.waitTimer) S.waitTimer = setInterval(() => {
+    if (surgeon !== S || !S.waiting || !S.liana){ clearInterval(S.waitTimer); S.waitTimer = null; return; }
+    if (cur === PEN && mode === "explore" && $("obj").hidden) openLianaCard();
+  }, 3000);
   const box = $("objBtns"); box.innerHTML = "";
   const add = (label, fn, cls = "") => choiceRow(box, label, fn, cls);
   const standingParty = party.filter(p => !p.down);
@@ -22797,7 +22827,7 @@ function openLianaCard(){
     const tr = own ? null : (elvishPc.find(q => q !== p) || npcTongue[0] || null);
     if (!own && !tr) continue;
     const trName = tr ? (tr.kind === "pc" ? fname(tr) : (SHORT[tr.id] || fname(tr))) : null;
-    add(own ? `${fname(p)} asks her (Persuasion)` : `${fname(p)} asks, ${trName} translating (disadvantage)`, () => lianaPersuaded(p, trName), offered ? "" : "primary");
+    add(own ? `${fname(p)} asks for something from her satchel (Persuasion)` : `${fname(p)} asks for something from her satchel, ${trName} translating (disadvantage)`, () => lianaPersuaded(p, trName), offered ? "" : "primary");
     offered++;
   }
   if (!offered) log("Nobody here speaks Elvish. Liana does not wait to be understood.", {say: true});
@@ -22806,6 +22836,7 @@ function openLianaCard(){
 }
 async function lianaPersuaded(p, translator){
   $("obj").hidden = true;
+  if (surgeon) surgeon.waiting = false;
   const j = await surgeonApi("persuade", {speakerId: characterIdOf(p.id) || undefined, translator: translator || undefined, speakerSlug: p.id, speakerName: fname(p)});
   if (j.failed){ if (j.status === 409){ lianaLeaves("gone"); return; }   // already asked, on another screen: she is done here
     toast(j.error || "The game did not answer."); openLianaCard(); return; }
@@ -22813,16 +22844,37 @@ async function lianaPersuaded(p, translator){
   log(`${esc(fname(p))}${translator ? `, through ${esc(translator)},` : ""} asks Liana for help. Persuasion: d20 ${r.rolls.length > 1 ? `[${r.rolls.join(", ")}] (disadvantage) ` : ""}${r.d20} ${r.bonus >= 0 ? "+" : "−"} ${Math.abs(r.bonus)} = <b>${r.total}</b> vs DC ${r.dc} — ${r.success ? "she listens" : "she does not"}.`);
   if (!r.success){ lianaSays("refuse", 4500); setTimeout(() => lianaLeaves("failed"), 3200); return; }
   const b = j.boon;
-  if (dmScreen()) log(`<i>Malachar's hidden d4: ${b.d4}.</i>`);
-  lianaSays("offer" + b.d4, 8500);
+  if (dmScreen()) log(`<i>Malachar's hidden d6: ${b.d6}.</i>`);
+  lianaSays("offer" + b.d6, 8500);
   setTimeout(() => {
-    if (j.granted){ bank("ui/item_pickup", .7); log(`Liana presses something into ${esc(j.granted.to)}'s hand: <b>${esc(j.granted.name)}</b>.`); }
-    else if (b.kind === "jorlan") log("Liana will speak to <b>Jorlan</b>, who hates Ilvara more than you do.", {say: true});
+    if (j.choosing){ lianaSatchelCard(p, j.satchel || []); return; }
+    if (j.granted) lianaGave(j.granted);
     lianaLeaves("helped");
   }, 4200);
 }
+function lianaGave(g){
+  bank("ui/item_pickup", .7);
+  log(`Liana presses ${g.qty > 1 ? `${g.qty} × ` : ""}<b>${esc(g.name)}</b> into ${esc(g.to)}'s hand.`);
+}
+// On a 6 she opens the satchel and lets the one who asked point (Sam's five things; the 6 is Claude's call).
+function lianaSatchelCard(p, list){
+  const S = surgeon; if (!S) return;
+  mode = "dialog";
+  $("objWho").textContent = "Liana's satchel";
+  $("objText").textContent = `She holds the satchel open for ${fname(p)}. One thing.`;
+  const box = $("objBtns"); box.innerHTML = "";
+  list.forEach((it, i) => choiceRow(box, `${it.qty > 1 ? `${it.qty} × ` : ""}${it.name}`, async () => {
+    $("obj").hidden = true;
+    const j = await surgeonApi("pick", {pick: it.n, speakerSlug: p.id, speakerName: fname(p)});
+    if (j.failed){ toast(j.error || "The game did not answer."); lianaLeaves("gone"); return; }
+    if (j.granted) lianaGave(j.granted);
+    lianaLeaves("helped");
+  }, i ? "" : "primary"));
+  showObjCard(); box.querySelector("button")?.focus();
+}
 async function lianaLeaves(why){
   $("obj").hidden = true;
+  if (surgeon){ surgeon.waiting = false; if (surgeon.waitTimer){ clearInterval(surgeon.waitTimer); surgeon.waitTimer = null; } }
   if (!why) await surgeonApi("leave");
   const S = surgeon, a = S && S.liana;
   if (a){
@@ -22841,7 +22893,7 @@ function surgeonOnEnter(n){
   if (String(n) === "14" && s.victim) placeBodyInPool(s.victim);   // (the surrender's victims are placed by surrenderOnEnter)
   if (n !== PEN || surgeon) return;
   if (sceneWatched()) return;                               // WORLD EVENTS: another screen is already playing it; it is shown here from there
-  if (s.stage === "shooting" || s.stage === "down" || s.stage === "tended") sceneBegin("gate", gateSceneBusy);   // the first screen back carries it; the others show that one (sceneYield)
+  if (s.stage === "shooting" || s.stage === "down" || s.stage === "tended" || s.stage === "choosing") sceneBegin("gate", gateSceneBusy);   // the first screen back carries it; the others show that one (sceneYield)
   if (s.stage === "shooting"){ surgeon = {pc: leader, stage: "shooting", local: false}; surgeonStepped(); return; }
   if (s.stage === "down" && s.again){
     const pc = party.find(p => characterIdOf(p.id) === s.target.id) || leader;
@@ -22853,6 +22905,13 @@ function surgeonOnEnter(n){
     surgeon = {pc, stage: s.stage, local: false, victimRec: s.victim};
     if (s.stage === "down"){ pc.down = true; pc.surgeonDown = true; if (SPR[pc.id].img.dead) playOnce(pc, "dead", () => {}); setTimeout(lianaArrives, 2500); }
     else setTimeout(() => lianaArrives(openLianaCard), 1500);          // already stitched: she only has the question left
+    return;
+  }
+  if (s.stage === "choosing"){                                  // cut off with her satchel open: she comes back and holds it open again
+    const pc = party.find(p => characterIdOf(p.id) === s.target.id) || leader;
+    const asker = party.find(p => fname(p) === (s.boon && s.boon.to)) || pc;
+    surgeon = {pc, stage: "choosing", local: false, victimRec: s.victim};
+    setTimeout(() => lianaArrives(() => lianaSatchelCard(asker, SURGEON_SATCHEL.map(n => ({n, name: surgeonBoon(n).shown, qty: surgeonBoon(n).qty || 1})))), 1500);
   }
 }
 // The pool (area 14): the drow dump their waste there (OotA p.19), and the one they threw over the falls is in it.
