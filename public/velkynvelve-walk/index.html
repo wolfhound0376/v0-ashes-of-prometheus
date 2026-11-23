@@ -15371,6 +15371,7 @@ function fall(t){
   else narrate(t, `${fname(t)} falls.`);
   bodyRemovalNote(t);     // everyone else: the drow come for them in two guard cycles (Sam, 2026-10-30)
   buppidoRisesCheck(t);   // the one prisoner who does not stay down (Sam, 2026-10-30)
+  buppidoZombieFell(t);   // the drow it bit let it go (Sam, 2026-11-23)
   // THE BANTER on a death: the ally who made the kill says so; else an ally or a gambler cheers; a foe sees one of its own drop
   if (cbt && t.kind === "foe"){
     const k = t.killedBy;
@@ -16205,6 +16206,7 @@ function foeTurn(f){
   if (f.c.conds.has("prone")){ f.c.conds.delete("prone"); f.c.move = Math.floor(f.c.move / 2); log(`${fname(f)} gets up.`); }
   // NPC MINDS: one who has been told to fall back (or chose to) spends the turn getting out; a named NPC asks its mind
   // first (mindTurn), which comes back here with a plan — or with none, and then this algorithm is the turn
+  if (f.vexedBy){ if (inFight(f.vexedBy)){ buppidoVexedTurn(f); return; } f.vexedBy = null; }   // bitten by Buppido's zombie: it first (Sam, 2026-11-23)
   if (f.retreating){ retreatTurn(f); return; }
   if (f.task === "alarm"){ alarmTurn(f); return; }                 // THE ALARM: on the way to the horn
   if (f.task === "runner"){ runnerTurn(f); return; }               // gone for help
@@ -16216,13 +16218,16 @@ function foeTurn(f){
   const inSight = seen0.filter(p => !coverOf(f, p).total), blind = !inSight.length && seen0.length > 0;
   const seen = inSight.length ? inSight : seen0;
   if (cbt && cbt.grudge && cbt.grudge.att === f && (cbt.grudge.done || cbt.grudge.tgt.down)){ setTimeout(() => passTurn(f), 400); return; }   // the score is settled: he does not go looking for another
+  const zNear = f.buppidoZombie ? buppidoZombieNearest(f) : null;   // BUPPIDO'S ZOMBIE: the nearest, any side (Sam, 2026-11-23)
+  if (zNear && !heroes().includes(zNear)){ buppidoZombieSwing(f, zNear); return; }
   const grudgeOn = cbt && cbt.grudge && cbt.grudge.att === f && !cbt.grudge.tgt.down && actors.includes(cbt.grudge.tgt) ? cbt.grudge.tgt : null;
   let tgt = grudgeOn ? grudgeOn : f.c.berserk ? berserkTarget(f, seen.length ? seen : standing(heroes())) : (seen.length ? seen : standing(heroes())).sort((a, b) => Math.hypot(a.x - f.x, a.y - f.y) - Math.hypot(b.x - f.x, b.y - f.y))[0];
   // NPC MINDS: the target the mind chose, or the commander's order (focus one hero, or protect: whoever is nearest the
   // commander). Only someone still standing; the rules below (invisible, Sanctuary, hidden) still apply to them.
-  const wanted = grudgeOn || f.c.berserk ? null : mindWants(f, plan);
+  const wanted = grudgeOn || f.c.berserk || zNear ? null : mindWants(f, plan);
   if (wanted) tgt = wanted;
-  if (tgt && !grudgeOn && !f.c.berserk && !wanted){ const pot = potShot(f); if (pot) tgt = pot; }   // BYSTANDERS: threats first, now and then a pot shot
+  if (zNear) tgt = zNear;
+  if (tgt && !grudgeOn && !f.c.berserk && !wanted && !zNear){ const pot = potShot(f); if (pot) tgt = pot; }   // BYSTANDERS: threats first, now and then a pot shot
   // INVISIBILITY (SRD 5.2.1 Invisible): it cannot see them. With nobody it can see, a foe goes for an invisible hero only if
   // one is close enough to hear and feel (within 5 ft), at disadvantage (advantageOn); otherwise it searches for anyone
   // merely hidden, or loses the turn looking.
@@ -17567,6 +17572,7 @@ function endCombat(won, opts = {}){
   // the walk keeps no clock between fights, so a spell held through the fight is let go at its end
   for (const a of [...heroes(), ...foes]) if (a.c && a.c.conc) endConc(a, "the fight is over");
   const allies = cbt ? cbt.allies : [], fightId = cbt ? cbt.id : null;
+  for (const n of npcs) if (n.spectator){ n.spectator = false; n.vexedBy = null; }   // BUPPIDO'S AUDIENCE: the show is over; the next fight on this plate is theirs again
   for (const b of (cbt && cbt.bystanders) || []){   // BYSTANDERS: the dead lie where they fell, searchable; the living stand down
     b.bystander = false; b.path = [];
     if (b.down){ b.kind = "body"; b.body = true; b.once = null; b.lootKey = bodyKeyOf(b); }
@@ -27485,6 +27491,12 @@ async function bodyRemovalRun(body, pair){
 //             the fight starts in the pen.
 //   [SAM 2026-10-30] it fires on ANY death of Buppido in the pen, not only the gate volley's d8.
 //   [SAM 2026-10-30] the guards watch and enjoy it — they never join the fight on either side.
+//   [SAM 2026-11-23] (revises the line above for one case) "whenever buppido dies the cinematic of him dying and
+//             turning into a zombie with him crawling from the ground and attacking whomever he is closest to: NPC,
+//             character, or drow." Then: "Of course they fight back if they get struck. They even get annoyed.
+//             Create a grave mound then." So: a stone and its mound go up wherever he fell, not in the pen alone, and
+//             he crawls out of it; the zombie goes for the NEAREST creature it can get at, on any side; a drow it
+//             strikes fights it, annoyed, until it is down, then goes back to watching.
 //   [SAM 2026-10-30] the zombie keeps Undead Fortitude. Asked directly whether to soften it for a pen full of
 //             level-1 prisoners with no weapons, Sam kept the canon rule.
 //   [SAM 2026-10-30] the kill drops ONE thing: the Scarab of Protection, very rare, attunement, 12 charges.
@@ -27500,7 +27512,7 @@ async function bodyRemovalRun(body, pair){
 
 const BUPPIDO_RISES_RULES = {
   npc: "buppido",        // the only prisoner this happens to
-  plate: 11,             // the slave pen. Nowhere else: on the road there is no pen and no audience
+  plate: 11,             // the slave pen: the only plate with its film and its watching guards. The rise itself is anywhere
   foe: "zombie-rotting", // the sprite set with the prebuilt emerge animation
   loot: "scarab-of-protection",
   bodyMs: 2600,          // he lies where he fell while the others are dragged out and the guards get bored
@@ -27508,6 +27520,36 @@ const BUPPIDO_RISES_RULES = {
   stirMs: 1500,          // the mound trembles. Nothing has come out yet, and this is the longest second in the session
   emergeMs: 1750,        // 21 frames at 12 fps: the zombie climbs out
   surpriseMs: 900,       // the guards react before initiative — they are entertained, not alarmed
+}
+
+// What a drow says when the thing bites him (Sam, 2026-11-23: "They even get annoyed"). Claude's words.
+const BUPPIDO_RISES_VEXED = [
+  "Get off me, you rotting filth!",
+  "It bit me. The dead thing BIT me.",
+  "Enough. Somebody put this back in the ground.",
+  "Lolth's teeth! That was my good arm.",
+]
+
+/** A drow, for "attacking whomever he is closest to: NPC, character, or drow" and "they fight back". */
+function buppidoRisesIsDrow(id) {
+  return /^drow-|^(jorlan|shoor|asha|ilvara|liana)(-|$)/.test(String(id || ""))
+}
+
+/**
+ * Who the zombie goes for: the nearest creature still standing, whatever side it is on (Sam, 2026-11-23). The map
+ * hands in only what it can actually get at (seen, not behind the pen's locked bars); this picks the closest.
+ * @param {{ x: number, y: number }} z
+ * @param {Array<{ x: number, y: number, down?: boolean }>} pool
+ */
+function buppidoRisesNearest(z, pool = []) {
+  if (!z) return null
+  let best = null, bd = Infinity
+  for (const t of pool) {
+    if (!t || t.down || t === z) continue
+    const d = Math.hypot(t.x - z.x, t.y - z.y)
+    if (d < bd) { bd = d; best = t }
+  }
+  return best
 }
 
 // Malachar's lines over the rise. Claude's words (flagged above) — Sam to keep, cut or rewrite.
@@ -27528,7 +27570,7 @@ function buppidoRisesActive({ deadId, plate, fired = false } = {}) {
   return String(deadId || "") === BUPPIDO_RISES_RULES.npc
 }
 
-/** The pen's own version of the rise (the stone, the mound, the drow audience, the film). */
+/** The pen's own version of the rise: its film and its watching guards. The stone and the mound go up anywhere now. */
 function buppidoRisesInPen(plate) {
   return Number(plate) === BUPPIDO_RISES_RULES.plate
 }
@@ -27624,20 +27666,19 @@ function buppidoRisesCheck(t){
   playBuppidoRises(t);
 }
 async function playBuppidoRises(t){
-  const R = BUPPIDO_RISES_RULES, line = buppidoRisesLine(state.buppidoRisen && state.buppidoRisen.seq);
-  if (!buppidoRisesInPen(cur)) return playBuppidoRisesWhereHeFell(t, line);
-  // HIS BODY STAYS. Sam: "his body doesn't get dragged away like the rest." Nothing on this map drags bodies yet — the
-  // guards' drag is in the unmerged Drow Surgeon work — so this flag is the instruction waiting for it, not a change to
-  // behaviour that exists today. Whatever lands that drag reads `noDrag` and steps over him.
+  const R = BUPPIDO_RISES_RULES, line = buppidoRisesLine(state.buppidoRisen && state.buppidoRisen.seq), pen = buppidoRisesInPen(cur);
+  // HIS BODY STAYS where he fell until the ground takes it: nobody drags it off (Sam, 2026-10-30).
   t.noDrag = true;
   await wait(R.bodyMs);
 
-  // THE STONE. The grave system raises stones for heroes only; Buppido is the one NPC who gets one, which is Sam's
-  // "just for him" — the other prisoners who die in the pen leave a body and nothing else.
+  // THE STONE AND ITS MOUND, WHEREVER HE FELL (Sam, 2026-11-23: "Create a grave mound then"). Until today only the pen
+  // had one, and anywhere else he stood up out of his own body. Now every plate gets the same grave the pen does, and
+  // the body goes under it: what comes up is coming up out of the ground, which is the whole picture Sam described.
   graveRaise(t, true);
   buppidoRisesMusic();                                   // the horror cue, over the whole sequence and into the fight
   log(`<b>Malachar:</b> "${esc(line)}"`);
   buppidoRisesSay(line);
+  buppidoRisesBury(t);
   await wait(R.stoneMs);
 
   // THE MOUND MOVES. Nothing has come out yet. This is the beat that does the work.
@@ -27645,87 +27686,133 @@ async function playBuppidoRises(t){
   shake(5); bank("creature/death_beast", .3);
   for (let i = 0; i < 3; i++) setTimeout(() => { shake(4); addBlood({x: g.x + labRnd(-14, 14), y: g.y}, .5, false); }, i * 420);
   await wait(R.stirMs);
-  mapFilm("buppido-rises");
+  // THE FILM is the pen's: it was shot in the pen, with the guards watching from the bridge. Played on the road it
+  // would show a pen and an audience that are not there (Sam's complaint, 2026-11-10: cinematics that do not match
+  // what is happening). Off the pen, the map's own rise is the scene until a film without the pen is made.
+  if (pen) mapFilm("buppido-rises");
 
   // IT CLIMBS OUT, on the prebuilt sheet: 21 frames at 12 fps, with the `undead-breach` sting its sprite.json names.
-  // ONE FIGHT (2026-11-10): the rise takes ~10 s, and a fight can open in the meantime. Then startCombat() below is a
-  // no-op and the zombie was left standing on this screen alone, outside the fight, unseen by every other screen. So:
-  // while this screen is only SHOWING someone else's fight it waits for that fight to end; while it RUNS a fight, the
-  // zombie joins that fight, which the fight sync then carries to every screen.
+  // ONE FIGHT (2026-11-10): the rise takes ~10 s, and a fight can open in the meantime. While this screen is only
+  // SHOWING someone else's fight it waits for that fight to end; while it RUNS a fight, the zombie joins that fight,
+  // which the fight sync then carries to every screen.
   for (let i = 0; i < 600 && FIGHT.mirror; i++) await wait(500);
   const joining = mode === "combat" && cbt && !FIGHT.mirror;
   const z = joining ? foeJoins(R.foe, {x: g.x, y: g.y}) : mkActor(R.foe, g.x, g.y, "foe", {hostile: true, face: faceOf((leader ? leader.x : g.x) - g.x, (leader ? leader.y : g.y) - g.y), home: {x: g.x, y: g.y}});
   if (!z) return;
   z.hostile = true; z.home = {x: g.x, y: g.y};
+  z.buppidoZombie = true;                                // it goes for whoever is nearest, any side (buppidoZombieNearest)
   npcs.push(z); if (!joining) actors.push(z);
   shake(9); bank("walk:undead-breach", 1);
   if (SPR[z.id] && SPR[z.id].img.emerge) playOnce(z, "emerge", () => setAnim(z, "idle")); else setAnim(z, "idle");
   await wait(R.emergeMs);
-
-  // THE GUARDS WATCH. Sam, 2026-10-30, asked what they do: "watch and enjoy it." They are marked spectators, which
-  // keeps them out of the fight that is about to start even though they are hostile and standing right there.
-  buppidoRisesAudience();
-  await wait(R.surpriseMs);
-
-  // WHY THIS FIGHT IS NOT A SWARM (Sam, 2026-10-30: "There are a lot of prisoners that can all attack because they
-  // will have the initiative. They may be able to kill him before he attacks.") He is right, and the first build of
-  // this was wrong: four prisoners carry real blocks and fight as allies (ALLY_SHEETS: Ront, Eldeth, Derendil,
-  // Sarith), the zombie is AC 8 so nearly everything lands, and its initiative is -2 so it acts last. Nine attackers
-  // put it down before it ever swung. Two corrections, both of them things the fight already understood:
-  //   SURPRISED: it came out of the ground. Nobody at that table expected it, so nobody acts on the first turn
-  //     (SRD 5.1: a surprised creature "can't move or take an action on its first turn of the combat"), which with a
-  //     -2 initiative is what buys it the round of being the only thing moving.
-  //   NO ALLIES: a dwarf, an orc, a quaggoth and a drow will all swing at a guard. None of them swings at a corpse
-  //     that just stood up — they run, like every other bystander in the pen (Sam's bystander ruling, 2026-10-28),
-  //     and the gate is locked. That is the difference between nine attackers and the party on its own.
   if (joining){ if (inFight(z)) log(`<b>Something has climbed out of Buppido's grave</b> and joins the fight.`); return; }
-  startCombat([z], "something has climbed out of Buppido's grave",
-              {noAllies: true, surprised: [...party, ...npcs.filter(n => actors.includes(n) && n !== z)]});
-}
-/**
- * ANYWHERE ELSE (Sam, 2026-11-15: "when he dies he becomes a zombie"). No pen, no stone, no mound and no drow audience:
- * he lies where he fell, the body twitches, and the same zombie gets up out of it on the prebuilt emerge sheet. The
- * pen's film stays the pen's (it shows the mound and the guards). Mid-fight it joins that fight, as in the pen. Out of
- * a fight it starts one; everyone is surprised (a dead man standing up), and the companions fight it as allies here:
- * the pen's "they run" was about a locked pen full of bystanders, and out on the road they are the party's own.
- */
-async function playBuppidoRisesWhereHeFell(t, line){
-  const R = BUPPIDO_RISES_RULES;
-  t.noDrag = true;
-  await wait(R.bodyMs);
-  buppidoRisesMusic();
-  log(`<b>Malachar:</b> "${esc(line)}"`);
-  buppidoRisesSay(line);
-  const g = {x: t.x, y: t.y};
-  shake(4); bank("creature/death_beast", .3);
-  for (let i = 0; i < 3; i++) setTimeout(() => { shake(4); addBlood({x: g.x + labRnd(-12, 12), y: g.y}, .4, false); }, i * 420);
-  await wait(R.stirMs);
-  for (let i = 0; i < 600 && FIGHT.mirror; i++) await wait(500);
-  const joining = mode === "combat" && cbt && !FIGHT.mirror;
-  const z = joining ? foeJoins(R.foe, {x: g.x, y: g.y}) : mkActor(R.foe, g.x, g.y, "foe", {hostile: true, face: faceOf((leader ? leader.x : g.x) - g.x, (leader ? leader.y : g.y) - g.y), home: {x: g.x, y: g.y}});
-  if (!z) return;
-  z.hostile = true; z.home = {x: g.x, y: g.y};
-  npcs.push(z); if (!joining) actors.push(z);
-  t.alpha = 0; t.fading = true; t.offStage = true;          // the body is what stands up: it is not left lying beside it
-  shake(9); bank("walk:undead-breach", 1);
-  if (SPR[z.id] && SPR[z.id].img.emerge) playOnce(z, "emerge", () => setAnim(z, "idle")); else setAnim(z, "idle");
-  await wait(R.emergeMs);
-  if (joining){ if (inFight(z)) log(`<b>Buppido gets back up</b> and joins the fight. He is not Buppido any more.`); return; }
+
+  // THE DROW WATCH. Sam, 2026-10-30, asked what they do: "watch and enjoy it." They are marked spectators, which
+  // keeps them out of the fight that is about to start even though they are hostile and standing right there — until
+  // the thing bites one of them (buppidoVexed). In the pen that is every hostile on the plate; anywhere else, the drow.
+  buppidoRisesAudience(!pen);
   await wait(R.surpriseMs);
-  startCombat([z], "Buppido gets back up", {surprised: [...party, ...npcs.filter(n => actors.includes(n) && n !== z)]});
+
+  // WHY THE PEN FIGHT IS NOT A SWARM (Sam, 2026-10-30: "There are a lot of prisoners that can all attack because they
+  // will have the initiative. They may be able to kill him before he attacks."). SURPRISED: it came out of the ground,
+  // so nobody acts on the first turn (SRD 5.1). NO ALLIES, in the pen: the four prisoners with real blocks do not
+  // swing at a corpse that just stood up in a locked pen; they run like every other bystander there. Out on the road
+  // they are the party's own and fight it as allies.
+  startCombat([z], pen ? "something has climbed out of Buppido's grave" : "something claws its way out of Buppido's grave",
+              {noAllies: pen, surprised: [...party, ...npcs.filter(n => actors.includes(n) && n !== z)]});
+}
+/** Under the stone: the body fades as the mound settles over it (npcBury's fade), so it is not left lying beside it. */
+function buppidoRisesBury(t){
+  t.buried = true;
+  setTimeout(() => { t.fadeOut = true; const t0 = now, tick = () => { t.alpha = Math.max(0, 1 - (now - t0) / 700); if (t.alpha > 0) requestAnimationFrame(tick); else t.offStage = true; }; tick(); }, GRAVE_MS * 3);
 }
 /** The horror cue. The engine already scores anything undead as `scary`; this just starts it before initiative does. */
 function buppidoRisesMusic(){ try { pickCombatTrack("scary"); setTrack("combat"); } catch (e) {} }
 function buppidoRisesSay(line){ try { gameOverVoice(line); } catch (e) {} }   // Malachar's lich voice, the dashboard's
-/** Every drow who can see the pen becomes an audience: still hostile, still armed, and not in this fight. */
-function buppidoRisesAudience(){
+/** The audience: armed, standing right there, and not in this fight. Every drow on the plate, on watch or not (the
+ *  guards walking their rounds are not `hostile` until something starts), and in the pen every hostile as well.
+ *  Off the pen a hostile that is not a drow (a spider on the road) is no audience: it joins the fight as it always has. */
+function buppidoRisesAudience(drowOnly){
   for (const n of npcs){
-    if (!n.hostile || n.down || n.body || n.offStage || n.backdrop) continue;
+    if (n.down || n.body || n.offStage || n.backdrop || n.buppidoZombie || n.ally) continue;
+    if (!buppidoRisesIsDrow(n.id) && (drowOnly || !n.hostile)) continue;
     n.spectator = true; n.path = []; stopActivity(n); setAnim(n, "idle");
     n.face = faceOf((leader ? leader.x : n.x) - n.x, (leader ? leader.y : n.y) - n.y);
   }
   const watcher = npcs.filter(n => n.spectator)[0];
   if (watcher) bark(watcher, "…what is that?", 2200, {talk: true});
+}
+// ---------- THE ZOMBIE GOES FOR THE NEAREST (Sam, 2026-11-23) ----------
+// "attacking whomever he is closest to: NPC, character, or drow." Every other foe on the map hunts the heroes' side
+// (heroes(): the party and its allies). This one does not care whose side anyone is on: each turn it goes for the
+// nearest creature it can get at — a hero, an ally, a prisoner running from it, a drow watching from the bridge, or a
+// drow already in the fight against the party. "Can get at": seen (not hidden or invisible, no wall between), and in
+// the pen with the gate shut, on its own side of the bars. When the nearest is on the heroes' side the ordinary foe
+// turn plays out (it keeps every rule that turn already knows); anyone else gets buppidoZombieSwing.
+function buppidoZombieNearest(z){
+  const shut = buppidoRisesInPen(cur) && !gatePassable(), mySide = outsidePen(z);
+  const watchers = npcs.filter(n => n.spectator && !n.down && !n.body && !n.offStage && !n.backdrop && actors.includes(n));
+  const pool = [...standing(heroes()), ...bystanders(), ...standing(foes), ...watchers].filter(t => t !== z && !t.buppidoZombie
+    && !(t.c && (t.c.conds.has("hidden") || t.c.conds.has("invisible"))) && !coverOf(z, t).total && !(shut && outsidePen(t) !== mySide));
+  return buppidoRisesNearest(z, [...new Set(pool)]);
+}
+function buppidoZombieSwing(z, t){
+  if (!t.c) t.c = fighterFor(t);                         // a drow who was only watching has no numbers until something swings at him
+  pairCam(z, t);
+  log(`The thing out of Buppido's grave lurches at ${fname(t)}, the nearest of them.`);
+  attackWith(z, t, z.c.sheet.attacks[0], () => {
+    if (z.c.lastSwingHit){
+      if (t.down){ if (cbt && !foes.includes(t) && !cbt.bystanders.includes(t)) cbt.bystanders.push(t); }   // dead where he stood watching: a body to search when it is over
+      else buppidoVexed(t, z);
+    }
+    setTimeout(() => passTurn(z), 500);
+  });
+}
+// ---------- STRUCK, A DROW FIGHTS BACK (Sam, 2026-11-23: "Of course they fight back if they get struck. They even get
+// annoyed.") ----------
+// A drow the zombie hits turns on it, says so, and fights it until it is down. One who was only watching comes into
+// the fight to do it (on the foes' side of the order: he is no friend of the party) and, once the thing is down, stands
+// down and goes back to watching, so the fight ends instead of turning into the party against the guards. One already
+// fighting the party turns on the zombie for as long as it stands, then goes back to the party. Any drow struck counts,
+// on any plate. A hit, not a miss: Sam's word was "struck".
+function buppidoVexed(t, z){
+  if (!cbt || !t || t.down || !t.c || t.vexedBy === z) return;
+  if (!buppidoRisesIsDrow(t.id) && !t.spectator && !foes.includes(t)) return;   // a prisoner or a hero is already doing what they do
+  t.vexedBy = z;
+  if (!foes.includes(t)){
+    t.wasSpectator = true; t.wasHostile = !!t.hostile; t.spectator = false; t.kind = "foe"; t.path = []; stopActivity(t);
+    t.c.sheet = {...t.c.sheet, xp: 0};                   // the party is not paid for a guard the zombie kills
+    npcs = npcs.filter(n => n !== t); foes.push(t); if (!actors.includes(t)) actors.push(t);
+    t.c.initRoll = d20(0, t); t.c.init = t.c.initRoll + (t.c.sheet.init || 0);
+    let j = cbt.order.findIndex((x, k) => k > cbt.idx && x.c.init < t.c.init); if (j < 0) j = cbt.order.length; cbt.order.splice(j, 0, t);
+    renderTurns();
+  }
+  const L = BUPPIDO_RISES_VEXED;
+  popText(t, "annoyed", "#ff9a6b", 1);
+  bark(t, L[Math.floor(Math.random() * L.length)], 2600, {talk: true});
+  log(`${fname(t)} has been bitten by the thing out of the grave, and is not amused: he turns on it.`);
+}
+/** A vexed drow's turn: the zombie, crossbow at range or blade up close, until it is down. */
+function buppidoVexedTurn(f){
+  const z = f.vexedBy, s = f.c.sheet, bow = s.attacks.find(k => k.ranged), ft = feetBetween(f, z);
+  const atk = bow && ft > 5 && ft <= (bow.long || bow.reach) ? bow : (s.attacks.find(k => !k.ranged) || s.attacks[0]);
+  const swings = atk.ranged ? 1 : (s.multi || 1);
+  pairCam(f, z);
+  let n = 0; const go = () => { if (!cbt || z.down || f.down || n >= swings){ setTimeout(() => passTurn(f), 500); return; } n++; attackWith(f, z, atk, () => setTimeout(go, 250)); };
+  setTimeout(go, 400);
+}
+/** The zombie is down: the drow it bit let it go. The ones who came in from watching stand down and watch again. */
+function buppidoZombieFell(t){
+  if (!t || !t.buppidoZombie || !cbt) return;
+  for (const f of [...foes]){
+    if (f.vexedBy !== t) continue;
+    f.vexedBy = null;
+    if (!f.wasSpectator || f.down) continue;
+    f.wasSpectator = false; f.kind = "npc"; f.hostile = f.wasHostile; f.spectator = true; f.path = []; setAnim(f, "idle");
+    foes = foes.filter(x => x !== f); if (!npcs.includes(f)) npcs.push(f);
+    const i = cbt.order.indexOf(f); if (i >= 0){ cbt.order.splice(i, 1); if (i <= cbt.idx) cbt.idx--; }
+    renderTurns();
+  }
 }
 // ---------- BUPPIDO ON THE LEDGE (Sam, 2026-11-15: "Build buppido ledge shove") ----------
 // The book's assassination attempt (lib/buppido-rises.mjs BUPPIDO_RISES_LEDGE has the sources). On a ledge plate, with

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buppidoRisesActive, buppidoRisesInPen, buppidoRisesLedgePlate, buppidoRisesLedgeTarget, buppidoRisesLedgeSpotted, buppidoRisesShoveWins } from "./buppido-rises.mjs"
+import { buppidoRisesActive, buppidoRisesInPen, buppidoRisesNearest, buppidoRisesIsDrow, BUPPIDO_RISES_VEXED, buppidoRisesLedgePlate, buppidoRisesLedgeTarget, buppidoRisesLedgeSpotted, buppidoRisesShoveWins } from "./buppido-rises.mjs"
 
 describe("Buppido rises anywhere (Sam, 2026-11-15)", () => {
   it("fires for Buppido on any plate, once", () => {
@@ -11,6 +11,23 @@ describe("Buppido rises anywhere (Sam, 2026-11-15)", () => {
   it("keeps the stone and the audience for the pen only", () => {
     expect(buppidoRisesInPen(11)).toBe(true)
     expect(buppidoRisesInPen("5c")).toBe(false)
+  })
+})
+
+describe("the zombie goes for the nearest, any side (Sam, 2026-11-23)", () => {
+  it("picks the closest standing creature, whoever it is", () => {
+    const z = { x: 0, y: 0 }
+    const hero = { id: "kenta", x: 300, y: 0 }, drow = { id: "drow-guard-male", x: 120, y: 0 }, prisoner = { id: "jimjar", x: 200, y: 0 }
+    expect(buppidoRisesNearest(z, [hero, drow, prisoner])).toBe(drow)
+    expect(buppidoRisesNearest(z, [hero, { ...drow, down: true }, prisoner])).toBe(prisoner)
+    expect(buppidoRisesNearest(z, [])).toBeNull()
+  })
+  it("knows a drow when it bites one", () => {
+    for (const id of ["drow-guard-male", "drow-guard-female", "jorlan", "shoor", "asha", "ilvara"]) expect(buppidoRisesIsDrow(id)).toBe(true)
+    for (const id of ["kenta", "eldeth", "jimjar", "zombie-rotting", "quaggoth"]) expect(buppidoRisesIsDrow(id)).toBe(false)
+  })
+  it("has something annoyed to say", () => {
+    expect(BUPPIDO_RISES_VEXED.length).toBeGreaterThan(0)
   })
 })
 
