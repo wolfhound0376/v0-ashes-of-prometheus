@@ -1,7 +1,7 @@
 // The strike cam's rules (lib/strike-cam.mjs): which blows get a close-up, which scene, and full or short.
 // The painted map reads the SAME file (build_walk.py pastes it in), so what passes here is what the map does.
 import { describe, expect, it } from "vitest"
-import { STRIKE_CAM, strikeCamClock, strikeCamCut, strikeCamMode, strikeCamScene } from "./strike-cam.mjs"
+import { STRIKE_CAM, strikeCamClock, strikeCamCut, strikeCamMode, strikeCamOnce, strikeCamScene } from "./strike-cam.mjs"
 
 const jab = { att: "freia", tgt: "drow-guard-male", art: "sap", weapon: "Dagger" }
 const shot = { att: "freia", tgt: "drow-guard-male", art: "hamstring", weapon: "Hand Crossbow" }
@@ -42,7 +42,7 @@ describe("key moments", () => {
 describe("poses are drawn on demand", () => {
   it("no pose for the attacker's move, or no hit pose for the target: it plays on the map", () => {
     expect(strikeCamScene({ ...jab, att: "lynkes", mode: "all" })).toBeNull()
-    expect(strikeCamScene({ ...jab, tgt: "giant-spider", mode: "all" })).toBeNull()
+    expect(strikeCamScene({ ...jab, tgt: "buppido", mode: "all" })).toBeNull()
     expect(strikeCamScene({ ...jab, art: "vex", mode: "all" })).toBeNull()
     expect(strikeCamScene({ att: "kenta", tgt: "drow-guard-male", spell: "Fire Bolt", spellLevel: 0, mode: "all" })).toBeNull()
   })
@@ -70,6 +70,47 @@ describe("poses are drawn on demand", () => {
     expect(crit?.hard).toBe(true)
     expect(crit?.hit.src).toBe("closeup-hit-hard.png")
     expect(strikeCamScene({ ...jab, tgt: "drow-guard-female", crit: true, mode: "key" })?.hard).toBe(false)
+  })
+})
+
+describe("the rest of the trigger list (PR 2)", () => {
+  const stab = { att: "freia", tgt: "drow-guard-male", weapon: "Dagger" }
+  const claw = { att: "quaggoth", tgt: "freia", weapon: "Claw", foe: true }
+  it("Sneak Attack with a dagger is a key moment, once a fight", () => {
+    const sc = strikeCamScene({ ...stab, sneak: true, mode: "key" })
+    expect(sc?.key).toBe("sneak")
+    expect(sc?.once).toBe("sneak")
+    expect(sc?.pose.wind?.src).toBe("closeup-flip.png")
+    expect(strikeCamScene({ ...stab, mode: "key" })).toBeNull()                       // a plain stab stays on the map
+    expect(strikeCamScene({ ...stab, sneak: true, weapon: "Rapier", mode: "key" })).toBeNull()
+    const mem = {}
+    expect(strikeCamOnce(mem, "freia", "sneak")).toBe(true)
+    expect(strikeCamOnce(mem, "freia", "sneak")).toBe(false)
+    expect(strikeCamOnce(mem, "freia", null)).toBe(true)
+  })
+  it("a weapon art that also sneaks keeps the art's own close-up", () => {
+    expect(strikeCamScene({ ...jab, sneak: true, mode: "key" })?.key).toBe("art:sap")
+  })
+  it("a monster's blow on a hero: mirrored, and only when it earns one", () => {
+    expect(strikeCamScene({ ...claw, mode: "key" })).toBeNull()                        // an ordinary claw
+    const drop = strikeCamScene({ ...claw, drop: true, mode: "key" })
+    expect(drop?.key).toBe("attack")
+    expect(drop?.flip).toBe(true)
+    expect(drop?.once).toBeNull()
+    expect(strikeCamScene({ ...claw, crit: true, mode: "key" })?.flip).toBe(true)
+    expect(strikeCamScene({ ...claw, signature: true, mode: "key" })?.once).toBe("signature")
+    expect(strikeCamScene({ ...claw, foe: false, mode: "all" })).toBeNull()            // not a hero's move
+  })
+  it("the killing blow is a key moment for a blow that has a scene, and takes the heavier pose", () => {
+    const frost = { att: "kenta", tgt: "drow-guard-male", spell: "Ray of Frost", spellLevel: 0 }
+    expect(strikeCamScene({ ...frost, mode: "key" })).toBeNull()
+    const k = strikeCamScene({ ...frost, kill: true, mode: "key" })
+    expect(k?.key).toBe("spell:Ray of Frost")
+    expect(k?.hard).toBe(true)
+    expect(strikeCamScene({ ...stab, kill: true, mode: "key" })).toBeNull()            // no pose for a plain stab
+  })
+  it("every hero has a hit pose", () => {
+    for (const h of ["freia", "kenta", "samson", "scott", "gandalf", "lynkes"]) expect((STRIKE_CAM.poses as any)[h].hit.src).toBe("closeup-hit.png")
   })
 })
 
