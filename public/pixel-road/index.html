@@ -18,14 +18,21 @@
   Where the party can walk is not painted by hand. It comes with the map: road.json carries the map's own grid
   of cells (floor / rock / cliff face / stream) and each prop's footprint, and the page walks on that.
 
-  The page makes no sound, so it does not load /test-copy-silence.js (lib/sound-rules.test.ts guards pages that do).
+  SOUND (Sam, 2026-11-23: "Where is the horror, underdark DND sound ... we have a number of tracks we can use from
+  my library"). The road sounds the way the travel map's road already does (public/underdark-map/index.html), with
+  the same files and the same levels, nothing new: the library's Cavern of Lost Souls for music, the tunnel bed
+  under it, boots on stone while the party moves, and the water bed rising as they near the stream. It starts on
+  the first click or key, as browsers require. /test-copy-silence.js is the first script, so a preview copy stays
+  silent until Sam turns its sound on with the pill in the corner. M turns the music off and on.
 
   Open it:  /pixel-road/index.html            (or the DM's door, /rehearsal?to=road)
             ?line=kenta,freia,scott           who walks, leader first (sprite slugs in /sprites)
             ?light=0                          the cave drawn fully lit, no darkness or glow
             ?fg=0                             without the near rock (ceiling and shelf) in front
             ?road=road-01                     which stretch
+            ?sound=0                          no sound at all
 -->
+<script src="/test-copy-silence.js"></script>
 <style>
   html,body{margin:0;height:100%;background:#07060b;overflow:hidden;touch-action:none}
   canvas{display:block;width:100vw;height:100vh;cursor:pointer}
@@ -262,6 +269,7 @@ function drawForeground() {
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
   const moved = stepLeader(dt); heroes[0].moving = moved; placeFollowers(dt, moved);
+  soundTick(moved);
   for (const h of heroes) h.t += dt;
   camera();
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#07060b"; ctx.fillRect(0, 0, cv.width, cv.height);
@@ -287,6 +295,46 @@ function frame(now) {
   requestAnimationFrame(frame);
 }
 
+/* ---------- sound: the travel map's own road sound, same files, same levels ---------- */
+const SOUND = Q.get("sound") !== "0";
+const SND = {
+  music: { src: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/99_Cavern_of_Lost_Souls-THx80DYk2x7Bbhv3h7KPAeIxLPywTO.mp3", vol: 0.45 }, // lib/music-library.ts, the Underdark road's track
+  bed: { src: "/underdark-map/sfx/tunnel.mp3", vol: 0.25 },      // the room the party is standing in, far under the music
+  march: { src: "/underdark-map/sfx/march.mp3", vol: 0.5 },      // boots on stone, only while they move
+  water: { src: "/underdark-map/sfx/water.mp3", vol: 0.32 },     // louder the nearer the stream
+};
+const snd = {}; let unlocked = false, musicOn = true, sfxOn = true, marching = false, waterAt = null;
+try { musicOn = localStorage.getItem("wm_music") !== "0"; sfxOn = localStorage.getItem("wm_sfx") !== "0"; } catch { /* storage blocked */ }
+function ramp(a, to, ms) {
+  if (!a) return; clearInterval(a._iv); const from = a.volume, t0 = Date.now();
+  if (to > 0 && a.paused) a.play().catch(() => {});
+  a._iv = setInterval(() => { const u = Math.min(1, (Date.now() - t0) / ms); a.volume = Math.max(0, Math.min(1, from + (to - from) * u)); if (u >= 1) { clearInterval(a._iv); if (to === 0) a.pause(); } }, 30);
+}
+function soundStart() {
+  if (!SOUND || unlocked) return; unlocked = true;
+  for (const [k, d] of Object.entries(SND)) { const a = new Audio(); a.loop = true; a.preload = "auto"; a.volume = 0; a.src = d.src; snd[k] = a; }
+  if (musicOn) ramp(snd.music, SND.music.vol, 2200);
+  if (sfxOn) ramp(snd.bed, SND.bed.vol, 1500);
+}
+function soundTick(moved) {
+  if (!unlocked) return;
+  if (moved !== marching) {             // the march and the music share the same air: the music drops a fifth while they walk
+    marching = moved;
+    if (sfxOn) ramp(snd.march, moved ? SND.march.vol : 0, moved ? 450 : 600);
+    if (musicOn) ramp(snd.music, SND.music.vol * (moved ? 0.8 : 1), 500);
+  }
+  if (sfxOn && waterAt) {               // the stream: heard from about eight cells off, full at its bank
+    const d = Math.hypot(heroes[0].x - waterAt[0], heroes[0].y - waterAt[1]), v = SND.water.vol * Math.max(0, 1 - d / 260) ** 1.5, a = snd.water;
+    if (v > 0.004 && a.paused) a.play().catch(() => {});
+    if (Math.abs(a.volume - v) > 0.004) a.volume = v;
+    if (v <= 0.004 && !a.paused && a.volume <= 0.004) a.pause();
+  }
+}
+function toggleMusic() {
+  musicOn = !musicOn; try { localStorage.setItem("wm_music", musicOn ? "1" : "0"); } catch { /* storage blocked */ }
+  if (unlocked) ramp(snd.music, musicOn ? SND.music.vol * (marching ? 0.8 : 1) : 0, 600);
+}
+
 /* ---------- start ---------- */
 (async function () {
   road = await (await fetch(BASE + "road.json")).json();
@@ -299,17 +347,21 @@ function frame(now) {
   heroes = (await Promise.all(LINE.map(loadHero))).filter(Boolean);
   if (!ground || !heroes.length) { document.body.innerHTML = '<p style="color:#a99;font:14px Georgia;padding:2em">The road could not be drawn.</p>'; return; }
   heroes.forEach((h, i) => { h.x = road.entry.x - i * GAP; h.y = road.entry.y; });
+  { let sx = 0, sy = 0, n = 0;      // the middle of the stream, for the sound of it
+    road.grid.forEach((row, r) => { for (let c = 0; c < row.length; c++) if (row[c] === "s") { sx += c * road.tile + 16; sy += r * road.tile + 16; n++; } });
+    if (n) waterAt = [sx / n, sy / n]; }
   for (let i = 0; i <= heroes.length * GAP + 4; i += 1.5) trail.push([road.entry.x - i, road.entry.y]);
   resize(); addEventListener("resize", resize);
-  addEventListener("keydown", (e) => { keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = true; if (e.key.startsWith("Arrow")) e.preventDefault(); });
+  addEventListener("keydown", (e) => { soundStart(); if (e.key === "m" || e.key === "M") toggleMusic(); keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = true; if (e.key.startsWith("Arrow")) e.preventDefault(); });
   addEventListener("keyup", (e) => { keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = false; });
   addEventListener("blur", () => { keys = {}; });
   cv.addEventListener("pointerdown", (e) => {
+    soundStart();
     const r = cv.width / cv.clientWidth, wx = cam.x + e.clientX * r / cam.z, wy = cam.y + e.clientY * r / cam.z;
     path = findPath(heroes[0].x, heroes[0].y, wx, wy);
   });
   // For poking at it from the console and for a browser test. The walk check itself is lib/pixel-road.test.ts.
-  window.__road = { road, heroes, objImg, findPath, canStand, go: (x, y) => { path = findPath(heroes[0].x, heroes[0].y, x, y); return path.length; }, idle: () => !path.length };
+  window.__road = { road, heroes, objImg, snd, findPath, canStand, go: (x, y) => { path = findPath(heroes[0].x, heroes[0].y, x, y); return path.length; }, idle: () => !path.length };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
 </script>
