@@ -2939,6 +2939,7 @@ function drawFrame(){
   if (barsAt != null) drawGateBars();
 
   while (cloudQ.length) drawPuff(cloudQ.shift());
+  mimicDraw();          // THE MIMIC's chomp, over the one it is eating (drawn after the actors)
   drawLight();          // the dark, with the lamps, the heroes and landing spells cut out of it; everything after glows through
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
   drawTolls();
@@ -3524,6 +3525,7 @@ const EXPLORE_POOLS = {
   outpost: [null, "outpost-1", "outpost-2", "outpost-3", "outpost-4"],   // null: the original explore.mp3
   caverns: ["caverns-1", "caverns-2", "caverns-3", "caverns-4"],
   water:   ["water-1", "water-2"],
+  ruins:   ["ruins-1"],   // THE RUINS (Sam, 2026-11-23: "this module having it's own sinister music from elevenlabs"): one 3-minute track, ElevenLabs Music v2.5, flow l1J5MTwvFNRNDlBa6Ih5, levelled to -16 LUFS like the rest
 };
 const WATER_PLATES = new Set(["node-09-waterfall", "node-14-pool-river", "biome-shore"]);
 const ORIGINAL_EXPLORE = ASSET + "audio/explore.mp3";
@@ -3532,7 +3534,7 @@ const REST_EVERY = 2, REST_MS = [20000, 40000];
 let exploreRegion = null, lastExplore = null, exploreSince = 0, exploreRestUntil = 0, exploreSwap = null, dmExplore = "auto";
 try { dmExplore = localStorage.getItem("vk-explore-music") || "auto"; } catch (e) {}
 /** What kind of place a plate is, for the music. */
-function regionOf(slug){ return WATER_PLATES.has(slug) ? "water" : /^biome-/.test(slug || "") ? "caverns" : "outpost"; }
+function regionOf(slug){ return /^ruins-/.test(slug || "") ? "ruins" : WATER_PLATES.has(slug) ? "water" : /^biome-/.test(slug || "") ? "caverns" : "outpost"; }
 function wantedRegion(){ return dmExplore !== "auto" && dmExplore !== "off" ? dmExplore : regionOf(node && node.slug); }
 /** The gap between tracks (or the DM turned exploring music off): only the ambience is heard. */
 function exploreQuiet(){ return dmExplore === "off" || performance.now() < exploreRestUntil; }
@@ -4525,6 +4527,9 @@ async function roadFight(){
   startCombat(foeIds, why, {noAllies: false, roadSurprise: surprised});
 }
 function leaveVelkynvelve(z){
+  // THE RUINS' WAY OUT IS THE TUNNEL ROAD it was entered from (public/pixel-road); ?at=ruins stands the party at its door.
+  if (isRuinPlate(cur)){ const map = state.ruinsFrom === "map";   // in by the travel map's Ruins card -> back to the march; in by the pixel road's door -> back to that door
+    showDialog({title: "Out of the ruins", body: map ? "The march is where you left it." : "The tunnel road is where you left it.", buttons: [{label: map ? "Back to the map" : "Back to the road", primary: true, fn: () => { (window.top !== window ? window.top : window).location.href = map ? "/map" : "/pixel-road/index.html?at=ruins"; }}, {label: "Stay"}]}); return; }
   // A ROAD PLATE'S WAY OUT IS THE ROAD (ROAD FIGHT, below): back to the travel map, where the march stands halted.
   // OUT OF THE CHAINS: the party never walked out of the outpost, so the map is told which way the column took them
   if (isRoadPlate(cur) && state.chainMarch && state.chainMarch.out === "escaped" && String(cur) === CHAIN_MARCH.plate){ showDialog({title: "The north passage", body: "Velkynvelve is behind you, and the escort lies on the bridge. Anything left on the dead stays here. Past this point the party is on the Underdark map, on the north road the caravan was taking.", buttons: [{label: "Take the road", primary: true, fn: () => { $("fade").classList.add("on"); setTimeout(() => { (window.top !== window ? window.top : window).location.href = chainMarchMapHref(); }, CHAIN_MARCH.fadeMs); }}, {label: "Search the dead first"}]}); return; }
@@ -5927,9 +5932,13 @@ function plateCrop(poly){
 }
 // chests and lockers you only open (story.json `loot`): Shoor's chest, the barracks footlockers
 let hoverLoot = null;
-function lootSpotAt(w){ return (node.loot || []).find(l => inPoly(l.poly, w.x, w.y)) || null; }
+// A HIDDEN THING (Sam, 2026-11-23: "Have some hidden item that are only available on a passive perception success"): a
+// loot spot marked `hidden` in story.json is not drawn and cannot be opened until the room's passive Perception check
+// finds it (ruinOnEnter, below, writes state.director.found).
+function lootShown(l){ if (l.mimic) return mimicWaiting(); return !l.hidden || !!((state.director || {}).found || {})[l.id]; }
+function lootSpotAt(w){ mimicSync(); return (node.loot || []).find(l => lootShown(l) && inPoly(l.poly, w.x, w.y)) || null; }
 function lootCenter(l){ const xs = l.poly.map(p => p[0]), ys = l.poly.map(p => p[1]); return {x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) + 30}; }
-function openLootSpot(l){ if (atWorkPlate()) return laborDoPocket({id: l.id, name: l.name, poly: l.poly}); openLoot(l.id, l.name, {poly: l.poly, text: l.text, at: polyBase(l.poly)}); }   // at work: under the escort's eye (Hard Labor)
+function openLootSpot(l){ if (l.mimic) return mimicTouch(l); if (atWorkPlate()) return laborDoPocket({id: l.id, name: l.name, poly: l.poly}); openLoot(l.id, l.name, {poly: l.poly, text: l.text, at: polyBase(l.poly)}); }   // at work: under the escort's eye (Hard Labor)
 // LOOT YOU CAN SEE, NOT BOXES ROUND IT (Sam, 2026-10-27: "replace painted lootboxes with size appropriate chests from
 // pixel art. They can glow yellow if they are interactable but these large yellow boxes are silly"). A loot spot that is
 // a chest (story.json `chest`: wooden | iron | ornate, standing at `at`) is drawn as that pixel chest from the sprite
@@ -5980,7 +5989,9 @@ function drawRopeAnchor(z, lit, pulse){
 function drawLootHighlight(){
   if (mode !== "explore" && mode !== "dialog" && mode !== "combat") return;
   const pulse = .5 + .5 * Math.sin(now / 520);
+  mimicSync();
   for (const l of node.loot || []){
+    if (!lootShown(l)) continue;
     const c = lootCenter(l), lit = mode !== "combat" && (hoverLoot === l || (leader && Math.hypot(leader.x - c.x, leader.y - c.y) < 300 * node.scale));
     if (l.prop){
       const im = lootImg(`${SPRITE_BASE}${l.prop}/idle.png`); if (!im.complete || !im.naturalWidth) continue;
@@ -8120,6 +8131,14 @@ const FOE_BLOCKS = {
   // and slashing from nonmagical attacks. Multiattack: one tentacles attack; if it hits, one beak attack on the same
   // target (`rotate` + `chain`: the beak comes only after the tentacles land). Tentacles +4, 2d6+2 slashing. Beak +4,
   // 1d6+2 piercing. NOT modelled: Stone Camouflage (on the road, who saw whom is the marker's passive roll).
+  // THE MIMIC IN THE RUINS (Sam, 2026-11-23). SRD 5.1 Mimic, read from campaign_chunks: AC 12, 58 hp (9d8+18), speed 15,
+  // passive Perception 11, Stealth +5, immune to acid, cannot be knocked prone. Pseudopod +5, 1d8+3 bludgeoning; Bite +5,
+  // 1d8+3 piercing plus 1d8 acid. The bite on the hand that opened it is rolled in full by mimicFight (below).
+  // NOT MODELLED YET, so the mimic is a little weaker than the book's after its first bite: the bite's 1d8 acid in the
+  // rounds that follow (the map's attack `rider` always asks for a save, and this acid has none), Adhesive on a
+  // pseudopod hit, and the DC 13 escape check (the hold ends when the mimic drops or the hero is pulled 5 ft clear).
+  mimic: {name: "Mimic", xp: 450, passive: 11, stealth: 5, hp: 58, ac: 12, speed: 15, init: 1, saves: {str: 3, dex: 1, con: 2, int: -3, wis: 1, cha: -1}, immune: ["acid"], immuneCond: ["prone"],
+          attacks: [{name: "Bite", hit: 5, dmg: "1d8+3", type: "piercing", reach: 5}, {name: "Pseudopod", hit: 5, dmg: "1d8+3", type: "bludgeoning", reach: 5}], multi: 1, rotate: true},
   grick: {name: "Grick", xp: 450, passive: 12, hp: 27, ac: 14, speed: 30, init: 2, saves: {str: 2, dex: 2, con: 0, int: -4, wis: 2, cha: -3}, resistNonmagical: ["bludgeoning", "piercing", "slashing"],
           attacks: [{name: "Tentacles", hit: 4, dmg: "2d6+2", type: "slashing", reach: 5}, {name: "Beak", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}], multi: 2, rotate: true, chain: true},
   quaggoth: {name: "Quaggoth", xp: 450, passive: 11, hp: 45, ac: 13, speed: 30, init: 1, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, immune: ["poison"], immuneCond: ["poisoned"],
@@ -11697,7 +11716,113 @@ async function dirFight(fight, why, ctx, R){
 async function directorLair(){ const R = dirRand(`${cur}:lair`), r = rollTable("lair", R); if (!r) return;
   await dirCard("Searching the lair", `d20 = ${r.roll}: ${r.say}${r.tell ? "\n" + r.tell : ""}`);
   if (APP) handOff(`The party searched the ambushers' lair on ${node.name}: Ambush Lair Discovery d20 = ${r.roll}: ${r.say}${r.tell ? " " + r.tell : ""} Award only from the catalog.`); }
+// ---------- THE RUINS: one roll per room (Sam, 2026-11-23) ----------
+// "each room passive rolls a dice for what you will find ... Have some hidden item that are only available on a passive
+// perception success." The rooms' rows are lib/plate-director.mjs RUIN_ROOMS (pasted in above). First visit this run: the
+// room's d20 is rolled by the map (seeded, so every screen sees the same face), then the best passive Perception in the
+// party is held against the room's hidden thing. A miss says nothing: the players are not told there was something.
+// The drow pursuit is not touched here (the party came in off the road, not out of the outpost's caverns).
+function isRuinPlate(n){ return ruinPlate((SPEC[n] || {}).slug); }
+async function ruinOnEnter(plate){
+  if (cur !== plate || cbt || mode !== "explore" || FIGHT.mirror) return;   // gone again before the room could speak: it rolls next time
+  const D = dirState(); if (D.seen[plate]) return; D.seen[plate] = true; D.found = D.found || {};
+  const draw = ruinDraw(SPEC[plate].slug, dirRand(`${plate}:ruin`)); if (!draw) return;
+  const title = node.name.replace(/^The Ruins: /, "").replace(/^t/, "T"), told = [`${node.name}: d20 = ${draw.roll}. ${draw.say}${draw.tell ? " " + draw.tell : ""}`];
+  const ctx = {plate: String(plate), id: "ruin", title, hook: draw.hook, n: 0, told};
+  bank("magic/necrotic_windup", .45);
+  await dirCard(title, `${draw.hook}\n\nd20 = ${draw.roll}. ${draw.say}${draw.tell ? "\n" + draw.tell : ""}`, draw.fight && !draw.steps ? [{label: "Fight", primary: true}] : null);
+  log(`<b>${esc(title)}.</b> d20 = ${draw.roll}. ${esc(draw.say)}`);
+  if (cur === plate && !cbt){
+    const best = dirHeroes().sort((a, b) => dirPassive(b) - dirPassive(a))[0], h = draw.hidden;
+    if (h && !D.found[h.id] && best && ruinNotices(h, dirPassive(best))){
+      D.found[h.id] = true;
+      await dirCard(title, `${fname(best)} notices what the others walk past (passive Perception ${dirPassive(best)}).\n${h.found}`);
+      log(`<i>${esc(fname(best))} notices something hidden.</i>`); told.push(`${fname(best)} found the hidden cache (passive Perception ${dirPassive(best)} vs ${h.passive}).`);
+    }
+  }
+  let on = true;
+  if (draw.steps && cur === plate && !cbt) on = await dirSteps(draw.steps, ctx) !== false;
+  if (draw.fight && on && cur === plate && !cbt){
+    const {ids, missing} = fieldFoes(draw.fight, dirRand(`${plate}:ruin:fight`), dirCanField);
+    if (!ids.length) told.push(`No stat block on the map for ${missing.join(", ")}: run it from the book.`);
+    else { if (draw.steps) await dirCard(title, draw.say, [{label: "Fight", primary: true}]); if (cur === plate && !cbt){ mode = "explore"; startCombat(ids, draw.say); } }
+  }
+  if (APP) handOff(told.join(" ") + " (The Ruins: OotA D&D Encounters ch.2 p.31; the rooms and their odds are ours.)");
+}
+// ---------- THE MIMIC IN THE RUINS (Sam, 2026-11-23) ----------
+// "Throw a mimic there somewhere randomly pretending to be a loot box. Create an animation where after a failed
+// perception check a treasure box tries to eat the person interacting with it." Rules and numbers: lib/plate-director.mjs
+// (pasted in above). One room per run holds a wooden chest that is not a chest. Whoever opens it is held to their own
+// passive Perception: seen in time, they choose; not seen, the chest eats the hand (16 frames, PixelLab animate_image from
+// the chest's own frame to the mimic's, public/sprites/mimic/chomp.png), bites with advantage, holds on, and the fight
+// opens with the heroes surprised.
+let MIMIC_FX = null;
+const MIMIC_CHOMP = {frames: 17, ms: 1500, bite: .62};
+function ruinMimic(){ const D = dirState(); if (!D.mimic) D.mimic = {room: mimicRoom(dirRand("ruins:mimic")), sprung: false, known: false}; return D.mimic; }
+function mimicWaiting(){ if (!node || !isRuinPlate(cur) || MIMIC_FX) return false; const M = ruinMimic(); return !M.sprung && M.room === SPEC[cur].slug; }
+function mimicSync(){
+  if (!node || !isRuinPlate(cur)) return;
+  const M = ruinMimic(); if (M.room !== SPEC[cur].slug || (node.loot || []).some(l => l.mimic)) return;
+  const [x, y] = MIMIC_SPOTS[M.room];
+  (node.loot = node.loot || []).push({id: "ruins-mimic", name: "A wooden chest", mimic: true, chest: "wooden", at: [x, y], poly: [[x - 62, y - 112], [x + 62, y - 112], [x + 62, y - 8], [x - 62, y - 8]], text: ""});
+}
+function mimicDraw(){
+  if (!MIMIC_FX || MIMIC_FX.plate !== cur) return;
+  const im = lootImg(`${SPRITE_BASE}mimic/chomp.png`); if (!im.complete || !im.naturalWidth) return;
+  const k = Math.min(MIMIC_CHOMP.frames - 1, Math.floor((performance.now() - MIMIC_FX.t0) / MIMIC_CHOMP.ms * MIMIC_CHOMP.frames));
+  // it swells and throws itself at the hand on its lid: out and back, peaking on the bite frame
+  const at = {x: MIMIC_FX.at[0], y: MIMIC_FX.at[1]}, base = CHEST_FT * ftPx(at) * 128 / 100, u = k / (MIMIC_CHOMP.frames - 1);
+  const lunge = u < .3 ? 0 : Math.sin(Math.PI * Math.min(1, (u - .3) / .7)), side = base * (1 + .5 * lunge), w = MIMIC_FX.who;
+  const cx = at.x + (w ? (w.x - at.x) * .55 * lunge : 0), fy = at.y + (w ? (w.y - at.y) * .55 * lunge : 0) + (u < .3 ? Math.sin(u * 90) * 2 : 0);
+  ctx.save(); ctx.imageSmoothingEnabled = false; ctx.drawImage(im, k * 128, 0, 128, 128, cx - side / 2, fy - side * 126 / 128, side, side); ctx.restore();
+}
+async function mimicTouch(l){
+  if (cbt || MIMIC_FX || FIGHT.mirror || (mode !== "explore" && mode !== "dialog")) return;
+  const M = ruinMimic(), who = leader, pp = dirPassive(who), plate = cur;
+  if (M.known || mimicSeen(pp)){
+    M.known = true;
+    const pick = await dirCard("A wooden chest", `${fname(who)} stops with a hand an inch from the lid (passive Perception ${pp}).\nThe wood is breathing.`, [{label: "Strike first", primary: true, value: 1}, {label: "Back away", value: 0}]);
+    if (pick && cur === plate && !cbt) mimicFight(l, who, false);
+    return;
+  }
+  MIMIC_FX = {t0: performance.now(), at: l.at, who, plate};
+  bank("creature/death_beast", .5);
+  await wait(MIMIC_CHOMP.ms * MIMIC_CHOMP.bite);
+  shake(10); bank("combat/melee_hit_flesh", .8); popText(who, "CHOMP", "#ff7a6a", 1.5);
+  await wait(MIMIC_CHOMP.ms * (1 - MIMIC_CHOMP.bite) + 260);
+  if (cur !== plate || cbt){ MIMIC_FX = null; return; }
+  mimicFight(l, who, true);
+}
+async function mimicFight(l, who, fooled){
+  const M = ruinMimic(), plate = cur; M.sprung = true; M.known = true; MIMIC_FX = null;
+  const f = mkActor("mimic", l.at[0], l.at[1], "foe", {alpha: 1});
+  const why = fooled ? "The chest was never a chest." : "The chest knows it has been seen.";
+  log(`<b>A mimic.</b> ${esc(why)}`);
+  mode = "explore"; startCombat([f], why, fooled ? {roadSurprise: "party"} : {});
+  if (APP) handOff(`In ${node.name} a wooden chest was a mimic (SRD 5.1). ${fname(who)} ${fooled ? `did not see it in time (passive Perception ${dirPassive(who)} against 15) and it bit the hand that opened it` : `saw it breathe (passive Perception ${dirPassive(who)}) and the party struck first`}. It held no treasure.`);
+  if (!fooled) return;
+  // the hand on the lid: stuck (Adhesive), and bitten with advantage (Grappler). Waits for the fight to be laid out.
+  for (let i = 0; i < 100 && !(cbt && who.c && f.c); i++){ await wait(200); if (cur !== plate) return; }
+  if (!cbt || !who.c || !f.c || who.down) return;
+  const r = mimicBite((acOf(who.id) || {}).ac ?? (who.c.sheet || {}).ac ?? 10, dirRand("ruins:mimic:bite"));
+  who.c.conds.add("grappled"); who.c.grappledBy = f;
+  log(`The mimic's lid closes on ${esc(fname(who))}: Bite ${r.dice.join(" / ")} with Advantage, ${r.total} to hit — ${r.hit ? `${r.crit ? "a critical hit, " : ""}${r.piercing} piercing and ${r.acid} acid` : "the teeth scrape and miss"}. ${esc(fname(who))} is stuck to it (grappled).`);
+  if (r.hit){ damage(who, r.piercing, "piercing", r.crit, f); if (r.acid) damage(who, r.acid, "acid", false, f); } else popText(who, "miss", "#cfc6dc");
+}
+// THE WAY IN: the pixel road's Ruins (public/pixel-road, "Enter the ruins") opens this page with ?ruins=1. Read once
+// and cleaned from the address, like a road fight's, so a reload does not walk the party back in.
+async function ruinsDoor(){
+  let top, q; try { top = window.top !== window ? window.top : window; q = new URLSearchParams(top.location.search); } catch (e) { return; }
+  if (!q.get("ruins")) return;
+  state.ruinsFrom = q.get("from") === "map" ? "map" : "road";   // the travel map's Ruins card, or the pixel road's door
+  try { q.delete("ruins"); q.delete("from"); top.history.replaceState(null, "", top.location.pathname + (q.toString() ? "?" + q : "")); } catch (e) {}
+  const plate = "ruins-threshold"; if (!SPEC[plate] || cbt || FIGHT.mirror) return;
+  const at = SPEC[plate].arrive;
+  await enterNode(plate, {spawn: {x: at[0], y: at[1]}, note: "The door stands open behind you, and the road's noise does not follow you in."});
+  mode = "explore";
+}
 async function directorOnEnter(plate){
+  if (isRuinPlate(plate)) return ruinOnEnter(plate);
   if (!directorPlate((SPEC[plate] || {}).slug) || cbt || mode !== "explore" || FIGHT.mirror) return;
   const D = dirState(); if (D.pursuit == null && !state.chainMarch) D.pursuit = PURSUIT_START;   // p.29: out of Velkynvelve, the pursuit begins at 4
   dirPursuitPill();
@@ -23611,6 +23736,7 @@ const AREA_SURFACE = {
   "node-12-quaggoth-den": "gravel", "node-13-northern-watch-post": "wood", "node-14-pool-river": "stone",
   "biome-tunnels": "gravel", "biome-crystal": "crystal", "biome-wastes": "gravel", "biome-lair": "gravel",
   "biome-shore": "water", "biome-grove": "moss",
+  "ruins-threshold": "stone", "ruins-ossuary": "stone", "ruins-great-hall": "stone", "ruins-flooded-crypt": "stone", "ruins-sanctum": "stone", "ruins-reliquary": "stone",
 };
 // Each surface's level against the others, so a stride sounds the same size whatever it lands on.
 const SURFACE_TRIM = {stone: 1, gravel: 1, wood: 1, bridge: 1.1, water: 1.25, moss: 1.35, crystal: .85};
@@ -25424,6 +25550,7 @@ function npcAskCouncil(n, ask){
   booted = true;
   if (APP) owStart(W);
   roadFight();
+  ruinsDoor();
   // the heroes' own gear, now that they are on the plate. The first load (noteSeats) runs before the party is built,
   // so it reached only the allies: a hero's pack and hands stayed empty until something else asked, and an equipped
   // crossbow never became an attack.
