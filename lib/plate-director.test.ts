@@ -79,6 +79,7 @@ describe("fights field only what the map has a stat block for", () => {
 describe("where the director works", () => {
   it("only on the cavern plates", () => {
     expect(directorPlate("biome-tunnels")).toBe(true)
+    expect(directorPlate("deep-fork")).toBe(true)   // the deep caverns roll too (Sam, 2026-11-23)
     expect(directorPlate("node-11-slave-pen")).toBe(false)
     expect(directorPlate("road-webs")).toBe(false)
   })

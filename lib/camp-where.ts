@@ -17,9 +17,9 @@
 //
 // Pure, so the dashboard button and the /camp page reach the same answer.
 
-/** A walk plate outside any settlement: a cavern plate (biome-*) or a road plate (road-*). */
+/** A walk plate outside any settlement: a cavern plate (biome-*, deep-*) or a road plate (road-*). */
 export function isWildPlate(plate: string | null | undefined): boolean {
-  return typeof plate === "string" && /^(biome-|road-)/.test(plate)
+  return typeof plate === "string" && /^(biome-|deep-|road-)/.test(plate)
 }
 
 /** What party_location_label() returns (the fields this needs). */
