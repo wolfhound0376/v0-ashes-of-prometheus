@@ -17599,7 +17599,8 @@ function laborGateWatch(){
 // over the map at their moment, then the map carries on: The Call when a detail is first called out of the pen, The
 // Fall and then Caught in the Web when a rappel on the cliff below the lift is missed, Redo the first time a guard
 // makes someone do their work again. Each plays once per session in this browser (the moment repeats; the film need
-// not). Click, Space or Escape skips. The player's "Cinematics" setting (lib/settings.ts, aop_settings_v1) turns them
+// not). Batch 2 (Sam, 2026-11-23, Runway kling-4 at 1080p, 8 s): a new Call, plus Water when a water detail reaches its
+// station and Caught when the escort sees a hand pocket something. Click, Space or Escape skips. The player's "Cinematics" setting (lib/settings.ts, aop_settings_v1) turns them
 // off. Silent files: the map's own music and effects keep playing underneath.
 const FILM_DIR = `${APP ? "/" : "../"}videos/labor/`;
 const filmsSeen = new Set();
@@ -17759,6 +17760,7 @@ function laborAtWork(){
   const k = `${labor.id}:work:${cur}`; if (laborPlayed[k]) return; laborPlayed[k] = true;
   setTimeout(() => escortSays(escortDrow(), LINES.task[labor.task] || LINES.task.water), 900);
   log(`<b>Work detail:</b> ${esc(TASKS_LABEL[labor.task] || labor.task)}. The escort stands over you while you work.`);
+  if (labor.task === "water") playFilm("water");            // hauling the barrel over the bridge (Sam, 2026-11-23), once a session
 }
 // The shift timeout (Sam, 2026-10-26: one game hour; /api/labor, lib/labor-walk.mjs shiftTimeout). Past the hour the
 // server says `overdue`, and the map that may press "Finish the shift" (the DM's, or the one that marched them) walks
@@ -18137,6 +18139,7 @@ async function laborPocketFrom(h, spot){
       }
     } else {
       escortTurnsTo(h); bank("ui/nat1", .5); popText(h, "caught!", "#ff6b5e", 1.2);
+      await playFilm("caught");                               // the beast's hand on the collar (Sam, 2026-11-23), once a session
       escortSays(escortDrow(), CAUGHT_LINE, 6000);
       log(`<b>The escort catches ${esc(fname(h))}'s hand</b> at the ${esc(row.name)}. It stays where it was.`);
       laborEvent("caught", {slug: h.id, item: row.slug, total: r.total, dc});
