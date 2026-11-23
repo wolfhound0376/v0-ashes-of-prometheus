@@ -46,12 +46,20 @@ def main():
     W, H = cols * T, rows * T
 
     ground = Image.new("RGB", (W, H))
-    x = 0
-    for c in cfg["crops"]:
-        im = Image.open(p(c)).convert("RGB")
-        assert im.size[1] == H, (c, im.size)
-        ground.paste(im, (x, 0)); x += im.size[0]
-    assert x == W, x
+    # "crops" is one row of view_map crops, left to right, each the full height; or, for a stretch taller than a
+    # full-size crop allows (road-02), a list of such rows, top to bottom.
+    crop_rows = cfg["crops"] if cfg["crops"] and isinstance(cfg["crops"][0], list) else [cfg["crops"]]
+    y = 0
+    for row in crop_rows:
+        x, rh = 0, None
+        for c in row:
+            im = Image.open(p(c)).convert("RGB")
+            rh = rh or im.size[1]
+            assert im.size[1] == rh, (c, im.size)
+            ground.paste(im, (x, y)); x += im.size[0]
+        assert x == W, x
+        y += rh
+    assert y == H, y
     # PAVING (Sam, 2026-11-23, on the first forecourt made of flat 64px tiles: "Those ground tiles look horrible for
     # the ruins. Make highquality, highdef ones that look like rubble, stone"). A patch of floor is ONE painted
     # picture, not tiles, so there are no seams, and it is kept at its own (finer) resolution and drawn by the page
@@ -84,6 +92,23 @@ def main():
     grid = [l.strip() for l in open(p(cfg["grid"])) if l.strip()]
     assert len(grid) == rows and all(len(r) == cols for r in grid)
     at = lambda cx, cy: grid[cy][cx] if 0 <= cy < rows and 0 <= cx < cols else "d"
+
+    # WATER (Sam, 2026-11-23: "that water needs to look foreboding and realistic"). The tile art's stream is bright
+    # blue; the page darkens it, deepens its middle and runs slow cold ripples over it. It needs to know exactly which
+    # pixels are water: the blue pixels of the ground picture that lie within a cell of a stream cell ('s'), so the
+    # grey-blue damp floor elsewhere is left alone. water.png is that mask, white on clear, at full size.
+    water = None
+    if any("s" in r for r in grid):
+        gpx = np.array(ground).astype(np.int16)
+        near = np.zeros((rows, cols), bool)
+        for cy in range(rows):
+            for cx in range(cols):
+                if any(at(cx + dx, cy + dy) == "s" for dx in (-1, 0, 1) for dy in (-1, 0, 1)): near[cy, cx] = True
+        near = np.kron(near, np.ones((T, T), bool))
+        blue = (gpx[..., 2] > gpx[..., 0] + 28) & (gpx[..., 2] >= gpx[..., 1] - 4) & near
+        m = Image.fromarray((blue * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(1.0))
+        Image.merge("RGBA", [Image.new("L", m.size, 255)] * 3 + [m]).save(os.path.join(out, "water.png"), optimize=True)
+        water = "water.png"
 
     man = json.load(open(os.path.join(p(cfg["export"]), "objects", "manifest.json")))["objects"]
     objs, seen = [], {}
@@ -200,7 +225,8 @@ def main():
             "ground": "ground.png", "shade": "shade.png", "front": "front.png", "foreground": fg,
             "legend": {"w": "floor", "r": "damp floor", "d": "rock", "a": "rock face", "s": "stream"}, "walkable": "wr",
             "grid": grid, "objects": objs, "entry": cfg["entry"], "exit": cfg["exit"],
-            "landmarks": marks, "paving": paving, "glow": cfg.get("glow", {}), "shine": cfg.get("shine", {})}
+            "landmarks": marks, "paving": paving, "glow": cfg.get("glow", {}), "shine": cfg.get("shine", {}),
+            "water": water, "mood": cfg.get("mood")}
     json.dump(road, open(os.path.join(out, "road.json"), "w"), indent=1)
     print(rid, len(objs), "props,", sorted(seen), "->", out)
 

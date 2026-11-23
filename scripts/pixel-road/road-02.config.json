@@ -1,0 +1,72 @@
+{
+ "name": "The long tunnel",
+ "pixellabMapId": "34e52ec9-c88f-4bb4-b9bd-212574b70a8b",
+ "rows": 48,
+ "cols": 112,
+ "crops": [
+  [
+   "<view_map crop x=0 y=0, 16x24 cells>.png",
+   "<view_map crop x=16 y=0, 16x24 cells>.png",
+   "<view_map crop x=32 y=0, 16x24 cells>.png",
+   "<view_map crop x=48 y=0, 16x24 cells>.png",
+   "<view_map crop x=64 y=0, 16x24 cells>.png",
+   "<view_map crop x=80 y=0, 16x24 cells>.png",
+   "<view_map crop x=96 y=0, 16x24 cells>.png"
+  ],
+  [
+   "<view_map crop x=0 y=24, 16x24 cells>.png",
+   "<view_map crop x=16 y=24, 16x24 cells>.png",
+   "<view_map crop x=32 y=24, 16x24 cells>.png",
+   "<view_map crop x=48 y=24, 16x24 cells>.png",
+   "<view_map crop x=64 y=24, 16x24 cells>.png",
+   "<view_map crop x=80 y=24, 16x24 cells>.png",
+   "<view_map crop x=96 y=24, 16x24 cells>.png"
+  ]
+ ],
+ "grid": "road-02.grid.txt",
+ "export": "<unzipped PixelLab export>/",
+ "kinds": {
+  "underdark-hq spire": "spire",
+  "underdark-hq fang": "fang",
+  "underdark-hq zurkhwood": "zurkhwood",
+  "underdark-hq stalagmites": "stalagmites",
+  "underdark-hq rubble": "rubble",
+  "underdark-hq boulders": "boulders",
+  "underdark-hq crystals": "crystals",
+  "underdark-hq mushrooms": "mushrooms"
+ },
+ "foreground": {
+  "ceiling": "art/ceiling.webp",
+  "shelf": "art/shelf.webp"
+ },
+ "entry": {
+  "x": 48,
+  "y": 784,
+  "label": "The way back"
+ },
+ "exit": {
+  "x": 3536,
+  "y": 784,
+  "label": "The road on"
+ },
+ "landmarks": [],
+ "glow": {
+  "crystals": "#6fd8ff",
+  "boulders": "#39d6b8",
+  "mushrooms": "#d06bff",
+  "zurkhwood": "#c77bff"
+ },
+ "shine": {
+  "crystals": 1.0,
+  "mushrooms": 0.5,
+  "zurkhwood": 0.45,
+  "boulders": 0.28
+ },
+ "mood": {
+  "_": "Sam, 2026-11-23, with two paintings of a misty violet Underdark: some of the Underdark should look like this",
+  "grade": "#3c3470",
+  "gradeAlpha": 0.55,
+  "haze": "#b9a6ff",
+  "mist": 0.4
+ }
+}
