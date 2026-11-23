@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { battleFor, battleHref, isBattle, RUINS_HREF, ruinsRolled } from "./battle"
+import { battleFor, battleHref, isBattle, RUINS_HREF, ruinsRolled, TUNNEL_PLATES, tunnelPlate } from "./battle"
 
 const spiders = { table_key: "underdark_ambush", result: "1d6 giant spiders clinging to walls or ceiling", detail: { count: "1d6", bestiary: "Giant Spider" } }
 const ambushers = { table_key: "underdark_creature", result: "Ambushers", detail: { rolls: ["underdark_ambush"] } }
@@ -38,13 +38,22 @@ describe("where a road encounter is fought (Sam, 2026-11-12)", () => {
     const gricks = { table_key: "underdark_ambush", result: "1d4 gricks hiding in a crevice", detail: { count: "1d4", bestiary: "Grick" } }
     const orogs = { table_key: "underdark_ambush", result: "1d4 orogs perching on ledges", detail: { count: "1d4", bestiary: "Orog" } }
     const g = battleFor([random, ambushers, gricks], null, () => 3)
-    expect(isBattle(g) && [g.plate, g.foes.join()]).toEqual(["road-tunnels", "grick,grick,grick"])
+    expect(isBattle(g) && [g.plate, g.foes.join()]).toEqual(["road-tunnels-winding", "grick,grick,grick"])   // a 3 on the plate die
     const t = battleFor([random, ambushers, orogs], null, () => 2)
-    expect(isBattle(t) && [t.plate, t.foes.join()]).toEqual(["road-tunnels", "orog,orog"])
+    expect(isBattle(t) && [t.plate, t.foes.join()]).toEqual(["road-tunnels-junction", "orog,orog"])
     const u = battleFor([random, terrain("Lava swell"), ambushers, orogs], null, () => 2)
-    expect(isBattle(u) && u.plate).toBe("road-tunnels")
+    expect(isBattle(u) && TUNNEL_PLATES.includes(u.plate)).toBe(true)
     const o = battleFor([random, terrain("Boneyard"), ambushers, orogs], null, () => 2)
     expect(isBattle(o) && [o.plate, o.foes.join()]).toEqual(["road-boneyard", "orog,orog"])
+  })
+  it("a fight that falls to the tunnels rolls one of the generic tunnel plates (Sam, 2026-11-23)", () => {
+    expect(TUNNEL_PLATES[0]).toBe("road-tunnels")
+    expect([1, 2, 3, 4].map((f) => tunnelPlate(() => f))).toEqual([...TUNNEL_PLATES])
+    expect(tunnelPlate(() => 0)).toBe("road-tunnels")   // a bad die falls back to the original plate
+    expect(tunnelPlate(() => 9)).toBe("road-tunnels")
+    const dice: number[] = []
+    tunnelPlate((d) => (dice.push(d), 1))
+    expect(dice).toEqual([TUNNEL_PLATES.length])
   })
   it("the address carries plate, foes, the row's words and the surprise", () => {
     const b = battleFor([ambushers, spiders], { surprised: "party" }, () => 2)
