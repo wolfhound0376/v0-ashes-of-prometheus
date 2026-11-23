@@ -860,5 +860,13 @@
     "size_by": "height",
     "target_ft": 5.0,
     "note": "PixelLab's south rotation had an opaque white box behind the figure; built from a cleaned south.png (flood-fill of edge-connected white plus the enclosed pocket at x 77-86, y 43-68; sha256 of pixels 555fc153...0366). The other 7 rotations are untouched"
+  },
+  {
+    "slug": "gnoll",
+    "name": "Gnoll",
+    "pixellab_character_id": "61ff756e-64e4-4cda-96e5-3c93790306de",
+    "size_by": "height",
+    "target_ft": 7.0,
+    "note": "7 ft is Claude's pick inside the book's Medium size (gnolls run 7 to 7.5 ft); attack is a posed-skeleton stab, hit set to 0.45"
   }
 ]
