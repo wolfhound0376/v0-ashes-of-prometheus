@@ -621,45 +621,6 @@
       }
     },
     "arrivals": {
-      "gray-ooze": {
-        "from": [
-          30,
-          425
-        ],
-        "to": [
-          690,
-          750
-        ],
-        "anim": "walk",
-        "backdrop": true,
-        "fixedScale": 1.35,
-        "via": "along the rope bridge",
-        "note": "to the outside of the gate, where Malachar had it (2026-10-12: it reaches the gate, touches the bars). `inside` is the chasm-side entry Malachar narrated (2026-10-13 21:28: it oozes up the stone wall from the pool below the pen) — it heaves up over the ledge at the pen's left rim, by the crystals. The approved film shows an under-the-bars entry instead; `insideGate` keeps that path for when he brings it through the gate.",
-        "inside": {
-          "from": [
-            700,
-            1240
-          ],
-          "to": [
-            1000,
-            1150
-          ],
-          "anim": "emerge",
-          "via": "heaving itself up over the ledge from the chasm"
-        },
-        "insideGate": {
-          "from": [
-            812,
-            812
-          ],
-          "to": [
-            900,
-            900
-          ],
-          "anim": "emerge",
-          "via": "squeezing under the bars"
-        }
-      },
       "default": {
         "from": [
           812,
@@ -1300,7 +1261,7 @@
       "foes": [],
       "who": "something in the pool",
       "label": "Something surges out of the pool's shallows.",
-      "_src": "HOMEBREW: the gray ooze in the pool (OotA p.19) — no sprite is sent here; its entrance stays Malachar's (Gray Ooze Entrance doc)."
+      "_src": "HOMEBREW: a rest roll by the pool. The gray ooze itself (OotA p.19) is the plate's ambush hazard in spec.py since 2026-11-23 (Sam: \"Lets have it in the pool\"); this roll sends no sprite."
     }
   },
   "9": {

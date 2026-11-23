@@ -247,7 +247,19 @@ NODES = {
    # PROPOSED position: the gap in the back rail under the painted cave mouth, Claude's by eye over the painted floor.
    zones=[dict(rect=[1080, 1260, 1320, 1339], to=[12], label="Walkway down to the den perimeter"),
           dict(rect=[1110, 650, 1290, 720], to=[], kind="leave", via="north", label="The north passage: toward Menzoberranzan and Blingdenstone (OotA p.20)")]),
+ # THE GRAY OOZE LIVES IN THE POOL (Sam, 2026-11-23: "Lets have it in the pool"). OotA p.19, area 14 (campaign_chunks 1204):
+ # "A gray ooze lurks in the pool's shallows, blending perfectly with the dark, wet stone ... In addition to attacking any
+ # creature in the pool, the ooze surges up to 10 feet out of the pool to attack creatures at its edge. When it does so,
+ # creatures within 30 feet of the ooze telepathically sense a voice cry out, 'Flesh for the Faceless Lord!'" So the
+ # hazard is the water itself plus a band along its near edge (the 10 ft it surges out). It replaces the October staging,
+ # where Malachar had it cross the rope bridge to the pen gate. `landFrom`: a drop through the falls (9) lands IN the
+ # water (OotA p.18: "dive into the pool"), so the party is in the ooze's pool the moment they arrive. Polygon and landing
+ # spot are Claude's, by eye over the painting and Sam's floor mask; the ooze's AC/HP/attack are its SRD block.
  14: dict(slug="node-14-pool-river", name="Pool / Underground River", scale=0.9,
+   landFrom={"9": [880, 540]},
+   hazard=dict(poly=P((470,470),(820,430),(1100,440),(1360,500),(1540,600),(1500,760),(1300,820),(1240,880),(900,870),(600,860),(460,780)),
+               kind="ambush", foes=["gray-ooze"],
+               label="The smooth stone in the shallows rears up out of the water, and a voice that is no voice fills every head at once: “Flesh for the Faceless Lord!”"),
    floors=[dict(poly=P((300,840),(640,790),(940,820),(1120,880),(1400,860),(1520,940),(1640,1120),(1760,1280),(1760,1339),(400,1339),(300,1120))),dict(poly=P((1640,660),(1900,580),(2120,640),(2200,800),(2080,940),(1800,940),(1600,860))),dict(poly=P((1400,840),(1600,800),(1640,920),(1520,960)))],
    obstacles=[],
    zones=[dict(rect=[884, 1223, 1420, 1367], to=["shore"], kind="leave", label="The underground river runs on toward the Darklake — PROPOSED: the river runs west to the Darklake (OotA p.18, p.20)", proposed=True),
