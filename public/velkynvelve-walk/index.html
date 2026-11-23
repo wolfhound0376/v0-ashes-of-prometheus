@@ -14367,7 +14367,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (hit && !crit && tgt.kind === "pc" && tgt.down && !ranged && feetBetween(att, tgt) <= 7.5) crit = true;   // SRD: unconscious — a hit from within 5 ft is a critical hit
       if (bl) popText(att, bl > 0 ? `bless +${bl}` : `bane ${bl}`, bl > 0 ? "#ffe9a8" : "#b07ad8", .8);
       if (hit && !crit && !cv.total && hero(tgt) && canShield(tgt) && r + atk.hit + bl + insp < acVs + 5){
-        shieldWait = new Promise(res => askShield(tgt, att, atk, r + atk.hit + insp, acVs, used => { if (used){ acVs += 5; hit = false; } rest(); res(); }));
+        shieldWait = new Promise(res => askShield(tgt, att, atk, r + atk.hit + insp, acVs, used => { if (used){ acVs += 5; hit = false; const sc = strikeCamShield(att, tgt, atk, ranged); if (sc) strikeCam(sc); } rest(); res(); }));   // THE STRIKE CAM: Shield turned the hit into a miss
         return;
       }
       rest();
@@ -14462,7 +14462,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (tgt.c.sheet.holyVulnerable && !atk.flask && att.c.conds.has("blessed")) holyOpen(tgt, `${fname(att)}'s blessed blow`);
       { const art = atk.art && WEAPON_ARTS[atk.art], word = art && art.says && !art.cleave ? String(art.says).toUpperCase() : "";   // THE STRIKE CAM: the blow has landed
         if (att.strikeCamOpen){ att.strikeCamOpen = false; strikeCamLand({dmg: dmg.total, crit, word}); }
-        else if (!shot){ const sc = strikeCamFor(att, tgt, {art: atk.art, weapon: atk.itemName || atk.name, crit, title: art ? art.name : atk.name, melee: true, sneak,
+        else if (!shot){ const sc = strikeCamFor(att, tgt, {art: atk.art, weapon: atk.itemName || atk.name, crit, title: art ? art.name : atk.name, melee: true, sneak, reaction: !!reaction,
             signature: !!(atk.rider || atk.extra || atk.curse || atk.numb || atk.tooth)}); if (sc) strikeCam({...sc, dmg: dmg.total, crit, word}); } }
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
       blowNarration(att, tgt, atk, dmg.total, crit);
@@ -17662,7 +17662,7 @@ function burst(a, col, n){ const m = SPR[a.id].json, sc = actorScale(a), y = a.y
 //
 // PR 2 (2026-11-23, Sam: "go") added the rest of the trigger list that has art: Sneak Attack (once a fight), the
 // killing blow, and a monster's blow on a hero (a signature ability once a fight, a crit, or the blow that drops them).
-// Reactions are not in yet.
+// PR 3 added the reactions that change the outcome: an opportunity attack that lands, and Shield (strikeCamBlock).
 //
 // PR 1 OF 3 carried the engine, the DM's setting (off by default) and the three scenes Sam approved. The
 // wider trigger list (killing blows, Sneak Attack, reactions, monster abilities on a hero) and weapon arts for the
@@ -17728,8 +17728,9 @@ const STRIKE_CAM = {
   },
   // named foes: the blow that kills one of them is a key moment, like a boss's
   named: ["ilvara", "asha", "shoor", "jorlan"],
-  // shown once a fight, then it plays on the map: Sneak Attack, and a monster's signature ability
-  once: ["sneak", "signature"],
+  // shown once a fight, then it plays on the map: Sneak Attack, a monster's signature ability, and a reaction that
+  // changes the outcome (an opportunity attack that lands, Shield turning a hit into a miss)
+  once: ["sneak", "signature", "reaction"],
   // where the target stands, by the kind of scene
   targetFeetX: { melee: 1050, shot: 1130, spell: 1130 },
 
@@ -17753,7 +17754,7 @@ function strikeCamMode(v) {
  *   ev: { mode, att, tgt (sprite slugs), art (a weapon art's key), weapon (the attack's name), spell, spellLevel,
  *         crit, quick (Quick resolve is on),
  *         sneak (this hit carried Sneak Attack), foe (a monster's melee blow on a hero), signature (that blow carries
- *         the monster's own rider: venom, a curse), drop (it dropped the hero to 0), kill (it killed a boss or a named
+ *         the monster's own rider: venom, a curse), reaction (an opportunity attack), drop (it dropped the hero to 0), kill (it killed a boss or a named
  *         foe, or ended the fight) }
  * Returns null (it plays on the map) or { key, kind, att, tgt, pose, hit, hard, fx }. `hard` says the target has a
  * heavier hit pose and this blow (a critical hit) earns it.
@@ -17791,11 +17792,27 @@ function strikeCamScene(ev) {
   }
   if (!pose) return null;
   if (pose.weapon && !pose.weapon.test(String(ev.weapon || ""))) return null;   // the pose shows another weapon
+  if (ev.reaction && !special) { special = true; once = "reaction"; }   // an opportunity attack that landed
   if (ev.kill) special = true;
   if (mode === "key" && !special && !ev.crit) return null;
   if (mode === "all" || ev.crit || ev.kill || ev.drop) once = null;   // a crit or a finishing blow is shown on its own account; "all" shows everything
   const hard = !!((ev.crit || ev.kill || ev.drop) && theirs.hitHard);
   return { key, kind: pose.kind, att: ev.att, tgt: ev.tgt, pose, hit: hard ? theirs.hitHard : hit, hard, fx, once, flip: !!ev.foe };
+}
+
+/**
+ * SHIELD TURNS A HIT INTO A MISS (rule 7, a reaction that changes the outcome). The foe's blow is shown against the
+ * caster's own casting pose, the ward up, and no blood.
+ *   ev: { mode, att (the foe), tgt (the hero who cast Shield), quick, shot (the blow was a shot) }
+ * Returns null or a scene like strikeCamScene's, with `block: true`. A shot has no scene yet.
+ */
+function strikeCamBlock(ev) {
+  const mode = strikeCamMode(ev && ev.mode);
+  if (mode === "off" || !ev || ev.quick) return null;
+  const mine = STRIKE_CAM.poses[ev.att], theirs = STRIKE_CAM.poses[ev.tgt];
+  const pose = mine && (ev.shot ? mine.shot : mine.attack), ward = theirs && theirs.cast;
+  if (!pose || !ward) return null;
+  return { key: "shield", kind: pose.kind, att: ev.att, tgt: ev.tgt, pose, hit: ward, hard: false, fx: null, once: mode === "all" ? null : "reaction", flip: true, block: true };
 }
 
 /**
@@ -17845,7 +17862,7 @@ const SC = {el: null, cv: null, ctx: null, run: null, raf: 0, img: {}, W: 1600, 
 function scImg(src){ if (!SC.img[src]){ const i = new Image(); i.src = src; SC.img[src] = i; } return SC.img[src]; }
 const scPoseSrc = (slug, p) => `/sprites/${slug}/${p.src}`;
 function scParts(o){   // the scene's pictures, rebuilt from what crossed the relay
-  const mine = STRIKE_CAM.poses[o.att], theirs = STRIKE_CAM.poses[o.tgt], pose = mine && mine[o.pose], hit = theirs && ((o.hard && theirs.hitHard) || theirs.hit);
+  const mine = STRIKE_CAM.poses[o.att], theirs = STRIKE_CAM.poses[o.tgt], pose = mine && mine[o.pose], hit = theirs && (o.block ? theirs.cast : ((o.hard && theirs.hitHard) || theirs.hit));   // Shield: the caster's own casting pose stands in for a hit pose
   if (!pose || !hit) return null;
   const fx = pose.kind === "spell" ? STRIKE_CAM.spellFx[o.spell] : null; if (pose.kind === "spell" && !fx) return null;
   const sheet = f => f ? [scImg(`/vfx/${f[0]}`), f[1], f[2], f[3]] : null;
@@ -17868,13 +17885,25 @@ function strikeCamFor(att, tgt, ev){
   const foe = !hero(att) && hero(tgt), gone = !!tgt.c && tgt.c.hp <= 0;
   const kill = gone && !hero(tgt) && (cbt.boss === tgt || STRIKE_CAM.named.includes(tgt.id) || !foes.some(f => f !== tgt && !f.down && !f.left && f.c && f.c.hp > 0 && actors.includes(f)));
   const sc = strikeCamScene({mode, att: att.id, tgt: tgt.id, art: ev.art, weapon: ev.weapon, spell: ev.spell, spellLevel: ev.spellLevel, crit: ev.crit, quick: !!cbt.quick,
-    sneak: !!ev.sneak, foe: foe && !!ev.melee, signature: !!ev.signature, drop: foe && gone, kill});
+    sneak: !!ev.sneak, foe: foe && !!ev.melee, signature: !!ev.signature, reaction: !!ev.reaction, drop: foe && gone, kill});
   if (!sc) return null;
   const mem = cbt.strikeMem = cbt.strikeMem || {};
-  const o = {att: att.id, tgt: tgt.id, pose: sc.kind === "spell" ? "cast" : sc.key, spell: ev.spell || null, hard: !!sc.hard, flip: !!sc.flip, title: (sc.key === "sneak" ? "Sneak Attack" : ev.title) || "", who: `${fname(att)}  →  ${fname(tgt)}`};
+  const o = {att: att.id, tgt: tgt.id, pose: sc.kind === "spell" ? "cast" : sc.key, spell: ev.spell || null, hard: !!sc.hard, flip: !!sc.flip, title: (sc.key === "sneak" ? "Sneak Attack" : ev.reaction ? "Opportunity Attack" : ev.title) || "", who: `${fname(att)}  →  ${fname(tgt)}`};
   if (!scReady(scParts(o))){ strikeCamWarm(); return null; }
   if (!strikeCamOnce(mem, att.id, sc.once)) return null;   // once a fight, then it plays on the map
   o.cut = strikeCamCut(mem, att.id, sc.key, cbt.round || 1);
+  return o;
+}
+/** Shield has just turned this blow into a miss: the close-up of it, or null. Same checks as strikeCamFor. */
+function strikeCamShield(att, tgt, atk, shot){
+  if (!cbt || cbt.mirror || !att || !tgt) return null;
+  const sc = strikeCamBlock({mode: strikeCamMode(state.strikeCam), att: att.id, tgt: tgt.id, quick: !!cbt.quick, shot: !!shot});
+  if (!sc) return null;
+  const mem = cbt.strikeMem = cbt.strikeMem || {};
+  const o = {att: att.id, tgt: tgt.id, pose: shot ? "shot" : "attack", spell: null, hard: false, flip: true, block: true, title: "Shield", who: `${fname(att)}  →  ${fname(tgt)}`, dmg: "MISS", crit: false, word: "SHIELD"};
+  if (!scReady(scParts(o))){ strikeCamWarm(); return null; }
+  if (!strikeCamOnce(mem, tgt.id, sc.once)) return null;
+  o.cut = strikeCamCut(mem, tgt.id, sc.key, cbt.round || 1);
   return o;
 }
 function scBuild(){
@@ -17958,7 +17987,7 @@ function strikeCam(o){
   const c = o.wait ? {inMs: base.inMs, snap: 60, rel: 90, hit: 1e9, stop: base.stop, hold: 1e9, out: base.out}
     : {inMs: 80, snap: 0, rel: spell ? 110 : 0, hit: (spell ? 240 : 110) + lead, stop: base.stop, hold: (spell ? 240 : 110) + lead + after, out: base.out};
   const rays = []; for (let i = 0; i < 13; i++) rays.push({a: Math.random() * 6.283, len: .55 + Math.random() * .6, w: Math.random()});
-  const blood = P.fx && P.fx.blood === false ? 0 : Math.round((o.crit ? 70 : 44) * (melee ? 1 : .6)), drops = [];
+  const blood = o.block || (P.fx && P.fx.blood === false) ? 0 : Math.round((o.crit ? 70 : 44) * (melee ? 1 : .6)), drops = [];
   for (let i = 0; i < blood; i++){ const a = -.35 + (Math.random() - .5) * 1.5, v = 260 + Math.random() * (o.crit ? 900 : 640); drops.push({vx: Math.cos(a) * v, vy: Math.sin(a) * v - 120, r: 3 + Math.random() * 9, col: ["#96121a", "#be1418", "#70060e"][i % 3]}); }
   const me = SC.run = {t0: performance.now(), c, after, o: {...o}, waiting: !!o.wait};
   SC.el.style.display = "block"; cancelAnimationFrame(SC.raf);
@@ -17980,10 +18009,10 @@ function strikeCam(o){
       const k = scClamp((tm - c.snap) / Math.max(1, Math.min(c.hit, 1e8) - c.snap), 0, 1), drift = Math.max(0, tm - c.hit) / 1000, sinceRel = tm - c.rel;
       const adx = melee ? -150 * (1 - scEase(k)) + (still ? 0 : 16 * drift)
         : -60 * (1 - scEase(scClamp((tm - c.snap) / 110, 0, 1))) - (still || sinceRel < 0 ? 0 : (spell ? 10 : 18) * Math.exp(-sinceRel / 140));
-      const tdx = (since >= 0 ? (melee ? 34 : 26) * scEase(scClamp(since / 160, 0, 1)) : 0) + (still ? 0 : 24 * drift);
+      const tdx = d.block ? 0 : (since >= 0 ? (melee ? 34 : 26) * scEase(scClamp(since / 160, 0, 1)) : 0) + (still ? 0 : 24 * drift);   // Shield: the caster does not give ground
       const pose = melee && k < 1 && P.wind && !still ? P.wind : P.att;                               // the wind-up while she lunges, the blow from the hit on
       if (melee && !still && k < 1) for (let g = 3; g >= 1; g--) scFigure(pose, adx - g * 46 * (1 - k), .16, 0);
-      const tr = scFigure(P.tgt, tdx, 1, since >= 0 ? scClamp(1 - since / (spell ? 420 : 150), 0, 1) * (spell ? .7 : .85) : 0, P.fx && P.fx.tint);
+      const tr = scFigure(P.tgt, tdx, 1, since >= 0 ? scClamp(1 - since / (spell ? 420 : 150), 0, 1) * (spell ? .7 : .85) : 0, d.block ? "#cfe8ff" : P.fx && P.fx.tint);
       const ar = scFigure(pose, adx, 1, 0);
       if (tr && ar){
         const hand = P.pose.hand, mark = P.pose.mark || [.45, .4], px = ar.x + ar.w * hand[0], py = ar.y + ar.h * hand[1], ek = since / 420;
@@ -18004,11 +18033,15 @@ function strikeCam(o){
           if (since >= 0){ const s = crit ? 560 : 440; scCell(P.impact, since / 62, hx - s / 2, hy - s / 2, s, s, 1); }
         }
         if (since >= 0){
-          if (!spell) scBurst(hx, hy, scClamp(ek, 0, .999), (crit ? 250 : 180) * (melee ? 1 : .7), rays);
+          if (d.block){   // the ward: a pale blue shell between the blow and the caster
+            const wk = scClamp(since / 520, 0, 1), wx = tr.x + 6, wy = tr.y + tr.h * .48; ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = (1 - wk) * .9;
+            ctx.strokeStyle = "#cfe8ff"; ctx.shadowColor = "#8fc6ff"; ctx.shadowBlur = 30; ctx.lineWidth = 10 + 10 * (1 - wk); ctx.beginPath(); ctx.ellipse(wx, wy, 70 + 30 * wk, tr.h * (.5 + .08 * wk), 0, Math.PI * .5, Math.PI * 1.5); ctx.stroke();
+            ctx.globalAlpha = (1 - wk) * .22; ctx.fillStyle = "#bfe0ff"; ctx.beginPath(); ctx.ellipse(wx, wy, 70 + 30 * wk, tr.h * (.5 + .08 * wk), 0, Math.PI * .5, Math.PI * 1.5); ctx.fill(); ctx.restore(); }
+          else if (!spell) scBurst(hx, hy, scClamp(ek, 0, .999), (crit ? 250 : 180) * (melee ? 1 : .7), rays);
           const bt = Math.max(0, tm - c.hit) / 1000;
           for (const dr of drops){ const x = hx + dr.vx * bt, y = hy + dr.vy * bt + 900 * bt * bt; if (y > ground + 14) continue; ctx.globalAlpha = scClamp(1.4 - bt * 1.1, 0, 1); ctx.fillStyle = dr.col; ctx.beginPath(); ctx.ellipse(x, y, dr.r * 1.35, dr.r * .8, Math.atan2(dr.vy + 1800 * bt, dr.vx), 0, 7); ctx.fill(); }
           ctx.globalAlpha = 1;
-          scNumber(Math.min(tr.x + tr.w * .5 + 250 - tdx * .4, W - 250), tr.y + 70, scClamp(since / (me.after + c.out), 0, 1), d.dmg == null ? null : String(d.dmg), d.word || "", crit, P.fx && P.fx.pop);
+          scNumber(Math.min(tr.x + tr.w * .5 + 250 - tdx * .4, W - 250), tr.y + 70, scClamp(since / (me.after + c.out), 0, 1), d.dmg == null ? null : String(d.dmg), d.word || "", crit, d.block ? "#cfe8ff" : P.fx && P.fx.pop);
         }
       }
     }
