@@ -33,19 +33,27 @@
             ?sound=0                          no sound at all
 -->
 <script src="/test-copy-silence.js"></script>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&display=swap">
 <style>
   html,body{margin:0;height:100%;background:#07060b;overflow:hidden;touch-action:none}
   canvas{display:block;width:100vw;height:100vh;cursor:pointer}
-  #plate{position:fixed;inset:0;background:#07060b;opacity:0;pointer-events:none;transition:opacity .7s ease;cursor:pointer}
+  #plate{position:fixed;inset:0;background:#07060b;opacity:0;pointer-events:none;transition:opacity .9s ease}
   #plate.on{opacity:1;pointer-events:auto}
   #plate img{width:100%;height:100%;object-fit:cover;image-rendering:pixelated;display:block}
-  #plate .cap{position:absolute;left:0;right:0;bottom:0;padding:3.2em 1em 1.4em;text-align:center;color:#e9dcc6;font:600 22px Georgia,serif;letter-spacing:.22em;text-transform:uppercase;text-shadow:0 2px 6px #000;background:linear-gradient(transparent,rgba(4,3,8,.82))}
-  #plate .cap small{display:block;margin-top:.7em;font:13px Georgia,serif;letter-spacing:.08em;text-transform:none;color:#a99c8c}
+  #plate .card{position:absolute;left:50%;bottom:6vh;transform:translateX(-50%);width:min(620px,86vw);padding:20px 26px 22px;text-align:center;
+    background:linear-gradient(rgba(14,13,22,.93),rgba(8,7,13,.95));border:1px solid #6b5a3a;box-shadow:0 0 0 1px #000,0 12px 40px rgba(0,0,0,.7);border-radius:4px}
+  #plate .name{font:600 15px Cinzel,Georgia,serif;letter-spacing:.34em;text-transform:uppercase;color:#c9a96a}
+  #plate .ask{margin:.55em 0 .95em;font:italic 21px 'Crimson Text',Georgia,serif;color:#e9dcc6;line-height:1.35}
+  #plate .row{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+  #plate button{min-width:190px;padding:11px 18px;font:600 14px Cinzel,Georgia,serif;letter-spacing:.14em;text-transform:uppercase;color:#e9dcc6;cursor:pointer;
+    background:linear-gradient(#2a2433,#17131e);border:1px solid #8a7446;border-radius:3px}
+  #plate button:hover,#plate button:focus-visible{background:linear-gradient(#3a3147,#211b2b);border-color:#d9bd7c;color:#fff;outline:none}
+  #plate button .lbl{pointer-events:none}
 </style>
 </head>
 <body>
 <canvas id="c"></canvas>
-<div id="plate"><img alt=""><div class="cap"></div></div>
+<div id="plate"><img alt=""><div class="card"><div class="name"></div><div class="ask"></div><div class="row"></div></div></div>
 <script>
 "use strict";
 const Q = new URLSearchParams(location.search);
@@ -213,6 +221,7 @@ function camera() {
     cx = L.x + (v.x - L.x) * f * 0.75; cy = L.y + (v.y - L.y) * f;
   }
   const vw = cv.width / cam.z, vh = cv.height / cam.z;
+  cx = Math.max(L.x - vw * 0.38, Math.min(L.x + vw * 0.38, cx)); cy = Math.max(L.y - vh * 0.34, Math.min(L.y + vh * 0.34, cy));   // the vista never loses the party off the edge
   cam.x = Math.max(m, Math.min(m + ww - vw, cx - vw / 2)); cam.y = Math.max(m, Math.min(m + wh - vh, cy - vh / 2));
 }
 function sign(text, x, y, near) {
@@ -231,7 +240,7 @@ function drawLight() {
   l.globalCompositeOperation = "destination-out";
   const hole = (x, y, r, k) => { const g = l.createRadialGradient(sx(x), sy(y), 0, sx(x), sy(y), r * z); g.addColorStop(0, "rgba(0,0,0," + k + ")"); g.addColorStop(0.35, "rgba(0,0,0," + k * 0.8 + ")"); g.addColorStop(0.7, "rgba(0,0,0," + k * 0.3 + ")"); g.addColorStop(1, "rgba(0,0,0,0)"); l.fillStyle = g; l.fillRect(sx(x) - r * z, sy(y) - r * z, 2 * r * z, 2 * r * z); };
   hole(heroes[0].x, heroes[0].y - 14, 260, 1);
-  for (const o of road.objects) if (road.glow[o.kind]) hole(o.x + o.w / 2, o.y + o.h * 0.6, o.h > 100 ? 96 : 70, 0.6);
+  for (const o of road.objects) if (road.glow[o.kind]) hole(o.x + o.w / 2, o.y + o.h * 0.6, Math.max(o.h > 100 ? 96 : 70, o.w * 0.78), o.w > 160 ? 0.8 : 0.6);   // a wide thing (the Ruins) is lit across its whole front
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(lightCv, 0, 0);
 }
 // WHAT GLOWS (Sam, 2026-11-22: "Crystals should glow"). road.json says which kinds of prop give off light, in what
@@ -286,30 +295,43 @@ function drawForeground() {
   ctx.globalAlpha = 1 - 0.9 * vista; band(fgImg.shelf, 1.6, true); ctx.globalAlpha = 1;
 }
 // A STOP OPENS A PLATE (Sam, 2026-11-22: the party walks the pixel road until a stop, "then it moves into the painted
-// plates"; 2026-11-23: he sent the picture for the Ruins). When the party comes to rest beside a landmark that has a
-// plate, the road fades into that picture. A click or a key goes back to the road. It will not open again until the
-// party has walked away and come back. Look-only for now: nothing happens inside the plate yet.
+// plates"). Sam, 2026-11-23: "once you come near the ruins it goes to the pixel AI ruins large art. There should be a
+// question more or less that ask (Do you enter or walk away)." So: the moment the leader comes within `near` of a
+// landmark that has a plate, the party halts and the road fades into that picture with a two-way choice. Walking away
+// returns to the road; it will not open again until the party has left and come back. Entering has nowhere to lead yet
+// (what is inside a stop is step 2), so it says so and offers the road again.
 const plateEl = document.getElementById("plate"); let plateOpen = null; const plateSeen = new Set();
-function plateTick(moved) {
+function plateCard(name, ask, choices) {
+  plateEl.querySelector(".name").textContent = name; plateEl.querySelector(".ask").textContent = ask;
+  const row = plateEl.querySelector(".row"); row.innerHTML = "";
+  for (const [label, fn] of choices) {
+    const b = document.createElement("button"), l = document.createElement("span"); l.className = "lbl"; l.textContent = label; b.append(l);
+    b.addEventListener("click", (e) => { e.stopPropagation(); fn(); }); row.append(b);
+  }
+}
+function plateAsk(m) { plateCard(m.label, m.ask || "Do you enter, or walk away?", [[m.enter || "Enter", () => plateEnter()], [m.leave || "Walk away", () => plateClose()]]); }
+function plateEnter() {
+  if (!plateOpen) return; plateOpen.entered = true;
+  plateCard(plateOpen.label, plateOpen.inside || "You step through. What waits inside is not built yet.", [["Back to the road", () => plateClose()]]);
+}
+function plateTick() {
   const L = heroes[0];
   for (const m of road.landmarks || []) {
     if (!m.plate) continue;
     const d = Math.hypot(L.x - m.x, L.y - m.y);
-    if (d > 110) plateSeen.delete(m);
-    else if (d < 44 && !moved && !plateOpen && !plateSeen.has(m)) {
-      plateOpen = m; plateSeen.add(m);
-      plateEl.querySelector("img").src = BASE + m.plate;
-      plateEl.querySelector(".cap").innerHTML = ""; plateEl.querySelector(".cap").append(m.label, Object.assign(document.createElement("small"), { textContent: "Click or press any key to go back to the road" }));
-      plateEl.classList.add("on");
+    if (d > (m.near || 70) + 50) plateSeen.delete(m);
+    else if (d < (m.near || 70) && !plateOpen && !plateSeen.has(m)) {
+      plateOpen = m; plateSeen.add(m); path = []; keys = {};
+      plateEl.querySelector("img").src = BASE + m.plate; plateAsk(m); plateEl.classList.add("on");
     }
   }
 }
 function plateClose() { if (!plateOpen) return false; plateOpen = null; plateEl.classList.remove("on"); path = []; keys = {}; return true; }
-plateEl.addEventListener("pointerdown", (e) => { e.stopPropagation(); plateClose(); });
+plateEl.addEventListener("pointerdown", (e) => e.stopPropagation());
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
   const moved = plateOpen ? false : stepLeader(dt); heroes[0].moving = moved; placeFollowers(dt, moved);
-  plateTick(moved);
+  plateTick();
   soundTick(moved);
   for (const h of heroes) h.t += dt;
   camera();
@@ -343,10 +365,10 @@ const SOUND = Q.get("sound") !== "0";
 const SND = {
   music: { src: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/99_Cavern_of_Lost_Souls-THx80DYk2x7Bbhv3h7KPAeIxLPywTO.mp3", vol: 0.45 }, // lib/music-library.ts, the Underdark road's track
   bed: { src: "/underdark-map/sfx/tunnel.mp3", vol: 0.25 },      // the room the party is standing in, far under the music
-  march: { src: "/underdark-map/sfx/march.mp3", vol: 0.5 },      // boots on stone, only while they move
+  march: { src: "/underdark-map/sfx/march.mp3", vol: 0.14 },     // boots on stone, only while they move. Sam, 2026-11-23: "make the walking more subtle" (was 0.5)
   water: { src: "/underdark-map/sfx/water.mp3", vol: 0.32 },     // louder the nearer the stream
 };
-const snd = {}; let unlocked = false, musicOn = true, sfxOn = true, marching = false, waterAt = null;
+const snd = {}; let unlocked = false, musicOn = true, sfxOn = true, marching = false, waterAt = null, placeVol = 0.5;
 try { musicOn = localStorage.getItem("wm_music") !== "0"; sfxOn = localStorage.getItem("wm_sfx") !== "0"; } catch { /* storage blocked */ }
 function ramp(a, to, ms) {
   if (!a) return; clearInterval(a._iv); const from = a.volume, t0 = Date.now();
@@ -356,7 +378,8 @@ function ramp(a, to, ms) {
 function soundStart() {
   if (!SOUND || unlocked) return; unlocked = true;
   for (const [k, d] of Object.entries(SND)) { const a = new Audio(); a.loop = true; a.preload = "auto"; a.volume = 0; a.src = d.src; snd[k] = a; }
-  if (musicOn) ramp(snd.music, SND.music.vol, 2200);
+  // A landmark may bring its own music (Sam, 2026-11-23: "have some eery music playing from eleven labs" at the Ruins).
+  for (const m of road.landmarks || []) if (m.music) { const a = new Audio(); a.loop = true; a.preload = "auto"; a.volume = 0; a.src = BASE + m.music; snd.place = a; placeVol = m.musicVol || 0.5; }
   if (sfxOn) ramp(snd.bed, SND.bed.vol, 1500);
 }
 function soundTick(moved) {
@@ -364,8 +387,12 @@ function soundTick(moved) {
   if (moved !== marching) {             // the march and the music share the same air: the music drops a fifth while they walk
     marching = moved;
     if (sfxOn) ramp(snd.march, moved ? SND.march.vol : 0, moved ? 450 : 600);
-    if (musicOn) ramp(snd.music, SND.music.vol * (moved ? 0.8 : 1), 500);
   }
+  // The two musics share the air: the road's track gives way to the landmark's as the party nears it (the same
+  // measure the camera uses), and the landmark's plays alone while its plate is open. Eased a little every frame.
+  { const e = plateOpen ? 1 : vista, ease = (a, to) => { if (!a) return; to = musicOn ? to : 0; const v = a.volume + (to - a.volume) * 0.035;
+      a.volume = Math.max(0, Math.min(1, Math.abs(to - v) < 0.003 ? to : v)); if (a.volume > 0.004 && a.paused) a.play().catch(() => {}); if (a.volume <= 0.004 && to === 0 && !a.paused) a.pause(); };
+    ease(snd.music, SND.music.vol * (marching ? 0.8 : 1) * (snd.place ? 1 - 0.92 * e : 1)); ease(snd.place, placeVol * e); }
   if (sfxOn && waterAt) {               // the stream: heard from about eight cells off, full at its bank
     const d = Math.hypot(heroes[0].x - waterAt[0], heroes[0].y - waterAt[1]), v = SND.water.vol * Math.max(0, 1 - d / 260) ** 1.5, a = snd.water;
     if (v > 0.004 && a.paused) a.play().catch(() => {});
@@ -375,7 +402,6 @@ function soundTick(moved) {
 }
 function toggleMusic() {
   musicOn = !musicOn; try { localStorage.setItem("wm_music", musicOn ? "1" : "0"); } catch { /* storage blocked */ }
-  if (unlocked) ramp(snd.music, musicOn ? SND.music.vol * (marching ? 0.8 : 1) : 0, 600);
 }
 
 /* ---------- start ---------- */
@@ -396,7 +422,7 @@ function toggleMusic() {
     if (n) waterAt = [sx / n, sy / n]; }
   for (let i = 0; i <= heroes.length * GAP + 4; i += 1.5) trail.push([road.entry.x - i, road.entry.y]);
   resize(); addEventListener("resize", resize);
-  addEventListener("keydown", (e) => { soundStart(); if (plateClose()) { e.preventDefault(); return; } if (e.key === "m" || e.key === "M") toggleMusic(); keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = true; if (e.key.startsWith("Arrow")) e.preventDefault(); });
+  addEventListener("keydown", (e) => { soundStart(); if (plateOpen) { if (e.key === "Escape") plateClose(); else if (e.key === "Enter" && !plateOpen.entered) plateEnter(); e.preventDefault(); return; } if (e.key === "m" || e.key === "M") toggleMusic(); keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = true; if (e.key.startsWith("Arrow")) e.preventDefault(); });
   addEventListener("keyup", (e) => { keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = false; });
   addEventListener("blur", () => { keys = {}; });
   cv.addEventListener("pointerdown", (e) => {
@@ -405,7 +431,7 @@ function toggleMusic() {
     path = findPath(heroes[0].x, heroes[0].y, wx, wy);
   });
   // For poking at it from the console and for a browser test. The walk check itself is lib/pixel-road.test.ts.
-  window.__road = { road, heroes, plate: () => plateOpen && plateOpen.label, objImg, snd, findPath, canStand, go: (x, y) => { path = findPath(heroes[0].x, heroes[0].y, x, y); return path.length; }, idle: () => !path.length };
+  window.__road = { road, heroes, plate: () => plateOpen && plateOpen.label, plateEnter, plateClose, objImg, snd, findPath, canStand, go: (x, y) => { path = findPath(heroes[0].x, heroes[0].y, x, y); return path.length; }, idle: () => !path.length };
   requestAnimationFrame((t) => { last = t; frame(t); });
 })();
 </script>

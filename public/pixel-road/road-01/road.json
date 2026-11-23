@@ -220,27 +220,27 @@
   {
    "kind": "pillar-a",
    "x": 1097,
-   "y": 184,
-   "w": 51,
-   "h": 62,
+   "y": 189,
+   "w": 42,
+   "h": 59,
    "ground": [
     1097,
-    230,
-    51,
-    16
+    233,
+    42,
+    15
    ]
   },
   {
    "kind": "ruins",
-   "x": 1116,
-   "y": 43,
-   "w": 256,
-   "h": 145,
+   "x": 1117,
+   "y": 41,
+   "w": 255,
+   "h": 149,
    "ground": [
-    1116,
-    152,
-    256,
-    36
+    1117,
+    153,
+    255,
+    37
    ]
   },
   {
@@ -284,28 +284,28 @@
   },
   {
    "kind": "pillar-c",
-   "x": 1307,
-   "y": 266,
-   "w": 47,
-   "h": 46,
+   "x": 1308,
+   "y": 268,
+   "w": 52,
+   "h": 50,
    "ground": [
-    1310,
-    300,
-    44,
-    12
+    1313,
+    305,
+    47,
+    13
    ]
   },
   {
    "kind": "pillar-b",
-   "x": 1336,
-   "y": 180,
-   "w": 52,
-   "h": 56,
+   "x": 1342,
+   "y": 179,
+   "w": 49,
+   "h": 61,
    "ground": [
-    1336,
-    222,
-    52,
-    14
+    1343,
+    225,
+    48,
+    15
    ]
   },
   {
@@ -448,7 +448,13 @@
     "y": 196,
     "h": 336,
     "reach": 430
-   }
+   },
+   "music": "music/ruins.mp3",
+   "musicVol": 0.8,
+   "near": 74,
+   "ask": "The ruins stand open before you. Do you enter, or walk away?",
+   "enter": "Enter the ruins",
+   "leave": "Walk away"
   }
  ],
  "paving": [
@@ -465,13 +471,13 @@
   "boulders": "#39d6b8",
   "mushrooms": "#d06bff",
   "zurkhwood": "#c77bff",
-  "ruins": "#5fd6e8"
+  "ruins": "#58c8e8"
  },
  "shine": {
   "crystals": 1.0,
   "mushrooms": 0.5,
   "zurkhwood": 0.45,
-  "ruins": 0.18,
+  "ruins": 0.14,
   "boulders": 0.28
  }
 }

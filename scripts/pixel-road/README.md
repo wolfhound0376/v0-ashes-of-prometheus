@@ -75,6 +75,23 @@ multiple worn pillars not like a token sitting in the middle of the cave."
   highquality, highdef ones that look like rubble, stone, forget the spider that looks silly." The floor is made with
   `create_image_pro` at 640x384 (25 generations), `no_background: false`, with crops of his terrain board as references.
 
+## Arriving at a stop: the plate, the question, the music
+
+Sam, 2026-11-23: "once you come near the ruins it goes to the pixel AI ruins large art. There should be a question
+more or less that ask (Do you enter or walk away)", "have some eery music playing from eleven labs", "make the
+walking more subtle", and "The ruins should look like the tile set (which looks good)".
+
+- A landmark with a `plate` opens it the moment the leader comes within `near` pixels (no need to stop). The party
+  halts and a card asks `ask` with two answers, `enter` and `leave`. Walking away returns to the road. Entering has
+  nowhere to lead yet (step 2), so it says so. Card fonts are Cinzel and Crimson Text, per Sam's card rulings.
+- A landmark with `music` (a file under `art/music/`) crossfades with the road's track as the party nears, by the
+  same measure the camera vista uses, and plays alone while the plate is open. The Ruins track is ElevenLabs Music
+  (`eleven_music_v2_5`, 90s, 900 credits), with its tail folded into its head so it loops.
+- Footsteps play at 0.14 (were 0.5).
+- A landmark's building and props must be in the same stone as its floor. The Ruins facade and pillars were
+  regenerated with crops of Sam's terrain board and of the forecourt floor as references, and the facade's stone was
+  then shifted to the floor's own hue so the two meet without a seam of colour.
+
 ## Baking `road-01` (PixelLab map `1c47eece-3986-4b2c-9501-3ad0b47fe44e`, "Road 01 - Tunnel out of Velkynvelve (cavern)")
 
 `python3 scripts/pixel-road/bake.py road-01 <config.json>`, with a config like `road-01.config.json` here (its
