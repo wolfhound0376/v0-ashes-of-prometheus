@@ -203,3 +203,12 @@ describe("the clock", () => {
     for (const cut of ["full", "short"]) for (const kind of ["shot", "spell"]) { const c = strikeCamClock(cut, kind); expect(c.rel).toBeLessThan(c.hit); expect(c.rel).toBeGreaterThanOrEqual(c.snap) }
   })
 })
+
+describe("the gray ooze's close-ups", () => {
+  it("its pseudopod on a hero gets a scene when it crits; a hero's weapon art on it shows its hit pose", () => {
+    const slam = strikeCamScene({ att: "gray-ooze", tgt: "freia", weapon: "Pseudopod", foe: true, crit: true, mode: "key" })
+    expect(slam?.pose.src).toBe("closeup-attack.png")
+    expect(strikeCamScene({ att: "gray-ooze", tgt: "freia", weapon: "Pseudopod", foe: true, mode: "key" })).toBeNull()
+    expect(strikeCamScene({ att: "freia", tgt: "gray-ooze", weapon: "Dagger", art: "sap", mode: "key" })?.hit.src).toBe("closeup-hit.png")
+  })
+})

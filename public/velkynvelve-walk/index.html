@@ -17805,7 +17805,8 @@ const STRIKE_CAM = {
   //   strike poses: kind, the pose file, its scale, where the feet stand, `hand` (the pommel, the muzzle, the palm)
   //   weapon:       the pose shows that weapon, so it is only for that weapon (the pose follows the weapon in hand)
   //   wind:         an optional wind-up pose, shown only while a melee attacker lunges
-  //   hit:          the pose of someone taking a blow; `mark` is where a shot or a spell lands on it
+  //   hit:          the pose of someone taking a blow; `mark` is where a shot or a spell lands on it; `splash`, the
+  //                 colours of what flies off it (red blood when absent: an ooze splashes gray slime)
   poses: {
     freia: {
       "art:sap": { kind: "melee", src: "closeup-sap.png", scale: 2, feetX: 700, hand: [0.95, 0.6], weapon: /dagger/i,
@@ -17838,6 +17839,9 @@ const STRIKE_CAM = {
       attack: { kind: "melee", src: "closeup-attack.png", scale: 1.25, feetX: 600, hand: [0.99, 0.2] },
       shot: { kind: "shot", src: "closeup-shot.png", scale: 1.25, feetX: 420, hand: [0.98, 0.16], mark: [0.5, 0.4] } },
     quaggoth: { hit: { src: "closeup-hit.png", scale: 1.4 }, attack: { kind: "melee", src: "closeup-attack.png", scale: 1.4, feetX: 640, hand: [0.92, 0.63] } },
+    // the gray ooze of the Velkynvelve pool (Sam, 2026-11-23: "go corrode and ooze close-ups"): its pseudopod hooked
+    // over the mound as in his reference ("It should strike with a pseudopod like this"), the tip is the blow
+    "gray-ooze": { hit: { src: "closeup-hit.png", scale: 1.15, splash: ["#5d6a73", "#8b9aa3", "#3b454d"] }, attack: { kind: "melee", src: "closeup-attack.png", scale: 1.3, feetX: 640, hand: [0.87, 0.38] } },
     "giant-spider": { hit: { src: "closeup-hit.png", scale: 1.2 }, attack: { kind: "melee", src: "closeup-attack.png", scale: 1.3, feetX: 740, hand: [0.75, 0.55] } },
     // the named drow of Velkynvelve (Sam, 2026-11-23: "Draw hit poses for Ilvara, Asha, Shoor, Jorlan, giant spider")
     ilvara: { hit: { src: "closeup-hit.png", scale: 1.25 },
@@ -18118,7 +18122,7 @@ function strikeCam(o){
     : {inMs: 80, snap: 0, rel: spell ? 110 : 0, hit: (spell ? 240 : 110) + lead, stop: base.stop, hold: (spell ? 240 : 110) + lead + after, out: base.out};
   const rays = []; for (let i = 0; i < 13; i++) rays.push({a: Math.random() * 6.283, len: .55 + Math.random() * .6, w: Math.random()});
   const blood = o.block || (P.fx && P.fx.blood === false) ? 0 : Math.round((o.crit ? 70 : 44) * (melee ? 1 : .6)), drops = [];
-  for (let i = 0; i < blood; i++){ const a = -.35 + (Math.random() - .5) * 1.5, v = 260 + Math.random() * (o.crit ? 900 : 640); drops.push({vx: Math.cos(a) * v, vy: Math.sin(a) * v - 120, r: 3 + Math.random() * 9, col: ["#96121a", "#be1418", "#70060e"][i % 3]}); }
+  for (let i = 0; i < blood; i++){ const a = -.35 + (Math.random() - .5) * 1.5, v = 260 + Math.random() * (o.crit ? 900 : 640); drops.push({vx: Math.cos(a) * v, vy: Math.sin(a) * v - 120, r: 3 + Math.random() * 9, col: ((P.hit && P.hit.splash) || ["#96121a", "#be1418", "#70060e"])[i % 3]}); }   // an ooze splashes its own slime, not blood
   const me = SC.run = {t0: performance.now(), c, after, o: {...o}, waiting: !!o.wait};
   scSound(o);
   SC.el.style.display = "block"; cancelAnimationFrame(SC.raf);
