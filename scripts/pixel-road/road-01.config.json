@@ -1,0 +1,62 @@
+{
+ "name": "The tunnel out of Velkynvelve",
+ "pixellabMapId": "1c47eece-3986-4b2c-9501-3ad0b47fe44e",
+ "rows": 24,
+ "cols": 64,
+ "crops": [
+  "<view_map crop, cells 0-15>.png",
+  "<cells 16-31>.png",
+  "<cells 32-47>.png",
+  "<cells 48-63>.png"
+ ],
+ "grid": "road-01.grid.txt",
+ "export": "<unzipped PixelLab export>/",
+ "kinds": {
+  "underdark-hq spire": "spire",
+  "underdark-hq fang": "fang",
+  "underdark-hq zurkhwood": "zurkhwood",
+  "underdark-hq ruins": "ruins",
+  "underdark-hq stalagmites": "stalagmites",
+  "underdark-hq rubble": "rubble",
+  "underdark-hq boulders": "boulders",
+  "underdark-hq crystals": "crystals",
+  "underdark-hq mushrooms": "mushrooms"
+ },
+ "foreground": {
+  "ceiling": "art/ceiling.webp",
+  "shelf": "art/shelf.webp"
+ },
+ "entry": {
+  "x": 48,
+  "y": 400,
+  "label": "Velkynvelve"
+ },
+ "exit": {
+  "x": 2000,
+  "y": 432,
+  "label": "The road on"
+ },
+ "landmarks": [
+  {
+   "kind": "ruins",
+   "label": "Ruins",
+   "x": 1264,
+   "y": 246,
+   "plate": "art/plates/ruins.png"
+  }
+ ],
+ "glow": {
+  "crystals": "#6fd8ff",
+  "boulders": "#39d6b8",
+  "mushrooms": "#d06bff",
+  "zurkhwood": "#c77bff",
+  "ruins": "#5fd6e8"
+ },
+ "shine": {
+  "crystals": 1.0,
+  "mushrooms": 0.5,
+  "zurkhwood": 0.45,
+  "ruins": 0.4,
+  "boulders": 0.28
+ }
+}

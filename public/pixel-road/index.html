@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>The Road — Ashes of Prometheus</title>
+<!--
+  THE PIXEL ROAD (pilot, look only).
+
+  Sam, 2026-11-22: "We should make a hybrid where a token of the party and main characters with the party tightly
+  behind move through the pixel map until there is an encounter and then it moves into the painted plates."
+  And: "The plates can also be areas of interest, traders, special terrain features."
+
+  This page is step 1 of claude/Pixel_Road_Hybrid_2026-11-22.md: ONE stretch of road, drawn from a PixelLab tile
+  map, with the leader walking it and the party tight behind. It reads nothing from the game and writes nothing
+  to it: no march, no meetings, no fights, no plates yet. Those are steps 2 and 3.
+
+  Where the party can walk is not painted by hand. It comes with the map: road.json carries the map's own grid
+  of cells (floor / rock / cliff face / stream) and each prop's footprint, and the page walks on that.
+
+  SOUND (Sam, 2026-11-23: "Where is the horror, underdark DND sound ... we have a number of tracks we can use from
+  my library"). The road sounds the way the travel map's road already does (public/underdark-map/index.html), with
+  the same files and the same levels, nothing new: the library's Cavern of Lost Souls for music, the tunnel bed
+  under it, boots on stone while the party moves, and the water bed rising as they near the stream. It starts on
+  the first click or key, as browsers require. /test-copy-silence.js is the first script, so a preview copy stays
+  silent until Sam turns its sound on with the pill in the corner. M turns the music off and on.
+
+  Open it:  /pixel-road/index.html            (or the DM's door, /rehearsal?to=road)
+            ?line=kenta,freia,scott           who walks, leader first (sprite slugs in /sprites)
+            ?light=0                          the cave drawn fully lit, no darkness or glow
+            ?fg=0                             without the near rock (ceiling and shelf) in front
+            ?road=road-01                     which stretch
+            ?sound=0                          no sound at all
+-->
+<script src="/test-copy-silence.js"></script>
+<style>
+  html,body{margin:0;height:100%;background:#07060b;overflow:hidden;touch-action:none}
+  canvas{display:block;width:100vw;height:100vh;cursor:pointer}
+  #plate{position:fixed;inset:0;background:#07060b;opacity:0;pointer-events:none;transition:opacity .7s ease;cursor:pointer}
+  #plate.on{opacity:1;pointer-events:auto}
+  #plate img{width:100%;height:100%;object-fit:cover;image-rendering:pixelated;display:block}
+  #plate .cap{position:absolute;left:0;right:0;bottom:0;padding:3.2em 1em 1.4em;text-align:center;color:#e9dcc6;font:600 22px Georgia,serif;letter-spacing:.22em;text-transform:uppercase;text-shadow:0 2px 6px #000;background:linear-gradient(transparent,rgba(4,3,8,.82))}
+  #plate .cap small{display:block;margin-top:.7em;font:13px Georgia,serif;letter-spacing:.08em;text-transform:none;color:#a99c8c}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="plate"><img alt=""><div class="cap"></div></div>
+<script>
+"use strict";
+const Q = new URLSearchParams(location.search);
+const ROAD_ID = (Q.get("road") || "road-01").replace(/[^a-z0-9-]/gi, "");
+const BASE = "/pixel-road/" + ROAD_ID + "/";
+const LIGHT = Q.get("light") !== "0";
+// Everyone who has a walking sprite of their own (lib/travel/map-hero.ts). Leader first.
+const LINE = (Q.get("line") || "kenta,freia,scott,samson,lynkes,gandalf,kingasaur").split(",").map(s => s.trim().replace(/[^a-z0-9-]/gi, "")).filter(Boolean).slice(0, 7);
+// Lynkes stands as tall as Fifi (Sam, 2026-11-12); his manifest's ppu is not his real height (lib/travel/map-hero.ts).
+const PPU_FIX = { lynkes: 155 };
+// The eight facings, in the row order of every sheet (lib/sprite-token.ts): S, SE, E, NE, N, NW, W, SW.
+const rowFor = (dx, dy) => (2 - Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) + 16) % 8;
+
+const SPEED = 92;        // world pixels a second (a 32px cell is 5 ft)
+const GAP = 17;          // how far behind the one in front each follower walks: tight, per Sam
+const FACE_LIP = 14;      // how far a rock face hangs down into the floor cell below it
+const FOOT_RX = 7, FOOT_RY = 3; // a figure's footprint on the ground, for bumping into things
+
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const img = (src) => new Promise((ok) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => ok(null); i.src = src; });
+
+let road = null, ground = null, shade = null, front = null, fgImg = {}, WALK = "w", objImg = {}, heroes = [], trail = [], path = [], keys = {}, cam = { x: 0, y: 0, z: 3 }, last = 0, lightCv = null;
+
+/* ---------- where the party can walk: the map's own cells, minus each prop's footprint ---------- */
+function cellAt(px, py) {
+  const c = Math.floor(px / road.tile), r = Math.floor(py / road.tile);
+  if (r < 0 || c < 0 || r >= road.rows || c >= road.cols) return "d";
+  return road.grid[r][c];
+}
+function solidAt(px, py) {
+  if (!WALK.includes(cellAt(px, py))) return true;
+  // A rock face is painted half a cell lower than its cell (the tiles sit on the corners of the grid), so the top
+  // of the floor cell under one is still wall to the eye. Nobody stands there.
+  if (cellAt(px, py - FACE_LIP) === "a") return true;
+  for (const o of road.objects) { const g = o.ground; if (px >= g[0] && px <= g[0] + g[2] && py >= g[1] && py <= g[1] + g[3]) return true; }
+  return false;
+}
+function canStand(x, y) {
+  return !solidAt(x - FOOT_RX, y) && !solidAt(x + FOOT_RX, y) && !solidAt(x, y - FOOT_RY) && !solidAt(x, y + FOOT_RY) && !solidAt(x, y);
+}
+
+/* ---------- finding a way: a half-cell grid, eight directions, no cutting corners ---------- */
+const STEP = 16;
+function findPath(fx, fy, tx, ty) {
+  const W = Math.ceil(road.cols * road.tile / STEP), H = Math.ceil(road.rows * road.tile / STEP);
+  const node = (x, y) => [Math.max(0, Math.min(W - 1, Math.round((x - STEP / 2) / STEP))), Math.max(0, Math.min(H - 1, Math.round((y - STEP / 2) / STEP)))];
+  const pos = (i, j) => [i * STEP + STEP / 2, j * STEP + STEP / 2];
+  const ok = (i, j) => i >= 0 && j >= 0 && i < W && j < H && canStand(...pos(i, j));
+  const [si, sj] = node(fx, fy);
+  let [ti, tj] = node(tx, ty);
+  if (!ok(ti, tj)) { // a click on rock or a prop: go to the nearest ground you can stand on
+    let best = null;
+    for (let r = 1; r <= 8 && !best; r++) for (let j = tj - r; j <= tj + r; j++) for (let i = ti - r; i <= ti + r; i++) {
+      if (!ok(i, j)) continue; const d = (i - ti) ** 2 + (j - tj) ** 2; if (!best || d < best[2]) best = [i, j, d];
+    }
+    if (!best) return []; [ti, tj] = best;
+  }
+  const key = (i, j) => j * W + i, came = new Map(), cost = new Map([[key(si, sj), 0]]);
+  const open = [[0, si, sj]];
+  while (open.length) {
+    let b = 0; for (let k = 1; k < open.length; k++) if (open[k][0] < open[b][0]) b = k;
+    const [, i, j] = open.splice(b, 1)[0];
+    if (i === ti && j === tj) break;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      if (!di && !dj) continue; const ni = i + di, nj = j + dj;
+      if (!ok(ni, nj)) continue; if (di && dj && (!ok(i + di, j) || !ok(i, j + dj))) continue;
+      const c = cost.get(key(i, j)) + (di && dj ? 1.4142 : 1);
+      if (c < (cost.get(key(ni, nj)) ?? Infinity)) { cost.set(key(ni, nj), c); came.set(key(ni, nj), [i, j]); open.push([c + Math.hypot(ti - ni, tj - nj), ni, nj]); }
+    }
+  }
+  if (!came.has(key(ti, tj)) && !(si === ti && sj === tj)) return [];
+  const out = []; let cur = [ti, tj];
+  while (cur && !(cur[0] === si && cur[1] === sj)) { out.unshift(pos(cur[0], cur[1])); cur = came.get(key(cur[0], cur[1])); }
+  return out;
+}
+
+/* ---------- the party ---------- */
+async function loadHero(slug) {
+  try {
+    const m = await (await fetch("/sprites/" + slug + "/sprite.json")).json();
+    const a = m.animations || {}; if (!a.walk || !a.idle) return null;
+    const cell = Array.isArray(m.cell) ? m.cell[0] : 128, piv = Array.isArray(m.pivot) ? m.pivot : [cell / 2, cell];
+    const ppu = PPU_FIX[slug] || m.ppu || 96;
+    const [walk, idle] = await Promise.all([img("/sprites/" + slug + "/" + a.walk.sheet), img("/sprites/" + slug + "/" + a.idle.sheet)]);
+    if (!walk || !idle) return null;
+    return { slug, cell, piv, s: road.tile / ppu, walk: { im: walk, n: a.walk.frames, fps: a.walk.fps || 8 }, idle: { im: idle, n: a.idle.frames, fps: a.idle.fps || 5 }, x: 0, y: 0, row: 2, moving: false, t: Math.random() * 3 };
+  } catch { return null; }
+}
+function drawHero(h) {
+  const a = h.moving ? h.walk : h.idle, f = Math.floor(h.t * a.fps) % a.n, w = h.cell * h.s;
+  ctx.globalAlpha = 0.32; ctx.fillStyle = "#000"; ctx.beginPath(); ctx.ellipse(h.x, h.y, w * 0.17, w * 0.06, 0, 0, 7); ctx.fill(); ctx.globalAlpha = 1;
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(a.im, f * h.cell, h.row * h.cell, h.cell, h.cell, h.x - h.piv[0] * h.s, h.y - h.piv[1] * h.s, w, w);
+}
+
+/* ---------- moving ---------- */
+function stepLeader(dt) {
+  const L = heroes[0]; let vx = 0, vy = 0;
+  const kx = (keys.ArrowRight || keys.d ? 1 : 0) - (keys.ArrowLeft || keys.a ? 1 : 0), ky = (keys.ArrowDown || keys.s ? 1 : 0) - (keys.ArrowUp || keys.w ? 1 : 0);
+  if (kx || ky) { path = []; const n = Math.hypot(kx, ky); vx = kx / n; vy = ky / n; }
+  else if (path.length) {
+    const [tx, ty] = path[0], d = Math.hypot(tx - L.x, ty - L.y);
+    if (d < SPEED * dt + 0.5) { L.x = tx; L.y = ty; path.shift(); pushTrail(); return path.length > 0; }
+    vx = (tx - L.x) / d; vy = (ty - L.y) / d;
+  }
+  if (!vx && !vy) return false;
+  const nx = L.x + vx * SPEED * dt, ny = L.y + vy * SPEED * dt; let moved = false;
+  if (canStand(nx, ny)) { L.x = nx; L.y = ny; moved = true; }
+  else if (canStand(nx, L.y)) { L.x = nx; moved = true; }   // slide along a wall instead of stopping dead
+  else if (canStand(L.x, ny)) { L.y = ny; moved = true; }
+  if (moved) { L.row = rowFor(vx, vy); pushTrail(); }
+  return moved;
+}
+function pushTrail() {
+  const L = heroes[0], p = trail[0];
+  if (!p || Math.hypot(L.x - p[0], L.y - p[1]) >= 1.5) { trail.unshift([L.x, L.y]); if (trail.length > 900) trail.length = 900; }
+}
+// Each follower stands on the leader's own footsteps, GAP further back than the one ahead, so the line bends
+// round corners the way the leader went and nobody walks through rock.
+//
+// The distance back is measured from where the leader IS, not from the last footstep recorded. Footsteps are only
+// recorded every 1.5px, so measured from those a follower stood still on every frame that recorded none and then
+// jumped on the next, and each standstill flipped it from its walk to its idle and back. On a fast screen that was
+// most frames: the leader walked and everyone behind him shivered (Sam, 2026-11-23: "everyone is just vibrating
+// fast"). A follower now walks whenever the leader walks, and faces the way the path runs under its own feet.
+function placeFollowers(dt, leaderMoved) {
+  const L = heroes[0], pts = (!trail.length || trail[0][0] !== L.x || trail[0][1] !== L.y) ? [[L.x, L.y]].concat(trail) : trail;
+  for (let i = 1; i < heroes.length; i++) {
+    const h = heroes[i], want = GAP * i; let acc = 0, at = pts[pts.length - 1], dir = null;
+    for (let k = 1; k < pts.length; k++) {
+      const ax = pts[k - 1][0], ay = pts[k - 1][1], bx = pts[k][0], by = pts[k][1], d = Math.hypot(bx - ax, by - ay);
+      if (acc + d >= want) {
+        const u = (want - acc) / (d || 1); at = [ax + (bx - ax) * u, ay + (by - ay) * u];
+        // which way the path runs here, looked at over a few footsteps so a single kinked step cannot turn a head
+        const a = pts[Math.max(0, k - 4)], b = pts[Math.min(pts.length - 1, k + 3)];
+        if (Math.hypot(a[0] - b[0], a[1] - b[1]) > 2) dir = [a[0] - b[0], a[1] - b[1]];
+        break;
+      }
+      acc += d;
+    }
+    h.moving = leaderMoved;
+    if (leaderMoved && dir) h.row = rowFor(dir[0], dir[1]);
+    h.x = at[0]; h.y = at[1];
+  }
+}
+
+/* ---------- drawing ---------- */
+function resize() { const r = Math.min(window.devicePixelRatio || 1, 2); cv.width = Math.round(innerWidth * r); cv.height = Math.round(innerHeight * r); }
+function camera() {
+  // About eight and a half cells of height on screen, whatever the window: close, so the rock and the
+  // tall things in the cave stand over the figures (Sam, 2026-11-22: "more depth").
+  const m = road.tile / 2, ww = road.cols * road.tile - 2 * m, wh = road.rows * road.tile - 2 * m;
+  cam.z = Math.max(cv.height / (8.5 * road.tile), cv.width / ww, cv.height / wh);
+  const vw = cv.width / cam.z, vh = cv.height / cam.z, L = heroes[0];
+  cam.x = Math.max(m, Math.min(m + ww - vw, L.x - vw / 2)); cam.y = Math.max(m, Math.min(m + wh - vh, L.y - vh / 2));
+}
+function sign(text, x, y, near) {
+  // A way out or a place of interest: a small faint name that brightens as the party nears it (Sam's pick "A"
+  // on the exit signposts, 2026-11-15). No floor glow.
+  const d = Math.hypot(heroes[0].x - x, heroes[0].y - y), a = 0.34 + 0.6 * Math.max(0, 1 - d / near);
+  ctx.save(); ctx.globalAlpha = a; ctx.font = "600 7px Georgia, 'Times New Roman', serif"; ctx.textAlign = "center";
+  ctx.lineWidth = 2; ctx.strokeStyle = "rgba(0,0,0,.85)"; ctx.fillStyle = "#e8d6a8";
+  const t = text.toUpperCase().split("").join(" "); ctx.strokeText(t, x, y); ctx.fillText(t, x, y); ctx.restore();
+}
+function drawLight() {
+  if (!lightCv) lightCv = document.createElement("canvas");
+  if (lightCv.width !== cv.width || lightCv.height !== cv.height) { lightCv.width = cv.width; lightCv.height = cv.height; }
+  const l = lightCv.getContext("2d"), z = cam.z, sx = (x) => (x - cam.x) * z, sy = (y) => (y - cam.y) * z;
+  l.globalCompositeOperation = "source-over"; l.fillStyle = "rgba(7,5,16,.40)"; l.fillRect(0, 0, lightCv.width, lightCv.height);
+  l.globalCompositeOperation = "destination-out";
+  const hole = (x, y, r, k) => { const g = l.createRadialGradient(sx(x), sy(y), 0, sx(x), sy(y), r * z); g.addColorStop(0, "rgba(0,0,0," + k + ")"); g.addColorStop(0.35, "rgba(0,0,0," + k * 0.8 + ")"); g.addColorStop(0.7, "rgba(0,0,0," + k * 0.3 + ")"); g.addColorStop(1, "rgba(0,0,0,0)"); l.fillStyle = g; l.fillRect(sx(x) - r * z, sy(y) - r * z, 2 * r * z, 2 * r * z); };
+  hole(heroes[0].x, heroes[0].y - 14, 260, 1);
+  for (const o of road.objects) if (road.glow[o.kind]) hole(o.x + o.w / 2, o.y + o.h * 0.6, o.h > 100 ? 96 : 70, 0.6);
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(lightCv, 0, 0);
+}
+// WHAT GLOWS (Sam, 2026-11-22: "Crystals should glow"). road.json says which kinds of prop give off light, in what
+// colour and how strongly. Each one gets a pool of its colour on the floor, a bloom over itself, a slow pulse of its
+// own, and the strong ones (crystals) get glints. It is drawn after the darkness, so it reads as light, and it does
+// not depend on ?light.
+const hexA = (hex, a) => hex + Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, "0");
+function drawGlow(now) {
+  ctx.setTransform(cam.z, 0, 0, cam.z, -cam.x * cam.z, -cam.y * cam.z);
+  ctx.globalCompositeOperation = "lighter";
+  const t = now / 1000;
+  for (const o of road.objects) {
+    const col = road.glow && road.glow[o.kind]; if (!col) continue;
+    const k = (road.shine && road.shine[o.kind]) ?? 0.4, ph = o.x * 0.37 + o.y * 0.11;
+    const pulse = 0.76 + 0.24 * Math.sin(t * 1.7 + ph), cx = o.x + o.w / 2, base = o.ground[1] + o.ground[3] * 0.6;
+    // the pool on the floor: wide and flat
+    let r = 34 + 46 * k; ctx.save(); ctx.translate(cx, base); ctx.scale(1, 0.5);
+    let g = ctx.createRadialGradient(0, 0, 0, 0, 0, r); g.addColorStop(0, hexA(col, 0.42 * k * pulse)); g.addColorStop(0.5, hexA(col, 0.16 * k * pulse)); g.addColorStop(1, hexA(col, 0));
+    ctx.fillStyle = g; ctx.fillRect(-r, -r, 2 * r, 2 * r); ctx.restore();
+    // the bloom over the thing itself
+    const by = o.h > 100 ? o.y + o.h * 0.3 : o.y + o.h * 0.55; r = (o.h > 100 ? o.w * 0.55 : o.w * 0.62) * (0.8 + 0.4 * k);
+    g = ctx.createRadialGradient(cx, by, 0, cx, by, r); g.addColorStop(0, hexA(col, 0.5 * k * pulse)); g.addColorStop(0.45, hexA(col, 0.2 * k * pulse)); g.addColorStop(1, hexA(col, 0));
+    ctx.fillStyle = g; ctx.fillRect(cx - r, by - r, 2 * r, 2 * r);
+    if (k < 0.9) continue;
+    // glints: three small stars that take turns catching the light
+    for (let i = 0; i < 3; i++) {
+      const a = Math.max(0, Math.sin(t * 2.3 + ph + i * 2.1)) ** 6; if (a < 0.03) continue;
+      const gx = cx + [-9, 6, 1][i], gy = o.y + o.h * [0.42, 0.5, 0.28][i], L = 5 * a + 1;
+      ctx.fillStyle = hexA("#ffffff", 0.9 * a); ctx.fillRect(gx - L, gy - 0.5, 2 * L, 1); ctx.fillRect(gx - 0.5, gy - L, 1, 2 * L);
+    }
+  }
+  ctx.globalCompositeOperation = "source-over";
+}
+// THE NEAR ROCK (art: Sam, 2026-11-22, a stalactite ceiling lip and a stalagmite shelf). The ceiling hangs across the
+// top of the screen and the shelf rises along the bottom, both closer to the eye than the party, so they slide past
+// faster than the floor does. That difference in speed is most of what makes the cave read as deep. Each painting is
+// one screen wide and is laid end to end with every other copy mirrored, so the joins meet themselves.
+function drawForeground() {
+  if (Q.get("fg") === "0") return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+  const band = (im, par, bottom) => {
+    if (!im) return;
+    const w = cv.width, h = Math.round(im.height * w / im.width), y = bottom ? cv.height - h : 0;
+    const slide = cam.x * cam.z * par, first = Math.floor(slide / w);
+    for (let i = first; i * w - slide < cv.width; i++) {
+      const x = Math.round(i * w - slide);
+      if (i % 2 === 0) ctx.drawImage(im, x, y, w, h);
+      else { ctx.save(); ctx.translate(x + w, y); ctx.scale(-1, 1); ctx.drawImage(im, 0, 0, w, h); ctx.restore(); }
+    }
+  };
+  band(fgImg.ceiling, 1.3, false);
+  band(fgImg.shelf, 1.6, true);
+}
+// A STOP OPENS A PLATE (Sam, 2026-11-22: the party walks the pixel road until a stop, "then it moves into the painted
+// plates"; 2026-11-23: he sent the picture for the Ruins). When the party comes to rest beside a landmark that has a
+// plate, the road fades into that picture. A click or a key goes back to the road. It will not open again until the
+// party has walked away and come back. Look-only for now: nothing happens inside the plate yet.
+const plateEl = document.getElementById("plate"); let plateOpen = null; const plateSeen = new Set();
+function plateTick(moved) {
+  const L = heroes[0];
+  for (const m of road.landmarks || []) {
+    if (!m.plate) continue;
+    const d = Math.hypot(L.x - m.x, L.y - m.y);
+    if (d > 110) plateSeen.delete(m);
+    else if (d < 44 && !moved && !plateOpen && !plateSeen.has(m)) {
+      plateOpen = m; plateSeen.add(m);
+      plateEl.querySelector("img").src = BASE + m.plate;
+      plateEl.querySelector(".cap").innerHTML = ""; plateEl.querySelector(".cap").append(m.label, Object.assign(document.createElement("small"), { textContent: "Click or press any key to go back to the road" }));
+      plateEl.classList.add("on");
+    }
+  }
+}
+function plateClose() { if (!plateOpen) return false; plateOpen = null; plateEl.classList.remove("on"); path = []; keys = {}; return true; }
+plateEl.addEventListener("pointerdown", (e) => { e.stopPropagation(); plateClose(); });
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
+  const moved = plateOpen ? false : stepLeader(dt); heroes[0].moving = moved; placeFollowers(dt, moved);
+  plateTick(moved);
+  soundTick(moved);
+  for (const h of heroes) h.t += dt;
+  camera();
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.fillStyle = "#07060b"; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.setTransform(cam.z, 0, 0, cam.z, -cam.x * cam.z, -cam.y * cam.z);
+  ctx.imageSmoothingEnabled = false; ctx.drawImage(ground, 0, 0);
+  // Depth, baked once by scripts/pixel-road/bake.py: the dark at the foot of each rock face and the shadow every
+  // prop throws across the floor. It goes over the ground and under the figures and props.
+  if (shade) ctx.drawImage(shade, 0, 0);
+  // Figures and props together, back to front, so a hero who walks behind a stalagmite is behind it. The props are
+  // already in the ground picture; drawing the same pixels again on top of a figure is what puts it in front.
+  const things = heroes.map((h) => ({ y: h.y, h })).concat(road.objects.map((o) => ({ y: o.ground[1] + o.ground[3], o })));
+  things.sort((a, b) => a.y - b.y);
+  for (const t of things) { if (t.h) drawHero(t.h); else if (objImg[t.o.kind]) { ctx.imageSmoothingEnabled = false; ctx.drawImage(objImg[t.o.kind], t.o.x, t.o.y); } }
+  // The lip of the rock that stands between the party and us (bake.py): over the figures, so feet go behind it.
+  if (front) { ctx.imageSmoothingEnabled = false; ctx.drawImage(front, 0, 0); }
+  if (LIGHT) drawLight();
+  drawGlow(now);
+  drawForeground();
+  ctx.setTransform(cam.z, 0, 0, cam.z, -cam.x * cam.z, -cam.y * cam.z);
+  sign("← " + road.entry.label, road.entry.x + 26, road.entry.y - 62, 220);
+  sign(road.exit.label + " →", road.exit.x - 26, road.exit.y - 62, 220);
+  for (const m of road.landmarks || []) sign(m.label, m.x, m.y, 200);
+  requestAnimationFrame(frame);
+}
+
+/* ---------- sound: the travel map's own road sound, same files, same levels ---------- */
+const SOUND = Q.get("sound") !== "0";
+const SND = {
+  music: { src: "https://hebbkx1anhila5yf.public.blob.vercel-storage.com/99_Cavern_of_Lost_Souls-THx80DYk2x7Bbhv3h7KPAeIxLPywTO.mp3", vol: 0.45 }, // lib/music-library.ts, the Underdark road's track
+  bed: { src: "/underdark-map/sfx/tunnel.mp3", vol: 0.25 },      // the room the party is standing in, far under the music
+  march: { src: "/underdark-map/sfx/march.mp3", vol: 0.5 },      // boots on stone, only while they move
+  water: { src: "/underdark-map/sfx/water.mp3", vol: 0.32 },     // louder the nearer the stream
+};
+const snd = {}; let unlocked = false, musicOn = true, sfxOn = true, marching = false, waterAt = null;
+try { musicOn = localStorage.getItem("wm_music") !== "0"; sfxOn = localStorage.getItem("wm_sfx") !== "0"; } catch { /* storage blocked */ }
+function ramp(a, to, ms) {
+  if (!a) return; clearInterval(a._iv); const from = a.volume, t0 = Date.now();
+  if (to > 0 && a.paused) a.play().catch(() => {});
+  a._iv = setInterval(() => { const u = Math.min(1, (Date.now() - t0) / ms); a.volume = Math.max(0, Math.min(1, from + (to - from) * u)); if (u >= 1) { clearInterval(a._iv); if (to === 0) a.pause(); } }, 30);
+}
+function soundStart() {
+  if (!SOUND || unlocked) return; unlocked = true;
+  for (const [k, d] of Object.entries(SND)) { const a = new Audio(); a.loop = true; a.preload = "auto"; a.volume = 0; a.src = d.src; snd[k] = a; }
+  if (musicOn) ramp(snd.music, SND.music.vol, 2200);
+  if (sfxOn) ramp(snd.bed, SND.bed.vol, 1500);
+}
+function soundTick(moved) {
+  if (!unlocked) return;
+  if (moved !== marching) {             // the march and the music share the same air: the music drops a fifth while they walk
+    marching = moved;
+    if (sfxOn) ramp(snd.march, moved ? SND.march.vol : 0, moved ? 450 : 600);
+    if (musicOn) ramp(snd.music, SND.music.vol * (moved ? 0.8 : 1), 500);
+  }
+  if (sfxOn && waterAt) {               // the stream: heard from about eight cells off, full at its bank
+    const d = Math.hypot(heroes[0].x - waterAt[0], heroes[0].y - waterAt[1]), v = SND.water.vol * Math.max(0, 1 - d / 260) ** 1.5, a = snd.water;
+    if (v > 0.004 && a.paused) a.play().catch(() => {});
+    if (Math.abs(a.volume - v) > 0.004) a.volume = v;
+    if (v <= 0.004 && !a.paused && a.volume <= 0.004) a.pause();
+  }
+}
+function toggleMusic() {
+  musicOn = !musicOn; try { localStorage.setItem("wm_music", musicOn ? "1" : "0"); } catch { /* storage blocked */ }
+  if (unlocked) ramp(snd.music, musicOn ? SND.music.vol * (marching ? 0.8 : 1) : 0, 600);
+}
+
+/* ---------- start ---------- */
+(async function () {
+  road = await (await fetch(BASE + "road.json")).json();
+  ground = await img(BASE + road.ground);
+  WALK = road.walkable || "w";
+  if (road.shade) shade = await img(BASE + road.shade);
+  if (road.front) front = await img(BASE + road.front);
+  for (const [k, f] of Object.entries(road.foreground || {})) fgImg[k] = await img(BASE + f);
+  for (const k of new Set(road.objects.map((o) => o.kind))) objImg[k] = await img(BASE + "objects/" + k + ".png");
+  heroes = (await Promise.all(LINE.map(loadHero))).filter(Boolean);
+  if (!ground || !heroes.length) { document.body.innerHTML = '<p style="color:#a99;font:14px Georgia;padding:2em">The road could not be drawn.</p>'; return; }
+  heroes.forEach((h, i) => { h.x = road.entry.x - i * GAP; h.y = road.entry.y; });
+  { let sx = 0, sy = 0, n = 0;      // the middle of the stream, for the sound of it
+    road.grid.forEach((row, r) => { for (let c = 0; c < row.length; c++) if (row[c] === "s") { sx += c * road.tile + 16; sy += r * road.tile + 16; n++; } });
+    if (n) waterAt = [sx / n, sy / n]; }
+  for (let i = 0; i <= heroes.length * GAP + 4; i += 1.5) trail.push([road.entry.x - i, road.entry.y]);
+  resize(); addEventListener("resize", resize);
+  addEventListener("keydown", (e) => { soundStart(); if (plateClose()) { e.preventDefault(); return; } if (e.key === "m" || e.key === "M") toggleMusic(); keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = true; if (e.key.startsWith("Arrow")) e.preventDefault(); });
+  addEventListener("keyup", (e) => { keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = false; });
+  addEventListener("blur", () => { keys = {}; });
+  cv.addEventListener("pointerdown", (e) => {
+    soundStart();
+    const r = cv.width / cv.clientWidth, wx = cam.x + e.clientX * r / cam.z, wy = cam.y + e.clientY * r / cam.z;
+    path = findPath(heroes[0].x, heroes[0].y, wx, wy);
+  });
+  // For poking at it from the console and for a browser test. The walk check itself is lib/pixel-road.test.ts.
+  window.__road = { road, heroes, plate: () => plateOpen && plateOpen.label, objImg, snd, findPath, canStand, go: (x, y) => { path = findPath(heroes[0].x, heroes[0].y, x, y); return path.length; }, idle: () => !path.length };
+  requestAnimationFrame((t) => { last = t; frame(t); });
+})();
+</script>
+</body>
+</html>

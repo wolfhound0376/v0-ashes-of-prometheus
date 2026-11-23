@@ -1,0 +1,423 @@
+{
+ "_": "Baked by scripts/pixel-road/bake.py from the PixelLab map below; do not edit by hand. ground.png has the props painted in; objects/ holds the same props again so a figure can stand behind one.",
+ "id": "road-01",
+ "name": "The tunnel out of Velkynvelve",
+ "pixellabMapId": "1c47eece-3986-4b2c-9501-3ad0b47fe44e",
+ "tile": 32,
+ "cols": 64,
+ "rows": 24,
+ "ground": "ground.png",
+ "shade": "shade.png",
+ "front": "front.png",
+ "foreground": {
+  "ceiling": "fg/ceiling.webp",
+  "shelf": "fg/shelf.webp"
+ },
+ "legend": {
+  "w": "floor",
+  "r": "damp floor",
+  "d": "rock",
+  "a": "rock face",
+  "s": "stream"
+ },
+ "walkable": "wr",
+ "grid": [
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddddaaaaaaaaaaaadddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddddwwwwwwwwwwwwdddddddddddddddddddddddddddddddddddddd",
+  "ddddddddddddaawwwwwwwwwwwwaaddddddaaaaaaaaaadddddddddddddddddddd",
+  "ddddddddddddwwwwwwwwwwwwwwwwddddddwwwwwwwwwwdddddddddddddddddddd",
+  "ddddddddddddwwwwwwswwwwwswwwddaaaawwwwwwwwwwaaaadddddddddddddddd",
+  "ddddddddddddwwwwwssssssssswwddwwwwwwwwwwwwwwwwwwdddddddddddddddd",
+  "ddddddddaaaawwwsssssssssswwwddwwwwrwwwwwwwwwwwwwaaaaaadddddddddd",
+  "ddddddddwwwwwwssswwwwswwwwwwaawwwrrrrwwwwwwwwwwwwwwwwwdddddddddd",
+  "aaaaaaaawwwwwwwswwwwwwwwwwwwwwwwrrrrrrwwwwwwwwwwwwwwwwaaaaaaaaaa",
+  "wwwwwwwwwwwwwwwwwwwwwwwwwwwwwwwrrrwwrwwwwwwwwwwwwwwwwwwwwwwwwwww",
+  "wwwwrrwwwwwwwwwwrwwwwwwwrrwwrrwwrwwwwwwwwwwwrwwwwwwwwwwwwwwwwwww",
+  "wwwwwwrrwwwwwwwrrrrwwwwwwrrrwwwwwwwwwwwwwrrrrrwwwwwwwwwwrrwwrrww",
+  "wwwwwwwwwwwwwwrrrrrrwwwwwwwwwwwwwwwwwwwwrrrrrrwwddddwwwwwrrrwwww",
+  "ddddddddwwwwwrrrwwrrwwwwwwwwddwwwwwwwwwrrrwwrrrwddddwwwwwwwwwwww",
+  "ddddddddwwwwwwrwwrrrrwwwwwwwddwwwwwwwwrrrwwrrrwwdddddddddddddddd",
+  "ddddddddddddwwwwrrrrwwwwwwwwddwwwwwwwwwrwwrrrwwwdddddddddddddddd",
+  "ddddddddddddwwwwwrwwwwwwwwwwddwwwwwwwwwwwwwwwwwwdddddddddddddddd",
+  "dddddddddddddddwwwwwwwwwwddddddddwwwwwwwwwdddddddddddddddddddddd",
+  "dddddddddddddddwwwwwwwwwwddddddddwwwwwwwwwdddddddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+ ],
+ "objects": [
+  {
+   "kind": "rubble",
+   "x": 40,
+   "y": 332,
+   "w": 80,
+   "h": 52,
+   "ground": [
+    40,
+    371,
+    78,
+    13
+   ]
+  },
+  {
+   "kind": "boulders",
+   "x": 138,
+   "y": 424,
+   "w": 76,
+   "h": 56,
+   "ground": [
+    139,
+    466,
+    74,
+    14
+   ]
+  },
+  {
+   "kind": "fang",
+   "x": 296,
+   "y": 164,
+   "w": 80,
+   "h": 188,
+   "ground": [
+    296,
+    305,
+    80,
+    47
+   ]
+  },
+  {
+   "kind": "mushrooms",
+   "x": 404,
+   "y": 492,
+   "w": 56,
+   "h": 52,
+   "ground": [
+    404,
+    531,
+    55,
+    13
+   ]
+  },
+  {
+   "kind": "stalagmites",
+   "x": 406,
+   "y": 540,
+   "w": 52,
+   "h": 68,
+   "ground": [
+    407,
+    591,
+    50,
+    17
+   ]
+  },
+  {
+   "kind": "zurkhwood",
+   "x": 416,
+   "y": 36,
+   "w": 96,
+   "h": 188,
+   "ground": [
+    420,
+    177,
+    87,
+    47
+   ]
+  },
+  {
+   "kind": "boulders",
+   "x": 554,
+   "y": 616,
+   "w": 76,
+   "h": 56,
+   "ground": [
+    555,
+    658,
+    74,
+    14
+   ]
+  },
+  {
+   "kind": "spire",
+   "x": 672,
+   "y": 320,
+   "w": 96,
+   "h": 192,
+   "ground": [
+    672,
+    464,
+    96,
+    48
+   ]
+  },
+  {
+   "kind": "stalagmites",
+   "x": 758,
+   "y": 92,
+   "w": 52,
+   "h": 68,
+   "ground": [
+    759,
+    143,
+    50,
+    17
+   ]
+  },
+  {
+   "kind": "crystals",
+   "x": 790,
+   "y": 548,
+   "w": 52,
+   "h": 60,
+   "ground": [
+    793,
+    593,
+    47,
+    15
+   ]
+  },
+  {
+   "kind": "fang",
+   "x": 808,
+   "y": 36,
+   "w": 80,
+   "h": 188,
+   "ground": [
+    808,
+    177,
+    80,
+    47
+   ]
+  },
+  {
+   "kind": "boulders",
+   "x": 842,
+   "y": 552,
+   "w": 76,
+   "h": 56,
+   "ground": [
+    843,
+    594,
+    74,
+    14
+   ]
+  },
+  {
+   "kind": "crystals",
+   "x": 982,
+   "y": 516,
+   "w": 52,
+   "h": 60,
+   "ground": [
+    985,
+    561,
+    47,
+    15
+   ]
+  },
+  {
+   "kind": "fang",
+   "x": 1128,
+   "y": 484,
+   "w": 80,
+   "h": 188,
+   "ground": [
+    1128,
+    625,
+    80,
+    47
+   ]
+  },
+  {
+   "kind": "spire",
+   "x": 1152,
+   "y": 320,
+   "w": 96,
+   "h": 192,
+   "ground": [
+    1152,
+    464,
+    96,
+    48
+   ]
+  },
+  {
+   "kind": "ruins",
+   "x": 1211,
+   "y": 110,
+   "w": 107,
+   "h": 116,
+   "ground": [
+    1211,
+    197,
+    107,
+    29
+   ]
+  },
+  {
+   "kind": "rubble",
+   "x": 1256,
+   "y": 620,
+   "w": 80,
+   "h": 52,
+   "ground": [
+    1256,
+    659,
+    78,
+    13
+   ]
+  },
+  {
+   "kind": "spire",
+   "x": 1376,
+   "y": 192,
+   "w": 96,
+   "h": 192,
+   "ground": [
+    1376,
+    336,
+    96,
+    48
+   ]
+  },
+  {
+   "kind": "zurkhwood",
+   "x": 1440,
+   "y": 100,
+   "w": 96,
+   "h": 188,
+   "ground": [
+    1444,
+    241,
+    87,
+    47
+   ]
+  },
+  {
+   "kind": "stalagmites",
+   "x": 1494,
+   "y": 540,
+   "w": 52,
+   "h": 68,
+   "ground": [
+    1495,
+    591,
+    50,
+    17
+   ]
+  },
+  {
+   "kind": "zurkhwood",
+   "x": 1568,
+   "y": 164,
+   "w": 96,
+   "h": 188,
+   "ground": [
+    1572,
+    305,
+    87,
+    47
+   ]
+  },
+  {
+   "kind": "mushrooms",
+   "x": 1684,
+   "y": 396,
+   "w": 56,
+   "h": 52,
+   "ground": [
+    1684,
+    435,
+    55,
+    13
+   ]
+  },
+  {
+   "kind": "rubble",
+   "x": 1736,
+   "y": 332,
+   "w": 80,
+   "h": 52,
+   "ground": [
+    1736,
+    371,
+    78,
+    13
+   ]
+  },
+  {
+   "kind": "crystals",
+   "x": 1846,
+   "y": 452,
+   "w": 52,
+   "h": 60,
+   "ground": [
+    1849,
+    497,
+    47,
+    15
+   ]
+  },
+  {
+   "kind": "boulders",
+   "x": 1962,
+   "y": 456,
+   "w": 76,
+   "h": 56,
+   "ground": [
+    1963,
+    498,
+    74,
+    14
+   ]
+  },
+  {
+   "kind": "mushrooms",
+   "x": 1972,
+   "y": 332,
+   "w": 56,
+   "h": 52,
+   "ground": [
+    1972,
+    371,
+    55,
+    13
+   ]
+  }
+ ],
+ "entry": {
+  "x": 48,
+  "y": 400,
+  "label": "Velkynvelve"
+ },
+ "exit": {
+  "x": 2000,
+  "y": 432,
+  "label": "The road on"
+ },
+ "landmarks": [
+  {
+   "kind": "ruins",
+   "label": "Ruins",
+   "x": 1264,
+   "y": 246,
+   "plate": "plates/ruins.png"
+  }
+ ],
+ "glow": {
+  "crystals": "#6fd8ff",
+  "boulders": "#39d6b8",
+  "mushrooms": "#d06bff",
+  "zurkhwood": "#c77bff",
+  "ruins": "#5fd6e8"
+ },
+ "shine": {
+  "crystals": 1.0,
+  "mushrooms": 0.5,
+  "zurkhwood": 0.45,
+  "ruins": 0.4,
+  "boulders": 0.28
+ }
+}

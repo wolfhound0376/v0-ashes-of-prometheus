@@ -43,6 +43,9 @@ export default function RehearsalPage() {
   const [status, setStatus] = useState<"idle" | "checking" | "no" | "limited" | "nogate">("idle")
   const [toMap, setToMap] = useState(false)
   const wantsMap = () => { try { return new URLSearchParams(window.location.search).get("to") === "map" } catch { return false } }
+  // THE ROAD DOOR (Sam, 2026-11-22: the pixel road pilot). /rehearsal?to=road opens the walkable pixel stretch
+  // (public/pixel-road). It is a look-only page that reads and writes nothing in the game, so it needs no key.
+  const wantsRoad = () => { try { return new URLSearchParams(window.location.search).get("to") === "road" } catch { return false } }
 
   // The same three marks the host screen's Rehearsal button leaves, then the sandbox map.
   const enter = () => {
@@ -66,6 +69,7 @@ export default function RehearsalPage() {
   }
 
   useEffect(() => {
+    if (wantsRoad()) { window.location.replace("/pixel-road/index.html"); return }
     fetch("/api/dm/session", { cache: "no-store" }).then((r) => r.json()).then((j) => {
       setArmed(Boolean(j.gate))
       const map = wantsMap()
