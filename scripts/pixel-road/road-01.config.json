@@ -70,34 +70,13 @@
  },
  "paving": [
   {
-   "tiles": "art/tiles/ruin-ground",
-   "x": 1084,
-   "y": 180,
-   "rows": [
-    [
-     "3",
-     "0",
-     "11",
-     "0h",
-     "5"
-    ],
-    [
-     "4",
-     "1",
-     "2",
-     "0",
-     "4h"
-    ],
-    [
-     "",
-     "4h",
-     "1h",
-     "4",
-     ""
-    ]
-   ],
+   "image": "art/paving/ruins-forecourt.png",
+   "x": 1076,
+   "y": 176,
+   "w": 336,
    "solid": "t",
-   "ragged": 52,
+   "ragged": 70,
+   "bite": 10,
    "seed": 7
   }
  ]

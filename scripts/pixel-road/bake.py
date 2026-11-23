@@ -52,34 +52,33 @@ def main():
         assert im.size[1] == H, (c, im.size)
         ground.paste(im, (x, 0)); x += im.size[0]
     assert x == W, x
-    # PAVING (art: Sam, 2026-11-23, his 64px Underdark ruin ground tiles). A patch of his tiles laid into the floor,
-    # e.g. the forecourt of a ruin. "rows" are lists of tile names ("" leaves the cave floor; a trailing "h" mirrors
-    # the tile). The outer edge is eaten away in ragged 4px bites so the floor shows through and it reads as old
-    # paving breaking up, not a rug; "solid" names the sides that butt against something and stay straight.
-    for pv in cfg.get("paving", []):
-        rs = pv["rows"]; S = pv.get("size", 64); pw, ph = S * len(rs[0]), S * len(rs)
-        patch = Image.new("RGB", (pw, ph)); have = np.zeros((ph, pw), bool)
-        for r, row in enumerate(rs):
-            for c, n in enumerate(row):
-                if not n: continue
-                t = Image.open(p(os.path.join(pv["tiles"], n.rstrip("h") + ".png"))).convert("RGB")
-                if n.endswith("h"): t = t.transpose(Image.FLIP_LEFT_RIGHT)
-                patch.paste(t, (c * S, r * S)); have[r * S:(r + 1) * S, c * S:(c + 1) * S] = True
+    # PAVING (Sam, 2026-11-23, on the first forecourt made of flat 64px tiles: "Those ground tiles look horrible for
+    # the ruins. Make highquality, highdef ones that look like rubble, stone"). A patch of floor is ONE painted
+    # picture, not tiles, so there are no seams, and it is kept at its own (finer) resolution and drawn by the page
+    # over the ground and under the shadows. Its outer edge is eaten away in ragged bites with a soft rim so the cave
+    # floor shows through and it reads as paving breaking up, not a rug; "solid" names the sides that butt against
+    # something and stay straight.
+    paving = []
+    if os.path.isdir(os.path.join(out, "paving")): shutil.rmtree(os.path.join(out, "paving"))
+    for k, pv in enumerate(cfg.get("paving", [])):
+        os.makedirs(os.path.join(out, "paving"), exist_ok=True)
+        im = Image.open(p(pv["image"])).convert("RGB"); pw, ph = im.size
         yy, xx = np.mgrid[0:ph, 0:pw]; solid = pv.get("solid", "")
-        d = np.full((ph, pw), 999.0)
+        d = np.full((ph, pw), 9999.0)
         if "l" not in solid: d = np.minimum(d, xx)
         if "r" not in solid: d = np.minimum(d, pw - 1 - xx)
         if "t" not in solid: d = np.minimum(d, yy)
         if "b" not in solid: d = np.minimum(d, ph - 1 - yy)
-        rng = np.random.default_rng(pv.get("seed", 7))
-        bite = np.kron(rng.random((ph // 4 + 1, pw // 4 + 1)), np.ones((4, 4)))[:ph, :pw]
-        big = np.kron(rng.random((ph // 16 + 1, pw // 16 + 1)), np.ones((16, 16)))[:ph, :pw]
-        keep = have & (d > pv.get("ragged", 22) * (0.25 + 0.75 * big) * (0.4 + 0.6 * bite))
-        g = np.array(ground); x0, y0 = pv["x"], pv["y"]
-        sub = g[y0:y0 + ph, x0:x0 + pw]; pa = np.array(patch)
-        dark = keep & ~np.roll(keep, -1, axis=0)             # a thin dark lip under each broken edge
-        sub[keep] = pa[keep]; sub[dark] = (sub[dark] * 0.55).astype(np.uint8)
-        ground = Image.fromarray(g)
+        rng = np.random.default_rng(pv.get("seed", 7)); B = pv.get("bite", 10)
+        fine = np.kron(rng.random((ph // B + 1, pw // B + 1)), np.ones((B, B)))[:ph, :pw]
+        big = np.array(Image.fromarray((rng.random((ph // 48 + 2, pw // 48 + 2)) * 255).astype(np.uint8)).resize((pw, ph), Image.BICUBIC)) / 255.0
+        reach = pv.get("ragged", 60) * (0.15 + 0.85 * big) * (0.45 + 0.55 * fine)
+        al = np.clip((d - reach) / 5.0, 0, 1)
+        al = np.array(Image.fromarray((al * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.2)))
+        rgba = np.dstack([np.array(im), al]).astype(np.uint8)
+        name = "paving/%d.png" % k
+        Image.fromarray(rgba, "RGBA").save(os.path.join(out, name), optimize=True)
+        paving.append({"src": name, "x": pv["x"], "y": pv["y"], "w": pv["w"], "h": round(pv["w"] * ph / pw)})
     ground.save(os.path.join(out, "ground.png"), optimize=True)
 
     grid = [l.strip() for l in open(p(cfg["grid"])) if l.strip()]
@@ -197,7 +196,7 @@ def main():
             "ground": "ground.png", "shade": "shade.png", "front": "front.png", "foreground": fg,
             "legend": {"w": "floor", "r": "damp floor", "d": "rock", "a": "rock face", "s": "stream"}, "walkable": "wr",
             "grid": grid, "objects": objs, "entry": cfg["entry"], "exit": cfg["exit"],
-            "landmarks": marks, "glow": cfg.get("glow", {}), "shine": cfg.get("shine", {})}
+            "landmarks": marks, "paving": paving, "glow": cfg.get("glow", {}), "shine": cfg.get("shine", {})}
     json.dump(road, open(os.path.join(out, "road.json"), "w"), indent=1)
     print(rid, len(objs), "props,", sorted(seen), "->", out)
 

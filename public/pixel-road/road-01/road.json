@@ -451,6 +451,15 @@
    }
   }
  ],
+ "paving": [
+  {
+   "src": "paving/0.png",
+   "x": 1076,
+   "y": 176,
+   "w": 336,
+   "h": 199
+  }
+ ],
  "glow": {
   "crystals": "#6fd8ff",
   "boulders": "#39d6b8",

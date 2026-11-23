@@ -68,9 +68,12 @@ multiple worn pillars not like a token sitting in the middle of the cave."
   pillars on the floor in front. `import_object` takes at most 256x256.
 - **`vista` on a landmark** (`{"x","y","h","reach"}`): within `reach` pixels the camera eases back to show `h` world
   pixels of height centred on x,y, and the near rock (ceiling and shelf) fades so the landmark is not hidden.
-- **`paving` in the config** lays Sam's own 64px ground tiles (`art/tiles/ruin-ground/0..15.png`) into the floor as a
-  forecourt. `rows` name the tiles ("" = leave the cave floor, trailing "h" = mirrored); the edge is eaten away so
-  it reads as broken paving, not a rug.
+- **`paving` in the config** lays ONE painted picture of floor (not tiles) in front of a landmark:
+  `{"image","x","y","w","solid","ragged"}`. It is kept at its own finer resolution in `paving/` and the page draws it
+  over the ground and under the shadows; the bake eats its edge away so it reads as broken paving, not a rug.
+  Sam, 2026-11-23, on a first try built from flat 64px tiles: "Those ground tiles look horrible for the ruins. Make
+  highquality, highdef ones that look like rubble, stone, forget the spider that looks silly." The floor is made with
+  `create_image_pro` at 640x384 (25 generations), `no_background: false`, with crops of his terrain board as references.
 
 ## Baking `road-01` (PixelLab map `1c47eece-3986-4b2c-9501-3ad0b47fe44e`, "Road 01 - Tunnel out of Velkynvelve (cavern)")
 

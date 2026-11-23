@@ -194,7 +194,7 @@ function placeFollowers(dt, leaderMoved) {
 
 /* ---------- drawing ---------- */
 function resize() { const r = Math.min(window.devicePixelRatio || 1, 2); cv.width = Math.round(innerWidth * r); cv.height = Math.round(innerHeight * r); }
-let vista = 0;
+let vista = 0; const paveImg = [];
 function camera() {
   // About eight and a half cells of height on screen, whatever the window: close, so the rock and the
   // tall things in the cave stand over the figures (Sam, 2026-11-22: "more depth").
@@ -318,6 +318,8 @@ function frame(now) {
   ctx.imageSmoothingEnabled = false; ctx.drawImage(ground, 0, 0);
   // Depth, baked once by scripts/pixel-road/bake.py: the dark at the foot of each rock face and the shadow every
   // prop throws across the floor. It goes over the ground and under the figures and props.
+  // Painted floor (a ruin's forecourt): finer than the ground, so it is drawn smoothed, over the ground and under the shadows.
+  if (paveImg.length) { ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; for (const [im, q] of paveImg) ctx.drawImage(im, q.x, q.y, q.w, q.h); ctx.imageSmoothingEnabled = false; }
   if (shade) ctx.drawImage(shade, 0, 0);
   // Figures and props together, back to front, so a hero who walks behind a stalagmite is behind it. The props are
   // already in the ground picture; drawing the same pixels again on top of a figure is what puts it in front.
@@ -382,6 +384,7 @@ function toggleMusic() {
   ground = await img(BASE + road.ground);
   WALK = road.walkable || "w";
   if (road.shade) shade = await img(BASE + road.shade);
+  for (const q of road.paving || []) { const im = await img(BASE + q.src); if (im) paveImg.push([im, q]); }
   if (road.front) front = await img(BASE + road.front);
   for (const [k, f] of Object.entries(road.foreground || {})) fgImg[k] = await img(BASE + f);
   for (const k of new Set(road.objects.map((o) => o.kind))) objImg[k] = await img(BASE + "objects/" + k + ".png");
