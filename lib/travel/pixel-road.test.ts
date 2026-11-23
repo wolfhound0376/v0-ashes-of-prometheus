@@ -3,9 +3,13 @@ import { pixelRoadFor, pixelRoadHref } from "./pixel-road"
 
 describe("the pixel road on the real march (Sam, 2026-11-23)", () => {
   it("walks a road leg and never a sail leg", () => {
-    expect(pixelRoadFor({ a: "velkynvelve", b: "rm-1", mode: null })).toBe("road-02")
-    expect(pixelRoadFor({ a: "rm-1", b: "rm-2", mode: "road" })).toBe("road-02")
+    const one = pixelRoadFor({ a: "velkynvelve", b: "rm-1", mode: null })
+    expect(["road-02", "road-03"]).toContain(one)
+    expect(pixelRoadFor({ a: "rm-1", b: "velkynvelve", mode: "road" })).toBe(one)   // either direction, same stretch
     expect(pixelRoadFor({ a: "darklake-1", b: "darklake-2", mode: "sail" })).toBeNull()
+    const legs = ["velkynvelve", "rm-1", "rm-2", "rm-3", "rm-4", "rm-5", "sloobludop"]
+    const got = new Set(legs.slice(1).map((b, i) => pixelRoadFor({ a: legs[i], b, mode: "road" })))
+    expect(got.size).toBe(2)   // a march walks more than one stretch
   })
   it("builds the page's address: leader first, companions after, the two ends named", () => {
     const href = pixelRoadHref({ road: "road-01", line: ["kenta", "freia"], npcs: ["eldeth", "ront", "kenta"], from: "Velkynvelve", to: "Road Marker 1" })

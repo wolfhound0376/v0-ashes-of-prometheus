@@ -19,15 +19,23 @@ export interface RoadLeg {
  * The stretches that are painted. road-01 (64 x 24 cells) has the Ruins built into its wall and is the Rehearsal
  * door's. road-02 (112 x 48 cells, about three and a half times the floor) is the one a march walks (Sam,
  * 2026-11-23: "make sure that the pixel map we walk is large enough for us to explore when we are traveling"):
- * a long tunnel with side caves off it, a stream grotto, a fungus cave, a pool chamber and an alcove.
+ * a long tunnel with side caves off it, a stream grotto, a fungus cave, a pool chamber and an alcove. road-03 (112 x 44,
+ * "The violet hollow") is the painted misty-violet Underdark Sam picked (2026-11-23: spire, fungus tree, glowing
+ * fungus): a tunnel, a north cave, a chamber round a black lake, a south cave and an alcove.
  */
-export const PIXEL_ROADS = ["road-01", "road-02"] as const
+export const MARCH_ROADS: readonly PixelRoadId[] = ["road-02", "road-03"]
+export const PIXEL_ROADS = ["road-01", "road-02", "road-03"] as const
 export type PixelRoadId = (typeof PIXEL_ROADS)[number]
 
 /** Which stretch a leg is walked on, or null when the leg is not walked at all (water). */
 export function pixelRoadFor(leg: RoadLeg): PixelRoadId | null {
   if (leg.mode === "sail") return null
-  return "road-02"
+  // So marches differ, each leg has its own stretch, picked from its two ends (either direction gives the same one,
+  // and the same leg is always the same stretch). Claude's rule, not the book's.
+  const key = [leg.a, leg.b].sort().join("|")
+  let h = 0
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) >>> 0
+  return MARCH_ROADS[h % MARCH_ROADS.length]
 }
 
 const slugs = (xs: readonly string[], max: number) => [...new Set(xs.map((s) => s.toLowerCase().replace(/[^a-z0-9-]/g, "")).filter(Boolean))].slice(0, max)

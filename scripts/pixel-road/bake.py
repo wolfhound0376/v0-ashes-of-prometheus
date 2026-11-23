@@ -105,7 +105,10 @@ def main():
             for cx in range(cols):
                 if any(at(cx + dx, cy + dy) == "s" for dx in (-1, 0, 1) for dy in (-1, 0, 1)): near[cy, cx] = True
         near = np.kron(near, np.ones((T, T), bool))
-        blue = (gpx[..., 2] > gpx[..., 0] + 28) & (gpx[..., 2] >= gpx[..., 1] - 4) & near
+        if cfg.get("waterDark"):   # a black lake (road-03), not a blue stream: water is the dark pixels by the 's' cells
+            blue = (gpx.sum(axis=2) < 3 * 52) & near
+        else:
+            blue = (gpx[..., 2] > gpx[..., 0] + 28) & (gpx[..., 2] >= gpx[..., 1] - 4) & near
         m = Image.fromarray((blue * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.MinFilter(3)).filter(ImageFilter.GaussianBlur(1.0))
         Image.merge("RGBA", [Image.new("L", m.size, 255)] * 3 + [m]).save(os.path.join(out, "water.png"), optimize=True)
         water = "water.png"
