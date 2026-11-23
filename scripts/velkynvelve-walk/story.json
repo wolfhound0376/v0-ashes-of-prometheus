@@ -2511,6 +2511,58 @@
       }
     ]
   },
+  "gnoll-camp": {
+    "npcs": [
+      {
+        "id": "gnoll",
+        "x": 1100,
+        "y": 900,
+        "face": 0,
+        "hostile": true,
+        "static": true,
+        "barks": [
+          "(a gnoll lifts its muzzle and sniffs the air)"
+        ],
+        "_src": "OotA Encounters p.37, Hook Horror Hunt, area 2B: 'four gnolls and a gnoll pack lord are here'. These are the four; the pack lord joins when its sprite is built. Hostile: p.36 calls them 'a pack of mad gnolls'. Placement is Claude's."
+      },
+      {
+        "id": "gnoll",
+        "x": 1380,
+        "y": 940,
+        "face": 7,
+        "hostile": true,
+        "static": true,
+        "barks": [
+          "(a cackling whoop echoes off the rock)"
+        ],
+        "_src": "OotA Encounters p.37, Hook Horror Hunt, area 2B: 'four gnolls and a gnoll pack lord are here'. These are the four; the pack lord joins when its sprite is built. Hostile: p.36 calls them 'a pack of mad gnolls'. Placement is Claude's."
+      },
+      {
+        "id": "gnoll",
+        "x": 1560,
+        "y": 1010,
+        "face": 6,
+        "hostile": true,
+        "static": true,
+        "barks": [
+          "(a gnoll gnaws a bone by the fire)"
+        ],
+        "_src": "OotA Encounters p.37, Hook Horror Hunt, area 2B: 'four gnolls and a gnoll pack lord are here'. These are the four; the pack lord joins when its sprite is built. Hostile: p.36 calls them 'a pack of mad gnolls'. Placement is Claude's."
+      },
+      {
+        "id": "gnoll",
+        "x": 900,
+        "y": 1060,
+        "face": 1,
+        "hostile": true,
+        "static": true,
+        "barks": [
+          "(spear butts drum on the stone)"
+        ],
+        "_src": "OotA Encounters p.37, Hook Horror Hunt, area 2B: 'four gnolls and a gnoll pack lord are here'. These are the four; the pack lord joins when its sprite is built. Hostile: p.36 calls them 'a pack of mad gnolls'. Placement is Claude's."
+      }
+    ]
+  },
   "jetty": {
     "npcs": [
       {

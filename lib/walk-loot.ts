@@ -262,6 +262,9 @@ export const BODY_KIT: Record<string, LootEntry[]> = {
   // THE DEEP CAVERNS (2026-11-23). Kuo-toa stat block (Out of the Abyss): spear, net, and a shield (its AC 13 is "natural
   // armor, shield"). One of each is the stat block's; nothing else is carried.
   "kuo-toa": [{ slug: "spear", qty: 1 }, { slug: "net", qty: 1 }, { slug: "shield", qty: 1 }],
+  // Gnoll stat block (SRD 5.1): hide armor, shield, spear, longbow. The hide armor is left out: the catalogue has no
+  // hide-armor row yet. The ten arrows are Claude's quantity.
+  gnoll: [{ slug: "spear", qty: 1 }, { slug: "shield", qty: 1 }, { slug: "longbow", qty: 1 }, { slug: "arrows", qty: 10 }],
   ...CREATURE_PARTS,
   // THE THING OUT OF BUPPIDO'S GRAVE (Sam, 2026-10-30): "the only loot that pops out of the body ... the Scarab of
   // Protection." One item and nothing else — no carcass parts, no scraps. It is listed here rather than in
@@ -386,7 +389,7 @@ export function variedGuardKit(slug: string, kit: LootEntry[] | undefined, rng: 
 // migrations/walk_loot_coins.sql; until it is run they show on the body as "not in the catalogue yet".
 export const PURSE_CR: Record<string, number> = { "drow-guard-male": 0.25, "drow-guard-female": 0.25, asha: 2, shoor: 5, jorlan: 5, ilvara: 8,
   // the deep caverns (2026-11-23): the creatures there that would carry coin, at their bestiary challenge ratings
-  "kuo-toa": 0.25, "green-hag": 3 }
+  "kuo-toa": 0.25, "green-hag": 3, gnoll: 0.5 }
 export function rollPurse(cr: number, rng: () => number = Math.random): LootEntry[] {
   const d = (n: number, k: number) => { let t = 0; for (let i = 0; i < n; i++) t += 1 + Math.floor(rng() * k); return t }
   const r = 1 + Math.floor(rng() * 100), coin = (slug: string, qty: number): LootEntry => ({ slug, qty, note: "in a coin purse" })
