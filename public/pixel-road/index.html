@@ -195,13 +195,37 @@ function drawLight() {
   hole(heroes[0].x, heroes[0].y - 14, 260, 1);
   for (const o of road.objects) if (road.glow[o.kind]) hole(o.x + o.w / 2, o.y + o.h * 0.6, o.h > 100 ? 96 : 70, 0.6);
   ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(lightCv, 0, 0);
-  // a little of each glowing thing's own colour on the ground around it
+}
+// WHAT GLOWS (Sam, 2026-11-22: "Crystals should glow"). road.json says which kinds of prop give off light, in what
+// colour and how strongly. Each one gets a pool of its colour on the floor, a bloom over itself, a slow pulse of its
+// own, and the strong ones (crystals) get glints. It is drawn after the darkness, so it reads as light, and it does
+// not depend on ?light.
+const hexA = (hex, a) => hex + Math.round(Math.max(0, Math.min(1, a)) * 255).toString(16).padStart(2, "0");
+function drawGlow(now) {
+  ctx.setTransform(cam.z, 0, 0, cam.z, -cam.x * cam.z, -cam.y * cam.z);
   ctx.globalCompositeOperation = "lighter";
-  const pulse = 0.85 + 0.15 * Math.sin(performance.now() / 900);
-  for (const o of road.objects) { const col = road.glow[o.kind]; if (!col) continue;
-    const x = sx(o.x + o.w / 2), y = sy(o.y + o.h * 0.7), r = (o.h > 100 ? 52 : 30) * z, g = ctx.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, col + "30"); g.addColorStop(1, col + "00"); ctx.globalAlpha = pulse; ctx.fillStyle = g; ctx.fillRect(x - r, y - r, 2 * r, 2 * r); }
-  ctx.globalAlpha = 1; ctx.globalCompositeOperation = "source-over";
+  const t = now / 1000;
+  for (const o of road.objects) {
+    const col = road.glow && road.glow[o.kind]; if (!col) continue;
+    const k = (road.shine && road.shine[o.kind]) ?? 0.4, ph = o.x * 0.37 + o.y * 0.11;
+    const pulse = 0.76 + 0.24 * Math.sin(t * 1.7 + ph), cx = o.x + o.w / 2, base = o.ground[1] + o.ground[3] * 0.6;
+    // the pool on the floor: wide and flat
+    let r = 34 + 46 * k; ctx.save(); ctx.translate(cx, base); ctx.scale(1, 0.5);
+    let g = ctx.createRadialGradient(0, 0, 0, 0, 0, r); g.addColorStop(0, hexA(col, 0.42 * k * pulse)); g.addColorStop(0.5, hexA(col, 0.16 * k * pulse)); g.addColorStop(1, hexA(col, 0));
+    ctx.fillStyle = g; ctx.fillRect(-r, -r, 2 * r, 2 * r); ctx.restore();
+    // the bloom over the thing itself
+    const by = o.h > 100 ? o.y + o.h * 0.3 : o.y + o.h * 0.55; r = (o.h > 100 ? o.w * 0.55 : o.w * 0.62) * (0.8 + 0.4 * k);
+    g = ctx.createRadialGradient(cx, by, 0, cx, by, r); g.addColorStop(0, hexA(col, 0.5 * k * pulse)); g.addColorStop(0.45, hexA(col, 0.2 * k * pulse)); g.addColorStop(1, hexA(col, 0));
+    ctx.fillStyle = g; ctx.fillRect(cx - r, by - r, 2 * r, 2 * r);
+    if (k < 0.9) continue;
+    // glints: three small stars that take turns catching the light
+    for (let i = 0; i < 3; i++) {
+      const a = Math.max(0, Math.sin(t * 2.3 + ph + i * 2.1)) ** 6; if (a < 0.03) continue;
+      const gx = cx + [-9, 6, 1][i], gy = o.y + o.h * [0.42, 0.5, 0.28][i], L = 5 * a + 1;
+      ctx.fillStyle = hexA("#ffffff", 0.9 * a); ctx.fillRect(gx - L, gy - 0.5, 2 * L, 1); ctx.fillRect(gx - 0.5, gy - L, 1, 2 * L);
+    }
+  }
+  ctx.globalCompositeOperation = "source-over";
 }
 // THE NEAR ROCK (art: Sam, 2026-11-22, a stalactite ceiling lip and a stalagmite shelf). The ceiling hangs across the
 // top of the screen and the shelf rises along the bottom, both closer to the eye than the party, so they slide past
@@ -240,6 +264,7 @@ function frame(now) {
   things.sort((a, b) => a.y - b.y);
   for (const t of things) { if (t.h) drawHero(t.h); else if (objImg[t.o.kind]) { ctx.imageSmoothingEnabled = false; ctx.drawImage(objImg[t.o.kind], t.o.x, t.o.y); } }
   if (LIGHT) drawLight();
+  drawGlow(now);
   drawForeground();
   ctx.setTransform(cam.z, 0, 0, cam.z, -cam.x * cam.z, -cam.y * cam.z);
   sign("← " + road.entry.label, road.entry.x + 26, road.entry.y - 62, 220);

@@ -23,6 +23,19 @@ Everything in that folder is written by `bake.py`. Do not edit it by hand; chang
 4. **A close camera**: about eight and a half cells of height on screen.
 5. **Near rock**: a painted ceiling of stalactites across the top and a shelf of stalagmites along the bottom that slide faster than the floor.
 
+## Light
+
+`road.json` names the kinds of prop that give off light (`glow`: colour, `shine`: strength). The page gives each a
+pool of its colour on the floor, a bloom over itself and a slow pulse; crystals (shine 1) also get glints
+(Sam, 2026-11-22: "Crystals should glow").
+
+## Props that belong
+
+Sam, 2026-11-22, on the first teal fungus rocks: "Those green boulders looks out of place ... they don't look random".
+What fixed it: make a prop from the same stone as the floor and let the odd colour be a small part of it (brown
+boulders with teal fungus in the cracks, not a teal rock), and stand it against a wall or in a corner, not alone in
+the middle of the floor.
+
 ## Baking `road-01` (PixelLab map `1c47eece-3986-4b2c-9501-3ad0b47fe44e`, "Road 01 - Tunnel out of Velkynvelve (cavern)")
 
 `python3 scripts/pixel-road/bake.py road-01 <config.json>`, with a config like `road-01.config.json` here (its

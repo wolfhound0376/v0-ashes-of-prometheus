@@ -10,7 +10,9 @@ config.json:
     "export": "x/",                            the unzipped PixelLab export (objects/manifest.json + PNGs)
     "kinds": {"name prefix": "kind", ...},     PixelLab object name -> short kind used for the file name
     "foreground": {"ceiling": "art/ceiling.webp", "shelf": "art/shelf.webp"},
-    "entry": {...}, "exit": {...}, "landmarks": [...], "glow": {...} }
+    "entry": {...}, "exit": {...}, "landmarks": [...],
+    "glow": {"kind": "#colour"},               which kinds of prop give off light, and its colour
+    "shine": {"kind": 0..1} }                  how strongly: 1 is a crystal, 0.3 a patch of fungus
 
 What it writes:
   ground.png   the stitched picture, props painted in
@@ -114,7 +116,7 @@ def main():
             "ground": "ground.png", "shade": "shade.png", "foreground": fg,
             "legend": {"w": "floor", "r": "damp floor", "d": "rock", "a": "rock face", "s": "stream"}, "walkable": "wr",
             "grid": grid, "objects": objs, "entry": cfg["entry"], "exit": cfg["exit"],
-            "landmarks": cfg.get("landmarks", []), "glow": cfg.get("glow", {})}
+            "landmarks": cfg.get("landmarks", []), "glow": cfg.get("glow", {}), "shine": cfg.get("shine", {})}
     json.dump(road, open(os.path.join(out, "road.json"), "w"), indent=1)
     print(rid, len(objs), "props,", sorted(seen), "->", out)
 

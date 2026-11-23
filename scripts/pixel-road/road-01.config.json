@@ -16,11 +16,11 @@
   "cluster of three": "stalagmites",
   "pile of": "rubble",
   "cluster of glowing": "crystals",
-  "dark mossy": "fungus",
   "small cluster": "mushrooms",
   "huge natural": "spire",
   "massive tall": "fang",
-  "giant underground": "zurkhwood"
+  "giant underground": "zurkhwood",
+  "low cluster": "boulders"
  },
  "foreground": {
   "ceiling": "art/ceiling.webp",
@@ -46,9 +46,16 @@
  ],
  "glow": {
   "crystals": "#6fd8ff",
-  "fungus": "#39d6b8",
+  "boulders": "#39d6b8",
   "mushrooms": "#d06bff",
   "zurkhwood": "#c77bff",
   "ruins": "#a66bff"
+ },
+ "shine": {
+  "crystals": 1.0,
+  "mushrooms": 0.5,
+  "zurkhwood": 0.45,
+  "ruins": 0.4,
+  "boulders": 0.28
  }
 }
