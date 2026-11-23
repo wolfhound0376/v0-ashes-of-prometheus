@@ -404,6 +404,7 @@ for i in P + list(GARB.values()) + N + F + V + LP:
     # the director's archers and crossbowmen draw their own shots (Sam, 2026-11-15: "make sure their special abilities are animated")
     if i in ['bandit']: sh.append('shoot')
     if i in ['goblin', 'goblin-boss', 'skeleton-swordsman']: sh.append('shoot-bow')
+    if i == 'gray-ooze': sh = sh + ['emerge']   # it rises out of the pool's shallows when it springs its ambush (Sam, 2026-11-23)
     if i == 'zombie-rotting': sh = sh + ['emerge']   # the climb out of the mound (Sam, 2026-10-30); already drawn, 21 frames at 12 fps
     # the four allies fight beside the party (Sam, 2026-10-15), so they need their combat sheets too:
     # without 'attack' a swing has no hit frame and the roll never happens
