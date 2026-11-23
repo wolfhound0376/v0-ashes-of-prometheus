@@ -71,12 +71,13 @@ const label = (skill: SrdSkill) => skill.replace(/_/g, " ").replace(/\b\w/g, (c)
 
 /** Told to Malachar the turn the line is sent: the game is calling the roll, the NPC has not answered yet. */
 export function talkCallNote(skill: SrdSkill, npc: string): string {
-  return `[THIS LINE IS A ${label(skill).toUpperCase()} CHECK. The game is calling for the roll right now. ${npc} does not answer the attempt yet. Reply with one short line of your own calling for the ${label(skill)} roll. Write no [[dice]] and no number: the game has already set the roll and its difficulty.]`
+  // Sam, 2026-11-23: in a conversation the NPC answers, not the lich; the dice card is the only sign of the roll.
+  return `[THIS LINE IS A ${label(skill).toUpperCase()} CHECK. The game is calling for the roll right now and shows the dice itself. Write NO narration of your own and do not call for the roll. ${npc} reacts in ONE short spoken line, in [NPC_SPEECH] as always: weighing it, wary or curious, neither giving in nor refusing yet. Write no [[dice]] and no number.]`
 }
 
 /** Told to Malachar the turn the roll comes back: the outcome the NPC must play. Numbers stay out of the fiction. */
 export function talkResultNote(name: string, skill: SrdSkill, npc: string, success: boolean): string {
   return success
-    ? `[CHECK RESULT, decided by the game, not by you: ${name}'s ${label(skill)} with ${npc} SUCCEEDED. ${npc} answers the attempt as a success: they are swayed, deceived, cowed or moved as far as the request was reasonable. Say no numbers.]`
-    : `[CHECK RESULT, decided by the game, not by you: ${name}'s ${label(skill)} with ${npc} FAILED. ${npc} answers the attempt as a failure: unmoved, unconvinced or offended, as fits them. Say no numbers.]`
+    ? `[CHECK RESULT, decided by the game, not by you: ${name}'s ${label(skill)} with ${npc} SUCCEEDED. ${npc} answers the attempt as a success, in their own spoken lines: they are swayed, deceived, cowed or moved as far as the request was reasonable. No narration of your own. Say no numbers.]`
+    : `[CHECK RESULT, decided by the game, not by you: ${name}'s ${label(skill)} with ${npc} FAILED. ${npc} answers the attempt as a failure, in their own spoken lines: unmoved, unconvinced or offended, as fits them. No narration of your own. Say no numbers.]`
 }
