@@ -58,6 +58,23 @@ Sam, 2026-11-23, sent the picture "for the ruins". A landmark in the config may 
 beside that landmark the road fades into the picture; a click or any key goes back to the road. It is look-only: no
 fight, trade or search happens inside the plate yet (that is step 2).
 
+## A landmark that is part of the cave: vista and paving
+
+Sam, 2026-11-23, on the first Ruins prop: "This should be a lot larger and be part of the background as well with
+multiple worn pillars not like a token sitting in the middle of the cave."
+
+- **Build it into the wall.** The Ruins are a 256px-wide colonnade facade standing against the back wall of its
+  chamber, with the gaps between its pillars filled with darkness so it reads as cut into the rock, and loose worn
+  pillars on the floor in front. `import_object` takes at most 256x256.
+- **`vista` on a landmark** (`{"x","y","h","reach"}`): within `reach` pixels the camera eases back to show `h` world
+  pixels of height centred on x,y, and the near rock (ceiling and shelf) fades so the landmark is not hidden.
+- **`paving` in the config** lays ONE painted picture of floor (not tiles) in front of a landmark:
+  `{"image","x","y","w","solid","ragged"}`. It is kept at its own finer resolution in `paving/` and the page draws it
+  over the ground and under the shadows; the bake eats its edge away so it reads as broken paving, not a rug.
+  Sam, 2026-11-23, on a first try built from flat 64px tiles: "Those ground tiles look horrible for the ruins. Make
+  highquality, highdef ones that look like rubble, stone, forget the spider that looks silly." The floor is made with
+  `create_image_pro` at 640x384 (25 generations), `no_background: false`, with crops of his terrain board as references.
+
 ## Baking `road-01` (PixelLab map `1c47eece-3986-4b2c-9501-3ad0b47fe44e`, "Road 01 - Tunnel out of Velkynvelve (cavern)")
 
 `python3 scripts/pixel-road/bake.py road-01 <config.json>`, with a config like `road-01.config.json` here (its
