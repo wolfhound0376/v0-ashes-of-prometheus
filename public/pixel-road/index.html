@@ -335,6 +335,8 @@ function plateCard(name, ask, choices) {
 function plateAsk(m) { plateCard(m.label, m.ask || "Do you enter, or walk away?", [[m.enter || "Enter", () => plateEnter()], [m.leave || "Walk away", () => plateClose()]]); }
 function plateEnter() {
   if (!plateOpen) return; plateOpen.entered = true;
+  // A landmark with rooms behind it (road.json `href`): the Ruins' six painted rooms are on the walk page.
+  if (plateOpen.href && !new URLSearchParams(location.search).has("stay")) { plateEl.style.transition = "opacity .5s"; plateEl.style.opacity = "0"; setTimeout(() => { location.href = plateOpen.href; }, 450); return; }
   plateCard(plateOpen.label, plateOpen.inside || "You step through. What waits inside is not built yet.", [["Back to the road", () => plateClose()]]);
 }
 function plateTick() {
@@ -504,7 +506,11 @@ function toggleMusic() {
   { let sx = 0, sy = 0, n = 0;      // the middle of the stream, for the sound of it
     road.grid.forEach((row, r) => { for (let c = 0; c < row.length; c++) if (row[c] === "s") { sx += c * road.tile + 16; sy += r * road.tile + 16; n++; } });
     if (n) waterAt = [sx / n, sy / n]; }
-  for (let i = 0; i <= heroes.length * GAP + 4; i += 1.5) trail.push([road.entry.x - i, road.entry.y]);
+  let startAt = [road.entry.x, road.entry.y];
+  { // BACK FROM INSIDE (?at=<landmark kind>): the party stands at that landmark's door, just outside its reach
+    const at = new URLSearchParams(location.search).get("at"), m = at && (road.landmarks || []).find((k) => k.kind === at);
+    if (m) for (let dy = (m.near || 70) + 56; dy < 260; dy += 6) if (canStand(m.x, m.y + dy)) { startAt = [m.x, m.y + dy]; heroes.forEach((h) => { h.x = m.x; h.y = m.y + dy; }); break; } }
+  for (let i = 0; i <= heroes.length * GAP + 4; i += 1.5) trail.push([startAt[0] - (startAt[0] === road.entry.x ? i : 0), startAt[1]]);
   resize(); addEventListener("resize", resize);
   addEventListener("keydown", (e) => { soundStart(); if (resting) { e.preventDefault(); return; } if (plateOpen) { if (e.key === "Escape") plateClose(); else if (e.key === "Enter" && !plateOpen.entered) plateEnter(); e.preventDefault(); return; } if (e.key === "m" || e.key === "M") toggleMusic(); keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = true; if (e.key.startsWith("Arrow")) e.preventDefault(); });
   addEventListener("keyup", (e) => { keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = false; });

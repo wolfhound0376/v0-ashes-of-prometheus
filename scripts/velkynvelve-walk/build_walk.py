@@ -385,6 +385,7 @@ N = ['ront', 'eldeth', 'derendil', 'sarith', 'buppido', 'jimjar', 'topsy', 'turv
 if os.path.exists(os.path.join(SPR, 'liana', 'sprite.json')): N.append('liana')
 F = ['quaggoth', 'giant-spider', 'orog', 'grick', 'ghost-male', 'drow-elite-warrior', 'ilvara', 'shoor', 'asha', 'drow-lizard-rider', 'zombie-rotting']
 # the plate director's creatures (Sam, 2026-11-15: "Monster Stats"): the book's random-encounter tables name them
+F += ['mimic']   # the Ruins' false chest (Sam, 2026-11-23); it has an idle sheet only
 F += ['carrion-crawler', 'chuul', 'grell', 'umber-hulk', 'ochre-jelly', 'skeleton-swordsman', 'bandit', 'bandit-captain', 'goblin', 'goblin-boss', 'orc-eye-of-gruumsh']   # drow-lizard-rider: the mounted guard on the cliff below the lift (Sam, 2026-10-26); ghost-male: the bhut under Old Thessaly (Sam, 2026-10-24); the officers: Sam's playtest, 2026-10-24 (shoor and asha have idle sheets only); zombie-rotting: the thing out of Buppido's grave (Sam, 2026-10-30) — it alone also needs its `emerge` sheet, the climb out of the ground
 # THE DEEP CAVERNS (Sam, 2026-11-23): the hook horror pair and the ooze on the flooded stair fight; the kuo-toa, the green
 # hag and the myconids are there to be talked to (idle sheets only, like the vermin; they are not in F on purpose).

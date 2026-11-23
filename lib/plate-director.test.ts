@@ -1,8 +1,7 @@
 import { describe, expect, it } from "vitest"
 import {
   CREATURES, TABLES, TERRAIN, directorPlate, drawFor, fieldFoes, onTable, pursuitAfter, PURSUIT_START, randomEncounter,
-  rollDice, rollTable, savingThrow, hazardDamage, fallDamage,
-} from "./plate-director.mjs"
+  rollDice, rollTable, savingThrow, hazardDamage, fallDamage, RUIN_ROOMS, ruinDraw, ruinNotices, ruinPlate, MIMIC_NOTICE, MIMIC_SPOTS, mimicBite, mimicRoom, mimicSeen } from "./plate-director.mjs"
 
 const seq = (...xs: number[]) => { let i = 0; return () => xs[i++ % xs.length] }
 const faceOf = (die: number, face: number) => (face - 0.5) / die   // the rand() value that rolls `face` on a d`die`
@@ -82,5 +81,73 @@ describe("where the director works", () => {
     expect(directorPlate("biome-tunnels")).toBe(true)
     expect(directorPlate("node-11-slave-pen")).toBe(false)
     expect(directorPlate("road-webs")).toBe(false)
+  })
+})
+
+describe("the Ruins: one roll per room", () => {
+  const ROOMS = RUIN_ROOMS as Record<string, { hook: string; rows: any[]; hidden?: { id: string; passive: number; found: string } }>
+  const rooms = Object.keys(ROOMS)
+  it("has six rooms, and every face of the d20 lands on exactly one row", () => {
+    expect(rooms).toHaveLength(6)
+    for (const slug of rooms) {
+      expect(ruinPlate(slug)).toBe(true)
+      for (let n = 1; n <= 20; n++) expect(ROOMS[slug].rows.filter((r: any) => n >= r.lo && n <= r.hi)).toHaveLength(1)
+    }
+    expect(ruinPlate("road-webs")).toBe(false)
+    expect(directorPlate("ruins-ossuary")).toBe(false)   // the cavern director does not also roll here
+  })
+  it("keeps the book's Ruins row whole in the reliquary: half the time, 1d4 trinkets", () => {
+    const book = TABLES.ruins.rows
+    expect(ruinDraw("ruins-reliquary", seq(faceOf(20, 10)))!.say).toBe(book[0].say)
+    const hit = ruinDraw("ruins-reliquary", seq(faceOf(20, 11)))!
+    expect(hit.say).toBe(book[1].say)
+    expect(hit.tell).toBe(book[1].tell)
+  })
+  it("brings the skeletons out of the ossuary, two to six of them", () => {
+    expect(ruinDraw("ruins-ossuary", seq(faceOf(20, 5)))!.fight).toBeUndefined()
+    const r = ruinDraw("ruins-ossuary", seq(faceOf(20, 6)))!
+    expect(r.fight[0].id).toBe("skeleton-swordsman")
+    expect(fieldFoes(r.fight, () => 0, () => true).ids).toHaveLength(2)
+    expect(fieldFoes(r.fight, () => 0.999, () => true).ids).toHaveLength(6)
+  })
+  it("puts the horror in the sanctum: a madness save, and on a high roll the grell", () => {
+    expect(ruinDraw("ruins-sanctum", seq(faceOf(20, 4)))!.steps).toBeUndefined()
+    expect(ruinDraw("ruins-sanctum", seq(faceOf(20, 5)))!.steps![0]).toMatchObject({ t: "madness", ability: "wis", dc: 11 })
+    expect(ruinDraw("ruins-sanctum", seq(faceOf(20, 15)))!.fight[0].id).toBe("grell")
+  })
+  it("hides three things, found only when the best passive Perception meets the score", () => {
+    const hidden = rooms.map((s) => ROOMS[s].hidden).filter(Boolean)
+    expect(hidden.map((h: any) => h.id).sort()).toEqual(["ruins-cache-crypt", "ruins-cache-reliquary", "ruins-cache-threshold"])
+    const h = ROOMS["ruins-reliquary"].hidden!
+    expect(ruinNotices(h, 14)).toBe(false)
+    expect(ruinNotices(h, 15)).toBe(true)
+    expect(ruinNotices(null, 30)).toBe(false)
+    expect(ruinNotices(h, NaN)).toBe(false)
+  })
+  it("is not a room anywhere else", () => {
+    expect(ruinDraw("biome-tunnels", () => 0)).toBeNull()
+  })
+})
+
+describe("the mimic in the Ruins", () => {
+  it("can wait in any of the six rooms, and only in a room", () => {
+    const rooms = Object.keys(RUIN_ROOMS)
+    expect(Object.keys(MIMIC_SPOTS).sort()).toEqual([...rooms].sort())
+    expect(new Set(rooms.map((_, i) => mimicRoom(() => (i + 0.5) / rooms.length))).size).toBe(6)
+    expect(rooms).toContain(mimicRoom(() => 0.999999))
+  })
+  it("is seen in time only by a passive Perception of 15 or more (10 + its Stealth +5)", () => {
+    expect(MIMIC_NOTICE).toBe(15)
+    expect(mimicSeen(14)).toBe(false)
+    expect(mimicSeen(15)).toBe(true)
+    expect(mimicSeen(NaN)).toBe(false)
+  })
+  it("bites with advantage at +5 for 1d8+3 piercing and 1d8 acid (SRD 5.1)", () => {
+    const hit = mimicBite(15, seq(faceOf(20, 3), faceOf(20, 12), faceOf(8, 8), faceOf(8, 1)))
+    expect(hit).toMatchObject({ die: 12, total: 17, hit: true, crit: false, piercing: 11, acid: 1 })
+    expect(mimicBite(18, seq(faceOf(20, 12), faceOf(20, 3)))).toMatchObject({ hit: false, piercing: 0, acid: 0 })
+    const crit = mimicBite(30, seq(faceOf(20, 20), faceOf(20, 2), faceOf(8, 4), faceOf(8, 4), faceOf(8, 2), faceOf(8, 2)))
+    expect(crit).toMatchObject({ hit: true, crit: true, piercing: 11, acid: 4 })
+    expect(mimicBite(5, seq(faceOf(20, 1), faceOf(20, 1))).hit).toBe(false)
   })
 })

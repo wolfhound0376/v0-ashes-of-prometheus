@@ -411,6 +411,73 @@ ROAD_PLATES = {
 }
 NODES.update(ROAD_PLATES)
 
+# ── THE RUINS: six rooms behind the door on the tunnel road ─────────────────────────────────────────────────────────
+# Sam, 2026-11-23: "Create some high quality painted plates maybe six. There should probably be some skeletons than will
+# come out and some horror somewhere." -> the six paintings ("Looks good") -> "Wire them so they are connected like other
+# painted plates, with this module having it's own sinister music from elevenlabs, each room passive rolls a dice for
+# what you will find. Make sure you put some pixel art assets that are appropriate. Have some hidden item that are only
+# available on a passive perception success."
+# The paintings: Runway nano-banana-pro, 2752x1536 Lanczos -> 2400x1339, tasks 20b7fbc0 / e543f9f4 / c24ecd39 / 58a229d3 /
+# 3ff87d62 / 6195c178. The place is the book's "Ruins" terrain encounter (OotA D&D Encounters ch.2 p.31): "a small ruin
+# hidden in the Underdark". The book gives it no rooms; the six rooms and how they join are OURS:
+#   road <-> Threshold <-> Ossuary <-> Great Hall <-> Flooded Crypt <-> Sanctum,  Great Hall <-> Reliquary
+# The way in is the pixel road's Ruins (public/pixel-road, "Enter the ruins" -> /velkynvelve?ruins=1, template.html
+# ruinsDoor); the Threshold's way out goes back to that road. What each room holds is rolled by lib/plate-director.mjs
+# (RUIN_ROOMS); the searchable things are story.json loot spots.
+# Floors, obstacles and exits traced by Claude by eye from the paintings and walk-checked; NOT yet Sam's brush.
+RUINS_PLATES = {
+ "ruins-threshold": dict(slug="ruins-threshold", arrive=[1200, 1150], name="The Ruins: the threshold", scale=1.0, img="ruins-threshold.jpg",
+   # the colonnade hall: the cracked floor from the back wall to the bottom edge, and the sill of the violet doorway
+   floors=[dict(poly=P((440,665),(1085,645),(1100,560),(1300,560),(1315,645),(1960,655),(2090,840),(2230,960),(2400,1130),(2400,1339),(0,1339),(0,1210),(70,1150),(210,960),(310,840))),],
+   # the two fallen columns (two ellipses each, they lie on a slant), the rubble heap, the hole in the paving, the loose blocks
+   obstacles=[dict(cx=600,cy=790,rx=115,ry=62),dict(cx=790,cy=715,rx=105,ry=58),dict(cx=1650,cy=770,rx=105,ry=56),dict(cx=1805,cy=705,rx=95,ry=56),
+              dict(cx=450,cy=1065,rx=250,ry=85),dict(cx=1000,cy=790,rx=115,ry=52),dict(cx=1470,cy=825,rx=85,ry=32),dict(cx=690,cy=750,rx=32,ry=26)],
+   zones=[dict(rect=[900, 1285, 1500, 1339], to=[], kind="leave", label="Out of the ruins: back to the tunnel road"),
+          dict(rect=[1110, 560, 1290, 640], to=["ruins-ossuary"], label="The violet doorway: the Ossuary")]),
+ "ruins-ossuary": dict(slug="ruins-ossuary", arrive=[1200, 1200], name="The Ruins: the ossuary", scale=1.0, img="ruins-ossuary.jpg",
+   # the aisle between the six sarcophagi, out to the foot of the skull walls, and the sill of the far door
+   floors=[dict(poly=P((1090,205),(1310,205),(1320,290),(1570,295),(1770,560),(1960,860),(2080,1180),(2010,1339),(400,1339),(330,1180),(470,860),(650,560),(840,295),(1080,290)))],
+   # the six sarcophagi (far to near, left then right), the leaning lid, the two bone heaps, the two lids at the bottom edge
+   obstacles=[dict(cx=930,cy=385,rx=88,ry=105),dict(cx=860,cy=615,rx=115,ry=140),dict(cx=760,cy=945,rx=135,ry=185),
+              dict(cx=1455,cy=380,rx=78,ry=100),dict(cx=1545,cy=620,rx=112,ry=140),dict(cx=1655,cy=945,rx=152,ry=185),dict(cx=1850,cy=1050,rx=58,ry=85),
+              dict(cx=440,cy=880,rx=105,ry=75),dict(cx=1965,cy=885,rx=95,ry=75),dict(cx=590,cy=1310,rx=150,ry=50),dict(cx=1760,cy=1310,rx=150,ry=50)],
+   zones=[dict(rect=[1000, 1290, 1400, 1339], to=["ruins-threshold"], label="Back to the threshold"),
+          dict(rect=[1100, 205, 1300, 285], to=["ruins-great-hall"], label="The far door: the Great Hall")]),
+ "ruins-great-hall": dict(slug="ruins-great-hall", arrive=[1750, 1220], name="The Ruins: the great hall", scale=1.0, img="ruins-great-hall.jpg",
+   # the paved floor east of the crack, from the rockfall down to the bottom edge. The ledge west of the crack is not
+   # reached from here and is not floor; the crack itself is the way down.
+   floors=[dict(poly=P((1260,690),(1700,700),(1830,755),(2060,800),(2240,820),(2255,1000),(2260,1180),(2260,1339),(1240,1339),(1235,1175),(835,1175),(900,1090),(855,1000),(905,890),(1090,785)))],
+   # the five standing pillars' feet (near to far), the two fallen columns, the loose rocks, the column along the bottom
+   obstacles=[dict(cx=1320,cy=1335,rx=88,ry=52),dict(cx=1570,cy=1270,rx=96,ry=46),dict(cx=1740,cy=1092,rx=70,ry=36),dict(cx=1880,cy=912,rx=70,ry=36),dict(cx=1985,cy=778,rx=58,ry=30),
+              dict(cx=1530,cy=945,rx=165,ry=48),dict(cx=2055,cy=992,rx=140,ry=66),dict(cx=2092,cy=1100,rx=40,ry=28),dict(cx=2080,cy=1305,rx=235,ry=50)],
+   zones=[dict(rect=[1660, 1285, 1850, 1339], to=["ruins-ossuary"], label="Back to the ossuary"),
+          dict(rect=[860, 950, 960, 1050], to=["ruins-flooded-crypt"], label="The crack in the floor: down to the Flooded Crypt"),
+          dict(rect=[2100, 805, 2240, 870], to=["ruins-reliquary"], label="The east arcade: the Reliquary")]),
+ "ruins-flooded-crypt": dict(slug="ruins-flooded-crypt", arrive=[420, 1150], name="The Ruins: the flooded crypt", scale=1.0, img="ruins-flooded-crypt.jpg",
+   # the near platform, the causeway across the black water, and the far platform up to the arch. The lit stair in the
+   # far corner and the steps at the bottom right stand in water with no dry way to them: not floor.
+   floors=[dict(poly=P((0,945),(300,815),(500,892),(1380,455),(1385,305),(1700,165),(1870,205),(2080,285),(2275,500),(2040,640),(1840,532),(1600,680),(825,1060),(1000,1150),(1000,1339),(0,1339)))],
+   obstacles=[],
+   zones=[dict(rect=[150, 1285, 650, 1339], to=["ruins-great-hall"], label="The climb: back up to the Great Hall"),
+          dict(rect=[1890, 225, 2060, 310], to=["ruins-sanctum"], label="The arch across the water: the Sanctum")]),
+ "ruins-sanctum": dict(slug="ruins-sanctum", arrive=[1580, 1230], name="The Ruins: the sanctum", scale=1.0, img="ruins-sanctum.jpg",
+   # the round floor about the pit, under the chained idol
+   floors=[dict(poly=P((330,565),(560,600),(900,520),(1300,472),(1700,492),(2000,562),(2200,722),(2280,1000),(2300,1339),(100,1339),(120,960),(180,760)))],
+   # the pit, the idol's foot, the fallen slab, the three near benches, the four east benches
+   obstacles=[dict(cx=980,cy=720,rx=405,ry=180),dict(cx=720,cy=530,rx=190,ry=75),dict(cx=490,cy=965,rx=200,ry=110),
+              dict(cx=970,cy=958,rx=180,ry=62),dict(cx=1075,cy=1098,rx=195,ry=68),dict(cx=1210,cy=1222,rx=200,ry=72),
+              dict(cx=1630,cy=758,rx=150,ry=56),dict(cx=1775,cy=852,rx=155,ry=58),dict(cx=1945,cy=944,rx=165,ry=62),dict(cx=2125,cy=1054,rx=165,ry=66),dict(cx=2070,cy=990,rx=26,ry=22)],
+   zones=[dict(rect=[1440, 1290, 1740, 1339], to=["ruins-flooded-crypt"], label="Back to the flooded crypt")]),
+ "ruins-reliquary": dict(slug="ruins-reliquary", arrive=[760, 900], name="The Ruins: the reliquary", scale=1.0, img="ruins-reliquary.jpg",
+   # the vault floor between the alcove walls, and the lit sill of the open door
+   floors=[dict(poly=P((560,705),(800,585),(1700,585),(1880,760),(2000,1000),(2080,1339),(560,1339),(520,1000),(520,985),(520,840),(600,820)))],
+   # the two far coffers, the pots between them, the plinth, the near-left coffer, the near-right coffer, the fallen lid
+   obstacles=[dict(cx=950,cy=640,rx=185,ry=92),dict(cx=1595,cy=670,rx=172,ry=90),dict(cx=1340,cy=620,rx=55,ry=32),dict(cx=1210,cy=950,rx=100,ry=50),
+              dict(cx=640,cy=1210,rx=270,ry=125),dict(cx=1790,cy=1185,rx=200,ry=128),dict(cx=1460,cy=1120,rx=140,ry=58),dict(cx=790,cy=590,rx=24,ry=20),dict(cx=1690,cy=590,rx=24,ry=20)],
+   zones=[dict(rect=[520, 840, 600, 985], to=["ruins-great-hall"], label="The door: back to the Great Hall")]),
+}
+NODES.update(RUINS_PLATES)
+
 # ── battle plates for fights inside the outpost ─────────────────────────────────────────────────────────────────────
 # Sam, 2026-11-13, on a pen fight where an ally walked through the open gate mid-fight: "This is why we need to have a
 # separate battle screen for now. This is a bit complicated, so lets simplify it." -> a NEW, LARGER dedicated painting for

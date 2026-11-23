@@ -99,6 +99,30 @@
   "slug": "road-tunnels",
   "name": "Road: the tunnels"
  },
+ "ruins-threshold": {
+  "slug": "ruins-threshold",
+  "name": "The Ruins: the threshold"
+ },
+ "ruins-ossuary": {
+  "slug": "ruins-ossuary",
+  "name": "The Ruins: the ossuary"
+ },
+ "ruins-great-hall": {
+  "slug": "ruins-great-hall",
+  "name": "The Ruins: the great hall"
+ },
+ "ruins-flooded-crypt": {
+  "slug": "ruins-flooded-crypt",
+  "name": "The Ruins: the flooded crypt"
+ },
+ "ruins-sanctum": {
+  "slug": "ruins-sanctum",
+  "name": "The Ruins: the sanctum"
+ },
+ "ruins-reliquary": {
+  "slug": "ruins-reliquary",
+  "name": "The Ruins: the reliquary"
+ },
  "battle-pen-gate": {
   "slug": "battle-pen-gate",
   "name": "The landing outside the pen gate"

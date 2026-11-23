@@ -23,7 +23,7 @@ import { mayLead, tallyLeader, whoLeads } from "@/lib/travel/leader"
 import { noticeAt, noticeSpec, type Eyes } from "@/lib/travel/notice"
 import { meetingAt } from "@/lib/travel/meeting"
 import { foesOf, resolveStance, stanceOptions, type Foe, type StanceResult } from "@/lib/travel/stance"
-import { battleFor, isBattle } from "@/lib/travel/battle"
+import { battleFor, isBattle, ruinsRolled } from "@/lib/travel/battle"
 import { arrivalCue } from "@/lib/travel/stingers"
 import { malacharRoadLine, sayOnTheRoad, worthAWord } from "@/lib/travel/narrate"
 import { costLine, offerOptions, readOptions, resolveChoice, type NodeOption } from "@/lib/travel/options"
@@ -1125,6 +1125,7 @@ export async function POST(req: NextRequest) {
       stances,
       battle,
       noBattle,
+      ruins: outcome.halt && ruinsRolled(outcome.rolls),   // the book's Ruins terrain row: the card offers the way in (lib/travel/battle.ts)
       ...outcome,
       // The day overrides what the encounter alone would have said.
       halt,

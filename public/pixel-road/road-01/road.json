@@ -452,6 +452,7 @@
    "music": "music/ruins.mp3",
    "musicVol": 0.8,
    "near": 74,
+   "href": "/velkynvelve?ruins=1",
    "ask": "The ruins stand open before you. Do you enter, or walk away?",
    "enter": "Enter the ruins",
    "leave": "Walk away"

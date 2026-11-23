@@ -22,6 +22,43 @@ export type LootEntry = { slug: string; qty: number; note?: string; check?: Harv
 export type BookContainer = { node: string; title: string; source: string; stash?: "valuables" | "gear"; entries: LootEntry[] }
 
 export const BOOK_CONTAINERS: Record<string, BookContainer> = {
+  // THE RUINS (walk plates "ruins-*"; Sam, 2026-11-23: "Have some hidden item that are only available on a passive
+  // perception success"). THE BOOK gives the Ruins one thing only (OotA D&D Encounters ch.2 p.31): "there is a 50 percent
+  // chance of them finding 1d4 trinkets", and that is the Reliquary's roll in lib/plate-director.mjs, handed to Malachar
+  // because trinkets are not catalogue items. EVERYTHING BELOW IS CLAUDE'S PICK, open to Sam's Keep / Change / Cut: the
+  // book is silent and no loot table of ours covers a ruin. Every slug is an `items` row; all are common, and the lot
+  // is worth about 125 gp. The three "cache" containers are hidden (story.json `hidden`): the map shows them only after
+  // the room's passive Perception check is met.
+  "ruins-cache-threshold": {
+    node: "ruins-threshold", title: "Under the loose flagstone",
+    source: "CLAUDE'S PICK (Sam's ask 2026-11-23; the book is silent). Hidden: passive Perception 12.",
+    entries: [{ slug: "rusted-scimitar", qty: 1, note: "quantity is Claude's" }, { slug: "silver-coin", qty: 14, note: "quantity is Claude's" }],
+  },
+  "ruins-bone-heap": {
+    node: "ruins-ossuary", title: "The heap of bones",
+    source: "CLAUDE'S PICK (Sam's ask 2026-11-23; the book is silent). In plain sight.",
+    entries: [{ slug: "bone-ring", qty: 1, note: "quantity is Claude's" }],
+  },
+  "ruins-cache-crypt": {
+    node: "ruins-flooded-crypt", title: "The rotted satchel",
+    source: "CLAUDE'S PICK (Sam's ask 2026-11-23; the book is silent). Hidden: passive Perception 13.",
+    entries: [{ slug: "holy-water", qty: 1, note: "quantity is Claude's" }, { slug: "silver-coin", qty: 8, note: "quantity is Claude's" }],
+  },
+  "ruins-urn": {
+    node: "ruins-reliquary", title: "The cracked urn",
+    source: "CLAUDE'S PICK (Sam's ask 2026-11-23; the book is silent). In plain sight.",
+    entries: [{ slug: "carnelian-gem", qty: 1, note: "10 gp; quantity is Claude's" }],
+  },
+  "ruins-cache-reliquary": {
+    node: "ruins-reliquary", title: "The bronze casket",
+    source: "CLAUDE'S PICK (Sam's ask 2026-11-23; the book is silent). Hidden: passive Perception 15.",
+    entries: [
+      { slug: "reliquary", qty: 1, note: "a holy symbol; quantity is Claude's" },
+      { slug: "moonstone", qty: 1, note: "20 gp; quantity is Claude's" },
+      { slug: "potion-of-healing", qty: 1, note: "quantity is Claude's" },
+      { slug: "gold-coin", qty: 9, note: "quantity is Claude's" },
+    ],
+  },
   "ilvara-chest": {
     node: "7", title: "Ilvara's chest", stash: "valuables",
     source: "OotA ch.1 area 7: \"a silver chain headdress set with small onyx stones, worth 50 gp, and a drawstring bag containing two potions of healing. A small leather purse contains 24 gp, 30 sp, and a small moonstone worth 20 gp, while another purse is Ilvara's spare spell component pouch.\"",
