@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { pitComesFirst, pitDoneFor, pitDoneValue, pitOwedBy, pitSessionDoneValue, pitHeroKey, pitParty, pitSrc, pitTryParty } from "./pit"
+import { pitComesFirst, pitDoneFor, pitDoneValue, pitOwedBy, pitSessionDoneValue, pitHeroKey, pitParty, pitSrc, pitTryParty, pitChannel, pitRoles } from "./pit"
 
 describe("pitHeroKey", () => {
   it("knows the four originals by first name, however cased", () => {
@@ -76,5 +76,29 @@ describe("pitSrc / pitTryParty", () => {
     expect(pitTryParty("kenta,fifi,nobody,kenta")).toEqual(["kenta", "fifi"])
     expect(pitTryParty("nobody")).toBeNull()
     expect(pitTryParty(null)).toBeNull()
+  })
+})
+
+describe("THE PIT, TOGETHER", () => {
+  it("one channel per run and session", () => {
+    expect(pitChannel("run-7", 3)).toBe("pit:run-7:s3")
+    expect(pitChannel("run-7", null)).toBe("pit:run-7:s0")
+  })
+  it("the player here longest runs the fight; everyone works out the same answer", () => {
+    const m = [{ key: "kenta", at: 200 }, { key: "fifi", at: 100 }]
+    expect(pitRoles(m, ["fifi", "kenta"], "kenta")).toEqual({ host: "fifi", role: "client", present: ["fifi", "kenta"] })
+    expect(pitRoles(m, ["fifi", "kenta"], "fifi").role).toBe("host")
+  })
+  it("when the host leaves, the next one takes over", () => {
+    expect(pitRoles([{ key: "kenta", at: 200 }], ["fifi", "kenta"], "kenta")).toEqual({ host: "kenta", role: "host", present: ["kenta"] })
+  })
+  it("ignores strangers, keeps a hero's earliest tab, breaks ties by the Pit's order", () => {
+    const m = [{ key: "lynkes", at: 1 }, { key: "kenta", at: 50 }, { key: "kenta", at: 10 }, { key: "fifi", at: 10 }]
+    expect(pitRoles(m, ["fifi", "kenta"], "kenta")).toEqual({ host: "fifi", role: "client", present: ["fifi", "kenta"] })
+  })
+  it("nobody here yet: no role", () => expect(pitRoles([], ["fifi"], "fifi")).toEqual({ host: null, role: null, present: [] }))
+  it("the frame is told to join the shared fight", () => {
+    expect(pitSrc("fifi", ["fifi", "kenta"], { film: true, sound: true, net: true })).toContain("net=1")
+    expect(pitSrc("fifi", ["fifi"], { film: true, sound: true })).not.toContain("net=")
   })
 })

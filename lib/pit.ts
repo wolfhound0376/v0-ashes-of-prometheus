@@ -84,10 +84,36 @@ export function pitParty(myId: string, myName: string | null | undefined, seats:
   return { me, party: [me, ...Array.from(new Set(others))] }
 }
 
-/** The frame's address. `film` off skips the entrance film (Cinematics off); `sound` off starts it silent. */
-export function pitSrc(me: PitHero, party: readonly PitHero[], opts: { film: boolean; sound: boolean }): string {
+/** The frame's address. `film` off skips the entrance film (Cinematics off); `sound` off starts it silent.
+ *  `net` on: this screen joins the table's ONE shared fight (public/pit-arena: THE PIT, TOGETHER). */
+export function pitSrc(me: PitHero, party: readonly PitHero[], opts: { film: boolean; sound: boolean; net?: boolean }): string {
   const q = new URLSearchParams({ embed: "1", me, party: party.join(","), film: opts.film ? "1" : "0", snd: opts.sound ? "1" : "0" })
+  if (opts.net) q.set("net", "1")
   return `${PIT_FRAME}?${q.toString()}`
+}
+
+// THE PIT, TOGETHER (Sam, 2026-11-20: "Fifi and Kenta playing together were not synced. We played different instances.")
+// Every screen of a table joins one realtime channel for the run's session. One of them runs the fight (the HOST) and the
+// rest show it and send their hero's moves. The host is the player who has been in the Pit longest: it stays the host while
+// it is here, and passes to the next when it leaves. Every screen works this out from the same presence list, so they agree.
+
+/** The realtime channel a table's Pit fight runs on. */
+export const pitChannel = (run: string, session: number | null | undefined) => `pit:${run}:s${typeof session === "number" ? session : 0}`
+
+export type PitMember = { key: string; at: number }
+
+/** Who is here (heroes of this party, once each, earliest first) and which of them runs the fight. */
+export function pitRoles(members: readonly PitMember[], party: readonly string[], me: string): { host: string | null; role: "host" | "client" | null; present: string[] } {
+  const first = new Map<string, number>()
+  for (const m of members) {
+    if (!m || !party.includes(m.key) || typeof m.at !== "number") continue
+    const was = first.get(m.key)
+    if (was === undefined || m.at < was) first.set(m.key, m.at)
+  }
+  const order = (k: string) => (PIT_HEROES as readonly string[]).indexOf(k)
+  const present = Array.from(first.keys()).sort((a, b) => (first.get(a)! - first.get(b)!) || order(a) - order(b))
+  const host = present[0] ?? null
+  return { host, role: host === null ? null : host === me ? "host" : "client", present }
 }
 
 /** A DM trying the Pit without a seat: /pit?try=fifi,kenta. Unknown names are dropped; nothing usable → null. */
