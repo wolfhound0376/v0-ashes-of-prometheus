@@ -112,6 +112,35 @@ export function noticedBy(spotDC: number, party: readonly Senser[], penalty = 0)
   return best
 }
 
+/**
+ * ONE ROLL FOR THE WHOLE TABLE. Two screens can lead a march (the DM's and the leader's), and each walks the road.
+ * If each rolled its own traps they would see different pits, and one fall could be written to a sheet twice. So
+ * both seed their dice from the same key: the leg's two ends and the quarter hour it was set out on. The same key
+ * also names the damage (`trapSig`), so /api/walk-hazard writes it once. Claude's fix, 2026-11-23.
+ */
+export function trapSeedKey(a: string, b: string, now = Date.now()): string {
+  return [a, b].sort().join("|") + "|" + Math.floor(now / 900_000)
+}
+function hash32(s: string): number {
+  let h = 2166136261
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0 }
+  return h >>> 0
+}
+/** A repeatable random source (mulberry32) from a key: the same key gives the same dice on every screen. */
+export function seededRand(key: string): () => number {
+  let t = hash32(key)
+  return () => {
+    t = (t + 0x6d2b79f5) >>> 0
+    let r = Math.imul(t ^ (t >>> 15), 1 | t)
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296
+  }
+}
+/** The walk-event fingerprint for one trap's damage to one creature: the same on every screen. */
+export function trapSig(seedKey: string, slug: string, title: string): string {
+  return "ev-trap" + hash32(seedKey + "|" + slug + "|" + title).toString(36)
+}
+
 /** Every trap on this stretch, rolled. `penalty` is the pace's passive Perception modifier (fast: -5). */
 export function rollRoadTraps(party: readonly Senser[], penalty: number, roll: Roll): RoadTrap[] {
   const count = roll(4) - 1
