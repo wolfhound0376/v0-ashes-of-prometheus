@@ -557,7 +557,11 @@ DEEP = {
  # Sinkhole terrain (OotA Encounters p.30 table). One way down
  "sinkhole": dict(slug="deep-sinkhole", name="The Sinkhole", scale=1.0, img="deep-sinkhole.png",
    floors=[dict(poly=P((66,592), (346,522), (521,382), (871,382), (1046,348), (1361,348), (1501,400), (1956,488), (2404,628), (2404,1342), (136,1342), (-4,1048), (-4,698)))], obstacles=[],
-   zones=[dict(rect=[1011, 1048, 1536, 1230], to=["stone-teeth"], label="Down the hole: a drop into cold shallow water. No way back up", proposed=True)]),
+   zones=[# 2026-11-23 (the cast PR): with no way back, an arrival had no door to come in by, so the page stood the party at the
+          # plate's middle, which is the hole, and they dropped straight through to the Stone Teeth without ever seeing this
+          # plate. The tunnel mouth they came in by is a way back now; the drop below is still one way.
+          dict(rect=[1050, 150, 1360, 350], to=["fork"], label="Back up the passage to the Fork", proposed=True),
+          dict(rect=[1011, 1048, 1536, 1230], to=["stone-teeth"], label="Down the hole: a drop into cold shallow water. No way back up", proposed=True)]),
  # Rope Bridge terrain: a ravine spanned by an old rope bridge (p.31). Deck only (Sam, 2026-10-14)
  "gorge": dict(slug="deep-gorge", name="The Gorge", scale=1.0, img="deep-gorge.png",
    floors=[dict(poly=P((-4,330), (696,312), (836,382), (941,522), (958,838), (871,1048), (696,1152), (626,1342), (-4,1342)))], obstacles=[],
@@ -705,7 +709,7 @@ KNOWN_ONE_WAY = {("4", "1"), ("5", "2"), ("5", "wastes"), ("6", "10"), ("9", "14
                  ("battle-pen-gate", "10"), ("battle-pen-gate", "11"), ("battle-pen-gate", "12"),
                  # 2026-11-23, the deep caverns: a drop, a hole, a scree slide and a current, one-way on purpose. ("lair", "tunnels")
                  # is gone: the lair's way out is the Clacking Gallery, which leads back.
-                 ("fork", "sinkhole"), ("sinkhole", "stone-teeth"), ("nest", "gnoll-camp"), ("islet", "stream-sump")}
+                 ("sinkhole", "stone-teeth"), ("nest", "gnoll-camp"), ("islet", "stream-sump")}
 ALL = {str(k): v for k, v in NODES.items()}; ALL.update(CAVERNS)
 links = {(a, str(t)) for a, node in ALL.items() for z in node["zones"] for t in z["to"]}
 for a, b in links:

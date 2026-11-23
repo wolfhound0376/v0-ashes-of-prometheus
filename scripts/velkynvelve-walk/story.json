@@ -2424,5 +2424,183 @@
   "ruins-threshold": {"loot": [{"id": "ruins-cache-threshold", "name": "A loose flagstone", "hidden": true, "_src": "Sam, 2026-11-23: 'Make sure you put some pixel art assets that are appropriate. Have some hidden item that are only available on a passive perception success.' Pixel prop: PixelLab create_image_pro 128px, picked by Claude from four. Placement on the painting is Claude's. What it holds is lib/walk-loot.ts BOOK_CONTAINERS. HIDDEN: shown and searchable only once the room's passive Perception check is met (lib/plate-director.mjs RUIN_ROOMS, 12).", "prop": "ruins-flagstone", "at": [770, 935], "w": 130, "poly": [[705, 845], [835, 845], [835, 935], [705, 935]], "text": "The stone lifts easily. Somebody hollowed out the floor under it and never came back for what they left."}]},
   "ruins-ossuary": {"loot": [{"id": "ruins-bone-heap", "name": "A heap of bones", "_src": "Sam, 2026-11-23: 'Make sure you put some pixel art assets that are appropriate. Have some hidden item that are only available on a passive perception success.' Pixel prop: PixelLab create_image_pro 128px, picked by Claude from four. Placement on the painting is Claude's. What it holds is lib/walk-loot.ts BOOK_CONTAINERS.", "prop": "ruins-bone-heap", "at": [1240, 1010], "w": 170, "poly": [[1155, 890], [1325, 890], [1325, 1010], [1155, 1010]], "text": "Swept out of the niches and left where they fell. Something small is caught among the ribs."}]},
   "ruins-flooded-crypt": {"loot": [{"id": "ruins-cache-crypt", "name": "A rotted satchel", "hidden": true, "_src": "Sam, 2026-11-23: 'Make sure you put some pixel art assets that are appropriate. Have some hidden item that are only available on a passive perception success.' Pixel prop: PixelLab create_image_pro 128px, picked by Claude from four. Placement on the painting is Claude's. What it holds is lib/walk-loot.ts BOOK_CONTAINERS. HIDDEN: passive Perception 13.", "prop": "ruins-satchel", "at": [1330, 822], "w": 115, "poly": [[1272, 730], [1388, 730], [1388, 770], [1272, 770]], "text": "Wedged under the lip of the causeway, just above the black water. The leather comes apart in your hands."}]},
-  "ruins-reliquary": {"loot": [{"id": "ruins-urn", "name": "A cracked urn", "_src": "Sam, 2026-11-23: 'Make sure you put some pixel art assets that are appropriate. Have some hidden item that are only available on a passive perception success.' Pixel prop: PixelLab create_image_pro 128px, picked by Claude from four. Placement on the painting is Claude's. What it holds is lib/walk-loot.ts BOOK_CONTAINERS.", "prop": "ruins-urn", "at": [1010, 880], "w": 105, "poly": [[955, 785], [1065, 785], [1065, 880], [955, 880]], "text": "The only vessel in the vault nobody bothered to take. Ash, mostly."}, {"id": "ruins-cache-reliquary", "name": "A bronze casket", "hidden": true, "_src": "Sam, 2026-11-23: 'Make sure you put some pixel art assets that are appropriate. Have some hidden item that are only available on a passive perception success.' Pixel prop: PixelLab create_image_pro 128px, picked by Claude from four. Placement on the painting is Claude's. What it holds is lib/walk-loot.ts BOOK_CONTAINERS. HIDDEN: passive Perception 15.", "prop": "ruins-casket", "at": [1210, 770], "w": 105, "poly": [[1150, 680], [1270, 680], [1270, 990], [1150, 990]], "text": "It was sealed into the plinth behind the cracked bowl. The seam leaks a thin violet light, and it is warm."}]}
+  "ruins-reliquary": {"loot": [{"id": "ruins-urn", "name": "A cracked urn", "_src": "Sam, 2026-11-23: 'Make sure you put some pixel art assets that are appropriate. Have some hidden item that are only available on a passive perception success.' Pixel prop: PixelLab create_image_pro 128px, picked by Claude from four. Placement on the painting is Claude's. What it holds is lib/walk-loot.ts BOOK_CONTAINERS.", "prop": "ruins-urn", "at": [1010, 880], "w": 105, "poly": [[955, 785], [1065, 785], [1065, 880], [955, 880]], "text": "The only vessel in the vault nobody bothered to take. Ash, mostly."}, {"id": "ruins-cache-reliquary", "name": "A bronze casket", "hidden": true, "_src": "Sam, 2026-11-23: 'Make sure you put some pixel art assets that are appropriate. Have some hidden item that are only available on a passive perception success.' Pixel prop: PixelLab create_image_pro 128px, picked by Claude from four. Placement on the painting is Claude's. What it holds is lib/walk-loot.ts BOOK_CONTAINERS. HIDDEN: passive Perception 15.", "prop": "ruins-casket", "at": [1210, 770], "w": 105, "poly": [[1150, 680], [1270, 680], [1270, 990], [1150, 990]], "text": "It was sealed into the plinth behind the cracked bowl. The seam leaks a thin violet light, and it is warm."}]},
+  "fork": {
+    "decor": [
+      {
+        "img": "drow-onback",
+        "x": 1450,
+        "y": 709,
+        "sq": 1.25,
+        "_src": "HOMEBREW dressing (Sam approved the cast table 2026-11-23): a dead drow by the warning sigil. The sigil is the book's (OotA Encounters p.32, Warning Sign: 'Demons ahead!')."
+      }
+    ]
+  },
+  "faerzress": {
+    "npcs": [
+      {
+        "id": "orog",
+        "x": 1310,
+        "y": 829,
+        "face": 0,
+        "static": true,
+        "barks": [
+          "(an orog in a scholar's robe looks up from a slate of notes)"
+        ],
+        "_src": "OotA Encounters p.34, Society of Brilliance: d10 3-4 is Blurg the orog. Every member is neutral, Intelligence 18, fluent in Dwarvish, Elvish and Undercommon, 'erudite and talkative', and can give directions to any Underdark settlement without promising the route is safe. Sam approved a Society member here 2026-11-23; the board showed Grazilaxx the mind flayer, but the mind flayer has no bestiary row, so Blurg (who has a stat block and a sprite) stands here. Placement is Claude's."
+      }
+    ]
+  },
+  "sinkhole": {
+    "npcs": [
+      {
+        "id": "grick",
+        "x": 430,
+        "y": 769,
+        "face": 2,
+        "hostile": true,
+        "static": true,
+        "barks": [
+          "(something like a stalagmite uncoils in the rubble)"
+        ],
+        "_src": "bestiary: Grick. A grick in the rubble is Claude's placement, approved by Sam in the cast table 2026-11-23; the sinkhole is the book's terrain (OotA Encounters p.30)."
+      }
+    ]
+  },
+  "gorge": {
+    "decor": [
+      {
+        "img": "skeleton-scattered",
+        "x": 570,
+        "y": 829,
+        "sq": 1.1,
+        "_src": "dressing: old bones on the west ledge (the painting has them)"
+      }
+    ]
+  },
+  "flooded-stair": {
+    "npcs": [
+      {
+        "id": "gray-ooze",
+        "x": 1250,
+        "y": 809,
+        "face": 0,
+        "hostile": true,
+        "static": true,
+        "barks": [
+          "(the wet stone at the foot of the stair ripples)"
+        ],
+        "_src": "bestiary: Gray Ooze. The Oozing Temple is the book's (OotA Encounters p.39); one ooze on the stair outside it is Claude's placement, approved by Sam 2026-11-23."
+      }
+    ]
+  },
+  "clacking": {
+    "npcs": [
+      {
+        "id": "hook-horror",
+        "x": 1250,
+        "y": 769,
+        "face": 0,
+        "hostile": true,
+        "static": true,
+        "barks": [
+          "(two hooked shapes wait where the passage narrows)"
+        ],
+        "_src": "OotA Encounters p.37, Hook Horror Hunt: 'a mated pair of hook horrors' flee the gnolls and 'wait in ambush for any creatures that follow them'. Two, always. Placement is Claude's."
+      },
+      {
+        "id": "hook-horror",
+        "x": 1050,
+        "y": 900,
+        "face": 2,
+        "hostile": true,
+        "static": true,
+        "barks": [
+          "(a hooked limb scrapes the rock)"
+        ],
+        "_src": "The second of the mated pair (same source)."
+      }
+    ]
+  },
+  "jetty": {
+    "npcs": [
+      {
+        "id": "kuo-toa",
+        "x": 1150,
+        "y": 570,
+        "face": 0,
+        "static": true,
+        "dice": "1d4",
+        "spots": [
+          [
+            1150,
+            570,
+            0
+          ],
+          [
+            1010,
+            640,
+            1
+          ],
+          [
+            1290,
+            650,
+            7
+          ],
+          [
+            900,
+            720,
+            1
+          ]
+        ],
+        "barks": [
+          "(a kuo-toa watches you from the mooring, gills working)"
+        ],
+        "_src": "OotA Encounters p.47, Darklake creature encounters: '1d4 kuo-toa in a keelboat'. Not hostile until provoked is Claude's reading for a talking encounter, approved by Sam 2026-11-23. Placement is Claude's."
+      }
+    ]
+  },
+  "islet": {
+    "npcs": [
+      {
+        "id": "green-hag",
+        "x": 1110,
+        "y": 570,
+        "face": 0,
+        "static": true,
+        "barks": [
+          "(an old woman sits by the ring of stones, humming)"
+        ],
+        "_src": "OotA Encounters p.47, Darklake creature encounters: '1 green hag'. She talks first (Sam, 2026-11-23: 'some monsters will dialogue with you'). Placement is Claude's."
+      }
+    ]
+  },
+  "zurkhwood": {
+    "npcs": [
+      {
+        "id": "myconid-adult",
+        "x": 1050,
+        "y": 909,
+        "face": 0,
+        "static": true,
+        "spots": [
+          [
+            1050,
+            909,
+            0
+          ],
+          [
+            1260,
+            960,
+            7
+          ]
+        ],
+        "dice": "1d2",
+        "barks": [
+          "(a myconid turns its cap toward you; the air tastes of spores)"
+        ],
+        "_src": "HOMEBREW placement, approved by Sam in the cast table 2026-11-23: myconid adults among the zurkhwood. They speak by rapport spores (lib/rapport.ts). No stat block in FOE_BLOCKS: they are not meant to be fought here."
+      }
+    ]
+  }
 }
