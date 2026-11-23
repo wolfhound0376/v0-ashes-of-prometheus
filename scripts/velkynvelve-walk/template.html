@@ -17540,7 +17540,7 @@ async function pollLabor(){
   followCrews(j.crewsNow, j.day, j.shift);
   noteTalkClock(j.day, j.shift);
   // the shift has come round: anyone at the table may call it (the server takes the first and refuses the rest)
-  if (labor && j.due && labor.status === "scheduled" && cur === PEN && mode === "explore" && !surgeon && !state.gateOpen && escapePolicy().labor) await laborPost("call");
+  if (labor && j.due && labor.status === "scheduled" && cur === PEN && mode === "explore" && !surgeon && (!state.gateOpen || state.doorShut) && !state.brokeOut && !state.gateBroken && escapePolicy().labor) await laborPost("call");   // an unlocked but shut gate does not stop the call: the escort locks it behind them
   laborFollow(was);
   renderLaborBar();
 }
@@ -17608,7 +17608,7 @@ async function crewTakenOut(going, list){
     escortLeadsOut();
     await wait(7000);
     for (const a of team){ npcs = npcs.filter(x => x !== a); actors = actors.filter(x => x !== a); }
-    if (cur === PEN && !state.gateOpen) setDoor(false);
+    if (cur === PEN) escortLocks({sound: true});   // THE ESCORT HOLDS THE PEN: shut and locked behind the crew
   } finally { crewMoving = false; }
 }
 function laborFollow(was){
@@ -17717,6 +17717,49 @@ function escortLeadsOut(){
   const room = y => 1 / (node.scale * depthAt(y)), fs = 1.35, [lx, ly] = B.behind || [545, 702], [tx, ty] = B.threshold;
   laborEscort().forEach((a, i) => { a.static = false; stopActivity(a); a.waitUntil = now + i * 500;
     a.path = [{x: tx, y: ty, s: .95, out: true}, {x: lx, y: ly, s: fs * room(ly), jump: true}, {x: -120, y: ly, s: fs * room(ly), out: true}]; });
+}
+// THE ESCORT HOLDS THE PEN (Sam, 2026-11-22, the pen door rules: "When guards or people are escorted out the door
+// automatically closes. When guards are coming in everyone is frozen and only people being escorted, automatically
+// disappear through the door or appear from the door."). Measured in his playtest of 2026-11-22 (walk_log): Fifi opened
+// the gate at 17:19:34, the work detail was called at 17:19:52, the party was marched to the kitchen and back, the log
+// said "The work detail is back in the pen. The gate is locked." at 17:22:16, and at 17:22:22 Fifi walked out of the
+// gate onto the landing. The escort only ever shut the door `if (!state.gateOpen)`: a gate a prisoner had opened (or,
+// since the door rework, unlocked) was left that way after the detail. Now:
+//   - THE HOLD. While an escort is in the pen (the detail being called, another crew being taken out, the detail being
+//     brought back) nobody walks: not the heroes this screen drives, not the prisoners. Only the escort and the people
+//     it takes or brings move. Cards still come up (the call's own card is how a hero answers it).
+//   - THE DOOR SHUTS AND LOCKS behind every escort, whatever state it was in (a prisoner's unlock included). A key a
+//     hero stole still opens it afterwards ([CLAUDE] a reading, flagged). A gate torn off its hinges stays broken.
+//   - BACK FROM WORK the detail appears in the doorway and walks in, and the door shuts behind them.
+let escortHomeUntil = 0;
+function escortHolds(){
+  if (String(cur) !== String(PEN) || mode === "combat" || mode === "load") return false;
+  if (labor && labor.status === "called" && laborEscort().length && !laborMarching) return true;   // the call: the escort is in, the detail not yet marched
+  return crewMoving || now < escortHomeUntil;                                                       // another crew being taken; the detail coming home
+}
+let escortHeldSaid = 0;
+function escortHoldTick(){
+  if (!escortHolds()) return;
+  let stopped = false;
+  for (const h of party){
+    if (h.escorted || !canControl(h) || owRemote(h)) continue;
+    if ((h.path && h.path.length) || h.kbd){ h.path = []; h.onArrive = null; h.wantsZone = null; h.kbd = false; stopped = true; }
+  }
+  for (const n of npcs){
+    if (n.escort || n.escorted || n.offStage || n.company || !PEN_NPCS.some(d => d.id === n.id)) continue;
+    if (n.path && n.path.length) n.path = [];
+    n.actUntil = Math.max(n.actUntil || 0, now + 1500);
+  }
+  if (stopped && now - escortHeldSaid > 4000){ escortHeldSaid = now; toast("The escort is in the pen. Nobody moves.", 2600); }
+}
+/** The gate shut and locked, in the world's state, for every screen. `open`: the door is left swung back for now (the detail walking in through it). */
+function escortLocks(o = {}){
+  if (state.gateBroken) return;
+  const was = !!(state.gateOpen || state.doorShut || state.gateLeftUnlocked);
+  state.gateOpen = false; state.doorShut = false; state.gateLeftUnlocked = null; saveWalk();
+  if (String(cur) !== String(PEN)) return;
+  if (balcony()) buildGrid();
+  if (!o.open){ setDoor(false); if (was || o.sound){ sfx("door-close", .8); setTimeout(() => sfx("lock-picked", .6), 600); } }
 }
 // anyone at the open door on their own while a detail is being called out gets shot (not the escort's march)
 function laborGateWatch(){
@@ -17845,6 +17888,7 @@ async function laborWaitThenMarch(){
   laborMarching = true; escortLeadsOut(); await wait(900);
   await laborWalk(detailRoute(SPEC, labor.task).out, {cut: true});
   laborMarching = false;
+  escortLocks();                         // THE ESCORT HOLDS THE PEN: the door shuts and locks behind the detail
   if (labor && labor.status === "escorting") await laborPost("arrive");
   laborAtWork();
   renderLaborBar();
@@ -17946,16 +17990,25 @@ async function laborHomeCut(){
   $("fade").classList.remove("on");
 }
 // everyone this screen drives, back on the pen floor near the middle (not on the landing outside the bars)
+let laborHomeSeen = null;
 function laborBackInside(){
   if (cur !== PEN) return;
-  const B = balcony(), [ix, iy] = (B && B.inside) || [1300, 950], placed = [];
-  party.filter(p => !p.ko && actors.includes(p) && !owRemote(p)).forEach((h, i) => {
+  const B = balcony(), [ix, iy] = (B && B.inside) || [1300, 950], [tx, ty] = (B && B.threshold) || [ix, iy], placed = [];
+  // THE ESCORT HOLDS THE PEN: the gate is locked in the world at once (so the doorway takes nobody back out), and the
+  // detail appears in the doorway, one after another, and walks in; the door swings shut behind the last of them
+  const home = labor ? labor.id : "x"; if (laborHomeSeen === home) return; laborHomeSeen = home;
+  escortLocks({open: true}); setDoor(true);
+  party.filter(p => !p.ko && actors.includes(p) && !owRemote(p)).forEach(h => {
+    const i = Math.max(0, PARTY.indexOf(h.id));   // each hero's own spot by the table's order: two screens no longer stand their heroes on one spot
     const q = nearestWalkable(ix + ((i % 3) - 1) * 90, iy + 110 + Math.floor(i / 3) * 70, placed); placed.push(q);
-    stopActivity(h); h.x = q.x; h.y = q.y; h.path = []; h.onArrive = null; h.performing = false; h.static = false; h.walkIn = false;
-    h.fixedScale = 0; h.big = 1; h.alpha = 1; h.face = faceOf(0, 1);
+    stopActivity(h); h.x = tx; h.y = ty; h.onArrive = () => { h.escorted = false; }; h.performing = false; h.static = false; h.walkIn = true; h.escorted = true;
+    h.fixedScale = 0; h.big = .95; h.alpha = 0; h.fadeIn = true; h.face = faceOf(0, 1); h.waitUntil = now + i * 650;
+    h.path = [{x: ix, y: iy, s: 1}, {x: q.x, y: q.y, s: 1}];
+    setTimeout(() => { if (h.escorted){ h.escorted = false; h.x = q.x; h.y = q.y; h.path = []; h.alpha = 1; h.big = 1; } }, 6000);   // never left in the doorway
   });
   for (const a of npcs) if (a.escort){ a.alpha = 0; a.offStage = true; }
-  if (!state.gateOpen){ state.doorShut = true; setDoor(false); }
+  escortHomeUntil = now + 2600;
+  setTimeout(() => { if (String(cur) === String(PEN)){ setDoor(false); sfx("door-close", .85); setTimeout(() => sfx("lock-picked", .6), 600); } }, 2400);
 }
 function laborEnds(aborted){
   if (!aborted && cur !== PEN && labor && !laborHomeDirect && (party.some(crewHasHero) || atPlate(labor))){ laborHomeCut().then(() => laborEnds(false)); return; }   // a screen that did not drive them: home in the same cut
@@ -17967,7 +18020,7 @@ function laborEnds(aborted){
   if (cur === PEN && !aborted && laborStaged){ laborLockIn(); setTimeout(() => { labor = null; renderLaborBar(); }, 2500); return; }
   if (cur === PEN){
     escortSays(escortDrow(), aborted ? "Not today. Sit." : LINES.back, 4200);
-    setTimeout(() => { if (!state.gateOpen) { setDoor(false); sfx("door-close", .8); } escortLeaves(); }, 1800);
+    setTimeout(() => { escortLocks({sound: true}); escortLeaves(); }, 1800);   // THE ESCORT HOLDS THE PEN: shut and locked behind them
   } else escortLeaves();
   if (aborted) narrate(null, "The work detail is called off.");
   setTimeout(() => { labor = null; renderLaborBar(); }, 2500);
@@ -18004,7 +18057,7 @@ async function laborLockIn(){
   for (const h of heroes){ h.performing = false; h.static = false; h.face = faceOf(gateCenter() ? gateCenter().x - h.x : 0, -1); }
   if (cur !== PEN) return;
   await wait(500);
-  setDoor(false); sfx("door-close", .9);
+  escortLocks({open: true}); setDoor(false); sfx("door-close", .9);
   await wait(650); sfx("lock-picked", .6);
   log(`The gate clangs shut behind the detail, and the key turns.`);
   if (d){ d.performing = false; d.face = faceOf(ix - d.x, iy - d.y); escortSays(d, LINES.back, 4200); }
@@ -20955,7 +21008,7 @@ function drawExploreJumpSquares(L){
   }
   ctx.restore();
 }
-function walkTo(p, cb){ if (!ownLeader()){ if (leader) notYours(leader); return; } if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else: a friend can get them up, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.wantsZone = null; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
+function walkTo(p, cb){ if (escortHolds()){ toast("The escort is in the pen. Nobody moves.", 2600); return; } if (!ownLeader()){ if (leader) notYours(leader); return; } if (leader && leader.ko){ toast(`${fname(leader)} is out cold. Pick someone else: a friend can get them up, or the DM wakes them.`); return; } stopActivity(leader); leader.slow = false; leader.wantsZone = null; leader.path = findPath(leader, p); leader.onArrive = cb || null; if (!leader.path.length && cb) cb(); }
 $("zIn").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.3); };
 $("zOut").onclick = () => { const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.3); };
 $("zFit").onclick = () => {
@@ -23843,7 +23896,7 @@ const NUMPAD_DIR = {Numpad1: [-1, 1], Numpad2: [0, 1], Numpad3: [1, 1], Numpad4:
 const MOVE_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", ...Object.keys(NUMPAD_DIR)]);
 const keys = new Set();
 function keyDir(){
-  if (timeStopped) return null;
+  if (timeStopped || escortHolds()) return null;
   let x = 0, y = 0;
   if (keys.has("ArrowLeft") || keys.has("KeyA")) x -= 1;
   if (keys.has("ArrowRight") || keys.has("KeyD")) x += 1;
@@ -24092,7 +24145,7 @@ function update(dt){
   tickFootsteps();
   tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt);
   redSigilSeen();                       // a drow inside the pen reads the red scar: the fight starts once, however they got in
-  sigilNoticeTick(); wardOutTick(); fellTick(); thresholdTick(); deadTick();     // a caster notices the sigil (and gets its film); the ones it bit lie where they fell
+  sigilNoticeTick(); wardOutTick(); fellTick(); thresholdTick(); deadTick(); escortHoldTick();     // a caster notices the sigil (and gets its film); the ones it bit lie where they fell
   pacingTick();                         // the caravan clock, the wait vote, and the pen's three small beats
   tickFungus();
   ovTick(); tickChasmWebs(); camKeep(); buppidoLedgeTick();
