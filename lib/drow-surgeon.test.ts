@@ -101,14 +101,14 @@ describe("her satchel (Sam's d6, 2026-11-23)", () => {
     expect(surgeonBoon(1)).toMatchObject({ kind: "item", slug: "drow-poison", qty: 1 })
     expect(surgeonBoon(2)).toMatchObject({ kind: "item", slug: "thieves-tools" })
     expect(surgeonBoon(3)).toMatchObject({ kind: "item", slug: "potion-of-healing", qty: 2 })
-    expect(surgeonBoon(4)).toMatchObject({ kind: "item", slug: "dagger", shown: "Drow dagger" })
+    expect(surgeonBoon(4)).toMatchObject({ kind: "item", slug: "lolths-tooth", shown: "Drow ritual dagger" })
+    expect(`${surgeonBoon(4).shown} ${surgeonBoon(4).desc}`).not.toMatch(/lolth|ilvara|priestess|curse|venom|spider/i)
     expect(surgeonBoon(5)).toMatchObject({ kind: "item", slug: "healers-kit" })
     expect(surgeonBoon(6).kind).toBe("choice")
     expect(SURGEON_SATCHEL).toEqual([1, 2, 3, 4, 5])
   })
   it("the retired d4 favours are gone from the table", () => {
     const slugs = Object.values(SURGEON_BOONS).map((b) => (b as { slug?: string }).slug)
-    expect(slugs).not.toContain("lolths-tooth")
     expect(slugs).not.toContain("drow-lockpick")
   })
   it("she has a line for every face", () => {
