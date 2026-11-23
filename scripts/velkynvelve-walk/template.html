@@ -16150,7 +16150,7 @@ function strikeCam(o){
         }
         if (since >= 0){
           if (d.block){   // the ward: a pale blue shell between the blow and the caster
-            const wk = scClamp(since / 520, 0, 1), wx = tr.x + 6, wy = tr.y + tr.h * .48; ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = (1 - wk) * .9;
+            const wk = scClamp(since / 900, 0, 1), wx = tr.x + 6, wy = tr.y + tr.h * .48; ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.globalAlpha = (1 - wk) * .9;
             ctx.strokeStyle = "#cfe8ff"; ctx.shadowColor = "#8fc6ff"; ctx.shadowBlur = 30; ctx.lineWidth = 10 + 10 * (1 - wk); ctx.beginPath(); ctx.ellipse(wx, wy, 70 + 30 * wk, tr.h * (.5 + .08 * wk), 0, Math.PI * .5, Math.PI * 1.5); ctx.stroke();
             ctx.globalAlpha = (1 - wk) * .22; ctx.fillStyle = "#bfe0ff"; ctx.beginPath(); ctx.ellipse(wx, wy, 70 + 30 * wk, tr.h * (.5 + .08 * wk), 0, Math.PI * .5, Math.PI * 1.5); ctx.fill(); ctx.restore(); }
           else if (!spell) scBurst(hx, hy, scClamp(ek, 0, .999), (crit ? 250 : 180) * (melee ? 1 : .7), rays);
