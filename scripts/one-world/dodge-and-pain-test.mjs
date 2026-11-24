@@ -9,7 +9,8 @@
 //   4  a dodge never rotates the body: the pose has no `rot`, the lean is a small shear about the feet, the feet stay
 //      on the floor line, and the dodge carries real movement;
 //   5  a body with a drawn dodge plays its art for the sidestep and the sway, and the code adds no lean on top;
-//   6  a dodge leaves afterimages; no page errors.
+//   6  a dodge leaves afterimages;
+//   8  a falling body, the mimic, Buppido's mound and the weapon crit have their own sounds; no page errors.
 //
 //   npm i --no-save playwright@1.48.2 && npx playwright install chromium     (once; or CHROME=/path/to/chrome)
 //   python scripts/velkynvelve-walk/build_walk.py && node scripts/one-world/dodge-and-pain-test.mjs
@@ -125,6 +126,12 @@ const heroes = await pg.evaluate(async () => {
 })
 check("7 every main hero has a drawn dodge loaded", heroes.ids.length >= 4 && heroes.missing.length === 0, JSON.stringify(heroes))
 check("7 the leader plays it on a sidestep, no code lean", heroes.style === "sidestep" && heroes.anim === "dodge" && heroes.maxSk === 0, JSON.stringify(heroes))
+// 8 — the leftovers: a falling body, the mimic, Buppido's mound and the weapon crit (Sam, 2026-11-23: "body thud and
+// crit sound") have their own takes; no live call is left on the pack growl or the old crit
+const left = await pg.evaluate(async () => { const bad = []; for (const n of ["body-thud1", "body-thud2", "mimic-stir", "mound-stir", "weapon-crit"]){ const b = await loadSfx("walk:" + n); if (!b || b.duration < .1 || b.duration > 1.5) bad.push(n + ":" + (b ? b.duration.toFixed(2) : "missing")) } return bad })
+check("8 body thud, mimic stir, mound stir and weapon crit load", left.length === 0, left.join(" "))
+const src = readFileSync(join(ROOT, "velkynvelve-walk", "index.html"), "utf8")
+check("8 nothing plays the pack growl or the old crit any more", !/bank\("creature\/death_beast"/.test(src) && !/"combat\/crit_hit"/.test(src) && /crit \? "walk:weapon-crit"/.test(src))
 await wait(300)
 check("no page errors", errs.length === 0, errs.slice(0, 6).join(" | "))
 await browser.close(); server.close()

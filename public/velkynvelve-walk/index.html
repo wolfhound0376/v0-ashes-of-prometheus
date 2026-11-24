@@ -14828,7 +14828,7 @@ async function mimicTouch(l){
     return;
   }
   MIMIC_FX = {t0: performance.now(), at: l.at, who, plate};
-  bank("creature/death_beast", .5);
+  bank("walk:mimic-stir", .7);   // the lid creaks and something wet breathes inside (ElevenLabs), not the pack growl
   await wait(MIMIC_CHOMP.ms * MIMIC_CHOMP.bite);
   shake(10); bank("combat/melee_hit_flesh", .8); popText(who, "CHOMP", "#ff7a6a", 1.5);
   await wait(MIMIC_CHOMP.ms * (1 - MIMIC_CHOMP.bite) + 260);
@@ -15780,7 +15780,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       if (sneak) att.c.sneakUsed = true;
       if (sneak && (crimS || (shot && isStriker(att)))){ if (!shot) crimShadow(att, .7); crimShadow(tgt, 1); }   // the rogue's Sneak Attack comes out of shadow
       knock(tgt, att, (crit ? 34 : 20) * actorScale(tgt)); if (tgt.kind === "pc") redFlash();   // and a harder stagger on the one hit
-      bank(crit ? "combat/crit_hit" : sneak ? "combat/sneak_attack" : ws.hit, crit ? .95 : .8); if (crit) bank("ui/nat20", .7);
+      bank(crit ? "walk:weapon-crit" : sneak ? "combat/sneak_attack" : ws.hit, crit ? .95 : .8); if (crit) bank("ui/nat20", .7);
       // THE COMBO (Sam, 2026-10-28: "I want melee to function the same [as the demo]; it looked good. Not just one punch. The
       // damage can stay whatever is rolled"). One roll, one number — but the blow is drawn as two strokes: the cut, then the
       // follow-through from the other side 150 ms later with a second, smaller impact (a third stroke on a crit), and blood
@@ -18213,7 +18213,7 @@ function bodyCut(t){ const fr = frameOf(t), m = SPR[t.id].json, cw = m.cell[0], 
 const deathU = t => labH(t) / 180;                    // the lab's sizes and speeds were tuned on a ~180 px figure
 function playDeathFx(t){ const D = t.deathFx; t.deathFx = null; const U = deathU(t);
   if (D.kind === "bloodburst"){ deathBloodBurst(t, D.from); return; }
-  if (D.kind === "gibbed"){ t.alpha = 0; t.path = []; deathGibs(t, D.from); bank("combat/melee_hit_flesh", .9); bank("combat/crit_hit", .5); shake(14); return; }
+  if (D.kind === "gibbed"){ t.alpha = 0; t.path = []; deathGibs(t, D.from); bank("combat/melee_hit_flesh", .9); bank("walk:weapon-crit", .5); shake(14); return; }
   if (D.kind === "crisp"){ const B = bodyPoint(t); t.flash = now + 300; t.flashCol = D.fire ? "#ff9632" : "#fff0be"; bank(D.fire ? "magic/impact_fire" : "magic/impact_radiant", .8); if (!D.fire) setTimeout(() => bank("walk:death-sm-disintegrate", .7), 250);
     for (let i = 0; i < 24; i++) sparks.push({x: B.x + labRnd(-20, 20) * U, y: B.y + labRnd(-30, 30) * U, vx: labRnd(-30, 30), vy: -labRnd(40, 110), g: -20, col: Math.random() < .5 ? "#ff9a3a" : "#ffd166", t0: now, life: labRnd(500, 1000)});
     setTimeout(() => { t.alpha = 0; deathBits.push({kind: "crisp", plate: cur, x: t.x + (t.kx || 0), y: t.y, h: labH(t) * 1.18, flip: labLeft(t), t0: now}); lightFlash(t.x, labMid(t), "#ffbe5a", 220, 2200); }, 300); return; }
@@ -18257,7 +18257,7 @@ function deathDecap(t, D){ const b = bodyCut(t); if (!b){ return; } const g = b.
   t.alpha = 0; t.path = [];
   deathBits.push(Object.assign({kind: "body", plate: cur, t0: now, dir, neck}, b));
   deathBits.push({kind: "head", plate: cur, im: hc, x: hx, floor: b.y + 6 * U, z: b.y - hy, w: hw * sc, h: hh * sc, vx: dir * (D.blast ? labRnd(260, 360) : labRnd(150, 230)) * U, vy: labRnd(10, 40) * U, vz: (D.blast ? labRnd(520, 640) : labRnd(330, 420)) * U, rot: 0, bounces: 0, U, t0: now, rest: 0, fatality: !!D.fatality, dry: !D.fountain});
-  bank("combat/dagger_stab", .9); bank("combat/crit_hit", .6); hitstop(140); shake(8);
+  bank("combat/dagger_stab", .9); bank("walk:weapon-crit", .6); hitstop(140); shake(8);
   if (D.blast) for (let i = 0; i < 20; i++){ const a = labRnd(0, Math.PI * 2), sp = labRnd(60, 200) * U; sparks.push({x: hx, y: hy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, g: 0, col: "#b07aff", t0: now, life: labRnd(250, 500)}); }
   const nx = b.x, ny = hy + hh * sc * .5;
   if (D.fountain){ deathBits.push({kind: "fountain", plate: cur, x: nx, y: ny, dir, k: U * 1.5, t0: now});
@@ -18293,7 +18293,7 @@ function drawDeathBits(floor){
       continue; }
     if (b.kind === "body"){ const fallK = Math.max(0, Math.min(1, (age - 650) / 350)), lying = fallK >= 1; if (lying !== floor) continue; const dw = b.cw * b.sc, dh = b.ch * b.sc, e = fallK * fallK;
       ctx.save(); ctx.imageSmoothingEnabled = false; ctx.translate(b.x, b.y); ctx.rotate(b.dir * Math.PI / 2 * .94 * e); if (lying) ctx.filter = "brightness(.6) saturate(.55)"; ctx.drawImage(b.c, -b.px * b.sc, -b.py * b.sc, dw, dh); ctx.restore();
-      if (fallK > 0 && !b.thud){ b.thud = true; bank("creature/death_beast", .25); } continue; }
+      if (fallK > 0 && !b.thud){ b.thud = true; bank(`walk:body-thud${1 + (Math.random() * 2 | 0)}`, .6); } continue; }
     if (b.kind === "head"){ if (!floor && !b.rest){ b.vz -= 1300 * b.U * dt; b.z += b.vz * dt; b.x += b.vx * dt; b.floor += b.vy * dt; b.rot += b.vx * dt / Math.max(8, b.w * .5);
         if (b.z <= 0){ b.z = 0; if (b.vz < -90 * b.U){ b.vz = -b.vz * .62; b.vx *= .82; b.bounces++; if (!b.dry) addBlood({x: b.x, y: b.floor - 2}, .5, false); bank("combat/punch_hit", .35 / b.bounces); }
           else { b.vz = 0; b.vx *= .94; if (Math.abs(b.vx) < 8 * b.U){ b.vx = 0; b.rest = now; if (b.fatality) setTimeout(() => { bank("walk:death-fatality", 1); deathWord("FATALITY", "#d01c22"); }, 250); } } } }
@@ -29364,7 +29364,7 @@ async function playBuppidoRises(t){
 
   // THE MOUND MOVES. Nothing has come out yet. This is the beat that does the work.
   const g = (gravesHere().filter(v => v.slug === t.id))[0] || {x: t.x, y: t.y};
-  shake(5); bank("creature/death_beast", .3);
+  shake(5); bank("walk:mound-stir", .75);   // packed earth cracking and sliding from below (ElevenLabs), not the pack growl
   for (let i = 0; i < 3; i++) setTimeout(() => { shake(4); addBlood({x: g.x + labRnd(-14, 14), y: g.y}, .5, false); }, i * 420);
   await wait(R.stirMs);
   // THE FILM. The pen's was shot with the guards watching from the bridge; everywhere else plays the same film with
