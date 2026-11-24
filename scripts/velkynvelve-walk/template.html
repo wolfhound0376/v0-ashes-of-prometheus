@@ -4565,6 +4565,61 @@ function triggerZone(z){
   if (z.kind === "leave" || HANDOFFS[z.to[0]]){ goBeyond(z); return; }   // the way out of the outpost, by any name
   whoGoes(z, z.to[0]);
 }
+// ---------- THE CHASM JUMP (spec.py `jumps`) ----------
+// Sam, on the Act One board, 2026-11-24: "To get here, you will need to jump from the edge of the painted area. When
+// approaching the ledge adjacent to this box a dialogue box should be offered to you with athletics as the ability,
+// unless you have magical ways to get there or have a rope in your inventory which gives you advantage and +1 to your
+// roll." -> "Gorge jump is medium and 1d6 bludgeoning with someone having to pull you out."
+//   * Strength (Athletics) DC 15 on the dashboard's dice ("gorge:jump"). A rope in the jumper's own pack: advantage and
+//     +1 ("gorge:jump-rope", the same roll against DC 14).
+//   * A hero with a spell that crosses a gap crosses with no roll. [CLAUDE] which spells count (JUMP_MAGIC), and that
+//     no slot is spent.
+//   * Made it: the jumper is over and the rest of the party comes across on their line. [CLAUDE] one roll for the party,
+//     as on the cliff ropes.
+//   * Fell short: 1d6 bludgeoning, and they hang below the lip until someone hauls them out: the nearest other hero or
+//     companion on the plate does it. [CLAUDE] a hero with nobody there drags themself back up.
+const JUMP_MAGIC = /^(misty step|fly|levitate|spider climb|dimension door|thunder step|far step)\b/i;
+let ackJump = null;
+const JUMP_SPOTS = [[0, 0], [-34, 30], [34, 30], [-34, -28], [34, -28], [0, 56], [0, -52]];   // where the party stands once over: a tight knot, the far ledge is small
+function jumpAt(){ for (const J of node.jumps || []){ if (inRect(J.a, leader.x, leader.y)) return {J, from: "a"}; if (inRect(J.b, leader.x, leader.y)) return {J, from: "b"}; } return null; }
+function jumpTick(){ const k = jumpAt(); if (!k){ ackJump = null; return; } const key = k.J.id + k.from; if (ackJump === key || (leader.path && leader.path.length)) return; ackJump = key; jumpCard(k.J, k.from); }
+function jumpSpell(h){ const sh = SHEETS[h.id] || {}, m = sh.magicAll || sh.magic || {}; return [...(m.cantrips || []), ...(m.prepared || []), ...(m.known || []), ...(m.spells || [])].map(x => typeof x === "string" ? x : (x && x.name) || "").find(nm => JUMP_MAGIC.test(nm)) || null; }
+function jumpRope(h){ const g = GEAR[h.id]; return !!(g && (g.carried || []).some(c => /\brope\b/i.test(String(c.name || "")))); }
+function jumpCard(J, from){
+  if (mode !== "explore") return;
+  const h = leader, who = fname(h), spell = jumpSpell(h), rope = jumpRope(h);
+  const {add, close} = heroCard(`The edge of ${J.name}`, `The floor stops. ${J.name.charAt(0).toUpperCase() + J.name.slice(1)} is a long stride and a half across, and the violet light a long way down says how deep. There is a ledge on the far side.`);
+  if (spell) add(`Cross by magic · ${spell}`, () => { close(); log(`${esc(who)} crosses ${esc(J.name)} by ${esc(spell)} and throws a line back for the others.`); jumpOver(J, from); }, "primary");
+  add(rope ? "Jump, roped · Athletics · advantage and +1" : "Jump · Athletics", () => { close();
+    rollWithHelp(rope ? "gorge:jump-rope" : "gorge:jump", heroMod(h, "athletics", "str"), {who: h, ...(rope ? {advantage: true} : {})}).then(k => {
+      if (k && k.cancelled) return; if (!k || !k.ok){ toast((k && k.error) || "The dice did not roll.", 3200); return; }
+      if (k.success){ log(`${esc(who)} takes a run at ${esc(J.name)} and lands it (Athletics ${k.total}). The others come over on the line.`); if (APP) handOff(`${who} jumped ${J.name} on the Gloomwastes (Athletics ${k.total}, made it). The party follows across.`); jumpOver(J, from); }
+      else jumpShort(J, from, h, k.total);
+    }); }, spell ? "" : "primary");
+  add("Stay on this side", close);
+}
+function jumpOver(J, from){
+  const to = from === "a" ? J.B : J.A, order = [leader, ...followOrder()];
+  bank("magic/arcane_release", .2);
+  order.forEach((a, i) => { stopActivity(a); a.path = []; a.onArrive = null; const o = JUMP_SPOTS[i % JUMP_SPOTS.length], p = nearestWalkable(to[0] + o[0], to[1] + o[1]); a.x = p.x; a.y = p.y; });
+  ackJump = J.id + (from === "a" ? "b" : "a"); ackZone = zoneAt(leader.x, leader.y);
+}
+function jumpShort(J, from, h, total){
+  const who = fname(h), n = roll("1d6").total, back = from === "a" ? J.A : J.B;
+  stopActivity(h); h.path = []; h.onArrive = null; h.x = J.pit[0]; h.y = J.pit[1];
+  popText(h, `-${n}`, "#ff7a6a", 1); shake(4); sfx("door-locked", .4);
+  dirHits([{characterId: characterIdOf(h.id), amount: n, type: "bludgeoning"}].filter(x => x.characterId), cur, `jump:${J.id}:${Date.now()}`);
+  const helper = followOrder()[0] || npcs.find(x => x.company && !x.down && !x.hostile) || null;
+  log(`${esc(who)} jumps ${esc(J.name)} and falls short (Athletics ${total}): <b>${n} bludgeoning</b> against the far wall, and a ledge a body's length down that will not let go.`);
+  if (APP) handOff(`${who} tried to jump ${J.name} on the Gloomwastes and fell short (Athletics ${total}): ${n} bludgeoning damage, hanging on a ledge below the lip${helper ? `. ${fname(helper)} hauls them back up` : ", alone, and drags themself back up"}.`);
+  mode = "dialog";
+  setTimeout(() => {
+    const p = nearestWalkable(back[0], back[1]); h.x = p.x; h.y = p.y; if (mode === "dialog" && $("obj").hidden) mode = "explore";
+    log(helper ? `${esc(fname(helper))} gets a hand to ${esc(who)} and hauls them back over the lip.` : `Nobody is there to pull. ${esc(who)} drags themself back over the lip, slowly.`);
+    toast(helper ? `${fname(helper)} pulls ${who} out.` : `${who} drags themself out.`, 3200);
+    ackJump = J.id + from;
+  }, 2200);
+}
 // ---------- the cliff below the lift (5c): rappels and the web net ----------
 // Sam, 2026-10-26: "Rappel checks and fall into the web net." OotA Expanded p.45 (community supplement), Lift Trouble:
 // the prisoners go down "two coils of 25' rope (that are tattered and torn ...). They must make three separate rappels
@@ -7262,7 +7317,7 @@ async function bodySpill(b, id, title, name, emptySay){
 // the dashboard's engine with the dashboard's modifier, and the page answers {ok, success, total, natural} — or
 // {cancelled} if they stepped back. "aop:roll-ack" says the panel is open; after it the map waits as long as the
 // player does. Opened as a plain file (no game around it), the map rolls locally against the same DC.
-const ROLLS = new Map(), LOCAL_DC = {"thessaly:persuade": 15, "thessaly:look": 14, "sigil:find": 15, "sigil:wake": 15, "companion:feed": 10, "manacles:pick": 15, "manacles:friend": 15, "manacles:break": 20, "pocket:size-up": 10, "caught:persuade": 15, "caught:intimidate": 15, "falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12, "jimjar:bet": 13, "manacles:wire": 15, "druid:beast": 13, "ward:study-arcana": 20, "ward:study-history": 20, "ward:cut": 15};
+const ROLLS = new Map(), LOCAL_DC = {"thessaly:persuade": 15, "thessaly:look": 14, "sigil:find": 15, "sigil:wake": 15, "gorge:jump": 15, "gorge:jump-rope": 14, "companion:feed": 10, "manacles:pick": 15, "manacles:friend": 15, "manacles:break": 20, "pocket:size-up": 10, "caught:persuade": 15, "caught:intimidate": 15, "falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12, "jimjar:bet": 13, "manacles:wire": 15, "druid:beast": 13, "ward:study-arcana": 20, "ward:study-history": 20, "ward:cut": 15};
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
@@ -22709,6 +22764,9 @@ function exploreLeap(p){
   if (L.ko){ toast(`${fname(L)} is out cold.`); return; }
   const span = (SHEETS[L.id] || {}).strScore; if (!span){ toast(`${fname(L)} has no Strength score on the sheet to jump by.`); return; }
   if (balconyFloor() && outsidePen(L) !== outsidePen(p)){ toast("That is a wall, not a gap: the way is the gate."); return; }
+  // a gap the plate names (THE CHASM JUMP) is never the free leap: it is the checked one, whoever's Strength it is
+  { const d = (q, c) => Math.hypot(q.x - c[0], q.y - c[1]), J = (node.jumps || []).find(J => (d(L, J.A) < d(L, J.B)) !== (d(p, J.A) < d(p, J.B)));
+    if (J){ jumpCard(J, d(L, J.A) < d(L, J.B) ? "a" : "b"); return; } }
   const g = gapOnLine(L, p);
   if (!g || g.gapFt < MIN_LEAP_FT){ toast("No gap to jump there: just walk."); return; }
   const max = g.runUpFt >= 10 ? span : Math.floor(span / 2);
@@ -26158,6 +26216,8 @@ function update(dt){
     // the side away from the plate's floor), or stops inside it, and then crosses. Doors, ropes, the gate and the falls
     // bridge are things you use, not ways you walk off, and answer at once as before.
     if (z && z !== ackZone && exitReached(z)){ ackZone = z; triggerZone(z); }
+    // THE CHASM JUMP: walking up to either lip of a gap the plate names offers the jump (jumpTick, below)
+    if (mode === "explore" && !cbt && !leader.walkIn && !owRemote(leader)) jumpTick();
     else if (!z && !leader.walkIn) ackZone = null;
     // ambush
     const hz = node.hazard;

@@ -311,6 +311,13 @@ CAVERNS = {
    obstacles=[dict(cx=380,cy=800,rx=70,ry=45),dict(cx=1950,cy=940,rx=90,ry=55),dict(cx=560,cy=1250,rx=130,ry=70),dict(cx=2050,cy=1250,rx=140,ry=70)],
    zones=[dict(rect=[1656, 231, 1821, 563], to=[14], label="Back through the waterfall")]),
  "wastes": dict(slug="biome-wastes", name="The wastes", biome="tunnels", scale=1.0, img="biome-wastes.jpg",
+   # THE CHASM JUMP (Sam, on the Act One board, 2026-11-24: "To get here, you will need to jump from the edge of the painted
+   # area. When approaching the ledge adjacent to this box a dialogue box should be offered to you with athletics as the
+   # ability, unless you have magical ways to get there or have a rope in your inventory which gives you advantage and +1
+   # to your roll." -> "Gorge jump is medium and 1d6 bludgeoning with someone having to pull you out."). His painted floor
+   # leaves the Gorge exit on its own ledge east of the chasm. `a` is the lip on the main floor, `b` the lip on the far
+   # ledge; `A`/`B` where a jumper lands on each side; `pit` where one who falls short hangs. template.html THE CHASM JUMP.
+   jumps=[dict(id="wastes-chasm", name="the chasm", a=[1760, 650, 1900, 800], b=[2060, 650, 2200, 800], A=[1830, 730], B=[2130, 740], pit=[1975, 760])],
    # the bone-strewn floor up to the chasm on the right; the fallen pillars and the fire block
    floors=[dict(poly=P((350,520),(1000,430),(1400,430),(1680,420),(1850,590),(1880,1050),(1680,1339),(200,1339),(140,870),(140,700)))],
    obstacles=[dict(cx=450,cy=560,rx=70,ry=45),dict(cx=700,cy=575,rx=80,ry=40),dict(cx=1950,cy=575,rx=60,ry=45),dict(cx=310,cy=1150,rx=60,ry=90),dict(cx=800,cy=820,rx=40,ry=30)],
