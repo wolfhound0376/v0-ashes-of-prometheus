@@ -9,6 +9,8 @@ import { UiClickSound } from '@/components/ui-click-sound'
 import { StageProvider } from '@/components/stage/stage-provider'
 import { SessionGuard } from '@/components/session-guard'
 import { HeroFilmGate } from '@/components/hero-film-gate'
+import { PlayerPass } from '@/components/player-pass'
+import { OneTab } from '@/components/one-tab'
 
 import './globals.css'
 
@@ -108,6 +110,11 @@ export default function RootLayout({
         <StageProvider>{children}</StageProvider>
         {/* Sends players off in-game pages once the DM ends the game or removes them (lib/session-guard.ts). */}
         <SessionGuard />
+        {/* Who you are, kept by the server too, so Safari's seven-day wipe or a cleared cache never turns a
+            regular player into a stranger (lib/player-pass.ts). */}
+        <PlayerPass />
+        {/* One game tab per browser plays; the newest wins, the others dim with "Play here" (lib/one-tab.ts). */}
+        <OneTab />
         {/* A forged hero's own intro film, first time into the story each run (lib/hero-film.ts). */}
         <HeroFilmGate />
         <ThemeAudio />
