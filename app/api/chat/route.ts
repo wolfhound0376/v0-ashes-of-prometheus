@@ -8,6 +8,7 @@ import { MALACHAR_LAST_WORD, MALACHAR_PERSONA } from "@/lib/malachar-persona"
 import { findNpcRow, learnName, npcKnowsName, relationshipSummary, saysOwnName } from "@/lib/npc-acquaintance"
 import { applyStageEvents, jorlanOnDuty, pledgeTag, readStage, watchAndGateTags, type StageEvent } from "@/lib/stage-roster"
 import { directorPrompt, namesTaggedIn, parseDirector, wantsDirector, type DirectorCast } from "@/lib/stage-director"
+import { heldByAnother, FLOOR_STALE_MS } from "@/lib/talk-floor"
 import { readSeated } from "@/lib/seats"
 import { situationForChat } from "@/lib/situation"
 import { storedText } from "@/lib/address"
@@ -716,6 +717,30 @@ export async function POST(req: Request) {
   }
 
   const playerName = playerCharacter?.name || "Player"
+
+  // ONE SPEAKER PER CONVERSATION (Sam, 2026-11-20: "The principal character communicates, others can watch and even
+  // suggest but not directly interact" — lib/talk-floor.ts). The night this was written Fifi's line to Jorlan landed
+  // in the middle of Kenta's Persuasion roll and he answered them both. If another hero holds the floor with the NPC
+  // this line is for, it is refused HERE, before it is logged or Malachar hears it; that screen is a listener and
+  // its words go to the speaker as a suggestion (/api/talk-floor). Only a browser that said which hero it plays is
+  // held to this (the DM's screen names none), a line to the DM is always free, and a roll is not a line.
+  // Fails open: a floor that cannot be read refuses nobody.
+  if (!directorRaw && !sandbox && !toDm && playerCharacter && playerResolveVia === "body.characterId" && !/^\s*(\[\s*dice\s*roll\s*\]|\[\s*reaction\s*\]|🎲)/i.test(String(message ?? ""))) {
+    const lineTo = talkWith ?? (typeof facingRaw === "string" ? facingRaw.replace(/[^\p{L}\s'’-]/gu, "").trim().slice(0, 60) || null : null)
+    if (lineTo) {
+      try {
+        const { data: floors } = await adminClient().from("talk_floor").select("npc, npc_name, speaker, beat_at")
+          .gte("beat_at", new Date(Date.now() - FLOOR_STALE_MS).toISOString())
+        const holder = heldByAnother(floors as Array<{ npc: string; beat_at: string; speaker: string }> | null, lineTo, playerCharacter.name, Date.now())
+        if (holder) {
+          console.log(`[talk-floor] refused: ${playerCharacter.name} to ${lineTo}, ${holder} holds the floor`)
+          return Response.json({ error: "talk_floor", speaker: holder, npc: lineTo, message: `${holder} is speaking with ${lineTo}. You can listen and suggest, but the words are theirs.` }, { status: 409 })
+        }
+      } catch (e) {
+        console.error("[talk-floor] could not read the floor, letting the line through:", e)
+      }
+    }
+  }
 
   console.log(
     "[v0] chat: playerCharacter resolved:",

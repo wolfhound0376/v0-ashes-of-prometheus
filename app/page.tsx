@@ -39,6 +39,7 @@ import { dmCharacters } from "@/lib/dm-characters"
 import { GameClockPanel } from "@/components/dashboard/game-clock-panel"
 import { TimeStopToggle, TimeStoppedBanner } from "@/components/dashboard/time-stop"
 import { useLich } from "@/lib/hooks/use-lich"
+import { cleanSuggestion, freshSuggestions, FLOOR_BEAT_MS, type FloorSuggestion } from "@/lib/talk-floor"
 import { emitCinematicCue } from "@/lib/cinematic-cue"
 import { usePanelAssets } from "@/lib/hooks/use-panel-assets"
 import { CAMPAIGNS } from "@/lib/world-ai/campaigns"
@@ -540,6 +541,66 @@ export default function DashboardPage() {
       selectedCharacterId, claimToken, { director: true, talkWith: npcName, talkWhere: talkFrom === "map" ? where : null },
     ).catch((e) => console.error("[map talk] opener follow-up failed", e))
   }, [sendToLich, characters, talkAs, talkArea, selectedCharacterId, claimToken, talkFrom])
+
+  // ONE SPEAKER PER CONVERSATION (Sam, 2026-11-20: "Communication should be just like BG3. The principal character
+  // communicates, others can watch and even suggest but not directly interact." — lib/talk-floor.ts).
+  // While this screen is in a talk with an NPC it reaches for the floor with them and keeps beating
+  // (/api/talk-floor "claim" is both). The answer says which this screen is:
+  //   "mine"       it holds the floor: everything works as it always has, and listeners' suggestions show up.
+  //   "listening"  another hero is speaking with them: nothing typed here reaches the NPC or Malachar; it goes to
+  //                the speaker as a suggestion. The opener that rode in on the address is not said or logged.
+  //   "pending"    not known yet (the first answer is on its way): the opener waits for it.
+  //   "none"       no floor applies: the DM's screen, a rehearsal, an audience with Malachar, no hero.
+  // If the speaker leaves, the next beat takes the floor and this screen becomes the speaker. Fails open.
+  const [floorState, setFloorState] = useState<{ gate: "mine" | "listening"; npc: string; speaker: string; suggestions: FloorSuggestion[] } | null>(null)
+  const floorApplies = Boolean(campTalkWith && selectedCharacterId && !dmAudience) && !sandbox
+  const floorMineRef = useRef<string | null>(null)        // the NPC whose floor this screen holds, for letting go
+  const lastSaidAt = useRef(0)                            // suggestions made before my own last line are spent
+  const [, setSaidTick] = useState(0)
+  const floorCall = useCallback((op: "claim" | "release" | "suggest", npc: string, extra?: Record<string, unknown>, beacon = false) => {
+    const { characterId, claimToken: token } = claimRef.current
+    const body = JSON.stringify({ op, npc, characterId: characterId ?? selectedCharacterId, claimToken: token, ...(extra ?? {}) })
+    if (beacon && typeof navigator !== "undefined" && navigator.sendBeacon) { navigator.sendBeacon("/api/talk-floor", new Blob([body], { type: "application/json" })); return Promise.resolve(null) }
+    return fetch("/api/talk-floor", { method: "POST", headers: { "Content-Type": "application/json", ...dmHeaders() }, body, keepalive: op === "release" })
+      .then((r) => r.json()).catch(() => null) as Promise<{ mine?: boolean; ok?: boolean; floor?: { npc_name: string; speaker: string; suggestions?: FloorSuggestion[] } | null } | null>
+  }, [selectedCharacterId])
+  useEffect(() => {
+    if (!floorApplies || !campTalkWith || isSandbox()) { setFloorState(null); return }
+    const npc = campTalkWith
+    // The DM's own screen is never a listener and holds no floor: it plays the talk as it always has.
+    if (hasDmKey()) { setFloorState({ gate: "mine", npc, speaker: "", suggestions: [] }); return }
+    let live = true
+    const beat = async () => {
+      const j = await floorCall("claim", npc)
+      if (!live) return
+      const mine = !j || j.mine !== false || !j.floor          // no answer, or no row: nobody is refused
+      floorMineRef.current = mine ? npc : null
+      setFloorState({ gate: mine ? "mine" : "listening", npc: j?.floor?.npc_name ?? npc, speaker: j?.floor?.speaker ?? "", suggestions: j?.floor?.suggestions ?? [] })
+    }
+    void beat()
+    const id = window.setInterval(() => void beat(), FLOOR_BEAT_MS)
+    // Leaving the page (back to the map, a closed tab) gives the floor up at once instead of after the lapse.
+    const bye = () => { if (floorMineRef.current) void floorCall("release", floorMineRef.current, undefined, true) }
+    window.addEventListener("pagehide", bye)
+    return () => { live = false; window.clearInterval(id); window.removeEventListener("pagehide", bye); if (floorMineRef.current) { void floorCall("release", floorMineRef.current); floorMineRef.current = null } }
+  }, [floorApplies, campTalkWith, floorCall])
+  const floorGate: "mine" | "listening" | "pending" | "none" = !floorApplies ? "none" : floorState?.gate ?? "pending"
+  const listeningTo = floorGate === "listening" && floorState ? { speaker: floorState.speaker, npc: floorState.npc } : null
+  const listeningRef = useRef(listeningTo)
+  listeningRef.current = listeningTo
+  const suggestionsIn = floorGate === "mine" ? freshSuggestions(floorState?.suggestions, lastSaidAt.current) : []
+  /** A listener's line is a suggestion to the speaker, not a line to the NPC. True when it was taken as one. */
+  const suggestInstead = useCallback((text: string, addressTo: string | null | undefined): boolean => {
+    const to = listeningRef.current
+    if (!to || addressTo) return false                    // a line picked to the DM or to someone else is the hero's own business
+    if (/^\s*(\[\s*dice\s*roll\s*\]|\[\s*reaction\s*\]|🎲)/i.test(text)) return false
+    const said = cleanSuggestion(text)
+    if (!said) return true
+    void floorCall("suggest", to.npc, { text: said })
+    setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: "System", text: `*You suggest to ${to.speaker.split(/\s+/)[0]}: "${said}"*` }))
+    return true
+  }, [floorCall])
+  const noteSaid = useCallback(() => { lastSaidAt.current = Date.now(); setSaidTick((n) => n + 1) }, [])
 
   // The chat route returned 403: this browser's character claim is stale (e.g.
   // the character was deleted, or the token no longer matches). Surface it
@@ -1463,6 +1524,7 @@ if (error) {
           const mechanical = /^\s*(\[\s*dice\s*roll\s*\]|\[\s*reaction\s*\]|🎲)/i.test(message)
           const addressed = mechanical ? { line: message, addressTo: null, shown: message } : addressLine(message)
           if (!addressed.line) return null
+          if (!mechanical && suggestInstead(addressed.line, addressed.addressTo)) return null
           message = addressed.line
           setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: addressed.shown, pending: true }))
 
@@ -1542,6 +1604,8 @@ if (error) {
       const { line: text, addressTo, shown } = addressLine(stripReservedPrefixes(dialogueInput.trim()))
       if (!text) return                           // "/dm" with nothing after it
       setDialogueInput("")
+      if (suggestInstead(text, addressTo)) return  // listening in: it goes to the speaker, not the NPC
+      noteSaid()
 
       // Optimistically add player message to dialogue immediately. It is marked
       // pending so the realtime echo of the persisted row reconciles onto it by
@@ -1592,6 +1656,8 @@ if (error) {
       const { line, addressTo, shown } = addressLine(text)
       if (!line) return
       setDialogueInput("")
+      if (suggestInstead(line, addressTo)) return
+      noteSaid()
       setDialogue(prev => mergeDialogue(prev, { id: tempId(), speaker: playerName, text: shown, pending: true }))
       let response: Awaited<ReturnType<typeof dispatchToLich>> = null
       try {
@@ -2143,7 +2209,9 @@ if (error) {
         claimLocked={claimLocked}
         talkWith={campTalkWith}
         talkFrom={talkFrom}
-        talkOpening={talkOpening}
+        talkOpening={floorGate === "pending" || floorGate === "listening" ? null : talkOpening}
+        listening={listeningTo}
+        suggestionsIn={suggestionsIn}
         talkOpeningLang={talkOpeningLang}
         talkOpeningNext={talkOpeningNext}
         timeStopped={timeStopped}
@@ -2218,7 +2286,7 @@ if (error) {
         claimLocked={claimLocked}
         talkWith={campTalkWith}
         talkFrom={talkFrom}
-        talkOpening={talkOpening}
+        talkOpening={floorGate === "pending" || floorGate === "listening" ? null : talkOpening}
         talkOpeningLang={talkOpeningLang}
         talkOpeningNext={talkOpeningNext}
         timeStopped={timeStopped}

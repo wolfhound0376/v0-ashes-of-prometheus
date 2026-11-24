@@ -1,6 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { isRollLine, stripRollTalk } from "@/lib/speech-notation"
+import { FLOOR_STALE_MS } from "@/lib/talk-floor"
 
 // /api/map-dialogue — the story conversation, for the walk (public/velkynvelve-walk).
 //
@@ -18,6 +19,9 @@ import { isRollLine, stripRollTalk } from "@/lib/speech-notation"
 // heard.") ride along too, carrying `channel` and `recipient`: the walk draws them over the sender's sprite for
 // the whole table and says them in the sender's own voice.
 //
+// WHO HOLDS THE FLOOR rides along as `floors` ([{npc, speaker}], Sam 2026-11-20: one speaker per conversation, like
+// BG3 — lib/talk-floor.ts), so the walk knows an NPC is already in conversation without a second poll.
+//
 // Rolls are never speech (Sam, 2026-10-26): a roll announcement ("🎲 …") or a roll report to Malachar
 // ("[Dice Roll] …") never reaches the walk, and a check call or roll figure inside a spoken line ("Roll for
 // Stealth.", "(Insight)", "DC 12") is cut out of the bubble before it gets there. A line left with nothing is dropped.
@@ -27,6 +31,13 @@ export const dynamic = "force-dynamic"
 const SPOKEN = ["npc", "dm", "player"]
 const HEARD = ["dm", "direct"]
 
+async function floorsNow(db: ReturnType<typeof createAdminClient>) {
+  try {
+    const { data } = await db.from("talk_floor").select("npc, npc_name, speaker").gte("beat_at", new Date(Date.now() - FLOOR_STALE_MS).toISOString())
+    return data ?? []
+  } catch { return [] }
+}
+
 export async function GET(req: NextRequest) {
   try {
     const db = createAdminClient()
@@ -34,7 +45,7 @@ export async function GET(req: NextRequest) {
     if (!after || Number.isNaN(Date.parse(after))) {
       const { data } = await db.from("dialogue").select("created_at").in("channel", HEARD)
         .order("created_at", { ascending: false }).limit(1).maybeSingle()
-      return NextResponse.json({ cursor: data?.created_at ?? new Date().toISOString(), lines: [] })
+      return NextResponse.json({ cursor: data?.created_at ?? new Date().toISOString(), lines: [], floors: await floorsNow(db) })
     }
     const { data, error } = await db.from("dialogue")
       .select("id, speaker, speaker_type, text, speech_segments, created_at, sort_order, channel, recipient")  // speech_segments[].lang: the tongue (lib/languages)
@@ -57,7 +68,7 @@ export async function GET(req: NextRequest) {
     })
     // The cursor moves past dropped rows too, so a roll line is never asked for again.
     const last = data && data.length ? data[data.length - 1].created_at : null
-    return NextResponse.json({ cursor: last ?? after, lines })
+    return NextResponse.json({ cursor: last ?? after, lines, floors: await floorsNow(db) })
   } catch (e) {
     return NextResponse.json({ cursor: null, lines: [], error: String(e) })
   }
