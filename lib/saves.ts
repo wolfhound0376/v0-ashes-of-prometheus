@@ -25,7 +25,7 @@ export const WHOLE_TABLES = [
   "character_known_recipes", "character_known_runes", "character_known_effects", "character_known_weaknesses",
   "inventory_items", "item_events", "equipment_items", "vtt_ground_items", "combat_state",
   "roll_requests", "roll_attempts", "skill_progress",
-  "relationship_events", "character_relationships", "npc_knowledge",
+  "relationship_events", "character_relationships", "npc_knowledge", "npc_memories",
   "character_faith", "faith_events", "prayers", "rest_events", "crafting_projects", "magical_resources",
 ] as const
 
@@ -57,6 +57,8 @@ export const LIBRARY_TABLES = [
   "cinematic_clips", "media_manifest", "dashboard_assets", "lich_animations", "lich_personality", "skill_progress_rules",
   // who people are (ruling 2: art, voice, claims are shared)
   "character_secrets", "character_baselines", "forge_submissions",
+  // the cast's cards and Sam's coaching: the actor, not the run (migrations/20261123190000_npc_agents.sql)
+  "npc_agents", "npc_coaching",
   // kept on purpose by every reset (see lib/restart-campaign.ts)
   "dialogue_archive", "dm_phrasebook", "cinematic_requests",
   // the shelf itself
