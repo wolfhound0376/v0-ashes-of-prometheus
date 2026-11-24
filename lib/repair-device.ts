@@ -17,8 +17,9 @@ export const REPAIR_KEEPS: readonly string[] = [
   "aop_settings_v1", "aop_music_off",
   // heroes being built in the Forge — your work, never ours to throw away
   "aop_forge2014_v1", "aop_forge_draft_v1",
-  // films already seen on this device (lib/cinematic-replay.ts), so nothing replays
-  "aop-cinematics-played",
+  // what this device has already been through, so nothing replays: films seen (lib/cinematic-replay.ts), the intro
+  // (Sam, 2026-10-11: "It's annoying to have to do that every time"), the title film this run, the Pit won (lib/pit.ts)
+  "aop-cinematics-played", "aop_intro_seen_ever", "aop_title_film_run", "aop_pit_done",
 ]
 
 /** The localStorage keys Repair forgets, given every key there now. */

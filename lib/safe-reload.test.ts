@@ -46,6 +46,9 @@ describe("Repair this device", () => {
   it("keeps who you are, the DM key and your settings", () => {
     for (const k of [CHARACTER_LS_KEY, TOKEN_LS_KEY, ROLE_LS_KEY, MIRROR_KEY, DM_KEY_LS_KEY, SETTINGS_KEY]) expect(REPAIR_KEEPS).toContain(k)
   })
+  it("keeps what this device has already been through, so nothing replays", () => {
+    for (const k of ["aop_intro_seen_ever", "aop-cinematics-played", "aop_pit_done", "aop_forge2014_v1"]) expect(REPAIR_KEEPS).toContain(k)
+  })
   it("forgets the rest", () => {
     expect(keysToForget(["aop_character_id", "aop_door_then", "aop_combat_bag", "vv-light", "aop_forge2014_v1"])).toEqual(["aop_door_then", "aop_combat_bag", "vv-light"])
   })

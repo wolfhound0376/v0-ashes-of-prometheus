@@ -321,7 +321,7 @@ Per-browser identity is **not** in the database.
   per new build, only on a page between scenes (`/intro`, `/table`, `/join`, `/choose`, `/t/<code>`) and never while
   someone is typing; everywhere else it shows the notice. Do not add a page with unsaved local work to that list.
 - **Repair this device (`lib/repair-device.ts`, Settings on the title).** Forgets this site's browser storage except
-  `REPAIR_KEEPS` (the hero pair, the pass mirror, the DM key, settings, Forge drafts, films seen) and reloads clean.
+  `REPAIR_KEEPS` (the hero pair, the pass mirror, the DM key, settings, Forge drafts, and what the device has already seen: films, the intro, the Pit) and reloads clean.
   A new localStorage key that holds something a player would hate to lose belongs in `REPAIR_KEEPS`.
 - **Every message and every mutation must carry its own `characterId`.** Never fall back to
   `sessions.active_character_id` to decide who acted — that is the "one global seat" bug,
