@@ -75,6 +75,7 @@ const ARCANA: WalkCheck = { kind: "skill", skill: "arcana", label: "Arcana" }
 const HISTORY: WalkCheck = { kind: "skill", skill: "history", label: "History" }
 const DEXTERITY: WalkCheck = { kind: "ability", ability: "dex", label: "Dexterity" }
 const STRENGTH: WalkCheck = { kind: "ability", ability: "str", label: "Strength" }
+const MEDICINE: WalkCheck = { kind: "skill", skill: "medicine", label: "Medicine" }
 const COOKS: WalkCheck = { kind: "tool", tool: "Cook's Utensils", ability: "wis", label: "Cook's utensils" }
 
 /**
@@ -140,6 +141,14 @@ const BOOK_ACTIONS = {
   // same roll against a DC one lower: "gorge:jump-rope" is DC 14, sent with advantage. Homebrew.
   "gorge:jump": { title: "Jump the chasm", label: "Jumping the chasm on the Gloomwastes", check: ATHLETICS, dc: 15, source: "Sam's mechanic and difficulty (medium), 2026-11-24", mapNarrates: true },
   "gorge:jump-rope": { title: "Jump the chasm, roped", label: "Jumping the chasm on the Gloomwastes with a rope tied off", check: ATHLETICS, dc: 14, source: "Sam, 2026-11-24: a rope gives advantage and +1 (DC 15 less the +1)", mapNarrates: true },
+  // THE CRYSTAL PASSAGE (Sam, 2026-11-24, on the Act One board: "This area needs some rare crystal you can harvest and
+  // upon a successful check of the area, you will find a magic sword in the crystals, triggering a cinematic." He said
+  // yes to: harvest a medium check with three tries, the search Investigation at medium). Medium is DC 15. The harvest
+  // skill (Sleight of Hand, a careful cut) is CLAUDE'S PICK. "crystal:shard" is the Crystalline Aberration's own rule
+  // (EmberDM stat block Sam supplied): DC 12 Wisdom (Medicine) to remove one shard.
+  "crystal:harvest": { title: "Cut a crystal free", label: "Cutting a crystal from the Crystal Passage", check: SLEIGHT, dc: 15, source: "Sam 2026-11-24 (medium); skill is Claude's pick", mapNarrates: true },
+  "crystal:search": { title: "Search the crystals", label: "Searching the crystal cluster in the Crystal Passage", check: INVESTIGATION, dc: 15, source: "Sam 2026-11-24 (Investigation, medium)", mapNarrates: true },
+  "crystal:shard": { title: "Cut out a shard", label: "Cutting a crystalline shard out of a companion", check: MEDICINE, dc: 12, source: "Crystalline Aberration (EmberDM), Unstable Shatter: DC 12 Wisdom (Medicine)", mapNarrates: true },
   "sigil:find": { title: "Search the wall", label: "Searching the wall by the violet doorway", check: INVESTIGATION, dc: 15, source: "Sam's mechanic and difficulty (medium), 2026-11-24" },
   "sigil:wake": { title: "Wake the sigil", label: "Working out the sigil on the wall and waking it", check: ARCANA, dc: 15, source: "Sam's mechanic and difficulty (medium), 2026-11-24" },
   "thessaly:persuade": { title: "Talk him round", label: "Talking Old Thessaly into giving up his keelboat", check: PERSUASION, dc: 15, source: "house DC (Sam's way 2; DC Claude's)" },
