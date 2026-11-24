@@ -62,7 +62,7 @@ language sql immutable as $$
     'character_known_recipes', 'character_known_runes', 'character_known_effects', 'character_known_weaknesses',
     'inventory_items', 'item_events', 'equipment_items', 'vtt_ground_items', 'combat_state',
     'roll_requests', 'roll_attempts', 'skill_progress',
-    'relationship_events', 'character_relationships', 'npc_knowledge',
+    'relationship_events', 'character_relationships', 'npc_knowledge', 'npc_memories',
     'character_faith', 'faith_events', 'prayers', 'rest_events', 'crafting_projects', 'magical_resources'
   ]::text[]
 $$;

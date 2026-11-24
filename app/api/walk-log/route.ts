@@ -2,6 +2,8 @@ import { type NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { isDmRequest } from "@/lib/dm-session"
+import { after } from "next/server"
+import { rememberAllDue } from "@/lib/npc-agents-store"
 
 // /api/walk-log — THE REVIEW LOG (Sam, 2026-11-15: "Some of these comments we don't need for the player but the info is
 // important for review. Some of it should be in a log you can access but is minimized.").
@@ -65,6 +67,11 @@ export async function POST(req: NextRequest) {
     if (!rows.length) return NextResponse.json({ ok: true, saved: 0 })
     const { error } = await db.from("walk_log").insert(rows)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    // Story lines from a real run (not a rehearsal) may hold something the cast will remember: a fight, a death, a
+    // gift. The Rememberer decides, after the reply, at most once a minute (lib/npc-agents-store.ts).
+    if (rows.some((r) => r.kind === "story" && !/^rehearsal/i.test(r.mode ?? ""))) {
+      after(async () => { try { await rememberAllDue(db, { throttle: true }) } catch (e) { console.error("[rememberer] after walk-log:", e) } })
+    }
     return NextResponse.json({ ok: true, saved: rows.length })
   } catch (e) {
     return NextResponse.json({ error: String(e instanceof Error ? e.message : e) }, { status: 503 })

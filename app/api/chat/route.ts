@@ -6,6 +6,8 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { MALACHAR_MOOD_RULE, readMalacharMood, stripMalacharMood } from "@/lib/malachar-mood"
 import { MALACHAR_LAST_WORD, MALACHAR_PERSONA } from "@/lib/malachar-persona"
 import { findNpcRow, learnName, npcKnowsName, relationshipSummary, saysOwnName } from "@/lib/npc-acquaintance"
+import { after } from "next/server"
+import { cardFor, rememberDue } from "@/lib/npc-agents-store"
 import { applyStageEvents, jorlanOnDuty, pledgeTag, readStage, watchAndGateTags, type StageEvent } from "@/lib/stage-roster"
 import { directorPrompt, namesTaggedIn, parseDirector, wantsDirector, type DirectorCast } from "@/lib/stage-director"
 import { readSeated } from "@/lib/seats"
@@ -1626,6 +1628,19 @@ ${combatantRows
     stageContext += ` The player is sitting by the fire with ${talkWith}. Answer AS ${talkWith}: every spoken line is ${talkWith}'s own, quoted and attributed to ${talkWith} by name. No other NPC speaks unless ${talkWith} calls them over. Stay in the conversation. ONLY THEIR WORDS (Sam, 2026-11-13): in a conversation the player hears the one they are talking to, not the narrator. Write just what ${talkWith} SAYS, in quotes, attributed by name: no scene-setting, no description of how they look, move or sound, no commentary of your own. The two exceptions: when the player attempts something that needs a check, call for the roll and narrate its result as you always do; and when something actually happens (a wound, an item changing hands, someone leaving), say so in one plain sentence.`
   }
   stageContext += acquaintance
+  // THE REMEMBERER (lib/npc-agents-store.ts; Sam, 2026-11-23). Once this turn's reply is in the log, the NPC being
+  // talked to (and Malachar, who is in every scene) may remember what mattered. Due only after enough new lines,
+  // throttled, and nothing at all in a rehearsal: the sandbox writes no memories, the same as it writes no state.
+  if (!sandbox) {
+    after(async () => {
+      try {
+        const db = createAdminClient()
+        const card = talkWith ? await cardFor(db, talkWith) : null
+        if (card) await rememberDue(db, card.key)
+        await rememberDue(db, "malachar")
+      } catch (e) { console.error("[rememberer] after chat:", e) }
+    })
+  }
   // The stage list (lib/stage-roster.ts): who is in the area and where Malachar last put them. Positions
   // are his facts to keep (rule 13); the map draws exactly this.
   try {

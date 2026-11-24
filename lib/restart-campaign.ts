@@ -329,13 +329,20 @@ export async function restartCampaign(admin: SupabaseClient): Promise<RestartRes
   // game that kept them would open with Ront already holding a grudge and Eldeth already saying "Fifi".
   // The relationship tables were empty until /api/npc-ask began writing them; npc_knowledge was simply
   // never cleared (11 learned names had outlived their runs when this was added).
-  for (const table of ["relationship_events", "character_relationships", "npc_knowledge"] as const) {
+  // What the cast remembers (npc_memories, migrations/20261123190000_npc_agents.sql) is the run's too; their cards and
+  // Sam's coaching are not (Sam, 2026-11-23: memories reset on New Game, coaching survives). The Rememberer's watermark
+  // goes back to nothing so the new run's first scene is read from its start.
+  for (const table of ["relationship_events", "character_relationships", "npc_knowledge", "npc_memories"] as const) {
     const { count, error } = await admin
       .from(table)
       .delete({ count: "exact" })
       .neq("id", "00000000-0000-0000-0000-000000000000")
     note(table, error)
     report.relationshipsCleared = (Number(report.relationshipsCleared) || 0) + (count ?? 0)
+  }
+  {
+    const { error } = await admin.from("npc_agents").update({ remembered_through: null }).neq("key", "")
+    note("npc_agents watermark", error)
   }
 
   // THE REST OF THE RUN (Sam, 2026-11-10: "go PR5"; ruling "New game restarts EVERYTHING"). These were never
