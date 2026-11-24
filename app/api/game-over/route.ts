@@ -7,7 +7,7 @@ import { readSeated } from "@/lib/seats"
 import { clearInvites, clearSeats, readTable, writeTable } from "@/lib/table-store"
 import { headInPlay, loadSave, loadedSave, startNewSave } from "@/lib/save-store"
 import { newSaveName } from "@/lib/saves"
-import { WIPE_DONE_TEXT, WIPE_FLAG, wipeOutcome, wipeVerdict } from "@/lib/game-over-wipe"
+import { WIPE_DONE_TEXT, WIPE_FLAG, endVerdict, wipeOutcome } from "@/lib/game-over-wipe"
 
 // POST /api/game-over — THE GAME DIES WITH THE PARTY (Sam, 2026-11-15: "If everyone dies, then the game is deleted
 // after game over. It's also a hard reset."), in Mortal Mode only since 2026-11-23: "Party wipe deletes the game in
@@ -57,13 +57,15 @@ export async function POST(req: NextRequest) {
   const seats = await readSeated(db)
   if (who !== "dm" && !seats.some((s) => s.id === who)) return NextResponse.json({ error: "Only someone at the table can end the game." }, { status: 403 })
   const { data: world } = await db.from("walk_world").select("state, heroes").eq("campaign_run_id", run.id).maybeSingle()
-  const state = (world?.state ?? {}) as { fallen?: unknown[] }
-  const verdict = wipeVerdict(seats, (world?.heroes ?? {}) as Record<string, { cid?: string }>, Array.isArray(state.fallen) ? state.fallen : [])
+  const state = (world?.state ?? {}) as { fallen?: unknown[]; gameOver?: unknown }
+  // every seated hero dead, or a game over of another kind recorded for this run (Sam, 2026-11-23: "Game over;
+  // automatically ends the game." lib/game-over-wipe.ts endVerdict)
+  const verdict = endVerdict(seats, (world?.heroes ?? {}) as Record<string, { cid?: string }>, Array.isArray(state.fallen) ? state.fallen : [], state.gameOver)
   if (!verdict.ok) return NextResponse.json({ error: `${verdict.why} Nothing was deleted.` }, { status: 409 })
 
   // One screen does the work: the flag is keyed by campaign + key, so a second claim for this run fails. (The hard
   // reset clears every world flag, this one with them; by then the run number has moved on.)
-  const { error: claimErr } = await db.from("world_flags").insert({ campaign_id: CAMPAIGN_ID, key: WIPE_FLAG, value: { run: run.run_number, by: who, dead: verdict.dead }, set_by: who, note: "The whole table died" })
+  const { error: claimErr } = await db.from("world_flags").insert({ campaign_id: CAMPAIGN_ID, key: WIPE_FLAG, value: { run: run.run_number, by: who, dead: verdict.dead, ...(verdict.why ? { why: verdict.why } : {}) }, set_by: who, note: verdict.why ? `Game over (${verdict.why})` : "The whole table died" })
   if (claimErr) {
     if (claimErr.code === "23505") return NextResponse.json({ ok: true, already: true })
     return NextResponse.json({ error: claimErr.message }, { status: 500 })

@@ -14,8 +14,10 @@
 //   2. the save that was in play is DELETED from the shelf (lib/save-store.ts), not shelved as New Game does;
 //   3. the table closes and its seats empty, so every open screen goes back to the table (lib/session-guard.ts);
 //   4. the fresh world goes on the shelf as a new save, ready for the host to open.
-// A rehearsal (sandbox) keeps resetting itself on the map and never comes here. A game over that is not a death
-// (the march out in chains lost: lib/game-over.mjs `why`) is not covered by this rule and keeps the DM's restart.
+// A rehearsal (sandbox) keeps resetting itself on the map and never comes here.
+// EVERY GAME OVER ENDS THE GAME (Sam, 2026-11-23: "Game over; automatically ends the game."): the whole party down
+// with nobody to pick them up ("fell") and the march out in chains lost ("menzoberranzan") end it the same way as a
+// table of dead heroes, Mortal or not (endVerdict below).
 //
 // The server decides, never the page: a screen asks, and the route checks the shared world (walk_world: who has
 // fallen, which seat plays which hero) against the seats before anything is touched.
@@ -46,6 +48,24 @@ export function wipeVerdict(seats: readonly SeatLite[], heroes: Record<string, H
     out.push(slug)
   }
   return { ok: true, dead: out }
+}
+
+/** The game overs that end the game without every hero dead (Sam, 2026-11-23): the shared world records them as
+ *  `state.gameOver.why` (lib/game-over.mjs; the map's fellGameOver and the chain march). */
+export const ENDING_GAME_OVERS: ReadonlySet<string> = new Set(["fell", "menzoberranzan"])
+
+/**
+ * Does this table's game end? Every seated hero dead (wipeVerdict), or a game over of one of the kinds above recorded
+ * in the shared world for this run. A table with nobody seated never ends this way.
+ */
+export function endVerdict(seats: readonly SeatLite[], heroes: Record<string, HeroLite>, fallen: readonly unknown[], gameOver: unknown):
+  { ok: true; dead: string[]; why?: string } | { ok: false; why: string } {
+  const w = wipeVerdict(seats, heroes, fallen)
+  if (w.ok) return w
+  const why = gameOver && typeof gameOver === "object" ? (gameOver as { why?: unknown }).why : null
+  if (typeof why !== "string" || !ENDING_GAME_OVERS.has(why)) return w
+  if (!seats.some((s) => s && typeof s.id === "string" && !s.dm)) return { ok: false, why: "Nobody is seated at the table." }
+  return { ok: true, dead: fallen.filter((f): f is string => typeof f === "string"), why }
 }
 
 /**
