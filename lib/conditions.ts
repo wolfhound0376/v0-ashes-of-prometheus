@@ -4,6 +4,8 @@
 // npc_encounters.conditions. Display casing is preserved; matching is always
 // case-insensitive.
 
+import { conditionArtFile } from "./condition-rules.mjs"
+
 export const CONDITION_PRESETS = [
   "Manacled",
   "Magical Barrier",
@@ -110,4 +112,15 @@ export function addCondition(list: unknown, condition: string): string[] {
 export function removeCondition(list: unknown, condition: string): string[] {
   const key = condition.trim().toLowerCase()
   return normalizeConditions(list).filter((c) => c.toLowerCase() !== key)
+}
+
+// The painted art from the "Death Saves, Tombstones & Conditions" pack (Sam, 2026-11-23), served from the walk's
+// icon folder so the map and the dashboard show the same picture. One lookup for both: lib/condition-rules.mjs.
+
+export const CONDITION_ICON_BASE = "/velkynvelve-walk/icons/conditions/"
+
+/** The icon URL for a condition by name ("Poisoned", "Exhaustion 2", "Manacled"), or null when the pack has none. */
+export function conditionIcon(name: string): string | null {
+  const f = conditionArtFile(name)
+  return f ? `${CONDITION_ICON_BASE}${f}.png` : null
 }

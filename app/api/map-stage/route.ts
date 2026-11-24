@@ -110,7 +110,8 @@ export async function GET(req: NextRequest) {
     // line in a tongue that seat lacks as gibberish (lib/languages, public/js/aop-languages.js).
     const tongues = new Map<string, { languages: unknown; conditions: unknown }>()
     if (ids.length) {
-      const { data } = await admin.from("characters").select(WALK_SHEET_COLUMNS + ", languages, conditions").in("id", ids)
+      // (conditions is in WALK_SHEET_COLUMNS since 2026-11-23: the sheet carries Malachar's conditions to the map)
+      const { data } = await admin.from("characters").select(WALK_SHEET_COLUMNS + ", languages").in("id", ids)
       for (const r of (data ?? []) as unknown as Record<string, unknown>[]) {
         const id = String(r.id)
         tongues.set(id, { languages: r.languages ?? null, conditions: r.conditions ?? null })
