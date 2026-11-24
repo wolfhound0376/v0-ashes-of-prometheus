@@ -26657,6 +26657,7 @@ async function readTime(){
 // creatures he named, and closes when he ends it. The map never starts a fight on its own in the game;
 // the proximity and guards-on-watch triggers are the preview's.
 let combatFlagSeen = null;
+let flagOpenedByMap = false;                            // the flag this screen fought from was raised by the map's own spotting (flag.opener)
 // A FIGHT THAT IS OVER STAYS OVER (Sam, 2026-11-10: "why does refresh screen seem to start an encounter?"). The flag
 // used to outlive a fight won on the map, and `combatFlagSeen` above is this page's memory only, so a reload opened the
 // same fight again. Two things now: the map tells the server when its flag-fight ends (fightFlagOver → /api/walk-spotted
@@ -26689,6 +26690,7 @@ async function followCombatFlag(flag){
     talkGivesWay();                                     // the talk ended in steel: the card closes, the fight opens (NPC MINDS)
     if (mode !== "explore") return;                     // once we are free, the next poll opens it
     combatFlagSeen = flag.startedAt;
+    flagOpenedByMap = !!flag.opener;                    // THE MAP'S FIGHT IS THE MAP'S (below)
     const picked = [];
     // a guard's spotting names the plate it happened on (flag.opener: THE SPOTTED BEAT); drow guards stand on many plates,
     // and the ones HERE did not see anybody — this screen hears of the fight, it does not open one of its own
@@ -26729,6 +26731,12 @@ async function followCombatFlag(flag){
     startCombat(picked, flag.label || "Malachar calls for initiative.", {fromFlag: true});   // fromFlag rides along when the fight is cut to a battle plate
     if (cbt) cbt.fromFlag = true;
   } else if (!flag && mode === "combat" && cbt && cbt.fromFlag){
+    // THE MAP'S FIGHT IS THE MAP'S (found live 2026-11-23, Sam: "we started combat and then the drow disappeared"). A guard
+    // spotted Fifi on the Guard Tower and the map raised this flag itself (flag.opener); Malachar, told of it, answered with
+    // [COMBAT_END] and the flag came down fourteen seconds in, ending the fight with three guards standing. A fight the map
+    // opened is fought to its end here (won, fled, fallen); only a surrender ends it from the flag. The chat route now holds
+    // that tag too (lib/combat-flag.ts mapOwnsFight) — this is the map's half, for anything else that drops the flag.
+    if (flagOpenedByMap && !surrenderFresh()) return;
     endCombat(!surrenderFresh());                       // the flag dropped because the party surrendered: no victory, the plate is not cleared
   }
 }
