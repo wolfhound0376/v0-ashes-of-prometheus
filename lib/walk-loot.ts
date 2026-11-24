@@ -78,7 +78,7 @@ export const BOOK_CONTAINERS: Record<string, BookContainer> = {
   "necro-lab-lectern": {
     node: "ruins-necro-lab", title: "The open book on the lectern",
     source: "Sam's ruling, 2026-11-24: one book holds the notes on the making of the staff and its command word, the Elvish for \"death serpent\".",
-    entries: [{ slug: "necromancers-notes", qty: 1, note: "Sam's lore item; the Elvish spelling of the word is his to give" }],
+    entries: [{ slug: "necromancers-notes", qty: 1, note: "Sam's lore item; the command word is Gurulhûg (Sam, 2026-11-24)" }],
   },
   "necro-lab-shelves": {
     node: "ruins-necro-lab", title: "The bookshelves",

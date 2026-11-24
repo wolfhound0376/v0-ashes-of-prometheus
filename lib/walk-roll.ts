@@ -132,10 +132,10 @@ const BOOK_ACTIONS = {
   // The bet is read as Wisdom (Insight): which fist holds the pebble. The manacles: Dexterity (Sleight of Hand), the
   // wire being no thieves' tools; OotA's own manacle escape is DC 20 Dexterity, and a wire in the lock is worth 5.
   // OLD THESSALY (Sam, 2026-10-24; claude/Old_Thessaly_Module_2026-11-23.md): the Darklake shore's fisherman and his boat
-  // THE SIGIL ON THE THRESHOLD'S WEST WALL (Sam, 2026-11-24: "A successful investigation check will identify a sigil. A
+  // THE SIGIL BY THE THRESHOLD'S DOORWAY (first built on the west wall; Sam, 2026-11-24: "Sigil at the door please") (Sam, 2026-11-24: "A successful investigation check will identify a sigil. A
   // successful arcana check will activate it, opening a hidden room to the necromancers laboratory"; "Difficulty
   // medium" -> DC 15, SRD 5.2.1 Typical DCs). Homebrew: the book gives the Ruins no rooms.
-  "sigil:find": { title: "Search the wall", label: "Searching the west wall of the ruined hall", check: INVESTIGATION, dc: 15, source: "Sam's mechanic and difficulty (medium), 2026-11-24" },
+  "sigil:find": { title: "Search the wall", label: "Searching the wall by the violet doorway", check: INVESTIGATION, dc: 15, source: "Sam's mechanic and difficulty (medium), 2026-11-24" },
   "sigil:wake": { title: "Wake the sigil", label: "Working out the sigil on the wall and waking it", check: ARCANA, dc: 15, source: "Sam's mechanic and difficulty (medium), 2026-11-24" },
   "thessaly:persuade": { title: "Talk him round", label: "Talking Old Thessaly into giving up his keelboat", check: PERSUASION, dc: 15, source: "house DC (Sam's way 2; DC Claude's)" },
   "thessaly:look": { title: "Look at him properly", label: "Studying the old fisherman by the keelboat", check: INVESTIGATION, dc: 14, source: "the bhut's False Alive, DC 14 Intelligence (Investigation) (Sam's stat block)" },
