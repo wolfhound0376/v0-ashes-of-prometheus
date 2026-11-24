@@ -12,6 +12,7 @@ import { VESSELS, seats } from "@/lib/travel/vessels"
 import { MARCH_HOURS_PER_DAY, PACES, fatigue, legPreview } from "@/lib/travel/march"
 import { isRoadMarker } from "@/lib/travel/standing"
 import type { NodeRow, useTravel } from "./use-travel"
+import { FORK_LINE, useForkAsker } from "./fork-asker"
 
 export type Travel = ReturnType<typeof useTravel>
 
@@ -54,6 +55,8 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
     boatAction, dmAction, chooseOption, enterPlace, leadAction, setOut,
     routeMiles, routeBetween, byId,
   } = t
+  // "Ok, which one?" — someone in the company asks it out loud when the road forks (Sam, 2026-11-23; fork-asker.ts)
+  const asker = useForkAsker(!!roadChoice && !confirmNode && (roadChoice?.length ?? 0) > 1, me?.characterId)
   return (
     <>
         <style>{TRAVEL_SKIN_CSS}</style>
@@ -61,7 +64,8 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
           <div className="absolute inset-0 grid place-items-center bg-[#05030acc] p-3">
             <div className="tk-panel px-7 py-6 w-full max-w-[52ch]">
               <div className="text-[#9a8fb0] text-xs tracking-widest">OUT OF {(arrival?.from ?? "the outpost").toUpperCase()}</div>
-              <div className="text-[#f5c34d] text-base font-bold tracking-widest mt-2">{arrival?.name ?? "The cavern floor"}. Which way?</div>
+              <div className="text-[#f5c34d] text-base font-bold tracking-widest mt-2">{arrival?.name ?? "The cavern floor"}</div>
+              <div className="text-[#f3e6c6] text-sm italic mt-1">{asker ? <><span className="not-italic font-bold text-[#f5c34d]">{asker.split(/\s+/)[0]}:</span> “{FORK_LINE}”</> : FORK_LINE}</div>
               <div className="text-[#9a8fb0] text-xs mt-1">The roads the map knows from here. Pick one.</div>
               <div className="mt-4 grid gap-2">
                 {roadChoice.map((r) => (
