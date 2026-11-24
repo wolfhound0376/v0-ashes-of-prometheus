@@ -246,6 +246,14 @@ def water_rules(root):
     return re.sub(r'^export ', '', src, flags=re.M)
 
 
+def companions_rules(root):
+    """lib/companions.mjs (CREATURE COMPANIONS: Kenta's pocket spider first, the template for every pet, familiar and
+    summon after it; Sam 2026-11-23 "Go"), pasted whole minus `export`. The map and lib/companions.test.ts read the
+    SAME rules."""
+    src = open(os.path.join(root, 'lib', 'companions.mjs'), encoding='utf-8').read()
+    return re.sub(r'^export ', '', src, flags=re.M)
+
+
 def corrode_rules(root):
     """lib/corrode.mjs (CORRODE METAL, the gray ooze eats metal: SRD 5.1 Gray Ooze; Sam 2026-11-23 "go corrode"), pasted
     whole minus `export`. The map, app/api/walk-corrode and lib/corrode.test.ts read the SAME rule and tables."""
@@ -526,7 +534,7 @@ def somatic_table(root):
 
 t = t.replace('/*__SOMATIC__*/', somatic_table(ROOT))
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__TRAITS__*/', traits_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
-      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__STRIKE_CAM__*/', strike_cam_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__SURRENDER__*/', surrender_rules(ROOT)).replace('/*__CORRODE__*/', corrode_rules(ROOT)).replace('/*__WATER__*/', water_rules(ROOT)).replace('/*__GAME_OVER__*/', game_over_rules(ROOT)).replace('/*__BUPPIDO_RISES__*/', buppido_rises_rules(ROOT)).replace('/*__BODY_REMOVAL__*/', body_removal_rules(ROOT)).replace('/*__SHAKEDOWN__*/', shakedown_rules(ROOT)).replace('/*__PEN_ESCAPE__*/', pen_escape_rules(ROOT)).replace('/*__DIRECTOR__*/', director_rules(ROOT)).replace('/*__CHAIN_MARCH__*/', chain_march_rules(ROOT)).replace('/*__WATCH_THE_MAP__*/', watch_the_map_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__QUOTA__*/', quota_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
+      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__STRIKE_CAM__*/', strike_cam_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__SURRENDER__*/', surrender_rules(ROOT)).replace('/*__CORRODE__*/', corrode_rules(ROOT)).replace('/*__COMPANIONS__*/', companions_rules(ROOT)).replace('/*__WATER__*/', water_rules(ROOT)).replace('/*__GAME_OVER__*/', game_over_rules(ROOT)).replace('/*__BUPPIDO_RISES__*/', buppido_rises_rules(ROOT)).replace('/*__BODY_REMOVAL__*/', body_removal_rules(ROOT)).replace('/*__SHAKEDOWN__*/', shakedown_rules(ROOT)).replace('/*__PEN_ESCAPE__*/', pen_escape_rules(ROOT)).replace('/*__DIRECTOR__*/', director_rules(ROOT)).replace('/*__CHAIN_MARCH__*/', chain_march_rules(ROOT)).replace('/*__WATCH_THE_MAP__*/', watch_the_map_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__QUOTA__*/', quota_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))
