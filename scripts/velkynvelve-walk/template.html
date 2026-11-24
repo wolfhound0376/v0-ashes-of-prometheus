@@ -572,15 +572,15 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
    dialogue box." While the container is in #objBtns the card drops its frame, portrait, line and footer and fills the
    stage: a name, the X, the container with its things, and a small Take all. Any other card clears #objBtns, and the
    dialogue card is itself again (the rules hang on :has(.lootIn), not on a class someone must remember to remove). */
-#obj:has(.lootIn){inset:0;padding:0;z-index:24;pointer-events:auto;background:rgba(4,3,8,.97)}
+#obj:has(.lootIn){inset:0;padding:0;z-index:24;pointer-events:auto;background:rgba(4,3,8,.97);overflow:hidden}
 #obj:has(.lootIn) .tcard{width:100%;height:100%;margin:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);gap:0}
 #obj:has(.lootIn) .tcard::before,#obj:has(.lootIn) .tcard::after{display:none}
 #obj:has(.lootIn) .tcard .port,#obj:has(.lootIn) .tcard .narr,#obj:has(.lootIn) .tcard>.foot,#obj:has(.lootIn) #objLog{display:none}
 #obj:has(.lootIn) .tcard .head{padding:14px 18px 0 24px;min-height:0;align-items:center}
 #obj:has(.lootIn) .tcard .plate{background:none;clip-path:none;box-shadow:none;padding:0}
 #obj:has(.lootIn) .tcard .plate .name{font-size:1.9rem}
-#obj:has(.lootIn) .btns.tray{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;margin:0;padding:8px 16px 14px;max-height:none;min-height:0;overflow:hidden}
-.lootIn{position:relative;flex:none;border-radius:10px;overflow:hidden;background:#06050a center/100% 100% no-repeat;image-rendering:pixelated}
+#obj:has(.lootIn) .btns.tray{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;margin:0;padding:8px 16px 14px;max-height:none;min-height:0;overflow:visible}
+.lootIn{position:relative;flex:none;border-radius:10px;background:#06050a center/100% 100% no-repeat;image-rendering:pixelated}
 .lootIn.chest{background-image:url(img/loot/chest.png)}
 .lootIn.floor{background-image:url(img/loot/floor.png)}
 .lootSay{position:absolute;left:0;right:0;bottom:6%;text-align:center;font-family:var(--face-read);font-style:italic;font-size:1.2rem;color:var(--ink-dim);text-shadow:0 1px 3px #000;pointer-events:none}
@@ -589,6 +589,34 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .lootSlots{position:absolute;display:flex;flex-wrap:wrap;gap:0;align-content:center;justify-content:center;--ls:96px}
 .lootIn.chest .lootSlots{left:16%;right:13%;top:12%;bottom:42%}
 .lootIn.floor .lootSlots{left:13%;right:13%;top:16%;bottom:14%}
+/* THE COLUMNS OF LIGHT, in the chest (Sam, 2026-11-23: "columns in chest"). One .lootLight per uncommon-or-better piece,
+   in a layer between the container's art and the pieces. The pillar is the map's own texture (lootBeamUrl), drawn in
+   the map's three passes (bloom 2.4x, main, hot core .44x) and added to what is under it; the floor light is the map's
+   wash and pool, squashed for the floor. They climb past the top of the chest toward the top of the screen. */
+.lootLights{position:absolute;inset:0;pointer-events:none}
+.lootLight{position:absolute;width:0;height:0;transition:opacity .25s}
+.lootLight.out,.lootLight.unlit{opacity:0}
+.lootLight i{position:absolute;display:block;mix-blend-mode:plus-lighter}
+.lootLight .beam{left:calc(var(--bw) / -2);bottom:calc(var(--sz) * -.06);width:var(--bw);height:var(--bh);background:center/100% 100% no-repeat;image-rendering:auto;transform-origin:50% 100%;animation:lootFlick .19s ease-in-out var(--fd) infinite alternate}
+.lootLight .beam.bloom{left:calc(var(--bw) * -1.2);width:calc(var(--bw) * 2.4);animation:none}
+.lootLight .beam.hotc{left:calc(var(--bw) * -.22);width:calc(var(--bw) * .44)}
+.lootLight.slow .beam{animation-duration:.84s}
+.lootLight .wash{left:calc(var(--sz) * -2.4 * var(--k));top:calc(var(--sz) * -.86 * var(--k));width:calc(var(--sz) * 4.8 * var(--k));height:calc(var(--sz) * 1.72 * var(--k));border-radius:50%;
+  background:radial-gradient(closest-side,rgba(var(--sheath),.5),rgba(var(--halo),.2) 50%,rgba(var(--sheath),0))}
+.lootLight .pool{left:calc(var(--sz) * -.82 * var(--k));top:calc(var(--sz) * -.3 * var(--k));width:calc(var(--sz) * 1.64 * var(--k));height:calc(var(--sz) * .6 * var(--k));border-radius:50%;
+  background:radial-gradient(closest-side,rgba(var(--core),.95),rgba(var(--core),.8) 18%,rgba(var(--sheath),.55) 50%,rgba(var(--sheath),0))}
+.lootLight .flare{left:calc(var(--sz) * -.5);top:calc(var(--sz) * -1.5);width:var(--sz);height:calc(var(--sz) * 1.9);border-radius:50%;
+  background:radial-gradient(closest-side,rgba(var(--core),.75),rgba(var(--core),.45) 25%,rgba(var(--sheath),.22) 55%,rgba(var(--sheath),0))}
+.lootLight.ignite .beam{animation:lootRise .24s cubic-bezier(.2,.8,.2,1) both,lootFlick .19s ease-in-out .24s infinite alternate}
+.lootLight.ignite .beam.bloom{animation:lootRise .24s cubic-bezier(.2,.8,.2,1) both}
+@keyframes lootRise{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+@keyframes lootFlick{from{filter:brightness(.88)}to{filter:brightness(1.06)}}
+.lootSlot.pop{animation:lootPop .3s cubic-bezier(.2,1.4,.4,1) both}
+@keyframes lootPop{0%{opacity:0;transform:translateY(38%) scale(.2) rotate(-40deg)}70%{opacity:1;transform:translateY(-6%) scale(1.14)}100%{opacity:1;transform:none}}
+.lootFlash{position:absolute;inset:-8%;pointer-events:none;mix-blend-mode:plus-lighter;background:radial-gradient(closest-side,rgba(255,236,190,.85),rgba(255,180,70,.35) 45%,rgba(255,180,70,0));animation:lootFlashA .5s ease-out both}
+.lootFlash.tier{background:rgba(var(--core),.13);inset:-200%}
+@keyframes lootFlashA{from{opacity:1}to{opacity:0}}
+@media (prefers-reduced-motion:reduce){.lootLight .beam,.lootLight.ignite .beam,.lootSlot.pop{animation:none}}
 .lootSlot{position:relative;width:var(--ls);height:var(--ls);padding:0;display:grid;place-items:center;background:none;border:2px solid transparent;border-radius:10px;color:var(--ink);cursor:pointer;transition:transform .12s,opacity .12s}
 .lootSlot img{width:94%;height:94%;image-rendering:pixelated;object-fit:contain;filter:drop-shadow(0 4px 3px rgba(0,0,0,.8));pointer-events:none}
 .lootSlot.rar img{filter:drop-shadow(0 0 6px var(--rc)) drop-shadow(0 4px 3px rgba(0,0,0,.8))}
@@ -5978,6 +6006,8 @@ function drawPickup(d, i, t){
 // a turn is the free object interaction, the second is the action), a part behind a check (double-click rolls it).
 // The equip offer for a weapon taken with empty hands is asked once, when the tray is closed, not between takes.
 // No item checks here: they are rolled from the inventory (icardRender skips them for kind "loot").
+const LOOT_BEAM_URL = {};
+function lootBeamUrl(tier){ return LOOT_BEAM_URL[tier] || (LOOT_BEAM_URL[tier] = lootBeam(tier).toDataURL()); }   // the map's own pillar (THE LOOT FOUNTAIN), once per tier
 const lootIsChest = (id, title) => (node.props || []).some(pr => pr.id === id && pr.lid) || (node.loot || []).some(l => l.id === id && l.chest)
   || /chest|locker|coffer|strongbox|trunk|crate/i.test(title || "");
 // opts.at = where the container stands on the plate; the first open of it plays the loot fountain from there
@@ -5993,12 +6023,14 @@ async function openLoot(id, title, opts = {}){
   const fkey = lootKeyOf(id), spill = !!opts.at && !fountained.has(fkey);   // the first open of a body or chest spills it
   const j = await fetchLoot(id); await ensureCatalog();
   if (fighter ? !(cbt && mode === "combat") : mode !== "dialog"){ if (fighter) grabDone(fighter); return; }   // something else took the screen while the game answered
-  if (spill){
-    fountained.add(fkey);
-    const wait = j.error ? 0 : lootFountain(opts.at, j.rows || []);
-    if (wait) await new Promise(r => setTimeout(r, wait));
-    if (fighter ? !(cbt && mode === "combat") : mode !== "dialog"){ if (fighter) grabDone(fighter); return; }   // closed or left while it flew
-  }
+  // THE COLUMNS ARE IN THE CHEST (Sam, 2026-11-23: "what about the columns of light?" ... "columns in chest"). The first
+  // search used to burst on the map for a second and then this screen covered it. Now the first search goes straight to
+  // the container and the ceremony plays IN it: the burst and its sounds, each piece popping in rarest last, and every
+  // uncommon-or-better piece standing in its own column of light, the same pre-rendered pillar the map uses (lootBeam,
+  // LOOT_TIER: rare 82% of the way to the top of the screen, very rare 92%, legendary and artifact all the way), with
+  // the floor light under it. The columns stay for as long as the piece lies there, on every later look too; only the
+  // burst and the stings are the first search's. A pocket still gets no ceremony (no opts.at), as before.
+  if (spill) fountained.add(fkey);
   showObjCard(); cardClose(leave);
   $("objWho").textContent = chest ? "Chest" : title; $("objText").textContent = "";
   const rows = (j.rows || []).slice(), scrap = id.startsWith("body:") ? (j.ruined || []) : [];
@@ -6006,10 +6038,10 @@ async function openLoot(id, title, opts = {}){
   const takeable = () => rows.filter(r => !r.missing && r.kind !== "preview-stash");
   const plain = () => takeable().filter(r => !r.check);
   const live = () => !$("obj").hidden && box.classList.contains("tray") && box.contains(pane);
-  const slots = new Map(), pane = document.createElement("div"), grid = document.createElement("div");
+  const slots = new Map(), pane = document.createElement("div"), grid = document.createElement("div"), lights = document.createElement("div"), lit = new Map();
   let queue = Promise.resolve(), pending = 0;
   box.innerHTML = ""; box.classList.add("loot", "tray");
-  pane.className = "lootIn " + (chest ? "chest" : "floor"); grid.className = "lootSlots"; pane.appendChild(grid); box.appendChild(pane);
+  pane.className = "lootIn " + (chest ? "chest" : "floor"); grid.className = "lootSlots"; lights.className = "lootLights"; pane.appendChild(lights); pane.appendChild(grid); box.appendChild(pane);
   // why this hero cannot take it right now, or "" (said in the hover card and on a double-click)
   const refusal = row => row.missing ? `${row.name} is not in the item catalogue yet, so it cannot be taken.`
     : row.check && fighter ? `Needs a ${checkLabel(row.check)} check: after the fight.`
@@ -6038,6 +6070,7 @@ async function openLoot(id, title, opts = {}){
     if (k){ k.pay(); log(`${fname(who)} takes the <b>${esc(row.name)}</b> (${k.label === "free" ? "free object interaction" : "action"}).`); }
     rows.splice(rows.indexOf(row), 1);
     if (b && live()){ b.disabled = true; b.style.visibility = "hidden"; }   // the rest stay where they lie: nothing shifts under the pointer
+    const L = lit.get(b); if (L){ lit.delete(b); L.el.classList.add("out"); setTimeout(() => L.el.remove(), 260); }   // its column goes with it
   };
   const take = (row, step = 0) => {
     const b = slots.get(row); if (!b || b.classList.contains("fly") || !rows.includes(row)) return;
@@ -6061,6 +6094,17 @@ async function openLoot(id, title, opts = {}){
     const target = () => ({kind: "loot", row, slug: row.slug, name: it.name || row.name, pixel: px, hero: who,
       note: ruined ? "Ruined in the fight. Scrap now: it cannot be taken." : noteOf(row), onTake: ruined || refusal(row) ? null : () => take(row)});
     icardBind(b, target);
+    { const tier = ruined || row.missing ? "common" : tierOf(row), T = LOOT_TIER[tier];
+      b.dataset.rank = ruined ? -1 : rankOf(tier); b.dataset.tier = tier;
+      if (T && T.core){                                                          // a column of light for uncommon and better
+        const el = document.createElement("div"), rank = rankOf(tier), url = lootBeamUrl(tier); el.className = "lootLight";
+        el.style.setProperty("--core", T.core.join(",")); el.style.setProperty("--sheath", T.sheath.join(",")); el.style.setProperty("--halo", T.halo.join(","));
+        el.style.setProperty("--fd", (-Math.random() * 2).toFixed(2) + "s");
+        el.innerHTML = `<i class="wash"></i><i class="pool"></i>${rank >= 2 ? `<i class="flare"></i>` : ""}<i class="beam bloom" style="background-image:url(${url});opacity:${tier === "rare" ? .4 : .26}"></i><i class="beam" style="background-image:url(${url})"></i>`
+          + (T.hot ? `<i class="beam hotc" style="background-image:url(${url});opacity:${rank >= 4 ? .4 : .55}"></i>` : "");
+        if (tier === "artifact") el.classList.add("slow");
+        lights.appendChild(el); lit.set(b, {el, T, rank});
+      } }
     if (!ruined){
       let last = 0;
       b.addEventListener("click", () => { const t = performance.now();
@@ -6082,8 +6126,36 @@ async function openLoot(id, title, opts = {}){
     const n = grid.children.length, W = grid.clientWidth, H = grid.clientHeight; if (!n || !W || !H) return;
     let best = 44; for (let cols = 1; cols <= n; cols++){ const sz = Math.min(W / cols, H / Math.ceil(n / cols)); if (sz > best) best = sz; }
     grid.style.setProperty("--ls", Math.floor(Math.min(w * .17, best)) + "px");
+    // each column stands on its piece and climbs toward the top of the SCREEN, not the top of the chest
+    const pr = pane.getBoundingClientRect(), top = $("obj").getBoundingClientRect().top;
+    for (const [b, L] of lit){ const r = b.getBoundingClientRect(), sz = r.width, bx = r.left + sz / 2 - pr.left, by = r.top + sz * .8 - pr.top, dist = r.top + sz * .8 - top;
+      const st = L.el.style; st.left = bx + "px"; st.top = by + "px"; st.setProperty("--sz", sz + "px");
+      st.setProperty("--bw", sz * 1.2 * L.T.wide + "px"); st.setProperty("--bh", (L.T.beam >= 1 ? dist + 12 : dist * L.T.beam) + "px"); st.setProperty("--k", L.rank < 2 ? .6 : 1); }
+  }
+  // the first search: the burst, then each piece pops in, the rarest last, and its column ignites as it lands
+  function ceremony(){
+    const list = [...grid.querySelectorAll(".lootSlot:not(.ruined)")].sort((x, y) => x.dataset.rank - y.dataset.rank), n = list.length; if (!n) return;
+    const still = matchMedia("(prefers-reduced-motion: reduce)").matches, hold = n > 1 && +list[n - 1].dataset.rank >= 3;
+    const flash = document.createElement("div"); flash.className = "lootFlash"; pane.appendChild(flash); setTimeout(() => flash.remove(), 520);
+    sfx("walk:loot_boom", .9); sfx("walk:loot_burst", .75);
+    if (list.some(b => b.dataset.tier === "coins")) setTimeout(() => { if (live()) sfx("walk:loot_coins", .7); }, 260);
+    list.forEach((b, i) => {
+      const best = hold && i === n - 1, rank = +b.dataset.rank, tier = b.dataset.tier, at = 90 + (best ? (n - 2) * 70 + 420 : i * 70), L = lit.get(b);
+      if (!still){ b.classList.add("pop"); b.style.animationDelay = at + "ms";   // the class comes off when it has landed: a finished animation would hold the transform and block the hover lift and the take's flight
+        b.addEventListener("animationend", () => { b.classList.remove("pop"); b.style.animationDelay = ""; }, {once: true}); }
+      if (L) L.el.classList.add("unlit");
+      if (best) setTimeout(() => { if (live()) sfx("walk:loot_burst", .45, 1.25); }, at);
+      setTimeout(() => { if (!live()) return;
+        if (L){ L.el.classList.remove("unlit"); L.el.classList.add("ignite"); }
+        if (tier === "coins") lootCoinDing(); else sfx("walk:loot_land", .5, .96 + rank * .05 + Math.random() * .06);
+        if (i === n - 1){ if (rank >= 1) lootCeremonySound(rank);
+          if (rank >= 4 && L){ const f = document.createElement("div"); f.className = "lootFlash tier"; f.style.setProperty("--core", L.T.core.join(",")); pane.appendChild(f); setTimeout(() => f.remove(), 520); } }
+        else if (rank >= 2) sfx("walk:loot_rare", .32, .9 + Math.random() * .15);
+      }, at + (still ? 0 : 230));
+    });
   }
   foot(); fit(); requestAnimationFrame(fit); addEventListener("resize", fit);
+  if (spill && !j.error) ceremony();
   (box.querySelector(".lootAll:not([disabled])") || $("objX"))?.focus({preventScroll: true});   // Enter is Take all when there is one; Escape and the X close
 }
 // ----- THE ITEM CARD -----
