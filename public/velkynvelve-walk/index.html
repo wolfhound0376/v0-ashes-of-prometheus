@@ -4496,12 +4496,28 @@ function askWhichOne(){
   bark(a, FORK_LINE, 3600); speak(a.id, FORK_LINE);   // heard every time it is asked, not once (the page-wide silence rule still applies)
   return a;
 }
+// ONLY THE FORKS THAT MATTER (Sam, 2026-11-24: "which way only is used when there is a fork of some significance"):
+// a doorway between two rooms of the outpost is not a fork. These are -- the escape's choice at the pen landing, the
+// road out at the Northern Watch Post, and the crossroads of the caverns. `ways`: the destinations whose exits count
+// ("leave" = a road out onto the Underdark map; "*" = every way out of the plate). `advice`: whether a companion who
+// knows the way may then speak up (Sam, 2026-11-24: "NPCs that are tagging along may offer advice if they know the
+// way"; adviceAtTheWayOut, the book's guide table) -- not at the pen landing, which is a choice inside the outpost.
+// The list is Claude's reading of "significance"; Sam's to change. [CLAUDE]
+const FORKS = {
+  11: {ways: ["10", "12"]},                       // the pen landing: the bridge to the Guard Tower, or the cliff stairs to the Quaggoth Den
+  13: {ways: ["12", "leave"], advice: true},      // the Northern Watch Post: back down, or out onto the road
+  fork: {ways: "*", advice: true}, tunnels: {ways: "*", advice: true},
+  wastes: {ways: "*", advice: true}, shore: {ways: "*", advice: true},
+};
+const forkWays = z => (z.to || []).length ? z.to.map(String) : ["leave"];
 function tickFork(){
   if (mode !== "explore" || cbt || !leader || leader.down || talkBlocked()) return;
+  const F = FORKS[cur]; if (!F) return;
   const R = 480 * node.scale, near = [];
   node.zones.forEach((z, i) => {
     if (z.interact || z.rappel || z.secret || z.kind === "gate" || z === ackZone || z === forkCameBy) return;
     if (!(z.to || []).length && z.kind !== "leave") return;
+    if (F.ways !== "*" && !forkWays(z).some(w => F.ways.includes(w))) return;
     if (z.landing && !onBalcony(leader)) return;                       // the landing's ways out are only ways once you are out there
     const c = zoneCenter(z); if (Math.hypot(leader.x - c.x, leader.y - c.y) < R) near.push(i);
   });
@@ -4509,6 +4525,7 @@ function tickFork(){
   if (ways.size < 2) return;
   const key = near.join(","); if (forkAsked.has(key)) return;
   forkAsked.add(key); askWhichOne();
+  if (F.advice) setTimeout(() => { if (mode === "explore") adviceAtTheWayOut(); }, 1800);   // then anyone who knows the way may say so
 }
 function chooseDestination(z){
   if (z.to.length === 1){ whoGoes(z, z.to[0]); return; }

@@ -150,17 +150,41 @@ export default function UnderdarkMapModule() {
     const heroes = R.company.filter((m) => m.pc && m.name && m.slug !== R.heroSlug)
     const pool = companions.length ? companions : heroes
     const who = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null
-    send({ type: "aop:map-fork", ks: key.split(","), who: who ? who.name.split(/\s+/)[0] : "", line: who ? FORK_LINE : "" })
-    if (who) speak({
+    const ks = key.split(",")
+    const say = (name: string, line: string) => speak({
       rank: "npc",
-      speaker: who.name,
+      speaker: name,
       fetch: async () => {
         try {
-          const res = await fetch("/api/npc-tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: FORK_LINE, npcName: who.name }) })
+          const res = await fetch("/api/npc-tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: line, npcName: name }) })
           return res.ok ? await res.blob() : null
         } catch { return null }
       },
     })
+    send({ type: "aop:map-fork", ks, who: who ? who.name.split(/\s+/)[0] : "", line: who ? FORK_LINE : "" })
+    if (who) say(who.name, FORK_LINE)
+    // ...then anyone travelling with you who knows the way may say so (Sam, 2026-11-24: "NPCs that are tagging along
+    // may offer advice if they know the way"). Who knows what is the book's guide table, whether they speak is how they
+    // stand with your hero: /api/npc-advice (lib/npc-advice.ts), the same call the walk makes at its ways out. At most
+    // two, each a bubble over the party and their voice. Nobody lies about the road.
+    const cid = R.me?.characterId
+    const names = R.company.filter((m) => !m.pc && m.name).map((m) => m.name)
+    if (cid && names.length) setTimeout(() => {
+      fetch("/api/npc-advice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ npcNames: names, characterId: cid }) })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => {
+          const advice: { npc?: string; line?: string }[] = Array.isArray(j?.advice) ? j.advice.slice(0, 2) : []
+          advice.forEach((a, i) => {
+            if (!a.npc || !a.line) return
+            setTimeout(() => {
+              if (forkFor.current !== key) return   // the party already set out
+              send({ type: "aop:map-fork", ks, who: a.npc!.split(/\s+/)[0], line: a.line })
+              say(a.npc!, a.line!)
+            }, i * 5600)
+          })
+        })
+        .catch(() => {})
+    }, 2400)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [travel.roadChoice, ready, company])
   // the party set out: the fork is behind them
