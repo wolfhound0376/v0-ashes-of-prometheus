@@ -86,9 +86,13 @@
           "dc": 10,
           "alt": ["medicine", "herbalism-kit"],
           "useful": true,
-          "known": "Ormu. The glow is the plant, not a trick of the eye — and alchemists pay for it.",
+          "known": "Ormu. The glow is the plant, not a trick of the eye. Chewed raw it closes small cuts; brewed into a potion of healing it does far more — and alchemists pay for it.",
           "unknown": "Moss of some kind, glowing faintly. You could not say what.",
-          "_src": "Skill and DC are Claude's house numbers (2026-10-30). Sam ruled the mechanic (passive on a walk-by, rolled on a Search); Claude moved it off Insight onto Nature, since Insight reads creatures, not fungi."
+          "_src": "Skill and DC are Claude's house numbers (2026-10-30). Sam ruled the mechanic (passive on a walk-by, rolled on a Search); Claude moved it off Insight onto Nature, since Insight reads creatures, not fungi. Sam 2026-11-23: the healing is learned by this same successful check."
+        },
+        "eat": {
+          "item": "ormu-moss",
+          "_src": "Sam 2026-11-23: \"Eating ormu moss heals 1d4 and later a potion does better. This should be an option with mushrooms.\" The 1d4 is read from the catalogue (items.properties.eat_heal), not from here. That a handful eaten here is one of the patch's two, and that eating needs no roll, are Claude's."
         }
       },
       {
