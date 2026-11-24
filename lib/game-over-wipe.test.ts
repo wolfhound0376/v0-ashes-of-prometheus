@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { wipeVerdict } from "@/lib/game-over-wipe"
+import { wipeOutcome, wipeVerdict } from "@/lib/game-over-wipe"
 
 const heroes = { samson: { cid: "c-sam" }, scott: { cid: "c-scott" }, kenta: { cid: "c-kenta" } }
 
@@ -19,5 +19,19 @@ describe("the game dies with the party (Sam, 2026-11-15)", () => {
   })
   it("never wipes for a seated hero the shared world does not know", () => {
     expect(wipeVerdict([{ id: "c-sam" }, { id: "c-new" }], heroes, ["samson"]).ok).toBe(false)
+  })
+})
+
+describe("what a wipe does to the campaign (Sam, 2026-11-23: deletes in Mortal only)", () => {
+  it("deletes a Mortal campaign", () => {
+    expect(wipeOutcome({ mortal: true })).toBe("delete")
+  })
+  it("sends any other campaign back to its last save", () => {
+    expect(wipeOutcome({ mortal: false })).toBe("back")
+    expect(wipeOutcome({})).toBe("back")
+  })
+  it("deletes when no saved game is in play, as before saved games", () => {
+    expect(wipeOutcome(null)).toBe("delete")
+    expect(wipeOutcome("missing")).toBe("delete")
   })
 })
