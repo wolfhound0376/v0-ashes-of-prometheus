@@ -1485,6 +1485,13 @@ body.quota-on #cbtMenu[data-kind=explore]{display:none!important}
       <button class="btn" id="dmAmbush" aria-pressed="false">Ambushes: on</button>
       <button class="btn" id="dmTooth" title="A Remove Curse on Lolth's Tooth: Ilvara no longer feels it drawn. The spider-sense stays.">Lolth's Tooth: lift the curse</button>
       </details>
+      <!-- MALACHAR VISITS (Sam, 2026-11-23): he steps out of his portal, makes the party an offer, and goes in his cloud.
+           The DM writes the offer and the two answers; the party decides on the card everyone sees. -->
+      <details><summary>Malachar visits</summary>
+      <textarea id="malWords" class="dmq" rows="3" style="width:100%;resize:vertical" placeholder="What he offers, in his words (read aloud on every screen)" aria-label="What Malachar offers"></textarea>
+      <div class="dmCloudRow"><input id="malYes" class="dmq" placeholder="Accept his bargain" aria-label="The answer that accepts"><input id="malNo" class="dmq" placeholder="Refuse him" aria-label="The answer that refuses"></div>
+      <div class="dmCloudRow"><button class="btn" id="malSummon" title="DM: Malachar steps out of his portal where you click, speaks the offer, and the party answers on one card.">Summon him: click the floor</button><button class="btn danger" id="malAway">Send him away</button></div>
+      </details>
       <details><summary>Items</summary>
       <input id="dmItemQ" class="dmq" placeholder="Search the item catalogue" aria-label="Search the item catalogue">
       <select id="dmItem" size="6" aria-label="Catalogue items"></select>
@@ -2820,9 +2827,11 @@ function drawFrame(){
   const depth = a => a.y + (a.fan && cbt ? a.fan.front || 0 : 0);   // in a knot of fighters the one acting and the one aimed at are in front (fanSolve)
   const list = actors.concat(vermin, laborProps).filter(a => a.alpha > 0.01).sort((a, b) => depth(a) - depth(b));   // laborProps: Hard Labor's station props
   const cloudQ = mode === "combat" || clouds.length ? cloudPuffs() : [];   // the poison cloud, in depth order among the figures
+  const malQ = malVisitQ();                                       // MALACHAR VISITS: he stands among the figures by depth
   let barsAt = gateBarsY();                                       // the bars in front of a guard leaning at them, in depth order
   for (const a of list){
     while (cloudQ.length && cloudQ[0].y <= a.y) drawPuff(cloudQ.shift());
+    while (malQ.length && malQ[0].y <= a.y) drawMalVisit(malQ.shift());
     if (barsAt != null && barsAt <= a.y){ drawGateBars(); barsAt = null; }
     const ovT = ovPushActor(a);   // out on the balcony with the close-up on: drawn into that painting, at its size
     const m = SPR[a.id].json, sc = actorScale(a), [cw, ch] = m.cell, [px, py] = m.pivot;
@@ -2977,6 +2986,7 @@ function drawFrame(){
   if (barsAt != null) drawGateBars();
 
   while (cloudQ.length) drawPuff(cloudQ.shift());
+  while (malQ.length) drawMalVisit(malQ.shift());
   mimicDraw();          // THE MIMIC's chomp, over the one it is eating (drawn after the actors)
   drawLight();          // the dark, with the lamps, the heroes and landing spells cut out of it; everything after glows through
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
@@ -21700,6 +21710,7 @@ stage.addEventListener("wheel", e => { if (e.target.closest(".checkcard,.icard,.
 function click(w){
   if (timeStopped) return;
   if (FIGHT.mirror && mode === "combat"){ oneFightMirrorClick(w); return; }   // ONE FIGHT: aimed here, played there
+  if (malPlacing){ malPlacing = false; stage.classList.remove("placing"); malVisitStart(w); return; }   // MALACHAR VISITS: where he steps out
   if (dmPlacing){ placePile(w); return; }
   if (handClick(w)) return;   // steering or aiming the Mage Hand
   if (mode === "explore"){
@@ -21798,6 +21809,7 @@ addEventListener("keydown", e => {
   if (mode === "combat" && FIGHT.mirror && oneFightKey(e)) return;                                   // ONE FIGHT: your turn, played there
   if (mode === "combat" && FIGHT.auth && oneFightWaitsFor(activeActor()) && (e.code === "Enter" || MOVE_KEYS.has(e.code))) return;   // not this screen's hero to move
   if (mode === "combat" && grabbing && !$("obj").hidden){ if (e.key === "Escape"){ e.preventDefault(); $("objX").click(); } return; }   // GRABBING MID-FIGHT: the card has the keys
+  if (e.key === "Escape" && malPlacing){ malPlacing = false; stage.classList.remove("placing"); toast("Malachar stays away."); return; }
   if (e.key === "Escape" && dmPlacing){ dmPlacing = null; stage.classList.remove("placing"); hint(""); return; }
   if (e.key === "Escape" && PDEC.shownId) return;                    // THE PARTY DECIDES: no stepping back from the party's question
   if (e.key === "Escape" && topPanelOpen()){ closeTopPanels(); return; }
@@ -26674,6 +26686,150 @@ function npcAskCouncil(n, ask){
     if (!partyCard({kind: "npc", who: whoHero ? whoHero.id : null, face: n.id})) close();
   }, 2500);
 }
+
+// ---------- MALACHAR VISITS (Sam, 2026-11-23) ----------
+// Sam: "lets make some high quality pixel art for malachar since he may eventually visit. We also need some magical
+// effects when he offers a purple portal opening ... and red eyes glowing. Clouds forming around him and he disappears."
+// When: "When the party does too well and he wants to offer a difficult option." What "too well" means is Sam's to define,
+// so for now there is no automatic trigger: the DM summons him (DM tools, "Malachar visits"), writes what he offers and
+// the two answers, and clicks where he steps out.
+// A WORLD EVENT (Sam, 2026-11-20: "all events should be world events"). The visit is one key in the shared world,
+// state.malVisit {id, plate, x, y, at, words, labels, by, answer, leftAt}; every screen reads it and plays the same
+// visit from the same clock (owNow), so a screen that joins late sees him already standing there, not the visit again.
+//   - the portal: Sam's own painting of the ring, pixelated (vfx/malVisitPortal) — it forms, crackles while he is here,
+//     and collapses when he goes;
+//   - he steps out of it (vfx/malVisitIdle, a slow menacing idle), and as he speaks he holds out an open palm
+//     (vfx/malVisitOffer). His words are read aloud in the lich's voice on every screen;
+//   - the offer is THE PARTY DECIDES card (partyCard), with his face. The DM is the one offering, so the call goes to
+//     the host or a player at the table, never the DM; the DM's press is a vote like anyone's;
+//   - the answer: the portal collapses and he goes in his cloud (vfx/malVisitVanish: red eyes, portal-purple fire and
+//     orbs, the cloud closing over him). The answer goes to the log and to Malachar (handOff); what it costs or wins
+//     is his and the DM's to rule. Nothing is awarded or taken here.
+// He faces south (toward the table) the whole visit: the vanish sheet is drawn from that pose.
+// Height (AGENTS.md sprite height rule): the figure is 122 px tall in its sheet, read as 6.5 ft crown included, so
+// ppu = 122 x 5 / 6.5 = 94 [CLAUDE: his height is not in any source; the crown makes him a head over a drow].
+const MALV_PPU = 94, MALV_PORTAL_K = .9;
+const MALV_FORM_MS = 750, MALV_IN_AT = 900, MALV_IN_MS = 800, MALV_OFFER_AT = 2200, MALV_CARD_AT = 2600, MALV_GONE_MS = 3200;
+const MALV = {a: null, loading: false, seenId: null, spokeId: null, cardId: null, soundT: {}};
+let malPlacing = false;
+function malVisitAssets(){
+  if (MALV.a || MALV.loading) return MALV.a;
+  MALV.loading = true;
+  Promise.all(["malVisitPortal", "malVisitIdle", "malVisitOffer", "malVisitVanish"].map(vfxLoad))
+    .then(([portal, idle, offer, vanish]) => { if (portal && idle && offer && vanish) MALV.a = {portal, idle, offer, vanish}; })
+    .finally(() => { MALV.loading = false; });
+  return null;
+}
+/** One frame of a vfx sheet, its pivot (the feet) on (x, y). */
+function malSheet(v, f, x, y, sc){
+  const {m, img} = v, cw = img.width / m.cols, ch = img.height / m.rows, [px, py] = m.pivot || [cw / 2, ch];
+  ctx.drawImage(img, (f % m.cols) * cw, Math.floor(f / m.cols) * ch, cw, ch, x - px * sc, y - py * sc, cw * sc, ch * sc);
+}
+/** The visit as it stands on this plate right now, for the depth-ordered draw; empty when he is not here. */
+function malVisitQ(){
+  const v = state.malVisit;
+  if (!v || !v.id || !owSame(v.plate, cur) || OV.on) return [];
+  if (v.leftAt && owNow() - v.leftAt > MALV_GONE_MS) return [];
+  if (!malVisitAssets()) return [];
+  return [v];
+}
+function drawMalVisit(v){
+  const A = MALV.a; if (!A) return;
+  const t = owNow() - v.at, left = v.leftAt ? owNow() - v.leftAt : -1;
+  const sc = BASE * paceAt({x: v.x, y: v.y}) * (96 / MALV_PPU);
+  ctx.save(); ctx.filter = "none"; ctx.imageSmoothingEnabled = false;
+  // the floor glow under the ring: violet, breathing, gone with the portal
+  const glowK = left >= 0 ? Math.max(0, 1 - left / 600) : Math.min(1, t / MALV_FORM_MS);
+  if (glowK > 0){
+    const r = 70 * sc, g = ctx.createRadialGradient(v.x, v.y - 4 * sc, 0, v.x, v.y - 4 * sc, r);
+    g.addColorStop(0, `rgba(168,107,255,${(.32 + .08 * Math.sin(now / 260)) * glowK})`); g.addColorStop(1, "rgba(168,107,255,0)");
+    ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(v.x, v.y - 4 * sc, r, r * .42, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  // the portal, behind him
+  const P = A.portal, pm = P.m;
+  let pf = -1;
+  if (left >= 0){ const k = Math.floor(left * pm.fps / 1000); pf = k < pm.collapse[1] - pm.collapse[0] ? pm.collapse[0] + k : -1; }
+  else if (t >= 0 && t < MALV_FORM_MS) pf = Math.min(pm.form[1] - 1, pm.form[0] + Math.floor(t * pm.fps / 1000));
+  else if (t >= 0){ const n = pm.crackle[1] - pm.crackle[0]; pf = pm.crackle[0] + Math.floor((t - MALV_FORM_MS) * pm.fps / 1000) % n; }
+  if (pf >= 0){ ctx.globalAlpha = 1; malSheet(P, pf, v.x, v.y - 4 * sc, sc * MALV_PORTAL_K); }
+  // Malachar
+  if (left >= 0){
+    const vm = A.vanish.m, f = Math.floor(left * vm.fps / 1000);
+    if (f < vm.frames){ ctx.globalAlpha = 1; malSheet(A.vanish, f, v.x, v.y, sc); }
+  } else if (t >= MALV_IN_AT){
+    const k = Math.min(1, (t - MALV_IN_AT) / MALV_IN_MS), step = (1 - k) * (1 - k) * 16 * sc;   // out of the ring and a step toward the table
+    ctx.globalAlpha = .55 * k; ctx.fillStyle = "#000"; ctx.beginPath(); ctx.ellipse(v.x, v.y, 26 * sc * 1.1, 9 * sc * 1.1, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = k;
+    const O = A.offer, om = O.m, ot = t - MALV_OFFER_AT, of = ot >= 0 ? Math.floor(ot * om.fps / 1000) : -1;
+    if (of >= 0 && of < om.frames) malSheet(O, of, v.x, v.y - step, sc);
+    else { const I = A.idle; malSheet(I, Math.floor(t * I.m.fps / 1000) % I.m.frames, v.x, v.y - step, sc); }
+  }
+  ctx.restore();
+}
+/** Once per sound per visit on this screen (each screen plays its own; the sounds are not relayed). */
+function malSound(v, key, name, gain){ const k = v.id + key; if (MALV.soundT[k]) return; MALV.soundT[k] = 1; try { sfx("bank:" + name, gain); } catch (e) {} }
+function malVisitTick(){
+  const v = state.malVisit; if (!v || !v.id) return;
+  malVisitAssets();
+  const here = owSame(v.plate, cur), t = owNow() - v.at, left = v.leftAt ? owNow() - v.leftAt : -1, fresh = t < 15000;
+  if (MALV.seenId !== v.id){
+    MALV.seenId = v.id;
+    if (here && left < 0 && fresh) log(`<i>A ring of black stone tears open in the air. Malachar steps through it.</i>`);
+  }
+  if (here && fresh && left < 0){ malSound(v, "open", "magic/necrotic_windup", .7); if (t > MALV_FORM_MS) malSound(v, "crackle", "magic/impact_lightning", .45); }
+  if (here && left >= 0 && left < 1500) malSound(v, "gone", "magic/necrotic_tail", .7);
+  // his words, aloud, once on each screen that is there to hear them
+  if (here && left < 0 && t >= MALV_OFFER_AT && MALV.spokeId !== v.id && t < 60000){ MALV.spokeId = v.id; log(`<b>Malachar:</b> ${esc(v.words)}`); narrateAloud(v.words); }
+  // the offer card: raised once, by the screen that summoned him
+  if (left < 0 && v.answer == null && t >= MALV_CARD_AT && MALV.cardId !== v.id && v.by === (OW.key || "local")){ MALV.cardId = v.id; malVisitCard(v); }
+  // tidy up: the summoner clears the key once he is long gone
+  if (left > MALV_GONE_MS + 2000 && v.by === (OW.key || "local")) state.malVisit = null;
+}
+setInterval(malVisitTick, 250);
+/** Who answers Malachar for the party: the host, else a player at the table, never the DM (the DM is the one offering). */
+function malDecider(){
+  if (PT_HOST.hostId && PT_HOST.hostId !== "dm" && seatOn(PT_HOST.hostId)) return PT_HOST.hostId;
+  const k = othersAtTable().find(k => k !== "dm"); return k || OW.key;
+}
+function malVisitCard(v){
+  if (mode === "combat" || (state.pdec && state.pdec.id)){ MALV.cardId = null; return; }   // try again on the next tick
+  $("objWho").textContent = "Malachar"; $("objText").textContent = v.words;
+  const box = $("objBtns"); box.innerHTML = ""; box.classList.remove("loot"); showObjCard(); cardFace("malachar"); mode = "dialog";
+  $("objX").style.display = "none";                                       // he is not waved away: the party answers
+  const close = () => { $("obj").hidden = true; $("objX").style.display = ""; if (mode === "dialog") mode = "explore"; exploreKey = ""; };
+  v.labels.forEach((label, i) => choiceRow(box, label, () => { close(); malVisitAnswer(i); }, i === 0 ? "primary" : ""));
+  if (partyCard({kind: "malachar"}) && state.pdec && state.pdec.decider === "dm") state.pdec = {...state.pdec, decider: malDecider()};
+}
+function malVisitAnswer(i){
+  const v = state.malVisit; if (!v || v.answer != null || v.leftAt) return;
+  state.malVisit = {...v, answer: i, leftAt: owNow()};
+  const said = v.labels[i];
+  log(`The party answers Malachar: <b>${esc(said)}</b>. The ring folds in on itself and he is gone.`);
+  handOff(`Malachar came in person, out of his portal, and offered the party: "${v.words}" The party answered: "${said}". He has gone back through the portal.`, false);
+}
+function malVisitAway(){
+  const v = state.malVisit; if (!v || v.leftAt) { toast("Malachar is not here."); return; }
+  state.malVisit = {...v, leftAt: owNow()};
+  if (state.pdec && state.pdec.kind === "malachar") state.pdec = null;
+  councilClose(); if (!$("obj").hidden && $("objWho").textContent === "Malachar"){ $("obj").hidden = true; $("objX").style.display = ""; if (mode === "dialog") mode = "explore"; }
+  log(`<i>Malachar withdraws his offer. The ring folds in on itself and he is gone.</i>`);
+}
+function malVisitStart(w){
+  const words = $("malWords").value.trim(); if (!words){ toast("Write what Malachar offers first."); return; }
+  const p = nearestWalkable(w.x, w.y);
+  state.malVisit = {id: "mv" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), plate: cur, x: Math.round(p.x), y: Math.round(p.y), at: owNow(),
+    words, labels: [$("malYes").value.trim() || "Accept his bargain", $("malNo").value.trim() || "Refuse him"], by: OW.key || "local"};
+  reviewLog("sync", `The DM summons Malachar to this plate.`);
+}
+$("malSummon").onclick = () => {
+  if (!$("malWords").value.trim()){ toast("Write what Malachar offers first."); return; }
+  if (mode === "combat"){ toast("Not in the middle of a fight."); return; }
+  if (state.malVisit && state.malVisit.id && !state.malVisit.leftAt){ toast("He is already here. Send him away first."); return; }
+  if (state.pdec && state.pdec.id){ toast("The party is answering another question. Wait for it."); return; }
+  malPlacing = true; toggleDm(false); stage.classList.add("placing"); toast("Click where Malachar steps out. Esc to cancel.", 6000);
+};
+$("malAway").onclick = () => { toggleDm(false); malVisitAway(); };
+window.aopMalVisit = () => state.malVisit;   // for the DM's console
 
 // ---------- boot ----------
 (async () => {
