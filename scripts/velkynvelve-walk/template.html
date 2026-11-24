@@ -991,6 +991,8 @@ footer.party{display:flex;gap:8px;overflow-x:auto;min-width:0;align-items:stretc
 .pc .nm{display:grid;text-align:left;line-height:1.15}
 .pc .nm b{color:var(--ink);font-weight:500}
 .pc .nm small{font-family:var(--face-mono);font-size:.66rem;letter-spacing:.08em;text-transform:uppercase}
+.pc .pc-conds{display:flex;gap:2px;margin-top:2px}
+.pc .pc-conds .cond-ic{width:18px;height:18px}
 .pc[aria-pressed="true"]{border-color:var(--ember)}
 .pc[aria-pressed="true"] small{color:var(--ember)}
 .seats{display:flex;flex-direction:column;gap:4px}
@@ -1490,7 +1492,7 @@ body.quota-on #cbtMenu[data-kind=explore]{display:none!important}
       <details><summary>Malachar visits</summary>
       <textarea id="malWords" class="dmq" rows="3" style="width:100%;resize:vertical" placeholder="What he offers, in his words (read aloud on every screen)" aria-label="What Malachar offers"></textarea>
       <div class="dmCloudRow"><input id="malYes" class="dmq" placeholder="Accept his bargain" aria-label="The answer that accepts"><input id="malNo" class="dmq" placeholder="Refuse him" aria-label="The answer that refuses"></div>
-      <div class="dmCloudRow"><button class="btn" id="malSummon" title="DM: Malachar steps out of his portal where you click, speaks the offer, and the party answers on one card.">Summon him: click the floor</button><button class="btn danger" id="malAway">Send him away</button></div>
+      <div class="dmCloudRow"><button class="btn" id="malDraft" title="DM: Malachar drafts a bargain from this run's story, in his voice. Edit it before you summon him.">Draft it in his voice</button><button class="btn" id="malSummon" title="DM: Malachar steps out of his portal where you click, speaks the offer, and the party answers on one card.">Summon him: click the floor</button><button class="btn danger" id="malAway">Send him away</button></div>
       </details>
       <details><summary>Items</summary>
       <input id="dmItemQ" class="dmq" placeholder="Search the item catalogue" aria-label="Search the item catalogue">
@@ -1668,8 +1670,10 @@ function noteSeats(seated){
     if (typeof sh.hp === "number" && sh.hp > 0) S.hp = sh.hp;
     if (sh.hpNow != null) S.hpNow = sh.hpNow;   // mid-fight the chips read the fight's own a.c.hp, not this
     if (sh.xp != null) S.xp = sh.xp;
+    if (Array.isArray(sh.conditions)) S.conditions = sh.conditions;   // Malachar's conditions (characters.conditions)
     if (sh.magic){ const m = walkMagicOf(sh.magic); if (m) S.magic = m; S.magicAll = sh.magic; S.caster = true; }
     followLevel(S); }
+  try { syncSavedConds(); } catch (e) {}   // a condition Malachar added or lifted reaches a fight already running
   dmRun.clear();
   for (const s of seatsSeen) if (s.dm) for (const id of seatedSlugs([s])) dmRun.add(id);
   renderSeats();
@@ -3749,6 +3753,24 @@ function heroStage(id, canvas, stageH, wear){
   c.drawImage(img, b.x, b.y, b.w, b.h, 0, 0, b.w * k, b.h * k);
   canvas.style.width = canvas.width + "px"; canvas.style.height = canvas.height + "px";
 }
+// A HERO'S CONDITIONS, IN A FIGHT OR OUT OF ONE (Sam, 2026-11-23: "the condition is shown on hero cards"): the fight's
+// live set while there is one, else the sheet's own (characters.conditions, what Malachar's [CONDITION_ADD] wrote).
+// Returns [{key, label, tip}]: `key` has painted art or a glyph; a narrative-only name (Magical Barrier) has key null.
+function heroConds(a){
+  if (!a) return [];
+  const ex = a.c && inFightNow() ? a.c.exhaustion : conditionsForMap((SHEETS[a.id] || {}).conditions).exhaustion;
+  const tip = k => COND_GLYPH[k] ? COND_GLYPH[k][2] : "", lab = k => k === "exhaustion" && ex ? `Exhaustion ${ex}` : condLabel(k);
+  if (a.c && a.c.conds && inFightNow()) return [...a.c.conds].filter(k => COND_GLYPH[k]).map(k => ({key: k, label: lab(k), tip: tip(k)}));
+  const out = [], seen = new Set();
+  for (const name of (SHEETS[a.id] || {}).conditions || []){
+    const m = conditionKeyOf(name), k = m && COND_GLYPH[m.key] ? m.key : null;
+    if (k && seen.has(k)) continue; if (k) seen.add(k);
+    out.push({key: k, label: k ? lab(k) : String(name), tip: k ? tip(k) : String(name)});
+  }
+  return out;
+}
+const heroCondIcon = (c, px) => c.key && condArtSrc(c.key) ? `<img class="cond-ic" src="${condArtSrc(c.key)}" width="${px}" height="${px}" alt="${esc(c.label)}" title="${esc(c.label + (c.tip && c.tip !== c.label ? " — " + c.tip.replace(/^[^:]*:\s*/, "") : ""))}">`
+  : c.key ? `<b style="color:${COND_GLYPH[c.key][1]}" title="${esc(c.tip)}">${COND_GLYPH[c.key][0]}</b>` : "";
 function renderParty(){
   const el = $("party"); el.querySelectorAll(".pc").forEach(n => n.remove());
   PARTY.forEach(id => {
@@ -3756,7 +3778,9 @@ function renderParty(){
     const b = document.createElement("button"); b.className = "pc"; b.setAttribute("aria-pressed", String(a === leader));
     const c = document.createElement("canvas"); portrait(id, c, 64); b.appendChild(c);
     const nm = document.createElement("span"); nm.className = "nm";
-    nm.innerHTML = `<b>${esc(SHORT[id] || SPR[id].json.name)}</b><small>${a === leader ? "Moving" : "Waiting"}</small>`;
+    const cs = heroConds(a), ics = cs.map(c => heroCondIcon(c, 18)).join("");
+    nm.innerHTML = `<b>${esc(SHORT[id] || SPR[id].json.name)}</b><small>${a === leader ? "Moving" : "Waiting"}</small>${ics ? `<span class="pc-conds">${ics}</span>` : ""}`;
+    if (cs.length) b.title = cs.map(c => c.label).join(" · ");
     b.appendChild(nm); b.onclick = () => setLeader(a); el.appendChild(b);
   });
   // the heroes split off on another plate: shown dim, with where they are (SPLIT PARTY)
@@ -4584,11 +4608,13 @@ function tickChasmWebs(){
 // Sam's ways to the boat (his "1d4" is a menu, not a roll): pay 100 gp; talk him round; kill him, and the ghost stands
 // up out of the body, attacks everyone and curses whoever it strikes; or see what he is, and fetch his lost love's ruby
 // amulet from the crystal caverns to lay him to rest. Refuse that errand and he will not give the boat up.
-// This first piece (the module's PR 1): he is on the shore, the boat is his, and Persuasion, the look, the errand's ask
-// and the fight are live. Buying it (the party's purse) and the amulet's find and return are PR 2; until then those
-// rows are shown with their reason and cannot be pressed (Sam, 2026-10-30: options must be real options).
-// [HOUSE] Persuasion DC 15, once per hero; Investigation DC 14 is the bhut's own (False Alive); the facade fights as
-// the SRD 5.1 Commoner until it falls. Sam's calls in the module doc.
+// PR 1 put him on the shore with Persuasion, the look, the errand's ask and the fight. PR 2 (Sam, 2026-11-23: "PR2. 1.
+// Keep your numbers. 2. Fisherman dies like a 4 HP commoner. 45 sounds good but with tough spells. 3. Yes."): buying the
+// boat out of the whole party's coin (/api/walk-pay, lib/walk-pay.ts), the amulet hidden on the crystal plate, giving
+// it to him to lay him to rest (700 XP, Sam), and the bhut's spells (FOE_BLOCKS "ghost-male").
+// Sam's numbers: Persuasion DC 15, once per hero; Investigation DC 14 (the bhut's own False Alive); the amulet passive
+// Perception 15, +5 when the party came looking (SRD: advantage on a passive check is +5); the facade is the SRD Commoner.
+// His fate is `state.thessaly`, which One World shares with every screen at the table.
 SHORT["old-thessaly"] = "Old Thessaly";
 const THESSALY = "old-thessaly", THESSALY_BHUT = "ghost-male";
 const thessalyState = () => state.thessaly || (state.thessaly = {fate: "fishing", tried: {}});
@@ -4615,8 +4641,9 @@ function thessalyCard(z){
   try { const g = $("objPic").getContext("2d"); g.clearRect(0, 0, 128, 128); g.drawImage(faceCanvas(t, 128), 0, 0); } catch (e) {}
   const box = $("objBtns");
   const off = (label, why) => { const b = add(`${label} — ${why}`, null); b.disabled = true; };
-  // 1. buy it (Sam: 100 gp) — the purse is PR 2
-  off("Buy the boat (100 gp)", "paying from the party's purse comes in the next piece");
+  // 1. buy it (Sam: 100 gp), out of everything the party carries
+  if (S.fate === "refused") off("Buy the boat (100 gp)", "you turned down what he asked; he will not sell to you now");
+  else add("Buy the boat (100 gp)", () => { close(); thessalyBuy(t, z); });
   // 2. talk him round
   if (S.fate === "refused") off("Talk him round", "you turned down what he asked; he is done talking");
   else if (S.tried[h.id]) off(`${fname(h)} talks him round`, `${fname(h)} has tried; someone else may`);
@@ -4624,7 +4651,9 @@ function thessalyCard(z){
   // 3. see him for what he is (once seen, the question about what holds him)
   if (["revealed", "errand", "refused"].includes(S.fate)){
     if (S.fate === "revealed") add("Ask what holds him here", () => { close(); thessalyAsk(t); }, "primary");
-    else if (S.fate === "errand") off("Give him the ruby amulet", "nobody carries it yet; finding it in the crystal caverns comes in the next piece");
+    const amu = thessalyAmuletCarrier();
+    if (amu) add(`${fname(amu)} gives him the ruby amulet`, () => { close(); thessalyLayToRest(t, amu); }, "primary");
+    else if (S.fate === "errand") off("Give him the ruby amulet", "nobody carries it; it is somewhere in the crystal caverns");
   } else if (!S.looked || !S.looked[h.id]) choiceRow(box, `${fname(h)} looks at him properly`, () => { close(); thessalyLook(t, h); }, "", {check: "Investigation DC 14", ability: "int"});
   else off(`${fname(h)} looks at him properly`, `${fname(h)} has looked; someone else may`);
   // 4. take it from him
@@ -4658,6 +4687,68 @@ function thessalyAsk(t){
   try { const g = $("objPic").getContext("2d"); g.clearRect(0, 0, 128, 128); g.drawImage(faceCanvas(t, 128), 0, 0); } catch (e) {}
   add("We'll find it", () => { close(); S.fate = "errand"; saveWalk(); bark(t, THESSALY_LINES.errand, 5000, {talk: true}); log(`<b>Old Thessaly</b>: "${esc(THESSALY_LINES.errand)}" <em>His lost love's ruby amulet is somewhere in the crystal caverns.</em>`); }, "primary");
   add("Not our problem", () => { close(); S.fate = "refused"; saveWalk(); bark(t, THESSALY_LINES.refused, 4200, {talk: true}); log(`<b>Old Thessaly</b>: "${esc(THESSALY_LINES.refused)}"`); });
+}
+const THESSALY_AMULET = "ruby-amulet-lost-love", THESSALY_AMULET_SPOT = "thessaly-amulet";
+const THESSALY_PRICE = 100;
+/** Who in the party carries his lost love's amulet (the catalogue row ruby-amulet-lost-love), if anyone. */
+function thessalyAmuletCarrier(){ return party.find(p => ((GEAR[p.id] || {}).carried || []).some(c => slugOfItem(c) === THESSALY_AMULET)) || null; }
+// BUY IT (Sam: 100 gp). The whole party's coin, purses first, then loose coin (lib/walk-pay.ts); paid once (/api/walk-pay).
+async function thessalyBuy(t, z){
+  const S = thessalyState(), ids = [...new Set(party.map(p => characterIdOf(p.id)).filter(Boolean))];
+  if (APP){
+    if (!ids.length){ toast("Nobody in the party has a character sheet to pay from."); return; }
+    const mine = (() => { try { const id = localStorage.getItem("aop_character_id"); return id && ids.includes(id) ? localStorage.getItem("aop_claim_token") : null; } catch (e) { return null; } })();
+    const r = await fetch("/api/walk-pay", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()},
+      body: JSON.stringify({payKey: `thessaly-boat:${OW.run || runSeen || "local"}`, characterIds: ids, gp: THESSALY_PRICE, to: "Old Thessaly", why: "his keelboat", claimToken: mine || undefined})}).catch(() => null);
+    const j = r ? await r.json().catch(() => ({})) : {};
+    if (!r || !r.ok){
+      if (r && r.status === 409){ bark(t, "A hundred. Gold. Not a copper less.", 4200, {talk: true}); log(`<b>Old Thessaly</b> wants 100 gp. ${esc(j.error || "The party is short.")}`); }
+      else toast(j.error || "The payment did not go through.");
+      return;
+    }
+    if (bagOpen()) renderBag();
+  }
+  S.fate = "sold"; saveWalk(); bank("ui/coin_purse", .6);
+  bark(t, "Hmph. She leaks on the left. Bail or drown.", 5200, {talk: true});
+  log(`The party pays <b>Old Thessaly</b> ${THESSALY_PRICE} gp. The keelboat is yours to take.`);
+}
+// LAY HIM TO REST (Sam: the amulet brought back earns the XP). The amulet leaves the hero who carries it, the bhut's
+// own face shows for a breath, and he fades out of the light with no shadow to leave behind. 700 XP, paid once.
+async function thessalyLayToRest(t, h){
+  const S = thessalyState(), cid = characterIdOf(h.id);
+  const g = ((GEAR[h.id] || {}).carried || []).find(c => slugOfItem(c) === THESSALY_AMULET);
+  if (APP && cid && g){
+    const r = await fetch("/api/walk-items", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()},
+      body: JSON.stringify({action: "consume", characterId: cid, itemName: g.name, verb: "give", toNpc: "Old Thessaly"})}).catch(() => null);
+    if (!r || !r.ok){ toast("The amulet did not leave the inventory. Try again."); return; }
+    const gc = GEAR[h.id].carried, i = gc.indexOf(g); if (i >= 0) gc.splice(i, 1);
+  } else if (g){ const gc = GEAR[h.id].carried, i = gc.indexOf(g); if (i >= 0) gc.splice(i, 1); }
+  S.fate = "at-rest"; saveWalk();
+  t.path = []; t.talk = false; faceTo(t, h);
+  bark(t, "There she is. Take the boat. I've no more use for waiting.", 6000, {talk: true});
+  log(`<b>${esc(fname(h))}</b> puts the ruby amulet in the old fisherman's hand. He closes his fingers round it, and for a moment the face under his is plain to see: grey, drowned, at peace.`);
+  if (SPR[THESSALY] && SPR[THESSALY].img.reveal) setTimeout(() => setAnim(t, "reveal"), 2600);
+  setTimeout(() => {
+    bank("magic/necrotic_release", .5); beatBanner("Old Thessaly is at rest");
+    const t0 = now, tick = () => { t.alpha = Math.max(0, 1 - (now - t0) / 2200); if (t.alpha > 0) requestAnimationFrame(tick); else { t.offStage = true; actors = actors.filter(a => a !== t); } }; tick();
+    log("He is gone. The keelboat is yours to take.");
+    payXp(`thessaly-rest:${OW.run || runSeen || "local"}`, [{id: THESSALY, c: {sheet: {xp: 700}}}]);
+  }, 4200);
+}
+// THE AMULET IN THE CRYSTAL CAVERNS (Sam: "found in the crystal cave plate after successful perception check or after you
+// go there looking for it (advantage)"). Every time the party comes onto the crystal plate, until it is found: the best
+// passive Perception in the party against 15, +5 once the errand is taken (SRD: advantage on a passive check is +5).
+// A miss says nothing. Found, it is a loot spot (story.json crystal, `hidden`), opened like any other.
+async function thessalyAmuletOnEnter(){
+  const S = state.thessaly || {}, D = dirState(); D.found = D.found || {};
+  if (D.found[THESSALY_AMULET_SPOT] || ["at-rest", "destroyed"].includes(S.fate) || thessalyAmuletCarrier()) return;
+  await wait(1400); if (cur !== "crystal" || cbt) return;
+  const sought = S.fate === "errand", best = dirHeroes().sort((a, b) => dirPassive(b) - dirPassive(a))[0]; if (!best) return;
+  const pp = dirPassive(best) + (sought ? 5 : 0);
+  if (pp < 15) return;
+  D.found[THESSALY_AMULET_SPOT] = true; saveWalk();
+  log(`<i>${esc(fname(best))} notices a red glint among the white crystals${sought ? ", the only red in the cave, as the old man said" : ""} (passive Perception ${pp}).</i>`);
+  bark(best, sought ? "There. Red. That's hers." : "Something red, down in the crystals.", 3600);
 }
 function thessalyFight(t){
   const S = thessalyState(); S.fate = "fighting"; saveWalk();
@@ -4732,6 +4823,7 @@ function leaveVelkynvelve(z){
   const proposed = z.proposed || /PROPOSED/.test(z.label);
   showDialog({title: head, body: `${z.label}. Past here the party is out of the outpost and on the Underdark map.${proposed ? " This way out is a proposal from the guide, not yet reviewed by Sam." : ""}`,
     buttons: [{label: `Leave Velkynvelve → ${h.name}`, primary: true, fn: async () => {
+        await actEndVisit(1, `the party leaves Velkynvelve for ${h.name}`);   // THE END OF AN ACT: he comes before they go
         if (escapeTo(PEN_ESCAPE.EVENT.LEFT_AREA, `left Velkynvelve for ${h.name}`) && OW.on){ const t0 = Date.now(); while (owDirty() && Date.now() - t0 < 1500) await wait(100); }   // THE ESCAPE PHASE: gone, and every screen told before the page goes
         location.href = `/map?from=velkynvelve&via=${encodeURIComponent(key)}&plate=${encodeURIComponent(h.biome)}${Array.isArray(z.roads) && z.roads.length ? "&roads=" + encodeURIComponent(z.roads.join(",")) : ""}`; }},
       {label: "Stay"}]});
@@ -8489,7 +8581,12 @@ const FOE_BLOCKS = {
   "ghost-male": {name: "Bhut", ctype: "undead", holyVulnerable: true, xp: 700, passive: 10, hp: 45, ac: 13, speed: 30, init: 2, saves: {str: 1, dex: 2, con: 2, int: 1, wis: 0, cha: 2},
                  resistNonmagical: ["bludgeoning", "piercing", "slashing"], immune: ["poison"], immuneCond: ["poisoned", "charmed"], multi: 2, rotate: true,
                  attacks: [{name: "Numbing Bite", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5, extra: {dmg: "1d6", type: "cold"}, numb: {save: "con", dc: 12}, curse: true},
-                           {name: "Claws", hit: 4, dmg: "1d6+2", type: "slashing", reach: 5, curse: true}]},
+                           {name: "Claws", hit: 4, dmg: "1d6+2", type: "slashing", reach: 5, curse: true}],
+                 // TOUGH SPELLS (Sam, 2026-11-23: "45 sounds good but with tough spells"). [HOUSE] innate spellcasting on its
+                 // Charisma (15: +2, PB +2): save DC 12, +4 to hit, the stat block's own numbers. Cantrips at will: Chill Touch
+                 // (and the target cannot heal), Toll the Dead. Once a day each: Hold Person, Fear, Vampiric Touch; Inflict Wounds
+                 // twice. Necromancy and dread for a drowned thing; all resolve on this page. XP stays 700 for now (module doc).
+                 magic: {dc: 12, hit: 4, mod: 2, slots: {}, cantrips: ["Chill Touch", "Toll the Dead"], prepared: [], innate: {"Hold Person": 1, "Fear": 1, "Vampiric Touch": 1, "Inflict Wounds": 2}}},
   // THE OUTPOST'S OFFICERS, so the plates can hold who the book puts in them (Sam's playtest, 2026-10-24). Blocks from
   // `bestiary` rows `drow-elite-warrior` and `drow-priestess-of-lolth` (source: Out of the Abyss, owned) and SRD 5.1 Priest.
   // Saves are ability modifiers (no save proficiencies on the rows). What the page cannot do is flagged, not faked:
@@ -8868,6 +8965,8 @@ const SPELLS = {
 };
 // ---------- Rage and Wounded Fury: the rules, one copy (lib/rage.mjs, pasted in here by build_walk.py) ----------
 /*__RAGE__*/
+// ---------- conditions: names, art and rules (lib/condition-rules.mjs, pasted in here by build_walk.py) ----------
+/*__CONDITION_RULES__*/
 const COND_GLYPH = {turned: ["☼", "#ffe9a8", "Turned: Frightened and Incapacitated for a minute; it moves as far from the cleric as it can. Ends if it takes damage"], baned: ["▼", "#b07ad8", "Baned: −1d4 on attack rolls and saving throws"], laughing: ["☺", "#ff9bd2", "Laughing: prone and incapacitated, can't stand · WIS save at the end of each turn and when hurt"], blinded: ["◉", "#8a8098", "Blinded: its attacks have disadvantage, attacks on it have advantage · CON save at the end of each turn"], deafened: ["◌", "#9a90a8", "Deafened: hears nothing · fails any check that needs hearing · CON save at the end of each turn"],
   falseLife: ["♥", "#7fbf6a", "False Life: temporary hit points"], heroic: ["✪", "#ffd27a", "Heroism: immune to fear · temporary HP each turn"], aided: ["✚", "#fff3c0", "Aid: +5 hit points (maximum and current)"], mageArmor: ["⬡", "#8fc8ff", "Mage Armor: base AC 13 + DEX"], barkskin: ["❧", "#a07a4a", "Barkskin: AC at least 17"], frightened: ["‼", "#b8a0d8", "Frightened: Dashes away from the one it fears on each of its turns · disadvantage on attacks while it can see them · WIS save when it ends a turn out of their sight"], invisible: ["✧", "#d8e4ff", "Invisible: attacks on it have disadvantage, its attacks have advantage · ends if it attacks, deals damage or casts a spell"], mirrored: ["❖", "#bfd0ff", "Mirror Image: illusory duplicates · a hit lands on one instead on a d6 of 3 or more per duplicate"],
   sanctuary: ["☩", "#fff3c0", "Sanctuary: a foe must pass a WIS save to attack it or target it with a harmful spell · ends if it attacks or harms a foe"], surprised: ["!", "#ffd27a", "Surprised: no move and no action on its first turn, no reaction until that turn ends"], poisoned: ["☠", "#8fd48f", "Poisoned: disadvantage on attacks"], burning: ["♨", "#ff8a3a", "Burning: 1d4 fire each turn · an action and DC 10 DEX puts it out"], lit: ["✦", "#e9c4ff", "Lit: attacks on it have advantage"], asleep: ["z", "#b0b8ff", "Asleep"],
@@ -8879,6 +8978,18 @@ const COND_GLYPH = {turned: ["☼", "#ffe9a8", "Turned: Frightened and Incapacit
                     restrained: ["⌗", "#e8e2c8", "Restrained by webbing: speed 0, attacks on you have advantage, yours disadvantage"],
                     raging: ["✸", "#ff4a2a", "Raging: bonus melee damage with Strength, advantage on STR checks and saves, resists bludgeoning, piercing and slashing · ends if a turn passes with no attack made and no damage taken"],
                     fury: ["✹", "#ff4a2a", "Wounded Fury: at 10 HP or fewer, advantage on attacks and +2d6 on a melee hit"]};
+// THE CONDITIONS THE PACK PAINTED THAT THE MAP HAD NO STATUS FOR (Sam, 2026-11-23: "its effects is considered during
+// gameplay"). They arrive from Malachar's [CONDITION_ADD] (characters.conditions, seeded by seedSavedConds) and the DM;
+// what they do is lib/condition-rules.mjs (SRD 5.2.1). The glyph is only the fallback if a painting fails to load.
+Object.assign(COND_GLYPH, {
+  unconscious:   ["☾", "#c9b8ff", "Unconscious: incapacitated and prone, speed 0 · fails STR and DEX saves · attacks on it have advantage, a hit from within 5 ft is a critical"],
+  stunned:       ["✺", "#ffd27a", "Stunned: incapacitated, loses the turn · fails STR and DEX saves · attacks on it have advantage"],
+  petrified:     ["◆", "#a8a29a", "Petrified: stone — incapacitated, speed 0 · fails STR and DEX saves · attacks on it have advantage · resists all damage"],
+  incapacitated: ["⊘", "#e07a6a", "Incapacitated: no actions, bonus actions or reactions · concentration breaks"],
+  charmed:       ["♥", "#ff7ab8", "Charmed: can't attack the one who charmed it"],
+  exhaustion:    ["☾", "#e0a040", "Exhaustion: −2 per level on attack rolls, saves and checks · speed −5 ft per level"],
+  bleeding:      ["✚", "#e0403a", "Bleeding: loses hit points at the start of each of its turns · an action and a Medicine check stanch it · magical healing closes it"],
+});
 // Painted condition art (Sam, 2026-11-23: "better condition icons ... apply to cards as appropriate") — the "Death
 // Saves, Tombstones & Conditions" pack, 64 px masters in icons/conditions and icons/death-saves, shown at 20-26 CSS px.
 // A status with art shows the painting; one without (Bless, Mage Armor, Rage ...) keeps its COND_GLYPH glyph.
@@ -8931,7 +9042,7 @@ const d6 = () => 1 + Math.floor(Math.random() * 6);
 const FAITH_ITEM = /book of prayers|holy symbol|amulet|emblem|reliquary/i;
 function hasFaithItem(a){ const g = typeof GEAR !== "undefined" && GEAR[a.id]; return !!(g && (g.carried || []).some(c => FAITH_ITEM.test(c.name || ""))); }
 // Bless (SRD 5.1): a d4 on the attack roll or saving throw of a blessed creature, rolled and shown each time
-function blessD4(a){ if (!a || !a.c || !a.c.conds) return 0; return (a.c.conds.has("blessed") ? 1 + Math.floor(Math.random() * 4) : 0) - (a.c.conds.has("baned") ? 1 + Math.floor(Math.random() * 4) : 0); }   // Bless +1d4, Bane −1d4, on attacks and saves
+function blessD4(a){ if (!a || !a.c || !a.c.conds) return 0; return (a.c.conds.has("blessed") ? 1 + Math.floor(Math.random() * 4) : 0) - (a.c.conds.has("baned") ? 1 + Math.floor(Math.random() * 4) : 0) + exhaustionPenalty(a.c.exhaustion); }   // Bless +1d4, Bane −1d4, Exhaustion −2 a level, on attacks and saves
 // Roll-changing traits — lib/traits.mjs pasted in whole by build_walk.py (TRAITS placeholder), so the map,
 // the dashboard's dice and lib/traits.test.ts read ONE copy of Halfling Luck. (Sam, 2026-10-26: abilities tied
 // to rules must pop up when they are needed.)
@@ -9043,7 +9154,43 @@ function fighterFor(a){
   const own = !!s && (a.kind === "pc" || a.ally || turned);
   const hpMax = own ? s.hp : (a.hpMax || (s && s.hp) || 1), hp = own ? s.hp : (a.hp ?? hpMax);
   return {sheet: s || {name: SHORT[a.id] || SPR[a.id].json.name, cls: "", hp: hpMax, ac: 10, speed: 30, init: 0, saves: {}, attacks: [{name: "Strike", hit: 2, dmg: "1d4", type: "bludgeoning", reach: 5}], improvised: true},
-          hp, hpMax, ac: s ? s.ac : 10, conds: new Set(), slots: s && s.magic ? {...s.magic.slots} : {}, init: 0};
+          hp, hpMax, ac: s ? s.ac : 10, conds: seedSavedConds(s), exhaustion: conditionsForMap(s && s.conditions).exhaustion, slots: s && s.magic ? {...s.magic.slots} : {}, init: 0};
+}
+// MALACHAR'S CONDITIONS COUNT IN A FIGHT (Sam, 2026-11-23). A hero's `characters.conditions` (what [CONDITION_ADD]
+// writes) reaches the page on their sheet (lib/walk-sheet.ts `conditions`, refreshed every /api/map-stage poll).
+// Until now every fight began with an empty set, so a hero Malachar had Poisoned or Stunned fought as if fresh.
+// The keys the map has rules for are seeded; narrative-only names (Magical Barrier) stay the story's.
+function seedSavedConds(s){
+  const set = new Set(), m = conditionsForMap(s && s.conditions);
+  for (const k of m.keys) if (COND_GLYPH[k]) set.add(k);
+  if (m.exhaustion) set.add("exhaustion");   // shown as a status; its level is c.exhaustion
+  set.saved = new Set(set);   // which of these came from the sheet, so a condition Malachar lifts mid-fight lifts here too
+  return set;
+}
+// BLEEDING, helpers. The bleeder nearest this creature, itself first, within 5 ft (a stanch is done by hand).
+function bleederNear(a){ return [a, ...friends()].find(w => w && w.c && w.c.conds && w.c.conds.has("bleeding") && !w.dead && (w === a || feetBetween(a, w) <= 5.5)) || null; }
+function stanchWound(a, w){
+  const B = w.c.bleed || BLEED_DEFAULT, sh = a.c.sheet, mod = (sh.skills || {}).medicine ?? abilMod(sh, "wis");
+  const r = d20(0, a, null, B.dc - mod), total = r + mod + exhaustionPenalty(a.c.exhaustion);
+  a.c.action = false;
+  if (total >= B.dc){ w.c.conds.delete("bleeding"); delete w.c.bleed; if (w.c.conds.saved) w.c.conds.saved.delete("bleeding"); (w.c.lifted ||= new Set()).add("bleeding"); popText(w, "stanched", "#9ff2c8"); log(`${fname(a)} stanches ${w === a ? "their own" : fname(w) + "'s"} wound: Medicine ${r} + ${mod} = ${total} vs DC ${B.dc}.`); }
+  else { popText(w, "still bleeding", COND_GLYPH.bleeding[1]); log(`${fname(a)} tries to stanch ${w === a ? "their own" : fname(w) + "'s"} wound and fails: Medicine ${r} + ${mod} = ${total} vs DC ${B.dc}.`); }
+  renderParty(); openMenu(a);
+}
+// "The wound also closes if the target receives magical healing" (the Infernal Wound): a healing spell or a potion.
+function woundCloses(t, how){ if (!t || !t.c || !t.c.conds.has("bleeding")) return; t.c.conds.delete("bleeding"); delete t.c.bleed; if (t.c.conds.saved) t.c.conds.saved.delete("bleeding"); (t.c.lifted ||= new Set()).add("bleeding");
+  popText(t, "wound closes", "#9ff2c8", .9); log(`${fname(t)}'s wound closes (${how}).`); renderParty(); }
+// Mid-fight, the sheet changed (Malachar added or removed one): bring each hero's live set in step with it.
+function syncSavedConds(){
+  for (const a of party){ if (!a.c || !a.c.conds || a.kind !== "pc") continue;
+    const s = SHEETS[a.id], m = conditionsForMap(s && s.conditions), want = new Set([...m.keys.filter(k => COND_GLYPH[k]), ...(m.exhaustion ? ["exhaustion"] : [])]), had = a.c.conds.saved || new Set();
+    a.c.exhaustion = m.exhaustion;
+    let changed = false;
+    const lifted = a.c.lifted || new Set();   // what the fight itself ended (a stanched wound): not put back while the sheet still says it
+    for (const k of [...lifted]) if (!want.has(k)) lifted.delete(k);
+    for (const k of want) if (!had.has(k) && !lifted.has(k)){ had.add(k); if (!a.c.conds.has(k)){ addCond(a, k); changed = true; } }
+    for (const k of [...had]) if (!want.has(k)){ had.delete(k); if (a.c.conds.delete(k)) changed = true; }
+    a.c.conds.saved = had; if (changed && typeof renderParty === "function") renderParty(); }
 }
 function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   if (FIGHT.watch) sceneMirrorEnd({});                          // WORLD EVENTS: a fight that starts here ends this screen's showing of a scene
@@ -9889,9 +10036,25 @@ function nextTurn(first){
   if (a.c.heroMod && a.c.conds.has("heroic")) a.c.tempHp = Math.max(a.c.tempHp || 0, a.c.heroMod);   // Heroism: temporary HP at the start of each of its turns
   if (a.c.conds.has("laughing")){ popText(a, "HA HA HA", "#ff9bd2"); log(`${fname(a)} is on the floor, helpless with laughter.`); setTimeout(nextTurn, 900); return; }
   if (newSpellsTurnStart(a)) return;
+  // UNCONSCIOUS, PETRIFIED, a PARALYSIS with no save of its own (Malachar's, the DM's): speed 0 and no actions, so the
+  // whole turn passes (lib/condition-rules.mjs turnLostTo). It ends when the story lifts it ([CONDITION_REMOVE]).
+  { const lost = turnLostTo(a.c.conds); if (lost){ const k = ["petrified", "unconscious", "paralyzed"].find(x => a.c.conds.has(x));
+      popText(a, k, COND_GLYPH[k][1]); log(`${fname(a)} ${lost}.`); setTimeout(nextTurn, 900); return; } }
+  // STUNNED or INCAPACITATED (SRD 5.2.1, Sam 2026-11-23: "base it on DND 5E"): no action, bonus action or reaction,
+  // but the speed stands. A hero their player drives gets the turn with only Move left (set below, after the turn's
+  // budgets are refilled); a creature the map drives has nothing else to do and stays where it is.
+  const actless = onlyMoves(a.c.conds) ? ["stunned", "incapacitated"].find(x => a.c.conds.has(x)) : null;
   if (a.c.surprised){ a.c.surprised = false; a.c.conds.delete("surprised"); popText(a, "surprised", "#ffd27a"); log(`${fname(a)} is caught by surprise and loses the turn.`); setTimeout(nextTurn, 900); return; }
-  a.c.move = Math.max(0, turnSpeed(a) - (a.c.conds.has("slowed") ? 10 : 0)); a.c.conds.delete("slowed");
+  a.c.move = Math.max(0, turnSpeed(a) - (a.c.conds.has("slowed") ? 10 : 0) - exhaustionSpeedCut(a.c.exhaustion)); a.c.conds.delete("slowed");   // Exhaustion: −5 ft a level
+  if (a.c.exhaustion) popText(a, `exhaustion ${a.c.exhaustion}: −${exhaustionSpeedCut(a.c.exhaustion)} ft`, "#e0a040", .8);
   if (encumbered(a)) popText(a, `encumbered: ${turnSpeed(a)} ft`, "#ff8a7a", .9); a.c.action = true; a.c.bonus = true; a.c.objFree = true;
+  const actlessDriven = actless && !(a.kind === "pc" && !cbt.quick && canControl(a));   // a creature the map drives
+  if (actless && !actlessDriven){ a.c.action = false; a.c.bonus = false; a.c.reactionUsed = true; popText(a, `${actless}: move only`, COND_GLYPH[actless][1], .9); log(`${fname(a)} is ${actless}: no action, bonus action or reaction this turn, but they can still move.`); }
+  // BLEEDING (5E has none; its own bleeding wound is the bearded devil's Infernal Wound, SRD 5.1): hit points lost at the
+  // start of each of its turns. A wound that carries its own dice and DC (a.c.bleed) uses them; else the devil's.
+  if (a.c.conds.has("bleeding")){ const B = a.c.bleed || BLEED_DEFAULT, d = roll(B.dice).total; damage(a, d, "bleeding", false, null);
+    log(`${fname(a)} bleeds: ${d} hit points lost.`); if (a.down){ setTimeout(() => passTurn(a), 700); return; } }
+  if (actlessDriven){ popText(a, actless, COND_GLYPH[actless][1]); log(`${fname(a)} is ${actless}: no action, and stays where they are.`); setTimeout(nextTurn, 900); return; }
   guardianSlows(a);   // Spirit Guardians: half speed for a foe that starts its turn among the spirits
   if (a.c.conds.has("numbed")){ a.c.move = Math.floor(a.c.move / 2 / 5) * 5; a.c.reactionUsed = true; a.c.conds.delete("numbed"); popText(a, "numb: half speed, no reactions", "#9fd8ff", .9); }   // the bhut's bite, one round (the reaction budget is reactionUsed, reset just above)
   // Alchemist's fire (SRD 5.1): "the target takes 1d4 fire damage at the start of each of its turns"
@@ -10060,6 +10223,8 @@ function openMenu(a, sub){
     if (a.kind === "pc"){ const ex = exitFor(a), ft = ex ? walkFtTo(a, ex) : Infinity, dashFt = c.action ? turnSpeed(a) : 0;
       if (ex && SPEC[ex.to] && ft <= c.move + dashFt) add("Flee", `run for ${SPEC[ex.to].name || "the way out"} · ${Math.round(ft)} ft${ft > c.move ? " · uses your action to Dash" : ""}${a.c.conds.has("disengaged") ? "" : " · free swings as you leave reach"}`, () => heroFlee(a, ex, ft > c.move)); }
     add("Help", "an ally's next attack has advantage", c.action ? () => { closeMenu(); cbt.phase = "target"; cbt.pend = {help: true}; hint("Help: click a friend within 5 ft."); } : null);
+    { const w = bleederNear(a); if (w){ const B = w.c.bleed || BLEED_DEFAULT;   // 5E: "Any creature can take an action to stanch the wound"
+      add(`Stanch: ${w === a ? "your wound" : fname(w)}`, `Medicine check, DC ${B.dc} · your action`, c.action ? () => stanchWound(a, w) : null); } }
     petCombatRow(a, add);   // CREATURE COMPANIONS: a spider riding its owner is let loose with the owner's action
     add("Search", `Perception ${sgn((s.skills || {}).perception ?? abilMod(s, "wis"))}`, c.action ? () => doSearch(a) : null);
     gateOptions(a, add);
@@ -11591,7 +11756,7 @@ function chainMarchSettle(out){
   const M = state.chainMarch; if (!M || M.out) return;
   state.chainMarch = Object.assign({}, M, {out: out || "dm", outAt: Date.now()});
   if (out === "escaped" && !state.brokeOut) state.brokeOut = {at: Date.now(), why: "the march out in chains"};
-  if (out === "escaped") escapeTo(PEN_ESCAPE.EVENT.LEFT_AREA, "escaped the march out in chains");   // THE ESCAPE PHASE
+  if (out === "escaped"){ escapeTo(PEN_ESCAPE.EVENT.LEFT_AREA, "escaped the march out in chains"); setTimeout(() => actEndVisit(1, "the party escapes the march out in chains"), 4000); }   // THE ESCAPE PHASE; THE END OF AN ACT
   if (out === "lost" && !state.gameOver) state.gameOver = {seq: "g" + Date.now().toString(36), at: Date.now(), by: OW.key || "local", why: "menzoberranzan", line: chainMarchLostLine(M.seq)};
   saveWalk();
 }
@@ -12603,6 +12768,7 @@ async function ruinsDoor(){
   mode = "explore";
 }
 async function directorOnEnter(plate){
+  if (plate === "crystal") thessalyAmuletOnEnter();   // OLD THESSALY: his lost love's amulet is hidden here
   if (isRuinPlate(plate)) return ruinOnEnter(plate);
   if (!directorPlate((SPEC[plate] || {}).slug) || cbt || mode !== "explore" || FIGHT.mirror) return;
   // A plate that already holds a waiting foe (the Sinkhole's grick, the Flooded Stair's ooze, the Clacking's hook horror)
@@ -13228,7 +13394,7 @@ function advantageOn(att, tgt, ranged, atk){
     if (near) adv--;                                                          // or beyond the weapon's normal range
     if (atk && atk.long && feetBetween(att, tgt) > atk.reach) adv--;
   }
-  if (tgt.c.conds.has("lit") || tgt.c.conds.has("asleep") || tgt.c.conds.has("paralyzed")) adv++;
+  if (tgt.c.conds.has("lit") || tgt.c.conds.has("asleep") || tgt.c.conds.has("paralyzed") || attackedWithAdvantage(tgt.c.conds)) adv++;   // + stunned, unconscious, petrified (SRD 5.2.1)
   if (tgt.kind === "pc" && tgt.down) adv++;                                   // SRD: unconscious — attack rolls against it have advantage
   if (dodges(tgt) || att.c.conds.has("mocked")) adv--;
   if (att.c.conds.has("hidden") || att.c.conds.has("helped")) adv++;          // unseen attacker; an ally's Help
@@ -13268,7 +13434,7 @@ const sgn = (n) => (n >= 0 ? "+" : "−") + Math.abs(n);
 // without one works it out from its level; a creature with neither keeps the old +2.
 function profOf(sh){ if (!sh) return 2; if (Number.isFinite(+sh.prof) && +sh.prof > 0) return +sh.prof; const L = +sh.level; return L > 0 ? 2 + Math.floor((Math.min(20, L) - 1) / 4) : 2; }
 const shoveDc = (a) => 8 + abilMod(a.c.sheet, "str") + profOf(a.c.sheet);   // SRD 5.2.1: 8 + Strength modifier + proficiency
-function skillCheck(a, skill, dc){ const small = skill === "stealth" && isSmall(a), mod = (a.c.sheet.skills || {})[skill] ?? abilMod(a.c.sheet, skill === "perception" ? "wis" : skill === "athletics" ? "str" : "dex"), r = d20(withEdge(rageAdvantage(a.c.rage, skill === "athletics" ? "str" : skill), small), a, null, dc == null ? null : dc - mod); return {r, mod, total: r + mod, small}; }   // Small: Stealth with advantage (house rule, Sam 2026-10-26)
+function skillCheck(a, skill, dc){ const small = skill === "stealth" && isSmall(a), mod = (a.c.sheet.skills || {})[skill] ?? abilMod(a.c.sheet, skill === "perception" ? "wis" : skill === "athletics" ? "str" : "dex"), r = d20(withEdge(rageAdvantage(a.c.rage, skill === "athletics" ? "str" : skill), small), a, null, dc == null ? null : dc - mod); const ex = exhaustionPenalty(a.c && a.c.exhaustion); return {r, mod, total: r + mod + ex, small}; }   // Small: Stealth with advantage (house rule, Sam 2026-10-26)
 function targetAc(t){ let ac = t.c.ac; if (t.c.conds.has("mageArmor")) ac = Math.max(ac, 13 + abilMod(t.c.sheet, "dex")); if (t.c.conds.has("barkskin")) ac = Math.max(ac, 17); return ac + (t.c.conds.has("shielded") ? 2 : 0) + (t.c.conds.has("shieldSpell") ? 5 : 0); }
 // the buffs that change numbers, as they land
 function buffTakes(caster, t, name){ const mod = (caster.c.sheet.magic || {}).mod || 0;
@@ -13396,7 +13562,7 @@ function artRider(att, tgt, atk, crit){
   }
   if (tgt.down) return "";
   if (!v.save){ addCond(tgt, v.cond); popText(tgt, v.says, "#ffe08a", .85); return `${v.name}: ${fname(tgt)} is ${v.says}`; }
-  const s0 = d20(rageAdvantage(tgt.c.rage, v.save), tgt, v.cond, dc - (tgt.c.sheet.saves[v.save] || 0)) + (tgt.c.sheet.saves[v.save] || 0) + blessD4(tgt), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, dc) : 0), ok = sv >= dc;
+  const s0 = d20(rageAdvantage(tgt.c.rage, v.save), tgt, v.cond, dc - (tgt.c.sheet.saves[v.save] || 0)) + (tgt.c.sheet.saves[v.save] || 0) + blessD4(tgt), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, dc) : 0), ok = sv >= dc && !autoFailsSave(tgt.c.conds, v.save);
   if (!ok){ addCond(tgt, v.cond); if (v.cond === "numbed") tgt.c.reactionUsed = true; popText(tgt, v.says, "#ffe08a", .85); }
   return `${v.name}: ${v.save.toUpperCase()} save ${sv} vs DC ${dc}, ${ok ? "holds" : v.says}`;
 }
@@ -13425,6 +13591,10 @@ function readiedStrikeOn(att, cont){
 }
 function attackWith(att, tgt, atk, done, offhand, reaction){
   if (!sanctuaryLets(att, tgt)){ if (att.kind === "pc" && !reaction){ if (offhand) att.c.bonus = true; else att.c.action = true; }   // SRD: choose a new target or lose the attack
+    combatBusy = false; if (cbt) cbt.phase = "idle"; if (done) setTimeout(done, 500); else if (att.kind === "pc") openMenu(att); return; }
+  // CHARMED (SRD 5.2.1): it can't attack the one who charmed it. `charmBy` is set by whatever charms with a source; a
+  // charm Malachar wrote with no charmer forbids nobody. The action is not spent, the way Sanctuary hands it back.
+  if (att.c && charmForbids(att.c.conds, att.c.charmBy, tgt)){ popText(att, "charmed", COND_GLYPH.charmed[1]); log(`${fname(att)} cannot bring themselves to attack ${fname(tgt)}: charmed.`);
     combatBusy = false; if (cbt) cbt.phase = "idle"; if (done) setTimeout(done, 500); else if (att.kind === "pc") openMenu(att); return; }
   if (att.c && att.c.conds.has("sanctuary")) endSanctuary(att, "made an attack");   // SRD 5.2.1: it ends if the warded creature makes an attack roll
   handWatch(att, tgt);
@@ -13470,7 +13640,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       const bl = blessD4(att);
       let adv = advantageOn(att, tgt, ranged, atk), r = luckyGuard(att, tgt, d20(adv, att, null, cv.total ? null : acVs - atk.hit - bl), acVs - atk.hit - bl), crit = !cv.total && r === 20, insp = cv.total || r === 1 || crit ? 0 : useInspiration(att, r + atk.hit + bl, acVs), hit = !cv.total && (crit || (r !== 1 && r + atk.hit + bl + insp >= acVs)); att.c.conds.delete("mocked"); afterAttackRoll(att); spendDistraction(att, tgt);
       att.c.lastSwingHit = !!hit;   // for a block whose next attack needs this one to land (`chain`, the grick)
-      if (hit && !crit && tgt.c.conds.has("paralyzed") && feetBetween(att, tgt) <= 5.5) crit = true;   // SRD: a hit on the paralyzed from within 5 ft is a critical
+      if (hit && !crit && critFromAdjacent(tgt.c.conds) && feetBetween(att, tgt) <= 5.5) crit = true;   // SRD: a hit on the paralyzed or unconscious (asleep) from within 5 ft is a critical
       if (hit && !crit && tgt.kind === "pc" && tgt.down && !ranged && feetBetween(att, tgt) <= 7.5) crit = true;   // SRD: unconscious — a hit from within 5 ft is a critical hit
       if (bl) popText(att, bl > 0 ? `bless +${bl}` : `bane ${bl}`, bl > 0 ? "#ffe9a8" : "#b07ad8", .8);
       if (hit && !crit && !cv.total && hero(tgt) && canShield(tgt) && r + atk.hit + bl + insp < acVs + 5){
@@ -13551,10 +13721,10 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         if (IMPACT_OF[atk.extra.type] && atk.extra.type !== "thunder") setTimeout(() => spawnFx(IMPACT_OF[atk.extra.type], {at: tgt, sq: 1.3, anchor: "mid"}), 220);
         else if (att.id === "orc-eye-of-gruumsh"){   // and the Eye's Gruumsh's Fury: a red flare on the hit
           setTimeout(() => { tgt.flash = now + 220; tgt.flashCol = "#ff3a1a"; popText(tgt, "Gruumsh's Fury", "#ff6a3a"); }, 240); } setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att, true), 260); parts.push(`${e.total} ${atk.extra.type}`); }
-      if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20(rageAdvantage(tgt.c.rage, atk.rider.save), tgt, atk.rider.cond, atk.rider.dc - (tgt.c.sheet.saves[atk.rider.save] || 0)) + (tgt.c.sheet.saves[atk.rider.save] || 0) + blessD4(tgt), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
+      if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20(rageAdvantage(tgt.c.rage, atk.rider.save), tgt, atk.rider.cond, atk.rider.dc - (tgt.c.sheet.saves[atk.rider.save] || 0)) + (tgt.c.sheet.saves[atk.rider.save] || 0) + blessD4(tgt), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc && !autoFailsSave(tgt.c.conds, atk.rider.save), e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
         setTimeout(() => { damage(tgt, n, atk.rider.type, false, att, true); if (!ok && atk.rider.type === "poison" && !atk.rider.noCond){ addCond(tgt, "poisoned"); if (atk.rider.rounds && cbt) tgt.c.poisonEnd = (cbt.round || 1) + atk.rider.rounds; } }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
       // A HOLD (the carrion crawler's and the grell's tentacles): save or poisoned and paralyzed, the save again each turn
-      if (atk.hold && !tgt.down && !tgt.c.conds.has(atk.hold.cond)){ const hs = d20(0, tgt) + (tgt.c.sheet.saves[atk.hold.save] || 0) + blessD4(tgt), hok = hs >= atk.hold.dc;
+      if (atk.hold && !tgt.down && !tgt.c.conds.has(atk.hold.cond)){ const hs = d20(0, tgt) + (tgt.c.sheet.saves[atk.hold.save] || 0) + blessD4(tgt), hok = hs >= atk.hold.dc && !autoFailsSave(tgt.c.conds, atk.hold.save);
         if (!hok && !(tgt.c.sheet.immuneCond || []).includes("poisoned")){ addCond(tgt, "poisoned"); addCond(tgt, atk.hold.cond); tgt.c.holdSave = {...atk.hold, by: fname(att)}; tgt.path = []; popText(tgt, atk.hold.cond, "#b8ff9a"); labHoldHit(tgt, "venom"); }
         parts.push(`${atk.hold.save.toUpperCase()} save ${hs} vs ${atk.hold.dc}: ${hok ? "resists" : atk.hold.cond}`); }
       if (atk.drowPoison && !tgt.down) parts.push(drowPoison(tgt, atk.drowPoison.dc));
@@ -13562,7 +13732,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         const ct = att.coat; ct.uses--; if (ct.uses <= 0) att.coat = null;
         parts.push(`${ct.bolt ? "the poisoned bolt" : "the poisoned edge"}: ${drowPoison(tgt, ct.dc)}`); }
       if (atk.tooth && !tgt.down){ const v = toothVenomHit(att, tgt); if (v) parts.push(v); }
-      if (atk.numb && !tgt.down){ const s0 = d20(0, tgt, null, atk.numb.dc - (tgt.c.sheet.saves[atk.numb.save] || 0)) + (tgt.c.sheet.saves[atk.numb.save] || 0) + blessD4(tgt), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.numb.dc) : 0), ok = sv >= atk.numb.dc;
+      if (atk.numb && !tgt.down){ const s0 = d20(0, tgt, null, atk.numb.dc - (tgt.c.sheet.saves[atk.numb.save] || 0)) + (tgt.c.sheet.saves[atk.numb.save] || 0) + blessD4(tgt), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.numb.dc) : 0), ok = sv >= atk.numb.dc && !autoFailsSave(tgt.c.conds, atk.numb.save);
         if (!ok){ addCond(tgt, "numbed"); tgt.c.reactionUsed = true; popText(tgt, "numbed", "#9fd8ff"); } parts.push(`${atk.numb.save.toUpperCase()} save ${sv} vs ${atk.numb.dc}: ${ok ? "shakes it off" : "numbed"}`); }
       if (atk.art){ const w = artRider(att, tgt, atk, crit); if (w) parts.push(w); }
       if (atk.curse && !tgt.down && hero(tgt)) setTimeout(() => curseBy(att, tgt), 420);
@@ -13723,12 +13893,12 @@ function castSpell(caster, tgt, name, done, darts){
         log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d.total} ${sp.type}${sp.note ? " (" + sp.note + ")" : ""}.`);
       }; for (let bi = 0; bi < beams; bi++) setTimeout(() => one(bi), bi * 340);
       } else if (sp.kind === "heal"){
-        const d = tgt.c.noHeal ? 0 : roll(sp.dmg).total + m.mod; if (tgt.c.noHeal) popText(tgt, "can't regain HP", "#9be04a", .9); tgt.c.hp = Math.min(tgt.c.hpMax, tgt.c.hp + d); if (tgt.down && tgt.c.hp > 0){ tgt.down = false; setAnim(tgt, "idle"); }
+        const d = tgt.c.noHeal ? 0 : roll(sp.dmg).total + m.mod; if (tgt.c.noHeal) popText(tgt, "can't regain HP", "#9be04a", .9); tgt.c.hp = Math.min(tgt.c.hpMax, tgt.c.hp + d); if (d > 0) woundCloses(tgt, name); if (tgt.down && tgt.c.hp > 0){ tgt.down = false; setAnim(tgt, "idle"); }
         sigilEnd(tgt, true); bank("combat/heal", .8); setTimeout(() => bank("magic/heal_tail", .5), 300);
         kitImpact(tgt, KIT.healing);                                   // the shimmer comes down on them, the golden glow stays
         popText(tgt, `+${d}`, "#9ff2c8"); log(`${fname(caster)} ${name}: ${fname(tgt)} regains ${d}.`); renderParty();
         if (sp.targets > 1){ const more = standing(heroes()).concat(heroes().filter(h => h.down)).filter((h, i, A) => A.indexOf(h) === i && h !== tgt && !(h.c.ds && h.c.ds.dead) && feetBetween(caster, h) <= sp.range).sort((x, y) => Math.hypot(x.x - tgt.x, x.y - tgt.y) - Math.hypot(y.x - tgt.x, y.y - tgt.y)).slice(0, sp.targets - 1);   // the others it reaches
-          more.forEach((h, i) => setTimeout(() => { const d2 = h.c.noHeal ? 0 : roll(sp.dmg).total + m.mod; h.c.hp = Math.min(h.c.hpMax, h.c.hp + d2); if (h.down && h.c.hp > 0){ h.down = false; setAnim(h, "idle"); }
+          more.forEach((h, i) => setTimeout(() => { const d2 = h.c.noHeal ? 0 : roll(sp.dmg).total + m.mod; h.c.hp = Math.min(h.c.hpMax, h.c.hp + d2); if (d2 > 0) woundCloses(h, name); if (h.down && h.c.hp > 0){ h.down = false; setAnim(h, "idle"); }
             kitImpact(h, KIT.healing); popText(h, h.c.noHeal ? "can't regain HP" : `+${d2}`, "#9ff2c8"); log(`${fname(caster)} ${name}: ${fname(h)} regains ${d2}.`); renderParty(); }, 180 * (i + 1))); }
       } else if (sp.kind === "zone"){                                           // Cloud of Daggers: the blades hang where it was cast
         sigilEnd(at, true); const z = {x: at.x, y: at.y, caster, name, dmg: sp.dmg, type: sp.type}; daggerZones.push(z); sparks.push({labDaggers: true, z, t0: now, life: 3600000});
@@ -13772,7 +13942,7 @@ function castSpell(caster, tgt, name, done, darts){
           // Fey Ancestry (SRD 5.1 elf/half-elf 2315/2320, drow 1608): magic can't put them to sleep. Shown, not silent.
           if (name === "Sleep"){ const fp = sleepProof(rollerOf(t)); if (fp){ traitPop(t, fp); lines.push(`${fname(t)} is untouched (Fey Ancestry)`); if (i === targets.length - 1){ sigilEnd(t, false); log(`${fname(caster)} ${name}: ${lines.join("; ")}.`); } return; } }
           const cvS = sp.save === "dex" && name !== "Sacred Flame" ? coverOf(caster, t) : {ac: 0};            // SRD: cover adds to DEX saves too
-          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20(saveAdv(t, sp.save), t, sp.cond, dc - (t.c.sheet.saves[sp.save] || 0) - cvS.ac) + (t.c.sheet.saves[sp.save] || 0) + cvS.ac + blessD4(t), ok = s >= dc;
+          const dc = m.dc + (caster.c.conds.has("sorcery") ? 1 : 0), s = d20(saveAdv(t, sp.save), t, sp.cond, dc - (t.c.sheet.saves[sp.save] || 0) - cvS.ac) + (t.c.sheet.saves[sp.save] || 0) + cvS.ac + blessD4(t), ok = s >= dc && !autoFailsSave(t.c.conds, sp.save);
           let line = `${fname(t)} ${sp.save.toUpperCase()} ${s}${cvS.ac ? ` (cover +${cvS.ac})` : ""} vs DC ${dc}: ${ok ? "saves" : "fails"}`;
           if (sp.area && !marks.length) markTarget(t);
           if (name === "Sleep"){ if (!ok){ bank("spells/control-slumber-fall", .5); t.sheepT0 = now; } else bank("magic/spell_fizzle", .4); if (i === targets.length - 1) sigilEnd(t, !ok); }
@@ -13977,7 +14147,7 @@ function afterAction(a, done){
   if (checkEnd()) return;
   if (a.kind === "pc" && activeActor() === a){ if (a.c.action || a.c.bonus || a.c.move > 0) openMenu(a); else nextTurn(); }
 }
-function addCond(t, k){ if ((t.c.sheet.immuneCond || []).includes(k)) { popText(t, "immune", "#aaa"); return; } if (k === "frightened" && t.c.conds.has("heroic")){ popText(t, "immune (Heroism)", "#ffd27a"); return; } t.c.conds.add(k);
+function addCond(t, k){ if ((t.c.sheet.immuneCond || []).includes(k) || (k === "poisoned" && t.c.conds.has("petrified")) || (k === "bleeding" && bleedImmune(t.c.sheet.ctype))) { popText(t, "immune", "#aaa"); return; }   // Petrified: immune to Poisoned · no wound on the undead or a construct if (k === "frightened" && t.c.conds.has("heroic")){ popText(t, "immune (Heroism)", "#ffd27a"); return; } t.c.conds.add(k);
   if (t.c.conc && INCAP.includes(k)) endConc(t, "they are incapacitated"); popText(t, COND_GLYPH[k] ? COND_GLYPH[k][2].split(":")[0].toLowerCase() : k, COND_GLYPH[k] ? COND_GLYPH[k][1] : "#fff"); renderParty(); }
 // ---------- concentration (SRD 5.1, "Concentration") ----------
 // Sam, 2026-10-14: "Well, lets track concentration". The rules, as the SRD has them:
@@ -14281,7 +14451,7 @@ function damage(t, n, type, crit, from, magical = false){
   // a resistance is a TAG on the number ("5 ½"), not a word of its own over the head (the pop lanes, 2026-10-28)
   let tag = "";
   if (!magical && !t.c.holyOpen && !(s.resist || []).includes(type) && (s.resistNonmagical || []).includes(type)){ n = Math.floor(n / 2); tag = "½"; }
-  if ((s.resist || []).includes(type) || rageResists(t.c.rage, type)){ n = Math.floor(n / 2); tag = "½"; }
+  if ((s.resist || []).includes(type) || rageResists(t.c.rage, type) || resistsAllDamage(t.c.conds)){ n = Math.floor(n / 2); tag = "½"; }   // Petrified: resistance to all damage
   if ((s.vuln || []).includes(type)){ n *= 2; tag = "×2"; }   // SRD: vulnerability doubles (the skeleton and bludgeoning)   // a raging barbarian resists bludgeoning, piercing and slashing (lib/rage.mjs)
   const popSrc = from ? from.id : "world";   // two blows from the same source inside the merge window read as one number
   if (t.kind === "pc" && t.down){                                             // already at 0
@@ -21789,7 +21959,7 @@ function renderHeroCard(){
   const speed = s.speed != null ? (enc ? Math.max(5, s.speed - ENCUMBERED_SLOW_FT) : s.speed) : null;
   const fourth = s.magic && s.magic.dc ? [s.magic.dc, "SPELL DC"] : [10 + ((s.skills && s.skills.perception != null) ? s.skills.perception : ((s.mods && s.mods.wis) || 0)), "PASSIVE"];
   const state = [manacled(a) ? "⛓ Manacled" : "", a.down || a.ko ? "Down" : "", enc ? "Encumbered" : ""].filter(Boolean);
-  const conds = a.c && a.c.conds ? [...a.c.conds].filter(k => COND_GLYPH[k]) : [];   // painted where the pack has art (Sam, 2026-11-23)
+  const conds = heroConds(a);   // the fight's live set, else the sheet's (Malachar's) — painted where the pack has art (Sam, 2026-11-23)
   const ready = (s.attacks || []).slice(0, 2).map(t => `${t.name}, ${sgn(t.hit || 0)} · ${t.dmg}${t.type ? " " + t.type : ""}`);
   const magic = s.magic ? [...(s.magic.cantrips || []), ...(s.magic.prepared || [])] : [];
   const sig = JSON.stringify([a.id, name, sub, now, max, s.ac, speed, s.init, fourth, s.mods, state, conds, ready, magic]);
@@ -21802,7 +21972,7 @@ function renderHeroCard(){
     + `<div class="pc-stats"><div><b>${s.ac != null ? s.ac : "—"}</b><small>AC</small></div><div><b>${speed != null ? speed : "—"}</b><small>SPEED</small></div><div><b>${s.init != null ? sgn(s.init) : "—"}</b><small>INIT</small></div><div><b>${fourth[0]}</b><small>${fourth[1]}</small></div></div>`
     + (ab ? `<div class="pc-abil">${ab}</div>` : "")
     + `<div class="pc-lines">`
-    + (state.length || conds.length ? `<p><em>STATE</em><span>${state.map(t => `<span class="pc-chip">${esc(t)}</span>`).join("")}${conds.map(k => `<span class="pc-chip cond" title="${esc(COND_GLYPH[k][2])}">${condArtSrc(k) ? `<img class="cond-ic" src="${condArtSrc(k)}" width="18" height="18" alt="">` : `<b style="color:${COND_GLYPH[k][1]}">${COND_GLYPH[k][0]}</b>`}${esc(condLabel(k))}</span>`).join("")}</span></p>` : "")
+    + (state.length || conds.length ? `<p><em>STATE</em><span>${state.map(t => `<span class="pc-chip">${esc(t)}</span>`).join("")}${conds.map(c => `<span class="pc-chip cond" title="${esc(c.tip)}">${heroCondIcon(c, 18)}${esc(c.label)}</span>`).join("")}</span></p>` : "")
     + (ready.length ? `<p><em>READY</em><span>${ready.map(esc).join("<br>")}</span></p>` : "")
     + (magic.length ? `<p><em>MAGIC</em><span>${magic.map(esc).join(" · ")}</span></p>` : "")
     + `</div>`;
@@ -24013,7 +24183,7 @@ function drinkItem(a, it, t){
   spendItem(a, it, t === a ? "drink" : "give", t);
   bank("ui/item_pickup", .5);
   if (u.kind === "heal"){
-    const d = t.c.noHeal ? 0 : roll(u.dice).total; if (t.c.noHeal) setTimeout(() => popText(t, "can't regain HP", "#9be04a", .9), 250); t.c.hp = Math.min(t.c.hpMax, t.c.hp + d);
+    const d = t.c.noHeal ? 0 : roll(u.dice).total; if (t.c.noHeal) setTimeout(() => popText(t, "can't regain HP", "#9be04a", .9), 250); t.c.hp = Math.min(t.c.hpMax, t.c.hp + d); if (d > 0 && fight) woundCloses(t, it.name || "a potion");
     if (t.down && t.c.hp > 0){ t.down = false; setAnim(t, "idle"); }
     setTimeout(() => { kitImpact(t, KIT.healing); bank("combat/heal", .8); popText(t, `+${d}`, "#9ff2c8"); }, 250);
     log(t === a ? `${fname(a)} drinks the <b>${esc(it.name)}</b> and regains ${d} HP${fight ? " (bonus action)" : ""}.`
@@ -26927,9 +27097,10 @@ function npcAskCouncil(n, ask){
 // ---------- MALACHAR VISITS (Sam, 2026-11-23) ----------
 // Sam: "lets make some high quality pixel art for malachar since he may eventually visit. We also need some magical
 // effects when he offers a purple portal opening ... and red eyes glowing. Clouds forming around him and he disappears."
-// When: "When the party does too well and he wants to offer a difficult option." What "too well" means is Sam's to define,
-// so for now there is no automatic trigger: the DM summons him (DM tools, "Malachar visits"), writes what he offers and
-// the two answers, and clicks where he steps out.
+// When: "When the party does too well and he wants to offer a difficult option", and what that means (Sam, same night):
+// "At the end of each ACT". So he comes by himself when an Act ends (actEndVisit, below: Act 1 ends as the party leaves
+// Velkynvelve), with a bargain he drafts from the Act's own story (/api/malachar-offer, lib/malachar-offer.ts). The DM can
+// also summon him at any time (DM tools, "Malachar visits"): write the offer or have him draft it, then click the floor.
 // A WORLD EVENT (Sam, 2026-11-20: "all events should be world events"). The visit is one key in the shared world,
 // state.malVisit {id, plate, x, y, at, words, labels, by, answer, leftAt}; every screen reads it and plays the same
 // visit from the same clock (owNow), so a screen that joins late sees him already standing there, not the visit again.
@@ -26947,7 +27118,7 @@ function npcAskCouncil(n, ask){
 // ppu = 122 x 5 / 6.5 = 94 [CLAUDE: his height is not in any source; the crown makes him a head over a drow].
 const MALV_PPU = 94, MALV_PORTAL_K = .9;
 const MALV_FORM_MS = 750, MALV_IN_AT = 900, MALV_IN_MS = 800, MALV_OFFER_AT = 2200, MALV_CARD_AT = 2600, MALV_GONE_MS = 3200;
-const MALV = {a: null, loading: false, seenId: null, spokeId: null, cardId: null, soundT: {}};
+const MALV = {a: null, loading: false, seenId: null, spokeId: null, cardId: null, soundT: {}, after: {}};
 let malPlacing = false;
 function malVisitAssets(){
   if (MALV.a || MALV.loading) return MALV.a;
@@ -27006,7 +27177,10 @@ function drawMalVisit(v){
 /** Once per sound per visit on this screen (each screen plays its own; the sounds are not relayed). */
 function malSound(v, key, name, gain){ const k = v.id + key; if (MALV.soundT[k]) return; MALV.soundT[k] = 1; try { sfx("bank:" + name, gain); } catch (e) {} }
 function malVisitTick(){
-  const v = state.malVisit; if (!v || !v.id) return;
+  const v = state.malVisit;
+  // whoever was waiting on a visit that is over (or was cleared) goes on: the way out of Velkynvelve, below
+  for (const id of Object.keys(MALV.after)) if (!v || v.id !== id || (v.leftAt && owNow() - v.leftAt > MALV_GONE_MS)){ const f = MALV.after[id]; delete MALV.after[id]; try { f(); } catch (e) {} }
+  if (!v || !v.id) return;
   malVisitAssets();
   const here = owSame(v.plate, cur), t = owNow() - v.at, left = v.leftAt ? owNow() - v.leftAt : -1, fresh = t < 15000;
   if (MALV.seenId !== v.id){
@@ -27051,13 +27225,58 @@ function malVisitAway(){
   councilClose(); if (!$("obj").hidden && $("objWho").textContent === "Malachar"){ $("obj").hidden = true; $("objX").style.display = ""; if (mode === "dialog") mode = "explore"; }
   log(`<i>Malachar withdraws his offer. The ring folds in on itself and he is gone.</i>`);
 }
+/** He steps out at (x, y) on this plate, with these words and answers. Returns the visit's id. */
+function malVisitBegin(x, y, words, labels, extra = {}){
+  const p = nearestWalkable(x, y), id = "mv" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  state.malVisit = {id, plate: cur, x: Math.round(p.x), y: Math.round(p.y), at: owNow(), words, labels, by: OW.key || "local", ...extra};
+  return id;
+}
 function malVisitStart(w){
   const words = $("malWords").value.trim(); if (!words){ toast("Write what Malachar offers first."); return; }
-  const p = nearestWalkable(w.x, w.y);
-  state.malVisit = {id: "mv" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), plate: cur, x: Math.round(p.x), y: Math.round(p.y), at: owNow(),
-    words, labels: [$("malYes").value.trim() || "Accept his bargain", $("malNo").value.trim() || "Refuse him"], by: OW.key || "local"};
+  malVisitBegin(w.x, w.y, words, [$("malYes").value.trim() || "Accept his bargain", $("malNo").value.trim() || "Refuse him"]);
   reviewLog("sync", `The DM summons Malachar to this plate.`);
 }
+// ---------- THE END OF AN ACT: he comes by himself (Sam, 2026-11-23: "At the end of each ACT") ----------
+// The Acts are the campaign's own (lib/world-ai/campaigns.ts, Out of the Abyss). Each ends once per run: state.actsEnded
+// {<n>: {at, why}} is shared, so the second screen to reach the moment does not bring him twice, and New Game clears it.
+// Act 1 ends as the party leaves Velkynvelve: at the way out (leaveVelkynvelve waits for him before the travel map) or
+// when they escape the march out in chains. Later Acts call actEndVisit(<n>, why) from wherever they end.
+// The bargain is his (/api/malachar-offer, from the Act's story on the map log); if it does not come back in time the
+// moment passes without him and the log says so. Never in a rehearsal (no model call for a run that is not real).
+const ACT_LABEL = {1: "Act 1 — Escape Velkynvelve", 2: "Act 2 — Discovery", 3: "Act 3 — Madness Rising", 4: "Act 4 — The Ritual"};
+/** His bargain, drafted for this moment (act 0: a visit the DM calls mid-Act). Null when there is none to be had. */
+async function malOfferDraft(act){
+  if (!APP) return null; const a = owAuth(); if (!a) return null;
+  const heroes = party.filter(p => p.kind === "pc" && !p.down).map(p => fname(p));
+  const others = npcs.filter(n => !n.down && !n.offStage && (n.alpha ?? 1) > .2).map(n => SHORT[n.id] || (SPR[n.id] && SPR[n.id].json.name)).filter(Boolean).slice(0, 12);
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 25000);
+  try {
+    const r = await fetch("/api/malachar-offer", {method: "POST", signal: ctl.signal, headers: {"Content-Type": "application/json", ...a.headers},
+      body: JSON.stringify({...a.body, act, actLabel: ACT_LABEL[act] || "", where: plateLabel(cur), heroes, others, run: OW.run || null})});
+    const j = await r.json().catch(() => ({})); return j && j.offer && j.offer.words ? j.offer : null;
+  } catch (e) { return null; } finally { clearTimeout(t); }
+}
+/** The Act is over: he comes (once per Act per run). Resolves when he is gone again, or at once when he does not come. */
+async function actEndVisit(n, why){
+  if (SANDBOX) return;
+  const done = state.actsEnded || {}; if (done[n]) return;
+  state.actsEnded = {...done, [n]: {at: owNow(), why: why || ""}};
+  reviewLog("story", `${ACT_LABEL[n] || "Act " + n} ends: ${why || ""}.`);
+  if (mode === "combat" || !leader || (state.malVisit && state.malVisit.id && !state.malVisit.leftAt)) return;
+  log(`<i>The air goes cold. Something old is paying attention.</i>`);
+  const offer = await malOfferDraft(n);
+  if (!offer || mode === "combat" || !leader){ reviewLog("review", `Malachar did not come at the end of ${ACT_LABEL[n] || "Act " + n} (no bargain came back).`); return; }
+  const id = malVisitBegin(leader.x, leader.y - 150, offer.words, [offer.accept, offer.refuse], {act: n});
+  await new Promise(res => { MALV.after[id] = res; setTimeout(() => { if (MALV.after[id]){ delete MALV.after[id]; res(); } }, 5 * 60 * 1000); });   // (a table that never answers does not hold the way out forever)
+}
+$("malDraft").onclick = async () => {
+  const b = $("malDraft"); if (b.disabled) return; b.disabled = true; const was = b.textContent; b.textContent = "He is thinking…";
+  try {
+    const o = await malOfferDraft(0);
+    if (!o){ toast(APP ? "No bargain came back. Write one, or try again." : "Drafting needs the live game."); return; }
+    $("malWords").value = o.words; $("malYes").value = o.accept; $("malNo").value = o.refuse;
+  } finally { b.disabled = false; b.textContent = was; }
+};
 $("malSummon").onclick = () => {
   if (!$("malWords").value.trim()){ toast("Write what Malachar offers first."); return; }
   if (mode === "combat"){ toast("Not in the middle of a fight."); return; }

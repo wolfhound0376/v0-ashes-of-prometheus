@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server"
 import { generateText } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
-import { ensureObserveChip, parseSuggestions } from "@/lib/suggestions"
+import { capBait, dropAbsent, ensureObserveChip, parseSuggestions, publicSuggestions, type Suggestion } from "@/lib/suggestions"
 import { createAdminClient } from "@/lib/supabase/admin"
+import { loadMoment } from "@/lib/moment-store"
+import { knownNames, momentBrief } from "@/lib/moment"
 
 // Same direct-Anthropic provider as /api/chat — bypasses the Vercel AI Gateway.
 const anthropic = createAnthropic({
@@ -23,6 +25,18 @@ const anthropic = createAnthropic({
  *
  * Failure mode is always an empty list with HTTP 200 — the dashboard falls
  * back to its static quick replies and the table never sees an error.
+ *
+ * WHOSE OPTIONS, AND WHY EACH ONE (Sam, 2026-11-23: "Malachar's options he gives you are in tune with what is
+ * happening at that exact moment. They MUST all be Germaine or misleading in some way but ON PURPOSE … This is the
+ * case with all main NPCs." Design: project doc claude/Malachar_Options_2026-11-23.md, PR 1 of 3.)
+ *   - THE MOMENT (lib/moment.ts) is read from the game, not guessed from talk: the hero's plate, a fight on it, a
+ *     roll they owe, who is actually with them, who they are talking to. The talk is cut to the last 3 lines.
+ *   - THE AUTHOR is the NPC being talked to when they have an Agent Card, otherwise Malachar. Every option is either
+ *     GERMANE (answers the exact moment) or BAIT (a real, attemptable option the author wants taken because it is
+ *     worse than it looks; at most one). Bait never names a thing that is not there and is never impossible.
+ *   - The intent tags never reach a player: publicSuggestions() strips them. They are kept in suggestion_sets,
+ *     which is also the cache: one set per (beat, hero), so a reload or a second screen pays nothing.
+ *   - A chip that names someone who is not with the hero is dropped (dropAbsent) after the model answers.
  */
 
 interface SuggestionPayload {
@@ -40,7 +54,15 @@ interface SuggestionPayload {
   /** Named NPCs who just spoke or are on stage. */
   present?: string[]
   location?: string
+  /** The beat this set answers (the latest DM-or-NPC row) and the hero it is for: the cache key. */
+  beatKey?: string | null
+  characterId?: string | null
+  /** {action:"picked"}: the player took one of the chips (the audit of bait taken). */
+  action?: string
+  text?: string
 }
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
 const cleanName = (value: unknown): string | null =>
   typeof value === "string" ? value.replace(/[^\p{L}\s'’-]/gu, "").trim().slice(0, 60) || null : null
@@ -48,6 +70,22 @@ const cleanName = (value: unknown): string | null =>
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as SuggestionPayload
+    const characterId = typeof body.characterId === "string" && UUID.test(body.characterId) ? body.characterId : null
+    const beatKey = typeof body.beatKey === "string" ? body.beatKey.slice(0, 200) : null
+    if (body.action === "picked") {
+      if (characterId && beatKey && typeof body.text === "string") {
+        try { await createAdminClient().from("suggestion_sets").update({ picked: body.text.slice(0, 120) }).eq("beat_key", beatKey).eq("character_id", characterId) } catch { /* audit only */ }
+      }
+      return NextResponse.json({ ok: true })
+    }
+    let db: ReturnType<typeof createAdminClient> | null = null
+    try { db = createAdminClient() } catch { db = null }
+    if (db && characterId && beatKey) {
+      const { data: cached } = await db.from("suggestion_sets").select("suggestions").eq("beat_key", beatKey).eq("character_id", characterId).maybeSingle()
+      if (cached && Array.isArray(cached.suggestions) && cached.suggestions.length) {
+        return NextResponse.json({ suggestions: publicSuggestions(cached.suggestions as Suggestion[]) })
+      }
+    }
     const character = body.character
     const sceneText = (body.sceneText ?? "").trim()
     if (!character?.name || !character?.class || !sceneText) {
@@ -63,6 +101,15 @@ export async function POST(request: NextRequest) {
       ? body.present.map(cleanName).filter((name): name is string => !!name).slice(0, 8)
       : []
     if (talkingTo && !present.includes(talkingTo)) present.unshift(talkingTo)
+
+    // THE MOMENT, from the game (lib/moment.ts). Who is with the hero comes from the walk when it knows; the
+    // client's list (names in the recent talk) only fills in when the walk has no row for this hero.
+    const { moment, cards } = db ? await loadMoment(db, { characterId, talkingTo }) : { moment: null, cards: [] }
+    const here = moment && moment.plate ? moment.present : present
+    const author = moment?.author ?? { name: "Malachar" }
+    const isMalachar = author.name.toLowerCase().startsWith("malachar")
+    // The talk is cut to its last 3 lines: the moment carries the rest, and stale lines are what made old chips stale.
+    const lastLines = sceneText.split("\n").slice(-3).join("\n").slice(-900)
 
     // === FILMED MOMENTS ===
     // Some actions in a location have a cinematic shot for them. A player can
@@ -121,65 +168,40 @@ When you do use one, write it as ordinary in-character speech — never the
 shorthand, never any hint that something is filmed.`
       : ""
 
-    const prompt = `You suggest quick actions for ONE player in a D&D 5e game set in the Underdark (Out of the Abyss).
+    const motive = isMalachar
+      ? `You are Malachar, the lich who runs this world. You want these mortals dead or broken, you are bound by the rules of 5E and you never lie about the world.`
+      : `You are choosing these options as ${author.name} would lay them out, because ${author.name} is the one in front of the hero.${author.wants ? ` ${author.name} wants ${author.wants}.` : ""}${author.fears ? ` Fears ${author.fears}.` : ""}${author.turns ? ` ${author.turns}.` : ""}${author.secret ? ` What ${author.name} hides (never state it; let it shape the bait): ${author.secret}.` : ""}`
+
+    const prompt = `${motive}
+
+You write the options ONE hero sees right now in a D&D 5e game in the Underdark (Out of the Abyss). They are the hero's own actions, said as the player would say them.
 
 Return ONLY a JSON array, no prose, of 3 to 4 entries shaped:
-  {"text": "...", "skill": "..." | null, "observe": true | false}
+  {"text": "...", "skill": "..." | null, "observe": true | false, "bait": true | false}
 
-Rules:
+THE LAW OF THESE OPTIONS. Every entry is one of two things, and nothing else:
+- GERMANE ("bait": false): it answers THIS exact moment. The last thing said, to the one who said it, in the place the hero is standing, with what the hero carries. If a fight is on, it is about the fight. If a roll is waiting, it is about that roll.
+- BAIT ("bait": true): a real option the hero can truly attempt, laid on the table ON PURPOSE because ${isMalachar ? "you" : author.name} want${isMalachar ? "" : "s"} it taken and it is worse than it looks: the trusting answer to someone who should not be trusted, the shortcut that costs more, the gift that disarms them. It must still fit the moment exactly. At most ONE bait, and only when there is a reason for it here; a set with no bait is fine.
+- Filler is forbidden: an option that is neither germane to this moment nor deliberate bait does not belong.
+- Never lie about the world. Bait works by what it tempts, never by naming a person, item, door or way out that is not there. Never an option the hero cannot actually attempt.
+- Nothing in the wording may reveal which option is bait. Do not make the safe option look wise or the bait look dangerous.
 
-FIRST, AND ABOVE EVERY OTHER RULE — these are the player's real options for the
-situation in front of them. Each entry must be something this character could
-actually attempt RIGHT NOW, in the place the scene describes, with the body,
-training and possessions they actually have. A chip that cannot be acted on is
-worse than no chip: the player picks it, the DM has to refuse it, and the turn
-is wasted. If the scene gives three passages, act on THOSE passages; do not
-offer business from a room they have left.
+THE MOMENT (from the game; trust this over the talk):
+${moment ? momentBrief({ ...moment, present: here }) : `Here with the hero: ${here.join(", ") || "no one named"}.\nTalking to: ${talkingTo ?? "no one in particular"}.`}
+Never direct an option at anyone not listed above as here.
 
-- WHO IS IN THIS EXCHANGE. ${talkingTo
-      ? `${character.name} is in conversation with ${talkingTo}. The exchange below
-  is that conversation. At least two entries must engage ${talkingTo} directly —
-  answer them, press them, read them, bargain, lie, refuse, walk away — and
-  must make sense as a reply to the LAST thing ${talkingTo} said.`
-      : `Nobody is singled out; read the exchange for who, if anyone, just spoke to
-  ${character.name} and answer that.`}
-  Named people here right now: ${present.length ? present.join(", ") : "none named"}.
-  Never direct an action at someone who is not in this exchange and not in the
-  scene as written. A name from earlier in the night is not a target now; a
-  chip about a third person while ${talkingTo ?? "someone"} is waiting for an
-  answer is a wasted turn.
-- Ground each entry in THIS character. Their class, their listed skill
-  proficiencies and their carried items are what they have to work with — a
-  rogue's options are not a cleric's. Prefer actions their proficiencies
-  actually cover, and never invent an item they do not carry (if they hold only
-  rags, nothing gear-dependent).
-- Offer GENUINELY DIFFERENT things to do, not three phrasings of one idea. If
-  two entries would resolve the same way, replace one.
-- Be neutral. Some options should carry real risk, some should be safe, and
-  nothing in the wording should signal which is wise. Do not steer, do not
-  telegraph a trap, and do not make the cautious option obviously correct. A
-  bad idea the character would plausibly have is a legitimate suggestion.
-- EXACTLY ONE entry is an observation action — looking around, taking in the
-  surroundings, studying what is here — with "observe": true. Phrase it in this
-  character's voice; it need not use the words "look around". Every other entry
-  must have "observe": false.
-- "text" is a diegetic action phrased as the player would say it, 60 characters
-  or fewer. No dice notation, no rules jargon.
-- "skill" names the single most relevant 5e skill, spell or ability, or null
-  when none applies.
-- Respect active conditions. A manacled character cannot walk away; a poisoned
-  one is not at their best.
-- React to the exchange below — above all to its LAST line; do not restate it.
-${filmedBlock}
+${talkingTo ? `${character.name} is talking to ${talkingTo}. At least two options answer ${talkingTo}'s LAST line directly: answer, press, read, bargain, lie, refuse, walk away.` : "Answer whoever last spoke to the hero, if anyone did."}
 
-Exchange (oldest first; "Narration" is the DM, every other name is who said it):
-${sceneText.slice(-1600)}
-In conversation with: ${talkingTo ?? "no one in particular"}
-Location: ${body.location ?? "Unknown"}
-Character: ${character.name}, ${character.class} ${character.level ?? 1}
-Skill proficiencies: ${character.skills || "none recorded"}
-Active conditions: ${conditions.length ? conditions.join(", ") : "none"}
-Carried items: ${items.length ? items.join(", ") : "nothing but rags"}`
+The hero: ${character.name}, ${character.class} ${character.level ?? 1}. Proficient in: ${character.skills || "none recorded"}. Conditions: ${conditions.length ? conditions.join(", ") : "none"} (a manacled hero cannot walk away). Carrying: ${items.length ? items.join(", ") : "nothing but rags"} (never an item they do not carry).
+
+The last words (oldest first; "Narration" is the DM):
+${lastLines}
+
+Form:
+- Genuinely different options, not three phrasings of one idea.
+- EXACTLY ONE is an observation (looking around, studying what is here) with "observe": true, in the hero's voice; it is never bait.
+- "text" is 60 characters or fewer, no dice, no rules words. "skill" is the one most relevant 5e skill, spell or ability, or null.
+${filmedBlock}`
 
     const result = await generateText({
       model: anthropic("claude-haiku-4-5-20251001"),
@@ -190,12 +212,24 @@ Carried items: ${items.length ? items.join(", ") : "nothing but rags"}`
     // the deterministic chip is appended anyway. The look-around action is a
     // load-bearing game mechanic (it is what plays a location's cinematic), so
     // its presence is guaranteed here rather than left to the model.
-    const parsed = parseSuggestions(result.text)
+    // The law, enforced after the model: no chip about someone who is not here, at most one bait.
+    const parsed = capBait(dropAbsent(parseSuggestions(result.text), knownNames(cards, present), here))
     // An empty parse must stay empty: the client reads [] as "generation
     // failed" and falls back to the four static chips, which carry their own
     // look-around. Returning a lone observe chip here would replace that whole
     // fallback row with a single button.
-    return NextResponse.json({ suggestions: parsed.length ? ensureObserveChip(parsed) : [] })
+    if (!parsed.length) return NextResponse.json({ suggestions: [] })
+    const set = ensureObserveChip(parsed)
+    if (db && characterId && beatKey) {
+      // Kept with its intent tags for the DM (The Cast) and as the cache for this beat. Best-effort.
+      try {
+        await db.from("suggestion_sets").upsert(
+          { beat_key: beatKey, character_id: characterId, author: author.name, moment: moment ?? {}, suggestions: set },
+          { onConflict: "beat_key,character_id", ignoreDuplicates: true },
+        )
+      } catch (e) { console.error("[suggestions] keep failed:", e) }
+    }
+    return NextResponse.json({ suggestions: publicSuggestions(set) })
   } catch (error) {
     console.error("[suggestions] generation failed:", error)
     return NextResponse.json({ suggestions: [] })

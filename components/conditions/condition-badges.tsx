@@ -1,8 +1,9 @@
 import { cn } from "@/lib/utils"
-import { conditionColor, normalizeConditions } from "@/lib/conditions"
+import { conditionColor, conditionIcon, normalizeConditions } from "@/lib/conditions"
 
 // Read-only condition chips. Used on the player sheet, NPC detail views, and the
 // featured-speaker panel. Renders nothing when empty unless `emptyLabel` is set.
+// Each chip wears the condition's painted icon where the pack has one (Sam, 2026-11-23).
 export function ConditionBadges({
   conditions,
   size = "sm",
@@ -36,18 +37,26 @@ export function ConditionBadges({
         className,
       )}
     >
-      {list.map((c) => (
-        <span
-          key={c}
-          className={cn(
-            "uppercase tracking-wider rounded border border-current/30 bg-current/10",
-            size === "xs" ? "text-[9px] px-1.5 py-0.5" : "text-[10px] px-2 py-0.5",
-            conditionColor(c),
-          )}
-        >
-          {c}
-        </span>
-      ))}
+      {list.map((c) => {
+        const icon = conditionIcon(c)
+        return (
+          <span
+            key={c}
+            className={cn(
+              "inline-flex items-center gap-1 uppercase tracking-wider rounded border border-current/30 bg-current/10",
+              size === "xs" ? "text-[9px] px-1.5 py-0.5" : "text-[10px] px-2 py-0.5",
+              icon && (size === "xs" ? "pl-0.5" : "pl-1"),
+              conditionColor(c),
+            )}
+          >
+            {icon && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={icon} alt="" aria-hidden="true" className={cn("object-contain drop-shadow", size === "xs" ? "h-3.5 w-3.5" : "h-4 w-4")} />
+            )}
+            {c}
+          </span>
+        )
+      })}
     </div>
   )
 }

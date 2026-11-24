@@ -7,6 +7,7 @@ Inputs, all in this folder:
                  /*__BOSS__*/ is lib/boss-fight.mjs pasted in whole (see boss_rules): who the boss of a fight is, bloodied at half
                  (/*__KIT__*/ is filled from the BOARD's spell tables -- see build_kit_tables)
                  /*__RAGE__*/ is lib/rage.mjs pasted in whole (see rage_rules): Rage and Wounded Fury have ONE copy
+                 /*__CONDITION_RULES__*/ is lib/condition-rules.mjs pasted in whole (see condition_rules): conditions' names, art and rules
                  /*__TRAITS__*/ is lib/traits.mjs pasted in whole (see traits_rules): Halfling Luck and every roll-changing trait
                  /*__MARTIAL__*/ is lib/martial-arts-rules.mjs pasted in whole (see martial_rules): which hit spark a strike plays
                  /*__LABOR__*/ is lib/labor-walk.mjs pasted in whole (see labor_rules): Hard Labor's routes, steps and lines
@@ -173,6 +174,14 @@ def rage_rules(root):
     threshold; the tint), so there is no hand-typed copy in the page to drift. Plain JS on purpose:
     this build runs on Sam's machine, where there is no Node to compile TypeScript."""
     src = open(os.path.join(root, 'lib', 'rage.mjs'), encoding='utf-8').read()
+    return re.sub(r'^export ', '', src, flags=re.M)
+
+
+def condition_rules(root):
+    """lib/condition-rules.mjs, pasted into the page whole minus its `export` keywords -- the same pattern as
+    rage_rules. What a condition is called, which painting it wears and what it does in a fight (SRD 5.2.1) have
+    ONE copy, read by the map, the dashboard (lib/conditions.ts) and lib/condition-rules.test.ts."""
+    src = open(os.path.join(root, 'lib', 'condition-rules.mjs'), encoding='utf-8').read()
     return re.sub(r'^export ', '', src, flags=re.M)
 
 
@@ -553,7 +562,7 @@ def somatic_table(root):
             + 'const MATERIAL = ' + _j.dumps(mat, sort_keys=True, separators=(',', ':')) + ';')
 
 t = t.replace('/*__SOMATIC__*/', somatic_table(ROOT))
-t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__TRAITS__*/', traits_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
+t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__TRAITS__*/', traits_rules(ROOT)).replace('/*__CONDITION_RULES__*/', condition_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
       .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__STRIKE_CAM__*/', strike_cam_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__SURRENDER__*/', surrender_rules(ROOT)).replace('/*__CORRODE__*/', corrode_rules(ROOT)).replace('/*__COMPANIONS__*/', companions_rules(ROOT)).replace('/*__WATER__*/', water_rules(ROOT)).replace('/*__GAME_OVER__*/', game_over_rules(ROOT)).replace('/*__BUPPIDO_RISES__*/', buppido_rises_rules(ROOT)).replace('/*__BODY_REMOVAL__*/', body_removal_rules(ROOT)).replace('/*__SHAKEDOWN__*/', shakedown_rules(ROOT)).replace('/*__PEN_ESCAPE__*/', pen_escape_rules(ROOT)).replace('/*__DIRECTOR__*/', director_rules(ROOT)).replace('/*__CHAIN_MARCH__*/', chain_march_rules(ROOT)).replace('/*__WATCH_THE_MAP__*/', watch_the_map_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__QUOTA__*/', quota_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))

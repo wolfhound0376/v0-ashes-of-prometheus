@@ -1,4 +1,5 @@
 import { featNamesOn } from "./feats"
+import { normalizeConditions } from "./conditions"
 
 // ============================================================================
 // WALK SHEET — a seated character's combat sheet for the painted map, read from
@@ -60,6 +61,9 @@ export type WalkSheet = {
   prof: number
   /** the FEATS on the sheet (lib/feats.ts featNamesOn) — "Lucky" here is the feat, never Halfling Luck */
   feats: string[]
+  /** the row's conditions (characters.conditions, what Malachar's [CONDITION_ADD] writes), display names as stored.
+   *  The walk seeds a fighter with the ones it has rules for (lib/condition-rules.mjs) and shows them on the hero cards. */
+  conditions: string[]
 }
 
 export type LoreSkill = "investigation" | "arcana" | "religion" | "nature" | "history"
@@ -69,7 +73,7 @@ export type LoreTool = "alchemist" | "poisoner" | "herbalism"
 export const WALK_SHEET_COLUMNS =
   "id, name, class, level, hp_max, hp_current, xp, ac, initiative, speed, proficiency_bonus, " +
   "str_score, str_modifier, dex_modifier, con_modifier, int_modifier, wis_modifier, cha_modifier, " +
-  "sheet_species, sheet_skill_proficiencies, sheet_save_proficiencies, sheet_proficiencies, sheet_attacks, sheet_spellcasting, sheet_features"
+  "sheet_species, sheet_skill_proficiencies, sheet_save_proficiencies, sheet_proficiencies, sheet_attacks, sheet_spellcasting, sheet_features, conditions"
 
 
 type Row = Record<string, unknown>
@@ -220,5 +224,6 @@ export function walkSheetFromRow(row: Row): WalkSheet {
     magic: magicOf(row),
     prof,
     feats: featNamesOn(row.sheet_features),
+    conditions: normalizeConditions(row.conditions),
   }
 }
