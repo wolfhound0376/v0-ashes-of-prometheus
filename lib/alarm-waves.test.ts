@@ -81,3 +81,57 @@ describe("OUT OVER THE FALLS (Sam, 2026-11-23: \"We got out. Timer is off and no
     expect(p.state.alarm?.off).toBeUndefined()
   })
 })
+
+describe("THE ALARM HOLDS IN A FIGHT (Sam, 2026-11-23: \"The alarm timer looked like it was still counting down while we were in combat\")", () => {
+  it("tonight's 49-second wave-1 fight: the banner holds through a round, steps 6 s a round, and the next wave waits", async () => {
+    const t0 = 1_000_000
+    const { p, alarmTick } = page({ cur: "10c", now: t0 + 2 * MIN })
+    p.state.alarm = horn(t0)
+    await alarmTick()                                                    // wave 1 walks in and opens a fight
+    expect(p.waves.map((w) => w.why)).toEqual(["The alarm: wave 1 of 3"])
+    p.mode = "combat"; p.cbt = { id: "f1", round: 1 }
+    const seen: Record<number, string> = {}
+    for (let s = 1; s <= 49; s++) {
+      p.now += 1000
+      if (s === 20) p.cbt.round = 2
+      if (s === 40) p.cbt.round = 3
+      await alarmTick()
+      seen[s] = p.banner.textContent
+    }
+    expect(seen[5]).toBe(seen[19])                                       // round 1: the clock holds
+    expect(seen[19]).toContain("wave 2 of 3 in 1:59")
+    expect(seen[20]).toContain("in 1:53")                                // round 2 opens: 6 s
+    expect(seen[49]).toContain("in 1:47")                                // round 3: 12 s of rounds (+1 s before the fight)
+    p.mode = "explore"; p.cbt = null; p.now += 1000
+    await alarmTick()                                                    // the fight is over: 49 s real, 3 rounds = 18 s
+    expect(p.state.alarm?.held).toBe(49_000 - 18_000)
+    p.now = t0 + 4 * MIN + 30_000
+    await alarmTick()
+    expect(p.waves.length).toBe(1)                                       // on the wall clock wave 2 was due 30 s ago
+    p.now = t0 + 4 * MIN + 32_000
+    await alarmTick()
+    expect(p.waves.map((w) => w.why)).toEqual(["The alarm: wave 1 of 3", "The alarm: wave 2 of 3"])
+  })
+  it("out of a fight the alarm keeps the wall clock, as before", async () => {
+    const t0 = 1_000_000
+    const { p, alarmTick } = page({ cur: "10", now: t0 + 2 * MIN - 1000 })
+    p.state.alarm = horn(t0)
+    await alarmTick()
+    expect(p.waves).toEqual([])
+    expect(p.banner.textContent).toContain("wave 1 of 3 in 0:01")
+    p.now += 1000
+    await alarmTick()
+    expect(p.waves.length).toBe(1)
+    expect(p.state.alarm?.held).toBeUndefined()
+  })
+  it("a screen showing someone else's fight holds its banner but writes nothing", async () => {
+    const t0 = 1_000_000
+    const { p, alarmTick } = page({ cur: "10", now: t0 + 30_000, mode: "combat" })
+    p.state.alarm = horn(t0)
+    p.cbt = { id: "theirs", round: 1, mirror: true }
+    for (let s = 0; s < 30; s++) { p.now += 1000; await alarmTick() }
+    p.mode = "explore"; p.cbt = null; p.now += 1000
+    await alarmTick()
+    expect(p.state.alarm?.held).toBeUndefined()
+  })
+})
