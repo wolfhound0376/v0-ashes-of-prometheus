@@ -22326,8 +22326,9 @@ function tickGateWatch(){
   // Jorlan first, and Malachar decides what follows. Once per approach: a hero who is still at the bars when the talk is
   // over (or who comes back inside the window) gets the guards' warning and then the volleys, as without him.
   const jNear = j && Math.hypot(j.x - g.x, j.y - g.y) < GATE_WATCH.jorlanNear * sc;
-  if (h && d >= GATE_WATCH.near * sc * 1.3) h.jorlanSpoke = 0;          // walked well away: the next approach is a new one
-  if (jNear && h && d < GATE_WATCH.near * sc && !h.jorlanSpoke){ h.jorlanSpoke = now; jorlanAtBars(j, h, guards); return; }
+  if (h) jorlanSpokeLoad(h);                                            // JORLAN REMEMBERS ACROSS A RELOAD (below)
+  if (h && d >= GATE_WATCH.near * sc * 1.3 && h.jorlanSpoke) jorlanSpokeSet(h, 0);   // walked well away: the next approach is a new one
+  if (jNear && h && d < GATE_WATCH.near * sc && !h.jorlanSpoke){ jorlanSpokeSet(h, now); jorlanAtBars(j, h, guards); return; }
   if (jNear && h && h.jorlanSpoke && now - h.jorlanSpoke < GATE_WATCH.again){ gateWarn = null; return; }   // he is still dealing with them
   if (!guards.length){ gateWarn = null; return; }
   gateScan(guards, g, h, d, sc);
@@ -22551,6 +22552,28 @@ function gateDecide(guards, g, h){
   gateWarn = w ? {...w, who: h.id} : null;
   if (act === "warn") gateWarning(guards, g, h);
   else if (act === "shoot") gateGuardsShoot(guards, h);
+}
+// JORLAN REMEMBERS ACROSS A RELOAD (Sam, 2026-11-23, after the Jorlan night of 2026-11-20: Kenta's screen reached
+// the Parley three times in a minute). "Jorlan has already spoken to this hero at the bars" used to live only on the
+// hero object in this page. Going to the Parley and back loads this page fresh, so a hero still standing at the bars
+// was a brand-new approach every time and Jorlan turned and opened again (walk_log: Kenta 01:50:56, 01:51:50,
+// 01:53:03; Fifi 01:50:39). Now the moment is kept in this tab's sessionStorage, in wall-clock time (`now` restarts
+// at every load), and read back the first time the gate sees the hero. Walking well away still clears it, exactly as
+// before; a hero who comes back to the bars after the talk gets the guards' warning, as the rule above always said.
+// Kept JSPOKE_KEEP at most (house number, not Sam's): an old tab must not keep Jorlan quiet the next night.
+const JSPOKE_KEEP = 30 * 60 * 1000;
+const jspokeKey = id => "aop:jorlanSpoke:" + id;
+function jorlanSpokeLoad(h){
+  if (h.jorlanSpoke !== undefined) return;
+  h.jorlanSpoke = 0;
+  try {
+    const t = Number(sessionStorage.getItem(jspokeKey(h.id)));
+    if (t > 0 && Date.now() - t < JSPOKE_KEEP) h.jorlanSpoke = (now - (Date.now() - t)) || -1;   // never 0: 0 means "not spoken"
+  } catch (e) {}
+}
+function jorlanSpokeSet(h, at){
+  h.jorlanSpoke = at;
+  try { if (at) sessionStorage.setItem(jspokeKey(h.id), String(Date.now())); else sessionStorage.removeItem(jspokeKey(h.id)); } catch (e) {}
 }
 function jorlanAtBars(j, h, guards){
   // ONE SPEAKER PER CONVERSATION: he is already talking to another hero at the bars. He does not turn and open a second

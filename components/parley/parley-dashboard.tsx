@@ -1063,6 +1063,8 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
   const runSeenRef = useRef<string | null>(null)
   // The last "come and watch this" cue this screen followed, so one cue pulls it once.
   const pullSeenRef = useRef<string | null>(null)
+  // True until this page's first sync poll has been read (A CUE FROM BEFORE THIS PAGE, below).
+  const pullFirstPollRef = useRef(true)
   // Who this screen is, read at the moment a cue arrives rather than when the poll was set up: the poll runs for the
   // life of the page and the hero on it can change under it.
   const whoAmIRef = useRef<{ dm: boolean; hero: string | null }>({ dm: false, hero: null })
@@ -1089,6 +1091,18 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
         // The map raises a cue in the shared state when a sequence starts; who follows it, and for how long it
         // stays live, are lib/watch-the-map.mjs — the same copy the map reads.
         const pull = (j.world?.state as { pull?: Parameters<typeof shouldFollowPull>[0] } | undefined)?.pull ?? null
+        // A CUE FROM BEFORE THIS PAGE (2026-11-20, the Jorlan night): pullSeenRef starts empty on every load, so a
+        // Parley opened straight from the map obeyed a cue that hero had just been standing in. Kenta's opened 29 s
+        // after "The watch changes" had pulled the table (cues stay live 45 s), bounced back to the map, and Jorlan
+        // opened on him again. A screen that arrives FROM the map has already answered whatever cue is standing:
+        // on its first poll that cue counts as seen. A screen arriving from anywhere else still follows it.
+        if (pullFirstPollRef.current) {
+          pullFirstPollRef.current = false
+          const seq = (pull as { seq?: string } | null)?.seq
+          let fromMap = false
+          try { fromMap = !!document.referrer && new URL(document.referrer).origin === window.location.origin && new URL(document.referrer).pathname.startsWith("/velkynvelve") } catch { /* no referrer */ }
+          if (fromMap && typeof seq === "string" && seq) pullSeenRef.current = seq
+        }
         if (shouldFollowPull(pull, { seen: pullSeenRef.current, dm: whoAmIRef.current.dm, hero: whoAmIRef.current.hero, now })) {
           pullSeenRef.current = (pull as { seq?: string } | null)?.seq ?? null
           if (oneRef.current) {
