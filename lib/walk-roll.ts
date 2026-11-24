@@ -135,6 +135,11 @@ const BOOK_ACTIONS = {
   // THE SIGIL BY THE THRESHOLD'S DOORWAY (first built on the west wall; Sam, 2026-11-24: "Sigil at the door please") (Sam, 2026-11-24: "A successful investigation check will identify a sigil. A
   // successful arcana check will activate it, opening a hidden room to the necromancers laboratory"; "Difficulty
   // medium" -> DC 15, SRD 5.2.1 Typical DCs). Homebrew: the book gives the Ruins no rooms.
+  // THE CHASM JUMP on the Gloomwastes (Sam, 2026-11-24: Athletics, "medium" -> DC 15; a rope in the jumper's pack gives
+  // advantage and +1). The dice panel rolls the sheet's own Athletics and takes no flat bonus, so the rope's +1 is the
+  // same roll against a DC one lower: "gorge:jump-rope" is DC 14, sent with advantage. Homebrew.
+  "gorge:jump": { title: "Jump the chasm", label: "Jumping the chasm on the Gloomwastes", check: ATHLETICS, dc: 15, source: "Sam's mechanic and difficulty (medium), 2026-11-24", mapNarrates: true },
+  "gorge:jump-rope": { title: "Jump the chasm, roped", label: "Jumping the chasm on the Gloomwastes with a rope tied off", check: ATHLETICS, dc: 14, source: "Sam, 2026-11-24: a rope gives advantage and +1 (DC 15 less the +1)", mapNarrates: true },
   "sigil:find": { title: "Search the wall", label: "Searching the wall by the violet doorway", check: INVESTIGATION, dc: 15, source: "Sam's mechanic and difficulty (medium), 2026-11-24" },
   "sigil:wake": { title: "Wake the sigil", label: "Working out the sigil on the wall and waking it", check: ARCANA, dc: 15, source: "Sam's mechanic and difficulty (medium), 2026-11-24" },
   "thessaly:persuade": { title: "Talk him round", label: "Talking Old Thessaly into giving up his keelboat", check: PERSUASION, dc: 15, source: "house DC (Sam's way 2; DC Claude's)" },
