@@ -170,6 +170,9 @@ export interface SheetSlice {
   sheet_skill_proficiencies?: Record<string, string> | null
   /** Bard 2+: half proficiency on non-proficient checks. Off by default. */
   jack_of_all_trades?: boolean
+  /** Flat bonuses to named skills from what the hero is wearing ({ stealth: 1 }), set by lib/worn-bonus.ts
+   *  withWornGear on a dressed row. Ability bonuses from gear are already in the scores above. */
+  worn_skill_bonus?: Record<string, number> | null
 }
 
 export function scoreFor(sheet: SheetSlice, ability: Ability): number {
@@ -191,16 +194,27 @@ export function skillProficiency(sheet: SheetSlice, skill: Skill): ProficiencyLe
   return "none"
 }
 
+/** What the hero's worn gear adds to this skill. Read off the row itself (no import: this file has none). The one
+ *  homebrew number this file can meet, and it is data on the row, never a rule written here. */
+function wornSkillBonus(sheet: SheetSlice, skill: Skill): number {
+  const v = sheet.worn_skill_bonus?.[skill]
+  return typeof v === "number" && Number.isFinite(v) ? v : 0
+}
+
 /** SRD 5.1, Using Ability Scores: Proficiency Bonus — applied once, doubled by Expertise. */
-export function skillBonus(sheet: SheetSlice, skill: Skill): { mod: number; prof: number; level: ProficiencyLevel } {
-  const mod = abilityMod(scoreFor(sheet, skillAbility(skill)))
+export function skillBonus(sheet: SheetSlice, skill: Skill): { mod: number; prof: number; level: ProficiencyLevel; gear: number } {
+  // WORN GEAR (Sam, 2026-11-24: the Traveler's Cloak's +1 Stealth). A flat bonus to this very skill from what the
+  // hero wears is part of `mod`, so every caller that adds mod + prof already has it; `gear` says how much of `mod`
+  // it is, for a line that shows the working. Zero on a row nobody dressed.
+  const gear = wornSkillBonus(sheet, skill)
+  const mod = abilityMod(scoreFor(sheet, skillAbility(skill))) + gear
   const level = skillProficiency(sheet, skill)
   const pb = proficiency(sheet)
   let prof = 0
   if (level === "expertise") prof = pb * 2
   else if (level === "proficient") prof = pb
   else if (sheet.jack_of_all_trades) prof = Math.floor(pb / 2)
-  return { mod, prof, level }
+  return { mod, prof, level, gear }
 }
 
 // ---------------------------------------------------------------------------
@@ -253,13 +267,14 @@ export function resolveSkillCheck(
 ): CheckResult {
   const mode = resolveRollMode(opts.advantage ?? 0, opts.disadvantage ?? 0)
   const { roll, rolls } = rollD20(rng, mode)
-  const { mod, prof, level } = skillBonus(sheet, skill)
+  const { mod, prof, level, gear } = skillBonus(sheet, skill)
   const total = roll + mod + prof
   const ability = skillAbility(skill)
   const profLabel = level === "none" ? (prof ? `jack(+${prof})` : "") : `${level}(+${prof})`
   const arithmetic =
     `d20(${roll}${mode !== "flat" ? `, ${mode} of ${rolls.join("/")}` : ""})` +
-    ` + ${ability.toUpperCase()}(${signed(mod)})` +
+    ` + ${ability.toUpperCase()}(${signed(mod - gear)})` +
+    (gear ? ` + worn gear(${signed(gear)})` : "") +
     (profLabel ? ` + ${profLabel}` : "") +
     ` = ${total} vs DC ${dc}`
   return { actor: sheet.name, skill, ability, dc, mode, rolls, roll, mod, prof, proficiency: level, total, success: total >= dc, arithmetic }

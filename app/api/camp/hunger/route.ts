@@ -4,6 +4,7 @@ import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { COMPANION_ROWS, campName, campRoster, type WorldLike } from "@/lib/camp-roster"
 import { buppidoInTheDark, d, fistFight, hungerEvent, type Brawler, type HungerEvent } from "@/lib/camp-hunger"
 import { skillBonus, type SheetSlice } from "@/lib/game-context"
+import { dressRow } from "@/lib/worn-gear-rows"
 
 // /api/camp/hunger — what a hungry night does to the company (lib/camp-hunger.ts has Sam's rule and the sources).
 //
@@ -50,7 +51,7 @@ function rowIdOf(slug: string, w: WorldLike | null): string | null {
 async function rowOf(db: Db, id: string | null): Promise<Row | null> {
   if (!id) return null
   const { data } = await db.from("characters").select(COLS).eq("id", id).maybeSingle()
-  return (data as Row | null) ?? null
+  return dressRow(db, (data as Row | null) ?? null)   // with their gear on (lib/worn-bonus.ts)
 }
 
 async function grudge(db: Db, a: string | null, b: string | null, reason: string) {

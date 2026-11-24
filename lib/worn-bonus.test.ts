@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { withWornGear, wornBonuses, wornSkillBonus } from "./worn-bonus"
 import { calculateAC } from "./armor-class"
 import { walkSheetFromRow } from "./walk-sheet"
+import { resolveSkillCheck, skillBonus, type SheetSlice } from "./game-context"
 
 // Fifi of Waterdeep as the live row stood on 2026-11-24: Dexterity 17 (+3), a rogue with Stealth expertise.
 const fifi = {
@@ -90,5 +91,26 @@ describe("what the rest of the game then sees", () => {
     expect(worn.skills.stealth).toBe(base.skills.stealth + 1)
     expect(worn.skills.sleightOfHand).toBe(base.skills.sleightOfHand)
     expect(worn.saves.dex).toBe(base.saves.dex)
+  })
+})
+
+describe("camp, travel and Malachar's checks (lib/game-context.ts)", () => {
+  const slice = (row: object) => row as unknown as SheetSlice
+  it("a row nobody dressed is exactly as before", () => {
+    expect(skillBonus(slice(fifi), "stealth")).toEqual({ mod: 3, prof: 4, level: "expertise", gear: 0 })
+  })
+  it("the Dexterity cloak lifts every Dexterity skill through the score", () => {
+    const worn = slice(withWornGear(fifi, [dexCloak]))
+    expect(skillBonus(worn, "stealth")).toEqual({ mod: 4, prof: 4, level: "expertise", gear: 0 })
+    expect(skillBonus(worn, "acrobatics").mod).toBe(4)
+    expect(skillBonus(worn, "athletics").mod).toBe(-1)
+  })
+  it("the Stealth cloak lifts Stealth only, and the working names it", () => {
+    const worn = slice(withWornGear(fifi, [stealthCloak]))
+    expect(skillBonus(worn, "stealth")).toEqual({ mod: 4, prof: 4, level: "expertise", gear: 1 })
+    expect(skillBonus(worn, "sleight_of_hand")).toEqual({ mod: 3, prof: 4, level: "expertise", gear: 0 })
+    const check = resolveSkillCheck(worn, "stealth", 15, () => 0.5)
+    expect(check.total).toBe(check.roll + 8)
+    expect(check.arithmetic).toContain("DEX(+3) + worn gear(+1) + expertise(+4)")
   })
 })
