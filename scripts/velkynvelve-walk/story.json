@@ -2030,6 +2030,14 @@
   "crystal": {
     "loot": [
       {
+        "id": "crystal-cluster",
+        "name": "The great crystal cluster",
+        "_src": "Sam, on the Act One board, 2026-11-24: 'This area needs some rare crystal you can harvest and upon a successful check of the area, you will find a magic sword in the crystals, triggering a cinematic.' Then: 'Pulling it out releases this creature' (the Crystalline Aberration, EmberDM stat block he supplied), the sword is the Crystal Blade, a longsword, and the fight 'happens on the crystal passage plate'. He said yes to: harvest a medium check with three tries, the search Investigation at medium. Which cluster, and where the creature stands, are Claude's.",
+        "poly": [[1350, 340], [1570, 340], [1570, 550], [1350, 550]],
+        "text": "A cluster of rose crystal as tall as a dwarf, lit from somewhere inside. The floor around it is clean, as if nothing that lives here comes close.",
+        "crystal": {"attempts": 3, "harvest": "crystal:harvest", "search": "crystal:search", "vein": "crystal-vein", "blade": "crystal-blade-cluster", "film": "crystal-blade-reveal", "foe": "crystalline-aberration", "at": [1460, 600]}
+      },
+      {
         "id": "thessaly-amulet",
         "name": "A red glint among the crystals",
         "hidden": true,

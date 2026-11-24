@@ -90,6 +90,18 @@ export const BOOK_CONTAINERS: Record<string, BookContainer> = {
       { slug: "spell-scroll-vampiric-touch", qty: 1, pick: "scroll", note: "d4: 4" },
     ],
   },
+  // THE CRYSTAL PASSAGE (Sam, 2026-11-24). The cut crystal comes off the cluster on a made harvest check; the blade is
+  // there once it has been pulled free (template.html THE CRYSTAL PASSAGE). Both items are rows Sam approved that day.
+  "crystal-vein": {
+    node: "crystal", title: "The cut crystal",
+    source: "Sam's ruling, 2026-11-24: \"This area needs some rare crystal you can harvest\". The item (raw-crystal) he approved; the quantity is CLAUDE'S PICK.",
+    entries: [{ slug: "raw-crystal", qty: 2, note: "quantity is Claude's" }],
+  },
+  "crystal-blade-cluster": {
+    node: "crystal", title: "The blade in the crystal",
+    source: "Sam's ruling, 2026-11-24: \"you will find a magic sword in the crystals\"; the sword is the Crystal Blade (Fizban's), a longsword.",
+    entries: [{ slug: "crystal-blade", qty: 1, note: "Sam's item" }],
+  },
   "necro-lab-bench": {
     node: "ruins-necro-lab", title: "The workbench",
     source: "Sam's ruling, 2026-11-24: \"a couple of items like ingredients, poisons\". WHICH ones is CLAUDE'S PICK (two poisons, two ingredients, and the chalk for the sigil).",
