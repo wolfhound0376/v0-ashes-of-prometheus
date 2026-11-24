@@ -553,6 +553,19 @@ RUINS_PLATES = {
    obstacles=[dict(cx=950,cy=640,rx=185,ry=92),dict(cx=1595,cy=670,rx=172,ry=90),dict(cx=1340,cy=620,rx=55,ry=32),dict(cx=1210,cy=950,rx=100,ry=50),
               dict(cx=640,cy=1210,rx=270,ry=125),dict(cx=1790,cy=1185,rx=200,ry=128),dict(cx=1460,cy=1120,rx=140,ry=58),dict(cx=790,cy=590,rx=24,ry=20),dict(cx=1690,cy=590,rx=24,ry=20)],
    zones=[dict(rect=[520, 840, 600, 985], to=["ruins-great-hall"], label="The door: back to the Great Hall")]),
+ # THE NECROMANCER'S LABORATORY (Sam, 2026-11-24, on the Act One board: "A successful investigation check will identify a
+ # sigil. A successful arcana check will activate it, opening a hidden room to the necromancers laboratory ... Interacting
+ # with activated sigil teleports your party to that room." -> "The sigil plate in in the Ruins: the threshold on the
+ # west wall" -> "Way back is through another sigil on the interior."). A room with NO doors: the only way in or out is
+ # the sigil (story.json `sigil` loot spots; template.html THE SIGIL). Painting: Runway task e2851fdf (take 2 of 2, the
+ # one with no doorway), styled from ruins-reliquary.jpg, 2752x1536 Lanczos -> 2400x1339. Floor and obstacles traced by
+ # Claude by eye and walk-checked; NOT yet Sam's brush.
+ "ruins-necro-lab": dict(slug="ruins-necro-lab", arrive=[1210, 1190], name="The Ruins: the necromancer's laboratory", scale=1.0, img="ruins-necro-lab.jpg",
+   # the flagstones between the shelves, the workbench (left) and the staff wall (right), down to the bottom edge
+   floors=[dict(poly=P((770,615),(1740,615),(1880,740),(2110,930),(2380,1180),(2400,1339),(330,1339),(500,1200),(700,820)))],
+   # the lectern's foot, the skull and candle by the east wall
+   obstacles=[dict(cx=1200,cy=640,rx=80,ry=40),dict(cx=1850,cy=730,rx=70,ry=40)],
+   zones=[]),
 }
 NODES.update(RUINS_PLATES)
 

@@ -66,3 +66,20 @@ describe("a dead guard's pockets (Sam, 2026-11-23)", () => {
     expect(noneBreak.pocket).toEqual(pocket); expect(noneBreak.ruined).toEqual([])
   })
 })
+
+describe("one find out of several (pick)", () => {
+  it("the laboratory's shelves hold exactly one of the four necromancy scrolls, the same one every look", () => {
+    const entries = BOOK_CONTAINERS["necro-lab-shelves"].entries
+    expect(entries.filter((e) => e.pick === "scroll")).toHaveLength(4)
+    for (let face = 0; face < 4; face++) {
+      const rolls: Record<string, number> = {}
+      const first = settleRolls(entries, rolls, () => (face + 0.5) / 4)
+      expect(first.rolled).toBe(true)
+      expect(first.entries).toHaveLength(1)
+      expect(first.entries[0].slug).toBe(entries[face].slug)
+      const again = settleRolls(entries, rolls, () => 0.99)
+      expect(again.rolled).toBe(false)
+      expect(again.entries[0].slug).toBe(entries[face].slug)
+    }
+  })
+})
