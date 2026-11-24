@@ -24,6 +24,10 @@ export interface Moment {
   roll: { skill: string | null; purpose: string | null } | null
   /** Named companions on the same plate as the hero. */
   present: string[]
+  /** The same people as keys (company slugs and the talk partner's card key), for option banks' "with" rule. */
+  presentKeys: string[]
+  /** The author's card key ("malachar", "buppido"). */
+  authorKey: string
   /** Who the hero is talking to, if anyone. */
   talkingTo: string | null
   /** Whose options these are: the NPC being talked to when they have a card, otherwise Malachar. */
@@ -36,7 +40,7 @@ export interface WalkRow {
   heroes?: Record<string, { cid?: string | null; plate?: string | null } | undefined> | null
 }
 
-export interface CardLite { key: string; name: string; aliases?: string[]; sprite_slug?: string | null; agenda?: Record<string, unknown> | null }
+export interface CardLite { key: string; name: string; aliases?: string[]; sprite_slug?: string | null; agenda?: Record<string, unknown> | null; option_bank?: unknown }
 
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : "")
 
@@ -101,21 +105,28 @@ export function buildMoment(input: {
   const at = (state.companyAt ?? {}) as Record<string, unknown>
   const company = Array.isArray(state.company) ? (state.company as unknown[]).map(String) : []
   const present: string[] = []
+  const presentKeys: string[] = []
   for (const slug of company) {
     const where = str(at[slug])
     if (plate && where && where !== plate) continue
     const n = nameForSlug(slug, cards)
     if (!present.includes(n)) present.push(n)
+    const card = cards.find((c) => c.key === slug.toLowerCase() || (c.sprite_slug ?? "").toLowerCase() === slug.toLowerCase())
+    const k = card ? card.key : slug.toLowerCase()
+    if (!presentKeys.includes(k)) presentKeys.push(k)
   }
 
   const talkingTo = str(input.talkingTo) || null
   const partner = cardForName(cards, talkingTo)
   if (partner && !present.includes(partner.name) && talkingTo) present.unshift(partner.name)
+  if (partner && !presentKeys.includes(partner.key)) presentKeys.unshift(partner.key)
   const mal = cards.find((c) => c.key === "malachar")
-  const author = partner && partner.key !== "malachar" ? agendaOf(partner) : mal ? agendaOf(mal) : { name: "Malachar" }
+  const byPartner = !!partner && partner.key !== "malachar"
+  const author = byPartner ? agendaOf(partner!) : mal ? agendaOf(mal) : { name: "Malachar" }
+  const authorKey = byPartner ? partner!.key : "malachar"
 
   const roll = input.roll ? { skill: str(input.roll.skill) || null, purpose: str(input.roll.purpose) || null } : null
-  return { plate, fight, roll, present, talkingTo, author }
+  return { plate, fight, roll, present, presentKeys, talkingTo, author, authorKey }
 }
 
 /** The moment as the option writer reads it: short, exact, nothing it does not need. */

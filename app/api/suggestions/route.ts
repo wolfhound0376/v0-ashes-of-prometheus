@@ -5,6 +5,7 @@ import { capBait, dropAbsent, ensureObserveChip, parseSuggestions, publicSuggest
 import { createAdminClient } from "@/lib/supabase/admin"
 import { loadMoment } from "@/lib/moment-store"
 import { knownNames, momentBrief } from "@/lib/moment"
+import { bankMayAnswer, bankSet, parseBank } from "@/lib/option-bank"
 
 // Same direct-Anthropic provider as /api/chat — bypasses the Vercel AI Gateway.
 const anthropic = createAnthropic({
@@ -37,6 +38,9 @@ const anthropic = createAnthropic({
  *   - The intent tags never reach a player: publicSuggestions() strips them. They are kept in suggestion_sets,
  *     which is also the cache: one set per (beat, hero), so a reload or a second screen pays nothing.
  *   - A chip that names someone who is not with the hero is dropped (dropAbsent) after the model answers.
+ *   - FILES FIRST (PR 2): the author's option bank (npc_agents.option_bank, lib/option-bank.ts) answers routine
+ *     beats with no model call; the model is called only when a player has just spoken or the bank is too thin.
+ *     suggestion_sets.source says which ("bank" or "model"), so the saving shows on The Cast.
  */
 
 interface SuggestionPayload {
@@ -110,6 +114,32 @@ export async function POST(request: NextRequest) {
     const isMalachar = author.name.toLowerCase().startsWith("malachar")
     // The talk is cut to its last 3 lines: the moment carries the rest, and stale lines are what made old chips stale.
     const lastLines = sceneText.split("\n").slice(-3).join("\n").slice(-900)
+
+    // FILES FIRST (lib/option-bank.ts; Sam, 2026-11-23: "agentic AI intelligence for things that are required,
+    // otherwise from informational files to save tokens"). The author's option bank answers the beat with no model
+    // call when the beat is routine (no player line just answered) and the bank has enough options for THIS moment.
+    const keep = async (set: Suggestion[], source: "bank" | "model") => {
+      if (!(db && characterId && beatKey)) return
+      // Kept with its intent tags for the DM (The Cast) and as the cache for this beat. Best-effort.
+      try {
+        await db.from("suggestion_sets").upsert(
+          { beat_key: beatKey, character_id: characterId, author: author.name, moment: moment ?? {}, suggestions: set, source },
+          { onConflict: "beat_key,character_id", ignoreDuplicates: true },
+        )
+      } catch (e) { console.error("[suggestions] keep failed:", e) }
+    }
+    if (moment) {
+      const card = cards.find((c) => c.key === moment.authorKey)
+      const bank = parseBank(card?.option_bank)
+      if (bank.length && bankMayAnswer(sceneText, knownNames(cards))) {
+        const fromBank = bankSet(bank, { ...moment, present: here }, { items, conditions }, moment.presentKeys, beatKey ?? sceneText)
+        const lawful = fromBank ? dropAbsent(fromBank, knownNames(cards, present), here) : null
+        if (lawful && lawful.filter((x) => x.kind !== "observe").length >= 2) {
+          await keep(lawful, "bank")
+          return NextResponse.json({ suggestions: publicSuggestions(lawful) })
+        }
+      }
+    }
 
     // === FILMED MOMENTS ===
     // Some actions in a location have a cinematic shot for them. A player can
@@ -220,15 +250,7 @@ ${filmedBlock}`
     // fallback row with a single button.
     if (!parsed.length) return NextResponse.json({ suggestions: [] })
     const set = ensureObserveChip(parsed)
-    if (db && characterId && beatKey) {
-      // Kept with its intent tags for the DM (The Cast) and as the cache for this beat. Best-effort.
-      try {
-        await db.from("suggestion_sets").upsert(
-          { beat_key: beatKey, character_id: characterId, author: author.name, moment: moment ?? {}, suggestions: set },
-          { onConflict: "beat_key,character_id", ignoreDuplicates: true },
-        )
-      } catch (e) { console.error("[suggestions] keep failed:", e) }
-    }
+    await keep(set, "model")
     return NextResponse.json({ suggestions: publicSuggestions(set) })
   } catch (error) {
     console.error("[suggestions] generation failed:", error)

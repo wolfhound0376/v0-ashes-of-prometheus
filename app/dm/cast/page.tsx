@@ -206,6 +206,16 @@ function ActorTab({ pkg, onSaved }: { pkg: Json; onSaved: () => void }) {
   const add = async () => { if (note.trim().length < 3) return; await api("/api/cast", { method: "POST", body: JSON.stringify({ action: "coach", agent: c.key, note, scope }) }); setNote(""); onSaved() }
   const toggle = async (id: string, active: boolean) => { await api("/api/cast", { method: "POST", body: JSON.stringify({ action: "coach-toggle", id, active }) }); onSaved() }
   const saveChat = async (v: number) => { setChat(v); await api("/api/cast", { method: "PATCH", body: JSON.stringify({ agent: c.key, chattiness: v }) }) }
+  // THE OPTION BANK (lib/option-bank.ts): options already written, tried before any model call.
+  const [bank, setBank] = useState(JSON.stringify(c.option_bank ?? [], null, 1))
+  const [bankMsg, setBankMsg] = useState("")
+  useEffect(() => setBank(JSON.stringify(c.option_bank ?? [], null, 1)), [c])
+  const saveBank = async () => {
+    let parsed: unknown
+    try { parsed = JSON.parse(bank) } catch { setBankMsg("That is not valid JSON: nothing saved."); return }
+    if (!Array.isArray(parsed)) { setBankMsg("The bank is a list [ … ]: nothing saved."); return }
+    try { await api("/api/cast", { method: "PATCH", body: JSON.stringify({ agent: c.key, option_bank: parsed }) }); setBankMsg("Saved. The next routine beat draws from it."); onSaved() } catch (e) { setBankMsg(String((e as Error).message)) }
+  }
   return (
     <div className="grid max-w-5xl gap-4 lg:grid-cols-[2fr_1fr]">
       <div className={panel}>
@@ -236,7 +246,7 @@ function ActorTab({ pkg, onSaved }: { pkg: Json; onSaved: () => void }) {
           {(pkg.options ?? []).length === 0 ? <li className="text-[12px] text-stone-500">None yet. They gather as players are offered options.</li> : null}
           {(pkg.options ?? []).map((o: Json, i: number) => (
             <li key={i} className="rounded-sm border border-[#3d3428] px-2 py-1.5">
-              <div className="mb-1 text-[10px] uppercase tracking-wider text-stone-500">{new Date(o.created_at).toLocaleString()} · {o.moment?.plate ?? "somewhere"}{o.moment?.talkingTo ? ` · with ${o.moment.talkingTo}` : ""}{o.moment?.fight ? " · in a fight" : ""}</div>
+              <div className="mb-1 text-[10px] uppercase tracking-wider text-stone-500">{new Date(o.created_at).toLocaleString()} · <span className={o.source === "bank" ? "text-[#9fe6a8]" : ""}>{o.source === "bank" ? "from the bank (no model)" : "written by the model"}</span> · {o.moment?.plate ?? "somewhere"}{o.moment?.talkingTo ? ` · with ${o.moment.talkingTo}` : ""}{o.moment?.fight ? " · in a fight" : ""}</div>
               <ul className="space-y-0.5">
                 {(o.suggestions ?? []).map((sg: Json, j: number) => (
                   <li key={j} className="flex items-center gap-2 text-sm">
@@ -249,6 +259,14 @@ function ActorTab({ pkg, onSaved }: { pkg: Json; onSaved: () => void }) {
             </li>
           ))}
         </ul>
+      </div>
+      <div className={`${panel} lg:col-span-2 lg:row-start-3`}>
+        <span className={label}>{c.name.split(" ")[0]}&apos;s option bank (answers routine beats with no model call)</span>
+        <p className="mb-2 text-[12px] text-stone-400">
+          Each entry: <code>text</code> (60 characters), <code>skill</code>, <code>bait: true</code> or <code>observe: true</code>, and <code>when</code>: <code>plates</code> (e.g. &quot;11&quot; the pen), <code>fight</code>, <code>talking</code> (talking to {c.name.split(" ")[0]}), <code>with</code> (who must be there). Optional <code>needs</code> (an item word) and <code>notIf</code> (conditions). The model is still used when a player has just spoken, or when fewer than two entries fit.
+        </p>
+        <textarea value={bank} onChange={(e) => setBank(e.target.value)} rows={10} spellCheck={false} className={`${input} font-mono text-[12px]`} />
+        <div className="mt-2 flex items-center gap-3"><button onClick={saveBank} className={btn}>Save the bank</button><span className="text-[12px] text-stone-400">{bankMsg}</span></div>
       </div>
       <div className={`${panel} lg:row-start-1 lg:col-start-2`}>
         <span className={label}>Chattiness</span>
