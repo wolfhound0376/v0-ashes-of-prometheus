@@ -1146,7 +1146,32 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 .turncall .twhat b{color:#ff9b8f;font-weight:600}
 .turncall .twhat i{font-style:normal;color:#ffd27a;margin:0 6px}
 .turncall.foe .tname{color:#ffb0a0}
-@media (prefers-reduced-motion:reduce){.turn,.turncall{transition:none}}
+/* DEATH SAVES ON THE TURN CARD (turnSaves): three hearts, the d20, three skulls, each mark in a bronze medallion */
+.turncall.dying{border-color:#7d1f1a;box-shadow:0 3px 0 #000,0 8px 18px rgba(0,0,0,.55),0 0 18px rgba(170,30,24,.45)}
+.turncall.dying .tface{filter:grayscale(1) brightness(.75) contrast(1.1)}
+.turncall .tsaves{display:flex;align-items:center;gap:8px;margin-left:4px}
+.turncall .tsaves[hidden]{display:none}
+.turncall .dsrow{display:flex;gap:4px}
+.turncall .ds{position:relative;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 50% 38%,#2a1a14,#0b0605 72%);box-shadow:inset 0 0 0 1.5px #6b4a22,inset 0 0 0 3px #120a07,0 1px 0 #000}
+.turncall .ds svg{width:16px;height:16px;fill:none;stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round;opacity:.45}
+.turncall .ds.s svg{stroke:#62e3c6}
+.turncall .ds.f svg{stroke:#ff5a4a}
+.turncall .ds.on{box-shadow:inset 0 0 0 1.5px #d9a440,inset 0 0 0 3px #120a07,0 1px 0 #000}
+.turncall .ds.on svg{opacity:1}
+.turncall .ds.s.on{background:radial-gradient(circle at 50% 38%,#1f5a50,#07211d 72%)}
+.turncall .ds.s.on svg path:first-child{fill:#62e3c6;stroke:#d8fff4}
+.turncall .ds.s.on svg .beat{stroke:#06302a}
+.turncall .ds.s.on{filter:drop-shadow(0 0 5px rgba(98,227,198,.65))}
+.turncall .ds.f.on{background:radial-gradient(circle at 50% 38%,#5c1712,#1e0605 72%);filter:drop-shadow(0 0 5px rgba(255,90,74,.6))}
+.turncall .ds.f.on svg path:first-child{fill:#f2e6d0;stroke:#ff5a4a}
+.turncall .ds.f.on svg .eye{fill:#3a0806;stroke:none}
+.turncall .ds.fresh{animation:dsPop .55s cubic-bezier(.2,1.6,.4,1) both}
+@keyframes dsPop{0%{transform:scale(.2);opacity:0}60%{transform:scale(1.35);opacity:1}100%{transform:scale(1)}}
+.turncall .dsroll{min-width:30px;padding:2px 6px;text-align:center;font-family:"Cinzel",Georgia,serif;font-weight:700;font-size:.95rem;color:#c9b48a;border:1px solid #6b4a22;border-radius:6px;background:#120a07;text-shadow:0 1px 0 #000}
+.turncall .dsroll.ok{color:#9ff2c8;border-color:#2f8f7a}
+.turncall .dsroll.bad{color:#ff8a7c;border-color:#a2423a}
+.turncall .dsroll.fresh{animation:dsPop .45s ease-out both}
+@media (prefers-reduced-motion:reduce){.turn,.turncall{transition:none}.turncall .ds.fresh,.turncall .dsroll.fresh{animation:none}}
 /* THE DEATH BEAT banner (the pop lanes, 2026-10-28): "Drow guard slain", "Fifi is down" — a moment at the top of the stage */
 .beat{position:absolute;left:50%;top:24%;transform:translate(-50%,-50%);font-family:"Cinzel",Georgia,serif;font-size:26px;font-weight:700;color:#f3d68a;letter-spacing:.1em;text-shadow:0 0 14px rgba(255,120,80,.5),0 2px 0 #2a0a08,0 4px 12px rgba(0,0,0,.85);opacity:0;pointer-events:none;white-space:nowrap;z-index:40}
 .beat.show{animation:beat 1.3s ease-out forwards}
@@ -1464,7 +1489,7 @@ body.quota-on #cbtMenu[data-kind=explore]{display:none!important}
     <div id="victory" class="victory" hidden><div class="big"></div><div class="small"></div></div>
     <div id="lvlBanner" class="lvlBanner" hidden aria-live="polite"></div>
     <div id="beat" class="beat" aria-live="polite"></div>
-    <div id="turnCall" class="turncall" aria-live="polite"><div class="tface" id="turnFace"></div><span class="tname" id="turnName"></span><span class="twhat" id="turnWhat"></span></div>
+    <div id="turnCall" class="turncall" aria-live="polite"><div class="tface" id="turnFace"></div><span class="tname" id="turnName"></span><span class="twhat" id="turnWhat"></span><span class="tsaves" id="turnSaves" hidden></span></div>
     <div id="bossIntro" class="bossIntro" hidden><div class="bface" id="bossIntroFace"></div><div><div class="kick">BOSS</div><div class="big" id="bossIntroName"></div><div class="small" id="bossIntroEpithet"></div></div></div>
     <div class="talk" id="obj" hidden>
       <div class="tcard" role="dialog" aria-labelledby="objWho">
@@ -16225,10 +16250,41 @@ function drawCritBadges(){
 function beatBanner(text){ const el = $("beat"); if (!el) return; if (text !== "SPOTTED!") el.classList.remove("spotted"); el.textContent = text; el.classList.remove("show"); void el.offsetWidth; el.classList.add("show"); }
 // THE TURN CALL: whose turn it is; then what they do, and to whom, with the target ringed
 function turnCall(a){
-  const el = $("turnCall"); if (!el || !a || a.down) return;
+  const el = $("turnCall"); if (!el || !a || (a.down && !(a.kind === "pc" && a.c && a.c.ds))) return;   // a dying hero's turn has its card too (turnSaves)
   turnCall.who = a; $("turnFace").replaceChildren(cardFor(a)); $("turnName").textContent = fname(a); $("turnWhat").innerHTML = "";
   el.classList.toggle("foe", a.kind === "foe"); el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
+  turnSaves(a);
   clearTimeout(turnCall.t);
+}
+// DEATH SAVES ON THE TURN CARD (Sam, 2026-11-23: "Can we improve the death saves icons. Maybe we can have it on the hero
+// card that pops up during their turn. It should be higher quality than just three circles."). A dying hero's turn
+// brings up the turn card like anyone's (turnCall stepped aside for the downed until now), greyed, with a crimson rim,
+// and beside the name the three successes (hearts), the d20 and the three failures (skulls), each in its own medallion.
+// The save lands on the card: the die shows the roll and the mark it earned pops in. Struck while down, the failures
+// land on the card too (deathMark). Rules unchanged: deathSaveTurn and deathMark decide, this only shows them.
+const DS_PATH = {
+  s: "M12 20.5s-7.5-4.6-7.5-10.1A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.8c0 5.5-7.5 10.1-7.5 10.1z",
+  beat: "M5.5 12.2h3.2l1.5-2.6 2.1 5 1.6-3.2h4.6",
+  f: "M12 3.2c-4.6 0-7.6 3.1-7.6 7.2 0 2.4 1.1 4.1 2.6 5.1v2.6c0 .8.6 1.4 1.4 1.4h1.1v-1.8h1.2v1.8h2.6v-1.8h1.2v1.8h1.1c.8 0 1.4-.6 1.4-1.4v-2.6c1.5-1 2.6-2.7 2.6-5.1 0-4.1-3-7.2-7.6-7.2z",
+  eyes: "M10.9 11.2a1.9 1.9 0 1 1-3.8 0a1.9 1.9 0 1 1 3.8 0zM16.9 11.2a1.9 1.9 0 1 1-3.8 0a1.9 1.9 0 1 1 3.8 0zM12 13.4l-1 2h2z"
+};
+const DS_GLYPH = {
+  s: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${DS_PATH.s}"/><path class="beat" d="${DS_PATH.beat}"/></svg>`,
+  f: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${DS_PATH.f}"/><path class="eye" d="${DS_PATH.eyes}"/></svg>`
+};
+function turnSaves(a, roll){
+  const el = $("turnSaves"), card = $("turnCall"); if (!el || !card) return;
+  const ds = a && a.kind === "pc" && a.c && a.c.ds;
+  if (!ds || (!a.down && roll == null)){ el.hidden = true; el.innerHTML = ""; delete el.dataset.who; card.classList.remove("dying"); return; }
+  const was = el.dataset.who === a.id ? {s: +el.dataset.s || 0, f: +el.dataset.f || 0} : {s: ds.s, f: ds.f};   // what the card showed: the rest are fresh
+  const pip = (k, i, n, w) => `<span class="ds ${k}${i < n ? " on" : ""}${i < n && i >= w ? " fresh" : ""}">${DS_GLYPH[k]}</span>`;
+  const row = (k, n, w) => [0, 1, 2].map(i => pip(k, i, n, w)).join("");
+  const die = roll == null ? (ds.dead ? "✝" : ds.stable ? "✓" : "d20") : String(roll);
+  el.innerHTML = `<span class="dsrow" title="Death saves: ${ds.s} of 3 successes">${row("s", ds.s, was.s)}</span>`
+    + `<span class="dsroll${roll == null ? "" : (roll >= 10 ? " ok" : " bad") + " fresh"}">${die}</span>`
+    + `<span class="dsrow" title="Death saves: ${ds.f} of 3 failures">${row("f", ds.f, was.f)}</span>`;
+  el.dataset.who = a.id; el.dataset.s = ds.s; el.dataset.f = ds.f; el.hidden = false;
+  card.classList.add("dying");
 }
 function turnWhat(att, tgt, what, boon){
   if (!cbt) return;
@@ -23388,6 +23444,7 @@ function deathMark(a, success, n, why){
   if (ds.f >= 3){ dieNow(a, why); return; }
   if (ds.s >= 3){ ds.stable = true; popText(a, "stable", "#9ff2c8", 1.2); log(`<b>${fname(a)} is stable.</b> No more death saves; they stay down at 0 HP until healed.`); }
   renderParty();
+  if (turnCall.who === a && deathSaveTurn.rolling !== a && !$("turnSaves").hidden) turnSaves(a);   // struck while their card is up: the failure lands on it
 }
 function dieNow(a, why){
   // A hero who dies OUTSIDE a fight has no combat record yet (Sam, 2026-11-10: Fifi shot dead at the pen gate a second
@@ -24131,6 +24188,7 @@ function gameOverLeave(kind){
 }
 // a downed hero's turn: the save, and the turn passes (a 20 gets them up, and the turn is theirs)
 function deathSaveTurn(a){
+  turnCall(a); $("turnWhat").innerHTML = "<i>—</i><b>Death save</b>";   // the card up with the marks so far (turnSaves)
   const r = d20(0, a);   // a death save is a saving throw: Halfling Luck applies
   fightCam(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 40, 500, [a]);
   if (r === 20){
@@ -24140,7 +24198,8 @@ function deathSaveTurn(a){
   const ok = r >= 10; popText(a, ok ? `save ${r} ✓` : r === 1 ? "1 ✗✗" : `save ${r} ✗`, ok ? "#9ff2c8" : "#ff6b5e", 1.1);
   bank(ok ? "ui/turn_chime" : "ui/nat1", .5);
   log(`${fname(a)} death save: ${r} — ${ok ? "success" : r === 1 ? "two failures" : "failure"}.`);
-  deathMark(a, ok, ok ? 1 : r === 1 ? 2 : 1, "three failed death saves");
+  deathSaveTurn.rolling = a; deathMark(a, ok, ok ? 1 : r === 1 ? 2 : 1, "three failed death saves"); deathSaveTurn.rolling = null;
+  turnSaves(a, r);                                                   // the roll and the mark it earned, on the card
   setTimeout(() => passTurn(a), 1300); return true;
 }
 // first aid: an action, DC 10 Wisdom (Medicine), on a dying friend within 5 ft
@@ -24156,11 +24215,20 @@ function drawDeathSaves(a){
   if (ds.dead){ ctx.font = "bold 26px Georgia, serif"; ctx.fillStyle = "#ff6b5e"; ctx.strokeText("☠", a.x, y); ctx.fillText("☠", a.x, y); ctx.restore(); return; }
   if (ds.stable){ ctx.font = "bold 14px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#9ff2c8"; ctx.strokeText("stable", a.x, y); ctx.fillText("stable", a.x, y); ctx.restore(); return; }
   const pulse = .6 + .4 * Math.sin(now / 260), R = 5;
+  // the turn card's glyphs (DS_PATH, turnSaves): hearts for successes, skulls for failures, lit when earned
+  const P = drawDeathSaves.p2d || (drawDeathSaves.p2d = (() => { try { return {s: new Path2D(DS_PATH.s), f: new Path2D(DS_PATH.f), eyes: new Path2D(DS_PATH.eyes)}; } catch (e) { return false; } })());
   for (let i = 0; i < 3; i++){
-    for (const [row, n, col] of [[-1, ds.s, "#62e3c6"], [1, ds.f, "#ff5a4a"]]){
-      const x = a.x + (i - 1) * 15, yy = y + row * 8;
-      ctx.beginPath(); ctx.arc(x, yy, R, 0, Math.PI * 2); ctx.fillStyle = i < n ? col : "rgba(20,10,8,.85)"; ctx.globalAlpha = i < n ? 1 : .9; ctx.fill();
-      ctx.lineWidth = 1.5; ctx.strokeStyle = col; ctx.globalAlpha = i < n ? 1 : pulse; ctx.stroke(); ctx.globalAlpha = 1;
+    for (const [k, row, n, col] of [["s", -1, ds.s, "#62e3c6"], ["f", 1, ds.f, "#ff5a4a"]]){
+      const x = a.x + (i - 1) * 17, yy = y + row * 9, on = i < n;
+      if (!P){   // no Path2D: the old dots
+        ctx.beginPath(); ctx.arc(x, yy, R, 0, Math.PI * 2); ctx.fillStyle = on ? col : "rgba(20,10,8,.85)"; ctx.globalAlpha = on ? 1 : .9; ctx.fill();
+        ctx.lineWidth = 1.5; ctx.strokeStyle = col; ctx.globalAlpha = on ? 1 : pulse; ctx.stroke(); ctx.globalAlpha = 1; continue;
+      }
+      ctx.save(); ctx.translate(x - 7.5, yy - 7.5); ctx.scale(15 / 24, 15 / 24);
+      ctx.lineJoin = "round"; ctx.strokeStyle = "#140a06"; ctx.lineWidth = 5; ctx.stroke(P[k]);           // a dark outline, readable on any floor
+      if (on){ ctx.shadowColor = col; ctx.shadowBlur = 8; ctx.fillStyle = k === "s" ? col : "#f2e6d0"; ctx.fill(P[k]); ctx.shadowBlur = 0; if (k === "f"){ ctx.fillStyle = "#3a0806"; ctx.fill(P.eyes); } }
+      else { ctx.fillStyle = "rgba(20,10,8,.85)"; ctx.fill(P[k]); ctx.globalAlpha = pulse; }
+      ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke(P[k]); ctx.restore();
     }
   }
   ctx.restore();
