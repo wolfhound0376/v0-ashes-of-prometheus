@@ -24916,8 +24916,8 @@ addEventListener("keydown", e => {
   if (e.key === "+" || e.key === "="){ const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.2); }
   if (e.key === "-" || e.key === "_"){ const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.2); }
 });
-addEventListener("keyup", e => keys.delete(e.code));
-addEventListener("blur", () => keys.clear());
+addEventListener("keyup", e => { keys.delete(e.code); if (MOVE_KEYS.has(e.code)) mirrorDirPush(); });
+addEventListener("blur", () => { keys.clear(); mirrorDirPush(); });
 function interact(){
   const near = pilesHere().map(p => [p, feetToPile(leader, p)]).filter(([, d]) => d <= 6).sort((x, y) => x[1] - y[1])[0];
   if (near){ pickUp(leader, near[0]); return; }
@@ -28798,20 +28798,19 @@ if ($("dmItemQ")){
 const NUMPAD_DIR = {Numpad1: [-1, 1], Numpad2: [0, 1], Numpad3: [1, 1], Numpad4: [-1, 0], Numpad6: [1, 0], Numpad7: [-1, -1], Numpad8: [0, -1], Numpad9: [1, -1]};
 const MOVE_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", ...Object.keys(NUMPAD_DIR)]);
 const keys = new Set();
-function keyDir(){
+function keyDir(held = keys){
   if (timeStopped || escortHolds()) return null;
   let x = 0, y = 0;
-  if (keys.has("ArrowLeft") || keys.has("KeyA")) x -= 1;
-  if (keys.has("ArrowRight") || keys.has("KeyD")) x += 1;
-  if (keys.has("ArrowUp") || keys.has("KeyW")) y -= 1;
-  if (keys.has("ArrowDown") || keys.has("KeyS")) y += 1;
-  for (const k in NUMPAD_DIR) if (keys.has(k)){ x += NUMPAD_DIR[k][0]; y += NUMPAD_DIR[k][1]; }
+  if (held.has("ArrowLeft") || held.has("KeyA")) x -= 1;
+  if (held.has("ArrowRight") || held.has("KeyD")) x += 1;
+  if (held.has("ArrowUp") || held.has("KeyW")) y -= 1;
+  if (held.has("ArrowDown") || held.has("KeyS")) y += 1;
+  for (const k in NUMPAD_DIR) if (held.has(k)){ x += NUMPAD_DIR[k][0]; y += NUMPAD_DIR[k][1]; }
   x = Math.sign(x); y = Math.sign(y);
   return x || y ? {x, y} : null;
 }
-function keyboardMove(a, dt){
+function keyboardMove(a, dt, kd = keyDir()){
   if (!a || a.kind !== "pc" || a.once || a.ko) return;
-  const kd = keyDir();
   if (!kd){ if (a.kbd){ a.kbd = false; a.kbdOut = false; if (a.anim === "walk") setAnim(a, "idle");
       if (mode === "combat" && cbt && a === activeActor() && cbt.phase === "menu") openMenu(a); }   // the menu's "ft left" catches up
     return; }
@@ -28836,7 +28835,7 @@ function keyboardMove(a, dt){
       // one measure for both sides of the line: inside its reach this frame, outside it on the next step
       const f = standing(foes).find(f => { const r = reachPx(f, a, 5) + 6; return !f.c.reactionUsed && !incapacitated(f) && pxBetween(a, f, a) <= r && pxBetween({x: nx, y: ny}, f, a) > r; });
       if (f){
-        keys.clear(); a.kbd = false; setAnim(a, "idle"); f.c.reactionUsed = true; combatBusy = true; closeMenu();
+        keys.clear(); FIGHT.rdir = null; a.kbd = false; setAnim(a, "idle"); f.c.reactionUsed = true; combatBusy = true; closeMenu();
         oaCue(f, a); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
         attackWith(f, a, f.c.sheet.attacks[0], () => { combatBusy = false; if (cbt && activeActor() === a && !a.down) openMenu(a); });
         return;
@@ -29171,6 +29170,7 @@ function update(dt){
     }
   }
   if (mode === "combat" && !combatBusy && !FIGHT.mirror && canControl(activeActor()) && !oneFightWaitsFor(activeActor())) keyboardMove(activeActor(), dt);
+  else if (mode === "combat" && !combatBusy && FIGHT.auth && oneFightWaitsFor(activeActor())) keyboardMove(activeActor(), dt, remoteDir(activeActor()));   // ARROWS FROM THE OTHER SCREEN
   // idle life: whoever you're not moving potters about, like at camp
   if (mode === "explore") for (const a of (sceneWatched() ? party : [...party, ...npcs])) idleLife(a);      // (a shown scene's bystanders stand where its screen has them)
   if (FIGHT.watch) sceneSlide(dt);
@@ -29646,7 +29646,7 @@ async function owResync(){
 // Without the tables (migration unapplied), with One World off, or on a test copy, nothing changes: each screen fights alone.
 const FIGHT = {id: null, auth: false, mirror: false, plate: null, live: null, since: 0, inSince: 0, out: [], sent: {}, fullAt: 0, menuSig: "", dlgSig: "",
   serial: 0, dlgs: {}, dlgSeq: 0, promptFor: null, applying: null, polling: false, lastOk: 0, failed: false, hoverAt: 0, pendingActors: new Set(), endSent: false,
-  scene: null, watch: false, opening: null, sceneBusy: null, sceneQuiet: 0, sceneHold: 0};      // WORLD EVENTS (below): the same lane, outside a fight.
+  scene: null, watch: false, opening: null, sceneBusy: null, sceneQuiet: 0, sceneHold: 0, rdir: null, dirSent: null};      // WORLD EVENTS (below): the same lane, outside a fight.
 // (`watch`, not `mirror`, is a screen showing a SCENE: every `FIGHT.mirror` test on this page means "showing a fight" and
 // takes the hero's bag, menu and clicks away for it, which a screen watching a scene must keep.)
 const RELAY = {depth: 0, orig: {}, imgs: {}};
@@ -29839,6 +29839,7 @@ function fightInput(by, b){
       else { const it = itemFrom(a, b.it); if (it) fn(a, it, ...rest); }
     }
     else if (b.t === "hover" && typeof b.x === "number"){ aimW = {x: b.x, y: b.y}; hoverActor = hitActor(foes, aimW) || hitActor(heroes(), aimW); }
+    else if (b.t === "dir"){ const x = Math.sign(+b.x || 0), y = Math.sign(+b.y || 0); FIGHT.rdir = x || y ? {by, x, y, at: now} : null; }   // ARROWS FROM THE OTHER SCREEN
     else if (b.t === "key"){
       if (b.k === "Escape") cancelAim();
       else if (b.k === "Enter" && cbt.phase === "menu" && !combatBusy) nextTurn();
@@ -30070,8 +30071,31 @@ function oneFightHover(w){ if (!myTurnHere() || FIGHT.menu.phase === "menu" || n
 function oneFightKey(e){
   if (!FIGHT.mirror) return false;
   if (e.key === "Escape" || e.code === "Enter"){ if (myTurnHere()) fightSend({t: "key", k: e.key === "Escape" ? "Escape" : "Enter"}); e.preventDefault(); return true; }
-  return MOVE_KEYS.has(e.code);                                            // arrows do not walk a mirrored hero
+  if (MOVE_KEYS.has(e.code)){ e.preventDefault(); keys.add(e.code); mirrorDirPush(); return true; }   // ARROWS FROM THE OTHER SCREEN (below)
+  return false;
 }
+// ARROWS FROM THE OTHER SCREEN (Sam, 2026-11-23: Kenta "was having problems moving using directional buttons"). At the
+// pen-gate fight that night Fifi's screen ran the fight and Kenta's watched it: his screen sent 7 clicks and 9 button
+// presses and not one arrow, because a watching screen swallowed the arrows ("arrows do not walk a mirrored hero").
+// Now the watching screen sends the direction it holds, on every change and again every 300 ms while held; the screen
+// running the fight walks that hero with it through keyboardMove, so the keys still spend movement and still draw the
+// opportunity attack. A direction not heard again within a second is let go, so a lost key-up cannot run a hero away.
+function mirrorDirPush(again){
+  if (!FIGHT.mirror) return;
+  const d = myTurnHere() ? keyDir() : null, sig = d ? d.x + "," + d.y : null;
+  if (!again && sig === FIGHT.dirSent) return;
+  if (!sig && !FIGHT.dirSent) return;                 // nothing held, nothing to stop
+  FIGHT.dirSent = sig;
+  fightSend({t: "dir", x: d ? d.x : 0, y: d ? d.y : 0});
+}
+setInterval(() => { if (FIGHT.mirror && FIGHT.dirSent) mirrorDirPush(true); }, 300);
+/** On the screen running the fight: the direction the player of hero `a` is holding on their own screen, or null. */
+function remoteDir(a){
+  const r = FIGHT.rdir;
+  if (!r || !a || owDriver(a) !== r.by || now - r.at > REMOTE_DIR_MS || timeStopped || escortHolds()) return null;
+  return {x: r.x, y: r.y};
+}
+const REMOTE_DIR_MS = 1000;
 function mirrorEnd(b){
   const fin = new Map((b.actors || []).map(s => [s.k, s]));
   for (const ev of b.ev || []) relayPlay(ev);
