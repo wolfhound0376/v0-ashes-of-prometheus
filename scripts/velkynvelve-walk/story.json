@@ -2063,6 +2063,23 @@
     }
   },
   "shore": {
+    "npcs": [
+      {
+        "id": "old-thessaly",
+        "x": 1240,
+        "y": 760,
+        "face": 2,
+        "static": true,
+        "noShadow": true,
+        "barks": [
+          "(a line plops into the black water)",
+          "Bah. Nothing biting but the cold.",
+          "(he spits at the lake)",
+          "Mind my boat."
+        ],
+        "_src": "Sam, 2026-10-24 (claude/Darklake_Shore_Keelboat_Fisherman.md): Old Thessaly, a bhut, is 'hanging out near the boat on Darklake Shore plate fishing'. Placed beside the keelboat (spec.py obstacle at 1500,790), facing it, on the cobbles. noShadow: the bhut's False Alive tell, he casts no shadow. Barks are Claude's."
+      }
+    ],
     "rest": {
       "chance": 0,
       "foes": [],
