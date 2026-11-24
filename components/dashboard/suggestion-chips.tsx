@@ -107,6 +107,9 @@ export function SuggestionChips(props: SuggestionChipsProps) {
             talkingTo: context.talkingTo,
             present: context.present,
             location,
+            // The cache key, and who to read THE MOMENT for (lib/moment.ts; Sam, 2026-11-23).
+            beatKey,
+            characterId,
           }),
         })
         const data = response.ok ? await response.json() : null
@@ -149,7 +152,11 @@ export function SuggestionChips(props: SuggestionChipsProps) {
             <button
               key={sent}
               disabled={disabled}
-              onClick={() => onPick?.(sent, suggestion.kind === "observe")}
+              onClick={() => {
+                // The DM's audit of which option was taken (bait or not); fire and forget.
+                if (beatKey && characterId) void fetch("/api/suggestions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "picked", beatKey, characterId, text: suggestion.text }) }).catch(() => {})
+                onPick?.(sent, suggestion.kind === "observe")
+              }}
               className={chipClass}
               data-ability={ability ?? undefined}
               title={suggestion.skill ? `${suggestion.text} — ${suggestion.skill} check` : suggestion.text}

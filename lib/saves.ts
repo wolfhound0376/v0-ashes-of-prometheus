@@ -61,6 +61,9 @@ export const LIBRARY_TABLES = [
   "npc_agents", "npc_coaching",
   // kept on purpose by every reset (see lib/restart-campaign.ts)
   "dialogue_archive", "dm_phrasebook", "cinematic_requests",
+  // the options offered and why (germane or bait): a cache keyed by beat and the DM's audit, never rolled back
+  // (migrations/20261124030000_suggestion_sets.sql)
+  "suggestion_sets",
   // the shelf itself
   "campaign_saves",
   // live plumbing, gone in under a minute: who holds the floor in a conversation (lib/talk-floor.ts). Never part of a save.

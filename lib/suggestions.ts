@@ -15,6 +15,38 @@ export interface Suggestion {
    * bolted on beside it.
    */
   kind?: "observe" | null
+  /**
+   * WHY THIS OPTION IS HERE (Sam, 2026-11-23: every option is "Germaine or misleading in some way but ON PURPOSE").
+   * "germane" answers the exact moment; "bait" is a real, attemptable option the author (Malachar, or the NPC being
+   * talked to) WANTS the hero to take because it is worse than it looks. SERVER AND DM ONLY: publicSuggestions()
+   * strips it before anything reaches a player's screen.
+   */
+  intent?: "germane" | "bait" | null
+}
+
+/** At most this many bait options in one set: one lie among truths is a temptation; two is a pattern. */
+export const MAX_BAIT = 1
+
+/** What a player's screen receives: the option, never why it is there. */
+export function publicSuggestions(list: Suggestion[]): Suggestion[] {
+  return list.map((s) => ({ text: s.text, skill: s.skill, ...(s.kind ? { kind: s.kind } : {}) }))
+}
+
+/** Only the first bait survives as bait; later ones are dropped (a second lie in the same breath is a tell). */
+export function capBait(list: Suggestion[]): Suggestion[] {
+  let baits = 0
+  return list.filter((s) => (s.intent === "bait" ? ++baits <= MAX_BAIT : true))
+}
+
+/**
+ * Drop an option that names someone who is not here. `known` is every name the cast and company answer to;
+ * `present` is who is actually with the hero. A chip about Jorlan while Jorlan is three plates away is not an option.
+ */
+export function dropAbsent(list: Suggestion[], known: string[], present: string[]): Suggestion[] {
+  const here = present.map((n) => n.toLowerCase())
+  const isHere = (name: string) => here.some((h) => h === name.toLowerCase() || h.split(/\s+/)[0] === name.toLowerCase())
+  const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+  return list.filter((s) => !known.some((n) => n.length >= 3 && new RegExp(`\\b${esc(n)}\\b`, "i").test(s.text) && !isHere(n)))
 }
 
 /**
@@ -39,7 +71,7 @@ export function ensureObserveChip(suggestions: Suggestion[]): Suggestion[] {
   const observe = suggestions.find((entry) => entry.kind === "observe")
   const others = suggestions
     .filter((entry) => entry !== observe)
-    .map((entry) => ({ text: entry.text, skill: entry.skill }))
+    .map((entry) => ({ text: entry.text, skill: entry.skill, intent: entry.intent ?? null }))
   // Cap at four chips total so the row never wraps past the input box.
   return [...others.slice(0, 3), observe ?? OBSERVE_FALLBACK]
 }
@@ -149,7 +181,9 @@ export function parseSuggestions(raw: string): Suggestion[] {
       // The model may answer either shape; accept both rather than lose the tag.
       const raw = entry as { observe?: unknown; kind?: unknown }
       const isObserve = raw?.observe === true || raw?.kind === "observe"
-      suggestions.push({ text: text.slice(0, 80), skill, kind: isObserve ? "observe" : null })
+      const why = (entry as { bait?: unknown; intent?: unknown })
+      const intent: Suggestion["intent"] = why?.bait === true || why?.intent === "bait" ? "bait" : "germane"
+      suggestions.push({ text: text.slice(0, 80), skill, kind: isObserve ? "observe" : null, intent: isObserve ? "germane" : intent })
       // Read up to six. ensureObserveChip trims to four AFTER the observe
       // entry has been located — capping at four here threw away a correctly
       // tagged look-around action that happened to be listed last, and the

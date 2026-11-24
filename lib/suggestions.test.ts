@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { buildSuggestionContext, type SpeakerKind } from "./suggestions"
+import { buildSuggestionContext, capBait, dropAbsent, parseSuggestions, publicSuggestions, type SpeakerKind } from "./suggestions"
 
 // Mirrors lib/tts.ts classifySpeaker without its browser-side voice state.
 const classify = (speaker?: string | null): SpeakerKind => {
@@ -75,5 +75,35 @@ describe("buildSuggestionContext", () => {
     const ctx = buildSuggestionContext([{ speaker: "Malachar", text: "The gate creaks." }], classify)
     expect(ctx.beatKey).toBe("The gate creaks.")
     expect(ctx.talkingTo).toBeNull()
+  })
+})
+
+
+// Sam, 2026-11-23: every option is germane to the moment or bait on purpose; the tags are DM eyes only.
+describe("the law of the options", () => {
+  it("never sends the intent tag to a player's screen", () => {
+    const out = publicSuggestions([{ text: "Hand him the bar", skill: null, intent: "bait" }, { text: "Look", skill: "Perception", kind: "observe", intent: "germane" }])
+    expect(JSON.stringify(out)).not.toMatch(/intent|bait|germane/)
+    expect(out[1].kind).toBe("observe")
+  })
+
+  it("keeps at most one bait", () => {
+    const out = capBait([
+      { text: "a", skill: null, intent: "bait" }, { text: "b", skill: null, intent: "germane" }, { text: "c", skill: null, intent: "bait" },
+    ])
+    expect(out.map((s) => s.text)).toEqual(["a", "b"])
+  })
+
+  it("drops an option about someone who is not here", () => {
+    const known = ["Jorlan", "Jorlan Duskryn", "Eldeth", "Eldeth Feldrun"]
+    const out = dropAbsent([
+      { text: "Whistle to Jorlan at the gate", skill: null }, { text: "Ask Eldeth what she heard", skill: "Insight" }, { text: "Search the straw", skill: null },
+    ], known, ["Eldeth Feldrun"])
+    expect(out.map((s) => s.text)).toEqual(["Ask Eldeth what she heard", "Search the straw"])
+  })
+
+  it("reads the model's bait flag", () => {
+    const parsed = parseSuggestions('[{"text":"Trust him","skill":null,"bait":true},{"text":"Ask why","skill":"Insight"},{"text":"Look","skill":null,"observe":true,"bait":true}]')
+    expect(parsed.map((s) => s.intent)).toEqual(["bait", "germane", "germane"]) // an observation is never bait
   })
 })
