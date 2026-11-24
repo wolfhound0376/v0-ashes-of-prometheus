@@ -1903,6 +1903,18 @@ if (error) {
     if (!item || !slotAccepts(item.equippable_slot, slot)) return
     await supabase.from('equipment_items').delete().eq('character_id', selectedCharacterId).eq('slot', slot)
     const itemWithBonuses = item as InventoryItem & { stats_bonus?: Record<string, number> }
+    // This copy's own bonus (a Traveler's Cloak's +1 Dexterity or +1 Stealth). The view this page reads the pack
+    // through does not carry it, so ask the server, which also rolls it if it never was (/api/item-knack).
+    // Best effort: no answer means the item is worn without one, as before.
+    let knack: Record<string, number> | null = null
+    try {
+      const res = await fetch('/api/item-knack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ character_id: selectedCharacterId, inventory_item_id: itemId }),
+      })
+      if (res.ok) knack = (await res.json())?.stats_bonus ?? null
+    } catch { /* worn without a knack */ }
     const { error } = await supabase.from('equipment_items').insert({
       character_id: selectedCharacterId,
       slot,
@@ -1910,7 +1922,7 @@ if (error) {
       icon_url: item.icon_url,
       equipped: true,
       description: item.description,
-      stats_bonus: itemWithBonuses.stats_bonus ?? {},
+      stats_bonus: knack ?? itemWithBonuses.stats_bonus ?? {},
     })
     if (error) console.error('[equip] insert failed:', error)
     await fetchCharacterData()

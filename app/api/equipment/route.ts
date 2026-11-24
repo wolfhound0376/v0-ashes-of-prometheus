@@ -5,6 +5,7 @@ import { interactionCost, type InteractionEconomy } from "@/lib/ground-items"
 import { packWeight } from "@/lib/carry"
 import { MOVEMENT_KINDS, provenanceLine, type HistoryLine } from "@/lib/item-history"
 import { STASH_MARK } from "@/lib/confiscation"
+import { ensureKnacks } from "@/lib/item-knack-rows"
 
 // ============================================================================
 // /api/equipment — putting something in your hand, and taking it out again.
@@ -41,6 +42,9 @@ export async function GET(req: NextRequest) {
   const characterId = req.nextUrl.searchParams.get("character_id")
   if (!characterId) return NextResponse.json({ error: "character_id required" }, { status: 400 })
   const db = createAdminClient()
+  // A copy that rolls for a knack (the Traveler's Cloak's passive 1d2) is rolled the first time the pack is looked
+  // at, before it is read below, so its description already says what it does (lib/item-knack-rows.ts). Best effort.
+  const knacks = await ensureKnacks(db, characterId)
   const [doll, pack, who] = await Promise.all([
     db.from("equipment_items").select("id,slot,item_key,name,icon_url,equipped").eq("character_id", characterId),
     db.from("inventory_items")
@@ -65,7 +69,7 @@ export async function GET(req: NextRequest) {
     const { data: cev } = await db.from("item_events").select("inventory_item_id,detail,occurred_at").in("inventory_item_id", rows.map((r) => r.id)).eq("kind", "corrode").order("occurred_at", { ascending: true })
     for (const e of (cev ?? []) as { inventory_item_id: string; detail: { total?: number } | null }[]) corroded.set(e.inventory_item_id, Number(e.detail?.total) || 0)
   }
-  const carried = rows.map((r) => ({ ...r, corrode: corroded.get(r.id) ?? 0, origin: provenanceLine(lines.get(r.id) ?? []), from_stash: (lines.get(r.id) ?? []).some((e) => e.detail?.[STASH_MARK] === true) }))
+  const carried = rows.map((r) => ({ ...r, stats_bonus: knacks.get(r.id) ?? null, corrode: corroded.get(r.id) ?? 0, origin: provenanceLine(lines.get(r.id) ?? []), from_stash: (lines.get(r.id) ?? []).some((e) => e.detail?.[STASH_MARK] === true) }))
   const carry = { carried: packWeight(carried.filter((r) => !r.confiscated_from)), max: who.data?.weight_max != null && Number(who.data.weight_max) > 0 ? Number(who.data.weight_max) : null }
   return NextResponse.json({ equipped: doll.data ?? [], carried, carry })
 }
@@ -124,8 +128,10 @@ export async function POST(req: NextRequest) {
   const itemKey = String(body?.item_key ?? "")
   if (!itemKey) return NextResponse.json({ error: "item_key required to equip" }, { status: 400 })
 
+  // rolled first (if it never was), so the row read below already carries its own description
+  const worn = await ensureKnacks(db, characterId)
   const { data: carried } = await db.from("inventory_items")
-    .select("id,name,item_key,item_type,equippable_slot,icon_url,items(equippable_slot,item_type,properties)")
+    .select("id,name,item_key,item_type,equippable_slot,icon_url,description,items(equippable_slot,item_type,properties)")
     .eq("character_id", characterId).eq("item_key", itemKey).limit(1).maybeSingle()
   if (!carried) {
     // You cannot draw what you are not carrying. The pack is the gate, and it
@@ -148,9 +154,13 @@ export async function POST(req: NextRequest) {
     const old = doll.find((d) => d.slot === slot && d.equipped !== false)
     if (old) await db.from("equipment_items").delete().eq("id", old.id)
   }
+  // The copy's own bonus goes onto the worn row with it (lib/item-knack-rows.ts, read by lib/worn-bonus.ts). The worn
+  // row is deleted on unequip, so this is what makes a cloak's knack survive being taken off and put back on.
+  const knack = worn.get(carried.id)
   const { error } = await db.from("equipment_items").insert({
     character_id: characterId, slot, item_key: carried.item_key, name: carried.name,
     icon_url: carried.icon_url, equipped: true, updated_at: stamp,
+    ...(knack ? { stats_bonus: knack, description: carried.description } : {}),
   })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
