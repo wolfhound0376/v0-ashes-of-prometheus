@@ -5,6 +5,7 @@ import { isDmRequest } from "@/lib/dm-session"
 import { forgetCardCache, rememberDue } from "@/lib/npc-agents-store"
 import { namesOf, DIMS } from "@/lib/npc-agents"
 import { BUCKET, MEDIA_FOLDERS, abilitiesOf, agentFolder, searchWords, uploadPath } from "@/lib/cast"
+import { parseOpenerBank } from "@/lib/opener-bank"
 import { parseBank } from "@/lib/option-bank"
 
 // /api/cast — THE CAST, the DM's page for each agent's whole package (Sam, 2026-11-23). DM ONLY, every method:
@@ -14,7 +15,7 @@ import { parseBank } from "@/lib/option-bank"
 //   GET  ?agent=<key>         → the package: card, abilities (from the code), stat block, voice and video, films,
 //                               pixel art, files, memories, standing, coaching, recent lines, the options they
 //                               offered (germane or bait, and which one the player took)
-//   PATCH {agent, bible?, agenda?, voice_note?, chattiness?, option_bank?}  edit the card (Sam's own words win)
+//   PATCH {agent, bible?, agenda?, voice_note?, chattiness?, option_bank?, opener_bank?}  edit the card (Sam's own words win)
 //   POST {action:"coach", agent, note, scope}                          a coaching note ("Less talk at camp")
 //   POST {action:"coach-toggle", id, active}                           switch a note off or back on
 //   POST {action:"forget", id}                                         strike one memory
@@ -75,6 +76,13 @@ async function agentPackage(db: Db, key: string) {
   ])
   // The options this agent laid on the table, with why (germane or bait) and what the player took. DM eyes only.
   const options = (await db.from("suggestion_sets").select("created_at, moment, suggestions, picked, source").eq("author", card.name).order("created_at", { ascending: false }).limit(20)).data ?? []
+  // Where their openers and fight turns came from (lib/npc-turns.ts): the bank or the map's algorithm, or a model call.
+  const turnRows = ((await db.from("npc_turns").select("route, source, why, created_at").eq("agent_key", key).order("created_at", { ascending: false }).limit(200)).data ?? []) as { route: string; source: string; why: string | null; created_at: string }[]
+  const turns = {
+    files: turnRows.filter((t) => t.source !== "model").length,
+    model: turnRows.filter((t) => t.source === "model").length,
+    recent: turnRows.slice(0, 12),
+  }
   const heroName = new Map(((heroes.data ?? []) as { id: string; name: string }[]).map((h) => [h.id, h.name]))
   const e = enc.data?.[0] ?? null
 
@@ -140,6 +148,7 @@ async function agentPackage(db: Db, key: string) {
     events,
     coaching: coaching.data ?? [],
     options,
+    turns,
     lines: { archived: archive.count ?? 0, recent: recent.data ?? [] },
   }
 }
@@ -155,6 +164,8 @@ export async function PATCH(req: NextRequest) {
   if (typeof body.sources === "string") patch.sources = clip(body.sources, 600)
   // The option bank (lib/option-bank.ts): cleaned, never guessed at; a malformed entry is dropped.
   if (Array.isArray(body.option_bank)) patch.option_bank = parseBank(body.option_bank)
+  // The opener bank (lib/opener-bank.ts): first approaches to strangers, cleaned the same way.
+  if (Array.isArray(body.opener_bank)) patch.opener_bank = parseOpenerBank(body.opener_bank)
   if (typeof body.chattiness === "number") patch.chattiness = Math.max(0, Math.min(10, Math.round(body.chattiness)))
   if (body.agenda && typeof body.agenda === "object") {
     const a = body.agenda as Record<string, unknown>

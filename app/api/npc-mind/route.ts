@@ -3,8 +3,10 @@ import { generateText } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { findNpcRow } from "@/lib/npc-acquaintance"
-import { cleanOffer, parseMindReply } from "@/lib/npc-mind"
+import { cleanOffer, mindNeedsModel, parseMindReply } from "@/lib/npc-mind"
 import { npcBrief } from "@/lib/npc-brief"
+import { cardFor } from "@/lib/npc-agents-store"
+import { logTurn } from "@/lib/npc-turns"
 
 // Same direct-Anthropic provider as /api/npc-opener and /api/chat.
 const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -22,6 +24,11 @@ const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
  * lib/npc-mind.ts throws away anything outside it. Haiku, because the turn is waiting.
  *
  * Failure is always HTTP 200 with {choice: null}: the map runs its own algorithm for that turn.
+ *
+ * FILES FIRST (PR 3 of 3, Sam 2026-11-23): a ROUTINE turn (mindNeedsModel in lib/npc-mind.ts) is answered
+ * {choice: null} straight away, before any database brief or model call, and the map's algorithm takes it as it
+ * always did on a miss. Only the turns where a named NPC has to think (the opening, bloodied, alone, the commander's
+ * orders, a spell to weigh) reach Haiku. Each turn is logged to npc_turns either way (lib/npc-turns.ts).
  */
 export async function POST(req: NextRequest) {
   try {
@@ -33,10 +40,21 @@ export async function POST(req: NextRequest) {
     const offer = cleanOffer(body?.offer)
     if (!npcName || !offer.actions.length) return NextResponse.json({ choice: null })
 
+    const db = createAdminClient()
+    const card = await cardFor(db, npcName).catch(() => null)
+    const need = mindNeedsModel({
+      npcName, round: num(body?.round), hp: num(npc.hp), hpMax: num(npc.hpMax),
+      sideCount: Array.isArray(body?.side) ? body.side.length : 0,
+      log: (Array.isArray(body?.log) ? body.log : []).slice(-6).map((l: unknown) => clip(l, 200)),
+    }, offer)
+    if (!need.model) {
+      await logTurn(db, { npc: npcName, agentKey: card?.key, route: "mind", source: "algorithm", why: need.why })
+      return NextResponse.json({ choice: null, why: need.why })
+    }
+
     let personality = ""
     let cardBrief = ""
     try {
-      const db = createAdminClient()
       const row = await findNpcRow(db, npcName)
       if (row) personality = [row.description, row.disposition ? `disposition: ${row.disposition}` : ""].filter(Boolean).join("; ").slice(0, 400)
       // THE ONE BRIEF (lib/npc-brief.ts): the same card, memory and DM's notes the Parley and the opener read.
@@ -100,7 +118,8 @@ Reply with only JSON: {"action": "...", "target": "...", "attack": "...", "spell
     })
     const choice = parseMindReply(result.text, offer)
     if (!choice) console.warn("[npc-mind] reply outside the offer:", result.text.slice(0, 300))
-    return NextResponse.json({ choice })
+    await logTurn(db, { npc: npcName, agentKey: card?.key, route: "mind", source: "model", why: need.why })
+    return NextResponse.json({ choice, why: need.why })
   } catch (error) {
     console.error("[npc-mind] failed:", error)
     return NextResponse.json({ choice: null })
