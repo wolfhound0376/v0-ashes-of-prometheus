@@ -1136,5 +1136,70 @@
     "fps": 12,
     "bytes": 334052,
     "note": "Pixel lantern with Sam's painted skeleton and sphere, 360px cells; ring at (180,102), glass at (180,190)"
+  },
+  "malVisitIdle": {
+    "file": "malVisitIdle.webp",
+    "cols": 8,
+    "rows": 1,
+    "frames": 8,
+    "fps": 6,
+    "bytes": 5092,
+    "loop": true,
+    "pivot": [
+      88,
+      149
+    ],
+    "note": "Malachar (PixelLab c9749862, sprite B) slow menacing idle, south, skeleton-v3; 176px cells"
+  },
+  "malVisitOffer": {
+    "file": "malVisitOffer.webp",
+    "cols": 10,
+    "rows": 1,
+    "frames": 10,
+    "fps": 8,
+    "bytes": 15284,
+    "pivot": [
+      88,
+      149
+    ],
+    "note": "Malachar extends an open palm (the offer) and draws it back, south, skeleton-v3; 176px cells"
+  },
+  "malVisitPortal": {
+    "file": "malVisitPortal.webp",
+    "cols": 6,
+    "rows": 6,
+    "frames": 36,
+    "fps": 12,
+    "bytes": 59440,
+    "pivot": [
+      84,
+      214
+    ],
+    "form": [
+      0,
+      9
+    ],
+    "crackle": [
+      9,
+      30
+    ],
+    "collapse": [
+      30,
+      36
+    ],
+    "note": "Sam's canon stone portal (his painting, pixelated) forming, crackling, collapsing; PixelLab effect 42b44d24"
+  },
+  "malVisitVanish": {
+    "file": "malVisitVanish.webp",
+    "cols": 6,
+    "rows": 6,
+    "frames": 36,
+    "fps": 12,
+    "bytes": 57980,
+    "pivot": [
+      73,
+      126
+    ],
+    "note": "Malachar's red eyes, arcane fire, portal-purple orbs, cloud and vanish (his south pose baked in); PixelLab effect 561798a5"
   }
 }

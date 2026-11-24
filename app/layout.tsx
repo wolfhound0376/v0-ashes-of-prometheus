@@ -1,4 +1,4 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Cinzel, Cinzel_Decorative, Crimson_Text, Geist_Mono, IM_Fell_English, UnifrakturMaguntia } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import Script from 'next/script'
@@ -69,26 +69,25 @@ const imFell = IM_Fell_English({
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'D&D 5e Player Dashboard',
-  description: 'A dark fantasy Dungeons & Dragons 5e player dashboard',
+  // The name the installed app and the browser tab carry (Sam, 2026-11-23, "PR6"); pages may set their own title.
+  title: 'Ashes of Prometheus',
+  description: 'Out of the Abyss, run by Malachar — a live dark-fantasy table for D&D 5e.',
   generator: 'v0.app',
+  applicationName: 'Ashes of Prometheus',
+  // The crowned lich from the title painting, redrawn to read at icon size (public/icons/, app/manifest.ts).
   icons: {
     icon: [
-      {
-        url: '/icon-light-32x32.png',
-        media: '(prefers-color-scheme: light)',
-      },
-      {
-        url: '/icon-dark-32x32.png',
-        media: '(prefers-color-scheme: dark)',
-      },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
+      { url: '/icons/favicon-32.png', sizes: '32x32', type: 'image/png' },
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
     ],
     apple: '/apple-icon.png',
   },
+  // iPhone and iPad: the home-screen copy opens full screen under this name (lib/install-app.ts).
+  appleWebApp: { capable: true, title: 'Ashes', statusBarStyle: 'black-translucent' },
+}
+
+export const viewport: Viewport = {
+  themeColor: '#0a0908',
 }
 
 export default function RootLayout({
