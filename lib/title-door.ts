@@ -11,26 +11,41 @@
 //
 // Pure: no window, no fetch. app/intro/page.tsx does the reading and the navigating.
 
+import type { DoorIntent } from "@/lib/door-intent"
+
 export type DoorWho = "none" | "player" | "dm"
 /** "unknown" = the table could not be read (offline, first paint). Never a reason to block anyone. */
 export type DoorTable = "unknown" | "closed" | "lobby" | "live"
 
-export type DoorButton = { key: string; label: string; sub: string; href: string }
+/**
+ * One button on the door. `door`: this button goes through the DM door (/dm), so the title screen stamps the tab
+ * first (lib/dm-door.ts). `intent`: what /table should do on arrival (lib/door-intent.ts). The Join button has
+ * no href: it is the room-code field.
+ */
+export type DoorButton = { key: "continue" | "new" | "load" | "join"; label: string; sub: string; href: string | null; door?: boolean; intent?: DoorIntent }
 export type DoorMenu = {
   /** The pill above the buttons. `open` null = say nothing (the table could not be read). */
   status: { open: boolean | null; text: string }
-  primary: DoorButton
-  others: DoorButton[]
+  /** Always in this order: Continue (only for someone who has played here), New Campaign, Load Game, Join a Table. */
+  buttons: DoorButton[]
+  /** The one lit button: Continue when there is one, otherwise Join a Table. */
+  primary: DoorButton["key"]
+  /** The small links under the code field: Saved Game and New Hero always; The Table for a host mid-session. */
+  links: DoorLink[]
 }
 
-export const HOST_LINK_LABEL = "Host a Game"
+export type DoorLink = { label: string; sub: string; href: string }
+
 /** The second small corner link (Sam, 2026-11-10: "a clean way" into the sandbox from the title). It goes to
  *  /rehearsal, which asks for the DM code once and then opens the sandbox map — no table, no host, no save. */
 export const REHEARSAL_LINK_LABEL = "Rehearsal"
 export const REHEARSAL_HREF = "/rehearsal"
 
-const NEW_HERO: DoorButton = { key: "new", label: "New Hero", sub: "Choose one of six, or forge your own.", href: "/choose" }
-const SAVED_GAME: DoorButton = { key: "saved", label: "Saved Game", sub: "Played before? Three words bring your hero back.", href: "/join" }
+/** The small links under the room-code field, for someone with no link to follow. Sam's label: "Saved Game is fine". */
+export const SAVED_GAME_LINK: DoorLink = { label: "Saved Game", sub: "Your three words", href: "/join" }
+export const NEW_HERO_LINK: DoorLink = { label: "New Hero", sub: "Choose or forge one", href: "/choose" }
+/** The host, mid-session, can always get back to the table to end it or step a player out (2026-11-10). */
+export const HOST_TABLE_LINK: DoorLink = { label: "The Table", sub: "End, or step a player out", href: "/table" }
 
 function statusOf(table: DoorTable): DoorMenu["status"] {
   if (table === "lobby") return { open: true, text: "The table is open" }
@@ -40,48 +55,42 @@ function statusOf(table: DoorTable): DoorMenu["status"] {
 }
 
 /**
- * The menu for this browser, right now.
+ * THE FRONT DOOR (Sam, 2026-11-23: "PR3"; research doc claude/Tables_Invites_Saves_Research_2026-11-23.md §3A).
+ * The BG3 main menu: Continue, New Campaign, Load Game, Join a Table. Continue still reads the table (2026-11-10)
+ * and says where it will take you; the other three never change, so the door is learned once.
  *
- * `seat`: what the table says about this player's own chair — held (`seated`) and not stepped out
- * by the host (`away`). `heroName` is only for the sub-line; null reads fine. `isHost`: this browser's
- * hero is the campaign's host (a label only — the table checks the claim before it obeys).
+ * `seat`: what the table says about this player's own chair. `heroName` is only for the sub-line. `isHost`:
+ * this browser's hero hosts the campaign (a label only — the table checks the claim before it obeys).
  */
 export function doorMenu(who: DoorWho, table: DoorTable, seat: { seated: boolean; away: boolean } = { seated: false, away: false }, heroName: string | null = null, isHost = false): DoorMenu {
   const status = statusOf(table)
   const as = heroName ? `As ${heroName}.` : "Your hero is remembered on this device."
+  const cont = continueButton(who, table, seat, as, isHost)
+  const buttons: DoorButton[] = [
+    ...(cont ? [cont] : []),
+    // Only people with the key start a campaign (Sam, 2026-11-10). The door asks for it.
+    { key: "new", label: "New Campaign", sub: "From the first page. Needs the Dungeon Master's code.", href: "/dm", door: true, intent: "new" },
+    // The host loads their own saves without the code; anyone else brings it (Sam, 2026-11-23: any key holder may host).
+    isHost
+      ? { key: "load", label: "Load Game", sub: "Any saved campaign. You are the host.", href: "/table", intent: "load" }
+      : { key: "load", label: "Load Game", sub: "Any saved campaign. Needs the Dungeon Master's code.", href: "/dm", door: true, intent: "load" },
+    { key: "join", label: "Join a Table", sub: "Four letters from the host.", href: null },
+  ]
+  const hostMidSession = isHost && table === "live" && seat.seated && !seat.away
+  return { status, buttons, primary: cont ? "continue" : "join", links: hostMidSession ? [HOST_TABLE_LINK, SAVED_GAME_LINK, NEW_HERO_LINK] : [SAVED_GAME_LINK, NEW_HERO_LINK] }
+}
 
-  if (who === "dm") {
-    // Unchanged in this PR: the host model (the host plays, no second window) is the next one.
-    return {
-      status,
-      primary: { key: "continue", label: "Continue", sub: "Back behind the screen", href: "/" },
-      others: [NEW_HERO, SAVED_GAME],
-    }
-  }
-
-  if (who === "player") {
-    const elsewhere = [{ ...NEW_HERO, sub: "Play someone else." }, { ...SAVED_GAME, sub: "A different hero? Three words bring them back." }]
-    // THE HOST (lib/host.ts) opens their own table, and can always get back to it while the game is on.
-    if (isHost && table === "closed") {
-      return { status, primary: { key: "open", label: "Open the Table", sub: `${as} You are the host.`, href: "/table" }, others: elsewhere }
-    }
-    if (isHost && table === "live" && seat.seated && !seat.away) {
-      const theTable: DoorButton = { key: "table", label: "The Table", sub: "End the session, or step a player out.", href: "/table" }
-      return { status, primary: { key: "return", label: "Return to the Game", sub: `${as} Your seat is kept.`, href: "/" }, others: [theTable, ...elsewhere] }
-    }
-    if (table === "live" && seat.seated && !seat.away) {
-      return { status, primary: { key: "return", label: "Return to the Game", sub: `${as} Your seat is kept.`, href: "/" }, others: elsewhere }
-    }
-    if (table === "lobby" || table === "unknown") {
-      return { status, primary: { key: "seat", label: "Take Your Seat", sub: `${as} Straight to the table.`, href: "/table" }, others: elsewhere }
-    }
-    // Dark, or live without a seat (the roster locked without them, or the host stepped them out):
-    // the table is still the one place to wait, and it says why.
-    const why = table === "live" ? (seat.away ? "The host has stepped you out. Your chair is held." : "This session began without you. Wait for the next one.") : "You are seated the moment the host opens it."
-    return { status, primary: { key: "wait", label: "Wait at the Table", sub: `${as} ${why}`, href: "/table" }, others: elsewhere }
-  }
-
-  return { status, primary: NEW_HERO, others: [SAVED_GAME] }
+function continueButton(who: DoorWho, table: DoorTable, seat: { seated: boolean; away: boolean }, as: string, isHost: boolean): DoorButton | null {
+  if (who === "dm") return { key: "continue", label: "Continue", sub: "Back behind the screen.", href: "/" }
+  if (who !== "player") return null
+  // THE HOST (lib/host.ts) opens their own table — and with Continue it opens itself on arrival.
+  if (isHost && table === "closed") return { key: "continue", label: "Continue", sub: `${as} You are the host — the table opens as you arrive.`, href: "/table", intent: "open" }
+  if (table === "live" && seat.seated && !seat.away) return { key: "continue", label: "Continue", sub: `${as} Back into the game; your seat is kept.`, href: "/" }
+  if (table === "lobby" || table === "unknown") return { key: "continue", label: "Continue", sub: `${as} Take your seat at the table.`, href: "/table" }
+  // Dark, or live without a seat (the roster locked without them, or the host stepped them out): the table is
+  // still the one place to wait, and it says why.
+  const why = table === "live" ? (seat.away ? "The host has stepped you out. Your chair is held." : "This session began without you. Wait for the next one.") : "Wait at the table; you are seated the moment the host opens it."
+  return { key: "continue", label: "Continue", sub: `${as} ${why}`, href: "/table" }
 }
 
 /** Turn /api/table's `state.status` into a DoorTable; anything unexpected is "unknown". */

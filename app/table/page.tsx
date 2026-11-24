@@ -34,6 +34,7 @@ import { readSettings } from "@/lib/settings"
 import { SaveShelf } from "@/components/save-shelf"
 import { InvitePanel } from "@/components/invite-panel"
 import { PENDING_CODE_KEY, readPendingCode } from "@/lib/room-code"
+import { DOOR_INTENT_KEY, readIntent, type DoorIntent } from "@/lib/door-intent"
 
 const CHARACTER_LS_KEY = "aop_character_id"
 const TOKEN_LS_KEY = "aop_claim_token"
@@ -273,6 +274,25 @@ export default function TablePage() {
     }, DARK_MS)
   }, [view, role, dark, router, hostMode])
 
+  // WHY THEY CAME (lib/door-intent.ts; the title screen's four buttons, Sam 2026-11-23 "PR3"). Read once, for the
+  // DM or the host, the first time the room is known: Continue on a dark table opens it; New Campaign and Load Game
+  // bring their panel into view and light it for a few seconds.
+  const intentDone = useRef(false)
+  const [lit, setLit] = useState<DoorIntent | null>(null)
+  useEffect(() => {
+    if (intentDone.current || !view || !role) return
+    if (role !== "dm" && !hostMode) return
+    intentDone.current = true
+    let intent: DoorIntent | null = null
+    try { intent = readIntent(sessionStorage.getItem(DOOR_INTENT_KEY)); sessionStorage.removeItem(DOOR_INTENT_KEY) } catch { /* storage blocked */ }
+    if (!intent) return
+    if (intent === "open") { if (view.state.status === "closed") send("open"); return }
+    if (view.state.status !== "closed") return // New Game and the shelf only show while the table is dark
+    setLit(intent)
+    window.setTimeout(() => document.getElementById(intent === "new" ? "table-new-game" : "table-shelf")?.scrollIntoView({ behavior: "smooth", block: "center" }), 250)
+    window.setTimeout(() => setLit(null), 4500)
+  }, [view, role, hostMode, send])
+
   // Room music: calm, looped, only on the real site (Sam's test-copy rule) and only if the Settings sheet allows
   // intro scores. The browser will not start sound before a click, so it tries at once and again on the first
   // press anywhere; the speaker button shows as soon as the player exists, so a refused table is one press away.
@@ -368,8 +388,16 @@ export default function TablePage() {
         )}
         {view && hostMode && <SeatInvites view={view} busy={busy} send={send} />}
         {/* THE SHELF (Sam, 2026-11-10): the saved games, for the host or the DM, while the table is dark. */}
-        {view && view.state.status === "closed" && (role === "dm" || hostMode) && <SaveShelf me={hostMode ? me : null} onLoaded={load} />}
-        {view && view.state.status === "closed" && (role === "dm" || hostMode) && <NewGame me={hostMode ? me : null} onDone={load} />}
+        {view && view.state.status === "closed" && (role === "dm" || hostMode) && (
+          <div id="table-shelf" className={cn("rounded-sm transition-shadow duration-700", lit === "load" && "shadow-[0_0_0_2px_rgba(232,197,106,0.8),0_0_50px_rgba(232,197,106,0.35)]")}>
+            <SaveShelf me={hostMode ? me : null} onLoaded={load} />
+          </div>
+        )}
+        {view && view.state.status === "closed" && (role === "dm" || hostMode) && (
+          <div id="table-new-game" className={cn("rounded-sm transition-shadow duration-700", lit === "new" && "shadow-[0_0_0_2px_rgba(232,197,106,0.8),0_0_50px_rgba(232,197,106,0.35)]")}>
+            <NewGame me={hostMode ? me : null} onDone={load} />
+          </div>
+        )}
         {/* A host's Start is their Ready, so their own box shows only when it has something to tell them. */}
         {view && role === "player" && (!hostMode || view.mine?.light === "red") && <PlayerBox view={view} busy={busy} send={send} />}
         {view && role === "player" && view.state.status === "lobby" && view.mine && <FigurePicker view={view} busy={busy} send={send} />}
