@@ -85,8 +85,8 @@ describe("what each condition does", () => {
     expect(onlyMoves(new Set(["stunned", "paralyzed"]))).toBe(false)
     expect(onlyMoves(new Set(["poisoned"]))).toBe(false)
   })
-  it("bleeding is the bearded devil's Infernal Wound: 1d10 a turn, DC 12 Medicine, not undead or constructs", () => {
-    expect(BLEED_DEFAULT).toEqual({ dice: "1d10", dc: 12 })
+  it("bleeding is the Infernal Wound's rule at Sam's 1d6 a turn, DC 12 Medicine, not undead or constructs", () => {
+    expect(BLEED_DEFAULT).toEqual({ dice: "1d6", dc: 12 })
     expect(bleedImmune("Undead")).toBe(true)
     expect(bleedImmune("construct")).toBe(true)
     expect(bleedImmune("humanoid")).toBe(false)
