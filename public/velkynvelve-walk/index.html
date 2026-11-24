@@ -17952,9 +17952,11 @@ const DS_GLYPH = {
   s: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${DS_PATH.s}"/><path class="beat" d="${DS_PATH.beat}"/></svg>`,
   f: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${DS_PATH.f}"/><path class="eye" d="${DS_PATH.eyes}"/></svg>`
 };
-function turnSaves(a, roll){
+function turnSaves(a, roll, snap){
   const el = $("turnSaves"), card = $("turnCall"); if (!el || !card) return;
-  const ds = a && a.kind === "pc" && a.c && a.c.ds;
+  // snap: the marks as the screen running the fight had them when it called (ONE FIGHT relays this call). A screen
+  // showing the fight gets its fighters' sheets on its own clock, so it draws from the snapshot, never its own copy.
+  const ds = snap || (a && a.kind === "pc" && a.c && a.c.ds);
   if (!ds || (!a.down && roll == null)){ el.hidden = true; el.innerHTML = ""; delete el.dataset.who; card.classList.remove("dying"); return; }
   const was = el.dataset.who === a.id ? {s: +el.dataset.s || 0, f: +el.dataset.f || 0} : {s: ds.s, f: ds.f};   // what the card showed: the rest are fresh
   const pip = (k, i, n, w) => `<span class="ds ${k}${i < n ? " on" : ""}${i < n && i >= w ? " fresh" : ""}">${DS_GLYPH[k]}</span>`;
@@ -27166,7 +27168,7 @@ function deathMark(a, success, n, why){
   if (ds.f >= 3){ dieNow(a, why); return; }
   if (ds.s >= 3){ ds.stable = true; popText(a, "stable", "#9ff2c8", 1.2); log(`<b>${fname(a)} is stable.</b> No more death saves; they stay down at 0 HP until healed.`); }
   renderParty();
-  if (turnCall.who === a && deathSaveTurn.rolling !== a && !$("turnSaves").hidden) turnSaves(a);   // struck while their card is up: the failure lands on it
+  if (turnCall.who === a && deathSaveTurn.rolling !== a && !$("turnSaves").hidden) turnSaves(a, null, {...ds});   // struck while their card is up: the failure lands on it
 }
 function dieNow(a, why){
   // A hero who dies OUTSIDE a fight has no combat record yet (Sam, 2026-11-10: Fifi shot dead at the pen gate a second
@@ -28854,7 +28856,8 @@ function gameOverLeave(kind){
 }
 // a downed hero's turn: the save, and the turn passes (a 20 gets them up, and the turn is theirs)
 function deathSaveTurn(a){
-  turnCall(a); $("turnWhat").innerHTML = "<i>—</i><b>Death save</b>";   // the card up with the marks so far (turnSaves)
+  turnCall(a); turnWhat(a, null, "Death save");   // the card up with the marks so far (turnSaves); both are relayed (ONE FIGHT)
+  turnSaves(a, null, {...a.c.ds});   // the marks BEFORE the roll, as data: a screen showing the fight may already hold the sheet after it, and the new mark would not pop
   const r = d20(0, a);   // a death save is a saving throw: Halfling Luck applies
   fightCam(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 40, 500, [a]);
   if (r === 20){
@@ -28865,7 +28868,7 @@ function deathSaveTurn(a){
   bank(ok ? "ui/turn_chime" : "ui/nat1", .5);
   log(`${fname(a)} death save: ${r} — ${ok ? "success" : r === 1 ? "two failures" : "failure"}.`);
   deathSaveTurn.rolling = a; deathMark(a, ok, ok ? 1 : r === 1 ? 2 : 1, "three failed death saves"); deathSaveTurn.rolling = null;
-  turnSaves(a, r);                                                   // the roll and the mark it earned, on the card
+  turnSaves(a, r, a.c.ds && {...a.c.ds});                            // the roll and the mark it earned, on the card (and every screen's)
   setTimeout(() => passTurn(a), 1300); return true;
 }
 // first aid: an action, DC 10 Wisdom (Medicine), on a dying friend within 5 ft
@@ -29920,6 +29923,7 @@ const RELAY = {depth: 0, orig: {}, imgs: {}};
 const RELAY_FNS = ["log", "narrate", "popText", "bark", "shake", "hitstop", "redFlash", "critBeat", "toast", "victoryBanner", "triumph", "spawnFx", "slowmo",
   "pairCam", "pushCam", "settleCam",    // the camera's cues (HOW A FIGHT IS STAGED): each screen frames the same two fighters for itself
   "turnCall", "turnWhat",               // whose turn, what they do and to whom (the banner and the target's ring): a screen showing the fight had neither
+  "turnSaves",                          // a death save landing on the turn card: the roll and the marks it left, as the authority saw them
   "mapFilm", "playFilm",
   "strikeCam", "strikeCamLand"];               // WORLD EVENTS: a film cue plays on every screen on the plate (each seat's own once-per-character rule still decides)
 const fightOn = () => !!(FIGHT.id && (FIGHT.auth || FIGHT.mirror || FIGHT.watch));
