@@ -146,6 +146,22 @@ function gameLeg(a,b,last){
   if(!e){ e={a,b,m:"walk",o:0,mi:1,d:false}; e.pts=curvePts(e,40); }
   gameLast=!!last; gameLegP={legs:[{from:a,to:b,e}],miles:e.mi}; queued=null; goTo(b);
 }
+/* ---------- GAME MODE: "Ok, which one?" at a fork (Sam, 2026-11-23) ----------
+   The game names the roads the party could take and who in the company asks; the page says it in a bubble over the
+   party and makes those roads' stops pulse. No card: the road is picked by clicking its stop, the ordinary way. */
+const forkSay=document.createElement("div"); forkSay.className="forkSay"; forkSay.hidden=true; document.body.appendChild(forkSay);
+let forkKs=[], forkUntil=0; const forkV=new THREE.Vector3();
+function gameFork(m){
+  forkKs=Array.isArray(m.ks)?m.ks.filter(k=>stops.has(k)):[]; forkSay.textContent="";
+  if(m.line){ if(m.who){ const b=document.createElement("b"); b.textContent=m.who; forkSay.appendChild(b); } const s=document.createElement("span"); s.textContent=m.line; forkSay.appendChild(s); }
+  forkSay.hidden=!m.line; forkUntil=performance.now()+5200; if(!forkKs.length) refresh();
+}
+(function forkTick(){ requestAnimationFrame(forkTick);
+  if(!forkSay.hidden){ if(performance.now()>forkUntil) forkSay.hidden=true;
+    else { forkV.copy(hero.position); forkV.y+=hero.scale.y*1.12; forkV.project(camera);   // over the head: the sprite stands on its feet, scaled each frame
+      forkSay.style.transform=`translate(${(forkV.x*.5+.5)*innerWidth}px,${(-forkV.y*.5+.5)*innerHeight-6}px) translate(-50%,-100%)`; } }
+  if(forkKs.length){ const p=.55+.45*Math.sin(performance.now()/260); for(const k of forkKs){ const g=stops.get(k); if(g&&g.visible) g.userData.ringMat.emissiveIntensity=(g.userData.base||1.1)+1.6*p; } }
+})();
 if(GAME){
   document.body.classList.add("game"); rimLight(heroMat);
   const soon=document.querySelector("#entEnter .soon"); if(soon) soon.remove();
@@ -153,7 +169,8 @@ if(GAME){
   addEventListener("message",ev=>{ if(ev.origin!==location.origin||!ev.data) return; const m=ev.data;
     if(m.type==="aop:map-state") applyState(m,false);
     else if(m.type==="aop:map-leg") gameLeg(m.a,m.b,m.last);
-    else if(m.type==="aop:map-place") gamePlace(m.k); });
+    else if(m.type==="aop:map-place") gamePlace(m.k);
+    else if(m.type==="aop:map-fork") gameFork(m); });
 }
 '''
 
@@ -166,6 +183,10 @@ body.game .hud.toggles,body.game .hud.keys,body.game:not(.gm) #legend,body.game:
 body.game.gm .dmlight{display:flex;align-items:center;gap:7px;right:18px;top:14px;font-family:var(--ui);font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:#f3e6ff;background:var(--panel);border:1px solid #b44df5;padding:7px 11px;box-shadow:0 0 14px #b44df555}
 body.game.gm .dmlight i{width:8px;height:8px;border-radius:50%;background:#d48bff;box-shadow:0 0 8px #d48bff,0 0 2px #fff}
 body.game:not(.lead) #entEnter{display:none !important}
+/* "Ok, which one?" at a fork (Sam, 2026-11-23): a speech bubble over the party, like the Underwalk's */
+.forkSay{position:fixed;left:0;top:0;z-index:40;pointer-events:none;max-width:240px;padding:7px 12px 8px;border-radius:14px;background:#fbf6ea;color:#241a12;font:600 14px/1.25 var(--body,Georgia),serif;box-shadow:0 4px 14px rgba(0,0,0,.55);text-align:center}
+.forkSay b{display:block;font:700 10px/1.2 var(--ui,sans-serif);letter-spacing:.14em;text-transform:uppercase;color:#9a2a1e;margin-bottom:2px}
+.forkSay::after{content:"";position:absolute;left:50%;bottom:-9px;margin-left:-8px;border:8px solid transparent;border-bottom:0;border-top-color:#fbf6ea}
 '''
 
 PATCHES = [
