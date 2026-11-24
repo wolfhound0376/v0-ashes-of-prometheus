@@ -11,7 +11,8 @@ import { BUCKET, MEDIA_FOLDERS, abilitiesOf, agentFolder, searchWords, uploadPat
 //
 //   GET                       → {agents: [...]}  the eight, with portrait and counts
 //   GET  ?agent=<key>         → the package: card, abilities (from the code), stat block, voice and video, films,
-//                               pixel art, files, memories, standing, coaching, recent lines
+//                               pixel art, files, memories, standing, coaching, recent lines, the options they
+//                               offered (germane or bait, and which one the player took)
 //   PATCH {agent, bible?, agenda?, voice_note?, chattiness?}            edit the card (Sam's own words win)
 //   POST {action:"coach", agent, note, scope}                          a coaching note ("Less talk at camp")
 //   POST {action:"coach-toggle", id, active}                           switch a note off or back on
@@ -71,6 +72,8 @@ async function agentPackage(db: Db, key: string) {
     db.from("dialogue_archive").select("text, created_at, recipient").in("speaker", [card.name, ...(card.aliases ?? [])]).order("created_at", { ascending: false }).limit(12),
     db.from("characters").select("id, name").eq("is_player", true).is("archived_at", null),
   ])
+  // The options this agent laid on the table, with why (germane or bait) and what the player took. DM eyes only.
+  const options = (await db.from("suggestion_sets").select("created_at, moment, suggestions, picked").eq("author", card.name).order("created_at", { ascending: false }).limit(20)).data ?? []
   const heroName = new Map(((heroes.data ?? []) as { id: string; name: string }[]).map((h) => [h.id, h.name]))
   const e = enc.data?.[0] ?? null
 
@@ -135,6 +138,7 @@ async function agentPackage(db: Db, key: string) {
     standing,
     events,
     coaching: coaching.data ?? [],
+    options,
     lines: { archived: archive.count ?? 0, recent: recent.data ?? [] },
   }
 }

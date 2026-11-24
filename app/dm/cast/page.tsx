@@ -229,7 +229,28 @@ function ActorTab({ pkg, onSaved }: { pkg: Json; onSaved: () => void }) {
           ))}
         </ul>
       </div>
-      <div className={panel}>
+      <div className={`${panel} lg:col-span-2 lg:row-start-2`}>
+        <span className={label}>The options {c.name.split(" ")[0]} laid on the table</span>
+        <p className="mb-2 text-[12px] text-stone-400">Every option is germane to the moment or bait on purpose (Sam, 2026-11-23). Players never see these tags. A ✓ marks the one they took.</p>
+        <ul className="space-y-2">
+          {(pkg.options ?? []).length === 0 ? <li className="text-[12px] text-stone-500">None yet. They gather as players are offered options.</li> : null}
+          {(pkg.options ?? []).map((o: Json, i: number) => (
+            <li key={i} className="rounded-sm border border-[#3d3428] px-2 py-1.5">
+              <div className="mb-1 text-[10px] uppercase tracking-wider text-stone-500">{new Date(o.created_at).toLocaleString()} · {o.moment?.plate ?? "somewhere"}{o.moment?.talkingTo ? ` · with ${o.moment.talkingTo}` : ""}{o.moment?.fight ? " · in a fight" : ""}</div>
+              <ul className="space-y-0.5">
+                {(o.suggestions ?? []).map((sg: Json, j: number) => (
+                  <li key={j} className="flex items-center gap-2 text-sm">
+                    <span className={`w-14 shrink-0 rounded px-1 text-center text-[9px] uppercase ${sg.intent === "bait" ? "bg-red-900/40 text-red-300" : "bg-[#c4a777]/15 text-[#c4a777]"}`}>{sg.intent === "bait" ? "bait" : sg.kind === "observe" ? "look" : "germane"}</span>
+                    <span className="flex-1">{sg.text}</span>
+                    {o.picked && o.picked === sg.text ? <span className="text-[#9fe6a8]">✓</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className={`${panel} lg:row-start-1 lg:col-start-2`}>
         <span className={label}>Chattiness</span>
         <input type="range" min={0} max={10} value={chat} onChange={(e) => saveChat(Number(e.target.value))} className="w-full accent-[#c9a868]" />
         <div className="flex justify-between text-[10px] text-stone-500"><span>silent</span><span className={gold}>{chat}</span><span>never shuts up</span></div>
