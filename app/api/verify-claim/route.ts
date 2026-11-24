@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/admin"
 import { WALK_SHEET_COLUMNS, walkSheetFromRow, type WalkSheet } from "@/lib/walk-sheet"
+import { dressRows } from "@/lib/worn-gear-rows"
 
 // Verify a character claim link (/?c=<characterId>&k=<claimToken>) SERVER-SIDE.
 // The anon client must never be able to read characters.claim_token, so this
@@ -65,7 +66,8 @@ export async function POST(req: Request) {
   // still in his browser). Who you are now brings what you are with it. Best-effort: a sheet that
   // cannot be built leaves it off, and the map falls back as before.
   let sheet: WalkSheet | null = null
-  try { sheet = walkSheetFromRow(character) } catch { sheet = null }
+  // dressed, as /api/map-stage does it: worn gear counts (lib/worn-bonus.ts)
+  try { sheet = walkSheetFromRow((await dressRows(admin, [character]))[0]) } catch { sheet = null }
 
   // This route used to seat the character too, on every dashboard load and at /awaken, which is how
   // heroes walked into a game already under way (Sam's playtest, 2026-10-25). Seats are now taken
