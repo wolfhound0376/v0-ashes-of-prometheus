@@ -106,6 +106,7 @@ import {
 import { loadInfectionBlock } from "@/lib/gas-spore-clock"
 import { cueLines, cuesForMalachar, offerToMalachar, type CueRow, type OfferedCue } from "@/lib/cinematic-doors"
 import * as fal from "@fal-ai/serverless-client"
+import { dressRow } from "@/lib/worn-gear-rows"
 
 // Configure Fal client
 fal.config({
@@ -1235,11 +1236,13 @@ ${companions.length ? `RUN BY THE DM AS NPCs: ${companions.map((c) => c.name).jo
                 ? await timeAdmin.from("items").select("id, name, rarity, item_type, value, weight, description, properties").eq("id", project.item_id).maybeSingle()
                 : { data: null }
               const recipe = (item?.properties as { craft?: Parameters<typeof craftSpec>[1] } | null)?.craft
-              const { data: crafter } = await timeAdmin
+              const { data: crafterRow } = await timeAdmin
                 .from("characters")
                 .select("str_score, dex_score, con_score, int_score, wis_score, cha_score, proficiency_bonus, level, sheet_proficiencies")
                 .eq("id", playerCharacter.id)
                 .maybeSingle()
+              // with their gear on (lib/worn-bonus.ts): a worn ability bonus counts on the crafting roll
+              const crafter = await dressRow(timeAdmin, crafterRow, playerCharacter.id)
               // The same tool the work began with: the first of the recipe's
               // tools this crafter is proficient with.
               const profTools = (crafter?.sheet_proficiencies as { tools?: unknown } | null)?.tools
@@ -1281,9 +1284,10 @@ ${companions.length ? `RUN BY THE DM AS NPCs: ${companions.map((c) => c.name).jo
               // passive roll can find it when someone comes in the night.
               const face = keptD20(req.result as { total?: unknown; modifier?: unknown } | null)
               const ability = CAMP_TOOL_ACTIONS[linked.action].roll ?? "dex"
-              const { data: sheet } = await timeAdmin.from("characters")
+              const { data: sheetRow } = await timeAdmin.from("characters")
                 .select("str_score, dex_score, con_score, int_score, wis_score, cha_score, proficiency_bonus, level")
                 .eq("id", playerCharacter.id).maybeSingle()
+              const sheet = await dressRow(timeAdmin, sheetRow, playerCharacter.id)   // with their gear on (lib/worn-bonus.ts)
               if (face == null || !sheet) {
                 campResults.push(`${name}'s ${linked.action === "forge" ? "forgery" : "trap"} roll could not be read — nothing set.`)
               } else {
@@ -2364,10 +2368,12 @@ ${MALACHAR_LAST_WORD}`
       } else if (talkWith) {
         const said = parseTalkSkill(String(message ?? ""))
         if (said) {
-          const [{ data: npcRow }, { data: sheet }] = await Promise.all([
+          const [{ data: npcRow }, { data: sheetRow }] = await Promise.all([
             admin.from("npc_encounters").select("disposition").ilike("name", talkWith).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
             admin.from("characters").select("level, str_score, dex_score, con_score, int_score, wis_score, cha_score, proficiency_bonus, sheet_skill_proficiencies").eq("id", playerCharacter.id).maybeSingle(),
           ])
+          // with their gear on (lib/worn-bonus.ts): Malachar's own check uses the numbers the player's sheet shows
+          const sheet = await dressRow(admin, sheetRow, playerCharacter.id)
           if (sheet) {
             const b = skillBonus(sheet as unknown as Parameters<typeof skillBonus>[0], said.skill)
             talkCheck = { skill: said.skill, npc: talkWith, dc: talkDc((npcRow as { disposition?: string | null } | null)?.disposition), mod: b.mod + b.prof }
