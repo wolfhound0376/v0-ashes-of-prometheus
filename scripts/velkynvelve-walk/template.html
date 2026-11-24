@@ -4294,10 +4294,27 @@ function whoGoes(z, to){
   if (!others.length || !canControl(leader)){ travel(to, z); return; }
   if (!followOn || others.some(owRemote)) travel(to, z, false, null, true); else travel(to, z);
 }
+// "OK, WHICH ONE?" (Sam, 2026-11-23: "When there are multiple ways to go, make sure someone asks 'Ok, which one?'").
+// At a fork someone in the party says it out loud, in a bubble and their own saved voice, before the choice opens: a
+// companion if one walks with you, else another hero; nobody when the leader is alone (the card still asks).
+const FORK_LINE = "Ok, which one?";
+function forkAsker(){
+  const near = a => a && a !== leader && !a.down && !a.ko && a.alpha > .2 && SPR[a.id] && Math.hypot(a.x - leader.x, a.y - leader.y) < 700 * node.scale;
+  const pool = party.filter(a => near(a) && a.kind !== "pc"), heroes = party.filter(a => near(a) && a.kind === "pc");
+  const from = pool.length ? pool : heroes;
+  return from.length ? from[Math.floor(Math.random() * from.length)] : null;
+}
+function askWhichOne(){
+  const a = forkAsker(); if (!a) return null;
+  bark(a, FORK_LINE, 3600); speak(a.id, FORK_LINE);   // heard every time it is asked, not once (the page-wide silence rule still applies)
+  return a;
+}
 function chooseDestination(z){
-  if (z.to.length === 1){ whoGoes(z, z.to[0]); return; }
-  showDialog({title: z.label.split(":")[0], body: "Where does the party head?", buttons: [
-    ...z.to.filter(t => !unseenWayOnly() || t === QUAGGOTH_DEN).map(t => ({label: (z.routes && z.routes[t]) || `${t} · ${nameOf(t)}`, primary: true, fn: () => whoGoes(z, t)})),
+  const ways = z.to.filter(t => !unseenWayOnly() || t === QUAGGOTH_DEN);
+  if (ways.length === 1){ whoGoes(z, ways[0]); return; }
+  const who = askWhichOne();
+  showDialog({title: z.label.split(":")[0], body: who ? `${SHORT[who.id] || SPR[who.id].json.name}: “${FORK_LINE}”` : FORK_LINE, buttons: [
+    ...ways.map(t => ({label: (z.routes && z.routes[t]) || `${t} · ${nameOf(t)}`, primary: true, fn: () => whoGoes(z, t)})),
     {label: "Stay here"}]});
 }
 function exitReached(z){
