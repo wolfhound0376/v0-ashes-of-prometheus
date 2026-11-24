@@ -1,4 +1,5 @@
 import { featNamesOn } from "./feats"
+import { wornSkillBonus } from "./worn-bonus"
 import { normalizeConditions } from "./conditions"
 
 // ============================================================================
@@ -73,6 +74,8 @@ export type LoreTool = "alchemist" | "poisoner" | "herbalism"
 export const WALK_SHEET_COLUMNS =
   "id, name, class, level, hp_max, hp_current, xp, ac, initiative, speed, proficiency_bonus, " +
   "str_score, str_modifier, dex_modifier, con_modifier, int_modifier, wis_modifier, cha_modifier, " +
+  // the other five scores: worn gear raises a SCORE (lib/worn-bonus.ts), and only the score says whether the modifier moves
+  "dex_score, con_score, int_score, wis_score, cha_score, " +
   "sheet_species, sheet_skill_proficiencies, sheet_save_proficiencies, sheet_proficiencies, sheet_attacks, sheet_spellcasting, sheet_features, conditions"
 
 
@@ -105,7 +108,8 @@ export function skill(row: Row, label: string, mod: number, prof: number): numbe
   const flat = (s: string) => s.toLowerCase().replace(/[^a-z]/g, "")
   const key = Object.keys(profs).find((k) => flat(k) === flat(label))
   const level = key ? String(profs[key]).toLowerCase() : ""
-  return mod + (level === "expertise" ? 2 * prof : level === "proficient" ? prof : 0)
+  // plus what worn gear gives the skill itself (lib/worn-bonus.ts: a Traveler's Cloak that rolled Stealth)
+  return mod + (level === "expertise" ? 2 * prof : level === "proficient" ? prof : 0) + wornSkillBonus(row, label)
 }
 
 const ABILS = ["str", "dex", "con", "int", "wis", "cha"] as const
@@ -122,7 +126,8 @@ export function saves(row: Row, m: Record<Abil, number>, prof: number): WalkShee
 /** A skill's bonus with the proficiency word it came from ("" when none). */
 export function skillEntry(row: Row, label: string, mod: number, prof: number): { mod: number; level: "" | "proficient" | "expertise" } {
   const b = skill(row, label, mod, prof)
-  return { mod: b, level: b === mod + 2 * prof && prof > 0 ? "expertise" : b === mod + prof && prof > 0 ? "proficient" : "" }
+  const own = b - wornSkillBonus(row, label)   // the proficiency word is read off the hero's own bonus, not the gear's
+  return { mod: b, level: own === mod + 2 * prof && prof > 0 ? "expertise" : own === mod + prof && prof > 0 ? "proficient" : "" }
 }
 
 const LORE_TOOL_NAMES: Record<LoreTool, string> = { alchemist: "alchemistssupplies", poisoner: "poisonerskit", herbalism: "herbalismkit" }

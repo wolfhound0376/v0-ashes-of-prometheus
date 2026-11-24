@@ -778,7 +778,17 @@ for _k, _rle in _M.get('doors', {}).items():
     _runs = [int(r) for r in _rle.split(',')]
     assert sum(_runs) == _M['w'] * _M['h'], ('door cells do not cover exactly one grid', _k, sum(_runs))
     _PLATES[_k]['doorMask'] = _rle
-_PLATES['road-tunnels']['mask'] = _PLATES['tunnels']['mask']   # the road's tunnels walk the tunnels' painted floor
+if 'road-tunnels' not in _M['masks']: _PLATES['road-tunnels']['mask'] = _PLATES['tunnels']['mask']   # until Sam painted it on the board (2026-11-24), the road's tunnels walked the tunnels' floor
+# SAM'S EXIT BOXES (the Act One Plates board, "Edit exits", 2026-11-23/24): board_exits.json holds the rect he dragged
+# each exit to, by plate and by the exit's index in `zones`. Only the rect is taken; a stale index fails the build.
+_BX = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'board_exits.json')))
+for _k, _rs in _BX.items():
+    if _k.startswith('_'): continue
+    assert _k in _PLATES, ('board_exits.json names a plate that does not exist', _k)
+    for _i, _r in _rs.items():
+        assert int(_i) < len(_PLATES[_k]['zones']), ('board_exits.json names an exit that does not exist', _k, _i)
+        assert len(_r) == 4 and _r[0] < _r[2] and _r[1] < _r[3], ('board_exits.json rect is not a box', _k, _i, _r)
+        _PLATES[_k]['zones'][int(_i)]['rect'] = [int(v) for v in _r]
 print(len(_M['masks']), 'plates walk Sam\'s painted floor; traced shapes still used by:', ', '.join(k for k in _PLATES if k not in _M['masks']))
 
 # ── height on a plate ─────────────────────────────────────────────────────────────────────────────────────────────────

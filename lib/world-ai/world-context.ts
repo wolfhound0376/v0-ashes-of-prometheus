@@ -1,6 +1,7 @@
 import { formatTacticalSection, type TacticalBoard, type BoardToken } from "@/lib/tactical"
 // World Context Service - Gathers all world-building data for Malachar
 import { createClient } from "@/lib/supabase/server"
+import { withWornGear, wornSkillBonus } from "@/lib/worn-bonus"
 import { calculateAC } from "@/lib/armor-class"
 import { CAMPAIGNS, Campaign } from "./campaigns"
 import type { Character, InventoryItem, EquipmentItem, Ability, Environment, Dialogue } from "@/lib/types/database"
@@ -275,13 +276,18 @@ export async function fetchCharacters(): Promise<WorldContext["characters"]> {
     }
 
     // Fetch related data for each character
-    const result = await Promise.all(characters.map(async (char: Character) => {
-      // Get equipment
+    const result = await Promise.all(characters.map(async (stored: Character) => {
+      // Get equipment. The column is `equipped`: this filter read `is_equipped`, a column that does not exist,
+      // so the query failed, `equipment` was null, and Malachar saw every hero as wearing nothing (found 2026-11-24).
       const { data: equipment } = await supabase
         .from("equipment_items")
         .select("name, slot, stats_bonus")
-        .eq("character_id", char.id)
-        .eq("is_equipped", true)
+        .eq("character_id", stored.id)
+        .eq("equipped", true)
+
+      // The hero with their gear on (lib/worn-bonus.ts): a worn +1 Dexterity is in the scores, saves, skills and AC
+      // Malachar reads below, exactly as the player's own sheet shows them.
+      const char = withWornGear(stored, equipment || [])
       
       // Get abilities
       const { data: abilities } = await supabase
@@ -343,7 +349,7 @@ export async function fetchCharacters(): Promise<WorldContext["characters"]> {
                 const ability = SKILL_ABILITY[lookup]
                 if (!ability) return null
                 const isExpertise = String(level).toLowerCase() === "expertise"
-                const bonus = abilityMod(scoreByAbility[ability] ?? 10) + profBonus * (isExpertise ? 2 : 1)
+                const bonus = abilityMod(scoreByAbility[ability] ?? 10) + profBonus * (isExpertise ? 2 : 1) + wornSkillBonus(char, lookup)
                 return `${titleCaseSkill(lookup)} ${fmtBonus(bonus)}${isExpertise ? " (expertise)" : ""}`
               })
               .filter(Boolean) as string[])

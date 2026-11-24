@@ -865,6 +865,97 @@ body.bagOpen .toast,body.bagOpen .dialog{z-index:30}   /* the stage's height bud
 /* THE LEVEL UP CEREMONY (PR 2): a sheet over the backpack — what the level fixes, the one choice it asks (the Hit Die:
    roll it or take the SRD's fixed value), the choices owed on the sheet after, and one Confirm that writes once. */
 .invPack{position:relative}
+
+/* THE BACKPACK AS A GRID (Sam, 2026-11-24: "I like the grid of icons, dragging, drop on the ground, and transfer right
+   clicking on the item or dragging to the player card. Otherwise keep everything the same"; then tabs by kind from his
+   Ashes_Backpack_Tabs art, the card as a column in the loot ceremony's colours with the map's action buttons at its
+   foot, player cards top right, the header in the map's title face, coins by metal, the figure breathing).
+   The same rows, the same order, the same rules: each row is drawn as a tile, and what its buttons did lives on the card. */
+.inv .invPack{grid-template-columns:minmax(0,1fr) 250px;grid-template-rows:auto auto minmax(0,1fr);column-gap:10px}
+.inv .invPack > .invPackHead,.inv .invPack > .invKinds{grid-column:1/3}
+.inv .invPack > .invList{grid-column:1;grid-row:3}
+.inv .invPack > .invDetail{grid-column:2;grid-row:3}
+.inv .invPackHead{align-items:center}
+.inv .invPackHead .ttl{font-family:"Cinzel Decorative",var(--face-title);font-weight:900;font-size:clamp(20px,1.9vw,27px);line-height:1.05;letter-spacing:.055em;text-transform:uppercase;white-space:nowrap;
+  background:linear-gradient(180deg,#fff4d2 0%,#f0cf86 30%,#c8963c 52%,#7e5a22 74%,#d6a957 100%);-webkit-background-clip:text;background-clip:text;color:transparent;
+  filter:drop-shadow(0 1px 0 #241505) drop-shadow(0 0 16px rgba(150,104,255,.42)) drop-shadow(0 4px 7px rgba(0,0,0,.85))}
+.inv .invPackHead small{display:flex;align-items:center;gap:10px;font-family:var(--face-title);font-weight:600;font-size:.72rem;letter-spacing:.28em;color:#ece2c8;text-shadow:0 1px 3px #000}
+.inv .invPackHead small i{width:5px;height:5px;transform:rotate(45deg);background:#d9b56a;box-shadow:0 0 6px rgba(165,133,255,.8);flex:none}
+.inv .invPackHead small .heavy{color:#ff8a7a}
+.invKinds{display:flex;gap:7px;min-width:0}
+.inv .invKinds .btn{flex:1 1 0;min-width:0;display:grid;grid-template-columns:40px 1fr;align-items:center;column-gap:4px;min-height:54px;padding:4px 6px 4px 4px;border-radius:13px;font-family:var(--face-display);font-size:1.05rem;font-weight:700;text-align:center}
+.inv .invKinds .btn img{width:40px;height:40px;object-fit:contain;border-radius:9px;border:2px solid rgba(0,0,0,.6);box-shadow:inset 0 0 0 1px rgba(255,233,166,.25),0 2px 0 #000;background:#0a0710;padding:2px;box-sizing:border-box;position:relative;z-index:1}
+.inv .invKinds .btn[aria-pressed="true"]{--c1:#e0ac3c;--c2:#8a5d14;border-color:var(--th-gold-hi);box-shadow:var(--th-slab),0 0 18px rgba(242,197,92,.55)}
+.inv .invList{grid-template-columns:repeat(auto-fill,minmax(70px,1fr));grid-auto-rows:72px;gap:8px;align-content:start}
+.inv .invList .invEmpty{grid-column:1/-1}
+.inv .invRow{display:block;position:relative;height:72px;padding:0;border:0;border-radius:10px;background:none;box-shadow:none}
+.inv .invRow .invPic{width:100%;height:100%;box-sizing:border-box;overflow:hidden}
+.inv .invRow .invPic img{max-width:none;max-height:none;width:94%;height:94%;object-fit:contain;filter:saturate(1.45) contrast(1.08) drop-shadow(0 0 1px #000)}
+.inv .invRow.px .invPic img{image-rendering:pixelated}
+.inv .invRow .invQty{position:absolute;right:5px;bottom:2px;z-index:2;font-family:var(--face-display);font-weight:700;font-size:.82rem;color:#fff;text-shadow:0 0 3px #000,0 0 3px #000,0 1px 0 #000}
+.inv .invRow .invTxt,.inv .invRow .invBtns{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.inv .invRow:hover .invPic{border-color:var(--th-rim)}
+.inv .invRow.fits .invPic{border-color:rgba(242,197,92,.7)}
+.inv .invRow.sel{box-shadow:none}
+.inv .invRow.sel .invPic,.inv .invRow:focus-within .invPic{border-color:var(--th-gold-hi);box-shadow:var(--th-slab),0 0 14px rgba(242,197,92,.5)}
+.inv .invRow .invPic.worn::after{right:4px;top:4px;z-index:3}
+/* the card: a column down the right of the pack, in the loot ceremony's tier colours (LOOT_TIER), never under the grid */
+.inv .invDetail{display:flex;flex-direction:column;gap:0;align-items:stretch;padding:0;min-height:0;overflow:auto;border-top:3px solid var(--rc,#3a2a1b);box-shadow:inset 0 0 0 1px #000,inset 0 0 22px var(--rg,transparent),0 2px 0 #000}
+.inv .invDetail[hidden]{display:flex;visibility:hidden}
+.invDetail .efBand{display:flex;justify-content:space-between;gap:8px;padding:6px 12px;font-family:var(--face-mono);font-size:.62rem;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--rc);background:linear-gradient(90deg,var(--rg,transparent),transparent);border-bottom:1px solid #3a3128}
+.invDetail .efBand span:last-child{color:#7fdc8a}.invDetail .efBand span.war{color:#ff7a6e}
+.inv .invDetail .efBig{width:108px;height:108px;margin:14px auto 8px;flex:none;border-radius:50%;border:6px solid var(--rr,#a8a192);outline:2px solid #000;background:radial-gradient(#2d140a,#140a04);box-shadow:0 0 0 2px #000 inset,0 0 20px var(--rg2,transparent)}
+.inv .invDetail .efBig::before{display:none}
+.inv .invDetail .efBig img{max-width:78px;max-height:78px}
+.inv .invDetail .efBig.px img{width:78px;height:78px;max-width:78px;max-height:78px;object-fit:contain}
+.inv .invDetail h5{text-align:center;padding:0 10px;color:var(--rc);font-family:"Cinzel",var(--face-title);font-weight:700;font-size:1.25rem;line-height:1.1}
+.invDetail .efMeta,.invDetail .efDesc,.invDetail .efFrom{padding:8px 14px 0;margin:0}
+.invDetail .efMeta{text-align:center}
+.invDetail .efDesc{margin-top:8px;padding-top:8px;border-top:1px solid #3a3128}
+.inv .invDetail .efActs{margin-top:auto;display:grid;grid-template-columns:1fr 1fr;gap:9px 7px;padding:12px 10px 14px;border-top:1px solid #3a3128}
+.invDetail .efFrom + .efActs,.invDetail .efDesc + .efActs,.invDetail .efMeta + .efActs{margin-top:auto}
+.inv .invDetail .efAct{display:grid;grid-template-columns:32px minmax(0,1fr);grid-template-rows:auto auto;column-gap:6px;align-items:center;min-width:0;min-height:46px;padding:3px 6px 3px 4px;border-radius:12px;text-align:left;font-family:var(--face-display);font-size:.8rem;font-weight:700;line-height:1.1;text-shadow:0 2px 0 rgba(0,0,0,.65)}
+.inv .invDetail .efAct.wide{grid-column:1/3}
+.inv .invDetail .efAct img{grid-row:1/3;width:32px;height:32px;border-radius:8px;border:2px solid rgba(0,0,0,.6);box-shadow:inset 0 0 0 1px rgba(255,233,166,.25),0 2px 0 #000;object-fit:cover;background:#0a0710;position:relative;z-index:1}
+.inv .invDetail .efAct span{grid-column:2;overflow:hidden;text-overflow:ellipsis}
+.inv .invDetail .efAct small{grid-column:2;font-family:var(--face-mono);font-size:.54rem;font-weight:400;opacity:.85;line-height:1.15;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.inv .efAct[data-cat=attack]{--c1:#c8402e;--c2:#7a1f14}.inv .efAct[data-cat=move]{--c1:#2e8ab8;--c2:#174a66}.inv .efAct[data-cat=party]{--c1:#2f73c9;--c2:#1a4480}
+.inv .efAct[data-cat=search]{--c1:#d1832a;--c2:#8a4f12}.inv .efAct[data-cat=sneak]{--c1:#6b4fc1;--c2:#3d2b80}.inv .efAct[data-cat=rest]{--c1:#4a9a3a;--c2:#2a5e20}.inv .efAct[data-cat=cast]{--c1:#c23f8a;--c2:#731f52}
+.inv .efAct.first{border-color:var(--th-gold)}
+/* who walks with you: a card each, top right, where the name buttons were; drop an item on one to hand it over */
+.inv .invTabs .tbtn.invWho{display:grid;grid-template-columns:50px auto;grid-template-rows:auto auto;column-gap:8px;align-items:center;height:58px;padding:2px 10px 2px 3px;text-align:left;letter-spacing:.04em}
+.inv .invWho .pic{grid-row:1/3;width:50px;height:48px;border-radius:7px;overflow:hidden;background:#0a0710;border:2px solid rgba(0,0,0,.6);display:grid;place-items:center;position:relative;z-index:1}
+.inv .invWho .pic img{width:100%;height:100%;object-fit:cover;object-position:50% 18%}.inv .invWho .pic canvas{image-rendering:pixelated}
+.inv .invWho b{align-self:end;font-family:"Cinzel",var(--face-title);font-size:.86rem}
+.inv .invWho small{align-self:start;font-family:var(--face-body);font-size:.72rem;letter-spacing:0;color:#d9cfbd;white-space:nowrap;text-shadow:none}
+.inv .invWho small.heavy{color:#ff8a7a}
+.inv .invWho.dropOn{border-color:#7fdc8a;box-shadow:var(--th-slab),0 0 16px rgba(127,220,138,.6)}
+/* the purse: every metal and how many, where "out of combat: nothing costs a turn" was */
+.inv .invEcon{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+.invCoin{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 11px 0 4px;border:2px solid var(--th-rim);border-radius:15px;background:linear-gradient(#1d1a24,#121016);box-shadow:inset 0 0 0 1px #000,0 2px 0 #000}
+.invCoin img{width:22px;height:22px;image-rendering:pixelated;filter:saturate(1.5) drop-shadow(0 0 1px #000)}
+.invCoin b{font-family:var(--face-body);font-weight:700;font-size:1rem;color:#fff;font-variant-numeric:tabular-nums;text-shadow:0 2px 0 rgba(0,0,0,.65)}
+.invCoin small{font-family:var(--face-title);font-weight:600;font-size:.6rem;letter-spacing:.18em;text-transform:uppercase;color:#ece2c8}
+.invCoin.zero{opacity:.5}
+.invEcon .invTurn{margin-left:6px}
+/* right-click: who to hand it to, and Drop */
+.invMenu{position:fixed;z-index:62;min-width:210px;display:flex;flex-direction:column;padding:5px;border:2px solid var(--th-gold);border-radius:10px;background:linear-gradient(180deg,#1d1420,#120b14);box-shadow:0 0 0 1px #000,0 10px 26px rgba(0,0,0,.75)}
+.invMenu[hidden]{display:none}
+.invMenu h6{margin:3px 10px 5px;font-family:var(--face-body);font-weight:600;font-size:.74rem;color:#b8a98a}
+.invMenu button{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:9px;padding:5px 10px;border-radius:6px;cursor:pointer;font-family:var(--face-body);font-size:.95rem;color:#f2e6cc}
+.invMenu button:hover,.invMenu button:focus-visible{background:#4a3513}
+.invMenu button[disabled]{opacity:.5;cursor:default;background:none}
+.invMenu button .pic{width:26px;height:26px;border-radius:50%;overflow:hidden;background:#0a0710;flex:none;display:grid;place-items:center}
+.invMenu button .pic img{width:100%;height:100%;object-fit:cover;object-position:50% 18%}
+.invMenu button small{margin-left:auto;padding-left:12px;font-size:.72rem;color:#ff8a7a}
+.invMenu hr{width:100%;border:0;border-top:1px solid #3a3128;margin:4px 0}
+@media (max-width:1180px){
+  .inv .invPack{grid-template-columns:minmax(0,1fr);grid-template-rows:auto auto minmax(0,1fr) auto}
+  .inv .invPack > .invPackHead,.inv .invPack > .invKinds{grid-column:1}
+  .inv .invPack > .invDetail{grid-column:1;grid-row:4;max-height:44%}
+  .inv .invDetail[hidden]{display:none}
+}
+@media (prefers-reduced-motion:reduce){.inv .invRow .invPic,.inv .efAct{transition:none}}
 .invCeremony{position:absolute;inset:0;z-index:3;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:10px;padding:14px 16px;box-sizing:border-box;border-radius:var(--ef-radius);background:linear-gradient(145deg,#17131c,#0d0c12 70%);box-shadow:inset 0 0 0 1px var(--ef-brass),inset 0 0 0 2px #000}
 .invCeremony[hidden]{display:none}
 .cerHead{display:flex;align-items:center;gap:14px}
@@ -1466,13 +1557,15 @@ body.quota-on #cbtMenu[data-kind=explore]{display:none!important}
         </div>
         <div class="invPack">
           <div class="invPackHead" id="invPackHead">Backpack</div>
+          <div class="invKinds" id="invKinds" role="group" aria-label="Kind of item"></div>
           <div class="invList" id="invList"></div>
           <div class="invDetail" id="invDetail" hidden></div>
           <div class="invCeremony" id="invCeremony" role="region" aria-label="Level up" hidden></div>
         </div>
       </div>
       <div class="invHand" id="invHand" hidden></div>
-      <div class="invFoot">Click a slot to see what fits it · rest on or click an item for its card · drag gear on or off the body · I opens and closes · Esc closes</div>
+      <div class="invFoot">Rest on or click an item for its card · drag gear on or off the body, onto a companion, or out of the pack to drop it · right-click to give · I opens and closes · Esc closes</div>
+      <div class="invMenu" id="invMenu" role="menu" aria-label="Give to" hidden></div>
     </div>
     <div class="dm" id="dm" hidden>
       <div class="dmHead"><b>DM tools</b><button class="tbtn" id="dmClose" aria-label="Close DM tools">✕</button></div>
@@ -3766,6 +3859,28 @@ function figureBox(id){
   for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) if (d[(y * cw + x) * 4 + 3] > 16){ if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
   return figBox[id] = x1 < 0 ? {x: 0, y: 0, w: cw, h: ch} : {x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1};
 }
+// THE FIGURE BREATHES (Sam, 2026-11-24: "Make sure this pixel art is animated"). The hero on the inventory stage plays
+// the idle loop the map plays (the sheet's first row: 4 frames at 5 a second), not one still. idleBox is the box that
+// holds every frame of it, so the figure never jumps as it breathes. A worn-armor still (dollWear) has one picture and
+// stands still until it has frames of its own. Reduced motion: one frame, as before.
+const idleBoxes = {};
+function idleBox(id){
+  if (idleBoxes[id]) return idleBoxes[id];
+  const m = SPR[id].json, img = SPR[id].img.idle, [cw, ch] = m.cell, n = Math.max(1, Math.min((m.animations.idle || {}).frames || 1, Math.floor(img.naturalWidth / cw) || 1));
+  const t = document.createElement("canvas"); t.width = cw; t.height = ch; const tc = t.getContext("2d", {willReadFrequently: true});
+  let x0 = cw, y0 = ch, x1 = -1, y1 = -1;
+  for (let f = 0; f < n; f++){ tc.clearRect(0, 0, cw, ch); tc.drawImage(img, f * cw, 0, cw, ch, 0, 0, cw, ch); const d = tc.getImageData(0, 0, cw, ch).data;
+    for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) if (d[(y * cw + x) * 4 + 3] > 16){ if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
+  return idleBoxes[id] = x1 < 0 ? figureBox(id) : {x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1, n};
+}
+function bagBreathe(){
+  const s = inv.stage; if (!s || !bagOpen() || !s.canvas.isConnected) return;
+  if (s.wear && dollWear(s.id, s.wear)) return;   // one still: nothing to play
+  const an = (SPR[s.id].json.animations || {}).idle || {}, n = idleBox(s.id).n || 1; if (n < 2) return;
+  const f = Math.floor(performance.now() / 1000 * (an.fps || 5)) % n; if (f === s.f) return; s.f = f;
+  heroStage(s.id, s.canvas, s.h, s.wear, f);
+}
+if (!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches)) setInterval(bagBreathe, 60);
 function portrait(id, canvas, size){
   const img = SPR[id].img.idle, c = canvas.getContext("2d"), b = figureBox(id);
   canvas.width = size; canvas.height = size; c.imageSmoothingEnabled = false; c.clearRect(0, 0, size, size);
@@ -3806,12 +3921,12 @@ function dollWear(id, name){
     w.img.src = PLATE_DIR + "doll/" + f; }
   return w.box ? w : null;
 }
-function heroStage(id, canvas, stageH, wear){
+function heroStage(id, canvas, stageH, wear, f = 0){
   const w = wear ? dollWear(id, wear) : null;
-  const img = w ? w.img : SPR[id].img.idle, b = w ? w.box : figureBox(id), c = canvas.getContext("2d");
+  const img = w ? w.img : SPR[id].img.idle, b = w ? w.box : idleBox(id), c = canvas.getContext("2d");
   const k = Math.max(1, Math.floor(stageH * .72 / figureBox(id).h));   // the hero's own scale, so the armored figure stands the same size
   canvas.width = b.w * k; canvas.height = b.h * k; c.imageSmoothingEnabled = false;
-  c.drawImage(img, b.x, b.y, b.w, b.h, 0, 0, b.w * k, b.h * k);
+  c.drawImage(img, b.x + (w ? 0 : f * SPR[id].json.cell[0]), b.y, b.w, b.h, 0, 0, b.w * k, b.h * k);
   canvas.style.width = canvas.width + "px"; canvas.style.height = canvas.height + "px";
 }
 // A HERO'S CONDITIONS, IN A FIGHT OR OUT OF ONE (Sam, 2026-11-23: "the condition is shown on hero cards"): the fight's
@@ -4390,12 +4505,28 @@ function askWhichOne(){
   bark(a, FORK_LINE, 3600); speak(a.id, FORK_LINE);   // heard every time it is asked, not once (the page-wide silence rule still applies)
   return a;
 }
+// ONLY THE FORKS THAT MATTER (Sam, 2026-11-24: "which way only is used when there is a fork of some significance"):
+// a doorway between two rooms of the outpost is not a fork. These are -- the escape's choice at the pen landing, the
+// road out at the Northern Watch Post, and the crossroads of the caverns. `ways`: the destinations whose exits count
+// ("leave" = a road out onto the Underdark map; "*" = every way out of the plate). `advice`: whether a companion who
+// knows the way may then speak up (Sam, 2026-11-24: "NPCs that are tagging along may offer advice if they know the
+// way"; adviceAtTheWayOut, the book's guide table) -- not at the pen landing, which is a choice inside the outpost.
+// The list is Claude's reading of "significance"; Sam's to change. [CLAUDE]
+const FORKS = {
+  11: {ways: ["10", "12"]},                       // the pen landing: the bridge to the Guard Tower, or the cliff stairs to the Quaggoth Den
+  13: {ways: ["12", "leave"], advice: true},      // the Northern Watch Post: back down, or out onto the road
+  fork: {ways: "*", advice: true}, tunnels: {ways: "*", advice: true},
+  wastes: {ways: "*", advice: true}, shore: {ways: "*", advice: true},
+};
+const forkWays = z => (z.to || []).length ? z.to.map(String) : ["leave"];
 function tickFork(){
   if (mode !== "explore" || cbt || !leader || leader.down || talkBlocked()) return;
+  const F = FORKS[cur]; if (!F) return;
   const R = 480 * node.scale, near = [];
   node.zones.forEach((z, i) => {
     if (z.interact || z.rappel || z.secret || z.kind === "gate" || z === ackZone || z === forkCameBy) return;
     if (!(z.to || []).length && z.kind !== "leave") return;
+    if (F.ways !== "*" && !forkWays(z).some(w => F.ways.includes(w))) return;
     if (z.landing && !onBalcony(leader)) return;                       // the landing's ways out are only ways once you are out there
     const c = zoneCenter(z); if (Math.hypot(leader.x - c.x, leader.y - c.y) < R) near.push(i);
   });
@@ -4403,6 +4534,7 @@ function tickFork(){
   if (ways.size < 2) return;
   const key = near.join(","); if (forkAsked.has(key)) return;
   forkAsked.add(key); askWhichOne();
+  if (F.advice) setTimeout(() => { if (mode === "explore") adviceAtTheWayOut(); }, 1800);   // then anyone who knows the way may say so
 }
 function chooseDestination(z){
   if (z.to.length === 1){ whoGoes(z, z.to[0]); return; }
@@ -24185,7 +24317,7 @@ function drawStuckGround(){
 //   - throwables (acid, alchemist's fire, holy water), poisons and anything that asks for a save: shown with what the
 //     catalogue says, used through the DM. The map has no throw yet, and nothing gets spent by mistake.
 // Using a thing spends it: one off the stack (/api/walk-items "consume"), and a line in the story so Malachar knows.
-const inv = {who: null, slot: null, item: null};   // item: the backpack row whose card is open (name + item_key)
+const inv = {who: null, slot: null, item: null, kind: "all", stage: null};   // item: the backpack row whose card is open (name + item_key)
 const inFightNow = () => mode === "combat" && !!cbt;
 function useOf(it){
   const p = it.properties || {}, n = String(it.name || "").toLowerCase();
@@ -24256,12 +24388,21 @@ function renderBag(){
   $("invWho").textContent = fname(a); $("invCrest").src = HERO_ICON_BASE + "crest.png";
   if (cer.for && cer.for !== a.id) closeLevelUp();
   { const s = SHEETS[a.id] || {}; renderBagSub(a, s); renderBagChips(a, s); renderLevelPanel(a, s); }
-  $("invEcon").textContent = !fight ? "out of combat: nothing costs a turn"
-    : !mine ? "not their turn: look, don't touch"
-    : `this turn: ${c.action ? "action ready" : "action spent"} · ${c.bonus ? "bonus action ready" : "bonus action spent"} · only what is in hand can change mid-fight`;
+  // THE PURSE (Sam, 2026-11-24: "Where is our monetary section. I say remove out of combat:nothing costs a turn and add
+  // various types of currency separated by the number we have. Gold / Platinum / Etc"). Coins are counted here and
+  // nowhere else: they leave the grid. What a turn has left is still said, in a fight only.
+  $("invEcon").innerHTML = BAG_COINS.map(([slug, label]) => { const n = g.carried.filter(x => bagCoin(x) === slug).reduce((q, x) => q + (x.qty || 1), 0);
+      return `<span class="invCoin${n ? "" : " zero"}" title="${label}"><img src="${ITEM_PX}/item-pixels/${slug}.png" alt=""><b>${n}</b><small>${label}</small></span>`; }).join("")
+    + (!fight ? "" : `<span class="invTurn">${!mine ? "not their turn: look, don't touch"
+      : `this turn: ${c.action ? "action ready" : "action spent"} · ${c.bonus ? "bonus action ready" : "bonus action spent"} · only what is in hand can change mid-fight`}</span>`);
   const tabs = $("invTabs"); tabs.innerHTML = "";
-  for (const p of party){ const b = document.createElement("button"); b.className = "tbtn"; b.textContent = SHEETS[p.id] ? SHEETS[p.id].name.split(" ")[0] : p.id;
-    b.setAttribute("aria-pressed", String(p === a)); b.onclick = () => { inv.who = p; inv.slot = null; renderBag(); }; tabs.appendChild(b); }
+  // A CARD EACH (Sam, 2026-11-24: "Use these cards in the top right where there are just buttons now"): the face, the
+  // name, what they carry against what they can. Click one to look in their pack; drop an item on one to hand it over.
+  for (const p of party){ const b = document.createElement("button"); b.className = "tbtn invWho"; b.dataset.hero = p.id;
+    const nm = SHEETS[p.id] ? SHEETS[p.id].name.split(" ")[0] : p.id, has = carriedLb(p.id), max = carryMaxLb(p.id);
+    b.innerHTML = `<span class="pic"></span><b>${esc(nm)}</b><small class="${encumbered(p) ? "heavy" : ""}">${max != null ? `${has} / ${max} lb` : has > 0 ? `${has} lb` : ""}</small>`;
+    bagFace(p, b.querySelector(".pic"), 46);
+    b.setAttribute("aria-pressed", String(p === a)); b.onclick = () => { if (dragJustEnded) return; inv.who = p; inv.slot = null; renderBag(); }; tabs.appendChild(b); }
   // the doll
   const doll = $("invDoll"); doll.innerHTML = "";
   { const st = stageFor((SHEETS[a.id] || {}).cls || (PCS[a.id] || {}).cls);   // the class's own painting, feet on its pedestal
@@ -24269,7 +24410,9 @@ function renderBag(){
   // the figure at a whole-number scale, shown 1:1 so every pixel stays square, feet on the pedestal — Sam's hero sprite,
   // never a reinterpretation. The stage's height is the CSS clamp (--ef-stage-h); hidden at first render, so the same sum.
   const stageH = doll.clientHeight || Math.min(670, Math.max(360, window.innerHeight - 430));
-  const pic = document.createElement("canvas"); heroStage(a.id, pic, stageH, dollOutfit(a.id, (wornIn(g, "torso") || {}).name, (wornIn(g, "back") || {}).name)); doll.appendChild(pic);
+  const wear = dollOutfit(a.id, (wornIn(g, "torso") || {}).name, (wornIn(g, "back") || {}).name);   // armor, cloak, or the still of both
+  const pic = document.createElement("canvas"); heroStage(a.id, pic, stageH, wear); doll.appendChild(pic);
+  inv.stage = {id: a.id, canvas: pic, h: stageH, wear};   // the idle loop redraws this one (bagBreathe)
   for (const d of DOLL_SLOTS){
     const w = wornIn(g, d.id), it = w && g.carried.find(x => x.name === w.name);
     const b = document.createElement("button"); b.className = "slot" + (w ? "" : " empty"); b.style.left = d.at[0] + "%"; b.style.top = d.at[1] + "%";
@@ -24298,22 +24441,36 @@ function renderBag(){
       b.textContent = HAND(inv.slot) ? "Put away" : "Take off"; b.disabled = !mine || (fight && (!HAND(inv.slot) || !gearCost(a, 1).ok)); b.title = fight ? (HAND(inv.slot) ? gearHint(a, 1) : "not mid-fight") : "";
       b.onclick = () => removeFrom(a, inv.slot); bx.appendChild(b); sel.appendChild(bx); }
   } else sel.innerHTML = '<div class="what">Click a slot to equip or remove, or drag: an item onto a slot to wear it, a slot off the doll to take it off.</div>';
-  { const n = g.carried.length;
+  { const n = g.carried.filter(x => !bagCoin(x)).length;
     const has = carriedLb(a.id), max = carryMaxLb(a.id), over = encumbered(a), near = max != null && has >= max * .9;
-    const load = max != null ? `<span title="Carrying capacity: Strength × 15. Past it you are encumbered: ${ENCUMBERED_SLOW_FT} ft slower. Past ${max * 2} lb nothing more can be lifted."${near ? ' style="color:#ff8a7a"' : ""}>${has} / ${max} lb${over ? ` · encumbered −${ENCUMBERED_SLOW_FT} ft` : ""}</span> · ` : has > 0 ? `${has} lb · ` : "";
-    $("invPackHead").innerHTML = `Backpack<small>${inv.slot ? `fits the ${esc(slotLabel(inv.slot).toLowerCase())} first · ` : ""}${load}${n} item${n === 1 ? "" : "s"}</small>`; }
+    // the map's own faces (Sam, 2026-11-24: "This section in the same font and color as the pixel environment"): the name
+    // as the plate's name is written, the line under it as the area's is, a gold diamond between its parts
+    const parts = [inv.slot ? `<span>fits the ${esc(slotLabel(inv.slot).toLowerCase())} first</span>` : "",
+      max != null ? `<span title="Carrying capacity: Strength × 15. Past it you are encumbered: ${ENCUMBERED_SLOW_FT} ft slower. Past ${max * 2} lb nothing more can be lifted."${near ? ' class="heavy"' : ""}>${has} / ${max} lb</span>` : has > 0 ? `<span>${has} lb</span>` : "",
+      over ? `<span class="heavy">encumbered −${ENCUMBERED_SLOW_FT} ft</span>` : "", `<span>${n} item${n === 1 ? "" : "s"}</span>`].filter(Boolean);
+    $("invPackHead").innerHTML = `<span class="ttl">Backpack</span><small>${parts.join("<i></i>")}</small>`; }
+  // THE TABS (Sam, 2026-11-24, with his Ashes_Backpack_Tabs art: "Include all these type of tabs"; then "taller and
+  // actually look like buttons in the environment pixel art"). One home by what a thing is, and anything magic under
+  // Magical items too. The count is what the hero carries of that kind.
+  { const el = $("invKinds"); el.innerHTML = ""; if (!BAG_KINDS.some(([k]) => k === inv.kind)) inv.kind = "all";
+    const inBag = g.carried.filter(x => !bagCoin(x));
+    for (const [k, label] of BAG_KINDS){ const b = document.createElement("button"); b.className = "btn"; b.title = label; b.setAttribute("aria-label", label); b.setAttribute("aria-pressed", String(inv.kind === k));
+      b.innerHTML = `<img src="${ICON_BASE}bag/${k}.png" alt=""><span>${inBag.filter(x => k === "all" || bagKinds(x).includes(k)).length}</span>`;
+      b.onclick = () => { inv.kind = k; inv.item = null; renderBag(); }; el.appendChild(b); } }
   const list = $("invList"); list.innerHTML = "";
   // the card's panel holds a card or is not there: no instruction text, no empty frame (Sam, 2026-11-10: "We don't
   // need this button instruction"). Resting on a row or clicking it fills it — see openCard below.
   const detail = $("invDetail"); detail.hidden = true; detail.innerHTML = ""; clearTimeout(bagHoverT);
+  bagMenuClose();
   if (!g.carried.length){ list.innerHTML = `<p class="invEmpty">${APP ? "Nothing carried yet." : "Nothing carried. In the preview, put something on the floor from DM tools → Items and pick it up."}</p>`; return; }
   if (inv.item && !g.carried.some(it => sameBagItem(it, inv.item))) inv.item = null;   // the card's item left the pack (used, dropped)
   const order = {weapon: 0, heal: 1, drink: 2, throw: 3, food: 4, dm: 5, none: 6};
-  const rows = g.carried.map(it => ({it, u: useOf(it), fit: !!inv.slot && fitsSlot(it, inv.slot)}))
+  const rows = g.carried.filter(it => !bagCoin(it) && (inv.kind === "all" || !inv.kind || bagKinds(it).includes(inv.kind))).map(it => ({it, u: useOf(it), fit: !!inv.slot && fitsSlot(it, inv.slot)}))
     .sort((x, y) => (y.fit - x.fit) || order[x.u.kind] - order[y.u.kind] || x.it.name.localeCompare(y.it.name));
+  if (!rows.length) list.innerHTML = `<p class="invEmpty">Nothing of this kind.</p>`;
   for (const {it, u, fit} of rows){
     const picked = inv.item && sameBagItem(it, inv.item);
-    const row = document.createElement("div"); row.className = "invRow" + (fit ? " fits" : "") + (picked ? " sel" : "");
+    const row = document.createElement("div"); row.className = "invRow" + (fit ? " fits" : "") + (picked ? " sel" : "") + (it.icon ? "" : " px"); row.title = it.name;
     const worn = wornSlotsOf(g, it);
     const pic = it.icon || (it.pixel ? ITEM_PX + it.pixel : "");
     const rar = rarityOf({name: it.name, item: it}), rarTag = RARITY_RANK[rar] > 0 ? `<span class="efRar" style="color:${RARITY_COL[rar]}">${RARITY_LABEL[rar]}</span>` : "";
@@ -24337,7 +24494,7 @@ function renderBag(){
       if (!row.isConnected || (inv.item && sameBagItem(it, inv.item) && !detail.hidden)) return;
       inv.item = {name: it.name, item_key: it.item_key || null};
       for (const r of list.children){ const on = r === row; r.classList.toggle("sel", on); const p = r.querySelector(".efPick"); if (p) p.setAttribute("aria-pressed", String(on)); }
-      renderItemCard(a, g, it, u, worn, pic, what, fight, mine);
+      renderItemCard(a, g, it, u, worn, pic, what, fight, mine, acts);
       row.scrollIntoView({block: "nearest"});   // the card takes room under the list; keep this row in sight
     };
     row.querySelector(".efPick").onclick = e => { e.stopPropagation(); clearTimeout(bagHoverT); openCard(); };
@@ -24354,15 +24511,19 @@ function renderBag(){
       if (worn.length){ const sl = worn[0]; if (mine && (!fight || (HAND(sl) && gearCost(a, 1).ok))) removeFrom(a, sl); else toast(fight && !HAND(sl) ? "Not in the middle of a fight: getting out of that takes longer than a turn." : bagWhyNot(a)); return; }
       const home = homeSlot(g, it); if (!home){ toast(`${it.name} is not something to wear or hold.`); return; }
       equipTo(a, it, home); });
-    if (picked) renderItemCard(a, g, it, u, worn, pic, what, fight, mine);
+    if ((it.qty || 1) > 1) row.querySelector(".invPic").insertAdjacentHTML("beforeend", `<span class="invQty">×${it.qty}</span>`);
+    // RIGHT-CLICK (Sam, 2026-11-24: "transfer right clicking on the item"): who walks with you, and Drop
+    row.addEventListener("contextmenu", e => { e.preventDefault(); clearTimeout(bagHoverT); bagMenu(e.clientX, e.clientY, a, it); });
     const img = row.querySelector("img"); if (img && it.icon && it.pixel) img.onerror = () => { img.onerror = null; img.src = ITEM_PX + it.pixel; };
     // No floating zoom card on the backpack rows (Sam, 2026-10-28: "The item zoom on hover is not necessary because we
     // already have an explanatory box"). Hover fills that explanatory box instead (openCard above); its Examine button
     // opens the full card on purpose, for the lore checks and Study that only the card has.
-    const btns = row.querySelector(".invBtns");
-    { const ic = row.querySelector(".invPic"); if (ic) dragSource(ic, pic || "", (x, y) => { const to = slotUnder(x, y); if (!to) return;
+    // what the row's buttons did is on the card now (renderItemCard draws `acts` as the map's action buttons)
+    const acts = [];
+    { const ic = row.querySelector(".invPic"); if (ic) dragSource(ic, pic || "", (x, y) => { const to = slotUnder(x, y);
+        if (!to){ bagDropAt(a, it, x, y); return; }
         if (fitsSlot(it, to) && !worn.includes(to)) equipTo(a, it, to); else toast(`${it.name} does not go in the ${slotLabel(to).toLowerCase()}.`); }); }
-    const btn = (label, ok, why, fn) => { const b = document.createElement("button"); b.className = "btn"; b.textContent = label; b.disabled = !ok; if (why) b.title = why; b.onclick = fn; btns.appendChild(b); };
+    const btn = (label, ok, why, fn) => acts.push({label, ok, why, fn});
     // equip: into the selected slot when one is picked and it fits; otherwise to its own place (a one-handed weapon
     // can also go in the off hand). Each button says where it goes and, mid-fight, what it costs.
     const cost = sl => fight ? (HAND(sl) ? gearHint(a, wornIn(g, sl) ? 2 : 1) : "not mid-fight") : "";
@@ -24390,8 +24551,82 @@ function renderBag(){
     if (u.kind === "food") btn(u.verb === "drink" ? "Drink" : "Eat", mine && (!fight || c.action), fight ? "takes your action" : "", () => eatItem(a, it, u.verb));
     if (isTooth(it)) toothBagButtons(a, btn, mine, fight);
     if (isPetSpider(it)) btn(fight ? "Let it loose" : "Set it down", mine && (!fight || c.action) && !petAlive(), petAlive() ? "a spider already goes with the party" : fight ? "your action: it fights beside you" : "it follows the party", () => releaseSpider(a, it));
+    if (picked) renderItemCard(a, g, it, u, worn, pic, what, fight, mine, acts);
     list.appendChild(row);
   }
+  if (!rows.some(r => inv.item && sameBagItem(r.it, inv.item))){   // never an empty frame: the first thing in view
+    const r = rows[0]; if (r){ const w = wornSlotsOf(g, r.it), el = list.querySelector(".invRow"); if (el) el.dispatchEvent(new MouseEvent("click", {bubbles: true})); } }
+}
+// ---------- the backpack's tabs, purse, menu and drop (Sam, 2026-11-24) ----------
+const BAG_KINDS = [["all", "All"], ["weapons", "Weapons"], ["armor", "Armor"], ["potions", "Potions"], ["ingredients", "Ingredients"], ["scrolls-books", "Scrolls and books"], ["tools", "Tools"], ["magical-items", "Magical items"]];
+const BAG_COINS = [["platinum-coin", "Platinum"], ["gold-coin", "Gold"], ["electrum-coin", "Electrum"], ["silver-coin", "Silver"], ["copper-coin", "Copper"]];
+/** The coin a row is (its catalogue slug), or "" for anything else. */
+function bagCoin(it){ const s = String(it.slug || (catalogItem(it.name) || {}).slug || ""); return BAG_COINS.some(([k]) => k === s) ? s : ""; }
+/** The tabs a thing sits under: one home by what it is, and Magical items as well when it is magic. */
+function bagKinds(it){
+  const cat = catalogItem(it.name) || {}, ty = String(it.item_type || cat.item_type || "").toLowerCase(), p = it.properties || {}, n = String(it.name || "").toLowerCase(), u = useOf(it), out = [];
+  if (isWeapon(it)) out.push("weapons");
+  else if (isArmorish(it) || (slotOfItem(it) && ty !== "accessory")) out.push("armor");
+  else if (ty === "consumable") out.push(["heal", "drink", "coat", "throw", "dm"].includes(u.kind) || /potion|poison|antitoxin|elixir|vial|flask|wine|ale\b/.test(n) ? "potions" : "ingredients");
+  else if (/journal|book|scroll|quill|recipe|ink|letter|map\b/.test(n)) out.push("scrolls-books");
+  else if (p.crafting_material || p.alchemy_reagent || p.extraction || u.kind === "food") out.push("ingredients");
+  else if (ty !== "accessory") out.push("tools");
+  if (cat.attunement || ty === "accessory" || (RARITY_RANK[rarityOf({name: it.name, item: it})] > 0 && ty !== "consumable")) out.push("magical-items");
+  return out;
+}
+/** A face for a card or a menu row: the hero's painted one where there is one, else their own sprite. */
+function bagFace(t, el, size){
+  if (HERO_ART.has(t.id)){ const im = new Image(); im.src = `${HERO_ART_BASE}${t.id}-face.webp`; im.alt = ""; el.appendChild(im); return; }
+  try { if (SPR[t.id]){ const cv = document.createElement("canvas"); portrait(t.id, cv, size); el.appendChild(cv); } } catch (e) {}
+}
+function bagMenuClose(){ const m = $("invMenu"); if (m) m.hidden = true; }
+/** Who to hand it to, and Drop. Refusals stay in the list with their reason (Sam's standing rule). `above`: open over a button. */
+function bagMenu(px, py, a, it, above){
+  const m = $("invMenu"), g = GEAR[a.id]; if (!m || !g) return; const fight = inFightNow(), mine = bagCan(a), worn = wornSlotsOf(g, it);
+  const wornAll = worn.length && g.carried.filter(c => c.name === it.name).reduce((q, c) => q + (c.qty || 1), 0) <= worn.length;
+  m.innerHTML = `<h6>Give the ${esc(it.name)} to</h6>`;
+  const row = (t, n) => { const b = document.createElement("button"); b.setAttribute("role", "menuitem");
+    const why = !mine ? "not yours to hand over" : wornAll ? `${worn.some(HAND) ? "put it away" : "take it off"} first` : fight && feetBetween(a, t) > 5.5 ? "more than 5 ft away" : "";
+    b.disabled = !!why; b.innerHTML = `<span class="pic"></span><span>${esc(fname(t))}${n > 1 ? ` · all ${n}` : ""}</span>${why ? `<small>${esc(why)}</small>` : ""}`; bagFace(t, b.querySelector(".pic"), 26);
+    b.onclick = () => { bagMenuClose(); giveItem(a, it, t, n); }; m.appendChild(b); };
+  const who = giveTargets(a); for (const t of who) row(t, 1);
+  if ((it.qty || 1) > 1) for (const t of who) row(t, it.qty);
+  if (!who.length) m.insertAdjacentHTML("beforeend", `<button disabled><span>Nobody walks with you.</span></button>`);
+  m.appendChild(document.createElement("hr"));
+  { const b = document.createElement("button"); b.setAttribute("role", "menuitem"); b.disabled = !mine || !!wornAll; b.innerHTML = `<span>Drop it${fight ? " (free)" : ""}</span>${wornAll ? `<small>${worn.some(HAND) ? "put it away" : "take it off"} first</small>` : ""}`;
+    b.onclick = () => { bagMenuClose(); bagDrop(a, it); }; m.appendChild(b); }
+  m.hidden = false; const r = m.getBoundingClientRect();
+  m.style.left = Math.max(8, Math.min(px, innerWidth - r.width - 8)) + "px"; m.style.top = Math.max(8, Math.min(above ? py - r.height - 8 : py, innerHeight - r.height - 8)) + "px";
+  const first = m.querySelector("button:not([disabled])"); if (first) first.focus();
+}
+addEventListener("pointerdown", e => { if (!(e.target.closest && e.target.closest("#invMenu"))) bagMenuClose(); }, true);
+addEventListener("keydown", e => { if (e.key === "Escape") bagMenuClose(); }, true);
+/** Where a dragged item was let go when it was not on a slot: on a companion's card (give it), or clear of the pack and the body (drop it). */
+function bagDropAt(a, it, x, y){
+  const el = document.elementFromPoint(x, y), card = el && el.closest && el.closest(".invWho");
+  if (card){ const t = giveTargets(a).find(q => q.id === card.dataset.hero); if (t) giveItem(a, it, t, 1); else if (card.dataset.hero !== a.id) toast("They are not here to take it."); return; }
+  if (el && el.closest && (el.closest(".invPack") || el.closest("#invDoll") || el.closest("#invMenu"))) return;   // back where it was, or a slot missed: nothing happens
+  bagDrop(a, it);
+}
+/** DROP (Sam, 2026-11-24: "drop on the ground"): one of it leaves the pack and lies at the hero's feet on the plate, a real pile
+ * anyone can pick up (/api/walk-items "drop", the road a thrown dagger already takes). Free in a fight, as letting go is. */
+function bagDrop(a, it){
+  const g = GEAR[a.id]; if (!g) return; if (!bagCan(a)){ toast(bagWhyNot(a)); return; }
+  const worn = wornSlotsOf(g, it);
+  if (worn.length && g.carried.filter(c => c.name === it.name).reduce((q, c) => q + (c.qty || 1), 0) <= worn.length){ toast(`${worn.some(HAND) ? "Put it away" : "Take it off"} first.`); return; }
+  const wasEnc = encumbered(a), cat = catalogItem(it.name) || {};
+  let x = a.x + (Math.random() - .5) * 18, y = a.y + 6 + Math.random() * 6;
+  if (typeof nearestWalkable === "function" && !walkable(x, y)){ const q = nearestWalkable(x, y); x = q.x; y = q.y; }
+  it.qty = (it.qty || 1) - 1; if (it.qty <= 0) g.carried = g.carried.filter(c => c !== it);
+  if (inv.item && sameBagItem(it, inv.item) && it.qty <= 0) inv.item = null;
+  const pile = {id: "local-" + Math.random().toString(36).slice(2), node: String(cur), x: Math.round(x), y: Math.round(y), itemId: cat.id || null, slug: cat.slug || "", name: it.name, pixel: it.pixel || cat.pixel_icon_url || null, at: new Date().toISOString()};
+  floor.push(pile); noteLoad(a, wasEnc); bank("ui/item_pickup", .4);
+  log(`${fname(a)} drops the <b>${esc(it.name)}</b>${inFightNow() ? " (free)" : ""}.`);
+  const cid = serverCid(a.id);
+  if (cid) fetch("/api/walk-items", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({action: "drop", characterId: cid, itemKey: it.item_key || null, itemName: it.name, node: pile.node, x: pile.x, y: pile.y})})
+    .then(r => r.json()).then(j => { if (j && j.error){ toast(j.error); loadGear(a.id); } loadFloor(); }).catch(() => {});
+  refreshAttacks(a.id); if (inFightNow()) renderParty(); renderBag();
 }
 const sameBagItem = (it, ref) => it.item_key && ref.item_key ? it.item_key === ref.item_key : it.name === ref.name;
 function renderBagSub(a, s){
@@ -24570,7 +24805,7 @@ async function takeLevel(a, cid, p, choice){
 }
 // THE ITEM CARD (Emberforged's selected-item panel): the real row's data — what it is, where it goes, how many, its
 // rarity — the catalogue description, and the same Equip / Take off buttons the row offers, under the same rules.
-function renderItemCard(a, g, it, u, worn, pic, what, fight, mine){
+function renderItemCard(a, g, it, u, worn, pic, what, fight, mine, rowActs = []){
   const d = $("invDetail"); if (!d) return; d.hidden = false;
   const rar = rarityOf({name: it.name, item: it});
   const kind = u.kind === "weapon" ? "Weapon" : isArmorish(it) ? "Armor" : u.kind === "heal" || u.kind === "drink" ? "Potion" : u.kind === "food" ? "Provisions" : u.kind === "throw" ? "Thrown" : slotOfItem(it) ? "Wearable" : (it.item_type ? String(it.item_type).replace(/\b\w/g, c => c.toUpperCase()) : "Gear");
@@ -24581,28 +24816,27 @@ function renderItemCard(a, g, it, u, worn, pic, what, fight, mine){
     + (atk ? `<br>${esc(atk.dmg)} ${esc(atk.type)} · +${atk.hit} to hit${atk.reach > 5 ? ` · ${atk.reach} ft` : ""}` : "")
     + (armorOf(it) ? `<br>${armorNote(a, it)}` : "")
     + (atk ? `<br>${weaponNote(SHEETS[a.id], it)}` : "") + (attuneNote(it, false, a.id) ? `<br>${attuneNote(it, false, a.id)}` : "");
-  d.innerHTML = `<div class="efBig${it.icon ? "" : " px"}">${pic ? `<img src="${esc(pic)}" alt="">` : "◆"}</div><div><h5>${esc(it.name)}</h5><div class="efMeta">${meta}</div>${it.desc ? `<div class="efDesc">${esc(it.desc)}</div>` : ""}${it.origin ? `<div class="efFrom">${esc(it.origin)}</div>` : ""}<div class="efActs"></div></div>`;
+  // A COLUMN IN THE LOOT CEREMONY'S COLOURS (Sam, 2026-11-24: "make this a column and insure that is out of the way and
+  // uses the loot ceremony colors / description we laid out"; then "options such a give away, drop, etc should be on the
+  // bottom of the description card in the same font and colors as the action buttons in the pixel environment").
+  { const tier = LOOT_TIER[rar] || LOOT_TIER.common, lit = RARITY_RANK[rar] > 0;
+    d.style.setProperty("--rc", tier.label); d.style.setProperty("--rr", tier.ring); d.style.setProperty("--rg", lit ? tier.ring + "33" : "transparent"); d.style.setProperty("--rg2", lit ? tier.ring + "aa" : "transparent"); }
+  d.innerHTML = `<div class="efBand"><span>${esc(RARITY_LABEL[rar] || "common")}</span><span class="${fight ? "war" : ""}">${fight ? "in combat" : "out of combat"}</span></div>`
+    + `<div class="efBig${it.icon ? "" : " px"}">${pic ? `<img src="${esc(pic)}" alt="">` : "◆"}</div><h5>${esc(it.name)}</h5><div class="efMeta">${meta}</div>${it.desc ? `<div class="efDesc">${esc(it.desc)}</div>` : ""}${it.origin ? `<div class="efFrom">${esc(it.origin)}</div>` : ""}<div class="efActs"></div>`;
   const acts = d.querySelector(".efActs");
-  const btn = (label, ok, why, fn, primary) => { const b = document.createElement("button"); b.className = "btn" + (primary ? " primary" : ""); b.textContent = label; b.disabled = !ok; if (why) b.title = why; b.onclick = fn; acts.appendChild(b); };
-  const cost = sl => fight ? (HAND(sl) ? gearHint(a, wornIn(g, sl) ? 2 : 1) : "not mid-fight") : "";
-  const can = sl => mine && (!fight || (HAND(sl) && gearCost(a, wornIn(g, sl) ? 2 : 1).ok));
-  const to = inv.slot && fitsSlot(it, inv.slot) && !worn.includes(inv.slot) ? inv.slot : (!inv.slot ? homeSlot(g, it) : null);
-  if (to && !worn.includes(to)) btn(isWeapon(it) && HAND(to) ? `Equip · ${slotLabel(to).toLowerCase()}` : `Wear · ${slotLabel(to).toLowerCase()}`, can(to), cost(to), () => equipTo(a, it, to), true);
-  for (const sl of worn) btn(HAND(sl) ? `Put away (${slotLabel(sl).toLowerCase()})` : "Take off", mine && (!fight || (HAND(sl) && gearCost(a, 1).ok)), fight ? (HAND(sl) ? gearHint(a, 1) : "not mid-fight") : "", () => removeFrom(a, sl));
-  if (!acts.children.length) acts.innerHTML = `<span class="efHint">${worn.length ? "" : slotOfItem(it) || isWeapon(it) ? "pick a slot it fits, or drag it onto the body" : "nothing to wear here — use it from the row"}</span>`;
-  // give it to someone: the list of who walks with you. Refusals are shown with their reason, not hidden.
-  { const who = giveTargets(a);
-    if (who.length){ const box = document.createElement("span"); box.className = "efGive"; box.style.cssText = "display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap";
-      const sel = document.createElement("select"); sel.className = "btn"; sel.setAttribute("aria-label", `Give the ${it.name} to`);
-      sel.innerHTML = `<option value="">Give to…</option>` + who.map(t => { const far = fight && feetBetween(a, t) > 5.5; return `<option value="${esc(t.id)}"${far ? " disabled" : ""}>${esc(fname(t))}${far ? " (more than 5 ft away)" : ""}</option>`; }).join("");
-      const wornAll = worn.length && g.carried.filter(c => c.name === it.name).reduce((q, c) => q + (c.qty || 1), 0) <= worn.length;
-      sel.disabled = !mine || wornAll; sel.title = wornAll ? `${worn.some(HAND) ? "Put it away" : "Take it off"} first` : !mine ? "not yours to hand over" : fight ? `${gearHint(a, 1)} · they must be within 5 ft` : "";
-      box.appendChild(sel);
-      let all = null; if ((it.qty || 1) > 1){ all = document.createElement("label"); all.style.cssText = "font-size:.8rem;display:inline-flex;gap:4px;align-items:center"; all.innerHTML = `<input type="checkbox"> all ${it.qty}`; box.appendChild(all); }
-      sel.onchange = () => { const t = who.find(x => x.id === sel.value); if (t) giveItem(a, it, t, all && all.querySelector("input").checked ? it.qty : 1); };
-      acts.appendChild(box); } }
+  // the map's action buttons: a picture, the word, and under it what it costs or why not
+  const act = (label, sub, cat, ico, ok, fn, cls) => { const b = document.createElement("button"); b.className = "btn efAct" + (cls ? " " + cls : ""); b.dataset.cat = cat; b.disabled = !ok; if (sub) b.title = sub;
+    b.innerHTML = `<img src="${ICON_BASE}${ico}.png" alt=""><span>${esc(label)}</span><small>${esc(sub || "")}</small>`; b.onclick = fn; acts.appendChild(b); return b; };
+  const look = l => /off hand/i.test(l) ? ["move", "offhand-attack"] : /^(Equip|Wear|Put away|Take off)/.test(l) ? ["attack", "bar/attack"] : /^(Drink|Eat)/.test(l) ? ["rest", "use-item"]
+    : /^Give /.test(l) ? ["party", "bar/help"] : /^Throw/.test(l) ? ["search", "bar/throw"] : /^(Coat|Load|Scatter)/.test(l) ? ["sneak", "use-object"] : ["cast", "use-object"];
+  rowActs.forEach((r, i) => { const [cat, ico] = look(r.label), m = /^(Equip|Wear) · (.+)$/.exec(r.label) || /^(Put away) \((.+)\)$/.exec(r.label);
+    act(m ? (/off hand/.test(m[2]) ? "Off hand" : m[1]) : r.label, [m && !/off hand/.test(m[2]) ? m[2] : "", r.why].filter(Boolean).join(" · "), cat, ico, r.ok, r.fn, i === 0 ? "first" : ""); });
+  { const wornAll = worn.length && g.carried.filter(c => c.name === it.name).reduce((q, c) => q + (c.qty || 1), 0) <= worn.length, off = wornAll ? `${worn.some(HAND) ? "put it away" : "take it off"} first` : !mine ? "not yours to hand over" : "";
+    const gv = act("Give", off || (giveTargets(a).length ? "to a companion" : "nobody walks with you"), "party", "bar/help", !off && giveTargets(a).length > 0, () => { const r = gv.getBoundingClientRect(); bagMenu(r.left, r.top, a, it, true); });
+    act("Drop", off || (fight ? "free" : "at your feet"), "search", "bar/throw", !off, () => bagDrop(a, it)); }
+  if (acts.children.length % 2 === 0) acts.dataset.even = "1";
   // the full item card, on purpose rather than on hover: lore checks (INT or a tool), Study at the next rest
-  { const b = document.createElement("button"); b.className = "btn"; b.textContent = "Examine"; b.title = "Look closer: lore checks, and Study for something magical you cannot name yet";
+  { const b = document.createElement("button"); b.className = "btn efAct" + (acts.children.length % 2 ? "" : " wide"); b.dataset.cat = "sneak"; b.innerHTML = `<img src="${ICON_BASE}bar/search.png" alt=""><span>Examine</span><small>lore and study</small>`; b.title = "Look closer: lore checks, and Study for something magical you cannot name yet";
     b.onclick = () => { const r = b.getBoundingClientRect(); const t = {kind: "bag", it, slug: (catalogItem(it.name) || {}).slug, name: it.name, item_type: it.item_type, properties: it.properties, pixel: it.pixel, desc: it.desc, hero: a, anchor: b}; icardShow(t, r.left + r.width / 2, r.top, true); };
     acts.appendChild(b); }
 }

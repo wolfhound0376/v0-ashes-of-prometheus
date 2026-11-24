@@ -51,6 +51,7 @@ import { triggerFor, shouldPlay, readPlayed, rememberPlayed } from "@/lib/cinema
 import { useSpeechInput } from "@/lib/hooks/use-speech-input"
 import { classDefaults } from "@/lib/game-data"
 import { calculateAC } from "@/lib/armor-class"
+import { withWornGear, wornSkillBonus } from "@/lib/worn-bonus"
 import { defaultSlotFor, normalizeSlot, slotAccepts } from "@/lib/equipped"
 import { isCombatant } from "@/lib/challenge-rating"
 // blob URLs carry the extension inside ?pathname=, which a naive regex misses.
@@ -156,6 +157,7 @@ function toSheetCharacter(c: Character) {
       : []) as AbilityKey[],
     skillProficiencies: entries.filter(([, v]) => v === "proficient").map(([k]) => k),
     skillExpertises: entries.filter(([, v]) => v === "expertise").map(([k]) => k),
+    wornSkillBonus: (raw.worn_skill_bonus ?? {}) as Record<string, number>,
     languages: raw.languages ?? null,
     armorProficiencies: raw.sheet_proficiencies?.armor ?? null,
     weaponProficiencies: raw.sheet_proficiencies?.weapons ?? null,
@@ -227,7 +229,7 @@ function buildRailStats(c: Character | undefined) {
       const multiplier = level === "expertise" ? 2 : 1
       return {
         name: titleCaseSkill(key),
-        bonus: mod(ability) + pb * multiplier,
+        bonus: mod(ability) + pb * multiplier + wornSkillBonus(raw, key),
         fromClass: classSkills.includes(key),
         expertise: level === "expertise",
       }
@@ -569,7 +571,10 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
   )
   const livePlayers = props.characters.filter((character) => character.is_player)
   const party = livePlayers.length ? livePlayers : previewCharacters
-  const selected = props.selectedCharacter ?? livePlayers[0] ?? previewSelectedCharacter
+  // The hero with their gear on (lib/worn-bonus.ts): everything below that shows or rolls from `selected` — the
+  // ability boxes, saves, skills, initiative, AC, the full sheet — reads worn bonuses (a +1 Dexterity cloak) with it.
+  // Display only: nothing here writes the row back.
+  const selected = withWornGear(props.selectedCharacter ?? livePlayers[0] ?? previewSelectedCharacter, props.equipment)
   const canCyclePlayers = !!props.dmMode && !!props.onCharacterSelect && livePlayers.length > 1
   const selectedPlayerIndex = livePlayers.findIndex((character) => character.id === selected?.id)
   const nextPlayer = canCyclePlayers ? livePlayers[(selectedPlayerIndex + 1) % livePlayers.length] : undefined
@@ -1038,7 +1043,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
   ]
   const abilities = abilityKeys.map((key) => ({
     key,
-    score: (selected?.[`${key}_score` as keyof Character] as number ?? ({ str: 13, dex: 10, con: 14, int: 8, wis: 15, cha: 12 }[key])) + (equipmentBonus[key] ?? equipmentBonus[`${key}_score`] ?? 0),
+    score: (selected?.[`${key}_score` as keyof Character] as number ?? ({ str: 13, dex: 10, con: 14, int: 8, wis: 15, cha: 12 }[key])),   // worn score bonuses are already in `selected`
     mod: (selected?.[`${key}_modifier` as keyof Character] as number ?? ({ str: 1, dex: 0, con: 2, int: -1, wis: 2, cha: 1 }[key])) + (equipmentBonus[`${key}_modifier`] ?? 0),
     proficiencyBonus: ((selected as unknown as Record<string, unknown> | null)?.proficiency_bonus as number | undefined) ?? 2,
     saveProficient: (((selected as unknown as Record<string, unknown> | null)?.sheet_save_proficiencies as string[] | undefined) ?? [])
