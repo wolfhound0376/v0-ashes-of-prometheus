@@ -782,6 +782,7 @@
             780
           ]
         },
+        "film": {"src": "props/ilvara-chest-open.webp", "box": [860, 545, 430, 323], "frames": 24, "cols": 6, "secs": 1.5, "glow": [1080, 735, 90], "empty": "props/ilvara-chest-open-empty.webp", "sound": "chest-open-drow", "closeSound": "chest-close", "closeHit": 0.23, "_src": "Sam 2026-11-23: painted chests must open realistically. Made by scripts/velkynvelve-walk/make_chest_film.py from the plate crop (closed), an image edit (open) and a locked-camera video between them; the lid cut-out stays as the fallback. Empty film and ElevenLabs sounds: Sam 2026-11-23 ('When you remove any items it goes back to looking like an empty box', 'add opening sounds from eleven labs')."},
         "text": {
           "closed": "A heavy chest of black-stained zurkhwood at the foot of the bed. Locked.",
           "open": "Ilvara's chest stands open."
@@ -934,6 +935,7 @@
             434
           ]
         },
+        "film": {"src": "props/shoor-chest-open.webp", "box": [1200, 200, 420, 315], "frames": 24, "cols": 6, "secs": 1.5, "glow": [1405, 365, 90], "empty": "props/shoor-chest-open-empty.webp", "sound": "chest-open-iron", "closeSound": "chest-close", "closeHit": 0.23, "_src": "Sam 2026-11-23: painted chests must open realistically. Made by scripts/velkynvelve-walk/make_chest_film.py from the plate crop (closed), an image edit (open) and a locked-camera video between them; the lid cut-out stays as the fallback. Empty film and ElevenLabs sounds: Sam 2026-11-23 ('When you remove any items it goes back to looking like an empty box', 'add opening sounds from eleven labs')."},
         "text": {
           "closed": "A heavy iron-bound chest against the wall of Shoor's quarters.",
           "unlocked": "A heavy iron-bound chest against the wall. It is not locked.",

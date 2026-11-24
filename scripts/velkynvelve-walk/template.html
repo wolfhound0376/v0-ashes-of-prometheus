@@ -4781,10 +4781,21 @@ function buildProps(){
     const k = plateImg.naturalWidth / NAT_W; try { g.drawImage(plateImg, bx * k, by * k, bw * k, bh * k, 0, 0, bw, bh); } catch (e) {}
     const dk = document.createElement("canvas"); dk.width = bw; dk.height = bh; const dg = dk.getContext("2d");   // the underside: the same lid, in shadow
     dg.drawImage(c, 0, 0); dg.globalCompositeOperation = "source-atop"; dg.fillStyle = "rgba(10,7,16,.62)"; dg.fillRect(0, 0, bw, bh);
-    const o = propState(pr).open ? 1 : 0; lids[pr.id] = {img: c, dark: dk, bx, by, k: o, target: o};
+    const o = propState(pr).open ? 1 : 0; lids[pr.id] = {img: c, dark: dk, bx, by, k: o, target: o, secs: pr.film ? pr.film.secs : 0};
+    if (pr.film){ const L2 = lids[pr.id]; L2.film = lootImg(PLATE_DIR + pr.film.src); L2.e = 0; L2.emptyTarget = 0;   // the painted opening (see drawPropFilm)
+      if (pr.film.empty){ L2.filmEmpty = lootImg(PLATE_DIR + pr.film.empty); if (o) propEmptyCheck(pr.id); } }
   }
 }
-function tickProps(dt){ for (const id in lids){ const l = lids[id]; if (l.k !== l.target) l.k = l.target > l.k ? Math.min(1, l.k + dt / 1.3) : Math.max(0, l.k - dt / .7); } }
+function tickProps(dt){ for (const id in lids){ const l = lids[id], up = l.secs || 1.3, down = l.secs ? l.secs * .75 : .7; if (l.k !== l.target) l.k = l.target > l.k ? Math.min(1, l.k + dt / up) : Math.max(0, l.k - dt / down);
+  if (l.filmEmpty && l.e !== l.emptyTarget) l.e = l.emptyTarget > l.e ? Math.min(1, l.e + dt / .9) : Math.max(0, l.e - dt / .9); } }
+// IS THE CHEST EMPTY? (Sam, 2026-11-23: "When you remove any items it goes back to looking like an empty box.") A chest
+// with `film.empty` has a second filmed opening that ends on the same chest, open and bare. Which one plays is what the
+// server says is still inside: asked when the plate is built (an open chest), when it is opened, and whenever its loot
+// card closes. Emptied while open, the full chest fades to the bare one; something put back fades it the other way.
+function propEmptyCheck(id){
+  const l = lids[id]; if (!l || !l.filmEmpty) return;
+  fetchLoot(id).then(j => { if (j.error || lids[id] !== l) return; l.emptyTarget = (j.rows || []).length ? 0 : 1; if (l.k < .2) l.e = l.emptyTarget; });
+}
 // SET DRESSING ON THE FLOOR (story.json `decor`, Sam 2026-10-24: "get the skeletons done"): flat pixel objects from
 // public/sprites/cadavers/ laid on the plate under everyone — the den's gnawed bones, the pool's refuse. `sq` is how many
 // squares the 128-px canvas spans; `flip` mirrors. Nothing to interact with; the body of the thing is the painting's.
@@ -4799,6 +4810,7 @@ function drawDecor(){
 function drawProps(){
   for (const pr of node.props || []){
     const l = lids[pr.id]; if (!l || l.k <= 0) continue;
+    if (pr.film && drawPropFilm(pr, l)) continue;   // a painted chest with its own filmed opening; the cut-out lid below is the fallback
     const L = pr.lid.poly, [h0, h1] = pr.lid.hinge, e = l.k < .5 ? 2 * l.k * l.k : 1 - (-2 * l.k + 2) ** 2 / 2, a = e * 1.8;   // ~105 degrees
     // the inside: dark wood, and warm light rising out of it
     ctx.save(); ctx.beginPath(); L.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
@@ -4816,6 +4828,33 @@ function drawProps(){
     ctx.restore();
   }
 }
+// PAINTED CHESTS THAT OPEN LIKE REAL ONES (Sam, 2026-11-23: "we need a better solution to painted art chests and opening
+// them. It should look neat and open up realistically"). The cut-out lid above is a flat slice of the painting skewed on
+// its hinge: on a domed or deep lid it reads as a dark slab sweeping over the wall. A prop with `film` (story.json) plays
+// a short filmed opening instead, made FROM the painting: the plate crop is the first frame, an image edit painted the
+// open chest as the last, a video model moved the lid between them on a locked camera, and
+// scripts/velkynvelve-walk/make_chest_film.py registered every frame back onto the plate, matched its colour and cut
+// each frame's alpha to where it differs from the painting -- so frame 0 is the plate itself and only the lid, its
+// shadow and the light from inside are ever drawn over it. `film`: {src, box: [x, y, w, h] in plate px, frames, cols, secs,
+// glow: [x, y, r], empty: the same opening ending on the bare chest, sound / closeSound: ElevenLabs files in public/sfx/walk,
+// closeHit: seconds into closeSound where the lid lands}.
+// Opening plays it forward over `secs`; closing plays it back. The light inside breathes while the lid is up.
+function drawPropFilm(pr, l){
+  const f = pr.film, im = l.film, ie = l.filmEmpty, ready = m => m && m.complete && m.naturalWidth;
+  if (!ready(im)) return false;
+  const n = f.frames, cols = f.cols, fw = im.naturalWidth / cols, fh = im.naturalHeight / Math.ceil(n / cols);
+  const i = Math.min(n - 1, Math.round(l.k * (n - 1))), [x, y, w, h] = f.box, e = ready(ie) ? l.e || 0 : 0;
+  const cell = (m, a) => { if (a <= 0) return; ctx.globalAlpha = a; ctx.drawImage(m, (i % cols) * fw, Math.floor(i / cols) * fh, fw, fh, x, y, w, h); };
+  ctx.save(); cell(im, e < 1 ? 1 : 0); cell(ie, e); ctx.restore();   // the bare chest over the full one as it empties
+  if (l.k >= 1 && f.glow && e < 1){   // the open chest's warm light, breathing, and a mote now and then rising out of it
+    const [gx, gy, gr] = f.glow, a = (.10 + .06 * Math.sin(now / 700)) * (1 - e);
+    ctx.save(); ctx.globalCompositeOperation = "lighter";
+    const g = ctx.createRadialGradient(gx, gy, 2, gx, gy, gr); g.addColorStop(0, `rgba(255,190,110,${a})`); g.addColorStop(1, "rgba(255,190,110,0)");
+    ctx.fillStyle = g; ctx.fillRect(gx - gr, gy - gr, gr * 2, gr * 2); ctx.restore();
+    if (Math.random() < .05 * (1 - e)) sparks.push({x: gx + (Math.random() - .5) * gr, y: gy + (Math.random() - .5) * gr * .3, vx: (Math.random() - .5) * 6, vy: -14 - Math.random() * 16, g: -4, col: Math.random() < .5 ? "#ffd38a" : "#fff1c8", t0: now, life: 1400});
+  }
+  return true;
+}
 function drawPropHighlight(){
   if (mode !== "explore" && mode !== "dialog") return;
   for (const pr of node.props || []){
@@ -4829,10 +4868,10 @@ function drawPropHighlight(){
 let hoverProp = null;
 function propCenter(pr){ const xs = pr.poly.map(p => p[0]), ys = pr.poly.map(p => p[1]); return {x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) + 30}; }
 function openChest(pr){
-  const l = lids[pr.id], st = propState(pr); st.open = true; st.locked = false; if (l) l.target = 1;
-  sfx("door-open", .6); bank("ui/coin_purse", .5);
+  const l = lids[pr.id], st = propState(pr); st.open = true; st.locked = false; if (l) l.target = 1; propEmptyCheck(pr.id);
+  if (pr.film && pr.film.sound) sfx("walk:" + pr.film.sound, .85); else { sfx("door-open", .6); bank("ui/coin_purse", .5); }   // a filmed chest has its own ElevenLabs opening
   log(`${fname(leader)} opens <b>${pr.name}</b>.`);
-  setTimeout(() => { if (mode === "explore") openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open, at: polyBase(pr.poly)}); }, 1100);
+  setTimeout(() => { if (mode === "explore") openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open, at: polyBase(pr.poly)}); }, pr.film ? pr.film.secs * 1000 + 250 : 1100);   // the loot card waits for the lid
 }
 // the poison needle (OotA ch.1 area 7): any attempt to open the lock without the key sets it off
 function needle(pr){
@@ -4862,7 +4901,7 @@ function openProp(pr, opts = {}){
     });
   };
   const dex = ((SHEETS[leader.id] || {}).skills || {}).thievesTools ?? abilMod(SHEETS[leader.id], "dex");   // thieves' tools: the sheet's own number, else bare Dex
-  if (st.open){ $("objText").textContent = pr.text.open; add("Look inside", () => { close(); openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open, at: polyBase(pr.poly)}); }, "primary"); add("Close the lid", () => { close(); st.open = false; lids[pr.id].target = 0; setTimeout(() => sfx("door-close", .5), 500); }); add("Leave it", close); }
+  if (st.open){ $("objText").textContent = pr.text.open; add("Look inside", () => { close(); openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open, at: polyBase(pr.poly)}); }, "primary"); add("Close the lid", () => { close(); st.open = false; lids[pr.id].target = 0; if (pr.film && pr.film.closeSound) setTimeout(() => sfx("walk:" + pr.film.closeSound, .8), Math.max(0, pr.film.secs * 750 - (pr.film.closeHit || 0) * 1000)); else setTimeout(() => sfx("door-close", .5), 500); }); add("Leave it", close); }
   else if (!st.locked){ $("objText").textContent = (pr.text && pr.text.unlocked) || "The lock is open. The lid is heavy."; add("Open it", () => { close(); openChest(pr); }, "primary"); add("Leave it", close); }
   else {
     $("objText").textContent = pr.text.closed + (st.trapKnown ? (st.disarmed ? " The needle in the lock is harmless now." : " A needle hides in the lock, its tip dark with something.") : "");
@@ -5590,7 +5629,7 @@ async function openLoot(id, title, opts = {}){
   if (opts.poly) plateCrop(opts.poly);
   const who = fighter || leader, box = $("objBtns");
   $("objWho").textContent = title; $("objText").textContent = opts.text || "You look inside."; box.innerHTML = ""; box.classList.add("loot");
-  const close = () => { $("obj").hidden = true; box.classList.remove("loot"); if (!fighter) mode = "explore"; if (opts.onClose) opts.onClose(); };
+  const close = () => { $("obj").hidden = true; box.classList.remove("loot"); if (!fighter) mode = "explore"; if (opts.onClose) opts.onClose(); propEmptyCheck(id); };
   const leave = () => { close(); if (fighter) grabDone(fighter); };   // mid-fight, walking away from the card hands the turn back
   const add = (label, fn, cls = "", off = false) => { const b = choiceRow(box, label, fn || null, cls); b.disabled = off; return b; };
   const fkey = lootKeyOf(id), spill = !!opts.at && !fountained.has(fkey);   // the first open of a body or chest spills it
@@ -13305,9 +13344,10 @@ function grabChest(a, pr){
   const st = propState(pr), at = polyBase(pr.poly), opts = {poly: pr.poly, text: pr.text.open, at, fighter: a};
   grabStart(a, at);
   if (st.open){ log(`${fname(a)} goes through <b>${esc(pr.name)}</b> (their action).`); openLoot(pr.id, pr.name, opts); return; }
-  const l = lids[pr.id]; st.open = true; if (l) l.target = 1;
-  sfx("door-open", .6); bank("ui/coin_purse", .5); log(`${fname(a)} throws open <b>${esc(pr.name)}</b> (their action).`);
-  setTimeout(() => { if (cbt && grabbing === a) openLoot(pr.id, pr.name, opts); else grabDone(a); }, 1100);
+  const l = lids[pr.id]; st.open = true; if (l) l.target = 1; propEmptyCheck(pr.id);
+  if (pr.film && pr.film.sound) sfx("walk:" + pr.film.sound, .85); else { sfx("door-open", .6); bank("ui/coin_purse", .5); }   // a filmed chest's own opening
+  log(`${fname(a)} throws open <b>${esc(pr.name)}</b> (their action).`);
+  setTimeout(() => { if (cbt && grabbing === a) openLoot(pr.id, pr.name, opts); else grabDone(a); }, pr.film ? pr.film.secs * 1000 + 250 : 1100);
 }
 // A foe's Search (see foeTurn, HIDDEN HEROES): one Wisdom (Perception) check against each hidden hero's Stealth total
 // (c.hideDc, set by doHide; an older hide without one uses 10 + Stealth). Found: no longer hidden. Either way the action
