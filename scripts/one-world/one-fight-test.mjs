@@ -140,6 +140,18 @@ check("Kenta's screen shows his command list", !wB.menuHidden && wB.rows.length 
 // a few seconds: nothing happens without him
 await wait(4000)
 check("the fight waits for him", (await A.evaluate(() => activeActor().id)) === "kenta")
+// ARROWS FROM THE OTHER SCREEN (Sam, 2026-11-23): Kenta holds an arrow on his own (watching) screen; the screen running
+// the fight walks him, spends his movement, and stops him when he lets go
+const kAt = () => A.evaluate(() => { const k = party.find(p => p.id === "kenta"); return {x: Math.round(k.x), y: Math.round(k.y), move: k.c.move} })
+const k0 = await kAt()
+const press = (type, code) => B.evaluate(([type, code]) => dispatchEvent(new KeyboardEvent(type, {code, key: code, bubbles: true})), [type, code])
+const dirOf = await A.evaluate(() => { const k = party.find(p => p.id === "kenta"); const L = nearestWalkable(k.x - 120 * node.scale, k.y), R = nearestWalkable(k.x + 120 * node.scale, k.y); return Math.hypot(L.x - k.x, L.y - k.y) > Math.hypot(R.x - k.x, R.y - k.y) ? "ArrowLeft" : "ArrowRight" })
+await press("keydown", dirOf); await wait(1600); await press("keyup", dirOf); await wait(1500)
+const k1 = await kAt(); await wait(1200); const k2 = await kAt()
+check("Kenta's arrows on his own screen walk him on the fight's screen", Math.abs(k1.x - k0.x) > 4, {dirOf, k0, k1})
+check("the walk spends his movement", k1.move < k0.move, {before: k0.move, after: k1.move})
+check("he stops when he lets go", k1.x === k2.x && k1.y === k2.y, {k1, k2})
+check("and it is still his turn", (await A.evaluate(() => activeActor().id)) === "kenta")
 // Kenta presses Attack, then his weapon, then clicks the nearest drow — on his own screen
 await B.evaluate(() => { const b = [...$("cbtMenu").querySelectorAll("button")].find(b => /^Attack/.test(b.querySelector("span").textContent)); b.click() })
 await wait(1500)
