@@ -27895,7 +27895,7 @@ function councilRender(){
   });
   $("objX").style.display = "none";                                   // no stepping back: the party must answer
   const say = $("obj").querySelector(".fsay"); if (say) say.textContent = pdecFooter(d);
-  $("obj").classList.add("council"); $("obj").hidden = false; mode = "dialog";
+  $("obj").classList.add("council"); $("obj").hidden = false; if (mode !== "combat") mode = "dialog";   // never take a fight's mode (see councilTick)
 }
 function councilClose(){
   if (!PDEC.shownId) return;
@@ -27908,6 +27908,16 @@ function councilTick(){
   if (!OW.on) return;
   const d = state.pdec, pk = state.pdpick;
   if (!d || !d.id){ if (PDEC.local && PDEC.local.ran) PDEC.local = null; councilClose(); return; }
+  // A FIGHT OUTRANKS THE QUESTION (Sam, 2026-11-24: "Why are we in combat but not fighting; fix this"). Live run 504f1628,
+  // fight a59390fe: "The gate is open" was still up on Fifi's screen when the breakout began; her press ran councilRender
+  // (mode = "dialog") and councilClose (dialog -> "explore") with the fight live. In explore mode the follow tick walked
+  // Derendil off his dash, his turn never ended, and the fight sat at round 1 "busy". A card is never raised in a fight
+  // (partyCard); one caught by a fight is dropped, unanswered, on every screen.
+  if (mode === "combat" && !(pk && pk.d === d.id)){
+    reviewLog("sync", `A fight broke out: "${d.title}" is dropped, unanswered.`);
+    if (PDEC.local && PDEC.local.id === d.id) PDEC.local = null;
+    state.pdec = null; councilClose(); return;
+  }
   if (pk && pk.d === d.id){
     // THE ANSWER: the opener presses that row, once; everyone else just puts the card away
     if (PDEC.local && PDEC.local.id === d.id && !PDEC.local.ran){
