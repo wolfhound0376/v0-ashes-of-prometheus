@@ -1146,7 +1146,32 @@ button:focus-visible,select:focus-visible{outline:2px solid var(--fungus);outlin
 .turncall .twhat b{color:#ff9b8f;font-weight:600}
 .turncall .twhat i{font-style:normal;color:#ffd27a;margin:0 6px}
 .turncall.foe .tname{color:#ffb0a0}
-@media (prefers-reduced-motion:reduce){.turn,.turncall{transition:none}}
+/* DEATH SAVES ON THE TURN CARD (turnSaves): three hearts, the d20, three skulls, each mark in a bronze medallion */
+.turncall.dying{border-color:#7d1f1a;box-shadow:0 3px 0 #000,0 8px 18px rgba(0,0,0,.55),0 0 18px rgba(170,30,24,.45)}
+.turncall.dying .tface{filter:grayscale(1) brightness(.75) contrast(1.1)}
+.turncall .tsaves{display:flex;align-items:center;gap:8px;margin-left:4px}
+.turncall .tsaves[hidden]{display:none}
+.turncall .dsrow{display:flex;gap:4px}
+.turncall .ds{position:relative;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 50% 38%,#2a1a14,#0b0605 72%);box-shadow:inset 0 0 0 1.5px #6b4a22,inset 0 0 0 3px #120a07,0 1px 0 #000}
+.turncall .ds svg{width:16px;height:16px;fill:none;stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round;opacity:.45}
+.turncall .ds.s svg{stroke:#62e3c6}
+.turncall .ds.f svg{stroke:#ff5a4a}
+.turncall .ds.on{box-shadow:inset 0 0 0 1.5px #d9a440,inset 0 0 0 3px #120a07,0 1px 0 #000}
+.turncall .ds.on svg{opacity:1}
+.turncall .ds.s.on{background:radial-gradient(circle at 50% 38%,#1f5a50,#07211d 72%)}
+.turncall .ds.s.on svg path:first-child{fill:#62e3c6;stroke:#d8fff4}
+.turncall .ds.s.on svg .beat{stroke:#06302a}
+.turncall .ds.s.on{filter:drop-shadow(0 0 5px rgba(98,227,198,.65))}
+.turncall .ds.f.on{background:radial-gradient(circle at 50% 38%,#5c1712,#1e0605 72%);filter:drop-shadow(0 0 5px rgba(255,90,74,.6))}
+.turncall .ds.f.on svg path:first-child{fill:#f2e6d0;stroke:#ff5a4a}
+.turncall .ds.f.on svg .eye{fill:#3a0806;stroke:none}
+.turncall .ds.fresh{animation:dsPop .55s cubic-bezier(.2,1.6,.4,1) both}
+@keyframes dsPop{0%{transform:scale(.2);opacity:0}60%{transform:scale(1.35);opacity:1}100%{transform:scale(1)}}
+.turncall .dsroll{min-width:30px;padding:2px 6px;text-align:center;font-family:"Cinzel",Georgia,serif;font-weight:700;font-size:.95rem;color:#c9b48a;border:1px solid #6b4a22;border-radius:6px;background:#120a07;text-shadow:0 1px 0 #000}
+.turncall .dsroll.ok{color:#9ff2c8;border-color:#2f8f7a}
+.turncall .dsroll.bad{color:#ff8a7c;border-color:#a2423a}
+.turncall .dsroll.fresh{animation:dsPop .45s ease-out both}
+@media (prefers-reduced-motion:reduce){.turn,.turncall{transition:none}.turncall .ds.fresh,.turncall .dsroll.fresh{animation:none}}
 /* THE DEATH BEAT banner (the pop lanes, 2026-10-28): "Drow guard slain", "Fifi is down" — a moment at the top of the stage */
 .beat{position:absolute;left:50%;top:24%;transform:translate(-50%,-50%);font-family:"Cinzel",Georgia,serif;font-size:26px;font-weight:700;color:#f3d68a;letter-spacing:.1em;text-shadow:0 0 14px rgba(255,120,80,.5),0 2px 0 #2a0a08,0 4px 12px rgba(0,0,0,.85);opacity:0;pointer-events:none;white-space:nowrap;z-index:40}
 .beat.show{animation:beat 1.3s ease-out forwards}
@@ -1464,7 +1489,7 @@ body.quota-on #cbtMenu[data-kind=explore]{display:none!important}
     <div id="victory" class="victory" hidden><div class="big"></div><div class="small"></div></div>
     <div id="lvlBanner" class="lvlBanner" hidden aria-live="polite"></div>
     <div id="beat" class="beat" aria-live="polite"></div>
-    <div id="turnCall" class="turncall" aria-live="polite"><div class="tface" id="turnFace"></div><span class="tname" id="turnName"></span><span class="twhat" id="turnWhat"></span></div>
+    <div id="turnCall" class="turncall" aria-live="polite"><div class="tface" id="turnFace"></div><span class="tname" id="turnName"></span><span class="twhat" id="turnWhat"></span><span class="tsaves" id="turnSaves" hidden></span></div>
     <div id="bossIntro" class="bossIntro" hidden><div class="bface" id="bossIntroFace"></div><div><div class="kick">BOSS</div><div class="big" id="bossIntroName"></div><div class="small" id="bossIntroEpithet"></div></div></div>
     <div class="talk" id="obj" hidden>
       <div class="tcard" role="dialog" aria-labelledby="objWho">
@@ -4781,10 +4806,21 @@ function buildProps(){
     const k = plateImg.naturalWidth / NAT_W; try { g.drawImage(plateImg, bx * k, by * k, bw * k, bh * k, 0, 0, bw, bh); } catch (e) {}
     const dk = document.createElement("canvas"); dk.width = bw; dk.height = bh; const dg = dk.getContext("2d");   // the underside: the same lid, in shadow
     dg.drawImage(c, 0, 0); dg.globalCompositeOperation = "source-atop"; dg.fillStyle = "rgba(10,7,16,.62)"; dg.fillRect(0, 0, bw, bh);
-    const o = propState(pr).open ? 1 : 0; lids[pr.id] = {img: c, dark: dk, bx, by, k: o, target: o};
+    const o = propState(pr).open ? 1 : 0; lids[pr.id] = {img: c, dark: dk, bx, by, k: o, target: o, secs: pr.film ? pr.film.secs : 0};
+    if (pr.film){ const L2 = lids[pr.id]; L2.film = lootImg(PLATE_DIR + pr.film.src); L2.e = 0; L2.emptyTarget = 0;   // the painted opening (see drawPropFilm)
+      if (pr.film.empty){ L2.filmEmpty = lootImg(PLATE_DIR + pr.film.empty); if (o) propEmptyCheck(pr.id); } }
   }
 }
-function tickProps(dt){ for (const id in lids){ const l = lids[id]; if (l.k !== l.target) l.k = l.target > l.k ? Math.min(1, l.k + dt / 1.3) : Math.max(0, l.k - dt / .7); } }
+function tickProps(dt){ for (const id in lids){ const l = lids[id], up = l.secs || 1.3, down = l.secs ? l.secs * .75 : .7; if (l.k !== l.target) l.k = l.target > l.k ? Math.min(1, l.k + dt / up) : Math.max(0, l.k - dt / down);
+  if (l.filmEmpty && l.e !== l.emptyTarget) l.e = l.emptyTarget > l.e ? Math.min(1, l.e + dt / .9) : Math.max(0, l.e - dt / .9); } }
+// IS THE CHEST EMPTY? (Sam, 2026-11-23: "When you remove any items it goes back to looking like an empty box.") A chest
+// with `film.empty` has a second filmed opening that ends on the same chest, open and bare. Which one plays is what the
+// server says is still inside: asked when the plate is built (an open chest), when it is opened, and whenever its loot
+// card closes. Emptied while open, the full chest fades to the bare one; something put back fades it the other way.
+function propEmptyCheck(id){
+  const l = lids[id]; if (!l || !l.filmEmpty) return;
+  fetchLoot(id).then(j => { if (j.error || lids[id] !== l) return; l.emptyTarget = (j.rows || []).length ? 0 : 1; if (l.k < .2) l.e = l.emptyTarget; });
+}
 // SET DRESSING ON THE FLOOR (story.json `decor`, Sam 2026-10-24: "get the skeletons done"): flat pixel objects from
 // public/sprites/cadavers/ laid on the plate under everyone — the den's gnawed bones, the pool's refuse. `sq` is how many
 // squares the 128-px canvas spans; `flip` mirrors. Nothing to interact with; the body of the thing is the painting's.
@@ -4799,6 +4835,7 @@ function drawDecor(){
 function drawProps(){
   for (const pr of node.props || []){
     const l = lids[pr.id]; if (!l || l.k <= 0) continue;
+    if (pr.film && drawPropFilm(pr, l)) continue;   // a painted chest with its own filmed opening; the cut-out lid below is the fallback
     const L = pr.lid.poly, [h0, h1] = pr.lid.hinge, e = l.k < .5 ? 2 * l.k * l.k : 1 - (-2 * l.k + 2) ** 2 / 2, a = e * 1.8;   // ~105 degrees
     // the inside: dark wood, and warm light rising out of it
     ctx.save(); ctx.beginPath(); L.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
@@ -4816,6 +4853,33 @@ function drawProps(){
     ctx.restore();
   }
 }
+// PAINTED CHESTS THAT OPEN LIKE REAL ONES (Sam, 2026-11-23: "we need a better solution to painted art chests and opening
+// them. It should look neat and open up realistically"). The cut-out lid above is a flat slice of the painting skewed on
+// its hinge: on a domed or deep lid it reads as a dark slab sweeping over the wall. A prop with `film` (story.json) plays
+// a short filmed opening instead, made FROM the painting: the plate crop is the first frame, an image edit painted the
+// open chest as the last, a video model moved the lid between them on a locked camera, and
+// scripts/velkynvelve-walk/make_chest_film.py registered every frame back onto the plate, matched its colour and cut
+// each frame's alpha to where it differs from the painting -- so frame 0 is the plate itself and only the lid, its
+// shadow and the light from inside are ever drawn over it. `film`: {src, box: [x, y, w, h] in plate px, frames, cols, secs,
+// glow: [x, y, r], empty: the same opening ending on the bare chest, sound / closeSound: ElevenLabs files in public/sfx/walk,
+// closeHit: seconds into closeSound where the lid lands}.
+// Opening plays it forward over `secs`; closing plays it back. The light inside breathes while the lid is up.
+function drawPropFilm(pr, l){
+  const f = pr.film, im = l.film, ie = l.filmEmpty, ready = m => m && m.complete && m.naturalWidth;
+  if (!ready(im)) return false;
+  const n = f.frames, cols = f.cols, fw = im.naturalWidth / cols, fh = im.naturalHeight / Math.ceil(n / cols);
+  const i = Math.min(n - 1, Math.round(l.k * (n - 1))), [x, y, w, h] = f.box, e = ready(ie) ? l.e || 0 : 0;
+  const cell = (m, a) => { if (a <= 0) return; ctx.globalAlpha = a; ctx.drawImage(m, (i % cols) * fw, Math.floor(i / cols) * fh, fw, fh, x, y, w, h); };
+  ctx.save(); cell(im, e < 1 ? 1 : 0); cell(ie, e); ctx.restore();   // the bare chest over the full one as it empties
+  if (l.k >= 1 && f.glow && e < 1){   // the open chest's warm light, breathing, and a mote now and then rising out of it
+    const [gx, gy, gr] = f.glow, a = (.10 + .06 * Math.sin(now / 700)) * (1 - e);
+    ctx.save(); ctx.globalCompositeOperation = "lighter";
+    const g = ctx.createRadialGradient(gx, gy, 2, gx, gy, gr); g.addColorStop(0, `rgba(255,190,110,${a})`); g.addColorStop(1, "rgba(255,190,110,0)");
+    ctx.fillStyle = g; ctx.fillRect(gx - gr, gy - gr, gr * 2, gr * 2); ctx.restore();
+    if (Math.random() < .05 * (1 - e)) sparks.push({x: gx + (Math.random() - .5) * gr, y: gy + (Math.random() - .5) * gr * .3, vx: (Math.random() - .5) * 6, vy: -14 - Math.random() * 16, g: -4, col: Math.random() < .5 ? "#ffd38a" : "#fff1c8", t0: now, life: 1400});
+  }
+  return true;
+}
 function drawPropHighlight(){
   if (mode !== "explore" && mode !== "dialog") return;
   for (const pr of node.props || []){
@@ -4829,10 +4893,10 @@ function drawPropHighlight(){
 let hoverProp = null;
 function propCenter(pr){ const xs = pr.poly.map(p => p[0]), ys = pr.poly.map(p => p[1]); return {x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) + 30}; }
 function openChest(pr){
-  const l = lids[pr.id], st = propState(pr); st.open = true; st.locked = false; if (l) l.target = 1;
-  sfx("door-open", .6); bank("ui/coin_purse", .5);
+  const l = lids[pr.id], st = propState(pr); st.open = true; st.locked = false; if (l) l.target = 1; propEmptyCheck(pr.id);
+  if (pr.film && pr.film.sound) sfx("walk:" + pr.film.sound, .85); else { sfx("door-open", .6); bank("ui/coin_purse", .5); }   // a filmed chest has its own ElevenLabs opening
   log(`${fname(leader)} opens <b>${pr.name}</b>.`);
-  setTimeout(() => { if (mode === "explore") openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open, at: polyBase(pr.poly)}); }, 1100);
+  setTimeout(() => { if (mode === "explore") openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open, at: polyBase(pr.poly)}); }, pr.film ? pr.film.secs * 1000 + 250 : 1100);   // the loot card waits for the lid
 }
 // the poison needle (OotA ch.1 area 7): any attempt to open the lock without the key sets it off
 function needle(pr){
@@ -4862,7 +4926,7 @@ function openProp(pr, opts = {}){
     });
   };
   const dex = ((SHEETS[leader.id] || {}).skills || {}).thievesTools ?? abilMod(SHEETS[leader.id], "dex");   // thieves' tools: the sheet's own number, else bare Dex
-  if (st.open){ $("objText").textContent = pr.text.open; add("Look inside", () => { close(); openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open, at: polyBase(pr.poly)}); }, "primary"); add("Close the lid", () => { close(); st.open = false; lids[pr.id].target = 0; setTimeout(() => sfx("door-close", .5), 500); }); add("Leave it", close); }
+  if (st.open){ $("objText").textContent = pr.text.open; add("Look inside", () => { close(); openLoot(pr.id, pr.name, {poly: pr.poly, text: pr.text.open, at: polyBase(pr.poly)}); }, "primary"); add("Close the lid", () => { close(); st.open = false; lids[pr.id].target = 0; if (pr.film && pr.film.closeSound) setTimeout(() => sfx("walk:" + pr.film.closeSound, .8), Math.max(0, pr.film.secs * 750 - (pr.film.closeHit || 0) * 1000)); else setTimeout(() => sfx("door-close", .5), 500); }); add("Leave it", close); }
   else if (!st.locked){ $("objText").textContent = (pr.text && pr.text.unlocked) || "The lock is open. The lid is heavy."; add("Open it", () => { close(); openChest(pr); }, "primary"); add("Leave it", close); }
   else {
     $("objText").textContent = pr.text.closed + (st.trapKnown ? (st.disarmed ? " The needle in the lock is harmless now." : " A needle hides in the lock, its tip dark with something.") : "");
@@ -5590,7 +5654,7 @@ async function openLoot(id, title, opts = {}){
   if (opts.poly) plateCrop(opts.poly);
   const who = fighter || leader, box = $("objBtns");
   $("objWho").textContent = title; $("objText").textContent = opts.text || "You look inside."; box.innerHTML = ""; box.classList.add("loot");
-  const close = () => { $("obj").hidden = true; box.classList.remove("loot"); if (!fighter) mode = "explore"; if (opts.onClose) opts.onClose(); };
+  const close = () => { $("obj").hidden = true; box.classList.remove("loot"); if (!fighter) mode = "explore"; if (opts.onClose) opts.onClose(); propEmptyCheck(id); };
   const leave = () => { close(); if (fighter) grabDone(fighter); };   // mid-fight, walking away from the card hands the turn back
   const add = (label, fn, cls = "", off = false) => { const b = choiceRow(box, label, fn || null, cls); b.disabled = off; return b; };
   const fkey = lootKeyOf(id), spill = !!opts.at && !fountained.has(fkey);   // the first open of a body or chest spills it
@@ -13328,9 +13392,10 @@ function grabChest(a, pr){
   if (st.open){ grabStart(a, at, false); log(`${fname(a)} looks into <b>${esc(pr.name)}</b>.`); openLoot(pr.id, pr.name, opts); return; }
   const k = gearCost(a, 1); if (!k.ok){ toast(k.why); return; }
   grabStart(a, at, () => k.pay());
-  const l = lids[pr.id]; st.open = true; if (l) l.target = 1;
-  sfx("door-open", .6); bank("ui/coin_purse", .5); log(`${fname(a)} throws open <b>${esc(pr.name)}</b> (${k.label === "free" ? "free object interaction" : "their action"}).`);
-  setTimeout(() => { if (cbt && grabbing === a) openLoot(pr.id, pr.name, opts); else grabDone(a); }, 1100);
+  const l = lids[pr.id]; st.open = true; if (l) l.target = 1; propEmptyCheck(pr.id);
+  if (pr.film && pr.film.sound) sfx("walk:" + pr.film.sound, .85); else { sfx("door-open", .6); bank("ui/coin_purse", .5); }   // a filmed chest's own opening
+  log(`${fname(a)} throws open <b>${esc(pr.name)}</b> (${k.label === "free" ? "free object interaction" : "their action"}).`);
+  setTimeout(() => { if (cbt && grabbing === a) openLoot(pr.id, pr.name, opts); else grabDone(a); }, pr.film ? pr.film.secs * 1000 + 250 : 1100);
 }
 // A foe's Search (see foeTurn, HIDDEN HEROES): one Wisdom (Perception) check against each hidden hero's Stealth total
 // (c.hideDc, set by doHide; an older hide without one uses 10 + Stealth). Found: no longer hidden. Either way the action
@@ -16208,10 +16273,41 @@ function drawCritBadges(){
 function beatBanner(text){ const el = $("beat"); if (!el) return; if (text !== "SPOTTED!") el.classList.remove("spotted"); el.textContent = text; el.classList.remove("show"); void el.offsetWidth; el.classList.add("show"); }
 // THE TURN CALL: whose turn it is; then what they do, and to whom, with the target ringed
 function turnCall(a){
-  const el = $("turnCall"); if (!el || !a || a.down) return;
+  const el = $("turnCall"); if (!el || !a || (a.down && !(a.kind === "pc" && a.c && a.c.ds))) return;   // a dying hero's turn has its card too (turnSaves)
   turnCall.who = a; $("turnFace").replaceChildren(cardFor(a)); $("turnName").textContent = fname(a); $("turnWhat").innerHTML = "";
   el.classList.toggle("foe", a.kind === "foe"); el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
+  turnSaves(a);
   clearTimeout(turnCall.t);
+}
+// DEATH SAVES ON THE TURN CARD (Sam, 2026-11-23: "Can we improve the death saves icons. Maybe we can have it on the hero
+// card that pops up during their turn. It should be higher quality than just three circles."). A dying hero's turn
+// brings up the turn card like anyone's (turnCall stepped aside for the downed until now), greyed, with a crimson rim,
+// and beside the name the three successes (hearts), the d20 and the three failures (skulls), each in its own medallion.
+// The save lands on the card: the die shows the roll and the mark it earned pops in. Struck while down, the failures
+// land on the card too (deathMark). Rules unchanged: deathSaveTurn and deathMark decide, this only shows them.
+const DS_PATH = {
+  s: "M12 20.5s-7.5-4.6-7.5-10.1A4.3 4.3 0 0 1 12 7.6a4.3 4.3 0 0 1 7.5 2.8c0 5.5-7.5 10.1-7.5 10.1z",
+  beat: "M5.5 12.2h3.2l1.5-2.6 2.1 5 1.6-3.2h4.6",
+  f: "M12 3.2c-4.6 0-7.6 3.1-7.6 7.2 0 2.4 1.1 4.1 2.6 5.1v2.6c0 .8.6 1.4 1.4 1.4h1.1v-1.8h1.2v1.8h2.6v-1.8h1.2v1.8h1.1c.8 0 1.4-.6 1.4-1.4v-2.6c1.5-1 2.6-2.7 2.6-5.1 0-4.1-3-7.2-7.6-7.2z",
+  eyes: "M10.9 11.2a1.9 1.9 0 1 1-3.8 0a1.9 1.9 0 1 1 3.8 0zM16.9 11.2a1.9 1.9 0 1 1-3.8 0a1.9 1.9 0 1 1 3.8 0zM12 13.4l-1 2h2z"
+};
+const DS_GLYPH = {
+  s: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${DS_PATH.s}"/><path class="beat" d="${DS_PATH.beat}"/></svg>`,
+  f: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${DS_PATH.f}"/><path class="eye" d="${DS_PATH.eyes}"/></svg>`
+};
+function turnSaves(a, roll){
+  const el = $("turnSaves"), card = $("turnCall"); if (!el || !card) return;
+  const ds = a && a.kind === "pc" && a.c && a.c.ds;
+  if (!ds || (!a.down && roll == null)){ el.hidden = true; el.innerHTML = ""; delete el.dataset.who; card.classList.remove("dying"); return; }
+  const was = el.dataset.who === a.id ? {s: +el.dataset.s || 0, f: +el.dataset.f || 0} : {s: ds.s, f: ds.f};   // what the card showed: the rest are fresh
+  const pip = (k, i, n, w) => `<span class="ds ${k}${i < n ? " on" : ""}${i < n && i >= w ? " fresh" : ""}">${DS_GLYPH[k]}</span>`;
+  const row = (k, n, w) => [0, 1, 2].map(i => pip(k, i, n, w)).join("");
+  const die = roll == null ? (ds.dead ? "✝" : ds.stable ? "✓" : "d20") : String(roll);
+  el.innerHTML = `<span class="dsrow" title="Death saves: ${ds.s} of 3 successes">${row("s", ds.s, was.s)}</span>`
+    + `<span class="dsroll${roll == null ? "" : (roll >= 10 ? " ok" : " bad") + " fresh"}">${die}</span>`
+    + `<span class="dsrow" title="Death saves: ${ds.f} of 3 failures">${row("f", ds.f, was.f)}</span>`;
+  el.dataset.who = a.id; el.dataset.s = ds.s; el.dataset.f = ds.f; el.hidden = false;
+  card.classList.add("dying");
 }
 function turnWhat(att, tgt, what, boon){
   if (!cbt) return;
@@ -23371,6 +23467,7 @@ function deathMark(a, success, n, why){
   if (ds.f >= 3){ dieNow(a, why); return; }
   if (ds.s >= 3){ ds.stable = true; popText(a, "stable", "#9ff2c8", 1.2); log(`<b>${fname(a)} is stable.</b> No more death saves; they stay down at 0 HP until healed.`); }
   renderParty();
+  if (turnCall.who === a && deathSaveTurn.rolling !== a && !$("turnSaves").hidden) turnSaves(a);   // struck while their card is up: the failure lands on it
 }
 function dieNow(a, why){
   // A hero who dies OUTSIDE a fight has no combat record yet (Sam, 2026-11-10: Fifi shot dead at the pen gate a second
@@ -24114,6 +24211,7 @@ function gameOverLeave(kind){
 }
 // a downed hero's turn: the save, and the turn passes (a 20 gets them up, and the turn is theirs)
 function deathSaveTurn(a){
+  turnCall(a); $("turnWhat").innerHTML = "<i>—</i><b>Death save</b>";   // the card up with the marks so far (turnSaves)
   const r = d20(0, a);   // a death save is a saving throw: Halfling Luck applies
   fightCam(Math.min(2.6, cbt.home.z * 1.12), a.x, a.y - 40, 500, [a]);
   if (r === 20){
@@ -24123,7 +24221,8 @@ function deathSaveTurn(a){
   const ok = r >= 10; popText(a, ok ? `save ${r} ✓` : r === 1 ? "1 ✗✗" : `save ${r} ✗`, ok ? "#9ff2c8" : "#ff6b5e", 1.1);
   bank(ok ? "ui/turn_chime" : "ui/nat1", .5);
   log(`${fname(a)} death save: ${r} — ${ok ? "success" : r === 1 ? "two failures" : "failure"}.`);
-  deathMark(a, ok, ok ? 1 : r === 1 ? 2 : 1, "three failed death saves");
+  deathSaveTurn.rolling = a; deathMark(a, ok, ok ? 1 : r === 1 ? 2 : 1, "three failed death saves"); deathSaveTurn.rolling = null;
+  turnSaves(a, r);                                                   // the roll and the mark it earned, on the card
   setTimeout(() => passTurn(a), 1300); return true;
 }
 // first aid: an action, DC 10 Wisdom (Medicine), on a dying friend within 5 ft
@@ -24139,11 +24238,20 @@ function drawDeathSaves(a){
   if (ds.dead){ ctx.font = "bold 26px Georgia, serif"; ctx.fillStyle = "#ff6b5e"; ctx.strokeText("☠", a.x, y); ctx.fillText("☠", a.x, y); ctx.restore(); return; }
   if (ds.stable){ ctx.font = "bold 14px 'IBM Plex Mono', monospace"; ctx.fillStyle = "#9ff2c8"; ctx.strokeText("stable", a.x, y); ctx.fillText("stable", a.x, y); ctx.restore(); return; }
   const pulse = .6 + .4 * Math.sin(now / 260), R = 5;
+  // the turn card's glyphs (DS_PATH, turnSaves): hearts for successes, skulls for failures, lit when earned
+  const P = drawDeathSaves.p2d || (drawDeathSaves.p2d = (() => { try { return {s: new Path2D(DS_PATH.s), f: new Path2D(DS_PATH.f), eyes: new Path2D(DS_PATH.eyes)}; } catch (e) { return false; } })());
   for (let i = 0; i < 3; i++){
-    for (const [row, n, col] of [[-1, ds.s, "#62e3c6"], [1, ds.f, "#ff5a4a"]]){
-      const x = a.x + (i - 1) * 15, yy = y + row * 8;
-      ctx.beginPath(); ctx.arc(x, yy, R, 0, Math.PI * 2); ctx.fillStyle = i < n ? col : "rgba(20,10,8,.85)"; ctx.globalAlpha = i < n ? 1 : .9; ctx.fill();
-      ctx.lineWidth = 1.5; ctx.strokeStyle = col; ctx.globalAlpha = i < n ? 1 : pulse; ctx.stroke(); ctx.globalAlpha = 1;
+    for (const [k, row, n, col] of [["s", -1, ds.s, "#62e3c6"], ["f", 1, ds.f, "#ff5a4a"]]){
+      const x = a.x + (i - 1) * 17, yy = y + row * 9, on = i < n;
+      if (!P){   // no Path2D: the old dots
+        ctx.beginPath(); ctx.arc(x, yy, R, 0, Math.PI * 2); ctx.fillStyle = on ? col : "rgba(20,10,8,.85)"; ctx.globalAlpha = on ? 1 : .9; ctx.fill();
+        ctx.lineWidth = 1.5; ctx.strokeStyle = col; ctx.globalAlpha = on ? 1 : pulse; ctx.stroke(); ctx.globalAlpha = 1; continue;
+      }
+      ctx.save(); ctx.translate(x - 7.5, yy - 7.5); ctx.scale(15 / 24, 15 / 24);
+      ctx.lineJoin = "round"; ctx.strokeStyle = "#140a06"; ctx.lineWidth = 5; ctx.stroke(P[k]);           // a dark outline, readable on any floor
+      if (on){ ctx.shadowColor = col; ctx.shadowBlur = 8; ctx.fillStyle = k === "s" ? col : "#f2e6d0"; ctx.fill(P[k]); ctx.shadowBlur = 0; if (k === "f"){ ctx.fillStyle = "#3a0806"; ctx.fill(P.eyes); } }
+      else { ctx.fillStyle = "rgba(20,10,8,.85)"; ctx.fill(P[k]); ctx.globalAlpha = pulse; }
+      ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke(P[k]); ctx.restore();
     }
   }
   ctx.restore();

@@ -96,6 +96,12 @@ describe("reading the stored flag", () => {
   })
   it("keeps the session number", () => {
     expect(readTableState({ status: "lobby", session: 4 }).session).toBe(4)
+    // The room code lives on an open table only, and only a well-formed one.
+    expect(readTableState({ status: "lobby", code: "VKRT" }).code).toBe("VKRT")
+    expect(readTableState({ status: "live", code: "VKRT" }).code).toBe("VKRT")
+    expect(readTableState({ status: "closed", code: "VKRT" }).code).toBeNull()
+    expect(readTableState({ status: "lobby", code: "<script>" }).code).toBeNull()
+    expect(readTableState({ status: "lobby" }).code).toBeNull()
   })
 })
 

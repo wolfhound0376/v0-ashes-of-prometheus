@@ -15,6 +15,7 @@ import { entryKey } from "@/lib/entry"
 import { cleanSaveName, newSaveName } from "@/lib/saves"
 import { pitOwedBy } from "@/lib/pit"
 import { shelveWorldInPlay, startNewSave, usualParty } from "@/lib/save-store"
+import { codeOpens, freshRoomCode, makeRoomCode } from "@/lib/room-code"
 
 // /api/table — the staging table (lib/table.ts has the rules and Sam's words).
 //
@@ -33,7 +34,14 @@ import { shelveWorldInPlay, startNewSave, usualParty } from "@/lib/save-store"
 //                                  remove {characterId}    lobby: take the seat AND the invitation away
 //                                  excuse {characterId}    live: step a player out; the chair is held for them
 //                                  readmit {characterId}   live: let an excused player back in
+//     DM or host:                  newcode                 a fresh room code (the old link stops working)
 //     player (characterId + claimToken):  sit · ready · unready · leave · figure {figure: 0..6}
+//                                  join {code}  followed the host's link (/t/<code>): a live code opens this
+//                                               hero's seat, exactly as the host's "Open a seat" would.
+//
+//   THE ROOM CODE (lib/room-code.ts; Sam, 2026-11-23: "PR2", four letters). Opening the table makes one; it dies
+//   when the table closes; remove / withdraw / excuse make a new one so an old link cannot walk someone back in.
+//   Only the DM and the host are shown it — every other answer carries `code: null`.
 //
 //   THE HOST (lib/host.ts; Sam, 2026-11-10: "the host can play", "whomever started the campaign is the host",
 //   "only people with keys can start a campaign"). The hero named when the campaign was started is its host.
@@ -55,8 +63,8 @@ import { shelveWorldInPlay, startNewSave, usualParty } from "@/lib/save-store"
 export const dynamic = "force-dynamic"
 export const maxDuration = 60 // `new` runs the whole campaign reset first
 
-const DM_ACTIONS = new Set(["open", "new", "host", "start", "unstart", "remove", "companion", "end", "invite", "uninvite", "excuse", "readmit"])
-const PLAYER_ACTIONS = new Set(["sit", "ready", "unready", "leave", "figure"])
+const DM_ACTIONS = new Set(["open", "new", "host", "start", "unstart", "remove", "companion", "end", "invite", "uninvite", "excuse", "readmit", "newcode"])
+const PLAYER_ACTIONS = new Set(["sit", "ready", "unready", "leave", "figure", "join"])
 
 function isDm(req: NextRequest): boolean {
   return isDmRequest(req, normalizeCode, safeEquals)
@@ -108,7 +116,8 @@ async function reply(db: Db, view: TableView, characterId?: string | null, extra
     if (!rollsErr) pitDue = pitOwedBy(view.seats, new Set((rolls ?? []).map((r) => String(r.key).slice("fortune:".length)))).some((id) => id !== mine.id)
   }
   const { data: liveRun } = await db.from("campaign_runs").select("id").eq("campaign_id", CAMPAIGN_ID).neq("status", "ended").order("run_number", { ascending: false }).limit(1).maybeSingle()
-  return NextResponse.json({ ...view, seats: open ? view.seats : [], mine, invited, host: host ? { id: host.id, name: host.name } : null, run: liveRun?.id ?? null, ...(woke === undefined ? {} : { woke }), ...(pitDue === undefined ? {} : { pitDue }), ...(roster ? { roster } : {}), ...extra })
+  // The room code is the DM's and the host's to hand out; nobody else is ever shown it.
+  return NextResponse.json({ ...view, state: dm ? view.state : { ...view.state, code: null }, seats: open ? view.seats : [], mine, invited, host: host ? { id: host.id, name: host.name } : null, run: liveRun?.id ?? null, ...(woke === undefined ? {} : { woke }), ...(pitDue === undefined ? {} : { pitDue }), ...(roster ? { roster } : {}), ...extra })
 }
 
 /** Is this the campaign's host, proved by the host hero's own claim? */
@@ -156,7 +165,7 @@ export async function POST(req: NextRequest) {
     if (PLAYER_ACTIONS.has(action)) {
       const claimToken = typeof body.claimToken === "string" ? body.claimToken : ""
       if (!(await claimOk(db, characterId, claimToken))) return NextResponse.json({ error: "Your door code did not check out. Come in through the door again." }, { status: 403 })
-      return await playerAction(db, action, characterId, body.figure)
+      return await playerAction(db, action, characterId, body.figure, body.code)
     }
     return NextResponse.json({ error: "unknown action" }, { status: 400 })
   } catch (e) {
@@ -186,12 +195,15 @@ async function dmAction(db: Db, action: string, characterId: string, actor: Acto
     if (t.status === "closed") {
       // A new session: nobody is seated until they sit down at this table (the old seats are from the last one).
       await clearSeats(db)
-      const next: TableState = { status: "lobby", dmReady: false, session: t.session + 1, openedAt: now, startedAt: null }
+      const next: TableState = { status: "lobby", dmReady: false, session: t.session + 1, openedAt: now, startedAt: null, code: makeRoomCode() }
       await writeTable(db, next, `${by} opened the table for session ${next.session}`)
       // THE USUAL PARTY (Sam, 2026-11-10): whoever sat at this saved game last time gets their seat opened now.
       const party = await usualParty(db)
       for (const c of party) await writeInvite(db, c)
       if (party.length) return replyDm(await readTableView(db), { note: `Seats opened for the usual party: ${party.map((c) => c.name).join(", ")}.` })
+    } else if (!t.code) {
+      // A table opened before room codes existed gets one the next time Open is pressed.
+      await writeTable(db, { ...t, code: makeRoomCode() }, `${by} made a room code`)
     }
     return replyDm(await readTableView(db))
   }
@@ -217,7 +229,7 @@ async function dmAction(db: Db, action: string, characterId: string, actor: Acto
     if (!restart.ok) return NextResponse.json({ error: `The campaign reset did not fully finish, so the table was not opened. Tell Claude this step failed: ${restart.problems.join("; ")}.`, problems: restart.problems }, { status: 500 })
     const after = await readTable(db)
     await clearSeats(db)
-    await writeTable(db, { status: "lobby", dmReady: false, session: after.session + 1, openedAt: now, startedAt: null }, "The DM started a new game")
+    await writeTable(db, { status: "lobby", dmReady: false, session: after.session + 1, openedAt: now, startedAt: null, code: makeRoomCode() }, "The DM started a new game")
     // The reset wiped the old host with every other flag; the new campaign's host is whoever started it.
     if (newHost) await writeHost(db, newHost)
     // The fresh world is a new save, and the one in play (with its own host and party — ruling 3).
@@ -237,7 +249,7 @@ async function dmAction(db: Db, action: string, characterId: string, actor: Acto
     const saved = await shelveWorldInPlay(db, "Out of the Abyss")
     await clearSeats(db)
     await clearInvites(db)
-    await writeTable(db, { status: "closed", dmReady: false, session: t.session, openedAt: null, startedAt: null }, `${by} ended session ${t.session}`)
+    await writeTable(db, { status: "closed", dmReady: false, session: t.session, openedAt: null, startedAt: null, code: null }, `${by} ended session ${t.session}`)
     return replyDm(await readTableView(db), !saved.ok && !saved.missing ? { note: `The session ended, but the save could not be written: ${saved.error}` } : {})
   }
 
@@ -263,7 +275,14 @@ async function dmAction(db: Db, action: string, characterId: string, actor: Acto
     // To let them back in the lobby, invite them again; once the session is live use excuse/readmit.
     await removeSeat(db, characterId)
     await removeInvite(db, characterId)
+    await rotateCode(db, by)
     return replyDm(await startIfReady(db, await readTableView(db)))
+  }
+
+  if (action === "newcode") {
+    if (t.status === "closed") return NextResponse.json({ error: "Open the table first." }, { status: 409 })
+    await rotateCode(db, by)
+    return replyDm(await readTableView(db), { note: "New room code. The old link no longer works." })
   }
 
   if (action === "invite" || action === "uninvite") {
@@ -274,6 +293,7 @@ async function dmAction(db: Db, action: string, characterId: string, actor: Acto
       if (seated?.dm) return NextResponse.json({ error: "That is your own companion. Send it away from the roster." }, { status: 409 })
       await removeSeat(db, characterId)
       await removeInvite(db, characterId)
+      await rotateCode(db, by)
       return replyDm(await startIfReady(db, await readTableView(db)))
     }
     const { data: ch } = await db.from("characters").select("id, name, is_player").eq("id", characterId).is("archived_at", null).maybeSingle()
@@ -294,6 +314,7 @@ async function dmAction(db: Db, action: string, characterId: string, actor: Acto
     if (!seat) return NextResponse.json({ error: "That hero is not seated at this session." }, { status: 404 })
     if (seat.dm) return NextResponse.json({ error: "That is your own companion — you already control it." }, { status: 409 })
     await writeSeat(db, { ...seat, away: action === "excuse" }, "dm", `${seat.name} was ${action === "excuse" ? "excused from" : "let back into"} the session`)
+    if (action === "excuse") await rotateCode(db, by)
     return replyDm(await readTableView(db))
   }
 
@@ -314,10 +335,32 @@ async function dmAction(db: Db, action: string, characterId: string, actor: Acto
   return NextResponse.json({ error: "unknown action" }, { status: 400 })
 }
 
-async function playerAction(db: Db, action: string, characterId: string, figure?: unknown) {
+/** A new room code for an open table (after a kick, or on the host's "New code"), so an old link stops working. */
+async function rotateCode(db: Db, by: string) {
+  const cur = await readTable(db)
+  if (cur.status === "closed") return
+  await writeTable(db, { ...cur, code: freshRoomCode(cur.code) }, `${by} changed the room code`)
+}
+
+async function playerAction(db: Db, action: string, characterId: string, figure?: unknown, code?: unknown) {
   const t = await readTable(db)
   const view = await readTableView(db)
   const mine = view.seats.find((s) => s.id === characterId)
+
+  if (action === "join") {
+    // THE LINK IS THE INVITATION (lib/room-code.ts). A live code on an open table opens this hero's seat, as if the
+    // host had pressed "Open a seat"; the page's usual sit-down then seats them. A stale code opens nothing.
+    if (!codeOpens(t.code, t.status, code)) {
+      return reply(db, view, characterId, { refused: t.status === "closed" ? "That table is closed. Wait for the host to open it again." : "That link has changed. Ask the host for the new one." })
+    }
+    if (mine) return reply(db, view, characterId)
+    if (t.status === "live") return reply(db, view, characterId, { refused: "This session has already begun. You can join the next one." })
+    const { data: ch } = await db.from("characters").select("id, name, is_player").eq("id", characterId).is("archived_at", null).maybeSingle()
+    if (!ch?.is_player) return NextResponse.json({ error: "No such hero." }, { status: 404 })
+    if (view.seats.length >= MAX_SEATS) return reply(db, view, characterId, { refused: "Every seat at the table is taken." })
+    await writeInvite(db, { id: ch.id, name: ch.name })
+    return reply(db, view, characterId)
+  }
 
   if (action === "sit") {
     // The host is always invited to their own table (lib/host.ts).
