@@ -310,6 +310,13 @@ Per-browser identity is **not** in the database.
   (service-role), then locks the selection and hides the character picker.
 - `/api/chat` **re-verifies the claim token on every message** before accepting speaker
   attribution.
+- **The player pass (2026-11-23, `lib/player-pass.ts`).** The same pair is ALSO kept in an httpOnly
+  cookie `aop_player` set by `/api/player-pass` after a server-side check, because Safari deletes a site's
+  localStorage after seven days without a visit. `components/player-pass.tsx` (mounted in the layout) keeps
+  the two in step by watching the keys: a chosen hero is saved, a hero cleared on purpose is forgotten, and a
+  browser that lost both its keys and the `aop_pass_mirror` key gets its hero back with one reload. Pages
+  still read and write the localStorage keys exactly as before — do not read the cookie from page code.
+- **One game tab per browser (`lib/one-tab.ts`).** The newest game tab wins; others dim behind "Play here".
 - **Every message and every mutation must carry its own `characterId`.** Never fall back to
   `sessions.active_character_id` to decide who acted — that is the "one global seat" bug,
   where whatever one player did got attributed to whoever the DM last spotlighted.

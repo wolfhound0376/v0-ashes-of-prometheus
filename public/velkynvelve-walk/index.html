@@ -2967,7 +2967,7 @@ function drawFrame(){
   drawLight();          // the dark, with the lamps, the heroes and landing spells cut out of it; everything after glows through
   drawFxLayer(false);   // outside a fight it draws only the effects marked `always` (a necrotic kill's blaze)
   drawTolls();
-  ovWrapGroup(drops, drawDrops); drawDeathBits(false); drawCombatFx(); drawEbChargeOver(); drawMageHand(); drawCrimPuffs(); drawShots(); drawCritBadges(); drawToothGlow();
+  ovWrapGroup(drops, drawDrops); drawDeathBits(false); drawCombatFx(); drawEbChargeOver(); drawMageHand(); drawCrimPuffs(); drawBloodFx(); drawShots(); drawCritBadges(); drawToothGlow();
   drawExitSigns();
   ctx.globalAlpha = 1;
 }
@@ -14597,7 +14597,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       // crescent, then the blade driven in as a crimson lance with a burst at the point, then the crimson spray.
       if (!shot && crimS && sneak){ crimSlash(att, tgt, {crit}); labSneakBurst(tgt, att, crit);
         setTimeout(() => { crimThrust(att, tgt); crimStar(att, tgt, true); lunge(att, tgt, 14 * actorScale(att)); knock(tgt, att, 12 * actorScale(tgt)); }, 170);
-        setTimeout(() => { crimStar(att, tgt, crit); crimMist(att, tgt, crit ? 34 : 24); if (/piercing|slashing/.test(atk.type) && !/skeleton|ooze/.test(tgt.id)) addBlood(tgt, 1.2, false); shake(crit ? 9 : 6); }, 330); }
+        setTimeout(() => { crimStar(att, tgt, crit); crimMist(att, tgt, crit ? 34 : 24); if (/piercing|slashing/.test(atk.type) && !/skeleton|ooze/.test(tgt.id)){ bloodSpray(att, tgt, true); addBlood(tgt, 1.2, false, att); } shake(crit ? 9 : 6); }, 330); }
       else if (!shot && crimS){ crimSlash(att, tgt, {crit}); crimStar(att, tgt, crit); if (crit) crimThrust(att, tgt); if (/piercing|slashing/.test(atk.type)) crimMist(att, tgt, crit ? 26 : 8);   // the rogue & ranger strike
         setTimeout(() => { if (!tgt.down || crit){ crimSlash(att, tgt, {crit, flip: -1, stab: /pierc/.test(atk.type)}); crimStar(att, tgt, false); lunge(att, tgt, 10 * actorScale(att)); knock(tgt, att, 10 * actorScale(tgt)); } }, 150);
         if (crit) setTimeout(() => { crimThrust(att, tgt); crimStar(att, tgt, true); }, 290); }
@@ -14611,7 +14611,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         setTimeout(() => { if (!tgt.down || crit){ swipe(att, tgt, {...sw, crit, flip: -(sw.flip || 1)}); lunge(att, tgt, 10 * actorScale(att)); knock(tgt, att, 10 * actorScale(tgt)); spawnFx("physicalImpact", {at: tgt, sq: 1.4, mirror: tgt.x > att.x}); } }, 150);
         if (crit) setTimeout(() => swipe(att, tgt, {...sw, crit: true, flip: sw.kind === "claw" ? -(sw.flip || 1) : sw.flip}), 290); }
       if (!shot){
-        if (/piercing|slashing/.test(atk.type) && !/ooze/.test(tgt.id)) addBlood(tgt, crit ? 1.3 : .8, false); }
+        if (/piercing|slashing/.test(atk.type) && !/ooze|skeleton/.test(tgt.id)){ bloodSpray(att, tgt, crit); addBlood(tgt, crit ? 1.3 : .8, false, att); } }
       if (!crimS){ const sk = strikeSheet(atk, sneak, att, tgt, crit); spawnFx(sk.name, {at: tgt, mirror: sk.mirror, sq: shot ? (crit ? 1.8 : 1.3) : crit ? 2.6 : 2}); }   // a striker's hit (Sneak Attack too) has its own burst instead
       if (atk.flask){ flaskHits(att, tgt, atk, crit, why); return; }
       let dmg = roll(offhand ? offDmg(atk) : atk.dmg, crit), parts = [`${dmg.total} ${atk.type}${offhand ? " (off hand)" : ""}`];
@@ -16665,7 +16665,7 @@ function artHitFx(att, tgt, key, crit){
   const leg = key === "hamstring", m = SPR[tgt.id].json, sc = actorScale(tgt), dx = tgt.x - att.x, dy = tgt.y - att.y, d = Math.hypot(dx, dy) || 1, q = ovPt(tgt.x, tgt.y - m.pivot[1] * sc * (leg ? .16 : .5)), n = leg ? (crit ? 20 : 13) : crit ? 34 : 22;
   for (let i = 0; i < n; i++){ const sp = (90 + Math.random() * 230) * sc, a = Math.atan2(dy, dx) + (Math.random() - .5) * 1.1;
     crimPuffs.push({drop: true, x: q.x, y: q.y + (Math.random() - .5) * 10 * sc, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp * .6 - (40 + Math.random() * 90) * sc, g: 520 * sc, r0: (2 + (Math.random() * 3 | 0)) * sc, t0: now, life: 380 + Math.random() * 260, rgb: [150 + Math.random() * 80 | 0, 8, 14], a: 1}); }
-  crimMist(att, tgt, crit ? 16 : 9); addBlood(tgt, crit ? 1.2 : .9, false);
+  crimMist(att, tgt, crit ? 16 : 9); bloodSpray(att, tgt, crit, leg ? .16 : .5); addBlood(tgt, crit ? 1.2 : .9, false, att);
 }
 // blood mist: soft red discs that swell and drift away from the blow (not from bone or ooze)
 const crimPuffs = [];
@@ -22839,20 +22839,78 @@ function surgeonLocal(action, x){
   return {failed: true};
 }
 // ----- blood on the floor: the pool where they fall, the smear where they are dragged -----
-function addBlood(a, size, pool){
-  const sc = node.scale || 1;
-  bloodMarks.push({plate: cur, x: a.x + (Math.random() - .5) * 10 * sc, y: a.y + 3 * sc, r: (pool ? 44 : 13) * size * sc, pool: !!pool, t0: now, grow: pool ? 2600 : 160, rot: (Math.random() - .5) * .7});
+// SAM'S BLOOD PACK (2026-11-23: "This blood effect is NOT good. We need better.", with his pack of a spray streak, a
+// burst and loose drops). Every mark used to be a smooth flat red oval — the discs that sat round the party's feet like
+// selection rings on the painted plate. Now every mark is his pack, cut and pixelled at the heroes' own pixel size
+// (public/vfx/lab/blood*.webp, made by scripts/blood-pack/build.py): a pool is a puddle with a wet lip, a blade's hit
+// throws a splat onto the floor BEHIND the target, away from the blow, and the blow itself sprays (bloodSpray below).
+// Marks stay plain data (a sprite name, never an Image) so the fight relay can send them to the other screens.
+const BLOOD = {pool: ["bloodPool1", "bloodPool2", "bloodPool3"], splat: ["bloodSplat1", "bloodSplat2", "bloodSplat3", "bloodSplat4"],
+  fleck: ["bloodFleck1", "bloodFleck2", "bloodFleck3"], drop: ["bloodDrop1", "bloodDrop2", "bloodDrop3", "bloodDrop4"]};
+const BLOOD_PX = 1.05;                                  // one blood pixel ≈ one hero-sprite pixel (actorScale at pace 1)
+const bloodPick = l => l[Math.floor(Math.random() * l.length)];
+/** A mark on the floor. `size` as before (≈1 a body's pool, ≈.8 a blade's hit, ≤.5 a drop or a drag); `from`, when
+ *  given, is who struck the blow: the splat lands on the far side, the way the blood was thrown. */
+function addBlood(a, size, pool, from){
+  const sc = node.scale || 1, dir = from ? (Math.sign(a.x - from.x) || 1) : (Math.random() < .5 ? -1 : 1);
+  let spr, k = size, x = a.x, y = a.y + 2 * sc;
+  if (pool){ spr = bloodPick(BLOOD.pool); x += (Math.random() - .5) * 8 * sc; }
+  else if (size < .6){ spr = bloodPick(BLOOD.fleck); k = .8 + size; x += (Math.random() - .5) * 10 * sc; }
+  else { spr = from && size >= 1.15 ? "bloodSmear" : bloodPick(BLOOD.splat); x += dir * (14 + Math.random() * 12) * sc * size; y += (Math.random() - .3) * 6 * sc; }
+  bloodMarks.push({plate: cur, x, y, spr, k, fl: dir < 0, pool: !!pool, t0: now, grow: pool ? 2600 : 0});
   if (bloodMarks.length > 220) bloodMarks.shift();
 }
 function drawSurgeonGround(){
   for (const b of bloodMarks){
-    if (b.plate !== cur) continue;
-    const k = Math.min(1, (now - b.t0) / b.grow), r = b.r * (b.pool ? .35 + .65 * k : 1);
+    if (b.plate !== cur || now < b.t0) continue;
+    const im = b.spr && labImg(b.spr); if (!im || !im.complete || !im.naturalWidth) continue;
+    const g = b.grow ? Math.min(1, (now - b.t0) / b.grow) : 1, spread = b.pool ? .3 + .7 * (1 - Math.pow(1 - g, 3)) : 1;   // a pool spreads, fast then slow
+    const sc = (node.scale || 1) * BLOOD_PX * b.k, w = im.naturalWidth * sc * spread, h = im.naturalHeight * sc * spread;
     const ovB = ovPushAt(b.x, b.y);
-    ctx.save(); ctx.globalAlpha = b.pool ? .82 : .7; ctx.fillStyle = b.pool ? "#4e0808" : "#641010";
-    ctx.beginPath(); ctx.ellipse(b.x, b.y, r, r * .42, b.rot, 0, Math.PI * 2); ctx.fill();
-    if (b.pool){ ctx.globalAlpha = .35 * k; ctx.fillStyle = "#a01c16"; ctx.beginPath(); ctx.ellipse(b.x - r * .2, b.y - r * .08, r * .45, r * .16, b.rot, 0, Math.PI * 2); ctx.fill(); }
-    ctx.restore(); if (ovB) ctx.restore();
+    ctx.save(); ctx.globalAlpha = b.pool ? .94 : .9; ctx.translate(b.x, b.y); if (b.fl) ctx.scale(-1, 1);
+    ctx.drawImage(im, Math.round(-w / 2), Math.round(-h / 2), Math.round(w), Math.round(h)); ctx.restore(); if (ovB) ctx.restore();
+  }
+}
+// THE BLOW ITSELF: a blade that draws blood throws it — his burst where it lands, his streak flung out the far side
+// along the blow, and drops (his teardrops, turned to their flight) that fall and fleck the floor where they land.
+// The flecks are laid at the start with the time they land, so nothing is added mid-flight (every screen sees the same).
+const bloodFx = [];
+function bloodSpray(att, tgt, crit, at = .5){
+  if (!tgt || !SPR[tgt.id] || /skeleton|ooze|elemental|ghost/.test(tgt.id) || tgt.iced || tgt.withered) return;
+  const m = SPR[tgt.id].json, sc = actorScale(tgt), dx = att ? tgt.x - att.x : 1, dy = att ? (tgt.y - att.y) * .5 : 0;
+  const ang = Math.atan2(dy, dx), q = {x: tgt.x - Math.cos(ang) * 6 * sc, y: tgt.y - m.pivot[1] * sc * at}, k = crit ? 1.15 : .85;
+  bloodFx.push({kind: "burst", spr: crit ? "bloodBurstBig" : "bloodBurst", x: q.x, y: q.y, k: k * sc / BASE, rot: Math.random() * 6.28, t0: now, life: crit ? 360 : 280, plate: cur});
+  bloodFx.push({kind: "spray", spr: "bloodSpray", x: q.x, y: q.y, k: k * sc / BASE, rot: ang + (Math.random() - .5) * .35, t0: now + 20, life: crit ? 420 : 340, plate: cur});
+  const n = crit ? 9 : 5, fy = tgt.y + 2 * sc;
+  for (let i = 0; i < n; i++){
+    const a = ang + (Math.random() - .5) * 1.1, sp = (70 + Math.random() * 150) * sc, vx = Math.cos(a) * sp, vy = Math.sin(a) * sp * .5 - (20 + Math.random() * 70) * sc, gr = 900 * sc;
+    const land = fy + (Math.random() - .2) * 14 * sc, drop = land - q.y;          // when y(t) = q.y + vy t + ½ g t² reaches the floor
+    const t = (-vy + Math.sqrt(vy * vy + 2 * gr * Math.max(1, drop))) / gr;
+    bloodFx.push({kind: "drop", spr: bloodPick(BLOOD.drop), x: q.x, y: q.y, vx, vy, g: gr, k: sc / BASE, t0: now, life: t * 1000, plate: cur});
+    if (Math.random() < .7) bloodMarks.push({plate: cur, x: q.x + vx * t, y: land, spr: bloodPick(BLOOD.fleck), k: .9 + Math.random() * .5, fl: Math.random() < .5, pool: false, t0: now + t * 1000, grow: 0});
+  }
+  while (bloodFx.length > 160) bloodFx.shift();
+}
+function drawBloodFx(){
+  for (let i = bloodFx.length - 1; i >= 0; i--){
+    const f = bloodFx[i], el = now - f.t0, k = el / f.life;
+    if (k >= 1 || f.plate !== cur){ bloodFx.splice(i, 1); continue; } if (el < 0) continue;
+    const im = labImg(f.spr); if (!im.complete || !im.naturalWidth) continue;
+    const p = ovPt(f.x, f.y), s = f.k * BLOOD_PX * BASE, w = im.naturalWidth * s, h = im.naturalHeight * s;
+    ctx.save();
+    if (f.kind === "burst"){   // snaps open, holds, thins away
+      const g = Math.min(1, el / 70), z = .55 + .5 * g; ctx.globalAlpha = k < .45 ? 1 : 1 - (k - .45) / .55;
+      ctx.translate(Math.round(p.x), Math.round(p.y)); ctx.rotate(Math.round(f.rot / (Math.PI / 2)) * Math.PI / 2);   // quarter turns only: pixels stay square
+      ctx.drawImage(im, Math.round(-w * z / 2), Math.round(-h * z / 2), Math.round(w * z), Math.round(h * z));
+    } else if (f.kind === "spray"){   // flung out from the wound: unrolls along the blow, then thins
+      const g = Math.min(1, el / 110); ctx.globalAlpha = k < .5 ? 1 : 1 - (k - .5) / .5;
+      ctx.translate(Math.round(p.x), Math.round(p.y)); ctx.rotate(f.rot);
+      ctx.drawImage(im, 0, Math.round(-h / 2), Math.round(w * (.25 + .75 * g)), Math.round(h));
+    } else {                           // a drop in flight, point to its tail
+      const t = el / 1000, x = p.x + f.vx * t, y = p.y + f.vy * t + .5 * f.g * t * t, va = Math.atan2(f.vy + f.g * t, f.vx);
+      ctx.translate(Math.round(x), Math.round(y)); ctx.rotate(va - Math.PI / 2); ctx.drawImage(im, Math.round(-w / 2), Math.round(-h * .8), Math.round(w), Math.round(h));
+    }
+    ctx.restore();
   }
 }
 // carried, not walked: a body moves along `pts` over `ms` (the walk loop would put a walking frame on it)
@@ -24914,8 +24972,8 @@ addEventListener("keydown", e => {
   if (e.key === "+" || e.key === "="){ const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1.2); }
   if (e.key === "-" || e.key === "_"){ const r = stage.getBoundingClientRect(); zoomAt(r.width / 2, r.height / 2, 1 / 1.2); }
 });
-addEventListener("keyup", e => keys.delete(e.code));
-addEventListener("blur", () => keys.clear());
+addEventListener("keyup", e => { keys.delete(e.code); if (MOVE_KEYS.has(e.code)) mirrorDirPush(); });
+addEventListener("blur", () => { keys.clear(); mirrorDirPush(); });
 function interact(){
   const near = pilesHere().map(p => [p, feetToPile(leader, p)]).filter(([, d]) => d <= 6).sort((x, y) => x[1] - y[1])[0];
   if (near){ pickUp(leader, near[0]); return; }
@@ -28808,20 +28866,19 @@ if ($("dmItemQ")){
 const NUMPAD_DIR = {Numpad1: [-1, 1], Numpad2: [0, 1], Numpad3: [1, 1], Numpad4: [-1, 0], Numpad6: [1, 0], Numpad7: [-1, -1], Numpad8: [0, -1], Numpad9: [1, -1]};
 const MOVE_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "KeyW", "KeyA", "KeyS", "KeyD", ...Object.keys(NUMPAD_DIR)]);
 const keys = new Set();
-function keyDir(){
+function keyDir(held = keys){
   if (timeStopped || escortHolds()) return null;
   let x = 0, y = 0;
-  if (keys.has("ArrowLeft") || keys.has("KeyA")) x -= 1;
-  if (keys.has("ArrowRight") || keys.has("KeyD")) x += 1;
-  if (keys.has("ArrowUp") || keys.has("KeyW")) y -= 1;
-  if (keys.has("ArrowDown") || keys.has("KeyS")) y += 1;
-  for (const k in NUMPAD_DIR) if (keys.has(k)){ x += NUMPAD_DIR[k][0]; y += NUMPAD_DIR[k][1]; }
+  if (held.has("ArrowLeft") || held.has("KeyA")) x -= 1;
+  if (held.has("ArrowRight") || held.has("KeyD")) x += 1;
+  if (held.has("ArrowUp") || held.has("KeyW")) y -= 1;
+  if (held.has("ArrowDown") || held.has("KeyS")) y += 1;
+  for (const k in NUMPAD_DIR) if (held.has(k)){ x += NUMPAD_DIR[k][0]; y += NUMPAD_DIR[k][1]; }
   x = Math.sign(x); y = Math.sign(y);
   return x || y ? {x, y} : null;
 }
-function keyboardMove(a, dt){
+function keyboardMove(a, dt, kd = keyDir()){
   if (!a || a.kind !== "pc" || a.once || a.ko) return;
-  const kd = keyDir();
   if (!kd){ if (a.kbd){ a.kbd = false; a.kbdOut = false; if (a.anim === "walk") setAnim(a, "idle");
       if (mode === "combat" && cbt && a === activeActor() && cbt.phase === "menu") openMenu(a); }   // the menu's "ft left" catches up
     return; }
@@ -28846,7 +28903,7 @@ function keyboardMove(a, dt){
       // one measure for both sides of the line: inside its reach this frame, outside it on the next step
       const f = standing(foes).find(f => { const r = reachPx(f, a, 5) + 6; return !f.c.reactionUsed && !incapacitated(f) && pxBetween(a, f, a) <= r && pxBetween({x: nx, y: ny}, f, a) > r; });
       if (f){
-        keys.clear(); a.kbd = false; setAnim(a, "idle"); f.c.reactionUsed = true; combatBusy = true; closeMenu();
+        keys.clear(); FIGHT.rdir = null; a.kbd = false; setAnim(a, "idle"); f.c.reactionUsed = true; combatBusy = true; closeMenu();
         oaCue(f, a); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
         attackWith(f, a, f.c.sheet.attacks[0], () => { combatBusy = false; if (cbt && activeActor() === a && !a.down) openMenu(a); });
         return;
@@ -29181,6 +29238,7 @@ function update(dt){
     }
   }
   if (mode === "combat" && !combatBusy && !FIGHT.mirror && canControl(activeActor()) && !oneFightWaitsFor(activeActor())) keyboardMove(activeActor(), dt);
+  else if (mode === "combat" && !combatBusy && FIGHT.auth && oneFightWaitsFor(activeActor())) keyboardMove(activeActor(), dt, remoteDir(activeActor()));   // ARROWS FROM THE OTHER SCREEN
   // idle life: whoever you're not moving potters about, like at camp
   if (mode === "explore") for (const a of (sceneWatched() ? party : [...party, ...npcs])) idleLife(a);      // (a shown scene's bystanders stand where its screen has them)
   if (FIGHT.watch) sceneSlide(dt);
@@ -29656,7 +29714,7 @@ async function owResync(){
 // Without the tables (migration unapplied), with One World off, or on a test copy, nothing changes: each screen fights alone.
 const FIGHT = {id: null, auth: false, mirror: false, plate: null, live: null, since: 0, inSince: 0, out: [], sent: {}, fullAt: 0, menuSig: "", dlgSig: "",
   serial: 0, dlgs: {}, dlgSeq: 0, promptFor: null, applying: null, polling: false, lastOk: 0, failed: false, hoverAt: 0, pendingActors: new Set(), endSent: false,
-  scene: null, watch: false, opening: null, sceneBusy: null, sceneQuiet: 0, sceneHold: 0};      // WORLD EVENTS (below): the same lane, outside a fight.
+  scene: null, watch: false, opening: null, sceneBusy: null, sceneQuiet: 0, sceneHold: 0, rdir: null, dirSent: null};      // WORLD EVENTS (below): the same lane, outside a fight.
 // (`watch`, not `mirror`, is a screen showing a SCENE: every `FIGHT.mirror` test on this page means "showing a fight" and
 // takes the hero's bag, menu and clicks away for it, which a screen watching a scene must keep.)
 const RELAY = {depth: 0, orig: {}, imgs: {}};
@@ -29724,7 +29782,7 @@ function relayInstall(){
     arr.push = function(...items){ if (relayOn()) for (const it of items) FIGHT.out.push({p: n, v: enc(it)}); return Array.prototype.push.apply(this, items); };
   }
 }
-function relayArrays(){ return {sparks, flights, shots, stuck, notes, deathBits, bloodMarks, lightFlashes, critBadges, crimPuffs, crimGhosts}; }
+function relayArrays(){ return {sparks, flights, shots, stuck, notes, deathBits, bloodMarks, bloodFx, lightFlashes, critBadges, crimPuffs, crimGhosts}; }
 function relaySound(name, gain){ if (relayOn()) FIGHT.out.push({f: "bank", a: [name, gain]}); }
 function relayPlay(ev){
   RELAY.depth++;
@@ -29849,6 +29907,7 @@ function fightInput(by, b){
       else { const it = itemFrom(a, b.it); if (it) fn(a, it, ...rest); }
     }
     else if (b.t === "hover" && typeof b.x === "number"){ aimW = {x: b.x, y: b.y}; hoverActor = hitActor(foes, aimW) || hitActor(heroes(), aimW); }
+    else if (b.t === "dir"){ const x = Math.sign(+b.x || 0), y = Math.sign(+b.y || 0); FIGHT.rdir = x || y ? {by, x, y, at: now} : null; }   // ARROWS FROM THE OTHER SCREEN
     else if (b.t === "key"){
       if (b.k === "Escape") cancelAim();
       else if (b.k === "Enter" && cbt.phase === "menu" && !combatBusy) nextTurn();
@@ -30080,8 +30139,31 @@ function oneFightHover(w){ if (!myTurnHere() || FIGHT.menu.phase === "menu" || n
 function oneFightKey(e){
   if (!FIGHT.mirror) return false;
   if (e.key === "Escape" || e.code === "Enter"){ if (myTurnHere()) fightSend({t: "key", k: e.key === "Escape" ? "Escape" : "Enter"}); e.preventDefault(); return true; }
-  return MOVE_KEYS.has(e.code);                                            // arrows do not walk a mirrored hero
+  if (MOVE_KEYS.has(e.code)){ e.preventDefault(); keys.add(e.code); mirrorDirPush(); return true; }   // ARROWS FROM THE OTHER SCREEN (below)
+  return false;
 }
+// ARROWS FROM THE OTHER SCREEN (Sam, 2026-11-23: Kenta "was having problems moving using directional buttons"). At the
+// pen-gate fight that night Fifi's screen ran the fight and Kenta's watched it: his screen sent 7 clicks and 9 button
+// presses and not one arrow, because a watching screen swallowed the arrows ("arrows do not walk a mirrored hero").
+// Now the watching screen sends the direction it holds, on every change and again every 300 ms while held; the screen
+// running the fight walks that hero with it through keyboardMove, so the keys still spend movement and still draw the
+// opportunity attack. A direction not heard again within a second is let go, so a lost key-up cannot run a hero away.
+function mirrorDirPush(again){
+  if (!FIGHT.mirror) return;
+  const d = myTurnHere() ? keyDir() : null, sig = d ? d.x + "," + d.y : null;
+  if (!again && sig === FIGHT.dirSent) return;
+  if (!sig && !FIGHT.dirSent) return;                 // nothing held, nothing to stop
+  FIGHT.dirSent = sig;
+  fightSend({t: "dir", x: d ? d.x : 0, y: d ? d.y : 0});
+}
+setInterval(() => { if (FIGHT.mirror && FIGHT.dirSent) mirrorDirPush(true); }, 300);
+/** On the screen running the fight: the direction the player of hero `a` is holding on their own screen, or null. */
+function remoteDir(a){
+  const r = FIGHT.rdir;
+  if (!r || !a || owDriver(a) !== r.by || now - r.at > REMOTE_DIR_MS || timeStopped || escortHolds()) return null;
+  return {x: r.x, y: r.y};
+}
+const REMOTE_DIR_MS = 1000;
 function mirrorEnd(b){
   const fin = new Map((b.actors || []).map(s => [s.k, s]));
   for (const ev of b.ev || []) relayPlay(ev);
