@@ -2903,10 +2903,12 @@ function drawFrame(){
       const k = (now - a.deadSwap) / 650, idl = SPR[a.id].img.idle, a0 = ctx.globalAlpha;
       ctx.globalAlpha = a0 * (1 - k); ctx.drawImage(idl, 0, a.face * ch, cw, ch, dx, dy, dw, dh);
       ctx.globalAlpha = a0 * k; ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh); ctx.globalAlpha = a0;
-    } else if (sp){                              // leaning or crouched into a sparring move, pivoting on the feet
+    } else if (sp){                              // leaning or crouched into a sparring move, planted on the feet
       const fx = a.x + a.kx, fyy = a.y + fy + a.ky;
-      ctx.save(); ctx.translate(fx, fyy); ctx.rotate(sp.rot); ctx.scale(1, sp.sy);
+      ctx.save(); ctx.translate(fx, fyy); sparApply(sp);
       ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx - fx, dy - fyy, dw, dh); ctx.restore();
+      // a dodge leaves cold afterimages on the line it left, the way a dash does (sparGhost)
+      if (sp.ghost && !ovT && now - (a.ghostAt || 0) > 30){ a.ghostAt = now; crimGhosts.push({img, sx: f * cw, sy: a.face * ch, cw, ch, dx, dy, dw, dh, plate: cur, t0: now, col: "#9fc4e8", sk: sp.sk, fx, fyy, ssx: sp.sx, ssy: sp.sy}); if (crimGhosts.length > 40) crimGhosts.shift(); }
     } else { ctx.drawImage(img, f * cw, a.face * ch, cw, ch, dx, dy, dw, dh);
       if (a.trailUntil > now && !ovT && now - (a.ghostAt || 0) > 34){ a.ghostAt = now; crimGhosts.push({img, sx: f * cw, sy: a.face * ch, cw, ch, dx, dy, dw, dh, plate: cur, t0: now}); if (crimGhosts.length > 40) crimGhosts.shift(); } }
     if (pose) ctx.filter = "none";
@@ -2915,7 +2917,7 @@ function drawFrame(){
       tint.width = cw; tint.height = ch; const vc = tint.getContext("2d");
       vc.clearRect(0, 0, cw, ch); vc.drawImage(img, f * cw, a.face * ch, cw, ch, 0, 0, cw, ch);
       vc.globalCompositeOperation = "source-in"; vc.fillStyle = "rgb(18,34,44)"; vc.fillRect(0, 0, cw, ch); vc.globalCompositeOperation = "source-over";
-      if (sp){ const fx = a.x + a.kx, fyy = a.y + fy + a.ky; ctx.save(); ctx.translate(fx, fyy); ctx.rotate(sp.rot); ctx.scale(1, sp.sy); ctx.drawImage(tint, 0, 0, cw, ch, dx - fx, dy - fyy, dw, dh); ctx.restore(); }
+      if (sp){ const fx = a.x + a.kx, fyy = a.y + fy + a.ky; ctx.save(); ctx.translate(fx, fyy); sparApply(sp); ctx.drawImage(tint, 0, 0, cw, ch, dx - fx, dy - fyy, dw, dh); ctx.restore(); }
       else ctx.drawImage(tint, 0, 0, cw, ch, dx, dy, dw, dh);
       ctx.globalAlpha = a.alpha * veilK;
     }
@@ -2943,7 +2945,7 @@ function drawFrame(){
       tc.globalCompositeOperation = "source-in"; tc.fillStyle = wear.col; tc.fillRect(0, 0, cw, ch); tc.globalCompositeOperation = "source-over";
       if (sp && pose !== "belly" && pose !== "puddle" && pose !== "side" && !(a.deadSwap && now - a.deadSwap < 650 && a.anim === "dead")){   // the same branch the body took above
         const fx = a.x + a.kx, fyy = a.y + fy + a.ky;
-        ctx.save(); ctx.translate(fx, fyy); ctx.rotate(sp.rot); ctx.scale(1, sp.sy);
+        ctx.save(); ctx.translate(fx, fyy); sparApply(sp);
         ctx.drawImage(tint, 0, 0, cw, ch, dx - fx, dy - fyy, dw, dh); ctx.restore();
       } else ctx.drawImage(tint, 0, 0, cw, ch, dx, dy, dw, dh);
     }
@@ -7982,11 +7984,11 @@ const BOLT_OF = {cold: "pxIce", fire: "pxFireball", lightning: "pxArc", necrotic
 const IMPACT_OF = {cold: "frostImpact", fire: "fireImpact", lightning: "lightningStrike", necrotic: "necroImpact", psychic: "psychicImpact", radiant: "radiantColumn", force: "forceHit", acid: "acidImpact", poison: "poisonCloud", thunder: "thunderImpact"};
 const GROUND_OF = {cold: "groundFrost", fire: "groundScorch", lightning: "groundShock", necrotic: "groundGloom", radiant: "groundHallowed", acid: "groundAcid", poison: "groundMiasma", psychic: "groundArcane", force: "groundArcane"};
 const FAMILY_OF = {cold: "cold", fire: "fire", lightning: "arcane", necrotic: "necrotic", psychic: "psychic", radiant: "holy", force: "arcane", acid: "nature", poison: "nature", heal: "holy", abjuration: "arcane", enchantment: "psychic"};
-const CREATURE_SFX = {quaggoth: {call: "creature/creature_quaggoth_roar", hurt: "creature/hurt_quaggoth", death: "creature/death_quaggoth"},
+const CREATURE_SFX = {quaggoth: {call: "creature/creature_quaggoth_roar", death: "creature/death_quaggoth"},
   "ghost-male": {hurt: "magic/necrotic_tail", death: "magic/necrotic_release"},
-  "giant-spider": {call: "creature/creature_spider_hiss", hurt: "creature/hurt_spider", death: "creature/death_spider"},
-  "giant-wolf-spider": {call: "creature/creature_spider_hiss", hurt: "creature/hurt_spider", death: "creature/death_spider"},
-  "gray-ooze": {hurt: "creature/hurt_beast", death: "creature/death_beast"},
+  "giant-spider": {call: "creature/creature_spider_hiss", death: "creature/death_spider"},
+  "giant-wolf-spider": {call: "creature/creature_spider_hiss", death: "creature/death_spider"},
+  "gray-ooze": {death: "creature/death_beast"},
   "drow-guard-male": {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}, "drow-guard-female": {hurt: "creature/hurt_humanoid_female", death: "creature/death_humanoid_female"},
   "drow-elite-warrior": {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}, shoor: {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"},
   ilvara: {hurt: "creature/hurt_humanoid_female", death: "creature/death_humanoid_female"}, asha: {hurt: "creature/hurt_humanoid_female", death: "creature/death_humanoid_female"}, jorlan: {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}};
@@ -7996,8 +7998,10 @@ const CREATURE_SFX = {quaggoth: {call: "creature/creature_quaggoth_roar", hurt: 
 // drops them. Men and women have their own takes (ElevenLabs sound effects, cut and levelled, public/sfx/walk/vox-*),
 // several of each, and the same take never plays twice in a row, so a long fight does not sound canned. Beasts,
 // oozes, the myconid and the kuo-toa keep their own calls (CREATURE_SFX); the kuo-toa "should sound nothing like a human".
-const VOX_HUMAN = /^(kenta|samson|scott|freia|lynkes|gandalf|kingasaur|eldeth|sarith|buppido|jimjar|topsy|turvy|ront|ilvara|asha|jorlan|shoor|liana)$|^drow-/;
-const VOX_FEMALE = /^(freia|eldeth|ilvara|asha|topsy|liana)$|female/;
+// The rule above reaches every PERSON on the road too (2026-11-23): bandits, thugs, cultists, mages, duergar, dwarves,
+// deep gnomes, elves and townsfolk had no entry, so a blade drew the beast pack's cry from them.
+const VOX_HUMAN = /^(kenta|samson|scott|freia|lynkes|gandalf|kingasaur|eldeth|sarith|buppido|jimjar|topsy|turvy|ront|ilvara|asha|jorlan|shoor|liana)$|^drow-|^(bandit|thug|cultist|cult-fanatic|mage|necromancer|duergar|dwarf|deep-gnome|elf-|townswoman|hooded-stranger|wandering-peddler|underdark-barbarian|lynkes-)/;
+const VOX_FEMALE = /^(freia|eldeth|ilvara|asha|topsy|liana)$|female|woman/;
 // DERENDIL'S GRUNTS (Sam, 2026-11-10: "make the hit sounds for derendil (grunts) a little better"). He had the pack's one
 // generic beast yelp on every blow. He is a quaggoth who believes he is an elf prince, so a blow now draws one of three
 // deep, gruff, half-growl grunts of his own (ElevenLabs sound effects, cut and levelled like the people's,
@@ -8009,6 +8013,33 @@ function voxFor(t, kind){   // kind "hit" | "die" -> "walk:vox-hit-f2", or null 
   const k = quag ? "hit-q" : kind + "-" + (VOX_FEMALE.test(t.id || "") ? "f" : "m"), n = VOX_TAKES[k]; let i;
   do { i = 1 + Math.floor(Math.random() * n); } while (n > 1 && i === voxLast[k]);
   voxLast[k] = i; return `walk:vox-${k}${i}`;
+}
+// THE CRYING CAT (Sam, 2026-11-23: "During combat hits some of the creatures made a sound like a crying cat. Find it and
+// lets replace it."). It was the pack's creature/hurt_beast: a tonal "mrraow", harmonics sliding from 1.6 kHz down to
+// 600 Hz, and it was the fallback for EVERY creature without its own line (goblins, kuo-toa, rats, bats, beetles, the
+// undead, the ooze...). The spider's squeal and the quaggoth's whine (a held 600 Hz tone) measured the same way, and the
+// hook horror's was a 1.1 kHz screech. Now a blow draws a sound for what the thing IS, by family, from ElevenLabs sound
+// effects (eleven_text_to_sound_v3, flow "AoP creature hurt sounds (cat replacement) 2026-11-23"), trimmed, faded and
+// levelled to about -16 LUFS like the people's grunts (public/sfx/walk/pain-*), several takes each, the same take never
+// twice running. Every take was pitch-tracked and none holds a tone in the cat band. Spirits keep the necrotic tail.
+const PAIN_TAKES = {beast: 2, vermin: 3, chitin: 3, brute: 2, undead: 3, bones: 3, ooze: 2, croak: 3, monster: 2}, painLast = {};
+const PAIN_FAMILY = [
+  [/skeleton/, "bones"],
+  [/ghost|specter|poltergeist|wraith|banshee|will-o/, null],                                          // no body to hurt: the necrotic tail
+  [/zombie|ghoul|ghast|wight|mummy|vampire|death-knight|revenant/, "undead"],
+  [/spider|beetle|carrion-crawler|piercer|chuul|ankheg|scorpion|centipede|grick|umber-hulk/, "chitin"],
+  [/ooze|jelly|pudding|slime|myconid|^stool$|shrieker|gas-spore|^fungi-/, "ooze"],                  // soft bodies squelch
+  [/kuo-toa|shuushar/, "croak"],                                                                        // "should sound nothing like a human"
+  [/rat|bat$|bats|swarm/, "vermin"],
+  [/hook-horror|grell|beholder|nothic|roper|cloaker|dragon|otyugh|mimic|intellect-devourer|mind-flayer|drider|elemental|purple-worm/, "monster"],
+  [/quaggoth|lizard|rothe|wolf|(^|-)bear|boar|horse|(^|-)ape$|eagle/, "beast"],
+];
+function painFor(t){   // the hurt sound for a creature that is not a person: "walk:pain-chitin2", or the necrotic tail
+  const id = (t && t.id) || "", fam = (PAIN_FAMILY.find(([re]) => re.test(id)) || [null, "brute"])[1];   // goblins, gnolls, orcs and the unknown snarl
+  if (!fam) return "magic/necrotic_tail";
+  const n = PAIN_TAKES[fam]; let i;
+  do { i = 1 + Math.floor(Math.random() * n); } while (n > 1 && i === painLast[fam]);
+  painLast[fam] = i; return `walk:pain-${fam}${i}`;
 }
 const CLASS_TURN = {Sorcerer: "ui/turn_sorcerer", Cleric: "ui/turn_cleric", Bard: "ui/turn_bard", Rogue: "ui/turn_rogue"};
 // Opponents speak (Sam, 2026-10-13: "Opponents can speak and taunt"). Placeholder lines, not book text: the
@@ -14025,7 +14056,7 @@ function damage(t, n, type, crit, from, magical = false){
     t.c.fury = true; popText(t, "WOUNDED FURY", RAGE_TINT, 1.2); burst(t, RAGE_TINT, 20);
     log(`<b>${fname(t)}</b> — Wounded Fury: advantage on his attacks and +2d6 on every claw that lands.`); narrate(t, `${fname(t)} roars, bleeding, and keeps coming.`);
   }
-  if (t.c.hp > 0){ const cs = CREATURE_SFX[t.id], v = voxFor(t, "hit"); if (v) setTimeout(() => bank(v, .5), 70); else bank(t.kind === "pc" ? "creature/player_hurt" : cs && cs.hurt ? cs.hurt : "creature/hurt_beast", .7); }
+  if (t.c.hp > 0){ const cs = CREATURE_SFX[t.id], v = voxFor(t, "hit"); if (v) setTimeout(() => bank(v, .5), 70); else bank(t.kind === "pc" ? "creature/player_hurt" : cs && cs.hurt ? cs.hurt : painFor(t), .7); }
   if (t.c.hp <= 0){ t.killType = type; if (!hero(t)) t.deathFx = pickDeathFx(t, type, crit, from, hitCtx); fall(t); } else if (SPR[t.id].img.hurt) playOnce(t, "hurt", () => setAnim(t, "idle")); else if (SPR[t.id].img.dodge) playOnce(t, "dodge", () => setAnim(t, "idle"));
   if (cbt && cbt.boss === t){ if (t.c.hp <= 0) bossFalls(t); else bossHit(t, hpBefore); }   // BOSS FIGHTS: the bar follows every blow; half is the Bloodied beat
   if (n > 0 && t.c.hp > 0 && t.kind === "pc" && canRebuke(t, from)) offerRebuke(t, from);   // HELLISH REBUKE: the fight stops and asks
@@ -14044,23 +14075,40 @@ function miss(t){ popText(t, "miss", "#c9c4b8", .9); if (t.labSphere) labSphereA
 //   a natural 1 is the attacker's own doing: it stumbles through the swing and the defender does nothing at all.
 // The defender squares up to the swinger first. Each move is out fast, a held beat, back slow, well under a square.
 // There are no shields on this map, so there is no block (the board's third answer).
-const SPAR_SHAPES = {   // back/side/drop in sprite px (times actorScale) along the line between them; lean in radians
-  sidestep:  {back: 10, side: 34, drop: 4, lean: .14, squash: 0, life: 460},
-  duck:      {back: 2, side: 0, drop: 0, lean: -.14, squash: .26, life: 440},
-  sway:      {back: 30, side: 0, drop: 0, lean: .32, squash: .03, life: 460},
-  parry:     {back: 10, side: 0, drop: 0, lean: .10, squash: .04, life: 340},
-  deflected: {back: 16, side: 0, drop: 0, lean: .20, squash: 0, life: 380},
-  overreach: {back: -22, side: 6, drop: 0, lean: -.22, squash: .05, life: 420},
+// THE BODY NEVER SPINS (Sam, 2026-11-23: "some of the dodge effects look like the art just gets rotated 30 degrees.
+// This is garbage; lets make better."). Every move here used to rotate the whole sprite about its feet — the sway by 18
+// degrees, the attacker's overreach by 13 — so a hero with no drawn dodge was a stiff board tipping over, feet sliding
+// out from under it. Now: the feet stay planted and only the body above them leans (a shear, not a turn, and never more
+// than a few degrees' worth); the dodge is carried by MOVEMENT — a quick hop off the line, a sway back out of reach —
+// with cold afterimages left on the spot they left and a kick of dust from the feet. A crouch keeps its volume (it
+// widens as it drops). A foe with a drawn dodge (the drow, the quaggoth, the spider, the hook horror…) plays its drawn
+// art for the sidestep AND the sway, and then the code adds no lean at all: the art does the leaning.
+const SPAR_SHAPES = {   // back/side/hop/drop in sprite px (times actorScale) along the line between them; lean = shear of the body
+  sidestep:  {back: 8, side: 42, hop: 9, drop: 0, lean: .10, squash: 0, life: 420, ghost: true, dust: .5},
+  duck:      {back: 4, side: 0, hop: 0, drop: 0, lean: -.05, squash: .20, life: 420, dust: .3},
+  sway:      {back: 36, side: 0, hop: 0, drop: 0, lean: .14, squash: 0, life: 440, ghost: true, dust: .4},
+  parry:     {back: 10, side: 0, hop: 0, drop: 0, lean: .06, squash: .03, life: 340},
+  deflected: {back: 16, side: 0, hop: 0, drop: 0, lean: .09, squash: 0, life: 380},
+  overreach: {back: -22, side: 6, hop: 0, drop: 0, lean: -.10, squash: .04, life: 420},
 };
 const SPAR_DODGES = ["sidestep", "duck", "sway"];
 function sparEnv(p){ if (p <= 0 || p >= 1) return 0; if (p < .3){ const u = p / .3; return 1 - (1 - u) * (1 - u); } if (p < .5) return 1; const u = (p - .5) / .5; return 1 - u * u * (3 - 2 * u); }
-function spar(a, from, style){ const d = norm({x: a.x - from.x, y: a.y - from.y}); a.sparSide = -(a.sparSide || 1); a.spar = {style, t0: now, ax: d.x, ay: d.y, side: a.sparSide}; }
+function spar(a, from, style, art){
+  const d = norm({x: a.x - from.x, y: a.y - from.y}); a.sparSide = -(a.sparSide || 1);
+  a.spar = {style, t0: now, ax: d.x, ay: d.y, side: a.sparSide, art: !!art};
+  const sh = SPAR_SHAPES[style]; if (sh && sh.dust) landDust(a, sh.dust);
+}
 function sparPose(a){
   const s = a.spar; if (!s) return null;
   const sh = SPAR_SHAPES[s.style], p = (now - s.t0) / sh.life; if (p >= 1){ a.spar = null; return null; }
   const k = sparEnv(p), sc = actorScale(a), back = sh.back * sc * k, side = sh.side * s.side * sc * k;
-  return {ox: s.ax * back - s.ay * side, oy: (s.ay * back + s.ax * side) * .6 + sh.drop * sc * k, rot: (Math.sign(s.ax) || 1) * sh.lean * k, sy: 1 - sh.squash * k};
+  const hop = sh.hop ? sh.hop * sc * Math.sin(Math.min(1, p / .5) * Math.PI) : 0, drawn = s.art ? 0 : 1;
+  // shear about the feet: a positive lean carries the head along the line away from the attacker (ax), feet fixed
+  const sk = -(Math.sign(s.ax) || 1) * sh.lean * k * drawn, sq = sh.squash * k * drawn;
+  return {ox: s.ax * back - s.ay * side, oy: (s.ay * back + s.ax * side) * .6 + sh.drop * sc * k - hop, sk, sx: 1 + sq * .45, sy: 1 - sq,
+    ghost: !!sh.ghost && k > .15 && p < .55};
 }
+function sparApply(sp){ ctx.transform(sp.sx, 0, sp.sk, sp.sy, 0, 0); }   // x' = sx*x + sk*y, y' = sy*y, about the feet
 // steel on steel: a white star and a spray of hot sparks where the blade was met, most of the way to the defender
 function clash(att, tgt){
   const m = SPR[tgt.id].json, sc = actorScale(tgt), x = att.x + (tgt.x - att.x) * .62, y = att.y + (tgt.y - att.y) * .62 - m.pivot[1] * sc * .55;
@@ -14086,8 +14134,9 @@ function sparMiss(att, tgt, margin, sw, ws){
   }
   tgt.sparDodge = ((tgt.sparDodge ?? tgt.id.length) + 1) % SPAR_DODGES.length;
   const style = SPAR_DODGES[tgt.sparDodge];
-  spar(tgt, att, style); spar(att, tgt, "overreach");
-  if (style === "sidestep" && SPR[tgt.id].img.dodge) playOnce(tgt, "dodge", () => setAnim(tgt, "idle"));
+  const drawn = style !== "duck" && !!SPR[tgt.id].img.dodge;
+  spar(tgt, att, style, drawn); spar(att, tgt, "overreach");
+  if (drawn) playOnce(tgt, "dodge", () => setAnim(tgt, "idle"));
   popText(tgt, style === "duck" ? "duck" : "dodge", "#c9c4b8", .9); bank(ws.miss, .7); return style === "duck" ? "duck" : "dodge";
 }
 function fall(t){
@@ -15377,7 +15426,10 @@ function drawPushWave(s, k){ if (k < 0) return; const e = 1 - Math.pow(1 - k, 2)
 const crimGhosts = [];
 function drawCrimGhosts(){
   for (let i = crimGhosts.length - 1; i >= 0; i--){ const g = crimGhosts[i], k = (now - g.t0) / 300; if (k >= 1 || g.plate !== cur){ crimGhosts.splice(i, 1); continue; }
-    const im = tintedSheet(g.img, "ghost:" + g.img.src, "#3a1c5a"); ctx.save(); ctx.globalAlpha = (1 - k) * .55; ctx.drawImage(im, g.sx, g.sy, g.cw, g.ch, g.dx, g.dy, g.dw, g.dh); ctx.restore(); }
+    const col = g.col || "#3a1c5a", im = tintedSheet(g.img, "ghost:" + col + g.img.src, col); ctx.save(); ctx.globalAlpha = (1 - k) * (g.col ? .4 : .55);
+    if (g.sk != null){ ctx.translate(g.fx, g.fyy); ctx.transform(g.ssx, 0, g.sk, g.ssy, 0, 0); ctx.drawImage(im, g.sx, g.sy, g.cw, g.ch, g.dx - g.fx, g.dy - g.fyy, g.dw, g.dh); }
+    else ctx.drawImage(im, g.sx, g.sy, g.cw, g.ch, g.dx, g.dy, g.dw, g.dh);
+    ctx.restore(); }
 }
 // ---------- THE COMBAT EFFECTS LAB, WIRED IN (Sam, 2026-10-29: "Ok, lets wire all of these effects") ----------
 // Sam's effect sheets, cut out in the Combat Effects Lab (public/vfx/lab/*.webp), and the lab's drawn effects, moved
