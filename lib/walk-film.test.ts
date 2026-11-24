@@ -103,3 +103,26 @@ describe("the Act 1 moments the map stages itself", () => {
     for (const cue of asked) expect(Object.prototype.hasOwnProperty.call(WALK_FILMS, cue)).toBe(true)
   })
 })
+
+describe("a hazard's film", () => {
+  // The pool's ambush asks for its film with mapFilm(node.hazard.film): a cue read from spec.json, not a literal in the
+  // template, so the test above never saw it — and the bridge silently dropped "gray-ooze-surges" (2026-11-23).
+  const spec = JSON.parse(readFileSync("scripts/velkynvelve-walk/spec.json", "utf8")) as Record<string, { hazard?: { film?: string } }>
+  const films = Object.entries(spec).filter(([, p]) => p && p.hazard && p.hazard.film).map(([k, p]) => [k, p.hazard!.film!] as const)
+  it("the pool's ambush names one", () => {
+    expect(films.some(([k, f]) => k === "14" && f === "gray-ooze-surges")).toBe(true)
+  })
+  it("every plate hazard's film is a cue the bridge will pass", () => {
+    for (const [, cue] of films) {
+      expect(parseWalkFilm({ type: "aop:walk-film", cue })).toEqual({ cue, total: null })
+      expect(filmEarned(cue as keyof typeof WALK_FILMS, null)).toBe(true)
+    }
+  })
+  it("the ooze's film asks for the catalogue row it was filed under", () => {
+    const q = walkFilmParams("gray-ooze-surges", null)
+    expect(q.get("state")).toBe("gray-ooze-surges")
+    expect(q.get("location")).toBe(PEN_LOCATION)
+    expect(q.get("kind")).toBe("action")
+    expect(q.get("scope")).toBe("party")
+  })
+})
