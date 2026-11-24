@@ -32,6 +32,7 @@ import { ArrowRight, FlaskConical, Settings, Volume2, VolumeX } from "lucide-rea
 import { cn } from "@/lib/utils"
 import { getThemeAudio, playThemeAudio } from "@/components/theme-audio"
 import { SettingsSheet } from "@/components/settings-sheet"
+import { InstallAppLink } from "@/components/install-app"
 import { isMusicOff, onMusicPrefChange, setMusicOff } from "@/lib/audio-prefs"
 import { cinematicsOn, introMusicOn, onSettingsChange } from "@/lib/settings"
 import { markDmDoor } from "@/lib/dm-door"
@@ -368,6 +369,12 @@ export default function TitleScreen() {
           <span className="grid h-6 w-6 place-items-center rounded-full border border-stone-700 text-stone-500 transition-colors group-hover:border-[#c9a868] group-hover:text-[#e8c56a]"><FlaskConical className="h-3 w-3" /></span>
           {REHEARSAL_LINK_LABEL}
         </button>
+      )}
+
+      {/* INSTALL THE GAME (Sam, 2026-11-23, "PR6"): its own icon on the taskbar or home screen. Shown only where the
+          browser can install it and it is not installed yet (lib/install-app.ts). */}
+      {stage === "title" && (
+        <div className="fixed bottom-14 left-6 z-50"><InstallAppLink /></div>
       )}
 
       <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} />
