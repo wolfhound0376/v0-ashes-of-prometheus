@@ -210,6 +210,12 @@
       "fps": 12,
       "loop": false,
       "hit": 0.6
+    },
+    "dodge": {
+      "sheet": "dodge.png",
+      "frames": 8,
+      "fps": 14,
+      "loop": false
     }
   }
 }

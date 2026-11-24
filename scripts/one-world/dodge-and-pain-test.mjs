@@ -66,7 +66,9 @@ check("3 a townswoman's is a woman's", /vox-hit-f/.test(people.find(([i]) => i =
 
 // 4 — a dodge is movement, not rotation (a hero has no drawn dodge, so this is the code's own pose)
 const pose = await pg.evaluate(async () => {
-  const tgt = leader, att = npcs.find(n => !n.down) || npcs[0]
+  // a body with no drawn dodge, so this measures the code's own pose (the heroes have drawn ones now)
+  const tgt = [...npcs, ...party].find(a => SPR[a.id] && !(SPR[a.id].img && SPR[a.id].img.dodge) && !a.down) || leader
+  const att = [...npcs, ...party].find(a => a !== tgt && !a.down)
   const samples = [], styles = []; let ghosts = 0
   for (let k = 0; k < 3; k++){
     tgt.spar = null; att.spar = null
@@ -87,9 +89,9 @@ check("6 a dodge leaves afterimages", pose.ghosts > 0, String(pose.ghosts))
 
 // 5 — a body with drawn dodge art: the art leans, the code does not
 const drawn = await pg.evaluate(async () => {
-  const id = Object.keys(SPR).find(k => SPR[k].img && SPR[k].img.dodge); if (!id) return {none: true}
-  const tgt = [...npcs, ...(typeof foes !== "undefined" ? foes : [])].find(a => a.id === id) || null
-  if (!tgt) return {none: true, id}
+  const tgt = [...npcs, ...(typeof foes !== "undefined" ? foes : [])].find(a => SPR[a.id] && SPR[a.id].img && SPR[a.id].img.dodge && !a.down)
+  if (!tgt) return {none: true}
+  const id = tgt.id
   const att = leader; tgt.sparDodge = 1   // next style: sway
   sparMiss(att, tgt, -9, {kind: "slash"}, {miss: "combat/melee_miss"})
   const style = tgt.spar.style, anim = tgt.anim; let maxSk = 0
@@ -101,6 +103,19 @@ else {
   check("5 the drawn dodge plays for the sway too", drawn.style === "sway" && drawn.anim === "dodge", JSON.stringify(drawn))
   check("5 under drawn art the code adds no lean", drawn.maxSk === 0, JSON.stringify(drawn))
 }
+// 7 — the heroes have drawn dodges now (Sam, 2026-11-23: "yes" to drawn dodges): every main hero's sheet is loaded,
+// and the leader plays it on a sidestep with no code lean on top
+const heroes = await pg.evaluate(async () => {
+  const ids = ["kenta", "samson", "scott", "freia", "lynkes", "gandalf"].filter(id => SPR[id])
+  const missing = ids.filter(id => !(SPR[id].img && SPR[id].img.dodge))
+  const tgt = leader, att = npcs.find(n => !n.down) || npcs[0]; tgt.spar = null; tgt.sparDodge = 2   // next style: sidestep
+  sparMiss(att, tgt, -9, {kind: "slash"}, {miss: "combat/melee_miss"})
+  const anim = tgt.anim, style = tgt.spar.style; let maxSk = 0
+  const t0 = performance.now(); while (performance.now() - t0 < 300){ await new Promise(r => requestAnimationFrame(r)); const sp = sparPose(tgt); if (sp) maxSk = Math.max(maxSk, Math.abs(sp.sk)) }
+  return {ids, missing, leader: tgt.id, anim, style, maxSk}
+})
+check("7 every main hero has a drawn dodge loaded", heroes.ids.length >= 4 && heroes.missing.length === 0, JSON.stringify(heroes))
+check("7 the leader plays it on a sidestep, no code lean", heroes.style === "sidestep" && heroes.anim === "dodge" && heroes.maxSk === 0, JSON.stringify(heroes))
 await wait(300)
 check("no page errors", errs.length === 0, errs.slice(0, 6).join(" | "))
 await browser.close(); server.close()
