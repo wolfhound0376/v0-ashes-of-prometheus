@@ -4090,6 +4090,23 @@ async function enterNode(n, opts = {}){
   crewsOnEnter();                                         // prisoners out on another work crew are not in the pen
   owEntered();
   setTimeout(() => { if (cur === n) warmPlates(n); }, 1200);   // once this plate has settled, fetch the ones next door (DOORS DON'T WAIT)
+  safeMoment(n, opts);
+}
+// A SAFE MOMENT TO CATCH UP (Sam, 2026-11-23: "Can we make the app fix the stale page problem?"; "go and build it").
+// A screen that sat through a new version of the game only ever got a notice on the map, so a player who ignored it
+// played old code all night. The page around the map knows whether it is stale (components/build-watch.tsx); the map
+// knows when a reload costs nothing: just after the party has walked onto another plate, with nothing in hand. So the
+// map says so, and the page reloads itself then if (and only if) a newer version is live, once per version.
+// Never in a fight (this screen's or one it is showing), a talk, a card, a march under guard, a surrender, the surgeon's
+// visit, a stopped clock, a gather, or a rehearsal. The walk is saved first, the way it is for a trip to the Parley.
+function safeMoment(n, opts){
+  if (!APP || SANDBOX || window.parent === window || !booted || (opts && (opts.battle || opts.solo))) return;
+  setTimeout(() => {
+    if (cur !== n || mode !== "explore" || cbt || FIGHT.mirror || FIGHT.watch || battleLive() || laborLive() || surrenderFresh() || surgeon || timeStopped || GATHER.hold) return;
+    if (!$("dialog").hidden || !$("talk").hidden || (leader && leader.path && leader.path.length)) return;
+    saveWalk();
+    try { window.parent.postMessage({type: "aop:safe-moment", plate: String(n)}, location.origin); } catch (e) {}
+  }, 1500);
 }
 const wait = ms => new Promise(r => setTimeout(r, ms));
 // DOORS DON'T WAIT (Sam, 2026-11-10: "improving gameplay and map fluidity"; FF node movement lane 2, the timing half).

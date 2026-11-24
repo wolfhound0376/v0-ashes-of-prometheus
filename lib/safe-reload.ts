@@ -57,3 +57,26 @@ export function reloadDecision(i: ReloadInput): "none" | "reload" | "wait" | "no
   if (!isSafePage(i.pathname)) return "notice"
   return i.typing ? "wait" : "reload"
 }
+
+
+// THE MAP'S SAFE MOMENT (Sam, 2026-11-23: "Can we make the app fix the stale page problem?"; "go and build it").
+// The pages above are between scenes; the map is where a table sits for hours, and there a stale tab only ever got the
+// notice. The map now tells the page around it when a reload costs nothing: the party has just walked onto another
+// plate and nothing is in hand (scripts/velkynvelve-walk/template.html, safeMoment). At that word a stale tab reloads,
+// once per new build like every other reload here; the walk comes back from what the map saved, as it does after a
+// trip to the Parley.
+
+/** The message the map posts to the page around it at a safe moment. */
+export const SAFE_MOMENT_MESSAGE = "aop:safe-moment"
+
+/** Is this the map's word that now is a safe moment? (The caller checks the origin.) */
+export function isSafeMoment(data: unknown): boolean {
+  return !!data && typeof data === "object" && (data as { type?: unknown }).type === SAFE_MOMENT_MESSAGE
+}
+
+/** At the map's safe moment: "reload" if this tab is stale and has not already tried for this build. */
+export function momentDecision(i: { mine: string; live: string | null; reloadedFor: string | null }): "none" | "reload" {
+  if (!isStale(i.mine, i.live)) return "none"
+  if (i.reloadedFor && i.reloadedFor === i.live) return "none"   // already tried for this build: the notice stands, no loop
+  return "reload"
+}

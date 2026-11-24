@@ -29,9 +29,9 @@
 // /forge — everything.
 // ============================================================================
 
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 import { usePathname } from "next/navigation"
-import { isTyping, reloadDecision, RELOADED_FOR_KEY } from "@/lib/safe-reload"
+import { isSafeMoment, isTyping, momentDecision, reloadDecision, RELOADED_FOR_KEY } from "@/lib/safe-reload"
 
 /** How often to ask, in ms. Cheap: a few bytes, no database, no AI. */
 const POLL_MS = 60_000
@@ -44,17 +44,42 @@ export function BuildWatch() {
   const pathname = usePathname()
   const [tick, setTick] = useState(0)
 
-  const check = useCallback(async () => {
+  const liveRef = useRef<string | null>(null)
+  const [updating, setUpdating] = useState(false)
+
+  const check = useCallback(async (): Promise<string | null> => {
     try {
       const res = await fetch("/api/version", { cache: "no-store" })
-      if (!res.ok) return
+      if (!res.ok) return liveRef.current
       const data = (await res.json()) as { buildId?: unknown }
-      if (typeof data?.buildId === "string" && data.buildId) setLiveBuild(data.buildId)
+      if (typeof data?.buildId === "string" && data.buildId) { liveRef.current = data.buildId; setLiveBuild(data.buildId) }
     } catch {
       // Offline, asleep, flaky hotel wifi — say nothing. A false "you are out
       // of date" during a session is worse than staying quiet.
     }
+    return liveRef.current
   }, [])
+
+  // THE MAP'S SAFE MOMENT (lib/safe-reload.ts): the map, in its frame, says the party has just walked onto another
+  // plate with nothing in hand. A stale tab asks once more what is live, and catches up then, once per build.
+  useEffect(() => {
+    let going = false
+    const onMessage = (e: MessageEvent) => {
+      if (going || e.origin !== window.location.origin || !isSafeMoment(e.data)) return
+      void (async () => {
+        const live = await check()
+        let reloadedFor: string | null = null
+        try { reloadedFor = sessionStorage.getItem(RELOADED_FOR_KEY) } catch { return }   // no loop guard, no self-reload: the notice stays
+        if (going || !live || momentDecision({ mine: MY_BUILD, live, reloadedFor }) !== "reload") return
+        going = true
+        try { sessionStorage.setItem(RELOADED_FOR_KEY, live) } catch { going = false; return }
+        setUpdating(true)
+        window.setTimeout(() => window.location.reload(), 350)   // the dark card is up before the page goes
+      })()
+    }
+    window.addEventListener("message", onMessage)
+    return () => window.removeEventListener("message", onMessage)
+  }, [check])
 
   useEffect(() => {
     void check()
@@ -94,6 +119,11 @@ export function BuildWatch() {
   // Quiet in development (both sides report "dev"), quiet before the first
   // successful check, quiet when the builds agree — and quiet while a safe page
   // is about to refresh itself.
+  if (updating) return (
+    <div role="status" aria-live="polite" className="fixed inset-0 z-[300] grid place-items-center bg-[#050403]">
+      <span className="font-serif text-[12px] uppercase tracking-[0.4em] text-[#c9a868]">Updating the game…</span>
+    </div>
+  )
   if (decision !== "notice") return null
 
   return (
@@ -103,7 +133,7 @@ export function BuildWatch() {
       className="fixed bottom-4 left-1/2 z-[200] flex -translate-x-1/2 items-center gap-3 rounded-sm border border-[#a88745] bg-gradient-to-b from-[#241a08] to-[#12100b] px-4 py-2.5 shadow-[0_0_30px_rgba(0,0,0,0.6)]"
     >
       <span className="font-serif text-[11px] tracking-wide text-[#ead39e]">
-        A newer version of the table is live. It updates itself at the table or the title.
+        A newer version of the table is live. It updates itself as you next walk to another area.
       </span>
       <button
         type="button"
