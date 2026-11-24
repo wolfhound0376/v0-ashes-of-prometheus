@@ -91,6 +91,13 @@ export const WALK_FILMS = {
   // burn violet, the venom beads, and in the blade Ilvara's eyes open (the beacon). Solo: it is that hero's reading,
   // and the line over it is spoken in their own voice by the map. No dc: the map rolled the Arcana check itself.
   "lolths-tooth-revealed": { kind: "action", state: "lolths-tooth-revealed", scope: "solo", location: PEN_LOCATION, dc: null },
+  // THE GRAY OOZE SURGES (Sam, 2026-11-23: "Lets have it in the pool. Lets create a good intro"; he approved the film,
+  // "works for me"). The pool plate's ambush hazard names it (spec.py hazard `film`) and the map sends it as the ooze
+  // rises (mapFilm(node.hazard.film)). It was never listed here, so the bridge dropped the cue and the pool fight opened
+  // with no film (found live 2026-11-23: the ambush fired at the pool, no cinematic_views row for it). Party scope, as
+  // the catalogue row is; filed under the pen's location like the rest of Act 1 (the location is the catalogue key).
+  // No dc: the map has already decided the ooze rose.
+  "gray-ooze-surges": { kind: "action", state: "gray-ooze-surges", scope: "party", location: PEN_LOCATION, dc: null },
 } as const satisfies Record<string, WalkFilm>
 
 export type WalkFilmCue = keyof typeof WALK_FILMS
