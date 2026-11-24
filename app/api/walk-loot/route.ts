@@ -6,12 +6,13 @@ import { canCarry, syncCarried } from "@/lib/carry"
 import { recordItemMove } from "@/lib/item-history"
 import { lootHolderId, rowsToMint } from "@/lib/floor-holder"
 import { bodyKit } from "@/lib/harvest"
-import { BOOK_CONTAINERS, BODY_KIT, CREATURE_PARTS, PEN_KEY_SLUG, POCKET_SPRITES, rollPockets, rollWear, onDutyKit, variedGuardKit, rollPurse, PURSE_CR, isValuable, parseContainer, pocketEntries, settleRolls, type HarvestCheck, type LootEntry, type Ruined } from "@/lib/walk-loot"
+import { BOOK_CONTAINERS, BODY_KIT, CREATURE_PARTS, PEN_KEY_SLUG, POCKET_SPRITES, rollPockets, rollWear, onDutyKit, variedGuardKit, rollPurse, PURSE_CR, isValuable, parseContainer, pocketEntries, settleRolls, guardPocketFor, wearPocket, type HarvestCheck, type LootEntry, type Ruined } from "@/lib/walk-loot"
 
 // /api/walk-loot — what is in Velkynvelve's chests, on its dead and in its guards' pockets (see lib/walk-loot.ts).
 //
 //   GET  ?container=ID          → what is there now. ID: ilvara-chest | shoor-chest | barracks-west | barracks-east |
 //                                  body:<slug>:<which> | pocket:<slug>
+//        [&pocket=pocket:<sprite>:<post>]  a dead guard's own pockets, shown on his body (lib/walk-loot.ts guardPocketFor)
 //   GET  ?stash=1               → DM: every confiscated item and who (if anyone) the DM has handed it to
 //   POST {action:"take", characterId, container, slug | rowId}  → into that character's inventory_items
 //   POST {action:"carry", rowId, slug | null}                     → DM: hand a confiscated item to a drow, or back
@@ -32,7 +33,7 @@ type Db = ReturnType<typeof createAdminClient>
 // truth for what is left; the rows are who those things are.
 // rolls[container][slug]: a book count that is rolled (lib/walk-loot.ts `roll`, e.g. the landing chest's 1d4 potions),
 // rolled the first time anyone looks and kept for the run.
-type State = { taken: Record<string, Record<string, number>>; carry: Record<string, string>; pockets: Record<string, LootEntry[]>; bodies: Record<string, { kept: LootEntry[]; ruined: Ruined[] }>; rows: Record<string, Record<string, string[]>>; rolls: Record<string, Record<string, number>> }
+type State = { taken: Record<string, Record<string, number>>; carry: Record<string, string>; pockets: Record<string, LootEntry[]>; bodies: Record<string, { kept: LootEntry[]; ruined: Ruined[]; pocket?: string }>; rows: Record<string, Record<string, string[]>>; rolls: Record<string, Record<string, number>> }
 type Item = { id: string; slug: string; name: string; item_type: string; rarity: string | null; icon_url: string | null; pixel_icon_url: string | null; description: string | null; equippable_slot: string | null; weight: number | null; value: number | null; stackable: boolean }
 
 function authorized(req: NextRequest): boolean {
@@ -70,7 +71,8 @@ async function stashRows(db: Db, sid: string): Promise<StashRow[]> {
 // one row of what a container holds, as the walk shows it
 // `slot`: the catalogue's equippable slot, or null. On a living mark the map offers only slot-less things to a
 // pickpocket — a weapon, armour or a ring is worn or wielded, not in a pocket (Sam, 2026-10-27: "NOT equipped").
-type Shown = { kind: "book" | "stash"; slug?: string; rowId?: string; name: string; qty: number; note?: string; owner?: string | null; pixel: string | null; icon: string | null; missing?: boolean; slot?: string | null; check?: HarvestCheck }
+// `from`: a dead guard's pocket, when the row is shown on his body (a take of it is a take from that pocket)
+type Shown = { kind: "book" | "stash"; slug?: string; rowId?: string; name: string; qty: number; note?: string; owner?: string | null; pixel: string | null; icon: string | null; missing?: boolean; slot?: string | null; check?: HarvestCheck; from?: string }
 
 // what a carcass yields: the `creature_harvest` table (Sam, 2026-10-27: "I want all of this in databases and wired in the
 // game"; migrations/20261027200000_ingredients_and_harvest.sql). A creature with harvest rows drops those parts; a body
@@ -86,7 +88,7 @@ async function kitFor(db: Db, slug: string): Promise<LootEntry[] | undefined> {
   return bodyKit(slug, await harvestFor(db, slug))
 }
 
-async function contents(db: Db, id: string, s: State, kill?: string | null): Promise<{ title: string; source: string; rows: Shown[]; rolled: boolean; ruinedNow?: Ruined[]; ruined?: Ruined[] } | null> {
+async function contents(db: Db, id: string, s: State, kill?: string | null, pocketId?: string | null): Promise<{ title: string; source: string; rows: Shown[]; rolled: boolean; ruinedNow?: Ruined[]; ruined?: Ruined[] } | null> {
   const c = parseContainer(id); if (!c) return null
   // a guard's pockets are rolled the first time anyone looks, then kept for the run (lib/walk-loot.ts POCKET_TABLE)
   const guard = c.kind === "pocket" && POCKET_SPRITES.has(c.slug!)
@@ -101,6 +103,19 @@ async function contents(db: Db, id: string, s: State, kill?: string | null): Pro
     const worn = rollWear(kit ?? [], Math.random, kill)
     s.bodies[c.key] = { kept: [...worn.kept, ...(purseCr !== undefined ? rollPurse(purseCr) : [])], ruined: worn.ruined }   // the kit as it survived, and the purse
     rolled = true; ruinedNow = s.bodies[c.key].ruined
+  }
+  // A DEAD GUARD'S POCKETS (Sam, 2026-11-23): linked to his body the first time it is looked at with them; what is still
+  // in them rolls for wear by the same kill (lib/walk-loot.ts wearPocket). Kept for the run, like the body.
+  if (c.kind === "body" && s.bodies[c.key] && !s.bodies[c.key].pocket){
+    const pk = guardPocketFor(c.slug!, pocketId)
+    if (pk){
+      const pc = parseContainer(pk)!
+      if (!s.pockets[pk]) s.pockets[pk] = rollPockets(pc.which!)          // nobody had looked: his pockets are rolled now
+      const w = wearPocket(s.pockets[pk], s.taken[pk] ?? {}, Math.random, kill)
+      s.pockets[pk] = w.pocket; s.bodies[c.key].pocket = pk; s.bodies[c.key].ruined.push(...w.ruined)
+      if (w.ruined.length) ruinedNow = [...(ruinedNow ?? []), ...w.ruined]
+      rolled = true
+    }
   }
   const harvested = c.kind === "body" && (CREATURE_PARTS[c.slug!] || !BODY_KIT[c.slug!]) && !!(s.bodies[c.key]?.kept.length || s.bodies[c.key]?.ruined.length)
   // a rolled count in a chest (the landing chest's 1d4 potions) is rolled the first time anyone looks, then kept
@@ -128,6 +143,16 @@ async function contents(db: Db, id: string, s: State, kill?: string | null): Pro
     if (left <= 0 || (c.kind === "pocket" && e.slug === PEN_KEY_SLUG && penKeyGone)) continue
     const it = cat.get(e.slug)
     rows.push({ kind: "book", slug: e.slug, name: it?.name ?? e.slug.replace(/-/g, " "), qty: left, note: e.note, pixel: it?.pixel_icon_url ?? null, icon: it?.icon_url ?? null, missing: !it, slot: c.kind === "pocket" ? null : it?.equippable_slot ?? null, ...(e.check ? { check: e.check } : {}) })   // what the book puts in a pocket is in the pocket, whatever slot the catalogue gives it
+  }
+  const bodyPocket = c.kind === "body" ? s.bodies[c.key]?.pocket : undefined
+  if (bodyPocket){
+    const pent = s.pockets[bodyPocket] ?? [], ptaken = s.taken[bodyPocket] ?? {}, pcat = await itemsBySlug(db, pent.map((e) => e.slug))
+    for (const e of pent){
+      const left = e.qty - (ptaken[e.slug] ?? 0)
+      if (left <= 0 || (e.slug === PEN_KEY_SLUG && penKeyGone)) continue
+      const it = pcat.get(e.slug)
+      rows.push({ kind: "book", slug: e.slug, name: it?.name ?? e.slug.replace(/-/g, " "), qty: left, note: e.note, pixel: it?.pixel_icon_url ?? null, icon: it?.icon_url ?? null, missing: !it, slot: it?.equippable_slot ?? null, from: bodyPocket })
+    }
   }
   const sid = await stashId(db)
   if (sid){
@@ -165,7 +190,8 @@ export async function GET(req: NextRequest) {
   }
   const id = req.nextUrl.searchParams.get("container") ?? ""
   const kill = req.nextUrl.searchParams.get("kill")
-  const out = await contents(db, id, s, kill && /^[a-z]{2,16}$/.test(kill) ? kill : null)
+  const pocket = req.nextUrl.searchParams.get("pocket")
+  const out = await contents(db, id, s, kill && /^[a-z]{2,16}$/.test(kill) ? kill : null, pocket)
   if (!out) return NextResponse.json({ error: "No such container." }, { status: 404 })
   if (out.rolled) await writeState(db, s, `rolled for ${id}`)
   if (out.ruinedNow?.length) await logRuin(db, id, out.ruinedNow)   // the same guard holds the same things all run
@@ -213,7 +239,15 @@ export async function POST(req: NextRequest) {
   }
 
   if (action !== "take") return NextResponse.json({ error: "expected action take, eat or carry" }, { status: 400 })
-  const characterId = String(body?.characterId ?? ""), container = String(body?.container ?? "")
+  const characterId = String(body?.characterId ?? "")
+  let container = String(body?.container ?? "")
+  // a row shown on a dead guard's body from his own pocket (contents: `from`) is taken from that pocket, the one record
+  const fromBody = !!body?.from
+  if (fromBody){
+    const bc = parseContainer(container)
+    if (!bc || bc.kind !== "body" || s.bodies[bc.key]?.pocket !== String(body.from)) return NextResponse.json({ error: "It is not there any more." }, { status: 409 })
+    container = String(body.from)
+  }
   const c = parseContainer(container)
   if (!characterId || !c) return NextResponse.json({ error: "characterId and container required" }, { status: 400 })
   const { data: who } = await db.from("characters").select("id,name").eq("id", characterId).maybeSingle()
@@ -221,7 +255,7 @@ export async function POST(req: NextRequest) {
   const now = await contents(db, container, s); if (!now) return NextResponse.json({ error: "No such container." }, { status: 404 })
   if (now.rolled) await writeState(db, s, `rolled for ${container}`)
   if (now.ruinedNow?.length) await logRuin(db, container, now.ruinedNow)
-  const where = now.title === "The body" ? "a body" : now.title.replace(/^(The|A) /, (m) => m.toLowerCase())
+  const where = fromBody || now.title === "The body" ? "a body" : now.title.replace(/^(The|A) /, (m) => m.toLowerCase())
 
   // a confiscated item: the row moves to the taker, and it is no longer anybody's confiscated property
   if (body?.rowId){
