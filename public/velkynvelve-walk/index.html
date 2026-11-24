@@ -5610,6 +5610,7 @@ async function openLoot(id, title, opts = {}){
   else if (!rows.length) $("objText").textContent = opts.empty || "Nothing is left in it.";
   else $("objText").textContent = (opts.text ? opts.text + " " : "") + `${fname(who)} can take:`;
   for (const row of rows){
+    if (row.check && !row.missing && fighter){ add(`${row.name} · needs a ${checkLabel(row.check)} check: after the fight`, null, "", true); continue; }
     if (row.check && !row.missing){                                             // behind a check: roll it here, then it comes free
       const b = add(`Extract: ${row.name} · ${checkLabel(row.check)}`, async () => {
         b.disabled = true;
@@ -5621,14 +5622,17 @@ async function openLoot(id, title, opts = {}){
     }
     const info = !row.missing && row.kind !== "preview-stash" ? lootInfo(box, row, who) : null;   // what it is, above the take (below)
     const b = add(row.missing ? `${lootLabel(row)} · not in the catalogue yet` : row.kind === "preview-stash" ? row.name : `Take: ${lootLabel(row)}`,
-      async () => { b.disabled = true; if (await takeLoot(who, id, row)){ close(); offerEquip(() => openLoot(id, title, opts)); } else b.disabled = false; }, "", !!row.missing);
+      async () => { b.disabled = true;
+        const k = fighter ? gearCost(fighter, 1) : null; if (k && !k.ok){ toast(k.why); b.disabled = false; return; }   // ONE LOOTING RULE: a take is an interaction
+        if (await takeLoot(who, id, row)){ if (k){ k.pay(); log(`${fname(who)} takes the <b>${esc(row.name)}</b> (${k.label === "free" ? "free object interaction" : "action"}).`); } close(); offerEquip(() => openLoot(id, title, opts)); } else b.disabled = false; },
+      "", !!row.missing || !!(fighter && !gearCost(fighter, 1).ok));
     if (row.pixel){ const im = document.createElement("img"); im.src = ITEM_PX + row.pixel; im.alt = ""; im.className = "lootPx"; b.prepend(im); }
     const rar = row.missing || row.kind === "preview-stash" ? "common" : rarityOf(row);
     if (RARITY_RANK[rar] >= 1){ const col = RARITY_COL[rar]; b.style.color = col; b.style.borderColor = col; b.style.boxShadow = `inset 3px 0 0 ${col}`;
       const tag = document.createElement("span"); tag.className = "lootRar"; tag.textContent = RARITY_LABEL[rar]; b.appendChild(tag); }
     if (info) info.classList.add("r-" + rar);
   }
-  if (can.length > 1) add("Take all", async () => {
+  if (can.length > 1 && !fighter) add("Take all", async () => {
     for (const b of box.querySelectorAll("button")) b.disabled = true;
     for (const row of can) await takeLoot(who, id, row);
     close(); offerEquip(() => openLoot(id, title, opts));
@@ -10748,7 +10752,8 @@ function openMenu(a, sub){
       { ACTION_ICON["Pick up: " + pile.name] = "use-object"; add(`Pick up: ${pile.name}`, c.move >= PICKUP_FT ? `${PICKUP_FT} ft of your movement` : `needs ${PICKUP_FT} ft of movement`, c.move >= PICKUP_FT ? () => pickUp(a, pile) : null); }
     for (const l of lootSpotsNear(a))                 // A CHEST IN A FIGHT (Sam, 2026-11-23), below: loot spots open here, not in grabTargets
       { const label = `Open: ${l.name}`; ACTION_ICON[label] = "use-object"; add(label, "look inside · taking things is an object interaction", () => openLootInFight(a, l)); }
-    for (const g of grabTargets(a)){ ACTION_ICON[g.label] = "use-object"; add(g.label, "your action · take what you want from it", c.action ? g.go : null); }
+    for (const g of grabTargets(a)){ ACTION_ICON[g.label] = "use-object"; const k = g.cost === "action" ? {ok: !!c.action} : g.cost === "interaction" ? gearCost(a, 1) : {ok: true};
+      add(g.label, g.cost === "action" ? "your action (Search) · then one thing with your free interaction" : g.cost === "interaction" ? (k.ok ? `lift the lid · ${k.label === "free" ? "your free object interaction" : "your action"}` : k.why) : "look inside · taking things is an object interaction", k.ok ? g.go : null); }
     add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
     // JUMP, as a command (Sam, 2026-10-27: "where is the attack, jump, throw, push, entertain"). The leap itself is the
     // long-jump rule below (planLeap/leapMove): a click on the far side of a gap already springs across it. The button
@@ -10972,8 +10977,8 @@ function exploreExtras(m, o, add, who){
   if (/warlock/.test(cls) && beseechCan(L)) x("Beseech your patron", "✠", ART("pray"), "a way out of the pen · once until you rest", () => openBeseech());
   { const v = druidVermin(L); if (v) x(`Speak to the ${verminKind(v)}`, "❦", ART("talk"), `Animal Handling ${sgn(heroMod(L, "animalHandling", "wis"))} · send it for a guard's key or blade · once a watch`, () => speakToVermin(v)); }
   if (ironsCan(L, "key")) x("Unlock everyone's manacles", "⚿", ART("pickpocket", "search"), `${fname(ironsKeyHolder())} carries a key that fits them · no roll`, () => ironsUnlockAll());
-  if (ironsCan(L, "pick")) x("Pick your manacles", "⚿", ART("pickpocket", "search"), `Thieves' tools ${sgn(heroMod(L, "thievesTools", "dex"))} · one try until a long rest`, () => ironsTry("pick"));
-  for (const t of friendsInIrons(L)) x(`Pick ${fname(t)}'s manacles`, "⚿", ART("pickpocket", "search"), `Thieves' tools ${sgn(heroMod(L, "thievesTools", "dex"))} · one try until a long rest`, () => ironsFreeFriend(t));   // A FRIEND'S IRONS
+  if (ironsCan(L, "pick")) x("Pick your manacles", "⚿", ART("pickpocket", "search"), `Thieves' tools ${sgn(heroMod(L, "thievesTools", "dex"))} vs DC 15 · a failure breaks the kit`, () => ironsTry("pick"));
+  for (const t of friendsInIrons(L)) x(`Pick ${fname(t)}'s manacles`, "⚿", ART("pickpocket", "search"), `Thieves' tools ${sgn(heroMod(L, "thievesTools", "dex"))} vs DC 15 · a failure breaks the kit`, () => ironsFreeFriend(t));   // A FRIEND'S IRONS
   if (ironsCan(L, "break")) x("Break your manacles", "⚿", ART("force", "search"), `Strength ${sgn(abilMod(SHEETS[L.id] || {}, "str"))} · hard · one try until a long rest`, () => ironsTry("break"));
   if (callOutCan(L)){ const left = penLeftovers(); x("Call the others out", "☰", ART("follow"), `${left.length} still in the pen · they come with you`, () => callOthersOut()); }
   if (wireCan(L)) x("Work the wire into your manacles", "⚿", ART("pickpocket", "search"), `Sleight of Hand ${sgn(heroMod(L, "sleightOfHand", "dex"))} · one try until you rest`, () => wireManacles());
@@ -12970,9 +12975,10 @@ async function wireManacles(){
 // Healing Word and Thaumaturgy. The irons now come off in the game, not just in the prose:
 //   KEY    Someone in the party carries a key that fits manacles (the catalogue's "Iron key": walk-loot.ts) -> everyone's
 //          irons come off, no roll. Same party-wide switch as the DM drawer.
-//   PICK   The acting hero carries thieves' tools: OotA's DC 15 Dexterity, frees that hero.
+//   PICK   The acting hero carries thieves' tools: OotA's DC 15 Dexterity, frees that hero. May be retried (Sam,
+//          2026-11-23), but a failure breaks the kit (his house rule; 5E has no such rule).
 //   BREAK  OotA's DC 20 Strength, frees that hero.
-//   A failed pick or break is not retried until a long rest (OotA). The map has no long rest yet, so it holds for the
+//   A failed BREAK is not retried until a long rest (OotA). The map has no long rest yet, so it holds for the
 //   run; the DM drawer still strikes the irons off for everyone.
 const MANACLE_KEYS = ["Iron key"];
 let ironsBusy = false;
@@ -12981,7 +12987,7 @@ function ironsTried(L, how){ return !!((state.ironsTried || {})[L.id + ":" + how
 function ironsCan(L, how){
   if (!(L && mode === "explore" && !L.down && manacled(L) && !ironsBusy)) return false;
   if (how === "key") return !!ironsKeyHolder();
-  if (how === "pick") return carries(L, THIEVES_TOOLS) && !ironsTried(L, "pick");
+  if (how === "pick") return carries(L, THIEVES_TOOLS);   // RETRIES (Sam, 2026-11-23): try again while you still hold a kit
   return !ironsTried(L, "break");
 }
 function ironsUnlockAll(){
@@ -12996,15 +13002,24 @@ async function ironsTry(how){
   try {
     const r = await rollOnDashboard(how === "pick" ? "manacles:pick" : "manacles:break", how === "pick" ? heroMod(h, "thievesTools", "dex") : abilMod(SHEETS[h.id] || {}, "str"), {who: h});
     if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3600); return; }
-    state.ironsTried = Object.assign({}, state.ironsTried || {}, {[h.id + ":" + how]: true});
+    if (how === "break") state.ironsTried = Object.assign({}, state.ironsTried || {}, {[h.id + ":" + how]: true});   // a failed break waits for a long rest (OotA); a pick may be tried again
     if (r.success){
       state.unshackled = Object.assign({}, state.unshackled || {}, {[h.id]: true}); saveWalk();
       sfx(how === "pick" ? "lock-picked" : "door-locked", .8); popText(h, "free", "#9ad0ff", 1.1);
       log(`<b>${esc(fname(h))}'s manacles ${how === "pick" ? "click open" : "give way"}.</b> <em>Only theirs.</em>`, {say: true});
       if (APP) handOff(`${fname(h)} has ${how === "pick" ? "picked the lock of" : "broken"} their own manacles (${how === "pick" ? "thieves' tools" : "Strength"} ${r.total}) and is out of irons; the others are still manacled. Narrate it in a line; award nothing.`, true, {noLoot: true});
+    } else if (how === "pick"){
+      // A FAILED PICK BREAKS THE KIT (Sam, 2026-11-23: "A failed kit (thieves tools) consumes it"). HOUSE RULE: in 5E
+      // thieves' tools do not break on a failed check. The picks snap in the lock; the kit is gone from the hero's real
+      // inventory (spendItem -> /api/walk-items consume). Another kit, another try.
+      const kit = ((GEAR[h.id] || {}).carried || []).find(c => String(c.name || "").toLowerCase() === THIEVES_TOOLS.toLowerCase());
+      if (kit) spendItem(h, kit, "break");
+      saveWalk(); sfx("lock-pick-fail", .7); popText(h, "the picks snap", "#ff8a7a", 1);
+      log(`${esc(fname(h))} works the lock of their manacles. <em>A pick snaps in the lock. The thieves' tools are ruined.</em>`);
+      if (APP) handOff(`${fname(h)} failed to pick the lock of their manacles (thieves' tools ${r.total}); the picks broke in the lock and their thieves' tools are ruined and gone. They are still in irons. Narrate it in a line; award nothing.`, true, {noLoot: true});
     } else {
       saveWalk(); sfx("lock-pick-fail", .7);
-      log(`${esc(fname(h))} ${how === "pick" ? "works the lock of their manacles" : "strains against the irons"}. <em>They hold. Not again until a long rest.</em>`);
+      log(`${esc(fname(h))} strains against the irons. <em>They hold. Not again until a long rest.</em>`);
     }
   } finally { ironsBusy = false; exploreKey = ""; }
 }
@@ -13015,12 +13030,12 @@ async function ironsTry(how){
 // to a hero still in irons with tools in their own pack: Fifi, free, held both sets of thieves' tools, so nobody had
 // a way. Now a hero who is out of irons and carries thieves' tools can pick the lock of a friend's manacles, standing
 // beside them. BOOK RULE, OotA ch.1 Escape: a set of manacles' lock is picked with thieves' tools, DC 15 Dexterity (the
-// lock is the same whoever works it). A failure is not retried on that lock by that hero until a long rest, as with
-// their own. One hero freed per success.
+// lock is the same whoever works it). Sam, 2026-11-23: it may be tried again, but a failure breaks the kit (house rule).
+// One hero freed per success.
 const IRONS_REACH_FT = 10;                   // beside them (a step apart counts)
 function friendsInIrons(L){
   if (!(L && mode === "explore" && !L.down && !manacled(L) && carries(L, THIEVES_TOOLS) && !ironsBusy)) return [];
-  return party.filter(p => p !== L && actors.includes(p) && !p.down && manacled(p) && feetBetween(L, p) <= IRONS_REACH_FT && !ironsTried(L, "friend:" + p.id));
+  return party.filter(p => p !== L && actors.includes(p) && !p.down && manacled(p) && feetBetween(L, p) <= IRONS_REACH_FT);   // retries allowed (Sam, 2026-11-23); a failure breaks the kit
 }
 async function ironsFreeFriend(t){
   const h = leader; if (!friendsInIrons(h).includes(t)) return; ironsBusy = true; h.path = [];
@@ -13028,15 +13043,17 @@ async function ironsFreeFriend(t){
     h.face = faceOf(t.x - h.x, t.y - h.y);
     const r = await rollOnDashboard("manacles:friend", heroMod(h, "thievesTools", "dex"), {who: h});
     if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3600); return; }
-    state.ironsTried = Object.assign({}, state.ironsTried || {}, {[h.id + ":friend:" + t.id]: true});
     if (r.success){
       state.unshackled = Object.assign({}, state.unshackled || {}, {[t.id]: true}); saveWalk();
       sfx("lock-picked", .8); popText(t, "free", "#9ad0ff", 1.1);
       log(`<b>${esc(fname(h))} picks the lock of ${esc(fname(t))}'s manacles.</b> <em>They click open. ${esc(fname(t))}'s hands are their own again.</em>`, {say: true});
       if (APP) handOff(`${fname(h)} has picked the lock of ${fname(t)}'s manacles with thieves' tools (${r.total}). ${fname(t)} is out of irons now and can use both hands and cast spells with gestures. Narrate it in a line; award nothing.`, true, {noLoot: true});
     } else {
-      saveWalk(); sfx("lock-pick-fail", .7);
-      log(`${esc(fname(h))} works the lock of ${esc(fname(t))}'s manacles. <em>It will not turn. Not again, by those hands, until a long rest.</em>`);
+      const kit = ((GEAR[h.id] || {}).carried || []).find(c => String(c.name || "").toLowerCase() === THIEVES_TOOLS.toLowerCase());
+      if (kit) spendItem(h, kit, "break");                 // A FAILED PICK BREAKS THE KIT (Sam's house rule, above)
+      saveWalk(); sfx("lock-pick-fail", .7); popText(h, "the picks snap", "#ff8a7a", 1);
+      log(`${esc(fname(h))} works the lock of ${esc(fname(t))}'s manacles. <em>A pick snaps in the lock. The thieves' tools are ruined.</em>`);
+      if (APP) handOff(`${fname(h)} failed to pick the lock of ${fname(t)}'s manacles (thieves' tools ${r.total}); the picks broke and ${fname(h)}'s thieves' tools are ruined and gone. ${fname(t)} is still in irons. Narrate it in a line; award nothing.`, true, {noLoot: true});
     }
   } finally { ironsBusy = false; exploreKey = ""; }
 }
@@ -14960,15 +14977,20 @@ function grabTargets(a){
   if (a.kind !== "pc" || !cbt) return [];
   const out = [], near = 5.5;
   for (const f of new Set([...foes, ...(cbt.bystanders || [])])) if (f.down && !f.fading && f.kind !== "pc" && !f.ally && feetBetween(a, f) <= near)
-    out.push({label: `Search: ${fname(f)}'s body`, go: () => grabBody(a, f)});
+    out.push({label: `Search: ${fname(f)}'s body`, cost: "action", go: () => grabBody(a, f)});
   // loot spots (footlockers, the landing chest) are NOT here: they open with "Open: <spot>" (lootSpotsNear/openLootInFight,
   // PR #1508), where looking is free and each take is an object interaction (SRD 5.1). Two boxes for one chest broke the
   // bar rule (Sam, 2026-11-10: no duplicate or unavailable boxes). Bodies and painted props stay a Search/Open action here.
   for (const pr of node.props || []){ const st = propState(pr); if (pr.lid && !st.locked && ftToPoly(a, pr.poly) <= near)
-    out.push({label: `${st.open ? "Search" : "Open"}: ${pr.name}`, go: () => grabChest(a, pr)}); }
+    out.push({label: `${st.open ? "Search" : "Open"}: ${pr.name}`, cost: st.open ? "free" : "interaction", go: () => grabChest(a, pr)}); }
   return out;
 }
-function grabStart(a, at){ a.c.action = false; closeMenu(); cbt.phase = "busy"; combatBusy = true; grabbing = a; if (at) a.face = faceOf(at.x - a.x, at.y - a.y); }
+// ONE LOOTING RULE IN A FIGHT (Sam, 2026-11-23: "Your call based on DND 5E"). SRD 5.1, Interacting with Objects: one
+// object interaction is free on your turn (opening a lid, taking a thing out are each one), a second takes your action
+// (Use an Object), and that is all a turn holds. So: looking into an open chest or a heap costs nothing; LIFTING a closed
+// lid is an interaction; GOING THROUGH A BODY is the Search action (it is not one object); and EVERY THING TAKEN is an
+// interaction. No "Take all" while steel is out. Loot spots follow the same rule in openLootInFight (gearCost).
+function grabStart(a, at, pay){ if (pay) pay(); else if (pay !== false) a.c.action = false; closeMenu(); cbt.phase = "busy"; combatBusy = true; grabbing = a; if (at) a.face = faceOf(at.x - a.x, at.y - a.y); }
 function grabDone(a){ grabbing = null; if (!cbt) return; combatBusy = false; if (activeActor() !== a) return; cbt.phase = "menu"; renderParty(); afterAction(a); }
 function grabCard(a, id, title, opts){
   grabStart(a, opts.at); log(`${fname(a)} goes through <b>${esc(title)}</b> (their action).`);
@@ -14983,10 +15005,11 @@ function grabBody(a, f){
 }
 function grabChest(a, pr){
   const st = propState(pr), at = polyBase(pr.poly), opts = {poly: pr.poly, text: pr.text.open, at, fighter: a};
-  grabStart(a, at);
-  if (st.open){ log(`${fname(a)} goes through <b>${esc(pr.name)}</b> (their action).`); openLoot(pr.id, pr.name, opts); return; }
+  if (st.open){ grabStart(a, at, false); log(`${fname(a)} looks into <b>${esc(pr.name)}</b>.`); openLoot(pr.id, pr.name, opts); return; }
+  const k = gearCost(a, 1); if (!k.ok){ toast(k.why); return; }
+  grabStart(a, at, () => k.pay());
   const l = lids[pr.id]; st.open = true; if (l) l.target = 1;
-  sfx("door-open", .6); bank("ui/coin_purse", .5); log(`${fname(a)} throws open <b>${esc(pr.name)}</b> (their action).`);
+  sfx("door-open", .6); bank("ui/coin_purse", .5); log(`${fname(a)} throws open <b>${esc(pr.name)}</b> (${k.label === "free" ? "free object interaction" : "their action"}).`);
   setTimeout(() => { if (cbt && grabbing === a) openLoot(pr.id, pr.name, opts); else grabDone(a); }, 1100);
 }
 // A foe's Search (see foeTurn, HIDDEN HEROES): one Wisdom (Perception) check against each hidden hero's Stealth total
