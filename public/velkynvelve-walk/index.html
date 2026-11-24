@@ -14870,12 +14870,23 @@ async function mimicFight(l, who, fooled){
 }
 // THE WAY IN: the pixel road's Ruins (public/pixel-road, "Enter the ruins") opens this page with ?ruins=1. Read once
 // and cleaned from the address, like a road fight's, so a reload does not walk the party back in.
+// ONLY FROM THE ROAD (Sam, 2026-11-23: "why did I start the game here and not the pen??"). A fresh campaign's party,
+// still chained in the pen, was walked into the Ruins by a screen that opened this door: the door moved the whole live
+// party from wherever it stood. The Ruins are out on the march (the travel map's Ruins card, the pixel road's door), so
+// on the live game the door opens only when the party is out of Velkynvelve (/api/party/position, lib/ruins-door.ts).
+// A rehearsal (?sandbox=1) and a test copy (no APP) still walk straight in. If the check itself cannot be answered the
+// door opens: a lost reply is no reason to strand a party that really is standing at it.
 async function ruinsDoor(){
   let top, q; try { top = window.top !== window ? window.top : window; q = new URLSearchParams(top.location.search); } catch (e) { return; }
   if (!q.get("ruins")) return;
-  state.ruinsFrom = q.get("from") === "map" ? "map" : "road";   // the travel map's Ruins card, or the pixel road's door
-  state.ruinsRoad = /^road-\d{2}$/.test(q.get("road") || "") ? q.get("road") : null;   // which pixel road's door (road-01, road-03)
+  const from = q.get("from") === "map" ? "map" : "road", road = /^road-\d{2}$/.test(q.get("road") || "") ? q.get("road") : null;
   try { q.delete("ruins"); q.delete("from"); q.delete("road"); top.history.replaceState(null, "", top.location.pathname + (q.toString() ? "?" + q : "")); } catch (e) {}
+  if (APP && !SANDBOX){
+    const w = await fetch("/api/party/position", {cache: "no-store"}).then(r => r.ok ? r.json() : null).catch(() => null);
+    if (w && w.inOutpost){ toast("The party is still in Velkynvelve. The Ruins are out on the road.", 5000); return; }
+  }
+  state.ruinsFrom = from;   // the travel map's Ruins card, or the pixel road's door
+  state.ruinsRoad = road;   // which pixel road's door (road-01, road-03)
   const plate = "ruins-threshold"; if (!SPEC[plate] || cbt || FIGHT.mirror) return;
   const at = SPEC[plate].arrive;
   await enterNode(plate, {spawn: {x: at[0], y: at[1]}, note: "The door stands open behind you, and the road's noise does not follow you in."});
