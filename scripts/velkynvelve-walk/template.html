@@ -4557,11 +4557,13 @@ function tickChasmWebs(){
 // Sam's ways to the boat (his "1d4" is a menu, not a roll): pay 100 gp; talk him round; kill him, and the ghost stands
 // up out of the body, attacks everyone and curses whoever it strikes; or see what he is, and fetch his lost love's ruby
 // amulet from the crystal caverns to lay him to rest. Refuse that errand and he will not give the boat up.
-// This first piece (the module's PR 1): he is on the shore, the boat is his, and Persuasion, the look, the errand's ask
-// and the fight are live. Buying it (the party's purse) and the amulet's find and return are PR 2; until then those
-// rows are shown with their reason and cannot be pressed (Sam, 2026-10-30: options must be real options).
-// [HOUSE] Persuasion DC 15, once per hero; Investigation DC 14 is the bhut's own (False Alive); the facade fights as
-// the SRD 5.1 Commoner until it falls. Sam's calls in the module doc.
+// PR 1 put him on the shore with Persuasion, the look, the errand's ask and the fight. PR 2 (Sam, 2026-11-23: "PR2. 1.
+// Keep your numbers. 2. Fisherman dies like a 4 HP commoner. 45 sounds good but with tough spells. 3. Yes."): buying the
+// boat out of the whole party's coin (/api/walk-pay, lib/walk-pay.ts), the amulet hidden on the crystal plate, giving
+// it to him to lay him to rest (700 XP, Sam), and the bhut's spells (FOE_BLOCKS "ghost-male").
+// Sam's numbers: Persuasion DC 15, once per hero; Investigation DC 14 (the bhut's own False Alive); the amulet passive
+// Perception 15, +5 when the party came looking (SRD: advantage on a passive check is +5); the facade is the SRD Commoner.
+// His fate is `state.thessaly`, which One World shares with every screen at the table.
 SHORT["old-thessaly"] = "Old Thessaly";
 const THESSALY = "old-thessaly", THESSALY_BHUT = "ghost-male";
 const thessalyState = () => state.thessaly || (state.thessaly = {fate: "fishing", tried: {}});
@@ -4588,8 +4590,9 @@ function thessalyCard(z){
   try { const g = $("objPic").getContext("2d"); g.clearRect(0, 0, 128, 128); g.drawImage(faceCanvas(t, 128), 0, 0); } catch (e) {}
   const box = $("objBtns");
   const off = (label, why) => { const b = add(`${label} — ${why}`, null); b.disabled = true; };
-  // 1. buy it (Sam: 100 gp) — the purse is PR 2
-  off("Buy the boat (100 gp)", "paying from the party's purse comes in the next piece");
+  // 1. buy it (Sam: 100 gp), out of everything the party carries
+  if (S.fate === "refused") off("Buy the boat (100 gp)", "you turned down what he asked; he will not sell to you now");
+  else add("Buy the boat (100 gp)", () => { close(); thessalyBuy(t, z); });
   // 2. talk him round
   if (S.fate === "refused") off("Talk him round", "you turned down what he asked; he is done talking");
   else if (S.tried[h.id]) off(`${fname(h)} talks him round`, `${fname(h)} has tried; someone else may`);
@@ -4597,7 +4600,9 @@ function thessalyCard(z){
   // 3. see him for what he is (once seen, the question about what holds him)
   if (["revealed", "errand", "refused"].includes(S.fate)){
     if (S.fate === "revealed") add("Ask what holds him here", () => { close(); thessalyAsk(t); }, "primary");
-    else if (S.fate === "errand") off("Give him the ruby amulet", "nobody carries it yet; finding it in the crystal caverns comes in the next piece");
+    const amu = thessalyAmuletCarrier();
+    if (amu) add(`${fname(amu)} gives him the ruby amulet`, () => { close(); thessalyLayToRest(t, amu); }, "primary");
+    else if (S.fate === "errand") off("Give him the ruby amulet", "nobody carries it; it is somewhere in the crystal caverns");
   } else if (!S.looked || !S.looked[h.id]) choiceRow(box, `${fname(h)} looks at him properly`, () => { close(); thessalyLook(t, h); }, "", {check: "Investigation DC 14", ability: "int"});
   else off(`${fname(h)} looks at him properly`, `${fname(h)} has looked; someone else may`);
   // 4. take it from him
@@ -4631,6 +4636,68 @@ function thessalyAsk(t){
   try { const g = $("objPic").getContext("2d"); g.clearRect(0, 0, 128, 128); g.drawImage(faceCanvas(t, 128), 0, 0); } catch (e) {}
   add("We'll find it", () => { close(); S.fate = "errand"; saveWalk(); bark(t, THESSALY_LINES.errand, 5000, {talk: true}); log(`<b>Old Thessaly</b>: "${esc(THESSALY_LINES.errand)}" <em>His lost love's ruby amulet is somewhere in the crystal caverns.</em>`); }, "primary");
   add("Not our problem", () => { close(); S.fate = "refused"; saveWalk(); bark(t, THESSALY_LINES.refused, 4200, {talk: true}); log(`<b>Old Thessaly</b>: "${esc(THESSALY_LINES.refused)}"`); });
+}
+const THESSALY_AMULET = "ruby-amulet-lost-love", THESSALY_AMULET_SPOT = "thessaly-amulet";
+const THESSALY_PRICE = 100;
+/** Who in the party carries his lost love's amulet (the catalogue row ruby-amulet-lost-love), if anyone. */
+function thessalyAmuletCarrier(){ return party.find(p => ((GEAR[p.id] || {}).carried || []).some(c => slugOfItem(c) === THESSALY_AMULET)) || null; }
+// BUY IT (Sam: 100 gp). The whole party's coin, purses first, then loose coin (lib/walk-pay.ts); paid once (/api/walk-pay).
+async function thessalyBuy(t, z){
+  const S = thessalyState(), ids = [...new Set(party.map(p => characterIdOf(p.id)).filter(Boolean))];
+  if (APP){
+    if (!ids.length){ toast("Nobody in the party has a character sheet to pay from."); return; }
+    const mine = (() => { try { const id = localStorage.getItem("aop_character_id"); return id && ids.includes(id) ? localStorage.getItem("aop_claim_token") : null; } catch (e) { return null; } })();
+    const r = await fetch("/api/walk-pay", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()},
+      body: JSON.stringify({payKey: `thessaly-boat:${OW.run || runSeen || "local"}`, characterIds: ids, gp: THESSALY_PRICE, to: "Old Thessaly", why: "his keelboat", claimToken: mine || undefined})}).catch(() => null);
+    const j = r ? await r.json().catch(() => ({})) : {};
+    if (!r || !r.ok){
+      if (r && r.status === 409){ bark(t, "A hundred. Gold. Not a copper less.", 4200, {talk: true}); log(`<b>Old Thessaly</b> wants 100 gp. ${esc(j.error || "The party is short.")}`); }
+      else toast(j.error || "The payment did not go through.");
+      return;
+    }
+    if (bagOpen()) renderBag();
+  }
+  S.fate = "sold"; saveWalk(); bank("ui/coin_purse", .6);
+  bark(t, "Hmph. She leaks on the left. Bail or drown.", 5200, {talk: true});
+  log(`The party pays <b>Old Thessaly</b> ${THESSALY_PRICE} gp. The keelboat is yours to take.`);
+}
+// LAY HIM TO REST (Sam: the amulet brought back earns the XP). The amulet leaves the hero who carries it, the bhut's
+// own face shows for a breath, and he fades out of the light with no shadow to leave behind. 700 XP, paid once.
+async function thessalyLayToRest(t, h){
+  const S = thessalyState(), cid = characterIdOf(h.id);
+  const g = ((GEAR[h.id] || {}).carried || []).find(c => slugOfItem(c) === THESSALY_AMULET);
+  if (APP && cid && g){
+    const r = await fetch("/api/walk-items", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()},
+      body: JSON.stringify({action: "consume", characterId: cid, itemName: g.name, verb: "give", toNpc: "Old Thessaly"})}).catch(() => null);
+    if (!r || !r.ok){ toast("The amulet did not leave the inventory. Try again."); return; }
+    const gc = GEAR[h.id].carried, i = gc.indexOf(g); if (i >= 0) gc.splice(i, 1);
+  } else if (g){ const gc = GEAR[h.id].carried, i = gc.indexOf(g); if (i >= 0) gc.splice(i, 1); }
+  S.fate = "at-rest"; saveWalk();
+  t.path = []; t.talk = false; faceTo(t, h);
+  bark(t, "There she is. Take the boat. I've no more use for waiting.", 6000, {talk: true});
+  log(`<b>${esc(fname(h))}</b> puts the ruby amulet in the old fisherman's hand. He closes his fingers round it, and for a moment the face under his is plain to see: grey, drowned, at peace.`);
+  if (SPR[THESSALY] && SPR[THESSALY].img.reveal) setTimeout(() => setAnim(t, "reveal"), 2600);
+  setTimeout(() => {
+    bank("magic/necrotic_release", .5); beatBanner("Old Thessaly is at rest");
+    const t0 = now, tick = () => { t.alpha = Math.max(0, 1 - (now - t0) / 2200); if (t.alpha > 0) requestAnimationFrame(tick); else { t.offStage = true; actors = actors.filter(a => a !== t); } }; tick();
+    log("He is gone. The keelboat is yours to take.");
+    payXp(`thessaly-rest:${OW.run || runSeen || "local"}`, [{id: THESSALY, c: {sheet: {xp: 700}}}]);
+  }, 4200);
+}
+// THE AMULET IN THE CRYSTAL CAVERNS (Sam: "found in the crystal cave plate after successful perception check or after you
+// go there looking for it (advantage)"). Every time the party comes onto the crystal plate, until it is found: the best
+// passive Perception in the party against 15, +5 once the errand is taken (SRD: advantage on a passive check is +5).
+// A miss says nothing. Found, it is a loot spot (story.json crystal, `hidden`), opened like any other.
+async function thessalyAmuletOnEnter(){
+  const S = state.thessaly || {}, D = dirState(); D.found = D.found || {};
+  if (D.found[THESSALY_AMULET_SPOT] || ["at-rest", "destroyed"].includes(S.fate) || thessalyAmuletCarrier()) return;
+  await wait(1400); if (cur !== "crystal" || cbt) return;
+  const sought = S.fate === "errand", best = dirHeroes().sort((a, b) => dirPassive(b) - dirPassive(a))[0]; if (!best) return;
+  const pp = dirPassive(best) + (sought ? 5 : 0);
+  if (pp < 15) return;
+  D.found[THESSALY_AMULET_SPOT] = true; saveWalk();
+  log(`<i>${esc(fname(best))} notices a red glint among the white crystals${sought ? ", the only red in the cave, as the old man said" : ""} (passive Perception ${pp}).</i>`);
+  bark(best, sought ? "There. Red. That's hers." : "Something red, down in the crystals.", 3600);
 }
 function thessalyFight(t){
   const S = thessalyState(); S.fate = "fighting"; saveWalk();
@@ -8452,7 +8519,12 @@ const FOE_BLOCKS = {
   "ghost-male": {name: "Bhut", ctype: "undead", holyVulnerable: true, xp: 700, passive: 10, hp: 45, ac: 13, speed: 30, init: 2, saves: {str: 1, dex: 2, con: 2, int: 1, wis: 0, cha: 2},
                  resistNonmagical: ["bludgeoning", "piercing", "slashing"], immune: ["poison"], immuneCond: ["poisoned", "charmed"], multi: 2, rotate: true,
                  attacks: [{name: "Numbing Bite", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5, extra: {dmg: "1d6", type: "cold"}, numb: {save: "con", dc: 12}, curse: true},
-                           {name: "Claws", hit: 4, dmg: "1d6+2", type: "slashing", reach: 5, curse: true}]},
+                           {name: "Claws", hit: 4, dmg: "1d6+2", type: "slashing", reach: 5, curse: true}],
+                 // TOUGH SPELLS (Sam, 2026-11-23: "45 sounds good but with tough spells"). [HOUSE] innate spellcasting on its
+                 // Charisma (15: +2, PB +2): save DC 12, +4 to hit, the stat block's own numbers. Cantrips at will: Chill Touch
+                 // (and the target cannot heal), Toll the Dead. Once a day each: Hold Person, Fear, Vampiric Touch; Inflict Wounds
+                 // twice. Necromancy and dread for a drowned thing; all resolve on this page. XP stays 700 for now (module doc).
+                 magic: {dc: 12, hit: 4, mod: 2, slots: {}, cantrips: ["Chill Touch", "Toll the Dead"], prepared: [], innate: {"Hold Person": 1, "Fear": 1, "Vampiric Touch": 1, "Inflict Wounds": 2}}},
   // THE OUTPOST'S OFFICERS, so the plates can hold who the book puts in them (Sam's playtest, 2026-10-24). Blocks from
   // `bestiary` rows `drow-elite-warrior` and `drow-priestess-of-lolth` (source: Out of the Abyss, owned) and SRD 5.1 Priest.
   // Saves are ability modifiers (no save proficiencies on the rows). What the page cannot do is flagged, not faked:
@@ -12473,6 +12545,7 @@ async function ruinsDoor(){
   mode = "explore";
 }
 async function directorOnEnter(plate){
+  if (plate === "crystal") thessalyAmuletOnEnter();   // OLD THESSALY: his lost love's amulet is hidden here
   if (isRuinPlate(plate)) return ruinOnEnter(plate);
   if (!directorPlate((SPEC[plate] || {}).slug) || cbt || mode !== "explore" || FIGHT.mirror) return;
   // A plate that already holds a waiting foe (the Sinkhole's grick, the Flooded Stair's ooze, the Clacking's hook horror)

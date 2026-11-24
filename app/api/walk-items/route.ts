@@ -173,6 +173,7 @@ export async function POST(req: NextRequest) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     const verb = String(body?.verb ?? "use")
     let text = `${who.name} ${verb === "drink" ? "drinks" : verb === "eat" ? "eats" : verb === "throw" ? "throws" : verb === "break" ? "breaks" : "uses"} ${row.name}.`
+    if (verb === "give" && typeof body?.toNpc === "string" && body.toNpc.trim()) text = `${who.name} gives ${row.name} to ${String(body.toNpc).trim().slice(0, 60)}.`   // into an NPC's hands (Old Thessaly's amulet)
     if (verb === "give" && body?.targetCharacterId) {
       const { data: to } = await db.from("characters").select("name").eq("id", String(body.targetCharacterId)).maybeSingle()
       text = `${who.name} gives ${row.name} to ${to?.name ?? "an ally"}.`
