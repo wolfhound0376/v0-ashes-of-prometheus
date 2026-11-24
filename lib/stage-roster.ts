@@ -32,6 +32,14 @@ export type StageEntry = {
   /** Inside the party's own space (the pen) — the map's threshold. Set by [NPC_MOVE:] wording. */
   inside?: boolean
   /**
+   * The walk plate the party stood on when Malachar brought this one in or moved it (walk_world.plate), so the
+   * painted map walks it in on that plate only (Sam, 2026-11-23, of a chuul that walked in behind the party in a
+   * room it was never called to: "why is there one of these guys behind"). A creature stays in its room when the
+   * party walks on; Malachar bringing it in again ([NPC_ENCOUNTER:] / [NPC_MOVE:]) moves it to the party's room.
+   * null: written before 2026-11-23, or the plate could not be read — the map shows it wherever the party is.
+   */
+  plate?: string | null
+  /**
    * This NPC wants a word — set by [NPC_WANTS_WORD: name | character] (Sam, 2026-10-14: Jorlan "should
    * be able to approach and maybe prompt a player"). `who` is the character they want, or null for
    * anyone. The map shows the "!" and plays the approach; it clears when the talk happens (the chat
@@ -249,13 +257,29 @@ export function crossedInside(before: Stage, after: Stage): string[] {
   return Object.keys(after.present).filter((slug) => after.present[slug].inside && !before.present[slug]?.inside)
 }
 
+/**
+ * The walk plate the party stands on in the live run (walk_world.plate), for stamping who Malachar brings in.
+ * Best-effort: null when there is no live run, no world row yet, or the read fails.
+ */
+export async function partyWalkPlate(db: SupabaseClient): Promise<string | null> {
+  try {
+    const { data: run } = await db.from("campaign_runs").select("id").eq("campaign_id", "abyss").neq("status", "ended")
+      .order("run_number", { ascending: false }).limit(1).maybeSingle()
+    if (!run?.id) return null
+    const { data: w } = await db.from("walk_world").select("plate").eq("campaign_run_id", run.id).maybeSingle()
+    const plate = w?.plate
+    return plate == null || plate === "" ? null : String(plate)
+  } catch { return null }
+}
+
 /** Apply a turn's events in order, in one read and one write. Best-effort: never throws. */
 export async function applyStageEvents(db: SupabaseClient | null, events: StageEvent[]): Promise<{ crossed: string[] }> {
   if (!db || !events.length) return { crossed: [] }
   try {
     const stage = await readStage(db)
     const before: Stage = JSON.parse(JSON.stringify(stage))
-    applyEventsTo(stage, events, new Date().toISOString())
+    const plate = events.some((e) => e.kind === "arrive" || e.kind === "place") ? await partyWalkPlate(db) : null
+    applyEventsTo(stage, events, new Date().toISOString(), Math.random, plate)
     if (pledgeDaggerDue(stage) && await leaveDagger(db)) stage.jorlanPledge!.daggerPlaced = true
     await writeStage(db, stage)
     return { crossed: crossedInside(before, stage) }
@@ -276,8 +300,11 @@ export function keepPledge(stage: Stage, now: string): boolean {
   return true
 }
 
-/** The pure half of applyStageEvents: the turn's events applied to a stage in memory, in order. */
-export function applyEventsTo(stage: Stage, events: StageEvent[], now: string, rand: () => number = Math.random): Stage {
+/**
+ * The pure half of applyStageEvents: the turn's events applied to a stage in memory, in order. `plate` is the walk
+ * plate the party is on now (partyWalkPlate): whoever arrives or is moved this turn is stamped with it.
+ */
+export function applyEventsTo(stage: Stage, events: StageEvent[], now: string, rand: () => number = Math.random, plate: string | null = null): Stage {
   for (const e of events) {
     if (e.kind === "move") {
       // A new area: the story places its own cast there, and Malachar's tags fill in the rest. The watch is the
@@ -319,6 +346,7 @@ export function applyEventsTo(stage: Stage, events: StageEvent[], now: string, r
       // used to be dropped on the floor and Jorlan could never be walked to the bars. Now it opens one.
       const entry = stage.present[slug] ?? stage.gone[slug] ?? { name: e.name, slug, aliases: [], hp: null, hpMax: null, since: now }
       entry.where = e.where; entry.inside = isInsideWording(e.where); delete entry.dead
+      if (plate) entry.plate = plate                               // moved by Malachar: it is where the party is now
       delete stage.gone[slug]; stage.present[slug] = entry
       continue
     }
@@ -342,11 +370,12 @@ export function applyEventsTo(stage: Stage, events: StageEvent[], now: string, r
         hp: e.hp ?? prev?.hp ?? null, hpMax: e.hpMax ?? prev?.hpMax ?? null,
         since: prev && stage.present[slug] ? prev.since : now,
         where: prev?.where ?? null, inside: prev?.inside ?? false,
+        plate: plate ?? prev?.plate ?? null,                       // brought in where the party stands
       }
     } else {
       const prev = stage.present[slug] ?? stage.gone[slug]
       delete stage.present[slug]
-      stage.gone[slug] = { name: e.name, slug, aliases: prev?.aliases ?? [], hp: e.dead ? 0 : prev?.hp ?? null, hpMax: prev?.hpMax ?? null, since: now, dead: e.dead, cause: e.dead ? (e.cause ?? prev?.cause ?? null) : null, wantsWord: null }
+      stage.gone[slug] = { name: e.name, slug, aliases: prev?.aliases ?? [], hp: e.dead ? 0 : prev?.hp ?? null, hpMax: prev?.hpMax ?? null, since: now, dead: e.dead, cause: e.dead ? (e.cause ?? prev?.cause ?? null) : null, wantsWord: null, plate: prev?.plate ?? null }
     }
   }
   return stage

@@ -18136,8 +18136,12 @@ function arrivalFor(slug, inside){
   let arr = (node.arrivals || {})[slug] || (node.arrivals || {}).default;
   if (arr && inside && arr.inside) arr = arr.inside;                 // the way INTO the party's space (under the bars, through the gate)
   if (arr) return {from: {x: arr.from[0], y: arr.from[1]}, to: {x: arr.to[0], y: arr.to[1]}, anim: arr.anim || "walk", big: arr.big || 1, backdrop: !!arr.backdrop, fixedScale: arr.fixedScale || 0, via: arr.via || ""};
-  // no arrival written for this plate: in through the exit the party last used, toward the room's middle
-  const z = node.zones[0] ? zoneCenter(node.zones[0]) : {x: centroid.x, y: centroid.y - 200};
+  // no arrival written for this plate: in through the exit FARTHEST from the party, toward the room's middle. It used
+  // to be the plate's first exit, which on most plates is the way the party just came in, so whatever Malachar called
+  // up walked in at their backs (Sam, 2026-11-23: "why is there one of these guys behind"). Out of the room, not behind.
+  const zs = node.zones.filter(q => q && q.rect), by = leader || centroid;
+  const far = zs.length ? zs.reduce((b, q) => { const c = zoneCenter(q), d = zoneCenter(b); return Math.hypot(c.x - by.x, c.y - by.y) > Math.hypot(d.x - by.x, d.y - by.y) ? q : b; }) : null;
+  const z = far ? zoneCenter(far) : {x: centroid.x, y: centroid.y - 200};
   return {from: z, to: nearestWalkable(centroid.x, centroid.y), anim: "walk", big: 1};
 }
 function creatureArrives(c){
@@ -18245,12 +18249,24 @@ async function pollStage(){
     else for (const id of seatedSlugs(j.seated)) lateHeroJoins(id);   // THE LATE HERO: mid-fight they join the fight (below)
     const present = Array.isArray(j.present) ? j.present : [], gone = Array.isArray(j.gone) ? j.gone : [];
     // creatures: anyone present who is not part of the story's cast
+    // IN THEIR OWN ROOM (Sam, 2026-11-23, of a chuul that walked in behind the party: "why is there one of these guys
+    // behind"): the roster stamps each creature with the plate the party stood on when Malachar brought it in
+    // (lib/stage-roster.ts `plate`). It walks in on that plate only, and stays there when the party walks on; one
+    // written before the stamp (no plate) still shows wherever the party is.
+    const inRoom = c => c.plate == null || String(c.plate) === String(cur);
     for (const c of present){
-      if ([...CAST].some(id => stageMatch(c, id))) continue;
+      if ([...CAST].some(id => stageMatch(c, id)) || !inRoom(c)) continue;
       if (!creatures.has(c.slug) && await loadSpriteManifest(c.slug)) creatureArrives(c);
       const f = creatures.get(c.slug); if (f){ f.hp = c.hp; f.hpMax = c.hpMax; if (c.inside && !f.inside) creatureCrosses(c.slug); }
     }
-    for (const slug of [...creatures.keys()]) if (!present.some(c => c.slug === slug && ![...CAST].some(id => stageMatch(c, id)))){ const g = gone.find(c => c.slug === slug); creatureLeaves(slug, !!(g && g.dead), g && g.cause); }
+    for (const slug of [...creatures.keys()]){
+      const p = present.find(c => c.slug === slug && ![...CAST].some(id => stageMatch(c, id)));
+      if (p && inRoom(p)) continue;
+      // still in play, in another room: one standing on this plate (Malachar moved it on) walks off; one the party
+      // left behind is simply not here — no "slides away" on a plate it never stood on
+      if (p){ const f = creatures.get(slug); if (f && npcs.includes(f)) creatureLeaves(slug, false); else creatures.delete(slug); continue; }
+      const g = gone.find(c => c.slug === slug); creatureLeaves(slug, !!(g && g.dead), g && g.cause);
+    }
     // the cast: off the plate when the game says they have gone, back when it says they are here;
     // where Malachar put them ([NPC_MOVE:]) and whether they want a word ([NPC_WANTS_WORD:])
     storyWatch = j.watch || null;
