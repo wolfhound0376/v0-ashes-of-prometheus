@@ -28,6 +28,7 @@
 // table does not name, are ignored. One panel at a time.
 // ============================================================================
 
+import { withWornGear, wornSkillSources, type WornItem } from "@/lib/worn-bonus"
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react"
 import { describeRoll, useDice } from "@/components/dice/dice-provider"
 import { createClient } from "@/lib/supabase/client"
@@ -156,9 +157,24 @@ export function WalkRollBridge({ frameRef }: { frameRef: RefObject<HTMLIFrameEle
           const { data, error } = got
           if (error) console.error("[walk-roll] could not read the sheet:", error)
           row = (data as Record<string, unknown> | null) ?? null
+          // What they are wearing counts (lib/worn-bonus.ts: a cloak that gives +1 Dexterity or +1 Stealth). Best
+          // effort and held to the same clock: gear that does not load is a roll without its bonus, never a stuck roll.
+          if (row) {
+            const worn = supabase.from("equipment_items").select("name, slot, equipped, stats_bonus").eq("character_id", characterId)
+            const late = new Promise<"timeout">((r) => window.setTimeout(() => r("timeout"), SHEET_READ_MS))
+            const gear = await Promise.race([worn, late]).catch(() => "timeout" as const)
+            if (gear !== "timeout" && !gear.error) row = withWornGear(row, (gear.data ?? []) as WornItem[])
+          }
         }
         // No sheet means no modifier to apply — never a guessed one. The roll still happens.
         const mod = row ? walkCheckModifier(row, action.check) : { modifier: 0, parts: [] as WalkModifierPart[] }
+        // a worn piece that helps this very skill is its own chip on the roll panel, named for the piece
+        if (row && action.check.kind === "skill") {
+          for (const piece of wornSkillSources(row, action.check.skill)) {
+            mod.parts.push({ label: piece.from, value: piece.value })
+            mod.modifier += piece.value
+          }
+        }
         const who = (row && typeof row.name === "string" && row.name) || "Someone"
 
         const inspired = Boolean(row && row.sheet_heroic_inspiration === true)

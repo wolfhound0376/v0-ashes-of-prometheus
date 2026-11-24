@@ -4,6 +4,7 @@ import { applyStageEvents, jorlanOnDuty, readStage, watchWriteEvents } from "@/l
 import { normalizeCode, safeEquals } from "@/lib/access-code"
 import { readSeated } from "@/lib/seats"
 import { WALK_SHEET_COLUMNS, walkSheetFromRow, type WalkSheet } from "@/lib/walk-sheet"
+import { dressRows } from "@/lib/worn-gear-rows"
 import { loadNpcLanguages } from "@/lib/npc-languages"
 import { tickWorldTime } from "@/lib/world-time-tick"
 
@@ -112,7 +113,8 @@ export async function GET(req: NextRequest) {
     if (ids.length) {
       // (conditions is in WALK_SHEET_COLUMNS since 2026-11-23: the sheet carries Malachar's conditions to the map)
       const { data } = await admin.from("characters").select(WALK_SHEET_COLUMNS + ", languages").in("id", ids)
-      for (const r of (data ?? []) as unknown as Record<string, unknown>[]) {
+      // dressed: what each hero is wearing counts (lib/worn-bonus.ts, a cloak that gives +1 Dexterity or Stealth)
+      for (const r of await dressRows(admin, (data ?? []) as unknown as Record<string, unknown>[])) {
         const id = String(r.id)
         tongues.set(id, { languages: r.languages ?? null, conditions: r.conditions ?? null })
         if (typeof r.level === "number") levels.set(id, r.level)

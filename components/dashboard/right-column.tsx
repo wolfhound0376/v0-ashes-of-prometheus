@@ -23,6 +23,7 @@ import { AcBreakdownModal, AbilityDetailModal, type AbilityKey } from "./panels/
 import { CharacterSheetSlideOver } from "./character-sheet-slideover"
 import { XPTracker } from "./xp-tracker"
 import { calculateAC } from "@/lib/armor-class"
+import { withWornGear } from "@/lib/worn-bonus"
 import { slotAccepts } from "@/lib/equipped"
 
 import type { Character as DBCharacter, InventoryItem as DBInventoryItem, EquipmentItem as DBEquipmentItem } from "@/lib/types/database"
@@ -153,7 +154,7 @@ export function RightColumn({
   disableCharacterSelect = false,
   dmMode = false,
   onArchiveCharacter,
-  selectedCharacter,
+  selectedCharacter: storedCharacter,
   characterInventory,
   characterEquipment,
   loading,
@@ -162,6 +163,8 @@ export function RightColumn({
   onAddXP,
   onLevelUp
 }: RightColumnProps) {
+  // the hero with their gear on (lib/worn-bonus.ts); display only, never written back
+  const selectedCharacter = withWornGear(storedCharacter, characterEquipment)
   const [showCharacterDropdown, setShowCharacterDropdown] = useState(false)
 
   // Remove-character confirmation. Player characters must be confirmed by
@@ -211,6 +214,7 @@ export function RightColumn({
   // hand-entered characters.ac column (which reads 10 for everyone). With only
   // prison Rags equipped this correctly resolves to 10 + Dex.
   const acResult = calculateAC(selectedCharacter, characterEquipment)
+  const wornSkills = ((selectedCharacter as { worn_skill_bonus?: Record<string, number> } | null | undefined)?.worn_skill_bonus ?? {})
 
   // Transform character data
   const character = selectedCharacter ? {
@@ -436,7 +440,7 @@ age: (selectedCharacter as any).age,
       const ability = SKILL_ABILITY[key]
       if (!ability) return null
       const expertise = skillExpKeys.includes(key)
-      const bonus = character.abilities[ability].modifier + character.proficiencyBonus * (expertise ? 2 : 1)
+      const bonus = character.abilities[ability].modifier + character.proficiencyBonus * (expertise ? 2 : 1) + (wornSkills[key] ?? 0)
       return { key, label: titleSkill(key), bonus }
     })
     .filter((s): s is { key: string; label: string; bonus: number } => s !== null)

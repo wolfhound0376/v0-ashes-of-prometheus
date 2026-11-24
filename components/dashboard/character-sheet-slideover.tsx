@@ -111,6 +111,8 @@ interface SheetCharacter {
   savingThrowProficiencies: AbilityKey[]
   skillProficiencies: string[]
   skillExpertises: string[]
+  /** flat skill bonuses from worn gear, keyed like the lists above (lib/worn-bonus.ts) */
+  wornSkillBonus?: Record<string, number>
   /** Skills with progress on the earned-proficiency ledger and not yet awarded
    *  (docs/claude_Earned_Proficiency.md §6). The learning mark: a presence, never a count. */
   learningSkills?: string[]
@@ -425,7 +427,7 @@ export function CharacterSheetSlideOver({
     const key = toSkillKey(name)
     const expert = character.skillExpertises.includes(key)
     const prof = character.skillProficiencies.includes(key)
-    return character.abilities[ab].modifier + (expert ? pb * 2 : prof ? pb : 0)
+    return character.abilities[ab].modifier + (expert ? pb * 2 : prof ? pb : 0) + (character.wornSkillBonus?.[key] ?? 0)
   }
   const skillState = (name: string): "" | "p" | "e" | "l" => {
     const key = toSkillKey(name)
