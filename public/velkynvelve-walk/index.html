@@ -29094,18 +29094,56 @@ function graveRaise(a, force){
   const g = Array.isArray(state.graves) ? state.graves : [];
   if (g.some(v => v && v.slug === a.id)) return;                    // one stone per hero, however they got there
   state.graves = g.concat([{slug: a.id, plate: cur, x: Math.round(a.x + (a.kx || 0)), y: Math.round(a.y),
-                            h: Math.round(labH(a) * .58), t0: Date.now()}]);   // a new array: owStateTick diffs by value
+                            h: Math.round(labH(a) * .58), t0: Date.now(), stone: tombFor(a)}]);   // a new array: owStateTick diffs by value
   // .58 of the hero's own height on this plate puts the stone's head at about waist-to-chest on the figure standing
   // next to it, which is what a headstone looks like. Stored rather than recomputed, because the hero it was measured
   // from is about to stop existing.
   saveWalk();
 }
+// THE PAINTED STONES (Sam's "Death Saves, Tombstones & Conditions" pack, 2026-11-23; Sam, 2026-11-24: "do the
+// tombstones too"). They replace the pixel RIP sprite as the stone that goes up. Which stone is Claude's pick, one line
+// each in TOMB_BY, for Sam to change: heroes the rounded slate, Buppido the skeletal memorial (the killer under his
+// own stone), anyone else buried after a fight the broken arch. The pack's fourth, the drow webstone, has no one to
+// mark — the drow keep their carcasses — so it is not shipped.
+//   - 256 px copies of the pack's 512 px files (a stone is drawn at most ~100 px tall). `top` is the first opaque row,
+//     `foot` the pack's floor anchor (asset_manifest.json, halved): the painted stone is sized by the stone itself,
+//     foot to top, to the same height the old sprite was (g.h, waist-to-chest on the hero beside it).
+//   - IT STILL RISES: for the first 0.9 s (the old sprite's six frames) the stone climbs out of the floor, cut off at the
+//     ground line, with a shudder as it seats. A soft contact shadow keeps it standing on the plate, not floating.
+//   - The record says which stone (`stone`); a grave saved before this has none and is worked out from who it was.
+//     If the painting has not loaded yet the old sprite is drawn, so a stone never goes missing.
+const TOMB_BY = {hero: "rounded-slate", buppido: "skeletal-memorial", other: "broken-arch"};
+const TOMB_ART = {"rounded-slate": {top: 16, foot: 237}, "skeletal-memorial": {top: 16, foot: 238}, "broken-arch": {top: 16, foot: 237}};
+const TOMB_DIR = APP ? "/velkynvelve-walk/tombstones/" : "tombstones/", TOMB_IMG = {};
+const TOMB_RISE_MS = GRAVE_FRAMES * GRAVE_MS;
+function tombFor(a){ return a && a.id === "buppido" ? TOMB_BY.buppido : a && a.kind === "pc" ? TOMB_BY.hero : TOMB_BY.other; }
+function tombOf(v){
+  if (v.stone && TOMB_ART[v.stone]) return v.stone;
+  const who = [...party, ...actors].find(x => x && x.id === v.slug);
+  return who ? tombFor(who) : v.slug === "buppido" ? TOMB_BY.buppido : TOMB_BY.hero;
+}
+function tombImg(n){ let i = TOMB_IMG[n]; if (!i){ i = TOMB_IMG[n] = new Image(); i.src = `${TOMB_DIR}${n}.png`; } return i.complete && i.naturalWidth ? i : null; }
+function drawTomb(v, im, art){
+  const age = Date.now() - (v.t0 || 0), p = Math.max(0, Math.min(1, age / TOMB_RISE_MS)), rise = 1 - Math.pow(1 - p, 3);
+  const k = (v.h || 60) / (art.foot - art.top), w = im.naturalWidth * k, H = im.naturalHeight * k;
+  const sink = (1 - rise) * (art.foot - art.top) * k, jit = p > .6 && p < 1 ? Math.sin(age / 18) * 1.4 * (1 - p) / .4 : 0;
+  ctx.save();
+  ctx.globalAlpha = .38 * rise; ctx.fillStyle = "#000"; ctx.beginPath(); ctx.ellipse(v.x, v.y - 1, w * .34, Math.max(3, w * .07), 0, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 1;
+  if (p < 1){ ctx.beginPath(); ctx.rect(v.x - w, v.y - H * 2, w * 2, H * 2 + 3); ctx.clip(); }   // still climbing out: nothing below the floor shows
+  ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
+  ctx.drawImage(im, v.x - w / 2 + jit, v.y - art.foot * k + sink, w, H);
+  ctx.restore();
+}
 function drawGraves(){
   const g = Array.isArray(state.graves) ? state.graves : []; if (!g.length) return;
-  const im = labImg("grave"); if (!im.complete || !im.naturalWidth) return;
-  const fw = im.naturalWidth / GRAVE_FRAMES, fh = im.naturalHeight;
+  const im = labImg("grave");
   for (const v of g){
     if (!v || v.plate !== cur) continue;
+    const n = tombOf(v), t = tombImg(n);
+    if (t){ drawTomb(v, t, TOMB_ART[n]); continue; }
+    if (!im.complete || !im.naturalWidth) continue;   // neither has loaded yet
+    const fw = im.naturalWidth / GRAVE_FRAMES, fh = im.naturalHeight;
     const age = Date.now() - (v.t0 || 0);
     const fi = Math.max(0, Math.min(GRAVE_FRAMES - 1, Math.floor(age / GRAVE_MS)));
     const h = v.h || 60, w = h * fw / fh;
