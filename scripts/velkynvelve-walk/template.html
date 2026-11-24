@@ -1894,6 +1894,8 @@ let actors = [], party = [], npcs = [], foes = [];
 let leader = null, trail = [];
 let mode = "load";            // explore | combat | talk | dialog | travel
 let ackZone = null;
+const forkAsked = new Set();   // the forks already asked about on this plate ("OK, WHICH ONE?", tickFork)
+let forkCameBy = null;        // the way the party came onto this plate: never one of the "which one?" choices
 const state = {gateOpen: false, cleared: {}, talked: {}, declined: {}, voiced: {}, props: {}, rolls: {}, escape: null,   // escape: the pen escape's ONE phase (see THE ESCAPE PHASE)
   // THE BREAKOUT HAS BEEN FOUGHT (Sam, 2026-11-12): {at, why} once the party has fought the drow with the pen gate open.
   // From then on nobody in the pen is "behind bars": the gate watch's warning, volleys and Drow Surgeon are off, and a
@@ -3998,7 +4000,7 @@ async function enterNode(n, opts = {}){
   actors = [...party, ...npcs];
   for (const k in heroTrails) delete heroTrails[k];
   trail = followOrder().reverse().map(f => ({x: f.x, y: f.y})).concat([{x: L.x, y: L.y}]);
-  ackZone = arrival; hoverZone = null;
+  ackZone = arrival; hoverZone = null; forkAsked.clear(); forkCameBy = arrival;
   sliding = false; view = {z: 1, tx: 0, ty: 0}; camTween = null; applyView(); $("plate2").hidden = true;
   if (opts.slide){                     // walk in from the edge they came through (or drop in from above)
     party.forEach((p, i) => {
@@ -4295,12 +4297,15 @@ function whoGoes(z, to){
   if (!followOn || others.some(owRemote)) travel(to, z, false, null, true); else travel(to, z);
 }
 // "OK, WHICH ONE?" (Sam, 2026-11-23: "When there are multiple ways to go, make sure someone asks 'Ok, which one?'").
-// At a fork someone in the party says it out loud, in a bubble and their own saved voice, before the choice opens: a
-// companion if one walks with you, else another hero; nobody when the leader is alone (the card still asks).
+// ... "it is just a bubble and not a dialogue box. We can hear their voice but ultimately where we go will be decided
+// where we go"). When the leader comes within reach of two or more ways out at once (the pen landing: the bridge and
+// the cliff stairs), someone in the party says it, in a bubble and their own saved voice: a companion if one walks with
+// you, else another hero; nobody when the leader is alone. Nothing opens and nothing stops: the party goes whichever
+// way the player then walks. Once per fork per visit to the plate (tickFork; forkAsked is cleared on arrival).
 const FORK_LINE = "Ok, which one?";
 function forkAsker(){
   const near = a => a && a !== leader && !a.down && !a.ko && a.alpha > .2 && SPR[a.id] && Math.hypot(a.x - leader.x, a.y - leader.y) < 700 * node.scale;
-  const pool = party.filter(a => near(a) && a.kind !== "pc"), heroes = party.filter(a => near(a) && a.kind === "pc");
+  const pool = npcs.filter(a => a.company && a.id !== PET_SPIDER && near(a)), heroes = party.filter(a => near(a) && a.kind === "pc");   // companions walk in npcs (spawnCompanion); the pocket spider does not talk
   const from = pool.length ? pool : heroes;
   return from.length ? from[Math.floor(Math.random() * from.length)] : null;
 }
@@ -4309,12 +4314,24 @@ function askWhichOne(){
   bark(a, FORK_LINE, 3600); speak(a.id, FORK_LINE);   // heard every time it is asked, not once (the page-wide silence rule still applies)
   return a;
 }
+function tickFork(){
+  if (mode !== "explore" || cbt || !leader || leader.down || talkBlocked()) return;
+  const R = 480 * node.scale, near = [];
+  node.zones.forEach((z, i) => {
+    if (z.interact || z.rappel || z.secret || z.kind === "gate" || z === ackZone || z === forkCameBy) return;
+    if (!(z.to || []).length && z.kind !== "leave") return;
+    if (z.landing && !onBalcony(leader)) return;                       // the landing's ways out are only ways once you are out there
+    const c = zoneCenter(z); if (Math.hypot(leader.x - c.x, leader.y - c.y) < R) near.push(i);
+  });
+  const ways = new Set(near.map(i => { const z = node.zones[i]; return (z.to || []).length ? z.to.slice().sort().join("+") : "leave:" + i; }));
+  if (ways.size < 2) return;
+  const key = near.join(","); if (forkAsked.has(key)) return;
+  forkAsked.add(key); askWhichOne();
+}
 function chooseDestination(z){
-  const ways = z.to.filter(t => !unseenWayOnly() || t === QUAGGOTH_DEN);
-  if (ways.length === 1){ whoGoes(z, ways[0]); return; }
-  const who = askWhichOne();
-  showDialog({title: z.label.split(":")[0], body: who ? `${SHORT[who.id] || SPR[who.id].json.name}: “${FORK_LINE}”` : FORK_LINE, buttons: [
-    ...ways.map(t => ({label: (z.routes && z.routes[t]) || `${t} · ${nameOf(t)}`, primary: true, fn: () => whoGoes(z, t)})),
+  if (z.to.length === 1){ whoGoes(z, z.to[0]); return; }
+  showDialog({title: z.label.split(":")[0], body: "Where does the party head?", buttons: [
+    ...z.to.filter(t => !unseenWayOnly() || t === QUAGGOTH_DEN).map(t => ({label: (z.routes && z.routes[t]) || `${t} · ${nameOf(t)}`, primary: true, fn: () => whoGoes(z, t)})),
     {label: "Stay here"}]});
 }
 function exitReached(z){
@@ -25447,7 +25464,7 @@ function update(dt){
   if (cbt && !cbt.mirror && poisonZones.length) tickPoisonZones();
   if (cbt && !cbt.mirror && guardianAuras.length) tickGuardians();
   tickFootsteps();
-  tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt);
+  tickDoor(dt); tickProps(dt); tickWard(dt); tickVermin(dt); tickLift(dt); tickNet(dt); tickFork();
   redSigilSeen();                       // a drow inside the pen reads the red scar: the fight starts once, however they got in
   sigilNoticeTick(); wardOutTick(); fellTick(); thresholdTick(); deadTick(); escortHoldTick();     // a caster notices the sigil (and gets its film); the ones it bit lie where they fell
   pacingTick();                         // the caravan clock, the wait vote, and the pen's three small beats
