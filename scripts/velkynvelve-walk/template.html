@@ -1825,7 +1825,7 @@ function spawnCompanion(id, near, placed, face){
   const def = PEN_NPCS.find(d => d.id === id) || {};
   const p = nearestWalkable(near.x, near.y, placed); if (placed) placed.push(p);
   // no "a word, if you've a moment" on every arrival: that opener belongs to the pen; out here they are talked to like anyone (Talk)
-  const a = mkActor(id, p.x, p.y, "npc", {face: face || 0, talk: false, barks: def.barks || [], home: {x: p.x, y: p.y}, company: true, ...(id === PET_SPIDER ? {big: PET_BIG, owner: state.petOwner} : {})});
+  const a = mkActor(id, p.x, p.y, "npc", {face: face || 0, talk: false, barks: def.barks || [], home: {x: p.x, y: p.y}, company: true, ...(id === PET_SPIDER ? {big: petBig(), owner: state.petOwner} : {})});
   a.t0 = now - Math.random() * 1000; a.actUntil = now + 2000 + Math.random() * 7000;
   return a;
 }
@@ -9059,6 +9059,7 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   stripShow(1400 + introMs + 3200);   // the opening: the order in place, the entrance, the first turn call; then it fades
   oneFightOpened();                   // ONE FIGHT: ask to run it for the whole table (or show the one already running)
   huntClockStart();                   // THE HUNT: a fight at the pool while the escape is hunted (lib/water.mjs)
+  setTimeout(petCalmReflex, 300 + introMs);   // CREATURE COMPANIONS: the cave spider calms other spiders, on its own, before the first turn
 }
 // THE HUNT REACHES THE POOL (Sam's go, 2026-11-23: the drow hunt reaches the waterfall in 4 rounds; lib/water.mjs). A
 // fight on a plate whose hazard carries `hunt`, started while the escape is HUNTED, puts the hunt on the help queue the
@@ -9275,10 +9276,40 @@ ALLY_SHEETS[PET_SPIDER] = {name: "Spider", style: "melee", cls: "Spider (Tiny be
   attacks: [{name: "Bite", hit: 4, dmg: "1", type: "piercing", reach: 5, rider: {save: "con", dc: 9, dmg: "1d4", type: "poison"}}], kit: {},
   web: {name: "Web", hit: 4, range: 15, dc: 10, recharge: 5}};
 // its name everywhere the game names it (the turn strip, the log, the cards): the companion record's, else "Spider"
-Object.defineProperty(SHORT, PET_SPIDER, {enumerable: true, configurable: true, get(){ try { const r = state && state.companions && state.companions[PET_SPIDER]; if (r && typeof r.name === "string" && r.name) return r.name; } catch (e) {} return "Spider"; }});
+Object.defineProperty(SHORT, PET_SPIDER, {enumerable: true, configurable: true, get(){ try { const r = state && state.companions && state.companions[PET_SPIDER]; if (r && typeof r.name === "string" && r.name) return r.name; if (r && SPIDER_VARIANTS[r.variant]) return SPIDER_VARIANTS[r.variant].name; } catch (e) {} return "Spider"; }});
 const isPetSpider = it => /^(small|living) spider$|tarantula/i.test(String(it && it.name || "").trim());
-function petSprite(){ if (!SPR[PET_SPIDER] && SPR["giant-spider"]) SPR[PET_SPIDER] = {...SPR["giant-spider"], json: {...SPR["giant-spider"].json, name: "Spider"}}; return !!SPR[PET_SPIDER]; }
-async function petReady(){ if (!SPR["giant-spider"]) { try { await loadSpriteManifest("giant-spider"); } catch (e) {} } if (CREATURE_SFX["giant-spider"] && !CREATURE_SFX[PET_SPIDER]) CREATURE_SFX[PET_SPIDER] = CREATURE_SFX["giant-spider"]; return petSprite(); }
+// THE THREE SPIDERS (Sam, 2026-11-23: "we keep all three. They are variations based on a D4 roll"; lib/companions.mjs
+// SPIDER_VARIANTS). Each has its own sheet (public/sprites/pet-spider-<variant>/); a spider not rolled yet, or a sheet
+// not loaded, falls back to the giant spider drawn small, as before. The SRD 5.1 Spider block is kept for all three;
+// a variant changes only what lib/companions.mjs says it changes.
+const PET_ART = v => v ? `pet-spider-${v}` : null;
+function petVariant(){ try { return variantOf(normaliseCompanion(PET_SPIDER, (state.companions || {})[PET_SPIDER])); } catch (e) { return null; } }
+function petSheet(v){
+  const base = {name: "Spider", style: "melee", cls: "Spider (Tiny beast)", hp: 1, ac: 12, init: 2, speed: 20, strScore: 2, stealth: 4, skills: {stealth: 4}, passive: 10,
+    saves: {str: -4, dex: 2, con: -1, int: -5, wis: 0, cha: -4}, kit: {}};
+  const bite = {name: "Bite", hit: 4, dmg: "1", type: "piercing", reach: 5, rider: {save: "con", dc: 9, dmg: "1d4", type: "poison"}};
+  const web = {name: "Web", hit: 4, range: 15, dc: 10, recharge: 5};
+  if (v === "redknee") return {...base, cls: "Redknee tarantula (Tiny beast)", attacks: [{...bite, advantage: true, rider: {...bite.rider, noCond: true}}], web};
+  if (v === "cave") return {...base, cls: "Cave spider (Tiny beast)", attacks: [{...bite, rider: {...bite.rider, noCond: true}}]};
+  if (v === "phase") return {...base, cls: "Baby phase spider (Tiny)", attacks: [{...bite, rider: {...bite.rider, rounds: PHASE.poisonRounds}}], phase: PHASE.ft};
+  return {...base, attacks: [bite], web};     // not rolled yet: the 2026-11-15 spider
+}
+function petApplyVariant(){ ALLY_SHEETS[PET_SPIDER] = petSheet(petVariant()); }
+function petSprite(){
+  petApplyVariant();
+  const own = SPR[PET_ART(petVariant())], src = own || SPR["giant-spider"]; if (!src) return !!SPR[PET_SPIDER];
+  if (!SPR[PET_SPIDER] || SPR[PET_SPIDER].src !== src){ SPR[PET_SPIDER] = {...src, json: {...src.json, name: "Spider"}, src}; for (const n of npcs) if (n.id === PET_SPIDER) n.big = petBig(); }
+  return true;
+}
+/** How big to draw it: its own sheet is sized by its ppu; the giant spider's has to be shrunk to tarantula size. */
+const petBig = () => SPR[PET_ART(petVariant())] ? 1 : PET_BIG;
+async function petReady(){
+  const art = PET_ART(petVariant());
+  if (art && !SPR[art]){ try { await loadSpriteManifest(art); } catch (e) {} }
+  if (!SPR["giant-spider"] && !(art && SPR[art])){ try { await loadSpriteManifest("giant-spider"); } catch (e) {} }
+  if (CREATURE_SFX["giant-spider"] && !CREATURE_SFX[PET_SPIDER]) CREATURE_SFX[PET_SPIDER] = CREATURE_SFX["giant-spider"];
+  return petSprite();
+}
 const petHere = () => npcs.find(n => n.id === PET_SPIDER && !n.down && !n.body && !n.offStage && actors.includes(n));
 function canSpeakAnimals(a){
   const sh = (a && SHEETS[a.id]) || {}, m = sh.magicAll || sh.magic || {}, race = String(((typeof PCS !== "undefined" && PCS[a.id]) || {}).race || sh.race || "");
@@ -9301,6 +9332,19 @@ const PetName = () => { const s = petName(); return s.charAt(0).toUpperCase() + 
 /** What the explore bar must redraw for (its cache key). */
 function petKey(){ const r = petRec(); if (!r) return ""; const sp = petHere(); return [r.bond, r.perched ? "p" : "l", r.alive ? 1 : 0, r.name || "", r.fedDay ?? "", feedDay(storyRotations), sp ? Math.round(feetBetween(leader, sp) / 10) : "", vermin.length, petBusy ? "b" : ""].join(":"); }
 
+/** Which spider it is: a d4, rolled once by its owner (Sam, 2026-11-23). A 4 is a lucky find: the owner picks. */
+let petRolling = false;
+async function petRollVariant(owner){
+  if (petRolling || petVariant()) return; petRolling = true;
+  try {
+    const r = roll("1d4").total; let v = spiderFromD4(r);
+    log(`${esc(fname(owner))} gets a good look at the spider: d4 <b>${r}</b>.`);
+    if (!v) v = await new Promise(res => showDialog({title: "A lucky find", body: `A 4: ${fname(owner)} chooses which spider this is.`, src: "d4 · Sam's rule, 2026-11-23",
+      buttons: Object.entries(SPIDER_VARIANTS).map(([k, x], i) => ({label: `${x.name}: ${x.blurb}`, primary: i === 0, fn: () => res(k)}))}));
+    petSave({variant: v}); petApplyVariant(); petSprite();
+    const x = SPIDER_VARIANTS[v]; log(`It is a <b>${esc(x.title)}</b>: it ${esc(x.blurb)}.`, {say: true});
+  } finally { petRolling = false; }
+}
 /** From the bag, the first time: the item becomes the companion (it is spent), and it is put down beside its owner. */
 async function releaseSpider(a, it){
   const fight = inFightNow(); if (!bagCan(a)) return;
@@ -9309,6 +9353,8 @@ async function releaseSpider(a, it){
   if (!(await petReady())){ toast("The spider's art did not load. Try again in a moment.", 3200); return; }
   spendItem(a, it, "release");
   state.companions = {...companionsAll(), [PET_SPIDER]: {owner: a.id, name: null, bond: 0, fedDay: null, perched: true, alive: true}};
+  if (!fight) await petRollVariant(a); else petSave({variant: spiderFromD4(Math.min(3, roll("1d4").total)) || "redknee"});   // mid-fight there is no time to choose: a 4 counts as the 3
+  await petReady();
   const ok = await petLoose(a, {fromBag: true});
   if (ok && !fight){ log(`It will take orders once it trusts ${esc(fname(a))}: feed it (raw meat, crickets or worms from the pack, or let it catch a rat crossing the floor) and win an Animal Handling check.`); askPetName(a); }
 }
@@ -9319,7 +9365,8 @@ async function petLoose(a, opts = {}){
   if (petHere()) return false;
   if (!(await petReady())){ toast("The spider's art did not load. Try again in a moment.", 3200); return false; }
   const p = nearestWalkable(a.x + 46 * node.scale, a.y + 24 * node.scale, actors.map(q => ({x: q.x, y: q.y})));
-  const sp = mkActor(PET_SPIDER, p.x, p.y, "npc", {face: a.face | 0, talk: false, barks: [], home: {x: p.x, y: p.y}, company: true, big: PET_BIG, owner: a.id});
+  petApplyVariant();
+  const sp = mkActor(PET_SPIDER, p.x, p.y, "npc", {face: a.face | 0, talk: false, barks: [], home: {x: p.x, y: p.y}, company: true, big: petBig(), owner: a.id});
   sp.t0 = now; sp.actUntil = now + 4000; npcs.push(sp); actors.push(sp);
   const comp = companyNow(); if (!comp.includes(PET_SPIDER)) comp.push(PET_SPIDER);
   state.leftBehind = state.leftBehind.filter(id => id !== PET_SPIDER); state.petOwner = a.id;
@@ -9409,6 +9456,7 @@ async function feedPet(L, food){
 function petExploreRows(L, x){
   const r = petRec(); if (!r || !r.alive || cbt) return;
   const own = r.owner === L.id && canControl(L), sp = petHere(), nm = petName();
+  if (own && !r.variant && !petRolling && mode === "explore") setTimeout(() => petRollVariant(L), 0);
   if (own && r.perched) x(`Let ${nm} loose`, "✶", ART("help"), "it climbs down and follows the party", () => petLoose(L));
   else if (own && sp && !petBusy && feetBetween(L, sp) <= 60) x(`Call ${nm} back`, "✶", ART("wait"), "it runs up your arm and rides in a sleeve", () => petPerch(L));
   if (own && !petBusy){ const food = petFood(L), f = canFeed(r, {rotations: storyRotations, hasFood: !!food});
@@ -9435,15 +9483,16 @@ function petTurn(a){
 function petTargets(a){
   const seen = standing(foes).filter(f => !f.c.conds.has("hidden") && !f.c.conds.has("invisible") && (!coverOf(a, f).total || gateWayTo(a, f)))
     .sort((x, y) => feetBetween(a, x) - feetBetween(a, y));
-  const reach = (a.c.move || 0) + 5;
-  return {bite: seen.filter(f => feetBetween(a, f) <= reach), web: a.c.webReady && a.c.sheet.web ? seen.filter(f => feetBetween(a, f) <= a.c.sheet.web.range && !f.c.conds.has("restrained")) : []};
+  const reach = (a.c.move || 0) + 5 + (a.c.sheet.phase && a.c.bonus !== false ? a.c.sheet.phase : 0);   // a baby phase spider blinks the last 30 ft
+  return {bite: seen.filter(f => feetBetween(a, f) <= reach), web: a.c.webReady && a.c.sheet.web ? seen.filter(f => feetBetween(a, f) <= a.c.sheet.web.range && !f.c.conds.has("restrained")) : [],
+    spiders: standing(foes).filter(f => isSpiderFoe(f.id) && !f.calmTried && feetBetween(a, f) <= CALM.rangeFt)};
 }
-const PET_ICON = {bite: "bar/attack", web: "bar/throw", help: "bar/help", hide: "bar/hide", dodge: "bar/dodge", perch: "bar/wait"};
+const PET_ICON = {bite: "bar/attack", web: "bar/throw", help: "bar/help", hide: "bar/hide", dodge: "bar/dodge", perch: "bar/wait", calm: "bar/talk"};
 function openPetMenu(a, r, owner){
   const m = $("cbtMenu"); m.hidden = false; m.innerHTML = ""; m.dataset.kind = "combat"; exploreKey = ""; cbt.phase = "menu"; cbt.pend = null;
   const t = petTargets(a), mod = heroMod(owner, "animalHandling", "wis");
   const rows = commandMenu(r, {biteFoes: t.bite.map(fname), webFoes: t.web.map(fname), helpFoes: t.bite.map(fname), webReady: !!a.c.webReady,
-    ownerReach: feetBetween(a, owner) <= (a.c.move || 0) + 5, hidden: a.c.conds.has("hidden")});
+    ownerReach: feetBetween(a, owner) <= (a.c.move || 0) + 5 + (a.c.sheet.phase || 0), hidden: a.c.conds.has("hidden"), spidersNear: t.spiders.length > 0});
   const add = (label, sub, icon, fn) => { const b = document.createElement("button");
     b.innerHTML = `<img class="ico" src="${ICON_BASE}${icon}.png" alt=""><span>${esc(label)}</span>${sub ? `<small>${esc(sub)}</small>` : ""}`;
     b.title = sub ? `${label} · ${sub}` : label; dressButton(b, icon, sub); b.onclick = fn; m.appendChild(b); return b; };
@@ -9451,7 +9500,7 @@ function openPetMenu(a, r, owner){
   const n = {bite: 0, web: 0, help: 0};
   for (const row of rows){
     const foe = row.cmd === "web" ? t.web[n.web++] : row.cmd === "bite" ? t.bite[n.bite++] : row.cmd === "help" ? t.bite[n.help++] : null;
-    const why = {bite: "+4 · 1 piercing, DC 9 Con or 1d4 poison", web: "+4 · 15 ft · restrained (DC 10 Str)", help: "the party's next attack on them has advantage",
+    const why = {bite: `+4${a.c.sheet.attacks[0].advantage ? " with advantage" : ""} · 1 piercing, DC 9 Con or 1d4 poison${a.c.sheet.phase ? " and poisoned · phases in" : ""}`, calm: `each spider within ${CALM.rangeFt} ft: Charisma save or it backs off`, web: "+4 · 15 ft · restrained (DC 10 Str)", help: "the party's next attack on them has advantage",
       hide: "Stealth +4 vs their passive Perception", dodge: "attacks against it have disadvantage", perch: `it rides ${fname(owner)}: nothing can reach it`}[row.cmd];
     add(row.label, row.check ? `${why} · ${fname(owner)}: Animal Handling ${sgn(mod)}, or it does as it likes` : why, PET_ICON[row.cmd], () => petDo(a, row, foe, owner));
   }
@@ -9469,7 +9518,10 @@ function petDo(a, row, foe, owner){
   }
   combatBusy = true; cbt.phase = "busy";
   if (row.cmd === "bite"){ a.c.action = false; pairCam(a, foe);
-    approachThen(a, foe, 5, () => { if (!cbt || foe.down || !inReach(foe)){ log(`${esc(PetName())} cannot get at ${esc(fname(foe))}.`); end(); return; } attackWith(a, foe, a.c.sheet.attacks[0], end); }); return; }
+    const strike = () => approachThen(a, foe, 5, () => { if (!cbt || foe.down || !inReach(foe)){ log(`${esc(PetName())} cannot get at ${esc(fname(foe))}.`); end(); return; } attackWith(a, foe, a.c.sheet.attacks[0], end); });
+    if (a.c.sheet.phase && a.c.bonus !== false && !inReach(foe) && feetBetween(a, foe) > (a.c.move || 0) + 5){ petPhase(a, foe, strike); return; }   // out of its walk: it blinks in
+    strike(); return; }
+  if (row.cmd === "calm"){ a.c.action = false; petCalm(a, a, end); return; }
   if (row.cmd === "web"){ a.c.action = false; shootWeb(a, foe, end); return; }
   if (row.cmd === "help"){ a.c.action = false; pairCam(a, foe);
     approachThen(a, foe, 5, () => {
@@ -9483,8 +9535,48 @@ function petDo(a, row, foe, owner){
     else { popText(a, "spotted", "#c9c4b8"); log(`${esc(PetName())} tries to hide: Stealth ${k.r} + ${k.mod} = ${k.total} vs passive ${best} — spotted.`); }
     renderParty(); end(); return; }
   if (row.cmd === "dodge"){ a.c.action = false; addCond(a, "dodging"); popText(a, "dodge", "#cfe8ff", .8); log(`${esc(PetName())} skitters side to side (Dodge).`); end(); return; }
+  if (row.cmd === "perch" && a.c.sheet.phase && a.c.bonus !== false && feetBetween(a, owner) > (a.c.move || 0) + 5){ petPhase(a, owner, () => petPerchInFight(a, owner)); return; }
   if (row.cmd === "perch"){ approachThen(a, owner, 5, () => { if (!cbt) return; if (!inReach(owner)){ log(`${esc(PetName())} cannot reach ${esc(fname(owner))} this turn.`); end(); return; } petPerchInFight(a, owner); }); return; }
   end();
+}
+/** C's phase (lib/companions.mjs PHASE): a bonus action, it winks out and appears beside the target, up to 30 ft. */
+function petPhase(a, near, then){
+  a.c.bonus = false;
+  const ang = Math.atan2(a.y - near.y, a.x - near.x), r = reachPx(a, near, 5) * .8, to = nearestWalkable(near.x + Math.cos(ang) * r, near.y + Math.sin(ang) * r);
+  const puff = (x, y) => { for (let i = 0; i < 18; i++){ const g = Math.random() * Math.PI * 2, v = 20 + Math.random() * 60; sparks.push({x: x + (Math.random() - .5) * 10, y: y - Math.random() * 10, vx: Math.cos(g) * v, vy: Math.sin(g) * v * .5 - 15, g: -10, col: i % 3 ? "#e8d9ff" : "#9fd8ff", t0: now, life: 400 + Math.random() * 500}); } };
+  bank("magic/arcane_release", .45); puff(a.x, a.y); const a0 = a.alpha ?? 1;
+  setTimeout(() => { a.alpha = 0; }, 120);
+  setTimeout(() => { a.x = to.x; a.y = to.y; a.path = []; a.face = faceOf(near.x - a.x, near.y - a.y); puff(a.x, a.y); a.alpha = a0 || 1; a.flash = now + 180; a.flashCol = "#e8d9ff";
+    log(`${esc(PetName())} phases (bonus action) and is suddenly beside ${esc(fname(near))}.`); }, 420);
+  setTimeout(then, 700);
+}
+/** B's calm (lib/companions.mjs CALM): each hostile spider within 30 ft of `from` makes a Charisma save; the ones that
+ *  fail lose interest and back off into the dark, out of the fight (SRD 5.1 Calm Emotions, "indifferent"). */
+function petCalm(sp, from, done, quick){
+  const list = standing(foes).filter(f => isSpiderFoe(f.id) && !f.calmTried && feetBetween(from, f) <= CALM.rangeFt);
+  if (!list.length){ done && done(); return; }
+  popText(sp && actors.includes(sp) ? sp : from, "chitter…", "#c9b8ff", .9); bank("creature/creature_spider_hiss", .25);
+  log(`${esc(PetName())} chitters softly to the spiders${sp && actors.includes(sp) ? "" : ` from ${esc(fname(from))}'s sleeve`}.`, {say: true});
+  list.forEach((f, i) => setTimeout(() => {
+    if (!cbt || f.down) return;
+    f.calmTried = true;
+    const mod = (f.c.sheet.saves || {}).cha ?? -3, r = d20(0, f), total = r + mod, calmed = calmTakes({total, natural: r});
+    log(`${esc(fname(f))}: Charisma save ${r} ${sgn(mod)} = ${total} vs DC ${CALM.dc} — ${calmed ? "<b>calmed</b>: it backs off into the dark" : "it is not listening"}.`);
+    if (!calmed){ popText(f, "hiss!", "#ff8a7a", .8); return; }
+    popText(f, "calmed", "#c9b8ff", 1); f.left = true; f.path = []; f.fading = true;
+    setTimeout(() => { actors = actors.filter(y => y !== f); foes = foes.filter(y => y !== f); npcs = npcs.filter(y => y !== f); renderTurns(); renderParty(); }, 900);
+  }, quick ? 0 : 350 + i * 450));
+  setTimeout(() => { done && done(); }, quick ? 10 : 500 + list.length * 450);
+}
+/** Reflexively (Sam: "calming emotions reflexively"): when a fight with spiders opens and the cave spider is with the
+ *  party (loose or riding in a sleeve), it calms them on its own, once, before anyone moves. */
+function petCalmReflex(){
+  try {
+    if (!cbt || FIGHT.mirror || petVariant() !== "cave" || !petAlive()) return;
+    const sp = petHere(), owner = petOwnerActor(), from = sp || (owner && actors.includes(owner) && !owner.down ? owner : null);
+    if (!from || !standing(foes).some(f => isSpiderFoe(f.id) && feetBetween(from, f) <= CALM.rangeFt)) return;
+    petCalm(sp, from, () => { if (cbt) checkEnd(); }, true);   // decided at once, before the first turn is called
+  } catch (e) { console.warn("calm", e); }
 }
 /** The first party attack on a foe a companion is distracting uses its Help up (SRD 5.1). */
 function spendDistraction(att, tgt){ if (tgt && tgt.c && tgt.c.distracted && hero(att) && tgt.c.distracted.by !== att) delete tgt.c.distracted; }
@@ -9651,6 +9743,7 @@ function nextTurn(first){
   }
   const a = activeActor(); if (!a) return;
   for (const f of foes) if (f.c && f.c.distracted && f.c.distracted.by === a) delete f.c.distracted;   // a companion's Help lasts until its next turn (SRD 5.1)
+  if (a.c && a.c.poisonEnd && cbt.round >= a.c.poisonEnd){ a.c.conds.delete("poisoned"); delete a.c.poisonEnd; popText(a, "poison wears off", "#9fe0c0", .8); }   // the baby phase spider's poison: 1 minute
   // a dying hero who starts the turn in Cloudkill still makes the save, and the poison, hitting them at 0, is a
   // death-save failure (damage() does that) -- before the turn's own death save
   if (a.down){ renderTurns(); renderParty(); if (a.kind === "pc") poisonTurnStart(a, true); if (deathSaveTurn(a)) return; }
@@ -13016,6 +13109,7 @@ function advantageOn(att, tgt, ranged, atk){
   if (dodges(tgt) || att.c.conds.has("mocked")) adv--;
   if (att.c.conds.has("hidden") || att.c.conds.has("helped")) adv++;          // unseen attacker; an ally's Help
   if (tgt.c.distracted && hero(att) && tgt.c.distracted.by !== att) adv++;    // a companion's Help on THIS foe (SRD 5.1): the first party attack on it
+  if (atk && atk.advantage) adv++;                                            // the redknee's bite (Sam, 2026-11-23: "really good at biting (advantage)")
   if (tgt.c.conds.has("hidden")) adv--;                                       // swinging at where you think it is
   if (tgt.c.conds.has("prone")) adv += ranged ? -1 : 1;                      // SRD: prone — melee advantage, ranged disadvantage
   if (att.c.conds.has("prone")) adv--;
@@ -13334,7 +13428,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         else if (att.id === "orc-eye-of-gruumsh"){   // and the Eye's Gruumsh's Fury: a red flare on the hit
           setTimeout(() => { tgt.flash = now + 220; tgt.flashCol = "#ff3a1a"; popText(tgt, "Gruumsh's Fury", "#ff6a3a"); }, 240); } setTimeout(() => damage(tgt, e.total, atk.extra.type, false, att, true), 260); parts.push(`${e.total} ${atk.extra.type}`); }
       if (atk.rider && !tgt.down){ setTimeout(() => bank(`magic/impact_${atk.rider.type}`, .5), 260); const s0 = d20(rageAdvantage(tgt.c.rage, atk.rider.save), tgt, atk.rider.cond, atk.rider.dc - (tgt.c.sheet.saves[atk.rider.save] || 0)) + (tgt.c.sheet.saves[atk.rider.save] || 0) + blessD4(tgt), s = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.rider.dc) : 0), ok = s >= atk.rider.dc, e = roll(atk.rider.dmg); const n = ok && atk.rider.half ? Math.floor(e.total / 2) : e.total;
-        setTimeout(() => { damage(tgt, n, atk.rider.type, false, att, true); if (!ok && atk.rider.type === "poison") addCond(tgt, "poisoned"); }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
+        setTimeout(() => { damage(tgt, n, atk.rider.type, false, att, true); if (!ok && atk.rider.type === "poison" && !atk.rider.noCond){ addCond(tgt, "poisoned"); if (atk.rider.rounds && cbt) tgt.c.poisonEnd = (cbt.round || 1) + atk.rider.rounds; } }, 320); parts.push(`${atk.rider.save.toUpperCase()} save ${s} vs ${atk.rider.dc}: ${ok ? "saved, " : ""}${n} ${atk.rider.type}`); }
       // A HOLD (the carrion crawler's and the grell's tentacles): save or poisoned and paralyzed, the save again each turn
       if (atk.hold && !tgt.down && !tgt.c.conds.has(atk.hold.cond)){ const hs = d20(0, tgt) + (tgt.c.sheet.saves[atk.hold.save] || 0) + blessD4(tgt), hok = hs >= atk.hold.dc;
         if (!hok && !(tgt.c.sheet.immuneCond || []).includes("poisoned")){ addCond(tgt, "poisoned"); addCond(tgt, atk.hold.cond); tgt.c.holdSave = {...atk.hold, by: fname(att)}; tgt.path = []; popText(tgt, atk.hold.cond, "#b8ff9a"); labHoldHit(tgt, "venom"); }

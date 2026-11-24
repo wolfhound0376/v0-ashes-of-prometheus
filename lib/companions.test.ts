@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest"
 import { readFileSync } from "node:fs"
 import {
   BOND, CONTROL_MODELS, COMPANION_KINDS, bondOf, feedDay, canFeed, feedResult, obeys, orderObeyed, commandMenu, canFetch,
-  drowSpares, normaliseCompanion, companionName, companionLabel,
+  drowSpares, normaliseCompanion, companionName, companionLabel, SPIDER_VARIANTS, spiderFromD4, variantOf, CALM,
+  isSpiderFoe, calmTakes, PHASE,
 } from "./companions.mjs"
 
 const spider = (o = {}) => normaliseCompanion("pet-spider", { owner: "kenta", alive: true, ...o })!
@@ -96,6 +97,47 @@ describe("out of a fight", () => {
     for (const id of ["drow-guard-male", "drow-guard-female", "jorlan", "ilvara", "shoor", "asha"]) expect(drowSpares(id, "pet-spider")).toBe(true)
     expect(drowSpares("quaggoth", "pet-spider")).toBe(false)
     expect(drowSpares("drow-guard-male", "ront")).toBe(false)
+  })
+})
+
+describe("the three spiders (Sam, 2026-11-23: a d4)", () => {
+  it("a d4: 1 redknee, 2 cave, 3 baby phase, 4 the owner chooses", () => {
+    expect([1, 2, 3, 4].map(spiderFromD4)).toEqual(["redknee", "cave", "phase", null])
+    expect(Object.values(SPIDER_VARIANTS).map((v) => v.face)).toEqual([1, 2, 3])
+  })
+  it("the record keeps its variant; nonsense is dropped", () => {
+    expect(variantOf(spider({ variant: "cave" }))).toBe("cave")
+    expect(variantOf(spider({ variant: "dragon" }))).toBeNull()
+    expect(companionLabel(spider({ variant: "phase" }))).toBe("the baby phase spider")
+  })
+  it("A bites and webs, nothing more", () => {
+    const m = commandMenu(spider({ bond: 2, variant: "redknee" }), { biteFoes: ["Drow"], webFoes: ["Drow"], helpFoes: ["Drow"], webReady: true, spidersNear: true, ownerReach: true })
+    expect(m.map((r) => r.cmd)).toEqual(["bite", "web", "hide", "dodge", "perch"])
+    expect(SPIDER_VARIANTS.redknee.biteAdvantage).toBe(true)
+  })
+  it("B helps and calms spiders, no web; it steals from bond 1", () => {
+    const m = commandMenu(spider({ bond: 2, variant: "cave" }), { biteFoes: ["Drow"], webFoes: ["Drow"], helpFoes: ["Drow"], webReady: true, spidersNear: true })
+    expect(m.map((r) => r.cmd)).toEqual(["bite", "help", "calm", "hide", "dodge"])
+    expect(canFetch(spider({ bond: 1, variant: "cave" }), { isOwner: true })).toBe(true)
+    expect(canFetch(spider({ bond: 0, variant: "cave" }), { isOwner: true })).toBe(false)
+  })
+  it("C only bites (and keeps itself alive); A and C never steal", () => {
+    const m = commandMenu(spider({ bond: 2, variant: "phase" }), { biteFoes: ["Drow"], webFoes: ["Drow"], helpFoes: ["Drow"], webReady: true, spidersNear: true, ownerReach: true })
+    expect(m.map((r) => r.cmd)).toEqual(["bite", "hide", "dodge", "perch"])
+    expect(canFetch(spider({ bond: 3, variant: "phase" }), { isOwner: true, canSpeak: true })).toBe(false)
+    expect(canFetch(spider({ bond: 3, variant: "redknee" }), { isOwner: true, canSpeak: true })).toBe(false)
+    expect(PHASE.ft).toBe(30)
+  })
+  it("the calm: hostile spiders only; a Charisma save against DC 11", () => {
+    expect(isSpiderFoe("giant-spider")).toBe(true)
+    expect(isSpiderFoe("giant-wolf-spider")).toBe(true)
+    expect(isSpiderFoe("pet-spider")).toBe(false)
+    expect(isSpiderFoe("drow-guard-male")).toBe(false)
+    expect(calmTakes({ total: 10, natural: 13 })).toBe(true)
+    expect(calmTakes({ total: 11, natural: 14 })).toBe(false)
+    expect(calmTakes({ total: 25, natural: 1 })).toBe(true)
+    expect(calmTakes({ total: 2, natural: 20 })).toBe(false)
+    expect(CALM.rangeFt).toBe(30)
   })
 })
 
