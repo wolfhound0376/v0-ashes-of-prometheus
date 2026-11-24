@@ -317,6 +317,12 @@ Per-browser identity is **not** in the database.
   browser that lost both its keys and the `aop_pass_mirror` key gets its hero back with one reload. Pages
   still read and write the localStorage keys exactly as before — do not read the cookie from page code.
 - **One game tab per browser (`lib/one-tab.ts`).** The newest game tab wins; others dim behind "Play here".
+- **Stale tabs (2026-11-23, `lib/safe-reload.ts`).** `BuildWatch` reloads a tab running an old build by itself, once
+  per new build, only on a page between scenes (`/intro`, `/table`, `/join`, `/choose`, `/t/<code>`) and never while
+  someone is typing; everywhere else it shows the notice. Do not add a page with unsaved local work to that list.
+- **Repair this device (`lib/repair-device.ts`, Settings on the title).** Forgets this site's browser storage except
+  `REPAIR_KEEPS` (the hero pair, the pass mirror, the DM key, settings, Forge drafts, films seen) and reloads clean.
+  A new localStorage key that holds something a player would hate to lose belongs in `REPAIR_KEEPS`.
 - **Every message and every mutation must carry its own `characterId`.** Never fall back to
   `sessions.active_character_id` to decide who acted — that is the "one global seat" bug,
   where whatever one player did got attributed to whoever the DM last spotlighted.
