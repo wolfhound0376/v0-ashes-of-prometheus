@@ -39,6 +39,7 @@ import { pacedStep } from "@/lib/paced-line"
 import { isMusicOff, onMusicPrefChange, setMusicOff } from "@/lib/audio-prefs"
 import { isOnline, type WorldRow } from "@/lib/walk-world"
 import { shouldFollowPull } from "@/lib/watch-the-map.mjs"
+import { conditionIcon } from "@/lib/conditions"
 
 import { SuggestionChips } from "@/components/dashboard/suggestion-chips"
 import type { Suggestion } from "@/lib/suggestions"
@@ -1460,7 +1461,7 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
       <div className="p-panel p-third">
         <div className="p-vighead"><span>Conditions &amp; effects</span><span>colour = kind</span></div>
         <div className="p-fx">
-          {conditions.length ? conditions.map((condition) => { const kind = conditionKind(condition); const c = CONDITION_KIND_COLORS[kind]; return <span key={condition} className="p-slab" style={{ ["--c1" as string]: c[0], ["--c2" as string]: c[1] } as CSSProperties} title={CONDITION_KIND_LABEL[kind]}>{CONDITION_KIND_GLYPH[kind]} {condition}</span> }) : <span className="p-slab dark" style={{ cursor: "default", color: "#9a8bb5" }}>Nothing ails you</span>}
+          {conditions.length ? conditions.map((condition) => { const kind = conditionKind(condition); const c = CONDITION_KIND_COLORS[kind]; return <span key={condition} className="p-slab" style={{ ["--c1" as string]: c[0], ["--c2" as string]: c[1] } as CSSProperties} title={CONDITION_KIND_LABEL[kind]}>{conditionIcon(condition) ? <img src={conditionIcon(condition) as string} alt="" aria-hidden="true" style={{ width: 18, height: 18, objectFit: "contain", verticalAlign: "middle", filter: "drop-shadow(0 1px 1px rgba(0,0,0,.9))" }} /> : CONDITION_KIND_GLYPH[kind]} {condition}</span> }) : <span className="p-slab dark" style={{ cursor: "default", color: "#9a8bb5" }}>Nothing ails you</span>}
         </div>
         {hasSpellSlots ? <div className="p-slots">{spellSlotLevels.map((slot) => { const remaining = Math.max(0, slot.total - slot.used); return <div key={slot.level} className="p-slot"><span>Spell slots · lv {slot.level} {"◉".repeat(remaining)}{"◯".repeat(Math.max(0, slot.total - remaining))}</span><span>{remaining} / {slot.total}</span></div> })}</div> : null}
         <div className="p-fxkey">{(Object.keys(CONDITION_KIND_COLORS) as ConditionKind[]).map((k) => <span key={k}><i style={{ background: CONDITION_KIND_COLORS[k][0], color: CONDITION_KIND_COLORS[k][0] }} />{k}</span>)}</div>
@@ -1648,7 +1649,7 @@ function CharacterSheetModal({ character, abilities, inventory, equipment, displ
         <aside className="space-y-3">
           <section className="rounded border border-[#6a4d22] bg-[radial-gradient(circle_at_top,#402411,#110b07_70%)] p-4 text-center"><h4 className="text-[9px] uppercase tracking-wider text-[#a58a5b]">Hit Points</h4><b className="font-serif text-4xl text-[#f1dcae]">{character.hp_current}<span className="text-xl text-[#887653]"> / {character.hp_max}</span></b><div className="mt-2 h-2 bg-black"><div className="h-full bg-[#b72f3c]" style={{ width: `${Math.min(100, character.hp_current / Math.max(1, character.hp_max) * 100)}%` }} /></div></section>
           <div className="grid grid-cols-2 gap-2"><SheetCoreStat label="Proficiency" value={signed(character.proficiency_bonus)} /><SheetCoreStat label="Hit Dice" value="Not recorded" /></div>
-          <section className="rounded border border-[#4f3c1d] bg-black/25 p-3"><h4 className="mb-2 font-serif text-[10px] uppercase tracking-wider text-[#d7b56f]">Conditions</h4><div className="flex flex-wrap gap-1">{character.conditions?.length ? character.conditions.map((condition) => <span key={condition} className="rounded-full border border-[#755429] px-2 py-1 text-[9px] text-[#d6c29a]">{condition}</span>) : <span className="text-[10px] text-[#786b52]">No active conditions</span>}</div></section>
+          <section className="rounded border border-[#4f3c1d] bg-black/25 p-3"><h4 className="mb-2 font-serif text-[10px] uppercase tracking-wider text-[#d7b56f]">Conditions</h4><div className="flex flex-wrap gap-1">{character.conditions?.length ? character.conditions.map((condition) => <span key={condition} className="inline-flex items-center gap-1 rounded-full border border-[#755429] px-2 py-1 text-[9px] text-[#d6c29a]">{conditionIcon(condition) && <img src={conditionIcon(condition) as string} alt="" aria-hidden="true" className="h-4 w-4 object-contain" />}{condition}</span>) : <span className="text-[10px] text-[#786b52]">No active conditions</span>}</div></section>
           <SheetList title="Defenses" rows={[["Resistances", character.damage_resistances || "None recorded"], ["Immunities", character.damage_immunities || "None recorded"], ["Condition Immunities", character.condition_immunities || "None recorded"]]} />
         </aside>
       </div>

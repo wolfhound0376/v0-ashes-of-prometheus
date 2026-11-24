@@ -11,6 +11,7 @@ import { Coins, Heart, User2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { FantasyPanel } from "@/components/ui/fantasy-panel"
 import { characterVisualState, VISUAL_STATE_FILTER } from "@/lib/character-visual-state"
+import { conditionIcon, normalizeConditions } from "@/lib/conditions"
 
 export interface PartyMember {
   id: string
@@ -70,6 +71,22 @@ export function PartyStatus({ members, selectedCharacterId, onSelect, onViewAll 
                     ) : (
                       <div className="flex h-full w-full items-center justify-center">
                         <User2 className="h-7 w-7 text-[#4a4238]" />
+                      </div>
+                    )}
+                    {/* Conditions (Sam, 2026-11-23): the painted icons along the portrait's top edge, name on hover */}
+                    {normalizeConditions(m.conditions).length > 0 && (
+                      <div className="absolute inset-x-0 top-0 flex flex-wrap justify-center gap-0.5 bg-gradient-to-b from-black/70 to-transparent px-0.5 pb-1 pt-0.5">
+                        {normalizeConditions(m.conditions).map((c) => {
+                          const icon = conditionIcon(c)
+                          return icon ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img key={c} src={icon} alt={c} title={c} className="h-5 w-5 object-contain drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)]" />
+                          ) : (
+                            <span key={c} title={c} className="rounded-sm bg-black/60 px-1 text-[8px] uppercase leading-4 tracking-wider text-[#d6c29a]">
+                              {c}
+                            </span>
+                          )
+                        })}
                       </div>
                     )}
                     {state === "downed" && (

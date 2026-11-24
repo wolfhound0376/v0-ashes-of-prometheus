@@ -38,6 +38,11 @@ describe("walkSheetFromRow", () => {
       cantrips: ["Fire Bolt", "Mage Hand", "Ray of Frost"], prepared: ["Chromatic Orb", "Shield", "Magic Missile", "Thunderwave"] })
   })
 
+  it("carries the row's conditions as written, empty when there are none (2026-11-23)", () => {
+    expect(walkSheetFromRow({ ...GANDALF, conditions: ["Poisoned", "Exhaustion 2", "poisoned"] }).conditions).toEqual(["Poisoned", "Exhaustion 2"])
+    expect(walkSheetFromRow(GANDALF).conditions).toEqual([])
+  })
+
   it("fights unarmed at the start of a run: the row's Unarmed Strike, never the confiscated dagger", () => {
     expect(walkSheetFromRow(GANDALF).attacks).toEqual([{ name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5 }])
   })
