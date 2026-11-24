@@ -56,7 +56,7 @@ create table vtt_ground_items (id uuid default gen_random_uuid(), map_id uuid no
 create table vtt_maps (id uuid default gen_random_uuid(), name text not null, is_active boolean not null default false, meta jsonb not null default '{}', primary key (id));
 create table vtt_tokens (id uuid default gen_random_uuid(), map_id uuid not null, character_id uuid, label text not null, grid_x integer not null, grid_y integer not null, is_visible boolean not null default true, is_hidden boolean not null default false, hp_current integer, hp_max integer, summon jsonb, effects jsonb not null default '[]', primary key (id));
 create table walk_events (sig text not null, bucket bigint not null, text text, primary key (sig,bucket));
-create table walk_world (campaign_run_id uuid not null, version bigint not null, state jsonb not null, primary key (campaign_run_id));
+create table walk_world (campaign_run_id uuid not null, version bigint not null, state jsonb not null, plate text, primary key (campaign_run_id));
 create table work_details (id uuid default gen_random_uuid(), campaign_run_id uuid not null, day integer not null, primary key (id));
 create table world_flags (campaign_id text not null, key text not null, value jsonb not null, set_at timestamp with time zone not null default now(), set_by text, note text, primary key (campaign_id,key));
 

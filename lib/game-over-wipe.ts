@@ -1,8 +1,14 @@
 // THE GAME DIES WITH THE PARTY — the rule, pure (route: app/api/game-over/route.ts).
 //
 // Sam, 2026-11-15: "If everyone dies, then the game is deleted after game over. It's also a hard reset."
+// Narrowed by Sam, 2026-11-23, once campaigns had checkpoints: "Party wipe deletes the game in Mortal only and in
+// other modes ends the games but permits you to go to an earlier save." So (wipeOutcome below):
+//   - a MORTAL campaign (or a world with no saved game in play) is deleted and hard-reset, as follows;
+//   - any other campaign is NOT deleted: the table closes and the campaign goes back to its last save (the world as
+//     it was at the last End), its checkpoints untouched, so the host can play on from there or Rewind further back
+//     from Load Game.
 //
-// So a wiped table is not a save you can go back to. When every hero seated at the table is dead:
+// The Mortal (deleting) path, when every hero seated at the table is dead:
 //   1. the campaign is hard-reset: the same wipe as New Game (lib/restart-campaign.ts: a new run, every world flag
 //      cleared, heroes back on their starting sheets, the party back in the slave pen);
 //   2. the save that was in play is DELETED from the shelf (lib/save-store.ts), not shelved as New Game does;
@@ -41,3 +47,18 @@ export function wipeVerdict(seats: readonly SeatLite[], heroes: Record<string, H
   }
   return { ok: true, dead: out }
 }
+
+/**
+ * What a wipe does to the campaign in play (Sam, 2026-11-23). `save` is the save in play: null when nothing is loaded,
+ * "missing" before saved games existed. Only a known, non-Mortal campaign is kept; anything else is deleted, as before.
+ */
+export function wipeOutcome(save: { mortal?: boolean | null } | null | "missing"): "delete" | "back" {
+  if (!save || save === "missing") return "delete"
+  return save.mortal ? "delete" : "back"
+}
+
+/** What the GAME OVER card says once the server has done the work, per outcome. */
+export const WIPE_DONE_TEXT = {
+  delete: "Mortal Mode: the game is gone for good and the campaign has been reset. Everyone goes back to the table.",
+  back: "The campaign goes back to its last save. The host can play on from there, or rewind to an earlier save from Load Game.",
+} as const

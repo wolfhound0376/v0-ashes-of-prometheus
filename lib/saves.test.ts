@@ -3,7 +3,7 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import {
   CHARACTER_STATE_COLUMNS, LIBRARY_TABLES, MIXED_TABLES, WHOLE_TABLES,
-  cannotLoad, cleanSaveName, isSavesMissing, newSaveName, saveActionAllowed,
+  cannotCheckpoint, cannotLoad, cannotLoadKind, cannotRewind, cleanSaveName, isSavesMissing, newSaveName, saveActionAllowed,
 } from "./saves"
 import { BASELINE_COLUMNS } from "./hero-baseline"
 
@@ -93,5 +93,32 @@ describe("names and errors", () => {
     expect(isSavesMissing({ code: "42883", message: "function public.campaign_save(uuid) does not exist" })).toBe(true)
     expect(isSavesMissing({ code: "23503", message: "violates foreign key constraint" })).toBe(false)
     expect(isSavesMissing(null)).toBe(false)
+  })
+})
+
+describe("checkpoints and Mortal Mode (Sam, 2026-11-23: PR4)", () => {
+  it("the host may rewind and save now; nobody else", () => {
+    const host = { dm: false, dmCookie: false, host: true }, nobody = { dm: false, dmCookie: false, host: false }
+    for (const a of ["rewind", "checkpoint"]) { expect(saveActionAllowed(a, host)).toBe(true); expect(saveActionAllowed(a, nobody)).not.toBe(true) }
+  })
+  it("Load plays a campaign; a checkpoint is played with Rewind", () => {
+    expect(cannotLoadKind({ kind: "head" })).toBeNull()
+    expect(cannotLoadKind({})).toBeNull()
+    expect(cannotLoadKind({ kind: "auto" })).toMatch(/Rewind/)
+  })
+  it("Rewind: only a checkpoint, only on a dark table, never in Mortal Mode", () => {
+    expect(cannotRewind("closed", { kind: "named" }, { mortal: false })).toBeNull()
+    expect(cannotRewind("closed", { kind: "head" }, { mortal: false })).not.toBeNull()
+    expect(cannotRewind("live", { kind: "auto" }, { mortal: false })).toMatch(/close the table/)
+    expect(cannotRewind("closed", { kind: "auto" }, { mortal: true })).toMatch(/no going back/)
+    expect(cannotRewind("closed", { kind: "auto" }, null)).toMatch(/lost its campaign/)
+  })
+  it("Save now: never in Mortal Mode, and only once something is in play", () => {
+    expect(cannotCheckpoint({ mortal: false })).toBeNull()
+    expect(cannotCheckpoint({ mortal: true })).toMatch(/one save/)
+    expect(cannotCheckpoint(null)).not.toBeNull()
+  })
+  it("knows the part-2 functions are missing too", () => {
+    expect(isSavesMissing({ message: "Could not find the function public.campaign_rewind(p_id)" })).toBe(true)
   })
 })

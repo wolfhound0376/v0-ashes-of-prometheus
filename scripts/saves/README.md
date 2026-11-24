@@ -11,3 +11,16 @@ Proves `migrations/20261110230000_campaign_saves.sql` without touching the live 
 ```
 createdb t && psql -d t -f stub_schema.sql -f ../../migrations/20261110230000_campaign_saves.sql -f roundtrip.sql
 ```
+
+## Part 2 — checkpoints, Rewind, Mortal Mode (2026-11-23)
+
+`checkpoints.sql` proves `migrations/20261123230000_save_checkpoints.sql` on top of the part-1 round trip: old saves
+become heads of their own campaigns, named and auto checkpoints (five autos kept), Rewind (refused while the table is
+open; brings the world back; keeps "Before the rewind"; works from another campaign), Mortal Mode refusing both, and
+triggers back on.
+
+```
+createdb t && psql -d t -f stub_schema.sql -f ../../migrations/20261110230000_campaign_saves.sql -f roundtrip.sql \
+  -f ../../migrations/20261123230000_save_checkpoints.sql -f checkpoints.sql
+```
+(`stub_schema.sql` gained `walk_world.plate`, which the live table has.)

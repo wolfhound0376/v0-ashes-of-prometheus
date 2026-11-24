@@ -79,7 +79,23 @@ export type SaveRow = {
   host: { id?: string; name?: string } | null
   party: string[]
   is_loaded: boolean
+  // PART 2 (migrations/20261123230000_save_checkpoints.sql; Sam, 2026-11-23: "PR4"). Absent until it is applied.
+  /** The campaign this row belongs to: its head's id. */
+  campaign_id?: string | null
+  /** head = the campaign itself (End overwrites it); auto = written at End or before a Rewind; named = the host's Save now. */
+  kind?: SaveKind
+  /** Mortal Mode (Sam: "yes on mortal mode"): one save, no checkpoints, no going back. Set when the campaign starts. */
+  mortal?: boolean
+  /** The painted plate the party stood on (walk_world.plate) — the picture on the card. */
+  plate?: string | null
+  /** Real time played, summed at every End. */
+  play_seconds?: number
 }
+
+export type SaveKind = "head" | "auto" | "named"
+
+/** Autosaves kept per campaign (the migration's campaign_prune_autos keeps the same number). */
+export const AUTOSAVES_KEPT = 5
 
 export type SaveWho = { dm: boolean; dmCookie: boolean; host: boolean }
 
@@ -89,7 +105,7 @@ export type SaveWho = { dm: boolean; dmCookie: boolean; host: boolean }
  */
 export function saveActionAllowed(action: string, who: SaveWho): true | string {
   if (action === "delete") return who.dmCookie ? true : "Deleting a save needs the Dungeon Master's code. Come in through Host a Game."
-  if (action === "load" || action === "rename" || action === "list") return who.dm || who.host ? true : "Only the host can choose the saved game."
+  if (action === "load" || action === "rename" || action === "list" || action === "rewind" || action === "checkpoint") return who.dm || who.host ? true : "Only the host can choose the saved game."
   return "unknown action"
 }
 
@@ -97,6 +113,33 @@ export function saveActionAllowed(action: string, who: SaveWho): true | string {
 export function cannotLoad(tableStatus: string | null | undefined, save: Pick<SaveRow, "is_loaded"> | null): string | null {
   if (!save) return "There is no save by that name."
   if (tableStatus === "lobby" || tableStatus === "live") return "End the session and close the table before loading a save."
+  return null
+}
+
+/** Loading is for a campaign (its head); a checkpoint is played through Rewind. */
+export function cannotLoadKind(save: Pick<SaveRow, "kind"> | null): string | null {
+  if (save && save.kind && save.kind !== "head") return "That is a checkpoint. Use Rewind to play it."
+  return null
+}
+
+/**
+ * REWIND (Sam, 2026-11-23: "Continue takes the latest save unless we are playing on Mortal Mode"). Only a checkpoint,
+ * only while the table is dark, never in a Mortal campaign. The database checks the same things; this is the
+ * plain-words answer for the screen.
+ */
+export function cannotRewind(tableStatus: string | null | undefined, checkpoint: Pick<SaveRow, "kind"> | null, head: Pick<SaveRow, "mortal"> | null): string | null {
+  if (!checkpoint) return "There is no save by that name."
+  if (!checkpoint.kind || checkpoint.kind === "head") return "That is the campaign itself. Load it, or choose one of its checkpoints."
+  if (!head) return "That checkpoint has lost its campaign."
+  if (head.mortal) return "Mortal Mode: there is no going back."
+  if (tableStatus === "lobby" || tableStatus === "live") return "End the session and close the table before rewinding."
+  return null
+}
+
+/** Save now (a named checkpoint): never in Mortal Mode. Allowed while the table is open or live. */
+export function cannotCheckpoint(head: Pick<SaveRow, "mortal"> | null): string | null {
+  if (!head) return "No saved game is in play yet. It is saved the first time a session ends."
+  if (head.mortal) return "Mortal Mode keeps one save. There are no checkpoints."
   return null
 }
 
@@ -120,5 +163,5 @@ export function newSaveName(now = new Date()): string {
 export function isSavesMissing(err: { code?: string; message?: string } | null | undefined): boolean {
   if (!err) return false
   if (err.code === "PGRST202" || err.code === "42883" || err.code === "42P01") return true
-  return /campaign_save|campaign_load/.test(err.message ?? "") && /(does not exist|could not find)/i.test(err.message ?? "")
+  return /campaign_save|campaign_load|campaign_checkpoint|campaign_rewind/.test(err.message ?? "") && /(does not exist|could not find)/i.test(err.message ?? "")
 }
