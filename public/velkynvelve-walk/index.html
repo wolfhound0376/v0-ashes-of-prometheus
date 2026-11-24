@@ -1803,10 +1803,19 @@ function noteSeats(seated){
   // and a level taken in one browser never reached the next load or another seat. Attacks stay the snapshot's (they are
   // rebuilt from the carried weapons, refreshAttacks); AC stays the snapshot's (worn gear).
   for (const s of seatsSeen) if (s.sheet) for (const id of seatedSlugs([s])) if (SHEETS[id] && !FORGED_ID[id]){
-    const sh = s.sheet, S = SHEETS[id];
+    const sh = s.sheet, S = SHEETS[id], was = {...(S.mods || {})};
     if (sh.saves) S.saves = {...S.saves, ...sh.saves};
     if (sh.skills) S.skills = {...S.skills, ...sh.skills};
     if (sh.mods) S.mods = {...S.mods, ...sh.mods};
+    // A MODIFIER THAT MOVED REACHES THE FIGHT (Sam, 2026-11-24: "make the bonus count in fights too"). The row's sheet
+    // comes dressed (lib/worn-bonus.ts: Fifi's Traveler's Cloak is +1 Dexterity, 17 to 18, +3 to +4), and the modifiers
+    // above follow it. But a premade's initiative is the page's snapshot, and its AC and weapon lines are worked out
+    // only when the gear is read or changed, so all three kept the OLD Dexterity: she rolled initiative at +3 and stood
+    // at the AC of a +3 hero. Now initiative moves by exactly what Dexterity moved, and the AC and the attacks are
+    // worked out again from the new modifiers. Same when the cloak comes off. A forged hero takes the whole sheet above.
+    { const dDex = (S.mods.dex || 0) - (was.dex || 0), dStr = (S.mods.str || 0) - (was.str || 0);
+      if (dDex && typeof S.init === "number") S.init += dDex;
+      if (dDex || dStr) try { if (GEAR[id]){ refreshAttacks(id); refreshAc(id); } } catch (e) {} }   // GEAR is declared further down: before it exists the gear load does both
     if (sh.lore) S.lore = {...S.lore, ...sh.lore};
     if (sh.tools) S.tools = {...S.tools, ...sh.tools};
     if (typeof sh.level === "number") S.level = sh.level;
