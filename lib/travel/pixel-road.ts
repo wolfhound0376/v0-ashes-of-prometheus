@@ -54,3 +54,57 @@ export function pixelRoadHref(o: { road: PixelRoadId; line: readonly string[]; n
 
 /** Per-browser switch (the DM's button under the map): on unless turned off. */
 export const PIXEL_ROAD_SWITCH = "aop:map-pixel-road"
+
+/**
+ * BACK TO THE SAME SPOT AFTER A ROAD FIGHT (Sam, 2026-11-24: the fight "returns the party to the same spot on the
+ * road"). A meeting halts the party part-way along a stretch. If it comes to blows the whole tab leaves for the
+ * battle plate (lib/travel/battle.ts battleHref) and comes back to /map as a fresh page, which used to show only the
+ * nodal map: the stretch, and where the party stood on it, were forgotten. So when the road halts the party it says
+ * where (aop:road-at), the map module keeps that here for this tab, and on the way back the road is laid over the
+ * map again with the party standing where it was stopped. Put away when the meeting ends without a fight, when the
+ * stretch is walked to its end, or when it is too old to be this march. Nothing is saved to the game.
+ */
+export const ROAD_SPOT_KEY = "aop:road-spot"
+/** Longer than any fight; shorter than a tab left open overnight. */
+export const ROAD_SPOT_MAX_AGE_MS = 6 * 60 * 60 * 1000
+export interface RoadSpot {
+  /** the road page's address for the leg, as pixelRoadHref built it */
+  src: string
+  /** the leg: node_key left, node_key reached */
+  a: string
+  b: string
+  /** where the leader stood, in the stretch's own pixels */
+  x: number
+  y: number
+  /** when (ms) */
+  t: number
+  /** the leg's trap dice (lib/travel/road-traps.ts trapSeedKey), so the stretch comes back with the same traps */
+  seed?: string
+}
+
+export function roadSpot(src: string, leg: { a: string; b: string; seed?: string }, at: { x: unknown; y: unknown }, now: number): RoadSpot | null {
+  const x = Number(at.x), y = Number(at.y)
+  if (!src.startsWith("/pixel-road/index.html?") || !leg.a || !leg.b || !Number.isFinite(x) || !Number.isFinite(y)) return null
+  return { src, a: leg.a, b: leg.b, x: Math.round(x), y: Math.round(y), t: now, ...(typeof leg.seed === "string" && leg.seed ? { seed: leg.seed.slice(0, 120) } : {}) }
+}
+
+/** The kept spot, or null when there is none, it is not one of ours, or it is too old. */
+export function parseRoadSpot(raw: string | null | undefined, now: number): RoadSpot | null {
+  if (!raw) return null
+  let o: Partial<RoadSpot> | null = null
+  try { o = JSON.parse(raw) as Partial<RoadSpot> } catch { return null }
+  if (!o || typeof o.src !== "string" || typeof o.a !== "string" || typeof o.b !== "string" || typeof o.t !== "number") return null
+  if (now - o.t > ROAD_SPOT_MAX_AGE_MS || now < o.t - 60_000) return null
+  return roadSpot(o.src, { a: o.a, b: o.b, seed: typeof o.seed === "string" ? o.seed : undefined }, { x: o.x, y: o.y }, o.t)
+}
+
+/**
+ * The road page's address to come back to: the same leg, the party standing at the spot (`spot`), and the marker
+ * ahead already asked about (`met`), so its dice are not rolled a second time.
+ */
+export function roadSpotHref(s: RoadSpot): string {
+  const u = new URL(s.src, "http://x")
+  u.searchParams.set("spot", `${s.x},${s.y}`)
+  u.searchParams.set("met", "1")
+  return `${u.pathname}?${u.searchParams.toString()}`
+}

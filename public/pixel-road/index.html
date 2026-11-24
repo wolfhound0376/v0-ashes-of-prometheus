@@ -618,7 +618,11 @@ sayEl.addEventListener("pointerdown", (e) => e.stopPropagation());
 // between the party and the way on, and the party halts. The encounter card is the map's own, laid over this page.
 // When the card is put away the creatures go back into the dark and the walk goes on.
 const NEAR_AT = 0.55;      // how far along the stretch the marker's dice are asked for
-let near = false, meet = null, foes = [];
+// BACK FROM THE FIGHT (Sam, 2026-11-24; lib/travel/pixel-road.ts roadSpot). When the party is halted this page says where
+// it stands (aop:road-at), and the map keeps that. If the meeting came to blows on a battle plate, the map lays this
+// page over itself again with ?spot=x,y (the party stands there, not at the mouth of the stretch) and ?met=1 (the
+// marker ahead was already asked about: its dice are not rolled twice).
+let near = EMBED && Q.get("met") === "1", meet = null, foes = [];
 function progress() {
   const L = heroes[0], tot = Math.hypot(road.exit.x - road.entry.x, road.exit.y - road.entry.y) || 1;
   return Math.max(0, Math.min(1, 1 - Math.hypot(road.exit.x - L.x, road.exit.y - L.y) / tot));
@@ -626,6 +630,7 @@ function progress() {
 async function meetStart(m) {
   path = []; keys = {}; sayHide();
   meet = { kind: clean(m.kind, 20), t0: performance.now() };
+  tell({ type: "aop:road-at", x: Math.round(heroes[0].x), y: Math.round(heroes[0].y) });
   const L = heroes[0], ids = (Array.isArray(m.foes) ? m.foes : []).map((s) => String(s).replace(/[^a-z0-9-]/gi, "")).filter(Boolean).slice(0, 8);
   if (!ids.length) return;
   // where they come from: some way further along the party's own way on
@@ -691,6 +696,15 @@ function trapsSet(m) {
   traps = (Array.isArray(m.traps) ? m.traps : []).slice(0, 4).map((t) => { const at = wayAt(Math.max(0.1, Math.min(0.92, +t.at || 0.5)));
     return { kind: clean(t.kind, 16), title: clean(t.title, 30), spotDC: +t.spotDC || 10, fallRoll: t.fallRoll || null, spikesRoll: t.spikesRoll || null, d20s: Array.isArray(t.d20s) ? t.d20s.map(Number) : [],
       seenBy: t.seenBy ? { slug: clean(t.seenBy.slug, 30), name: clean(t.seenBy.name, 30), passive: +t.seenBy.passive || 0 } : null, source: String(t.source || "").replace(/[<>]/g, "").slice(0, 80), x: at[0], y: at[1], sprung: false, warned: false, caught: [] }; });
+  // BACK FROM THE FIGHT: the map deals this stretch the same traps it dealt before (the leg's own dice). The ones the
+  // party had already come past are behind it and are not laid again: only what is still ahead waits.
+  if (cameBackAt != null) traps = traps.filter((t) => wayFrac(t.x, t.y) > cameBackAt + 0.02);
+}
+let cameBackAt = null;                  // how far along the way the party stood when it came back (?spot), else null
+function wayFrac(x, y) {                // how far along the way (0..1) the point of the way nearest to x,y is
+  let best = 0, bd = Infinity, acc = 0;
+  for (let i = 0; i < way.length; i++) { if (i) acc += Math.hypot(way[i][0] - way[i - 1][0], way[i][1] - way[i - 1][1]); const d = Math.hypot(way[i][0] - x, way[i][1] - y); if (d < bd) { bd = d; best = acc; } }
+  return wayLen ? best / wayLen : 0;
 }
 const who = (h) => party.find((q) => q.slug === h.slug) || { slug: h.slug, name: h.slug.replace(/-/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()), strMod: 0, strSave: 0, ath: 0, hp: null };
 const faces = (r) => r && r.faces && r.faces.length > 1 ? r.faces.join(" + ") + " = " + r.total : String(r ? r.total : 0);
@@ -1013,8 +1027,14 @@ function toggleMusic() {
   { // BACK FROM INSIDE (?at=<landmark kind>): the party stands at that landmark's door, just outside its reach
     const at = new URLSearchParams(location.search).get("at"), m = at && (road.landmarks || []).find((k) => k.kind === at);
     if (m) for (let dy = (m.near || 70) + 56; dy < 260; dy += 6) if (canStand(m.x, m.y + dy)) { startAt = [m.x, m.y + dy]; heroes.forEach((h) => { h.x = m.x; h.y = m.y + dy; }); break; } }
+  { // BACK FROM THE FIGHT (?spot=x,y): the party stands where it was halted, or the nearest floor to it
+    const sp = (new URLSearchParams(location.search).get("spot") || "").split(",").map(Number);
+    if (EMBED && sp.length === 2 && sp.every(Number.isFinite)) {
+      let at = null;
+      for (let r = 0; r <= 96 && !at; r += 8) for (let k = 0; k < (r ? 12 : 1) && !at; k++) { const x = sp[0] + Math.cos(k * Math.PI / 6) * r, y = sp[1] + Math.sin(k * Math.PI / 6) * r; if (canStand(x, y)) at = [x, y]; }
+      if (at) { startAt = at; cameBackAt = -1; heroes.forEach((h) => { h.x = at[0]; h.y = at[1]; }); } } }
   for (let i = 0; i <= heroes.length * GAP + 4; i += 1.5) trail.push([startAt[0] - (startAt[0] === road.entry.x ? i : 0), startAt[1]]);
-  wayFind(); bonesScatter(); for (const k of ["skeleton", "skulls", "skull", "pit", "spiked", "net", "spot-cover", "spot-cloth", "spot-wire"]) TRAP_ART[k] = await img("/pixel-road/traps/" + k + ".png");
+  wayFind(); if (cameBackAt != null) cameBackAt = wayFrac(startAt[0], startAt[1]); bonesScatter(); for (const k of ["skeleton", "skulls", "skull", "pit", "spiked", "net", "spot-cover", "spot-cloth", "spot-wire"]) TRAP_ART[k] = await img("/pixel-road/traps/" + k + ".png");
   resize(); addEventListener("resize", resize);
   addEventListener("keydown", (e) => { soundStart(); if (resting) { e.preventDefault(); return; } if (plateOpen) { if (e.key === "Escape") plateClose(); else if (e.key === "Enter" && !plateOpen.entered) plateEnter(); e.preventDefault(); return; } if (e.key === "m" || e.key === "M") toggleMusic(); keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = true; if (e.key.startsWith("Arrow")) e.preventDefault(); });
   addEventListener("keyup", (e) => { keys[e.key.length === 1 ? e.key.toLowerCase() : e.key] = false; });
@@ -1025,7 +1045,7 @@ function toggleMusic() {
     path = findPath(heroes[0].x, heroes[0].y, wx, wy);
   });
   // For poking at it from the console and for a browser test. The walk check itself is lib/pixel-road.test.ts.
-  window.__road = { road, heroes, traps: () => traps, bones: () => bones, trapsSet, foes: () => foes, meeting: () => meet, progress, meetStart, meetClear, miniSet, plate: () => plateOpen && plateOpen.label, plateEnter, plateClose, rest, resting: () => resting && resting.kind, objImg, snd, findPath, canStand, go: (x, y) => { path = findPath(heroes[0].x, heroes[0].y, x, y); return path.length; }, idle: () => !path.length };
+  window.__road = { road, heroes, traps: () => traps, bones: () => bones, trapsSet, foes: () => foes, meeting: () => meet, near: () => near, progress, meetStart, meetClear, miniSet, plate: () => plateOpen && plateOpen.label, plateEnter, plateClose, rest, resting: () => resting && resting.kind, objImg, snd, findPath, canStand, go: (x, y) => { path = findPath(heroes[0].x, heroes[0].y, x, y); return path.length; }, idle: () => !path.length };
   requestAnimationFrame((t) => { last = t; frame(t); });
   tell({ type: "aop:road-ready", road: ROAD_ID });
 })();
