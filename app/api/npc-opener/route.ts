@@ -5,6 +5,9 @@ import { createAnthropic } from "@ai-sdk/anthropic"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { chooseLineLanguage, loadNpcLanguages } from "@/lib/npc-languages"
 import { findNpcRow, npcKnowsName, relationshipSummary } from "@/lib/npc-acquaintance"
+import { cardFor } from "@/lib/npc-agents-store"
+import { openerRoute, parseOpenerBank, pickOpener } from "@/lib/opener-bank"
+import { logTurn } from "@/lib/npc-turns"
 
 // Same direct-Anthropic provider as /api/chat and /api/suggestions.
 const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -30,6 +33,12 @@ const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
  * itself, one question or one statement. The map carries it to the dashboard as ?next=, which logs and
  * voices it on arrival. A missing `next` (old map, failed call) falls back to the Malachar turn.
  *
+ * FILES FIRST (PR 3 of 3, Sam 2026-11-23: "use [their] agentic AI intelligence for things that are required,
+ * otherwise from informational files to save tokens"). A first approach to a stranger (no situation, no name, no
+ * history, no memory of this hero) comes from the NPC's card (npc_agents.opener_bank, lib/opener-bank.ts), written
+ * from their agenda so `next` is their real business. Anything that has to come from what happened pays for Haiku,
+ * exactly as before. Each opener is logged to npc_turns (lib/npc-turns.ts) so The Cast can show the saving.
+ *
  * Failure is always HTTP 200 with nulls; the map falls back to a plain line.
  */
 export async function POST(req: NextRequest) {
@@ -53,15 +62,15 @@ export async function POST(req: NextRequest) {
     let standing: string | null = null
     let personality = ""
     let lang: string | null = null
+    let route: { source: "bank" | "model"; why: string } = { source: "model", why: "no card" }
     let cardBrief = ""
+    const db = createAdminClient()
+    const card = await cardFor(db, npcName).catch(() => null)
     try {
-      const db = createAdminClient()
       const npcRow = await findNpcRow(db, npcName)
       if (npcRow) personality = [npcRow.description, npcRow.disposition ? `disposition: ${npcRow.disposition}` : ""].filter(Boolean).join("; ")
       const { data: pcRows } = await db.from("characters").select("id, name, languages").ilike("name", pcName).limit(1)
       const pcRow = pcRows?.[0]
-      // THE ONE BRIEF (lib/npc-brief.ts): the card, what they remember of this run (about this hero first), the DM's notes.
-      cardBrief = await npcBrief(db, npcName, { heroId: pcRow?.id ?? null, heroName: pcName })
       // The tongue the opener is spoken in (lib/npc-languages): what the NPC shares
       // with this PC, else its own. null when the NPC has no language data.
       if (npcRow?.id) {
@@ -72,6 +81,28 @@ export async function POST(req: NextRequest) {
         knowsName = await npcKnowsName(db, npcName, pcRow.id)
         if (npcRow) standing = await relationshipSummary(db, npcRow.id, pcRow.id)
       }
+
+      // FILES FIRST: a first approach to a stranger is answered from the card's opener bank, with no model call.
+      if (card) {
+        let memoriesAbout = 0
+        if (pcRow?.id) {
+          const { count } = await db.from("npc_memories").select("id", { count: "exact", head: true }).eq("agent_key", card.key).eq("about_id", pcRow.id)
+          memoriesAbout = count ?? 0
+        }
+        route = openerRoute({ situation, knowsName, standing, memoriesAbout })
+        if (route.source === "bank") {
+          const { data: row } = await db.from("npc_agents").select("opener_bank").eq("key", card.key).maybeSingle()
+          const picked = pickOpener(parseOpenerBank(row?.opener_bank), { area, race: pcRace })
+          if (picked) {
+            await logTurn(db, { npc: npcName, agentKey: card.key, route: "opener", source: "bank", why: route.why })
+            return NextResponse.json({ narration: picked.narration, line: picked.line, lang, next: picked.next, source: "bank" })
+          }
+          route = { source: "model", why: "nothing in the bank fits" }
+        }
+      }
+
+      // THE ONE BRIEF (lib/npc-brief.ts): the card, what they remember of this run (about this hero first), the DM's notes.
+      cardBrief = await npcBrief(db, npcName, { heroId: pcRow?.id ?? null, heroName: pcName })
     } catch (e) {
       console.error("[npc-opener] acquaintance lookup failed:", e)
     }
@@ -102,7 +133,8 @@ Reply with only JSON: {"narration": "...", "line": "...", "next": "..."}`
     const said = typeof parsed?.next === "string" ? parsed.next.trim().replace(/^["“]|["”]$/g, "").slice(0, 280) : ""
     // Only ever alongside a real opener, and never the opener over again.
     const next = line && said && said.toLowerCase() !== line.toLowerCase() ? said : null
-    return NextResponse.json({ narration, line, lang, next })
+    if (line) await logTurn(db, { npc: npcName, agentKey: card?.key, route: "opener", source: "model", why: route.why })
+    return NextResponse.json({ narration, line, lang, next, source: "model" })
   } catch (error) {
     console.error("[npc-opener] failed:", error)
     return NextResponse.json({ narration: null, line: null, next: null })

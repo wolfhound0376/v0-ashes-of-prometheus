@@ -28,7 +28,7 @@ const HELP_WORDS: Record<HelpKind, string> = {
 const BUILT: Record<string, Ability[]> = {
   malachar: [
     { what: "Runs every Parley turn: narration, rulings, NPC voices (the inline tag protocol)", from: "app/api/chat" },
-    { what: "Commands named NPCs' fight turns (one line, inside the legal options)", from: "/api/npc-mind" },
+    { what: "Commands named NPCs' fight turns (one line, inside the legal options); only turns that need thought reach the model, routine ones go to the map's algorithm", from: "/api/npc-mind, lib/npc-mind.ts mindNeedsModel" },
     { what: "Talk to Malachar: the DM-only box from the map, mood loops, red eyes when angry", from: "PRs #1218, #1232" },
     { what: "Terse lich voice and word cap", from: "PRs #1230, #1430, #1431" },
     { what: "Revenge lich: an old, inherited grudge he never explains; mortal needs bore him; being outthought stings most; cornered foes bargain with bait", from: "Complete Guide to Liches pass, 2026-11-23" },
@@ -53,7 +53,7 @@ const BUILT: Record<string, Ability[]> = {
     { what: "Goes after a sleeping hero on hungry nights", from: "PR #1414" },
   ],
   jorlan: [
-    { what: "Named fight AI: picks attacks, calls for help, commands guards", from: "/api/npc-mind" },
+    { what: "Named fight AI: picks attacks, calls for help, commands guards (the model only on the opening, when bloodied, alone, re-ordering, or weighing a spell)", from: "/api/npc-mind" },
     { what: "Arrives with the 2nd or 3rd watch; gives and keeps his word to unlock the pen", from: "PRs #1270, #1324" },
   ],
 }

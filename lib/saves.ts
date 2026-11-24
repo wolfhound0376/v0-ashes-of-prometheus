@@ -64,6 +64,9 @@ export const LIBRARY_TABLES = [
   // the options offered and why (germane or bait): a cache keyed by beat and the DM's audit, never rolled back
   // (migrations/20261124030000_suggestion_sets.sql)
   "suggestion_sets",
+  // where each NPC opener and named-NPC fight turn came from (bank, algorithm or model): the DM's audit of the
+  // files-first rule, never rolled back (migrations/20261124050000_opener_banks.sql)
+  "npc_turns",
   // the shelf itself
   "campaign_saves",
   // live plumbing, gone in under a minute: who holds the floor in a conversation (lib/talk-floor.ts). Never part of a save.

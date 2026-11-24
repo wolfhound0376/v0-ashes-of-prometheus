@@ -110,3 +110,51 @@ export function cleanOffer(o: unknown): MindOffer {
     canOrder: x.canOrder === true,
   }
 }
+
+/**
+ * WHEN A FIGHT TURN NEEDS THE MODEL (PR 3 of 3, Sam 2026-11-23: "He must use his agentic AI intelligence for things
+ * that are required otherwise from informational files to save tokens"). Most turns are attacks (the prompt itself
+ * says so), and the map's own algorithm already plays an attack well: nearest hero, the commander's focus, the
+ * crossbow at range, a bark or a taunt from the page's own lines. So a ROUTINE turn answers {choice: null} at once,
+ * with no model call and none of the 4.5-second wait, and the algorithm takes it.
+ *
+ * The model is paid for only where a named NPC actually has to think:
+ *   - opening: the first round (the first shout, the commander's first order);
+ *   - bloodied: at or under half HP, where fight, flee, parley or yield is a real choice;
+ *   - alone: the commander with nobody left on their side;
+ *   - orders: the commander re-reads the field every third round after the first (4, 7, 10…);
+ *   - spell: a spell is castable and they did not cast one in the last few lines (the algorithm never casts, so a
+ *     caster who never asked would never cast; one who just did gives the blade a turn).
+ * Pure, so lib/npc-mind.test.ts can hold it to that.
+ */
+export interface MindMoment {
+  npcName: string
+  round: number | null
+  hp: number | null
+  hpMax: number | null
+  /** how many others are still fighting on their side */
+  sideCount: number
+  /** the map's recent fight log, newest last (may carry HTML) */
+  log: string[]
+}
+
+export function mindNeedsModel(m: MindMoment, offer: MindOffer): { model: boolean; why: string } {
+  const round = m.round ?? 1
+  if (round <= 1) return { model: true, why: "opening" }
+  if (m.hp != null && m.hpMax && m.hp <= m.hpMax / 2) return { model: true, why: "bloodied" }
+  const boss = offer.actions.includes("negotiate")
+  if (boss && m.sideCount === 0) return { model: true, why: "alone" }
+  if (offer.canOrder && round % 3 === 1) return { model: true, why: "orders" }
+  if (offer.spells.length && !castLately(m.npcName, m.log)) return { model: true, why: "spell" }
+  return { model: false, why: "routine" }
+}
+
+/** Did this NPC cast in the recent log? The map writes "<b>Name</b> casts <b>Spell</b>". */
+export function castLately(npcName: string, log: string[]): boolean {
+  const first = npcName.trim().split(/\s+/)[0]?.toLowerCase()
+  if (!first) return false
+  return log.some((l) => {
+    const t = String(l || "").replace(/<[^>]*>/g, "").toLowerCase()
+    return t.includes(first) && /\bcasts\b/.test(t)
+  })
+}

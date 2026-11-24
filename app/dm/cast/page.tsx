@@ -216,6 +216,17 @@ function ActorTab({ pkg, onSaved }: { pkg: Json; onSaved: () => void }) {
     if (!Array.isArray(parsed)) { setBankMsg("The bank is a list [ … ]: nothing saved."); return }
     try { await api("/api/cast", { method: "PATCH", body: JSON.stringify({ agent: c.key, option_bank: parsed }) }); setBankMsg("Saved. The next routine beat draws from it."); onSaved() } catch (e) { setBankMsg(String((e as Error).message)) }
   }
+  // THE OPENER BANK (lib/opener-bank.ts): first approaches to a stranger, tried before any model call.
+  const [openers, setOpeners] = useState(JSON.stringify(c.opener_bank ?? [], null, 1))
+  const [openMsg, setOpenMsg] = useState("")
+  useEffect(() => setOpeners(JSON.stringify(c.opener_bank ?? [], null, 1)), [c])
+  const saveOpeners = async () => {
+    let parsed: unknown
+    try { parsed = JSON.parse(openers) } catch { setOpenMsg("That is not valid JSON: nothing saved."); return }
+    if (!Array.isArray(parsed)) { setOpenMsg("The bank is a list [ … ]: nothing saved."); return }
+    try { await api("/api/cast", { method: "PATCH", body: JSON.stringify({ agent: c.key, opener_bank: parsed }) }); setOpenMsg("Saved. The next stranger they call over hears one of these."); onSaved() } catch (e) { setOpenMsg(String((e as Error).message)) }
+  }
+  const turns = pkg.turns ?? { files: 0, model: 0, recent: [] }
   return (
     <div className="grid max-w-5xl gap-4 lg:grid-cols-[2fr_1fr]">
       <div className={panel}>
@@ -267,6 +278,29 @@ function ActorTab({ pkg, onSaved }: { pkg: Json; onSaved: () => void }) {
         </p>
         <textarea value={bank} onChange={(e) => setBank(e.target.value)} rows={10} spellCheck={false} className={`${input} font-mono text-[12px]`} />
         <div className="mt-2 flex items-center gap-3"><button onClick={saveBank} className={btn}>Save the bank</button><span className="text-[12px] text-stone-400">{bankMsg}</span></div>
+      </div>
+      <div className={`${panel} lg:col-span-2 lg:row-start-4`}>
+        <span className={label}>{c.name.split(" ")[0]}&apos;s opener bank (first approach to a stranger, no model call)</span>
+        <p className="mb-2 text-[12px] text-stone-400">
+          Each entry: <code>narration</code> (how they come over), <code>line</code> (the balloon), <code>next</code> (the matter itself, the moment the hero steps over: one question or statement from their agenda). <code>{"{race}"}</code> becomes the hero&apos;s race. Optional <code>when</code>: <code>areas</code> (e.g. &quot;slave pen&quot;), <code>races</code>. Never use a hero&apos;s name here: these are for strangers. The model still writes the opener when something just happened, or when {c.name.split(" ")[0]} knows the hero, has history with them, or remembers them.
+        </p>
+        <textarea value={openers} onChange={(e) => setOpeners(e.target.value)} rows={10} spellCheck={false} className={`${input} font-mono text-[12px]`} />
+        <div className="mt-2 flex items-center gap-3"><button onClick={saveOpeners} className={btn}>Save the openers</button><span className="text-[12px] text-stone-400">{openMsg}</span></div>
+      </div>
+      <div className={`${panel} lg:col-span-2 lg:row-start-5`}>
+        <span className={label}>Where {c.name.split(" ")[0]}&apos;s openers and fight turns came from (last 200)</span>
+        <p className="mb-2 text-sm"><span className="text-[#9fe6a8]">{turns.files} from files</span> (the bank, or the map&apos;s own fight algorithm) · <span className={gold}>{turns.model} from the model</span></p>
+        <ul className="space-y-0.5">
+          {(turns.recent ?? []).length === 0 ? <li className="text-[12px] text-stone-500">None yet. They gather as {c.name.split(" ")[0]} calls heroes over or fights.</li> : null}
+          {(turns.recent ?? []).map((t: Json, i: number) => (
+            <li key={i} className="flex items-center gap-2 text-[12px]">
+              <span className="w-36 shrink-0 text-stone-500">{new Date(t.created_at).toLocaleString()}</span>
+              <span className="w-16 shrink-0 uppercase text-[10px] text-stone-400">{t.route === "mind" ? "fight" : "opener"}</span>
+              <span className={`w-20 shrink-0 uppercase text-[10px] ${t.source === "model" ? "text-[#c4a777]" : "text-[#9fe6a8]"}`}>{t.source}</span>
+              <span className="flex-1 text-stone-300">{t.why}</span>
+            </li>
+          ))}
+        </ul>
       </div>
       <div className={`${panel} lg:row-start-1 lg:col-start-2`}>
         <span className={label}>Chattiness</span>
