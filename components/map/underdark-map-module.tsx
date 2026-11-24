@@ -25,7 +25,7 @@ import { TravelCards, TravelPanels } from "./travel-cards"
 import { entranceFor, WALKABLE_SCENES } from "@/lib/travel/entrance"
 import { LONG_REST_KEY } from "@/lib/travel/standing"
 import { RUINS_HREF } from "@/lib/travel/battle"
-import { PIXEL_ROAD_SWITCH, pixelRoadFor, pixelRoadHref } from "@/lib/travel/pixel-road"
+import { PIXEL_ROAD_SWITCH, ROAD_SPOT_KEY, parseRoadSpot, pixelRoadFor, pixelRoadHref, roadSpot, roadSpotHref } from "@/lib/travel/pixel-road"
 import { roadRemarks } from "@/lib/travel/road-remarks"
 import { speak } from "@/lib/speech-queue"
 import { d as die, rollRoadTraps, seededRand, trapSeedKey, trapSig } from "@/lib/travel/road-traps"
@@ -110,6 +110,11 @@ export default function UnderdarkMapModule() {
   const roadFrame = useRef<HTMLIFrameElement | null>(null)
   const roadDone = useRef<(() => void) | null>(null)
   const [roadSrc, setRoadSrc] = useState<string | null>(null)
+  // BACK TO THE SAME SPOT AFTER A ROAD FIGHT (Sam, 2026-11-24; lib/travel/pixel-road.ts roadSpot). The leg's own
+  // address, kept beside the spot the road reports when it halts the party, so a tab that left for the battle plate
+  // and came back can lay the same stretch over the map with the party standing where it was stopped.
+  const roadHref = useRef<string | null>(null)
+  const dropSpot = () => { try { sessionStorage.removeItem(ROAD_SPOT_KEY) } catch { /* storage blocked */ } }
   const [roadOn, setRoadOn] = useState(false)
   const [pixelRoad, setPixelRoad] = useState(true)
   useEffect(() => { try { setPixelRoad(localStorage.getItem(PIXEL_ROAD_SWITCH) !== "0") } catch { /* storage blocked */ } }, [])
@@ -206,17 +211,40 @@ export default function UnderdarkMapModule() {
     if (!road) return
     const npcs = R.company.filter((m) => !m.pc).map((m) => m.slug)
     roadLeg.current = { a, b, seed: trapSeedKey(a, b) }
-    setRoadSrc(pixelRoadHref({ road, line: [R.heroSlug, ...R.followerSlugs], npcs, from: na.name ?? "", to: nb.name ?? "" }))
+    dropSpot()   // a new leg: whatever spot an older one left is behind the party now
+    await showRoad(pixelRoadHref({ road, line: [R.heroSlug, ...R.followerSlugs], npcs, from: na.name ?? "", to: nb.name ?? "" }))
+  }
+  /** Lay the road over the map, wait until it is walked to its end (or skipped), and fade back to the nodal map. */
+  async function showRoad(href: string, keep: string = href): Promise<void> {
+    roadHref.current = keep
+    setRoadSrc(href)
     await sleep(60)
     setRoadOn(true)
     await new Promise<void>((res) => { roadDone.current = res })
     roadDone.current = null
     roadLeg.current = null
+    roadHref.current = null
+    dropSpot()                // the stretch is behind them
     setRoadOn(false)          // fade back to the nodal map, which now shows the move
     await sleep(700)
     setRoadSrc(null)
   }
   const endRoad = () => roadDone.current?.()
+  // The tab came back from the battle plate (or was reloaded while halted on the road): the stretch again, at the spot.
+  // Only the browser that leads walks the road, and only while the DM's switch is on; nothing is asked of the game.
+  const cameBack = useRef(false)
+  useEffect(() => {
+    if (cameBack.current || !ready || !loaded || !party) return
+    cameBack.current = true
+    let spot = null
+    try { spot = parseRoadSpot(sessionStorage.getItem(ROAD_SPOT_KEY), Date.now()) } catch { /* storage blocked */ }
+    if (!spot) return
+    const L = live.current, R = roadLive.current
+    if (!R.pixelRoad || !L.canLead || roadDone.current || !L.nodes.some((n) => n.node_key === spot.a) || !L.nodes.some((n) => n.node_key === spot.b)) { dropSpot(); return }
+    roadLeg.current = { a: spot.a, b: spot.b, seed: spot.seed ?? trapSeedKey(spot.a, spot.b) }   // the same trap dice as before the fight
+    void showRoad(roadSpotHref(spot), spot.src)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, loaded, party?.node_id])
   useEffect(() => {
     const onRoad = (ev: MessageEvent) => {
       if (ev.origin !== window.location.origin || ev.source !== roadFrame.current?.contentWindow) return
@@ -250,6 +278,11 @@ export default function UnderdarkMapModule() {
         if (!R.leaderId || !npcs.length) deal({})
         else fetch("/api/npc-address", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ characterId: R.leaderId, npcNames: npcs.map((c) => c.name) }) })
           .then((r) => (r.ok ? r.json() : null)).then((j) => deal((j?.addresses as Record<string, string>) ?? {})).catch(() => deal({}))
+      } else if (m.type === "aop:road-at") {
+        // the road halted the party here: kept for this tab in case the meeting takes it to a battle plate
+        const leg = roadLeg.current, at = m as unknown as { x?: number; y?: number }
+        const spot = leg && roadHref.current ? roadSpot(roadHref.current, leg, { x: at.x, y: at.y }, Date.now()) : null
+        if (spot) try { sessionStorage.setItem(ROAD_SPOT_KEY, JSON.stringify(spot)) } catch { /* storage blocked */ }
       } else if (m.type === "aop:road-near") {
         const leg = roadLeg.current, n = leg ? live.current.nodes.find((x) => x.node_key === leg.b) : null
         if (n && met.current?.key !== n.node_key) met.current = { key: n.node_key, done: R.reachNode(n) }
@@ -302,7 +335,7 @@ export default function UnderdarkMapModule() {
       const t = setTimeout(() => setLift(true), foes.length ? 2600 : 500)
       return () => clearTimeout(t)
     }
-    if (!stopped && meetSent.current) { meetSent.current = false; setLift(false); post({ type: "aop:road-clear" }) }
+    if (!stopped && meetSent.current) { meetSent.current = false; setLift(false); dropSpot(); post({ type: "aop:road-clear" }) }   // put away without a fight: the walk goes on from here
     if (!roadOn) { meetSent.current = false; setLift(false) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stopped, roadOn])
