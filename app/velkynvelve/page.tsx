@@ -24,7 +24,7 @@
 import { useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
 import { StageLink } from "@/components/stage/stage-provider"
-import { ArrowLeft, Crown, Clapperboard } from "lucide-react"
+import { ArrowLeft, Crown, Clapperboard, Users } from "lucide-react"
 import { dmHeaders } from "@/lib/dm-key"
 import { AFTER_RESET_PATH, AWAKEN_PATH, needsWaking, wasReset } from "@/lib/session-guard"
 import { DOOR_NEXT_KEY, doorIntent, doorResume } from "@/lib/map-entry"
@@ -174,6 +174,13 @@ export default function VelkynvelvePage() {
           <a href="/cinematics" target="_blank" rel="noopener" className="ml-auto inline-flex items-center gap-1.5 font-serif text-xs uppercase tracking-[0.18em] text-[#e8c56a] hover:text-[#fff3cf]">
             <Clapperboard className="h-3.5 w-3.5" aria-hidden />
             Cinematics
+          </a>
+        )}
+        {/* The Cast (Sam, 2026-11-23): each agent's whole package. A new tab, same reason as Cinematics. */}
+        {dm && (
+          <a href="/dm/cast" target="_blank" rel="noopener" className="inline-flex items-center gap-1.5 font-serif text-xs uppercase tracking-[0.18em] text-[#e8c56a] hover:text-[#fff3cf]">
+            <Users className="h-3.5 w-3.5" aria-hidden />
+            The Cast
           </a>
         )}
         {dm ? <span><EndGameButton /></span> : (
