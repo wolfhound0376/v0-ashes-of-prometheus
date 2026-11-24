@@ -97,6 +97,7 @@ button.go{background:#6a1630;border-color:#ff6b8b}
  <div id="tScr" class="scr on"><div><div class="act">Prologue</div><h1>The Pit</h1><div class="sub">of Velkynvelve</div><button id="tGo" class="awk-btn" style="margin-top:34px">Enter the Pit</button><div class="hint">Switch SOUND on below for the score</div></div></div>
  <div id="crawlBox" class="scr"><div id="crawl"></div></div>
  <div id="filmScr" class="scr"><video id="film" playsinline preload="auto" src="assets/film/pit-intro-sequence.mp4"></video><div id="filmCap"></div><div id="filmTitle"><div><div class="act">Prologue</div><h1>The Pit</h1></div></div></div>
+ <div id="escScr" class="scr" style="z-index:6"><video id="escFilm" playsinline preload="auto" style="width:100%;height:100%;object-fit:cover;background:#000"></video></div>
  <div id="cardScr" class="scr"><div><div class="act">Prologue</div><h1>The Pit</h1><div class="sub">Lolth watches</div></div></div>
  <div id="endScr" class="scr"><div><div class="act" id="endKick">And so it begins</div><h1 id="endH">You wake in the slave pen</h1><div class="sub" id="endSub">Act I &mdash; Awakening into the Nightmare</div><a id="toAwk" class="awk-btn" href="https://ashes.playacartagena.com/awaken" target="_blank" rel="noopener" style="display:none;margin-right:12px;text-decoration:none">Continue to Awakening</a><button id="again" class="awk-btn">Fight again</button></div></div>
  <button id="skip" class="awk-skip">Skip</button>
@@ -256,7 +257,7 @@ let pick='fifi',partyN=2,F=[],dagger=null,fx=[],parts=[],floats=[],bubbles=[],bo
 let kills=0,result=null,lastDrum=0,barkT=4;
 const keys={},pressed={};
 const ferals=()=>F.filter(f=>f.side==='feral'),heroes=()=>F.filter(f=>f.side==='hero'&&!f.def.npc),allies=()=>F.filter(f=>f.side==='hero'),thralls=()=>F.filter(f=>f.side==='thrall');
-const foesOf=f=>F.filter(o=>o.side!==f.side&&!o.dead&&!o.down&&!(o.invis>0&&f.side==='thrall')&&(f.side==='thrall'?(f.def.hunter?!!o.def.coward:!o.def.coward):!o.def.coward));
+const foesOf=f=>F.filter(o=>o.side!==f.side&&!o.dead&&!o.down&&!o.inPit&&!(o.invis>0&&f.side==='thrall')&&(f.side==='thrall'?(f.def.hunter?!!o.def.coward:!o.def.coward):!o.def.coward));
 const dist=(a,b)=>Math.hypot(a.x-b.x,(a.z-b.z)*1.3);
 function nearest(f,list){let b=null,bd=1e9;for(const o of list){const dd=dist(f,o);if(dd<bd){bd=dd;b=o}}return b}
 function xLim(z){const p=(z-ZT)/(ZB-ZT);return [30-14*p,354+14*p]}
@@ -300,6 +301,7 @@ function setup(){syncPlate();spMeals=0;SL=[];WAVE2=[];wave=1;w2T=0;spiderOK=fals
     const k=CONTESTANTS[2],t=mk({key:'thrall',name:k.name,cls:'Pit Thrall',hp:22,ac:11,str:0,dex:1,fem:k.fem,sprite:k.sprite,body:k.body,acc:'#ff3355',hunter:1},'thrall',15);
     t.hx=250;t.hz=LANES[2];t.x=W+40;t.z=t.hz;t.pair=c;t.claimed=1;F.push(t);
     spiders.push({i:2,script:1,state:'up',x:192,z:140,h:200,dir:0,t:0,tg:null,anim:0})}
+  pitSetup();
   dagger={state:'none',x:192,z:158,h:0,rot:0};lurk.forEach(c=>{c.state='hidden';c.cd=2});fauna.forEach(a=>{a.x=a.hx;a.z=a.hz});
 }
 function park(){F.forEach(f=>{f.x=f.hx;f.z=f.hz})}
@@ -358,7 +360,7 @@ function damage(def,n,att,col='#ffe14a'){
   }else if(def.side==='thrall'&&def.hp<=def.max*.4&&Math.random()<.6){pvLine(def,'beg')}else if(def.side==='thrall'&&n>=5){pvLine(def,'fear')}
   if(def.def.npc&&n>0&&!def.down)npcCry(def,att,true);
 }
-function heal(f,n,by){const was=f.down;f.hp=Math.min(f.max,f.hp+n);f.down=false;f.anim=0;float(f,'+'+n,'#7dff9a',2);if(was){log(`${f.name} RISES (${by.name}'S HEALING WORD)`);f.state='idle';clap(20,.4)}}
+function heal(f,n,by){if(f.dead||f.impaled)return;const was=f.down;f.hp=Math.min(f.max,f.hp+n);f.down=false;f.anim=0;float(f,'+'+n,'#7dff9a',2);if(was){log(`${f.name} RISES (${by.name}'S HEALING WORD)`);f.state='idle';clap(20,.4)}}
 function dropDagger(f){if(!f.dagger)return;f.dagger=false;dagger={state:'ground',x:f.x+(Math.random()-.5)*16,z:f.z+(Math.random()-.5)*8,h:0,rot:0};clampPos(dagger);float(f,'DROPS THE DAGGER','#ccc')}
 const wpnMod=f=>f.dagger?Math.max(f.def.str,f.def.dex):f.def.str;
 function sneak(att,def){
@@ -711,7 +713,7 @@ function drawNpc(f,by,flick){const sp=f.def.sprite,A=NPCMAN[sp],sc=f.def.sc||1;l
 function think(f,dt){
   const I={};f.think-=dt;
   if(f.side==='feral'){f.rt=(f.rt||0)-dt;let tg=f.rtg;
-    if(!tg||tg.down||tg.dead||tg.invis>0||f.rt<=0){const pool=F.filter(o=>o.side!=='feral'&&!o.down&&!o.dead&&!(o.invis>0)&&!o.def.coward);tg=f.rtg=pool[d(pool.length||1)-1]||null;f.rt=3+Math.random()*2.5;if(tg&&Math.random()<.15)say(f,['GLUB! GLUB-GLUB!','BLIBDOOLPOOLP!','FLESH! FLESH!','SKREEEEK!'][d(4)-1],'#bfe8c8')}
+    if(!tg||tg.down||tg.dead||tg.invis>0||f.rt<=0){const pool=F.filter(o=>o.side!=='feral'&&!o.down&&!o.dead&&!o.inPit&&!(o.invis>0)&&!o.def.coward);tg=f.rtg=pool[d(pool.length||1)-1]||null;f.rt=3+Math.random()*2.5;if(tg&&Math.random()<.15)say(f,['GLUB! GLUB-GLUB!','BLIBDOOLPOOLP!','FLESH! FLESH!','SKREEEEK!'][d(4)-1],'#bfe8c8')}
     if(!tg)return I;const dd=dist(f,tg);if(dd>REACH*.85)steer(I,f,tg.x+(f.x<tg.x?-14:14),tg.z,3);if(dd<=REACH&&f.cd.j<=0&&f.think<=0){I.j=1;f.think=.3+Math.random()*.6}return I}
   if(f.def.coward)return cowardThink(f,dt);
   if(f.confused>0){if(Math.random()<dt*.8)steer(I,f,f.x+(Math.random()-.5)*60,f.z+(Math.random()-.5)*30,2);return I}
@@ -906,13 +908,14 @@ function serif(s,x,y,size,col,glow,align='center',ls='.14em',weight=600){g.save(
 
 /* ---------- update ---------- */
 function upd(f,dt){
-  if((f.down||f.dead||f.prone>0)&&!f.hidden&&!(f.eaten&&f.cocoon)){const zt=ZT+16,[a,b]=xLim(f.z),k=Math.min(1,dt*7);   // Sam, 2026-11-17: no one falls on the side of the wall
+  if((f.down||f.dead||f.prone>0)&&!f.hidden&&!f.impaled&&!(f.eaten&&f.cocoon)){const zt=ZT+16,[a,b]=xLim(f.z),k=Math.min(1,dt*7);   // Sam, 2026-11-17: no one falls on the side of the wall
     if(f.z<zt)f.z+=(zt-f.z)*k;if(f.z>ZB-4)f.z+=(ZB-4-f.z)*k;if(f.x<a+16)f.x+=(a+16-f.x)*k;if(f.x>b-16)f.x+=(b-16-f.x)*k}
   for(const c in f.cd)f.cd[c]=Math.max(0,f.cd[c]-dt);f.webbed=Math.max(0,(f.webbed||0)-dt);
   f.sneakCd=Math.max(0,f.sneakCd-dt);f.slow=Math.max(0,f.slow-dt);f.lag+=(f.hp-f.lag)*Math.min(1,dt*3);f.anim+=dt;
   if(f.dead||f.down){f.vx=f.vz=0;if(f.h>0){f.vh=Math.min(f.vh||0,0)-620*dt;f.h=Math.max(0,f.h+f.vh*dt);if(f.h===0){f.vh=0;dust(f.x,f.z,6);labThud()}}else f.vh=0;f.downT+=dt;   // a body drops like a body, never hangs in the air
     if(f.side==='thrall'&&!f.eaten&&f.downT>1){if(f.wrap||f.cocoon){if(f.cocoon&&!f.mmph&&(f.coT||0)>.4){f.mmph=1;say(f,'MMPH! MMMPH!','#c8b8c8');sob(f)}}else if(!f.dead){f.crawl=(f.crawl||0)+dt;if(Math.random()<dt*.6){pvLine(f,'down');}}}
     return}
+  if(f.inPit){pitUpd(f,dt);return}
   let I={};
   if(f.confused>0){f.confused-=dt;if(Math.random()<dt*2.5)f.dir=d(8)-1}
   if(f.invis>0){f.invis-=dt;if(f.invis<=0)vanishEnd(f)}
@@ -970,6 +973,7 @@ function upd(f,dt){
       if(tg&&!tg.down&&!tg.dead){const side=Math.sign(f.x-tg.x)||-1;f.x=tg.x-side*13;f.z=tg.z+.5;clampPos(f);faceTo(f,tg);smoke(f.x,f.z-12,5,.6);dust(f.x,f.z,4)}
       f.state='atk';f.st=.08;f.res=0;f.sneakGo=1}}
   }
+  pitAvoid(f);
   f.x+=f.vx*dt;f.z+=f.vz*dt;if(f.yank&&f.yank.t>0){f.x+=f.yank.vx*dt;f.z+=f.yank.vz*dt;f.yank.t-=dt}if(mode!=='intro')clampPos(f);
   if(f.h>0||f.vh>0){f.h+=f.vh*dt;f.vh-=520*dt;if(f.h<=0){f.h=0;f.vh=0}}
   if(Math.abs(f.vx)+Math.abs(f.vz)>1)f.walkT+=dt;
@@ -986,11 +990,14 @@ function updSpiders(dt){
     if(s.script&&s.state==='up'){if(s.go&&!s.used){s.used=1;const v2=s.go;s.tg=v2;const hole=curPL()?gateFor(v2):lurk.slice().sort((a,b)=>Math.hypot(a.x-v2.x,a.z-v2.z)-Math.hypot(b.x-v2.x,b.z-v2.z))[0];s.hole=hole;
         s.x=hole.x+hole.sx*4;s.z=hole.z-2;s.h=0;s.state=hole.in?'gate':'emerge';s.leapt=0;s.alpha=hole.in?0:s.alpha;if(hole.in)gateOpen(hole);s.t=0;s.sk=0;snd('spider.webm',.7);snd('sp-skitter.mp3',.6);hype=Math.min(1,hype+.3);clap(18,.4);
         for(let i=0;i<14;i++)parts.push({x:hole.x,y:hole.z-3,vx:(Math.random()-.5)*70,vy:-Math.random()*50,l:.6,c:Math.random()<.5?'#e8e8f0':'#5a4a3a'})}continue}
+    // Sam, 2026-11-23: "spiders only come for downed not decapitated opponents" (nor the spike pit's dead). A spider already
+    // on its way to someone who is then beheaded, frozen solid or impaled turns back to its gate.
+    if(s.tg&&(s.tg.fatal||s.tg.impaled||s.tg.inPit)&&!s.tg.eaten&&['gate','emerge','lurk','stalk','shoot','bite'].includes(s.state)){s.tg=null;s.drag=null;s.state='climb';s.t=0;s.leap=null;s.h=0;log('THE SPIDER TURNS BACK - NOTHING LEFT WORTH TAKING');continue}
     const v=s.tg,fang=()=>{const dv=[[0,1],[.7,.7],[1,0],[.7,-.7],[0,-1],[-.7,-.7],[-1,0],[-.7,.7]][s.dir]||[0,1];return [s.x+dv[0]*12,s.z-10+dv[1]*4]};
     // the spiders don't come until a prisoner is nearly dead: one crawls out of the nearest web hole and waits at the edge,
     // then moves in when the prisoner goes down (heroes only if the whole party is down: game over)
     if(s.state==='up'&&spiders.some(o=>o!==s&&o.state!=='up'))continue;   // Sam: only one spider in the pit at a time
-    if(s.state==='up'){const v=mode==='defeat'?heroes().find(h=>h.down&&!h.eaten&&!h.claimed):(spiderOK?thralls().find(t=>!t.eaten&&!t.claimed&&t.down&&t.downT>1.2):null);
+    if(s.state==='up'){const v=mode==='defeat'?heroes().find(h=>h.down&&!h.eaten&&!h.claimed):(spiderOK?thralls().find(t=>!t.eaten&&!t.claimed&&!t.fatal&&!t.impaled&&!t.inPit&&t.down&&t.downT>1.2):null);
       if(v){v.claimed=1;s.tg=v;if(v.side==='thrall'){spMeals=(spMeals||0)+1;if(spMeals%2===1&&!v.fatal)v.gorge=1;else v.entomb=1}if(v.side==='thrall'&&!v.dead)pvLine(v,'fear',3);const hole=curPL()?gateFor(v):lurk.slice().sort((a,b)=>Math.hypot(a.x-v.x,a.z-v.z)-Math.hypot(b.x-v.x,b.z-v.z))[s.i%2?1:0];s.hole=hole;
         s.x=hole.x+hole.sx*4;s.z=hole.z-2;s.h=0;s.state=hole.in?'gate':'emerge';s.leapt=0;s.alpha=hole.in?0:s.alpha;if(hole.in)gateOpen(hole);s.t=0;s.sk=0;snd('spider.webm',.7);snd('sp-skitter.mp3',.6);hype=Math.min(1,hype+.3);clap(18,.4);
         for(let i=0;i<14;i++)parts.push({x:hole.x,y:hole.z-3,vx:(Math.random()-.5)*70,vy:-Math.random()*50,l:.6,c:Math.random()<.5?'#e8e8f0':'#5a4a3a'});
@@ -1081,11 +1088,121 @@ function updDarts(dt){
   darts=darts.filter(m=>!m.done);
 }
 
+/* ---------- THE SPIKE PIT (Sam, 2026-11-23) ----------
+   "Introduce a trap spike pit that our characters can barely see when they are close enough to but trigger if they go over it.
+   Opponents can trigger this spike pit. If you fall, you have 2 seconds to jump or it kills you. Hitting the jump button pauses
+   the match, and cuts to a brief cinematic in runway of Fifi or Kenta jumping out of the spike trap ... Then the fight unpauses
+   with our pixel characters arranged appropriately and the pit open. Now, if anyone falls in they die and a gruesome death.
+   The spiders also don't come for these victims but you can hear Ilvara laughing loudly and the crowd cheering."
+   - One hidden pit per fight, at one of six spots clear of the walk-in lanes and the dagger. Only a hero's eye finds it: the
+     seams show faintly, and only when a living hero stands close.
+   - Anyone on foot who steps on it (a hero, a prisoner, a kuo-toa; a body kicked prone and sliding counts) springs it.
+     A hero who springs it is in the pit with 2 real seconds to JUMP (Space). A prisoner or kuo-toa who springs it dies on the spikes.
+   - JUMP: the match freezes on every screen and the hero's escape film plays (Fifi: a leap with a flip, "Ha ha, not today";
+     Kenta: he hangs from the ledge and hauls himself out). Then the fight goes on with the hero on the rim, anyone close shoved
+     back a step, and the pit open. Heroes without a film yet (Samson, Scott) or with cinematics off jump out in pixels.
+   - Once it is open, anyone who goes in dies at once: impaled, blood, a scream, the crowd roaring and Ilvara laughing.
+     Jumping over it is fine. The Pit's own people walk around it; players can walk in if they choose to.
+   - The impaled are claimed: no spider comes for them, and healing does not raise them.
+   - Calls that are Claude's, not Sam's: the six spots and the pit's size (about 15 x 7 ft); bots who fall in jump 3 times in 4;
+     a prisoner or kuo-toa who springs the hidden pit gets no jump; a hero who dies in it is dead for the rest of the fight. */
+let PIT={x:192,z:175,hw:18,hd:8,state:'hidden',t:0,bodies:0},PITC=null,PITM=null;
+const PIT_SPOTS=[[192,175],[192,133],[146,170],[238,134],[150,133],[234,171]];
+const PIT_FILMS={fifi:'assets/film/pit-escape-fifi.mp4',kenta:'assets/film/pit-escape-kenta.mp4'};
+const PIT_WINDOW=2000;   // ms of real time to jump
+const PIT_PRE={};
+const pitCineOn=()=>!(EMB&&EMBQ.get('film')==='0');
+function pitSetup(){if(PITC||PITM){PITC=null;PITM=null;pitFilmStop()}const s=PIT_SPOTS[Math.floor(Math.random()*PIT_SPOTS.length)];PIT={x:s[0],z:s[1],hw:18,hd:8,state:'hidden',t:0,bodies:0};
+  if(pitCineOn())for(const k in PIT_FILMS)if(!PIT_PRE[k]&&(k===pick||entered.has(k))){const v=document.createElement('video');v.preload='auto';v.muted=true;v.src=PIT_FILMS[k];PIT_PRE[k]=v}}
+const inPitRect=(x,z,m=0)=>Math.abs(x-PIT.x)<PIT.hw+m&&Math.abs(z-PIT.z)<PIT.hd+m;
+function pitCheck(){
+  for(const f of F){if(f.inPit||f.impaled||f.dead||f.down||f.hidden||f.eaten||(f.h||0)>=4||f.state==='dive'||f.state==='shadow')continue;
+    if(!inPitRect(f.x,f.z,-2))continue;
+    if(PIT.state==='hidden'){pitOpen(f);if(f.side==='hero'&&!f.def.npc){pitFallHero(f);continue}}
+    impale(f)}}
+function pitOpen(f){PIT.state='open';PIT.t=0;shake=Math.max(shake,.35);hitstop=Math.max(hitstop,.08);
+  laNoise({dur:.35,bp:700,bp1:180,q:1,gain:.4});laTone({f0:90,f1:40,dur:.35,gain:.4});for(let i=0;i<5;i++)setTimeout(()=>laNoise({dur:.05,hp:1800,gain:.22}),i*40);
+  for(let i=0;i<22;i++)parts.push({x:PIT.x+(Math.random()-.5)*PIT.hw*2,y:PIT.z+(Math.random()-.5)*PIT.hd*2,vx:(Math.random()-.5)*70,vy:-Math.random()*60,l:.7,c:Math.random()<.4?'#6a4a2a':'#b89a70'});
+  dust(PIT.x,PIT.z,12);clap(30,.5);hype=Math.min(1,hype+.4);log(`THE SAND GIVES WAY UNDER ${f.name.toUpperCase()} - A SPIKE PIT`)}
+function pitFallHero(f){f.inPit=1;f.pitT0=performance.now();f.pitLeft=1;f.x=PIT.x;f.z=PIT.z;f.vx=f.vz=0;f.vh=0;f.h=0;f.state='idle';f.st=0;f.res=0;f.yank=null;f.prone=0;
+  f.botJump=f.ai?(Math.random()<.75?500+Math.random()*1100:null):null;bubbles=bubbles.filter(b=>b.f!==f);effort(f,'big',1);float(f,'!','#ff5577',2);
+  log(`${f.name.toUpperCase()} DROPS INTO THE SPIKES - JUMP!`)}
+function pitUpd(f,dt){f.vx=f.vz=0;f.anim+=dt;if(PITC)return;const el=performance.now()-f.pitT0;f.pitLeft=Math.max(0,1-el/PIT_WINDOW);
+  let jump=false;if(mode==='fight'){if(f.remote)jump=!!netIn(f).jump;else if(f.ai)jump=f.botJump!=null&&el>f.botJump;else jump=!!pressed[' ']}
+  if(jump)pitEscape(f);else if(el>PIT_WINDOW||mode!=='fight')impale(f)}
+function pitEscape(f){const film=PIT_FILMS[f.def.key],pv=PIT_PRE[f.def.key];effort(f,'big',1);
+  if(film&&pitCineOn()&&!(pv&&pv.error)){PITC={f,k:f.def.key,t0:performance.now()};for(const k in keys)keys[k]=false;pitFilmPlay(film);log(`${f.name.toUpperCase()} JUMPS FOR IT`)}
+  else pitClimbOut(f,true)}
+function pitFilmPlay(src){const v=$('escFilm');try{v.pause()}catch(e){}v.src=src;v.currentTime=0;v.muted=!soundOn;v.volume=1;show('escScr');
+  v.play().catch(()=>{v.muted=true;v.play().catch(()=>{})});try{music.volume=.06;bed.volume=.06}catch(e){}}
+function pitFilmStop(){const v=$('escFilm');try{v.pause()}catch(e){}show('escScr',false);try{music.volume=.42;bed.volume=.5}catch(e){}}
+function pitCineTick(){const v=$('escFilm'),el=performance.now()-PITC.t0;
+  if(v.ended||(v.error&&el>300)||el>16000||(el>1500&&v.paused&&v.currentTime===0)||(el>1200&&(pressed.enter||pressed.escape)))pitCineEnd()}   // Enter or Esc skips the film
+function pitCineEnd(){const f=PITC.f;PITC=null;pitFilmStop();pitClimbOut(f,false)}
+function pitCineMirror(v){if(v&&!PITM){PITM=v;const s=PIT_FILMS[v.k];if(s)pitFilmPlay(s)}else if(!v&&PITM){PITM=null;pitFilmStop()}}
+function pitClimbOut(f,pixel){f.inPit=0;f.pitSaved=1;f.state='idle';f.st=0;f.vx=f.vz=0;
+  const north=PIT.z>150;f.z=north?PIT.z-PIT.hd-6:PIT.z+PIT.hd+6;f.x=PIT.x+(Math.random()-.5)*PIT.hw;clampPos(f);if(inPitRect(f.x,f.z,3))f.z+=north?-6:6;
+  f.dir=dirTo(192-f.x,150-f.z);
+  // the others give the one who just came out of the pit a step
+  for(const o of F){if(o===f||o.dead||o.down||o.inPit||o.impaled)continue;const dx=o.x-f.x,dz=o.z-f.z,l=Math.hypot(dx,dz)||1;
+    if(l<36){o.x+=dx/l*(36-l);o.z+=dz/l*(36-l)*.6;clampPos(o)}if(inPitRect(o.x,o.z,4)){o.z+=o.z<PIT.z?-(PIT.hd+6):PIT.hd+6;clampPos(o)}}
+  if(f.def.key==='kenta'&&!pixel){f.prone=.8;f.vx=0}   // he came out on his hands and knees
+  if(pixel){f.h=1;f.vh=190;f.anim=0;if(f.def.key==='fifi'){say(f,'HA HA. NOT TODAY.','#ffffff');voice('line-fifi-nottoday.mp3',1,2)}}
+  dust(f.x,f.z,10);labThud();float(f,f.def.key==='fifi'?'NOT TODAY!':'OUT!','#cfe8ff',1.6);clap(45,.6);hype=1;ilvReact('jeer');
+  log(`${f.name.toUpperCase()} CLAWS OUT OF THE SPIKE PIT`)}
+function impale(f){const was=f.inPit;f.inPit=0;f.impaled=1;f.x=PIT.x+(Math.random()-.5)*(PIT.hw-6)*2;f.z=PIT.z+(Math.random()-.5)*(PIT.hd-2);
+  f.hp=0;f.lag=Math.min(f.lag,f.max);f.down=true;f.dead=true;f.claimed=1;f.downT=0;f.anim=0;f.state='idle';f.vx=f.vz=0;f.h=0;f.vh=0;f.yank=null;f.prone=0;f.webbed=0;
+  dropDagger(f);if(dagger&&dagger.state==='ground'&&inPitRect(dagger.x,dagger.z,3)){dagger.z=PIT.z>150?PIT.z-PIT.hd-5:PIT.z+PIT.hd+5;clampPos(dagger)}
+  bubbles=bubbles.filter(b=>b.f!==f);PIT.bodies++;if(f.side==='thrall')kills++;
+  snd('sp-bite.mp3',1,.62);labThud();laNoise({dur:.18,lp:700,gain:.45});setTimeout(()=>snd('sp-bite.mp3',.7,.5),110);snd(f.fem?'vox-die-f1.mp3':`vox-die-m${d(2)}.mp3`,.9,.95);snd('death-fatality.mp3',.6);
+  vfx('blood',f.x,f.z+2,36,36,.9,{foot:1});
+  for(let i=0;i<40;i++)parts.push({x:f.x,y:f.z-6,vx:(Math.random()-.5)*150,vy:-Math.random()*150,l:.9,c:Math.random()<.5?'#c01414':'#5a0808'});
+  for(let i=0;i<14;i++)drops.push({x:f.x,y:f.z-8,vx:(Math.random()-.5)*90,vy:-rr(20,70),floor:PIT.z+(Math.random()<.5?-1:1)*rr(PIT.hd+1,PIT.hd+10),r:rr(.6,1.2),c:'#7a1010'});
+  for(let i=0;i<2;i++){const k=['arm','meat','leg'][d(3)-1],side=Math.random()<.5?-1:1;gore.push({k,x:f.x,z:f.z,fx:PIT.x+(Math.random()-.5)*PIT.hw*2.4,fz:Math.max(ZT,Math.min(ZB,PIT.z+side*(PIT.hd+6+Math.random()*8))),t:0,h:0,rot:Math.random()*6})}
+  shake=Math.max(shake,.45);hitstop=Math.max(hitstop,.14);slowmo=Math.max(slowmo,.3);flash=.1;hype=1;
+  float(f,'IMPALED','#ff3355',2);clap(90,.85);snd('crowd-roar.mp3',.9);setTimeout(ilvLaugh,450);
+  log(`${f.name.toUpperCase()} ${was?'DID NOT JUMP - ':''}IMPALED ON THE SPIKES`)}
+function ilvLaugh(){ilvReact('cheer');ILV.reps=3;voice('ilv-laugh.mp3',1,3)}
+function pitAvoid(f){if(PIT.state!=='open'||!f.ai||f.inPit||f.impaled||(!f.vx&&!f.vz))return;
+  const nx=f.x+f.vx*.25,nz=f.z+f.vz*.25;if(!inPitRect(nx,nz,6)||inPitRect(f.x,f.z,1))return;
+  if(Math.abs(f.z-PIT.z)>=PIT.hd+4){f.vz=0;if(Math.abs(f.vx)<20)f.vx=(f.x<PIT.x?-1:1)*45}
+  else{f.vx=0;if(Math.abs(f.vz)<15)f.vz=(f.z<PIT.z?-1:1)*36}}
+function drawPit(){const x0=PIT.x-PIT.hw,y0=PIT.z-PIT.hd,w=PIT.hw*2,h=PIT.hd*2;
+  if(PIT.state==='hidden'){   // the seams, faint, only to a hero standing close
+    let near=1e9;for(const f of heroes())if(!f.down&&!f.dead)near=Math.min(near,Math.hypot(f.x-PIT.x,(f.z-PIT.z)*1.3));
+    const a=Math.max(0,Math.min(1,(46-near)/28))*.42;if(a<=.01)return;g.save();g.globalAlpha=a;
+    g.fillStyle='rgba(40,24,12,.35)';g.fillRect(x0,y0,w,h);g.strokeStyle='#2a1a0c';g.lineWidth=.5;
+    g.beginPath();g.moveTo(x0,y0);g.lineTo(x0+w*.42,y0);g.moveTo(x0+w*.55,y0);g.lineTo(x0+w,y0);g.lineTo(x0+w,y0+h*.6);g.moveTo(x0+w,y0+h);g.lineTo(x0+w*.3,y0+h);g.moveTo(x0+w*.18,y0+h);g.lineTo(x0,y0+h);g.lineTo(x0,y0+h*.2);
+    for(let i=1;i<4;i++){const xx=x0+w*i/4;g.moveTo(xx,y0+1);g.lineTo(xx+(i%2?.5:-.5),y0+h-1)}g.stroke();g.restore();return}
+  const k=Math.min(1,PIT.t/.22),ww=w*(.4+.6*k),hh=h*(.4+.6*k),X=PIT.x-ww/2,Y=PIT.z-hh/2;
+  g.save();
+  const gr=g.createLinearGradient(0,Y,0,Y+hh);gr.addColorStop(0,'#020102');gr.addColorStop(.35,'#0c0505');gr.addColorStop(1,'#1e0c08');g.fillStyle=gr;g.fillRect(X,Y,ww,hh);
+  {const wg=g.createLinearGradient(0,Y,0,Y+7);wg.addColorStop(0,'#4a3422');wg.addColorStop(1,'#0d0806');g.fillStyle=wg;g.fillRect(X,Y,ww,7)}for(let i=2;i<ww;i+=5)P(X+i,Y+1,1,6,'rgba(20,12,8,.7)');P(X,Y+3,ww,.5,'rgba(0,0,0,.4)');   // a deep shaft: the far wall drops away into the dark   // the far wall
+  if(PIT.bodies){g.fillStyle='rgba(110,8,10,.55)';g.beginPath();g.ellipse(PIT.x,Y+hh*.72,ww*.42,hh*.25,0,0,7);g.fill()}
+  const spike=(sx,sy,ht,lit)=>{g.fillStyle='#3a2418';g.beginPath();g.moveTo(sx-1.1,sy);g.lineTo(sx,sy-ht);g.lineTo(sx+1.1,sy);g.fill();g.fillStyle=lit;g.fillRect(sx-.3,sy-ht,.7,1.4)};
+  const tip=PIT.bodies?'#a01414':'#a89078';
+  for(let sx=X+2;sx<X+ww-1;sx+=3.1)spike(sx,Y+hh*.62,4,'#6a5848');for(let sx=X+3.5;sx<X+ww-1;sx+=3.1)spike(sx,Y+hh*.8,5,'#7a6858');
+  // who is in it
+  g.beginPath();g.rect(X,Y-40,ww,hh+40);g.clip();
+  for(const f of F){if(f.impaled){const z0=f.z;f.z=Math.max(Y+hh*.55,Math.min(Y+hh-1,f.z+2));drawF(f);f.z=z0}}
+  g.restore();g.save();g.beginPath();g.rect(X,Y-44,ww,hh+44);g.clip();
+  for(const f of F){if(f.inPit){const z0=f.z;f.z=PIT.z+PIT.hd+7;drawF(f);f.z=z0}}
+  g.restore();g.save();
+  for(let sx=X+1.5;sx<X+ww;sx+=2.8)spike(sx,Y+hh-.5,7+((sx*7)%3),tip);
+  P(X,Y+hh-1,ww,1,'#6a4e34');P(X-1,Y+hh,ww+2,2,'#c9aa7a');P(X-1,Y-1,ww+2,1,'#8a6e4a');P(X-1,Y,1,hh,'#5a432c');P(X+ww,Y,1,hh,'#5a432c');   // the lips
+  g.fillStyle='#4a3020';g.save();g.translate(X+2,Y+1);g.rotate(-.5);g.fillRect(-3,-1,7,2);g.restore();g.save();g.translate(X+ww-2,Y+hh-1);g.rotate(.6);g.fillRect(-4,-1,7,2);g.restore();
+  g.restore()}
+function drawPitPrompt(){const f=F.find(o=>o.inPit);if(!f||PITC||PITM)return;const left=f.pitLeft==null?1:f.pitLeft;
+  if(isMe(f)){const on=Math.floor(T*8)%2;g.save();g.globalAlpha=on?1:.75;fightTxt('Jump!',W/2,72,26*(1+(1-left)*.15),'center',{glow:'rgba(255,40,20,.8)'});g.restore();
+    serif('PRESS SPACE',W/2,90,6,'#f1e8d6','rgba(0,0,0,.95)','center','.3em');P(W/2-40,96,80,3,'rgba(0,0,0,.7)');P(W/2-40,96,80*left,3,left>.35?'#ffd24a':'#ff3040')}
+  else{serif(`${f.name.toUpperCase()} IS IN THE SPIKES`,W/2,70,6,'#ffb0b0','rgba(0,0,0,.95)','center','.2em');P(W/2-30,78,60,2,'rgba(0,0,0,.7)');P(W/2-30,78,60*left,2,'#ff3040')}}
+
 /* ---------- scene flow ---------- */
 function startIntro(){setup();mode='intro';mt=0;lastDrum=0;syncMusic();music.currentTime=0}
 function skipIntro(){if(mode!=='intro')return;mt=Math.max(mt,11.8);park();if(dagger.state!=='ground'){dagger={state:'ground',x:192,z:158,h:0,rot:0};ilvSpeak('start')}}
-function allEaten(){return thralls().every(t=>t.eaten||t.fatal)}
+function allEaten(){return thralls().every(t=>t.eaten||t.fatal||t.impaled)}
 function step(dt){
+  if(PITC){pitCineTick();for(const k in pressed)delete pressed[k];return}
   T+=dt;mt+=dt;shake=Math.max(0,shake-dt);hype=Math.max(.18,hype-dt*.12);
   if(mode==='loading'){if(loaded>=toLoad){mode='title';setup();park();if(EMB){embSound();beginPrelude()}}return}
   stepPrelude(dt);if(false)updLurkers(dt);else lurk.forEach(c=>{if(c.state!=='hidden'){c.state='hidden'}});
@@ -1096,7 +1213,7 @@ function step(dt){
     if(mt>=12){mode='fight';mt=0;log('ROUND 1 - LOLTH WATCHES')}
   }
   if(mode!=='title')F.forEach(f=>upd(f,dt));
-  updDagger(dt);updDarts(dt);updSpiders(dt);updStrikeFx(dt);
+  updDagger(dt);updDarts(dt);updSpiders(dt);updStrikeFx(dt);if(mode==='fight')pitCheck();PIT.t+=dt;
   if(mode==='fight'){
     if(wave===1&&(thralls().some(t=>t.down)||mt>40))releaseWave2();
     if(wave===2){w2T+=dt;if(!spiderOK&&w2Pend===0&&((ferals().every(k=>k.dead)&&w2T>2.5)||w2T>16))spiderOK=true}
@@ -1104,7 +1221,7 @@ function step(dt){
     if(thralls().every(t=>t.down)&&allEaten()&&wave===2&&w2Pend===0&&ferals().every(k=>k.dead)){mode='victory';mt=0;SFX.roar();setTimeout(()=>ilvSpeak('win'),1200);clap(70,.6);setTimeout(()=>snd('level-up-fanfare.mp3',.6),600);result={win:true,kills}}
     else if(heroes().every(h=>h.down)){mode='defeat';mt=0;result={win:false,kills};boo(.2)}
   }
-  if(mode==='defeat'&&result&&!result.overT&&(heroes().every(h=>h.eaten)||mt>22)){result.overT=mt}
+  if(mode==='defeat'&&result&&!result.overT&&(heroes().every(h=>h.eaten||h.impaled)||mt>22)){result.overT=mt}
   if(mode==='victory'&&mt>4.6&&!result.shot){
     result.shot=1;allies().forEach((h,i)=>{const sx=40+Math.random()*300;bolts.push({x:sx,y:70,t:-i*.25,h})});
   }
@@ -1436,7 +1553,8 @@ function draw(){
   for(const [x,z,n] of DECOR)g.drawImage(IMG['d/'+n],x-16,z-26,32,32);
   drawStains();
   for(const g2 of gore)if(g2.h<=0)g.drawImage(IMG['g/'+g2.k],Math.round(g2.cx-6),Math.round(g2.cz-8),12,12);
-  const list=[...F.map(f=>({z:(f.dead||f.down)?f.z-8:f.z,f})),...spiders.filter(s=>s.state!=='up').map(s=>({z:s.z+.5,s})),...(dagger.state!=='none'&&dagger.state!=='held'?[{z:dagger.z,d:1}]:[])].sort((a,b)=>a.z-b.z);
+  drawPit();
+  const list=[...F.filter(f=>!f.inPit&&!f.impaled).map(f=>({z:(f.dead||f.down)?f.z-8:f.z,f})),...spiders.filter(s=>s.state!=='up').map(s=>({z:s.z+.5,s})),...(dagger.state!=='none'&&dagger.state!=='held'?[{z:dagger.z,d:1}]:[])].sort((a,b)=>a.z-b.z);
   for(const o of list)o.d?drawDagger():o.s?drawSpider(o.s):drawF(o.f);
   for(const g2 of gore)if(g2.h>0){g.save();g.translate(g2.cx,g2.cz-g2.h-6);g.rotate(g2.t*10);g.drawImage(IMG['g/'+g2.k],-6,-6,12,12);g.restore()}
   drawFX();drawStrikeFx();drawAim();
@@ -1444,7 +1562,7 @@ function draw(){
   g.setTransform(SC,0,0,SC,0,0);
   if(mode==='title'||mode==='prelude')return;
   {const DD=dagger,on=mode==='intro'&&DD&&(DD.state==='intro'||(DD.state==='ground'&&DD.landT&&T-DD.landT<1.3));lbK+=((on?1:0)-lbK)*.07;if(lbK>.01){const bh=Math.round(H*.11*lbK);P(0,0,W,bh,'#000');P(0,H-bh,W,bh,'#000')}}
-  if(lbK<.35)hud();drawIlvSpeech(1/60);   // the HUD steps aside while the dagger fallsdrawBanner(1/60);
+  if(lbK<.35)hud();drawPitPrompt();drawIlvSpeech(1/60);   // the HUD steps aside while the dagger fallsdrawBanner(1/60);
   if(mode==='intro'){
     // Sam, 2026-11-17: no Malachar caption strip over the walk-in
     if(mt>=9.8&&mt<10.9){g.globalAlpha=Math.min(1,(mt-9.8)/.4);fightTxt('Round 1',W/2,66,15,'center',{glow:'rgba(255,90,20,.5)'});g.globalAlpha=1}
@@ -1627,7 +1745,7 @@ const NET_G={
   kills:[()=>kills,v=>kills=v],wave:[()=>wave,v=>wave=v],spiderOK:[()=>spiderOK,v=>spiderOK=v],partyN:[()=>partyN,v=>partyN=v],
   zoom:[()=>zoom,v=>zoom=v],fatalWord:[()=>fatalWord,v=>fatalWord=v],comboTxt:[()=>comboTxt,v=>comboTxt=v],
   ILVS:[()=>ILVS,v=>ILVS=v],ILVDONE:[()=>ILVDONE,v=>ILVDONE=v||{}],ILV:[()=>({st:ILV.st,t:ILV.t,lean:ILV.lean,reps:ILV.reps}),v=>{if(v)Object.assign(ILV,v)}],
-  dagger:[()=>dagger,v=>{if(v)dagger=v}],spiders:[()=>spiders,v=>spiders=v||[]],darts:[()=>darts,v=>darts=v||[]],bolts:[()=>bolts,v=>bolts=v||[]],gore:[()=>gore,v=>gore=v||[]],
+  dagger:[()=>dagger,v=>{if(v)dagger=v}],PIT:[()=>PIT,v=>{if(v)PIT=v}],PITC:[()=>PITC?{k:PITC.k,id:PITC.f.id}:null,v=>pitCineMirror(v)],spiders:[()=>spiders,v=>spiders=v||[]],darts:[()=>darts,v=>darts=v||[]],bolts:[()=>bolts,v=>bolts=v||[]],gore:[()=>gore,v=>gore=v||[]],
   gates:[()=>GATES.map(gt=>[gt.st,gt.t,gt.op,gt.users||0]),v=>{(v||[]).forEach((a,i)=>{const gt=GATES[i];if(gt){gt.st=a[0];gt.t=a[1];gt.op=a[2];gt.users=a[3]}})}],
   result:[()=>result?{win:result.win,kills:result.kills,overT:result.overT||0}:null,v=>{if(!v){result=null;return}result=Object.assign(result||{},v)}]};
 
@@ -1696,7 +1814,7 @@ function mirrorStep(dt){T+=dt;mt+=dt;shake=Math.max(0,shake-dt);hype=Math.max(.1
   for(const f of F){if(f._tx!=null){const k=Math.min(1,dt*12);f._bx+=(f._tx-f._bx)*k;f._bz+=(f._tz-f._bz)*k;f._bh+=((f._th||0)-f._bh)*k;f.x=f._bx;f.z=f._bz;f.h=f._bh}
     f.anim=(f.anim||0)+dt;f.st=(f.st||0)+dt;if(Math.abs(f.vx||0)+Math.abs(f.vz||0)>1)f.walkT=(f.walkT||0)+dt;f.lag+=(f.hp-f.lag)*Math.min(1,dt*3)}
   // the player's own walking, shown at once and pulled back to the host's picture as it catches up
-  if(me&&me._bx!=null){const free=mode==='fight'&&!me.down&&!me.dead&&!(me.prone>0)&&!(me.webbed>0)&&!['atk','cast','throw','step','charge','dive'].includes(me.state);
+  if(me&&me._bx!=null){const free=mode==='fight'&&!me.inPit&&!PITM&&!me.down&&!me.dead&&!(me.prone>0)&&!(me.webbed>0)&&!['atk','cast','throw','step','charge','dive'].includes(me.state);
     let mx=0,mz=0;if(free&&NET.moving){mx=(keys.d||keys.arrowright?1:0)-(keys.a||keys.arrowleft?1:0);mz=(keys.s||keys.arrowdown?1:0)-(keys.w||keys.arrowup?1:0);const l=Math.hypot(mx,mz);if(l){mx/=l;mz/=l}}
     NET.po.x+=mx*64*dt;NET.po.z+=mz*64*.8*dt;const dk=Math.exp(-dt/.18);NET.po.x*=dk;NET.po.z*=dk;
     if(mx||mz){me.dir=dirTo(mx,mz/1.3);me.vx=mx*64;me.vz=mz*51}
@@ -1764,7 +1882,7 @@ if(NET.on)addEventListener('message',e=>{if(e.origin!==location.origin||!e.data|
   if(m.t==='rs'&&mode==='defeat'&&result&&result.goStarted)gameOverReset()});
 window.__pitnet={NET,F:()=>F,mode:()=>mode};
 
-window.__pit={hitHero:(k,n)=>{const h=F.find(o=>o.def&&o.def.key===k);if(h){const t=F.find(o=>o.side==='thrall');damage(h,n||1,t)}return h&&h.hp},setSp:()=>{spiderOK=true;wave=2;w2Pend=0;WAVE2=[];F.filter(f=>f.side==='feral').forEach(f=>{f.dead=true;f.down=true})},dag:()=>dagger&&[dagger.state,Math.round(dagger.sy||0),Math.round((dagger.t||0)*100)/100,Math.round(cam.k*100)/100],pv:(k)=>{const t=thralls().find(o=>!o.down);if(t)pvLine(t,k||'fear');return t&&t.name},aud:()=>[AX&&AX.state,Object.keys(VBUF),soundOn,music.paused,music.volume],dbg:()=>[T,mt,hitstop,slowmo,typeof paused!=='undefined'?paused:null],gate:i=>gateOpen(GATES[i]),gateClose:i=>gateClose(GATES[i]),thralls:()=>thralls(),heroesAll:()=>heroes(),spiders:()=>spiders,mode:()=>mode};
+window.__pit={PIT:()=>PIT,pitTest:k=>{const h=F.find(o=>o.def&&o.def.key===k);if(h){h.x=PIT.x;h.z=PIT.z;h.h=0}return PIT},jumpNow:()=>{pressed[' ']=true},hitHero:(k,n)=>{const h=F.find(o=>o.def&&o.def.key===k);if(h){const t=F.find(o=>o.side==='thrall');damage(h,n||1,t)}return h&&h.hp},setSp:()=>{spiderOK=true;wave=2;w2Pend=0;WAVE2=[];F.filter(f=>f.side==='feral').forEach(f=>{f.dead=true;f.down=true})},dag:()=>dagger&&[dagger.state,Math.round(dagger.sy||0),Math.round((dagger.t||0)*100)/100,Math.round(cam.k*100)/100],pv:(k)=>{const t=thralls().find(o=>!o.down);if(t)pvLine(t,k||'fear');return t&&t.name},aud:()=>[AX&&AX.state,Object.keys(VBUF),soundOn,music.paused,music.volume],dbg:()=>[T,mt,hitstop,slowmo,typeof paused!=='undefined'?paused:null],gate:i=>gateOpen(GATES[i]),gateClose:i=>gateClose(GATES[i]),thralls:()=>thralls(),heroesAll:()=>heroes(),spiders:()=>spiders,mode:()=>mode};
 })();
 
 </script><div id="gameOver" class="gameover" hidden role="alertdialog" aria-live="assertive" aria-label="Game over"><div class="go-big"><span>GAME</span><span>OVER</span></div><div class="go-line" id="goLine"></div><div class="go-btns" id="goBtns"></div></div>
