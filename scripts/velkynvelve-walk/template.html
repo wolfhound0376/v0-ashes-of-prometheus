@@ -624,6 +624,9 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .lootSlot .q{position:absolute;right:5px;bottom:2px;font-family:var(--face-body);font-weight:700;font-size:.95rem;text-shadow:0 1px 2px #000,0 0 4px #000}
 .lootSlot .ck{position:absolute;left:4px;top:3px;font-family:var(--face-mono);font-size:.62rem;letter-spacing:.06em;color:#c8e6a0;background:rgba(0,0,0,.6);border:1px solid #5f7f3f;border-radius:4px;padding:0 4px}
 .lootSlot .nopx{font-family:var(--face-body);font-size:.72rem;line-height:1.1;text-align:center;padding:4px;text-shadow:0 1px 2px #000}
+.lootSlot.pile.m-silver img,.lootSlot.pile.m-platinum img{filter:grayscale(1) brightness(1.15) drop-shadow(0 4px 3px rgba(0,0,0,.8))}
+.lootSlot.pile.m-copper img{filter:hue-rotate(-22deg) saturate(1.25) brightness(.82) drop-shadow(0 4px 3px rgba(0,0,0,.8))}
+.lootSlot.pile.m-electrum img{filter:saturate(.5) brightness(1.1) drop-shadow(0 4px 3px rgba(0,0,0,.8))}
 .lootSlot.ruined{cursor:default}.lootSlot.ruined img{filter:grayscale(1) brightness(.45)}
 .lootSlot.off img{opacity:.45}
 .lootSlot.fly{transition:transform .28s ease-in,opacity .28s ease-in;transform:translateY(120px) scale(.35);opacity:0;pointer-events:none}
@@ -5566,7 +5569,8 @@ async function takeLoot(a, id, row, o = {}){
   if (bagOpen()) renderBag();
   noteLoad(a, wasEnc);
   popText(a, `+ ${row.qty > 1 ? row.qty + " " : ""}${row.name}`, row.missing || row.kind === "preview-stash" || RARITY_RANK[rarityOf(row)] < 1 ? "#e8d9a8" : RARITY_COL[rarityOf(row)]);
-  if (o.tray) sfx("walk:loot_pickup", .75, 1 + Math.min(8, o.step || 0) * .06); else bank("ui/item_pickup", .7);   // THE LOOT TRAY: a collection sound for each thing acquired (Sam, 2026-11-23), stepping up through a Take all
+  if (o.tray && isCoinRow(row)) sfx("walk:coins_" + coinPile(row.qty || 1), .8);   // coins sound like how many there are (coinPile)
+  else if (o.tray) sfx("walk:loot_pickup", .75, 1 + Math.min(8, o.step || 0) * .06); else bank("ui/item_pickup", .7);   // THE LOOT TRAY: a collection sound for each thing acquired (Sam, 2026-11-23), stepping up through a Take all
   log(`${fname(a)} takes ${esc(row.qty > 1 ? row.qty + " × " : "")}<b>${esc(row.name)}</b>.`);
   // A weapon off a rack gets the same offer a weapon off the floor does (pickUp): hold it ready, or pack it. Without
   // this the armory's shortswords went straight into the pack and the party fought the guard tower bare-handed —
@@ -6024,6 +6028,13 @@ function drawPickup(d, i, t){
 // a turn is the free object interaction, the second is the action), a part behind a check (double-click rolls it).
 // The equip offer for a weapon taken with empty hands is asked once, when the tray is closed, not between takes.
 // No item checks here: they are rolled from the inventory (icardRender skips them for kind "loot").
+// COINS BY THE HEAP (Sam, 2026-11-23, on a "×48" beside one coin: "That should be for just one gold coin, more than 1 looks
+// like a small pile, more than 50 is a medium pile, and more than 100 is a large pile ... they make different sounds upon
+// picking them up."). In the loot screen a stack of coins is drawn by how many there are: 1 is the coin's own icon, 2-50
+// a small pile, 51-100 a medium pile, over 100 a large pile (img/loot/coins-*.png, drawn in gold and tinted for the other
+// metals). Each size has its own pickup sound (public/sfx/walk/coins_*.mp3, ElevenLabs flow "AoP coin pickups",
+// https://elevenlabs.io/app/flows/UGVdsdNE4ZN82Iqvryf5): one clink, a handful, a pouch, a hoard.
+const coinPile = q => q > 100 ? "large" : q > 50 ? "medium" : q > 1 ? "small" : "one";
 const LOOT_BEAM_URL = {};
 function lootBeamUrl(tier){ return LOOT_BEAM_URL[tier] || (LOOT_BEAM_URL[tier] = lootBeam(tier).toDataURL()); }   // the map's own pillar (THE LOOT FOUNTAIN), once per tier
 const lootIsChest = (id, title) => (node.props || []).some(pr => pr.id === id && pr.lid) || (node.loot || []).some(l => l.id === id && l.chest)
@@ -6067,6 +6078,8 @@ async function openLoot(id, title, opts = {}){
     : carryRefusal(who, (Number((catalogItem(row.name) || {}).weight) || 0) * (row.qty || 1), row.name);
   const noteOf = row => { const no = refusal(row); if (no) return no;
     if (row.check) return `Double-click to work it free: ${checkLabel(row.check)}.`;
+    if (isCoinRow(row)){ const q = row.qty || 1, kf = fighter ? gearCost(fighter, 1) : null;   // the sheet says how much is there
+      return `${q} ${metalOf(row)} piece${q === 1 ? "" : "s"}. Double-click to take${q > 1 ? " them all" : " it"}${kf ? (kf.label === "free" ? " · your free object interaction" : " · your action") : ""}.`; }
     const k = fighter ? gearCost(fighter, 1) : null;
     return `Double-click to take${row.qty > 1 ? ` all ${row.qty}` : ""}${k ? (k.label === "free" ? " · your free object interaction" : " · your action") : ""}.`; };
   const foot = () => {
@@ -6105,9 +6118,11 @@ async function openLoot(id, title, opts = {}){
     const b = document.createElement("button"); b.type = "button"; b.className = "lootSlot" + (ruined ? " ruined" : row.missing ? " off" : "");
     const it = icardItem({slug: row.slug, name: row.name, pixel: row.pixel}), rar = ruined || row.missing ? "common" : rarityOf(row);
     const px = row.pixel || it.pixel_icon_url || "";
+    const pile = !ruined && isCoinRow(row) ? coinPile(row.qty || 1) : "", art = pile && pile !== "one" ? `img/loot/coins-${pile}.png` : px ? ITEM_PX + px : "";
+    if (pile && pile !== "one") b.classList.add("pile", "m-" + metalOf(row));   // the pile art is gold: tinted for the other metals (a single coin keeps its own icon)
     b.style.setProperty("--rc", RARITY_COL[rar]); if (RARITY_RANK[rar] >= 1) b.classList.add("rar");
     b.setAttribute("aria-label", ruined ? `${it.name || row.name}, ruined` : lootLabel(row));
-    b.innerHTML = (px ? `<img src="${esc(ITEM_PX + px)}" alt="">` : `<span class="nopx">${esc(it.name || row.name)}</span>`)
+    b.innerHTML = (art ? `<img src="${esc(art)}" alt="">` : `<span class="nopx">${esc(it.name || row.name)}</span>`)
       + (!ruined && row.qty > 1 ? `<span class="q">×${row.qty}</span>` : "") + (!ruined && row.check ? `<span class="ck" aria-hidden="true">d20</span>` : "");
     const target = () => ({kind: "loot", row, slug: row.slug, name: it.name || row.name, pixel: px, hero: who,
       note: ruined ? "Ruined in the fight. Scrap now: it cannot be taken." : noteOf(row), onTake: ruined || refusal(row) ? null : () => take(row)});
