@@ -9497,8 +9497,9 @@ async function playBankFile(file, profile){ try { const ctx = audioCtx(); if (ct
 function knock(t, from, px){ const d = norm({x: t.x - from.x, y: t.y - from.y}); if (!isFinite(d.x)) return; t.kx = (t.kx || 0) + d.x * px; t.ky = (t.ky || 0) + d.y * px * .6; }
 function lunge(a, toward, px){ const d = norm({x: toward.x - a.x, y: toward.y - a.y}); if (!isFinite(d.x)) return; a.kx = (a.kx || 0) + d.x * px; a.ky = (a.ky || 0) + d.y * px * .6; }
 function redFlash(){ const v = $("vignette"); v.classList.add("hit"); setTimeout(() => v.classList.remove("hit"), 260); }
-function blowNarration(att, tgt, atk, n, crit){
+function blowNarration(att, tgt, atk, n, crit, thrown){
   const who = fname(att), whom = fname(tgt), w = atk.name.toLowerCase();
+  if (thrown){ narrate(att, `${who}'s thrown ${esc(String(atk.itemName || atk.name).toLowerCase())} buries itself in ${whom}${crit ? " — a terrible blow" : ""}.`); return; }
   const verb = /claw/.test(w) ? "rakes" : /bite/.test(w) ? "sinks its fangs into" : /pseudopod/.test(w) ? "slaps a burning pseudopod across" : /dagger/.test(w) ? "drives the dagger into" : /unarmed/.test(w) ? "lands a fist on" : "strikes";
   narrate(att, `${who} ${verb} ${whom}${crit ? " — a terrible blow" : ""}.`);
 }
@@ -10102,7 +10103,7 @@ const ALLY_SHEETS = {
   eldeth:   {name: "Eldeth", style: "ranged", cls: "Shield dwarf", hp: 16, ac: 13, init: 2, speed: 30, strScore: 11, saves: {str: 0, dex: 2, con: 1, int: 0, wis: 1, cha: 0}, multi: 2,
              attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
              kit: {shortsword: {name: "Shortsword", hit: 4, dmg: "1d6+2", type: "piercing", reach: 5}, longbow: {name: "Longbow", hit: 4, dmg: "1d8+2", type: "piercing", reach: 150}}},
-  derendil: {name: "Derendil", style: "melee", rages: true, cls: "Quaggoth", hp: 45, ac: 14, init: 1, speed: 30, strScore: 17, leaper: true, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, multi: 2, woundedFury: 10,
+  derendil: {name: "Derendil", style: "melee", natural: true, rages: true, cls: "Quaggoth", hp: 45, ac: 14, init: 1, speed: 30, strScore: 17, leaper: true, saves: {str: 3, dex: 1, con: 3, int: -2, wis: 1, cha: -2}, multi: 2, woundedFury: 10,
              attacks: [{name: "Claw", hit: 5, dmg: "1d6+3", type: "slashing", reach: 5}], kit: {}},
   sarith:   {name: "Sarith", style: "ranged", cls: "Drow", race: "drow", hp: 13, ac: 13, init: 2, speed: 30, strScore: 10, saves: {str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1},
              attacks: [{name: "Unarmed Strike", hit: 2, dmg: "1", type: "bludgeoning", reach: 5}],
@@ -15822,7 +15823,7 @@ function combatClick(w){
   { const cv = coverOf(a, t), round = p.atk && !p.throwing && (p.atk.reach || 5) <= 10 && gateWayTo(a, t);
     if (cv.total && !round){ toast(`No line of sight: ${fname(t)} is behind ${cv.why}.`); return; } }
   if (p.atk && p.throwing && feetBetween(a, t) > p.atk.thrown){ toast(`Too far to throw (${p.atk.thrown} ft).`); return; }
-  if (p.atk){ attackWith(a, t, p.atk, null, p.offhand); return; }
+  if (p.atk){ attackWith(a, t, p.throwing && !p.atk.flask ? {...p.atk, throwing: true} : p.atk, null, p.offhand); return; }
   // A SPELL HAS ITS RANGE (found 2026-10-29 while drafting the spell head start: a clicked foe at any distance took Fire
   // Bolt, Hold Person or Hex). Past the spell's range it is refused; a touch spell (range 5 ft: Shocking Grasp, Chill
   // Touch, Inflict Wounds, Vampiric Touch) walks the caster into reach first, the way a melee weapon does, if their
@@ -16363,7 +16364,15 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
   const c = att.c; if (att.kind === "pc" && !reaction){ if (offhand) c.bonus = false; else { c.action = false; if (atk.light) c.lastLight = atk; } } closeMenu(); cbt.phase = "busy"; combatBusy = true;
   if (atk.art) artSpend(att, atk.art);   // a weapon art is spent on the swing, hit or miss
   att.strikeCamOpen = false; if (strikeCamMode(state.strikeCam) !== "off") strikeCamWarm();   // the close-up's art is asked for before it is needed
-  const reach = atk.thrown && feetBetween(att, tgt) > 5 ? atk.thrown : atk.reach;
+  // STAB BEFORE YOU THROW (Sam, 2026-11-24: "in Underwalk fights everyone throws daggers instead of stabbing"). Any
+  // thrown weapon more than 5 ft from its target used to take the THROWN range as its reach, so nobody walked in: the
+  // fight's own record has Derendil and Eldeth standing about 20 ft from a drow with 30 ft of movement unspent, each
+  // throwing the same dagger twice. Decided once, here: a weapon that can be thrown is thrown when that was asked for
+  // (the Throw button, an ally's own choice) or when the feet cannot get into reach this turn; otherwise they close
+  // and stab. `atk.throwing` carries the answer to shotKind, the words and the floor.
+  { const throwIt = !!atk.thrown && !atk.flask && !atk.rock && feetBetween(att, tgt) > 5 && (!!atk.throwing || !closesThisTurn(att, tgt, atk.reach || 5));
+    if (!atk.flask && !atk.rock && !!atk.throwing !== throwIt) atk = {...atk, throwing: throwIt}; }
+  const reach = atk.throwing ? atk.thrown : atk.reach;
   // A BOW OR CROSSBOW SHOOTS FROM WHERE YOU STAND (Sam, 2026-10-24: "be able to fire from a distance. Not sure why fifi
   // had to move closer"). approachThen walks into reach first, and for a target beyond the pen's bars it walks to the
   // gate (gateWayTo), so a shot from inside the pen sent the archer to the gate before she loosed. A ranged weapon
@@ -16386,7 +16395,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
     if (!shot) bank(ws.swing, .6); else att.aimAt = chestOf(tgt, 0);
     const ranged = !!shot || feetBetween(att, tgt) > (atk.reach || 5) + 2;
     // a thrown weapon or flask leaves the hand: out of the bag now (the flask is spent; the weapon lands on the floor)
-    if ((shot === "thrown" || shot === "flask") && att.kind === "pc") flung(att, atk, shot);
+    if ((shot === "thrown" || shot === "flask") && (att.kind === "pc" || (shot === "thrown" && att.ally && GEAR[att.id]))) flung(att, atk, shot);   // an ally's too: it used to stay in the hand and be thrown again
     let flying = null, landed = null, shieldWait = null;
     att.bladeSwing = !shot && /dagger|sword|rapier|scimitar|knife|sickle|kukri|blade/i.test(atk.name);   // a sprite with a `dagger` sheet swings it for a blade (Lynkes, 2026-10-29)
     att.artSwing = !shot && atk.art && SPR[att.id].img["art-" + atk.art] ? atk.art : null;   // a special attack with its own sheet plays it (Fifi, 2026-11-10)
@@ -16425,7 +16434,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
       function lands(){
       const sw = swipeStyle(atk, crit, att), fist = !shot && /unarmed|fist|punch/i.test(atk.name), crimS = !shot && !fist && sw.kind !== "claw" && sw.kind !== "bite" && !/pseudopod|tentacle|slam/i.test(atk.name);   // every blade and fist takes the strike look; claws, bites and oozes keep their own
       att.trailUntil = 0;
-      if (shot === "thrown" && att.kind === "pc") restOnFloor(att, atk, hit ? tgt : (landed || tgt), !hit);     // at their feet, or where it fell
+      if (shot === "thrown" && (att.kind === "pc" || (att.ally && GEAR[att.id]))) restOnFloor(att, atk, hit ? tgt : (landed || tgt), !hit);     // at their feet, or where it fell
       if (shot === "flask") shatter(atk, hit ? {x: tgt.x, y: tgt.y} : (landed || tgt), hit ? tgt : null);
       if (!hit && mi && mi.ok){ mirrorShatter(tgt); if (!shot && !fist){ if (crimS) crimSlash(att, tgt, {miss: true}); else swipe(att, tgt, {...sw, miss: true}); }
         log(`${why} — a hit, but on an image (d6 ${mi.rolls.join(", ")}): it shatters${mi.left ? `, ${mi.left} left` : ", the last of them"}.`);
@@ -16436,7 +16445,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         const how = !shot && !cv.total && !tgt.down ? sparMiss(att, tgt, r === 1 ? null : r + atk.hit + insp - acVs, sw, ws) : null;
         if (!how){ if (!shot && !fist){ if (crimS) crimSlash(att, tgt, {miss: true}); else swipe(att, tgt, {...sw, miss: true}); } miss(tgt); bank(shot === "flask" ? "magic/spell_fizzle" : ws.miss, .7); }
         log(`${why} — ${how === "parry" ? "parried" : how === "duck" ? "ducked" : how === "dodge" ? "dodged" : "miss"}.`);
-        narrate(att, shot ? `${fname(att)}'s shot goes wide of ${fname(tgt)}.` : how === "parry" ? `${fname(att)} swings at ${fname(tgt)}, who turns the blow aside.` : how === "duck" ? `${fname(att)} swings at ${fname(tgt)}, who ducks under it.` : how === "dodge" ? `${fname(att)} swings at ${fname(tgt)}, who slips out of the way.` : `${fname(att)} swings at ${fname(tgt)} and misses.`);
+        narrate(att, shot === "thrown" ? `${fname(att)}'s thrown ${esc(String(atk.itemName || atk.name).toLowerCase())} flies wide of ${fname(tgt)}.` : shot ? `${fname(att)}'s shot goes wide of ${fname(tgt)}.` : how === "parry" ? `${fname(att)} swings at ${fname(tgt)}, who turns the blow aside.` : how === "duck" ? `${fname(att)} swings at ${fname(tgt)}, who ducks under it.` : how === "dodge" ? `${fname(att)} swings at ${fname(tgt)}, who slips out of the way.` : `${fname(att)} swings at ${fname(tgt)} and misses.`);
         if (tgt.kind === "foe" && Math.random() < .35) setTimeout(() => taunt(tgt, null, att), 500); return; }
       // Sneak Attack (Fifi's row): once per turn, with a Finesse or Ranged weapon, when you have advantage
       // OR an ally is within 5 ft of the target and you do not have disadvantage.
@@ -16504,7 +16513,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         else if (!shot || !hero(att)){ const sc = strikeCamFor(att, tgt, {art: atk.art, weapon: atk.itemName || atk.name, crit, title: art ? art.name : atk.name, melee: !shot, shot: !!shot, sneak, reaction: !!reaction,   // a monster's shot opens as it lands
             signature: !!(atk.rider || atk.extra || atk.curse || atk.numb || atk.tooth || atk.drowPoison)}); if (sc) strikeCam({...sc, dmg: dmg.total, crit, word}); } }
       log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${parts.join(", ")}.`);
-      blowNarration(att, tgt, atk, dmg.total, crit);
+      blowNarration(att, tgt, atk, dmg.total, crit, shot === "thrown");
       }
       }
     }, () => Promise.resolve(shieldWait).then(() => flying).then(() => setTimeout(() => { att.aimAt = null; combatBusy = false; cbt && (cbt.phase = "idle"); settleCam(); afterAction(att, done); }, flying ? 250 : 0)), shot);
@@ -17452,6 +17461,22 @@ function seekSight(f){
 function passTurn(a){ if (reactionWait){ reactionWait.then(() => setTimeout(() => passTurn(a), 250)); return; }   // a reaction is being asked: the turn waits for the answer
   if (cbt && activeActor() === a && !checkEnd()) nextTurn(); }
 // get within reach, then strike; the roll lands on the attack sheet's hit frame
+// Can `att` get within `ft` feet of `tgt` with the movement it has left? Already there counts. The same sum approachThen
+// does (the spot in reach, the real route to it, trimmed to the movement left), so "it can reach" here means the walk
+// will arrive. Through the pen gate, or for a leaper who may go over a gap, the straight line stands in.
+function closesThisTurn(att, tgt, ft){
+  const reach = reachPx(att, tgt, ft), d = pxBetween(att, tgt, tgt);
+  if (d <= reach + 6) return true;
+  const move = (att.c && att.c.move) || 0; if (move <= 0) return false;
+  const line = Math.max(0, feetBetween(att, tgt) - ft) <= move + 2.5;
+  if (gateWayTo(att, tgt) || (cbt && isLeaper(att) && !att.c.conds.has("disengaged"))) return line;
+  let kSpot = (d - reach) / d;
+  if (onPaintedFloor(att) && onPaintedFloor(tgt)){ let lo = 0, hi = 1; for (let i = 0; i < 12; i++){ const m = (lo + hi) / 2, q = {x: att.x + (tgt.x - att.x) * m, y: att.y + (tgt.y - att.y) * m};
+      if (pxBetween(q, tgt, tgt) > reach * .92) lo = m; else hi = m; } kSpot = lo; }
+  const spot = nearestWalkable(att.x + (tgt.x - att.x) * kSpot, att.y + (tgt.y - att.y) * kSpot), route = findPath(att, spot);
+  if (!route || !route.length) return line;
+  return !!cutPath(att, route, move * ruleFt(att)).reached;
+}
 function approachThen(att, tgt, ft, then){
   const reachFt = ft;
   if (gateWayTo(att, tgt)){ approachViaGate(att, tgt, ft, then); return; }
@@ -18390,7 +18415,10 @@ function triumph(a, chance){
   a.triumphDue = false; playOnce(a, "triumph", () => setAnim(a, "idle")); return true;
 }
 function allyAttackPick(a, tgt){
-  const s = a.c.sheet, list = s.attacks || [], blade = meleeOf(a), fists = !blade || /unarmed/i.test(blade.name) || (blade.reach || 5) > 10;
+  // A BODY'S OWN WEAPON COMES FIRST (`natural`: Derendil's claws). Anything handed over is listed ahead of the block's own
+  // attacks, so a dagger put in his paw (untrained, +3) displaced the Claw his block gives him (+5, 1d6+3).
+  const own = s0 => s0.natural ? (s0.baseAttacks || s0.attacks || []).find(k => !k.itemName && (k.reach || 5) <= 10) : null;
+  const s = a.c.sheet, list = s.attacks || [], blade = own(s) || meleeOf(a), fists = !blade || /unarmed/i.test(blade.name) || (blade.reach || 5) > 10;
   const ft = feetBetween(a, tgt), reaches = k => ft <= (k.long || k.reach || 5) + 2.5;
   const shots = list.filter(k => (k.reach || 5) > 10 && !k.thrown), tossed = list.filter(k => k.thrown && (k.reach || 5) <= 10 && ft > 5 && ft <= k.thrown + 2.5);
   const pressed = standing(foes).some(f => !incapacitated(f) && feetBetween(a, f) <= 5);
@@ -18398,10 +18426,11 @@ function allyAttackPick(a, tgt){
   const closes = k => Math.max(0, ft - (k.reach || 5)) <= (a.c.move || 0) + 2.5;     // can the feet get there this turn (straight line; the walk itself is measured by approachThen)
   if (style === "ranged"){
     if (shots.length && (!pressed || fists)) return {atk: shots.find(reaches) || shots[0], reach: (shots.find(reaches) || shots[0]).reach, how: "shoot"};
+    if (!fists && !closes(blade) && !pressed && tossed.length) return {atk: {...tossed[0], throwing: true}, reach: tossed[0].thrown, how: "throw"};   // nothing to shoot and too far to stab
     return {atk: blade || list[0], reach: (blade || list[0]).reach || 5, how: "close"};
   }
   if (!fists && closes(blade)) return {atk: blade, reach: blade.reach || 5, how: "close"};
-  if (!pressed && tossed.length) return {atk: tossed[0], reach: tossed[0].thrown, how: "throw"};
+  if (!pressed && tossed.length) return {atk: {...tossed[0], throwing: true}, reach: tossed[0].thrown, how: "throw"};
   if (!pressed && shots.some(reaches)) { const k = shots.find(reaches); return {atk: k, reach: k.reach, how: "shoot"}; }
   return {atk: blade || list[0], reach: (blade || list[0]).reach || 5, how: "close"};
 }
@@ -18445,7 +18474,9 @@ function allyTurn(a){
     log(`${fname(a)} dashes toward ${fname(tgt)}.`); narrate(a, `${fname(a)} runs at ${fname(tgt)}.`);
     approachThen(a, tgt, pick.reach || 5, end); return;
   }
-  let n = 0; const go = () => { if (!cbt || tgt.down || a.down || n >= swings){ end(); return; } n++; attackWith(a, tgt, atk, () => setTimeout(go, 250)); };
+  // what was thrown is gone from the hand: the next swing is chosen again from what is left
+  const held = k => !k.itemName || !GEAR[a.id] || (GEAR[a.id].carried || []).some(c => c.name === k.itemName);
+  let n = 0; const go = () => { if (!cbt || tgt.down || a.down || n >= swings){ end(); return; } n++; attackWith(a, tgt, held(atk) ? atk : allyAttackPick(a, tgt).atk, () => setTimeout(go, 250)); };
   setTimeout(go, 400);
 }
 // The spider's Web: it rears up (the attack sheet), a strand flies, and on a hit the target is wrapped —
@@ -28464,7 +28495,7 @@ function shotKind(atk, att, tgt){
   if (atk.flask) return "flask";
   if (atk.rock) return "rock";
   const k = SHOT_OF(String(atk.name || "").toLowerCase()); if (k) return k;
-  if (atk.thrown && atk.pixel && att && tgt && feetBetween(att, tgt) > 6) return "thrown";   // a throw from range flies; at arm's length it is a stab
+  if (atk.thrown && atk.throwing && atk.pixel && att && tgt && feetBetween(att, tgt) > 6) return "thrown";   // a throw from range flies (attackWith decides it is one); at arm's length it is a stab
   return null;
 }
 function chestOf(t, jitter){
