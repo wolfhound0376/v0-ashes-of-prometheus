@@ -9369,6 +9369,18 @@ function openMenu(a, sub){
     // the first orb sounds a beat after the click, so the two are heard as two (select, then the element)
     const el0 = ORB_ELEMENTS[orbPick.i]; setTimeout(() => { if (orbPick && orbPick.a === a && orbPick.i === ORB_ELEMENTS.indexOf(el0)) bank(`walk:orb-${el0.type}`, el0.gain); }, 260);
     return;
+  } else if (sub === "loot"){                       // A CHEST IN A FIGHT: what is in it, one take at a time
+    const L = cbt.loot || {}, rows = L.rows || [], k = gearCost(a, 1);
+    if (L.error) add("The game did not answer", L.error, null);
+    else if (!rows.length) add("Nothing is left in it", "", null);
+    for (const row of rows){
+      const label = `Take: ${lootLabel(row)}`; ACTION_ICON[label] = "use-object";
+      if (row.missing) add(label, "not in the item catalogue yet", null);
+      else if (row.kind === "preview-stash") add(row.name, "the real list shows in the game", null);
+      else if (row.check) add(label, `needs a ${checkLabel(row.check)} check: after the fight`, null);
+      else add(label, k.ok ? (k.label === "free" ? "your free object interaction" : "your action (Use an Object)") : k.why, k.ok ? () => takeInFight(a, L.l, row) : null);
+    }
+    add("Back", "close it and carry on", () => { cbt.loot = null; openMenu(a); });
   } else if (sub === "shove"){
     add("Shove: knock prone", `they save STR or DEX vs DC ${shoveDc(a)}`, () => aim(a, {shove: "prone"}));
     add("Shove: push 5 ft", `they save STR or DEX vs DC ${shoveDc(a)}`, () => aim(a, {shove: "push"}));
@@ -9518,6 +9530,8 @@ function openMenu(a, sub){
     add("Inventory", "I · equip, put away, drink a potion", () => toggleBag(true, a));
     for (const pile of pilesHere().filter(q => feetToPile(a, q) <= 6))
       { ACTION_ICON["Pick up: " + pile.name] = "use-object"; add(`Pick up: ${pile.name}`, c.move >= PICKUP_FT ? `${PICKUP_FT} ft of your movement` : `needs ${PICKUP_FT} ft of movement`, c.move >= PICKUP_FT ? () => pickUp(a, pile) : null); }
+    for (const l of lootSpotsNear(a))                 // A CHEST IN A FIGHT (Sam, 2026-11-23), below
+      { const label = `Open: ${l.name}`; ACTION_ICON[label] = "use-object"; add(label, "look inside · taking things is an object interaction", () => openLootInFight(a, l)); }
     add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
     // JUMP, as a command (Sam, 2026-10-27: "where is the attack, jump, throw, push, entertain"). The leap itself is the
     // long-jump rule below (planLeap/leapMove): a click on the far side of a gap already springs across it. The button
@@ -9670,7 +9684,7 @@ const BUTTON_PRI = [[/^Level Up/, .5], [/^Talk to /, 1], [/^(Pick up|Search [A-Z
 //   class features (Bardic Inspiration, Rage, Innate Sorcery) · Move · Cunning Action · Dash · Disengage · Dodge · Hide ·
 //   Shove · Help · Ready · Jump · Equip · Search · Inventory.   End turn is always the last box on the bar, never folded.
 const COMBAT_KEEP = 8;
-const COMBAT_PRI = [[/^(Stand up|Break free|Cut free|Put out the flames|Shake awake|Stabilize|End concentration|Pick up)/, 0],
+const COMBAT_PRI = [[/^(Stand up|Break free|Cut free|Put out the flames|Shake awake|Stabilize|End concentration|Pick up|Open: |Take: )/, 0],
   [/^(Attack|Sneak Attack)/, 1], [/^Off-hand/, 2], [/^Cast/, 3], [/^Throw/, 4], [/^(Bardic Inspiration|Rage|End rage|Innate Sorcery)/, 5],
   [/^Move/, 6], [/^Cunning Action/, 7], [/^Dash/, 8], [/^Disengage/, 9], [/^Dodge/, 10], [/^Hide/, 11], [/^Shove/, 12], [/^Help/, 13],
   [/^Ready/, 14], [/^Jump/, 15], [/^Equip/, 16], [/^Search/, 17], [/^Inventory/, 18], [/^End turn/, 90]];
@@ -22145,6 +22159,39 @@ async function pickUp(a, p){
   if (inFight){ openMenu(a); return; }
   if (isWeapon(cat) || isWeapon({name: p.name})) showDialog({title: p.name, body: `${fname(a)} has the ${p.name}. Hold it ready, or keep it in the pack?`, buttons: [
     {label: "Equip it", primary: true, fn: () => equipItem(a, p.name)}, {label: "Keep it in the pack"}]});
+}
+// A CHEST IN A FIGHT (Sam, 2026-11-23: "wasn't able to grab items during combat from the treasure chest"). The pen-gate
+// battle plate's "A chest on the landing" is a loot spot, and loot spots only answered outside a fight (openLoot needs
+// explore), so in the fight there was no way into it at all. Now a hero standing at a loot spot on their turn gets
+// "Open: <spot>": looking inside costs nothing, and each thing taken out is an object interaction by the same rule as
+// drawing a weapon (gearCost, SRD 5.1): the first is the turn's free one, the second is the action (Use an Object), then
+// nothing is left. The list lives in the command menu, so in One Fight it shows on the screen of the player whose hero it
+// is and the take is played on the fight's screen, like every other command. Things behind a check (a carcass part) wait
+// for the fight to end; a mimic and a work-plate pocket stay out of it (they have their own rules).
+const LOOT_REACH_FT = 8;
+function lootSpotsNear(a){
+  if (!a || atWorkPlate()) return [];
+  const per = pxPerFtAt(a.y);
+  return (node.loot || []).filter(l => !l.mimic && lootShown(l) && (inPoly(l.poly, a.x, a.y) ||
+    Math.min(...[lootCenter(l), ...l.poly.map(([x, y]) => ({x, y}))].map(q => Math.hypot(q.x - a.x, q.y - a.y))) / per <= LOOT_REACH_FT));
+}
+async function openLootInFight(a, l){
+  if (!cbt || activeActor() !== a) return;
+  closeMenu(); hint(`${fname(a)} looks inside ${l.name}…`);
+  let j; try { j = await fetchLoot(l.id); await ensureCatalog(); } catch (e) { j = {error: "no answer"}; }
+  if (!cbt || activeActor() !== a) return;
+  cbt.loot = {l, rows: j.rows || [], error: j.error || null};
+  log(`${fname(a)} opens <b>${esc(l.name)}</b>.`); hint("");
+  openMenu(a, "loot");
+}
+async function takeInFight(a, l, row){
+  if (!cbt || activeActor() !== a) return;
+  const k = gearCost(a, 1); if (!k.ok){ toast(k.why); return; }
+  closeMenu();
+  const got = await takeLoot(a, l.id, row);
+  if (!cbt || activeActor() !== a) return;
+  if (got){ k.pay(); log(`${fname(a)} takes the <b>${esc(row.name)}</b> from ${esc(l.name)} (${k.label === "free" ? "free object interaction" : "action"}).`); }
+  return openLootInFight(a, l);
 }
 // ONE ANSWER TO "REACH FOR A THING" (Sam, 2026-10-15: "Yes" to the walk matching the battle board). The board's rule
 // (/api/equipment, lib/ground-items interactionCost): the SRD gives one free object interaction a turn — "draw or
