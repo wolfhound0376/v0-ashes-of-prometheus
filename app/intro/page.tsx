@@ -10,13 +10,15 @@
 // claude/One_Door_Entry_Flow_2026-11-10.md). It asks /api/table what the table is doing and puts one
 // obvious button first, re-reading every few seconds so the button changes the moment the table opens:
 //
-//   a browser nobody has played on   NEW HERO → /choose        SAVED GAME → /join
-//   a returning player, table open   TAKE YOUR SEAT → /table   (no code on this device)
-//   a returning player, table dark   WAIT AT THE TABLE → /table
-//   a returning player, seated, live RETURN TO THE GAME → /
-//   Host a Game                      → DM_HREF  small, bottom-left (was "Dungeon Master")
-//
-// Labels are Sam's: "Saved Game is fine"; New Hero and Take Your Seat approved the same day.
+// THE FOUR BUTTONS (Sam, 2026-11-23: "PR3"; research doc claude/Tables_Invites_Saves_Research_2026-11-23.md §3A),
+// the Baldur's Gate 3 main menu, always in this order:
+//   CONTINUE         only for someone who has played here; its sub-line says where it goes (your seat, back into
+//                    the game, or — for the host on a dark table — the table, which opens itself on arrival)
+//   NEW CAMPAIGN     through the DM door (/dm: the code, your hero) to the table's New Game, brought into view
+//   LOAD GAME        the shelf of saved games on the table (the host goes straight there; anyone else via /dm)
+//   JOIN A TABLE     the four-letter room code (lib/room-code.ts) → /t/<code>
+// Under the code field, for someone with no link: Saved Game (three words, /join) and New Hero (/choose).
+// "Host a Game" in the corner is gone: New Campaign and Load Game are that door now. Rehearsal stays.
 //
 // The opening film plays once per DEVICE per CAMPAIGN RUN — a New Game earns one more showing, and
 // "Watch the opening" brings it back — click anywhere or Skip, and only while Cinematics is ON in
@@ -26,7 +28,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { FlaskConical, Settings, Volume2, VolumeX } from "lucide-react"
+import { ArrowRight, FlaskConical, Settings, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getThemeAudio, playThemeAudio } from "@/components/theme-audio"
 import { SettingsSheet } from "@/components/settings-sheet"
@@ -34,11 +36,10 @@ import { isMusicOff, onMusicPrefChange, setMusicOff } from "@/lib/audio-prefs"
 import { cinematicsOn, introMusicOn, onSettingsChange } from "@/lib/settings"
 import { markDmDoor } from "@/lib/dm-door"
 import { createClient } from "@/lib/supabase/client"
-import { doorMenu, doorTableOf, shouldPlayFilm, FILM_RUN_KEY, FILM_RUN_UNKNOWN, HOST_LINK_LABEL, REHEARSAL_HREF, REHEARSAL_LINK_LABEL, type DoorTable } from "@/lib/title-door"
+import { doorMenu, doorTableOf, shouldPlayFilm, FILM_RUN_KEY, FILM_RUN_UNKNOWN, REHEARSAL_HREF, REHEARSAL_LINK_LABEL, type DoorButton, type DoorTable } from "@/lib/title-door"
+import { DOOR_INTENT_KEY, intentValue } from "@/lib/door-intent"
+import { normalizeRoomCode } from "@/lib/room-code"
 
-/** Where the small "Host a Game" link goes (it read "Dungeon Master" until 2026-11-10): the DM door (/dm) — code, then the table. This link is the
- *  only way in; /dm sends anyone without its stamp back here (Sam, 2026-10-25; lib/dm-door.ts). */
-const DM_HREF = "/dm"
 const FILM_SEEN_KEY = "aop_title_film_seen" // sessionStorage: never twice in one browser session
 const TABLE_POLL_MS = 5000 // how often the door re-reads the table
 const FILM_WAIT_MS = 1500 // the longest the first paint waits on the table before deciding film or menu
@@ -200,6 +201,27 @@ export default function TitleScreen() {
     window.setTimeout(() => router.push(href), 420)
   }
 
+  // A door button: stamp the DM door when it goes through /dm (lib/dm-door.ts), and leave the table a note saying
+  // why we came (lib/door-intent.ts), so New Campaign lands on New Game and Load Game on the shelf.
+  const press = (b: DoorButton) => {
+    if (!b.href) return
+    if (b.door) markDmDoor()
+    try {
+      if (b.intent) window.sessionStorage.setItem(DOOR_INTENT_KEY, intentValue(b.intent))
+      else window.sessionStorage.removeItem(DOOR_INTENT_KEY)
+    } catch { /* storage blocked */ }
+    go(b.href)
+  }
+
+  // JOIN A TABLE: the room code the host shares (lib/room-code.ts). Its own page (/t/<code>) does the rest.
+  const [roomCode, setRoomCode] = useState("")
+  const [roomError, setRoomError] = useState(false)
+  const joinTable = () => {
+    const c = normalizeRoomCode(roomCode)
+    if (!c) { setRoomError(true); return }
+    go(`/t/${c}`)
+  }
+
   const toggleMute = () => {
     const off = !isMusicOff()
     setMusicOff(off)
@@ -282,19 +304,27 @@ export default function TitleScreen() {
               </div>
             )}
 
-            <MenuButton primary onClick={() => go(menu.primary.href)} delay=".08s" sub={menu.primary.sub}>
-              {menu.primary.label}
-            </MenuButton>
-            {menu.others.map((b, i) => (
-              <MenuButton key={b.key} onClick={() => go(b.href)} delay={`${0.16 + i * 0.08}s`} sub={b.sub}>
+            {menu.buttons.map((b, i) => b.key === "join" ? (
+              <JoinBox key={b.key} primary={menu.primary === "join"} delay={`${0.08 + i * 0.08}s`} label={b.label} sub={b.sub}
+                value={roomCode} error={roomError} onChange={(v) => { setRoomCode(v); setRoomError(false) }} onGo={joinTable} />
+            ) : (
+              <MenuButton key={b.key} primary={menu.primary === b.key} onClick={() => press(b)} delay={`${0.08 + i * 0.08}s`} sub={b.sub}>
                 {b.label}
               </MenuButton>
             ))}
 
-            <p className="mt-5 text-center text-[11px] leading-relaxed text-stone-500" style={{ animationDelay: ".32s" }}>
-              A new hero waits for the host to let them in.
-            </p>
-            <div className="mt-2 text-center" style={{ animationDelay: ".36s" }}>
+            {/* No link to follow? Your three words, or a new hero. */}
+            <div className="mx-auto mt-1 flex w-fit flex-wrap justify-center gap-x-6 gap-y-2 rounded-sm bg-black/70 px-5 py-2 backdrop-blur-[2px]" style={{ animationDelay: ".4s" }}>
+              {menu.links.map((l) => (
+                <button key={l.href} type="button" onClick={() => { try { window.sessionStorage.removeItem(DOOR_INTENT_KEY) } catch { /* storage blocked */ } go(l.href) }}
+                  className="group text-center">
+                  <span className="block font-serif text-[12px] uppercase tracking-[0.26em] text-[#d9bd7e] transition-colors group-hover:text-[#f0dba8]">{l.label}</span>
+                  <span className="block text-[10px] tracking-[0.04em] text-stone-500 group-hover:text-stone-400">{l.sub}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-3 text-center" style={{ animationDelay: ".36s" }}>
               <button type="button" onClick={() => setStage("film")} className="px-3 py-2 font-serif text-[10px] uppercase tracking-[0.3em] text-[#8a6a3a] transition-colors hover:text-[#e8c56a]">
                 Watch the opening
               </button>
@@ -327,23 +357,13 @@ export default function TitleScreen() {
       >
         <Settings className="h-4 w-4" />
       </button>
-      {stage === "title" && (
-        <button
-          type="button"
-          onClick={() => { markDmDoor(); go(DM_HREF) }} // the ONLY way to the table-opening door (lib/dm-door.ts)
-          className="group fixed bottom-5 left-6 z-50 flex items-center gap-2 text-[10px] uppercase tracking-[0.35em] text-stone-600 transition-colors hover:text-[#c9a868]"
-        >
-          <span className="grid h-6 w-6 place-items-center rounded-full border border-stone-700 font-serif text-[11px] text-stone-500 transition-colors group-hover:border-[#c9a868] group-hover:text-[#e8c56a]">☠</span>
-          {HOST_LINK_LABEL}
-        </button>
-      )}
       {/* THE REHEARSAL DOOR (Sam, 2026-11-10: "a clean way" into the sandbox): the DM code once, then the sandbox map. */}
       {stage === "title" && (
         <button
           type="button"
           onClick={() => go(REHEARSAL_HREF)}
           title="The sandbox: Malachar answers, nothing is saved"
-          className="group fixed bottom-14 left-6 z-50 flex items-center gap-2 text-[10px] uppercase tracking-[0.35em] text-stone-600 transition-colors hover:text-[#c9a868]"
+          className="group fixed bottom-5 left-6 z-50 flex items-center gap-2 text-[10px] uppercase tracking-[0.35em] text-stone-600 transition-colors hover:text-[#c9a868]"
         >
           <span className="grid h-6 w-6 place-items-center rounded-full border border-stone-700 text-stone-500 transition-colors group-hover:border-[#c9a868] group-hover:text-[#e8c56a]"><FlaskConical className="h-3 w-3" /></span>
           {REHEARSAL_LINK_LABEL}
@@ -379,6 +399,50 @@ function MenuButton({ children, sub, primary, onClick, delay }: { children: Reac
       </span>
       {sub && <span className="mt-1 block text-[11px] tracking-[0.04em] text-stone-500 transition-colors group-hover:text-stone-400">{sub}</span>}
     </button>
+  )
+}
+
+/** JOIN A TABLE — dressed like the other buttons, with the room-code field inside it. */
+function JoinBox({ primary, delay, label, sub, value, error, onChange, onGo }: { primary: boolean; delay: string; label: string; sub: string; value: string; error: boolean; onChange: (v: string) => void; onGo: () => void }) {
+  return (
+    <form
+      onSubmit={(e) => { e.preventDefault(); onGo() }}
+      style={{ animationDelay: delay }}
+      className={cn(
+        "group relative mb-3 block w-full rounded-[3px] border px-6 py-4 text-left transition-all duration-300",
+        "bg-gradient-to-b from-[#15110c]/95 via-[#100d09]/95 to-[#0b0907]/95 backdrop-blur-[2px]",
+        primary
+          ? "border-[#c9a868]/80 shadow-[inset_0_0_24px_rgba(201,168,104,0.10),0_0_40px_rgba(201,168,104,0.18)]"
+          : "border-[#7a5f33]/60 focus-within:border-[#c9a868]/80",
+      )}
+    >
+      <Bracket className="left-[4px] top-[4px]" />
+      <Bracket className="right-[4px] top-[4px] -scale-x-100" />
+      <Bracket className="bottom-[4px] left-[4px] -scale-y-100" />
+      <Bracket className="bottom-[4px] right-[4px] -scale-100" />
+      <label htmlFor="room-code" className={cn("block font-serif text-[17px] uppercase tracking-[0.28em]", primary ? "text-[#e8c56a]" : "text-[#d9bd7e]")}>{label}</label>
+      <div className="mt-2 flex items-center gap-2">
+        <input
+          id="room-code"
+          value={value}
+          onChange={(e) => onChange(e.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4))}
+          placeholder="VKRT"
+          autoComplete="off"
+          autoCapitalize="characters"
+          spellCheck={false}
+          inputMode="text"
+          aria-invalid={error}
+          className={cn(
+            "w-0 flex-1 rounded-sm border bg-black/60 px-3 py-2 text-center font-serif text-xl uppercase tracking-[0.6em] text-[#f0dba8] placeholder:text-stone-700 focus:outline-none",
+            error ? "border-red-500/70" : "border-[#3d3428] focus:border-[#c9a868]",
+          )}
+        />
+        <button type="submit" aria-label="Join the table" className="grid h-11 w-11 place-items-center rounded-sm border border-[#7a5f33] text-[#d9bd7e] transition-colors hover:border-[#c9a868] hover:text-[#f0dba8]">
+          <ArrowRight className="h-4 w-4" />
+        </button>
+      </div>
+      <span className={cn("mt-1 block text-[11px] tracking-[0.04em]", error ? "text-red-300/80" : "text-stone-500")}>{error ? "Four letters, like VKRT." : sub}</span>
+    </form>
   )
 }
 

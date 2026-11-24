@@ -1,69 +1,87 @@
 import { describe, expect, it } from "vitest"
-import { doorMenu, doorTableOf, shouldPlayFilm, HOST_LINK_LABEL, REHEARSAL_HREF, REHEARSAL_LINK_LABEL } from "./title-door"
+import { doorMenu, doorTableOf, shouldPlayFilm, HOST_TABLE_LINK, NEW_HERO_LINK, REHEARSAL_HREF, REHEARSAL_LINK_LABEL, SAVED_GAME_LINK } from "./title-door"
 
-describe("doorMenu — a browser nobody has played on", () => {
-  it("offers New Hero first and Saved Game second, whatever the table is doing", () => {
+const keys = (m: ReturnType<typeof doorMenu>) => m.buttons.map((b) => b.key)
+const btn = (m: ReturnType<typeof doorMenu>, k: string) => m.buttons.find((b) => b.key === k)!
+
+describe("doorMenu — the four buttons (Sam, 2026-11-23: PR3)", () => {
+  it("a browser nobody has played on: no Continue, and Join a Table is the lit one", () => {
     for (const t of ["unknown", "closed", "lobby", "live"] as const) {
       const m = doorMenu("none", t)
-      expect(m.primary.label).toBe("New Hero")
-      expect(m.primary.href).toBe("/choose")
-      expect(m.others.map((b) => b.label)).toEqual(["Saved Game"])
-      expect(m.others[0].href).toBe("/join")
+      expect(keys(m)).toEqual(["new", "load", "join"])
+      expect(m.primary).toBe("join")
+      expect(btn(m, "join").href).toBeNull()
     }
   })
+  it("always in the same order, Continue first when there is one", () => {
+    expect(keys(doorMenu("player", "lobby"))).toEqual(["continue", "new", "load", "join"])
+    expect(keys(doorMenu("dm", "closed"))).toEqual(["continue", "new", "load", "join"])
+    expect(doorMenu("player", "lobby").primary).toBe("continue")
+  })
+  it("New Campaign goes through the DM door and asks for the code", () => {
+    const b = btn(doorMenu("player", "closed", undefined, null, true), "new")
+    expect(b.href).toBe("/dm")
+    expect(b.door).toBe(true)
+    expect(b.intent).toBe("new")
+    expect(b.sub).toMatch(/code/i)
+  })
+  it("Load Game: the host goes straight to the shelf; anyone else through the door with the code", () => {
+    const host = btn(doorMenu("player", "closed", undefined, null, true), "load")
+    expect(host).toMatchObject({ href: "/table", intent: "load" })
+    expect(host.door).toBeFalsy()
+    const other = btn(doorMenu("player", "closed"), "load")
+    expect(other).toMatchObject({ href: "/dm", door: true, intent: "load" })
+  })
   it("never uses the label Sam turned down", () => {
-    const all = (["none", "player", "dm"] as const).flatMap((w) => (["unknown", "closed", "lobby", "live"] as const).flatMap((t) => { const m = doorMenu(w, t); return [m.primary, ...m.others] }))
+    const all = (["none", "player", "dm"] as const).flatMap((w) => (["unknown", "closed", "lobby", "live"] as const).flatMap((t) => doorMenu(w, t).buttons))
     expect(all.some((b) => /my words/i.test(b.label))).toBe(false)
+    expect(SAVED_GAME_LINK.label).toBe("Saved Game")
+    expect(SAVED_GAME_LINK.href).toBe("/join")
+    expect(NEW_HERO_LINK.href).toBe("/choose")
   })
 })
 
-describe("doorMenu — a returning player", () => {
-  it("table open: Take Your Seat goes straight to the table", () => {
-    const m = doorMenu("player", "lobby", { seated: false, away: false }, "Fifi of Waterdeep")
-    expect(m.primary.label).toBe("Take Your Seat")
-    expect(m.primary.href).toBe("/table")
-    expect(m.primary.sub).toContain("Fifi of Waterdeep")
-    expect(m.status).toEqual({ open: true, text: "The table is open" })
+describe("Continue — a returning player", () => {
+  it("table open: to the table, naming the hero", () => {
+    const c = btn(doorMenu("player", "lobby", { seated: false, away: false }, "Fifi of Waterdeep"), "continue")
+    expect(c.href).toBe("/table")
+    expect(c.sub).toContain("Fifi of Waterdeep")
+    expect(c.sub).toMatch(/take your seat/i)
+    expect(doorMenu("player", "lobby").status).toEqual({ open: true, text: "The table is open" })
   })
-  it("table dark: Wait at the Table, and the pill says dark", () => {
+  it("table dark: waits at the table, and the pill says dark", () => {
     const m = doorMenu("player", "closed")
-    expect(m.primary.label).toBe("Wait at the Table")
-    expect(m.primary.href).toBe("/table")
+    expect(btn(m, "continue").href).toBe("/table")
+    expect(btn(m, "continue").intent).toBeUndefined()
     expect(m.status).toEqual({ open: false, text: "The table is dark" })
   })
-  it("live and seated: Return to the Game", () => {
-    const m = doorMenu("player", "live", { seated: true, away: false })
-    expect(m.primary.label).toBe("Return to the Game")
-    expect(m.primary.href).toBe("/")
+  it("the host on a dark table: the table opens itself on arrival", () => {
+    const c = btn(doorMenu("player", "closed", undefined, null, true), "continue")
+    expect(c).toMatchObject({ href: "/table", intent: "open" })
+  })
+  it("live and seated: back into the game", () => {
+    expect(btn(doorMenu("player", "live", { seated: true, away: false }), "continue").href).toBe("/")
   })
   it("live but stepped out by the host: waits at the table, told why", () => {
-    const m = doorMenu("player", "live", { seated: true, away: true })
-    expect(m.primary.label).toBe("Wait at the Table")
-    expect(m.primary.sub).toContain("stepped you out")
+    const c = btn(doorMenu("player", "live", { seated: true, away: true }), "continue")
+    expect(c.href).toBe("/table")
+    expect(c.sub).toContain("stepped you out")
   })
-  it("live without a seat: waits at the table, told the session began without them", () => {
-    const m = doorMenu("player", "live", { seated: false, away: false })
-    expect(m.primary.label).toBe("Wait at the Table")
-    expect(m.primary.sub).toContain("began without you")
+  it("live without a seat: told the session began without them", () => {
+    expect(btn(doorMenu("player", "live"), "continue").sub).toContain("began without you")
   })
   it("table unreadable: still lets them through to the table, with no status pill", () => {
     const m = doorMenu("player", "unknown")
-    expect(m.primary.href).toBe("/table")
+    expect(btn(m, "continue").href).toBe("/table")
     expect(m.status.open).toBeNull()
   })
-  it("can always play someone else", () => {
-    expect(doorMenu("player", "lobby").others.map((b) => b.href)).toEqual(["/choose", "/join"])
+  it("the DM's browser: Continue goes behind the screen", () => {
+    expect(btn(doorMenu("dm", "lobby"), "continue").href).toBe("/")
   })
 })
 
-describe("doorMenu — the DM's browser (unchanged until the host PR)", () => {
-  it("keeps Continue to the dashboard", () => {
-    const m = doorMenu("dm", "lobby")
-    expect(m.primary.label).toBe("Continue")
-    expect(m.primary.href).toBe("/")
-  })
-  it("the corner link is Host a Game", () => { expect(HOST_LINK_LABEL).toBe("Host a Game") })
-  it("the second corner link is Rehearsal, and it goes to its own door, not the host screen", () => {
+describe("the corner", () => {
+  it("Rehearsal goes to its own door, not the host screen", () => {
     expect(REHEARSAL_LINK_LABEL).toBe("Rehearsal")
     expect(REHEARSAL_HREF).toBe("/rehearsal")
   })
@@ -92,21 +110,14 @@ describe("shouldPlayFilm — once per device per run", () => {
   })
 })
 
-describe("doorMenu — the host", () => {
-  it("table dark: Open the Table", () => {
-    const m = doorMenu("player", "closed", { seated: false, away: false }, "Fifi of Waterdeep", true)
-    expect(m.primary.label).toBe("Open the Table")
-    expect(m.primary.href).toBe("/table")
-  })
-  it("live and seated: Return to the Game first, The Table second", () => {
+describe("doorMenu — the host mid-session", () => {
+  it("keeps a small link back to the table", () => {
     const m = doorMenu("player", "live", { seated: true, away: false }, null, true)
-    expect(m.primary.label).toBe("Return to the Game")
-    expect(m.others[0]).toMatchObject({ label: "The Table", href: "/table" })
+    expect(btn(m, "continue").href).toBe("/")
+    expect(m.links[0]).toEqual(HOST_TABLE_LINK)
   })
-  it("table open: takes a seat like anyone else", () => {
-    expect(doorMenu("player", "lobby", { seated: false, away: false }, null, true).primary.label).toBe("Take Your Seat")
-  })
-  it("a player who is not the host never sees Open the Table", () => {
-    expect(doorMenu("player", "closed").primary.label).toBe("Wait at the Table")
+  it("nobody else gets it", () => {
+    expect(doorMenu("player", "live", { seated: true, away: false }).links).toEqual([SAVED_GAME_LINK, NEW_HERO_LINK])
+    expect(doorMenu("none", "live").links).toEqual([SAVED_GAME_LINK, NEW_HERO_LINK])
   })
 })
