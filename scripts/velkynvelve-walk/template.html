@@ -3781,7 +3781,15 @@ function portrait(id, canvas, size){
 // inventory doll only: one still per hero per armor, shown while that armor sits in the torso slot. The map sprites are
 // not repainted (every facing of every animation, per armor). A hero or an armor with no picture here shows the
 // hero's own sprite, as before. To add one: put the 128x128 still in img/doll/ and name it in this table.
-const DOLL_WEAR = {freia: {"studded leather armor": "freia-studded-leather.png"}};
+// AND THE CLOAK (Sam, 2026-11-24: the Traveler's Cloak is red; he approved the still of Fifi in it over her studded
+// leather). A cloak is not a layer drawn over the armor's still: armor and cloak together are their own picture, keyed
+// "<armor>+<cloak>". dollOutfit picks the still of both when there is one, else the armor's, else the cloak's.
+const DOLL_WEAR = {freia: {"studded leather armor": "freia-studded-leather.png",
+  "studded leather armor+traveler's cloak": "freia-studded-leather-red-cloak.png"}};
+function dollOutfit(id, torso, back){
+  const has = k => k && (DOLL_WEAR[id] || {})[String(k).toLowerCase()];
+  return [torso && back && `${torso}+${back}`, torso, back].find(has) || null;
+}
 const DOLL_WEAR_IMG = {};
 function dollWear(id, name){
   const f = (DOLL_WEAR[id] || {})[String(name || "").toLowerCase()]; if (!f) return null;
@@ -24260,7 +24268,7 @@ function renderBag(){
   // the figure at a whole-number scale, shown 1:1 so every pixel stays square, feet on the pedestal — Sam's hero sprite,
   // never a reinterpretation. The stage's height is the CSS clamp (--ef-stage-h); hidden at first render, so the same sum.
   const stageH = doll.clientHeight || Math.min(670, Math.max(360, window.innerHeight - 430));
-  const pic = document.createElement("canvas"); heroStage(a.id, pic, stageH, (wornIn(g, "torso") || {}).name); doll.appendChild(pic);
+  const pic = document.createElement("canvas"); heroStage(a.id, pic, stageH, dollOutfit(a.id, (wornIn(g, "torso") || {}).name, (wornIn(g, "back") || {}).name)); doll.appendChild(pic);
   for (const d of DOLL_SLOTS){
     const w = wornIn(g, d.id), it = w && g.carried.find(x => x.name === w.name);
     const b = document.createElement("button"); b.className = "slot" + (w ? "" : " empty"); b.style.left = d.at[0] + "%"; b.style.top = d.at[1] + "%";
