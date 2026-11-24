@@ -597,3 +597,35 @@ export function parseContainer(id: string): { kind: "book" | "body" | "pocket"; 
   const which = m[3] || "default"
   return { kind: "pocket", key: m[3] ? `pocket:${m[2]}:${m[3]}` : `pocket:${m[2]}`, slug: m[2], which }
 }
+
+// A DEAD GUARD'S POCKETS ARE ON HIS BODY (Sam, 2026-11-23: "Yes", to "when a rank-and-file guard dies, whatever is still
+// in his pockets should be on his body. Anything already picked stays gone, and glass goes through the normal breakage
+// roll for how he died."). Until then the pocket roll (POCKET_TABLE: the potion, the drow poison, the pen key...) could
+// only be reached by picking a LIVING guard's pocket; a search of his body showed his kit and his purse and nothing else.
+// ONE PLACE, NOT TWO. The pocket stays its own container (`pocket:<sprite>:<post>`) and the body only shows what is left
+// in it, marked `from`, so a take off the body is a take from the pocket: a thing lifted before he died is not there,
+// the pen key is still one key (whoever holds it, no other guard offers it), and the strangled guard's key (dragged
+// through the bars straight out of his pocket) is not on his body as well.
+// THE WEAR is the body's: on the first look after he falls, what is still in the pocket rolls rollWear for the kill, so
+// a flask or a potion can break; keys and coins never do (NEVER). What broke is told with the body's own ruined list.
+/** Which pocket a body may show: a rank-and-file guard's own (same sprite; the labor escort's is `:escort`), or null. */
+export function guardPocketFor(bodySlug: string, pocketId: string | null | undefined): string | null {
+  if (!pocketId) return null
+  const p = parseContainer(pocketId)
+  if (!p || p.kind !== "pocket" || !POCKET_SPRITES.has(p.slug!)) return null
+  if (bodySlug !== p.slug && !(bodySlug === "escort-drow" && p.which === "escort")) return null
+  return p.key
+}
+/** A pocket as its owner falls: what is still in it rolls for wear by the kill; what was already taken stays taken
+ *  (its count is kept, so the taken record still adds up). Returns the pocket as it now is and what broke. */
+export function wearPocket(pocket: LootEntry[], taken: Record<string, number>, rng: () => number = Math.random, kill?: string | null): { pocket: LootEntry[]; ruined: Ruined[] } {
+  const out: LootEntry[] = [], ruined: Ruined[] = []
+  for (const e of pocket){
+    const gone = Math.min(e.qty, taken[e.slug] ?? 0), left = e.qty - gone
+    const w = rollWear(left > 0 ? [{ ...e, qty: left }] : [], rng, kill)
+    ruined.push(...w.ruined)
+    const kept = w.kept[0]?.qty ?? 0
+    if (gone + kept > 0) out.push({ ...e, qty: gone + kept })
+  }
+  return { pocket: out, ruined }
+}

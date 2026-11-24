@@ -5446,12 +5446,21 @@ const bodyKeyOf = t => (typeof t.lootPost === "string" && t.lootPost) || `${cur}
 const lootKeyOf = id => id.startsWith("pocket:") ? id : id.startsWith("body:") ? "body:" + id.split(":")[1] + ":" + id.split(":").slice(2).join(":") : id;
 const localLootKey = row => row.slug || ("row:" + row.rowId);   // a book row by slug, a confiscated (stash) row by its id
 const slugName = s => s.replace(/-/g, " ").replace(/^./, c => c.toUpperCase());
+// A DEAD GUARD'S POCKETS ARE ON HIS BODY (Sam, 2026-11-23: "Yes"). His body is asked for with his own pocket id, and the
+// server shows what is still in that pocket on the body (rows marked `from`: a take of one is a take from the pocket, so
+// nothing is there twice). lib/walk-loot.ts guardPocketFor / wearPocket.
+function bodyPocketOf(id){
+  if (!id.startsWith("body:")) return null;
+  const t = actors.find(a => a.lootKey && `body:${a.id}:${a.lootKey}` === id);
+  return t && (/^drow-guard-/.test(t.id) || t.id === "escort-drow") ? pocketId(t) : null;
+}
 async function fetchLoot(id, kill){
+  const bp = bodyPocketOf(id);
   if (APP){
-    try { const r = await fetch(`/api/walk-loot?container=${encodeURIComponent(id)}${kill ? `&kill=${encodeURIComponent(kill)}` : ""}`, {cache: "no-store"}); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
+    try { const r = await fetch(`/api/walk-loot?container=${encodeURIComponent(id)}${kill ? `&kill=${encodeURIComponent(kill)}` : ""}${bp ? `&pocket=${encodeURIComponent(bp)}` : ""}`, {cache: "no-store"}); const j = await r.json(); if (!r.ok) throw new Error(j.error || r.status);
       // what this tab took on its own (a rehearsal, or a hero with no seat: takeLoot) stays taken here
       const mine = lootLocal[lootKeyOf(id)] || {}, penGone = Object.keys(lootLocal).some(k => k.startsWith("pocket:") && lootLocal[k]["slave-pen-key"]);
-      j.rows = (j.rows || []).map(r => ({...r, qty: r.qty - (mine[localLootKey(r)] || 0)})).filter(r => r.qty > 0 && !(r.slug === "slave-pen-key" && penGone));
+      j.rows = (j.rows || []).map(r => ({...r, qty: r.qty - ((r.from ? lootLocal[r.from] || {} : mine)[localLootKey(r)] || 0)})).filter(r => r.qty > 0 && !(r.slug === "slave-pen-key" && penGone));
       return j; }
     catch (e){ return {rows: [], error: String(e.message || e)}; }
   }
@@ -5465,6 +5474,15 @@ async function fetchLoot(id, kill){
     const left = qty - (taken[slug] || 0); if (left <= 0 || (slug === "slave-pen-key" && penGone)) continue;
     const it = (catalog || []).find(i => i.slug === slug);
     rows.push({kind: "book", slug, name: it ? it.name : slugName(slug), qty: left, note, pixel: it ? it.pixel_icon_url : null, missing: !it, slot: it ? it.equippable_slot : null, loose: pocketGuard && LOOSE_IN_POCKET.has(slug), ...(check ? {check} : {})});
+  }
+  if (bp){
+    if (!pocketLocal[bp]) pocketLocal[bp] = rollPocketsLocal(bp.split(":").slice(2).join(":") || "default");
+    const pt = lootLocal[bp] || {};
+    for (const [slug, qty, note] of pocketLocal[bp]){
+      const left = qty - (pt[slug] || 0); if (left <= 0 || (slug === "slave-pen-key" && penGone)) continue;
+      const it = (catalog || []).find(i => i.slug === slug);
+      rows.push({kind: "book", slug, name: it ? it.name : slugName(slug), qty: left, note, pixel: it ? it.pixel_icon_url : null, missing: !it, slot: it ? it.equippable_slot : null, from: bp});
+    }
   }
   if (LOOT_STASH[id]) rows.push({kind: "preview-stash", name: LOOT_STASH[id], qty: 1});
   return {rows};
@@ -5502,14 +5520,14 @@ async function takeLoot(a, id, row, o = {}){
   { await ensureCatalog(); const no = carryRefusal(a, (Number((catalogItem(row.name) || {}).weight) || 0) * (row.qty || 1), row.name); if (no){ toast(no, 4200); return false; } }   // carrying capacity; the server checks again
   if (APP && cid){
     try {
-      const r = await fetch("/api/walk-loot", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "take", characterId: cid, container: id, slug: row.slug, rowId: row.rowId, passed: row.passed === true})});
+      const r = await fetch("/api/walk-loot", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "take", characterId: cid, container: id, slug: row.slug, rowId: row.rowId, passed: row.passed === true, from: row.from || undefined})});
       const j = await r.json(); if (!r.ok || j.error){ toast(j.error || "It would not come free.", 3600); return false; }
     } catch (e){ toast("The game did not answer. Try again.", 3000); return false; }
     await loadGear(a.id);   // awaited: the equip offer below needs the pack to hold the weapon before it can ready it
   } else {
     if (row.kind === "preview-stash"){ toast("In the game this is the real list of what the drow took from you.", 3600); return false; }
     if (APP) noteLocalOnly(a);
-    const k = lootKeyOf(id), m = lootLocal[k] || (lootLocal[k] = {}), lk = localLootKey(row); m[lk] = (m[lk] || 0) + row.qty;
+    const k = lootKeyOf(row.from || id), m = lootLocal[k] || (lootLocal[k] = {}), lk = localLootKey(row); m[lk] = (m[lk] || 0) + row.qty;   // a dead guard's pocket row is kept against his pocket
     await ensureCatalog();
     const g = GEAR[a.id] || (GEAR[a.id] = {carried: [], main: null}), cat = (row.slug ? (catalog || []).find(i => i.slug === row.slug) : catalogItem(row.name)) || {};
     const have = g.carried.find(c => c.name === row.name && !isWeapon(c));
