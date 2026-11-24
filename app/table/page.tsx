@@ -32,6 +32,8 @@ import { DOOR_NEXT_KEY, ENTERED_KEY, doorWaiting, mapHref } from "@/lib/map-entr
 import { fadeOutThemeAudio } from "@/components/theme-audio"
 import { readSettings } from "@/lib/settings"
 import { SaveShelf } from "@/components/save-shelf"
+import { InvitePanel } from "@/components/invite-panel"
+import { PENDING_CODE_KEY, readPendingCode } from "@/lib/room-code"
 
 const CHARACTER_LS_KEY = "aop_character_id"
 const TOKEN_LS_KEY = "aop_claim_token"
@@ -219,6 +221,18 @@ export default function TablePage() {
     } catch { setMsg("Could not reach the table."); return null } finally { setBusy(false) }
   }, [me, role])
 
+  // THE LINK IS THE INVITATION (lib/room-code.ts). A player who followed the host's link (/t/<code>) brought the
+  // code with them, through /join or the hero chooser if they had to. Once, it asks the table to open their seat;
+  // the sit-down below then seats them. A stale code is simply told so.
+  const joined = useRef(false)
+  useEffect(() => {
+    if (role !== "player" || !me || !view || joined.current) return
+    let code: string | null = null
+    try { code = readPendingCode(localStorage.getItem(PENDING_CODE_KEY)); localStorage.removeItem(PENDING_CODE_KEY) } catch { /* storage blocked */ }
+    joined.current = true
+    if (code && !view.mine && !view.invited) send("join", { code })
+  }, [role, me, view, send])
+
   // A player takes their seat once the DM has the table open AND has opened a seat to them (Sam, 2026-10-25:
   // "NO player can sit at the table without me FIRST opening up the seat to them"). If he takes the invitation
   // back, the latch resets so a fresh invitation sits them down again.
@@ -342,6 +356,10 @@ export default function TablePage() {
         {!view && <p className="text-[11px] uppercase tracking-[0.4em] text-stone-600">Lighting the candles…</p>}
         {view && role === "dm" && <DmControls view={view} busy={busy} send={send} onRehearse={() => router.push(mapHref(true))} />}
         {view && (role === "dm" || hostMode) && <DoorKnocks me={hostMode ? me : null} />}
+        {/* THE INVITE (Sam, 2026-11-23: "PR2"): the room code, link, Share and QR while the table is open. */}
+        {view && (role === "dm" || hostMode) && view.state.status !== "closed" && view.state.code && (
+          <InvitePanel code={view.state.code} busy={busy} onNewCode={() => send("newcode")} />
+        )}
         {view && role === "dm" && <SeatInvites view={view} busy={busy} send={send} />}
         {/* THE HOST: the same table controls. New Game asks for the DM code (lib/host.ts KEY_ONLY_ACTIONS). */}
         {view && hostMode && <DmControls host view={view} busy={busy} send={send} onRehearse={() => router.push(mapHref(true))} />}

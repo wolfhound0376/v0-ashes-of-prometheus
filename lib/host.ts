@@ -31,7 +31,7 @@ export function readHostValue(value: unknown): Host | null {
 }
 
 /** What the host may do with their hero's claim alone. Everything the DM can do at the table except the reset. */
-export const HOST_ACTIONS: ReadonlySet<string> = new Set(["open", "start", "unstart", "remove", "companion", "end", "invite", "uninvite", "excuse", "readmit"])
+export const HOST_ACTIONS: ReadonlySet<string> = new Set(["open", "start", "unstart", "remove", "companion", "end", "invite", "uninvite", "excuse", "readmit", "newcode"])
 /** Only the DM code's own door cookie: the reset, and naming who hosts. */
 export const KEY_ONLY_ACTIONS: ReadonlySet<string> = new Set(["new", "host"])
 /** DM actions that, for the DM, need the door cookie rather than the older header (lib/dm-door.ts). */

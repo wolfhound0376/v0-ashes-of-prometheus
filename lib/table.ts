@@ -31,6 +31,8 @@
 // Pure: no Supabase, so the rules can be tested. lib/table-store.ts reads and writes them.
 // ============================================================================
 
+import { isRoomCode } from "@/lib/room-code"
+
 export const MAX_SEATS = 5
 /** The table's seven cartoon players (public/table/player-1..7.webp): three women, four men. */
 export const FIGURE_COUNT = 7
@@ -99,9 +101,12 @@ export type TableState = {
   session: number
   openedAt: string | null
   startedAt: string | null
+  /** The four-letter room code friends join with (lib/room-code.ts). Null when the table is closed. Only the DM
+   *  and the host are ever shown it (app/api/table reply()). */
+  code?: string | null
 }
 
-export const CLOSED: TableState = { status: "closed", dmReady: false, session: 0, openedAt: null, startedAt: null }
+export const CLOSED: TableState = { status: "closed", dmReady: false, session: 0, openedAt: null, startedAt: null, code: null }
 
 /** What a character brings to the table. */
 export type Readiness = { sprite: boolean; sheet: boolean; voice: boolean; thumbnail: boolean }
@@ -174,6 +179,8 @@ export function readTableState(value: unknown): TableState {
     session: typeof v.session === "number" ? v.session : 0,
     openedAt: typeof v.openedAt === "string" ? v.openedAt : null,
     startedAt: typeof v.startedAt === "string" ? v.startedAt : null,
+    // A closed table has no code: the code dies with the table.
+    code: status !== "closed" && isRoomCode(v.code) ? v.code : null,
   }
 }
 
