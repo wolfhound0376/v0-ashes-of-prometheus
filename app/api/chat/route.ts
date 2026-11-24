@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { MALACHAR_MOOD_RULE, readMalacharMood, stripMalacharMood } from "@/lib/malachar-mood"
 import { MALACHAR_LAST_WORD, MALACHAR_PERSONA } from "@/lib/malachar-persona"
+import { MALACHAR_LORE_CORE, loreFor } from "@/lib/malachar-lore"
 import { findNpcRow, learnName, npcKnowsName, relationshipSummary, saysOwnName } from "@/lib/npc-acquaintance"
 import { after } from "next/server"
 import { cardFor, rememberDue } from "@/lib/npc-agents-store"
@@ -1662,6 +1663,12 @@ ${combatantRows
     const mb = await malacharBrief(adminClient(), { heroId: playerCharacter?.id ?? null, heroName: playerCharacter ? playerName : null })
     if (mb) stageContext += `\nFOR YOU, MALACHAR — ${mb}\n`
   } catch (e) { console.error("[npc-brief] malachar skipped:", e) }
+  // WHAT HE KNOWS OF HIS KIND (lib/malachar-lore.ts; Sam, 2026-11-23). Only when the line touches it, and never in a
+  // conversation with an NPC: Eldeth does not know what a phylactery is, and that talk is hers, not his.
+  if (!talkWith) {
+    const lore = loreFor(typeof message === "string" ? message : "")
+    if (lore) stageContext += `\nFOR YOU, MALACHAR — ${lore}\n`
+  }
   // THE REMEMBERER (lib/npc-agents-store.ts; Sam, 2026-11-23). Once this turn's reply is in the log, the NPC being
   // talked to (and Malachar, who is in every scene) may remember what mattered. Due only after enough new lines,
   // throttled, and nothing at all in a rehearsal: the sandbox writes no memories, the same as it writes no state.
@@ -1828,6 +1835,8 @@ Rules:
   const lichPrompt = `You are Malachar, a lich, and the Dungeon Master of this campaign. You are running D&D 5E "Out of the Abyss" in the Underdark of Faerûn. You never break character.
 
   ${MALACHAR_PERSONA}
+
+  ${MALACHAR_LORE_CORE}
   
   === CONTINUITY — READ BEFORE RESPONDING ===
 This is an ONGOING session already in progress. The conversation history above is real and continuous.

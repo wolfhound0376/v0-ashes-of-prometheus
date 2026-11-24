@@ -32,6 +32,7 @@ const BUILT: Record<string, Ability[]> = {
     { what: "Talk to Malachar: the DM-only box from the map, mood loops, red eyes when angry", from: "PRs #1218, #1232" },
     { what: "Terse lich voice and word cap", from: "PRs #1230, #1430, #1431" },
     { what: "Revenge lich: an old, inherited grudge he never explains; mortal needs bore him; being outthought stings most; cornered foes bargain with bait", from: "Complete Guide to Liches pass, 2026-11-23" },
+    { what: "Knows his own kind: the vessel and the soul-hunger, how liches are made and decay, other liches (Szass Tam, Larloch, Kiaransalee, alhoons), lairs, the redemption myth; brought in only when a line touches it", from: "lib/malachar-lore.ts" },
   ],
   eldeth: [{ what: "Triumph pose after a hard kill", from: "PR #1228" }, { what: "Hungry-night brawl with Ront", from: "PR #1414" }],
   ront: [
