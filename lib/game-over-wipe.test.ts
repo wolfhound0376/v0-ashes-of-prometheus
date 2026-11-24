@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { wipeOutcome, wipeVerdict } from "@/lib/game-over-wipe"
+import { ENDING_GAME_OVERS, endVerdict, wipeOutcome, wipeVerdict } from "@/lib/game-over-wipe"
 
 const heroes = { samson: { cid: "c-sam" }, scott: { cid: "c-scott" }, kenta: { cid: "c-kenta" } }
 
@@ -33,5 +33,25 @@ describe("what a wipe does to the campaign (Sam, 2026-11-23: deletes in Mortal o
   it("deletes when no saved game is in play, as before saved games", () => {
     expect(wipeOutcome(null)).toBe("delete")
     expect(wipeOutcome("missing")).toBe("delete")
+  })
+})
+
+describe("every game over ends the game (Sam, 2026-11-23: \"Game over; automatically ends the game.\")", () => {
+  const heroes = { fifi: { cid: "c-fifi" }, samson: { cid: "c-sam" } }
+  it("the whole party down with nobody to pick them up ends it, though nobody is dead", () => {
+    expect(endVerdict([{ id: "c-fifi" }], heroes, [], { why: "fell", seq: "g1" })).toEqual({ ok: true, dead: [], why: "fell" })
+  })
+  it("so does the march out in chains lost", () => {
+    expect(endVerdict([{ id: "c-fifi" }, { id: "c-sam" }], heroes, ["samson"], { why: "menzoberranzan" })).toEqual({ ok: true, dead: ["samson"], why: "menzoberranzan" })
+  })
+  it("a table of dead heroes still ends it as before", () => {
+    expect(endVerdict([{ id: "c-fifi" }], heroes, ["fifi"], null)).toEqual({ ok: true, dead: ["fifi"] })
+  })
+  it("nothing else does: no game over, an unknown kind, one hero dead while another lives, or nobody seated", () => {
+    expect(endVerdict([{ id: "c-fifi" }], heroes, [], null).ok).toBe(false)
+    expect(endVerdict([{ id: "c-fifi" }], heroes, [], { why: "anything-else" }).ok).toBe(false)
+    expect(endVerdict([{ id: "c-fifi" }, { id: "c-sam" }], heroes, ["fifi"], undefined).ok).toBe(false)
+    expect(endVerdict([{ id: "dm", dm: true }], heroes, [], { why: "fell" }).ok).toBe(false)
+    expect([...ENDING_GAME_OVERS].sort()).toEqual(["fell", "menzoberranzan"])
   })
 })

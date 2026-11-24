@@ -135,7 +135,9 @@ describe("the game dies with the party (Sam, 2026-11-15)", async () => {
     expect(gameOverWipes({ app: true, sandbox: true })).toBe(false)
     expect(gameOverWipes({ app: false })).toBe(false)
   })
-  it("a game over that is not a death (the march lost) keeps the DM's restart", () => {
-    expect(gameOverWipes({ app: true, sandbox: false, why: "menzoberranzan" })).toBe(false)
+  it("every game over at a real table ends the game, not only a death (Sam, 2026-11-23: \"Game over; automatically ends the game.\")", () => {
+    expect(gameOverWipes({ app: true, sandbox: false, why: "fell" } as never)).toBe(true)
+    expect(gameOverWipes({ app: true, sandbox: false, why: "menzoberranzan" } as never)).toBe(true)
+    expect(gameOverWipes({ app: true, sandbox: true, why: "fell" } as never)).toBe(false)   // a rehearsal still resets itself
   })
 })
