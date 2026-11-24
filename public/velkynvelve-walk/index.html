@@ -17248,6 +17248,37 @@ const alarmLocal = new Set();               // waves this screen has walked in i
 // clock did while nobody was looking. Played straight through, that is the same two, four and six minutes as before.
 const alarmWavesIn = A => Math.max(0, Math.min(ALARM_WAVES.length, (A && A.waves) | 0));
 const alarmNextAt = A => ((A && (A.last || A.at)) || 0) + ALARM_WAVE_MS;
+// THE ALARM HOLDS IN A FIGHT (Sam, 2026-11-23: "The alarm timer looked like it was still counting down while we were in
+// combat"; of the game clock the day before: "it should really pause while fights and activities are occurring"). Found
+// live: the horn at 04:06:37 UTC, a 49-second fight at 04:08:37, and wave 2 still came at 04:10:41 on the wall clock, then
+// wave 3 two real minutes later in the middle of the pool fight. A round is about 6 seconds (SRD 5.1, Combat), and a
+// table takes far longer than that to play one, so in a fight the alarm counts ROUNDS, not real time: the banner holds
+// through a round and steps 6 s as each new one opens. When the fight ends, the real time it took beyond its rounds is
+// written into the alarm (`held`, One World state, by the screen that ran the fight) and the countdown picks up where the
+// rounds left it. Times on the alarm (`at`, `last`) are alarm time: the wall clock less what fights have held.
+// [CLAUDE]'s reading of the ruling, flagged: a wave already due still joins a fight after ~20 rounds; a screen reloaded
+// mid-fight loses its hold for the part of the fight before the reload.
+const ALARM_ROUND_MS = 6000;
+let alarmHold = null;                       // {fight, at, round, lastRound, alarmAt, mirror}: a fight on this screen holding the alarm
+function alarmHeldFor(h, real, final){ return Math.min(real - h.at, Math.max(0, h.lastRound - h.round + (final ? 1 : 0)) * ALARM_ROUND_MS); }
+function alarmTime(){
+  const A = state.alarm, real = owNow(), base = real - ((A && A.held) || 0), h = alarmHold;
+  if (!h || !A || A.at !== h.alarmAt) return base;
+  return base - (real - h.at) + alarmHeldFor(h, real, false);
+}
+function alarmSettle(){
+  const h = alarmHold; alarmHold = null;
+  const A = state.alarm; if (!h || h.mirror || !A || A.at !== h.alarmAt || A.off) return;   // a screen showing someone else's fight writes nothing
+  const real = owNow(), extra = (real - h.at) - alarmHeldFor(h, real, true);
+  if (extra > 0){ state.alarm = {...A, held: (A.held || 0) + extra}; saveWalk(); }
+}
+function alarmHoldTick(){
+  const A = state.alarm, fighting = !!(A && A.at && !A.off && mode === "combat" && cbt);
+  if (!fighting){ if (alarmHold) alarmSettle(); return; }
+  if (alarmHold && (alarmHold.fight !== cbt.id || alarmHold.alarmAt !== A.at)) alarmSettle();
+  if (!alarmHold) alarmHold = {fight: cbt.id, at: owNow(), round: cbt.round || 1, lastRound: cbt.round || 1, alarmAt: A.at, mirror: !!(FIGHT.mirror || cbt.mirror)};
+  else alarmHold.lastRound = Math.max(alarmHold.lastRound, cbt.round || 1);
+}
 let alarmBusy = false;
 function helpHow(f){
   if (node.alarm && !alarmUp() && alarmReaches(cur)) return `sound the ${node.alarm.name.toLowerCase()} (${Math.round(feetBetween(f, node.alarm))} ft away): every two minutes a wave of the garrison arrives, three waves`;
@@ -17344,19 +17375,20 @@ async function reinforce(ids, at, why){
 }
 // the waves: one every two minutes after the blast, on the plate the party is on, if it is in the outpost
 async function alarmTick(){
+  alarmHoldTick();                                                       // THE ALARM HOLDS IN A FIGHT
   const A = state.alarm; renderAlarmBanner();
   if (!A || !A.at || !leader || alarmBusy) return;
   if (FIGHT.mirror) return;                                              // ONE FIGHT: the fight's own screen brings the wave in and writes it down; this one shows it
   if (A.off) return;                                                     // stood down (OUT OVER THE FALLS): nobody else is coming
   if (ALARM_BEYOND.has(String(cur))){                                    // OUT OVER THE FALLS: the party has got out, and the alarm is over
-    state.alarm = {...A, waves: ALARM_WAVES.length, last: owNow(), off: String(cur)}; saveWalk(); renderAlarmBanner();
+    state.alarm = {...A, waves: ALARM_WAVES.length, last: alarmTime(), off: String(cur)}; saveWalk(); renderAlarmBanner();
     log(`<em>The horns fade overhead.</em> Nobody follows you down the falls.`);
     return;
   }
   const w = alarmWavesIn(A) + 1;
-  if (w > ALARM_WAVES.length || owNow() < alarmNextAt(A)) return;
+  if (w > ALARM_WAVES.length || alarmTime() < alarmNextAt(A)) return;
   const key = `${A.at}:${w}`;
-  if (alarmLocal.has(key)){ state.alarm = {...A, waves: w, last: owNow()}; saveWalk(); return; }   // this screen brought it and its word was written over: said again, nobody comes twice
+  if (alarmLocal.has(key)){ state.alarm = {...A, waves: w, last: alarmTime()}; saveWalk(); return; }   // this screen brought it and its word was written over: said again, nobody comes twice
   alarmBusy = true;
   try {
     let came = true;
@@ -17368,7 +17400,7 @@ async function alarmTick(){
     }
     if (came){
       alarmLocal.add(key);
-      const N = state.alarm; if (N && N.at === A.at && alarmWavesIn(N) < w){ state.alarm = {...N, waves: w, last: owNow()}; saveWalk(); }
+      const N = state.alarm; if (N && N.at === A.at && alarmWavesIn(N) < w){ state.alarm = {...N, waves: w, last: alarmTime()}; saveWalk(); }
     }
   } finally { alarmBusy = false; }
 }
@@ -17378,8 +17410,8 @@ function renderAlarmBanner(){
   if (!A || !A.at || A.off){ if (el) el.hidden = true; return; }       // stood down: OUT OVER THE FALLS
   if (!el){ el = document.createElement("div"); el.id = "alarmBanner"; el.style.cssText = "position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:40;padding:6px 16px;border-radius:6px;background:rgba(90,10,6,.88);border:1px solid #ff6a4a;color:#ffd9c8;font:600 14px/1.2 Georgia,serif;letter-spacing:.04em;pointer-events:none;text-shadow:0 1px 2px #000"; (stage || document.body).appendChild(el); }
   const w = alarmWavesIn(A);                                             // the waves that have come (written in the world), not the wall clock
-  if (w >= ALARM_WAVES.length && owNow() - (A.last || A.at) > 20000){ el.hidden = true; return; }
-  const left = Math.max(0, alarmNextAt(A) - owNow()), mm = Math.floor(left / 60000), ss = String(Math.floor(left / 1000) % 60).padStart(2, "0");
+  if (w >= ALARM_WAVES.length && alarmTime() - (A.last || A.at) > 20000){ el.hidden = true; return; }
+  const left = Math.max(0, alarmNextAt(A) - alarmTime()), mm = Math.floor(left / 60000), ss = String(Math.floor(left / 1000) % 60).padStart(2, "0");
   el.textContent = w >= ALARM_WAVES.length ? `⚠ ALARM — the whole garrison is out` : `⚠ ALARM (${A.name}) — wave ${w + 1} of ${ALARM_WAVES.length} in ${mm}:${ss}${alarmReaches(cur) ? "" : " · out of earshot here"}`;
   el.hidden = false;
 }
@@ -29194,7 +29226,7 @@ function escapeDiscoveryTick(){
 // is on. And the other way: a horn blown during the escape means the escape is hunted (escapeDiscoveryTick, endCombat).
 const escapeAlarmed = e => !!(state.alarm && state.alarm.at && e && state.alarm.at >= (e.since || 0) - 1000);
 function escapeHorn(why){
-  if (SANDBOX || (state.alarm && state.alarm.off) || (alarmUp() && (alarmWavesIn(state.alarm) < ALARM_WAVES.length || owNow() - (state.alarm.last || state.alarm.at) < 60000))) return;   // already blowing: its waves are still coming
+  if (SANDBOX || (state.alarm && state.alarm.off) || (alarmUp() && (alarmWavesIn(state.alarm) < ALARM_WAVES.length || alarmTime() - (state.alarm.last || state.alarm.at) < 60000))) return;   // already blowing: its waves are still coming
   state.alarm = {plate: String(PEN), at: owNow(), by: "the outpost", name: "warning horn"};
   try { bank("creature/drow_alarm_gong", .95); shake(4); } catch (e) {}
   log(`<b>A warning horn sounds across Velkynvelve.</b> The garrison is coming: a wave every two minutes, three waves.`, {say: true});
