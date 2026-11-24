@@ -1490,7 +1490,7 @@ body.quota-on #cbtMenu[data-kind=explore]{display:none!important}
       <details><summary>Malachar visits</summary>
       <textarea id="malWords" class="dmq" rows="3" style="width:100%;resize:vertical" placeholder="What he offers, in his words (read aloud on every screen)" aria-label="What Malachar offers"></textarea>
       <div class="dmCloudRow"><input id="malYes" class="dmq" placeholder="Accept his bargain" aria-label="The answer that accepts"><input id="malNo" class="dmq" placeholder="Refuse him" aria-label="The answer that refuses"></div>
-      <div class="dmCloudRow"><button class="btn" id="malSummon" title="DM: Malachar steps out of his portal where you click, speaks the offer, and the party answers on one card.">Summon him: click the floor</button><button class="btn danger" id="malAway">Send him away</button></div>
+      <div class="dmCloudRow"><button class="btn" id="malDraft" title="DM: Malachar drafts a bargain from this run's story, in his voice. Edit it before you summon him.">Draft it in his voice</button><button class="btn" id="malSummon" title="DM: Malachar steps out of his portal where you click, speaks the offer, and the party answers on one card.">Summon him: click the floor</button><button class="btn danger" id="malAway">Send him away</button></div>
       </details>
       <details><summary>Items</summary>
       <input id="dmItemQ" class="dmq" placeholder="Search the item catalogue" aria-label="Search the item catalogue">
@@ -4618,6 +4618,7 @@ function leaveVelkynvelve(z){
   const proposed = z.proposed || /PROPOSED/.test(z.label);
   showDialog({title: head, body: `${z.label}. Past here the party is out of the outpost and on the Underdark map.${proposed ? " This way out is a proposal from the guide, not yet reviewed by Sam." : ""}`,
     buttons: [{label: `Leave Velkynvelve → ${h.name}`, primary: true, fn: async () => {
+        await actEndVisit(1, `the party leaves Velkynvelve for ${h.name}`);   // THE END OF AN ACT: he comes before they go
         if (escapeTo(PEN_ESCAPE.EVENT.LEFT_AREA, `left Velkynvelve for ${h.name}`) && OW.on){ const t0 = Date.now(); while (owDirty() && Date.now() - t0 < 1500) await wait(100); }   // THE ESCAPE PHASE: gone, and every screen told before the page goes
         location.href = `/map?from=velkynvelve&via=${encodeURIComponent(key)}&plate=${encodeURIComponent(h.biome)}${Array.isArray(z.roads) && z.roads.length ? "&roads=" + encodeURIComponent(z.roads.join(",")) : ""}`; }},
       {label: "Stay"}]});
@@ -13047,7 +13048,7 @@ function chainMarchSettle(out){
   const M = state.chainMarch; if (!M || M.out) return;
   state.chainMarch = Object.assign({}, M, {out: out || "dm", outAt: Date.now()});
   if (out === "escaped" && !state.brokeOut) state.brokeOut = {at: Date.now(), why: "the march out in chains"};
-  if (out === "escaped") escapeTo(PEN_ESCAPE.EVENT.LEFT_AREA, "escaped the march out in chains");   // THE ESCAPE PHASE
+  if (out === "escaped"){ escapeTo(PEN_ESCAPE.EVENT.LEFT_AREA, "escaped the march out in chains"); setTimeout(() => actEndVisit(1, "the party escapes the march out in chains"), 4000); }   // THE ESCAPE PHASE; THE END OF AN ACT
   if (out === "lost" && !state.gameOver) state.gameOver = {seq: "g" + Date.now().toString(36), at: Date.now(), by: OW.key || "local", why: "menzoberranzan", line: chainMarchLostLine(M.seq)};
   saveWalk();
 }
@@ -31695,9 +31696,10 @@ function npcAskCouncil(n, ask){
 // ---------- MALACHAR VISITS (Sam, 2026-11-23) ----------
 // Sam: "lets make some high quality pixel art for malachar since he may eventually visit. We also need some magical
 // effects when he offers a purple portal opening ... and red eyes glowing. Clouds forming around him and he disappears."
-// When: "When the party does too well and he wants to offer a difficult option." What "too well" means is Sam's to define,
-// so for now there is no automatic trigger: the DM summons him (DM tools, "Malachar visits"), writes what he offers and
-// the two answers, and clicks where he steps out.
+// When: "When the party does too well and he wants to offer a difficult option", and what that means (Sam, same night):
+// "At the end of each ACT". So he comes by himself when an Act ends (actEndVisit, below: Act 1 ends as the party leaves
+// Velkynvelve), with a bargain he drafts from the Act's own story (/api/malachar-offer, lib/malachar-offer.ts). The DM can
+// also summon him at any time (DM tools, "Malachar visits"): write the offer or have him draft it, then click the floor.
 // A WORLD EVENT (Sam, 2026-11-20: "all events should be world events"). The visit is one key in the shared world,
 // state.malVisit {id, plate, x, y, at, words, labels, by, answer, leftAt}; every screen reads it and plays the same
 // visit from the same clock (owNow), so a screen that joins late sees him already standing there, not the visit again.
@@ -31715,7 +31717,7 @@ function npcAskCouncil(n, ask){
 // ppu = 122 x 5 / 6.5 = 94 [CLAUDE: his height is not in any source; the crown makes him a head over a drow].
 const MALV_PPU = 94, MALV_PORTAL_K = .9;
 const MALV_FORM_MS = 750, MALV_IN_AT = 900, MALV_IN_MS = 800, MALV_OFFER_AT = 2200, MALV_CARD_AT = 2600, MALV_GONE_MS = 3200;
-const MALV = {a: null, loading: false, seenId: null, spokeId: null, cardId: null, soundT: {}};
+const MALV = {a: null, loading: false, seenId: null, spokeId: null, cardId: null, soundT: {}, after: {}};
 let malPlacing = false;
 function malVisitAssets(){
   if (MALV.a || MALV.loading) return MALV.a;
@@ -31774,7 +31776,10 @@ function drawMalVisit(v){
 /** Once per sound per visit on this screen (each screen plays its own; the sounds are not relayed). */
 function malSound(v, key, name, gain){ const k = v.id + key; if (MALV.soundT[k]) return; MALV.soundT[k] = 1; try { sfx("bank:" + name, gain); } catch (e) {} }
 function malVisitTick(){
-  const v = state.malVisit; if (!v || !v.id) return;
+  const v = state.malVisit;
+  // whoever was waiting on a visit that is over (or was cleared) goes on: the way out of Velkynvelve, below
+  for (const id of Object.keys(MALV.after)) if (!v || v.id !== id || (v.leftAt && owNow() - v.leftAt > MALV_GONE_MS)){ const f = MALV.after[id]; delete MALV.after[id]; try { f(); } catch (e) {} }
+  if (!v || !v.id) return;
   malVisitAssets();
   const here = owSame(v.plate, cur), t = owNow() - v.at, left = v.leftAt ? owNow() - v.leftAt : -1, fresh = t < 15000;
   if (MALV.seenId !== v.id){
@@ -31819,13 +31824,58 @@ function malVisitAway(){
   councilClose(); if (!$("obj").hidden && $("objWho").textContent === "Malachar"){ $("obj").hidden = true; $("objX").style.display = ""; if (mode === "dialog") mode = "explore"; }
   log(`<i>Malachar withdraws his offer. The ring folds in on itself and he is gone.</i>`);
 }
+/** He steps out at (x, y) on this plate, with these words and answers. Returns the visit's id. */
+function malVisitBegin(x, y, words, labels, extra = {}){
+  const p = nearestWalkable(x, y), id = "mv" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  state.malVisit = {id, plate: cur, x: Math.round(p.x), y: Math.round(p.y), at: owNow(), words, labels, by: OW.key || "local", ...extra};
+  return id;
+}
 function malVisitStart(w){
   const words = $("malWords").value.trim(); if (!words){ toast("Write what Malachar offers first."); return; }
-  const p = nearestWalkable(w.x, w.y);
-  state.malVisit = {id: "mv" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), plate: cur, x: Math.round(p.x), y: Math.round(p.y), at: owNow(),
-    words, labels: [$("malYes").value.trim() || "Accept his bargain", $("malNo").value.trim() || "Refuse him"], by: OW.key || "local"};
+  malVisitBegin(w.x, w.y, words, [$("malYes").value.trim() || "Accept his bargain", $("malNo").value.trim() || "Refuse him"]);
   reviewLog("sync", `The DM summons Malachar to this plate.`);
 }
+// ---------- THE END OF AN ACT: he comes by himself (Sam, 2026-11-23: "At the end of each ACT") ----------
+// The Acts are the campaign's own (lib/world-ai/campaigns.ts, Out of the Abyss). Each ends once per run: state.actsEnded
+// {<n>: {at, why}} is shared, so the second screen to reach the moment does not bring him twice, and New Game clears it.
+// Act 1 ends as the party leaves Velkynvelve: at the way out (leaveVelkynvelve waits for him before the travel map) or
+// when they escape the march out in chains. Later Acts call actEndVisit(<n>, why) from wherever they end.
+// The bargain is his (/api/malachar-offer, from the Act's story on the map log); if it does not come back in time the
+// moment passes without him and the log says so. Never in a rehearsal (no model call for a run that is not real).
+const ACT_LABEL = {1: "Act 1 — Escape Velkynvelve", 2: "Act 2 — Discovery", 3: "Act 3 — Madness Rising", 4: "Act 4 — The Ritual"};
+/** His bargain, drafted for this moment (act 0: a visit the DM calls mid-Act). Null when there is none to be had. */
+async function malOfferDraft(act){
+  if (!APP) return null; const a = owAuth(); if (!a) return null;
+  const heroes = party.filter(p => p.kind === "pc" && !p.down).map(p => fname(p));
+  const others = npcs.filter(n => !n.down && !n.offStage && (n.alpha ?? 1) > .2).map(n => SHORT[n.id] || (SPR[n.id] && SPR[n.id].json.name)).filter(Boolean).slice(0, 12);
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 25000);
+  try {
+    const r = await fetch("/api/malachar-offer", {method: "POST", signal: ctl.signal, headers: {"Content-Type": "application/json", ...a.headers},
+      body: JSON.stringify({...a.body, act, actLabel: ACT_LABEL[act] || "", where: plateLabel(cur), heroes, others, run: OW.run || null})});
+    const j = await r.json().catch(() => ({})); return j && j.offer && j.offer.words ? j.offer : null;
+  } catch (e) { return null; } finally { clearTimeout(t); }
+}
+/** The Act is over: he comes (once per Act per run). Resolves when he is gone again, or at once when he does not come. */
+async function actEndVisit(n, why){
+  if (SANDBOX) return;
+  const done = state.actsEnded || {}; if (done[n]) return;
+  state.actsEnded = {...done, [n]: {at: owNow(), why: why || ""}};
+  reviewLog("story", `${ACT_LABEL[n] || "Act " + n} ends: ${why || ""}.`);
+  if (mode === "combat" || !leader || (state.malVisit && state.malVisit.id && !state.malVisit.leftAt)) return;
+  log(`<i>The air goes cold. Something old is paying attention.</i>`);
+  const offer = await malOfferDraft(n);
+  if (!offer || mode === "combat" || !leader){ reviewLog("review", `Malachar did not come at the end of ${ACT_LABEL[n] || "Act " + n} (no bargain came back).`); return; }
+  const id = malVisitBegin(leader.x, leader.y - 150, offer.words, [offer.accept, offer.refuse], {act: n});
+  await new Promise(res => { MALV.after[id] = res; setTimeout(() => { if (MALV.after[id]){ delete MALV.after[id]; res(); } }, 5 * 60 * 1000); });   // (a table that never answers does not hold the way out forever)
+}
+$("malDraft").onclick = async () => {
+  const b = $("malDraft"); if (b.disabled) return; b.disabled = true; const was = b.textContent; b.textContent = "He is thinking…";
+  try {
+    const o = await malOfferDraft(0);
+    if (!o){ toast(APP ? "No bargain came back. Write one, or try again." : "Drafting needs the live game."); return; }
+    $("malWords").value = o.words; $("malYes").value = o.accept; $("malNo").value = o.refuse;
+  } finally { b.disabled = false; b.textContent = was; }
+};
 $("malSummon").onclick = () => {
   if (!$("malWords").value.trim()){ toast("Write what Malachar offers first."); return; }
   if (mode === "combat"){ toast("Not in the middle of a fight."); return; }
