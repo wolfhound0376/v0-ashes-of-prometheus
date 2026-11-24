@@ -19,7 +19,7 @@ import { storedText } from "@/lib/address"
 import { readPartySituation } from "@/lib/situation-store"
 import { situationForSpeaker, splitForSpeaker, splitNote, type HeroRecord } from "@/lib/split-party"
 import { dryRun, newDryRunLog } from "@/lib/dry-run"
-import { startCombatFlag, endCombatFlag } from "@/lib/combat-flag"
+import { startCombatFlag, endCombatFlag, readCombatFlag, mapOwnsFight, holdFightFoes } from "@/lib/combat-flag"
 import { hasPlayableStats } from "@/lib/bestiary-stats"
 import { ELEVEN_VOICE_LIBRARY } from "@/lib/tts"
 import { parseRollRequest, stripRollRequestExtras, type RollRequestSpec, type SrdSkill } from "@/lib/roll-requests"
@@ -4281,6 +4281,11 @@ Rules:
     }
   }
 
+  // THE MAP'S FIGHT IS THE MAP'S (lib/combat-flag.ts mapOwnsFight): the fight on the flag BEFORE this reply. One the map
+  // opened itself (a guard's spotting) is not ended by [COMBAT_END] in the narration, and its living foes are not walked
+  // off the stage by a non-death [NPC_LEAVE:] (holdFightFoes, at the roster write below).
+  const fightOnFlag = await readCombatFlag(timeAdmin)
+
   // Malachar's call that initiative is rolled (lib/combat-flag.ts). The names are resolved to canon and
   // their current HP read from the shared rows, so the map opens the fight with exactly those creatures.
   const combatStartMatch = rawText.match(/\[COMBAT_START:\s*([^\]]+)\]/i)
@@ -4296,7 +4301,10 @@ Rules:
     }
     await startCombatFlag(timeAdmin, { foes, area: taggedLocationName ?? currentLocation ?? null, startedBy: playerCharacter?.name ?? null })
   }
-  if (/\[COMBAT_END\]/i.test(rawText)) await endCombatFlag(timeAdmin)
+  if (/\[COMBAT_END\]/i.test(rawText)) {
+    if (mapOwnsFight(fightOnFlag)) console.log("[combat-flag] [COMBAT_END] held: the map is fighting", (fightOnFlag?.foes ?? []).map((f) => f.name).join(", "))
+    else await endCombatFlag(timeAdmin)
+  }
   for (const m of rawText.matchAll(/\[NPC_MOVE:\s*([^|\]]+)\|\s*([^\]]+)\]/gi)) {
     const resolved = await resolveNpcByName(supabase, m[1].trim())
     stageEvents.push({ kind: "place", name: resolved?.name || m[1].trim(), where: m[2].trim().slice(0, 80) })
@@ -4358,7 +4366,9 @@ Rules:
 
   // The stage roster: one read, one write, after every tag has been handled (best-effort, never blocks the turn).
   // A creature crossing INTO the party's space this turn is what the arrival film is for (see the cinematic block).
-  const { crossed: crossedInsideNow } = await applyStageEvents(timeAdmin, stageEvents)
+  const fightHold = holdFightFoes(fightOnFlag, stageEvents)
+  if (fightHold.held.length) console.log("[stage] held while the map fights them:", fightHold.held.join(", "))
+  const { crossed: crossedInsideNow } = await applyStageEvents(timeAdmin, fightHold.events)
 
   // === TIME LOGGING ===
   // Every successful exchange advances the clock, then any explicit time tags

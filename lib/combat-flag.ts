@@ -8,7 +8,7 @@
 // creatures. [COMBAT_END] clears it. Rides world_flags (key "combat") — no migration.
 
 import type { SupabaseClient } from "@supabase/supabase-js"
-import { slugOf } from "@/lib/stage-roster"
+import { slugOf, type StageEvent } from "@/lib/stage-roster"
 
 export const COMBAT_FLAG = "combat"
 const CAMPAIGN = "ashes-of-prometheus"
@@ -49,4 +49,57 @@ export async function endCombatFlag(db: SupabaseClient | null) {
   } catch (err) {
     console.error("[combat-flag] end failed:", err)
   }
+}
+
+/** The fight on the flag now, or null. Best-effort: a failed read is "no fight", the turn goes on. */
+export async function readCombatFlag(db: SupabaseClient | null): Promise<CombatFlag | null> {
+  if (!db) return null
+  try {
+    const { data } = await db.from("world_flags").select("value").eq("campaign_id", CAMPAIGN).eq("key", COMBAT_FLAG).maybeSingle()
+    const v = (data?.value ?? null) as CombatFlag | null
+    return v && v.status === "active" ? v : null
+  } catch {
+    return null
+  }
+}
+
+// THE MAP'S FIGHT IS THE MAP'S (found live 2026-11-23, run 95b1aa1b, Sam: "During our first fight at the watch/guard
+// tower we started combat and then the drow disappeared"). A guard on the Guard Tower spotted Fifi; the map raised the
+// flag through /api/walk-spotted (flag.opener = the screen that saw it) and opened the fight; the beat went to Malachar
+// as a direction. His reply narrated "The body is already cooling." and carried [NPC_LEAVE: Drow Guard] (hp 22, not
+// dead) and [COMBAT_END]. The leave wrote the roster's `gone` for drow-guard — every drow guard on the map matches it —
+// and the COMBAT_END took the flag down, which ends a fight the map opened from the flag. Fourteen seconds in, one punch
+// thrown, the three guards were gone and the fight was over with no victory.
+// A fight the map opened is fought on the map: it ends there (a win, a flight, a fall, a surrender), and the narration of
+// it cannot end it or walk its foes off. Malachar's own calls to initiative (no opener) are untouched.
+
+/** True when the fight on the flag is one the map opened itself (a guard's spotting), not Malachar's [COMBAT_START:]. */
+export function mapOwnsFight(flag: CombatFlag | null | undefined): boolean {
+  return !!(flag && flag.status === "active" && flag.opener)
+}
+
+/** Does this name (any spelling of it) belong to one of the fight's foes? "Drow Guard" is the flag's "Drow guard". */
+export function isFightFoe(flag: CombatFlag, name: string): boolean {
+  const s = slugOf(name)
+  if (!s) return false
+  return (flag.foes ?? []).some((f) => {
+    const names = [f.slug, ...(f.aliases ?? [])].filter(Boolean)
+    return names.some((n) => n === s || n.startsWith(s + "-") || s.startsWith(n + "-"))
+  })
+}
+
+/**
+ * The stage events a turn may apply while a map-opened fight is on: a foe of that fight may die in the narration
+ * (a leave with `dead`), but a living one is not taken off the stage — the map is fighting it. Everything else passes.
+ * Returns the events kept and the names held back (for the log).
+ */
+export function holdFightFoes(flag: CombatFlag | null | undefined, events: StageEvent[]): { events: StageEvent[]; held: string[] } {
+  if (!mapOwnsFight(flag)) return { events, held: [] }
+  const held: string[] = []
+  const kept = events.filter((e) => {
+    if (e.kind !== "leave" || e.dead || !isFightFoe(flag!, e.name)) return true
+    held.push(e.name)
+    return false
+  })
+  return { events: kept, held }
 }
