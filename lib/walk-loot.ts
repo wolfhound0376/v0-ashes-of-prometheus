@@ -22,6 +22,14 @@ export type LootEntry = { slug: string; qty: number; note?: string; check?: Harv
 export type BookContainer = { node: string; title: string; source: string; stash?: "valuables" | "gear"; entries: LootEntry[] }
 
 export const BOOK_CONTAINERS: Record<string, BookContainer> = {
+  // OLD THESSALY'S AMULET (Sam, 2026-10-24; claude/Old_Thessaly_Module_2026-11-23.md): his lost love's ruby amulet, hidden on
+  // the crystal plate until a passive Perception 15 finds it (+5 once the party came looking). The catalogue row is Sam's
+  // quest item, homebrew. Giving it to him lays him to rest and frees the keelboat (thessalyLayToRest on the map).
+  "thessaly-amulet": {
+    node: "crystal", title: "A red glint among the crystals",
+    source: "Sam's ruling, 2026-10-24: the ruby amulet of Old Thessaly's lost love, found on the crystal cave plate.",
+    entries: [{ slug: "ruby-amulet-lost-love", qty: 1, note: "Sam's quest item" }],
+  },
   // THE RUINS (walk plates "ruins-*"; Sam, 2026-11-23: "Have some hidden item that are only available on a passive
   // perception success"). THE BOOK gives the Ruins one thing only (OotA D&D Encounters ch.2 p.31): "there is a 50 percent
   // chance of them finding 1d4 trinkets", and that is the Reliquary's roll in lib/plate-director.mjs, handed to Malachar

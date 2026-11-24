@@ -2024,6 +2024,33 @@
     }
   },
   "crystal": {
+    "loot": [
+      {
+        "id": "thessaly-amulet",
+        "name": "A red glint among the crystals",
+        "hidden": true,
+        "_src": "Sam, 2026-10-24: Old Thessaly's lost love's ruby amulet is 'found in the crystal cave plate after successful perception check or after you go there looking for it (advantage)'. HIDDEN: passive Perception 15, +5 once the errand is taken (thessalyAmuletOnEnter). What it holds is lib/walk-loot.ts BOOK_CONTAINERS. Placement in the crystal cluster is Claude's.",
+        "poly": [
+          [
+            1840,
+            930
+          ],
+          [
+            1930,
+            930
+          ],
+          [
+            1930,
+            1010
+          ],
+          [
+            1840,
+            1010
+          ]
+        ],
+        "text": "Wedged deep in a crystal cluster, where the light pools red: a ruby on a fine chain, warm as a hand."
+      }
+    ],
     "rest": {
       "chance": 0.16666666666666666,
       "foes": [
