@@ -31,7 +31,7 @@ import type { SeatView } from "@/lib/table-store"
 import { DOOR_NEXT_KEY, ENTERED_KEY, doorWaiting, mapHref } from "@/lib/map-entry"
 import { fadeOutThemeAudio } from "@/components/theme-audio"
 import { readSettings } from "@/lib/settings"
-import { SaveShelf } from "@/components/save-shelf"
+import { SaveNow, SaveShelf } from "@/components/save-shelf"
 import { InvitePanel } from "@/components/invite-panel"
 import { PENDING_CODE_KEY, readPendingCode } from "@/lib/room-code"
 import { DOOR_INTENT_KEY, readIntent, type DoorIntent } from "@/lib/door-intent"
@@ -380,6 +380,8 @@ export default function TablePage() {
         {view && (role === "dm" || hostMode) && view.state.status !== "closed" && view.state.code && (
           <InvitePanel code={view.state.code} busy={busy} onNewCode={() => send("newcode")} />
         )}
+        {/* SAVE NOW (Sam, 2026-11-23: "PR4"): a named checkpoint any time the table is open — never in Mortal Mode. */}
+        {view && (role === "dm" || hostMode) && view.state.status !== "closed" && <SaveNow me={hostMode ? me : null} />}
         {view && role === "dm" && <SeatInvites view={view} busy={busy} send={send} />}
         {/* THE HOST: the same table controls. New Game asks for the DM code (lib/host.ts KEY_ONLY_ACTIONS). */}
         {view && hostMode && <DmControls host view={view} busy={busy} send={send} onRehearse={() => router.push(mapHref(true))} />}
@@ -639,6 +641,8 @@ function NewGame({ me, onDone }: { me: { id: string; token: string } | null; onD
   // The host this new game will have: a hero's id, or "" for the DM alone (only offered to the DM).
   const [pick, setPick] = useState<string>(me?.id ?? "")
   useEffect(() => { setPick(me?.id ?? "") }, [me?.id])
+  // MORTAL MODE (Sam, 2026-11-23: "yes on mortal mode"): chosen here, at the start, never after.
+  const [mortal, setMortal] = useState(false)
   useEffect(() => {
     if (step !== "ask" || heroes) return
     let live = true
@@ -656,7 +660,7 @@ function NewGame({ me, onDone }: { me: { id: string; token: string } | null; onD
         const lj = await l.json().catch(() => ({}))
         if (!l.ok || !lj.ok) { setNote(l.status === 429 ? "Too many tries. Wait a few minutes." : "That is not the DM code. Nothing was reset."); return }
       }
-      const r = await fetch("/api/table", { method: "POST", headers: { "Content-Type": "application/json", ...dmHeaders() }, body: JSON.stringify(pick ? { action: "new", hostId: pick } : { action: "new" }) })
+      const r = await fetch("/api/table", { method: "POST", headers: { "Content-Type": "application/json", ...dmHeaders() }, body: JSON.stringify({ action: "new", ...(pick ? { hostId: pick } : {}), ...(mortal ? { mortal: true } : {}) }) })
       const j = await r.json().catch(() => ({}))
       // The hero picked hosts, and this browser sits down as them: their claim in, the DM code out (the same
       // hand-over as the host door, app/dm/page.tsx). A hero with no door words yet cannot be sat as from here.
@@ -736,13 +740,21 @@ function NewGame({ me, onDone }: { me: { id: string; token: string } | null; onD
               </button>
             </div>
           )}
+          <button type="button" disabled={step === "working"} aria-pressed={mortal} onClick={() => setMortal((m) => !m)}
+            className={cn("mt-4 flex w-full items-start gap-3 rounded-sm border p-3 text-left transition-colors", mortal ? "border-red-600/80 bg-red-950/40" : "border-[#3d3428] hover:border-[#7a5f33]")}>
+            <span className={cn("mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-sm border", mortal ? "border-red-400 bg-red-900/60 text-red-100" : "border-stone-600")}>{mortal ? "✓" : ""}</span>
+            <span>
+              <span className={cn("block font-serif text-[14px] uppercase tracking-[0.22em]", mortal ? "text-red-200" : "text-stone-300")}>Mortal Mode</span>
+              <span className="block text-[12px] text-stone-500">One save that keeps overwriting itself. No checkpoints, no Rewind — what happens, happened. It cannot be changed later.</span>
+            </span>
+          </button>
           {me && (
             <input value={code} onChange={(e) => setCode(e.target.value)} type="password" autoComplete="off" placeholder="the DM code"
               className="mt-3 w-full rounded-sm border border-[#7a5f33]/70 bg-black/70 px-3 py-2 text-center font-mono text-[15px] tracking-widest text-stone-100 placeholder:text-stone-700 focus:border-[#c9a868] focus:outline-none" />
           )}
           <div className="mt-3 flex gap-2">
             <button type="button" disabled={step === "working" || (me != null && !code.trim())} onClick={go} className="flex flex-1 items-center justify-center gap-2 rounded-sm border-2 border-red-700/80 bg-gradient-to-b from-[#3a1414] to-[#1f0b0b] py-3 font-serif text-sm uppercase tracking-[0.25em] text-red-100 hover:border-red-400 disabled:opacity-40">
-              <RotateCcw className="h-4 w-4" /> {step === "working" ? "Starting…" : "Start a new game"}
+              <RotateCcw className="h-4 w-4" /> {step === "working" ? "Starting…" : mortal ? "Start a Mortal game" : "Start a new game"}
             </button>
             <button type="button" disabled={step === "working"} onClick={() => { setStep("idle"); setCode("") }} className="flex-1 rounded-sm border border-[#3d3428] py-3 text-[12px] uppercase tracking-[0.25em] text-stone-400 hover:text-stone-200 disabled:opacity-40">
               Keep this game

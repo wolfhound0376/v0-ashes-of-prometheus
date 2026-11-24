@@ -14,7 +14,8 @@ import { actorFor, type Actor, type Host } from "@/lib/host"
 import { entryKey } from "@/lib/entry"
 import { cleanSaveName, newSaveName } from "@/lib/saves"
 import { pitOwedBy } from "@/lib/pit"
-import { shelveWorldInPlay, startNewSave, usualParty } from "@/lib/save-store"
+import { addPlayTime, checkpoint, headInPlay, setMortal, shelveWorldInPlay, startNewSave, usualParty } from "@/lib/save-store"
+import { sessionSeconds } from "@/lib/save-book"
 import { codeOpens, freshRoomCode, makeRoomCode } from "@/lib/room-code"
 
 // /api/table — the staging table (lib/table.ts has the rules and Sam's words).
@@ -160,7 +161,7 @@ export async function POST(req: NextRequest) {
       const host = await readHost(db)
       const who = actorFor(action, { dm: isDm(req), dmCookie: hasDmCookie(req), host: await hostProved(db, host, hostId, hostToken) })
       if ("refused" in who) return NextResponse.json({ error: who.refused }, { status: 403 })
-      return await dmAction(db, action, characterId, who.actor, host, hostId, cleanSaveName(body.saveName))
+      return await dmAction(db, action, characterId, who.actor, host, hostId, cleanSaveName(body.saveName), body.mortal === true)
     }
     if (PLAYER_ACTIONS.has(action)) {
       const claimToken = typeof body.claimToken === "string" ? body.claimToken : ""
@@ -174,7 +175,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function dmAction(db: Db, action: string, characterId: string, actor: Actor, host: Host | null, hostId: string, saveName: string | null = null) {
+async function dmAction(db: Db, action: string, characterId: string, actor: Actor, host: Host | null, hostId: string, saveName: string | null = null, mortal = false) {
   // The host is also a player at this table, so their answer carries their own seat (`mine`); the DM's does not.
   const replyDm = (view: TableView, extra: Record<string, unknown> = {}) =>
     actor === "host" && host ? reply(db, view, host.id, { isHost: true, ...extra }, true) : reply(db, view, null, extra, true)
@@ -234,8 +235,11 @@ async function dmAction(db: Db, action: string, characterId: string, actor: Acto
     if (newHost) await writeHost(db, newHost)
     // The fresh world is a new save, and the one in play (with its own host and party — ruling 3).
     const fresh = shelved.ok ? await startNewSave(db, saveName ?? newSaveName()) : null
+    // MORTAL MODE (Sam, 2026-11-23: "yes on mortal mode"): chosen here, at the start, and never changed after.
+    const mortalErr = mortal && fresh?.ok && fresh.id ? await setMortal(db, fresh.id) : null
     return replyDm(await readTableView(db), {
       ...(fresh && !fresh.ok && !fresh.missing ? { note: `The new game started, but it could not be put on the shelf: ${fresh.error}` } : {}),
+      ...(mortalErr ? { note: `The new game started, but it could not be made Mortal: ${mortalErr}` } : {}),
       newGame: true, run: (restart.report.run as { number?: number } | undefined)?.number ?? null,
       hostClaim: newHost?.claimToken ? { characterId: newHost.id, claimToken: newHost.claimToken } : null,
     })
@@ -247,6 +251,13 @@ async function dmAction(db: Db, action: string, characterId: string, actor: Acto
     // SAVED GAMES: the save in play is written now, before the seats empty, so it remembers who was at the table.
     // A failed save never stops the End — the world is still exactly as it was played — but it is reported.
     const saved = await shelveWorldInPlay(db, "Out of the Abyss")
+    // THE BOOK (Sam, 2026-11-23: "PR4"): the hours played, and an autosave of this End — before the seats empty, so it
+    // remembers the party. A Mortal campaign keeps one save, so it gets no autosave. Both best-effort.
+    if (saved.ok) {
+      await addPlayTime(db, sessionSeconds(t.status === "live" ? t.startedAt : null))
+      const head = await headInPlay(db)
+      if (head && !head.mortal) await checkpoint(db, "auto", `Session ${t.session} ended`)
+    }
     await clearSeats(db)
     await clearInvites(db)
     await writeTable(db, { status: "closed", dmReady: false, session: t.session, openedAt: null, startedAt: null, code: null }, `${by} ended session ${t.session}`)

@@ -77,7 +77,11 @@ export async function POST(req: NextRequest) {
 
   let deleted: string | null = null, note: string | null = null
   if (doomed && doomed !== "missing") {
-    const { error } = await db.from("campaign_saves").delete().eq("id", doomed.id)
+    // The whole campaign goes, its checkpoints with it (lib/save-book.ts; Sam, 2026-11-15: "the game is deleted"), so
+    // nothing of the dead world is left on the Load Game shelf to rewind into.
+    let { error } = await db.from("campaign_saves").delete().or(`id.eq.${doomed.id},campaign_id.eq.${doomed.id}`)
+    // Before the checkpoints migration there is no campaign_id: the save alone goes, as it always did.
+    if (error?.code === "42703") ({ error } = await db.from("campaign_saves").delete().eq("id", doomed.id))
     if (error) note = `The world was reset, but the old save could not be deleted: ${error.message}`
     else deleted = doomed.name
   }
