@@ -14712,7 +14712,8 @@ function afterAction(a, done){
   if (checkEnd()) return;
   if (a.kind === "pc" && activeActor() === a){ if (a.c.action || a.c.bonus || a.c.move > 0) openMenu(a); else nextTurn(); }
 }
-function addCond(t, k){ if ((t.c.sheet.immuneCond || []).includes(k) || (k === "poisoned" && t.c.conds.has("petrified")) || (k === "bleeding" && bleedImmune(t.c.sheet.ctype))) { popText(t, "immune", "#aaa"); return; }   // Petrified: immune to Poisoned · no wound on the undead or a construct if (k === "frightened" && t.c.conds.has("heroic")){ popText(t, "immune (Heroism)", "#ffd27a"); return; } t.c.conds.add(k);
+function addCond(t, k){ if ((t.c.sheet.immuneCond || []).includes(k) || (k === "poisoned" && t.c.conds.has("petrified")) || (k === "bleeding" && bleedImmune(t.c.sheet.ctype))) { popText(t, "immune", "#aaa"); return; }   // Petrified: immune to Poisoned · no wound on the undead or a construct
+  if (k === "frightened" && t.c.conds.has("heroic")){ popText(t, "immune (Heroism)", "#ffd27a"); return; } t.c.conds.add(k);
   if (t.c.conc && INCAP.includes(k)) endConc(t, "they are incapacitated"); popText(t, COND_GLYPH[k] ? COND_GLYPH[k][2].split(":")[0].toLowerCase() : k, COND_GLYPH[k] ? COND_GLYPH[k][1] : "#fff"); renderParty(); }
 // ---------- concentration (SRD 5.1, "Concentration") ----------
 // Sam, 2026-10-14: "Well, lets track concentration". The rules, as the SRD has them:
