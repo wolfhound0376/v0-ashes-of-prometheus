@@ -24989,7 +24989,13 @@ function graveRaise(a, force){
 //   - The record says which stone (`stone`); a grave saved before this has none and is worked out from who it was.
 //     If the painting has not loaded yet the old sprite is drawn, so a stone never goes missing.
 const TOMB_BY = {hero: "rounded-slate", buppido: "skeletal-memorial", other: "broken-arch"};
-const TOMB_ART = {"rounded-slate": {top: 16, foot: 237}, "skeletal-memorial": {top: 16, foot: 238}, "broken-arch": {top: 16, foot: 237}};
+// RIP (Sam, 2026-11-24: "add RIP to the stones", keeping his 2026-10-30 "the RIP tombstone"): carved at draw time, not
+// painted into the pack's files, so the art stays as delivered. `rip` is where on each face, in the 256 px file's own
+// pixels: the slate's open face; on the memorial the plain band under the rune, clear of the skeleton; on the arch
+// across the face, where the crack splits the letters like old stone would.
+const TOMB_ART = {"rounded-slate": {top: 16, foot: 237, rip: {x: 118, y: 128, size: 36}},
+  "skeletal-memorial": {top: 16, foot: 238, rip: {x: 117, y: 194, size: 23}},
+  "broken-arch": {top: 16, foot: 237, rip: {x: 139, y: 138, size: 32}}};
 const TOMB_DIR = APP ? "/velkynvelve-walk/tombstones/" : "tombstones/", TOMB_IMG = {};
 const TOMB_RISE_MS = GRAVE_FRAMES * GRAVE_MS;
 function tombFor(a){ return a && a.id === "buppido" ? TOMB_BY.buppido : a && a.kind === "pc" ? TOMB_BY.hero : TOMB_BY.other; }
@@ -25009,6 +25015,17 @@ function drawTomb(v, im, art){
   if (p < 1){ ctx.beginPath(); ctx.rect(v.x - w, v.y - H * 2, w * 2, H * 2 + 3); ctx.clip(); }   // still climbing out: nothing below the floor shows
   ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
   ctx.drawImage(im, v.x - w / 2 + jit, v.y - art.foot * k + sink, w, H);
+  if (art.rip) tombRip(art.rip, v.x - w / 2 + jit, v.y - art.foot * k + sink, w / im.naturalWidth);
+  ctx.restore();
+}
+// The letters cut into the stone: a dark cut, and under it a faint warm lip on the lower right, the edge the pack's
+// top-left light catches. Drawn in the file's pixels (scaled with the stone), inside the rising stone's clip.
+function tombRip(r, ox, oy, k){
+  ctx.save(); ctx.translate(ox, oy); ctx.scale(k, k);
+  ctx.font = `700 ${r.size}px Cinzel, Georgia, serif`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  try { ctx.letterSpacing = `${Math.round(r.size * .12)}px`; } catch (e) {}
+  ctx.fillStyle = "rgba(222,200,168,.30)"; ctx.fillText("RIP", r.x + 1.1, r.y + 1.3);
+  ctx.fillStyle = "rgba(12,8,10,.88)"; ctx.fillText("RIP", r.x, r.y);
   ctx.restore();
 }
 function drawGraves(){
