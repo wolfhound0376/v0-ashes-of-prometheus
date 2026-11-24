@@ -4,6 +4,7 @@ import { createAnthropic } from "@ai-sdk/anthropic"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { findNpcRow } from "@/lib/npc-acquaintance"
 import { cleanOffer, parseMindReply } from "@/lib/npc-mind"
+import { npcBrief } from "@/lib/npc-brief"
 
 // Same direct-Anthropic provider as /api/npc-opener and /api/chat.
 const anthropic = createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
@@ -33,9 +34,14 @@ export async function POST(req: NextRequest) {
     if (!npcName || !offer.actions.length) return NextResponse.json({ choice: null })
 
     let personality = ""
+    let cardBrief = ""
     try {
-      const row = await findNpcRow(createAdminClient(), npcName)
+      const db = createAdminClient()
+      const row = await findNpcRow(db, npcName)
       if (row) personality = [row.description, row.disposition ? `disposition: ${row.disposition}` : ""].filter(Boolean).join("; ").slice(0, 400)
+      // THE ONE BRIEF (lib/npc-brief.ts): the same card, memory and DM's notes the Parley and the opener read.
+      // Three memories, not five: the turn is waiting.
+      cardBrief = await npcBrief(db, npcName, { k: 3 })
     } catch (e) {
       console.error("[npc-mind] npc row lookup failed:", e)
     }
@@ -60,6 +66,7 @@ export async function POST(req: NextRequest) {
     const prompt = `You are Malachar, the lich running an Out of the Abyss D&D 5e fight. You play ONE named NPC for one turn.
 NPC: ${npcName}${clip(npc.epithet, 60) ? `, ${clip(npc.epithet, 60)}` : ""}. HP ${num(npc.hp)}/${num(npc.hpMax)}.${clip(npc.conds, 80) ? ` Conditions: ${clip(npc.conds, 80)}.` : ""}
 ${personality ? `Who they are: ${personality}` : ""}
+${cardBrief}
 ${offer.canOrder ? "They are the highest-ranking drow in this fight: the others obey them." : clip(body?.commander, 60) ? `They answer to ${clip(body?.commander, 60)}, who commands this fight.` : ""}
 ${order ? `Their commander's last order: ${order}.` : ""}
 Place: ${clip(body?.area, 60) || "Velkynvelve"}, round ${num(body?.round) ?? 1}. The heroes are escaped prisoners.
