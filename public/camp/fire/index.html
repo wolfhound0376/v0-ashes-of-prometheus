@@ -1429,11 +1429,12 @@ function songTick(dt){ songT+=dt; if(songOn&&songT>41) songOn=false; // the note
 // instrument is ever in this pool — same list as lib/bard-songs.ts). Takes follow lib/sfx's convention: <slug>.ogg plus
 // <slug>_2.ogg… so a new take is an upload, not an edit. A take that will not load is dropped quietly.
 const BARD_BASE="https://ppadxmvvvxmnnejeaoer.supabase.co/storage/v1/object/public/vtt-assets/sfx/bard/";
-const BARD_SONGS=["sun-is-a-rumour","count-the-spiders","rothe-and-rot","haul-away-deep-water","down-we-went","ashes-the-bards-song"];
+const BARD_SONGS=["sun-is-a-rumour","count-the-spiders","rothe-and-rot","haul-away-deep-water","down-we-went","ashes-the-bards-song","the-ruin-road","beneath-the-black-arch"]; // the last two: Sam, 2026-11-23, "keep those for his repertoire"
 const BARD_TAKES={whistle:["/audio/bard/whistle"], // Sam picked take 3, 2026-10-27; add /audio/bard/whistle_2 etc. here for more
   "sun-is-a-rumour":["sun-is-a-rumour","sun-is-a-rumour_2"],
   "count-the-spiders":["count-the-spiders","count-the-spiders_2"],"rothe-and-rot":["rothe-and-rot","rothe-and-rot_2"],
-  "haul-away-deep-water":["haul-away-deep-water","haul-away-deep-water_2"],"down-we-went":["down-we-went","down-we-went_2"],"ashes-the-bards-song":["ashes-the-bards-song"]};
+  "haul-away-deep-water":["haul-away-deep-water","haul-away-deep-water_2"],"down-we-went":["down-we-went","down-we-went_2"],"ashes-the-bards-song":["ashes-the-bards-song"],
+  "the-ruin-road":["the-ruin-road"],"beneath-the-black-arch":["beneath-the-black-arch"]};
 const bardSrc=(k)=>(k.startsWith("/")?k:BARD_BASE+k)+".ogg";
 const BARD_DEAD=new Set(); let bardLast=null, bardWait=12+Math.random()*8, bardHum=null; // the first tune comes soon after you sit down (Sam, 2026-10-27: "I didn't hear the song or whistle")
 const BARD_WHISTLE_ODDS=.75;
@@ -1458,7 +1459,7 @@ function bardIdleTick(dt){ const f=figures.find(x=>/^bard\b/i.test(x.cls||""));
   bardWait-=dt; if(bardWait>0) return; const pick=bardPick(); if(!pick){ bardWait=1e9; return; } bardSing(f,pick); }
 // A performance draws from the same unaccompanied songs by how it lands (lib/camp perform bands, warm = success).
 // Flat: he only manages a whistle.
-function performCue(band){ if(band==="flat") return bardTake("whistle"); const pool=band==="moving"?["down-we-went","ashes-the-bards-song"]:["sun-is-a-rumour","count-the-spiders","rothe-and-rot","haul-away-deep-water"];
+function performCue(band){ if(band==="flat") return bardTake("whistle"); const pool=band==="moving"?["down-we-went","ashes-the-bards-song","the-ruin-road","beneath-the-black-arch"]:["sun-is-a-rumour","count-the-spiders","rothe-and-rot","haul-away-deep-water"];
   const s=pool.filter(x=>bardTake(x)); const pick=s[Math.floor(Math.random()*s.length)]; return pick?bardTake(pick):null; }
 // The perform sprite strums a lute. The drow took the party's gear, so it shows only when the performer is this
 // player and an instrument is actually in their pack; everyone else sees him sitting bare-handed.

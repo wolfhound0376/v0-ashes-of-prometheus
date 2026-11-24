@@ -56,7 +56,10 @@ export const UNACCOMPANIED: Readonly<Record<Exclude<PerformanceBand, "flat">, re
   // that the party are slaves doing forced labour is why it landed as a work
   // song rather than a drinking one.
   warm: ["sun-is-a-rumour", "count-the-spiders", "rothe-and-rot", "haul-away-deep-water"],
-  moving: ["down-we-went", "ashes-the-bards-song"],
+  // "the-ruin-road" and "beneath-the-black-arch" are two slow unaccompanied laments in a low weathered voice,
+  // made with ElevenLabs Music on 2026-11-23 and kept for the repertoire at Sam's word ("keep those other two songs
+  // for his repertoire that he can sing during camp"). One take each; a second is an upload of <slug>_2.ogg.
+  moving: ["down-we-went", "ashes-the-bards-song", "the-ruin-road", "beneath-the-black-arch"],
 }
 
 /**
