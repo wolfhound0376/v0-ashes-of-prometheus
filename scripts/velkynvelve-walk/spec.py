@@ -129,7 +129,12 @@ NODES = {
           # the way from the bridge to the armory's rope ladder ran across it, and the party went down the hatch instead. The
           # whole box is still the hatch to hover and click; only its south lip, where the ladder's foot is, takes you down.
           dict(rect=[1719, 822, 1840, 909], trigger=[1738, 900, 1822, 962], to=["10b"], label="The hatch: ladder down to the lower chamber", climb=dict(foot=[1780, 945], ladder=[1778, 872], dir="down")),
-          dict(rect=[1715, 690, 1815, 770], to=["10c"], label="Rope ladder up to the armory", climb=dict(foot=[1768, 740], ladder=[1768, 690], dir="up"))]),
+          dict(rect=[1715, 690, 1815, 770], to=["10c"], label="Rope ladder up to the armory", climb=dict(foot=[1768, 740], ladder=[1768, 690], dir="up")),
+          # Sam, 2026-11-24: on the Act One board he painted floor off the south edge of the tower and dragged the armory
+          # ladder's box onto it. Asked, he said yes to: the ladder box goes back on the rope ladder, and the south strip
+          # is its own way out, to the Underdark map (his board comment: "Going here should take you back to the pixel
+          # underdark tunnel map."). `via` names the hand-off (lib/travel/handoff.ts), as plate 13's north passage does.
+          dict(rect=[1424, 1252, 1619, 1335], to=[], kind="leave", via="tunnels", label="South off the tower: down to the Underdark tunnels")]),
  "10b": dict(slug="node-10b-guard-tower-lower", name="Guard Tower, lower chamber", scale=3.2, depth=[0.8, 1.6], img="node-10b-guard-tower-lower.jpg",
    # scale 3.2 and depth 0.8→1.6, not 0.95 and the default 0.8→1.12 (Sam, 2026-10-24: "fix both guard room and armory").
    # A close-up with steep perspective: ladder rungs at the back wall ~56 px/ft, the table and chairs mid-room ~105 px/ft.
