@@ -23,29 +23,42 @@ export type DoorTable = "unknown" | "closed" | "lobby" | "live"
  * no href: it is the room-code field.
  */
 export type DoorButton = { key: "continue" | "new" | "load" | "join"; label: string; sub: string; href: string | null; door?: boolean; intent?: DoorIntent }
+
+/**
+ * THE TITLE, SCRUBBED (Sam, 2026-11-23: "new hero and new campaign redundant. Scrub intro landing page for utility,
+ * easy UI, and remove confusion for the players. Ease of use.")
+ *
+ * Two audiences, two sections, so a player never reads a door that is not theirs:
+ *   PLAYERS  Continue (only someone who has played on this device) and Join a Table. Nothing else: the room-code
+ *            page (/t/<code>) already asks a newcomer "I have my words" or "I am new — choose a hero", so the old
+ *            small links Saved Game and New Hero only repeated it, and New Hero read like New Campaign.
+ *   HOST     below a rule, smaller: New Campaign and Load Game side by side, and the quiet links Rehearsal (moved in
+ *            from its corner — it needs the same key) and, for a host mid-session, The Table. The key is said once,
+ *            on the section, not on every button.
+ */
 export type DoorMenu = {
   /** The pill above the buttons. `open` null = say nothing (the table could not be read). */
   status: { open: boolean | null; text: string }
-  /** Always in this order: Continue (only for someone who has played here), New Campaign, Load Game, Join a Table. */
+  /** The player section: Continue (only for someone who has played here), then Join a Table. */
   buttons: DoorButton[]
   /** The one lit button: Continue when there is one, otherwise Join a Table. */
   primary: DoorButton["key"]
-  /** The small links under the code field: Saved Game and New Hero always; The Table for a host mid-session. */
-  links: DoorLink[]
+  /** The host section: its heading line, New Campaign and Load Game, and its quiet links. */
+  host: { title: string; sub: string; buttons: DoorButton[]; links: DoorLink[] }
 }
 
 export type DoorLink = { label: string; sub: string; href: string }
 
-/** The second small corner link (Sam, 2026-11-10: "a clean way" into the sandbox from the title). It goes to
- *  /rehearsal, which asks for the DM code once and then opens the sandbox map — no table, no host, no save. */
+/** The sandbox door (Sam, 2026-11-10: "a clean way" into the sandbox from the title). /rehearsal asks for the DM code
+ *  once and then opens the sandbox map — no table, no host, no save. Since 2026-11-23 it sits in the host section. */
 export const REHEARSAL_LINK_LABEL = "Rehearsal"
 export const REHEARSAL_HREF = "/rehearsal"
-
-/** The small links under the room-code field, for someone with no link to follow. Sam's label: "Saved Game is fine". */
-export const SAVED_GAME_LINK: DoorLink = { label: "Saved Game", sub: "Your three words", href: "/join" }
-export const NEW_HERO_LINK: DoorLink = { label: "New Hero", sub: "Choose or forge one", href: "/choose" }
+export const REHEARSAL_LINK: DoorLink = { label: REHEARSAL_LINK_LABEL, sub: "Sandbox, nothing saved", href: REHEARSAL_HREF }
 /** The host, mid-session, can always get back to the table to end it or step a player out (2026-11-10). */
 export const HOST_TABLE_LINK: DoorLink = { label: "The Table", sub: "End, or step a player out", href: "/table" }
+
+/** What Join a Table says under its box: the one door for every player, new or not. */
+export const JOIN_SUB = "The four letters your host shares. New here? You make your hero on the next page."
 
 function statusOf(table: DoorTable): DoorMenu["status"] {
   if (table === "lobby") return { open: true, text: "The table is open" }
@@ -55,9 +68,8 @@ function statusOf(table: DoorTable): DoorMenu["status"] {
 }
 
 /**
- * THE FRONT DOOR (Sam, 2026-11-23: "PR3"; research doc claude/Tables_Invites_Saves_Research_2026-11-23.md §3A).
- * The BG3 main menu: Continue, New Campaign, Load Game, Join a Table. Continue still reads the table (2026-11-10)
- * and says where it will take you; the other three never change, so the door is learned once.
+ * THE FRONT DOOR. Continue still reads the table (2026-11-10) and says where it will take you; Join a Table is the
+ * one door for players; the host's doors never change, so the screen is learned once.
  *
  * `seat`: what the table says about this player's own chair. `heroName` is only for the sub-line. `isHost`:
  * this browser's hero hosts the campaign (a label only — the table checks the claim before it obeys).
@@ -68,16 +80,29 @@ export function doorMenu(who: DoorWho, table: DoorTable, seat: { seated: boolean
   const cont = continueButton(who, table, seat, as, isHost)
   const buttons: DoorButton[] = [
     ...(cont ? [cont] : []),
-    // Only people with the key start a campaign (Sam, 2026-11-10). The door asks for it.
-    { key: "new", label: "New Campaign", sub: "From the first page. Needs the Dungeon Master's code.", href: "/dm", door: true, intent: "new" },
-    // The host loads their own saves without the code; anyone else brings it (Sam, 2026-11-23: any key holder may host).
+    { key: "join", label: "Join a Table", sub: JOIN_SUB, href: null },
+  ]
+  // Only people with the key start a campaign (Sam, 2026-11-10); any key holder may host (2026-11-23). The host loads
+  // their own saves without the code.
+  const keyed = isHost || who === "dm"
+  const hostButtons: DoorButton[] = [
+    { key: "new", label: "New Campaign", sub: "From the first page", href: "/dm", door: true, intent: "new" },
     isHost
-      ? { key: "load", label: "Load Game", sub: "Any saved campaign. You are the host.", href: "/table", intent: "load" }
-      : { key: "load", label: "Load Game", sub: "Any saved campaign. Needs the Dungeon Master's code.", href: "/dm", door: true, intent: "load" },
-    { key: "join", label: "Join a Table", sub: "Four letters from the host.", href: null },
+      ? { key: "load", label: "Load Game", sub: "A saved campaign", href: "/table", intent: "load" }
+      : { key: "load", label: "Load Game", sub: "A saved campaign", href: "/dm", door: true, intent: "load" },
   ]
   const hostMidSession = isHost && table === "live" && seat.seated && !seat.away
-  return { status, buttons, primary: cont ? "continue" : "join", links: hostMidSession ? [HOST_TABLE_LINK, SAVED_GAME_LINK, NEW_HERO_LINK] : [SAVED_GAME_LINK, NEW_HERO_LINK] }
+  return {
+    status,
+    buttons,
+    primary: cont ? "continue" : "join",
+    host: {
+      title: "Hosting",
+      sub: keyed ? (isHost ? "You host this campaign." : "Behind the screen.") : "For whoever runs the game. Needs the Dungeon Master's code.",
+      buttons: hostButtons,
+      links: hostMidSession ? [HOST_TABLE_LINK, REHEARSAL_LINK] : [REHEARSAL_LINK],
+    },
+  }
 }
 
 function continueButton(who: DoorWho, table: DoorTable, seat: { seated: boolean; away: boolean }, as: string, isHost: boolean): DoorButton | null {
