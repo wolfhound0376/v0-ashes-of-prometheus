@@ -27,6 +27,7 @@ import { LONG_REST_KEY } from "@/lib/travel/standing"
 import { RUINS_HREF } from "@/lib/travel/battle"
 import { PIXEL_ROAD_SWITCH, pixelRoadFor, pixelRoadHref } from "@/lib/travel/pixel-road"
 import { roadRemarks } from "@/lib/travel/road-remarks"
+import { speak } from "@/lib/speech-queue"
 import { d as die, rollRoadTraps, seededRand, trapSeedKey, trapSig } from "@/lib/travel/road-traps"
 import { PACES } from "@/lib/travel/march"
 import { dmHeaders } from "@/lib/dm-key"
@@ -129,6 +130,47 @@ export default function UnderdarkMapModule() {
   const roadLeg = useRef<{ a: string; b: string; seed: string } | null>(null)
   const met = useRef<{ key: string; done: Promise<void> } | null>(null)
   const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+  // "OK, WHICH ONE?" (Sam, 2026-11-23: "When there are multiple ways to go, make sure someone asks 'Ok, which one?'" ...
+  // "it is just a bubble and not a dialogue box. We can hear their voice but ultimately where we go will be decided
+  // where we go"; and "yes" to the same on the travel map). The walk hands the party out onto several roads: instead of
+  // the "Which way?" card, someone in the company says it in a bubble over the party (the page draws it, aop:map-fork)
+  // and in their saved voice, and those roads' stops pulse. The road is picked the ordinary way: click its stop, and the
+  // departure sheet asks as it always does. A companion asks first, else another hero, never you; alone, the stops
+  // still pulse and nobody speaks. The pulsing ends when the party leaves.
+  const FORK_LINE = "Ok, which one?"
+  const forkFor = useRef<string>("")
+  useEffect(() => {
+    const roads = travel.roadChoice
+    const key = roads && roads.length > 1 ? roads.map((r) => (r.node as NodeRow).node_key).join(",") : ""
+    if (!ready || key === forkFor.current) return
+    forkFor.current = key
+    if (!key) { send({ type: "aop:map-fork", ks: [], line: "" }); return }
+    const R = roadLive.current
+    const companions = R.company.filter((m) => !m.pc && m.name && m.slug !== "pet-spider")
+    const heroes = R.company.filter((m) => m.pc && m.name && m.slug !== R.heroSlug)
+    const pool = companions.length ? companions : heroes
+    const who = pool.length ? pool[Math.floor(Math.random() * pool.length)] : null
+    send({ type: "aop:map-fork", ks: key.split(","), who: who ? who.name.split(/\s+/)[0] : "", line: who ? FORK_LINE : "" })
+    if (who) speak({
+      rank: "npc",
+      speaker: who.name,
+      fetch: async () => {
+        try {
+          const res = await fetch("/api/npc-tts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: FORK_LINE, npcName: who.name }) })
+          return res.ok ? await res.blob() : null
+        } catch { return null }
+      },
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [travel.roadChoice, ready, company])
+  // the party set out: the fork is behind them
+  const forkFrom = useRef<string | null>(null)
+  useEffect(() => {
+    if (!party) return
+    if (forkFrom.current && forkFrom.current !== party.node_id && travel.roadChoice) travel.setRoadChoice(null)
+    forkFrom.current = party.node_id
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [party?.node_id])
   const youName = () => { const R = roadLive.current; return (R.company.find((m) => m.pc && m.slug === R.heroSlug)?.name ?? "").split(/\s+/)[0] ?? "" }
   async function walkTheRoad(a: string, b: string): Promise<void> {
     const L = live.current, R = roadLive.current
@@ -375,7 +417,7 @@ export default function UnderdarkMapModule() {
         <iframe ref={frame} src={PAGE} title="The Underdark" className="absolute inset-0 h-full w-full border-0" allow="autoplay" />
         {/* Over the pixel road too, once the road has shown what the marker put in the way (`lift`). */}
         <div className={`absolute inset-0 pointer-events-none [&>*]:pointer-events-auto ${lift ? "z-30" : ""}`}>
-          <TravelCards t={{ ...travel, entrance: null }} />
+          <TravelCards t={{ ...travel, entrance: null, roadChoice: null }} />
         </div>
         {roadSrc ? (
           <div className="absolute inset-0 z-20 bg-[#05030a] transition-opacity duration-700" style={{ opacity: roadOn ? 1 : 0, pointerEvents: roadOn ? "auto" : "none" }}>
