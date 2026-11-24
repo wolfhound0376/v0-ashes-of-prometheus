@@ -17156,6 +17156,13 @@ function exitFor(f){
 const ALARM_WAVE_MS = 120000, HELP_ROUNDS = 3, HELP_MS = 30000;
 const ALARM_WAVES = [["drow-guard-male", "drow-guard-female"], ["drow-guard-male", "drow-guard-female", "drow-elite-warrior"], ["drow-guard-male", "drow-guard-female", "drow-guard-male", "drow-elite-warrior"]];
 const inOutpost = n => /^\d/.test(String(n));
+// OUT OVER THE FALLS (Sam, 2026-11-23, after a run where wave 2 met the party the second it landed in the pool: "drow were
+// there to meet us?? This should not be effected by the timer. We got out. Timer is off and no further waves."). The pool
+// under the falls (area 14) is numbered like the outpost's plates, but a party that drops into it has got out: the waves do
+// not follow it there, and the alarm stands down for good (`off`). The pool's own 4-round hunt (huntClockStart, Sam's "4",
+// 2026-11-23) is a different thing and is untouched.
+const ALARM_BEYOND = new Set(["14"]);
+const alarmReaches = n => inOutpost(n) && !ALARM_BEYOND.has(String(n));
 const alarmUp = () => !!(state.alarm && state.alarm.at);
 let pendingHelp = [];                       // runners who got out: {plate, ids, at: {x, y}, dueRound, fightId, dueAt}
 const alarmLocal = new Set();               // waves this screen has walked in itself (by alarm time + wave): only until its own word of it has gone out
@@ -17171,14 +17178,14 @@ const alarmWavesIn = A => Math.max(0, Math.min(ALARM_WAVES.length, (A && A.waves
 const alarmNextAt = A => ((A && (A.last || A.at)) || 0) + ALARM_WAVE_MS;
 let alarmBusy = false;
 function helpHow(f){
-  if (node.alarm && !alarmUp() && inOutpost(cur)) return `sound the ${node.alarm.name.toLowerCase()} (${Math.round(feetBetween(f, node.alarm))} ft away): every two minutes a wave of the garrison arrives, three waves`;
+  if (node.alarm && !alarmUp() && alarmReaches(cur)) return `sound the ${node.alarm.name.toLowerCase()} (${Math.round(feetBetween(f, node.alarm))} ft away): every two minutes a wave of the garrison arrives, three waves`;
   if (alarmUp()) return null;                                          // the horn is already blowing: nobody else to fetch
   if (exitFor(f)) return `send a runner out the nearest way (${f === commander() && underOf(f).length ? "one of yours goes" : "you go yourself"}): two drow come back with them in about three rounds`;
   return null;
 }
 function callForHelp(f){
   f.calledHelp = true; popText(f, "help!", "#ffcf6a", 1.1); bank("ui/initiative_start", .3);
-  const dev = node.alarm && !alarmUp() && inOutpost(cur) ? node.alarm : null, lead = f === commander();
+  const dev = node.alarm && !alarmUp() && alarmReaches(cur) ? node.alarm : null, lead = f === commander();
   const pool = [f, ...(lead ? underOf(f) : [])].filter(x => inFight(x) && !x.task);
   if (dev){
     const who = pool.sort((a, b) => Math.hypot(a.x - dev.x, a.y - dev.y) - Math.hypot(b.x - dev.x, b.y - dev.y))[0] || f;
@@ -17199,7 +17206,7 @@ function callForHelp(f){
 // an ordinary guard on a plate with a horn: the drow nearest it goes for it, once, if nobody is already going
 function guardTakesHorn(f){
   const dev = node.alarm;
-  if (!cbt || !dev || alarmUp() || !inOutpost(cur) || isMind(f) || !drowSide(f) || f.calledHelp) return false;
+  if (!cbt || !dev || alarmUp() || !alarmReaches(cur) || isMind(f) || !drowSide(f) || f.calledHelp) return false;
   if (foes.some(x => x.task === "alarm" && inFight(x))) return false;
   const drow = foes.filter(x => inFight(x) && drowSide(x) && !x.task && !x.retreating);
   if (drow.sort((a, b) => Math.hypot(a.x - dev.x, a.y - dev.y) - Math.hypot(b.x - dev.x, b.y - dev.y))[0] !== f) return false;
@@ -17268,6 +17275,12 @@ async function alarmTick(){
   const A = state.alarm; renderAlarmBanner();
   if (!A || !A.at || !leader || alarmBusy) return;
   if (FIGHT.mirror) return;                                              // ONE FIGHT: the fight's own screen brings the wave in and writes it down; this one shows it
+  if (A.off) return;                                                     // stood down (OUT OVER THE FALLS): nobody else is coming
+  if (ALARM_BEYOND.has(String(cur))){                                    // OUT OVER THE FALLS: the party has got out, and the alarm is over
+    state.alarm = {...A, waves: ALARM_WAVES.length, last: owNow(), off: String(cur)}; saveWalk(); renderAlarmBanner();
+    log(`<em>The horns fade overhead.</em> Nobody follows you down the falls.`);
+    return;
+  }
   const w = alarmWavesIn(A) + 1;
   if (w > ALARM_WAVES.length || owNow() < alarmNextAt(A)) return;
   const key = `${A.at}:${w}`;
@@ -17275,7 +17288,7 @@ async function alarmTick(){
   alarmBusy = true;
   try {
     let came = true;
-    if (inOutpost(cur)){                                                 // (out of the outpost: the wave searches in vain, and is counted as come)
+    if (alarmReaches(cur)){                                              // (out of the outpost: the wave searches in vain, and is counted as come)
       const zs = (node.zones || []).filter(z => z.rect && (z.to || []).length);
       const z = zs.find(q => (q.to || []).some(t => String(t) === String(A.plate))) || zs[w % Math.max(1, zs.length)];
       const c = z ? zoneCenter(z) : centroid, at = nearestWalkable(c.x, c.y);
@@ -17290,12 +17303,12 @@ async function alarmTick(){
 function renderAlarmBanner(){
   let el = $("alarmBanner");
   const A = state.alarm;
-  if (!A || !A.at){ if (el) el.hidden = true; return; }
+  if (!A || !A.at || A.off){ if (el) el.hidden = true; return; }       // stood down: OUT OVER THE FALLS
   if (!el){ el = document.createElement("div"); el.id = "alarmBanner"; el.style.cssText = "position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:40;padding:6px 16px;border-radius:6px;background:rgba(90,10,6,.88);border:1px solid #ff6a4a;color:#ffd9c8;font:600 14px/1.2 Georgia,serif;letter-spacing:.04em;pointer-events:none;text-shadow:0 1px 2px #000"; (stage || document.body).appendChild(el); }
   const w = alarmWavesIn(A);                                             // the waves that have come (written in the world), not the wall clock
   if (w >= ALARM_WAVES.length && owNow() - (A.last || A.at) > 20000){ el.hidden = true; return; }
   const left = Math.max(0, alarmNextAt(A) - owNow()), mm = Math.floor(left / 60000), ss = String(Math.floor(left / 1000) % 60).padStart(2, "0");
-  el.textContent = w >= ALARM_WAVES.length ? `⚠ ALARM — the whole garrison is out` : `⚠ ALARM (${A.name}) — wave ${w + 1} of ${ALARM_WAVES.length} in ${mm}:${ss}${inOutpost(cur) ? "" : " · out of earshot here"}`;
+  el.textContent = w >= ALARM_WAVES.length ? `⚠ ALARM — the whole garrison is out` : `⚠ ALARM (${A.name}) — wave ${w + 1} of ${ALARM_WAVES.length} in ${mm}:${ss}${alarmReaches(cur) ? "" : " · out of earshot here"}`;
   el.hidden = false;
 }
 setInterval(() => { alarmTick(); helpArrives(); }, 1000);
@@ -29077,7 +29090,7 @@ function escapeDiscoveryTick(){
 // is on. And the other way: a horn blown during the escape means the escape is hunted (escapeDiscoveryTick, endCombat).
 const escapeAlarmed = e => !!(state.alarm && state.alarm.at && e && state.alarm.at >= (e.since || 0) - 1000);
 function escapeHorn(why){
-  if (SANDBOX || (alarmUp() && (alarmWavesIn(state.alarm) < ALARM_WAVES.length || owNow() - (state.alarm.last || state.alarm.at) < 60000))) return;   // already blowing: its waves are still coming
+  if (SANDBOX || (state.alarm && state.alarm.off) || (alarmUp() && (alarmWavesIn(state.alarm) < ALARM_WAVES.length || owNow() - (state.alarm.last || state.alarm.at) < 60000))) return;   // already blowing: its waves are still coming
   state.alarm = {plate: String(PEN), at: owNow(), by: "the outpost", name: "warning horn"};
   try { bank("creature/drow_alarm_gong", .95); shake(4); } catch (e) {}
   log(`<b>A warning horn sounds across Velkynvelve.</b> The garrison is coming: a wave every two minutes, three waves.`, {say: true});
