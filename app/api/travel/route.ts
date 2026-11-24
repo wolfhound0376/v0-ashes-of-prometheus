@@ -36,6 +36,7 @@ import { activeRunId, readLeader, roster } from "@/lib/travel/leader-store"
 import { MAX_EXHAUSTION, normaliseExhaustion } from "@/lib/exhaustion"
 import { logTimeEvent } from "@/lib/time-tracking"
 import type { SheetSlice } from "@/lib/game-context"
+import { dressRow, dressRows } from "@/lib/worn-gear-rows"
 
 // /api/travel — Malachar's hands on the travel graph.
 //
@@ -500,7 +501,8 @@ export async function POST(req: NextRequest) {
         .eq("id", id)
         .maybeSingle()
       if (!sheet) return NextResponse.json({ error: "unknown character_id" }, { status: 404 })
-      navigator = navigatorFromSheet(sheet as unknown as SheetSlice, { familiar: !!nv.familiar, hasMap: !!nv.has_map })
+      // dressed: worn gear counts on the road too (lib/worn-bonus.ts)
+      navigator = navigatorFromSheet((await dressRow(dbd, sheet as Record<string, unknown>)) as unknown as SheetSlice, { familiar: !!nv.familiar, hasMap: !!nv.has_map })
     } else if (nv != null) {
       return NextResponse.json({ error: "navigator must be {kind:'guide', key} or {kind:'pc', character_id}" }, { status: 400 })
     }
@@ -616,7 +618,7 @@ export async function POST(req: NextRequest) {
         : Promise.resolve({ data: [] }),
     ])
     const pace = normaliseDay(m as Record<string, unknown> | null).pace
-    const result = resolveStance(key, { meeting: o.meeting, foes: o.foes, pace, party: (sheets ?? []) as unknown as SheetSlice[], spotted }, Math.random)
+    const result = resolveStance(key, { meeting: o.meeting, foes: o.foes, pace, party: (await dressRows(dbs, (sheets ?? []) as Record<string, unknown>[])) as unknown as SheetSlice[], spotted }, Math.random)
     if (!result) {
       return NextResponse.json({ error: "that choice is not open here", offered: stanceOptions({ first: o.meeting.first, foes: o.foes, pace, spotted }) }, { status: 409 })
     }
@@ -686,7 +688,7 @@ export async function POST(req: NextRequest) {
     if (!picked) return NextResponse.json({ error: "no such option here", offered: offered.map((o) => o.key) }, { status: 404 })
     if (!picked.available) return NextResponse.json({ error: `the party lacks: ${picked.blocked_by.join(", ")}` }, { status: 409 })
 
-    const party = (sheets ?? []) as unknown as SheetSlice[]
+    const party = (await dressRows(dbc, (sheets ?? []) as Record<string, unknown>[])) as unknown as SheetSlice[]   // with their gear on
     const outcome = resolveChoice(picked, party, Math.random)
 
     // THE COSTS. Hours go on the day like a leg of road; exhaustion goes on the
@@ -960,7 +962,7 @@ export async function POST(req: NextRequest) {
     // (fast −5, p.24), against the node's DC. No dice. A success can reveal a
     // hidden node_key named in the node's metadata.
     const spec = noticeSpec((full?.metadata as Record<string, unknown> | null) ?? null)
-    const eyes: Eyes[] = ((saversRes.data ?? []) as Record<string, unknown>[]).map((c) => ({
+    const eyes: Eyes[] = (await dressRows(db, (saversRes.data ?? []) as Record<string, unknown>[])).map((c) => ({
       id: String(c.id),
       name: String(c.name ?? "?"),
       passive: marchPassivePerception(c as unknown as SheetSlice, dayAfter.pace),

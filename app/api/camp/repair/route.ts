@@ -18,6 +18,7 @@
 // already the item's history (Layer 1); this makes it load-bearing as well as
 // narrative, and it is what `item_events_item_idx` is for.
 
+import { dressRow } from "@/lib/worn-gear-rows"
 import { createAdminClient } from "@/lib/supabase/admin"
 import { settleCraftRoll, craftModifier, spendCampAction } from "@/lib/camp"
 import {
@@ -115,6 +116,8 @@ export async function GET(req: Request) {
     return Response.json({ error: "read_failed" }, { status: 500 })
   }
   if (!character) return Response.json({ error: "not_found" }, { status: 404 })
+  // with their gear on (lib/worn-bonus.ts): a worn ability bonus counts on the tool check
+  const wornCharacter = (await dressRow(admin, character as Record<string, unknown>)) ?? character
 
   const [{ data: pack, error: packError }, facilities] = await Promise.all([
     admin.from("inventory_items").select(PACK_SELECT).eq("character_id", characterId),
@@ -165,8 +168,8 @@ export async function GET(req: Request) {
             toPristineGp: repairToPristineGp(item.value, condition),
             // The modifier the route itself will apply, so the dice label and
             // the settled roll can never disagree.
-            modifier: craftModifier(character as Record<string, number | null>, spec.abilities, pb).modifier,
-            ability: craftModifier(character as Record<string, number | null>, spec.abilities, pb).ability,
+            modifier: craftModifier(wornCharacter as Record<string, number | null>, spec.abilities, pb).modifier,
+            ability: craftModifier(wornCharacter as Record<string, number | null>, spec.abilities, pb).ability,
             banked: bankedByItem.get(row.id)?.successes ?? 0,
           }
         : null,
@@ -231,6 +234,8 @@ export async function POST(req: Request) {
     .select("id, name, sheet_proficiencies, proficiency_bonus, level, rest_actions_remaining, str_score, dex_score, con_score, int_score, wis_score, cha_score")
     .eq("id", characterId).is("archived_at", null).maybeSingle()
   if (!character) return Response.json({ error: "character_not_found" }, { status: 404 })
+  // with their gear on (lib/worn-bonus.ts): a worn ability bonus counts on the tool check
+  const wornCharacter = (await dressRow(admin, character as Record<string, unknown>)) ?? character
 
   const { data: raw } = await admin.from("inventory_items").select(PACK_SELECT).eq("id", inventoryItemId).maybeSingle()
   if (!raw) return Response.json({ error: "item_not_found" }, { status: 404 })
@@ -310,7 +315,7 @@ export async function POST(req: Request) {
       if (!spend.ok) return Response.json({ ok: false, reason: spend.note }, { status: 409 })
 
       const pb = Number(character.proficiency_bonus ?? 0)
-      const { modifier } = craftModifier(character as Record<string, number | null>, spec.abilities, pb)
+      const { modifier } = craftModifier(wornCharacter as Record<string, number | null>, spec.abilities, pb)
       const out = settleCraftRoll({
         crafter: character.name, item: item.name, face, modifier, spec,
         successes: banked.successes, attempts: banked.attempts,

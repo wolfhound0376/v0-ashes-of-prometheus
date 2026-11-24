@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/admin"
 import { COMPANION_ROWS, campName, campRoster, mouthsAtCamp, type WorldLike } from "@/lib/camp-roster"
 import { hitDieFor } from "@/lib/camp"
 import { abilityMod, passivePerception, skillBonus, type SheetSlice } from "@/lib/game-context"
+import { dressRows } from "@/lib/worn-gear-rows"
 
 // /api/camp/roster — who sits at the fire tonight (Sam, 2026-11-15: "At camp the pixel characters of the available
 // NPCs still alive or with you should be there").
@@ -42,7 +43,8 @@ export async function GET() {
     const { data: rows } = ids.length
       ? await db.from("characters").select("id,name,class,level,hp_current,hp_max,con_score,wis_score,conditions,sheet_hit_dice,hit_dice_remaining,str_score,dex_score,int_score,cha_score,proficiency_bonus,passive_perception,sheet_skill_proficiencies,sheet_save_proficiencies").in("id", ids)
       : { data: [] as Row[] }
-    const byId = new Map(((rows ?? []) as Row[]).map((r) => [r.id, r]))
+    // with their gear on (lib/worn-bonus.ts): the camp card's senses and checks read worn bonuses
+    const byId = new Map((await dressRows(db, (rows ?? []) as Row[])).map((r) => [r.id, r]))
 
     const senses = (r: Row) => {
       const sheet = { ...r, level: Math.max(1, Number(r.level) || 1), str_score: Number(r.str_score) || 10, dex_score: Number(r.dex_score) || 10, con_score: Number(r.con_score) || 10, int_score: Number(r.int_score) || 10, wis_score: Number(r.wis_score) || 10, cha_score: Number(r.cha_score) || 10 } as SheetSlice
