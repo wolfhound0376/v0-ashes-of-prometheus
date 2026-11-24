@@ -5584,22 +5584,24 @@ function drawPickup(d, i, t){
 // the card: what is there, a button for each, and Take all
 // opts.at = where the container stands on the plate; the first open of it plays the loot fountain from there
 async function openLoot(id, title, opts = {}){
-  if (mode !== "explore" && mode !== "dialog") return;
-  mode = "dialog"; party.forEach(p => { p.path = []; }); tip.hidden = true;
+  const fighter = opts.fighter || null;   // GRABBING THINGS MID-FIGHT (grabTargets): the hero whose turn it is, in mode "combat"
+  if (fighter ? !(cbt && mode === "combat") : mode !== "explore" && mode !== "dialog"){ if (fighter) grabDone(fighter); return; }
+  if (!fighter){ mode = "dialog"; party.forEach(p => { p.path = []; }); } tip.hidden = true;
   if (opts.poly) plateCrop(opts.poly);
-  const who = leader, box = $("objBtns");
+  const who = fighter || leader, box = $("objBtns");
   $("objWho").textContent = title; $("objText").textContent = opts.text || "You look inside."; box.innerHTML = ""; box.classList.add("loot");
-  const close = () => { $("obj").hidden = true; box.classList.remove("loot"); mode = "explore"; if (opts.onClose) opts.onClose(); };
+  const close = () => { $("obj").hidden = true; box.classList.remove("loot"); if (!fighter) mode = "explore"; if (opts.onClose) opts.onClose(); };
+  const leave = () => { close(); if (fighter) grabDone(fighter); };   // mid-fight, walking away from the card hands the turn back
   const add = (label, fn, cls = "", off = false) => { const b = choiceRow(box, label, fn || null, cls); b.disabled = off; return b; };
   const fkey = lootKeyOf(id), spill = !!opts.at && !fountained.has(fkey);   // the first open of a body or chest spills it
-  if (!spill){ showObjCard(); cardClose(close); add("…", null, "", true); }
+  if (!spill){ showObjCard(); cardClose(leave); add("…", null, "", true); }
   const j = await fetchLoot(id); await ensureCatalog();
   if (spill){
     fountained.add(fkey);
     const wait = j.error ? 0 : lootFountain(opts.at, j.rows || []);
     if (wait) await new Promise(r => setTimeout(r, wait));
-    if (mode !== "dialog") return;                                                // closed or left while it flew
-    showObjCard(); cardClose(close);
+    if (fighter ? !(cbt && mode === "combat") : mode !== "dialog"){ if (fighter) grabDone(fighter); return; }   // closed or left while it flew
+    showObjCard(); cardClose(leave);
   }
   if ($("obj").hidden) return;
   box.innerHTML = "";
@@ -5611,8 +5613,8 @@ async function openLoot(id, title, opts = {}){
     if (row.check && !row.missing){                                             // behind a check: roll it here, then it comes free
       const b = add(`Extract: ${row.name} · ${checkLabel(row.check)}`, async () => {
         b.disabled = true;
-        if (await extractPart(who, row)){ if (await takeLoot(who, id, {...row, passed: true})){ close(); return; } }
-        if (mode === "dialog") b.disabled = false;
+        if (await extractPart(who, row)){ if (await takeLoot(who, id, {...row, passed: true})){ leave(); return; } }
+        if (fighter || mode === "dialog") b.disabled = false;
       });
       if (row.pixel){ const im = document.createElement("img"); im.src = ITEM_PX + row.pixel; im.alt = ""; im.className = "lootPx"; b.prepend(im); }
       continue;
@@ -5631,8 +5633,8 @@ async function openLoot(id, title, opts = {}){
     for (const row of can) await takeLoot(who, id, row);
     close(); offerEquip(() => openLoot(id, title, opts));
   }, "primary");
-  if (opts.extra) for (const [label, fn] of opts.extra) add(label, () => { close(); fn(); });
-  add("Leave it", close);
+  if (opts.extra) for (const [label, fn] of opts.extra) add(label, () => { leave(); fn(); });
+  add(fighter ? "Done" : "Leave it", leave);
   box.querySelector("button:not([disabled])")?.focus();
 }
 // ----- ONE CARD FOR A FIND (Sam, 2026-11-13: "This is redundant; suggest something better" … "Go and build the merged
@@ -10732,6 +10734,7 @@ function openMenu(a, sub){
     add("Inventory", "I · equip, put away, drink a potion", () => toggleBag(true, a));
     for (const pile of pilesHere().filter(q => feetToPile(a, q) <= 6))
       { ACTION_ICON["Pick up: " + pile.name] = "use-object"; add(`Pick up: ${pile.name}`, c.move >= PICKUP_FT ? `${PICKUP_FT} ft of your movement` : `needs ${PICKUP_FT} ft of movement`, c.move >= PICKUP_FT ? () => pickUp(a, pile) : null); }
+    for (const g of grabTargets(a)){ ACTION_ICON[g.label] = "use-object"; add(g.label, "your action · take what you want from it", c.action ? g.go : null); }
     add("Move", `${c.move} ft left · click the ground`, c.move > 0 ? () => { closeMenu(); cbt.phase = "move"; hint("Click where to go."); } : null);
     // JUMP, as a command (Sam, 2026-10-27: "where is the attack, jump, throw, push, entertain"). The leap itself is the
     // long-jump rule below (planLeap/leapMove): a click on the far side of a gap already springs across it. The button
@@ -10884,7 +10887,7 @@ const BUTTON_PRI = [[/^Level Up/, .5], [/^Talk to /, 1], [/^(Pick up|Search [A-Z
 //   class features (Bardic Inspiration, Rage, Innate Sorcery) · Move · Cunning Action · Dash · Disengage · Dodge · Hide ·
 //   Shove · Help · Ready · Jump · Equip · Search · Inventory.   End turn is always the last box on the bar, never folded.
 const COMBAT_KEEP = 8;
-const COMBAT_PRI = [[/^(Stand up|Break free|Cut free|Put out the flames|Shake awake|Stabilize|End concentration|Pick up)/, 0],
+const COMBAT_PRI = [[/^(Stand up|Break free|Cut free|Put out the flames|Shake awake|Stabilize|End concentration|Pick up|Search: |Open: )/, 0],
   [/^(Attack|Sneak Attack)/, 1], [/^Off-hand/, 2], [/^Cast/, 3], [/^Throw/, 4], [/^(Bardic Inspiration|Rage|End rage|Innate Sorcery)/, 5],
   [/^Move/, 6], [/^Cunning Action/, 7], [/^Dash/, 8], [/^Disengage/, 9], [/^Dodge/, 10], [/^Hide/, 11], [/^Shove/, 12], [/^Help/, 13],
   [/^Ready/, 14], [/^Jump/, 15], [/^Equip/, 16], [/^Search/, 17], [/^Inventory/, 18], [/^End turn/, 90]];
@@ -14924,6 +14927,52 @@ function doSearch(a){
   found.forEach(f => { f.c.conds.delete("hidden"); f.alpha = 1; popText(f, "found", "#ffe08a"); });
   log(`${fname(a)} searches: Perception ${k.r} + ${k.mod} = ${k.total}${found.length ? ` — finds ${found.map(fname).join(", ")}` : " — nothing hidden here"}.`);
   openMenu(a);
+}
+// GRABBING THINGS MID-FIGHT (Sam, 2026-11-23: "You should be able to search for items, open things while in combat, to
+// take advantage of grabbing items."). SRD 5.1 Actions in Combat, Search and Use an Object: going through a body or a
+// footlocker, or throwing open a chest and taking what is in it, is the turn's action. Within 5 ft of the hero. The
+// card is the explore loot card (openLoot, opts.fighter): the same rows, fountain and takes, played by the hero whose
+// turn it is; closing it hands the turn back. Not offered mid-fight: a LOCKED chest (its lock and needle are the
+// explore card's), a mimic, and the work plates' pockets.
+let grabbing = null;
+function ftToPoly(a, poly){
+  if (inPoly(poly, a.x, a.y)) return 0;
+  let best = Infinity;
+  for (let i = 0; i < poly.length; i++){ const [x1, y1] = poly[i], [x2, y2] = poly[(i + 1) % poly.length], dx = x2 - x1, dy = y2 - y1, L = dx * dx + dy * dy;
+    const t = L ? Math.max(0, Math.min(1, ((a.x - x1) * dx + (a.y - y1) * dy) / L)) : 0; best = Math.min(best, Math.hypot(a.x - (x1 + t * dx), a.y - (y1 + t * dy))); }
+  return best / pxPerFtAt(a.y);
+}
+function grabTargets(a){
+  if (a.kind !== "pc" || !cbt) return [];
+  const out = [], near = 5.5;
+  for (const f of new Set([...foes, ...(cbt.bystanders || [])])) if (f.down && !f.fading && f.kind !== "pc" && !f.ally && feetBetween(a, f) <= near)
+    out.push({label: `Search: ${fname(f)}'s body`, go: () => grabBody(a, f)});
+  if (!atWorkPlate()) for (const l of node.loot || []) if (!l.mimic && lootShown(l) && ftToPoly(a, l.poly) <= near)
+    out.push({label: `Search: ${l.name}`, go: () => grabCard(a, l.id, l.name, {poly: l.poly, text: l.text, at: polyBase(l.poly)})});
+  for (const pr of node.props || []){ const st = propState(pr); if (pr.lid && !st.locked && ftToPoly(a, pr.poly) <= near)
+    out.push({label: `${st.open ? "Search" : "Open"}: ${pr.name}`, go: () => grabChest(a, pr)}); }
+  return out;
+}
+function grabStart(a, at){ a.c.action = false; closeMenu(); cbt.phase = "busy"; combatBusy = true; grabbing = a; if (at) a.face = faceOf(at.x - a.x, at.y - a.y); }
+function grabDone(a){ grabbing = null; if (!cbt) return; combatBusy = false; if (activeActor() !== a) return; cbt.phase = "menu"; renderParty(); afterAction(a); }
+function grabCard(a, id, title, opts){
+  grabStart(a, opts.at); log(`${fname(a)} goes through <b>${esc(title)}</b> (their action).`);
+  openLoot(id, title, {...opts, fighter: a});
+}
+function grabBody(a, f){
+  grabStart(a, f); f.lootKey = f.lootKey || bodyKeyOf(f);
+  const id = `body:${f.id}:${f.lootKey}`, name = fname(f), first = !f.searched, known = !!LOOT_BOOK["body:" + f.id];
+  f.searched = true; bank("ui/item_pickup", .7); log(`${fname(a)} searches ${esc(name)}'s body (their action).`);
+  if (first){ tellBodyRuin(f, id); if (!known && APP) handOff(`${fname(a)} searches ${name}'s body mid-fight (round ${cbt.round}).`, true); }
+  openLoot(id, `${name}'s body`, {fighter: a, at: {x: f.x, y: f.y}, text: `${name} lies where it fell.`, empty: `Nothing is left on ${name}.`});
+}
+function grabChest(a, pr){
+  const st = propState(pr), at = polyBase(pr.poly), opts = {poly: pr.poly, text: pr.text.open, at, fighter: a};
+  grabStart(a, at);
+  if (st.open){ log(`${fname(a)} goes through <b>${esc(pr.name)}</b> (their action).`); openLoot(pr.id, pr.name, opts); return; }
+  const l = lids[pr.id]; st.open = true; if (l) l.target = 1;
+  sfx("door-open", .6); bank("ui/coin_purse", .5); log(`${fname(a)} throws open <b>${esc(pr.name)}</b> (their action).`);
+  setTimeout(() => { if (cbt && grabbing === a) openLoot(pr.id, pr.name, opts); else grabDone(a); }, 1100);
 }
 // A foe's Search (see foeTurn, HIDDEN HEROES): one Wisdom (Perception) check against each hidden hero's Stealth total
 // (c.hideDc, set by doHide; an older hide without one uses 10 + Stealth). Found: no longer hidden. Either way the action
@@ -24886,6 +24935,7 @@ addEventListener("keydown", e => {
   if (e.target.closest && e.target.closest("input,select")) return;
   if (mode === "combat" && FIGHT.mirror && oneFightKey(e)) return;                                   // ONE FIGHT: your turn, played there
   if (mode === "combat" && FIGHT.auth && oneFightWaitsFor(activeActor()) && (e.code === "Enter" || MOVE_KEYS.has(e.code))) return;   // not this screen's hero to move
+  if (mode === "combat" && grabbing && !$("obj").hidden){ if (e.key === "Escape"){ e.preventDefault(); $("objX").click(); } return; }   // GRABBING MID-FIGHT: the card has the keys
   if (e.key === "Escape" && dmPlacing){ dmPlacing = null; stage.classList.remove("placing"); hint(""); return; }
   if (e.key === "Escape" && PDEC.shownId) return;                    // THE PARTY DECIDES: no stepping back from the party's question
   if (e.key === "Escape" && topPanelOpen()){ closeTopPanels(); return; }
