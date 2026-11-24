@@ -3785,7 +3785,8 @@ function portrait(id, canvas, size){
 // leather). A cloak is not a layer drawn over the armor's still: armor and cloak together are their own picture, keyed
 // "<armor>+<cloak>". dollOutfit picks the still of both when there is one, else the armor's, else the cloak's.
 const DOLL_WEAR = {freia: {"studded leather armor": "freia-studded-leather.png",
-  "studded leather armor+traveler's cloak": "freia-studded-leather-red-cloak.png"}};
+  "studded leather armor+traveler's cloak": "freia-studded-leather-red-cloak.png",
+  "traveler's cloak": "freia-red-cloak.png"}};   // the cloak over her own clothes (Sam approved it "as is", 2026-11-24)
 function dollOutfit(id, torso, back){
   const has = k => k && (DOLL_WEAR[id] || {})[String(k).toLowerCase()];
   return [torso && back && `${torso}+${back}`, torso, back].find(has) || null;
