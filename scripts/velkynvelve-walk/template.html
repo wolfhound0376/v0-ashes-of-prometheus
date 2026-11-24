@@ -5392,7 +5392,13 @@ const LOOT_BOOK = {
   // Hard Labor plates (2026-10-26): same lists as lib/walk-loot.ts
   "cliff-top-sack": [["fresh-fruit", 1, "a container of it"]], "cliff-crate": [["dart", 5, "on a weapon belt"]], "cliff-low-sack": [["drow-poison", 3, "vials in a pouch"]],
   "kitchen-knives": [["dagger", 3, "kitchen knives"]], "kitchen-mushrooms": [["edible-mushrooms", 1, "a handful"]], "kitchen-card-table": [["gaming-set-cards", 1, "the drow's deck"]],
+  // the pen (plate 11): same lists as lib/walk-loot.ts. A count written as dice ("1d4") is rolled once per page, the
+  // way the game rolls it once per run (lib/walk-loot.ts settleRolls).
+  "pen-ormu": [["ormu-moss", 2, "scraped off the wet stone"]], "pen-timmask": [["timmask", 1, "cut at the base, cap intact"]],
+  "pen-waterorb": [["waterorb", 1, "heavy with clean water"]], "pen-bonecap": [["bonecap", 3, "a clutch of pale caps"]],
+  "pen-landing-chest": [["dagger", 1], ["thieves-tools", 2], ["drow-poison", 1, "a single vial"], ["potion-of-healing", "1d4", "stoppered vials"]],
 };
+const lootRolledLocal = {};   // preview only: "<container>|<slug>" -> the count rolled for a dice entry
 const LOOT_STASH = {"ilvara-chest": "Everything of value the drow took from you: focuses, spell components, spellbooks, magic.", "shoor-chest": "Your weapons, armour and packs, as the drow took them."};
 const PEN_KEY = "Slave pen key";
 // A guard's pockets (Sam, 2026-10-27: "a 1D6 set of items, maybe drow poison, dagger, bolts, GP, the key to the pen,
@@ -5435,7 +5441,8 @@ async function fetchLoot(id, kill){
   if (pocketGuard && !pocketLocal[id]) pocketLocal[id] = rollPocketsLocal(pk.slice(2).join(":") || "default");
   const book = pocketGuard ? pocketLocal[id] : LOOT_BOOK[id] || LOOT_BOOK[id.split(":").slice(0, 2).join(":")] || [], taken = lootLocal[lootKeyOf(id)] || {}, penGone = Object.keys(lootLocal).some(k => k.startsWith("pocket:") && lootLocal[k]["slave-pen-key"]);
   const rows = [];
-  for (const [slug, qty, note, check] of book){
+  for (const [slug, qty0, note, check] of book){
+    const qty = typeof qty0 === "string" ? (lootRolledLocal[id + "|" + slug] ??= roll(qty0).total) : qty0;
     const left = qty - (taken[slug] || 0); if (left <= 0 || (slug === "slave-pen-key" && penGone)) continue;
     const it = (catalog || []).find(i => i.slug === slug);
     rows.push({kind: "book", slug, name: it ? it.name : slugName(slug), qty: left, note, pixel: it ? it.pixel_icon_url : null, missing: !it, slot: it ? it.equippable_slot : null, loose: pocketGuard && LOOSE_IN_POCKET.has(slug), ...(check ? {check} : {})});
@@ -10394,7 +10401,7 @@ function renderExploreBar(){
   const lvlNext = canControl(leader) && !inFightNow() ? levelReady(leader.id) : 0;
   const who = SHORT[leader.id] || (SHEETS[leader.id] && SHEETS[leader.id].name.split(" ")[0]) || SPR[leader.id].json.name;
   o.mark = pickpocketMark(leader);   // someone in reach of a hand while this hero is sneaking unseen
-  const key = [leader.id, o.talkNear && o.talkNear.id, o.talkList.length, lvlNext, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, o.mark && o.mark.id, party.length, whistleCan(leader) ? "w" : "", beseechCan(leader) ? "b" : "", wireCan(leader) ? "m" : "", sparkTargets(leader).map(p => p.id).join("+"), (druidVermin(leader) || {}).uid || "", petKey()].join("|");
+  const key = [leader.id, o.talkNear && o.talkNear.id, o.talkList.length, lvlNext, o.pile && o.pile.id, o.body && o.body.id, o.obj && o.obj.interact.name, o.foe && o.foe.id, o.mark && o.mark.id, party.length, whistleCan(leader) ? "w" : "", beseechCan(leader) ? "b" : "", wireCan(leader) ? "m" : "", sparkTargets(leader).map(p => p.id).join("+"), (druidVermin(leader) || {}).uid || "", petKey(), fungusBarKey()].join("|");
   if (key === exploreKey && !m.hidden) return;
   exploreKey = key; m.dataset.kind = "explore"; m.innerHTML = ""; m.hidden = false;
   const add = (label, glyph, icon, sub, fn, cls) => { const b = document.createElement("button"); if (cls) b.className = cls;
@@ -10475,7 +10482,7 @@ let sneak = null, helpNext = null, followOn = true, moreOpen = false, exploreJum
 // Situational options (a pile at your feet, a foe, a way out to listen at) still cut in near the front, since they are why
 // you stopped; hero-specific ones (Pray, Inspire, Scout, Quick drink, Jump) sit between the bar and the tray.
 const EXPLORE_KEEP = 7;
-const BUTTON_PRI = [[/^Level Up/, .5], [/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3],
+const BUTTON_PRI = [[/^Level Up/, .5], [/^Talk to /, 1], [/^(Pick up|Search [A-Z]|Use|Open|The )/, 2], [/^Attack /, 2], [/^Listen/, 3], [/^Look closer/, 3], [/^(Harvest |Eat a handful)/, 3],
   [/^(Sneak|Stop sneaking)/, 4], [/^Pick .*pocket/, 4], [/^Cast/, 5], [/^Search$/, 6], [/^Inventory/, 7], [/^Tell Malachar/, 8], [/^Next hero/, 9],
   [/^(Scout|Jump|Pray|Beseech|Inspire|Whistle|Work the wire|Speak to the|Quick drink)/, 10], [/^(Feed |Let .+ loose|Call .+ back|Send |Name your)/, 10], [/^My company/, 11], [/^Short rest/, 12], [/^Long rest/, 12.5], [/^Help/, 13], [/^(Follow|Wait)/, 14], [/^Talk$/, 30]];
 // THE COMBAT BAR (Sam, 2026-11-10: "Don't offer bubble boxes for actions that aren't available. Offer boxes in order of
@@ -10566,9 +10573,11 @@ function exploreExtras(m, o, add, who){
   // standing rogue button any more. It appears only while the party is sneaking together, for whoever leads; taking it
   // splits the leader off (they keep the Stealth they rolled) and the others wait where they stand.
   if (sneak && !sneak.scout && followOn && party.length > 1) x("Scout alone", "➶", ART("scout"), "slip away from the group; the others wait", () => scoutAlone());
-  const fg = fungusReach(); if (fg && fungusTriesLeft(L, fg) > 0) x(`Harvest ${fg.name.replace(/^(A|An|The) /i, "the ")}`, "✂", ART("search-here", "search"),
+  const fg = fungusReach(); if (fg && fungusTriesLeft(L, fg) > 0 && fungusEatLeft[fg.id] !== 0) x(`Harvest ${fg.name.replace(/^(A|An|The) /i, "the ")}`, "✂", ART("search-here", "search"),
     fg.harvest ? `${SKILL_NAME[fg.harvest.skill] || fg.harvest.skill} DC ${fg.harvest.dc} · ${fungusTriesLeft(L, fg)} ${fungusTriesLeft(L, fg) === 1 ? "try" : "tries"} left` : "it comes up easily",
     () => fungusHarvest(fg));
+  { const fe = fungusEatReach(); if (fe){ const nm = ((catalog || []).find(i => i.slug === fe.eat.item) || {}).name || slugName(fe.eat.item), left = fungusEatLeft[fe.id];
+    x(`Eat a handful of ${nm.toLowerCase()}`, "❦", ART("quick-drink", "search"), `heals ${eatHealOf(fe.eat.item)} · no roll${left != null ? ` · ${left} left here` : ""}`, canControl(L) ? () => fungusEat(fe) : null); } }
   // THE WARD SIGIL (Sam, 2026-10-30): a caster within reach of the wall can read it; a 20+ read unlocks the cut.
   //
   // SAYS WHY IT CANNOT (Sam, 2026-10-30, standing at the sigil: "why am I unable to examine it" — then, of the two
@@ -10974,6 +10983,8 @@ function fungusLearn(h, l){
   state.fungusKnown = state.fungusKnown || {};
   if (state.fungusKnown[fungusKey(h, l)]) return;
   state.fungusKnown[fungusKey(h, l)] = true;
+  (state.fungusKnownItem = state.fungusKnownItem || {})[h.id + ":" + l.identify.item] = true;   // the bag's Eat line reads this (fungusKnowsItem)
+  if (l.eat) ensureCatalog();                                       // the Eat box needs the catalogue's healing number
   log(`${fname(h)} knows it: <em>${esc(l.identify.known)}</em>`);
   if (!l.identify.useful) return;                    // the bonecap is a trap; it must not announce itself
   bark(h, FUNGUS_LINE, 4200, {voice: true, talk: true});
@@ -11083,6 +11094,56 @@ function fungusHarvest(l){
   const now_left = fungusTriesLeft(h, l);
   log(`<em>${esc(hv.fail || "It comes apart in your hands.")}</em>` + (now_left > 0 ? ` ${now_left} more ${now_left === 1 ? "try" : "tries"}.` : ""));
   if (now_left <= 0) log(`<em>${esc(hv.ruined || "There is nothing usable left of it.")}</em>`);
+}
+// EATING IT WHERE IT GROWS (Sam, 2026-11-23: "Eating ormu moss heals 1d4 and later a potion does better. This should be
+// an option with mushrooms. Its healing properties can be determined after successful check.")
+//   THE CHECK is the one that already names it (passive on the walk-by, rolled on a Search): that success now also says
+//   what eating it does (story.json `identify.known`), and the Eat box appears beside Harvest for that hero only.
+//   THE NUMBER is the catalogue's (items.properties.eat_heal on ormu-moss: "1d4"), never the map's. What "does better" is
+//   the potion of healing (2d4 + 2), brewed from two of these and a waterorb (lib/alchemy.ts).
+//   IT COMES OFF THE PATCH. A handful eaten is one of the patch's handfuls gone (/api/walk-loot "eat"), so eating and
+//   harvesting draw on the same moss and neither is endless. No roll: chewing a handful is not the careful cut.
+//   Explore only, like Harvest. Moss already in a pack is eaten from the bag (useOf: properties.eat_heal), an action in a fight.
+const fungusEatLeft = {};   // spot id -> handfuls left, as the last eat or look said; unknown until then
+function eatHealOf(slug){ const it = (catalog || []).find(i => i.slug === slug); return it && it.properties && it.properties.eat_heal ? String(it.properties.eat_heal) : null; }
+function fungusKnowsItem(h, slug){
+  if (!h) return false;
+  if ((state.fungusKnownItem || {})[h.id + ":" + slug]) return true;
+  return fungusSpots().some(l => l.identify && l.identify.item === slug && fungusIsKnown(h, l));   // named before the item was recorded
+}
+function fungusEatReach(){
+  const l = fungusReach(); if (!l || !l.eat || fungusEatLeft[l.id] === 0) return null;
+  if (!catalog){ if (!fungusEatReach.asked){ fungusEatReach.asked = true; ensureCatalog().finally(() => { fungusEatReach.asked = false; }); } return null; }   // the box waits for the catalogue's number (one fetch, not one per redraw)
+  return eatHealOf(l.eat.item) ? l : null;
+}
+function fungusBarKey(){ const l = fungusReach(); return l ? `${l.id}:${fungusTriesLeft(leader, l)}:${fungusEatReach() ? (fungusEatLeft[l.id] ?? "?") : "-"}` : ""; }
+async function fungusEat(l){
+  const h = leader; if (!h || !l.eat || !canControl(h) || !fungusIsKnown(h, l)) return;   // your own hero's mouth, as with the bag
+  await ensureCatalog();
+  const slug = l.eat.item, it = (catalog || []).find(i => i.slug === slug) || {}, name = (it.name || slugName(slug)).toLowerCase(), dice = eatHealOf(slug);
+  if (!dice) return;
+  const cid = serverCid(h.id);
+  if (APP && cid){
+    try {
+      const r = await fetch("/api/walk-loot", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({action: "eat", characterId: cid, container: l.id, slug})});
+      const j = await r.json();
+      if (!r.ok || j.error){ if (j.left === 0) fungusEatLeft[l.id] = 0; toast(j.error || "It would not come away.", 3600); exploreKey = ""; return; }
+      fungusEatLeft[l.id] = j.left;
+    } catch (e){ toast("The game did not answer. Try again.", 3000); return; }
+  } else {
+    const row = ((await fetchLoot(l.id)).rows || []).find(r => r.slug === slug);
+    if (!row){ fungusEatLeft[l.id] = 0; log(`<em>There is no ${esc(name)} left here to eat.</em>`); exploreKey = ""; return; }
+    if (APP) noteLocalOnly(h);
+    const k = lootKeyOf(l.id), m = lootLocal[k] || (lootLocal[k] = {}); m[slug] = (m[slug] || 0) + 1;
+    fungusEatLeft[l.id] = row.qty - 1;
+  }
+  h.c = h.c || fighterFor(h);
+  const d = h.c.noHeal ? 0 : roll(dice).total;
+  h.c.hp = Math.min(h.c.hpMax, h.c.hp + d);
+  bank("ui/item_pickup", .5);
+  setTimeout(() => { kitImpact(h, KIT.healing); bank("combat/heal", .8); popText(h, h.c.noHeal ? "can't regain HP" : `+${d}`, "#9ff2c8"); }, 250);
+  log(`${fname(h)} eats a handful of ${esc(name)} and regains ${d} HP (${esc(dice)}).`);
+  renderParty(); exploreKey = "";
 }
 function fungusVent(l, hv){
   const at = lootCenter(l), v = hv.vent || {}, dc = v.dc || 14, R = (v.radius_ft || 15) * ruleFt(at);
@@ -23788,6 +23849,7 @@ function useOf(it){
   if (isCaltrops(it)) return {kind: "caltrops"};
   if (isWeapon(it)) return {kind: "weapon"};
   if (p.heal) return {kind: "heal", dice: String(p.heal)};
+  if (p.eat_heal) return {kind: "food", verb: "eat", heal: String(p.eat_heal)};   // ormu (Sam, 2026-11-23): eaten raw, it heals a little
   if (FLASK_OF(it)) return {kind: "throw"};
   if (p.damage || p.range || p.application || p.poison_type || p.save_ability || p.save || p.trap_item || /poison|venom|blood \(vial\)/.test(n))
     return {kind: "dm", why: "it needs a save or a target"};
@@ -23914,7 +23976,7 @@ function renderBag(){
       : u.kind === "weapon" ? "a weapon"
       : u.kind === "heal" ? `restores ${u.dice} HP`
       : u.kind === "drink" ? (u.effect || "a draught")
-      : u.kind === "food" ? (u.verb === "drink" ? "a drink" : "food")
+      : u.kind === "food" ? (u.verb === "drink" ? "a drink" : u.heal && fungusKnowsItem(a, it.slug || (catalogItem(it.name) || {}).slug) ? `eat it · heals ${u.heal}` : "food")
       : u.kind === "throw" ? `${FLASK_OF(it).blurb} · thrown up to 20 ft` : u.kind === "dm" ? `use it through the DM: ${u.why}` : (it.desc || "");
     // the row keeps the short line (what it is, or where it is worn); the long description lives on the item's card
     row.innerHTML = `<span class="invPic${worn.length ? " worn" : ""}"${RARITY_RANK[rar] > 0 ? ` style="border-color:${RARITY_COL[rar]}"` : ""}>${pic ? `<img src="${esc(pic)}" alt="" loading="lazy">` : "◆"}</span>`
@@ -24232,6 +24294,12 @@ function eatItem(a, it, verb){
   const fight = inFightNow(); if (!bagCan(a)) return;
   if (fight){ if (!a.c.action){ toast("That takes your action."); return; } a.c.action = false; }
   spendItem(a, it, verb, a); bank("ui/item_pickup", .5); popText(a, it.name, "#e8d9a8", .8);
+  const u = useOf(it);
+  if (u.heal){   // ormu: the catalogue's number (properties.eat_heal), the same hit points a potion writes
+    a.c = a.c || fighterFor(a); const d = a.c.noHeal ? 0 : roll(u.heal).total; a.c.hp = Math.min(a.c.hpMax, a.c.hp + d);
+    setTimeout(() => { kitImpact(a, KIT.healing); bank("combat/heal", .8); popText(a, a.c.noHeal ? "can't regain HP" : `+${d}`, "#9ff2c8"); }, 250);
+    log(`${fname(a)} eats the <b>${esc(it.name)}</b> and regains ${d} HP (${esc(u.heal)})${fight ? " (action)" : ""}.`);
+  } else
   log(`${fname(a)} ${verb === "drink" ? "drinks" : "eats"} the <b>${esc(it.name)}</b>${fight ? " (action)" : ""}.`);
   if (fight){ renderParty(); toggleBag(false); afterAction(a); } else renderBag();
 }

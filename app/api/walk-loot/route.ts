@@ -6,7 +6,7 @@ import { canCarry, syncCarried } from "@/lib/carry"
 import { recordItemMove } from "@/lib/item-history"
 import { lootHolderId, rowsToMint } from "@/lib/floor-holder"
 import { bodyKit } from "@/lib/harvest"
-import { BOOK_CONTAINERS, BODY_KIT, CREATURE_PARTS, PEN_KEY_SLUG, POCKET_SPRITES, rollPockets, rollWear, onDutyKit, variedGuardKit, rollPurse, PURSE_CR, isValuable, parseContainer, pocketEntries, type HarvestCheck, type LootEntry, type Ruined } from "@/lib/walk-loot"
+import { BOOK_CONTAINERS, BODY_KIT, CREATURE_PARTS, PEN_KEY_SLUG, POCKET_SPRITES, rollPockets, rollWear, onDutyKit, variedGuardKit, rollPurse, PURSE_CR, isValuable, parseContainer, pocketEntries, settleRolls, type HarvestCheck, type LootEntry, type Ruined } from "@/lib/walk-loot"
 
 // /api/walk-loot — what is in Velkynvelve's chests, on its dead and in its guards' pockets (see lib/walk-loot.ts).
 //
@@ -15,6 +15,7 @@ import { BOOK_CONTAINERS, BODY_KIT, CREATURE_PARTS, PEN_KEY_SLUG, POCKET_SPRITES
 //   GET  ?stash=1               → DM: every confiscated item and who (if anyone) the DM has handed it to
 //   POST {action:"take", characterId, container, slug | rowId}  → into that character's inventory_items
 //   POST {action:"carry", rowId, slug | null}                     → DM: hand a confiscated item to a drow, or back
+//   POST {action:"eat", characterId, container, slug}              → one off a container, eaten where it grows (ormu)
 //
 // What has been taken is one world flag, `walk-loot`: {taken: {container: {slug: n}}, carry: {rowId: slug}}.
 // No migration for the mechanism. migrations/walk_loot_catalog.sql adds the five catalogue rows the book names that
@@ -29,7 +30,9 @@ type Db = ReturnType<typeof createAdminClient>
 // rows: the inventory_items rows that ARE the unique things still in a container, parked on the loot holder
 // (lib/floor-holder.ts, step 3 of the item-identity design). rows[container][slug] = row ids. Counts (`taken`) stay the
 // truth for what is left; the rows are who those things are.
-type State = { taken: Record<string, Record<string, number>>; carry: Record<string, string>; pockets: Record<string, LootEntry[]>; bodies: Record<string, { kept: LootEntry[]; ruined: Ruined[] }>; rows: Record<string, Record<string, string[]>> }
+// rolls[container][slug]: a book count that is rolled (lib/walk-loot.ts `roll`, e.g. the landing chest's 1d4 potions),
+// rolled the first time anyone looks and kept for the run.
+type State = { taken: Record<string, Record<string, number>>; carry: Record<string, string>; pockets: Record<string, LootEntry[]>; bodies: Record<string, { kept: LootEntry[]; ruined: Ruined[] }>; rows: Record<string, Record<string, string[]>>; rolls: Record<string, Record<string, number>> }
 type Item = { id: string; slug: string; name: string; item_type: string; rarity: string | null; icon_url: string | null; pixel_icon_url: string | null; description: string | null; equippable_slot: string | null; weight: number | null; value: number | null; stackable: boolean }
 
 function authorized(req: NextRequest): boolean {
@@ -40,7 +43,7 @@ function authorized(req: NextRequest): boolean {
 async function readState(db: Db): Promise<State> {
   const { data } = await db.from("world_flags").select("value").eq("campaign_id", CAMPAIGN).eq("key", KEY).maybeSingle()
   const v = (data?.value ?? {}) as Partial<State>
-  return { taken: v.taken ?? {}, carry: v.carry ?? {}, pockets: v.pockets ?? {}, bodies: v.bodies ?? {}, rows: v.rows ?? {} }
+  return { taken: v.taken ?? {}, carry: v.carry ?? {}, pockets: v.pockets ?? {}, bodies: v.bodies ?? {}, rows: v.rows ?? {}, rolls: v.rolls ?? {} }
 }
 async function writeState(db: Db, s: State, note: string) {
   const { error } = await db.from("world_flags").upsert({ campaign_id: CAMPAIGN, key: KEY, value: s, set_by: "walk", note }, { onConflict: "campaign_id,key" })
@@ -100,7 +103,10 @@ async function contents(db: Db, id: string, s: State, kill?: string | null): Pro
     rolled = true; ruinedNow = s.bodies[c.key].ruined
   }
   const harvested = c.kind === "body" && (CREATURE_PARTS[c.slug!] || !BODY_KIT[c.slug!]) && !!(s.bodies[c.key]?.kept.length || s.bodies[c.key]?.ruined.length)
-  const book: LootEntry[] = c.kind === "book" ? BOOK_CONTAINERS[id].entries : c.kind === "body" ? (s.bodies[c.key]?.kept ?? kit ?? BODY_KIT[c.slug!] ?? []) : guard ? s.pockets[c.key] : pocketEntries(c.slug!)
+  // a rolled count in a chest (the landing chest's 1d4 potions) is rolled the first time anyone looks, then kept
+  let bookEntries = c.kind === "book" ? BOOK_CONTAINERS[id].entries : []
+  if (c.kind === "book" && bookEntries.some((e) => e.roll)){ const r = settleRolls(bookEntries, (s.rolls[c.key] ??= {})); bookEntries = r.entries; if (r.rolled) rolled = true }
+  const book: LootEntry[] = c.kind === "book" ? bookEntries : c.kind === "body" ? (s.bodies[c.key]?.kept ?? kit ?? BODY_KIT[c.slug!] ?? []) : guard ? s.pockets[c.key] : pocketEntries(c.slug!)
   const cat = await itemsBySlug(db, book.map((e) => e.slug))
   const taken = s.taken[c.key] ?? {}
   // THE THINGS IN HERE ARE REAL BEFORE ANYONE TAKES THEM (Sam, 2026-11-10: "unique with their own ID like the original
@@ -181,7 +187,32 @@ export async function POST(req: NextRequest) {
     return err ? NextResponse.json({ error: err.message }, { status: 500 }) : NextResponse.json({ ok: true, carry: s.carry })
   }
 
-  if (action !== "take") return NextResponse.json({ error: "expected action take or carry" }, { status: 400 })
+  // EATEN WHERE IT GROWS (Sam, 2026-11-23: "Eating ormu moss heals 1d4 and later a potion does better. This should be
+  // an option with mushrooms."). One off the container, into nobody's pack: the hero ate it. Only a thing whose catalogue
+  // row says it is eaten for healing (properties.eat_heal) can be eaten this way, so this cannot become a way to empty
+  // a chest. The map rolls the healing from that same catalogue number and owns the hit points, as with a potion.
+  if (action === "eat"){
+    const characterId = String(body?.characterId ?? ""), container = String(body?.container ?? ""), slug = String(body?.slug ?? "")
+    const c = parseContainer(container)
+    if (!characterId || !c || !slug) return NextResponse.json({ error: "characterId, container and slug required" }, { status: 400 })
+    const { data: who } = await db.from("characters").select("id,name").eq("id", characterId).maybeSingle()
+    if (!who) return NextResponse.json({ error: "No such character." }, { status: 404 })
+    const { data: cat } = await db.from("items").select("name,stackable,properties").eq("slug", slug).maybeSingle()
+    const heal = (cat?.properties as { eat_heal?: string } | null)?.eat_heal
+    if (!cat || !heal) return NextResponse.json({ error: "That is not something to eat here." }, { status: 409 })
+    if (!cat.stackable) return NextResponse.json({ error: `${cat.name} cannot be eaten from here.` }, { status: 409 })   // a unique thing has its own row; eating it is the bag's job
+    const now = await contents(db, container, s); if (!now) return NextResponse.json({ error: "No such container." }, { status: 404 })
+    const row = now.rows.find((r) => r.kind === "book" && r.slug === slug)
+    if (!row || row.qty <= 0) return NextResponse.json({ error: `There is no ${cat.name} left here.`, left: 0 }, { status: 409 })
+    ;(s.taken[c.key] ??= {})[slug] = (s.taken[c.key][slug] ?? 0) + 1
+    const err = await writeState(db, s, `${who.name} ate ${cat.name}`)
+    if (err) return NextResponse.json({ error: err.message }, { status: 500 })
+    const where = now.title.charAt(0).toLowerCase() + now.title.slice(1)   // "glowing moss on the wet wall"
+    await db.from("dialogue").insert({ speaker: "System", speaker_type: "system", channel: "dm", text: `${who.name} eats a handful of ${cat.name} from ${where}.` })
+    return NextResponse.json({ ok: true, ate: cat.name, heal, left: row.qty - 1 })
+  }
+
+  if (action !== "take") return NextResponse.json({ error: "expected action take, eat or carry" }, { status: 400 })
   const characterId = String(body?.characterId ?? ""), container = String(body?.container ?? "")
   const c = parseContainer(container)
   if (!characterId || !c) return NextResponse.json({ error: "characterId and container required" }, { status: 400 })

@@ -18,7 +18,10 @@
 // a part that only comes free with a check (Sam, 2026-10-27, gray ooze residue: "roll a medicine check to see if you can
 // extract its residue ... Otherwise it hurts you"). A failed try deals `fail` to the one trying; they may try again.
 export type HarvestCheck = { skill: string; dc: number; fail?: { dice: string; type: string } }
-export type LootEntry = { slug: string; qty: number; note?: string; check?: HarvestCheck }
+// `roll` (book containers only): how many is rolled, e.g. "1d4", the first time anyone looks, then kept for the run in
+// the walk-loot flag (`rolls`), so every screen sees the same count and a restart rolls it again. `qty` is the most it
+// can be. See settleRolls below.
+export type LootEntry = { slug: string; qty: number; note?: string; check?: HarvestCheck; roll?: string }
 export type BookContainer = { node: string; title: string; source: string; stash?: "valuables" | "gear"; entries: LootEntry[] }
 
 export const BOOK_CONTAINERS: Record<string, BookContainer> = {
@@ -222,11 +225,12 @@ export const BOOK_CONTAINERS: Record<string, BookContainer> = {
   // loot: the contents and counts are Sam's, word for word; the spot on the landing is Claude's.
   "pen-landing-chest": {
     node: "11", title: "A chest on the landing",
-    source: "Sam's ruling, 2026-11-13: a chest outside the pen holding one dagger, two sets of thieves' tools and one vial of drow poison.",
+    source: "Sam's ruling, 2026-11-13: a chest outside the pen holding one dagger, two sets of thieves' tools and one vial of drow poison. Sam, 2026-11-23: \"add 1d4 healing potions in the chest outside the pen\" (rolled once per run).",
     entries: [
       { slug: "dagger", qty: 1 },
       { slug: "thieves-tools", qty: 2 },
       { slug: "drow-poison", qty: 1, note: "a single vial" },
+      { slug: "potion-of-healing", qty: 4, roll: "1d4", note: "stoppered vials" },
     ],
   },
   // The kitchen (plate 3k): what is painted on Sam's plate. The book (OotA p.12) names the chores, not the kit.
@@ -566,6 +570,25 @@ export function isValuable(name: string, type: string | null | undefined, rarity
 /** Which container a request names, and how its id is read. */
 // A pocket is one per character (`pocket:ilvara`), except the rank-and-file guards, who are one per guard
 // (`pocket:drow-guard-male:<plate-post>`); a guard id with no `:<which>` (an old page) is their shared pocket.
+/** "NdM" rolled. Anything else is 0, so a typo in a table shows as an empty slot, never as an invented count. */
+export function rollCount(dice: string, rng: () => number = Math.random): number {
+  const m = /^(\d{1,2})d(\d{1,3})$/.exec(dice.trim()); if (!m) return 0
+  let t = 0; for (let i = 0; i < Number(m[1]); i++) t += 1 + Math.floor(rng() * Number(m[2]))
+  return t
+}
+/** A container's book entries with every rolled count settled. `rolls` is the run's record for this container
+ *  (slug -> count): a count already there is used as it is; one rolled now is written into it and `rolled` is true, so
+ *  the caller saves the flag. Never more than the entry's `qty`. */
+export function settleRolls(entries: LootEntry[], rolls: Record<string, number>, rng: () => number = Math.random): { entries: LootEntry[]; rolled: boolean } {
+  let rolled = false
+  const out = entries.map((e) => {
+    if (!e.roll) return e
+    if (rolls[e.slug] == null){ rolls[e.slug] = Math.min(e.qty, rollCount(e.roll, rng)); rolled = true }
+    return { ...e, qty: rolls[e.slug] }
+  })
+  return { entries: out, rolled }
+}
+
 export function parseContainer(id: string): { kind: "book" | "body" | "pocket"; key: string; slug?: string; which?: string } | null {
   if (BOOK_CONTAINERS[id]) return { kind: "book", key: id }
   const m = /^(body|pocket):([a-z0-9-]+)(?::([A-Za-z0-9:._-]+))?$/.exec(id)
