@@ -314,26 +314,26 @@ export default function TitleScreen() {
 
             {/* HOSTING (Sam, 2026-11-23: "remove confusion for the players"): the key holder's doors, below a rule and
                 smaller, so a player reads only Continue and Join a Table. The key is said once, here. */}
-            <div className="mt-5" style={{ animationDelay: ".32s" }}>
+            <div className="mt-4 rounded-[3px] bg-black/75 px-3 pb-1.5 pt-3 backdrop-blur-[3px]" style={{ animationDelay: ".32s" }}>
               <div className="flex items-center gap-3">
                 <span className="h-px flex-1 bg-gradient-to-r from-transparent to-[#5a4a30]" />
                 <span className="font-serif text-[10px] uppercase tracking-[0.42em] text-[#a88a5a]">{menu.host.title}</span>
                 <span className="h-px flex-1 bg-gradient-to-l from-transparent to-[#5a4a30]" />
               </div>
-              <p className="mt-1.5 text-center text-[11px] tracking-[0.03em] text-stone-500">{menu.host.sub}</p>
+              <p className="mt-1.5 text-center text-[11px] tracking-[0.03em] text-stone-400">{menu.host.sub}</p>
               <div className="mt-2.5 grid grid-cols-2 gap-2">
                 {menu.host.buttons.map((b) => (
                   <button key={b.key} type="button" onClick={() => press(b)}
                     className="group rounded-[3px] border border-[#5a4a30]/80 bg-black/70 px-3 py-2.5 text-center backdrop-blur-[2px] transition-colors hover:border-[#c9a868]/80">
                     <span className="block font-serif text-[12px] uppercase tracking-[0.24em] text-[#d9bd7e] group-hover:text-[#f0dba8]">{b.label}</span>
-                    <span className="mt-0.5 block text-[10px] text-stone-500 group-hover:text-stone-400">{b.sub}</span>
+                    <span className="mt-0.5 block text-[10px] text-stone-400 group-hover:text-stone-300">{b.sub}</span>
                   </button>
                 ))}
               </div>
               <div className="mt-2 flex flex-wrap justify-center gap-x-5">
                 {menu.host.links.map((l) => (
                   <button key={l.href} type="button" onClick={() => { try { window.sessionStorage.removeItem(DOOR_INTENT_KEY) } catch { /* storage blocked */ } go(l.href) }}
-                    title={l.sub} className="px-1 py-1 font-serif text-[10px] uppercase tracking-[0.3em] text-stone-500 transition-colors hover:text-[#e8c56a]">
+                    title={l.sub} className="px-1 py-1 font-serif text-[10px] uppercase tracking-[0.3em] text-stone-400 transition-colors hover:text-[#e8c56a]">
                     {l.label}
                   </button>
                 ))}
@@ -341,7 +341,7 @@ export default function TitleScreen() {
             </div>
 
             <div className="mt-3 text-center" style={{ animationDelay: ".36s" }}>
-              <button type="button" onClick={() => setStage("film")} className="px-3 py-2 font-serif text-[10px] uppercase tracking-[0.3em] text-[#8a6a3a] transition-colors hover:text-[#e8c56a]">
+              <button type="button" onClick={() => setStage("film")} className="rounded-full bg-black/70 px-4 py-1.5 font-serif text-[10px] uppercase tracking-[0.3em] text-[#a88a5a] backdrop-blur-[2px] transition-colors hover:text-[#e8c56a]">
                 Watch the opening
               </button>
             </div>
