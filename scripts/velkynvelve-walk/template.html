@@ -6487,7 +6487,7 @@ function openLootSpot(l){ if (l.mimic) return mimicTouch(l); if (l.sigil) return
 // THE SIGIL (Sam, 2026-11-24, on the Act One board: "A successful investigation check will identify a sigil. A
 // successful arcana check will activate it, opening a hidden room to the necromancers laboratory ... Interacting with
 // activated sigil teleports your party to that room." -> "The sigil plate in in the Ruins: the threshold on the west
-// wall" -> "Difficulty medium" -> "Way back is through another sigil on the interior."). A story.json loot spot with a
+// wall" -> "Difficulty medium" -> "Sigil at the door please" (so it is on the wall beside the violet doorway, not the west wall) -> "Way back is through another sigil on the interior."). A story.json loot spot with a
 // `sigil` holds nothing: it is a wall to search (Investigation), then a mark to wake (Arcana), then a way through. Both
 // rolls are the dashboard's dice (lib/walk-roll.ts "sigil:find", "sigil:wake"; DC 15). One try per hero at each, like
 // the pen's ward sigil; once it is awake it stays awake for everyone (state.sigils, shared by One World). The sigil
@@ -6509,8 +6509,8 @@ function openSigil(l){
   else if (!S.found){
     if (tried("sigil:find")) off("Search the wall", `${fname(h)} has looked and found a wall`);
     else add("Search the wall · Investigation", roll(G.find, "investigation", "int",
-      () => { S.found = true; bank("magic/arcane_release", .35); log(`${fname(h)} scrapes the moss off the west wall. There is a <b>sigil</b> cut into the stone under it.`); toast("A sigil, cut into the stone under the moss.", 3600); setTimeout(() => { if (mode === "explore") openSigil(l); }, 1200); },
-      () => { log(`${fname(h)} goes over the west wall and finds a wall.`); }), "primary");
+      () => { S.found = true; bank("magic/arcane_release", .35); log(`${fname(h)} scrapes the moss off the wall by the doorway. There is a <b>sigil</b> cut into the stone under it.`); toast("A sigil, cut into the stone under the moss.", 3600); setTimeout(() => { if (mode === "explore") openSigil(l); }, 1200); },
+      () => { log(`${fname(h)} goes over the wall by the doorway and finds a wall.`); }), "primary");
   } else {
     if (tried("sigil:wake")) off("Wake the sigil", `${fname(h)} cannot make sense of it`);
     else add("Wake the sigil · Arcana", roll(G.wake, "arcana", "int",
@@ -6522,7 +6522,7 @@ function openSigil(l){
 async function sigilCross(l){
   const G = l.sigil, at = G.at || SPEC[G.to].arrive, fade = $("fade");
   bank("magic/arcane_release", .5); fade.classList.add("quick", "on"); await wait(320);
-  try { await enterNode(G.to, {...(at ? {spawn: {x: at[0], y: at[1]}} : {}), note: G.lit ? "The violet light lets go of you. You are back in the ruined hall, by the west wall." : "The wall is not there. Then you are somewhere else: a closed room that smells of dust and old poison."}); }
+  try { await enterNode(G.to, {...(at ? {spawn: {x: at[0], y: at[1]}} : {}), note: G.lit ? "The violet light lets go of you. You are back in the ruined hall, beside the violet doorway." : "The wall is not there. Then you are somewhere else: a closed room that smells of dust and old poison."}); }
   finally { fade.classList.remove("on"); setTimeout(() => fade.classList.remove("quick"), 400); if (mode === "dialog" && $("obj").hidden) mode = "explore"; }
 }
 // LOOT YOU CAN SEE, NOT BOXES ROUND IT (Sam, 2026-10-27: "replace painted lootboxes with size appropriate chests from
