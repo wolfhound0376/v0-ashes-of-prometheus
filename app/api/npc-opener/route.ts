@@ -1,3 +1,4 @@
+import { npcBrief } from "@/lib/npc-brief"
 import { NextRequest, NextResponse } from "next/server"
 import { generateText } from "ai"
 import { createAnthropic } from "@ai-sdk/anthropic"
@@ -52,12 +53,15 @@ export async function POST(req: NextRequest) {
     let standing: string | null = null
     let personality = ""
     let lang: string | null = null
+    let cardBrief = ""
     try {
       const db = createAdminClient()
       const npcRow = await findNpcRow(db, npcName)
       if (npcRow) personality = [npcRow.description, npcRow.disposition ? `disposition: ${npcRow.disposition}` : ""].filter(Boolean).join("; ")
       const { data: pcRows } = await db.from("characters").select("id, name, languages").ilike("name", pcName).limit(1)
       const pcRow = pcRows?.[0]
+      // THE ONE BRIEF (lib/npc-brief.ts): the card, what they remember of this run (about this hero first), the DM's notes.
+      cardBrief = await npcBrief(db, npcName, { heroId: pcRow?.id ?? null, heroName: pcName })
       // The tongue the opener is spoken in (lib/npc-languages): what the NPC shares
       // with this PC, else its own. null when the NPC has no language data.
       if (npcRow?.id) {
@@ -79,6 +83,7 @@ NPC: ${brief}.
 ${situation ? `What just happened: ${situation} The line reacts to THAT, in character — a threat, a question, a demand; whether they attack is decided later in the conversation, so do not narrate an attack.` : ""}
 Player character: ${pcName}${pcRace || pcClass ? `, a ${[pcRace, pcClass].filter(Boolean).join(" ")}` : ""}.
 ${personality ? `Their personality and manner: ${personality}.` : ""}
+${cardBrief}
 ${knowsName ? `The NPC knows ${pcName}'s name and may use it.` : `The NPC does NOT know this character's name. Never say "${pcName}" or invent a name. Address them by what the NPC can see (that they are a ${pcRace || "stranger"}, how they look) or with a gesture.`}
 ${standing ? `How the NPC feels about them (trust, fear, respect, affection, debt, resentment): ${standing}. Let that set how warm, wary or cold the line is.` : "They have no history together yet: a fellow prisoner the NPC has noticed but does not know."}
 The line is spoken in the NPC's own voice and manner, under 25 words.${lang && lang !== "Common" ? ` The NPC speaks it in ${lang}; write the words as they mean them (the game renders the foreign sound). The narration may say they speak in ${lang} but must not translate it.` : ""} Do not invent facts about the campaign.

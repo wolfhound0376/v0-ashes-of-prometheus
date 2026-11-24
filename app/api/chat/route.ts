@@ -8,6 +8,7 @@ import { MALACHAR_LAST_WORD, MALACHAR_PERSONA } from "@/lib/malachar-persona"
 import { findNpcRow, learnName, npcKnowsName, relationshipSummary, saysOwnName } from "@/lib/npc-acquaintance"
 import { after } from "next/server"
 import { cardFor, rememberDue } from "@/lib/npc-agents-store"
+import { malacharBrief, npcBrief } from "@/lib/npc-brief"
 import { applyStageEvents, jorlanOnDuty, pledgeTag, readStage, watchAndGateTags, type StageEvent } from "@/lib/stage-roster"
 import { directorPrompt, namesTaggedIn, parseDirector, wantsDirector, type DirectorCast } from "@/lib/stage-director"
 import { heldByAnother, FLOOR_STALE_MS } from "@/lib/talk-floor"
@@ -1642,6 +1643,9 @@ ${combatantRows
       acquaintance += standing
         ? ` ${talkWith}'s standing toward them: ${standing}. Let it set how warm, wary or cold ${talkWith} is.`
         : ` They have no history yet: ${talkWith} treats them as a fellow prisoner they do not know.`
+      // THE ONE BRIEF (lib/npc-brief.ts): their card, what they remember of this run, the DM's notes on playing them.
+      const brief = await npcBrief(db, talkWith, { heroId: playerCharacter.id, heroName: playerName })
+      if (brief) acquaintance += `\n${brief}\n`
     } catch (e) {
       console.error("[acquaintance] skipped:", e)
     }
@@ -1653,6 +1657,11 @@ ${combatantRows
     stageContext += ` The player is sitting by the fire with ${talkWith}. Answer AS ${talkWith}: every spoken line is ${talkWith}'s own, quoted and attributed to ${talkWith} by name. No other NPC speaks unless ${talkWith} calls them over. Stay in the conversation. ONLY THEIR WORDS (Sam, 2026-11-13): in a conversation the player hears the one they are talking to, not the narrator. Write just what ${talkWith} SAYS, in quotes, attributed by name: no scene-setting, no description of how they look, move or sound, no commentary of your own. The two exceptions: when the player attempts something that needs a check, call for the roll and narrate its result as you always do; and when something actually happens (a wound, an item changing hands, someone leaving), say so in one plain sentence.`
   }
   stageContext += acquaintance
+  // Malachar's own memory of this run and the DM's notes on playing him (lib/npc-brief.ts). His persona is elsewhere.
+  try {
+    const mb = await malacharBrief(adminClient(), { heroId: playerCharacter?.id ?? null, heroName: playerCharacter ? playerName : null })
+    if (mb) stageContext += `\nFOR YOU, MALACHAR — ${mb}\n`
+  } catch (e) { console.error("[npc-brief] malachar skipped:", e) }
   // THE REMEMBERER (lib/npc-agents-store.ts; Sam, 2026-11-23). Once this turn's reply is in the log, the NPC being
   // talked to (and Malachar, who is in every scene) may remember what mattered. Due only after enough new lines,
   // throttled, and nothing at all in a rehearsal: the sandbox writes no memories, the same as it writes no state.
