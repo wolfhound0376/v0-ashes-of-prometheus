@@ -2766,10 +2766,12 @@ function drawFrame(){
         // them to highlight yellow, offering you the ability to interact"); in reach but not pointed at, the gold it had
         const hot = hoverObj === z || hoverZone === z, col = hot ? "255,221,64" : "240,190,90", pts = OV.on ? OV.cfg.door.map(([x, y]) => [x + OV.cfg.x0, y]) : z.interact.poly;   // gold, open or shut (Sam, 2026-10-27: "highlighted in gold as an option")
         ctx.save(); ctx.beginPath(); pts.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
-        ctx.fillStyle = `rgba(${col},${(hot ? .16 : .06) + .05 * pulse})`; ctx.fill();
-        ctx.shadowColor = `rgba(${col},.95)`; ctx.shadowBlur = hot ? 34 : 24; ctx.lineJoin = "round";
-        ctx.strokeStyle = `rgba(${col},${(hot ? .8 : .55) + (hot ? .2 : .35) * pulse})`; ctx.lineWidth = hot ? 6 : 5; ctx.stroke();
-        ctx.shadowBlur = 0; ctx.lineWidth = 1.5; ctx.strokeStyle = `rgba(255,240,210,${.5 + .3 * pulse})`; ctx.stroke(); ctx.restore();
+        // QUIETER (Sam, 2026-11-23: "Yellow locations need to be less distracting"): in reach it is a thin warm edge that
+        // barely breathes, no fill; only under the pointer does it light up yellow, and less hotly than before.
+        if (hot){ ctx.fillStyle = `rgba(${col},${.08 + .03 * pulse})`; ctx.fill(); }
+        ctx.shadowColor = `rgba(${col},${hot ? .85 : .6})`; ctx.shadowBlur = hot ? 18 : 9; ctx.lineJoin = "round";
+        ctx.strokeStyle = `rgba(${col},${hot ? .75 + .15 * pulse : .3 + .1 * pulse})`; ctx.lineWidth = hot ? 3.5 : 2.5; ctx.stroke();
+        ctx.shadowBlur = 0; ctx.lineWidth = 1; ctx.strokeStyle = `rgba(255,240,210,${hot ? .55 + .2 * pulse : .22 + .08 * pulse})`; ctx.stroke(); ctx.restore();
         continue;
       }
       if (z.kind === "rappel"){ drawRopeAnchor(z, hoverZone === z || (leader && Math.hypot(leader.x - cx, leader.y - cy) < 340 * node.scale), pulse); continue; }
@@ -4889,7 +4891,9 @@ function drawPropHighlight(){
     const lit = hoverProp === pr || (leader && Math.hypot(leader.x - cx, leader.y - cy) < 300 * node.scale); if (!lit) continue;
     const st = propState(pr), pulse = .5 + .5 * Math.sin(now / 520), col = st.open ? "98,227,198" : "240,170,80";
     ctx.save(); ctx.beginPath(); pr.poly.forEach(([x, y], i) => i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)); ctx.closePath();
-    ctx.shadowColor = `rgba(${col},.95)`; ctx.shadowBlur = 22; ctx.lineJoin = "round"; ctx.strokeStyle = `rgba(${col},${.5 + .35 * pulse})`; ctx.lineWidth = 4; ctx.stroke(); ctx.restore();
+    // quieter in reach, brighter under the pointer (Sam, 2026-11-23: "Yellow locations need to be less distracting")
+    const hot = hoverProp === pr; ctx.shadowColor = `rgba(${col},${hot ? .85 : .6})`; ctx.shadowBlur = hot ? 16 : 9; ctx.lineJoin = "round";
+    ctx.strokeStyle = `rgba(${col},${hot ? .75 + .15 * pulse : .3 + .1 * pulse})`; ctx.lineWidth = hot ? 3.5 : 2.5; ctx.stroke(); ctx.restore();
   }
 }
 let hoverProp = null;
