@@ -14463,7 +14463,13 @@ function dealEscort(comp){
   if (!heroes.length) return;
   const was = state.escort || {}, next = {}, count = Object.fromEntries(heroes.map(h => [h, 0]));
   const home = {...(state.escortHome || {})};
-  for (const n of comp){ const hm = home[n.id], hh = hm && party.find(p => p.id === hm);
+  // A CREATURE FOLLOWS ITS OWNER (Sam, 2026-11-24: "Spider is following Kenta and he can not see it. It should be
+  // following me Fifi"). The live row showed companions["pet-spider"].owner = freia while escort["pet-spider"] = kenta:
+  // the spider was dealt like a freed prisoner, to whoever had the fewest. A companion with an owner on its record goes
+  // to that hero while they stand, and is not counted against their share of the prisoners. Owner down: dealt as before.
+  for (const id of ids){ const r = state.companions && state.companions[id], o = r && typeof r.owner === "string" ? r.owner : null;
+    if (o && heroes.includes(o)){ next[id] = o; home[id] = o; } }
+  for (const n of comp){ if (next[n.id]) continue; const hm = home[n.id], hh = hm && party.find(p => p.id === hm);
     if (hm && hm !== was[n.id] && heroUp(hh) && !heroAlone(hm) && Math.hypot(hh.x - n.x, hh.y - n.y) < 450 * node.scale){ next[n.id] = hm; count[hm]++; } }
   for (const id of ids) if (!next[id] && was[id] && count[was[id]] != null){ next[id] = was[id]; count[was[id]]++; }
   const seed = runSeen != null ? String(runSeen) : "preview";
