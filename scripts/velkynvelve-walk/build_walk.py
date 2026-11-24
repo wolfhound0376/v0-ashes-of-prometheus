@@ -480,6 +480,18 @@ spec = json.load(open(os.path.join(HERE, 'spec.json')))
 # beyond the edge (spec.py CAVERNS / LAYOUT): not plates of this page. The hand-offs reach the page as HANDOFFS so a
 # 'leave' exit knows where it sends the party; the editor layout stays in spec.json only.
 handoffs = spec.pop('_handoffs', {}); spec.pop('_layout', None)
+# EXIT EDGES (Sam, 2026-11-23: exits glow along their doorway / cave mouth / floor's edge; exit_edges.py makes the file).
+# Matched by the zone's index AND its label, so an exit moved or renamed in spec.py loses its glow (and says so here)
+# rather than lighting the wrong doorway; rerun exit_edges.py after changing exits or floors.
+_edges = json.load(open(os.path.join(HERE, 'exit_edges.json')))
+_lost = []
+for _k, _list in _edges.items():
+    for _e in _list:
+        _zs = spec.get(_k, {}).get('zones', [])
+        if _e['i'] < len(_zs) and _zs[_e['i']].get('label', '') == _e['label']:
+            if _e['paths']: _zs[_e['i']]['edge'] = _e['paths']
+        else: _lost.append(f"{_k}#{_e['i']}")
+print('exit edges:', sum(1 for v in spec.values() if isinstance(v, dict) for z in v.get('zones', []) if 'edge' in z), 'lit' + (f"; STALE, rerun exit_edges.py: {', '.join(_lost)}" if _lost else ''))
 story = json.load(open(os.path.join(HERE, 'story.json')))
 for k, v in story.items():
     if k.startswith('_'): continue
