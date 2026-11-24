@@ -146,6 +146,10 @@ const BOOK_ACTIONS = {
   // get a key or small weapon"). HOMEBREW. Wisdom (Animal Handling); the DC is a house number [CLAUDE]. The map says
   // what the creature brought back, so the bridge sends nothing.
   "druid:beast": { title: "Speak to the creature", label: "Asking a pen rat or spider to fetch something from a guard", check: ANIMAL_HANDLING, dc: 13, source: "house (Sam's mechanic, DC Claude's)", mapNarrates: true },
+  // A PET'S TRUST (Sam, 2026-11-23, creature companions call 1: "Yes"): feeding a pet and a Wisdom (Animal Handling)
+  // check against DC 10 raises its bond by one, at most once a game day (lib/companions.mjs). HOMEBREW; the DC is
+  // Sam's (he approved the proposed number). The map says what came of it, so the bridge sends nothing.
+  "companion:feed": { title: "Feed your companion", label: "Feeding a pet creature to earn its trust", check: ANIMAL_HANDLING, dc: 10, source: "house (Sam 2026-11-23, creature companions)", mapNarrates: true },
   // LIFT ONLY WHAT YOU KNOW ABOUT, AND CAUGHT MEANS A FIGHT (Sam, 2026-11-13: lifting an item "shouldn't be an option
   // unless you know he has these"; "failing any check leads to combat (1:1) unless you pass a persuasion (the offended
   // lets it pass this time only) / intimidation check successfully (gives it to you but at the cost of gravity)").
