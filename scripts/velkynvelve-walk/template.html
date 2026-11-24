@@ -2834,7 +2834,7 @@ function drawFrame(){
     // INVISIBLE (the spell): further than hidden, a shimmer of the figure, so its own player can still find it
     const ivT = a.c && a.c.conds && a.c.conds.has("invisible") && !a.down ? 1 : 0; a.iv = (a.iv || 0) + (ivT - (a.iv || 0)) * .1; if (a.iv < .005) a.iv = 0;
     const veilK = (1 - a.st * (.55 - .07 * Math.sin(now / 160 + a.x * .05))) * (1 - a.iv * (.74 - .1 * Math.sin(now / 140 + a.y * .03)));
-    if (a.fall || a.fallIn || a.prop) {} else { ctx.globalAlpha = a.alpha * .45 * (1 - .7 * Math.max(a.st, a.iv || 0)); ctx.fillStyle = "#000";
+    if (a.fall || a.fallIn || a.prop || a.noShadow) {} else { ctx.globalAlpha = a.alpha * .45 * (1 - .7 * Math.max(a.st, a.iv || 0)); ctx.fillStyle = "#000";
     ctx.beginPath(); ctx.ellipse(a.x, a.y, 26 * sc * (cw / 128), 9 * sc * (cw / 128), 0, 0, Math.PI * 2); ctx.fill(); }
     if (a === leader && mode === "explore"){
       ctx.globalAlpha = .55 + .2 * Math.sin(now / 300); ctx.strokeStyle = "#e8a24a"; ctx.lineWidth = 2 / (base * view.z);
@@ -3916,6 +3916,7 @@ async function enterNode(n, opts = {}){
   for (const id of comp) if (state.companyAt) state.companyAt[id] = String(n);
   for (const np of whoIsHere(n)){
     if ((state.slain || []).includes(np.id)) continue;   // BYSTANDERS: killed in a fight, gone for good
+    if (np.id === "old-thessaly" && state.thessaly && ["destroyed", "at-rest"].includes(state.thessaly.fate)) continue;   // OLD THESSALY: destroyed, or laid to rest
     { const fk = MIND_RANK[np.id] ? np.id : np.hostile ? `${n}-post-${Math.round(np.x)}-${Math.round(np.y)}` : null;
       if (fk && state.fledFrom && state.fledFrom[fk]) continue; }   // ran from a fight: not at the old spot any more (refugeesHere)
     if (np.hostile && state.cleared[n]) continue;
@@ -3927,7 +3928,7 @@ async function enterNode(n, opts = {}){
     // and however many times the plate is fought (Sam's ruling 3, 2026-11-10: only drow the story brings in arrive with
     // new gear). bodyKeyOf() uses it; a drow who arrives in a wave has no post and is keyed by where he fell, as before.
     const a = mkActor(np.id, np.x, np.y, "npc", {lootPost: np.hostile ? `${n}-post-${Math.round(np.x)}-${Math.round(np.y)}` : undefined, face: np.face || 0, talk: !!np.talk, talkLine: np.talkLine, barks: np.barks || [], home: {x: np.x, y: np.y},
-      hostile: !!np.hostile, static: !!np.static, backdrop: !!np.backdrop, fixedScale: np.fixedScale || 0, patrol: np.patrol || null, post: {x: np.x, y: np.y}});
+      hostile: !!np.hostile, static: !!np.static, backdrop: !!np.backdrop, fixedScale: np.fixedScale || 0, patrol: np.patrol || null, post: {x: np.x, y: np.y}, noShadow: !!np.noShadow});
     a.pocketKey = `${n === PEN ? "pen" : "p" + n}-${Math.round(np.x)}-${Math.round(np.y)}`;   // this guard's own pockets, the same every visit (pocketId)
     a.t0 = now - Math.random() * 1000; a.actUntil = now + 2000 + Math.random() * 7000; npcs.push(a);
   }
@@ -4276,6 +4277,7 @@ function triggerZone(z){
   // everyone through the falls. It is a choice now.
   if (z.kind === "water" && cur === 9){ fallsDialog(z); return; }
   if (z.kind === "leave" && node.lift){ openLift(); return; }
+  if (thessalyHoldsBoat(z)){ thessalyCard(z); return; }                                      // OLD THESSALY: the shore's boat is his
   if (z.kind === "leave" || HANDOFFS[z.to[0]]){ goBeyond(z); return; }   // the way out of the outpost, by any name
   whoGoes(z, z.to[0]);
 }
@@ -4548,6 +4550,118 @@ function tickChasmWebs(){
 // carry floors and a painting), so a way out of the outpost is walked like any other exit, onto the cavern plate; the
 // hand-over to the map happens at THAT plate's outward edge (a `leave` zone with no destination), and the cavern the
 // party is standing on is the one /map hears about.
+// ---------- OLD THESSALY AND HIS KEELBOAT (Sam, 2026-10-24; the module, claude/Old_Thessaly_Module_2026-11-23.md) ----------
+// The Darklake shore's beached keelboat (the plate's "Traverse the Darklake" way) belongs to a cantankerous old deep
+// gnome who sits fishing beside it and will not give it up. He is a BHUT: a solid illusion of his living self over his
+// own corpse, and he casts NO SHADOW (story.json noShadow: everyone else's ellipse lies on the cobbles, his does not).
+// Sam's ways to the boat (his "1d4" is a menu, not a roll): pay 100 gp; talk him round; kill him, and the ghost stands
+// up out of the body, attacks everyone and curses whoever it strikes; or see what he is, and fetch his lost love's ruby
+// amulet from the crystal caverns to lay him to rest. Refuse that errand and he will not give the boat up.
+// This first piece (the module's PR 1): he is on the shore, the boat is his, and Persuasion, the look, the errand's ask
+// and the fight are live. Buying it (the party's purse) and the amulet's find and return are PR 2; until then those
+// rows are shown with their reason and cannot be pressed (Sam, 2026-10-30: options must be real options).
+// [HOUSE] Persuasion DC 15, once per hero; Investigation DC 14 is the bhut's own (False Alive); the facade fights as
+// the SRD 5.1 Commoner until it falls. Sam's calls in the module doc.
+SHORT["old-thessaly"] = "Old Thessaly";
+const THESSALY = "old-thessaly", THESSALY_BHUT = "ghost-male";
+const thessalyState = () => state.thessaly || (state.thessaly = {fate: "fishing", tried: {}});
+const thessalyActor = () => npcs.find(n => n.id === THESSALY && actors.includes(n) && !n.down && !n.offStage);
+// the boat is free once he has sold it, been talked round, been destroyed or laid to rest
+const thessalyLetsGo = () => ["persuaded", "sold", "destroyed", "at-rest"].includes(thessalyState().fate);
+function thessalyHoldsBoat(z){ return cur === "shore" && z && z.kind === "leave" && !thessalyLetsGo() && !!thessalyActor(); }
+const THESSALY_LINES = {
+  refuse: ["Mine. Built her, patched her, bailed her. Go swim.", "Touch that hull and I'll gut you like a cave eel.", "The lake takes fools. My boat doesn't."],
+  persuaded: "Hrmph. Fine. Bring her back in one piece or don't bother coming back at all.",
+  persuadeFail: "Pretty words. Fish don't bite on pretty words, and neither do I.",
+  look: "His lantern throws every shadow on the shore across the rock. Not his. He sits in the light and casts nothing at all.",
+  ask: "Her amulet. A red stone on a chain. I lost it in the shining caves, the night the lake took her. Bring it here and the boat's yours, and I can finally stop waiting.",
+  errand: "Then go. The caves glitter like a rich man's purse. Hers is the only red in them.",
+  refused: "Then you've no business with my boat. Off my shore."
+};
+function thessalyCard(z){
+  const t = thessalyActor(); if (!t) return;
+  const S = thessalyState(), h = leader;
+  faceTo(t, h); t.path = [];
+  const say = S.fate === "refused" ? THESSALY_LINES.refused : S.fate === "errand" ? THESSALY_LINES.errand : THESSALY_LINES.refuse[Math.floor(Math.random() * THESSALY_LINES.refuse.length)];
+  bark(t, say, 4200, {talk: true});
+  const {add, close} = heroCard("Old Thessaly", `"${say}" The old deep gnome does not get up from his rock. The keelboat is beached beside him, the only boat on the shore.`);
+  try { const g = $("objPic").getContext("2d"); g.clearRect(0, 0, 128, 128); g.drawImage(faceCanvas(t, 128), 0, 0); } catch (e) {}
+  const box = $("objBtns");
+  const off = (label, why) => { const b = add(`${label} — ${why}`, null); b.disabled = true; };
+  // 1. buy it (Sam: 100 gp) — the purse is PR 2
+  off("Buy the boat (100 gp)", "paying from the party's purse comes in the next piece");
+  // 2. talk him round
+  if (S.fate === "refused") off("Talk him round", "you turned down what he asked; he is done talking");
+  else if (S.tried[h.id]) off(`${fname(h)} talks him round`, `${fname(h)} has tried; someone else may`);
+  else choiceRow(box, `${fname(h)} talks him round`, () => { close(); thessalyPersuade(t, h, z); }, "", {check: "Persuasion DC 15", ability: "cha"});
+  // 3. see him for what he is (once seen, the question about what holds him)
+  if (["revealed", "errand", "refused"].includes(S.fate)){
+    if (S.fate === "revealed") add("Ask what holds him here", () => { close(); thessalyAsk(t); }, "primary");
+    else if (S.fate === "errand") off("Give him the ruby amulet", "nobody carries it yet; finding it in the crystal caverns comes in the next piece");
+  } else if (!S.looked || !S.looked[h.id]) choiceRow(box, `${fname(h)} looks at him properly`, () => { close(); thessalyLook(t, h); }, "", {check: "Investigation DC 14", ability: "int"});
+  else off(`${fname(h)} looks at him properly`, `${fname(h)} has looked; someone else may`);
+  // 4. take it from him
+  add("Take the boat by force", () => { close(); thessalyFight(t); }, "danger");
+  if (dmScreen()) add("Let them take it (DM)", () => { close(); S.fate = "sold"; S.by = "dm"; saveWalk(); log("<em>The DM waves the party onto the boat.</em>"); if (z) goBeyond(z); });
+  add("Step back", close);
+}
+async function thessalyPersuade(t, h, z){
+  const S = thessalyState(); S.tried[h.id] = true; saveWalk();
+  const r = await rollWithHelp("thessaly:persuade", heroMod(h, "persuasion", "cha"), {who: h});
+  if (r && r.success){ S.fate = "persuaded"; saveWalk(); bark(t, THESSALY_LINES.persuaded, 5200, {talk: true}); log(`<b>Old Thessaly</b> gives in: "${esc(THESSALY_LINES.persuaded)}" The keelboat is yours to take.`); }
+  else if (r){ bark(t, THESSALY_LINES.persuadeFail, 4200, {talk: true}); log(`<b>Old Thessaly</b> is not moved. "${esc(THESSALY_LINES.persuadeFail)}"`); }
+}
+async function thessalyLook(t, h){
+  const S = thessalyState(); (S.looked || (S.looked = {}))[h.id] = true; saveWalk();
+  const r = await rollWithHelp("thessaly:look", heroMod(h, "investigation", "int"), {who: h});
+  if (!r) return;
+  if (!r.success){ log(`${esc(fname(h))} studies the old fisherman and sees an old fisherman.`); return; }
+  S.fate = "revealed"; saveWalk();
+  // the facade slips for a breath: his own face with the bhut's red eyes (the PixelLab "Revealed" state)
+  if (SPR[THESSALY] && SPR[THESSALY].img.reveal){ setAnim(t, "reveal"); setTimeout(() => { if (t.anim === "reveal") setAnim(t, "idle"); }, 1800); }
+  bank("magic/necrotic_tail", .45);
+  log(`<em>${esc(THESSALY_LINES.look)}</em> ${esc(fname(h))} sees him for what he is: something dead, wearing a living man.`);
+  narrate(t, THESSALY_LINES.look);
+  setTimeout(() => { if (mode === "explore" && thessalyActor() === t) thessalyCard(null); }, 2200);
+}
+function thessalyAsk(t){
+  const S = thessalyState();
+  bark(t, THESSALY_LINES.ask, 7000, {talk: true});
+  const {add, close} = heroCard("Old Thessaly", `"${THESSALY_LINES.ask}"`);
+  try { const g = $("objPic").getContext("2d"); g.clearRect(0, 0, 128, 128); g.drawImage(faceCanvas(t, 128), 0, 0); } catch (e) {}
+  add("We'll find it", () => { close(); S.fate = "errand"; saveWalk(); bark(t, THESSALY_LINES.errand, 5000, {talk: true}); log(`<b>Old Thessaly</b>: "${esc(THESSALY_LINES.errand)}" <em>His lost love's ruby amulet is somewhere in the crystal caverns.</em>`); }, "primary");
+  add("Not our problem", () => { close(); S.fate = "refused"; saveWalk(); bark(t, THESSALY_LINES.refused, 4200, {talk: true}); log(`<b>Old Thessaly</b>: "${esc(THESSALY_LINES.refused)}"`); });
+}
+function thessalyFight(t){
+  const S = thessalyState(); S.fate = "fighting"; saveWalk();
+  t.hostile = true; t.static = false; t.talk = false; t.commoner = true;   // the facade fights as the SRD Commoner [HOUSE]
+  bark(t, "So that's how it is.", 2400, {talk: true});
+  startCombat([t], "Old Thessaly will not give up his boat");
+}
+// THE FACADE FALLS (fall(), beside buppidoRisesCheck): the body drops and the bhut stands up out of it, at once and
+// inside the same fight, so the fight cannot end on the fisherman (Sam: "Killing him ... reveals a ghost after his
+// death ... that attacks everyone and curses anyone he strikes"). The ghost is the bhut's own block (FOE_BLOCKS
+// "ghost-male": its curse, Numbing Bite and Holy Vulnerability are already wired). When the ghost goes down, he is done.
+function thessalyFell(t){
+  if (!t) return;
+  const S = thessalyState();
+  if (t.id === THESSALY && S.fate !== "bhut"){
+    S.fate = "bhut"; saveWalk();
+    t.deathFx = {...(t.deathFx || {}), noPool: true};           // a corpse that has been dead a long time does not bleed
+    if (!cbt) return;
+    const g = foeJoins(THESSALY_BHUT, {x: t.x + 6, y: t.y + 4}, {after: t});
+    if (!g) return;
+    g.thessalyBhut = true; g.hostile = true; g.alpha = 0; g.fadeIn = true; faceTo(g, leader);
+    shake(8); bank("magic/necrotic_release", .7); hitstop(220);
+    log(`<b>The old fisherman's body drops and casts no shadow.</b> Something grey stands up out of it: the thing that was wearing him.`);
+    beatBanner("The bhut rises");
+    return;
+  }
+  if (t.thessalyBhut){
+    S.fate = "destroyed"; state.slain = [...new Set([...(state.slain || []), THESSALY])]; saveWalk();
+    log(`<b>The bhut comes apart</b> like wet ash. The keelboat is nobody's now: it is yours to take.`);
+  }
+}
 function goBeyond(z){ const t = z.to[0]; if (t != null && SPEC[t]) travel(t, z); else leaveVelkynvelve(z); }
 // ---------- ROAD FIGHT: a road encounter that came to blows ----------
 // Sam (the Pixel Heroes pass): "If a fight ensues then we fade into a battle map that resembles the area we are in. Like
@@ -6602,7 +6716,7 @@ function openBody(b){
 // the dashboard's engine with the dashboard's modifier, and the page answers {ok, success, total, natural} — or
 // {cancelled} if they stepped back. "aop:roll-ack" says the panel is open; after it the map waits as long as the
 // player does. Opened as a plain file (no game around it), the map rolls locally against the same DC.
-const ROLLS = new Map(), LOCAL_DC = {"companion:feed": 10, "manacles:pick": 15, "manacles:friend": 15, "manacles:break": 20, "pocket:size-up": 10, "caught:persuade": 15, "caught:intimidate": 15, "falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12, "jimjar:bet": 13, "manacles:wire": 15, "druid:beast": 13, "ward:study-arcana": 20, "ward:study-history": 20, "ward:cut": 15};
+const ROLLS = new Map(), LOCAL_DC = {"thessaly:persuade": 15, "thessaly:look": 14, "companion:feed": 10, "manacles:pick": 15, "manacles:friend": 15, "manacles:break": 20, "pocket:size-up": 10, "caught:persuade": 15, "caught:intimidate": 15, "falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12, "jimjar:bet": 13, "manacles:wire": 15, "druid:beast": 13, "ward:study-arcana": 20, "ward:study-history": 20, "ward:cut": 15};
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
@@ -14214,6 +14328,7 @@ function fall(t){
   else narrate(t, `${fname(t)} falls.`);
   bodyRemovalNote(t);     // everyone else: the drow come for them in two guard cycles (Sam, 2026-10-30)
   buppidoRisesCheck(t);   // the one prisoner who does not stay down (Sam, 2026-10-30)
+  thessalyFell(t);        // OLD THESSALY: the bhut stands up out of the fisherman; its fall frees the boat
   buppidoZombieFell(t);   // the drow it bit let it go (Sam, 2026-11-23)
   // THE BANTER on a death: the ally who made the kill says so; else an ally or a gambler cheers; a foe sees one of its own drop
   if (cbt && t.kind === "foe"){

@@ -405,6 +405,9 @@ N = ['ront', 'eldeth', 'derendil', 'sarith', 'buppido', 'jimjar', 'topsy', 'turv
 # Liana, the drow surgeon (The Drow Surgeon, Sam 2026-10-25): baked once her sheets are in the repo; until then the page
 # dresses her in the female guard's sheets (lianaSprite in the template)
 if os.path.exists(os.path.join(SPR, 'liana', 'sprite.json')): N.append('liana')
+# Old Thessaly, the Darklake shore's fisherman (Sam, 2026-10-24): `idle` is him seated on his rock fishing, `stand` his
+# standing breath, `reveal` his own face with the bhut's red eyes (claude/Old_Thessaly_Module_2026-11-23.md)
+if os.path.exists(os.path.join(SPR, 'old-thessaly', 'sprite.json')): N.append('old-thessaly')
 F = ['quaggoth', 'giant-spider', 'orog', 'grick', 'ghost-male', 'drow-elite-warrior', 'ilvara', 'shoor', 'asha', 'drow-lizard-rider', 'zombie-rotting']
 # the plate director's creatures (Sam, 2026-11-15: "Monster Stats"): the book's random-encounter tables name them
 F += ['mimic']   # the Ruins' false chest (Sam, 2026-11-23); it has an idle sheet only
@@ -455,6 +458,7 @@ for i in P + list(GARB.values()) + N + F + V + LP:
     # `shoot-bow` the bow; strike() picks by the weapon in hand, and a hero without the sheet stands and aims as before
     if i in PG: sh += ['shoot', 'shoot-bow']
     if i == 'scott': sh.append('perform')
+    if i == 'old-thessaly': sh += ['stand', 'reveal']
     # the quaggoth's grab and shove (Sam, 2026-11-16; PixelLab posed skeleton 'throw', scripts/sprites/add-shoot-pose.py --pose throw)
     if i == 'quaggoth': sh.append('throw')
     if i in ['jorlan', 'drow-guard-male', 'drow-guard-female']: sh += ['attack', 'dodge', 'hurt', 'dead']

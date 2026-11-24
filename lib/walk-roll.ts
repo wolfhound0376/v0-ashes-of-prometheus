@@ -131,6 +131,9 @@ const BOOK_ACTIONS = {
   // him)"; the rogue "can attempt once per short rest on her manacles"). Both are HOMEBREW with house DCs [CLAUDE].
   // The bet is read as Wisdom (Insight): which fist holds the pebble. The manacles: Dexterity (Sleight of Hand), the
   // wire being no thieves' tools; OotA's own manacle escape is DC 20 Dexterity, and a wire in the lock is worth 5.
+  // OLD THESSALY (Sam, 2026-10-24; claude/Old_Thessaly_Module_2026-11-23.md): the Darklake shore's fisherman and his boat
+  "thessaly:persuade": { title: "Talk him round", label: "Talking Old Thessaly into giving up his keelboat", check: PERSUASION, dc: 15, source: "house DC (Sam's way 2; DC Claude's)" },
+  "thessaly:look": { title: "Look at him properly", label: "Studying the old fisherman by the keelboat", check: INVESTIGATION, dc: 14, source: "the bhut's False Alive, DC 14 Intelligence (Investigation) (Sam's stat block)" },
   "jimjar:bet": { title: "Bet Jimjar for it", label: "Betting Jimjar which fist holds the pebble", check: INSIGHT, dc: 13, source: "house (Sam's mechanic, DC Claude's)", mapNarrates: true },
   // STRIKING OFF THE IRONS (Sam's playtest, 2026-11-15: "Samson, even with manacles off, never was able to cast other
   // spells". Malachar narrated the irons falling; the game's manacle flag never moved, so somatic spells stayed dark).
