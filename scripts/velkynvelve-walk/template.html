@@ -8801,6 +8801,7 @@ Object.assign(COND_GLYPH, {
   incapacitated: ["⊘", "#e07a6a", "Incapacitated: no actions, bonus actions or reactions · concentration breaks"],
   charmed:       ["♥", "#ff7ab8", "Charmed: can't attack the one who charmed it"],
   exhaustion:    ["☾", "#e0a040", "Exhaustion: −2 per level on attack rolls, saves and checks · speed −5 ft per level"],
+  bleeding:      ["✚", "#e0403a", "Bleeding: loses hit points at the start of each of its turns · an action and a Medicine check stanch it · magical healing closes it"],
 });
 // Painted condition art (Sam, 2026-11-23: "better condition icons ... apply to cards as appropriate") — the "Death
 // Saves, Tombstones & Conditions" pack, 64 px masters in icons/conditions and icons/death-saves, shown at 20-26 CSS px.
@@ -8979,13 +8980,28 @@ function seedSavedConds(s){
   set.saved = new Set(set);   // which of these came from the sheet, so a condition Malachar lifts mid-fight lifts here too
   return set;
 }
+// BLEEDING, helpers. The bleeder nearest this creature, itself first, within 5 ft (a stanch is done by hand).
+function bleederNear(a){ return [a, ...friends()].find(w => w && w.c && w.c.conds && w.c.conds.has("bleeding") && !w.dead && (w === a || feetBetween(a, w) <= 5.5)) || null; }
+function stanchWound(a, w){
+  const B = w.c.bleed || BLEED_DEFAULT, sh = a.c.sheet, mod = (sh.skills || {}).medicine ?? abilMod(sh, "wis");
+  const r = d20(0, a, null, B.dc - mod), total = r + mod + exhaustionPenalty(a.c.exhaustion);
+  a.c.action = false;
+  if (total >= B.dc){ w.c.conds.delete("bleeding"); delete w.c.bleed; if (w.c.conds.saved) w.c.conds.saved.delete("bleeding"); (w.c.lifted ||= new Set()).add("bleeding"); popText(w, "stanched", "#9ff2c8"); log(`${fname(a)} stanches ${w === a ? "their own" : fname(w) + "'s"} wound: Medicine ${r} + ${mod} = ${total} vs DC ${B.dc}.`); }
+  else { popText(w, "still bleeding", COND_GLYPH.bleeding[1]); log(`${fname(a)} tries to stanch ${w === a ? "their own" : fname(w) + "'s"} wound and fails: Medicine ${r} + ${mod} = ${total} vs DC ${B.dc}.`); }
+  renderParty(); openMenu(a);
+}
+// "The wound also closes if the target receives magical healing" (the Infernal Wound): a healing spell or a potion.
+function woundCloses(t, how){ if (!t || !t.c || !t.c.conds.has("bleeding")) return; t.c.conds.delete("bleeding"); delete t.c.bleed; if (t.c.conds.saved) t.c.conds.saved.delete("bleeding"); (t.c.lifted ||= new Set()).add("bleeding");
+  popText(t, "wound closes", "#9ff2c8", .9); log(`${fname(t)}'s wound closes (${how}).`); renderParty(); }
 // Mid-fight, the sheet changed (Malachar added or removed one): bring each hero's live set in step with it.
 function syncSavedConds(){
   for (const a of party){ if (!a.c || !a.c.conds || a.kind !== "pc") continue;
     const s = SHEETS[a.id], m = conditionsForMap(s && s.conditions), want = new Set([...m.keys.filter(k => COND_GLYPH[k]), ...(m.exhaustion ? ["exhaustion"] : [])]), had = a.c.conds.saved || new Set();
     a.c.exhaustion = m.exhaustion;
     let changed = false;
-    for (const k of want) if (!had.has(k)){ had.add(k); if (!a.c.conds.has(k)){ addCond(a, k); changed = true; } }
+    const lifted = a.c.lifted || new Set();   // what the fight itself ended (a stanched wound): not put back while the sheet still says it
+    for (const k of [...lifted]) if (!want.has(k)) lifted.delete(k);
+    for (const k of want) if (!had.has(k) && !lifted.has(k)){ had.add(k); if (!a.c.conds.has(k)){ addCond(a, k); changed = true; } }
     for (const k of [...had]) if (!want.has(k)){ had.delete(k); if (a.c.conds.delete(k)) changed = true; }
     a.c.conds.saved = had; if (changed && typeof renderParty === "function") renderParty(); }
 }
@@ -9833,14 +9849,25 @@ function nextTurn(first){
   if (a.c.heroMod && a.c.conds.has("heroic")) a.c.tempHp = Math.max(a.c.tempHp || 0, a.c.heroMod);   // Heroism: temporary HP at the start of each of its turns
   if (a.c.conds.has("laughing")){ popText(a, "HA HA HA", "#ff9bd2"); log(`${fname(a)} is on the floor, helpless with laughter.`); setTimeout(nextTurn, 900); return; }
   if (newSpellsTurnStart(a)) return;
-  // STUNNED, UNCONSCIOUS, PETRIFIED, INCAPACITATED, a PARALYSIS with no save of its own (Malachar's, the DM's): the
-  // turn is lost (lib/condition-rules.mjs turnLostTo). It ends when the story lifts it ([CONDITION_REMOVE]).
-  { const lost = turnLostTo(a.c.conds); if (lost){ const k = ["petrified", "unconscious", "stunned", "paralyzed", "incapacitated"].find(x => a.c.conds.has(x));
+  // UNCONSCIOUS, PETRIFIED, a PARALYSIS with no save of its own (Malachar's, the DM's): speed 0 and no actions, so the
+  // whole turn passes (lib/condition-rules.mjs turnLostTo). It ends when the story lifts it ([CONDITION_REMOVE]).
+  { const lost = turnLostTo(a.c.conds); if (lost){ const k = ["petrified", "unconscious", "paralyzed"].find(x => a.c.conds.has(x));
       popText(a, k, COND_GLYPH[k][1]); log(`${fname(a)} ${lost}.`); setTimeout(nextTurn, 900); return; } }
+  // STUNNED or INCAPACITATED (SRD 5.2.1, Sam 2026-11-23: "base it on DND 5E"): no action, bonus action or reaction,
+  // but the speed stands. A hero their player drives gets the turn with only Move left (set below, after the turn's
+  // budgets are refilled); a creature the map drives has nothing else to do and stays where it is.
+  const actless = onlyMoves(a.c.conds) ? ["stunned", "incapacitated"].find(x => a.c.conds.has(x)) : null;
   if (a.c.surprised){ a.c.surprised = false; a.c.conds.delete("surprised"); popText(a, "surprised", "#ffd27a"); log(`${fname(a)} is caught by surprise and loses the turn.`); setTimeout(nextTurn, 900); return; }
   a.c.move = Math.max(0, turnSpeed(a) - (a.c.conds.has("slowed") ? 10 : 0) - exhaustionSpeedCut(a.c.exhaustion)); a.c.conds.delete("slowed");   // Exhaustion: −5 ft a level
   if (a.c.exhaustion) popText(a, `exhaustion ${a.c.exhaustion}: −${exhaustionSpeedCut(a.c.exhaustion)} ft`, "#e0a040", .8);
   if (encumbered(a)) popText(a, `encumbered: ${turnSpeed(a)} ft`, "#ff8a7a", .9); a.c.action = true; a.c.bonus = true; a.c.objFree = true;
+  const actlessDriven = actless && !(a.kind === "pc" && !cbt.quick && canControl(a));   // a creature the map drives
+  if (actless && !actlessDriven){ a.c.action = false; a.c.bonus = false; a.c.reactionUsed = true; popText(a, `${actless}: move only`, COND_GLYPH[actless][1], .9); log(`${fname(a)} is ${actless}: no action, bonus action or reaction this turn, but they can still move.`); }
+  // BLEEDING (5E has none; its own bleeding wound is the bearded devil's Infernal Wound, SRD 5.1): hit points lost at the
+  // start of each of its turns. A wound that carries its own dice and DC (a.c.bleed) uses them; else the devil's.
+  if (a.c.conds.has("bleeding")){ const B = a.c.bleed || BLEED_DEFAULT, d = roll(B.dice).total; damage(a, d, "bleeding", false, null);
+    log(`${fname(a)} bleeds: ${d} hit points lost.`); if (a.down){ setTimeout(() => passTurn(a), 700); return; } }
+  if (actlessDriven){ popText(a, actless, COND_GLYPH[actless][1]); log(`${fname(a)} is ${actless}: no action, and stays where they are.`); setTimeout(nextTurn, 900); return; }
   guardianSlows(a);   // Spirit Guardians: half speed for a foe that starts its turn among the spirits
   if (a.c.conds.has("numbed")){ a.c.move = Math.floor(a.c.move / 2 / 5) * 5; a.c.reactionUsed = true; a.c.conds.delete("numbed"); popText(a, "numb: half speed, no reactions", "#9fd8ff", .9); }   // the bhut's bite, one round (the reaction budget is reactionUsed, reset just above)
   // Alchemist's fire (SRD 5.1): "the target takes 1d4 fire damage at the start of each of its turns"
@@ -10009,6 +10036,8 @@ function openMenu(a, sub){
     if (a.kind === "pc"){ const ex = exitFor(a), ft = ex ? walkFtTo(a, ex) : Infinity, dashFt = c.action ? turnSpeed(a) : 0;
       if (ex && SPEC[ex.to] && ft <= c.move + dashFt) add("Flee", `run for ${SPEC[ex.to].name || "the way out"} · ${Math.round(ft)} ft${ft > c.move ? " · uses your action to Dash" : ""}${a.c.conds.has("disengaged") ? "" : " · free swings as you leave reach"}`, () => heroFlee(a, ex, ft > c.move)); }
     add("Help", "an ally's next attack has advantage", c.action ? () => { closeMenu(); cbt.phase = "target"; cbt.pend = {help: true}; hint("Help: click a friend within 5 ft."); } : null);
+    { const w = bleederNear(a); if (w){ const B = w.c.bleed || BLEED_DEFAULT;   // 5E: "Any creature can take an action to stanch the wound"
+      add(`Stanch: ${w === a ? "your wound" : fname(w)}`, `Medicine check, DC ${B.dc} · your action`, c.action ? () => stanchWound(a, w) : null); } }
     petCombatRow(a, add);   // CREATURE COMPANIONS: a spider riding its owner is let loose with the owner's action
     add("Search", `Perception ${sgn((s.skills || {}).perception ?? abilMod(s, "wis"))}`, c.action ? () => doSearch(a) : null);
     gateOptions(a, add);
@@ -13676,12 +13705,12 @@ function castSpell(caster, tgt, name, done, darts){
         log(`${why} — <b>${crit ? "critical " : ""}hit</b>, ${d.total} ${sp.type}${sp.note ? " (" + sp.note + ")" : ""}.`);
       }; for (let bi = 0; bi < beams; bi++) setTimeout(() => one(bi), bi * 340);
       } else if (sp.kind === "heal"){
-        const d = tgt.c.noHeal ? 0 : roll(sp.dmg).total + m.mod; if (tgt.c.noHeal) popText(tgt, "can't regain HP", "#9be04a", .9); tgt.c.hp = Math.min(tgt.c.hpMax, tgt.c.hp + d); if (tgt.down && tgt.c.hp > 0){ tgt.down = false; setAnim(tgt, "idle"); }
+        const d = tgt.c.noHeal ? 0 : roll(sp.dmg).total + m.mod; if (tgt.c.noHeal) popText(tgt, "can't regain HP", "#9be04a", .9); tgt.c.hp = Math.min(tgt.c.hpMax, tgt.c.hp + d); if (d > 0) woundCloses(tgt, name); if (tgt.down && tgt.c.hp > 0){ tgt.down = false; setAnim(tgt, "idle"); }
         sigilEnd(tgt, true); bank("combat/heal", .8); setTimeout(() => bank("magic/heal_tail", .5), 300);
         kitImpact(tgt, KIT.healing);                                   // the shimmer comes down on them, the golden glow stays
         popText(tgt, `+${d}`, "#9ff2c8"); log(`${fname(caster)} ${name}: ${fname(tgt)} regains ${d}.`); renderParty();
         if (sp.targets > 1){ const more = standing(heroes()).concat(heroes().filter(h => h.down)).filter((h, i, A) => A.indexOf(h) === i && h !== tgt && !(h.c.ds && h.c.ds.dead) && feetBetween(caster, h) <= sp.range).sort((x, y) => Math.hypot(x.x - tgt.x, x.y - tgt.y) - Math.hypot(y.x - tgt.x, y.y - tgt.y)).slice(0, sp.targets - 1);   // the others it reaches
-          more.forEach((h, i) => setTimeout(() => { const d2 = h.c.noHeal ? 0 : roll(sp.dmg).total + m.mod; h.c.hp = Math.min(h.c.hpMax, h.c.hp + d2); if (h.down && h.c.hp > 0){ h.down = false; setAnim(h, "idle"); }
+          more.forEach((h, i) => setTimeout(() => { const d2 = h.c.noHeal ? 0 : roll(sp.dmg).total + m.mod; h.c.hp = Math.min(h.c.hpMax, h.c.hp + d2); if (d2 > 0) woundCloses(h, name); if (h.down && h.c.hp > 0){ h.down = false; setAnim(h, "idle"); }
             kitImpact(h, KIT.healing); popText(h, h.c.noHeal ? "can't regain HP" : `+${d2}`, "#9ff2c8"); log(`${fname(caster)} ${name}: ${fname(h)} regains ${d2}.`); renderParty(); }, 180 * (i + 1))); }
       } else if (sp.kind === "zone"){                                           // Cloud of Daggers: the blades hang where it was cast
         sigilEnd(at, true); const z = {x: at.x, y: at.y, caster, name, dmg: sp.dmg, type: sp.type}; daggerZones.push(z); sparks.push({labDaggers: true, z, t0: now, life: 3600000});
@@ -13930,7 +13959,7 @@ function afterAction(a, done){
   if (checkEnd()) return;
   if (a.kind === "pc" && activeActor() === a){ if (a.c.action || a.c.bonus || a.c.move > 0) openMenu(a); else nextTurn(); }
 }
-function addCond(t, k){ if ((t.c.sheet.immuneCond || []).includes(k) || (k === "poisoned" && t.c.conds.has("petrified"))) { popText(t, "immune", "#aaa"); return; }   // Petrified: immune to Poisoned if (k === "frightened" && t.c.conds.has("heroic")){ popText(t, "immune (Heroism)", "#ffd27a"); return; } t.c.conds.add(k);
+function addCond(t, k){ if ((t.c.sheet.immuneCond || []).includes(k) || (k === "poisoned" && t.c.conds.has("petrified")) || (k === "bleeding" && bleedImmune(t.c.sheet.ctype))) { popText(t, "immune", "#aaa"); return; }   // Petrified: immune to Poisoned · no wound on the undead or a construct if (k === "frightened" && t.c.conds.has("heroic")){ popText(t, "immune (Heroism)", "#ffd27a"); return; } t.c.conds.add(k);
   if (t.c.conc && INCAP.includes(k)) endConc(t, "they are incapacitated"); popText(t, COND_GLYPH[k] ? COND_GLYPH[k][2].split(":")[0].toLowerCase() : k, COND_GLYPH[k] ? COND_GLYPH[k][1] : "#fff"); renderParty(); }
 // ---------- concentration (SRD 5.1, "Concentration") ----------
 // Sam, 2026-10-14: "Well, lets track concentration". The rules, as the SRD has them:
@@ -23965,7 +23994,7 @@ function drinkItem(a, it, t){
   spendItem(a, it, t === a ? "drink" : "give", t);
   bank("ui/item_pickup", .5);
   if (u.kind === "heal"){
-    const d = t.c.noHeal ? 0 : roll(u.dice).total; if (t.c.noHeal) setTimeout(() => popText(t, "can't regain HP", "#9be04a", .9), 250); t.c.hp = Math.min(t.c.hpMax, t.c.hp + d);
+    const d = t.c.noHeal ? 0 : roll(u.dice).total; if (t.c.noHeal) setTimeout(() => popText(t, "can't regain HP", "#9be04a", .9), 250); t.c.hp = Math.min(t.c.hpMax, t.c.hp + d); if (d > 0 && fight) woundCloses(t, it.name || "a potion");
     if (t.down && t.c.hp > 0){ t.down = false; setAnim(t, "idle"); }
     setTimeout(() => { kitImpact(t, KIT.healing); bank("combat/heal", .8); popText(t, `+${d}`, "#9ff2c8"); }, 250);
     log(t === a ? `${fname(a)} drinks the <b>${esc(it.name)}</b> and regains ${d} HP${fight ? " (bonus action)" : ""}.`

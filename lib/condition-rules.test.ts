@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import {
-  CONDITION_ART_FILES, attackedWithAdvantage, autoFailsSave, charmForbids, conditionArtFile, conditionKeyOf,
+  BLEED_DEFAULT, CONDITION_ART_FILES, attackedWithAdvantage, bleedImmune, onlyMoves, autoFailsSave, charmForbids, conditionArtFile, conditionKeyOf,
   conditionsForMap, critFromAdjacent, exhaustionPenalty, exhaustionSpeedCut, resistsAllDamage, speedZero, turnLostTo,
 } from "./condition-rules.mjs"
 
@@ -73,9 +73,23 @@ describe("what each condition does", () => {
     expect(speedZero(new Set(["stunned"]))).toBe(false)
     expect(resistsAllDamage(new Set(["petrified"]))).toBe(true)
   })
-  it("who loses the turn", () => {
-    expect(turnLostTo(new Set(["stunned"]))).toMatch(/stunned/)
+  it("who loses the whole turn: speed 0 and no actions", () => {
+    expect(turnLostTo(new Set(["unconscious"]))).toMatch(/unconscious/)
+    expect(turnLostTo(new Set(["petrified"]))).toMatch(/stone/)
+    expect(turnLostTo(new Set(["stunned"]))).toBeNull()
     expect(turnLostTo(new Set(["poisoned"]))).toBeNull()
+  })
+  it("the stunned and incapacitated may still move (SRD 5.2.1), unless something heavier holds them", () => {
+    expect(onlyMoves(new Set(["stunned"]))).toBe(true)
+    expect(onlyMoves(new Set(["incapacitated"]))).toBe(true)
+    expect(onlyMoves(new Set(["stunned", "paralyzed"]))).toBe(false)
+    expect(onlyMoves(new Set(["poisoned"]))).toBe(false)
+  })
+  it("bleeding is the bearded devil's Infernal Wound: 1d10 a turn, DC 12 Medicine, not undead or constructs", () => {
+    expect(BLEED_DEFAULT).toEqual({ dice: "1d10", dc: 12 })
+    expect(bleedImmune("Undead")).toBe(true)
+    expect(bleedImmune("construct")).toBe(true)
+    expect(bleedImmune("humanoid")).toBe(false)
   })
   it("exhaustion: −2 per level on d20 tests, −5 ft per level", () => {
     expect([0, 1, 3, 6, 8].map(exhaustionPenalty)).toEqual([0, -2, -6, -12, -12])
