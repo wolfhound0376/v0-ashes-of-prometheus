@@ -67,14 +67,14 @@ check("3 a townswoman's is a woman's", /vox-hit-f/.test(people.find(([i]) => i =
 // 4 — a dodge is movement, not rotation (a hero has no drawn dodge, so this is the code's own pose)
 const pose = await pg.evaluate(async () => {
   const tgt = leader, att = npcs.find(n => !n.down) || npcs[0]
-  const samples = [], styles = []
+  const samples = [], styles = []; let ghosts = 0
   for (let k = 0; k < 3; k++){
     tgt.spar = null; att.spar = null
     styles.push(sparMiss(att, tgt, -9, {kind: "slash"}, {miss: "combat/melee_miss"}) + ":" + tgt.spar.style)
     const t0 = performance.now()
-    while (performance.now() - t0 < 470){ await new Promise(r => requestAnimationFrame(r)); const sp = sparPose(tgt); if (sp) samples.push({style: tgt.spar && tgt.spar.style, ...sp}) }
+    while (performance.now() - t0 < 470){ await new Promise(r => requestAnimationFrame(r)); const sp = sparPose(tgt); if (sp) samples.push({style: tgt.spar && tgt.spar.style, ...sp}); ghosts = Math.max(ghosts, crimGhosts.filter(g => g.col).length) }
   }
-  return {styles, samples, ghosts: crimGhosts.filter(g => g.col).length}
+  return {styles, samples, ghosts}
 })
 const maxSk = Math.max(...pose.samples.map(s => Math.abs(s.sk))), hasRot = pose.samples.some(s => "rot" in s)
 const moved = Math.max(...pose.samples.map(s => Math.hypot(s.ox, s.oy)))
