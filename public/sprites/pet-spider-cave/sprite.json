@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "name": "Cave spider",
+  "cell": [
+    160,
+    160
+  ],
+  "pivot": [
+    80,
+    158
+  ],
+  "ppu": 370,
+  "animations": {
+    "attack": {
+      "sheet": "attack.png",
+      "frames": 9,
+      "fps": 12,
+      "loop": false,
+      "hit": 0.7
+    },
+    "walk": {
+      "sheet": "walk.png",
+      "frames": 9,
+      "fps": 10,
+      "loop": true
+    },
+    "idle": {
+      "sheet": "idle.png",
+      "frames": 1,
+      "fps": 5,
+      "loop": true
+    }
+  }
+}
