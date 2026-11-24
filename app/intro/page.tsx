@@ -10,16 +10,14 @@
 // claude/One_Door_Entry_Flow_2026-11-10.md). It asks /api/table what the table is doing and puts one
 // obvious button first, re-reading every few seconds so the button changes the moment the table opens:
 //
-// THE FOUR BUTTONS (Sam, 2026-11-23: "PR3"; research doc claude/Tables_Invites_Saves_Research_2026-11-23.md §3A),
-// the Baldur's Gate 3 main menu, always in this order:
-//   CONTINUE         only for someone who has played here; its sub-line says where it goes (your seat, back into
-//                    the game, or — for the host on a dark table — the table, which opens itself on arrival)
-//   NEW CAMPAIGN     through the DM door (/dm: the code, your hero) to the table's New Game, brought into view
-//   LOAD GAME        the shelf of saved games on the table (the host goes straight there; anyone else via /dm)
-//   JOIN A TABLE     the four-letter room code (lib/room-code.ts) → /t/<code>
-// Under the code field, for someone with no link: Saved Game (three words, /join) and New Hero (/choose).
-// "Host a Game" in the corner is gone: New Campaign and Load Game are that door now. Rehearsal stays.
-//
+// THE TITLE, SCRUBBED (Sam, 2026-11-23: "new hero and new campaign redundant. Scrub intro landing page for utility,
+// easy UI, and remove confusion for the players. Ease of use."; rule in lib/title-door.ts). Two sections:
+//   PLAYERS   CONTINUE      only for someone who has played here; its sub-line says where it goes
+//             JOIN A TABLE  the four-letter room code → /t/<code>, which asks a newcomer for their words or a new hero
+//   HOSTING   below a rule, smaller, the key said once: NEW CAMPAIGN and LOAD GAME (via /dm, or straight to the shelf
+//             for the host), and the quiet links Rehearsal and, for a host mid-session, The Table.
+// Gone: the small Saved Game / New Hero links (the room-code page already asks both) and the Rehearsal corner button.
+
 // The opening film plays once per DEVICE per CAMPAIGN RUN — a New Game earns one more showing, and
 // "Watch the opening" brings it back — click anywhere or Skip, and only while Cinematics is ON in
 // the settings sheet (bottom-right gear, lib/settings.ts). It used to replay every browser session,
@@ -28,7 +26,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useRouter } from "next/navigation"
-import { ArrowRight, FlaskConical, Settings, Volume2, VolumeX } from "lucide-react"
+import { ArrowRight, Settings, Volume2, VolumeX } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getThemeAudio, playThemeAudio } from "@/components/theme-audio"
 import { SettingsSheet } from "@/components/settings-sheet"
@@ -37,7 +35,7 @@ import { isMusicOff, onMusicPrefChange, setMusicOff } from "@/lib/audio-prefs"
 import { cinematicsOn, introMusicOn, onSettingsChange } from "@/lib/settings"
 import { markDmDoor } from "@/lib/dm-door"
 import { createClient } from "@/lib/supabase/client"
-import { doorMenu, doorTableOf, shouldPlayFilm, FILM_RUN_KEY, FILM_RUN_UNKNOWN, REHEARSAL_HREF, REHEARSAL_LINK_LABEL, type DoorButton, type DoorTable } from "@/lib/title-door"
+import { doorMenu, doorTableOf, shouldPlayFilm, FILM_RUN_KEY, FILM_RUN_UNKNOWN, type DoorButton, type DoorTable } from "@/lib/title-door"
 import { DOOR_INTENT_KEY, intentValue } from "@/lib/door-intent"
 import { normalizeRoomCode } from "@/lib/room-code"
 
@@ -314,15 +312,32 @@ export default function TitleScreen() {
               </MenuButton>
             ))}
 
-            {/* No link to follow? Your three words, or a new hero. */}
-            <div className="mx-auto mt-1 flex w-fit flex-wrap justify-center gap-x-6 gap-y-2 rounded-sm bg-black/70 px-5 py-2 backdrop-blur-[2px]" style={{ animationDelay: ".4s" }}>
-              {menu.links.map((l) => (
-                <button key={l.href} type="button" onClick={() => { try { window.sessionStorage.removeItem(DOOR_INTENT_KEY) } catch { /* storage blocked */ } go(l.href) }}
-                  className="group text-center">
-                  <span className="block font-serif text-[12px] uppercase tracking-[0.26em] text-[#d9bd7e] transition-colors group-hover:text-[#f0dba8]">{l.label}</span>
-                  <span className="block text-[10px] tracking-[0.04em] text-stone-500 group-hover:text-stone-400">{l.sub}</span>
-                </button>
-              ))}
+            {/* HOSTING (Sam, 2026-11-23: "remove confusion for the players"): the key holder's doors, below a rule and
+                smaller, so a player reads only Continue and Join a Table. The key is said once, here. */}
+            <div className="mt-5" style={{ animationDelay: ".32s" }}>
+              <div className="flex items-center gap-3">
+                <span className="h-px flex-1 bg-gradient-to-r from-transparent to-[#5a4a30]" />
+                <span className="font-serif text-[10px] uppercase tracking-[0.42em] text-[#a88a5a]">{menu.host.title}</span>
+                <span className="h-px flex-1 bg-gradient-to-l from-transparent to-[#5a4a30]" />
+              </div>
+              <p className="mt-1.5 text-center text-[11px] tracking-[0.03em] text-stone-500">{menu.host.sub}</p>
+              <div className="mt-2.5 grid grid-cols-2 gap-2">
+                {menu.host.buttons.map((b) => (
+                  <button key={b.key} type="button" onClick={() => press(b)}
+                    className="group rounded-[3px] border border-[#5a4a30]/80 bg-black/70 px-3 py-2.5 text-center backdrop-blur-[2px] transition-colors hover:border-[#c9a868]/80">
+                    <span className="block font-serif text-[12px] uppercase tracking-[0.24em] text-[#d9bd7e] group-hover:text-[#f0dba8]">{b.label}</span>
+                    <span className="mt-0.5 block text-[10px] text-stone-500 group-hover:text-stone-400">{b.sub}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="mt-2 flex flex-wrap justify-center gap-x-5">
+                {menu.host.links.map((l) => (
+                  <button key={l.href} type="button" onClick={() => { try { window.sessionStorage.removeItem(DOOR_INTENT_KEY) } catch { /* storage blocked */ } go(l.href) }}
+                    title={l.sub} className="px-1 py-1 font-serif text-[10px] uppercase tracking-[0.3em] text-stone-500 transition-colors hover:text-[#e8c56a]">
+                    {l.label}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="mt-3 text-center" style={{ animationDelay: ".36s" }}>
@@ -334,7 +349,7 @@ export default function TitleScreen() {
         </div>
       )}
 
-      {/* corners: the sound, the gear, the DM's small door */}
+      {/* corners: the sound and the gear (Rehearsal moved into the Hosting section, 2026-11-23) */}
       <button
         type="button"
         onClick={toggleMute}
@@ -358,23 +373,10 @@ export default function TitleScreen() {
       >
         <Settings className="h-4 w-4" />
       </button>
-      {/* THE REHEARSAL DOOR (Sam, 2026-11-10: "a clean way" into the sandbox): the DM code once, then the sandbox map. */}
-      {stage === "title" && (
-        <button
-          type="button"
-          onClick={() => go(REHEARSAL_HREF)}
-          title="The sandbox: Malachar answers, nothing is saved"
-          className="group fixed bottom-5 left-6 z-50 flex items-center gap-2 text-[10px] uppercase tracking-[0.35em] text-stone-600 transition-colors hover:text-[#c9a868]"
-        >
-          <span className="grid h-6 w-6 place-items-center rounded-full border border-stone-700 text-stone-500 transition-colors group-hover:border-[#c9a868] group-hover:text-[#e8c56a]"><FlaskConical className="h-3 w-3" /></span>
-          {REHEARSAL_LINK_LABEL}
-        </button>
-      )}
-
       {/* INSTALL THE GAME (Sam, 2026-11-23, "PR6"): its own icon on the taskbar or home screen. Shown only where the
           browser can install it and it is not installed yet (lib/install-app.ts). */}
       {stage === "title" && (
-        <div className="fixed bottom-14 left-6 z-50"><InstallAppLink /></div>
+        <div className="fixed bottom-5 left-6 z-50"><InstallAppLink /></div>
       )}
 
       <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} />
