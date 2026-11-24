@@ -2,9 +2,12 @@
 
 // The settings sheet — a small dark panel that slides up over whatever page opened it.
 //
-// Two switches only (lib/settings.ts): Cinematics and Intro music. Sam, 2026-10-24: "I also should
+// Two switches (lib/settings.ts): Cinematics and Intro music. Sam, 2026-10-24: "I also should
 // be able to have an option to not have cinematics or intro scores." Both are remembered on this
 // device; the choice holds across the title screen, the opening and the dashboard.
+// And one button, Repair this device (lib/repair-device.ts; Sam, 2026-11-23, "fix cache memory"):
+// forgets what this browser remembered about the game, keeps your hero, the DM key and your choices,
+// and reloads clean. Two presses, so a stray tap does nothing.
 //
 // The gear that opens it (SettingsGear) sits bottom-right on the pre-game pages. The sheet is plain
 // markup rather than the shadcn Dialog so it carries the game's own look — gold rule, small caps,
@@ -15,6 +18,7 @@ import { Settings } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { readSettings, writeSettings, onSettingsChange, type PlayerSettings } from "@/lib/settings"
 import { setMusicOff } from "@/lib/audio-prefs"
+import { repairThisDevice } from "@/lib/repair-device"
 
 function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -39,6 +43,41 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
         {on ? "On" : "Off"}
       </span>
     </button>
+  )
+}
+
+function RepairRow() {
+  const [armed, setArmed] = useState(false)
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    if (!armed) return
+    const t = setTimeout(() => setArmed(false), 5000)
+    return () => clearTimeout(t)
+  }, [armed])
+  return (
+    <div className="flex items-start justify-between gap-4 py-4">
+      <div>
+        <div className="font-serif text-[15px] tracking-[0.08em] text-[#e8d9ae]">Repair this device</div>
+        <p className="mt-1 text-[12px] leading-relaxed text-stone-500">
+          Something acting strangely on this screen only? This forgets what the browser remembered about the game and reloads it clean. Your hero, the DM key and these settings are kept, and the game itself is never touched.
+        </p>
+      </div>
+      <button
+        type="button"
+        disabled={busy}
+        onClick={() => {
+          if (!armed) { setArmed(true); return }
+          setBusy(true)
+          void repairThisDevice()
+        }}
+        className={cn(
+          "shrink-0 rounded-sm border px-3 py-1.5 font-serif text-[10px] uppercase tracking-[0.18em] transition-colors",
+          armed ? "border-[#e0a060] bg-[#3a2410] text-[#ffd9a8]" : "border-[#7a5f33] bg-[#16110b] text-[#d9bd7e] hover:border-[#c9a868] hover:text-[#f0dba8]",
+        )}
+      >
+        {busy ? "Repairing…" : armed ? "Press again" : "Repair"}
+      </button>
+    </div>
   )
 }
 
@@ -100,6 +139,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
             </div>
             <Toggle on={s.introMusic} onChange={(v) => set({ introMusic: v })} label="Intro music" />
           </div>
+          <RepairRow />
         </div>
 
         <button
