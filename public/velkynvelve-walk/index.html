@@ -568,19 +568,38 @@ body.dm-open .cbt-menu:not([hidden]) + .cbt-mini{display:block}
 .btns.loot .btn[disabled]{opacity:.55;cursor:default}
 #objBtns .btn[disabled]{opacity:.5;cursor:default;filter:saturate(.4)}   /* a row a rule refuses: shown, with its reason, not pressable */
 .lootPx{width:24px;height:24px;image-rendering:pixelated;flex:none}
-/* one card for a find: what the item is, above its take (lootInfo) */
-.lootInfo{display:grid;gap:6px;margin-top:4px;padding:10px 12px;border:1px solid var(--rule);border-left:3px solid var(--ink-dim);border-radius:6px;background:rgba(0,0,0,.28);font-size:13px;line-height:1.4;text-align:left}
-.lootInfo.r-uncommon{border-left-color:#5fd068}.lootInfo.r-rare{border-left-color:#4fa3ff}.lootInfo.r-very_rare{border-left-color:#b46cff}.lootInfo.r-legendary,.lootInfo.r-artifact{border-left-color:#ff9a2e}
-.lootInfo .li-head{display:flex;align-items:center;gap:10px}
-.lootInfo .li-head img{width:32px;height:32px;image-rendering:pixelated;flex:none}
-.lootInfo .li-head b{display:block;font-family:var(--face-display);font-size:16px;font-weight:600}
-.lootInfo .li-head small{display:block;color:var(--ink-dim);font-size:12px}
-.lootInfo .li-dmg b{font-size:15px}
-.lootInfo .li-fact{display:flex;gap:6px;align-items:flex-start}.lootInfo .li-fact i{font-style:normal;opacity:.6;flex:none}.lootInfo .li-fact.dim{opacity:.7;font-style:italic}
-.lootInfo .li-chk{font:inherit;display:grid;grid-template-columns:auto 1fr auto;grid-template-rows:auto auto;column-gap:8px;align-items:center;text-align:left;background:transparent;color:var(--ink);border:1px solid #2f5f8f;border-left:3px solid #4fa3ff;border-radius:5px;padding:6px 10px;cursor:pointer}
-.lootInfo .li-chk .ab{grid-row:1/3;font-size:10px;font-weight:700;letter-spacing:.06em;color:#4fa3ff;border:1px solid #4fa3ff;border-radius:3px;padding:1px 4px}
-.lootInfo .li-chk small{grid-column:2;color:var(--ink-dim);font-size:11px}.lootInfo .li-chk em{grid-row:1/3;grid-column:3;font-style:normal;font-weight:700}
-.lootInfo .li-res{font-size:12px;padding:4px 8px;border-radius:4px}.lootInfo .li-res.ok{color:#7fdc8a;background:rgba(80,180,90,.12)}.lootInfo .li-res.no{color:#e88;background:rgba(200,80,80,.12)}
+/* THE LOOT SCREEN (openLoot). Sam, 2026-11-23: "a chest that takes the whole screen with no introduction. "Chest" No
+   dialogue box." While the container is in #objBtns the card drops its frame, portrait, line and footer and fills the
+   stage: a name, the X, the container with its things, and a small Take all. Any other card clears #objBtns, and the
+   dialogue card is itself again (the rules hang on :has(.lootIn), not on a class someone must remember to remove). */
+#obj:has(.lootIn){inset:0;padding:0;z-index:24;pointer-events:auto;background:rgba(4,3,8,.97)}
+#obj:has(.lootIn) .tcard{width:100%;height:100%;margin:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);gap:0}
+#obj:has(.lootIn) .tcard::before,#obj:has(.lootIn) .tcard::after{display:none}
+#obj:has(.lootIn) .tcard .port,#obj:has(.lootIn) .tcard .narr,#obj:has(.lootIn) .tcard>.foot,#obj:has(.lootIn) #objLog{display:none}
+#obj:has(.lootIn) .tcard .head{padding:14px 18px 0 24px;min-height:0;align-items:center}
+#obj:has(.lootIn) .tcard .plate{background:none;clip-path:none;box-shadow:none;padding:0}
+#obj:has(.lootIn) .tcard .plate .name{font-size:1.9rem}
+#obj:has(.lootIn) .btns.tray{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;margin:0;padding:8px 16px 14px;max-height:none;min-height:0;overflow:hidden}
+.lootIn{position:relative;flex:none;border-radius:10px;overflow:hidden;background:#06050a center/100% 100% no-repeat;image-rendering:pixelated}
+.lootIn.chest{background-image:url(img/loot/chest.png)}
+.lootIn.floor{background-image:url(img/loot/floor.png)}
+.lootSay{position:absolute;left:0;right:0;bottom:6%;text-align:center;font-family:var(--face-read);font-style:italic;font-size:1.2rem;color:var(--ink-dim);text-shadow:0 1px 3px #000;pointer-events:none}
+.lootAll{flex:none;height:34px;padding:0 22px;border:1px solid var(--ember);border-radius:999px;background:rgba(16,14,24,.9);color:#ffe2b0;font-family:var(--face-body);font-size:1rem;font-weight:700;letter-spacing:.04em;cursor:pointer}
+.lootAll:hover:not(:disabled){background:rgba(232,162,74,.18)}.lootAll:focus-visible{outline:2px solid var(--fungus);outline-offset:3px}.lootAll:disabled{opacity:.5;cursor:default}
+.lootSlots{position:absolute;display:flex;flex-wrap:wrap;gap:0;align-content:center;justify-content:center;--ls:96px}
+.lootIn.chest .lootSlots{left:16%;right:13%;top:12%;bottom:42%}
+.lootIn.floor .lootSlots{left:13%;right:13%;top:16%;bottom:14%}
+.lootSlot{position:relative;width:var(--ls);height:var(--ls);padding:0;display:grid;place-items:center;background:none;border:2px solid transparent;border-radius:10px;color:var(--ink);cursor:pointer;transition:transform .12s,opacity .12s}
+.lootSlot img{width:94%;height:94%;image-rendering:pixelated;object-fit:contain;filter:drop-shadow(0 4px 3px rgba(0,0,0,.8));pointer-events:none}
+.lootSlot.rar img{filter:drop-shadow(0 0 6px var(--rc)) drop-shadow(0 4px 3px rgba(0,0,0,.8))}
+.lootSlot:hover,.lootSlot:focus-visible{outline:none;border-color:var(--rc,#e8e2d0);background:radial-gradient(circle at 50% 55%,rgba(232,226,208,.2),rgba(0,0,0,0) 72%);transform:translateY(-3px)}
+.lootSlot .q{position:absolute;right:5px;bottom:2px;font-family:var(--face-body);font-weight:700;font-size:.95rem;text-shadow:0 1px 2px #000,0 0 4px #000}
+.lootSlot .ck{position:absolute;left:4px;top:3px;font-family:var(--face-mono);font-size:.62rem;letter-spacing:.06em;color:#c8e6a0;background:rgba(0,0,0,.6);border:1px solid #5f7f3f;border-radius:4px;padding:0 4px}
+.lootSlot .nopx{font-family:var(--face-body);font-size:.72rem;line-height:1.1;text-align:center;padding:4px;text-shadow:0 1px 2px #000}
+.lootSlot.ruined{cursor:default}.lootSlot.ruined img{filter:grayscale(1) brightness(.45)}
+.lootSlot.off img{opacity:.45}
+.lootSlot.fly{transition:transform .28s ease-in,opacity .28s ease-in;transform:translateY(120px) scale(.35);opacity:0;pointer-events:none}
+@media (prefers-reduced-motion:reduce){.lootSlot,.lootSlot.fly{transition:none}}
 .lootRar{margin-left:auto;padding-left:10px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.9;flex:none}
 .lootDm{display:grid;gap:6px;font-size:12px}
 .lootRow{display:grid;gap:3px}
@@ -5472,7 +5491,7 @@ function noteLocalOnly(a){
                 : `${fname(a)} has no seat in this game, so it is kept in this tab's pack only.`, 4200);
 }
 // one thing into a hero's hands: the server first (it is the truth), then the bag here
-async function takeLoot(a, id, row){
+async function takeLoot(a, id, row, o = {}){
   const wasEnc = encumbered(a);
   if (row.missing){ toast(`${row.name} is not in the item catalogue yet, so it cannot be taken.`, 3600); return false; }
   // WHERE IT GOES. A seated hero in the real game: the server (their inventory). A REHEARSAL (?sandbox=1) or a hero with
@@ -5500,7 +5519,8 @@ async function takeLoot(a, id, row){
   if (row.name === PEN_KEY){ state.penKey = true; shakeKeyTaken(); }   // THE SHAKEDOWN: the drow start counting rotations
   if (bagOpen()) renderBag();
   noteLoad(a, wasEnc);
-  popText(a, `+ ${row.qty > 1 ? row.qty + " " : ""}${row.name}`, row.missing || row.kind === "preview-stash" || RARITY_RANK[rarityOf(row)] < 1 ? "#e8d9a8" : RARITY_COL[rarityOf(row)]); bank("ui/item_pickup", .7);
+  popText(a, `+ ${row.qty > 1 ? row.qty + " " : ""}${row.name}`, row.missing || row.kind === "preview-stash" || RARITY_RANK[rarityOf(row)] < 1 ? "#e8d9a8" : RARITY_COL[rarityOf(row)]);
+  if (o.tray) sfx("walk:loot_pickup", .75, 1 + Math.min(8, o.step || 0) * .06); else bank("ui/item_pickup", .7);   // THE LOOT TRAY: a collection sound for each thing acquired (Sam, 2026-11-23), stepping up through a Take all
   log(`${fname(a)} takes ${esc(row.qty > 1 ? row.qty + " × " : "")}<b>${esc(row.name)}</b>.`);
   // A weapon off a rack gets the same offer a weapon off the floor does (pickUp): hold it ready, or pack it. Without
   // this the armory's shortswords went straight into the pack and the party fought the guard tower bare-handed —
@@ -5935,7 +5955,31 @@ function drawPickup(d, i, t){
   }
   return true;
 }
-// the card: what is there, a button for each, and Take all
+// ----- THE LOOT TRAY -----
+// Sam, 2026-11-23: "Selecting which loot you grab from the options should be simpler than it is." Then, on the
+// prototype (https://claude.ai/artifact/YEAdHs2z4h8K3omeH2bjwJ): "Icons should be larger. Numerical list not necessary.
+// It should show a pixelated chest background and item icons that you can hover over and get the description ...
+// Double clicking automatically puts it in your inventory. You don't need everyone hero cards. Also Studying is done in
+// your inventory module not here. Weight is fine but could be in the hover. A collection sound for each acquired item."
+// Then: "Looks good". Then, on the first build in the dialogue card: "It just needs to a chest that takes the whole
+// screen with no introduction. "Chest" No dialogue box." So the container fills the stage: its name ("Chest"), an X,
+// the things in it, and a small Take all. No portrait, no frame, no opening line, no row of choices.
+//
+// What it replaces: a list with an info block above every Take button (the merged card of 2026-11-13), which closed,
+// asked the server again and redrew itself after EVERY take, and stopped to ask about equipping in the middle.
+// What it is now: the things lie IN the container, as their own pixel art. Hover one (hold a finger on a phone) and
+// the item card opens beside the tray: name, rarity, damage, weight, value, what you know. Double-click it (or press
+// Enter on it, or the card's "Take it") and it goes into the pack of the hero who opened the container, with the
+// pickup sound; the rest stay where they lie and the tray stays open. Take all takes everything that needs no check.
+// The contents are asked for ONCE, on opening. Takes go to the server one after another (the container's record is
+// read and rewritten per take, so they must not race), but the piece leaves the tray the moment it is double-clicked
+// and comes back only if the take is refused.
+// Not changed: what is in a container, who may take it, weight, the fight's looting rule (gearCost: the first take of
+// a turn is the free object interaction, the second is the action), a part behind a check (double-click rolls it).
+// The equip offer for a weapon taken with empty hands is asked once, when the tray is closed, not between takes.
+// No item checks here: they are rolled from the inventory (icardRender skips them for kind "loot").
+const lootIsChest = (id, title) => (node.props || []).some(pr => pr.id === id && pr.lid) || (node.loot || []).some(l => l.id === id && l.chest)
+  || /chest|locker|coffer|strongbox|trunk|crate/i.test(title || "");
 // opts.at = where the container stands on the plate; the first open of it plays the loot fountain from there
 async function openLoot(id, title, opts = {}){
   const fighter = opts.fighter || null;   // GRABBING THINGS MID-FIGHT (grabTargets): the hero whose turn it is, in mode "combat"
@@ -5943,103 +5987,104 @@ async function openLoot(id, title, opts = {}){
   if (!fighter){ mode = "dialog"; party.forEach(p => { p.path = []; }); } tip.hidden = true;
   if (opts.poly) plateCrop(opts.poly);
   const who = fighter || leader, box = $("objBtns");
-  $("objWho").textContent = title; $("objText").textContent = opts.text || "You look inside."; box.innerHTML = ""; box.classList.add("loot");
-  const close = () => { $("obj").hidden = true; box.classList.remove("loot"); if (!fighter) mode = "explore"; if (opts.onClose) opts.onClose(); propEmptyCheck(id); };
-  const leave = () => { close(); if (fighter) grabDone(fighter); };   // mid-fight, walking away from the card hands the turn back
-  const add = (label, fn, cls = "", off = false) => { const b = choiceRow(box, label, fn || null, cls); b.disabled = off; return b; };
+  const chest = lootIsChest(id, title);
+  const close = () => { $("obj").hidden = true; box.classList.remove("loot", "tray"); box.innerHTML = ""; removeEventListener("resize", fit); icardHide(true); if (!fighter) mode = "explore"; if (opts.onClose) opts.onClose(); propEmptyCheck(id); };
+  const leave = () => { close(); if (fighter) grabDone(fighter); else offerEquip(); };   // mid-fight, walking away hands the turn back; out of one, a blade taken with empty hands is offered now
   const fkey = lootKeyOf(id), spill = !!opts.at && !fountained.has(fkey);   // the first open of a body or chest spills it
-  if (!spill){ showObjCard(); cardClose(leave); add("…", null, "", true); }
   const j = await fetchLoot(id); await ensureCatalog();
+  if (fighter ? !(cbt && mode === "combat") : mode !== "dialog"){ if (fighter) grabDone(fighter); return; }   // something else took the screen while the game answered
   if (spill){
     fountained.add(fkey);
     const wait = j.error ? 0 : lootFountain(opts.at, j.rows || []);
     if (wait) await new Promise(r => setTimeout(r, wait));
     if (fighter ? !(cbt && mode === "combat") : mode !== "dialog"){ if (fighter) grabDone(fighter); return; }   // closed or left while it flew
-    showObjCard(); cardClose(leave);
   }
-  if ($("obj").hidden) return;
-  box.innerHTML = "";
-  const rows = j.rows || [], can = rows.filter(r => !r.missing && r.kind !== "preview-stash" && !r.check);
-  if (j.error) $("objText").textContent = `The game did not answer (${j.error}).`;
-  else if (!rows.length) $("objText").textContent = opts.empty || "Nothing is left in it.";
-  else $("objText").textContent = (opts.text ? opts.text + " " : "") + `${fname(who)} can take:`;
-  for (const row of rows){
-    if (row.check && !row.missing && fighter){ add(`${row.name} · needs a ${checkLabel(row.check)} check: after the fight`, null, "", true); continue; }
-    if (row.check && !row.missing){                                             // behind a check: roll it here, then it comes free
-      const b = add(`Extract: ${row.name} · ${checkLabel(row.check)}`, async () => {
-        b.disabled = true;
-        if (await extractPart(who, row)){ if (await takeLoot(who, id, {...row, passed: true})){ leave(); return; } }
-        if (fighter || mode === "dialog") b.disabled = false;
-      });
-      if (row.pixel){ const im = document.createElement("img"); im.src = ITEM_PX + row.pixel; im.alt = ""; im.className = "lootPx"; b.prepend(im); }
-      continue;
-    }
-    const info = !row.missing && row.kind !== "preview-stash" ? lootInfo(box, row, who) : null;   // what it is, above the take (below)
-    const b = add(row.missing ? `${lootLabel(row)} · not in the catalogue yet` : row.kind === "preview-stash" ? row.name : `Take: ${lootLabel(row)}`,
-      async () => { b.disabled = true;
-        const k = fighter ? gearCost(fighter, 1) : null; if (k && !k.ok){ toast(k.why); b.disabled = false; return; }   // ONE LOOTING RULE: a take is an interaction
-        if (await takeLoot(who, id, row)){ if (k){ k.pay(); log(`${fname(who)} takes the <b>${esc(row.name)}</b> (${k.label === "free" ? "free object interaction" : "action"}).`); } close(); offerEquip(() => openLoot(id, title, opts)); } else b.disabled = false; },
-      "", !!row.missing || !!(fighter && !gearCost(fighter, 1).ok));
-    if (row.pixel){ const im = document.createElement("img"); im.src = ITEM_PX + row.pixel; im.alt = ""; im.className = "lootPx"; b.prepend(im); }
-    const rar = row.missing || row.kind === "preview-stash" ? "common" : rarityOf(row);
-    if (RARITY_RANK[rar] >= 1){ const col = RARITY_COL[rar]; b.style.color = col; b.style.borderColor = col; b.style.boxShadow = `inset 3px 0 0 ${col}`;
-      const tag = document.createElement("span"); tag.className = "lootRar"; tag.textContent = RARITY_LABEL[rar]; b.appendChild(tag); }
-    if (info) info.classList.add("r-" + rar);
-  }
-  if (can.length > 1 && !fighter) add("Take all", async () => {
-    for (const b of box.querySelectorAll("button")) b.disabled = true;
-    for (const row of can) await takeLoot(who, id, row);
-    close(); offerEquip(() => openLoot(id, title, opts));
-  }, "primary");
-  if (opts.extra) for (const [label, fn] of opts.extra) add(label, () => { leave(); fn(); });
-  add(fighter ? "Done" : "Leave it", leave);
-  box.querySelector("button:not([disabled])")?.focus();
-}
-// ----- ONE CARD FOR A FIND (Sam, 2026-11-13: "This is redundant; suggest something better" … "Go and build the merged
-// card. We don't need the side card but we do want to incorporate it maybe when examining it in the inventory.") -----
-// A loot card used to list the take buttons and float the item card beside it on hover, so a find was read twice and
-// had two Take buttons. What the side card told you now sits in the loot card itself, above each take: the item, its
-// type and rarity, weight and value, the damage of a weapon, WHAT YOU KNOW, and the out-of-combat checks, rolled here
-// by the leader with their own bonus (the same once-per-hero rolls as the item card: icardRoll). The side card stays
-// for the inventory (and for loot on the floor). Read off the same catalogue row and the same lore rules as the card.
-function lootInfo(box, row, who){
-  const el = document.createElement("div"); el.className = "lootInfo"; box.appendChild(el);
-  const draw = () => {
-    const it = icardItem({slug: row.slug, name: row.name, pixel: row.pixel}), p = it.properties || {}, slug = it.slug || row.slug || null;
-    const known = icardKnown(slug), view = loreView(it, known), rar = loreRarity(it);
-    const weaponish = isWeapon(it) || !!p.damage, base = baseWeapon(it);
-    const type = weaponish ? `Weapon${base ? ` (${base})` : ""}` : (it.item_type ? it.item_type.replace(/^./, c => c.toUpperCase()) : "Item");
-    const rarName = rar === "very_rare" ? "Very Rare" : rar.replace(/^./, c => c.toUpperCase());
-    const pic = it.pixel_icon_url ? ITEM_PX + it.pixel_icon_url : row.pixel ? ITEM_PX + row.pixel : it.icon_url || "";
-    const sub = [type, rarName, Number(it.weight) > 0 ? `${+it.weight} lb` : "", Number(it.value) > 0 ? `${it.value} gp` : ""].filter(Boolean);
-    let h = `<div class="li-head">${pic ? `<img src="${esc(pic)}" alt="">` : ""}<div><b>${esc(it.name || row.name)}</b>`
-      + `<small>${esc(sub.join(" · "))}${view.magic ? ` · ${view.identified ? "identified" : "unidentified"}` : ""}</small></div></div>`;
-    if (weaponish && p.damage){ const bon = view.bonusKnown ? Number(p.damage_bonus ?? p.bonus ?? 0) : 0, die = String(p.damage).match(/^\s*(\d+d\d+|\d+)/);
-      h += `<div class="li-dmg"><b>${esc(die ? die[1] : p.damage)}${bon ? ` + ${bon}` : ""}</b> ${esc(p.damage_type || "")}${(p.weapon_properties || []).length ? ` · ${esc(p.weapon_properties.join(", "))}` : ""}</div>`; }
-    const lines = [...(view.description ? [view.description] : []), ...view.facts];
-    for (const l of lines) h += `<div class="li-fact"><i aria-hidden="true">◆</i><span>${esc(l)}</span></div>`;
-    if (view.magic && !view.identified) h += `<div class="li-fact dim"><i aria-hidden="true">◆</i><span>Carry it and study it through a short rest to learn what it is.</span></div>`;
-    // the checks: out of a fight, rolled by the hero at the card (the leader, or the first hero this screen controls)
-    const rollers = icardRollers(), a = rollers.includes(who) ? who : rollers[0], sh = a && SHEETS[a.id];
-    const checks = !inFightNow() && slug && sh ? loreChecks(it, known) : [];
-    for (const c of checks){
-      const m = loreMod(sh, c); if (!m) continue;
-      const tool = c.tools && m.level === "Tool" ? c.tools.find(x => typeof (sh.tools || {})[x] === "number") : null;
-      const what = tool ? LORE_TOOLS[tool] : (c.skill || "").replace(/^./, x => x.toUpperCase());
-      const rec = (known.r || {})[`${c.key}:${a.id}`];
-      if (rec){ const [d, tot, ok] = rec; h += `<div class="li-res ${ok ? "ok" : "no"}">${esc(fname(a))}, ${esc(c.label.toLowerCase())}: d20 ${d} ${icardFmt(m.mod)} = ${tot} vs DC ${c.dc}, ${ok ? "success" : "fail"}.${ok ? "" : " Nothing you can make out."}</div>`; continue; }
-      h += `<button type="button" class="li-chk" data-check="${esc(c.key)}"><span class="ab">${tool ? "TOOL" : "INT"}</span><b>${esc(c.label)}</b><small>${esc(fname(a))} · ${esc(what)} · DC ${c.dc}</small><em>${icardFmt(m.mod)}</em></button>`;
-    }
-    el.innerHTML = h;
-    el.querySelectorAll("[data-check]").forEach(btn => btn.onclick = () => {
-      // icardRoll rolls for ICARD.who and repaints the item card: aim it at this hero, keep the side card out of it
-      const keep = ICARD.target; ICARD.who = a; ICARD.target = null;
-      icardRoll(it, checks.find(c => c.key === btn.dataset.check));
-      ICARD.target = keep; draw();
-    });
+  showObjCard(); cardClose(leave);
+  $("objWho").textContent = chest ? "Chest" : title; $("objText").textContent = "";
+  const rows = (j.rows || []).slice(), scrap = id.startsWith("body:") ? (j.ruined || []) : [];
+  const stash = rows.find(r => r.kind === "preview-stash");
+  const takeable = () => rows.filter(r => !r.missing && r.kind !== "preview-stash");
+  const plain = () => takeable().filter(r => !r.check);
+  const live = () => !$("obj").hidden && box.classList.contains("tray") && box.contains(pane);
+  const slots = new Map(), pane = document.createElement("div"), grid = document.createElement("div");
+  let queue = Promise.resolve(), pending = 0;
+  box.innerHTML = ""; box.classList.add("loot", "tray");
+  pane.className = "lootIn " + (chest ? "chest" : "floor"); grid.className = "lootSlots"; pane.appendChild(grid); box.appendChild(pane);
+  // why this hero cannot take it right now, or "" (said in the hover card and on a double-click)
+  const refusal = row => row.missing ? `${row.name} is not in the item catalogue yet, so it cannot be taken.`
+    : row.check && fighter ? `Needs a ${checkLabel(row.check)} check: after the fight.`
+    : fighter && !gearCost(fighter, 1).ok ? gearCost(fighter, 1).why
+    : carryRefusal(who, (Number((catalogItem(row.name) || {}).weight) || 0) * (row.qty || 1), row.name);
+  const noteOf = row => { const no = refusal(row); if (no) return no;
+    if (row.check) return `Double-click to work it free: ${checkLabel(row.check)}.`;
+    const k = fighter ? gearCost(fighter, 1) : null;
+    return `Double-click to take${row.qty > 1 ? ` all ${row.qty}` : ""}${k ? (k.label === "free" ? " · your free object interaction" : " · your action") : ""}.`; };
+  const foot = () => {
+    for (const el of [...box.children]) if (el !== pane) el.remove();
+    pane.querySelector(".lootSay")?.remove();
+    const say = j.error ? `The game did not answer (${j.error}).` : takeable().length || scrap.length ? (stash ? stash.name : "") : (opts.empty || "Empty.");
+    if (say){ const el = document.createElement("div"); el.className = "lootSay"; el.textContent = say; pane.appendChild(el); }
+    if (plain().length > 1 && !fighter){ const b = document.createElement("button"); b.type = "button"; b.className = "lootAll"; b.textContent = "Take all"; b.disabled = pending > 0; b.onclick = takeAll; box.appendChild(b); }
   };
-  draw();
-  return el;
+  // one take, start to finish. The piece has already left the tray (fly); a refusal puts it back.
+  const doTake = async (row, step) => {
+    const b = slots.get(row), back = () => { if (b) b.classList.remove("fly"); };
+    if (!live() || !rows.includes(row)){ back(); return; }
+    let r = row;
+    if (row.check){ if (!(await extractPart(who, row)) || !live()){ back(); return; } r = {...row, passed: true}; }
+    const k = fighter ? gearCost(fighter, 1) : null; if (k && !k.ok){ toast(k.why); back(); return; }   // ONE LOOTING RULE: a take is an interaction
+    const got = await takeLoot(who, id, r, {tray: true, step});
+    if (!got){ back(); return; }
+    if (k){ k.pay(); log(`${fname(who)} takes the <b>${esc(row.name)}</b> (${k.label === "free" ? "free object interaction" : "action"}).`); }
+    rows.splice(rows.indexOf(row), 1);
+    if (b && live()){ b.disabled = true; b.style.visibility = "hidden"; }   // the rest stay where they lie: nothing shifts under the pointer
+  };
+  const take = (row, step = 0) => {
+    const b = slots.get(row); if (!b || b.classList.contains("fly") || !rows.includes(row)) return;
+    const no = refusal(row); if (no){ toast(no, 3600); return; }
+    icardHide(true); b.classList.add("fly"); pending++;
+    queue = queue.then(() => doTake(row, step)).catch(() => { b.classList.remove("fly"); }).then(() => { pending--; if (live()) foot(); });
+    return queue;
+  };
+  function takeAll(){
+    const all = plain().filter(r => !refusal(r)); all.forEach((r, i) => take(r, i)); if (live()) foot();
+    queue.then(() => { if (live() && !takeable().length) setTimeout(() => { if (live()) leave(); }, 320); });   // emptied in one go: nothing left to choose
+  }
+  const slot = (row, ruined) => {
+    const b = document.createElement("button"); b.type = "button"; b.className = "lootSlot" + (ruined ? " ruined" : row.missing ? " off" : "");
+    const it = icardItem({slug: row.slug, name: row.name, pixel: row.pixel}), rar = ruined || row.missing ? "common" : rarityOf(row);
+    const px = row.pixel || it.pixel_icon_url || "";
+    b.style.setProperty("--rc", RARITY_COL[rar]); if (RARITY_RANK[rar] >= 1) b.classList.add("rar");
+    b.setAttribute("aria-label", ruined ? `${it.name || row.name}, ruined` : lootLabel(row));
+    b.innerHTML = (px ? `<img src="${esc(ITEM_PX + px)}" alt="">` : `<span class="nopx">${esc(it.name || row.name)}</span>`)
+      + (!ruined && row.qty > 1 ? `<span class="q">×${row.qty}</span>` : "") + (!ruined && row.check ? `<span class="ck" aria-hidden="true">d20</span>` : "");
+    const target = () => ({kind: "loot", row, slug: row.slug, name: it.name || row.name, pixel: px, hero: who,
+      note: ruined ? "Ruined in the fight. Scrap now: it cannot be taken." : noteOf(row), onTake: ruined || refusal(row) ? null : () => take(row)});
+    icardBind(b, target);
+    if (!ruined){
+      let last = 0;
+      b.addEventListener("click", () => { const t = performance.now();
+        if (t - last < 450){ last = 0; take(row); return; }                       // our own double-click, so a double tap on a phone takes it too
+        last = t; if ($("icard").hidden){ const tg = target(); tg.anchor = b; icardShow(tg, 0, 0, false); } });   // a single tap reads it
+      b.addEventListener("keydown", e => { if (e.key === "Enter"){ e.preventDefault(); e.stopPropagation(); take(row); } });
+      slots.set(row, b);
+    }
+    return b;
+  };
+  for (const row of rows) if (row.kind !== "preview-stash") grid.appendChild(slot(row, false));
+  for (const r of scrap) grid.appendChild(slot({slug: r.slug, name: slugName(r.slug), qty: 1}, true));
+  // THE WHOLE SCREEN: the container as large as the stage allows at its own shape, and each piece as large as fits in it
+  function fit(){
+    if (!live()) return;
+    const cs = getComputedStyle(box), W0 = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight), H0 = box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom) - 44;
+    const ar = chest ? 196 / 118 : 320 / 200, w = Math.max(240, Math.min(W0, H0 * ar));
+    pane.style.width = Math.floor(w) + "px"; pane.style.height = Math.floor(w / ar) + "px";
+    const n = grid.children.length, W = grid.clientWidth, H = grid.clientHeight; if (!n || !W || !H) return;
+    let best = 44; for (let cols = 1; cols <= n; cols++){ const sz = Math.min(W / cols, H / Math.ceil(n / cols)); if (sz > best) best = sz; }
+    grid.style.setProperty("--ls", Math.floor(Math.min(w * .17, best)) + "px");
+  }
+  foot(); fit(); requestAnimationFrame(fit); addEventListener("resize", fit);
+  (box.querySelector(".lootAll:not([disabled])") || $("objX"))?.focus({preventScroll: true});   // Enter is Take all when there is one; Escape and the X close
 }
 // ----- THE ITEM CARD -----
 // Sam, 2026-10-27: "Hovering over loot should create an effect like this" (a Diablo item card), then, from the canvas
@@ -6276,7 +6321,11 @@ async function icardShow(t, cx, cy, pin){
   // place it beside the thing: a map item by its spot on the plate, a row beside the panel it sits in
   const sr = stage.getBoundingClientRect(), W = el.offsetWidth, H = el.offsetHeight;
   let x, y;
-  if (t.anchor){ const box = (t.anchor.closest(".talk,.inv") || t.anchor).getBoundingClientRect(), row = t.anchor.getBoundingClientRect();
+  if (t.anchor && t.kind === "loot"){ const r = t.anchor.getBoundingClientRect();   // THE LOOT TRAY: beside the piece itself, not out past the card
+    const under = Math.min(r.bottom - sr.top + 8, sr.height - H - 8);
+    if (under >= r.bottom - sr.top - 6){ x = (r.left + r.right) / 2 - sr.left - W / 2; y = under; }   // under it, over the container's own front, so no other piece is covered
+    else { x = r.right - sr.left + 12; if (x + W > sr.width - 8) x = r.left - sr.left - W - 12; y = r.top - sr.top - 20; } }
+  else if (t.anchor){ const box = (t.anchor.closest(".talk,.inv") || t.anchor).getBoundingClientRect(), row = t.anchor.getBoundingClientRect();
     x = box.right - sr.left + 12; if (x + W > sr.width - 8) x = box.left - sr.left - W - 12; y = row.top - sr.top - 20; }
   else { const oq = t.at ? ovActorPt(t.at, t.at.x, t.at.y) : null, [sx, sy] = t.at ? w2s(oq.x, oq.y) : [cx - sr.left, cy - sr.top];
     if (el.classList.contains("chip")){ x = sx - W / 2; y = sy - H - 26; if (y < 8) y = sy + 26; }   // the chip: right above the item, pointing at it
@@ -6356,7 +6405,7 @@ function icardRender(){
   // the checks: out of a fight, the ones this item offers, rolled by a hero this screen controls
   const checks = loreChecks(it, known), rollers = icardRollers();
   if (fight) h += `<div class="ic-sec"><div class="ic-note">In combat there are no checks. Drawing or stowing it is your free object interaction.</div></div>`;
-  else if (out && checks.length && slug && rollers.length && a){
+  else if (out && checks.length && slug && rollers.length && a && t.kind !== "loot"){   // not from the loot tray (Sam, 2026-11-23: "Studying is done in your inventory module not here")
     h += `<div class="ic-sec"><div class="ic-lbl" style="color:#7fb6e6">CHECKS · ${esc(fname(a).toUpperCase())}</div>`;
     if (rollers.length > 1) h += `<div class="ic-heroes">${rollers.map(r => `<button type="button" data-hero="${esc(r.id)}" aria-pressed="${r === a}" style="--hc:${ICARD_HERO_COL[SHEETS[r.id].cls] || "#d9cfbd"}">${esc(fname(r))}</button>`).join("")}</div>`;
     for (const c of checks){
@@ -6382,7 +6431,7 @@ function icardRender(){
   if (!fight){
     if (src === "drop" || src === "pile") btns.push(`<button type="button" class="main" data-act="take">Pick it up</button>`);
     if ((src === "drop" || src === "pile") && weaponish) btns.push(`<button type="button" data-act="takeEquip">Pick up &amp; hold it</button>`);
-    if (src === "loot") btns.push(`<button type="button" class="main" data-act="take">Take it</button>`);
+    if (src === "loot" && t.onTake) btns.push(`<button type="button" class="main" data-act="take">Take it</button>`);
     if (src === "bag" && weaponish && carried && !(GEAR[a.id].main === it.name)) btns.push(`<button type="button" class="main" data-act="equip">Hold it ready</button>`);
     if (view.magic && !view.identified && slug){
       if (src === "bag" && carried) btns.push(`<button type="button" class="study" data-act="study">${known.q === (a && a.id) ? "Studying at the next short rest" : "Study at the next short rest"}</button>`);
@@ -6393,6 +6442,7 @@ function icardRender(){
     btns.push(on ? `<button type="button" data-act="attuneEnd">End attunement</button>`
       : `<button type="button" class="study" data-act="attune"${full ? ` disabled title="${ATTUNE_MAX} items attuned already: end one first"` : ""}>${av.q === slug ? "Attuning at the next short rest" : full ? `${ATTUNE_MAX} attuned already` : "Attune at the next short rest"}</button>`);
   }
+  if (src === "loot" && t.note) h += `<div class="ic-sec"><div class="ic-note">${esc(t.note)}</div></div>`;   // the loot tray: how to take it, what it costs, or why not
   if (btns.length) h += `<div class="ic-btns">${btns.join("")}</div>`;
   if (view.magic && !view.identified && slug && src !== "bag" && !fight) h += `<div class="ic-foot">Carry it and study it through a short rest to learn what it is.</div>`;
   if (known.q && view.magic && !view.identified){ const q = party.find(x => x.id === known.q); if (q && src !== "bag") h += `<div class="ic-foot">${esc(fname(q))} will study it at the next short rest.</div>`; }
@@ -26470,6 +26520,7 @@ addEventListener("keydown", e => {
   if (bagOpen() && /^(ArrowUp|ArrowDown|PageUp|PageDown|Home|End)$/.test(e.code)){ e.preventDefault(); const l = $("invList"), pg = l.clientHeight * 0.85;
     const by = {ArrowUp: -90, ArrowDown: 90, PageUp: -pg, PageDown: pg, Home: -l.scrollHeight, End: l.scrollHeight}[e.code]; l.scrollBy({top: by, behavior: "smooth"}); return; }
   if (e.key === "Escape" && exploreJump){ exploreJump = false; hint(""); return; }
+  if (e.key === "Escape" && !$("obj").hidden && $("objBtns").querySelector(".lootIn")){ e.preventDefault(); $("objX").click(); return; }   // THE LOOT SCREEN: Escape is its X (puts the container away, then the equip offer)
   if (e.key === "Escape"){ if (!$("obj").hidden){ $("obj").hidden = true; mode = "explore"; } else if (!$("talk").hidden) $("talkNo").click(); else if (!$("dm").hidden) toggleDm(false); }
   if (e.key === "m" || e.key === "M") $("musicBtn").click();
   if (e.code === "KeyL" && !e.ctrlKey && !e.metaKey && !e.altKey && !bagOpen()){ e.preventDefault(); toggleReviewLog(); return; }
