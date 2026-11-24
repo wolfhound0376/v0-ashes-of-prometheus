@@ -120,7 +120,7 @@ async function contents(db: Db, id: string, s: State, kill?: string | null, pock
   const harvested = c.kind === "body" && (CREATURE_PARTS[c.slug!] || !BODY_KIT[c.slug!]) && !!(s.bodies[c.key]?.kept.length || s.bodies[c.key]?.ruined.length)
   // a rolled count in a chest (the landing chest's 1d4 potions) is rolled the first time anyone looks, then kept
   let bookEntries = c.kind === "book" ? BOOK_CONTAINERS[id].entries : []
-  if (c.kind === "book" && bookEntries.some((e) => e.roll)){ const r = settleRolls(bookEntries, (s.rolls[c.key] ??= {})); bookEntries = r.entries; if (r.rolled) rolled = true }
+  if (c.kind === "book" && bookEntries.some((e) => e.roll || e.pick)){ const r = settleRolls(bookEntries, (s.rolls[c.key] ??= {})); bookEntries = r.entries; if (r.rolled) rolled = true }
   const book: LootEntry[] = c.kind === "book" ? bookEntries : c.kind === "body" ? (s.bodies[c.key]?.kept ?? kit ?? BODY_KIT[c.slug!] ?? []) : guard ? s.pockets[c.key] : pocketEntries(c.slug!)
   const cat = await itemsBySlug(db, book.map((e) => e.slug))
   const taken = s.taken[c.key] ?? {}

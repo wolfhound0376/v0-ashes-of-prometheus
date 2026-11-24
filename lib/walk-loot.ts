@@ -21,7 +21,10 @@ export type HarvestCheck = { skill: string; dc: number; fail?: { dice: string; t
 // `roll` (book containers only): how many is rolled, e.g. "1d4", the first time anyone looks, then kept for the run in
 // the walk-loot flag (`rolls`), so every screen sees the same count and a restart rolls it again. `qty` is the most it
 // can be. See settleRolls below.
-export type LootEntry = { slug: string; qty: number; note?: string; check?: HarvestCheck; roll?: string }
+// `pick` (book containers only): entries sharing a pick name are ONE find out of several. The first time anyone looks,
+// a die the size of the group is rolled and only that entry is there; the roll is kept for the run in the same flag
+// (`rolls`, under "pick:<name>") so every screen sees the same one. The laboratory's scroll, 1d4 (Sam, 2026-11-24).
+export type LootEntry = { slug: string; qty: number; note?: string; check?: HarvestCheck; roll?: string; pick?: string }
 export type BookContainer = { node: string; title: string; source: string; stash?: "valuables" | "gear"; entries: LootEntry[] }
 
 export const BOOK_CONTAINERS: Record<string, BookContainer> = {
@@ -59,6 +62,44 @@ export const BOOK_CONTAINERS: Record<string, BookContainer> = {
     node: "ruins-reliquary", title: "The cracked urn",
     source: "CLAUDE'S PICK (Sam's ask 2026-11-23; the book is silent). In plain sight.",
     entries: [{ slug: "carnelian-gem", qty: 1, note: "10 gp; quantity is Claude's" }],
+  },
+  // THE NECROMANCER'S LABORATORY (walk plate "ruins-necro-lab", reached only by the sigil on the Threshold's west wall).
+  // Sam, 2026-11-24: "the magical item will be ... the Staff of the Adder"; "The room where it is found will have a
+  // number of books but one has notes regarding the making of this staff and the command word \"Elvish for Death
+  // Serpent\". There will also be a couple of items like ingredients, poisons, and a uncommon necromancy scroll we can
+  // roll 1d4 to determine what it will populate as." The staff, the notes and the scroll are HIS. Which four spells the
+  // d4 picks from, and exactly which ingredients and poisons lie on the bench, are CLAUDE'S PICK, open to his Keep /
+  // Change / Cut. Every slug is an `items` row.
+  "necro-lab-staff": {
+    node: "ruins-necro-lab", title: "The staff on the wall",
+    source: "Sam's ruling, 2026-11-24: the Staff of the Adder (uncommon; attunement by a cleric, druid or warlock), stats as he gave them.",
+    entries: [{ slug: "staff-of-the-adder", qty: 1, note: "Sam's item" }],
+  },
+  "necro-lab-lectern": {
+    node: "ruins-necro-lab", title: "The open book on the lectern",
+    source: "Sam's ruling, 2026-11-24: one book holds the notes on the making of the staff and its command word, the Elvish for \"death serpent\".",
+    entries: [{ slug: "necromancers-notes", qty: 1, note: "Sam's lore item; the Elvish spelling of the word is his to give" }],
+  },
+  "necro-lab-shelves": {
+    node: "ruins-necro-lab", title: "The bookshelves",
+    source: "Sam's ruling, 2026-11-24: one uncommon necromancy scroll, 1d4 for which. The four (SRD 5.2.1 necromancy, 2nd and 3rd level, which is what an uncommon scroll holds) are CLAUDE'S PICK.",
+    entries: [
+      { slug: "spell-scroll-ray-of-enfeeblement", qty: 1, pick: "scroll", note: "d4: 1" },
+      { slug: "spell-scroll-blindness-deafness", qty: 1, pick: "scroll", note: "d4: 2" },
+      { slug: "spell-scroll-animate-dead", qty: 1, pick: "scroll", note: "d4: 3" },
+      { slug: "spell-scroll-vampiric-touch", qty: 1, pick: "scroll", note: "d4: 4" },
+    ],
+  },
+  "necro-lab-bench": {
+    node: "ruins-necro-lab", title: "The workbench",
+    source: "Sam's ruling, 2026-11-24: \"a couple of items like ingredients, poisons\". WHICH ones is CLAUDE'S PICK (two poisons, two ingredients, and the chalk for the sigil).",
+    entries: [
+      { slug: "serpent-venom", qty: 1, note: "poison; quantity is Claude's" },
+      { slug: "basic-poison-vial", qty: 1, note: "poison; quantity is Claude's" },
+      { slug: "bonecap", qty: 2, note: "ingredient; quantity is Claude's" },
+      { slug: "spider-venom-gland", qty: 1, note: "ingredient; quantity is Claude's" },
+      { slug: "rune-chalk", qty: 1, note: "quantity is Claude's" },
+    ],
   },
   "ruins-cache-reliquary": {
     node: "ruins-reliquary", title: "The bronze casket",
@@ -581,6 +622,13 @@ export function rollCount(dice: string, rng: () => number = Math.random): number
  *  the caller saves the flag. Never more than the entry's `qty`. */
 export function settleRolls(entries: LootEntry[], rolls: Record<string, number>, rng: () => number = Math.random): { entries: LootEntry[]; rolled: boolean } {
   let rolled = false
+  const groups: Record<string, LootEntry[]> = {}
+  for (const e of entries) if (e.pick) (groups[e.pick] ??= []).push(e)
+  for (const [g, list] of Object.entries(groups)) {
+    const k = `pick:${g}`
+    if (rolls[k] == null || rolls[k] < 1 || rolls[k] > list.length){ rolls[k] = 1 + Math.floor(rng() * list.length); rolled = true }
+  }
+  entries = entries.filter((e) => !e.pick || groups[e.pick][rolls[`pick:${e.pick}`] - 1] === e)
   const out = entries.map((e) => {
     if (!e.roll) return e
     if (rolls[e.slug] == null){ rolls[e.slug] = Math.min(e.qty, rollCount(e.roll, rng)); rolled = true }

@@ -135,6 +135,10 @@
   "slug": "ruins-reliquary",
   "name": "The Ruins: the reliquary"
  },
+ "ruins-necro-lab": {
+  "slug": "ruins-necro-lab",
+  "name": "The Ruins: the necromancer's laboratory"
+ },
  "battle-pen-gate": {
   "slug": "battle-pen-gate",
   "name": "The landing outside the pen gate"

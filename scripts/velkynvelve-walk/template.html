@@ -6444,10 +6444,51 @@ let hoverLoot = null;
 // A HIDDEN THING (Sam, 2026-11-23: "Have some hidden item that are only available on a passive perception success"): a
 // loot spot marked `hidden` in story.json is not drawn and cannot be opened until the room's passive Perception check
 // finds it (ruinOnEnter, below, writes state.director.found).
-function lootShown(l){ if (l.mimic) return mimicWaiting(); return !l.hidden || !!((state.director || {}).found || {})[l.id]; }
+function lootShown(l){ if (l.mimic) return mimicWaiting(); if (l.sigil) return true; return !l.hidden || !!((state.director || {}).found || {})[l.id]; }
 function lootSpotAt(w){ mimicSync(); return (node.loot || []).find(l => lootShown(l) && inPoly(l.poly, w.x, w.y)) || null; }
 function lootCenter(l){ const xs = l.poly.map(p => p[0]), ys = l.poly.map(p => p[1]); return {x: (Math.min(...xs) + Math.max(...xs)) / 2, y: Math.max(...ys) + 30}; }
-function openLootSpot(l){ if (l.mimic) return mimicTouch(l); if (atWorkPlate()) return laborDoPocket({id: l.id, name: l.name, poly: l.poly}); openLoot(l.id, l.name, {poly: l.poly, text: l.text, at: polyBase(l.poly)}); }   // at work: under the escort's eye (Hard Labor)
+function openLootSpot(l){ if (l.mimic) return mimicTouch(l); if (l.sigil) return openSigil(l); if (atWorkPlate()) return laborDoPocket({id: l.id, name: l.name, poly: l.poly}); openLoot(l.id, l.name, {poly: l.poly, text: l.text, at: polyBase(l.poly)}); }   // at work: under the escort's eye (Hard Labor)
+// THE SIGIL (Sam, 2026-11-24, on the Act One board: "A successful investigation check will identify a sigil. A
+// successful arcana check will activate it, opening a hidden room to the necromancers laboratory ... Interacting with
+// activated sigil teleports your party to that room." -> "The sigil plate in in the Ruins: the threshold on the west
+// wall" -> "Difficulty medium" -> "Way back is through another sigil on the interior."). A story.json loot spot with a
+// `sigil` holds nothing: it is a wall to search (Investigation), then a mark to wake (Arcana), then a way through. Both
+// rolls are the dashboard's dice (lib/walk-roll.ts "sigil:find", "sigil:wake"; DC 15). One try per hero at each, like
+// the pen's ward sigil; once it is awake it stays awake for everyone (state.sigils, shared by One World). The sigil
+// inside the room is cut awake (`lit`) and needs no roll.
+const sigilState = l => { const S = state.sigils || (state.sigils = {}); return S[l.id] || (S[l.id] = {found: false, lit: false, tried: {}}); };
+function openSigil(l){
+  const G = l.sigil, S = G.lit ? {found: true, lit: true, tried: {}} : sigilState(l), h = leader, to = SPEC[G.to];
+  if (mode !== "explore" || !to) return;
+  const text = S.lit ? (G.lit ? l.text : "The mark on the wall is awake: every line of it burns violet, and the stone inside the ring looks thin as smoke.")
+    : S.found ? "Under the moss there is a ring of cut lines, a hand across: a sigil, dead and dark. Somebody meant this wall to open."
+    : l.text;
+  const {add, close} = heroCard(S.found && !G.lit ? "The sigil in the wall" : l.name, text);
+  try { const g = $("objPic").getContext("2d"), xs = l.poly.map(p => p[0]), ys = l.poly.map(p => p[1]), x0 = Math.min(...xs), y0 = Math.min(...ys), sz = Math.max(Math.max(...xs) - x0, Math.max(...ys) - y0), k = plateImg.naturalWidth / NAT_W; g.clearRect(0, 0, 128, 128); g.drawImage(plateImg, x0 * k, y0 * k, sz * k, sz * k, 0, 0, 128, 128); } catch (e) {}
+  const off = (label, why) => { const b = add(`${label} — ${why}`, null); if (b) b.disabled = true; };
+  const tried = k => !!(S.tried[k] || {})[h.id];
+  const roll = (key, skill, abil, onWin, onLose) => () => { close(); (S.tried[key] || (S.tried[key] = {}))[h.id] = true; saveWalk();
+    rollWithHelp(key, (skill === "arcana" ? wardLoreMod(h, "arcana") : heroMod(h, skill, abil)), {who: h}).then(r => { if (!r || !r.ok){ if (r && !r.cancelled) toast(r.error || "The dice did not answer.", 3200); delete S.tried[key][h.id]; return; } if (r.success) onWin(); else onLose(); saveWalk(); }); };
+  if (S.lit) add(G.lit ? "Step onto the sigil" : "Step through the sigil", () => { close(); sigilCross(l); }, "primary");
+  else if (!S.found){
+    if (tried("sigil:find")) off("Search the wall", `${fname(h)} has looked and found a wall`);
+    else add("Search the wall · Investigation", roll(G.find, "investigation", "int",
+      () => { S.found = true; bank("magic/arcane_release", .35); log(`${fname(h)} scrapes the moss off the west wall. There is a <b>sigil</b> cut into the stone under it.`); toast("A sigil, cut into the stone under the moss.", 3600); setTimeout(() => { if (mode === "explore") openSigil(l); }, 1200); },
+      () => { log(`${fname(h)} goes over the west wall and finds a wall.`); }), "primary");
+  } else {
+    if (tried("sigil:wake")) off("Wake the sigil", `${fname(h)} cannot make sense of it`);
+    else add("Wake the sigil · Arcana", roll(G.wake, "arcana", "int",
+      () => { S.lit = true; bank("magic/arcane_release", .5); log(`${fname(h)} traces the sigil the right way round. It <b>wakes</b>: violet light runs along every line.`); toast("The sigil wakes.", 3200); setTimeout(() => { if (mode === "explore") openSigil(l); }, 1200); },
+      () => { bank("magic/spell_fizzle", .35); log(`${fname(h)} traces the sigil. It stays dark.`); }), "primary");
+  }
+  add("Leave it", close);
+}
+async function sigilCross(l){
+  const G = l.sigil, at = G.at || SPEC[G.to].arrive, fade = $("fade");
+  bank("magic/arcane_release", .5); fade.classList.add("quick", "on"); await wait(320);
+  try { await enterNode(G.to, {...(at ? {spawn: {x: at[0], y: at[1]}} : {}), note: G.lit ? "The violet light lets go of you. You are back in the ruined hall, by the west wall." : "The wall is not there. Then you are somewhere else: a closed room that smells of dust and old poison."}); }
+  finally { fade.classList.remove("on"); setTimeout(() => fade.classList.remove("quick"), 400); if (mode === "dialog" && $("obj").hidden) mode = "explore"; }
+}
 // LOOT YOU CAN SEE, NOT BOXES ROUND IT (Sam, 2026-10-27: "replace painted lootboxes with size appropriate chests from
 // pixel art. They can glow yellow if they are interactable but these large yellow boxes are silly"). A loot spot that is
 // a chest (story.json `chest`: wooden | iron | ornate, standing at `at`) is drawn as that pixel chest from the sprite
@@ -7016,7 +7057,7 @@ function openBody(b){
 // the dashboard's engine with the dashboard's modifier, and the page answers {ok, success, total, natural} — or
 // {cancelled} if they stepped back. "aop:roll-ack" says the panel is open; after it the map waits as long as the
 // player does. Opened as a plain file (no game around it), the map rolls locally against the same DC.
-const ROLLS = new Map(), LOCAL_DC = {"thessaly:persuade": 15, "thessaly:look": 14, "companion:feed": 10, "manacles:pick": 15, "manacles:friend": 15, "manacles:break": 20, "pocket:size-up": 10, "caught:persuade": 15, "caught:intimidate": 15, "falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12, "jimjar:bet": 13, "manacles:wire": 15, "druid:beast": 13, "ward:study-arcana": 20, "ward:study-history": 20, "ward:cut": 15};
+const ROLLS = new Map(), LOCAL_DC = {"thessaly:persuade": 15, "thessaly:look": 14, "sigil:find": 15, "sigil:wake": 15, "companion:feed": 10, "manacles:pick": 15, "manacles:friend": 15, "manacles:break": 20, "pocket:size-up": 10, "caught:persuade": 15, "caught:intimidate": 15, "falls:look": 12, "ilvara-chest:search": 20, "ilvara-chest:disarm": 15, "ilvara-chest:pick": 15, "lift:spool": 18, "pen-gate:pick": 20, "pen-gate:force": 20, "cliff:rappel": 12, "cliff:climb": 12, "labor:water": 10, "labor:lift": 12, "labor:pots": 10, "labor:kitchen": 12, "labor:look": 12, "labor:pocket": 12, "labor:pocket-jorlan": 14, "labor:hide": 12, "labor:hide-jorlan": 14, "pen:whistle": 12, "jimjar:bet": 13, "manacles:wire": 15, "druid:beast": 13, "ward:study-arcana": 20, "ward:study-history": 20, "ward:cut": 15};
 addEventListener("message", e => { if (e.origin !== location.origin) return; const m = e.data; if (!m || !ROLLS.has(m.id)) return;
   if (m.type === "aop:roll-ack"){ ROLLS.get(m.id).ack(); return; }
   if (m.type !== "aop:roll-result") return; const r = ROLLS.get(m.id); ROLLS.delete(m.id); r.done(m); });
