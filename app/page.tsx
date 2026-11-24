@@ -308,6 +308,13 @@ export default function DashboardPage() {
 
   // World AI panel state
   const [worldAIPanelOpen, setWorldAIPanelOpen] = useState(false)
+  // NO BLINK ON THE WAY IN (Sam, 2026-11-23: starting a game "blinked to malachar dialogue" — "Full Parley sheet with
+  // cartoon malachar"). "/" decides in its first effect whether this arrival stays here or goes on (to /intro, or to the
+  // map for a first arrival in this tab — lib/map-entry.ts), but it painted the whole Parley first: in the server HTML
+  // and in the first client frame, until the redirect landed. Every door that passes through "/" on the way in —
+  // Continue, The Table's "Return to the game", the bare address — showed the Parley for a moment. Now "/" paints a
+  // plain dark page until that decision is made, and the Parley only once it is staying.
+  const [entryChecked, setEntryChecked] = useState(false)
   const [npcAssetsOpen, setNpcAssetsOpen] = useState(false)
   const [campaignBook, setCampaignBook] = useState<CampaignBookSection | null>(null)
   const [showCampaignChangeDialog, setShowCampaignChangeDialog] = useState(false)
@@ -956,6 +963,7 @@ export default function DashboardPage() {
           return
         }
       }
+      setEntryChecked(true)                                                // staying: NO BLINK ON THE WAY IN
 
       const storedRole = window.localStorage.getItem(ROLE_LS_KEY)
       const storedToken = window.localStorage.getItem(TOKEN_LS_KEY)
@@ -1001,6 +1009,7 @@ export default function DashboardPage() {
       return
     }
 
+    setEntryChecked(true)                                                  // a claim link always stays here
     let cancelled = false
     ;(async () => {
       try {
@@ -1998,6 +2007,9 @@ if (error) {
     }
     setWorldAIPanelOpen(true)
   }
+
+  // NO BLINK ON THE WAY IN: nothing of the Parley until "/" knows this arrival is staying (see entryChecked)
+  if (!entryChecked) return <main aria-busy="true" className="min-h-dvh bg-[#050403]" />
 
   return (
     <DiceProvider
