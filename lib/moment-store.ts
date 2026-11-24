@@ -13,7 +13,7 @@ export async function loadMoment(db: Db, opts: { characterId: string | null; tal
     const since = new Date(Date.now() - 15 * 60_000).toISOString()
     const [walk, agents, roll] = await Promise.all([
       db.from("walk_world").select("plate, state, heroes, updated_at").order("updated_at", { ascending: false }).limit(4),
-      db.from("npc_agents").select("key, name, aliases, sprite_slug, agenda"),
+      db.from("npc_agents").select("key, name, aliases, sprite_slug, agenda, option_bank"),
       opts.characterId
         ? db.from("roll_requests").select("skill, purpose").eq("character_id", opts.characterId).eq("status", "pending").gte("created_at", since).order("created_at", { ascending: false }).limit(1)
         : Promise.resolve({ data: [] }),
