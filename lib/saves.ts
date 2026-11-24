@@ -63,6 +63,8 @@ export const LIBRARY_TABLES = [
   "dialogue_archive", "dm_phrasebook", "cinematic_requests",
   // the shelf itself
   "campaign_saves",
+  // live plumbing, gone in under a minute: who holds the floor in a conversation (lib/talk-floor.ts). Never part of a save.
+  "talk_floor",
   // read-only views and helpers
   "item_catalog_lookup", "travel_nodes_player", "camp_docs", "environment_inventory",
 ] as const

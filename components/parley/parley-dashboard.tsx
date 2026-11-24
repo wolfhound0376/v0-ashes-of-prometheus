@@ -386,6 +386,12 @@ interface ParleyDashboardProps {
   /** Map talk: the player accepted the NPC's "a word" and came over. Fired once, after the opener is
    *  logged, so the page can ask Malachar for what the NPC actually wanted to say. */
   onOpenerAccepted?: (npcName: string, opener: string) => void
+  /** ONE SPEAKER PER CONVERSATION (Sam, 2026-11-20: "like BG3 ... others can watch and even suggest but not directly
+   *  interact" — lib/talk-floor.ts). Set when ANOTHER hero holds the floor with the NPC this screen is turned to:
+   *  this screen listens, and what it types goes to that hero as a suggestion. */
+  listening?: { speaker: string; npc: string } | null
+  /** What the listeners have suggested to THIS screen's hero, who holds the floor. A press puts it in the box. */
+  suggestionsIn?: Array<{ from: string; text: string; at: string }>
   // ---- the Parley's top bar and strip (the old TopNav's jobs, re-homed) ----
   /** Malachar's and the NPCs' voices on this screen. */
   voicesOn?: boolean
@@ -1188,11 +1194,15 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
   // TALK TO MALACHAR: the thread is the hero and the DM, nobody else's lines, and it is always open.
   const logMini = interactiveLogMinimized && !props.audience
   const shownLines = props.audience ? displayedDialogue.filter((entry) => classifySpeaker(entry.speaker) === "dm" || (!!selected?.name && entry.speaker.toLowerCase() === selected.name.toLowerCase())) : displayedDialogue
+  // LISTENING IN (lib/talk-floor.ts): another hero is speaking with this NPC. No reply options are written for this
+  // seat (they were the "options rapidly cycling" of 2026-11-20: every line the NPC said to the OTHER hero rewrote
+  // them); the row says who is speaking, and the box sends a suggestion to them.
+  const listening = props.listening ?? null
   const sayBox = (
       <div className="p-panel p-say">
-        <input value={props.dialogueInput} disabled={props.timeStopped} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder={props.timeStopped ? "Time is stopped. The world waits for the DM." : props.audience ? "Say something to Malachar…" : props.addressPick === "dm" ? "Ask the DM — nobody in the scene hears this…" : (props.addressPick ?? props.addressee) ? `Say something to ${(props.addressPick ?? props.addressee)!.split(/\s+/)[0]}, or act…` : "Say something, or tell Malachar what you do…"} className={cn(props.addressPick === "dm" && "to-dm")} aria-label="Say something" />
+        <input value={props.dialogueInput} disabled={props.timeStopped} onChange={(event) => props.setDialogueInput(event.target.value)} onKeyDown={(event) => event.key === "Enter" && props.onDialogueSubmit()} placeholder={props.timeStopped ? "Time is stopped. The world waits for the DM." : listening && props.addressPick == null ? `Suggest something to ${listening.speaker.split(/\s+/)[0]}…` : props.audience ? "Say something to Malachar…" : props.addressPick === "dm" ? "Ask the DM — nobody in the scene hears this…" : (props.addressPick ?? props.addressee) ? `Say something to ${(props.addressPick ?? props.addressee)!.split(/\s+/)[0]}, or act…` : "Say something, or tell Malachar what you do…"} className={cn(props.addressPick === "dm" && "to-dm")} aria-label="Say something" />
         <button type="button" disabled={!micSupported} onClick={() => { if (!micListening) speechBaseRef.current = props.dialogueInput; toggleMic() }} className={cn("p-slab dark p-mic", micListening && "live red")} title={micSupported ? micListening ? "Stop dictation" : "Dictate your response" : "Voice input is not supported in this browser"}><Mic className="h-4 w-4" /></button>
-        <button type="button" onClick={props.onDialogueSubmit} disabled={props.timeStopped} className="p-slab" style={{ ["--c1" as string]: "#b8252a", ["--c2" as string]: "#5a0e12" } as CSSProperties}>Send</button>
+        <button type="button" onClick={props.onDialogueSubmit} disabled={props.timeStopped} className="p-slab" style={{ ["--c1" as string]: "#b8252a", ["--c2" as string]: "#5a0e12" } as CSSProperties}>{listening && props.addressPick == null ? "Suggest" : "Send"}</button>
       </div>
   )
 
@@ -1216,8 +1226,18 @@ export function ParleyDashboard(props: ParleyDashboardProps) {
           <span className="p-mid"><small>Talking to</small><b>{addressCurrent?.label}</b><em>{addressCurrent?.sub}</em></span>
           <button type="button" className="p-slab p-arrow" onClick={() => cycleAddress(1)} aria-label="Next">▶</button>
         </span> : null
-  const sayChips = (
+  const sayChips = listening ? (
+        <span className="p-chips p-listen" role="status">
+          <small className="p-saylbl">LISTENING</small>
+          <span className="p-listen-note"><b>{listening.speaker.split(/\s+/)[0]}</b> is speaking with {listening.npc.split(/\s+/)[0]}. You can watch, and what you type goes to {listening.speaker.split(/\s+/)[0]} as a suggestion.</span>
+        </span>
+  ) : (
         <span className="p-chips" hidden={!!props.audience}>
+          {(props.suggestionsIn ?? []).map((s) => (
+            <button key={`${s.from}-${s.at}`} type="button" className="p-slab p-sug p-hint" title="Put it in the box. Whether you say it is up to you." onClick={() => props.setDialogueInput(s.text)}>
+              <i>{s.from.split(/\s+/)[0]} suggests</i> {s.text}
+            </button>
+          ))}
           <small className="p-saylbl">SAY</small>
           <SuggestionChips
             variant="parley"

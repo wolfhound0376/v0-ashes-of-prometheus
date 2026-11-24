@@ -6573,8 +6573,8 @@ function openInteract(z, opts = {}){
     const seen = n => n && !n.offStage && !n.body && !n.down && !n.hostile && n.alpha > .5 && actors.includes(n), gx = (it.poly[0][0] + it.poly[2][0]) / 2, gy = (it.poly[0][1] + it.poly[2][1]) / 2;
     const j = npcs.find(n => n.id === "jorlan" && seen(n));
     const g = npcs.filter(n => /^drow-guard/.test(n.id) && seen(n)).sort((a, b) => Math.hypot(a.x - gx, a.y - gy) - Math.hypot(b.x - gx, b.y - gy))[0];
-    if (j) add("Call to Jorlan", () => { close(); openTalk(j, {quiet: true}); }, "", {icon: "talk"});
-    if (g) add("Call to the guard", () => { close(); openTalk(g, {quiet: true}); }, "", {icon: "talk"});
+    if (j) add("Call to Jorlan", () => { close(); openTalk(j, {quiet: true, byHand: true}); }, "", {icon: "talk"});
+    if (g) add("Call to the guard", () => { close(); openTalk(g, {quiet: true, byHand: true}); }, "", {icon: "talk"});
   };
   if (!state.gateOpen){
     if (isDoor && !opts.again) sfx("door-locked", .7);             // you try the bars: locked fast
@@ -22457,6 +22457,10 @@ function gateDecide(guards, g, h){
   else if (act === "shoot") gateGuardsShoot(guards, h);
 }
 function jorlanAtBars(j, h, guards){
+  // ONE SPEAKER PER CONVERSATION: he is already talking to another hero at the bars. He does not turn and open a second
+  // talk with this one (2026-11-20: he opened five times in ninety seconds, two heroes at once). The caller still marks
+  // this hero as "Jorlan is dealing with them", so the guards hold their warning while he talks.
+  if (APP && floorHeldBy(SPR[j.id].json.name)) return;
   const who = fname(h);
   for (const x of guards){ x.path = []; x.actUntil = now + 20000; x.scanAt = now + 20000; faceTo(x, h); }
   stopActivity(j); j.path = []; faceTo(j, h); popText(j, "!", "#ffd166", 1.2);
@@ -24281,6 +24285,7 @@ async function pollTalk(){
   try {
     const r = await fetch("/api/map-dialogue" + (talkCursor ? "?after=" + encodeURIComponent(talkCursor) : ""), {cache: "no-store"});
     const j = await r.json(); if (!j) return;
+    if (Array.isArray(j.floors)) talkFloors = j.floors;               // who is in conversation with whom (ONE SPEAKER PER CONVERSATION, below)
     if (!talkCursor){ talkCursor = j.cursor; return; }                 // first look: start from now, do not replay history
     for (const row of j.lines || []){ if (talkSeen.has(row.id)) continue; talkSeen.add(row.id); hearLine(row); }
     if (j.cursor) talkCursor = j.cursor;
@@ -24553,14 +24558,63 @@ function approach(n){
   if (talkBlocked()){ toast("Not now: the work detail is on.", 2200); return; }
   if (planAsking(n)) return openPlanCard(n);                 // ELDETH ASKS THE PLAN: a choice card, not a conversation
   if (wireAsking(n)) return openWireCard(n);                 // JIMJAR HAS A WIRE: a deal, not a conversation
-  if (wantsWord(n)) return openTalk(n);
-  if (canTalkTo(n)) return openTalk(n, {quiet: true});
+  if (wantsWord(n)) return openTalk(n, {byHand: true});
+  if (canTalkTo(n)) return openTalk(n, {quiet: true, byHand: true});
   ambient(n);
+}
+// ---------- ONE SPEAKER PER CONVERSATION ----------
+// Sam, 2026-11-20, after Fifi and Kenta both talked to Jorlan at the bars: "It was a mess. We were not in sync, he was
+// talking to both of us at the same time with options rapidly cycling. Communication should be just like BG3. The
+// principal character communicates, others can watch and even suggest but not directly interact."
+// What the log showed: each screen opened its OWN talk with him (this function ran on both, each for its own hero), so
+// he opened five times in ninety seconds and offered the escape twice. Nothing knew a conversation was already going.
+// Now the first hero to reach an NPC holds the floor with them (table talk_floor, /api/talk-floor; the rule is
+// lib/talk-floor.ts, kept in step by hand). For everyone else:
+//   - an NPC who would have come up to them on their own (wants a word, Jorlan at the bars) simply does not: they
+//     are busy, and the bubbles over their head show the talk that is going on;
+//   - walking up and pressing Talk gets a card that says who is speaking, with "Listen in": the Parley opens as a
+//     listener, where what you type goes to the speaker as a suggestion.
+// Declining gives the floor back at once; a speaker whose screen goes quiet loses it after 45 s. Two different NPCs
+// can still be in two conversations. The preview and a rehearsal hold no floor. If the floor cannot be read, the
+// talk opens as it always did: a broken lock must not silence the table.
+let talkFloors = [], talkWatch = null, talkClaiming = false;
+const floorNorm = v => String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
+function floorSameNpc(a, b){
+  const x = floorNorm(a), y = floorNorm(b); if (!x || !y) return false; if (x === y) return true;
+  const xs = x.split(" "), ys = y.split(" "); return (xs.length === 1 && ys[0] === x) || (ys.length === 1 && xs[0] === y);
+}
+const floorMe = () => myHeroName || (leader && PLAYS_AS[leader.id]) || "";
+/** The other hero speaking with this NPC right now (from the last poll), or null. */
+function floorHeldBy(npcName){
+  const r = talkFloors.find(f => floorSameNpc(f.npc, npcName));
+  return r && floorNorm(r.speaker) !== floorNorm(floorMe()) ? r.speaker : null;
+}
+async function floorPost(op, npcName){
+  const a = owAuth(); if (!a) return null;
+  try { const r = await fetch("/api/talk-floor", {method: "POST", headers: {"Content-Type": "application/json", ...a.headers}, body: JSON.stringify({op, npc: npcName, ...a.body}), keepalive: op === "release"}); return await r.json(); } catch (e) { return null; }
+}
+/** Reach for the floor with this NPC. Answers the OTHER hero's name when they hold it, else null (it is ours, or nobody's to hold). */
+async function floorClaim(npcName){
+  const j = await floorPost("claim", npcName);
+  if (!j || j.mine !== false || !j.floor) return null;
+  if (!talkFloors.some(f => floorSameNpc(f.npc, npcName))) talkFloors = talkFloors.concat([{npc: j.floor.npc, npc_name: j.floor.npc_name, speaker: j.floor.speaker}]);
+  return j.floor.speaker;
 }
 let talkQuiet = false;
 async function openTalk(npc, opts = {}){
-  if (!npc || mode === "talk" || talkBlocked()) return;
-  talkQuiet = !!opts.quiet; $("talkNo").querySelector(".lbl").textContent = talkQuiet ? "Leave" : "Decline";
+  if (!npc || mode === "talk" || talkBlocked() || talkClaiming) return;
+  let watch = null;
+  if (APP && !SANDBOX){
+    const who = SPR[npc.id].json.name;
+    if (!opts.byHand && floorHeldBy(who)) return;      // they are already talking to someone: they do not come to you as well
+    const was = mode; talkClaiming = true;
+    try { watch = await floorClaim(who); } finally { talkClaiming = false; }
+    if (mode !== was || talkBlocked()){ if (!watch) floorPost("release", who); return; }   // a fight or a card opened while we asked
+    if (watch && !opts.byHand) return;
+  }
+  talkWatch = watch;
+  talkQuiet = !!opts.quiet || !!watch; $("talkNo").querySelector(".lbl").textContent = talkQuiet ? "Leave" : "Decline";
+  $("talkGo").querySelector(".lbl").textContent = watch ? "Listen in" : "Talk";
   talkNext = null;
   mode = "talk"; party.forEach(p => { p.path = []; setAnim(p, "idle"); });
   stopActivity(npc); npc.path = []; npc.face = faceOf(leader.x - npc.x, leader.y - npc.y);
@@ -24571,6 +24625,11 @@ async function openTalk(npc, opts = {}){
   $("talkGo").href = talkUrl(npc, "");
   $("talk").hidden = false; $("talkGo").focus();
   talkNpc = npc;
+  if (watch){                                       // someone else has the floor: you may listen, the words are theirs
+    const sp = String(watch).split(/\s+/)[0];
+    $("talkLine").innerHTML = `<p class="narr">${esc(sp)} is speaking with ${esc(nm)}. You can listen in and suggest what to say, but the words are ${esc(sp)}'s.</p>`;
+    return;
+  }
   if (talkQuiet){                                   // you came to them: no opener, no voice, they wait for you
     const look = npc.barks && npc.barks.length ? npc.barks[Math.floor(Math.random() * npc.barks.length)] : `${nm} waits for you to speak first.`;
     $("talkLine").innerHTML = `<p class="narr">${esc(look.replace(/^\(|\)$/g, ""))}</p>`;
@@ -24729,6 +24788,8 @@ function talkUrl(npc, said){
 }
 function closeTalk(talked){
   if (!talkNpc) return;
+  if (talkWatch){ talkWatch = null; $("talk").hidden = true; talkNpc = null; mode = "explore"; return; }   // a listener: nothing was said to them, nothing is marked
+  if (!talked && APP && !SANDBOX) floorPost("release", SPR[talkNpc.id].json.name);                         // turned away: the floor is free for the next hero
   if (!talked && voiceAudio) try { voiceAudio.stop(); } catch (e) {}
   if (talked){ state.talked[talkNpc.id] = true; state.declined[talkNpc.id] = false; }
   else if (!talkQuiet) state.declined[talkNpc.id] = true;   // turning down someone who wanted a word: the "!" stays over their head
@@ -25434,7 +25495,7 @@ $("dmWake").onclick = () => {
 };
 $("dmTalk").onclick = () => { toggleDm(false); if (mode !== "explore") return;
   const n = npcs.find(a => a.talk);
-  if (n){ state.talked[n.id] = false; state.declined[n.id] = false; openTalk(n); }
+  if (n){ state.talked[n.id] = false; state.declined[n.id] = false; openTalk(n, {byHand: true}); }
   else log("Nobody here wants to talk. The pen (Area 11) has Eldeth."); };
 $("dmBark").onclick = () => { toggleDm(false); const n = npcs.filter(a => a.barks && a.barks.length); if (n.length) ambient(n[Math.floor(Math.random() * n.length)]); else log("No one here to comment."); };
 $("dmReset").onclick = () => { toggleDm(false); state.cleared = {}; log("Ambushes reset."); };
