@@ -54,10 +54,19 @@ check("1 bones rattle, rats squeal, the hook horror bellows", /pain-bones/.test(
 check("1 a ghost has no body to hurt", sounds["ghost-female"] === "magic/necrotic_tail", sounds["ghost-female"])
 check("1 the same take never twice running", await pg.evaluate(() => { let last = null; for (let i = 0; i < 40; i++){ const s = painFor({id: "goblin"}); if (s === last) return false; last = s } return true }))
 
+// 1b — and the last sound it makes (Sam, 2026-11-23: "yes" to the same for deaths): no creature dies on the pack's one growl
+const deaths = await pg.evaluate(() => {
+  const ids = ["goblin", "kuo-toa", "giant-rat", "giant-fire-beetle", "zombie", "skeleton-swordsman", "gray-ooze", "myconid-adult", "hook-horror", "deep-rothe", "ghost-female"]
+  const out = {}; for (const id of ids){ const cs = CREATURE_SFX[id]; out[id] = cs && cs.death ? cs.death : deathFor({id, kind: "foe"}) } return out
+})
+check("1b no creature dies on the pack's growl", !Object.values(deaths).some(s => /death_beast/.test(s)), JSON.stringify(deaths))
+check("1b bones clatter down, the ooze collapses, the kuo-toa croaks out", /death-bones/.test(deaths["skeleton-swordsman"]) && /death-ooze/.test(deaths["gray-ooze"]) && /death-croak/.test(deaths["kuo-toa"]) && deaths["ghost-female"] === "magic/necrotic_release", JSON.stringify(deaths))
+
 // 2 — every take is on disk and decodes
-const takes = await pg.evaluate(() => Object.entries(PAIN_TAKES).flatMap(([f, n]) => Array.from({length: n}, (_, i) => `pain-${f}${i + 1}`)))
-const loaded = await pg.evaluate(async (names) => { const bad = []; for (const n of names){ const b = await loadSfx("walk:" + n); if (!b || b.duration < .1 || b.duration > 1) bad.push(n + ":" + (b ? b.duration.toFixed(2) : "missing")) } return bad }, takes)
-check(`2 all ${takes.length} pain takes load, each 0.1-1 s`, loaded.length === 0, loaded.join(" "))
+const takes = await pg.evaluate(() => [...Object.entries(PAIN_TAKES).flatMap(([f, n]) => Array.from({length: n}, (_, i) => `pain-${f}${i + 1}`)),
+  ...Object.entries(DEATH_TAKES).flatMap(([f, n]) => Array.from({length: n}, (_, i) => `death-${f}${i + 1}`))])
+const loaded = await pg.evaluate(async (names) => { const bad = []; for (const n of names){ const b = await loadSfx("walk:" + n), max = n.startsWith("death-") ? 2.4 : 1; if (!b || b.duration < .1 || b.duration > max) bad.push(n + ":" + (b ? b.duration.toFixed(2) : "missing")) } return bad }, takes)
+check(`2 all ${takes.length} pain and death takes load (hurts 0.1-1 s, deaths up to 2.4 s)`, loaded.length === 0, loaded.join(" "))
 
 // 3 — people grunt like people
 const people = await pg.evaluate(() => ["bandit", "thug", "duergar", "deep-gnome", "elf-townswoman", "cultist", "mage"].map(id => [id, voxFor({id, kind: "foe"}, "hit")]))

@@ -8548,7 +8548,7 @@ const CREATURE_SFX = {quaggoth: {call: "creature/creature_quaggoth_roar", death:
   "ghost-male": {hurt: "magic/necrotic_tail", death: "magic/necrotic_release"},
   "giant-spider": {call: "creature/creature_spider_hiss", death: "creature/death_spider"},
   "giant-wolf-spider": {call: "creature/creature_spider_hiss", death: "creature/death_spider"},
-  "gray-ooze": {death: "creature/death_beast"},
+  "gray-ooze": {},
   "drow-guard-male": {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}, "drow-guard-female": {hurt: "creature/hurt_humanoid_female", death: "creature/death_humanoid_female"},
   "drow-elite-warrior": {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}, shoor: {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"},
   ilvara: {hurt: "creature/hurt_humanoid_female", death: "creature/death_humanoid_female"}, asha: {hurt: "creature/hurt_humanoid_female", death: "creature/death_humanoid_female"}, jorlan: {hurt: "creature/hurt_humanoid_male", death: "creature/death_humanoid_male"}};
@@ -8594,12 +8594,22 @@ const PAIN_FAMILY = [
   [/hook-horror|grell|beholder|nothic|roper|cloaker|dragon|otyugh|mimic|intellect-devourer|mind-flayer|drider|elemental|purple-worm/, "monster"],
   [/quaggoth|lizard|rothe|wolf|(^|-)bear|boar|horse|(^|-)ape$|eagle/, "beast"],
 ];
-function painFor(t){   // the hurt sound for a creature that is not a person: "walk:pain-chitin2", or the necrotic tail
+function painFor(t){ return creatureCry(t, "pain"); }   // the hurt sound for a creature that is not a person: "walk:pain-chitin2", or the necrotic tail
+// AND THE LAST SOUND IT MAKES (Sam, 2026-11-23: "yes" to giving the deaths the same treatment). Every creature without
+// a line of its own died on the pack's creature/death_beast — one low growl for a goblin, a rat, a skeleton and an ooze
+// alike. Now the same families have their own deaths (ElevenLabs, flow "AoP creature death sounds 2026-11-23",
+// public/sfx/walk/death-*, trimmed to 1.4-2.2 s, levelled to about -16 LUFS): a skeleton clatters down into a heap, an
+// ooze collapses into a puddle, a kuo-toa croaks out, a rat's squeal is cut short. Every take was pitch-tracked and none
+// holds a tone in the cat band. The spider and the quaggoth keep their own deaths (CREATURE_SFX); spirits keep the
+// necrotic release.
+const DEATH_TAKES = {beast: 3, vermin: 3, chitin: 3, brute: 3, undead: 3, bones: 3, ooze: 3, croak: 3, monster: 3};
+function deathFor(t){ return creatureCry(t, "death"); }
+function creatureCry(t, kind){
   const id = (t && t.id) || "", fam = (PAIN_FAMILY.find(([re]) => re.test(id)) || [null, "brute"])[1];   // goblins, gnolls, orcs and the unknown snarl
-  if (!fam) return "magic/necrotic_tail";
-  const n = PAIN_TAKES[fam]; let i;
-  do { i = 1 + Math.floor(Math.random() * n); } while (n > 1 && i === painLast[fam]);
-  painLast[fam] = i; return `walk:pain-${fam}${i}`;
+  if (!fam) return kind === "death" ? "magic/necrotic_release" : "magic/necrotic_tail";
+  const n = (kind === "death" ? DEATH_TAKES : PAIN_TAKES)[fam], key = kind + fam; let i;
+  do { i = 1 + Math.floor(Math.random() * n); } while (n > 1 && i === painLast[key]);
+  painLast[key] = i; return `walk:${kind}-${fam}${i}`;
 }
 const CLASS_TURN = {Sorcerer: "ui/turn_sorcerer", Cleric: "ui/turn_cleric", Bard: "ui/turn_bard", Rogue: "ui/turn_rogue"};
 // Opponents speak (Sam, 2026-10-13: "Opponents can speak and taunt"). Placeholder lines, not book text: the
@@ -16099,7 +16109,7 @@ function damage(t, n, type, crit, from, magical = false){
     if (sv >= dc){
       t.c.hp = 1; if (t.creature) t.hp = 1;
       t.necro = null; t.withered = null; t.iced = null; t.deathFx = null;
-      popText(t, "UNDEAD FORTITUDE", "#9ad06a", 1.3); bank("creature/death_beast", .35);
+      popText(t, "UNDEAD FORTITUDE", "#9ad06a", 1.3); bank(deathFor(t), .35);
       log(`<b>${fname(t)}</b> — Undead Fortitude: CON save ${sv} vs DC ${dc}. <b>It does not go down.</b>`);
       narrate(t, `${fname(t)} folds, and then keeps coming.`);
     } else log(`<b>${fname(t)}</b> — Undead Fortitude: CON save ${sv} vs DC ${dc}. It fails.`);
@@ -16211,7 +16221,7 @@ function fall(t){
   if (t.zappedAt && now - t.zappedAt < 2000 && !hero(t)) labAsh(t);   // killed by Shocking Grasp: straight to ash (Sam, 2026-10-29)
   if (cbt && !/ooze|ghost/.test(t.id) && !t.iced && !t.withered && !(t.deathFx && t.deathFx.noPool)) setTimeout(() => addBlood(t, t.boss ? 1.3 : 1, true), 500);   // the pool spreads under the body
   if (t.kind === "pc") t.c.ds = {s: 0, f: 0, stable: !!t.ko, dead: false};
-  const cs = CREATURE_SFX[t.id], vd = voxFor(t, "die"); if (vd) setTimeout(() => bank(vd, t.kind === "pc" ? .48 : .55), 110); else bank(cs && cs.death ? cs.death : "creature/death_beast", .85);
+  const cs = CREATURE_SFX[t.id], vd = voxFor(t, "die"); if (vd) setTimeout(() => bank(vd, t.kind === "pc" ? .48 : .55), 110); else bank(cs && cs.death ? cs.death : deathFor(t), .85);
   // Sam, 2026-10-14: "I don't see any carcasses of the creatures that are dead." Only creatures with a death
   // sheet used to stay; the rest (spider, quaggoth, Jorlan) faded out. Now everything that dies stays down:
   // its own death sheet when it has one, otherwise it is drawn dead (frameOf: belly-up or on its side).
@@ -23792,7 +23802,7 @@ async function drowSurgeonBegins(guards, pc = leader){
 function surgeonKill(v){
   surgeon.victim = v; v.slain = true; v.talk = false; v.stroll = null;
   popText(v, "slain", "#ffd166", 1.3); burst(v, "#a8140e", 16); hitstop(140); shake(8);
-  bank(voxFor(v, "die") || "creature/death_beast", .55); addBlood(v, 1.1, true);
+  bank(voxFor(v, "die") || deathFor(v), .55); addBlood(v, 1.1, true);
   castLeaves(v, true, true);                                // down where they stand: the out-of-fight death
   log(`A bolt takes <b>${esc(fname(v))}</b> in the chest. ${esc(fname(v))} is dead.`);
   const near = npcs.filter(n => n !== v && PEN_NPCS.some(d => d.id === n.id) && !n.down && !n.offStage && n.alpha > .5).sort((a, b) => Math.hypot(a.x - v.x, a.y - v.y) - Math.hypot(b.x - v.x, b.y - v.y))[0];
@@ -27876,7 +27886,7 @@ function dieNow(a, why){
   // time, "we are not in sync"): `a.c.ds` threw, so no grave and no shared `fallen`, and no other screen ever saw her die.
   a.c = a.c || fighterFor(a);
   const ds = a.c.ds || (a.c.ds = {s: 0, f: 0}); ds.dead = true; ds.f = 3; a.dead = true;
-  bank(voxFor(a, "die") || "creature/death_beast", .5); popText(a, "dead", "#ff6b5e", 1.5); shake(8);
+  bank(voxFor(a, "die") || deathFor(a), .5); popText(a, "dead", "#ff6b5e", 1.5); shake(8);
   log(`<b>${fname(a)} dies</b>${why ? ` (${why})` : ""}.`); narrate(a, `${fname(a)} is gone.`);
   const near = standing(party).filter(p => p !== a)[0]; if (near) setTimeout(() => bark(near, `No… ${fname(a)}!`, 2000, {talk: true}), 500);
   renderParty();
