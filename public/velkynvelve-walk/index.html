@@ -118,6 +118,8 @@ input[type=range]{width:84px;accent-color:var(--fungus)}
 .pc-lines{margin-top:12px;font-family:var(--face-read);font-size:15px;line-height:1.5}
 .pc-lines p{margin:0;display:flex;gap:10px}
 .pc-lines p em{font-style:normal;font-family:var(--face-mono);font-size:9px;letter-spacing:.16em;color:#b9ad92;width:62px;flex:none;padding-top:4px}
+.pc-chip.cond{padding-left:3px;border-color:rgba(214,176,98,.45);color:#e8d6ae}
+.pc-chip .cond-ic{width:18px;height:18px}
 .pc-chip{display:inline-flex;align-items:center;gap:6px;padding:0 9px;height:20px;border-radius:10px;border:1px solid rgba(220,120,90,.55);color:#f0b39e;font-family:var(--face-mono);font-size:10px;letter-spacing:.08em;margin:2px 6px 2px 0}
 .pc-foot{display:flex;gap:10px;margin-top:14px}
 .pc-foot button{all:unset;cursor:pointer;flex:1;height:36px;border-radius:7px;display:flex;align-items:center;justify-content:center;gap:8px;border:1px solid rgba(214,176,98,.5);font-family:var(--face-title);font-weight:600;font-size:11px;letter-spacing:.2em;color:#ece2c8;text-transform:uppercase}
@@ -475,10 +477,18 @@ body.dm-open .cbt-dm{display:none}
 .cbt-party{position:absolute;right:10px;bottom:58px;display:flex;flex-direction:column;gap:5px;width:208px}
 .cbt-party .cpc{background:linear-gradient(90deg,rgba(26,14,10,.94),rgba(18,10,8,.82));border:1px solid var(--rule);border-left:3px solid var(--rule);border-radius:5px;padding:5px 8px 6px;transition:border-color .2s,transform .2s}
 .cbt-party .cpc.now{border-color:var(--ember);border-left-color:var(--ember);transform:translateX(-6px);box-shadow:0 0 14px rgba(232,162,74,.25)}
-.cbt-party .cpc.down{opacity:.5;filter:grayscale(1)}
+.cbt-party .cpc.down{opacity:1;filter:none}   /* dimmed, but the painted death saves keep their colour */
+.cbt-party .cpc.down .nm{color:var(--ink-dim)}
+.cbt-party .cpc.down .hp,.cbt-party .cpc.down .slots,.cbt-party .cpc.down .nm>small,.cbt-party .cpc.down .nm>.cond-ic,.cbt-party .cpc.down .nm>b:not(.ds){opacity:.5;filter:grayscale(1)}
 .cbt-party .nm{font-family:var(--face-display);font-size:var(--s0);color:var(--ink);display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
 .cbt-party .nm small{font-family:var(--face-mono);font-size:.62rem;color:var(--ink-dim);letter-spacing:0}
 .cbt-party .nm b{font-size:.8rem;margin-left:2px}
+.cond-ic{display:inline-block;width:20px;height:20px;vertical-align:middle;object-fit:contain;filter:drop-shadow(0 1px 1px rgba(0,0,0,.9))}
+.cbt-party .nm .cond-ic{align-self:center;margin-left:1px}
+.cbt-party .nm .conc .cond-ic{width:18px;height:18px;margin:0 1px 0 0}
+.cbt-party .nm .ds{display:inline-flex;align-items:center;gap:1px}
+.cbt-party .nm .ds i{width:5px}
+.ds-ic{width:16px;height:16px;object-fit:contain;filter:drop-shadow(0 1px 1px rgba(0,0,0,.9))}
 .cbt-party .hp{position:relative;height:9px;margin-top:4px;background:#2a1612;border:1px solid #4a2420;border-radius:3px;overflow:hidden}
 .cbt-party .hp i{position:absolute;inset:0;width:0;background:linear-gradient(90deg,#c4432f,#ff7a5c);transition:width .35s ease-out}
 .cbt-party .hp span{position:absolute;inset:0;font-family:var(--face-mono);font-size:.56rem;line-height:9px;text-align:right;padding-right:3px;color:#fff;text-shadow:0 0 2px #000}
@@ -9666,6 +9676,40 @@ const COND_GLYPH = {turned: ["☼", "#ffe9a8", "Turned: Frightened and Incapacit
                     restrained: ["⌗", "#e8e2c8", "Restrained by webbing: speed 0, attacks on you have advantage, yours disadvantage"],
                     raging: ["✸", "#ff4a2a", "Raging: bonus melee damage with Strength, advantage on STR checks and saves, resists bludgeoning, piercing and slashing · ends if a turn passes with no attack made and no damage taken"],
                     fury: ["✹", "#ff4a2a", "Wounded Fury: at 10 HP or fewer, advantage on attacks and +2d6 on a melee hit"]};
+// Painted condition art (Sam, 2026-11-23: "better condition icons ... apply to cards as appropriate") — the "Death
+// Saves, Tombstones & Conditions" pack, 64 px masters in icons/conditions and icons/death-saves, shown at 20-26 CSS px.
+// A status with art shows the painting; one without (Bless, Mage Armor, Rage ...) keeps its COND_GLYPH glyph.
+// Asleep is the Sleep spell's Unconscious (SRD: the creature "falls unconscious"), so it wears the Unconscious art; the
+// counting sheep and z's still play over it. Turned and Laughing are spell effects, not single conditions: glyphs stay.
+// Charmed, Petrified, Stunned, Incapacitated, Exhaustion and Bleeding have art but no status on the walk yet — they
+// light up the day a COND_GLYPH entry with that key is added.
+const COND_ART = {blinded: "blinded", deafened: "deafened", frightened: "frightened", invisible: "invisible", poisoned: "poisoned",
+  burning: "burning", marked: "marked", paralyzed: "paralyzed", slowed: "slowed", prone: "prone", grappled: "grappled",
+  restrained: "restrained", asleep: "unconscious", unconscious: "unconscious", charmed: "charmed", petrified: "petrified",
+  stunned: "stunned", incapacitated: "incapacitated", exhaustion: "exhaustion", bleeding: "bleeding"};
+const condArtSrc = k => COND_ART[k] ? `${ICON_BASE}conditions/${COND_ART[k]}.png` : "";
+const dsArtSrc = n => `${ICON_BASE}death-saves/${n}.png`;
+// The status's short name for a chip: the tip's words before the colon ("Poisoned"), else the key ("Shielded").
+const condLabel = k => { const g = COND_GLYPH[k], tip = g ? g[2] : ""; return tip.includes(":") ? tip.split(":")[0] : k.replace(/^./, ch => ch.toUpperCase()); };
+// One status on a card: the painting at `px`, or the old coloured glyph when there is no painting.
+function condChip(k, px){
+  const g = COND_GLYPH[k]; if (!g) return "";
+  const src = condArtSrc(k);
+  return src ? `<img class="cond-ic" src="${src}" width="${px}" height="${px}" alt="${esc(condLabel(k))}" title="${esc(g[2])}">`
+    : `<b style="color:${g[1]}" title="${esc(g[2])}">${g[0]}</b>`;
+}
+// The painting as an Image for the canvas (over a figure's head), loaded once; null until it has arrived.
+const condArtCache = {};
+function condArtImage(k){
+  const src = condArtSrc(k); if (!src) return null;
+  let im = condArtCache[src]; if (!im){ im = condArtCache[src] = new Image(); im.src = src; }
+  return im.complete && im.naturalWidth ? im : null;
+}
+// Death saves on the party card: three hearts and three skulls, painted, filled for each one rolled.
+function dsPips(s, f){
+  const pip = (n, filled, empty, tip) => Array.from({length: 3}, (_, i) => `<img class="ds-ic" src="${dsArtSrc(i < n ? filled : empty)}" width="16" height="16" alt="" title="${tip}">`).join("");
+  return `<b class="ds" title="Death saves: three successes and they are stable, three failures and they die">${pip(s, "success_filled", "success_empty", "Successes")}<i></i>${pip(f, "failure_filled", "failure_empty", "Failures")}</b>`;
+}
 
 // dice: "1d8+3", "2d6", "4" → {total, rolls}
 function roll(expr, crit){
@@ -10923,17 +10967,17 @@ function renderParty(){
   for (const p of list){
     const c = p.c || fighterFor(p), row = document.createElement("div"); row.className = "cpc" + (p === activeActor() ? " now" : "") + (p.down ? " down" : "");
     if (p.kind !== "pc"){
-      const open = hero(p) || !APP || isDm(), conds = [...c.conds].map(k => COND_GLYPH[k] ? `<b style="color:${COND_GLYPH[k][1]}" title="${COND_GLYPH[k][2]}">${COND_GLYPH[k][0]}</b>` : "").join("");
+      const open = hero(p) || !APP || isDm(), conds = [...c.conds].map(k => condChip(k, 20)).join("");
       const sub = c.sheet.epithet || c.sheet.cls || (p.ally ? "ally" : p.kind === "foe" ? "foe" : "");
       row.innerHTML = `<div class="nm">${esc(fname(p))} <small>${esc(sub)}${open ? ` · AC ${c.ac}` : ""}</small>${conds}${p.down ? `<b style="color:#ff6b5e">down</b>` : ""}</div>` +
         (open ? `<div class="hp"><i style="width:${100 * Math.max(0, c.hp) / c.hpMax}%"></i><span>${Math.max(0, c.hp)} / ${c.hpMax}</span></div>` : "");
       el.appendChild(row); continue;
     }
     const slots = Object.entries(c.slots).map(([l, n]) => `<span class="slots" title="Level ${l} spell slots">${"●".repeat(n)}${"○".repeat(Math.max(0, (c.sheet.magic.slots[l] || 0) - n))}</span>`).join("");
-    const conds = [...c.conds].map(k => COND_GLYPH[k] ? `<b style="color:${COND_GLYPH[k][1]}" title="${COND_GLYPH[k][2]}">${COND_GLYPH[k][0]}</b>` : "").join("");
-    const conc = c.conc ? `<b class="conc" style="color:#9fe6ff" title="Concentrating on ${esc(c.conc.spell)}: taking damage means a CON save (DC 10 or half the damage)">◎ ${esc(c.conc.spell)}</b>` : "";
-    const ds = p.down && c.ds ? (c.ds.dead ? `<b style="color:#ff6b5e">☠ dead</b>` : c.ds.stable ? `<b style="color:#9ff2c8">stable</b>`
-      : `<b title="Death saves: three successes and they are stable, three failures and they die" style="letter-spacing:1px"><span style="color:#62e3c6">${"●".repeat(c.ds.s)}${"○".repeat(3 - c.ds.s)}</span> <span style="color:#ff5a4a">${"●".repeat(c.ds.f)}${"○".repeat(3 - c.ds.f)}</span></b>`) : "";
+    const conds = [...c.conds].map(k => condChip(k, 20)).join("");
+    const conc = c.conc ? `<b class="conc" style="color:#9fe6ff" title="Concentrating on ${esc(c.conc.spell)}: taking damage means a CON save (DC 10 or half the damage)"><img class="cond-ic" src="${ICON_BASE}conditions/concentration.png" width="18" height="18" alt="Concentrating"> ${esc(c.conc.spell)}</b>` : "";
+    const ds = p.down && c.ds ? (c.ds.dead ? `<b style="color:#ff6b5e"><img class="cond-ic" src="${dsArtSrc("failure_critical")}" width="18" height="18" alt=""> dead</b>` : c.ds.stable ? `<b style="color:#9ff2c8"><img class="cond-ic" src="${dsArtSrc("success_filled")}" width="18" height="18" alt=""> stable</b>`
+      : dsPips(c.ds.s, c.ds.f)) : "";
     row.innerHTML = `<div class="nm">${esc(c.sheet.name)} <small>${esc(c.sheet.cls)} · AC ${c.ac + (c.conds.has("shielded") ? 2 : 0)}</small>${conds}${conc}${ds}</div>
       <div class="hp"><i style="width:${100 * c.hp / c.hpMax}%"></i><span>${c.hp} / ${c.hpMax}</span></div>${slots}`;
     el.appendChild(row);
@@ -19932,8 +19976,14 @@ function drawConds(a){
   const shown = [...a.c.conds, ...(woundedFury(a.c.hp, a.c.sheet.woundedFury) ? ["fury"] : [])];   // Wounded Fury is the hit points, not a condition: shown while it is on
   if (!shown.length) return;
   if (a.c.conds.has("asleep")){ if (!a.c.drugged) drawSheep(a, top); drawZzz(a, top); }
-  for (const k of shown){ const g = COND_GLYPH[k]; if (!g) continue; ctx.font = "bold 22px Georgia, serif"; ctx.textAlign = "center"; ctx.lineWidth = 4; ctx.strokeStyle = "#140a06"; ctx.fillStyle = g[1];
-    const x = a.x + (i - (shown.length - 1) / 2) * 22; ctx.strokeText(g[0], x, top); ctx.fillText(g[0], x, top); i++; }
+  const S = 24, gap = 25;   // the painted icon's size and spacing over the head (was a 22 px glyph)
+  for (const k of shown){ const g = COND_GLYPH[k]; if (!g) continue;
+    const x = a.x + (i - (shown.length - 1) / 2) * gap, im = condArtImage(k);
+    if (im){   // smoothed, not pixelated: it is painted art scaled down from 64 px, with a shadow to lift it off the plate
+      ctx.save(); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high"; ctx.shadowColor = "rgba(0,0,0,.85)"; ctx.shadowBlur = 4; ctx.shadowOffsetY = 1;
+      ctx.drawImage(im, x - S / 2, top - S - 3, S, S); ctx.restore();   // sits clear above the foe's hit-point bar
+    } else { ctx.font = "bold 22px Georgia, serif"; ctx.textAlign = "center"; ctx.lineWidth = 4; ctx.strokeStyle = "#140a06"; ctx.fillStyle = g[1]; ctx.strokeText(g[0], x, top); ctx.fillText(g[0], x, top); }
+    i++; }
 }
 // z's drifting up off a sleeper: three at a time, growing and fading as they rise
 function drawZzz(a, top){
@@ -25328,9 +25378,10 @@ function renderHeroCard(){
   const speed = s.speed != null ? (enc ? Math.max(5, s.speed - ENCUMBERED_SLOW_FT) : s.speed) : null;
   const fourth = s.magic && s.magic.dc ? [s.magic.dc, "SPELL DC"] : [10 + ((s.skills && s.skills.perception != null) ? s.skills.perception : ((s.mods && s.mods.wis) || 0)), "PASSIVE"];
   const state = [manacled(a) ? "⛓ Manacled" : "", a.down || a.ko ? "Down" : "", enc ? "Encumbered" : ""].filter(Boolean);
+  const conds = a.c && a.c.conds ? [...a.c.conds].filter(k => COND_GLYPH[k]) : [];   // painted where the pack has art (Sam, 2026-11-23)
   const ready = (s.attacks || []).slice(0, 2).map(t => `${t.name}, ${sgn(t.hit || 0)} · ${t.dmg}${t.type ? " " + t.type : ""}`);
   const magic = s.magic ? [...(s.magic.cantrips || []), ...(s.magic.prepared || [])] : [];
-  const sig = JSON.stringify([a.id, name, sub, now, max, s.ac, speed, s.init, fourth, s.mods, state, ready, magic]);
+  const sig = JSON.stringify([a.id, name, sub, now, max, s.ac, speed, s.init, fourth, s.mods, state, conds, ready, magic]);
   if (sig === cardSig) return; cardSig = sig;
   const tone = hpTone(now, max), frac = max ? Math.max(0, Math.min(1, now / max)) : 1;
   const ab = s.mods ? ["str", "dex", "con", "int", "wis", "cha"].map(k => `<div><b>${s.mods[k] != null ? sgn(s.mods[k]) : "—"}</b><small>${k.toUpperCase()}</small></div>`).join("") : "";
@@ -25340,7 +25391,7 @@ function renderHeroCard(){
     + `<div class="pc-stats"><div><b>${s.ac != null ? s.ac : "—"}</b><small>AC</small></div><div><b>${speed != null ? speed : "—"}</b><small>SPEED</small></div><div><b>${s.init != null ? sgn(s.init) : "—"}</b><small>INIT</small></div><div><b>${fourth[0]}</b><small>${fourth[1]}</small></div></div>`
     + (ab ? `<div class="pc-abil">${ab}</div>` : "")
     + `<div class="pc-lines">`
-    + (state.length ? `<p><em>STATE</em><span>${state.map(t => `<span class="pc-chip">${esc(t)}</span>`).join("")}</span></p>` : "")
+    + (state.length || conds.length ? `<p><em>STATE</em><span>${state.map(t => `<span class="pc-chip">${esc(t)}</span>`).join("")}${conds.map(k => `<span class="pc-chip cond" title="${esc(COND_GLYPH[k][2])}">${condArtSrc(k) ? `<img class="cond-ic" src="${condArtSrc(k)}" width="18" height="18" alt="">` : `<b style="color:${COND_GLYPH[k][1]}">${COND_GLYPH[k][0]}</b>`}${esc(condLabel(k))}</span>`).join("")}</span></p>` : "")
     + (ready.length ? `<p><em>READY</em><span>${ready.map(esc).join("<br>")}</span></p>` : "")
     + (magic.length ? `<p><em>MAGIC</em><span>${magic.map(esc).join(" · ")}</span></p>` : "")
     + `</div>`;
