@@ -40,6 +40,17 @@ describe("Malachar's persona", () => {
     expect(MALACHAR_LAST_WORD).toMatch(/no hints/i)
   })
 
+  // Sam, 2026-11-23, approving the Complete Guide to Liches pass: the revenge lich.
+  it("is a revenge lich: the debt is old and not theirs, and whose it was stays unsaid", () => {
+    expect(MALACHAR_PERSONA).toMatch(/a debt older than any of them/)
+    expect(MALACHAR_PERSONA).toMatch(/never state and never hint at/)
+    expect(MALACHAR_PERSONA).toMatch(/Their needs are beneath you/)
+    expect(MALACHAR_PERSONA).toMatch(/Your pride is in your mind/)
+    expect(MALACHAR_PERSONA).toMatch(/The offer is bait/)
+    // the world may cheat; his voice may not
+    expect(MALACHAR_PERSONA).toMatch(/You do not lie about the world/)
+  })
+
   it("has no asterisks or backticks, which TTS would read aloud", () => {
     expect(MALACHAR_PERSONA + MALACHAR_LAST_WORD).not.toMatch(/[*`]/)
   })
