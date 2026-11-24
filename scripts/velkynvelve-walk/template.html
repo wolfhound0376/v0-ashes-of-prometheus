@@ -5793,7 +5793,7 @@ function lootFountain(at, rows, pick){
     drops.push({x0: at.x, y0: at.y, x1: land[i].x, y1: land[i].y, h: sqPx * (1.3 + rk * .17 + Math.random() * .5) * (best ? 1.45 : 1) * (pick ? 1.15 : 1),
       sq: sqPx * (pick ? .58 : .46), pixel: r.pixel, name: r.name, qty: r.qty, tier, metal: metalOf(r), rar: tier === "coins" ? "common" : tier,
       t0, flight, landed: false, last: i === n - 1, best, launched: false, spin: (Math.random() < .5 ? -1 : 1) * (1 + Math.random() * 1.6), id: Math.random() * 1e3,
-      pickup: pick ? {id: pick.id, plate: pick.plate, row: r, cool: 0} : null, plate: pick ? pick.plate : cur});
+      pickup: pick ? {id: pick.id, plate: pick.plate, row: r, cool: 0, lie: !!pick.lie, reachFt: pick.reachFt || 0} : null, plate: pick ? pick.plate : cur});
     wait = Math.max(wait, t0 - now + flight + 180);
   });
   // the blast: a flash, a shockwave, sparks, a kick of the screen
@@ -5953,7 +5953,8 @@ function drawLootCoins(dt){
         for (let q = 0; q < 4; q++){ const a = Math.random() * LTAU; lootFx.push({x: h.x, y: hy, vx: Math.cos(a) * c.sqPx * .6, vy: Math.sin(a) * c.sqPx * .6 - c.sqPx * .3, g: c.sqPx, col: [255, 226, 120], t0: now, life: 260, r: c.r * .25}); }
         continue; } }
     else if (c.rest){ const tgt = Math.round(c.a / Math.PI) * Math.PI; c.a += (tgt - c.a) * Math.min(1, dt * 9); c.x += c.vx * dt; c.vx *= .9;
-      const h = age > 350 && live && c.drop.pickup && !c.drop.fly && c.drop.landed ? lootHeroNear(c.x, c.fy, MAGNET_FT * pxPerFtAt(c.fy)) : null;
+      const pk = c.drop.pickup;   // a searched body's purse lies there like the rest (pickup.lie): its scattered coins pull nobody in; the purse itself is clicked or stepped on
+      const h = age > 350 && live && pk && !c.drop.fly && c.drop.landed && !pk.lie ? lootHeroNear(c.x, c.fy, MAGNET_FT * pxPerFtAt(c.fy)) : null;
       if (h){ c.drop.fly = {h, t0: now}; } }
     else { c.vy += c.sqPx * 9 * dt; c.x += c.vx * dt; c.y += c.vy * dt; c.a += c.va * dt;
       if (c.y > c.fy && c.vy > 0){ c.y = c.fy; c.vy *= -.38; c.vx *= .55; c.va *= .6; if (Math.abs(c.vy) < c.sqPx * .3){ c.vy = 0; c.rest = true; } } }
@@ -6003,8 +6004,11 @@ function drawPickup(d, i, t){
   if (t < d.flight) return false;                                               // still flying out: the ordinary draw
   const gx = d.x1, gy = d.y1;
   if (!d.fly && now > d.pickup.cool){
-    const h = lootHeroNear(gx, gy, MAGNET_FT * pxPerFtAt(gy));                  // a player's hero, never a companion
-    if (h) d.fly = {h, t0: now};
+    const h = lootHeroNear(gx, gy, (d.pickup.reachFt || MAGNET_FT) * pxPerFtAt(gy));   // a player's hero, never a companion
+    // A SEARCHED BODY'S SPILL LIES THERE (bodySpill): the hero who searched is standing in it, so nothing flies until
+    // every hero has been clear of the piece once; after that stepping onto it takes it, and a click on it always does
+    if (d.pickup.lie && !d.pickup.armed){ if (!h) d.pickup.armed = true; }
+    else if (h) d.fly = {h, t0: now};
   }
   if (!d.fly) return false;
   const h = d.fly.h, k = Math.min(1, (now - d.fly.t0) / MAGNET_MS), e = k * k;   // eases in, like it is pulled
@@ -6079,7 +6083,7 @@ async function openLoot(id, title, opts = {}){
   if (spill) fountained.add(fkey);
   showObjCard(); cardClose(leave);
   $("objWho").textContent = chest ? "Chest" : title; $("objText").textContent = "";
-  const rows = (j.rows || []).slice(), scrap = id.startsWith("body:") ? (j.ruined || []) : [];
+  const rows = (j.rows || []).filter(opts.only || (() => true)), scrap = id.startsWith("body:") && !opts.only ? (j.ruined || []) : [];
   const stash = rows.find(r => r.kind === "preview-stash");
   const takeable = () => rows.filter(r => !r.missing && r.kind !== "preview-stash");
   const plain = () => takeable().filter(r => !r.check);
@@ -7078,10 +7082,33 @@ function openBody(b){
   add(b.searched ? "Look again" : "Search the body", () => { close(); const first = !b.searched; b.searched = true;
     if (first){ bank("ui/item_pickup", .7); log(`${fname(leader)} searches ${name}'s body.`); tellBodyRuin(b, `body:${b.id}:${b.lootKey}`); }
     if (!known && first && APP) handOff(`${fname(leader)} searches ${name}'s body.`, true);                 // not a kit the book lists: Malachar says
-    openLoot(`body:${b.id}:${b.lootKey}`, b.buried ? `${name}'s grave` : `${name}'s body`, {at: {x: b.x, y: b.y}, text: b.buried ? `${name} lies under the stone. What they carried was left with them.` : `${name} lies where it fell.`, empty: known ? `Nothing is left on ${name}.` : APP ? `Nothing the map knows of. What ${name} carried is Malachar's to say.` : "What it carried is Malachar's to say — in the game this goes to him as your action."});
+    bodySpill(b, `body:${b.id}:${b.lootKey}`, b.buried ? `${name}'s grave` : `${name}'s body`, name, known ? `Nothing is left on ${name}.` : APP ? `Nothing the map knows of. What ${name} carried is Malachar's to say.` : "What it carried is Malachar's to say — in the game this goes to him as your action.");
   }, "primary");
   add("Leave it", close, "", {icon: "back"});
   showObjCard(); cardClose(close); box.querySelector("button")?.focus();
+}
+// A SEARCHED BODY SPILLS ON THE GROUND (Sam, 2026-11-24, asked whether a body should skip its card and open the loot screen
+// like a chest: "Still open it and for checked bodies it just creates a loot ceremony and the items are on the ground near
+// by with their lights."). So a chest keeps its card and its full-screen loot screen, and a body does NOT get the screen:
+// "Search the body" plays the loot ceremony where the body lies (lootFountain: the burst, the columns of light) and what
+// it carried lands on the ground around it and STAYS there, lit, until someone takes it. Click a piece (or step onto
+// it) to pick it up; hover it for its sheet. Nothing flies to the hero who is standing there searching (pickup.lie).
+// The pieces are this screen's picture of the body's contents: the body still holds them until they are taken, so
+// "Look again" (another player, or after a reload) spills whatever is left again.
+// A part behind a check (ooze residue, a carcass part) does not leap out of a body: once nothing plain is left to
+// spill, "Look again" opens the loot screen on those parts alone, where the check is rolled as before.
+// Mid-fight (grabBody) is unchanged: the search is the turn's action and each take an object interaction, counted on
+// the loot screen.
+async function bodySpill(b, id, title, name, emptySay){
+  const plate = cur, j = await fetchLoot(id); await ensureCatalog();
+  if (cur !== plate || mode !== "explore") return;
+  if (j.error){ toast(`The game did not answer (${j.error}).`, 3200); return; }
+  const rows = (j.rows || []).filter(r => !r.missing && r.kind !== "preview-stash"), plain = rows.filter(r => !r.check), parts = rows.filter(r => r.check);
+  // reachFt 1.5: you have to step ON a piece, so walking to one does not sweep up its neighbours
+  const lying = drops.some(d => d.pickup && d.pickup.id === id && d.plate === plate);
+  if (plain.length && !lying){ fountained.add(lootKeyOf(id)); lootFountain({x: b.x, y: b.y}, plain, {id, plate, lie: true, reachFt: 1.5}); return; }
+  if (parts.length){ openLoot(id, title, {text: "", empty: emptySay, only: r => !!r.check}); return; }
+  toast(lying ? `What ${name} carried is on the ground beside the body.` : emptySay, 3200);
 }
 // The game-side hook for an action the map cannot resolve itself. Nothing listens yet; the dashboard will.
 // A check rolled on the dashboard's dice (Sam, 2026-10-25). The map names an action from lib/walk-roll.ts WALK_ACTIONS;
@@ -22504,6 +22531,8 @@ function click(w){
     if (exploreJump){ exploreJump = false; hint(""); exploreLeap(nearestWalkable(w.x, w.y)); return; }
     const pile = !hitActor(npcs, w) ? pileAt(w) : null;
     if (pile){ const me0 = leader; walkTo(nearestWalkable(pile.x, pile.y + 8), () => pickUp(me0, pile)); return; }
+    { const dr = !hitActor(npcs, w) ? icardMapTarget(w) : null;   // a piece of loot lying on the ground (a searched body's spill): click it to take it
+      if (dr && dr.kind === "drop"){ icardAct("take", dr, icardItem(dr)); return; } }
     const me = hitActor(party, w);
     if (me && me !== leader){ pickLeader(me); return; }
     const pr = propAt(w); if (pr){ const pc = propCenter(pr); walkTo(nearestWalkable(pc.x, pc.y), () => openProp(pr)); return; }
