@@ -7,6 +7,7 @@ import { WALK_SHEET_COLUMNS, walkSheetFromRow, type WalkSheet } from "@/lib/walk
 import { dressRows } from "@/lib/worn-gear-rows"
 import { loadNpcLanguages } from "@/lib/npc-languages"
 import { tickWorldTime } from "@/lib/world-time-tick"
+import { canonBySlug } from "@/lib/canon-heroes"
 
 // /api/map-stage — who is in the area with the party, as Malachar has narrated it (lib/stage-roster.ts).
 //
@@ -104,7 +105,23 @@ export async function GET(req: NextRequest) {
     // created a character named gandalf but kenta is the pixel art"). The premades keep the page's own
     // snapshots for attacks and magic; their saves and skills come from this sheet (class save proficiency
     // included, 2026-10-27), and a seat the map does not already know takes the whole sheet.
+    // THE REHEARSAL HERO (Sam, 2026-11-25: "Rehearsal ... should bypass everything and allow me to start a game with a
+    // character of my choice"). The sandbox map asks with ?rehearse=<canon slug>; that hero's row rides along beside
+    // `seated` (never inside it: nobody is seated by this, and nothing is written), so the map can put them in the
+    // party whether or not they sit at the real table. Only the six canon heroes, whose ids are public on /choose.
+    const rehearse = canonBySlug(req.nextUrl.searchParams.get("rehearse"))
+    let rehearseName: string | null = null
     const ids = seated.map((s) => s.id)
+    if (rehearse) {
+      if (!ids.includes(rehearse.id)) ids.push(rehearse.id)
+      rehearseName = seated.find((s) => s.id === rehearse.id)?.name ?? null
+      if (!rehearseName) {
+        try {
+          const { data: row } = await admin.from("characters").select("name").eq("id", rehearse.id).maybeSingle()
+          rehearseName = typeof row?.name === "string" ? row.name : null
+        } catch { /* best-effort: without the row there is no rehearsal hero, and the sandbox opens as before */ }
+      }
+    }
     const levels = new Map<string, number>()
     const sheets = new Map<string, WalkSheet>()
     // Each seat's languages (and conditions, for Comprehend Languages / Tongues) so the map can render a
@@ -147,6 +164,9 @@ export async function GET(req: NextRequest) {
       gone: Object.values(stage.gone),
       run: runRes.data?.run_number ?? null,
       seated: seated.map((s) => ({ id: s.id, name: s.name, dm: !!s.dm, level: levels.get(s.id) ?? null, sheet: sheets.get(s.id) ?? null, ...(tongues.get(s.id) ?? { languages: null, conditions: null }) })),
+      rehearseHero: rehearse && rehearseName
+        ? { id: rehearse.id, name: rehearseName, dm: false, level: levels.get(rehearse.id) ?? null, sheet: sheets.get(rehearse.id) ?? null, ...(tongues.get(rehearse.id) ?? { languages: null, conditions: null }) }
+        : null,
     })
   } catch (e) {
     return NextResponse.json({ area: null, watch: null, gate: null, rotations: 0, jorlanOnDuty: false, present: [], gone: [], run: null, seated: [], npcLanguages: {}, error: String(e) }, { status: 200 })

@@ -20,6 +20,15 @@
 // What it does NOT do: open a table, name a host, pick a save or reset anything. A rehearsal touches none of
 // that. The sandbox itself is unchanged (lib/dry-run.ts, /velkynvelve?sandbox=1): Malachar answers, nothing saves.
 //
+// PICK A HERO, START CLEAN (Sam, 2026-11-25: "Rehearsal at the settings should bypass everything and allow me to start
+// a game with a character of my choice. Clear cache, etc."). Past the lock there is now one more question — who are
+// you playing — asked as six portraits (the canon heroes, lib/canon-heroes.ts). The pick is left in this tab
+// (aop_rehearsal_hero); the sandbox map reads it, puts that hero in the party and gives them the lead. Then the door
+// forgets what this browser remembered about the game (lib/repair-device.ts forgetThisDevice: the same forgetting as
+// Settings' "Repair this device", which keeps the DM key and your choices) and leaves by a FULL page load, so no old
+// fight, old storage or old copy of the page is carried in. No table, no host, no seat, no awakening, no save.
+// /rehearsal?hero=<slug> skips the question (for a link straight to one hero); so does ?quota=, as before.
+//
 // The lock is the same one the host screen uses (POST /api/dm/login, which mints the httpOnly DM cookie), and
 // signing in here does to this browser exactly what signing in there does, including letting go of a hero's
 // seat on this device — so the two doors can never leave a browser in two different states.
@@ -30,6 +39,11 @@ import { FlaskConical } from "lucide-react"
 import { hasDmKey, setDmKey } from "@/lib/dm-key"
 import { HomeButton } from "@/components/home-button"
 import { ENTERED_KEY, mapHref } from "@/lib/map-entry"
+import { CANON_HEROES, canonBySlug } from "@/lib/canon-heroes"
+import { forgetThisDevice } from "@/lib/repair-device"
+
+/** This tab's rehearsal hero, a canon slug. The sandbox map reads it as it boots (template.html, THE REHEARSAL HERO). */
+const REHEARSAL_HERO_KEY = "aop_rehearsal_hero"
 
 const ROLE_LS_KEY = "aop_access_role"
 const TOKEN_LS_KEY = "aop_claim_token"
@@ -37,7 +51,7 @@ const CHARACTER_LS_KEY = "aop_character_id"
 
 export default function RehearsalPage() {
   const router = useRouter()
-  const [phase, setPhase] = useState<"checking" | "gate" | "entering">("checking")
+  const [phase, setPhase] = useState<"checking" | "gate" | "pick" | "entering">("checking")
   const [armed, setArmed] = useState(true)
   const [code, setCode] = useState("")
   const [status, setStatus] = useState<"idle" | "checking" | "no" | "limited" | "nogate">("idle")
@@ -47,9 +61,23 @@ export default function RehearsalPage() {
   // (public/pixel-road). It is a look-only page that reads and writes nothing in the game, so it needs no key.
   const wantsRoad = () => { try { return new URLSearchParams(window.location.search).get("to") === "road" } catch { return false } }
 
+  const param = (k: string) => { try { return new URLSearchParams(window.location.search).get(k) ?? "" } catch { return "" } }
+
+  // Past the lock: the travel map and the quota door go straight on; so does a link that already names a hero.
+  // Anyone else is asked who they are playing.
+  const unlocked = () => {
+    if (wantsMap()) { enter(null); return }
+    const named = canonBySlug(param("hero").toLowerCase())
+    if (named || param("quota")) { enter(named ? named.slug : null); return }
+    setPhase("pick")
+  }
+
   // The same three marks the host screen's Rehearsal button leaves, then the sandbox map.
-  const enter = () => {
+  const enter = async (hero: string | null) => {
     setPhase("entering")
+    // START CLEAN: forget what this browser remembered about the game before the marks below are written (the
+    // travel map is the real game, not a rehearsal, so it is left alone).
+    if (!wantsMap()) { try { await forgetThisDevice() } catch { /* nothing to forget */ } }
     try {
       window.localStorage.setItem(ROLE_LS_KEY, "dm")
       window.sessionStorage.setItem("aop_intro_seen", "1")
@@ -59,13 +87,17 @@ export default function RehearsalPage() {
       // back to the same moment. Coming in through this door means a new rehearsal, so the old one is dropped: no
       // fight, open gate or hunt from an earlier test carries over. Refreshing the map itself still keeps it.
       window.sessionStorage.removeItem("aop_walk_state")
+      if (hero) window.sessionStorage.setItem(REHEARSAL_HERO_KEY, hero)
+      else window.sessionStorage.removeItem(REHEARSAL_HERO_KEY)
     } catch { /* storage blocked */ }
     // THE QUOTA DOOR (Sam, 2026-11-17: "the links never actually take me to the detail"): /rehearsal?quota=water
     // opens the sandbox straight onto that work detail's plate with a shift of its own (nothing saved).
     let quota = ""
     try { quota = new URLSearchParams(window.location.search).get("quota") ?? "" } catch { /* no window */ }
     const sandboxHref = mapHref(true)
-    router.push(wantsMap() ? "/map" : quota ? `${sandboxHref}${sandboxHref.includes("?") ? "&" : "?"}quota=${encodeURIComponent(quota)}` : sandboxHref)
+    if (wantsMap()) { router.push("/map"); return }
+    // a full page load, not a client hop: the sandbox opens on a fresh copy of the page
+    window.location.assign(quota ? `${sandboxHref}${sandboxHref.includes("?") ? "&" : "?"}quota=${encodeURIComponent(quota)}` : sandboxHref)
   }
 
   useEffect(() => {
@@ -74,7 +106,7 @@ export default function RehearsalPage() {
       setArmed(Boolean(j.gate))
       const map = wantsMap()
       setToMap(map)
-      if (j.dm && (!map || hasDmKey())) enter()
+      if (j.dm && (!map || hasDmKey())) unlocked()
       else setPhase("gate")
     }).catch(() => setPhase("gate"))
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -95,7 +127,7 @@ export default function RehearsalPage() {
         window.localStorage.removeItem(TOKEN_LS_KEY)
         window.localStorage.removeItem(CHARACTER_LS_KEY)
       } catch { /* storage blocked */ }
-      enter()
+      unlocked()
     } catch { setStatus("no") }
   }
 
@@ -108,11 +140,32 @@ export default function RehearsalPage() {
         <div className="mb-8 text-center">
           <div className="text-[10px] uppercase tracking-[0.5em] text-[#8a6a3a]">Ashes of Prometheus</div>
           <h1 className="mt-2 font-serif text-3xl tracking-[0.14em] text-[#e8c56a]">{toMap ? "The Travel Map" : "Rehearsal"}</h1>
-          <p className="mt-2 text-sm text-stone-500">{toMap ? "The DM's way onto the map. This is the real map: moving the party moves it in the game." : "The sandbox. Malachar answers, and nothing is saved."}</p>
+          <p className="mt-2 text-sm text-stone-500">{toMap ? "The DM's way onto the map. This is the real map: moving the party moves it in the game." : phase === "pick" ? "Who are you playing? It starts clean, and nothing is saved." : "The sandbox. Malachar answers, and nothing is saved."}</p>
         </div>
 
         {phase === "checking" && <div className="py-24 text-center text-[11px] uppercase tracking-[0.4em] text-stone-600">Checking the lock…</div>}
         {phase === "entering" && <div className="py-24 text-center text-[11px] uppercase tracking-[0.4em] text-stone-500">{toMap ? "Opening the map…" : "Opening the sandbox…"}</div>}
+
+        {phase === "pick" && (
+          <div className="mx-auto grid max-w-4xl grid-cols-2 gap-4 sm:grid-cols-3">
+            {CANON_HEROES.map((h) => (
+              <button
+                key={h.slug}
+                type="button"
+                onClick={() => { void enter(h.slug) }}
+                className="group overflow-hidden rounded-sm border border-[#7a5f33]/70 bg-black/60 text-left transition-colors hover:border-[#c9a868] focus:border-[#c9a868] focus:outline-none"
+              >
+                {/* portrait rule: never cropped through the head */}
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={h.portrait} alt="" className="aspect-[3/4] w-full object-cover object-[center_12%] opacity-90 transition-opacity group-hover:opacity-100" />
+                <div className="px-3 py-2.5">
+                  <div className="font-serif text-[14px] tracking-[0.06em] text-[#e8d9ae]">{h.name}</div>
+                  <div className="mt-0.5 text-[10px] uppercase tracking-[0.25em] text-stone-500">{h.clazz}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
 
         {phase === "gate" && (
           <form onSubmit={submit} className="mx-auto max-w-sm text-center">

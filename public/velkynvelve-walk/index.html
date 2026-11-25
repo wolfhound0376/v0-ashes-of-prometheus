@@ -21620,6 +21620,7 @@ let stageSeen = null;
 // number changes the map reloads itself, because everything it holds in memory — the gate it opened,
 // the creatures that walked in, where the party got to — belongs to a game that no longer exists.
 let runSeen = null;
+let rehearsalHero = null;   // THE REHEARSAL HERO's slug (boot): in the party by the DM's pick, not by a seat, so the poll never sends them away
 async function pollStage(){
   if (!APP || timeStopped) return;
   try {
@@ -21636,7 +21637,7 @@ async function pollStage(){
     noteSeats(j.seated);
     if (mode === "explore"){
       for (const id of seatedSlugs(j.seated)) if (!party.some(p => p.id === id)) partyJoins(id);
-      if (Array.isArray(j.seated) && j.seated.length) for (const id of PARTY.slice()) if (!seatedSlugs(j.seated).includes(id) && party.length > 1 && id !== (leader && leader.id)) partyLeaves(id);
+      if (Array.isArray(j.seated) && j.seated.length) for (const id of PARTY.slice()) if (!seatedSlugs(j.seated).includes(id) && party.length > 1 && id !== (leader && leader.id) && id !== rehearsalHero) partyLeaves(id);
     }
     else for (const id of seatedSlugs(j.seated)) lateHeroJoins(id);   // THE LATE HERO: mid-fight they join the fight (below)
     const present = Array.isArray(j.present) ? j.present : [], gone = Array.isArray(j.gone) ? j.gone : [];
@@ -33376,7 +33377,14 @@ window.aopMalVisit = () => state.malVisit;   // for the DM's console
       }
     } catch (e) {}
     await loadRoster();   // every hero's row, seated or not (characterIdOf)
-    try { const r = await fetch("/api/map-stage", {cache: "no-store"}); const j = await r.json(); noteSeats(j.seated); noteNpcTongues(j); const seated = seatedSlugs(j.seated); if (seated.length) PARTY = seated; if (typeof j.run === "number") runSeen = j.run; } catch (e) {}
+    // THE REHEARSAL HERO (Sam, 2026-11-25: Rehearsal "should bypass everything and allow me to start a game with a
+    // character of my choice"). /rehearsal leaves the pick in this tab (aop_rehearsal_hero, a canon slug); a sandbox
+    // asks the stage for that hero's row too, puts them in the party beside whoever is already in it, and they lead.
+    // Nobody is seated by it and nothing is saved. The DM's browser holds no hero, so `mine` is free for this.
+    let rehearsing = ""; if (SANDBOX){ try { rehearsing = String(sessionStorage.getItem("aop_rehearsal_hero") || "").toLowerCase().replace(/[^a-z]/g, ""); } catch (e) {} }
+    try { const r = await fetch("/api/map-stage" + (rehearsing ? "?rehearse=" + rehearsing : ""), {cache: "no-store"}); const j = await r.json(); noteSeats(j.seated); noteNpcTongues(j); const seated = seatedSlugs(j.seated); if (seated.length) PARTY = seated; if (typeof j.run === "number") runSeen = j.run;
+      if (SANDBOX && j.rehearseHero && !mine){ const pick = seatedSlugs([j.rehearseHero])[0]; if (pick){ mine = pick; rehearsalHero = pick; } }
+    } catch (e) {}
     if (mine && !PARTY.includes(mine)) PARTY = FULL_PARTY.filter(x => PARTY.includes(x) || x === mine);
   }
   // ONE WORLD: the shared world wins over what this tab remembers. Only a world nobody has placed yet (or no
