@@ -8,15 +8,16 @@ const shot = { att: "freia", tgt: "drow-guard-male", art: "hamstring", weapon: "
 const frost = { att: "kenta", tgt: "drow-guard-male", spell: "Ray of Frost", spellLevel: 0 }
 
 describe("the DM's setting", () => {
-  it("is off unless it is one of the three modes", () => {
-    expect(strikeCamMode(undefined)).toBe("off")
-    expect(strikeCamMode("loud")).toBe("off")
+  it("is Key moments until the DM chooses, and Off stays Off (Sam, 2026-11-25: 'lets activate it')", () => {
+    expect(strikeCamMode(undefined)).toBe("key")
+    expect(strikeCamMode("loud")).toBe("key")
+    expect(strikeCamMode("off")).toBe("off")
     expect(strikeCamMode("key")).toBe("key")
     expect(strikeCamMode("all")).toBe("all")
   })
   it("off shows nothing, whatever lands", () => {
     for (const ev of [jab, shot, frost]) expect(strikeCamScene({ ...ev, crit: true, mode: "off" })).toBeNull()
-    expect(strikeCamScene({ ...jab })).toBeNull()
+    expect(strikeCamScene({ ...jab })?.key).toBe("art:sap")   // no setting chosen: the default shows it
   })
 })
 
@@ -27,9 +28,13 @@ describe("key moments", () => {
     expect(s && s.kind).toBe("melee")
     expect(strikeCamScene({ ...shot, mode: "key" })!.kind).toBe("shot")
   })
-  it("a cantrip is shown only when it crits", () => {
+  it("a spell is shown only when it crits, cantrip or levelled (Sam, 2026-11-25: 'critical spells')", () => {
     expect(strikeCamScene({ ...frost, mode: "key" })).toBeNull()
     expect(strikeCamScene({ ...frost, mode: "key", crit: true })!.kind).toBe("spell")
+    const bolt1 = { att: "samson", tgt: "asha", spell: "Guiding Bolt", spellLevel: 1 }
+    expect(strikeCamScene({ ...bolt1, mode: "key" })).toBeNull()
+    expect(strikeCamScene({ ...bolt1, mode: "key", crit: true })!.kind).toBe("spell")
+    expect(strikeCamScene({ ...bolt1, mode: "all" })!.kind).toBe("spell")
   })
   it("a plain attack has no close-up at all yet, crit or not (no pose is drawn for it)", () => {
     expect(strikeCamScene({ att: "freia", tgt: "drow-guard-male", weapon: "Dagger", crit: true, mode: "key" })).toBeNull()
@@ -58,8 +63,8 @@ describe("poses are drawn on demand", () => {
       if (!k.startsWith("hit")) expect(p.hand, `${slug} ${k}`).toHaveLength(2)
     }
   })
-  it("a caster's pose serves each spell of theirs that has sheets: Samson's Guiding Bolt is a key moment", () => {
-    const sc = strikeCamScene({ att: "samson", tgt: "drow-guard-female", spell: "Guiding Bolt", spellLevel: 1, mode: "key" })
+  it("a caster's pose serves each spell of theirs that has sheets: Samson's Guiding Bolt is a key moment when it crits", () => {
+    const sc = strikeCamScene({ att: "samson", tgt: "drow-guard-female", spell: "Guiding Bolt", spellLevel: 1, crit: true, mode: "key" })
     expect(sc?.kind).toBe("spell")
     expect(sc?.key).toBe("spell:Guiding Bolt")
     expect(strikeCamScene({ att: "scott", tgt: "drow-guard-male", spell: "Vicious Mockery", spellLevel: 0, crit: true, mode: "all" })).toBeNull()
@@ -76,10 +81,10 @@ describe("poses are drawn on demand", () => {
 describe("the rest of the trigger list (PR 2)", () => {
   const stab = { att: "freia", tgt: "drow-guard-male", weapon: "Dagger" }
   const claw = { att: "quaggoth", tgt: "freia", weapon: "Claw", foe: true }
-  it("Sneak Attack with a dagger is a key moment, once a fight", () => {
+  it("Sneak Attack with a dagger is a key moment every time it lands (Sam, 2026-11-25: 'all special shots that land')", () => {
     const sc = strikeCamScene({ ...stab, sneak: true, mode: "key" })
     expect(sc?.key).toBe("sneak")
-    expect(sc?.once).toBe("sneak")
+    expect(sc?.once).toBeNull()
     expect(sc?.pose.wind?.src).toBe("closeup-flip.png")
     expect(strikeCamScene({ ...stab, mode: "key" })).toBeNull()                       // a plain stab stays on the map
     expect(strikeCamScene({ ...stab, sneak: true, weapon: "Rapier", mode: "key" })).toBeNull()
@@ -98,7 +103,7 @@ describe("the rest of the trigger list (PR 2)", () => {
     expect(drop?.flip).toBe(true)
     expect(drop?.once).toBeNull()
     expect(strikeCamScene({ ...claw, crit: true, mode: "key" })?.flip).toBe(true)
-    expect(strikeCamScene({ ...claw, signature: true, mode: "key" })?.once).toBe("signature")
+    expect(strikeCamScene({ ...claw, signature: true, mode: "key" })?.once).toBeNull()                // its venom lands: every time
     expect(strikeCamScene({ ...claw, foe: false, mode: "all" })).toBeNull()            // not a hero's move
   })
   it("the killing blow is a key moment for a blow that has a scene, and takes the heavier pose", () => {
@@ -145,16 +150,17 @@ describe("monsters' shots and spells on heroes (PR 4)", () => {
     expect(sc?.kind).toBe("shot")
     expect(sc?.flip).toBe(true)
     expect(strikeCamScene({ ...bolt, drop: true, mode: "key" })?.key).toBe("shot")
-    expect(strikeCamScene({ ...bolt, signature: true, mode: "key" })?.once).toBe("signature")
+    expect(strikeCamScene({ ...bolt, signature: true, mode: "key" })?.once).toBeNull()
     expect(strikeCamScene({ ...bolt, att: "quaggoth", crit: true, mode: "key" })).toBeNull()   // the quaggoth has no shot
   })
   it("Asha's Guiding Bolt on a hero is a key moment, mirrored", () => {
-    const sc = strikeCamScene({ att: "asha", tgt: "samson", spell: "Guiding Bolt", spellLevel: 1, against: true, mode: "key" })
+    expect(strikeCamScene({ att: "asha", tgt: "samson", spell: "Guiding Bolt", spellLevel: 1, against: true, mode: "key" })).toBeNull()   // it did not crit
+    const sc = strikeCamScene({ att: "asha", tgt: "samson", spell: "Guiding Bolt", spellLevel: 1, against: true, crit: true, mode: "key" })
     expect(sc?.kind).toBe("spell")
     expect(sc?.flip).toBe(true)
   })
   it("a hero's own spell is not mirrored", () => {
-    expect(strikeCamScene({ att: "samson", tgt: "asha", spell: "Guiding Bolt", spellLevel: 1, mode: "key" })?.flip).toBe(false)
+    expect(strikeCamScene({ att: "samson", tgt: "asha", spell: "Guiding Bolt", spellLevel: 1, crit: true, mode: "key" })?.flip).toBe(false)
   })
   it("Shield against a shot", () => {
     expect(strikeCamBlock({ mode: "key", att: "drow-guard-female", tgt: "gandalf", shot: true })?.pose.src).toBe("closeup-shot.png")

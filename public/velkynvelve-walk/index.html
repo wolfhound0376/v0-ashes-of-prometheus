@@ -1575,7 +1575,7 @@ body.quota-on #cbtMenu[data-kind=explore]{display:none!important}
       <div class="dmCloudRow"><button class="btn" id="quickBtn" title="DM: let the heroes fight on their own at speed. Weapons only, no spells or items. Every roll is real.">Quick resolve</button><button class="btn danger" id="endCombat">End fight</button></div>
       <!-- THE STRIKE CAM (Sam, 2026-11-22/23): close-ups on the blows that earn one. Off until the DM turns it on; the setting
            travels with the world, so the screen running the fight reads the same one. -->
-      <div class="dmCloudRow"><label for="dmStrikeCam" style="align-self:center">Close-ups</label><select id="dmStrikeCam" title="DM: the strike cam. A close-up on a weapon art, a levelled spell or a critical hit, where the art for it exists. Off by default."><option value="off">Off</option><option value="key">Key moments</option><option value="all">Every hit that has one</option></select></div>
+      <div class="dmCloudRow"><label for="dmStrikeCam" style="align-self:center">Close-ups</label><select id="dmStrikeCam" title="DM: the strike cam. A close-up on every special attack that lands and every critical hit, spells included, where the art for it exists. On (Key moments) unless you turn it off."><option value="off">Off</option><option value="key">Key moments</option><option value="all">Every hit that has one</option></select></div>
       <!-- THE SURRENDER (Sam, 2026-10-28): when the party gives up to the drow — said to Malachar, or a fight they cannot win —
            the DM makes the map match: a beating, the march back to the pen, one prisoner thrown into the chasm, the gate locked. -->
       <div class="dmCloudRow"><button class="btn danger" id="dmSurrender" title="DM: the party surrenders to the drow. They are beaten (1d4 each), marched back to the slave pen, and one of the prisoners with them is thrown into the chasm as a warning.">They surrender</button></div>
@@ -19979,7 +19979,15 @@ function burst(a, col, n){ const m = SPR[a.id].json, sc = actorScale(a), y = a.y
 // Poison Spray), mirrored like their blows.
 // PR 3 added the reactions that change the outcome: an opportunity attack that lands, and Shield (strikeCamBlock).
 //
-// PR 1 OF 3 carried the engine, the DM's setting (off by default) and the three scenes Sam approved. The
+// ON BY DEFAULT, AND WHAT COUNTS (Sam, 2026-11-25: "lets activate it. I'd say all special shots that land and critical
+// spells."). A table that has never touched the setting plays on "Key moments"; a DM who chose Off keeps Off. In "key":
+//   - every special attack that lands gets its close-up, each time, not once a fight: a weapon art, Sneak Attack, a
+//     monster's signature ability (venom, a curse);
+//   - a spell gets one only when it crits, cantrip or levelled, a hero's or a monster's;
+//   - what he did not mention is left as he approved it on 2026-11-23: a weapon's critical hit, the killing blow, the
+//     blow that drops a hero, and the reactions (an opportunity attack, Shield) once a fight.
+//
+// PR 1 OF 3 carried the engine, the DM's setting (off by default then) and the three scenes Sam approved. The
 // wider trigger list (killing blows, Sneak Attack, reactions, monster abilities on a hero) and weapon arts for the
 // casters are the next two PRs; the "key" setting below already says which of the blows it is shown count.
 //
@@ -19988,8 +19996,9 @@ function burst(a, col, n){ const m = SPR[a.id].json, sc = actorScale(a), y = a.y
 // here starts with STRIKE_CAM or strikeCam so the paste cannot collide with the page's own names.
 
 const STRIKE_CAM = {
-  // the DM's setting. "off" is the default: nothing changes for a table until the DM turns it on.
+  // the DM's setting. "key" is the default (Sam, 2026-11-25: "lets activate it"); a DM who picks Off keeps Off.
   modes: ["off", "key", "all"],
+  byDefault: "key",
   modeNames: { off: "Off", key: "Key moments", all: "Every hit that has one" },
 
   // ms. `lead` is added between the poses snapping in and the hit: the flight of a bolt, the charge of a spell.
@@ -20053,9 +20062,10 @@ const STRIKE_CAM = {
   },
   // named foes: the blow that kills one of them is a key moment, like a boss's
   named: ["ilvara", "asha", "shoor", "jorlan"],
-  // shown once a fight, then it plays on the map: Sneak Attack, a monster's signature ability, and a reaction that
-  // changes the outcome (an opportunity attack that lands, Shield turning a hit into a miss)
-  once: ["sneak", "signature", "reaction"],
+  // shown once a fight, then it plays on the map: a reaction that changes the outcome (an opportunity attack that
+  // lands, Shield turning a hit into a miss). Sneak Attack and a monster's signature ability were once a fight too,
+  // until Sam's "all special shots that land" (2026-11-25).
+  once: ["reaction"],
   // where the target stands, by the kind of scene
   targetFeetX: { melee: 1050, shot: 1130, spell: 1130 },
 
@@ -20072,9 +20082,9 @@ const STRIKE_CAM = {
   },
 };
 
-/** the mode as stored, made safe: anything unknown is "off" */
+/** the mode as stored, made safe: a setting nobody has chosen (or an unknown one) is the default, "key" */
 function strikeCamMode(v) {
-  return STRIKE_CAM.modes.includes(v) ? v : "off";
+  return STRIKE_CAM.modes.includes(v) ? v : STRIKE_CAM.byDefault;
 }
 
 /**
@@ -20088,9 +20098,10 @@ function strikeCamMode(v) {
  * Returns null (it plays on the map) or { key, kind, att, tgt, pose, hit, hard, fx }. `hard` says the target has a
  * heavier hit pose and this blow (a critical hit) earns it.
  *
- * "key" is Sam's list as far as PR 1 can see it: a weapon art, a levelled spell aimed at one creature, or a critical
- * hit. A cantrip or a plain attack is shown only when it crits. "all" shows every hit that has a scene, for looking at
- * the scenes. Nothing is shown in Quick resolve, and nothing without a pose on BOTH sides.
+ * "key" is Sam's list (2026-11-25): every special attack that lands (a weapon art, Sneak Attack, a monster's signature
+ * ability) and a critical hit. A spell, cantrip or levelled, and a plain attack are shown only when they crit. "all"
+ * shows every hit that has a scene, for looking at the scenes. Nothing is shown in Quick resolve, and nothing without a
+ * pose on BOTH sides.
  */
 function strikeCamScene(ev) {
   const mode = strikeCamMode(ev && ev.mode);
@@ -20103,7 +20114,7 @@ function strikeCamScene(ev) {
     fx = STRIKE_CAM.spellFx[ev.spell] || null;
     pose = fx ? mine.cast : null;
     key = "spell:" + ev.spell;
-    special = (ev.spellLevel || 0) > 0;
+    special = false;   // a spell earns its close-up by a critical hit (Sam, 2026-11-25: "critical spells")
   } else if (ev.art) {
     pose = mine["art:" + ev.art] || null;
     key = "art:" + ev.art;
@@ -20111,13 +20122,12 @@ function strikeCamScene(ev) {
   } else if (ev.sneak && !ev.foe) {
     pose = mine.sneak || null;
     key = "sneak";
-    special = true;
-    once = "sneak";
+    special = true;   // every Sneak Attack that lands (it was once a fight until 2026-11-25)
   } else if (ev.foe) {
     pose = (ev.shot ? mine.shot : mine.attack) || null;
     key = ev.shot ? "shot" : "attack";
     special = !!ev.drop;
-    if (!special && !ev.crit && ev.signature) { special = true; once = "signature"; }
+    if (ev.signature) special = true;   // every time its venom or curse lands (once a fight until 2026-11-25)
   }
   if (!pose) return null;
   if (pose.weapon && !pose.weapon.test(String(ev.weapon || ""))) return null;   // the pose shows another weapon
@@ -20178,7 +20188,7 @@ function strikeCamClock(cut, kind) {
 // What is here is only the drawing. It is an overlay on the stage, never a second screen: the plate dims and blurs
 // behind a letterbox band (a backdrop filter and a dark scrim, so the fight goes on underneath and is there when the band lifts), the
 // attacker and the target snap to one large held pose each, the blow lands, the pair drift for a beat, and it is gone.
-//   - OFF BY DEFAULT. state.strikeCam is the DM's setting (DM tools, "Close-ups"); it travels with the world like the
+//   - ON BY DEFAULT ("Key moments"; Sam, 2026-11-25: "lets activate it"). state.strikeCam is the DM's setting (DM tools, "Close-ups"); it travels with the world like the
 //     rest of `state`, and the screen running the fight is the one that reads it.
 //   - ONE SCENE ON EVERY SCREEN (world events): strikeCam and strikeCamLand are on RELAY_FNS, so the screen running the
 //     fight opens the close-up and every screen showing the fight plays the same one. Their arguments are plain data
