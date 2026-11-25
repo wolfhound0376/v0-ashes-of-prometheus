@@ -92,7 +92,7 @@ function RehearsalRow() {
       <div>
         <div className="font-serif text-[15px] tracking-[0.08em] text-[#e8d9ae]">{REHEARSAL_LINK_LABEL}</div>
         <p className="mt-1 text-[12px] leading-relaxed text-stone-500">
-          The sandbox, for whoever runs the game. It asks for the Dungeon Master&rsquo;s code once on this device. Malachar answers, and nothing is saved.
+          The sandbox, for whoever runs the game. It asks for the Dungeon Master&rsquo;s code once on this device, then who you are playing, and starts clean. Malachar answers, and nothing is saved.
         </p>
       </div>
       <a

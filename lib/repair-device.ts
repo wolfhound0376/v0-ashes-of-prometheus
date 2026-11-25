@@ -40,10 +40,12 @@ export function repairedUrl(href: string, now: number): string {
 }
 
 /**
- * Do it, in the browser. Forgets the storage, empties any offline caches and service workers this site ever left
- * behind (it has none today — belt and braces for an old one), then reloads clean. Returns how many keys went.
+ * The forgetting on its own, with no reload: the storage (all but REPAIR_KEEPS), this tab's session storage, and any
+ * offline caches and service workers this site ever left behind (it has none today — belt and braces for an old one).
+ * Returns how many localStorage keys went. Rehearsal uses this at its door (Sam, 2026-11-25: "Clear cache, etc.") and
+ * then leaves by a full page load, so nothing old is carried into the sandbox.
  */
-export async function repairThisDevice(w: Window = window): Promise<number> {
+export async function forgetThisDevice(w: Window = window): Promise<number> {
   let gone = 0
   try {
     const all: string[] = []
@@ -58,6 +60,12 @@ export async function repairThisDevice(w: Window = window): Promise<number> {
     const regs = await w.navigator.serviceWorker?.getRegistrations?.()
     for (const r of regs ?? []) await r.unregister()
   } catch { /* no service workers */ }
+  return gone
+}
+
+/** Do it, in the browser: forget (above), then reload clean. Returns how many keys went. */
+export async function repairThisDevice(w: Window = window): Promise<number> {
+  const gone = await forgetThisDevice(w)
   w.location.replace(repairedUrl(w.location.href, Date.now()))
   return gone
 }
