@@ -8102,10 +8102,45 @@ async function battleBegin(foeObjs, label, o = {}){
     battleOpen(B);
   } finally { battleBusy = false; if (mine) fade.classList.remove("on"); if (mode === "dialog" && $("obj").hidden) mode = "explore"; }
 }
+// THE PRISONERS WHO CAME ARE STANDING THERE (Sam, 2026-11-25: "why is no one joining us after we left the pen"; Kenta:
+// "people disappear when a fight starts"; then "go" on the safety net). The live game: Fifi answered "Flee, with
+// everyone", the battle's record listed eight prisoners and both screens logged "... come with you out of the pen", but
+// the screen that ran the fight had none of them on the plate when initiative was rolled: four in the order, no allies,
+// no bystanders, and the other screen dropped its own copies when it began showing that fight. Two-screen replays of
+// the same moments did not reproduce it, so the cause is NOT known. This is the net under it: just before initiative,
+// anyone the battle's record says came and who is not standing on the plate is stood there, and what was wrong is
+// written to the sync log (walk_log) so the cause can be read off the next time it happens. [CLAUDE: a patch on the
+// symptom, said so to Sam]
+function battleStandAllies(B){
+  try {
+    if (!B || !Array.isArray(B.allies) || !B.allies.length || !leader) return [];
+    const dead = new Set([...(state.slain || []), surgeonDeadId()].filter(Boolean)), fixed = [], why = [];
+    const placed = [...party, ...npcs.filter(n => !n.offStage)].map(q => ({x: q.x, y: q.y})), sc = node.scale || 1;
+    B.allies.filter(id => SPR[id] && !dead.has(id)).forEach((id, i) => {
+      const all = npcs.filter(n => n.id === id), a = all.find(n => !n.body && !n.down) || null;
+      if (all.length && !a) return;                                   // fell on the way: not stood back up
+      if (a && !a.offStage && !a.hostile && actors.includes(a)) return;   // there, as they should be
+      const at = (state.companyAt || {})[id];
+      why.push(`${id}: ${!a ? "not on the plate" : a.offStage ? "off stage" : a.hostile ? "hostile" : "not among the actors"}${companyNow().includes(id) ? "" : ", not in the company"}${at != null ? `, recorded at ${at}` : ""}`);
+      if (!companyNow().includes(id)) companyNow().push(id);
+      state.leftBehind = state.leftBehind.filter(x => x !== id);
+      if (state.companyAt && state.companyAt[id] != null) state.companyAt = {...state.companyAt, [id]: String(cur)};
+      if (a){ a.offStage = false; a.hostile = false; a.alpha = 1; a.fading = false; a.company = true; a.path = []; if (!walkable(a.x, a.y)){ const q = nearestWalkable(leader.x, leader.y, placed); a.x = q.x; a.y = q.y; } placed.push({x: a.x, y: a.y}); }
+      else { const ring = i < 6 ? 0 : 1, k = ring ? i - 6 : i, ang = (k + .5) / 6 * Math.PI * 2 + ring * .4, r = (170 + ring * 90) * sc;
+        npcs.push(spawnCompanion(id, {x: leader.x + Math.cos(ang) * r, y: leader.y + Math.sin(ang) * r * .7}, placed, leader.face)); }
+      fixed.push(id);
+    });
+    if (!fixed.length) return [];
+    actors = [...party, ...npcs, ...foes]; saveWalk();
+    reviewLog("sync", `Battle safety net: ${fixed.length} of ${B.allies.length} who came were not standing on ${String(cur)} at initiative and were stood there. ${why.join(" · ")}. Heroes elsewhere: ${PARTY.filter(h => heroAt[h] && !party.some(p => p.id === h)).map(h => `${h}@${heroAt[h].plate}`).join(", ") || "none"}. Battle by ${B.by === (OW.key || "local") ? "this screen" : "another screen"}.`);
+    return fixed;
+  } catch (e) { try { reviewLog("sync", `Battle safety net failed: ${String(e).slice(0, 160)}`); } catch (x) {} return []; }
+}
 /** Initiative, on the battle plate: the watch at the plate's posts, surprised or not, the one who led it first. */
 function battleOpen(B){
   if (String(cur) !== String(B.plate) || cbt || FIGHT.mirror) return;
   mode = "explore";
+  battleStandAllies(B);
   const first = B.opener ? party.find(p => p.id === B.opener) : null;
   startCombat(B.foes.slice(), B.label, {battle: true, noAllies: false, ...(first ? {opener: first} : {})});
   if (!cbt || mode !== "combat") return;
