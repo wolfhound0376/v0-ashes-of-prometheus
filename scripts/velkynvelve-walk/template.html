@@ -9850,7 +9850,13 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   }
   mode = "combat"; [...party, ...npcs].forEach(p => { p.path = []; stopActivity(p); setAnim(p, "idle"); });
   if (balcony()) buildGrid();               // the balcony outside the pen gate is floor while the fight lasts
-  const allies = opts.noAllies ? [] : alliesHere(); allies.forEach(n => { n.ally = true; n.talking = false; });
+  // A COMPANION IS PART OF ITS OWNER (Sam, 2026-11-25: "why is my spider not helping me in this fight with Jimjar",
+  // then "go"). A one on one shuts every ally out, and the thief's own spider went out with them: it ran from the fight
+  // as a bystander. Now a companion loose on the plate goes into its owner's one on one and acts right after them, as it
+  // does when it is shaken out of a sleeve mid-fight (petLoose). Everyone else still stands aside. The rule is for any
+  // companion or summons that follows (the record's owner decides), not the spider alone.
+  const duelCompany = opts.duel ? companionsOf(opts.duel) : [];
+  const allies = opts.noAllies ? duelCompany : alliesHere(); allies.forEach(n => { n.ally = true; n.talking = false; });
   // BYSTANDERS (Sam, 2026-10-27): everyone on our side who is not fighting runs from it, can be hit, and can be protected;
   // one who drops is dead (fall). They used to roll initiative so their running was a turn like anyone's — until the strip
   // carried seventeen cards. Sam, 2026-10-28: "Only active attackers and defenders need be given initiative. The
@@ -9911,6 +9917,10 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   if (opts.duel) for (const p of party) if (p !== opts.duel && !p.down && !p.c) p.c = fighterFor(p);   // out of the order, still on the plate: the panel, a pot shot and a heal all read their numbers
   for (const a of order){ a.c = a.c && (hero(a) || a.bystander) ? a.c : fighterFor(a); a.c.initRoll = d20((opts.roadSurprise === "party" && hero(a)) || (opts.roadSurprise === "them" && foes.includes(a)) ? -1 : 0, a); a.c.init = a.c.initRoll + (a.c.sheet.init || 0); }
   order.sort((a, b) => b.c.init - a.c.init || (b.c.sheet.init || 0) - (a.c.sheet.init || 0) || (a.kind === "pc" ? -1 : 1));
+  for (const sp of duelCompany) if (order.includes(sp) && order.includes(opts.duel)){   // its owner's initiative, the turn right after theirs
+    sp.summoner = opts.duel; sp.c.init = opts.duel.c.init;
+    order.splice(order.indexOf(sp), 1); order.splice(order.indexOf(opts.duel) + 1, 0, sp);
+  }
   // SURPRISE (SRD 5.1, Combat > Surprise; fightWith): a foe who never saw it coming is surprised — no move and no action
   // on its first turn, no reaction until that turn ends. And the one who struck from hiding goes first (Sam, 2026-10-27:
   // "If we sneak attack them we hit them first"): initiative is still rolled for the rest of the order.
@@ -10193,6 +10203,11 @@ async function petReady(){
   return petSprite();
 }
 const petHere = () => npcs.find(n => n.id === PET_SPIDER && !n.down && !n.body && !n.offStage && actors.includes(n));
+/** The companions loose on this plate that belong to this hero (the companion record's owner). One today: the spider. */
+function companionsOf(hero){
+  const sp = petHere(), r = sp && petRec();
+  return sp && r && r.alive && !r.perched && r.owner === hero.id && !sp.hostile ? [sp] : [];
+}
 function canSpeakAnimals(a){
   const sh = (a && SHEETS[a.id]) || {}, m = sh.magicAll || sh.magic || {}, race = String(((typeof PCS !== "undefined" && PCS[a.id]) || {}).race || sh.race || "");
   return [...(m.cantrips || []), ...(m.prepared || []), ...(m.known || [])].some(nm => /^speak with animals/i.test(nm)) || /forest gnome/i.test(race);
