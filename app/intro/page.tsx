@@ -10,13 +10,16 @@
 // claude/One_Door_Entry_Flow_2026-11-10.md). It asks /api/table what the table is doing and puts one
 // obvious button first, re-reading every few seconds so the button changes the moment the table opens:
 //
-// THE TITLE, SCRUBBED (Sam, 2026-11-23: "new hero and new campaign redundant. Scrub intro landing page for utility,
-// easy UI, and remove confusion for the players. Ease of use."; rule in lib/title-door.ts). Two sections:
-//   PLAYERS   CONTINUE      only for someone who has played here; its sub-line says where it goes
-//             JOIN A TABLE  the four-letter room code → /t/<code>, which asks a newcomer for their words or a new hero
-//   HOSTING   below a rule, smaller, the key said once: NEW CAMPAIGN and LOAD GAME (via /dm, or straight to the shelf
-//             for the host), and the quiet links Rehearsal and, for a host mid-session, The Table.
-// Gone: the small Saved Game / New Hero links (the room-code page already asks both) and the Rehearsal corner button.
+// ONE DOOR (Sam, 2026-11-25: "Remove Continue from the intro and load game. Joining a Table should get you to the
+// appropriate load game or new game."; rule in lib/title-door.ts). Two sections:
+//   PLAYERS   JOIN A TABLE  the four-letter room code → /t/<code>, which asks a newcomer for their words or a new
+//                           hero. On a device that already holds a hero, an empty box and the arrow go where
+//                           Continue used to (your seat, the game, or the table to wait).
+//   HOSTING   below a rule, smaller: HOST A TABLE (via /dm, or straight to the table for the host), where New Game
+//             and the saved games both live; and, for a host mid-session, the quiet link The Table.
+// Gone: Continue, New Campaign / Load Game, the "table is dark" pill. Rehearsal is a row in Settings (the gear).
+// "Watch the opening" sits under the painted ASHES OF PROMETHEUS title on a wide screen, under the menu's own
+// heading on a phone (where the menu covers the painted title).
 
 // The opening film plays once per DEVICE per CAMPAIGN RUN — a New Game earns one more showing, and
 // "Watch the opening" brings it back — click anywhere or Skip, and only while Cinematics is ON in
@@ -42,6 +45,7 @@ import { normalizeRoomCode } from "@/lib/room-code"
 const FILM_SEEN_KEY = "aop_title_film_seen" // sessionStorage: never twice in one browser session
 const TABLE_POLL_MS = 5000 // how often the door re-reads the table
 const FILM_WAIT_MS = 1500 // the longest the first paint waits on the table before deciding film or menu
+const WATCH_CLASS = "rounded-full bg-black/70 px-4 py-1.5 font-serif text-[10px] uppercase tracking-[0.3em] text-[#a88a5a] backdrop-blur-[2px] hover:text-[#e8c56a]"
 
 type Stage = "film" | "title"
 
@@ -217,6 +221,9 @@ export default function TitleScreen() {
   const [roomError, setRoomError] = useState(false)
   const joinTable = () => {
     const c = normalizeRoomCode(roomCode)
+    // An empty box on a device the game already knows: the way back in (lib/title-door.ts, wayBack).
+    const j = menu.buttons.find((b) => b.key === "join")
+    if (!roomCode.trim() && j?.href) { press(j); return }
     if (!c) { setRoomError(true); return }
     go(`/t/${c}`)
   }
@@ -291,6 +298,8 @@ export default function TitleScreen() {
             <div className="mb-6 text-center" style={{ animationDelay: "0s" }}>
               <div className="text-[10px] uppercase tracking-[0.5em] text-[#8a6a3a]">Out of the Abyss</div>
               <div className="ttl-rule mx-auto mt-3 h-px w-40 bg-gradient-to-r from-transparent via-[#c9a868] to-transparent" />
+              {/* on a phone the menu covers the painted title, so the film link sits under this heading instead */}
+              <button type="button" onClick={() => setStage("film")} className={cn(WATCH_CLASS, "mt-3 md:hidden")}>Watch the opening</button>
             </div>
 
             {/* what the table is doing — the pill is left out when it could not be read */}
@@ -321,7 +330,7 @@ export default function TitleScreen() {
                 <span className="h-px flex-1 bg-gradient-to-l from-transparent to-[#5a4a30]" />
               </div>
               <p className="mt-1.5 text-center text-[11px] tracking-[0.03em] text-stone-400">{menu.host.sub}</p>
-              <div className="mt-2.5 grid grid-cols-2 gap-2">
+              <div className="mt-2.5 grid gap-2">
                 {menu.host.buttons.map((b) => (
                   <button key={b.key} type="button" onClick={() => press(b)}
                     className="group rounded-[3px] border border-[#5a4a30]/80 bg-black/70 px-3 py-2.5 text-center backdrop-blur-[2px] transition-colors hover:border-[#c9a868]/80">
@@ -330,7 +339,7 @@ export default function TitleScreen() {
                   </button>
                 ))}
               </div>
-              <div className="mt-2 flex flex-wrap justify-center gap-x-5">
+              <div className={cn("flex flex-wrap justify-center gap-x-5", menu.host.links.length ? "mt-2" : "mt-1.5")}>
                 {menu.host.links.map((l) => (
                   <button key={l.href} type="button" onClick={() => { try { window.sessionStorage.removeItem(DOOR_INTENT_KEY) } catch { /* storage blocked */ } go(l.href) }}
                     title={l.sub} className="px-1 py-1 font-serif text-[10px] uppercase tracking-[0.3em] text-stone-400 transition-colors hover:text-[#e8c56a]">
@@ -339,17 +348,22 @@ export default function TitleScreen() {
                 ))}
               </div>
             </div>
-
-            <div className="mt-3 text-center" style={{ animationDelay: ".36s" }}>
-              <button type="button" onClick={() => setStage("film")} className="rounded-full bg-black/70 px-4 py-1.5 font-serif text-[10px] uppercase tracking-[0.3em] text-[#a88a5a] backdrop-blur-[2px] transition-colors hover:text-[#e8c56a]">
-                Watch the opening
-              </button>
-            </div>
           </div>
         </div>
       )}
 
-      {/* corners: the sound and the gear (Rehearsal moved into the Hosting section, 2026-11-23) */}
+      {/* WATCH THE OPENING (Sam, 2026-11-25: "below ashes of prometheus title"). On a wide screen the painting stands
+          whole and centred, so its bottom edge is at 50% + half its height (the painting is 3840x2867, so half its
+          height is 37.33vw when the width is what limits it). The link sits just under that edge, never off screen. */}
+      {stage === "title" && (
+        <button type="button" onClick={() => setStage("film")}
+          className={cn(WATCH_CLASS, "absolute left-1/2 z-10 hidden -translate-x-1/2 transition-opacity duration-500 md:block", leaving ? "opacity-0" : "opacity-100")}
+          style={{ top: "min(calc(50% + 37.33vw + 8px), calc(100% - 36px))" }}>
+          Watch the opening
+        </button>
+      )}
+
+      {/* corners: the sound and the gear (Rehearsal is a row inside the gear's sheet since 2026-11-25) */}
       <button
         type="button"
         onClick={toggleMute}
@@ -379,7 +393,7 @@ export default function TitleScreen() {
         <div className="fixed bottom-5 left-6 z-50"><InstallAppLink /></div>
       )}
 
-      <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsSheet open={settingsOpen} onClose={() => setSettingsOpen(false)} rehearsal />
     </div>
   )
 }
