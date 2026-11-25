@@ -19385,7 +19385,18 @@ function laborFollow(was){
   const key = s => `${labor.id}:${s}`;
   if (labor.status === "called" && cur === PEN && !laborPlayed[key("called")]){ laborPlayed[key("called")] = true; laborCall(); }
   if (labor.status === "returning" && !laborDriving && atPlate(labor)) laborSearchMine();
-  if ((labor.status === "done" || labor.status === "aborted") && was && isLive(was) && !laborPlayed[key("end")]){ laborPlayed[key("end")] = true; laborEnds(labor.status === "aborted"); }
+  if ((labor.status === "done" || labor.status === "aborted") && was && isLive(was) && !laborPlayed[key("end")]){ laborPlayed[key("end")] = true; if (labor.status === "aborted" && laborEndedBySurrender(labor)) laborOverBySurrender(); else laborEnds(labor.status === "aborted"); }
+}
+// A SURRENDER ENDS THE DETAIL (Sam, 2026-11-25; the live row was still "working" in the pen after the party had been
+// beaten and marched home, so the bar read "Work detail: under escort" behind the bars). /api/surrender calls the
+// party's detail off; here it ends without the escort's "Not today. Sit." or a second lock-in: the surrender plays those.
+const laborEndedBySurrender = d => !!d && (d.events || []).some(e => e && e.kind === "step" && e.action === "abort" && e.by === "surrender");
+function laborOverBySurrender(){
+  if (!labor) return;
+  laborPlayed[`${labor.id}:end`] = true; laborPropsClear(); laborDriving = false; laborCard = null;
+  for (const a of laborEscort()){ a.static = false; }
+  if (cur !== PEN) escortLeaves();
+  labor = null; renderLaborBar();
 }
 
 // the escort: spawned on each plate the detail is on, walking in beside the party (on the pen plate: across the bridge)
@@ -21817,6 +21828,7 @@ async function surrenderBegins(w){
     state.surrender = null; state.escape = escWas; here.forEach(p => setAnim(p, "idle")); mode = "explore"; surrenderBusy = false; return;
   }
   state.surrender = {seq: j.seq, at: Date.now(), area: String(cur), by: OW.key || "local", victim: j.victim ? {id: j.victim.id, name: j.victim.name, from: j.victim.from} : null};
+  laborOverBySurrender();   // a work detail ends here (the server has called it off): no "under escort" banner in the pen afterwards
   if (j.victim){ const v = npcs.find(n => n.id === j.victim.id && !n.body); if (v) v.slain = true;   // the story has them marked: the stage poll must not drop them here
     log(`<i>${j.victim.from === "party" ? `Malachar's d${j.victim.of} over the prisoners who ran with them` : `Nobody ran with them — Malachar's d${j.victim.of} over the pen`}: ${j.victim.roll}.</i>`); }
   else log("<i>There is no prisoner left to make an example of.</i>", {say: true});
@@ -26398,7 +26410,13 @@ function update(dt){
     // drow who are on watch
     if (mode === "explore" && !state.cleared[cur]){
       const watch = npcs.filter(n => n.hostile && !n.offStage);
-      if (!APP && !state.ambushOff && state.jumped !== cur && watch.length && watch.some(n => Math.hypot(n.x - leader.x, n.y - leader.y) < 520 * node.scale)) startCombat(watch, node.hostileLabel || "You've been seen.");
+      // UNDER ESCORT (Sam's ruling on the watch: slaves out of the pen are challenged "unless you are escorted"; his
+      // question, 2026-11-25: "Why did they attack us in the work detail?"). The live game: the dishes detail reached the
+      // Main Hall kitchen and ten seconds later the party was on its knees, with the quota met and nothing suspected. This
+      // challenge never asked whether the drow had brought them there themselves. A party on a work detail is not stopped
+      // by the watch (laborLive, as guardsReact already says); what they do wrong on a detail is the escort's to answer.
+      if (laborLive()){}
+      else if (!APP && !state.ambushOff && state.jumped !== cur && watch.length && watch.some(n => Math.hypot(n.x - leader.x, n.y - leader.y) < 520 * node.scale)) startCombat(watch, node.hostileLabel || "You've been seen.");
       // IN THE GAME TOO (Sam, 2026-10-27: "Attack should have started" — the party walked openly up the bridge into the
       // Guard Tower and its three guards stood there). Only a SNEAK was ever judged in the game; walking in the open past
       // the watch was left to Malachar, who is not watching the map. Now a guard on watch who has the leader in plain

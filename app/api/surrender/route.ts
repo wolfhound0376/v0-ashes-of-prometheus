@@ -137,6 +137,17 @@ export async function POST(req: NextRequest) {
         if (error) console.warn("[surrender] situation not written:", error.message)
       }
 
+      // a work detail ends here too (Sam, 2026-11-25: after a surrender on a detail the pen still read "Work detail:
+      // under escort", because the row stayed "working"). Called off, with the reason on the row for every screen.
+      if (runId) {
+        const { data: live } = await db.from("work_details").select("id, status, events").eq("campaign_run_id", runId).eq("party", true).in("status", ["called", "escorting", "working", "returning"])
+        for (const d of live ?? []) {
+          const events = [...(Array.isArray(d.events) ? d.events : []), { at: now, kind: "step", action: "abort", from: d.status, to: "aborted", by: "surrender" }]
+          const { error } = await db.from("work_details").update({ status: "aborted", events: events.slice(-200), updated_at: now }).eq("id", d.id).eq("status", d.status)
+          if (error) console.warn("[surrender] work detail not called off:", error.message)
+        }
+      }
+
       // a fight with the drow ends here
       const { data: fight } = await db.from("world_flags").select("value").eq("campaign_id", CAMPAIGN).eq("key", COMBAT_FLAG).maybeSingle()
       if (fight?.value && (fight.value as { status?: string }).status === "active") await endCombatFlag(db)
