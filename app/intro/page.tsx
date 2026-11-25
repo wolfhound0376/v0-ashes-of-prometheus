@@ -18,8 +18,17 @@
 //   HOSTING   below a rule, smaller: HOST A TABLE (via /dm, or straight to the table for the host), where New Game
 //             and the saved games both live; and, for a host mid-session, the quiet link The Table.
 // Gone: Continue, New Campaign / Load Game, the "table is dark" pill. Rehearsal is a row in Settings (the gear).
-// "Watch the opening" sits under the painted ASHES OF PROMETHEUS title on a wide screen, under the menu's own
-// heading on a phone (where the menu covers the painted title).
+// "Watch the opening" sits under the ASHES OF PROMETHEUS title on a wide screen, under the menu's own heading on a
+// phone.
+//
+// THE TITLE FILM (Sam, 2026-11-25: "Replace the song and the image still of the Title landing page with this new
+// video loop … Make sure that like the title page all that there is a title and button options in the same format
+// as before"). Behind the menu, in place of the old painting: the party attacks the lich and it does nothing, the
+// camera closes on him as he clenches his fist, charges his staff and laughs, and it comes to rest on a still of the
+// lich alone, where the title lettering (cut from the old painting, same font) writes itself in. The menu is there
+// from the first frame, so nobody waits on the film. It plays once per visit to this page; with Cinematics off, or
+// reduced motion, the page opens on the still with the title already up. The film file carries only the storm (thunder);
+// the song is the theme element, and both follow the Intro music switch.
 
 // The opening film plays once per DEVICE per CAMPAIGN RUN — a New Game earns one more showing, and
 // "Watch the opening" brings it back — click anywhere or Skip, and only while Cinematics is ON in
@@ -46,6 +55,14 @@ const FILM_SEEN_KEY = "aop_title_film_seen" // sessionStorage: never twice in on
 const TABLE_POLL_MS = 5000 // how often the door re-reads the table
 const FILM_WAIT_MS = 1500 // the longest the first paint waits on the table before deciding film or menu
 const WATCH_CLASS = "rounded-full bg-black/70 px-4 py-1.5 font-serif text-[10px] uppercase tracking-[0.3em] text-[#a88a5a] backdrop-blur-[2px] hover:text-[#e8c56a]"
+// The title film: 1080p for most screens, the 4K file where the screen can show it.
+const TITLE_FILM = "/videos/title-lich.mp4"
+const TITLE_FILM_4K = "/videos/title-lich-4k.mp4"
+const TITLE_FILM_4K_MIN_PX = 2560 // physical pixels across
+const TITLE_STORM_VOLUME = 0.5 // the thunder sits behind the song
+// The film comes to rest on the lich 20 s in (10 s of the party, 10 s closing on him). The file then holds that last
+// frame for 6 s more so the thunder can roll out under the title, which is why landing reads the clock and not the end.
+const TITLE_LANDS_AT = 20.0
 
 type Stage = "film" | "title"
 
@@ -64,6 +81,11 @@ export default function TitleScreen() {
   const [heroName, setHeroName] = useState<string | null>(null)
   const [isHost, setIsHost] = useState(false) // this browser's hero hosts the campaign (lib/host.ts)
   const runRef = useRef<string | null>(null) // the campaign run the table last reported
+  const titleFilmRef = useRef<HTMLVideoElement | null>(null)
+  const [titleFilmSrc, setTitleFilmSrc] = useState<string | null>(null) // chosen on the device: 1080p or 4K
+  const [landed, setLanded] = useState(false) // the title film has come to rest on the lich: the lettering goes up
+  const landedRef = useRef(false)
+  const land = useCallback(() => { landedRef.current = true; setLanded(true) }, [])
 
   // First paint: remember that this browser has seen the door, learn whether it already holds a
   // seat, and decide film or title from the device's settings.
@@ -80,6 +102,10 @@ export default function TitleScreen() {
       else if (role === "player" && token && character) setSeated("player")
     } catch { /* storage blocked */ }
     setMusicOffState(!introMusicOn())
+    try {
+      const px = Math.max(window.screen?.width ?? 0, window.innerWidth) * (window.devicePixelRatio || 1)
+      setTitleFilmSrc(px >= TITLE_FILM_4K_MIN_PX ? TITLE_FILM_4K : TITLE_FILM)
+    } catch { setTitleFilmSrc(TITLE_FILM) }
 
     // Who is at the door, for the table read and the "As <hero>" line.
     let characterId: string | null = null
@@ -155,6 +181,31 @@ export default function TitleScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [musicOff, stage])
 
+  // The title film behind the menu. It starts when the title is up and its file is chosen, plays once and rests on
+  // the still (land). Once it has landed it stays landed — coming back from "Watch the opening" does not replay it.
+  // It starts muted when the browser will not let it start with sound; the first tap brings the thunder up with the song.
+  useEffect(() => {
+    const video = titleFilmRef.current
+    if (stage === "film") { video?.pause(); return }
+    if (stage !== "title" || landedRef.current) return
+    let still = !cinematicsOn()
+    try { if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) still = true } catch { /* no matchMedia */ }
+    if (still || !video || !titleFilmSrc) { if (still) land(); return }
+    video.volume = TITLE_STORM_VOLUME
+    video.muted = musicOff
+    video.play().catch(() => {
+      video.muted = true
+      video.play().catch(() => land()) // the film cannot play at all here: show the still and the title
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stage, titleFilmSrc])
+
+  // The mute button and the Intro music switch govern the thunder too; a refusal silences it at once.
+  useEffect(() => {
+    const video = titleFilmRef.current
+    if (video && musicOff) video.muted = true
+  }, [musicOff])
+
   const unmuteFilm = () => {
     const video = videoRef.current
     if (!video || musicOff) return
@@ -171,10 +222,16 @@ export default function TitleScreen() {
     if (!audio) return
     audio.volume = 0.55
     if (stage === "film") { if (!audio.paused) audio.pause(); return }
+    // The thunder in the title film comes up with the song and never without it (playThemeAudio resolves without
+    // playing when music is refused, so the pause check is what says the song is really on).
+    const stormUp = () => {
+      const film = titleFilmRef.current
+      if (film && !audio.paused && introMusicOn() && !isMusicOff()) film.muted = false
+    }
     const tryTheme = () => {
       if (!introMusicOn()) { if (!audio.paused) audio.pause(); return }
-      if (!audio.paused) { setNeedsTap(false); return }
-      playThemeAudio().then(() => setNeedsTap(false)).catch(() => setNeedsTap(true))
+      if (!audio.paused) { setNeedsTap(false); stormUp(); return }
+      playThemeAudio().then(() => { setNeedsTap(false); stormUp() }).catch(() => setNeedsTap(true))
     }
     tryTheme()
     window.addEventListener("pointerdown", tryTheme)
@@ -248,17 +305,37 @@ export default function TitleScreen() {
         .ttl-ember { position: absolute; bottom: -2vh; width: 3px; height: 3px; border-radius: 50%; background: #ffb257; box-shadow: 0 0 8px 2px rgba(255,140,40,.55); animation: ttl-ember linear infinite; pointer-events: none; }
         .ttl-menu > * { animation: ttl-rise .7s cubic-bezier(.2,.7,.2,1) both; }
         .ttl-rule { transform-origin: 50% 50%; animation: ttl-rule 1.2s cubic-bezier(.2,.7,.2,1) .3s both; }
-        @media (prefers-reduced-motion: reduce) { .ttl-art, .ttl-ember, .ttl-menu > *, .ttl-rule { animation: none !important; } }
+        /* The title lettering is one picture shown twice: the top band (ASHES OF) flares up first, then the lower
+           band (PROMETHEUS) writes in from the left. 38.5% is where the two lines part in the picture. */
+        @keyframes ttl-word-a { from { opacity: 0; filter: brightness(2.4) blur(3px) } to { opacity: 1; filter: brightness(1) blur(0) } }
+        @keyframes ttl-word-b { from { clip-path: inset(38.5% 100% 0 0); filter: brightness(2.2) } to { clip-path: inset(38.5% 0 0 0); filter: brightness(1) } }
+        .ttl-word-a { clip-path: inset(0 0 61.5% 0); animation: ttl-word-a 1.3s ease-out .5s both; }
+        .ttl-word-b { clip-path: inset(38.5% 0 0 0); animation: ttl-word-b 1.9s cubic-bezier(.3,.6,.2,1) 1.4s both; }
+        @media (prefers-reduced-motion: reduce) { .ttl-art, .ttl-ember, .ttl-menu > *, .ttl-rule, .ttl-word-a, .ttl-word-b { animation: none !important; } }
       `}</style>
 
-      {/* THE KEY ART — the whole painting, never cropped (Sam, 2026-10-25: "the head of the lich is cut
-          off"). On a wide screen it stands at full height with a blurred copy of itself filling the
-          sides; on a phone it covers, because the menu sits over the bottom there anyway. */}
+      {/* THE TITLE FILM, then the still it rests on (see the note at the top of this file). Both fill the screen and
+          hold the lich in frame: his head is never cropped (Sam, 2026-10-25: "the head of the lich is cut off"). On a
+          phone the frame is pulled a little right so he stays in the narrow window. */}
       <div className={cn("absolute inset-0 transition-opacity duration-1000", filmUp ? "opacity-0" : "opacity-100")}>
-        <div className="absolute inset-0 hidden scale-110 bg-[url('/images/intro-poster.webp')] bg-cover bg-center opacity-80 blur-2xl md:block" />
-        <div className="ttl-art absolute inset-0 bg-[url('/images/intro-poster.webp')] bg-cover bg-[center_30%] md:bg-contain md:bg-center md:bg-no-repeat" />
+        <video
+          ref={titleFilmRef}
+          src={titleFilmSrc ?? undefined}
+          poster="/images/title-lich-open.webp"
+          onTimeUpdate={(e) => { if (!landedRef.current && e.currentTarget.currentTime >= TITLE_LANDS_AT) land() }}
+          onEnded={land}
+          onError={land}
+          muted
+          playsInline
+          preload="auto"
+          aria-hidden
+          className="absolute inset-0 h-full w-full object-cover object-[56%_center] md:object-center"
+        />
+        <div className={cn("ttl-art absolute inset-0 bg-[url('/images/title-lich.webp')] bg-cover bg-[52%_center] transition-opacity duration-700 md:bg-center", landed ? "opacity-100" : "opacity-0")} />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_50%_40%,rgba(0,0,0,0)_0%,rgba(0,0,0,0.35)_55%,rgba(0,0,0,0.85)_100%)]" />
         <div className="absolute inset-x-0 top-0 h-32 bg-gradient-to-b from-black/70 to-transparent" />
+        {/* the floor the lettering stands on, once the film has come to rest */}
+        <div className={cn("absolute inset-x-0 bottom-0 hidden h-[55%] bg-gradient-to-t from-black/85 via-black/45 to-transparent transition-opacity duration-1000 md:block", landed ? "opacity-100" : "opacity-0")} />
         {/* embers */}
         {EMBERS.map((e, i) => (
           <span key={i} className="ttl-ember" style={{ left: e.left, animationDuration: e.dur, animationDelay: e.delay, ["--dx" as string]: e.dx } as React.CSSProperties} />
@@ -352,15 +429,27 @@ export default function TitleScreen() {
         </div>
       )}
 
-      {/* WATCH THE OPENING (Sam, 2026-11-25: "below ashes of prometheus title"). On a wide screen the painting stands
-          whole and centred, so its bottom edge is at 50% + half its height (the painting is 3840x2867, so half its
-          height is 37.33vw when the width is what limits it). The link sits just under that edge, never off screen. */}
+      {/* THE TITLE, and WATCH THE OPENING under it (Sam, 2026-11-25: "below ashes of prometheus title"). The lettering
+          is cut from the old painting (public/images/title-lettering.webp, 2899x952), so it is the same font as
+          before. On a wide screen it stands at the bottom, centred in the room left of the menu; on a phone it sits
+          at the top, above the lich, because the menu fills the bottom. Its room is kept from the start, so nothing
+          jumps when it writes itself in. */}
       {stage === "title" && (
-        <button type="button" onClick={() => setStage("film")}
-          className={cn(WATCH_CLASS, "absolute left-1/2 z-10 hidden -translate-x-1/2 transition-opacity duration-500 md:block", leaving ? "opacity-0" : "opacity-100")}
-          style={{ top: "min(calc(50% + 37.33vw + 8px), calc(100% - 36px))" }}>
-          Watch the opening
-        </button>
+        <div className={cn("pointer-events-none absolute inset-x-0 top-[5vh] z-10 flex flex-col items-center px-[9vw] transition-opacity duration-500 md:bottom-[3vh] md:left-[3vw] md:right-[calc(min(92vw,380px)+7vw)] md:top-auto md:px-0", leaving ? "opacity-0" : "opacity-100")}>
+          <div className="relative w-full drop-shadow-[0_6px_22px_rgba(0,0,0,0.9)]" style={{ maxWidth: "min(1100px, 92vh)", aspectRatio: "2899 / 952" }}>
+            {landed && (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/images/title-lettering.webp" alt="Ashes of Prometheus" className="ttl-word-a absolute inset-0 h-full w-full" />
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src="/images/title-lettering.webp" alt="" aria-hidden className="ttl-word-b absolute inset-0 h-full w-full" />
+              </>
+            )}
+          </div>
+          <button type="button" onClick={() => setStage("film")} className={cn(WATCH_CLASS, "pointer-events-auto mt-2 hidden md:block")}>
+            Watch the opening
+          </button>
+        </div>
       )}
 
       {/* corners: the sound and the gear (Rehearsal is a row inside the gear's sheet since 2026-11-25) */}
