@@ -32743,8 +32743,19 @@ function owFightEnds(){
 }
 // --- the light ---
 const OW_LABEL = {"away": "Away (reloading?)", "in-step": "In step", "catching-up": "Catching up…", "out-of-touch": "Out of touch", "fight-unshared": "Fight not shared", "off": "Not shared", "rehearsal": "Rehearsal · own world"};
+// THE LIGHT SAID "FIGHT NOT SHARED" DURING SHARED FIGHTS (Sam's playtest note, 2026-11-25: "Fight not shared"). The
+// status "fight-unshared" dates from before ONE FIGHT (2026-11-12), when a fight really was one screen's own. It is
+// still the status every screen on a fighting plate reports (the gather and the seat list read it, so the VALUE stays),
+// but its words were never updated: both screens read "Fight not shared", amber, with a tooltip saying the others do
+// not see it, through fights that walk_fight_msgs shows both screens playing. Measured on run 6924b7b2: both screens
+// logged "Sync: Fight not shared" at 21:54:18 while one ran the pen-gate fight and the other showed it. Now the words
+// follow the fight this screen is actually in: shared (it runs it, or shows another screen's) reads "Fight shared",
+// green; only a fight that is NOT on One Fight keeps the old words and the amber. Presentation only. [CLAUDE]
+function owFightShared(){ return !!FIGHT.id && (FIGHT.auth || FIGHT.mirror) && !FIGHT.scene && !FIGHT.watch; }
+function owWords(st){ return st === "fight-unshared" && owFightShared() ? "Fight shared" : (OW_LABEL[st] || st); }
+function owDot(st){ return st === "fight-unshared" && owFightShared() ? "in-step" : st; }
 function owSetStatus(s){
-  if (s !== OW.status) reviewLog("sync", `Sync: ${OW_LABEL[s] || s}${OW.status && OW.status !== "off" ? ` (was ${OW_LABEL[OW.status] || OW.status})` : ""}`);
+  if (s !== OW.status) reviewLog("sync", `Sync: ${owWords(s)}${OW.status && OW.status !== "off" ? ` (was ${OW_LABEL[OW.status] || OW.status})` : ""}`);
   OW.status = s;
   let el = $("owLight");
   if (!el){
@@ -32753,10 +32764,11 @@ function owSetStatus(s){
     $("stage").appendChild(el);
     const p = document.createElement("div"); p.id = "owSeats"; p.className = "ow-seats"; p.hidden = true; $("stage").appendChild(p);
   }
-  el.dataset.s = s;
+  el.dataset.s = owDot(s);
   const f = fightHere();
-  el.textContent = OW_LABEL[s] || s;
-  el.title = s === "fight-unshared" && f ? `A fight is running on ${f.who === (SHORT[mySlug] || mySlug) ? "this" : f.who + "'s"} screen. Fights are not shared between screens yet — the others do not see it.`
+  el.textContent = owWords(s);
+  el.title = s === "fight-unshared" && owFightShared() ? `This fight is shared: ${FIGHT.auth ? "this screen runs it and the others show it" : "another screen runs it and this one shows it"}. Every screen on this plate sees the same fight.`
+    : s === "fight-unshared" && f ? `A fight is running on ${f.who === (SHORT[mySlug] || mySlug) ? "this" : f.who + "'s"} screen. Fights are not shared between screens yet — the others do not see it.`
     : s === "rehearsal" ? (OW_TEST_HOST && !SANDBOX ? "A test copy: this screen plays its own world and the other screens do not see it. Click to join the real table." : "A DM rehearsal: this screen plays its own world and never touches the real game.")
     : s === "off" ? "This screen is not sharing its world with the others. Tell the DM."
     : s === "out-of-touch" ? "This screen cannot reach the game. It will catch up on its own when the connection comes back."
@@ -32776,7 +32788,7 @@ function owRenderSeats(){
   p.innerHTML = rows.length ? rows.map(([k, s]) => {
     const live = AopOneWorld.isOnline(s, t), st = live ? s.status : "out-of-touch";
     const name = s.dm ? "DM" : (s.slug && (SHORT[s.slug] || PLAYS_AS[s.slug])) || "Seat " + (s.seat || "?");
-    return `<div class="ow-row"><i data-s="${esc(st)}"></i>${esc(name)}<span>${esc(live ? OW_LABEL[st] || st : "away")}</span></div>`;
+    return `<div class="ow-row"><i data-s="${esc(owDot(st))}"></i>${esc(name)}<span>${esc(live ? owWords(st) : "away")}</span></div>`;
   }).join("") : `<div class="ow-row">No screen has checked in yet.</div>`;
   if (back){ p.insertAdjacentHTML("beforeend", back); $("owLeave").onclick = () => owTestSwitch(false); }
 }
@@ -32965,7 +32977,7 @@ function owPaintDots(){
   const el = $("owLight"); if (!el || !OW.on || !window.AopOneWorld) return;
   let box = el.querySelector(".ow-dots"); if (!box){ box = document.createElement("span"); box.className = "ow-dots"; el.appendChild(box); }
   const t = owNow(), seats = Object.entries(OW.seats || {}).filter(([k, s]) => s && k !== OW.key && typeof s.at === "number" && t - s.at <= GATHER_SEAT_MS);
-  box.innerHTML = seats.map(([k, s]) => { const live = AopOneWorld.isOnline(s, t), st = live ? s.status : "away"; lagging(k, live && !(s.status === "in-step" || s.status === "fight-unshared"), t); return `<i data-s="${esc(st)}" title="${esc(seatNameOf(s))}: ${esc(live ? OW_LABEL[st] || st : "away")}"></i>`; }).join("");
+  box.innerHTML = seats.map(([k, s]) => { const live = AopOneWorld.isOnline(s, t), st = live ? s.status : "away"; lagging(k, live && !(s.status === "in-step" || s.status === "fight-unshared"), t); return `<i data-s="${esc(owDot(st))}" title="${esc(seatNameOf(s))}: ${esc(live ? owWords(st) : "away")}"></i>`; }).join("");
 }
 setInterval(owPaintDots, 1000);
 
