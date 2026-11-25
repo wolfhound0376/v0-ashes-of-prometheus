@@ -9,6 +9,10 @@
 // forgets what this browser remembered about the game, keeps your hero, the DM key and your choices,
 // and reloads clean. Two presses, so a stray tap does nothing.
 //
+// And, on the title screen only (the `rehearsal` prop), the way into Rehearsal — the sandbox, behind the DM code
+// (Sam, 2026-11-25: "Rehearsal should be in settings where you put your DM code"). It is a link to /rehearsal,
+// which owns the one lock: it asks for the code once per device and then opens the sandbox.
+//
 // The gear that opens it (SettingsGear) sits bottom-right on the pre-game pages. The sheet is plain
 // markup rather than the shadcn Dialog so it carries the game's own look — gold rule, small caps,
 // carved toggles — with nothing to theme twice.
@@ -19,6 +23,7 @@ import { cn } from "@/lib/utils"
 import { readSettings, writeSettings, onSettingsChange, type PlayerSettings } from "@/lib/settings"
 import { setMusicOff } from "@/lib/audio-prefs"
 import { repairThisDevice } from "@/lib/repair-device"
+import { REHEARSAL_HREF, REHEARSAL_LINK_LABEL } from "@/lib/title-door"
 
 function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -81,7 +86,26 @@ function RepairRow() {
   )
 }
 
-export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+function RehearsalRow() {
+  return (
+    <div className="flex items-start justify-between gap-4 py-4">
+      <div>
+        <div className="font-serif text-[15px] tracking-[0.08em] text-[#e8d9ae]">{REHEARSAL_LINK_LABEL}</div>
+        <p className="mt-1 text-[12px] leading-relaxed text-stone-500">
+          The sandbox, for whoever runs the game. It asks for the Dungeon Master&rsquo;s code once on this device. Malachar answers, and nothing is saved.
+        </p>
+      </div>
+      <a
+        href={REHEARSAL_HREF}
+        className="shrink-0 rounded-sm border border-[#7a5f33] bg-[#16110b] px-3 py-1.5 font-serif text-[10px] uppercase tracking-[0.18em] text-[#d9bd7e] transition-colors hover:border-[#c9a868] hover:text-[#f0dba8]"
+      >
+        Enter
+      </a>
+    </div>
+  )
+}
+
+export function SettingsSheet({ open, onClose, rehearsal = false }: { open: boolean; onClose: () => void; rehearsal?: boolean }) {
   const [s, setS] = useState<PlayerSettings>({ cinematics: true, introMusic: true })
 
   useEffect(() => {
@@ -140,6 +164,7 @@ export function SettingsSheet({ open, onClose }: { open: boolean; onClose: () =>
             <Toggle on={s.introMusic} onChange={(v) => set({ introMusic: v })} label="Intro music" />
           </div>
           <RepairRow />
+          {rehearsal && <RehearsalRow />}
         </div>
 
         <button
