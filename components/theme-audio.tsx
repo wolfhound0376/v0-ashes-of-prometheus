@@ -88,5 +88,8 @@ export default function ThemeAudio() {
     })
   }, [])
 
-  return <audio id={THEME_AUDIO_ID} src="/audio/forge-creation-theme.mp3" loop preload="auto" />
+  // The title song (Sam, 2026-11-25: "Replace the song … of the Title landing page with … AOP_Intro_GOTHIC_vocals_softer.mp3").
+  // It is the one theme element, so the new song also carries on into the door and the Forge, as the old one did.
+  // The old file (/audio/forge-creation-theme.mp3) stays in the repo, unused.
+  return <audio id={THEME_AUDIO_ID} src="/audio/aop-intro-gothic.mp3" loop preload="auto" />
 }
