@@ -26,8 +26,8 @@ describe("where a road encounter is fought (Sam, 2026-11-12)", () => {
     expect(isBattle(c) && c.plate).toBe("road-webs")
   })
   it("offers nothing it cannot back with data, and says why", () => {
-    const chuul = { table_key: "underdark_ambush", result: "1 chuul lurking in a pool of water", detail: { count: 1, bestiary: "Chuul" } }
-    expect(battleFor([random, ambushers, chuul], null, four)).toEqual({ reason: "The walk has no stat block for Chuul yet." })
+    const piercers = { table_key: "underdark_ambush", result: "1d6 piercers masquerading as stalactites", detail: { count: "1d6", bestiary: "Piercer" } }
+    expect(battleFor([random, ambushers, piercers], null, four)).toEqual({ reason: "The walk has no stat block for Piercer yet." })
     const traders = { table_key: "underdark_creature", result: "Traders", detail: {} }
     expect(battleFor([random, traders], null, four)).toEqual({ reason: "This result has no stat block linked in the encounter table yet." })
     const noCount = { table_key: "underdark_ambush", result: "giant spiders", detail: { bestiary: "Giant Spider" } }
@@ -79,5 +79,30 @@ describe("the Ruins on the road", () => {
   })
   it("opens the walk page at the rooms and says it came from the map", () => {
     expect(RUINS_HREF).toBe("/velkynvelve?ruins=1&from=map")
+  })
+})
+
+describe("more ambushers come to blows (Sam, 2026-11-25: \"Need more creatures\")", () => {
+  const random = { table_key: "underdark_random", result: "One or more creatures", detail: {} }
+  const ambushers = { table_key: "underdark_creature", result: "Ambushers", detail: {} }
+  const one = () => 1
+  const row = (result: string, bestiary: string, count: number | string) => ({ table_key: "underdark_ambush", result, detail: { bestiary, count } })
+  it("the chuul, the grell and the umber hulk each have a fight, on the tunnels", () => {
+    for (const [result, bestiary, foe] of [
+      ["1 chuul lurking in a pool of water", "Chuul", "chuul"],
+      ["1 grell floating near the high ceiling", "Grell", "grell"],
+      ["1 umber hulk bursting out of a nearby wall", "Umber Hulk", "umber-hulk"],
+    ] as const) {
+      const b = battleFor([random, ambushers, row(result, bestiary, 1)], null, one)
+      expect(isBattle(b), bestiary).toBe(true)
+      if (!isBattle(b)) continue
+      expect(b.foes).toEqual([foe])
+      expect(TUNNEL_PLATES).toContain(b.plate)
+    }
+  })
+  it("a creature the walk cannot field still says why, and a row with no count still says so", () => {
+    expect(battleFor([random, ambushers, row("1d6 piercers masquerading as stalactites", "Piercer", "1d6")], null, one)).toEqual({ reason: "The walk has no stat block for Piercer yet." })
+    const crawler = { table_key: "underdark_creature", result: "Carrion crawler", detail: { bestiary: "Carrion Crawler" } }
+    expect(battleFor([random, crawler], null, one)).toEqual({ reason: "The walk has no stat block for Carrion Crawler yet." })
   })
 })
