@@ -16,7 +16,7 @@
 //
 //   WHICH FOES. Only a creature row that carries both a `bestiary` name and a `count` in encounter_table_rows
 //     (today: the Ambushers table), and only a creature the walk page has a stat block and sprite for
-//     (WALK_FOES: giant spider, orog, grick). A dice count ("1d6") is rolled here with the caller's roller and
+//     (WALK_FOES: giant spider, orog, grick, chuul, grell, umber hulk). A dice count ("1d6") is rolled here with the caller's roller and
 //     the roll is kept, so the number on the plate can be audited like every other die.
 //
 // Surprise is the meeting's verdict (lib/travel/meeting.ts), carried through untouched.
@@ -56,7 +56,13 @@ export function tunnelPlate(roll: Roll): string {
 }
 
 /** Bestiary name -> the walk page's foe id (a sprite AND a stat block there: template.html FOE_BLOCKS). */
-export const WALK_FOES: Readonly<Record<string, string>> = { "giant spider": "giant-spider", orog: "orog", grick: "grick" }
+// Chuul, grell and umber hulk added 2026-11-25 (Sam: "Need more creatures"): the rest of the Ambushers rows whose stat block
+// and sprite the walk page already carries. Carrion crawler and ochre jelly have both too, but their Creature Encounters
+// rows give no count yet, so a roll of either still says so instead of guessing how many. Piercer has a sprite, no stat block.
+export const WALK_FOES: Readonly<Record<string, string>> = {
+  "giant spider": "giant-spider", orog: "orog", grick: "grick",
+  chuul: "chuul", grell: "grell", "umber hulk": "umber-hulk",
+}
 
 export interface RoadBattle {
   /** The walk plate the fight opens on. */
