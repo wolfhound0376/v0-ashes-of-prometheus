@@ -210,3 +210,13 @@ describe("a fleeing drow runs the feet its turn allows (Sam, 2026-11-25: \"the c
   it("slowed by 10 ft: 40 ft", () => expect(run({ move: 20, turnFt: 20, sheet: { speed: 30 } })).toBe(40))
   it("just up from prone (half the move spent standing): 45 ft", () => expect(run({ move: 15, turnFt: 30, sheet: { speed: 30 } })).toBe(45))
 })
+
+describe("NO HORN ON DISCOVERY (Sam, 2026-11-25: \"runner only\")", () => {
+  it("a discovered escape no longer starts the waves by itself: the only thing that sets the alarm is raiseAlarm", () => {
+    expect(html).not.toContain("function escapeHorn")
+    expect(html).not.toContain("escapeHorn(")
+    const sets = html.match(/state\.alarm = \{plate:/g) || []
+    expect(sets.length).toBe(1)
+    expect(BLOCK).toContain("state.alarm = {plate:")
+  })
+})
