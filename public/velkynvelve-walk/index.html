@@ -11398,6 +11398,13 @@ function huntClockStart(){
     const H = node.hazard && node.hazard.hunt; if (!H || !cbt || FIGHT.mirror || SANDBOX) return;
     if (escapeNow().phase !== PEN_ESCAPE.PHASE.HUNTED) return;
     if (pendingHelp.some(h => h.hunt && owSame(h.plate, cur))) return;
+    // THE HUNT COMES ONCE (Sam's playtest, 2026-11-24: "why are also these people still on us"). The hunt arrived as a
+    // fight of its own the moment the ooze was dead, and that fight, being a fight at the pool while hunted, started this
+    // clock again: three more drow walked in four rounds later, six in all, and the party fell. Now the hunt is written
+    // in the world's state when its clock starts (`state.hunt`, shared like the rest), and no later fight on that plate
+    // starts another. It is forgotten when the party is marched back to the pen (escapeTo, RETURNED).
+    if (state.hunt && owSame(state.hunt.plate, cur)) return;
+    state.hunt = {plate: String(cur), at: Date.now(), came: 0}; saveWalk();
     const aside = !!(storyPledge && storyPledge.keptAt), ids = huntParty({jorlanStandsAside: aside});
     pendingHelp.push({plate: String(cur), ids, at: {x: H.at[0], y: H.at[1]}, fightId: cbt.id, dueRound: huntDueRound(1), dueAt: now + HUNT_ROUNDS * 6000, hunt: true,
       who: aside ? "The hunt" : "Jorlan", why: aside ? "The hunt reaches the pool" : "The hunt reaches the pool, Jorlan at its head"});
@@ -18012,11 +18019,28 @@ function runnerGotOut(f, ex){
 // help comes back: into the fight still running here, or (the fight over) as a new one if the party is still here
 async function helpArrives(){
   for (const h of pendingHelp) if (h.hunt && !h.warned && cbt && cbt.id === h.fightId && cbt.round === h.dueRound - 1){ h.warned = true; toast("The hunt is one round away.", 3800); log(`<b>Torchlight on the cavern floor.</b> The hunt is one round away.`); }   // THE HUNT: one warning
+  // THE HUNT COMES ONCE: every screen that opened the pool's fight put the hunt on its own queue; once it has arrived
+  // on any of them (state.hunt.came, shared) the others drop theirs, or each would bring the hunt in again later
+  if (state.hunt && state.hunt.came) pendingHelp = pendingHelp.filter(h => !h.hunt);
+  // A BREATHER (Sam, 2026-11-24, "Your suggestion": the hunt opened its fight three seconds after the ooze died). The
+  // clock is four rounds from the start of the fight; a fight won sooner used to leave the hunt due at once. Now, when
+  // the fight that started the clock is over and the hunt has not come, it is at least HUNT_BREATH_MS away, and the
+  // party is told so once. [CLAUDE] 30 seconds, about five rounds: Sam's to change.
+  for (const h of pendingHelp) if (h.hunt && !h.breath && !cbt && mode !== "combat" && owSame(h.plate, cur)){
+    h.breath = true; h.dueAt = Math.max(h.dueAt, now + HUNT_BREATH_MS);
+    toast("The hunt is close. You have a moment: use it, or go.", 5200);
+    log(`<b>Torchlight high on the cavern wall.</b> The hunt is close: perhaps half a minute. Bind wounds, or go.`, {say: true});
+  }
   const due = pendingHelp.filter(h => owSame(h.plate, cur) && ((cbt && cbt.id === h.fightId && cbt.round >= h.dueRound) || (!cbt && now >= h.dueAt)));
   if (!due.length) return;
   pendingHelp = pendingHelp.filter(h => !due.includes(h));
-  for (const h of due) await reinforce(h.ids, h.at, h.why || `${h.who} is back with help`);
+  for (const h of due){
+    const came = await reinforce(h.ids, h.at, h.why || `${h.who} is back with help`);
+    if (came === false){ pendingHelp.push(h); continue; }                 // a card held the moment: next tick, as reinforce says
+    if (h.hunt && !FIGHT.mirror){ state.hunt = {...(state.hunt || {plate: String(cur), at: Date.now()}), came: Date.now()}; saveWalk(); }
+  }
 }
+const HUNT_BREATH_MS = 30000;
 // a wave or a runner's help walks in at `at` (a doorway): joins the fight here, or starts one
 async function reinforce(ids, at, why){
   if (FIGHT.mirror) return true;                                        // ONE FIGHT: the fight's own screen brings them in; this one shows it
@@ -29985,6 +30009,7 @@ function escapeTo(event, why){
     if (next.phase === PEN_ESCAPE.PHASE.HUNTED) escapeHorn(next.why);                       // step 6: hunted IS the horn and the waves
     if (event === PEN_ESCAPE.EVENT.RETURNED && state.alarm) state.alarm = null;              // marched back in: that alarm is over
     if (event === PEN_ESCAPE.EVENT.RETURNED && state.dead) state.dead = null;                // ...and the drow have carried their dead off ([CLAUDE] a reading, flagged)
+    if (event === PEN_ESCAPE.EVENT.RETURNED && state.hunt) state.hunt = null;                // ...and that hunt is over: the next escape is hunted afresh (THE HUNT COMES ONCE)
     saveWalk();
     console.info("[escape]", was.phase, "->", next.phase, "(" + next.why + ")");
     return true;
@@ -32242,7 +32267,12 @@ function fightTickBody(){
     const poseNew = full || FIGHT.sent[k] !== pj, cNew = full || FIGHT.sentC[k] !== cj;
     if (poseNew || cNew){ if (cNew && c) s.c = c; actorsOut.push(s); FIGHT.sent[k] = pj; FIGHT.sentC[k] = cj; }
   }
-  for (const k of Object.keys(FIGHT.sent)) if (!keys.has(k)){ gone.push(k); delete FIGHT.sent[k]; if (FIGHT.sentC) delete FIGHT.sentC[k]; }
+  // NOBODY "LEAVES" BECAUSE THE FIGHT IS OVER (Sam's playtest, 2026-11-24: the hunt's fight opened with none of the four
+  // in it). endCombat clears `cbt` 700 ms before it says the fight has ended; a tick in that gap no longer lists the
+  // allies and bystanders (fightActors reads them off `cbt`), so it reported them all as gone, and the screen showing
+  // the fight took them out of its `actors`. A fight opened from that screen then had no ally to call on. Only a
+  // running fight (or a scene) says who has left it.
+  if (cbt || FIGHT.scene) for (const k of Object.keys(FIGHT.sent)) if (!keys.has(k)){ gone.push(k); delete FIGHT.sent[k]; if (FIGHT.sentC) delete FIGHT.sentC[k]; }
   const body = {t: Date.now()};
   if (FIGHT.scene && full) body.scene = FIGHT.scene;
   if (actorsOut.length) body.actors = actorsOut;
@@ -32431,7 +32461,8 @@ async function mirrorActor(s){
 async function mirrorApply(b){
   if (FIGHT.watch){ await sceneMirrorApply(b); return; }
   for (const s of b.actors || []) await mirrorActor(s);
-  for (const k of b.gone || []){ const a = byKey(k); if (a && a.kind !== "pc"){ actors = actors.filter(x => x !== a); foes = foes.filter(x => x !== a); } }
+  for (const k of b.gone || []){ const a = byKey(k); if (a && a.kind !== "pc"){ if (npcs.includes(a) && actors.includes(a)) (FIGHT.stood ||= new Set()).add(a);   // one of this plate's own people: back on the plate when the fight is over (mirrorEnd)
+    actors = actors.filter(x => x !== a); foes = foes.filter(x => x !== a); } }
   if (b.cbt && cbt){ const c = b.cbt, turnWas = activeActor(); FIGHT.gotCbt = true;
     Object.assign(cbt, {round: c.round, idx: c.idx, phase: c.phase, quick: c.quick, order: c.order.map(byKey).filter(Boolean), boss: byKey(c.boss),
       allies: c.allies.map(byKey).filter(Boolean), bystanders: c.bystanders.map(byKey).filter(Boolean), pend: dec(c.pend)});
@@ -32558,6 +32589,12 @@ function mirrorEnd(b){
   $("bossBar").hidden = true; $("cbtFlee").hidden = true; turnCallHide(); $("combat").classList.remove("has-boss", "strip-on", "peek");
   $("combat").hidden = true; stage.classList.remove("fight"); $("vignette").classList.remove("on"); setTrack("explore"); cbtLog.active = false;
   party.forEach(p => { p.home = {x: p.x, y: p.y}; p.path = []; });
+  // OUR SIDE STANDS DOWN HERE AS IT DOES ON THE FIGHT'S OWN SCREEN (endCombat): the allies and bystanders are people on
+  // the plate again, not fighters of a fight that is over, and anyone the fight's last ticks took off this screen is
+  // put back. Left as they were, the next fight opened from this screen found no ally (alliesHere) and nobody to run.
+  for (const n of FIGHT.stood || []) if (npcs.includes(n) && !actors.includes(n) && !n.body && !n.offStage) actors.push(n);
+  FIGHT.stood = null;
+  for (const n of npcs) if (!n.hostile && (n.ally || n.bystander)){ n.ally = false; n.bystander = false; n.path = []; if (!n.down && !n.body){ n.home = {x: n.x, y: n.y}; n.post = {x: n.x, y: n.y}; } }
   fightLetsGo();                     // A LIVE FIGHT HOLDS ITS PLATE, rule 2: the mirror's own hero may be standing in a doorway
   try { camTo(1, NAT_W / 2, NAT_H / 2, 800); } catch (e) {}
   renderParty(); hint("");
