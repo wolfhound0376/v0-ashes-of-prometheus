@@ -95,6 +95,20 @@ export type LeadInfo = {
   open_halt?: { kind: string; title: string; body: string | null; source: string } | null
 }
 
+/** One search of an ambushers' lair (app/api/travel action "lair"; OotA ch.2 p.32). */
+export type LairFind = {
+  searcher: string
+  skill: string
+  arithmetic: string
+  face: number | null
+  result: string
+  note: string
+  awarded: { name: string; quantity: number }[]
+  dm_picks: string | null
+  flags: string[]
+  source: string
+}
+
 export type Halt = {
   /** Who saw whom first, when creatures were met here (lib/travel/meeting.ts). */
   meeting?: { first: "party" | "them"; chip: string } | null
@@ -108,6 +122,10 @@ export type Halt = {
   noBattle?: string | null
   /** The terrain dice landed on the book's Ruins: the card offers the six painted rooms (lib/travel/battle.ts RUINS_HREF). */
   ruins?: boolean
+  /** The dice named Ambushers: their lair can be searched once they are behind the party (lib/travel/lair.ts). */
+  lair?: boolean
+  /** What the search of the lair turned up, once made. */
+  lairFind?: LairFind | null
   kind: string
   title: string
   body: string | null
@@ -569,7 +587,7 @@ export function useTravel() {
         .catch(() => {})
     }
     if (out?.halt) {
-      setHalt({ kind: out.kind, title: out.title, body: out.body, rolls: out.rolls ?? [], source: out.source, meeting: out.meeting ? { first: out.meeting.first, chip: out.meeting.chip } : null, foes: Array.isArray(out.foes) ? out.foes : [], stances: Array.isArray(out.stances) ? out.stances : [], stance: null, battle: out.battle ?? null, noBattle: out.noBattle ?? null, ruins: !!out.ruins })
+      setHalt({ kind: out.kind, title: out.title, body: out.body, rolls: out.rolls ?? [], source: out.source, meeting: out.meeting ? { first: out.meeting.first, chip: out.meeting.chip } : null, foes: Array.isArray(out.foes) ? out.foes : [], stances: Array.isArray(out.stances) ? out.stances : [], stance: null, battle: out.battle ?? null, noBattle: out.noBattle ?? null, ruins: !!out.ruins, lair: !!out.lair, lairFind: null })
       // Picked up again by the Continue button, from exactly this step.
       await new Promise<void>((resolve) => {
         resumeRef.current = () => {
@@ -659,6 +677,20 @@ export function useTravel() {
     setStanceBusy(false)
   }
 
+  /** Search the ambushers' lair: the server rolls the check and the book's d20, and puts what is found in the searcher's pack. */
+  const [lairBusy, setLairBusy] = useState(false)
+  async function searchLair() {
+    if (lairBusy) return
+    setLairBusy(true)
+    try {
+      const res = await fetch("/api/travel", { method: "POST", headers: travelHeaders(), body: travelBody({ action: "lair" }) })
+      const out = await res.json().catch(() => null)
+      // Already searched (another browser, or before a reload): show what was found then.
+      if (out?.lair) setHalt((h) => (h ? { ...h, lairFind: out.lair } : h))
+    } catch { /* the button stays; the search can be tried again */ }
+    setLairBusy(false)
+  }
+
   /** The halt card's buttons: walk on (or break camp), or push on into a forced march. */
   function continueMarch(force: boolean) {
     const go = resumeRef.current
@@ -681,7 +713,7 @@ export function useTravel() {
   return {
     nodes, edges, party, loaded, dmKey, setRefresh,
     confirmNode, setConfirmNode, arrivedAt, setArrivedAt,
-    halt, setHalt, continueMarch, takeStance, stanceBusy, reachNode, walkStarted,
+    halt, setHalt, continueMarch, takeStance, stanceBusy, searchLair, lairBusy, reachNode, walkStarted,
     /** did THIS browser set the party walking (the one that rolls what waits at each marker)? */
     initiated: () => initiatedRef.current,
     vessels, hasBoat, march, setMarch, guides, pcs,

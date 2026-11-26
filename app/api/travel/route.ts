@@ -24,6 +24,10 @@ import { noticeAt, noticeSpec, type Eyes } from "@/lib/travel/notice"
 import { meetingAt } from "@/lib/travel/meeting"
 import { foesOf, resolveStance, stanceOptions, type Foe, type StanceResult } from "@/lib/travel/stance"
 import { battleFor, isBattle, ruinsRolled } from "@/lib/travel/battle"
+import { LAIR_SOURCE, isAmbushLair, lairSearchOpen, searcherOf } from "@/lib/travel/lair"
+import { SEARCH_DC, searchRoom, type CatalogItem, type RoomFind } from "@/lib/camp-field"
+import type { EncounterTableRow } from "@/lib/camp"
+import { resolveSkillCheck } from "@/lib/game-context"
 import { arrivalCue } from "@/lib/travel/stingers"
 import { malacharRoadLine, sayOnTheRoad, worthAWord } from "@/lib/travel/narrate"
 import { costLine, offerOptions, readOptions, resolveChoice, type NodeOption } from "@/lib/travel/options"
@@ -419,8 +423,8 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   const action = body?.action
   const nodeKey = typeof body?.node_key === "string" ? body.node_key : ""
-  const KNOWN = ["reveal", "reveal_name", "move", "arrive", "continue", "vessel", "depart", "vote", "leader", "choose", "enter", "leave", "stance"]
-  const NO_NODE = ["continue", "vessel", "depart", "vote", "leader", "stance"]
+  const KNOWN = ["reveal", "reveal_name", "move", "arrive", "continue", "vessel", "depart", "vote", "leader", "choose", "enter", "leave", "stance", "lair"]
+  const NO_NODE = ["continue", "vessel", "depart", "vote", "leader", "stance", "lair"]
   if (!KNOWN.includes(action) || (!nodeKey && !NO_NODE.includes(action))) {
     return NextResponse.json({ error: `expected { action: ${KNOWN.join("|")}, node_key }` }, { status: 400 })
   }
@@ -438,7 +442,7 @@ export async function POST(req: NextRequest) {
   const tally = tallyLeader(lead.votes, party.map((c) => c.id))
   const leaderId = whoLeads(lead.leader, lead.host, tally.leader).leader
   const leadOut = (w: ReturnType<typeof whoLeads>) => ({ leader: w.leader, by_vote: w.by_vote, by: w.by })
-  if (["depart", "move", "arrive", "continue", "choose", "enter", "leave", "stance"].includes(action) && !mayLead(who, leaderId)) {
+  if (["depart", "move", "arrive", "continue", "choose", "enter", "leave", "stance", "lair"].includes(action) && !mayLead(who, leaderId)) {
     return NextResponse.json({ error: "only the party's leader (or the DM) may move the party", leader: leaderId }, { status: 403 })
   }
   const force = body?.force === true
@@ -625,6 +629,56 @@ export async function POST(req: NextRequest) {
     await dbs.from("travel_arrivals").update({ outcome: { ...o, stance: result, ...(prior ? { stance_history: [...(o.stance_history ?? []), prior] } : {}) } }).eq("id", open.id)
     const stances = result.outcome === "spotted" ? stanceOptions({ first: o.meeting.first, foes: o.foes, pace, spotted: true }) : []
     return NextResponse.json({ ok: true, action, stance: result, stances })
+  }
+
+  // ==========================================================================
+  // LAIR — search the ambushers' lair (lib/travel/lair.ts; Sam, 2026-11-25: "Build it there"). OotA ch.2 p.32:
+  // once Ambushers are behind the party (slipped past, or fought), their lair can be searched, once. The best eye on
+  // the march rolls Perception or Investigation; on a success, a d20 on Ambush Lair Discovery. What is found resolves
+  // against the items catalog and goes into the searcher's pack; a magic item is the DM's pick, never auto-awarded.
+  // ==========================================================================
+  if (action === "lair") {
+    const dbl = createAdminClient()
+    const { data: open } = await dbl.from("travel_arrivals").select("id,outcome").eq("halted", true).is("resolved_at", null).limit(1).maybeSingle()
+    const o = (open?.outcome ?? null) as ({ kind?: string; rolls?: { table_key?: string }[]; stance?: StanceResult | null; foes?: Foe[]; meeting?: unknown; lair?: unknown } & Record<string, unknown>) | null
+    if (!open || !o || o.kind !== "encounter" || !isAmbushLair(o.rolls)) return NextResponse.json({ error: "there is no ambushers' lair here to search" }, { status: 409 })
+    if (o.lair) return NextResponse.json({ error: "the lair has already been searched", lair: o.lair }, { status: 409 })
+    // Choices still open when the party has not answered the encounter box yet (the same test the card draws).
+    const choicesLeft = !o.stance && o.meeting && Array.isArray(o.foes) && o.foes.length ? 1 : o.stance?.outcome === "spotted" ? 1 : 0
+    if (!lairSearchOpen(o.stance ?? null, choicesLeft)) return NextResponse.json({ error: "the ambushers are not behind the party yet" }, { status: 409 })
+    const ids = party.map((c) => c.id)
+    if (!ids.length) return NextResponse.json({ error: "nobody on the march to search" }, { status: 409 })
+    const [{ data: sheets }, { data: rows }, { data: items }] = await Promise.all([
+      dbl.from("characters").select("id,name,level,str_score,dex_score,con_score,int_score,wis_score,cha_score,proficiency_bonus,passive_perception,sheet_skill_proficiencies").in("id", ids),
+      dbl.from("encounter_table_rows").select("table_key,roll_min,roll_max,result,detail").eq("table_key", "underdark_discovery"),
+      dbl.from("items").select("id,slug,name,item_type,rarity,value,description,icon_url,equippable_slot,weight"),
+    ])
+    const dressed = (await dressRows(dbl, (sheets ?? []) as Record<string, unknown>[])) as unknown as (SheetSlice & { id: string })[]
+    const searcher = searcherOf(dressed)
+    if (!searcher || !(rows ?? []).length) return NextResponse.json({ error: "the lair table or the party's sheets could not be read" }, { status: 500 })
+    const check = resolveSkillCheck(searcher.sheet, searcher.skill, SEARCH_DC, Math.random)
+    const catalog = (items ?? []) as (CatalogItem & { id: string; description: string | null; icon_url: string | null; equippable_slot: string | null; weight: number | null })[]
+    const find: RoomFind = searchRoom({ who: searcher.sheet.name, total: check.total, catalog, discoveryRows: (rows ?? []) as unknown as EncounterTableRow[], rng: Math.random })
+    // Into the searcher's pack: only catalog rows, never anything the table did not name.
+    const awarded: { name: string; quantity: number }[] = []
+    const problems: string[] = []
+    for (const it of find.items) {
+      const row = catalog.find((c) => c.slug === it.slug)
+      if (!row) continue
+      const { error } = await dbl.from("inventory_items").insert({
+        character_id: searcher.sheet.id, name: row.name, quantity: it.quantity, description: row.description, item_type: row.item_type,
+        icon_url: row.icon_url, item_id: row.id, equippable_slot: row.equippable_slot, weight: row.weight, value: row.value,
+      })
+      if (error) problems.push(error.message)
+      else awarded.push({ name: row.name, quantity: it.quantity })
+    }
+    const lair = {
+      searcher: searcher.sheet.name, character_id: searcher.sheet.id, skill: searcher.skill, arithmetic: check.arithmetic,
+      face: find.face, result: find.result, note: find.note, awarded, dm_picks: find.dmPicks, flags: find.flags, source: LAIR_SOURCE,
+      ...(problems.length ? { problems } : {}),
+    }
+    await dbl.from("travel_arrivals").update({ outcome: { ...o, lair } }).eq("id", open.id)
+    return NextResponse.json({ ok: true, action, lair })
   }
 
   // CHOOSE — the party picks one of the node's authored options.
@@ -1127,7 +1181,8 @@ export async function POST(req: NextRequest) {
       stances,
       battle,
       noBattle,
-      ruins: outcome.halt && ruinsRolled(outcome.rolls),   // the book's Ruins terrain row: the card offers the way in (lib/travel/battle.ts)
+      ruins: outcome.halt && ruinsRolled(outcome.rolls),
+      lair: outcome.halt && outcome.kind === "encounter" && isAmbushLair(outcome.rolls),   // Ambushers: their lair can be searched once they are behind the party (lib/travel/lair.ts)   // the book's Ruins terrain row: the card offers the way in (lib/travel/battle.ts)
       ...outcome,
       // The day overrides what the encounter alone would have said.
       halt,
