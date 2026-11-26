@@ -12103,6 +12103,12 @@ function petCalm(sp, from, done, quick){
   const list = standing(foes).filter(f => isSpiderFoe(f.id) && !f.calmTried && feetBetween(from, f) <= CALM.rangeFt);
   if (!list.length){ done && done(); return; }
   popText(sp && actors.includes(sp) ? sp : from, "chitter…", "#c9b8ff", .9); bank("creature/creature_spider_hiss", .25);
+  // Sam (2026-11-25): "Calm can use the charm animation with hearts from the sfx game module". The Lab's charm hearts
+  // (the Friends cantrip's, labHeart): a stream from the spider (or the sleeve it rides in) to each spider it talks to,
+  // and a few more rising off each one that is calmed. `sparks` is on the relay, so every screen on the plate sees them.
+  const src = sp && actors.includes(sp) ? sp : from, hy = a => { try { return a.y - Math.max(6, labH(a) * .5); } catch (e) { return a.y - 8; } };
+  const hearts = (x0, y0, x1, y1, n, life) => { for (let i = 0; i < n; i++) setTimeout(() => sparks.push({labHeart: true, x: x0, y: y0, vx: x1 - x0 + labRnd(-14, 14), vy: y1 - y0 + labRnd(-14, 14), r: labRnd(4, 7), col: i % 2 ? "#ff7ad5" : "#ffb0e6", t0: now, life}), i * 50); };
+  list.forEach(f => hearts(src.x, hy(src), f.x, hy(f), 10, 600));
   log(`${esc(PetName())} chitters softly to the spiders${sp && actors.includes(sp) ? "" : ` from ${esc(fname(from))}'s sleeve`}.`, {say: true});
   list.forEach((f, i) => setTimeout(() => {
     if (!cbt || f.down) return;
@@ -12110,7 +12116,7 @@ function petCalm(sp, from, done, quick){
     const mod = (f.c.sheet.saves || {}).cha ?? -3, r = d20(0, f), total = r + mod, calmed = calmTakes({total, natural: r});
     log(`${esc(fname(f))}: Charisma save ${r} ${sgn(mod)} = ${total} vs DC ${CALM.dc} — ${calmed ? "<b>calmed</b>: it backs off into the dark" : "it is not listening"}.`);
     if (!calmed){ popText(f, "hiss!", "#ff8a7a", .8); return; }
-    popText(f, "calmed", "#c9b8ff", 1); f.left = true; f.path = []; f.fading = true;
+    popText(f, "♥ calmed", "#ff7ab8", 1); hearts(f.x, hy(f), f.x, hy(f) - 34, 8, 800); f.left = true; f.path = []; f.fading = true;
     setTimeout(() => { actors = actors.filter(y => y !== f); foes = foes.filter(y => y !== f); npcs = npcs.filter(y => y !== f); renderTurns(); renderParty(); }, 900);
   }, quick ? 0 : 350 + i * 450));
   setTimeout(() => { done && done(); }, quick ? 10 : 500 + list.length * 450);
