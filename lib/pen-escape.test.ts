@@ -26,7 +26,9 @@ describe("the phases", () => {
     e = escapeStep(e, EVENT.DISCOVERED, at(5, 6)); expect(e.phase).toBe(PHASE.HUNTED)
     // Jorlan does not say "Back inside": he leads the hunt
     expect(jorlanStance(e)).toBe("hunt")
-    expect(malacharLine(e)).toMatch(/alarm is up/)
+    expect(malacharLine(e)).toMatch(/the drow know/)
+    // discovered is hunted, not a horn (Sam, 2026-11-25: "runner only")
+    expect(watchChangeMeans(e)).toBe("none")
   })
 
   it("refuses moves that make no sense, and says why", () => {
