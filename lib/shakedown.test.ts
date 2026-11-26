@@ -144,11 +144,11 @@ describe("Branch A — the one who dies", () => {
 })
 
 describe("Branch B — the alarm waves", () => {
-  it("is three waves, two minutes apart", () => {
+  it("is three waves, five minutes apart (Sam, 2026-11-25)", () => {
     expect(WAVE_COUNT).toBe(3)
     expect(WAVES).toHaveLength(3)
-    expect(WAVE_INTERVAL_MS).toBe(120000)
-    expect(WAVES.map((w) => w.atMs)).toEqual([120000, 240000, 360000])
+    expect(WAVE_INTERVAL_MS).toBe(300000)
+    expect(WAVES.map((w) => w.atMs)).toEqual([300000, 600000, 900000])
   })
 
   it("commits 6 drow and 2 quaggoths and no more", () => {
@@ -157,15 +157,15 @@ describe("Branch B — the alarm waves", () => {
     expect(all.filter((s) => s === "quaggoth")).toHaveLength(2)
   })
 
-  it("sends nothing before the first two minutes", () => {
+  it("sends nothing before the first five minutes", () => {
     expect(wavesDue(0, 0)).toEqual([])
-    expect(wavesDue(119999, 0)).toEqual([])
-    expect(wavesDue(120000, 0).map((w) => w.n)).toEqual([1])
+    expect(wavesDue(299999, 0)).toEqual([])
+    expect(wavesDue(300000, 0).map((w) => w.n)).toEqual([1])
   })
 
   it("does not re-send a wave that already landed", () => {
-    expect(wavesDue(400000, 3)).toEqual([])
-    expect(wavesDue(400000, 1).map((w) => w.n)).toEqual([2, 3])
+    expect(wavesDue(1000000, 3)).toEqual([])
+    expect(wavesDue(1000000, 1).map((w) => w.n)).toEqual([2, 3])
   })
 
   it("stops for good after the third", () => {
@@ -176,18 +176,18 @@ describe("Branch B — the alarm waves", () => {
 
 describe("the countdown banner", () => {
   it("counts down to the first spears", () => {
-    expect(bannerText(0, 0)).toBe("ALARM RAISED — first spears in 2:00")
-    expect(bannerText(60000, 0)).toBe("ALARM RAISED — first spears in 1:00")
-    expect(bannerText(119000, 0)).toBe("ALARM RAISED — first spears in 0:01")
+    expect(bannerText(0, 0)).toBe("ALARM RAISED — first spears in 5:00")
+    expect(bannerText(240000, 0)).toBe("ALARM RAISED — first spears in 1:00")
+    expect(bannerText(299000, 0)).toBe("ALARM RAISED — first spears in 0:01")
   })
 
   it("names the wave once the first has landed", () => {
-    expect(bannerText(120000, 1)).toBe("WAVE 2 in 2:00")
-    expect(bannerText(230000, 1)).toBe("WAVE 2 in 0:10")
+    expect(bannerText(300000, 1)).toBe("WAVE 2 in 5:00")
+    expect(bannerText(590000, 1)).toBe("WAVE 2 in 0:10")
   })
 
   it("pads the seconds", () => {
-    expect(bannerText(115000, 0)).toBe("ALARM RAISED — first spears in 0:05")
+    expect(bannerText(295000, 0)).toBe("ALARM RAISED — first spears in 0:05")
   })
 
   it("never shows a negative countdown when a wave is overdue", () => {
@@ -196,7 +196,7 @@ describe("the countdown banner", () => {
 
   // A countdown to nothing is a lie the players would plan around.
   it("goes away once nothing more is coming", () => {
-    expect(bannerText(400000, 3)).toBeNull()
+    expect(bannerText(1000000, 3)).toBeNull()
   })
 })
 
