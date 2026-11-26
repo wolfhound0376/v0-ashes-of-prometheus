@@ -12349,6 +12349,7 @@ function nextTurn(first){
   a.c.bonusSpell = false; a.c.leveledSpell = false;   // the bonus-action spell rule is per turn (it had slipped into the comment above, so one Guiding Bolt locked out Healing Word for the rest of the fight)
   if (a.c.conds.has("grappled")){ const g = a.c.grappledBy; if (!g || g.down || feetBetween(a, g) > 5) a.c.conds.delete("grappled"); else a.c.move = 0; }
   if (a.c.conds.has("restrained")) a.c.move = 0;
+  a.c.turnFt = a.c.move;                                                 // the speed this turn began with, after its modifiers: what a Dash adds
   if ((a.kind === "foe" || a.id === PET_SPIDER) && a.c.sheet.web && !a.c.webReady){ const r = d6(); if (r >= a.c.sheet.web.recharge){ a.c.webReady = true; popText(a, "web ready", "#e8e2c8", .9); } }
   if (a.c.holyOpen && --a.c.holyOpen <= 0){ delete a.c.holyOpen; popText(a, "resistance returns", "#aaa", .8); }
   if (a.c.retching && a.kind !== "pc"){ a.c.retching = false; retchTurn(a); return; }   // Stinking Cloud: the action goes on retching
@@ -17887,7 +17888,13 @@ function exitFor(f){
 // more drow (HELP_ROUNDS; out of a fight, half a minute). Dropped before the door, nobody is coming.
 // Ordinary guards (the algorithm) run for the horn too: on a plate that has one, the drow nearest it goes the moment a
 // fight is on. Called once a fight per caller.
-const ALARM_WAVE_MS = 120000, HELP_ROUNDS = 3, HELP_MS = 30000;
+// FIVE MINUTES, AND ONLY A DROW WHO GETS AWAY (Sam, 2026-11-25: "Alarm waves should be 5 minutes. The alarm is only set when
+// you are spotted by a drow and they flee the map and manage to flee OFF the map."). This supersedes the two-minute waves
+// of 2026-10-30 and the horn as a thing a drow blows in a fight: in a fight in the outpost, the alarm goes up when a drow
+// who has seen the party runs for a way out and REACHES it (retreatTurn, under the heroes' opportunity attacks). Dropped
+// before the door, nobody knows. The watch posts' trumpet and horn (story.json `alarm`) now only mark the plates whose
+// sentry runs to warn the garrison. Beyond the outpost a runner still fetches two drow in three rounds, as before.
+const ALARM_WAVE_MS = 300000, HELP_ROUNDS = 3, HELP_MS = 30000;
 const ALARM_WAVES = [["drow-guard-male", "drow-guard-female"], ["drow-guard-male", "drow-guard-female", "drow-elite-warrior"], ["drow-guard-male", "drow-guard-female", "drow-guard-male", "drow-elite-warrior"]];
 const inOutpost = n => /^\d/.test(String(n));
 // OUT OVER THE FALLS (Sam, 2026-11-23, after a run where wave 2 met the party the second it landed in the pool: "drow were
@@ -17906,7 +17913,7 @@ const alarmLocal = new Set();               // waves this screen has walked in i
 // and wave 1 walked in again as a new fight; and a game reopened after the clock had run found all three due and brought
 // 2 + 3 + 4 = 9 drow at once (the count in Sam's playtest of 2026-11-22). Now the alarm itself carries how many have come
 // (`waves`) and when the last one did (`last`), as One World state: a refresh, or the other screen, reads it and brings
-// nobody twice; and the next wave is two minutes after the LAST ONE ARRIVED, so they come one at a time whatever the
+// nobody twice; and the next wave is five minutes (ALARM_WAVE_MS) after the LAST ONE ARRIVED, so they come one at a time whatever the
 // clock did while nobody was looking. Played straight through, that is the same two, four and six minutes as before.
 const alarmWavesIn = A => Math.max(0, Math.min(ALARM_WAVES.length, (A && A.waves) | 0));
 const alarmNextAt = A => ((A && (A.last || A.at)) || 0) + ALARM_WAVE_MS;
@@ -17943,67 +17950,48 @@ function alarmHoldTick(){
 }
 let alarmBusy = false;
 function helpHow(f){
-  if (node.alarm && !alarmUp() && alarmReaches(cur)) return `sound the ${node.alarm.name.toLowerCase()} (${Math.round(feetBetween(f, node.alarm))} ft away): every two minutes a wave of the garrison arrives, three waves`;
-  if (alarmUp()) return null;                                          // the horn is already blowing: nobody else to fetch
-  if (exitFor(f)) return `send a runner out the nearest way (${f === commander() && underOf(f).length ? "one of yours goes" : "you go yourself"}): two drow come back with them in about three rounds`;
-  return null;
+  if (alarmUp()) return null;                                          // the garrison already knows: nobody else to fetch
+  if (!exitFor(f)) return null;
+  const who = f === commander() && underOf(f).length ? "one of yours goes" : "you go yourself";
+  return alarmReaches(cur) ? `send a runner out the nearest way (${who}): if the runner gets off the map the alarm is up, and every five minutes a wave of the garrison arrives, three waves`
+                           : `send a runner out the nearest way (${who}): two drow come back with them in about three rounds`;
 }
 function callForHelp(f){
   f.calledHelp = true; popText(f, "help!", "#ffcf6a", 1.1); bank("ui/initiative_start", .3);
-  const dev = node.alarm && !alarmUp() && alarmReaches(cur) ? node.alarm : null, lead = f === commander();
+  const lead = f === commander();
   const pool = [f, ...(lead ? underOf(f) : [])].filter(x => inFight(x) && !x.task);
-  if (dev){
-    const who = pool.sort((a, b) => Math.hypot(a.x - dev.x, a.y - dev.y) - Math.hypot(b.x - dev.x, b.y - dev.y))[0] || f;
-    who.task = "alarm";
-    log(`<b>${esc(fname(f))} shouts for the ${esc(dev.name.toLowerCase())}!</b>${who !== f ? ` ${esc(fname(who))} runs for it.` : ""}`, {say: true});
-    if (who === f){ alarmTurn(f); return; }
-    popText(who, "!", "#ffcf6a", 1); setTimeout(() => passTurn(f), 1200); return;
-  }
   const ex = exitFor(f);
   if (!ex){ log(`<b>${esc(fname(f))} shouts for help</b>, and nobody is near enough to hear.`); setTimeout(() => passTurn(f), 1200); return; }
   const who = pool.filter(x => x !== f).sort((a, b) => Math.hypot(a.x - ex.x, a.y - ex.y) - Math.hypot(b.x - ex.x, b.y - ex.y))[0] || f;
   who.task = "runner";
+  const brings = alarmReaches(cur) ? "the alarm goes up if the runner gets off the map" : "two more drow come back in about three rounds unless the runner is stopped";
   log(`<b>${esc(fname(f))} shouts for help</b> — ${who === f ? "and runs for it" : `${esc(fname(who))} runs for the way out`}.`, {say: true});
-  if (APP) handOff(`${fname(f)} sends ${who === f ? "themself" : fname(who)} running for help out of ${node.name} mid-fight (round ${cbt.round}); two more drow come back in about three rounds unless the runner is stopped.`);
+  if (APP) handOff(`${fname(f)} sends ${who === f ? "themself" : fname(who)} running for help out of ${node.name} mid-fight (round ${cbt.round}); ${brings}.`);
   if (who === f){ runnerTurn(f); return; }
   popText(who, "!", "#ffcf6a", 1); setTimeout(() => passTurn(f), 1200);
 }
-// an ordinary guard on a plate with a horn: the drow nearest it goes for it, once, if nobody is already going
-function guardTakesHorn(f){
-  const dev = node.alarm;
-  if (!cbt || !dev || alarmUp() || !alarmReaches(cur) || isMind(f) || !drowSide(f) || f.calledHelp) return false;
-  if (foes.some(x => x.task === "alarm" && inFight(x))) return false;
-  const drow = foes.filter(x => inFight(x) && drowSide(x) && !x.task && !x.retreating);
-  if (drow.sort((a, b) => Math.hypot(a.x - dev.x, a.y - dev.y) - Math.hypot(b.x - dev.x, b.y - dev.y))[0] !== f) return false;
-  f.calledHelp = true; f.task = "alarm";
-  log(`<b>${esc(fname(f))} runs for the ${esc(dev.name.toLowerCase())}!</b>`, {say: true}); popText(f, "!", "#ffcf6a", 1.1);
+// a sentry at a watch post (a plate with the trumpet or the horn): the drow nearest a way out runs to warn the garrison,
+// once, if nobody is already going
+function guardRunsToWarn(f){
+  if (!cbt || !node.alarm || alarmUp() || !alarmReaches(cur) || isMind(f) || !drowSide(f) || f.calledHelp) return false;
+  if (foes.some(x => x.task === "runner" && inFight(x))) return false;
+  const far = x => { const e = exitFor(x); return e ? Math.hypot(x.x - e.x, x.y - e.y) : Infinity; };
+  const drow = foes.filter(x => inFight(x) && drowSide(x) && !x.task && !x.retreating && far(x) < Infinity);
+  if (drow.sort((a, b) => far(a) - far(b))[0] !== f) return false;
+  f.calledHelp = true; f.task = "runner";
+  log(`<b>${esc(fname(f))} runs to warn the garrison!</b> Stop them before they get off the map.`, {say: true}); popText(f, "!", "#ffcf6a", 1.1);
   return true;
 }
-// to the horn (its movement, under opportunity attacks), and if in reach, the blast: the action
-function alarmTurn(f){
-  const dev = node.alarm;
-  if (!dev || alarmUp()){ f.task = null; f.mindPlan = {fallback: true}; foeTurn(f); return; }
-  const spot = nearestWalkable(dev.x, dev.y), reach = 6 * ruleFt(f);
-  const blow = () => { combatBusy = false; if (!cbt || f.down || !inFight(f)) return; if (Math.hypot(f.x - spot.x, f.y - spot.y) <= reach + 30){ raiseAlarm(f); setTimeout(() => passTurn(f), 1400); } else { setAnim(f, "idle"); setTimeout(() => passTurn(f), 300); } };
-  if (Math.hypot(f.x - spot.x, f.y - spot.y) <= reach + 30){ blow(); return; }
-  const walk = cutPath(f, findPath(f, spot), (f.c.move ?? (f.c.sheet.speed || 30)) * ruleFt(f));
-  const goal = walk.pts.length ? walk.pts[walk.pts.length - 1] : {x: f.x, y: f.y};
-  combatBusy = true;
-  oaGauntlet(f, goal, () => {
-    if (!cbt || f.down) return;
-    let fired = false; const done = () => { if (fired) return; fired = true; blow(); };
-    if (!walk.pts.length){ done(); return; }
-    f.path = walk.pts; f.onArrive = done; setTimeout(done, 2600);
-  });
-}
+// THE ALARM IS UP: a drow who saw the party got off the map (Sam, 2026-11-25). Only in the outpost, and only once.
 function raiseAlarm(f){
-  const dev = node.alarm; f.task = null;
-  state.alarm = {plate: String(cur), at: owNow(), by: fname(f), name: dev.name};
-  bank("creature/drow_alarm_gong", .95); shake(5); popText(f, dev.name.split(" ").pop().toUpperCase() + "!", "#ff6a4a", 1.2);
-  log(`<b>${esc(fname(f))} blows the ${esc(dev.name.toLowerCase())}.</b> The whole outpost has heard it.`, {say: true});
-  toast(`The ${dev.name.toLowerCase()}! The garrison is coming: a wave every two minutes.`, 4200);
-  if (APP) handOff(`${fname(f)} blew the ${dev.name.toLowerCase()} at ${node.name}. The alarm is up across Velkynvelve: three waves of the garrison, one every two minutes, come at the party wherever it is in the outpost.`);
+  if (alarmUp() || !alarmReaches(cur) || !drowSide(f)) return false;
+  state.alarm = {plate: String(cur), at: owNow(), by: fname(f), name: "warning horn"}; saveWalk();
+  bank("creature/drow_alarm_gong", .95); shake(5);
+  log(`<b>${esc(fname(f))} got away.</b> A warning horn sounds across Velkynvelve: the whole outpost knows.`, {say: true});
+  toast("A drow got off the map! The garrison is coming: a wave every five minutes, three waves.", 4800);
+  if (APP) handOff(`${fname(f)} got out of the fight at ${node.name} and raised the alarm. It is up across Velkynvelve: three waves of the garrison, one every five minutes, come at the party wherever it is in the outpost.`);
   alarmTick();
+  return true;
 }
 // the runner: a Dash for the way out (retreatTurn's own run, opportunity attacks and all); out, they are fetching help
 function runnerTurn(f){
@@ -18013,6 +18001,8 @@ function runnerTurn(f){
 }
 function runnerGotOut(f, ex){
   f.task = null;
+  if (raiseAlarm(f)) return;                                           // in the outpost, getting out IS the alarm: the waves are the help
+  if (alarmUp() && alarmReaches(cur)) return;                          // the garrison already knows
   pendingHelp.push({plate: String(cur), ids: [f.id, "drow-guard-male", "drow-guard-female"], at: {x: ex.x, y: ex.y}, fightId: cbt ? cbt.id : null, dueRound: cbt ? cbt.round + HELP_ROUNDS : 0, dueAt: now + HELP_MS, hp: f.c.hp, hpMax: f.c.hpMax, who: fname(f)});
 }
 // help comes back: into the fight still running here, or (the fight over) as a new one if the party is still here
@@ -18035,7 +18025,7 @@ async function reinforce(ids, at, why){
   if (mode === "explore" || mode === "talk"){ startCombat(ids, why); return true; }
   return false;                                                         // a card that holds the moment (a march, a film): next tick
 }
-// the waves: one every two minutes after the blast, on the plate the party is on, if it is in the outpost
+// the waves: one every five minutes after the alarm, on the plate the party is on, if it is in the outpost
 async function alarmTick(){
   alarmHoldTick();                                                       // THE ALARM HOLDS IN A FIGHT
   const A = state.alarm; renderAlarmBanner();
@@ -18232,7 +18222,13 @@ function giveOrder(f, o){
 function retreatTurn(f){
   const ex = exitFor(f);
   if (!ex){ f.retreating = false; f.mindPlan = {fallback: true}; foeTurn(f); return; }
-  const walk = cutPath(f, findPath(f, ex), (f.c.sheet.speed || 30) * 2 * ruleFt(f));
+  // THE RIGHT FEET PER TURN (Sam, 2026-11-25: "ensure that they are using the correct movements number per turn"). The run
+  // was priced at twice the sheet's speed whatever had happened to the runner, so a drow that was grappled or restrained
+  // (speed 0), slowed, numbed, on caltrops or just up from prone still ran 60 ft. A Dash adds the turn's speed AFTER its
+  // modifiers (SRD 5.2.1, Dash): what the turn has left (f.c.move) plus the speed the turn began with (f.c.turnFt).
+  const left = Math.max(0, f.c.move ?? (f.c.sheet.speed || 30)), dash = Math.max(0, f.c.turnFt ?? left);
+  const walk = cutPath(f, findPath(f, ex), (left + dash) * ruleFt(f));
+  f.c.move = Math.max(0, left + dash - walk.usedFt);
   const goal = walk.pts.length ? walk.pts[walk.pts.length - 1] : {x: f.x, y: f.y};
   const out = walk.pts.length && Math.hypot(goal.x - ex.x, goal.y - ex.y) < 30;     // this turn's Dash reaches the way out
   log(`${esc(fname(f))} breaks off and runs for the way out${out ? "" : " (not there yet)"}.`);
@@ -18240,7 +18236,7 @@ function retreatTurn(f){
   oaGauntlet(f, goal, () => {
     if (!cbt || f.down) return;
     let gone = false;
-    const done = () => { if (gone) return; gone = true; combatBusy = false; if (out){ if (f.task === "runner") runnerGotOut(f, ex); leaveFight(f, f.runner ? null : ex.to); } else setAnim(f, "idle"); setTimeout(() => passTurn(f), 300); };
+    const done = () => { if (gone) return; gone = true; combatBusy = false; if (out){ if (f.task === "runner") runnerGotOut(f, ex); else raiseAlarm(f); leaveFight(f, f.runner ? null : ex.to); } else setAnim(f, "idle"); setTimeout(() => passTurn(f), 300); };
     if (!walk.pts.length){ done(); return; }
     f.path = walk.pts; f.onArrive = done; setTimeout(done, 2600);
   });
@@ -18363,9 +18359,8 @@ function foeTurn(f){
   // first (mindTurn), which comes back here with a plan — or with none, and then this algorithm is the turn
   if (f.vexedBy){ if (inFight(f.vexedBy)){ buppidoVexedTurn(f); return; } f.vexedBy = null; }   // bitten by Buppido's zombie: it first (Sam, 2026-11-23)
   if (f.retreating){ retreatTurn(f); return; }
-  if (f.task === "alarm"){ alarmTurn(f); return; }                 // THE ALARM: on the way to the horn
   if (f.task === "runner"){ runnerTurn(f); return; }               // gone for help
-  if (guardTakesHorn(f)){ alarmTurn(f); return; }
+  if (guardRunsToWarn(f)){ runnerTurn(f); return; }                // a watch post's sentry: off to warn the garrison
   const plan = f.mindPlan || null; f.mindPlan = null;
   if (!plan && isMind(f) && mindUrl()){ mindTurn(f); return; }
   const marks = standing(heroes()).filter(p => !drowSpares(f.id, p.id));   // CREATURE COMPANIONS: a drow does not go for Lolth's spider (Sam's call 3)
@@ -29626,15 +29621,16 @@ function pickVictim(present, rand = Math.random) {
 // [SAM] "If the group wins the fight then the door is left open to escape but now they will need to fight through
 // with the alarm on; soon drow will start pouring in from the map."
 // [SAM, 2026-10-30] Approved: two-minute waves, three waves, a countdown banner on the pixel map.
+// [SAM, 2026-11-25] "Alarm waves should be 5 minutes." Supersedes the two minutes; three waves and the banner stand.
 //
 // [HOUSE] The numbers. Velkynvelve garrisons 19 drow and 12 quaggoths [BOOK], so the response must be finite or
 // the outpost abandons every post it has. Three waves commit 6 drow and 2 quaggoths; with the enforcers already
 // in the pen that is 8 of 19 — heavy, survivable, and it leaves the rest of the outpost plausibly manned.
 //
-// Two minutes is roughly 6-8 rounds: a full wave-gap to clear the plate. Sam's constraint was "make it reasonable
+// Five minutes is a full wave-gap to clear the plate and move on. Sam's constraint was "make it reasonable
 // or this will be impossible to get out", and the banner is what makes that legible BEFORE the first bolt flies.
 
-const WAVE_INTERVAL_MS = 2 * 60 * 1000
+const WAVE_INTERVAL_MS = 5 * 60 * 1000
 const WAVE_COUNT = 3
 
 
@@ -30022,15 +30018,15 @@ function escapeDiscoveryTick(){
 // THE HORN (step 6; Sam, 2026-10-30, approved for the breakout: "TWO-MINUTE waves, three waves, with a countdown banner").
 // The waves themselves are the map's alarm (THE ALARM AND REINFORCEMENTS: state.alarm, ALARM_WAVES, the banner). Until
 // now only a drow who reached the horn in a fight could start them. Now the escape does too: the moment it is hunted, the
-// horn sounds from the pen's side of the outpost, and every two minutes a wave comes onto whatever outpost plate the party
+// horn sounds from the pen's side of the outpost, and every five minutes a wave comes onto whatever outpost plate the party
 // is on. And the other way: a horn blown during the escape means the escape is hunted (escapeDiscoveryTick, endCombat).
 const escapeAlarmed = e => !!(state.alarm && state.alarm.at && e && state.alarm.at >= (e.since || 0) - 1000);
 function escapeHorn(why){
   if (SANDBOX || (state.alarm && state.alarm.off) || (alarmUp() && (alarmWavesIn(state.alarm) < ALARM_WAVES.length || alarmTime() - (state.alarm.last || state.alarm.at) < 60000))) return;   // already blowing: its waves are still coming
   state.alarm = {plate: String(PEN), at: owNow(), by: "the outpost", name: "warning horn"};
   try { bank("creature/drow_alarm_gong", .95); shake(4); } catch (e) {}
-  log(`<b>A warning horn sounds across Velkynvelve.</b> The garrison is coming: a wave every two minutes, three waves.`, {say: true});
-  toast("The warning horn! A wave of the garrison every two minutes.", 4800);
+  log(`<b>A warning horn sounds across Velkynvelve.</b> The garrison is coming: a wave every five minutes, three waves.`, {say: true});
+  toast("The warning horn! A wave of the garrison every five minutes.", 4800);
   try { alarmTick(); } catch (e) {}
 }
 /** The countdown while they are out quietly (null otherwise): the caravan banner's place, the same look. */

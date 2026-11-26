@@ -189,7 +189,7 @@ if (PART === "1") {
 if (PART === "2") {
   // the gate watch out of it: this part is the alarm's waves alone
   for (const pg of [A, B]) await pg.evaluate(() => { for (const n of [...npcs]) if (/^drow/.test(n.id)){ actors = actors.filter(a => a !== n); npcs = npcs.filter(a => a !== n) } })
-  await A.evaluate(() => { state.gateWatchDown = { rot: 99, at: Date.now() }; state.alarm = { plate: "11", at: owNow() - 125000, by: "test", name: "warning horn" } }); await wait(10000)
+  await A.evaluate(() => { state.gateWatchDown = { rot: 99, at: Date.now() }; state.alarm = { plate: "11", at: owNow() - 305000, by: "test", name: "warning horn" } }); await wait(10000)
   let a = await snap(A), b = await snap(B)
   check("wave 1 walks in: two drow, one fight, on both screens", a.mode === "combat" && b.mode === "combat" && a.foes.length === 2 && b.foes.length === 2 && opens() === 1, { a: a.foes, b: b.foes, opens: opens() })
   check("wave 1 is written in the world (both screens read it)", a.waves === 1 && b.waves === 1, { a: a.waves, b: b.waves })
@@ -203,13 +203,13 @@ if (PART === "2") {
   check("a refresh does NOT bring wave 1 in again (before: it did, as a new fight)", a.mode !== "combat" && b.mode !== "combat" && opens() === 1 && a.living.length === 0, { mode: a.mode, opens: opens(), living: a.living })
   check("...and the beaten wave's bodies are still there", near(a.bodies, fell), { now: a.bodies, fell })
   check("...and the banner counts down to wave 2, not wave 1", /wave 2 of 3/.test(a.banner), a.banner)
-  // the clock ran on with the game closed: ten minutes since the horn, one wave come so far
-  await A.evaluate(() => { state.alarm = { ...state.alarm, at: owNow() - 600000, waves: 1, last: owNow() - 480000 } }); await wait(10000)
+  // the clock ran on with the game closed: twenty-five minutes since the horn, one wave come so far
+  await A.evaluate(() => { state.alarm = { ...state.alarm, at: owNow() - 1500000, waves: 1, last: owNow() - 1200000 } }); await wait(10000)
   a = await snap(A); b = await snap(B)
   check("the clock ran on: ONE wave comes (wave 2: three drow), not two waves together (seven)", a.mode === "combat" && a.foes.length === 3 && b.foes.length === 3 && a.waves === 2, { a: a.foes, waves: a.waves })
   check("wave 2 is beaten", await win(A, B)); await wait(9000)
   a = await snap(A)
-  check("wave 3 does not follow at once: it is two minutes after wave 2 came", a.mode !== "combat" && a.waves === 2 && /wave 3 of 3 in 1:/.test(a.banner), { mode: a.mode, banner: a.banner })
+  check("wave 3 does not follow at once: it is five minutes after wave 2 came", a.mode !== "combat" && a.waves === 2 && /wave 3 of 3 in 4:/.test(a.banner), { mode: a.mode, banner: a.banner })
   await reload(A, 12000)
   a = await snap(A)
   check("a refresh then: still no new wave, and five bodies on the pen", a.mode !== "combat" && a.waves === 2 && a.bodies.length === 5 && opens() === 2, { mode: a.mode, bodies: a.bodies.length, opens: opens() })
