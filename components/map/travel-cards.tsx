@@ -45,7 +45,7 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
   const {
     nodes, edges, party, loaded, dmKey, setRefresh,
     confirmNode, setConfirmNode, arrivedAt, setArrivedAt,
-    halt, continueMarch, takeStance, stanceBusy,
+    halt, continueMarch, takeStance, stanceBusy, searchLair, lairBusy,
     vessels, hasBoat, march, guides, pcs,
     pace, setPace, navSel, setNavSel, pcFamiliar, setPcFamiliar, pcHasMap, setPcHasMap,
     me, lead, canLead, hoverNode, setHoverNode,
@@ -408,6 +408,29 @@ export function TravelCards({ t, embedded = false }: { t: Travel; embedded?: boo
                   ENTER THE RUINS →
                 </StageLink>
               )}
+              {/* SEARCH THE LAIR (Sam, 2026-11-25: "Build it there"): Ambushers, once behind the party, leave a lair to
+                  search, once (OotA ch.2 p.32, Ambush Lair Discovery). After a fight it is for when the fight is won. */}
+              {halt.kind === "encounter" && halt.lair && (halt.lairFind ? (
+                <div className="mt-3 rounded border border-[#6b5a2a] bg-[#1d180c] px-3 py-2">
+                  <div className="text-[10px] uppercase tracking-[.22em] text-[#e0c36c]">The lair</div>
+                  <div className="mt-1 text-[13px] leading-relaxed text-[#e4d8bf]">{halt.lairFind.note}</div>
+                  <div className="mt-1 text-[11px] text-[#9a8fb0]">{halt.lairFind.searcher}: {halt.lairFind.skill === "investigation" ? "Investigation" : "Perception"} {halt.lairFind.arithmetic}</div>
+                  {halt.lairFind.face != null && <div className="text-[11px] text-[#9a8fb0]"><span className="text-[#f5c34d]">d20 = {halt.lairFind.face}</span> | Ambush Lair Discovery: <span className="text-[#e4d8bf]">{halt.lairFind.result}</span></div>}
+                  {halt.lairFind.awarded.length > 0 && <div className="mt-1 text-[12px] text-[#9fd08a]">Into {halt.lairFind.searcher}'s pack: {halt.lairFind.awarded.map((a) => `${a.quantity > 1 ? a.quantity + " × " : ""}${a.name}`).join(", ")}</div>}
+                  {halt.lairFind.dm_picks && <div className="mt-1 text-[12px] text-[#ffc98a]">For the DM to choose from the catalog: {halt.lairFind.dm_picks}</div>}
+                  <div className="mt-1 text-[10px] italic text-[#6f6486]">{halt.lairFind.source}</div>
+                </div>
+              ) : (halt.stance ? halt.stance.outcome === "passed" || halt.stance.outcome === "fight" : !(halt.stances ?? []).length) ? (
+                <button
+                  type="button"
+                  disabled={!canLead || lairBusy}
+                  onClick={() => void searchLair()}
+                  className="tk-btn tk-amber mt-3 block w-full px-3 py-2 text-center text-[11px] tracking-[.2em]"
+                  title="OotA ch.2 p.32: the best eye on the march rolls Perception or Investigation; on a success, a d20 on Ambush Lair Discovery"
+                >
+                  SEARCH THE LAIR{halt.stance?.outcome === "passed" ? "" : " (ONCE THEY ARE DEAD)"}
+                </button>
+              ) : null)}
               {halt.kind === "camp" && (
                 <>
                   <StageLink
