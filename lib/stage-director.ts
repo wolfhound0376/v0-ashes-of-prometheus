@@ -71,11 +71,31 @@ Return ONLY strict JSON, nothing else:
 - watch "changing": the guards hand over to a relief watch (shift change, relief arrives, the watch rotates).
 - watch "unattended": the posts are left empty — the guards and the gatekeeper are gone from sight, nobody watches the pen.
 - watch "posted": guards are back at their posts after they had gone.
-- gate: only when the gate is actually unlocked, opened or locked in this narration.
+- gate: only when the PEN GATE itself is actually unlocked, opened or locked in this narration. The gate is the barred
+  door of the pen and nothing else: a manacle, a shackle, a chain, a collar, a chest or any other lock that is picked,
+  turned or opened is NOT the gate, and a prisoner getting out of their own irons leaves the gate exactly as it was (null).
 - moves: a cast member walks somewhere in the area. Not someone who merely looks, speaks or gestures.
 - leaves: a cast member walks out of sight (off the bridge, round the corner, away to the tower). Never a death.
 - approaches: a cast member comes over to a player character, sits beside them, leans close to talk to them.
 - Leave a field null or [] when nothing of that kind happens. When in doubt, leave it out.`
+}
+
+/**
+ * THE GATE IS ONLY THE GATE (Sam, 2026-11-25: "me picking my manacles DOES NOT OPEN THE PEN GATE"). Fifi picked the lock
+ * of her own manacles with the bent wire; the pass above read "the lock turns over" as the pen gate and reported
+ * gate "unlocked", and the map dutifully took the lock off the gate. So the model's word alone is not enough for the
+ * gate: one sentence of the narration must name the gate (or its door) AND say the thing done to it. A lock that
+ * turns in a sentence with no gate in it is somebody's irons, a chest, anything; it is not the gate. Malachar's own
+ * [GATE:] tag and Jorlan's kept word do not come through here and are untouched. Pure.
+ */
+const GATE_WORD = /\b(gates?|door|doors)\b/i
+const GATE_DONE: Record<GateState, RegExp> = {
+  unlocked: /\b(unlock\w*|locks?|key|keys|latch\w*|bolt\w*|click\w*|unbarr?\w*|unfasten\w*)\b/i,
+  open: /\b(open\w*|sw[iu]ngs?|swinging|ajar|wide)\b/i,
+  locked: /\b(lock\w*|key|keys|bolt\w*|bars? it|barred|shut\w*|clos\w*|slam\w*)\b/i,
+}
+export function gateIsNarrated(narration: string, state: GateState): boolean {
+  return String(narration || "").split(/(?<=[.!?…])\s+|\n+/).some((s) => GATE_WORD.test(s) && GATE_DONE[state].test(s))
 }
 
 function resolveCast(raw: unknown, cast: DirectorCast[]): string | null {
@@ -116,7 +136,7 @@ export function parseDirector(reply: string, input: DirectorInput, tagged: Alrea
   }
   if (!tagged.gate && typeof j.gate === "string") {
     const g = gateStateOf(j.gate)
-    if (g && g !== (input.gate ?? "locked")) out.push({ kind: "gate", state: g })
+    if (g && g !== (input.gate ?? "locked") && gateIsNarrated(input.narration, g)) out.push({ kind: "gate", state: g })
   }
   const seen = new Set<string>()
   for (const m of Array.isArray(j.approaches) ? j.approaches : []) {

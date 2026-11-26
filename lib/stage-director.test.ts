@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import { gateStateOf, watchAndGateTags, watchStateOf } from "./stage-roster"
-import { directorPrompt, namesTaggedIn, parseDirector, wantsDirector, type DirectorInput } from "./stage-director"
+import { directorPrompt, gateIsNarrated, namesTaggedIn, parseDirector, wantsDirector, type DirectorInput } from "./stage-director"
 
 const pen: DirectorInput = {
   narration: "The two guards on the bridge stiffen as boots ring on the tower stair. Their relief has come.",
@@ -48,7 +48,7 @@ describe("the stage director", () => {
     expect(parseDirector('{"watch":"changing","gate":null,"moves":[],"leaves":[],"approaches":[]}', pen, none)).toEqual([{ kind: "watch", state: "changing" }])
   })
   it("empties the posts and unlocks the gate when the narration does", () => {
-    const ev = parseDirector('```json\n{"watch":"unattended","gate":"unlocked","moves":[],"leaves":["Jorlan"],"approaches":[]}\n```', pen, none)
+    const ev = parseDirector('```json\n{"watch":"unattended","gate":"unlocked","moves":[],"leaves":["Jorlan"],"approaches":[]}\n```', { ...pen, narration: "Jorlan turns a key in the pen gate and leaves the lock off. Then he and the guards walk away toward the tower, and the bridge stands empty." }, none)
     expect(ev).toEqual([
       { kind: "watch", state: "unattended" },
       { kind: "gate", state: "unlocked" },
@@ -75,5 +75,25 @@ describe("the stage director", () => {
   })
   it("does not reopen a gate the story already holds open", () => {
     expect(parseDirector('{"gate":"open"}', { ...pen, gate: "open" }, none)).toEqual([])
+  })
+})
+
+// Sam, 2026-11-25 (playtest note): "me picking my manacles DOES NOT OPEN THE PEN GATE". The production log for that turn:
+// [stage-director] from the prose: [{"kind":"gate","state":"unlocked"},{"kind":"place","name":"Eldeth Feldrun","where":"at the bars"}]
+describe("the gate is only the gate", () => {
+  const irons = { ...pen, narration: "The wire catches. The lock of Fifi's manacle turns over with a small, traitorous click, and the irons come off into her lap. Beyond the gate, the guard on the bridge does not turn her head. Eldeth drifts to the bars to watch." }
+  it("a manacle lock that turns is not the pen gate, whatever the model says", () => {
+    expect(parseDirector('{"watch":null,"gate":"unlocked","moves":[{"name":"Eldeth Feldrun","where":"at the bars"}],"leaves":[],"approaches":[]}', irons, none))
+      .toEqual([{ kind: "place", name: "Eldeth Feldrun", where: "at the bars" }])
+    expect(parseDirector('{"gate":"open"}', irons, none)).toEqual([])
+  })
+  it("still follows a gate the narration itself unlocks, opens or locks", () => {
+    expect(gateIsNarrated("In the noise of the changing watch, a key turns in the pen gate.", "unlocked")).toBe(true)
+    expect(gateIsNarrated("The guard hauls the gate open and looks them over.", "open")).toBe(true)
+    expect(gateIsNarrated("She slams the door and turns the key.", "locked")).toBe(true)
+    expect(gateIsNarrated("A lock clicks somewhere in the dark.", "unlocked")).toBe(false)
+  })
+  it("tells the model so", () => {
+    expect(directorPrompt(pen)).toMatch(/manacle[^.]*NOT the gate/i)
   })
 })
