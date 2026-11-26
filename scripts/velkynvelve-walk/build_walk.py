@@ -22,6 +22,7 @@ Inputs, all in this folder:
                  /*__CHAIN_MARCH__*/ is lib/chain-march.mjs pasted in whole (see chain_march_rules): the march out in chains when the caravan clock runs out
                  /*__WATCH_THE_MAP__*/ is lib/watch-the-map.mjs pasted in whole (see watch_the_map_rules): the cue that pulls a dashboard here
                  /*__ITEM_LORE__*/ is lib/item-lore.mjs pasted in whole (see item_lore_rules): the loot card's checks
+                 /*__COATINGS__*/ is lib/coatings.mjs pasted in whole (see coating_rules): what a weapon or ammunition is dipped in, which vials are thrown
   spec.json      per-plate walk floors, obstacles, exits, hazards, NPC spots, painted masks (built by spec.py from spec.py + masks.json); _handoffs = the cavern
                  plates a 'leave' exit hands the party to, _layout = Sam's editor board (not used by the page)
   story.json     who stands where, scripted crossings, chains; bark lines are placeholders
@@ -267,6 +268,13 @@ def corrode_rules(root):
     """lib/corrode.mjs (CORRODE METAL, the gray ooze eats metal: SRD 5.1 Gray Ooze; Sam 2026-11-23 "go corrode"), pasted
     whole minus `export`. The map, app/api/walk-corrode and lib/corrode.test.ts read the SAME rule and tables."""
     src = open(os.path.join(root, 'lib', 'corrode.mjs'), encoding='utf-8').read()
+    return re.sub(r'^export ', '', src, flags=re.M)
+
+
+def coating_rules(root):
+    """lib/coatings.mjs (what a weapon or ammunition can be dipped in, and which vials are thrown: Sam 2026-11-25),
+    pasted whole minus `export`. The map and lib/coatings.test.ts read the SAME table and rules."""
+    src = open(os.path.join(root, 'lib', 'coatings.mjs'), encoding='utf-8').read()
     return re.sub(r'^export ', '', src, flags=re.M)
 
 
@@ -563,7 +571,7 @@ def somatic_table(root):
 
 t = t.replace('/*__SOMATIC__*/', somatic_table(ROOT))
 t = (t.replace('/*__KIT__*/', build_kit_tables(ROOT)).replace('/*__RAGE__*/', rage_rules(ROOT)).replace('/*__TRAITS__*/', traits_rules(ROOT)).replace('/*__CONDITION_RULES__*/', condition_rules(ROOT)).replace('/*__AREA_CLOUD__*/', area_cloud_rules(ROOT)).replace('/*__POISON_CLOUDS__*/', poison_cloud_rules(ROOT))
-      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__STRIKE_CAM__*/', strike_cam_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__SURRENDER__*/', surrender_rules(ROOT)).replace('/*__CORRODE__*/', corrode_rules(ROOT)).replace('/*__COMPANIONS__*/', companions_rules(ROOT)).replace('/*__WATER__*/', water_rules(ROOT)).replace('/*__GAME_OVER__*/', game_over_rules(ROOT)).replace('/*__BUPPIDO_RISES__*/', buppido_rises_rules(ROOT)).replace('/*__BODY_REMOVAL__*/', body_removal_rules(ROOT)).replace('/*__SHAKEDOWN__*/', shakedown_rules(ROOT)).replace('/*__PEN_ESCAPE__*/', pen_escape_rules(ROOT)).replace('/*__DIRECTOR__*/', director_rules(ROOT)).replace('/*__CHAIN_MARCH__*/', chain_march_rules(ROOT)).replace('/*__WATCH_THE_MAP__*/', watch_the_map_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__QUOTA__*/', quota_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
+      .replace('/*__MARTIAL__*/', martial_rules(ROOT)).replace('/*__STRIKE_CAM__*/', strike_cam_rules(ROOT)).replace('/*__DROW_SURGEON__*/', surgeon_rules(ROOT)).replace('/*__SURRENDER__*/', surrender_rules(ROOT)).replace('/*__CORRODE__*/', corrode_rules(ROOT)).replace('/*__COATINGS__*/', coating_rules(ROOT)).replace('/*__COMPANIONS__*/', companions_rules(ROOT)).replace('/*__WATER__*/', water_rules(ROOT)).replace('/*__GAME_OVER__*/', game_over_rules(ROOT)).replace('/*__BUPPIDO_RISES__*/', buppido_rises_rules(ROOT)).replace('/*__BODY_REMOVAL__*/', body_removal_rules(ROOT)).replace('/*__SHAKEDOWN__*/', shakedown_rules(ROOT)).replace('/*__PEN_ESCAPE__*/', pen_escape_rules(ROOT)).replace('/*__DIRECTOR__*/', director_rules(ROOT)).replace('/*__CHAIN_MARCH__*/', chain_march_rules(ROOT)).replace('/*__WATCH_THE_MAP__*/', watch_the_map_rules(ROOT)).replace('/*__GATE_WATCH__*/', gate_rules(ROOT)).replace('/*__LABOR__*/', labor_rules(ROOT)).replace('/*__QUOTA__*/', quota_rules(ROOT)).replace('/*__ITEM_LORE__*/', item_lore_rules(ROOT)).replace('/*__BOSS__*/', boss_rules(ROOT))
       .replace('/*__SPEC__*/', json.dumps(spec, separators=(',', ':'))).replace('/*__FX__*/', fx)
       .replace('/*__HANDOFFS__*/{}', json.dumps(handoffs, separators=(',', ':')))
       .replace('/*__SPRITES__*/', json.dumps(meta, separators=(',', ':')))

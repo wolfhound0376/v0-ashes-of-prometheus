@@ -10694,7 +10694,7 @@ function nextTurn(first){
   if (a.c.ready){ a.c.ready = null; a.c.conds.delete("readied"); }   // SRD: a readied action lasts until the start of your next turn
   renderTurns(); renderParty(); turnCall(a); turnCam(a);   // every turn opens framed, a foe's and an ally's too (HOW A FIGHT IS STAGED)
   heroEntrance(a);                                          // HERO ENTRANCES: a geared hero's first turn (below mapFilm)
-  if (a.c.conds.has("asleep") && a.c.drugged){ popText(a, "out cold", "#8fd48f"); log(`${fname(a)} lies senseless from the drow poison. Damage or a shake will wake them.`); setTimeout(nextTurn, 900); return; }
+  if (a.c.conds.has("asleep") && a.c.drugged){ popText(a, "out cold", "#8fd48f"); log(`${fname(a)} lies senseless from the ${a.c.druggedBy || "drow poison"}. Damage or a shake will wake them.`); setTimeout(nextTurn, 900); return; }
   if (a.c.conds.has("asleep")){
     const s = d20(0, a) + (a.c.sheet.saves.wis || 0);
     if (s >= (a.c.sleptDc || 13)){ a.c.conds.delete("asleep"); popText(a, "wakes", "#b0b8ff"); }
@@ -10771,7 +10771,7 @@ function openMenu(a, sub){
   if (sub === "attack"){
     for (const d of drawable(a)){ ACTION_ICON[d.label] = "bar/attack";
       add(d.label, c.objFree !== false ? `draw it (your free object interaction) and attack · ${d.hint}` : "your free object interaction is spent: draw it from the inventory instead", c.objFree !== false ? () => drawAndAttack(a, d.it) : null); }
-    for (const atk of s.attacks){ ACTION_ICON[atk.name] = atk.name.toLowerCase().includes("unarmed") ? "opportunity-attack" : "bar/attack"; add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${atk.sneak ? ` · sneak +${atk.sneak}` : ""}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk}));
+    for (const atk of s.attacks){ ACTION_ICON[atk.name] = atk.name.toLowerCase().includes("unarmed") ? "opportunity-attack" : "bar/attack"; add(atk.name, `+${atk.hit} · ${atk.dmg} ${atk.type}${coatNote(a, atk)}${atk.sneak ? ` · sneak +${atk.sneak}` : ""}${atk.thrown ? " · 5 ft or thrown" : ""}`, () => aim(a, {atk}));
       // the weapon's own special attacks (WEAPON_ARTS): one row each, in its lane, spent ones shown with the reason
       for (const art of artsFor(a, atk)){ const label = `${art.name} · ${atk.name}`; ACTION_ICON[label] = ART_ICON[art.key] || "bar/attack";
         add(label, art.used ? "used · a short rest brings it back" : `${ART_LANE[art.ab]} · ${art.blurb}${art.save ? ` · DC ${art.dc}` : ""} · once per short rest`, art.used ? null : () => aim(a, {atk: {...atk, art: art.key}})); } }
@@ -14475,9 +14475,7 @@ function attackWith(att, tgt, atk, done, offhand, reaction){
         if (!hok && !(tgt.c.sheet.immuneCond || []).includes("poisoned")){ addCond(tgt, "poisoned"); addCond(tgt, atk.hold.cond); tgt.c.holdSave = {...atk.hold, by: fname(att)}; tgt.path = []; popText(tgt, atk.hold.cond, "#b8ff9a"); labHoldHit(tgt, "venom"); }
         parts.push(`${atk.hold.save.toUpperCase()} save ${hs} vs ${atk.hold.dc}: ${hok ? "resists" : atk.hold.cond}`); }
       if (atk.drowPoison && !tgt.down) parts.push(drowPoison(tgt, atk.drowPoison.dc));
-      else if (att.coat && !tgt.down && !atk.flask && !atk.rock && (att.coat.bolt ? /crossbow/i.test(atk.name || "") : !/crossbow|bow|sling/i.test(atk.name || ""))){   // COATED (poison-coat, below)
-        const ct = att.coat; ct.uses--; if (ct.uses <= 0) att.coat = null;
-        parts.push(`${ct.bolt ? "the poisoned bolt" : "the poisoned edge"}: ${drowPoison(tgt, ct.dc)}`); }
+      else if (!tgt.down){ const cw = coatHit(att, tgt, atk, crit); if (cw){ dmg.total += cw.dmg; parts.push(cw.text); } }   // COATED (coatHit, below): what it adds is in the damage total too
       if (atk.tooth && !tgt.down){ const v = toothVenomHit(att, tgt); if (v) parts.push(v); }
       if (atk.numb && !tgt.down){ const s0 = d20(0, tgt, null, atk.numb.dc - (tgt.c.sheet.saves[atk.numb.save] || 0)) + (tgt.c.sheet.saves[atk.numb.save] || 0) + blessD4(tgt), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, atk.numb.dc) : 0), ok = sv >= atk.numb.dc && !autoFailsSave(tgt.c.conds, atk.numb.save);
         if (!ok){ addCond(tgt, "numbed"); tgt.c.reactionUsed = true; popText(tgt, "numbed", "#9fd8ff"); } parts.push(`${atk.numb.save.toUpperCase()} save ${sv} vs ${atk.numb.dc}: ${ok ? "shakes it off" : "numbed"}`); }
@@ -15192,6 +15190,7 @@ function concSave(a, dmg){
 // only when it did not — a +1 blade or a cantrip goes through whole.
 function damage(t, n, type, crit, from, magical = false){
   const s = t.c.sheet; if ((s.immune || []).includes(type)){ popText(t, "immune", "#aaa"); return; }
+  if (type === "fire" && t.c.oiled && n > 0){ t.c.oiled = false; n += COAT_RULES.oilBurn; setTimeout(() => popText(t, "the oil catches", "#ff8a3a", .9), 120); log(`<em>The oil on ${esc(fname(t))} catches: ${COAT_RULES.oilBurn} more fire.</em>`); }   // SRD Oil (lib/coatings.mjs)
   handCheer(t, from);
   if (from && from !== t && from.c && from.c.conds && from.c.conds.has("sanctuary") && n > 0) endSanctuary(from, "dealt damage");   // SRD 5.2.1: or deals damage
   if (from && from !== t && from.c && from.c.conds && from.c.conds.has("invisible") && n > 0) endInvisible(from, "dealt damage");
@@ -17618,6 +17617,7 @@ function setQuick(on, quiet){
 }
 function endCombat(won, opts = {}){
   if (mode !== "combat" || FIGHT.mirror) return;
+  for (const h of party) if (h.coats) for (const k of ["weapon", "ammo"]){ const ct = h.coats[k]; if (ct && (ct.wholeFight || ct.rounds)) h.coats[k] = null; }   // the residue lasts one combat (Sam); Basic Poison dries in a minute (SRD)
   // THE ESCAPE PHASE: how the escape's fight came out. endCombat(false) means several things (a truce, the party running,
   // a guard standing down, the party falling), so the loss is read from the field, not from `won`. Won: every foe down.
   // Fell: nobody of ours standing. Anything else leaves drow alive who saw them: they know (FOE_ESCAPED, hunted).
@@ -24310,6 +24310,9 @@ function FLASK_OF(it){
   if (/^acid\b/.test(n)) return {kind: "acid", dmg: "2d6", type: "acid", fx: "acidImpact", blurb: "2d6 acid on a hit"};
   if (/alchemist'?s fire/.test(n)) return {kind: "fire", burn: "1d4", type: "fire", fx: "fireImpact", blurb: "sets them burning: 1d4 fire each turn"};
   if (/holy water/.test(n)) return {kind: "holy", dmg: "2d6", type: "radiant", only: /fiend|undead/, fx: "radiantColumn", blurb: "2d6 radiant to a fiend or undead"};
+  // oil, essence of ether, crawler mucus (lib/coatings.mjs THROWN_VIALS, each with the SRD rule it is printed with)
+  { const v = thrownVialOf(it); if (v) return v.kind === "oil" ? {kind: "oil", type: "oil", sound: "magic/impact_acid", fx: null, blurb: v.blurb}
+      : {kind: v.kind, type: "poison", dc: v.dc, fx: "poisonCloud", blurb: v.blurb, label: String(it.name || "").replace(/\s*\(.*\)$/, "")}; }
   return null;
 }
 function flaskAttacks(a){
@@ -24340,8 +24343,9 @@ function restOnFloor(a, atk, where, missed){
 }
 // the glass goes where it lands
 function shatter(atk, where, tgt){
-  const f = atk.flask; bank(`magic/impact_${f.type}`, .75);
-  if (tgt) spawnFx(f.fx, {at: tgt, sq: 1.6, anchor: f.type === "radiant" ? "feet" : "mid"});
+  const f = atk.flask; bank(f.sound || `magic/impact_${f.type}`, .75);
+  if (!f.fx){ /* oil: only the glass and the splash */ }
+  else if (tgt) spawnFx(f.fx, {at: tgt, sq: 1.6, anchor: f.type === "radiant" ? "feet" : "mid"});
   else spawnFx(f.fx, {at: null, x: where.x, y: where.y, sq: 1.3, flat: true});
   const gr = GROUND_OF[f.type]; if (gr) spawnFx(gr, {at: tgt || null, x: where.x, y: tgt ? tgt.y : where.y, sq: 1.4, flat: true, fade: true});
   for (let i = 0; i < 8; i++) sparks.push({x: where.x, y: where.y, vx: (Math.random() - .5) * 160, vy: -40 - Math.random() * 90, g: 300, col: i % 2 ? "#e8f4ff" : "#9fc4d8", t0: now, life: 420});   // glass
@@ -24350,6 +24354,10 @@ function flaskHits(att, tgt, atk, crit, why){
   const f = atk.flask;
   knock(tgt, att, 10 * actorScale(tgt));
   if (f.kind === "fire"){ addCond(tgt, "burning"); log(`${why} — <b>hit</b>: ${fname(tgt)} catches fire (1d4 fire at the start of each turn; an action and DC 10 DEX puts it out).`); narrate(att, `${fname(att)}'s flask bursts across ${fname(tgt)} in a sheet of fire.`); renderParty(); return; }
+  // OIL (SRD 5.1 Equipment: Oil): "On a hit, the target is covered in oil. If the target takes any fire damage before
+  // the oil dries (after 1 minute), the target takes an additional 5 fire damage from the burning oil." (damage(), below)
+  if (f.kind === "oil"){ tgt.c.oiled = true; popText(tgt, "soaked in oil", "#e0b070", .95); log(`${why} — <b>hit</b>: ${fname(tgt)} is covered in oil. The next fire damage it takes burns for ${COAT_RULES.oilBurn} more.`); narrate(att, `${fname(att)}'s flask bursts and ${fname(tgt)} drips with lamp oil.`); return; }
+  if (f.kind === "ether" || f.kind === "mucus"){ log(`${why} — <b>hit</b>: ${vialPoison(tgt, f, att)}.`); renderParty(); return; }
   if (f.only){ const kind = (tgt.c.sheet.ctype || (tgt.creature && tgt.creature.type) || "").toLowerCase();
     if (!f.only.test(kind)){ popText(tgt, "no effect", "#cfe8ff"); log(`${why} — <b>hit</b>, but ${fname(tgt)} is neither fiend nor undead: the holy water only wets them.`); return; } }
   if (f.kind === "holy" && tgt.c.sheet.holyVulnerable) holyOpen(tgt, "the holy water");
@@ -24375,29 +24383,87 @@ function drowPoison(t, dc){
     return `CON save ${sv} vs ${dc}: poisoned and unconscious (wakes if hurt, or shaken awake as an action)`; }
   renderParty(); return `CON save ${sv} vs ${dc}: poisoned (disadvantage on attacks)`;
 }
-// POISON ON A WEAPON (Sam, 2026-10-24: "items need a way to apply poisons/oils BG3-style"; 2026-11-15 "Go" on the list).
-// Drow poison (DMG, the catalogue row drow-poison: DC 13 Constitution): poisoned for an hour, unconscious too on a fail
-// by 5 or more (drowPoison above, the same rule the drow's own bolts use). From the bag:
-//   - a vial: "Coat the blade" (the hero's next melee hit carries it) or "Coat 3 bolts" (the next three hand-crossbow
-//     hits; three pieces of ammunition is the SRD's Basic Poison measure, Claude's choice for drow poison too).
-//     Applying poison is an action in a fight (SRD, Basic Poison: "As an action").
-//   - a hand crossbow bolt (drow poison) from the Scavenged Possessions: "Load the poisoned bolt", free (loading is the
-//     shot's own object interaction); the next hand-crossbow hit carries it.
-// The coat stays on the hero until it lands (Claude's call: the SRD's one-minute drying is not tracked).
+/*__COATINGS__*/
+
+// COATING A WEAPON OR AMMUNITION, AND THROWING THE VIALS (Sam, 2026-10-24: "items need a way to apply poisons/oils
+// BG3-style"; 2026-11-25: "I should be able to dip my weapon or bolt/arrow in poison or other special additive you have
+// per DND 5E rules. You should also be able to throw the vials. Bonus on attack should be reflected in damage.").
+// lib/coatings.mjs (pasted above) holds the table and every printed rule; this is the map doing it. From the bag:
+//   - any coating (drow poison, basic poison, serpent venom, wyvern poison, purple worm poison, gray ooze residue):
+//     "Coat the <weapon>" or "Coat 3 bolts / arrows / needles". An action in a fight (SRD, Basic Poison: "As an action").
+//   - a hand crossbow bolt (drow poison) from the Scavenged Possessions: "Load it", free (loading is the shot's own
+//     object interaction); the next hand-crossbow hit carries it.
+// A hero carries one coat on the weapon and one on the ammunition (a.coats). What a coat adds is rolled with the hit,
+// shown as its own number over the target, written in the log AND added to the blow's total (the strike cam's number).
 const isDrowPoisonVial = it => /^drow poison$/i.test(String(it && it.name || "")) || String(it && it.slug || "") === "drow-poison";
 const isPoisonBolt = it => /bolt \(drow poison\)|poisoned bolt/i.test(String(it && it.name || "")) || String(it && it.slug || "") === "hand-crossbow-bolt-drow-poison";
 function hasHandCrossbow(a){ const g = GEAR[a.id] || {}; return [...(g.carried || []), ...(g.doll || [])].some(x => /hand crossbow/i.test(String(x && x.name || "")) && !/bolt/i.test(String(x.name))) || ((a.c && a.c.sheet && a.c.sheet.attacks) || []).some(k => /hand crossbow/i.test(k.name || "")); }
-function coatWith(a, it, how){
+const coatSheet = a => (a.c && a.c.sheet) || SHEETS[a.id] || {};
+// what the hero's launcher shoots ("bolts", "arrows", "needles"), or null with no bow, crossbow or blowgun to hand
+function launcherWord(a){ const g = GEAR[a.id] || {};
+  for (const x of [...(coatSheet(a).attacks || []), ...(g.doll || []), ...(g.carried || [])]){ const w = ammoWord(x && x.name); if (w) return w; }
+  return null; }
+// the weapon the coat would go on: the first attack line that can carry it (a blade or point; any weapon for the
+// residue), else a weapon in the hands or the pack (it need not be drawn to be dipped)
+function coatableWeapon(a, coating){ const probe = {...coating, where: "weapon"}, g = GEAR[a.id] || {};
+  const line = (coatSheet(a).attacks || []).find(k => (k.item || !/unarmed/i.test(k.name || "")) && coatFits(probe, {name: k.itemName || k.name, type: k.type, ammo: k.ammo}));
+  if (line) return line;
+  const it = [...(g.doll || []), ...(g.carried || [])].find(x => x && isWeapon(x) && coatFits(probe, {name: x.name, type: String((x.properties || {}).damage_type || (catalogItem(x.name) || {properties: {}}).properties.damage_type || ""), ammo: ((x.properties || {}).weapon_properties || []).includes("ammunition")}));
+  return it ? {name: it.name, itemName: it.name} : null; }
+const coatSlot = atk => (atk.ammo || ammoWord(atk.itemName || atk.name) || /sling/i.test(atk.name || "")) ? "ammo" : "weapon";
+const coatFor = (a, atk) => { const ct = a && a.coats && a.coats[coatSlot(atk)]; return ct && coatFits(ct, {name: atk.itemName || atk.name, type: atk.type, ammo: atk.ammo, flask: atk.flask, rock: atk.rock}) ? ct : null; };
+// the attack line in the menu says what the coat adds: "+5 · 1d6+3 piercing · coated: +1d6 acid"
+function coatNote(a, atk){ const ct = coatFor(a, atk); return ct ? ` · coated: ${coatLine(ct)}${ct.where === "ammo" && ct.uses !== Infinity ? ` (${ct.uses} left)` : ""}` : ""; }
+function coatWith(a, it, how){   // how: "weapon" · "ammo" · "bolt" (the single ready-poisoned bolt)
   const fight = inFightNow(); if (!bagCan(a)) return;
-  if (how !== "bolt" && fight){ if (!a.c.action){ toast("Applying poison takes your action."); return; } a.c.action = false; }
-  if ((how === "bolts" || how === "bolt") && !hasHandCrossbow(a)){ toast(`${fname(a)} has no hand crossbow to shoot it from.`, 3200); if (fight && how !== "bolt") a.c.action = true; return; }
-  a.coat = how === "blade" ? {dc: 13, uses: 1, bolt: false} : how === "bolts" ? {dc: 13, uses: 3, bolt: true} : {dc: 13, uses: 1, bolt: true};
-  spendItem(a, it, how === "bolt" ? "load" : "apply", a); bank("magic/impact_poison", .4); popText(a, how === "blade" ? "blade poisoned" : how === "bolts" ? "3 bolts poisoned" : "poisoned bolt loaded", "#8fd48f", .9);
-  log(how === "blade" ? `${fname(a)} works the black venom into the edge of the weapon. The next hit carries <b>drow poison</b> (DC 13 Con)${fight ? " (action)" : ""}.`
-    : how === "bolts" ? `${fname(a)} dips three bolts in the vial. The next three hand-crossbow hits carry <b>drow poison</b> (DC 13 Con)${fight ? " (action)" : ""}.`
-    : `${fname(a)} loads the bolt with the black, tacky head. The next hand-crossbow hit carries <b>drow poison</b> (DC 13 Con).`);
-  if (APP) handOff(`${fname(a)} ${how === "bolt" ? "loaded a drow-poisoned bolt into the hand crossbow" : how === "bolts" ? "coated three hand-crossbow bolts with drow poison" : "coated the weapon's edge with drow poison"}.`);
+  const single = how === "bolt", coating = single ? COATINGS["drow-poison"] : coatingOf(it); if (!coating) return;
+  const where = how === "weapon" ? "weapon" : "ammo", word = single ? "bolts" : launcherWord(a), wpn = where === "weapon" ? coatableWeapon(a, coating) : null;
+  if (single && !hasHandCrossbow(a)){ toast(`${fname(a)} has no hand crossbow to shoot it from.`, 3200); return; }
+  if (where === "ammo" && !word){ toast(`${fname(a)} has no bow, crossbow or blowgun to shoot it from.`, 3200); return; }
+  if (where === "weapon" && !wpn){ toast(coating.anyDamage ? `${fname(a)} has no weapon to put it on.` : `${fname(a)} has no weapon that pierces or slashes: the ${coating.label} needs a wound.`, 3600); return; }
+  if (!single && fight){ if (!a.c.action){ toast("Applying it takes your action."); return; } a.c.action = false; }
+  a.coats = a.coats || {}; const ct = a.coats[where] = newCoat(coating, where, single ? 1 : 0); if (fight && cbt) ct.startRound = cbt.round || 1;
+  const col = coating.type === "acid" ? "#b8ff9a" : "#8fd48f", one = word ? word.replace(/s$/, "") : "bolt", wname = wpn ? String(wpn.itemName || wpn.name).toLowerCase() : "weapon", act = fight && !single ? " (action)" : "";
+  spendItem(a, it, single ? "load" : "apply", a); bank(`magic/impact_${coating.type === "acid" ? "acid" : "poison"}`, .4);
+  popText(a, single ? "poisoned bolt loaded" : where === "weapon" ? `${wname} coated` : `${ct.uses === Infinity ? "" : ct.uses + " "}${word} coated`, col, .9);
+  log(single ? `${fname(a)} loads the bolt with the black, tacky head. The next hand-crossbow hit carries <b>drow poison</b> (${coatLine(ct)}).`
+    : where === "weapon" ? `${fname(a)} works the <b>${coating.label}</b> into the ${esc(wname)}: ${coatLine(ct)}, ${coatLasts(ct)}${act}.`
+    : `${fname(a)} dips ${ct.uses === Infinity ? `the ${word}` : `${ct.uses} ${word}`} in the <b>${coating.label}</b>: ${coatLine(ct)}, ${coatLasts(ct)}${act}.`);
+  if (APP) handOff(`${fname(a)} ${single ? "loaded a drow-poisoned bolt into the hand crossbow" : where === "weapon" ? `coated the ${wname} with ${coating.label}` : `coated ${ct.uses === Infinity ? "the" : ct.uses} ${ct.uses === 1 ? one : word} with ${coating.label}`}.`);
   if (fight){ renderParty(); toggleBag(false); afterAction(a); } else renderBag();
+}
+// THE COATED HIT. Returns {dmg, text}: dmg is what the coat added to this blow (already dealt, as its own damage type),
+// text is its line in the log. null when this attack carries no coat.
+//   bonus (the residue): the dice ride the hit, doubled on a critical like any damage dice of the attack.
+//   save (basic poison, venoms): a CON save; the poison's dice are not the attack's, so a critical does not double them.
+//   drow: the same rule the drow's own bolts use (drowPoison, above).
+function coatHit(att, tgt, atk, crit){
+  if (att.kind !== "pc") return null; const ct = coatFor(att, atk); if (!ct) return null;
+  const where = ct.where, round = (cbt && cbt.round) || 1; if (ct.startRound == null) ct.startRound = round;
+  if (coatDried(ct, round)){ att.coats[where] = null; return {dmg: 0, text: `the ${ct.label} has dried`}; }
+  if (ct.uses !== Infinity){ ct.uses--; if (ct.uses <= 0) att.coats[where] = null; }
+  const on = where === "ammo" ? `the coated ${SHOT_OF(String(atk.itemName || atk.name || "").toLowerCase()) || "shot"}` : "the coated edge";
+  if (ct.kind === "drow") return {dmg: 0, text: `${on}: ${drowPoison(tgt, ct.dc)}`};
+  const s = tgt.c.sheet, land = n => setTimeout(() => { bank(`magic/impact_${ct.type}`, .5); if (IMPACT_OF[ct.type]) spawnFx(IMPACT_OF[ct.type], {at: tgt, sq: 1.2, anchor: "mid"}); damage(tgt, n, ct.type, false, att, true); }, 280);
+  if ((s.immune || []).includes(ct.type)) return {dmg: 0, text: `${on}: immune to ${ct.type}`};
+  if (ct.kind === "bonus"){ const e = roll(ct.dice, crit).total; land(e); return {dmg: e, text: `${ct.label} ${e} ${ct.type}`}; }
+  const s0 = d20(0, tgt) + (s.saves.con || 0) + blessD4(tgt), sv = s0 + (hero(tgt) ? useInspiration(tgt, s0, ct.dc) : 0), ok = sv >= ct.dc && !autoFailsSave(tgt.c.conds, "con");
+  const n = coatSaveDamage(ct, roll(ct.dice).total, ok); if (n > 0) land(n); else setTimeout(() => popText(tgt, "resists poison", "#8fd48f", .8), 280);
+  return {dmg: n, text: `${ct.label}: CON save ${sv} vs ${ct.dc}, ${ok ? (n ? `saved, ${n} ${ct.type}` : "no effect") : `${n} ${ct.type}`}`};
+}
+// A THROWN VIAL OF POISON that needs no wound (lib/coatings.mjs THROWN_VIALS). Essence of Ether (inhaled): DC 15 CON or
+// poisoned and unconscious, waking if hurt or shaken awake. Crawler Mucus (contact): DC 13 CON or poisoned and paralyzed,
+// the save again each turn (the carrion crawler's own hold, newSpellsTurnStart).
+function vialPoison(t, f, att){
+  const s = t.c.sheet, name = f.label || "the poison";
+  if ((s.immune || []).includes("poison") || (s.immuneCond || []).includes("poisoned")) return `${fname(t)} is immune to the ${name}`;
+  const s0 = d20(0, t) + (s.saves.con || 0) + blessD4(t), sv = s0 + (hero(t) ? useInspiration(t, s0, f.dc) : 0), ok = sv >= f.dc && !autoFailsSave(t.c.conds, "con");
+  if (ok){ popText(t, "resists poison", "#8fd48f", .8); return `CON save ${sv} vs ${f.dc}: ${fname(t)} shrugs off the ${name}`; }
+  addCond(t, "poisoned"); t.path = [];
+  if (f.kind === "ether"){ addCond(t, "asleep"); t.c.drugged = true; t.c.druggedBy = name.toLowerCase(); popText(t, "out cold", "#8fd48f", 1.1);
+    return `CON save ${sv} vs ${f.dc}: poisoned and unconscious (wakes if hurt, or shaken awake as an action)`; }
+  addCond(t, "paralyzed"); t.c.holdSave = {save: "con", dc: f.dc, cond: "paralyzed", by: fname(att)};
+  return `CON save ${sv} vs ${f.dc}: poisoned and paralyzed (the save again each turn)`;
 }
 // an action and a DC 10 Dexterity check
 function putOutFire(a, done){
@@ -24607,7 +24673,7 @@ const inFightNow = () => mode === "combat" && !!cbt;
 function useOf(it){
   const p = it.properties || {}, n = String(it.name || "").toLowerCase();
 
-  if (isDrowPoisonVial(it)) return {kind: "coat"};
+  if (coatingOf(it)) return {kind: "coat", coat: coatingOf(it)};
   if (isPoisonBolt(it)) return {kind: "bolt"};
   if (isCaltrops(it)) return {kind: "caltrops"};
   if (isWeapon(it)) return {kind: "weapon"};
@@ -24765,6 +24831,7 @@ function renderBag(){
       : u.kind === "heal" ? `restores ${u.dice} HP`
       : u.kind === "drink" ? (u.effect || "a draught")
       : u.kind === "food" ? (u.verb === "drink" ? "a drink" : u.heal && fungusKnowsItem(a, it.slug || (catalogItem(it.name) || {}).slug) ? `eat it · heals ${u.heal}` : "food")
+      : u.kind === "coat" ? `coats a weapon or ammunition · ${coatLine(u.coat)}`
       : u.kind === "throw" ? `${FLASK_OF(it).blurb} · thrown up to 20 ft` : u.kind === "dm" ? `use it through the DM: ${u.why}` : (it.desc || "");
     // the row keeps the short line (what it is, or where it is worn); the long description lives on the item's card
     row.innerHTML = `<span class="invPic${worn.length ? " worn" : ""}"${RARITY_RANK[rar] > 0 ? ` style="border-color:${RARITY_COL[rar]}"` : ""}>${pic ? `<img src="${esc(pic)}" alt="" loading="lazy">` : "◆"}</span>`
@@ -24829,8 +24896,12 @@ function renderBag(){
     }
     if (u.kind === "throw" && fight){ const fa = flaskAttacks(a).find(x => x.itemName === it.name);
       btn("Throw", mine && c.action && !!fa, "your action: click a foe within 20 ft", () => { toggleBag(false); aim(a, {atk: fa, throwing: true}); }); }
-    if (u.kind === "coat"){ btn("Coat the blade", mine && (!fight || c.action), fight ? "your action: the next melee hit carries it" : "the next melee hit carries it", () => coatWith(a, it, "blade"));
-      btn("Coat 3 bolts", mine && (!fight || c.action) && hasHandCrossbow(a), hasHandCrossbow(a) ? (fight ? "your action: the next three hand-crossbow hits" : "the next three hand-crossbow hits") : "needs a hand crossbow", () => coatWith(a, it, "bolts")); }
+    if (u.kind === "coat"){ const cw = coatableWeapon(a, u.coat), lw = launcherWord(a), free = mine && (!fight || c.action), act = fight ? "your action · " : "";
+      const wc = newCoat(u.coat, "weapon"), ac = newCoat(u.coat, "ammo"), n = ac.uses === Infinity ? "the " : ac.uses + " ";
+      btn(cw ? `Coat the ${String(cw.itemName || cw.name).toLowerCase()}` : "Coat a weapon", free && !!cw, cw ? `${act}${coatLine(wc)} · ${coatLasts(wc)}` : u.coat.anyDamage ? "needs a weapon" : "needs a weapon that pierces or slashes", () => coatWith(a, it, "weapon"));
+      btn(`Coat ${n}${lw || "ammunition"}`, free && !!lw, lw ? `${act}${coatLine(ac)} · ${coatLasts(ac)}` : "needs a bow, crossbow or blowgun", () => coatWith(a, it, "ammo"));
+      // not thrown, and the bag says why (Sam, 2026-10-30: show the refused row with its reason)
+      if (fight) btn("Throw", false, u.coat.anyDamage ? "it works on a weapon or ammunition, not thrown" : "an injury poison only works through a wound: coat a weapon with it", () => {}); }
     if (u.kind === "bolt") btn("Load it", mine && hasHandCrossbow(a), hasHandCrossbow(a) ? "free: the next hand-crossbow hit carries the poison" : "needs a hand crossbow", () => coatWith(a, it, "bolt"));
     if (u.kind === "caltrops") btn("Scatter", mine && (!fight || c.action), fight ? "your action: a 5-ft square in front of you" : "a 5-ft square in front of you", () => scatterCaltrops(a, it));
     if (u.kind === "food") btn(u.verb === "drink" ? "Drink" : "Eat", mine && (!fight || c.action), fight ? "takes your action" : "", () => eatItem(a, it, u.verb));
