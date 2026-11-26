@@ -1983,7 +1983,7 @@ function act(k){
   const map={alchemy:"brew",repair:"mend",artifice:"artifice",study:"attune",trade:"trade",medicine:"brew"}; const name=map[k]||k;
   if(!spend(name)) return;
   const f=me();
-  if(k==="forage"){ playFilm("forage",startForage); return; }
+  if(k==="forage"){ playFilm("forage",startForageRun); return; }
   if(k==="hunt"){ playFilm("hunt",startHunt); return; }
   if(k==="explore"){ if(!startExplore()){ budget[ME]++; refresh(); } return; }
   if(k==="perform"){ if(!canPerform()){ budget[ME]++; refresh(); speak(`<b>ENTERTAIN</b>\n${f.name} has no instrument and no musical proficiency.`); return; } const r=C.perform(sheetOf(f),rng); leave(f); goTo(f,"perform",[560,470],"south"); speak(`<b>PERFORM</b>\n${r.note}`); if(isBard()){ bardEnd(); const k=performCue(r.band); if(k){ bardLast=k; playSong(f,bardSrc(k),k.includes("whistle")?.75:.95); } else playSong(f); } return; }
@@ -2869,6 +2869,34 @@ function fMalSummary(L,down){ const p=PARTY[ME]; const killed=[]; Object.entries
   return {text:`${down?`${p.name} comes back to the fire the hard way.`:`${p.name} comes back to the fire.`} ${bits.join(" ")||"Empty-handed."} ${MAL_COMMENT[key]}`,key}; }
 function theNight(){ const seed="mock-"+biome; if(!NIGHT||NIGHT.seed!==seed) NIGHT={seed,W:F.buildExploreWorld(seed,FROWS),seen:new Set(),searched:new Map(),screenFoes:{},outings:0,rareTaken:new Set()}; if(!NIGHT.rareTaken) NIGHT.rareTaken=new Set(); return NIGHT; }
 function startForage(){ const ok=startWorld("forage"); if(!ok){ budget[ME]++; refresh(); } return ok; }
+// FORAGE RUN (Sam, 2026-11-26: "wire this to the camp options for foraging") — the Forage tile now opens the side-scroller at
+// /camp/forage-run/ over the fire. The run is a page of its own; it is handed the hero's modifiers and the level, and it
+// posts back what was carried home as catalog slugs. That haul goes through the same postHaul gate as every other outing,
+// so the server still refuses anything the catalog does not know. The old field forage (startForage) is kept, unused.
+const FORAGE_RUN_SRC="/camp/forage-run/index.html", FORAGE_RUN_KEY="aopForageRunLevel";
+function startForageRun(){ const p=PARTY[ME]; if(document.getElementById("foragerun")) return true;
+  const mod=(v)=>Math.floor(((v||10)-10)/2); let surv=mod(p.wis); try{ surv=F.skillBonus(fSurv()); }catch(e){}
+  let lvl=0; try{ lvl=Math.max(0,Math.min(2,parseInt(localStorage.getItem(FORAGE_RUN_KEY),10)||0)); }catch(e){}
+  const q=new URLSearchParams({embed:"1",level:String(lvl),con:String(mod(p.con)),wis:String(mod(p.wis)),survival:String(surv)}); if(p.dex!=null) q.set("dex",String(mod(p.dex))); if(p.str!=null) q.set("str",String(mod(p.str)));
+  const ov=document.createElement("div"); ov.id="foragerun"; ov.style.cssText="position:fixed;inset:0;z-index:10000;background:#06040f";
+  const fr=document.createElement("iframe"); fr.src=FORAGE_RUN_SRC+"?"+q.toString(); fr.title="Forage Run"; fr.allow="autoplay; fullscreen"; fr.style.cssText="width:100%;height:100%;border:0;display:block"; ov.appendChild(fr); document.body.appendChild(ov);
+  if(window.campMusic&&window.campMusic.duck) window.campMusic.duck(true); setTimeout(()=>{ try{ fr.focus(); }catch(e){} },300);
+  let reported=false;
+  function onMsg(e){ if(e.source!==fr.contentWindow||e.origin!==location.origin||!e.data||typeof e.data!=="object") return; const d=e.data;
+    if(d.type==="forage-run-done"&&!reported){ reported=true; const items=(Array.isArray(d.items)?d.items:[]).filter(i=>i&&typeof i.slug==="string"&&i.quantity>0).map(i=>({slug:i.slug,quantity:Math.trunc(i.quantity)})); const food=Math.max(0,Math.trunc(+d.food||0));
+      supplies+=food; const sp=$("sup"); if(sp) sp.textContent=supplies; items.forEach(it=>PACK[it.slug]=(PACK[it.slug]||0)+it.quantity);
+      const named=items.map(it=>`${(FCAT.find(c=>c.slug===it.slug)||{name:it.slug}).name} x${it.quantity}`);
+      const how=d.outcome==="win"?`cleared ${d.levelName||"the level"}`:d.outcome==="lamp"?"ran out of lamp oil and was walked home":"fell and was carried back on a stretcher";
+      const lines=[`${p.name} ${how}.`]; if(named.length) lines.push(`Carried home: ${named.join(", ")}.`); else lines.push("Carried home nothing.");
+      if(food) lines.push(`${food} day${food===1?"":"s"} of food. Rations → ${supplies}.`);
+      if(d.loot&&d.loot.r2) lines.push(`Loot box (d6 ${d.loot.r2}): ${d.loot.text}.`); if(Array.isArray(d.dm)&&d.dm.length) lines.push(`FOR THE DM: ${d.dm.join("; ")}.`);
+      if(d.outcome==="fallen"){ p.hp=1; lines.push(`${p.name} is left at 1 HP.`); }
+      if(d.outcome==="win"){ try{ localStorage.setItem(FORAGE_RUN_KEY,String(((+d.level||0)+1)%3)); }catch(e){} }
+      if(food||items.length) postHaul("forage",food,items,lines.join(" "));
+      speak(`<b>FORAGE</b>\n${lines.join(" ")}`); refresh(); }
+    if(d.type==="forage-run-close"){ window.removeEventListener("message",onMsg); ov.remove(); if(window.campMusic&&window.campMusic.duck) window.campMusic.duck(false);
+      if(!reported&&d.quit){ speak(`<b>FORAGE</b>\n${p.name} turned back before the lamp burned down. Nothing carried home.`); } refresh(); } }
+  window.addEventListener("message",onMsg); return true; }
 function startHunt(){ const ok=startWorld("hunt"); if(!ok){ budget[ME]++; refresh(); } return ok; }
 function startExplore(){ return startWorld("explore"); }
 const LOS=(L,ax,ay,bx,by)=>{ const n=Math.ceil(Math.hypot(bx-ax,by-ay)/28); for(let i=1;i<n;i++){ const t=i/n; if(L.tileW(ax+(bx-ax)*t,ay+(by-ay)*t-20)===F.T.WALL) return false; } return true; };
@@ -3027,7 +3055,7 @@ function startWorld(mode){ const p=PARTY[ME], f=me();
   if(light.source==="torchstalk"){ const ts=F.lightTorchstalk(rng); FLD.log.push(ts.note); if(ts.exploded){ setTimeout(()=>{ if(FLD&&!FLD.ended){ fPop(FLD.hero.x-FLD.ox(),FLD.hero.y-FLD.oy()-140,`the torchstalk goes off! −${ts.damage}`,"#ff7a3a"); sfx("magic_impact_fire",{vol:.5}); fHurt(FLD,ts.damage,"an exploding torchstalk"); } },600); } }
   $("fldsearch").hidden=mode!=="explore"; $("fldsearch").disabled=true; $("fldback").hidden=false; $("fldback").disabled=false; $("fldback").textContent="Turn in at the fire"; $("fldgo").hidden=true; return true;
 }
-if(window.__camp){ Object.defineProperty(window.__camp,"FLD",{get(){return FLD;}}); window.__camp.budget=budget; window.__camp.setDm=(on)=>setDm(on); window.__camp.preyTurns=()=>fPreyTurns(FLD,FLD.prey); window.__camp.au=fAu; window.__camp.setGear=(g)=>{GEARPICK=g;}; window.__camp.setKit=(c)=>{KITPICK=c;}; window.__camp.speak=()=>fSpeak(); window.__camp.butcher=(c)=>fButcher(FLD,c); window.__camp.corpseFrom=(e)=>fCorpseFrom(FLD,e); window.__camp.malEl=fMalEl; window.__camp.fDrawMon=fDrawMon; window.__camp.refresh=()=>refresh(); window.__camp.switchTo=(i)=>switchTo(i); window.__camp.status=(k)=>fStatus(FLD,k); window.__camp.wild=()=>{ const L=FLD; const key=`${L.sc.x},${L.sc.y}`; const P=(L.plants||{})[key]||[]; const p=P.find(q=>!q.tried); if(!p) return null; p.tried=true; fWildForage(L,p,p.x,p.y); return L.log[L.log.length-1]; }; window.__camp.pack=PACK; window.__camp.packs=PACKS; window.__camp.budgetOf=()=>budget[ME]; window.__camp.ambush=(b,n)=>fAmbush(FLD,{result:b,bestiary:b,count:n},null,"test"); }
+if(window.__camp){ Object.defineProperty(window.__camp,"FLD",{get(){return FLD;}}); window.__camp.budget=budget; window.__camp.forageRun=()=>startForageRun(); window.__camp.state=()=>({supplies,me:PARTY[ME].name,hp:PARTY[ME].hp,pack:{...PACK}}); window.__camp.setDm=(on)=>setDm(on); window.__camp.preyTurns=()=>fPreyTurns(FLD,FLD.prey); window.__camp.au=fAu; window.__camp.setGear=(g)=>{GEARPICK=g;}; window.__camp.setKit=(c)=>{KITPICK=c;}; window.__camp.speak=()=>fSpeak(); window.__camp.butcher=(c)=>fButcher(FLD,c); window.__camp.corpseFrom=(e)=>fCorpseFrom(FLD,e); window.__camp.malEl=fMalEl; window.__camp.fDrawMon=fDrawMon; window.__camp.refresh=()=>refresh(); window.__camp.switchTo=(i)=>switchTo(i); window.__camp.status=(k)=>fStatus(FLD,k); window.__camp.wild=()=>{ const L=FLD; const key=`${L.sc.x},${L.sc.y}`; const P=(L.plants||{})[key]||[]; const p=P.find(q=>!q.tried); if(!p) return null; p.tried=true; fWildForage(L,p,p.x,p.y); return L.log[L.log.length-1]; }; window.__camp.pack=PACK; window.__camp.packs=PACKS; window.__camp.budgetOf=()=>budget[ME]; window.__camp.ambush=(b,n)=>fAmbush(FLD,{result:b,bestiary:b,count:n},null,"test"); }
 function lanternOut(){ const L=FLD; if(!L||L.busy) return; L.busy=true; const p=PARTY[ME];
   if(L.atCamp){ endExplore(false,`The lantern gutters out just as ${p.name} reaches the fire.`); return; }
   const lost=F.lostInTheDark(p.name); p.exhaustion=(p.exhaustion||0)+lost.exhaustion; fPop(FW/2,FH/2,"the light dies","#8a8078");
