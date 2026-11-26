@@ -31271,7 +31271,7 @@ function keyboardMove(a, dt, kd = keyDir()){
       // one measure for both sides of the line: inside its reach this frame, outside it on the next step
       const f = standing(foes).find(f => { const r = reachPx(f, a, 5) + 6; return !f.c.reactionUsed && !incapacitated(f) && pxBetween(a, f, a) <= r && pxBetween({x: nx, y: ny}, f, a) > r; });
       if (f){
-        keys.clear(); FIGHT.rdir = null; a.kbd = false; setAnim(a, "idle"); f.c.reactionUsed = true; combatBusy = true; closeMenu();
+        keys.clear(); FIGHT.rdir = []; a.kbd = false; setAnim(a, "idle"); f.c.reactionUsed = true; combatBusy = true; closeMenu();
         oaCue(f, a); narrate(f, `${fname(f)} lashes out as ${fname(a)} breaks away.`);
         attackWith(f, a, f.c.sheet.attacks[0], () => { combatBusy = false; if (cbt && activeActor() === a && !a.down) openMenu(a); });
         return;
@@ -32228,6 +32228,7 @@ async function oneFightOpened(){
 }
 function fightTick(){
   if (!FIGHT.auth || !FIGHT.id) return;
+  if (!FIGHT.scene && FIGHT.inLoop !== FIGHT.id){ FIGHT.inLoop = FIGHT.id; fightInputLoop(FIGHT.id); }
   try { fightTickBody(); } catch (e) { console.warn("[one-fight] tick", e && e.stack ? e.stack.slice(0, 300) : e); setTimeout(fightTick, 250); }
 }
 function fightTickBody(){
@@ -32254,8 +32255,19 @@ function fightTickBody(){
   { const m = menuNow(), j = JSON.stringify(m); if (full || j !== FIGHT.menuSig){ body.menu = m; FIGHT.menuSig = j; } }
   { const d = Object.values(FIGHT.dlgs).map(x => x.pub), j = JSON.stringify(d); if (full || j !== FIGHT.dlgSig){ body.dlgs = d; FIGHT.dlgSig = j; } }
   if (FIGHT.out.length){ body.ev = FIGHT.out; FIGHT.out = []; }
+  const sentAt = Date.now();
   const send = Object.keys(body).length > 1 ? fightPost("tick", {fight: FIGHT.id, body}).catch(e => { if (e.ended) fightLetGo(); else if (e.status === 403) (FIGHT.scene ? fightLetGo() : fightOvertaken()); }) : Promise.resolve();
-  send.finally(() => (FIGHT.scene ? Promise.resolve() : fightInputs()).finally(() => { if (FIGHT.auth) setTimeout(fightTick, 250); }));
+  // THE QUARTER SECOND IS COUNTED FROM THE SEND (Sam, 2026-11-24: "It's laggy"). Measured in that playtest
+  // (walk_fight_msgs, the fight on plate 10): a tick left every 0.8 s, not every 0.25 s, because each round waited for
+  // the tick to be stored, THEN for the players' presses to be read, THEN a quarter second more. Now the presses are read
+  // on their own (fightInputLoop) and the wait is what is left of the quarter second once the tick is stored. One tick
+  // at a time still, so they stay in order.
+  send.finally(() => { if (FIGHT.auth) setTimeout(fightTick, Math.max(60, 250 - (Date.now() - sentAt))); });
+}
+// the players' presses, read on their own round so a slow tick never holds a press back (and the other way round)
+function fightInputLoop(id){
+  if (!FIGHT.auth || FIGHT.id !== id || FIGHT.scene){ if (FIGHT.inLoop === id) FIGHT.inLoop = null; return; }
+  fightInputs().finally(() => setTimeout(() => fightInputLoop(id), 120));
 }
 async function fightInputs(){
   if (!FIGHT.auth) return;                              // only the screen that runs the fight plays the presses (fightOvertaken)
@@ -32284,7 +32296,7 @@ function fightInput(by, b){
       else { const it = itemFrom(a, b.it); if (it) fn(a, it, ...rest); }
     }
     else if (b.t === "hover" && typeof b.x === "number"){ aimW = {x: b.x, y: b.y}; hoverActor = hitActor(foes, aimW) || hitActor(heroes(), aimW); }
-    else if (b.t === "dir"){ const x = Math.sign(+b.x || 0), y = Math.sign(+b.y || 0); FIGHT.rdir = x || y ? {by, x, y, at: now} : null; }   // ARROWS FROM THE OTHER SCREEN
+    else if (b.t === "dir") remoteDirHeard(by, a, Math.sign(+b.x || 0), Math.sign(+b.y || 0), +b.ms || 0);   // ARROWS FROM THE OTHER SCREEN
     else if (b.t === "key"){
       if (b.k === "Escape") cancelAim();
       else if (b.k === "Enter" && cbt.phase === "menu" && !combatBusy) nextTurn();
@@ -32531,16 +32543,41 @@ function mirrorDirPush(again){
   if (!again && sig === FIGHT.dirSent) return;
   if (!sig && !FIGHT.dirSent) return;                 // nothing held, nothing to stop
   FIGHT.dirSent = sig;
-  fightSend({t: "dir", x: d ? d.x : 0, y: d ? d.y : 0});
+  fightSend({t: "dir", x: d ? d.x : 0, y: d ? d.y : 0, ms: Date.now()});   // (ms: this screen's own clock, so the fight's screen knows how LONG a key was held)
 }
 setInterval(() => { if (FIGHT.mirror && FIGHT.dirSent) mirrorDirPush(true); }, 300);
 /** On the screen running the fight: the direction the player of hero `a` is holding on their own screen, or null. */
 function remoteDir(a){
-  const r = FIGHT.rdir;
-  if (!r || !a || owDriver(a) !== r.by || now - r.at > REMOTE_DIR_MS || timeStopped || escortHolds()) return null;
-  return {x: r.x, y: r.y};
+  const q = FIGHT.rdir;
+  if (!q || !q.length) return null;
+  if (!a || timeStopped || escortHolds()) return null;
+  while (q.length){
+    const s = q[0];
+    if (s.k !== akey(a) || owDriver(a) !== s.by){ q.shift(); continue; }                // another hero's turn now
+    if (s.t0 == null){ if (now - s.heard > REMOTE_STALE_MS){ q.shift(); continue; } s.t0 = now; }   // (pressed during a swing that ran long: let go)
+    if (s.dur != null ? now - s.t0 >= s.dur : now - s.heard > REMOTE_DIR_MS){ q.shift(); continue; }
+    return {x: s.x, y: s.y};
+  }
+  return null;
 }
-const REMOTE_DIR_MS = 1000;
+const REMOTE_DIR_MS = 1000, REMOTE_STALE_MS = 1500;
+// A TAP IS A STEP (Sam, 2026-11-24: "we are unable to use direction buttons to move well"). Measured in that playtest
+// (walk_fight_msgs, the fight on plate 10, Fifi's turns on her watching screen): the screen running the fight read her
+// presses in batches 0.8 s apart and kept only the LAST word of each batch. So a tap whose press and release were read
+// together did nothing (three taps in a row at 17:34, 25 ft of movement left, not a pixel), and a tap whose release fell
+// in the next batch walked her on for a whole batch (pressed 0.26 s, walked about a second, 130 px). Now every press is
+// kept, in order, with how long it was held by the clock of the screen that pressed it: a press and its release read
+// together walk the hero for exactly that long, and a release that comes late ends the walk at once if it has already
+// run its time. A key still held (no release heard yet) walks on until it is not heard again for a second, as before.
+function remoteDirHeard(by, a, x, y, ms){
+  const q = FIGHT.rdir ||= [], last = q[q.length - 1], k = akey(a);
+  if (last && last.dur == null && last.by === by && last.k === k){
+    if (x === last.x && y === last.y){ last.heard = now; return; }                        // still held (the 300 ms repeat)
+    // let go, or turned: the press before this one lasted as long as the pressing screen says (an old page sends no clock: it ends now)
+    last.dur = ms && last.ms ? Math.max(0, Math.min(ms - last.ms, 30000)) : 0;
+  }
+  if (x || y){ q.push({by, k, x, y, ms, dur: null, heard: now, t0: null}); if (q.length > 12) q.splice(0, q.length - 12); }
+}
 function mirrorEnd(b){
   const fin = new Map((b.actors || []).map(s => [s.k, s]));
   for (const ev of b.ev || []) relayPlay(ev);
