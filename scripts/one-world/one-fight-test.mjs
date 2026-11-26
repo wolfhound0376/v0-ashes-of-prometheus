@@ -26,6 +26,10 @@ const STAGE = process.env.STAGE_JSON ? JSON.parse(readFileSync(process.env.STAGE
 const SEATED = STAGE.seated.filter((s) => s.id === FIFI || s.id === KENTA)
 if (SEATED.length < 2) { console.log("Fifi and Kenta must both be seated in the live run for the sheets; or pass STAGE_JSON"); process.exit(2) }
 const SEATNO = { [FIFI]: 1, [KENTA]: 2 }
+// THE ROAD TO THE SERVER IS NOT INSTANT. Measured in the 2026-11-24 playtest (walk_fight_msgs, fight 7100d40f): the screen
+// running the fight got a tick out every 0.8 s, not every quarter second, because each call to /api/walk-fight took about a
+// quarter second itself. The stand-in server answers the fight lane this late, so the test meets the game as it is played.
+const FIGHT_LAG_MS = process.env.FIGHT_LAG_MS === undefined ? 200 : +process.env.FIGHT_LAG_MS || 0
 let world = { campaign_run_id: "00000000-0000-0000-0000-000000000014", version: 0, plate: null, state: {}, heroes: {}, travel: null, seats: {} }
 const log = []
 const fights = [], msgs = [], fightLog = []; let fightSeq = 0, msgSeq = 0, bytes = 0
@@ -65,6 +69,7 @@ const server = http.createServer(async (req, res) => {
     return send(answer(apply(c.patch, who), refused.length ? { refused } : {}))
   }
   if (p === "/api/walk-fight") {
+    if (FIGHT_LAG_MS) await new Promise((r) => setTimeout(r, FIGHT_LAG_MS))
     if (req.method === "GET") {
       const id = url.searchParams.get("fight")
       if (!id) { const f = fights.find(f => !f.ended_at && Date.now() - f.seen < 60000); return send({ fight: f ? pub(f) : null, now: Date.now() }) }
@@ -96,7 +101,7 @@ const server = http.createServer(async (req, res) => {
 await new Promise((r) => server.listen(4100, r))
 
 
-const browser = await chromium.launch()
+const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME, args: ["--no-sandbox", "--mute-audio"] } : { args: ["--mute-audio"] })
 async function screen(cid, name) {
   const c = await browser.newContext({ viewport: { width: 1280, height: 760 } })
   await c.addInitScript(([id]) => { localStorage.setItem("aop_character_id", id); localStorage.setItem("aop_claim_token", "tok"); localStorage.setItem("vk-music", "off") }, [cid])
@@ -152,6 +157,18 @@ check("Kenta's arrows on his own screen walk him on the fight's screen", Math.ab
 check("the walk spends his movement", k1.move < k0.move, {before: k0.move, after: k1.move})
 check("he stops when he lets go", k1.x === k2.x && k1.y === k2.y, {k1, k2})
 check("and it is still his turn", (await A.evaluate(() => activeActor().id)) === "kenta")
+// A TAP IS A STEP (Sam, 2026-11-24: "we are unable to use direction buttons to move well"). That night Fifi's taps on
+// her watching screen either did nothing or ran her on for a second: the screen running the fight read the presses in
+// batches, so a press and its release read together cancelled out, and a release read a batch late came a batch late.
+// Three short taps back the way he came: each one moves him, and none of them is a run.
+const back = dirOf === "ArrowLeft" ? "ArrowRight" : "ArrowLeft", held = Math.abs(k1.x - k0.x), taps = []
+for (let i = 0; i < 3; i++){
+  const a0 = await kAt(); await press("keydown", back); await wait(180); await press("keyup", back); await wait(2200); const a1 = await kAt()
+  taps.push(Math.round(Math.hypot(a1.x - a0.x, a1.y - a0.y)))
+}
+check("each short tap on his arrow steps him (none is swallowed)", taps.every(d => d >= 2), {taps, held})
+check("a tap is a step, not a run (well under the 1.6 s hold)", taps.every(d => d < held * 0.45), {taps, held})
+check("and it is still his turn after the taps", (await A.evaluate(() => activeActor().id)) === "kenta")
 // Kenta presses Attack, then his weapon, then clicks the nearest drow — on his own screen
 await B.evaluate(() => { const b = [...$("cbtMenu").querySelectorAll("button")].find(b => /^Attack/.test(b.querySelector("span").textContent)); b.click() })
 await wait(1500)

@@ -101,7 +101,7 @@ const server = http.createServer(async (req, res) => {
 })
 await new Promise((r) => server.listen(PORT, r))
 
-const browser = await chromium.launch()
+const browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME, args: ["--no-sandbox", "--mute-audio"] } : { args: ["--mute-audio"] })
 async function screen(cid, name) {
   const c = await browser.newContext({ viewport: { width: 1280, height: 760 } })
   await c.addInitScript(([id]) => { localStorage.setItem("aop_character_id", id); localStorage.setItem("aop_claim_token", "tok"); localStorage.setItem("vk-music", "off") }, [cid])
