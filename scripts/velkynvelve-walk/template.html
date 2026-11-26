@@ -10493,7 +10493,24 @@ function petPhase(a, near, then){
 // beat and collapses inside PET_PORTAL_MS, faster than his: this is a blink, not an entrance.
 const PET_PORTAL_MS = 1000, PET_PORTAL_K = .25;
 let PET_PORTAL = null, petPortalLoading = false;
-function petPortalArt(){ if (PET_PORTAL || petPortalLoading) return PET_PORTAL; petPortalLoading = true; vfxLoad("malVisitPortal").then(v => { PET_PORTAL = v; }).finally(() => { petPortalLoading = false; }); return null; }
+function petPortalArt(){ if (PET_PORTAL || petPortalLoading) return PET_PORTAL; petPortalLoading = true; vfxLoad("malVisitPortal").then(v => { PET_PORTAL = v ? petPortalCore(v) : null; }).finally(() => { petPortalLoading = false; }); return null; }
+/** Sam (2026-11-25): "just keep the purple center and not the dark rim of portal". The spider's copy of the sheet with
+ *  the stone ring taken out: only the violet of the gate and the white of its lightning are kept. Malachar's own
+ *  portal is untouched (it reads the sheet through malVisitAssets, not through here). */
+function petPortalCore(v){
+  try {
+    const c = document.createElement("canvas"); c.width = v.img.width; c.height = v.img.height;
+    const x = c.getContext("2d"); x.drawImage(v.img, 0, 0);
+    const d = x.getImageData(0, 0, c.width, c.height), p = d.data;
+    for (let i = 0; i < p.length; i += 4){
+      const r = p[i], g = p[i + 1], b = p[i + 2];
+      const violet = b >= r && b > g + 18 && r > g && Math.max(r, g, b) > 70, white = Math.min(r, g, b) > 185;
+      if (!violet && !white) p[i + 3] = 0;
+    }
+    x.putImageData(d, 0, 0);
+    return {m: v.m, img: c};
+  } catch (e) { return v; }
+}
 function drawPetPortal(s, k){
   const P = petPortalArt(); if (!P || k < 0) return;
   const m = P.m, sc = BASE * paceAt({x: s.x, y: s.y}) * (96 / MALV_PPU) * MALV_PORTAL_K * PET_PORTAL_K;
