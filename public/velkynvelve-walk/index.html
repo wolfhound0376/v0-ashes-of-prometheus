@@ -32190,9 +32190,19 @@ const SCENE_ACTOR_KEYS = [...ACTOR_KEYS, "slain", "surgeonDown", "slow", "fixedS
 function snapActor(a, noC){
   const s = {k: akey(a)}; for (const k of (FIGHT.scene ? SCENE_ACTOR_KEYS : ACTOR_KEYS)) if (a[k] !== undefined) s[k] = typeof a[k] === "number" ? Math.round(a[k] * 10) / 10 : a[k];
   s.anim = a.anim; s.age = Math.round(now - (a.t0 || now)); if (a.once) s.ol = Math.round(a.once.end - now);
+  // EVERYONE WHO HAD BEEN HIT STOOD WHITE (Sam's playtest, 2026-11-25, pictures 0c237841 and f7f4cf49). `flash` is "white
+  // until this moment" on THIS page's clock, and a page's clock starts at nought when it loads. It was sent as it stood,
+  // so a screen that had just reloaded (clock near nought) was handed "white until 974658" by a screen sixteen minutes
+  // old, and drew every fighter who had ever been hit white for the next quarter of an hour; a screen OLDER than the one
+  // running the fight never saw a hit flash at all. It now crosses as "this long from now", the way `ol` does.
+  if (s.flash !== undefined) s.flash = a.flash > now ? Math.max(120, Math.round(a.flash - now)) : 0;
   if (a.c && !noC) s.c = enc(a.c);
   return s;
 }
+// a hit flash as another screen sent it: "this long from now", put on THIS page's clock. Never longer than a second (the
+// longest flash in the game is 550 ms), so a screen still running the page from before this fix, which sends its own
+// clock's number, cannot paint anyone white for minutes; and a flash left standing far in the future is put out.
+function flashFrom(a, s){ if (s.flash > 0) a.flash = now + Math.min(s.flash, 1000); else if (a.flash > now + 2000) a.flash = 0; }
 function fightActors(){ return [...new Set([...party, ...foes, ...((cbt && cbt.allies) || []), ...((cbt && cbt.bystanders) || []), ...npcs.filter(n => n.body && actors.includes(n))])].filter(a => actors.includes(a) || foes.includes(a)); }
 const ZONE_NAMES = ["poisonZones", "daggerZones", "fireSpheres", "spiritWeapons", "guardianAuras", "icePatches", "caltropPatches", "aoeMarks"];
 function zonesNow(){ const z = {}; for (const n of ZONE_NAMES) try { z[n] = enc(eval(n)); } catch (e) {} return z; }
@@ -32418,7 +32428,8 @@ async function mirrorActor(s){
     if (a.kind === "foe") foes.push(a); actors.push(a);
     }
   }
-  for (const k of ACTOR_KEYS) if (k !== "x" && k !== "y" && s[k] !== undefined) a[k] = s[k];
+  for (const k of ACTOR_KEYS) if (k !== "x" && k !== "y" && k !== "flash" && s[k] !== undefined) a[k] = s[k];
+  flashFrom(a, s);
   const d = Math.hypot(s.x - a.x, s.y - a.y);
   if (d > 400 * node.scale || a.down){ a.x = s.x; a.y = s.y; a.path = []; } else if (d > 3) a.path = [{x: s.x, y: s.y}];
   if (s.anim && (s.anim !== a.anim || Math.abs((now - a.t0) - s.age) > 400)){ a.anim = s.anim; a.t0 = now - s.age; }
@@ -32674,7 +32685,8 @@ function sceneSet(a, s, put){
   // dice) stays this screen's to bring back: only the fallen and the carried are taken off stage by a scene
   if (!!s.offStage !== !!a.offStage && !s.down && !a.down && !a.sceneGuest) return;
   if (s.slain){ a.talk = false; a.stroll = null; }
-  for (const k of SCENE_ACTOR_KEYS){ if (k === "x" || k === "y" || k === "kind" || k === "id" || s[k] === undefined) continue; a[k] = s[k]; }
+  for (const k of SCENE_ACTOR_KEYS){ if (k === "x" || k === "y" || k === "kind" || k === "id" || k === "flash" || s[k] === undefined) continue; a[k] = s[k]; }
+  flashFrom(a, s);
   {
     const d = Math.hypot(s.x - a.x, s.y - a.y);
     if (put || d > 400 * node.scale){ a.x = s.x; a.y = s.y; a.path = []; a.sceneTo = null; }
