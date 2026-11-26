@@ -9798,7 +9798,8 @@ function fighterFor(a){
     console.warn(`[walk] no sheet for ${a.id}: using a placeholder block so the map keeps running`);
   }
   const own = !!s && (a.kind === "pc" || a.ally || turned);
-  const hpMax = own ? s.hp : (a.hpMax || (s && s.hp) || 1), hp = own ? s.hp : (a.hp ?? hpMax);
+  // WOUNDS ARE KEPT (Sam, 2026-11-25): a hero begins with what their sheet says now, not their maximum (woundsToSheet)
+  const hpMax = own ? s.hp : (a.hpMax || (s && s.hp) || 1), hp = own ? (a.kind === "pc" ? hpStart(s.hp, s.hpNow, a.down) : s.hp) : (a.hp ?? hpMax);
   return {sheet: s || {name: SHORT[a.id] || SPR[a.id].json.name, cls: "", hp: hpMax, ac: 10, speed: 30, init: 0, saves: {}, attacks: [{name: "Strike", hit: 2, dmg: "1d4", type: "bludgeoning", reach: 5}], improvised: true},
           hp, hpMax, ac: s ? s.ac : 10, conds: seedSavedConds(s), exhaustion: conditionsForMap(s && s.conditions).exhaustion, slots: s && s.magic ? {...s.magic.slots} : {}, init: 0};
 }
@@ -9949,8 +9950,9 @@ function startCombat(foeIds, label, opts = {}){ bardTuneStop();
   // ONE ON ONE (Sam, 2026-11-13: a caught thief's fight is "combat (1:1)"): opts.duel is the one hero in it. The rest
   // of the party is on the plate and out of the order, like the allies a grudge fight leaves standing.
   const order = [...(opts.duel ? [opts.duel] : party), ...allies, ...foes].filter(a => !a.down);   // fighters only: bystanders run between the turns
-  if (opts.duel) for (const p of party) if (p !== opts.duel && !p.down && !p.c) p.c = fighterFor(p);   // out of the order, still on the plate: the panel, a pot shot and a heal all read their numbers
-  for (const a of order){ a.c = a.c && (hero(a) || a.bystander) ? a.c : fighterFor(a); a.c.initRoll = d20((opts.roadSurprise === "party" && hero(a)) || (opts.roadSurprise === "them" && foes.includes(a)) ? -1 : 0, a); a.c.init = a.c.initRoll + (a.c.sheet.init || 0); }
+  if (opts.duel) for (const p of party) if (p !== opts.duel && !p.down && !p.c) p.c = fighterFor(p);
+  for (const p of party) if (p.c) hpFromSheet(p);   // WOUNDS ARE KEPT: everyone's numbers start from the sheet, in the order or not (the fight's end writes the whole party back)   // out of the order, still on the plate: the panel, a pot shot and a heal all read their numbers
+  for (const a of order){ a.c = a.c && (hero(a) || a.bystander) ? a.c : fighterFor(a); hpFromSheet(a); a.c.initRoll = d20((opts.roadSurprise === "party" && hero(a)) || (opts.roadSurprise === "them" && foes.includes(a)) ? -1 : 0, a); a.c.init = a.c.initRoll + (a.c.sheet.init || 0); }
   order.sort((a, b) => b.c.init - a.c.init || (b.c.sheet.init || 0) - (a.c.sheet.init || 0) || (a.kind === "pc" ? -1 : 1));
   for (const sp of duelCompany) if (order.includes(sp) && order.includes(opts.duel)){   // its owner's initiative, the turn right after theirs
     sp.summoner = opts.duel; sp.c.init = opts.duel.c.init;
@@ -17560,6 +17562,8 @@ function fellHelp(by, t){
   const f = (state.fell || {})[t.id]; if (!f) return;
   const out = Object.assign({}, state.fell); delete out[t.id]; state.fell = out; saveWalk();
   faceTo(by, t);
+  t.c = t.c || fighterFor(t); if (f.why !== "poison" || !(t.c.hp > 0)) t.c.hp = 1;
+  woundsToSheet([t], "helped up");   // WOUNDS ARE KEPT: 1 hit point is what the sheet says until a rest, a heal or a level
   log(f.why === "poison" ? `<b>${esc(fname(by))}</b> shakes ${esc(fname(t))} awake.` : `<b>${esc(fname(by))}</b> gets ${esc(fname(t))} back on their feet. <em>1 hit point.</em>`, {say: true});
   exploreKey = "";
 }
@@ -17691,6 +17695,7 @@ function endCombat(won, opts = {}){
     camTo(1, NAT_W / 2, NAT_H / 2, 800);
     { const b = $("zFit"); if (b){ b.textContent = wholePlate ? "Follow" : "Fit"; b.title = wholePlate ? "Follow your hero" : "Show the whole plate"; } }   // the fight's "Fit" is over
     fightLeavesDown(allies);           // DOWN STAYS DOWN: nobody gets up on their own when the fight ends (below)
+    woundsToSheet(party, "fight");     // WOUNDS ARE KEPT: what this fight left each hero with goes onto their sheet
     // the allies the same way as the party (knocked down, not killed — the DM core rules on wounds), then back to
     // being people on the plate, standing where the fight left them
     allies.forEach(n => { n.ally = false; n.path = []; if (n.down){ n.down = false; setAnim(n, "idle"); if (n.c) n.c.hp = 1; } n.home = {x: n.x, y: n.y}; n.post = {x: n.x, y: n.y}; });
@@ -17709,6 +17714,44 @@ $("quickBtn").onclick = () => setQuick(!(cbt && cbt.quick));
 // be the whole of it: nothing was written, so every sheet stayed at 0. /api/walk-xp now pays the win: split evenly
 // across the party's player characters (NPC companions get no share — Sam, 2026-09-27), once per fight. Levelling
 // is still done at camp (camp house rules, 2026-09-26); the map only says who is ready.
+// WOUNDS ARE KEPT (Sam, 2026-11-25: "Stabilizing and getting picked up only returns you to 1HP. HP and your level should
+// maintain it's state until you've rested (and used hit dice), healed yourself or been healed, or a level up that
+// raises your HP according to DND 5E rules.")
+// What the game did: a fight's hit points lived on this page only. Nothing wrote them to the hero's sheet, and every
+// fight started a hero at their maximum (fighterFor), so a hero helped up "at 1 hit point" read full on their chips the
+// moment the fight was over, short-rested and levelled from full, and walked into the next fight whole. Now the SHEET
+// (characters.hp_current) is the one copy between fights:
+//   - when a fight ends, the screen that ran it writes what it left every hero with (/api/walk-hp);
+//   - a hero helped up out of a fight is written at 1; a potion or ormu taken outside a fight is written too;
+//   - every fight starts a hero from the sheet (hpStart; lib/walk-hp.ts `fightStartHp` is the tested twin).
+// What changes them after that is what the rules say: a rest (/api/walk-rest), a healing spell (/api/walk-cast), an
+// item, the surgeon, a level (/api/walk-level-up adds the level's hit points to the current number, wounds kept).
+// [CLAUDE] a hero on their feet has at least 1; the fighting NPCs (Ront, Eldeth...) still begin each fight whole.
+function hpStart(max, nowHp, down){
+  const m = Math.max(1, Math.floor(Number(max) || 1));
+  if (nowHp == null || !Number.isFinite(Number(nowHp))) return m;
+  return Math.min(m, Math.max(down ? 0 : 1, Math.floor(Number(nowHp))));
+}
+/** A hero's fight numbers take their hit points from the sheet (outside a fight the sheet is the one copy). */
+function hpFromSheet(a){
+  const s = a && a.kind === "pc" ? SHEETS[a.id] : null; if (!s || !a.c || !(s.hp > 0)) return;
+  a.c.hpMax = s.hp; a.c.hp = hpStart(s.hp, s.hpNow, a.down);
+}
+/** Write these heroes' hit points, as this page holds them, onto their sheets. */
+async function woundsToSheet(list, why){
+  const set = [];
+  for (const p of list || []){
+    if (!p || p.kind !== "pc" || !p.c) continue;
+    const hp = Math.max(0, Math.min(p.c.hpMax || 1, Math.floor(Number(p.c.hp) || 0)));
+    if (SHEETS[p.id]) SHEETS[p.id].hpNow = hp;                     // the chips read this the moment the fight is over
+    const cid = characterIdOf(p.id); if (cid) set.push({characterId: cid, hp});
+  }
+  if (typeof renderParty === "function") renderParty();
+  if (!APP || !set.length) return;
+  const claim = (() => { try { const id = localStorage.getItem("aop_character_id"), tok = localStorage.getItem("aop_claim_token"); return id && tok ? {claimId: id, claimToken: tok} : {}; } catch (e) { return {}; } })();
+  const res = await fetch("/api/walk-hp", {method: "POST", headers: {"Content-Type": "application/json", ...dmHeaders()}, body: JSON.stringify({set, why: why || "", ...claim})}).catch(() => null);
+  if (!res || !res.ok) log(`<i>The wounds were not saved to the sheets${res && res.status === 403 ? ": only the DM screen or a seated player can save them" : ""}.</i>`);
+}
 async function payXp(fightId, slain){
   if (!fightId) return;
   const recipients = [...new Set(party.map(p => characterIdOf(p.id)).filter(Boolean))];
@@ -25211,12 +25254,15 @@ function drinkItem(a, it, t){
   const fight = inFightNow(); if (!bagCan(a)) return;
   if (fight){ if (!a.c.bonus){ toast("Drinking a potion takes your bonus action."); return; }
     if (t !== a && feetBetween(a, t) > 5.5){ toast(`${fname(t)} is out of reach: they must be within 5 ft.`); return; } a.c.bonus = false; }
-  const u = useOf(it); t.c = t.c || fighterFor(t);
+  const u = useOf(it); t.c = t.c || fighterFor(t); if (!fight) hpFromSheet(t);
   spendItem(a, it, t === a ? "drink" : "give", t);
   bank("ui/item_pickup", .5);
   if (u.kind === "heal"){
     const d = t.c.noHeal ? 0 : roll(u.dice).total; if (t.c.noHeal) setTimeout(() => popText(t, "can't regain HP", "#9be04a", .9), 250); t.c.hp = Math.min(t.c.hpMax, t.c.hp + d); if (d > 0 && fight) woundCloses(t, it.name || "a potion");
     if (t.down && t.c.hp > 0){ t.down = false; setAnim(t, "idle"); }
+    if (!fight){   // WOUNDS ARE KEPT: outside a fight the heal lands on the sheet, and a friend on the floor gets up
+      if (t.c.hp > 0 && state.fell && state.fell[t.id]){ const out = Object.assign({}, state.fell); delete out[t.id]; state.fell = out; saveWalk(); }
+      woundsToSheet([t], "potion"); }
     setTimeout(() => { kitImpact(t, KIT.healing); bank("combat/heal", .8); popText(t, `+${d}`, "#9ff2c8"); }, 250);
     log(t === a ? `${fname(a)} drinks the <b>${esc(it.name)}</b> and regains ${d} HP${fight ? " (bonus action)" : ""}.`
                : `${fname(a)} pours the <b>${esc(it.name)}</b> into ${fname(t)}: ${d} HP back${fight ? " (bonus action)" : ""}.`);
@@ -25232,7 +25278,7 @@ function eatItem(a, it, verb){
   spendItem(a, it, verb, a); bank("ui/item_pickup", .5); popText(a, it.name, "#e8d9a8", .8);
   const u = useOf(it);
   if (u.heal){   // ormu: the catalogue's number (properties.eat_heal), the same hit points a potion writes
-    a.c = a.c || fighterFor(a); const d = a.c.noHeal ? 0 : roll(u.heal).total; a.c.hp = Math.min(a.c.hpMax, a.c.hp + d);
+    a.c = a.c || fighterFor(a); if (!fight) hpFromSheet(a); const d = a.c.noHeal ? 0 : roll(u.heal).total; a.c.hp = Math.min(a.c.hpMax, a.c.hp + d); if (!fight) woundsToSheet([a], "food");
     setTimeout(() => { kitImpact(a, KIT.healing); bank("combat/heal", .8); popText(a, a.c.noHeal ? "can't regain HP" : `+${d}`, "#9ff2c8"); }, 250);
     log(`${fname(a)} eats the <b>${esc(it.name)}</b> and regains ${d} HP (${esc(u.heal)})${fight ? " (action)" : ""}.`);
   } else
